@@ -27,8 +27,8 @@ POWERLINE_LEFT_B_FG=$__SOLARIZED_BASE2
 POWERLINE_LEFT_C_BG=$__SOLARIZED_BASE02
 POWERLINE_LEFT_C_FG=$__SOLARIZED_BASE1
 
-POWERLINE_RIGHT_BG=$__SOLARIZED_BASE03
-POWERLINE_RIGHT_FG=$__SOLARIZED_BASE0
+POWERLINE_RIGHT_BG=$__SOLARIZED_BASE02
+POWERLINE_RIGHT_FG=$__SOLARIZED_GREEN
 
 # powerline theme
 POWERLINE_SEPARATOR=$'\uE0B0'
@@ -85,7 +85,6 @@ function zle-line-init zle-keymap-select {
     || [[ $KEYMAP = '' ]]; then
     echo -ne '\e[1 q' # Blink Block
   fi
-  render_prompt
 
   zle reset-prompt
   zle -R
@@ -111,15 +110,7 @@ render_prompt() {
   POWERLINE_LEFT_C=" %k%f%F{$POWERLINE_LEFT_C_FG}%K{$POWERLINE_LEFT_C_BG}"$(git_time_details)" %k%f%F{$POWERLINE_LEFT_C_BG}"$POWERLINE_SEPARATOR"%f "
 
   PROMPT=$POWERLINE_LEFT_A$POWERLINE_LEFT_B$POWERLINE_LEFT_C
-  RPROMPT="%F{$POWERLINE_RIGHT_BG}$POWERLINE_R_SEPARATOR%f%K{$POWERLINE_RIGHT_BG}%F{$POWERLINE_RIGHT_FG} $(vi_mode_prompt_info) %f%k"
-}
-
-vi_mode_prompt_info() {
-  if [[ $KEYMAP == vicmd ]]; then
-    echo "NORMAL"
-  else
-    echo "INSERT"
-  fi
+  RPROMPT="%F{$POWERLINE_RIGHT_BG}$POWERLINE_R_SEPARATOR%f%K{$POWERLINE_RIGHT_BG}%F{$POWERLINE_RIGHT_FG} %D %T %f%k"
 }
 
 git_time_details() {
