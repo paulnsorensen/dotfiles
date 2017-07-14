@@ -1,0 +1,11 @@
+<application>
+  <component name="FindRecents">
+    <findStrings>
+      <find>CreditCardGatewayService</find>
+      <find>health()</find>
+      <find>VERSION</find>
+      <find>VersionRe</find>
+      <find>Vers</find>
+    </findStrings>
+  </component>
+</application>

@@ -1,0 +1,35 @@
+<application>
+  <component name="UsageTrigger">
+    <counts>
+      <entry feature="CreateFile.CreateFileAction" count="1" />
+      <entry feature="StripeButton[Version_Control].hidden" count="1" />
+      <entry feature="StripeButton[Version_Control].shown" count="1" />
+      <entry feature="debugger.reload.classes" count="1" />
+      <entry feature="execute.Application.Coverage" count="1" />
+      <entry feature="execute.Application.Run" count="2" />
+      <entry feature="execute.JUnit.Debug" count="15" />
+      <entry feature="execute.JUnit.Run" count="13" />
+      <entry feature="ide.settings.Annotation_Processors" count="1" />
+      <entry feature="ide.settings.Appearance" count="3" />
+      <entry feature="ide.settings.Auto_Import" count="1" />
+      <entry feature="ide.settings.Checkstyle" count="1" />
+      <entry feature="ide.settings.Colors_&amp;_Fonts" count="5" />
+      <entry feature="ide.settings.Font" count="7" />
+      <entry feature="ide.settings.Importing" count="1" />
+      <entry feature="ide.settings.Inspections" count="1" />
+      <entry feature="ide.settings.Keymap" count="2" />
+      <entry feature="ide.settings.Markdown" count="1" />
+      <entry feature="ide.settings.Plugins" count="4" />
+      <entry feature="ide.settings.Project_Structure" count="2" />
+      <entry feature="ideaapp.started" count="28" />
+      <entry feature="spring.SpringConfigurationCheck.FileCount.java" count="8" />
+      <entry feature="spring.SpringConfigurationCheckTask.CreateDefault" count="1" />
+      <entry feature="terminal.mac" count="6" />
+      <entry feature="welcome.screen.WelcomeScreen.Configure" count="3" />
+      <entry feature="welcome.screen.WelcomeScreen.ImportProject" count="1" />
+      <entry feature="welcome.screen.WelcomeScreen.OpenProject" count="2" />
+      <entry feature="welcome.screen.WelcomeScreen.Settings" count="1" />
+      <entry feature="welcome.screen.null" count="1" />
+    </counts>
+  </component>
+</application>
