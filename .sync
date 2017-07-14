@@ -1,8 +1,9 @@
 #!/bin/bash
 ############################
-# .makelinks
+# .sync
 # This script creates symlinks from the home directory to any desired dotfiles
 # in ~/dotfiles
+# or runs the relevant .sync script
 # Stolen from https://github.com/natebosch/dotfiles
 ############################
 
@@ -19,16 +20,22 @@ mkdir -p $olddir
 echo "...done"
 
 # move any existing dotfiles in homedir to dotfiles_old directory, then create
-# symlinks 
+# symlinks
 for file in $(ls); do
-  if [ -h ~/.$file ]; then
+  if [[ -h ~/.$file ]]; then
     echo "Removing old link to $file"
     rm ~/.$file
   fi
-  if [ -f ~/.$file -o -d ~/.$file ]; then
+  if [[ -f ~/.$file || -d ~/.$file ]]; then
     echo "Moving existing $file from ~ to $olddir"
     mv ~/.$file $olddir
   fi
-  echo "Creating symlink to $file in home directory."
-  ln -s $dir/$file ~/.$file
+
+  if [[ -d $dir/$file ]] && [[ -f $dir/$file/.sync ]]; then
+    echo "Running .sync for $file."
+    sh $dir/$file/.sync
+  else
+    echo "Creating symlink to $file in home directory."
+    ln -s $dir/$file ~/.$file
+  fi
 done
