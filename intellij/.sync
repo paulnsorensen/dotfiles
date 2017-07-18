@@ -20,10 +20,8 @@ for version in "${intellij_versions[@]}"
 do
   for config in $(find ${script_dir}/config -depth 1 -name "[!.]*" | xargs -n 1 basename)
   do
-    if [[ $platform == *Darwin* ]]
-    then
-      if [[ ! -a ~/Library/Preferences/$version/$config ]]
-      then
+    if [[ $platform == *Darwin* ]]; then
+      if [[ ! -a ~/Library/Preferences/$version/$config ]]; then
         ln -s $script_dir/config/$config ~/Library/Preferences/$version/$config
       else
         echo "~/Library/Preferences/$version/$config already exists! Diff:"
