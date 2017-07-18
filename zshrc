@@ -33,3 +33,5 @@ export PAGER=less       # less is more :)
 export LESS='-i -M -R'  # case insensitive searching, status line, and colors
 
 clear
+
+[ $HOME/.iterm2_shell_integration.zsh ] && source $HOME/.iterm2_shell_integration.zsh
