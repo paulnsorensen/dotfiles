@@ -10,7 +10,10 @@ Thumbs.db
 .Spotlight-V100
 .Trashes
 
-#IntelliJ
+# iterm2 background
+ iterm2/background/i_know_how_to_make_ducks.png
+
+# IntelliJ
 intellij/config/*.key
 intellij/config/options/*statistics*
 intellij/config/options/appComponentVersions.xml
