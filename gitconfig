@@ -1,0 +1,40 @@
+[user]
+	name = Paul Sorensen
+
+[branch]
+  autosetuprebase = always
+
+[fetch]
+	prune = true
+
+[push]
+  default = simple
+
+[commit]
+	verbose = true
+
+[color]
+  ui = true
+[color "diff"]
+  meta = yellow
+  func = magenta
+[color "status"]
+  added = green
+  untracked = red
+  nobranch = bold red
+  changed = yellow
+[color "interactive"]
+  prompt = 33
+
+[alias]
+	cwork = !git config user.email paul.sorensen@uber.com
+	cpersonal = !git config user.email paulnsorense@gmail.com
+
+[url "ssh://code.uber.internal/"]
+	insteadOf = https://code.uber.internal/
+[url "ssh://config.uber.internal/"]
+	insteadOf = https://config.uber.internal/
+[http "https://gopkg.uberinternal.com"]
+	followRedirects = true
+[http "https://gopkg.in"]
+	followRedirects = true
