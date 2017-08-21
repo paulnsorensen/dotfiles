@@ -28,7 +28,7 @@
 
 [alias]
 	cwork = !git config user.email paul.sorensen@uber.com
-	cpersonal = !git config user.email paulnsorense@gmail.com
+	cpersonal = !git config user.email paulnsorensen@gmail.com
 
 [difftool "kdiff3"]
     path = /Applications/kdiff3.app/Contents/MacOS/kdiff3
