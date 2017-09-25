@@ -14,7 +14,7 @@ platform=$(uname)
 # fi
 
 # TODO: add community version here
-intellij_versions=("IntelliJIdea2017.1")
+intellij_versions=("IntelliJIdea2017.2")
 
 for version in "${intellij_versions[@]}"
 do
@@ -25,7 +25,8 @@ do
         ln -s $script_dir/config/$config ~/Library/Preferences/$version/$config
       else
         echo "~/Library/Preferences/$version/$config already exists! Diff:"
-        echo $(diff -rq $script_dir/config/$config ~/Library/Preferences/$version/$config)
+        # echo $(diff -rq $script_dir/config/$config ~/Library/Preferences/$version/$config)
+        cp -R ~/Library/Preferences/$version/$config/ $script_dir/config/
       fi
       # TODO: Decide if you need this
       # else
