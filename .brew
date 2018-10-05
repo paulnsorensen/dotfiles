@@ -1,0 +1,21 @@
+#!/bin/bash
+
+############################
+# .brew
+# This script installs packages via homebrew if not installed
+############################
+
+
+######### Packages #########
+
+packages=(blueutil)
+
+####### End Packages #######
+
+
+for package in ${packages[@]}; do
+  if ! brew ls --versions $package > /dev/null; then
+    echo "Installing $package..."
+    brew install $package
+  fi
+done
