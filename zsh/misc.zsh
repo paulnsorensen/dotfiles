@@ -2,3 +2,5 @@
 function lb() {
     vim ~/logbook/$(date '+%Y-%m-%d').md
 }
+
+alias uuidgen="/usr/bin/uuidgen | tr 'A-Z' 'a-z' | tee /dev/stderr | tr -d '\n' | pbcopy"
