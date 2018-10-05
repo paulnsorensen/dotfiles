@@ -14,6 +14,11 @@ olddir=~/.dotfiles.bak             # old dotfiles backup directory
 
 ##########
 
+# run homebrew
+
+echo "Running homebrew script"
+sh $dir/.brew
+
 # create dotfiles_old in homedir
 echo "Creating $olddir for backup of any existing dotfiles in ~"
 mkdir -p $olddir

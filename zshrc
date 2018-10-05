@@ -35,3 +35,5 @@ export LESS='-i -M -R'  # case insensitive searching, status line, and colors
 clear
 
 [ $HOME/.iterm2_shell_integration.zsh ] && source $HOME/.iterm2_shell_integration.zsh
+brew analytics off 2>&1 >/dev/null
+export PATH="/usr/local/opt/sqlite/bin:$PATH"

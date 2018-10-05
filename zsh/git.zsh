@@ -12,3 +12,6 @@ alias gf='git fetch'
 alias gl='git pull'
 alias gp='git push'
 alias gst='git status'
+
+# remove files that match .gitignore
+alias gri='git rm --cached `git ls-files -i -X .gitignore`'
