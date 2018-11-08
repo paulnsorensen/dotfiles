@@ -14,7 +14,7 @@ then
     for config_file ($HOME/.zsh/*) source $config_file
 fi
 
-[ $HOME/.zshrc.local ] && source .zshrc.local
+[ -f $HOME/.zshrc.local ] && source .zshrc.local
 
 
 bindkey -v

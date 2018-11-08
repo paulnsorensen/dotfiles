@@ -12,6 +12,16 @@ packages=(blueutil)
 
 ####### End Packages #######
 
+# install brew if it does not exist
+which -s brew
+if [[ $? != 0 ]] ; then
+    echo "Installing homebrew"
+    ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+else
+    echo "Updating homebrew"
+    brew update
+fi
+
 
 for package in ${packages[@]}; do
   if ! brew ls --versions $package > /dev/null; then

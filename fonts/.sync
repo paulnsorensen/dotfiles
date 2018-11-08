@@ -1,0 +1,13 @@
+#!/bin/bash
+
+##
+# This file installs all fonts inside its dir
+##
+fontdir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+
+for file in $fontdir/*; do
+  if [[ "file" != ".sync" ]]; then
+    echo "Installing font $file"
+    [ -f /LibraryFonts ] && sudo cp $file /Library/Fonts
+  fi
+done
