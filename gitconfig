@@ -1,5 +1,6 @@
 [user]
 	name = Paul Sorensen
+	email = paul.sorensen@uber.com
 
 [branch]
   autosetuprebase = always
@@ -53,3 +54,7 @@
 	followRedirects = true
 [http "https://gopkg.in"]
 	followRedirects = true
+[rerere]
+	enabled = true
+[include]
+  path = .gitconfig.local
