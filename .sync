@@ -10,7 +10,7 @@
 ########## Variables
 
 dir=$(pwd)
-olddir=~/.dotfiles.bak             # old dotfiles backup directory
+source .vars
 
 ##########
 
