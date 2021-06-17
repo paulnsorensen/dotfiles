@@ -183,7 +183,7 @@
 				<real>0.0</real>
 			</dict>
 			<key>Background Image Location</key>
-			<string>/Users/paulsorensen/Dev/dotfiles/iterm2/background/i_know_how_to_make_ducks.png</string>
+			<string>/Users/{{user}}/Dev/dotfiles/iterm2/background/i_know_how_to_make_ducks.png</string>
 			<key>Badge Color</key>
 			<dict>
 				<key>Alpha Component</key>
@@ -662,7 +662,7 @@
 			<key>Window Type</key>
 			<integer>0</integer>
 			<key>Working Directory</key>
-			<string>/Users/paulsorensen</string>
+			<string>/Users/{{user}}</string>
 		</dict>
 	</array>
 	<key>PasteTabToStringTabStopSize</key>
