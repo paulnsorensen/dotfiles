@@ -1,7 +1,6 @@
 # dotfiles by @paulnsorensen (with a lot of copying from others)
 
 path=(
-  /Library/Frameworks/R.framework/Resources
   /opt/homebrew/bin
   $path
 )
@@ -52,6 +51,7 @@ export VISUAL=$EDITOR   # some programs use this instead of EDITOR
 export PAGER=less       # less is more :)
 export LESS='-i -M -R'  # case insensitive searching, status line, and colors
 
+# init pyenv if it exists
 if command -v pyenv 1>/dev/null 2>&1; then
   eval "$(pyenv init -)"
 fi
@@ -77,4 +77,3 @@ else
 fi
 unset __conda_setup
 # <<< conda initialize <<<
-

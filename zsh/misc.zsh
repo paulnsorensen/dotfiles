@@ -6,5 +6,3 @@ function lb() {
 alias uuidgen="/usr/bin/uuidgen | tr 'A-Z' 'a-z' | tee /dev/stderr | tr -d '\n' | pbcopy"
 
 alias cdd="cd ~/Dev"
-
-alias py3="/opt/homebrew/opt/python@3.8/bin/python3"
