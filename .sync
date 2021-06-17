@@ -10,9 +10,27 @@
 ########## Variables
 
 dir=$(pwd)
-olddir=~/.dotfiles.bak             # old dotfiles backup directory
+source .vars
 
 ##########
+
+# export and parse arg cariables
+export DOTFILES_DEV=false
+
+for ARG in "$@"
+do
+  case $ARG in
+     dev)
+          echo "Setting dev=true"
+          export DOTFILES_DEV=true
+          ;;
+     *)
+          echo "Unrecognized arg"
+          exit 1
+          ;;
+esac
+done
+
 
 # run homebrew
 
@@ -44,3 +62,6 @@ for file in $(ls); do
     ln -s $dir/$file ~/.$file
   fi
 done
+
+# cleanup exported vars
+unset $DOTFILES_DEV

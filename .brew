@@ -8,7 +8,18 @@
 
 ######### Packages #########
 
-packages=(blueutil)
+# TODO maybe use this instead https://github.com/pyenv/pyenv-installer
+packages=()
+
+if [ "$DOTFILES_DEV" = true ]; then
+  packages+=(pyenv, libomp, miniforge)
+fi
+
+echo $packages
+
+# sudo mkdir -p /usr/local/opt
+# sudo ln -s /opt/homebrew/Cellar/libomp/11.1.0 /usr/local/opt/libomp
+# TODO: probably a better way to do this
 
 ####### End Packages #######
 

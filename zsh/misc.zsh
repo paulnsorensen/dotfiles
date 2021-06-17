@@ -4,3 +4,5 @@ function lb() {
 }
 
 alias uuidgen="/usr/bin/uuidgen | tr 'A-Z' 'a-z' | tee /dev/stderr | tr -d '\n' | pbcopy"
+
+alias cdd="cd ~/Dev"

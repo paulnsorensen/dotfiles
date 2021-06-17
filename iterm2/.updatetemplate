@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -e
+
+script_dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+
+sed "s/$(logname)/{{user}}/g" $script_dir/com.googlecode.iterm2.plist > $script_dir/plist.template
