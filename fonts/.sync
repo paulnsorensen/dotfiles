@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ "$(uname)" != "Darwin" ]; then
+  echo "Not on mac, skipping fonts"
+  exit 0
+fi
+
 ##
 # This file installs fonts from brew cask
 ##
