@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ "$(uname)" != "Darwin" ]; then
+  echo "Not on mac, skipping iterm2"
+  exit 0
+fi
+
 set -e
 
 script_dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )

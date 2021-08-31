@@ -33,9 +33,10 @@ done
 
 
 # run homebrew
-
-echo "Running homebrew script"
-sh $dir/.brew
+if [ "$(uname)" == "Darwin" ]; then
+  echo "Running homebrew script"
+  sh $dir/.brew
+fi
 
 # create dotfiles_old in homedir
 echo "Creating $olddir for backup of any existing dotfiles in ~"
