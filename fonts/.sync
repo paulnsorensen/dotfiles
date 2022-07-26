@@ -1,7 +1,11 @@
 #!/bin/bash
-
 if [ "$(uname)" != "Darwin" ]; then
   echo "Not on mac, skipping fonts"
+  exit 0
+fi
+
+if [ $QUICK_SYNC = true ]; then
+  echo "Quick sync, skipping fonts"
   exit 0
 fi
 

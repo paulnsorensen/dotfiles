@@ -5,6 +5,12 @@ if [ "$(uname)" != "Darwin" ]; then
   exit 0
 fi
 
+
+if [ $QUICK_SYNC = true ]; then
+  echo "Quick sync, skipping iterm"
+  exit 0
+fi
+
 set -e
 
 script_dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )

@@ -5,6 +5,10 @@
 # This script installs packages via homebrew if not installed
 ############################
 
+if [ $QUICK_SYNC = true ]; then
+  echo "Quick sync, skipping brew"
+  exit 0
+fi
 
 ######### Packages #########
 

@@ -69,6 +69,7 @@ TRAPALRM() {
   if [[ "$WIDGET" =~ "comp" || "$WIDGET" =~ "fzf" ]]; then
     return 0
   fi
+  prompt_precmd
   zle reset-prompt
 }
 

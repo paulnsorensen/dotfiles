@@ -14,8 +14,14 @@ source .vars
 
 ##########
 
-# export and parse arg cariables
+# TODO: evaluate whether we need this in sync, also maybe have .setup and .sync
+# separately
+# sudo chmod -R 755 /usr/local/share/zsh
+
+
+# export and parse arg variables
 export DOTFILES_DEV=false
+export QUICK_SYNC=false
 
 for ARG in "$@"
 do
@@ -23,6 +29,10 @@ do
      dev)
           echo "Setting dev=true"
           export DOTFILES_DEV=true
+          ;;
+     q)
+          echo "Setting quick_sync=true"
+          export QUICK_SYNC=true
           ;;
      *)
           echo "Unrecognized arg"
