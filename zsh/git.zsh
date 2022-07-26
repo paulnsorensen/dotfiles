@@ -21,3 +21,5 @@ alias glc='git config user.email | xargs git log --author'
 
 # rebase from main
 alias grb='git pull -r origin main'
+
+alias gcom='git checkout main && git pull'

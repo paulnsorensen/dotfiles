@@ -3,6 +3,9 @@ function lb() {
     vim ~/logbook/$(date '+%Y-%m-%d').md
 }
 
-alias uuidgen="/usr/bin/uuidgen | tr 'A-Z' 'a-z' | tee /dev/stderr | tr -d '\n' | pbcopy"
+alias uuidg="/usr/bin/uuidgen | tr 'A-Z' 'a-z' | tee /dev/stderr | tr -d '\n' | pbcopy"
 
 alias cdd="cd ~/Dev"
+
+# for nix
+alias hms="home-manager switch"

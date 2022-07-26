@@ -15,4 +15,4 @@ function dd() {
   echo "Set dev dir to $DEVDIR"
 }
 
-alias cddd="cd $DEVDIR" 
+alias cddd="cd $DEVDIR"

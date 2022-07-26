@@ -1,9 +1,12 @@
 # dotfiles by @paulnsorensen (with a lot of copying from others)
 
-path=(
-  /opt/homebrew/bin
-  $path
-)
+
+if [[ $OSTYPE == darwin* ]]; then
+  path=(
+    /opt/homebrew/bin
+    $path
+    )
+fi
 
 fpath=(
   ~/.nix-profile/share/zsh/site-functions
@@ -40,7 +43,6 @@ bindkey -v
 autoload -U edit-command-line
 zle -N edit-command-line
 bindkey -M vicmd v edit-command-line
-bindkey '^r' history-incremental-search-backward
 
 
 setopt NO_BEEP      # Never ever beep. Ever
@@ -61,7 +63,7 @@ alias zrl="source ${(%):-%N}"
 
 clear
 
-[ $HOME/.iterm2_shell_integration.zsh ] && source $HOME/.iterm2_shell_integration.zsh
+[ -f $HOME/.iterm2_shell_integration.zsh ] && source $HOME/.iterm2_shell_integration.zsh
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
