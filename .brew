@@ -16,7 +16,7 @@ fi
 packages=()
 
 if [ "$DOTFILES_DEV" = true ]; then
-  packages+=(pyenv, libomp, miniforge)
+  packages+=(pyenv, libomp, miniforge, black, "--cask docker")
 fi
 
 echo $packages
