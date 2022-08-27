@@ -6,6 +6,7 @@ if [[ $OSTYPE == darwin* ]]; then
     /opt/homebrew/bin
     $path
     )
+    export PATH=$(brew --prefix openssl)/bin:$PATH
 fi
 
 fpath=(
