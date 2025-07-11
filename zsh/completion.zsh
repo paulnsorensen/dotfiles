@@ -8,6 +8,8 @@ setopt CORRECT              # Spell check commands
 setopt ALWAYS_TO_END        # Push cursor on completions.
 
 setopt histignorealldups sharehistory
+setopt HIST_VERIFY           # Show command with history expansion to user before running it
+setopt HIST_IGNORE_SPACE     # Don't save commands that start with space
 
 # Keep 1000 lines of history within the shell and save it to ~/.zsh_history:
 HISTSIZE=1000
@@ -16,6 +18,10 @@ HISTFILE=~/.zsh_history
 
 # Use modern completion system
 autoload -Uz compinit
+
+# Ensure cache directory exists
+[[ ! -d $HOME/.zsh/cache ]] && mkdir -p $HOME/.zsh/cache
+
 compinit
 
 # cache completions

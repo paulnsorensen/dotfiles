@@ -63,6 +63,13 @@ zstyle ':vcs_info:*:prompt:*' actionformats "${fmt_branch}${fmt_action}"
 zstyle ':vcs_info:*:prompt:*' formats       "${fmt_branch}"
 zstyle ':vcs_info:*:prompt:*' nvcsformats   ""
 
+# Git status caching variables
+_git_cache_dir=""
+_git_cache_head=""
+_git_cache_status=""
+_git_cache_time=""
+_git_cache_last_commit=""
+
 # Reset the prompt every 10 seconds
 TMOUT=10
 TRAPALRM() {
@@ -93,6 +100,9 @@ function zle-line-init zle-keymap-select {
 }
 
 function prompt_precmd() {
+  # Update git cache first
+  update_git_cache
+  
   fmt_branch="%b%u%c"
   zstyle ':vcs_info:*:prompt:*' formats "${fmt_branch}"
 
@@ -111,27 +121,56 @@ render_prompt() {
   RPROMPT=""
 }
 
-git_time_details() {
-  # only proceed if there is actually a git repository
-  if [ -d .git ] || $(git rev-parse --git-dir > /dev/null 2>&1); then
-    # only proceed if there is actually a commit
-    if [[ $(git log -1 2>&1 > /dev/null | grep -c "^fatal: bad default revision") == 0 ]]; then
-      # get the last commit hash
-      # lc_hash=$(git log --pretty=format:'%h' -1 2> /dev/null)
-      # get the last commit time
-      lc_time=$(git log -1 --pretty=format:'%at' -1 2> /dev/null)
-
-      now=$(date +%s)
-      seconds_since_last_commit=$((now-lc_time))
-      lc_time_since=$(time_since_commit $seconds_since_last_commit)
-
-      echo "$lc_time_since"
+update_git_cache() {
+  local current_dir="$PWD"
+  local git_dir=""
+  
+  # Check if we're in a git repository
+  if git_dir=$(git rev-parse --git-dir 2>/dev/null); then
+    local git_head_file="${git_dir}/HEAD"
+    local current_head=""
+    
+    # Get current HEAD reference
+    if [[ -f "$git_head_file" ]]; then
+      current_head=$(cat "$git_head_file")
+    fi
+    
+    # Check if cache is valid (same directory and HEAD hasn't changed)
+    if [[ "$current_dir" == "$_git_cache_dir" && "$current_head" == "$_git_cache_head" ]]; then
+      return 0
+    fi
+    
+    # Update cache
+    _git_cache_dir="$current_dir"
+    _git_cache_head="$current_head"
+    
+    # Get last commit time if repository has commits
+    if git rev-parse --verify HEAD >/dev/null 2>&1; then
+      _git_cache_last_commit=$(git log -1 --pretty=format:'%at' 2>/dev/null)
     else
-      echo ""
+      _git_cache_last_commit=""
+    fi
+    
+    # Calculate time since last commit
+    if [[ -n "$_git_cache_last_commit" ]]; then
+      local now=$(date +%s)
+      local seconds_since=$((now - _git_cache_last_commit))
+      _git_cache_time=$(time_since_commit $seconds_since)
+    else
+      _git_cache_time=""
     fi
   else
-    echo ""
+    # Not in a git repository
+    _git_cache_dir=""
+    _git_cache_head=""
+    _git_cache_time=""
+    _git_cache_last_commit=""
   fi
+}
+
+git_time_details() {
+  # Cache is already updated in prompt_precmd, just return cached value
+  echo "$_git_cache_time"
 }
 
 time_since_commit() {
