@@ -100,9 +100,6 @@ function zle-line-init zle-keymap-select {
 }
 
 function prompt_precmd() {
-  # Update git cache first
-  update_git_cache
-  
   fmt_branch="%b%u%c"
   zstyle ':vcs_info:*:prompt:*' formats "${fmt_branch}"
 
@@ -169,7 +166,8 @@ update_git_cache() {
 }
 
 git_time_details() {
-  # Cache is already updated in prompt_precmd, just return cached value
+  # Update cache and return the time
+  update_git_cache
   echo "$_git_cache_time"
 }
 
