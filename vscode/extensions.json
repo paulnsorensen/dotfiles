@@ -1,0 +1,48 @@
+{
+  "recommendations": [
+    // Vim extension (essential)
+    "vscodevim.vim",
+
+    // Code formatting and linting
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-eslint",
+    "bradlc.vscode-tailwindcss",
+    "ms-python.python",
+    "ms-python.black-formatter",
+
+    // Git tools
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+
+    // Language support
+    "ms-vscode.vscode-typescript-next",
+    "ms-vscode.vscode-json",
+    "yzhang.markdown-all-in-one",
+    "redhat.vscode-yaml",
+    "ms-vscode.vscode-css-peek",
+
+    // File management
+    "christian-kohler.path-intellisense",
+    "formulahendry.auto-rename-tag",
+    "bradlc.vscode-tailwindcss",
+
+    // Productivity
+    "ms-vscode.vscode-sublime-keybindings",
+    "alefragnani.bookmarks",
+    "gruntfuggly.todo-tree",
+
+    // Theme and UI
+    "PKief.material-icon-theme",
+    "GitHub.github-vscode-theme",
+
+    // Terminal and shell
+    "ms-vscode.vscode-terminal",
+
+    // Docker (if needed)
+    "ms-azuretools.vscode-docker",
+
+    // Remote development
+    "ms-vscode-remote.remote-ssh",
+    "ms-vscode-remote.remote-containers"
+  ]
+}

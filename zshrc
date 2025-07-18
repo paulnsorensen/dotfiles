@@ -21,6 +21,10 @@ setopt VI
 # second.)
 KEYTIMEOUT=1
 
+# Shell safety options (disabled for interactive use)
+# Note: ERR_EXIT, PIPE_FAIL, and UNSET are too strict for interactive shells
+# and can cause unexpected exits. Enable them only in scripts if needed.
+
 # nix
 if [ -e ~/.nix-profile/etc/profile.d/nix.sh ]; then
   source ~/.nix-profile/etc/profile.d/nix.sh

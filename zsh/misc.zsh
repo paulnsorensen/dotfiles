@@ -1,6 +1,12 @@
 # https://routley.io/tech/2017/11/23/logbook.html
 function lb() {
-    vim ~/logbook/$(date '+%Y-%m-%d').md
+    local logbook_dir="$HOME/logbook"
+    local logbook_file="$logbook_dir/$(date '+%Y-%m-%d').md"
+    
+    # Create logbook directory if it doesn't exist
+    [[ ! -d "$logbook_dir" ]] && mkdir -p "$logbook_dir"
+    
+    vim "$logbook_file"
 }
 
 alias uuidg="/usr/bin/uuidgen | tr 'A-Z' 'a-z' | tee /dev/stderr | tr -d '\n' | pbcopy"

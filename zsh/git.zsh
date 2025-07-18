@@ -14,7 +14,7 @@ alias gp='git push'
 alias gst='git status'
 
 # remove files that match .gitignore
-alias gri='git rm --cached `git ls-files -i -X .gitignore`'
+alias gri='git rm --cached "$(git ls-files -i -X .gitignore)"'
 
 # log only your commits
 alias glc='git config user.email | xargs git log --author'
