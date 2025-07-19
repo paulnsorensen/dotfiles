@@ -17,13 +17,16 @@
 [color]
   ui = true
 [color "diff"]
-  meta = yellow
+	meta = 102
   func = magenta
+	old = 203
+	new = 107
+	frag = 141
 [color "status"]
-  added = green
-  untracked = red
+	added = 107
+	untracked = 203
   nobranch = bold red
-  changed = yellow
+	changed = 179
 [color "interactive"]
   prompt = 33
 
@@ -63,3 +66,7 @@
 	smudge = git-lfs smudge -- %f
 	process = git-lfs filter-process
 	required = true
+[color "branch"]
+	current = 75
+	local = 146
+	remote = 79

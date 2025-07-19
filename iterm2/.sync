@@ -26,12 +26,10 @@ if [[ ! -f $script_dir/background/i_know_how_to_make_ducks.png ]]; then
     convert $script_dir/background/i_know_how_to_make_ducks.png -alpha on -channel A -evaluate set $bg_opacity +channel $script_dir/background/i_know_how_to_make_ducks.png
 fi
 
-echo "Installing shell integration..."
-curl -L https://iterm2.com/misc/install_shell_integration.sh | bash
-
 echo "Loading iterm2 configuration"
 
-sed "s/{{user}}/$(logname)/g" $script_dir/plist.template > $script_dir/com.googlecode.iterm2.plist
+# Update the background image path in the existing plist file
+sed -i.bak "/<key>Background Image Location<\/key>/{n;s|<string>.*</string>|<string>$script_dir/background/i_know_how_to_make_ducks.png</string>|;}" $script_dir/com.googlecode.iterm2.plist
 
 # Specify the preferences directory
 defaults write com.googlecode.iterm2.plist PrefsCustomFolder -string $script_dir
