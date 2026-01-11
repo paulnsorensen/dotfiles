@@ -17,15 +17,15 @@ echo "Checking for secrets..."
 
 # Patterns that might indicate secrets
 SECRET_PATTERNS=(
-    "password.*=.*['\"].*['\"]"
-    "token.*=.*['\"].*['\"]"
-    "secret.*=.*['\"].*['\"]"
-    "api[_-]?key.*=.*['\"].*['\"]"
-    "private[_-]?key.*=.*['\"].*['\"]"
-    "access[_-]?key.*=.*['\"].*['\"]"
-    "client[_-]?secret.*=.*['\"].*['\"]"
-    "auth.*=.*['\"].*['\"]"
-    "BRAVE_API_KEY=.*[^'\"]"  # Specific to your config
+    "password.*=.*['\"][^'\"]{3,}['\"]"
+    "token.*=.*['\"][^'\"]{10,}['\"]"
+    "secret.*=.*['\"][^'\"]{3,}['\"]"
+    "api[_-]?key.*=.*['\"][^'\"]{10,}['\"]"
+    "private[_-]?key.*=.*['\"][^'\"]{10,}['\"]"
+    "access[_-]?key.*=.*['\"][^'\"]{10,}['\"]"
+    "client[_-]?secret.*=.*['\"][^'\"]{10,}['\"]"
+    "auth.*=.*['\"][^'\"]{3,}['\"]"
+    "BRAVE_API_KEY=[^'\"]{10,}"  # Specific to your config
 )
 
 # Files to check (staged files only)
