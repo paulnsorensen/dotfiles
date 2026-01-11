@@ -70,3 +70,5 @@
 	current = 75
 	local = 146
 	remote = 79
+[init]
+	defaultBranch = main
