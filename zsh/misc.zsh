@@ -15,3 +15,6 @@ alias cdd="cd ~/Dev"
 
 # for nix
 alias hms="home-manager switch"
+
+# VS Code shortcut - opens current directory, reuses window if already open
+alias c="code -r ."
