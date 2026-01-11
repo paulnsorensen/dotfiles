@@ -1,42 +1,16 @@
 # Based off of https://web.archive.org/web/20160817112745/http://dougblack.io:80/words/zsh-vi-mode.html
 # and https://github.com/davidjrice/prezto_powerline
+#
+# Colors sourced from zsh/colors.zsh (Deuterawarm palette)
 
-# COLORS
-# Selenized Dark color scheme
-# Background colors
-__SELENIZED_BG0=23        # #103c48
-__SELENIZED_BG1=24        # #184956
-__SELENIZED_BG2=66        # #2d5b69
-# Foreground colors
-__SELENIZED_DIM0=102      # #72898f
-__SELENIZED_FG0=146       # #adbcbc
-__SELENIZED_FG1=188       # #cad8d9
-# Standard colors
-__SELENIZED_RED=203       # #fa5750
-__SELENIZED_GREEN=107     # #75b938
-__SELENIZED_YELLOW=179    # #dbb32d
-__SELENIZED_BLUE=75       # #4695f7
-__SELENIZED_MAGENTA=207   # #f275be
-__SELENIZED_CYAN=79       # #41c7b9
-__SELENIZED_ORANGE=209    # #ed8649
-__SELENIZED_VIOLET=141    # #af88eb
-# Bright colors
-__SELENIZED_BR_RED=209    # #ff665c
-__SELENIZED_BR_GREEN=113  # #84c747
-__SELENIZED_BR_YELLOW=185 # #ebc13d
-__SELENIZED_BR_BLUE=81    # #58a3ff
-__SELENIZED_BR_MAGENTA=213 # #ff84cd
-__SELENIZED_BR_CYAN=86    # #53d6c7
-__SELENIZED_BR_ORANGE=215 # #fd9456
-__SELENIZED_BR_VIOLET=147 # #bd96fa
-
-POWERLINE_LEFT_A_BG=$__SELENIZED_BG1
-POWERLINE_LEFT_A_FG=$__SELENIZED_FG1
-POWERLINE_LEFT_B_BG=$__SELENIZED_BLUE
-POWERLINE_LEFT_B_FG=$__SELENIZED_BG0
-POWERLINE_LEFT_C_BG=$__SELENIZED_BG0
-POWERLINE_LEFT_C_FG=$__SELENIZED_FG0
-POWERLINE_LEFT_D_FG=$__SELENIZED_BLUE
+# Powerline segment colors (using ANSI 256 codes from colors.zsh)
+POWERLINE_LEFT_A_BG=$__DW_BG_ALT_256       # Slightly lighter background
+POWERLINE_LEFT_A_FG=$__DW_FG_256           # Foreground text
+POWERLINE_LEFT_B_BG=$__DW_BLUE_256         # Blue for git branch segment
+POWERLINE_LEFT_B_FG=$__DW_BG_256           # Dark text on blue
+POWERLINE_LEFT_C_BG=$__DW_BG_256           # Background for time segment
+POWERLINE_LEFT_C_FG=$__DW_DIM_256          # Dimmed text for time
+POWERLINE_LEFT_D_FG=$__DW_BLUE_256         # Blue for date/time text
 
 # powerline theme
 POWERLINE_SEPARATOR=$'\uE0B0'

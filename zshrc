@@ -5,6 +5,7 @@
 
 # Source zsh configuration files in order
 source "$HOME/Dev/dotfiles/zsh/core.zsh"
+source "$HOME/Dev/dotfiles/zsh/colors.zsh"    # Deuterawarm palette (must come before fzf/prompt)
 source "$HOME/Dev/dotfiles/zsh/aliases.zsh"
 source "$HOME/Dev/dotfiles/zsh/completion.zsh"
 source "$HOME/Dev/dotfiles/zsh/fzf.zsh"

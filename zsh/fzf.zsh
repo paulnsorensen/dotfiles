@@ -26,13 +26,8 @@ if command -v tree >/dev/null 2>&1; then
     export FZF_ALT_C_OPTS="--preview 'tree -C {} | head -200'"
 fi
 
-# Selenized Dark theme for fzf to match your setup
-export FZF_DEFAULT_OPTS='
-  --color=fg:#adbcbc,bg:#103c48,hl:#ad7fa8
-  --color=fg+:#adbcbc,bg+:#184956,hl+:#ad7fa8
-  --color=info:#8ae234,prompt:#fcaf3e,pointer:#fcaf3e
-  --color=marker:#fcaf3e,spinner:#fcaf3e,header:#729fcf
-  --height=50% --layout=reverse --border --inline-info'
+# Deuterawarm theme for fzf (colors from zsh/colors.zsh)
+export FZF_DEFAULT_OPTS="$__DW_FZF_COLORS --height=50% --layout=reverse --border --inline-info"
 
 # Fallback if fzf isn't available
 if [ ! -f ~/.fzf.zsh ]; then
