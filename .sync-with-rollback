@@ -1,0 +1,317 @@
+#!/bin/bash
+############################
+# .sync-with-rollback
+# Enhanced sync script with rollback capability and state management
+############################
+
+set -euo pipefail  # Fail fast on errors
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+########## Variables
+
+dir=$(pwd)
+olddir=~/.dotfiles.bak             # old dotfiles backup directory
+
+# State management
+DOTFILES_STATE_DIR="${HOME}/.local/state/dotfiles"
+BACKUP_DIR="${DOTFILES_STATE_DIR}/backups/$(date +%Y%m%d_%H%M%S)"
+MANIFEST_FILE="${DOTFILES_STATE_DIR}/current.manifest"
+ROLLBACK_LOG="${DOTFILES_STATE_DIR}/rollback.log"
+
+########## Functions
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Initialize state directory
+init_state() {
+    log_info "Initializing state management..."
+    mkdir -p "${DOTFILES_STATE_DIR}/backups"
+    mkdir -p "${BACKUP_DIR}"
+    
+    # Save current timestamp
+    echo "$(date +%s)" > "${DOTFILES_STATE_DIR}/last_sync"
+}
+
+# Create manifest of current symlinks
+create_manifest() {
+    log_info "Creating manifest of current state..."
+    > "${MANIFEST_FILE}.tmp"
+    
+    # Find all symlinks pointing to our dotfiles (exclude protected directories)
+    (find "${HOME}" -maxdepth 3 -type l \
+        -not -path "${HOME}/Library/Mobile Documents*" \
+        -not -path "${HOME}/Library/Application Support/MobileSync*" \
+        -not -path "${HOME}/Music*" \
+        -not -path "${HOME}/Pictures/Photos*" \
+        2>/dev/null || true) | while read -r link; do
+        target=$(readlink "${link}" 2>/dev/null || true)
+        if [[ "${target}" == "${dir}"* ]]; then
+            echo "${link}:${target}" >> "${MANIFEST_FILE}.tmp"
+        fi
+    done
+    
+    # If manifest exists, back it up
+    if [[ -f "${MANIFEST_FILE}" ]]; then
+        cp "${MANIFEST_FILE}" "${BACKUP_DIR}/manifest.backup"
+    fi
+    
+    mv "${MANIFEST_FILE}.tmp" "${MANIFEST_FILE}"
+    log_success "Manifest created with $(wc -l < "${MANIFEST_FILE}") symlinks"
+}
+
+# Backup current dotfiles before making changes
+backup_current_state() {
+    log_info "Backing up current dotfiles to ${BACKUP_DIR}..."
+    
+    # Copy manifest
+    if [[ -f "${MANIFEST_FILE}" ]]; then
+        cp "${MANIFEST_FILE}" "${BACKUP_DIR}/manifest"
+    fi
+    
+    # Backup existing dotfiles
+    for file in $(ls); do
+        if [[ -f ~/.$file || -d ~/.$file ]]; then
+            if [[ ! -L ~/.$file ]]; then
+                log_info "Backing up .$file"
+                cp -r ~/.$file "${BACKUP_DIR}/" 2>/dev/null || true
+            fi
+        fi
+    done
+    
+    # Save metadata
+    cat > "${BACKUP_DIR}/metadata.json" <<EOF
+{
+    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    "directory": "${dir}",
+    "git_commit": "$(git rev-parse HEAD 2>/dev/null || echo 'unknown')",
+    "git_branch": "$(git branch --show-current 2>/dev/null || echo 'unknown')"
+}
+EOF
+    
+    log_success "Backup completed at ${BACKUP_DIR}"
+}
+
+# List available backups
+list_backups() {
+    echo -e "${BLUE}Available backups:${NC}"
+    echo
+    
+    if [[ ! -d "${DOTFILES_STATE_DIR}/backups" ]]; then
+        log_warning "No backups found"
+        return 1
+    fi
+    
+    for backup in $(ls -r "${DOTFILES_STATE_DIR}/backups" 2>/dev/null); do
+        if [[ -f "${DOTFILES_STATE_DIR}/backups/${backup}/metadata.json" ]]; then
+            timestamp=$(grep '"timestamp"' "${DOTFILES_STATE_DIR}/backups/${backup}/metadata.json" | cut -d'"' -f4)
+            echo -e "  ${GREEN}${backup}${NC} - ${timestamp}"
+        else
+            echo -e "  ${YELLOW}${backup}${NC} - (no metadata)"
+        fi
+    done
+}
+
+# Rollback to a specific backup
+rollback() {
+    local backup_id="${1:-}"
+    
+    if [[ -z "${backup_id}" ]]; then
+        log_error "No backup ID provided"
+        list_backups
+        echo
+        read -p "Enter backup ID to rollback to: " backup_id
+    fi
+    
+    local backup_path="${DOTFILES_STATE_DIR}/backups/${backup_id}"
+    
+    if [[ ! -d "${backup_path}" ]]; then
+        log_error "Backup ${backup_id} not found!"
+        return 1
+    fi
+    
+    log_warning "Rolling back to ${backup_id}..."
+    echo "This will:"
+    echo "  1. Remove current symlinks"
+    echo "  2. Restore files from backup"
+    echo "  3. Recreate symlinks from manifest"
+    echo
+    read -p "Continue? [y/N] " -n 1 -r
+    echo
+    
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Rollback cancelled"
+        return 0
+    fi
+    
+    # Create rollback record
+    echo "$(date +%s):${backup_id}" >> "${ROLLBACK_LOG}"
+    
+    # Remove current symlinks
+    if [[ -f "${MANIFEST_FILE}" ]]; then
+        while IFS=: read -r link target; do
+            if [[ -L "${link}" ]]; then
+                log_info "Removing symlink ${link}"
+                rm "${link}"
+            fi
+        done < "${MANIFEST_FILE}"
+    fi
+    
+    # Restore backed up files
+    for file in $(ls "${backup_path}" 2>/dev/null); do
+        if [[ "${file}" != "manifest" && "${file}" != "metadata.json" && "${file}" != "manifest.backup" ]]; then
+            log_info "Restoring ${file}"
+            cp -r "${backup_path}/${file}" "${HOME}/" 2>/dev/null || true
+        fi
+    done
+    
+    # Restore symlinks from manifest
+    if [[ -f "${backup_path}/manifest" ]]; then
+        while IFS=: read -r link target; do
+            if [[ ! -e "${link}" && -e "${target}" ]]; then
+                log_info "Recreating symlink ${link}"
+                ln -s "${target}" "${link}"
+            fi
+        done < "${backup_path}/manifest"
+    fi
+    
+    # Restore the manifest
+    if [[ -f "${backup_path}/manifest" ]]; then
+        cp "${backup_path}/manifest" "${MANIFEST_FILE}"
+    fi
+    
+    log_success "Rollback to ${backup_id} completed!"
+}
+
+# Main sync function
+run_sync() {
+    # Initialize state management
+    init_state
+    
+    # Create backup before changes
+    backup_current_state
+    
+    # Parse arguments
+    export DOTFILES_DEV=false
+    export QUICK_SYNC=false
+    
+    for ARG in "$@"
+    do
+      case $ARG in
+         dev)
+              echo "Setting dev=true"
+              export DOTFILES_DEV=true
+              ;;
+         q)
+              echo "Setting quick_sync=true"
+              export QUICK_SYNC=true
+              ;;
+         rollback)
+              rollback "${2:-}"
+              exit 0
+              ;;
+         list-backups)
+              list_backups
+              exit 0
+              ;;
+         *)
+              # Continue with regular sync
+              ;;
+    esac
+    done
+    
+    # run homebrew
+    if [ "$(uname)" == "Darwin" ]; then
+      log_info "Running homebrew script"
+      sh $dir/.brew
+    fi
+    
+    # create dotfiles_old in homedir
+    log_info "Creating $olddir for backup of any existing dotfiles in ~"
+    mkdir -p $olddir
+    
+    # move any existing dotfiles in homedir to dotfiles_old directory, then create symlinks
+    for file in $(ls); do
+      # Skip state management files
+      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" ]]; then
+        continue
+      fi
+      
+      if [[ -h ~/.$file ]]; then
+        log_info "Removing old link to $file"
+        rm ~/.$file
+      fi
+      if [[ -f ~/.$file || -d ~/.$file ]]; then
+        log_info "Moving existing $file from ~ to $olddir"
+        mv ~/.$file $olddir
+      fi
+    
+      if [[ -d $dir/$file ]] && [[ -f $dir/$file/.sync ]]; then
+        log_info "Running .sync for $file."
+        sh $dir/$file/.sync
+      else
+        log_info "Creating symlink to $file in home directory."
+        ln -s $dir/$file ~/.$file
+      fi
+    done
+    
+    # Create new manifest after sync
+    create_manifest
+    
+    # cleanup exported vars
+    unset DOTFILES_DEV
+    
+    log_success "Sync completed successfully!"
+    echo
+    log_info "Backup saved at: ${BACKUP_DIR}"
+    log_info "To rollback, run: $0 rollback ${BACKUP_DIR##*/}"
+}
+
+# Help message
+show_help() {
+    echo "Usage: $0 [OPTION]"
+    echo
+    echo "Options:"
+    echo "  (no args)      Run normal sync with backup"
+    echo "  dev            Set dev mode"
+    echo "  q              Quick sync"
+    echo "  rollback [ID]  Rollback to a specific backup"
+    echo "  list-backups   List available backups"
+    echo "  help           Show this help message"
+}
+
+########## Main
+
+case "${1:-sync}" in
+    help|--help|-h)
+        show_help
+        ;;
+    rollback)
+        rollback "${2:-}"
+        ;;
+    list-backups)
+        list_backups
+        ;;
+    *)
+        run_sync "$@"
+        ;;
+esac

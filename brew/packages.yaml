@@ -1,0 +1,28 @@
+# Homebrew Packages
+# Run `dots sync` or `.brew` to install
+
+# Core CLI tools (always installed)
+formulae:
+  - jq           # JSON processing
+  - yq           # YAML processing (for MCP sync)
+  - fzf          # Fuzzy finder
+  - gh           # GitHub CLI
+  - shellcheck   # Shell script linter
+  - tree         # Directory tree view
+  - htop         # Process viewer
+  - ripgrep      # Fast grep (rg)
+  - fd           # Fast find
+
+# Development tools (installed when DOTFILES_DEV=true)
+dev_formulae:
+  - pyenv        # Python version management
+  - node         # Node.js
+  - uv           # Fast Python package manager
+
+dev_casks:
+  - docker       # Docker Desktop
+
+# Optional casks (uncomment to install)
+# casks:
+#   - iterm2
+#   - visual-studio-code

@@ -1,46 +1,94 @@
 #!/bin/bash
-
 ############################
 # .brew
-# This script installs packages via homebrew if not installed
+# Installs packages from brew/packages.yaml
 ############################
 
-if [ $QUICK_SYNC = true ]; then
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGES_FILE="$SCRIPT_DIR/brew/packages.yaml"
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+if [ "${QUICK_SYNC:-false}" = "true" ]; then
   echo "Quick sync, skipping brew"
   exit 0
 fi
 
-######### Packages #########
-
-# TODO maybe use this instead https://github.com/pyenv/pyenv-installer
-packages=(yq jq)  # yq for YAML parsing (claude mcp sync), jq for JSON
-
-if [ "$DOTFILES_DEV" = true ]; then
-  packages+=(pyenv, libomp, miniforge, black, "--cask docker")
-fi
-
-echo $packages
-
-# sudo mkdir -p /usr/local/opt
-# sudo ln -s /opt/homebrew/Cellar/libomp/11.1.0 /usr/local/opt/libomp
-# TODO: probably a better way to do this
-
-####### End Packages #######
-
-# install brew if it does not exist
-which -s brew
-if [[ $? != 0 ]] ; then
-    echo "Installing homebrew"
-    ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+# Install brew if not present
+if ! command -v brew &> /dev/null; then
+    echo -e "${BLUE}Installing Homebrew...${NC}"
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 else
-    echo "Updating homebrew"
+    echo -e "${BLUE}Updating Homebrew...${NC}"
     brew update
 fi
 
+# Check for yq (needed to parse YAML)
+if ! command -v yq &> /dev/null; then
+    echo -e "${YELLOW}Installing yq (needed to parse packages.yaml)...${NC}"
+    brew install yq
+fi
 
-for package in ${packages[@]}; do
-  if ! brew ls --versions $package > /dev/null; then
-    echo "Installing $package..."
-    brew install $package
-  fi
+if [[ ! -f "$PACKAGES_FILE" ]]; then
+    echo -e "${YELLOW}Warning: $PACKAGES_FILE not found${NC}"
+    exit 0
+fi
+
+echo -e "${BLUE}Reading packages from $PACKAGES_FILE${NC}"
+
+# Install core formulae
+echo -e "\n${GREEN}Core formulae:${NC}"
+for package in $(yq -r '.formulae[]' "$PACKAGES_FILE" 2>/dev/null); do
+    if brew ls --versions "$package" > /dev/null 2>&1; then
+        echo "  ✓ $package (installed)"
+    else
+        echo "  Installing $package..."
+        brew install "$package"
+    fi
 done
+
+# Install core casks (if any)
+if yq -e '.casks' "$PACKAGES_FILE" > /dev/null 2>&1; then
+    echo -e "\n${GREEN}Casks:${NC}"
+    for cask in $(yq -r '.casks[]' "$PACKAGES_FILE" 2>/dev/null); do
+        if brew ls --cask --versions "$cask" > /dev/null 2>&1; then
+            echo "  ✓ $cask (installed)"
+        else
+            echo "  Installing $cask..."
+            brew install --cask "$cask"
+        fi
+    done
+fi
+
+# Install dev packages if DOTFILES_DEV=true
+if [ "${DOTFILES_DEV:-false}" = "true" ]; then
+    echo -e "\n${GREEN}Dev formulae:${NC}"
+    for package in $(yq -r '.dev_formulae[]' "$PACKAGES_FILE" 2>/dev/null); do
+        if brew ls --versions "$package" > /dev/null 2>&1; then
+            echo "  ✓ $package (installed)"
+        else
+            echo "  Installing $package..."
+            brew install "$package"
+        fi
+    done
+
+    if yq -e '.dev_casks' "$PACKAGES_FILE" > /dev/null 2>&1; then
+        echo -e "\n${GREEN}Dev casks:${NC}"
+        for cask in $(yq -r '.dev_casks[]' "$PACKAGES_FILE" 2>/dev/null); do
+            if brew ls --cask --versions "$cask" > /dev/null 2>&1; then
+                echo "  ✓ $cask (installed)"
+            else
+                echo "  Installing $cask..."
+                brew install --cask "$cask"
+            fi
+        done
+    fi
+fi
+
+echo -e "\n${GREEN}Homebrew sync complete!${NC}"

@@ -4,23 +4,24 @@ if [ "$(uname)" != "Darwin" ]; then
   exit 0
 fi
 
-if [ $QUICK_SYNC = true ]; then
+if [ "${QUICK_SYNC:-false}" = "true" ]; then
   echo "Quick sync, skipping fonts"
   exit 0
 fi
 
-##
-# This file installs fonts from brew cask
-##
-
 fonts=(hack fira-code monoid)
-fontdir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
-
-brew tap homebrew/cask-fonts
 
 for font in ${fonts[@]}; do
-  if ! brew ls --versions font-$font > /dev/null; then
-    echo "Installing $font..."
-    brew install font-$font
+  # Check if font is already installed (via brew or manually)
+  if brew ls --cask --versions font-$font > /dev/null 2>&1; then
+    echo "font-$font already installed via brew, skipping"
+  elif ls ~/Library/Fonts/ 2>/dev/null | grep -qi "${font%%-*}"; then
+    echo "font-$font already installed manually, skipping"
+  else
+    echo "Installing font-$font..."
+    brew install --cask font-$font 2>/dev/null || echo "Warning: font-$font install failed"
   fi
 done
+
+# Always exit 0 - fonts are optional
+exit 0
