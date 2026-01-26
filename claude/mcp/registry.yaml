@@ -1,0 +1,26 @@
+# MCP Registry - Source of truth for Claude Code MCP servers
+# Run `mcp-sync` to sync this to your Claude Code installation
+#
+# Scopes:
+#   user    - Available in all projects (recommended for dev tools)
+#   project - Stored in .mcp.json, shared with team
+#   local   - Machine-specific, gitignored
+
+mcps:
+  octocode:
+    command: npx
+    args: [octocode-mcp@latest]
+    scope: user
+    description: GitHub code search and repository tools
+
+  serena:
+    command: uvx
+    args: ["--from", "git+https://github.com/oraios/serena", "serena", "start-mcp-server"]
+    scope: user
+    description: Semantic code analysis with LSP integration
+
+  context7:
+    command: npx
+    args: ["-y", "@context7/mcp-server"]
+    scope: user
+    description: Documentation context for libraries and frameworks

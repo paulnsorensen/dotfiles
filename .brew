@@ -13,7 +13,7 @@ fi
 ######### Packages #########
 
 # TODO maybe use this instead https://github.com/pyenv/pyenv-installer
-packages=()
+packages=(yq jq)  # yq for YAML parsing (claude mcp sync), jq for JSON
 
 if [ "$DOTFILES_DEV" = true ]; then
   packages+=(pyenv, libomp, miniforge, black, "--cask docker")

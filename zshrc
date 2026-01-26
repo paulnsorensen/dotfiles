@@ -10,7 +10,7 @@ source "$HOME/Dev/dotfiles/zsh/aliases.zsh"
 source "$HOME/Dev/dotfiles/zsh/completion.zsh"
 source "$HOME/Dev/dotfiles/zsh/fzf.zsh"
 source "$HOME/Dev/dotfiles/zsh/prompt.zsh"
-source "$HOME/Dev/dotfiles/zsh/mcp.zsh"
+source "$HOME/Dev/dotfiles/zsh/claude.zsh"
 
 # Source local customizations if they exist
 [ -f $HOME/.zshrc.local ] && source $HOME/.zshrc.local
