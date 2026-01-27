@@ -39,8 +39,6 @@ mcp-add() {
 # Config Shortcuts
 # ═══════════════════════════════════════════════════════════════════
 alias claude-settings='${EDITOR:-vim} ~/.claude/settings.json'
-alias claude-agents='ls -la ~/.claude/agents/ 2>/dev/null || echo "No agents directory"'
-alias claude-commands='ls -la ~/.claude/commands/ 2>/dev/null || echo "No commands directory"'
 
 # ═══════════════════════════════════════════════════════════════════
 # Plugin Management (thin wrappers around native commands)

@@ -42,7 +42,6 @@ cdd() {
     fi
 }
 
-# Additional directory shortcuts
 alias cddot='cd $HOME/Dev/dotfiles'
 
 # =============================================================================
@@ -69,24 +68,8 @@ alias rgf='rg --files-with-matches'           # Show only filenames with matches
 alias rgc='rg --count'                        # Show match counts per file
 alias rgl='rg --files-without-match'          # Show files WITHOUT matches
 
-# Search specific file types
-alias rgjs='rg --type js'                     # JavaScript files only
-alias rgts='rg --type ts'                     # TypeScript files only  
-alias rgpy='rg --type py'                     # Python files only
-alias rgjson='rg --type json'                 # JSON files only
-alias rgmd='rg --type md'                     # Markdown files only
-
 # Common developer searches
 alias todos='rg "TODO|FIXME|HACK|NOTE" -n'    # Find all todos/fixmes
-alias rgfunc='rg "(function|def|func)" -A 2'  # Find function definitions
-alias rgimport='rg "(import|require|from)"'   # Find imports
-alias rgapi='rg "(GET|POST|PUT|DELETE|PATCH)" -C 2' # Find API endpoints
-
-# =============================================================================
-# macOS Specific
-# =============================================================================
-# Bluetooth on/off (pass 1 or 0)
-alias blu='blueutil -p'
 
 # =============================================================================
 # Theme Management (tinty)

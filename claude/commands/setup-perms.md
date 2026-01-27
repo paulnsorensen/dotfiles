@@ -59,7 +59,6 @@ Bash(xargs $PWD/*)
 # MCP & web
 mcp__serena__*
 mcp__octocode__*
-mcp__sequential-thinking__*
 WebSearch
 ```
 
