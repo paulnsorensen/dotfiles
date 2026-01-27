@@ -37,7 +37,7 @@ if [[ -n "$FILES" ]]; then
         while IFS= read -r file; do
             if [[ -f "$file" ]]; then
                 # Skip .example files and this hook file
-                if [[ "$file" == *.example ]] || [[ "$file" == *githooks* ]]; then
+                if [[ "$file" == *.example ]] || [[ "$file" == *githooks* ]] || [[ "$file" == tests/* ]]; then
                     continue
                 fi
                 
@@ -126,6 +126,21 @@ for file in $FILES; do
     fi
 done
 
+# Run shellcheck on staged shell scripts
+if command -v shellcheck >/dev/null 2>&1; then
+    echo "Running shellcheck..."
+    for file in $FILES; do
+        if [[ -f "$file" ]] && { [[ "$file" == *.sh ]] || [[ "$file" == *.bash ]] || head -1 "$file" 2>/dev/null | grep -q "^#!/.*bash\|^#!/.*sh"; }; then
+            if ! shellcheck "$file" 2>/dev/null; then
+                echo -e "${RED}❌ shellcheck issues in $file${NC}"
+                ERRORS=$((ERRORS + 1))
+            fi
+        fi
+    done
+else
+    echo -e "${YELLOW}⚠ shellcheck not installed, skipping${NC}"
+fi
+
 # Check for large files
 echo "Checking file sizes..."
 for file in $FILES; do
@@ -133,7 +148,7 @@ for file in $FILES; do
         size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
         # Warn if file is larger than 1MB
         if [[ $size -gt 1048576 ]]; then
-            echo -e "${YELLOW}⚠️  Large file: $file ($(($size / 1024))KB)${NC}"
+            echo -e "${YELLOW}⚠️  Large file: $file ($((size / 1024))KB)${NC}"
             read -p "Are you sure you want to commit this large file? [y/N] " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then

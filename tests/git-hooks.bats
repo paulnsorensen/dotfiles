@@ -82,8 +82,9 @@ EOF
 @test "pre-commit allows valid shell scripts" {
     cat > good.sh << 'EOF'
 #!/bin/bash
-echo "test"
-if [[ true ]]; then
+greeting="test"
+echo "$greeting"
+if [[ -n "$greeting" ]]; then
     echo "good"
 fi
 EOF
