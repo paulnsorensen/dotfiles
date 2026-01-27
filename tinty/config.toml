@@ -1,0 +1,18 @@
+shell = "sh -c '{}'"
+default-scheme = "base24-selenized-deutan-warm"
+
+# iTerm2 - apply via AppleScript
+[[items]]
+path = "https://github.com/tinted-theming/tinted-terminal"
+name = "tinted-terminal-iterm2"
+themes-dir = "themes-16/iterm2-applescripts"
+hook = "osascript \"$TINTY_THEME_FILE_PATH\""
+supported-systems = ["base16", "base24"]
+
+# Shell - tinted-shell sets ANSI colors via escape sequences
+[[items]]
+path = "https://github.com/tinted-theming/tinted-shell"
+name = "tinted-shell"
+themes-dir = "scripts"
+hook = ". \"$TINTY_THEME_FILE_PATH\""
+supported-systems = ["base16", "base24"]

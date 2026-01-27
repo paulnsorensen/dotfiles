@@ -89,6 +89,15 @@ alias rgapi='rg "(GET|POST|PUT|DELETE|PATCH)" -C 2' # Find API endpoints
 alias blu='blueutil -p'
 
 # =============================================================================
+# Theme Management (tinty)
+# =============================================================================
+alias theme='tinty apply'
+alias theme-ls='tinty list'
+alias theme-now='tinty current'
+alias theme-cycle='tinty cycle'
+alias theme-edit='${EDITOR:-vim} ~/.config/tinted-theming/tinty/config.toml'
+
+# =============================================================================
 # File Listing with Selenized Dark Colors
 # =============================================================================
 # Enable colored ls output

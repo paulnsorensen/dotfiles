@@ -42,6 +42,19 @@ fi
 
 echo -e "${BLUE}Reading packages from $PACKAGES_FILE${NC}"
 
+# Add taps
+if yq -e '.taps' "$PACKAGES_FILE" > /dev/null 2>&1; then
+    echo -e "\n${GREEN}Taps:${NC}"
+    for tap in $(yq -r '.taps[]' "$PACKAGES_FILE" 2>/dev/null); do
+        if brew tap | grep -q "^${tap}$"; then
+            echo "  ✓ $tap (tapped)"
+        else
+            echo "  Tapping $tap..."
+            brew tap "$tap"
+        fi
+    done
+fi
+
 # Install core formulae
 echo -e "\n${GREEN}Core formulae:${NC}"
 for package in $(yq -r '.formulae[]' "$PACKAGES_FILE" 2>/dev/null); do

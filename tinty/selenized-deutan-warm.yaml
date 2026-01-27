@@ -1,0 +1,30 @@
+system: "base24"
+name: "Selenized Deutan Warm"
+author: "Paul Sorensen"
+variant: "dark"
+description: "Deuteranopia-safe, circadian-friendly colors based on Selenized by Jan Warchol"
+palette:
+  base00: "3E3530" # Main background (L*=23, warm)
+  base01: "4A403B" # Lighter background (status bars)
+  base02: "5D534D" # Selection background
+  base03: "908579" # Comments, invisibles
+  base04: "C4B7A3" # Dark foreground
+  base05: "C4B7A3" # Default foreground
+  base06: "E0D3BE" # Light foreground
+  base07: "E0D3BE" # Lightest foreground
+  base08: "F05A19" # Red/Vermillion - errors, variables
+  base09: "FF8752" # Orange - warnings, integers
+  base0A: "F0B822" # Yellow - types, classes
+  base0B: "3EB8A5" # Teal/Green - success, strings
+  base0C: "3ACBF2" # Cyan - regex, info
+  base0D: "0091EF" # Blue - functions
+  base0E: "B587E3" # Violet - keywords
+  base0F: "FC94D8" # Magenta - constants, deprecated
+  base10: "342C28" # Darker background
+  base11: "2A2420" # Darkest background
+  base12: "FF6928" # Bright red
+  base13: "FFC734" # Bright yellow
+  base14: "4FC6B3" # Bright green
+  base15: "4FD9FF" # Bright cyan
+  base16: "009FFE" # Bright blue
+  base17: "C495F2" # Bright magenta/violet

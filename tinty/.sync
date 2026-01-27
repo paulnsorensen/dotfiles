@@ -1,0 +1,38 @@
+#!/bin/bash
+# Sync tinty configuration
+# Called by dots sync
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TINTY_CONFIG_DIR="$HOME/.config/tinted-theming/tinty"
+CUSTOM_SCHEMES_DIR="$HOME/.local/share/tinted-theming/tinty/custom-schemes/base24"
+
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${BLUE}Syncing tinty configuration...${NC}"
+
+# Ensure directories exist
+mkdir -p "$TINTY_CONFIG_DIR"
+mkdir -p "$CUSTOM_SCHEMES_DIR"
+
+# Copy config (not symlink - tinty may modify it)
+cp "$SCRIPT_DIR/config.toml" "$TINTY_CONFIG_DIR/config.toml"
+echo -e "  ${GREEN}✓${NC} config.toml → $TINTY_CONFIG_DIR/"
+
+# Symlink custom scheme
+ln -sf "$SCRIPT_DIR/selenized-deutan-warm.yaml" "$CUSTOM_SCHEMES_DIR/selenized-deutan-warm.yaml"
+echo -e "  ${GREEN}✓${NC} selenized-deutan-warm.yaml → $CUSTOM_SCHEMES_DIR/"
+
+# Run tinty sync if available
+if command -v tinty &> /dev/null; then
+    echo -e "  ${BLUE}Running tinty sync...${NC}"
+    tinty sync
+    echo -e "  ${GREEN}✓${NC} tinty sync complete"
+else
+    echo -e "  ⚠ tinty not installed. Run: brew install tinty"
+fi
+
+echo -e "${GREEN}Tinty sync complete!${NC}"

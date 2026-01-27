@@ -1,6 +1,10 @@
 # Homebrew Packages
 # Run `dots sync` or `.brew` to install
 
+# Third-party taps
+taps:
+  - tinted-theming/tinted  # tinty theme manager
+
 # Core CLI tools (always installed)
 formulae:
   - jq           # JSON processing
@@ -12,6 +16,7 @@ formulae:
   - htop         # Process viewer
   - ripgrep      # Fast grep (rg)
   - fd           # Fast find
+  - tinty        # Base16/Base24 theme manager
 
 # Development tools (installed when DOTFILES_DEV=true)
 dev_formulae:
