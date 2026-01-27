@@ -41,3 +41,12 @@ mcp-add() {
 alias claude-settings='${EDITOR:-vim} ~/.claude/settings.json'
 alias claude-agents='ls -la ~/.claude/agents/ 2>/dev/null || echo "No agents directory"'
 alias claude-commands='ls -la ~/.claude/commands/ 2>/dev/null || echo "No commands directory"'
+
+# ═══════════════════════════════════════════════════════════════════
+# Plugin Management (thin wrappers around native commands)
+# ═══════════════════════════════════════════════════════════════════
+alias plugin='claude plugin'
+alias plugin-ls='claude plugin list'
+alias plugin-sync='$CLAUDE_DOTFILES/plugins/sync.sh'
+alias plugin-sync-dry='$CLAUDE_DOTFILES/plugins/sync.sh --dry-run'
+alias plugin-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/plugins/registry.yaml'

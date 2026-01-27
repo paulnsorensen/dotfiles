@@ -1,0 +1,46 @@
+# Plugin Registry - Source of truth for Claude Code plugins
+#
+# Format: <plugin>@<marketplace>
+# Marketplaces:
+#   - claude-code-lsps: Language server plugins
+#   - claude-plugins-official: Official workflow plugins
+#
+# Usage:
+#   plugin-sync           Sync plugins (install missing)
+#   plugin-sync-dry       Preview changes
+#   plugin-ls             List installed plugins
+
+plugins:
+  # LSP Plugins - Language server support
+  pyright@claude-code-lsps:
+    description: Python type checking and language server
+    scope: user
+
+  gopls@claude-code-lsps:
+    description: Go language server
+    scope: user
+
+  rust-analyzer@claude-code-lsps:
+    description: Rust language server
+    scope: user
+
+  vtsls@claude-code-lsps:
+    description: TypeScript/JavaScript language server
+    scope: user
+
+  # Workflow Plugins - Development automation
+  pr-review-toolkit@claude-plugins-official:
+    description: PR review agents and workflows
+    scope: user
+
+  commit-commands@claude-plugins-official:
+    description: Git commit helpers and workflows
+    scope: user
+
+  security-guidance@claude-plugins-official:
+    description: Security best practices hooks
+    scope: user
+
+  code-simplifier@claude-plugins-official:
+    description: Code cleanup and simplification agents
+    scope: user

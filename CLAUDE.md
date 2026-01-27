@@ -30,6 +30,12 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `mcp-edit` - Edit MCP registry.yaml
 - `mcp-ls` - List currently configured MCPs
 
+### Plugin Management
+- `plugin-sync` - Sync plugins from registry.yaml to Claude Code
+- `plugin-sync-dry` - Preview plugin sync changes without applying
+- `plugin-edit` - Edit plugin registry.yaml
+- `plugin-ls` - List currently installed plugins
+
 ### Common Development Tasks
 - `lb` - Open daily logbook (creates markdown file at `~/psorensen/logbook/[date].md`)
 - `uuidg` - Generate UUID and copy to clipboard
@@ -47,7 +53,8 @@ dotfiles/
 │   │   └── sync.sh         # Declarative MCP sync script
 │   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/cheese, /curdle, etc.)
-│   └── hooks/              # Pre-tool hooks
+│   ├── hooks/              # Pre-tool hooks
+│   └── plugins/            # Plugin registry and sync script
 ├── fonts/                  # Font installation (.sync script)
 ├── gitconfig               # Git configuration
 ├── githooks/               # Git hooks (pre-commit checks)
@@ -106,6 +113,33 @@ mcps:
 3. Apply changes: `mcp-sync`
 
 The sync script uses native `claude mcp add/remove` commands, not direct JSON manipulation.
+
+## Plugin Management
+
+Plugins are managed declaratively via `claude/plugins/registry.yaml`:
+
+```yaml
+plugins:
+  security-guidance@claude-plugins-official:
+    description: Security best practices hooks
+    scope: user
+```
+
+**Prerequisites:**
+Marketplaces must be added first:
+```bash
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin marketplace add boostvolt/claude-code-lsps
+```
+
+**Workflow:**
+1. Edit registry: `plugin-edit`
+2. Preview changes: `plugin-sync-dry`
+3. Apply changes: `plugin-sync`
+4. Restart Claude Code for changes to take effect
+
+Note: Unlike MCP, the plugins directory is NOT symlinked to ~/.claude because
+Claude Code uses that location for plugin cache storage.
 
 ## Sync System
 

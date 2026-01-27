@@ -21,6 +21,9 @@ reference/
 # Serena state (stays local)
 .serena/
 
+# Claude Code managed files
+claude/settings.json
+
 # Backup files
 *.bak
 .serena/

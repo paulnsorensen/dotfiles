@@ -7,7 +7,7 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Create ~/.claude if it doesn't exist
 mkdir -p "$CLAUDE_DIR"
 
-# Config to symlink
+# Config to symlink (note: plugins NOT included - Claude uses that dir for plugin cache)
 configs=(
   agents
   commands
@@ -32,13 +32,5 @@ for item in "${configs[@]}"; do
     ln -s "$source" "$target"
   fi
 done
-
-# Copy settings.json to Application Support (not symlink - app may modify it)
-SETTINGS_DIR="$HOME/Library/Application Support/claude-code"
-if [[ -f "$SOURCE_DIR/settings.json" ]]; then
-  mkdir -p "$SETTINGS_DIR"
-  cp "$SOURCE_DIR/settings.json" "$SETTINGS_DIR/settings.json"
-  echo "  Copied settings.json to $SETTINGS_DIR"
-fi
 
 echo "Claude config synced"
