@@ -1,0 +1,44 @@
+#!/bin/bash
+# Sync Claude Code config files to ~/.claude/
+
+CLAUDE_DIR="$HOME/.claude"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Create ~/.claude if it doesn't exist
+mkdir -p "$CLAUDE_DIR"
+
+# Config to symlink
+configs=(
+  agents
+  commands
+  hooks
+  mcp
+  CLAUDE.md
+)
+
+for item in "${configs[@]}"; do
+  target="$CLAUDE_DIR/$item"
+  source="$SOURCE_DIR/$item"
+  
+  if [[ -e "$source" ]]; then
+    if [[ -L "$target" ]]; then
+      rm "$target"
+    elif [[ -e "$target" ]]; then
+      echo "  Backing up existing $item"
+      mv "$target" "$target.bak"
+    fi
+    
+    echo "  Linking $item"
+    ln -s "$source" "$target"
+  fi
+done
+
+# Copy settings.json to Application Support (not symlink - app may modify it)
+SETTINGS_DIR="$HOME/Library/Application Support/claude-code"
+if [[ -f "$SOURCE_DIR/settings.json" ]]; then
+  mkdir -p "$SETTINGS_DIR"
+  cp "$SOURCE_DIR/settings.json" "$SETTINGS_DIR/settings.json"
+  echo "  Copied settings.json to $SETTINGS_DIR"
+fi
+
+echo "Claude config synced"

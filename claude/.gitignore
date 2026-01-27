@@ -1,0 +1,13 @@
+# Runtime state (stays local, not tracked)
+cache/
+debug/
+file-history/
+history.jsonl
+plans/
+projects/
+shell-snapshots/
+telemetry/
+todos/
+
+# Keep memories tracked for now (optional)
+# memories/
