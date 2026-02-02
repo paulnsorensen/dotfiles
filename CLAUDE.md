@@ -89,6 +89,70 @@ dotfiles/
 - **Declarative MCP Management**: Single YAML registry synced via native `claude mcp` commands
 - **Rollback Support**: Sync creates backups and manifests for easy rollback
 
+## Engineering Philosophy
+
+These principles apply to ALL code changes, regardless of workflow used.
+
+### Core Principles
+
+1. **Input Validation** — Trust nothing from external sources. Validate at system boundaries only.
+2. **Fail Fast and Loud** — Errors throw immediately with specific messages. No silent swallowing, no `catch` that ignores, no returning `null` when you mean "broken."
+3. **Loose Coupling (Sliced Bread Architecture)** — Each slice is independent. Business logic never imports infrastructure. Dependencies flow inward. If removing one slice breaks another, they're not sliced — they're welded.
+4. **YAGNI** — Build exactly what's needed. No "just in case" params, no abstract base classes with one implementation, no config for hypothetical futures. Three similar lines beat a premature abstraction.
+5. **Real-World Models** — Name things after what the business calls them. `InvoiceGenerator` yes. `DataManager`, `HelperUtils`, `BaseHandler` absolutely not.
+6. **Immutable Patterns** — Don't mutate inputs. Don't hide state changes. Prefer returning new values over modifying existing ones.
+
+### Code Style
+
+- **Guard clauses over nested ifs.** Return early, reduce nesting, flatten logic.
+- **Terse, not clever.** No extra logs, no bonus features, no defensive code for impossible states. If it's not explicitly required, don't write it.
+- **Minimal dependency graphs.** Stdlib first. Before adding a dep, justify why you can't solve it without one. Every dependency is a liability.
+- **Self-documenting code.** Comments only where business logic is non-obvious. Good names replace comments.
+
+### Complexity Budget
+
+| Metric | Limit |
+|--------|-------|
+| Function length | 40 lines max |
+| File length | 300 lines max |
+| Parameters | 4 per function max |
+| Nesting depth | 3 levels max |
+
+### Naming
+
+| Element | Convention |
+|---------|------------|
+| Classes | PascalCase |
+| Functions | snake_case (Python) / camelCase (JS/TS) |
+| Constants | SCREAMING_SNAKE_CASE |
+| Files | kebab-case |
+
+### Testing Priority
+
+When writing tests, order by value:
+1. **Invalid inputs first** — null, wrong types, empty, boundary values
+2. **Edge cases** — off-by-one, empty collections, max values
+3. **Integration failures** — network down, bad responses, timeouts
+4. **Happy path last** — it probably already works; prove the edges don't break
+
+Test naming: `functionName_scenario_expectedBehavior`
+
+### Commits
+
+Conventional Commits format. Subject ≤50 chars, imperative mood, no period. Body wraps at 72 chars, explains WHY not how. Required for: new features, non-trivial fixes, multi-file refactors.
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+### Review Red Flags (Auto-reject)
+
+- `try-catch` that swallows errors silently
+- Business logic mixed with HTTP/DB/UI handling
+- Generic names (`Manager`, `Helper`, `Utility`, `Common`)
+- Functions that mutate their inputs
+- Abstract classes with one implementation
+- Logging or error handling added "just in case"
+- Dependencies added without justification
+
 ## MCP (Model Context Protocol) Management
 
 MCPs are managed declaratively via `claude/mcp/registry.yaml`:

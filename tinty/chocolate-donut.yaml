@@ -1,0 +1,30 @@
+system: "base24"
+name: "Chocolate Donut"
+author: "Paul Sorensen"
+variant: "dark"
+description: "Warm chocolate palette with donut-glazed accents"
+palette:
+  base00: "2a1c12" # Main background
+  base01: "3c291c" # Lighter background (Black)
+  base02: "4f4030" # Selection background
+  base03: "636363" # Comments, invisibles (B.Black)
+  base04: "9e9387" # Dark foreground (dim)
+  base05: "dac2b1" # Default foreground (White)
+  base06: "e9ddd4" # Light foreground
+  base07: "f8f8f8" # Lightest foreground (B.White)
+  base08: "e8575b" # Red - errors, variables
+  base09: "e9b76b" # B.Yellow - warnings, integers
+  base0A: "ffae00" # Yellow - types, classes
+  base0B: "88b994" # Green - success, strings
+  base0C: "00c4fb" # Cyan - regex, info
+  base0D: "768da1" # Blue - functions
+  base0E: "b287cd" # Magenta - keywords
+  base0F: "e8575b" # Red (reused) - deprecated
+  base10: "1f140d" # Darker background
+  base11: "140d08" # Darkest background
+  base12: "ff7558" # Bright red
+  base13: "e9b76b" # Bright yellow
+  base14: "00dac0" # Bright green
+  base15: "00ddf3" # Bright cyan
+  base16: "349ee9" # Bright blue
+  base17: "e17cb9" # Bright magenta

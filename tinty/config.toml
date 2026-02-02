@@ -1,5 +1,5 @@
 shell = "sh -c '{}'"
-default-scheme = "base24-selenized-deutan-warm"
+default-scheme = "base24-chocolate-donut"
 
 # iTerm2 - apply via AppleScript
 [[items]]

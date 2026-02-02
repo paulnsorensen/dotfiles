@@ -1,99 +1,82 @@
-# Selenized Deutan Warm - Shell Color Palette
-# Deuteranopia-safe, circadian-friendly colors
+# Chocolate Donut - Shell Color Palette
+# Warm chocolate palette with donut-glazed accents
 #
-# Based on Selenized by Jan Warchoł, transformed for CVD accessibility
-# Design principles:
-#   - Warm backgrounds (a*=+3, b*=+5) reduce blue light for circadian health
-#   - Accent colors spread along b* (blue-yellow) axis for deuteranopia safety
-#   - Green → Teal shift moves success colors OFF the red-green confusion axis
+# Background: #2a1c12
+# Design: Rich brown neutrals with vibrant accent colors
 
 # =============================================================================
-# PALETTE DEFINITION (CIELAB-derived)
+# PALETTE DEFINITION
 # =============================================================================
 
 # -----------------------------------------------------------------------------
 # Background / Foreground
 # -----------------------------------------------------------------------------
-__SDW_BG="#3E3530"           # L*=23, a*=3, b*=5 - Main background
-__SDW_BG_256=237
+__SDW_BG="#2a1c12"
+__SDW_BG_256=234
 
-__SDW_BG_ALT="#4A403B"       # L*=28, a*=3, b*=5 - Highlight bg
-__SDW_BG_ALT_256=238
+__SDW_BG_ALT="#3c291c"
+__SDW_BG_ALT_256=236
 
-__SDW_BG_HIGHLIGHT="#5D534D" # L*=36, a*=3, b*=5 - Selection/visual
-__SDW_BG_HIGHLIGHT_256=240
+__SDW_BG_HIGHLIGHT="#4f4030"
+__SDW_BG_HIGHLIGHT_256=238
 
-__SDW_DIM="#908579"          # L*=56, a*=2, b*=8 - Comments
-__SDW_DIM_256=102
+__SDW_DIM="#636363"
+__SDW_DIM_256=241
 
-__SDW_FG="#C4B7A3"           # L*=75, a*=1, b*=12 - Main foreground
-__SDW_FG_256=144
+__SDW_FG="#dac2b1"
+__SDW_FG_256=181
 
-__SDW_FG_BRIGHT="#E0D3BE"    # L*=85, a*=1, b*=12 - Emphasized text
-__SDW_FG_BRIGHT_256=187
+__SDW_FG_BRIGHT="#f8f8f8"
+__SDW_FG_BRIGHT_256=255
 
 # -----------------------------------------------------------------------------
-# Accent Colors (Deuteranopia-safe)
+# Accent Colors
 # -----------------------------------------------------------------------------
 
-# Red → Vermillion (errors)
-__SDW_RED="#F05A19"          # L*=58, a*=55, b*=62
-__SDW_RED_256=202
+# Red (errors)
+__SDW_RED="#e8575b"
+__SDW_RED_256=167
 
-# Green → Teal (success) - shifted OFF red-green confusion axis
-__SDW_GREEN="#3EB8A5"        # L*=68, a*=-38, b*=0
-__SDW_GREEN_256=79
+# Green (success)
+__SDW_GREEN="#88b994"
+__SDW_GREEN_256=108
 
 # Yellow (types, highlights)
-__SDW_YELLOW="#F0B822"       # L*=78, a*=8, b*=75
+__SDW_YELLOW="#ffae00"
 __SDW_YELLOW_256=214
 
 # Blue (functions)
-__SDW_BLUE="#0091EF"         # L*=58, a*=0, b*=-57
-__SDW_BLUE_256=33
+__SDW_BLUE="#768da1"
+__SDW_BLUE_256=103
 
-# Magenta (constants)
-__SDW_MAGENTA="#FC94D8"      # L*=74, a*=48, b*=-18
-__SDW_MAGENTA_256=212
+# Magenta (constants, keywords)
+__SDW_MAGENTA="#b287cd"
+__SDW_MAGENTA_256=140
 
 # Cyan (strings)
-__SDW_CYAN="#3ACBF2"         # L*=76, a*=-25, b*=-30
-__SDW_CYAN_256=81
-
-# Orange (warnings)
-__SDW_ORANGE="#FF8752"       # L*=70, a*=45, b*=50
-__SDW_ORANGE_256=209
-
-# Violet (keywords)
-__SDW_VIOLET="#B587E3"       # L*=64, a*=35, b*=-40
-__SDW_VIOLET_256=141
+__SDW_CYAN="#00c4fb"
+__SDW_CYAN_256=39
 
 # -----------------------------------------------------------------------------
-# Bright Variants (L* + 5.2)
+# Bright Variants
 # -----------------------------------------------------------------------------
-__SDW_BR_RED="#FF6928"
-__SDW_BR_RED_256=208
+__SDW_BR_RED="#ff7558"
+__SDW_BR_RED_256=209
 
-__SDW_BR_GREEN="#4FC6B3"
-__SDW_BR_GREEN_256=80
+__SDW_BR_GREEN="#00dac0"
+__SDW_BR_GREEN_256=43
 
-__SDW_BR_YELLOW="#FFC734"
-__SDW_BR_YELLOW_256=220
+__SDW_BR_YELLOW="#e9b76b"
+__SDW_BR_YELLOW_256=179
 
-__SDW_BR_BLUE="#009FFE"
-__SDW_BR_BLUE_256=39
+__SDW_BR_BLUE="#349ee9"
+__SDW_BR_BLUE_256=33
 
-__SDW_BR_MAGENTA="#FFA2E7"
-__SDW_BR_MAGENTA_256=218
+__SDW_BR_MAGENTA="#e17cb9"
+__SDW_BR_MAGENTA_256=176
 
-__SDW_BR_CYAN="#4FD9FF"
-__SDW_BR_CYAN_256=87
-
-__SDW_BR_ORANGE="#FF955F"
-__SDW_BR_ORANGE_256=215
-
-__SDW_BR_VIOLET="#C495F2"
-__SDW_BR_VIOLET_256=177
+__SDW_BR_CYAN="#00ddf3"
+__SDW_BR_CYAN_256=45
 
 # =============================================================================
 # ANSI 16-COLOR MAPPING
@@ -117,12 +100,12 @@ __SDW_BR_WHITE_256=$__SDW_FG_BRIGHT_256
 # =============================================================================
 __SDW_ERROR="$__SDW_RED"
 __SDW_SUCCESS="$__SDW_GREEN"
-__SDW_WARNING="$__SDW_ORANGE"
+__SDW_WARNING="$__SDW_YELLOW"
 __SDW_INFO="$__SDW_CYAN"
 
 __SDW_COMMENT="$__SDW_DIM"
 __SDW_STRING="$__SDW_CYAN"
-__SDW_KEYWORD="$__SDW_VIOLET"
+__SDW_KEYWORD="$__SDW_MAGENTA"
 __SDW_FUNCTION="$__SDW_BLUE"
 __SDW_TYPE="$__SDW_YELLOW"
 __SDW_CONSTANT="$__SDW_MAGENTA"
@@ -135,7 +118,7 @@ __SDW_FZF_COLORS+=" --color=fg:${__SDW_FG},fg+:${__SDW_FG_BRIGHT}"
 __SDW_FZF_COLORS+=" --color=hl:${__SDW_CYAN},hl+:${__SDW_BR_CYAN}"
 __SDW_FZF_COLORS+=" --color=info:${__SDW_DIM},marker:${__SDW_GREEN}"
 __SDW_FZF_COLORS+=" --color=pointer:${__SDW_RED},prompt:${__SDW_BLUE}"
-__SDW_FZF_COLORS+=" --color=spinner:${__SDW_MAGENTA},header:${__SDW_VIOLET}"
+__SDW_FZF_COLORS+=" --color=spinner:${__SDW_MAGENTA},header:${__SDW_MAGENTA}"
 
 # =============================================================================
 # LS_COLORS
@@ -149,8 +132,8 @@ export LSCOLORS='ExGxFxdxCxDxDxhbadacec'
 # EXPORTS
 # =============================================================================
 export __SDW_BG __SDW_BG_ALT __SDW_FG __SDW_FG_BRIGHT __SDW_DIM
-export __SDW_RED __SDW_GREEN __SDW_YELLOW __SDW_BLUE __SDW_MAGENTA __SDW_CYAN __SDW_ORANGE __SDW_VIOLET
-export __SDW_BR_RED __SDW_BR_GREEN __SDW_BR_YELLOW __SDW_BR_BLUE __SDW_BR_MAGENTA __SDW_BR_CYAN __SDW_BR_ORANGE __SDW_BR_VIOLET
+export __SDW_RED __SDW_GREEN __SDW_YELLOW __SDW_BLUE __SDW_MAGENTA __SDW_CYAN
+export __SDW_BR_RED __SDW_BR_GREEN __SDW_BR_YELLOW __SDW_BR_BLUE __SDW_BR_MAGENTA __SDW_BR_CYAN
 export __SDW_FZF_COLORS
 
 # =============================================================================
