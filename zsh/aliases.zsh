@@ -72,25 +72,16 @@ alias rgl='rg --files-without-match'          # Show files WITHOUT matches
 alias todos='rg "TODO|FIXME|HACK|NOTE" -n'    # Find all todos/fixmes
 
 # =============================================================================
-# Theme Management (tinty)
+# Theme Management
 # =============================================================================
-alias theme='tinty apply'
-alias theme-ls='tinty list'
-alias theme-now='tinty current'
-alias theme-cycle='tinty cycle'
-alias theme-edit='${EDITOR:-vim} ~/.config/tinted-theming/tinty/config.toml'
+alias theme-edit='${EDITOR:-vim} ~/Dev/dotfiles/theme/config.yaml'
+alias theme-ls='ls ~/Dev/dotfiles/theme/schemes/'
 
 # =============================================================================
-# File Listing with Selenized Dark Colors
+# File Listing
 # =============================================================================
 # Enable colored ls output
 export CLICOLOR=1
-
-# LSCOLORS for BSD ls (macOS) - Selenized Dark color scheme
-export LSCOLORS=ExGxFxdxCxegedabagacad
-
-# LS_COLORS for GNU ls (if using coreutils) - Selenized Dark colors
-export LS_COLORS='di=1;34:ln=1;36:so=1;35:pi=33:ex=1;32:bd=34;46:cd=34;43:su=30;41:sg=30;46:tw=30;42:ow=30;43'
 
 # ls aliases with color support
 alias ls='ls -G'
