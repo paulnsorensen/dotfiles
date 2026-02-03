@@ -173,6 +173,10 @@ The `.sync-with-rollback` script provides:
 - Pre-tool hooks (block-install.js, phantom-file-check.js)
 - Serena MCP for semantic code analysis
 
+## Pre-Commit Requirement
+
+Always run `dots test` before committing to verify sync, shell config, and theme generation are working.
+
 ## Development Notes
 
 ### When Modifying Shell Configuration
