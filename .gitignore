@@ -24,6 +24,9 @@ reference/
 # Claude Code managed files
 claude/settings.json
 
+# Vim auto-generated files
+vim/.netrwhist
+
 # Backup files
 *.bak
 .serena/
