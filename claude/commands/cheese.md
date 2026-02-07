@@ -1,16 +1,17 @@
 ---
 name: cheese
-description: Execute abbreviated Cheddar Flow - quick 4-step workflow with Explore, Plan, Code, and Light Review phases.
+description: Execute abbreviated Cheddar Flow - quick 5-step workflow with Explore, Plan, Code, Simplify, and Light Review phases.
 ---
 
 Execute the quick Cheese Flow development workflow for the given request. This is the fast curd - streamlined for rapid iteration when you're confident in the approach.
 
-## The Four Stages
+## The Five Stages
 
 1. **Explore** - Use gouda-explorer to understand current codebase context
 2. **Plan** - Use brie-architect to create implementation strategy
 3. **Code** - Use cheddar-craftsman to implement the plan precisely
-4. **Review** - Use brie-architect for architectural sanity check
+4. **Simplify** - Use ricotta-reducer to distill the code to its essential form
+5. **Review** - Use brie-architect for architectural sanity check
 
 ## What's Skipped (vs /curdle)
 

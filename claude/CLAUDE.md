@@ -48,6 +48,36 @@ uv pip install pkg    # Install packages
 uv init project       # New project
 ```
 
+## Architecture: Sliced Bread
+
+Organic vertical slices. Files grow into facades. No ceremony.
+
+```
+src/
+├── domains/                     # The loaf
+│   ├── common/                  # Shared kernel (leaf - no sibling deps)
+│   ├── orders/                  # A slice
+│   │   ├── index.*              # Public API (the crust)
+│   │   ├── order.*              # Core concept
+│   │   ├── fulfillment.*        # Facade → delegates to fulfillment/
+│   │   └── fulfillment/
+│   └── pricing/                 # Thin slice (one file is fine)
+├── adapters/                    # Implements domain protocols
+└── app/                         # Presentation + orchestration (DI)
+```
+
+**Growth pattern:**
+1. Start with one file per concept
+2. Extract sibling when crowded
+3. File becomes facade + folder when it wants friends
+
+**Rules:**
+- Index/barrel file is the crust — external code imports from here only
+- Don't reach into another slice (import from index, not internals)
+- Models stay pure (no ORM, framework, or adapter imports)
+- One direction only (use events for reverse deps)
+- `common/` is a leaf (imports nothing from siblings)
+
 ## Workflow
 
 I use the Cheddar Flow for development:
