@@ -39,8 +39,30 @@ Slash commands invoked with `/command-name`.
 
 | Command | Description |
 |---------|-------------|
-| `/cheese` | Quick 4-step workflow: Explore → Plan → Code → Light Review |
-| `/curdle` | Full 6-step workflow: Explore → Plan → Code → Test → Review → Commit |
+| `/cheese` | Quick 5-step workflow: Explore → Plan → Code → Simplify → Light Review |
+| `/curdle` | Full 7-step workflow: Explore → Plan → Code → Simplify → Test → Review → Commit |
+| `/copilot-review` | Review a PR and route fixes to GitHub Copilot via inline comments |
+| `/copilot-setup` | Generate GitHub Copilot agent and review instructions for a repo |
+| `/scaffold` | Scaffold a new domain slice following Sliced Bread architecture |
+
+### Review & Quality Commands
+
+| Command | Use When |
+|---------|----------|
+| `/diff` | Pre-commit smoke test — catch secrets, debug statements, silent failures |
+| `/review` | Learning — teaching-focused review with severity levels |
+| `/simplifier` | Reduction — strip genAI bloat, enforce YAGNI (invokes ricotta-reducer) |
+| `/code-review` | Deep dive — full architectural walkthrough with persistent history |
+| `/copilot-review` | PR review — analyze, present findings, route fixes to Copilot |
+| `pr-review-toolkit:review-pr` | Quick PR review — plugin-based, no Copilot routing |
+
+### Utility Commands
+
+| Command | Description |
+|---------|-------------|
+| `/deps` | Audit dependencies for unused packages, security, stdlib alternatives |
+| `/setup-perms` | Scaffold `.claude/settings.local.json` with project permissions |
+| `/onboard` | Quick codebase orientation for an unfamiliar repo |
 
 ### Learning Commands
 
@@ -76,8 +98,9 @@ Specialized agents for each workflow stage. Invoked via Task tool with `subagent
 | Agent | Stage | Purpose | Model |
 |-------|-------|---------|-------|
 | `gouda-explorer` | Explore | Read-only codebase mapping with Serena | sonnet |
-| `brie-architect` | Plan | Implementation strategy, hexagonal design | - |
+| `brie-architect` | Plan | Implementation strategy, hexagonal design | opus |
 | `cheddar-craftsman` | Code | YAGNI-focused implementation | - |
+| `ricotta-reducer` | Simplify | Code distillation, YAGNI enforcement (analysis only) | sonnet |
 | `roquefort-wrecker` | Test | Adversarial testing (invalid inputs first) | - |
 | `parmigiano-sentinel` | Review | Principle enforcement gate | - |
 | `manchego-chronicler` | Commit | Conventional Commits with context | - |
@@ -242,12 +265,38 @@ All agents enforce these principles:
 
 ---
 
+## Review Decision Tree
+
+| Situation | Use |
+|-----------|-----|
+| Pre-commit smoke test | `/diff` |
+| Learning / studying code | `/review` |
+| Strip bloat, enforce YAGNI | `/simplifier` |
+| Deep architectural walkthrough | `/code-review` |
+| Review PR, route fixes to Copilot | `/copilot-review` |
+| Quick PR review (no Copilot) | `pr-review-toolkit:review-pr` |
+| Pre-commit quality gate (in workflow) | parmigiano-sentinel agent |
+
+---
+
 ## Quick Reference
 
 ```bash
 # Workflows
-/cheese "fix login bug"           # Quick 4-step
-/curdle "add user auth"           # Full 6-step
+/cheese "fix login bug"           # Quick 5-step
+/curdle "add user auth"           # Full 7-step
+
+# Review & Quality
+/diff                             # Pre-commit smoke test
+/simplifier src/orders/           # Strip bloat
+/copilot-review 123               # Review PR → Copilot
+/code-review                      # Deep architectural review
+
+# Utilities
+/scaffold orders                  # New domain slice
+/deps                             # Dependency audit
+/onboard                          # Map unfamiliar codebase
+/copilot-setup                    # Generate Copilot config
 
 # Learning
 /pingpong "user validation"       # TDD pairing
@@ -257,10 +306,11 @@ All agents enforce these principles:
 /explain "dependency injection"   # Learn concepts
 
 # Direct agent access (via Task tool)
-gouda-explorer    # Explore codebase
-brie-architect    # Plan implementation
-cheddar-craftsman # Write code
-roquefort-wrecker # Break code with tests
+gouda-explorer      # Explore codebase
+brie-architect      # Plan implementation
+cheddar-craftsman   # Write code
+ricotta-reducer     # Distill code (analysis only)
+roquefort-wrecker   # Break code with tests
 parmigiano-sentinel # Review for principles
 manchego-chronicler # Craft commit messages
 ```
