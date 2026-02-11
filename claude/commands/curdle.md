@@ -1,9 +1,9 @@
 ---
 name: curdle
-description: Execute the complete Cheddar Flow - full 7-step cheese-powered development workflow with Explore, Plan, Code, Simplify, Test, Review, and Commit phases.
+description: Complete Cheddar Flow - full 6-step workflow with Explore, Plan, Code, Test, Review, and Commit.
 ---
 
-Execute the complete Cheddar Flow development workflow for the given request. This is the full fermentation process - thorough, comprehensive, and produces the finest aged code.
+Execute the complete Cheddar Flow development workflow for the given request. This is the full fermentation - thorough and comprehensive. You do the thinking directly; sub-agents only for mechanical work.
 
 ## Preamble — Isolate
 
@@ -12,24 +12,49 @@ Before starting, check if task isolation is needed:
 - Otherwise, derive a slug from the request (lowercase, hyphens, no special chars) and run: `git worktree add .worktrees/<slug> -b claude/<slug>` then `cd` into it.
 - If the worktree already exists for that slug, just `cd` into it.
 
-## The Seven Stages
+## The Six Stages
 
-1. **Explore** - Use gouda-explorer to map the current codebase state with Serena's semantic intelligence
-2. **Plan** - Use brie-architect to create a detailed implementation strategy with hexagonal design
-3. **Code** - Use cheddar-craftsman to implement the plan with YAGNI discipline
-4. **Simplify** - Use ricotta-reducer to distill the code, strip genAI bloat, and enforce YAGNI
-5. **Test** - Use roquefort-wrecker to validate with adversarial testing (invalid inputs FIRST)
-6. **Review** - Use parmigiano-sentinel to enforce all engineering principles
-7. **Commit** - Use manchego-chronicler to document changes with meaningful Conventional Commits
+### 1. Explore
 
-## Core Engineering Principles Enforced
+Read relevant files in parallel using Read, Grep, and Glob directly. Map the architecture — entry points, domain models, adapters, and configuration. Prefer parallel tool calls to speed this up.
 
-- **Input Validation** - Trust nothing from external sources
-- **Fail Fast and Loud** - Handle errors where they occur
-- **Loose Coupling** - Separate business logic from infrastructure
-- **YAGNI** - Build only what's needed now
-- **Real-World Models** - Name after business concepts
-- **Immutable Patterns** - Minimize state mutation
+### 2. Plan
+
+Write a detailed implementation strategy inline. Cover:
+- What changes are needed and where
+- Order of operations
+- Edge cases to handle
+- What NOT to build (YAGNI boundaries)
+
+### 3. Code
+
+Implement the plan directly. Follow YAGNI discipline — build only what's needed now.
+
+### 4. Test
+
+Launch the roquefort-wrecker sub-agent via the Task tool to validate the implementation:
+- Invalid inputs first (boundary conditions, nulls, empty strings)
+- Happy path coverage
+- Edge cases identified during planning
+
+### 5. Review
+
+Self-review the changes against the full engineering principles:
+
+- **Input Validation** — Trust nothing from external sources. Validate at system boundaries.
+- **Fail Fast and Loud** — No silent failures. Specific error messages. Handle errors where they occur.
+- **Loose Coupling** — Business logic free of infrastructure imports. Dependencies point inward.
+- **YAGNI** — No premature abstractions. No speculative code. No single-use wrappers.
+- **Real-World Models** — Domain-driven naming. Consistent terminology. Business concepts, not technical jargon.
+- **Immutable Patterns** — Minimize mutation. Pure functions where possible.
+- **Complexity budget** — 40 lines/fn, 300 lines/file, 4 params/fn, 3 levels nesting.
+- **No genAI bloat** — Strip unnecessary docs, dead code, over-documentation.
+
+If issues found, fix them before proceeding.
+
+### 6. Commit
+
+Use the `/commit` skill to create a Conventional Commits message for the changes.
 
 ## When to Use /curdle
 
