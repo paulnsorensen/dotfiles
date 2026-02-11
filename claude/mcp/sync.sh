@@ -129,7 +129,8 @@ if [[ -n "$TO_ADD" ]]; then
 
         if $DRY_RUN; then
             args_preview=$(echo "$DESIRED_JSON" | jq -r --arg n "$name" '.[$n].args // [] | join(" ")')
-            echo -e "  ${BLUE}[dry-run]${NC} Would run: claude mcp add -s $scope $name -- $command $args_preview"
+            env_preview=$(echo "$DESIRED_JSON" | jq -r --arg n "$name" '.[$n].env // {} | to_entries[] | "-e \(.key)=\(.value)"' 2>/dev/null || true)
+            echo -e "  ${BLUE}[dry-run]${NC} Would run: claude mcp add -s $scope $env_preview $name -- $command $args_preview"
         else
             echo -n "  Adding $name... "
 
@@ -139,8 +140,19 @@ if [[ -n "$TO_ADD" ]]; then
             # Use eval to properly handle the args array
             eval "args_array=($(echo "$args_json" | jq -r '.[] | @sh'))"
 
-            local err; err=$(claude mcp add -s "$scope" "$name" -- "$command" "${args_array[@]}" 2>&1 >/dev/null)
-            if [[ $? -eq 0 ]]; then
+            # Build env var flags if present
+            env_flags=()
+            env_json=$(echo "$DESIRED_JSON" | jq -c --arg n "$name" '.[$n].env // {}')
+            if [[ "$env_json" != "{}" ]]; then
+                while IFS='=' read -r key val; do
+                    # Expand shell variables in values (e.g. ${CONTEXT7_API_KEY})
+                    expanded_val=$(eval echo "$val")
+                    env_flags+=(-e "${key}=${expanded_val}")
+                done < <(echo "$env_json" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+            fi
+
+            # shellcheck disable=SC2154
+            if err=$(claude mcp add "${env_flags[@]}" -s "$scope" "$name" -- "$command" "${args_array[@]}" 2>&1 >/dev/null); then
                 echo -e "${GREEN}done${NC}"
             else
                 echo -e "${RED}failed${NC}"
@@ -172,8 +184,7 @@ if [[ -n "$TO_REMOVE" ]]; then
                 echo -e "  ${BLUE}[dry-run]${NC} Would remove: $name ($scope)"
             else
                 echo -n "  Removing $name... "
-                local err; err=$(claude mcp remove "$name" -s "$scope" 2>&1 >/dev/null)
-                if [[ $? -eq 0 ]]; then
+                if err=$(claude mcp remove "$name" -s "$scope" 2>&1 >/dev/null); then
                     echo -e "${GREEN}done${NC}"
                 else
                     echo -e "${RED}failed${NC}"
@@ -187,8 +198,7 @@ if [[ -n "$TO_REMOVE" ]]; then
             read -r response
             if [[ "$response" =~ ^[Yy]$ ]]; then
                 echo -n "  Removing $name... "
-                local err; err=$(claude mcp remove "$name" -s "$scope" 2>&1 >/dev/null)
-                if [[ $? -eq 0 ]]; then
+                if err=$(claude mcp remove "$name" -s "$scope" 2>&1 >/dev/null); then
                     echo -e "${GREEN}done${NC}"
                 else
                     echo -e "${RED}failed${NC}"

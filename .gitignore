@@ -21,8 +21,8 @@ reference/
 # Serena state (stays local)
 .serena/
 
-# Claude Code managed files
-claude/settings.json
+# Claude Code managed files (settings.local.json stays untracked)
+# claude/settings.json is tracked — contains hook configuration
 
 # Vim auto-generated files
 vim/.netrwhist
