@@ -15,7 +15,7 @@ mcps:
 
   serena:
     command: serena-mcp-server
-    args: []
+    args: ["--open-web-dashboard", "False"]
     scope: user
     description: Semantic code analysis with LSP integration
 

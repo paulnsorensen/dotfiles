@@ -49,13 +49,13 @@ init_state() {
     mkdir -p "${BACKUP_DIR}"
     
     # Save current timestamp
-    echo "$(date +%s)" > "${DOTFILES_STATE_DIR}/last_sync"
+    date +%s > "${DOTFILES_STATE_DIR}/last_sync"
 }
 
 # Create manifest of current symlinks
 create_manifest() {
     log_info "Creating manifest of current state..."
-    > "${MANIFEST_FILE}.tmp"
+    true > "${MANIFEST_FILE}.tmp"
     
     # Find all symlinks pointing to our dotfiles (exclude protected directories)
     (find "${HOME}" -maxdepth 3 -type l \
@@ -89,11 +89,11 @@ backup_current_state() {
     fi
     
     # Backup existing dotfiles
-    for file in $(ls); do
-        if [[ -f ~/.$file || -d ~/.$file ]]; then
-            if [[ ! -L ~/.$file ]]; then
+    for file in *; do
+        if [[ -f ~/."$file" || -d ~/."$file" ]]; then
+            if [[ ! -L ~/."$file" ]]; then
                 log_info "Backing up .$file"
-                cp -r ~/.$file "${BACKUP_DIR}/" 2>/dev/null || true
+                cp -r ~/."$file" "${BACKUP_DIR}/" 2>/dev/null || true
             fi
         fi
     done
@@ -121,7 +121,9 @@ list_backups() {
         return 1
     fi
     
-    for backup in $(ls -r "${DOTFILES_STATE_DIR}/backups" 2>/dev/null); do
+    for backup_path in "${DOTFILES_STATE_DIR}/backups"/*/; do
+        backup=$(basename "$backup_path")
+        [[ "$backup" == "*" ]] && continue
         if [[ -f "${DOTFILES_STATE_DIR}/backups/${backup}/metadata.json" ]]; then
             timestamp=$(grep '"timestamp"' "${DOTFILES_STATE_DIR}/backups/${backup}/metadata.json" | cut -d'"' -f4)
             echo -e "  ${GREEN}${backup}${NC} - ${timestamp}"
@@ -139,7 +141,7 @@ rollback() {
         log_error "No backup ID provided"
         list_backups
         echo
-        read -p "Enter backup ID to rollback to: " backup_id
+        read -rp "Enter backup ID to rollback to: " backup_id
     fi
     
     local backup_path="${DOTFILES_STATE_DIR}/backups/${backup_id}"
@@ -177,7 +179,8 @@ rollback() {
     fi
     
     # Restore backed up files
-    for file in $(ls "${backup_path}" 2>/dev/null); do
+    for file in "${backup_path}"/*; do
+        file=$(basename "$file")
         if [[ "${file}" != "manifest" && "${file}" != "metadata.json" && "${file}" != "manifest.backup" ]]; then
             log_info "Restoring ${file}"
             cp -r "${backup_path}/${file}" "${HOME}/" 2>/dev/null || true
@@ -242,7 +245,15 @@ run_sync() {
     # run homebrew
     if [ "$(uname)" == "Darwin" ]; then
       log_info "Running homebrew script"
-      sh $dir/.brew
+      sh "$dir/.brew"
+    fi
+
+    # upgrade uv-managed tools
+    if command -v uv &> /dev/null; then
+      log_info "Upgrading uv-managed tools..."
+      uv tool upgrade --all 2>&1 | while read -r line; do
+        log_info "  $line"
+      done
     fi
     
     # create dotfiles_old in homedir
@@ -250,27 +261,27 @@ run_sync() {
     mkdir -p $olddir
     
     # move any existing dotfiles in homedir to dotfiles_old directory, then create symlinks
-    for file in $(ls); do
+    for file in *; do
       # Skip state management files
       if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" || "${file}" == ".worktrees" ]]; then
         continue
       fi
-      
-      if [[ -h ~/.$file ]]; then
+
+      if [[ -h ~/."$file" ]]; then
         log_info "Removing old link to $file"
-        rm ~/.$file
+        rm ~/."$file"
       fi
-      if [[ -f ~/.$file || -d ~/.$file ]]; then
+      if [[ -f ~/."$file" || -d ~/."$file" ]]; then
         log_info "Moving existing $file from ~ to $olddir"
-        mv ~/.$file $olddir
+        mv ~/."$file" "$olddir"
       fi
-    
-      if [[ -d $dir/$file ]] && [[ -f $dir/$file/.sync ]]; then
+
+      if [[ -d "$dir/$file" ]] && [[ -f "$dir/$file/.sync" ]]; then
         log_info "Running .sync for $file."
-        sh $dir/$file/.sync
+        sh "$dir/$file/.sync"
       else
         log_info "Creating symlink to $file in home directory."
-        ln -s $dir/$file ~/.$file
+        ln -s "$dir/$file" ~/."$file"
       fi
     done
     
