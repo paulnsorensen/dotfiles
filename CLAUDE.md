@@ -168,8 +168,8 @@ The `.sync-with-rollback` script provides:
 - Pre-commit hooks check for secrets, validate shell scripts
 
 ### Claude Code Integration
-- Cheese-themed agents (Gouda Explorer, Brie Architect, etc.)
-- Custom slash commands (`/cheese`, `/curdle` for workflows)
+- Cheddar Flow workflows (`/cheese` for quick 4-step, `/curdle` for full 6-step)
+- Sub-agents only for mechanical work (roquefort-wrecker for tests, ricotta-reducer for simplification)
 - Pre-tool hooks (block-install.js, phantom-file-check.js)
 - Serena MCP for semantic code analysis
 

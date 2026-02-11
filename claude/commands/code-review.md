@@ -35,7 +35,7 @@ If the user provided an argument ($ARGUMENTS), use that as the focus area and sk
 
 ## Phase 3: Discovery
 
-Use the gouda-explorer agent (or explore directly) to map the codebase:
+Explore directly to map the codebase:
 
 1. **Identify the core business models/domain objects.** These are the nouns of the system - the entities that the code exists to serve. List them prominently. Everything else in the review should reference back to these.
 

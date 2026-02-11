@@ -75,4 +75,4 @@ If issues found:
 - Add docstrings or comments
 - Run tests (that's a separate step)
 
-This is a quick gate, not a code review. For thorough review, use `/review` or the parmigiano-sentinel agent.
+This is a quick gate, not a code review. For thorough review, use `/review`.
