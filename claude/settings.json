@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/pre-compact.sh\"",
+            "async": true,
+            "statusMessage": "Saving session context..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/post-compact.sh\"",
+            "statusMessage": "Re-priming MCP tools..."
+          }
+        ]
+      }
+    ]
+  }
+}

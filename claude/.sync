@@ -12,6 +12,7 @@ configs=(
   agents
   commands
   hooks
+  settings.json
   mcp
   CLAUDE.md
 )

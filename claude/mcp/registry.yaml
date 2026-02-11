@@ -14,13 +14,15 @@ mcps:
     description: GitHub code search and repository tools
 
   serena:
-    command: uvx
-    args: ["--from", "git+https://github.com/oraios/serena", "serena", "start-mcp-server"]
+    command: serena-mcp-server
+    args: ["--open-web-dashboard", "False"]
     scope: user
     description: Semantic code analysis with LSP integration
 
   context7:
     command: npx
     args: ["-y", "@context7/mcp-server"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
     scope: user
     description: Documentation context for libraries and frameworks

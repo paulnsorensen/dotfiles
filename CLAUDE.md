@@ -171,7 +171,13 @@ The `.sync-with-rollback` script provides:
 - Cheddar Flow workflows (`/cheese` for quick 4-step, `/curdle` for full 6-step)
 - Sub-agents only for mechanical work (roquefort-wrecker for tests, ricotta-reducer for simplification)
 - Pre-tool hooks (block-install.js, phantom-file-check.js)
-- Serena MCP for semantic code analysis
+- Compaction hooks (pre-compact.sh saves context, post-compact.sh re-primes Serena)
+- `/go` command to re-prime MCPs after compaction or at session start
+
+### MCP Usage Guidelines
+- **Serena**: Prefer `find_symbol` and `get_symbols_overview` over reading full files. Use `write_memory`/`read_memory` to persist discoveries across compaction. Always activate the project at conversation start.
+- **Context7**: Use when working with third-party library APIs to get version-specific docs.
+- **After compaction**: Run `/go` or manually activate Serena (`activate_project`), read Serena memories, and check onboarding. The post-compact hook does this automatically but `/go` is there as a manual fallback.
 
 ## Pre-Commit Requirement
 
