@@ -14,8 +14,8 @@ mcps:
     description: GitHub code search and repository tools
 
   serena:
-    command: uvx
-    args: ["--from", "git+https://github.com/oraios/serena", "serena", "start-mcp-server"]
+    command: serena-mcp-server
+    args: []
     scope: user
     description: Semantic code analysis with LSP integration
 
