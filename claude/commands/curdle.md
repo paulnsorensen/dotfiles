@@ -5,6 +5,13 @@ description: Execute the complete Cheddar Flow - full 7-step cheese-powered deve
 
 Execute the complete Cheddar Flow development workflow for the given request. This is the full fermentation process - thorough, comprehensive, and produces the finest aged code.
 
+## Preamble — Isolate
+
+Before starting, check if task isolation is needed:
+- If already in a worktree (check `git worktree list` — current dir is under a worktree path, not the main repo root), skip this step.
+- Otherwise, derive a slug from the request (lowercase, hyphens, no special chars) and run: `git worktree add .worktrees/<slug> -b claude/<slug>` then `cd` into it.
+- If the worktree already exists for that slug, just `cd` into it.
+
 ## The Seven Stages
 
 1. **Explore** - Use gouda-explorer to map the current codebase state with Serena's semantic intelligence

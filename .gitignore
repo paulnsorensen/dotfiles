@@ -27,6 +27,9 @@ claude/settings.json
 # Vim auto-generated files
 vim/.netrwhist
 
+# Git worktrees (Claude Code task isolation)
+.worktrees/
+
 # Backup files
 *.bak
 .serena/

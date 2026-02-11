@@ -5,6 +5,13 @@ description: Execute abbreviated Cheddar Flow - quick 5-step workflow with Explo
 
 Execute the quick Cheese Flow development workflow for the given request. This is the fast curd - streamlined for rapid iteration when you're confident in the approach.
 
+## Preamble — Isolate
+
+Before starting, check if task isolation is needed:
+- If already in a worktree (check `git worktree list` — current dir is under a worktree path, not the main repo root), skip this step.
+- Otherwise, derive a slug from the request (lowercase, hyphens, no special chars) and run: `git worktree add .worktrees/<slug> -b claude/<slug>` then `cd` into it.
+- If the worktree already exists for that slug, just `cd` into it.
+
 ## The Five Stages
 
 1. **Explore** - Use gouda-explorer to understand current codebase context
