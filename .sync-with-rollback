@@ -252,7 +252,7 @@ run_sync() {
     # move any existing dotfiles in homedir to dotfiles_old directory, then create symlinks
     for file in $(ls); do
       # Skip state management files
-      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" ]]; then
+      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" || "${file}" == ".worktrees" ]]; then
         continue
       fi
       
