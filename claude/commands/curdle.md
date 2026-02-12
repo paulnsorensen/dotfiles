@@ -5,12 +5,18 @@ description: Complete Cheddar Flow - full 6-step workflow with Explore, Plan, Co
 
 Execute the complete Cheddar Flow development workflow for the given request. This is the full fermentation - thorough and comprehensive. You do the thinking directly; sub-agents only for mechanical work.
 
-## Preamble — Isolate
+## Preamble — Isolate & Prime
 
 Before starting, check if task isolation is needed:
-- If already in a worktree (check `git worktree list` — current dir is under a worktree path, not the main repo root), skip this step.
+- If already in a worktree (check `git worktree list` — current dir is under a worktree path, not the main repo root), skip isolation.
 - Otherwise, derive a slug from the request (lowercase, hyphens, no special chars) and run: `git worktree add .worktrees/<slug> -b claude/<slug>` then `cd` into it.
 - If the worktree already exists for that slug, just `cd` into it.
+
+After entering the worktree, prime Serena:
+1. If `.serena/` exists at the main repo root but not in the worktree, copy it over (minus `cache/`).
+2. `activate_project` for the worktree path.
+3. `check_onboarding_performed` — run `onboarding` if needed.
+4. `list_memories` — `read_memory` for relevant ones.
 
 ## The Six Stages
 
@@ -52,9 +58,10 @@ Self-review the changes against the full engineering principles:
 
 If issues found, fix them before proceeding.
 
-### 6. Commit
+### 6. Ship
 
-Use the `/commit` skill to create a Conventional Commits message for the changes.
+Use the `/commit-push-pr` skill to commit, push, and open a PR.
+If `/commit-push-pr` is unavailable, fall back to `/commit`.
 
 ## When to Use /curdle
 

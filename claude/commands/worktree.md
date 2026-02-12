@@ -1,7 +1,7 @@
 ---
 name: worktree
 description: Create an isolated git worktree for a Claude Code task, keeping main clean.
-allowed-tools: Bash
+allowed-tools: Bash, mcp__serena__activate_project, mcp__serena__check_onboarding_performed, mcp__serena__onboarding, mcp__serena__list_memories, mcp__serena__read_memory
 argument-hint: "<task-slug>"
 ---
 
@@ -33,11 +33,25 @@ If no slug is provided, ask the user for one.
 - `cd` into `.worktrees/<slug>/`
 - Print the absolute path and confirm ready to work
 
-### 4. Confirm
+### 4. Seed Serena
+
+If `.serena/` exists at the repo root but not in the worktree, copy it over (minus `cache/`):
+```bash
+cp -r <repo_root>/.serena <worktree>/.serena && rm -rf <worktree>/.serena/cache
+```
+
+### 5. Prime Serena
+
+1. `activate_project` for the worktree path
+2. `check_onboarding_performed` — run `onboarding` if needed
+3. `list_memories` — `read_memory` for any relevant ones
+
+### 6. Confirm
 
 Report:
 ```
 Worktree ready: <absolute path>
 Branch: claude/<slug>
 Base: <short SHA and branch we forked from>
+Serena: active (memories loaded)
 ```
