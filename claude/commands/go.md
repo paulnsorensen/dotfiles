@@ -15,6 +15,7 @@ Re-prime the development environment. Run this after context compaction or at th
 ## When to Use
 
 - After context compaction (Claude stops using Serena tools)
-- At the start of a long coding session
-- When you notice Claude navigating code with Grep instead of Serena's semantic tools
 - After `/clear`
+- When you notice Claude navigating code with Grep instead of Serena's semantic tools
+
+**Note:** `/worktree`, `/cheese`, and `/curdle` now prime Serena automatically during their preamble. Use `/go` only for recovery scenarios above.

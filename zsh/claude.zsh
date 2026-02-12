@@ -84,6 +84,15 @@ ccw() {
         echo "Linked permissions: ${wt_key} → ${main_key}"
     fi
 
+    # Seed Serena memories from main repo into worktree
+    local serena_src="${repo_root}/.serena"
+    local serena_dst="${repo_root}/${wt_dir}/.serena"
+    if [[ -d "${serena_src}" ]] && [[ ! -d "${serena_dst}" ]]; then
+        cp -r "${serena_src}" "${serena_dst}"
+        rm -rf "${serena_dst}/cache" 2>/dev/null
+        echo "Seeded Serena memories from main repo"
+    fi
+
     cd "${repo_root}/${wt_dir}" && claude "$@"
 }
 
@@ -116,6 +125,13 @@ ccw-clean() {
             echo "Removing: ${slug} (${branch} merged)"
             git -C "${repo_root}" worktree remove "${slug_dir}" 2>/dev/null
             git -C "${repo_root}" branch -d "${branch}" 2>/dev/null
+
+            # Clean Serena project config for deleted worktree
+            if command -v yq &>/dev/null && [[ -f "${HOME}/.serena/serena_config.yml" ]]; then
+                yq -i "del(.projects[] | select(. == \"${slug_dir}\"))" \
+                    "${HOME}/.serena/serena_config.yml" 2>/dev/null
+            fi
+
             ((cleaned++))
         fi
     done
