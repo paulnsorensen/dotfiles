@@ -60,6 +60,9 @@ alias c="code -r ."
 # Shell reload
 alias zrl="source ~/.zshrc"
 
+# Tmux reload
+alias trl='tmux source-file ~/.tmux.conf && echo "tmux config reloaded"'
+
 # =============================================================================
 # Search and Find (using ripgrep)
 # =============================================================================

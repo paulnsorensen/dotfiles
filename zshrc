@@ -21,3 +21,4 @@ source "$HOME/Dev/dotfiles/zsh/claude.zsh"
 clear
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+export PATH="$HOME/.local/bin:$PATH"
