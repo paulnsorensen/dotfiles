@@ -16,6 +16,7 @@ formulae:
   - htop         # Process viewer
   - ripgrep      # Fast grep (rg)
   - fd           # Fast find
+  - tmux         # Terminal multiplexer
   - tinty        # Base16/Base24 theme manager
 
 # Development tools (installed when DOTFILES_DEV=true)

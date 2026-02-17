@@ -242,10 +242,13 @@ run_sync() {
     esac
     done
     
-    # run homebrew
+    # install platform packages
     if [ "$(uname)" == "Darwin" ]; then
       log_info "Running homebrew script"
       sh "$dir/.brew"
+    elif [ "$(uname)" == "Linux" ]; then
+      log_info "Checking apt packages"
+      bash "$dir/.apt"
     fi
 
     # upgrade uv-managed tools
@@ -263,7 +266,15 @@ run_sync() {
     # move any existing dotfiles in homedir to dotfiles_old directory, then create symlinks
     for file in *; do
       # Skip state management files
-      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" || "${file}" == ".worktrees" ]]; then
+      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" || "${file}" == ".worktrees" || "${file}" == "apt" ]]; then
+        continue
+      fi
+
+      # Directories with .sync scripts manage their own setup (e.g. claude/.sync
+      # symlinks items INTO ~/.claude without replacing the whole directory)
+      if [[ -d "$dir/$file" ]] && [[ -f "$dir/$file/.sync" ]]; then
+        log_info "Running .sync for $file."
+        bash "$dir/$file/.sync" || log_warning "sync for $file failed (non-fatal)"
         continue
       fi
 
@@ -273,16 +284,12 @@ run_sync() {
       fi
       if [[ -f ~/."$file" || -d ~/."$file" ]]; then
         log_info "Moving existing $file from ~ to $olddir"
+        rm -rf "$olddir/.$file" 2>/dev/null || true
         mv ~/."$file" "$olddir"
       fi
 
-      if [[ -d "$dir/$file" ]] && [[ -f "$dir/$file/.sync" ]]; then
-        log_info "Running .sync for $file."
-        sh "$dir/$file/.sync"
-      else
-        log_info "Creating symlink to $file in home directory."
-        ln -s "$dir/$file" ~/."$file"
-      fi
+      log_info "Creating symlink to $file in home directory."
+      ln -s "$dir/$file" ~/."$file"
     done
     
     # Create new manifest after sync

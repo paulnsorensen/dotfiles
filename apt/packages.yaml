@@ -1,0 +1,21 @@
+# APT Packages (Linux)
+# Run `dots sync` to install
+
+# Core CLI tools (always installed)
+packages:
+  - jq           # JSON processing
+  - xclip        # Clipboard support (X11)
+  - fzf          # Fuzzy finder
+  - gh           # GitHub CLI
+  - shellcheck   # Shell script linter
+  - tree         # Directory tree view
+  - htop         # Process viewer
+  - ripgrep      # Fast grep (rg)
+  - fd-find      # Fast find (fd)
+  - tmux         # Terminal multiplexer
+  - yq           # YAML processing (snap)
+
+# Development tools (installed when DOTFILES_DEV=true)
+dev_packages:
+  - nodejs       # Node.js
+  - npm          # Node package manager
