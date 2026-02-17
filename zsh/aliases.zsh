@@ -48,7 +48,11 @@ alias cddot='cd $HOME/Dev/dotfiles'
 # Utilities
 # =============================================================================
 # UUID generator (lowercase, copied to clipboard)
-alias uuidg="/usr/bin/uuidgen | tr 'A-Z' 'a-z' | tee /dev/stderr | tr -d '\n' | pbcopy"
+if [[ "$DOTFILES_OS" == "macos" ]]; then
+  alias uuidg="/usr/bin/uuidgen | tr 'A-Z' 'a-z' | tee /dev/stderr | tr -d '\n' | pbcopy"
+else
+  alias uuidg="uuidgen | tr 'A-Z' 'a-z' | tee /dev/stderr | tr -d '\n' | xclip -sel clip"
+fi
 
 # VS Code shortcut - opens current directory, reuses window if already open
 alias c="code -r ."
@@ -84,7 +88,14 @@ alias theme-ls='ls ~/Dev/dotfiles/theme/schemes/'
 export CLICOLOR=1
 
 # ls aliases with color support
-alias ls='ls -G'
-alias ll='ls -lhG'
-alias la='ls -lahG'
-alias l='ls -CFG'
+if [[ "$DOTFILES_OS" == "macos" ]]; then
+  alias ls='ls -G'
+  alias ll='ls -lhG'
+  alias la='ls -lahG'
+  alias l='ls -CFG'
+else
+  alias ls='ls --color=auto'
+  alias ll='ls -lh --color=auto'
+  alias la='ls -lah --color=auto'
+  alias l='ls -CF --color=auto'
+fi
