@@ -26,6 +26,7 @@ reference/
 
 # Vim auto-generated files
 vim/.netrwhist
+vim/undo/
 
 # Git worktrees (Claude Code task isolation)
 .worktrees/

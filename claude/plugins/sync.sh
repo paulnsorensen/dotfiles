@@ -150,12 +150,10 @@ if [[ -n "$TO_ADD" ]]; then
             echo -e "  ${BLUE}[dry-run]${NC} Would run: claude plugin install -s $scope $name"
         else
             echo -n "  Installing $name... "
-            local err; err=$(claude plugin install -s "$scope" "$name" 2>&1 >/dev/null)
-            if [[ $? -eq 0 ]]; then
+            if claude plugin install -s "$scope" "$name" 2>/dev/null; then
                 echo -e "${GREEN}done${NC}"
             else
                 echo -e "${RED}failed${NC}"
-                [[ -n "$err" ]] && echo -e "    ${RED}$err${NC}"
             fi
         fi
     done
@@ -176,12 +174,10 @@ if [[ -n "$TO_REMOVE" ]]; then
                 echo -e "  ${BLUE}[dry-run]${NC} Would remove: $name"
             else
                 echo -n "  Removing $name... "
-                local err; err=$(claude plugin remove -s "$scope" "$name" 2>&1 >/dev/null)
-                if [[ $? -eq 0 ]]; then
+                if claude plugin remove -s "$scope" "$name" 2>/dev/null; then
                     echo -e "${GREEN}done${NC}"
                 else
                     echo -e "${RED}failed${NC}"
-                    [[ -n "$err" ]] && echo -e "    ${RED}$err${NC}"
                 fi
             fi
         elif $DRY_RUN; then
@@ -191,12 +187,10 @@ if [[ -n "$TO_REMOVE" ]]; then
             read -r response
             if [[ "$response" =~ ^[Yy]$ ]]; then
                 echo -n "  Removing $name... "
-                local err; err=$(claude plugin remove -s "$scope" "$name" 2>&1 >/dev/null)
-                if [[ $? -eq 0 ]]; then
+                if claude plugin remove -s "$scope" "$name" 2>/dev/null; then
                     echo -e "${GREEN}done${NC}"
                 else
                     echo -e "${RED}failed${NC}"
-                    [[ -n "$err" ]] && echo -e "    ${RED}$err${NC}"
                 fi
             else
                 echo "  Keeping $name"

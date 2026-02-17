@@ -24,6 +24,11 @@ I follow these core engineering principles (enforced by my Cheddar Flow agents):
 5. **Real-World Models** - Name things after business concepts, not technical abstractions
 6. **Immutable Patterns** - Minimize state mutation for predictable behavior
 
+## Early Development Stance
+
+- **No backward compatibility concerns** — projects in early unreleased development have zero users and zero production data. Do not add migration backfills, deprecation shims, or compatibility layers until there is something to be compatible with.
+- Dismiss reviewer suggestions about backward compat during this phase.
+
 ## Complexity Budget
 
 - **Functions**: Max 40 lines
