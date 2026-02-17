@@ -1,7 +1,10 @@
 # dotfiles by @paulnsorensen (with a lot of copying from others)
 
-# Source simplified zsh configuration
-# core.zsh handles all environment setup
+# Platform detection (used by modules for OS-specific behavior)
+case "$OSTYPE" in
+  darwin*)  export DOTFILES_OS="macos" ;;
+  linux*)   export DOTFILES_OS="linux" ;;
+esac
 
 # Source zsh configuration files in order
 source "$HOME/Dev/dotfiles/zsh/core.zsh"

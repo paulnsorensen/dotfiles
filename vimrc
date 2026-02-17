@@ -131,8 +131,12 @@ nnoremap <leader>x :wq<CR>
 " Enable mouse support
 set mouse=a
 
-" Clipboard integration (macOS)
-set clipboard=unnamed
+" Clipboard integration
+if has('mac')
+  set clipboard=unnamed
+else
+  set clipboard=unnamedplus
+endif
 
 " File type detection and plugins
 filetype plugin indent on

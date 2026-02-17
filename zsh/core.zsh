@@ -57,9 +57,6 @@ if command -v pyenv 1>/dev/null 2>&1; then
   eval "$(pyenv init -)"
 fi
 
-# init rbenv
-eval "$(rbenv init - zsh)"
-
 # Source .env file if it exists to load CLAUDE_SETUP_DIR
 if [ -f "$HOME/Dev/dotfiles/.env" ]; then
     source "$HOME/Dev/dotfiles/.env"
