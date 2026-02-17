@@ -16,6 +16,20 @@ log_info()  { echo -e "${BLUE}[theme]${NC} $1"; }
 log_ok()    { echo -e "${GREEN}[theme]${NC} $1"; }
 log_err()   { echo -e "${RED}[theme]${NC} $1" >&2; }
 
+if ! command -v yq &>/dev/null; then
+  log_err "yq not found — install with: sudo snap install yq, or brew install yq"
+  exit 1
+fi
+
+# Portable in-place sed (GNU vs BSD)
+sedi() {
+  if [[ "$(uname)" == "Darwin" ]]; then
+    sed -i '' "$@"
+  else
+    sed -i "$@"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Read config
 # ---------------------------------------------------------------------------
@@ -278,16 +292,16 @@ generate_vimrc() {
   br_yellow=$(c256 base09)
 
   # Update header comments
-  sed -i '' "s/^\" Vim configuration with .* theme/\" Vim configuration with ${SCHEME_NAME} theme/" "$vimrc"
-  sed -i '' "s/^\" .* color scheme$/\" ${SCHEME_NAME} color scheme/" "$vimrc"
-  sed -i '' "s/^\" These colors match your terminal's .* theme$/\" These colors match your terminal's ${SCHEME_NAME} theme/" "$vimrc"
-  sed -i '' "s/^\" .*color definitions$/\" ${SCHEME_NAME} color definitions/" "$vimrc"
-  sed -i '' "s/^\" Using terminal colors that match .*$/\" Using terminal colors that match ${SCHEME_NAME}/" "$vimrc"
+  sedi "s/^\" Vim configuration with .* theme/\" Vim configuration with ${SCHEME_NAME} theme/" "$vimrc"
+  sedi "s/^\" .* color scheme$/\" ${SCHEME_NAME} color scheme/" "$vimrc"
+  sedi "s/^\" These colors match your terminal's .* theme$/\" These colors match your terminal's ${SCHEME_NAME} theme/" "$vimrc"
+  sedi "s/^\" .*color definitions$/\" ${SCHEME_NAME} color definitions/" "$vimrc"
+  sedi "s/^\" Using terminal colors that match .*$/\" Using terminal colors that match ${SCHEME_NAME}/" "$vimrc"
 
   # Helper: replace highlight line
   hl() {
     local name="$1"; shift
-    sed -i '' "s/^highlight ${name} .*$/highlight ${name} $*/" "$vimrc"
+    sedi "s/^highlight ${name} .*$/highlight ${name} $*/" "$vimrc"
   }
 
   hl Normal        "ctermfg=$fg ctermbg=NONE"

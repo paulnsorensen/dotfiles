@@ -1,0 +1,91 @@
+#!/bin/bash
+############################
+# .apt
+# Installs packages on Linux via apt-get
+# Requires sudo — prints the command for the user to run
+############################
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGES_FILE="$SCRIPT_DIR/apt/packages.yaml"
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+if [ "${QUICK_SYNC:-false}" = "true" ]; then
+  echo "Quick sync, skipping apt"
+  exit 0
+fi
+
+if [[ ! -f "$PACKAGES_FILE" ]]; then
+    echo -e "${YELLOW}Warning: $PACKAGES_FILE not found${NC}"
+    exit 0
+fi
+
+# We need yq to parse the YAML, but yq might be one of the packages to install.
+# Use a simple grep/sed fallback if yq isn't available yet.
+parse_yaml_list() {
+    local file="$1" key="$2"
+    if command -v yq &>/dev/null; then
+        yq -r ".${key}[]" "$file" 2>/dev/null
+    else
+        # Fallback: extract list items between key and next key/EOF
+        sed -n "/^${key}:/,/^[^ #]/p" "$file" | grep '^ *-' | sed 's/^ *- *//; s/ *#.*//'
+    fi
+}
+
+# Collect packages that aren't already installed
+missing=()
+
+echo -e "${BLUE}Checking apt packages from $PACKAGES_FILE${NC}"
+
+echo -e "\n${GREEN}Core packages:${NC}"
+for package in $(parse_yaml_list "$PACKAGES_FILE" "packages"); do
+    # yq is a snap package, handle separately
+    if [[ "$package" == "yq" ]]; then
+        if command -v yq &>/dev/null; then
+            echo -e "  ${GREEN}✓${NC} $package (installed)"
+        else
+            echo -e "  ${YELLOW}○${NC} $package (snap — install with: sudo snap install yq)"
+        fi
+        continue
+    fi
+    if dpkg -s "$package" &>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} $package (installed)"
+    else
+        echo -e "  ${YELLOW}○${NC} $package (missing)"
+        missing+=("$package")
+    fi
+done
+
+# Dev packages
+if [ "${DOTFILES_DEV:-false}" = "true" ]; then
+    echo -e "\n${GREEN}Dev packages:${NC}"
+    for package in $(parse_yaml_list "$PACKAGES_FILE" "dev_packages"); do
+        if dpkg -s "$package" &>/dev/null; then
+            echo -e "  ${GREEN}✓${NC} $package (installed)"
+        else
+            echo -e "  ${YELLOW}○${NC} $package (missing)"
+            missing+=("$package")
+        fi
+    done
+fi
+
+if [[ ${#missing[@]} -eq 0 ]]; then
+    echo -e "\n${GREEN}All apt packages are installed!${NC}"
+    exit 0
+fi
+
+echo ""
+echo -e "${YELLOW}The following packages need to be installed:${NC}"
+echo -e "  ${missing[*]}"
+echo ""
+echo -e "${BLUE}Please run:${NC}"
+echo ""
+echo -e "  sudo apt-get install -y ${missing[*]}"
+echo ""
