@@ -94,6 +94,10 @@ plugins:
     scope: user
 
   # External Plugins - Third-party integrations
+  context7-plugin@context7-marketplace:
+    description: Up-to-date library docs and code examples via Context7
+    scope: user
+
   github@claude-plugins-official:
     description: GitHub integration tools
     scope: user

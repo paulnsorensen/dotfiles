@@ -11,6 +11,11 @@ alias ccc='claude --continue'
 alias ccr='claude --resume'
 alias ccp='claude --print'
 
+# Fresh session: continue last conversation with MCPs primed
+ccfresh() {
+  claude --continue -p '/go'
+}
+
 # ═══════════════════════════════════════════════════════════════════
 # MCP Management (thin wrappers around native commands)
 # ═══════════════════════════════════════════════════════════════════

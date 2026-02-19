@@ -24,6 +24,7 @@ dev_formulae:
   - pyenv        # Python version management
   - node         # Node.js
   - uv           # Fast Python package manager
+  - rustup       # Rust toolchain manager
 
 dev_casks:
   - docker       # Docker Desktop

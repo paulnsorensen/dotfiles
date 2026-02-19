@@ -20,6 +20,13 @@ export PATH="$HOME/Dev/dotfiles/bin:$PATH"
 # Add local bin to PATH
 export PATH="$HOME/.local/bin:$PATH"
 
+# Rust toolchain (rustup via Homebrew, keg-only due to conflict with rust formula)
+if [[ -d "$(brew --prefix 2>/dev/null)/opt/rustup/bin" ]]; then
+  export PATH="$(brew --prefix)/opt/rustup/bin:$PATH"
+fi
+# cargo install puts binaries in ~/.cargo/bin
+[[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
+
 # fpath for completions
 fpath=(
   $fpath
@@ -59,5 +66,7 @@ fi
 
 # Source .env file if it exists to load CLAUDE_SETUP_DIR
 if [ -f "$HOME/Dev/dotfiles/.env" ]; then
+    set -a
     source "$HOME/Dev/dotfiles/.env"
+    set +a
 fi

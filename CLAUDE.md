@@ -130,6 +130,7 @@ Marketplaces must be added first:
 ```bash
 claude plugin marketplace add anthropics/claude-plugins-official
 claude plugin marketplace add boostvolt/claude-code-lsps
+claude plugin marketplace add upstash/context7
 ```
 
 **Workflow:**
