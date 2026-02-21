@@ -1,5 +1,7 @@
 ---
 name: grep
+model: haiku
+allowed-tools: Bash(rg:*)
 description: >
   Use ripgrep (rg) to search file contents. Invoke this skill whenever you need to
   search for patterns in files — even if the user says "grep for X" or "find where X
