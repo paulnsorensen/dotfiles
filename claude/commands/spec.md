@@ -1,6 +1,7 @@
 ---
 name: spec
 description: Discovery dialogue to architect a feature and produce a specification
+allowed-tools: Read, Write, Grep, Glob
 argument-hint: <what you want to build>
 ---
 

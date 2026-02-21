@@ -88,5 +88,10 @@ src/
 I use the Cheddar Flow for development:
 - `/cheese` - Quick 4-step: Explore → Plan → Code → Review
 - `/curdle` - Full 6-step: Explore → Plan → Code → Test → Review → Commit
+- `/ralph` - Iterative refinement via ralph-loop (cheaper than manual back-and-forth)
 
 See `~/.claude/commands/` for available commands and `~/.claude/agents/` for specialist agents.
+
+Sub-agents use cheaper models to save limits:
+- **roquefort-wrecker** (haiku) — adversarial testing
+- **ricotta-reducer** (haiku) — code simplification analysis

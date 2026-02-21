@@ -1,6 +1,7 @@
 ---
 name: go
 description: Re-prime MCP tools (Serena, Context7) after compaction or at conversation start.
+allowed-tools: Bash, mcp__serena__activate_project, mcp__serena__check_onboarding_performed, mcp__serena__onboarding, mcp__serena__list_memories, mcp__serena__read_memory
 ---
 
 Re-prime the development environment. Run this after context compaction or at the start of a long session.

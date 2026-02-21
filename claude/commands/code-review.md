@@ -1,6 +1,7 @@
 ---
 name: code-review
 description: Comprehensive code review of a library, system, or whole repo with persistent review history.
+allowed-tools: Read, Grep, Glob, Write, Bash
 argument-hint: "[module or class to focus on, or leave blank for full overview]"
 ---
 

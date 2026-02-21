@@ -28,6 +28,8 @@ Write a detailed implementation strategy inline. Cover:
 
 Implement the plan directly. Follow YAGNI discipline — build only what's needed now.
 
+If the implementation involves iterative refinement (refactoring, formatting, multi-pass cleanup), use the ralph-loop plugin to converge rather than doing manual passes — this saves tokens by batching iterations.
+
 ### 4. Test
 
 Launch the roquefort-wrecker sub-agent via the Task tool to validate the implementation:
