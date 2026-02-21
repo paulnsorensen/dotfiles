@@ -25,6 +25,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `cc` - Alias for `claude`
 - `ccc` - Continue last conversation (`claude --continue`)
 - `ccr` - Resume conversation (`claude --resume`)
+- `ccw <slug>` - Create isolated git worktree and launch Claude inside it (sandboxed)
 - `mcp-sync` - Sync MCPs from registry.yaml to Claude Code
 - `mcp-sync-dry` - Preview MCP sync changes without applying
 - `mcp-edit` - Edit MCP registry.yaml
@@ -61,6 +62,9 @@ dotfiles/
 ├── iterm2/                 # iTerm2 preferences
 ├── nixpkgs/                # Nix Home Manager config
 ├── reference/              # Reference docs (gitignored)
+├── .claude/
+│   ├── specs/              # Tabled feature specs (.claude/specs/<slug>.md)
+│   └── hookify.*.local.md  # Active hookify rules (gitignored)
 ├── vim/                    # Vim configuration
 ├── vimrc                   # Vim settings
 ├── zsh/                    # Modular zsh configuration
@@ -174,6 +178,8 @@ The `.sync-with-rollback` script provides:
 - Pre-tool hooks (block-install.js, phantom-file-check.js)
 - Compaction hooks (pre-compact.sh saves context, post-compact.sh re-primes Serena)
 - `/go` command to re-prime MCPs after compaction or at session start
+- Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed
+- `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
 
 ### MCP Usage Guidelines
 - **Serena**: Prefer `find_symbol` and `get_symbols_overview` over reading full files. Use `write_memory`/`read_memory` to persist discoveries across compaction. Always activate the project at conversation start.
@@ -201,6 +207,12 @@ Always run `dots test` before committing to verify sync, shell config, and theme
 1. Add entry to `claude/mcp/registry.yaml`
 2. Run `mcp-sync` to install
 3. Restart Claude Code for changes to take effect
+
+### When Adding New Plugins
+1. Add entry to `claude/plugins/registry.yaml`
+2. Run `plugin-sync` to install
+3. Restart Claude Code for changes to take effect
+4. Add `mcp__plugin_<name>__*` to `permissions.allow` in `claude/settings.json` if the plugin provides MCP tools
 
 ### Dependencies (Homebrew)
 Managed in `.brew`:

@@ -2,6 +2,8 @@
 allowed-tools: Read, Write, Bash
 description: Start ping-pong TDD - AI writes tests, you implement
 argument-hint: [feature description]
+model: sonnet
+disable-model-invocation: true
 ---
 
 Entering **PING-PONG TDD** mode for: $ARGUMENTS

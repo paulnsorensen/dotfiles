@@ -98,6 +98,14 @@ ccw() {
         echo "Seeded Serena memories from main repo"
     fi
 
+    # Seed sandbox settings for the worktree session
+    local claude_local="${repo_root}/${wt_dir}/.claude/settings.local.json"
+    if [[ ! -f "${claude_local}" ]]; then
+        mkdir -p "${repo_root}/${wt_dir}/.claude"
+        printf '{\n  "sandbox": {\n    "enabled": true,\n    "autoAllowBashIfSandboxed": true\n  }\n}\n' > "${claude_local}"
+        echo "Enabled sandboxing for worktree"
+    fi
+
     cd "${repo_root}/${wt_dir}" && claude "$@"
 }
 

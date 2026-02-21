@@ -22,6 +22,7 @@ formulae:
   - delta        # Syntax-aware diff tool
   - tmux         # Terminal multiplexer
   - tinty        # Base16/Base24 theme manager
+  - prek         # Pre-commit hook manager
 
 # Development tools (installed when DOTFILES_DEV=true)
 dev_formulae:

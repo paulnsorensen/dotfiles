@@ -2,6 +2,7 @@
 allowed-tools: Bash(gh *), Bash(git *), Bash(sleep *), Bash(date *), Read, AskUserQuestion, Skill
 description: Delegate a task to GitHub Copilot coding agent, then review the resulting PR.
 argument-hint: "<task description>"
+disable-model-invocation: true
 ---
 
 Delegate a task to the GitHub Copilot coding agent. Monitor until it produces a PR, then trigger `/copilot-review`.
