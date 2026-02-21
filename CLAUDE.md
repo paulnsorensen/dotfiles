@@ -120,10 +120,15 @@ Plugins are managed declaratively via `claude/plugins/registry.yaml`:
 
 ```yaml
 plugins:
-  security-guidance@claude-plugins-official:
-    description: Security best practices hooks
+  ralph-loop@claude-plugins-official:
+    description: Iterative self-referential loops for convergent task completion
     scope: user
+    tier: core
 ```
+
+**Tiers:**
+- `core` - Always enabled in `settings.json` (every session needs these)
+- `situational` - Installed but disabled by default; enable per-project
 
 **Prerequisites:**
 Marketplaces must be added first:
@@ -137,6 +142,11 @@ claude plugin marketplace add boostvolt/claude-code-lsps
 2. Preview changes: `plugin-sync-dry`
 3. Apply changes: `plugin-sync`
 4. Restart Claude Code for changes to take effect
+
+Enable situational plugins per-project in `.claude/settings.local.json`:
+```json
+{ "enabledPlugins": { "playwright@claude-plugins-official": true } }
+```
 
 Note: Unlike MCP, the plugins directory is NOT symlinked to ~/.claude because
 Claude Code uses that location for plugin cache storage.
@@ -220,3 +230,37 @@ Managed in `.brew`:
 4. **Vi Mode**: Shell is in vi mode by default
 5. **MCP Scope**: Use `user` scope for dev tools, `project` for team-shared MCPs
 6. **Reference Folder**: Put reference docs in `reference/` (gitignored, not symlinked)
+
+## Usage Limits Optimization
+
+### Plugin Tiers
+
+Plugins are split into **core** (always enabled) and **situational** (enable per-project).
+Every enabled plugin adds to the system prompt and consumes tokens on every message.
+
+**Core** (enabled in `claude/settings.json`):
+- `ralph-loop` — Iterative convergence (saves tokens vs manual back-and-forth)
+- `code-review` — PR review capability
+- `github` — GitHub integration
+- `claude-md-management` — CLAUDE.md maintenance
+- `bash-language-server` — Shell language support
+- `yaml-language-server` — YAML config support
+
+**Situational** (enable in project `.claude/settings.local.json`):
+- LSPs: `pyright`, `gopls`, `rust-analyzer`, `vtsls` — enable for matching language
+- `feature-dev`, `hookify`, `playwright`, `frontend-design` — enable when the project needs them
+- `agent-sdk-dev`, `plugin-dev` — only when developing agents/plugins
+
+To enable a situational plugin for a project, add to `.claude/settings.local.json`:
+```json
+{ "enabledPlugins": { "playwright@claude-plugins-official": true } }
+```
+
+### Token-Saving Strategies
+
+1. **Use `/ralph` for iterative tasks** — batches refinement into a loop instead of multi-turn chat
+2. **Use `/cheese` over `/curdle`** for small changes — skips testing and commit overhead
+3. **Sub-agents use cheaper models** — roquefort-wrecker (haiku) and ricotta-reducer (haiku)
+4. **`allowed-tools` on commands** — prevents expensive tool calls in read-only workflows
+5. **Serena `find_symbol` over grep** — semantic search is more targeted than text search
+6. **Parallel tool calls** — reading 3 files in one turn instead of 3 turns

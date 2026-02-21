@@ -5,95 +5,127 @@
 #   - claude-code-lsps: Language server plugins
 #   - claude-plugins-official: Official workflow plugins
 #
+# Tiers:
+#   core        - Always enabled in settings.json (every session needs these)
+#   situational - Installed but disabled by default; enable per-project in
+#                 .claude/settings.local.json when needed
+#
+# Why tiers matter:
+#   Every enabled plugin adds to the system prompt, consuming tokens on EVERY
+#   message. With 13+ plugins enabled, that's significant overhead per turn.
+#   Keep core small; enable situational plugins only in projects that use them.
+#
 # Usage:
 #   plugin-sync           Sync plugins (install missing)
 #   plugin-sync-dry       Preview changes
 #   plugin-ls             List installed plugins
 
 plugins:
-  # LSP Plugins - Language server support
-  pyright@claude-code-lsps:
-    description: Python type checking and language server
-    scope: user
-
-  gopls@claude-code-lsps:
-    description: Go language server
-    scope: user
-
-  rust-analyzer@claude-code-lsps:
-    description: Rust language server
-    scope: user
-
-  vtsls@claude-code-lsps:
-    description: TypeScript/JavaScript language server
-    scope: user
+  # ── Core Plugins (always enabled in settings.json) ─────────────
+  # These provide fundamental capabilities needed in every session.
 
   bash-language-server@claude-code-lsps:
     description: Bash/shell script language server
     scope: user
+    tier: core
 
   yaml-language-server@claude-code-lsps:
     description: YAML language server
     scope: user
-
-  # Workflow Plugins - Development automation
-  pr-review-toolkit@claude-plugins-official:
-    description: PR review agents and workflows
-    scope: user
-
-  commit-commands@claude-plugins-official:
-    description: Git commit helpers and workflows
-    scope: user
-
-  security-guidance@claude-plugins-official:
-    description: Security best practices hooks
-    scope: user
-
-  code-simplifier@claude-plugins-official:
-    description: Code cleanup and simplification agents
-    scope: user
-
-  hookify@claude-plugins-official:
-    description: Create hooks to prevent unwanted behaviors by analyzing conversation patterns
-    scope: user
-
-  claude-md-management@claude-plugins-official:
-    description: Audit, maintain, and improve CLAUDE.md files with session learnings
-    scope: user
-
-  playwright@claude-plugins-official:
-    description: Browser testing and automation with Playwright
-    scope: user
+    tier: core
 
   ralph-loop@claude-plugins-official:
     description: Iterative self-referential loops for convergent task completion
     scope: user
-
-  agent-sdk-dev@claude-plugins-official:
-    description: Scaffold and verify Claude Agent SDK apps (Python and TypeScript)
-    scope: user
-
-  feature-dev@claude-plugins-official:
-    description: Multi-agent feature development with exploration, architecture, and review
-    scope: user
+    tier: core
 
   code-review@claude-plugins-official:
     description: Automated PR code review with parallel specialized agents
     scope: user
+    tier: core
+
+  github@claude-plugins-official:
+    description: GitHub integration tools
+    scope: user
+    tier: core
+
+  claude-md-management@claude-plugins-official:
+    description: Audit, maintain, and improve CLAUDE.md files with session learnings
+    scope: user
+    tier: core
+
+  # ── Situational Plugins (installed, enable per-project) ────────
+  # Add to your project's .claude/settings.local.json:
+  #   { "enabledPlugins": { "<plugin>": true } }
+
+  # LSP Plugins - Enable for matching language projects
+  pyright@claude-code-lsps:
+    description: Python type checking and language server
+    scope: user
+    tier: situational
+
+  gopls@claude-code-lsps:
+    description: Go language server
+    scope: user
+    tier: situational
+
+  rust-analyzer@claude-code-lsps:
+    description: Rust language server
+    scope: user
+    tier: situational
+
+  vtsls@claude-code-lsps:
+    description: TypeScript/JavaScript language server
+    scope: user
+    tier: situational
+
+  # Workflow Plugins - Enable when the project needs them
+  feature-dev@claude-plugins-official:
+    description: Multi-agent feature development with exploration, architecture, and review
+    scope: user
+    tier: situational
+
+  hookify@claude-plugins-official:
+    description: Create hooks to prevent unwanted behaviors by analyzing conversation patterns
+    scope: user
+    tier: situational
+
+  playwright@claude-plugins-official:
+    description: Browser testing and automation with Playwright
+    scope: user
+    tier: situational
 
   frontend-design@claude-plugins-official:
     description: Frontend design skill for UI/UX implementation
     scope: user
+    tier: situational
+
+  agent-sdk-dev@claude-plugins-official:
+    description: Scaffold and verify Claude Agent SDK apps (Python and TypeScript)
+    scope: user
+    tier: situational
 
   plugin-dev@claude-plugins-official:
     description: Tools for developing Claude Code plugins
     scope: user
+    tier: situational
 
-  example-plugin@claude-plugins-official:
-    description: Reference plugin demonstrating all Claude Code extension points
+  pr-review-toolkit@claude-plugins-official:
+    description: PR review agents and workflows
     scope: user
+    tier: situational
 
-  # External Plugins - Third-party integrations
-  github@claude-plugins-official:
-    description: GitHub integration tools
+  commit-commands@claude-plugins-official:
+    description: Git commit helpers and workflows
     scope: user
+    tier: situational
+
+  security-guidance@claude-plugins-official:
+    description: Security best practices hooks
+    scope: user
+    tier: situational
+
+  code-simplifier@claude-plugins-official:
+    description: Code cleanup and simplification agents
+    scope: user
+    tier: situational
