@@ -16,6 +16,10 @@ formulae:
   - htop         # Process viewer
   - ripgrep      # Fast grep (rg)
   - fd           # Fast find
+  - eza          # Modern ls replacement
+  - bat          # Cat clone with syntax highlighting
+  - ast-grep     # AST-based code search
+  - delta        # Syntax-aware diff tool
   - tmux         # Terminal multiplexer
   - tinty        # Base16/Base24 theme manager
 

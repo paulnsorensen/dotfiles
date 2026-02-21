@@ -85,20 +85,48 @@ alias theme-edit='${EDITOR:-vim} ~/Dev/dotfiles/theme/config.yaml'
 alias theme-ls='ls ~/Dev/dotfiles/theme/schemes/'
 
 # =============================================================================
-# File Listing
+# File Listing (using eza for modern ls replacement)
 # =============================================================================
-# Enable colored ls output
+# Enable colored output
 export CLICOLOR=1
 
-# ls aliases with color support
-if [[ "$DOTFILES_OS" == "macos" ]]; then
-  alias ls='ls -G'
-  alias ll='ls -lhG'
-  alias la='ls -lahG'
-  alias l='ls -CFG'
+# eza aliases (modern ls replacement)
+if command -v eza &> /dev/null; then
+  alias ls='eza'
+  alias ll='eza -lh'
+  alias la='eza -lah'
+  alias l='eza -F'
+  alias tree='eza --tree'
 else
-  alias ls='ls --color=auto'
-  alias ll='ls -lh --color=auto'
-  alias la='ls -lah --color=auto'
-  alias l='ls -CF --color=auto'
+  # Fallback to ls if eza not installed
+  if [[ "$DOTFILES_OS" == "macos" ]]; then
+    alias ls='ls -G'
+    alias ll='ls -lhG'
+    alias la='ls -lahG'
+    alias l='ls -CFG'
+  else
+    alias ls='ls --color=auto'
+    alias ll='ls -lh --color=auto'
+    alias la='ls -lah --color=auto'
+    alias l='ls -CF --color=auto'
+  fi
+fi
+
+# =============================================================================
+# Modern CLI Tools
+# =============================================================================
+# bat - cat with syntax highlighting
+if command -v bat &> /dev/null; then
+  alias cat='bat'
+  alias catn='bat --number'  # with line numbers
+fi
+
+# delta - syntax-aware diff
+if command -v delta &> /dev/null; then
+  alias diff='delta'
+fi
+
+# ast-grep - AST-based code search
+if command -v ast-grep &> /dev/null; then
+  alias sg='ast-grep'
 fi
