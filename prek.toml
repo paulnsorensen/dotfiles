@@ -1,0 +1,31 @@
+# Pre-commit hooks managed by prek (Rust-powered pre-commit)
+# https://prek.j178.dev/
+
+# Built-in hooks (Rust-native, fast)
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace", args = ["--markdown-linebreak-ext=md"] },
+  { id = "end-of-file-fixer" },
+  { id = "check-yaml" },
+  { id = "check-toml" },
+  { id = "check-json" },
+  { id = "check-merge-conflict" },
+  { id = "detect-private-key" },
+  { id = "check-added-large-files", args = ["--maxkb=1024"] },
+]
+
+# Shellcheck for shell scripts
+[[repos]]
+repo = "https://github.com/shellcheck-py/shellcheck-py"
+rev = "v0.10.0.1"
+hooks = [
+  { id = "shellcheck", args = ["-e", "SC1091,SC2148"] },
+]
+
+# Local hooks
+[[repos]]
+repo = "local"
+hooks = [
+  { id = "claude-sync", name = "Sync Claude config", entry = "bash -c 'DOTFILES_DEV=false bash claude/.sync'", language = "system", pass_filenames = false, files = "^claude/" },
+]

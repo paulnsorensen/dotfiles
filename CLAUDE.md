@@ -58,7 +58,7 @@ dotfiles/
 │   └── plugins/            # Plugin registry and sync script
 ├── fonts/                  # Font installation (.sync script)
 ├── gitconfig               # Git configuration
-├── githooks/               # Git hooks (pre-commit checks)
+├── prek.toml               # Pre-commit hooks config (prek)
 ├── iterm2/                 # iTerm2 preferences
 ├── nixpkgs/                # Nix Home Manager config
 ├── reference/              # Reference docs (gitignored)
@@ -170,7 +170,7 @@ The `.sync-with-rollback` script provides:
 - Aliases follow oh-my-zsh conventions for familiarity
 - Custom `grb` alias rebases from main (not master)
 - Kdiff3 configured as merge/diff tool
-- Pre-commit hooks check for secrets, validate shell scripts
+- Pre-commit hooks via prek (secrets, shellcheck, large files, claude sync)
 
 ### Claude Code Integration
 - Fromage pipeline (`/fromage` — adapts to task complexity, replaces `/cheese` and `/curdle`)
@@ -190,9 +190,9 @@ The `.sync-with-rollback` script provides:
 - **Context7**: Use when working with third-party library APIs to get version-specific docs.
 - **After compaction**: Run `/go` or manually activate Serena (`activate_project`), read Serena memories, and check onboarding. The post-compact hook does this automatically but `/go` is there as a manual fallback.
 
-## Pre-Commit Requirement
+## Pre-Commit Hooks (prek)
 
-Always run `dots test` before committing to verify sync, shell config, and theme generation are working.
+Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run automatically on commit and include: trailing whitespace, secret detection, shellcheck, large file checks, and claude config sync. Run `prek install` after cloning to set up hooks. Always run `dots test` before committing to verify sync, shell config, and theme generation are working.
 
 ## Development Notes
 
