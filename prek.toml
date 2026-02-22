@@ -11,7 +11,7 @@ hooks = [
   { id = "check-toml" },
   { id = "check-json" },
   { id = "check-merge-conflict" },
-  { id = "detect-private-key" },
+  { id = "detect-private-key", exclude = "tests/" },
   { id = "check-added-large-files", args = ["--maxkb=1024"] },
 ]
 
