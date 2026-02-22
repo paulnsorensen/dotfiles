@@ -1,13 +1,21 @@
 ---
 name: gh
 model: haiku
-allowed-tools: Bash(gh:*), Bash(git:*)
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(gh-pr-review:*), Bash(gh-pr-prep:*), Bash(gh-issue-context:*)
 description: >
   Complete GitHub tasks using only the gh CLI. Use for any GitHub operation —
   PRs, issues, CI checks, repo management, releases, Actions, code search.
   Use git commands (log, diff, status) for context when informing GitHub
   operations (e.g. reading commits before drafting a PR body). Never use the
   GitHub REST API directly or browser URLs. Only gh commands.
+examples:
+  - "review PR 14"
+  - "create a PR for my branch"
+  - "what's the CI status on this PR?"
+  - "list open issues labeled bug"
+  - "merge PR 23 with squash"
+  - "gather context for PR 14"
+  - "show me issue 42 with comments"
 ---
 
 # gh
@@ -16,6 +24,38 @@ GitHub operations via `gh` CLI. Use `git` read-only commands for context.
 
 **Rule**: Only `gh` for GitHub tasks. `gh api` when no dedicated subcommand exists.
 **Rule**: `git` is read-only here — log, diff, status. No commits, no push.
+
+---
+
+## Batched operations
+
+Batch multiple gh/git calls into a single Bash invocation to minimize round-trips.
+Shell helpers are available in `zsh/claude.zsh` for the most common bundles.
+
+```bash
+# PR review — metadata + diff + checks in one shot
+gh-pr-review 14
+
+# PR prep — commits, diff stat, upstream status before creating a PR
+gh-pr-prep
+
+# Issue context — issue body + full comment thread
+gh-issue-context 42
+```
+
+When helpers don't cover your case, batch manually:
+
+```bash
+# Custom batch — collect related data in one script
+{
+  echo "=== PR METADATA ==="
+  gh pr view 14 --json number,title,state,author,additions,deletions
+  echo "=== DIFF ==="
+  gh pr diff 14
+  echo "=== CHECKS ==="
+  gh pr checks 14
+}
+```
 
 ---
 
