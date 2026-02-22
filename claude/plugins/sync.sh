@@ -37,7 +37,7 @@ for arg in "$@"; do
 done
 
 # Check dependencies
-for cmd in claude yq; do
+for cmd in claude yq jq; do
     if ! command -v $cmd &> /dev/null; then
         echo -e "${RED}Error: $cmd not found. Install with: brew install $cmd${NC}"
         exit 1
@@ -55,14 +55,12 @@ echo
 # Get desired plugins from registry (keys are in format plugin@marketplace)
 DESIRED_NAMES=$(yq '.plugins | keys | .[]' "$REGISTRY_FILE" | sort)
 
-# Get current plugins from claude
-# Output format: "  ❯ plugin@marketplace" followed by metadata lines
-CURRENT_OUTPUT=$(claude plugin list 2>/dev/null || true)
-if echo "$CURRENT_OUTPUT" | grep -q "No plugins installed"; then
-    CURRENT_NAMES=""
+# Get current plugins from settings.json (reliable JSON source of truth)
+SETTINGS_FILE="$SCRIPT_DIR/../settings.json"
+if [[ -f "$SETTINGS_FILE" ]] && jq -e '.enabledPlugins' "$SETTINGS_FILE" &>/dev/null; then
+    CURRENT_NAMES=$(jq -r '.enabledPlugins | keys[]' "$SETTINGS_FILE" | sort)
 else
-    # Parse lines containing @ and extract plugin name (handle ❯ bullet character)
-    CURRENT_NAMES=$(echo "$CURRENT_OUTPUT" | grep '@' | sed 's/^[[:space:]]*❯[[:space:]]*//' | cut -d' ' -f1 | sort)
+    CURRENT_NAMES=""
 fi
 
 # Find differences
@@ -197,6 +195,25 @@ if [[ -n "$TO_REMOVE" ]]; then
             fi
         fi
     done
+    echo
+fi
+
+# Sync enabledPlugins in settings.json from registry load: key
+if [[ -f "$SETTINGS_FILE" ]]; then
+    echo -e "${BLUE}Syncing enabledPlugins in settings.json...${NC}"
+
+    # Build enabledPlugins object from registry
+    ENABLED_JSON=$(yq -o=json '.plugins | to_entries | map({(.key): (.value.load // true)}) | add' "$REGISTRY_FILE")
+
+    if $DRY_RUN; then
+        echo -e "  ${BLUE}[dry-run]${NC} Would set enabledPlugins to:"
+        echo "$ENABLED_JSON" | jq .
+    else
+        # Merge enabledPlugins into settings.json
+        jq --argjson plugins "$ENABLED_JSON" '.enabledPlugins = $plugins' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
+            && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+        echo -e "  ${GREEN}Updated enabledPlugins${NC}"
+    fi
     echo
 fi
 
