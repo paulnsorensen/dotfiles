@@ -177,6 +177,10 @@ The `.sync-with-rollback` script provides:
 - Sub-agents only for mechanical work (roquefort-wrecker for tests, ricotta-reducer for simplification)
 - Pre-tool hooks (block-install.js, phantom-file-check.js)
 - Compaction hooks (pre-compact.sh saves context, post-compact.sh re-primes Serena)
+- Fresh session hook (post-fresh-start.sh injects /go reminder on non-compact starts)
+- Session-end hook (on-session-end.sh detects parting language → injects /park reminder)
+- Conductor agent (`claude/agents/conductor.md`) — routes tasks to the right skill/workflow
+- `/agents` command — control panel listing all agents and skills
 - `/go` command to re-prime MCPs after compaction or at session start
 - Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`

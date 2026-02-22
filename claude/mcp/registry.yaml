@@ -7,15 +7,8 @@
 #   local   - Machine-specific, gitignored
 
 mcps:
-  octocode:
-    command: npx
-    args: [octocode-mcp@latest]
-    scope: user
-    description: GitHub code search and repository tools
-
   serena:
     command: serena-mcp-server
-    args: ["--open-web-dashboard", "False"]
     scope: user
     description: Semantic code analysis with LSP integration
 

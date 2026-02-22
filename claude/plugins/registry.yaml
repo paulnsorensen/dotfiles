@@ -101,7 +101,3 @@ plugins:
     description: Reference plugin demonstrating all Claude Code extension points
     scope: user
 
-  # External Plugins - Third-party integrations
-  context7-plugin@context7-marketplace:
-    description: Up-to-date library docs and code examples via Context7
-    scope: user
