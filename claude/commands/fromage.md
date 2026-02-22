@@ -46,7 +46,7 @@ Complexity: Medium
 | 2. Pasteurize | skip | skip | run | run |
 | 3. Culture | skip | skip | run | run |
 | 4. Curdle | skip | skip | run | run |
-| 5. Cut | skip | optional | run | defer→Press |
+| 5. Cut | skip | optional | run | run |
 | 6. Cook | run | run | run | run |
 | 7. Press | skip | optional | run | run |
 | 8. Age | skip | skip | run | run |
@@ -81,10 +81,7 @@ Interactive requirements gathering. This is a conversation, not an interrogation
 
 1. Parse the request and identify what's clear vs ambiguous
 2. For ambiguous areas, ask clarifying questions (weave naturally, don't dump a list)
-3. When external research is needed, delegate to `/research` skill via Task tool:
-   ```
-   Task(subagent_type="general-purpose", prompt="Use the research skill: <specific question>")
-   ```
+3. When external research is needed, invoke `/research` for parallel multi-source research via agent team
 4. Once requirements are clear, write spec to `.claude/specs/<slug>.md` using the spec format from `/spec`
 
 **Skip condition**: Task is self-evident (trivial/small) OR user provides a complete spec up front.
@@ -118,7 +115,7 @@ Launch the `fromage-curdle` agent with all exploration context:
 Task(subagent_type="fromage-curdle", model="opus", prompt="Create execution plan. Exploration results: <results>. Spec: <spec>. Key files: <files read>")
 ```
 
-The agent produces a numbered implementation checklist.
+The agent runs in `permissionMode: plan` (read-only) and produces a numbered implementation checklist.
 
 **Present the plan to the user for approval.** Use AskUserQuestion:
 - Option 1: "Approve plan"
@@ -134,13 +131,13 @@ Do NOT proceed to Cook without explicit approval.
 ## Phase 5 — Cut (Sonnet, inline)
 
 Write high-level tests based on the approved plan and spec:
+- **Large tasks**: Unit tests for new modules, integration test skeleton for the feature
 - **Medium tasks**: Unit tests for new functions, integration test for the feature
 - **Small tasks**: Single test file covering the change
-- **Large tasks**: Defer to Press phase (tests after implementation is more practical)
 
 Use the project's existing test framework and conventions. If no test framework exists, skip entirely.
 
-**Skip condition**: No test framework, trivial change, large task (defer to Press), or user opts out.
+**Skip condition**: No test framework, trivial change, or user opts out.
 
 ---
 
