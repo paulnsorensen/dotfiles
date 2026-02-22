@@ -53,7 +53,7 @@ dotfiles/
 │   │   ├── registry.yaml   # MCP source of truth
 │   │   └── sync.sh         # Declarative MCP sync script
 │   ├── agents/             # Cheese-themed specialist agents
-│   ├── commands/           # Slash commands (/cheese, /curdle, etc.)
+│   ├── commands/           # Slash commands (/fromage, /spec, etc.)
 │   ├── hooks/              # Pre-tool hooks
 │   └── plugins/            # Plugin registry and sync script
 ├── fonts/                  # Font installation (.sync script)
@@ -173,7 +173,7 @@ The `.sync-with-rollback` script provides:
 - Pre-commit hooks check for secrets, validate shell scripts
 
 ### Claude Code Integration
-- Cheddar Flow workflows (`/cheese` for quick 4-step, `/curdle` for full 6-step)
+- Fromage pipeline (`/fromage` — adapts to task complexity, replaces `/cheese` and `/curdle`)
 - Sub-agents only for mechanical work (roquefort-wrecker for tests, ricotta-reducer for simplification)
 - Pre-tool hooks (block-install.js, phantom-file-check.js)
 - Compaction hooks (pre-compact.sh saves context, post-compact.sh re-primes Serena)

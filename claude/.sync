@@ -35,4 +35,12 @@ for item in "${configs[@]}"; do
   fi
 done
 
+# Sync MCPs and plugins if in dev mode (requires claude CLI)
+if [[ "${DOTFILES_DEV:-}" == "true" ]]; then
+  echo "  Running MCP sync..."
+  bash "$SOURCE_DIR/mcp/sync.sh"
+  echo "  Running plugin sync..."
+  bash "$SOURCE_DIR/plugins/sync.sh"
+fi
+
 echo "Claude config synced"

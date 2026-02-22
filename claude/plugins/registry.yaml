@@ -15,91 +15,78 @@ plugins:
   pyright@claude-code-lsps:
     description: Python type checking and language server
     scope: user
+    load: false
 
   gopls@claude-code-lsps:
     description: Go language server
     scope: user
+    load: false
 
   rust-analyzer@claude-code-lsps:
     description: Rust language server
     scope: user
+    load: false
 
   vtsls@claude-code-lsps:
     description: TypeScript/JavaScript language server
     scope: user
+    load: false
 
   solargraph@claude-code-lsps:
     description: Ruby language server
     scope: user
+    load: false
 
   bash-language-server@claude-code-lsps:
     description: Bash/shell script language server
     scope: user
+    load: false
 
   yaml-language-server@claude-code-lsps:
     description: YAML language server
     scope: user
+    load: false
 
   # Workflow Plugins - Development automation
-  pr-review-toolkit@claude-plugins-official:
-    description: PR review agents and workflows
-    scope: user
-
-  commit-commands@claude-plugins-official:
-    description: Git commit helpers and workflows
-    scope: user
-
   security-guidance@claude-plugins-official:
     description: Security best practices hooks
     scope: user
+    load: false
 
   code-simplifier@claude-plugins-official:
     description: Code cleanup and simplification agents
     scope: user
+    load: false
 
   hookify@claude-plugins-official:
     description: Create hooks to prevent unwanted behaviors by analyzing conversation patterns
     scope: user
+    load: false
 
   claude-md-management@claude-plugins-official:
     description: Audit, maintain, and improve CLAUDE.md files with session learnings
     scope: user
+    load: false
 
   playwright@claude-plugins-official:
     description: Browser testing and automation with Playwright
     scope: user
+    load: false
 
   ralph-loop@claude-plugins-official:
     description: Iterative self-referential loops for convergent task completion
     scope: user
-
-  agent-sdk-dev@claude-plugins-official:
-    description: Scaffold and verify Claude Agent SDK apps (Python and TypeScript)
-    scope: user
-
-  feature-dev@claude-plugins-official:
-    description: Multi-agent feature development with exploration, architecture, and review
-    scope: user
-
-  code-review@claude-plugins-official:
-    description: Automated PR code review with parallel specialized agents
-    scope: user
+    load: false
 
   frontend-design@claude-plugins-official:
     description: Frontend design skill for UI/UX implementation
     scope: user
-
-  plugin-dev@claude-plugins-official:
-    description: Tools for developing Claude Code plugins
-    scope: user
+    load: false
 
   skill-creator@claude-plugins-official:
     description: Guided skill creation workflow with component design, implementation, and validation
     scope: user
-
-  example-plugin@claude-plugins-official:
-    description: Reference plugin demonstrating all Claude Code extension points
-    scope: user
+    load: false
 
   # External Plugins - Third-party integrations
   context7-plugin@context7-marketplace:
