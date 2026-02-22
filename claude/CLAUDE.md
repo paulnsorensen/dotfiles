@@ -86,8 +86,8 @@ src/
 ## Workflow
 
 I use the Cheddar Flow for development:
-- `/cheese` - Quick 4-step: Explore → Plan → Code → Review
-- `/curdle` - Full 6-step: Explore → Plan → Code → Test → Review → Commit
+- `/fromage` - Intelligent cheese-making pipeline that adapts to task complexity (replaces /cheese and /curdle)
+- `/research` - Multi-source research: library docs, codebase analysis, prior art
 - `/worktree <slug>` - Create isolated git worktree for a task
 - `/spec` - Discovery dialogue to design a feature and produce a spec artifact
 - `/duck` - Think through a problem together before coding

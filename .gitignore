@@ -30,6 +30,7 @@ vim/undo/
 
 # Git worktrees (Claude Code task isolation)
 .worktrees/
+.conductor/
 
 # Backup files
 *.bak

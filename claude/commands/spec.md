@@ -129,7 +129,7 @@ Description and why not chosen.
 
 ## When NOT to Use /spec
 
-- Simple changes → `/cheese` directly
+- Simple changes → `/fromage` directly
 - Bug fixes → just fix it
 - User already has clear spec → skip to implementation
 - Pure research → `/onboard` or `/code-review`

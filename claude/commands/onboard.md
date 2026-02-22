@@ -84,5 +84,5 @@ Keep it to one screen. This is a map, not a thesis.
 
 - Not a code review (use `/review` or `/code-review`)
 - Not a deep architectural audit (use `/code-review`)
-- Not a planning session (use `/cheese` or `/curdle`)
+- Not a planning session (use `/fromage`)
 - Not persistent — does not save to `.claude/review/` (use `/code-review` for that)
