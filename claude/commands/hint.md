@@ -2,6 +2,7 @@
 allowed-tools: Read
 description: Get a hint when stuck (preserves learning)
 argument-hint: [what you're stuck on]
+disable-model-invocation: true
 ---
 
 You're stuck on: $ARGUMENTS

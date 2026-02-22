@@ -3,6 +3,7 @@ name: scaffold
 description: Scaffold a new domain slice following the Sliced Bread architecture pattern.
 allowed-tools: Read, Write, Bash, Glob, Grep
 argument-hint: "<slice-name> [language: ts|py|go|rs]"
+disable-model-invocation: true
 ---
 
 Scaffold a new domain slice: $ARGUMENTS

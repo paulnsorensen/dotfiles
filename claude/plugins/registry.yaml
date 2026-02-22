@@ -28,6 +28,10 @@ plugins:
     description: TypeScript/JavaScript language server
     scope: user
 
+  solargraph@claude-code-lsps:
+    description: Ruby language server
+    scope: user
+
   bash-language-server@claude-code-lsps:
     description: Bash/shell script language server
     scope: user
@@ -89,15 +93,11 @@ plugins:
     description: Tools for developing Claude Code plugins
     scope: user
 
+  skill-creator@claude-plugins-official:
+    description: Guided skill creation workflow with component design, implementation, and validation
+    scope: user
+
   example-plugin@claude-plugins-official:
     description: Reference plugin demonstrating all Claude Code extension points
     scope: user
 
-  # External Plugins - Third-party integrations
-  context7-plugin@context7-marketplace:
-    description: Up-to-date library docs and code examples via Context7
-    scope: user
-
-  github@claude-plugins-official:
-    description: GitHub integration tools
-    scope: user

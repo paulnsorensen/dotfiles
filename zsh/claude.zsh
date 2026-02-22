@@ -98,6 +98,14 @@ ccw() {
         echo "Seeded Serena memories from main repo"
     fi
 
+    # Seed sandbox settings for the worktree session
+    local claude_local="${repo_root}/${wt_dir}/.claude/settings.local.json"
+    if [[ ! -f "${claude_local}" ]]; then
+        mkdir -p "${repo_root}/${wt_dir}/.claude"
+        printf '{\n  "sandbox": {\n    "enabled": true,\n    "autoAllowBashIfSandboxed": true\n  }\n}\n' > "${claude_local}"
+        echo "Enabled sandboxing for worktree"
+    fi
+
     cd "${repo_root}/${wt_dir}" && claude "$@"
 }
 
@@ -155,6 +163,46 @@ ccw-clean() {
 
 # List active worktrees
 alias ccw-ls='git worktree list'
+
+# ═══════════════════════════════════════════════════════════════════
+# GitHub Helpers (batched gh operations)
+# ═══════════════════════════════════════════════════════════════════
+
+# PR review bundle: metadata + diff + checks in one shot
+#   gh-pr-review 14       → everything needed to review PR #14
+gh-pr-review() {
+    local pr="${1:?Usage: gh-pr-review <number>}"
+    echo "=== PR METADATA ==="
+    gh pr view "$pr" --json number,title,state,author,additions,deletions,labels,reviewDecision
+    echo "=== DIFF ==="
+    gh pr diff "$pr"
+    echo "=== CHECKS ==="
+    gh pr checks "$pr"
+}
+
+# PR prep bundle: context for creating a PR
+#   gh-pr-prep             → commits, diff stat, upstream status
+gh-pr-prep() {
+    echo "=== COMMITS ==="
+    git log --oneline origin/main..HEAD
+    echo "=== DIFF STAT ==="
+    git diff origin/main...HEAD --stat
+    echo "=== STATUS ==="
+    git status --short
+    echo "=== UPSTREAM ==="
+    git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null \
+        || echo "No upstream set"
+}
+
+# Issue context bundle: issue metadata + comments
+#   gh-issue-context 42    → issue body, labels, and full comment thread
+gh-issue-context() {
+    local issue="${1:?Usage: gh-issue-context <number>}"
+    echo "=== ISSUE ==="
+    gh issue view "$issue" --json number,title,state,author,labels,assignees,body
+    echo "=== COMMENTS ==="
+    gh issue view "$issue" --comments
+}
 
 # ═══════════════════════════════════════════════════════════════════
 # Config Shortcuts

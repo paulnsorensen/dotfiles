@@ -1,6 +1,6 @@
 ---
 name: go
-description: Re-prime MCP tools (Serena, Context7) after compaction or at conversation start.
+description: Re-prime Serena MCP after compaction or at conversation start.
 ---
 
 Re-prime the development environment. Run this after context compaction or at the start of a long session.
