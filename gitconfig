@@ -70,3 +70,23 @@
 	remote = 79
 [init]
 	defaultBranch = main
+
+[pager]
+	diff = delta
+	log = delta
+	blame = delta
+	show = delta
+
+[interactive]
+	diffFilter = delta --color-only --features=interactive
+
+[delta]
+	navigate = true
+	line-numbers = true
+	light = false
+	features = decorations
+
+[delta "decorations"]
+	commit-decoration-style = bold yellow box ul
+	file-style = bold yellow ul
+	file-decoration-style = none

@@ -1,4 +1,11 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(git fetch:*)",
+      "Bash(git rebase:*)"
+    ]
+  },
+  "model": "sonnet",
   "hooks": {
     "PreCompact": [
       {
@@ -38,6 +45,8 @@
     "playwright@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,
-    "yaml-language-server@claude-code-lsps": true
+    "yaml-language-server@claude-code-lsps": true,
+    "context7@claude-plugins-official": true,
+    "context7-plugin@context7-marketplace": true
   }
 }
