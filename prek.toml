@@ -27,5 +27,5 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "claude-sync", name = "Sync Claude config", entry = "bash -c 'DOTFILES_DEV=false bash claude/.sync'", language = "system", pass_filenames = false, files = "^claude/" },
+  { id = "check-claude-sync", name = "Check Claude config synced", entry = "bash -c 'target=$(readlink ~/.claude/settings.json 2>/dev/null) && [[ \"$target\" == *Dev/dotfiles/claude/settings.json ]] || { echo \"Claude config not synced. Run: dots sync\"; exit 1; }'", language = "system", always_run = true, pass_filenames = false },
 ]

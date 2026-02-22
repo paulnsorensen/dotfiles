@@ -192,7 +192,9 @@ The `.sync-with-rollback` script provides:
 
 ## Pre-Commit Hooks (prek)
 
-Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run automatically on commit and include: trailing whitespace, secret detection, shellcheck, large file checks, and claude config sync. Run `prek install` after cloning to set up hooks. Always run `dots test` before committing to verify sync, shell config, and theme generation are working.
+Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run automatically on commit and include: trailing whitespace, secret detection, shellcheck, large file checks, and a claude config sync check. Run `prek install` after cloning to set up hooks.
+
+**Always run `dots sync` before committing.** The pre-commit hook verifies that Claude config is synced to `~/.claude/` — if not, the commit will be blocked with a reminder to run `dots sync`. This ensures `~/.claude/settings.json`, agents, commands, hooks, and skills stay in sync with the repo.
 
 ## Development Notes
 
