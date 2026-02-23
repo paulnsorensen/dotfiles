@@ -47,7 +47,6 @@ plugins:
     scope: user
     load: false
 
-  # Workflow Plugins - Development automation
   code-simplifier@claude-plugins-official:
     description: Code cleanup and simplification agents
     scope: user
@@ -82,8 +81,3 @@ plugins:
     description: Guided skill creation workflow with component design, implementation, and validation
     scope: user
     load: false
-
-  # External Plugins - Third-party integrations
-  context7-plugin@context7-marketplace:
-    description: Up-to-date library docs and code examples via Context7
-    scope: user

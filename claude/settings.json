@@ -8,6 +8,8 @@
       "Bash(git fetch:*)",
       "Bash(git rebase:*)",
       "mcp__plugin_playwright_playwright__*",
+      "mcp__context7__*",
+      "mcp__octocode__*",
       "WebSearch",
       "WebFetch"
     ]
@@ -58,24 +60,19 @@
     ]
   },
   "enabledPlugins": {
-    "rust-analyzer-lsp@claude-plugins-official": true,
-    "agent-sdk-dev@claude-plugins-official": false,
-    "bash-language-server@claude-code-lsps": true,
-    "claude-md-management@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true,
-    "feature-dev@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true,
-    "hookify@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true,
-    "plugin-dev@claude-plugins-official": true,
-    "ralph-loop@claude-plugins-official": true,
-    "yaml-language-server@claude-code-lsps": true,
-    "solargraph@claude-code-lsps": true,
     "pyright@claude-code-lsps": true,
     "gopls@claude-code-lsps": true,
-    "skill-creator@claude-plugins-official": true,
-    "code-simplifier@claude-plugins-official": true,
     "rust-analyzer@claude-code-lsps": true,
-    "vtsls@claude-code-lsps": true
+    "vtsls@claude-code-lsps": true,
+    "solargraph@claude-code-lsps": true,
+    "bash-language-server@claude-code-lsps": true,
+    "yaml-language-server@claude-code-lsps": true,
+    "code-simplifier@claude-plugins-official": true,
+    "hookify@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true
   }
 }
