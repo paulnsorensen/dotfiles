@@ -25,13 +25,23 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `cc` - Alias for `claude`
 - `ccc` - Continue last conversation (`claude --continue`)
 - `ccr` - Resume conversation (`claude --resume`)
+- `ccp` - Print mode (`claude --print`)
 - `ccw <slug>` - Create isolated git worktree and launch Claude inside it (sandboxed)
+- `ccw-ls` - List git worktrees
 - `ccw-sweep` - Scan ~/Dev for stale worktrees with safety checks (dry-run, auto-clean modes)
 - `ccw-clean` - Clean stale worktrees in current repo only (delegates to ccw-sweep)
+- `ccfresh` - Continue last conversation with MCPs primed
+- `claude-settings` - Edit ~/.claude/settings.json
 - `mcp-sync` - Sync MCPs from registry.yaml to Claude Code
 - `mcp-sync-dry` - Preview MCP sync changes without applying
 - `mcp-edit` - Edit MCP registry.yaml
 - `mcp-ls` - List currently configured MCPs
+- `mcp-add <name> <cmd> [args...]` - Add a user-scoped MCP
+
+### GitHub Helpers
+- `gh-pr-review <PR#>` - Bundle PR metadata, diff, and checks for review
+- `gh-pr-prep` - Bundle PR prep context (commits, diff stats, upstream status)
+- `gh-issue-context <issue#>` - Bundle issue metadata and comments
 
 ### Plugin Management
 - `plugin-sync` - Sync plugins from registry.yaml to Claude Code
@@ -57,6 +67,7 @@ dotfiles/
 │   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/fromage, /spec, etc.)
 │   ├── hooks/              # Pre-tool hooks
+│   ├── skills/             # Reusable skill definitions
 │   └── plugins/            # Plugin registry and sync script
 ├── fonts/                  # Font installation (.sync script)
 ├── gitconfig               # Git configuration
@@ -126,8 +137,8 @@ Plugins are managed declaratively via `claude/plugins/registry.yaml`:
 
 ```yaml
 plugins:
-  security-guidance@claude-plugins-official:
-    description: Security best practices hooks
+  hookify@claude-plugins-official:
+    description: Create hooks to prevent unwanted behaviors by analyzing conversation patterns
     scope: user
 ```
 
@@ -178,12 +189,12 @@ The `.sync-with-rollback` script provides:
 ### Claude Code Integration
 - Fromage pipeline (`/fromage` — adapts to task complexity, replaces `/cheese` and `/curdle`)
 - Review/analysis agents use universal 0-100 confidence scoring (>= 75 to surface)
-- Specialist agents: fromage-age (code review), fromage-press (adversarial testing), fromage-pasteurize (security+deps audit), cheese-factory (codebase orientation), roquefort-wrecker (standalone tests), ricotta-reducer (simplification)
+- Specialist agents: fromage-age (code review), fromage-press (adversarial testing), fromage-pasteurize (security+deps audit), cheese-factory (codebase orientation), roquefort-wrecker (standalone tests), ricotta-reducer (simplification), whey-drainer (test runner), research (multi-source research), worktree-triage (stale worktree analysis)
 - `/wreck` — adversarial test writer (roquefort-wrecker), writes and runs tests outside /fromage
 - `/age` — Staff Engineer code review of recent changes (fromage-age, focused mode)
 - `/audit` — security and dependency health audit (fromage-pasteurize)
 - `/test` — run existing tests via whey-drainer, returns concise summary
-- Pre-tool hooks (block-install.js, phantom-file-check.js)
+- Pre-tool hooks (block-install.js, phantom-file-check.js, block-file-write.js)
 - Compaction hooks (pre-compact.sh saves context, post-compact.sh re-primes Serena)
 - Fresh session hook (post-fresh-start.sh injects /go reminder on non-compact starts)
 - Session-end hook (on-session-end.sh detects parting language → injects /park reminder)

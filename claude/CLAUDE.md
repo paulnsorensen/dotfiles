@@ -93,11 +93,12 @@ I use the Cheddar Flow for development. **Discover all available agents and skil
 - `/duck` - Think through a problem together before coding
 - `/research` - Multi-source research: library docs, codebase analysis, prior art
 - `/worktree <slug>` - Create isolated git worktree for a task
+- `/worktree-sweep` - Scan ~/Dev for stale worktrees and safely clean them up
+- `/scaffold` - Scaffold a new domain slice (Sliced Bread pattern)
 
 **Code Review & Analysis:**
 - `/age` - Staff Engineer code review of recent changes (fromage-age, 0-100 scoring)
 - `/code-review` - Comprehensive repo/library review with persistent history (fromage-age, comprehensive mode)
-- `/copilot-review` - Review a PR and route fixes to GitHub Copilot via inline comments (fromage-age, focused mode)
 - `/audit` - Security and dependency health audit (fromage-pasteurize agent)
 - `/simplifier` - Ruthless code distiller; removes genAI bloat and enforces YAGNI
 
@@ -105,9 +106,17 @@ I use the Cheddar Flow for development. **Discover all available agents and skil
 - `/wreck` - Adversarial test writer (roquefort-wrecker) — writes and runs tests outside /fromage
 - `/test` - Run existing tests via whey-drainer, returns concise summary
 - `/diff` - Pre-commit smoke test of staged changes
+- `/pingpong` - Ping-pong TDD: AI writes tests, you implement
+
+**GitHub Integration:**
+- `/copilot-review` - Review a PR and route fixes to GitHub Copilot via inline comments
+- `/copilot-delegate` - Delegate task to Copilot agent, then review the resulting PR
+- `/copilot-setup` - Generate Copilot instructions for a repo
 
 **Learning & Navigation:**
+- `/agents` - Control panel: list all agents and skills
 - `/explain` - Explain code or concept (quiz included)
+- `/hint` - Get escalating hints when stuck (preserves learning)
 - `/onboard` - Quick codebase orientation for an unfamiliar repo
 - `/go` - Re-prime MCPs (Serena, Context7) after compaction or session start
 - `/park` - Save session context to Serena memories before exiting
@@ -129,6 +138,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | GitHub ops | gh | `gh` CLI | raw GitHub API |
 | Code navigation | serena | symbol lookup, cross-refs | grep for definitions |
 | External docs | fetch | Context7, WebSearch, octocode | guessing from training data |
+| Worktree isolation | worktree | git worktree, Serena seeding | manual branch + cd |
 
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 
