@@ -1,4 +1,5 @@
 ---
+name: duck
 allowed-tools: Read, Grep, Glob
 description: Think through a problem together before coding
 argument-hint: [problem or feature to think through]

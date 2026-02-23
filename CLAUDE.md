@@ -174,12 +174,16 @@ The `.sync-with-rollback` script provides:
 
 ### Claude Code Integration
 - Fromage pipeline (`/fromage` — adapts to task complexity, replaces `/cheese` and `/curdle`)
-- Sub-agents only for mechanical work (roquefort-wrecker for tests, ricotta-reducer for simplification)
+- Review/analysis agents use universal 0-100 confidence scoring (>= 75 to surface)
+- Specialist agents: fromage-age (code review), fromage-press (adversarial testing), fromage-pasteurize (security+deps audit), cheese-factory (codebase orientation), roquefort-wrecker (standalone tests), ricotta-reducer (simplification)
+- `/wreck` — adversarial test writer (roquefort-wrecker), writes and runs tests outside /fromage
+- `/age` — Staff Engineer code review of recent changes (fromage-age, focused mode)
+- `/audit` — security and dependency health audit (fromage-pasteurize)
+- `/test` — run existing tests via whey-drainer, returns concise summary
 - Pre-tool hooks (block-install.js, phantom-file-check.js)
 - Compaction hooks (pre-compact.sh saves context, post-compact.sh re-primes Serena)
 - Fresh session hook (post-fresh-start.sh injects /go reminder on non-compact starts)
 - Session-end hook (on-session-end.sh detects parting language → injects /park reminder)
-- Conductor agent (`claude/agents/conductor.md`) — routes tasks to the right skill/workflow
 - `/agents` command — control panel listing all agents and skills
 - `/go` command to re-prime MCPs after compaction or at session start
 - Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed

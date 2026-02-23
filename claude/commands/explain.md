@@ -1,4 +1,5 @@
 ---
+name: explain
 allowed-tools: Read, Grep
 description: Explain code or concept (quiz included)
 argument-hint: [code, concept, or pattern to explain]
