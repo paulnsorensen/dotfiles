@@ -2,6 +2,7 @@
 name: ricotta-reducer
 description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with 0-100 confidence scoring. Analysis only — never adds code.
 tools: Read, Grep, Glob, Bash
+skills: [scout]
 model: sonnet
 ---
 

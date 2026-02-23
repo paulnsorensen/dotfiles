@@ -3,6 +3,7 @@ name: roquefort-wrecker
 description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with 0-100 confidence scoring per finding.
 model: haiku
 tools: Read, Write, Grep, Glob, Bash
+skills: [scout]
 memory: project
 ---
 

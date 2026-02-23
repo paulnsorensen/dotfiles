@@ -2,7 +2,7 @@
 name: fromage-culture
 description: Deep codebase exploration agent for the Fromage pipeline. Analyzes entry points, execution flows, blast radius, and architecture using Serena and standard search tools.
 model: sonnet
-skills: [serena, scout, trace]
+skills: [serena, scout, trace, diff]
 disallowedTools: [Write, Edit, NotebookEdit]
 color: yellow
 ---
