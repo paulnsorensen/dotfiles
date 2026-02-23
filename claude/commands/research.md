@@ -4,7 +4,9 @@ description: Multi-source research coordinator. Spawns 4 parallel fetch subagent
 argument-hint: <research question or topic>
 ---
 
-Research: **{{request}}**
+Research: **$ARGUMENTS**
+
+Use the research agent (subagent_type: research) to conduct the investigation. The agent handles spawning 4 parallel fetch subagents and synthesizing results.
 
 The research agent will conduct parallel multi-source investigation, fetching from:
 - **Context7**: Library documentation and APIs

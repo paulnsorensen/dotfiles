@@ -1,6 +1,7 @@
 ---
 name: fetch
 model: sonnet
+fork: true
 allowed-tools: WebSearch, WebFetch, gh, Task(subagent_type="general-purpose"), mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7-plugin_context7__resolve-library-id, mcp__plugin_context7-plugin_context7__query-docs, mcp__octocode__*
 description: >
   Fetch external documentation or code while protecting the main context window.

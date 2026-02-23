@@ -2,7 +2,8 @@
 # Test helper functions for bats tests
 
 # Get the actual dotfiles directory (where the tests are)
-export REAL_DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REAL_DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export REAL_DOTFILES_DIR
 export PATH="$REAL_DOTFILES_DIR/bin:$PATH"
 
 # Test environment setup
@@ -24,7 +25,7 @@ setup_test_env() {
     # Create test home directory
     mkdir -p "$TEST_HOME"
     mkdir -p "$DOTFILES_STATE_DIR"
-    
+
     # Backup original HOME
     export ORIGINAL_HOME="$HOME"
     export HOME="$TEST_HOME"
@@ -34,7 +35,7 @@ setup_test_env() {
 teardown_test_env() {
     # Restore original HOME
     export HOME="$ORIGINAL_HOME"
-    
+
     # Clean up test directory
     if [[ -d "$TEST_HOME" ]]; then
         rm -rf "$TEST_HOME"
@@ -45,14 +46,15 @@ teardown_test_env() {
 create_mock_repo() {
     local dir="${1:-$TEST_HOME/mock-dotfiles}"
     mkdir -p "$dir"
-    cd "$dir"
-    git init --quiet
-    git config user.email "test@example.com"
-    git config user.name "Test User"
-    echo "test" > test.txt
-    git add test.txt
-    git commit -m "Initial commit" --quiet
-    cd - > /dev/null
+    (
+        cd "$dir" || return
+        git init --quiet
+        git config user.email "test@example.com"
+        git config user.name "Test User"
+        echo "test" > test.txt
+        git add test.txt
+        git commit -m "Initial commit" --quiet
+    )
 }
 
 # Assert file exists
@@ -77,13 +79,14 @@ assert_dir_exists() {
 assert_symlink() {
     local link="$1"
     local target="$2"
-    
+
     if [[ ! -L "$link" ]]; then
         echo "Not a symlink: $link" >&2
         return 1
     fi
-    
-    local actual_target=$(readlink "$link")
+
+    local actual_target
+    actual_target=$(readlink "$link")
     if [[ "$actual_target" != "$target" ]]; then
         echo "Symlink $link points to $actual_target, not $target" >&2
         return 1
@@ -92,8 +95,9 @@ assert_symlink() {
 
 # Assert command succeeds (works with bats 'run' which sets $status)
 assert_success() {
-    if [[ ${status:-$?} -ne 0 ]]; then
-        echo "Command failed with exit code ${status:-$?}" >&2
+    local exit_code="${status:-$?}"
+    if [[ "$exit_code" -ne 0 ]]; then
+        echo "Command failed with exit code $exit_code" >&2
         return 1
     fi
 }
@@ -108,19 +112,20 @@ assert_failure() {
 
 # Strip ANSI color codes from text
 strip_colors() {
-    echo "$1" | sed 's/\x1b\[[0-9;]*m//g'
+    local text="$1"
+    printf '%s' "${text//$'\x1b'\[*([0-9;])m/}"
 }
 
 # Assert output contains string
 assert_output_contains() {
     local expected="$1"
     local actual="${2:-$output}"
-    
+
     # Strip colors from actual output if not already done
     if [[ "$actual" == *$'\x1b'* ]]; then
         actual=$(strip_colors "$actual")
     fi
-    
+
     if [[ "$actual" != *"$expected"* ]]; then
         echo "Output does not contain: $expected" >&2
         echo "Actual output: $actual" >&2
@@ -132,7 +137,7 @@ assert_output_contains() {
 assert_output_not_contains() {
     local unexpected="$1"
     local actual="${2:-$output}"
-    
+
     if [[ "$actual" == *"$unexpected"* ]]; then
         echo "Output contains unexpected: $unexpected" >&2
         echo "Actual output: $actual" >&2

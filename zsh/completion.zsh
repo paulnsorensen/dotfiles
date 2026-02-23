@@ -49,10 +49,10 @@ zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
 # cdd completion - shows directories in DEV_DIR
 _cdd() {
   local dev_dir="${DEV_DIR:-$HOME/Dev}"
-  
+
   # Only complete if base directory exists
   [[ -d "$dev_dir" ]] || return 1
-  
+
   # Get list of directories
   local -a dev_dirs
   if [[ -n "$ZSH_VERSION" ]]; then
@@ -66,7 +66,7 @@ _cdd() {
       [[ -d "$dir" ]] && dev_dirs+=("$(basename "$dir")")
     done
   fi
-  
+
   # Provide completions
   _describe 'development directories' dev_dirs
 }

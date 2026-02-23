@@ -15,7 +15,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     if command -v brew &>/dev/null; then
         echo "Installing bats-core via Homebrew..."
         brew install bats-core
-        
+
         # Install helpful bats libraries
         brew tap kaos/shell
         brew install bats-assert

@@ -25,4 +25,3 @@ mcps:
       CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
     scope: user
     description: Documentation context for libraries and frameworks
-

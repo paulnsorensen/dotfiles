@@ -48,11 +48,6 @@ plugins:
     load: false
 
   # Workflow Plugins - Development automation
-  security-guidance@claude-plugins-official:
-    description: Security best practices hooks
-    scope: user
-    load: false
-
   code-simplifier@claude-plugins-official:
     description: Code cleanup and simplification agents
     scope: user
