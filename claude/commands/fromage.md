@@ -246,13 +246,29 @@ All findings are scored 0-100. Only failures >= 75 are highlighted as critical.
 Task(subagent_type="fromage-pasteurize", model="sonnet", prompt="Security scan of changed files: <list>. Check for OWASP issues, input validation gaps, and dependency vulnerabilities.")
 ```
 
-**Fix failures inline** after the agent reports. Then use `whey-drainer` to confirm all tests pass (cheaper than re-running press):
+### Wrecker-Drainer Feedback Loop
 
-```
-Task(subagent_type="whey-drainer", model="haiku", prompt="Run all tests. Confirm fixes for: <list of failures that were fixed>")
-```
+After press writes tests, run the wrecker↔drainer loop to shake out issues:
 
-If whey-drainer reports new failures, fix and re-run (up to 3 iterations before escalating to user).
+1. **Drain**: Launch `whey-drainer` to run all tests:
+   ```
+   Task(subagent_type="whey-drainer", model="haiku", prompt="Run all tests. For any failures, note whether each looks like a test bug (test is wrong) or a code bug (implementation is broken).")
+   ```
+
+2. **Wreck** (if failures): Pass failure details to `roquefort-wrecker` to investigate and fix:
+   ```
+   Task(subagent_type="roquefort-wrecker", model="haiku", prompt="Investigate these test failures from whey-drainer:\n<failure details>\n\nFor test bugs: fix the tests. For code bugs: confirm and score them (0-100). Changed files: <list>.")
+   ```
+
+3. **Re-drain**: Launch `whey-drainer` again to verify fixes:
+   ```
+   Task(subagent_type="whey-drainer", model="haiku", prompt="Re-run all tests. Previous iteration had <N> failures. Confirm fixes and report any remaining issues.")
+   ```
+
+4. **Iterate** up to 3 rounds. After 3 rounds, surface remaining failures to the user:
+   - **Code bugs (score >= 75)**: Fix inline or ask user for guidance
+   - **Test bugs (score < 50)**: Wrecker should have fixed these — escalate if stuck
+   - **Ambiguous (50-74)**: Present to user for judgment
 
 **Skip condition**: Cut phase provided sufficient coverage, no test framework, or trivial change.
 
@@ -323,6 +339,6 @@ Keep transitions tight — one or two sentences max.
 
 - If an agent fails or returns poor results, retry once with refined prompt
 - If a phase produces unexpected results, pause and ask the user
-- If tests fail in Press, fix and re-run via `whey-drainer` (up to 3 iterations before escalating to user)
+- If tests fail in Press, run the wrecker↔drainer feedback loop (up to 3 iterations before escalating to user)
 - Never proceed past a user approval gate without explicit approval
-- Use `whey-drainer` (not the full press/wrecker agents) for re-runs — it's cheaper and keeps context clean
+- Use `whey-drainer` for running tests and `roquefort-wrecker` for fixing them — they work as a pair in the feedback loop
