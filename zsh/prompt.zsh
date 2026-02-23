@@ -4,13 +4,13 @@
 # Colors sourced from zsh/colors.zsh (Deuterawarm palette)
 
 # Powerline segment colors (using ANSI 256 codes from colors.zsh)
-POWERLINE_LEFT_A_BG=$__DW_BG_ALT_256       # Slightly lighter background
-POWERLINE_LEFT_A_FG=$__DW_FG_256           # Foreground text
-POWERLINE_LEFT_B_BG=$__DW_BLUE_256         # Blue for git branch segment
-POWERLINE_LEFT_B_FG=$__DW_BG_256           # Dark text on blue
-POWERLINE_LEFT_C_BG=$__DW_BG_256           # Background for time segment
-POWERLINE_LEFT_C_FG=$__DW_DIM_256          # Dimmed text for time
-POWERLINE_LEFT_D_FG=$__DW_BLUE_256         # Blue for date/time text
+POWERLINE_LEFT_A_BG=$__SDW_BG_ALT_256       # Slightly lighter background
+POWERLINE_LEFT_A_FG=$__SDW_FG_256           # Foreground text
+POWERLINE_LEFT_B_BG=$__SDW_BLUE_256         # Blue for git branch segment
+POWERLINE_LEFT_B_FG=$__SDW_BG_256           # Dark text on blue
+POWERLINE_LEFT_C_BG=$__SDW_BG_256           # Background for time segment
+POWERLINE_LEFT_C_FG=$__SDW_DIM_256          # Dimmed text for time
+POWERLINE_LEFT_D_FG=$__SDW_BLUE_256         # Blue for date/time text
 
 # powerline theme
 POWERLINE_SEPARATOR=$'\uE0B0'
@@ -54,14 +54,11 @@ _git_cache_status=""
 _git_cache_time=""
 _git_cache_last_commit=""
 
-# Reset the prompt every 10 seconds
-TMOUT=10
-TRAPALRM() {
-  if [[ "$WIDGET" =~ "comp" || "$WIDGET" =~ "fzf" ]]; then
-    return 0
-  fi
+# Refresh prompt periodically (PERIOD avoids repurposing TMOUT idle timer)
+PERIOD=30
+periodic() {
   prompt_precmd
-  zle reset-prompt
+  zle && zle reset-prompt
 }
 
 # Ensure that the prompt is redrawn when the terminal size changes.

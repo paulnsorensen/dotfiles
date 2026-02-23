@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# PR review bundle: metadata + diff + checks in one shot
+# Usage: gh-pr-review <number>
+set -euo pipefail
+
+pr="${1:?Usage: gh-pr-review <number>}"
+echo "=== PR METADATA ==="
+gh pr view "$pr" --json number,title,state,author,additions,deletions,labels,reviewDecision
+echo "=== DIFF ==="
+gh pr diff "$pr"
+echo "=== CHECKS ==="
+gh pr checks "$pr"

@@ -136,18 +136,3 @@ export __SDW_BG __SDW_BG_ALT __SDW_FG __SDW_FG_BRIGHT __SDW_DIM
 export __SDW_RED __SDW_GREEN __SDW_YELLOW __SDW_BLUE __SDW_MAGENTA __SDW_CYAN
 export __SDW_BR_RED __SDW_BR_GREEN __SDW_BR_YELLOW __SDW_BR_BLUE __SDW_BR_MAGENTA __SDW_BR_CYAN
 export __SDW_FZF_COLORS
-
-# =============================================================================
-# BACKWARD COMPATIBILITY (alias old __DW_* names)
-# =============================================================================
-__DW_BG="$__SDW_BG"
-__DW_BG_256=$__SDW_BG_256
-__DW_BG_ALT="$__SDW_BG_ALT"
-__DW_BG_ALT_256=$__SDW_BG_ALT_256
-__DW_FG="$__SDW_FG"
-__DW_FG_256=$__SDW_FG_256
-__DW_DIM="$__SDW_DIM"
-__DW_DIM_256=$__SDW_DIM_256
-__DW_BLUE="$__SDW_BLUE"
-__DW_BLUE_256=$__SDW_BLUE_256
-__DW_FZF_COLORS="$__SDW_FZF_COLORS"

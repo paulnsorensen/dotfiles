@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# PR prep bundle: context for creating a PR
+# Usage: gh-pr-prep
+set -euo pipefail
+
+echo "=== COMMITS ==="
+git log --oneline origin/main..HEAD
+echo "=== DIFF STAT ==="
+git diff origin/main...HEAD --stat
+echo "=== STATUS ==="
+git status --short
+echo "=== UPSTREAM ==="
+# shellcheck disable=SC1083
+git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null \
+    || echo "No upstream set"
