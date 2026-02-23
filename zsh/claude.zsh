@@ -112,57 +112,19 @@ ccw() {
     cd "${repo_root}/${wt_dir}" && claude "$@"
 }
 
-# Remove worktrees whose claude/* branches are merged into main
+# Clean worktrees — single-repo (current dir) or full sweep (~/Dev)
 ccw-clean() {
     if ! git rev-parse --is-inside-work-tree &>/dev/null; then
         echo "Not a git repository"
         return 1
     fi
-
     local repo_root
     repo_root="$(git rev-parse --show-toplevel)"
-    local wt_root="${repo_root}/.worktrees"
-    local cleaned=0
-
-    if [[ ! -d "${wt_root}" ]]; then
-        echo "No .worktrees/ directory"
-        return 0
-    fi
-
-    # Get branches merged into main
-    local merged
-    merged="$(git -C "${repo_root}" branch --merged main 2>/dev/null | sed 's/^[ *]*//')"
-
-    for slug_dir in "${wt_root}"/*(N/); do
-        local slug="${slug_dir:t}"
-        local branch="claude/${slug}"
-
-        if echo "${merged}" | grep -qx "${branch}"; then
-            echo "Removing: ${slug} (${branch} merged)"
-            git -C "${repo_root}" worktree remove "${slug_dir}" 2>/dev/null
-            git -C "${repo_root}" branch -d "${branch}" 2>/dev/null
-
-            # Clean Serena project config for deleted worktree
-            if command -v yq &>/dev/null && [[ -f "${HOME}/.serena/serena_config.yml" ]]; then
-                yq -i "del(.projects[] | select(. == \"${slug_dir}\"))" \
-                    "${HOME}/.serena/serena_config.yml" 2>/dev/null
-            fi
-
-            ((cleaned++))
-        fi
-    done
-
-    if (( cleaned == 0 )); then
-        echo "Nothing to clean — no merged worktrees found"
-        # Show what's still active
-        local active=("${wt_root}"/*(N/:t))
-        if (( ${#active} > 0 )); then
-            echo "Active worktrees: ${active[*]}"
-        fi
-    else
-        echo "Cleaned ${cleaned} worktree(s)"
-    fi
+    ccw-sweep --path "$repo_root" "$@"
 }
+
+# Sweep all repos under ~/Dev for stale worktrees
+alias ccw-sweep='$HOME/Dev/dotfiles/bin/ccw-sweep'
 
 # List active worktrees
 alias ccw-ls='git worktree list'

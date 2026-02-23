@@ -115,6 +115,25 @@ I use the Cheddar Flow for development. **Discover all available agents and skil
 
 All review/analysis agents use universal 0-100 confidence scoring (>= 75 to surface findings).
 
+## Skill Delegation
+
+When a skill is available, use it — never fall back to raw bash equivalents.
+
+| Task | Skill | Tools it provides | NEVER use instead |
+|------|-------|-------------------|-------------------|
+| Search files | scout | `rg`, `fd`, `ls` (eza) | `find`, `grep`, bare `ls` |
+| Code structure | trace | `sg` (ast-grep) | grep for code shapes |
+| Pre-commit check | diff | git diff/status/log, rg, sg | raw git + manual scanning |
+| File editing | chisel | `sd`, Edit | `sed`, `awk` |
+| Git operations | commit | full git | manual git add/commit |
+| GitHub ops | gh | `gh` CLI | raw GitHub API |
+| Code navigation | serena | symbol lookup, cross-refs | grep for definitions |
+| External docs | fetch | Context7, WebSearch, octocode | guessing from training data |
+
+**Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
+
+**Agent skill enforcement**: When an agent has `skills: [scout, trace, diff]`, it MUST use those tools. Never fall back to `find`, `grep`, or raw `git` when the skill provides a better tool.
+
 ## Troubleshooting
 
 **MCPs not loading?**

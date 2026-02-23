@@ -26,6 +26,8 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `ccc` - Continue last conversation (`claude --continue`)
 - `ccr` - Resume conversation (`claude --resume`)
 - `ccw <slug>` - Create isolated git worktree and launch Claude inside it (sandboxed)
+- `ccw-sweep` - Scan ~/Dev for stale worktrees with safety checks (dry-run, auto-clean modes)
+- `ccw-clean` - Clean stale worktrees in current repo only (delegates to ccw-sweep)
 - `mcp-sync` - Sync MCPs from registry.yaml to Claude Code
 - `mcp-sync-dry` - Preview MCP sync changes without applying
 - `mcp-edit` - Edit MCP registry.yaml
