@@ -15,7 +15,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `dots rollback [id]` - Rollback to a previous state
 - `dots backups` - List available backups
 - `dots doctor` - Run health checks and profile shell
-- `dots test` - Run test suite
+- `dots test` - Run test suite (validates shell loading, git hooks, symlinks, and Claude config sync)
 
 ### Shell Configuration
 - `zrl` - Reload zsh configuration after changes
@@ -171,6 +171,7 @@ The `.sync-with-rollback` script provides:
 - Custom `grb` alias rebases from main (not master)
 - Kdiff3 configured as merge/diff tool
 - Pre-commit hooks via prek (secrets, shellcheck, large files, claude sync)
+- **Skipping hooks**: Use `git commit --no-verify` if prek blocks a commit and you need to override (rare)
 
 ### Claude Code Integration
 - Fromage pipeline (`/fromage` — adapts to task complexity, replaces `/cheese` and `/curdle`)
@@ -193,6 +194,7 @@ The `.sync-with-rollback` script provides:
 - **Serena**: Prefer `find_symbol` and `get_symbols_overview` over reading full files. Use `write_memory`/`read_memory` to persist discoveries across compaction. Always activate the project at conversation start.
 - **Context7**: Use when working with third-party library APIs to get version-specific docs.
 - **After compaction**: Run `/go` or manually activate Serena (`activate_project`), read Serena memories, and check onboarding. The post-compact hook does this automatically but `/go` is there as a manual fallback.
+- **Fresh vs Continued sessions**: Continued sessions (`ccc`, `ccr`) preserve context; fresh sessions call the session-start hook which runs `/go` automatically. If MCPs seem stale, always run `/go` to re-prime them.
 
 ## Pre-Commit Hooks (prek)
 
@@ -243,3 +245,5 @@ Managed in `.brew`:
 4. **Vi Mode**: Shell is in vi mode by default
 5. **MCP Scope**: Use `user` scope for dev tools, `project` for team-shared MCPs
 6. **Reference Folder**: Put reference docs in `reference/` (gitignored, not symlinked)
+7. **zsh Loading Order**: Files in `zsh/` are sourced in the order they appear in `zshrc`. If you add a new config file, edit `zshrc` to source it at the right point. For example, completions must load before `fzf.zsh` or keybindings might conflict.
+8. **Pre-Commit Hook Failures**: If prek blocks a commit (e.g., detected secrets), fix the issue before retrying. Only use `--no-verify` for temporary overrides. Check `prek.toml` to understand what's being checked.
