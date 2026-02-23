@@ -9,13 +9,18 @@ Park the current session — persist important context to Serena memories so the
 
 1. **Summarize the session** — What was worked on, what was accomplished, what's still pending or blocked
 
-2. **Write to Serena memory** — Use `write_memory` with filename `session-context.md`:
-   - Current task / feature being worked on
-   - Key files modified or under investigation
-   - Decisions made and approaches chosen
-   - Next steps / TODOs
-   - Any gotchas or blockers discovered
+2. **Call prepare_for_new_conversation**
+   - Serena writes a structured summary memory file automatically
+   - Do NOT manually write_memory for session state — this tool is purpose-built for it
 
-3. **Confirm saved** — Report what was written to memory
+3. **If architecture decisions or gotchas were discovered this session:**
+   - `write_memory("arch-<topic>.md")` or `write_memory("gotcha-<topic>.md")`
+   - Follow naming convention (see `claude/skills/serena/SKILL.md#memory-naming`)
 
-4. **Instruct the user** — Tell them to `/exit` then run `ccfresh` to start a clean primed session
+4. **Cleanup:** Call `list_memories`. If count > 5, delete_memory on oldest or redundant entries
+   - Ask user before deleting `arch-*` or `gotcha-*` memories
+   - Note: `session-*` files are auto-managed by `prepare_for_new_conversation`
+
+5. **Confirm what was saved** — Report to user
+   - Tell them to `/exit` then run `ccfresh` to start primed
+   - Next session will auto-activate Serena and load memories
