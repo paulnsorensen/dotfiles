@@ -63,6 +63,7 @@ CURRENT_NAMES=$(echo "$CURRENT_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:' | cut -d: -f
 # Find differences using comm (works on all bash versions)
 DESIRED_FILE=$(mktemp)
 CURRENT_FILE=$(mktemp)
+trap 'rm -f "$DESIRED_FILE" "$CURRENT_FILE"' EXIT
 echo "$DESIRED_NAMES" | grep -v '^$' > "$DESIRED_FILE"
 echo "$CURRENT_NAMES" | grep -v '^$' > "$CURRENT_FILE"
 

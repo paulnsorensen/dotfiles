@@ -261,7 +261,7 @@ run_sync() {
 
     # create dotfiles_old in homedir
     log_info "Creating $olddir for backup of any existing dotfiles in ~"
-    mkdir -p $olddir
+    mkdir -p "$olddir"
 
     # move any existing dotfiles in homedir to dotfiles_old directory, then create symlinks
     for file in *; do

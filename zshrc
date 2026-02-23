@@ -19,6 +19,3 @@ source "$HOME/Dev/dotfiles/zsh/claude.zsh"
 [ -f $HOME/.zshrc.local ] && source $HOME/.zshrc.local
 
 clear
-
-[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
-export PATH="$HOME/.local/bin:$PATH"

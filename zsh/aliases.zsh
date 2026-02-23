@@ -42,7 +42,7 @@ cdd() {
     fi
 }
 
-alias cddot='cd $HOME/Dev/dotfiles'
+alias cddot='cd $DOTFILES_DIR'
 
 # =============================================================================
 # Utilities
@@ -81,8 +81,8 @@ alias todos='rg "TODO|FIXME|HACK|NOTE" -n'    # Find all todos/fixmes
 # =============================================================================
 # Theme Management
 # =============================================================================
-alias theme-edit='${EDITOR:-vim} ~/Dev/dotfiles/theme/config.yaml'
-alias theme-ls='ls ~/Dev/dotfiles/theme/schemes/'
+alias theme-edit='${EDITOR:-vim} $DOTFILES_DIR/theme/config.yaml'
+alias theme-ls='ls $DOTFILES_DIR/theme/schemes/'
 
 # =============================================================================
 # File Listing (using eza for modern ls replacement)

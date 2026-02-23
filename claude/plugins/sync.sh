@@ -66,6 +66,7 @@ fi
 # Find differences
 DESIRED_FILE=$(mktemp)
 CURRENT_FILE=$(mktemp)
+trap 'rm -f "$DESIRED_FILE" "$CURRENT_FILE"' EXIT
 echo "$DESIRED_NAMES" | grep -v '^$' > "$DESIRED_FILE" 2>/dev/null || true
 echo "$CURRENT_NAMES" | grep -v '^$' > "$CURRENT_FILE" 2>/dev/null || true
 

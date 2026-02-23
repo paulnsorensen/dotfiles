@@ -14,15 +14,15 @@ alias ccc='claude --continue'
 alias ccr='claude --resume'
 alias ccp='claude --print'
 
-# Fresh session: continue last conversation with MCPs primed
+# Fresh session: prime MCPs in last conversation, then open it interactively
 ccfresh() {
-  claude --continue -p '/go'
+  claude --continue -p '/go' && claude --continue
 }
 
 # ═══════════════════════════════════════════════════════════════════
 # MCP Management (thin wrappers around native commands)
 # ═══════════════════════════════════════════════════════════════════
-CLAUDE_DOTFILES="$HOME/Dev/dotfiles/claude"
+CLAUDE_DOTFILES="$DOTFILES_DIR/claude"
 
 alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'
@@ -124,7 +124,7 @@ ccw-clean() {
 }
 
 # Sweep all repos under ~/Dev for stale worktrees
-alias ccw-sweep='$HOME/Dev/dotfiles/bin/ccw-sweep'
+alias ccw-sweep='$DOTFILES_DIR/bin/ccw-sweep'
 
 # List active worktrees
 alias ccw-ls='git worktree list'
