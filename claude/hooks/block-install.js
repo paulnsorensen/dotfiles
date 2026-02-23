@@ -8,13 +8,12 @@ module.exports = {
     matcher: (toolName, input) => {
       if (toolName !== 'Bash') return false;
       const cmd = input.command?.toLowerCase() || '';
-      return cmd.includes('npm install') ||
-             cmd.includes('yarn add') ||
-             cmd.includes('pnpm add') ||
-             cmd.includes('pip install') ||
-             cmd.includes('pip3 install') ||
-             cmd.includes('go get') ||
-             cmd.includes('cargo add');
+      return /\bnpm\s+install\b/.test(cmd) ||
+             /\byarn\s+add\b/.test(cmd) ||
+             /\bpnpm\s+(add|install)\b/.test(cmd) ||
+             /\bpip3?\s+install\b/.test(cmd) ||
+             /\bgo\s+get\b/.test(cmd) ||
+             /\bcargo\s+add\b/.test(cmd);
     },
     handler: async () => ({
       result: `Whoa there, Cheese Lord! Package installation requires your royal approval.
