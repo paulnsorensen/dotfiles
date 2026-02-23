@@ -27,7 +27,7 @@ if command -v tree >/dev/null 2>&1; then
 fi
 
 # Deuterawarm theme for fzf (colors from zsh/colors.zsh)
-export FZF_DEFAULT_OPTS="$__DW_FZF_COLORS --height=50% --layout=reverse --border --inline-info"
+export FZF_DEFAULT_OPTS="$__SDW_FZF_COLORS --height=50% --layout=reverse --border --inline-info"
 
 # Fallback if fzf isn't available
 if [ ! -f ~/.fzf.zsh ]; then

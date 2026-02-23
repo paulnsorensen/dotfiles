@@ -13,36 +13,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY_FILE="$SCRIPT_DIR/registry.yaml"
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+# shellcheck source=../lib/sync-common.sh
+source "$SCRIPT_DIR/../lib/sync-common.sh"
 
-# Parse arguments
-DRY_RUN=false
-FORCE=false
-for arg in "$@"; do
-    case $arg in
-        --dry-run) DRY_RUN=true ;;
-        --force) FORCE=true ;;
-        --help|-h)
-            echo "Usage: $0 [--dry-run] [--force]"
-            echo "  --dry-run  Show what would change without making changes"
-            echo "  --force    Remove extras without prompting"
-            exit 0
-            ;;
-    esac
-done
-
-# Check dependencies
-for cmd in claude yq jq; do
-    if ! command -v $cmd &> /dev/null; then
-        echo -e "${RED}Error: $cmd not found. Install with: brew install $cmd${NC}"
-        exit 1
-    fi
-done
+sync_parse_args "$@"
+sync_check_deps
 
 if [[ ! -f "$REGISTRY_FILE" ]]; then
     echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}"
@@ -54,69 +29,28 @@ echo
 
 # Get desired MCPs from registry (as JSON for easier processing)
 DESIRED_JSON=$(yq -o=json '.mcps' "$REGISTRY_FILE")
+# shellcheck disable=SC2034  # used by sync-common.sh
 DESIRED_NAMES=$(echo "$DESIRED_JSON" | jq -r 'keys[]' | sort)
 
 # Get current MCPs from claude
 CURRENT_OUTPUT=$(claude mcp list 2>/dev/null || true)
+# shellcheck disable=SC2034  # used by sync-common.sh
 CURRENT_NAMES=$(echo "$CURRENT_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:' | cut -d: -f1 | sort)
 
-# Find differences using comm (works on all bash versions)
-DESIRED_FILE=$(mktemp)
-CURRENT_FILE=$(mktemp)
-echo "$DESIRED_NAMES" | grep -v '^$' > "$DESIRED_FILE"
-echo "$CURRENT_NAMES" | grep -v '^$' > "$CURRENT_FILE"
+# Callbacks for sync-common
+get_description() { echo "$DESIRED_JSON" | jq -r --arg n "$1" '.[$n].description // ""'; }
+get_item_scope() {
+    local scope_info
+    scope_info=$(claude mcp get "$1" 2>/dev/null || true)
+    if echo "$scope_info" | grep -qi "user"; then echo "user"
+    elif echo "$scope_info" | grep -qi "project"; then echo "project"
+    else echo "local"
+    fi
+}
+remove_item() { claude mcp remove "$1" -s "$2" 2>/dev/null; }
 
-TO_ADD=$(comm -23 "$DESIRED_FILE" "$CURRENT_FILE")
-TO_REMOVE=$(comm -13 "$DESIRED_FILE" "$CURRENT_FILE")
-EXISTING=$(comm -12 "$DESIRED_FILE" "$CURRENT_FILE")
-
-rm -f "$DESIRED_FILE" "$CURRENT_FILE"
-
-# Count items
-desired_count=$(echo "$DESIRED_NAMES" | grep -c . || echo 0)
-current_count=$(echo "$CURRENT_NAMES" | grep -c . || echo 0)
-add_count=$(echo "$TO_ADD" | grep -c . || echo 0)
-remove_count=$(echo "$TO_REMOVE" | grep -c . || echo 0)
-
-# Summary
-echo "Registry: $desired_count MCPs defined"
-echo "Current:  $current_count MCPs configured"
-echo
-
-if [[ -z "$TO_ADD" && -z "$TO_REMOVE" ]]; then
-    echo -e "${GREEN}Everything in sync!${NC}"
-    exit 0
-fi
-
-# Show plan
-if [[ -n "$TO_ADD" ]]; then
-    echo -e "${GREEN}To add ($add_count):${NC}"
-    echo "$TO_ADD" | while read -r name; do
-        [[ -z "$name" ]] && continue
-        desc=$(echo "$DESIRED_JSON" | jq -r --arg n "$name" '.[$n].description // ""')
-        echo "  + $name: $desc"
-    done
-    echo
-fi
-
-if [[ -n "$TO_REMOVE" ]]; then
-    echo -e "${YELLOW}Not in registry ($remove_count):${NC}"
-    echo "$TO_REMOVE" | while read -r name; do
-        [[ -z "$name" ]] && continue
-        echo "  - $name"
-    done
-    echo
-fi
-
-if [[ -n "$EXISTING" ]]; then
-    existing_count=$(echo "$EXISTING" | grep -c . || echo 0)
-    echo -e "${BLUE}Already configured ($existing_count):${NC}"
-    echo "$EXISTING" | while read -r name; do
-        [[ -z "$name" ]] && continue
-        echo "  = $name"
-    done
-    echo
-fi
+sync_compute_diff
+sync_show_plan "MCPs" || exit 0
 
 # Execute additions
 if [[ -n "$TO_ADD" ]]; then
@@ -134,28 +68,22 @@ if [[ -n "$TO_ADD" ]]; then
         else
             echo -n "  Adding $name... "
 
-            # Build the command with proper argument handling
             args_json=$(echo "$DESIRED_JSON" | jq -c --arg n "$name" '.[$n].args // []')
-
-            # Parse args JSON into array safely (bash 3.2 compatible, no eval)
             args_array=()
             while IFS= read -r arg; do
                 args_array+=("$arg")
             done < <(echo "$args_json" | jq -r '.[]')
 
-            # Build env var flags if present
             env_flags=()
             env_json=$(echo "$DESIRED_JSON" | jq -c --arg n "$name" '.[$n].env // {}')
             if [[ "$env_json" != "{}" ]]; then
                 while IFS='=' read -r key val; do
-                    # Expand env var references safely (e.g. ${CONTEXT7_API_KEY})
-                    # Strip ${...} wrapper to get the var name, then resolve via indirection
                     if [[ "$val" =~ ^\$\{([^}]+)\}$ ]]; then
                         var_name="${BASH_REMATCH[1]}"
                         expanded_val="${!var_name}"
                         if [[ -z "$expanded_val" ]]; then
                             echo -e "${RED}Error: $key references unset env var \$$var_name — skipping $name${NC}" >&2
-                            continue 2  # Skip this entire MCP addition
+                            continue 2
                         fi
                     else
                         expanded_val="$val"
@@ -176,54 +104,7 @@ if [[ -n "$TO_ADD" ]]; then
     echo
 fi
 
-# Handle removals
-if [[ -n "$TO_REMOVE" ]]; then
-    echo -e "${YELLOW}MCPs not in registry:${NC}"
-    echo "$TO_REMOVE" | while read -r name; do
-        [[ -z "$name" ]] && continue
-
-        # Get scope from claude mcp get
-        scope_info=$(claude mcp get "$name" 2>/dev/null || true)
-        if echo "$scope_info" | grep -qi "user"; then
-            scope="user"
-        elif echo "$scope_info" | grep -qi "project"; then
-            scope="project"
-        else
-            scope="local"
-        fi
-
-        if $FORCE; then
-            if $DRY_RUN; then
-                echo -e "  ${BLUE}[dry-run]${NC} Would remove: $name ($scope)"
-            else
-                echo -n "  Removing $name... "
-                if err=$(claude mcp remove "$name" -s "$scope" 2>&1 >/dev/null); then
-                    echo -e "${GREEN}done${NC}"
-                else
-                    echo -e "${RED}failed${NC}"
-                    [[ -n "$err" ]] && echo -e "    ${RED}$err${NC}"
-                fi
-            fi
-        elif $DRY_RUN; then
-            echo -e "  ${BLUE}[dry-run]${NC} Would prompt to remove: $name ($scope)"
-        else
-            echo -n "  Remove '$name' ($scope)? [y/N] "
-            read -r response
-            if [[ "$response" =~ ^[Yy]$ ]]; then
-                echo -n "  Removing $name... "
-                if err=$(claude mcp remove "$name" -s "$scope" 2>&1 >/dev/null); then
-                    echo -e "${GREEN}done${NC}"
-                else
-                    echo -e "${RED}failed${NC}"
-                    [[ -n "$err" ]] && echo -e "    ${RED}$err${NC}"
-                fi
-            else
-                echo "  Keeping $name"
-            fi
-        fi
-    done
-    echo
-fi
+sync_handle_removals "MCPs"
 
 echo -e "${GREEN}Sync complete!${NC}"
 echo

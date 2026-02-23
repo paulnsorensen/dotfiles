@@ -11,26 +11,20 @@ if [[ $OSTYPE == darwin* ]]; then
     /opt/homebrew/bin
     $path
   )
-  export PATH=$(brew --prefix openssl)/bin:$PATH
+  _brew_prefix="$(brew --prefix 2>/dev/null)"
+  [[ -d "${_brew_prefix}/opt/openssl/bin" ]] && export PATH="${_brew_prefix}/opt/openssl/bin:$PATH"
+  [[ -d "${_brew_prefix}/opt/rustup/bin" ]] && export PATH="${_brew_prefix}/opt/rustup/bin:$PATH"
+  unset _brew_prefix
 fi
 
 # Add dotfiles bin to PATH
-export PATH="$HOME/Dev/dotfiles/bin:$PATH"
+export PATH="$DOTFILES_DIR/bin:$PATH"
 
 # Add local bin to PATH
 export PATH="$HOME/.local/bin:$PATH"
 
-# Rust toolchain (rustup via Homebrew, keg-only due to conflict with rust formula)
-if [[ -d "$(brew --prefix 2>/dev/null)/opt/rustup/bin" ]]; then
-  export PATH="$(brew --prefix)/opt/rustup/bin:$PATH"
-fi
 # cargo install puts binaries in ~/.cargo/bin
 [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
-
-# fpath for completions
-fpath=(
-  $fpath
-)
 
 # Editor configuration
 export EDITOR=$(which vim)
@@ -64,9 +58,10 @@ if command -v pyenv 1>/dev/null 2>&1; then
   eval "$(pyenv init -)"
 fi
 
-# Source .env file if it exists to load CLAUDE_SETUP_DIR
-if [ -f "$HOME/Dev/dotfiles/.env" ]; then
-    set -a
-    source "$HOME/Dev/dotfiles/.env"
-    set +a
+# Source .env file if it exists (key=value only, no command execution)
+if [[ -f "$DOTFILES_DIR/.env" ]]; then
+    while IFS='=' read -r key val; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        export "$key=$val"
+    done < "$DOTFILES_DIR/.env"
 fi

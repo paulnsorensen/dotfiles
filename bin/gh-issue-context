@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Issue context bundle: issue metadata + comments
+# Usage: gh-issue-context <number>
+set -euo pipefail
+
+issue="${1:?Usage: gh-issue-context <number>}"
+echo "=== ISSUE ==="
+gh issue view "$issue" --json number,title,state,author,labels,assignees,body
+echo "=== COMMENTS ==="
+gh issue view "$issue" --comments
