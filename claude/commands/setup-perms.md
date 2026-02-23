@@ -1,3 +1,9 @@
+---
+name: setup-perms
+description: Scaffold a clean .claude/settings.local.json with sensible permissions for this project.
+allowed-tools: Read, Write, Bash, Glob
+---
+
 # Setup Project Permissions
 
 Scaffold a clean `.claude/settings.local.json` with sensible permissions for this project.

@@ -42,12 +42,44 @@ Always start a new session with:
 3. `find_referencing_symbols` for impact analysis before editing
 4. Avoid `read_file` unless a file has no symbols (config, data files)
 
+## search_for_pattern
+
+For text/regex searches when you don't have a symbol name:
+
+```
+# Code-only search (skips configs, data files, markdown)
+search_for_pattern(substring_pattern="validate_.*input", restrict_search_to_code_files=True)
+
+# Narrow scope to a directory
+search_for_pattern(substring_pattern="Repository", relative_path="src/adapters/")
+
+# Get surrounding context for matches
+search_for_pattern(substring_pattern="raise.*Error", context_lines_before=3, context_lines_after=3)
+
+# Exclude test files
+search_for_pattern(substring_pattern="def create_user", paths_exclude_glob="*test*")
+```
+
+### When to use which search
+
+| Need | Tool |
+|------|------|
+| Who calls/uses a known symbol? | `find_referencing_symbols` |
+| Text/regex match without a symbol name | `search_for_pattern` |
+| Search config, YAML, markdown, data files | `search_for_pattern` |
+| Impact analysis before editing a symbol | `find_referencing_symbols` |
+
 ## Memory
 
 Write memories for discoveries worth keeping across compaction:
-- Key architecture decisions and domain model locations
-- Patterns and conventions specific to this project
-- Solutions to recurring problems
 
-Do not write: session-specific state, in-progress work, or anything
-already captured in CLAUDE.md.
+**Worth persisting:**
+- Architecture decisions and domain boundary maps
+- Key file ownership (which team/module owns what)
+- Gotchas that cost debugging time
+- Conventions not captured in CLAUDE.md or onboarding
+
+**Not worth persisting:**
+- Current task state (use `/park` instead)
+- File contents you just read (they're in the codebase)
+- Anything already in CLAUDE.md or onboarding docs

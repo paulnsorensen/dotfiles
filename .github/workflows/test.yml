@@ -9,17 +9,17 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install bats
       run: |
         sudo npm install -g bats
-    
+
     - name: Run tests
       run: ./tests/run-tests.sh
-    
+
     - name: Test git hooks
       run: |
         # Test that pre-commit hook blocks secrets
@@ -31,10 +31,10 @@ jobs:
         git add test-secret.sh
         ! git commit -m "test" 2>/dev/null || exit 1
         echo "✅ Pre-commit hook correctly blocked secret"
-  
+
   shellcheck:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
 

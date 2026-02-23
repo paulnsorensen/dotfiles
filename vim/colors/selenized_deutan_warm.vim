@@ -1,6 +1,6 @@
 " Selenized Deutan Warm - A deuteranopia-safe, circadian-friendly colorscheme
 " Based on Selenized by Jan Warchoł, transformed for CVD accessibility
-" 
+"
 " Design principles:
 "   - Warm backgrounds (a*=+3, b*=+5) reduce blue light for circadian health
 "   - Accent colors spread along b* (blue-yellow) axis for deuteranopia safety

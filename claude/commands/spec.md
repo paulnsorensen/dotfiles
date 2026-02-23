@@ -4,7 +4,7 @@ description: Discovery dialogue to architect a feature and produce a specificati
 argument-hint: <what you want to build>
 ---
 
-Facilitate a discovery dialogue to architect: {{request}}
+Facilitate a discovery dialogue to architect: $ARGUMENTS
 
 This is upstream of implementation — collaborative design thinking that produces a spec artifact.
 
@@ -142,4 +142,4 @@ Description and why not chosen.
 - When "I don't know the full picture" is true
 - Cross-team initiatives needing documentation
 
-Begin the discovery dialogue for: {{request}}
+Begin the discovery dialogue for: $ARGUMENTS

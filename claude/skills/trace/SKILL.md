@@ -70,6 +70,54 @@ sg --lang python -p 'async def $NAME($$$ARGS): $$$BODY'
 sg --lang python -p 'isinstance($OBJ, $TYPE)'
 ```
 
+## Advanced patterns
+
+### Inheritance — TypeScript
+```bash
+sg --lang typescript -p 'class $NAME extends $BASE { $$$BODY }'
+```
+
+### Interface implementation — TypeScript
+```bash
+sg --lang typescript -p 'class $NAME implements $IFACE { $$$BODY }'
+```
+
+### Multiple inheritance — Python
+```bash
+sg --lang python -p 'class $NAME($BASE1, $BASE2): $$$BODY'
+```
+
+### Decorator matching — Python
+```bash
+sg --lang python -p '@$DECORATOR
+def $NAME($$$ARGS): $$$BODY'
+```
+
+### Class annotation — TypeScript
+```bash
+sg --lang typescript -p '@$ANNOTATION
+class $NAME { $$$BODY }'
+```
+
+### Nested try/except in loop — Python
+```bash
+sg --lang python -p 'for $VAR in $ITER:
+    try:
+        $$$TRY_BODY
+    except $E:
+        $$$EXCEPT_BODY'
+```
+
+### Empty except blocks — Python
+```bash
+sg --lang python -p 'except $E: pass'
+```
+
+### Scoped import audit — Python
+```bash
+sg --lang python -p 'from $MODULE import $NAME' -r src/adapters/
+```
+
 ## Output format
 
 Return **only** a concise bulleted list. Each bullet must contain:

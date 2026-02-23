@@ -2,7 +2,8 @@
 # Simple tests for the dots command that don't require HOME manipulation
 
 # Get the dotfiles directory
-export DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
+DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
+export DOTFILES_DIR
 export PATH="$DOTFILES_DIR/bin:$PATH"
 
 # Simple assert functions
@@ -23,7 +24,7 @@ assert_failure() {
 assert_contains() {
     local haystack="${2:-$output}"
     # Strip colors
-    haystack=$(echo "$haystack" | sed 's/\x1b\[[0-9;]*m//g')
+    haystack="${haystack//$'\x1b'\[*([0-9;])m/}"
     [[ "$haystack" == *"$1"* ]] || {
         echo "Output does not contain: $1"
         echo "Actual: $haystack"
