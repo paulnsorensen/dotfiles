@@ -83,6 +83,8 @@ src/
 - One direction only (use events for reverse deps)
 - `common/` is a leaf (imports nothing from siblings)
 
+> For rationale, anti-patterns, and boundary guidance, see `claude/reference/sliced-bread.md`.
+
 ## Workflow
 
 I use the Cheddar Flow for development. **Discover all available agents and skills with `/agents`** — it's the control panel for the full ecosystem.
