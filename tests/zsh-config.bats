@@ -22,7 +22,7 @@ teardown() {
     assert_file_exists "$REAL_DOTFILES_DIR/zsh/completion.zsh"
     assert_file_exists "$REAL_DOTFILES_DIR/zsh/prompt.zsh"
     assert_file_exists "$REAL_DOTFILES_DIR/zsh/fzf.zsh"
-    
+
     # Old over-engineered files should be gone
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/environment.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/git.zsh" ]]
@@ -35,18 +35,18 @@ teardown() {
 
 @test "core.zsh contains essential settings" {
     local core_file="$REAL_DOTFILES_DIR/zsh/core.zsh"
-    
+
     # Should have DEV_DIR export
     grep -q "export DEV_DIR" "$core_file"
-    
+
     # Should have history configuration
     grep -q "HISTFILE" "$core_file"
     grep -q "HISTSIZE" "$core_file"
     grep -q "SAVEHIST" "$core_file"
-    
+
     # Should have editor configuration
     grep -q "export EDITOR" "$core_file"
-    
+
     # Should have vi mode setup
     grep -q "setopt VI" "$core_file"
     grep -q "KEYTIMEOUT" "$core_file"
@@ -54,18 +54,18 @@ teardown() {
 
 @test "aliases.zsh contains consolidated aliases" {
     local aliases_file="$REAL_DOTFILES_DIR/zsh/aliases.zsh"
-    
+
     # Should have git aliases
     grep -q "alias ga=" "$aliases_file"
     grep -q "alias gst=" "$aliases_file"
-    
+
     # Should have cdd function
     grep -q "cdd()" "$aliases_file"
-    
+
     # Should have ripgrep aliases
     grep -q "alias todos=" "$aliases_file"
     grep -q "alias rgjs=" "$aliases_file"
-    
+
     # Should have utility aliases
     grep -q "alias uuidg=" "$aliases_file"
     grep -q "alias zrl=" "$aliases_file"
@@ -73,11 +73,11 @@ teardown() {
 
 @test "completion.zsh has cdd completion" {
     local completion_file="$REAL_DOTFILES_DIR/zsh/completion.zsh"
-    
+
     # Should have cdd completion function
     grep -q "_cdd()" "$completion_file"
     grep -q "compdef _cdd cdd" "$completion_file"
-    
+
     # Should NOT have history config (moved to core.zsh)
     ! grep -q "HISTFILE" "$completion_file"
     ! grep -q "HISTSIZE" "$completion_file"
@@ -85,14 +85,14 @@ teardown() {
 
 @test "zshrc sources files in correct order" {
     local zshrc_file="$REAL_DOTFILES_DIR/zshrc"
-    
+
     # Should source our simplified files
     grep -q "source.*core.zsh" "$zshrc_file"
-    grep -q "source.*aliases.zsh" "$zshrc_file"  
+    grep -q "source.*aliases.zsh" "$zshrc_file"
     grep -q "source.*completion.zsh" "$zshrc_file"
     grep -q "source.*fzf.zsh" "$zshrc_file"
     grep -q "source.*prompt.zsh" "$zshrc_file"
-    
+
     # Should NOT have old complex sourcing loop
     ! grep -q "for config_file" "$zshrc_file"
 }
@@ -100,13 +100,13 @@ teardown() {
 @test "cdd function works with DEV_DIR" {
     # Create mock Dev directory
     mkdir -p "$TEST_HOME/Dev/project1"
-    mkdir -p "$TEST_HOME/Dev/project2" 
-    
+    mkdir -p "$TEST_HOME/Dev/project2"
+
     export DEV_DIR="$TEST_HOME/Dev"
-    
+
     # Source the function
     source "$REAL_DOTFILES_DIR/zsh/aliases.zsh"
-    
+
     # Test cdd without arguments
     run bash -c "cd /tmp && source '$REAL_DOTFILES_DIR/zsh/aliases.zsh' && cdd && pwd"
     assert_output_contains "$TEST_HOME/Dev"
@@ -143,16 +143,16 @@ teardown() {
     # Test each file for syntax errors
     run zsh -n "$REAL_DOTFILES_DIR/zsh/core.zsh"
     [[ $status -eq 0 ]]
-    
+
     run zsh -n "$REAL_DOTFILES_DIR/zsh/aliases.zsh"
     [[ $status -eq 0 ]]
-    
+
     run zsh -n "$REAL_DOTFILES_DIR/zsh/completion.zsh"
     [[ $status -eq 0 ]]
-    
+
     run zsh -n "$REAL_DOTFILES_DIR/zsh/fzf.zsh"
     [[ $status -eq 0 ]]
-    
+
     run zsh -n "$REAL_DOTFILES_DIR/zshrc"
     [[ $status -eq 0 ]]
 }

@@ -203,7 +203,7 @@ if [[ -f "$SETTINGS_FILE" ]]; then
     echo -e "${BLUE}Syncing enabledPlugins in settings.json...${NC}"
 
     # Build enabledPlugins object from registry
-    ENABLED_JSON=$(yq -o=json '.plugins | to_entries | map({(.key): (.value.load // true)}) | add' "$REGISTRY_FILE")
+    ENABLED_JSON=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq 'to_entries | map({(.key): (.value.load // true)}) | add')
 
     if $DRY_RUN; then
         echo -e "  ${BLUE}[dry-run]${NC} Would set enabledPlugins to:"

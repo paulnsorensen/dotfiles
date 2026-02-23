@@ -20,9 +20,8 @@ mcps:
 
   context7:
     command: npx
-    args: ["-y", "@context7/mcp-server"]
+    args: ["-y", "@upstash/context7-mcp"]
     env:
       CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
     scope: user
     description: Documentation context for libraries and frameworks
-

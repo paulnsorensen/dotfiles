@@ -1,6 +1,7 @@
 ---
 name: diff
 model: haiku
+fork: true
 allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(rg:*), Bash(sg:*), Bash(delta), Read
 description: >
   Quick pre-commit smoke test of staged or unstaged changes. Scans for blockers
@@ -29,6 +30,14 @@ git diff {ref}
 ```
 
 If there are no changes at all, say so and stop.
+
+### Tool Selection
+
+- `sg` — structural checks: empty catch blocks, missing error handling, functions missing return types
+- `rg` — text patterns: TODO/FIXME, console.log, hardcoded secrets, debug statements, commented code
+- `Read` — context: when a pattern match needs surrounding code to judge if it's a real problem
+
+Default to `rg`. Reach for `sg` when the question is about code shape, not text.
 
 ### 2. Scan for Red Flags
 

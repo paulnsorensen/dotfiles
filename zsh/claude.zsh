@@ -3,6 +3,9 @@
 # Claude Code CLI utilities and MCP management
 ############################
 
+# On-demand tool loading (Claude Code v2.0.74+)
+export ENABLE_TOOL_SEARCH=true
+
 # ═══════════════════════════════════════════════════════════════════
 # Quick Access
 # ═══════════════════════════════════════════════════════════════════

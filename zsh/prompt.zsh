@@ -105,33 +105,33 @@ render_prompt() {
 update_git_cache() {
   local current_dir="$PWD"
   local git_dir=""
-  
+
   # Check if we're in a git repository
   if git_dir=$(git rev-parse --git-dir 2>/dev/null); then
     local git_head_file="${git_dir}/HEAD"
     local current_head=""
-    
+
     # Get current HEAD reference
     if [[ -f "$git_head_file" ]]; then
       current_head=$(cat "$git_head_file")
     fi
-    
+
     # Check if cache is valid (same directory and HEAD hasn't changed)
     if [[ "$current_dir" == "$_git_cache_dir" && "$current_head" == "$_git_cache_head" ]]; then
       return 0
     fi
-    
+
     # Update cache
     _git_cache_dir="$current_dir"
     _git_cache_head="$current_head"
-    
+
     # Get last commit time if repository has commits
     if git rev-parse --verify HEAD >/dev/null 2>&1; then
       _git_cache_last_commit=$(git log -1 --pretty=format:'%at' 2>/dev/null)
     else
       _git_cache_last_commit=""
     fi
-    
+
     # Calculate time since last commit
     if [[ -n "$_git_cache_last_commit" ]]; then
       local now=$(date +%s)

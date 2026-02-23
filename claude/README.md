@@ -21,7 +21,7 @@ This creates:
 ```
 claude/
 ├── agents/           # Cheese-themed specialist agents
-├── commands/         # Slash commands (/cheese, /curdle, etc.)
+├── commands/         # Slash commands (/fromage, /spec, etc.)
 ├── hooks/            # Pre-tool enforcement hooks
 ├── memories/         # Serena persistent context (templates)
 ├── settings.json     # Plugin configuration
@@ -39,8 +39,7 @@ Slash commands invoked with `/command-name`.
 
 | Command | Description |
 |---------|-------------|
-| `/cheese` | Quick 5-step workflow: Explore → Plan → Code → Simplify → Light Review |
-| `/curdle` | Full 7-step workflow: Explore → Plan → Code → Simplify → Test → Review → Commit |
+| `/fromage` | Intelligent cheese-making pipeline that adapts to task complexity (Preparing → Pasteurize → Culture → Curdle → Cut → Cook → Press → Age → Package) |
 | `/copilot-review` | Review a PR and route fixes to GitHub Copilot via inline comments |
 | `/copilot-setup` | Generate GitHub Copilot agent and review instructions for a repo |
 | `/scaffold` | Scaffold a new domain slice following Sliced Bread architecture |
@@ -283,8 +282,8 @@ All agents enforce these principles:
 
 ```bash
 # Workflows
-/cheese "fix login bug"           # Quick 5-step
-/curdle "add user auth"           # Full 7-step
+/fromage "fix login bug"          # Adapts to trivial complexity
+/fromage "add user auth"          # Adapts to medium complexity
 
 # Review & Quality
 /diff                             # Pre-commit smoke test

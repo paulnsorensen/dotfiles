@@ -63,25 +63,25 @@ EOF
 do_update() {
     echo -e "${BLUE}📦 Updating dotfiles...${NC}"
     cd_dotfiles
-    
+
     # Fetch changes
     git fetch || {
         echo -e "${RED}Failed to fetch updates${NC}"
         exit 1
     }
-    
+
     # Check if we're behind
     LOCAL=$(git rev-parse HEAD)
     REMOTE=$(git rev-parse '@{u}')
     BASE=$(git merge-base HEAD '@{u}')
-    
+
     if [[ "$LOCAL" == "$REMOTE" ]]; then
         echo -e "${GREEN}✅ Already up to date!${NC}"
     elif [[ "$LOCAL" == "$BASE" ]]; then
         # Pull changes
         echo -e "${BLUE}Pulling changes...${NC}"
         git pull --rebase
-        
+
         echo -e "${GREEN}✅ Updated successfully!${NC}"
         echo
         echo -e "${BLUE}Running sync...${NC}"
@@ -98,7 +98,7 @@ do_update() {
 do_sync() {
     echo -e "${BLUE}🔄 Syncing dotfiles...${NC}"
     cd_dotfiles
-    
+
     if [[ -f "$DOTFILES_DIR/.sync-with-rollback" ]]; then
         "$DOTFILES_DIR/.sync-with-rollback" "$@"
     else
@@ -109,22 +109,22 @@ do_sync() {
 # Show status
 do_status() {
     cd_dotfiles
-    
+
     # Check for updates first
     git fetch --quiet 2>/dev/null || true
-    
+
     LOCAL=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
     REMOTE=$(git rev-parse '@{u}' 2>/dev/null || echo "unknown")
-    
+
     echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║          Dotfiles Status               ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
     echo
-    
+
     # Branch info
     BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
     echo -e "${BLUE}Branch:${NC} $BRANCH"
-    
+
     # Check if up to date
     if [[ "$LOCAL" != "unknown" ]] && [[ "$REMOTE" != "unknown" ]]; then
         if [[ "$LOCAL" == "$REMOTE" ]]; then
@@ -142,9 +142,9 @@ do_status() {
             fi
         fi
     fi
-    
+
     echo
-    
+
     # Git status
     if [[ -n "$(git status -s 2>/dev/null)" ]]; then
         echo -e "${YELLOW}Uncommitted changes:${NC}"
@@ -152,7 +152,7 @@ do_status() {
     else
         echo -e "${GREEN}Working directory clean${NC}"
     fi
-    
+
     # Last sync info
     if [[ -f "$DOTFILES_STATE_DIR/last_sync" ]]; then
         LAST_SYNC=$(cat "$DOTFILES_STATE_DIR/last_sync")
@@ -190,13 +190,17 @@ do_doctor() {
         echo -e "  ${GREEN}✓ All symlinks valid${NC}"
     fi
 
-    # Check git hooks
-    echo -e "${BLUE}Checking git hooks...${NC}"
-    if [[ "$(git config core.hooksPath)" == *"githooks"* ]]; then
-        echo -e "  ${GREEN}✓ Git hooks installed${NC}"
+    # Check pre-commit hooks (prek)
+    echo -e "${BLUE}Checking pre-commit hooks...${NC}"
+    if [[ -f .git/hooks/pre-commit ]] && grep -q prek .git/hooks/pre-commit 2>/dev/null; then
+        echo -e "  ${GREEN}✓ prek hooks installed${NC}"
+    elif command -v prek &>/dev/null; then
+        echo -e "  ${YELLOW}⚠ prek hooks not installed${NC}"
+        echo -e "    Run: ${GREEN}prek install${NC}"
+        issues=$((issues + 1))
     else
-        echo -e "  ${YELLOW}⚠ Git hooks not installed${NC}"
-        echo -e "    Run: ${GREEN}./githooks/install-hooks.sh${NC}"
+        echo -e "  ${RED}✗ prek not found${NC}"
+        echo -e "    Run: ${GREEN}brew install prek${NC}"
         issues=$((issues + 1))
     fi
 

@@ -47,7 +47,7 @@ init_state() {
     log_info "Initializing state management..."
     mkdir -p "${DOTFILES_STATE_DIR}/backups"
     mkdir -p "${BACKUP_DIR}"
-    
+
     # Save current timestamp
     date +%s > "${DOTFILES_STATE_DIR}/last_sync"
 }
@@ -56,7 +56,7 @@ init_state() {
 create_manifest() {
     log_info "Creating manifest of current state..."
     true > "${MANIFEST_FILE}.tmp"
-    
+
     # Find all symlinks pointing to our dotfiles (exclude protected directories)
     (find "${HOME}" -maxdepth 3 -type l \
         -not -path "${HOME}/Library/Mobile Documents*" \
@@ -69,12 +69,12 @@ create_manifest() {
             echo "${link}:${target}" >> "${MANIFEST_FILE}.tmp"
         fi
     done
-    
+
     # If manifest exists, back it up
     if [[ -f "${MANIFEST_FILE}" ]]; then
         cp "${MANIFEST_FILE}" "${BACKUP_DIR}/manifest.backup"
     fi
-    
+
     mv "${MANIFEST_FILE}.tmp" "${MANIFEST_FILE}"
     log_success "Manifest created with $(wc -l < "${MANIFEST_FILE}") symlinks"
 }
@@ -82,12 +82,12 @@ create_manifest() {
 # Backup current dotfiles before making changes
 backup_current_state() {
     log_info "Backing up current dotfiles to ${BACKUP_DIR}..."
-    
+
     # Copy manifest
     if [[ -f "${MANIFEST_FILE}" ]]; then
         cp "${MANIFEST_FILE}" "${BACKUP_DIR}/manifest"
     fi
-    
+
     # Backup existing dotfiles
     for file in *; do
         if [[ -f ~/."$file" || -d ~/."$file" ]]; then
@@ -97,7 +97,7 @@ backup_current_state() {
             fi
         fi
     done
-    
+
     # Save metadata
     cat > "${BACKUP_DIR}/metadata.json" <<EOF
 {
@@ -107,7 +107,7 @@ backup_current_state() {
     "git_branch": "$(git branch --show-current 2>/dev/null || echo 'unknown')"
 }
 EOF
-    
+
     log_success "Backup completed at ${BACKUP_DIR}"
 }
 
@@ -115,12 +115,12 @@ EOF
 list_backups() {
     echo -e "${BLUE}Available backups:${NC}"
     echo
-    
+
     if [[ ! -d "${DOTFILES_STATE_DIR}/backups" ]]; then
         log_warning "No backups found"
         return 1
     fi
-    
+
     for backup_path in "${DOTFILES_STATE_DIR}/backups"/*/; do
         backup=$(basename "$backup_path")
         [[ "$backup" == "*" ]] && continue
@@ -136,21 +136,21 @@ list_backups() {
 # Rollback to a specific backup
 rollback() {
     local backup_id="${1:-}"
-    
+
     if [[ -z "${backup_id}" ]]; then
         log_error "No backup ID provided"
         list_backups
         echo
         read -rp "Enter backup ID to rollback to: " backup_id
     fi
-    
+
     local backup_path="${DOTFILES_STATE_DIR}/backups/${backup_id}"
-    
+
     if [[ ! -d "${backup_path}" ]]; then
         log_error "Backup ${backup_id} not found!"
         return 1
     fi
-    
+
     log_warning "Rolling back to ${backup_id}..."
     echo "This will:"
     echo "  1. Remove current symlinks"
@@ -159,15 +159,15 @@ rollback() {
     echo
     read -p "Continue? [y/N] " -n 1 -r
     echo
-    
+
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         log_info "Rollback cancelled"
         return 0
     fi
-    
+
     # Create rollback record
     echo "$(date +%s):${backup_id}" >> "${ROLLBACK_LOG}"
-    
+
     # Remove current symlinks
     if [[ -f "${MANIFEST_FILE}" ]]; then
         while IFS=: read -r link target; do
@@ -177,7 +177,7 @@ rollback() {
             fi
         done < "${MANIFEST_FILE}"
     fi
-    
+
     # Restore backed up files
     for file in "${backup_path}"/*; do
         file=$(basename "$file")
@@ -186,7 +186,7 @@ rollback() {
             cp -r "${backup_path}/${file}" "${HOME}/" 2>/dev/null || true
         fi
     done
-    
+
     # Restore symlinks from manifest
     if [[ -f "${backup_path}/manifest" ]]; then
         while IFS=: read -r link target; do
@@ -196,12 +196,12 @@ rollback() {
             fi
         done < "${backup_path}/manifest"
     fi
-    
+
     # Restore the manifest
     if [[ -f "${backup_path}/manifest" ]]; then
         cp "${backup_path}/manifest" "${MANIFEST_FILE}"
     fi
-    
+
     log_success "Rollback to ${backup_id} completed!"
 }
 
@@ -209,14 +209,14 @@ rollback() {
 run_sync() {
     # Initialize state management
     init_state
-    
+
     # Create backup before changes
     backup_current_state
-    
+
     # Parse arguments
     export DOTFILES_DEV=false
     export QUICK_SYNC=false
-    
+
     for ARG in "$@"
     do
       case $ARG in
@@ -241,7 +241,7 @@ run_sync() {
               ;;
     esac
     done
-    
+
     # install platform packages
     if [ "$(uname)" == "Darwin" ]; then
       log_info "Running homebrew script"
@@ -258,11 +258,11 @@ run_sync() {
         log_info "  $line"
       done
     fi
-    
+
     # create dotfiles_old in homedir
     log_info "Creating $olddir for backup of any existing dotfiles in ~"
     mkdir -p $olddir
-    
+
     # move any existing dotfiles in homedir to dotfiles_old directory, then create symlinks
     for file in *; do
       # Skip state management files
@@ -291,13 +291,23 @@ run_sync() {
       log_info "Creating symlink to $file in home directory."
       ln -s "$dir/$file" ~/."$file"
     done
-    
+
+    # Install prek pre-commit hooks
+    if command -v prek &> /dev/null; then
+      log_info "Installing prek pre-commit hooks..."
+      prek install 2>&1 | while read -r line; do
+        log_info "  $line"
+      done
+    else
+      log_warning "prek not installed, skipping pre-commit hooks"
+    fi
+
     # Create new manifest after sync
     create_manifest
-    
+
     # cleanup exported vars
     unset DOTFILES_DEV
-    
+
     log_success "Sync completed successfully!"
     echo
     log_info "Backup saved at: ${BACKUP_DIR}"

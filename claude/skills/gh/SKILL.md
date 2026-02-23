@@ -1,6 +1,7 @@
 ---
 name: gh
 model: haiku
+fork: true
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(gh-pr-review:*), Bash(gh-pr-prep:*), Bash(gh-issue-context:*)
 description: >
   Complete GitHub tasks using only the gh CLI. Use for any GitHub operation —
@@ -28,6 +29,8 @@ GitHub operations via `gh` CLI. Use `git` read-only commands for context.
 ---
 
 ## Batched operations
+
+**Dependency**: Shell helpers (`gh-pr-review`, `gh-pr-prep`, `gh-issue-context`) are defined in `zsh/claude.zsh` — if that file is reorganized, update the references here.
 
 Batch multiple gh/git calls into a single Bash invocation to minimize round-trips.
 Shell helpers are available in `zsh/claude.zsh` for the most common bundles.

@@ -1,88 +1,24 @@
 ---
 name: onboard
-description: Quick codebase orientation. Maps architecture, entry points, and domain models for an unfamiliar repo.
-allowed-tools: Read, Grep, Glob, Bash
+description: Quick codebase orientation. Spawns cheese-factory to map architecture, entry points, and domain models.
 argument-hint: "[path or leave blank for current repo]"
 ---
 
-Map this codebase for first contact: $ARGUMENTS
+Orient in this codebase: $ARGUMENTS
 
 ## Instructions
 
-You are orienting in an unfamiliar codebase. Your goal is a concise mental model — not an exhaustive audit. Spend most of your time reading, very little time writing.
-
-### 1. Vital Signs
-
-Gather the basics quickly:
-- **Language/framework**: Check for `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`, etc.
-- **Size**: Count of source files (exclude tests, generated, vendor)
-- **Age**: `git log --reverse --format="%ai" | head -1` (first commit)
-- **Activity**: `git log --oneline -10` (recent commits)
-- **Contributors**: `git shortlog -sn --no-merges | head -5`
-
-### 2. Entry Points
-
-Find how the system starts and what it exposes:
-- Main/entrypoint files (`main.*`, `index.*`, `app.*`, `server.*`)
-- CLI commands or scripts (`bin/`, `scripts/`, `cmd/`)
-- API routes or handlers
-- Configuration/bootstrapping
-
-### 3. Domain Models
-
-Identify the core business concepts — the nouns of the system:
-- Search for class/struct/type definitions in the main source directory
-- Name them in business terms: "This system deals with Orders, Customers, and Invoices"
-- Note where they live (are they pure? do they import infrastructure?)
-
-### 4. Architecture Shape
-
-Determine the high-level structure:
-- **Monolith or microservice?**
-- **Vertical slices, layered, or mixed?**
-- **Where does business logic live?** (dedicated domain layer, or scattered?)
-- **Where does infrastructure live?** (adapters, or mixed in?)
-- **How do modules communicate?** (direct imports, events, API calls?)
-
-### 5. Key Dependencies
-
-Check `package.json`/`pyproject.toml`/`go.mod`/`Cargo.toml` for:
-- Framework (Express, FastAPI, Gin, Actix, etc.)
-- Database (Prisma, SQLAlchemy, GORM, etc.)
-- Major libraries that shape the architecture
-
-### 6. Present the Map
-
-Output a concise orientation document:
+Launch the `cheese-factory` agent:
 
 ```
-## Codebase: {name}
-
-**Stack:** {language}, {framework}, {database}
-**Size:** ~{N} source files | {lines} LOC
-**Shape:** {architecture pattern}
-
-### Domain Models
-- {Model1} — {one-line description}
-- {Model2} — {one-line description}
-
-### Entry Points
-- {file} — {what it does}
-
-### Architecture
-{2-3 sentences on how the system is structured}
-
-### First Impressions
-- {observation about what's done well}
-- {observation about potential concern}
-- {question worth investigating}
+Task(subagent_type="cheese-factory", model="sonnet", prompt="Codebase orientation for: <$ARGUMENTS or current repo>. Map vital signs, entry points, domain models, architecture shape, and key dependencies. Return a concise one-screen orientation map.")
 ```
 
-Keep it to one screen. This is a map, not a thesis.
+When the agent returns, present the orientation map to the user.
 
 ## What This Is NOT
 
-- Not a code review (use `/review` or `/code-review`)
-- Not a deep architectural audit (use `/code-review`)
-- Not a planning session (use `/cheese` or `/curdle`)
-- Not persistent — does not save to `.claude/review/` (use `/code-review` for that)
+- Not a code review (use `/code-review` or `/age`)
+- Not a security audit (use `/audit`)
+- Not a planning session (use `/fromage`)
+- Not persistent — does not save to `.claude/review/`

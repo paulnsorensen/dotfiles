@@ -15,7 +15,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `dots rollback [id]` - Rollback to a previous state
 - `dots backups` - List available backups
 - `dots doctor` - Run health checks and profile shell
-- `dots test` - Run test suite
+- `dots test` - Run test suite (validates shell loading, git hooks, symlinks, and Claude config sync)
 
 ### Shell Configuration
 - `zrl` - Reload zsh configuration after changes
@@ -53,12 +53,12 @@ dotfiles/
 │   │   ├── registry.yaml   # MCP source of truth
 │   │   └── sync.sh         # Declarative MCP sync script
 │   ├── agents/             # Cheese-themed specialist agents
-│   ├── commands/           # Slash commands (/cheese, /curdle, etc.)
+│   ├── commands/           # Slash commands (/fromage, /spec, etc.)
 │   ├── hooks/              # Pre-tool hooks
 │   └── plugins/            # Plugin registry and sync script
 ├── fonts/                  # Font installation (.sync script)
 ├── gitconfig               # Git configuration
-├── githooks/               # Git hooks (pre-commit checks)
+├── prek.toml               # Pre-commit hooks config (prek)
 ├── iterm2/                 # iTerm2 preferences
 ├── nixpkgs/                # Nix Home Manager config
 ├── reference/              # Reference docs (gitignored)
@@ -170,16 +170,21 @@ The `.sync-with-rollback` script provides:
 - Aliases follow oh-my-zsh conventions for familiarity
 - Custom `grb` alias rebases from main (not master)
 - Kdiff3 configured as merge/diff tool
-- Pre-commit hooks check for secrets, validate shell scripts
+- Pre-commit hooks via prek (secrets, shellcheck, large files, claude sync)
+- **Skipping hooks**: Use `git commit --no-verify` if prek blocks a commit and you need to override (rare)
 
 ### Claude Code Integration
-- Cheddar Flow workflows (`/cheese` for quick 4-step, `/curdle` for full 6-step)
-- Sub-agents only for mechanical work (roquefort-wrecker for tests, ricotta-reducer for simplification)
+- Fromage pipeline (`/fromage` — adapts to task complexity, replaces `/cheese` and `/curdle`)
+- Review/analysis agents use universal 0-100 confidence scoring (>= 75 to surface)
+- Specialist agents: fromage-age (code review), fromage-press (adversarial testing), fromage-pasteurize (security+deps audit), cheese-factory (codebase orientation), roquefort-wrecker (standalone tests), ricotta-reducer (simplification)
+- `/wreck` — adversarial test writer (roquefort-wrecker), writes and runs tests outside /fromage
+- `/age` — Staff Engineer code review of recent changes (fromage-age, focused mode)
+- `/audit` — security and dependency health audit (fromage-pasteurize)
+- `/test` — run existing tests via whey-drainer, returns concise summary
 - Pre-tool hooks (block-install.js, phantom-file-check.js)
 - Compaction hooks (pre-compact.sh saves context, post-compact.sh re-primes Serena)
 - Fresh session hook (post-fresh-start.sh injects /go reminder on non-compact starts)
 - Session-end hook (on-session-end.sh detects parting language → injects /park reminder)
-- Conductor agent (`claude/agents/conductor.md`) — routes tasks to the right skill/workflow
 - `/agents` command — control panel listing all agents and skills
 - `/go` command to re-prime MCPs after compaction or at session start
 - Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed
@@ -189,10 +194,13 @@ The `.sync-with-rollback` script provides:
 - **Serena**: Prefer `find_symbol` and `get_symbols_overview` over reading full files. Use `write_memory`/`read_memory` to persist discoveries across compaction. Always activate the project at conversation start.
 - **Context7**: Use when working with third-party library APIs to get version-specific docs.
 - **After compaction**: Run `/go` or manually activate Serena (`activate_project`), read Serena memories, and check onboarding. The post-compact hook does this automatically but `/go` is there as a manual fallback.
+- **Fresh vs Continued sessions**: Continued sessions (`ccc`, `ccr`) preserve context; fresh sessions call the session-start hook which runs `/go` automatically. If MCPs seem stale, always run `/go` to re-prime them.
 
-## Pre-Commit Requirement
+## Pre-Commit Hooks (prek)
 
-Always run `dots test` before committing to verify sync, shell config, and theme generation are working.
+Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run automatically on commit and include: trailing whitespace, secret detection, shellcheck, large file checks, and a claude config sync check. Run `prek install` after cloning to set up hooks.
+
+**Always run `dots sync` before committing.** The pre-commit hook verifies that Claude config is synced to `~/.claude/` — if not, the commit will be blocked with a reminder to run `dots sync`. This ensures `~/.claude/settings.json`, agents, commands, hooks, and skills stay in sync with the repo.
 
 ## Development Notes
 
@@ -237,3 +245,5 @@ Managed in `.brew`:
 4. **Vi Mode**: Shell is in vi mode by default
 5. **MCP Scope**: Use `user` scope for dev tools, `project` for team-shared MCPs
 6. **Reference Folder**: Put reference docs in `reference/` (gitignored, not symlinked)
+7. **zsh Loading Order**: Files in `zsh/` are sourced in the order they appear in `zshrc`. If you add a new config file, edit `zshrc` to source it at the right point. For example, completions must load before `fzf.zsh` or keybindings might conflict.
+8. **Pre-Commit Hook Failures**: If prek blocks a commit (e.g., detected secrets), fix the issue before retrying. Only use `--no-verify` for temporary overrides. Check `prek.toml` to understand what's being checked.

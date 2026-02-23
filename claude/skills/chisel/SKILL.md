@@ -27,6 +27,21 @@ context-matched single-file edits.
 
 **Default to `sd`** unless you need the precision of a context-matched Edit.
 
+## Safety: preview before multi-file replacements
+
+Always run `sd -p` (preview/dry-run) first when replacing across multiple files.
+For single-file edits where the match is obvious, skip the preview.
+
+```bash
+# 1. Preview — see what would change (no writes)
+sd -p 'oldFunc' 'newFunc' src/**/*.ts
+
+# 2. Confirm the diff looks right, then apply
+sd 'oldFunc' 'newFunc' src/**/*.ts
+```
+
+For complex regex replacements, always preview regardless of file count.
+
 ---
 
 ## sd — string replacement

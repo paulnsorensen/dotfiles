@@ -69,7 +69,7 @@ run_tests() {
     echo -e "${CYAN}║        Dotfiles Test Suite             ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
     echo
-    
+
     local test_files
     if [[ -n "$SPECIFIC_TEST" ]]; then
         test_files="$SPECIFIC_TEST"
@@ -77,25 +77,27 @@ run_tests() {
         # Run simpler tests that don't require complex setup
         test_files="dots-simple.bats git-hooks.bats sync.bats"
     fi
-    
+
     # Count total tests
     local total_tests=0
     for file in $test_files; do
         if [[ -f "$file" ]]; then
-            local count=$(grep -c "^@test" "$file" || true)
+            local count
+            count=$(grep -c "^@test" "$file" || true)
             total_tests=$((total_tests + count))
         fi
     done
-    
+
     echo -e "${BLUE}Running $total_tests tests...${NC}"
     echo
-    
+
     # Run tests
     local bats_args=""
     if [[ "$VERBOSE" == true ]]; then
         bats_args="-v"
     fi
-    
+
+    # shellcheck disable=SC2086 # intentional word splitting for multiple file args
     if bats $bats_args $test_files; then
         echo
         echo -e "${GREEN}═══ All tests passed! ═══${NC}"
@@ -112,13 +114,13 @@ if [[ "$WATCH" == true ]]; then
     echo -e "${YELLOW}Watch mode: Tests will re-run on file changes${NC}"
     echo -e "${YELLOW}Press Ctrl+C to exit${NC}"
     echo
-    
+
     # Initial run
     run_tests || true
-    
+
     # Watch for changes
     if command -v fswatch &>/dev/null; then
-        fswatch -o . ../**/*.sh ../**/*.bash | while read; do
+        fswatch -o . ../**/*.sh ../**/*.bash | while read -r; do
             clear
             run_tests || true
         done

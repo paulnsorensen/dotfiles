@@ -85,25 +85,51 @@ src/
 
 ## Workflow
 
-I use the Cheddar Flow for development:
-- `/cheese` - Quick 4-step: Explore → Plan → Code → Review
-- `/curdle` - Full 6-step: Explore → Plan → Code → Test → Review → Commit
-- `/worktree <slug>` - Create isolated git worktree for a task
+I use the Cheddar Flow for development. **Discover all available agents and skills with `/agents`** — it's the control panel for the full ecosystem.
+
+**Development & Planning:**
+- `/fromage` - Intelligent cheese-making pipeline that adapts to task complexity (replaces /cheese and /curdle)
 - `/spec` - Discovery dialogue to design a feature and produce a spec artifact
 - `/duck` - Think through a problem together before coding
+- `/research` - Multi-source research: library docs, codebase analysis, prior art
+- `/worktree <slug>` - Create isolated git worktree for a task
+
+**Code Review & Analysis:**
+- `/age` - Staff Engineer code review of recent changes (fromage-age, 0-100 scoring)
+- `/code-review` - Comprehensive repo/library review with persistent history (fromage-age, comprehensive mode)
+- `/copilot-review` - Review a PR and route fixes to GitHub Copilot via inline comments (fromage-age, focused mode)
+- `/audit` - Security and dependency health audit (fromage-pasteurize agent)
+- `/simplifier` - Ruthless code distiller; removes genAI bloat and enforces YAGNI
+
+**Testing & Validation:**
+- `/wreck` - Adversarial test writer (roquefort-wrecker) — writes and runs tests outside /fromage
+- `/test` - Run existing tests via whey-drainer, returns concise summary
 - `/diff` - Pre-commit smoke test of staged changes
+
+**Learning & Navigation:**
+- `/explain` - Explain code or concept (quiz included)
 - `/onboard` - Quick codebase orientation for an unfamiliar repo
+- `/go` - Re-prime MCPs (Serena, Context7) after compaction or session start
 - `/park` - Save session context to Serena memories before exiting
 - `/pull` - Pull latest from main and refresh Serena memories
-- `/go` - Re-prime MCPs (Serena, Context7) after compaction or session start
-- `/explain` - Explain code or concept (quiz included)
-- `/hint` - Get a hint when stuck (preserves learning)
-- `/pingpong` - Ping-pong TDD (AI writes tests, you implement)
-- `/deps` - Audit dependencies for unused packages and security issues
-- `/code-review` - Comprehensive repo/library review with persistent history
-- `/copilot-review` - Review a PR and route fixes to GitHub Copilot via inline comments
-- `/copilot-delegate` - Delegate a task to GitHub Copilot coding agent
-- `/copilot-setup` - Generate Copilot agent/review instructions for a repo
-- `/simplifier` - Ruthless code distiller; removes genAI bloat and enforces YAGNI
+
+All review/analysis agents use universal 0-100 confidence scoring (>= 75 to surface findings).
+
+## Troubleshooting
+
+**MCPs not loading?**
+- Run `/go` to re-prime MCPs and Serena
+- Check `~/.claude/mcp/registry.yaml` for syntax errors
+- Verify external tools are installed (e.g., `which octocode-mcp`)
+
+**Agent or skill not found?**
+- Run `/agents` to discover currently available agents
+- Some agents/skills are context-dependent (only available in certain project types)
+- Restart Claude Code if you just installed a new plugin
+
+**Serena showing stale information?**
+- Run `/go` or `mcp activate_project` to reload project context
+- Use `read_memory` to check persisted discoveries
+- If severely out of sync, use `/park` then start a fresh session
 
 See `~/.claude/commands/` for available commands and `~/.claude/agents/` for specialist agents.
