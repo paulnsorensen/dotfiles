@@ -12,13 +12,13 @@ if [[ -z "$TRANSCRIPT" || ! -f "$TRANSCRIPT" ]]; then
   exit 0
 fi
 
-# Extract recent file paths: per-line jq to skip malformed lines
-FILES=$(tail -200 "$TRANSCRIPT" | while IFS= read -r line; do
+# Extract recent file paths: cap bytes first to prevent choking on huge lines
+FILES=$(tail -c 100000 "$TRANSCRIPT" | tail -200 | while IFS= read -r line; do
   echo "$line" | jq -r '.tool_input.file_path // empty' 2>/dev/null
 done | grep -v '^$' | sort -u | tail -20)
 
-# Extract recent bash commands: per-line jq to skip malformed lines
-COMMANDS=$(tail -200 "$TRANSCRIPT" | while IFS= read -r line; do
+# Extract recent bash commands: cap bytes first to prevent choking on huge lines
+COMMANDS=$(tail -c 100000 "$TRANSCRIPT" | tail -200 | while IFS= read -r line; do
   echo "$line" | jq -r 'select(.tool_input.command) | .tool_input.command' 2>/dev/null
 done | grep -v '^$' | tail -10)
 

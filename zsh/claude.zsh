@@ -14,15 +14,15 @@ alias ccc='claude --continue'
 alias ccr='claude --resume'
 alias ccp='claude --print'
 
-# Fresh session: continue last conversation with MCPs primed
+# Fresh session: prime MCPs in last conversation, then open it interactively
 ccfresh() {
-  claude --continue -p '/go'
+  claude --continue -p '/go' && claude --continue
 }
 
 # ═══════════════════════════════════════════════════════════════════
 # MCP Management (thin wrappers around native commands)
 # ═══════════════════════════════════════════════════════════════════
-CLAUDE_DOTFILES="$HOME/Dev/dotfiles/claude"
+CLAUDE_DOTFILES="$DOTFILES_DIR/claude"
 
 alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'
@@ -124,50 +124,12 @@ ccw-clean() {
 }
 
 # Sweep all repos under ~/Dev for stale worktrees
-alias ccw-sweep='$HOME/Dev/dotfiles/bin/ccw-sweep'
+alias ccw-sweep='$DOTFILES_DIR/bin/ccw-sweep'
 
 # List active worktrees
 alias ccw-ls='git worktree list'
 
-# ═══════════════════════════════════════════════════════════════════
-# GitHub Helpers (batched gh operations)
-# ═══════════════════════════════════════════════════════════════════
-
-# PR review bundle: metadata + diff + checks in one shot
-#   gh-pr-review 14       → everything needed to review PR #14
-gh-pr-review() {
-    local pr="${1:?Usage: gh-pr-review <number>}"
-    echo "=== PR METADATA ==="
-    gh pr view "$pr" --json number,title,state,author,additions,deletions,labels,reviewDecision
-    echo "=== DIFF ==="
-    gh pr diff "$pr"
-    echo "=== CHECKS ==="
-    gh pr checks "$pr"
-}
-
-# PR prep bundle: context for creating a PR
-#   gh-pr-prep             → commits, diff stat, upstream status
-gh-pr-prep() {
-    echo "=== COMMITS ==="
-    git log --oneline origin/main..HEAD
-    echo "=== DIFF STAT ==="
-    git diff origin/main...HEAD --stat
-    echo "=== STATUS ==="
-    git status --short
-    echo "=== UPSTREAM ==="
-    git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null \
-        || echo "No upstream set"
-}
-
-# Issue context bundle: issue metadata + comments
-#   gh-issue-context 42    → issue body, labels, and full comment thread
-gh-issue-context() {
-    local issue="${1:?Usage: gh-issue-context <number>}"
-    echo "=== ISSUE ==="
-    gh issue view "$issue" --json number,title,state,author,labels,assignees,body
-    echo "=== COMMENTS ==="
-    gh issue view "$issue" --comments
-}
+# GitHub helpers (gh-pr-review, gh-pr-prep, gh-issue-context) live in bin/
 
 # ═══════════════════════════════════════════════════════════════════
 # Config Shortcuts
