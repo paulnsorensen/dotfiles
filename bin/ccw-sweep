@@ -101,12 +101,39 @@ check_worktree() {
         reasons+=("branch not found")
         # Still safe to remove if branch is gone
     else
-        # Check if merged into main
+        # Check if merged into main (covers regular merges)
+        local is_merged=false
         local merged
         merged="$(git -C "$repo_root" branch --merged main 2>/dev/null | sed 's/^[ *]*//')"
         if echo "$merged" | grep -qx "$branch"; then
+            is_merged=true
             reasons+=("merged into main")
-        else
+        fi
+
+        # Check for squash-merged PR via gh CLI
+        if ! $is_merged && command -v gh &>/dev/null; then
+            local pr_state
+            pr_state="$(gh pr list --repo "$(git -C "$repo_root" remote get-url origin 2>/dev/null)" \
+                --head "$branch" --state all --json state --jq '.[0].state' 2>/dev/null || true)"
+            if [[ "$pr_state" == "MERGED" ]]; then
+                is_merged=true
+                reasons+=("PR squash-merged")
+            elif [[ "$pr_state" == "CLOSED" ]]; then
+                reasons+=("PR closed without merge")
+            fi
+        fi
+
+        # Check if diff against main is empty (changes already incorporated)
+        if ! $is_merged; then
+            local diff_stat
+            diff_stat="$(git -C "$repo_root" diff --stat "main...$branch" -- 2>/dev/null)"
+            if [[ -z "$diff_stat" ]]; then
+                is_merged=true
+                reasons+=("diff vs main is empty")
+            fi
+        fi
+
+        if ! $is_merged; then
             if [[ "$status" == "SAFE" ]]; then
                 status="WARN"
             fi
@@ -127,12 +154,10 @@ check_worktree() {
             fi
         else
             # No upstream — check if there are commits beyond main
-            local ahead_main
-            ahead_main="$(git -C "$wt_path" rev-list --count 'main..HEAD' 2>/dev/null || echo 0)"
-            if (( ahead_main > 0 )); then
-                local is_merged
-                is_merged="$(git -C "$repo_root" branch --merged main 2>/dev/null | sed 's/^[ *]*//' | grep -cx "$branch")"
-                if (( is_merged == 0 )); then
+            if ! $is_merged; then
+                local ahead_main
+                ahead_main="$(git -C "$wt_path" rev-list --count 'main..HEAD' 2>/dev/null || echo 0)"
+                if (( ahead_main > 0 )); then
                     if [[ "$status" == "SAFE" ]]; then
                         status="WARN"
                     fi
