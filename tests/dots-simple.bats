@@ -23,8 +23,8 @@ assert_failure() {
 
 assert_contains() {
     local haystack="${2:-$output}"
-    # Strip colors
-    haystack="${haystack//$'\x1b'\[*([0-9;])m/}"
+    # Strip ANSI escape codes (compatible with bash 3.2+)
+    haystack=$(printf '%s' "$haystack" | sed $'s/\x1b\\[[0-9;]*m//g')
     [[ "$haystack" == *"$1"* ]] || {
         echo "Output does not contain: $1"
         echo "Actual: $haystack"
