@@ -99,11 +99,16 @@ I use the Cheddar Flow for development:
 - `/explain` - Explain code or concept (quiz included)
 - `/hint` - Get a hint when stuck (preserves learning)
 - `/pingpong` - Ping-pong TDD (AI writes tests, you implement)
-- `/deps` - Audit dependencies for unused packages and security issues
-- `/code-review` - Comprehensive repo/library review with persistent history
-- `/copilot-review` - Review a PR and route fixes to GitHub Copilot via inline comments
+- `/audit` - Security and dependency health audit (fromage-pasteurize agent)
+- `/code-review` - Comprehensive repo/library review with persistent history (fromage-age, comprehensive mode)
+- `/copilot-review` - Review a PR and route fixes to GitHub Copilot via inline comments (fromage-age, focused mode)
 - `/copilot-delegate` - Delegate a task to GitHub Copilot coding agent
 - `/copilot-setup` - Generate Copilot agent/review instructions for a repo
 - `/simplifier` - Ruthless code distiller; removes genAI bloat and enforces YAGNI
+- `/wreck` - Adversarial test writer (roquefort-wrecker) — writes and runs tests outside /fromage
+- `/age` - Staff Engineer code review of recent changes (fromage-age, 0-100 scoring)
+- `/test` - Run existing tests via whey-drainer, returns concise summary
+
+All review/analysis agents use universal 0-100 confidence scoring (>= 75 to surface findings).
 
 See `~/.claude/commands/` for available commands and `~/.claude/agents/` for specialist agents.

@@ -1,4 +1,5 @@
 ---
+name: pingpong
 allowed-tools: Read, Write, Bash
 description: Start ping-pong TDD - AI writes tests, you implement
 argument-hint: [feature description]

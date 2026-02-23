@@ -4,7 +4,7 @@ description: Complete Fromage Development Platform — intelligent cheese-making
 argument-hint: <what you want to build or fix>
 ---
 
-Execute the Fromage development pipeline for: **{{request}}**
+Execute the Fromage development pipeline for: **$ARGUMENTS**
 
 This is the full cheese-making process — from raw milk to packaged wheel. The pipeline assesses complexity and skips phases that don't add value.
 
@@ -225,6 +225,14 @@ The agent follows roquefort-wrecker's adversarial philosophy:
 3. Integration paths (dependency failures)
 4. Happy path (boring but necessary)
 
+All findings are scored 0-100. Only failures >= 75 are highlighted as critical.
+
+**Optional security check**: For medium/large tasks with external inputs or dependencies, also launch `fromage-pasteurize` in parallel for security and dependency scanning:
+
+```
+Task(subagent_type="fromage-pasteurize", model="sonnet", prompt="Security scan of changed files: <list>. Check for OWASP issues, input validation gaps, and dependency vulnerabilities.")
+```
+
 **Fix failures inline** after the agent reports. Then use `whey-drainer` to confirm all tests pass (cheaper than re-running press):
 
 ```
@@ -239,17 +247,17 @@ If whey-drainer reports new failures, fix and re-run (up to 3 iterations before 
 
 ## Phase 8 — Age (Opus agent)
 
-Launch the `fromage-age` agent for code review:
+Launch the `fromage-age` agent in **focused mode** for code review:
 
 ```
-Task(subagent_type="fromage-age", model="opus", prompt="Review changes. Diff: <git diff summary>. Architecture: Sliced Bread. Principles: <list>")
+Task(subagent_type="fromage-age", model="opus", prompt="Focused mode review. Diff: <git diff summary>. Review through two lenses: 1) Correctness & Safety (security, bugs, silent failures) 2) Architecture & Weight (coupling, dead code, inline, undocument, complexity). Score all findings 0-100, only surface >= 75.")
 ```
 
 The agent reviews against:
 - Sliced Bread architecture compliance
 - Engineering principles (input validation, fail-fast, loose coupling, YAGNI, real-world models, immutable patterns)
 - Complexity budget enforcement
-- Only reports issues with >= 80% confidence
+- 0-100 confidence scoring, only surfaces >= 75
 
 **Present findings to user.** Fix agreed issues inline.
 
