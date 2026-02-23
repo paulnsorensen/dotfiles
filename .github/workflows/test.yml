@@ -17,20 +17,13 @@ jobs:
       run: |
         sudo npm install -g bats
 
+    - name: Install prek
+      uses: j178/prek-action@v1
+      with:
+        install-only: true
+
     - name: Run tests
       run: ./tests/run-tests.sh
-
-    - name: Test git hooks
-      run: |
-        # Test that pre-commit hook blocks secrets
-        git config user.email "test@example.com"
-        git config user.name "Test User"
-        git config core.hooksPath ./githooks
-        # Build test string to avoid triggering our own hook
-        printf '%s="%s"\n' "password" "secret" > test-secret.sh
-        git add test-secret.sh
-        ! git commit -m "test" 2>/dev/null || exit 1
-        echo "✅ Pre-commit hook correctly blocked secret"
 
   shellcheck:
     runs-on: ubuntu-latest
