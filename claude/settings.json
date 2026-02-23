@@ -5,10 +5,6 @@
   },
   "permissions": {
     "allow": [
-      "Bash(dots test:*)",
-      "Bash(dots sync:*)",
-      "Bash(dots status:*)",
-      "Bash(dots doctor:*)",
       "Bash(git fetch:*)",
       "Bash(git rebase:*)",
       "mcp__plugin_playwright_playwright__*",
