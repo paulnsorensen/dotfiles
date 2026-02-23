@@ -12,6 +12,19 @@ This is the full cheese-making process — from raw milk to packaged wheel. The 
 
 ## Phase 0 — Assess
 
+### Hard Gate: Worktree Check
+
+Before anything else, check if you are in a git worktree (`git rev-parse --show-toplevel` differs from the main repo root, or `.git` is a file not a directory). If NOT in a worktree:
+
+1. **Stop.** Do not proceed with any implementation.
+2. Ask the user if they want to create one: "You're on the main branch. Want me to create a worktree with `/worktree <slug>`?"
+3. Derive `<slug>` from the request (e.g., "fix login bug" → `fix-login-bug`).
+4. Only proceed after the user is on a worktree OR explicitly says "continue on main".
+
+This gate is **never skipped** regardless of complexity level.
+
+### Classify Complexity
+
 Evaluate the request and classify complexity:
 
 | Level | Signals | Examples |
@@ -269,16 +282,26 @@ The agent reviews against:
 
 Ship it:
 
-1. **Final regression check**: Launch `whey-drainer` to confirm all tests still pass after any Age fixes:
+### Hard Gate: Tests Must Pass
+
+Before committing, run the project's test suite. This gate is **never skipped**.
+
+1. Launch `whey-drainer` for the final regression check:
    ```
    Task(subagent_type="whey-drainer", model="haiku", prompt="Final regression check before commit. Run all tests.")
    ```
-   If failures, fix before proceeding. Do NOT commit with failing tests.
+2. If tests fail:
+   - Fix failures that are caused by your changes
+   - Re-run tests (up to 3 iterations)
+   - If failures are pre-existing (not caused by your changes), report them to the user and ask whether to proceed
+3. **Do NOT commit with failing tests** unless the user explicitly approves after seeing the failures.
 
-2. Use the `/commit` skill to stage and commit with a conventional commit message
-3. If the user wants a PR, use the `/gh` skill to push and open a PR
+### Commit and PR
 
-**Skip condition**: User wants manual control, work is WIP, or user says "don't commit".
+1. Use the `/commit` skill to stage and commit with a conventional commit message
+2. If the user wants a PR, use the `/gh` skill to push and open a PR
+
+**Skip condition for commit/PR**: User wants manual control, work is WIP, or user says "don't commit". The test gate still runs even if commit is skipped.
 
 ---
 

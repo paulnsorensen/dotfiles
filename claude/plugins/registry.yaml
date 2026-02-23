@@ -15,69 +15,69 @@ plugins:
   pyright@claude-code-lsps:
     description: Python type checking and language server
     scope: user
-    load: false
+    load: true
 
   gopls@claude-code-lsps:
     description: Go language server
     scope: user
-    load: false
+    load: true
 
   rust-analyzer@claude-code-lsps:
     description: Rust language server
     scope: user
-    load: false
+    load: true
 
   vtsls@claude-code-lsps:
     description: TypeScript/JavaScript language server
     scope: user
-    load: false
+    load: true
 
   solargraph@claude-code-lsps:
     description: Ruby language server
     scope: user
-    load: false
+    load: true
 
   bash-language-server@claude-code-lsps:
     description: Bash/shell script language server
     scope: user
-    load: false
+    load: true
 
   yaml-language-server@claude-code-lsps:
     description: YAML language server
     scope: user
-    load: false
+    load: true
 
   code-simplifier@claude-plugins-official:
     description: Code cleanup and simplification agents
     scope: user
-    load: false
+    load: true
 
   hookify@claude-plugins-official:
     description: Create hooks to prevent unwanted behaviors by analyzing conversation patterns
     scope: user
-    load: false
+    load: true
 
   claude-md-management@claude-plugins-official:
     description: Audit, maintain, and improve CLAUDE.md files with session learnings
     scope: user
-    load: false
+    load: true
 
   playwright@claude-plugins-official:
     description: Browser testing and automation with Playwright
     scope: user
-    load: false
+    load: true
 
   ralph-loop@claude-plugins-official:
     description: Iterative self-referential loops for convergent task completion
     scope: user
-    load: false
+    load: true
 
   frontend-design@claude-plugins-official:
     description: Frontend design skill for UI/UX implementation
     scope: user
-    load: false
+    load: true
 
   skill-creator@claude-plugins-official:
     description: Guided skill creation workflow with component design, implementation, and validation
     scope: user
-    load: false
+    load: true

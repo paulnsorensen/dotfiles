@@ -110,10 +110,9 @@ assert_failure() {
     fi
 }
 
-# Strip ANSI color codes from text
+# Strip ANSI color codes from text (bash 3.2 compatible, no extglob)
 strip_colors() {
-    local text="$1"
-    printf '%s' "${text//$'\x1b'\[*([0-9;])m/}"
+    printf '%s' "$1" | sed $'s/\x1b\\[[0-9;]*m//g'
 }
 
 # Assert output contains string

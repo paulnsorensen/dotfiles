@@ -10,10 +10,12 @@ module.exports = {
   hooks: [{
     matcher: (toolName) => toolName === 'Read',
     handler: async (input) => {
-      const filePath = path.resolve(input.path);
+      const rawPath = input.file_path || input.path;
+      if (!rawPath) return null; // No path provided, let the tool handle it
+      const filePath = path.resolve(rawPath);
       if (!fs.existsSync(filePath)) {
         return {
-          result: `Cheese Lord, that file doesn't exist: "${input.path}"
+          result: `Cheese Lord, that file doesn't exist: "${rawPath}"
 
 Use \`ls\` or \`glob\` to find the correct path.
 A true Gouda Explorer verifies the terrain before mapping it.`

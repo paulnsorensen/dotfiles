@@ -137,16 +137,29 @@ if [[ -n "$TO_ADD" ]]; then
             # Build the command with proper argument handling
             args_json=$(echo "$DESIRED_JSON" | jq -c --arg n "$name" '.[$n].args // []')
 
-            # Use eval to properly handle the args array
-            eval "args_array=($(echo "$args_json" | jq -r '.[] | @sh'))"
+            # Parse args JSON into array safely (bash 3.2 compatible, no eval)
+            args_array=()
+            while IFS= read -r arg; do
+                args_array+=("$arg")
+            done < <(echo "$args_json" | jq -r '.[]')
 
             # Build env var flags if present
             env_flags=()
             env_json=$(echo "$DESIRED_JSON" | jq -c --arg n "$name" '.[$n].env // {}')
             if [[ "$env_json" != "{}" ]]; then
                 while IFS='=' read -r key val; do
-                    # Expand shell variables in values (e.g. ${CONTEXT7_API_KEY})
-                    expanded_val=$(eval echo "$val")
+                    # Expand env var references safely (e.g. ${CONTEXT7_API_KEY})
+                    # Strip ${...} wrapper to get the var name, then resolve via indirection
+                    if [[ "$val" =~ ^\$\{([^}]+)\}$ ]]; then
+                        var_name="${BASH_REMATCH[1]}"
+                        expanded_val="${!var_name}"
+                        if [[ -z "$expanded_val" ]]; then
+                            echo -e "${RED}Error: $key references unset env var \$$var_name — skipping $name${NC}" >&2
+                            continue 2  # Skip this entire MCP addition
+                        fi
+                    else
+                        expanded_val="$val"
+                    fi
                     env_flags+=(-e "${key}=${expanded_val}")
                 done < <(echo "$env_json" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
             fi
