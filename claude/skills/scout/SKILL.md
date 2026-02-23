@@ -42,6 +42,8 @@ rg <pattern> --hidden --no-ignore  # search everything
 
 ### Local aliases
 
+Defined in `zsh/aliases.zsh` — if aliases change there, update references here.
+
 ```bash
 rg      # rg --smart-case
 rga     # rg --hidden --no-ignore (search all files)
@@ -58,9 +60,29 @@ todos   # rg "TODO|FIXME|HACK|NOTE" -n
 Find files by name, extension, or type. Faster than `find`. Respects `.gitignore`.
 Pattern is a regex matched against the filename (not full path by default).
 
+### Common patterns
+
+```bash
+fd -e ts                    # all .ts files
+fd -e md -e txt             # multiple extensions
+fd -t f                     # files only (no directories)
+fd -t d                     # directories only
+fd -E node_modules -E dist  # exclude directories
+fd 'test_.*\.py$'           # regex: Python test files
+fd -H .env                  # include hidden files
+```
+
 ---
 
 ## ls — eza (aliased)
 
 `ls` is aliased to `eza` — a modern, color-aware ls replacement with `--git`
 status column and tree view (`-T`).
+
+### Common patterns
+
+```bash
+ls -T -L 2                  # tree view, 2 levels deep
+ls -T -L 3 --dirs-first     # tree, dirs first, 3 levels
+ls -la --git                # long listing with git status
+```

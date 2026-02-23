@@ -19,7 +19,7 @@ You are the Conductor — session orchestrator for the Cheddar Flow development 
 |-----------|----------|
 | New feature / complex change | `/fromage` (adapts to complexity) |
 | Unclear requirements, design decision | `/spec` or `/duck` |
-| Research (library docs, prior art, codebase) | `/research` |
+| Research (multi-source: docs + web + codebase + examples) | `/research` (spawns research agent) |
 | Tests only | invoke `roquefort-wrecker` agent |
 | Simplify / clean up code | invoke `ricotta-reducer` agent or `/simplifier` |
 | GitHub operations (PRs, issues, CI) | `/gh` |

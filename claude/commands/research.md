@@ -1,77 +1,57 @@
 ---
 name: research
-description: Multi-source research using an agent team for parallel external lookups, codebase analysis, and synthesis.
+description: Multi-source research coordinator. Spawns 4 parallel fetch subagents for library docs, external concepts, codebase patterns, and real-world examples. Synthesizes findings into a coherent answer.
 argument-hint: <research question or topic>
 ---
 
 Research: **{{request}}**
 
-Spawn an agent team for parallel multi-source research. Use this for questions that need 2+ sources (library docs, codebase analysis, GitHub examples). For quick single-source lookups, use the research skill inline instead.
+The research agent will conduct parallel multi-source investigation, fetching from:
+- **Context7**: Library documentation and APIs
+- **WebSearch/WebFetch**: External concepts and best practices
+- **Serena**: Codebase patterns and usage
+- **Octocode**: Real-world GitHub examples
+
+Results are synthesized into a single coherent answer with evidence from all sources.
 
 ---
 
-## Team Structure
+## When to Use
 
-### Lead (you)
-- **Owns**: Synthesis, Serena codebase analysis, final answer
-- **Tools**: Serena MCP, Read, Grep, Glob (codebase tools)
-- Coordinate teammates, merge findings, resolve contradictions
+✅ **Use this agent** for questions needing 2+ sources:
+- "How do I set up authentication in Express 5?" (docs + examples + patterns)
+- "What's the best pattern for rate limiting?" (web + GitHub + codebase)
+- "How do we handle X in our codebase, and what do other projects do?" (Serena + Octocode)
 
-### Teammate: docs-fetcher
-- **Role**: External documentation and web research
-- **Tools**: Context7 MCP, WebSearch, WebFetch
-- **Prompt pattern**: "Find documentation for <library/concept>. Specific question: <question>. Return a focused summary with code examples if available."
-
-### Teammate: code-searcher
-- **Role**: GitHub code search for real-world usage patterns
-- **Tools**: Octocode MCP (githubSearchCode, githubGetFileContent, githubViewRepoStructure)
-- **Prompt pattern**: "Search GitHub for real-world examples of <pattern/API usage>. Focus on popular repos with good practices. Return 3-5 relevant code snippets with context."
-
----
-
-## When to Use a Team vs Inline
-
-| Situation | Approach |
-|---|---|
-| Quick API question, single library | Inline (research skill) |
-| "How does X work in our codebase?" | Inline (Serena only) |
-| Library docs + codebase patterns | Team (docs-fetcher + lead) |
-| External patterns + GitHub examples + codebase | Full team |
-| Architecture decision needing prior art | Full team |
-
----
-
-## Workflow
-
-1. **Assess** — Does this need a team? If it's a single-source lookup, use the research skill inline.
-2. **Dispatch** — Launch relevant teammates in parallel via Task tool with `agentTeam: true`:
-   ```
-   Task(subagent_type="general-purpose", prompt="<teammate prompt>", agentTeam: true)
-   ```
-3. **Analyze locally** — While teammates work, do your own Serena/codebase analysis
-4. **Synthesize** — Merge all findings into a single coherent answer
+❌ **Don't use** for single-source questions:
+- "What does `Array.map` do?" (training data is fine)
+- "How does our auth module work?" (use Serena directly, inline)
+- "Show me React useEffect docs" (use fetch skill directly)
 
 ---
 
 ## Output Format
 
-```
+The agent returns findings organized by source:
+
+```markdown
 ## Research: <Question>
 
 ### Finding
-<Direct answer in 1-3 paragraphs>
+<Direct answer synthesized from all sources>
 
-### Evidence
-| Source | Finding |
-|---|---|
-| Codebase (Serena) | <what our code shows> |
-| Docs (Context7/Web) | <what documentation says> |
-| GitHub examples | <what real-world code does> |
+### Evidence by Source
+| Source | Finding | Confidence |
+|---|---|---|
+| Docs (Context7) | <what we learned> | High/Medium/Low |
+| Web (WebSearch) | <what we learned> | High/Medium/Low |
+| Codebase (Serena) | <what we learned> | High/Medium/Low |
+| GitHub (Octocode) | <what we learned> | High/Medium/Low |
 
 ### Implications for Our Task
-- <How this affects the implementation>
-- <Constraints or opportunities discovered>
+- <How this affects implementation>
+- <Constraints or opportunities>
 
-### Confidence
+### Overall Confidence
 <High/Medium/Low> — <brief justification>
 ```

@@ -84,6 +84,22 @@ Interactive requirements gathering. This is a conversation, not an interrogation
 3. When external research is needed, invoke `/research` for parallel multi-source research via agent team
 4. Once requirements are clear, write spec to `.claude/specs/<slug>.md` using the spec format from `/spec`
 
+**>>> CHECKPOINT 1: Requirements Approval <<<**
+
+Present the spec summary to the user:
+- What will be built (2-3 bullets)
+- Key constraints or decisions made
+- Scope boundaries — what's explicitly OUT
+- Link to full spec: `.claude/specs/<slug>.md`
+
+Use AskUserQuestion:
+- Option 1: "Approve requirements — proceed to exploration"
+- Option 2: "Edit requirements" (iterate on spec)
+- Option 3: "Pause — I need to think"
+
+Do NOT proceed to Culture without explicit approval.
+The spec is the contract — exploration and planning flow from it.
+
 **Skip condition**: Task is self-evident (trivial/small) OR user provides a complete spec up front.
 
 ---
@@ -117,10 +133,20 @@ Task(subagent_type="fromage-curdle", model="opus", prompt="Create execution plan
 
 The agent runs in `permissionMode: plan` (read-only) and produces a numbered implementation checklist.
 
-**Present the plan to the user for approval.** Use AskUserQuestion:
-- Option 1: "Approve plan"
-- Option 2: "Modify plan" (then iterate)
-- Option 3: "Scrap and re-plan"
+**>>> CHECKPOINT 2: Plan Approval <<<**
+
+Present the plan summary:
+- Architecture decision (one line)
+- Files: N to modify, N to create
+- Build steps: N (X parallel, Y sequential)
+- Key decisions made
+- YAGNI boundaries — what we're NOT building
+
+Use AskUserQuestion:
+- Option 1: "Approve plan — start building"
+- Option 2: "Modify plan" (iterate)
+- Option 3: "Scrap and re-explore" (back to Culture)
+- Option 4: "Pause — save plan for later"
 
 Do NOT proceed to Cook without explicit approval.
 
@@ -136,6 +162,12 @@ Write high-level tests based on the approved plan and spec:
 - **Small tasks**: Single test file covering the change
 
 Use the project's existing test framework and conventions. If no test framework exists, skip entirely.
+
+After writing tests, run them via `whey-drainer` to confirm the scaffolding is sound before moving to implementation:
+
+```
+Task(subagent_type="whey-drainer", model="haiku", prompt="Run the new tests. They should fail (tests-before-code). Confirm they run without syntax/import errors and report the failure summary.")
+```
 
 **Skip condition**: No test framework, trivial change, or user opts out.
 
@@ -159,6 +191,14 @@ Split work by independent modules/files. Each cook agent gets:
 - Engineering principles to follow
 
 After all cooks return, verify integration — make sure the pieces fit together.
+
+**Post-Cook verification**: Launch `whey-drainer` to run the full test suite and confirm the implementation doesn't break anything. This keeps verbose test output out of your context:
+
+```
+Task(subagent_type="whey-drainer", model="haiku", prompt="Run all tests. Report pass/fail counts and any failures.")
+```
+
+If failures are reported, fix them inline before moving on.
 
 **Engineering principles for all implementation**:
 1. Input validation at system boundaries
@@ -185,7 +225,13 @@ The agent follows roquefort-wrecker's adversarial philosophy:
 3. Integration paths (dependency failures)
 4. Happy path (boring but necessary)
 
-**Fix failures inline** after the agent reports. Re-run tests to confirm fixes.
+**Fix failures inline** after the agent reports. Then use `whey-drainer` to confirm all tests pass (cheaper than re-running press):
+
+```
+Task(subagent_type="whey-drainer", model="haiku", prompt="Run all tests. Confirm fixes for: <list of failures that were fixed>")
+```
+
+If whey-drainer reports new failures, fix and re-run (up to 3 iterations before escalating to user).
 
 **Skip condition**: Cut phase provided sufficient coverage, no test framework, or trivial change.
 
@@ -215,8 +261,14 @@ The agent reviews against:
 
 Ship it:
 
-1. Use the `/commit` skill to stage and commit with a conventional commit message
-2. If the user wants a PR, use the `/gh` skill to push and open a PR
+1. **Final regression check**: Launch `whey-drainer` to confirm all tests still pass after any Age fixes:
+   ```
+   Task(subagent_type="whey-drainer", model="haiku", prompt="Final regression check before commit. Run all tests.")
+   ```
+   If failures, fix before proceeding. Do NOT commit with failing tests.
+
+2. Use the `/commit` skill to stage and commit with a conventional commit message
+3. If the user wants a PR, use the `/gh` skill to push and open a PR
 
 **Skip condition**: User wants manual control, work is WIP, or user says "don't commit".
 
@@ -240,5 +292,6 @@ Keep transitions tight — one or two sentences max.
 
 - If an agent fails or returns poor results, retry once with refined prompt
 - If a phase produces unexpected results, pause and ask the user
-- If tests fail in Press, fix and re-run (up to 3 iterations before escalating to user)
+- If tests fail in Press, fix and re-run via `whey-drainer` (up to 3 iterations before escalating to user)
 - Never proceed past a user approval gate without explicit approval
+- Use `whey-drainer` (not the full press/wrecker agents) for re-runs — it's cheaper and keeps context clean
