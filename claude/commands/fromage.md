@@ -16,6 +16,7 @@ Each phase builds on prior phases. When launching agents, always include:
 - **Exploration findings**: from Phase 3, if it ran (entry points, blast radius, key files)
 - **Plan steps**: from Phase 4, scoped to the agent's chunk
 - **Changed files**: accumulated list, updated after each Cook/Press cycle
+- **Design skill**: from Phase 4 plan or `--skill` flag (skill file content injected into Cook)
 
 ---
 
@@ -38,6 +39,14 @@ Generate a kebab-case slug from the request (<30 chars). Examples:
 - "fix login timeout bug" → `fix-login-timeout`
 
 The slug is used for: spec file (`.claude/specs/<slug>.md`), worktree branch, PR title context.
+
+### Parse Flags
+
+If `$ARGUMENTS` contains `--skill <name>`:
+1. Extract the skill name and remove the flag from the arguments
+2. Verify `claude/skills/<name>/SKILL.md` exists (error if not found)
+3. Carry the skill name through all subsequent phases
+4. This overrides any skill detected by Curdle
 
 ### Classify Complexity
 
@@ -138,6 +147,15 @@ Implementation. **Never skipped.**
 **Small/trivial**: Implement directly inline.
 
 **Medium/large**: Launch parallel `fromage-cook` agents (sonnet), split by independent modules. Each gets their chunk, relevant files, and engineering principles.
+
+### Design Skill Injection
+
+If a design skill was specified (via Curdle plan's "Design Skill" section or `--skill` flag):
+1. Read `claude/skills/<skill-name>/SKILL.md`
+2. Include the skill's markdown body in each Cook agent's prompt
+3. Prefix with: "Apply the following design skill guidelines to your implementation:"
+
+If no design skill applies, skip this step.
 
 After cooks return, verify integration. Run `whey-drainer` (haiku) for regression check. Fix failures before moving on.
 

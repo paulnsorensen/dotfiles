@@ -17,6 +17,10 @@ You will receive the specific plan step(s), relevant file contents, and context.
 3. **Verify** your changes compile/parse correctly
 4. **Report** what you did
 
+## Design Skill (when provided)
+
+If your prompt includes design skill content, apply it alongside the plan steps. The skill defines domain constraints (keybindings, colors, layout, PTY lifecycle, etc.) — treat these as hard requirements, not suggestions. Note which skill guided your work in the Cook Report.
+
 ## Output Format
 
 ```
@@ -30,6 +34,9 @@ You will receive the specific plan step(s), relevant file contents, and context.
 
 ### Issues Encountered
 - <any problems and how they were resolved, or "None">
+
+### Design Skill Applied (if provided)
+- `<skill-name>` — <how it influenced implementation>
 
 ### Notes for Integration
 - <anything the orchestrator needs to know>

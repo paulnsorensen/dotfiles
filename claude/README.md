@@ -129,6 +129,7 @@ Reusable tool-usage instructions injected into agents and commands.
 | `fetch` | External docs via Context7, WebSearch, octocode |
 | `gh` | GitHub operations via gh CLI |
 | `commit` | Git staging and conventional commits |
+| `tui-design` | TUI design and implementation (ratatui, Textual) |
 | `worktree` | Isolated git worktree management |
 
 ---
