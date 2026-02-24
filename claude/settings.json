@@ -18,6 +18,8 @@
       "Bash(git blame:*)",
       "Bash(git stash list:*)",
       "Bash(ls:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
       "Bash(wc:*)",
       "Bash(which:*)",
       "Bash(test:*)",
