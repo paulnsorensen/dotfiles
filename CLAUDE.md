@@ -194,6 +194,7 @@ The `.sync-with-rollback` script provides:
 - `/age` — Staff Engineer code review of recent changes (fromage-age, focused mode)
 - `/audit` — security and dependency health audit (fromage-pasteurize)
 - `/test` — run existing tests via whey-drainer, returns concise summary
+- `/move-my-cheese <PR#>` — take over a PR: merge main, diagnose CI failures, fix tests/conflicts, push
 - Pre-tool hooks (block-install.js, phantom-file-check.js, block-file-write.js)
 - Compaction hooks (pre-compact.sh saves context, post-compact.sh re-primes Serena)
 - Fresh session hook (post-fresh-start.sh injects /go reminder on non-compact starts)

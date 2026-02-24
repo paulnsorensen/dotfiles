@@ -83,6 +83,8 @@ src/
 - One direction only (use events for reverse deps)
 - `common/` is a leaf (imports nothing from siblings)
 
+> For rationale, anti-patterns, and boundary guidance, see `claude/reference/sliced-bread.md`.
+
 ## Workflow
 
 I use the Cheddar Flow for development. **Discover all available agents and skills with `/agents`** — it's the control panel for the full ecosystem.
@@ -109,6 +111,7 @@ I use the Cheddar Flow for development. **Discover all available agents and skil
 - `/pingpong` - Ping-pong TDD: AI writes tests, you implement
 
 **GitHub Integration:**
+- `/move-my-cheese <PR#>` - Take over a PR: merge main, diagnose CI failures, fix tests/conflicts, push
 - `/copilot-review` - Review a PR and route fixes to GitHub Copilot via inline comments
 - `/copilot-delegate` - Delegate task to Copilot agent, then review the resulting PR
 - `/copilot-setup` - Generate Copilot instructions for a repo
