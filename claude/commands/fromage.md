@@ -8,19 +8,36 @@ Execute the Fromage development pipeline for: **$ARGUMENTS**
 
 Full cheese-making process — raw milk to packaged wheel. Assesses complexity and skips phases that don't add value.
 
+## Context Passing
+
+Each phase builds on prior phases. When launching agents, always include:
+- **Slug**: kebab-case task identifier derived in Phase 0 (used for spec files, branch names)
+- **Spec summary**: from Phase 2, or the original request if spec was skipped
+- **Exploration findings**: from Phase 3, if it ran (entry points, blast radius, key files)
+- **Plan steps**: from Phase 4, scoped to the agent's chunk
+- **Changed files**: accumulated list, updated after each Cook/Press cycle
+
 ---
 
 ## Phase 0 — Assess
 
 ### Hard Gate: Worktree Check
 
-Check if you are in a git worktree (`.git` is a file, not a directory). If NOT:
+Check if you are in a git worktree: run `git rev-parse --git-dir` — if output contains `/worktrees/`, you're in one. If NOT:
 
 1. **Stop.** Do not proceed.
 2. Ask: "You're on the main branch. Want me to create a worktree with `/worktree <slug>`?"
 3. Only proceed after user is on a worktree OR explicitly says "continue on main".
 
 This gate is **never skipped**.
+
+### Derive Slug
+
+Generate a kebab-case slug from the request (<30 chars). Examples:
+- "add dark mode support" → `add-dark-mode`
+- "fix login timeout bug" → `fix-login-timeout`
+
+The slug is used for: spec file (`.claude/specs/<slug>.md`), worktree branch, PR title context.
 
 ### Classify Complexity
 
@@ -39,21 +56,21 @@ Announce complexity and show which phases run vs skip:
 | 2. Pasteurize | skip | skip | run | run |
 | 3. Culture | skip | skip | run | run |
 | 4. Curdle | skip | skip | run | run |
-| 5. Cut | skip | optional | run | run |
+| 5. Cut | skip | ask | run | run |
 | 6. Cook | run | run | run | run |
-| 7. Press | skip | optional | run | run |
+| 7. Press | skip | ask | run | run |
 | 8. Age | skip | skip | run | run |
 | 9. Package | run | run | run | run |
 
-User can override any skip decision.
+**ask** = ask user before running. User can also override any skip → run.
 
 ---
 
 ## Phase 1 — Preparing (Haiku)
 
-Launch `fromage-preparing` (haiku). It checks worktree status, primes Serena, and reports git state.
+Launch `fromage-preparing` (haiku). It primes Serena (activate_project, check_onboarding, read memories) and reports git state. Worktree status was already verified in Phase 0 — this phase focuses on environment readiness.
 
-**Skip**: Already in a worktree AND Serena active — confirm inline.
+**Skip**: Serena already active and git state is clean — confirm inline.
 
 ---
 
@@ -78,11 +95,11 @@ AskUserQuestion: Approve / Edit / Pause. Do NOT proceed without approval — the
 
 ## Phase 3 — Culture (Sonnet, parallel)
 
-Launch 2-3 `fromage-culture` agents (sonnet), each targeting a different aspect:
+Launch 2-3 `fromage-culture` agents (sonnet), each targeting a different aspect. Every agent applies the full trace checklist (data transformations, state changes, cross-cutting concerns, configuration) to their assigned scope:
 
-- **Aspect A**: Entry points, existing patterns, data flow and transformations
-- **Aspect B**: Blast radius — affected code, state changes, side effects
-- **Aspect C** (large only): Architecture, cross-cutting concerns, configuration
+- **Aspect A**: Entry points and existing patterns relevant to the change
+- **Aspect B**: Blast radius — what existing code will be affected
+- **Aspect C** (large only): Architecture boundaries and integration points
 
 After agents return, **read all identified key files** yourself for full planning context.
 
@@ -147,7 +164,9 @@ Launch `fromage-press` (sonnet) for adversarial testing — chaos inputs, bounda
 
 ## Phase 8 — Age (Opus)
 
-Launch `fromage-age` (opus) in focused mode. Reviews through three dimensions:
+Launch `fromage-age` (opus) in focused mode. Include the list of changed file paths in the prompt — the agent uses `git blame` and `git log` for historical context.
+
+Reviews through three dimensions:
 
 1. **Correctness & Safety** — security, bugs, silent failures
 2. **Architecture & Weight** — coupling, dead code, complexity, inline/undocument
