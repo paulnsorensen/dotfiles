@@ -111,6 +111,7 @@ I use the Cheddar Flow for development. **Discover all available agents and skil
 - `/pingpong` - Ping-pong TDD: AI writes tests, you implement
 
 **GitHub Integration:**
+- `/move-my-cheese <PR#>` - Take over a PR: merge main, diagnose CI failures, fix tests/conflicts, push
 - `/copilot-review` - Review a PR and route fixes to GitHub Copilot via inline comments
 - `/copilot-delegate` - Delegate task to Copilot agent, then review the resulting PR
 - `/copilot-setup` - Generate Copilot instructions for a repo
