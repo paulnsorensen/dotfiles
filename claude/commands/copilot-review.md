@@ -7,6 +7,17 @@ argument-hint: "<PR number or URL>"
 
 Review a pull request and route fixes to GitHub Copilot: $ARGUMENTS
 
+## Progress Tracking
+
+At command start, call `TaskCreate` for all 4 phases. Mark `in_progress` at phase start, `completed` at phase end.
+
+| Phase | Subject | activeForm |
+|---|---|---|
+| 1 | Fetch PR context | Fetching PR context |
+| 2 | Run code review | Running code review |
+| 3 | Format findings for Copilot | Formatting review findings |
+| 4 | Post review comments | Posting review comments |
+
 ## Phase 1: Fetch PR Context (inline — small)
 
 1. Determine the PR number from the argument. If it's a URL, extract the number. If no argument, list open PRs with `gh pr list` and ask which one.
