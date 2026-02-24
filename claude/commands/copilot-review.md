@@ -1,6 +1,6 @@
 ---
 name: copilot-review
-allowed-tools: Bash(gh *), Bash(git *), Bash(jq *), Bash(cat *), Read, Grep, AskUserQuestion
+allowed-tools: Bash(gh *), Bash(git *), Bash(jq *), Bash(cat *), Read, Grep, AskUserQuestion, Task, TaskCreate, TaskUpdate, TaskList, TaskGet
 description: Review a PR and route fixes to GitHub Copilot via inline comments. Spawns fromage-age for the review, then formats findings for Copilot.
 argument-hint: "<PR number or URL>"
 ---
