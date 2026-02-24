@@ -2,7 +2,7 @@
 name: tui-design
 model: sonnet
 fork: true
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(cargo:*), Bash(uv:*), Bash(python:*), Bash(npm:*), Bash(npx:*), Bash(mkdir:*), mcp__context7__resolve-library-id, mcp__context7__query-docs
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(mkdir:*), mcp__context7__resolve-library-id, mcp__context7__query-docs
 description: >
   Create distinctive, production-grade terminal user interfaces with high usability
   and professional polish. Use this skill when the user asks to build TUI applications,
@@ -58,9 +58,9 @@ Then implement working code that is:
 ## TUI Aesthetics
 
 - **Borders**: Single-line (`+-+||+-+`) for standard panels, double-line sparingly for emphasis/focus. Round corners for softer feel. Consistent style across the app. 1 char internal padding minimum.
-- **Color**: Cohesive palette. Bright/warm for primary, dim/cool for secondary. Bold for emphasis, dim for metadata, reverse-video for selections. Always pair color with symbol/text (checkmark/X/warning). Support light AND dark backgrounds. Respect `NO_COLOR`.
+- **Color**: Cohesive palette. Bright/warm for primary, dim/cool for secondary. Bold for emphasis, dim for metadata, reverse-video for selections. Default to CVD-safe status colors: blue=success/info, orange/amber=warning, magenta=error. Classic green/yellow/red may be offered as an alternate theme. Always pair color with symbol/text (checkmark/X/warning). Support light AND dark backgrounds. Respect `NO_COLOR`.
 - **Hierarchy**: Top-left = most important context, bottom = status/keybindings, center = primary workspace. Right-align numbers, left-align text. Truncate with ellipsis, never wrap in tables.
-- **Status bar**: Bottom 1-2 lines. Structure: `[MODE] | context | metadata | position | keybinding hints`. Temporary messages overwrite 3-5 seconds, then restore. Color-code: green=success, red=error, yellow=warning — always with text prefix too.
+- **Status bar**: Bottom 1-2 lines. Structure: `[MODE] | context | metadata | position | keybinding hints`. Temporary messages overwrite 3-5 seconds, then restore. Use the CVD-safe palette above — always with text prefix (`[OK]`, `[ERR]`, `[WARN]`).
 
 NEVER hard-code colors assuming dark background. NEVER rely on color alone. NEVER mix border styles. NEVER skip the status bar.
 
@@ -105,7 +105,7 @@ Use **prefix keys** (`gg`, `dd`) instead of modifier chords for maximum terminal
 
 | Risk | Pattern | Example |
 |------|---------|---------|
-| Reversible | Undo instead of confirm | `Done. Ctrl-Z to undo (10s)` |
+| Reversible | Undo instead of confirm | `Done. Press u to undo (10s)` |
 | Low | Force-flag | `:q` vs `:q!` |
 | Moderate | Inline y/N | `Delete config.yaml? [y/N]:` (capitalize safe default) |
 | High | Modal dialog | Centered overlay with OK/Cancel |
@@ -117,7 +117,7 @@ Use **prefix keys** (`gg`, `dd`) instead of modifier chords for maximum terminal
 
 ## PTY Management
 
-### Full PTY handoff (shelling out) — execute EXACTLY:
+### Full PTY handoff (shelling out) — in this order:
 1. Leave alternate screen, 2. Disable mouse capture, 3. Disable raw mode, 4. Show cursor
 5. Spawn child with inherited stdin/stdout/stderr, 6. waitpid()
 7. Re-enable raw mode, 8. Re-enable mouse capture, 9. Re-enter alternate screen, 10. Full redraw
@@ -125,13 +125,20 @@ Use **prefix keys** (`gg`, `dd`) instead of modifier chords for maximum terminal
 **Rust (ratatui + crossterm):**
 ```rust
 fn shell_out<B: Backend>(terminal: &mut Terminal<B>, cmd: &str, args: &[&str]) -> io::Result<ExitStatus> {
+    // Suspend TUI (steps 1-4)
     crossterm::execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
     crossterm::terminal::disable_raw_mode()?;
-    let status = std::process::Command::new(cmd).args(args).status()?;
+    crossterm::execute!(io::stdout(), crossterm::cursor::Show)?;
+
+    // Run child (steps 5-6)
+    let result = std::process::Command::new(cmd).args(args).status();
+
+    // Always restore TUI (steps 7-10), even if child failed
     crossterm::terminal::enable_raw_mode()?;
     crossterm::execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
     terminal.clear()?;
-    Ok(status)
+
+    result
 }
 ```
 
