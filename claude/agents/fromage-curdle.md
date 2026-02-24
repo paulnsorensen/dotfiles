@@ -44,6 +44,11 @@ Steps marked with dependencies:
 
 ### What NOT to Build
 - <Explicitly excluded scope — YAGNI boundaries>
+
+### Design Skill (optional)
+- Skill: `<skill-name>` — <one-line justification>
+Only include if the task involves specialized design work (TUI, frontend, API
+design). Skill must exist at `claude/skills/<name>/SKILL.md`.
 ```
 
 ## Rules
@@ -52,4 +57,5 @@ Steps marked with dependencies:
 - Every file in the map must exist or be justified as new.
 - Mark which steps can run in parallel (for Cook agent parallelization).
 - Plan must be specific enough that a Sonnet-class agent can implement each step without further design decisions.
+- If the task involves UI/UX work, check `claude/skills/` for applicable design skills and recommend one in the "Design Skill" section.
 - Keep the plan under 200 lines.
