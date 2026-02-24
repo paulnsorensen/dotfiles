@@ -23,6 +23,17 @@ This command orchestrates across multiple skills:
 | Commit | **commit** | Stage and commit fixes (conventional format) |
 | Push | **gh** | Push to PR branch, re-run failed CI |
 
+## Progress Tracking
+
+At command start, call `TaskCreate` for all 4 phases. Mark `in_progress` at phase start, `completed` at phase end.
+
+| Phase | Subject | activeForm |
+|---|---|---|
+| 1 | Recon PR state | Gathering PR context |
+| 2 | Checkout and merge main | Merging main into PR |
+| 3 | Diagnose and fix failures | Diagnosing and fixing failures |
+| 4 | Push fixes and report | Pushing fixes |
+
 ---
 
 ## Phase 1 — Recon (gh skill)

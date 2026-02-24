@@ -18,6 +18,28 @@ Each phase builds on prior phases. When launching agents, always include:
 - **Changed files**: accumulated list, updated after each Cook/Press cycle
 - **Design skill**: from Phase 4 plan or `--skill` flag (skill file content injected into Cook)
 
+## Progress Tracking
+
+After complexity classification in Phase 0, call `TaskCreate` for each phase that will **run** (not skipped). This gives the user a persistent at-a-glance view of pipeline progress.
+
+- Create tasks using the subject and `activeForm` from the table below
+- At the start of each phase, `TaskUpdate` that phase's task → `in_progress`
+- At each `--- Phase N complete ---` transition, `TaskUpdate` → `completed`
+- Phases gated by "ask": create the task as `pending`. If the user declines, `TaskUpdate` → `deleted`
+
+| Phase | Subject | activeForm |
+|---|---|---|
+| 0 | Assess complexity | Assessing complexity |
+| 1 | Prepare environment | Preparing environment |
+| 2 | Gather requirements | Gathering requirements |
+| 3 | Explore codebase | Exploring codebase |
+| 4 | Plan implementation | Planning implementation |
+| 5 | Write test scaffolds | Writing test scaffolds |
+| 6 | Implement changes | Implementing changes |
+| 7 | Adversarial testing | Running adversarial tests |
+| 8 | Code review | Reviewing changes |
+| 9 | Package and ship | Packaging and shipping |
+
 ---
 
 ## Phase 0 — Assess
