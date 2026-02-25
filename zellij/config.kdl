@@ -1,0 +1,126 @@
+// Chocolate Donut theme + vim-style navigation
+// Zellij v0.40+
+
+default_mode "normal"
+default_shell "zsh"
+scroll_buffer_size 50000
+mouse_mode true
+pane_frames true
+copy_on_select false
+simplified_ui false
+show_startup_tips false
+theme "chocolate-donut"
+default_layout "default"
+
+// ─── Keybindings ────────────────────────────────────────────────────────────
+// Alt+key = global (no prefix needed, works from any mode)
+// Designed for vim muscle memory without conflicting with tmux's Ctrl+a
+
+keybinds clear-defaults=false {
+    shared_except "locked" {
+        // Pane navigation (Alt+hjkl, no prefix)
+        bind "Alt h" { MoveFocusOrTab "Left"; }
+        bind "Alt l" { MoveFocusOrTab "Right"; }
+        bind "Alt j" { MoveFocus "Down"; }
+        bind "Alt k" { MoveFocus "Up"; }
+
+        // Splits
+        bind "Alt |" { NewPane "Right"; }
+        bind "Alt -" { NewPane "Down"; }
+
+        // Pane management
+        bind "Alt x" { CloseFocus; }
+        bind "Alt z" { ToggleFocusFullscreen; }
+
+        // Floating panes (Zellij killer feature)
+        bind "Alt f" { ToggleFloatingPanes; }
+        bind "Alt F" { NewFloatingPane; }
+
+        // Tabs
+        bind "Alt c" { NewTab; }
+        bind "Alt n" { GoToNextTab; }
+        bind "Alt p" { GoToPreviousTab; }
+        bind "Alt ," { SwitchToMode "RenameTab"; TabNameInput 0; }
+
+        // Session
+        bind "Alt s" { LaunchOrFocusPlugin "session-manager" {
+            floating true
+            move_to_focused_tab true
+        }; }
+        bind "Alt d" { Detach; }
+
+        // Scroll/search
+        bind "Alt [" { SwitchToMode "Scroll"; }
+
+        // Pane mode (for advanced ops)
+        bind "Alt a" { SwitchToMode "Pane"; }
+    }
+
+    normal {
+        bind "Ctrl g" { SwitchToMode "Locked"; }
+    }
+
+    scroll {
+        bind "q" "Escape" { SwitchToMode "Normal"; }
+        bind "j" { ScrollDown; }
+        bind "k" { ScrollUp; }
+        bind "Ctrl d" { HalfPageScrollDown; }
+        bind "Ctrl u" { HalfPageScrollUp; }
+        bind "G" { ScrollToBottom; }
+        bind "g" { ScrollToTop; }
+        bind "/" { SwitchToMode "Search"; }
+    }
+
+    search {
+        bind "Escape" "q" { SwitchToMode "Scroll"; }
+        bind "n" { Search "down"; }
+        bind "N" { Search "up"; }
+        bind "c" { SearchToggleOption "CaseSensitivity"; }
+        bind "w" { SearchToggleOption "Wrap"; }
+    }
+
+    pane {
+        bind "Escape" { SwitchToMode "Normal"; }
+        bind "h" { MoveFocus "Left"; }
+        bind "j" { MoveFocus "Down"; }
+        bind "k" { MoveFocus "Up"; }
+        bind "l" { MoveFocus "Right"; }
+        bind "|" { NewPane "Right"; SwitchToMode "Normal"; }
+        bind "-" { NewPane "Down"; SwitchToMode "Normal"; }
+        bind "f" { ToggleFocusFullscreen; SwitchToMode "Normal"; }
+        bind "w" { ToggleFloatingPanes; SwitchToMode "Normal"; }
+        bind "x" { CloseFocus; SwitchToMode "Normal"; }
+        bind "r" { SwitchToMode "Resize"; }
+    }
+
+    resize {
+        bind "Escape" { SwitchToMode "Normal"; }
+        bind "h" { Resize "Left"; }
+        bind "j" { Resize "Down"; }
+        bind "k" { Resize "Up"; }
+        bind "l" { Resize "Right"; }
+    }
+
+    locked {
+        bind "Ctrl g" { SwitchToMode "Normal"; }
+    }
+}
+
+// ─── Theme ──────────────────────────────────────────────────────────────────
+themes {
+    chocolate-donut {
+        palette {
+            bg      "#2a1c12"
+            fg      "#dac2b1"
+            black   "#3c291c"
+            red     "#e8575b"
+            green   "#88b994"
+            yellow  "#ffae00"
+            blue    "#768da1"
+            magenta "#b287cd"
+            cyan    "#00c4fb"
+            white   "#dac2b1"
+            orange  "#ff7558"
+        }
+    }
+}

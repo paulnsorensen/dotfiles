@@ -130,3 +130,26 @@ fi
 if command -v ast-grep &> /dev/null; then
   alias sg='ast-grep'
 fi
+
+# =============================================================================
+# Rust Replacements (modern coreutils)
+# =============================================================================
+# bottom - system monitor (keeps htop for process management)
+if command -v btm &>/dev/null; then
+    alias top='btm'
+fi
+
+# dust - disk usage with tree visualization
+if command -v dust &>/dev/null; then
+    alias du='dust'
+fi
+
+# procs - process viewer with keyword filtering
+if command -v procs &>/dev/null; then
+    alias ps='procs'
+fi
+
+# tokei - code statistics by language
+if command -v tokei &>/dev/null; then
+    alias loc='tokei'
+fi

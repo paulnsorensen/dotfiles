@@ -66,20 +66,6 @@ TRAPWINCH() {
   zle && zle -R
 }
 
-# Change cursor shape for different vi modes.
-function zle-line-init zle-keymap-select {
-  if [[ $KEYMAP == vicmd ]]; then
-    echo -ne '\e[2 q' # Solid Block
-  elif [[ $KEYMAP == main ]] \
-    || [[ $KEYMAP == viins ]] \
-    || [[ $KEYMAP = '' ]]; then
-    echo -ne '\e[1 q' # Blink Block
-  fi
-
-  zle reset-prompt
-  zle -R
-}
-
 function prompt_precmd() {
   fmt_branch="%b%u%c"
   zstyle ':vcs_info:*:prompt:*' formats "${fmt_branch}"
@@ -174,6 +160,3 @@ time_since_commit() {
     echo "${minutes}m"
   fi
 }
-
-zle -N zle-line-init
-zle -N zle-keymap-select

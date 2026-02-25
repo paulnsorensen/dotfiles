@@ -1,0 +1,18 @@
+# Local-only mode — no account, no sync
+auto_sync = false
+update_check = false
+
+# Fuzzy search (like fzf, but for history)
+search_mode = "fuzzy"
+
+# Show this machine's history only
+filter_mode = "host"
+
+# Up-arrow shows current session only
+filter_mode_shell_up_key = "session"
+
+# Show stats inline
+show_stats = true
+
+# Don't record commands prefixed with space
+secrets_filter = true

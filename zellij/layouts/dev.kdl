@@ -1,0 +1,16 @@
+// Editor + shell + git log
+layout {
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+    pane split_direction="vertical" {
+        pane size="65%" name="editor" focus=true
+        pane split_direction="horizontal" size="35%" {
+            pane size="70%" name="shell"
+            pane size="30%" name="git" {
+                command "git"
+                args "log" "--oneline" "--graph" "--color=always" "-20"
+            }
+        }
+    }
+}

@@ -65,3 +65,18 @@ if [[ -f "$DOTFILES_DIR/.env" ]]; then
         export "$key=$val"
     done < "$DOTFILES_DIR/.env"
 fi
+
+# Vi mode cursor shapes (orthogonal to prompt choice — works with any prompt)
+function zle-line-init zle-keymap-select {
+  if [[ $KEYMAP == vicmd ]]; then
+    echo -ne '\e[2 q' # Solid Block
+  elif [[ $KEYMAP == main ]] \
+    || [[ $KEYMAP == viins ]] \
+    || [[ $KEYMAP = '' ]]; then
+    echo -ne '\e[1 q' # Blink Block
+  fi
+  zle reset-prompt
+  zle -R
+}
+zle -N zle-line-init
+zle -N zle-keymap-select

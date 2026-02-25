@@ -8,14 +8,23 @@ esac
 
 # Source zsh configuration files in order
 source "$HOME/Dev/dotfiles/zsh/core.zsh"
-source "$HOME/Dev/dotfiles/zsh/colors.zsh"    # Deuterawarm palette (must come before fzf/prompt)
+source "$HOME/Dev/dotfiles/zsh/colors.zsh"    # Chocolate Donut palette (must come before fzf/prompt)
 source "$HOME/Dev/dotfiles/zsh/aliases.zsh"
 source "$HOME/Dev/dotfiles/zsh/completion.zsh"
 source "$HOME/Dev/dotfiles/zsh/fzf.zsh"
-source "$HOME/Dev/dotfiles/zsh/prompt.zsh"
-source "$HOME/Dev/dotfiles/zsh/claude.zsh"
+source "$HOME/Dev/dotfiles/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
+source "$HOME/Dev/dotfiles/zsh/zellij.zsh"    # Zellij aliases and helpers
 
-# Source local customizations if they exist
+# Source local customizations early (sets DOTFILES_PROMPT, etc.)
 [ -f $HOME/.zshrc.local ] && source $HOME/.zshrc.local
+
+# Prompt selection — set DOTFILES_PROMPT=starship in ~/.zshrc.local to use starship
+if [[ "$DOTFILES_PROMPT" == "starship" ]] && command -v starship &>/dev/null; then
+  eval "$(starship init zsh)"
+else
+  source "$HOME/Dev/dotfiles/zsh/prompt.zsh"
+fi
+
+source "$HOME/Dev/dotfiles/zsh/claude.zsh"
 
 clear
