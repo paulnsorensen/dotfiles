@@ -4,9 +4,12 @@
 DEST="$HOME/.config/zellij"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+mkdir -p "$(dirname "$DEST")"
+
 if [[ -L "$DEST" ]]; then
     rm "$DEST"
 elif [[ -d "$DEST" ]]; then
+    rm -rf "$DEST.bak" 2>/dev/null || true
     mv "$DEST" "$DEST.bak"
 fi
 

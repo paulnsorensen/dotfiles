@@ -9,7 +9,7 @@ mkdir -p "$DEST_DIR"
 if [[ -L "$DEST_DIR/config.toml" ]]; then
     rm "$DEST_DIR/config.toml"
 elif [[ -f "$DEST_DIR/config.toml" ]]; then
-    mv "$DEST_DIR/config.toml" "$DEST_DIR/config.toml.bak"
+    mv -f "$DEST_DIR/config.toml" "$DEST_DIR/config.toml.bak"
 fi
 
 ln -s "$SOURCE_DIR/config.toml" "$DEST_DIR/config.toml"

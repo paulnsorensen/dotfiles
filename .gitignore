@@ -33,6 +33,9 @@ vim/undo/
 .worktrees/
 .conductor/
 
+# Workspace-local notebooks and context
+.context/
+
 # Backup files
 *.bak
 .serena/

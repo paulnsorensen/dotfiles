@@ -4,10 +4,12 @@
 DEST="$HOME/.config/starship.toml"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+mkdir -p "$(dirname "$DEST")"
+
 if [[ -L "$DEST" ]]; then
     rm "$DEST"
 elif [[ -f "$DEST" ]]; then
-    mv "$DEST" "$DEST.bak"
+    mv -f "$DEST" "$DEST.bak"
 fi
 
 ln -s "$SOURCE_DIR/starship.toml" "$DEST"

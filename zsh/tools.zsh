@@ -15,7 +15,7 @@ fi
 if command -v yazi &>/dev/null; then
     y() {
         local tmp
-        tmp="$(mktemp -t "yazi-cwd")"
+        tmp="$(mktemp "${TMPDIR:-/tmp}/yazi-cwd.XXXXXX")"
         yazi "$@" --cwd-file="$tmp"
         if [[ -f "$tmp" ]]; then
             local cwd
