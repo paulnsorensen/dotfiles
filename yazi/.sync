@@ -1,0 +1,14 @@
+#!/bin/bash
+# Sync yazi config to ~/.config/yazi/
+
+DEST="$HOME/.config/yazi"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -L "$DEST" ]]; then
+    rm "$DEST"
+elif [[ -d "$DEST" ]]; then
+    mv "$DEST" "$DEST.bak"
+fi
+
+ln -s "$SOURCE_DIR" "$DEST"
+echo "  yazi config synced"

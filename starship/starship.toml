@@ -1,0 +1,179 @@
+# Chocolate Donut Powerline — Starship v1.x
+# Palette matched to zsh/colors.zsh
+
+"$schema" = "https://starship.rs/config-schema.json"
+
+# ── Global ──────────────────────────────────────────────────────────────────
+add_newline = false
+command_timeout = 500
+scan_timeout = 30
+
+palette = "chocolate_donut"
+
+[palettes.chocolate_donut]
+bg       = "#2a1c12"
+bg_alt   = "#3c291c"
+bg_hi    = "#4f4030"
+dim      = "#636363"
+fg       = "#dac2b1"
+fg_hi    = "#f8f8f8"
+red      = "#e8575b"
+green    = "#88b994"
+yellow   = "#ffae00"
+blue     = "#768da1"
+magenta  = "#b287cd"
+cyan     = "#00c4fb"
+br_red   = "#ff7558"
+br_green = "#00dac0"
+br_blue  = "#349ee9"
+
+# ── Prompt layout ──────────────────────────────────────────────────────────
+format = """
+[](fg:bg_alt)\
+$directory\
+[](fg:bg_alt bg:blue)\
+$git_branch\
+$git_status\
+[](fg:blue bg:bg)\
+$custom\
+[](fg:bg bg:bg_hi)\
+$time\
+[](fg:bg_hi)\
+$fill\
+$aws\
+$kubernetes\
+$docker_context\
+$cmd_duration\
+$line_break\
+$python$nodejs$rust\
+$character"""
+
+right_format = ""
+
+# ── Directory ──────────────────────────────────────────────────────────────
+[directory]
+style = "bg:bg_alt fg:fg"
+format = "[ $path$read_only ]($style)"
+truncation_length = 3
+truncate_to_repo = true
+truncation_symbol = "…/"
+read_only = "  "
+
+[directory.substitutions]
+"Dev" = " Dev"
+
+# ── Git ────────────────────────────────────────────────────────────────────
+[git_branch]
+style = "bg:blue fg:bg"
+format = "[ $symbol$branch(:$remote_branch) ]($style)"
+symbol = " "
+truncation_length = 30
+
+[git_status]
+style = "bg:blue fg:bg"
+format = "[$all_status$ahead_behind ]($style)"
+conflicted = "="
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+untracked = "?${count}"
+modified = "!${count}"
+staged = "+${count}"
+deleted = "✘${count}"
+
+# ── Custom: Time since last commit ─────────────────────────────────────────
+# Ported from zsh/prompt.zsh time_since_commit()
+[custom.git_time]
+description = "Time since last git commit"
+command = """
+t=$(git log -1 --pretty=format:'%at' 2>/dev/null) || exit 1
+now=$(date +%s)
+s=$((now - t))
+m=$((s / 60)); h=$((s / 3600)); d=$((s / 86400))
+if [ "$h" -gt 48 ]; then printf '%sd' "$d"
+elif [ "$h" -gt 24 ]; then printf '%sd%sh' "$d" "$((h % 24))"
+elif [ "$m" -gt 60 ]; then printf '%sh%sm' "$h" "$((m % 60))"
+else printf '%sm' "$m"; fi
+"""
+when = "git rev-parse --is-inside-work-tree 2>/dev/null"
+shell = ["bash", "--noprofile", "--norc"]
+style = "bg:bg fg:dim"
+format = "[ $output ]($style)"
+
+# ── Time ───────────────────────────────────────────────────────────────────
+[time]
+disabled = false
+style = "bg:bg_hi fg:blue"
+format = "[ $time ]($style)"
+time_format = "%d %H:%M"
+
+# ── Character (vi mode indicator) ──────────────────────────────────────────
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+vimcmd_symbol = "[❮](bold blue)"
+vimcmd_replace_symbol = "[❮](bold magenta)"
+vimcmd_visual_symbol = "[❮](bold yellow)"
+
+# ── Command duration ──────────────────────────────────────────────────────
+[cmd_duration]
+min_time = 2000
+style = "dimmed yellow"
+format = "[ took $duration ]($style)"
+
+# ── Fill ───────────────────────────────────────────────────────────────────
+[fill]
+symbol = " "
+
+# ── Language modules (auto-detected, zero noise) ──────────────────────────
+[python]
+style = "yellow bold"
+format = "[${symbol}(${version})(\\($virtualenv\\)) ]($style)"
+symbol = " "
+detect_files = [".python-version", "pyproject.toml", "requirements.txt", "uv.lock"]
+
+[nodejs]
+style = "green bold"
+format = "[$symbol($version) ]($style)"
+symbol = " "
+detect_files = ["package.json", ".nvmrc"]
+
+[rust]
+style = "bold br_red"
+format = "[$symbol($version) ]($style)"
+symbol = " "
+
+# ── Cloud context (only in relevant directories) ─────────────────────────
+[aws]
+style = "bold yellow"
+format = "[$symbol($profile)(\\($region\\)) ]($style)"
+symbol = "  "
+[aws.region_aliases]
+us-east-1 = "us-e1"
+us-west-2 = "us-w2"
+
+[kubernetes]
+disabled = false
+style = "cyan bold"
+format = "[$symbol$context( \\($namespace\\)) ]($style)"
+symbol = "☸ "
+detect_folders = ["infra", "k8s", "kubernetes", "helm"]
+detect_files = ["kustomization.yaml", "helmfile.yaml"]
+
+[docker_context]
+style = "blue bold"
+format = "[$symbol$context ]($style)"
+symbol = " "
+only_with_files = true
+
+# ── Disabled modules ─────────────────────────────────────────────────────
+[package]
+disabled = true
+[battery]
+disabled = true
+[username]
+disabled = true
+[hostname]
+disabled = true
+[conda]
+disabled = true

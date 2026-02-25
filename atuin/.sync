@@ -1,0 +1,16 @@
+#!/bin/bash
+# Sync atuin config to ~/.config/atuin/
+
+DEST_DIR="$HOME/.config/atuin"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+mkdir -p "$DEST_DIR"
+
+if [[ -L "$DEST_DIR/config.toml" ]]; then
+    rm "$DEST_DIR/config.toml"
+elif [[ -f "$DEST_DIR/config.toml" ]]; then
+    mv "$DEST_DIR/config.toml" "$DEST_DIR/config.toml.bak"
+fi
+
+ln -s "$SOURCE_DIR/config.toml" "$DEST_DIR/config.toml"
+echo "  atuin config synced"
