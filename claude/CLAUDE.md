@@ -116,6 +116,10 @@ I use the Cheddar Flow for development. **Discover all available agents and skil
 - `/copilot-delegate` - Delegate task to Copilot agent, then review the resulting PR
 - `/copilot-setup` - Generate Copilot instructions for a repo
 
+**Environment & Setup:**
+- `/lsp` - Auto-detect project languages and enable matching LSP plugins locally
+- `/lsp --all` - Enable all LSPs regardless of project
+
 **Learning & Navigation:**
 - `/agents` - Control panel: list all agents and skills
 - `/explain` - Explain code or concept (quiz included)

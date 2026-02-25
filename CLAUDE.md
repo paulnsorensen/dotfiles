@@ -49,6 +49,17 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `plugin-edit` - Edit plugin registry.yaml
 - `plugin-ls` - List currently installed plugins
 
+### LSP Management (local-only)
+- `/lsp` - Auto-detect project languages and enable matching LSPs (Claude skill)
+- `/lsp --all` - Enable all LSPs regardless of project
+- `/lsp --list` - Preview which LSPs would be enabled (dry run)
+- `/lsp --disable` - Remove all LSP entries from local settings
+- `lsp-sync` - Install and enable ALL LSP plugins locally (bash, no detection)
+- `lsp-sync-dry` - Preview LSP sync changes without applying
+- `lsp-disable` - Remove LSP plugins from local settings
+- `lsp-ls` - Show which LSPs are enabled locally
+- `lsp-edit` - Edit lsp-registry.yaml
+
 ### Common Development Tasks
 - `lb` - Open daily logbook (creates markdown file at `~/psorensen/logbook/[date].md`)
 - `uuidg` - Generate UUID and copy to clipboard
@@ -239,6 +250,12 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 2. Run `plugin-sync` to install
 3. Restart Claude Code for changes to take effect
 4. Add `mcp__plugin_<name>__*` to `permissions.allow` in `claude/settings.json` if the plugin provides MCP tools
+
+### When Adding New LSPs
+1. Add entry to `claude/plugins/lsp-registry.yaml`
+2. Run `lsp-sync` to install and enable locally
+3. Restart Claude Code for changes to take effect
+4. LSPs are local-only (stored in `~/.claude/settings.local.json`, not committed) to avoid overhead in headless/CI sessions
 
 ### Dependencies (Homebrew)
 Managed in `.brew`:

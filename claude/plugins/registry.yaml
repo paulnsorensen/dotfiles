@@ -11,41 +11,8 @@
 #   plugin-ls             List installed plugins
 
 plugins:
-  # LSP Plugins - Language server support
-  pyright@claude-code-lsps:
-    description: Python type checking and language server
-    scope: user
-    load: true
-
-  gopls@claude-code-lsps:
-    description: Go language server
-    scope: user
-    load: true
-
-  rust-analyzer@claude-code-lsps:
-    description: Rust language server
-    scope: user
-    load: true
-
-  vtsls@claude-code-lsps:
-    description: TypeScript/JavaScript language server
-    scope: user
-    load: true
-
-  solargraph@claude-code-lsps:
-    description: Ruby language server
-    scope: user
-    load: true
-
-  bash-language-server@claude-code-lsps:
-    description: Bash/shell script language server
-    scope: user
-    load: true
-
-  yaml-language-server@claude-code-lsps:
-    description: YAML language server
-    scope: user
-    load: true
+  # LSP plugins managed separately — see lsp-registry.yaml + lsp-sync
+  # Run `lsp-sync` to enable LSPs locally (not loaded for headless sessions)
 
   code-simplifier@claude-plugins-official:
     description: Code cleanup and simplification agents

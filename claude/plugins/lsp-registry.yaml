@@ -1,0 +1,41 @@
+# LSP Plugin Registry - Local-only language servers
+#
+# These are NOT loaded by default. They install language servers at startup,
+# so they're opt-in per machine via `lsp-sync` (all) or `/lsp` (auto-detect).
+#
+# Usage:
+#   /lsp               Auto-detect project languages and enable matching LSPs
+#   /lsp --all         Enable all LSPs
+#   /lsp --list        Preview which LSPs would be enabled
+#   /lsp --disable     Remove all LSP entries from local settings
+#   lsp-sync           Install + enable ALL LSPs locally (bash)
+#   lsp-ls             Show current LSP status
+
+lsps:
+  pyright@claude-code-lsps:
+    description: Python type checking and language server
+    extensions: [py, pyi, pyx]
+
+  gopls@claude-code-lsps:
+    description: Go language server
+    extensions: [go]
+
+  rust-analyzer@claude-code-lsps:
+    description: Rust language server
+    extensions: [rs]
+
+  vtsls@claude-code-lsps:
+    description: TypeScript/JavaScript language server
+    extensions: [ts, tsx, js, jsx, mjs, cjs, mts, cts]
+
+  solargraph@claude-code-lsps:
+    description: Ruby language server
+    extensions: [rb, rake, gemspec]
+
+  bash-language-server@claude-code-lsps:
+    description: Bash/shell script language server
+    extensions: [sh, bash, zsh]
+
+  yaml-language-server@claude-code-lsps:
+    description: YAML language server
+    extensions: [yaml, yml]
