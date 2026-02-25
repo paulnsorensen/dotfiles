@@ -24,6 +24,17 @@ formulae:
   - tinty        # Base16/Base24 theme manager
   - prek         # Pre-commit hook manager
 
+  # Modern terminal tools
+  - starship     # Cross-shell prompt
+  - zellij       # Terminal multiplexer (tmux alternative)
+  - zoxide       # Smarter cd with frecency ranking
+  - atuin        # Shell history with search and sync
+  - bottom       # System resource monitor (btm)
+  - dust         # Intuitive disk usage (du alternative)
+  - procs        # Modern process viewer (ps alternative)
+  - tokei        # Code statistics by language
+  - yazi         # Terminal file manager
+
 # Development tools (installed when DOTFILES_DEV=true)
 dev_formulae:
   - pyenv        # Python version management
