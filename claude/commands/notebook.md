@@ -2,7 +2,7 @@
 name: notebook
 description: >
   Guided codebase review with persistent note-taking. Walk through code interactively,
-  accumulate observations, and save structured notes to Serena memory. Use when manually
+  accumulate observations, and save structured notes to a file. Use when manually
   exploring an unfamiliar codebase, auditing code quality, or building understanding
   before a refactor.
 argument-hint: <area, module, or topic to review>
@@ -14,13 +14,18 @@ You are a review partner — I drive, you navigate and take notes.
 
 ## Session Setup
 
-1. **Check for prior notes**: `list_memories` → look for `review-*` memories from previous sessions on this topic. If found, `read_memory` and present a brief summary: "Last time we covered X, Y, Z."
+1. **Check for prior notes**: Look for an existing notebook file at `.context/notebooks/<slug>.md`. If found, read it and present a brief summary: "Last time we covered X, Y, Z. Picking up where we left off."
 
-2. **Initialize the notebook**: Start an internal running document (do NOT write to disk yet). Format:
+2. **Initialize the notebook**: Create (or resume) the notebook file at `.context/notebooks/<slug>.md`. Derive the slug from the topic:
+   - `/notebook orders module` → `.context/notebooks/orders-module.md`
+   - `/notebook auth flow` → `.context/notebooks/auth-flow.md`
 
-```
+   Initial format:
+
+```markdown
 # Review: <topic>
 Started: <date>
+Last updated: <date>
 
 ## Areas Covered
 - (populated as we go)
@@ -35,7 +40,7 @@ Started: <date>
 (things to fix or change)
 ```
 
-3. **Orient**: Use Serena (`get_symbols_overview`, `list_dir`) to give me a map of the area we're reviewing. Keep it concise — top-level structure, not deep dives.
+3. **Orient**: Use Serena (`get_symbols_overview`, `list_dir`) or Glob/Read to give me a map of the area we're reviewing. Keep it concise — top-level structure, not deep dives.
 
 ## Review Loop
 
@@ -48,6 +53,8 @@ This is a **conversation**, not a checklist. Follow my lead:
 - When I say **"notes"** or **"show notes"** → display the full accumulated notebook so far
 - When I say **"questions"** → display just the Questions section
 - When I say **"actions"** → display just the Action Items section
+
+**Write to the notebook file incrementally** — don't wait until the end. Each time a note is added, append it to the file so nothing is lost if the session ends unexpectedly.
 
 ### Proactive note-taking
 
@@ -82,20 +89,19 @@ Frame suggestions as: "Worth noting: ..." — I'll confirm or dismiss.
 
 ## Saving Notes
 
-When I say **"save"**, **"done"**, or **"park"**:
+Notes are saved incrementally to `.context/notebooks/<slug>.md` throughout the session.
 
-1. **Display the final notebook** for my review
-2. **Ask what to keep**: "Save everything, or want to trim first?"
-3. **Write to Serena memory**: `write_memory("review-<slug>.md", <notebook content>)`
-   - If a `review-<slug>` memory already exists, **merge** new notes into the existing one (append new sections, don't duplicate)
-4. **Write to file** (optional): If I say "file too", write to `.claude/reviews/<slug>.md`
-5. **Cleanup**: Check memory count with `list_memories`. If > 5, suggest which to prune
+When I say **"done"** or **"wrap up"**:
 
-### Memory naming
+1. **Update the `Last updated` date** in the notebook header
+2. **Display a summary**: areas covered count, notes count, open questions, action items
+3. **Offer next steps**: "Want to turn any action items into GitHub issues?"
 
-Use `review-<slug>` where slug is derived from the topic:
-- `/notebook orders module` → `review-orders-module.md`
-- `/notebook auth flow` → `review-auth-flow.md`
+### File location
+
+- `.context/` is gitignored — notebooks stay local to the workspace
+- To share a notebook, copy it somewhere trackable: "Move to `.claude/reviews/<slug>.md`"
+- To load into Claude's auto-memory for future sessions: "Copy key findings to memory"
 
 ## What This Is NOT
 
