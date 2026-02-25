@@ -124,6 +124,7 @@ I use the Cheddar Flow for development. **Discover all available agents and skil
 - `/agents` - Control panel: list all agents and skills
 - `/explain` - Explain code or concept (quiz included)
 - `/hint` - Get escalating hints when stuck (preserves learning)
+- `/notebook <area>` - Guided codebase review with persistent note-taking (Serena memory)
 - `/onboard` - Quick codebase orientation for an unfamiliar repo
 - `/go` - Re-prime MCPs (Serena, Context7) after compaction or session start
 - `/park` - Save session context to Serena memories before exiting
