@@ -97,12 +97,5 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 @test "lspmux server is reachable" {
     # lspmux status connects to the server; exit 0 = reachable
     run lspmux status
-    if [[ "$status" -ne 0 ]]; then
-        # Could be sandbox or server genuinely down
-        if echo "$output" | grep -q "Operation not permitted"; then
-            skip "sandbox blocking TCP to 127.0.0.1:27631"
-        fi
-        echo "lspmux status failed: $output" >&2
-        return 1
-    fi
+    [[ "$status" -eq 0 ]]
 }

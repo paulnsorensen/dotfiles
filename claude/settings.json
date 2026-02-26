@@ -94,5 +94,11 @@
     "frontend-design@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true
   },
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "sandbox": {
+    "network": {
+      "allowLocalBinding": true,
+      "allowedDomains": ["127.0.0.1", "localhost"]
+    }
+  }
 }

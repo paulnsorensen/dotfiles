@@ -21,15 +21,13 @@ Wrapper scripts are installed to `$DOTFILES_DIR/bin/` (`~/Dev/dotfiles/bin/`)
 ahead of the real binaries on PATH. The LSP plugin calls the same binary name it
 always did; the wrapper handles routing transparently.
 
-## Wrapper fallback behavior
+## Wrapper behavior
 
-Each wrapper script checks if lspmux is reachable before forwarding:
+Wrappers fail fast if lspmux is not available:
 
 1. lspmux running → forward request to shared server
-2. lspmux not running → exec real binary directly (transparent fallback)
-3. lspmux not installed → exec real binary directly
-
-This means LSPs are always functional regardless of lspmux state.
+2. lspmux not running → **error** (fix: `lspmux server` or check launchd)
+3. lspmux not installed → **error** (fix: `cargo install lspmux`)
 
 ## Debugging
 
