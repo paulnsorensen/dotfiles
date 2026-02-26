@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+# claude-monitor — Live observability for Claude Code sessions
+# Parses the active session's JSONL stream and displays metrics
+set -euo pipefail
+
+# ═══════════════════════════════════════════════════════════════════
+# Chocolate Donut ANSI colors (hardcoded — works outside zsh env)
+# ═══════════════════════════════════════════════════════════════════
+C_CYAN=$'\033[38;5;45m'     # #00c4fb — labels
+C_GREEN=$'\033[38;5;108m'   # #88b994 — good values
+C_YELLOW=$'\033[38;5;214m'  # #ffae00 — highlights
+C_RED=$'\033[38;5;167m'     # #e8575b — warnings
+C_DIM=$'\033[38;5;241m'     # #636363 — separators
+C_FG=$'\033[38;5;181m'      # #dac2b1 — normal text
+C_ORANGE=$'\033[38;5;209m'  # #ff7558 — accents
+C_RESET=$'\033[0m'
+
+# ═══════════════════════════════════════════════════════════════════
+# CLI args
+# ═══════════════════════════════════════════════════════════════════
+MONITOR_CWD="${PWD}"
+POLL_INTERVAL=2
+ONCE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --cwd)    MONITOR_CWD="$2"; shift 2 ;;
+        --interval) POLL_INTERVAL="$2"; shift 2 ;;
+        --once)   ONCE=true; shift ;;
+        --help|-h)
+            echo "Usage: claude-monitor [--cwd DIR] [--interval SECS] [--once]"
+            echo "  --cwd DIR       Monitor sessions for this directory (default: \$PWD)"
+            echo "  --interval N    Poll every N seconds (default: 2)"
+            echo "  --once          Print metrics once and exit"
+            exit 0 ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+done
+
+# ═══════════════════════════════════════════════════════════════════
+# Session discovery
+# ═══════════════════════════════════════════════════════════════════
+encode_path() {
+    echo "${1//[\/.]/-}"
+}
+
+find_session() {
+    local project_dir
+    project_dir="${HOME}/.claude/projects/$(encode_path "$MONITOR_CWD")"
+    [[ -d "$project_dir" ]] || return 1
+    find "$project_dir" -maxdepth 1 -name '*.jsonl' -print0 2>/dev/null \
+        | xargs -0 stat -f '%m %N' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Formatting helpers
+# ═══════════════════════════════════════════════════════════════════
+fmt_tokens() {
+    local n="${1:-0}"
+    if (( n >= 1000000 )); then
+        printf "%.1fM" "$(echo "scale=1; $n / 1000000" | bc)"
+    elif (( n >= 1000 )); then
+        printf "%.1fk" "$(echo "scale=1; $n / 1000" | bc)"
+    else
+        printf "%d" "$n"
+    fi
+}
+
+fmt_duration() {
+    local secs="${1:-0}"
+    if (( secs >= 3600 )); then
+        printf "%dh%02dm" $((secs / 3600)) $(((secs % 3600) / 60))
+    elif (( secs >= 60 )); then
+        printf "%dm%02ds" $((secs / 60)) $((secs % 60))
+    else
+        printf "%ds" "$secs"
+    fi
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# JSONL parsing — returns single JSON metrics object
+# ═══════════════════════════════════════════════════════════════════
+parse_session() {
+    jq -n -R "$(cat <<'JQEOF'
+def safe_num: if . == null then 0 else . end;
+[inputs | fromjson? // empty] |
+
+([.[] | select(.type == "assistant" and .message.id != null)] |
+  group_by(.message.id) | map(last)) as $msgs |
+([.[] | select(.type == "user" and (.toolUseResult == null))] | length) as $ht |
+($msgs | map(.message.content[]? | select(.type == "tool_use") | .name) |
+  group_by(.) | map({name: .[0], count: length}) | sort_by(-.count)) as $tools |
+($msgs | map(.message.content[]? |
+  select(.type == "tool_use" and .name == "Skill") | .input.skill // "unknown") | unique) as $skills |
+($msgs | map(.message.content[]? |
+  select(.type == "tool_use" and .name == "Task")) | length) as $tc |
+($msgs | map(.message.usage.output_tokens | safe_num) | add // 0) as $out |
+($msgs | map(.message.usage.input_tokens | safe_num) | add // 0) as $in_raw |
+($msgs | map(.message.usage.cache_creation_input_tokens | safe_num) | add // 0) as $cc |
+($msgs | map(.message.usage.cache_read_input_tokens | safe_num) | add // 0) as $cr |
+($msgs | last | if . then
+  (.message.usage | (.input_tokens|safe_num) + (.cache_creation_input_tokens|safe_num) + (.cache_read_input_tokens|safe_num))
+else 0 end) as $ctx |
+($msgs | if length > 1 then .[-2] else null end | if . then
+  (.message.usage | (.input_tokens|safe_num) + (.cache_creation_input_tokens|safe_num) + (.cache_read_input_tokens|safe_num))
+else 0 end) as $ctx_prev |
+($msgs | last | .message.model // "unknown") as $model |
+([.[] | .timestamp // empty] |
+  if length > 0 then {first: first, last: last} else {first: null, last: null} end) as $times |
+([.[] | select(.type == "system" and .subtype == "compact_boundary")] | length) as $compactions |
+
+{
+  model: $model, human_turns: $ht, assistant_turns: ($msgs|length),
+  total_in: ($in_raw + $cc + $cr), total_out: $out,
+  cache_pct: (if ($in_raw+$cc+$cr) > 0 then (($cr*100/($in_raw+$cc+$cr))|floor) else 0 end),
+  ctx_latest: $ctx,
+  ctx_trend: (if $ctx > $ctx_prev then "up" elif $ctx < $ctx_prev then "down" else "flat" end),
+  tools: ($tools[:7] | map("\(.name):\(.count)") | join(" ")),
+  skills: ($skills | join(",")),
+  task_count: $tc, compactions: $compactions,
+  first_ts: $times.first, last_ts: $times.last
+}
+JQEOF
+)" < "$1" 2>/dev/null
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Render — builds and prints the 2-line display
+# ═══════════════════════════════════════════════════════════════════
+render() {
+    local model ht at ti to cp ctx trend tools skills tc comp ts
+    {
+        read -r model; read -r ht; read -r at; read -r ti; read -r to
+        read -r cp; read -r ctx; read -r trend; read -r tools
+        read -r skills; read -r tc; read -r comp; read -r ts
+    } < <(echo "$1" | jq -r '
+        (.model // "unknown"), (.human_turns // 0 | tostring),
+        (.assistant_turns // 0 | tostring), (.total_in // 0 | tostring),
+        (.total_out // 0 | tostring), (.cache_pct // 0 | tostring),
+        (.ctx_latest // 0 | tostring), (.ctx_trend // "flat"),
+        (.tools // ""), (.skills // ""),
+        (.task_count // 0 | tostring), (.compactions // 0 | tostring),
+        (.first_ts // "")')
+    model="${model#claude-}"
+
+    local dur="--"
+    if [[ -n "$ts" && "$ts" != "null" ]]; then
+        local t0 now
+        t0=$(date -u -jf "%Y-%m-%dT%H:%M:%S" "${ts%%.*}" "+%s" 2>/dev/null || echo 0)
+        now=$(date -u "+%s")
+        (( t0 > 0 )) && dur=$(fmt_duration $((now - t0)))
+    fi
+
+    local tsym="${C_DIM}=${C_RESET}" ccol="$C_RED" cstr=""
+    case "$trend" in up) tsym="${C_YELLOW}^${C_RESET}" ;; down) tsym="${C_GREEN}v${C_RESET}" ;; esac
+    if (( cp >= 70 )); then ccol="$C_GREEN"
+    elif (( cp >= 40 )); then ccol="$C_YELLOW"; fi
+    (( comp > 0 )) && cstr=" ${C_ORANGE}C:${comp}${C_RESET}"
+
+    local l1="${C_CYAN}CC:${C_RESET} ${C_FG}${model}${C_RESET}"
+    l1+=" ${C_DIM}|${C_RESET} ${C_CYAN}T${C_RESET} ${C_FG}${dur}${C_RESET}"
+    l1+=" ${C_DIM}|${C_RESET} ${C_CYAN}Turns:${C_RESET} ${C_FG}${ht}/${at}${C_RESET}"
+    l1+=" ${C_DIM}|${C_RESET} ${C_CYAN}In:${C_RESET}${C_FG}$(fmt_tokens "$ti")${C_RESET}"
+    l1+=" ${C_CYAN}Out:${C_RESET}${C_FG}$(fmt_tokens "$to")${C_RESET}"
+    l1+=" ${ccol}Cache:${cp}%${C_RESET}${cstr}"
+
+    local l2="${C_CYAN}Tools:${C_RESET} ${C_FG}${tools:-none}${C_RESET}"
+    (( tc > 0 )) && l2+=" ${C_DIM}|${C_RESET} ${C_YELLOW}Tasks:${tc}${C_RESET}"
+    [[ -n "$skills" ]] && l2+=" ${C_DIM}|${C_RESET} ${C_ORANGE}Skills:${skills}${C_RESET}"
+    l2+=" ${C_DIM}|${C_RESET} ${C_CYAN}Ctx:${C_RESET}${C_FG}~$(fmt_tokens "$ctx")${C_RESET} ${tsym}"
+
+    printf '\033[2K%s\n\033[2K%s' "$l1" "$l2"
+}
+
+render_waiting() {
+    printf '\033[2K%s\n\033[2K%s' \
+        "${C_DIM}CC: Waiting for active session...${C_RESET}" \
+        "${C_DIM}Monitoring: $(encode_path "$MONITOR_CWD")${C_RESET}"
+}
+
+render_error() {
+    printf '\033[2K%s\n\033[2K%s' \
+        "${C_RED}CC: Parse error (check JSONL format)${C_RESET}" \
+        "${C_DIM}File: ${1}${C_RESET}"
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Tick — single poll iteration (returns via LAST_DISPLAY)
+# ═══════════════════════════════════════════════════════════════════
+SESSION_FILE="" LAST_SIZE=0 STALE_COUNT=0 PARSE_ERRORS=0 LAST_METRICS=""
+
+tick() {
+    local candidate
+    candidate="$(find_session 2>/dev/null || echo "")"
+    if [[ -z "$candidate" ]]; then render_waiting; return; fi
+
+    if [[ "$candidate" != "$SESSION_FILE" ]]; then
+        SESSION_FILE="$candidate"; LAST_SIZE=0; PARSE_ERRORS=0; LAST_METRICS=""
+    fi
+
+    local current_size
+    current_size=$(wc -c < "$SESSION_FILE" 2>/dev/null || echo 0)
+
+    # Skip re-parse if no new data
+    if (( current_size <= LAST_SIZE )); then
+        STALE_COUNT=$((STALE_COUNT + 1))
+        (( STALE_COUNT > 15 )) && { SESSION_FILE=""; STALE_COUNT=0; }
+        if [[ -n "$LAST_METRICS" ]]; then render "$LAST_METRICS"; else render_waiting; fi
+        return
+    fi
+    STALE_COUNT=0
+
+    local metrics
+    metrics=$(parse_session "$SESSION_FILE") || metrics=""
+    LAST_SIZE="$current_size"
+
+    if [[ -n "$metrics" && "$metrics" != "null" ]]; then
+        PARSE_ERRORS=0; LAST_METRICS="$metrics"
+        render "$metrics"
+    else
+        PARSE_ERRORS=$((PARSE_ERRORS + 1))
+        if (( PARSE_ERRORS >= 3 )); then
+            render_error "$SESSION_FILE"
+        else
+            render_waiting
+        fi
+    fi
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Main loop
+# ═══════════════════════════════════════════════════════════════════
+main() {
+    if [[ "$ONCE" == true ]]; then
+        local s; s="$(find_session 2>/dev/null || echo "")"
+        if [[ -z "$s" ]]; then echo "No active session found"; exit 1; fi
+        local m; m=$(parse_session "$s") || m=""
+        if [[ -n "$m" && "$m" != "null" ]]; then render "$m"; printf '\n'
+        else echo "Failed to parse session"; exit 1; fi
+        return
+    fi
+
+    tput civis 2>/dev/null || true
+    trap 'tput cnorm 2>/dev/null; printf "\n"; exit 0' INT TERM EXIT
+
+    while true; do
+        tick
+        printf '\033[1A\r'
+        sleep "$POLL_INTERVAL"
+    done
+}
+
+main

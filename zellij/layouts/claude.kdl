@@ -1,0 +1,10 @@
+// Claude Code session with live monitor
+layout {
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+    pane focus=true
+    pane size=2 borderless=true name="monitor" {
+        command "claude-monitor"
+    }
+}

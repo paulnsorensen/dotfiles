@@ -18,6 +18,12 @@ zjdev() {
     zellij --layout dev --session "$session"
 }
 
+# Launch with Claude monitor layout
+zjclaude() {
+    local session="${1:-claude}"
+    zellij --layout claude --session "$session"
+}
+
 # Auto-attach guard (opt-in — uncomment in ~/.zshrc.local)
 # Prevents nesting: checks for existing tmux/zellij
 zellij_auto_attach() {
