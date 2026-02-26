@@ -69,11 +69,11 @@ fi
 # Vi mode cursor shapes (orthogonal to prompt choice — works with any prompt)
 function zle-line-init zle-keymap-select {
   if [[ $KEYMAP == vicmd ]]; then
-    echo -ne '\e[2 q' # Solid Block
+    echo -ne '\e[2 q' # Solid block — normal mode
   elif [[ $KEYMAP == main ]] \
     || [[ $KEYMAP == viins ]] \
     || [[ $KEYMAP = '' ]]; then
-    echo -ne '\e[1 q' # Blink Block
+    echo -ne '\e[5 q' # Blinking beam — insert mode (matches native vim)
   fi
   zle reset-prompt
   zle -R

@@ -6,7 +6,7 @@
 # ── Global ──────────────────────────────────────────────────────────────────
 add_newline = false
 command_timeout = 500
-scan_timeout = 30
+scan_timeout = 500
 
 palette = "chocolate_donut"
 
@@ -33,22 +33,35 @@ format = """
 $directory\
 [](fg:bg_alt bg:blue)\
 $git_branch\
-$git_status\
+\
+\
 [](fg:blue bg:bg)\
-$custom\
+\
+\
 [](fg:bg bg:bg_hi)\
 $time\
 [](fg:bg_hi)\
 $fill\
-$aws\
+\
+\
 $kubernetes\
 $docker_context\
-$cmd_duration\
+\
+\
+\
 $line_break\
 $python$nodejs$rust\
-$character"""
+\
+"""
 
 right_format = ""
+
+# ── Transient prompt (collapses scrollback to just the character) ─────────
+# NOTE: Requires starship >= 1.23+ (check `starship --version`)
+# Uncomment when your starship version supports it.
+# [transient_prompt]
+# format = ""
+# disabled = false
 
 # ── Directory ──────────────────────────────────────────────────────────────
 [directory]
@@ -80,6 +93,32 @@ untracked = "?${count}"
 modified = "!${count}"
 staged = "+${count}"
 deleted = "✘${count}"
+
+[git_state]
+style = "bg:blue fg:yellow"
+format = "[ (/) ]()"
+rebase = "REBASE"
+merge = "MERGE"
+cherry_pick = " PICK"
+bisect = "BISECT"
+am = "AM"
+am_or_rebase = "AM/REBASE"
+
+[git_metrics]
+disabled = false
+added_style = "bold br_green"
+deleted_style = "bold br_red"
+only_nonzero_diffs = true
+format = "([+]() )([-]() )"
+
+[git_commit]
+disabled = false
+commit_hash_length = 7
+style = "bold br_blue"
+format = "[  ]()"
+only_detached = true
+tag_disabled = false
+tag_symbol = " "
 
 # ── Custom: Time since last commit ─────────────────────────────────────────
 # Ported from zsh/prompt.zsh time_since_commit()
@@ -166,14 +205,78 @@ format = "[$symbol$context ]($style)"
 symbol = " "
 only_with_files = true
 
+# ── Status (exit codes with signal names) ─────────────────────────────────
+[status]
+disabled = false
+style = "bold red"
+symbol = " "
+not_executable_symbol = " "
+not_found_symbol = " "
+sigint_symbol = " "
+signal_symbol = " "
+success_symbol = ""
+format = "[ ]()"
+map_symbol = true
+pipestatus = true
+
+# ── Jobs (background process count) ──────────────────────────────────────
+[jobs]
+disabled = false
+symbol = " "
+style = "bold blue"
+number_threshold = 1
+format = "[ ]()"
+
+# ── Shell level (nested shell indicator) ──────────────────────────────────
+[shlvl]
+disabled = false
+threshold = 2
+style = "bold yellow"
+format = "[ ]()"
+symbol = "↕ "
+
+# ── Hostname (only visible over SSH) ─────────────────────────────────────
+[hostname]
+ssh_only = true
+style = "bold magenta"
+format = "[ ]()"
+ssh_symbol = " "
+
+# ── Battery ──────────────────────────────────────────────────────────────
+[battery]
+disabled = false
+format = "[ ]()"
+
+[[battery.display]]
+threshold = 20
+style = "bold red"
+charging_symbol = " "
+discharging_symbol = " "
+
+[[battery.display]]
+threshold = 50
+style = "bold yellow"
+charging_symbol = " "
+discharging_symbol = " "
+
+[[battery.display]]
+threshold = 100
+style = "dimmed green"
+charging_symbol = " "
+discharging_symbol = ""
+
+# ── Memory usage (right prompt, only when high) ─────────────────────────
+[memory_usage]
+disabled = false
+threshold = 75
+style = "bold dimmed red"
+format = "[ ]()"
+symbol = " "
+
 # ── Disabled modules ─────────────────────────────────────────────────────
 [package]
 disabled = true
-[battery]
-disabled = true
 [username]
-disabled = true
-[hostname]
 disabled = true
 [conda]
 disabled = true

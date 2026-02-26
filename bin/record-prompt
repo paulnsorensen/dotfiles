@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# record-prompt — Record the zsh prompt with VHS for visual debugging.
+#
+# Usage:
+#   record-prompt              # Record default prompt tape → vhs/output/prompt.gif
+#   record-prompt <tape>       # Record a custom tape file
+#   record-prompt --screenshot  # Single-frame PNG instead of GIF (quick check)
+#   record-prompt --mp4         # MP4 video instead of GIF
+#
+# Requires: vhs (brew install vhs)
+
+set -euo pipefail
+
+DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+DEFAULT_TAPE="$DOTFILES_DIR/vhs/prompt.tape"
+OUTPUT_DIR="$DOTFILES_DIR/vhs/output"
+
+usage() {
+  echo "Usage: record-prompt [options] [tape-file]"
+  echo ""
+  echo "Options:"
+  echo "  --screenshot   Single-frame PNG capture (fast)"
+  echo "  --mp4          Record as MP4 video"
+  echo "  --open         Open output file after recording"
+  echo "  -h, --help     Show this help"
+  echo ""
+  echo "Tape files live in vhs/ — output goes to vhs/output/ (gitignored)."
+}
+
+# Defaults
+TAPE=""
+FORMAT=""
+OPEN_AFTER=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --screenshot)
+      FORMAT="png"
+      shift
+      ;;
+    --mp4)
+      FORMAT="mp4"
+      shift
+      ;;
+    --open)
+      OPEN_AFTER=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      TAPE="$1"
+      shift
+      ;;
+  esac
+done
+
+# Resolve tape file
+TAPE="${TAPE:-$DEFAULT_TAPE}"
+if [[ ! -f "$TAPE" ]]; then
+  echo "Error: tape file not found: $TAPE" >&2
+  exit 1
+fi
+
+# Check for vhs
+if ! command -v vhs &>/dev/null; then
+  echo "Error: vhs not found. Install with: brew install vhs" >&2
+  exit 1
+fi
+
+mkdir -p "$OUTPUT_DIR"
+
+# If a format override was requested, create a temp tape with the Output line patched
+if [[ -n "$FORMAT" ]]; then
+  TAPE_NAME="$(basename "${TAPE%.tape}")"
+  OUTPUT_FILE="$OUTPUT_DIR/${TAPE_NAME}.${FORMAT}"
+
+  TEMP_TAPE="$(mktemp "${TMPDIR:-/tmp}/vhs-XXXXXX.tape")"
+  trap 'rm -f "$TEMP_TAPE"' EXIT
+
+  # Replace the Output line with the new format
+  sed "s|^Output .*|Output ${OUTPUT_FILE}|" "$TAPE" > "$TEMP_TAPE"
+  TAPE="$TEMP_TAPE"
+else
+  TAPE_NAME="$(basename "${TAPE%.tape}")"
+  OUTPUT_FILE="$OUTPUT_DIR/${TAPE_NAME}.gif"
+fi
+
+echo "Recording: $TAPE"
+echo "Output:    $OUTPUT_FILE"
+echo ""
+
+cd "$DOTFILES_DIR"
+vhs "$TAPE"
+
+echo ""
+echo "Done! Output: $OUTPUT_FILE"
+
+if [[ "$OPEN_AFTER" == true ]] && command -v open &>/dev/null; then
+  open "$OUTPUT_FILE"
+fi
