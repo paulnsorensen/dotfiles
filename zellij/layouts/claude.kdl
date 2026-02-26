@@ -1,10 +1,10 @@
-// Claude Code session with live monitor
+// Claude Code development layout — 50/50 editor + claude
 layout {
     pane size=1 borderless=true {
         plugin location="zellij:compact-bar"
     }
-    pane focus=true
-    pane size=2 borderless=true name="monitor" {
-        command "claude-monitor"
+    pane split_direction="vertical" {
+        pane size="50%" name="editor" focus=true
+        pane size="50%" name="claude"
     }
 }
