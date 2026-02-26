@@ -15,7 +15,7 @@ zjs() {
 # Launch with dev layout
 zjdev() {
     local session="${1:-dev}"
-    zellij --layout dev --session "$session"
+    zellij --new-session-with-layout dev --session "$session"
 }
 
 # Launch with Claude monitor layout (generates layout with cwd baked in)
@@ -54,7 +54,7 @@ EOF
         return 1
     fi
 
-    zellij --layout "$layout" --session "$session"
+    zellij --new-session-with-layout "$layout" --session "$session"
 }
 
 # Auto-attach guard (opt-in — uncomment in ~/.zshrc.local)
