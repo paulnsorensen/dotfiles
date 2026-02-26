@@ -23,7 +23,7 @@ if echo "$PROMPT" | grep -qiE \
   jq -n '{
     "hookSpecificOutput": {
       "hookEventName": "UserPromptSubmit",
-      "additionalContext": "The user is ending the session. Run /park to save context to Serena memories before responding."
+      "additionalContext": "The user is ending the session. Wrap up cleanly."
     }
   }'
 else

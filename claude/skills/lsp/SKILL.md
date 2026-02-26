@@ -16,6 +16,29 @@ permissions:
 
 Detect project languages. Enable matching LSPs. Write to local settings only.
 
+## When do you need LSPs?
+
+ast-grep, Serena, and LSP plugins serve different roles:
+
+| Capability | ast-grep (`/trace`) | Serena MCP | LSP plugins |
+|---|---|---|---|
+| Structural pattern search | Yes | No | No |
+| Symbol lookup / cross-refs | No | Yes | Yes |
+| Go-to-definition (resolved) | No | Yes | Yes |
+| Type inference / hover types | No | No | Yes |
+| Diagnostics / type errors | No | No | Yes |
+| Works without project config | Yes | Needs activation | Needs tsconfig etc. |
+
+**When to enable LSPs:**
+- You need type information that Serena alone can't provide
+- Working in a typed language (TypeScript, Python with type hints, Go, Rust)
+- Interactive session where startup overhead is acceptable
+
+**When to skip LSPs:**
+- Headless/CI sessions (startup cost, no interactivity)
+- Quick structural searches (use `/trace` instead)
+- Symbol navigation only (Serena suffices)
+
 LSP plugins install language servers at startup — expensive for headless/CI sessions.
 This skill enables them per-project in `~/.claude/settings.local.json` so only
 interactive sessions on machines that opt in get the overhead.

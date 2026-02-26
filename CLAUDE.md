@@ -207,20 +207,32 @@ The `.sync-with-rollback` script provides:
 - `/test` — run existing tests via whey-drainer, returns concise summary
 - `/notebook <area>` — guided codebase review with persistent note-taking
 - `/move-my-cheese <PR#>` — take over a PR: merge main, diagnose CI failures, fix tests/conflicts, push
-- Pre-tool hooks (block-install.js, phantom-file-check.js, block-file-write.js)
-- Compaction hooks (pre-compact.sh saves context, post-compact.sh re-primes Serena)
-- Fresh session hook (post-fresh-start.sh injects /go reminder on non-compact starts)
-- Session-end hook (on-session-end.sh detects parting language → injects /park reminder)
+- Pre-tool hooks (block-install.js, phantom-file-check.js, block-file-write.js, block-legacy-tools.js)
+- Compaction hooks (pre-compact.sh saves context, post-compact.sh restores it with /trace suggestion)
+- Fresh session hook (post-fresh-start.sh suggests /trace for code navigation)
+- Session-end hook (on-session-end.sh detects parting language → clean wrap-up)
 - `/agents` command — control panel listing all agents and skills
 - `/go` command to re-prime MCPs after compaction or at session start
 - Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
 
+### Code Intelligence Tools
+
+Three complementary tools for understanding code — not substitutes:
+
+| Question | Tool | Notes |
+|---|---|---|
+| "Find all X that contain Y" (shape) | `/trace` (ast-grep) | AST pattern matching, zero config needed |
+| "Who calls function foo?" (semantic) | serena (Serena MCP) | Cross-file symbol resolution + memory |
+| "Type of variable X?" (inference) | LSP plugins (`/lsp`) | Type system integration, hover info |
+
+- **ast-grep** (`sg`): Works on any codebase without initialization. No `sgconfig.yml` needed for ad-hoc pattern search. Supports YAML rules for complex queries (`sg scan --inline-rules`).
+- **Serena**: Wraps LSP internally for symbol navigation. Adds project memory across compaction. Must be activated per project.
+- **LSP plugins**: Enable via `/lsp` for type inference and diagnostics. Local-only (machine-specific). Startup overhead — skip in headless/CI.
+
 ### MCP Usage Guidelines
-- **Serena**: Prefer `find_symbol` and `get_symbols_overview` over reading full files. Use `write_memory`/`read_memory` to persist discoveries across compaction. Always activate the project at conversation start.
 - **Context7**: Use when working with third-party library APIs to get version-specific docs.
-- **After compaction**: Run `/go` or manually activate Serena (`activate_project`), read Serena memories, and check onboarding. The post-compact hook does this automatically but `/go` is there as a manual fallback.
-- **Fresh vs Continued sessions**: Continued sessions (`ccc`, `ccr`) preserve context; fresh sessions call the session-start hook which runs `/go` automatically. If MCPs seem stale, always run `/go` to re-prime them.
+- **After compaction**: The post-compact hook restores working context (files, commands) automatically. Use `/trace` for re-orientation.
 
 ## Pre-Commit Hooks (prek)
 
