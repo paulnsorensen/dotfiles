@@ -216,9 +216,22 @@ The `.sync-with-rollback` script provides:
 - Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
 
+### Code Intelligence Tools
+
+Three complementary tools for understanding code — not substitutes:
+
+| Question | Tool | Notes |
+|---|---|---|
+| "Find all X that contain Y" (shape) | `/trace` (ast-grep) | AST pattern matching, zero config needed |
+| "Who calls function foo?" (semantic) | serena (Serena MCP) | Cross-file symbol resolution + memory |
+| "Type of variable X?" (inference) | LSP plugins (`/lsp`) | Type system integration, hover info |
+
+- **ast-grep** (`sg`): Works on any codebase without initialization. No `sgconfig.yml` needed for ad-hoc pattern search. Supports YAML rules for complex queries (`sg scan --inline-rules`).
+- **Serena**: Wraps LSP internally for symbol navigation. Adds project memory across compaction. Must be activated per project.
+- **LSP plugins**: Enable via `/lsp` for type inference and diagnostics. Local-only (machine-specific). Startup overhead — skip in headless/CI.
+
 ### MCP Usage Guidelines
 - **Context7**: Use when working with third-party library APIs to get version-specific docs.
-- **Code structure**: Use `/trace` (ast-grep) for structural code queries — symbol lookup, cross-references, architecture mapping. Prefer over grep for code shape questions.
 - **After compaction**: The post-compact hook restores working context (files, commands) automatically. Use `/trace` for re-orientation.
 
 ## Pre-Commit Hooks (prek)

@@ -148,6 +148,18 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | External docs | fetch | Context7, WebSearch, octocode | guessing from training data |
 | Worktree isolation | worktree | git worktree, Serena seeding | manual branch + cd |
 
+**Code intelligence tool division** — three complementary tools, not substitutes:
+
+| Question | Tool | Why |
+|---|---|---|
+| "Find all X that contain Y" (shape) | trace (ast-grep) | AST pattern matching, zero config |
+| "Who calls function foo?" (semantic) | serena (LSP-backed) | Cross-file symbol resolution |
+| "Type of variable X?" (inference) | LSP plugins (`/lsp`) | Type system integration |
+
+ast-grep needs no initialization — `sg --lang X -p 'pattern'` works on any codebase.
+LSP plugins add type inference that neither ast-grep nor Serena provide.
+Serena wraps LSP for symbol navigation and adds project memory.
+
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 
 **Agent skill enforcement**: When an agent has `skills: [scout, trace, diff]`, it MUST use those tools. Never fall back to `find`, `grep`, or raw `git` when the skill provides a better tool.
