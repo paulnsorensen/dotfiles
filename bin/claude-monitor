@@ -125,27 +125,22 @@ JQEOF
 }
 
 # ═══════════════════════════════════════════════════════════════════
-# Extract fields from metrics JSON in one jq call
-# ═══════════════════════════════════════════════════════════════════
-extract_fields() {
-    echo "$1" | jq -r '[
-        .model // "unknown", (.human_turns // 0 | tostring),
-        (.assistant_turns // 0 | tostring), (.total_in // 0 | tostring),
-        (.total_out // 0 | tostring), (.cache_pct // 0 | tostring),
-        (.ctx_latest // 0 | tostring), .ctx_trend // "flat",
-        .tools // "", .skills // "",
-        (.task_count // 0 | tostring), (.compactions // 0 | tostring),
-        .first_ts // ""
-    ] | join("\t")'
-}
-
-# ═══════════════════════════════════════════════════════════════════
 # Render — builds and prints the 2-line display
 # ═══════════════════════════════════════════════════════════════════
 render() {
-    local fields
-    fields=$(extract_fields "$1")
-    IFS=$'\t' read -r model ht at ti to cp ctx trend tools skills tc comp ts <<< "$fields"
+    local model ht at ti to cp ctx trend tools skills tc comp ts
+    {
+        read -r model; read -r ht; read -r at; read -r ti; read -r to
+        read -r cp; read -r ctx; read -r trend; read -r tools
+        read -r skills; read -r tc; read -r comp; read -r ts
+    } < <(echo "$1" | jq -r '
+        (.model // "unknown"), (.human_turns // 0 | tostring),
+        (.assistant_turns // 0 | tostring), (.total_in // 0 | tostring),
+        (.total_out // 0 | tostring), (.cache_pct // 0 | tostring),
+        (.ctx_latest // 0 | tostring), (.ctx_trend // "flat"),
+        (.tools // ""), (.skills // ""),
+        (.task_count // 0 | tostring), (.compactions // 0 | tostring),
+        (.first_ts // "")')
     model="${model#claude-}"
 
     local dur="--"
