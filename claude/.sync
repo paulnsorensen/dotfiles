@@ -53,7 +53,7 @@ fi
 LSPMUX_PLIST_TEMPLATE="$SOURCE_DIR/lspmux/com.lspmux.server.plist.template"
 LSPMUX_CONFIG_TEMPLATE="$SOURCE_DIR/lspmux/config.toml.template"
 LSPMUX_PLIST_DEST="$HOME/Library/LaunchAgents/com.lspmux.server.plist"
-LSPMUX_CONFIG_DEST="$HOME/.config/lspmux/config.toml"
+LSPMUX_CONFIG_DEST="$HOME/Library/Application Support/lspmux/config.toml"
 LSPMUX_LOG_DIR="$HOME/Library/Logs/lspmux"
 
 if [[ -f "$LSPMUX_PLIST_TEMPLATE" ]] || [[ -f "$LSPMUX_CONFIG_TEMPLATE" ]]; then

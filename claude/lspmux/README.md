@@ -70,7 +70,7 @@ log show --predicate 'subsystem == "com.lspmux.server"' --last 1h
 | Daemon not auto-starting | launchd plist installed? | `dots sync` then `launchctl load ~/Library/LaunchAgents/com.lspmux.server.plist` |
 | LSP not working at all | Wrapper on PATH? | `which pyright` — should be `~/Dev/dotfiles/bin/pyright` |
 | LSP slow (fallback mode) | Daemon running? | `lspmux server` to start manually |
-| Config not applied | Config path correct? | Edit `~/.config/lspmux/config.toml` |
+| Config not applied | Config path correct? | Edit `~/Library/Application Support/lspmux/config.toml` |
 
 ## Files installed by `dots sync`
 
@@ -78,6 +78,6 @@ log show --predicate 'subsystem == "com.lspmux.server"' --last 1h
 |---|---|
 | `~/Dev/dotfiles/bin/<lsp-name>` | Wrapper scripts for each LSP (installed via `dots sync`) |
 | `~/Library/LaunchAgents/com.lspmux.server.plist` | launchd auto-start agent |
-| `~/.config/lspmux/config.toml` | lspmux configuration (from template) |
+| `~/Library/Application Support/lspmux/config.toml` | lspmux configuration (from template) |
 
 Templates live in `claude/lspmux/` in this repo.

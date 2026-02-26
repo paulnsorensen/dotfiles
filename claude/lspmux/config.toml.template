@@ -1,5 +1,5 @@
 # lspmux server configuration
-# Installed to: ~/.config/lspmux/config.toml
+# Installed to: ~/Library/Application Support/lspmux/config.toml
 
 # How long (seconds) an idle language server instance is kept alive before
 # being shut down. Frees memory when you're not actively working.

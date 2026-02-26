@@ -70,7 +70,7 @@ Claude sessions, reducing memory usage and eliminating cold-start overhead for
 - **Install wrappers + launchd plist:** `dots sync` (run after installing lspmux)
 - **Start server manually:** `lspmux server` (or auto-starts on next login via launchd)
 - **Verify launchd agent:** `launchctl list com.lspmux.server`
-- **Config file:** `~/.config/lspmux/config.toml` (edit if needed)
+- **Config file:** `~/Library/Application Support/lspmux/config.toml` (edit if needed)
 - **Disable auto-start:** `launchctl unload ~/Library/LaunchAgents/com.lspmux.server.plist`
 - **Status in `/lsp`:** The `/lsp` skill reports `lspmux server: running | not running | not installed`
 
