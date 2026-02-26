@@ -49,4 +49,47 @@ else
   echo "  Skipping MCP/plugin sync (claude CLI not found)"
 fi
 
+# --- lspmux: expand launchd plist and config.toml from templates ---
+LSPMUX_PLIST_TEMPLATE="$SOURCE_DIR/lspmux/com.lspmux.server.plist.template"
+LSPMUX_CONFIG_TEMPLATE="$SOURCE_DIR/lspmux/config.toml.template"
+LSPMUX_PLIST_DEST="$HOME/Library/LaunchAgents/com.lspmux.server.plist"
+LSPMUX_CONFIG_DEST="$HOME/.config/lspmux/config.toml"
+LSPMUX_LOG_DIR="$HOME/Library/Logs/lspmux"
+
+if [[ -f "$LSPMUX_PLIST_TEMPLATE" ]] || [[ -f "$LSPMUX_CONFIG_TEMPLATE" ]]; then
+  LSPMUX_BIN="$(command -v lspmux 2>/dev/null || true)"
+
+  # Expand launchd plist
+  if [[ -f "$LSPMUX_PLIST_TEMPLATE" ]]; then
+    if [[ -z "$LSPMUX_BIN" ]]; then
+      echo "  Warning: lspmux not found in PATH — skipping plist install"
+      echo "    Install lspmux and re-run 'dots sync', then:"
+      echo "    launchctl load $LSPMUX_PLIST_DEST"
+    else
+      mkdir -p "$HOME/Library/LaunchAgents"
+      mkdir -p "$LSPMUX_LOG_DIR"
+      sed \
+        -e "s|{{LSPMUX_BIN}}|$LSPMUX_BIN|g" \
+        -e "s|{{LOG_DIR}}|$LSPMUX_LOG_DIR|g" \
+        "$LSPMUX_PLIST_TEMPLATE" > "$LSPMUX_PLIST_DEST"
+      echo "  Written $LSPMUX_PLIST_DEST"
+
+      # Check if launchd service is already loaded; if so, emit reload instructions
+      if launchctl list com.lspmux.server &>/dev/null; then
+        echo "    Service already loaded. To update running service:"
+        echo "    launchctl unload $LSPMUX_PLIST_DEST && launchctl load $LSPMUX_PLIST_DEST"
+      else
+        echo "    To activate: launchctl load $LSPMUX_PLIST_DEST"
+      fi
+    fi
+  fi
+
+  # Expand config.toml
+  if [[ -f "$LSPMUX_CONFIG_TEMPLATE" ]]; then
+    mkdir -p "$(dirname "$LSPMUX_CONFIG_DEST")"
+    cp "$LSPMUX_CONFIG_TEMPLATE" "$LSPMUX_CONFIG_DEST"
+    echo "  Written $LSPMUX_CONFIG_DEST"
+  fi
+fi
+
 echo "Claude config synced"

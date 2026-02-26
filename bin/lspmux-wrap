@@ -1,0 +1,44 @@
+#!/bin/bash
+# lspmux-wrap — smart LSP binary interceptor
+#
+# Usage: lspmux-wrap <binary-name> [args...]
+#
+# This script is called by shadow wrappers (lspmux-python, lspmux-go, etc.).
+# It finds the real LSP binary, then either:
+#   1. Forwards to lspmux client (if lspmux is installed and the server is running)
+#   2. Falls back to the real binary directly (graceful degradation)
+#
+# Stripping $DOTFILES_DIR/bin from PATH prevents infinite recursion — without
+# this, `command -v pyright-langserver` would find this wrapper again.
+
+set -euo pipefail
+
+BINARY="${1:-}"
+if [[ -z "$BINARY" ]]; then
+    echo "lspmux-wrap: error: binary name required as first argument" >&2
+    exit 1
+fi
+shift  # remaining args are passed through to the binary
+
+# Strip this bin directory from PATH to avoid finding our own wrapper again.
+# DOTFILES_DIR may not be set (e.g., in non-interactive shells), so fall back
+# to the dirname of this script.
+THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
+PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v "^${THIS_DIR}$" | tr '\n' ':' | sed 's/:$//')"
+export PATH
+
+# Locate the real binary on the (now-stripped) PATH.
+REAL_BIN="$(command -v "$BINARY" 2>/dev/null || true)"
+if [[ -z "$REAL_BIN" ]]; then
+    echo "lspmux-wrap: error: '$BINARY' not found on PATH" >&2
+    exit 1
+fi
+
+# Forward through lspmux if it is installed and a server is reachable.
+# Check if lspmux binary exists and server is reachable via status probe.
+if command -v lspmux &>/dev/null && lspmux status --server-path "$REAL_BIN" &>/dev/null; then
+    exec lspmux client --server-path "$REAL_BIN" "$@"
+fi
+
+# Graceful degradation: run the real binary directly.
+exec "$REAL_BIN" "$@"

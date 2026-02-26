@@ -132,6 +132,46 @@ jq --argjson keys '["pyright@claude-code-lsps", ...]' \
 Tell the user to restart Claude Code for changes to take effect, or that
 the LSPs will be active on next session start.
 
+## lspmux Integration
+
+lspmux is an optional multiplexer that shares a single LSP server instance across
+multiple Claude sessions. Without it, each session spawns its own language server
+(e.g., pyright, vtsls). With it, a background daemon handles all requests — the
+2nd+ session connects to the running instance instead of starting a fresh one.
+
+Wrapper scripts installed by `dots sync` sit on your PATH ahead of the real
+binaries (e.g., `~/Dev/dotfiles/bin/pyright` forwards to lspmux if running, or
+falls back to the real binary if not). This forwarding is transparent to
+LSP plugins — they call the same binary name regardless.
+
+**Benefits:** Faster startup for 2nd+ session (no cold-start JIT). Lower memory
+when running multiple Claude sessions on the same project simultaneously.
+
+### lspmux status check
+
+When `/lsp` runs (auto-detect or `--all`), check lspmux status and surface it:
+
+```bash
+if command -v lspmux &>/dev/null; then
+  lspmux status
+  # Show: "lspmux server: running" or "lspmux server: not running"
+else
+  # Show: "lspmux server: not installed"
+fi
+```
+
+Include the status line in the report output so it's visible alongside detected languages.
+
+### lspmux troubleshooting
+
+- **Server not running**: Start manually with `lspmux server` or wait for launchd
+  (it auto-starts on login via `~/Library/LaunchAgents/com.lspmux.server.plist`)
+- **Wrappers on PATH but lspmux is down**: LSPs fall back to direct binary execution
+  automatically — no action needed, just slightly slower startup
+- **lspmux installed but not found**: Check that `~/.cargo/bin` is on your PATH,
+  or reinstall with `cargo install lspmux`
+- **Verify launchd agent**: `launchctl list com.lspmux.server`
+
 ## Edge cases
 
 - **No languages detected**: Report this clearly. Don't write an empty object.

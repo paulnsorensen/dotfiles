@@ -28,17 +28,27 @@ NC='\033[0m'
 DRY_RUN=false
 DISABLE=false
 LIST_ONLY=false
+LSPMUX_STATUS=false
 
 for arg in "$@"; do
     case $arg in
         --dry-run) DRY_RUN=true ;;
         --disable) DISABLE=true ;;
         --list) LIST_ONLY=true ;;
+        --lspmux-status) LSPMUX_STATUS=true ;;
         --help|-h)
-            echo "Usage: $0 [--dry-run] [--disable] [--list]"
-            echo "  --dry-run  Preview changes without applying"
-            echo "  --disable  Remove LSP entries from local settings"
-            echo "  --list     Show current LSP enable status"
+            echo "Usage: $0 [--dry-run] [--disable] [--list] [--lspmux-status]"
+            echo "  --dry-run        Preview changes without applying"
+            echo "  --disable        Remove LSP entries from local settings"
+            echo "  --list           Show current LSP enable status"
+            echo "  --lspmux-status  Show lspmux server status (launchd + binary)"
+            echo
+            echo "lspmux integration:"
+            echo "  LSP plugins route through lspmux when it is running, sharing a single"
+            echo "  language server instance across editor sessions. Run 'dots sync' to"
+            echo "  install the launchd agent (com.lspmux.server) from the template in"
+            echo "  claude/lspmux/. First-time setup requires:"
+            echo "    launchctl load ~/Library/LaunchAgents/com.lspmux.server.plist"
             exit 0
             ;;
     esac
@@ -54,6 +64,29 @@ done
 if [[ ! -f "$REGISTRY_FILE" ]]; then
     echo -e "${RED}Error: LSP registry not found at $REGISTRY_FILE${NC}"
     exit 1
+fi
+
+# --- lspmux status check ---
+if command -v lspmux > /dev/null 2>&1; then
+    echo -e "${GREEN}lspmux found at $(which lspmux)${NC}"
+    launchd_out=$(launchctl list com.lspmux.server 2>&1)
+    if echo "$launchd_out" | grep -q '"PID"'; then
+        pid=$(echo "$launchd_out" | grep '"PID"' | awk -F'[= ]' '{print $NF}' | tr -d ';')
+        echo -e "  launchd: ${GREEN}running${NC} (PID $pid)"
+    elif echo "$launchd_out" | grep -q 'com.lspmux.server'; then
+        echo -e "  launchd: ${YELLOW}loaded but not running${NC}"
+    else
+        echo -e "  launchd: ${YELLOW}not loaded${NC} — run: launchctl load ~/Library/LaunchAgents/com.lspmux.server.plist"
+    fi
+    if $LSPMUX_STATUS; then
+        echo
+        echo "launchctl list com.lspmux.server:"
+        echo "$launchd_out"
+    fi
+    echo
+else
+    echo -e "${YELLOW}lspmux not found${NC} — install lspmux and run 'dots sync' to set up the launchd agent"
+    echo
 fi
 
 # Get LSP names from registry

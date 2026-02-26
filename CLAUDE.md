@@ -60,6 +60,20 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `lsp-ls` - Show which LSPs are enabled locally
 - `lsp-edit` - Edit lsp-registry.yaml
 
+### lspmux Setup
+
+[lspmux](https://codeberg.org/p2502/lspmux) shares LSP server instances across
+Claude sessions, reducing memory usage and eliminating cold-start overhead for
+2nd+ sessions. It is optional — LSPs work without it via direct binary execution.
+
+- **Install (one-time):** `cargo install lspmux`
+- **Install wrappers + launchd plist:** `dots sync` (run after installing lspmux)
+- **Start server manually:** `lspmux server` (or auto-starts on next login via launchd)
+- **Verify launchd agent:** `launchctl list com.lspmux.server`
+- **Config file:** `~/.config/lspmux/config.toml` (edit if needed)
+- **Disable auto-start:** `launchctl unload ~/Library/LaunchAgents/com.lspmux.server.plist`
+- **Status in `/lsp`:** The `/lsp` skill reports `lspmux server: running | not running | not installed`
+
 ### Session Monitoring
 - `ccm` - Run Claude session monitor standalone (shows metrics for current directory's session)
 - `ccm --cwd DIR` - Monitor a specific directory's session
