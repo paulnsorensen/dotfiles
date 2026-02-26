@@ -200,7 +200,7 @@ rule:
       position: 5
       ofRule:
         kind: required_parameter
-    stopBy: end" .
+  stopBy: end" .
 ```
 
 ### Empty except blocks (Python)

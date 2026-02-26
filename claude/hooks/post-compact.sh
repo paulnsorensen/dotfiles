@@ -11,7 +11,7 @@ if [[ -f "$CONTEXT_FILE" ]]; then
   rm -f "$CONTEXT_FILE"
 fi
 
-REMINDER="COMPACTION COMPLETE — context restored. Use /trace for code structure questions (symbol lookup, cross-references, architecture mapping). Use Grep/Glob for text search."
+REMINDER="COMPACTION COMPLETE — context restored. Use /trace for structural code queries (pattern matching, architecture mapping, code shape analysis). Use Grep/Glob for text search."
 
 if [[ -n "$SAVED_CONTEXT" ]]; then
   FULL_CONTEXT="$REMINDER

@@ -15,6 +15,6 @@ fi
 jq -n '{
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "Fresh session started. Use /trace for code structure questions (symbol lookup, cross-references, architecture mapping). Use Grep/Glob for text search."
+    "additionalContext": "Fresh session started. Use /trace for structural code queries (pattern matching, architecture mapping, code shape analysis). Use Grep/Glob for text search."
   }
 }'
