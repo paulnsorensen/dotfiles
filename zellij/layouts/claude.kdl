@@ -1,10 +1,11 @@
-// Claude Code development layout — 50/50 editor + claude
 layout {
     pane size=1 borderless=true {
         plugin location="zellij:compact-bar"
     }
-    pane split_direction="vertical" {
-        pane size="50%" name="editor" focus=true
-        pane size="50%" name="claude"
+    pane focus=true {
+        command "claude"
+    }
+    pane size=2 borderless=true name="monitor" {
+        command "claude-monitor"
     }
 }

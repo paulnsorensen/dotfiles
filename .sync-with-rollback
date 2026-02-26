@@ -306,6 +306,11 @@ run_sync() {
 
     # Install prek pre-commit hooks
     if command -v prek &> /dev/null; then
+      # prek refuses to install when core.hooksPath is set — clear it first
+      if git config --local core.hooksPath &>/dev/null; then
+        log_info "Unsetting local core.hooksPath (conflicts with prek)..."
+        git config --local --unset core.hooksPath
+      fi
       log_info "Installing prek pre-commit hooks..."
       prek install 2>&1 | while read -r line; do
         log_info "  $line"

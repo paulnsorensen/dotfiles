@@ -32,10 +32,11 @@ DESIRED_JSON=$(yq -o=json '.mcps' "$REGISTRY_FILE")
 # shellcheck disable=SC2034  # used by sync-common.sh
 DESIRED_NAMES=$(echo "$DESIRED_JSON" | jq -r 'keys[]' | sort)
 
-# Get current MCPs from claude
+# Get current MCPs from claude (exclude plugin-managed MCPs — those are
+# auto-registered by the plugin system and can't be removed via `claude mcp remove`)
 CURRENT_OUTPUT=$(claude mcp list 2>/dev/null || true)
 # shellcheck disable=SC2034  # used by sync-common.sh
-CURRENT_NAMES=$(echo "$CURRENT_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:' | cut -d: -f1 | sort)
+CURRENT_NAMES=$(echo "$CURRENT_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:' | cut -d: -f1 | grep -v '^plugin' | sort)
 
 # Callbacks for sync-common
 get_description() { echo "$DESIRED_JSON" | jq -r --arg n "$1" '.[$n].description // ""'; }
