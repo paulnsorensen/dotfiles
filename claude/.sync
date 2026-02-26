@@ -77,9 +77,10 @@ if [[ -f "$LSPMUX_PLIST_TEMPLATE" ]] || [[ -f "$LSPMUX_CONFIG_TEMPLATE" ]]; then
       # Check if launchd service is already loaded; if so, emit reload instructions
       if launchctl list com.lspmux.server &>/dev/null; then
         echo "    Service already loaded. To update running service:"
-        echo "    launchctl unload $LSPMUX_PLIST_DEST && launchctl load $LSPMUX_PLIST_DEST"
+        echo "    launchctl bootout gui/\$(id -u) $LSPMUX_PLIST_DEST"
+        echo "    launchctl bootstrap gui/\$(id -u) $LSPMUX_PLIST_DEST"
       else
-        echo "    To activate: launchctl load $LSPMUX_PLIST_DEST"
+        echo "    To activate: launchctl bootstrap gui/\$(id -u) $LSPMUX_PLIST_DEST"
       fi
     fi
   fi

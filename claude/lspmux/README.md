@@ -67,7 +67,7 @@ log show --predicate 'subsystem == "com.lspmux.server"' --last 1h
 | Symptom | Check | Fix |
 |---|---|---|
 | `lspmux: command not found` | `~/.cargo/bin` on PATH? | Add to PATH or reinstall: `cargo install lspmux` |
-| Daemon not auto-starting | launchd plist installed? | `dots sync` then `launchctl load ~/Library/LaunchAgents/com.lspmux.server.plist` |
+| Daemon not auto-starting | launchd plist installed? | `dots sync` then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lspmux.server.plist` |
 | LSP not working at all | Wrapper on PATH? | `which pyright` — should be `~/Dev/dotfiles/bin/pyright` |
 | LSP slow (fallback mode) | Daemon running? | `lspmux server` to start manually |
 | Config not applied | Config path correct? | Edit `~/Library/Application Support/lspmux/config.toml` |

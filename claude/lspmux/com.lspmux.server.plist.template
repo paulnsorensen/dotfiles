@@ -12,7 +12,7 @@
   Logs written to: {{LOG_DIR}}/server.log
 
   To load manually after first install:
-    launchctl load ~/Library/LaunchAgents/com.lspmux.server.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lspmux.server.plist
 
   To check status:
     launchctl list com.lspmux.server

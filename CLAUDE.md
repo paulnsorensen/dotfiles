@@ -71,7 +71,7 @@ Claude sessions, reducing memory usage and eliminating cold-start overhead for
 - **Start server manually:** `lspmux server` (or auto-starts on next login via launchd)
 - **Verify launchd agent:** `launchctl list com.lspmux.server`
 - **Config file:** `~/Library/Application Support/lspmux/config.toml` (edit if needed)
-- **Disable auto-start:** `launchctl unload ~/Library/LaunchAgents/com.lspmux.server.plist`
+- **Disable auto-start:** `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.lspmux.server.plist`
 - **Status in `/lsp`:** The `/lsp` skill reports `lspmux server: running | not running | not installed`
 
 ### Session Monitoring
