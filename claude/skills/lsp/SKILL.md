@@ -6,6 +6,10 @@ description: >
   says "set up LSPs", "enable language servers", "/lsp", or mentions wanting code
   intelligence. Also useful proactively when you notice a project has languages that
   aren't covered by currently enabled LSPs. Supports --all, --list, and --disable flags.
+permissions:
+  allow:
+    - "Bash(yq:*)"
+    - "Bash(jq:*)"
 ---
 
 # lsp
