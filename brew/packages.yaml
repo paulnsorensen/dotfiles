@@ -34,6 +34,7 @@ formulae:
   - procs        # Modern process viewer (ps alternative)
   - tokei        # Code statistics by language
   - yazi         # Terminal file manager
+  - lazygit      # Terminal UI for git
   - sd           # Intuitive find-and-replace (sed alternative)
   - vhs          # Terminal session recorder (GIF/MP4)
 

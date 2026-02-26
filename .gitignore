@@ -42,3 +42,6 @@ vhs/output/
 # Backup files
 *.bak
 .serena/
+
+# tmux generated theme (rebuilt on dots sync)
+tmux/theme.conf
