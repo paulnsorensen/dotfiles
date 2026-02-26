@@ -34,7 +34,7 @@ keybinds clear-defaults=false {
 
         // Floating panes (Zellij killer feature)
         bind "Alt f" { ToggleFloatingPanes; }
-        bind "Alt F" { NewFloatingPane; }
+        bind "Alt F" { NewPane; }
 
         // Tabs
         bind "Alt c" { NewTab; }
@@ -72,7 +72,7 @@ keybinds clear-defaults=false {
     }
 
     scroll {
-        bind "q" "Escape" { SwitchToMode "Normal"; }
+        bind "q" "Esc" { SwitchToMode "Normal"; }
         bind "j" { ScrollDown; }
         bind "k" { ScrollUp; }
         bind "Ctrl d" { HalfPageScrollDown; }
@@ -83,7 +83,7 @@ keybinds clear-defaults=false {
     }
 
     search {
-        bind "Escape" "q" { SwitchToMode "Scroll"; }
+        bind "Esc" "q" { SwitchToMode "Scroll"; }
         bind "n" { Search "down"; }
         bind "N" { Search "up"; }
         bind "c" { SearchToggleOption "CaseSensitivity"; }
@@ -91,7 +91,7 @@ keybinds clear-defaults=false {
     }
 
     pane {
-        bind "Escape" { SwitchToMode "Normal"; }
+        bind "Esc" { SwitchToMode "Normal"; }
         bind "h" { MoveFocus "Left"; }
         bind "j" { MoveFocus "Down"; }
         bind "k" { MoveFocus "Up"; }
@@ -105,7 +105,7 @@ keybinds clear-defaults=false {
     }
 
     resize {
-        bind "Escape" { SwitchToMode "Normal"; }
+        bind "Esc" { SwitchToMode "Normal"; }
         bind "h" { Resize "Left"; }
         bind "j" { Resize "Down"; }
         bind "k" { Resize "Up"; }

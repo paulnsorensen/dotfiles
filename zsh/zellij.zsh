@@ -18,10 +18,43 @@ zjdev() {
     zellij --layout dev --session "$session"
 }
 
-# Launch with Claude monitor layout
+# Launch with Claude monitor layout (generates layout with cwd baked in)
 zjclaude() {
     local session="${1:-claude}"
-    zellij --layout claude --session "$session"
+
+    # Don't nest inside existing zellij
+    if [[ -n "$ZELLIJ" ]]; then
+        echo "Already inside zellij — use zjclaude from an outside terminal" >&2
+        return 1
+    fi
+
+    # Kill stale session with same name (dead sessions block --session)
+    if zellij list-sessions 2>/dev/null | grep -q "^${session} "; then
+        zellij kill-session "$session" 2>/dev/null
+    fi
+
+    local tmpdir="${TMPDIR:-/tmp}"
+    local layout="${tmpdir}/zjclaude-layout.kdl"
+    cat > "$layout" <<EOF
+layout {
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+    pane focus=true cwd="$PWD" {
+        command "claude"
+    }
+    pane size=2 borderless=true name="monitor" cwd="$PWD" {
+        command "claude-monitor"
+        args "--cwd" "$PWD"
+    }
+}
+EOF
+    if [[ ! -f "$layout" ]]; then
+        echo "Failed to write layout to $layout" >&2
+        return 1
+    fi
+
+    zellij --layout "$layout" --session "$session"
 }
 
 # Auto-attach guard (opt-in — uncomment in ~/.zshrc.local)
