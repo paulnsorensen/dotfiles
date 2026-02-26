@@ -298,6 +298,10 @@ run_sync() {
       git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm" 2>&1 | while read -r line; do
         log_info "  $line"
       done
+      log_info "Installing tmux plugins..."
+      "$HOME/.tmux/plugins/tpm/bin/install_plugins" 2>&1 | while read -r line; do
+        log_info "  $line"
+      done
     fi
 
     # Install prek pre-commit hooks
