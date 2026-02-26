@@ -1,5 +1,5 @@
 #!/bin/bash
-# post-fresh-start.sh — Prime Serena on fresh session start
+# post-fresh-start.sh — Session start context
 # Skips if this is a post-compact session (handled by post-compact.sh)
 # IMPORTANT: Must be listed BEFORE the compact hook in settings.json SessionStart array
 # so it can detect the compaction context file before post-compact.sh deletes it.
@@ -15,6 +15,6 @@ fi
 jq -n '{
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "Fresh session started. Run /go (or: activate_project → list_memories → read_memory) to prime Serena and load project context before starting work."
+    "additionalContext": "Fresh session started. Use /trace for code structure questions (symbol lookup, cross-references, architecture mapping). Use Grep/Glob for text search."
   }
 }'

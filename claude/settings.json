@@ -69,7 +69,7 @@
           {
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/post-compact.sh\"",
-            "statusMessage": "Re-priming MCP tools..."
+            "statusMessage": "Restoring session context..."
           }
         ]
       }
