@@ -140,9 +140,10 @@ multiple Claude sessions. Without it, each session spawns its own language serve
 2nd+ session connects to the running instance instead of starting a fresh one.
 
 Wrapper scripts installed by `dots sync` sit on your PATH ahead of the real
-binaries (e.g., `~/Dev/dotfiles/bin/pyright` forwards to lspmux if running, or
-falls back to the real binary if not). This forwarding is transparent to
-LSP plugins — they call the same binary name regardless.
+binaries (e.g., `~/Dev/dotfiles/bin/pyright-langserver` forwards to lspmux).
+Wrappers fail fast if lspmux is not installed or the server is down.
+This forwarding is transparent to LSP plugins — they call the same binary name
+regardless.
 
 **Benefits:** Faster startup for 2nd+ session (no cold-start JIT). Lower memory
 when running multiple Claude sessions on the same project simultaneously.
