@@ -207,7 +207,7 @@ The `.sync-with-rollback` script provides:
 - `/test` — run existing tests via whey-drainer, returns concise summary
 - `/notebook <area>` — guided codebase review with persistent note-taking
 - `/move-my-cheese <PR#>` — take over a PR: merge main, diagnose CI failures, fix tests/conflicts, push
-- Pre-tool hooks (block-install.js, phantom-file-check.js, block-file-write.js)
+- Pre-tool hooks (block-install.js, phantom-file-check.js, block-file-write.js, block-legacy-tools.js)
 - Compaction hooks (pre-compact.sh saves context, post-compact.sh restores it with /trace suggestion)
 - Fresh session hook (post-fresh-start.sh suggests /trace for code navigation)
 - Session-end hook (on-session-end.sh detects parting language → clean wrap-up)
