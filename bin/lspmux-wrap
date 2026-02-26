@@ -37,4 +37,12 @@ if ! command -v lspmux &>/dev/null; then
     exit 1
 fi
 
+# Log wrapper invocation for debugging (rotate at 100KB)
+LSPMUX_LOG="${LSPMUX_LOG:-$HOME/Library/Logs/lspmux/wrap.log}"
+mkdir -p "$(dirname "$LSPMUX_LOG")" 2>/dev/null || true
+if [[ -f "$LSPMUX_LOG" ]] && [[ "$(wc -c < "$LSPMUX_LOG")" -gt 102400 ]]; then
+    mv "$LSPMUX_LOG" "${LSPMUX_LOG}.1"
+fi
+echo "$(date -Iseconds) pid=$$ binary=$BINARY real=$REAL_BIN" >> "$LSPMUX_LOG" 2>/dev/null || true
+
 exec lspmux client --server-path "$REAL_BIN" "$@"
