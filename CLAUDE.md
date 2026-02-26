@@ -84,7 +84,6 @@ dotfiles/
 ├── gitconfig               # Git configuration
 ├── prek.toml               # Pre-commit hooks config (prek)
 ├── iterm2/                 # iTerm2 preferences
-├── nixpkgs/                # Nix Home Manager config
 ├── reference/              # Reference docs (gitignored)
 ├── .claude/
 │   ├── specs/              # Tabled feature specs (.claude/specs/<slug>.md)
@@ -176,7 +175,7 @@ The `.sync-with-rollback` script provides:
 - **Automatic backups** before changes (stored in `~/.local/state/dotfiles/backups/`)
 - **Manifest tracking** of all symlinks
 - **Rollback capability** to any previous state
-- **Per-directory .sync scripts** for custom setup (fonts, iterm2, nixpkgs)
+- **Per-directory .sync scripts** for custom setup (fonts, iterm2)
 
 **Skip list** (not symlinked to ~):
 - `.git`, `.local`, `reference`
@@ -276,7 +275,6 @@ Managed in `.brew`:
 - `jq` - JSON processing
 
 ### Dependencies Not Managed by This Repo
-- Nix Home Manager (configuration in nixpkgs/home.nix)
 - VS Code extensions (list in vscode/settings.json)
 - Pyenv and Conda
 - iTerm2 application
