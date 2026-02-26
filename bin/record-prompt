@@ -50,6 +50,10 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
+    --*)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
     *)
       TAPE="$1"
       shift
@@ -81,6 +85,10 @@ if [[ -n "$FORMAT" ]]; then
   trap 'rm -f "$TEMP_TAPE"' EXIT
 
   # Replace the Output line with the new format
+  if ! grep -q '^Output ' "$TAPE"; then
+    echo "Error: no Output line found in tape: $TAPE" >&2
+    exit 1
+  fi
   sed "s|^Output .*|Output ${OUTPUT_FILE}|" "$TAPE" > "$TEMP_TAPE"
   TAPE="$TEMP_TAPE"
 else
