@@ -1,7 +1,7 @@
 ---
 name: worktree
 model: haiku
-allowed-tools: Bash(git:*), mcp__serena__activate_project, mcp__serena__check_onboarding_performed, mcp__serena__onboarding, mcp__serena__list_memories, mcp__serena__read_memory
+allowed-tools: Bash(git:*), Bash(jq:*), Bash(mkdir:*), Bash(cp:*), Bash(rm:*), Bash(echo:*), mcp__serena__activate_project, mcp__serena__check_onboarding_performed, mcp__serena__onboarding, mcp__serena__list_memories, mcp__serena__read_memory
 description: >
   Create an isolated git worktree for a Claude Code task, keeping main clean.
   Use when asked to create or resume a worktree, set up an isolated branch for
@@ -42,7 +42,28 @@ git worktree add .worktrees/<slug> -b claude/<slug>
 - `cd` into `.worktrees/<slug>/`
 - Confirm ready
 
-### 4. Seed Serena
+### 4. Seed local settings
+
+Copy the main repo's `.claude/settings.local.json` into the worktree (preserves LSPs,
+custom permissions, etc.) and ensure sandbox is enabled on top.
+
+If `.claude/settings.local.json` exists at repo root but not in the worktree:
+```bash
+mkdir -p .worktrees/<slug>/.claude
+# Merge main settings with sandbox overlay (sandbox wins on conflict)
+jq -s '.[0] * .[1]' <REPO_ROOT>/.claude/settings.local.json \
+  <(echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}') \
+  > .worktrees/<slug>/.claude/settings.local.json
+```
+
+If no `.claude/settings.local.json` at repo root, write sandbox-only:
+```bash
+mkdir -p .worktrees/<slug>/.claude
+echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}' | jq . \
+  > .worktrees/<slug>/.claude/settings.local.json
+```
+
+### 5. Seed Serena
 
 If `.serena/` exists at repo root but not in the worktree:
 ```bash
@@ -50,13 +71,13 @@ cp -r <REPO_ROOT>/.serena .worktrees/<slug>/.serena
 rm -rf .worktrees/<slug>/.serena/cache
 ```
 
-### 5. Prime Serena
+### 6. Prime Serena
 
 1. `activate_project` for the worktree path
 2. `check_onboarding_performed` — run `onboarding` if needed
 3. `list_memories` — `read_memory` for any relevant ones
 
-### 6. Confirm
+### 7. Confirm
 
 ```
 Worktree ready: <absolute path>
