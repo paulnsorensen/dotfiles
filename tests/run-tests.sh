@@ -75,7 +75,7 @@ run_tests() {
         test_files="$SPECIFIC_TEST"
     else
         # Run simpler tests that don't require complex setup
-        test_files="dots-simple.bats git-hooks.bats sync.bats"
+        test_files="dots-simple.bats git-hooks.bats sync.bats config-validation.bats prompt.bats lspmux-infra.bats"
     fi
 
     # Count total tests

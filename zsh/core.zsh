@@ -56,6 +56,8 @@ bindkey -M vicmd v edit-command-line
 # init pyenv if it exists
 if command -v pyenv 1>/dev/null 2>&1; then
   eval "$(pyenv init -)"
+  # Re-prepend dotfiles/bin so lspmux wrappers shadow pyenv shims
+  export PATH="$DOTFILES_DIR/bin:$PATH"
 fi
 
 # Source .env file if it exists (key=value only, no command execution)
