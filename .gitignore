@@ -36,6 +36,9 @@ vim/undo/
 # Workspace-local notebooks and context
 .context/
 
+# VHS recording output
+vhs/output/
+
 # Backup files
 *.bak
 .serena/

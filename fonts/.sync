@@ -9,7 +9,7 @@ if [ "${QUICK_SYNC:-false}" = "true" ]; then
   exit 0
 fi
 
-fonts=(hack fira-code monoid)
+fonts=(hack hack-nerd-font fira-code monoid)
 
 for font in ${fonts[@]}; do
   # Check if font is already installed (via brew or manually)
