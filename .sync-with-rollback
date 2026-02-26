@@ -292,6 +292,14 @@ run_sync() {
       ln -s "$dir/$file" ~/."$file"
     done
 
+    # Install TPM (tmux plugin manager) if not present
+    if command -v tmux &>/dev/null && [[ ! -d "$HOME/.tmux/plugins/tpm" ]]; then
+      log_info "Installing TPM (tmux plugin manager)..."
+      git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm" 2>&1 | while read -r line; do
+        log_info "  $line"
+      done
+    fi
+
     # Install prek pre-commit hooks
     if command -v prek &> /dev/null; then
       log_info "Installing prek pre-commit hooks..."
