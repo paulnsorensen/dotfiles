@@ -60,6 +60,12 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `lsp-ls` - Show which LSPs are enabled locally
 - `lsp-edit` - Edit lsp-registry.yaml
 
+### Session Monitoring
+- `ccm` - Run Claude session monitor standalone (shows metrics for current directory's session)
+- `ccm --cwd DIR` - Monitor a specific directory's session
+- `ccm --once` - Print metrics once and exit (for scripting)
+- `zjclaude` - Launch zellij with Claude layout (main pane + monitor bar)
+
 ### Common Development Tasks
 - `lb` - Open daily logbook (creates markdown file at `~/psorensen/logbook/[date].md`)
 - `uuidg` - Generate UUID and copy to clipboard

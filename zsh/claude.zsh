@@ -19,6 +19,9 @@ ccfresh() {
   claude --continue -p '/go' && claude --continue
 }
 
+# Session monitor
+alias ccm='claude-monitor'
+
 # ═══════════════════════════════════════════════════════════════════
 # MCP Management (thin wrappers around native commands)
 # ═══════════════════════════════════════════════════════════════════
