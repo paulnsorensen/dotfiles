@@ -6,6 +6,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 # ── zsh powerline prompt (prompt.zsh) ─────────────────────────────────────────
 
 @test "prompt.zsh has valid zsh syntax" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     run zsh -n "$DOTFILES_DIR/zsh/prompt.zsh"
     [[ $status -eq 0 ]]
 }
