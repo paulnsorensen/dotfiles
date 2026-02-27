@@ -234,7 +234,7 @@ When dispatching Cook agents for medium/large tasks:
 
 When a Cook or Culture agent encounters an unfamiliar library/API:
 
-1. **Codebase first**: Grep the codebase for existing usage patterns
+1. **Codebase first**: Grep the codebase for existing usage patterns, or use `/trace` (ast-grep) for structural matches
 2. **Context7 second**: Query library docs via Context7 MCP
 3. **Package README third**: Use octocode to read the package README
 4. **NEVER**: Read library source code. If the answer isn't in steps 1-3, return what you have and flag it as needing research.
