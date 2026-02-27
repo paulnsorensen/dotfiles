@@ -79,6 +79,10 @@ create_manifest() {
     log_success "Manifest created with $(wc -l < "${MANIFEST_FILE}") symlinks"
 }
 
+# Directories managed by .sync scripts — their config is symlinked,
+# the rest is runtime data that shouldn't be backed up
+BACKUP_EXCLUDE=("claude")
+
 # Backup current dotfiles before making changes
 backup_current_state() {
     log_info "Backing up current dotfiles to ${BACKUP_DIR}..."
@@ -90,6 +94,10 @@ backup_current_state() {
 
     # Backup existing dotfiles
     for file in *; do
+        # Skip directories managed by .sync scripts (runtime data, not config)
+        if printf '%s\n' "${BACKUP_EXCLUDE[@]}" | grep -qx "$file"; then
+            continue
+        fi
         if [[ -f ~/."$file" || -d ~/."$file" ]]; then
             if [[ ! -L ~/."$file" ]]; then
                 log_info "Backing up .$file"
@@ -331,6 +339,57 @@ run_sync() {
     log_info "To rollback, run: $0 rollback ${BACKUP_DIR##*/}"
 }
 
+# Clean old backups, keeping the N most recent
+clean_backups() {
+    local keep="${1:-5}"
+    local dry_run="${2:-false}"
+    local backup_base="${DOTFILES_STATE_DIR}/backups"
+
+    if [[ ! -d "$backup_base" ]]; then
+        log_warning "No backups directory found"
+        return 0
+    fi
+
+    # List backup dirs sorted oldest first
+    local all_backups=()
+    while IFS= read -r d; do
+        [[ -d "$d" ]] && all_backups+=("$d")
+    done < <(ls -dt "$backup_base"/*/ 2>/dev/null)
+
+    local total=${#all_backups[@]}
+    if [[ $total -le $keep ]]; then
+        log_info "Only $total backup(s) found, keeping all (threshold: $keep)"
+        return 0
+    fi
+
+    local to_delete=("${all_backups[@]:$keep}")
+    local delete_count=${#to_delete[@]}
+
+    if [[ "$dry_run" == "true" ]]; then
+        echo -e "${BLUE}Dry run: would delete $delete_count backup(s), keeping $keep most recent${NC}"
+        echo
+        for b in "${to_delete[@]}"; do
+            local size
+            size=$(du -sh "$b" 2>/dev/null | cut -f1)
+            echo -e "  ${RED}DELETE${NC} $(basename "$b")  ($size)"
+        done
+        echo
+        echo -e "${GREEN}KEEP:${NC}"
+        for b in "${all_backups[@]:0:$keep}"; do
+            echo -e "  ${GREEN}KEEP${NC}   $(basename "$b")"
+        done
+    else
+        log_info "Deleting $delete_count old backup(s), keeping $keep most recent..."
+        for b in "${to_delete[@]}"; do
+            local name
+            name=$(basename "$b")
+            rm -rf "$b"
+            log_info "Deleted $name"
+        done
+        log_success "Cleaned $delete_count backup(s). $keep remaining."
+    fi
+}
+
 # Help message
 show_help() {
     echo "Usage: $0 [OPTION]"
@@ -341,6 +400,7 @@ show_help() {
     echo "  q              Quick sync"
     echo "  rollback [ID]  Rollback to a specific backup"
     echo "  list-backups   List available backups"
+    echo "  clean          Prune old backups (--keep=N, --dry-run)"
     echo "  help           Show this help message"
 }
 
@@ -355,6 +415,18 @@ case "${1:-sync}" in
         ;;
     list-backups)
         list_backups
+        ;;
+    clean)
+        shift
+        keep=5
+        dry_run=false
+        for arg in "$@"; do
+            case "$arg" in
+                --keep=*) keep="${arg#--keep=}" ;;
+                --dry-run) dry_run=true ;;
+            esac
+        done
+        clean_backups "$keep" "$dry_run"
         ;;
     *)
         run_sync "$@"

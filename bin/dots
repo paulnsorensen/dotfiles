@@ -39,6 +39,7 @@ ${BLUE}Commands:${NC}
   ${GREEN}status${NC}          Show git status of dotfiles
   ${GREEN}rollback [id]${NC}   Rollback to a previous state
   ${GREEN}backups${NC}         List available backups
+  ${GREEN}clean${NC}           Prune old backups (--keep=N, --dry-run)
   ${GREEN}doctor${NC}          Run health checks and profile shell
   ${GREEN}test${NC}            Run test suite
   ${GREEN}help${NC}            Show this help message
@@ -288,6 +289,10 @@ case "${1:-status}" in
         ;;
     backups|b)
         "$DOTFILES_DIR/.sync-with-rollback" list-backups
+        ;;
+    clean|c)
+        shift
+        "$DOTFILES_DIR/.sync-with-rollback" clean "$@"
         ;;
     doctor|d)
         do_doctor
