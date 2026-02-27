@@ -114,24 +114,14 @@ ccw() {
         local main_local="${repo_root}/.claude/settings.local.json"
         local sandbox='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
         local tmp="${claude_local}.tmp"
-        if command -v jq &>/dev/null; then
-            if [[ -f "${main_local}" ]]; then
-                jq -s '.[0] * .[1]' "${main_local}" <(echo "${sandbox}") > "${tmp}" \
-                    && mv "${tmp}" "${claude_local}" \
-                    && echo "Copied local settings + enabled sandboxing"
-            else
-                echo "${sandbox}" | jq . > "${tmp}" \
-                    && mv "${tmp}" "${claude_local}" \
-                    && echo "Enabled sandboxing for worktree"
-            fi
+        if [[ -f "${main_local}" ]]; then
+            jq -s '.[0] * .[1]' "${main_local}" <(echo "${sandbox}") > "${tmp}" \
+                && mv "${tmp}" "${claude_local}" \
+                && echo "Copied local settings + enabled sandboxing"
         else
-            if [[ -f "${main_local}" ]]; then
-                cp "${main_local}" "${claude_local}"
-                echo "Copied local settings (jq not found; sandbox not auto-enabled)"
-            else
-                echo "${sandbox}" > "${claude_local}"
-                echo "Enabled sandboxing for worktree"
-            fi
+            echo "${sandbox}" | jq . > "${tmp}" \
+                && mv "${tmp}" "${claude_local}" \
+                && echo "Enabled sandboxing for worktree"
         fi
     fi
 
