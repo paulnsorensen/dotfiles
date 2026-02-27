@@ -106,6 +106,7 @@ LAYOUT
 # ── Shell scripts ─────────────────────────────────────────────────────────────
 
 @test "all zsh config files have valid syntax" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     local failed=0
     for f in "$DOTFILES_DIR"/zsh/*.zsh; do
         if ! zsh -n "$f" 2>/dev/null; then
@@ -117,6 +118,7 @@ LAYOUT
 }
 
 @test "zshrc has valid syntax" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     run zsh -n "$DOTFILES_DIR/zshrc"
     [[ $status -eq 0 ]]
 }

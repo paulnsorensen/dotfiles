@@ -10,6 +10,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 # ===========================================================================
 
 @test "lspmux binary is installed" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
     command -v lspmux
 }
 
@@ -52,10 +53,12 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 # ===========================================================================
 
 @test "launchd plist exists in LaunchAgents" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
     [[ -f "$HOME/Library/LaunchAgents/com.lspmux.server.plist" ]]
 }
 
 @test "launchd plist is valid XML" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
     run plutil -lint "$HOME/Library/LaunchAgents/com.lspmux.server.plist"
     [[ "$status" -eq 0 ]]
 }
@@ -65,6 +68,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 }
 
 @test "launchd plist points to existing lspmux binary" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
     local bin_path
     bin_path="$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$HOME/Library/LaunchAgents/com.lspmux.server.plist")"
     [[ -x "$bin_path" ]]
@@ -75,10 +79,12 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 # ===========================================================================
 
 @test "lspmux config exists at macOS Application Support path" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
     [[ -f "$HOME/Library/Application Support/lspmux/config.toml" ]]
 }
 
 @test "lspmux config contains expected keys" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
     local config="$HOME/Library/Application Support/lspmux/config.toml"
     grep -q 'instance_timeout' "$config"
     grep -q 'listen' "$config"
@@ -90,11 +96,13 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 # ===========================================================================
 
 @test "launchd service is registered" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
     run launchctl print "gui/$(id -u)/com.lspmux.server"
     [[ "$status" -eq 0 ]]
 }
 
 @test "lspmux server is reachable" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
     # lspmux status connects to the server; exit 0 = reachable
     run lspmux status
     [[ "$status" -eq 0 ]]
