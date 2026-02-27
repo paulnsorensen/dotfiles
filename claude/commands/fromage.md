@@ -40,7 +40,7 @@ EXCEPTION: Reading small config files (<2K chars) for phase gating decisions is 
 
 After reading the spec, the orchestrator pre-digests it for downstream agents:
 
-1. Write the full spec to `$TMPDIR/fromage-spec-<slug>.md` (temp copy for agents)
+1. Write the full spec to `$TMPDIR/fromage-spec-<slug>.md` via Bash (`cat > "$TMPDIR/..."`) — TMPDIR is sandbox-allowed, so this skips permission prompts. Do NOT use the Write tool for temp files.
 2. Extract a **spec summary** (<2K chars): what's being built (bullets), constraints, scope boundaries (what's OUT)
 
 Distribution:
@@ -138,7 +138,7 @@ Announce complexity and show which phases run vs skip:
 | 2. Pasteurize | skip | skip | run | run |
 | 3. Culture | skip | skip | run | run |
 | 4. Curdle | skip | skip | run | run |
-| 5. Cut | skip | ask | run | run |
+| 5. Cut | skip | run | run | run |
 | 6. Cook | run | run | run | run |
 | 7. Press | skip | ask | run | run |
 | 8. Age | skip | skip | run | run |
@@ -203,13 +203,63 @@ AskUserQuestion: Approve / Modify / Re-explore / Pause. Do NOT proceed without a
 
 ---
 
-## Phase 5 — Cut (Sonnet, inline)
+## Phase 5 — Cut (Sonnet, delegated)
 
-Write tests based on the plan. Scale: large = unit + integration skeleton, medium = unit + integration, small = single test file.
+Launch `roquefort-wrecker` (sonnet, `max_turns: 25`) to write failing smoke tests **before** implementation. This is TDD scaffolding, not adversarial testing (Phase 7).
 
-Run via `whey-drainer` (haiku) to confirm scaffolding — tests should fail (tests-before-code).
+### What Cut Produces
 
-**Skip**: No test framework, trivial change, or user opts out.
+Skeleton tests that define the **contract** — function signatures, expected inputs/outputs, error cases. Tests MUST fail when first written (no implementation yet).
+
+| Complexity | Scope | Example |
+|---|---|---|
+| **Small** | 1 test file, 3-6 test cases | `test_new_alias_defined`, `test_alias_runs_without_error` |
+| **Medium** | 1-2 test files, 5-12 test cases | Unit tests for new functions + basic integration |
+| **Large** | 2-4 test files, 10-20 test cases | Unit + integration skeletons + key edge cases |
+
+### Orchestrator Prep (before spawning agent)
+
+The orchestrator gathers context for the agent prompt — without reading source code:
+
+1. **Spec summary** — from Phase 2 (or original request for small tasks)
+2. **Plan steps** — from Phase 4, if it ran
+3. **Test discovery** — run `fd -e test.sh -e bats -e test.py -e spec.ts -e test.ts --max-depth 3` to find existing tests. Pick 1-2 example paths for the prompt.
+4. **Test location** — infer from discovery results (e.g., `tests/`, `__tests__/`, alongside source)
+
+### Agent Prompt
+
+Include all of the above in the `roquefort-wrecker` prompt:
+
+```
+MODE: TDD scaffold (not adversarial). Write failing smoke tests that define
+the contract Cook agents will implement against.
+
+**What's being built**: {spec_summary}
+**Plan steps**: {plan_steps_or_request_summary}
+**Test framework**: {detected_framework} (see examples: {example_test_paths})
+**Test location**: {test_directory}
+
+Write tests that:
+- Assert expected function signatures exist (import succeeds)
+- Assert expected outputs for core happy-path inputs
+- Assert error handling for 1-2 obvious invalid inputs
+- Use descriptive names: test_{feature}_{scenario}_{expected}
+
+Do NOT write:
+- Adversarial chaos tests (Phase 7 handles that)
+- Tests for implementation details (only public API)
+- Mocks for things that don't exist yet (stub minimally)
+
+Every test MUST fail right now. If a test passes, it's testing the wrong thing.
+Run tests after writing to confirm all fail.
+```
+
+### After Agent Returns
+
+1. Collect test file paths from agent summary → add to `changed_files`
+2. If agent reports any tests passed, flag for review (test is wrong or testing existing code)
+
+**Skip**: No test framework detected, or trivial complexity.
 
 ---
 
@@ -217,9 +267,15 @@ Run via `whey-drainer` (haiku) to confirm scaffolding — tests should fail (tes
 
 Implementation. **Never skipped.**
 
-**Small/trivial**: Implement directly inline.
+### TDD Target
 
-**Medium/large**: Launch parallel `fromage-cook` agents (sonnet), split by independent modules. Each gets their chunk, relevant files, and engineering principles.
+If Phase 5 (Cut) ran, Cook agents receive the test file paths in their prompt. Their job: **make those tests pass**. Include in each Cook prompt:
+- Test file paths from Cut (in `changed_files`)
+- Instruction: "Run these tests after implementation. All must pass before you're done."
+
+**Small/trivial**: Implement directly inline. If Cut wrote tests, run them at the end.
+
+**Medium/large**: Launch parallel `fromage-cook` agents (sonnet), split by independent modules. Each gets their chunk, relevant test files, and engineering principles.
 
 ### Wave Splitting
 
