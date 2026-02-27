@@ -25,3 +25,9 @@ mcps:
       CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
     scope: user
     description: Documentation context for libraries and frameworks
+
+  shadcn:
+    command: npx
+    args: [shadcn@latest, mcp]
+    scope: user
+    description: Browse and install shadcn/ui components via natural language

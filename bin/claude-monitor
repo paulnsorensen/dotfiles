@@ -13,6 +13,7 @@ C_RED=$'\033[38;5;167m'     # #e8575b — warnings
 C_DIM=$'\033[38;5;241m'     # #636363 — separators
 C_FG=$'\033[38;5;181m'      # #dac2b1 — normal text
 C_ORANGE=$'\033[38;5;209m'  # #ff7558 — accents
+C_BAR_BG=$'\033[48;2;25;18;35m'  # dark purple-black bar background
 C_RESET=$'\033[0m'
 
 # ═══════════════════════════════════════════════════════════════════
@@ -55,6 +56,17 @@ find_session() {
 # ═══════════════════════════════════════════════════════════════════
 # Formatting helpers
 # ═══════════════════════════════════════════════════════════════════
+fill_line() {
+    local content="$1"
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 120)
+    local stripped
+    stripped=$(printf '%s' "$content" | sed $'s/\033\[[0-9;]*m//g')
+    local pad=$((cols - ${#stripped}))
+    (( pad < 0 )) && pad=0
+    printf '%s%s%*s%s' "$C_BAR_BG" "$content" "$pad" "" "$C_RESET"
+}
+
 fmt_tokens() {
     local n="${1:-0}"
     if (( n >= 1000000 )); then
@@ -157,31 +169,34 @@ render() {
     elif (( cp >= 40 )); then ccol="$C_YELLOW"; fi
     (( comp > 0 )) && cstr=" ${C_ORANGE}C:${comp}${C_RESET}"
 
+    local sep=" ${C_DIM}│${C_RESET} "
+
     local l1="${C_CYAN}CC:${C_RESET} ${C_FG}${model}${C_RESET}"
-    l1+=" ${C_DIM}|${C_RESET} ${C_CYAN}T${C_RESET} ${C_FG}${dur}${C_RESET}"
-    l1+=" ${C_DIM}|${C_RESET} ${C_CYAN}Turns:${C_RESET} ${C_FG}${ht}/${at}${C_RESET}"
-    l1+=" ${C_DIM}|${C_RESET} ${C_CYAN}In:${C_RESET}${C_FG}$(fmt_tokens "$ti")${C_RESET}"
-    l1+=" ${C_CYAN}Out:${C_RESET}${C_FG}$(fmt_tokens "$to")${C_RESET}"
-    l1+=" ${ccol}Cache:${cp}%${C_RESET}${cstr}"
+    l1+="${sep}${C_CYAN}T${C_RESET} ${C_FG}${dur}${C_RESET}"
+    l1+="${sep}${C_CYAN}Turns:${C_RESET} ${C_FG}${ht}/${at}${C_RESET}"
+    l1+="${sep}${C_CYAN}In:${C_RESET} ${C_FG}$(fmt_tokens "$ti")${C_RESET}"
+    l1+=" ${C_CYAN}Out:${C_RESET} ${C_FG}$(fmt_tokens "$to")${C_RESET}"
+    l1+="${sep}${ccol}Cache:${cp}%${C_RESET}${cstr}"
 
-    local l2="${C_CYAN}Tools:${C_RESET} ${C_FG}${tools:-none}${C_RESET}"
-    (( tc > 0 )) && l2+=" ${C_DIM}|${C_RESET} ${C_YELLOW}Tasks:${tc}${C_RESET}"
-    [[ -n "$skills" ]] && l2+=" ${C_DIM}|${C_RESET} ${C_ORANGE}Skills:${skills}${C_RESET}"
-    l2+=" ${C_DIM}|${C_RESET} ${C_CYAN}Ctx:${C_RESET}${C_FG}~$(fmt_tokens "$ctx")${C_RESET} ${tsym}"
+    local l2
+    l2="${C_CYAN}Ctx:${C_RESET} ${C_FG}~$(fmt_tokens "$ctx")${C_RESET} ${tsym}"
+    l2+="${sep}${C_CYAN}Tools:${C_RESET} ${C_FG}${tools:-none}${C_RESET}"
+    (( tc > 0 )) && l2+="${sep}${C_YELLOW}Tasks:${tc}${C_RESET}"
+    [[ -n "$skills" ]] && l2+="${sep}${C_ORANGE}Skills:${skills}${C_RESET}"
 
-    printf '\033[2K%s\n\033[2K%s' "$l1" "$l2"
+    printf '\033[2K%s\n\033[2K%s' "$(fill_line " $l1")" "$(fill_line " $l2")"
 }
 
 render_waiting() {
     printf '\033[2K%s\n\033[2K%s' \
-        "${C_DIM}CC: Waiting for active session...${C_RESET}" \
-        "${C_DIM}Monitoring: $(encode_path "$MONITOR_CWD")${C_RESET}"
+        "$(fill_line " ${C_DIM}CC: Waiting for active session...${C_RESET}")" \
+        "$(fill_line " ${C_DIM}Monitoring: $(encode_path "$MONITOR_CWD")${C_RESET}")"
 }
 
 render_error() {
     printf '\033[2K%s\n\033[2K%s' \
-        "${C_RED}CC: Parse error (check JSONL format)${C_RESET}" \
-        "${C_DIM}File: ${1}${C_RESET}"
+        "$(fill_line " ${C_RED}CC: Parse error (check JSONL format)${C_RESET}")" \
+        "$(fill_line " ${C_DIM}File: ${1}${C_RESET}")"
 }
 
 # ═══════════════════════════════════════════════════════════════════

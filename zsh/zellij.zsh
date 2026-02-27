@@ -20,7 +20,7 @@ zjdev() {
 
 # Launch with Claude monitor layout (generates layout with cwd baked in)
 zjclaude() {
-    local session="${1:-claude}"
+    local session="${1:-claude-$((RANDOM % 20 + 1))}"
 
     # Don't nest inside existing zellij
     if [[ -n "$ZELLIJ" ]]; then

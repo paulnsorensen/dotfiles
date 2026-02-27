@@ -12,6 +12,12 @@ show_startup_tips false
 theme "chocolate-donut"
 default_layout "default"
 
+ui {
+    pane_frames {
+        rounded_corners true
+    }
+}
+
 // ─── Keybindings ────────────────────────────────────────────────────────────
 // Alt+key = global (no prefix needed, works from any mode)
 // Designed for vim muscle memory without conflicting with tmux's Ctrl+a
@@ -125,7 +131,7 @@ themes {
             fg      "#dac2b1"
             black   "#3c291c"
             red     "#e8575b"
-            green   "#88b994"
+            green   "#b287cd"
             yellow  "#ffae00"
             blue    "#768da1"
             magenta "#b287cd"
