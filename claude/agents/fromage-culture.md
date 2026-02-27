@@ -24,6 +24,26 @@ These details are critical for the planning phase. Don't just map the flow — m
 
 ## Output Format
 
+Write your full Culture Report to `$TMPDIR/fromage-culture-<slug>.md` using the detailed format below. Since Write is disallowed, use Bash: `cat <<'EOF' > "$TMPDIR/fromage-culture-<slug>.md"`.
+
+Return to the orchestrator ONLY a structured summary (max 2000 chars):
+
+```
+## Culture Summary: <Aspect Name>
+**Files analyzed**: <count>
+**Key entry points**: <max 5 bullets, file:line — description>
+**Blast radius**: low | medium | high
+**Critical findings**:
+- <most important finding>
+- <second most important>
+- <third, if applicable>
+**Full report**: $TMPDIR/fromage-culture-<slug>.md
+```
+
+The orchestrator works from summaries. The full report is available if a later agent (Curdle, Cook) needs deeper context — they can read the temp file themselves.
+
+### Detailed Report Format (for the temp file)
+
 ```
 ## Culture Report: <Aspect Name>
 

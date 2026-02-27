@@ -42,6 +42,26 @@ Rate every failure/finding 0-100. Only highlight findings scoring >= 75 as criti
 
 ## Output Format
 
+Write your full Press Report to `$TMPDIR/fromage-press-<slug>.md` using the detailed format below.
+
+Return to the orchestrator ONLY a structured summary (max 2000 chars):
+
+```
+## Press Summary
+**Tests**: N passed | N failed | N skipped
+**Findings >= 75**: N issues
+| # | Score | Test | Category |
+|---|-------|------|----------|
+| 1 | 95 | test_null_input_crashes | BUG |
+**Below threshold**: N uncertain, N nitpick
+**Robustness**: <one-line assessment>
+**Full report**: $TMPDIR/fromage-press-<slug>.md
+```
+
+The orchestrator works from summaries. The full report is available if needed for the wrecker-drainer feedback loop.
+
+### Detailed Report Format (for the temp file)
+
 ```
 ## Press Report
 

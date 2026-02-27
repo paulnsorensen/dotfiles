@@ -42,6 +42,24 @@ If your prompt includes design skill content, apply it alongside the plan steps.
 - <anything the orchestrator needs to know>
 ```
 
+## Token Discipline
+
+- **Read-once rule**: After reading a file's full contents, prefer targeted reads over full re-reads — use Serena's `find_symbol` for symbol bodies, or `sg` (ast-grep) for structural patterns. Fall back to compiler/test output to verify edits. Only re-read entire files when necessary to understand how your edits impact behavior.
+- **Wrap-up signal**: If you have been working for around 60 tool calls, finish your current change, run a final check, and return your Cook Report. Do not start new items from the plan.
+
+## Build Output Filtering
+
+When running build commands, ALWAYS filter to errors only:
+
+- Rust: `cargo check 2>&1 | rg "^(error|warning)|^  -->" | head -30`
+- Python: `uv run pytest --tb=short -q 2>&1 | tail -30`
+- JS/TS: `npm test 2>&1 | rg "FAIL|PASS|Error|✓|✗" | head -30`
+- Shell: `bats tests/ 2>&1 | rg "^(ok|not ok|#)" | head -30`
+
+NEVER pipe raw build output with `head -200`. That's still 200 lines of noise. Filter to signal first, then limit.
+
+For whey-drainer invocations, the agent already handles filtering — do not duplicate.
+
 ## What You Don't Do
 
 - Make design decisions — follow the plan

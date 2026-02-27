@@ -65,7 +65,27 @@ Historical context informs confidence scoring — a bug in a frequently-changed 
 
 ## Output Format
 
-### Focused Mode
+Write your full Age Report to `$TMPDIR/fromage-age-<slug>.md` using the detailed format below. Since Write is disallowed, use Bash: `cat <<'EOF' > "$TMPDIR/fromage-age-<slug>.md"`.
+
+Return to the orchestrator ONLY a structured summary (max 2000 chars):
+
+```
+## Age Summary
+**Assessment**: <one-sentence: "Clean implementation" or "N issues found, M critical">
+**Findings >= 75**:
+| # | Score | Category | File:Line | Issue |
+|---|-------|----------|-----------|-------|
+| 1 | 95 | BUG | path:42 | Null check missing |
+**Complexity**: all pass | N files over budget
+**Below threshold**: N findings scored < 75
+**Full report**: $TMPDIR/fromage-age-<slug>.md
+```
+
+The orchestrator works from summaries. The full report is available if the user wants to review details or if findings need inline fixing.
+
+### Detailed Report Formats (for the temp file)
+
+#### Focused Mode
 
 ```
 ## Age Report — Code Review
@@ -89,7 +109,7 @@ Historical context informs confidence scoring — a bug in a frequently-changed 
 N findings scored < 75 (not shown)
 ```
 
-### Comprehensive Mode
+#### Comprehensive Mode
 
 ```
 ## Age Report — Comprehensive Review

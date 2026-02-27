@@ -18,6 +18,57 @@ Each phase builds on prior phases. When launching agents, always include:
 - **Changed files**: accumulated list, updated after each Cook/Press cycle
 - **Design skill**: from Phase 4 plan or `--skill` flag (skill file content injected into Cook)
 
+## Orchestrator Token Discipline
+
+"Orchestrator" means the Claude session executing this `/fromage` command — not a separate agent. It has full tool access.
+
+The orchestrator reads ONE thing: the spec. Everything else is delegated.
+
+The orchestrator MUST NOT:
+- Use Read, Grep, or Glob on codebase files (delegate to Culture/Cook agents)
+- Run build/test commands directly (delegate to whey-drainer)
+- Read subagent full reports (work from their returned summaries)
+
+The orchestrator SHOULD:
+- Read the spec (`.claude/specs/<slug>.md`) — this is the contract that drives all phase decisions. One read, justified.
+- Work from subagent summaries, not full reports
+- Keep its own context focused on phase orchestration decisions
+
+EXCEPTION: Reading small config files (<2K chars) for phase gating decisions is acceptable (e.g., checking if a test framework exists).
+
+## Spec Distribution
+
+After reading the spec, the orchestrator pre-digests it for downstream agents:
+
+1. Write the full spec to `$TMPDIR/fromage-spec-<slug>.md` (temp copy for agents)
+2. Extract a **spec summary** (<2K chars): what's being built (bullets), constraints, scope boundaries (what's OUT)
+
+Distribution:
+- **Curdle**: gets the full spec temp file path in its prompt — reads it itself. Curdle is the planner; it needs every constraint and boundary.
+- **Culture**: gets the spec summary inline in prompt (enough to scope exploration)
+- **Cook**: gets relevant plan steps + spec summary (plan is the primary input)
+- **Press/Age**: gets spec summary + changed files list (enough to evaluate against)
+
+If the spec is <5K chars, pass it inline to all agents (no temp file needed). If >5K chars, always use the summary + temp file pattern.
+
+## Agent Turn Limits
+
+Always set `max_turns` when spawning Task agents:
+
+| Agent | max_turns | Rationale |
+|-------|-----------|-----------|
+| fromage-preparing | 15 | Env check, fast |
+| fromage-culture | 40 | Exploration, bounded |
+| fromage-curdle | 30 | Planning, should be decisive |
+| fromage-cook | 80 | Implementation, largest scope |
+| fromage-press | 50 | Testing + feedback loops |
+| fromage-age | 30 | Review, read-only |
+| whey-drainer | 15 | Just runs tests |
+| roquefort-wrecker | 25 | Writes + runs tests |
+| research (any) | 15 | Should find answer fast or bail |
+
+If an agent hits its limit, it returns partial results. The orchestrator decides whether to spawn a continuation agent or proceed with what it has.
+
 ## Progress Tracking
 
 After complexity classification in Phase 0, call `TaskCreate` for each phase that will **run** (not skipped). This gives the user a persistent at-a-glance view of pipeline progress.
@@ -132,7 +183,7 @@ Launch 2-3 `fromage-culture` agents (sonnet), each targeting a different aspect.
 - **Aspect B**: Blast radius — what existing code will be affected
 - **Aspect C** (large only): Architecture boundaries and integration points
 
-After agents return, **read all identified key files** yourself for full planning context.
+After agents return, pass their summaries and full report temp file paths to Curdle. The planner can read the full reports if it needs deeper context.
 
 **Skip**: Single-file change, config tweak, obvious modification path.
 
@@ -169,6 +220,26 @@ Implementation. **Never skipped.**
 **Small/trivial**: Implement directly inline.
 
 **Medium/large**: Launch parallel `fromage-cook` agents (sonnet), split by independent modules. Each gets their chunk, relevant files, and engineering principles.
+
+### Wave Splitting
+
+When dispatching Cook agents for medium/large tasks:
+- Count the files each plan step touches
+- If a single Cook agent would need to touch roughly 8+ files, split into multiple Cook agents (one per independent group) — this is a heuristic, not a hard limit; adjust based on file sizes and complexity
+- Each Cook agent gets a fresh context window — this is the primary mechanism for preventing token accumulation
+- Set `max_turns: 80` on each Cook Task invocation
+- If a Cook agent hits max_turns, spawn a continuation agent for remaining items with the completed items noted in its prompt
+
+### Research Discipline
+
+When a Cook or Culture agent encounters an unfamiliar library/API:
+
+1. **Codebase first**: Grep the codebase for existing usage patterns, or use `/trace` (ast-grep) for structural matches
+2. **Context7 second**: Query library docs via Context7 MCP
+3. **Package README third**: Use octocode to read the package README
+4. **NEVER**: Read library source code. If the answer isn't in steps 1-3, return what you have and flag it as needing research.
+
+Research agents spawned during Cook get `max_turns: 15`.
 
 ### Design Skill Injection
 
