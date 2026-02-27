@@ -27,6 +27,7 @@ The slug becomes:
 ```bash
 git rev-parse --is-inside-work-tree
 git rev-parse --show-toplevel   # store as REPO_ROOT
+command -v jq                   # needed for settings merge
 ```
 
 ### 3. Create or resume
@@ -45,21 +46,29 @@ git worktree add .worktrees/<slug> -b claude/<slug>
 ### 4. Seed local settings
 
 Copy the main repo's `.claude/settings.local.json` into the worktree (preserves LSPs,
-custom permissions, etc.) and ensure sandbox is enabled on top.
+custom permissions, etc.) and ensure sandbox is enabled on top. Write to a temp file
+first to avoid truncated output if jq fails.
 
-If `.claude/settings.local.json` exists at repo root but not in the worktree:
+If `.claude/settings.local.json` exists at repo root and jq is available:
 ```bash
 mkdir -p .worktrees/<slug>/.claude
-# Merge main settings with sandbox overlay (sandbox wins on conflict)
 jq -s '.[0] * .[1]' <REPO_ROOT>/.claude/settings.local.json \
   <(echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}') \
-  > .worktrees/<slug>/.claude/settings.local.json
+  > .worktrees/<slug>/.claude/settings.local.json.tmp \
+  && mv .worktrees/<slug>/.claude/settings.local.json.tmp \
+       .worktrees/<slug>/.claude/settings.local.json
+```
+
+If `.claude/settings.local.json` exists but jq is not available, copy as-is:
+```bash
+mkdir -p .worktrees/<slug>/.claude
+cp <REPO_ROOT>/.claude/settings.local.json .worktrees/<slug>/.claude/settings.local.json
 ```
 
 If no `.claude/settings.local.json` at repo root, write sandbox-only:
 ```bash
 mkdir -p .worktrees/<slug>/.claude
-echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}' | jq . \
+echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}' \
   > .worktrees/<slug>/.claude/settings.local.json
 ```
 

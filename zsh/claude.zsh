@@ -106,18 +106,32 @@ ccw() {
 
     # Seed local settings for the worktree session.
     # Copies main repo's settings.local.json (LSPs, custom permissions, etc.)
-    # and ensures sandbox is enabled on top.
+    # and ensures sandbox is enabled on top. Writes to a temp file first to
+    # avoid truncated settings if jq fails on malformed input.
     local claude_local="${repo_root}/${wt_dir}/.claude/settings.local.json"
     if [[ ! -f "${claude_local}" ]]; then
         mkdir -p "${repo_root}/${wt_dir}/.claude"
         local main_local="${repo_root}/.claude/settings.local.json"
         local sandbox='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
-        if [[ -f "${main_local}" ]] && command -v jq &>/dev/null; then
-            jq -s '.[0] * .[1]' "${main_local}" <(echo "${sandbox}") > "${claude_local}"
-            echo "Copied local settings + enabled sandboxing"
+        local tmp="${claude_local}.tmp"
+        if command -v jq &>/dev/null; then
+            if [[ -f "${main_local}" ]]; then
+                jq -s '.[0] * .[1]' "${main_local}" <(echo "${sandbox}") > "${tmp}" \
+                    && mv "${tmp}" "${claude_local}" \
+                    && echo "Copied local settings + enabled sandboxing"
+            else
+                echo "${sandbox}" | jq . > "${tmp}" \
+                    && mv "${tmp}" "${claude_local}" \
+                    && echo "Enabled sandboxing for worktree"
+            fi
         else
-            echo "${sandbox}" | jq . > "${claude_local}"
-            echo "Enabled sandboxing for worktree"
+            if [[ -f "${main_local}" ]]; then
+                cp "${main_local}" "${claude_local}"
+                echo "Copied local settings (jq not found; sandbox not auto-enabled)"
+            else
+                echo "${sandbox}" > "${claude_local}"
+                echo "Enabled sandboxing for worktree"
+            fi
         fi
     fi
 
