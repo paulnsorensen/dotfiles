@@ -24,7 +24,7 @@ These details are critical for the planning phase. Don't just map the flow — m
 
 ## Output Format
 
-Write your full Culture Report to `$TMPDIR/fromage-culture-<slug>.md` using the detailed format below.
+Write your full Culture Report to `$TMPDIR/fromage-culture-<slug>.md` using the detailed format below. Since Write is disallowed, use Bash: `cat <<'EOF' > "$TMPDIR/fromage-culture-<slug>.md"`.
 
 Return to the orchestrator ONLY a structured summary (max 2000 chars):
 

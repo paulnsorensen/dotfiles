@@ -20,6 +20,8 @@ Each phase builds on prior phases. When launching agents, always include:
 
 ## Orchestrator Token Discipline
 
+"Orchestrator" means the Claude session executing this `/fromage` command — not a separate agent. It has full tool access.
+
 The orchestrator reads ONE thing: the spec. Everything else is delegated.
 
 The orchestrator MUST NOT:
@@ -223,7 +225,7 @@ Implementation. **Never skipped.**
 
 When dispatching Cook agents for medium/large tasks:
 - Count the files each plan step touches
-- If a single Cook agent would need to touch >8 files, split into multiple Cook agents (one per independent group of <=8 files)
+- If a single Cook agent would need to touch roughly 8+ files, split into multiple Cook agents (one per independent group) — this is a heuristic, not a hard limit; adjust based on file sizes and complexity
 - Each Cook agent gets a fresh context window — this is the primary mechanism for preventing token accumulation
 - Set `max_turns: 80` on each Cook Task invocation
 - If a Cook agent hits max_turns, spawn a continuation agent for remaining items with the completed items noted in its prompt

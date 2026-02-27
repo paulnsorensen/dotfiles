@@ -65,7 +65,7 @@ Historical context informs confidence scoring — a bug in a frequently-changed 
 
 ## Output Format
 
-Write your full Age Report to `$TMPDIR/fromage-age-<slug>.md` using the detailed format below.
+Write your full Age Report to `$TMPDIR/fromage-age-<slug>.md` using the detailed format below. Since Write is disallowed, use Bash: `cat <<'EOF' > "$TMPDIR/fromage-age-<slug>.md"`.
 
 Return to the orchestrator ONLY a structured summary (max 2000 chars):
 
