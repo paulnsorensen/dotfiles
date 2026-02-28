@@ -103,11 +103,11 @@ teardown() {
   make_claude_json "$real_dir" "/nonexistent/a" "/nonexistent/b" > "$CLAUDE_JSON"
 
   local before
-  before=$(md5 -q "$CLAUDE_JSON")
+  before=$(shasum "$CLAUDE_JSON" | awk '{print $1}')
   run claude-json-prune
   assert_success
   local after
-  after=$(md5 -q "$CLAUDE_JSON")
+  after=$(shasum "$CLAUDE_JSON" | awk '{print $1}')
   [[ "$before" = "$after" ]] || {
     echo "File was modified during dry run!"
     return 1
@@ -250,13 +250,13 @@ teardown() {
   make_claude_json "$real_dir" > "$CLAUDE_JSON"
 
   local before
-  before=$(md5 -q "$CLAUDE_JSON")
+  before=$(shasum "$CLAUDE_JSON" | awk '{print $1}')
   run claude-json-prune --apply
   assert_success
   assert_contains "Already clean"
 
   local after
-  after=$(md5 -q "$CLAUDE_JSON")
+  after=$(shasum "$CLAUDE_JSON" | awk '{print $1}')
   [[ "$before" = "$after" ]] || {
     echo "File was modified when no pruning needed!"
     return 1
