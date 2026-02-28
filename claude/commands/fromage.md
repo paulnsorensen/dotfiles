@@ -69,30 +69,6 @@ Always set `max_turns` when spawning Task agents:
 
 If an agent hits its limit, it returns partial results. The orchestrator decides whether to spawn a continuation agent or proceed with what it has.
 
-## Progress Tracking
-
-After complexity classification in Phase 0, call `TaskCreate` for each phase that will **run** (not skipped). This gives the user a persistent at-a-glance view of pipeline progress.
-
-- Create tasks using the subject and `activeForm` from the table below
-- At the start of each phase, `TaskUpdate` that phase's task → `in_progress`
-- At each `--- Phase N complete ---` transition, `TaskUpdate` → `completed`
-- Phases gated by "ask": create the task as `pending`. If the user declines, `TaskUpdate` → `deleted`
-
-| Phase | Subject | activeForm |
-|---|---|---|
-| 0 | Assess complexity | Assessing complexity |
-| 1 | Prepare environment | Preparing environment |
-| 2 | Gather requirements | Gathering requirements |
-| 3 | Explore codebase | Exploring codebase |
-| 4 | Plan implementation | Planning implementation |
-| 5 | Write test scaffolds | Writing test scaffolds |
-| 6 | Implement changes | Implementing changes |
-| 7 | Adversarial testing | Running adversarial tests |
-| 8 | Code review | Reviewing changes |
-| 9 | Package and ship | Packaging and shipping |
-
----
-
 ## Phase 0 — Assess
 
 ### Hard Gate: Worktree Check
@@ -163,7 +139,12 @@ Interactive requirements gathering — a conversation, not an interrogation.
 1. Parse the request: what's clear vs ambiguous
 2. Ask clarifying questions naturally (don't dump a list)
 3. Invoke `/research` when external research is needed
-4. Write spec to `.claude/specs/<slug>.md`
+4. **Library discovery**: Search for existing libraries/packages that could accelerate implementation. Use octocode (`packageSearch`, `githubSearchRepositories`) and Context7 (`resolve-library-id`, `query-docs`) to find candidates. Evaluate: maturity, maintenance activity, API fit, **license compatibility** (see below).
+5. Write spec to `.claude/specs/<slug>.md` — include any recommended libraries with justification
+
+### License Awareness
+
+Check repo visibility (`gh repo view --json isPrivate -q '.isPrivate'`). For **private repos**: avoid copyleft licenses (GPL, AGPL, LGPL, MPL) — prefer MIT, Apache-2.0, BSD, ISC, or Unlicense. For **public/open-source repos**: any OSI-approved license is acceptable, but note copyleft obligations in the spec.
 
 **>>> CHECKPOINT 1: Requirements <<<**
 
@@ -183,6 +164,17 @@ Launch 2-3 `fromage-culture` agents (sonnet), each targeting a different aspect.
 - **Aspect B**: Blast radius — what existing code will be affected
 - **Aspect C** (large only): Architecture boundaries and integration points
 
+### Library Discovery (orchestrator, before spawning Culture agents)
+
+If Phase 2 identified candidate libraries, or if the task domain suggests reusable packages exist:
+
+1. **octocode** `packageSearch` — search for packages matching the task domain (e.g., "terminal table rendering", "YAML schema validation")
+2. **Context7** `resolve-library-id` + `query-docs` — verify API fit for top candidates
+3. Check license compatibility (see Phase 2 license rules)
+4. Pass viable candidates to Curdle alongside Culture summaries — Curdle decides whether to adopt or build
+
+This runs inline (orchestrator context) before spawning Culture agents, so the results flow into both exploration and planning.
+
 After agents return, pass their summaries and full report temp file paths to Curdle. The planner can read the full reports if it needs deeper context.
 
 **Skip**: Single-file change, config tweak, obvious modification path.
@@ -191,11 +183,13 @@ After agents return, pass their summaries and full report temp file paths to Cur
 
 ## Phase 4 — Curdle (Opus)
 
-Launch `fromage-curdle` (opus, permissionMode: plan) with exploration results and spec. Produces a numbered implementation checklist.
+Launch `fromage-curdle` (opus, permissionMode: plan) with exploration results, spec, and any library candidates from Phase 3 discovery. Produces a numbered implementation checklist.
+
+If library candidates were identified, include them in Curdle's prompt with: package name, license, what it solves, and a note to adopt or justify building in-house. Curdle makes the final call.
 
 **>>> CHECKPOINT 2: Plan <<<**
 
-Present: architecture decision (one line), files to modify/create, build steps (parallel vs sequential), YAGNI boundaries.
+Present: architecture decision (one line), files to modify/create, build steps (parallel vs sequential), YAGNI boundaries, adopted libraries (if any).
 
 AskUserQuestion: Approve / Modify / Re-explore / Pause. Do NOT proceed without approval.
 
@@ -357,12 +351,12 @@ Present findings to user. Fix agreed issues inline.
 2. Failures: fix your changes, re-run (up to 3 iterations). Pre-existing failures: report and ask user.
 3. **Do NOT commit with failing tests** unless user explicitly approves.
 
-### Commit and PR
+### Commit and PR (default: always)
 
 1. `/commit` to stage and commit with conventional commit message
-2. `/gh` to push and open a PR (if user wants one)
+2. `/gh` to push and open a PR — **this is the default**. Do not ask "do you want a PR?" — just create it.
 
-**Skip for commit/PR**: User wants manual control, WIP, or says "don't commit". Test gate still runs.
+**Skip commit/PR only if**: User explicitly said "don't commit", "WIP", "no PR", or "manual control" earlier in the session. Test gate still runs regardless.
 
 ---
 
