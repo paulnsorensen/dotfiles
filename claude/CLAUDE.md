@@ -83,7 +83,7 @@ src/
 - One direction only (use events for reverse deps)
 - `common/` is a leaf (imports nothing from siblings)
 
-> For rationale, anti-patterns, and boundary guidance, see `claude/reference/sliced-bread.md`.
+> For rationale, anti-patterns, and boundary guidance, see `~/Dev/dotfiles/claude/reference/sliced-bread.md`.
 
 ## Workflow
 
@@ -93,11 +93,11 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 
 | Category | Key Skills |
 |----------|-----------|
-| Planning | `/fromage`, `/spec`, `/duck`, `/research`, `/worktree`, `/scaffold` |
+| Planning | `/fromage`, `/spec`, `/duck`, `/research` |
 | Review | `/age`, `/code-review`, `/audit`, `/simplifier` |
 | Testing | `/wreck`, `/test`, `/diff`, `/pingpong` |
 | GitHub | `/move-my-cheese <PR#>`, `/copilot-review`, `/copilot-delegate` |
-| Setup | `/lsp`, `/go`, `/park`, `/pull` |
+| Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/notebook`, `/onboard` |
 
 All review/analysis agents use 0-100 confidence scoring (>= 75 to surface).

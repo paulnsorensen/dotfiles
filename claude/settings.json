@@ -36,6 +36,7 @@
       "mcp__plugin_playwright_playwright__*",
       "mcp__context7__*",
       "mcp__octocode__*",
+      "mcp__plugin_github_github__*",
       "WebSearch",
       "WebFetch"
     ]
@@ -93,7 +94,7 @@
     "ralph-loop@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "plugin-dev@claude-plugins-official": true
+    "github@claude-plugins-official": true
   },
   "sandbox": {
     "network": {
@@ -111,7 +112,8 @@
         "mcp.context7.com",
         "ui.shadcn.com",
         "octocode-mcp-host.onrender.com",
-        "pypi.org"
+        "pypi.org",
+        "api.githubcopilot.com"
       ],
       "allowLocalBinding": true
     }

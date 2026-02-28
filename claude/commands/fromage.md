@@ -139,7 +139,7 @@ Interactive requirements gathering — a conversation, not an interrogation.
 1. Parse the request: what's clear vs ambiguous
 2. Ask clarifying questions naturally (don't dump a list)
 3. Invoke `/research` when external research is needed
-4. **Library discovery**: Search for existing libraries/packages that could accelerate implementation. Use octocode (`packageSearch`, `githubSearchRepositories`) and Context7 (`resolve-library-id`, `query-docs`) to find candidates. Evaluate: maturity, maintenance activity, API fit, **license compatibility** (see below).
+4. **Library discovery**: Search for existing libraries/packages that could accelerate implementation. Use octocode (`packageSearch`) and Context7 (`resolve-library-id` → `query-docs`) to find candidates. Evaluate: maturity, maintenance activity, API fit, **license compatibility** (see below).
 5. Write spec to `.claude/specs/<slug>.md` — include any recommended libraries with justification
 
 ### License Awareness
@@ -164,17 +164,6 @@ Launch 2-3 `fromage-culture` agents (sonnet), each targeting a different aspect.
 - **Aspect B**: Blast radius — what existing code will be affected
 - **Aspect C** (large only): Architecture boundaries and integration points
 
-### Library Discovery (orchestrator, before spawning Culture agents)
-
-If Phase 2 identified candidate libraries, or if the task domain suggests reusable packages exist:
-
-1. **octocode** `packageSearch` — search for packages matching the task domain (e.g., "terminal table rendering", "YAML schema validation")
-2. **Context7** `resolve-library-id` + `query-docs` — verify API fit for top candidates
-3. Check license compatibility (see Phase 2 license rules)
-4. Pass viable candidates to Curdle alongside Culture summaries — Curdle decides whether to adopt or build
-
-This runs inline (orchestrator context) before spawning Culture agents, so the results flow into both exploration and planning.
-
 After agents return, pass their summaries and full report temp file paths to Curdle. The planner can read the full reports if it needs deeper context.
 
 **Skip**: Single-file change, config tweak, obvious modification path.
@@ -183,7 +172,7 @@ After agents return, pass their summaries and full report temp file paths to Cur
 
 ## Phase 4 — Curdle (Opus)
 
-Launch `fromage-curdle` (opus, permissionMode: plan) with exploration results, spec, and any library candidates from Phase 3 discovery. Produces a numbered implementation checklist.
+Launch `fromage-curdle` (opus, permissionMode: plan) with exploration results, spec, and any library candidates from Phase 2 discovery. Produces a numbered implementation checklist.
 
 If library candidates were identified, include them in Curdle's prompt with: package name, license, what it solves, and a note to adopt or justify building in-house. Curdle makes the final call.
 

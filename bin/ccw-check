@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Verify worktree permissions and sandbox config for Claude Code worktrees.
+# Usage: ccw-check [slug]   (or run from inside a worktree directory)
+
+slug="${1:-}"
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "Not a git repository"; exit 1; }
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "jq is required (install via: brew install jq)"
+    exit 1
+fi
+
+# Auto-detect slug from cwd
+if [[ -z "$slug" ]]; then
+    cwd="$(pwd)"
+    if [[ "$cwd" == */.worktrees/* ]]; then
+        slug="${cwd##*/.worktrees/}"
+        slug="${slug%%/*}"
+    else
+        echo "Usage: ccw-check <slug>"
+        echo "  Or run from inside a worktree directory"
+        exit 1
+    fi
+fi
+
+wt_dir="${repo_root}/.worktrees/${slug}"
+ok=0; fail=0
+
+echo "Checking worktree: ${slug}"
+echo "──────────────────────────────"
+
+# 1. Worktree exists
+if [[ -d "${wt_dir}" ]]; then
+    echo "✓ Worktree directory exists"; ((ok++))
+else
+    echo "✗ Worktree directory missing: ${wt_dir}"
+    echo "  Run: ccw ${slug}"
+    exit 1
+fi
+
+# 2. Permission symlink
+claude_projects="${HOME}/.claude/projects"
+main_key="${repo_root//[\/.]/-}"
+wt_key="${wt_dir//[\/.]/-}"
+
+if [[ -L "${claude_projects}/${wt_key}" ]]; then
+    target="$(readlink "${claude_projects}/${wt_key}")"
+    if [[ "$target" == "${claude_projects}/${main_key}" ]]; then
+        echo "✓ Permission symlink → main repo"; ((ok++))
+    else
+        echo "⚠ Permission symlink points to unexpected target: ${target}"; ((fail++))
+    fi
+elif [[ -d "${claude_projects}/${wt_key}" ]]; then
+    echo "⚠ Permission dir exists but is not a symlink (perms not inherited)"; ((fail++))
+else
+    echo "✗ Permission symlink missing"; ((fail++))
+    echo "  Expected: ${claude_projects}/${wt_key} → ${claude_projects}/${main_key}"
+fi
+
+# 3. Local settings (fail loud on parse errors)
+claude_local="${wt_dir}/.claude/settings.local.json"
+if [[ -f "${claude_local}" ]]; then
+    if ! sandbox_enabled="$(jq -er '.sandbox.enabled // false' "${claude_local}")"; then
+        echo "✗ Failed to parse ${claude_local} (invalid JSON?)"; ((fail++))
+    elif [[ "$sandbox_enabled" == "true" ]]; then
+        echo "✓ Sandbox enabled"; ((ok++))
+    else
+        echo "✗ Sandbox not enabled"; ((fail++))
+    fi
+
+    if ! auto_allow="$(jq -er '.sandbox.autoAllowBashIfSandboxed // false' "${claude_local}")"; then
+        echo "✗ Failed to parse autoAllowBashIfSandboxed (invalid JSON?)"; ((fail++))
+    elif [[ "$auto_allow" == "true" ]]; then
+        echo "✓ autoAllowBashIfSandboxed enabled"; ((ok++))
+    else
+        echo "⚠ autoAllowBashIfSandboxed not set (you'll get permission prompts)"; ((fail++))
+    fi
+else
+    echo "✗ Local settings missing: ${claude_local}"; ((fail++))
+    echo "  Run: ccw ${slug}  (it seeds settings on first launch)"
+fi
+
+# 4. Serena memories
+if [[ -d "${wt_dir}/.serena" ]]; then
+    echo "✓ Serena memories seeded"; ((ok++))
+else
+    echo "– Serena memories not seeded (optional)"
+fi
+
+echo "──────────────────────────────"
+echo "${ok} passed, ${fail} issues"
+[[ $fail -eq 0 ]]

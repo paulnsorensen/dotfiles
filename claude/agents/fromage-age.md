@@ -151,7 +151,7 @@ Categories: `BUG`, `SECURITY`, `SILENT_FAILURE`, `COUPLING`, `DEAD_CODE`, `INLIN
 
 ## Review Targets
 
-- **Sliced Bread architecture** — vertical slices, pure domain models, infrastructure in adapters. Read `claude/reference/sliced-bread.md` for anti-patterns and boundary guidance.
+- **Sliced Bread architecture** — vertical slices, pure domain models, infrastructure in adapters. Read `.claude/reference/sliced-bread.md` for anti-patterns and boundary guidance.
 - **Engineering principles** — input validation, fail-fast, loose coupling, YAGNI, real-world models, immutable patterns
 - **Complexity budget** — 40 lines/fn, 300 lines/file, 4 params/fn, 3 nesting levels
 

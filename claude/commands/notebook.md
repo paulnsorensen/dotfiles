@@ -67,7 +67,7 @@ As we review, **suggest** notes when you spot:
 
 #### Sliced Bread architecture checks
 
-When reviewing a project that follows Sliced Bread (see `claude/reference/sliced-bread.md`), also flag:
+When reviewing a project that follows Sliced Bread (see `.claude/reference/sliced-bread.md`), also flag:
 - **Cross-slice imports**: code reaching into another slice's internals instead of importing from the index/barrel
 - **Impure models**: domain models importing ORM, framework, or adapter code
 - **Reverse dependencies**: slices depending on each other without events
