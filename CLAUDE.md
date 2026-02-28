@@ -37,6 +37,8 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `mcp-edit` - Edit MCP registry.yaml
 - `mcp-ls` - List currently configured MCPs
 - `mcp-add <name> <cmd> [args...]` - Add a user-scoped MCP
+- `claude-json-prune` - Preview stale project entries in ~/.claude.json (dry run)
+- `claude-json-prune --apply` - Remove stale entries (creates timestamped backup first)
 
 ### GitHub Helpers
 - `gh-pr-review <PR#>` - Bundle PR metadata, diff, and checks for review
