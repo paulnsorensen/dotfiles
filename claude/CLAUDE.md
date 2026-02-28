@@ -87,50 +87,20 @@ src/
 
 ## Workflow
 
-I use the Cheddar Flow for development. **Discover all available agents and skills with `/agents`** — it's the control panel for the full ecosystem.
+I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 
-**Development & Planning:**
-- `/fromage` - Intelligent cheese-making pipeline that adapts to task complexity (replaces /cheese and /curdle)
-- `/spec` - Discovery dialogue to design a feature and produce a spec artifact
-- `/duck` - Think through a problem together before coding
-- `/research` - Multi-source research: library docs, codebase analysis, prior art
-- `/worktree <slug>` - Create isolated git worktree for a task
-- `/worktree-sweep` - Scan ~/Dev for stale worktrees and safely clean them up
-- `/scaffold` - Scaffold a new domain slice (Sliced Bread pattern)
+**Core pipeline**: `/fromage <task>` — adapts to complexity, from trivial fixes to large features.
 
-**Code Review & Analysis:**
-- `/age` - Staff Engineer code review of recent changes (fromage-age, 0-100 scoring)
-- `/code-review` - Comprehensive repo/library review with persistent history (fromage-age, comprehensive mode)
-- `/audit` - Security and dependency health audit (fromage-pasteurize agent)
-- `/simplifier` - Ruthless code distiller; removes genAI bloat and enforces YAGNI
+| Category | Key Skills |
+|----------|-----------|
+| Planning | `/fromage`, `/spec`, `/duck`, `/research`, `/worktree`, `/scaffold` |
+| Review | `/age`, `/code-review`, `/audit`, `/simplifier` |
+| Testing | `/wreck`, `/test`, `/diff`, `/pingpong` |
+| GitHub | `/move-my-cheese <PR#>`, `/copilot-review`, `/copilot-delegate` |
+| Setup | `/lsp`, `/go`, `/park`, `/pull` |
+| Learning | `/agents`, `/explain`, `/hint`, `/notebook`, `/onboard` |
 
-**Testing & Validation:**
-- `/wreck` - Adversarial test writer (roquefort-wrecker) — writes and runs tests outside /fromage
-- `/test` - Run existing tests via whey-drainer, returns concise summary
-- `/diff` - Pre-commit smoke test of staged changes
-- `/pingpong` - Ping-pong TDD: AI writes tests, you implement
-
-**GitHub Integration:**
-- `/move-my-cheese <PR#>` - Take over a PR: merge main, diagnose CI failures, fix tests/conflicts, push
-- `/copilot-review` - Review a PR and route fixes to GitHub Copilot via inline comments
-- `/copilot-delegate` - Delegate task to Copilot agent, then review the resulting PR
-- `/copilot-setup` - Generate Copilot instructions for a repo
-
-**Environment & Setup:**
-- `/lsp` - Auto-detect project languages and enable matching LSP plugins locally
-- `/lsp --all` - Enable all LSPs regardless of project
-
-**Learning & Navigation:**
-- `/agents` - Control panel: list all agents and skills
-- `/explain` - Explain code or concept (quiz included)
-- `/hint` - Get escalating hints when stuck (preserves learning)
-- `/notebook <area>` - Guided codebase review with persistent note-taking
-- `/onboard` - Quick codebase orientation for an unfamiliar repo
-- `/go` - Re-prime MCPs (Serena, Context7) after compaction or session start
-- `/park` - Save session context to Serena memories before exiting
-- `/pull` - Pull latest from main and refresh Serena memories
-
-All review/analysis agents use universal 0-100 confidence scoring (>= 75 to surface findings).
+All review/analysis agents use 0-100 confidence scoring (>= 75 to surface).
 
 ## Skill Delegation
 

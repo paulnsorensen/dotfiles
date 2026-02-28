@@ -62,17 +62,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 
 ### lspmux Setup
 
-[lspmux](https://codeberg.org/p2502/lspmux) shares LSP server instances across
-Claude sessions, reducing memory usage and eliminating cold-start overhead for
-2nd+ sessions. It is optional — LSPs work without it via direct binary execution.
-
-- **Install (one-time):** `cargo install lspmux`
-- **Install wrappers + launchd plist:** `dots sync` (run after installing lspmux)
-- **Start server manually:** `lspmux server` (or auto-starts on next login via launchd)
-- **Verify launchd agent:** `launchctl list com.lspmux.server`
-- **Config file:** `~/Library/Application Support/lspmux/config.toml` (edit if needed)
-- **Disable auto-start:** `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.lspmux.server.plist`
-- **Status in `/lsp`:** The `/lsp` skill reports `lspmux server: running | not running | not installed`
+[lspmux](https://codeberg.org/p2502/lspmux) shares LSP instances across Claude sessions (optional). Install: `cargo install lspmux` then `dots sync`. Auto-starts via launchd. Config: `~/Library/Application Support/lspmux/config.toml`. `/lsp` reports its status.
 
 ### Session Monitoring
 - `ccm` - Run Claude session monitor standalone (shows metrics for current directory's session)
@@ -217,41 +207,18 @@ The `.sync-with-rollback` script provides:
 - **Skipping hooks**: Use `git commit --no-verify` if prek blocks a commit and you need to override (rare)
 
 ### Claude Code Integration
-- Fromage pipeline (`/fromage` — adapts to task complexity, replaces `/cheese` and `/curdle`)
-- Review/analysis agents use universal 0-100 confidence scoring (>= 75 to surface)
-- Specialist agents: fromage-age (code review), fromage-press (adversarial testing), fromage-pasteurize (security+deps audit), cheese-factory (codebase orientation), roquefort-wrecker (standalone tests), ricotta-reducer (simplification), whey-drainer (test runner), research (multi-source research), worktree-triage (stale worktree analysis)
-- `/wreck` — adversarial test writer (roquefort-wrecker), writes and runs tests outside /fromage
-- `/age` — Staff Engineer code review of recent changes (fromage-age, focused mode)
-- `/audit` — security and dependency health audit (fromage-pasteurize)
-- `/test` — run existing tests via whey-drainer, returns concise summary
-- `/notebook <area>` — guided codebase review with persistent note-taking
-- `/move-my-cheese <PR#>` — take over a PR: merge main, diagnose CI failures, fix tests/conflicts, push
-- Pre-tool hooks (block-install.js, phantom-file-check.js, block-file-write.js, block-legacy-tools.js)
-- Compaction hooks (pre-compact.sh saves context, post-compact.sh restores it with /trace suggestion)
-- Fresh session hook (post-fresh-start.sh suggests /trace for code navigation)
-- Session-end hook (on-session-end.sh detects parting language → clean wrap-up)
-- `/agents` command — control panel listing all agents and skills
-- `/go` command to re-prime MCPs after compaction or at session start
+
+Full agent/skill catalog is in `claude/CLAUDE.md` (auto-discovered). Key project-level details:
+
+- Pre-tool hooks: `block-install.js`, `phantom-file-check.js`, `block-file-write.js`, `block-legacy-tools.js`
+- Compaction hooks: `pre-compact.sh` saves context, `post-compact.sh` restores with `/trace` suggestion
+- Session hooks: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
 - Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
 
-### Code Intelligence Tools
+### Code Intelligence & MCP
 
-Three complementary tools for understanding code — not substitutes:
-
-| Question | Tool | Notes |
-|---|---|---|
-| "Find all X that contain Y" (shape) | `/trace` (ast-grep) | AST pattern matching, zero config needed |
-| "Who calls function foo?" (semantic) | serena (Serena MCP) | Cross-file symbol resolution + memory |
-| "Type of variable X?" (inference) | LSP plugins (`/lsp`) | Type system integration, hover info |
-
-- **ast-grep** (`sg`): Works on any codebase without initialization. No `sgconfig.yml` needed for ad-hoc pattern search. Supports YAML rules for complex queries (`sg scan --inline-rules`).
-- **Serena**: Wraps LSP internally for symbol navigation. Adds project memory across compaction. Must be activated per project.
-- **LSP plugins**: Enable via `/lsp` for type inference and diagnostics. Local-only (machine-specific). Startup overhead — skip in headless/CI.
-
-### MCP Usage Guidelines
-- **Context7**: Use when working with third-party library APIs to get version-specific docs.
-- **After compaction**: The post-compact hook restores working context (files, commands) automatically. Use `/trace` for re-orientation.
+Code intelligence tool division (ast-grep, Serena, LSPs) is documented in `claude/CLAUDE.md`. Context7 provides version-specific library docs. After compaction, the post-compact hook restores context automatically — use `/trace` for re-orientation.
 
 ## Pre-Commit Hooks (prek)
 
@@ -293,11 +260,6 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 Managed in `.brew`:
 - `yq` - YAML parsing for MCP sync
 - `jq` - JSON processing
-
-### Dependencies Not Managed by This Repo
-- VS Code extensions (list in vscode/settings.json)
-- Pyenv and Conda
-- iTerm2 application
 
 ## Important Gotchas
 
