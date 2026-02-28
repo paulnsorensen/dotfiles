@@ -116,6 +116,11 @@
         "api.githubcopilot.com"
       ],
       "allowLocalBinding": true
+    },
+    "filesystem": {
+      "write": {
+        "allow": ["~/.cache/prek"]
+      }
     }
   },
   "skipDangerousModePermissionPrompt": true
