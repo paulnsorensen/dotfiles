@@ -145,6 +145,9 @@ alias ccw-sweep='$DOTFILES_DIR/bin/ccw-sweep'
 # List active worktrees
 alias ccw-ls='git worktree list'
 
+# Verify worktree permissions and sandbox config (lives in bin/)
+alias ccw-check='$DOTFILES_DIR/bin/ccw-check'
+
 # GitHub helpers (gh-pr-review, gh-pr-prep, gh-issue-context) live in bin/
 
 # ═══════════════════════════════════════════════════════════════════

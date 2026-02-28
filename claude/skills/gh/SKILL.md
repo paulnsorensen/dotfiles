@@ -2,7 +2,7 @@
 name: gh
 model: haiku
 fork: true
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(gh-pr-review:*), Bash(gh-pr-prep:*), Bash(gh-issue-context:*)
+allowed-tools: mcp__plugin_github_github__*, Bash(gh:*), Bash(git:*), Bash(gh-pr-review:*), Bash(gh-pr-prep:*), Bash(gh-issue-context:*)
 description: >
   Complete GitHub tasks using only the gh CLI. Use for any GitHub operation —
   PRs, issues, CI checks, repo management, releases, Actions, code search.
@@ -21,9 +21,10 @@ examples:
 
 # gh
 
-GitHub operations via `gh` CLI. Use `git` read-only commands for context.
+GitHub operations via GitHub MCP plugin or `gh` CLI. Use `git` read-only commands for context.
 
-**Rule**: Only `gh` for GitHub tasks. `gh api` when no dedicated subcommand exists.
+**Prefer**: GitHub MCP tools (`mcp__plugin_github_github__*`) — works in sandbox, no TLS issues.
+**Fallback**: `gh` CLI when MCP tools don't cover the operation (e.g., `gh run watch`, `gh release`).
 **Rule**: `git` is read-only here — log, diff, status. No commits, no push.
 
 ---

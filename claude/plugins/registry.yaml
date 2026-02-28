@@ -48,3 +48,8 @@ plugins:
     description: Guided skill creation workflow with component design, implementation, and validation
     scope: user
     load: true
+
+  github@claude-plugins-official:
+    description: Official GitHub MCP server — PRs, issues, repos, code search via remote API
+    scope: user
+    load: true

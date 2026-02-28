@@ -17,18 +17,18 @@
 [color]
   ui = true
 [color "diff"]
-	meta = 102
-  func = magenta
-	old = 203
-	new = 107
-	frag = 141
+	meta = 241      # dim (#636363)
+	func = 140      # magenta (#b287cd)
+	old = 167       # red (#e8575b)
+	new = 108       # green (#88b994)
+	frag = 140      # magenta (#b287cd)
 [color "status"]
-	added = 107
-	untracked = 203
-  nobranch = bold red
-	changed = 179
+	added = 108     # green (#88b994)
+	untracked = 167 # red (#e8575b)
+	nobranch = bold 167
+	changed = 214   # yellow (#ffae00)
 [color "interactive"]
-  prompt = 33
+	prompt = 103    # blue (#768da1)
 
 [alias]
 	cwork = !git config user.email paul.sorensen@uber.com
@@ -65,9 +65,9 @@
 	process = git-lfs filter-process
 	required = true
 [color "branch"]
-	current = 75
-	local = 146
-	remote = 79
+	current = 45    # cyan (#00c4fb)
+	local = 103     # blue (#768da1)
+	remote = 108    # green (#88b994)
 [init]
 	defaultBranch = main
 
@@ -84,9 +84,23 @@
 	navigate = true
 	line-numbers = true
 	light = false
-	features = decorations
+	features = chocolate-donut
 
-[delta "decorations"]
-	commit-decoration-style = bold yellow box ul
-	file-style = bold yellow ul
+[delta "chocolate-donut"]
+	# Diff backgrounds: theme bg #2a1c12 blended with red/green
+	minus-style = syntax "#3d2219"
+	minus-emph-style = syntax "#5a2b24"
+	plus-style = syntax "#2d3520"
+	plus-emph-style = syntax "#364428"
+	# Line numbers
+	line-numbers-minus-style = "#e8575b"
+	line-numbers-plus-style = "#88b994"
+	line-numbers-zero-style = "#636363"
+	# Decorations
+	commit-decoration-style = "#ffae00" box ul
+	file-style = "#ffae00" ul
 	file-decoration-style = none
+	hunk-header-decoration-style = "#768da1" box
+	hunk-header-style = file line-number "#768da1"
+	hunk-header-file-style = "#ffae00"
+	hunk-header-line-number-style = "#768da1"
