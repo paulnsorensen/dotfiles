@@ -92,13 +92,29 @@
     "playwright@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true
+    "skill-creator@claude-plugins-official": true,
+    "plugin-dev@claude-plugins-official": true
   },
-  "skipDangerousModePermissionPrompt": true,
   "sandbox": {
     "network": {
-      "allowLocalBinding": true,
-      "allowedDomains": ["127.0.0.1", "localhost"]
+      "allowedDomains": [
+        "127.0.0.1",
+        "localhost",
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "api.anthropic.com",
+        "docs.anthropic.com",
+        "mcp-proxy.anthropic.com",
+        "registry.npmjs.org",
+        "context7.com",
+        "mcp.context7.com",
+        "ui.shadcn.com",
+        "octocode-mcp-host.onrender.com",
+        "pypi.org"
+      ],
+      "allowLocalBinding": true
     }
-  }
+  },
+  "skipDangerousModePermissionPrompt": true
 }
