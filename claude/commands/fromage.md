@@ -38,18 +38,16 @@ EXCEPTION: Reading small config files (<2K chars) for phase gating decisions is 
 
 ## Spec Distribution
 
-After reading the spec, the orchestrator pre-digests it for downstream agents:
+After exiting plan mode and reading the spec, the orchestrator pre-digests it for downstream agents:
 
-1. Write the full spec to `$TMPDIR/fromage-spec-<slug>.md` via Bash (`cat > "$TMPDIR/..."`) — TMPDIR is sandbox-allowed, so this skips permission prompts. Do NOT use the Write tool for temp files.
-2. Extract a **spec summary** (<2K chars): what's being built (bullets), constraints, scope boundaries (what's OUT)
+1. Extract a **spec summary** (<2K chars): what's being built (bullets), constraints, scope boundaries (what's OUT)
+2. For specs >5K chars, write the full spec to `$TMPDIR/fromage-spec-<slug>.md` using the Write tool (TMPDIR is sandbox-allowed, no permission prompt)
 
-Distribution:
-- **Curdle**: gets the full spec temp file path in its prompt — reads it itself. Curdle is the planner; it needs every constraint and boundary.
-- **Culture**: gets the spec summary inline in prompt (enough to scope exploration)
-- **Cook**: gets relevant plan steps + spec summary (plan is the primary input)
-- **Press/Age**: gets spec summary + changed files list (enough to evaluate against)
-
-If the spec is <5K chars, pass it inline to all agents (no temp file needed). If >5K chars, always use the summary + temp file pattern.
+Distribution — **prefer inline** to avoid temp file overhead:
+- **Curdle**: spec inline if <5K, otherwise temp file path (Curdle reads it itself). Curdle is the planner; it needs every constraint and boundary.
+- **Culture**: spec summary inline in prompt (enough to scope exploration)
+- **Cook**: relevant plan steps + spec summary inline (plan is the primary input)
+- **Press/Age**: spec summary + changed files list inline (enough to evaluate against)
 
 ## Agent Turn Limits
 
@@ -68,6 +66,22 @@ Always set `max_turns` when spawning Task agents:
 | research (any) | 15 | Should find answer fast or bail |
 
 If an agent hits its limit, it returns partial results. The orchestrator decides whether to spawn a continuation agent or proceed with what it has.
+
+## Agent Permission Modes
+
+After exiting plan mode, spawn implementation agents with `mode: "acceptEdits"` for uninterrupted execution:
+
+| Agent | Mode | Rationale |
+|-------|------|-----------|
+| fromage-preparing | default | Env check only |
+| fromage-culture | default | Read-only exploration |
+| fromage-curdle | plan | Planning, needs approval |
+| fromage-cook | **acceptEdits** | Implementation, writes freely |
+| fromage-press | **acceptEdits** | Testing, writes test files |
+| fromage-age | default | Read-only review |
+| whey-drainer | default | Runs tests only |
+| roquefort-wrecker | **acceptEdits** | Writes + runs tests |
+| research (any) | default | Read-only research |
 
 ## Phase 0 — Assess
 
@@ -122,6 +136,16 @@ Announce complexity and show which phases run vs skip:
 
 **ask** = ask user before running. User can also override any skip → run.
 
+### Plan Mode Gate (Medium/Large only)
+
+For **medium** and **large** tasks, call `EnterPlanMode` after displaying the phase matrix. This puts the orchestrator into read-only mode for Phases 1-4:
+
+- Spec writes are delegated to sub-agents (orchestrator cannot write files)
+- Exploration and planning happen without risk of accidental edits
+- `ExitPlanMode` at Checkpoint 2 transitions to implementation with pre-approved permissions
+
+For **trivial** and **small** tasks, skip plan mode — proceed directly to implementation phases.
+
 ---
 
 ## Phase 1 — Preparing (Haiku)
@@ -141,6 +165,8 @@ Interactive requirements gathering — a conversation, not an interrogation.
 3. Invoke `/research` when external research is needed
 4. **Library discovery**: Search for existing libraries/packages that could accelerate implementation. Use octocode (`packageSearch`) and Context7 (`resolve-library-id` → `query-docs`) to find candidates. Evaluate: maturity, maintenance activity, API fit, **license compatibility** (see below).
 5. Write spec to `.claude/specs/<slug>.md` — include any recommended libraries with justification
+
+**Plan mode note**: The orchestrator is in plan mode and cannot write files directly. Delegate spec writing to a haiku agent — pass the spec content in the prompt, the agent writes to `.claude/specs/<slug>.md` and returns confirmation. Similarly, delegate `gh repo view` license checks to a research agent.
 
 ### License Awareness
 
@@ -178,9 +204,26 @@ If library candidates were identified, include them in Curdle's prompt with: pac
 
 **>>> CHECKPOINT 2: Plan <<<**
 
-Present: architecture decision (one line), files to modify/create, build steps (parallel vs sequential), YAGNI boundaries, adopted libraries (if any).
+Present the plan as visible text output: architecture decision (one line), files to modify/create, build steps (parallel vs sequential), YAGNI boundaries, adopted libraries (if any).
 
-AskUserQuestion: Approve / Modify / Re-explore / Pause. Do NOT proceed without approval.
+Then use AskUserQuestion: Approve / Modify / Re-explore / Pause. Do NOT proceed without approval.
+
+After user approves, call `ExitPlanMode` (with `allowedPrompts` below) to unlock edit mode. The user already approved the plan — this is a mechanical unlock, not a second review:
+
+```json
+{
+  "allowedPrompts": [
+    {"tool": "Bash", "prompt": "run tests and test frameworks"},
+    {"tool": "Bash", "prompt": "file discovery with fd"},
+    {"tool": "Bash", "prompt": "install dependencies"},
+    {"tool": "Bash", "prompt": "run build commands"},
+    {"tool": "Bash", "prompt": "write temp files for agent distribution"},
+    {"tool": "Bash", "prompt": "git operations for commit and PR"}
+  ]
+}
+```
+
+After exiting plan mode, implementation agents spawn with `mode: "acceptEdits"` (see Agent Permission Modes table).
 
 **Skip**: Obvious single-step change (trivial/small).
 
