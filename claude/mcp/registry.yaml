@@ -31,8 +31,3 @@ mcps:
     args: [shadcn@latest, mcp]
     scope: user
     description: Browse and install shadcn/ui components via natural language
-
-  tern-standalone:
-    command: /Users/paulsorensen/Dev/tern/.worktrees/test-mcp-standalone/target/release/tern-mcp-bridge
-    scope: user
-    description: Tern code intelligence (symbol search, dependency graphs, repo map)
