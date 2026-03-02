@@ -43,5 +43,6 @@ vhs/output/
 *.bak
 .serena/
 
-# tmux generated theme (rebuilt on dots sync)
+# tmux (plugins managed by TPM, theme rebuilt on dots sync)
+tmux/plugins/
 tmux/theme.conf
