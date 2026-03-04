@@ -100,7 +100,19 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/notebook`, `/onboard` |
 
-All review/analysis agents use 0-100 confidence scoring (>= 75 to surface).
+All agents use 0-100 confidence scoring (>= 75 to surface). This applies pipeline-wide:
+
+| Agent/Skill | Scoring |
+|-------------|---------|
+| Research | Per-source 0-100, aggregate overall |
+| Ricotta-reducer/Simplifier | Per-finding 0-100 |
+| Fromage-age | Per-finding 0-100 |
+| Fromage-press | Per-failure 0-100 |
+| Fromage-cook | Per-step completion confidence 0-100 |
+
+**When confidence < 75 on any decision, ask the user.** Don't guess and move on.
+
+**Never claim green on partial work.** If steps were skipped, blockers hit, or scope was reduced, report it honestly. The orchestrator (and the Cheese Lord) need accurate status to make good decisions. Lying about completion is the cardinal sin of the pipeline.
 
 ## Skill Delegation
 

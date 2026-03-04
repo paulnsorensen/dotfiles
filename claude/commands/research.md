@@ -43,17 +43,17 @@ The agent returns findings organized by source:
 <Direct answer synthesized from all sources>
 
 ### Evidence by Source
-| Source | Finding | Confidence |
-|---|---|---|
-| Docs (Context7) | <what we learned> | High/Medium/Low |
-| Web (WebSearch) | <what we learned> | High/Medium/Low |
-| Codebase (Serena) | <what we learned> | High/Medium/Low |
-| GitHub (Octocode) | <what we learned> | High/Medium/Low |
+| Source | Finding | Score | Notes |
+|---|---|---|---|
+| Docs (Context7) | <what we learned> | 0-100 | <version, caveats> |
+| Web (WebSearch) | <what we learned> | 0-100 | <recency, authority> |
+| Codebase (Serena) | <what we learned> | 0-100 | <file refs> |
+| GitHub (Octocode) | <what we learned> | 0-100 | <repo quality> |
 
 ### Implications for Our Task
 - <How this affects implementation>
 - <Constraints or opportunities>
 
 ### Overall Confidence
-<High/Medium/Low> — <brief justification>
+**<0-100>** — <brief justification based on source agreement>
 ```

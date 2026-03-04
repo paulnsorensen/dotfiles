@@ -12,6 +12,8 @@ module.exports = {
       const clean = cmd
         .replace(/[12]?>+\s*\/dev\/(null|stderr|stdout)/g, '')
         .replace(/2>&1/g, '');
+      // Allow writes to $TMPDIR — temp report files from pipeline agents
+      if (/\$TMPDIR|\/private\/tmp\/claude|\/tmp\/claude/.test(cmd)) return false;
       // 1. cat > file or cat >> file (stdin-to-file creation)
       if (/\bcat\s*>>?\s/.test(clean)) return true;
       // 2. heredoc combined with file redirect (inline file content to disk)

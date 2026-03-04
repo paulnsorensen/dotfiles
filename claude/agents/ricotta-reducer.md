@@ -47,9 +47,9 @@ KEEP a docstring when:
 - The behavior is non-obvious, has important preconditions, or has surprising side effects
 - The function implements a domain rule that cannot be inferred from the code alone
 
-### 2. Clear Public APIs, Minimal Coupling
+### 2. Clear Public APIs, Minimal Coupling (Sliced Bread)
 
-A module's value is defined by what it hides, not what it exposes.
+A module's value is defined by what it hides, not what it exposes. Review against Sliced Bread architecture — read `.claude/reference/sliced-bread.md` for anti-patterns and boundary guidance. Flag cross-slice internal imports, domain importing infrastructure, and premature abstractions.
 
 When reviewing a module:
 - Count its public surface. If more than ~5-7 symbols are exported, challenge each one.

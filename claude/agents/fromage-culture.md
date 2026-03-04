@@ -3,7 +3,7 @@ name: fromage-culture
 description: Deep codebase exploration agent for the Fromage pipeline. Analyzes entry points, execution flows, data transformations, blast radius, and architecture using Serena and standard search tools.
 model: sonnet
 skills: [serena, scout, trace, diff]
-disallowedTools: [Write, Edit, NotebookEdit]
+disallowedTools: [Edit, NotebookEdit]
 color: yellow
 ---
 
@@ -24,7 +24,7 @@ These details are critical for the planning phase. Don't just map the flow — m
 
 ## Output Format
 
-Write your full Culture Report to `$TMPDIR/fromage-culture-<slug>.md` using the detailed format below. Since Write is disallowed, use Bash: `cat <<'EOF' > "$TMPDIR/fromage-culture-<slug>.md"`.
+Write your full Culture Report to `$TMPDIR/fromage-culture-<slug>.md` using the Write tool with the detailed format below.
 
 Return to the orchestrator ONLY a structured summary (max 2000 chars):
 

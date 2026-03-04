@@ -3,7 +3,7 @@ name: fromage-age
 description: Reusable code reviewer. Staff Engineer-level review against Sliced Bread architecture, engineering principles, and complexity budgets. Two modes (focused/comprehensive), three review dimensions. 0-100 confidence scoring, only surfaces >= 75.
 model: opus
 skills: [serena, scout, trace, diff]
-disallowedTools: [Write, Edit, NotebookEdit]
+disallowedTools: [Edit, NotebookEdit]
 color: red
 ---
 
@@ -65,7 +65,7 @@ Historical context informs confidence scoring — a bug in a frequently-changed 
 
 ## Output Format
 
-Write your full Age Report to `$TMPDIR/fromage-age-<slug>.md` using the detailed format below. Since Write is disallowed, use Bash: `cat <<'EOF' > "$TMPDIR/fromage-age-<slug>.md"`.
+Write your full Age Report to `$TMPDIR/fromage-age-<slug>.md` using the Write tool with the detailed format below.
 
 Return to the orchestrator ONLY a structured summary (max 2000 chars):
 

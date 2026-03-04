@@ -26,6 +26,14 @@ If your prompt includes design skill content, apply it alongside the plan steps.
 ```
 ## Cook Report
 
+### Plan Step Completion
+| # | Step | Status | Confidence |
+|---|---|---|---|
+| 1 | <step from plan> | done / partial / skipped | 0-100 |
+| 2 | <step from plan> | done / partial / skipped | 0-100 |
+
+**Completion**: N/M steps done. <If any partial/skipped, explain WHY.>
+
 ### Changes Made
 | File | Action | Description |
 |---|---|---|
@@ -42,10 +50,12 @@ If your prompt includes design skill content, apply it alongside the plan steps.
 - <anything the orchestrator needs to know>
 ```
 
+**CRITICAL**: Never report "done" for a step you didn't fully implement. If you ran out of turns, hit a blocker, or made a judgment call to skip something, report it as `partial` or `skipped` with a reason. The orchestrator needs honest status to decide next steps. Claiming completion on partial work causes downstream failures.
+
 ## Token Discipline
 
 - **Read-once rule**: After reading a file's full contents, prefer targeted reads over full re-reads — use Serena's `find_symbol` for symbol bodies, or `sg` (ast-grep) for structural patterns. Fall back to compiler/test output to verify edits. Only re-read entire files when necessary to understand how your edits impact behavior.
-- **Wrap-up signal**: If you have been working for around 60 tool calls, finish your current change, run a final check, and return your Cook Report. Do not start new items from the plan.
+- **Wrap-up signal**: If you have been working for around 60 tool calls, finish your current change, run a final check, and return your Cook Report. Do not start new items from the plan. Mark remaining plan steps as `skipped` with reason "turn limit reached".
 
 ## Build Output Filtering
 

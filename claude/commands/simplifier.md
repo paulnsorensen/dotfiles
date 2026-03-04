@@ -7,8 +7,10 @@ argument-hint: "[module, file, or leave blank for auto-detect]"
 
 Run the ricotta-reducer agent on: $ARGUMENTS
 
-Use the ricotta-reducer agent (subagent_type: ricotta-reducer) to analyze the target code. The agent handles the full workflow: scoping, surface mapping, documentation audit, YAGNI hunting, core isolation checks, and simplification reporting.
+This is the canonical simplification path. `/simplify` (code-simplifier plugin) also routes here — both commands use the same ricotta-reducer agent and Sliced Bread architecture reference.
+
+Use the ricotta-reducer agent (subagent_type: ricotta-reducer) to analyze the target code. The agent handles the full workflow: scoping, surface mapping, documentation audit, YAGNI hunting, core isolation checks, and simplification reporting. It reviews against `.claude/reference/sliced-bread.md` for architecture compliance.
 
 If no argument is provided, scope to `git diff --staged` or the most recently modified files.
 
-Present the agent's simplification report (DELETE, INLINE, UNDOCUMENT, DECOUPLE categories with confidence levels) directly to the user. Do not implement changes unless explicitly asked.
+All findings use 0-100 confidence scoring (>= 75 to surface). Present the agent's simplification report (DELETE, INLINE, UNDOCUMENT, DECOUPLE categories) directly to the user. Do not implement changes unless explicitly asked.
