@@ -90,6 +90,10 @@
       }
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "bash -c '\"/opt/homebrew/bin/node\" \"$(ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1)dist/index.js\"'"
+  },
   "enabledPlugins": {
     "code-simplifier@claude-plugins-official": true,
     "hookify@claude-plugins-official": true,
@@ -98,7 +102,16 @@
     "ralph-loop@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "github@claude-plugins-official": true
+    "github@claude-plugins-official": true,
+    "claude-hud@claude-hud": true
+  },
+  "extraKnownMarketplaces": {
+    "claude-hud": {
+      "source": {
+        "source": "github",
+        "repo": "jarrodwatts/claude-hud"
+      }
+    }
   },
   "sandbox": {
     "network": {
@@ -121,11 +134,8 @@
       ],
       "allowLocalBinding": true
     },
-    "filesystem": {
-      "write": {
-        "allow": ["~/.cache/prek"]
-      }
-    }
+    "filesystem": {}
   },
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "model": "opus"
 }

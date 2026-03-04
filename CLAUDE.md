@@ -170,6 +170,7 @@ Marketplaces must be added first:
 claude plugin marketplace add anthropics/claude-plugins-official
 claude plugin marketplace add boostvolt/claude-code-lsps
 claude plugin marketplace add upstash/context7
+claude plugin marketplace add jarrodwatts/claude-hud
 ```
 
 **Workflow:**
