@@ -332,7 +332,15 @@ If a design skill was specified (via Curdle plan's "Design Skill" section or `--
 
 If no design skill applies, skip this step.
 
-After cooks return, verify integration. Run `whey-drainer` (haiku) for regression check. Fix failures before moving on.
+After cooks return, **verify plan completion** before proceeding:
+
+1. Cross-check each Cook's "Plan Step Completion" table against the plan from Phase 4
+2. If ANY steps are `partial` or `skipped`:
+   - Decide: spawn a continuation Cook for remaining steps, OR ask the user
+   - NEVER proceed to Press/Age with known incomplete work
+3. Run `whey-drainer` (haiku) for regression check. Fix failures before moving on.
+
+**Anti-pattern**: Do NOT accept a Cook report that shows all steps "done" but the whey-drainer reveals missing functionality. Re-check the Cook's claims against test results.
 
 **Engineering principles**: Input validation at boundaries, fail fast and loud, loose coupling, YAGNI, real-world naming, immutable patterns, complexity budget (40 lines/fn, 300 lines/file, 4 params, 3 nesting).
 

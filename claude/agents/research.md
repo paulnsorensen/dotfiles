@@ -59,7 +59,7 @@ Return:
 - Direct answer (1–2 sentences)
 - Code example if available
 - Version/caveats
-- Confidence (High/Medium/Low)
+- Confidence (0-100, where 75+ = actionable)
 
 Do not fetch if the answer is in your training data and stable.
 ```
@@ -79,7 +79,7 @@ Steps:
 Return:
 - Direct answer (1–2 sentences)
 - Why this matters
-- Confidence (High/Medium/Low)
+- Confidence (0-100, where 75+ = actionable)
 ```
 
 #### Serena Fetcher
@@ -96,7 +96,7 @@ Use Serena MCP and codebase tools (find_symbol, search_for_pattern) to discover:
 Return:
 - Findings (1–2 sentences)
 - Code references (file:line)
-- Confidence (High/Medium/Low)
+- Confidence (0-100, where 75+ = actionable)
 ```
 
 #### Octocode Fetcher
@@ -114,7 +114,7 @@ Use octocode to find:
 Return:
 - Key patterns (bullet list)
 - 1–2 code snippets with context
-- Confidence (High/Medium/Low)
+- Confidence (0-100, where 75+ = actionable)
 ```
 
 ### 3. Wait for Parallel Results
@@ -128,16 +128,25 @@ for task_id in [ctx7_task, web_task, serena_task, octocode_task]:
   results.append(output)
 ```
 
-Each subagent returns a structured finding with confidence level (High/Medium/Low).
+Each subagent returns a structured finding with a 0-100 confidence score.
 
-### 3.5. Aggregate Confidence
+### 3.5. Confidence Scoring
 
-Before synthesis, assess agreement across sources:
+Rate every finding 0-100. Use the same rubric as the rest of the pipeline:
 
-- **3-4 sources agree** → Overall confidence: **High**
-- **2 sources agree** → Overall confidence: **Medium**
-- **Disagreement (sources contradict)** → Note in findings, explain why (version diff? scope diff?), default to recency/popularity
-- **1 source only** → Inherit that source's confidence, note as weak signal
+| Score | Label | Meaning |
+|-------|-------|---------|
+| 0-25 | Uncertain | Weak signal. Single source, unverified, or stale. |
+| 26-50 | Plausible | Some evidence but incomplete. Needs corroboration. |
+| 51-74 | Likely | Multiple signals agree but caveats exist. |
+| 75-89 | Confident | Strong evidence from 2+ sources. Actionable. |
+| 90-100 | Verified | 3-4 sources agree with no contradictions. |
+
+Aggregate across sources:
+- **3-4 sources agree** → Overall 85-100
+- **2 sources agree** → Overall 60-84
+- **Disagreement** → Note in findings, explain why, default to recency/popularity, cap overall at 50
+- **1 source only** → Inherit that source's score, note as weak signal
 
 ---
 
@@ -152,19 +161,19 @@ Merge findings into **one coherent answer**:
 <Direct answer in 1–3 paragraphs, synthesized from all 4 sources>
 
 ### Evidence by Source
-| Source | Finding | Confidence |
-|---|---|---|
-| Docs (Context7) | <what we learned> | High/Medium/Low |
-| Web (WebSearch) | <what we learned> | High/Medium/Low |
-| Codebase (Serena) | <what we learned> | High/Medium/Low |
-| GitHub (Octocode) | <what we learned> | High/Medium/Low |
+| Source | Finding | Score | Notes |
+|---|---|---|---|
+| Docs (Context7) | <what we learned> | 0-100 | <version, caveats> |
+| Web (WebSearch) | <what we learned> | 0-100 | <recency, authority> |
+| Codebase (Serena) | <what we learned> | 0-100 | <file refs> |
+| GitHub (Octocode) | <what we learned> | 0-100 | <repo quality> |
 
 ### Implications for Our Task
 - <How this affects implementation>
 - <Constraints or opportunities>
 
 ### Overall Confidence
-<High/Medium/Low> — <brief justification>
+**<0-100>** — <brief justification based on source agreement>
 ```
 
 ---
@@ -192,12 +201,12 @@ Merge findings into **one coherent answer**:
 Express doesn't have built-in rate limiting, so most projects use middleware libraries like `express-rate-limit` or Redis-based solutions. Best practice is to use `express-rate-limit` for simple in-memory stores or Redis for distributed systems. Our codebase currently has no rate limiting, which is a gap for production.
 
 ### Evidence by Source
-| Source | Finding | Confidence |
-|---|---|---|
-| Docs (Context7) | express-rate-limit is the de-facto standard; config via middleware options (windowMs, max, message) | High |
-| Web (WebSearch) | Industry best practice: combine rate limiting with caching layers; monitor with Prometheus metrics | High |
-| Codebase (Serena) | No rate limiting middleware found in middleware stack (auth.js, errorHandler.js); no Redis integration | High |
-| GitHub (Octocode) | Strapi, Fastify projects use express-rate-limit; popular repos add Redis for scaling (ioredis + rate-limit-redis) | High |
+| Source | Finding | Score | Notes |
+|---|---|---|---|
+| Docs (Context7) | express-rate-limit is the de-facto standard; config via middleware options (windowMs, max, message) | 92 | Current docs, stable API |
+| Web (WebSearch) | Industry best practice: combine rate limiting with caching layers; monitor with Prometheus metrics | 85 | Multiple authoritative sources |
+| Codebase (Serena) | No rate limiting middleware found in middleware stack (auth.js, errorHandler.js); no Redis integration | 95 | Direct codebase scan |
+| GitHub (Octocode) | Strapi, Fastify projects use express-rate-limit; popular repos add Redis for scaling (ioredis + rate-limit-redis) | 88 | 3+ quality repos sampled |
 
 ### Implications for Our Task
 - **Recommendation**: Adopt express-rate-limit as default, with optional Redis backend for scaling
@@ -205,7 +214,7 @@ Express doesn't have built-in rate limiting, so most projects use middleware lib
 - **Risk**: Misconfigured limits could block legitimate users; test with load tool before deploy
 
 ### Overall Confidence
-**High** — All 4 sources aligned. Express community has standardized on express-rate-limit.
+**92** — All 4 sources aligned. Express community has standardized on express-rate-limit.
 ```
 
 ---
