@@ -8,6 +8,13 @@ Execute the Fromage development pipeline for: **$ARGUMENTS**
 
 Full cheese-making process — raw milk to packaged wheel. Assesses complexity and skips phases that don't add value.
 
+### When to use `/fromage` vs `/batch`
+
+- **`/fromage`**: Single coherent feature or fix — spec → explore → plan → implement → test → review → PR
+- **`/batch`**: Mass mechanical change across many files — decomposes into 5-30 independent units, each in its own worktree, each opens a PR. Use for renames, migrations, pattern replacements at scale.
+
+Rule of thumb: if every file gets the same transformation, use `/batch`. If files interact and the change needs design, use `/fromage`.
+
 ## Context Passing
 
 Each phase builds on prior phases. When launching agents, always include:
@@ -344,6 +351,16 @@ After cooks return, **verify plan completion** before proceeding:
 
 **Engineering principles**: Input validation at boundaries, fail fast and loud, loose coupling, YAGNI, real-world naming, immutable patterns, complexity budget (40 lines/fn, 300 lines/file, 4 params, 3 nesting).
 
+### Post-Cook Simplify Pass
+
+After Cook completion is verified and whey-drainer passes, run the built-in `/simplify` as a hygiene sweep before Press/Age. This catches genAI bloat, redundant imports, and copy-paste artifacts that Cook agents leave behind.
+
+- **Trivial/small**: skip (not enough code to warrant it)
+- **Medium/large**: run `/simplify` targeting changed files
+- If `/simplify` makes changes, re-run `whey-drainer` to confirm nothing broke
+
+This is distinct from `/simplifier` (ricotta-reducer), which runs during Phase 8 as a scored architecture audit. `/simplify` is a fixer; `/simplifier` is an auditor.
+
 ---
 
 ## Phase 7 — Press (Sonnet)
@@ -365,21 +382,22 @@ Launch `fromage-press` (sonnet) for adversarial testing — chaos inputs, bounda
 
 ## Phase 8 — Age (Opus)
 
-Launch `fromage-age` (opus) in focused mode. Include the list of changed file paths in the prompt — the agent uses `git blame` and `git log` for historical context.
+Launch two parallel reviews:
 
-Reviews through three dimensions:
+1. **`fromage-age`** (opus, focused mode) — Include changed file paths. Uses `git blame` and `git log` for historical context. Reviews through three dimensions:
+   - **Correctness & Safety** — security, bugs, silent failures
+   - **Architecture & Weight** — coupling, dead code, complexity, inline/undocument
+   - **Historical Context** — git blame patterns, recurring issues from prior changes
 
-1. **Correctness & Safety** — security, bugs, silent failures
-2. **Architecture & Weight** — coupling, dead code, complexity, inline/undocument
-3. **Historical Context** — git blame patterns, recurring issues from prior changes
+2. **`/simplifier`** (ricotta-reducer) — Architecture compliance audit against Sliced Bread. Produces scored DELETE/INLINE/UNDOCUMENT/DECOUPLE report. Complements Age: Age covers correctness and safety; ricotta-reducer specifically hunts structural bloat.
 
 All findings scored 0-100, only >= 75 surfaced.
 
-**Validation pass** (medium/large): For findings scored 75-89, launch a haiku agent to verify against actual code context. Discard findings that don't survive scrutiny. Findings >= 90 skip validation.
+**Validation pass** (medium/large): For Age findings scored 75-89, launch a haiku agent to verify against actual code context. Discard findings that don't survive scrutiny. Findings >= 90 skip validation.
 
-Present findings to user. Fix agreed issues inline.
+Present combined findings to user. Fix agreed issues inline.
 
-**Skip**: Trivial change, single-line fix.
+**Skip**: Trivial change, single-line fix. For small tasks, run Age only (skip ricotta-reducer).
 
 ---
 
