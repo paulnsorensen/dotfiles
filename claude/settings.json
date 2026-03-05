@@ -155,7 +155,13 @@
       ],
       "allowLocalBinding": true
     },
-    "filesystem": {}
+    "filesystem": {
+      "write": {
+        "allow": [
+          "~/.cache/prek"
+        ]
+      }
+    }
   },
   "skipDangerousModePermissionPrompt": true
 }
