@@ -62,6 +62,7 @@
       "WebFetch"
     ]
   },
+  "model": "opus",
   "hooks": {
     "PreCompact": [
       {
@@ -112,7 +113,6 @@
     "command": "bash -c 'PLUGIN_DIR=$(ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1); INDEX_JS=\"${PLUGIN_DIR}dist/index.js\"; if [ -z \"$PLUGIN_DIR\" ] || [ ! -f \"$INDEX_JS\" ]; then exit 0; fi; \"$(command -v node)\" \"$INDEX_JS\"'"
   },
   "enabledPlugins": {
-    "code-simplifier@claude-plugins-official": true,
     "hookify@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
@@ -157,10 +157,11 @@
     },
     "filesystem": {
       "write": {
-        "allow": ["~/.cache/prek"]
+        "allow": [
+          "~/.cache/prek"
+        ]
       }
     }
   },
-  "skipDangerousModePermissionPrompt": true,
-  "model": "opus"
+  "skipDangerousModePermissionPrompt": true
 }

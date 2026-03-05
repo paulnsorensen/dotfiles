@@ -7,7 +7,7 @@ argument-hint: "[module, file, or leave blank for auto-detect]"
 
 Run the ricotta-reducer agent on: $ARGUMENTS
 
-This is the canonical simplification path. `/simplify` (code-simplifier plugin) also routes here — both commands use the same ricotta-reducer agent and Sliced Bread architecture reference.
+This is the canonical simplification path. `/simplify` is now a built-in Claude Code command; this custom `/simplifier` delegates to the ricotta-reducer agent with Sliced Bread architecture enforcement.
 
 Use the ricotta-reducer agent (subagent_type: ricotta-reducer) to analyze the target code. The agent handles the full workflow: scoping, surface mapping, documentation audit, YAGNI hunting, core isolation checks, and simplification reporting. It reviews against `.claude/reference/sliced-bread.md` for architecture compliance.
 

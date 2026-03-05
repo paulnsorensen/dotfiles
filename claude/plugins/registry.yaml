@@ -14,11 +14,6 @@ plugins:
   # LSP plugins managed separately — see lsp-registry.yaml + lsp-sync
   # Run `lsp-sync` to enable LSPs locally (not loaded for headless sessions)
 
-  code-simplifier@claude-plugins-official:
-    description: Code cleanup and simplification agents
-    scope: user
-    load: true
-
   hookify@claude-plugins-official:
     description: Create hooks to prevent unwanted behaviors by analyzing conversation patterns
     scope: user

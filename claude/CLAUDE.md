@@ -89,12 +89,15 @@ src/
 
 I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 
-**Core pipeline**: `/fromage <task>` — adapts to complexity, from trivial fixes to large features.
+**Core pipeline**: `/fromage <task>` — single coherent feature or fix, full lifecycle.
+**Mass changes**: `/batch <instruction>` — decomposes into 5-30 independent units, parallel worktree agents, one PR each.
+**Built-in cleanup**: `/simplify` — 3 parallel review agents (reuse, quality, efficiency), auto-fixes changed files. Used as post-Cook hygiene in Fromage.
 
 | Category | Key Skills |
 |----------|-----------|
-| Planning | `/fromage`, `/spec`, `/duck`, `/research` |
+| Planning | `/fromage`, `/batch`, `/spec`, `/duck`, `/research` |
 | Review | `/age`, `/code-review`, `/audit`, `/simplifier` |
+| Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit) |
 | Testing | `/wreck`, `/test`, `/diff`, `/pingpong` |
 | GitHub | `/move-my-cheese <PR#>`, `/copilot-review`, `/copilot-delegate` |
 | Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
