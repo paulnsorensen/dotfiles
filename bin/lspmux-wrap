@@ -45,4 +45,4 @@ if [[ -f "$LSPMUX_LOG" ]] && [[ "$(wc -c < "$LSPMUX_LOG")" -gt 102400 ]]; then
 fi
 echo "$(date -Iseconds) pid=$$ binary=$BINARY real=$REAL_BIN" >> "$LSPMUX_LOG" 2>/dev/null || true
 
-exec lspmux client --server-path "$REAL_BIN" "$@"
+exec lspmux client --server-path "$REAL_BIN" -- "$@"

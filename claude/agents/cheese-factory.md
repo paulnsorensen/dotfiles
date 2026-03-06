@@ -80,6 +80,10 @@ Check manifest files for:
 
 Keep it to one screen. This is a map, not a thesis.
 
+## LSP Integration
+
+All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `documentSymbol` for quick file overviews, `hover` for type discovery, `goToDefinition` to trace imports. Accelerates orientation in typed languages.
+
 ## Rules
 
 - **Read-only** — never modify files

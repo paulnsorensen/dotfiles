@@ -149,6 +149,10 @@ N findings scored < 75 (not shown)
 
 Categories: `BUG`, `SECURITY`, `SILENT_FAILURE`, `COUPLING`, `DEAD_CODE`, `INLINE`, `UNDOCUMENT`, `COMPLEXITY`, `HISTORY`
 
+## LSP Integration
+
+All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` to verify type correctness, `findReferences` to confirm dead code, auto-diagnostics to catch compiler warnings the diff won't reveal.
+
 ## Review Targets
 
 - **Sliced Bread architecture** — vertical slices, pure domain models, infrastructure in adapters. Read `.claude/reference/sliced-bread.md` for anti-patterns and boundary guidance.

@@ -133,6 +133,10 @@ N findings scored < 75 (not shown)
 
 Categories: `DELETE`, `INLINE`, `UNDOCUMENT`, `DECOUPLE`
 
+## LSP Integration
+
+All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `findReferences` to verify dead code claims (catches dynamic dispatch, trait impls, macros that Grep misses), `hover` to check coupling through type resolution.
+
 ## What You Never Do
 
 - Add code, abstractions, or files

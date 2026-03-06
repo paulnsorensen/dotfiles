@@ -351,6 +351,8 @@ After cooks return, **verify plan completion** before proceeding:
 
 **Engineering principles**: Input validation at boundaries, fail fast and loud, loose coupling, YAGNI, real-world naming, immutable patterns, complexity budget (40 lines/fn, 300 lines/file, 4 params, 3 nesting).
 
+**LSP integration**: All 7 LSP plugins are enabled globally. Cook agents get auto-diagnostics after edits and can use the `LSP` tool (`hover`, `findReferences`, etc.) for quick type verification — reduces the need for `cargo check` / `npm test` loops.
+
 ### Post-Cook Simplify Pass
 
 After Cook completion is verified and whey-drainer passes, run the built-in `/simplify` as a hygiene sweep before Press/Age. This catches genAI bloat, redundant imports, and copy-paste artifacts that Cook agents leave behind.

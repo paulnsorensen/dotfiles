@@ -65,9 +65,19 @@ When helpers don't cover your case, batch manually:
 
 ## Pull requests — `gh pr`
 
+**PR bodies**: Always write the body to a temp file and use `--body-file` instead of inline `--body`.
+Inline markdown with `#` headers triggers Claude Code's safety check ("newline followed by #-prefixed line").
+
+```bash
+BODY_FILE=$(mktemp)
+printf '%s\n' "## Summary" "Description here..." > "$BODY_FILE"
+gh pr create --title "type(scope): description" --body-file "$BODY_FILE"
+rm -f "$BODY_FILE"
+```
+
 | Command | What it does |
 |---------|-------------|
-| `gh pr create` | Open a PR (`--title`, `--body`, `--base`) |
+| `gh pr create` | Open a PR (`--title`, `--body-file`, `--base`) |
 | `gh pr list` | List open PRs; filter with `--state`, `--label`, `--search` |
 | `gh pr view [<number>]` | Read PR body and metadata |
 | `gh pr diff [<number>]` | Show the diff |

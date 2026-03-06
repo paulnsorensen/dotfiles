@@ -57,6 +57,10 @@ If your prompt includes design skill content, apply it alongside the plan steps.
 - **Read-once rule**: After reading a file's full contents, prefer targeted reads over full re-reads — use Serena's `find_symbol` for symbol bodies, or `sg` (ast-grep) for structural patterns. Fall back to compiler/test output to verify edits. Only re-read entire files when necessary to understand how your edits impact behavior.
 - **Wrap-up signal**: If you have been working for around 60 tool calls, finish your current change, run a final check, and return your Cook Report. Do not start new items from the plan. Mark remaining plan steps as `skipped` with reason "turn limit reached".
 
+## LSP Integration
+
+All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool after edits — `hover` for type checks, `findReferences` to verify callers, `documentSymbol` to orient in a file. Auto-diagnostics surface type errors after edits without running a full build. Faster than `cargo check` or `npm test` for quick verification.
+
 ## Build Output Filtering
 
 When running build commands, ALWAYS filter to errors only:

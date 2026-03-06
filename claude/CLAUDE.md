@@ -145,6 +145,12 @@ ast-grep needs no initialization — `sg --lang X -p 'pattern'` works on any cod
 LSP plugins add type inference that neither ast-grep nor Serena provide.
 Serena wraps LSP for symbol navigation and adds project memory.
 
+**LSP integration** — All 7 LSP plugins are enabled globally. Claude Code's built-in `LSP` tool provides 9 operations (`goToDefinition`, `findReferences`, `hover`, `documentSymbol`, etc.):
+- **Lazy startup**: Servers only start when the LSP tool is invoked on a matching file type — zero cost when idle
+- **Auto-diagnostics**: After file edits, the language server reports type errors, missing imports, and syntax issues
+- **lspmux**: Deduplicates server instances across sessions per workspace root
+- **Status/troubleshooting**: Run `/lsp` to check what's running and verify binaries
+
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 
 **Agent skill enforcement**: When an agent has `skills: [scout, trace, diff]`, it MUST use those tools. Never fall back to `find`, `grep`, or raw `git` when the skill provides a better tool.

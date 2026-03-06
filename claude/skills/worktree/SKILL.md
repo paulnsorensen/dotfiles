@@ -51,8 +51,8 @@ to avoid truncated output if jq fails on malformed input.
 If `.claude/settings.local.json` exists at repo root:
 ```bash
 mkdir -p .worktrees/<slug>/.claude
-jq -s '.[0] * .[1]' <REPO_ROOT>/.claude/settings.local.json \
-  <(echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}') \
+SANDBOX='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
+jq --argjson overlay "$SANDBOX" '. * $overlay' <REPO_ROOT>/.claude/settings.local.json \
   > .worktrees/<slug>/.claude/settings.local.json.tmp \
   && mv .worktrees/<slug>/.claude/settings.local.json.tmp \
        .worktrees/<slug>/.claude/settings.local.json

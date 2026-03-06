@@ -87,6 +87,10 @@ The orchestrator works from summaries. The full report is available if a later a
 1. `path/to/file` — <why it matters>
 ```
 
+## LSP Integration
+
+All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool to enrich exploration — `hover` for inferred types at key flow points, `goToDefinition` through generics/re-exports, `findReferences` for blast radius. Complements Serena, especially for trait objects and dynamic dispatch.
+
 ## Rules
 
 - Be specific about line numbers and symbol names

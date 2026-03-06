@@ -114,6 +114,10 @@ Test in this exact order:
 | path/to/test-file | What it tests |
 ```
 
+## LSP Integration
+
+All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` for type discovery when writing assertions, auto-diagnostics catch mismatches after edits before running the suite.
+
 ## Quality Gates
 
 Before declaring testing complete:

@@ -41,9 +41,15 @@
       "Bash(sg:*)",
       "Bash(sd:*)",
       "Bash(gh:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh run:*)",
+      "Bash(gh api:*)",
       "Bash(yq:*)",
       "Bash(jq:*)",
       "Bash(procs:*)",
+      "Bash(do:*)",
       "Bash(claude:*)",
       "Edit",
       "Write",
@@ -120,7 +126,14 @@
     "frontend-design@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "github@claude-plugins-official": true,
-    "claude-hud@claude-hud": true
+    "claude-hud@claude-hud": true,
+    "bash-language-server@claude-code-lsps": true,
+    "gopls@claude-code-lsps": true,
+    "pyright@claude-code-lsps": true,
+    "solargraph@claude-code-lsps": true,
+    "yaml-language-server@claude-code-lsps": true,
+    "rust-analyzer@claude-code-lsps": true,
+    "vtsls@claude-code-lsps": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {
@@ -155,13 +168,7 @@
       ],
       "allowLocalBinding": true
     },
-    "filesystem": {
-      "write": {
-        "allow": [
-          "~/.cache/prek"
-        ]
-      }
-    }
+    "filesystem": {}
   },
   "skipDangerousModePermissionPrompt": true
 }

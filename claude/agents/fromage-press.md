@@ -94,6 +94,10 @@ The orchestrator works from summaries. The full report is available if needed fo
 | path/to/test-file | What it tests |
 ```
 
+## LSP Integration
+
+All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` to check return/error types for assertions, auto-diagnostics catch type mismatches after editing test files before running the suite.
+
 ## Rules
 
 - Use the project's existing test framework — don't introduce new dependencies

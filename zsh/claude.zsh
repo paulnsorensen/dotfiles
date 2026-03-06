@@ -115,7 +115,7 @@ ccw() {
         local sandbox='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
         local tmp="${claude_local}.tmp"
         if [[ -f "${main_local}" ]]; then
-            jq -s '.[0] * .[1]' "${main_local}" <(echo "${sandbox}") > "${tmp}" \
+            jq --argjson overlay "${sandbox}" '. * $overlay' "${main_local}" > "${tmp}" \
                 && mv "${tmp}" "${claude_local}" \
                 && echo "Copied local settings + enabled sandboxing"
         else
@@ -154,6 +154,12 @@ alias ccw-check='$DOTFILES_DIR/bin/ccw-check'
 # Config Shortcuts
 # ═══════════════════════════════════════════════════════════════════
 alias claude-settings='${EDITOR:-vim} ~/.claude/settings.json'
+
+# ═══════════════════════════════════════════════════════════════════
+# lspmux (LSP multiplexer)
+# ═══════════════════════════════════════════════════════════════════
+alias lspmux-restart='launchctl bootout gui/$(id -u)/com.lspmux.server 2>/dev/null; sleep 1; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lspmux.server.plist && echo "lspmux restarted"'
+alias lspmux-status='lspmux status'
 
 # ═══════════════════════════════════════════════════════════════════
 # Plugin Management (thin wrappers around native commands)
