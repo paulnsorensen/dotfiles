@@ -38,21 +38,18 @@ At command start, call `TaskCreate` for all 4 phases. Mark `in_progress` at phas
 
 ## Phase 1 — Recon (gh skill)
 
-Use the `/gh` skill to gather all PR context in a single batched call:
+Use the `/gh` skill to gather PR context. MCP tools are preferred (sandbox-safe):
 
-```bash
-# Batch all recon into one shot
-{
-  echo "=== PR METADATA ==="
-  gh pr view $ARGUMENTS --json title,body,headRefName,baseRefName,state,mergeable,mergeStateStatus,url,statusCheckRollup
-  echo "=== DIFF ==="
-  gh pr diff $ARGUMENTS --stat
-  echo "=== CHECKS ==="
-  gh pr checks $ARGUMENTS
-}
+```
+# MCP — get PR metadata
+pull_request_read(pullNumber=$ARGUMENTS)
+
+# CLI fallback — diff and CI checks (no MCP equivalent)
+gh pr diff $ARGUMENTS --stat
+gh pr checks $ARGUMENTS
 ```
 
-For any failing checks, fetch logs:
+For any failing checks, fetch logs (CLI-only):
 ```bash
 gh run view <run-id> --log-failed
 ```
@@ -143,8 +140,8 @@ Then re-drain to verify.
 ## Phase 4 — Push & Report (commit + gh skills)
 
 1. **Commit** fixes via the `/commit` skill (conventional format, never --no-verify)
-2. **Push** to the PR branch via `/gh`: `git push origin HEAD:<pr-branch>`
-3. If CI failure was purely infrastructure, offer to re-run: `gh run rerun <run-id> --failed`
+2. **Push** to the PR branch via `/gh`: use MCP `push_files` or `git push origin HEAD:<pr-branch>`
+3. If CI failure was purely infrastructure, offer to re-run: `gh run rerun <run-id> --failed` (CLI-only)
 
 Report summary:
 - What was wrong (conflicts, test failures, infra flakes)

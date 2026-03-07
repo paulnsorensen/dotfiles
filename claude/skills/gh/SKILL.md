@@ -2,13 +2,12 @@
 name: gh
 model: haiku
 fork: true
-allowed-tools: mcp__plugin_github_github__*, Bash(gh:*), Bash(git:*), Bash(gh-pr-review:*), Bash(gh-pr-prep:*), Bash(gh-issue-context:*)
+allowed-tools: mcp__plugin_github_github__*, Bash(git:*), Bash(gh:*), Bash(gh-pr-review:*), Bash(gh-pr-prep:*), Bash(gh-issue-context:*)
 description: >
-  Complete GitHub tasks using only the gh CLI. Use for any GitHub operation —
-  PRs, issues, CI checks, repo management, releases, Actions, code search.
-  Use git commands (log, diff, status) for context when informing GitHub
-  operations (e.g. reading commits before drafting a PR body). Never use the
-  GitHub REST API directly or browser URLs. Only gh commands.
+  Complete GitHub tasks using the GitHub MCP plugin. Use for any GitHub operation —
+  PRs, issues, CI checks, repo management, releases, code search.
+  Use git commands (log, diff, status) for local context.
+  Prefer MCP tools over gh CLI — they bypass sandbox/TLS issues.
 examples:
   - "review PR 14"
   - "create a PR for my branch"
@@ -21,143 +20,116 @@ examples:
 
 # gh
 
-GitHub operations via GitHub MCP plugin or `gh` CLI. Use `git` read-only commands for context.
+GitHub operations via **GitHub MCP plugin** (`mcp__plugin_github_github__*`). MCP is the default — it works reliably in sandbox with no TLS issues.
 
-**Prefer**: GitHub MCP tools (`mcp__plugin_github_github__*`) — works in sandbox, no TLS issues.
-**Fallback**: `gh` CLI when MCP tools don't cover the operation (e.g., `gh run watch`, `gh release`).
-**Rule**: `git` is read-only here — log, diff, status. No commits, no push.
-
----
-
-## Batched operations
-
-**Dependency**: Shell helpers (`gh-pr-review`, `gh-pr-prep`, `gh-issue-context`) are defined in `zsh/claude.zsh` — if that file is reorganized, update the references here.
-
-Batch multiple gh/git calls into a single Bash invocation to minimize round-trips.
-Shell helpers are available in `zsh/claude.zsh` for the most common bundles.
-
-```bash
-# PR review — metadata + diff + checks in one shot
-gh-pr-review 14
-
-# PR prep — commits, diff stat, upstream status before creating a PR
-gh-pr-prep
-
-# Issue context — issue body + full comment thread
-gh-issue-context 42
-```
-
-When helpers don't cover your case, batch manually:
-
-```bash
-# Custom batch — collect related data in one script
-{
-  echo "=== PR METADATA ==="
-  gh pr view 14 --json number,title,state,author,additions,deletions
-  echo "=== DIFF ==="
-  gh pr diff 14
-  echo "=== CHECKS ==="
-  gh pr checks 14
-}
-```
+**Default**: GitHub MCP tools for all supported operations.
+**Fallback**: `gh` CLI only for operations MCP doesn't cover (see table below).
+**Rule**: `git` is read-only here — log, diff, status. No commits, no push via git.
 
 ---
 
-## Pull requests — `gh pr`
+## MCP Tool Reference
 
-**PR bodies**: Always write the body to a temp file and use `--body-file` instead of inline `--body`.
-Inline markdown with `#` headers triggers Claude Code's safety check ("newline followed by #-prefixed line").
+### Pull Requests
 
-```bash
-BODY_FILE=$(mktemp)
-printf '%s\n' "## Summary" "Description here..." > "$BODY_FILE"
-gh pr create --title "type(scope): description" --body-file "$BODY_FILE"
-rm -f "$BODY_FILE"
-```
+| Operation | MCP Tool |
+|-----------|----------|
+| Create PR | `create_pull_request` (title, body, head, base) |
+| List PRs | `list_pull_requests` (state, head, base filters) |
+| Read PR | `pull_request_read` (number) |
+| Merge PR | `merge_pull_request` (number, merge_method) |
+| Update PR | `update_pull_request` (title, body, state) |
+| Update branch | `update_pull_request_branch` (number) |
+| Review PR | `pull_request_review_write` (approve, request_changes, comment) |
+| Reply to comment | `add_reply_to_pull_request_comment` |
+| Search PRs | `search_pull_requests` (query) |
 
-| Command | What it does |
-|---------|-------------|
-| `gh pr create` | Open a PR (`--title`, `--body-file`, `--base`) |
-| `gh pr list` | List open PRs; filter with `--state`, `--label`, `--search` |
-| `gh pr view [<number>]` | Read PR body and metadata |
-| `gh pr diff [<number>]` | Show the diff |
-| `gh pr checks [<number>]` | CI status for all checks |
-| `gh pr review [<number>]` | Approve, request changes, or comment |
-| `gh pr merge [<number>]` | Merge (`--merge`, `--squash`, `--rebase`) |
-| `gh pr edit [<number>]` | Update title, body, labels, assignees |
-| `gh pr comment [<number>]` | Add a comment |
-| `gh pr checkout [<number>]` | Check out branch locally |
-| `gh pr ready [<number>]` | Mark draft as ready for review |
-| `gh pr close / reopen` | Change state |
+### Issues
+
+| Operation | MCP Tool |
+|-----------|----------|
+| Create issue | `issue_write` |
+| List issues | `list_issues` (state, labels, assignee) |
+| Read issue | `issue_read` (number) |
+| Edit issue | `issue_write` (update mode) |
+| Comment | `add_issue_comment` (number, body) |
+| Search issues | `search_issues` (query) |
+| Sub-issues | `sub_issue_write` |
+
+### Repos & Code
+
+| Operation | MCP Tool |
+|-----------|----------|
+| Create repo | `create_repository` |
+| Fork repo | `fork_repository` |
+| List branches | `list_branches` |
+| Create branch | `create_branch` |
+| List commits | `list_commits` |
+| Get commit | `get_commit` (sha) |
+| File contents | `get_file_contents` (path) |
+| Create/update file | `create_or_update_file` |
+| Push files | `push_files` (multiple files in one commit) |
+| Delete file | `delete_file` |
+| Search code | `search_code` (query) |
+| Search repos | `search_repositories` (query) |
+
+### Releases & Tags
+
+| Operation | MCP Tool |
+|-----------|----------|
+| List releases | `list_releases` |
+| Latest release | `get_latest_release` |
+| Release by tag | `get_release_by_tag` |
+| List tags | `list_tags` |
+| Get tag | `get_tag` |
+
+### Other
+
+| Operation | MCP Tool |
+|-----------|----------|
+| Who am I | `get_me` |
+| Get label | `get_label` |
+| Teams | `get_teams`, `get_team_members` |
+| Issue types | `list_issue_types` |
+| Copilot | `assign_copilot_to_issue`, `create_pull_request_with_copilot`, `request_copilot_review`, `get_copilot_job_status` |
 
 ---
 
-## Issues — `gh issue`
+## CLI Fallback (only when MCP can't do it)
 
-| Command | What it does |
-|---------|-------------|
-| `gh issue create` | File an issue |
-| `gh issue list` | List issues; filter with `--state`, `--label`, `--assignee` |
-| `gh issue view [<number>]` | Read issue body and metadata |
-| `gh issue edit [<number>]` | Update title, body, labels, assignees |
-| `gh issue comment [<number>]` | Add a comment |
-| `gh issue close / reopen` | Change state |
-| `gh issue develop [<number>]` | Create/link a branch to the issue |
+These operations have no MCP equivalent — use `gh` CLI:
 
----
-
-## Repos, Actions, Releases
-
-```bash
-# Repos
-gh repo view [<repo>]        # metadata
-gh repo create               # new repo
-gh repo fork                 # fork current repo
-gh repo edit                 # update settings
-
-# Actions
-gh run list                  # recent runs
-gh run view [<id>]           # run details
-gh run watch [<id>]          # stream logs
-gh workflow run <workflow>   # trigger dispatch
-
-# Releases
-gh release list
-gh release create <tag>      # add --notes, --draft, --prerelease
-gh release view [<tag>]
-gh release delete <tag>
-```
+| Operation | Command |
+|-----------|---------|
+| PR diff | `gh pr diff <number>` |
+| PR checks / CI status | `gh pr checks <number>` |
+| Run logs | `gh run view <id> --log-failed` |
+| Watch a run | `gh run watch <id>` |
+| Trigger workflow | `gh workflow run <workflow>` |
+| Create release | `gh release create <tag>` |
+| Delete release | `gh release delete <tag>` |
+| Raw API calls | `gh api <endpoint>` |
+| Re-run failed CI | `gh run rerun <id> --failed` |
 
 ---
 
-## Raw API — `gh api`
+## Batched Recon (CLI)
+
+**Dependency**: Shell helpers (`gh-pr-review`, `gh-pr-prep`, `gh-issue-context`) are defined in `zsh/claude.zsh`.
+
+For gathering PR context where you need diff + checks + metadata in one shot, the shell helpers are efficient:
 
 ```bash
-gh api repos/{owner}/{repo}/topics               # GET
-gh api repos/{owner}/{repo}/issues -f title="X"  # POST
-gh api --paginate /repos/{owner}/{repo}/issues   # paginate
-gh api graphql -f query='{ viewer { login } }'  # GraphQL
-gh api repos/{owner}/{repo}/releases --jq '.[0].tag_name'
+gh-pr-review 14       # metadata + diff + checks
+gh-pr-prep             # commits, diff stat, upstream status
+gh-issue-context 42    # issue body + comment thread
 ```
 
 ---
 
-## Output and flags
+## Git Context (read-only)
 
-```bash
-# Extract structured data
-gh pr list --json number,title,headRefName --jq '.[] | "\(.number)\t\(.title)"'
-gh pr view --json number,title,state,url
-
-# Common flags
--R / --repo owner/repo   # target a different repo
---limit N                # cap results
---web                    # open in browser
-```
-
-## Git context (read-only)
-
-Before creating PRs or writing descriptions, use git for context:
+Before creating PRs or writing descriptions, use git for local context:
 
 ```bash
 git log --oneline origin/main..HEAD   # commits going into the PR

@@ -128,7 +128,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | Pre-commit check | diff | git diff/status/log, rg, sg | raw git + manual scanning |
 | File editing | chisel | `sd`, Edit | `sed`, `awk` |
 | Git operations | commit | full git | manual git add/commit |
-| GitHub ops | gh | `gh` CLI | raw GitHub API |
+| GitHub ops | gh | GitHub MCP (`mcp__plugin_github_github__*`), `gh` CLI fallback | raw GitHub API |
 | Code navigation | serena | symbol lookup, cross-refs | grep for definitions |
 | External docs | fetch | Context7, WebSearch, octocode | guessing from training data |
 | Worktree isolation | worktree | git worktree, Serena seeding | manual branch + cd |

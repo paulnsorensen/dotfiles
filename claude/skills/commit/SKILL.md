@@ -59,6 +59,6 @@ git commit -m "type(scope): description" -m "Co-Authored-By: Claude Sonnet 4.6 <
 - **Never amend** unless explicitly asked — create new commits instead
 - **Never --no-verify** — don't skip hooks
 - **Never force-push** to main/master
-- **No push, no PR** — hand off to gh skill for that
+- **No push, no PR** — hand off to gh skill (GitHub MCP) for that
 - **Hook fails?** Fix the issue, re-stage, create a new commit (not amend)
 - **Don't commit** `.env`, credentials, or large binaries — warn the user

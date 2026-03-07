@@ -68,7 +68,6 @@
       "WebFetch"
     ]
   },
-  "model": "opus",
   "hooks": {
     "PreCompact": [
       {
@@ -133,7 +132,8 @@
     "solargraph@claude-code-lsps": true,
     "yaml-language-server@claude-code-lsps": true,
     "rust-analyzer@claude-code-lsps": true,
-    "vtsls@claude-code-lsps": true
+    "vtsls@claude-code-lsps": true,
+    "rust-analyzer-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {
@@ -170,5 +170,6 @@
     },
     "filesystem": {}
   },
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "model": "opus[1m]"
 }

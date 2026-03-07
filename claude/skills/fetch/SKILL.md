@@ -85,7 +85,7 @@ Use octocode when:
 
 ### gh skill (GitHub ops)
 
-Use the `gh` skill for GitHub operations (PRs, issues, releases, CI checks).
+Use the `gh` skill for GitHub operations (PRs, issues, releases, CI checks). The gh skill uses GitHub MCP tools by default (sandbox-safe), with `gh` CLI as fallback for CI/diff operations.
 
 ### WebFetch (raw file contents)
 
@@ -131,6 +131,6 @@ Tell the subagent to **return a summary**, not raw file contents.
 - Using WebSearch when Context7 covers the library
 - Reading full file content before searching for what you need
 - Fetching 5 files inline when a subagent would isolate the bloat
-- Using WebFetch for authenticated GitHub repos (use `gh` skill instead)
-- Using octocode for GitHub ops (PRs, issues) — that's the `gh` skill's job
+- Using WebFetch for authenticated GitHub repos (use `gh` skill / GitHub MCP instead)
+- Using octocode for GitHub ops (PRs, issues) — that's the `gh` skill's job (via MCP)
 - Calling WebSearch when training data is clearly sufficient
