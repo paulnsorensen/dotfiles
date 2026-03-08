@@ -1,0 +1,23 @@
+#!/bin/bash
+# Sync cargo config into ~/.cargo/ (without replacing the whole directory)
+
+CARGO_DIR="$HOME/.cargo"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+mkdir -p "$CARGO_DIR"
+
+# Symlink config.toml
+target="$CARGO_DIR/config.toml"
+source="$SOURCE_DIR/config.toml"
+
+if [[ -L "$target" ]]; then
+  rm "$target"
+elif [[ -e "$target" ]]; then
+  echo "  Backing up existing config.toml"
+  mv "$target" "$target.bak"
+fi
+
+echo "  Linking cargo/config.toml"
+ln -s "$source" "$target"
+
+echo "Cargo config synced"

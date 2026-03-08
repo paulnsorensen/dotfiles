@@ -26,6 +26,12 @@ export PATH="$HOME/.local/bin:$PATH"
 # cargo install puts binaries in ~/.cargo/bin
 [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
 
+# sccache - shared compilation cache for Rust and C/C++
+if command -v sccache &>/dev/null; then
+  export SCCACHE_CACHE_SIZE="30G"
+  export CARGO_INCREMENTAL=1
+fi
+
 # Editor configuration
 export EDITOR=$(which vim)
 export VISUAL=$EDITOR

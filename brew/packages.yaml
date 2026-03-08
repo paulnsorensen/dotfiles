@@ -44,6 +44,7 @@ dev_formulae:
   - node         # Node.js
   - uv           # Fast Python package manager
   - rustup       # Rust toolchain manager
+  - sccache      # Shared compilation cache (Rust, C/C++)
 
 dev_casks:
   - docker       # Docker Desktop

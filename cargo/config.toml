@@ -1,0 +1,5 @@
+# Cargo global configuration
+# Managed by dotfiles — synced to ~/.cargo/config.toml via cargo/.sync
+
+[build]
+rustc-wrapper = "sccache"
