@@ -30,6 +30,7 @@ export PATH="$HOME/.local/bin:$PATH"
 if command -v sccache &>/dev/null; then
   export SCCACHE_CACHE_SIZE="30G"
   export CARGO_INCREMENTAL=1
+  ulimit -n 4096 2>/dev/null  # macOS default (256) is too low for sccache on large crates
 fi
 
 # Editor configuration
