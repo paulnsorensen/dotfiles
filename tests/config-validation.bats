@@ -154,7 +154,7 @@ LAYOUT
     [[ $status -eq 0 ]]
 }
 
-@test "brew packages.yaml is valid YAML" {
-    run yq '.' "$DOTFILES_DIR/brew/packages.yaml"
+@test "packages.yaml is valid YAML" {
+    run yq '.' "$DOTFILES_DIR/packages.yaml"
     [[ $status -eq 0 ]]
 }

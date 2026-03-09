@@ -1,0 +1,70 @@
+# packages.yaml — unified package registry
+# Run `dots sync` to install
+
+brew:
+  taps:
+    - tinted-theming/tinted  # tinty theme manager
+
+  formulae:
+    - jq           # JSON processing
+    - yq           # YAML processing (for MCP sync)
+    - fzf          # Fuzzy finder
+    - gh           # GitHub CLI
+    - shellcheck   # Shell script linter
+    - tree         # Directory tree view
+    - htop         # Process viewer
+    - ripgrep      # Fast grep (rg)
+    - fd           # Fast find
+    - eza          # Modern ls replacement
+    - bat          # Cat clone with syntax highlighting
+    - ast-grep     # AST-based code search
+    - git-delta    # Syntax-aware diff tool (delta)
+    - tmux         # Terminal multiplexer
+    - tinty        # Base16/Base24 theme manager
+    - prek         # Pre-commit hook manager
+    - starship     # Cross-shell prompt
+    - zellij       # Terminal multiplexer (tmux alternative)
+    - zoxide       # Smarter cd with frecency ranking
+    - atuin        # Shell history with search and sync
+    - bottom       # System resource monitor (btm)
+    - dust         # Intuitive disk usage (du alternative)
+    - procs        # Modern process viewer (ps alternative)
+    - tokei        # Code statistics by language
+    - yazi         # Terminal file manager
+    - lazygit      # Terminal UI for git
+    - sd           # Intuitive find-and-replace (sed alternative)
+    - vhs          # Terminal session recorder (GIF/MP4)
+
+  # casks: []  # uncomment when needed
+
+  dev_formulae:
+    - pyenv        # Python version management
+    - node         # Node.js
+    - uv           # Fast Python package manager
+    - rustup       # Rust toolchain manager
+    - sccache      # Shared compilation cache (Rust, C/C++)
+
+  dev_casks:
+    - docker       # Docker Desktop
+
+cargo:
+  - name: lspmux
+    git: https://codeberg.org/p2502/lspmux.git
+
+apt:
+  packages:
+    - jq           # JSON processing
+    - xclip        # Clipboard support (X11)
+    - fzf          # Fuzzy finder
+    - gh           # GitHub CLI
+    - shellcheck   # Shell script linter
+    - tree         # Directory tree view
+    - htop         # Process viewer
+    - ripgrep      # Fast grep (rg)
+    - fd-find      # Fast find (fd)
+    - tmux         # Terminal multiplexer
+    - yq           # YAML processing (snap)
+
+  dev_packages:
+    - nodejs       # Node.js
+    - npm          # Node package manager
