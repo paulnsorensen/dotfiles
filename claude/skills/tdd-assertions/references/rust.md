@@ -27,8 +27,8 @@ assert!(result.is_err());
 // STRONG — specific variant
 assert!(matches!(result, Err(MyError::NotFound(_))));
 
-// STRONG — variant + content
-assert_matches!(result, Err(MyError::NotFound(msg)) if msg.contains("id=42"));
+// STRONG — variant + content (no external crate needed)
+assert!(matches!(result, Err(MyError::NotFound(msg)) if msg.contains("id=42")));
 
 // STRONG — with assert_eq on error
 let err = result.unwrap_err();

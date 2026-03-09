@@ -77,8 +77,17 @@ A non-nil interface holding a nil pointer is not nil. Classic Go gotcha.
 var err error = (*MyError)(nil) // non-nil interface, nil pointer
 assert.Nil(t, err)             // FAILS — err is not nil!
 
-// STRONG — check the concrete type when possible
-assert.NoError(t, err)         // handles the interface-nil case correctly
+// BETTER — prefer NoError for intent when checking errors
+assert.NoError(t, err)         // but still FAILS for typed-nil errors
+
+// REAL FIX — ensure the code under test returns a truly nil error
+// return nil, NOT return (*MyError)(nil)
+func (s *Service) DoSomething() error {
+    if ok {
+        return nil // correct: returns nil interface
+    }
+    return &MyError{} // correct: returns non-nil interface with non-nil pointer
+}
 ```
 
 ## 6. Missing `t.Helper()` in test helpers
@@ -110,8 +119,8 @@ func TestFormat(t *testing.T) {
     assert.Equal(t, "1 item", result1)
     result2, _ := format(0)
     assert.Equal(t, "0 items", result2)
-    result3, _ := format(-1)
-    assert.Error(t, result3) // not even consistent
+    _, err3 := format(-1)
+    assert.Error(t, err3) // not even consistent with above
 }
 
 // STRONG — table-driven

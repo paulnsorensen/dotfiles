@@ -86,13 +86,17 @@ mock_send.assert_called_once_with(
 )
 ```
 
-## 6. `mock.called` (attribute, not method)
+## 6. `mock.called` without `assert` — silent pass
 
-A common AI mistake — `.called` is a boolean attribute, not an assertion method.
-It doesn't raise on failure.
+The real pitfall is referencing `.called` without asserting. AI sometimes
+writes `mock.called` as a bare expression (no `assert`), which is always
+truthy as a statement and silently passes.
 
 ```python
-# WEAK — if this is False, the test still passes!
+# WEAK — bare expression, always passes, tests nothing
+mock.called
+
+# WEAK — works but only checks "was called", not "with what"
 assert mock.called
 
 # STRONG
