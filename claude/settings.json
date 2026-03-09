@@ -118,6 +118,13 @@
     "command": "bash -c 'PLUGIN_DIR=$(ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1); INDEX_JS=\"${PLUGIN_DIR}dist/index.js\"; if [ -z \"$PLUGIN_DIR\" ] || [ ! -f \"$INDEX_JS\" ]; then exit 0; fi; \"$(command -v node)\" \"$INDEX_JS\"'"
   },
   "enabledPlugins": {
+    "bash-language-server@claude-code-lsps": true,
+    "vtsls@claude-code-lsps": true,
+    "yaml-language-server@claude-code-lsps": true,
+    "rust-analyzer@claude-code-lsps": true,
+    "pyright@claude-code-lsps": true,
+    "gopls@claude-code-lsps": true,
+    "solargraph@claude-code-lsps": true,
     "hookify@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
@@ -125,15 +132,7 @@
     "frontend-design@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "github@claude-plugins-official": true,
-    "claude-hud@claude-hud": true,
-    "bash-language-server@claude-code-lsps": true,
-    "gopls@claude-code-lsps": true,
-    "pyright@claude-code-lsps": true,
-    "solargraph@claude-code-lsps": true,
-    "yaml-language-server@claude-code-lsps": true,
-    "rust-analyzer@claude-code-lsps": true,
-    "vtsls@claude-code-lsps": true,
-    "rust-analyzer-lsp@claude-plugins-official": true
+    "claude-hud@claude-hud": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {

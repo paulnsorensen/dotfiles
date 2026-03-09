@@ -97,7 +97,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 |----------|-----------|
 | Planning | `/fromage`, `/batch`, `/spec`, `/duck`, `/research` |
 | Review | `/age`, `/code-review`, `/audit`, `/simplifier` |
-| Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit) |
+| Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit), `/de-slop` (AI anti-patterns) |
 | Testing | `/wreck`, `/test`, `/diff`, `/pingpong` |
 | GitHub | `/move-my-cheese <PR#>`, `/copilot-review`, `/copilot-delegate` |
 | Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
@@ -132,6 +132,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | Code navigation | serena | symbol lookup, cross-refs | grep for definitions |
 | External docs | fetch | Context7, WebSearch, octocode | guessing from training data |
 | Worktree isolation | worktree | git worktree, Serena seeding | manual branch + cd |
+| AI slop cleanup | de-slop | language-specific anti-pattern refs | ignoring AI tells |
 
 **Code intelligence tool division** — three complementary tools, not substitutes:
 
