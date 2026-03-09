@@ -75,13 +75,26 @@ cp -r <REPO_ROOT>/.serena .worktrees/<slug>/.serena
 rm -rf .worktrees/<slug>/.serena/cache
 ```
 
-### 6. Prime Serena
+### 6. Seed hookify rules
+
+Copy any `.claude/hookify.*.local.md` files from the main repo into the worktree's `.claude/` directory (skip files that already exist):
+
+```bash
+for rule in <REPO_ROOT>/.claude/hookify.*.local.md; do
+  [ -f "$rule" ] || continue
+  basename="$(basename "$rule")"
+  [ -f ".worktrees/<slug>/.claude/${basename}" ] && continue
+  cp "$rule" ".worktrees/<slug>/.claude/${basename}"
+done
+```
+
+### 7. Prime Serena
 
 1. `activate_project` for the worktree path
 2. `check_onboarding_performed` — run `onboarding` if needed
 3. `list_memories` — `read_memory` for any relevant ones
 
-### 7. Confirm
+### 8. Confirm
 
 ```
 Worktree ready: <absolute path>

@@ -125,6 +125,18 @@ ccw() {
         fi
     fi
 
+    # Seed hookify rules from main repo into worktree
+    local hookify_dst="${repo_root}/${wt_dir}/.claude"
+    local copied_hookify=0
+    for rule in "${repo_root}"/.claude/hookify.*.local.md(N); do
+        local basename="${rule##*/}"
+        if [[ ! -f "${hookify_dst}/${basename}" ]]; then
+            cp "${rule}" "${hookify_dst}/${basename}"
+            ((copied_hookify++))
+        fi
+    done
+    (( copied_hookify > 0 )) && echo "Seeded ${copied_hookify} hookify rule(s) from main repo"
+
     cd "${repo_root}/${wt_dir}" && claude "$@"
 }
 
