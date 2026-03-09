@@ -1,5 +1,6 @@
 #!/bin/bash
 # Sync cargo config into ~/.cargo/ (without replacing the whole directory)
+set -euo pipefail
 
 CARGO_DIR="$HOME/.cargo"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
