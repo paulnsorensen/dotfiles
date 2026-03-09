@@ -28,6 +28,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # sccache - shared compilation cache for Rust and C/C++
 if command -v sccache &>/dev/null; then
+  export RUSTC_WRAPPER=sccache
   export SCCACHE_CACHE_SIZE="30G"
   ulimit -n 4096 2>/dev/null  # macOS default (256) is too low for sccache on large crates
 fi
