@@ -39,12 +39,15 @@ Then follow the table:
 | Type/signature of a symbol | **LSP** `hover` | **Context7** or **octocode** |
 | Go to definition | **LSP** `goToDefinition` | **Context7** `query-docs` |
 | Who calls this function? | **Serena** `find_referencing_symbols` | **octocode** `search_code` |
-| Who implements this trait/interface? | **ast-grep** `sg -p 'impl $T for $S'` | **octocode** `search_code` |
+| Who implements this trait/interface? | **/trace** `sg -p 'impl $T for $S'` | **octocode** `search_code` |
 | All usages of a type | **Serena** `find_referencing_symbols` | **octocode** `search_code` |
 | Method list on a struct/class | **LSP** `documentSymbol` | **Context7** `query-docs` |
 | What does this function do? | **LSP** `hover` + **Read** the body | **Context7** or **WebFetch** raw source |
-| Find structural patterns | **ast-grep** `sg --lang X -p 'pattern'` | N/A — use octocode text search |
+| Find structural patterns | **/trace** `sg --lang X -p 'pattern'` | N/A — use octocode text search |
 | Error type / return type | **LSP** `hover` | **Context7** `query-docs` |
+| Find files by name/pattern | **Glob** or **fd** (scout skill) | N/A |
+| Find files by content | **Grep** (built-in) or **rg** (scout) | **octocode** `search_code` |
+| List directory contents | **ls** (scout skill) | **octocode** `view_repo_structure` |
 
 ### Quick reference by tool
 
@@ -61,10 +64,18 @@ Then follow the table:
 - `get_symbols_overview` — file-level symbol map
 - Best for: "who calls X?", "what references Y?", impact analysis
 
-**ast-grep** (zero config, via /trace skill):
+**ast-grep** (zero config — invoke via `/trace` skill):
 - `sg --lang X -p 'pattern'` — structural pattern matching
 - Best for: "find all classes that extend Z", "which functions have >4 params"
 - Works on AST shape, not text — won't false-match comments or strings
+- **Always use `/trace`** — it enforces no-file-read and proper output format
+
+**File finding** (built-in tools or scout skill):
+- **Glob** — find files by name/extension pattern (`**/*.ts`, `src/**/*.rs`)
+- **fd** (via scout) — find files by name, type, size, date (`fd -e rs -t f`)
+- **Grep** (built-in) — search file contents for text patterns
+- **rg** (via scout) — faster content search with .gitignore awareness
+- **NEVER use `find`** — use Glob or fd instead. `find` is blocked by hook.
 
 **Context7** (MCP, for external libraries):
 - `resolve-library-id` → `query-docs` — version-specific docs + examples
