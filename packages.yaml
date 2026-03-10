@@ -1,0 +1,71 @@
+# packages.yaml — flat package registry
+# Bare string = brew formula. Map = override defaults.
+# Defaults: source=brew, dev=false
+# Sources: brew, cask, tap, cargo, apt
+
+packages:
+  # --- Taps (prerequisites, processed first) ---
+  - name: tinted-theming/tinted
+    source: tap
+
+  # --- Core CLI tools ---
+  - jq
+  - yq
+  - fzf
+  - gh
+  - shellcheck
+  - tree
+  - htop
+  - ripgrep
+  - fd
+  - eza
+  - bat
+  - ast-grep
+  - git-delta
+  - tmux
+  - tinty
+  - prek
+  - starship
+  - zellij
+  - zoxide
+  - atuin
+  - bottom
+  - dust
+  - procs
+  - tokei
+  - yazi
+  - lazygit
+  - sd
+  - vhs
+
+  # --- Dev tools (DOTFILES_DEV=true) ---
+  - name: pyenv
+    dev: true
+  - name: node
+    dev: true
+  - name: uv
+    dev: true
+  - name: rustup
+    dev: true
+  - name: sccache
+    dev: true
+  - name: docker
+    source: cask
+    dev: true
+
+  # --- Cargo ---
+  - name: lspmux
+    source: cargo
+    git: https://codeberg.org/p2502/lspmux.git
+
+  # --- Linux (apt) ---
+  - name: xclip
+    source: apt
+  - name: fd-find
+    source: apt
+  - name: nodejs
+    source: apt
+    dev: true
+  - name: npm
+    source: apt
+    dev: true

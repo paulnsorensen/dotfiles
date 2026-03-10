@@ -9,7 +9,8 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 ## Key Commands
 
 ### Dotfiles Management
-- `dots sync` - Sync dotfiles (symlinks, homebrew, fonts) with rollback support
+- `dots sync` - Sync dotfiles (symlinks, packages, fonts) with rollback support
+- `dots sync refresh` - Force re-check all packages (bypass cache)
 - `dots update` - Pull latest changes and run sync
 - `dots status` - Show git status of dotfiles
 - `dots rollback [id]` - Rollback to a previous state
@@ -64,7 +65,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 
 ### lspmux Setup
 
-[lspmux](https://codeberg.org/p2502/lspmux) shares LSP instances across Claude sessions (optional). Install: `cargo install lspmux` then `dots sync`. Auto-starts via launchd. Config: `~/Library/Application Support/lspmux/config.toml`. `/lsp` reports its status.
+[lspmux](https://codeberg.org/p2502/lspmux) shares LSP instances across Claude sessions (optional). Installed declaratively via `packages.yaml` (cargo section) — `dots sync` handles it. Auto-starts via launchd. Config: `~/Library/Application Support/lspmux/config.toml`. `/lsp` reports its status.
 
 ### Session Monitoring
 - `ccm` - Run Claude session monitor standalone (shows metrics for current directory's session)
@@ -92,6 +93,9 @@ dotfiles/
 │   ├── hooks/              # Pre-tool hooks
 │   ├── skills/             # Reusable skill definitions
 │   └── plugins/            # Plugin registry and sync script
+├── packages.yaml           # Flat package registry (brew, cargo, apt)
+├── packages/
+│   └── sync.sh             # Package sync with hash cache
 ├── fonts/                  # Font installation (.sync script)
 ├── gitconfig               # Git configuration
 ├── prek.toml               # Pre-commit hooks config (prek)
@@ -112,7 +116,6 @@ dotfiles/
 │   └── prompt.zsh          # Custom powerline prompt
 ├── zshrc                   # Main zsh entry point
 ├── .sync-with-rollback     # Main sync script with state management
-├── .brew                   # Homebrew package installation
 └── CLAUDE.md               # This file
 ```
 
@@ -191,7 +194,7 @@ The `.sync-with-rollback` script provides:
 - **Per-directory .sync scripts** for custom setup (fonts, iterm2)
 
 **Skip list** (not symlinked to ~):
-- `.git`, `.local`, `reference`
+- `.git`, `.local`, `reference`, `packages`, `brew`, `apt`
 
 ## Important Implementation Details
 
@@ -259,10 +262,10 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 3. Restart Claude Code for changes to take effect
 4. LSPs are local-only (stored in `~/.claude/settings.local.json`, not committed) to avoid overhead in headless/CI sessions
 
-### Dependencies (Homebrew)
-Managed in `.brew`:
-- `yq` - YAML parsing for MCP sync
-- `jq` - JSON processing
+### When Adding New Packages
+1. Edit `packages.yaml` at repo root — bare string for brew, map for anything else
+2. Run `dots sync` — hash cache detects the change and installs missing packages
+3. Use `dots sync refresh` to force re-check even if `packages.yaml` hasn't changed
 
 ## Important Gotchas
 

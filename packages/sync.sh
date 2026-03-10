@@ -1,0 +1,286 @@
+#!/bin/bash
+############################
+# packages/sync.sh
+# Unified package sync from flat packages.yaml
+# Uses SHA-256 hash cache to skip when unchanged
+############################
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+PACKAGES_FILE="$REPO_DIR/packages.yaml"
+CACHE_DIR="${HOME}/.local/state/dotfiles"
+CACHE_FILE="$CACHE_DIR/packages.hash"
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_info()    { echo -e "${BLUE}[packages]${NC} $1"; }
+log_success() { echo -e "${GREEN}[packages]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[packages]${NC} $1"; }
+
+if [[ "${QUICK_SYNC:-false}" == "true" ]]; then
+    log_info "Quick sync, skipping packages"
+    exit 0
+fi
+
+if [[ ! -f "$PACKAGES_FILE" ]]; then
+    log_warning "packages.yaml not found"
+    exit 0
+fi
+
+########## Cache
+
+check_cache() {
+    if [[ "${FORCE_PACKAGES:-false}" == "true" ]]; then
+        log_info "FORCE_PACKAGES set, bypassing cache"
+        return 1
+    fi
+    [[ -f "$CACHE_FILE" ]] || return 1
+    local current stored
+    current=$(shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1)
+    stored=$(cat "$CACHE_FILE")
+    [[ "$current" == "$stored" ]]
+}
+
+save_cache() {
+    mkdir -p "$CACHE_DIR"
+    shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
+}
+
+if check_cache; then
+    log_success "packages.yaml unchanged (cached), skipping"
+    exit 0
+fi
+
+########## Query helpers
+
+# Get names for a source, filtering by dev flag
+# Usage: get_names <source> [--dev]
+get_names() {
+    local source="$1"
+    local want_dev="${2:-}"
+
+    if [[ "$source" == "brew" && -z "$want_dev" ]]; then
+        # Bare strings are brew + non-dev. Also include maps with source=brew, dev!=true.
+        {
+            yq -r '.packages[] | select(kind == "scalar")' "$PACKAGES_FILE" 2>/dev/null
+            yq -r '.packages[] | select(kind == "map" and (.source // "brew") == "brew" and (.dev // false) == false) | .name' "$PACKAGES_FILE" 2>/dev/null
+        }
+    elif [[ -z "$want_dev" ]]; then
+        yq -r ".packages[] | select(kind == \"map\" and .source == \"$source\" and (.dev // false) == false) | .name" "$PACKAGES_FILE" 2>/dev/null
+    else
+        yq -r ".packages[] | select(kind == \"map\" and (.source // \"brew\") == \"$source\" and .dev == true) | .name" "$PACKAGES_FILE" 2>/dev/null
+    fi
+}
+
+########## Brew
+
+sync_brew() {
+    if ! command -v brew &>/dev/null; then
+        log_info "Installing Homebrew..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+
+    log_info "Syncing brew packages"
+
+    # Taps first (other packages may depend on them)
+    local taps
+    taps=$(get_names "tap")
+    if [[ -n "$taps" ]]; then
+        echo -e "\n${GREEN}Taps:${NC}"
+        local tapped
+        tapped=$(brew tap)
+        while IFS= read -r tap; do
+            [[ -z "$tap" ]] && continue
+            if echo "$tapped" | grep -qx "$tap"; then
+                echo "  + $tap"
+            else
+                echo "  Installing tap $tap..."
+                brew tap "$tap"
+            fi
+        done <<< "$taps"
+    fi
+
+    # Core formulae
+    local formulae
+    formulae=$(get_names "brew")
+    if [[ -n "$formulae" ]]; then
+        echo -e "\n${GREEN}Formulae:${NC}"
+        local installed
+        installed=$(brew list --formulae 2>/dev/null || true)
+        while IFS= read -r pkg; do
+            [[ -z "$pkg" ]] && continue
+            if echo "$installed" | grep -qx "$pkg"; then
+                echo "  + $pkg"
+            else
+                echo "  Installing $pkg..."
+                brew install "$pkg"
+            fi
+        done <<< "$formulae"
+    fi
+
+    # Core casks
+    local casks
+    casks=$(get_names "cask")
+    if [[ -n "$casks" ]]; then
+        echo -e "\n${GREEN}Casks:${NC}"
+        local installed_casks
+        installed_casks=$(brew list --cask 2>/dev/null || true)
+        while IFS= read -r pkg; do
+            [[ -z "$pkg" ]] && continue
+            if echo "$installed_casks" | grep -qx "$pkg"; then
+                echo "  + $pkg"
+            else
+                echo "  Installing $pkg..."
+                brew install --cask "$pkg"
+            fi
+        done <<< "$casks"
+    fi
+
+    # Dev packages
+    if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
+        local dev_formulae
+        dev_formulae=$(get_names "brew" "--dev")
+        if [[ -n "$dev_formulae" ]]; then
+            echo -e "\n${GREEN}Dev formulae:${NC}"
+            local installed
+            installed=$(brew list --formulae 2>/dev/null || true)
+            while IFS= read -r pkg; do
+                [[ -z "$pkg" ]] && continue
+                if echo "$installed" | grep -qx "$pkg"; then
+                    echo "  + $pkg"
+                else
+                    echo "  Installing $pkg..."
+                    brew install "$pkg"
+                fi
+            done <<< "$dev_formulae"
+        fi
+
+        local dev_casks
+        dev_casks=$(get_names "cask" "--dev")
+        if [[ -n "$dev_casks" ]]; then
+            echo -e "\n${GREEN}Dev casks:${NC}"
+            local installed_casks
+            installed_casks=$(brew list --cask 2>/dev/null || true)
+            while IFS= read -r pkg; do
+                [[ -z "$pkg" ]] && continue
+                if echo "$installed_casks" | grep -qx "$pkg"; then
+                    echo "  + $pkg"
+                else
+                    echo "  Installing $pkg..."
+                    brew install --cask "$pkg"
+                fi
+            done <<< "$dev_casks"
+        fi
+    fi
+
+    log_success "Brew sync complete"
+}
+
+########## Cargo
+
+sync_cargo() {
+    local cargo_pkgs
+    cargo_pkgs=$(yq -r '.packages[] | select(kind == "map" and .source == "cargo") | [.name, (.git // "")] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    [[ -z "$cargo_pkgs" ]] && return 0
+
+    if ! command -v cargo &>/dev/null; then
+        log_warning "cargo not found, skipping cargo packages"
+        return 0
+    fi
+
+    log_info "Syncing cargo packages"
+    local installed
+    installed=$(cargo install --list 2>/dev/null | grep -E '^\S' | cut -d' ' -f1 || true)
+
+    while IFS=$'\t' read -r name git_url; do
+        [[ -z "$name" ]] && continue
+        if echo "$installed" | grep -qx "$name"; then
+            echo "  + $name"
+        elif [[ -n "$git_url" ]]; then
+            echo "  Installing $name from $git_url..."
+            cargo install --git "$git_url"
+        else
+            echo "  Installing $name..."
+            cargo install "$name"
+        fi
+    done <<< "$cargo_pkgs"
+
+    log_success "Cargo sync complete"
+}
+
+########## APT
+
+sync_apt() {
+    command -v apt-get &>/dev/null || return 0
+
+    log_info "Checking apt packages"
+    local missing=()
+
+    echo -e "\n${GREEN}Core packages:${NC}"
+    for pkg in $(get_names "apt"); do
+        [[ -z "$pkg" ]] && continue
+        if [[ "$pkg" == "yq" ]]; then
+            if command -v yq &>/dev/null; then
+                echo "  + $pkg (installed)"
+            else
+                echo "  $pkg (snap — install with: sudo snap install yq)"
+            fi
+            continue
+        fi
+        if dpkg -s "$pkg" &>/dev/null; then
+            echo "  + $pkg"
+        else
+            echo "  - $pkg (missing)"
+            missing+=("$pkg")
+        fi
+    done
+
+    if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
+        echo -e "\n${GREEN}Dev packages:${NC}"
+        for pkg in $(get_names "apt" "--dev"); do
+            [[ -z "$pkg" ]] && continue
+            if dpkg -s "$pkg" &>/dev/null; then
+                echo "  + $pkg"
+            else
+                echo "  - $pkg (missing)"
+                missing+=("$pkg")
+            fi
+        done
+    fi
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo ""
+        log_warning "Missing packages: ${missing[*]}"
+        echo "  sudo apt-get install -y ${missing[*]}"
+    fi
+}
+
+########## Main
+
+# Bootstrap yq if needed (macOS only)
+if [[ "$(uname)" == "Darwin" ]] && ! command -v yq &>/dev/null; then
+    if command -v brew &>/dev/null; then
+        log_info "Bootstrapping yq..."
+        brew install yq
+    else
+        log_warning "yq not found and brew not available"
+        exit 1
+    fi
+fi
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    sync_brew
+elif [[ "$(uname)" == "Linux" ]]; then
+    sync_apt
+fi
+
+sync_cargo
+
+save_cache
+log_success "Package sync complete"

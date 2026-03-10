@@ -48,6 +48,7 @@ ${BLUE}Quick Actions:${NC}
   ${GREEN}dots${NC}            Show status (same as 'dots status')
   ${GREEN}dots u${NC}          Update (shorthand)
   ${GREEN}dots s${NC}          Sync (shorthand)
+  ${GREEN}dots s refresh${NC}  Force re-check all packages (bypass cache)
   ${GREEN}dots t${NC}          Test (shorthand)
 
 ${BLUE}Examples:${NC}
