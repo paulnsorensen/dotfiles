@@ -1,20 +1,21 @@
 // block-brute-lookup.js
-// Blocks brute-force code lookup and build output parsing patterns
+// Blocks brute-force code lookup patterns
 // Part of the Cheddar Flow enforcement system
 //
-// Two categories of anti-patterns:
+// Anti-patterns blocked here:
+// - Grepping dependency caches (node_modules, .cargo/registry, site-packages, etc.)
+// - Doc generation + grep chains (cargo doc | grep, go doc | grep, etc.)
+// - find + xargs/exec grep chains for symbol lookup
+// - Grepping generated doc directories (target/doc/)
 //
-// 1. LOOKUP: grepping dependency caches, doc gen + grep, find chains
-//    → Use /lookup skill (routes to LSP, Serena, ast-grep, Context7, octocode)
-//
-// 2. BUILD OUTPUT: piping build commands through tail/head/grep to parse errors
-//    → Use /make skill (forked subagent, structured file:line:col output)
+// Build output piping (build | tail/head/grep) is handled by hookify rules
+// instead — they provide softer, LLM-readable guidance toward /make.
 //
 // Language-agnostic coverage:
-// Rust:   cargo doc/check + grep, ~/.cargo/registry/, target/doc/
-// JS/TS:  node_modules/, .pnpm-store/, npm run build | tail
-// Python: site-packages/, .venv/lib/, python help(), mypy | grep
-// Go:     go doc + grep, $GOPATH/pkg/mod/, go build | tail
+// Rust:   cargo doc + grep, ~/.cargo/registry/, target/doc/
+// JS/TS:  node_modules/, .pnpm-store/
+// Python: site-packages/, .venv/lib/, python help()
+// Go:     go doc + grep, $GOPATH/pkg/mod/
 // Ruby:   gems/, .gem/
 // Java:   .m2/repository/, .gradle/caches/
 
@@ -42,40 +43,12 @@ const DOC_GREP_PATTERNS = [
   { gen: /ri\s+/, label: 'ri (Ruby)' },
 ];
 
-// Build commands — when piped through tail/head/grep, use /make instead
-const BUILD_CMD_PATTERNS = [
-  /cargo\s+(check|build|clippy|test)\b/,
-  /npm\s+run\s+(build|check|lint|test)\b/,
-  /npx\s+tsc\b/,
-  /bun\s+(build|test)\b/,
-  /go\s+(build|test|vet)\b/,
-  /just\s+(check|build|test|lint|ci)\b/,
-  /make\s+(check|build|test|lint|all)?\b/,
-  /cmake\s+--build\b/,
-  /gradle\w*\s+(build|test|check)\b/,
-  /mvn\s+(compile|test|verify)\b/,
-  /uv\s+run\s+(mypy|pytest|ruff)\b/,
-  /mypy\b/,
-  /pytest\b/,
-  /ruff\s+check\b/,
-  /eslint\b/,
-  /tsc\s+--noEmit\b/,
-];
-
 module.exports = {
   event: 'preToolUse',
   hooks: [{
     matcher: (toolName, input) => {
       if (toolName !== 'Bash') return false;
       const cmd = input.command || '';
-
-      // Block build commands piped through tail/head/grep for output parsing
-      const hasParsePipe = /\|\s*(tail|head|grep)\b/.test(cmd);
-      if (hasParsePipe) {
-        for (const pattern of BUILD_CMD_PATTERNS) {
-          if (pattern.test(cmd)) return true;
-        }
-      }
 
       // Block doc generation when chained with grep/head/tail (lookup, not doc build)
       for (const { gen } of DOC_GREP_PATTERNS) {
@@ -98,22 +71,6 @@ module.exports = {
     },
     handler: async (_toolName, input) => {
       const cmd = input.command || '';
-
-      // Check for build output parsing first (most common anti-pattern)
-      const hasParsePipe = /\|\s*(tail|head|grep)\b/.test(cmd);
-      if (hasParsePipe) {
-        for (const pattern of BUILD_CMD_PATTERNS) {
-          if (pattern.test(cmd)) {
-            const buildCmd = cmd.match(pattern)?.[0] || 'build command';
-            return {
-              result: `Blocked: piping ${buildCmd} through tail/head/grep to parse output.
-  Use /make instead — it runs the build in a forked subagent and returns
-  structured file:line:col errors. Zero context pollution, zero noise.
-  Example: /make (auto-detects build system) or /make test`
-            };
-          }
-        }
-      }
 
       // Identify which doc tool was used
       for (const { gen, label } of DOC_GREP_PATTERNS) {
