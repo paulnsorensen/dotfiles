@@ -2,10 +2,39 @@
 // Blocks brute-force code lookup patterns — agents should use code intelligence tools
 // Part of the Cheddar Flow enforcement system
 //
-// cargo doc + grep → Context7 or octocode for external crate docs
-// grep ~/.cargo/registry/ → LSP hover or Context7
-// grep node_modules/ → LSP hover or Context7
-// find + grep for signatures → Serena find_symbol or LSP hover
+// Language-agnostic: catches dependency cache grepping, doc generation + grep,
+// and multi-step find chains across all ecosystems.
+//
+// Rust:   cargo doc + grep, ~/.cargo/registry/, target/doc/
+// JS/TS:  node_modules/, .pnpm-store/
+// Python: site-packages/, .venv/lib/, python -c "help(...)"
+// Go:     go doc + grep, $GOPATH/pkg/mod/, ~/go/pkg/mod/
+// Ruby:   gems/, .gem/
+// Java:   .m2/repository/, .gradle/caches/
+
+// Dependency cache paths — any grep/cat/find touching these is a brute-force lookup
+const DEP_CACHE_PATTERNS = [
+  /\.cargo\/registry/,
+  /node_modules\//,
+  /\.pnpm-store/,
+  /site-packages\//,
+  /\.venv\/lib\//,
+  /\/go\/pkg\/mod\//,
+  /GOPATH.*pkg\/mod/,
+  /\.m2\/repository\//,
+  /\.gradle\/caches\//,
+  /\.gem\//,
+  /vendor\/bundle\//,
+];
+
+// Doc generation commands used for grepping (not legitimate doc builds)
+const DOC_GREP_PATTERNS = [
+  { gen: /cargo\s+doc\b/, label: 'cargo doc' },
+  { gen: /go\s+doc\b/, label: 'go doc' },
+  { gen: /pydoc3?\b/, label: 'pydoc' },
+  { gen: /python3?\s+-c\s+.*help\s*\(/, label: 'python help()' },
+  { gen: /ri\s+/, label: 'ri (Ruby)' },
+];
 
 module.exports = {
   event: 'preToolUse',
@@ -14,14 +43,17 @@ module.exports = {
       if (toolName !== 'Bash') return false;
       const cmd = input.command || '';
 
-      // Block cargo doc when used for lookup (not legitimate doc generation)
-      if (/cargo\s+doc\b/.test(cmd) && /grep|head|tail/.test(cmd)) return true;
+      // Block doc generation when chained with grep/head/tail (lookup, not doc build)
+      for (const { gen } of DOC_GREP_PATTERNS) {
+        if (gen.test(cmd) && /grep|head|tail/.test(cmd)) return true;
+      }
 
       // Block grepping dependency caches
-      if (/\.cargo\/registry/.test(cmd)) return true;
-      if (/node_modules\//.test(cmd) && /(grep|cat|head|find)/.test(cmd)) return true;
+      for (const pattern of DEP_CACHE_PATTERNS) {
+        if (pattern.test(cmd)) return true;
+      }
 
-      // Block grepping target/doc/ (generated docs)
+      // Block grepping generated doc directories
       if (/target\/doc\//.test(cmd) && /grep/.test(cmd)) return true;
 
       // Block find + xargs/exec grep chains for type/signature lookup
@@ -33,30 +65,36 @@ module.exports = {
     handler: async (_toolName, input) => {
       const cmd = input.command || '';
 
-      if (/cargo\s+doc\b/.test(cmd)) {
-        return {
-          result: `Blocked: cargo doc + grep for symbol lookup. Use code intelligence tools instead:
+      // Identify which doc tool was used
+      for (const { gen, label } of DOC_GREP_PATTERNS) {
+        if (gen.test(cmd)) {
+          return {
+            result: `Blocked: ${label} + grep for symbol lookup. Use code intelligence tools instead:
   - LSP hover: instant type/signature info on any symbol in your code
-  - Context7: query-docs for external crate documentation
-  - octocode: search the crate's GitHub repo for implementations
+  - Context7: resolve-library-id → query-docs for versioned API docs
+  - octocode: search the package's GitHub repo for implementations
   - /lookup skill: routes you to the right tool automatically`
-        };
+          };
+        }
       }
 
-      if (/\.cargo\/registry/.test(cmd) || /node_modules\//.test(cmd)) {
-        const cache = /\.cargo\/registry/.test(cmd) ? 'cargo registry' : 'node_modules';
-        return {
-          result: `Blocked: grepping ${cache} for symbol lookup. Use code intelligence tools instead:
+      // Identify which dependency cache was hit
+      for (const pattern of DEP_CACHE_PATTERNS) {
+        if (pattern.test(cmd)) {
+          const match = cmd.match(pattern);
+          return {
+            result: `Blocked: grepping dependency cache (${match[0]}) for symbol lookup.
   - LSP hover: type/signature of any symbol where you use it (zero config)
   - Context7: resolve-library-id → query-docs for versioned API docs
   - octocode: search the package's GitHub repo
   - /lookup skill: routes you to the right tool automatically`
-        };
+          };
+        }
       }
 
       if (/target\/doc\//.test(cmd)) {
         return {
-          result: `Blocked: grepping target/doc/ for symbol lookup. Use Context7 or LSP hover instead.
+          result: `Blocked: grepping generated docs. Use Context7 or LSP hover instead.
   - LSP hover on the symbol in your code gives the same info instantly
   - Context7 query-docs returns versioned API documentation`
         };

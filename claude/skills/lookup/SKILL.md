@@ -2,14 +2,17 @@
 name: lookup
 description: >
   Code intelligence router — decides which tool to use when you need to understand
-  a symbol, type, API, or code relationship. Prevents wasteful cargo doc + grep
-  chains, grepping node_modules or cargo registry, and other brute-force lookup
-  anti-patterns. Use this skill BEFORE reaching for bash when the question is
-  "what does X do?", "what's the signature of Y?", "who calls Z?", or "how do I
-  use this API?". Routes to the right tool: LSP for types, Serena for cross-refs,
-  ast-grep for structural patterns, Context7 for external docs, octocode for
-  GitHub code search. If you catch yourself writing cargo doc, grepping registry
-  caches, or chaining find+grep for a method signature — stop and use this instead.
+  a symbol, type, API, or code relationship. Language-agnostic: works for Rust,
+  Python, TypeScript, Go, Ruby, Java, and any language with LSP support. Prevents
+  wasteful brute-force lookup anti-patterns: cargo doc + grep, grepping dependency
+  caches (node_modules, site-packages, .cargo/registry, go/pkg/mod, .m2),
+  go doc + grep, python help() + grep, and multi-step find chains. Use this skill
+  BEFORE reaching for bash when the question is "what does X do?", "what's the
+  signature of Y?", "who calls Z?", or "how do I use this API?". Routes to the
+  right tool: LSP for types, Serena for cross-refs, ast-grep for structural
+  patterns, Context7 for external docs, octocode for GitHub code search. If you
+  catch yourself about to grep a dependency cache or generate docs just to search
+  them — stop and use this instead.
 ---
 
 # lookup
@@ -75,20 +78,42 @@ Then follow the table:
 
 These are the brute-force patterns this skill exists to prevent:
 
-### 1. cargo doc + grep
+### 1. Doc generation + grep (any language)
 ```bash
-# WRONG — generates docs just to grep them
-cargo doc -p some-crate --no-deps 2>&1
-grep -r "fn method_name" target/doc/
-```
-**Instead**: Context7 `query-docs` for the crate, or octocode to search the crate's repo.
+# WRONG — Rust
+cargo doc -p some-crate --no-deps 2>&1; grep -r "fn method" target/doc/
 
-### 2. Grepping dependency caches
+# WRONG — Go
+go doc some/package | grep "func Method"
+
+# WRONG — Python
+python3 -c "help(some_module)" 2>&1 | grep "method_name"
+pydoc some.module | grep "def method"
+
+# WRONG — Ruby
+ri SomeClass | grep "method_name"
+```
+**Instead**: Context7 `query-docs` for the library, or octocode to search the repo.
+
+### 2. Grepping dependency caches (any ecosystem)
 ```bash
-# WRONG — reading vendored source for a signature
+# WRONG — Rust
 grep -r "fn env" ~/.cargo/registry/src/*/portable-pty-*/
+
+# WRONG — JavaScript/TypeScript
 grep -r "interface Props" node_modules/react/
-find . -path "*/some_crate*" -exec grep "fn method" {} \;
+
+# WRONG — Python
+grep -r "def validate" .venv/lib/python3.*/site-packages/pydantic/
+
+# WRONG — Go
+grep -r "func New" ~/go/pkg/mod/github.com/some/pkg@*/
+
+# WRONG — Java
+grep -r "public void" ~/.m2/repository/org/some/artifact/
+
+# WRONG — Ruby
+grep -r "def method" vendor/bundle/ruby/*/gems/some-gem-*/
 ```
 **Instead**: LSP `hover` on the symbol where you use it, or Context7 for the docs.
 
@@ -97,6 +122,7 @@ find . -path "*/some_crate*" -exec grep "fn method" {} \;
 # WRONG — O(n) scanning for what's an O(1) lookup
 find . -name "*.rs" | xargs grep "trait CommandBuilder"
 grep -rn "def validate" --include="*.py" | grep -v test
+find . -path "*/some_crate*" -exec grep "fn method" {} \;
 ```
 **Instead**: Serena `find_symbol` or ast-grep `sg --lang rust -p 'trait CommandBuilder'`.
 
@@ -105,6 +131,7 @@ grep -rn "def validate" --include="*.py" | grep -v test
 # WRONG — compiling just to read error messages for type info
 cargo check 2>&1 | grep "expected"
 tsc --noEmit 2>&1 | grep "Type '"
+mypy src/ 2>&1 | grep "has type"
 ```
 **Instead**: LSP `hover` on the expression — it shows the inferred type.
 
@@ -130,6 +157,19 @@ Not every project has all tools active:
 
 The hierarchy is: **LSP > Serena > ast-grep > Grep**. Only fall to the next level
 when the better tool genuinely isn't available — not because it's easier to type `grep`.
+
+## Why This Skill Is NOT Forked
+
+Unlike `/make` or `/fetch`, this skill runs inline — not in a subagent. Two reasons:
+
+1. **LSP and Serena only work in the foreground context.** Forking would cut off
+   the two most powerful tools (hover, find_symbol, findReferences).
+2. **Routing is cheap.** This skill's output is a decision ("use LSP hover"), not
+   verbose data. There's nothing to isolate from the context window.
+
+The tools this skill routes TO may fork on their own (e.g., `/fetch` forks for
+Context7/octocode lookups). That's fine — the routing decision stays inline,
+the heavy fetching forks as needed.
 
 ## Rules
 
