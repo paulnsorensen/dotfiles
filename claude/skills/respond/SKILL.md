@@ -125,9 +125,12 @@ not optional — it's the final gate.
 2. Go back and do the work you were about to defer
 3. Re-scan after completing
 
-**Exception:** These phrases are fine when used in analysis, discussion, or when
-quoting existing code — the ban applies to your own implementation decisions, not
-to describing what you observe in the codebase.
+**Exceptions — these uses are fine:**
+- Analysis, discussion, or quoting existing code
+- Asking the user a clarifying question about scope (e.g., "Should I stub the
+  interface and implement it, or do you want to handle auth separately?")
+- The ban applies to your own implementation decisions, not to describing what
+  you observe or asking the user how to proceed.
 
 ## How to Use This Skill
 

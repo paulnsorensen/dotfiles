@@ -131,6 +131,9 @@ Reusable tool-usage instructions injected into agents and commands.
 | `commit` | Git staging and conventional commits |
 | `tui-design` | TUI design and implementation (ratatui, Textual) |
 | `worktree` | Isolated git worktree management |
+| `de-slop` | AI code anti-pattern detection and fixes |
+| `tdd-assertions` | Weak test assertion detection |
+| `respond` | Complete implementation, zero deferrals |
 
 ---
 
