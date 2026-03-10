@@ -11,7 +11,7 @@ module.exports = {
     matcher: (toolName) => toolName === 'Read',
     handler: async (input) => {
       const rawPath = input.file_path || input.path;
-      if (!rawPath) return null; // No path provided, let the tool handle it
+      if (!rawPath) return null;
       const filePath = path.resolve(rawPath);
       if (!fs.existsSync(filePath)) {
         return {
@@ -21,7 +21,7 @@ Use \`ls\` or \`glob\` to find the correct path.
 A true Gouda Explorer verifies the terrain before mapping it.`
         };
       }
-      return null; // Allow the read
+      return null;
     }
   }]
 };

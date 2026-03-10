@@ -12,13 +12,12 @@
 #   ./lsp-sync.sh --disable   Disable all LSPs locally (remove from settings.local.json)
 #   ./lsp-sync.sh --list      Show current LSP status
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY_FILE="$SCRIPT_DIR/lsp-registry.yaml"
 LOCAL_SETTINGS="$HOME/.claude/settings.local.json"
 
-# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -56,13 +55,13 @@ done
 
 for cmd in yq jq; do
     if ! command -v "$cmd" &> /dev/null; then
-        echo -e "${RED}Error: $cmd not found. Install with: brew install $cmd${NC}"
+        echo -e "${RED}Error: $cmd not found. Install with: brew install $cmd${NC}" >&2
         exit 1
     fi
 done
 
 if [[ ! -f "$REGISTRY_FILE" ]]; then
-    echo -e "${RED}Error: LSP registry not found at $REGISTRY_FILE${NC}"
+    echo -e "${RED}Error: LSP registry not found at $REGISTRY_FILE${NC}" >&2
     exit 1
 fi
 
@@ -89,10 +88,8 @@ else
     echo
 fi
 
-# Get LSP names from registry
 LSP_NAMES=$(yq '.lsps | keys | .[]' "$REGISTRY_FILE")
 
-# Ensure settings.local.json exists
 ensure_local_settings() {
     if [[ ! -f "$LOCAL_SETTINGS" ]]; then
         mkdir -p "$(dirname "$LOCAL_SETTINGS")"
@@ -100,7 +97,6 @@ ensure_local_settings() {
     fi
 }
 
-# Get current enabled status from local settings
 get_local_status() {
     local name="$1"
     if [[ -f "$LOCAL_SETTINGS" ]]; then
@@ -110,7 +106,6 @@ get_local_status() {
     fi
 }
 
-# --- List mode ---
 if $LIST_ONLY; then
     echo -e "${BLUE}LSP Plugin Status${NC}"
     echo
@@ -129,7 +124,6 @@ if $LIST_ONLY; then
     exit 0
 fi
 
-# --- Disable mode ---
 if $DISABLE; then
     echo -e "${YELLOW}Disabling LSP plugins in local settings...${NC}"
     echo
@@ -153,7 +147,6 @@ if $DISABLE; then
     exit 0
 fi
 
-# --- Enable mode (default) ---
 echo -e "${BLUE}LSP Sync - Local-only Language Server Management${NC}"
 echo
 
@@ -161,7 +154,6 @@ lsp_count=$(echo "$LSP_NAMES" | grep -c . 2>/dev/null || echo 0)
 echo "Registry: $lsp_count LSPs defined"
 echo
 
-# Install plugins if not already installed
 echo -e "${GREEN}Ensuring LSP plugins are installed...${NC}"
 echo "$LSP_NAMES" | while read -r name; do
     [[ -z "$name" ]] && continue
@@ -178,7 +170,6 @@ echo "$LSP_NAMES" | while read -r name; do
 done
 echo
 
-# Enable in local settings
 echo -e "${GREEN}Enabling in $LOCAL_SETTINGS...${NC}"
 
 ENABLED_JSON=$(yq -o=json '.lsps | keys' "$REGISTRY_FILE" | jq '[.[] | {(.): true}] | add')
