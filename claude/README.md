@@ -131,6 +131,9 @@ Reusable tool-usage instructions injected into agents and commands.
 | `commit` | Git staging and conventional commits |
 | `tui-design` | TUI design and implementation (ratatui, Textual) |
 | `worktree` | Isolated git worktree management |
+| `de-slop` | AI code anti-pattern detection and fixes |
+| `tdd-assertions` | Weak test assertion detection |
+| `respond` | PR review comment triage with confidence scoring |
 
 ---
 
@@ -150,6 +153,18 @@ Reusable tool-usage instructions injected into agents and commands.
 | `post-compact.sh` | SessionStart (compact) | Re-primes Serena after compaction |
 | `post-fresh-start.sh` | SessionStart | Injects `/go` reminder on fresh sessions |
 | `on-session-end.sh` | UserPromptSubmit | Detects parting language, injects `/park` reminder |
+
+### Hookify Rules (`hookify/`)
+
+Managed hookify rules synced to `~/.claude/` by `claude/.sync`. These fire automatically — no skill invocation needed.
+
+| Rule | Event | Action | What it catches |
+|------|-------|--------|-----------------|
+| `warn-deferred-stop` | stop | warn | Deferred work at session end (for now, out of scope, would need to) |
+| `warn-placeholder-code` | file | warn | TODO/FIXME/`unimplemented!()` in written code |
+| `warn-ellipsis-code` | file | warn | `// ...` and "rest is similar" hand-waves |
+
+Add new rules to `claude/hookify/` as `hookify.<name>.local.md` files. Run `dots sync` to symlink them to `~/.claude/`.
 
 ---
 
