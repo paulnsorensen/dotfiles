@@ -13,7 +13,6 @@ PACKAGES_FILE="$REPO_DIR/packages.yaml"
 CACHE_DIR="${HOME}/.local/state/dotfiles"
 CACHE_FILE="$CACHE_DIR/packages.hash"
 
-# Colors
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
@@ -59,22 +58,39 @@ fi
 
 ########## Query helpers
 
-# Get names for a source, filtering by dev flag
-# Usage: get_names <source> [--dev]
-get_names() {
-    local source="$1"
-    local want_dev="${2:-}"
+# Platform package names (brew on mac, apt on linux)
+# Bare strings + maps with default source, respecting platform + dev filters
+# On linux, uses .apt field for name override
+# Usage: get_platform_pkgs [--dev]
+get_platform_pkgs() {
+    local want_dev="${1:-}"
+    local skip_platform name_expr
+    if [[ "$(uname)" == "Darwin" ]]; then
+        skip_platform="linux"
+        name_expr=".name"
+    else
+        skip_platform="mac"
+        name_expr="(.apt // .name)"
+    fi
 
-    if [[ "$source" == "brew" && -z "$want_dev" ]]; then
-        # Bare strings are brew + non-dev. Also include maps with source=brew, dev!=true.
+    if [[ -z "$want_dev" ]]; then
         {
-            yq -r '.packages[] | select(kind == "scalar")' "$PACKAGES_FILE" 2>/dev/null
-            yq -r '.packages[] | select(kind == "map" and (.source // "brew") == "brew" and (.dev // false) == false) | .name' "$PACKAGES_FILE" 2>/dev/null
+            yq -r ".packages[] | select(kind == \"scalar\")" "$PACKAGES_FILE" 2>/dev/null
+            yq -r ".packages[] | select(kind == \"map\" and (.source // \"brew\") == \"brew\" and (.dev // false) == false and (.platform == \"$skip_platform\" | not)) | $name_expr" "$PACKAGES_FILE" 2>/dev/null
         }
-    elif [[ -z "$want_dev" ]]; then
+    else
+        yq -r ".packages[] | select(kind == \"map\" and (.source // \"brew\") == \"brew\" and .dev == true and (.platform == \"$skip_platform\" | not)) | $name_expr" "$PACKAGES_FILE" 2>/dev/null
+    fi
+}
+
+# Explicit source names (tap, cask)
+# Usage: get_source_pkgs <source> [--dev]
+get_source_pkgs() {
+    local source="$1" want_dev="${2:-}"
+    if [[ -z "$want_dev" ]]; then
         yq -r ".packages[] | select(kind == \"map\" and .source == \"$source\" and (.dev // false) == false) | .name" "$PACKAGES_FILE" 2>/dev/null
     else
-        yq -r ".packages[] | select(kind == \"map\" and (.source // \"brew\") == \"$source\" and .dev == true) | .name" "$PACKAGES_FILE" 2>/dev/null
+        yq -r ".packages[] | select(kind == \"map\" and .source == \"$source\" and .dev == true) | .name" "$PACKAGES_FILE" 2>/dev/null
     fi
 }
 
@@ -109,7 +125,7 @@ sync_brew() {
 
     # Taps first (other packages may depend on them)
     local taps
-    taps=$(get_names "tap")
+    taps=$(get_source_pkgs "tap")
     if [[ -n "$taps" ]]; then
         echo -e "\n${GREEN}Taps:${NC}"
         local tapped
@@ -125,17 +141,16 @@ sync_brew() {
         done <<< "$taps"
     fi
 
-    # One call each to get installed formulae and casks
     local installed_formulae installed_casks
     installed_formulae=$(brew list --formulae 2>/dev/null || true)
     installed_casks=$(brew list --cask 2>/dev/null || true)
 
-    brew_install_pkgs "Formulae" "$(get_names "brew")" "$installed_formulae"
-    brew_install_pkgs "Casks" "$(get_names "cask")" "$installed_casks" --cask
+    brew_install_pkgs "Formulae" "$(get_platform_pkgs)" "$installed_formulae"
+    brew_install_pkgs "Casks" "$(get_source_pkgs "cask")" "$installed_casks" --cask
 
     if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
-        brew_install_pkgs "Dev formulae" "$(get_names "brew" "--dev")" "$installed_formulae"
-        brew_install_pkgs "Dev casks" "$(get_names "cask" "--dev")" "$installed_casks" --cask
+        brew_install_pkgs "Dev formulae" "$(get_platform_pkgs "--dev")" "$installed_formulae"
+        brew_install_pkgs "Dev casks" "$(get_source_pkgs "cask" "--dev")" "$installed_casks" --cask
     fi
 
     log_success "Brew sync complete"
@@ -175,42 +190,42 @@ sync_cargo() {
 
 ########## APT
 
+apt_check_pkg() {
+    local pkg="$1" missing_ref="$2"
+    if [[ "$pkg" == "yq" ]]; then
+        if command -v yq &>/dev/null; then
+            echo "  + $pkg"
+        else
+            echo "  $pkg (snap — install with: sudo snap install yq)"
+        fi
+        return
+    fi
+    if dpkg -s "$pkg" &>/dev/null; then
+        echo "  + $pkg"
+    else
+        echo "  - $pkg (missing)"
+        eval "$missing_ref+=(\"\$pkg\")"
+    fi
+}
+
 sync_apt() {
     command -v apt-get &>/dev/null || return 0
 
     log_info "Checking apt packages"
     local missing=()
 
-    echo -e "\n${GREEN}Core packages:${NC}"
-    for pkg in $(get_names "apt"); do
+    echo -e "\n${GREEN}Packages:${NC}"
+    while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
-        if [[ "$pkg" == "yq" ]]; then
-            if command -v yq &>/dev/null; then
-                echo "  + $pkg (installed)"
-            else
-                echo "  $pkg (snap — install with: sudo snap install yq)"
-            fi
-            continue
-        fi
-        if dpkg -s "$pkg" &>/dev/null; then
-            echo "  + $pkg"
-        else
-            echo "  - $pkg (missing)"
-            missing+=("$pkg")
-        fi
-    done
+        apt_check_pkg "$pkg" missing
+    done <<< "$(get_platform_pkgs)"
 
     if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
         echo -e "\n${GREEN}Dev packages:${NC}"
-        for pkg in $(get_names "apt" "--dev"); do
+        while IFS= read -r pkg; do
             [[ -z "$pkg" ]] && continue
-            if dpkg -s "$pkg" &>/dev/null; then
-                echo "  + $pkg"
-            else
-                echo "  - $pkg (missing)"
-                missing+=("$pkg")
-            fi
-        done
+            apt_check_pkg "$pkg" missing
+        done <<< "$(get_platform_pkgs "--dev")"
     fi
 
     if [[ ${#missing[@]} -gt 0 ]]; then
