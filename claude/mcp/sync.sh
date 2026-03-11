@@ -20,7 +20,7 @@ sync_parse_args "$@"
 sync_check_deps
 
 if [[ ! -f "$REGISTRY_FILE" ]]; then
-    echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}"
+    echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}" >&2
     exit 1
 fi
 
@@ -77,11 +77,11 @@ if [[ -n "$TO_ADD" ]]; then
                 while IFS='=' read -r key val; do
                     if [[ "$val" =~ ^\$\{([^}]+)\}$ ]]; then
                         var_name="${BASH_REMATCH[1]}"
-                        expanded_val="${!var_name}"
-                        if [[ -z "$expanded_val" ]]; then
+                        if [[ ! -v "$var_name" || -z "${!var_name}" ]]; then
                             echo -e "${RED}Error: $key references unset env var \$$var_name — skipping $name${NC}" >&2
                             continue 2
                         fi
+                        expanded_val="${!var_name}"
                     else
                         expanded_val="$val"
                     fi

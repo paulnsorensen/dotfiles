@@ -21,7 +21,7 @@ sync_parse_args "$@"
 sync_check_deps
 
 if [[ ! -f "$REGISTRY_FILE" ]]; then
-    echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}"
+    echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}" >&2
     exit 1
 fi
 
