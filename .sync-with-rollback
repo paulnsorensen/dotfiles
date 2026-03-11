@@ -277,7 +277,7 @@ run_sync() {
 
     for file in *; do
       # Skip state management files
-      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" || "${file}" == ".worktrees" || "${file}" == "packages" || "${file}" == "brew" || "${file}" == "apt" ]]; then
+      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" || "${file}" == ".worktrees" || "${file}" == "packages" || "${file}" == "packages.yaml" || "${file}" == "brew" || "${file}" == "apt" ]]; then
         continue
       fi
 

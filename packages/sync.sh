@@ -80,6 +80,25 @@ get_names() {
 
 ########## Brew
 
+# Install brew packages from a list, skipping already-installed ones
+# Usage: brew_install_pkgs <label> <pkg_list> <installed_list> [--cask]
+brew_install_pkgs() {
+    local label="$1" pkg_list="$2" installed="$3" cask_flag="${4:-}"
+    [[ -z "$pkg_list" ]] && return 0
+
+    echo -e "\n${GREEN}${label}:${NC}"
+    while IFS= read -r pkg; do
+        [[ -z "$pkg" ]] && continue
+        if echo "$installed" | grep -qx "$pkg"; then
+            echo "  + $pkg"
+        else
+            echo "  Installing $pkg..."
+            # shellcheck disable=SC2086  # cask_flag intentionally unquoted (empty or --cask)
+            brew install $cask_flag "$pkg"
+        fi
+    done <<< "$pkg_list"
+}
+
 sync_brew() {
     if ! command -v brew &>/dev/null; then
         log_info "Installing Homebrew..."
@@ -106,77 +125,17 @@ sync_brew() {
         done <<< "$taps"
     fi
 
-    # Core formulae
-    local formulae
-    formulae=$(get_names "brew")
-    if [[ -n "$formulae" ]]; then
-        echo -e "\n${GREEN}Formulae:${NC}"
-        local installed
-        installed=$(brew list --formulae 2>/dev/null || true)
-        while IFS= read -r pkg; do
-            [[ -z "$pkg" ]] && continue
-            if echo "$installed" | grep -qx "$pkg"; then
-                echo "  + $pkg"
-            else
-                echo "  Installing $pkg..."
-                brew install "$pkg"
-            fi
-        done <<< "$formulae"
-    fi
+    # One call each to get installed formulae and casks
+    local installed_formulae installed_casks
+    installed_formulae=$(brew list --formulae 2>/dev/null || true)
+    installed_casks=$(brew list --cask 2>/dev/null || true)
 
-    # Core casks
-    local casks
-    casks=$(get_names "cask")
-    if [[ -n "$casks" ]]; then
-        echo -e "\n${GREEN}Casks:${NC}"
-        local installed_casks
-        installed_casks=$(brew list --cask 2>/dev/null || true)
-        while IFS= read -r pkg; do
-            [[ -z "$pkg" ]] && continue
-            if echo "$installed_casks" | grep -qx "$pkg"; then
-                echo "  + $pkg"
-            else
-                echo "  Installing $pkg..."
-                brew install --cask "$pkg"
-            fi
-        done <<< "$casks"
-    fi
+    brew_install_pkgs "Formulae" "$(get_names "brew")" "$installed_formulae"
+    brew_install_pkgs "Casks" "$(get_names "cask")" "$installed_casks" --cask
 
-    # Dev packages
     if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
-        local dev_formulae
-        dev_formulae=$(get_names "brew" "--dev")
-        if [[ -n "$dev_formulae" ]]; then
-            echo -e "\n${GREEN}Dev formulae:${NC}"
-            local installed
-            installed=$(brew list --formulae 2>/dev/null || true)
-            while IFS= read -r pkg; do
-                [[ -z "$pkg" ]] && continue
-                if echo "$installed" | grep -qx "$pkg"; then
-                    echo "  + $pkg"
-                else
-                    echo "  Installing $pkg..."
-                    brew install "$pkg"
-                fi
-            done <<< "$dev_formulae"
-        fi
-
-        local dev_casks
-        dev_casks=$(get_names "cask" "--dev")
-        if [[ -n "$dev_casks" ]]; then
-            echo -e "\n${GREEN}Dev casks:${NC}"
-            local installed_casks
-            installed_casks=$(brew list --cask 2>/dev/null || true)
-            while IFS= read -r pkg; do
-                [[ -z "$pkg" ]] && continue
-                if echo "$installed_casks" | grep -qx "$pkg"; then
-                    echo "  + $pkg"
-                else
-                    echo "  Installing $pkg..."
-                    brew install --cask "$pkg"
-                fi
-            done <<< "$dev_casks"
-        fi
+        brew_install_pkgs "Dev formulae" "$(get_names "brew" "--dev")" "$installed_formulae"
+        brew_install_pkgs "Dev casks" "$(get_names "cask" "--dev")" "$installed_casks" --cask
     fi
 
     log_success "Brew sync complete"
@@ -204,7 +163,7 @@ sync_cargo() {
             echo "  + $name"
         elif [[ -n "$git_url" ]]; then
             echo "  Installing $name from $git_url..."
-            cargo install --git "$git_url"
+            cargo install --git "$git_url" "$name"
         else
             echo "  Installing $name..."
             cargo install "$name"

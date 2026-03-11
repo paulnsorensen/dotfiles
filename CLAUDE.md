@@ -194,7 +194,7 @@ The `.sync-with-rollback` script provides:
 - **Per-directory .sync scripts** for custom setup (fonts, iterm2)
 
 **Skip list** (not symlinked to ~):
-- `.git`, `.local`, `reference`, `packages`, `brew`, `apt`
+- `.git`, `.local`, `reference`, `packages`, `packages.yaml`, `brew`, `apt`
 
 ## Important Implementation Details
 
