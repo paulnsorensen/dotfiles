@@ -8,7 +8,7 @@
 #   ./sync.sh --force   Remove extras without prompting
 #
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY_FILE="$SCRIPT_DIR/registry.yaml"
@@ -21,18 +21,16 @@ sync_parse_args "$@"
 sync_check_deps
 
 if [[ ! -f "$REGISTRY_FILE" ]]; then
-    echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}"
+    echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}" >&2
     exit 1
 fi
 
 echo -e "${BLUE}Plugin Sync - Declarative Plugin Management${NC}"
 echo
 
-# Get desired plugins from registry (keys are in format plugin@marketplace)
 # shellcheck disable=SC2034  # used by sync-common.sh
 DESIRED_NAMES=$(yq '.plugins | keys | .[]' "$REGISTRY_FILE" | sort)
 
-# Get current plugins from settings.json
 # shellcheck disable=SC2034  # used by sync-common.sh
 if [[ -f "$SETTINGS_FILE" ]] && jq -e '.enabledPlugins' "$SETTINGS_FILE" &>/dev/null; then
     CURRENT_NAMES=$(jq -r '.enabledPlugins | keys[]' "$SETTINGS_FILE" | sort)
@@ -40,7 +38,6 @@ else
     CURRENT_NAMES=""
 fi
 
-# Callbacks for sync-common
 get_description() { yq ".plugins.\"$1\".description // \"\"" "$REGISTRY_FILE"; }
 get_item_scope() { echo "user"; }
 remove_item() { claude plugin remove -s "$2" "$1" 2>/dev/null; }
@@ -48,7 +45,6 @@ remove_item() { claude plugin remove -s "$2" "$1" 2>/dev/null; }
 sync_compute_diff
 sync_show_plan "plugins" || exit 0
 
-# Execute installations
 if [[ -n "$TO_ADD" ]]; then
     echo -e "${GREEN}Installing missing plugins...${NC}"
     echo "$TO_ADD" | while read -r name; do
@@ -71,7 +67,6 @@ fi
 
 sync_handle_removals "Plugins"
 
-# Sync enabledPlugins in settings.json from registry load: key
 if [[ -f "$SETTINGS_FILE" ]]; then
     echo -e "${BLUE}Syncing enabledPlugins in settings.json...${NC}"
 

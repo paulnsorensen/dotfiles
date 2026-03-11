@@ -8,7 +8,7 @@
 #   ./sync.sh --force   Remove extras without prompting
 #
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY_FILE="$SCRIPT_DIR/registry.yaml"
@@ -20,25 +20,22 @@ sync_parse_args "$@"
 sync_check_deps
 
 if [[ ! -f "$REGISTRY_FILE" ]]; then
-    echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}"
+    echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}" >&2
     exit 1
 fi
 
 echo -e "${BLUE}MCP Sync - Declarative MCP Management${NC}"
 echo
 
-# Get desired MCPs from registry (as JSON for easier processing)
 DESIRED_JSON=$(yq -o=json '.mcps' "$REGISTRY_FILE")
 # shellcheck disable=SC2034  # used by sync-common.sh
 DESIRED_NAMES=$(echo "$DESIRED_JSON" | jq -r 'keys[]' | sort)
 
-# Get current MCPs from claude (exclude plugin-managed MCPs — those are
-# auto-registered by the plugin system and can't be removed via `claude mcp remove`)
+# Exclude plugin-managed MCPs — auto-registered, can't be removed via `claude mcp remove`
 CURRENT_OUTPUT=$(claude mcp list 2>/dev/null || true)
 # shellcheck disable=SC2034  # used by sync-common.sh
 CURRENT_NAMES=$(echo "$CURRENT_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:' | cut -d: -f1 | grep -v '^plugin' | sort)
 
-# Callbacks for sync-common
 get_description() { echo "$DESIRED_JSON" | jq -r --arg n "$1" '.[$n].description // ""'; }
 get_item_scope() {
     local scope_info
@@ -53,7 +50,6 @@ remove_item() { claude mcp remove "$1" -s "$2" 2>/dev/null; }
 sync_compute_diff
 sync_show_plan "MCPs" || exit 0
 
-# Execute additions
 if [[ -n "$TO_ADD" ]]; then
     echo -e "${GREEN}Adding missing MCPs...${NC}"
     echo "$TO_ADD" | while read -r name; do
@@ -81,11 +77,11 @@ if [[ -n "$TO_ADD" ]]; then
                 while IFS='=' read -r key val; do
                     if [[ "$val" =~ ^\$\{([^}]+)\}$ ]]; then
                         var_name="${BASH_REMATCH[1]}"
-                        expanded_val="${!var_name}"
-                        if [[ -z "$expanded_val" ]]; then
+                        if [[ ! -v "$var_name" || -z "${!var_name}" ]]; then
                             echo -e "${RED}Error: $key references unset env var \$$var_name — skipping $name${NC}" >&2
                             continue 2
                         fi
+                        expanded_val="${!var_name}"
                     else
                         expanded_val="$val"
                     fi

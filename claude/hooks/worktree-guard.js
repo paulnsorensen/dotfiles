@@ -4,6 +4,7 @@
 // Part of the Cheddar Flow enforcement system
 
 const { execSync } = require('child_process');
+const path = require('path');
 
 let worktreeRoot = null;
 let isWorktree = null;
@@ -29,19 +30,15 @@ function detectWorktree() {
 }
 
 function resolvePath(filePath) {
-  const path = require('path');
   if (path.isAbsolute(filePath)) return path.resolve(filePath);
   return path.resolve(process.cwd(), filePath);
 }
 
 function isAllowedPath(filePath) {
   const resolved = resolvePath(filePath);
-  // Allow writes within the worktree
   if (resolved.startsWith(worktreeRoot + '/')) return true;
   if (resolved === worktreeRoot) return true;
-  // Allow TMPDIR, /tmp, /private/tmp (temp report files)
   if (/^(\/private)?\/tmp\//.test(resolved)) return true;
-  // Allow ~/.claude/ (memories, specs, hookify rules)
   const home = process.env.HOME || '';
   if (resolved.startsWith(home + '/.claude/')) return true;
   return false;

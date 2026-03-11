@@ -76,13 +76,13 @@ hex_to_256() {
   # 6x6x6 color cube (indices 16-231)
   local ri gi bi cr cg cb d
   for ri in 0 1 2 3 4 5; do
-    if [ $ri -eq 0 ]; then cr=0; else cr=$(( 55 + 40 * ri )); fi
+    if [[ $ri -eq 0 ]]; then cr=0; else cr=$(( 55 + 40 * ri )); fi
     for gi in 0 1 2 3 4 5; do
-      if [ $gi -eq 0 ]; then cg=0; else cg=$(( 55 + 40 * gi )); fi
+      if [[ $gi -eq 0 ]]; then cg=0; else cg=$(( 55 + 40 * gi )); fi
       for bi in 0 1 2 3 4 5; do
-        if [ $bi -eq 0 ]; then cb=0; else cb=$(( 55 + 40 * bi )); fi
+        if [[ $bi -eq 0 ]]; then cb=0; else cb=$(( 55 + 40 * bi )); fi
         d=$(( (r-cr)*(r-cr) + (g-cg)*(g-cg) + (b-cb)*(b-cb) ))
-        if [ $d -lt $best_dist ]; then
+        if [[ $d -lt $best_dist ]]; then
           best_dist=$d
           best_idx=$(( 16 + 36*ri + 6*gi + bi ))
         fi
@@ -95,13 +95,13 @@ hex_to_256() {
   for i in $(seq 0 23); do
     cv=$(( 8 + 10 * i ))
     d=$(( (r-cv)*(r-cv) + (g-cv)*(g-cv) + (b-cv)*(b-cv) ))
-    if [ $d -lt $best_dist ]; then
+    if [[ $d -lt $best_dist ]]; then
       best_dist=$d
       best_idx=$(( 232 + i ))
     fi
   done
 
-  echo $best_idx
+  echo "$best_idx"
 }
 
 # ---------------------------------------------------------------------------

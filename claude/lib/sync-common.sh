@@ -2,7 +2,6 @@
 # sync-common.sh — Shared logic for declarative sync scripts (MCP + plugins)
 # Source this file, then call sync_init, sync_compute_diff, etc.
 
-# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -12,7 +11,6 @@ NC='\033[0m'
 DRY_RUN=false
 FORCE=false
 
-# Parse --dry-run, --force, --help from "$@"
 sync_parse_args() {
     for arg in "$@"; do
         case $arg in
@@ -28,18 +26,15 @@ sync_parse_args() {
     done
 }
 
-# Verify claude, yq, jq are available
 sync_check_deps() {
     for cmd in claude yq jq; do
         if ! command -v "$cmd" &> /dev/null; then
-            echo -e "${RED}Error: $cmd not found. Install with: brew install $cmd${NC}"
+            echo -e "${RED}Error: $cmd not found. Install with: brew install $cmd${NC}" >&2
             exit 1
         fi
     done
 }
 
-# Compute TO_ADD, TO_REMOVE, EXISTING from DESIRED_NAMES and CURRENT_NAMES.
-# Also sets desired_count, current_count, add_count, remove_count.
 sync_compute_diff() {
     local desired_file current_file
     desired_file=$(mktemp)
@@ -62,8 +57,7 @@ sync_compute_diff() {
     [[ -n "$TO_REMOVE" ]] && remove_count=$(echo "$TO_REMOVE" | grep -c . 2>/dev/null || echo 0)
 }
 
-# Display plan. Caller must define get_description() taking a name.
-# Args: $1=item_label (e.g. "MCPs", "plugins")
+# Caller must define get_description(name)
 sync_show_plan() {
     local label="$1"
 
@@ -110,9 +104,7 @@ sync_show_plan() {
     return 0
 }
 
-# Handle removal prompts. Caller must define remove_item() taking name + scope.
-# Args: $1=label (e.g. "MCPs", "Plugins")
-# Caller must define: get_item_scope(name) and remove_item(name, scope)
+# Caller must define get_item_scope(name) and remove_item(name, scope)
 sync_handle_removals() {
     local label="$1"
     [[ -z "$TO_REMOVE" ]] && return 0
