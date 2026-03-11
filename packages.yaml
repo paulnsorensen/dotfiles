@@ -1,0 +1,59 @@
+# packages.yaml — flat package registry
+#
+# Bare string = brew (mac) / apt (linux)
+# Key-value = override defaults
+#
+#   source:   brew (default) | cask | tap | cargo
+#   dev:      only when DOTFILES_DEV=true
+#   apt:      override name for linux
+#   platform: mac | linux (default: both)
+
+packages:
+  - tinted-theming/tinted: { source: tap }
+
+  # Core CLI
+  - jq
+  - yq
+  - fzf
+  - gh
+  - shellcheck
+  - tree
+  - htop
+  - ripgrep
+  - fd: { apt: fd-find }
+  - eza
+  - bat
+  - ast-grep
+  - git-delta
+  - tmux
+  - tinty
+  - prek
+  - starship
+  - zellij
+  - zoxide
+  - atuin
+  - bottom
+  - dust
+  - procs
+  - tokei
+  - yazi
+  - lazygit
+  - sd
+  - vhs
+
+  # Linux-only
+  - xclip: { platform: linux }
+
+  # Dev (DOTFILES_DEV=true)
+  - pyenv: { dev: true }
+  - node: { dev: true, apt: nodejs }
+  - uv: { dev: true }
+  - rustup: { dev: true }
+  - sccache: { dev: true }
+  - docker: { source: cask, dev: true }
+  - npm: { platform: linux, dev: true }
+
+  # Cargo
+  - lspmux:
+      source: cargo
+      git: https://codeberg.org/p2502/lspmux.git

@@ -154,7 +154,13 @@ LAYOUT
     [[ $status -eq 0 ]]
 }
 
-@test "brew packages.yaml is valid YAML" {
-    run yq '.' "$DOTFILES_DIR/brew/packages.yaml"
+@test "packages.yaml is valid YAML" {
+    run yq '.' "$DOTFILES_DIR/packages.yaml"
     [[ $status -eq 0 ]]
+}
+
+@test "packages.yaml map entries have exactly one key (the name)" {
+    local bad
+    bad=$(yq -r '.packages[] | select(kind == "map") | select((keys | length) == 1 | not)' "$DOTFILES_DIR/packages.yaml" 2>/dev/null)
+    [[ -z "$bad" ]]
 }

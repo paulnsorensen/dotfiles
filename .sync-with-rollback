@@ -236,6 +236,10 @@ run_sync() {
               echo "Setting quick_sync=true"
               export QUICK_SYNC=true
               ;;
+         refresh|r)
+              echo "Setting force_packages=true"
+              export FORCE_PACKAGES=true
+              ;;
          rollback)
               rollback "${2:-}"
               exit 0
@@ -250,13 +254,15 @@ run_sync() {
     esac
     done
 
-    if [[ "$(uname)" == "Darwin" ]]; then
-      log_info "Running homebrew script"
-      sh "$dir/.brew"
-    elif [[ "$(uname)" == "Linux" ]]; then
-      log_info "Checking apt packages"
-      bash "$dir/.apt"
+    # Bootstrap yq (needed by packages/sync.sh to parse YAML)
+    if [[ "$(uname)" == "Darwin" ]] && ! command -v yq &>/dev/null; then
+      log_info "Bootstrapping yq..."
+      brew install yq
     fi
+
+    # Install platform packages
+    log_info "Syncing packages"
+    bash "$dir/packages/sync.sh"
 
     # upgrade uv-managed tools
     if command -v uv &> /dev/null; then
@@ -271,7 +277,7 @@ run_sync() {
 
     for file in *; do
       # Skip state management files
-      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" || "${file}" == ".worktrees" || "${file}" == "apt" ]]; then
+      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" || "${file}" == ".worktrees" || "${file}" == "packages" || "${file}" == "packages.yaml" || "${file}" == "brew" || "${file}" == "apt" ]]; then
         continue
       fi
 
@@ -395,6 +401,7 @@ show_help() {
     echo "  (no args)      Run normal sync with backup"
     echo "  dev            Set dev mode"
     echo "  q              Quick sync"
+    echo "  refresh        Force re-check all packages (bypass cache)"
     echo "  rollback [ID]  Rollback to a specific backup"
     echo "  list-backups   List available backups"
     echo "  clean          Prune old backups (--keep=N, --dry-run)"
