@@ -193,12 +193,12 @@ check_worktree() {
     echo -e "  ${color}[${status}]${RESET} ${BOLD}${slug}${RESET} ${DIM}(${last_commit_relative})${RESET}"
     echo -e "         ${reason_str}"
 
-    ((TOTAL++))
+    TOTAL=$((TOTAL + 1))
 
     # ── Action ──────────────────────────────────────────────────────
     if $DRY_RUN; then
         if [[ "$status" == "SAFE" ]]; then
-            ((SAFE++))
+            SAFE=$((SAFE + 1))
         fi
         return 0
     fi
@@ -206,26 +206,26 @@ check_worktree() {
     local should_remove=false
 
     if [[ "$status" == "SAFE" ]]; then
-        ((SAFE++))
+        SAFE=$((SAFE + 1))
         if $AUTO_CLEAN; then
             should_remove=true
         else
-            read -rp "         Remove? [y/N] " answer
+            read -rp "         Remove? [y/N] " answer </dev/tty
             [[ "$answer" =~ ^[Yy] ]] && should_remove=true
         fi
     elif [[ "$status" == "WARN" ]]; then
-        read -rp "         Remove anyway? [y/N] " answer
+        read -rp "         Remove anyway? [y/N] " answer </dev/tty
         [[ "$answer" =~ ^[Yy] ]] && should_remove=true
     else
-        read -rp "         Has uncommitted work. Remove? [y/N] " answer
+        read -rp "         Has uncommitted work. Remove? [y/N] " answer </dev/tty
         [[ "$answer" =~ ^[Yy] ]] && should_remove=true
     fi
 
     if $should_remove; then
         remove_worktree "$wt_path" "$repo_root" "$branch"
-        ((REMOVED++))
+        REMOVED=$((REMOVED + 1))
     else
-        ((SKIPPED++))
+        SKIPPED=$((SKIPPED + 1))
     fi
 }
 
@@ -274,7 +274,7 @@ echo ""
 FOUND_REPOS=0
 
 # Find all .worktrees directories (max depth 3 to avoid deep traversal)
-while IFS= read -r wt_root; do
+while IFS= read -r -u3 wt_root; do
     repo_root="$(dirname "$wt_root")"
     repo_name="${repo_root#"${SCAN_ROOT}/"}"
 
@@ -295,7 +295,7 @@ while IFS= read -r wt_root; do
         continue
     fi
 
-    ((FOUND_REPOS++))
+    FOUND_REPOS=$((FOUND_REPOS + 1))
     echo -e "${CYAN}${repo_name}${RESET} ${DIM}(${#local_wts[@]} worktree(s))${RESET}"
 
     for wt_path in "${local_wts[@]}"; do
@@ -303,7 +303,7 @@ while IFS= read -r wt_root; do
     done
     echo ""
 
-done < <(find "$SCAN_ROOT" -maxdepth 3 -type d -name '.worktrees' 2>/dev/null)
+done 3< <(find "$SCAN_ROOT" -maxdepth 3 -type d -name '.worktrees' 2>/dev/null)
 
 # ── Summary ─────────────────────────────────────────────────────────
 
@@ -324,8 +324,8 @@ fi
 if ! $DRY_RUN && (( REMOVED > 0 )); then
     echo ""
     echo -e "${DIM}Running git worktree prune...${RESET}"
-    while IFS= read -r wt_root; do
+    while IFS= read -r -u3 wt_root; do
         repo_root="$(dirname "$wt_root")"
         git -C "$repo_root" worktree prune 2>/dev/null || true
-    done < <(find "$SCAN_ROOT" -maxdepth 3 -type d -name '.worktrees' 2>/dev/null)
+    done 3< <(find "$SCAN_ROOT" -maxdepth 3 -type d -name '.worktrees' 2>/dev/null)
 fi
