@@ -1,15 +1,15 @@
 # packages.yaml — flat package registry
 #
-# Bare string = brew (mac) / apt (linux), same name
-# Map overrides: source, dev, apt, platform, git
+# Bare string = brew (mac) / apt (linux)
+# Key-value = override defaults
 #
 #   source:   brew (default) | cask | tap | cargo
 #   dev:      only when DOTFILES_DEV=true
-#   apt:      override name for linux (e.g. fd -> fd-find)
+#   apt:      override name for linux
 #   platform: mac | linux (default: both)
 
 packages:
-  - { name: tinted-theming/tinted, source: tap }
+  - tinted-theming/tinted: { source: tap }
 
   # Core CLI
   - jq
@@ -20,7 +20,7 @@ packages:
   - tree
   - htop
   - ripgrep
-  - { name: fd, apt: fd-find }
+  - fd: { apt: fd-find }
   - eza
   - bat
   - ast-grep
@@ -42,18 +42,18 @@ packages:
   - vhs
 
   # Linux-only
-  - { name: xclip, platform: linux }
+  - xclip: { platform: linux }
 
   # Dev (DOTFILES_DEV=true)
-  - { name: pyenv, dev: true }
-  - { name: node, dev: true, apt: nodejs }
-  - { name: uv, dev: true }
-  - { name: rustup, dev: true }
-  - { name: sccache, dev: true }
-  - { name: docker, source: cask, dev: true }
-  - { name: npm, platform: linux, dev: true }
+  - pyenv: { dev: true }
+  - node: { dev: true, apt: nodejs }
+  - uv: { dev: true }
+  - rustup: { dev: true }
+  - sccache: { dev: true }
+  - docker: { source: cask, dev: true }
+  - npm: { platform: linux, dev: true }
 
   # Cargo
-  - name: lspmux
-    source: cargo
-    git: https://codeberg.org/p2502/lspmux.git
+  - lspmux:
+      source: cargo
+      git: https://codeberg.org/p2502/lspmux.git

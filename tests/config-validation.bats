@@ -159,9 +159,8 @@ LAYOUT
     [[ $status -eq 0 ]]
 }
 
-@test "packages.yaml entries are strings or maps with name" {
-    # Every entry must be a string or a map with a .name field
+@test "packages.yaml map entries have exactly one key (the name)" {
     local bad
-    bad=$(yq -r '.packages[] | select(kind == "map" and .name == null)' "$DOTFILES_DIR/packages.yaml" 2>/dev/null)
+    bad=$(yq -r '.packages[] | select(kind == "map") | select((keys | length) == 1 | not)' "$DOTFILES_DIR/packages.yaml" 2>/dev/null)
     [[ -z "$bad" ]]
 }

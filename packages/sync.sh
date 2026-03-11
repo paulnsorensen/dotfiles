@@ -57,29 +57,29 @@ if check_cache; then
 fi
 
 ########## Query helpers
+# Entry format: bare string OR single-key map (key = name, value = overrides)
+# Map queries use: to_entries[0] | .key = name, .value.* = properties
 
 # Platform package names (brew on mac, apt on linux)
-# Bare strings + maps with default source, respecting platform + dev filters
-# On linux, uses .apt field for name override
 # Usage: get_platform_pkgs [--dev]
 get_platform_pkgs() {
     local want_dev="${1:-}"
     local skip_platform name_expr
     if [[ "$(uname)" == "Darwin" ]]; then
         skip_platform="linux"
-        name_expr=".name"
+        name_expr=".key"
     else
         skip_platform="mac"
-        name_expr="(.apt // .name)"
+        name_expr="(.value.apt // .key)"
     fi
 
     if [[ -z "$want_dev" ]]; then
         {
             yq -r ".packages[] | select(kind == \"scalar\")" "$PACKAGES_FILE" 2>/dev/null
-            yq -r ".packages[] | select(kind == \"map\" and (.source // \"brew\") == \"brew\" and (.dev // false) == false and (.platform == \"$skip_platform\" | not)) | $name_expr" "$PACKAGES_FILE" 2>/dev/null
+            yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select((.value.source // \"brew\") == \"brew\" and (.value.dev // false) == false and (.value.platform == \"$skip_platform\" | not)) | $name_expr" "$PACKAGES_FILE" 2>/dev/null
         }
     else
-        yq -r ".packages[] | select(kind == \"map\" and (.source // \"brew\") == \"brew\" and .dev == true and (.platform == \"$skip_platform\" | not)) | $name_expr" "$PACKAGES_FILE" 2>/dev/null
+        yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select((.value.source // \"brew\") == \"brew\" and .value.dev == true and (.value.platform == \"$skip_platform\" | not)) | $name_expr" "$PACKAGES_FILE" 2>/dev/null
     fi
 }
 
@@ -88,9 +88,9 @@ get_platform_pkgs() {
 get_source_pkgs() {
     local source="$1" want_dev="${2:-}"
     if [[ -z "$want_dev" ]]; then
-        yq -r ".packages[] | select(kind == \"map\" and .source == \"$source\" and (.dev // false) == false) | .name" "$PACKAGES_FILE" 2>/dev/null
+        yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"$source\" and (.value.dev // false) == false) | .key" "$PACKAGES_FILE" 2>/dev/null
     else
-        yq -r ".packages[] | select(kind == \"map\" and .source == \"$source\" and .dev == true) | .name" "$PACKAGES_FILE" 2>/dev/null
+        yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"$source\" and .value.dev == true) | .key" "$PACKAGES_FILE" 2>/dev/null
     fi
 }
 
@@ -109,7 +109,7 @@ brew_install_pkgs() {
             echo "  + $pkg"
         else
             echo "  Installing $pkg..."
-            # shellcheck disable=SC2086  # cask_flag intentionally unquoted (empty or --cask)
+            # shellcheck disable=SC2086  # cask_flag intentionally unquoted
             brew install $cask_flag "$pkg"
         fi
     done <<< "$pkg_list"
@@ -160,7 +160,7 @@ sync_brew() {
 
 sync_cargo() {
     local cargo_pkgs
-    cargo_pkgs=$(yq -r '.packages[] | select(kind == "map" and .source == "cargo") | [.name, (.git // "")] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    cargo_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "cargo") | [.key, (.value.git // "")] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$cargo_pkgs" ]] && return 0
 
     if ! command -v cargo &>/dev/null; then
