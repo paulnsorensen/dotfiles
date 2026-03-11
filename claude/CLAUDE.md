@@ -98,8 +98,9 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Planning | `/fromage`, `/batch`, `/spec`, `/duck`, `/research` |
 | Review | `/age`, `/code-review`, `/audit`, `/simplifier` |
 | Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit), `/de-slop` (AI anti-patterns) |
+| PR Response | `/respond` (confidence-rated review triage), `/copilot-review`, `/copilot-delegate` |
 | Testing | `/wreck`, `/test`, `/diff`, `/tdd-assertions`, `/pingpong` |
-| GitHub | `/move-my-cheese <PR#>`, `/copilot-review`, `/copilot-delegate` |
+| GitHub | `/move-my-cheese <PR#>` |
 | Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/notebook`, `/onboard` |
 
@@ -134,6 +135,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | Worktree isolation | worktree | git worktree, Serena seeding | manual branch + cd |
 | AI slop cleanup | de-slop | language-specific anti-pattern refs | ignoring AI tells |
 | Weak test assertions | tdd-assertions | framework-specific assertion refs | truthy checks, catch-all errors |
+| PR review response | respond | confidence triage, GitHub MCP replies | manually reading and replying to each comment |
 
 **Code intelligence tool division** — three complementary tools, not substitutes:
 

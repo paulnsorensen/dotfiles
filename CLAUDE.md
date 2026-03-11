@@ -89,6 +89,7 @@ dotfiles/
 │   │   └── sync.sh         # Declarative MCP sync script
 │   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/fromage, /spec, etc.)
+│   ├── hookify/            # Hookify rules (synced to ~/.claude/ by .sync)
 │   ├── hooks/              # Pre-tool hooks
 │   ├── skills/             # Reusable skill definitions
 │   └── plugins/            # Plugin registry and sync script
@@ -99,7 +100,7 @@ dotfiles/
 ├── reference/              # Reference docs (gitignored)
 ├── .claude/
 │   ├── specs/              # Tabled feature specs (.claude/specs/<slug>.md)
-│   └── hookify.*.local.md  # Active hookify rules (gitignored)
+│   └── hookify.*.local.md  # Active hookify rules (symlinked from claude/hookify/ + any local-only)
 ├── vim/                    # Vim configuration
 ├── vimrc                   # Vim settings
 ├── zsh/                    # Modular zsh configuration
