@@ -100,7 +100,7 @@ dotfiles/
 ├── reference/              # Reference docs (gitignored)
 ├── .claude/
 │   ├── specs/              # Tabled feature specs (.claude/specs/<slug>.md)
-│   └── hookify.*.local.md  # Active hookify rules (symlinked from claude/hookify/ + any local-only)
+│   └── hookify.*.local.md  # Active hookify rules (synced into ~/.claude/ from claude/hookify/, plus any local-only)
 ├── vim/                    # Vim configuration
 ├── vimrc                   # Vim settings
 ├── zsh/                    # Modular zsh configuration

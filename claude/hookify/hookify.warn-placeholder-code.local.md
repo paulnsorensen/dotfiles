@@ -5,7 +5,7 @@ event: file
 conditions:
   - field: new_text
     operator: regex_match
-    pattern: (TODO|FIXME|HACK|XXX|PLACEHOLDER|unimplemented!|todo!)\b
+    pattern: \b(TODO|FIXME|HACK|XXX|PLACEHOLDER)\b|unimplemented!\(\)|todo!\(\)
 action: warn
 ---
 
