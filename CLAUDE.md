@@ -210,6 +210,9 @@ The `.sync-with-rollback` script provides:
 - Aliases follow oh-my-zsh conventions for familiarity
 - Custom `grb` alias rebases from main (not master)
 - Kdiff3 configured as merge/diff tool
+- **difftastic**: AST-aware structural diff via Tree-sitter (700+ languages). Use `gds` alias for structural diffs, or `git difftool -t difftastic` for side-by-side. Composes with delta (delta handles pager for log/show/blame, difftastic outputs directly to terminal).
+- **mergiraf**: AST-aware merge driver. Registered globally via `gitattributes` for all supported languages. Auto-resolves structural conflicts (import reorders, independent additions) and falls back to standard merge for anything it can't handle. Works transparently with merge/rebase/cherry-pick.
+- **Merge conflict resolution chain**: mergiraf (auto-resolve structural) → rerere (replay remembered manual resolutions) → kdiff3 (manual)
 - Pre-commit hooks via prek (secrets, shellcheck, large files, claude sync)
 - **Skipping hooks**: Use `git commit --no-verify` if prek blocks a commit and you need to override (rare)
 
