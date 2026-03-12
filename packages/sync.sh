@@ -12,6 +12,7 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 PACKAGES_FILE="${PACKAGES_FILE:-$REPO_DIR/packages.yaml}"
 CACHE_DIR="${CACHE_DIR:-${HOME}/.local/state/dotfiles}"
 CACHE_FILE="${CACHE_FILE:-$CACHE_DIR/packages.hash}"
+PLATFORM="$(uname)"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -42,7 +43,7 @@ check_cache() {
     [[ -f "$CACHE_FILE" ]] || return 1
     local current stored
     current=$(shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1)
-    stored=$(cat "$CACHE_FILE")
+    stored=$(<"$CACHE_FILE")
     [[ "$current" == "$stored" ]]
 }
 
@@ -67,7 +68,7 @@ INSTALL_FAILURES=0
 get_platform_pkgs() {
     local want_dev="${1:-}"
     local skip_platform name_expr
-    if [[ "$(uname)" == "Darwin" ]]; then
+    if [[ "$PLATFORM" == "Darwin" ]]; then
         skip_platform="linux"
         name_expr=".key"
     else
@@ -270,7 +271,7 @@ sync_apt() {
 ########## Main
 
 # Bootstrap yq if needed (macOS only)
-if [[ "$(uname)" == "Darwin" ]] && ! command -v yq &>/dev/null; then
+if [[ "$PLATFORM" == "Darwin" ]] && ! command -v yq &>/dev/null; then
     if command -v brew &>/dev/null; then
         log_info "Bootstrapping yq..."
         brew install yq
@@ -280,9 +281,9 @@ if [[ "$(uname)" == "Darwin" ]] && ! command -v yq &>/dev/null; then
     fi
 fi
 
-if [[ "$(uname)" == "Darwin" ]]; then
+if [[ "$PLATFORM" == "Darwin" ]]; then
     sync_brew
-elif [[ "$(uname)" == "Linux" ]]; then
+elif [[ "$PLATFORM" == "Linux" ]]; then
     sync_apt
 fi
 

@@ -1,25 +1,35 @@
 #!/bin/bash
-if [ "$(uname)" != "Darwin" ]; then
+if [[ "$(uname)" != "Darwin" ]]; then
   echo "Not on mac, skipping fonts"
   exit 0
 fi
 
-if [ "${QUICK_SYNC:-false}" = "true" ]; then
+if [[ "${QUICK_SYNC:-false}" == "true" ]]; then
   echo "Quick sync, skipping fonts"
   exit 0
 fi
 
 fonts=(hack hack-nerd-font fira-code monoid)
 
-for font in ${fonts[@]}; do
-  # Check if font is already installed (via brew or manually)
-  if brew ls --cask --versions font-$font > /dev/null 2>&1; then
+# Map cask name to font filename glob for manual install detection
+font_pattern() {
+    case "$1" in
+        hack)           echo "Hack-*" ;;
+        hack-nerd-font) echo "HackNF*" ;;
+        fira-code)      echo "FiraCode*" ;;
+        monoid)         echo "Monoid*" ;;
+        *)              echo "${1}*" ;;
+    esac
+}
+
+for font in "${fonts[@]}"; do
+  if brew ls --cask --versions "font-$font" > /dev/null 2>&1; then
     echo "font-$font already installed via brew, skipping"
-  elif ls ~/Library/Fonts/ 2>/dev/null | grep -qi "${font%%-*}"; then
+  elif compgen -G "$HOME/Library/Fonts/$(font_pattern "$font")" > /dev/null 2>&1; then
     echo "font-$font already installed manually, skipping"
   else
     echo "Installing font-$font..."
-    brew install --cask font-$font 2>/dev/null || echo "Warning: font-$font install failed"
+    brew install --cask "font-$font" 2>/dev/null || echo "Warning: font-$font install failed"
   fi
 done
 

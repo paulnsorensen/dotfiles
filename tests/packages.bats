@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
-# Tests for packages/sync.sh
+# Integration tests for packages/sync.sh
 #
-# Integration tests run the real sync script with a mock brew/cargo
-# that records calls instead of installing. This verifies the full
-# flow: YAML parsing → platform filtering → install decisions → cache.
+# Runs the real sync script with mock brew/cargo that record calls
+# instead of installing. Verifies: YAML parsing, platform filtering,
+# install decisions, cache behavior, and rust bootstrap.
 
 load test_helper
 
@@ -16,46 +16,14 @@ setup() {
     export CACHE_FILE="$CACHE_DIR/packages.hash"
     mkdir -p "$CACHE_DIR"
 
-    # Mock bin directory — prepended to PATH so mock brew/cargo are found first
     export MOCK_BIN="$TEST_HOME/bin"
     mkdir -p "$MOCK_BIN"
 
-    # Log file where mock brew records every call
     export BREW_LOG="$TEST_HOME/brew.log"
     export CARGO_LOG="$TEST_HOME/cargo.log"
 
-    # Create mock brew
-    cat > "$MOCK_BIN/brew" << 'MOCKBREW'
-#!/bin/bash
-echo "brew $*" >> "$BREW_LOG"
-case "$1" in
-    list)   echo "" ;;          # nothing installed
-    tap)
-        if [[ $# -eq 1 ]]; then
-            echo ""             # no taps
-        fi
-        ;;                      # brew tap <name> succeeds silently
-    install) ;;                 # succeed silently
-esac
-exit 0
-MOCKBREW
-    chmod +x "$MOCK_BIN/brew"
-
-    # Create mock cargo
-    cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
-#!/bin/bash
-echo "cargo $*" >> "$CARGO_LOG"
-case "$1" in
-    install)
-        if [[ "$2" == "--list" ]]; then
-            echo ""
-        fi
-        ;;
-esac
-exit 0
-MOCKCARGO
-    chmod +x "$MOCK_BIN/cargo"
-
+    write_mock_brew
+    write_mock_cargo
     export PATH="$MOCK_BIN:$PATH"
 }
 
@@ -63,7 +31,50 @@ teardown() {
     teardown_test_env
 }
 
-# Helper: write a test packages.yaml
+# --- Mock helpers ---
+
+# Usage: write_mock_brew [installed_formulae] [installed_casks] [fail_pkg]
+write_mock_brew() {
+    local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}"
+    cat > "$MOCK_BIN/brew" << MOCKBREW
+#!/bin/bash
+echo "brew \$*" >> "$BREW_LOG"
+case "\$1" in
+    list)
+        if [[ "\$2" == "--formulae" ]]; then
+            echo "$formulae"
+        else
+            echo "$casks"
+        fi
+        ;;
+    tap)
+        if [[ \$# -eq 1 ]]; then echo ""; fi
+        ;;
+    install)
+        if [[ -n "$fail_pkg" && ("\$2" == "$fail_pkg" || "\$3" == "$fail_pkg") ]]; then
+            exit 1
+        fi
+        ;;
+esac
+exit 0
+MOCKBREW
+    chmod +x "$MOCK_BIN/brew"
+}
+
+write_mock_cargo() {
+    cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
+#!/bin/bash
+echo "cargo $*" >> "$CARGO_LOG"
+case "$1" in
+    install)
+        if [[ "$2" == "--list" ]]; then echo ""; fi
+        ;;
+esac
+exit 0
+MOCKCARGO
+    chmod +x "$MOCK_BIN/cargo"
+}
+
 write_test_yaml() {
     cat > "$PACKAGES_FILE" << 'YAML'
 packages:
@@ -83,7 +94,6 @@ packages:
 YAML
 }
 
-# Helper: run the sync script with FORCE_PACKAGES to skip cache
 run_sync() {
     FORCE_PACKAGES=true run bash "$SYNC_SCRIPT"
 }
@@ -136,7 +146,6 @@ run_sync() {
     run_sync
     assert_success
 
-    # curl and jq are bare strings — should be passed to brew install
     grep -q "brew install curl" "$BREW_LOG"
     grep -q "brew install jq" "$BREW_LOG"
 }
@@ -151,7 +160,6 @@ run_sync() {
 }
 
 @test "sync installs mac-only packages on Darwin" {
-    # This test only runs on macOS (where uname == Darwin)
     [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
 
     write_test_yaml
@@ -176,7 +184,6 @@ run_sync() {
     run_sync
     assert_success
 
-    # tap line should appear before any install line
     local tap_line install_line
     tap_line=$(grep -n "brew tap test/tap-repo" "$BREW_LOG" | head -1 | cut -d: -f1)
     install_line=$(grep -n "brew install " "$BREW_LOG" | head -1 | cut -d: -f1)
@@ -217,34 +224,12 @@ run_sync() {
 
 @test "sync skips already-installed packages" {
     write_test_yaml
-
-    # Mock brew list to report curl as installed
-    cat > "$MOCK_BIN/brew" << 'MOCKBREW'
-#!/bin/bash
-echo "brew $*" >> "$BREW_LOG"
-case "$1" in
-    list)
-        if [[ "$2" == "--formulae" ]]; then
-            echo "curl"
-        else
-            echo ""
-        fi
-        ;;
-    tap)
-        if [[ $# -eq 1 ]]; then echo ""; fi
-        ;;
-    install) ;;
-esac
-exit 0
-MOCKBREW
-    chmod +x "$MOCK_BIN/brew"
+    write_mock_brew "curl"
 
     run_sync
     assert_success
 
-    # curl should NOT appear in brew install calls
     ! grep -q "brew install curl" "$BREW_LOG"
-    # jq should still be installed
     grep -q "brew install jq" "$BREW_LOG"
 }
 
@@ -271,56 +256,32 @@ MOCKBREW
 
 @test "sync skips when cache matches" {
     write_test_yaml
-
-    # Pre-seed the cache with matching hash
     shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
 
-    # Run WITHOUT force — should hit cache
     run bash "$SYNC_SCRIPT"
     assert_success
     assert_output_contains "unchanged (cached), skipping"
 
-    # No brew calls should have happened
     [[ ! -f "$BREW_LOG" ]]
 }
 
 @test "FORCE_PACKAGES bypasses valid cache" {
     write_test_yaml
-
-    # Pre-seed matching cache
     shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
 
     run_sync
     assert_success
     assert_output_contains "bypassing cache"
 
-    # Brew calls should have happened
     [[ -f "$BREW_LOG" ]]
 }
 
 @test "sync does NOT save cache when brew install fails" {
     write_test_yaml
-
-    # Mock brew that fails on 'jq'
-    cat > "$MOCK_BIN/brew" << 'MOCKBREW'
-#!/bin/bash
-echo "brew $*" >> "$BREW_LOG"
-case "$1" in
-    list)   echo "" ;;
-    tap)    if [[ $# -eq 1 ]]; then echo ""; fi ;;
-    install)
-        if [[ "$2" == "jq" || "$3" == "jq" ]]; then
-            exit 1
-        fi
-        ;;
-esac
-exit 0
-MOCKBREW
-    chmod +x "$MOCK_BIN/brew"
+    write_mock_brew "" "" "jq"
 
     run_sync
 
-    # Cache should NOT exist
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
     assert_output_contains "failed to install"
     assert_output_contains "cache NOT saved"
@@ -328,44 +289,18 @@ MOCKBREW
 
 @test "sync retries after previous failure (no cache)" {
     write_test_yaml
+    write_mock_brew "" "" "jq"
 
-    # First run: brew fails on jq
-    cat > "$MOCK_BIN/brew" << 'MOCKBREW'
-#!/bin/bash
-echo "brew $*" >> "$BREW_LOG"
-case "$1" in
-    list)   echo "" ;;
-    tap)    if [[ $# -eq 1 ]]; then echo ""; fi ;;
-    install)
-        if [[ "$2" == "jq" || "$3" == "jq" ]]; then exit 1; fi
-        ;;
-esac
-exit 0
-MOCKBREW
-    chmod +x "$MOCK_BIN/brew"
-
-    # First run — fails, no cache saved
     run bash "$SYNC_SCRIPT"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
 
-    # Fix brew and re-run — should NOT skip (no cache)
+    # Fix brew and re-run
     rm -f "$BREW_LOG"
-    cat > "$MOCK_BIN/brew" << 'MOCKBREW'
-#!/bin/bash
-echo "brew $*" >> "$BREW_LOG"
-case "$1" in
-    list)   echo "" ;;
-    tap)    if [[ $# -eq 1 ]]; then echo ""; fi ;;
-    install) ;;
-esac
-exit 0
-MOCKBREW
-    chmod +x "$MOCK_BIN/brew"
+    write_mock_brew
 
     run bash "$SYNC_SCRIPT"
     assert_success
 
-    # Now cache should be saved
     [[ -f "$CACHE_FILE" ]]
     grep -q "brew install jq" "$BREW_LOG"
 }
@@ -374,14 +309,10 @@ MOCKBREW
 
 @test "sync counts missing cargo AND rustup as failure (no cache saved)" {
     write_test_yaml
-
-    # Remove both mocks so neither is found
-    rm -f "$MOCK_BIN/cargo"
-    rm -f "$MOCK_BIN/rustup"
+    rm -f "$MOCK_BIN/cargo" "$MOCK_BIN/rustup"
 
     run_sync
 
-    # Should warn about cargo and not save cache
     assert_output_contains "cargo not found"
     assert_output_contains "cache NOT saved"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
@@ -389,16 +320,12 @@ MOCKBREW
 
 @test "sync bootstraps rust toolchain when rustup exists but cargo missing" {
     write_test_yaml
-
-    # Remove cargo mock
     rm -f "$MOCK_BIN/cargo"
 
-    # Create mock rustup that "installs" cargo
+    # Mock rustup that creates a mock cargo on "default stable"
     cat > "$MOCK_BIN/rustup" << MOCKRUSTUP
 #!/bin/bash
 echo "rustup \$*" >> "$CARGO_LOG"
-# Simulate: after 'rustup default stable', cargo becomes available
-# Create a mock cargo in the same bin dir
 cat > "$MOCK_BIN/cargo" << 'INNERCARGO'
 #!/bin/bash
 echo "cargo \$*" >> "$CARGO_LOG"
@@ -418,7 +345,6 @@ MOCKRUSTUP
     assert_success
 
     assert_output_contains "Bootstrapping Rust stable toolchain"
-    # Cargo packages should have been installed after bootstrap
     grep -q "cargo install --git" "$CARGO_LOG"
 }
 

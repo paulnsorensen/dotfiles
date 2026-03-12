@@ -1,37 +1,36 @@
 #!/bin/bash
 
-if [ "$(uname)" != "Darwin" ]; then
+if [[ "$(uname)" != "Darwin" ]]; then
   echo "Not on mac, skipping iterm2"
   exit 0
 fi
 
-
-if [ $QUICK_SYNC = true ]; then
+if [[ "${QUICK_SYNC:-false}" == "true" ]]; then
   echo "Quick sync, skipping iterm"
   exit 0
 fi
 
-set -e
+set -euo pipefail
 
-script_dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bg_link=https://u2658847.dl.dropboxusercontent.com/u/2658847/IMG_0568.JPG
 
 bg_opacity=50%
 
-if [[ ! -f $script_dir/background/i_know_how_to_make_ducks.png ]]; then
+if [[ ! -f "$script_dir/background/i_know_how_to_make_ducks.png" ]]; then
     echo "Downloading background file..."
-    wget -O $script_dir/background/i_know_how_to_make_ducks.png $bg_link
+    wget -O "$script_dir/background/i_know_how_to_make_ducks.png" "$bg_link"
 
     echo "Setting opacity of background file..."
-    convert $script_dir/background/i_know_how_to_make_ducks.png -alpha on -channel A -evaluate set $bg_opacity +channel $script_dir/background/i_know_how_to_make_ducks.png
+    convert "$script_dir/background/i_know_how_to_make_ducks.png" -alpha on -channel A -evaluate set "$bg_opacity" +channel "$script_dir/background/i_know_how_to_make_ducks.png"
 fi
 
 echo "Loading iterm2 configuration"
 
 # Update the background image path in the existing plist file
-sed -i.bak "/<key>Background Image Location<\/key>/{n;s|<string>.*</string>|<string>$script_dir/background/i_know_how_to_make_ducks.png</string>|;}" $script_dir/com.googlecode.iterm2.plist
+sed -i.bak "/<key>Background Image Location<\/key>/{n;s|<string>.*</string>|<string>$script_dir/background/i_know_how_to_make_ducks.png</string>|;}" "$script_dir/com.googlecode.iterm2.plist"
 
 # Specify the preferences directory
-defaults write com.googlecode.iterm2.plist PrefsCustomFolder -string $script_dir
+defaults write com.googlecode.iterm2.plist PrefsCustomFolder -string "$script_dir"
 # Tell iTerm2 to use the custom preferences in the directory
 defaults write com.googlecode.iterm2.plist LoadPrefsFromCustomFolder -bool true
