@@ -9,9 +9,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
-PACKAGES_FILE="$REPO_DIR/packages.yaml"
-CACHE_DIR="${HOME}/.local/state/dotfiles"
-CACHE_FILE="$CACHE_DIR/packages.hash"
+PACKAGES_FILE="${PACKAGES_FILE:-$REPO_DIR/packages.yaml}"
+CACHE_DIR="${CACHE_DIR:-${HOME}/.local/state/dotfiles}"
+CACHE_FILE="${CACHE_FILE:-$CACHE_DIR/packages.hash}"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -55,6 +55,8 @@ if check_cache; then
     log_success "packages.yaml unchanged (cached), skipping"
     exit 0
 fi
+
+INSTALL_FAILURES=0
 
 ########## Query helpers
 # Entry format: bare string OR single-key map (key = name, value = overrides)
@@ -110,7 +112,10 @@ brew_install_pkgs() {
         else
             echo "  Installing $pkg..."
             # shellcheck disable=SC2086  # cask_flag intentionally unquoted
-            brew install $cask_flag "$pkg"
+            if ! brew install $cask_flag "$pkg"; then
+                log_warning "Failed to install $pkg"
+                INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+            fi
         fi
     done <<< "$pkg_list"
 }
@@ -164,8 +169,29 @@ sync_cargo() {
     [[ -z "$cargo_pkgs" ]] && return 0
 
     if ! command -v cargo &>/dev/null; then
-        log_warning "cargo not found, skipping cargo packages"
-        return 0
+        # Bootstrap toolchain if rustup is installed but no toolchain yet
+        if command -v rustup &>/dev/null; then
+            log_info "Bootstrapping Rust stable toolchain..."
+            if ! rustup default stable; then
+                log_warning "Failed to bootstrap Rust toolchain"
+                INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+                return 0
+            fi
+            # Brew-installed rustup keeps cargo proxies in opt/rustup/bin
+            local rustup_bin
+            rustup_bin="$(brew --prefix rustup 2>/dev/null)/bin"
+            if [[ -d "$rustup_bin" ]]; then
+                export PATH="$rustup_bin:$PATH"
+            elif [[ -f "$HOME/.cargo/env" ]]; then
+                # shellcheck disable=SC1091
+                source "$HOME/.cargo/env"
+            fi
+        fi
+        if ! command -v cargo &>/dev/null; then
+            log_warning "cargo not found (install rustup first)"
+            INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+            return 0
+        fi
     fi
 
     log_info "Syncing cargo packages"
@@ -178,10 +204,16 @@ sync_cargo() {
             echo "  + $name"
         elif [[ -n "$git_url" ]]; then
             echo "  Installing $name from $git_url..."
-            cargo install --git "$git_url" "$name"
+            if ! cargo install --git "$git_url" "$name"; then
+                log_warning "Failed to install $name"
+                INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+            fi
         else
             echo "  Installing $name..."
-            cargo install "$name"
+            if ! cargo install "$name"; then
+                log_warning "Failed to install $name"
+                INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+            fi
         fi
     done <<< "$cargo_pkgs"
 
@@ -256,5 +288,9 @@ fi
 
 sync_cargo
 
-save_cache
-log_success "Package sync complete"
+if [[ "$INSTALL_FAILURES" -gt 0 ]]; then
+    log_warning "$INSTALL_FAILURES package(s) failed to install — cache NOT saved (will retry next sync)"
+else
+    save_cache
+    log_success "Package sync complete"
+fi

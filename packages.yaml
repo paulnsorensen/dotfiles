@@ -38,20 +38,26 @@ packages:
   - tokei
   - yazi
   - lazygit
+  - just
+  - node: { apt: nodejs }
   - sd
   - vhs
+
+  # macOS-only
+  - mas: { platform: mac }                    # Mac App Store CLI
+  - trash: { platform: mac }                  # Move to Trash (safer rm)
+  - terminal-notifier: { platform: mac }      # macOS notifications from terminal
 
   # Linux-only
   - xclip: { platform: linux }
 
   # Dev (DOTFILES_DEV=true)
   - pyenv: { dev: true }
-  - node: { dev: true, apt: nodejs }
   - uv: { dev: true }
   - rustup: { dev: true }
   - sccache: { dev: true }
-  - docker: { source: cask, dev: true }
-  - npm: { platform: linux, dev: true }
+  - docker: { source: cask, dev: true, platform: mac }
+  - npm: { platform: linux, dev: true }       # On mac, npm comes with `brew install node`
 
   # Cargo
   - lspmux:
