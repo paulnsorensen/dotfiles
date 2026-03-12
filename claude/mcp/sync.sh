@@ -31,10 +31,15 @@ DESIRED_JSON=$(yq -o=json '.mcps' "$REGISTRY_FILE")
 # shellcheck disable=SC2034  # used by sync-common.sh
 DESIRED_NAMES=$(echo "$DESIRED_JSON" | jq -r 'keys[]' | sort)
 
-# Exclude plugin-managed MCPs — auto-registered, can't be removed via `claude mcp remove`
-CURRENT_OUTPUT=$(claude mcp list 2>/dev/null || true)
+# Per-name lookup avoids `claude mcp list` which health-checks all servers (~6s)
+CURRENT_NAMES_LIST=()
+for name in $DESIRED_NAMES; do
+    if claude mcp get "$name" &>/dev/null; then
+        CURRENT_NAMES_LIST+=("$name")
+    fi
+done
 # shellcheck disable=SC2034  # used by sync-common.sh
-CURRENT_NAMES=$(echo "$CURRENT_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:' | cut -d: -f1 | grep -v '^plugin' | sort)
+CURRENT_NAMES=$( (( ${#CURRENT_NAMES_LIST[@]} )) && printf '%s\n' "${CURRENT_NAMES_LIST[@]}" | sort || true)
 
 get_description() { echo "$DESIRED_JSON" | jq -r --arg n "$1" '.[$n].description // ""'; }
 get_item_scope() {
@@ -77,7 +82,7 @@ if [[ -n "$TO_ADD" ]]; then
                 while IFS='=' read -r key val; do
                     if [[ "$val" =~ ^\$\{([^}]+)\}$ ]]; then
                         var_name="${BASH_REMATCH[1]}"
-                        if [[ ! -v "$var_name" || -z "${!var_name}" ]]; then
+                        if [[ -z "${!var_name+x}" || -z "${!var_name}" ]]; then
                             echo -e "${RED}Error: $key references unset env var \$$var_name — skipping $name${NC}" >&2
                             continue 2
                         fi

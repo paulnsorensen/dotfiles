@@ -39,7 +39,6 @@ sync_compute_diff() {
     local desired_file current_file
     desired_file=$(mktemp)
     current_file=$(mktemp)
-    trap 'rm -f "$desired_file" "$current_file"' EXIT
 
     echo "$DESIRED_NAMES" | grep -v '^$' > "$desired_file" 2>/dev/null || true
     echo "$CURRENT_NAMES" | grep -v '^$' > "$current_file" 2>/dev/null || true
@@ -51,10 +50,10 @@ sync_compute_diff() {
     rm -f "$desired_file" "$current_file"
 
     desired_count=0; current_count=0; add_count=0; remove_count=0
-    [[ -n "$DESIRED_NAMES" ]] && desired_count=$(echo "$DESIRED_NAMES" | grep -c . 2>/dev/null || echo 0)
-    [[ -n "$CURRENT_NAMES" ]] && current_count=$(echo "$CURRENT_NAMES" | grep -c . 2>/dev/null || echo 0)
-    [[ -n "$TO_ADD" ]] && add_count=$(echo "$TO_ADD" | grep -c . 2>/dev/null || echo 0)
-    [[ -n "$TO_REMOVE" ]] && remove_count=$(echo "$TO_REMOVE" | grep -c . 2>/dev/null || echo 0)
+    [[ -n "$DESIRED_NAMES" ]] && desired_count=$(echo "$DESIRED_NAMES" | grep -c . 2>/dev/null || echo 0) || true
+    [[ -n "$CURRENT_NAMES" ]] && current_count=$(echo "$CURRENT_NAMES" | grep -c . 2>/dev/null || echo 0) || true
+    [[ -n "$TO_ADD" ]] && add_count=$(echo "$TO_ADD" | grep -c . 2>/dev/null || echo 0) || true
+    [[ -n "$TO_REMOVE" ]] && remove_count=$(echo "$TO_REMOVE" | grep -c . 2>/dev/null || echo 0) || true
 }
 
 # Caller must define get_description(name)
