@@ -1,0 +1,28 @@
+#!/bin/bash
+# Sync macOS-specific configuration
+# - Installs LaunchAgents (e.g., Caps Lock → Control remap)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+
+mkdir -p "$LAUNCH_AGENTS_DIR"
+
+for plist in "$SCRIPT_DIR"/*.plist; do
+    [ -f "$plist" ] || continue
+    name="$(basename "$plist")"
+    target="$LAUNCH_AGENTS_DIR/$name"
+
+    # Symlink the plist
+    if [ -L "$target" ]; then
+        rm "$target"
+    elif [ -f "$target" ]; then
+        mv "$target" "$target.bak"
+    fi
+    ln -s "$plist" "$target"
+
+    # Load the agent (unload first if already loaded)
+    launchctl bootout "gui/$(id -u)" "$target" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$target"
+done
