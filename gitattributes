@@ -1,0 +1,24 @@
+# gitattributes — global merge driver assignments
+# mergiraf: syntax-aware merge via Tree-sitter ASTs
+# Falls back to standard git merge for unsupported languages
+
+*.cs merge=mergiraf
+*.css merge=mergiraf
+*.dart merge=mergiraf
+*.go merge=mergiraf
+*.html merge=mergiraf
+*.java merge=mergiraf
+*.js merge=mergiraf
+*.json merge=mergiraf
+*.jsx merge=mergiraf
+*.kt merge=mergiraf
+*.py merge=mergiraf
+*.rs merge=mergiraf
+*.scala merge=mergiraf
+*.ts merge=mergiraf
+*.tsx merge=mergiraf
+*.xhtml merge=mergiraf
+*.xml merge=mergiraf
+*.yaml merge=mergiraf
+*.yml merge=mergiraf
+*.toml merge=mergiraf

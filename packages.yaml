@@ -37,6 +37,8 @@ packages:
   - procs
   - tokei
   - yazi
+  - difftastic
+  - mergiraf
   - lazygit
   - sd
   - vhs
