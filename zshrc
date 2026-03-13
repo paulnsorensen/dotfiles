@@ -28,3 +28,10 @@ fi
 source "$HOME/Dev/dotfiles/zsh/claude.zsh"
 
 clear
+
+# bun completions
+[ -s "/Users/paulsorensen/.bun/_bun" ] && source "/Users/paulsorensen/.bun/_bun"
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"

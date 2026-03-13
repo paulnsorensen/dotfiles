@@ -1,0 +1,21 @@
+{
+  "name": "chocolate-donut-theme",
+  "displayName": "Chocolate Donut",
+  "description": "Warm chocolate palette with donut-glazed accents",
+  "version": "1.0.0",
+  "author": "Paul Sorensen",
+  "publisher": "paulsorensen",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": ["Themes"],
+  "contributes": {
+    "themes": [
+      {
+        "label": "Chocolate Donut",
+        "uiTheme": "vs-dark",
+        "path": "./chocolate-donut-color-theme.json"
+      }
+    ]
+  }
+}

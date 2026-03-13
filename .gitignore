@@ -41,7 +41,10 @@ vhs/output/
 
 # Backup files
 *.bak
-.serena/
+
+# Ralph TUI
+.ralph-tui/
+claude/skills/ralph-tui-*
 
 # tmux (plugins managed by TPM, theme rebuilt on dots sync)
 tmux/plugins/
