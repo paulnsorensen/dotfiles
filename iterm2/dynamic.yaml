@@ -1,0 +1,8 @@
+# dynamic.yaml — iTerm2 plist patches applied at sync time
+#
+# Variables available: $HOME, $DOTFILES_DIR
+# Uses PlistBuddy keypaths (colons separate levels, 0-indexed arrays)
+
+patches:
+  - keypath: ":New Bookmarks:0:Background Image Location"
+    value: "$DOTFILES_DIR/iterm2/background/i_know_how_to_make_ducks.png"

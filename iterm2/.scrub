@@ -1,0 +1,80 @@
+#!/bin/bash
+# .scrub — Capture live iTerm2 plist into base plist with normalized values
+#
+# Run this after making intentional changes in iTerm2 GUI:
+#   bash iterm2/.scrub
+#   git diff iterm2/iterm2.base.plist
+#   git add iterm2/iterm2.base.plist && git commit
+
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+live_plist="$script_dir/com.googlecode.iterm2.plist"
+base_plist="$script_dir/iterm2.base.plist"
+
+if [[ ! -f "$live_plist" ]]; then
+  echo "No live plist found at $live_plist"
+  echo "Run 'dots sync' first to generate one."
+  exit 1
+fi
+
+# Detect dotfiles dir and home for placeholder replacement
+dotfiles_dir="$(cd "$script_dir/.." && pwd)"
+user_home="$HOME"
+
+python3 - "$live_plist" "$base_plist" "$dotfiles_dir" "$user_home" <<'PYEOF'
+import sys
+import plistlib
+import re
+
+live_path = sys.argv[1]
+base_path = sys.argv[2]
+dotfiles_dir = sys.argv[3]
+user_home = sys.argv[4]
+
+with open(live_path, "rb") as f:
+    plist = plistlib.load(f)
+
+def normalize_float(v, precision=6):
+    """Round floats to consistent precision to eliminate drift."""
+    if isinstance(v, float):
+        rounded = round(v, precision)
+        # Collapse 1.0 and 0.0 to clean values
+        if rounded == 1.0:
+            return 1.0
+        if rounded == 0.0:
+            return 0.0
+        return rounded
+    return v
+
+def strip_redundant_alpha(d):
+    """Remove Alpha Component entries that are 1 (the default)."""
+    if isinstance(d, dict):
+        if "Alpha Component" in d and normalize_float(d["Alpha Component"]) == 1.0:
+            del d["Alpha Component"]
+
+def replace_paths(v):
+    """Replace machine-specific paths with placeholders."""
+    if isinstance(v, str):
+        # Replace dotfiles dir first (more specific) then home
+        v = v.replace(dotfiles_dir, "__DOTFILES_DIR__")
+        v = v.replace(user_home, "__HOME__")
+    return v
+
+def walk(obj):
+    """Recursively normalize a plist object."""
+    if isinstance(obj, dict):
+        strip_redundant_alpha(obj)
+        return {k: walk(replace_paths(normalize_float(v))) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [walk(item) for item in obj]
+    else:
+        return replace_paths(normalize_float(obj))
+
+plist = walk(plist)
+
+with open(base_path, "wb") as f:
+    plistlib.dump(plist, f, fmt=plistlib.FMT_XML, sort_keys=True)
+
+print(f"Scrubbed live plist → {base_path}")
+PYEOF
