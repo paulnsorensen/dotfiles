@@ -44,7 +44,6 @@ packages:
   - node: { apt: nodejs }
   - sd
   - vhs
-  - bun: { platform: mac }
 
   # macOS-only
   - mas: { platform: mac }                    # Mac App Store CLI
