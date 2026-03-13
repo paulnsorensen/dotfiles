@@ -241,7 +241,7 @@ sync_npm() {
 
     log_info "Syncing npm packages"
     local installed
-    installed=$(npm list -g --depth=0 2>/dev/null | tail -n +2 | sed 's/.*[[:space:]]//' | cut -d@ -f1 || true)
+    installed=$(npm ls -g --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' || true)
 
     while IFS=$'\t' read -r name pkg; do
         [[ -z "$name" ]] && continue

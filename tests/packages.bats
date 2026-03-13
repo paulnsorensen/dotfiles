@@ -121,7 +121,7 @@ run_sync() {
     assert_success
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
-        [[ "$source" == "brew" || "$source" == "cask" || "$source" == "tap" || "$source" == "cargo" ]]
+        [[ "$source" == "brew" || "$source" == "cask" || "$source" == "tap" || "$source" == "cargo" || "$source" == "npm" ]]
     done <<< "$output"
 }
 
