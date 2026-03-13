@@ -4,6 +4,11 @@
 
 set -euo pipefail
 
+if [ "$(uname -s)" != "Darwin" ]; then
+    echo "macos/.sync: skipping (not macOS)" >&2
+    exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 
@@ -17,7 +22,7 @@ for plist in "$SCRIPT_DIR"/*.plist; do
     # Symlink the plist
     if [ -L "$target" ]; then
         rm "$target"
-    elif [ -f "$target" ]; then
+    elif [ -e "$target" ]; then
         mv "$target" "$target.bak"
     fi
     ln -s "$plist" "$target"
