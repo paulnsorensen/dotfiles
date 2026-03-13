@@ -26,6 +26,9 @@ iterm2/com.googlecode.iterm2.plist
 # Claude Code local state (hookify rules, settings.local.json, specs)
 .claude/
 
+# Claude test sandbox (temporary test files from /test-sandbox skill)
+.claude/testing/
+
 # Vim auto-generated files
 vim/.netrwhist
 vim/undo/
