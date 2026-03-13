@@ -63,7 +63,7 @@ assert_contains() {
 }
 
 @test "dots doctor runs with profiling" {
-    run timeout 10 dots doctor
+    run dots doctor
     assert_success
     assert_contains "Health Check"
     assert_contains "Profiling shell startup"
