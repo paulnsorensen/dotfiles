@@ -19,6 +19,15 @@ source "$SCRIPT_DIR/../lib/sync-common.sh"
 sync_parse_args "$@"
 sync_check_deps
 
+# Source .env for secrets (e.g. CONTEXT7_API_KEY) — same loader as zsh/core.zsh
+DOTFILES_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if [[ -f "$DOTFILES_DIR/.env" ]]; then
+    while IFS='=' read -r key val; do
+        [[ -z "$key" || "$key" =~ ^# ]] && continue
+        export "$key=$val"
+    done < "$DOTFILES_DIR/.env"
+fi
+
 if [[ ! -f "$REGISTRY_FILE" ]]; then
     echo -e "${RED}Error: Registry file not found at $REGISTRY_FILE${NC}" >&2
     exit 1
@@ -39,7 +48,11 @@ for name in $DESIRED_NAMES; do
     fi
 done
 # shellcheck disable=SC2034  # used by sync-common.sh
-CURRENT_NAMES=$( (( ${#CURRENT_NAMES_LIST[@]} )) && printf '%s\n' "${CURRENT_NAMES_LIST[@]}" | sort || true)
+if (( ${#CURRENT_NAMES_LIST[@]} )); then
+    CURRENT_NAMES=$(printf '%s\n' "${CURRENT_NAMES_LIST[@]}" | sort)
+else
+    CURRENT_NAMES=""
+fi
 
 get_description() { echo "$DESIRED_JSON" | jq -r --arg n "$1" '.[$n].description // ""'; }
 get_item_scope() {
@@ -95,7 +108,7 @@ if [[ -n "$TO_ADD" ]]; then
             fi
 
             # shellcheck disable=SC2154
-            if err=$(claude mcp add "${env_flags[@]}" -s "$scope" "$name" -- "$command" "${args_array[@]}" 2>&1 >/dev/null); then
+            if err=$(claude mcp add ${env_flags[@]+"${env_flags[@]}"} -s "$scope" "$name" -- "$command" ${args_array[@]+"${args_array[@]}"} 2>&1 >/dev/null); then
                 echo -e "${GREEN}done${NC}"
             else
                 echo -e "${RED}failed${NC}"
