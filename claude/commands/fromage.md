@@ -171,15 +171,14 @@ Interactive requirements gathering — a conversation, not an interrogation.
 2. Ask clarifying questions naturally (don't dump a list)
 3. Invoke `/research` when external research is needed
 4. **Library discovery**: Search for existing libraries/packages that could accelerate implementation. Use octocode (`packageSearch`) and Context7 (`resolve-library-id` → `query-docs`) to find candidates. Evaluate: maturity, maintenance activity, API fit, **license compatibility** (see below).
-5. **Quality gates** (mandatory): Before writing the spec, ask with lettered options:
+5. **Quality gates** (mandatory when this phase runs): Before writing the spec, ask with lettered options:
 
 ```
 What commands must pass for this to be considered done?
    A. cargo test && cargo clippy
    B. npm test && npm run typecheck
    C. pytest && mypy
-   D. just test (justfile)
-   E. Other: [specify your commands]
+   D. Other: [specify — e.g., just test, dots test, make check]
 
 Should we include integration/E2E verification?
    A. Yes, specific paths: [specify]
@@ -199,7 +198,7 @@ Check repo visibility (`gh repo view --json isPrivate -q '.isPrivate'`). For **p
 
 **>>> CHECKPOINT 1: Requirements <<<**
 
-Present with lettered options for fast iteration:
+Present a structured summary, then ask with lettered approval options:
 
 1. **What's being built** (2-3 bullets), constraints, scope boundaries (what's OUT)
 2. **Quality gates** — the commands that must pass (from step 5)
@@ -447,7 +446,7 @@ Present combined findings to user. Fix agreed issues inline.
 
 ### Hard Gate: Tests Must Pass (never skipped)
 
-1. Read quality gates from `.claude/specs/<slug>.md` — run exactly those commands via `whey-drainer` (haiku). If no spec exists (trivial/small tasks), fall back to auto-detected test commands.
+1. Use quality gates captured during Phase 2 spec read — pass those commands to `whey-drainer` (haiku). If no spec exists (trivial/small tasks), fall back to auto-detected test commands.
 2. Failures: fix your changes, re-run (up to 3 iterations). Pre-existing failures: report and ask user.
 3. **Do NOT commit with failing tests** unless user explicitly approves.
 
