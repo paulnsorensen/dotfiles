@@ -12,6 +12,9 @@ alias gcb='git checkout -b'
 alias gc='git commit -v'
 alias gcm='git commit -m'
 alias gd='git diff'
+if command -v difft &>/dev/null; then
+  alias gds='GIT_EXTERNAL_DIFF=difft git diff'
+fi
 alias gdn='git diff --name-only'
 alias gf='git fetch'
 alias gl='git pull'

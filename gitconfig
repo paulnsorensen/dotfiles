@@ -2,6 +2,8 @@
 	name = Paul Sorensen
 	email = paulnsorensen@gmail.com
 
+[core]
+    attributesfile = ~/.gitattributes
 [branch]
   autosetuprebase = always
 
@@ -36,6 +38,8 @@
 
 [difftool "kdiff3"]
     trustExitCode = false
+[difftool "difftastic"]
+    cmd = difft "$LOCAL" "$REMOTE"
 [difftool]
     prompt = false
 [diff]
@@ -46,6 +50,10 @@
     keepBackup = false
 [merge]
     tool = kdiff3
+    conflictstyle = zdiff3
+[merge "mergiraf"]
+    name = mergiraf
+    driver = mergiraf merge --git "%O" "%A" "%B" -s "%S" -x "%X" -y "%Y" -p "%P"
 
 [url "ssh://code.uber.internal/"]
 	insteadOf = https://code.uber.internal/
