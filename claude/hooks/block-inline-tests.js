@@ -5,15 +5,15 @@
  * These patterns bypass project venv, pytest fixtures, conftest, and leave no test artifact.
  *
  * Detected patterns:
- * - python3 -c 'import X; assert ...'
- * - python3 -c "import X; print(...)"
+ * - python3 -c 'import X; assert ...'  (import + assert)
  * - python3 -c $'...\n...' (heredoc form)
- * - cat << 'EOF' | python3 -c "..." (piped heredoc)
- * - python3 -c < file.py (file redirect)
+ * - cat << 'EOF' | python3 (piped heredoc with test content)
  *
  * Does NOT block legitimate one-liners like:
  * - python3 -c "print(sys.version)"
- * - python3 -c "import json; print(json.dumps({}))"
+ *
+ * Note: `import X; print(...)` IS blocked because it's a test-flavored pattern
+ * (verifying output by importing a module and printing results).
  *
  * Redirects to: /test-sandbox skill or uv run pytest
  */
@@ -43,11 +43,12 @@ module.exports = {
         const multilinePattern = /python3?\s+-c\s+['"][^'"]*\bimport\b[^'"]*;[^'"]*(?:\bassert\b|print\s*\()/;
         if (multilinePattern.test(cmd)) return true;
 
-        // Pattern 4: cat/python3 piped with heredoc containing test patterns
-        // Catches: cat << 'EOF' | python3 -c "..." or python3 -c < heredoc.py
+        // Pattern 4: cat piped with heredoc containing test patterns
+        // Catches: cat << 'EOF' | python3 ... (heredoc body piped to python)
         // Also: cat <<-EOF (with tab stripping)
-        const heredocPipePattern = /(?:cat\s+<<[-~]?|python3?\s+-c\s*<\s*)['"]?\w+/;
-        if (heredocPipePattern.test(cmd) && /\bimport\b.*(?:\bassert\b|print\s*\()/.test(cmd)) return true;
+        const heredocPipePattern = /cat\s+<<[-~]?\s*['"]?\w+/;
+        const normalizedCmd = cmd.replace(/\n/g, ' ');
+        if (heredocPipePattern.test(cmd) && /\bimport\b[\s\S]*(?:\bassert\b|print\s*\()/.test(normalizedCmd)) return true;
 
         return false;
       },
@@ -65,7 +66,7 @@ Use the /test-sandbox skill instead:
 Or write a proper test file:
   uv run pytest tests/test_feature.py --tb=short
 
-To override this block, use git commit --no-verify (not recommended).`
+If this is a false positive, ask the Cheese Lord to temporarily disable the hook.`
         };
       }
     }

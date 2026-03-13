@@ -5,7 +5,7 @@ event: file
 conditions:
   - field: new_text
     operator: regex_match
-    pattern: (?:python3?\s+-c\s+['"][^'"]*(?:import|assert)|cat\s+<<|python3?\s+-c\s*<)
+    pattern: (?:python3?\s+-c\s+['"][^'"]*(?:import|assert|print\s*\()|cat\s+<<)
 action: warn
 ---
 

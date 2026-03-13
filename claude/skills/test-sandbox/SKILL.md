@@ -1,3 +1,13 @@
+---
+name: test-sandbox
+description: >
+  Run Python test code in an isolated sandbox without polluting the main context.
+  Writes test files to .claude/testing/ (gitignored), runs via sub-agent, and
+  reports only pass/fail counts and assertion details. Use when you want to quickly
+  verify code without writing inline python3 -c scripts. Also supports --sweep to
+  clean stale test files.
+---
+
 # /test-sandbox — Isolated Test Sandboxing
 
 Run Python test code in an isolated, sandboxed environment without polluting the main context. Ideal for quick assertions and verification during development.
