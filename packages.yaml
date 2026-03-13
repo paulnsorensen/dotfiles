@@ -61,6 +61,13 @@ packages:
   - docker: { source: cask, dev: true, platform: mac }
   - npm: { platform: linux, dev: true }       # On mac, npm comes with `brew install node`
 
+  # LSP servers (for Claude Code LSP plugins via lspmux)
+  - bash-language-server
+  - yaml-language-server
+  - pyright
+  - gopls: { dev: true }
+  - vtsls: { source: npm, pkg: "@vtsls/language-server" }
+
   # Cargo
   - lspmux:
       source: cargo

@@ -1,0 +1,69 @@
+#!/bin/bash
+# lsp-status — single-command LSP health check for Claude Code
+# Checks lspmux, real binaries (behind wrappers), and plugin enablement
+set -euo pipefail
+
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+BINARIES=(bash-language-server vtsls yaml-language-server rust-analyzer pyright-langserver gopls solargraph)
+
+########## lspmux
+
+echo "=== lspmux ==="
+if command -v lspmux &>/dev/null; then
+    if launchctl print "gui/$(id -u)/com.lspmux.server" &>/dev/null; then
+        echo -e "  status: ${GREEN}running${NC}"
+    else
+        echo -e "  status: ${YELLOW}installed but not running${NC}"
+        echo "  fix: launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/com.lspmux.server.plist"
+    fi
+    lspmux status 2>/dev/null | sed 's/^/  /' || true
+else
+    echo -e "  status: ${RED}not installed${NC}"
+fi
+
+########## Binaries (strip dotfiles/bin wrappers to find real ones)
+
+echo ""
+echo "=== Binaries ==="
+REAL_PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v 'dotfiles/bin' | tr '\n' ':' | sed 's/:$//')"
+found=0
+total="${#BINARIES[@]}"
+
+for bin in "${BINARIES[@]}"; do
+    loc=$(PATH="$REAL_PATH" command -v "$bin" 2>/dev/null || true)
+    if [[ -n "$loc" ]]; then
+        echo -e "  ${GREEN}✓${NC} $bin: $loc"
+        ((found++)) || true
+    else
+        echo -e "  ${RED}✗${NC} $bin: NOT FOUND"
+    fi
+done
+echo "  $found/$total binaries found"
+
+########## Plugins
+
+echo ""
+echo "=== Plugins ==="
+plugin_output=$(claude plugin list 2>&1 || echo "")
+enabled=0
+total_plugins=0
+
+for plugin in bash-language-server vtsls yaml-language-server rust-analyzer pyright gopls solargraph; do
+    full="${plugin}@claude-code-lsps"
+    ((total_plugins++)) || true
+    if echo "$plugin_output" | grep -q "$full"; then
+        if echo "$plugin_output" | grep -A3 "$full" | grep -q "enabled"; then
+            echo -e "  ${GREEN}✓${NC} $full"
+            ((enabled++)) || true
+        else
+            echo -e "  ${YELLOW}!${NC} $full (disabled)"
+        fi
+    else
+        echo -e "  ${RED}✗${NC} $full (not installed)"
+    fi
+done
+echo "  $enabled/$total_plugins plugins enabled"
