@@ -76,6 +76,8 @@ LSPMUX_LOG_DIR="$HOME/Library/Logs/lspmux"
 
 if [[ -f "$LSPMUX_PLIST_TEMPLATE" ]] || [[ -f "$LSPMUX_CONFIG_TEMPLATE" ]]; then
   LSPMUX_BIN="$(command -v lspmux 2>/dev/null || true)"
+  # Fallback: cargo install puts binaries in ~/.cargo/bin which may not be on PATH during dots sync
+  [[ -z "$LSPMUX_BIN" && -x "$HOME/.cargo/bin/lspmux" ]] && LSPMUX_BIN="$HOME/.cargo/bin/lspmux"
 
   # Expand launchd plist
   if [[ -f "$LSPMUX_PLIST_TEMPLATE" ]]; then
