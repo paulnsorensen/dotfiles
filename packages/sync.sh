@@ -17,11 +17,15 @@ PLATFORM="$(uname)"
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
+
+FAILED=()
 
 log_info()    { echo -e "${BLUE}[packages]${NC} $1"; }
 log_success() { echo -e "${GREEN}[packages]${NC} $1"; }
-log_warning() { echo -e "${YELLOW}[packages]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[packages]${NC} $1" >&2; }
+log_error()   { echo -e "${RED}[packages]${NC} $1" >&2; }
 
 if [[ "${QUICK_SYNC:-false}" == "true" ]]; then
     log_info "Quick sync, skipping packages"
@@ -56,8 +60,6 @@ if check_cache; then
     log_success "packages.yaml unchanged (cached), skipping"
     exit 0
 fi
-
-INSTALL_FAILURES=0
 
 ########## Query helpers
 # Entry format: bare string OR single-key map (key = name, value = overrides)
@@ -113,9 +115,9 @@ brew_install_pkgs() {
         else
             echo "  Installing $pkg..."
             # shellcheck disable=SC2086  # cask_flag intentionally unquoted
-            if ! brew install $cask_flag "$pkg"; then
-                log_warning "Failed to install $pkg"
-                INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+            if ! brew install $cask_flag "$pkg" </dev/null; then
+                log_error "Failed to install $pkg"
+                FAILED+=("$pkg")
             fi
         fi
     done <<< "$pkg_list"
@@ -142,7 +144,10 @@ sync_brew() {
                 echo "  + $tap"
             else
                 echo "  Installing tap $tap..."
-                brew tap "$tap"
+                if ! brew tap "$tap" </dev/null; then
+                    log_error "Failed to tap $tap"
+                    FAILED+=("tap:$tap")
+                fi
             fi
         done <<< "$taps"
     fi
@@ -174,8 +179,8 @@ sync_cargo() {
         if command -v rustup &>/dev/null; then
             log_info "Bootstrapping Rust stable toolchain..."
             if ! rustup default stable; then
-                log_warning "Failed to bootstrap Rust toolchain"
-                INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+                log_error "Failed to bootstrap Rust toolchain"
+                FAILED+=("rustup-bootstrap")
                 return 0
             fi
             # Brew-installed rustup keeps cargo proxies in opt/rustup/bin
@@ -189,8 +194,8 @@ sync_cargo() {
             fi
         fi
         if ! command -v cargo &>/dev/null; then
-            log_warning "cargo not found (install rustup first)"
-            INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+            log_error "cargo not found (install rustup first)"
+            FAILED+=("cargo")
             return 0
         fi
     fi
@@ -205,15 +210,15 @@ sync_cargo() {
             echo "  + $name"
         elif [[ -n "$git_url" ]]; then
             echo "  Installing $name from $git_url..."
-            if ! cargo install --git "$git_url" "$name"; then
-                log_warning "Failed to install $name"
-                INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+            if ! cargo install --git "$git_url" "$name" </dev/null; then
+                log_error "Failed to install $name"
+                FAILED+=("$name")
             fi
         else
             echo "  Installing $name..."
-            if ! cargo install "$name"; then
-                log_warning "Failed to install $name"
-                INSTALL_FAILURES=$((INSTALL_FAILURES + 1))
+            if ! cargo install "$name" </dev/null; then
+                log_error "Failed to install $name"
+                FAILED+=("$name")
             fi
         fi
     done <<< "$cargo_pkgs"
@@ -224,7 +229,9 @@ sync_cargo() {
 ########## APT
 
 apt_check_pkg() {
-    local pkg="$1" missing_ref="$2"
+    local pkg="$1"
+    # shellcheck disable=SC2178  # nameref to caller's array
+    local -n _missing="$2"
     if [[ "$pkg" == "yq" ]]; then
         if command -v yq &>/dev/null; then
             echo "  + $pkg"
@@ -237,7 +244,7 @@ apt_check_pkg() {
         echo "  + $pkg"
     else
         echo "  - $pkg (missing)"
-        eval "$missing_ref+=(\"\$pkg\")"
+        _missing+=("$pkg")
     fi
 }
 
@@ -289,9 +296,11 @@ fi
 
 sync_cargo
 
-if [[ "$INSTALL_FAILURES" -gt 0 ]]; then
-    log_warning "$INSTALL_FAILURES package(s) failed to install — cache NOT saved (will retry next sync)"
-else
-    save_cache
-    log_success "Package sync complete"
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    echo ""
+    log_error "Failed to install ${#FAILED[@]} package(s): ${FAILED[*]}"
+    exit 1
 fi
+
+save_cache
+log_success "Package sync complete"
