@@ -102,7 +102,7 @@ For apps with many actions, add searchable command discovery:
 from textual.command import Provider, Hit
 
 class EndpointProvider(Provider):
-    async def search(self, query: str) -> Hit:
+    async def search(self, query: str) -> AsyncIterator[Hit]:
         for endpoint in self.app.endpoints:
             if query.lower() in endpoint.path.lower():
                 yield Hit(

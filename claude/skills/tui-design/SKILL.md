@@ -150,7 +150,7 @@ with self.app.suspend():
 
 ### Terminal state safety — THE CARDINAL RULE:
 **Always restore terminal state on every exit path: normal exit, panic, signals.**
-- Rust (ratatui >= v0.30): `ratatui::init()` handles panic hooks automatically
+- Rust (ratatui >= v0.29): `ratatui::init()` handles panic hooks automatically
 - Python (Textual): `App.run()` lifecycle handles cleanup
 - A TUI that corrupts the terminal on crash will be immediately uninstalled
 

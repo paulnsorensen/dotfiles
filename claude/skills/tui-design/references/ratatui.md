@@ -186,13 +186,12 @@ fn spawn_event_handler(tx: mpsc::Sender<Event>) {
         let mut reader = EventStream::new();
         let mut tick = tokio::time::interval(Duration::from_millis(250));
         loop {
-            tokio::select! {
-                Some(Ok(evt)) = reader.next() => {
-                    let _ = tx.send(evt.into()).await;
-                }
-                _ = tick.tick() => {
-                    let _ = tx.send(Event::Tick).await;
-                }
+            let event = tokio::select! {
+                Some(Ok(evt)) = reader.next() => evt.into(),
+                _ = tick.tick() => Event::Tick,
+            };
+            if tx.send(event).await.is_err() {
+                break; // Receiver dropped, app is shutting down
             }
         }
     });
