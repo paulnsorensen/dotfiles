@@ -171,7 +171,25 @@ Interactive requirements gathering — a conversation, not an interrogation.
 2. Ask clarifying questions naturally (don't dump a list)
 3. Invoke `/research` when external research is needed
 4. **Library discovery**: Search for existing libraries/packages that could accelerate implementation. Use octocode (`packageSearch`) and Context7 (`resolve-library-id` → `query-docs`) to find candidates. Evaluate: maturity, maintenance activity, API fit, **license compatibility** (see below).
-5. Write spec to `.claude/specs/<slug>.md` — include any recommended libraries with justification
+5. **Quality gates** (mandatory): Before writing the spec, ask with lettered options:
+
+```
+What commands must pass for this to be considered done?
+   A. cargo test && cargo clippy
+   B. npm test && npm run typecheck
+   C. pytest && mypy
+   D. just test (justfile)
+   E. Other: [specify your commands]
+
+Should we include integration/E2E verification?
+   A. Yes, specific paths: [specify]
+   B. Unit tests are sufficient
+   C. Manual verification checklist
+```
+
+Capture the answer in the spec under a `## Quality Gates` section. These commands become the contract for Phase 9 (Package) — whey-drainer runs exactly these commands.
+
+6. Write spec to `.claude/specs/<slug>.md` — include quality gates and any recommended libraries with justification
 
 **Plan mode note**: The orchestrator is in plan mode and cannot write files directly. Delegate spec writing to a haiku agent — pass the spec content in the prompt, the agent writes to `.claude/specs/<slug>.md` and returns confirmation. Similarly, delegate `gh repo view` license checks to a research agent.
 
@@ -181,9 +199,23 @@ Check repo visibility (`gh repo view --json isPrivate -q '.isPrivate'`). For **p
 
 **>>> CHECKPOINT 1: Requirements <<<**
 
-Present: what's being built (2-3 bullets), constraints, scope boundaries (what's OUT).
+Present with lettered options for fast iteration:
 
-AskUserQuestion: Approve / Edit / Pause. Do NOT proceed without approval — the spec is the contract.
+1. **What's being built** (2-3 bullets), constraints, scope boundaries (what's OUT)
+2. **Quality gates** — the commands that must pass (from step 5)
+3. **Red/Green paths** — end-to-end verification scenarios:
+   - **Green:** User does X → system responds with Y → state becomes Z
+   - **Red:** User does X incorrectly → system returns error → no state change
+
+AskUserQuestion with options:
+```
+   A. Approve — proceed to exploration
+   B. Edit — I want to change scope
+   C. Add constraint — something's missing
+   D. Pause — need to think
+```
+
+Do NOT proceed without approval — the spec is the contract.
 
 **Skip**: Self-evident task or user provides a complete spec.
 
@@ -213,7 +245,15 @@ If library candidates were identified, include them in Curdle's prompt with: pac
 
 Present the plan as visible text output: architecture decision (one line), files to modify/create, build steps (parallel vs sequential), YAGNI boundaries, adopted libraries (if any).
 
-Then use AskUserQuestion: Approve / Modify / Re-explore / Pause. Do NOT proceed without approval.
+Then AskUserQuestion with lettered options:
+```
+   A. Approve — start implementation
+   B. Modify plan — adjust steps
+   C. Re-explore — need more context
+   D. Pause — hold off
+```
+
+Do NOT proceed without approval.
 
 After user approves, call `ExitPlanMode` (with `allowedPrompts` below) to unlock edit mode. The user already approved the plan — this is a mechanical unlock, not a second review:
 
@@ -407,7 +447,7 @@ Present combined findings to user. Fix agreed issues inline.
 
 ### Hard Gate: Tests Must Pass (never skipped)
 
-1. `whey-drainer` (haiku) for final regression check
+1. Read quality gates from `.claude/specs/<slug>.md` — run exactly those commands via `whey-drainer` (haiku). If no spec exists (trivial/small tasks), fall back to auto-detected test commands.
 2. Failures: fix your changes, re-run (up to 3 iterations). Pre-existing failures: report and ask user.
 3. **Do NOT commit with failing tests** unless user explicitly approves.
 
