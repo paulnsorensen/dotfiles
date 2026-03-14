@@ -44,7 +44,8 @@ packages:
   - node: { apt: nodejs }
   - sd
   - vhs
-  - taf2/tap/mdvi: { source: tap }
+  - gettext
+  - taf2/tap/mdvi
 
   # macOS-only
   - mas: { platform: mac }                    # Mac App Store CLI
