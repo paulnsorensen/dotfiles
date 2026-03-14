@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Batch PR status: metadata, mergeable state, and changed files for multiple PRs
+# Usage: gh-pr-batch <PR#> [PR# ...]
+# Output: JSON block per PR with title, state, mergeable, branch, and files touched
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: gh-pr-batch <PR#> [PR# ...]"
+    exit 1
+fi
+
+for pr in "$@"; do
+    echo "=== PR #$pr ==="
+    gh pr view "$pr" --json number,title,state,mergeable,headRefName,baseRefName,additions,deletions,files \
+        --jq '{
+            number,
+            title,
+            state,
+            mergeable,
+            branch: .headRefName,
+            base: .baseRefName,
+            additions,
+            deletions,
+            files: [.files[].path]
+        }'
+done

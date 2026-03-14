@@ -2,7 +2,7 @@
 name: gh
 model: haiku
 fork: true
-allowed-tools: mcp__plugin_github_github__*, Bash(git:*), Bash(gh:*), Bash(gh-pr-review:*), Bash(gh-pr-prep:*), Bash(gh-issue-context:*)
+allowed-tools: mcp__plugin_github_github__*, Bash(git:*), Bash(gh:*), Bash(gh-pr-review:*), Bash(gh-pr-prep:*), Bash(gh-issue-context:*), Bash(gh-pr-batch:*), Bash(gh-pr-checks-batch:*)
 description: >
   Complete GitHub tasks using the GitHub MCP plugin. Use for any GitHub operation —
   PRs, issues, CI checks, repo management, releases, code search.
@@ -120,10 +120,14 @@ These operations have no MCP equivalent — use `gh` CLI:
 For gathering PR context where you need diff + checks + metadata in one shot, the shell helpers are efficient:
 
 ```bash
-gh-pr-review 14       # metadata + diff + checks
-gh-pr-prep             # commits, diff stat, upstream status
-gh-issue-context 42    # issue body + comment thread
+gh-pr-review 14              # single PR: metadata + diff + checks
+gh-pr-prep                    # commits, diff stat, upstream status
+gh-issue-context 42           # issue body + comment thread
+gh-pr-batch 59 60 61 62       # batch: metadata + files for multiple PRs
+gh-pr-checks-batch 59 60 61   # batch: CI checks for multiple PRs
 ```
+
+**Batch helpers** (`gh-pr-batch`, `gh-pr-checks-batch`) are designed for `/cheese-convoy` — one bash approval covers all PRs instead of N individual calls. Output includes file paths touched per PR for overlap detection.
 
 ---
 
