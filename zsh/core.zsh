@@ -33,6 +33,10 @@ if command -v sccache &>/dev/null; then
   ulimit -n 4096 2>/dev/null  # macOS default (256) is too low for sccache on large crates
 fi
 
+# Go TLS fix for macOS sandbox (Claude Code Seatbelt blocks Security.framework mach services)
+# Forces Go to use embedded root certs instead of cgo Security.framework calls
+export GODEBUG=x509usefallbackroots=1
+
 # Editor configuration
 export EDITOR=$(which vim)
 export VISUAL=$EDITOR
