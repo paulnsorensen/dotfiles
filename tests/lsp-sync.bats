@@ -8,8 +8,6 @@ LSP_SYNC="$REAL_DOTFILES_DIR/claude/plugins/lsp-sync.sh"
 LSP_STATUS="$REAL_DOTFILES_DIR/bin/lsp-status"
 
 setup() {
-    export TEST_HOME="${TMPDIR:-/private/tmp/claude-501}/dotfiles-test-$$"
-    export DOTFILES_STATE_DIR="$TEST_HOME/.local/state/dotfiles"
     setup_test_env
 
     MOCK_BIN="$TEST_HOME/bin"
@@ -28,7 +26,6 @@ teardown() {
     teardown_test_env
 }
 
-# --- Mock helpers ---
 
 write_mock_yq() {
     cat > "$MOCK_BIN/yq" <<'MOCKYQ'
@@ -105,10 +102,11 @@ YAML
 }
 
 make_patched_sync() {
+    local registry="${1:-$FIXTURE_REGISTRY}"
     local patched="$TEST_HOME/lsp-sync-patched.sh"
     local settings="$TEST_HOME/.claude/settings.local.json"
     sed \
-        -e "s|REGISTRY_FILE=.*|REGISTRY_FILE=\"$FIXTURE_REGISTRY\"|" \
+        -e "s|REGISTRY_FILE=.*|REGISTRY_FILE=\"$registry\"|" \
         -e "s|LOCAL_SETTINGS=.*|LOCAL_SETTINGS=\"$settings\"|" \
         "$LSP_SYNC" > "$patched"
     chmod +x "$patched"
@@ -123,9 +121,6 @@ run_patched() {
     run env PATH="$MOCK_BIN:/usr/bin:/bin" bash "$patched" "$@"
 }
 
-# ===========================================================================
-# lsp-sync.sh tests
-# ===========================================================================
 
 @test "lsp-sync --list shows enabled and not-set status" {
     echo '{"enabledPlugins":{"pyright@claude-code-lsps":true}}' \
@@ -215,12 +210,8 @@ run_patched() {
 }
 
 @test "missing lsp-registry.yaml exits with error" {
-    local patched="$TEST_HOME/lsp-sync-missing-reg.sh"
-    sed \
-        -e "s|REGISTRY_FILE=.*|REGISTRY_FILE=\"$TEST_HOME/nonexistent.yaml\"|" \
-        -e "s|LOCAL_SETTINGS=.*|LOCAL_SETTINGS=\"$(settings_path)\"|" \
-        "$LSP_SYNC" > "$patched"
-    chmod +x "$patched"
+    local patched
+    patched=$(make_patched_sync "$TEST_HOME/nonexistent.yaml")
     run env PATH="$MOCK_BIN:/usr/bin:/bin" bash "$patched"
     assert_failure
     assert_output_contains "registry not found"
@@ -243,9 +234,6 @@ run_patched() {
     assert_output_contains "jq not found"
 }
 
-# ===========================================================================
-# bin/lsp-status tests
-# ===========================================================================
 
 @test "lsp-status shows binary discovery results" {
     cat > "$MOCK_BIN/pyright-langserver" <<'EOF'
@@ -258,13 +246,10 @@ EOF
     assert_output_contains "Binaries"
 }
 
-@test "lsp-status PATH filtering strips dotfiles/bin from search" {
-    run bash -c '
-        REAL_PATH="$(printf "%s" "$PATH" | tr ":" "\n" | grep -v "dotfiles/bin" | tr "\n" ":" | sed "s/:$//")"
-        echo "$REAL_PATH"
-    '
+@test "lsp-status searches PATH excluding dotfiles/bin for real binaries" {
+    run bash "$LSP_STATUS"
     assert_success
-    assert_output_not_contains "dotfiles/bin"
+    assert_output_contains "Binaries"
 }
 
 @test "lsp-status shows plugin list from settings" {

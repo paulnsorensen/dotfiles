@@ -1,15 +1,11 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2016
 # Tests for JavaScript blocking hooks (preToolUse)
-# Each hook exports { matcher, handler } — we invoke them via a Node wrapper.
 
 load test_helper
 
 HOOKS_DIR="$REAL_DOTFILES_DIR/claude/hooks"
 
-# Invoke a hook's matcher+handler. Args: <hook-file> <toolName> <json-input>
-# Outputs "blocked: <reason>" or "allowed" depending on matcher result.
-# Handles varying handler signatures: (input), (_toolName, input), or ().
 run_hook() {
     local hook="$1" tool="$2" input="$3"
     run node -e "
@@ -19,11 +15,8 @@ run_hook() {
         const matched = hook.matcher('$tool', input);
         if (!matched) { console.log('allowed'); process.exit(0); }
         (async () => {
-            // Hooks have varying handler signatures: (), (input), or (toolName, input).
-            // Try (toolName, input) first; if result is null, retry with (input).
-            let r = await hook.handler('$tool', input);
-            if (r == null) r = await hook.handler(input);
-            // A null/undefined result from handler means allow (e.g. phantom-file-check)
+            const arity = hook.handler.length;
+            let r = arity >= 2 ? await hook.handler('$tool', input) : await hook.handler(input);
             if (r == null) { console.log('allowed'); return; }
             console.log('blocked: ' + (r.result || 'no reason'));
         })();
@@ -31,18 +24,12 @@ run_hook() {
 }
 
 setup() {
-    export TEST_HOME="${TMPDIR:-/private/tmp/claude-501}/dotfiles-test-$$"
-    export DOTFILES_STATE_DIR="$TEST_HOME/.local/state/dotfiles"
     setup_test_env
 }
 
 teardown() {
     teardown_test_env
 }
-
-# ===========================================================================
-# block-install.js
-# ===========================================================================
 
 @test "block-install: npm install is blocked" {
     run_hook "$HOOKS_DIR/block-install.js" Bash '{"command":"npm install express"}'
@@ -80,10 +67,6 @@ teardown() {
     [[ "$output" == "allowed" ]]
 }
 
-# ===========================================================================
-# block-file-write.js
-# ===========================================================================
-
 @test "block-file-write: cat > file is blocked" {
     run_hook "$HOOKS_DIR/block-file-write.js" Bash '{"command":"cat > output.txt"}'
     [ "$status" -eq 0 ]
@@ -119,10 +102,6 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
 }
-
-# ===========================================================================
-# block-legacy-tools.js
-# ===========================================================================
 
 @test "block-legacy: bare grep is blocked" {
     run_hook "$HOOKS_DIR/block-legacy-tools.js" Bash '{"command":"grep pattern file.txt"}'
@@ -163,10 +142,6 @@ teardown() {
     [[ "$output" == "allowed" ]]
 }
 
-# ===========================================================================
-# block-brute-lookup.js
-# ===========================================================================
-
 @test "block-brute: grepping node_modules is blocked" {
     run_hook "$HOOKS_DIR/block-brute-lookup.js" Bash '{"command":"grep -r pattern node_modules/express"}'
     [ "$status" -eq 0 ]
@@ -191,10 +166,6 @@ teardown() {
     [[ "$output" == "allowed" ]]
 }
 
-# ===========================================================================
-# block-inline-tests.js
-# ===========================================================================
-
 @test "block-inline: python -c with import+assert is blocked" {
     run_hook "$HOOKS_DIR/block-inline-tests.js" Bash '{"command":"python3 -c \"import json; assert True\""}'
     [ "$status" -eq 0 ]
@@ -218,10 +189,6 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
 }
-
-# ===========================================================================
-# phantom-file-check.js
-# ===========================================================================
 
 @test "phantom: non-existent file is blocked" {
     run_hook "$HOOKS_DIR/phantom-file-check.js" Read '{"file_path":"/nonexistent/path/foo.txt"}'

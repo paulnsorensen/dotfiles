@@ -28,7 +28,6 @@ MOCK
 
 teardown() { teardown_test_env; }
 
-# --- Fixture helpers ---
 
 create_mock_sync_dir() {
     local src_script="$1" name="$2"
@@ -72,7 +71,6 @@ YAML
 JSON
 }
 
-# --- sync_parse_args ---
 
 @test "sync_parse_args sets DRY_RUN=true with --dry-run" {
     source "$SYNC_COMMON"
@@ -96,7 +94,6 @@ JSON
     assert_output_contains "--dry-run"
 }
 
-# --- sync_check_deps ---
 
 @test "sync_check_deps fails when claude is missing" {
     rm -f "$MOCK_BIN/claude"
@@ -133,7 +130,6 @@ JSON
     assert_success
 }
 
-# --- sync_compute_diff ---
 
 @test "sync_compute_diff correctly computes TO_ADD" {
     source "$SYNC_COMMON"
@@ -164,7 +160,6 @@ JSON
     [[ "$add_count" -eq 2 && "$remove_count" -eq 1 ]]
 }
 
-# --- sync_show_plan ---
 
 @test "sync_show_plan returns 1 when everything in sync" {
     source "$SYNC_COMMON"
@@ -189,7 +184,6 @@ JSON
     assert_output_contains "oldone"
 }
 
-# --- sync_handle_removals ---
 
 @test "sync_handle_removals with force+dry-run shows [dry-run]" {
     source "$SYNC_COMMON"
@@ -226,7 +220,6 @@ JSON
     assert_output_contains "Keeping stale-mcp"
 }
 
-# --- mcp/sync.sh ---
 
 @test "mcp sync: missing registry file exits with error" {
     local mock_dir
@@ -246,9 +239,7 @@ JSON
     assert_output_contains "[dry-run]"
     assert_output_contains "alpha"
     assert_output_contains "beta"
-    if [[ -f "$CLAUDE_LOG" ]]; then
-        ! grep -q "claude mcp add" "$CLAUDE_LOG"
-    fi
+    [ ! -f "$CLAUDE_LOG" ] || ! grep -q "claude mcp add" "$CLAUDE_LOG"
 }
 
 @test "mcp sync: adds new MCPs with correct scope and args" {
@@ -262,7 +253,6 @@ JSON
     grep -q "claude mcp add -s project beta -- node beta-server.js" "$CLAUDE_LOG"
 }
 
-# --- plugins/sync.sh ---
 
 @test "plugin sync: missing registry file exits with error" {
     local mock_dir
@@ -286,7 +276,5 @@ JSON
     assert_output_contains "[dry-run]"
     assert_output_contains "hookify@official"
     assert_output_contains "linter@community"
-    if [[ -f "$CLAUDE_LOG" ]]; then
-        ! grep -q "claude plugin install" "$CLAUDE_LOG"
-    fi
+    [ ! -f "$CLAUDE_LOG" ] || ! grep -q "claude plugin install" "$CLAUDE_LOG"
 }

@@ -7,7 +7,7 @@ export REAL_DOTFILES_DIR
 export PATH="$REAL_DOTFILES_DIR/bin:$PATH"
 
 # Test environment setup
-export TEST_HOME="/tmp/dotfiles-test-$$"
+export TEST_HOME="${TMPDIR:-/tmp}/dotfiles-test-$$"
 
 # Override DOTFILES_DIR for tests to point to the real location
 export DOTFILES_DIR="$REAL_DOTFILES_DIR"
