@@ -226,6 +226,39 @@ sync_cargo() {
     log_success "Cargo sync complete"
 }
 
+########## NPM
+
+sync_npm() {
+    local npm_pkgs
+    npm_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "npm") | [.key, (.value.pkg // .key)] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    [[ -z "$npm_pkgs" ]] && return 0
+
+    if ! command -v npm &>/dev/null; then
+        log_error "npm not found (install node first)"
+        FAILED+=("npm")
+        return 0
+    fi
+
+    log_info "Syncing npm packages"
+    local installed
+    installed=$(npm ls -g --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' || true)
+
+    while IFS=$'\t' read -r name pkg; do
+        [[ -z "$name" ]] && continue
+        if echo "$installed" | grep -qx "$pkg"; then
+            echo "  + $name"
+        else
+            echo "  Installing $pkg..."
+            if ! npm install -g "$pkg" </dev/null; then
+                log_error "Failed to install $pkg"
+                FAILED+=("$pkg")
+            fi
+        fi
+    done <<< "$npm_pkgs"
+
+    log_success "NPM sync complete"
+}
+
 ########## APT
 
 apt_check_pkg() {
@@ -295,6 +328,7 @@ elif [[ "$PLATFORM" == "Linux" ]]; then
 fi
 
 sync_cargo
+sync_npm
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     echo ""

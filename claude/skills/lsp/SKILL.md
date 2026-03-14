@@ -6,9 +6,7 @@ description: >
   verifies binaries, and diagnoses issues.
 permissions:
   allow:
-    - "Bash(lspmux:*)"
-    - "Bash(which:*)"
-    - "Bash(claude:*)"
+    - "Bash(lsp-status:*)"
 ---
 
 # lsp
@@ -40,54 +38,21 @@ LSP plugins provide Claude Code's built-in `LSP` tool with 9 operations:
 
 ## Protocol
 
-### 1. Check lspmux status
+Run the all-in-one health check:
 
 ```bash
-lspmux status
+lsp-status
 ```
 
-Show active instances, their workspace roots, and connected clients.
-
-### 2. Verify binaries
-
-For each plugin, check the real binary exists (stripping dotfiles/bin wrappers):
-
-```bash
-PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v 'dotfiles/bin' | tr '\n' ':' | sed 's/:$//')"
-for bin in bash-language-server vtsls yaml-language-server rust-analyzer pyright-langserver gopls solargraph; do
-  echo "$bin: $(command -v "$bin" 2>/dev/null || echo 'NOT FOUND')"
-done
-```
-
-### 3. Check plugin enablement
-
-```bash
-claude plugin list 2>&1 | grep -E "claude-code-lsps" -A3
-```
-
-All should show `Status: ✔ enabled`. If any show disabled, run:
-`claude plugin enable <name>@claude-code-lsps`
-
-### 4. Report
-
-```
-LSP Status:
-  lspmux: running | not running | not installed
-  Active instances: N (list servers + workspace roots)
-
-  Binaries:
-    bash-language-server: /opt/homebrew/bin/bash-language-server
-    vtsls: /opt/homebrew/bin/vtsls
-    ...
-    solargraph: NOT FOUND (install with: gem install solargraph)
-
-  Plugins: 7/7 enabled | N/7 enabled (list disabled ones)
-```
+This single script checks lspmux status, verifies all 7 binaries exist (behind
+dotfiles/bin wrappers), and confirms plugin enablement. Report the output to the
+user and flag anything that needs attention.
 
 ## Troubleshooting
 
 - **LSP tool not available**: Restart Claude Code — plugins load at session start
-- **Server not starting**: Check binary exists (step 2). lspmux-wrap requires `--` before server args (fixed in lspmux-wrap)
+- **Server not starting**: Check binary exists in `lsp-status` output. lspmux-wrap requires `--` before server args
 - **lspmux down**: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lspmux.server.plist`
 - **Plugin disabled**: `claude plugin enable <name>@claude-code-lsps`
+- **Binary not found**: Run `dots sync` to install missing LSP servers from packages.yaml
 - **Wrong binary found**: Ensure `$DOTFILES_DIR/bin` is first on PATH (wrappers must shadow real binaries)
