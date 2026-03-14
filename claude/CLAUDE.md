@@ -100,7 +100,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit), `/de-slop` (AI anti-patterns) |
 | PR Response | `/respond` (confidence-rated review triage), `/copilot-review`, `/copilot-delegate` |
 | Testing | `/wreck`, `/test`, `/diff`, `/tdd-assertions`, `/pingpong` |
-| GitHub | `/move-my-cheese <PR#>` |
+| GitHub | `/move-my-cheese <PR#>`, `/cheese-convoy <PR# PR# ...>` |
 | Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/notebook`, `/onboard` |
 
@@ -113,6 +113,7 @@ All agents use 0-100 confidence scoring (>= 75 to surface). This applies pipelin
 | Fromage-age | Per-finding 0-100 |
 | Fromage-press | Per-failure 0-100 |
 | Fromage-cook | Per-step completion confidence 0-100 |
+| Cheese-responder | Per-thread 0-100, auto-fix >= 75 |
 
 **When confidence < 75 on any decision, ask the user.** Don't guess and move on.
 
@@ -154,6 +155,8 @@ Serena wraps LSP for symbol navigation and adds project memory.
 - **Auto-diagnostics**: After file edits, the language server reports type errors, missing imports, and syntax issues
 - **lspmux**: Deduplicates server instances across sessions per workspace root
 - **Status/troubleshooting**: Run `/lsp` to check what's running and verify binaries
+
+**Agent permission modes** — `acceptEdits` only covers Edit/Write, NOT Bash or MCP calls. For worktree agents that need `gh`, `git push`, or build commands without prompts, use `bypassPermissions` with worktree isolation. The isolation provides safety; the permission mode provides uninterrupted execution.
 
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 
