@@ -45,6 +45,8 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `gh-pr-review <PR#>` - Bundle PR metadata, diff, and checks for review
 - `gh-pr-prep` - Bundle PR prep context (commits, diff stats, upstream status)
 - `gh-issue-context <issue#>` - Bundle issue metadata and comments
+- `gh-pr-batch <PR#> [PR# ...]` - Batch status (title, state, mergeable, files) for multiple PRs
+- `gh-pr-checks-batch <PR#> [PR# ...]` - Batch CI checks for multiple PRs
 
 ### Plugin Management
 - `plugin-sync` - Sync plugins from registry.yaml to Claude Code
