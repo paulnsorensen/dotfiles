@@ -16,16 +16,9 @@ Semantic code navigation and project memory. Only use via this skill.
 
 ## When to use serena vs. other tools
 
-| Question | Tool |
-|---|---|
-| "Who calls function foo?" (semantic) | **serena** — cross-file symbol resolution |
-| "Go to definition of bar" | **serena** — resolved navigation |
-| "Find all X that contain Y" (shape) | **trace** (ast-grep) — AST pattern matching |
-| "Type of variable X?" (inference) | LSP plugins (`/lsp`) — type system |
-
-Serena wraps LSP internally for symbol operations. ast-grep provides structural
-pattern matching that Serena can't do. LSP plugins add type inference that
-neither tool provides.
+Use `/lookup` for the full routing decision tree. In short: serena handles
+**semantic** questions ("who calls X?", "go to definition of Y"). For structural
+shape queries, use trace. For type inference, use LSP.
 
 ## Activate first
 

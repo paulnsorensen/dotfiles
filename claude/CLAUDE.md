@@ -138,17 +138,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | Weak test assertions | tdd-assertions | framework-specific assertion refs | truthy checks, catch-all errors |
 | PR review response | respond | confidence triage, GitHub MCP replies | manually reading and replying to each comment |
 
-**Code intelligence tool division** — three complementary tools, not substitutes:
-
-| Question | Tool | Why |
-|---|---|---|
-| "Find all X that contain Y" (shape) | trace (ast-grep) | AST pattern matching, zero config |
-| "Who calls function foo?" (semantic) | serena (LSP-backed) | Cross-file symbol resolution |
-| "Type of variable X?" (inference) | LSP plugins (`/lsp`) | Type system integration |
-
-ast-grep needs no initialization — `sg --lang X -p 'pattern'` works on any codebase.
-LSP plugins add type inference that neither ast-grep nor Serena provide.
-Serena wraps LSP for symbol navigation and adds project memory.
+**Code intelligence routing** — use `/lookup` to decide between trace (AST shape), serena (semantic cross-refs), LSP (type inference), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
 
 **LSP integration** — All 7 LSP plugins are enabled globally. Claude Code's built-in `LSP` tool provides 9 operations (`goToDefinition`, `findReferences`, `hover`, `documentSymbol`, etc.):
 - **Lazy startup**: Servers only start when the LSP tool is invoked on a matching file type — zero cost when idle

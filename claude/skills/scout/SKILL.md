@@ -3,11 +3,12 @@ name: scout
 model: haiku
 allowed-tools: Bash(rg:*), Bash(fd:*), Bash(ls:*)
 description: >
-  Use rg, fd, and ls (eza) to search and explore files. Invoke this skill
-  whenever you need to search for patterns in files, find files by name or
-  metadata, or list directory contents. rg is faster, smarter, and respects
-  .gitignore by default. Always prefer rg over grep or find -exec grep.
-  Use fd for finding files by name/type. Use ls (eza) for directory listings.
+  Use rg, fd, and ls (eza) to search and explore files. Adds capabilities
+  beyond built-in Grep/Glob: fd finds files by metadata (size, date, type),
+  rg aliases (rga, rgf, rgc, todos) provide common search patterns, and
+  ls (eza) gives tree views with git status. Use built-in Grep/Glob for
+  simple content/name searches; use scout when you need fd, rg aliases,
+  hidden/ignored file search, or eza directory listings.
 ---
 
 # scout

@@ -32,14 +32,9 @@ Config files are only for rule authoring (shared lint rules, test infrastructure
 
 ## When to use trace vs. other tools
 
-| Question shape | Tool |
-|---|---|
-| "Find all X that contain Y" (structural) | **trace** (ast-grep) |
-| "What implements interface Z?" (shape) | **trace** (ast-grep) |
-| "Who calls function foo?" (semantic) | **serena** (LSP-backed) |
-| "Go to definition of bar" (navigation) | **serena** (LSP-backed) |
-| "Find text pattern in files" | **scout** (rg) |
-| "Type of variable X?" (inference) | LSP server (via `/lsp`) |
+Use `/lookup` for the full routing decision tree. In short: trace handles
+**structural/shape** questions ("what implements X?", "find all Y that contain Z").
+For semantic queries (calls, references), use serena. For type inference, use LSP.
 
 ## Core invocations
 
