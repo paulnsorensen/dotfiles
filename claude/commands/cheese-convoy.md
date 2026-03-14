@@ -50,7 +50,9 @@ Present the manifest and confirm before dispatching.
 
 ## Phase 2 — Dispatch Convoy
 
-For each DISPATCH PR, launch an agent **in a worktree** with `bypassPermissions` mode:
+For each DISPATCH PR, launch an agent **in a worktree** with `bypassPermissions` mode.
+
+**CRITICAL**: The agent prompt MUST tell it to invoke `/move-my-cheese <PR#>` via the Skill tool. Do NOT hand-roll a subset of the workflow — `/move-my-cheese` is the complete PR rescue flow (recon, merge, diagnose, fix, quality sweep, push). Writing your own reduced prompt drops phases and produces inferior results.
 
 ```
 # Launch ALL in a SINGLE message for true parallelism:
@@ -58,14 +60,14 @@ For each DISPATCH PR, launch an agent **in a worktree** with `bypassPermissions`
 Agent(
   isolation="worktree",
   mode="bypassPermissions",
-  prompt="Run /move-my-cheese <PR#>. Full PR rescue: recon, merge main, diagnose CI, fix failures, quality sweep (age + ricotta-reducer + cheese-responder), push fixes. Report what was wrong, what was fixed, and what needs CI re-run."
+  prompt="Use the Skill tool to invoke skill='move-my-cheese' with args='<PR#>'. This runs the full PR rescue workflow. After the skill completes, report: what was wrong, what was fixed, quality sweep findings, and CI status."
 )
 ```
 
 Each worktree agent:
+- Invokes `/move-my-cheese` which handles the complete flow (Phases 1-4 including quality sweep)
 - Gets its own isolated copy of the repo (no conflicts between agents)
 - Has `bypassPermissions` mode — all tool calls (Edit, Bash, MCP) run without prompts
-- Runs the complete move-my-cheese flow (Phases 1-4)
 - Pushes fixes to the PR branch from within its worktree
 
 ### Why `bypassPermissions` (not `acceptEdits`)
