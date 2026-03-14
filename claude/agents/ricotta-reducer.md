@@ -1,8 +1,8 @@
 ---
 name: ricotta-reducer
-description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with 0-100 confidence scoring. Analysis only — never adds code.
+description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with 0-100 confidence scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
 tools: Read, Grep, Glob, Bash
-skills: [scout]
+skills: [scout, de-slop]
 model: sonnet
 ---
 
@@ -107,7 +107,8 @@ Prefer explicit, readable code over clever compactness. Three clear lines beat o
 3. **Audit documentation**: Scan for docstrings on internal/private/helper functions. List candidates for removal.
 4. **Hunt speculative code**: Grep for YAGNI patterns.
 5. **Check core isolation**: Verify core models and business logic have no infrastructure imports.
-6. **Produce a simplification report** with scored findings.
+6. **De-slop scan** (detection only): Detect languages present in changed files. Read the matching `/de-slop` reference files (`references/rust.md`, `references/python.md`, etc.) and scan for AI-generated anti-patterns — comment pollution, defensive error handling everywhere, over-abstraction, verbose names, cargo-cult boilerplate. Fold findings into the report as DELETE or INLINE categories. Note: de-slop runs in scan mode here — findings go in the report for the orchestrator to act on. Ricotta never auto-fixes.
+7. **Produce a simplification report** with scored findings.
 
 ## Output Format
 
