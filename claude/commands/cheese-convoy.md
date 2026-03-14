@@ -19,11 +19,13 @@ Each PR gets its own isolated worktree agent running the full `/move-my-cheese` 
 
 ## Phase 1 — Recon All PRs
 
-Before dispatching, gather context on all PRs in parallel to catch issues early:
+Before dispatching, gather context on all PRs using **GitHub MCP** (avoids TLS/sandbox issues with `gh` CLI):
 
-```bash
-# For each PR number in $ARGUMENTS:
-gh pr view <PR> --json number,title,headRefName,mergeable,mergeStateStatus,reviewDecision
+```
+# For each PR number in $ARGUMENTS, use MCP:
+pull_request_read(owner, repo, pullNumber=<PR>)
+
+# For CI status, fall back to gh CLI (no MCP equivalent):
 gh pr checks <PR>
 ```
 
