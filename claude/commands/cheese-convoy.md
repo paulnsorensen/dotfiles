@@ -74,11 +74,13 @@ Each worktree agent:
 
 `acceptEdits` only auto-approves Edit/Write tools. PR rescue requires Bash commands (`gh pr`, `git push`, build/test) and MCP calls (GitHub plugin for PR comments, CI re-runs). Using `acceptEdits` still triggers sandbox prompts for every `gh` heredoc, `git push`, and build command — defeating parallel automation.
 
-`bypassPermissions` is safe here because:
-- Each agent runs in an isolated worktree (filesystem isolation)
-- Agents can only push to the PR's remote branch (not main/force-push)
+`bypassPermissions` is contained here because:
+- Each agent runs in an isolated worktree (filesystem containment)
 - The convoy manifest in Phase 1 gives the user a confirm gate before agents launch
-- Error recovery rules prevent destructive operations (no force-push without asking)
+- Prompt instructions restrict push targets (see below) — this is procedural, not enforced by the sandbox
+- Error recovery rules prevent destructive operations
+
+**Branch restriction (procedural guardrail):** Worktree agents MUST only push to the PR's branch (`git push origin HEAD:<pr-branch>`). NEVER push to main, master, or any branch other than the PR branch. NEVER force-push. These are prompt-level restrictions — `bypassPermissions` does not enforce them mechanically, so they must be explicit.
 
 ## Phase 3 — Collect Reports
 
