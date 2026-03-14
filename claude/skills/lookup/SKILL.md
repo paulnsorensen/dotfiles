@@ -45,9 +45,9 @@ Then follow the table:
 | What does this function do? | **LSP** `hover` + **Read** the body | **Context7** or **WebFetch** raw source |
 | Find structural patterns | **/trace** `sg --lang X -p 'pattern'` | N/A — use octocode text search |
 | Error type / return type | **LSP** `hover` | **Context7** `query-docs` |
-| Find files by name/pattern | **Glob** or **fd** (scout skill) | N/A |
-| Find files by content | **Grep** (built-in) or **rg** (scout) | **octocode** `search_code` |
-| List directory contents | **ls** (scout skill) | **octocode** `view_repo_structure` |
+| Find files by name/pattern | **Glob** (simple) or **fd** via scout (metadata filters) | N/A |
+| Find files by content | **Grep** (simple) or **rg** via scout (aliases, hidden files) | **octocode** `search_code` |
+| List directory contents | **ls** via scout (eza tree view + git status) | **octocode** `view_repo_structure` |
 
 ### Quick reference by tool
 

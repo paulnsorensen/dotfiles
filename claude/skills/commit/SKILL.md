@@ -46,12 +46,15 @@ Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `style`
 
 Focus on the **why**, not the **what**. The diff already shows what changed.
 
-## Commit message format
-
-Use `-m` with the full message. For multi-line messages, use multiple `-m` flags:
+Use a heredoc to preserve formatting:
 
 ```bash
-git commit -m "type(scope): description" -m "Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+git commit -m "$(cat <<'EOF'
+type(scope): short description
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+EOF
+)"
 ```
 
 ## Rules
