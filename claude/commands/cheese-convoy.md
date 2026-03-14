@@ -72,7 +72,7 @@ Using the `files` arrays from `gh-pr-batch` output:
 ### Combination Workflow
 
 When PRs should be combined:
-1. Pick the **target PR** — the one with the most commits or most recent activity
+1. Pick the **target PR** — use `totalCommits` and `updatedAt` from `gh-pr-batch` output (highest commit count wins; break ties by most recent `updatedAt`)
 2. Present the combination plan to the user for approval:
    ```
    ## Combination Plan

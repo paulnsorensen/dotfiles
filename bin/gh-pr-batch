@@ -11,7 +11,7 @@ fi
 
 for pr in "$@"; do
     echo "=== PR #$pr ==="
-    gh pr view "$pr" --json number,title,state,mergeable,headRefName,baseRefName,additions,deletions,files \
+    gh pr view "$pr" --json number,title,state,mergeable,headRefName,baseRefName,additions,deletions,files,commits,updatedAt \
         --jq '{
             number,
             title,
@@ -21,6 +21,8 @@ for pr in "$@"; do
             base: .baseRefName,
             additions,
             deletions,
+            totalCommits: (.commits | length),
+            updatedAt,
             files: [.files[].path]
         }'
 done
