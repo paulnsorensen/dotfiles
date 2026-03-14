@@ -64,7 +64,7 @@ Summarize findings:
 - Merge status (clean, conflicts, or blocked)
 - CI failures (infra flake vs real test failure)
 - Scope of changes (files touched, lines changed)
-- Unresolved review comments (yes/no — needed to decide if Phase 3b runs `/respond`)
+- Unresolved review comments (yes/no — needed to decide if Phase 3b launches `cheese-responder`)
 
 ---
 
@@ -186,9 +186,9 @@ After all three agents return:
 2. **Apply fixes** using chisel — these are typically:
    - Removing unnecessary abstractions or dead code (de-slop)
    - Fixing complexity budget violations (age)
-   - Addressing reviewer comments that /respond auto-fixed
+   - Addressing reviewer comments that cheese-responder auto-fixed
 3. **Re-run `/make test`** to verify fixes didn't break anything
-4. If respond fixed code, those changes are already in the working tree — just verify and commit together
+4. If cheese-responder fixed code, those changes are already in the working tree — just verify and commit together
 
 If any finding is < 75 confidence, **ask the user** before acting on it.
 

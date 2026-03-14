@@ -83,5 +83,7 @@ If code was changed, commit fixes using the **commit** skill. Report: files modi
 - One reply per thread
 - Match reviewer's tone — professional for humans, concise for bots
 - Batch all code fixes into one commit
-- Only surface findings >= 75 confidence for auto-fix
-- Items < 75 go in the report for user decision
+- Show ALL threads in the triage table (full visibility)
+- Auto-fix items >= 75 confidence
+- Push back on items < 50 with a professional reply
+- Items 50-74 go in the report for user/orchestrator decision
