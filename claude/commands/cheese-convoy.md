@@ -100,7 +100,7 @@ As each agent completes, collect its report. Build a consolidated convoy report:
 **Status**: Fixed and pushed
 **Issues**: Merge conflict in zsh/claude.zsh (additive — both sides added aliases)
 **Fixes**: Kept both alias sets, resolved conflict
-**Quality sweep**: cheese-responder addressed 2 Copilot comments (score 85, 90)
+**Quality sweep**: fromage-fort addressed 2 Copilot comments (score 85, 90)
 **CI**: All green after push
 
 ### PR #61 — SKIPPED (blocked mergeable status)

@@ -64,7 +64,7 @@ Summarize findings:
 - Merge status (clean, conflicts, or blocked)
 - CI failures (infra flake vs real test failure)
 - Scope of changes (files touched, lines changed)
-- Unresolved review comments (yes/no — needed to decide if Phase 3b launches `cheese-responder`)
+- Unresolved review comments (yes/no — needed to decide if Phase 3b launches `fromage-fort`)
 
 ---
 
@@ -169,14 +169,14 @@ Agent(subagent_type="fromage-age", prompt="Review the changes on this branch vs 
 Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 75 confidence.")
 
 # Only if Phase 1 recon found unresolved review comments:
-Agent(subagent_type="cheese-responder", prompt="Triage unresolved review comments on PR #$ARGUMENTS. Score each 0-100, fix >= 75, push back < 50, report 50-74 for user decision.")
+Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on PR #$ARGUMENTS. Score each 0-100, fix >= 75, push back < 50, report 50-74 for user decision.")
 ```
 
 | Agent | What it catches |
 |---|---|
 | **fromage-age** | Architecture violations, complexity budget breaches, principle violations |
 | **ricotta-reducer** | AI slop + de-slop patterns, over-abstraction, comment pollution, dead code |
-| **cheese-responder** | Unresolved reviewer comments — triages and fixes >= 75 confidence |
+| **fromage-fort** | Unresolved reviewer comments — triages and fixes >= 75 confidence |
 
 ### Apply Sweep Findings
 
@@ -186,9 +186,9 @@ After all three agents return:
 2. **Apply fixes** using chisel — these are typically:
    - Removing unnecessary abstractions or dead code (de-slop)
    - Fixing complexity budget violations (age)
-   - Addressing reviewer comments that cheese-responder auto-fixed
+   - Addressing reviewer comments that fromage-fort auto-fixed
 3. **Re-run `/make test`** to verify fixes didn't break anything
-4. If cheese-responder fixed code, those changes are already in the working tree — just verify and commit together
+4. If fromage-fort fixed code, those changes are already in the working tree — just verify and commit together
 
 If any finding is < 75 confidence, **ask the user** before acting on it.
 

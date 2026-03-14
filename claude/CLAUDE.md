@@ -113,7 +113,7 @@ All agents use 0-100 confidence scoring (>= 75 to surface). This applies pipelin
 | Fromage-age | Per-finding 0-100 |
 | Fromage-press | Per-failure 0-100 |
 | Fromage-cook | Per-step completion confidence 0-100 |
-| Cheese-responder | Per-thread 0-100, auto-fix >= 75 |
+| Fromage-fort | Per-thread 0-100, auto-fix >= 75 |
 
 **When confidence < 75 on any decision, ask the user.** Don't guess and move on.
 
