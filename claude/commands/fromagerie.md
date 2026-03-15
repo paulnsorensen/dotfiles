@@ -66,9 +66,9 @@ This gate is **never skipped**.
 ### Read and Validate Spec
 
 Read the spec file. Fail fast with a clear error if any of these are missing:
-- Problem statement
-- User stories
-- Quality Gates section (with runnable commands)
+- Problem Statement (`## Problem Statement`)
+- User Stories (`## User Stories`)
+- Quality Gates (`## Quality Gates`) with runnable commands
 
 Extract:
 - **Spec summary** (<2K chars): what's being built (bullets), constraints, scope boundaries
@@ -216,7 +216,6 @@ Agent(
   isolation="worktree",
   mode="bypassPermissions",
   run_in_background=True,
-  subagent_type="fromage-cook",
   max_turns=60,
   prompt="""
 You are executing atom #{N} of a /fromagerie decomposition for spec: {slug}
