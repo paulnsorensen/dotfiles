@@ -2,8 +2,11 @@
 name: warn-deferred-stop
 enabled: true
 event: stop
-pattern: .*
 action: warn
+conditions:
+  - field: reason
+    operator: regex_match
+    pattern: .*
 ---
 
 **Spec completion check before stopping.**
