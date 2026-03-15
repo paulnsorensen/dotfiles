@@ -57,7 +57,8 @@ echo "...done"
 
 # move any existing dotfiles in homedir to dotfiles_old directory, then create
 # symlinks
-for file in *; do
+for path in "$dir"/*; do
+  file=$(basename "$path")
   if [[ -h "${HOME}/.$file" ]]; then
     echo "Removing old link to $file"
     rm "${HOME}/.$file"

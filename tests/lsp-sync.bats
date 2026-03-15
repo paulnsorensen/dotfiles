@@ -246,10 +246,19 @@ EOF
     assert_output_contains "Binaries"
 }
 
-@test "lsp-status searches PATH excluding dotfiles/bin for real binaries" {
-    run bash "$LSP_STATUS"
+@test "lsp-status excludes dotfiles/bin wrappers from binary search" {
+    # Place a "binary" only in dotfiles/bin (which should be excluded)
+    mkdir -p "$TEST_HOME/dotfiles/bin"
+    cat > "$TEST_HOME/dotfiles/bin/typescript-language-server" <<'EOF'
+#!/bin/bash
+echo "wrapper"
+EOF
+    chmod +x "$TEST_HOME/dotfiles/bin/typescript-language-server"
+    # Ensure dotfiles/bin is on PATH but no real binary exists elsewhere
+    PATH="$TEST_HOME/dotfiles/bin:$MOCK_BIN" run bash "$LSP_STATUS"
     assert_success
-    assert_output_contains "Binaries"
+    # The wrapper should not appear as a found binary
+    assert_output_not_contains "typescript-language-server"
 }
 
 @test "lsp-status shows plugin list from settings" {
