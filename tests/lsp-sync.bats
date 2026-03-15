@@ -8,8 +8,6 @@ LSP_SYNC="$REAL_DOTFILES_DIR/claude/plugins/lsp-sync.sh"
 LSP_STATUS="$REAL_DOTFILES_DIR/bin/lsp-status"
 
 setup() {
-    export TEST_HOME="${TMPDIR:-/private/tmp/claude-501}/dotfiles-test-$$"
-    export DOTFILES_STATE_DIR="$TEST_HOME/.local/state/dotfiles"
     setup_test_env
 
     MOCK_BIN="$TEST_HOME/bin"
@@ -28,7 +26,6 @@ teardown() {
     teardown_test_env
 }
 
-# --- Mock helpers ---
 
 write_mock_yq() {
     cat > "$MOCK_BIN/yq" <<'MOCKYQ'
@@ -105,10 +102,11 @@ YAML
 }
 
 make_patched_sync() {
+    local registry="${1:-$FIXTURE_REGISTRY}"
     local patched="$TEST_HOME/lsp-sync-patched.sh"
     local settings="$TEST_HOME/.claude/settings.local.json"
     sed \
-        -e "s|REGISTRY_FILE=.*|REGISTRY_FILE=\"$FIXTURE_REGISTRY\"|" \
+        -e "s|REGISTRY_FILE=.*|REGISTRY_FILE=\"$registry\"|" \
         -e "s|LOCAL_SETTINGS=.*|LOCAL_SETTINGS=\"$settings\"|" \
         "$LSP_SYNC" > "$patched"
     chmod +x "$patched"
@@ -123,9 +121,6 @@ run_patched() {
     run env PATH="$MOCK_BIN:/usr/bin:/bin" bash "$patched" "$@"
 }
 
-# ===========================================================================
-# lsp-sync.sh tests
-# ===========================================================================
 
 @test "lsp-sync --list shows enabled and not-set status" {
     echo '{"enabledPlugins":{"pyright@claude-code-lsps":true}}' \
@@ -215,12 +210,8 @@ run_patched() {
 }
 
 @test "missing lsp-registry.yaml exits with error" {
-    local patched="$TEST_HOME/lsp-sync-missing-reg.sh"
-    sed \
-        -e "s|REGISTRY_FILE=.*|REGISTRY_FILE=\"$TEST_HOME/nonexistent.yaml\"|" \
-        -e "s|LOCAL_SETTINGS=.*|LOCAL_SETTINGS=\"$(settings_path)\"|" \
-        "$LSP_SYNC" > "$patched"
-    chmod +x "$patched"
+    local patched
+    patched=$(make_patched_sync "$TEST_HOME/nonexistent.yaml")
     run env PATH="$MOCK_BIN:/usr/bin:/bin" bash "$patched"
     assert_failure
     assert_output_contains "registry not found"
@@ -228,24 +219,38 @@ run_patched() {
 
 @test "missing yq dependency exits with error" {
     rm -f "$MOCK_BIN/yq"
-    local patched
+    local patched restricted_bin
     patched=$(make_patched_sync)
-    run env PATH="$MOCK_BIN:/usr/bin:/bin" bash "$patched" --list
+    # Build a restricted bin with only essential commands (no yq)
+    restricted_bin="$TEST_HOME/restricted-bin"
+    mkdir -p "$restricted_bin"
+    for cmd in bash cat grep sed sort tail head env printf mkdir chmod rm ln cp mv comm tee wc tr dirname readlink; do
+        local real_path
+        real_path=$(command -v "$cmd" 2>/dev/null) && ln -sf "$real_path" "$restricted_bin/$cmd"
+    done
+    ln -sf "$(command -v jq)" "$restricted_bin/jq"
+    run env PATH="$restricted_bin" bash "$patched" --list
     assert_failure
     assert_output_contains "yq not found"
 }
 
 @test "missing jq dependency exits with error" {
     rm -f "$MOCK_BIN/jq"
-    # Use PATH with only mock bin (no jq) plus bare essentials
-    run env PATH="$MOCK_BIN:/bin" bash "$(make_patched_sync)" --list
+    local patched restricted_bin
+    patched=$(make_patched_sync)
+    # Build a restricted bin with only essential commands (no jq)
+    restricted_bin="$TEST_HOME/restricted-bin"
+    mkdir -p "$restricted_bin"
+    for cmd in bash cat grep sed sort tail head env printf mkdir chmod rm ln cp mv comm tee wc tr dirname readlink; do
+        local real_path
+        real_path=$(command -v "$cmd" 2>/dev/null) && ln -sf "$real_path" "$restricted_bin/$cmd"
+    done
+    cp "$MOCK_BIN/yq" "$restricted_bin/yq"
+    run env PATH="$restricted_bin" bash "$patched" --list
     assert_failure
     assert_output_contains "jq not found"
 }
 
-# ===========================================================================
-# bin/lsp-status tests
-# ===========================================================================
 
 @test "lsp-status shows binary discovery results" {
     cat > "$MOCK_BIN/pyright-langserver" <<'EOF'
@@ -258,13 +263,20 @@ EOF
     assert_output_contains "Binaries"
 }
 
-@test "lsp-status PATH filtering strips dotfiles/bin from search" {
-    run bash -c '
-        REAL_PATH="$(printf "%s" "$PATH" | tr ":" "\n" | grep -v "dotfiles/bin" | tr "\n" ":" | sed "s/:$//")"
-        echo "$REAL_PATH"
-    '
+@test "lsp-status excludes dotfiles/bin wrappers from binary search" {
+    # Place a "binary" only in dotfiles/bin (which should be excluded)
+    mkdir -p "$TEST_HOME/dotfiles/bin"
+    cat > "$TEST_HOME/dotfiles/bin/typescript-language-server" <<'EOF'
+#!/bin/bash
+echo "wrapper"
+EOF
+    chmod +x "$TEST_HOME/dotfiles/bin/typescript-language-server"
+    # Ensure dotfiles/bin is on PATH; lsp-status should filter it out
+    PATH="$TEST_HOME/dotfiles/bin:$MOCK_BIN:/usr/bin:/bin" run bash "$LSP_STATUS"
     assert_success
-    assert_output_not_contains "dotfiles/bin"
+    # typescript-language-server only exists in dotfiles/bin (filtered out),
+    # so it should NOT appear as a found binary
+    assert_output_not_contains "typescript-language-server"
 }
 
 @test "lsp-status shows plugin list from settings" {

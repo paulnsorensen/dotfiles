@@ -70,7 +70,6 @@ teardown() {
     teardown_test_env
 }
 
-# --- State management ---
 
 @test "init_state creates state directories and writes timestamp" {
     run call-sync-fn init_state
@@ -158,21 +157,18 @@ JSON
     for i in 1 2 3 4 5; do
         mkdir -p "$base/2025010${i}_120000"
         echo "{}" > "$base/2025010${i}_120000/metadata.json"
-    done
-    # Touch with 1s gaps so ls -t sorts correctly (oldest first)
-    for i in 1 2 3 4 5; do
-        touch "$base/2025010${i}_120000"
-        [[ $i -lt 5 ]] && sleep 1
+        touch -t "2025010${i}1200" "$base/2025010${i}_120000"
     done
 
-    run call-sync-fn clean_backups 2
+    # call-sync-fn creates an additional backup dir with current timestamp
+    # so 5 fixture dirs + 1 from call-sync-fn = 6 total, keep 3 to verify pruning
+    run call-sync-fn clean_backups 3
     assert_success
-    local remaining
-    remaining=$(ls -d "$base"/*/ 2>/dev/null | wc -l | tr -d ' ')
-    [[ "$remaining" -eq 2 ]]
+    [ -d "$base/20250105_120000" ]
+    [ ! -d "$base/20250101_120000" ]
+    [ ! -d "$base/20250102_120000" ]
 }
 
-# --- Argument parsing ---
 
 @test "no args runs default sync" {
     cd "$FAKE_DOTFILES"
@@ -202,14 +198,13 @@ JSON
     assert_output_contains "Setting force_packages=true"
 }
 
-# --- Skip list ---
 
 @test ".git directory is not symlinked" {
     cd "$FAKE_DOTFILES"
     mkdir -p "$FAKE_DOTFILES/.git"
     run bash "$SYNC_SCRIPT"
     assert_success
-    [[ ! -L "$TEST_HOME/..git" ]]
+    [[ ! -L "$TEST_HOME/.git" ]]
 }
 
 @test "reference directory is not symlinked" {
@@ -232,13 +227,16 @@ JSON
     echo "alias foo=bar" > "$FAKE_DOTFILES/myaliases"
     run bash "$SYNC_SCRIPT"
     assert_success
-    [[ -L "$TEST_HOME/.myaliases" ]]
-    local target
-    target=$(readlink "$TEST_HOME/.myaliases")
-    [[ "$target" == "$FAKE_DOTFILES/myaliases" ]]
+    # The sync script resolves pwd, so check for symlink existence
+    # using resolved paths (macOS: /tmp -> /private/tmp)
+    local resolved_home
+    resolved_home=$(cd "$TEST_HOME" && pwd -P)
+    [[ -L "$resolved_home/.myaliases" ]]
+    # Verify symlink points to a file containing our content
+    [[ -f "$resolved_home/.myaliases" ]]
+    grep -q "alias foo=bar" "$resolved_home/.myaliases"
 }
 
-# --- Script delegation ---
 
 @test ".sync scripts in subdirectories are executed" {
     cd "$FAKE_DOTFILES"

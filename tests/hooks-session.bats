@@ -1,20 +1,13 @@
 #!/usr/bin/env bats
 # Tests for session/guard hooks
-# Covers: worktree-guard.js, on-session-end.sh, pre-compact.sh,
-#         post-compact.sh, post-fresh-start.sh, de-slop-pre-commit.js,
-#         tdd-assertions-pre-commit.js
 
 load test_helper
 
 HOOKS_DIR="$REAL_DOTFILES_DIR/claude/hooks"
 
 setup() {
-    export TEST_HOME="${TMPDIR:-/private/tmp/claude-501}/dotfiles-test-$$"
-    export DOTFILES_STATE_DIR="$TEST_HOME/.local/state/dotfiles"
     setup_test_env
     mkdir -p "$TEST_HOME/.claude"
-
-    # Capture node binary dir for worktree-guard tests that restrict PATH
     NODE_BIN_DIR="$(dirname "$(command -v node)")"
 }
 
@@ -22,10 +15,7 @@ teardown() {
     teardown_test_env
 }
 
-# Helper: create mock git that simulates a worktree environment
-# Sets MOCK_BIN and MOCK_WT variables for use in test
 setup_worktree_mock() {
-    # Use a clean path without double slashes from TMPDIR
     MOCK_WT=$(cd "$TEST_HOME" && pwd -P)/worktree
     mkdir -p "$MOCK_WT"
     MOCK_BIN="$TEST_HOME/mockbin"
@@ -41,28 +31,25 @@ MOCKEOF
     chmod +x "$MOCK_BIN/git"
 }
 
-# --- worktree-guard.js ---
+run_worktree_guard() {
+    local file_path="$1"
+    run env PATH="$MOCK_BIN:$NODE_BIN_DIR:/usr/bin:/bin" HOME="$(cd "$TEST_HOME" && pwd -P)" node -e "
+const h = require('$HOOKS_DIR/worktree-guard.js');
+const matched = h.hooks[0].matcher('Write', {file_path: '$file_path'});
+console.log(matched ? 'blocked' : 'allowed');
+"
+}
 
 @test "worktree-guard: Write to worktree root path is allowed" {
     setup_worktree_mock
-
-    run env PATH="$MOCK_BIN:$NODE_BIN_DIR:/usr/bin:/bin" node -e "
-const h = require('$HOOKS_DIR/worktree-guard.js');
-const matched = h.hooks[0].matcher('Write', {file_path: '$MOCK_WT/src/main.js'});
-console.log(matched ? 'blocked' : 'allowed');
-"
+    run_worktree_guard "$MOCK_WT/src/main.js"
     [ "$status" -eq 0 ]
     [[ "$output" == "allowed" ]]
 }
 
 @test "worktree-guard: Write to /tmp path is allowed" {
     setup_worktree_mock
-
-    run env PATH="$MOCK_BIN:$NODE_BIN_DIR:/usr/bin:/bin" node -e "
-const h = require('$HOOKS_DIR/worktree-guard.js');
-const matched = h.hooks[0].matcher('Write', {file_path: '/tmp/report.txt'});
-console.log(matched ? 'blocked' : 'allowed');
-"
+    run_worktree_guard "/tmp/report.txt"
     [ "$status" -eq 0 ]
     [[ "$output" == "allowed" ]]
 }
@@ -71,26 +58,14 @@ console.log(matched ? 'blocked' : 'allowed');
     setup_worktree_mock
     local real_home
     real_home=$(cd "$TEST_HOME" && pwd -P)
-
-    run env PATH="$MOCK_BIN:$NODE_BIN_DIR:/usr/bin:/bin" HOME="$real_home" node -e "
-const h = require('$HOOKS_DIR/worktree-guard.js');
-const matched = h.hooks[0].matcher('Write', {file_path: '$real_home/.claude/specs/foo.md'});
-console.log(matched ? 'blocked' : 'allowed');
-"
+    run_worktree_guard "$real_home/.claude/specs/foo.md"
     [ "$status" -eq 0 ]
     [[ "$output" == "allowed" ]]
 }
 
 @test "worktree-guard: Write to path outside worktree is blocked" {
     setup_worktree_mock
-    local real_home
-    real_home=$(cd "$TEST_HOME" && pwd -P)
-
-    run env PATH="$MOCK_BIN:$NODE_BIN_DIR:/usr/bin:/bin" HOME="$real_home" node -e "
-const h = require('$HOOKS_DIR/worktree-guard.js');
-const matched = h.hooks[0].matcher('Write', {file_path: '/Users/someone/other-repo/file.js'});
-console.log(matched ? 'blocked' : 'allowed');
-"
+    run_worktree_guard "/Users/someone/other-repo/file.js"
     [ "$status" -eq 0 ]
     [[ "$output" == "blocked" ]]
 }
@@ -106,7 +81,6 @@ console.log(matched ? 'blocked' : 'allowed');
 }
 
 @test "worktree-guard: non-worktree context passes through" {
-    # Mock git to return a normal .git dir (not under worktrees/)
     MOCK_BIN="$TEST_HOME/mockbin"
     mkdir -p "$MOCK_BIN"
     cat > "$MOCK_BIN/git" <<'MOCKEOF'
@@ -126,8 +100,6 @@ console.log(matched ? 'blocked' : 'allowed');
     [[ "$output" == "allowed" ]]
 }
 
-# --- on-session-end.sh ---
-
 @test "on-session-end: farewell 'goodbye' produces JSON output" {
     run bash -c 'echo "{\"prompt\": \"goodbye\"}" | bash '"$HOOKS_DIR/on-session-end.sh"
     [ "$status" -eq 0 ]
@@ -137,7 +109,7 @@ console.log(matched ? 'blocked' : 'allowed');
 @test "on-session-end: farewell 'see you' produces JSON output" {
     run bash -c 'echo "{\"prompt\": \"see you later\"}" | bash '"$HOOKS_DIR/on-session-end.sh"
     [ "$status" -eq 0 ]
-    echo "$output" | jq -e '.hookSpecificOutput' > /dev/null
+    echo "$output" | jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit"'
 }
 
 @test "on-session-end: normal text does not match" {
@@ -145,14 +117,6 @@ console.log(matched ? 'blocked' : 'allowed');
     [ "$status" -eq 0 ]
     [ -z "$output" ]
 }
-
-@test "on-session-end: output is valid JSON" {
-    run bash -c 'echo "{\"prompt\": \"good night\"}" | bash '"$HOOKS_DIR/on-session-end.sh"
-    [ "$status" -eq 0 ]
-    echo "$output" | jq empty
-}
-
-# --- pre-compact.sh ---
 
 @test "pre-compact: extracts file paths from transcript" {
     local transcript="$TEST_HOME/transcript.jsonl"
@@ -190,8 +154,6 @@ console.log(matched ? 'blocked' : 'allowed');
     grep -q '## Files recently touched' "$TEST_HOME/.claude/.compaction-context"
 }
 
-# --- post-compact.sh ---
-
 @test "post-compact: with context file reads and outputs content" {
     echo "## Files recently touched" > "$TEST_HOME/.claude/.compaction-context"
     echo "/src/main.js" >> "$TEST_HOME/.claude/.compaction-context"
@@ -219,14 +181,6 @@ console.log(matched ? 'blocked' : 'allowed');
     [ ! -f "$TEST_HOME/.claude/.compaction-context" ]
 }
 
-@test "post-compact: output is valid JSON" {
-    run bash "$HOOKS_DIR/post-compact.sh"
-    [ "$status" -eq 0 ]
-    echo "$output" | jq empty
-}
-
-# --- post-fresh-start.sh ---
-
 @test "post-fresh-start: without compaction file outputs JSON suggestion" {
     rm -f "$TEST_HOME/.claude/.compaction-context"
 
@@ -243,16 +197,6 @@ console.log(matched ? 'blocked' : 'allowed');
     [ "$status" -eq 0 ]
     [ -z "$output" ]
 }
-
-@test "post-fresh-start: output is valid JSON when produced" {
-    rm -f "$TEST_HOME/.claude/.compaction-context"
-
-    run bash "$HOOKS_DIR/post-fresh-start.sh"
-    [ "$status" -eq 0 ]
-    echo "$output" | jq empty
-}
-
-# --- de-slop-pre-commit.js ---
 
 @test "de-slop: git commit command matched" {
     run node -e "
@@ -273,8 +217,6 @@ console.log(m ? 'matched' : 'skipped');
     [ "$status" -eq 0 ]
     [[ "$output" == "skipped" ]]
 }
-
-# --- tdd-assertions-pre-commit.js ---
 
 @test "tdd-assertions: git commit command matched" {
     run node -e "

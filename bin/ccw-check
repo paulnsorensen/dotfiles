@@ -6,10 +6,10 @@ set -euo pipefail
 
 slug="${1:-}"
 
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "Not a git repository"; exit 1; }
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "Not a git repository" >&2; exit 1; }
 
 if ! command -v jq >/dev/null 2>&1; then
-    echo "jq is required (install via: brew install jq)"
+    echo "jq is required (install via: brew install jq)" >&2
     exit 1
 fi
 
@@ -20,8 +20,8 @@ if [[ -z "$slug" ]]; then
         slug="${cwd##*/.worktrees/}"
         slug="${slug%%/*}"
     else
-        echo "Usage: ccw-check <slug>"
-        echo "  Or run from inside a worktree directory"
+        echo "Usage: ccw-check <slug>" >&2
+        echo "  Or run from inside a worktree directory" >&2
         exit 1
     fi
 fi

@@ -1,9 +1,12 @@
 ---
-name: warn-boyscout-triage
+name: block-boyscout-triage
 enabled: true
 event: stop
-pattern: .*
-action: warn
+action: block
+conditions:
+  - field: reason
+    operator: regex_match
+    pattern: .*
 ---
 
 **🏕️ Boy Scout Rule: Leave the campground cleaner than you found it.**
@@ -33,6 +36,11 @@ If yes, you MUST triage them before stopping. Do NOT dismiss failures as pre-exi
    - Show the failure also occurs on the base branch (run the failing test/build there)
    - OR show via `git log`/`git blame` that the broken code predates your branch
    - "It looks unrelated" is NOT evidence
+
+5. **Never declare "build is clean" while failures exist.**
+   - "All failures are pre-existing" is not a clean build — it's a known-broken build you chose not to fix.
+   - Phrases like "the build is clean for this PR's scope" or "nothing new to worry about" are **red flags** — they reframe ignoring failures as acceptable. They are not.
+   - If pre-existing failures exist, you MUST open fix PRs (step 3) before declaring done.
 
 **What counts as a failure:**
 - Test failures (unit, integration, e2e)

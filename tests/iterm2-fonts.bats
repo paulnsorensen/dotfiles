@@ -32,7 +32,6 @@ setup() {
 
 teardown() { teardown_test_env; }
 
-# --- Mock helpers ---
 
 write_mock_uname() {
     printf '#!/bin/bash\necho "%s"\n' "$1" > "$MOCK_BIN/uname"
@@ -87,7 +86,6 @@ run_iterm_scrub() {
     run bash "$ITERM_DIR/.scrub"
 }
 
-# ── iterm2/.sync ─────────────────────────────────────────────────
 
 @test "iterm2 sync: skips on non-Darwin" {
     write_mock_uname "Linux"
@@ -137,7 +135,6 @@ run_iterm_scrub() {
     assert_success
 }
 
-# ── iterm2/.scrub ────────────────────────────────────────────────
 
 @test "iterm2 scrub: exits with error on missing live plist" {
     run_iterm_scrub
@@ -162,12 +159,14 @@ run_iterm_scrub() {
 }
 
 @test "iterm2 scrub: replaces user-specific paths with placeholders" {
-    # Use ORIGINAL_HOME so dotfiles_dir != HOME (avoids prefix overlap)
     export HOME="$ORIGINAL_HOME"
+    # Resolve symlinks so paths match what the scrub script sees via cd && pwd
+    local resolved_iterm
+    resolved_iterm=$(cd "$ITERM_DIR" && pwd -P)
     python3 -c "
 import plistlib
-data = {'CustomDir': '$ITERM_DIR', 'HomeDir': '$ORIGINAL_HOME/.config'}
-with open('$ITERM_DIR/com.googlecode.iterm2.plist', 'wb') as f:
+data = {'CustomDir': '$resolved_iterm', 'HomeDir': '$ORIGINAL_HOME/.config'}
+with open('$resolved_iterm/com.googlecode.iterm2.plist', 'wb') as f:
     plistlib.dump(data, f, fmt=plistlib.FMT_XML)
 "
     run_iterm_scrub
@@ -193,7 +192,6 @@ with open('$ITERM_DIR/com.googlecode.iterm2.plist', 'wb') as f:
     [[ "$first" == "$second" ]]
 }
 
-# ── fonts/.sync ──────────────────────────────────────────────────
 
 @test "fonts sync: skips on non-Darwin" {
     write_mock_uname "Linux"
@@ -235,7 +233,7 @@ with open('$ITERM_DIR/com.googlecode.iterm2.plist', 'wb') as f:
     run bash "$FONTS_SYNC"
     assert_success
     assert_output_contains "already installed manually, skipping"
-    ! grep -q "brew install --cask" "$BREW_LOG" 2>/dev/null || true
+    [ ! -f "$BREW_LOG" ] || ! grep -q "brew install --cask" "$BREW_LOG"
 }
 
 @test "fonts sync: installs missing fonts via brew cask" {

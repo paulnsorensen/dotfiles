@@ -31,6 +31,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `ccw-ls` - List git worktrees
 - `ccw-sweep` - Scan ~/Dev for stale worktrees with safety checks (dry-run, auto-clean modes)
 - `ccw-clean` - Clean stale worktrees in current repo only (delegates to ccw-sweep)
+- `wt-git <path> <cmd>` - Run git commands in a worktree without cd (avoids safety heuristics)
 - `ccfresh` - Continue last conversation with MCPs primed
 - `claude-settings` - Edit ~/.claude/settings.json
 - `mcp-sync` - Sync MCPs from registry.yaml to Claude Code

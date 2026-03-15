@@ -39,12 +39,12 @@ while [[ $# -gt 0 ]]; do
             echo "  --auto      Auto-remove safe worktrees, prompt for others"
             echo "  --path DIR  Scan DIR instead of ~/Dev"
             exit 0 ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
 
 if [[ ! -d "$SCAN_ROOT" ]]; then
-    echo -e "${RED}Directory not found: ${SCAN_ROOT}${RESET}"
+    echo -e "${RED}Directory not found: ${SCAN_ROOT}${RESET}" >&2
     exit 1
 fi
 

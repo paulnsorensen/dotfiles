@@ -1,5 +1,6 @@
 #!/bin/bash
 # Sync zellij config to ~/.config/zellij/
+set -euo pipefail
 
 DEST="$HOME/.config/zellij"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

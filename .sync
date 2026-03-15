@@ -9,8 +9,9 @@
 
 ########## Variables
 
-dir=$(pwd)
-source .vars
+dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly dir
+source "${dir}/.vars"
 
 ##########
 
@@ -25,7 +26,7 @@ export QUICK_SYNC=false
 
 for ARG in "$@"
 do
-  case $ARG in
+  case "$ARG" in
      dev)
           echo "Setting dev=true"
           export DOTFILES_DEV=true
@@ -35,7 +36,7 @@ do
           export QUICK_SYNC=true
           ;;
      *)
-          echo "Unrecognized arg"
+          echo "Unrecognized arg: $ARG" >&2
           exit 1
           ;;
 esac
@@ -43,36 +44,38 @@ done
 
 
 # run homebrew
-if [ "$(uname)" == "Darwin" ]; then
+if [[ "$(uname)" == "Darwin" ]]; then
   echo "Running homebrew script"
-  sh $dir/.brew
+  bash "$dir/.brew"
 fi
 
 # create dotfiles_old in homedir
+# shellcheck disable=SC2154
 echo "Creating $olddir for backup of any existing dotfiles in ~"
-mkdir -p $olddir
+mkdir -p "$olddir"
 echo "...done"
 
 # move any existing dotfiles in homedir to dotfiles_old directory, then create
 # symlinks
-for file in $(ls); do
-  if [[ -h ~/.$file ]]; then
+for path in "$dir"/*; do
+  file=$(basename "$path")
+  if [[ -h "${HOME}/.$file" ]]; then
     echo "Removing old link to $file"
-    rm ~/.$file
+    rm "${HOME}/.$file"
   fi
-  if [[ -f ~/.$file || -d ~/.$file ]]; then
+  if [[ -f "${HOME}/.$file" || -d "${HOME}/.$file" ]]; then
     echo "Moving existing $file from ~ to $olddir"
-    mv ~/.$file $olddir
+    mv "${HOME}/.$file" "$olddir"
   fi
 
-  if [[ -d $dir/$file ]] && [[ -f $dir/$file/.sync ]]; then
+  if [[ -d "$dir/$file" ]] && [[ -f "$dir/$file/.sync" ]]; then
     echo "Running .sync for $file."
-    sh $dir/$file/.sync
+    bash "$dir/$file/.sync"
   else
     echo "Creating symlink to $file in home directory."
-    ln -s $dir/$file ~/.$file
+    ln -s "$dir/$file" "${HOME}/.$file"
   fi
 done
 
 # cleanup exported vars
-unset $DOTFILES_DEV
+unset DOTFILES_DEV
