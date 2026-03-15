@@ -254,10 +254,11 @@ EOF
 echo "wrapper"
 EOF
     chmod +x "$TEST_HOME/dotfiles/bin/typescript-language-server"
-    # Ensure dotfiles/bin is on PATH but no real binary exists elsewhere
-    PATH="$TEST_HOME/dotfiles/bin:$MOCK_BIN" run bash "$LSP_STATUS"
+    # Ensure dotfiles/bin is on PATH; lsp-status should filter it out
+    PATH="$TEST_HOME/dotfiles/bin:$MOCK_BIN:/usr/bin:/bin" run bash "$LSP_STATUS"
     assert_success
-    # The wrapper should not appear as a found binary
+    # typescript-language-server only exists in dotfiles/bin (filtered out),
+    # so it should NOT appear as a found binary
     assert_output_not_contains "typescript-language-server"
 }
 
