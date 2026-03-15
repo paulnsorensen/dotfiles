@@ -2,6 +2,8 @@
 # sync-common.sh — Shared logic for declarative sync scripts (MCP + plugins)
 # Source this file, then call sync_init, sync_compute_diff, etc.
 
+set -euo pipefail
+
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -50,10 +52,10 @@ sync_compute_diff() {
     rm -f "$desired_file" "$current_file"
 
     desired_count=0; current_count=0; add_count=0; remove_count=0
-    [[ -n "$DESIRED_NAMES" ]] && desired_count=$(echo "$DESIRED_NAMES" | grep -c . 2>/dev/null || echo 0) || true
-    [[ -n "$CURRENT_NAMES" ]] && current_count=$(echo "$CURRENT_NAMES" | grep -c . 2>/dev/null || echo 0) || true
-    [[ -n "$TO_ADD" ]] && add_count=$(echo "$TO_ADD" | grep -c . 2>/dev/null || echo 0) || true
-    [[ -n "$TO_REMOVE" ]] && remove_count=$(echo "$TO_REMOVE" | grep -c . 2>/dev/null || echo 0) || true
+    if [[ -n "$DESIRED_NAMES" ]]; then desired_count=$(echo "$DESIRED_NAMES" | grep -c . 2>/dev/null || echo 0); fi
+    if [[ -n "$CURRENT_NAMES" ]]; then current_count=$(echo "$CURRENT_NAMES" | grep -c . 2>/dev/null || echo 0); fi
+    if [[ -n "$TO_ADD" ]]; then add_count=$(echo "$TO_ADD" | grep -c . 2>/dev/null || echo 0); fi
+    if [[ -n "$TO_REMOVE" ]]; then remove_count=$(echo "$TO_REMOVE" | grep -c . 2>/dev/null || echo 0); fi
 }
 
 # Caller must define get_description(name)

@@ -1,7 +1,7 @@
 # fzf configuration
 
 # Set up fzf key bindings and fuzzy completion
-[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+[[ -f ~/.fzf.zsh ]] && source ~/.fzf.zsh
 
 # Use fd instead of find for better performance and respects .gitignore
 if command -v fd >/dev/null 2>&1; then
@@ -30,6 +30,6 @@ fi
 export FZF_DEFAULT_OPTS="$__SDW_FZF_COLORS --height=50% --layout=reverse --border --inline-info"
 
 # Fallback if fzf isn't available
-if [ ! -f ~/.fzf.zsh ]; then
+if [[ ! -f ~/.fzf.zsh ]]; then
     bindkey "^r" history-incremental-search-backward
 fi

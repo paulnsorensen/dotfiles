@@ -19,7 +19,7 @@ NC='\033[0m'
 # Ensure we're in the dotfiles directory for git commands
 cd_dotfiles() {
     cd "$DOTFILES_DIR" || {
-        echo -e "${RED}Error: Cannot access dotfiles directory at $DOTFILES_DIR${NC}"
+        echo -e "${RED}Error: Cannot access dotfiles directory at $DOTFILES_DIR${NC}" >&2
         exit 1
     }
 }
@@ -68,7 +68,7 @@ do_update() {
 
     # Fetch changes
     git fetch || {
-        echo -e "${RED}Failed to fetch updates${NC}"
+        echo -e "${RED}Failed to fetch updates${NC}" >&2
         exit 1
     }
 
@@ -89,8 +89,8 @@ do_update() {
         echo -e "${BLUE}Running sync...${NC}"
         "$DOTFILES_DIR/.sync-with-rollback" || "$DOTFILES_DIR/.sync"
     else
-        echo -e "${YELLOW}⚠️  Local changes detected${NC}"
-        echo "Please commit or stash your changes first"
+        echo -e "${YELLOW}⚠️  Local changes detected${NC}" >&2
+        echo "Please commit or stash your changes first" >&2
         git status -s
         exit 1
     fi
@@ -303,8 +303,8 @@ case "${1:-status}" in
         if [[ -f "$DOTFILES_DIR/tests/run-tests.sh" ]]; then
             "$DOTFILES_DIR/tests/run-tests.sh" "$@"
         else
-            echo -e "${RED}Test suite not found${NC}"
-            echo "Tests are located in: $DOTFILES_DIR/tests/"
+            echo -e "${RED}Test suite not found${NC}" >&2
+            echo "Tests are located in: $DOTFILES_DIR/tests/" >&2
             exit 1
         fi
         ;;
@@ -312,9 +312,9 @@ case "${1:-status}" in
         show_help
         ;;
     *)
-        echo -e "${RED}Unknown command: $1${NC}"
-        echo
-        show_help
+        echo -e "${RED}Unknown command: $1${NC}" >&2
+        echo >&2
+        show_help >&2
         exit 1
         ;;
 esac

@@ -50,7 +50,6 @@ zstyle ':vcs_info:*:prompt:*' nvcsformats   ""
 # Git status caching variables
 _git_cache_dir=""
 _git_cache_head=""
-_git_cache_status=""
 _git_cache_time=""
 _git_cache_last_commit=""
 
@@ -150,11 +149,11 @@ time_since_commit() {
   sub_hours=$((hours % 24))
   sub_minutes=$((minutes % 60))
 
-  if [ "$hours" -gt 48 ]; then
+  if [[ "$hours" -gt 48 ]]; then
     echo "${days}d"
-  elif [ "$hours" -gt 24 ]; then
+  elif [[ "$hours" -gt 24 ]]; then
     echo "${days}d${sub_hours}h"
-  elif [ "$minutes" -gt 60 ]; then
+  elif [[ "$minutes" -gt 60 ]]; then
     echo "${hours}h${sub_minutes}m"
   else
     echo "${minutes}m"

@@ -1,5 +1,5 @@
 #!/bin/bash
 # Sync theme - generate all color targets from active scheme
-set -e
+set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bash "$SCRIPT_DIR/generate.sh"

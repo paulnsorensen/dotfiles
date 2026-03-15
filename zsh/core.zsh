@@ -34,7 +34,7 @@ if command -v sccache &>/dev/null; then
 fi
 
 # Editor configuration
-export EDITOR=$(which vim)
+export EDITOR="$(which vim)"
 export VISUAL=$EDITOR
 export PAGER=less
 export LESS='-i -M -R'  # case insensitive searching, status line, and colors

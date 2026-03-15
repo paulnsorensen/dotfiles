@@ -2,6 +2,8 @@
 # on-session-end.sh — Detect session-end intent and remind to /park
 # Runs as a UserPromptSubmit hook on every message; exits silently if no match.
 
+set -euo pipefail
+
 INPUT=$(cat)
 
 # Extract the user's prompt — try common field names
@@ -11,7 +13,7 @@ PROMPT=$(echo "$INPUT" | jq -r '
   .content //
   .userMessage //
   empty
-' 2>/dev/null)
+' 2>/dev/null) || true
 
 if [[ -z "$PROMPT" ]]; then
   exit 0

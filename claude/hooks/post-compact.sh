@@ -3,11 +3,13 @@
 # Runs as a SessionStart hook with matcher "compact".
 # Re-injects saved file paths and commands so the agent can resume.
 
+set -euo pipefail
+
 CONTEXT_FILE="$HOME/.claude/.compaction-context"
 SAVED_CONTEXT=""
 
 if [[ -f "$CONTEXT_FILE" ]]; then
-  SAVED_CONTEXT=$(cat "$CONTEXT_FILE")
+  SAVED_CONTEXT=$(<"$CONTEXT_FILE")
   rm -f "$CONTEXT_FILE"
 fi
 

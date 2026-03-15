@@ -4,6 +4,8 @@
 # IMPORTANT: Must be listed BEFORE the compact hook in settings.json SessionStart array
 # so it can detect the compaction context file before post-compact.sh deletes it.
 
+set -euo pipefail
+
 CONTEXT_FILE="$HOME/.claude/.compaction-context"
 
 # If the compaction context file exists, this is a post-compact session.

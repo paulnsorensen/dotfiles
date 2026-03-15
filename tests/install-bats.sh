@@ -22,10 +22,10 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         brew install bats-support
         brew install bats-file
     else
-        echo -e "${YELLOW}Homebrew not found. Install manually:${NC}"
-        echo "  git clone https://github.com/bats-core/bats-core.git"
-        echo "  cd bats-core"
-        echo "  ./install.sh /usr/local"
+        echo -e "${YELLOW}Homebrew not found. Install manually:${NC}" >&2
+        echo "  git clone https://github.com/bats-core/bats-core.git" >&2
+        echo "  cd bats-core" >&2
+        echo "  ./install.sh /usr/local" >&2
     fi
 else
     # Linux installation

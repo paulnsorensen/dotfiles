@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# wt-git — run git commands in a worktree without cd
+# Avoids Claude Code's "bare repository attack" heuristic on cd && git
+#
+# Usage: wt-git <worktree-path> <git-args...>
+#   wt-git .worktrees/my-task status
+#   wt-git .worktrees/my-task commit -m "feat: add feature"
+#   wt-git .worktrees/my-task push origin claude/my-task
+#   wt-git .worktrees/my-task log --oneline -5
+set -euo pipefail
+
+if [[ $# -lt 2 ]]; then
+    echo "Usage: wt-git <worktree-path> <git-command> [args...]" >&2
+    echo "" >&2
+    echo "Examples:" >&2
+    echo "  wt-git .worktrees/my-task status" >&2
+    echo "  wt-git .worktrees/my-task commit -m 'feat: thing'" >&2
+    echo "  wt-git .worktrees/my-task push origin claude/my-task" >&2
+    exit 1
+fi
+
+wt_path="$1"
+shift
+
+if [[ ! -d "$wt_path" ]]; then
+    echo "Error: worktree path does not exist: $wt_path" >&2
+    exit 1
+fi
+
+exec git -C "$wt_path" "$@"

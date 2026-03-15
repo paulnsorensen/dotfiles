@@ -17,23 +17,23 @@ DIM='\033[2m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-if [ ! -f "$CLAUDE_JSON" ]; then
-  echo -e "${RED}No ~/.claude.json found${RESET}"
+if [[ ! -f "$CLAUDE_JSON" ]]; then
+  echo -e "${RED}No ~/.claude.json found${RESET}" >&2
   exit 1
 fi
 
 if ! command -v jq &>/dev/null; then
-  echo -e "${RED}jq is required but not installed${RESET}"
+  echo -e "${RED}jq is required but not installed${RESET}" >&2
   exit 1
 fi
 
 apply=false
-[ "${1:-}" = "--apply" ] && apply=true
+[[ "${1:-}" == "--apply" ]] && apply=true
 
 # Find stale project paths (directory no longer exists on disk)
 stale_paths=()
 while IFS= read -r path; do
-  [ ! -d "$path" ] && stale_paths+=("$path")
+  [[ ! -d "$path" ]] && stale_paths+=("$path")
 done < <(jq -r '.projects | keys[]' "$CLAUDE_JSON")
 
 total=$(jq '.projects | keys | length' "$CLAUDE_JSON")
@@ -44,7 +44,7 @@ echo -e "${BOLD}~/.claude.json${RESET}"
 echo -e "  Projects: ${total}  Lines: ${lines}"
 echo ""
 
-if [ "$stale" -eq 0 ]; then
+if [[ "$stale" -eq 0 ]]; then
   echo -e "${GREEN}No stale entries found. Already clean.${RESET}"
   exit 0
 fi

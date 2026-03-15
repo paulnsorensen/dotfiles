@@ -1,5 +1,6 @@
 #!/bin/bash
 # Sync starship config to ~/.config/starship.toml
+set -euo pipefail
 
 DEST="$HOME/.config/starship.toml"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

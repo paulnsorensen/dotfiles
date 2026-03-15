@@ -19,7 +19,7 @@ if command -v yazi &>/dev/null; then
         yazi "$@" --cwd-file="$tmp"
         if [[ -f "$tmp" ]]; then
             local cwd
-            cwd="$(cat "$tmp")"
+            cwd="$(<"$tmp")"
             rm -f "$tmp"
             [[ -n "$cwd" && "$cwd" != "$PWD" ]] && cd "$cwd"
         fi
@@ -30,5 +30,5 @@ fi
 if [[ -d "$HOME/.bun" ]]; then
     export BUN_INSTALL="$HOME/.bun"
     export PATH="$BUN_INSTALL/bin:$PATH"
-    [ -s "$BUN_INSTALL/_bun" ] && source "$BUN_INSTALL/_bun"
+    [[ -s "$BUN_INSTALL/_bun" ]] && source "$BUN_INSTALL/_bun"
 fi

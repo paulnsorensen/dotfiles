@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+
 if [[ "$(uname)" != "Darwin" ]]; then
   echo "Not on mac, skipping fonts"
   exit 0

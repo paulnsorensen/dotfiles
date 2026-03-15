@@ -4,8 +4,10 @@
 # so post-compact can re-inject working context.
 # Uses per-line jq parsing for robustness with malformed JSON.
 
+set -euo pipefail
+
 INPUT=$(cat)
-TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty') || true
 CONTEXT_FILE="$HOME/.claude/.compaction-context"
 
 if [[ -z "$TRANSCRIPT" || ! -f "$TRANSCRIPT" ]]; then
