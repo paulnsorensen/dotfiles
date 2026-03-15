@@ -219,17 +219,34 @@ run_patched() {
 
 @test "missing yq dependency exits with error" {
     rm -f "$MOCK_BIN/yq"
-    local patched
+    local patched restricted_bin
     patched=$(make_patched_sync)
-    run env PATH="$MOCK_BIN:/usr/bin:/bin" bash "$patched" --list
+    # Build a restricted bin with only essential commands (no yq)
+    restricted_bin="$TEST_HOME/restricted-bin"
+    mkdir -p "$restricted_bin"
+    for cmd in bash cat grep sed sort tail head env printf mkdir chmod rm ln cp mv comm tee wc tr dirname readlink; do
+        local real_path
+        real_path=$(command -v "$cmd" 2>/dev/null) && ln -sf "$real_path" "$restricted_bin/$cmd"
+    done
+    ln -sf "$(command -v jq)" "$restricted_bin/jq"
+    run env PATH="$restricted_bin" bash "$patched" --list
     assert_failure
     assert_output_contains "yq not found"
 }
 
 @test "missing jq dependency exits with error" {
     rm -f "$MOCK_BIN/jq"
-    # Use PATH with only mock bin (no jq) plus bare essentials
-    run env PATH="$MOCK_BIN:/bin" bash "$(make_patched_sync)" --list
+    local patched restricted_bin
+    patched=$(make_patched_sync)
+    # Build a restricted bin with only essential commands (no jq)
+    restricted_bin="$TEST_HOME/restricted-bin"
+    mkdir -p "$restricted_bin"
+    for cmd in bash cat grep sed sort tail head env printf mkdir chmod rm ln cp mv comm tee wc tr dirname readlink; do
+        local real_path
+        real_path=$(command -v "$cmd" 2>/dev/null) && ln -sf "$real_path" "$restricted_bin/$cmd"
+    done
+    cp "$MOCK_BIN/yq" "$restricted_bin/yq"
+    run env PATH="$restricted_bin" bash "$patched" --list
     assert_failure
     assert_output_contains "jq not found"
 }

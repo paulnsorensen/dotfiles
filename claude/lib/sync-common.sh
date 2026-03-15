@@ -130,8 +130,12 @@ sync_handle_removals() {
         elif $DRY_RUN; then
             echo -e "  ${BLUE}[dry-run]${NC} Would prompt to remove: $name ($scope)"
         else
+            if [[ ! -t 0 ]] && [[ ! -e /dev/tty || ! -w /dev/tty ]]; then
+                echo "  Keeping $name (non-interactive)"
+                continue
+            fi
             echo -n "  Remove '$name' ($scope)? [y/N] "
-            read -r response
+            read -r response </dev/tty || response=""
             if [[ "$response" =~ ^[Yy]$ ]]; then
                 echo -n "  Removing $name... "
                 if remove_item "$name" "$scope"; then
