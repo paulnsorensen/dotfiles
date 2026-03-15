@@ -275,8 +275,9 @@ Wait for background agent completion notifications.
 
 As each atom agent reports back:
 1. Parse its report: status (success/failure), worktree path, error summary
-2. Update manifest: atom status, worktree path, error field
-3. Report progress: "Atom 3/6 complete — code ready in worktree"
+2. Derive branch name: `git -C <worktree-path> rev-parse --abbrev-ref HEAD`
+3. Update manifest: atom status, worktree path, branch name, error field
+4. Report progress: "Atom 3/6 complete — code ready in worktree"
 
 ### Retry Logic
 
@@ -307,11 +308,10 @@ This runs in the orchestrator's session which has the user's full Bash permissio
 
 For each successful atom:
 1. Read `pr-metadata.json` from the worktree (the Agent result includes the worktree path)
-2. Use the `wt-git` skill to push the worktree branch:
-   - `Skill(skill="wt-git", args="<worktree-path> push -u origin HEAD")`
-3. Use the `wt-git` skill to create the PR:
-   - `Skill(skill="wt-git", args="<worktree-path> gh-pr-create --title '<title>' --body '<body>'")`
-   - Or use `gh pr create --head <branch-name>` directly from the orchestrator
+2. Push the worktree branch: `git -C <worktree-path> push -u origin HEAD`
+3. Create the PR using `gh pr create --head <branch-name> --title <title> --body-file <path>`:
+   - Write body from `pr-metadata.json` to a temp file, pass via `--body-file` to avoid shell-escaping issues
+   - Use the `branch` field from the manifest (captured in Collect step) for `--head`
 4. Update manifest: atom PR number, PR URL
 5. Report: "Atom 3/6 — PR #74 created"
 
