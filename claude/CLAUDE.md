@@ -90,12 +90,12 @@ src/
 I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 
 **Core pipeline**: `/fromage <task>` — single coherent feature or fix, full lifecycle.
-**Mass changes**: `/batch <instruction>` — decomposes into 5-30 independent units, parallel worktree agents, one PR each.
+**Large features**: `/fromagerie <spec-path>` — decomposes a spec into non-overlapping atoms, executes foundation work sequentially, dispatches parallel worktree agents (cook+press+age+de-slop), then triggers `/cheese-convoy` on the resulting PRs. Requires a spec from `/spec`.
 **Built-in cleanup**: `/simplify` — 3 parallel review agents (reuse, quality, efficiency), auto-fixes changed files. Used as post-Cook hygiene in Fromage.
 
 | Category | Key Skills |
 |----------|-----------|
-| Planning | `/fromage`, `/batch`, `/spec`, `/duck`, `/research` |
+| Planning | `/fromage`, `/fromagerie`, `/spec`, `/duck`, `/research` |
 | Review | `/age`, `/code-review`, `/audit`, `/simplifier` |
 | Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit), `/de-slop` (AI anti-patterns) |
 | PR Response | `/respond` (confidence-rated review triage), `/copilot-review`, `/copilot-delegate` |
@@ -114,6 +114,7 @@ All agents use 0-100 confidence scoring (>= 75 to surface). This applies pipelin
 | Fromage-press | Per-failure 0-100 |
 | Fromage-cook | Per-step completion confidence 0-100 |
 | Fromage-fort | Per-thread 0-100, auto-fix >= 75 |
+| Fromagerie-decomposer | Per-file-assignment 0-100, surface < 75 as notes |
 
 **When confidence < 75 on any decision, ask the user.** Don't guess and move on.
 
