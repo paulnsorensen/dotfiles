@@ -8,12 +8,12 @@ Execute the Fromage development pipeline for: **$ARGUMENTS**
 
 Full cheese-making process — raw milk to packaged wheel. Assesses complexity and skips phases that don't add value.
 
-### When to use `/fromage` vs `/batch`
+### When to use `/fromage` vs `/fromagerie`
 
 - **`/fromage`**: Single coherent feature or fix — spec → explore → plan → implement → test → review → PR
-- **`/batch`**: Mass mechanical change across many files — decomposes into 5-30 independent units, each in its own worktree, each opens a PR. Use for renames, migrations, pattern replacements at scale.
+- **`/fromagerie`**: Feature that decomposes into 5-30 independent work units — front-loads exploration, splits into non-overlapping atoms, executes foundation work sequentially, dispatches parallel worktree agents, then triggers `/cheese-convoy`. Requires a spec from `/spec`.
 
-Rule of thumb: if every file gets the same transformation, use `/batch`. If files interact and the change needs design, use `/fromage`.
+Rule of thumb: if the work is sequential and interrelated, use `/fromage`. If the spec spans many independent files/slices, use `/fromagerie`.
 
 ## Context Passing
 

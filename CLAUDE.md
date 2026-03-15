@@ -92,7 +92,7 @@ dotfiles/
 │   │   ├── registry.yaml   # MCP source of truth
 │   │   └── sync.sh         # Declarative MCP sync script
 │   ├── agents/             # Cheese-themed specialist agents
-│   ├── commands/           # Slash commands (/fromage, /spec, etc.)
+│   ├── commands/           # Slash commands (/fromage, /fromagerie, /spec, etc.)
 │   ├── hookify/            # Hookify rules (synced to ~/.claude/ by .sync)
 │   ├── hooks/              # Pre-tool hooks
 │   ├── skills/             # Reusable skill definitions
