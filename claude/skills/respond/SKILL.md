@@ -129,7 +129,7 @@ Present the full triage table so the user sees everything at once:
 - **PUSH BACK** (< 50): Draft reply below — edit or approve
 ```
 
-For each row, include a one-line expansion:
+For each row, include a one-line expansion (representative examples below):
 
 ```
 ### 1. Missing null check on token (92) — FIX

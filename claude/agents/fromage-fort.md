@@ -25,11 +25,11 @@ pull_request_read(method: "get", owner, repo, pullNumber)
 pull_request_read(method: "get_diff", owner, repo, pullNumber)
 
 # PR-level review bodies (gh CLI — no MCP equivalent)
-gh api repos/{owner}/{repo}/pulls/{PR}/reviews
+gh api repos/{owner}/{repo}/pulls/{pullNumber}/reviews
 
 # CLI fallback for inline
-gh pr view <PR> --json reviewRequests,reviews,comments
-gh api repos/{owner}/{repo}/pulls/{PR}/comments
+gh pr view {pullNumber} --json reviewRequests,reviews,comments
+gh api repos/{owner}/{repo}/pulls/{pullNumber}/comments
 ```
 
 ### Inline threads
