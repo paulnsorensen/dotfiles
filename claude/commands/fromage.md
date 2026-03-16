@@ -169,7 +169,7 @@ Launch `fromage-preparing` (haiku). It primes Serena (activate_project, check_on
 
 Before starting interactive requirements, check if a spec already exists:
 
-1. **Spec exists** (`.claude/specs/<slug>.md`): Read it, confirm it's current, and **skip Pasteurize entirely**. The spec IS the requirements. Proceed to Culture.
+1. **Spec exists** (`.claude/specs/<slug>.md`): Read it, summarize key constraints and quality gates, then confirm with user ("This spec covers X, Y, Z — still current? Proceed to exploration?"). Skip the full Pasteurize dialogue but **do not skip the approval checkpoint**. Proceed to Culture after confirmation.
 2. **No spec + medium/large complexity**: Suggest `/spec` first: "This looks like a medium+ feature. Want to run `/spec` to shape requirements before we build? Or should I gather requirements inline?"
 3. **No spec + trivial/small**: Proceed with inline Pasteurize (below).
 
@@ -243,11 +243,14 @@ Launch Culture agents (sonnet), each targeting a different aspect. Every agent a
 
 ### Aspects
 
+**`fromage-culture` agents (codebase exploration):**
 - **Aspect A**: Entry points and existing patterns relevant to the change
 - **Aspect B**: Blast radius — what existing code will be affected
 - **Aspect C** (medium+): Architecture boundaries and integration points
-- **Aspect D** (large only): **External prior art** — spawn a `/research` agent to scan how other projects solved similar problems. Use octocode for GitHub examples, Context7 for library docs, WebSearch for blog posts and design rationale. Write findings to a temp markdown file.
-- **Aspect E** (large only): **Dependency and API landscape** — what external libraries, APIs, or services does this change interact with? Are there newer/better options? Version constraints?
+
+**Separate research subagents (large only, run in parallel with Culture):**
+- **Aspect D**: **External prior art** — spawn a `/research` agent (not `fromage-culture`) to scan how other projects solved similar problems. Use octocode for GitHub examples, Context7 for library docs, WebSearch for blog posts and design rationale. Write findings to `$TMPDIR/fromage-culture-<slug>-prior-art.md`.
+- **Aspect E**: **Dependency and API landscape** — spawn a `/fetch` agent to assess external libraries, APIs, or services this change interacts with. Are there newer/better options? Version constraints? Write to `$TMPDIR/fromage-culture-<slug>-deps.md`.
 
 After agents return:
 1. **Synthesize cross-agent patterns** — what do 2+ agents agree on? Where do they contradict?

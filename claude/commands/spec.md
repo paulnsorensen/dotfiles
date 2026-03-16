@@ -66,14 +66,14 @@ The user responds with "1A, 2C" for fast iteration.
 
 **Beat 2 — Research Burst** (round 2, then as needed)
 
-In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents simultaneously, each scanning a different source. Each agent writes findings to a temp markdown file that you synthesize afterward.
+In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents simultaneously, each scanning a different source. Each agent writes findings to `$TMPDIR/spec-research-<slug>-<source>.md`.
 
 | Agent | Source | What to Find |
 |-------|--------|-------------|
 | `/research` | Web + docs | Prior art, competitor approaches, relevant blog posts, library options |
 | `/lookup` → `/trace` | Codebase | Existing patterns, public API surface, architectural boundaries |
 | `/serena` | Cross-refs | Call chains, dependency direction, blast radius of the change |
-| Context7 / octocode | External code | How other projects solved similar problems, real-world examples |
+| `/fetch` | External code | How other projects solved similar problems, real-world examples |
 
 After agents return, **synthesize key patterns** before continuing the conversation:
 - What do 2+ sources agree on? (strong signal)
