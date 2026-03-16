@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # on-session-end.sh — Detect session-end intent and remind to /park
 # Runs as a UserPromptSubmit hook on every message; exits silently if no match.
 

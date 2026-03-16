@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # post-fresh-start.sh — Session start context
 # Skips if this is a post-compact session (handled by post-compact.sh)
 # IMPORTANT: Must be listed BEFORE the compact hook in settings.json SessionStart array

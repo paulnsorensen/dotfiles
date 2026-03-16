@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # post-compact.sh — Restore working context after compaction
 # Runs as a SessionStart hook with matcher "compact".
 # Re-injects saved file paths and commands so the agent can resume.
