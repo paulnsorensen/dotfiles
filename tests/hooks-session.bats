@@ -100,6 +100,8 @@ console.log(matched ? 'blocked' : 'allowed');
     [[ "$output" == "allowed" ]]
 }
 
+# ── on-session-end ──────────────────────────────────────────────────
+
 @test "on-session-end: farewell 'goodbye' produces JSON output" {
     run bash -c 'echo "{\"prompt\": \"goodbye\"}" | bash '"$HOOKS_DIR/on-session-end.sh"
     [ "$status" -eq 0 ]
@@ -117,6 +119,8 @@ console.log(matched ? 'blocked' : 'allowed');
     [ "$status" -eq 0 ]
     [ -z "$output" ]
 }
+
+# ── pre-compact / post-compact / post-fresh-start ───────────────────
 
 @test "pre-compact: extracts file paths from transcript" {
     local transcript="$TEST_HOME/transcript.jsonl"
@@ -198,42 +202,65 @@ console.log(matched ? 'blocked' : 'allowed');
     [ -z "$output" ]
 }
 
-@test "de-slop: git commit command matched" {
-    run node -e "
-const h = require('$HOOKS_DIR/de-slop-pre-commit.js');
-const m = h.hooks[0].matcher('Bash', {command: 'git commit -m \"feat: add\"'});
-console.log(m ? 'matched' : 'skipped');
-"
+# ── semantic-stop-guard ─────────────────────────────────────────────
+
+@test "stop-guard: parses as valid JS (syntax check)" {
+    run node --check "$HOOKS_DIR/semantic-stop-guard.js"
     [ "$status" -eq 0 ]
-    [[ "$output" == "matched" ]]
 }
 
-@test "de-slop: git status command not matched" {
-    run node -e "
-const h = require('$HOOKS_DIR/de-slop-pre-commit.js');
-const m = h.hooks[0].matcher('Bash', {command: 'git status'});
-console.log(m ? 'matched' : 'skipped');
-"
+@test "stop-guard: blocks first stop attempt with evaluation prompt" {
+    run bash -c 'echo "{\"last_assistant_message\":\"Here is the implementation I wrote.\",\"stop_hook_active\":false}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
     [ "$status" -eq 0 ]
-    [[ "$output" == "skipped" ]]
+    echo "$output" | jq -e '.decision == "block"'
+    echo "$output" | jq -e '.reason' > /dev/null
+    [[ "$output" == *"SYCOPHANCY"* ]]
+    [[ "$output" == *"PREMATURE COMPLETION"* ]]
+    [[ "$output" == *"AI SLOP"* ]]
+    [[ "$output" == *"WEAK ASSERTIONS"* ]]
 }
 
-@test "tdd-assertions: git commit command matched" {
-    run node -e "
-const h = require('$HOOKS_DIR/tdd-assertions-pre-commit.js');
-const m = h.hooks[0].matcher('Bash', {command: 'git commit -m \"test: add checks\"'});
-console.log(m ? 'matched' : 'skipped');
-"
+@test "stop-guard: allows on second attempt (stop_hook_active circuit breaker)" {
+    run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
     [ "$status" -eq 0 ]
-    [[ "$output" == "matched" ]]
+    [[ "$output" == "{}" ]]
 }
 
-@test "tdd-assertions: git diff command not matched" {
-    run node -e "
-const h = require('$HOOKS_DIR/tdd-assertions-pre-commit.js');
-const m = h.hooks[0].matcher('Bash', {command: 'git diff HEAD'});
-console.log(m ? 'matched' : 'skipped');
-"
+@test "stop-guard: skips short messages" {
+    run bash -c 'echo "{\"last_assistant_message\":\"ok\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
     [ "$status" -eq 0 ]
-    [[ "$output" == "skipped" ]]
+    [[ "$output" == "{}" ]]
+}
+
+@test "stop-guard: skips empty messages" {
+    run bash -c 'echo "{\"last_assistant_message\":\"\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{}" ]]
+}
+
+@test "stop-guard: skips missing message field" {
+    run bash -c 'echo "{\"stop_hook_active\":false}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{}" ]]
+}
+
+@test "stop-guard: handles malformed JSON gracefully" {
+    run bash -c 'echo "not json" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{}" ]]
+}
+
+@test "stop-guard: evaluation prompt includes all 8 categories" {
+    run bash -c 'echo "{\"last_assistant_message\":\"Here is a long enough response to trigger.\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    local msg
+    msg=$(echo "$output" | jq -r '.systemMessage')
+    [[ "$msg" == *"SYCOPHANCY"* ]]
+    [[ "$msg" == *"PREMATURE COMPLETION"* ]]
+    [[ "$msg" == *"DISMISSING FAILURES"* ]]
+    [[ "$msg" == *"HEDGING"* ]]
+    [[ "$msg" == *"SCOPE REDUCTION"* ]]
+    [[ "$msg" == *"FALSE CONFIDENCE"* ]]
+    [[ "$msg" == *"AI SLOP"* ]]
+    [[ "$msg" == *"WEAK ASSERTIONS"* ]]
 }

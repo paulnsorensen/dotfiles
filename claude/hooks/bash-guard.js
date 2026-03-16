@@ -8,11 +8,11 @@ const INSTALL_PATTERNS = [
 ];
 
 const LEGACY_TOOLS = [
-  { pattern: /^\s*(grep|egrep|fgrep)\b/, msg: 'Use the built-in Grep tool (ripgrep). Example: Grep with pattern="..." path="..."' },
-  { pattern: /^\s*sed\b/, msg: 'Use sd for regex replacements or the Edit tool. sd syntax: sd \'pattern\' \'replacement\' file' },
-  { pattern: /\bsed\s+-[^|]*i/, msg: 'Use sd for regex replacements or the Edit tool.' },
-  { pattern: /^\s*awk\b/, msg: 'Use sd for text transformations or the Edit tool.' },
-  { pattern: /^\s*find\b/, msg: 'Use the Glob tool for file patterns or fd (scout skill). Example: Glob with pattern="**/*.ts"' },
+  { pattern: /^\s*(grep|egrep|fgrep)\b/, msg: 'Use the built-in Grep tool or /scout (rg). Example: Grep with pattern="..." path="..."' },
+  { pattern: /^\s*sed\b/, msg: 'Use /chisel (sd) or the Edit tool. Example: sd \'pattern\' \'replacement\' file' },
+  { pattern: /\bsed\s+-[^|]*i/, msg: 'Use /chisel (sd) or the Edit tool.' },
+  { pattern: /^\s*awk\b/, msg: 'Use /chisel (sd) or the Edit tool.' },
+  { pattern: /^\s*find\b/, msg: 'Use the Glob tool or /scout (fd). Example: Glob with pattern="**/*.ts"' },
 ];
 
 const DEP_CACHES = [
@@ -30,8 +30,8 @@ const DOC_GREP = [
 ];
 
 const HEURISTIC_TRIGGERS = [
-  { pattern: /\bcd\s+\S+\s*&&\s*git\b/, msg: 'Use git -C <path> instead. Example: git -C /path/to/worktree commit -m "message"' },
-  { pattern: /gh\s+pr\s+create\b[^|]*--body\s*"\$\(cat\b/, msg: 'Use mcp__plugin_github_github__create_pull_request instead (avoids heuristic + TLS issues).' },
+  { pattern: /\bcd\s+\S+\s*&&\s*git\b/, msg: 'Use /wt-git or git -C <path> instead. Example: wt-git /path/to/worktree commit -m "message"' },
+  { pattern: /gh\s+pr\s+create\b[^|]*--body\s*"\$\(cat\b/, msg: 'Use /gh (GitHub MCP create_pull_request) instead (avoids heuristic + TLS issues).' },
 ];
 
 function matchInstall(cmd) {
@@ -69,14 +69,14 @@ function matchInlineTest(cmd) {
 function matchBruteLookup(cmd) {
   for (const { gen, label } of DOC_GREP) {
     if (gen.test(cmd) && /grep|head|tail/.test(cmd))
-      return `Blocked: ${label} + grep for symbol lookup. Use LSP hover, Context7, octocode, or /lookup.`;
+      return `Blocked: ${label} + grep for symbol lookup. Use /lookup, /fetch (Context7), or LSP hover.`;
   }
   for (const pat of DEP_CACHES) {
-    if (pat.test(cmd)) return `Blocked: grepping dependency cache (${cmd.match(pat)[0]}). Use LSP hover, Context7, or /lookup.`;
+    if (pat.test(cmd)) return `Blocked: grepping dependency cache (${cmd.match(pat)[0]}). Use /lookup, /fetch (Context7), or LSP hover.`;
   }
-  if (/target\/doc\//.test(cmd) && /grep/.test(cmd)) return 'Blocked: grepping generated docs. Use Context7 or LSP hover.';
+  if (/target\/doc\//.test(cmd) && /grep/.test(cmd)) return 'Blocked: grepping generated docs. Use /fetch (Context7) or LSP hover.';
   if (/find\s+.*-exec\s+grep/.test(cmd) || /find\s+.*\|\s*xargs\s+grep/.test(cmd))
-    return 'Blocked: find + grep chain. Use Serena find_symbol, ast-grep (/trace), or /lookup.';
+    return 'Blocked: find + grep chain. Use /serena (find_symbol), /trace (ast-grep), or /lookup.';
   return null;
 }
 
@@ -86,7 +86,7 @@ function matchHeuristic(cmd) {
   return `Blocked: triggers Claude Code safety heuristic. ${m.msg}`;
 }
 
-const ALL_MATCHERS = [matchInstall, matchLegacyTool, matchFileWrite, matchBruteLookup, matchHeuristic];
+const ALL_MATCHERS = [matchInstall, matchBruteLookup, matchLegacyTool, matchFileWrite, matchHeuristic];
 
 module.exports = {
   event: 'preToolUse',

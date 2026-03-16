@@ -12,8 +12,7 @@ Do not leave TODO/FIXME markers or unimplemented!() stubs.`
   {
     pattern: /(?:python3?\s+-c\s+['"][^'"]*(?:import|assert|print\s*\()|cat\s+<<)/,
     skipFiles: /\.(md|sh|bash|yml|yaml|toml|Makefile|justfile)$/,
-    msg: `Inline test code detected. Use /test-sandbox or write a proper test file:
-  uv run pytest tests/test_feature.py --tb=short`
+    msg: `Inline test code detected. Use /test-sandbox or /wreck to write a proper test file.`
   },
 ];
 
