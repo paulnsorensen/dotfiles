@@ -89,6 +89,30 @@ teardown() {
     [[ "$output" == blocked:* ]]
 }
 
+@test "bash-guard: pnpm install is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"pnpm install"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: pip install -r is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"pip install -r requirements.txt"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: go generate is allowed" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"go generate ./..."}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: go test is allowed" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"go test ./..."}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
 @test "bash-guard: npm test is allowed" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"npm test"}'
     [ "$status" -eq 0 ]
@@ -118,6 +142,37 @@ teardown() {
 
 @test "bash-guard: bare egrep is blocked" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"egrep pattern file.txt"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: bare fgrep is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"fgrep pattern file.txt"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: grep with leading whitespace is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"  grep -r pattern src/"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: bare sed without -i is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"sed s/foo/bar/ file.txt"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+    [[ "$output" == *"/chisel"* ]]
+}
+
+@test "bash-guard: awk with leading whitespace is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"  awk -F, file.txt"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: find with leading whitespace is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"  find . -name *.js"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
 }
@@ -200,8 +255,20 @@ teardown() {
     [[ "$output" == "allowed" ]]
 }
 
+@test "bash-guard: redirect to /private/tmp/claude is allowed" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"echo test > /private/tmp/claude/out.txt"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
 @test "bash-guard: stderr redirect is allowed" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"some_cmd 2>/dev/stderr"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: stdout redirect to /dev/stdout is allowed" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"some_cmd 1>/dev/stdout"}'
     [ "$status" -eq 0 ]
     [[ "$output" == "allowed" ]]
 }
@@ -223,6 +290,18 @@ teardown() {
 
 @test "bash-guard: python -c with dollar-quote is blocked" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash "{\"command\":\"python3 -c \$'import os\\nassert True'\"}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: python (not python3) -c with import+assert is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"python -c \"import json; assert True\""}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: cat heredoc with import+assert is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"cat <<EOF | python3\nimport os\nassert True\nEOF"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
 }
@@ -264,6 +343,74 @@ teardown() {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"cat /go/pkg/mod/github.com/pkg/errors/errors.go"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: grepping .pnpm-store is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"cat .pnpm-store/v3/files/pkg/index.js"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: grepping GOPATH pkg/mod is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"cat GOPATH/src/pkg/mod/github.com/foo/bar.go"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: grepping .m2/repository is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"cat .m2/repository/org/apache/commons/commons-lang3/3.12.0/pom.xml"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: grepping .gradle/caches is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"cat .gradle/caches/modules-2/files-2.1/com.google.guava/guava/31.1-jre/source.jar"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: grepping .gem/ is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"cat .gem/ruby/3.2.0/gems/rails-7.0.0/lib/rails.rb"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: grepping vendor/bundle is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"cat vendor/bundle/ruby/3.2.0/gems/rack-2.2.7/lib/rack.rb"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: pydoc piped to grep is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"pydoc json | grep loads"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+    [[ "$output" == *"pydoc"* ]]
+}
+
+@test "bash-guard: pydoc3 piped to head is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"pydoc3 requests | head -50"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: python help() piped to grep is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"python3 -c \"help(json.loads)\" | grep param"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: ri piped to grep is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"ri Array#map | grep return"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+    [[ "$output" == *"ri (Ruby)"* ]]
+}
+
+@test "bash-guard: go doc without grep is allowed" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"go doc net/http"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
 }
 
 @test "bash-guard: cargo doc piped to grep is blocked with /fetch reference" {
@@ -373,6 +520,12 @@ teardown() {
     [[ "$output" == blocked:* ]]
 }
 
+@test "write-guard: ... same pattern is blocked" {
+    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"... same as above","file_path":"foo.ts"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
 @test "write-guard: actual spread syntax is allowed" {
     run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"const merged = {...a, ...b};","file_path":"foo.ts"}'
     [ "$status" -eq 0 ]
@@ -418,8 +571,20 @@ teardown() {
     [[ "$output" == blocked:* ]]
 }
 
+@test "write-guard: PLACEHOLDER is blocked" {
+    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"const value = PLACEHOLDER;","file_path":"foo.ts"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
 @test "write-guard: lowercase todo in prose is allowed" {
     run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"// need to do this next","file_path":"foo.ts"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "write-guard: TODOLIST is allowed (word boundary)" {
+    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"const TODOLIST = [];","file_path":"foo.ts"}'
     [ "$status" -eq 0 ]
     [[ "$output" == "allowed" ]]
 }
@@ -455,6 +620,48 @@ teardown() {
     run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"ci.yml"}'
     [ "$status" -eq 0 ]
     [[ "$output" == "allowed" ]]
+}
+
+@test "write-guard: python -c in .bash file is allowed (skipFiles)" {
+    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"setup.bash"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "write-guard: python -c in .yaml file is allowed (skipFiles)" {
+    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"config.yaml"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "write-guard: python -c in .toml file is allowed (skipFiles)" {
+    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"pyproject.toml"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "write-guard: python (not python3) -c is blocked" {
+    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python -c \"import os; print(os.getcwd())\"","file_path":"foo.ts"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "write-guard: python -c with assert (no import) is blocked" {
+    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"assert 1 == 1\"","file_path":"foo.ts"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "write-guard: python -c with print( (no import) is blocked" {
+    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"print(42)\"","file_path":"foo.ts"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "write-guard: Write tool content field works" {
+    run_hook "$HOOKS_DIR/write-guard.js" Write '{"content":"// ... rest of handlers","file_path":"foo.ts"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
 }
 
 @test "write-guard: clean code is allowed" {
