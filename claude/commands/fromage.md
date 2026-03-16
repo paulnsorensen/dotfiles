@@ -165,6 +165,16 @@ Launch `fromage-preparing` (haiku). It primes Serena (activate_project, check_on
 
 ## Phase 2 — Pasteurize (Opus, interactive)
 
+### Spec Detection Gate
+
+Before starting interactive requirements, check if a spec already exists:
+
+1. **Spec exists** (`.claude/specs/<slug>.md`): Read it, confirm it's current, and **skip Pasteurize entirely**. The spec IS the requirements. Proceed to Culture.
+2. **No spec + medium/large complexity**: Suggest `/spec` first: "This looks like a medium+ feature. Want to run `/spec` to shape requirements before we build? Or should I gather requirements inline?"
+3. **No spec + trivial/small**: Proceed with inline Pasteurize (below).
+
+### Interactive Requirements (when Pasteurize runs)
+
 Interactive requirements gathering — a conversation, not an interrogation.
 
 1. Parse the request: what's clear vs ambiguous
@@ -222,13 +232,27 @@ Do NOT proceed without approval — the spec is the contract.
 
 ## Phase 3 — Culture (Sonnet, parallel)
 
-Launch 2-3 `fromage-culture` agents (sonnet), each targeting a different aspect. Every agent applies the full trace checklist (data transformations, state changes, cross-cutting concerns, configuration) to their assigned scope:
+Launch Culture agents (sonnet), each targeting a different aspect. Every agent applies the full trace checklist (data transformations, state changes, cross-cutting concerns, configuration) to their assigned scope.
+
+### Agent Count by Complexity
+
+| Complexity | Agents | Aspects |
+|---|---|---|
+| **Medium** | 2-3 | A, B, (C) |
+| **Large** | 4-5 | A, B, C, D, (E) |
+
+### Aspects
 
 - **Aspect A**: Entry points and existing patterns relevant to the change
 - **Aspect B**: Blast radius — what existing code will be affected
-- **Aspect C** (large only): Architecture boundaries and integration points
+- **Aspect C** (medium+): Architecture boundaries and integration points
+- **Aspect D** (large only): **External prior art** — spawn a `/research` agent to scan how other projects solved similar problems. Use octocode for GitHub examples, Context7 for library docs, WebSearch for blog posts and design rationale. Write findings to a temp markdown file.
+- **Aspect E** (large only): **Dependency and API landscape** — what external libraries, APIs, or services does this change interact with? Are there newer/better options? Version constraints?
 
-After agents return, pass their summaries and full report temp file paths to Curdle. The planner can read the full reports if it needs deeper context.
+After agents return:
+1. **Synthesize cross-agent patterns** — what do 2+ agents agree on? Where do they contradict?
+2. Pass summaries and full report temp file paths to Curdle
+3. The planner can read the full reports if it needs deeper context
 
 **Skip**: Single-file change, config tweak, obvious modification path.
 
