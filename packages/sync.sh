@@ -232,9 +232,10 @@ sync_cargo() {
 
 sync_rustup_proxies() {
     command -v rustup &>/dev/null || return 0
-    local toolchain_bin
-    toolchain_bin="$(rustup run stable rustc --print sysroot 2>/dev/null)/bin"
-    [[ -d "$toolchain_bin" ]] || return 0
+    local sysroot
+    sysroot="$(rustup run stable rustc --print sysroot 2>/dev/null || true)"
+    [[ -n "$sysroot" && -d "$sysroot/bin" ]] || return 0
+    local toolchain_bin="$sysroot/bin"
 
     local cargo_bin="${HOME}/.cargo/bin"
     mkdir -p "$cargo_bin"
@@ -244,7 +245,10 @@ sync_rustup_proxies() {
         [[ -x "$toolchain_bin/$bin" ]] || continue
         if [[ ! -e "$cargo_bin/$bin" ]]; then
             log_info "Creating rustup proxy: $bin"
-            ln -sf "$toolchain_bin/$bin" "$cargo_bin/$bin"
+            if ! ln -sf "$toolchain_bin/$bin" "$cargo_bin/$bin"; then
+                log_error "Failed to create proxy: $bin"
+                FAILED+=("rustup-proxy:$bin")
+            fi
         fi
     done
 }

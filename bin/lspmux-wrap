@@ -7,8 +7,8 @@
 # Finds the real LSP binary and forwards through lspmux client.
 # Fails loudly if lspmux is not installed or the server is down.
 #
-# Stripping $DOTFILES_DIR/bin from PATH prevents infinite recursion — without
-# this, `command -v pyright-langserver` would find this wrapper again.
+# Strips all directories containing lspmux-wrap from PATH to prevent
+# infinite recursion when the script is symlinked across multiple locations.
 
 set -euo pipefail
 
