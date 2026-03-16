@@ -1,5 +1,46 @@
 #!/usr/bin/env bats
 # Tests for session/guard hooks
+#
+# ── Coverage manifest ───────────────────────────────────────────────
+# Every hook in this file must have at least one positive and one
+# negative test. When modifying hooks, update this manifest.
+#
+# worktree-guard.js — matcher: toolName == Write/Edit + git worktree detection
+#   Write inside worktree root:     → allowed
+#   Write to /tmp:                  → allowed
+#   Write to ~/.claude/:            → allowed
+#   Write outside worktree:         → blocked
+#   non-Write tool:                 → allowed (matcher returns false)
+#   non-worktree context (.git):    → allowed (not a worktree)
+#
+# on-session-end.sh — farewell regex in prompt field
+#   "goodbye":                      → produces JSON output
+#   "see you later":                → produces JSON output
+#   normal text (neg):              → no output
+#
+# pre-compact.sh — transcript_path → .compaction-context
+#   file_path extraction:           → file paths in context file
+#   command extraction:             → commands in context file
+#   missing transcript:             → graceful exit
+#   section headers:                → ## Working directory, ## Files
+#
+# post-compact.sh — reads .compaction-context → JSON output
+#   with context file:              → outputs content, deletes file
+#   without context file:           → default COMPACTION COMPLETE
+#
+# post-fresh-start.sh — fresh session vs compaction resume
+#   without compaction file:        → JSON suggestion output
+#   with compaction file:           → silent exit
+#
+# semantic-stop-guard.js — stdin JSON → stdout JSON
+#   stop_hook_active false + long msg: → block with 8-category eval
+#   stop_hook_active true:            → {} (circuit breaker)
+#   short message (<20 chars):       → {} (skip)
+#   empty message:                    → {} (skip)
+#   missing message field:            → {} (skip)
+#   malformed JSON:                   → {} (graceful)
+#   evaluation prompt categories:     → all 8 present in systemMessage
+# ────────────────────────────────────────────────────────────────────
 
 load test_helper
 

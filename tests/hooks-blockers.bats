@@ -1,6 +1,100 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2016
 # Tests for JavaScript blocking hooks (preToolUse)
+#
+# ── Coverage manifest ───────────────────────────────────────────────
+# Every regex pattern in bash-guard.js and write-guard.js must have
+# at least one positive test (fires) and one negative test (passes).
+# When adding a new pattern, add its line here and write the test.
+#
+# bash-guard.js — INSTALL_PATTERNS (6 patterns)
+#   /\bnpm\s+install\b/             → npm install, npm test (neg)
+#   /\byarn\s+add\b/                → yarn add
+#   /\bpnpm\s+(add|install)\b/      → pnpm add, pnpm install
+#   /\bpip3?\s+install\b/           → pip install, pip3 install, pip install -r
+#   /\bgo\s+get\b/                  → go get, go generate (neg), go test (neg)
+#   /\bcargo\s+add\b/               → cargo add, cargo build (neg)
+#
+# bash-guard.js — LEGACY_TOOLS (5 patterns)
+#   /^\s*(grep|egrep|fgrep)\b/      → grep, egrep, fgrep, leading whitespace, piped grep (neg), git grep (neg)
+#   /^\s*sed\b/                     → bare sed (no -i)
+#   /\bsed\s+-[^|]*i/              → sed -i, sed -i.bak
+#   /^\s*awk\b/                     → awk, leading whitespace
+#   /^\s*find\b/                    → find, leading whitespace
+#
+# bash-guard.js — matchFileWrite (2 block patterns, 3 allow patterns)
+#   /\bcat\s*>>?\s/                 → cat >, cat >>
+#   /<<[-~]?\s*['"]?\w+/ + />>?\s+/ → heredoc redirect
+#   /[12]?>+\s*\/dev\/(null|stderr|stdout)/  → /dev/null (neg), /dev/stderr (neg), /dev/stdout (neg)
+#   /2>&1/                          → 2>&1 (neg, stripped)
+#   /\$TMPDIR|\/private\/tmp\/claude|\/tmp\/claude/ → TMPDIR (neg), /tmp/claude (neg), /private/tmp/claude (neg)
+#
+# bash-guard.js — matchInlineTest (4 patterns)
+#   /python3?\s+-c\s+['"].*\bimport\b.*(?:\bassert\b|print\s*\()/  → import+assert, import+print
+#   /python3?\s+-c\s+\$'/           → dollar-quote form
+#   /python3?\s+-c\s+['"]...\bimport\b...;...(?:\bassert|print)/   → (covered by pattern 1)
+#   /cat\s+<<...\bimport\b.../      → cat heredoc with import+assert
+#   python (not python3):           → python -c import+assert
+#   simple python print (neg):     → python3 -c print(42)
+#   script execution (neg):        → python3 test_file.py
+#
+# bash-guard.js — DEP_CACHES (11 patterns)
+#   /\.cargo\/registry/             → .cargo/registry
+#   /node_modules\//                → node_modules/
+#   /\.pnpm-store/                  → .pnpm-store
+#   /site-packages\//               → site-packages/ (via .venv path)
+#   /\.venv\/lib\//                 → (covered by site-packages test)
+#   /\/go\/pkg\/mod\//              → /go/pkg/mod/
+#   /GOPATH.*pkg\/mod/              → GOPATH/src/pkg/mod/
+#   /\.m2\/repository\//            → .m2/repository/
+#   /\.gradle\/caches\//            → .gradle/caches/
+#   /\.gem\//                       → .gem/
+#   /vendor\/bundle\//              → vendor/bundle/
+#
+# bash-guard.js — DOC_GREP (5 generators, require grep|head|tail)
+#   /cargo\s+doc\b/                 → cargo doc | grep
+#   /go\s+doc\b/                    → go doc | grep, go doc alone (neg)
+#   /pydoc3?\b/                     → pydoc | grep, pydoc3 | head
+#   /python3?\s+-c\s+.*help\s*\(/   → python help() | grep
+#   /ri\s+/                         → ri | grep
+#   /target\/doc\// + /grep/        → target/doc grep
+#   /find\s+.*-exec\s+grep/        → find -exec grep
+#   /find\s+.*\|\s*xargs\s+grep/   → find | xargs grep
+#
+# bash-guard.js — HEURISTIC_TRIGGERS (2 patterns)
+#   /\bcd\s+\S+\s*&&\s*git\b/      → cd && git, git -C (neg)
+#   /gh\s+pr\s+create\b...--body\s*"\$\(cat\b/ → gh pr create --body "$(cat
+#
+# write-guard.js — RULES[0] ellipsis (4 alternations)
+#   /\/\/\s*\.\.\./                 → // ...
+#   /#\s*\.\.\./                    → # ...
+#   /\/\*\s*\.\.\.\s*\*\//         → /* ... */
+#   /\.{3}\s*(rest|remaining|similar|same)/ → ...remaining, ...similar, ...same
+#   {...a, ...b} (neg):            → spread syntax allowed
+#
+# write-guard.js — RULES[1] placeholder (7 alternations)
+#   /\bTODO\b/                      → TODO
+#   /\bFIXME\b/                     → FIXME
+#   /\bHACK\b/                      → HACK
+#   /\bXXX\b/                       → XXX
+#   /\bPLACEHOLDER\b/               → PLACEHOLDER
+#   /unimplemented!\(\)/            → unimplemented!()
+#   /todo!\(\)/                     → todo!()
+#   lowercase "todo" (neg):         → allowed
+#   TODOLIST (neg):                 → word boundary prevents match
+#
+# write-guard.js — RULES[2] inline test (2 patterns + skipFiles)
+#   /python3?\s+-c\s+['"]...(?:import|assert|print\s*\()/  → python3 -c import, assert alone, print( alone
+#   /cat\s+<</                      → cat heredoc
+#   python (not python3):           → python -c import
+#   skipFiles .md:                  → allowed
+#   skipFiles .sh:                  → allowed
+#   skipFiles .bash:                → allowed
+#   skipFiles .yml:                 → allowed
+#   skipFiles .yaml:                → allowed
+#   skipFiles .toml:                → allowed
+#   Write tool content field:       → blocked (tests content vs new_string)
+# ────────────────────────────────────────────────────────────────────
 
 load test_helper
 
