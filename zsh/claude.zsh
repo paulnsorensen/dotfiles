@@ -181,12 +181,3 @@ alias plugin-ls='claude plugin list'
 alias plugin-sync='$CLAUDE_DOTFILES/plugins/sync.sh'
 alias plugin-sync-dry='$CLAUDE_DOTFILES/plugins/sync.sh --dry-run'
 alias plugin-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/plugins/registry.yaml'
-
-# ═══════════════════════════════════════════════════════════════════
-# LSP Management (local-only — not loaded for headless/CI sessions)
-# ═══════════════════════════════════════════════════════════════════
-alias lsp-sync='$CLAUDE_DOTFILES/plugins/lsp-sync.sh'
-alias lsp-sync-dry='$CLAUDE_DOTFILES/plugins/lsp-sync.sh --dry-run'
-alias lsp-disable='$CLAUDE_DOTFILES/plugins/lsp-sync.sh --disable'
-alias lsp-ls='$CLAUDE_DOTFILES/plugins/lsp-sync.sh --list'
-alias lsp-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/plugins/lsp-registry.yaml'

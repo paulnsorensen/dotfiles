@@ -11,7 +11,7 @@
 #   plugin-ls             List installed plugins
 
 plugins:
-  # --- LSP plugins (all enabled globally, servers start lazily) ---
+  # --- LSP plugins (globally enabled, servers start lazily per file type) ---
   bash-language-server@claude-code-lsps:
     description: Bash/shell script language server (.sh, .bash, .zsh)
     scope: user

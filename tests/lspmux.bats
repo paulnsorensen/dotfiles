@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Adversarial tests for lspmux integration
-# Tests: lspmux-wrap, shadow wrappers, .sync template expansion, lsp-sync.sh status check
+# Tests: lspmux-wrap, shadow wrappers, .sync template expansion
 
 load test_helper
 
@@ -442,50 +442,7 @@ EOF
 }
 
 # ===========================================================================
-# SECTION 8 — lsp-sync.sh: syntax and CLI flags
-# ===========================================================================
-
-@test "lsp-sync.sh passes bash -n syntax check" {
-    run bash -n "$DOTFILES_DIR/claude/plugins/lsp-sync.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "lsp-sync.sh --help exits 0 and shows usage" {
-    run bash "$DOTFILES_DIR/claude/plugins/lsp-sync.sh" --help
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Usage:"* ]]
-}
-
-@test "lsp-sync.sh exits 1 when yq is not available" {
-    # Shadow yq with a non-existent command by masking PATH
-    run env PATH="/usr/bin:/bin" bash "$DOTFILES_DIR/claude/plugins/lsp-sync.sh" --list
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"yq"* ]]
-}
-
-@test "lsp-sync.sh --lspmux-status flag is accepted (--help output)" {
-    run bash "$DOTFILES_DIR/claude/plugins/lsp-sync.sh" --help
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"--lspmux-status"* ]]
-}
-
-@test "lsp-sync.sh prints lspmux not found warning when lspmux absent" {
-    # Remove lspmux from PATH by restricting to system paths that won't have it
-    run env PATH="/usr/bin:/bin" bash "$DOTFILES_DIR/claude/plugins/lsp-sync.sh" --help
-    # help exits before lspmux check, so use --list with mocked deps
-    # Simpler: just verify the code path string exists in the script
-    grep -q 'lspmux not found' "$DOTFILES_DIR/claude/plugins/lsp-sync.sh"
-}
-
-@test "lsp-sync.sh handles unexpected launchctl output without crashing" {
-    # The launchctl parsing uses grep + awk — verify script is robust
-    # by checking the launchd_out parsing logic exists
-    grep -q 'launchd_out' "$DOTFILES_DIR/claude/plugins/lsp-sync.sh"
-    grep -q '"PID"' "$DOTFILES_DIR/claude/plugins/lsp-sync.sh"
-}
-
-# ===========================================================================
-# SECTION 9 — integration: end-to-end wrapper + lspmux routing
+# SECTION 8 — integration: end-to-end wrapper + lspmux routing
 # ===========================================================================
 
 @test "integration: wrapper is executable and has correct shebang" {

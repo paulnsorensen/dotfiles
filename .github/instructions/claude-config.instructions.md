@@ -14,7 +14,6 @@ This directory contains all Claude Code configuration: skills, agents, hooks, MC
 - `claude/hooks/*.sh` — Lifecycle hooks (shell, runs at session events)
 - `claude/mcp/registry.yaml` — MCP server registry (source of truth)
 - `claude/plugins/registry.yaml` — Plugin registry
-- `claude/plugins/lsp-registry.yaml` — LSP server registry (local-only)
 - `claude/settings.json` — Permissions, environment, hooks, enabled plugins
 
 ### Code Intelligence Tool Division
