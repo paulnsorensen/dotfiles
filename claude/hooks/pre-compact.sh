@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # pre-compact.sh — Save session context before compaction
 # Extracts recent file paths and commands from the transcript
 # so post-compact can re-inject working context.

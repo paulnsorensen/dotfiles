@@ -76,7 +76,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/pre-compact.sh\"",
+            "command": "/bin/bash \"$HOME/.claude/hooks/pre-compact.sh\"",
             "statusMessage": "Saving session context...",
             "async": true
           }
@@ -88,7 +88,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/post-fresh-start.sh\"",
+            "command": "/bin/bash \"$HOME/.claude/hooks/post-fresh-start.sh\"",
             "statusMessage": "Priming session context..."
           }
         ]
@@ -98,7 +98,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/post-compact.sh\"",
+            "command": "/bin/bash \"$HOME/.claude/hooks/post-compact.sh\"",
             "statusMessage": "Restoring session context..."
           }
         ]
@@ -109,7 +109,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/on-session-end.sh\""
+            "command": "/bin/bash \"$HOME/.claude/hooks/on-session-end.sh\""
           }
         ]
       }
@@ -117,7 +117,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash -c 'PLUGIN_DIR=$(ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1); INDEX_JS=\"${PLUGIN_DIR}dist/index.js\"; if [ -z \"$PLUGIN_DIR\" ] || [ ! -f \"$INDEX_JS\" ]; then exit 0; fi; \"$(command -v node)\" \"$INDEX_JS\"'"
+    "command": "/bin/bash -c 'PLUGIN_DIR=$(ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1); INDEX_JS=\"${PLUGIN_DIR}dist/index.js\"; if [ -z \"$PLUGIN_DIR\" ] || [ ! -f \"$INDEX_JS\" ]; then exit 0; fi; \"$(command -v node)\" \"$INDEX_JS\"'"
   },
   "enabledPlugins": {
     "bash-language-server@claude-code-lsps": true,
