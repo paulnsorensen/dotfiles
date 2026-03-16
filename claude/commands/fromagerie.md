@@ -66,9 +66,15 @@ This gate is **never skipped**.
 ### Read and Validate Spec
 
 Read the spec file. Fail fast with a clear error if any of these are missing:
+- Executive Summary (`## Executive Summary`)
 - Problem Statement (`## Problem Statement`)
 - User Stories (`## User Stories`)
 - Quality Gates (`## Quality Gates`) with runnable commands
+
+Warn (but don't fail) if these sections are absent — they improve decomposition quality:
+- Business Context (`## Business Context`)
+- Design Principles (`## Design Principles`)
+- Key Patterns (`## Key Patterns`)
 
 Extract:
 - **Spec summary** (<2K chars): what's being built (bullets), constraints, scope boundaries
@@ -101,17 +107,29 @@ print(json.dumps(manifest, indent=2))
 
 ## Phase 1 — Explore
 
-Launch 2-3 `fromage-culture` agents (sonnet, parallel) in a **single message**:
+Launch Culture agents (sonnet, parallel) in a **single message**. Scale by spec size:
 
-- **Agent A**: Entry points, existing patterns, and file ownership relevant to the spec's scope
-- **Agent B**: Blast radius — what existing code will be affected or extended
-- **Agent C** (if spec is large): Architecture boundaries and public API surfaces
+| Spec Size | Agents | Aspects |
+|---|---|---|
+| Small (< 3 user stories) | 2 | A, B |
+| Medium (3-6 user stories) | 3 | A, B, C |
+| Large (7+ user stories) | 4-5 | A, B, C, D, (E) |
 
-Each agent prompt includes the spec summary. Full report written to `$TMPDIR/fromagerie-culture-<slug>-<N>.md`.
+**`fromage-culture` agents (codebase exploration):**
+- **Aspect A**: Entry points, existing patterns, and file ownership relevant to the spec's scope
+- **Aspect B**: Blast radius — what existing code will be affected or extended
+- **Aspect C** (medium+): Architecture boundaries and public API surfaces
+
+**Separate research subagents (large specs only, run in parallel with Culture):**
+- **Aspect D**: **External prior art** — spawn a `/research` agent to scan how other projects solved similar problems. Write findings to `$TMPDIR/fromagerie-culture-<slug>-prior-art.md`.
+- **Aspect E**: **Dependency and API landscape** — spawn a `/fetch` agent to assess external libraries and APIs this feature interacts with. Write to `$TMPDIR/fromagerie-culture-<slug>-deps.md`.
+
+Each `fromage-culture` agent prompt includes the spec summary. Full report written to `$TMPDIR/fromagerie-culture-<slug>-<N>.md`.
 
 After agents return:
-- Collect inline summaries (keep in orchestrator context)
-- Pass temp file paths to Phase 2 (decomposer reads full reports if needed)
+1. **Synthesize cross-agent patterns** — what do 2+ agents agree on? Where do they contradict?
+2. Collect inline summaries (keep in orchestrator context)
+3. Pass temp file paths to Phase 2 (decomposer reads full reports if needed)
 
 Update manifest: `"phase": "explore"`.
 

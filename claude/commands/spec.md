@@ -24,6 +24,20 @@ This is a **fluid conversation**, not an interrogation — but with structure fo
 - Periodically summarize: "Here's where we are..."
 - Research and code exploration happen *during* the dialogue, not as a separate phase
 
+## Beat 0 — Defend the Why (mandatory gate)
+
+Before any design or scoping work, run through these framing questions. These are **non-negotiable** — if the user can't defend their answers, push back. Present as lettered options where possible.
+
+1. **Job to Be Done** — "What's the job this feature does for the user? Not what it *is*, but what it *lets them accomplish*."
+2. **Why Now** — "Why build this now instead of next month or never? What's changed?"
+3. **What This Unlocks** — "If we build this, what becomes possible that wasn't before? What's the second-order effect?"
+4. **Who Has This Problem** — "Who specifically feels this pain today? How do they work around it?"
+5. **Do Nothing Option** — "What happens if we don't build this? Is the status quo actually intolerable?"
+
+If the user can't answer #1-3 convincingly, **pause and explore further** before proceeding. A vague JTBD means we're building the wrong thing. Surface this tension directly: "I'm not convinced yet — can you help me understand X?"
+
+After framing, summarize the "why" in 2-3 sentences. This becomes the spec's Problem Statement.
+
 ## The Loop
 
 The conversation follows a question-research-question loop. Minimum **3 rounds**, maximum **6 rounds** before generating the spec.
@@ -50,15 +64,29 @@ Ask 2-4 clarifying questions with lettered options. Group related questions toge
 
 The user responds with "1A, 2C" for fast iteration.
 
-**Beat 2 — Research** (rounds 2+, as needed)
-Between rounds, use skills to verify and deepen understanding:
+**Beat 2 — Research Burst** (round 2, then as needed)
 
-- **`/research`** — Verify assumptions against current docs, check prior art, confirm APIs haven't changed. Spawn as a subagent so it runs in the background while you formulate next questions.
-- **`/lookup`** — Assess the shape of existing code. What modules exist? What's the public API surface? What patterns are already established? Routes to LSP, Serena, ast-grep, or Context7 as appropriate.
-- **`/trace`** — When you need structural code patterns: "what implements this interface?", "which adapters call this port?"
-- **`/serena`** — For cross-reference tracing and symbol navigation when you need to understand call chains or dependency direction.
+In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents simultaneously, each scanning a different source. Each agent writes findings to `$TMPDIR/spec-research-<slug>-<source>.md`.
 
-Surface findings conversationally: "I checked and we already have a `FooAdapter` that does half of this — want to extend it or build fresh?"
+| Agent | Source | What to Find |
+|-------|--------|-------------|
+| `/research` | Web + docs | Prior art, competitor approaches, relevant blog posts, library options |
+| `/lookup` → `/trace` | Codebase | Existing patterns, public API surface, architectural boundaries |
+| `/serena` | Cross-refs | Call chains, dependency direction, blast radius of the change |
+| `/fetch` | External code | How other projects solved similar problems, real-world examples |
+
+After agents return, **synthesize key patterns** before continuing the conversation:
+- What do 2+ sources agree on? (strong signal)
+- Where do sources contradict? (needs user input)
+- What surprising findings emerged? (surface these)
+
+Present synthesis conversationally: "I ran research in parallel — here's what I found across 4 sources: [patterns]. The interesting tension is between X and Y. Which direction feels right?"
+
+In later rounds, use individual skills as needed:
+- **`/research`** — Verify specific assumptions, check APIs
+- **`/lookup`** — Targeted code exploration
+- **`/trace`** — Structural code patterns: "what implements this interface?"
+- **`/serena`** — Cross-reference tracing and symbol navigation
 
 **Beat 3 — Summarize** (every 2 rounds)
 Periodically check alignment: "Here's where we are so far... Does this direction feel right?"
@@ -91,7 +119,10 @@ Your YAGNI principle is relevant here. What's driving this work?
    B. I'm about to add new capabilities and want a cleaner extension point
    C. The file is over my complexity budget and I want to get ahead of it
    D. Mostly a craftsmanship itch — I want it to feel right
+   E. Actually... maybe we don't need to build this at all
 ```
+
+Always include an explicit **"do nothing"** option. Sometimes the best spec is the one that concludes "the status quo is fine" or "a smaller change solves this." That's a valid outcome — it saves real engineering time.
 
 This isn't about blocking work — it's about making sure the spec solves the right problem.
 
@@ -129,6 +160,8 @@ Save and optionally publish:
 
 ## Spec Artifact Format
 
+Target a **2-minute read** (~800 words of prose, excluding code/tables). Ruthlessly prioritize signal over documentation theater. If a section has nothing meaningful to say, omit it rather than filling space.
+
 ```markdown
 ---
 title: <Feature Name>
@@ -140,8 +173,28 @@ related: []
 
 # <Feature Name>
 
+## Executive Summary
+3-5 sentences: what we're building, why, and the key design decision.
+A busy person reading only this section should understand the feature.
+
+## Business Context
+What business or engineering goal does this serve? Ground the feature in
+what the product/system does in the real world.
+- **Domain**: What is the business domain? (e.g., "we provide inference APIs")
+- **Primary entities**: What are the key business objects? (e.g., users, subscriptions, deployments)
+- **This feature's role**: How does this feature serve the business goal?
+- **Success looks like**: What changes in the real world when this ships?
+
 ## Problem Statement
 What problem are we solving? Who has it? Why now?
+(Drawn from Beat 0 framing answers — JTBD, why now, what this unlocks)
+
+## Design Principles
+3-5 principles specific to THIS feature (not global engineering principles).
+Each principle is a decision filter — when in doubt during implementation, consult these.
+- **Principle 1**: e.g., "Prefer accuracy over speed — a slow correct answer beats a fast wrong one"
+- **Principle 2**: e.g., "Users should never see raw error codes — always translate to actionable guidance"
+- **Principle 3**: e.g., "Backward compatibility with existing CLI flags is non-negotiable"
 
 ## Goals
 - [ ] Goal 1
@@ -190,14 +243,31 @@ Commands that must pass for every user story:
 
 ### Option A: <Name> (Recommended)
 Description, tradeoffs, and why this is recommended.
+**Evidence**: [cite research findings — e.g., "3 competitor implementations use this pattern", "our codebase already has FooAdapter doing 80% of this"]
 
 ### Option B: <Name>
 Description and why not chosen.
+**Evidence**: [cite specific reason with evidence — not just "less good", but "adds 2 new dependencies for marginal benefit" or "competitor X tried this and reverted"]
+
+### Option C: Do Nothing
+What happens if we don't build this? Is the status quo actually intolerable?
+(This option is always included. Sometimes it wins.)
+
+## Risks & Mitigations
+What could go wrong and how we'd handle it:
+- **Risk**: <what could fail> → **Mitigation**: <how we prevent or recover>
+- **Risk**: <what could fail> → **Mitigation**: <how we prevent or recover>
 
 ## Implementation Notes
 - Key files/modules to touch (from /lookup findings)
 - Patterns to follow
 - Pitfalls to avoid
+
+## Key Patterns (from research)
+Synthesized findings from the parallel research burst:
+- **Pattern 1**: What 2+ sources agreed on [Evidence: source A, source B]
+- **Pattern 2**: How other projects solved this [Evidence: GitHub examples]
+- **Tension**: Where sources disagreed and the decision we made
 
 ## Areas for Further Exploration
 Items that need deeper investigation during /fromage execution:
