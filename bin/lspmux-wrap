@@ -7,8 +7,8 @@
 # Finds the real LSP binary and forwards through lspmux client.
 # Fails loudly if lspmux is not installed or the server is down.
 #
-# Stripping $DOTFILES_DIR/bin from PATH prevents infinite recursion — without
-# this, `command -v pyright-langserver` would find this wrapper again.
+# Strips all directories containing lspmux-wrap from PATH to prevent
+# infinite recursion when the script is symlinked across multiple locations.
 
 set -euo pipefail
 
@@ -19,15 +19,32 @@ if [[ -z "$BINARY" ]]; then
 fi
 shift  # remaining args are passed through to the binary
 
-# Strip this bin directory from PATH to avoid finding our own wrapper again.
-THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
-PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v "^${THIS_DIR}$" | tr '\n' ':' | sed 's/:$//')"
+# Strip any directory containing lspmux-wrap from PATH to avoid finding our
+# own wrapper again. Simple THIS_DIR stripping fails when the script is
+# symlinked (e.g., ~/Dev/dotfiles/bin → conductor workspace copy) because
+# both paths are on PATH but only one gets stripped.
+CLEAN_PATH=""
+while IFS= read -r dir; do
+    [[ -z "$dir" ]] && continue
+    [[ -f "$dir/lspmux-wrap" ]] && continue
+    CLEAN_PATH="${CLEAN_PATH:+$CLEAN_PATH:}$dir"
+done <<< "$(printf '%s' "$PATH" | tr ':' '\n')"
+PATH="$CLEAN_PATH"
 export PATH
 
 # Locate the real binary on the (now-stripped) PATH.
+# Falls back to rustup for Rust toolchain binaries (rust-analyzer, rustfmt, etc.)
+# since brew-installed rustup doesn't always create ~/.cargo/bin proxies.
 REAL_BIN="$(command -v "$BINARY" 2>/dev/null || true)"
+# Reject if the found binary is another lspmux-wrap shadow wrapper (symlink loop)
+if [[ -n "$REAL_BIN" ]] && [[ -f "$(dirname "$REAL_BIN")/lspmux-wrap" ]]; then
+    REAL_BIN=""
+fi
+if [[ -z "$REAL_BIN" ]] && command -v rustup &>/dev/null; then
+    REAL_BIN="$(rustup which "$BINARY" 2>/dev/null || true)"
+fi
 if [[ -z "$REAL_BIN" ]]; then
-    echo "lspmux-wrap: error: '$BINARY' not found on PATH" >&2
+    echo "lspmux-wrap: error: '$BINARY' not found on PATH or via rustup" >&2
     exit 1
 fi
 

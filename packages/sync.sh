@@ -226,6 +226,33 @@ sync_cargo() {
     log_success "Cargo sync complete"
 }
 
+########## Rustup proxies
+# Brew-installed rustup doesn't always create ~/.cargo/bin proxies for
+# toolchain binaries (rust-analyzer, rustfmt, etc.). Ensure they exist.
+
+sync_rustup_proxies() {
+    command -v rustup &>/dev/null || return 0
+    local sysroot
+    sysroot="$(rustup run stable rustc --print sysroot 2>/dev/null || true)"
+    [[ -n "$sysroot" && -d "$sysroot/bin" ]] || return 0
+    local toolchain_bin="$sysroot/bin"
+
+    local cargo_bin="${HOME}/.cargo/bin"
+    mkdir -p "$cargo_bin"
+
+    local proxied=(rust-analyzer rustfmt cargo-fmt clippy-driver)
+    for bin in "${proxied[@]}"; do
+        [[ -x "$toolchain_bin/$bin" ]] || continue
+        if [[ ! -e "$cargo_bin/$bin" ]]; then
+            log_info "Creating rustup proxy: $bin"
+            if ! ln -sf "$toolchain_bin/$bin" "$cargo_bin/$bin"; then
+                log_error "Failed to create proxy: $bin"
+                FAILED+=("rustup-proxy:$bin")
+            fi
+        fi
+    done
+}
+
 ########## NPM
 
 sync_npm() {
@@ -328,6 +355,7 @@ elif [[ "$PLATFORM" == "Linux" ]]; then
 fi
 
 sync_cargo
+sync_rustup_proxies
 sync_npm
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
