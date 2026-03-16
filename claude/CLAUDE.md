@@ -147,7 +147,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 - **lspmux**: Deduplicates server instances across sessions per workspace root
 - **Status/troubleshooting**: Run `/lsp` to check what's running and verify binaries
 
-**Agent permission modes** — `acceptEdits` only covers Edit/Write, NOT Bash or MCP calls. For worktree agents that need `gh`, `git push`, or build commands without prompts, use `bypassPermissions` with worktree isolation. The isolation provides filesystem containment; prompt instructions provide operational guardrails (e.g., "never push to main"); the permission mode provides uninterrupted execution. Safety is procedural, not mechanically enforced — make guardrails explicit in agent prompts.
+**Agent permission modes** — `acceptEdits` and `bypassPermissions` only suppress the interactive approval dialog for Edit/Write — they do NOT auto-approve Bash or MCP calls. Bash permissions use a separate allowlist (`permissions.allow` entries like `Bash(git:*)`). In sandboxed environments (Conductor, fresh sessions without your `settings.json`), worktree agents may lack allowlist entries for `git push`, `gh pr create`, etc. **Design pattern**: have isolated agents do code work + commit only, then return control to the orchestrator (which runs in the user's session with full permissions) for push/PR operations.
 
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 

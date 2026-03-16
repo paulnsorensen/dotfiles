@@ -244,32 +244,40 @@ Do NOT create, modify, or delete any file not on this list.
 3. Age: Self-review via fromage-age (sonnet-class, architecture + complexity only, >= 75 confidence)
 4. De-slop: Use Skill tool to invoke skill='de-slop' on changed files
 5. Commit: Use Skill tool to invoke skill='commit' (conventional format)
-6. PR: Create PR with `gh pr create` — title, body summarizing this atom's changes
+6. Write PR metadata: Create a file `pr-metadata.json` in the worktree root with:
+   ```json
+   {"title": "<conventional PR title>", "body": "<summary of this atom's changes>"}
+   ```
+
+## IMPORTANT: Do NOT push or create PRs
+The orchestrator handles git push and PR creation. Your job ends at committing
+and writing pr-metadata.json. Do not run `git push`, `gh pr create`, or any
+GitHub CLI commands.
 
 ## Safety Guardrails
-- Never push to main or master
-- Never force-push
-- Only push to your atom branch
-- If a change touches a file not on your list, skip it and note it in your PR description
-- If quality gates fail after 3 rounds, stop and report failures — do not create a PR
+- If a change touches a file not on your list, skip it and note it in pr-metadata.json body
+- If quality gates fail after 3 rounds, stop and report failures — do not commit
 """
 )
 ```
 
-**Why `bypassPermissions`**: Atom agents need Bash (`git push`, `gh pr create`, build/test commands) and MCP calls without prompts. Each runs in an isolated worktree (filesystem containment). Safety is procedural: file list constraint + branch restriction in the prompt.
+**Why no push/PR in atoms**: `bypassPermissions` only suppresses Edit/Write approval dialogs — it does NOT auto-approve Bash commands. The Bash allowlist (`permissions.allow`) is a separate mechanism. In sandboxed environments (Conductor, fresh sessions), atoms lack the allowlist entries for `git push` / `gh pr create`. Moving push+PR to the orchestrator (which runs in the user's session with full permissions) eliminates this failure mode entirely.
 
 Update manifest: `"phase": "dispatched"`, mark each atom status as `"running"`.
 
 ---
 
-## Phase 6 — Collect
+## Phase 6 — Collect & Publish
 
 Wait for background agent completion notifications.
 
+### Collect Results
+
 As each atom agent reports back:
-1. Parse its report: status (success/failure), PR number (if created), error summary
-2. Update manifest: atom status, PR number, error field
-3. Report progress: "Atom 3/6 complete — PR #74 created"
+1. Parse its report: status (success/failure), worktree path, error summary
+2. Derive branch name: `git -C <worktree-path> rev-parse --abbrev-ref HEAD`
+3. Update manifest: atom status, worktree path, branch name, error field
+4. Report progress: "Atom 3/6 complete — code ready in worktree"
 
 ### Retry Logic
 
@@ -292,6 +300,23 @@ Address this failure before proceeding with the workflow.
 ```
 
 After retries: mark `"retry_count": 1`. Do not retry a second time — move on.
+
+### Publish PRs (orchestrator-owned)
+
+After all atoms are collected, the **orchestrator** creates PRs for each successful atom.
+This runs in the orchestrator's session which has the user's full Bash permissions.
+
+For each successful atom:
+1. Read `pr-metadata.json` from the worktree (the Agent result includes the worktree path)
+2. Push the worktree branch: `git -C <worktree-path> push -u origin HEAD`
+3. Create the PR using `gh pr create --head <branch-name> --title <title> --body-file <path>`:
+   - Write body from `pr-metadata.json` to a temp file, pass via `--body-file` to avoid shell-escaping issues
+   - Use the `branch` field from the manifest (captured in Collect step) for `--head`
+4. Update manifest: atom PR number, PR URL
+5. Report: "Atom 3/6 — PR #74 created"
+
+If `pr-metadata.json` is missing (agent crashed before writing it), use the atom description
+from the manifest as the PR title and body fallback.
 
 Update manifest with final statuses. Determine the convoy list (successful atom PR numbers).
 
@@ -367,6 +392,8 @@ Manifest: .claude/fromagerie/<slug>/manifest.json
       "files": ["src/domains/orders/index.ts"],
       "complexity": "medium",
       "status": "completed",
+      "worktree_path": "/path/to/.worktrees/atom-1",
+      "branch": "fromagerie/slug/atom-1",
       "pr_number": 72,
       "pr_url": "https://github.com/...",
       "retry_count": 0,
