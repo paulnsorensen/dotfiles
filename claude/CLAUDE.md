@@ -102,7 +102,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Testing | `/wreck`, `/test`, `/diff`, `/tdd-assertions`, `/pingpong` |
 | GitHub | `/move-my-cheese <PR#>`, `/cheese-convoy <PR# PR# ...>` |
 | Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
-| Learning | `/agents`, `/explain`, `/hint`, `/notebook`, `/onboard` |
+| Learning | `/agents`, `/explain`, `/hint`, `/xray`, `/onboard` |
 
 All agents use 0-100 confidence scoring (>= 75 to surface). This applies pipeline-wide:
 
