@@ -32,14 +32,16 @@
 #   without compaction file:        → JSON suggestion output
 #   with compaction file:           → silent exit
 #
-# semantic-stop-guard.js — stdin JSON → stdout JSON
-#   stop_hook_active false + long msg: → block with 8-category eval
+# semantic-stop-guard.js — stdin JSON + transcript → stdout JSON
+#   transcript with file edits:       → block with self-eval prompt
 #   stop_hook_active true:            → {} (circuit breaker)
-#   short message (<20 chars):       → {} (skip)
+#   short message (<200 chars):       → {} (skip)
 #   empty message:                    → {} (skip)
 #   missing message field:            → {} (skip)
 #   malformed JSON:                   → {} (graceful)
-#   evaluation prompt categories:     → all 8 present in systemMessage
+#   self-eval prompt content:         → TODOs, error swallowing, verifying
+#   CI dismissal with patterns:       → block with dismissal prompt
+#   no transcript / no file edits:    → {} (allow)
 # ────────────────────────────────────────────────────────────────────
 
 load test_helper
@@ -250,15 +252,17 @@ console.log(matched ? 'blocked' : 'allowed');
     [ "$status" -eq 0 ]
 }
 
-@test "stop-guard: blocks first stop attempt with evaluation prompt" {
-    run bash -c 'echo "{\"last_assistant_message\":\"Here is the implementation I wrote.\",\"stop_hook_active\":false}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+@test "stop-guard: blocks when transcript shows file edits" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' > "$transcript"
+    local long_msg
+    long_msg=$(printf 'x%.0s' {1..250})
+    run bash -c 'echo "{\"last_assistant_message\":\"'"$long_msg"'\",\"stop_hook_active\":false,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.decision == "block"'
     echo "$output" | jq -e '.reason' > /dev/null
-    [[ "$output" == *"SYCOPHANCY"* ]]
-    [[ "$output" == *"PREMATURE COMPLETION"* ]]
-    [[ "$output" == *"AI SLOP"* ]]
-    [[ "$output" == *"WEAK ASSERTIONS"* ]]
+    [[ "$output" == *"TODOs"* ]]
+    [[ "$output" == *"error swallowing"* ]]
 }
 
 @test "stop-guard: allows on second attempt (stop_hook_active circuit breaker)" {
@@ -291,17 +295,36 @@ console.log(matched ? 'blocked' : 'allowed');
     [[ "$output" == "{}" ]]
 }
 
-@test "stop-guard: evaluation prompt includes all 8 categories" {
-    run bash -c 'echo "{\"last_assistant_message\":\"Here is a long enough response to trigger.\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+@test "stop-guard: self-eval prompt covers all 3 checks" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"src/bar.ts"}}]}}' > "$transcript"
+    local long_msg
+    long_msg=$(printf 'x%.0s' {1..250})
+    run bash -c 'echo "{\"last_assistant_message\":\"'"$long_msg"'\",\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
     [ "$status" -eq 0 ]
     local msg
     msg=$(echo "$output" | jq -r '.systemMessage')
-    [[ "$msg" == *"SYCOPHANCY"* ]]
-    [[ "$msg" == *"PREMATURE COMPLETION"* ]]
-    [[ "$msg" == *"DISMISSING FAILURES"* ]]
-    [[ "$msg" == *"HEDGING"* ]]
-    [[ "$msg" == *"SCOPE REDUCTION"* ]]
-    [[ "$msg" == *"FALSE CONFIDENCE"* ]]
-    [[ "$msg" == *"AI SLOP"* ]]
-    [[ "$msg" == *"WEAK ASSERTIONS"* ]]
+    [[ "$msg" == *"TODOs"* ]]
+    [[ "$msg" == *"silent error swallowing"* ]]
+    [[ "$msg" == *"verifying"* ]]
+}
+
+@test "stop-guard: blocks CI dismissal with dismissal language" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"gh run list"}}]}}' > "$transcript"
+    local long_msg="These failures are pre-existing and not related to our changes. The tests were already failing before this PR was created and are known flaky tests in the CI pipeline. The infrastructure team is aware of the issue and tracking it separately."
+    run bash -c 'echo "{\"last_assistant_message\":\"'"$long_msg"'\",\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.decision == "block"'
+    [[ "$output" == *"base branch"* ]]
+}
+
+@test "stop-guard: allows when no file edits in transcript" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"src/foo.ts"}}]}}' > "$transcript"
+    local long_msg
+    long_msg=$(printf 'x%.0s' {1..250})
+    run bash -c 'echo "{\"last_assistant_message\":\"'"$long_msg"'\",\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{}" ]]
 }
