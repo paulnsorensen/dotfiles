@@ -8,6 +8,7 @@ description: >
   "is this the right architecture", "check this code against the spec",
   "what does this module actually do", design review, code audit.
 argument-hint: <module path, spec path, PR number, or concept>
+allowed-tools: Read, Write, Glob, Grep, Bash(sg:*), Bash(git diff:*), Bash(git log:*), Bash(gh:*), Agent
 ---
 
 # /xray — Interactive Design Verification
