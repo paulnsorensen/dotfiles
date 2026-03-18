@@ -46,12 +46,51 @@ Using spec context from Phase 1, spawn TWO parallel haiku agents following
 
 Wait for both to return.
 
-### Phase 3: Caller analysis
+### Phase 3: Caller/callee analysis
 
-From the graph edges, identify who depends on this node:
-- List callers and what they use (which exports they import)
-- Assess: does the public API serve its callers well?
+From the graph edges, build caller and callee lists for each public export:
+
+**Callers** (who imports this node):
+- List callers and which exports they use
+- **Summarization rule**: If >5 callers, summarize:
+  "{N} callers across {M} files (top 3: {file1}, {file2}, {file3})"
 - Flag any caller using internal details instead of the public API
+
+**Callees** (what this node calls):
+- List outgoing dependencies and which symbols are used
+- Same summarization rule for >5 callees
+- Assess: does the public API serve its callers well?
+
+Format as a compact table:
+```
+| Export       | Callers          | Callees          |
+|-------------|-----------------|-----------------|
+| createOrder | 3 (api, cli, …) | validate, save  |
+| OrderType   | 7 across 4 files | —              |
+```
+
+### Phase 3.5: Smells / Dead Code / Encapsulation
+
+Using the scout's `visibility` field and graph edges, check:
+
+- **Dead exports**: Public symbols with zero callers in the graph (excluding
+  the barrel file itself) → "Exported but unused: {symbol}"
+- **Dead private functions**: Private symbols with zero internal references →
+  "Dead code: {symbol} is private and unused"
+- **Improper encapsulation**: Public functions that are only used internally
+  (should be private). Private functions referenced from outside the file
+  (shouldn't happen but catches re-exports of internals).
+- **Over-exported barrel**: Barrel file re-exports symbols that have zero
+  external consumers
+
+Report format:
+```
+### Encapsulation & Hygiene
+- Dead exports: {list or "none"}
+- Dead private code: {list or "none"}
+- Should be private: {list of public-but-internal-only symbols}
+- Barrel bloat: {list of unused re-exports or "none"}
+```
 
 ### Phase 4: Test shape analysis (ast-grep)
 
@@ -95,6 +134,12 @@ Combine all findings into a structured node report:
 
 ### Contracts
 {Public API summary — max 5 lines}
+
+### Callers / Callees
+{Compact table from Phase 3}
+
+### Encapsulation & Hygiene
+{Findings from Phase 3.5 or "clean"}
 
 ### Spec Alignment
 {If spec exists: N/M acceptance criteria covered}

@@ -31,6 +31,33 @@
         "targetPath": {
           "type": "string",
           "description": "Root path that was xrayed (relative to repo root)"
+        },
+        "barrelFile": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Path to the barrel/index file (the module's barrel), or null if none found"
+        },
+        "barrelExports": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": ["name", "signature", "visibility"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "signature": {
+                "type": "string",
+                "description": "Function signature or type declaration"
+              },
+              "visibility": {
+                "type": "string",
+                "enum": ["public"],
+                "description": "Always public — barrel exports are the module's contract"
+              }
+            }
+          },
+          "description": "Public exports from the barrel file — the module's API contract"
         }
       }
     },
@@ -78,6 +105,12 @@
             "type": ["string", "null"],
             "format": "date-time",
             "default": null
+          },
+          "visibility": {
+            "type": "string",
+            "enum": ["public", "private"],
+            "default": "public",
+            "description": "Symbol visibility — public symbols form the API surface, private are tracked for dead-code analysis"
           }
         }
       }

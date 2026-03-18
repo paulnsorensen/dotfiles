@@ -83,9 +83,25 @@ After the scout returns, read the graph JSON and display the opening dashboard:
 Legend: [G] green  [Y] yellow  [R] red  [ ] unverified
 ```
 
+### 1.5. Barrel Entry Points
+
+Display the barrel file's public exports as the module's contract:
+```
+Barrel: {barrelFile}
+Entry points:
+  {export1}({params}) → {return_type}
+  {export2}({params}) → {return_type}
+  ...
+```
+If no barrel file found, display:
+```
+⚠ No barrel/index file found
+```
+
 ### 2. API Surface Summary
 
-For each module node, list its primary exports (from the graph's symbolName):
+For each module node, list its primary **public** exports (from the graph's
+symbolName, filtered by `visibility: "public"`):
 ```
 Exports:
   {module-a}: {export1}, {export2}, {export3}
@@ -99,6 +115,14 @@ dashboard:
 ```
 Health: {N} de-slop findings across {M} files
   {top 3 findings with file:line}
+```
+
+### 4. Encapsulation Summary
+
+From scout's public/private tagging:
+```
+Encapsulation: {N} public exports, {M} private internals
+Potential issues: {count from analyst's hygiene check}
 ```
 
 ## DFS Verification Loop
