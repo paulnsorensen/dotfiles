@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "XRay Dependency Graph",
+  "description": "Semantic dependency graph for /xray design verification sessions",
+  "type": "object",
+  "required": ["meta", "nodes", "edges", "dfsOrder"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["slug", "created", "lastVerified", "gitSha", "targetPath"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "type": "string",
+          "description": "URL-safe identifier derived from target path"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastVerified": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "gitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$",
+          "description": "Git HEAD SHA at last save — used for staleness detection on resume"
+        },
+        "targetPath": {
+          "type": "string",
+          "description": "Root path that was xrayed (relative to repo root)"
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "filePath", "symbolName", "type", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique node identifier (e.g. file path or file:symbol)"
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "symbolName": {
+            "type": "string",
+            "description": "Primary exported symbol or module name"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["module", "function", "type"],
+            "description": "module = file-level, function/type = symbol-level (drill-down)"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["unverified", "green", "yellow", "red"],
+            "description": "Traffic light verdict — tool proposes, user confirms"
+          },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "description": "User and analyst observations"
+          },
+          "evidence": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "description": "Concrete evidence supporting the traffic light (test counts, spec alignment, de-slop findings)"
+          },
+          "lastVerified": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "default": null
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Source node ID (the importer/caller)"
+          },
+          "to": {
+            "type": "string",
+            "description": "Target node ID (the imported/callee)"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["import", "call"],
+            "description": "import = static dependency, call = runtime invocation"
+          },
+          "label": {
+            "type": "string",
+            "default": "",
+            "description": "Optional edge annotation (e.g. imported symbol name)"
+          }
+        }
+      }
+    },
+    "dfsOrder": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Node IDs in leaf-first DFS order — verification traversal sequence"
+    }
+  }
+}

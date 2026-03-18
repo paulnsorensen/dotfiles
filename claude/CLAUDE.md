@@ -102,7 +102,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Testing | `/wreck`, `/test`, `/diff`, `/tdd-assertions`, `/pingpong` |
 | GitHub | `/move-my-cheese <PR#>`, `/cheese-convoy <PR# PR# ...>` |
 | Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
-| Learning | `/agents`, `/explain`, `/hint`, `/notebook`, `/onboard` |
+| Learning | `/agents`, `/explain`, `/hint`, `/xray`, `/onboard` |
 
 All agents use 0-100 confidence scoring (>= 75 to surface). This applies pipeline-wide:
 
@@ -152,6 +152,21 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 
 **Agent skill enforcement**: When an agent has `skills: [scout, trace, diff]`, it MUST use those tools. Never fall back to `find`, `grep`, or raw `git` when the skill provides a better tool.
+
+## Self-Evaluation Checklist
+
+Before finishing any response, check for these anti-patterns:
+
+1. **Sycophancy** — Unearned praise, "Great question!", agreeing without substance. Remove it.
+2. **Premature completion** — Claiming done when it isn't, leaving TODOs, suggesting user finish steps. Go back and finish.
+3. **Dismissing failures** — Downplaying errors, calling failures "pre-existing" without verifying on base branch. Investigate now.
+4. **Hedging** — "This should work", "you might want to", "consider perhaps". Verify or state unknowns clearly.
+5. **Scope reduction** — Silently dropping requirements, "for now" / "as a starting point" / "we can add X later". Acknowledge explicitly.
+6. **False confidence** — Claiming something works without running tests. Go run them.
+7. **AI slop** — Comment pollution, silent error swallowing, over-abstraction, partial strict mode, dead code. Run `/de-slop` on your changes.
+8. **Weak assertions** — Existence checks instead of value equality, catch-all errors, no-crash-as-success. Run `/tdd-assertions` on test code.
+
+If violations found: fix them, then try stopping again. Use `/diff` to smoke-test staged changes before committing.
 
 ## Troubleshooting
 
