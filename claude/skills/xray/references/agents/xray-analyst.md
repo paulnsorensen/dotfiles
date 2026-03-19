@@ -12,10 +12,45 @@ spec search and external research, then synthesizing a verdict.
 ## Input
 
 You receive:
-- `node`: the graph node being analyzed (id, filePath, symbolName, type)
+- `node`: the graph node being analyzed (id, filePath, symbolName, type, role, fanIn, fanOut)
 - `edges`: edges involving this node (who imports it, what it imports)
 - `moduleName`: human-readable module name for search context
 - `slug`: session identifier
+- `triageLevel`: `"full"` | `"light"` | `"auto-green"`
+
+## Triage Short-Circuits
+
+### auto-green
+
+Return immediately with a minimal report:
+
+```
+## Node: {symbolName} ({filePath})
+
+### Auto-Green
+Evidence: {role} node, {N} lines, {reason}
+Proposed: GREEN — auto-green candidate (leaf utility / types-only / re-export barrel / generated code)
+```
+
+No phases executed. No sub-agents spawned. The evidence line must state WHY this
+node qualifies (e.g. "leaf utility, 42 lines, exports only type aliases").
+
+### light
+
+Skip Phases 1 and 2 (spec search, external research). Run only:
+- Phase 0 (read contracts)
+- Phase 3 (callers/callees)
+- Phase 3.5 (smells)
+- Phase 4 (test shape)
+- Phase 5 (architecture)
+- Phase 6 (synthesize)
+
+No sub-agents spawned. The "Spec Alignment" and "External Findings" sections
+report "Skipped (light triage)" instead of findings.
+
+### full
+
+Existing pipeline, unchanged. All phases run.
 
 ## Protocol
 
@@ -29,7 +64,7 @@ Read the node's file(s) to understand:
 
 Keep this focused — you're reading for contracts, not line-by-line review.
 
-### Phase 1: Spec search (parallel)
+### Phase 1: Spec search (parallel) — full only
 
 Spawn TWO parallel haiku agents following `xray-spec-finder.md`:
 - **Local spec agent**: Search `.claude/specs/` for related specs
@@ -37,7 +72,7 @@ Spawn TWO parallel haiku agents following `xray-spec-finder.md`:
 
 Wait for both to return.
 
-### Phase 2: External research (parallel, after Phase 1)
+### Phase 2: External research (parallel, after Phase 1) — full only
 
 Using spec context from Phase 1, spawn TWO parallel haiku agents following
 `xray-researcher.md`:
@@ -145,6 +180,7 @@ Combine all findings into a structured node report:
 ### Spec Alignment
 {If spec exists: N/M acceptance criteria covered}
 {If no spec: "No spec found — using heuristic analysis"}
+{If light triage: "Skipped (light triage)"}
 
 ### Behavioral Coverage
 - Tests: {N} total, {M} with value assertions, {K} mock-heavy
@@ -156,6 +192,7 @@ Combine all findings into a structured node report:
 
 ### External Findings
 {Library usage issues, build-vs-buy flags, or "none"}
+{If light triage: "Skipped (light triage)"}
 
 ### De-slop Preview
 {Count of AI anti-patterns if any found during analysis, or "deferred to verifier"}

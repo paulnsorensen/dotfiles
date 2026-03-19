@@ -63,25 +63,39 @@ Spawn an **xray-scout** agent (sonnet) with:
 - `targetPath`: the resolved module path
 - `slug`: the derived slug
 
-The scout builds the semantic dependency graph using LSP + ast-grep and writes
-it to `.context/xrays/{slug}-graph.json`.
+The scout builds the semantic dependency graph using ecosystem dependency tools
+(dependency-cruiser, pydeps, cargo-modules, go list) with ast-grep fallback,
+enriches with LSP, computes node roles, and writes the graph JSON + Mermaid
+visualization.
 
 After the scout returns, read the graph JSON and display the opening dashboard:
 
-### 1. ASCII Dependency Tree
+### 1. Layered Role Dashboard
 
 ```
-{slug} dependency graph — all nodes unverified
+━━━ {slug} ━━━  {N} nodes, {M} edges, {K} cycles
 
-  {root-module}  [ ]
-  ├── {child-a}  [ ]
-  │   ├── {leaf-1}  [ ]
-  │   └── {leaf-2}  [ ]
-  └── {child-b}  [ ]
-      └── {leaf-3}  [ ]
+ENTRY POINTS (nothing imports these)
+  controller.ts          fanIn:0  fanOut:3  [ ]
 
-Legend: [G] green  [Y] yellow  [R] red  [ ] unverified
+HUBS (high traffic)
+  service.ts             fanIn:4  fanOut:5  [ ]
+
+DOMAIN (business logic)
+  pricing.ts             fanIn:2  fanOut:2  [ ]
+
+UTILITIES (widely imported, few deps)
+  types.ts               fanIn:6  fanOut:0  [·]
+
+LEAVES (import nothing internal)
+  validator.ts           fanIn:2  fanOut:0  [ ]
+
+[·] = auto-green candidate
+Cycles: {list or "none"}
 ```
+
+Group nodes by their `role` field from the graph. Within each group, sort by
+`fanIn` descending. Show `[·]` marker for auto-green candidates (see Triage).
 
 ### 1.5. Barrel Entry Points
 
@@ -124,17 +138,66 @@ Encapsulation: {N} public exports, {M} private internals
 ```
 Issue counts are added here after analyst reports are generated during the DFS loop.
 
+## Triage
+
+After displaying the dashboard, classify every node into a triage level before
+starting the DFS loop. This determines how deeply each node gets analyzed.
+
+### Classification rules
+
+**auto-green** — return immediately, no analysis:
+- Leaf node (`role: "leaf"`) with <50 LOC AND exports only types/constants
+- Re-export barrel files (all exports are re-exports, no logic)
+- Generated code (file header contains `@generated`, `auto-generated`, or similar)
+- Terminal nodes (`role: "terminal"`) — always auto-skipped
+
+**light** — skip spec search and external research:
+- Leaf node with logic but <100 LOC AND tests exist
+- Utility node (`role: "utility"`) with passing tests
+- Nodes where all children are already green
+
+**full** — complete analysis pipeline:
+- Hub nodes (`role: "hub"`) — always full
+- Domain nodes (`role: "domain"`)
+- Entry-point nodes (`role: "entry-point"`)
+- Any node with a red child
+- Any node the user explicitly drills into
+
+### Triage prompt
+
+Present the triage plan and let the user adjust:
+
+```
+Triage plan:
+  auto-green: {N} nodes ({list or "types.ts, constants.ts, ..."})
+  light:      {M} nodes ({list})
+  full:       {K} nodes ({list})
+
+  [confirm all]          Accept triage plan
+  [review individually]  Step through each classification
+  [skip triage]          Full analysis on everything
+```
+
+On `confirm all`, apply the triage levels. On `skip triage`, set all nodes to
+`triageLevel: "full"`. On `review individually`, present each node with its
+proposed level and let the user override.
+
 ## DFS Verification Loop
 
 Walk nodes in `dfsOrder` (leaves first). At each node:
 
+**Terminal node handling**: Nodes with `role: "terminal"` are auto-skipped.
+Mark as `status: "green"` with evidence "Terminal node (well-known external library)".
+Advance to next node without prompting.
+
 ### 1. Show position
 
-Display breadcrumb and updated tree:
+Display breadcrumb and updated layered view:
 
 ```
-━━━ Verifying: {symbolName} ({filePath}) ━━━
+━━━ Verifying: {symbolName} ({filePath}) [{role}] ━━━
 Path: {leaf} → {parent} → {grandparent}
+Triage: {auto-green|light|full}
 
   {root}  [ ]
   ├── {child-a}  [ ]
@@ -146,17 +209,25 @@ Path: {leaf} → {parent} → {grandparent}
 ### 2. Run analysis
 
 Spawn **xray-analyst** (sonnet) for this node with:
-- The node data and its edges from the graph
+- The node data and its edges from the graph (including `role`, `fanIn`, `fanOut`)
 - Module name for search context
 - Session slug
+- `triageLevel`: the triage level assigned to this node
 
-The analyst orchestrates spec-finder and researcher sub-agents, analyzes
-contracts, callers, test shape, and architecture, then returns a structured
-node report.
+The analyst orchestrates spec-finder and researcher sub-agents (full only),
+analyzes contracts, callers, test shape, and architecture, then returns a
+structured node report.
+
+**auto-green nodes**: The analyst returns immediately with evidence. Display:
+```
+━━━ {symbolName} — Auto-Green ━━━
+{evidence line}
+```
+Auto-confirm as green. Advance to next node without prompting.
 
 ### 3. Run verification
 
-After the analyst returns, spawn **xray-verifier** (sonnet) with:
+After the analyst returns (light and full only), spawn **xray-verifier** (sonnet) with:
 - The node data
 - Test files discovered by the analyst
 - Spec criteria from the analyst's findings
@@ -172,6 +243,7 @@ Synthesize the analyst and verifier reports into a concise presentation:
 ```
 ━━━ {symbolName} — Analysis ━━━
 
+Role: {role}  fanIn:{N}  fanOut:{M}
 Contracts: {public API summary}
 Spec: {alignment summary or "no spec found"}
 Tests: {pass}/{total}, {behavioral_coverage}% behavioral coverage
@@ -187,13 +259,17 @@ Proposed: {GREEN|YELLOW|RED} — {evidence summary}
 Present the proposed traffic light and wait for user input:
 
 ```
-  [confirm]          Accept proposed verdict
-  [override G/Y/R]   Override with note (required)
-  [note: <text>]     Add observation without confirming
-  [skip]             Skip this node for now
-  [drill <symbol>]   Expand to function-level detail
-  [up]               Bubble to parent node
-  [done]             End session, save progress
+  [confirm]                Accept proposed verdict
+  [override G/Y/R]         Override with note (required)
+  [note: <text>]           Add observation without confirming
+  [skip]                   Skip this node for now
+  [drill <symbol>]         Expand to function-level detail
+  [drill <symbol> depth=N] N levels of outgoing call hierarchy
+  [drill <symbol> callers] Incoming call hierarchy
+  [map]                    Show full Mermaid graph with current traffic lights
+  [map <node>]             Ego-centric view: node ± 1 level
+  [up]                     Bubble to parent node
+  [done]                   End session, save progress
 ```
 
 ### 6. Process verdict
@@ -210,12 +286,19 @@ Present the proposed traffic light and wait for user input:
   - Create child nodes in the graph
   - Enter sub-DFS on the expanded children
   - On completion, collapse back and return to the parent node
+- **drill symbol depth=N**: Same as drill but follow outgoing calls N levels deep.
+- **drill symbol callers**: Use LSP `callHierarchy` (incoming) to show who calls
+  this symbol. Display as a flat list, don't enter sub-DFS.
+- **map**: Regenerate the Mermaid graph at `.context/xrays/{slug}-graph.md` with
+  current traffic light classDefs applied. Display the path.
+- **map node**: Generate an ego-centric Mermaid subgraph showing the focal node
+  plus all nodes 1 hop away (direct importers + direct dependencies).
 - **up**: Jump to the current node's parent in the tree.
 - **done**: Save session and exit.
 
-### 7. Update tree
+### 7. Update dashboard
 
-After each verdict, redisplay the ASCII tree with updated traffic lights.
+After each verdict, redisplay the layered role view with updated traffic lights.
 
 ## Navigation
 
@@ -225,9 +308,13 @@ These commands work at any point in the session:
 |---------|--------|
 | `up` | Bubble to parent node |
 | `down` / `drill <symbol>` | Expand function-level detail |
+| `drill <symbol> depth=N` | N levels of outgoing call hierarchy |
+| `drill <symbol> callers` | Incoming call hierarchy |
 | `next` | Skip to next sibling |
 | `back` | Return to previous node |
-| `tree` | Redisplay full ASCII tree with current traffic lights |
+| `tree` | Redisplay layered role dashboard with current traffic lights |
+| `map` | Regenerate full Mermaid graph with current traffic lights |
+| `map <node>` | Ego-centric view: node ± 1 level of dependencies |
 | `notes` | Show all accumulated notes across nodes |
 | `status` | Show progress: N verified, M remaining, K stale |
 
@@ -278,6 +365,9 @@ After each verdict or on `done`, save:
 - Current git HEAD SHA in meta.gitSha
 - Updated meta.lastVerified timestamp
 
+**Mermaid graph** (`.context/xrays/{slug}-graph.md`):
+- Updated traffic light classDefs on verified nodes
+
 **Session notes** (`.context/xrays/{slug}.md`):
 ```markdown
 ---
@@ -293,8 +383,9 @@ progress: {verified}/{total} nodes
 
 ## Progress
 - Verified: {N} ({green} green, {yellow} yellow, {red} red)
+- Auto-green: {K}
 - Remaining: {M}
-- Stale: {K}
+- Stale: {J}
 
 ## Node Notes
 ### {node-1 symbolName} [{status}]
