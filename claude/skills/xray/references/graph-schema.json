@@ -112,6 +112,24 @@
             "enum": ["public", "private"],
             "default": "public",
             "description": "Symbol visibility — public symbols form the API surface, private are tracked for dead-code analysis"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["entry-point", "hub", "domain", "utility", "leaf", "terminal"],
+            "default": "domain",
+            "description": "Architectural role computed from edge topology: entry-point (fanIn==0), hub (high fanIn+fanOut), domain (business logic), utility (widely imported, few deps), leaf (fanOut==0), terminal (well-known external lib)"
+          },
+          "fanIn": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of modules that depend on this node (incoming import edges). Only computed for type:module nodes."
+          },
+          "fanOut": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of modules this node depends on (outgoing import edges). Only computed for type:module nodes."
           }
         }
       }
@@ -140,6 +158,12 @@
             "type": "string",
             "default": "",
             "description": "Optional edge annotation (e.g. imported symbol name)"
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Number of distinct symbols imported (for import edges) or call sites (for call edges) between these nodes"
           }
         }
       }
