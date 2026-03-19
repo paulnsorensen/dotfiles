@@ -10,4 +10,10 @@ mkdir -p "$target_dir"
 # Expand placeholders and install (same pattern as iterm2/.sync)
 sed -e "s|__DOTFILES_DIR__|${dotfiles_dir}|g" \
   "$script_dir/config" > "$target_dir/config"
+
+if grep -q '__DOTFILES_DIR__' "$target_dir/config"; then
+  echo "Error: __DOTFILES_DIR__ placeholder was not expanded in ghostty config" >&2
+  exit 1
+fi
+
 echo "Installed ghostty config"
