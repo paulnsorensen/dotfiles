@@ -1,7 +1,5 @@
 ---
 name: self-eval
-model: haiku
-fork: true
 description: >
   Run the Self-Evaluation Checklist against your last response or recent changes.
   Use this skill when the user says "self-eval", "self-evaluate", "check my response",

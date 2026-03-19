@@ -96,7 +96,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Category | Key Skills |
 |----------|-----------|
 | Planning | `/fromage`, `/fromagerie`, `/spec`, `/duck`, `/research` |
-| Review | `/age`, `/code-review`, `/audit`, `/simplifier` |
+| Review | `/age`, `/code-review`, `/audit`, `/simplifier`, `/self-eval` |
 | Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit), `/de-slop` (AI anti-patterns) |
 | PR Response | `/respond` (confidence-rated review triage), `/copilot-review`, `/copilot-delegate` |
 | Testing | `/wreck`, `/test`, `/diff`, `/tdd-assertions`, `/pingpong` |
@@ -165,6 +165,8 @@ Before finishing any response, check for these anti-patterns:
 6. **False confidence** — Claiming something works without running tests. Go run them.
 7. **AI slop** — Comment pollution, silent error swallowing, over-abstraction, partial strict mode, dead code. Run `/de-slop` on your changes.
 8. **Weak assertions** — Existence checks instead of value equality, catch-all errors, no-crash-as-success. Run `/tdd-assertions` on test code.
+
+Run `/self-eval` for the full 8-item scorecard with automatic `/de-slop` and `/tdd-assertions` delegation. The semantic stop hook invokes this automatically when you modify files — but you can run it manually anytime.
 
 If violations found: fix them, then try stopping again. Use `/diff` to smoke-test staged changes before committing.
 

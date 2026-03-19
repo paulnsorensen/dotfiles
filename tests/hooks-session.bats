@@ -39,7 +39,7 @@
 #   empty message:                    → {} (skip)
 #   missing message field:            → {} (skip)
 #   malformed JSON:                   → {} (graceful)
-#   self-eval prompt content:         → TODOs, error swallowing, verifying
+#   self-eval prompt content:         → /self-eval, Skill tool, do not mentally check
 #   CI dismissal with patterns:       → block with dismissal prompt
 #   no transcript / no file edits:    → {} (allow)
 # ────────────────────────────────────────────────────────────────────
@@ -261,8 +261,8 @@ console.log(matched ? 'blocked' : 'allowed');
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.decision == "block"'
     echo "$output" | jq -e '.reason' > /dev/null
-    [[ "$output" == *"TODOs"* ]]
-    [[ "$output" == *"error swallowing"* ]]
+    [[ "$output" == *"/self-eval"* ]]
+    [[ "$output" == *"Skill tool"* ]]
 }
 
 @test "stop-guard: allows on second attempt (stop_hook_active circuit breaker)" {
@@ -295,7 +295,7 @@ console.log(matched ? 'blocked' : 'allowed');
     [[ "$output" == "{}" ]]
 }
 
-@test "stop-guard: self-eval prompt covers all 3 checks" {
+@test "stop-guard: self-eval prompt directs to invoke skill" {
     local transcript="$TEST_HOME/transcript.jsonl"
     printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"src/bar.ts"}}]}}' > "$transcript"
     local long_msg
@@ -304,9 +304,9 @@ console.log(matched ? 'blocked' : 'allowed');
     [ "$status" -eq 0 ]
     local msg
     msg=$(echo "$output" | jq -r '.systemMessage')
-    [[ "$msg" == *"TODOs"* ]]
-    [[ "$msg" == *"silent error swallowing"* ]]
-    [[ "$msg" == *"verifying"* ]]
+    [[ "$msg" == *"/self-eval"* ]]
+    [[ "$msg" == *"Skill tool"* ]]
+    [[ "$msg" == *"Do not mentally check"* ]]
 }
 
 @test "stop-guard: blocks CI dismissal with dismissal language" {

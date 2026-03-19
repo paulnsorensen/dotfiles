@@ -24,11 +24,7 @@ const DISMISSAL_PATTERNS = [
   /\brunner\s+(issue|flake|problem)\b/i,
 ];
 
-const SELF_EVAL_PROMPT = `You modified files this turn. Before stopping, silently check:
-1. Did you leave TODOs, placeholders, or unfinished work?
-2. Did you introduce silent error swallowing, dead code, or over-abstraction?
-3. Did you claim something works without verifying it?
-If ALL clean, stop without comment. If ANY violation found, fix it — don't just list the violation.`;
+const SELF_EVAL_PROMPT = `You modified files this turn. Invoke /self-eval using the Skill tool before stopping. Do not mentally check — actually call the skill.`;
 
 const DISMISSAL_PROMPT = `You checked CI status and dismissed a failure as pre-existing or unrelated. Before stopping:
 1. Did you verify this failure exists on the base branch? (git log, gh run list on main, or checking the PR's base)
