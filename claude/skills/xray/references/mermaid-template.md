@@ -24,7 +24,7 @@ flowchart TD
 
   %% Hubs (high traffic both directions)
   subgraph hubs ["Hubs"]
-    {nodeId}["{symbolName}\nfanIn:{N} fanOut:{M}"]
+    {nodeId}["{symbolName}\nfanIn:{N} fanOut:{M}"]:::hub
   end
 
   %% Domain (business logic)
@@ -34,7 +34,7 @@ flowchart TD
 
   %% Utilities (widely imported, few deps)
   subgraph utils ["Utilities"]
-    {nodeId}["{symbolName}\nfanIn:{N} fanOut:{M}"]
+    {nodeId}["{symbolName}\nfanIn:{N} fanOut:{M}"]:::util
   end
 
   %% Leaves (import nothing internal)
@@ -51,11 +51,14 @@ flowchart TD
   {fromId} --> {toId}
   {fromId} -.-> {toId}  %% call edges use dotted lines
 
-  %% Apply traffic light classes after verdicts
-  class {nodeId} green
-  class {nodeId} yellow
-  class {nodeId} red
-  class {nodeId} unverified
+  %% Apply exactly ONE status class per node (regenerate on each verdict)
+  %% Hub/util/terminal role classes are set inline (:::hub, :::util, :::terminal)
+  %% Traffic light class overrides the role class after a verdict is confirmed:
+  class {greenNodeId} green
+  class {yellowNodeId} yellow
+  class {redNodeId} red
+  %% Unverified nodes keep their role class (hub/util) or get explicit unverified:
+  class {unverifiedNodeId} unverified
 ```
 
 ## Conventions
@@ -64,9 +67,13 @@ flowchart TD
 - **Dotted arrows** (`-.->`) = call edges
 - **Node labels** include `fanIn`/`fanOut` counts
 - **Subgraph grouping** by role — entry, hubs, domain, utils, leaves, terminals
-- **Traffic light classDefs** applied after each verdict during the DFS loop
-- **Terminal nodes** always get dashed stroke, regardless of traffic light
-- **Hub nodes** get purple fill to stand out as high-traffic intersections
+- **One class per node**: Each node gets exactly one class at generation time.
+  Regenerate the full Mermaid source on each `map` command rather than appending.
+- **Role classes** (`:::hub`, `:::util`, `:::terminal`) are applied inline in the
+  node definition. When a traffic light verdict is confirmed, the traffic light
+  class replaces the role class.
+- **Terminal nodes** always keep dashed stroke (`:::terminal`), even after auto-green
+- **Hub nodes** start purple (`:::hub`) until a verdict overrides to green/yellow/red
 
 ## Ego-centric View (`map <node>`)
 

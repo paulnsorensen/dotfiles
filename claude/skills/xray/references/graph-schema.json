@@ -121,13 +121,15 @@
           },
           "fanIn": {
             "type": "integer",
+            "minimum": 0,
             "default": 0,
-            "description": "Number of modules that depend on this node (incoming import edges)"
+            "description": "Number of modules that depend on this node (incoming import edges). Only computed for type:module nodes."
           },
           "fanOut": {
             "type": "integer",
+            "minimum": 0,
             "default": 0,
-            "description": "Number of modules this node depends on (outgoing import edges)"
+            "description": "Number of modules this node depends on (outgoing import edges). Only computed for type:module nodes."
           }
         }
       }
@@ -159,8 +161,9 @@
           },
           "weight": {
             "type": "integer",
+            "minimum": 1,
             "default": 1,
-            "description": "Number of distinct symbols imported or call sites between these nodes"
+            "description": "Number of distinct symbols imported (for import edges) or call sites (for call edges) between these nodes"
           }
         }
       }

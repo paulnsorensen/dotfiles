@@ -85,10 +85,10 @@ DOMAIN (business logic)
   pricing.ts             fanIn:2  fanOut:2  [ ]
 
 UTILITIES (widely imported, few deps)
-  types.ts               fanIn:6  fanOut:0  [·]
+  types.ts               fanIn:6  fanOut:1  [·]
 
 LEAVES (import nothing internal)
-  validator.ts           fanIn:2  fanOut:0  [ ]
+  validator.ts           fanIn:1  fanOut:0  [ ]
 
 [·] = auto-green candidate
 Cycles: {list or "none"}

@@ -6,10 +6,11 @@ You build dependency graphs using ecosystem-specific CLI tools, LSP, and ast-gre
 ## Constraints
 
 - **Model**: sonnet
-- **Tools**: LSP, Bash, Write, Glob
+- **Tools**: LSP, Bash, Write, Glob, Read
 - **Allowed Bash**: `Bash(npx:*)`, `Bash(pydeps:*)`, `Bash(cargo:*)`, `Bash(go:*)`,
   `Bash(sg:*)`, `Bash(ast-grep:*)` (fallback only)
-- **FORBIDDEN**: Read, Grep, WebSearch, WebFetch, Agent, any MCP tool
+- **Allowed Read**: `references/known-terminals.md` only
+- **FORBIDDEN**: Grep, WebSearch, WebFetch, Agent, any MCP tool
 - **Hard stop**: If LSP is not responding for the target language, report the
   error and exit immediately. Do NOT fall back to grep or text search.
 
@@ -124,8 +125,10 @@ sg --lang bash -p 'source $FILE' --json {file}
 sg --lang bash -p '. $FILE' --json {file}
 ```
 
-Build import edges from results. Only include edges between files within the
-target path (external dependencies are noted but don't become graph nodes).
+Build import edges from results. Internal files become `type: "module"` nodes.
+External dependencies that match `references/known-terminals.md` become
+`type: "module"` nodes with `role: "terminal"`. Unmatched external dependencies
+are excluded from the graph.
 
 ### 3. Parse into graph schema
 
@@ -170,21 +173,26 @@ Deep call chains are discovered during the DFS loop, not upfront.
 
 ### 5. Compute node roles
 
-Using the import edge list, compute `fanIn` and `fanOut` for each node:
-- `fanIn` = count of distinct nodes that have an import edge **to** this node
-- `fanOut` = count of distinct nodes this node has an import edge **from**
+Role computation applies to `type: "module"` nodes only. Symbol-level nodes
+(`type: "function"` or `type: "type"`, created during drill-down) inherit their
+parent module's role and are excluded from fanIn/fanOut computation.
 
-Compute the **median** fanIn and fanOut across all nodes.
+Using the import edge list, compute `fanIn` and `fanOut` for each module node:
+- `fanIn` = count of distinct module nodes that have an import edge **to** this node
+- `fanOut` = count of distinct module nodes this node has an import edge **from**
+
+Compute the **median** fanIn and fanOut across all module nodes.
+
+Read `references/known-terminals.md` for the terminal patterns list.
 
 Assign roles in this priority order (first match wins):
 
-1. **terminal**: Node ID matches an entry in `references/known-terminals.md`
-   (read the file and match against external dependency names)
+1. **terminal**: Already marked terminal during Step 3 (matched known-terminals.md)
 2. **entry-point**: `fanIn == 0` OR matches a framework entry pattern
    (e.g. `main.ts`, `app.ts`, `__main__.py`, `main.go`, `main.rs`)
-3. **leaf**: `fanOut == 0` (imports nothing internal)
-4. **hub**: `fanIn >= 2 * medianFanIn` AND `fanOut >= 2 * medianFanOut`
-5. **utility**: `fanIn >= 2 * medianFanIn` AND `fanOut <= 1`
+3. **hub**: `fanIn >= 2 * medianFanIn` AND `fanOut >= 2 * medianFanOut`
+4. **utility**: `fanIn >= 2 * medianFanIn` AND `fanOut <= 1`
+5. **leaf**: `fanOut == 0` (imports nothing internal)
 6. **domain**: everything else
 
 ### 6. Compute DFS order
