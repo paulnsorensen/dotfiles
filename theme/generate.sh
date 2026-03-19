@@ -552,7 +552,7 @@ selection-background = #$(pal base02)
 selection-foreground = #$(pal base07)
 
 # Background image (duck, matches iTerm2)
-background-image = ${REPO_DIR}/iterm2/background/i_know_how_to_make_ducks.png
+background-image = __DOTFILES_DIR__/iterm2/background/i_know_how_to_make_ducks.png
 background-image-opacity = 0.06
 background-image-position = center-left
 background-blur = 20

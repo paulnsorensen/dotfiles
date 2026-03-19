@@ -2,17 +2,12 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+dotfiles_dir="$(cd "$script_dir/.." && pwd)"
 target_dir="$HOME/.config/ghostty"
 
 mkdir -p "$target_dir"
 
-# Symlink config (cmux reads from ~/.config/ghostty/config)
-if [[ -L "$target_dir/config" ]]; then
-  rm "$target_dir/config"
-elif [[ -f "$target_dir/config" ]]; then
-  mv "$target_dir/config" "$target_dir/config.bak"
-  echo "Backed up existing ghostty config to config.bak"
-fi
-
-ln -s "$script_dir/config" "$target_dir/config"
-echo "Linked ghostty config"
+# Expand placeholders and install (same pattern as iterm2/.sync)
+sed -e "s|__DOTFILES_DIR__|${dotfiles_dir}|g" \
+  "$script_dir/config" > "$target_dir/config"
+echo "Installed ghostty config"
