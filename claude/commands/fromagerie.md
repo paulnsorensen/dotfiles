@@ -1,17 +1,17 @@
 ---
 name: fromagerie
-description: Large feature orchestrator — decomposes a spec into non-overlapping atoms, executes foundation work, dispatches parallel worktree agents, then triggers /cheese-convoy on the resulting PRs.
-argument-hint: <spec-file-path> [--resume <slug>]
+description: Large feature orchestrator — decomposes a spec into non-overlapping atoms, executes foundation work, dispatches parallel worktree agents, then consolidates into 1-3 reviewable PRs via the reducer.
+argument-hint: [<spec-file-path>] [--resume <slug>]
 ---
 
 Orchestrate the full lifecycle for: **$ARGUMENTS**
 
-Reads a spec, front-loads exploration, decomposes into atoms, executes foundation work, dispatches parallel agents, and lands PRs via convoy.
+Reads a spec, front-loads permissions, runs focused culture agents, decomposes into token-sized atoms, executes via expand/reduce pattern, and consolidates into 1-3 PRs.
 
 ## When to use `/fromagerie` vs `/fromage`
 
 - **`/fromage`**: Single coherent feature or fix — one worktree, one PR.
-- **`/fromagerie`**: Feature that decomposes into 5-30 independent work units with explicit file ownership — parallel agents, multiple PRs, one convoy.
+- **`/fromagerie`**: Feature that decomposes into 5-30 independent work units with explicit file ownership — parallel agents, multiple PRs consolidated by the reducer.
 
 Rule of thumb: if you wrote a spec with `/spec` and it clearly spans many independent files, use `/fromagerie`. If the work is sequential and interrelated, use `/fromage`.
 
@@ -36,7 +36,8 @@ Each phase builds on prior phases. Carry forward:
 - **Spec summary**: extracted in Phase 0 (<2K chars)
 - **Quality gate commands**: extracted from spec's Quality Gates section
 - **Exploration summary**: from Phase 1 Culture agents
-- **Decomposition result**: from Phase 2, including foundation items and atom list
+- **Tokei manifest path**: from Phase 1 culture-tokei agent
+- **Decomposition result**: from Phase 2, including foundation items and atom list with token estimates
 - **Manifest path**: `.claude/fromagerie/<slug>/manifest.json`
 
 ---
@@ -50,6 +51,12 @@ If `$ARGUMENTS` contains `--resume <slug>`:
 2. Read manifest at `.claude/fromagerie/<slug>/manifest.json`
 3. Find the last completed phase and skip to the next incomplete phase
 4. Report: "Resuming <slug> from phase <N>"
+
+If `$ARGUMENTS` is empty or the path doesn't exist:
+1. Report: "No spec found. Launching /spec to create one."
+2. Invoke `/spec` via Skill tool: `Skill(skill="spec")`
+3. After `/spec` completes and saves to `.claude/specs/<slug>.md`, resume fromagerie with that path
+4. If user cancels spec creation, stop fromagerie
 
 Otherwise, `$ARGUMENTS` is a spec file path.
 
@@ -80,8 +87,49 @@ Extract:
 - **Spec summary** (<2K chars): what's being built (bullets), constraints, scope boundaries
 - **Quality gate commands**: the exact commands from the Quality Gates section
 - **Slug**: kebab-case from the spec title (<30 chars)
+- **Libraries in scope**: external dependencies mentioned in the spec (for Context7 agent)
+- **Scope paths**: directories/files the spec targets (for LSP and Tokei agents)
 
 For specs >5K chars, write the full spec to `$TMPDIR/fromagerie-spec-<slug>.md` for agent distribution.
+
+### Front-Load Permissions
+
+Enumerate all bash commands the pipeline will need:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push:*)",
+      "Bash(git worktree:*)",
+      "Bash(git merge:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr view:*)",
+      "Bash(tokei:*)",
+      "<quality-gate-commands-from-spec>"
+    ]
+  }
+}
+```
+
+Present this manifest to the user:
+
+```
+## Permission Manifest
+
+The pipeline needs these bash permissions to run autonomously:
+- git: push, worktree, merge, checkout, branch, cherry-pick
+- gh: pr create, pr view
+- tokei (token estimation)
+- Quality gates: <list from spec>
+
+Approve? These will be written to .claude/settings.local.json.
+```
+
+On approval: merge these permissions into `.claude/settings.local.json` (preserve existing entries, add new ones). Use `worktree-settings.sh` as the base and overlay pipeline-specific permissions.
 
 ### Create Manifest
 
@@ -97,7 +145,7 @@ manifest = {
   'quality_gates': <quality_gate_commands>,
   'foundation': {'items': []},
   'atoms': [],
-  'convoy': {'status': 'pending', 'pr_numbers': []}
+  'reducer': {'status': 'pending', 'pr_branches': [], 'pr_metadata': []},
 }
 print(json.dumps(manifest, indent=2))
 " > .claude/fromagerie/<slug>/manifest.json
@@ -107,29 +155,84 @@ print(json.dumps(manifest, indent=2))
 
 ## Phase 1 — Explore
 
-Launch Culture agents (sonnet, parallel) in a **single message**. Scale by spec size:
+Launch exactly **3 focused culture sub-agents** in a **single message** for true parallelism:
 
-| Spec Size | Agents | Aspects |
-|---|---|---|
-| Small (< 3 user stories) | 2 | A, B |
-| Medium (3-6 user stories) | 3 | A, B, C |
-| Large (7+ user stories) | 4-5 | A, B, C, D, (E) |
+### Agent 1: culture-lsp (sonnet)
 
-**`fromage-culture` agents (codebase exploration):**
-- **Aspect A**: Entry points, existing patterns, and file ownership relevant to the spec's scope
-- **Aspect B**: Blast radius — what existing code will be affected or extended
-- **Aspect C** (medium+): Architecture boundaries and public API surfaces
+Structural dependency analysis via LSP.
 
-**Separate research subagents (large specs only, run in parallel with Culture):**
-- **Aspect D**: **External prior art** — spawn a `/research` agent to scan how other projects solved similar problems. Write findings to `$TMPDIR/fromagerie-culture-<slug>-prior-art.md`.
-- **Aspect E**: **Dependency and API landscape** — spawn a `/fetch` agent to assess external libraries and APIs this feature interacts with. Write to `$TMPDIR/fromagerie-culture-<slug>-deps.md`.
+```
+Agent(
+  subagent_type="culture-lsp",
+  run_in_background=True,
+  prompt="""
+Analyze the structural dependencies for fromagerie spec: {slug}
 
-Each `fromage-culture` agent prompt includes the spec summary. Full report written to `$TMPDIR/fromagerie-culture-<slug>-<N>.md`.
+## Spec Summary
+{spec_summary}
 
-After agents return:
-1. **Synthesize cross-agent patterns** — what do 2+ agents agree on? Where do they contradict?
-2. Collect inline summaries (keep in orchestrator context)
-3. Pass temp file paths to Phase 2 (decomposer reads full reports if needed)
+## Scope Paths
+{scope_paths}
+
+## Slug
+{slug}
+
+Build the dependency graph, identify entry points, hubs, and blast radius for the files in scope.
+"""
+)
+```
+
+### Agent 2: culture-context7 (haiku)
+
+Library documentation verification.
+
+```
+Agent(
+  subagent_type="culture-context7",
+  run_in_background=True,
+  prompt="""
+Verify library documentation for fromagerie spec: {slug}
+
+## Libraries in Scope
+{libraries_list}
+
+## Usage Context
+{how_each_library_is_used}
+
+## Slug
+{slug}
+
+Check each library for API correctness, deprecations, and simpler alternatives.
+"""
+)
+```
+
+### Agent 3: culture-tokei (haiku)
+
+Token estimation manifest.
+
+```
+Agent(
+  subagent_type="culture-tokei",
+  run_in_background=True,
+  prompt="""
+Measure token sizes for fromagerie spec: {slug}
+
+## Scope Paths
+{scope_paths}
+
+## Slug
+{slug}
+
+Run tokei and write the size manifest with per-file token estimates.
+"""
+)
+```
+
+After all 3 agents return:
+1. Collect inline summaries from LSP and Context7 agents (keep in orchestrator context)
+2. Note the tokei manifest path: `$TMPDIR/fromagerie-tokei-<slug>.json`
+3. Pass LSP node list path and tokei manifest path to Phase 2
 
 Update manifest: `"phase": "explore"`.
 
@@ -139,29 +242,40 @@ Update manifest: `"phase": "explore"`.
 
 Launch `fromagerie-decomposer` (opus, plan mode) with:
 - Spec (inline if <5K, temp file path otherwise)
-- Culture exploration summaries + full report paths
+- Culture exploration summaries (LSP structural findings + Context7 library findings)
+- Tokei manifest path: `$TMPDIR/fromagerie-tokei-<slug>.json`
+- LSP node list path: `$TMPDIR/fromagerie-culture-lsp-<slug>-nodes.json`
 - Quality gate commands
-- Instruction to output: foundation items (ordered, with file lists and commit boundaries) + parallel atoms (with file lists and complexity tags)
 
-### Overlap Validation (hard constraint)
+The decomposer will:
+1. Read the tokei manifest for per-file token estimates
+2. Use LSP/Serena to verify file dependencies
+3. Enforce hard constraints: <50K tokens per atom, 2-3 files per atom
+4. Output foundation items + parallel atoms with token budget validation table
 
-After decomposer returns, validate that no file appears in more than one atom:
+### Validation (hard constraints)
 
+After decomposer returns, validate:
+
+**Overlap check:**
 ```python
-# Pseudocode — implement as python3 one-liner or inline check
 all_files = []
 for atom in atoms:
     for f in atom['files']:
         if f in all_files:
-            FAIL: "File overlap detected: {f} in atom {a} and atom {b}. Re-decomposing."
+            FAIL: "File overlap detected: {f}. Re-decomposing."
         all_files.append(f)
 ```
 
-If overlap detected: re-run decomposer with the conflict highlighted. Maximum 2 retries, then stop and report.
+**Token budget check:**
+- Every atom must have `estimated_tokens < 50,000`
+- Every atom must have 1-3 files
+
+If any validation fails: re-run decomposer with the violation highlighted. Maximum 2 retries, then stop and report.
 
 If atom count > 10: warn — "Feature may be too large for a single /fromagerie run. Consider splitting the spec."
 
-Update manifest with full decomposition result.
+Update manifest with full decomposition result (including `estimated_tokens` per atom).
 
 ---
 
@@ -177,13 +291,14 @@ Present the full decomposition plan as visible output:
 2. ...
 
 ### Atoms (parallel, wall-clock ~<max_atom_time> min)
-| # | Description | Files | Complexity | Est. Time |
-|---|---|---|---|---|
-| 1 | <desc> | <N> files | medium | ~5 min |
-| 2 | <desc> | <N> files | small | ~2 min |
+| # | Description | Files | Est. Tokens | Budget | Complexity | Est. Time |
+|---|---|---|---|---|---|---|
+| 1 | <desc> | 2 files | 12,500 | 25% | small | ~2 min |
+| 2 | <desc> | 3 files | 38,000 | 76% | medium | ~5 min |
 ...
 
-**Complexity key**: small ~2 min, medium ~5 min, large ~10 min
+**Token budget**: all atoms <50K tokens (sonnet model)
+**PR consolidation**: reducer will consolidate into 1-3 PRs after atom completion
 **Total estimated time**: <foundation_time> + <max_atom_time> min wall-clock
 ```
 
@@ -206,18 +321,45 @@ Update manifest: `"phase": "gate_approved"`.
 
 ## Phase 4 — Foundation
 
-Execute foundation items on the current worktree (not isolated).
+If foundation items are small (total estimated tokens < 50K across all items):
+- Execute directly on the current worktree using Edit/Write tools
+- Run quality gates after each item
+- Commit via `/commit` skill
+
+If foundation items are large (total estimated tokens >= 50K):
+- Use the **expand/reduce loop**: opus plans splits → sonnet agents execute in parallel worktrees → opus reduces
+
+### Expand/Reduce for Foundation (large only)
+
+```
+# Opus plans: split foundation into token-sized chunks
+plan = opus_plan(foundation_items, tokei_data)
+
+# Sonnet agents execute in parallel worktrees
+agents = []
+for chunk in plan.chunks:
+    assert chunk.estimated_tokens < 50_000
+    agents.append(Agent(
+        isolation="worktree",
+        mode="bypassPermissions",
+        run_in_background=True,
+        prompt="Execute foundation chunk: {chunk.description}\nFiles: {chunk.files}\n..."
+    ))
+
+# Wait for all, then opus reduces (merge back, fix integration)
+results = wait_all(agents)
+# Merge foundation worktree branches back to orchestrator's branch
+```
+
+### After Foundation (either path)
 
 For each foundation item:
-1. Implement the changes (inline, using Edit/Write tools)
-2. Run quality gates: pass commands from spec to `whey-drainer` (haiku)
-3. If gates fail: **STOP**. Report the failure. Do not proceed to Phase 5.
-4. Commit via `/commit` skill (Skill tool — conventional commit format)
-5. Update manifest with commit SHA
+1. If gates fail: **STOP**. Report the failure. Do not proceed to Phase 5.
+2. Commit via `/commit` skill (conventional commit format)
+3. Update manifest with commit SHA
 
-After all foundation items:
-- Push to branch: `git push origin HEAD`
-- Foundation must be pushed before atoms dispatch — worktree agents branch from HEAD
+Push to branch: `git push origin HEAD`
+Foundation must be pushed before atoms dispatch — worktree agents branch from HEAD.
 
 Update manifest: `"phase": "foundation_complete"`, include commit SHAs.
 
@@ -234,7 +376,7 @@ Agent(
   isolation="worktree",
   mode="bypassPermissions",
   run_in_background=True,
-  max_turns=60,
+  model="sonnet",
   prompt="""
 You are executing atom #{N} of a /fromagerie decomposition for spec: {slug}
 
@@ -243,6 +385,9 @@ You may ONLY modify these files:
 {file_list}
 
 Do NOT create, modify, or delete any file not on this list.
+
+## Token Budget
+Estimated tokens for your files: {estimated_tokens} / 50,000
 
 ## Your Plan Steps
 {atom_plan_steps}
@@ -285,11 +430,11 @@ Update manifest: `"phase": "dispatched"`, mark each atom status as `"running"`.
 
 ---
 
-## Phase 6 — Collect & Publish
+## Phase 6 — Reduce & Publish
 
 Wait for background agent completion notifications.
 
-### Collect Results
+### 6a. Collect Atom Results
 
 As each atom agent reports back:
 1. Parse its report: status (success/failure), worktree path, error summary
@@ -306,6 +451,7 @@ Agent(
   isolation="worktree",
   mode="bypassPermissions",
   run_in_background=True,
+  model="sonnet",
   prompt="""<original atom prompt>
 
 ## Retry Context
@@ -319,61 +465,86 @@ Address this failure before proceeding with the workflow.
 
 After retries: mark `"retry_count": 1`. Do not retry a second time — move on.
 
-### Publish PRs (orchestrator-owned)
+### 6b. Launch Reducer
 
-After all atoms are collected, the **orchestrator** creates PRs for each successful atom.
-This runs in the orchestrator's session which has the user's full Bash permissions.
+After all atoms are collected (including retries), launch the **fromagerie-reducer** (opus):
 
-For each successful atom:
-1. Read `pr-metadata.json` from the worktree (the Agent result includes the worktree path)
-2. Push the worktree branch: `git -C <worktree-path> push -u origin HEAD`
-3. Create the PR using `gh pr create --head <branch-name> --title <title> --body-file <path>`:
-   - Write body from `pr-metadata.json` to a temp file, pass via `--body-file` to avoid shell-escaping issues
-   - Use the `branch` field from the manifest (captured in Collect step) for `--head`
-4. Update manifest: atom PR number, PR URL
-5. Report: "Atom 3/6 — PR #74 created"
+```
+Agent(
+  subagent_type="fromagerie-reducer",
+  prompt="""
+Consolidate atom worktrees into 1-3 reviewable PRs for: {slug}
 
-If `pr-metadata.json` is missing (agent crashed before writing it), use the atom description
-from the manifest as the PR title and body fallback.
+## Manifest Path
+.claude/fromagerie/{slug}/manifest.json
 
-Update manifest with final statuses. Determine the convoy list (successful atom PR numbers).
+## Spec Summary
+{spec_summary}
+
+## Atom Worktree Paths
+{list of worktree paths for successful atoms}
+
+## Target Branch
+{orchestrator_branch}
+
+Read each atom's diff and pr-metadata.json, group into 1-3 PRs by Sliced Bread
+boundaries, cherry-pick into consolidated branches, fix integration issues, and
+write PR metadata files.
+"""
+)
+```
+
+The reducer will:
+1. Analyze all atom diffs
+2. Group into 1-3 PRs by slice boundary / logical cohesion
+3. Cherry-pick into consolidated branches
+4. Fix integration issues (deduped imports, type mismatches)
+5. Run quality gates
+6. Write PR metadata to `.claude/fromagerie/<slug>/pr-<N>-metadata.json`
+
+### 6c. Publish PRs (orchestrator-owned)
+
+After the reducer returns, the **orchestrator** creates PRs from the consolidated branches.
+
+For each consolidated PR:
+1. Read PR metadata from `.claude/fromagerie/<slug>/pr-<N>-metadata.json`
+2. Push the consolidated branch: `git push -u origin <branch>`
+3. Create the PR using `gh pr create --head <branch> --title <title> --body-file <path>`:
+   - Write body to a temp file, pass via `--body-file` to avoid shell-escaping issues
+4. Update manifest: PR number, PR URL
+5. Report: "PR 1/2 — #74 created: <title>"
+
+### 6d. Optional Convoy
+
+If the reducer produced 2+ PRs and any have CI issues, offer to run `/cheese-convoy`:
+
+```
+Reducer produced {N} PRs. Want me to run /cheese-convoy on them?
+```
+
+If user approves: `Skill(skill="cheese-convoy", args="<PR# PR# ...>")`
+
+Update manifest: `"reducer": {"status": "completed", "pr_branches": [...], "pr_metadata": [...]}`.
 
 ---
 
-## Phase 7 — Convoy
-
-Collect successful PR numbers from manifest.
-
-If all atoms failed: report and stop.
-
-```
-All atoms failed. Manual intervention required.
-Failed atoms: {list with error summaries}
-Manifest: .claude/fromagerie/<slug>/manifest.json
-```
-
-If any atoms succeeded: invoke `/cheese-convoy` via the Skill tool:
-
-```
-Skill(skill="cheese-convoy", args="<PR# PR# ...>")
-```
-
-After convoy completes, update manifest: `"convoy": {"status": "completed", "pr_numbers": [...]}`.
-
-### Final Report
+## Final Report
 
 ```
 ## Fromagerie Complete: <slug>
 
 ### Atom Results
-| # | Description | Status | PR |
+| # | Description | Status | Tokens Used |
 |---|---|---|---|
-| 1 | <desc> | success | #74 |
+| 1 | <desc> | success | 12,500 |
 | 2 | <desc> | failed | — |
 ...
 
-### Convoy
-{convoy_result_summary}
+### Consolidated PRs
+| PR | Title | Atoms | Files | Integration Fixes |
+|----|-------|-------|-------|-------------------|
+| #74 | feat(orders): add fulfillment | A1, A3 | 4 | 2 |
+| #75 | feat(pricing): add tiers | A2 | 2 | 0 |
 
 ### Manual Actions Needed
 - Atom #2 failed after retry: {error_summary} — review and run /fromage manually
@@ -392,12 +563,13 @@ Manifest: .claude/fromagerie/<slug>/manifest.json
   "spec_path": ".claude/specs/feature-name.md",
   "created": "2026-03-14T10:00:00Z",
   "phase": "dispatched",
-  "quality_gates": ["cargo test", "cargo clippy"],
+  "quality_gates": ["dots test"],
   "foundation": {
     "items": [
       {
         "description": "Add shared types",
         "files": ["src/domains/common/types.ts"],
+        "estimated_tokens": 5000,
         "commit_sha": "abc123",
         "status": "completed"
       }
@@ -408,19 +580,27 @@ Manifest: .claude/fromagerie/<slug>/manifest.json
       "id": 1,
       "description": "Implement order slice",
       "files": ["src/domains/orders/index.ts"],
-      "complexity": "medium",
+      "estimated_tokens": 12500,
+      "complexity": "small",
       "status": "completed",
       "worktree_path": "/path/to/.worktrees/atom-1",
       "branch": "fromagerie/slug/atom-1",
-      "pr_number": 72,
-      "pr_url": "https://github.com/...",
       "retry_count": 0,
       "error": null
     }
   ],
-  "convoy": {
-    "status": "pending",
-    "pr_numbers": []
+  "reducer": {
+    "status": "completed",
+    "pr_branches": ["fromagerie/slug/pr-1", "fromagerie/slug/pr-2"],
+    "pr_metadata": [
+      {
+        "branch": "fromagerie/slug/pr-1",
+        "title": "feat(orders): add fulfillment",
+        "atoms": [1, 3],
+        "pr_number": 74,
+        "pr_url": "https://github.com/..."
+      }
+    ]
   }
 }
 ```
@@ -431,20 +611,25 @@ Manifest: .claude/fromagerie/<slug>/manifest.json
 
 One-line status between phases:
 ```
---- Phase 1 complete --- 3 culture agents, 12 key files mapped. Moving to Decompose...
---- Phase 2 complete --- 2 foundation items, 5 atoms (no overlap). Moving to Gate...
+--- Phase 0 complete --- Spec ingested, permissions approved. Moving to Explore...
+--- Phase 1 complete --- 3 culture agents (LSP, Context7, Tokei), tokei manifest ready. Moving to Decompose...
+--- Phase 2 complete --- 2 foundation items, 5 atoms (all <50K tokens, no overlap). Moving to Gate...
 --- Phase 4 complete --- 2 foundation commits pushed. Moving to Dispatch...
+--- Phase 5 complete --- 5 atoms dispatched. Waiting for completion...
+--- Phase 6 complete --- Reducer consolidated into 2 PRs. Publishing...
 ```
 
 ---
 
 ## Error Recovery
 
+- **No spec argument**: invoke `/spec`, resume after save
 - **Overlap detected**: re-run decomposer with conflict noted (max 2 retries, then stop)
+- **Token budget exceeded**: re-run decomposer with violation noted (max 2 retries, then stop)
 - **Foundation gate failure**: stop execution, report, do not dispatch atoms
 - **Atom fails**: retry once with error context, then mark failed and continue
-- **All atoms fail**: report and stop, no convoy dispatch
-- **Convoy fails**: report convoy result, leave PRs open for manual action
+- **All atoms fail**: report and stop, no reducer launch
+- **Reducer fails**: fall back to per-atom PRs (create one PR per successful atom, like v1)
 - **Resume**: `--resume <slug>` reads manifest and skips completed phases
 - **Never proceed past Phase 3 gate without explicit user approval**
 - **Never claim green on partial work** — report partial/failed atoms honestly in the final report
