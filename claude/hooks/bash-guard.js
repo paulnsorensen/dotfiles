@@ -36,7 +36,7 @@ const HEURISTIC_TRIGGERS = [
   { pattern: /\bgh\s+[^|]+\|\s*(grep|head|tail|awk|sed|cut|sort|wc)\b/, msg: 'Use gh --jq for filtering/formatting. Example: gh pr list --json number --jq \'.[].number\'. Pipes trigger compound command detection.' },
   { pattern: /\bgh\s+api\b/, msg: 'Use /gh (GitHub MCP tools) instead of gh api. MCP bypasses sandbox TLS issues. For PR comments: pull_request_read(method: "get_review_comments"), for issues: issue_read.' },
   { pattern: /\bgit\s+add\b[^|]*&&\s*git\s+commit\b/, msg: 'Use /commit instead. Compound git add && git commit with heredoc triggers "hides arguments" heuristic and requires sandbox bypass.' },
-  { pattern: /\bgit\s+commit\b[^"]*"\$\(cat\b/, msg: 'Use /commit instead. Heredoc commit messages trigger "hides arguments" heuristic. The /commit skill handles staging, message drafting, and committing.' },
+  { pattern: /\bgit\s+commit\b.*\$\(/, msg: 'Use /commit instead. Command substitution in git commit triggers "backticks" or "hides arguments" heuristic. The /commit skill handles staging, message drafting, and committing.' },
 ];
 
 function matchInstall(cmd) {

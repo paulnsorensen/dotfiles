@@ -42,7 +42,16 @@ git worktree add .worktrees/<slug> -b claude/<slug>
 - `cd` into `.worktrees/<slug>/`
 - Confirm ready
 
-### 4. Seed local settings
+### 4. Disable pre-commit hooks
+
+Prek writes to `~/.cache/prek/` which is outside the Seatbelt sandbox write paths.
+Worktrees are ephemeral branches where pre-commit hooks aren't meaningful.
+
+```bash
+git -C .worktrees/<slug> config core.hooksPath /dev/null
+```
+
+### 5. Seed local settings
 
 Copy the main repo's `.claude/settings.local.json` into the worktree (preserves LSPs,
 custom permissions, etc.) and merge sandbox config on top. Write to a temp file first
@@ -67,7 +76,7 @@ echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}' | jq . \
        .worktrees/<slug>/.claude/settings.local.json
 ```
 
-### 5. Seed Serena
+### 6. Seed Serena
 
 If `.serena/` exists at repo root but not in the worktree:
 ```bash
@@ -75,7 +84,7 @@ cp -r <REPO_ROOT>/.serena .worktrees/<slug>/.serena
 rm -rf .worktrees/<slug>/.serena/cache
 ```
 
-### 6. Seed hookify rules
+### 7. Seed hookify rules
 
 Copy hookify rules into the worktree's `.claude/` directory. Source from `claude/hookify/` (committed rules) first, then any local-only rules in `.claude/` (skip files that already exist):
 
@@ -97,13 +106,13 @@ for rule in <REPO_ROOT>/.claude/hookify.*.local.md; do
 done
 ```
 
-### 7. Prime Serena
+### 8. Prime Serena
 
 1. `activate_project` for the worktree path
 2. `check_onboarding_performed` — run `onboarding` if needed
 3. `list_memories` — `read_memory` for any relevant ones
 
-### 8. Confirm
+### 9. Confirm
 
 ```
 Worktree ready: <absolute path>

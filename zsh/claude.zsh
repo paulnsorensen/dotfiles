@@ -104,6 +104,12 @@ ccw() {
         echo "Seeded Serena memories from main repo"
     fi
 
+    # Disable pre-commit hooks in worktrees. Prek writes to ~/.cache/prek/
+    # which is outside the Seatbelt sandbox write paths, causing "Operation
+    # not permitted" on every commit. Worktrees are ephemeral branches where
+    # prek's claude-sync and shellcheck hooks aren't meaningful anyway.
+    git -C "${repo_root}/${wt_dir}" config core.hooksPath /dev/null 2>/dev/null
+
     # Seed local settings for the worktree session.
     # Copies main repo's settings.local.json (LSPs, custom permissions, etc.)
     # and ensures sandbox is enabled on top. Writes to a temp file first to

@@ -68,7 +68,7 @@
 #   /\bgh\s+[^|]+\|\s*(grep|head|tail|awk|sed|cut|sort|wc)\b/ → gh | grep, gh | head, gh --json (neg)
 #   /\bgh\s+api\b/                 → gh api, gh pr list (neg)
 #   /\bgit\s+add\b...&&\s*git\s+commit\b/ → git add && git commit, git add alone (neg)
-#   /\bgit\s+commit\b..."\$\(cat\b/ → git commit -m "$(cat, git commit -m "msg" (neg)
+#   /\bgit\s+commit\b.*\$\(/       → git commit with $( subst, git commit -m "msg" (neg)
 #
 # write-guard.js — RULES[0] ellipsis (4 alternations)
 #   /\/\/\s*\.\.\./                 → // ...
@@ -650,6 +650,13 @@ teardown() {
 
 @test "bash-guard: git commit with heredoc is blocked with /commit reference" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"git commit -m \"$(cat <<'\''EOF'\''\nfix: thing\nEOF\n)\""}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+    [[ "$output" == *"/commit"* ]]
+}
+
+@test "bash-guard: git commit with command substitution is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"git commit -m \"$(date): fix thing\""}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
     [[ "$output" == *"/commit"* ]]
