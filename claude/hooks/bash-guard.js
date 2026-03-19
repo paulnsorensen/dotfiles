@@ -31,7 +31,12 @@ const DOC_GREP = [
 
 const HEURISTIC_TRIGGERS = [
   { pattern: /\bcd\s+\S+\s*&&\s*git\b/, msg: 'Use /wt-git or git -C <path> instead. Example: wt-git /path/to/worktree commit -m "message"' },
-  { pattern: /gh\s+pr\s+create\b[^|]*--body\s*"\$\(cat\b/, msg: 'Use /gh (GitHub MCP create_pull_request) instead (avoids heuristic + TLS issues).' },
+  { pattern: /gh\s+pr\s+create\b[^|]*--body\s*"\$\(cat\b/, msg: 'Heredoc --body triggers "hides arguments" heuristic. Use MCP create_pull_request, or write body to $TMPDIR/pr-body.md and use gh pr create --body-file "$TMPDIR/pr-body.md".' },
+  { pattern: /\bgh\s+[^|]+\|\s*jq\b/, msg: 'Use gh --jq instead of piping to jq. Example: gh pr list --json number,title --jq \'.[].title\'' },
+  { pattern: /\bgh\s+[^|]+\|\s*(grep|head|tail|awk|sed|cut|sort|wc)\b/, msg: 'Use gh --jq for filtering/formatting. Example: gh pr list --json number --jq \'.[].number\'. Pipes trigger compound command detection.' },
+  { pattern: /\bgh\s+api\b/, msg: 'Use /gh (GitHub MCP tools) instead of gh api. MCP bypasses sandbox TLS issues. For PR comments: pull_request_read(method: "get_review_comments"), for issues: issue_read.' },
+  { pattern: /\bgit\s+add\b[^|]*&&\s*git\s+commit\b/, msg: 'Use /commit instead. Compound git add && git commit with heredoc triggers "hides arguments" heuristic and requires sandbox bypass.' },
+  { pattern: /\bgit\s+commit\b.*\$\(/, msg: 'Use /commit instead. Command substitution in git commit triggers "backticks" or "hides arguments" heuristic. The /commit skill handles staging, message drafting, and committing.' },
 ];
 
 function matchInstall(cmd) {
