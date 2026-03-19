@@ -50,11 +50,12 @@ If PreToolUse hooks exist, some Bash commands are blocked regardless of permissi
 | Legacy: `awk` | `Bash(awk:*)` | `/chisel`, Edit |
 | Legacy: `find` | `Bash(find:*)`, specific find commands | Glob, `/scout (fd)` |
 | Install: `npm install` | `Bash(npm install:*)` | per-use approval |
+| Install: `pnpm add/install` | `Bash(pnpm add:*)`, `Bash(pnpm install:*)` | per-use approval |
 | Install: `yarn add` | `Bash(yarn add:*)` | per-use approval |
 | Install: `pip install` | `Bash(pip install:*)` | per-use approval |
 | Install: `cargo add` | `Bash(cargo add:*)` | per-use approval |
 | Install: `go get` | `Bash(go get:*)` | per-use approval |
-| Inline tests: `python3 -c` + import/assert | subset of `Bash(python3 -c ":*)` | `/test-sandbox` |
+| Inline tests: `python3 -c` + import/assert | subset of `Bash(python3 -c:*)` | `/test-sandbox` |
 | Dep cache grep | entries with `.cargo/registry`, `node_modules/` etc. | `/lookup`, `/fetch` |
 | Heuristic: `cd && git` | `Bash(cd:*)` (already JUNK) | `/wt-git` |
 
@@ -76,7 +77,7 @@ Examples:
 **Same-file coverage** — also applies to Bash and Read entries within the local file:
 - `Read(//path/subdir/**)` is covered by `Read(//path/**)`
 - `Bash(lspmux status:*)` is covered by `Bash(lspmux:*)`
-- `Bash(python3 -c ":*)` is covered by `Bash(python3:*)`
+- `Bash(python3 -c:*)` is covered by `Bash(python3:*)`
 
 For non-Bash entries: check for exact match in global (e.g., local `Edit` + global `Edit` → covered).
 
@@ -132,6 +133,8 @@ Recommended deny entries (reinforces hook blocks):
 
   Package installs (require per-use approval):
     "Bash(npm install:*)"  → approve individually
+    "Bash(pnpm add:*)"     → approve individually
+    "Bash(pnpm install:*)" → approve individually
     "Bash(yarn add:*)"     → approve individually
     "Bash(pip install:*)"  → approve individually
     "Bash(pip3 install:*)" → approve individually
