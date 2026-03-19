@@ -119,6 +119,18 @@ Instead:
 1. **MCP** (preferred): `create_pull_request` — no shell involved
 2. **`--body-file`** (CLI fallback): Write body with the Write tool to `$TMPDIR/pr-body.md`, then `gh pr create --title "..." --body-file "$TMPDIR/pr-body.md"`
 
+**Never use `gh api`.** Raw API calls bypass MCP and hit TLS issues in the sandbox. Every `gh api` call has an MCP equivalent:
+
+```bash
+# WRONG — TLS failure in sandbox, requires dangerouslyDisableSandbox
+gh api repos/owner/repo/pulls/78/reviews
+
+# RIGHT — MCP tool, runs in host process, no sandbox issues
+pull_request_read(method: "get_review_comments", owner, repo, pullNumber: 78)
+```
+
+If you need an endpoint the MCP doesn't cover, use the `/gh` skill which routes through MCP first and only falls back to CLI for the gaps listed below.
+
 ---
 
 ## CLI Fallback (only when MCP can't do it)
