@@ -110,24 +110,18 @@ ccw() {
     # prek's claude-sync and shellcheck hooks aren't meaningful anyway.
     git -C "${repo_root}/${wt_dir}" config core.hooksPath /dev/null 2>/dev/null
 
-    # Seed local settings for the worktree session.
-    # Copies main repo's settings.local.json (LSPs, custom permissions, etc.)
-    # and ensures sandbox is enabled on top. Writes to a temp file first to
-    # avoid truncated settings if jq fails on malformed input.
+    # Generate worktree settings from dotfiles sources of truth.
+    # Pulls skills, MCPs, and plugins dynamically — no stale copies.
     local claude_local="${repo_root}/${wt_dir}/.claude/settings.local.json"
     if [[ ! -f "${claude_local}" ]]; then
         mkdir -p "${repo_root}/${wt_dir}/.claude"
-        local main_local="${repo_root}/.claude/settings.local.json"
-        local sandbox='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
-        local tmp="${claude_local}.tmp"
-        if [[ -f "${main_local}" ]]; then
-            jq --argjson overlay "${sandbox}" '. * $overlay' "${main_local}" > "${tmp}" \
-                && mv "${tmp}" "${claude_local}" \
-                && echo "Copied local settings + enabled sandboxing"
+        local generator="${DOTFILES_DIR}/claude/worktree-settings.sh"
+        if [[ -f "${generator}" ]]; then
+            bash "${generator}" "${DOTFILES_DIR}" > "${claude_local}" \
+                && echo "Generated worktree settings (sandbox + $(jq '.permissions.allow | length' "${claude_local}") permissions)"
         else
-            echo "${sandbox}" | jq . > "${tmp}" \
-                && mv "${tmp}" "${claude_local}" \
-                && echo "Enabled sandboxing for worktree"
+            echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}' | jq . > "${claude_local}" \
+                && echo "Enabled sandboxing for worktree (generator not found)"
         fi
     fi
 
