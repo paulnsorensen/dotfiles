@@ -31,7 +31,9 @@ const DOC_GREP = [
 
 const HEURISTIC_TRIGGERS = [
   { pattern: /\bcd\s+\S+\s*&&\s*git\b/, msg: 'Use /wt-git or git -C <path> instead. Example: wt-git /path/to/worktree commit -m "message"' },
-  { pattern: /gh\s+pr\s+create\b[^|]*--body\s*"\$\(cat\b/, msg: 'Use /gh (GitHub MCP create_pull_request) instead (avoids heuristic + TLS issues).' },
+  { pattern: /gh\s+pr\s+create\b[^|]*--body\s*"\$\(cat\b/, msg: 'Heredoc --body triggers "hides arguments" heuristic. Use MCP create_pull_request, or write body to $TMPDIR/pr-body.md and use gh pr create --body-file "$TMPDIR/pr-body.md".' },
+  { pattern: /\bgh\s+[^|]+\|\s*jq\b/, msg: 'Use gh --jq instead of piping to jq. Example: gh pr list --json number,title --jq \'.[].title\'' },
+  { pattern: /\bgh\s+[^|]+\|\s*(grep|head|tail|awk|sed|cut|sort|wc)\b/, msg: 'Use gh --jq for filtering/formatting. Example: gh pr list --json number --jq \'.[].number\'. Pipes trigger compound command detection.' },
 ];
 
 function matchInstall(cmd) {

@@ -61,9 +61,11 @@
 #   /find\s+.*-exec\s+grep/        → find -exec grep
 #   /find\s+.*\|\s*xargs\s+grep/   → find | xargs grep
 #
-# bash-guard.js — HEURISTIC_TRIGGERS (2 patterns)
+# bash-guard.js — HEURISTIC_TRIGGERS (4 patterns)
 #   /\bcd\s+\S+\s*&&\s*git\b/      → cd && git, git -C (neg)
 #   /gh\s+pr\s+create\b...--body\s*"\$\(cat\b/ → gh pr create --body "$(cat
+#   /\bgh\s+[^|]+\|\s*jq\b/        → gh | jq, gh --jq (neg)
+#   /\bgh\s+[^|]+\|\s*(grep|head|tail|awk|sed|cut|sort|wc)\b/ → gh | grep, gh | head, gh --json (neg)
 #
 # write-guard.js — RULES[0] ellipsis (4 alternations)
 #   /\/\/\s*\.\.\./                 → // ...
@@ -554,15 +556,65 @@ teardown() {
     [[ "$output" == *"/wt-git"* || "$output" == *"git -C"* ]]
 }
 
-@test "bash-guard: gh pr create with cat heredoc is blocked with /gh reference" {
+@test "bash-guard: gh pr create with cat heredoc is blocked with --body-file reference" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"gh pr create --title \"fix\" --body \"$(cat <<EOF\nsummary\nEOF\n)\""}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/gh"* || "$output" == *"GitHub MCP"* ]]
+    [[ "$output" == *"--body-file"* || "$output" == *"MCP"* ]]
 }
 
 @test "bash-guard: git -C is allowed" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"git -C /some/path status"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: gh pr create --body-file is allowed" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"gh pr create --title \"fix\" --body-file /tmp/pr-body.md"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: gh piped to jq is blocked with --jq reference" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"gh pr list --json number | jq \".[].number\""}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+    [[ "$output" == *"--jq"* ]]
+}
+
+@test "bash-guard: gh piped to grep is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"gh pr list --json title | grep fix"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+    [[ "$output" == *"--jq"* ]]
+}
+
+@test "bash-guard: gh piped to head is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"gh issue list | head -5"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: gh piped to sort is blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"gh pr list --json number | sort -n"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: gh with --jq flag (no pipe) is allowed" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"gh pr list --json number --jq \".[].number\""}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: gh pr diff (no pipe) is allowed" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"gh pr diff 42"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: gh pr checks (no pipe) is allowed" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"gh pr checks 42"}'
     [ "$status" -eq 0 ]
     [[ "$output" == "allowed" ]]
 }

@@ -95,6 +95,32 @@ GitHub operations via **GitHub MCP plugin** (`mcp__plugin_github_github__*`). MC
 
 ---
 
+## CLI Rules
+
+**Never pipe `gh` output.** The `gh` CLI has `--json`, `--jq`, and `--template` flags built in:
+
+```bash
+# WRONG — pipe triggers compound command detection + needs jq binary
+gh pr list --json number | jq '.[].number'
+
+# RIGHT — inline jq, no pipe, embedded interpreter
+gh pr list --json number --jq '.[].number'
+
+# Complex filtering
+gh pr list --json number,title,state --jq '.[] | select(.state == "OPEN") | .title'
+
+# Go template alternative
+gh pr view 42 --json title --template '{{.title}}'
+```
+
+**Never use heredoc `--body` with `gh pr create`.** The `$(cat <<'EOF' ... EOF)` pattern triggers Claude Code's "hides arguments" heuristic when the body contains `#`-prefixed lines (markdown headers).
+
+Instead:
+1. **MCP** (preferred): `create_pull_request` — no shell involved
+2. **`--body-file`** (CLI fallback): Write body with the Write tool to `$TMPDIR/pr-body.md`, then `gh pr create --title "..." --body-file "$TMPDIR/pr-body.md"`
+
+---
+
 ## CLI Fallback (only when MCP can't do it)
 
 These operations have no MCP equivalent — use `gh` CLI:
