@@ -42,13 +42,14 @@
           "default": [],
           "items": {
             "type": "object",
-            "required": ["name", "signature", "visibility"],
+            "required": ["name", "visibility"],
             "additionalProperties": false,
             "properties": {
               "name": { "type": "string" },
               "signature": {
-                "type": "string",
-                "description": "Function signature or type declaration"
+                "type": ["string", "null"],
+                "default": null,
+                "description": "Function signature or type declaration (null for re-exports, constants, or when LSP hover unavailable)"
               },
               "visibility": {
                 "type": "string",

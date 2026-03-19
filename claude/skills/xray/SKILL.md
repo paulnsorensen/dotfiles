@@ -85,12 +85,12 @@ Legend: [G] green  [Y] yellow  [R] red  [ ] unverified
 
 ### 1.5. Barrel Entry Points
 
-Display the barrel file's public exports as the module's contract:
+Display the barrel file's public exports from `meta.barrelExports` as the
+module's contract:
 ```
-Barrel: {barrelFile}
+Barrel: {meta.barrelFile}
 Entry points:
-  {export1}({params}) → {return_type}
-  {export2}({params}) → {return_type}
+  {barrelExports[].name}({signature or "—"})
   ...
 ```
 If no barrel file found, display:
@@ -100,12 +100,11 @@ If no barrel file found, display:
 
 ### 2. API Surface Summary
 
-For each module node, list its primary **public** exports (from the graph's
-symbolName, filtered by `visibility: "public"`):
+List all nodes where `visibility: "public"`, grouped by file:
 ```
 Exports:
-  {module-a}: {export1}, {export2}, {export3}
-  {module-b}: {export1}
+  {module-a}: {symbolName1}, {symbolName2}, {symbolName3}
+  {module-b}: {symbolName1}
 ```
 
 ### 3. Upfront Health Scan
@@ -119,11 +118,11 @@ Health: {N} de-slop findings across {M} files
 
 ### 4. Encapsulation Summary
 
-From scout's public/private tagging:
+From scout's visibility tagging (counts derived from graph nodes):
 ```
 Encapsulation: {N} public exports, {M} private internals
-Potential issues: {count from analyst's hygiene check}
 ```
+Issue counts are added here after analyst reports are generated during the DFS loop.
 
 ## DFS Verification Loop
 

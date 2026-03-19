@@ -48,7 +48,8 @@ Wait for both to return.
 
 ### Phase 3: Caller/callee analysis
 
-From the graph edges, build caller and callee lists for each public export:
+From the graph edges, build caller and callee lists for this node's exports
+(edge labels carry per-export detail when available):
 
 **Callers** (who imports this node):
 - List callers and which exports they use

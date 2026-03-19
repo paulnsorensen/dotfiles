@@ -48,13 +48,15 @@ Look for barrel/index files at the target path root:
 
 If a barrel file is found:
 1. Use `LSP documentSymbol` on the barrel file to get all exports
-2. Record these as `barrelExports` in the graph meta — these are the module's
+2. For each export, use `LSP hover` to derive its signature (nullable — some
+   symbols like re-exports or constants may not have a meaningful signature)
+3. Record these as `barrelExports` in the graph meta — these are the module's
    public API contract
 3. Set `meta.barrelFile` to the barrel file's path
 
 If no barrel file is found:
 - Set `meta.barrelFile` to null, `meta.barrelExports` to empty array
-- Add a finding note: "No barrel/index file — no barrel file detected"
+- Report "No barrel/index file detected" in the scout's return summary
 
 ### 2. Extract imports (ast-grep)
 
@@ -83,10 +85,10 @@ sg --lang bash -p '. $FILE' --json {file}
 Build import edges from results. Only include edges between files within the
 target path (external dependencies are noted but don't become graph nodes).
 
-### 3. Extract exports (LSP documentSymbol) — public-only
+### 3. Extract symbols (LSP documentSymbol) — classify by visibility
 
-For each file, use LSP `documentSymbol` to discover symbols, then filter to
-public symbols only:
+For each file, use LSP `documentSymbol` to discover all symbols, then classify
+each as public or private:
 
 - **TypeScript/JS**: symbols with `export` keyword (LSP marks these)
 - **Python**: symbols not prefixed with `_`
@@ -97,11 +99,12 @@ public symbols only:
 LSP documentSymbol {file}
 ```
 
-Public symbols become the node's `symbolName` (use the most prominent export,
-or the module name if many exports).
+All symbols become graph nodes. Public symbols use `visibility: "public"`,
+private symbols use `visibility: "private"`. The node's `symbolName` is derived
+from the most prominent **public** export (or the module name if many exports).
 
-Private symbols are still discovered but marked `visibility: "private"` in the
-node. They are needed for dead-code analysis but excluded from `symbolName`.
+Private nodes are included in the graph for dead-code analysis in the analyst's
+Phase 3.5, but excluded from `symbolName` and the dashboard's API surface.
 
 ### 4. Build call edges (LSP callHierarchy — lazy)
 
