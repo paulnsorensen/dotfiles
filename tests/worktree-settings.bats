@@ -1,10 +1,7 @@
 #!/usr/bin/env bats
-# Tests for claude/worktree-settings.sh — worktree settings generator
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 GENERATOR="${DOTFILES_DIR}/claude/worktree-settings.sh"
-
-# ── Helpers ───────────────────────────────────────────────────────────
 
 setup() {
     TMPDIR_TEST="$(mktemp -d)"
@@ -12,9 +9,6 @@ setup() {
              "${TMPDIR_TEST}/claude/skills/bar-baz" \
              "${TMPDIR_TEST}/claude/mcp" \
              "${TMPDIR_TEST}/claude/plugins"
-    # Minimal SKILL.md so the dirs look real
-    touch "${TMPDIR_TEST}/claude/skills/foo/SKILL.md"
-    touch "${TMPDIR_TEST}/claude/skills/bar-baz/SKILL.md"
 }
 
 teardown() {
@@ -38,15 +32,11 @@ assert_no_entry() {
     }
 }
 
-# ── Sandbox config ────────────────────────────────────────────────────
-
 @test "worktree-settings: sandbox enabled with autoAllow" {
     result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
     [[ "$(jq -r '.sandbox.enabled' <<< "$result")" == "true" ]]
     [[ "$(jq -r '.sandbox.autoAllowBashIfSandboxed' <<< "$result")" == "true" ]]
 }
-
-# ── Static defaults ──────────────────────────────────────────────────
 
 @test "worktree-settings: includes static defaults" {
     result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
@@ -56,8 +46,6 @@ assert_no_entry() {
     assert_has_entry "$result" "WebSearch"
     assert_has_entry "$result" "WebFetch"
 }
-
-# ── Skills ───────────────────────────────────────────────────────────
 
 @test "worktree-settings: discovers skills from directories" {
     result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
@@ -71,8 +59,6 @@ assert_no_entry() {
     count="$(jq '[.permissions.allow[] | select(startswith("Skill("))] | length' <<< "$result")"
     [[ "$count" -eq 0 ]]
 }
-
-# ── MCPs ─────────────────────────────────────────────────────────────
 
 @test "worktree-settings: discovers MCPs from registry" {
     cat > "${TMPDIR_TEST}/claude/mcp/registry.yaml" <<'YAML'
@@ -95,8 +81,6 @@ YAML
     count="$(jq '[.permissions.allow[] | select(startswith("mcp__")) | select(startswith("mcp__plugin_") | not) | select(startswith("mcp__claude_ai_") | not)] | length' <<< "$result")"
     [[ "$count" -eq 0 ]]
 }
-
-# ── Plugins ──────────────────────────────────────────────────────────
 
 @test "worktree-settings: discovers non-LSP plugins" {
     cat > "${TMPDIR_TEST}/claude/plugins/registry.yaml" <<'YAML'
@@ -129,8 +113,6 @@ YAML
     assert_no_entry "$result" "mcp__plugin_ralph-loop_ralph-loop__*"
 }
 
-# ── Claude.ai integrations ──────────────────────────────────────────
-
 @test "worktree-settings: pulls claude_ai MCPs from settings.json" {
     cat > "${TMPDIR_TEST}/claude/settings.json" <<'JSON'
 {
@@ -150,8 +132,6 @@ JSON
     # Should NOT pull non-claude_ai entries
     assert_no_entry "$result" "Bash(git:*)"
 }
-
-# ── Output format ────────────────────────────────────────────────────
 
 @test "worktree-settings: output is valid JSON" {
     result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
@@ -173,8 +153,6 @@ YAML
     resorted="$(jq -c '.permissions.allow | sort' <<< "$result")"
     [[ "$sorted" == "$resorted" ]]
 }
-
-# ── Real dotfiles ────────────────────────────────────────────────────
 
 @test "worktree-settings: generates from real dotfiles without error" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"

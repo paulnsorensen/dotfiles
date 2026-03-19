@@ -19,11 +19,8 @@ PLUGIN_REGISTRY="${DOTFILES}/claude/plugins/registry.yaml"
 SETTINGS_JSON="${DOTFILES}/claude/settings.json"
 
 perms=()
-
-# --- Static defaults ---
 perms+=("Edit" "Write" "LSP" "WebSearch" "WebFetch")
 
-# --- Skills: one entry per skill directory ---
 if [[ -d "${SKILLS_DIR}" ]]; then
     for skill_dir in "${SKILLS_DIR}"/*/; do
         name="$(basename "${skill_dir}")"
@@ -31,14 +28,12 @@ if [[ -d "${SKILLS_DIR}" ]]; then
     done
 fi
 
-# --- MCPs from registry.yaml ---
 if [[ -f "${MCP_REGISTRY}" ]]; then
     while IFS= read -r name; do
         [[ -n "${name}" ]] && perms+=("mcp__${name}__*")
-    done < <(yq -r '.mcps | keys[]' "${MCP_REGISTRY}" 2>/dev/null)
+    done < <(yq -r '.mcps | keys[]' "${MCP_REGISTRY}")
 fi
 
-# --- Plugins that provide MCP tools (non-LSP workflow plugins) ---
 if [[ -f "${PLUGIN_REGISTRY}" ]]; then
     while IFS= read -r key; do
         [[ -z "${key}" ]] && continue
@@ -49,17 +44,14 @@ if [[ -f "${PLUGIN_REGISTRY}" ]]; then
         # Claude Code normalizes hyphens to underscores in tool names
         normalized="${plugin//-/_}"
         perms+=("mcp__plugin_${normalized}_${normalized}__*")
-    done < <(yq -r '.plugins | keys[]' "${PLUGIN_REGISTRY}" 2>/dev/null)
+    done < <(yq -r '.plugins | keys[]' "${PLUGIN_REGISTRY}")
 fi
 
-# --- Claude.ai integrations from settings.json ---
 if [[ -f "${SETTINGS_JSON}" ]]; then
     while IFS= read -r entry; do
         [[ -n "${entry}" ]] && perms+=("${entry}")
-    done < <(jq -r '.permissions.allow[]? | select(startswith("mcp__claude_ai_"))' "${SETTINGS_JSON}" 2>/dev/null)
+    done < <(jq -r '.permissions.allow[]? | select(startswith("mcp__claude_ai_"))' "${SETTINGS_JSON}")
 fi
-
-# --- Build JSON ---
 jq -n \
     --argjson sandbox '{"enabled":true,"autoAllowBashIfSandboxed":true}' \
     --args \

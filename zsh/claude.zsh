@@ -110,17 +110,18 @@ ccw() {
     # prek's claude-sync and shellcheck hooks aren't meaningful anyway.
     git -C "${repo_root}/${wt_dir}" config core.hooksPath /dev/null 2>/dev/null
 
-    # Generate worktree settings from dotfiles sources of truth.
-    # Pulls skills, MCPs, and plugins dynamically — no stale copies.
     local claude_local="${repo_root}/${wt_dir}/.claude/settings.local.json"
     if [[ ! -f "${claude_local}" ]]; then
         mkdir -p "${repo_root}/${wt_dir}/.claude"
         local generator="${DOTFILES_DIR}/claude/worktree-settings.sh"
+        local tmp_settings="${claude_local}.tmp"
         if [[ -f "${generator}" ]]; then
-            bash "${generator}" "${DOTFILES_DIR}" > "${claude_local}" \
+            bash "${generator}" "${DOTFILES_DIR}" > "${tmp_settings}" \
+                && mv "${tmp_settings}" "${claude_local}" \
                 && echo "Generated worktree settings (sandbox + $(jq '.permissions.allow | length' "${claude_local}") permissions)"
         else
-            echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}' | jq . > "${claude_local}" \
+            echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}' > "${tmp_settings}" \
+                && mv "${tmp_settings}" "${claude_local}" \
                 && echo "Enabled sandboxing for worktree (generator not found)"
         fi
     fi
