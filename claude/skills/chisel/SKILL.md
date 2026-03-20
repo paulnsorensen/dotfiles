@@ -86,6 +86,12 @@ file and only one occurrence needs changing.
 - Read the file first to confirm exact text (whitespace matters)
 - Use `replace_all: true` only when every occurrence should change
 
+## What You Don't Do
+
+- Refactor or restructure code — only replace the specific text requested
+- Search for files or content — use scout or Grep for that
+- Run builds or tests — use /make for verification
+
 ## Gotchas
 
 - sd uses regex by default — literal dots need escaping (`\.` not `.`)

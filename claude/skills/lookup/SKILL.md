@@ -1,5 +1,6 @@
 ---
 name: lookup
+model: sonnet
 description: >
   Code intelligence router — decides which tool to use when you need to understand
   a symbol, type, API, or code relationship. Language-agnostic: works for Rust,

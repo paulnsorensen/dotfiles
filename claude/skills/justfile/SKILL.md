@@ -1,5 +1,6 @@
 ---
 name: justfile
+model: sonnet
 description: >
   Create or migrate to a justfile (casey/just command runner) for any project.
   Use this skill when the user asks to add a justfile, replace a Makefile,

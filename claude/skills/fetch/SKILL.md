@@ -125,6 +125,12 @@ Tell the subagent to **return a summary**, not raw file contents.
 
 ---
 
+## What You Don't Do
+
+- Modify code or files — only fetch and return information
+- Search local code — use scout, Grep, or serena for that
+- Run GitHub operations (PRs, issues) — use the gh skill
+
 ## Anti-patterns
 
 - Fetching docs for `Array.prototype.filter` or other stable stdlib APIs

@@ -1,5 +1,6 @@
 ---
 name: git-hygiene
+user-invocable: false
 description: >
   Guardrail for proper git tool usage. Prevents reading file contents via
   git show <ref>:<path> or git cat-file, which bypass the Read tool and file

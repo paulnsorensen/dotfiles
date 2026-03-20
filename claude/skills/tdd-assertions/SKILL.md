@@ -1,5 +1,6 @@
 ---
 name: tdd-assertions
+model: sonnet
 description: >
   Detect and fix weak test assertions that AI generates across Rust, Python,
   TypeScript, Go, and Shell. Use this skill whenever you write or review tests,
@@ -220,6 +221,13 @@ Strengthened 4 assertions:
 ```
 
 Don't over-explain. The stronger assertion speaks for itself.
+
+## What You Don't Do
+
+- Write new tests from scratch — use /wreck for adversarial test generation
+- Fix implementation code — only strengthen the assertions
+- Add test infrastructure (fixtures, conftest, helpers) — focus on assertion quality
+- Review non-test code — use /de-slop for production code anti-patterns
 
 ## Gotchas
 

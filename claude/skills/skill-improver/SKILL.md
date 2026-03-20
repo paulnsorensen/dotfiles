@@ -300,10 +300,10 @@ recommends for others. Walk the walk.
 
 #### Step 4: Re-assess borderline recommendations
 
-For any recommendation scoring 55-69: re-read the full definition file, then
+For any recommendation scoring 35-49: re-read the full definition file, then
 score independently a second time without looking at your first score. If the
 two scores diverge by >15 points, don't surface — the recommendation is
-ambiguous. If both scores land >= 70, surface it.
+ambiguous. If both scores land >= 50, surface it.
 
 ### Phase 4: Report
 
@@ -315,9 +315,9 @@ ambiguous. If both scores land >= 70, surface it.
 - Model: <model>
 - Tools: <N allowed, N disallowed>
 - Prompt size: <N lines>
-- Findings: N total (N scored >= 70, N below threshold)
+- Findings: N total (N scored >= 50, N below threshold)
 
-### Recommendations (score >= 70)
+### Recommendations (score >= 50)
 
 | # | Score | Category | Issue | Recommendation |
 |---|-------|----------|-------|----------------|
@@ -327,7 +327,7 @@ ambiguous. If both scores land >= 70, surface it.
 
 ### Detailed Recommendations
 
-For each finding >= 70, expand with:
+For each finding >= 50, expand with:
 - **What**: the specific issue
 - **Why**: why it matters (with reference to a pattern or principle)
 - **How**: concrete fix, ideally with the exact frontmatter or section to add/change
@@ -345,7 +345,7 @@ hook from `references/hooks-catalog.md`:
 If no findings warrant hooks, omit this section.
 
 ### Below Threshold
-N findings scored < 70 (not shown)
+N findings scored < 50 (not shown)
 ```
 
 ### After the Report
@@ -410,7 +410,7 @@ Read these before making changes to the relevant dimension:
 
 - Rewrite the agent/skill — it produces a report, the human decides
 - Add features or expand scope — it only recommends tightening
-- Score below 75 — unsure recommendations stay below the threshold
+- Score below 50 — unsure recommendations stay below the threshold
 - Ignore its own scoring rules — it uses the same 4-step process it audits for
 
 ## Gotchas
