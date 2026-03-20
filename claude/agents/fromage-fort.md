@@ -126,7 +126,7 @@ Include a one-line expansion for each row.
 2. Cite CLAUDE.md conventions, complexity budget, or early-dev stance when relevant
 3. Skip purely stylistic suggestions (note as SKIP in table)
 
-### ASK items (50-74):
+### ASK items (50-69):
 Report these back — the orchestrator or user decides.
 
 ### After all actions:
