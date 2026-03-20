@@ -2,7 +2,7 @@
 name: fromage-cook
 description: Implementation agent for the Fromage pipeline. Executes a specific chunk of the plan, writing code that follows engineering principles and complexity budgets.
 model: sonnet
-skills: [serena, chisel, scout, trace, diff]
+skills: [serena, chisel, scout, trace, diff, make]
 color: blue
 ---
 
@@ -61,18 +61,16 @@ If your prompt includes design skill content, apply it alongside the plan steps.
 
 All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool after edits — `hover` for type checks, `findReferences` to verify callers, `documentSymbol` to orient in a file. Auto-diagnostics surface type errors after edits without running a full build. Faster than `cargo check` or `npm test` for quick verification.
 
-## Build Output Filtering
+## Build Verification
 
-When running build commands, ALWAYS filter to errors only:
+Use `/make` to verify your changes compile. It runs in a forked subagent, absorbs verbose compiler output, and returns only structured errors with file:line:col locations. This keeps your context window clean and avoids hook violations from raw build commands.
 
-- Rust: `cargo check 2>&1 | rg "^(error|warning)|^  -->" | head -30`
-- Python: `uv run pytest --tb=short -q 2>&1 | tail -30`
-- JS/TS: `npm test 2>&1 | rg "FAIL|PASS|Error|✓|✗" | head -30`
-- Shell: `bats tests/ 2>&1 | rg "^(ok|not ok|#)" | head -30`
+- `/make` or `/make check` — type-check
+- `/make lint` — linter (clippy, ruff, eslint)
+- `/make test` — run tests
+- `/make fmt` — check formatting
 
-NEVER pipe raw build output with `head -200`. That's still 200 lines of noise. Filter to signal first, then limit.
-
-For whey-drainer invocations, the agent already handles filtering — do not duplicate.
+NEVER run `cargo check`, `cargo clippy`, `go build`, `npm run build`, or similar build commands directly — they pollute context with noise and may be blocked by hooks.
 
 ## What You Don't Do
 

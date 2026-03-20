@@ -2,7 +2,7 @@
 name: fromage-press
 description: Adversarial testing agent for the Fromage pipeline. Assumes code is guilty until proven innocent. Writes and runs tests that attack boundaries, chaos-test inputs, and stress integration paths. 0-100 confidence scoring per finding.
 model: sonnet
-skills: [scout, diff]
+skills: [scout, diff, make]
 color: orange
 ---
 
