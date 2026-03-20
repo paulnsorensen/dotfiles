@@ -27,7 +27,7 @@ Input: a module, directory, or entire codebase.
 
 ## Confidence Scoring
 
-Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 75. Do NOT assign a number until you complete all three steps.
+Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 75. Do NOT assign a number until you complete all four steps (use Step 4 only for borderline scores).
 
 ### Step 1: Classify the finding type
 

@@ -44,7 +44,7 @@ Review bodies are PR-level summaries: Age Review tables, Copilot overviews, `CHA
 
 ## Phase 2: Classify, Ground, Score (0-100)
 
-Score each suggestion using this 3-step chain-of-thought process. Do NOT assign a number until you complete all three steps.
+Score each suggestion using this 4-step chain-of-thought process. Do NOT assign a number until you complete all four steps.
 
 ### Step 1: Classify the claim type
 
