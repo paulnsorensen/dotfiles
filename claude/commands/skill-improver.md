@@ -1,7 +1,7 @@
 ---
 name: skill-improver
 description: Audit an agent or skill definition for calibration, tool scoping, context management, and output quality. Produces scored improvement recommendations.
-allowed-tools: Read, Grep, Glob, Bash
+allowed-tools: Read, Grep, Glob
 argument-hint: "<path to agent or skill definition>"
 ---
 

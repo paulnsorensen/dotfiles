@@ -1,6 +1,7 @@
 ---
 name: test-sandbox
 context: fork
+allowed-tools: Read, Write, Bash(python3:*), Bash(uv:*), Bash(pytest:*), Bash(ls:*), Bash(rm:*)
 description: >
   Run Python test code in an isolated sandbox without polluting the main context.
   Writes test files to .claude/testing/ (gitignored), runs via sub-agent, and
