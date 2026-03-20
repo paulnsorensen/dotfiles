@@ -5,11 +5,11 @@ description: >
   context management, activation quality, and output format. Use when the user says
   "improve this skill", "audit this agent", "optimize this agent", "review agent
   definition", "fix trigger rate", "skill not activating", or invokes /skill-improver
-  with a path. Also trigger when creating new agents or skills that need quality review
-  before deployment, when an agent is producing poor results and needs prompt tuning,
-  or when a skill isn't triggering reliably. Covers: calibrated confidence scoring,
-  tool allow/disallow scoping, sub-agent delegation patterns, fork vs inline decisions,
-  context budgets, activation/description optimization, and output format standardization.
+  with a path. Also trigger when an agent is producing poor results and needs prompt
+  tuning, or when a skill isn't triggering reliably. Covers: calibrated confidence
+  scoring, tool scoping, sub-agent delegation, fork vs inline, context budgets,
+  and activation optimization. Do NOT use for creating new skills from scratch —
+  use /skill-creator for that.
 ---
 
 # skill-improver
@@ -31,6 +31,9 @@ This skill codifies what we've learned into a repeatable audit.
 
 A path to an agent definition (`agents/*.md`) or skill definition (`skills/*/SKILL.md`).
 If no path is given, ask.
+
+This skill runs inline (no `context: fork`), inheriting the parent session's model.
+For best results on judgment-heavy audits, invoke from an opus-tier session.
 
 ## Protocol
 
@@ -188,7 +191,7 @@ pipeline phases. Every pipeline agent should have one. Example from fromage-cook
 other phases.
 
 **Decision scaffolds for judgment tasks**: Skills that use "always/never" for
-judgment tasks should use CGCR (Classify → Ground → Context → Reassess) or
+judgment tasks should use a structured reasoning scaffold (Classify → Ground → Context → Reassess) or
 degrees-of-freedom patterns instead. Match constraint level to risk: high
 freedom for low-risk, exact steps for fragile operations.
 See `references/decision-frameworks.md` for the full pattern catalog.
@@ -200,6 +203,8 @@ Check: Is the prompt well-structured? Does it explain why? Are there examples?
 Is the role framing concise? Are there walls of text that could be tables?
 Does the agent have an explicit "What You Don't Do" section? Does it have a
 Gotchas section? Do judgment tasks use decision scaffolds instead of rigid rules?
+Does the skill's workflow align with a recognized pattern (sequential workflow,
+iterative refinement, context-aware tool selection, or domain-specific intelligence)?
 
 #### Dimension 5 — Output Format
 
@@ -249,6 +254,9 @@ Check for:
   without per-use approval. Use to constrain skills to their actual needs.
 - `disable-model-invocation: true` — requires explicit `/skill-name` to trigger.
   Appropriate for destructive or infrequently-needed skills.
+- `effort` — overrides model effort level (low/medium/high). Use `effort: high`
+  for research-heavy skills, `effort: low` for simple formatting tasks. New in
+  March 2026.
 - `user-invocable: false` — hides from `/` menu. Use for background knowledge
   Claude should know but users shouldn't invoke directly.
 
@@ -327,9 +335,27 @@ For each finding >= 75, expand with:
 - **How**: concrete fix, ideally with the exact frontmatter or section to add/change
 - **Reference**: link to an agent/skill that does it right
 
+### Recommended Hooks (if applicable)
+
+For findings where enforcement matters more than guidance, suggest a companion
+hook from `references/hooks-catalog.md`:
+
+| Finding # | Hook Type | What It Enforces |
+|-----------|-----------|-----------------|
+| (only include findings where a hook would help — not every finding needs one) |
+
+If no findings warrant hooks, omit this section.
+
 ### Below Threshold
 N findings scored < 75 (not shown)
 ```
+
+### After the Report
+
+If the audit reveals activation or trigger issues, suggest the user run
+`/skill-creator` to generate eval queries and measure trigger rate before/after
+applying changes. Static audit identifies problems; eval-driven iteration
+validates fixes.
 
 ## Anti-Patterns to Check
 
@@ -391,7 +417,7 @@ how often they appear and how much impact they have:
     happen 100% of the time, recommend a hook. See `references/hooks-catalog.md`.
 
 15. **"Always/never" for judgment tasks** — Works for mechanical tasks. Fails
-    for judgment where context determines the answer. Recommend CGCR scaffold.
+    for judgment where context determines the answer. Recommend structured reasoning scaffold.
     See `references/decision-frameworks.md`.
 
 16. **Missing Gotchas section** — No record of known failure modes. Every skill
@@ -406,7 +432,7 @@ Read these before making changes to the relevant dimension:
 
 - `references/calibrated-scoring.md` — 4-step calibration method and templates
 - `references/description-optimization.md` — Trigger optimization with before/after examples
-- `references/decision-frameworks.md` — CGCR, degrees of freedom, example-driven spec
+- `references/decision-frameworks.md` — Structured reasoning scaffold, degrees of freedom, example-driven spec
 - `references/hooks-catalog.md` — JS hook examples for activation, validation, enforcement
 - `references/anti-patterns.md` — 20 most common skill mistakes with diagnostic checklist
 
@@ -416,3 +442,16 @@ Read these before making changes to the relevant dimension:
 - Add features or expand scope — it only recommends tightening
 - Score below 75 — unsure recommendations stay below the threshold
 - Ignore its own scoring rules — it uses the same 4-step process it audits for
+
+## Gotchas
+
+- Tends to produce generic findings on simple skills — every finding must cite a
+  specific line or pattern, not just "could be improved"
+- Over-indexes on missing `disallowedTools` even when the agent's tool list is
+  naturally constrained by platform defaults
+- Step 4 (borderline re-assessment) is the step most likely to get skipped under
+  time pressure — it's also the step that catches the most false positives
+- Not every finding needs a companion hook — only recommend hooks for rules that
+  must hold 100% of the time
+- Description optimization alone plateaus at ~50% trigger rate. For critical
+  skills, always recommend a companion hook (84% with forced eval)

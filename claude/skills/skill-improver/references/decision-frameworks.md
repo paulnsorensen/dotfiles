@@ -7,7 +7,7 @@ time an edge case appears.
 The fix: encode *reasoning scaffolds* that help Claude think through decisions
 rather than memorize answers.
 
-## Pattern 1: CGCR (Classify → Ground → Context → Reassess)
+## Pattern 1: Structured Reasoning Scaffold (Classify → Ground → Context → Reassess)
 
 General-purpose framework for any task where "it depends" is the honest answer.
 
@@ -115,7 +115,7 @@ prevent the most common failures.
 ## Combining Patterns
 
 A well-structured judgment-heavy skill uses:
-1. CGCR scaffold for the overall decision process
+1. Structured reasoning scaffold for the overall decision process
 2. Degrees of freedom matched to risk for each sub-task
 3. "Why" explanations for every constraint
 4. Examples for the trickiest parts

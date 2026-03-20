@@ -27,7 +27,7 @@ Scan every skill you improve against this list.
     edge cases. Add why: enables tree-shaking, safer refactoring.
 12. **"Always/never" for judgment tasks** — Works for mechanical tasks (always
     run tests). Fails for judgment tasks where context determines the answer.
-    Use CGCR scaffold instead. See `decision-frameworks.md`.
+    Use structured reasoning scaffold instead. See `decision-frameworks.md`.
 13. **No examples** — Abstract rules without concrete input → output examples.
     Two examples communicate more than a page of rules.
 14. **Missing Gotchas section** — No record of known failure modes. Add one and
@@ -62,7 +62,7 @@ Scan every skill you improve against this list.
 - [ ] No inline scripts that should be external files
 - [ ] Instructions framed positively
 - [ ] Every rule has a "why"
-- [ ] Judgment tasks use CGCR, not rigid rules
+- [ ] Judgment tasks use structured reasoning scaffold, not rigid rules
 - [ ] At least 2-3 examples for tricky patterns
 - [ ] Gotchas section exists
 - [ ] Constraint level matches risk level
