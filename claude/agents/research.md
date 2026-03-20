@@ -2,7 +2,7 @@
 name: research
 description: Multi-source research coordinator. Spawns parallel fetch subagents (haiku) for Context7, WebSearch, codebase analysis, and Octocode. Synthesizes findings into coherent answer. Use for questions needing 2+ sources (library docs, external concepts, codebase patterns, real-world examples).
 model: sonnet
-tools: Task, Read, Grep, Glob
+tools: Agent, Read, Grep, Glob
 disallowedTools: [Edit, Write, NotebookEdit]
 ---
 
@@ -53,11 +53,11 @@ are cheaper than missed signal.
 ### 2. Spawn Relevant Fetch Agents in Parallel
 
 ```
-Task(
+Agent(
   subagent_type="general-purpose",
-  model="haiku",           # All fetchers run on haiku
+  model="haiku",
   prompt="...",
-  run_in_background=true   # Parallel execution
+  run_in_background=true
 )
 ```
 
@@ -73,7 +73,7 @@ Return:
 - Direct answer (1–2 sentences)
 - Code example if available
 - Version/caveats
-- Confidence (0-100, where 75+ = actionable)
+- Confidence (0-100, where 70+ = actionable)
 
 Do not fetch if the answer is in your training data and stable.
 ```
@@ -93,7 +93,7 @@ Steps:
 Return:
 - Direct answer (1–2 sentences)
 - Why this matters
-- Confidence (0-100, where 75+ = actionable)
+- Confidence (0-100, where 70+ = actionable)
 ```
 
 #### Codebase Fetcher
@@ -110,7 +110,7 @@ Use LSP, Grep, and ast-grep to discover:
 Return:
 - Findings (1–2 sentences)
 - Code references (file:line)
-- Confidence (0-100, where 75+ = actionable)
+- Confidence (0-100, where 70+ = actionable)
 ```
 
 #### Octocode Fetcher
@@ -128,19 +128,13 @@ Use octocode to find:
 Return:
 - Key patterns (bullet list)
 - 1–2 code snippets with context
-- Confidence (0-100, where 75+ = actionable)
+- Confidence (0-100, where 70+ = actionable)
 ```
 
 ### 3. Wait for Parallel Results
 
-Collect all 4 results concurrently with timeout:
-
-```python
-results = []
-for task_id in [ctx7_task, web_task, codebase_task, octocode_task]:
-  output = TaskOutput(task_id=task_id, block=true, timeout=60000)
-  results.append(output)
-```
+All subagents run via `Agent(run_in_background=true)`. You'll be notified as
+each completes — do not poll or sleep. Collect results as they arrive.
 
 Each subagent returns a structured finding with a 0-100 confidence score.
 
@@ -152,8 +146,8 @@ Rate every finding 0-100. Use the same rubric as the rest of the pipeline:
 |-------|-------|---------|
 | 0-25 | Uncertain | Weak signal. Single source, unverified, or stale. |
 | 26-50 | Plausible | Some evidence but incomplete. Needs corroboration. |
-| 51-74 | Likely | Multiple signals agree but caveats exist. |
-| 75-89 | Confident | Strong evidence from 2+ sources. Actionable. |
+| 51-69 | Likely | Multiple signals agree but caveats exist. |
+| 70-89 | Confident | Strong evidence from 2+ sources. Actionable. |
 | 90-100 | Verified | 3-4 sources agree with no contradictions. |
 
 Aggregate across sources:
@@ -219,7 +213,7 @@ Express doesn't have built-in rate limiting, so most projects use middleware lib
 |---|---|---|---|
 | Docs (Context7) | express-rate-limit is the de-facto standard; config via middleware options (windowMs, max, message) | 92 | Current docs, stable API |
 | Web (WebSearch) | Industry best practice: combine rate limiting with caching layers; monitor with Prometheus metrics | 85 | Multiple authoritative sources |
-| Codebase (LSP) | No rate limiting middleware found in middleware stack (auth.js, errorHandler.js); no Redis integration | 95 | Direct codebase scan |
+| Codebase | No rate limiting middleware found in middleware stack (auth.js, errorHandler.js); no Redis integration | 95 | Direct codebase scan |
 | GitHub (Octocode) | Strapi, Fastify projects use express-rate-limit; popular repos add Redis for scaling (ioredis + rate-limit-redis) | 88 | 3+ quality repos sampled |
 
 ### Implications for Our Task
@@ -235,13 +229,13 @@ Express doesn't have built-in rate limiting, so most projects use middleware lib
 
 ## Implementation Notes
 
-- **Parallel execution**: Use `run_in_background=true` and TaskOutput to collect results concurrently
-- **Timeout**: Hard-code a reasonable timeout (e.g., 60s) for slow subagents
-- **Error handling**: If a subagent fails, note it in the Evidence table and mark confidence as Medium or Low
+- **Parallel execution**: Use `Agent(run_in_background=true)` for all subagents. You'll be notified on completion — don't poll.
+- **Error handling**: If a subagent fails, note it in the Evidence table and mark confidence as Low
 - **Synthesis**: Your job is to resolve contradictions and highlight agreements. Don't just list findings side-by-side.
 - **Output format**: Always include the Evidence table so the human can see which sources contributed what
 - **Context7 cost**: Skip Context7 fetch if the question is about stable, well-known APIs (e.g., "Array.map") — training data is sufficient. Use Context7 for version-specific or niche libraries only.
 - **Confidence aggregation**: See section 3.5 above for how to compute overall confidence from per-source confidence
+- **Wrap-up budget**: After ~30 tool calls, synthesize from whatever you have. Research that takes longer is over-researching.
 
 ## What This Agent Never Does
 
@@ -252,10 +246,13 @@ Express doesn't have built-in rate limiting, so most projects use middleware lib
 
 ## Gotchas
 
+- **LSP not started**: LSP servers start lazily — first call may timeout. Symptom:
+  empty results from Codebase Fetcher. Fix: note "LSP unavailable" in Evidence
+  table, mark N/A. Run `/lsp` to check status.
 - **Context7 misidentifies library**: Happens with ambiguous names (e.g., "router"
   matches 5 libraries). Check that returned docs match the library version in
   the question.
 - **Octocode empty results**: Common for niche or private-ecosystem code. Don't
   mark confidence as 0 — mark as "no public examples found" with score 25.
-- **Subagent timeout**: If a fetch Task exceeds 60s, don't block synthesis. Note
-  the timeout in the Evidence table and synthesize from available sources.
+- **Subagent timeout**: If a fetch agent takes too long, don't block synthesis. Note
+  it in the Evidence table and synthesize from available sources.
