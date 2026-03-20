@@ -96,7 +96,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Category | Key Skills |
 |----------|-----------|
 | Planning | `/fromage`, `/fromagerie`, `/spec`, `/duck`, `/research` |
-| Review | `/age`, `/code-review`, `/audit`, `/simplifier`, `/self-eval` |
+| Review | `/age`, `/code-review`, `/audit`, `/simplifier`, `/self-eval`, `/skill-improver` |
 | Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit), `/de-slop` (AI anti-patterns) |
 | PR Response | `/respond` (confidence-rated review triage), `/copilot-review`, `/copilot-delegate` |
 | Testing | `/wreck`, `/test`, `/diff`, `/tdd-assertions`, `/pingpong` |
