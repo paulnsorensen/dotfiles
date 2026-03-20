@@ -9,7 +9,7 @@ description: >
   trigger when the user mentions a specific PR and wants to deal with reviewer
   suggestions — whether from Copilot, human reviewers, or bots. Reads all
   unresolved review threads and review bodies, scores each suggestion 0-100,
-  and presents a triage table. High-confidence fixes (>= 75) execute
+  and presents a triage table. High-confidence fixes (>= 70) execute
   immediately while the user reviews uncertain items. Do NOT use to generate
   a new review — use /copilot-review for that. This skill only processes
   existing review comments already posted to the PR.
@@ -119,8 +119,8 @@ doesn't automatically make the suggestion *correct*).
 | Suggestion duplicates another thread | -15 |
 | Pre-existing issue not introduced by this PR | -15 |
 
-**Step 4 — Re-assess borderline (65-84):**
-Re-read the reviewer's comment and the relevant code independently. If two scores diverge >15 points, the suggestion is ambiguous — present to user rather than auto-acting.
+**Step 4 — Re-assess borderline (55-69):**
+For items near the FIX threshold: re-read the reviewer's comment and the relevant code independently. Score a second time without looking at your first score. If the two scores diverge >15 points, the suggestion is ambiguous — keep as ASK. If both land >= 70, upgrade to FIX.
 
 ## Phase 3: Triage Table + Immediate Execution
 
@@ -129,18 +129,18 @@ Present the full triage table so the user sees everything at once:
 ```
 ## PR #N Review Triage
 
-| # | Score | Reviewer | Location | Summary | Action |
-|---|-------|----------|----------|---------|--------|
-| 1 | 92 | copilot | auth.ts:42 | Missing null check on token | FIX |
-| 2 | 85 | alice | api.ts:78 | Error not propagated to caller | FIX |
-| 3 | 78 | alice | (review body) | Missing error handling in 3 endpoints | FIX |
-| 4 | 60 | copilot | utils.ts:15 | Extract to shared helper | ASK |
-| 5 | 35 | bob | index.ts:3 | Add backward compat shim | PUSH BACK |
-| 6 | 20 | copilot | (review body) | General "consider adding tests" | SKIP |
+| # | Score | Type | Reviewer | Location | Summary | Action |
+|---|-------|------|----------|----------|---------|--------|
+| 1 | 92 | BUG | copilot | auth.ts:42 | Missing null check on token | FIX |
+| 2 | 85 | BUG | alice | api.ts:78 | Error not propagated to caller | FIX |
+| 3 | 78 | VALID_CONCERN | alice | (review body) | Missing error handling in 3 endpoints | FIX |
+| 4 | 60 | STYLE | copilot | utils.ts:15 | Extract to shared helper | ASK |
+| 5 | 35 | SCOPE_CREEP | bob | index.ts:3 | Add backward compat shim | PUSH BACK |
+| 6 | 20 | STYLE | copilot | (review body) | General "consider adding tests" | SKIP |
 
 ### Legend
-- **FIX** (>= 75): Agree and implement — proceeding now
-- **ASK** (50-74): Needs your call — what do you want to do?
+- **FIX** (>= 70): Agree and implement — proceeding now
+- **ASK** (50-69): Needs your call — what do you want to do?
 - **PUSH BACK** (< 50): Draft reply below — edit or approve
 ```
 
@@ -170,7 +170,7 @@ Stance. We'll add migration support when there's something to migrate from."
 
 **Then immediately — in the same turn:**
 
-1. Start fixing all FIX items (>= 75) while the user reviews ASK and PUSH BACK items
+1. Start fixing all FIX items (>= 70) while the user reviews ASK and PUSH BACK items
 2. Post PUSH BACK replies for items scored < 50 (the user can override before you get to them, but don't wait)
 3. Ask the user about ASK items (50-74):
    - "Should I fix this, push back, or skip?"
@@ -182,7 +182,7 @@ to move fast on the obvious stuff.
 
 ## Phase 4: Execute
 
-### For FIX items (>= 75):
+### For FIX items (>= 70):
 1. Read the relevant source file
 2. Implement the fix
 3. Reply acknowledging the fix:
@@ -223,7 +223,7 @@ threads still pending user decision.
 
 ## Rules
 
-- **Show the triage table before executing** — but don't wait for approval on >= 75 items
+- **Show the triage table before executing** — but don't wait for approval on >= 70 items
 - **One reply per thread** — don't fragment responses across multiple comments
 - **Match the reviewer's tone** — professional for humans, concise for bots
 - **Cite specifics in pushback** — reference CLAUDE.md conventions, complexity budget, or early-dev stance when relevant

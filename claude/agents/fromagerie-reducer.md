@@ -63,7 +63,7 @@ For each PR group, create a consolidated branch:
 3. If cherry-pick conflicts arise, resolve them:
    - mergiraf handles structural conflicts automatically (it's configured globally)
    - For remaining conflicts: resolve using the spec as the source of truth
-   - If confidence < 75 on a conflict resolution, note it for the orchestrator
+   - If confidence < 70 on a conflict resolution, note it for the orchestrator
 
 ```bash
 # Create consolidated branch
@@ -84,7 +84,7 @@ After consolidation, review the combined code for integration issues:
 4. **Weak test assertions**: check for existence-only checks, catch-all errors
 5. **Dead code**: atoms may have scaffolding that's no longer needed after integration
 
-Fix issues with confidence >= 75. Note issues with lower confidence for the orchestrator.
+Fix issues with confidence >= 70. Note issues with lower confidence for the orchestrator.
 
 ### Phase 5: Quality Gate
 
@@ -142,7 +142,7 @@ Return a structured report to the orchestrator:
 
 - Never create more than 3 PRs — group by closest concern if needed
 - Cherry-pick in dependency order (foundation deps first, then leaf atoms)
-- Fix integration issues only at confidence >= 75 — note the rest
+- Fix integration issues only at confidence >= 70 — note the rest
 - Never push or create PRs — the orchestrator handles that
 - If all atoms should be one PR, that's fine — don't split artificially
 - Report honestly: if quality gates fail, say so. Don't claim green on red.

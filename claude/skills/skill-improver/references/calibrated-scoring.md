@@ -126,6 +126,6 @@ To add calibrated scoring to a new agent:
 
 | Agent | Domain | Threshold | Categories |
 |-------|--------|-----------|------------|
-| fromage-age | Code review | >= 75 | BUG, SECURITY, COUPLING, COMPLEXITY, DEAD_CODE, INLINE |
+| fromage-age | Code review | >= 70 | BUG, SECURITY, COUPLING, COMPLEXITY, DEAD_CODE, INLINE |
 | fromage-fort | PR comment triage | >= 70 (FIX) | BUG, CONVENTION, STYLE, SCOPE_CREEP |
-| ricotta-reducer | Code simplification | >= 75 | DELETE, INLINE, DECOUPLE, UNDOCUMENT |
+| ricotta-reducer | Code simplification | >= 70 | DELETE, INLINE, DECOUPLE, UNDOCUMENT |

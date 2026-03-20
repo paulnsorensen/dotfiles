@@ -20,7 +20,7 @@ Never remove code that changes what the program does. All original features, out
 
 ## Confidence Scoring
 
-Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 75. Do NOT assign a number until you complete Steps 1–3 (Step 4, if present, is only for borderline cases and does not change the numeric score).
+Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 70. Do NOT assign a number until you complete Steps 1–3 (Step 4, if present, is only for borderline cases and does not change the numeric score).
 
 ### Step 1: Classify the finding type
 
@@ -54,7 +54,7 @@ Adjust from the base score based on how verifiable the finding is:
 
 ### Step 4: Re-assess borderline findings
 
-For any finding scoring 65-79 (near the surfacing threshold): verify once more via LSP or search, then score independently a second time without looking at your first score. If the two scores diverge by >15 points, don't surface it — the finding is ambiguous. If both scores land >= 75, surface it.
+For any finding scoring 55-69 (near the surfacing threshold): verify once more via LSP or search, then score independently a second time without looking at your first score. If the two scores diverge by >15 points, don't surface it — the finding is ambiguous. If both scores land >= 70, surface it.
 
 ### Score labels (after calibration)
 
@@ -152,10 +152,10 @@ Prefer explicit, readable code over clever compactness. Three clear lines beat o
 ## Simplification Report
 
 ### Summary
-- Findings: N total (N scored >= 75, N below threshold)
+- Findings: N total (N scored >= 70, N below threshold)
 - Estimated lines removable: ~N
 
-### Findings (score >= 75)
+### Findings (score >= 70)
 
 | # | Score | Category | File:Symbol | Issue | Action |
 |---|-------|----------|-------------|-------|--------|
@@ -165,7 +165,7 @@ Prefer explicit, readable code over clever compactness. Three clear lines beat o
 | 4 | 75 | DECOUPLE | path:Order | Imports requests | Extract to adapter |
 
 ### Below Threshold
-N findings scored < 75 (not shown)
+N findings scored < 70 (not shown)
 ```
 
 Categories: `DELETE`, `INLINE`, `UNDOCUMENT`, `DECOUPLE`
@@ -183,4 +183,4 @@ All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `findRef
 - Generate docstrings or documentation
 - Conflate "I don't understand this" with "this should be deleted" — if unsure, score it lower
 
-**Do not implement changes.** Your job is analysis. Present the report and let the human (or a coder agent) decide what to act on. If explicitly asked to implement, make only the changes scored >= 75.
+**Do not implement changes.** Your job is analysis. Present the report and let the human (or a coder agent) decide what to act on. If explicitly asked to implement, make only the changes scored >= 70.

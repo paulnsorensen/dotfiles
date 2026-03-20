@@ -12,6 +12,7 @@ description: >
   Ruby, and Shell projects.
   Do NOT use for husky, lint-staged, or CI pipeline hook configuration — this skill is specifically for prek.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(prek:*), mcp__context7__resolve-library-id, mcp__context7__query-docs
+context: fork
 ---
 
 # prek

@@ -82,9 +82,6 @@ Reference implementations:
 
 #### Dimension 2 — Tool Scoping
 
-Over-broad tool access degrades agent quality in two ways: the model wastes
-tokens considering irrelevant tools, and it may take unintended actions.
-
 **Three-tier model** — every agent should fall into one of these tiers:
 
 | Tier | Tools | Use case | Frontmatter |
@@ -215,7 +212,7 @@ that work:
 - **Summary first**: one-sentence assessment, then details
 - **Tables for findings**: score, category, location, issue, fix — scannable in
   under 2 minutes
-- **Below-threshold count**: "N findings scored < 75 (not shown)" — tells the
+- **Below-threshold count**: "N findings scored < 70 (not shown)" — tells the
   reader you looked but filtered
 - **Temp file for details**: full report to `$TMPDIR/`, summary to orchestrator
 
@@ -303,10 +300,10 @@ recommends for others. Walk the walk.
 
 #### Step 4: Re-assess borderline recommendations
 
-For any recommendation scoring 65-79: re-read the full definition file, then
+For any recommendation scoring 55-69: re-read the full definition file, then
 score independently a second time without looking at your first score. If the
 two scores diverge by >15 points, don't surface — the recommendation is
-ambiguous. If both scores land >= 75, surface it.
+ambiguous. If both scores land >= 70, surface it.
 
 ### Phase 4: Report
 
@@ -318,9 +315,9 @@ ambiguous. If both scores land >= 75, surface it.
 - Model: <model>
 - Tools: <N allowed, N disallowed>
 - Prompt size: <N lines>
-- Findings: N total (N scored >= 75, N below threshold)
+- Findings: N total (N scored >= 70, N below threshold)
 
-### Recommendations (score >= 75)
+### Recommendations (score >= 70)
 
 | # | Score | Category | Issue | Recommendation |
 |---|-------|----------|-------|----------------|
@@ -330,7 +327,7 @@ ambiguous. If both scores land >= 75, surface it.
 
 ### Detailed Recommendations
 
-For each finding >= 75, expand with:
+For each finding >= 70, expand with:
 - **What**: the specific issue
 - **Why**: why it matters (with reference to a pattern or principle)
 - **How**: concrete fix, ideally with the exact frontmatter or section to add/change
@@ -348,7 +345,7 @@ hook from `references/hooks-catalog.md`:
 If no findings warrant hooks, omit this section.
 
 ### Below Threshold
-N findings scored < 75 (not shown)
+N findings scored < 70 (not shown)
 ```
 
 ### After the Report
@@ -395,37 +392,10 @@ how often they appear and how much impact they have:
    (e.g., "after ~60 tool calls, wrap up") can run indefinitely, consuming
    context until performance degrades.
 
-9. **Freeform instructions** — Wall of prose instead of structured sections with
-   tables. The model skims long paragraphs the same way humans do.
-
-10. **Missing "why"** — Rules without rationale. "Never use grep" without
-    explaining that scout provides better alternatives. Why-based instructions
-    transfer to edge cases; bare rules don't.
-
-11. **Over-specified role** — Three paragraphs of character description before
-    getting to the actual task. One sentence is enough.
-
-12. **Passive description** — Skill description reads like a summary ("A tool
-    for analyzing code") instead of a trigger spec ("Use when the user says
-    'analyze', 'audit', or 'review code'"). Passive descriptions undertrigger.
-
-13. **Negation-heavy rules** — Instructions that say "don't do X" without
-    providing the positive alternative. LLMs handle "use Y instead of X"
-    better than "never use X."
-
-14. **Critical rule as instruction only** — CLAUDE.md says "always run tests"
-    but Claude doesn't. Instructions are requests; hooks are laws. If it must
-    happen 100% of the time, recommend a hook. See `references/hooks-catalog.md`.
-
-15. **"Always/never" for judgment tasks** — Works for mechanical tasks. Fails
-    for judgment where context determines the answer. Recommend structured reasoning scaffold.
-    See `references/decision-frameworks.md`.
-
-16. **Missing Gotchas section** — No record of known failure modes. Every skill
-    should capture the specific ways Claude gets things wrong, updated over time.
-
-For the full 20-item anti-patterns catalog with diagnostic checklist, read
-`references/anti-patterns.md`.
+The remaining anti-patterns (freeform instructions, missing "why", over-specified
+role, passive descriptions, negation-heavy rules, critical-rule-as-instruction-only,
+always/never for judgment, missing Gotchas) are lower-frequency and covered by
+the dimension audit sections above.
 
 ## Reference Files
 
@@ -435,7 +405,6 @@ Read these before making changes to the relevant dimension:
 - `references/description-optimization.md` — Trigger optimization with before/after examples
 - `references/decision-frameworks.md` — Structured reasoning scaffold, degrees of freedom, example-driven spec
 - `references/hooks-catalog.md` — JS hook examples for activation, validation, enforcement
-- `references/anti-patterns.md` — 20 most common skill mistakes with diagnostic checklist
 
 ## What This Skill Never Does
 

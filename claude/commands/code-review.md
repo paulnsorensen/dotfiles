@@ -32,7 +32,7 @@ If the user provided an argument, use that as focus and skip this question.
 ### 3. Launch fromage-age (Comprehensive Mode)
 
 ```
-Task(subagent_type="fromage-age", model="opus", prompt="Comprehensive mode review. Scope: <selected scope>. Delta context: <if delta, include changed files and commit log>. Previous review findings: <if exists, key items from last review>. Review the full architecture: business model inventory, architecture assessment, risk areas, strengths, and scored issues (0-100, surface >= 75).")
+Task(subagent_type="fromage-age", model="opus", prompt="Comprehensive mode review. Scope: <selected scope>. Delta context: <if delta, include changed files and commit log>. Previous review findings: <if exists, key items from last review>. Review the full architecture: business model inventory, architecture assessment, risk areas, strengths, and scored issues (0-100, surface >= 70).")
 ```
 
 ### 4. Persist the Review

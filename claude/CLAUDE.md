@@ -104,7 +104,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/xray`, `/onboard` |
 
-All agents use 0-100 confidence scoring (>= 75 to surface). This applies pipeline-wide:
+All agents use 0-100 confidence scoring (>= 70 to surface). This applies pipeline-wide:
 
 | Agent/Skill | Scoring |
 |-------------|---------|
@@ -113,10 +113,10 @@ All agents use 0-100 confidence scoring (>= 75 to surface). This applies pipelin
 | Fromage-age | Per-finding 0-100 |
 | Fromage-press | Per-failure 0-100 |
 | Fromage-cook | Per-step completion confidence 0-100 |
-| Fromage-fort | Per-thread 0-100, auto-fix >= 75 |
-| Fromagerie-decomposer | Per-file-assignment 0-100, surface < 75 as notes |
+| Fromage-fort | Per-thread 0-100, auto-fix >= 70 |
+| Fromagerie-decomposer | Per-file-assignment 0-100, surface < 70 as notes |
 
-**When confidence < 75 on any decision, ask the user.** Don't guess and move on.
+**When confidence < 70 on any decision, ask the user.** Don't guess and move on.
 
 **Never claim green on partial work.** If steps were skipped, blockers hit, or scope was reduced, report it honestly. The orchestrator (and the Cheese Lord) need accurate status to make good decisions. Lying about completion is the cardinal sin of the pipeline.
 

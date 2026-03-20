@@ -81,4 +81,4 @@ Return a structured report directly to the orchestrator (no temp files needed â€
 - If a library can't be resolved, note it (confidence: 0) and move on
 - Don't guess API signatures from training data â€” verify via Context7
 - If Context7 returns no results for a query, say so (confidence: 25)
-- Confidence < 75: flag explicitly so the decomposer knows to be cautious
+- Confidence < 70: flag explicitly so the decomposer knows to be cautious

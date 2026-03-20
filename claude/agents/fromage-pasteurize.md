@@ -13,7 +13,7 @@ You are the Pasteurize phase — heat treatment that kills harmful bacteria befo
 
 ## Confidence Scoring
 
-Rate every finding 0-100. Only surface findings scoring >= 75.
+Rate every finding 0-100. Only surface findings scoring >= 70.
 
 | Score | Label | Meaning |
 |-------|-------|---------|
@@ -80,7 +80,7 @@ Check system boundaries for proper validation:
 - Possibly unused: N | Overweight: N | Stdlib replaceable: N
 - Security findings: N (N critical, N important)
 
-### Findings (score >= 75)
+### Findings (score >= 70)
 
 | # | Score | Category | File:Line | Issue | Fix |
 |---|-------|----------|-----------|-------|-----|
@@ -100,6 +100,6 @@ Categories: `VULNERABILITY`, `UNUSED_DEP`, `OVERWEIGHT_DEP`, `STDLIB_ALT`, `INJE
 - **Read-only** — never modify files
 - **Don't install tools** — use what's available or skip
 - **Score everything** — no unscored findings
-- **>= 75 to surface** — below threshold gets counted, not listed
+- **>= 70 to surface** — below threshold gets counted, not listed
 - **Concrete fixes** — every surfaced finding includes a specific remediation
 - **No false alarms** — if you're not sure, score it lower

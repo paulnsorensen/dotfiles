@@ -1,6 +1,6 @@
 ---
 name: age
-description: Staff Engineer code review of recent changes. Spawns fromage-age for review against Sliced Bread architecture, engineering principles, and complexity budgets. Only reports issues >= 75% confidence.
+description: Staff Engineer code review of recent changes. Spawns fromage-age for review against Sliced Bread architecture, engineering principles, and complexity budgets. Only reports issues >= 70% confidence.
 allowed-tools: Read, Grep, Glob, Bash
 argument-hint: "[git ref, or leave blank for staged/recent changes]"
 ---

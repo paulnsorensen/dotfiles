@@ -44,7 +44,7 @@ At command start, call `TaskCreate` for all 4 phases. Mark `in_progress` at phas
 ## Phase 2: Launch fromage-age (Focused Mode)
 
 ```
-Task(subagent_type="fromage-age", model="opus", prompt="Focused mode review of PR #<number>. Title: <title>. Author: <author>.\n\nDiff:\n<diff content>\n\nReview through two lenses:\n1. Correctness & Safety (security, bugs, silent failures)\n2. Architecture & Weight (coupling, dead code, inline, undocument, complexity)\n\nScore all findings 0-100. Only surface >= 75. For each finding include: file, line, category, issue description, and concrete fix.")
+Task(subagent_type="fromage-age", model="opus", prompt="Focused mode review of PR #<number>. Title: <title>. Author: <author>.\n\nDiff:\n<diff content>\n\nReview through two lenses:\n1. Correctness & Safety (security, bugs, silent failures)\n2. Architecture & Weight (coupling, dead code, inline, undocument, complexity)\n\nScore all findings 0-100. Only surface >= 70. For each finding include: file, line, category, issue description, and concrete fix.")
 ```
 
 ## Phase 3: Format Findings for Copilot
