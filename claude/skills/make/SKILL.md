@@ -31,6 +31,8 @@ the main context window.
 | Invocation | Action |
 |---|---|
 | `/make` or no args | Detect build system, run default check/build |
+| `/make check` | Alias for `/make` — type-check without full build |
+| `/make build` | Full build (not just type-check) |
 | `/make test` | Run test suite (detect framework, return pass/fail + failures) |
 | `/make lint` | Run linter (clippy, ruff, eslint — stricter than check) |
 | `/make fmt` | Run formatter in check mode (report unformatted files) |
