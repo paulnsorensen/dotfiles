@@ -2,13 +2,14 @@
 name: skill-improver
 description: >
   Audit and improve agent and skill definitions for better calibration, tool scoping,
-  context management, and output quality. Use when the user says "improve this skill",
-  "audit this agent", "optimize this agent", "review agent definition", or invokes
-  /skill-improver with a path. Also trigger when creating new agents or skills that
-  need quality review before deployment, or when an agent is producing poor results
-  and needs prompt tuning. Covers: calibrated confidence scoring, tool allow/disallow
-  scoping, sub-agent delegation patterns, fork vs inline decisions, context budgets,
-  and output format standardization.
+  context management, activation quality, and output format. Use when the user says
+  "improve this skill", "audit this agent", "optimize this agent", "review agent
+  definition", "fix trigger rate", "skill not activating", or invokes /skill-improver
+  with a path. Also trigger when creating new agents or skills that need quality review
+  before deployment, when an agent is producing poor results and needs prompt tuning,
+  or when a skill isn't triggering reliably. Covers: calibrated confidence scoring,
+  tool allow/disallow scoping, sub-agent delegation patterns, fork vs inline decisions,
+  context budgets, activation/description optimization, and output format standardization.
 ---
 
 # skill-improver
@@ -144,10 +145,18 @@ agent pattern: spawn N focused sub-agents, synthesize results.
 - `sonnet` — implementation, exploration, most general-purpose work
 - `haiku` — focused fetch tasks, simple transforms, token-constrained sub-agents
 
+**Frontmatter controls** (skills only):
+- `context: fork` — runs the skill in an isolated subagent context. Use when
+  the skill reads 30+ files, produces verbose reports, or needs isolated context.
+  Do NOT use on guideline-only skills (no task = subagent returns nothing useful).
+- `allowed-tools` — restricts tools to only what the skill needs. Same
+  principle as agent tool scoping but via frontmatter.
+
 Check: Does the agent manage its output size? Should it fork? Does it use
 sub-agents where parallel work would help? Is the model appropriate and
 documented? Is the prompt file under 500 lines? Does the agent have a wrap-up
 signal to prevent runaway execution (e.g., "after ~60 tool calls, wrap up")?
+For skills: is `context: fork` appropriate? Are `allowed-tools` constrained?
 
 #### Dimension 4 — Prompt Quality
 
@@ -158,6 +167,11 @@ a 50-row table of rules gets skimmed the same way a wall of text does.
 **Why over what**: Explaining *why* a rule exists makes the model better at
 edge cases. "Never use `find`" is brittle. "Use `fd` instead of `find` because
 fd respects .gitignore and is faster on large repos" transfers to novel situations.
+
+**Positive over negative framing**: "Use named exports" beats "Don't use default
+exports." LLMs struggle with negation — positive framing reduces rule violations
+by ~50% in testing. Flag rules that rely heavily on "don't", "never", "avoid"
+without providing the positive alternative.
 
 **Examples**: One good example is worth ten rules. Two examples establish a
 pattern. Three confirm it. More than three for the same concept is diminishing
@@ -192,6 +206,46 @@ that work:
 Check: Is the output format defined? Is it scannable? Does it separate summary
 from detail? Is there a clear "clean" vs "issues found" signal?
 
+#### Dimension 6 — Activation & Triggering (skills only)
+
+Skills have an undertriggering problem — community testing shows a 20% baseline
+trigger rate. The `description` field is not a summary for humans; it's a trigger
+specification for the model's routing decision.
+
+**Description structure** — effective descriptions follow a three-part pattern:
+`[Core capability]. [Secondary capabilities]. Use when [trigger1], [trigger2],
+or when user mentions "[keyword1]", "[keyword2]".`
+
+Check for:
+- **Trigger phrases**: Does the description list specific user phrases that
+  should activate it? ("improve this skill", "audit this agent", etc.)
+- **Pushy enough**: Anthropic recommends descriptions be assertive to combat
+  undertriggering. Passive descriptions ("A tool for X") underperform active
+  ones ("Use this when X, Y, or Z").
+- **Third-person voice**: Descriptions are injected into the system prompt.
+  First-person ("I analyze...") breaks the framing.
+- **Negative triggers**: For skills with adjacent domains, explicit "Do NOT
+  use for X" prevents false activations.
+- **Keyword coverage**: Does the description mention all reasonable phrasings
+  a user might try? Missing synonyms = missed activations.
+
+**Frontmatter fields** — check for appropriate use of:
+- `context: fork` — runs in isolated subagent context. Use when the skill
+  reads 30+ files or produces verbose reports. Skills with only guidelines
+  (no task) should NOT fork — the subagent gets no actionable prompt.
+- `agent` — specifies subagent type when `context: fork` is set (Explore,
+  Plan, general-purpose, or custom). Should match the skill's workload.
+- `allowed-tools` — restricts which tools the skill can use. Grants access
+  without per-use approval. Use to constrain skills to their actual needs.
+- `disable-model-invocation: true` — requires explicit `/skill-name` to trigger.
+  Appropriate for destructive or infrequently-needed skills.
+- `user-invocable: false` — hides from `/` menu. Use for background knowledge
+  Claude should know but users shouldn't invoke directly.
+
+Check: Is the description a trigger spec or just a summary? Does it list
+trigger phrases? Is it pushy enough? Are frontmatter fields appropriate?
+Would `/skill-creator` description optimization improve trigger rate?
+
 ### Phase 3: Score Each Finding (4-Step Calibration)
 
 For each improvement recommendation, apply the same 4-step scoring this skill
@@ -206,6 +260,7 @@ recommends for others. Walk the walk.
 | `CONTEXT` | Context pollution, missing fork/delegation, wrong model | 40 | 95 |
 | `PROMPT` | Ambiguous instructions, missing examples, wall of text | 35 | 85 |
 | `OUTPUT` | Missing or unclear output format | 30 | 80 |
+| `ACTIVATION` | Poor description, missing triggers, wrong frontmatter fields | 35 | 90 |
 
 #### Step 2: Evidence grounding
 
@@ -311,6 +366,14 @@ how often they appear and how much impact they have:
 
 11. **Over-specified role** — Three paragraphs of character description before
     getting to the actual task. One sentence is enough.
+
+12. **Passive description** — Skill description reads like a summary ("A tool
+    for analyzing code") instead of a trigger spec ("Use when the user says
+    'analyze', 'audit', or 'review code'"). Passive descriptions undertrigger.
+
+13. **Negation-heavy rules** — Instructions that say "don't do X" without
+    providing the positive alternative. LLMs handle "use Y instead of X"
+    better than "never use X."
 
 ## What This Skill Never Does
 
