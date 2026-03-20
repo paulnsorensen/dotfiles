@@ -193,7 +193,7 @@ to move fast on the obvious stuff.
      ```
    - **Review body items**: post a PR conversation comment referencing the review:
      ```
-     add_issue_comment(owner, repo, issue_number: pullNumber, body: "Re: @reviewer's review — Fixed: <brief description>.")
+     add_issue_comment(owner, repo, number: pullNumber, body: "Re: @reviewer's review — Fixed: <brief description>.")
      ```
    ```
    Fixed — <brief description of what changed>.
@@ -207,7 +207,7 @@ to move fast on the obvious stuff.
      ```
    - **Review body items**:
      ```
-     add_issue_comment(owner, repo, issue_number: pullNumber, body: "Re: @reviewer's review — <pushback explanation>.")
+     add_issue_comment(owner, repo, number: pullNumber, body: "Re: @reviewer's review — <pushback explanation>.")
      ```
 2. Keep the tone professional and specific — explain *why*, not just *no*
 
