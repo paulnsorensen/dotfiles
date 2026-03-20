@@ -228,6 +228,7 @@ threads still pending user decision.
 - **Match the reviewer's tone** — professional for humans, concise for bots
 - **Cite specifics in pushback** — reference CLAUDE.md conventions, complexity budget, or early-dev stance when relevant
 - **Don't argue style** — if the suggestion is purely stylistic and score is < 50, just skip it rather than posting a pushback (note it as SKIP in the table)
+- **Never defer to a follow-up** — don't reply "will address in a follow-up PR" or "good idea, will do in a separate PR". If it scores >= 70, fix it now. If it scores < 50, push back. The only valid deferral is an ASK item (50-69) that the user explicitly decides to skip.
 - **Batch commits** — group all fixes into one commit, not one per thread
 - **User can override anything** — if they say "don't fix #2" before you get to it, stop. If they say "actually fix #4", do it. The confidence score is a default, not a mandate.
 
