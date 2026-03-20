@@ -537,6 +537,8 @@ font-style-bold = Bold
 font-style-italic = Italic
 font-style-bold-italic = Bold Italic
 font-size = 14
+font-thicken = true
+font-thicken-strength = 200
 
 # Core colors
 background = #$(pal base00)
