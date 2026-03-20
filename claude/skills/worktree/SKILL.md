@@ -51,6 +51,10 @@ to avoid truncated output if jq fails on malformed input.
 The overlay includes `sandbox.filesystem.allowWrite` for `~/.cache/prek` so that
 prek pre-commit hooks can write their cache inside the Seatbelt sandbox.
 
+**Note:** `ccw()` currently sets `core.hooksPath=/dev/null` which disables all
+git hooks (including prek) in worktrees. The prek cache allowance is forward-looking
+for when worktree hook restrictions are relaxed.
+
 If `.claude/settings.local.json` exists at repo root:
 ```bash
 mkdir -p .worktrees/<slug>/.claude
