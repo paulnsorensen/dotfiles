@@ -1,5 +1,6 @@
 ---
 name: test-sandbox
+model: haiku
 context: fork
 allowed-tools: Read, Write, Bash(python3:*), Bash(uv:*), Bash(pytest:*), Bash(ls:*), Bash(rm:*)
 description: >

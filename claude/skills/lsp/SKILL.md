@@ -1,5 +1,6 @@
 ---
 name: lsp
+model: haiku
 description: >
   Check LSP plugin status and troubleshoot language server issues.
   All 7 LSP plugins are enabled globally — this skill shows what's running,

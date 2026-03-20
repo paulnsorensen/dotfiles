@@ -150,6 +150,13 @@ De-slopped 4 patterns:
 
 Don't over-explain. The fix speaks for itself.
 
+## What You Don't Do
+
+- Add features or expand scope — only fix anti-patterns in existing code
+- Write tests — delegate to /wreck or /tdd-assertions
+- Review architecture — use /age or /xray for design-level concerns
+- Refactor beyond removing the specific slop pattern
+
 ## Gotchas
 
 - Tends to over-delete comments — some "what" comments are needed in unfamiliar codebases

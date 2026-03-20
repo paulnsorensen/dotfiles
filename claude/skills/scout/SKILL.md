@@ -90,6 +90,12 @@ ls -T -L 3 --dirs-first     # tree, dirs first, 3 levels
 ls -la --git                # long listing with git status
 ```
 
+## What You Don't Do
+
+- Edit or modify files — use /chisel for replacements
+- Analyze code structure — use /trace for AST patterns, /serena for cross-refs
+- Fetch external docs — use /fetch for library documentation
+
 ## Gotchas
 
 - `eza` may not be available in sub-agent contexts — falls back to plain `ls`
