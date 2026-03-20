@@ -37,23 +37,6 @@ for item in "${configs[@]}"; do
   fi
 done
 
-# Sync hookify rules (symlink each rule file into ~/.claude/)
-if [[ -d "$SOURCE_DIR/hookify" ]]; then
-  for rule in "$SOURCE_DIR/hookify"/hookify.*.local.md; do
-    [[ -f "$rule" ]] || continue
-    basename="$(basename "$rule")"
-    target="$CLAUDE_DIR/$basename"
-    if [[ -L "$target" ]]; then
-      rm "$target"
-    elif [[ -e "$target" ]]; then
-      echo "  Backing up existing $basename"
-      mv "$target" "$target.bak"
-    fi
-    echo "  Linking $basename"
-    ln -s "$rule" "$target"
-  done
-fi
-
 # Sync MCPs and plugins (requires claude CLI)
 if command -v claude &>/dev/null; then
   if [[ -x "$SOURCE_DIR/mcp/sync.sh" ]]; then

@@ -8,6 +8,7 @@ description: >
   committing test code — AI assistants systematically produce assertions that
   pass when the code is broken, which is the cardinal sin of TDD.
   Trigger proactively on test generation and test review.
+allowed-tools: Read, Edit, Grep, Glob, Bash(rg:*)
 ---
 
 # tdd-assertions
@@ -219,3 +220,10 @@ Strengthened 4 assertions:
 ```
 
 Don't over-explain. The stronger assertion speaks for itself.
+
+## Gotchas
+
+- `is not None` is correct when the contract genuinely is "returns any value, not None"
+- `toBeCloseTo` / `assertAlmostEqual` is correct for floating-point arithmetic — not weak
+- Mock argument checking can be excessive for fire-and-forget calls — use judgment
+- Catch-all `except Exception` is valid in top-level error boundaries — only flag in inner code

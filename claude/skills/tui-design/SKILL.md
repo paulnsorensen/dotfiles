@@ -1,7 +1,7 @@
 ---
 name: tui-design
 model: sonnet
-fork: true
+context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(mkdir:*), mcp__context7__resolve-library-id, mcp__context7__query-docs
 description: >
   Create distinctive, production-grade terminal user interfaces with high usability
@@ -9,6 +9,8 @@ description: >
   terminal dashboards, interactive CLI tools, or any full-screen terminal interface
   (system monitors, git clients, database explorers, log viewers, file managers, REPL
   wrappers). Supports Rust (ratatui/crossterm) and Python (Textual/Rich).
+  Use when the user says "build a dashboard", "terminal UI", "interactive CLI",
+  "TUI app", "system monitor", "log viewer", or invokes /tui-design.
 ---
 
 # tui-design
@@ -339,3 +341,16 @@ See `references/ratatui.md` and `references/textual.md` for full test examples.
 **Build a CLI when**: output needs piping, runs in CI/automation, single command-to-result.
 
 **Best practice**: Build the CLI core first, add TUI as interactive layer. Show what CLI commands the TUI executes — lazygit's command log is beloved for this.
+
+## What You Don't Do
+
+- Architecture review — use /xray for design verification
+- Write tests — use /wreck for adversarial testing
+- Build web UIs — use /frontend-design for browser-based interfaces
+
+## Gotchas
+
+- Tends to generate monolithic render functions — split into composable widgets early
+- Forgets `NO_COLOR` / `TERM=dumb` handling — always test with color disabled
+- Skips resize event handling — terminal resize without handler causes layout corruption
+- Ratatui's `Frame` lifetime constraints trip up async code — keep render logic synchronous

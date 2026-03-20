@@ -189,3 +189,11 @@ the heavy fetching forks as needed.
 - External deps are NEVER solved by grepping local caches
 - If LSP is running, `hover` answers 80% of type questions in one call
 - If you need the skill that each tool delegates to, invoke it: /trace, /serena, /lsp, /fetch
+
+## Gotchas
+
+- LSP servers start lazily — first `hover` or `goToDefinition` may fail, retry after a moment
+- Serena requires `/go` activation before use — check if project is activated first
+- Context7 library ID resolution sometimes returns wrong package for ambiguous names — verify
+- ast-grep patterns are language-specific — Rust `impl` blocks vs Go `func` declarations have different AST shapes
+- Training data is often sufficient for well-known libraries — don't fetch docs for stdlib

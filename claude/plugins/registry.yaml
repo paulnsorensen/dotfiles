@@ -48,11 +48,6 @@ plugins:
     load: true
 
   # --- Workflow plugins ---
-  hookify@claude-plugins-official:
-    description: Create hooks to prevent unwanted behaviors by analyzing conversation patterns
-    scope: user
-    load: true
-
   claude-md-management@claude-plugins-official:
     description: Audit, maintain, and improve CLAUDE.md files with session learnings
     scope: user

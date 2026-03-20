@@ -124,6 +124,68 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/bash-guard.js\"",
+            "statusMessage": "Checking command..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/write-guard.js\"",
+            "statusMessage": "Checking write target..."
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/phantom-file-check.js\"",
+            "statusMessage": "Checking file..."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__plugin_github_github__add_reply_to_pull_request_comment",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/review-reply-guard.js\"",
+            "statusMessage": "Checking reply for deferral..."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__plugin_github_github__add_issue_comment",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/review-reply-guard.js\"",
+            "statusMessage": "Checking reply for deferral..."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__plugin_github_github__pull_request_review_write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/review-reply-guard.js\"",
+            "statusMessage": "Checking reply for deferral..."
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
@@ -138,7 +200,6 @@
     "pyright@claude-code-lsps": true,
     "gopls@claude-code-lsps": true,
     "solargraph@claude-code-lsps": true,
-    "hookify@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,

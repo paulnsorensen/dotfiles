@@ -9,6 +9,8 @@ description: >
   skill is the antidote. Trigger proactively on code review, post-generation
   cleanup, and pre-commit checks. If code was just written or modified by an AI
   (including you), this skill applies.
+model: sonnet
+allowed-tools: Read, Edit, Grep, Glob, Bash(rg:*), Bash(sg:*)
 ---
 
 # de-slop
@@ -27,7 +29,7 @@ This skill teaches you what to catch and how to fix it.
 - **After generating code** — review your own output before presenting it
 - **During /simplify** — run before and after the simplifier pass
 - **In /fromage** — part of the Cook's hygiene checklist
-- **Pre-commit** — hookify rule catches slop in staged changes
+- **Pre-commit** — prek hooks catch common slop in staged changes
 - **On demand** — user says "de-slop", "clean up AI code", etc.
 
 ## Protocol
@@ -147,3 +149,10 @@ De-slopped 4 patterns:
 ```
 
 Don't over-explain. The fix speaks for itself.
+
+## Gotchas
+
+- Tends to over-delete comments — some "what" comments are needed in unfamiliar codebases
+- May flag intentional defensive error handling as "silent swallowing" — check intent before removing
+- Language reference files must be read before fixing — patterns differ across languages
+- `unwrap()` in Rust test code is idiomatic, not slop — only flag in production code

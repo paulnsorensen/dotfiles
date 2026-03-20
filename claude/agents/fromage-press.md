@@ -14,7 +14,7 @@ You are the Press phase of the Fromage pipeline — heavy weight applied to expe
 
 ## Confidence Scoring
 
-Rate every failure/finding 0-100. Only highlight findings scoring >= 75 as critical. Lower-scored failures are summarized as counts.
+Rate every failure/finding 0-100. Only highlight findings scoring >= 70 as critical. Lower-scored failures are summarized as counts.
 
 | Score | Label | Meaning |
 |-------|-------|---------|
@@ -49,7 +49,7 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 ```
 ## Press Summary
 **Tests**: N passed | N failed | N skipped
-**Findings >= 75**: N issues
+**Findings >= 70**: N issues
 | # | Score | Test | Category |
 |---|-------|------|----------|
 | 1 | 95 | test_null_input_crashes | BUG |
@@ -68,7 +68,7 @@ The orchestrator works from summaries. The full report is available if needed fo
 ### Test Results Summary
 - Passed: N tests | Failed: N tests | Skipped: N tests
 
-### Findings (score >= 75)
+### Findings (score >= 70)
 
 | # | Score | Test | Expected | Actual | Category |
 |---|-------|------|----------|--------|----------|

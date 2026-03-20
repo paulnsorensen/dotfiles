@@ -8,7 +8,9 @@ description: >
   rg aliases (rga, rgf, rgc, todos) provide common search patterns, and
   ls (eza) gives tree views with git status. Use built-in Grep/Glob for
   simple content/name searches; use scout when you need fd, rg aliases,
-  hidden/ignored file search, or eza directory listings.
+  hidden/ignored file search, or eza directory listings. Use when the user
+  says "search hidden files", "find by size", "find by date", "tree view",
+  "list directory with git status", "search ignored files", or invokes /scout.
 ---
 
 # scout
@@ -87,3 +89,10 @@ ls -T -L 2                  # tree view, 2 levels deep
 ls -T -L 3 --dirs-first     # tree, dirs first, 3 levels
 ls -la --git                # long listing with git status
 ```
+
+## Gotchas
+
+- `eza` may not be available in sub-agent contexts — falls back to plain `ls`
+- `fd` conflicts with the file-descriptor utility on some Linux distros — use full path if needed
+- rg aliases (rga, rgf, rgc, todos) require interactive zsh — not available in non-interactive shells or sub-agents
+- `fd` hidden file search (`-H`) still respects `.gitignore` unless `-I` is also passed

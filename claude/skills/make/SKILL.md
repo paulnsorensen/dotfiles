@@ -1,7 +1,7 @@
 ---
 name: make
 model: haiku
-fork: true
+context: fork
 allowed-tools: Bash(*), Read, Glob, Grep
 description: >
   You cannot run build commands (cargo check, cargo clippy, go build, npm run build,
@@ -282,6 +282,20 @@ Or on success: `✓ Format check passed — all files formatted`
 | maven | `mvn clean` |
 
 Return: `✓ Clean complete (<tool>)` or report if no clean target exists.
+
+## What You Don't Do
+
+- Fix build errors — report them, let the caller decide
+- Install missing tools or dependencies
+- Modify source code
+- Run commands outside the project root
+
+## Gotchas
+
+- ANSI color stripping is imperfect — some escape sequences leak through to the report
+- Sandbox restrictions may prevent writing to build artifact dirs (`target/`, `node_modules/.cache/`)
+- Multi-step commands may partially succeed — report each step's status individually
+- Justfile recipe names are case-sensitive — `just Check` ≠ `just check`
 
 ## Rules
 

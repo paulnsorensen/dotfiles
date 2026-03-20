@@ -42,18 +42,54 @@ Review bodies are PR-level summaries: Age Review tables, Copilot overviews, `CHA
 
 **Deduplication**: If a review has both a body AND inline comments (`pull_request_review_id` links them), only score the body for suggestions NOT already covered by its inline comments.
 
-## Phase 2: Score Each Thread (0-100)
+## Phase 2: Classify, Ground, Score (0-100)
 
-| Score | Meaning | Action |
-|-------|---------|--------|
-| 90-100 | Clearly correct — real bug, missing validation | FIX |
-| 75-89 | Good suggestion — improves clarity, matches conventions | FIX |
-| 50-74 | Debatable — style preference, context-dependent | ASK |
-| 25-49 | Likely wrong — misunderstands intent, unnecessary complexity | PUSH BACK |
-| 0-24 | Clearly wrong — factually incorrect, would introduce bug | PUSH BACK |
+Score each suggestion using this 4-step chain-of-thought process. Do NOT assign a number until you complete all four steps.
 
-**Raises confidence**: catches real bug, missing edge case, aligns with CLAUDE.md patterns, `CHANGES_REQUESTED` state (reviewer flagged as blocking).
-**Lowers confidence**: bot making generic observation, adds complexity without benefit, backward-compat concern in early-dev project, scope creep ("you should also...").
+### Step 1: Classify the claim type
+
+| Type | Description | Base score | Cap |
+|------|-------------|------------|-----|
+| `BUG` | Concrete correctness issue — crashes, wrong output, missing check | 50 | 100 |
+| `CONVENTION` | Violates a stated project pattern or CLAUDE.md rule | 40 | 90 |
+| `STYLE` | Naming, formatting, subjective "cleaner" suggestions | 20 | 60 |
+| `SCOPE_CREEP` | "You should also...", unrelated additions, feature requests | 10 | 45 |
+
+### Step 2: Evidence grounding
+
+Adjust from the base score based on how grounded the suggestion is:
+
+| Evidence quality | Modifier |
+|------------------|----------|
+| Cites specific file:line + describes concrete failure scenario | +20 |
+| Names a real code construct (verifiable via search) | +15 |
+| References a CLAUDE.md rule or project convention by name | +10 |
+| Generic observation, no specific code reference | -10 |
+| Cites nonexistent API, imaginary pattern, or hallucinated code | hard cap at 25 |
+
+### Step 3: Apply context modifiers and assign final score
+
+| Signal | Modifier |
+|--------|----------|
+| `CHANGES_REQUESTED` review state | +10 |
+| Multiple reviewers flagged same issue independently | +15 |
+| Human reviewer (vs known bot) | +5 |
+| Bot making generic observation | -10 |
+| Backward-compat concern in early-dev project | -20 |
+
+Assign the final score (respecting the type cap from Step 1).
+
+### Action thresholds
+
+| Score | Action |
+|-------|--------|
+| 70-100 | FIX |
+| 50-69 | ASK |
+| 0-49 | PUSH BACK |
+
+### Step 4: Re-assess borderline items
+
+For any item scoring 55-69 (the ASK zone near the FIX threshold): re-read the full source file (not just the diff hunk), then score independently a second time without looking at your first score. If the two scores diverge by >15 points, the suggestion is genuinely ambiguous — keep it as ASK and flag "low consistency" in the triage table. If both scores land >= 70, upgrade to FIX.
 
 **Review body parsing**: A single review body may contain multiple suggestions (bullets, numbered lists, table rows). Parse into individual items — each gets its own score. Single cohesive comments ("LGTM", general observations) stay as one item.
 
@@ -64,19 +100,19 @@ Present the full table:
 ```
 ## PR #N Review Triage
 
-| # | Score | Reviewer | Location | Summary | Action |
-|---|-------|----------|----------|---------|--------|
-| 1 | 92 | copilot | auth.ts:42 | Missing null check | FIX |
-| 2 | 78 | alice | (review body) | Missing error handling | FIX |
-| 3 | 60 | copilot | utils.ts:15 | Extract to helper | ASK |
-| 4 | 35 | bob | index.ts:3 | Add compat shim | PUSH BACK |
+| # | Score | Type | Reviewer | Location | Summary | Action |
+|---|-------|------|----------|----------|---------|--------|
+| 1 | 92 | BUG | copilot | auth.ts:42 | Missing null check | FIX |
+| 2 | 73 | CONVENTION | alice | (review body) | Missing error handling | FIX |
+| 3 | 60 | STYLE | copilot | utils.ts:15 | Extract to helper | ASK |
+| 4 | 35 | SCOPE_CREEP | bob | index.ts:3 | Add compat shim | PUSH BACK |
 ```
 
 Include a one-line expansion for each row.
 
 ## Phase 4: Execute
 
-### FIX items (>= 75):
+### FIX items (>= 70):
 1. Read the source file
 2. Implement the fix using **chisel**
 3. Reply acknowledging the fix:
@@ -90,7 +126,7 @@ Include a one-line expansion for each row.
 2. Cite CLAUDE.md conventions, complexity budget, or early-dev stance when relevant
 3. Skip purely stylistic suggestions (note as SKIP in table)
 
-### ASK items (50-74):
+### ASK items (50-69):
 Report these back — the orchestrator or user decides.
 
 ### After all actions:
@@ -98,10 +134,11 @@ If code was changed, commit fixes using the **commit** skill. Report: files modi
 
 ## Rules
 
+- **Never defer to a follow-up** — don't reply "will address in a follow-up PR" or "good idea, will do in a separate PR". If it scores >= 70, fix it now in this PR. If it scores < 50, push back. The only valid deferral is an ASK item (50-69) that the user explicitly decides to skip.
 - One reply per thread
 - Match reviewer's tone — professional for humans, concise for bots
 - Batch all code fixes into one commit
 - Show ALL threads in the triage table (full visibility)
-- Auto-fix items >= 75 confidence
+- Auto-fix items >= 70 confidence
 - Push back on items < 50 with a professional reply
-- Items 50-74 go in the report for user/orchestrator decision
+- Items 50-69 go in the report for user/orchestrator decision

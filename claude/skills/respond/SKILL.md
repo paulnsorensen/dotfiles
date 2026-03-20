@@ -9,8 +9,11 @@ description: >
   trigger when the user mentions a specific PR and wants to deal with reviewer
   suggestions — whether from Copilot, human reviewers, or bots. Reads all
   unresolved review threads and review bodies, scores each suggestion 0-100,
-  and presents a triage table. High-confidence fixes (>= 75) execute
-  immediately while the user reviews uncertain items.
+  and presents a triage table. High-confidence fixes (>= 70) execute
+  immediately while the user reviews uncertain items. Do NOT use to generate
+  a new review — use /copilot-review for that. This skill only processes
+  existing review comments already posted to the PR.
+allowed-tools: Read, Edit, Bash(gh:*), Bash(git:*), mcp__plugin_github_github__pull_request_read, mcp__plugin_github_github__add_reply_to_pull_request_comment, mcp__plugin_github_github__add_issue_comment
 ---
 
 # Respond: PR Review Triage
@@ -84,28 +87,40 @@ treat it as one item.
 into scoring (it raises confidence that the suggestion matters, though it
 doesn't automatically make the suggestion *correct*).
 
-**Scoring guidance:**
+### Step 3: Score Each Suggestion (4-Step Calibration)
 
-| Score | Meaning | Signals |
-|-------|---------|---------|
-| 90-100 | Clearly correct | Catches a real bug, missing validation, or factual error |
-| 75-89 | Good suggestion | Improves clarity, matches codebase conventions, or fixes a real gap |
-| 50-74 | Debatable | Style preference, trade-off with no clear winner, or context-dependent |
-| 25-49 | Likely wrong | Misunderstands intent, suggests unnecessary complexity, or conflicts with project conventions |
-| 0-24 | Clearly wrong | Factually incorrect, contradicts documented patterns, or would introduce a bug |
+**Step 1 — Classify suggestion type:**
 
-**What raises confidence:**
-- Suggestion catches a real bug or security issue
-- Points out a missing edge case with a concrete example
-- Aligns with patterns documented in CLAUDE.md or the codebase
-- Multiple reviewers agree
+| Type | Description | Base | Cap |
+|------|-------------|------|-----|
+| BUG | Correctness issue, logic error, crash | 50 | 100 |
+| SECURITY | Vulnerability, data exposure, auth bypass | 55 | 100 |
+| CONVENTION | Style, naming, project-standard deviation | 25 | 65 |
+| STYLE | Formatting, subjective preference | 15 | 50 |
+| SCOPE_CREEP | Unrelated improvement, "while you're here" | 20 | 55 |
+| VALID_CONCERN | Architectural, performance, maintainability | 40 | 90 |
 
-**What lowers confidence:**
-- Reviewer is a bot making a generic observation
-- Suggestion adds complexity without clear benefit
-- Conflicts with the project's stated conventions (YAGNI, complexity budget, etc.)
-- "You should also..." additions that weren't in the original scope
-- Backward-compatibility concerns in early-development projects (per Early Development Stance)
+**Step 2 — Evidence grounding:**
+
+| Evidence | Modifier |
+|----------|----------|
+| Reviewer cites specific code with accurate analysis | +20 |
+| Suggestion references project convention or CLAUDE.md rule | +15 |
+| Generic observation without specific code reference | -10 |
+| Reviewer misreads the code or cites wrong line | hard cap 0 |
+
+**Step 3 — Context modifiers:**
+
+| Signal | Modifier |
+|--------|----------|
+| CHANGES_REQUESTED review state | +10 |
+| Reviewer is a maintainer/codeowner | +10 |
+| Bot reviewer (Copilot, CodeRabbit, etc.) | -10 |
+| Suggestion duplicates another thread | -15 |
+| Pre-existing issue not introduced by this PR | -15 |
+
+**Step 4 — Re-assess borderline (55-69):**
+For items near the FIX threshold: re-read the reviewer's comment and the relevant code independently. Score a second time without looking at your first score. If the two scores diverge >15 points, the suggestion is ambiguous — keep as ASK. If both land >= 70, upgrade to FIX.
 
 ## Phase 3: Triage Table + Immediate Execution
 
@@ -114,18 +129,18 @@ Present the full triage table so the user sees everything at once:
 ```
 ## PR #N Review Triage
 
-| # | Score | Reviewer | Location | Summary | Action |
-|---|-------|----------|----------|---------|--------|
-| 1 | 92 | copilot | auth.ts:42 | Missing null check on token | FIX |
-| 2 | 85 | alice | api.ts:78 | Error not propagated to caller | FIX |
-| 3 | 78 | alice | (review body) | Missing error handling in 3 endpoints | FIX |
-| 4 | 60 | copilot | utils.ts:15 | Extract to shared helper | ASK |
-| 5 | 35 | bob | index.ts:3 | Add backward compat shim | PUSH BACK |
-| 6 | 20 | copilot | (review body) | General "consider adding tests" | SKIP |
+| # | Score | Type | Reviewer | Location | Summary | Action |
+|---|-------|------|----------|----------|---------|--------|
+| 1 | 92 | BUG | copilot | auth.ts:42 | Missing null check on token | FIX |
+| 2 | 85 | BUG | alice | api.ts:78 | Error not propagated to caller | FIX |
+| 3 | 78 | VALID_CONCERN | alice | (review body) | Missing error handling in 3 endpoints | FIX |
+| 4 | 60 | STYLE | copilot | utils.ts:15 | Extract to shared helper | ASK |
+| 5 | 35 | SCOPE_CREEP | bob | index.ts:3 | Add backward compat shim | PUSH BACK |
+| 6 | 20 | STYLE | copilot | (review body) | General "consider adding tests" | SKIP |
 
 ### Legend
-- **FIX** (>= 75): Agree and implement — proceeding now
-- **ASK** (50-74): Needs your call — what do you want to do?
+- **FIX** (>= 70): Agree and implement — proceeding now
+- **ASK** (50-69): Needs your call — what do you want to do?
 - **PUSH BACK** (< 50): Draft reply below — edit or approve
 ```
 
@@ -155,7 +170,7 @@ Stance. We'll add migration support when there's something to migrate from."
 
 **Then immediately — in the same turn:**
 
-1. Start fixing all FIX items (>= 75) while the user reviews ASK and PUSH BACK items
+1. Start fixing all FIX items (>= 70) while the user reviews ASK and PUSH BACK items
 2. Post PUSH BACK replies for items scored < 50 (the user can override before you get to them, but don't wait)
 3. Ask the user about ASK items (50-74):
    - "Should I fix this, push back, or skip?"
@@ -167,7 +182,7 @@ to move fast on the obvious stuff.
 
 ## Phase 4: Execute
 
-### For FIX items (>= 75):
+### For FIX items (>= 70):
 1. Read the relevant source file
 2. Implement the fix
 3. Reply acknowledging the fix:
@@ -208,10 +223,28 @@ threads still pending user decision.
 
 ## Rules
 
-- **Show the triage table before executing** — but don't wait for approval on >= 75 items
+- **Show the triage table before executing** — but don't wait for approval on >= 70 items
 - **One reply per thread** — don't fragment responses across multiple comments
 - **Match the reviewer's tone** — professional for humans, concise for bots
 - **Cite specifics in pushback** — reference CLAUDE.md conventions, complexity budget, or early-dev stance when relevant
 - **Don't argue style** — if the suggestion is purely stylistic and score is < 50, just skip it rather than posting a pushback (note it as SKIP in the table)
+- **Never defer to a follow-up** — don't reply "will address in a follow-up PR" or "good idea, will do in a separate PR". If it scores >= 70, fix it now. If it scores < 50, push back. The only valid deferral is an ASK item (50-69) that the user explicitly decides to skip.
 - **Batch commits** — group all fixes into one commit, not one per thread
 - **User can override anything** — if they say "don't fix #2" before you get to it, stop. If they say "actually fix #4", do it. The confidence score is a default, not a mandate.
+
+## What This Skill Never Does
+
+- Generate a new review — use `/copilot-review` for that
+- Refactor code beyond the specific fix a reviewer requested
+- Add tests unless a reviewer explicitly asked for them
+- Open new issues or PRs beyond the one being triaged
+- Change files not referenced in review comments
+- Resolve threads it didn't reply to — let GitHub auto-resolve
+
+## Gotchas
+
+- GitHub MCP rate limits hit on PRs with 50+ comments — batch reads where possible
+- Review body parsing can split cohesive comments into fragments — check for related threads
+- `is_resolved` field is not always reliable across GitHub Apps — verify thread state manually
+- Bot reviewers with CHANGES_REQUESTED state inflate perceived urgency — apply -10 modifier
+- Deduplication between inline comments and review body summaries is tricky — check for overlap before acting

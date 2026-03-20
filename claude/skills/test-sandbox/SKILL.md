@@ -1,11 +1,14 @@
 ---
 name: test-sandbox
+context: fork
+allowed-tools: Read, Write, Bash(python3:*), Bash(uv:*), Bash(pytest:*), Bash(ls:*), Bash(rm:*)
 description: >
   Run Python test code in an isolated sandbox without polluting the main context.
   Writes test files to .claude/testing/ (gitignored), runs via sub-agent, and
   reports only pass/fail counts and assertion details. Use when you want to quickly
   verify code without writing inline python3 -c scripts. Also supports --sweep to
-  clean stale test files.
+  clean stale test files. Use when the user says "run a quick test", "verify this
+  works", "sanity check", "test this snippet", or invokes /test-sandbox.
 ---
 
 # /test-sandbox — Isolated Test Sandboxing
@@ -38,7 +41,7 @@ Run Python test code in an isolated, sandboxed environment without polluting the
 
 1. **Writes test file** to `.claude/testing/test_<hash>.py` (isolated from repo)
 2. **Runs test** via sub-agent: `uv run pytest .claude/testing/test_<hash>.py --tb=short`
-3. **Reports concisely**: ✓/✗ pass count, assertions run, findings >= 75 confidence only
+3. **Reports concisely**: ✓/✗ pass count, assertions run, findings >= 70 confidence only
 4. **Cleans up** the test file (optional, configurable per session)
 
 The skill delegates to sub-agents to keep your main context clean — you only see the results, not the verbose test output or implementation details.
@@ -95,7 +98,7 @@ On first use, `/test-sandbox` automatically adds `.claude/testing/` to `.gitigno
 ## Quality
 
 - **Real test runner**: Uses your project's `uv run pytest`, not a mock runner. Respects venv, fixtures, conftest.
-- **Confidence scoring**: Only surfaces findings scored >= 75 (high-confidence issues).
+- **Confidence scoring**: Only surfaces findings scored >= 70 (high-confidence issues).
 - **Context discipline**: Sub-agent reports summarized to ~2K max. Full details available in `$TMPDIR` if needed.
 - **Fail-safe cleanup**: Stale test files are swept automatically (24-hour age threshold).
 
@@ -140,8 +143,15 @@ cat .claude/testing/test_*.py  # Inspect the generated test
 
 - **Skill**: Routes test code to sub-agents (roquefort-wrecker for TDD work)
 - **Sub-agents**: Spawn in parallel for independence, write test files, run tests, score findings
-- **Output**: Only pass/fail counts + findings >= 75. Verbose output trapped in sub-agent context.
+- **Output**: Only pass/fail counts + findings >= 70. Verbose output trapped in sub-agent context.
 - **Cleanup**: Automatic after run (unless `--keep` flag used)
 - **Gitignore**: Idempotent (safe to run multiple times)
 
 See `claude/CLAUDE.md` for sub-agent delegation patterns and context discipline rules.
+
+## Gotchas
+
+- Module imports fail if PYTHONPATH doesn't include project root — prefix with `PYTHONPATH=.`
+- conftest.py fixtures from `tests/` are not available in `.claude/testing/` — copy needed fixtures
+- `uv` must be installed — fall back to `python -m pytest` if unavailable
+- Test files in `.claude/testing/` are gitignored but accumulate — use `--sweep` periodically

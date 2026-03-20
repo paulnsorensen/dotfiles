@@ -408,7 +408,7 @@ Estimated tokens for your files: {estimated_tokens} / 50,000
 ## Workflow
 1. Cook: Implement your plan steps (fromage-cook agent patterns)
 2. Press: Run quality gates — fix all failures before continuing
-3. Age: Self-review via fromage-age (sonnet-class, architecture + complexity only, >= 75 confidence)
+3. Age: Self-review via fromage-age (sonnet-class, architecture + complexity only, >= 70 confidence)
 4. De-slop: Use Skill tool to invoke skill='de-slop' on changed files
 5. Commit: Use Skill tool to invoke skill='commit' (conventional format)
 6. Write PR metadata: Create a file `pr-metadata.json` in the worktree root with:

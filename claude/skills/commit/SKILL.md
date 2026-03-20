@@ -65,3 +65,10 @@ EOF
 - **No push, no PR** — hand off to gh skill (GitHub MCP) for that
 - **Hook fails?** Fix the issue, re-stage, create a new commit (not amend)
 - **Don't commit** `.env`, credentials, or large binaries — warn the user
+
+## Gotchas
+
+- Heredoc commit messages with backticks or `$` need single-quoted delimiter (`<<'EOF'` not `<<EOF`)
+- If prek hook fails, the commit did NOT happen — create a new commit after fixing, never amend
+- Co-Authored-By model name drifts as models change — check it matches the active model
+- Empty `git diff HEAD` after staging means nothing new was added — check `git diff --cached` instead

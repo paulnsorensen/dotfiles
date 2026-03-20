@@ -242,3 +242,10 @@ When applying:
 - **No confirmation loops.** Show the dry-run, wait for the user to say apply.
 - **Hook detection is optional.** If no hooks exist, skip HOOK-BLOCKED and deny recommendations. The removal and skill-addition logic still works independently.
 - **Skill detection is best-effort.** If the skills directory can't be found, skip Step 5. The removal logic still works independently.
+
+## Gotchas
+
+- Removing a Bash permission entry forces re-approval next time it's needed — when in doubt, keep it
+- Running during an active session that's accumulating permissions can cause immediate re-addition
+- Pipe characters in regex-style entries need careful matching — don't break valid patterns
+- Hook-redirected skills need their permissions preserved — check hooks before pruning

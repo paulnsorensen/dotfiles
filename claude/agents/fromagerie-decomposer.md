@@ -162,7 +162,7 @@ Return the full decomposition plan as structured markdown:
 | **Estimated wall-clock** | | | | **~Zmin** |
 
 ### Decomposition Notes
-- <Any decision with confidence < 75 — explain the ambiguity>
+- <Any decision with confidence < 70 — explain the ambiguity>
 - <Files that were borderline between foundation and atom — explain the call>
 ```
 
@@ -174,4 +174,4 @@ Return the full decomposition plan as structured markdown:
 - Shared test utilities (fixtures, helpers used by multiple atoms) belong in foundation.
 - If atom count exceeds 10, flag it and suggest which atoms could merge.
 - Never assign a file you haven't verified exists via Serena or Glob.
-- Confidence < 75 on any file assignment: note it, don't silently guess.
+- Confidence < 70 on any file assignment: note it, don't silently guess.

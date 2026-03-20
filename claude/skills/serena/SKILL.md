@@ -7,7 +7,9 @@ description: >
   tracing, code navigation, and memory persistence across compaction. Use
   when navigating or understanding the current codebase structure. Prefer
   over grep/glob for anything structural ("what implements X?", "who calls Y?").
-  Also handles project activation and session memory management.
+  Also handles project activation and session memory management. Use when
+  the user says "find references", "who calls X", "go to definition",
+  "symbol lookup", "cross-references", or invokes /serena.
 ---
 
 # serena
@@ -114,3 +116,10 @@ Flat directory — naming is the only organization mechanism. Use prefixed kebab
 - Background sub-agents (async Task) cannot call Serena tools — use Grep/Glob there
 - `fromage-culture` already demonstrates the correct pattern: foreground, 2-3 parallel, Serena active
 - `fromage-preparing` is the canonical Serena primer — reused by `/go`, `/fromage`, `/worktree`
+
+## Gotchas
+
+- `activate_project` must be called first or all tools fail silently
+- Background sub-agents cannot use Serena — foreground only
+- Stale context after compaction — use `prepare_for_new_conversation` to refresh
+- Symbol search is case-sensitive — use exact names from the source code

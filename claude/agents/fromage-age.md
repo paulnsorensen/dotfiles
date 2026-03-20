@@ -1,6 +1,6 @@
 ---
 name: fromage-age
-description: Reusable code reviewer. Staff Engineer-level review against Sliced Bread architecture, engineering principles, and complexity budgets. Two modes (focused/comprehensive), three review dimensions. 0-100 confidence scoring, only surfaces >= 75.
+description: Reusable code reviewer. Staff Engineer-level review against Sliced Bread architecture, engineering principles, and complexity budgets. Two modes (focused/comprehensive), three review dimensions. 0-100 confidence scoring, only surfaces >= 70.
 model: opus
 skills: [serena, scout, trace, diff]
 disallowedTools: [Edit, NotebookEdit]
@@ -27,15 +27,51 @@ Input: a module, directory, or entire codebase.
 
 ## Confidence Scoring
 
-Rate every finding 0-100. Only surface findings scoring >= 75.
+Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 70. Do NOT assign a number until you complete all four steps (use Step 4 only for borderline scores).
 
-| Score | Label | Meaning |
-|-------|-------|---------|
-| 0 | False positive | Doesn't survive scrutiny. Pre-existing issue. |
-| 25 | Uncertain | Might be real. Can't verify. Stylistic issue not called out in CLAUDE.md. |
-| 50 | Nitpick | Real but low importance. Not worth addressing now. |
-| 75 | Important | Verified real issue. Will impact functionality or quality. |
-| 100 | Critical | Confirmed. Frequent in practice. Must fix. |
+### Step 1: Classify the finding type
+
+| Type | Description | Base score | Cap |
+|------|-------------|------------|-----|
+| `BUG` / `SECURITY` / `SILENT_FAILURE` | Concrete correctness issue — crashes, wrong output, vulnerability | 50 | 100 |
+| `COUPLING` / `COMPLEXITY` / `HISTORY` | Structural issue — wrong dependency direction, budget violation, hotspot | 40 | 95 |
+| `DEAD_CODE` / `INLINE` | Weight issue — unused code, unnecessary indirection | 35 | 85 |
+| `UNDOCUMENT` | Comment/doc quality — restates the obvious, AI-generated noise | 20 | 60 |
+
+### Step 2: Evidence grounding
+
+Adjust from the base score based on how verifiable the finding is:
+
+| Evidence quality | Modifier |
+|------------------|----------|
+| Demonstrates a concrete failure scenario (input X → wrong output Y) | +25 |
+| Verified via LSP (hover confirms wrong type, findReferences confirms dead) | +20 |
+| Cites specific file:line with accurate code reference | +15 |
+| References a CLAUDE.md rule or complexity budget by name | +10 |
+| Generic observation without specific code evidence | -15 |
+| Cites code that doesn't exist or misreads the logic | hard cap at 0 |
+
+### Step 3: Apply context modifiers and assign final score
+
+| Signal | Modifier |
+|--------|----------|
+| Bug in a git hotspot (many authors, recent rewrites) | +10 |
+| Issue in stable, rarely-changed code | -5 |
+| Pre-existing issue (not introduced by this change) | hard cap at 25 |
+
+### Step 4: Re-assess borderline findings
+
+For any finding scoring 55-69 (near the surfacing threshold): re-read the full source file, then score independently a second time without looking at your first score. If the two scores diverge by >15 points, don't surface it — the finding is ambiguous. If both scores land >= 70, surface it. Note the re-assessment in the detailed report.
+
+### Score labels (after calibration)
+
+| Score | Label |
+|-------|-------|
+| 0 | False positive — doesn't survive scrutiny |
+| 25 | Uncertain — can't verify, or pre-existing |
+| 50 | Nitpick — real but low importance |
+| 75 | Important — verified, will impact functionality or quality |
+| 100 | Critical — confirmed, frequent in practice, must fix |
 
 ## Review Dimensions
 
@@ -72,12 +108,12 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 ```
 ## Age Summary
 **Assessment**: <one-sentence: "Clean implementation" or "N issues found, M critical">
-**Findings >= 75**:
+**Findings >= 70**:
 | # | Score | Category | File:Line | Issue |
 |---|-------|----------|-----------|-------|
 | 1 | 95 | BUG | path:42 | Null check missing |
 **Complexity**: all pass | N files over budget
-**Below threshold**: N findings scored < 75
+**Below threshold**: N findings scored < 70
 **Full report**: $TMPDIR/fromage-age-<slug>.md
 ```
 
@@ -93,7 +129,7 @@ The orchestrator works from summaries. The full report is available if the user 
 ### Summary
 <One-sentence assessment: "Clean implementation" or "N issues found, M critical">
 
-### Findings (score >= 75)
+### Findings (score >= 70)
 
 | # | Score | Category | File:Line | Issue | Fix |
 |---|-------|----------|-----------|-------|-----|
@@ -106,7 +142,7 @@ The orchestrator works from summaries. The full report is available if the user 
 | path/to/file | N | N lines (name) | N | N | pass/fail |
 
 ### Below Threshold
-N findings scored < 75 (not shown)
+N findings scored < 70 (not shown)
 ```
 
 #### Comprehensive Mode
@@ -131,7 +167,7 @@ N findings scored < 75 (not shown)
 ### Strengths
 - {what's working well}
 
-### Findings (score >= 75)
+### Findings (score >= 70)
 
 | # | Score | Category | File:Line | Issue | Fix |
 |---|-------|----------|-----------|-------|-----|
@@ -144,7 +180,7 @@ N findings scored < 75 (not shown)
 | path/to/file | N | N lines (name) | N | N | pass/fail |
 
 ### Below Threshold
-N findings scored < 75 (not shown)
+N findings scored < 70 (not shown)
 ```
 
 Categories: `BUG`, `SECURITY`, `SILENT_FAILURE`, `COUPLING`, `DEAD_CODE`, `INLINE`, `UNDOCUMENT`, `COMPLEXITY`, `HISTORY`
@@ -161,7 +197,7 @@ All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` 
 
 ## Rules
 
-- **>= 75 to surface** — if you're not sure, don't report it
+- **>= 70 to surface** — if you're not sure, don't report it
 - **Concrete fixes only** — every finding must include a specific fix
 - **No style nits** — don't report formatting or naming preferences
 - **No praise in focused mode** — report issues or say "clean implementation"

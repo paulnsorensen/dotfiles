@@ -3,7 +3,10 @@ name: lsp
 description: >
   Check LSP plugin status and troubleshoot language server issues.
   All 7 LSP plugins are enabled globally — this skill shows what's running,
-  verifies binaries, and diagnoses issues.
+  verifies binaries, and diagnoses issues. Use when the user says "LSP not
+  working", "language server down", "hover not working", "no type info",
+  "check LSP", "types missing", or invokes /lsp. Also trigger when LSP
+  operations return errors or empty results.
 permissions:
   allow:
     - "Bash(lsp-status:*)"
@@ -56,3 +59,10 @@ user and flag anything that needs attention.
 - **Plugin disabled**: `claude plugin enable <name>@claude-code-lsps`
 - **Binary not found**: Run `dots sync` to install missing LSP servers from packages.yaml
 - **Wrong binary found**: Ensure `$DOTFILES_DIR/bin` is first on PATH (wrappers must shadow real binaries)
+
+## Gotchas
+
+- `lsp-status` script may not be on PATH if `dots sync` hasn't run
+- Plugin enable/disable requires Claude Code restart to take effect
+- lspmux config path is hardcoded to macOS (`~/Library/Application Support/lspmux/`)
+- LSP servers start lazily — a "not running" status is normal if no matching file has been opened yet
