@@ -104,17 +104,23 @@ error/value on failure, printing only `false`.
 assert!(result.is_ok());
 assert!(result.is_err());
 assert_eq!(count, 3);  // no context on failure
+```
 
+```rust
 // CLEAN — propagate the real error
 let value = result.expect("scan_worktree should succeed");
 assert_eq!(value.label, "Ready");
+```
 
+```rust
 // CLEAN — check specific error variant
 assert!(matches!(result, Err(MyError::NotFound { .. })));
 // or check the message
 let err = result.unwrap_err();
 assert!(err.to_string().contains("not found"), "expected NotFound, got: {err}");
+```
 
+```rust
 // CLEAN — failure message for non-obvious operands
 assert_eq!(count, 3, "expected 3 active workers after spawn");
 ```
