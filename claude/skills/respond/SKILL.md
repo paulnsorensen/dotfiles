@@ -10,7 +10,10 @@ description: >
   suggestions — whether from Copilot, human reviewers, or bots. Reads all
   unresolved review threads and review bodies, scores each suggestion 0-100,
   and presents a triage table. High-confidence fixes (>= 75) execute
-  immediately while the user reviews uncertain items.
+  immediately while the user reviews uncertain items. Do NOT use to generate
+  a new review — use /copilot-review for that. This skill only processes
+  existing review comments already posted to the PR.
+allowed-tools: Read, Edit, Bash, mcp__plugin_github_github__pull_request_read, mcp__plugin_github_github__add_reply_to_pull_request_comment, mcp__plugin_github_github__add_issue_comment
 ---
 
 # Respond: PR Review Triage
@@ -215,3 +218,12 @@ threads still pending user decision.
 - **Don't argue style** — if the suggestion is purely stylistic and score is < 50, just skip it rather than posting a pushback (note it as SKIP in the table)
 - **Batch commits** — group all fixes into one commit, not one per thread
 - **User can override anything** — if they say "don't fix #2" before you get to it, stop. If they say "actually fix #4", do it. The confidence score is a default, not a mandate.
+
+## What This Skill Never Does
+
+- Generate a new review — use `/copilot-review` for that
+- Refactor code beyond the specific fix a reviewer requested
+- Add tests unless a reviewer explicitly asked for them
+- Open new issues or PRs beyond the one being triaged
+- Change files not referenced in review comments
+- Resolve threads it didn't reply to — let GitHub auto-resolve
