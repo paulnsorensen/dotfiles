@@ -42,25 +42,19 @@ git worktree add .worktrees/<slug> -b claude/<slug>
 - `cd` into `.worktrees/<slug>/`
 - Confirm ready
 
-### 4. Disable pre-commit hooks
-
-Prek writes to `~/.cache/prek/` which is outside the Seatbelt sandbox write paths.
-Worktrees are ephemeral branches where pre-commit hooks aren't meaningful.
-
-```bash
-git -C .worktrees/<slug> config core.hooksPath /dev/null
-```
-
-### 5. Seed local settings
+### 4. Seed local settings
 
 Copy the main repo's `.claude/settings.local.json` into the worktree (preserves LSPs,
 custom permissions, etc.) and merge sandbox config on top. Write to a temp file first
 to avoid truncated output if jq fails on malformed input.
 
+The overlay includes `sandbox.filesystem.allowWrite` for `~/.cache/prek` so that
+prek pre-commit hooks can write their cache inside the Seatbelt sandbox.
+
 If `.claude/settings.local.json` exists at repo root:
 ```bash
 mkdir -p .worktrees/<slug>/.claude
-SANDBOX='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
+SANDBOX='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":["~/.cache/prek"]}}}'
 jq --argjson overlay "$SANDBOX" '. * $overlay' <REPO_ROOT>/.claude/settings.local.json \
   > .worktrees/<slug>/.claude/settings.local.json.tmp \
   && mv .worktrees/<slug>/.claude/settings.local.json.tmp \
@@ -70,13 +64,13 @@ jq --argjson overlay "$SANDBOX" '. * $overlay' <REPO_ROOT>/.claude/settings.loca
 If no `.claude/settings.local.json` at repo root, write sandbox-only:
 ```bash
 mkdir -p .worktrees/<slug>/.claude
-echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}' | jq . \
+echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":["~/.cache/prek"]}}}' | jq . \
   > .worktrees/<slug>/.claude/settings.local.json.tmp \
   && mv .worktrees/<slug>/.claude/settings.local.json.tmp \
        .worktrees/<slug>/.claude/settings.local.json
 ```
 
-### 6. Seed Serena
+### 5. Seed Serena
 
 If `.serena/` exists at repo root but not in the worktree:
 ```bash
@@ -84,7 +78,7 @@ cp -r <REPO_ROOT>/.serena .worktrees/<slug>/.serena
 rm -rf .worktrees/<slug>/.serena/cache
 ```
 
-### 7. Seed hookify rules
+### 6. Seed hookify rules
 
 Copy hookify rules into the worktree's `.claude/` directory. Source from `claude/hookify/` (committed rules) first, then any local-only rules in `.claude/` (skip files that already exist):
 
@@ -106,13 +100,13 @@ for rule in <REPO_ROOT>/.claude/hookify.*.local.md; do
 done
 ```
 
-### 8. Prime Serena
+### 7. Prime Serena
 
 1. `activate_project` for the worktree path
 2. `check_onboarding_performed` — run `onboarding` if needed
 3. `list_memories` — `read_memory` for any relevant ones
 
-### 9. Confirm
+### 8. Confirm
 
 ```
 Worktree ready: <absolute path>
