@@ -138,7 +138,6 @@
     "pyright@claude-code-lsps": true,
     "gopls@claude-code-lsps": true,
     "solargraph@claude-code-lsps": true,
-    "hookify@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,

@@ -27,7 +27,7 @@ This skill teaches you what to catch and how to fix it.
 - **After generating code** — review your own output before presenting it
 - **During /simplify** — run before and after the simplifier pass
 - **In /fromage** — part of the Cook's hygiene checklist
-- **Pre-commit** — hookify rule catches slop in staged changes
+- **Pre-commit** — prek hooks catch common slop in staged changes
 - **On demand** — user says "de-slop", "clean up AI code", etc.
 
 ## Protocol

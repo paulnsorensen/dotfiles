@@ -13,8 +13,8 @@ description: >
 
 Git has commands that can read arbitrary file contents from any branch or commit.
 Using them in Bash bypasses the Read tool, avoids file access controls, and floods
-the context window with unstructured output. The hookify rule `block-git-file-read`
-blocks these at runtime — this skill explains why and what to do instead.
+the context window with unstructured output. This skill explains why these
+patterns are dangerous and what to do instead.
 
 ## Blocked patterns
 
