@@ -187,9 +187,19 @@ pipeline phases. Every pipeline agent should have one. Example from fromage-cook
 "Make design decisions... Add tests... Review code quality" — all belong to
 other phases.
 
+**Decision scaffolds for judgment tasks**: Skills that use "always/never" for
+judgment tasks should use CGCR (Classify → Ground → Context → Reassess) or
+degrees-of-freedom patterns instead. Match constraint level to risk: high
+freedom for low-risk, exact steps for fragile operations.
+See `references/decision-frameworks.md` for the full pattern catalog.
+
+**Gotchas section**: Every skill should capture known failure modes. These are
+the highest-value content per token — they directly prevent repeated failures.
+
 Check: Is the prompt well-structured? Does it explain why? Are there examples?
 Is the role framing concise? Are there walls of text that could be tables?
-Does the agent have an explicit "What You Don't Do" section?
+Does the agent have an explicit "What You Don't Do" section? Does it have a
+Gotchas section? Do judgment tasks use decision scaffolds instead of rigid rules?
 
 #### Dimension 5 — Output Format
 
@@ -261,6 +271,7 @@ recommends for others. Walk the walk.
 | `PROMPT` | Ambiguous instructions, missing examples, wall of text | 35 | 85 |
 | `OUTPUT` | Missing or unclear output format | 30 | 80 |
 | `ACTIVATION` | Poor description, missing triggers, wrong frontmatter fields | 35 | 90 |
+| `ENFORCEMENT` | Critical rule as instruction-only, missing companion hooks | 40 | 90 |
 
 #### Step 2: Evidence grounding
 
@@ -374,6 +385,30 @@ how often they appear and how much impact they have:
 13. **Negation-heavy rules** — Instructions that say "don't do X" without
     providing the positive alternative. LLMs handle "use Y instead of X"
     better than "never use X."
+
+14. **Critical rule as instruction only** — CLAUDE.md says "always run tests"
+    but Claude doesn't. Instructions are requests; hooks are laws. If it must
+    happen 100% of the time, recommend a hook. See `references/hooks-catalog.md`.
+
+15. **"Always/never" for judgment tasks** — Works for mechanical tasks. Fails
+    for judgment where context determines the answer. Recommend CGCR scaffold.
+    See `references/decision-frameworks.md`.
+
+16. **Missing Gotchas section** — No record of known failure modes. Every skill
+    should capture the specific ways Claude gets things wrong, updated over time.
+
+For the full 20-item anti-patterns catalog with diagnostic checklist, read
+`references/anti-patterns.md`.
+
+## Reference Files
+
+Read these before making changes to the relevant dimension:
+
+- `references/calibrated-scoring.md` — 4-step calibration method and templates
+- `references/description-optimization.md` — Trigger optimization with before/after examples
+- `references/decision-frameworks.md` — CGCR, degrees of freedom, example-driven spec
+- `references/hooks-catalog.md` — JS hook examples for activation, validation, enforcement
+- `references/anti-patterns.md` — 20 most common skill mistakes with diagnostic checklist
 
 ## What This Skill Never Does
 
