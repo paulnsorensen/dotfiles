@@ -88,7 +88,128 @@ When ownership gets complex, AI reaches for interior mutability or `unsafe`.
 - Pass short-lived borrows as method parameters
 - Restructure to avoid holding long-lived references
 
-## 6. Hallucinated APIs and deprecated syntax
+## 6. Weak assertions — the #1 AI test smell
+
+`assert!(result.is_ok())` and `assert!(result.is_err())` swallow the actual
+error/value on failure, printing only `false`.
+
+**Fix:**
+- Propagate with `.expect("context")` or `?` to see the real error
+- Check actual values, not just existence
+- For errors, verify the specific variant with `matches!` or check the message
+- Every `assert_eq!`/`assert!` with non-obvious operands needs a failure message
+
+```rust
+// SLOP
+assert!(result.is_ok());
+assert!(result.is_err());
+assert_eq!(count, 3);  // no context on failure
+```
+
+```rust
+// CLEAN — propagate the real error
+let value = result.expect("scan_worktree should succeed");
+assert_eq!(value.label, "Ready");
+```
+
+```rust
+// CLEAN — check specific error variant
+assert!(matches!(result, Err(MyError::NotFound { .. })));
+// or check the message
+let err = result.unwrap_err();
+assert!(err.to_string().contains("not found"), "expected NotFound, got: {err}");
+```
+
+```rust
+// CLEAN — failure message for non-obvious operands
+assert_eq!(count, 3, "expected 3 active workers after spawn");
+```
+
+## 7. `is_none()` / `is_some()` without value context
+
+`assert!(x.is_none())` prints `assertion failed: false`. `assert_eq!` shows what was actually there.
+
+**Fix:**
+- Use `assert_eq!(x, None)` for better failure messages
+- For `is_some()`, extract and check the inner value
+
+```rust
+// SLOP
+assert!(x.is_none());
+assert!(ping["result"]["host_type"].as_str().is_some());
+
+// CLEAN
+assert_eq!(x, None);
+assert_eq!(ping["result"]["host_type"].as_str(), Some("daemon"));
+```
+
+## 8. Async timing slop
+
+Raw `tokio::time::sleep` before assertions is fragile — passes on fast machines, flakes in CI.
+
+**Fix:**
+- Use a `wait_until_async` polling pattern with timeout
+- Sleep-then-assert is only acceptable for testing actual timing behavior
+
+```rust
+// SLOP
+tokio::time::sleep(Duration::from_millis(500)).await;
+assert_eq!(state.status(), "ready");
+
+// CLEAN — poll with timeout
+wait_until_async(Duration::from_secs(2), || async {
+    state.status() == "ready"
+}).await.expect("status should reach ready");
+```
+
+## 9. `#[should_panic]` without `expected`
+
+A bare `#[should_panic]` passes on *any* panic — including unrelated ones from
+refactoring. Always pin the expected message.
+
+**Fix:**
+- Add `expected = "substring"` to match the intended panic message
+
+```rust
+// SLOP
+#[test]
+#[should_panic]
+fn rejects_empty_input() {
+    parse("");
+}
+
+// CLEAN
+#[test]
+#[should_panic(expected = "input must not be empty")]
+fn rejects_empty_input() {
+    parse("");
+}
+```
+
+## 10. No-crash-is-success tests
+
+Tests with zero assertions only prove the code doesn't panic — not that it works.
+
+**Fix:**
+- Add assertions on return values or side effects
+- If intentionally testing "no panic", add an explicit comment documenting why
+
+```rust
+// SLOP
+#[test]
+fn stamp_activity_nonexistent_is_noop() {
+    tracker.stamp_activity("ghost-id");
+}
+
+// CLEAN — document the intent
+#[test]
+fn stamp_activity_nonexistent_is_noop() {
+    // No assertion needed: verifying no panic on missing ID
+    tracker.stamp_activity("ghost-id");
+}
+```
+
+## 11. Hallucinated APIs and deprecated syntax
 
 AI generates functions that don't exist or uses outdated API patterns
 (e.g., `clap` `App::new` instead of derive macros).
