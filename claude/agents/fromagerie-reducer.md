@@ -70,7 +70,7 @@ For each PR group, create a consolidated branch:
 git checkout -b fromagerie/<slug>/pr-<N> <target-branch>
 
 # Cherry-pick from each atom worktree
-wt-git <atom-path> log --oneline  # find commit SHAs
+wt-git <atom-path> log --oneline <target-branch>..HEAD  # find atom-only commit SHAs
 git cherry-pick <sha1> <sha2> ...
 ```
 

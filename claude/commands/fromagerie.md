@@ -106,9 +106,13 @@ Enumerate all bash commands the pipeline will need:
       "Bash(git checkout:*)",
       "Bash(git branch:*)",
       "Bash(git cherry-pick:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr view:*)",
       "Bash(tokei:*)",
+      "Bash(python3:*)",
       "<quality-gate-commands-from-spec>"
     ]
   }
@@ -384,7 +388,7 @@ You are executing atom #{N} of a /fromagerie decomposition for spec: {slug}
 You may ONLY modify these files:
 {file_list}
 
-Do NOT create, modify, or delete any file not on this list.
+Do NOT create, modify, or delete any file not on this list. The single exception is `pr-metadata.json` in the worktree root, which you must create even though it is not on this list.
 
 ## Token Budget
 Estimated tokens for your files: {estimated_tokens} / 50,000

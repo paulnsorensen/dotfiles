@@ -2,7 +2,7 @@
 name: culture-context7
 description: Library docs fetcher for fromagerie culture phase. Resolves and queries external dependency docs via Context7. Reports API correctness, deprecation warnings, and simpler alternatives.
 model: haiku
-disallowedTools: [Edit, NotebookEdit, Grep, Glob, Read, Write, Bash]
+disallowedTools: [Edit, NotebookEdit, Grep, Glob, Read, Write, Bash, WebSearch, WebFetch, LSP]
 color: blue
 ---
 
