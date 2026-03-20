@@ -4,15 +4,17 @@ model: haiku
 fork: true
 allowed-tools: Bash(*), Read, Glob, Grep
 description: >
-  Language-agnostic build/check runner that protects the main context window from
-  verbose compiler output. Auto-detects build system (just, cargo, npm, go, make,
-  cmake, gradle, maven, uv/python), runs the build in a forked subagent, parses
-  errors into structured file:line:col format, and returns only actionable results.
-  Use when the user says /make, /build, /check, /compile, or when you need to verify
-  code compiles after edits. Also handles /make test (run tests), /make fmt (formatter
-  check), and /make clean. Use this skill PROACTIVELY after writing or editing code —
-  don't run raw build commands in the main context. Even for non-standard projects,
-  this skill checks CLAUDE.md for documented build commands as a fallback.
+  You cannot run build commands (cargo check, cargo clippy, go build, npm run build,
+  just check, tsc, pytest, etc.) directly — hooks will block them and raw compiler
+  output floods your context window. This skill is the ONLY way to verify code
+  compiles, run linters, execute tests, or check formatting. It runs in a forked
+  subagent that absorbs all verbose output and returns only structured file:line:col
+  errors. Auto-detects build system (just, cargo, npm, go, make, cmake, gradle,
+  maven, uv/python). Triggers automatically when you need to: check if code compiles
+  after edits, verify a refactor didn't break anything, run clippy/eslint/ruff, run
+  tests, check formatting, clean build artifacts, or fix a CI failure. Also triggers
+  on /make, /build, /check, /compile. Subcommands: /make test, /make lint, /make fmt,
+  /make clean. If a hook blocks a build command, invoke this skill immediately.
 ---
 
 # make
@@ -29,7 +31,10 @@ the main context window.
 | Invocation | Action |
 |---|---|
 | `/make` or no args | Detect build system, run default check/build |
+| `/make check` | Alias for `/make` — type-check without full build |
+| `/make build` | Full build (not just type-check) |
 | `/make test` | Run test suite (detect framework, return pass/fail + failures) |
+| `/make lint` | Run linter (clippy, ruff, eslint — stricter than check) |
 | `/make fmt` | Run formatter in check mode (report unformatted files) |
 | `/make clean` | Clean build artifacts |
 | `/make <file>` | Check a specific file if the build system supports it |
@@ -225,6 +230,21 @@ Parse output into pass/fail/skip counts plus failure details:
 ```
 
 Cap failure detail at 10 lines per test, 5 detailed + rest summarized if >10 failures.
+
+## Subcommand: lint
+
+Run the project's linter (stricter than check — includes style, complexity, correctness warnings):
+
+| Tool | Lint Command |
+|---|---|
+| just | `just lint 2>&1` (if recipe exists, else fall back to tool-specific) |
+| cargo/clippy | `cargo clippy --message-format=short 2>&1` |
+| npm/eslint | `npx eslint . 2>&1` |
+| go/golangci-lint | `golangci-lint run 2>&1` |
+| uv/ruff | `uv run ruff check . 2>&1` |
+| make | `make lint 2>&1` (if target exists) |
+
+Parse output using the same error/warning format as Step 3.
 
 ## Subcommand: fmt
 
