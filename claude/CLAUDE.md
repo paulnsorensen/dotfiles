@@ -104,48 +104,30 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/xray`, `/onboard` |
 
-All agents use 0-100 confidence scoring (>= 70 to surface). This applies pipeline-wide:
-
-| Agent/Skill | Scoring |
-|-------------|---------|
-| Research | Per-source 0-100, aggregate overall |
-| Ricotta-reducer/Simplifier | Per-finding 0-100 |
-| Fromage-age | Per-finding 0-100 |
-| Fromage-press | Per-failure 0-100 |
-| Fromage-cook | Per-step completion confidence 0-100 |
-| Fromage-fort | Per-thread 0-100, auto-fix >= 70 |
-| Fromagerie-decomposer | Per-file-assignment 0-100, surface < 70 as notes |
-
-**When confidence < 70 on any decision, ask the user.** Don't guess and move on.
-
-**Never claim green on partial work.** If steps were skipped, blockers hit, or scope was reduced, report it honestly. The orchestrator (and the Cheese Lord) need accurate status to make good decisions. Lying about completion is the cardinal sin of the pipeline.
+All agents use 0-100 confidence scoring (>= 70 to surface). Each agent defines its own scoring granularity. **When confidence < 70, ask the user.** Never claim green on partial work — lying about completion is the cardinal sin of the pipeline.
 
 ## Skill Delegation
 
 When a skill is available, use it — never fall back to raw bash equivalents.
 
-| Task | Skill | Tools it provides | NEVER use instead |
-|------|-------|-------------------|-------------------|
-| Search files | scout | `rg`, `fd`, `ls` (eza) | `find`, `grep`, bare `ls` |
-| Code structure | trace | `sg` (ast-grep) | grep for code shapes |
-| Pre-commit check | diff | git diff/status/log, rg, sg | raw git + manual scanning |
-| File editing | chisel | `sd`, Edit | `sed`, `awk` |
-| Git operations | commit | full git | manual git add/commit |
-| GitHub ops | gh | GitHub MCP (`mcp__plugin_github_github__*`), `gh` CLI fallback | raw GitHub API |
-| Code navigation | LSP | goToDefinition, findReferences, hover | grep for definitions |
-| External docs | fetch | Context7, WebSearch, octocode | guessing from training data |
-| Worktree isolation | worktree | git worktree setup | manual branch + cd |
-| AI slop cleanup | de-slop | language-specific anti-pattern refs | ignoring AI tells |
-| Weak test assertions | tdd-assertions | framework-specific assertion refs | truthy checks, catch-all errors |
-| PR review response | respond | confidence triage, GitHub MCP replies | manually reading and replying to each comment |
+| Task | Skill | NEVER use instead |
+|------|-------|--------------------|
+| Search files | scout | `find`, `grep`, bare `ls` |
+| Code structure | trace | grep for code shapes |
+| Pre-commit check | diff | raw git + manual scanning |
+| File editing | chisel | `sed`, `awk` |
+| Git operations | commit | manual git add/commit |
+| GitHub ops | gh | raw GitHub API |
+| Code navigation | LSP | grep for definitions |
+| External docs | fetch | guessing from training data |
+| Worktree isolation | worktree | manual branch + cd |
+| AI slop cleanup | de-slop | ignoring AI tells |
+| Weak test assertions | tdd-assertions | truthy checks, catch-all errors |
+| PR review response | respond | manually replying to each comment |
 
 **Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
 
-**LSP integration** — All 7 LSP plugins are enabled globally. Claude Code's built-in `LSP` tool provides 9 operations (`goToDefinition`, `findReferences`, `hover`, `documentSymbol`, etc.):
-- **Lazy startup**: Servers only start when the LSP tool is invoked on a matching file type — zero cost when idle
-- **Auto-diagnostics**: After file edits, the language server reports type errors, missing imports, and syntax issues
-- **lspmux**: Deduplicates server instances across sessions per workspace root
-- **Status/troubleshooting**: Run `/lsp` to check what's running and verify binaries
+**LSP integration** — All 7 LSP plugins are enabled globally (lazy startup, zero cost when idle). Run `/lsp` for status and troubleshooting.
 
 **Agent permission modes** — `acceptEdits` and `bypassPermissions` only suppress the interactive approval dialog for Edit/Write — they do NOT auto-approve Bash or MCP calls. Bash permissions use a separate allowlist (`permissions.allow` entries like `Bash(git:*)`). In sandboxed environments (Conductor, fresh sessions without your `settings.json`), worktree agents may lack allowlist entries for `git push`, `gh pr create`, etc. **Design pattern**: have isolated agents do code work + commit only, then return control to the orchestrator (which runs in the user's session with full permissions) for push/PR operations.
 
@@ -172,14 +154,4 @@ If violations found: fix them, then try stopping again. Use `/diff` to smoke-tes
 
 ## Troubleshooting
 
-**MCPs not loading?**
-- Run `/go` to re-prime MCPs
-- Check `~/.claude/mcp/registry.yaml` for syntax errors
-- Verify external tools are installed (e.g., `which octocode-mcp`)
-
-**Agent or skill not found?**
-- Run `/agents` to discover currently available agents
-- Some agents/skills are context-dependent (only available in certain project types)
-- Restart Claude Code if you just installed a new plugin
-
-See `~/.claude/commands/` for available commands and `~/.claude/agents/` for specialist agents.
+MCPs broken? → `/go`. Agent missing? → `/agents`. LSP down? → `/lsp`.

@@ -1,6 +1,6 @@
 ---
 name: commit
-model: sonnet
+model: haiku
 allowed-tools: Bash(git:*)
 description: >
   Stage and commit changes to git following conventional commits format. Use

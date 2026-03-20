@@ -1,7 +1,7 @@
 ---
 name: fromagerie-reducer
 description: Consolidates fromagerie atom worktrees into 1-3 reviewable PRs. Groups by slice boundary, fixes integration issues, reviews quality.
-model: opus
+model: sonnet
 skills: [scout, diff, chisel, commit, wt-git]
 color: gold
 ---
