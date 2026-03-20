@@ -1,5 +1,6 @@
 ---
 name: respond
+model: sonnet
 description: >
   Respond to PR review comments with confidence-rated triage. Handles both
   inline review threads (anchored to diff lines) AND PR-level review body
@@ -34,7 +35,7 @@ pull_request_read(method: "get_review_comments", owner, repo, pullNumber)
 
 **PR-level review bodies** (summary comments submitted with a review):
 ```
-gh api repos/{owner}/{repo}/pulls/{pullNumber}/reviews
+pull_request_read(method: "get_reviews", owner, repo, pullNumber)
 ```
 
 Also fetch PR metadata for context:
@@ -172,7 +173,7 @@ Stance. We'll add migration support when there's something to migrate from."
 
 1. Start fixing all FIX items (>= 70) while the user reviews ASK and PUSH BACK items
 2. Post PUSH BACK replies for items scored < 50 (the user can override before you get to them, but don't wait)
-3. Ask the user about ASK items (50-74):
+3. Ask the user about ASK items (50-69):
    - "Should I fix this, push back, or skip?"
    - Include enough context for a quick decision
 
@@ -192,8 +193,7 @@ to move fast on the obvious stuff.
      ```
    - **Review body items**: post a PR conversation comment referencing the review:
      ```
-     gh api repos/{owner}/{repo}/issues/{pullNumber}/comments \
-       -f body="Re: @reviewer's review — Fixed: <brief description>."
+     add_issue_comment(owner, repo, number: pullNumber, body: "Re: @reviewer's review — Fixed: <brief description>.")
      ```
    ```
    Fixed — <brief description of what changed>.
@@ -207,12 +207,11 @@ to move fast on the obvious stuff.
      ```
    - **Review body items**:
      ```
-     gh api repos/{owner}/{repo}/issues/{pullNumber}/comments \
-       -f body="Re: @reviewer's review — <pushback explanation>."
+     add_issue_comment(owner, repo, number: pullNumber, body: "Re: @reviewer's review — <pushback explanation>.")
      ```
 2. Keep the tone professional and specific — explain *why*, not just *no*
 
-### For ASK items (50-74) after user decides:
+### For ASK items (50-69) after user decides:
 - Execute as FIX or PUSH BACK based on the user's decision
 - If the user doesn't respond to a specific ASK, leave it unresolved
 
