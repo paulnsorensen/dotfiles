@@ -84,7 +84,7 @@ rm -rf .worktrees/<slug>/.serena/cache
 2. `check_onboarding_performed` — run `onboarding` if needed
 3. `list_memories` — `read_memory` for any relevant ones
 
-### 8. Confirm
+### 7. Confirm
 
 ```
 Worktree ready: <absolute path>
@@ -92,3 +92,16 @@ Branch: claude/<slug>
 Base: <short SHA> (<branch forked from>)
 Serena: active (memories loaded)
 ```
+
+## What You Don't Do
+
+- Commit, push, or create PRs — use /wt-git for git operations in worktrees
+- Set up full project environments — only creates the worktree and seeds Serena
+- Delete worktrees — use /worktree-sweep for cleanup
+
+## Gotchas
+
+- Worktree creation fails if the branch already exists on remote — use a unique branch name
+- jq errors if settings.local.json is malformed — the tmp-file write pattern avoids corruption
+- Serena onboarding can time out on large repos — set a 30-second limit
+- Worktree path must not contain spaces — use slugified names only

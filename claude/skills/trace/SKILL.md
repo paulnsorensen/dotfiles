@@ -254,3 +254,11 @@ decides what to read next based on this list.
 
 For comprehensive rule syntax (atomic, relational, composite rules, metavariable
 constraints, transforms), see `references/rule_reference.md`.
+
+## Gotchas
+
+- Missing `stopBy: end` in relational rules silently returns incomplete results — the #1 failure mode
+- Shell expansion eats `$` in inline rules — always use single quotes or escape
+- Pattern must match AST node structure exactly — use `sg --debug-query=ast` to verify node names
+- Some languages use unexpected AST names (`arrow_function` vs `function_declaration` in JS/TS)
+- Large repos with many matches can overwhelm haiku's context — use `--json` and pipe through `jq` to filter

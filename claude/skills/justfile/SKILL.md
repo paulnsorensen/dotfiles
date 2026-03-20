@@ -8,6 +8,7 @@ description: >
   a Makefile that would benefit from just's simpler syntax, or when setting
   up a new project that needs common dev commands (build, test, lint, fmt).
   Covers Rust, Python, TypeScript/JavaScript, Go, and Ruby ecosystems.
+  Do NOT use for CI pipeline configuration, Dockerfiles, or actual build system setup (cargo, webpack, etc.).
 ---
 
 # justfile
@@ -209,3 +210,18 @@ analyze:
 - Don't put secrets in justfiles — use dotenv or env vars
 - Don't write 200-line justfiles — use modules (`mod`) to split by concern
 - Don't duplicate CI pipeline steps 1:1 — group them into meaningful recipes like `check` or `ci`
+
+## What You Don't Do
+
+- Design CI pipelines or GitHub Actions workflows
+- Create Dockerfiles or container configs
+- Replace actual build systems (cargo, webpack, go build) — just wraps them
+- Remove existing Makefiles without user confirmation
+
+## Gotchas
+
+- `just` binary may not be on PATH — check with `which just` before generating recipes
+- Shebang recipes need explicit `#!/usr/bin/env` for portability across systems
+- `dotenv-load` exposes all env vars to all recipes — avoid for secrets-heavy projects
+- Module paths are relative to the justfile location, not the working directory
+- `set positional-arguments` changes how `$1` works inside recipes — document when used

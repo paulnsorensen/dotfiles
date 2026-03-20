@@ -1,11 +1,13 @@
 ---
 name: test-sandbox
+context: fork
 description: >
   Run Python test code in an isolated sandbox without polluting the main context.
   Writes test files to .claude/testing/ (gitignored), runs via sub-agent, and
   reports only pass/fail counts and assertion details. Use when you want to quickly
   verify code without writing inline python3 -c scripts. Also supports --sweep to
-  clean stale test files.
+  clean stale test files. Use when the user says "run a quick test", "verify this
+  works", "sanity check", "test this snippet", or invokes /test-sandbox.
 ---
 
 # /test-sandbox — Isolated Test Sandboxing
@@ -145,3 +147,10 @@ cat .claude/testing/test_*.py  # Inspect the generated test
 - **Gitignore**: Idempotent (safe to run multiple times)
 
 See `claude/CLAUDE.md` for sub-agent delegation patterns and context discipline rules.
+
+## Gotchas
+
+- Module imports fail if PYTHONPATH doesn't include project root — prefix with `PYTHONPATH=.`
+- conftest.py fixtures from `tests/` are not available in `.claude/testing/` — copy needed fixtures
+- `uv` must be installed — fall back to `python -m pytest` if unavailable
+- Test files in `.claude/testing/` are gitignored but accumulate — use `--sweep` periodically

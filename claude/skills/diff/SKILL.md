@@ -1,7 +1,7 @@
 ---
 name: diff
 model: haiku
-fork: true
+context: fork
 allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(rg:*), Bash(sg:*), Bash(delta), Read
 description: >
   Quick pre-commit smoke test of staged or unstaged changes. Scans for blockers
@@ -89,3 +89,10 @@ If issues found:
 - Run tests (that's a separate step)
 
 This is a quick gate, not a code review. For thorough review, use `/age` or `/code-review`.
+
+## Gotchas
+
+- Haiku may miss subtle secrets (base64-encoded keys, hex tokens without common prefixes)
+- Binary files in the diff produce noise — skip files detected as binary
+- `sg` pattern matching operates on full files, not diff hunks — patterns may match pre-existing code
+- Delta pager can interfere with raw diff capture — use `--no-pager` for machine-readable output

@@ -9,6 +9,8 @@ description: >
   skill is the antidote. Trigger proactively on code review, post-generation
   cleanup, and pre-commit checks. If code was just written or modified by an AI
   (including you), this skill applies.
+model: sonnet
+allowed-tools: Read, Edit, Grep, Glob, Bash(rg:*), Bash(sg:*)
 ---
 
 # de-slop
@@ -147,3 +149,10 @@ De-slopped 4 patterns:
 ```
 
 Don't over-explain. The fix speaks for itself.
+
+## Gotchas
+
+- Tends to over-delete comments — some "what" comments are needed in unfamiliar codebases
+- May flag intentional defensive error handling as "silent swallowing" — check intent before removing
+- Language reference files must be read before fixing — patterns differ across languages
+- `unwrap()` in Rust test code is idiomatic, not slop — only flag in production code

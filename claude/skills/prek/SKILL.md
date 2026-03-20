@@ -10,6 +10,7 @@ description: >
   an existing prek.toml, audit their hook config, or migrate from
   pre-commit to prek. Covers Rust, Python, TypeScript/JavaScript, Go,
   Ruby, and Shell projects.
+  Do NOT use for husky, lint-staged, or CI pipeline hook configuration — this skill is specifically for prek.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(prek:*), mcp__context7__resolve-library-id, mcp__context7__query-docs
 ---
 
@@ -229,3 +230,17 @@ If `.pre-commit-config.yaml` exists:
 1. prek reads YAML natively — the existing config works as-is
 2. Offer to convert to `prek.toml` for access to prek-only features (glob patterns, `repo: builtin`)
 3. Replace `repo: https://github.com/pre-commit/pre-commit-hooks` with `repo: builtin` where hooks are supported
+
+## What You Don't Do
+
+- Configure CI pipelines, GitHub Actions, or other CI hook systems
+- Manage husky, lint-staged, or pre-commit (Python) configs
+- Remove existing hooks without user confirmation
+- Modify `.pre-commit-config.yaml` directly — only generates `prek.toml`
+
+## Gotchas
+
+- Context7 may be unavailable — fall back to training data for hook recommendations
+- `prek run --all-files` can fail on first run if auto-fix hooks reformat everything
+- Rev pinning in `prek.toml` goes stale — recommend periodic updates
+- `prek install` needs write access to `.git/hooks/` — fails in worktrees with shared hooks

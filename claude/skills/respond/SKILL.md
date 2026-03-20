@@ -13,7 +13,7 @@ description: >
   immediately while the user reviews uncertain items. Do NOT use to generate
   a new review — use /copilot-review for that. This skill only processes
   existing review comments already posted to the PR.
-allowed-tools: Read, Edit, Bash, mcp__plugin_github_github__pull_request_read, mcp__plugin_github_github__add_reply_to_pull_request_comment, mcp__plugin_github_github__add_issue_comment
+allowed-tools: Read, Edit, Bash(gh:*), Bash(git:*), mcp__plugin_github_github__pull_request_read, mcp__plugin_github_github__add_reply_to_pull_request_comment, mcp__plugin_github_github__add_issue_comment
 ---
 
 # Respond: PR Review Triage
@@ -87,28 +87,40 @@ treat it as one item.
 into scoring (it raises confidence that the suggestion matters, though it
 doesn't automatically make the suggestion *correct*).
 
-**Scoring guidance:**
+### Step 3: Score Each Suggestion (4-Step Calibration)
 
-| Score | Meaning | Signals |
-|-------|---------|---------|
-| 90-100 | Clearly correct | Catches a real bug, missing validation, or factual error |
-| 75-89 | Good suggestion | Improves clarity, matches codebase conventions, or fixes a real gap |
-| 50-74 | Debatable | Style preference, trade-off with no clear winner, or context-dependent |
-| 25-49 | Likely wrong | Misunderstands intent, suggests unnecessary complexity, or conflicts with project conventions |
-| 0-24 | Clearly wrong | Factually incorrect, contradicts documented patterns, or would introduce a bug |
+**Step 1 — Classify suggestion type:**
 
-**What raises confidence:**
-- Suggestion catches a real bug or security issue
-- Points out a missing edge case with a concrete example
-- Aligns with patterns documented in CLAUDE.md or the codebase
-- Multiple reviewers agree
+| Type | Description | Base | Cap |
+|------|-------------|------|-----|
+| BUG | Correctness issue, logic error, crash | 50 | 100 |
+| SECURITY | Vulnerability, data exposure, auth bypass | 55 | 100 |
+| CONVENTION | Style, naming, project-standard deviation | 25 | 65 |
+| STYLE | Formatting, subjective preference | 15 | 50 |
+| SCOPE_CREEP | Unrelated improvement, "while you're here" | 20 | 55 |
+| VALID_CONCERN | Architectural, performance, maintainability | 40 | 90 |
 
-**What lowers confidence:**
-- Reviewer is a bot making a generic observation
-- Suggestion adds complexity without clear benefit
-- Conflicts with the project's stated conventions (YAGNI, complexity budget, etc.)
-- "You should also..." additions that weren't in the original scope
-- Backward-compatibility concerns in early-development projects (per Early Development Stance)
+**Step 2 — Evidence grounding:**
+
+| Evidence | Modifier |
+|----------|----------|
+| Reviewer cites specific code with accurate analysis | +20 |
+| Suggestion references project convention or CLAUDE.md rule | +15 |
+| Generic observation without specific code reference | -10 |
+| Reviewer misreads the code or cites wrong line | hard cap 0 |
+
+**Step 3 — Context modifiers:**
+
+| Signal | Modifier |
+|--------|----------|
+| CHANGES_REQUESTED review state | +10 |
+| Reviewer is a maintainer/codeowner | +10 |
+| Bot reviewer (Copilot, CodeRabbit, etc.) | -10 |
+| Suggestion duplicates another thread | -15 |
+| Pre-existing issue not introduced by this PR | -15 |
+
+**Step 4 — Re-assess borderline (65-84):**
+Re-read the reviewer's comment and the relevant code independently. If two scores diverge >15 points, the suggestion is ambiguous — present to user rather than auto-acting.
 
 ## Phase 3: Triage Table + Immediate Execution
 
@@ -227,3 +239,11 @@ threads still pending user decision.
 - Open new issues or PRs beyond the one being triaged
 - Change files not referenced in review comments
 - Resolve threads it didn't reply to — let GitHub auto-resolve
+
+## Gotchas
+
+- GitHub MCP rate limits hit on PRs with 50+ comments — batch reads where possible
+- Review body parsing can split cohesive comments into fragments — check for related threads
+- `is_resolved` field is not always reliable across GitHub Apps — verify thread state manually
+- Bot reviewers with CHANGES_REQUESTED state inflate perceived urgency — apply -10 modifier
+- Deduplication between inline comments and review body summaries is tricky — check for overlap before acting

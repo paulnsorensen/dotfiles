@@ -7,6 +7,7 @@ description: >
   quality before finishing. Also trigger when the user expresses doubt about your output
   ("did you actually test that?", "are you sure?", "that seems incomplete"). This skill
   cross-references with /de-slop and /tdd-assertions for items that have dedicated tooling.
+allowed-tools: Read, Edit, Glob, Grep
 ---
 
 # self-eval
@@ -65,3 +66,17 @@ After fixes, output the updated scorecard with a one-line summary:
 - **All PASS**: "Clean. Ready to ship."
 - **Fixes applied**: "Fixed N violations. Review changes above."
 - **Unresolvable**: "N items need user input." (explain what and why)
+
+## What You Don't Do
+
+- Refactor beyond removing the specific violation
+- Add new tests — delegate to /tdd-assertions
+- Rewrite working code for style preferences
+- Expand scope of prior changes
+
+## Gotchas
+
+- Self-evaluating your own evaluation creates recursion — limit to one pass
+- /de-slop and /tdd-assertions may not be available in sub-agent contexts
+- Auto-fixing a violation can introduce a new one — re-check after each fix
+- Not all checklist items apply to every response — skip items that don't match the task type

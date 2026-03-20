@@ -1,13 +1,16 @@
 ---
 name: gh
 model: haiku
-fork: true
+context: fork
 allowed-tools: mcp__plugin_github_github__*, Bash(git:*), Bash(gh:*), Bash(gh-pr-review:*), Bash(gh-pr-prep:*), Bash(gh-issue-context:*), Bash(gh-pr-batch:*), Bash(gh-pr-checks-batch:*)
 description: >
   Complete GitHub tasks using the GitHub MCP plugin. Use for any GitHub operation —
   PRs, issues, CI checks, repo management, releases, code search.
   Use git commands (log, diff, status) for local context.
   Prefer MCP tools over gh CLI — they bypass sandbox/TLS issues.
+  Use when the user says "create PR", "merge PR", "check CI", "list issues", "review PR",
+  "PR status", "close issue", or invokes /gh. Do NOT use for local git operations like
+  commit, stage, or push — use /commit for those.
 examples:
   - "review PR 14"
   - "create a PR for my branch"
@@ -178,3 +181,16 @@ git log --oneline origin/main..HEAD   # commits going into the PR
 git diff origin/main...HEAD           # full diff for PR body
 git status                            # working tree state
 ```
+
+## What You Don't Do
+
+- Commit, push, rebase, or modify the local working tree — use /commit for git write operations
+- Review code quality — use /age or /code-review
+- Create worktrees — use /worktree
+
+## Gotchas
+
+- MCP auth tokens can expire mid-session — if MCP calls start failing, restart Claude Code
+- `gh` CLI has TLS issues in sandboxed environments — prefer MCP tools
+- Heredoc `--body` with markdown headers triggers the "# hides arguments" safety heuristic — use `--body-file` or MCP instead
+- Rate limits hit harder on large repos with many PRs — batch operations where possible

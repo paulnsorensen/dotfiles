@@ -1,5 +1,6 @@
 ---
 name: xray
+model: opus
 description: >
   Interactive design verification via dependency graph traversal. Replaces /notebook.
   Use when reviewing large modules, verifying agent output, auditing design decisions,
@@ -399,6 +400,12 @@ progress: {verified}/{total} nodes
 - {timestamp}: {node} marked {color} — {reason}
 ```
 
+### Session Limits
+
+After ~40 tool calls or 15 nodes analyzed, suggest saving progress and resuming
+in a fresh session to avoid context degradation. Interactive sessions accumulate
+context faster than batch operations.
+
 ### Wrap-up
 
 When the user says `done` or all nodes are verified:
@@ -425,3 +432,18 @@ When the user says `done` or all nodes are verified:
 - Not `/de-slop` standalone — de-slop runs as part of xray verification.
 - Not `/test` — test execution is delegated to whey-drainer within xray.
 - Not a CI gate — this is interactive, human-in-the-loop verification.
+
+## What You Don't Do
+
+- Auto-fix findings — suggest /de-slop or /wreck instead, let the user decide
+- Run without user confirmation at each node — this is interactive by design
+- Replace /age or /code-review — xray verifies design decisions, not code quality
+- Write tests — delegate to /wreck for adversarial testing
+
+## Gotchas
+
+- Dependency graph building fails on repos without standard import patterns — fall back to manual node selection
+- LSP `callHierarchy` is not available for all languages — use grep-based fallback
+- `.context/xrays/` directory requires write access — create it if missing
+- Mermaid graphs break above ~50 nodes — split into subgraphs for large modules
+- Sub-agent spawning (xray-scout, xray-analyst, xray-verifier) adds latency — budget 30s per node

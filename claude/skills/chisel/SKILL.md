@@ -7,6 +7,8 @@ description: >
   Prefer sd for regex/pattern replacements, multi-file substitutions, or simple
   string swaps. Use Edit for single-file precise replacements where surrounding
   context must be matched exactly. Never use sed — sd is always the CLI choice.
+  Use when the user says "replace", "rename", "find and replace", "substitution",
+  "regex replace", "bulk rename", or invokes /chisel.
 ---
 
 # chisel
@@ -83,3 +85,10 @@ file and only one occurrence needs changing.
 - `old_string` must be **unique** in the file — extend with surrounding lines if not
 - Read the file first to confirm exact text (whitespace matters)
 - Use `replace_all: true` only when every occurrence should change
+
+## Gotchas
+
+- sd uses regex by default — literal dots need escaping (`\.` not `.`)
+- Edit tool fails if `old_string` isn't unique — provide more surrounding context
+- In zsh, sd glob patterns may expand unexpectedly — quote patterns or use single quotes
+- sd's regex flavor differs from sed — `\b` word boundaries work, but backreferences use `$1` not `\1`

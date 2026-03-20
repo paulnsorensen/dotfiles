@@ -10,6 +10,7 @@ description: >
   scoring, tool scoping, sub-agent delegation, fork vs inline, context budgets,
   and activation optimization. Do NOT use for creating new skills from scratch —
   use /skill-creator for that.
+allowed-tools: Read, Glob, Grep
 ---
 
 # skill-improver

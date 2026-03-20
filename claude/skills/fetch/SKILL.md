@@ -1,7 +1,7 @@
 ---
 name: fetch
 model: sonnet
-fork: true
+context: fork
 allowed-tools: WebSearch, WebFetch, gh, Task(subagent_type="general-purpose"), mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__octocode__*
 description: >
   Fetch external documentation or code while protecting the main context window.
@@ -134,3 +134,10 @@ Tell the subagent to **return a summary**, not raw file contents.
 - Using WebFetch for authenticated GitHub repos (use `gh` skill / GitHub MCP instead)
 - Using octocode for GitHub ops (PRs, issues) — that's the `gh` skill's job (via MCP)
 - Calling WebSearch when training data is clearly sufficient
+
+## Gotchas
+
+- Context7 `resolve-library-id` sometimes returns the wrong library for ambiguous names — verify the resolved ID
+- WebFetch on JavaScript-heavy sites returns empty content — try WebSearch as fallback
+- Sub-agent summaries can lose critical version-specific details — request explicit version numbers
+- Large MCP responses (>25K tokens) get truncated — write to `/tmp/` and analyze via file read

@@ -1,6 +1,6 @@
 ---
 name: wt-git
-model: sonnet
+model: haiku
 allowed-tools: Bash(git:*), Bash(gh:*), Bash(wt-git:*), Read, Grep, Glob
 description: >
   Run git and GitHub operations inside a worktree without triggering Claude Code's
@@ -122,3 +122,16 @@ wt-git .worktrees/my-task status
 wt-git .worktrees/my-task log --oneline origin/main..HEAD
 wt-git .worktrees/my-task diff --stat origin/main...HEAD
 ```
+
+## What You Don't Do
+
+- Create worktrees — use /worktree for that
+- Handle non-worktree git operations — use /commit for the main repo
+- Resolve merge conflicts — use the standard git workflow
+
+## Gotchas
+
+- `wt-git` wrapper must be on PATH (sourced from zsh/claude.zsh) — sub-agents may not have it
+- `gh pr create --body-file` still triggers heuristic if the temp file path contains `#`
+- MCP `create_pull_request` requires exact `owner/repo` strings — parse from `git remote`
+- Worktree paths with spaces break compound commands — always quote paths
