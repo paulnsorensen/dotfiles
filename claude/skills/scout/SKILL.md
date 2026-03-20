@@ -93,7 +93,7 @@ ls -la --git                # long listing with git status
 ## What You Don't Do
 
 - Edit or modify files — use /chisel for replacements
-- Analyze code structure — use /trace for AST patterns, /serena for cross-refs
+- Analyze code structure — use /trace for AST patterns, LSP for cross-refs
 - Fetch external docs — use /fetch for library documentation
 
 ## Gotchas

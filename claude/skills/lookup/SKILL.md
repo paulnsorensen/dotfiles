@@ -10,7 +10,7 @@ description: >
   go doc + grep, python help() + grep, and multi-step find chains. Use this skill
   BEFORE reaching for bash when the question is "what does X do?", "what's the
   signature of Y?", "who calls Z?", or "how do I use this API?". Routes to the
-  right tool: LSP for types, Serena for cross-refs, ast-grep for structural
+  right tool: LSP for types and cross-refs, ast-grep for structural
   patterns, Context7 for external docs, octocode for GitHub code search. If you
   catch yourself about to grep a dependency cache or generate docs just to search
   them — stop and use this instead.
@@ -22,7 +22,7 @@ Code intelligence routing. Ask the right tool, not bash.
 
 When you need to understand a symbol, type, or API, your instinct might be to
 grep for it, run `cargo doc`, or read files in `node_modules`. Don't. You have
-five purpose-built tools that are faster, cheaper, and don't pollute your context.
+four purpose-built tools that are faster, cheaper, and don't pollute your context.
 This skill tells you which one to use.
 
 ## Decision Tree
@@ -39,9 +39,9 @@ Then follow the table:
 |---|---|---|
 | Type/signature of a symbol | **LSP** `hover` | **Context7** or **octocode** |
 | Go to definition | **LSP** `goToDefinition` | **Context7** `query-docs` |
-| Who calls this function? | **Serena** `find_referencing_symbols` | **octocode** `search_code` |
+| Who calls this function? | **LSP** `findReferences` | **octocode** `search_code` |
 | Who implements this trait/interface? | **/trace** `sg -p 'impl $T for $S'` | **octocode** `search_code` |
-| All usages of a type | **Serena** `find_referencing_symbols` | **octocode** `search_code` |
+| All usages of a type | **LSP** `findReferences` | **octocode** `search_code` |
 | Method list on a struct/class | **LSP** `documentSymbol` | **Context7** `query-docs` |
 | What does this function do? | **LSP** `hover` + **Read** the body | **Context7** or **WebFetch** raw source |
 | Find structural patterns | **/trace** `sg --lang X -p 'pattern'` | N/A — use octocode text search |
@@ -58,12 +58,6 @@ Then follow the table:
 - `findReferences` — all usages in the project
 - `documentSymbol` — list all symbols in a file
 - Works on: .rs, .py, .ts, .go, .sh, .yaml, .rb (all 7 LSP plugins)
-
-**Serena** (MCP, needs activation):
-- `find_symbol` — locate by name, optionally include body
-- `find_referencing_symbols` — cross-file usage analysis
-- `get_symbols_overview` — file-level symbol map
-- Best for: "who calls X?", "what references Y?", impact analysis
 
 **ast-grep** (zero config — invoke via `/trace` skill):
 - `sg --lang X -p 'pattern'` — structural pattern matching
@@ -136,7 +130,7 @@ find . -name "*.rs" | xargs grep "trait CommandBuilder"
 grep -rn "def validate" --include="*.py" | grep -v test
 find . -path "*/some_crate*" -exec grep "fn method" {} \;
 ```
-**Instead**: Serena `find_symbol` or ast-grep `sg --lang rust -p 'trait CommandBuilder'`.
+**Instead**: LSP `findReferences` or ast-grep `sg --lang rust -p 'trait CommandBuilder'`.
 
 ### 4. Building code to discover types
 ```bash
@@ -153,7 +147,7 @@ mypy src/ 2>&1 | grep "has type"
 cat src/lib.rs | grep -A 20 "fn new"
 ```
 **Instead**: LSP `documentSymbol` to list all symbols, then `hover` on the one you need.
-Or Serena `find_symbol(name="new", include_body=True)`.
+Or LSP `goToDefinition` on the symbol.
 
 ## When Tools Aren't Available
 
@@ -161,21 +155,19 @@ Not every project has all tools active:
 
 | Situation | Fallback |
 |---|---|
-| No LSP running | Serena `find_symbol(include_body=True)` for local code |
-| Serena not activated | LSP `findReferences` + `documentSymbol` |
-| Neither LSP nor Serena | ast-grep for structure, Grep for text (last resort) |
+| No LSP running | ast-grep for structure, Grep for text (last resort) |
 | Context7 doesn't have the library | octocode search → WebFetch raw source |
 | External crate, no MCP available | `WebSearch` for official docs (via /fetch skill) |
 
-The hierarchy is: **LSP > Serena > ast-grep > Grep**. Only fall to the next level
+The hierarchy is: **LSP > ast-grep > Grep**. Only fall to the next level
 when the better tool genuinely isn't available — not because it's easier to type `grep`.
 
 ## Why This Skill Is NOT Forked
 
 Unlike `/make` or `/fetch`, this skill runs inline — not in a subagent. Two reasons:
 
-1. **LSP and Serena only work in the foreground context.** Forking would cut off
-   the two most powerful tools (hover, find_symbol, findReferences).
+1. **LSP only works in the foreground context.** Forking would cut off
+   the most powerful tool (hover, findReferences, goToDefinition).
 2. **Routing is cheap.** This skill's output is a decision ("use LSP hover"), not
    verbose data. There's nothing to isolate from the context window.
 
@@ -189,12 +181,11 @@ the heavy fetching forks as needed.
 - One lookup per question — don't chain 3 tools when one gives the answer
 - External deps are NEVER solved by grepping local caches
 - If LSP is running, `hover` answers 80% of type questions in one call
-- If you need the skill that each tool delegates to, invoke it: /trace, /serena, /lsp, /fetch
+- If you need the skill that each tool delegates to, invoke it: /trace, /lsp, /fetch
 
 ## Gotchas
 
 - LSP servers start lazily — first `hover` or `goToDefinition` may fail, retry after a moment
-- Serena requires `/go` activation before use — check if project is activated first
 - Context7 library ID resolution sometimes returns wrong package for ambiguous names — verify
 - ast-grep patterns are language-specific — Rust `impl` blocks vs Go `func` declarations have different AST shapes
 - Training data is often sufficient for well-known libraries — don't fetch docs for stdlib

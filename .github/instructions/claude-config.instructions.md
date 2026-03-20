@@ -18,13 +18,12 @@ This directory contains all Claude Code configuration: skills, agents, hooks, MC
 
 ### Code Intelligence Tool Division
 
-Three complementary tools — changes must respect their boundaries:
+Two complementary tools — changes must respect their boundaries:
 
 | Tool | Domain | Skill |
 |---|---|---|
 | ast-grep (`sg`) | Structural pattern matching (code shapes) | trace |
-| Serena MCP | Semantic navigation (symbol lookup, cross-refs) | serena |
-| LSP plugins | Type inference, diagnostics | lsp |
+| LSP plugins | Type inference, diagnostics, symbol lookup, cross-refs | lsp |
 
 Do not attribute one tool's capabilities to another in descriptions or docs.
 

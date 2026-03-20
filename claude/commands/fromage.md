@@ -157,9 +157,9 @@ For **trivial** and **small** tasks, skip plan mode — proceed directly to impl
 
 ## Phase 1 — Preparing (Haiku)
 
-Launch `fromage-preparing` (haiku). It primes Serena (activate_project, check_onboarding, read memories) and reports git state. Worktree status was already verified in Phase 0 — this phase focuses on environment readiness.
+Launch `fromage-preparing` (haiku). It checks git state and environment readiness. Worktree status was already verified in Phase 0 — this phase focuses on environment readiness.
 
-**Skip**: Serena already active and git state is clean — confirm inline.
+**Skip**: Git state is clean — confirm inline.
 
 ---
 

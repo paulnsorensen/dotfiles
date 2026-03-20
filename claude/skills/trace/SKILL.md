@@ -34,7 +34,7 @@ Config files are only for rule authoring (shared lint rules, test infrastructure
 
 Use `/lookup` for the full routing decision tree. In short: trace handles
 **structural/shape** questions ("what implements X?", "find all Y that contain Z").
-For semantic queries (calls, references), use serena. For type inference, use LSP.
+For semantic queries (calls, references, type inference), use LSP.
 
 ## Core invocations
 

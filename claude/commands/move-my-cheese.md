@@ -17,7 +17,7 @@ This command orchestrates across multiple skills:
 |---|---|---|
 | Recon | **gh** | PR metadata, CI checks, failed run logs, diff |
 | Explore | **scout** | Search codebase for test files, CI config, related code |
-| Understand | **lookup** | Route to LSP/Serena/Context7 for symbol types, cross-refs, API docs |
+| Understand | **lookup** | Route to LSP/Context7 for symbol types, cross-refs, API docs |
 | Diagnose | **diff** | Smoke-test the merged state for obvious issues |
 | Fix | **chisel** | Edit conflict markers, patch test assertions |
 | Build | **make** | Build/check with output isolation (forked subagent) |
@@ -126,7 +126,7 @@ Run `/make` to verify the merged code compiles. This forks a subagent that absor
 Skill(skill="make")
 ```
 
-If build fails, use `/lookup` to understand the failing symbols (types, signatures, cross-refs) before fixing with **chisel**. `/lookup` routes to the right tool — LSP for types, Serena for cross-refs, Context7 for external API docs. Never grep dependency caches.
+If build fails, use `/lookup` to understand the failing symbols (types, signatures, cross-refs) before fixing with **chisel**. `/lookup` routes to the right tool — LSP for types and cross-refs, Context7 for external API docs. Never grep dependency caches.
 
 ### Run Tests (make test)
 

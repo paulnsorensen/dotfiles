@@ -24,7 +24,7 @@ Delegate to the right skill for each phase of TUI development:
 | Phase | Skill | Why |
 |-------|-------|-----|
 | Search codebase for patterns | `scout` | rg/fd for fast file and content search |
-| Understand existing code structure | `serena` | Symbol lookup, cross-references, AST navigation |
+| Understand existing code structure | LSP | Symbol lookup, cross-references, type info |
 | Look up ratatui/Textual/crossterm docs | `fetch` | Context7 for version-specific library docs |
 | Find structural code patterns | `trace` | ast-grep for "what implements X?" questions |
 | Edit existing files precisely | `chisel` | sd for multi-file replacements, Edit for precision |

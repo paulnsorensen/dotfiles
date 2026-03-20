@@ -13,11 +13,6 @@ mcps:
     scope: user
     description: GitHub code search and repository tools
 
-  serena:
-    command: serena-mcp-server
-    scope: user
-    description: Semantic code analysis with LSP integration
-
   context7:
     command: npx
     args: ["-y", "@upstash/context7-mcp"]

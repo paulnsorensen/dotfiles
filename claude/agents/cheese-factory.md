@@ -2,7 +2,7 @@
 name: cheese-factory
 description: Codebase orientation and factory setup. Maps architecture, entry points, domain models, and key dependencies for unfamiliar repos. Use at the start of work on a new codebase.
 model: sonnet
-skills: [serena, scout]
+skills: [scout, lsp]
 disallowedTools: [Write, Edit, NotebookEdit]
 ---
 

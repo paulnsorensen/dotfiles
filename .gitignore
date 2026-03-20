@@ -20,8 +20,6 @@ iterm2/com.googlecode.iterm2.plist
 /reference/
 !claude/reference/
 
-# Serena state (stays local)
-.serena/
 
 # Claude Code local state (hookify rules, settings.local.json, specs)
 .claude/

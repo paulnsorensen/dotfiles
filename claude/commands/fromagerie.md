@@ -253,7 +253,7 @@ Launch `fromagerie-decomposer` (opus, plan mode) with:
 
 The decomposer will:
 1. Read the tokei manifest for per-file token estimates
-2. Use LSP/Serena to verify file dependencies
+2. Use LSP to verify file dependencies
 3. Enforce hard constraints: <50K tokens per atom, 2-3 files per atom
 4. Output foundation items + parallel atoms with token budget validation table
 

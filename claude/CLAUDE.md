@@ -132,14 +132,14 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | File editing | chisel | `sd`, Edit | `sed`, `awk` |
 | Git operations | commit | full git | manual git add/commit |
 | GitHub ops | gh | GitHub MCP (`mcp__plugin_github_github__*`), `gh` CLI fallback | raw GitHub API |
-| Code navigation | serena | symbol lookup, cross-refs | grep for definitions |
+| Code navigation | LSP | goToDefinition, findReferences, hover | grep for definitions |
 | External docs | fetch | Context7, WebSearch, octocode | guessing from training data |
-| Worktree isolation | worktree | git worktree, Serena seeding | manual branch + cd |
+| Worktree isolation | worktree | git worktree setup | manual branch + cd |
 | AI slop cleanup | de-slop | language-specific anti-pattern refs | ignoring AI tells |
 | Weak test assertions | tdd-assertions | framework-specific assertion refs | truthy checks, catch-all errors |
 | PR review response | respond | confidence triage, GitHub MCP replies | manually reading and replying to each comment |
 
-**Code intelligence routing** — use `/lookup` to decide between trace (AST shape), serena (semantic cross-refs), LSP (type inference), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
+**Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
 
 **LSP integration** — All 7 LSP plugins are enabled globally. Claude Code's built-in `LSP` tool provides 9 operations (`goToDefinition`, `findReferences`, `hover`, `documentSymbol`, etc.):
 - **Lazy startup**: Servers only start when the LSP tool is invoked on a matching file type — zero cost when idle
@@ -173,7 +173,7 @@ If violations found: fix them, then try stopping again. Use `/diff` to smoke-tes
 ## Troubleshooting
 
 **MCPs not loading?**
-- Run `/go` to re-prime MCPs and Serena
+- Run `/go` to re-prime MCPs
 - Check `~/.claude/mcp/registry.yaml` for syntax errors
 - Verify external tools are installed (e.g., `which octocode-mcp`)
 
@@ -181,10 +181,5 @@ If violations found: fix them, then try stopping again. Use `/diff` to smoke-tes
 - Run `/agents` to discover currently available agents
 - Some agents/skills are context-dependent (only available in certain project types)
 - Restart Claude Code if you just installed a new plugin
-
-**Serena showing stale information?**
-- Run `/go` or `mcp activate_project` to reload project context
-- Use `read_memory` to check persisted discoveries
-- If severely out of sync, use `/park` then start a fresh session
 
 See `~/.claude/commands/` for available commands and `~/.claude/agents/` for specialist agents.

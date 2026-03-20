@@ -252,12 +252,6 @@ remove_worktree() {
         rm "${claude_projects}/${wt_key}"
     fi
 
-    # Clean Serena project config
-    if command -v yq &>/dev/null && [[ -f "${HOME}/.serena/serena_config.yml" ]]; then
-        yq -i "del(.projects[] | select(. == \"${wt_path}\"))" \
-            "${HOME}/.serena/serena_config.yml" 2>/dev/null || true
-    fi
-
     echo -e "         ${GREEN}Removed${RESET}"
 }
 

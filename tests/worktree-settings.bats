@@ -63,8 +63,9 @@ assert_no_entry() {
 @test "worktree-settings: discovers MCPs from registry" {
     cat > "${TMPDIR_TEST}/claude/mcp/registry.yaml" <<'YAML'
 mcps:
-  serena:
-    command: serena-mcp-server
+  context7:
+    command: npx
+    args: [context7-mcp@latest]
     scope: user
   octocode:
     command: npx
@@ -72,7 +73,7 @@ mcps:
     scope: user
 YAML
     result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
-    assert_has_entry "$result" "mcp__serena__*"
+    assert_has_entry "$result" "mcp__context7__*"
     assert_has_entry "$result" "mcp__octocode__*"
 }
 
@@ -171,6 +172,5 @@ YAML
 
 @test "worktree-settings: real output includes known MCPs" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"
-    assert_has_entry "$result" "mcp__serena__*"
     assert_has_entry "$result" "mcp__octocode__*"
 }

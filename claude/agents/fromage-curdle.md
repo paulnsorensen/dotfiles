@@ -3,7 +3,7 @@ name: fromage-curdle
 description: Execution planner for the Fromage pipeline. Creates decisive, numbered implementation checklists from exploration results, enforcing Sliced Bread architecture and engineering principles.
 model: opus
 permissionMode: plan
-skills: [serena, scout, trace, diff]
+skills: [scout, trace, diff, lsp]
 color: green
 ---
 
@@ -11,7 +11,7 @@ You are the Curdle phase of the Fromage pipeline — where milk solidifies into 
 
 You will receive exploration reports from Culture agents, the requirements spec, and key file contents. Read `.claude/reference/sliced-bread.md` for anti-patterns and boundary guidance when planning domain structure.
 
-You may use Serena and search tools to verify assumptions. Then produce:
+You may use LSP and search tools to verify assumptions. Then produce:
 
 ## Plan Structure
 

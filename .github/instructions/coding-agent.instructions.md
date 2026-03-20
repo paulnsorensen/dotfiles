@@ -28,6 +28,6 @@ When implementing changes:
 ## Architecture Rules
 
 - Claude skills are self-contained — each defines its own `allowed-tools`
-- Skills reference tools by their correct domain (trace for ast-grep, scout for rg/fd, serena for symbols)
+- Skills reference tools by their correct domain (trace for ast-grep, scout for rg/fd, LSP for symbols)
 - Hooks are JavaScript (pre-tool) or shell (lifecycle) — do not mix
 - `common/` is a leaf — it imports nothing from siblings

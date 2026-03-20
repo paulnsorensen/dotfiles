@@ -83,12 +83,6 @@ else
     echo "  Run: ccw ${slug}  (it seeds settings on first launch)"
 fi
 
-# 4. Serena memories
-if [[ -d "${wt_dir}/.serena" ]]; then
-    echo "✓ Serena memories seeded"; ((ok++))
-else
-    echo "– Serena memories not seeded (optional)"
-fi
 
 echo "──────────────────────────────"
 echo "${ok} passed, ${fail} issues"

@@ -220,7 +220,7 @@ Full agent/skill catalog is in `claude/CLAUDE.md` (auto-discovered). Key project
 
 ### Code Intelligence & MCP
 
-Code intelligence tool division (ast-grep, Serena, LSPs) is documented in `claude/CLAUDE.md`. Context7 provides version-specific library docs. After compaction, the post-compact hook restores context automatically — use `/trace` for re-orientation.
+Code intelligence tool division (ast-grep, LSPs) is documented in `claude/CLAUDE.md`. Context7 provides version-specific library docs. After compaction, the post-compact hook restores context automatically — use `/trace` for re-orientation.
 
 ## Pre-Commit Hooks (prek)
 

@@ -2,7 +2,7 @@
 name: fromage-age
 description: Reusable code reviewer. Staff Engineer-level review against Sliced Bread architecture, engineering principles, and complexity budgets. Two modes (focused/comprehensive), three review dimensions. 0-100 confidence scoring, only surfaces >= 70.
 model: opus
-skills: [serena, scout, trace, diff]
+skills: [scout, trace, diff, lsp]
 disallowedTools: [Edit, NotebookEdit]
 color: red
 ---

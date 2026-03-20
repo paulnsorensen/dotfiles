@@ -161,7 +161,7 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 | `find` | `Skill(scout)` |
 | `python3 -c` tests | `Skill(test-sandbox)` |
 | dep cache grep, doc+grep | `Skill(lookup)`, `Skill(fetch)` |
-| find+grep chains | `Skill(serena)`, `Skill(trace)`, `Skill(lookup)` |
+| find+grep chains | `Skill(trace)`, `Skill(lookup)` |
 | `cd && git` | `Skill(wt-git)` |
 | `gh pr create --body` | `Skill(gh)` |
 
@@ -176,7 +176,6 @@ Missing skills — hook-critical (redirect won't work without these):
   + Skill(test-sandbox)   ← python3 -c hook redirects here
   + Skill(lookup)         ← dep cache/doc grep hooks redirect here
   + Skill(fetch)          ← dep cache/doc grep hooks redirect here
-  + Skill(serena)         ← find+grep chain hook redirects here
   + Skill(trace)          ← find+grep chain hook redirects here
 
 Missing skills — available but not allowed:

@@ -529,7 +529,7 @@ teardown() {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"find . -name *.go -exec grep Handler {} +"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/trace"* || "$output" == *"/serena"* ]]
+    [[ "$output" == *"/trace"* || "$output" == *"/lookup"* ]]
 }
 
 @test "bash-guard: find | xargs grep is blocked" {

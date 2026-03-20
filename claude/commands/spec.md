@@ -72,7 +72,7 @@ In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents 
 |-------|--------|-------------|
 | `/research` | Web + docs | Prior art, competitor approaches, relevant blog posts, library options |
 | `/lookup` → `/trace` | Codebase | Existing patterns, public API surface, architectural boundaries |
-| `/serena` | Cross-refs | Call chains, dependency direction, blast radius of the change |
+| LSP | Cross-refs | Call chains, dependency direction, blast radius of the change |
 | `/fetch` | External code | How other projects solved similar problems, real-world examples |
 
 After agents return, **synthesize key patterns** before continuing the conversation:
@@ -86,7 +86,7 @@ In later rounds, use individual skills as needed:
 - **`/research`** — Verify specific assumptions, check APIs
 - **`/lookup`** — Targeted code exploration
 - **`/trace`** — Structural code patterns: "what implements this interface?"
-- **`/serena`** — Cross-reference tracing and symbol navigation
+- **LSP** — Cross-reference tracing and symbol navigation
 
 **Beat 3 — Summarize** (every 2 rounds)
 Periodically check alignment: "Here's where we are so far... Does this direction feel right?"

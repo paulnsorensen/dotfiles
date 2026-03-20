@@ -81,7 +81,7 @@ function matchBruteLookup(cmd) {
   }
   if (/target\/doc\//.test(cmd) && /grep/.test(cmd)) return 'Blocked: grepping generated docs. Use /fetch (Context7) or LSP hover.';
   if (/find\s+.*-exec\s+grep/.test(cmd) || /find\s+.*\|\s*xargs\s+grep/.test(cmd))
-    return 'Blocked: find + grep chain. Use /serena (find_symbol), /trace (ast-grep), or /lookup.';
+    return 'Blocked: find + grep chain. Use LSP (findReferences), /trace (ast-grep), or /lookup.';
   return null;
 }
 

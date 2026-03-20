@@ -69,9 +69,9 @@ Slash commands invoked with `/command-name`.
 | `/agents` | Control panel listing all agents, skills, and commands |
 | `/setup-perms` | Scaffold `.claude/settings.local.json` with project permissions |
 | `/onboard` | Quick codebase orientation for an unfamiliar repo |
-| `/go` | Re-prime MCPs (Serena, Context7) after compaction or session start |
-| `/park` | Save session context to Serena memories before exiting |
-| `/pull` | Pull latest from main and refresh Serena memories |
+| `/go` | Re-prime MCPs after compaction or session start |
+| `/park` | Save session context before exiting |
+| `/pull` | Pull latest from main |
 | `/research` | Multi-source research: library docs, codebase analysis, prior art |
 
 ### Learning Commands
@@ -93,7 +93,7 @@ Specialized agents invoked via Task tool with `subagent_type`.
 
 | Agent | Phase | Purpose |
 |-------|-------|---------|
-| `fromage-preparing` | Preparing | Environment readiness, Serena priming |
+| `fromage-preparing` | Preparing | Environment readiness checks |
 | `fromage-pasteurize` | Pasteurize | Security and dependency health audit |
 | `fromage-culture` | Culture | Read-only codebase exploration |
 | `fromage-curdle` | Curdle | Execution plan creation (plan mode) |
@@ -121,7 +121,6 @@ Reusable tool-usage instructions injected into agents and commands.
 
 | Skill | Purpose |
 |-------|---------|
-| `serena` | Semantic code analysis via Serena MCP |
 | `scout` | File search with rg, fd, eza |
 | `trace` | Structural code parsing with ast-grep |
 | `diff` | Pre-commit change review |
@@ -149,8 +148,8 @@ Reusable tool-usage instructions injected into agents and commands.
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `pre-compact.sh` | PreCompact | Saves session context to Serena before compaction |
-| `post-compact.sh` | SessionStart (compact) | Re-primes Serena after compaction |
+| `pre-compact.sh` | PreCompact | Saves session context before compaction |
+| `post-compact.sh` | SessionStart (compact) | Restores context after compaction |
 | `post-fresh-start.sh` | SessionStart | Injects `/go` reminder on fresh sessions |
 | `on-session-end.sh` | UserPromptSubmit | Detects parting language, injects `/park` reminder |
 
@@ -213,7 +212,6 @@ Managed declaratively via `mcp/registry.yaml`. Sync with `mcp-sync`.
 
 | MCP | Purpose |
 |-----|---------|
-| `serena` | Semantic code analysis with LSP integration |
 | `octocode` | GitHub code search and repository tools |
 | `context7` | Documentation context for libraries and frameworks |
 

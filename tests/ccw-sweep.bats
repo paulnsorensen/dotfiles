@@ -81,7 +81,7 @@ add_diverged_worktree() {
 
 setup() {
   SCAN=$(mktemp -d)
-  # Isolate HOME so remove_worktree doesn't touch real ~/.claude or ~/.serena
+  # Isolate HOME so remove_worktree doesn't touch real ~/.claude
   ORIGINAL_HOME="$HOME"
   HOME=$(mktemp -d)
   export HOME

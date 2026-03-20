@@ -128,7 +128,7 @@ Tell the subagent to **return a summary**, not raw file contents.
 ## What You Don't Do
 
 - Modify code or files — only fetch and return information
-- Search local code — use scout, Grep, or serena for that
+- Search local code — use scout, Grep, or LSP for that
 - Run GitHub operations (PRs, issues) — use the gh skill
 
 ## Anti-patterns
