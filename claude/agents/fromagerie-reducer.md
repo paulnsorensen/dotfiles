@@ -148,7 +148,7 @@ Return a structured report to the orchestrator:
 - If all atoms should be one PR, that's fine — don't split artificially
 - Report honestly: if quality gates fail, say so. Don't claim green on red.
 
-**Wrap-up signal**: After ~60 tool calls, conclude with the final report. You've consolidated and verified — time to hand off to the orchestrator.
+**Wrap-up signal**: After ~50 tool calls, conclude with the final report. You've consolidated and verified — time to hand off to the orchestrator.
 
 ## What You Don't Do
 
