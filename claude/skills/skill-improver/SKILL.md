@@ -34,8 +34,7 @@ This skill codifies what we've learned into a repeatable audit.
 A path to an agent definition (`agents/*.md`) or skill definition (`skills/*/SKILL.md`).
 If no path is given, ask.
 
-This skill runs inline (no `context: fork`), inheriting the parent session's model.
-For best results on judgment-heavy audits, invoke from an opus-tier session.
+This skill runs inline (no `context: fork`) at opus tier — set explicitly in frontmatter.
 
 ## Protocol
 
