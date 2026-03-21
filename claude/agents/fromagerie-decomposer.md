@@ -2,6 +2,7 @@
 name: fromagerie-decomposer
 description: Decomposes specs into non-overlapping foundation items and parallel atoms for /fromagerie. Uses tokei data for token-aware sizing.
 model: opus
+effort: high
 permissionMode: plan
 skills: [scout, trace, lookup, lsp]
 disallowedTools: [Edit, NotebookEdit]

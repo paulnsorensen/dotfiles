@@ -1,6 +1,7 @@
 ---
 name: xray
 model: opus
+effort: high
 description: >
   Interactive design verification via dependency graph traversal. Replaces /notebook.
   Use when reviewing large modules, verifying agent output, auditing design decisions,

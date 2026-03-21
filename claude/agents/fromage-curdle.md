@@ -2,6 +2,7 @@
 name: fromage-curdle
 description: Execution planner for the Fromage pipeline. Creates decisive, numbered implementation checklists from exploration results, enforcing Sliced Bread architecture and engineering principles.
 model: opus
+effort: high
 permissionMode: plan
 skills: [scout, trace, diff, lsp]
 disallowedTools: [Edit, Write, NotebookEdit]
