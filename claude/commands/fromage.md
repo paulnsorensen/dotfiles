@@ -62,7 +62,6 @@ Always set `max_turns` when spawning Task agents:
 
 | Agent | max_turns | Rationale |
 |-------|-----------|-----------|
-| fromage-preparing | 15 | Env check, fast |
 | fromage-culture | 40 | Exploration, bounded |
 | fromage-curdle | 30 | Planning, should be decisive |
 | fromage-cook | 80 | Implementation, largest scope |
@@ -80,7 +79,6 @@ After exiting plan mode, spawn implementation agents with `mode: "acceptEdits"` 
 
 | Agent | Mode | Rationale |
 |-------|------|-----------|
-| fromage-preparing | default | Env check only |
 | fromage-culture | default | Read-only exploration |
 | fromage-curdle | plan | Planning, needs approval |
 | fromage-cook | **acceptEdits** | Implementation, writes freely |
@@ -131,7 +129,7 @@ Announce complexity and show which phases run vs skip:
 
 | Phase | Trivial | Small | Medium | Large |
 |---|---|---|---|---|
-| 1. Preparing | run | run | run | run |
+| 1. Preparing | skip | skip | skip | skip |
 | 2. Pasteurize | skip | skip | run | run |
 | 3. Culture | skip | skip | run | run |
 | 4. Curdle | skip | skip | run | run |
@@ -155,11 +153,11 @@ For **trivial** and **small** tasks, skip plan mode — proceed directly to impl
 
 ---
 
-## Phase 1 — Preparing (Haiku)
+## Phase 1 — Preparing (Skipped)
 
-Launch `fromage-preparing` (haiku). It checks git state and environment readiness. Worktree status was already verified in Phase 0 — this phase focuses on environment readiness.
+Git state and worktree status are verified inline during Phase 0. No dedicated agent needed.
 
-**Skip**: Git state is clean — confirm inline.
+**Always skip** — confirm git state is clean before proceeding to Phase 2.
 
 ---
 
