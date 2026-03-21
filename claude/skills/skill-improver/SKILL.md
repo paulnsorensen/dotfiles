@@ -1,6 +1,7 @@
 ---
 name: skill-improver
 model: opus
+effort: high
 description: >
   Audit and improve agent and skill definitions for better calibration, tool scoping,
   context management, activation quality, and output format. Use when the user says
