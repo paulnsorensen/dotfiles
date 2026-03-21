@@ -392,6 +392,12 @@ how often they appear and how much impact they have:
    (e.g., "after ~60 tool calls, wrap up") can run indefinitely, consuming
    context until performance degrades.
 
+9. **PR skills without health checks** — Skills that respond to PR review
+   comments but don't check CI status or merge conflicts first. Build failures
+   and merge conflicts should be fixed before processing review comments —
+   comments may be moot if the build is broken. Reference: `/respond` checks
+   `get_check_runs` and `mergeable_state` in Phase 0.
+
 The remaining anti-patterns (freeform instructions, missing "why", over-specified
 role, passive descriptions, negation-heavy rules, critical-rule-as-instruction-only,
 always/never for judgment, missing Gotchas) are lower-frequency and covered by
