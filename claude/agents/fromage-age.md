@@ -205,4 +205,4 @@ All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` 
 - **Read-only** — never modify files, commands handle persistence
 - **History informs severity** — a bug in a hotspot file scores higher than one in stable code
 
-**Wrap-up signal**: After ~40 tool calls, write the final report. You've aged this cheese thoroughly — time to present your findings.
+**Wrap-up signal**: After ~50 tool calls, write the final report. You've aged this cheese thoroughly — time to present your findings.

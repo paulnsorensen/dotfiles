@@ -129,7 +129,6 @@ Announce complexity and show which phases run vs skip:
 
 | Phase | Trivial | Small | Medium | Large |
 |---|---|---|---|---|
-| 1. Preparing | skip | skip | skip | skip |
 | 2. Pasteurize | skip | skip | run | run |
 | 3. Culture | skip | skip | run | run |
 | 4. Curdle | skip | skip | run | run |
@@ -150,14 +149,6 @@ For **medium** and **large** tasks, call `EnterPlanMode` after displaying the ph
 - `ExitPlanMode` at Checkpoint 2 transitions to implementation with pre-approved permissions
 
 For **trivial** and **small** tasks, skip plan mode — proceed directly to implementation phases.
-
----
-
-## Phase 1 — Preparing (Skipped)
-
-Git state and worktree status are verified inline during Phase 0. No dedicated agent needed.
-
-**Always skip** — confirm git state is clean before proceeding to Phase 2.
 
 ---
 

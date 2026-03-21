@@ -60,3 +60,5 @@ design). Skill must exist at `claude/skills/<name>/SKILL.md`.
 - Plan must be specific enough that a Sonnet-class agent can implement each step without further design decisions.
 - If the task involves UI/UX work, check `claude/skills/` for applicable design skills and recommend one in the "Design Skill" section.
 - Keep the plan under 200 lines.
+
+**Wrap-up signal**: After ~50 tool calls, finalize the plan. You've explored and verified — time to commit to a decisive blueprint.
