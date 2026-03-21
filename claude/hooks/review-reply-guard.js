@@ -25,7 +25,8 @@ process.stdin.on('end', () => {
   let event;
   try {
     event = JSON.parse(input);
-  } catch {
+  } catch (err) {
+    console.error(`review-reply-guard: failed to parse stdin as JSON: ${err && err.message ? err.message : String(err)}`);
     console.log(JSON.stringify({ decision: 'allow' }));
     process.exit(0);
   }
