@@ -22,7 +22,13 @@ const EXCEPTION_PATTERNS = [
 let input = '';
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
-  const event = JSON.parse(input);
+  let event;
+  try {
+    event = JSON.parse(input);
+  } catch {
+    console.log(JSON.stringify({ decision: 'allow' }));
+    process.exit(0);
+  }
   const toolInput = event.tool_input || {};
   const body = toolInput.body || toolInput.message || '';
 

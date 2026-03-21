@@ -1,6 +1,5 @@
 // phantom-file-check.js
 // Prevents reading non-existent files (anti-hallucination)
-// Part of the Cheddar Flow enforcement system
 
 const fs = require('fs');
 const path = require('path');

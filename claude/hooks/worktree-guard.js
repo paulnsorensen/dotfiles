@@ -1,7 +1,6 @@
 // worktree-guard.js
 // When running in a git worktree, blocks Write/Edit to files outside the worktree root.
 // Prevents agents from accidentally modifying main repo or other worktrees.
-// Part of the Cheddar Flow enforcement system
 
 const { execSync } = require('child_process');
 const path = require('path');
@@ -29,13 +28,8 @@ function detectWorktree() {
   return isWorktree;
 }
 
-function resolvePath(filePath) {
-  if (path.isAbsolute(filePath)) return path.resolve(filePath);
-  return path.resolve(process.cwd(), filePath);
-}
-
 function isAllowedPath(filePath) {
-  const resolved = resolvePath(filePath);
+  const resolved = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(process.cwd(), filePath);
   if (resolved.startsWith(worktreeRoot + '/')) return true;
   if (resolved === worktreeRoot) return true;
   if (/^(\/private)?\/tmp\//.test(resolved)) return true;
