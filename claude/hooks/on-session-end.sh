@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# on-session-end.sh — Detect session-end intent and remind to /park
+# on-session-end.sh — Detect session-end intent
 # Runs as a UserPromptSubmit hook on every message; exits silently if no match.
 
 set -euo pipefail
@@ -21,7 +21,7 @@ fi
 
 # Match common session-end phrases
 if echo "$PROMPT" | grep -qiE \
-  "\b(bye|goodbye|good night|goodnight|done for (the )?day|that'?s all|see you|signing off|wrapping up|ciao|all done|i'?m done|i'?m out|heading out|logging off|let'?s stop|stopping here)\b|^/park$"; then
+  "\b(bye|goodbye|good night|goodnight|done for (the )?day|that'?s all|see you|signing off|wrapping up|ciao|all done|i'?m done|i'?m out|heading out|logging off|let'?s stop|stopping here)\b"; then
   jq -n '{
     "hookSpecificOutput": {
       "hookEventName": "UserPromptSubmit",

@@ -101,7 +101,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | PR Response | `/respond` (confidence-rated review triage), `/copilot-review`, `/copilot-delegate` |
 | Testing | `/wreck`, `/test`, `/diff`, `/tdd-assertions`, `/pingpong` |
 | GitHub | `/move-my-cheese <PR#>`, `/cheese-convoy <PR# PR# ...>` |
-| Setup | `/lsp`, `/go`, `/park`, `/pull`, `/worktree`, `/scaffold` |
+| Setup | `/lsp`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/xray`, `/onboard` |
 
 All agents use 0-100 confidence scoring (>= 70 to surface). This applies pipeline-wide:
@@ -173,7 +173,6 @@ If violations found: fix them, then try stopping again. Use `/diff` to smoke-tes
 ## Troubleshooting
 
 **MCPs not loading?**
-- Run `/go` to re-prime MCPs
 - Check `~/.claude/mcp/registry.yaml` for syntax errors
 - Verify external tools are installed (e.g., `which octocode-mcp`)
 

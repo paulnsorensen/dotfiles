@@ -10,7 +10,8 @@ description: >
   Prefer MCP tools over gh CLI — they bypass sandbox/TLS issues.
   Use when the user says "create PR", "merge PR", "check CI", "list issues", "review PR",
   "PR status", "close issue", or invokes /gh. Do NOT use for local git operations like
-  commit, stage, or push — use /commit for those.
+  commit, stage, or push — use /commit for those. Do NOT use for code quality
+  review — use /age or /code-review.
 examples:
   - "review PR 14"
   - "create a PR for my branch"
@@ -33,68 +34,13 @@ GitHub operations via **GitHub MCP plugin** (`mcp__plugin_github_github__*`). MC
 
 ## MCP Tool Reference
 
-### Pull Requests
+For the full MCP tool catalog (PRs, issues, repos, releases, Copilot), read
+`references/github-mcp.md`. Key tools for common operations:
 
-| Operation | MCP Tool |
-|-----------|----------|
-| Create PR | `create_pull_request` (title, body, head, base) |
-| List PRs | `list_pull_requests` (state, head, base filters) |
-| Read PR | `pull_request_read` (number) |
-| Merge PR | `merge_pull_request` (number, merge_method) |
-| Update PR | `update_pull_request` (title, body, state) |
-| Update branch | `update_pull_request_branch` (number) |
-| Review PR | `pull_request_review_write` (approve, request_changes, comment) |
-| Reply to comment | `add_reply_to_pull_request_comment` |
-| Search PRs | `search_pull_requests` (query) |
-
-### Issues
-
-| Operation | MCP Tool |
-|-----------|----------|
-| Create issue | `issue_write` |
-| List issues | `list_issues` (state, labels, assignee) |
-| Read issue | `issue_read` (number) |
-| Edit issue | `issue_write` (update mode) |
-| Comment | `add_issue_comment` (number, body) |
-| Search issues | `search_issues` (query) |
-| Sub-issues | `sub_issue_write` |
-
-### Repos & Code
-
-| Operation | MCP Tool |
-|-----------|----------|
-| Create repo | `create_repository` |
-| Fork repo | `fork_repository` |
-| List branches | `list_branches` |
-| Create branch | `create_branch` |
-| List commits | `list_commits` |
-| Get commit | `get_commit` (sha) |
-| File contents | `get_file_contents` (path) |
-| Create/update file | `create_or_update_file` |
-| Push files | `push_files` (multiple files in one commit) |
-| Delete file | `delete_file` |
-| Search code | `search_code` (query) |
-| Search repos | `search_repositories` (query) |
-
-### Releases & Tags
-
-| Operation | MCP Tool |
-|-----------|----------|
-| List releases | `list_releases` |
-| Latest release | `get_latest_release` |
-| Release by tag | `get_release_by_tag` |
-| List tags | `list_tags` |
-| Get tag | `get_tag` |
-
-### Other
-
-| Operation | MCP Tool |
-|-----------|----------|
-| Who am I | `get_me` |
-| Get label | `get_label` |
-| Teams | `get_teams`, `get_team_members` |
-| Issue types | `list_issue_types` |
-| Copilot | `assign_copilot_to_issue`, `create_pull_request_with_copilot`, `request_copilot_review`, `get_copilot_job_status` |
+- **PRs**: `create_pull_request`, `pull_request_read`, `merge_pull_request`, `add_reply_to_pull_request_comment`
+- **Issues**: `issue_read`, `issue_write`, `add_issue_comment`, `list_issues`
+- **Code**: `search_code`, `get_file_contents`, `push_files`
+- **Copilot**: `assign_copilot_to_issue`, `request_copilot_review`
 
 ---
 
@@ -122,17 +68,15 @@ Instead:
 1. **MCP** (preferred): `create_pull_request` — no shell involved
 2. **`--body-file`** (CLI fallback): Write body with the Write tool to `$TMPDIR/pr-body.md`, then `gh pr create --title "..." --body-file "$TMPDIR/pr-body.md"`
 
-**Never use `gh api`.** Raw API calls bypass MCP and hit TLS issues in the sandbox. Every `gh api` call has an MCP equivalent:
+**Prefer MCP over `gh api`.** Raw API calls can hit TLS issues in sandboxed environments. Most `gh api` calls have an MCP equivalent:
 
 ```bash
-# WRONG — TLS failure in sandbox, requires dangerouslyDisableSandbox
-gh api repos/owner/repo/pulls/78/reviews
-
-# RIGHT — MCP tool, runs in host process, no sandbox issues
+# PREFER — MCP tool, runs in host process, no sandbox issues
 pull_request_read(method: "get_review_comments", owner, repo, pullNumber: 78)
-```
 
-If you need an endpoint the MCP doesn't cover, use the `/gh` skill which routes through MCP first and only falls back to CLI for the gaps listed below.
+# FALLBACK — gh api, only when MCP doesn't cover the endpoint
+gh api repos/owner/repo/actions/runs/123/logs
+```
 
 ---
 
@@ -149,7 +93,6 @@ These operations have no MCP equivalent — use `gh` CLI:
 | Trigger workflow | `gh workflow run <workflow>` |
 | Create release | `gh release create <tag>` |
 | Delete release | `gh release delete <tag>` |
-| Raw API calls | `gh api <endpoint>` |
 | Re-run failed CI | `gh run rerun <id> --failed` |
 
 ---
