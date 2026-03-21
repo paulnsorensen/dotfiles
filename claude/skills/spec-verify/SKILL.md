@@ -3,7 +3,7 @@ name: spec-verify
 model: opus
 context: fork
 effort: high
-allowed-tools: Read, Glob, Grep, Bash(sg *), Bash(echo *), Agent, LSP
+allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Agent, LSP
 description: >
   Verify that a spec's implementation matches its requirements using LSP structural
   analysis, build verification, and test coverage checking. Use when the user says
@@ -113,8 +113,9 @@ sg --lang python -p 'class $NAME($BASE): $$$BODY' --json {file}
 
 ### Phase 3: Test Coverage Analysis
 
-Verify that tests exist and cover the spec's requirements. This is coverage
-*shape* analysis, not test execution (Phase 1 handles that).
+Verify that tests exist and cover the spec's requirements. Steps 1-4 analyze
+coverage *shape* — mapping test names to requirements via LSP. Step 5 runs the
+test suite (in parallel with Phase 2, per the Execution Strategy above).
 
 1. **Find test files** — Glob for test files in scope:
    ```
@@ -202,9 +203,9 @@ evidence.
 
 ## Output
 
-Write detailed report to `$TMPDIR/spec-verify-{slug}.md`.
-
-Return structured summary to caller (max 2500 chars):
+Return the full structured report as output. Since this skill runs in a forked
+context, the full output is already contained — it won't pollute the caller's
+context window. Lead with the summary, then the details.
 
 ```
 ## Spec Verification: <spec title>
@@ -241,7 +242,7 @@ Return structured summary to caller (max 2500 chars):
 2. <second gap>
 
 ### Below Threshold
-N items scored < 70 (see full report: $TMPDIR/spec-verify-{slug}.md)
+N items scored < 70 (not shown above — details in the full report below)
 ```
 
 ### Verdict Logic
