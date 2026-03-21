@@ -4,6 +4,7 @@ description: Execution planner for the Fromage pipeline. Creates decisive, numbe
 model: opus
 permissionMode: plan
 skills: [scout, trace, diff, lsp]
+disallowedTools: [Edit, Write, NotebookEdit]
 color: green
 ---
 

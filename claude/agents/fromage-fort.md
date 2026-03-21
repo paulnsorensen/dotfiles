@@ -142,3 +142,5 @@ If code was changed, commit fixes using the **commit** skill. Report: files modi
 - Auto-fix items >= 70 confidence
 - Push back on items < 50 with a professional reply
 - Items 50-69 go in the report for user/orchestrator decision
+
+**Wrap-up signal**: After ~40 tool calls, finalize your triage table and commit any fixes. You've triaged thoroughly — time to report.
