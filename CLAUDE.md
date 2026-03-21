@@ -191,12 +191,6 @@ The `.sync-with-rollback` script provides:
 
 ## Important Implementation Details
 
-### Prompt System (zsh/prompt.zsh)
-- Uses a caching mechanism for git status to improve performance
-- Implements vi mode cursor shape changes
-- Shows time since last commit in git repositories
-- Color codes match Chocolate Donut theme
-
 ### Git Integration
 - Work email: paul.sorensen@uber.com
 - Aliases follow oh-my-zsh conventions for familiarity
@@ -218,10 +212,6 @@ Full agent/skill catalog is in `claude/CLAUDE.md` (auto-discovered). Key project
 - Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
 
-### Code Intelligence & MCP
-
-Code intelligence tool division (ast-grep, LSPs) is documented in `claude/CLAUDE.md`. Context7 provides version-specific library docs. After compaction, the post-compact hook restores context automatically — use `/trace` for re-orientation.
-
 ## Pre-Commit Hooks (prek)
 
 Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run automatically on commit and include: trailing whitespace, secret detection, shellcheck, large file checks, and a claude config sync check. Run `prek install` after cloning to set up hooks.
@@ -241,27 +231,14 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 2. General utilities go in `zsh/aliases.zsh`
 3. Tool-specific configs get their own file
 
-### When Adding New MCPs
-1. Add entry to `claude/mcp/registry.yaml`
-2. Run `mcp-sync` to install
-3. Restart Claude Code for changes to take effect
+### When Adding New MCPs, Plugins, LSPs, or Packages
 
-### When Adding New Plugins
-1. Add entry to `claude/plugins/registry.yaml`
-2. Run `plugin-sync` to install
-3. Restart Claude Code for changes to take effect
-4. Add `mcp__plugin_<name>__*` to `permissions.allow` in `claude/settings.json` if the plugin provides MCP tools
-
-### When Adding New LSPs
-1. Add entry to `claude/plugins/registry.yaml` with `load: true`
-2. Run `plugin-sync` to install
-3. Restart Claude Code for changes to take effect
-4. LSP servers start lazily — zero overhead until the LSP tool is invoked on a matching file
-
-### When Adding New Packages
-1. Edit `packages.yaml` at repo root — bare string for brew, map for anything else
-2. Run `dots sync` — hash cache detects the change and installs missing packages
-3. Use `dots sync refresh` to force re-check even if `packages.yaml` hasn't changed
+| Type | Registry | Sync command | Notes |
+|------|----------|--------------|-------|
+| MCP | `claude/mcp/registry.yaml` | `mcp-sync` | Restart Claude Code after |
+| Plugin | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
+| LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
+| Package | `packages.yaml` (repo root) | `dots sync` | Use `dots sync refresh` to force re-check |
 
 ## Important Gotchas
 

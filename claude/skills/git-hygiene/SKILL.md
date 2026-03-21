@@ -1,5 +1,6 @@
 ---
 name: git-hygiene
+model: haiku
 user-invocable: false
 description: >
   Guardrail for proper git tool usage. Prevents reading file contents via
