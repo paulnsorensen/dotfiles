@@ -2,19 +2,20 @@
 name: respond
 model: sonnet
 description: >
-  Respond to PR review comments with confidence-rated triage. Handles both
-  inline review threads (anchored to diff lines) AND PR-level review body
+  Respond to PR review comments with confidence-rated triage. Also checks and
+  fixes build failures and merge conflicts before processing comments. Handles
+  both inline review threads (anchored to diff lines) AND PR-level review body
   comments (summaries submitted with reviews, like Age tables or Copilot
   overviews). Use when the user says "respond to PR comments", "handle review
-  feedback", "address PR reviews", or invokes /respond with a PR number. Also
-  trigger when the user mentions a specific PR and wants to deal with reviewer
-  suggestions — whether from Copilot, human reviewers, or bots. Reads all
-  unresolved review threads and review bodies, scores each suggestion 0-100,
-  and presents a triage table. High-confidence fixes (>= 70) execute
-  immediately while the user reviews uncertain items. Do NOT use to generate
-  a new review — use /copilot-review for that. This skill only processes
-  existing review comments already posted to the PR.
-allowed-tools: Read, Edit, Bash(gh:*), Bash(git:*), mcp__plugin_github_github__pull_request_read, mcp__plugin_github_github__add_reply_to_pull_request_comment, mcp__plugin_github_github__add_issue_comment
+  feedback", "address PR reviews", "fix the build", "fix CI", "fix merge
+  conflicts", or invokes /respond with a PR number. Also trigger when the user
+  mentions a specific PR and wants to deal with reviewer suggestions — whether
+  from Copilot, human reviewers, or bots. Checks CI status and mergeability
+  first, then reads all unresolved review threads and review bodies, scores
+  each suggestion 0-100, and presents a triage table. High-confidence fixes
+  (>= 70) execute immediately while the user reviews uncertain items. Do NOT
+  use to generate a new review — use /copilot-review for that.
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash(gh:*), Bash(git:*), mcp__plugin_github_github__pull_request_read, mcp__plugin_github_github__add_reply_to_pull_request_comment, mcp__plugin_github_github__add_issue_comment
 ---
 
 # Respond: PR Review Triage
@@ -22,6 +23,34 @@ allowed-tools: Read, Edit, Bash(gh:*), Bash(git:*), mcp__plugin_github_github__p
 Read review comments on a PR, rate each one, and act based on confidence —
 fix the obvious ones immediately, push back on the bad ones, and ask about
 the uncertain ones while the fixes are already underway.
+
+## Phase 0: PR Health Check
+
+Before triaging comments, check the PR's build and merge status:
+
+```
+pull_request_read(method: "get_check_runs", owner, repo, pullNumber)
+pull_request_read(method: "get", owner, repo, pullNumber)  # check mergeable_state
+```
+
+**Build failures**: If any check run has `conclusion: "failure"`, fetch the
+failed job logs (`gh run view <run_id> --log-failed`) and fix the root cause
+before processing review comments. Build fixes go first — review comments may
+be moot if the build is broken.
+
+**Merge conflicts**: If the PR's `mergeable` field is `false` or `mergeable_state`
+is `"dirty"`, rebase onto `origin/main` and force-push (with lease) before
+processing comments. Stale conflicts block everything downstream.
+
+Include build/merge status at the top of the triage table:
+
+```
+## PR #N Status
+- **Build**: passing | failing (N jobs)
+- **Merge**: clean | conflicts (rebase needed)
+```
+
+If both are clean, proceed to Phase 1. If fixes were needed, note what was done.
 
 ## Phase 1: Fetch Review Threads and Review Bodies
 

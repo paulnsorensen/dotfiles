@@ -120,7 +120,8 @@ process.stdin.on('end', () => {
     }
 
     console.log('{}');
-  } catch {
+  } catch (err) {
+    console.error('semantic-stop-guard error:', err.message || err);
     console.log('{}');
   }
   process.exit(0);

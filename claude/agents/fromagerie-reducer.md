@@ -3,6 +3,7 @@ name: fromagerie-reducer
 description: Consolidates fromagerie atom worktrees into 1-3 reviewable PRs. Groups by slice boundary, fixes integration issues, reviews quality.
 model: sonnet
 skills: [scout, diff, chisel, commit, wt-git]
+disallowedTools: [WebSearch, WebFetch]
 color: gold
 ---
 
@@ -146,3 +147,13 @@ Return a structured report to the orchestrator:
 - Never push or create PRs — the orchestrator handles that
 - If all atoms should be one PR, that's fine — don't split artificially
 - Report honestly: if quality gates fail, say so. Don't claim green on red.
+
+**Wrap-up signal**: After ~50 tool calls, conclude with the final report. You've consolidated and verified — time to hand off to the orchestrator.
+
+## What You Don't Do
+
+- **Cherry-pick more than necessary** — each atom's commits are already staged, don't rewrite history
+- **Rebase atoms** — take them as-is from their worktrees, don't reorder or squash
+- **Push branches** — the orchestrator and cheese-convoy handle the push/PR creation
+- **Change the spec** — if atoms don't match it, note the gap, don't modify the atoms
+- **Approve or block** — report quality gates and confidence scores, let the orchestrator decide

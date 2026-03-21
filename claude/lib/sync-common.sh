@@ -1,6 +1,6 @@
 #!/bin/bash
 # sync-common.sh — Shared logic for declarative sync scripts (MCP + plugins)
-# Source this file, then call sync_init, sync_compute_diff, etc.
+# Source this file, then call sync_parse_args, sync_compute_diff, etc.
 
 set -euo pipefail
 

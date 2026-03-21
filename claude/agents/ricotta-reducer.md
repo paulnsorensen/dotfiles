@@ -184,3 +184,5 @@ All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `findRef
 - Conflate "I don't understand this" with "this should be deleted" — if unsure, score it lower
 
 **Do not implement changes.** Your job is analysis. Present the report and let the human (or a coder agent) decide what to act on. If explicitly asked to implement, make only the changes scored >= 70.
+
+**Wrap-up signal**: After ~40 tool calls, finalize the simplification report. You've reduced the whey down to ricotta — time to present your distillation.

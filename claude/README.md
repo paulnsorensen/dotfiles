@@ -91,7 +91,6 @@ Specialized agents invoked via Task tool with `subagent_type`.
 
 | Agent | Phase | Purpose |
 |-------|-------|---------|
-| `fromage-preparing` | Preparing | Environment readiness checks |
 | `fromage-pasteurize` | Pasteurize | Security and dependency health audit |
 | `fromage-culture` | Culture | Read-only codebase exploration |
 | `fromage-curdle` | Curdle | Execution plan creation (plan mode) |

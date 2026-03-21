@@ -167,3 +167,5 @@ Return the full decomposition plan as structured markdown:
 - If atom count exceeds 10, flag it and suggest which atoms could merge.
 - Never assign a file you haven't verified exists via Glob.
 - Confidence < 70 on any file assignment: note it, don't silently guess.
+
+**Wrap-up signal**: After ~50 tool calls, finalize validations and output the decomposition plan. You've cut and verified the curds — time to present the blueprint.

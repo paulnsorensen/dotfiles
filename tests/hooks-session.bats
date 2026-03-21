@@ -290,7 +290,7 @@ console.log(matched ? 'blocked' : 'allowed');
 }
 
 @test "stop-guard: handles malformed JSON gracefully" {
-    run bash -c 'echo "not json" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    run bash -c 'echo "not json" | node '"$HOOKS_DIR/semantic-stop-guard.js"' 2>/dev/null'
     [ "$status" -eq 0 ]
     [[ "$output" == "{}" ]]
 }

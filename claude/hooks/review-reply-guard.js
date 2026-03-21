@@ -22,7 +22,14 @@ const EXCEPTION_PATTERNS = [
 let input = '';
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
-  const event = JSON.parse(input);
+  let event;
+  try {
+    event = JSON.parse(input);
+  } catch (err) {
+    console.error(`review-reply-guard: failed to parse stdin as JSON: ${err && err.message ? err.message : String(err)}`);
+    console.log(JSON.stringify({ decision: 'allow' }));
+    process.exit(0);
+  }
   const toolInput = event.tool_input || {};
   const body = toolInput.body || toolInput.message || '';
 
