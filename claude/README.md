@@ -69,8 +69,6 @@ Slash commands invoked with `/command-name`.
 | `/agents` | Control panel listing all agents, skills, and commands |
 | `/setup-perms` | Scaffold `.claude/settings.local.json` with project permissions |
 | `/onboard` | Quick codebase orientation for an unfamiliar repo |
-| `/go` | Re-prime MCPs after compaction or session start |
-| `/park` | Save session context before exiting |
 | `/pull` | Pull latest from main |
 | `/research` | Multi-source research: library docs, codebase analysis, prior art |
 
@@ -150,8 +148,8 @@ Reusable tool-usage instructions injected into agents and commands.
 |------|-------|---------|
 | `pre-compact.sh` | PreCompact | Saves session context before compaction |
 | `post-compact.sh` | SessionStart (compact) | Restores context after compaction |
-| `post-fresh-start.sh` | SessionStart | Injects `/go` reminder on fresh sessions |
-| `on-session-end.sh` | UserPromptSubmit | Detects parting language, injects `/park` reminder |
+| `post-fresh-start.sh` | SessionStart | Injects `/trace` suggestion on fresh sessions |
+| `on-session-end.sh` | UserPromptSubmit | Detects parting language, suggests saving context |
 
 ### Hookify Rules (`hookify/`)
 
