@@ -71,6 +71,7 @@ packages:
   - vtsls: { source: npm, pkg: "@vtsls/language-server" }
 
   # Cargo
+  - cargo-llvm-cov: { source: cargo }
   - lspmux:
       source: cargo
       git: https://codeberg.org/p2502/lspmux.git

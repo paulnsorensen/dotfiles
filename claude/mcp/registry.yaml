@@ -26,3 +26,19 @@ mcps:
     args: [shadcn@latest, mcp]
     scope: user
     description: Browse and install shadcn/ui components via natural language
+
+  tavily:
+    command: npx
+    args: ["-y", "tavily-mcp@latest"]
+    env:
+      TAVILY_API_KEY: "${TAVILY_API_KEY}"
+    scope: user
+    description: Web search and research via Tavily AI search API
+
+  serper:
+    command: npx
+    args: ["-y", "serper-search-scrape-mcp-server"]
+    env:
+      SERPER_API_KEY: "${SERPER_API_KEY}"
+    scope: user
+    description: Google SERP data via Serper.dev — web search, Knowledge Graph, People Also Ask, and page scraping

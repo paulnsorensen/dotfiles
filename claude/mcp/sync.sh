@@ -66,10 +66,65 @@ get_item_scope() {
 remove_item() { claude mcp remove "$1" -s "$2" 2>/dev/null; }
 
 sync_compute_diff
-sync_show_plan "MCPs" || exit 0
+
+# Config drift detection: compare desired command+args vs current for existing entries
+TO_UPDATE=""
+if [[ -n "$EXISTING" ]]; then
+    while read -r name; do
+        [[ -z "$name" ]] && continue
+        current_info=$(claude mcp get "$name" 2>/dev/null || true)
+        current_cmd=$(echo "$current_info" | grep '^ *Command:' | sed 's/^ *Command: *//')
+        current_args=$(echo "$current_info" | grep '^ *Args:' | sed 's/^ *Args: *//')
+
+        desired_cmd=$(echo "$DESIRED_JSON" | jq -r --arg n "$name" '.[$n].command')
+        desired_args=$(echo "$DESIRED_JSON" | jq -r --arg n "$name" '.[$n].args // [] | join(" ")')
+
+        if [[ "$current_cmd" != "$desired_cmd" ]] || [[ "$current_args" != "$desired_args" ]]; then
+            TO_UPDATE="${TO_UPDATE:+$TO_UPDATE
+}$name"
+        fi
+    done <<< "$EXISTING"
+fi
+
+# Move drifted entries into TO_ADD (they'll be removed first in the update step)
+if [[ -n "$TO_UPDATE" ]]; then
+    TO_ADD="${TO_ADD:+$TO_ADD
+}$TO_UPDATE"
+    # shellcheck disable=SC2034  # used by sync-common.sh
+    add_count=$(echo "$TO_ADD" | grep -c . 2>/dev/null || echo 0)
+fi
+
+# Show update info alongside the standard plan
+if [[ -n "$TO_UPDATE" ]]; then
+    update_count=$(echo "$TO_UPDATE" | grep -c . 2>/dev/null || echo 0)
+    echo -e "${YELLOW}Config changed ($update_count):${NC}"
+    echo "$TO_UPDATE" | while read -r name; do
+        [[ -z "$name" ]] && continue
+        echo "  ~ $name: command/args changed"
+    done
+    echo
+fi
+
+sync_show_plan "MCPs" || { [[ -z "$TO_UPDATE" ]] && exit 0; }
+
+# Remove drifted entries before re-adding with new config
+if [[ -n "$TO_UPDATE" ]]; then
+    echo -e "${YELLOW}Updating changed MCPs...${NC}"
+    echo "$TO_UPDATE" | while read -r name; do
+        [[ -z "$name" ]] && continue
+        scope=$(get_item_scope "$name")
+        if $DRY_RUN; then
+            echo -e "  ${BLUE}[dry-run]${NC} Would remove $name (config changed)"
+        else
+            echo -n "  Removing old $name... "
+            remove_item "$name" "$scope" && echo -e "${GREEN}done${NC}" || echo -e "${RED}failed${NC}"
+        fi
+    done
+    echo
+fi
 
 if [[ -n "$TO_ADD" ]]; then
-    echo -e "${GREEN}Adding missing MCPs...${NC}"
+    echo -e "${GREEN}Adding MCPs...${NC}"
     echo "$TO_ADD" | while read -r name; do
         [[ -z "$name" ]] && continue
 

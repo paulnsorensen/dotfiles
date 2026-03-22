@@ -2,17 +2,19 @@
 name: fetch
 model: sonnet
 context: fork
-allowed-tools: WebSearch, WebFetch, gh, Task(subagent_type="general-purpose"), mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__octocode__*
+allowed-tools: WebSearch, WebFetch, gh, Task(subagent_type="general-purpose"), mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__octocode__*, mcp__tavily__tavily_search, mcp__tavily__tavily_extract, mcp__tavily__tavily_research, mcp__serper__*
 description: >
   Fetch external documentation or code while protecting the main context window.
-  Use Context7 (preferred) or WebSearch/WebFetch for library docs. Use octocode
-  for GitHub code search, gh CLI for GitHub ops. Governs: when to skip and use
-  training data, when to fetch inline vs delegate to a subagent.
+  Use Context7 (preferred, free) for library docs. Use Tavily for technical concepts
+  and best practices. Use Serper for factual lookups and Google SERP features.
+  Use octocode for GitHub code search, gh CLI for GitHub ops. Cost-aware routing:
+  free → cheap → expensive. Governs: when to skip and use training data, when to
+  fetch inline vs delegate to a subagent.
 ---
 
 # fetch
 
-External knowledge with context window hygiene. Three sources, one budget.
+External knowledge with context window hygiene. Five sources, one budget.
 
 ## Should I fetch at all?
 
@@ -30,11 +32,27 @@ External knowledge with context window hygiene. Three sources, one budget.
 
 ---
 
+## Source Routing (cost-aware)
+
+Try free tools first, then cheap, then expensive:
+
+| Priority | Source | Cost | Use When |
+|----------|--------|------|----------|
+| 1 | Context7 | Free (1K calls/mo) | Library/framework API question |
+| 2 | Codebase (Grep/Read) | Free | Local code patterns |
+| 3 | Octocode | Free | GitHub code search, real-world examples |
+| 4 | Serper | ~$0.001/query | Factual lookups, SERP features, news |
+| 5 | Tavily search | ~$0.003-0.008/query | Technical concepts, best practices |
+| 6 | Tavily research | ~$0.12-2.00/call | Deep multi-source exploration (user must request) |
+| 7 | WebSearch/WebFetch | Varies | Legacy fallback if MCPs are down |
+
+---
+
 ## Library Documentation
 
-### Context7 (preferred — targeted, version-aware)
+### Context7 (preferred — free, version-aware)
 
-Use Context7 first for any supported library. It returns curated, version-specific
+Use Context7 first for any supported library. Returns curated, version-specific
 code examples with minimal context overhead.
 
 ```
@@ -48,11 +66,55 @@ resolve-library-id(libraryName="<library>", query="<specific question>")
 | "Prisma upsert with where clause" | "how does Prisma work" |
 | "Next.js App Router middleware config" | "Next.js authentication" |
 
-Fall back to WebSearch/WebFetch if the library isn't in Context7's index.
+Fall back to Tavily if the library isn't in Context7's index.
 
-### WebSearch + WebFetch (fallback)
+### Tavily (preferred fallback — AI-optimized search)
 
-Use `WebSearch` to find the official docs URL, then `WebFetch` with a focused query.
+Use Tavily when Context7 doesn't cover the library or when you need technical
+concepts beyond API reference docs. Returns AI-processed, markdown-formatted content.
+
+```
+tavily_search(query="<natural language question>", search_depth="basic"|"advanced")
+```
+
+| search_depth | Cost | Use When |
+|---|---|---|
+| basic | 1 credit | Quick lookup, well-known topic |
+| advanced | 2 credits | Deep technical question, version-specific |
+
+**Cost-saving tip**: `tavily_search(..., include_raw_content=true)` returns full
+page markdown inline, combining search + extract in one call. Avoids a separate
+`tavily_extract` call.
+
+Use `tavily_extract(urls=[...], query="<question>")` only when you already have
+a specific URL to read (e.g., from a Serper result).
+
+**DO NOT** use `tavily_research` unless the user explicitly asks for deep research.
+It costs 15-250 credits per call.
+
+### Serper (Google SERP features — cheapest paid option)
+
+Use Serper when you need Google's structured SERP data: Knowledge Graph entries,
+answer boxes, People Also Ask, or when a keyword-optimized Google search will
+find the answer faster than AI search.
+
+```
+google_search(q="<keyword query>", gl="us", hl="en")
+```
+
+Serper returns URLs and snippets, not extracted content. If you need page text,
+follow up with `scrape(url="<url>")`.
+
+Best for:
+- Factual lookups where Google's answer box has the answer
+- Discovering related questions via People Also Ask
+- Entity information via Knowledge Graph
+- Quick sanity checks ("is X deprecated?")
+
+### WebSearch + WebFetch (legacy fallback)
+
+Use only if Tavily and Serper MCPs are unavailable. These are the least
+structured option.
 
 ### Subagent (broad or uncertain scope)
 
@@ -69,14 +131,10 @@ Task(subagent_type="general-purpose", prompt="Look up <specific question> in <li
 
 ## External Code (GitHub / packages)
 
-### Octocode (code search)
+### Octocode (code search — free)
 
 Use octocode MCP for searching GitHub code — finding implementations, usage examples,
 or how a pattern is used across public repos.
-
-```
-mcp__octocode__search_code(query="<pattern>", ...)
-```
 
 Use octocode when:
 - Searching for real-world usage examples of an API
@@ -85,14 +143,17 @@ Use octocode when:
 
 ### gh skill (GitHub ops)
 
-Use the `gh` skill for GitHub operations (PRs, issues, releases, CI checks). The gh skill uses GitHub MCP tools by default (sandbox-safe), with `gh` CLI as fallback for CI/diff operations.
+Use the `gh` skill for GitHub operations (PRs, issues, releases, CI checks). The
+gh skill uses GitHub MCP tools by default (sandbox-safe), with `gh` CLI as fallback.
 
-### WebFetch (raw file contents)
+### Tavily extract / Serper scrape (read specific pages)
 
-For reading specific files from public repos:
-```
-WebFetch(url="https://raw.githubusercontent.com/owner/repo/main/path/to/file")
-```
+For reading a specific URL's content:
+- `tavily_extract(urls=["<url>"], query="<question>")` — AI-processed, relevance-ranked chunks
+- `scrape(url="<url>", includeMarkdown=true)` — raw page content with JSON-LD metadata
+
+Tavily extract is better for long pages (it reranks by relevance). Serper scrape
+is cheaper and includes structured metadata.
 
 ### Subagent (deep exploration)
 
@@ -101,49 +162,51 @@ Delegate to `general-purpose` agent when:
 - Tracing a call chain across multiple modules
 - Unfamiliar codebase with unclear entry points
 
-```
-Task(subagent_type="general-purpose", prompt="In <repo>, trace how X calls Y. Return a summary only.")
-```
-
 Tell the subagent to **return a summary**, not raw file contents.
 
 ---
 
 ## Context Budget Quick Reference
 
-| Situation | Action |
-|---|---|
-| Training data is sufficient | Skip fetch entirely |
-| Narrow, specific doc question | Context7 inline |
-| Library not in Context7 index | WebSearch → WebFetch inline |
-| Broad or multi-concept docs | `general-purpose` subagent |
-| GitHub code search / usage examples | Octocode inline |
-| Local code search | Scout skill or Grep |
-| External repo, 1–2 targeted files | Inline WebFetch |
-| External repo, deep exploration | `general-purpose` subagent |
-| Main context already heavy | Always delegate, never inline |
+| Situation | Action | Cost |
+|---|---|---|
+| Training data is sufficient | Skip fetch entirely | Free |
+| Narrow library API question | Context7 inline | Free |
+| Factual lookup, entity info | Serper google_search | ~$0.001 |
+| Technical concept, best practice | Tavily search (basic) | ~$0.003 |
+| Deep technical question | Tavily search (advanced) | ~$0.006 |
+| Need to read a specific URL | Tavily extract or Serper scrape | ~$0.001-0.003 |
+| GitHub code search / examples | Octocode inline | Free |
+| Local code search | Grep / Read | Free |
+| Broad or multi-concept docs | general-purpose subagent | Varies |
+| Main context already heavy | Always delegate, never inline | — |
 
 ---
 
 ## What You Don't Do
 
 - Modify code or files — only fetch and return information
-- Search local code — use scout, Grep, or LSP for that
+- Search local code — use Grep, Read, or LSP for that
 - Run GitHub operations (PRs, issues) — use the gh skill
+- Use tavily_research without explicit user request — it costs 15-250 credits
 
 ## Anti-patterns
 
 - Fetching docs for `Array.prototype.filter` or other stable stdlib APIs
-- Using WebSearch when Context7 covers the library
+- Using WebSearch/WebFetch when Tavily or Serper can do the job better
+- Using Tavily when Serper (cheaper) or Context7 (free) can answer the question
+- Using tavily_research for a narrow question (tavily_search is 100× cheaper)
 - Reading full file content before searching for what you need
 - Fetching 5 files inline when a subagent would isolate the bloat
-- Using WebFetch for authenticated GitHub repos (use `gh` skill / GitHub MCP instead)
-- Using octocode for GitHub ops (PRs, issues) — that's the `gh` skill's job (via MCP)
-- Calling WebSearch when training data is clearly sufficient
+- Using WebFetch for authenticated GitHub repos (use gh skill / GitHub MCP)
+- Using octocode for GitHub ops (PRs, issues) — that's the gh skill's job
+- Calling any search tool when training data is clearly sufficient
 
 ## Gotchas
 
 - Context7 `resolve-library-id` sometimes returns the wrong library for ambiguous names — verify the resolved ID
-- WebFetch on JavaScript-heavy sites returns empty content — try WebSearch as fallback
+- Serper returns URLs and snippets, not content — follow up with `scrape` if you need page text
+- Tavily `include_raw_content=true` saves a separate extract call — use it for single-page reads
+- WebFetch on JavaScript-heavy sites returns empty content — try Tavily extract or Serper scrape instead
 - Sub-agent summaries can lose critical version-specific details — request explicit version numbers
 - Large MCP responses (>25K tokens) get truncated — write to `/tmp/` and analyze via file read

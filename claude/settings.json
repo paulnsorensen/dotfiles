@@ -65,6 +65,8 @@
       "mcp__octocode__*",
       "mcp__plugin_github_github__*",
       "mcp__shadcn__*",
+      "mcp__tavily__*",
+      "mcp__serper__*",
       "WebSearch",
       "WebFetch"
     ]
@@ -242,7 +244,10 @@
         "files.pythonhosted.org",
         "crates.io",
         "static.crates.io",
-        "api.githubcopilot.com"
+        "api.githubcopilot.com",
+        "api.tavily.com",
+        "mcp.tavily.com",
+        "google.serper.dev"
       ],
       "allowLocalBinding": true
     },
