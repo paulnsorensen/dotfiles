@@ -100,7 +100,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit), `/de-slop` (AI anti-patterns) |
 | PR Response | `/respond` (confidence-rated review triage), `/copilot-review`, `/copilot-delegate` |
 | Testing | `/wreck`, `/test`, `/diff`, `/tdd-assertions`, `/pingpong` |
-| GitHub | `/move-my-cheese <PR#>`, `/cheese-convoy <PR# PR# ...>` |
+| GitHub | `/move-my-cheese <PR#>`, `/cheese-convoy [PR# PR# ...]` |
 | Setup | `/lsp`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/xray`, `/onboard` |
 
