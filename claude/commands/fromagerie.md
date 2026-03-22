@@ -164,9 +164,9 @@ Keep: slug, spec summary (2K), manifest path, quality gates.
 
 ## Phase 1 — Seed
 
-Seed items are minimal: only shared types/protocols that atoms literally cannot compile without.
+Seed items are minimal: only shared types/protocols that atoms literally cannot compile without. Seed has a 10K soft cap / 25K hard cap — if the decomposer exceeded this, the decomposition needs restructuring, not a bigger seed phase.
 
-If total seed tokens < 50K: execute inline with Edit/Write. Otherwise: split into chunks and dispatch parallel cook agents.
+Execute seed inline with Edit/Write (seed is always small enough for the orchestrator to handle directly — this is a deliberate exception to the "never write code" discipline).
 
 For each seed item:
 1. Implement the change

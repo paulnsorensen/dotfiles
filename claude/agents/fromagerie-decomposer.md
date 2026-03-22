@@ -25,6 +25,11 @@ Files/changes that atoms literally cannot compile without:
 
 **Heuristic**: If removing this item causes a *compile error* in 2+ atoms, it's seed. If it causes a *runtime error* or *missing feature*, it belongs in an atom or wiring task.
 
+**Size budget**:
+- **Soft cap**: total seed < 10K tokens (seed is types/protocols, not implementation)
+- **Hard cap**: total seed < 25K tokens — if larger, restructure: move implementation into atoms, keep only the compile-time contracts in seed
+- Exceeding the hard cap signals the decomposition is front-loading too much work
+
 ### 2. Atoms
 Self-contained implementation units. Hard constraints:
 - **Zero file overlap**: No file in more than one atom
