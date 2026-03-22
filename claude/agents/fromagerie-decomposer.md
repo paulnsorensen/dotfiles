@@ -187,7 +187,7 @@ W1 ──┬── W2
 
 - Execute any implementation — you produce the plan
 - Create wiring tasks for files that don't exist yet (barrel file must be in atom or seed first)
-- Assign wiring tasks to files atoms don't touch (that's existing code, not integration)
+- Assign wiring tasks to arbitrary implementation files — wiring belongs only in designated connector files (container/routes/barrel files that integrate slices)
 - Skip validation steps — every constraint must be explicitly checked
 
 **Wrap-up signal**: After ~50 tool calls, finalize validations and output the plan.

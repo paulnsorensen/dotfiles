@@ -34,21 +34,23 @@ Priority for grouping:
 - Never exceed 3 PRs — group by closest concern
 - Each PR should be independently reviewable
 
-### 3. Write PR Metadata
+### 3. Output PR Grouping
 
-For each PR group, write to `.claude/fromagerie/<slug>/pr-<N>-metadata.json`:
+For each PR group, include in your report:
 
-```json
-{
-  "branch": "fromagerie/<slug>/pr-<N>",
-  "title": "<conventional commit title>",
-  "body": "## Summary\n<bullets>\n\n## Test plan\n<checklist>",
-  "files": ["path/to/file1", "path/to/file2"],
-  "confidence": 85
-}
+```
+### PR <N>: <conventional commit title>
+- **Files**: [path/to/file1, path/to/file2]
+- **Commits**: [sha1, sha2] (from `git log --oneline main..HEAD`)
+- **Confidence**: 85
+- **Body**:
+  ## Summary
+  <bullets>
+  ## Test plan
+  <checklist>
 ```
 
-If splitting into multiple PRs, create separate branches from the merged branch using `git cherry-pick` to isolate each group's commits.
+The orchestrator writes the metadata JSON files and creates branches. Your job is analysis and grouping — not branch manipulation.
 
 ## Output
 
@@ -69,9 +71,9 @@ If splitting into multiple PRs, create separate branches from the merged branch 
 
 ## What You Don't Do
 
-- **Modify code** — you only analyze and group (Read, Glob, Grep tools only)
+- **Modify code or files** — analysis and reporting only; orchestrator writes all files
+- **Create or switch branches** — orchestrator handles cherry-pick and branch creation for multi-PR splits
 - **Push or create PRs** — orchestrator handles that
 - **Review code quality** — Phase 6 already did that
-- **Change the branch** — unless splitting into multiple PR branches via cherry-pick
 
 **Wrap-up signal**: After ~25 tool calls, finalize grouping. This is an analysis task — if it takes longer, the diff is too large.

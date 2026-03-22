@@ -170,7 +170,7 @@ If total seed tokens < 50K: execute inline with Edit/Write. Otherwise: split int
 
 For each seed item:
 1. Implement the change
-2. Run quality gates — if fail, **STOP**
+2. Invoke `whey-drainer` to run quality gates — if gates fail, **STOP**
 3. Commit via `/commit` skill
 
 Push to branch: `git push origin HEAD` (atoms branch from HEAD).
@@ -240,7 +240,7 @@ Read from disk when needed: wiring DAG from integration manifest.
 
 ## Phase 3 — Fan In (Merge)
 
-Read atom branches from manifest. Launch `fromagerie-merger`:
+Read atom worktree paths from manifest (`atoms[].worktree_path`). Launch `fromagerie-merger`:
 
 ```
 Agent(
@@ -251,8 +251,8 @@ Merge atom worktrees for: {slug}
 ## Manifest Path
 .claude/fromagerie/{slug}/manifest.json
 
-## Atom Branches
-{list of branches for successful atoms}
+## Worktrees to Merge
+{list of worktree_path values for successful atoms}
 
 ## Target Branch
 {orchestrator_branch}
@@ -271,19 +271,19 @@ After merger returns: verify branch has all atom commits. If merger fails, fall 
 
 Read integration manifest from `.claude/fromagerie/<slug>/manifest.json`.
 
-Dispatch wiring tasks in **topological order** of the DAG:
-1. Find all wiring tasks with no unmet dependencies → dispatch in parallel
-2. Wait for completion
-3. Find newly unblocked tasks → dispatch next wave
-4. Repeat until DAG is exhausted
+Dispatch wiring tasks in **topological order** of the DAG, **sequentially** within each wave. Wiring agents commit to the same working directory — concurrent git operations cause index.lock races even if they touch different files.
 
-Each wiring agent uses the dedicated `fromage-wire` agent type. Wiring agents run on the orchestrator's branch (no worktree isolation) because they touch connector files that may overlap — the DAG's dependency edges enforce sequential access to shared files.
+1. Find all wiring tasks with no unmet dependencies → dispatch **one at a time**, waiting for each to complete
+2. Find newly unblocked tasks → dispatch next batch sequentially
+3. Repeat until DAG is exhausted
+
+Each wiring agent uses the dedicated `fromage-wire` agent type. Wiring tasks are small (20 tool call max) — sequential dispatch is not a significant throughput cost.
 
 ```
 Agent(
   subagent_type="fromage-wire",
   mode="acceptEdits",
-  run_in_background=True,
+  run_in_background=False,
   prompt="""
 You are performing integration wiring for: {slug}
 
@@ -422,10 +422,12 @@ Decide PR grouping for: {slug}
 {all_changed_files}
 
 Analyze the diff, group into 1-3 PRs by Sliced Bread boundaries.
-Write PR metadata files.
+Output your grouping in your report — include title, files, commits, and body for each group.
 """
 )
 ```
+
+After slicer returns: parse the grouping from its report. For each PR group, write `.claude/fromagerie/<slug>/pr-<N>-metadata.json`. If 2+ PRs, use `git cherry-pick` to create separate branches for each group.
 
 ### Publish PRs (orchestrator-owned)
 
@@ -502,7 +504,7 @@ Manifest: .claude/fromagerie/<slug>/manifest.json
 - **Wiring DAG cycles**: If the decomposer produces a cyclic DAG, topological dispatch deadlocks. The decomposer should merge cyclic tasks, but if one slips through, detect it in Phase 4 and merge the cycle into a single task before dispatch.
 - **bypassPermissions doesn't bypass Bash**: Atom agents in worktrees can Edit/Write freely but cannot `git push` or `gh pr create` without Bash allowlist entries. The orchestrator must handle all push/PR operations.
 - **Nesting depth limit**: Claude Code supports 1 level of sub-agent nesting. Phase 6 agents (spec-verify, age) that spawn their own sub-agents count as that level. The orchestrator cannot nest further — this is why spec-verify runs forked, not as a sub-agent that spawns sub-agents.
-- **Parallel wiring race conditions**: Wiring tasks dispatched in the same DAG wave run on the same branch. If two tasks accidentally touch the same file (decomposer error), the second commit may silently overwrite the first. The DAG overlap validation in Phase 0 prevents this, but if it slips through, Phase 6 quality gates catch the missing wiring.
+- **Wiring race conditions**: Wiring tasks commit to the same working directory. Phase 4 dispatches them sequentially (not in parallel) to avoid git index.lock contention — even tasks touching different files would race on concurrent commits.
 - **Stale worktrees**: Atom worktrees persist after Phase 3 merge. The orchestrator does NOT clean them up — use `/worktree-sweep` after the pipeline completes.
 
 ---

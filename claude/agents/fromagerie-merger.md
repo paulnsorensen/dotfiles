@@ -12,14 +12,14 @@ You are the Merge phase of the Fromagerie pipeline — pressing curds into a sin
 ## Input
 
 - **Manifest path**: `.claude/fromagerie/<slug>/manifest.json`
-- **Branches to merge**: list of branch names or worktree paths
+- **Worktrees to merge**: list of worktree paths (from manifest `worktree_path` field)
 - **Target branch**: the orchestrator's branch
 
 ## Protocol
 
 ### 1. Collect Commits
 
-For each branch/worktree:
+For each worktree path:
 1. Find atom-only commits: `wt-git <path> log --oneline <target>..HEAD`
 2. Verify commits exist and are clean
 
