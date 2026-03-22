@@ -59,7 +59,8 @@ function loadClassifier() {
     classifier.consolidate();
 
     return classifier;
-  } catch {
+  } catch (err) {
+    process.stderr.write(`[semantic-stop-guard] Warning: failed to load violation classifier; running in pass-through mode. Error: ${err && err.message ? err.message : String(err)}\n`);
     return null;
   }
 }
@@ -156,9 +157,16 @@ function hasUnresolvedFindings(lines, classifier) {
 function hasFixesAfterFindings(lines, classifier) {
   if (!classifier) return false;
 
+  let start = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let entry;
+    try { entry = JSON.parse(lines[i]); } catch { continue; }
+    if (entry.type === 'user') { start = i + 1; break; }
+  }
+
   let foundViolation = false;
 
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = start; i < lines.length; i++) {
     let entry;
     try { entry = JSON.parse(lines[i]); } catch { continue; }
 
