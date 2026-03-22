@@ -7,7 +7,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, WebFetch
 
 Rescue and consolidate PRs — the cheese convoy rides!
 
-If PR numbers are provided, rescue those. If no args, auto-discover all open PRs for the current repo. Groups related PRs into fewer consolidated PRs before dispatching parallel worktree agents.
+If PR numbers are provided, rescue those. If no PR numbers are given, auto-discover your open PRs (authored by you) for the current repo. Groups related PRs into fewer consolidated PRs before dispatching parallel worktree agents.
 
 ## Skills Used
 
@@ -21,9 +21,10 @@ If PR numbers are provided, rescue those. If no args, auto-discover all open PRs
 | Per-group | **move-my-cheese** | Full PR rescue workflow |
 | Report | **gh** | PR status, CI re-runs |
 
-## Phase 0 — Discover (when no args)
+## Phase 0 — Discover (when no PR numbers)
 
-If `$ARGUMENTS` is empty (no PR numbers provided), auto-discover open PRs.
+Parse `$ARGUMENTS` to separate PR numbers (integers) from flags (tokens starting with `--`).
+If no integers are found — including flags-only invocations like `--all` — auto-discover open PRs.
 
 ### Query
 
@@ -63,7 +64,9 @@ C. Cancel
 
 Proceed to Phase 1 with the confirmed PR list.
 
-**Skip**: When `$ARGUMENTS` contains PR numbers — use those directly.
+Set `$PR_NUMBERS` to the confirmed space-separated list of PR integers (e.g., `59 60 62`). This variable is used throughout Phases 1–4.
+
+**Skip**: When `$ARGUMENTS` contains PR numbers — parse them out, set `$PR_NUMBERS`, and skip to Phase 1.
 
 ## Phase 1 — Batch Recon
 
@@ -136,7 +139,7 @@ When PRs should be combined:
 **Close superseded PRs** using GitHub MCP:
 ```
 update_pull_request(pullNumber=<absorbed>, state="closed")
-add_issue_comment(issueNumber=<absorbed>, body="Superseded by #<target>. Changes merged into the target PR.")
+add_issue_comment(number=<absorbed>, body="Superseded by #<target>. Changes merged into the target PR.")
 ```
 
 ### Skip Combination
@@ -167,6 +170,7 @@ loss vs CI efficiency savings.
 
 ```
 Agent(
+  model="opus",
   prompt="""
 You are analyzing whether to consolidate multiple PRs into fewer groups before
 rescue. This is a judgment task — weigh CI savings against review state loss.
@@ -346,7 +350,7 @@ After all agents complete:
 1. **Close absorbed PRs** from consolidation (if not already closed by the worktree agent):
    ```
    update_pull_request(pullNumber=<absorbed>, state="closed")
-   add_issue_comment(issueNumber=<absorbed>, body="Consolidated into #<target>. Changes cherry-picked into the target PR.")
+   add_issue_comment(number=<absorbed>, body="Consolidated into #<target>. Changes cherry-picked into the target PR.")
    ```
 2. **Close superseded PRs** from Phase 1.5 combination (if not already closed)
 3. Report any worktrees that had changes (they persist until merged)
