@@ -50,7 +50,7 @@ done
 Check plugin status:
 
 ```bash
-claude plugin list 2>&1 | grep claude-code-lsps
+claude plugin list 2>&1 | rg claude-code-lsps
 ```
 
 ## Troubleshooting
