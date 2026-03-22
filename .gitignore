@@ -21,6 +21,10 @@ iterm2/com.googlecode.iterm2.plist
 !claude/reference/
 
 
+# Hook dependencies (installed by claude/.sync)
+claude/hooks/node_modules/
+claude/hooks/package-lock.json
+
 # Claude Code local state (hookify rules, settings.local.json, specs)
 .claude/
 

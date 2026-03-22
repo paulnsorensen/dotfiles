@@ -34,7 +34,11 @@
 #
 # semantic-stop-guard.js — stdin JSON + transcript → stdout JSON
 #   transcript with file edits:       → block with self-eval prompt
-#   stop_hook_active true:            → {} (circuit breaker)
+#   stop_hook_active true (clean):    → {} (NLP finds no violations)
+#   stop_hook_active + unresolved:    → block (NLP detects violations without fixes)
+#   stop_hook_active + resolved:      → {} (violations followed by Edit/Write)
+#   stop_hook_active + prose deferral: → block (NLP catches natural language deferral)
+#   stop_hook_active + clean prose:   → {} (NLP confirms clean output)
 #   short message (<200 chars):       → {} (skip)
 #   empty message:                    → {} (skip)
 #   missing message field:            → {} (skip)
@@ -42,6 +46,9 @@
 #   self-eval prompt content:         → /self-eval, Skill tool, do not mentally check
 #   CI dismissal with patterns:       → block with dismissal prompt
 #   no transcript / no file edits:    → {} (allow)
+#
+# eval-classifier.js — leave-one-out cross-validation
+#   accuracy >= 90%:                  → exit 0
 # ────────────────────────────────────────────────────────────────────
 
 load test_helper
@@ -265,8 +272,71 @@ console.log(matched ? 'blocked' : 'allowed');
     [[ "$output" == *"Skill tool"* ]]
 }
 
-@test "stop-guard: allows on second attempt (stop_hook_active circuit breaker)" {
-    run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+@test "stop-guard: allows on second attempt when no unresolved self-eval" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' > "$transcript"
+    run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{}" ]]
+}
+
+@test "stop-guard: blocks on second attempt when self-eval FAIL unresolved" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' \
+        '{"type":"user","message":"do the thing"}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"## Self-Evaluation\n| # | Check | Result | Notes |\n|---|---|---|---|\n| 1 | Sycophancy | PASS | |\n| 2 | Premature complete | FAIL | Left TODO on line 42 |"}]}}' \
+        > "$transcript"
+    run bash -c 'echo "{\"last_assistant_message\":\"All done.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.decision == "block"'
+    [[ "$output" == *"Unresolved"* ]]
+}
+
+@test "stop-guard: allows on second attempt when self-eval FAIL was fixed" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    # Self-eval found FAIL, then an Edit followed (fix applied)
+    printf '%s\n' \
+        '{"type":"user","message":"do the thing"}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"| 2 | Premature complete | FAIL | Left TODO on line 42 |"}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
+        > "$transcript"
+    run bash -c 'echo "{\"last_assistant_message\":\"Fixed the TODO.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{}" ]]
+}
+
+@test "stop-guard: detects FAIL in tool_result content" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' \
+        '{"type":"user","message":"do the thing"}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_result","content":"| 5 | Scope reduction | FAIL | Dropped retry logic |"}]}}' \
+        > "$transcript"
+    run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.decision == "block"'
+}
+
+@test "stop-guard: blocks prose deferral of high-confidence finding" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' \
+        '{"type":"user","message":"fix the PR"}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"The ricotta agent flagged this at score 90 but it was deferred to a future PR."}]}}' \
+        > "$transcript"
+    run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.decision == "block"'
+}
+
+@test "stop-guard: allows clean transcript on second attempt" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' \
+        '{"type":"user","message":"fix the PR"}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"All checks passed. Clean. Ready to ship."}]}}' \
+        > "$transcript"
+    run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
     [ "$status" -eq 0 ]
     [[ "$output" == "{}" ]]
 }
@@ -317,6 +387,12 @@ console.log(matched ? 'blocked' : 'allowed');
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.decision == "block"'
     [[ "$output" == *"base branch"* ]]
+}
+
+@test "eval-classifier: accuracy above 90% threshold" {
+    run bash -c 'cd '"$REAL_DOTFILES_DIR"'/claude/hooks && node eval-classifier.js 2>&1'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Accuracy:"* ]]
 }
 
 @test "stop-guard: allows when no file edits in transcript" {
