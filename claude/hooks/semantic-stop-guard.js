@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const path = require('path');
 
 const MIN_MESSAGE_LENGTH = 200;
 const FILE_MODIFYING_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit']);
@@ -26,19 +27,52 @@ const DISMISSAL_PATTERNS = [
 
 const SELF_EVAL_PROMPT = `You modified files this turn. Invoke /self-eval using the Skill tool before stopping. Do not mentally check — actually call the skill.`;
 
+const UNRESOLVED_PROMPT = `Unresolved violations detected in this turn's output. Fix every violation before stopping. If a pipeline agent scored a finding >= 70, act on it now — do not defer to a follow-up.`;
+
 const DISMISSAL_PROMPT = `You checked CI status and dismissed a failure as pre-existing or unrelated. Before stopping:
 1. Did you verify this failure exists on the base branch? (git log, gh run list on main, or checking the PR's base)
 2. Can you cite specific evidence (run ID, commit SHA, or log line) that this failure predates your changes?
 If you cannot cite evidence, investigate the failure properly — don't dismiss it.`;
 
-function scanCurrentTurn(transcriptPath) {
-  let lines;
+function loadClassifier() {
   try {
-    lines = fs.readFileSync(transcriptPath, 'utf8').trim().split('\n');
-  } catch {
-    return { modifiedFiles: false, checkedCI: false };
-  }
+    const winkNLP = require('wink-nlp');
+    const model = require('wink-eng-lite-web-model');
+    const nbc = require('wink-naive-bayes-text-classifier');
 
+    const nlp = winkNLP(model);
+    const its = nlp.its;
+
+    const classifier = nbc();
+    classifier.definePrepTasks([
+      (text) => {
+        const doc = nlp.readDoc(text);
+        return doc.tokens().filter(t => t.out(its.type) === 'word').out(its.normal);
+      }
+    ]);
+    classifier.defineConfig({ considerOnlyPresence: true, smoothingFactor: 1 });
+
+    const dataPath = path.join(__dirname, 'violation-training.json');
+    const data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+    data.violation.forEach(v => classifier.learn(v, 'violation'));
+    data.clean.forEach(c => classifier.learn(c, 'clean'));
+    classifier.consolidate();
+
+    return classifier;
+  } catch {
+    return null;
+  }
+}
+
+function parseTurnLines(transcriptPath) {
+  try {
+    return fs.readFileSync(transcriptPath, 'utf8').trim().split('\n');
+  } catch {
+    return [];
+  }
+}
+
+function scanCurrentTurn(lines) {
   let modifiedFiles = false;
   let checkedCI = false;
 
@@ -75,6 +109,91 @@ function scanCurrentTurn(transcriptPath) {
   return { modifiedFiles, checkedCI };
 }
 
+function extractTurnText(lines) {
+  const chunks = [];
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let entry;
+    try { entry = JSON.parse(lines[i]); } catch { continue; }
+
+    if (entry.type === 'user') break;
+
+    if (entry.type === 'assistant') {
+      const content = entry.message?.content;
+      if (!Array.isArray(content)) continue;
+      for (const block of content) {
+        if (block.type === 'text' && typeof block.text === 'string') {
+          chunks.push(block.text);
+        }
+        if (block.type === 'tool_result' && typeof block.content === 'string') {
+          chunks.push(block.content);
+        }
+      }
+    }
+  }
+
+  return chunks;
+}
+
+function hasUnresolvedFindings(lines, classifier) {
+  if (!classifier) return false;
+
+  const chunks = extractTurnText(lines);
+  if (chunks.length === 0) return false;
+
+  for (const chunk of chunks) {
+    const sentences = chunk.split(/\n+/).filter(s => s.trim().length > 10);
+    for (const sentence of sentences) {
+      if (classifier.predict(sentence) === 'violation') {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function hasFixesAfterFindings(lines, classifier) {
+  if (!classifier) return false;
+
+  let foundViolation = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    let entry;
+    try { entry = JSON.parse(lines[i]); } catch { continue; }
+
+    if (entry.type === 'user') {
+      foundViolation = false;
+      continue;
+    }
+
+    if (entry.type !== 'assistant') continue;
+
+    const content = entry.message?.content;
+    if (!Array.isArray(content)) continue;
+
+    for (const block of content) {
+      if (!foundViolation) {
+        const text = block.type === 'text' ? block.text
+          : block.type === 'tool_result' ? block.content : null;
+        if (typeof text === 'string') {
+          const sentences = text.split(/\n+/).filter(s => s.trim().length > 10);
+          for (const sentence of sentences) {
+            if (classifier.predict(sentence) === 'violation') {
+              foundViolation = true;
+              break;
+            }
+          }
+        }
+      } else if (block.type === 'tool_use' && FILE_MODIFYING_TOOLS.has(block.name)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 function hasDismissalLanguage(message) {
   return DISMISSAL_PATTERNS.some(p => p.test(message));
 }
@@ -84,9 +203,22 @@ process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
   try {
     const payload = JSON.parse(input);
+    const lines = parseTurnLines(payload.transcript_path);
 
     if (payload.stop_hook_active) {
-      console.log('{}');
+      const classifier = loadClassifier();
+      const hasViolations = hasUnresolvedFindings(lines, classifier);
+      const hasFixed = hasViolations && hasFixesAfterFindings(lines, classifier);
+
+      if (hasViolations && !hasFixed) {
+        console.log(JSON.stringify({
+          decision: 'block',
+          reason: 'Unresolved violations detected.',
+          systemMessage: UNRESOLVED_PROMPT
+        }));
+      } else {
+        console.log('{}');
+      }
       process.exit(0);
     }
 
@@ -97,9 +229,8 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    const { modifiedFiles, checkedCI } = scanCurrentTurn(payload.transcript_path);
+    const { modifiedFiles, checkedCI } = scanCurrentTurn(lines);
 
-    // Check for CI dismissal without evidence (higher priority)
     if (checkedCI && hasDismissalLanguage(message)) {
       console.log(JSON.stringify({
         decision: 'block',
@@ -109,7 +240,6 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    // Standard self-eval for file modifications
     if (modifiedFiles) {
       console.log(JSON.stringify({
         decision: 'block',

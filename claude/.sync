@@ -20,6 +20,12 @@ configs=(
   CLAUDE.md
 )
 
+# Install hook dependencies (wink-nlp for violation classifier)
+if [[ -f "$SOURCE_DIR/hooks/package.json" ]]; then
+  echo "  Installing hook dependencies..."
+  (cd "$SOURCE_DIR/hooks" && npm install --silent 2>/dev/null) || echo "  Warning: hook npm install failed (non-fatal)"
+fi
+
 for item in "${configs[@]}"; do
   target="$CLAUDE_DIR/$item"
   source="$SOURCE_DIR/$item"
