@@ -46,6 +46,9 @@
 #   self-eval prompt content:         → /self-eval, Skill tool, do not mentally check
 #   CI dismissal with patterns:       → block with dismissal prompt
 #   no transcript / no file edits:    → {} (allow)
+#
+# eval-classifier.js — leave-one-out cross-validation
+#   accuracy >= 90%:                  → exit 0
 # ────────────────────────────────────────────────────────────────────
 
 load test_helper
@@ -384,6 +387,12 @@ console.log(matched ? 'blocked' : 'allowed');
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.decision == "block"'
     [[ "$output" == *"base branch"* ]]
+}
+
+@test "eval-classifier: accuracy above 90% threshold" {
+    run bash -c 'cd '"$REAL_DOTFILES_DIR"'/claude/hooks && node eval-classifier.js 2>&1'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Accuracy:"* ]]
 }
 
 @test "stop-guard: allows when no file edits in transcript" {
