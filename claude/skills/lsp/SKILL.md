@@ -58,7 +58,7 @@ claude plugin list 2>&1 | rg claude-code-lsps
 - **LSP tool not available**: Restart Claude Code — plugins load at session start
 - **Server not starting**: Check binary exists with `command -v <binary>`
 - **Plugin disabled**: `claude plugin enable <name>@claude-code-lsps`
-- **Binary not found**: Run `dots sync` to install missing LSP servers from packages.yaml
+- **Binary not found**: Run `dots sync` to install missing LSP servers from packages.yaml (`solargraph` requires `gem install solargraph`)
 
 ## Gotchas
 

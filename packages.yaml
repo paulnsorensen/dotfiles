@@ -68,6 +68,7 @@ packages:
   - yaml-language-server
   - pyright
   - gopls: { dev: true }
+  - rust-analyzer
   - vtsls: { source: npm, pkg: "@vtsls/language-server" }
 
   # Cargo
