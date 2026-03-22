@@ -55,10 +55,6 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `plugin-edit` - Edit plugin registry.yaml
 - `plugin-ls` - List currently installed plugins
 
-### lspmux Setup
-
-[lspmux](https://codeberg.org/p2502/lspmux) shares LSP instances across Claude sessions (optional). Installed declaratively via `packages.yaml` (cargo section) — `dots sync` handles it. Auto-starts via launchd. Config: `~/Library/Application Support/lspmux/config.toml`. `/lsp` reports its status.
-
 ### Session Monitoring
 - `ccm` - Run Claude session monitor standalone (shows metrics for current directory's session)
 - `ccm --cwd DIR` - Monitor a specific directory's session

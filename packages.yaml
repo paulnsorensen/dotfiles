@@ -63,7 +63,7 @@ packages:
   - docker: { source: cask, dev: true, platform: mac }
   - npm: { platform: linux, dev: true }       # On mac, npm comes with `brew install node`
 
-  # LSP servers (for Claude Code LSP plugins via lspmux)
+  # LSP servers (for Claude Code LSP plugins)
   - bash-language-server
   - yaml-language-server
   - pyright
@@ -72,6 +72,3 @@ packages:
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }
-  - lspmux:
-      source: cargo
-      git: https://codeberg.org/p2502/lspmux.git

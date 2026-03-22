@@ -148,12 +148,6 @@ alias ccw-check='$DOTFILES_DIR/bin/ccw-check'
 alias claude-settings='${EDITOR:-vim} ~/.claude/settings.json'
 
 # ═══════════════════════════════════════════════════════════════════
-# lspmux (LSP multiplexer)
-# ═══════════════════════════════════════════════════════════════════
-alias lspmux-restart='launchctl bootout gui/$(id -u)/com.lspmux.server 2>/dev/null; sleep 1; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lspmux.server.plist && echo "lspmux restarted"'
-alias lspmux-status='lspmux status'
-
-# ═══════════════════════════════════════════════════════════════════
 # Plugin Management (thin wrappers around native commands)
 # ═══════════════════════════════════════════════════════════════════
 alias plugin='claude plugin'
