@@ -218,6 +218,10 @@ Fallback if no test targets: compile check only ({fallback_command})
 4. Commit: Skill(skill='commit')
 5. Write pr-metadata.json with title and body
 
+## Do NOT use LSP tools
+Atom worktrees each spawn their own language server (~200-400MB RAM).
+With 5+ parallel atoms, that's 1-2GB wasted. Verify via test_targets instead.
+
 ## Do NOT push or create PRs
 The orchestrator handles that.
 
