@@ -11,8 +11,8 @@ This command invokes the nih-audit skill which handles the full workflow:
 2. Spawn nih-scanner agent for structural NIH pattern detection
 3. Research library alternatives via parallel research agents
 4. Check specs and code comments for intentional NIH decisions
-5. Score findings 0-100 with evidence grounding and context modifiers
-6. Report only findings >= 50 with effort sizing (S/M/L) and migration paths
+5. Dual-pass scoring 0-100 with evidence grounding and context modifiers
+6. Report ALL findings with effort sizing (S/M/L), migration paths, why/why-not
 
 If no argument is provided, scope to the full codebase.
 

@@ -99,11 +99,10 @@ Agent(
 )
 ```
 
-The scanner returns:
-- JSON candidate list at `$TMPDIR/nih-scanner-{slug}.json`
-- Summary with file count, candidate count, categories
+The scanner returns the full JSON candidate list inline in its response,
+along with a summary (file count, candidate count, categories).
 
-Read the candidate list. If 0 candidates, report clean and stop.
+Parse the candidates from the response. If 0 candidates, report clean and stop.
 
 **Tool budget**: ~30 calls (in sub-agent).
 
@@ -178,11 +177,15 @@ Wait for all research agents. For each candidate:
 
 **Goal**: Check if NIH code is intentional or if a library covers planned work too.
 
-### 3.1 Read Specs
+### 3.1 Find and Read Specs
+
+Search for spec directories across the repo, not just `.claude/specs/`:
 
 ```
-Glob: .claude/specs/*.md
+Glob: **/specs/*.md
 ```
+
+Filter out specs inside node_modules/, vendor/, .git/, build/.
 
 Read each spec's first 100 lines (summary, requirements, goals sections).
 
@@ -259,13 +262,15 @@ For each candidate with a library recommendation, apply the full 4-step chain:
 | NIH code is isolated (1 file, clear boundary) | +5 |
 | NIH code is deeply coupled (referenced from >10 files) | -5 |
 
-#### Step 4: Borderline re-assessment (55-69)
+#### Step 4: Second independent scoring pass
 
-For candidates scoring 55-69 after steps 1-3:
-1. Re-read the NIH code and the library's API
-2. Score independently without looking at the first score
-3. If scores diverge by >15 points, don't surface — the finding is ambiguous
-4. If both scores land >= 55, surface at the average
+For EVERY candidate (not just borderlines):
+1. Clear your mental state — do not look at the first score
+2. Re-read the NIH code and the library's API fresh
+3. Score independently using the same steps 1-3
+4. Report BOTH scores in the finding (Pass 1: NN, Pass 2: NN)
+5. Final score = average of both passes
+6. If scores diverge by >20 points, flag as "ambiguous" but still include
 
 ### 4.2 Effort Sizing
 
@@ -275,13 +280,14 @@ For candidates scoring 55-69 after steps 1-3:
 | 2-5 files, <200 LOC, <=10 call sites | **M** |
 | >5 files, >200 LOC, or >10 call sites | **L** |
 
-### 4.3 Write Detailed Report
+### 4.3 Build Detailed Report
 
-Write to `$TMPDIR/nih-audit-{slug}.md`:
+Build the full report in memory. Do NOT write to `$TMPDIR` or any file — return
+everything inline in the summary response.
 
-For each finding >= 50:
+For EVERY finding (no threshold filtering — show all candidates):
 ```
-### Finding #N: <Title> (Score: NN)
+### Finding #N: <Title> (Score: NN) [AMBIGUOUS if passes diverge >20]
 
 **NIH Code**: `file:line-line` (N LOC)
 **Category**: CATEGORY
@@ -304,19 +310,24 @@ For each finding >= 50:
 2. Replace: specific code change description
 3. Clean up: remove old files/tests
 
-**Scoring Breakdown**:
-- Base: NN (TYPE)
-- Evidence: +NN (reasons)
-- Context: +NN (reasons)
-- Final: NN
+**Scoring**:
+- Pass 1: NN (base NN + evidence NN + context NN)
+- Pass 2: NN (base NN + evidence NN + context NN)
+- Final: NN (average)
 
-**Pros**: maintenance reduction, bug fixes for free, community support, etc.
-**Cons**: new dependency, API differences, migration risk, etc.
+**Why do it**: <concrete benefits — maintenance burden removed, bugs already
+fixed upstream, stdlib means zero new deps, covers planned features, etc.>
+
+**Why not**: <concrete reasons to keep NIH — trivial code not worth a dep,
+hot path where you need control, intentional design choice, library adds
+transitive deps you don't want, coupling risk, etc.>
 ```
 
-### 4.4 Return Summary
+### 4.4 Return Full Report
 
-Return to caller (max 2000 chars):
+Return everything inline — no temp files. Include the summary table, specs
+consulted, and the full detailed findings (one ### Finding block per
+recommendation above threshold):
 
 ```
 ## NIH Audit: <scope>
@@ -324,21 +335,20 @@ Return to caller (max 2000 chars):
 ### Summary
 - Files scanned: N
 - NIH candidates found: N
-- Above threshold (>= 50): N
-- Below threshold: N (not shown)
 - Already using best option: N (filtered out)
+- Ambiguous (scoring passes diverge >20): N
 
-### Recommendations (score >= 50)
+### All Findings (sorted by score, descending)
 
-| # | Score | Category | NIH Code | Replace With | Effort | Files |
-|---|-------|----------|----------|-------------|--------|-------|
-| 1 | 92 | UUID | src/utils/uuid.ts:12 | crypto.randomUUID() (stdlib) | S | 3 |
-| 2 | 85 | RETRY | src/http/retry.ts | p-retry (MIT, 2M/wk) | M | 7 |
+| # | Score | P1 | P2 | Category | NIH Code | Replace With | Effort |
+|---|-------|----|----|----------|----------|-------------|--------|
+| 1 | 92 | 90 | 94 | UUID | src/utils/uuid.ts:12 | crypto.randomUUID() (stdlib) | S |
+| 2 | 42 | 45 | 39 | COLOR | theme/generate.sh:68 | pastel (cargo) | S |
 
 ### Specs Consulted
 - spec-name: <relevant finding or "no NIH justifications">
 
-### Full report: $TMPDIR/nih-audit-{slug}.md
+<detailed findings inline — one ### Finding block per candidate, ALL included>
 ```
 
 **Tool budget**: ~10 calls.
@@ -357,7 +367,6 @@ Return to caller (max 2000 chars):
 
 - Modify code or implement migrations — it recommends, the human decides
 - Recommend GPL libraries without flagging the license risk
-- Surface findings below 50 confidence
 - Use tavily_research (15-250 credits) — regular tavily_search is sufficient
 - Override explicit NIH decisions documented in specs or code comments
 - Run in codebases without any manifest files (nothing to cross-reference)

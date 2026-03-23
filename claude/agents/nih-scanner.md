@@ -153,7 +153,8 @@ If LSP is unavailable, use `Grep` as fallback for this step only.
 
 ### 6. Output
 
-Write JSON to `$TMPDIR/nih-scanner-{slug}.json`:
+Return the full candidate list as JSON directly in your response (do NOT write
+to `$TMPDIR` or any file):
 
 ```json
 {
@@ -179,7 +180,7 @@ Write JSON to `$TMPDIR/nih-scanner-{slug}.json`:
 }
 ```
 
-Return a summary to the orchestrator (max 2000 chars):
+Follow the JSON with a brief summary:
 
 ```
 ## NIH Scanner Results
@@ -187,7 +188,6 @@ Return a summary to the orchestrator (max 2000 chars):
 **LSP available**: yes/no
 **Candidates found**: N
 **By category**: UUID: N, RETRY: N, VALIDATION: N, ...
-**Candidate list**: $TMPDIR/nih-scanner-{slug}.json
 ```
 
 ## What This Agent Never Does
