@@ -88,9 +88,7 @@ packages:
   - docker: { source: cask, dev: true, platform: mac }
   - npm: { platform: linux, dev: true }
   - pyenv: { dev: true }
-  - lspmux:
-      source: cargo
-      git: https://example.com/lspmux.git
+  - cargo-llvm-cov: { source: cargo }
 YAML
 }
 
@@ -238,7 +236,7 @@ run_sync() {
     run_sync
     assert_success
 
-    grep -q "cargo install --git https://example.com/lspmux.git lspmux" "$CARGO_LOG"
+    grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
 }
 
 # --- Integration: cache behavior ---

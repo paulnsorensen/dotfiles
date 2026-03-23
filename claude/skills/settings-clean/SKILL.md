@@ -78,7 +78,7 @@ Examples:
 
 **Same-file coverage** — also applies to Bash and Read entries within the local file:
 - `Read(//path/subdir/**)` is covered by `Read(//path/**)`
-- `Bash(lspmux status:*)` is covered by `Bash(lspmux:*)`
+- `Bash(cargo check:*)` is covered by `Bash(cargo:*)`
 - `Bash(python3 -c:*)` is covered by `Bash(python3:*)`
 
 For non-Bash entries: check for exact match in global (e.g., local `Edit` + global `Edit` → covered).

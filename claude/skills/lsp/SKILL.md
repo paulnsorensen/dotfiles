@@ -8,9 +8,6 @@ description: >
   working", "language server down", "hover not working", "no type info",
   "check LSP", "types missing", or invokes /lsp. Also trigger when LSP
   operations return errors or empty results.
-permissions:
-  allow:
-    - "Bash(lsp-status:*)"
 ---
 
 # lsp
@@ -25,7 +22,7 @@ LSP plugins provide Claude Code's built-in `LSP` tool with 9 operations:
 `goToImplementation`, `prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`.
 
 - **Zero cost when idle** — servers only start when the LSP tool is invoked
-- **lspmux deduplicates** — multiple sessions share one server per workspace root
+- **Per-session servers** — each Claude session spawns its own LSP server
 - **Auto-diagnostics** — after file edits, the language server reports errors inline
 
 ## Enabled plugins
@@ -42,28 +39,28 @@ LSP plugins provide Claude Code's built-in `LSP` tool with 9 operations:
 
 ## Protocol
 
-Run the all-in-one health check:
+Check binary availability:
 
 ```bash
-lsp-status
+for bin in bash-language-server vtsls yaml-language-server rust-analyzer pyright-langserver gopls solargraph; do
+  command -v "$bin" &>/dev/null && echo "OK $bin" || echo "MISSING $bin"
+done
 ```
 
-This single script checks lspmux status, verifies all 7 binaries exist (behind
-dotfiles/bin wrappers), and confirms plugin enablement. Report the output to the
-user and flag anything that needs attention.
+Check plugin status:
+
+```bash
+claude plugin list 2>&1 | rg claude-code-lsps
+```
 
 ## Troubleshooting
 
 - **LSP tool not available**: Restart Claude Code — plugins load at session start
-- **Server not starting**: Check binary exists in `lsp-status` output. lspmux-wrap requires `--` before server args
-- **lspmux down**: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lspmux.server.plist`
+- **Server not starting**: Check binary exists with `command -v <binary>`
 - **Plugin disabled**: `claude plugin enable <name>@claude-code-lsps`
-- **Binary not found**: Run `dots sync` to install missing LSP servers from packages.yaml
-- **Wrong binary found**: Ensure `$DOTFILES_DIR/bin` is first on PATH (wrappers must shadow real binaries)
+- **Binary not found**: Run `dots sync` to install missing LSP servers from packages.yaml (`solargraph` requires `gem install solargraph`)
 
 ## Gotchas
 
-- `lsp-status` script may not be on PATH if `dots sync` hasn't run
 - Plugin enable/disable requires Claude Code restart to take effect
-- lspmux config path is hardcoded to macOS (`~/Library/Application Support/lspmux/`)
 - LSP servers start lazily — a "not running" status is normal if no matching file has been opened yet
