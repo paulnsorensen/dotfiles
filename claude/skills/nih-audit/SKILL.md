@@ -279,7 +279,7 @@ For candidates scoring 55-69 after steps 1-3:
 
 Write to `$TMPDIR/nih-audit-{slug}.md`:
 
-For each finding >= 70:
+For each finding >= 50:
 ```
 ### Finding #N: <Title> (Score: NN)
 
@@ -324,11 +324,11 @@ Return to caller (max 2000 chars):
 ### Summary
 - Files scanned: N
 - NIH candidates found: N
-- Above threshold (>= 70): N
+- Above threshold (>= 50): N
 - Below threshold: N (not shown)
 - Already using best option: N (filtered out)
 
-### Recommendations (score >= 70)
+### Recommendations (score >= 50)
 
 | # | Score | Category | NIH Code | Replace With | Effort | Files |
 |---|-------|----------|----------|-------------|--------|-------|
@@ -357,7 +357,7 @@ Return to caller (max 2000 chars):
 
 - Modify code or implement migrations — it recommends, the human decides
 - Recommend GPL libraries without flagging the license risk
-- Surface findings below 70 confidence
+- Surface findings below 50 confidence
 - Use tavily_research (15-250 credits) — regular tavily_search is sufficient
 - Override explicit NIH decisions documented in specs or code comments
 - Run in codebases without any manifest files (nothing to cross-reference)
