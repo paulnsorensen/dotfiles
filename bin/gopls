@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Wrapper that runs gopls in daemon mode (-remote=auto).
+# A single shared daemon serves all clients (editors, worktrees, agents),
+# eliminating redundant cold starts and type-checking across parallel sessions.
+# Falls back to direct invocation if the daemon flag is unsupported.
+exec /opt/homebrew/bin/gopls -remote=auto "$@"
