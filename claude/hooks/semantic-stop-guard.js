@@ -6,6 +6,23 @@ const path = require('path');
 const MIN_MESSAGE_LENGTH = 200;
 const FILE_MODIFYING_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit']);
 
+function isSubstantiveUserMessage(entry) {
+  if (entry.type !== 'user') return false;
+  if (typeof entry.message === 'string') return entry.message.trim().length > 0;
+  const content = entry.message?.content;
+  if (typeof content === 'string') return content.trim().length > 0;
+  if (Array.isArray(content)) {
+    return content.some(b =>
+      typeof b === 'string' ? b.trim().length > 0
+        : b?.type === 'text' && typeof b.text === 'string' && b.text.trim().length > 0
+    );
+  }
+  if (entry.message != null) {
+    process.stderr.write(`[semantic-stop-guard] Warning: unexpected user message shape: ${JSON.stringify(entry.message).slice(0, 200)}\n`);
+  }
+  return false;
+}
+
 const CI_CHECK_PATTERNS = [
   /\bgh\s+(run|pr\s+checks|api\s+repos\/)/,
   /mcp__plugin_github_github__/,
@@ -81,7 +98,7 @@ function scanCurrentTurn(lines) {
     let entry;
     try { entry = JSON.parse(lines[i]); } catch { continue; }
 
-    if (entry.type === 'user') break;
+    if (isSubstantiveUserMessage(entry)) break;
 
     if (entry.type === 'assistant') {
       const content = entry.message?.content;
@@ -117,7 +134,7 @@ function extractTurnText(lines) {
     let entry;
     try { entry = JSON.parse(lines[i]); } catch { continue; }
 
-    if (entry.type === 'user') break;
+    if (isSubstantiveUserMessage(entry)) break;
 
     if (entry.type === 'assistant') {
       const content = entry.message?.content;
@@ -161,7 +178,7 @@ function hasFixesAfterFindings(lines, classifier) {
   for (let i = lines.length - 1; i >= 0; i--) {
     let entry;
     try { entry = JSON.parse(lines[i]); } catch { continue; }
-    if (entry.type === 'user') { start = i + 1; break; }
+    if (isSubstantiveUserMessage(entry)) { start = i + 1; break; }
   }
 
   let foundViolation = false;
@@ -170,7 +187,7 @@ function hasFixesAfterFindings(lines, classifier) {
     let entry;
     try { entry = JSON.parse(lines[i]); } catch { continue; }
 
-    if (entry.type === 'user') {
+    if (isSubstantiveUserMessage(entry)) {
       foundViolation = false;
       continue;
     }
