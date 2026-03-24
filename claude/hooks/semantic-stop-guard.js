@@ -16,6 +16,9 @@ function isSubstantiveUserMessage(entry) {
         : b?.type === 'text' && typeof b.text === 'string' && b.text.trim().length > 0
     );
   }
+  if (entry.message != null) {
+    process.stderr.write(`[semantic-stop-guard] Warning: unexpected user message shape: ${JSON.stringify(entry.message).slice(0, 200)}\n`);
+  }
   return false;
 }
 
