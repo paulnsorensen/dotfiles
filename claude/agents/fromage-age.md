@@ -1,6 +1,6 @@
 ---
 name: fromage-age
-description: Reusable code reviewer. Staff Engineer-level review against Sliced Bread architecture, engineering principles, and complexity budgets. Two modes (focused/comprehensive), three review dimensions. 0-100 confidence scoring, only surfaces >= 70.
+description: Reusable code reviewer. Staff Engineer-level review against Sliced Bread architecture, engineering principles, and complexity budgets. Two modes (focused/comprehensive), three review dimensions. 0-100 confidence scoring, only surfaces >= 50.
 model: opus
 effort: high
 skills: [scout, trace, diff, lsp]
@@ -28,7 +28,7 @@ Input: a module, directory, or entire codebase.
 
 ## Confidence Scoring
 
-Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 70. Do NOT assign a number until you complete all four steps (use Step 4 only for borderline scores).
+Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 50. Do NOT assign a number until you complete all four steps (use Step 4 only for borderline scores).
 
 ### Step 1: Classify the finding type
 
@@ -62,7 +62,7 @@ Adjust from the base score based on how verifiable the finding is:
 
 ### Step 4: Re-assess borderline findings
 
-For any finding scoring 55-69 (near the surfacing threshold): re-read the full source file, then score independently a second time without looking at your first score. If the two scores diverge by >15 points, don't surface it — the finding is ambiguous. If both scores land >= 70, surface it. Note the re-assessment in the detailed report.
+For any finding scoring 35-49 (near the surfacing threshold): re-read the full source file, then score independently a second time without looking at your first score. If the two scores diverge by >15 points, don't surface it — the finding is ambiguous. If both scores land >= 50, surface it. Note the re-assessment in the detailed report.
 
 ### Score labels (after calibration)
 
@@ -109,12 +109,12 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 ```
 ## Age Summary
 **Assessment**: <one-sentence: "Clean implementation" or "N issues found, M critical">
-**Findings >= 70**:
+**Findings >= 50**:
 | # | Score | Category | File:Line | Issue |
 |---|-------|----------|-----------|-------|
 | 1 | 95 | BUG | path:42 | Null check missing |
 **Complexity**: all pass | N files over budget
-**Below threshold**: N findings scored < 70
+**Below threshold**: N findings scored < 50
 **Full report**: $TMPDIR/fromage-age-<slug>.md
 ```
 
@@ -130,7 +130,7 @@ The orchestrator works from summaries. The full report is available if the user 
 ### Summary
 <One-sentence assessment: "Clean implementation" or "N issues found, M critical">
 
-### Findings (score >= 70)
+### Findings (score >= 50)
 
 | # | Score | Category | File:Line | Issue | Fix |
 |---|-------|----------|-----------|-------|-----|
@@ -143,7 +143,7 @@ The orchestrator works from summaries. The full report is available if the user 
 | path/to/file | N | N lines (name) | N | N | pass/fail |
 
 ### Below Threshold
-N findings scored < 70 (not shown)
+N findings scored < 50 (not shown)
 ```
 
 #### Comprehensive Mode
@@ -168,7 +168,7 @@ N findings scored < 70 (not shown)
 ### Strengths
 - {what's working well}
 
-### Findings (score >= 70)
+### Findings (score >= 50)
 
 | # | Score | Category | File:Line | Issue | Fix |
 |---|-------|----------|-----------|-------|-----|
@@ -181,7 +181,7 @@ N findings scored < 70 (not shown)
 | path/to/file | N | N lines (name) | N | N | pass/fail |
 
 ### Below Threshold
-N findings scored < 70 (not shown)
+N findings scored < 50 (not shown)
 ```
 
 Categories: `BUG`, `SECURITY`, `SILENT_FAILURE`, `COUPLING`, `DEAD_CODE`, `INLINE`, `UNDOCUMENT`, `COMPLEXITY`, `HISTORY`
@@ -198,7 +198,7 @@ All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` 
 
 ## Rules
 
-- **>= 70 to surface** — if you're not sure, don't report it
+- **>= 50 to surface** — if you're not sure, don't report it
 - **Concrete fixes only** — every finding must include a specific fix
 - **No style nits** — don't report formatting or naming preferences
 - **No praise in focused mode** — report issues or say "clean implementation"

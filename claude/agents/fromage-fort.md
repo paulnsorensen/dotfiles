@@ -52,7 +52,7 @@ Score each suggestion using this 4-step chain-of-thought process. Do NOT assign 
 |------|-------------|------------|-----|
 | `BUG` | Concrete correctness issue — crashes, wrong output, missing check | 50 | 100 |
 | `CONVENTION` | Violates a stated project pattern or CLAUDE.md rule | 40 | 90 |
-| `STYLE` | Naming, formatting, subjective "cleaner" suggestions | 20 | 60 |
+| `STYLE` | Naming, formatting, subjective "cleaner" suggestions | 20 | 45 |
 | `SCOPE_CREEP` | "You should also...", unrelated additions, feature requests | 10 | 45 |
 
 ### Step 2: Evidence grounding
@@ -83,13 +83,13 @@ Assign the final score (respecting the type cap from Step 1).
 
 | Score | Action |
 |-------|--------|
-| 70-100 | FIX |
-| 50-69 | ASK |
-| 0-49 | PUSH BACK |
+| 50-100 | FIX |
+| 30-49 | ASK |
+| 0-29 | PUSH BACK |
 
 ### Step 4: Re-assess borderline items
 
-For any item scoring 55-69 (the ASK zone near the FIX threshold): re-read the full source file (not just the diff hunk), then score independently a second time without looking at your first score. If the two scores diverge by >15 points, the suggestion is genuinely ambiguous — keep it as ASK and flag "low consistency" in the triage table. If both scores land >= 70, upgrade to FIX.
+For any item scoring 35-49 (the ASK zone near the FIX threshold): re-read the full source file (not just the diff hunk), then score independently a second time without looking at your first score. If the two scores diverge by >15 points, the suggestion is genuinely ambiguous — keep it as ASK and flag "low consistency" in the triage table. If both scores land >= 50, upgrade to FIX.
 
 **Review body parsing**: A single review body may contain multiple suggestions (bullets, numbered lists, table rows). Parse into individual items — each gets its own score. Single cohesive comments ("LGTM", general observations) stay as one item.
 
@@ -112,21 +112,21 @@ Include a one-line expansion for each row.
 
 ## Phase 4: Execute
 
-### FIX items (>= 70):
+### FIX items (>= 50):
 1. Read the source file
 2. Implement the fix using **chisel**
 3. Reply acknowledging the fix:
    - **Inline threads**: `add_reply_to_pull_request_comment(owner, repo, pullNumber, commentId, body)`
    - **Review body items**: `gh api repos/{owner}/{repo}/issues/{pullNumber}/comments -f body="Re: @reviewer's review — Fixed: <description>."`
 
-### PUSH BACK items (< 50):
+### PUSH BACK items (< 30):
 1. Post a professional reply explaining *why*:
    - **Inline threads**: `add_reply_to_pull_request_comment`
    - **Review body items**: `gh api repos/{owner}/{repo}/issues/{pullNumber}/comments -f body="..."`
 2. Cite CLAUDE.md conventions, complexity budget, or early-dev stance when relevant
 3. Skip purely stylistic suggestions (note as SKIP in table)
 
-### ASK items (50-69):
+### ASK items (30-49):
 Report these back — the orchestrator or user decides.
 
 ### After all actions:
@@ -134,13 +134,13 @@ If code was changed, commit fixes using the **commit** skill. Report: files modi
 
 ## Rules
 
-- **Never defer to a follow-up** — don't reply "will address in a follow-up PR" or "good idea, will do in a separate PR". If it scores >= 70, fix it now in this PR. If it scores < 50, push back. The only valid deferral is an ASK item (50-69) that the user explicitly decides to skip.
+- **Never defer to a follow-up** — don't reply "will address in a follow-up PR" or "good idea, will do in a separate PR". If it scores >= 50, fix it now in this PR. If it scores < 30, push back. The only valid deferral is an ASK item (30-49) that the user explicitly decides to skip.
 - One reply per thread
 - Match reviewer's tone — professional for humans, concise for bots
 - Batch all code fixes into one commit
 - Show ALL threads in the triage table (full visibility)
-- Auto-fix items >= 70 confidence
-- Push back on items < 50 with a professional reply
-- Items 50-69 go in the report for user/orchestrator decision
+- Auto-fix items >= 50 confidence
+- Push back on items < 30 with a professional reply
+- Items 30-49 go in the report for user/orchestrator decision
 
 **Wrap-up signal**: After ~40 tool calls, finalize your triage table and commit any fixes. You've triaged thoroughly — time to report.
