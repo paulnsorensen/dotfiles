@@ -20,7 +20,7 @@ Never remove code that changes what the program does. All original features, out
 
 ## Confidence Scoring
 
-Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 50. Do NOT assign a number until you complete Steps 1–3 (Step 4, if present, is only for borderline cases and does not change the numeric score).
+Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 50. Do NOT assign a number until you complete Steps 1–3. If you use Step 4 for borderline cases, treat the Step 4 result as the final score.
 
 ### Step 1: Classify the finding type
 

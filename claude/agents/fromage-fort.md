@@ -52,7 +52,7 @@ Score each suggestion using this 4-step chain-of-thought process. Do NOT assign 
 |------|-------------|------------|-----|
 | `BUG` | Concrete correctness issue — crashes, wrong output, missing check | 50 | 100 |
 | `CONVENTION` | Violates a stated project pattern or CLAUDE.md rule | 40 | 90 |
-| `STYLE` | Naming, formatting, subjective "cleaner" suggestions | 20 | 60 |
+| `STYLE` | Naming, formatting, subjective "cleaner" suggestions | 20 | 45 |
 | `SCOPE_CREEP` | "You should also...", unrelated additions, feature requests | 10 | 45 |
 
 ### Step 2: Evidence grounding

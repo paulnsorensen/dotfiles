@@ -126,7 +126,7 @@ doesn't automatically make the suggestion *correct*).
 | BUG | Correctness issue, logic error, crash | 50 | 100 |
 | SECURITY | Vulnerability, data exposure, auth bypass | 55 | 100 |
 | CONVENTION | Style, naming, project-standard deviation | 25 | 65 |
-| STYLE | Formatting, subjective preference | 15 | 50 |
+| STYLE | Formatting, subjective preference | 15 | 45 |
 | SCOPE_CREEP | Unrelated improvement, "while you're here" | 20 | 55 |
 | VALID_CONCERN | Architectural, performance, maintainability | 40 | 90 |
 
@@ -255,7 +255,7 @@ threads still pending user decision.
 - **One reply per thread** — don't fragment responses across multiple comments
 - **Match the reviewer's tone** — professional for humans, concise for bots
 - **Cite specifics in pushback** — reference CLAUDE.md conventions, complexity budget, or early-dev stance when relevant
-- **Don't argue style** — if the suggestion is purely stylistic and score is < 50, just skip it rather than posting a pushback (note it as SKIP in the table)
+- **Don't argue style** — if the suggestion is purely stylistic and score is < 30, just skip it rather than posting a pushback (note it as SKIP in the table). For purely stylistic items scored 30–49, leave them as ASK so the user can decide.
 - **Never defer to a follow-up** — don't reply "will address in a follow-up PR" or "good idea, will do in a separate PR". If it scores >= 50, fix it now. If it scores < 30, push back. The only valid deferral is an ASK item (30-49) that the user explicitly decides to skip.
 - **Batch commits** — group all fixes into one commit, not one per thread
 - **User can override anything** — if they say "don't fix #2" before you get to it, stop. If they say "actually fix #4", do it. The confidence score is a default, not a mandate.
