@@ -86,7 +86,7 @@ assessments agree, the finding is robust. If they diverge by >15 points,
 the model is genuinely uncertain — which is valuable information.
 
 **Rules:**
-- Define your borderline zone: typically threshold ± 10 points
+- Define your borderline zone: typically threshold-15 to threshold-1
 - Re-read the full source file (not just the excerpt) before rescoring
 - If scores diverge >15 points → don't surface (ambiguous)
 - If both scores land >= threshold → surface with confidence
@@ -118,7 +118,7 @@ To add calibrated scoring to a new agent:
 3. **Define evidence grounding** — what verification tools does this agent have?
    LSP, grep, test execution, API calls?
 4. **Add context modifiers** — what domain signals adjust severity?
-5. **Set the borderline zone** — threshold ± 10 points for re-assessment
+5. **Set the borderline zone** — typically threshold-15 to threshold-1 for re-assessment
 6. **Define the surfacing threshold** — typically 75, but can be 50 for agents
    where false negatives are costlier than false positives
 
