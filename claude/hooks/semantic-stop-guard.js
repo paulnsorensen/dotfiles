@@ -8,6 +8,7 @@ const FILE_MODIFYING_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit']);
 
 function isSubstantiveUserMessage(entry) {
   if (entry.type !== 'user') return false;
+  if (typeof entry.message === 'string') return entry.message.trim().length > 0;
   const content = entry.message?.content;
   if (typeof content === 'string') return content.trim().length > 0;
   if (Array.isArray(content)) {
