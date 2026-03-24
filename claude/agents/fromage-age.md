@@ -188,7 +188,14 @@ Categories: `BUG`, `SECURITY`, `SILENT_FAILURE`, `COUPLING`, `DEAD_CODE`, `INLIN
 
 ## LSP Integration
 
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` to verify type correctness, `findReferences` to confirm dead code, auto-diagnostics to catch compiler warnings the diff won't reveal.
+All 7 LSP plugins are enabled globally.
+
+| Context | Strategy |
+|---|---|
+| **Standalone** (invoked directly or by `/age`) | Direct LSP — `hover` for type correctness, `findReferences` for dead code, auto-diagnostics for warnings |
+| **Parallel context** (spawned by move-my-cheese, cheese-convoy, or any worktree agent) | **lsp-probe** — batch all LSP queries into one `Agent(subagent_type="lsp-probe")` call. Avoids holding a language server for the session when N agents run concurrently |
+
+**How to detect parallel context**: Your prompt will mention "lsp-probe" or "worktree" or "parallel agents". When it does, collect all the LSP queries you need (hover for type checks, findReferences for dead code verification, documentSymbol for symbol listings) and batch them into a single lsp-probe invocation rather than calling LSP directly.
 
 ## Review Targets
 
