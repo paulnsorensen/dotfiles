@@ -104,7 +104,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Setup | `/lsp`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/xray`, `/onboard` |
 
-All agents use 0-100 confidence scoring (>= 70 to surface). Each agent defines its own scoring granularity. **When confidence < 70, ask the user.** Never claim green on partial work — lying about completion is the cardinal sin of the pipeline.
+All agents use 0-100 confidence scoring (>= 50 to surface). Each agent defines its own scoring granularity. **When confidence < 50, ask the user.** Never claim green on partial work — lying about completion is the cardinal sin of the pipeline.
 
 ## Skill Delegation
 

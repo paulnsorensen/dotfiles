@@ -13,4 +13,4 @@ Use the ricotta-reducer agent (subagent_type: ricotta-reducer) to analyze the ta
 
 If no argument is provided, scope to `git diff --staged` or the most recently modified files.
 
-All findings use 0-100 confidence scoring (>= 70 to surface). Present the agent's simplification report (DELETE, INLINE, UNDOCUMENT, DECOUPLE categories) directly to the user. Do not implement changes unless explicitly asked.
+All findings use 0-100 confidence scoring (>= 50 to surface). Present the agent's simplification report (DELETE, INLINE, UNDOCUMENT, DECOUPLE categories) directly to the user. Do not implement changes unless explicitly asked.

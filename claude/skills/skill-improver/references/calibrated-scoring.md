@@ -119,13 +119,13 @@ To add calibrated scoring to a new agent:
    LSP, grep, test execution, API calls?
 4. **Add context modifiers** — what domain signals adjust severity?
 5. **Set the borderline zone** — threshold ± 10 points for re-assessment
-6. **Define the surfacing threshold** — typically 75, but can be 70 for agents
+6. **Define the surfacing threshold** — typically 75, but can be 50 for agents
    where false negatives are costlier than false positives
 
 ## Reference Implementations
 
 | Agent | Domain | Threshold | Categories |
 |-------|--------|-----------|------------|
-| fromage-age | Code review | >= 70 | BUG, SECURITY, COUPLING, COMPLEXITY, DEAD_CODE, INLINE |
-| fromage-fort | PR comment triage | >= 70 (FIX) | BUG, CONVENTION, STYLE, SCOPE_CREEP |
-| ricotta-reducer | Code simplification | >= 70 | DELETE, INLINE, DECOUPLE, UNDOCUMENT |
+| fromage-age | Code review | >= 50 | BUG, SECURITY, COUPLING, COMPLEXITY, DEAD_CODE, INLINE |
+| fromage-fort | PR comment triage | >= 50 (FIX) | BUG, CONVENTION, STYLE, SCOPE_CREEP |
+| ricotta-reducer | Code simplification | >= 50 | DELETE, INLINE, DECOUPLE, UNDOCUMENT |
