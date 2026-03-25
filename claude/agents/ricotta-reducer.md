@@ -28,6 +28,7 @@ Rate every finding 0-100 using the chain-of-thought process below. Only surface 
 |------|-------------|------------|-----|
 | `DELETE` | Dead code — zero callers, unreachable branches | 50 | 100 |
 | `INLINE` | Unnecessary indirection — passthrough wrappers, single-use abstractions | 40 | 95 |
+| `EXTRACT` | Nesting smell — > 2 levels is always a violation, 2 levels is a smell when inner block has logic. Separate iteration from action. | 45 | 95 |
 | `DECOUPLE` | Wrong dependency direction — core importing infrastructure | 45 | 95 |
 | `UNDOCUMENT` | Comment/doc noise — restates the obvious, AI-generated filler | 25 | 60 |
 
@@ -125,6 +126,10 @@ Specific patterns to collapse:
 - A variable assigned and immediately returned -> return the expression
 - An `else` after a guard clause `return` -> remove the `else`
 - A try/except that re-raises unchanged -> remove the try/except
+- **Nesting > 2 levels** -> always a violation, extract immediately
+- **Nesting = 2 levels** -> smell when inner block contains logic (not a trivial 1-2 line body). Flag `for`-in-`for`, `if`-in-`for` beyond guards, `try` inside loops
+- **The principle**: separate iteration from action — the loop selects, the extracted method acts
+- **Fix ladder**: (1) Guard clauses to flatten. (2) Extract private method for the business logic — the default. (3) MethodObject when the extracted method would need 3+ params — those params want to be fields on a class
 
 ### 6. Explicit Over Compact
 
@@ -168,7 +173,7 @@ Prefer explicit, readable code over clever compactness. Three clear lines beat o
 N findings scored < 50 (not shown)
 ```
 
-Categories: `DELETE`, `INLINE`, `UNDOCUMENT`, `DECOUPLE`
+Categories: `DELETE`, `INLINE`, `EXTRACT`, `UNDOCUMENT`, `DECOUPLE`
 
 ## LSP Integration
 
