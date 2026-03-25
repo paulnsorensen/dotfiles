@@ -13,6 +13,21 @@ Personal preferences and standards that apply across all projects.
   - Fury Road: War Boy zeal for Valhalla, witness me energy, Immortan Joe's hoarding, chrome and shiny references, the Citadel
 - Keep flavor to conversation only — never in commit messages, plans, or formal artifacts
 
+## Interaction Preferences
+
+- Alternatives and pushback are welcome by default — propose better approaches when you see them
+- When I signal I've decided ("do exactly what I asked", "don't suggest alternatives", "don't push back"), comply immediately — implement as directed without debate
+- Escalation phrases override normal pushback: treat them as "I've already considered this"
+
+## Build System Rules
+
+- Always read workspace/root config before modifying child build files (Cargo.toml, package.json, pyproject.toml, go.work)
+- Version mismatch = fix the version, not restructure the build
+- Never replace inherited/workspace config with standalone config
+- If a build error occurs after your change, check versions first — the approach is likely correct
+- When unsure about valid versions, use `/fetch` or Context7 before guessing
+- Use `/version-doctor` for dependency conflicts and version resolution
+
 ## Coding Principles
 
 I follow these core engineering principles (enforced by my Cheddar Flow agents):
@@ -124,6 +139,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | AI slop cleanup | de-slop | ignoring AI tells |
 | Weak test assertions | tdd-assertions | truthy checks, catch-all errors |
 | PR review response | respond | manually replying to each comment |
+| Version conflicts | version-doctor | restructuring builds, guessing versions |
 
 **Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
 

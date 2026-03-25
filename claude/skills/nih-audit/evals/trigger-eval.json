@@ -1,0 +1,82 @@
+[
+  {
+    "query": "we have this utils/retry.ts file that does exponential backoff with jitter, and it's like 80 lines. I feel like there's gotta be a package for this. can you check if we're reinventing anything?",
+    "should_trigger": true
+  },
+  {
+    "query": "I noticed our codebase has a hand-rolled UUID generator in src/common/id.ts using Math.random(). Are there better alternatives we should be using instead of maintaining this ourselves?",
+    "should_trigger": true
+  },
+  {
+    "query": "do a build vs buy audit on the domains/validation/ folder — I think we wrote a bunch of validation logic that zod or yup already handles",
+    "should_trigger": true
+  },
+  {
+    "query": "what libraries are we reinventing the wheel on? scan the whole repo and tell me where we should be using existing packages instead of our custom implementations",
+    "should_trigger": true
+  },
+  {
+    "query": "check if there are dependency opportunities in our codebase — places where we wrote custom code but a well-maintained open source lib would be better",
+    "should_trigger": true
+  },
+  {
+    "query": "I just inherited this project and there's a LOT of utility functions in helpers/. Can you figure out which ones are redundant because there's already a library that does the same thing?",
+    "should_trigger": true
+  },
+  {
+    "query": "our team keeps writing custom date formatting functions. is there a library we should standardize on instead of maintaining all these one-off implementations across the codebase?",
+    "should_trigger": true
+  },
+  {
+    "query": "run a NIH audit on packages/api/ — I suspect we're maintaining code that established npm packages already handle, especially around HTTP retry and input sanitization",
+    "should_trigger": true
+  },
+  {
+    "query": "are we using any libraries with known security vulnerabilities? can you scan our dependencies for CVEs and outdated packages",
+    "should_trigger": false
+  },
+  {
+    "query": "review the code quality of the changes in my last 3 commits — check for complexity violations, coupling issues, and architecture problems",
+    "should_trigger": false
+  },
+  {
+    "query": "find all the dead code and unused exports in src/domains/ and remove them. I want to slim down the codebase",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to install express-rate-limit and set it up as middleware. can you help me configure it in our existing Express app?",
+    "should_trigger": false
+  },
+  {
+    "query": "we have a custom logging framework in src/logger.ts. can you help me add structured JSON output to it? I don't want to replace it, just improve the formatting",
+    "should_trigger": false
+  },
+  {
+    "query": "check our package.json — are any of our dependencies unmaintained or deprecated? I want to make sure we're not relying on abandoned projects",
+    "should_trigger": false
+  },
+  {
+    "query": "can you explain how our custom retry logic in utils/http.ts works? I need to understand the backoff algorithm before I modify it",
+    "should_trigger": false
+  },
+  {
+    "query": "write unit tests for the deepMerge function in src/utils/objects.ts — I want full coverage including edge cases with nested arrays and circular references",
+    "should_trigger": false
+  },
+  {
+    "query": "help me refactor the authentication module — it's gotten too complex and I want to simplify the flow without changing any external dependencies",
+    "should_trigger": false
+  },
+  {
+    "query": "what npm packages should I use for a new Express project? I need auth, validation, logging, and rate limiting recommendations",
+    "should_trigger": false
+  },
+  {
+    "query": "are there any libraries we should migrate to? I feel like half our utils/ folder is stuff that lodash or ramda already does, and the other half is date stuff that date-fns handles",
+    "should_trigger": true
+  },
+  {
+    "query": "should we use a library for our custom argument parser in bin/cli.ts? it's gotten to 200 lines and I'm not sure it's worth maintaining vs using commander or yargs",
+    "should_trigger": true
+  }
+]
