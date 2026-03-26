@@ -88,7 +88,11 @@ For any finding scoring 35-49 (near the surfacing threshold): re-read the full s
 5. **Dead Code** — Unused exports, unreachable branches, speculative abstractions (ABCs with one impl, factories with one type, registries with one entry)
 6. **Inline** — Passthrough layers, single-use wrappers, one-method classes that should be functions
 7. **Undocument** — Docstrings that restate the function name, AI-generated comments that add no insight
-8. **Complexity** — Functions over 40 lines, files over 300 lines, deeply nested logic, too many parameters
+8. **Complexity** — Functions over 40 lines, files over 300 lines, too many parameters, and **nesting depth smells** (intentionally stricter than the global complexity budget of "max 3 levels" — agents detect smells earlier to prompt extraction before code hardens):
+   - **> 2 levels (triple nesting+)**: Always a violation. No exceptions.
+   - **= 2 levels (double nesting)**: Flag as a smell when the inner block contains logic — `for`-in-`for` where inner could be `.filter()`/`.map()`/named helper, `if`-in-`for` beyond a simple guard, `try` inside a loop, or any double nesting where the inner block exceeds ~5 lines. Exception: matrix/grid ops with a 1-2 line body, or a match arm with a single guard.
+   - **The principle**: separate iteration from action. The business logic inside a loop should be extracted — the loop selects, the extracted method acts.
+   - **Fix ladder**: (1) Guard clauses to flatten conditions. (2) Extract private method for the action/business logic — the default choice. (3) MethodObject when the extracted method would need 3+ parameters, meaning that state wants to live as fields on a dedicated class with `compute()`/`call()` + private helpers.
 
 ### Dimension 3 — Historical Context
 
@@ -114,6 +118,7 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 |---|-------|----------|-----------|-------|
 | 1 | 95 | BUG | path:42 | Null check missing |
 **Complexity**: all pass | N files over budget
+**Nesting**: clean | N smells (depth 2: N violations, depth 3+: N violations)
 **Below threshold**: N findings scored < 50
 **Full report**: $TMPDIR/fromage-age-<slug>.md
 ```
@@ -141,6 +146,13 @@ The orchestrator works from summaries. The full report is available if the user 
 | File | Lines | Longest Function | Max Nesting | Max Params | Status |
 |---|---|---|---|---|---|
 | path/to/file | N | N lines (name) | N | N | pass/fail |
+
+### Nesting Smells (if any)
+| File:Line | Depth | Recommended Fix |
+|-----------|-------|-----------------|
+| path:42 | 3 | Extract private method — separate iteration from action |
+| path:87 | 2 | Smell — inner block has 12 lines of business logic, extract to private method |
+| path:103 | 4 | MethodObject — 4 shared locals need to be fields |
 
 ### Below Threshold
 N findings scored < 50 (not shown)
@@ -180,6 +192,13 @@ N findings scored < 50 (not shown)
 |---|---|---|---|---|---|
 | path/to/file | N | N lines (name) | N | N | pass/fail |
 
+### Nesting Smells (if any)
+| File:Line | Depth | Recommended Fix |
+|-----------|-------|-----------------|
+| path:42 | 3 | Extract private method — separate iteration from action |
+| path:87 | 2 | Smell — inner block has 12 lines of business logic, extract to private method |
+| path:103 | 4 | MethodObject — 4 shared locals need to be fields |
+
 ### Below Threshold
 N findings scored < 50 (not shown)
 ```
@@ -201,7 +220,7 @@ All 7 LSP plugins are enabled globally.
 
 - **Sliced Bread architecture** — vertical slices, pure domain models, infrastructure in adapters. Read `.claude/reference/sliced-bread.md` for anti-patterns and boundary guidance.
 - **Engineering principles** — input validation, fail-fast, loose coupling, YAGNI, real-world models, immutable patterns
-- **Complexity budget** — 40 lines/fn, 300 lines/file, 4 params/fn, 3 nesting levels
+- **Complexity budget** — 40 lines/fn, 300 lines/file, 4 params/fn, nesting: > 2 levels = violation, 2 levels = smell when inner block has logic
 
 ## Rules
 
