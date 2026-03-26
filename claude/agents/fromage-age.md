@@ -88,7 +88,7 @@ For any finding scoring 35-49 (near the surfacing threshold): re-read the full s
 5. **Dead Code** — Unused exports, unreachable branches, speculative abstractions (ABCs with one impl, factories with one type, registries with one entry)
 6. **Inline** — Passthrough layers, single-use wrappers, one-method classes that should be functions
 7. **Undocument** — Docstrings that restate the function name, AI-generated comments that add no insight
-8. **Complexity** — Functions over 40 lines, files over 300 lines, too many parameters, and **nesting depth smells**:
+8. **Complexity** — Functions over 40 lines, files over 300 lines, too many parameters, and **nesting depth smells** (intentionally stricter than the global complexity budget of "max 3 levels" — agents detect smells earlier to prompt extraction before code hardens):
    - **> 2 levels (triple nesting+)**: Always a violation. No exceptions.
    - **= 2 levels (double nesting)**: Flag as a smell when the inner block contains logic — `for`-in-`for` where inner could be `.filter()`/`.map()`/named helper, `if`-in-`for` beyond a simple guard, `try` inside a loop, or any double nesting where the inner block exceeds ~5 lines. Exception: matrix/grid ops with a 1-2 line body, or a match arm with a single guard.
    - **The principle**: separate iteration from action. The business logic inside a loop should be extracted — the loop selects, the extracted method acts.
@@ -118,6 +118,7 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 |---|-------|----------|-----------|-------|
 | 1 | 95 | BUG | path:42 | Null check missing |
 **Complexity**: all pass | N files over budget
+**Nesting**: clean | N smells (depth 2: N violations, depth 3+: N violations)
 **Below threshold**: N findings scored < 50
 **Full report**: $TMPDIR/fromage-age-<slug>.md
 ```

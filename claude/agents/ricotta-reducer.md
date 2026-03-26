@@ -28,7 +28,7 @@ Rate every finding 0-100 using the chain-of-thought process below. Only surface 
 |------|-------------|------------|-----|
 | `DELETE` | Dead code — zero callers, unreachable branches | 50 | 100 |
 | `INLINE` | Unnecessary indirection — passthrough wrappers, single-use abstractions | 40 | 95 |
-| `EXTRACT` | Nesting smell — > 2 levels is always a violation, 2 levels is a smell when inner block has logic. Separate iteration from action. | 45 | 95 |
+| `EXTRACT` | Nesting smell — > 2 levels is always a violation, 2 levels is a smell when inner block has logic. Separate iteration from action. Recommend extraction refactors in prose only — do not implement new helpers, methods, or files. | 45 | 95 |
 | `DECOUPLE` | Wrong dependency direction — core importing infrastructure | 45 | 95 |
 | `UNDOCUMENT` | Comment/doc noise — restates the obvious, AI-generated filler | 25 | 60 |
 
