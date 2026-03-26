@@ -27,6 +27,30 @@ This command orchestrates across multiple skills:
 | Commit | **commit** | Stage and commit fixes (conventional format) |
 | Push | **gh** | Push to PR branch, re-run failed CI |
 
+## Parallel LSP Strategy
+
+Two tiers of LSP usage — one for move-my-cheese itself, one for the sub-agents it always spawns:
+
+### move-my-cheese (Phase 3a diagnosis)
+
+| Context | LSP approach |
+|---|---|
+| Running standalone (user invoked `/move-my-cheese`) | Direct LSP via `/lookup` — single session, no contention |
+| Running in a worktree (dispatched by cheese-convoy) | **lsp-probe** — batch queries, release server, stay lightweight |
+
+**How to detect worktree context**: Working directory is under a `.worktrees/` path, or the prompt mentions "worktree" or "parallel agents".
+
+**lsp-probe pattern** for diagnosis (Phase 3a):
+```
+Agent(subagent_type="lsp-probe", prompt="queries:\n  1. hover <file>:<line>\n  2. findReferences <file>:<line> symbol=<name>\n  3. documentSymbol <file>")
+```
+
+Batch all LSP queries for a diagnosis pass into one probe invocation.
+
+### Quality sweep sub-agents (Phase 3b)
+
+**Always use lsp-probe** — regardless of whether move-my-cheese is running standalone or in a worktree. The sweep agents (fromage-age, ricotta-reducer) are always spawned as 3 concurrent sub-agents doing read-only analysis. They should never hold a persistent LSP server. The Phase 3b agent prompts signal this explicitly.
+
 ## Progress Tracking
 
 At command start, call `TaskCreate` for all 5 phases. Mark `in_progress` at phase start, `completed` at phase end.
@@ -126,7 +150,11 @@ Run `/make` to verify the merged code compiles. This forks a subagent that absor
 Skill(skill="make")
 ```
 
-If build fails, use `/lookup` to understand the failing symbols (types, signatures, cross-refs) before fixing with **chisel**. `/lookup` routes to the right tool — LSP for types and cross-refs, Context7 for external API docs. Never grep dependency caches.
+If build fails, understand the failing symbols before fixing with **chisel**:
+- **Standalone**: Use `/lookup` — routes to LSP for types/cross-refs, Context7 for external APIs
+- **Worktree context** (dispatched by cheese-convoy): Batch failing symbols into a single **lsp-probe** call — hover for types, findReferences for cross-refs — then fix with chisel
+
+Never grep dependency caches.
 
 ### Run Tests (make test)
 
@@ -138,10 +166,12 @@ Skill(skill="make", args="test")
 
 If tests pass: the CI failure was likely infra. Move to Phase 3b.
 
-### Fix Strategy (lookup + scout + chisel skills)
+### Fix Strategy (lookup/lsp-probe + scout + chisel skills)
 
 For real test/build failures:
-1. Use `/lookup` to understand the failing symbol — type mismatches, missing methods, changed APIs
+1. Understand the failing symbol — type mismatches, missing methods, changed APIs:
+   - **Standalone**: `/lookup` (routes to direct LSP or Context7)
+   - **Worktree context**: Batch all failing symbols into one `lsp-probe` call (hover + findReferences)
 2. Use **scout** (`rg` for error messages, `fd` for test files) to locate the failing test
 3. Read the failing test and the code under test
 4. Fix with **chisel** — minimal change, `sd` for pattern fixes, Edit for precise patches
@@ -164,9 +194,9 @@ After Phase 3a fixes are stable (build passes, tests pass), launch three review 
 ```
 # Launch in a SINGLE message — all as Agent tool calls for true parallelism:
 
-Agent(subagent_type="fromage-age", prompt="Review the changes on this branch vs origin/main. Staff Engineer review against Sliced Bread architecture, engineering principles, and complexity budgets. Only surface findings >= 70 confidence.")
+Agent(subagent_type="fromage-age", prompt="Review the changes on this branch vs origin/main. Staff Engineer review against Sliced Bread architecture, engineering principles, and complexity budgets. Only surface findings >= 70 confidence. LSP strategy: use lsp-probe for batched queries (hover, findReferences, documentSymbol) — batch your LSP needs into one probe call rather than holding a server for the session.")
 
-Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 70 confidence.")
+Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 70 confidence. LSP strategy: use lsp-probe for batched queries (findReferences to verify dead code, hover for coupling checks) — batch your LSP needs into one probe call rather than holding a server for the session.")
 
 # Only if Phase 1 recon found unresolved review comments:
 Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on PR #$ARGUMENTS. Score each 0-100, fix >= 70, push back < 50, report 50-74 for user decision.")
