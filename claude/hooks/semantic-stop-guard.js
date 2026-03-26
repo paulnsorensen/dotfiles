@@ -231,6 +231,12 @@ process.stdin.on('end', () => {
     const lines = parseTurnLines(payload.transcript_path);
 
     if (payload.stop_hook_active) {
+      const { modifiedFiles: editedFiles } = scanCurrentTurn(lines);
+      if (!editedFiles) {
+        console.log('{}');
+        process.exit(0);
+      }
+
       const classifier = loadClassifier();
       const hasViolations = hasUnresolvedFindings(lines, classifier);
       const hasFixed = hasViolations && hasFixesAfterFindings(lines, classifier);
@@ -266,12 +272,15 @@ process.stdin.on('end', () => {
     }
 
     if (modifiedFiles) {
-      console.log(JSON.stringify({
-        decision: 'block',
-        reason: 'Self-evaluation required before stopping.',
-        systemMessage: SELF_EVAL_PROMPT
-      }));
-      process.exit(0);
+      const classifier = loadClassifier();
+      if (hasUnresolvedFindings(lines, classifier)) {
+        console.log(JSON.stringify({
+          decision: 'block',
+          reason: 'Self-evaluation required — potential pushback or shirking detected.',
+          systemMessage: SELF_EVAL_PROMPT
+        }));
+        process.exit(0);
+      }
     }
 
     console.log('{}');

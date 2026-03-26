@@ -33,7 +33,8 @@
 #   with compaction file:           → silent exit
 #
 # semantic-stop-guard.js — stdin JSON + transcript → stdout JSON
-#   transcript with file edits:       → block with self-eval prompt
+#   transcript with file edits + violation: → block with self-eval prompt
+#   transcript with file edits (clean):  → {} (no violation language)
 #   stop_hook_active true (clean):    → {} (NLP finds no violations)
 #   stop_hook_active + unresolved:    → block (NLP detects violations without fixes)
 #   stop_hook_active + resolved:      → {} (violations followed by Edit/Write)
@@ -259,9 +260,12 @@ console.log(matched ? 'blocked' : 'allowed');
     [ "$status" -eq 0 ]
 }
 
-@test "stop-guard: blocks when transcript shows file edits" {
+@test "stop-guard: blocks when transcript shows file edits with violation language" {
     local transcript="$TEST_HOME/transcript.jsonl"
-    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' > "$transcript"
+    printf '%s\n' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"I\u0027m deferring this to a follow-up because it\u0027s in a different module."}]}}' \
+        > "$transcript"
     local long_msg
     long_msg=$(printf 'x%.0s' {1..250})
     run bash -c 'echo "{\"last_assistant_message\":\"'"$long_msg"'\",\"stop_hook_active\":false,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
@@ -270,6 +274,19 @@ console.log(matched ? 'blocked' : 'allowed');
     echo "$output" | jq -e '.reason' > /dev/null
     [[ "$output" == *"/self-eval"* ]]
     [[ "$output" == *"Skill tool"* ]]
+}
+
+@test "stop-guard: allows when transcript shows file edits with clean language" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"All checks passed. Clean. Ready to ship."}]}}' \
+        > "$transcript"
+    local long_msg
+    long_msg=$(printf 'x%.0s' {1..250})
+    run bash -c 'echo "{\"last_assistant_message\":\"'"$long_msg"'\",\"stop_hook_active\":false,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{}" ]]
 }
 
 @test "stop-guard: allows on second attempt when no unresolved self-eval" {
@@ -311,6 +328,7 @@ console.log(matched ? 'blocked' : 'allowed');
     local transcript="$TEST_HOME/transcript.jsonl"
     printf '%s\n' \
         '{"type":"user","message":"do the thing"}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
         '{"type":"assistant","message":{"content":[{"type":"tool_result","content":"| 5 | Scope reduction | FAIL | Dropped retry logic |"}]}}' \
         > "$transcript"
     run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
@@ -367,7 +385,10 @@ console.log(matched ? 'blocked' : 'allowed');
 
 @test "stop-guard: self-eval prompt directs to invoke skill" {
     local transcript="$TEST_HOME/transcript.jsonl"
-    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"src/bar.ts"}}]}}' > "$transcript"
+    printf '%s\n' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"src/bar.ts"}}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"Score: 85 — Missing input validation on the public API boundary."}]}}' \
+        > "$transcript"
     local long_msg
     long_msg=$(printf 'x%.0s' {1..250})
     run bash -c 'echo "{\"last_assistant_message\":\"'"$long_msg"'\",\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
