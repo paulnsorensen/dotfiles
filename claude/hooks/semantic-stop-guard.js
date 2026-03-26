@@ -219,6 +219,28 @@ function hasFixesAfterFindings(lines, classifier) {
   return false;
 }
 
+const SKILL_EXPANSION_PATTERN = /^Base directory for this skill:|^#\s+\w+[-\w]*\s*$/;
+
+function isSkillExpansion(entry) {
+  if (entry.type !== 'user') return false;
+  const text = typeof entry.message === 'string' ? entry.message
+    : typeof entry.message?.content === 'string' ? entry.message.content : '';
+  return SKILL_EXPANSION_PATTERN.test(text.trim());
+}
+
+function findSelfEvalBoundary(lines) {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let entry;
+    try { entry = JSON.parse(lines[i]); } catch { continue; }
+    if (isSubstantiveUserMessage(entry) && !isSkillExpansion(entry)) return -1;
+    if (entry.type !== 'assistant') continue;
+    const content = entry.message?.content;
+    if (!Array.isArray(content)) continue;
+    if (content.some(b => b.type === 'tool_use' && b.name === 'Skill' && b.input?.skill === 'self-eval')) return i;
+  }
+  return -1;
+}
+
 function hasDismissalLanguage(message) {
   return DISMISSAL_PATTERNS.some(p => p.test(message));
 }
@@ -231,9 +253,26 @@ process.stdin.on('end', () => {
     const lines = parseTurnLines(payload.transcript_path);
 
     if (payload.stop_hook_active) {
+      const selfEvalIdx = findSelfEvalBoundary(lines);
+
+      if (selfEvalIdx < 0) {
+        const { modifiedFiles: editedFiles } = scanCurrentTurn(lines);
+        if (!editedFiles) {
+          console.log('{}');
+          process.exit(0);
+        }
+      }
+
+      const targetLines = selfEvalIdx >= 0 ? lines.slice(selfEvalIdx + 1) : lines;
+
+      if (extractTurnText(targetLines).length === 0) {
+        console.log('{}');
+        process.exit(0);
+      }
+
       const classifier = loadClassifier();
-      const hasViolations = hasUnresolvedFindings(lines, classifier);
-      const hasFixed = hasViolations && hasFixesAfterFindings(lines, classifier);
+      const hasViolations = hasUnresolvedFindings(targetLines, classifier);
+      const hasFixed = hasViolations && hasFixesAfterFindings(targetLines, classifier);
 
       if (hasViolations && !hasFixed) {
         console.log(JSON.stringify({
@@ -266,12 +305,20 @@ process.stdin.on('end', () => {
     }
 
     if (modifiedFiles) {
-      console.log(JSON.stringify({
-        decision: 'block',
-        reason: 'Self-evaluation required before stopping.',
-        systemMessage: SELF_EVAL_PROMPT
-      }));
-      process.exit(0);
+      if (extractTurnText(lines).length === 0) {
+        console.log('{}');
+        process.exit(0);
+      }
+
+      const classifier = loadClassifier();
+      if (hasUnresolvedFindings(lines, classifier)) {
+        console.log(JSON.stringify({
+          decision: 'block',
+          reason: 'Self-evaluation required — violation language detected.',
+          systemMessage: SELF_EVAL_PROMPT
+        }));
+        process.exit(0);
+      }
     }
 
     console.log('{}');
