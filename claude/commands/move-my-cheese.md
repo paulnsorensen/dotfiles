@@ -29,21 +29,27 @@ This command orchestrates across multiple skills:
 
 ## Parallel LSP Strategy
 
-When dispatched by cheese-convoy (running in a worktree alongside N other agents), prefer **lsp-probe** over direct LSP to avoid N concurrent language servers:
+Two tiers of LSP usage — one for move-my-cheese itself, one for the sub-agents it always spawns:
+
+### move-my-cheese (Phase 3a diagnosis)
 
 | Context | LSP approach |
 |---|---|
 | Running standalone (user invoked `/move-my-cheese`) | Direct LSP via `/lookup` — single session, no contention |
 | Running in a worktree (dispatched by cheese-convoy) | **lsp-probe** — batch queries, release server, stay lightweight |
 
-**How to detect**: If you're running inside a worktree agent (your working directory is under a `.worktrees/` path or you were spawned with `isolation="worktree"`), use lsp-probe.
+**How to detect worktree context**: Working directory is under a `.worktrees/` path, or the prompt mentions "worktree" or "parallel agents".
 
 **lsp-probe pattern** for diagnosis (Phase 3a):
 ```
 Agent(subagent_type="lsp-probe", prompt="queries:\n  1. hover <file>:<line>\n  2. findReferences <file>:<line> symbol=<name>\n  3. documentSymbol <file>")
 ```
 
-Batch all LSP queries you need for a diagnosis pass into one probe invocation instead of interleaving direct LSP calls with code reads.
+Batch all LSP queries for a diagnosis pass into one probe invocation.
+
+### Quality sweep sub-agents (Phase 3b)
+
+**Always use lsp-probe** — regardless of whether move-my-cheese is running standalone or in a worktree. The sweep agents (fromage-age, ricotta-reducer) are always spawned as 3 concurrent sub-agents doing read-only analysis. They should never hold a persistent LSP server. The Phase 3b agent prompts signal this explicitly.
 
 ## Progress Tracking
 
