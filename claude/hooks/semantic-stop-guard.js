@@ -237,6 +237,11 @@ process.stdin.on('end', () => {
         process.exit(0);
       }
 
+      if (extractTurnText(lines).length === 0) {
+        console.log('{}');
+        process.exit(0);
+      }
+
       const classifier = loadClassifier();
       const hasViolations = hasUnresolvedFindings(lines, classifier);
       const hasFixed = hasViolations && hasFixesAfterFindings(lines, classifier);
@@ -272,11 +277,16 @@ process.stdin.on('end', () => {
     }
 
     if (modifiedFiles) {
+      if (extractTurnText(lines).length === 0) {
+        console.log('{}');
+        process.exit(0);
+      }
+
       const classifier = loadClassifier();
       if (hasUnresolvedFindings(lines, classifier)) {
         console.log(JSON.stringify({
           decision: 'block',
-          reason: 'Self-evaluation required — potential pushback or shirking detected.',
+          reason: 'Self-evaluation required — violation language detected.',
           systemMessage: SELF_EVAL_PROMPT
         }));
         process.exit(0);
