@@ -70,7 +70,7 @@ Agent(
 )
 ```
 
-The agent writes the full JSON report to `$TMPDIR/ghostbuster-{slug}.md` and returns
+The agent writes the full JSON report to `$TMPDIR/ghostbuster-{slug}.json` and returns
 a structured summary (max 2000 chars). Read the full report for detailed findings.
 
 ## Phase 4: Synthesize & Present
