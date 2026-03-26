@@ -35,6 +35,8 @@
 # semantic-stop-guard.js — stdin JSON + transcript → stdout JSON
 #   transcript with file edits + violation: → block with self-eval prompt
 #   transcript with file edits (clean):  → {} (no violation language)
+#   stop_hook + self-eval passed:         → {} (post-self-eval text is clean)
+#   stop_hook + self-eval FAIL:           → block (post-self-eval text has violations)
 #   stop_hook_active true (clean):    → {} (NLP finds no violations)
 #   stop_hook_active + unresolved:    → block (NLP detects violations without fixes)
 #   stop_hook_active + resolved:      → {} (violations followed by Edit/Write)
@@ -357,6 +359,37 @@ console.log(matched ? 'blocked' : 'allowed');
     run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
     [ "$status" -eq 0 ]
     [[ "$output" == "{}" ]]
+}
+
+@test "stop-guard: allows when self-eval passed after triage with violation text" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    # Simulate: edit + triage output (violation-ish text) + self-eval Skill + clean scorecard
+    printf '%s\n' \
+        '{"type":"user","message":"fix the PR"}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"Score: 85 — Missing input validation on the public API boundary."}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"self-eval"}}]}}' \
+        '{"type":"user","message":"Base directory for this skill: self-eval"}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"All checks passed. Clean. Ready to ship."}]}}' \
+        > "$transcript"
+    run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{}" ]]
+}
+
+@test "stop-guard: blocks when self-eval found FAIL after triage" {
+    local transcript="$TEST_HOME/transcript.jsonl"
+    printf '%s\n' \
+        '{"type":"user","message":"fix the PR"}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"self-eval"}}]}}' \
+        '{"type":"user","message":"Base directory for this skill: self-eval"}' \
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"| 2 | Premature complete | FAIL | Left TODO on line 42 |"}]}}' \
+        > "$transcript"
+    run bash -c 'echo "{\"last_assistant_message\":\"Done.\",\"stop_hook_active\":true,\"transcript_path\":\"'"$transcript"'\"}" | node '"$HOOKS_DIR/semantic-stop-guard.js"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.decision == "block"'
+    [[ "$output" == *"Unresolved"* ]]
 }
 
 @test "stop-guard: skips short messages" {

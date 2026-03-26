@@ -115,6 +115,21 @@
     "PASS on all self-eval dimensions. No action needed.",
     "All items scored below threshold. Nothing to fix.",
     "Review complete. No actionable findings.",
-    "Tests passing, diff clean, no violations. Done."
+    "Tests passing, diff clean, no violations. Done.",
+    "| 1 | 92 | BUG | copilot | auth.ts:42 | Missing null check on token | FIX |",
+    "| 2 | 85 | BUG | alice | api.ts:78 | Error not propagated to caller | FIX |",
+    "| 5 | 35 | SCOPE_CREEP | bob | index.ts:3 | Add backward compat shim | PUSH BACK |",
+    "Both Copilot comments addressed and replied to.",
+    "Fixed — changed to violation language detected which matches the predicate.",
+    "The semantic-stop-guard hook was firing self-eval on every file modification.",
+    "Now both paths require the classifier to detect violation language before blocking.",
+    "Self-evaluation required — violation language detected.",
+    "PR #103 Review Triage",
+    "Score | Type | Reviewer | Location | Summary | Action",
+    "Plan: Add null guard before decode, return 401.",
+    "The reason string says pushback or shirking but the predicate detects any violation.",
+    "Triage table shows 2 FIX items and 1 PUSH BACK item.",
+    "Draft reply: This project is pre-release with zero users — backward compatibility is not a concern.",
+    "Replied to both review threads with fix confirmations."
   ]
 }
