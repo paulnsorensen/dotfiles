@@ -251,7 +251,11 @@
       ],
       "allowLocalBinding": true
     },
-    "filesystem": {}
+    "filesystem": {
+      "allowWrite": [
+        "/Users/paul/Library/Caches/Mozilla.sccache"
+      ]
+    }
   },
   "skipDangerousModePermissionPrompt": true
 }
