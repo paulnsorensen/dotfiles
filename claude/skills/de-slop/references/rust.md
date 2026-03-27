@@ -209,7 +209,264 @@ fn stamp_activity_nonexistent_is_noop() {
 }
 ```
 
-## 11. Hallucinated APIs and deprecated syntax
+## 11. Lint suppression as band-aid (`#[allow(...)]`)
+
+AI sprinkles `#[allow(...)]` to silence warnings instead of fixing root causes.
+The compiler is telling you something — listen, don't muzzle it.
+
+### Crate-level nuclear options (instant fail)
+
+These suppress warnings globally and are never legitimate in production code:
+
+```rust
+// SLOP — the nuclear option
+#![allow(warnings)]
+#![allow(clippy::all)]
+
+// SLOP — the scaffold dump (3+ together = AI signature)
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+```
+
+**Fix:** Delete the allows and fix each warning individually. If there are too
+many warnings, the code has bigger problems than lint noise.
+
+### The AI scaffold cluster
+
+These five attributes appearing together are the highest-confidence AI signal:
+
+| Attribute | AI excuse | Real fix |
+|-----------|-----------|----------|
+| `allow(dead_code)` | "I'll wire it up later" | Delete unconnected code |
+| `allow(unused_imports)` | Copied from examples | Remove unused `use` statements |
+| `allow(unused_variables)` | Bound "just in case" | Prefix with `_` or remove |
+| `allow(unused_mut)` | Added `mut` preemptively | Remove unnecessary `mut` |
+| `allow(unused_assignments)` | Assign then overwrite | Remove dead assignment |
+
+**Fix:** Each has a specific fix — the allow hides which one is needed.
+Remove the allow, read the warning, apply the real fix.
+
+### Clippy suppression smells
+
+**Red Flag (almost always slop — these suppress restrictions for a reason):**
+
+```rust
+// SLOP — hiding panic risks
+#[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
+#[allow(clippy::indexing_slicing)]
+#[allow(clippy::panic)]
+
+// CLEAN — handle the error
+fn get_item(items: &[Item], idx: usize) -> Option<&Item> {
+    items.get(idx)
+}
+```
+
+```rust
+// SLOP — incomplete code in CI
+#[allow(clippy::todo)]
+#[allow(clippy::unimplemented)]
+#[allow(clippy::dbg_macro)]       // debug macros left in source
+
+// CLEAN — ship nothing with these lints suppressed
+```
+
+```rust
+// SLOP — logging-aware code ignored
+#[allow(clippy::print_stdout)]
+#[allow(clippy::print_stderr)]
+
+// CLEAN — use a logging framework (tracing, log, slog)
+tracing::info!("event happened");
+```
+
+```rust
+// SLOP — weak error handling
+#[allow(clippy::result_unit_err)]  // Result<T, ()> is useless for error context
+
+// CLEAN — use a real error type
+fn parse_config(s: &str) -> Result<Config, ConfigError> { ... }
+```
+
+**Yellow Flag (often slop, but context-dependent — check before removing):**
+
+```rust
+// SLOP (often) — hiding complexity debt
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
+
+// CLEAN — decompose the function
+```
+
+```rust
+// SLOP (often) — legitimate in some contexts (async move blocks, trait impls)
+#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::cognitive_complexity)]
+
+// Check: does the suppression hide a real refactoring opportunity?
+```
+
+**Blue Flag (style preference, not necessarily slop):**
+
+```rust
+// Acceptable — pedantic lints are opt-in for a reason
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
+#[allow(clippy::module_name_repetitions)]
+#[allow(clippy::wildcard_imports)]
+
+// These are in "pedantic" (not "restriction"), so suppressing them
+// is more defensible. Still check the reason.
+```
+
+### Naming convention suppressions
+
+Three together = author came from Python/Java, not Rust:
+
+```rust
+// SLOP
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+#![allow(non_upper_case_globals)]
+
+// CLEAN — use Rust conventions
+// snake_case for functions, CamelCase for types, SCREAMING for constants
+```
+
+**Exception:** FFI modules wrapping C libraries may legitimately need
+`non_snake_case` or `non_camel_case_types` to match the C API.
+
+### The "debug and print" tells
+
+Three patterns that almost certainly indicate hastily generated code:
+
+```rust
+// SLOP — debug macro left in source
+fn process(data: &[u8]) {
+    #[allow(clippy::dbg_macro)]
+    dbg!(data);  // this went to production
+    // ...
+}
+
+// CLEAN — remove the debug macro entirely
+fn process(data: &[u8]) {
+    tracing::debug!(?data);  // use structured logging
+    // ...
+}
+```
+
+```rust
+// SLOP — println instead of logging
+#[allow(clippy::print_stdout)]
+println!("Processing file: {}", path);
+
+// CLEAN — use a logging framework
+tracing::info!(file = %path, "Processing file");
+```
+
+```rust
+// SLOP — placeholder error type
+#[allow(clippy::result_unit_err)]
+fn load_config(path: &str) -> Result<Config, ()> {
+    // caller has no idea what went wrong
+}
+
+// CLEAN — define a real error type
+#[derive(Debug)]
+pub enum ConfigError {
+    NotFound(String),
+    InvalidFormat { line: usize, reason: String },
+}
+
+fn load_config(path: &str) -> Result<Config, ConfigError> {
+    // caller can now handle specific errors
+}
+```
+
+### Redundant allows
+
+An allow that duplicates what the language already provides:
+
+```rust
+// SLOP — `_name` already suppresses unused_variables
+#[allow(unused_variables)]
+fn process(_name: &str, _config: &Config) { ... }
+
+// SLOP — pub items can't be dead code (compiler perspective)
+#[allow(dead_code)]
+pub fn my_function() { ... }
+
+// CLEAN — just use the underscore prefix
+fn process(_name: &str, _config: &Config) { ... }
+```
+
+### Scope matters
+
+The further an allow reaches, the worse it smells:
+
+| Scope | Severity | Example |
+|-------|----------|---------|
+| Crate-level `#![allow(...)]` | High | Suppresses across entire crate |
+| Module-level `#[allow(...)]` on `mod` | Medium | Blanket suppression for module |
+| Function-level | Low | Targeted, possibly legitimate |
+| Statement-level | Lowest | Precise suppression with clear reason |
+
+**Rule:** If you must allow, scope it to the narrowest possible target and
+add a comment explaining why.
+
+```rust
+// Acceptable — narrow scope, clear reason
+#[allow(clippy::too_many_arguments)] // mirrors the C FFI signature exactly
+fn ffi_create_window(x: i32, y: i32, w: i32, h: i32, flags: u32) -> *mut Window { ... }
+```
+
+### Tier system for evaluation
+
+Clippy groups lints into categories. Use these groupings as a heuristic when judging whether suppression is legitimate:
+
+| Category | Philosophy | Example | Suppression OK? |
+|----------|-----------|---------|-----------------|
+| **restriction** | "Don't do this" | `unwrap_used`, `panic`, `todo`, `print_stdout` | 🔴 Almost never |
+| **correctness** | "This is likely wrong" | Most logic bugs | 🔴 Almost never |
+| **complexity** | "This is confusing" | `too_many_arguments`, `cognitive_complexity` | 🟡 With justification |
+| **perf** | "This is slow" | `clone_on_copy`, `inefficient_to_string` | 🟡 Document why |
+| **style** | "Use X instead" | `let_and_return`, `wildcard_imports` | 🟡 Preference |
+| **pedantic** | "Extra strict" | `cast_possible_truncation`, `missing_docs` | 🟢 Usually OK |
+
+**Rule:** Never suppress `restriction` lints casually. `Pedantic` lints are opt-in,
+so suppressing them is more defensible. `Complexity` lints need justification.
+
+### Legitimate uses (don't flag these)
+
+**Test code:**
+- `#[allow(dead_code)]` on test utility functions
+- `#[allow(unused)]` in `mod tests` blocks
+- `#[allow(clippy::unwrap_used)]` in test assertions (idiomatic)
+
+**Framework integration:**
+- `#[allow(unused)]` on trait impls required by framework (async frameworks often have dead-looking methods)
+- `#[allow(clippy::must_use_candidate)]` when the framework signature doesn't support `#[must_use]`
+
+**Intentional design:**
+- `#[allow(clippy::pedantic)]` at crate level (pedantic lints are opt-in)
+- `#[allow(clippy::cognitive_complexity)]` on state machines or DSLs (legitimately complex, not a bug)
+
+**FFI/interop:**
+- `#[allow(non_snake_case)]` / `non_camel_case_types` matching C signatures
+- `#[allow(unsafe_code)]` when wrapping C libraries
+
+**Generated code:**
+- `build.rs` output
+- Protobuf/gRPC generated files
+- Macro-generated code inside the macro itself
+- `#[cfg_attr(feature = "generated", allow(...))]` for optional generated modules
+
+**Red flag check:** If the allow targets a **restriction** lint (unwrap, panic, todo, print)
+in these contexts, it's still slop. Only pedantic/style/perf lints are genuinely legitimate here.
+
+## 12. Hallucinated APIs and deprecated syntax
 
 AI generates functions that don't exist or uses outdated API patterns
 (e.g., `clap` `App::new` instead of derive macros).
