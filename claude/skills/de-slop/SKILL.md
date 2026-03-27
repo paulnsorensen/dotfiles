@@ -121,7 +121,7 @@ the underlying issue: `#[allow(dead_code)]`, `# noqa`, `// @ts-ignore`,
 `//nolint`, `// eslint-disable`.
 
 **High-confidence smells (almost always slop):**
-- Rust: `#[allow(clippy::unwrap_used)]`, `dbg_macro`, `print_stdout`, `panic`, `todo`
+- Rust: `#[allow(clippy::unwrap_used)]`, `#[allow(clippy::dbg_macro)]`, `#[allow(clippy::print_stdout)]`, `#[allow(clippy::panic)]`, `#[allow(clippy::todo)]`
 - Python: `# noqa: E501` (line too long), `# pylint: disable=missing-docstring`
 - TypeScript: `// @ts-ignore` (error suppression without `@ts-expect-error`)
 - Go: `//nolint` (generic suppression without specific lint name)
