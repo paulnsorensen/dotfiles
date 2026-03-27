@@ -424,13 +424,13 @@ fn ffi_create_window(x: i32, y: i32, w: i32, h: i32, flags: u32) -> *mut Window 
 
 ### Tier system for evaluation
 
-Clippy categorizes lints by severity. Use this to judge suppression legitimacy:
+Clippy groups lints into categories. Use these groupings as a heuristic when judging whether suppression is legitimate:
 
 | Category | Philosophy | Example | Suppression OK? |
 |----------|-----------|---------|-----------------|
 | **restriction** | "Don't do this" | `unwrap_used`, `panic`, `todo`, `print_stdout` | 🔴 Almost never |
 | **correctness** | "This is likely wrong" | Most logic bugs | 🔴 Almost never |
-| **complexity** | "This is confusing" | `too_many_args`, `cognitive_complexity` | 🟡 With justification |
+| **complexity** | "This is confusing" | `too_many_arguments`, `cognitive_complexity` | 🟡 With justification |
 | **perf** | "This is slow" | `clone_on_copy`, `inefficient_to_string` | 🟡 Document why |
 | **style** | "Use X instead" | `let_and_return`, `wildcard_imports` | 🟡 Preference |
 | **pedantic** | "Extra strict" | `cast_possible_truncation`, `missing_docs` | 🟢 Usually OK |

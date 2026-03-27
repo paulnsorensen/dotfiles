@@ -125,7 +125,7 @@ the underlying issue: `#[allow(dead_code)]`, `# noqa`, `// @ts-ignore`,
 - Python: `# noqa: E501` (line too long), `# pylint: disable=missing-docstring`
 - TypeScript: `// @ts-ignore` (error suppression without `@ts-expect-error`)
 - Go: `//nolint` (generic suppression without specific lint name)
-- Shell: No equivalent; instead the script has unchecked `set -e` without `-u` and `-o pipefail`
+- Shell: `# shellcheck disable=SCxxxx` (broad suppression instead of fixing the script)
 
 **Fix:** Remove the suppression, read the warning, fix the root cause. If the
 suppression is truly needed, scope it narrowly and add a comment explaining why.
