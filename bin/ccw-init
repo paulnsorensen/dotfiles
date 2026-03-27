@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Create or resume a git worktree for Claude Code.
+# Handles: git validation, worktree creation, permission symlinks, settings
+# seeding (sandbox + merged permissions), and hook disablement.
+#
+# Used by: ccw() shell function, /worktree skill
+# Usage: ccw-init <slug>
+# Output: JSON with worktree details (path, branch, base_sha, base_branch, created)
+
+slug="${1:-}"
+if [[ -z "$slug" ]]; then
+    echo "Usage: ccw-init <slug>" >&2
+    exit 1
+fi
+
+if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+    echo "Not a git repository" >&2
+    exit 1
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+wt_dir="${repo_root}/.worktrees/${slug}"
+branch="claude/${slug}"
+
+created=false
+if [[ -d "${wt_dir}" ]]; then
+    echo "Resuming worktree: ${wt_dir}" >&2
+else
+    echo "Creating worktree: ${wt_dir} (branch: ${branch})" >&2
+    git -C "${repo_root}" worktree add "${wt_dir}" -b "${branch}" || exit 1
+    created=true
+fi
+
+readonly CLAUDE_PROJECTS_DIR="${HOME}/.claude/projects"
+main_key="${repo_root//[\/.]/-}"
+wt_key="${wt_dir//[\/.]/-}"
+
+if [[ -d "${CLAUDE_PROJECTS_DIR}/${main_key}" ]] && [[ ! -L "${CLAUDE_PROJECTS_DIR}/${wt_key}" ]]; then
+    rm -rf "${CLAUDE_PROJECTS_DIR}/${wt_key}" 2>/dev/null
+    ln -s "${CLAUDE_PROJECTS_DIR}/${main_key}" "${CLAUDE_PROJECTS_DIR}/${wt_key}"
+    echo "Linked permissions: ${wt_key} → ${main_key}" >&2
+fi
+
+git -C "${wt_dir}" config core.hooksPath /dev/null 2>/dev/null
+
+claude_local="${wt_dir}/.claude/settings.local.json"
+if [[ ! -f "${claude_local}" ]]; then
+    mkdir -p "${wt_dir}/.claude"
+    dotfiles_root="${DOTFILES_DIR:-${HOME}/Dev/dotfiles}"
+    generator="${dotfiles_root}/claude/worktree-settings.sh"
+    tmp="${claude_local}.tmp"
+
+    if [[ -f "${generator}" ]]; then
+        bash "${generator}" "${dotfiles_root}" > "${tmp}" && mv "${tmp}" "${claude_local}"
+        echo "Generated worktree settings ($(jq '.permissions.allow | length' "${claude_local}") permissions)" >&2
+    else
+        repo_local="${repo_root}/.claude/settings.local.json"
+        readonly SANDBOX_CONFIG='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":["~/.cache/prek"]}}}'
+        if [[ -f "${repo_local}" ]]; then
+            jq --argjson overlay "$SANDBOX_CONFIG" '. * $overlay' "${repo_local}" > "${tmp}" && mv "${tmp}" "${claude_local}"
+            echo "Merged repo settings with sandbox config" >&2
+        else
+            echo "$SANDBOX_CONFIG" | jq . > "${tmp}" && mv "${tmp}" "${claude_local}"
+            echo "Created sandbox-only settings" >&2
+        fi
+    fi
+fi
+
+base_sha="$(git -C "${wt_dir}" rev-parse --short HEAD)"
+base_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD)"
+
+jq -n \
+    --arg path "${wt_dir}" \
+    --arg branch "${branch}" \
+    --arg base_sha "${base_sha}" \
+    --arg base_branch "${base_branch}" \
+    --argjson created "${created}" \
+    '{path: $path, branch: $branch, base_sha: $base_sha, base_branch: $base_branch, created: $created}'
