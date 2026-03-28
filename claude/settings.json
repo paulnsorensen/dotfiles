@@ -127,15 +127,15 @@
       }
     ],
     "UserPromptSubmit": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "/bin/bash \"$HOME/.claude/hooks/on-session-end.sh\""
-        }
-      ]
-    }
-  ],
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash \"$HOME/.claude/hooks/on-session-end.sh\""
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -239,7 +239,8 @@
     "frontend-design@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "github@claude-plugins-official": true,
-    "claude-hud@claude-hud": true
+    "claude-hud@claude-hud": true,
+    "astral@astral-sh": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {
