@@ -1,8 +1,6 @@
 {
   "private": true,
   "dependencies": {
-    "wink-nlp": "^2.3.0",
-    "wink-eng-lite-web-model": "^1.6.0",
-    "wink-naive-bayes-text-classifier": "^2.2.1"
+    "natural": "^8.0.1"
   }
 }

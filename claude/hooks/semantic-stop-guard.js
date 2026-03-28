@@ -51,29 +51,28 @@ const DISMISSAL_PROMPT = `You checked CI status and dismissed a failure as pre-e
 2. Can you cite specific evidence (run ID, commit SHA, or log line) that this failure predates your changes?
 If you cannot cite evidence, investigate the failure properly — don't dismiss it.`;
 
+const { VIOLATION_PATTERNS, CLEAN_PRE_FILTERS, VIOLATION_CONFIDENCE_THRESHOLD } = require('./violation-patterns');
+
+function classifySentenceByLayer(classifier, text) {
+  if (VIOLATION_PATTERNS.some(p => p.test(text))) return 'violation';
+  if (CLEAN_PRE_FILTERS.some(p => p.test(text))) return 'clean';
+  if (!classifier) return 'clean';
+  const scores = classifier.getClassifications(text);
+  const violation = scores.find(s => s.label === 'violation');
+  return (violation && violation.value >= VIOLATION_CONFIDENCE_THRESHOLD)
+    ? 'violation' : 'clean';
+}
+
 function loadClassifier() {
   try {
-    const winkNLP = require('wink-nlp');
-    const model = require('wink-eng-lite-web-model');
-    const nbc = require('wink-naive-bayes-text-classifier');
-
-    const nlp = winkNLP(model);
-    const its = nlp.its;
-
-    const classifier = nbc();
-    classifier.definePrepTasks([
-      (text) => {
-        const doc = nlp.readDoc(text);
-        return doc.tokens().filter(t => t.out(its.type) === 'word').out(its.normal);
-      }
-    ]);
-    classifier.defineConfig({ considerOnlyPresence: true, smoothingFactor: 1 });
+    const natural = require('natural');
+    const classifier = new natural.LogisticRegressionClassifier();
 
     const dataPath = path.join(__dirname, 'violation-training.json');
     const data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-    data.violation.forEach(v => classifier.learn(v, 'violation'));
-    data.clean.forEach(c => classifier.learn(c, 'clean'));
-    classifier.consolidate();
+    data.violation.forEach(v => classifier.addDocument(v, 'violation'));
+    data.clean.forEach(c => classifier.addDocument(c, 'clean'));
+    classifier.train();
 
     return classifier;
   } catch (err) {
@@ -154,15 +153,13 @@ function extractTurnText(lines) {
 }
 
 function hasUnresolvedFindings(lines, classifier) {
-  if (!classifier) return false;
-
   const chunks = extractTurnText(lines);
   if (chunks.length === 0) return false;
 
   for (const chunk of chunks) {
     const sentences = chunk.split(/\n+/).filter(s => s.trim().length > 10);
     for (const sentence of sentences) {
-      if (classifier.predict(sentence) === 'violation') {
+      if (classifySentenceByLayer(classifier, sentence) === 'violation') {
         return true;
       }
     }
@@ -204,7 +201,7 @@ function hasFixesAfterFindings(lines, classifier) {
         if (typeof text === 'string') {
           const sentences = text.split(/\n+/).filter(s => s.trim().length > 10);
           for (const sentence of sentences) {
-            if (classifier.predict(sentence) === 'violation') {
+            if (classifySentenceByLayer(classifier, sentence) === 'violation') {
               foundViolation = true;
               break;
             }

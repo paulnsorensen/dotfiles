@@ -1,29 +1,34 @@
 #!/usr/bin/env node
 
 /**
- * Leave-one-out cross-validation for the violation classifier.
- * Usage: node eval-classifier.js [--verbose]
+ * Leave-one-out cross-validation for the layered violation classifier.
+ * Tests: structural patterns → clean pre-filters → LR with threshold.
+ * Usage: node eval-classifier.js
  */
 
 const fs = require('fs');
 const path = require('path');
+const natural = require('natural');
+const { VIOLATION_PATTERNS, CLEAN_PRE_FILTERS, VIOLATION_CONFIDENCE_THRESHOLD } = require('./violation-patterns');
 
-const VERBOSE = process.argv.includes('--verbose');
+function classifyWithLayers(classifier, text) {
+  if (VIOLATION_PATTERNS.some(p => p.test(text))) {
+    return { label: 'violation', layer: 'structural' };
+  }
+  if (CLEAN_PRE_FILTERS.some(p => p.test(text))) {
+    return { label: 'clean', layer: 'pre-filter' };
+  }
+  if (!classifier) return { label: 'clean', layer: 'fallback' };
+  const scores = classifier.getClassifications(text);
+  const violation = scores.find(s => s.label === 'violation');
+  const conf = violation ? violation.value : 0;
+  if (conf >= VIOLATION_CONFIDENCE_THRESHOLD) {
+    return { label: 'violation', layer: 'ml', confidence: conf };
+  }
+  return { label: 'clean', layer: 'ml', confidence: conf };
+}
 
 function main() {
-  const winkNLP = require('wink-nlp');
-  const model = require('wink-eng-lite-web-model');
-  const nbc = require('wink-naive-bayes-text-classifier');
-
-  // Single NLP instance shared across all folds (heavy object)
-  const nlp = winkNLP(model);
-  const its = nlp.its;
-
-  const prepTask = (text) => {
-    const doc = nlp.readDoc(text);
-    return doc.tokens().filter(t => t.out(its.type) === 'word').out(its.normal);
-  };
-
   const dataPath = path.join(__dirname, 'violation-training.json');
   const data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
 
@@ -33,36 +38,36 @@ function main() {
   ];
 
   console.log(`Training data: ${data.violation.length} violation, ${data.clean.length} clean`);
+  console.log(`Violation patterns: ${VIOLATION_PATTERNS.length}, Clean pre-filters: ${CLEAN_PRE_FILTERS.length}`);
+  console.log(`ML confidence threshold: ${VIOLATION_CONFIDENCE_THRESHOLD}`);
   console.log(`Running leave-one-out cross-validation (${allExamples.length} rounds)...\n`);
 
   const start = Date.now();
   let tp = 0, fp = 0, tn = 0, fn = 0;
   const misclassifications = [];
+  const layerCounts = { structural: 0, 'pre-filter': 0, ml: 0, fallback: 0 };
 
   for (let i = 0; i < allExamples.length; i++) {
     const held = allExamples[i];
 
-    // Lightweight classifier per fold (reuses shared NLP)
-    const classifier = nbc();
-    classifier.definePrepTasks([prepTask]);
-    classifier.defineConfig({ considerOnlyPresence: true, smoothingFactor: 1 });
-
+    const classifier = new natural.LogisticRegressionClassifier();
     for (let j = 0; j < allExamples.length; j++) {
       if (j === i) continue;
-      classifier.learn(allExamples[j].text, allExamples[j].label);
+      classifier.addDocument(allExamples[j].text, allExamples[j].label);
     }
-    classifier.consolidate();
+    classifier.train();
 
-    const predicted = classifier.predict(held.text);
+    const result = classifyWithLayers(classifier, held.text);
+    layerCounts[result.layer]++;
 
-    if (held.label === 'violation' && predicted === 'violation') tp++;
-    else if (held.label === 'clean' && predicted === 'clean') tn++;
-    else if (held.label === 'clean' && predicted === 'violation') {
+    if (held.label === 'violation' && result.label === 'violation') tp++;
+    else if (held.label === 'clean' && result.label === 'clean') tn++;
+    else if (held.label === 'clean' && result.label === 'violation') {
       fp++;
-      misclassifications.push({ text: held.text, actual: 'clean', predicted: 'violation' });
+      misclassifications.push({ ...result, text: held.text, actual: 'clean', predicted: 'violation' });
     } else {
       fn++;
-      misclassifications.push({ text: held.text, actual: 'violation', predicted: 'clean' });
+      misclassifications.push({ ...result, text: held.text, actual: 'violation', predicted: 'clean' });
     }
   }
 
@@ -83,7 +88,12 @@ function main() {
   console.log(`F1 Score:  ${f1}%`);
   console.log(`Time:      ${elapsed}ms (${(elapsed / total).toFixed(1)}ms per fold)\n`);
 
-  console.log('=== Confusion Matrix ===');
+  console.log('=== Layer Distribution ===');
+  for (const [layer, count] of Object.entries(layerCounts)) {
+    if (count > 0) console.log(`  ${layer}: ${count} (${(count / total * 100).toFixed(1)}%)`);
+  }
+
+  console.log('\n=== Confusion Matrix ===');
   console.log(`                 Predicted`);
   console.log(`              violation  clean`);
   console.log(`Actual viol.    ${String(tp).padStart(3)}      ${String(fn).padStart(3)}`);
@@ -92,7 +102,8 @@ function main() {
   if (misclassifications.length > 0) {
     console.log(`\n=== Misclassifications (${misclassifications.length}) ===`);
     for (const m of misclassifications) {
-      console.log(`  [${m.actual} → ${m.predicted}] "${m.text.substring(0, 100)}${m.text.length > 100 ? '...' : ''}"`);
+      const conf = m.confidence !== undefined ? ` conf=${m.confidence.toFixed(3)}` : '';
+      console.log(`  [${m.actual} → ${m.predicted}] (${m.layer}${conf}) "${m.text.substring(0, 100)}${m.text.length > 100 ? '...' : ''}"`);
     }
   } else {
     console.log('\nNo misclassifications — perfect accuracy.');
