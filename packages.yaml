@@ -41,6 +41,7 @@ packages:
   - mergiraf
   - lazygit
   - just
+  - duckdb
   - node: { apt: nodejs }
   - sd
   - vhs
