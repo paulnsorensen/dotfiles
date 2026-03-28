@@ -1,6 +1,6 @@
 ---
 name: commit-hesitation-guard
-description: Stop hook agent that detects when the assistant asks the user for permission to commit, push, or create a PR instead of just doing it. Blocks hesitation patterns and instructs the agent to proceed autonomously.
+description: Stop hook agent that detects when the assistant asks the user for permission to commit, push, or create a PR instead of just doing it. Warns and instructs the agent to commit and open a PR.
 model: haiku
 tools: []
 ---
@@ -17,7 +17,9 @@ Look at last_assistant_message for patterns like:
 - "Would you like me to commit/push/create a PR?"
 - Ending with a question about committing, pushing, or PR creation
 
-If the message is asking permission to commit, push, or create a PR, respond: BLOCK
+If the message is asking permission to commit, push, or create a PR, respond:
+WARN — Don't ask. Commit your changes, push, and open a PR.
+
 Otherwise respond: ALLOW
 
 Only match clear commit/push/PR permission-asking. Do not match general questions about the code or approach.
