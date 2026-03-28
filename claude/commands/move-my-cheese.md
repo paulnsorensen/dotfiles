@@ -204,7 +204,7 @@ Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on
 
 | Agent | What it catches |
 |---|---|
-| **fromage-age** | Safety, complexity, encapsulation, YAGNI, spec adherence (6 parallel sub-agents) |
+| **fromage-age** | Safety, complexity, encapsulation, YAGNI, spec adherence, history/risk modifiers (6 parallel sub-agents) |
 | **ricotta-reducer** | AI slop + de-slop patterns, over-abstraction, comment pollution, dead code |
 | **fromage-fort** | Unresolved reviewer comments — triages and fixes >= 70 confidence |
 

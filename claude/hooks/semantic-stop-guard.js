@@ -42,8 +42,6 @@ const DISMISSAL_PATTERNS = [
   /\brunner\s+(issue|flake|problem)\b/i,
 ];
 
-const SELF_EVAL_PROMPT = `You modified files this turn. Invoke /self-eval using the Skill tool before stopping. Do not mentally check — actually call the skill.`;
-
 const UNRESOLVED_PROMPT = `Unresolved violations detected in this turn's output. Fix every violation before stopping. If a pipeline agent scored a finding >= 70, act on it now — do not defer to a follow-up.`;
 
 const DISMISSAL_PROMPT = `You checked CI status and dismissed a failure as pre-existing or unrelated. Before stopping:
@@ -293,7 +291,7 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    const { modifiedFiles, checkedCI } = scanCurrentTurn(lines);
+    const { checkedCI } = scanCurrentTurn(lines);
 
     if (checkedCI && hasDismissalLanguage(message)) {
       console.log(JSON.stringify({
@@ -303,24 +301,6 @@ process.stdin.on('end', () => {
       }));
       process.exit(0);
     }
-
-    // Self-eval trigger disabled — was too noisy on agent definition files.
-    // To re-enable: uncomment the block below.
-    // if (modifiedFiles) {
-    //   if (extractTurnText(lines).length === 0) {
-    //     console.log('{}');
-    //     process.exit(0);
-    //   }
-    //   const classifier = loadClassifier();
-    //   if (hasUnresolvedFindings(lines, classifier)) {
-    //     console.log(JSON.stringify({
-    //       decision: 'block',
-    //       reason: 'Self-evaluation required — violation language detected.',
-    //       systemMessage: SELF_EVAL_PROMPT
-    //     }));
-    //     process.exit(0);
-    //   }
-    // }
 
     console.log('{}');
   } catch (err) {

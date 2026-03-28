@@ -263,6 +263,7 @@ console.log(matched ? 'blocked' : 'allowed');
 }
 
 @test "stop-guard: blocks when transcript shows file edits with violation language" {
+    skip "self-eval auto-trigger disabled"
     local transcript="$TEST_HOME/transcript.jsonl"
     printf '%s\n' \
         '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/foo.ts"}}]}}' \
@@ -417,6 +418,7 @@ console.log(matched ? 'blocked' : 'allowed');
 }
 
 @test "stop-guard: self-eval prompt directs to invoke skill" {
+    skip "self-eval auto-trigger disabled"
     local transcript="$TEST_HOME/transcript.jsonl"
     printf '%s\n' \
         '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"src/bar.ts"}}]}}' \
