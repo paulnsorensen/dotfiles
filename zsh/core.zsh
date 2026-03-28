@@ -27,7 +27,9 @@ export PATH="$HOME/.local/bin:$PATH"
 [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
 
 # sccache - shared compilation cache for Rust and C/C++
-if command -v sccache &>/dev/null; then
+# Skip in Claude Code's Seatbelt sandbox (CLAUDECODE=1 without Conductor)
+# where sccache gets "Operation not permitted" on cache I/O.
+if command -v sccache &>/dev/null && [[ -z "$CLAUDECODE" || -n "$CONDUCTOR_WORKSPACE_PATH" ]]; then
   export RUSTC_WRAPPER=sccache
   export SCCACHE_CACHE_SIZE="30G"
   ulimit -n 4096 2>/dev/null  # macOS default (256) is too low for sccache on large crates
