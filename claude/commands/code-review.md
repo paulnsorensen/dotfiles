@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Comprehensive code review with persistent history. Spawns fromage-age in comprehensive mode for full architectural audit.
+description: Comprehensive code review with persistent history. Invokes the age skill in comprehensive mode for full architectural audit.
 argument-hint: "[module or class to focus on, or leave blank for full overview]"
 ---
 
@@ -29,11 +29,14 @@ Use AskUserQuestion with these options:
 
 If the user provided an argument, use that as focus and skip this question.
 
-### 3. Launch fromage-age (Comprehensive Mode)
+### 3. Run Age Review (Comprehensive Mode)
 
-```
-Task(subagent_type="fromage-age", model="opus", prompt="Comprehensive mode review. Scope: <selected scope>. Delta context: <if delta, include changed files and commit log>. Previous review findings: <if exists, key items from last review>. Review the full architecture: business model inventory, architecture assessment, risk areas, strengths, and scored issues (0-100, surface >= 70).")
-```
+Invoke the `age` skill in **comprehensive mode**. Pass it:
+- **Scope**: the selected scope from step 2
+- **Delta context**: if delta mode, the changed files and commit log
+- **Previous review findings**: key items from last review if one exists
+
+The skill will spawn 6 parallel review sub-agents, merge findings, and present a comprehensive report.
 
 ### 4. Persist the Review
 
@@ -50,7 +53,7 @@ scope: <"full" | "delta" | specific module name>
 previous_review: <filename of previous review, or "none">
 ---
 
-<fromage-age comprehensive report>
+<age comprehensive report>
 ```
 
 3. Add `.claude/review/` to `.gitignore` if not already present.

@@ -147,6 +147,8 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 
 **Agent permission modes** — `acceptEdits` and `bypassPermissions` only suppress the interactive approval dialog for Edit/Write — they do NOT auto-approve Bash or MCP calls. Bash permissions use a separate allowlist (`permissions.allow` entries like `Bash(git:*)`). In sandboxed environments (Conductor, fresh sessions without your `settings.json`), worktree agents may lack allowlist entries for `git push`, `gh pr create`, etc. **Design pattern**: have isolated agents do code work + commit only, then return control to the orchestrator (which runs in the user's session with full permissions) for push/PR operations.
 
+**Agent nesting rule** — Claude Code supports only 1 level of sub-agent nesting. If an orchestrator needs to spawn sub-agents, convert it to a skill. Skills run inline in the caller's context, so their `Agent()` calls create first-level sub-agents. Example: `age` is a skill (not an agent) because it spawns 6 parallel review sub-agents.
+
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 
 **Agent skill enforcement**: When an agent has `skills: [scout, trace, diff]`, it MUST use those tools. Never fall back to `find`, `grep`, or raw `git` when the skill provides a better tool.
@@ -164,7 +166,7 @@ Before finishing any response, check for these anti-patterns:
 7. **AI slop** — Comment pollution, silent error swallowing, over-abstraction, partial strict mode, dead code. Run `/de-slop` on your changes.
 8. **Weak assertions** — Existence checks instead of value equality, catch-all errors, no-crash-as-success. Run `/tdd-assertions` on test code.
 
-Run `/self-eval` for the full 8-item scorecard with automatic `/de-slop` and `/tdd-assertions` delegation. The semantic stop hook invokes this automatically when you modify files — but you can run it manually anytime.
+Run `/self-eval` for the full 8-item scorecard with automatic `/de-slop` and `/tdd-assertions` delegation.
 
 If violations found: fix them, then try stopping again. Use `/diff` to smoke-test staged changes before committing.
 
