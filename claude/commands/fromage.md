@@ -441,10 +441,13 @@ Launch `fromage-press` (sonnet) for adversarial testing — chaos inputs, bounda
 
 Launch two parallel reviews:
 
-1. **`fromage-age`** (opus, focused mode) — Include changed file paths. Uses `git blame` and `git log` for historical context. Reviews through three dimensions:
-   - **Correctness & Safety** — security, bugs, silent failures
-   - **Architecture & Weight** — coupling, dead code, complexity, inline/undocument
-   - **Historical Context** — git blame patterns, recurring issues from prior changes
+1. **`fromage-age`** (focused mode) — Include changed file paths. Orchestrates six parallel sub-agents:
+   - **fromage-age-safety** — bugs, security, silent failures
+   - **fromage-age-arch** — complexity budgets, nesting, file structure
+   - **fromage-age-encap** — encapsulation, leaky abstractions, boundary violations
+   - **fromage-age-yagni** — unjustified dead code, speculative abstractions, AI noise
+   - **fromage-age-history** — git blame risk signals → per-file score modifiers
+   - **fromage-age-spec** — spec drift, monkey patches, missing implementations
 
 2. **`/simplifier`** (ricotta-reducer) — Architecture compliance audit against Sliced Bread. Produces scored DELETE/INLINE/UNDOCUMENT/DECOUPLE report. Complements Age: Age covers correctness and safety; ricotta-reducer specifically hunts structural bloat.
 

@@ -96,7 +96,13 @@ Specialized agents invoked via Task tool with `subagent_type`.
 | `fromage-curdle` | Curdle | Execution plan creation (plan mode) |
 | `fromage-cook` | Cook | Implementation |
 | `fromage-press` | Press | Adversarial testing |
-| `fromage-age` | Age | Code review (focused and comprehensive modes) |
+| `fromage-age` | Age | Code review orchestrator (spawns 6 parallel sub-agents) |
+| `fromage-age-safety` | Age | Correctness & safety (bugs, security, silent failures) |
+| `fromage-age-arch` | Age | Complexity budgets, nesting smells, file structure |
+| `fromage-age-encap` | Age | Encapsulation, leaky abstractions, boundary violations |
+| `fromage-age-yagni` | Age | Dead code (must be justified), speculative abstractions, AI noise |
+| `fromage-age-history` | Age | Git history risk signals → per-file score modifiers |
+| `fromage-age-spec` | Age | Spec drift, monkey patches, missing implementations |
 
 ### Standalone Agents
 

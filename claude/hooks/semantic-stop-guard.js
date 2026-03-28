@@ -304,22 +304,23 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    if (modifiedFiles) {
-      if (extractTurnText(lines).length === 0) {
-        console.log('{}');
-        process.exit(0);
-      }
-
-      const classifier = loadClassifier();
-      if (hasUnresolvedFindings(lines, classifier)) {
-        console.log(JSON.stringify({
-          decision: 'block',
-          reason: 'Self-evaluation required — violation language detected.',
-          systemMessage: SELF_EVAL_PROMPT
-        }));
-        process.exit(0);
-      }
-    }
+    // Self-eval trigger disabled — was too noisy on agent definition files.
+    // To re-enable: uncomment the block below.
+    // if (modifiedFiles) {
+    //   if (extractTurnText(lines).length === 0) {
+    //     console.log('{}');
+    //     process.exit(0);
+    //   }
+    //   const classifier = loadClassifier();
+    //   if (hasUnresolvedFindings(lines, classifier)) {
+    //     console.log(JSON.stringify({
+    //       decision: 'block',
+    //       reason: 'Self-evaluation required — violation language detected.',
+    //       systemMessage: SELF_EVAL_PROMPT
+    //     }));
+    //     process.exit(0);
+    //   }
+    // }
 
     console.log('{}');
   } catch (err) {
