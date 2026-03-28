@@ -140,6 +140,19 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | Weak test assertions | tdd-assertions | truthy checks, catch-all errors |
 | PR review response | respond | manually replying to each comment |
 | Version conflicts | version-doctor | restructuring builds, guessing versions |
+| JSON processing | `jq` (pipe or file), `gh --jq` | `python3 -c "import json..."` |
+| YAML processing | `yq` | `python3 -c "import yaml..."` |
+| Session analytics | `/session-analytics` | ad-hoc python3 JSONL parsing |
+
+**Available CLI tools** — these are always installed and in the allowlist. Use them instead of python3 inline scripts:
+- **jq** — JSON processing (parse, filter, transform). Use `gh --jq` for GitHub output.
+- **yq** — YAML processing (same syntax as jq)
+- **sd** — regex replacement (Rust sed). Use via `/chisel` skill.
+- **fd** — file finder (Rust find). Use via `/scout` skill.
+- **rg** — content search (Rust grep). Use via Grep tool or `/scout`.
+- **sg** — AST structural search (ast-grep). Use via `/trace` skill.
+- **tokei** — code statistics by language
+- **duckdb** — SQL analytics on local data (used by `/session-analytics`)
 
 **Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
 
