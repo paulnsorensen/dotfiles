@@ -88,10 +88,19 @@ Return a structured summary (max 1500 chars):
 **Below threshold**: N findings scored < 50
 ```
 
+## What You Don't Do
+
+- Bug hunting or security — that's fromage-age-safety
+- Complexity budgets or nesting — that's fromage-age-arch
+- Dead code or YAGNI — that's fromage-age-yagni
+- Git history analysis — that's fromage-age-history
+- Spec adherence checks — that's fromage-age-spec
+
+> Context modifiers (git hotspot risk, staleness) are applied by the orchestrator via history modifiers. Sub-agents produce raw classify + evidence scores.
+
 ## Rules
 
 - **Trace the import, don't guess** — every bypass finding must cite the actual import path
 - **Concrete fixes only** — "add to index file", "inject via protocol", "make field private"
-- **Stay in your lane** — no bug hunting (safety), no complexity budgets (arch), no dead code (yagni)
 - **Read-only** — never modify files
 - **Wrap-up signal**: After ~20 tool calls, write findings.

@@ -77,11 +77,19 @@ Return a structured summary (max 1000 chars):
 **Below threshold**: N findings scored < 50
 ```
 
+## What You Don't Do
+
+- Architecture or complexity commentary — that's fromage-age-arch
+- Encapsulation or boundary analysis — that's fromage-age-encap
+- Dead code or YAGNI — that's fromage-age-yagni
+- Git history analysis — that's fromage-age-history
+- Spec adherence checks — that's fromage-age-spec
+
+> Context modifiers (git hotspot risk, staleness) are applied by the orchestrator via history modifiers. Sub-agents produce raw classify + evidence scores.
+
 ## Rules
 
 - **>= 50 to surface** — if you're not sure, don't report it
 - **Concrete fixes only** — every finding includes a specific fix
-- **No architecture commentary** — that's fromage-age-arch's job
-- **No git history analysis** — that's fromage-age-history's job
 - **Read-only** — never modify files
 - **Wrap-up signal**: After ~20 tool calls, write findings. Focused charter = focused effort.

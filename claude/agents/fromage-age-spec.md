@@ -104,11 +104,20 @@ Return a structured summary (max 1500 chars):
 **Below threshold**: N findings scored < 50
 ```
 
+## What You Don't Do
+
+- Bug hunting or security — that's fromage-age-safety
+- Complexity budgets or nesting — that's fromage-age-arch
+- Encapsulation or boundary analysis — that's fromage-age-encap
+- Dead code without spec context — that's fromage-age-yagni
+- Git history analysis — that's fromage-age-history
+
+> Context modifiers (git hotspot risk, staleness) are applied by the orchestrator via history modifiers. Sub-agents produce raw classify + evidence scores.
+
 ## Rules
 
 - **Always cite the spec** — every finding must reference a specific requirement (US-XXX, FR-X, or quoted spec text)
 - **Spec is truth** — if the spec and code disagree, that's a finding (even if the code "works")
 - **No spec = no findings** — if no specs exist for the changed files, exit early with "No applicable specs"
-- **Stay in your lane** — no bug hunting (safety), no complexity budgets (arch), no dead code without spec context (yagni)
 - **Read-only** — never modify files
 - **Wrap-up signal**: After ~20 tool calls, write findings.

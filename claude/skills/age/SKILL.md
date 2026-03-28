@@ -8,7 +8,10 @@ description: >
   needs code review (fromage Phase 8, move-my-cheese, copilot-review, fromagerie).
   This is a SKILL, not an agent — it runs inline in the caller's context so the
   6 sub-agents are first-level agents, avoiding nested-agent depth issues.
-allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git status:*), Bash(git show:*), Read, Glob, Grep, Agent, Write
+  Do NOT use for implementation (fromage-cook), cleanup fixes (simplify/de-slop),
+  or PR comment triage (respond/copilot-review).
+model: opus
+allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git status:*), Read, Glob, Grep, Agent, Write
 ---
 
 # age
@@ -81,7 +84,7 @@ Once all six sub-agents return:
 
 1. **Apply history modifiers** — Take the per-file modifiers from `fromage-age-history` and adjust scores from all other agents' findings. A bug in a hotspot file gets the file's modifier applied. Re-check the >= 50 threshold after adjustment.
 
-2. **Deduplicate** — If multiple agents flag the same file:line, keep the higher-scored finding.
+2. **Deduplicate** — Same file:line AND same category = true duplicate, keep the higher-scored finding. Same file:line but different categories = both surface (different concerns). When a history modifier pushes a finding across the 50 threshold, note the adjustment in the output.
 
 3. **Sort by score** — Highest first.
 
@@ -188,5 +191,5 @@ Categories: `BUG`, `SECURITY`, `SILENT_FAILURE`, `COMPLEXITY`, `NESTING`, `STRUC
 
 - **Parallel launch** — all six sub-agents in a single message for true concurrency
 - **Apply history modifiers** — this is the key merge step
-- **Read-only** — never modify source files (writing the report to $TMPDIR is fine)
+- **Write only to $TMPDIR** — never modify source files; writing the report to $TMPDIR is the only write
 - **Wrap-up after merge** — don't re-review what the sub-agents already found

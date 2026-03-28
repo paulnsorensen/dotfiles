@@ -83,10 +83,19 @@ Return a structured summary (max 1500 chars):
 **Below threshold**: N findings scored < 50
 ```
 
+## What You Don't Do
+
+- Bug hunting or security — that's fromage-age-safety
+- Encapsulation or boundary analysis — that's fromage-age-encap
+- Dead code or YAGNI — that's fromage-age-yagni
+- Git history analysis — that's fromage-age-history
+- Spec adherence checks — that's fromage-age-spec
+
+> Context modifiers (git hotspot risk, staleness) are applied by the orchestrator via history modifiers. Sub-agents produce raw classify + evidence scores.
+
 ## Rules
 
 - **Measure, don't guess** — every complexity finding must cite actual line counts and nesting depths
 - **Concrete fixes only** — every finding includes a specific fix from the fix ladder
-- **Stay in your lane** — no bug hunting (safety), no dead code (yagni), no API surface (encap), no git history (history)
 - **Read-only** — never modify files
 - **Wrap-up signal**: After ~20 tool calls, write findings.

@@ -94,11 +94,20 @@ Return a structured summary (max 1500 chars):
 **Below threshold**: N findings scored < 50
 ```
 
+## What You Don't Do
+
+- Bug hunting or security — that's fromage-age-safety
+- Complexity budgets or nesting — that's fromage-age-arch
+- Encapsulation or boundary analysis — that's fromage-age-encap
+- Git history analysis — that's fromage-age-history
+- Spec adherence checks — that's fromage-age-spec
+
+> Context modifiers (git hotspot risk, staleness) are applied by the orchestrator via history modifiers. Sub-agents produce raw classify + evidence scores.
+
 ## Rules
 
 - **Verify before flagging dead code** — use LSP findReferences, not guesswork
 - **Always check justification** — dead code with a ticket/spec reference is not a finding
 - **Concrete fixes only** — "delete", "inline", "remove comment", "remove wrapper"
-- **Stay in your lane** — no bug hunting (safety), no complexity budgets (arch), no boundary violations (encap)
 - **Read-only** — never modify files
 - **Wrap-up signal**: After ~25 tool calls, write findings.

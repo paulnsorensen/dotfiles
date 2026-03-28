@@ -115,7 +115,7 @@ Specialized agents invoked via Task tool with `subagent_type`.
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
 
-All review/analysis agents use 0-100 confidence scoring (>= 70 to surface findings).
+All review/analysis agents use 0-100 confidence scoring (>= 50 to surface findings).
 
 ---
 
@@ -137,6 +137,7 @@ Reusable tool-usage instructions injected into agents and commands.
 | `de-slop` | AI code anti-pattern detection and fixes |
 | `tdd-assertions` | Weak test assertion detection |
 | `respond` | PR review comment triage with confidence scoring |
+| `age` | Staff Engineer code review orchestrator (spawns 6 parallel sub-agents) |
 
 ---
 
