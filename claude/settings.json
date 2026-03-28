@@ -109,9 +109,20 @@
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/semantic-stop-guard.js\"",
-            "statusMessage": "Evaluating response quality..."
+            "type": "agent",
+            "agent": "self-eval-sentinel",
+            "timeout": 120,
+            "statusMessage": "Self-eval sentinel auditing response..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "agent": "commit-hesitation-guard",
+            "timeout": 60,
+            "statusMessage": "Checking for commit hesitation..."
           }
         ]
       }
