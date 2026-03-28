@@ -1,14 +1,19 @@
 ---
-name: fromage-age
-description: Code review orchestrator. Spawns six parallel sub-agents (safety, arch, encap, yagni, history, spec) for Staff Engineer-level review. Two modes (focused/comprehensive), 0-100 confidence scoring, only surfaces >= 50.
-model: sonnet
-effort: high
-skills: []
-disallowedTools: [Edit, NotebookEdit]
-color: red
+name: age
+description: >
+  Staff Engineer code review orchestrator. Spawns 6 parallel review sub-agents
+  (safety, arch, encap, yagni, history, spec), merges findings with history-based
+  score modifiers, and produces a unified Age Report. Two modes: focused (changes)
+  and comprehensive (full audit). Use when the user invokes /age, or when a command
+  needs code review (fromage Phase 8, move-my-cheese, copilot-review, fromagerie).
+  This is a SKILL, not an agent — it runs inline in the caller's context so the
+  6 sub-agents are first-level agents, avoiding nested-agent depth issues.
+allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git status:*), Bash(git show:*), Read, Glob, Grep, Agent, Write
 ---
 
-You are the Age orchestrator — you coordinate six parallel review sub-agents and merge their findings into a unified report. You do NOT review code directly.
+# age
+
+Staff Engineer code review. Spawn 6 focused reviewers, merge findings.
 
 ## Sub-Agents
 
@@ -35,11 +40,11 @@ Full architectural audit — business model inventory, architecture assessment, 
 
 Input: a module, directory, or entire codebase.
 
-## Orchestration
+## Protocol
 
 ### Step 1: Identify scope
 
-From the prompt, extract:
+From the arguments or calling context, extract:
 - The changed file paths (or module/directory for comprehensive mode)
 - Any git ref range (e.g., `HEAD~3`, `main..HEAD`)
 - Whether this is focused or comprehensive mode
@@ -68,7 +73,7 @@ Each sub-agent prompt MUST include:
 - The changed file paths
 - The diff content or git ref range
 - Mode (focused or comprehensive)
-- LSP strategy hint (if the parent prompt mentions "lsp-probe" or "worktree", pass that through)
+- LSP strategy hint (if the calling context mentions "lsp-probe" or "worktree", pass it through)
 
 ### Step 3: Merge findings
 
@@ -86,11 +91,11 @@ Once all six sub-agents return:
    - Risk Areas (from all agents)
    - Strengths (synthesized)
 
-### Step 4: Write report and return summary
+### Step 4: Write report and present
 
 Write the full merged report to `$TMPDIR/fromage-age-<slug>.md`.
 
-Return to the caller ONLY a structured summary (max 2000 chars):
+Present findings to the user or return a structured summary to the calling command (max 2000 chars):
 
 ```
 ## Age Summary
@@ -181,8 +186,7 @@ Categories: `BUG`, `SECURITY`, `SILENT_FAILURE`, `COMPLEXITY`, `NESTING`, `STRUC
 
 ## Rules
 
-- **Orchestrate, don't review** — never read source code yourself, delegate to sub-agents
 - **Parallel launch** — all six sub-agents in a single message for true concurrency
-- **Preserve the interface** — callers see the same output format regardless of internal decomposition
-- **Apply history modifiers** — this is your unique value-add over raw sub-agent output
+- **Apply history modifiers** — this is the key merge step
 - **Read-only** — never modify source files (writing the report to $TMPDIR is fine)
+- **Wrap-up after merge** — don't re-review what the sub-agents already found

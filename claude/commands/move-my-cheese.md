@@ -49,7 +49,7 @@ Batch all LSP queries for a diagnosis pass into one probe invocation.
 
 ### Quality sweep sub-agents (Phase 3b)
 
-**Always use lsp-probe** — regardless of whether move-my-cheese is running standalone or in a worktree. The sweep agents (fromage-age, ricotta-reducer) are always spawned as 3 concurrent sub-agents doing read-only analysis. They should never hold a persistent LSP server. The Phase 3b agent prompts signal this explicitly.
+**Always use lsp-probe** — regardless of whether move-my-cheese is running standalone or in a worktree. The sweep agents (age sub-agents, ricotta-reducer) are spawned as concurrent sub-agents doing read-only analysis. They should never hold a persistent LSP server. The Phase 3b agent prompts signal this explicitly.
 
 ## Progress Tracking
 
@@ -189,22 +189,25 @@ Then apply `/tdd-assertions` to the wrecker's output and re-run `/make test` to 
 
 ## Phase 3b — Quality Sweep (parallel agents)
 
-After Phase 3a fixes are stable (build passes, tests pass), launch three review agents **in parallel**:
+After Phase 3a fixes are stable (build passes, tests pass), invoke the `age` skill and launch parallel review agents:
 
 ```
-# Launch in a SINGLE message — all as Agent tool calls for true parallelism:
+# Invoke the age skill inline — it spawns 6 review sub-agents directly (no nesting).
+# Pass lsp-probe hint so sub-agents batch LSP queries.
+# Follow the age skill protocol: identify scope, launch 6 agents, merge findings.
+# Scope: changes on this branch vs origin/main. Surface findings >= 70.
+# LSP strategy: use lsp-probe for batched queries.
 
-Agent(subagent_type="fromage-age", prompt="Review the changes on this branch vs origin/main. Staff Engineer review against Sliced Bread architecture, engineering principles, and complexity budgets. Only surface findings >= 70 confidence. LSP strategy: use lsp-probe for batched queries (hover, findReferences, documentSymbol) — batch your LSP needs into one probe call rather than holding a server for the session.")
-
+# In parallel with the age skill's sub-agents, also launch:
 Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 70 confidence. LSP strategy: use lsp-probe for batched queries (findReferences to verify dead code, hover for coupling checks) — batch your LSP needs into one probe call rather than holding a server for the session.")
 
 # Only if Phase 1 recon found unresolved review comments:
 Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on PR #$ARGUMENTS. Score each 0-100, fix >= 70, push back < 50, report 50-74 for user decision.")
 ```
 
-| Agent | What it catches |
+| Agent/Skill | What it catches |
 |---|---|
-| **fromage-age** | Safety, complexity, encapsulation, YAGNI, spec adherence, history/risk modifiers (6 parallel sub-agents) |
+| **age skill** (6 sub-agents) | Safety, complexity, encapsulation, YAGNI, spec adherence, history/risk modifiers |
 | **ricotta-reducer** | AI slop + de-slop patterns, over-abstraction, comment pollution, dead code |
 | **fromage-fort** | Unresolved reviewer comments — triages and fixes >= 70 confidence |
 
