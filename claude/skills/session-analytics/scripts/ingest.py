@@ -14,6 +14,7 @@ import time
 
 DB_DIR = os.path.expanduser("~/.claude/analytics")
 DB_PATH = os.path.join(DB_DIR, "sessions.duckdb")
+DB_TMP_PATH = os.path.join(DB_DIR, "sessions.duckdb.tmp")
 JSONL_GLOB = os.path.expanduser("~/.claude/projects/**/*.jsonl")
 TTL_SECONDS = 3600  # 1 hour
 
@@ -25,9 +26,9 @@ def db_is_fresh():
     return age < TTL_SECONDS
 
 
-def run_sql(sql):
+def run_sql(sql, db_path=None):
     result = subprocess.run(
-        ["duckdb", DB_PATH, "-c", sql],
+        ["duckdb", db_path or DB_TMP_PATH, "-c", sql],
         capture_output=True, text=True, timeout=600
     )
     if result.returncode != 0:
@@ -48,9 +49,9 @@ def main():
 
     os.makedirs(DB_DIR, exist_ok=True)
 
-    # Remove stale db to start fresh
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
+    # Ingest into tmp file; atomically replace only on success
+    if os.path.exists(DB_TMP_PATH):
+        os.remove(DB_TMP_PATH)
 
     print("Ingesting JSONL logs into DuckDB...")
     t0 = time.time()
@@ -90,12 +91,7 @@ def main():
         );
     """)
 
-    row_count = subprocess.run(
-        ["duckdb", DB_PATH, "-json", "-c",
-         "SELECT count(*) AS cnt FROM raw_entries"],
-        capture_output=True, text=True
-    )
-    print(f"  Raw entries loaded: {row_count.stdout.strip()}")
+    run_sql("SELECT count(*) AS raw_entries_loaded FROM raw_entries;")
 
     # Step 2: Create tool_uses view (flattened from assistant content blocks)
     print("  Creating tool_uses...")
@@ -273,10 +269,13 @@ def main():
         CREATE INDEX idx_sessions_id ON sessions(sessionId);
     """)
 
+    # Atomically replace the live database only after full success
+    os.replace(DB_TMP_PATH, DB_PATH)
+
     elapsed = time.time() - t0
     print(f"\nIngestion complete in {elapsed:.1f}s")
 
-    # Print summary
+    # Print summary against the now-live database
     run_sql("""
         SELECT
             (SELECT count(*) FROM tool_uses) AS tool_uses,
@@ -287,7 +286,7 @@ def main():
             (SELECT count(*) FROM mcp_calls) AS mcp_calls,
             (SELECT count(*) FROM sessions) AS sessions,
             (SELECT count(*) FROM permission_denials) AS permission_denials;
-    """)
+    """, db_path=DB_PATH)
 
 
 if __name__ == "__main__":
