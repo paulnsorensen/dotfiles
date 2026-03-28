@@ -32,8 +32,7 @@
 #   without compaction file:        → JSON suggestion output
 #   with compaction file:           → silent exit
 #
-# self-eval-sentinel — type: "agent" Stop hook (no command tests; agent hooks are runtime-evaluated)
-# commit-hesitation-guard — type: "agent" Stop hook (same)
+# commit-hesitation-guard — type: "agent" Stop hook (no command tests; agent hooks are runtime-evaluated)
 # ────────────────────────────────────────────────────────────────────
 
 load test_helper
