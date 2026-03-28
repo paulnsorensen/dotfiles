@@ -437,7 +437,7 @@ Launch `fromage-press` (sonnet) for adversarial testing — chaos inputs, bounda
 
 ---
 
-## Phase 8 — Age (Opus)
+## Phase 8 — Age (Sonnet)
 
 Launch two parallel reviews:
 
@@ -451,9 +451,9 @@ Launch two parallel reviews:
 
 2. **`/simplifier`** (ricotta-reducer) — Architecture compliance audit against Sliced Bread. Produces scored DELETE/INLINE/UNDOCUMENT/DECOUPLE report. Complements Age: Age covers correctness and safety; ricotta-reducer specifically hunts structural bloat.
 
-All findings scored 0-100, only >= 70 surfaced.
+All findings scored 0-100, only >= 50 surfaced.
 
-**Validation pass** (medium/large): For Age findings scored 75-89, launch a haiku agent to verify against actual code context. Discard findings that don't survive scrutiny. Findings >= 90 skip validation.
+**Validation pass** (medium/large): For Age findings scored 50-74, launch a haiku agent to verify against actual code context. Discard findings that don't survive scrutiny. Findings >= 75 skip validation.
 
 Present combined findings to user. Fix agreed issues inline.
 
