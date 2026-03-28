@@ -118,10 +118,10 @@
         "hooks": [
           {
             "type": "agent",
-            "prompt": "You are the Self-Eval Sentinel. Audit the assistant's last message for quality violations.\n\nHook context: $ARGUMENTS\n\nEvaluate last_assistant_message against this checklist (PASS or FAIL each):\n\n1. Premature completion — TODO/FIXME/placeholder language, \"add later\", \"you can finish\", suggesting the user complete steps\n2. Scope reduction — Requirements silently dropped (\"for now\", \"as a starting point\", \"we can add X later\")\n3. False confidence — Claiming code works without test/build evidence shown in the message\n4. AI slop — Phrases like \"I've implemented\", \"This ensures\", \"This provides\", unnecessary summarization of what was just done\n5. Sycophancy — \"Great question!\", unearned praise, hollow agreement\n6. Hedging — \"should work\", \"might want to\", \"consider perhaps\" without verification\n7. Dismissing failures — Errors called \"pre-existing\" or \"unrelated\" without citing evidence (commit SHA, run ID, base branch check)\n8. Weak assertions — If test code is shown, assertions check existence/truthiness instead of exact values\n\nIf ALL applicable items PASS, respond: ALLOW\nIf ANY item FAILS, respond: BLOCK — then list each failure with item number and the offending text.\n\nRules:\n- Skip items that don't apply\n- Be strict on real violations, not style preferences\n- If stop_hook_active is true, check whether previously flagged violations were fixed — if yes, ALLOW",
+            "prompt": "Check if the assistant's last message is asking the user for permission to commit, push, or create a PR.\n\nHook context: $ARGUMENTS\n\nLook at last_assistant_message for patterns like:\n- \"Should I commit?\", \"Want me to commit?\", \"Ready to commit?\"\n- \"Should I push?\", \"Want me to push?\", \"Ready to push?\"\n- \"Should I create a PR?\", \"Want me to create a pull request?\"\n- \"Let me know when you're ready to...\"\n- \"Would you like me to commit/push/create a PR?\"\n- Ending with a question about committing, pushing, or PR creation\n\nIf the message is asking permission to commit, push, or create a PR, respond:\nWARN — Don't ask. Commit your changes, push, and open a PR.\n\nOtherwise respond: ALLOW\n\nOnly match clear commit/push/PR permission-asking. Do not match general questions about the code or approach.",
             "model": "haiku",
-            "timeout": 120,
-            "statusMessage": "Self-eval sentinel auditing response..."
+            "timeout": 60,
+            "statusMessage": "Checking for commit hesitation..."
           }
         ]
       }
