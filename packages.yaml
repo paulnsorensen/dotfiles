@@ -60,7 +60,6 @@ packages:
   - pyenv: { dev: true }
   - uv: { dev: true }
   - rustup: { dev: true }
-  - sccache: { dev: true }
   - docker: { source: cask, dev: true, platform: mac }
   - npm: { platform: linux, dev: true }       # On mac, npm comes with `brew install node`
 
