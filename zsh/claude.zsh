@@ -82,7 +82,8 @@ ccw() {
     result="$("${ccw_init}" "${slug}")" || return 1
 
     local wt_path
-    wt_path="$(echo "$result" | jq -r '.path')"
+    wt_path="$(echo "$result" | jq -er '.path')" || { echo "ccw: failed to parse worktree path" >&2; return 1; }
+    [[ -d "$wt_path" ]] || { echo "ccw: worktree path not found: $wt_path" >&2; return 1; }
 
     cd "${wt_path}" && claude "$@"
 }
