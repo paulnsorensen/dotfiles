@@ -140,12 +140,27 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | Weak test assertions | tdd-assertions | truthy checks, catch-all errors |
 | PR review response | respond | manually replying to each comment |
 | Version conflicts | version-doctor | restructuring builds, guessing versions |
+| JSON processing | `jq` (pipe or file), `gh --jq` | `python3 -c "import json..."` |
+| YAML processing | `yq` | `python3 -c "import yaml..."` |
+| Session analytics | `/session-analytics` | ad-hoc python3 JSONL parsing |
+
+**Available CLI tools** — these are always installed and in the allowlist. Use them instead of python3 inline scripts:
+- **jq** — JSON processing (parse, filter, transform). Use `gh --jq` for GitHub output.
+- **yq** — YAML processing (same syntax as jq)
+- **sd** — regex replacement (Rust sed). Use via `/chisel` skill.
+- **fd** — file finder (Rust find). Use via `/scout` skill.
+- **rg** — content search (Rust grep). Use via Grep tool or `/scout`.
+- **sg** — AST structural search (ast-grep). Use via `/trace` skill.
+- **tokei** — code statistics by language
+- **duckdb** — SQL analytics on local data (used by `/session-analytics`)
 
 **Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
 
-**LSP integration** — All 7 LSP plugins are enabled globally (lazy startup, zero cost when idle). Run `/lsp` for status and troubleshooting.
+**LSP integration** — All 6 LSP plugins are enabled globally (lazy startup, zero cost when idle). Run `/lsp` for status and troubleshooting.
 
 **Agent permission modes** — `acceptEdits` and `bypassPermissions` only suppress the interactive approval dialog for Edit/Write — they do NOT auto-approve Bash or MCP calls. Bash permissions use a separate allowlist (`permissions.allow` entries like `Bash(git:*)`). In sandboxed environments (Conductor, fresh sessions without your `settings.json`), worktree agents may lack allowlist entries for `git push`, `gh pr create`, etc. **Design pattern**: have isolated agents do code work + commit only, then return control to the orchestrator (which runs in the user's session with full permissions) for push/PR operations.
+
+**Agent nesting rule** — Claude Code supports only 1 level of sub-agent nesting. If an orchestrator needs to spawn sub-agents, convert it to a skill. Skills run inline in the caller's context, so their `Agent()` calls create first-level sub-agents. Example: `age` is a skill (not an agent) because it spawns 6 parallel review sub-agents.
 
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 
@@ -164,7 +179,7 @@ Before finishing any response, check for these anti-patterns:
 7. **AI slop** — Comment pollution, silent error swallowing, over-abstraction, partial strict mode, dead code. Run `/de-slop` on your changes.
 8. **Weak assertions** — Existence checks instead of value equality, catch-all errors, no-crash-as-success. Run `/tdd-assertions` on test code.
 
-Run `/self-eval` for the full 8-item scorecard with automatic `/de-slop` and `/tdd-assertions` delegation. The semantic stop hook invokes this automatically when you modify files — but you can run it manually anytime.
+Run `/self-eval` for the full 8-item scorecard with automatic `/de-slop` and `/tdd-assertions` delegation.
 
 If violations found: fix them, then try stopping again. Use `/diff` to smoke-test staged changes before committing.
 

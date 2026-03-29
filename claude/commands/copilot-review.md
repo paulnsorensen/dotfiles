@@ -1,7 +1,7 @@
 ---
 name: copilot-review
 allowed-tools: Bash(gh *), Bash(git *), Bash(jq *), Bash(cat *), Read, Grep, AskUserQuestion, Task, TaskCreate, TaskUpdate, TaskList, TaskGet
-description: Review a PR and route fixes to GitHub Copilot via inline comments. Spawns fromage-age for the review, then formats findings for Copilot.
+description: Review a PR and route fixes to GitHub Copilot via inline comments. Invokes the age skill for review, then formats findings for Copilot.
 argument-hint: "<PR number or URL>"
 ---
 
@@ -41,15 +41,18 @@ At command start, call `TaskCreate` for all 4 phases. Mark `in_progress` at phas
 
 5. Present brief summary: PR title, author, base <- head, files changed, additions/deletions.
 
-## Phase 2: Launch fromage-age (Focused Mode)
+## Phase 2: Run Age Review (Focused Mode)
 
-```
-Task(subagent_type="fromage-age", model="opus", prompt="Focused mode review of PR #<number>. Title: <title>. Author: <author>.\n\nDiff:\n<diff content>\n\nReview through two lenses:\n1. Correctness & Safety (security, bugs, silent failures)\n2. Architecture & Weight (coupling, dead code, inline, undocument, complexity)\n\nScore all findings 0-100. Only surface >= 70. For each finding include: file, line, category, issue description, and concrete fix.")
-```
+Invoke the `age` skill in **focused mode** with:
+- PR number, title, and author
+- The full diff from Phase 1
+- Instruction to surface findings >= 70
+
+The skill spawns 6 parallel review sub-agents, merges findings, and returns the Age Report.
 
 ## Phase 3: Format Findings for Copilot
 
-When fromage-age returns its scored findings:
+When the age skill returns its scored findings:
 
 1. **Present strengths first** — what the PR does well (not posted as comments).
 
@@ -124,4 +127,4 @@ _Noted for future work — not a Copilot fix._
 - **Frame in business terms** — never "this function processes data"
 - **One comment per issue** — note "same pattern at lines X, Y, Z" if repeated
 - **Respect the codebase** — don't flag consistent patterns
-- **All review intelligence lives in fromage-age** — this command handles PR fetch + Copilot formatting only
+- **All review intelligence lives in the age skill** — this command handles PR fetch + Copilot formatting only

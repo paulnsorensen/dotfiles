@@ -53,6 +53,14 @@
       "Bash(procs:*)",
       "Bash(do:*)",
       "Bash(claude:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo nextest:*)",
+      "Bash(just:*)",
+      "Bash(tokei:*)",
+      "Bash(node:*)",
+      "Bash(duckdb:*)",
+      "Bash(python3:*)",
       "Edit",
       "Write",
       "mcp__plugin_playwright_playwright__*",
@@ -103,15 +111,25 @@
             "statusMessage": "Restoring session context..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/paul/.claude/hooks/gsd-check-update.js\""
+          }
+        ]
       }
     ],
     "Stop": [
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/semantic-stop-guard.js\"",
-            "statusMessage": "Evaluating response quality..."
+            "type": "agent",
+            "prompt": "Check if the assistant's last message is asking the user for permission to commit, push, or create a PR.\n\nHook context: $ARGUMENTS\n\nLook at last_assistant_message for patterns like:\n- \"Should I commit?\", \"Want me to commit?\", \"Ready to commit?\"\n- \"Should I push?\", \"Want me to push?\", \"Ready to push?\"\n- \"Should I create a PR?\", \"Want me to create a pull request?\"\n- \"Let me know when you're ready to...\"\n- \"Would you like me to commit/push/create a PR?\"\n- Ending with a question about committing, pushing, or PR creation\n\nIf the message is asking permission to commit, push, or create a PR, respond:\nWARN — Don't ask. Commit your changes, push, and open a PR.\n\nOtherwise respond: ALLOW\n\nOnly match clear commit/push/PR permission-asking. Do not match general questions about the code or approach.",
+            "timeout": 60,
+            "model": "haiku",
+            "statusMessage": "Checking for commit hesitation..."
           }
         ]
       }
@@ -186,12 +204,34 @@
             "statusMessage": "Checking reply for deferral..."
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/paul/.claude/hooks/gsd-prompt-guard.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/paul/.claude/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
       }
     ]
   },
   "statusLine": {
     "type": "command",
-    "command": "/bin/bash -c 'PLUGIN_DIR=$(ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1); INDEX_JS=\"${PLUGIN_DIR}dist/index.js\"; if [ -z \"$PLUGIN_DIR\" ] || [ ! -f \"$INDEX_JS\" ]; then exit 0; fi; NODE=$(command -v node) || exit 0; \"$NODE\" \"$INDEX_JS\"'"
+    "command": "node \"/Users/paul/.claude/hooks/gsd-statusline.js\""
   },
   "enabledPlugins": {
     "bash-language-server@claude-code-lsps": true,
@@ -200,14 +240,14 @@
     "rust-analyzer@claude-code-lsps": true,
     "pyright@claude-code-lsps": true,
     "gopls@claude-code-lsps": true,
-    "solargraph@claude-code-lsps": true,
     "claude-md-management@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "github@claude-plugins-official": true,
-    "claude-hud@claude-hud": true
+    "claude-hud@claude-hud": true,
+    "astral@astral-sh": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {
@@ -220,6 +260,12 @@
       "source": {
         "source": "github",
         "repo": "boostvolt/claude-code-lsps"
+      }
+    },
+    "astral-sh": {
+      "source": {
+        "source": "github",
+        "repo": "astral-sh/claude-code-plugins"
       }
     }
   },

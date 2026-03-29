@@ -114,7 +114,24 @@ different inputs ("write empty bytes succeeds", "write binary data succeeds",
 test per input variation. 35 tests for a 119-line implementation is a smell —
 aim for focused tests that cover actual edge cases and error paths.
 
-### 9. Partial strict mode in shell scripts
+### 9. Lint suppression as band-aid
+
+AI silences compiler/linter warnings with suppression comments instead of fixing
+the underlying issue: `#[allow(dead_code)]`, `# noqa`, `// @ts-ignore`,
+`//nolint`, `// eslint-disable`.
+
+**High-confidence smells (almost always slop):**
+- Rust: `#[allow(clippy::unwrap_used)]`, `#[allow(clippy::dbg_macro)]`, `#[allow(clippy::print_stdout)]`, `#[allow(clippy::panic)]`, `#[allow(clippy::todo)]`
+- Python: `# noqa: E501` (line too long), `# pylint: disable=missing-docstring`
+- TypeScript: `// @ts-ignore` (error suppression without `@ts-expect-error`)
+- Go: `//nolint` (generic suppression without specific lint name)
+- Shell: `# shellcheck disable=SCxxxx` (broad suppression instead of fixing the script)
+
+**Fix:** Remove the suppression, read the warning, fix the root cause. If the
+suppression is truly needed, scope it narrowly and add a comment explaining why.
+See language references for specific patterns (Rust has the deepest taxonomy).
+
+### 10. Partial strict mode in shell scripts
 
 AI writes `set -e` but omits `-u` (undefined variables) and `-o pipefail`
 (pipeline error propagation). This is especially dangerous in scripts that
@@ -163,3 +180,5 @@ Don't over-explain. The fix speaks for itself.
 - May flag intentional defensive error handling as "silent swallowing" — check intent before removing
 - Language reference files must be read before fixing — patterns differ across languages
 - `unwrap()` in Rust test code is idiomatic, not slop — only flag in production code
+- Lint suppressions in FFI, generated code, and `#[cfg(test)]` are often legitimate — check context before removing
+- `#[allow(clippy::pedantic)]` at crate level is a style choice, not slop

@@ -66,7 +66,7 @@ Always set `max_turns` when spawning Task agents:
 | fromage-curdle | 30 | Planning, should be decisive |
 | fromage-cook | 80 | Implementation, largest scope |
 | fromage-press | 50 | Testing + feedback loops |
-| fromage-age | 30 | Review, read-only |
+| age sub-agents | 20 each | Review, read-only (6 parallel) |
 | whey-drainer | 15 | Just runs tests |
 | roquefort-wrecker | 25 | Writes + runs tests |
 | research (any) | 15 | Should find answer fast or bail |
@@ -83,7 +83,7 @@ After exiting plan mode, spawn implementation agents with `mode: "acceptEdits"` 
 | fromage-curdle | plan | Planning, needs approval |
 | fromage-cook | **acceptEdits** | Implementation, writes freely |
 | fromage-press | **acceptEdits** | Testing, writes test files |
-| fromage-age | default | Read-only review |
+| age sub-agents | default | Read-only review (6 parallel) |
 | whey-drainer | default | Runs tests only |
 | roquefort-wrecker | **acceptEdits** | Writes + runs tests |
 | research (any) | default | Read-only research |
@@ -437,20 +437,23 @@ Launch `fromage-press` (sonnet) for adversarial testing — chaos inputs, bounda
 
 ---
 
-## Phase 8 — Age (Opus)
+## Phase 8 — Age (Sonnet)
 
 Launch two parallel reviews:
 
-1. **`fromage-age`** (opus, focused mode) — Include changed file paths. Uses `git blame` and `git log` for historical context. Reviews through three dimensions:
-   - **Correctness & Safety** — security, bugs, silent failures
-   - **Architecture & Weight** — coupling, dead code, complexity, inline/undocument
-   - **Historical Context** — git blame patterns, recurring issues from prior changes
+1. **`age` skill** (focused mode) — Invoke the `age` skill inline. Include changed file paths. The skill spawns six parallel sub-agents directly (no nesting):
+   - **fromage-age-safety** — bugs, security, silent failures
+   - **fromage-age-arch** — complexity budgets, nesting, file structure
+   - **fromage-age-encap** — encapsulation, leaky abstractions, boundary violations
+   - **fromage-age-yagni** — unjustified dead code, speculative abstractions, AI noise
+   - **fromage-age-history** — git blame risk signals → per-file score modifiers
+   - **fromage-age-spec** — spec drift, monkey patches, missing implementations
 
 2. **`/simplifier`** (ricotta-reducer) — Architecture compliance audit against Sliced Bread. Produces scored DELETE/INLINE/UNDOCUMENT/DECOUPLE report. Complements Age: Age covers correctness and safety; ricotta-reducer specifically hunts structural bloat.
 
-All findings scored 0-100, only >= 70 surfaced.
+All findings scored 0-100, only >= 50 surfaced.
 
-**Validation pass** (medium/large): For Age findings scored 75-89, launch a haiku agent to verify against actual code context. Discard findings that don't survive scrutiny. Findings >= 90 skip validation.
+**Validation pass** (medium/large): For Age findings scored 50-74, launch a haiku agent to verify against actual code context. Discard findings that don't survive scrutiny. Findings >= 75 skip validation.
 
 Present combined findings to user. Fix agreed issues inline.
 

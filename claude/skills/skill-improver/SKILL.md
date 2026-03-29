@@ -12,7 +12,7 @@ description: >
   scoring, tool scoping, sub-agent delegation, fork vs inline, context budgets,
   and activation optimization. Do NOT use for creating new skills from scratch —
   use /skill-creator for that.
-allowed-tools: Read, Glob, Grep
+allowed-tools: Read, Glob, Grep, Agent, Bash
 ---
 
 # skill-improver
@@ -44,6 +44,29 @@ This skill runs inline (no `context: fork`) at opus tier — set explicitly in f
 1. Read the target file
 2. Determine type: **agent** (has `tools:`/`disallowedTools:` frontmatter) or **skill** (has `name:`/`description:` in SKILL.md frontmatter)
 3. Read any referenced files (sub-skills, reference docs) to understand the full picture
+
+### Phase 1.5: Gather Usage Analytics
+
+Before auditing, gather empirical data from session logs. This step is
+**best-effort** — skip if the database doesn't exist or queries return empty.
+
+1. Run ingestion to ensure fresh data:
+   ```bash
+   python3 ~/Dev/dotfiles/claude/skills/session-analytics/scripts/ingest.py
+   ```
+
+2. Spawn **three parallel sub-agents** (all sonnet, read-only):
+
+   | Agent | Type | Prompt |
+   |-------|------|--------|
+   | Usage | `skill-analytics-usage` | "Analyze usage patterns for skill: {name}" |
+   | Tools | `skill-analytics-tools` | "Analyze tool patterns for skill: {name}. Declared tools: {tools list from frontmatter}" |
+   | Friction | `skill-analytics-friction` | "Analyze friction patterns for skill: {name}" |
+
+3. Collect their structured findings for use in Dimension 7.
+
+If ingestion fails (duckdb not installed, no JSONL logs), skip to Phase 2 and
+omit Dimension 7 from the report. Never block the audit on analytics.
 
 ### Phase 2: Audit Against Dimensions
 
@@ -263,6 +286,49 @@ Check: Is the description a trigger spec or just a summary? Does it list
 trigger phrases? Is it pushy enough? Are frontmatter fields appropriate?
 Would `/skill-creator` description optimization improve trigger rate?
 
+#### Dimension 7 — Usage Analytics (data-driven)
+
+Static analysis reveals what the definition *says*. Usage analytics reveals what
+*actually happens* when the skill runs. This dimension uses findings from the
+Phase 1.5 sub-agents. Skip entirely if analytics data was unavailable.
+
+**What to look for:**
+
+- **Zero or low invocations** — Skill exists but isn't used. Cross-reference
+  with Dimension 6 (activation). A well-described skill with zero invocations
+  is a stronger signal than a poorly-described one with zero invocations.
+
+- **Declared-vs-actual tool mismatch** — `allowed-tools` lists Read but the
+  skill never reads files in practice. Or the skill triggers Bash calls that
+  aren't in `allowed-tools`. Mismatches reveal stale declarations or missing
+  permissions.
+
+- **Undeclared agent spawns** — Skill spawns agent types it doesn't document.
+  Either the agent spawns are intentional (add them to docs) or unintended
+  (scope creep from the model).
+
+- **High error rate vs baseline** — If tools error >2x the baseline rate during
+  skill windows, the skill is fighting the environment. Common causes: wrong
+  tool for the job, missing permissions, stale file paths.
+
+- **Permission friction** — Repeated denials in skill windows mean the skill
+  triggers tools not in the user's allowlist. Either add to allowlist docs
+  or change the skill's approach.
+
+- **Hook interruptions** — Stop hooks blocking continuation during skill
+  execution reveal conflicts between the skill's behavior and the user's
+  guard rails.
+
+- **Declining usage** — Skill was active, now rarely used. Something changed —
+  a better alternative, workflow shift, or the problem it solved was fixed.
+  Worth flagging for the user to decide if the skill should be retired.
+
+- **Single-project concentration** — Skill used in only one project may be
+  too specialized for its current scope, or could be generalized.
+
+Check: Does actual tool usage match declarations? Is the error rate elevated?
+Are there permission or hook conflicts? Is usage healthy or declining?
+
 ### Phase 3: Score Each Finding (4-Step Calibration)
 
 For each improvement recommendation, apply the same 4-step scoring this skill
@@ -279,12 +345,14 @@ recommends for others. Walk the walk.
 | `OUTPUT` | Missing or unclear output format | 30 | 80 |
 | `ACTIVATION` | Poor description, missing triggers, wrong frontmatter fields | 35 | 90 |
 | `ENFORCEMENT` | Critical rule as instruction-only, missing companion hooks | 40 | 90 |
+| `ANALYTICS` | Usage data contradicts definition (tool mismatch, friction, decay) | 35 | 85 |
 
 #### Step 2: Evidence grounding
 
 | Evidence quality | Modifier |
 |------------------|----------|
 | Cites specific line in the definition + concrete failure scenario | +20 |
+| Backed by session analytics data (query results, counts, rates) | +15 |
 | Names a reference implementation that does it right | +15 |
 | References a CLAUDE.md rule or established pattern | +10 |
 | Generic observation without specific reference | -10 |
