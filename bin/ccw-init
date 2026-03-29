@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Create or resume a git worktree for Claude Code.
-# Handles: git validation, worktree creation, permission symlinks, settings
-# seeding (sandbox + merged permissions), and hook disablement.
-#
-# Used by: ccw() shell function, /worktree skill
-# Usage: ccw-init <slug>
-# Output: JSON with worktree details (path, branch, base_sha, base_branch, created)
-
 slug="${1:-}"
 if [[ -z "$slug" ]]; then
     echo "Usage: ccw-init <slug>" >&2
+    exit 1
+fi
+
+if [[ "$slug" =~ [^a-zA-Z0-9_-] ]]; then
+    echo "slug must contain only a-z, 0-9, hyphens, underscores" >&2
     exit 1
 fi
 
@@ -38,7 +35,7 @@ main_key="${repo_root//[\/.]/-}"
 wt_key="${wt_dir//[\/.]/-}"
 
 if [[ -d "${CLAUDE_PROJECTS_DIR}/${main_key}" ]] && [[ ! -L "${CLAUDE_PROJECTS_DIR}/${wt_key}" ]]; then
-    rm -rf "${CLAUDE_PROJECTS_DIR}/${wt_key}" 2>/dev/null
+    rm -rf "${CLAUDE_PROJECTS_DIR}/${wt_key:?}" 2>/dev/null
     ln -s "${CLAUDE_PROJECTS_DIR}/${main_key}" "${CLAUDE_PROJECTS_DIR}/${wt_key}"
     echo "Linked permissions: ${wt_key} → ${main_key}" >&2
 fi
@@ -56,15 +53,9 @@ if [[ ! -f "${claude_local}" ]]; then
         bash "${generator}" "${dotfiles_root}" > "${tmp}" && mv "${tmp}" "${claude_local}"
         echo "Generated worktree settings ($(jq '.permissions.allow | length' "${claude_local}") permissions)" >&2
     else
-        repo_local="${repo_root}/.claude/settings.local.json"
         readonly SANDBOX_CONFIG='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":["~/.cache/prek"]}}}'
-        if [[ -f "${repo_local}" ]]; then
-            jq --argjson overlay "$SANDBOX_CONFIG" '. * $overlay' "${repo_local}" > "${tmp}" && mv "${tmp}" "${claude_local}"
-            echo "Merged repo settings with sandbox config" >&2
-        else
-            echo "$SANDBOX_CONFIG" | jq . > "${tmp}" && mv "${tmp}" "${claude_local}"
-            echo "Created sandbox-only settings" >&2
-        fi
+        echo "$SANDBOX_CONFIG" | jq . > "${tmp}" && mv "${tmp}" "${claude_local}"
+        echo "Created sandbox-only settings" >&2
     fi
 fi
 
