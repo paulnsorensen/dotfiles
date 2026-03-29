@@ -43,11 +43,6 @@ plugins:
     scope: user
     load: true
 
-  solargraph@claude-code-lsps:
-    description: Ruby language server (.rb, .rake)
-    scope: user
-    load: true
-
   # --- Workflow plugins ---
   claude-md-management@claude-plugins-official:
     description: Audit, maintain, and improve CLAUDE.md files with session learnings

@@ -62,6 +62,44 @@ function matchFileWrite(cmd) {
   return null;
 }
 
+const PYTHON_AS_TOOL = [
+  {
+    pattern: /\|\s*python3?\s+.*\bjson[.\s]*(load|loads|dump|dumps)\b/,
+    msg: 'Blocked: piping to python3 for JSON processing. Use jq instead. Example: gh api ... | jq \'.field\' or cat file.json | jq \'.key\'. For gh: use gh --jq. For JSONL: use jq -c on each line.',
+  },
+  {
+    pattern: /python3?\s+(-c\s+['"$]|<<).*\bjson[.\s]*(load|loads)\b.*\bopen\s*\(/s,
+    msg: 'Blocked: python3 for reading+parsing JSON files. Use jq: jq \'.\' file.json. For field extraction: jq \'.field\' file.json. For JSONL: jq -c \'.\' file.jsonl.',
+  },
+  {
+    pattern: /python3?\s+(-c\s+['"$]|<<).*\bjson[.\s]*(dump|dumps)\b.*\bopen\s*\(.*['"]\s*w/s,
+    msg: 'Blocked: python3 for writing JSON files. Use the Write tool with JSON content, or jq for transforms: jq \'.key = "value"\' file.json > tmp && mv tmp file.json.',
+  },
+  {
+    pattern: /python3?\s+-m\s+json\.tool\b/,
+    msg: 'Blocked: python3 -m json.tool for pretty-printing. Use jq: echo \'{"a":1}\' | jq \'.\' or jq \'.\' file.json.',
+  },
+  {
+    pattern: /python3?\s+(-c\s+['"$]|<<).*\bimport\s+re\b.*\b(re\.sub|re\.match|re\.search|re\.findall)\b/s,
+    msg: 'Blocked: python3 for regex file manipulation. Use sd (chisel skill) for replacements: sd \'pattern\' \'replacement\' file. Or use the Edit tool for precise edits.',
+  },
+  {
+    pattern: /python3?\s+(-c\s+['"$]|<<).*\bimport\s+yaml\b/s,
+    msg: 'Blocked: python3 for YAML processing. Use yq instead. Example: yq \'.\' file.yml (validate), yq \'.key\' file.yml (extract), yq -i \'.key = "val"\' file.yml (edit in-place).',
+  },
+];
+
+function matchPythonAsTool(cmd) {
+  // Skip scripts in /tmp (legitimate scratch work) and skill/hook scripts
+  if (/python3?\s+\//.test(cmd) && !/python3?\s+-[cm]/.test(cmd)) return null;
+  if (/\$TMPDIR|\/private\/tmp\/claude|\/tmp\/claude/.test(cmd)) return null;
+
+  const norm = cmd.replace(/\n/g, ' ');
+  const m = PYTHON_AS_TOOL.find(r => r.pattern.test(norm));
+  if (!m) return null;
+  return m.msg;
+}
+
 function matchInlineTest(cmd) {
   if (/python3?\s+-c\s+['"].*\bimport\b.*(?:\bassert\b|print\s*\()/.test(cmd)) return true;
   if (/python3?\s+-c\s+\$'/.test(cmd)) return true;
@@ -91,7 +129,7 @@ function matchHeuristic(cmd) {
   return `Blocked: triggers Claude Code safety heuristic. ${m.msg}`;
 }
 
-const ALL_MATCHERS = [matchInstall, matchBruteLookup, matchLegacyTool, matchFileWrite, matchHeuristic];
+const ALL_MATCHERS = [matchInstall, matchBruteLookup, matchLegacyTool, matchFileWrite, matchPythonAsTool, matchHeuristic];
 
 module.exports = {
   event: 'preToolUse',

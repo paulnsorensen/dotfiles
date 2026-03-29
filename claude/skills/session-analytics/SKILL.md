@@ -165,7 +165,9 @@ Pre-filtered tool_results for permission-related failures.
 The full unflattened JSONL data. Use only when the materialized tables
 don't have what you need.
 
-## Example queries
+## Query Catalog
+
+Organized by investigation type. Use as starting points — modify for your question.
 
 ### Tool usage frequency
 ```sql
@@ -188,35 +190,6 @@ GROUP BY tu.tool_name
 ORDER BY errors DESC;
 ```
 
-### Permission denials by tool
-```sql
-SELECT
-    -- Extract tool name from "Permission to use X has been denied"
-    regexp_extract(content, 'Permission to use (\w+)', 1) AS tool,
-    count(*) AS denials
-FROM permission_denials
-WHERE content LIKE 'Permission to use%'
-GROUP BY tool
-ORDER BY denials DESC;
-```
-
-### How /research routes between sources
-```sql
--- What agents does /research spawn?
-SELECT agent_type, description, count(*) AS cnt
-FROM agent_spawns
-WHERE sessionId IN (
-    SELECT DISTINCT sessionId FROM skill_invocations
-    WHERE skill_name = 'research'
-)
-AND timestamp >= (
-    SELECT min(timestamp) FROM skill_invocations
-    WHERE skill_name = 'research'
-)
-GROUP BY agent_type, description
-ORDER BY cnt DESC;
-```
-
 ### MCP server usage breakdown
 ```sql
 SELECT
@@ -226,20 +199,6 @@ SELECT
 FROM mcp_calls
 GROUP BY server, method
 ORDER BY calls DESC;
-```
-
-### MCP errors
-```sql
-SELECT
-    tu.tool_name,
-    substr(tr.content, 1, 120) AS error,
-    count(*) AS cnt
-FROM mcp_calls tu
-JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
-WHERE tr.is_error = 'true'
-GROUP BY tu.tool_name, error
-ORDER BY cnt DESC
-LIMIT 20;
 ```
 
 ### Skill usage over time
@@ -267,16 +226,6 @@ ORDER BY tool_calls DESC
 LIMIT 10;
 ```
 
-### Tool calls by hour (UTC)
-```sql
-SELECT
-    extract(hour FROM timestamp::TIMESTAMP) AS hour,
-    count(*) AS calls
-FROM tool_uses
-GROUP BY hour
-ORDER BY hour;
-```
-
 ### Most common Bash commands
 ```sql
 SELECT
@@ -289,25 +238,177 @@ ORDER BY uses DESC
 LIMIT 20;
 ```
 
-### Files read most often
-```sql
-SELECT file_path, count(*) AS reads
-FROM tool_uses
-WHERE tool_name = 'Read' AND file_path IS NOT NULL
-GROUP BY file_path
-ORDER BY reads DESC
-LIMIT 15;
-```
-
-### Stop hook errors
+### Permission friction audit
+What Bash commands get denied most, categorized by root cause:
 ```sql
 SELECT
-    unnest(json_extract(hookErrors, '$[*]'))::VARCHAR AS error,
+    CASE
+        WHEN bash_cmd LIKE '%python3%' THEN 'python3 inline'
+        WHEN bash_cmd LIKE '%cat %' AND bash_cmd LIKE '%>%' THEN 'cat redirect (use Write)'
+        WHEN bash_cmd LIKE 'find %' OR bash_cmd LIKE '% find %' THEN 'find (use Glob)'
+        WHEN bash_cmd LIKE 'grep %' OR bash_cmd LIKE 'egrep %' THEN 'grep (use Grep)'
+        WHEN bash_cmd LIKE 'sed %' OR bash_cmd LIKE '%sed -i%' THEN 'sed (use Edit)'
+        WHEN bash_cmd LIKE 'cd %' AND bash_cmd LIKE '%git%' THEN 'cd+git (use wt-git)'
+        WHEN bash_cmd LIKE 'cd %' AND bash_cmd LIKE '%gh %' THEN 'cd+gh (use wt-git)'
+        WHEN bash_cmd LIKE '%cargo clippy%' THEN 'cargo clippy'
+        WHEN bash_cmd LIKE '%cargo fmt%' THEN 'cargo fmt'
+        WHEN bash_cmd LIKE '%cargo nextest%' THEN 'cargo nextest'
+        WHEN bash_cmd LIKE '%just %' THEN 'just'
+        WHEN bash_cmd LIKE '%tokei%' THEN 'tokei'
+        WHEN bash_cmd LIKE 'mkdir%' THEN 'mkdir'
+        WHEN bash_cmd LIKE '%git add%&&%git commit%' THEN 'git add+commit (use /commit)'
+        WHEN bash_cmd LIKE '%git commit%$(%' THEN 'git commit heredoc (use /commit)'
+        ELSE 'other: ' || substr(bash_cmd, 1, 50)
+    END AS category,
+    count(*) AS denials
+FROM tool_uses tu
+JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+WHERE tu.tool_name = 'Bash'
+AND tr.is_error = 'true'
+AND tr.content LIKE 'Permission to use Bash%'
+GROUP BY category
+ORDER BY denials DESC;
+```
+
+### Bash allowlist gap finder
+Commands that succeed but require manual approval (not in allowlist, not blocked by hook):
+```sql
+SELECT
+    split_part(bash_cmd, ' ', 1) AS cmd_prefix,
+    count(*) AS uses,
+    sum(CASE WHEN tr.is_error = 'true' AND tr.content LIKE 'Permission%' THEN 1 ELSE 0 END) AS denied,
+    round(sum(CASE WHEN tr.is_error = 'true' AND tr.content LIKE 'Permission%' THEN 1 ELSE 0 END) * 100.0 / count(*), 1) AS deny_pct
+FROM tool_uses tu
+JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+WHERE tu.tool_name = 'Bash' AND tu.bash_cmd IS NOT NULL
+GROUP BY cmd_prefix
+HAVING count(*) >= 5
+ORDER BY denied DESC
+LIMIT 20;
+```
+
+### Python3 usage by purpose
+Categorizes inline python3 calls to find skill opportunities:
+```sql
+SELECT
+    CASE
+        WHEN bash_cmd LIKE '%json.load%' OR bash_cmd LIKE '%json.loads%' THEN 'JSON parse/transform'
+        WHEN bash_cmd LIKE '%json.dump%' OR bash_cmd LIKE '%json.dumps%' THEN 'JSON write'
+        WHEN bash_cmd LIKE '%json.tool%' THEN 'JSON pretty-print'
+        WHEN bash_cmd LIKE '%re.sub%' OR bash_cmd LIKE '%re.match%' OR bash_cmd LIKE '%.replace(%' THEN 'regex/string replace'
+        WHEN bash_cmd LIKE '%open(%' AND bash_cmd LIKE '%write%' THEN 'file write/update'
+        WHEN bash_cmd LIKE '%open(%' AND bash_cmd LIKE '%read%' THEN 'file read/filter'
+        WHEN bash_cmd LIKE '%base64%' THEN 'base64 encode/decode'
+        WHEN bash_cmd LIKE '%yaml%' THEN 'YAML processing'
+        WHEN bash_cmd LIKE '%subprocess%' THEN 'subprocess orchestration'
+        WHEN bash_cmd LIKE '%os.path%' OR bash_cmd LIKE '%import os%' THEN 'filesystem ops'
+        WHEN bash_cmd LIKE '%import re%' THEN 'regex processing'
+        ELSE 'other'
+    END AS purpose,
+    count(*) AS cnt,
+    round(count(*) * 100.0 / sum(count(*)) OVER (), 1) AS pct
+FROM tool_uses tu
+JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+WHERE tu.tool_name = 'Bash'
+AND tu.bash_cmd LIKE '%python3%'
+AND tr.is_error = 'false'
+GROUP BY purpose
+ORDER BY cnt DESC;
+```
+
+### MCP routing for a specific skill
+Shows which MCPs were called within N minutes of a skill invocation:
+```sql
+-- Replace 'research' with the skill name and adjust window
+WITH skill_windows AS (
+    SELECT sessionId, timestamp,
+           timestamp::TIMESTAMP AS t_start,
+           timestamp::TIMESTAMP + INTERVAL '10' MINUTE AS t_end
+    FROM skill_invocations
+    WHERE skill_name = 'research'
+)
+SELECT
+    split_part(mc.tool_name, '__', 2) AS server,
+    split_part(mc.tool_name, '__', 3) AS method,
+    count(*) AS calls
+FROM mcp_calls mc
+JOIN skill_windows sw
+    ON mc.sessionId = sw.sessionId
+    AND mc.timestamp::TIMESTAMP BETWEEN sw.t_start AND sw.t_end
+GROUP BY server, method
+ORDER BY calls DESC;
+```
+
+### Agent spawn patterns by skill
+Shows which agent types each skill spawns:
+```sql
+SELECT
+    si.skill_name,
+    asp.agent_type,
+    substr(asp.description, 1, 60) AS agent_desc,
+    count(*) AS spawns
+FROM skill_invocations si
+JOIN agent_spawns asp
+    ON si.sessionId = asp.sessionId
+    AND asp.timestamp::TIMESTAMP BETWEEN si.timestamp::TIMESTAMP
+        AND si.timestamp::TIMESTAMP + INTERVAL '10' MINUTE
+GROUP BY si.skill_name, asp.agent_type, agent_desc
+ORDER BY si.skill_name, spawns DESC;
+```
+
+### Hook impact analysis
+Stop hooks that blocked continuation vs allowed:
+```sql
+SELECT
+    level,
+    preventedContinuation,
+    substr(stopReason, 1, 100) AS reason,
     count(*) AS cnt
 FROM stop_hooks
-WHERE json_array_length(hookErrors) > 0
-GROUP BY error
-ORDER BY cnt DESC;
+GROUP BY level, preventedContinuation, reason
+ORDER BY cnt DESC
+LIMIT 20;
+```
+
+### Compound command friction
+Bash commands with pipes or && that trigger permission prompts:
+```sql
+SELECT
+    substr(bash_cmd, 1, 150) AS cmd,
+    count(*) AS denials
+FROM tool_uses tu
+JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+WHERE tu.tool_name = 'Bash'
+AND tr.is_error = 'true'
+AND tr.content LIKE 'Permission to use Bash%'
+AND (bash_cmd LIKE '%|%' OR bash_cmd LIKE '%&&%')
+GROUP BY cmd
+ORDER BY denials DESC
+LIMIT 20;
+```
+
+### Tool usage by project
+Compare tool patterns across projects:
+```sql
+SELECT
+    regexp_extract(cwd, '.*/([^/]+)$', 1) AS project,
+    tool_name,
+    count(*) AS uses
+FROM tool_uses
+GROUP BY project, tool_name
+ORDER BY project, uses DESC;
+```
+
+### Daily activity heatmap
+```sql
+SELECT
+    timestamp::DATE AS day,
+    extract(hour FROM timestamp::TIMESTAMP) AS hour,
+    count(*) AS calls
+FROM tool_uses
+WHERE timestamp::DATE >= CURRENT_DATE - INTERVAL '14' DAY
+GROUP BY day, hour
+ORDER BY day DESC, hour;
 ```
 
 ## Query patterns
@@ -322,8 +423,10 @@ When answering user questions:
    query if the user might want to modify it.
 5. For follow-up questions, skip ingestion — the database persists
 
-For complex analysis, chain multiple queries. The tables are indexed on
-common join columns (tool_name, sessionId, is_error).
+For complex analysis, chain multiple queries. Aim to answer within 5-8 queries.
+If the question needs more, present intermediate findings and ask if deeper
+analysis is needed. The tables are indexed on common join columns (tool_name,
+sessionId, is_error).
 
 When filtering by project, use `LIKE '%keyword%'` on the `cwd` column since
 full paths are verbose (`/Users/paul/conductor/workspaces/tern-lisbon/...`).

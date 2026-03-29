@@ -353,9 +353,9 @@ Run in this order. Each agent sees the full diff (seed + atoms + wiring).
 - `spec-verify` (opus, forked) — contract verification against spec
 
 **Step 2** — After press + spec-verify return:
-- `fromage-age` (opus) — architecture review on full diff
+- Invoke the `age` skill (focused mode) — spawns 6 parallel review sub-agents on the full diff
 
-**Step 3** — After age returns:
+**Step 3** — After age skill completes:
 - `/de-slop` — syntactic AI pattern cleanup
 
 ### 6c. Synthesize and Fix
