@@ -63,61 +63,29 @@ ccw() {
 
     local slug="$1"
     shift
-    local wt_dir=".worktrees/${slug}"
-    local branch="claude/${slug}"
 
-    if ! git rev-parse --is-inside-work-tree &>/dev/null; then
-        echo "Not a git repository"
+    # Find ccw-init relative to repo or DOTFILES_DIR
+    local ccw_init="${DOTFILES_DIR}/bin/ccw-init"
+    if [[ ! -f "${ccw_init}" ]]; then
+        # Fallback: check if it's in the current repo
+        local repo_root
+        repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 1
+        ccw_init="${repo_root}/bin/ccw-init"
+    fi
+
+    if [[ ! -f "${ccw_init}" ]]; then
+        echo "ccw-init not found" >&2
         return 1
     fi
 
-    local repo_root
-    repo_root="$(git rev-parse --show-toplevel)"
+    local result
+    result="$("${ccw_init}" "${slug}")" || return 1
 
-    if [[ -d "${repo_root}/${wt_dir}" ]]; then
-        echo "Resuming worktree: ${wt_dir}"
-    else
-        echo "Creating worktree: ${wt_dir} (branch: ${branch})"
-        git -C "${repo_root}" worktree add "${wt_dir}" -b "${branch}" || return 1
-    fi
+    local wt_path
+    wt_path="$(echo "$result" | jq -er '.path')" || { echo "ccw: failed to parse worktree path" >&2; return 1; }
+    [[ -d "$wt_path" ]] || { echo "ccw: worktree path not found: $wt_path" >&2; return 1; }
 
-    # Share Claude project permissions with the worktree.
-    # Claude keys perms by absolute path (/ and . replaced with -).
-    # Symlink the worktree's project dir to the main repo's so perms carry over.
-    local claude_projects="${HOME}/.claude/projects"
-    local main_key="${repo_root//[\/.]/-}"
-    local wt_key="${repo_root}/${wt_dir}"
-    wt_key="${wt_key//[\/.]/-}"
-
-    if [[ -d "${claude_projects}/${main_key}" ]] && [[ ! -L "${claude_projects}/${wt_key}" ]]; then
-        rm -rf "${claude_projects}/${wt_key}" 2>/dev/null
-        ln -s "${claude_projects}/${main_key}" "${claude_projects}/${wt_key}"
-        echo "Linked permissions: ${wt_key} → ${main_key}"
-    fi
-
-    # Disable pre-commit hooks in worktrees. Prek writes to ~/.cache/prek/
-    # which is outside the Seatbelt sandbox write paths, causing "Operation
-    # not permitted" on every commit. Worktrees are ephemeral branches where
-    # prek's claude-sync and shellcheck hooks aren't meaningful anyway.
-    git -C "${repo_root}/${wt_dir}" config core.hooksPath /dev/null 2>/dev/null
-
-    local claude_local="${repo_root}/${wt_dir}/.claude/settings.local.json"
-    if [[ ! -f "${claude_local}" ]]; then
-        mkdir -p "${repo_root}/${wt_dir}/.claude"
-        local generator="${DOTFILES_DIR}/claude/worktree-settings.sh"
-        local tmp_settings="${claude_local}.tmp"
-        if [[ -f "${generator}" ]]; then
-            bash "${generator}" "${DOTFILES_DIR}" > "${tmp_settings}" \
-                && mv "${tmp_settings}" "${claude_local}" \
-                && echo "Generated worktree settings (sandbox + $(jq '.permissions.allow | length' "${claude_local}") permissions)"
-        else
-            echo '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}' > "${tmp_settings}" \
-                && mv "${tmp_settings}" "${claude_local}" \
-                && echo "Enabled sandboxing for worktree (generator not found)"
-        fi
-    fi
-
-    cd "${repo_root}/${wt_dir}" && claude "$@"
+    cd "${wt_path}" && claude "$@"
 }
 
 # Clean worktrees — single-repo (current dir) or full sweep (~/Dev)
