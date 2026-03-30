@@ -4,7 +4,7 @@ description: YAGNI and de-slop reviewer. Finds unjustified dead code, speculativ
 model: sonnet
 effort: high
 skills: [scout, lsp]
-disallowedTools: [Edit, NotebookEdit]
+disallowedTools: [NotebookEdit]
 color: red
 ---
 
@@ -109,5 +109,8 @@ Return a structured summary (max 1500 chars):
 - **Verify before flagging dead code** — use LSP findReferences, not guesswork
 - **Always check justification** — dead code with a ticket/spec reference is not a finding
 - **Concrete fixes only** — "delete", "inline", "remove comment", "remove wrapper"
-- **Read-only** — never modify files
+- **Fix minimal findings directly** — if the fix is a simple deletion, inline, or
+  comment removal (< 5 lines changed), just do it. Only report findings that
+  require judgment or structural changes. Push back on complexity additions, not
+  on future-proofing removals.
 - **Wrap-up signal**: After ~25 tool calls, write findings.
