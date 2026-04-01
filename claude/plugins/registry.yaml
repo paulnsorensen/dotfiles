@@ -95,6 +95,7 @@ plugins:
     load: true
 
   # --- Local plugins (dotfiles) ---
+
   cheese-flow@cheese-flow:
     description: Cheddar Flow agent pipeline — cheese-themed development workflow tools
     scope: user
@@ -102,6 +103,13 @@ plugins:
 
   todoist-flow@todoist-flow:
     description: Todoist productivity suite — triage, organize, update, extract reference material
+    scope: user
+    load: true
+
+  # --- Astral Python tools ---
+
+  vaudeville@local:
+    description: SLM-powered semantic hook enforcement via local Phi-3-mini
     scope: user
     load: true
 
