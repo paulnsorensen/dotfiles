@@ -54,11 +54,6 @@ plugins:
     scope: user
     load: true
 
-  ralph-loop@claude-plugins-official:
-    description: Iterative self-referential loops for convergent task completion
-    scope: user
-    load: true
-
   frontend-design@claude-plugins-official:
     description: Frontend design skill for UI/UX implementation
     scope: user
@@ -76,6 +71,12 @@ plugins:
 
   claude-hud@claude-hud:
     description: Real-time statusline HUD — context usage, rate limits, active tools, agents, tasks
+    scope: user
+    load: true
+
+  # --- Local plugins ---
+  vaudeville@local:
+    description: SLM-powered semantic hook enforcement via local Phi-3-mini
     scope: user
     load: true
 

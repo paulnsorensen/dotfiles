@@ -76,7 +76,8 @@
       "mcp__tavily__*",
       "mcp__serper__*",
       "WebSearch",
-      "WebFetch"
+      "WebFetch",
+      "Skill"
     ]
   },
   "hooks": {
@@ -226,6 +227,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/auto-format.js\"",
+            "timeout": 10
+          }
+        ]
       }
     ]
   },
@@ -242,12 +253,12 @@
     "gopls@claude-code-lsps": true,
     "claude-md-management@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
-    "ralph-loop@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "github@claude-plugins-official": true,
     "claude-hud@claude-hud": true,
-    "astral@astral-sh": true
+    "astral@astral-sh": true,
+    "vaudeville@local": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {

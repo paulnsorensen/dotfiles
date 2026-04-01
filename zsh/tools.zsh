@@ -32,3 +32,6 @@ if [[ -d "$HOME/.bun" ]]; then
     export PATH="$BUN_INSTALL/bin:$PATH"
     [[ -s "$BUN_INSTALL/_bun" ]] && source "$BUN_INSTALL/_bun"
 fi
+
+# ─── vaudeville (SLM hook enforcement for Claude Code) ───────────────────
+export VAUDEVILLE_DEBUG=1
