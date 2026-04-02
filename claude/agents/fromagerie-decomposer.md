@@ -174,7 +174,7 @@ W1 ──┬── W2
 | **Total** | | | **X tokens** |
 
 ### Notes
-- <Any decision with confidence < 70>
+- <Any decision with confidence < 50>
 - <Borderline seed vs atom calls>
 ```
 
@@ -186,7 +186,7 @@ W1 ──┬── W2
 - Shared test utilities belong in seed.
 - If atom count > 10, flag it and suggest merges.
 - Never assign a file you haven't verified exists via Glob.
-- Confidence < 70: note it, don't silently guess.
+- Confidence < 50: note it, don't silently guess.
 
 ## What You Don't Do
 

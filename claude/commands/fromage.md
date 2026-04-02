@@ -422,7 +422,7 @@ This is distinct from `/simplifier` (ricotta-reducer), which runs during Phase 8
 
 ## Phase 7 — Press (Sonnet)
 
-Launch `fromage-press` (sonnet) for adversarial testing — chaos inputs, boundary assault, dependency failures, then happy path. All findings scored 0-100, >= 70 highlighted.
+Launch `fromage-press` (sonnet) for adversarial testing — chaos inputs, boundary assault, dependency failures, then happy path. All findings scored 0-100, >= 50 highlighted.
 
 **Optional**: For tasks with external inputs, also launch `fromage-pasteurize` (sonnet) in parallel for security scanning.
 
@@ -431,7 +431,7 @@ Launch `fromage-press` (sonnet) for adversarial testing — chaos inputs, bounda
 1. **Drain**: `whey-drainer` (haiku) runs all tests, classifies failures as test bugs vs code bugs
 2. **Wreck** (if failures): `roquefort-wrecker` (haiku) investigates — fixes test bugs, scores code bugs
 3. **Re-drain**: `whey-drainer` verifies fixes
-4. **Iterate** up to 3 rounds. After 3: code bugs >= 70 get fixed or escalated, test bugs escalated if stuck, ambiguous (50-74) presented to user.
+4. **Iterate** up to 3 rounds. After 3: code bugs >= 50 get fixed or escalated, test bugs escalated if stuck, ambiguous (30-49) presented to user.
 
 **Skip**: Cut phase had sufficient coverage, no test framework, or trivial change.
 

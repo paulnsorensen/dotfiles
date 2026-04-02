@@ -34,7 +34,7 @@ git cherry-pick <sha1> <sha2> ...
 If cherry-pick conflicts:
 - mergiraf handles structural conflicts automatically (globally configured)
 - For remaining conflicts: resolve using the simpler/smaller change
-- If confidence < 70 on a resolution: **STOP** and report the conflict to orchestrator
+- If confidence < 50 on a resolution: **STOP** and report the conflict to orchestrator
 
 ### 3. Dedup Imports
 

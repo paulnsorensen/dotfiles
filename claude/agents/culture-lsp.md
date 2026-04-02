@@ -177,5 +177,5 @@ Return a structured summary (max 2000 chars) to the orchestrator:
 - Be specific about file paths and line numbers
 - Focus on the spec's scope — don't map the entire repo
 - If LSP and ast-grep both fail for a file, skip it and note the failure
-- Confidence < 70 on any structural finding: note it explicitly
+- Confidence < 50 on any structural finding: note it explicitly
 - After ~40 tool calls, skip remaining files and synthesize from available data. Note incomplete coverage.

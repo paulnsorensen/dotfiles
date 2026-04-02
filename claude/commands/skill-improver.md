@@ -13,4 +13,4 @@ If no argument is provided, ask what to audit. Common targets:
 - `claude/agents/<name>.md` — agent definitions
 - `claude/skills/<name>/SKILL.md` — skill definitions
 
-All recommendations use 4-step calibrated confidence scoring (classify, ground, context modifiers, borderline re-assessment). Only surface recommendations scoring >= 70.
+All recommendations use 4-step calibrated confidence scoring (classify, ground, context modifiers, borderline re-assessment). Only surface recommendations scoring >= 50.

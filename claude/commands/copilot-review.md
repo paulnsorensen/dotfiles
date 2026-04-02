@@ -46,7 +46,7 @@ At command start, call `TaskCreate` for all 4 phases. Mark `in_progress` at phas
 Invoke the `age` skill in **focused mode** with:
 - PR number, title, and author
 - The full diff from Phase 1
-- Instruction to surface findings >= 70
+- Instruction to surface findings >= 50
 
 The skill spawns 6 parallel review sub-agents, merges findings, and returns the Age Report.
 

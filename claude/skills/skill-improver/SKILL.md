@@ -236,7 +236,7 @@ that work:
 - **Summary first**: one-sentence assessment, then details
 - **Tables for findings**: score, category, location, issue, fix — scannable in
   under 2 minutes
-- **Below-threshold count**: "N findings scored < 70 (not shown)" — tells the
+- **Below-threshold count**: "N findings scored < 50 (not shown)" — tells the
   reader you looked but filtered
 - **Temp file for details**: full report to `$TMPDIR/`, summary to orchestrator
 

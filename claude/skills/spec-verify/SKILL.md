@@ -198,7 +198,7 @@ Each verification item uses 0-100 confidence scoring:
 second LSP pass. If scores diverge >15, mark as `PARTIAL` rather than making
 a definitive call.
 
-**Surfacing threshold**: >= 70 for PASS. < 70 = PARTIAL or FAIL depending on
+**Surfacing threshold**: >= 50 for PASS. < 50 = PARTIAL or FAIL depending on
 evidence.
 
 ## Output
@@ -242,14 +242,14 @@ context window. Lead with the summary, then the details.
 2. <second gap>
 
 ### Below Threshold
-N items scored < 70 (not shown above — details in the full report below)
+N items scored < 50 (not shown above — details in the full report below)
 ```
 
 ### Verdict Logic
 
-- **PASS** — All quality gates pass, all functional requirements >= 70, no
+- **PASS** — All quality gates pass, all functional requirements >= 50, no
   uncovered red/green paths, >= 80% of acceptance criteria at PASS
-- **PARTIAL** — Quality gates pass, but some requirements < 70 or acceptance
+- **PARTIAL** — Quality gates pass, but some requirements < 50 or acceptance
   criteria gaps exist
 - **FAIL** — Any quality gate fails, OR any functional requirement scores 0,
   OR > 50% of acceptance criteria are FAIL/UNTESTED
