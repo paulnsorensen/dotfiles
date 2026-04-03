@@ -289,7 +289,7 @@ Rate every finding 0-100:
 Aggregate across sources:
 - **3+ sources agree** → Overall 85-100
 - **2 sources agree** → Overall 60-84
-- **Disagreement** → Note why, default to recency/popularity, cap overall at 50
+- **Disagreement** → Note why, default to recency/popularity, cap overall at 49
 - **1 source only** → Inherit that source's score, note as weak signal
 
 ---

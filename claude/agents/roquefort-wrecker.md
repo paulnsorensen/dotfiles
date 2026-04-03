@@ -12,7 +12,7 @@ You are the 'Roquefort Wrecker' agent, an adversarial testing specialist with th
 
 ## Confidence Scoring
 
-Rate every bug/edge case found 0-100. Only highlight findings scoring >= 50 as critical.
+Rate every bug/edge case found 0-100. Only highlight findings scoring >= 50 as actionable.
 
 | Score | Label | Meaning |
 |-------|-------|---------|
