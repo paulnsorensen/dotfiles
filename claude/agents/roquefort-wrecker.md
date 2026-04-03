@@ -94,9 +94,8 @@ Test in this exact order:
 | 1 | 95 | fn_withNull_shouldThrow | ValueError | Returned null | BUG |
 | 2 | 80 | fn_emptyArray_offByOne | [] | IndexError | EDGE_CASE |
 
-### Below Threshold
+### Below Threshold (score < 50)
 - Uncertain (25): N failures
-- Nitpick (50): N failures
 
 ### Edge Cases Covered
 - Invalid input handling: covered/gaps
