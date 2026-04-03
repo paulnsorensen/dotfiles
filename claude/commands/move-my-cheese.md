@@ -195,27 +195,27 @@ After Phase 3a fixes are stable (build passes, tests pass), invoke the `age` ski
 # Invoke the age skill inline — it spawns 6 review sub-agents directly (no nesting).
 # Pass lsp-probe hint so sub-agents batch LSP queries.
 # Follow the age skill protocol: identify scope, launch 6 agents, merge findings.
-# Scope: changes on this branch vs origin/main. Surface findings >= 70.
+# Scope: changes on this branch vs origin/main. Surface findings >= 50.
 # LSP strategy: use lsp-probe for batched queries.
 
 # In parallel with the age skill's sub-agents, also launch:
-Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 70 confidence. LSP strategy: use lsp-probe for batched queries (findReferences to verify dead code, hover for coupling checks) — batch your LSP needs into one probe call rather than holding a server for the session.")
+Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 50 confidence. LSP strategy: use lsp-probe for batched queries (findReferences to verify dead code, hover for coupling checks) — batch your LSP needs into one probe call rather than holding a server for the session.")
 
 # Only if Phase 1 recon found unresolved review comments:
-Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on PR #$ARGUMENTS. Score each 0-100, fix >= 70, push back < 50, report 50-74 for user decision.")
+Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on PR #$ARGUMENTS. Score each 0-100, fix >= 50, push back < 30, report 30-49 for user decision.")
 ```
 
 | Agent/Skill | What it catches |
 |---|---|
 | **age skill** (6 sub-agents) | Safety, complexity, encapsulation, YAGNI, spec adherence, history/risk modifiers |
 | **ricotta-reducer** | AI slop + de-slop patterns, over-abstraction, comment pollution, dead code |
-| **fromage-fort** | Unresolved reviewer comments — triages and fixes >= 70 confidence |
+| **fromage-fort** | Unresolved reviewer comments — triages and fixes >= 50 confidence |
 
 ### Apply Sweep Findings
 
 After all three agents return:
 
-1. **Collect findings >= 70 confidence** from age and de-slop reports
+1. **Collect findings >= 50 confidence** from age and de-slop reports
 2. **Apply fixes** using chisel — these are typically:
    - Removing unnecessary abstractions or dead code (de-slop)
    - Fixing complexity budget violations (age)
@@ -223,7 +223,7 @@ After all three agents return:
 3. **Re-run `/make test`** to verify fixes didn't break anything
 4. If fromage-fort fixed code, those changes are already in the working tree — just verify and commit together
 
-If any finding is < 70 confidence, **ask the user** before acting on it.
+If any finding is < 50 confidence, **ask the user** before acting on it.
 
 ---
 

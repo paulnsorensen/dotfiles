@@ -363,7 +363,7 @@ After all agents complete:
 - If a PR branch is checked out in another worktree, the agent handles this (move-my-cheese Phase 2 worktree check)
 - If >5 PRs are requested, warn about resource usage and confirm before dispatching
 - Never force-push from any worktree agent without asking
-- If an agent reports confidence < 70 on any fix, surface it in the convoy report for user decision
+- If an agent reports confidence < 50 on any fix, surface it in the convoy report for user decision
 - If combination analysis can't determine overlap (e.g., `gh-pr-batch` fails), fall back to dispatching all PRs independently
 - If consolidation sub-agent fails or times out, fall back to dispatching all PRs independently (no consolidation)
 - If cherry-pick during consolidated rescue fails with conflicts, the worktree agent resolves or reports — never silently drop absorbed PR commits

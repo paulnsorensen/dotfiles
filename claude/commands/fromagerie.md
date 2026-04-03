@@ -368,7 +368,7 @@ Collect all findings. Precedence for conflicts on same code:
 Deduplicate by file path. Build the synthesis in this format before passing to the fix agent:
 
 ```
-## Findings for {slug} — {N} total, {M} actionable (>= 70)
+## Findings for {slug} — {N} total, {M} actionable (>= 50)
 
 ### By File
 #### src/domains/orders/order.ts
@@ -395,7 +395,7 @@ Fix the following findings from the review pipeline for: {slug}
 ## Precedence
 If findings conflict: spec-verify > age > de-slop.
 
-Fix all findings scored >= 70. Report any you disagree with (score + reasoning).
+Fix all findings scored >= 50. Report any you disagree with (score + reasoning).
 """
 )
 ```

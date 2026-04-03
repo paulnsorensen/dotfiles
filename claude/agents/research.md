@@ -170,7 +170,7 @@ Return:
 - Direct answer (1-2 sentences)
 - Code example if available
 - Version/caveats
-- Confidence (0-100, where 70+ = actionable)
+- Confidence (0-100, where 50+ = actionable)
 
 Skip if the answer is stable, well-known API (Array.map, os.path).
 ```
@@ -199,7 +199,7 @@ Return:
 - Direct answer from answerBox/knowledgeGraph if available
 - Top 2-3 organic results with snippets
 - Related questions from People Also Ask (if relevant)
-- Confidence (0-100, where 70+ = actionable)
+- Confidence (0-100, where 50+ = actionable)
 ```
 
 #### Tavily Fetcher
@@ -230,7 +230,7 @@ Return:
 - Direct answer (1-2 sentences)
 - Key supporting detail or code pattern
 - Source URL
-- Confidence (0-100, where 70+ = actionable)
+- Confidence (0-100, where 50+ = actionable)
 ```
 
 #### Codebase Fetcher
@@ -248,7 +248,7 @@ Use Grep, Glob, and Read to discover:
 Return:
 - Findings (1-2 sentences)
 - Code references (file:line)
-- Confidence (0-100, where 70+ = actionable)
+- Confidence (0-100, where 50+ = actionable)
 ```
 
 #### Octocode Fetcher
@@ -267,7 +267,7 @@ Use octocode MCP tools to find:
 Return:
 - Key patterns (bullet list)
 - 1-2 code snippets with context
-- Confidence (0-100, where 70+ = actionable)
+- Confidence (0-100, where 50+ = actionable)
 ```
 
 ### 4. Wait for Parallel Results
@@ -280,16 +280,16 @@ Rate every finding 0-100:
 
 | Score | Label | Meaning |
 |-------|-------|---------|
-| 0-25 | Uncertain | Weak signal. Single source, unverified, or stale. |
-| 26-50 | Plausible | Some evidence but incomplete. Needs corroboration. |
-| 51-69 | Likely | Multiple signals agree but caveats exist. |
-| 70-89 | Confident | Strong evidence from 2+ sources. Actionable. |
+| 0-24 | Uncertain | Weak signal. Single source, unverified, or stale. |
+| 25-49 | Plausible | Some evidence but incomplete. Needs corroboration. |
+| 50-74 | Confident | Strong evidence from 2+ sources. Actionable. |
+| 75-89 | High | Multiple sources agree with strong corroboration. |
 | 90-100 | Verified | 3+ sources agree with no contradictions. |
 
 Aggregate across sources:
 - **3+ sources agree** → Overall 85-100
 - **2 sources agree** → Overall 60-84
-- **Disagreement** → Note why, default to recency/popularity, cap overall at 50
+- **Disagreement** → Note why, default to recency/popularity, cap overall at 49
 - **1 source only** → Inherit that source's score, note as weak signal
 
 ---
