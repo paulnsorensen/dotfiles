@@ -175,11 +175,11 @@ Four scripts and a shared utility module in `<skill-dir>/scripts/` cover the com
 |--------|---------|-------------|
 | `conflict-summary.py` | Structured summary with line numbers + context | **Always run first** — replaces grep for `<<<<<<<` |
 | `batch-resolve.py` | Run `mergiraf merge` on all conflicted files | Supported langs with structural conflicts |
-| `conflict-pick.py` | Choose ours/theirs per hunk | Shell, SQL, Markdown, .gitignore — unsupported types |
+| `conflict-pick.py` | Choose ours/theirs per hunk | Shell, SQL, `.gitignore`, or formats not handled by mergiraf (e.g. Markdown without a `.gitattributes` entry) |
 | `lockfile-resolve.py` | Take one side + regenerate lockfile | `Cargo.lock`, `package-lock.json`, `yarn.lock`, etc. |
 | `git_utils.py` | Shared utilities — conflict detection, mergiraf support check | Internal — imported by other scripts |
 
-**conflict-pick.py** — for unsupported file types (shell scripts, `.gitignore`, Markdown):
+**conflict-pick.py** — for file types not handled by mergiraf in this repo (shell scripts, `.gitignore`, or Markdown when `.md` isn't registered in `.gitattributes`):
 ```bash
 # Take ours for all hunks
 python3 <skill-dir>/scripts/conflict-pick.py hooks/session-start.sh --ours
