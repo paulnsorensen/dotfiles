@@ -203,85 +203,10 @@ Skipped:
 - Group by file when there are 10+ issues — makes it scannable
 - Always include the total count in the header even if truncated
 
-## Subcommand: test
+## Subcommands (test, lint, fmt, clean)
 
-Detect the test framework using the same detection order (marker files → CLAUDE.md).
-Common test commands:
-
-| Tool | Test Command |
-|---|---|
-| just | `just test 2>&1` |
-| cargo | `cargo test 2>&1` |
-| npm | `npm test 2>&1` |
-| go | `go test ./... 2>&1` |
-| uv/python | `uv run pytest --tb=short -q 2>&1` |
-| make | `make test 2>&1` |
-| CLAUDE.md | Whatever test command is documented |
-
-Parse output into pass/fail/skip counts plus failure details:
-
-```
-## Test Results
-- **Passed**: <N> | **Failed**: <N> | **Skipped**: <N>
-- **Command**: `<command>`
-
-### Failures
-<file>:<line> — <test name>: <assertion detail>
-```
-
-Cap failure detail at 10 lines per test, 5 detailed + rest summarized if >10 failures.
-
-## Subcommand: lint
-
-Run the project's linter (stricter than check — includes style, complexity, correctness warnings):
-
-| Tool | Lint Command |
-|---|---|
-| just | `just lint 2>&1` (if recipe exists, else fall back to tool-specific) |
-| cargo/clippy | `cargo clippy --message-format=short 2>&1` |
-| npm/eslint | `npx eslint . 2>&1` |
-| go/golangci-lint | `golangci-lint run 2>&1` |
-| uv/ruff | `uv run ruff check . 2>&1` |
-| make | `make lint 2>&1` (if target exists) |
-
-Parse output using the same error/warning format as Step 3.
-
-## Subcommand: fmt
-
-Detect and run the formatter in check mode (no writes):
-
-| Tool | Fmt Check Command |
-|---|---|
-| cargo/rustfmt | `cargo fmt --check 2>&1` |
-| prettier | `npx prettier --check . 2>&1` |
-| ruff | `uv run ruff format --check . 2>&1` |
-| black | `uv run black --check . 2>&1` |
-| gofmt | `gofmt -l . 2>&1` |
-| just | `just fmt --check 2>&1` (if recipe exists) |
-
-```
-✗ Format check failed — <N> files need formatting
-
-  src/lib.rs
-  src/main.rs
-  tests/integration.rs
-```
-
-Or on success: `✓ Format check passed — all files formatted`
-
-## Subcommand: clean
-
-| Tool | Clean Command |
-|---|---|
-| cargo | `cargo clean` |
-| npm | `rm -rf node_modules dist build` |
-| go | `go clean` |
-| make/cmake | `make clean` |
-| just | `just clean` (if recipe exists) |
-| gradle | `./gradlew clean` |
-| maven | `mvn clean` |
-
-Return: `✓ Clean complete (<tool>)` or report if no clean target exists.
+When invoked with a subcommand, read `references/subcommands.md` for the
+detection rules, command mappings, and output templates for that subcommand.
 
 ## What You Don't Do
 
@@ -299,12 +224,12 @@ Return: `✓ Clean complete (<tool>)` or report if no clean target exists.
 
 ## Rules
 
-- NEVER return raw compiler output — parse everything into the structured format
-- NEVER omit the file:line:col — that's the whole point, the caller needs to navigate
-- NEVER include progress bars, download logs, or compilation unit lists
-- NEVER add commentary, suggestions, or fix recommendations — just the facts
+- ALWAYS parse output into the structured file:line:col format before returning
+- ALWAYS include file:line:col for every error — the caller navigates by these
+- ALWAYS strip progress bars, download logs, and compilation unit lists before returning
+- Return facts only — no commentary, suggestions, or fix recommendations
 - Strip ANSI color codes before parsing
 - If the build produces no output and exits 0, that's a clean pass
-- If you can't determine the build system, say so clearly — don't try random commands
-- Always capture exit code — some tools report warnings on stdout but exit 0
+- If you can't determine the build system, say so clearly — use only detected build tools
+- ALWAYS capture exit code — some tools report warnings on stdout but exit 0
 - Use the EXACT output templates above — do not improvise formatting

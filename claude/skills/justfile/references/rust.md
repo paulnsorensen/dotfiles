@@ -71,7 +71,6 @@ coverage:
 ## Notes
 
 - Prefer `cargo nextest` over `cargo test` if the project uses it — check for `.config/nextest.toml`
-- `sccache` is handled by `~/.cargo/config.toml` — no justfile config needed
 - For workspaces, add `--workspace` to test/clippy/build recipes
 - If the project uses `cargo-make`, that's a different tool — migrate tasks to just recipes
 - For binary crates, add `install` recipe: `cargo install --path .`

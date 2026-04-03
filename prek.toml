@@ -28,4 +28,5 @@ hooks = [
 repo = "local"
 hooks = [
   { id = "check-claude-sync", name = "Check Claude config synced", entry = "bash -c 'target=$(readlink ~/.claude/settings.json 2>/dev/null) && [[ \"$target\" == */claude/settings.json ]] || { echo \"Claude config not synced. Run: dots sync\"; exit 1; }'", language = "system", always_run = true, pass_filenames = false },
+  { id = "check-claude-settings-schema", name = "Validate Claude settings schema", entry = "bash -c 'uv tool run check-jsonschema --schemafile https://json.schemastore.org/claude-code-settings.json claude/settings.json'", language = "system", files = "claude/settings\\.json$", pass_filenames = false },
 ]

@@ -28,6 +28,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `ccr` - Resume conversation (`claude --resume`)
 - `ccp` - Print mode (`claude --print`)
 - `ccw <slug>` - Create isolated git worktree and launch Claude inside it (sandboxed)
+- `ccw-init <slug>` - Create/resume a worktree (used by ccw and /worktree skill)
 - `ccw-ls` - List git worktrees
 - `ccw-sweep` - Scan ~/Dev for stale worktrees with safety checks (dry-run, auto-clean modes)
 - `ccw-clean` - Clean stale worktrees in current repo only (delegates to ccw-sweep)
@@ -202,7 +203,7 @@ The `.sync-with-rollback` script provides:
 
 Full agent/skill catalog is in `claude/CLAUDE.md` (auto-discovered). Key project-level details:
 
-- Pre-tool hooks: `bash-guard.js`, `write-guard.js`, `phantom-file-check.js`, `review-reply-guard.js`, `semantic-stop-guard.js`
+- Pre-tool hooks: `bash-guard.js`, `write-guard.js`, `phantom-file-check.js`, `review-reply-guard.js`
 - Compaction hooks: `pre-compact.sh` saves context, `post-compact.sh` restores with `/trace` suggestion
 - Session hooks: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
 - Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed

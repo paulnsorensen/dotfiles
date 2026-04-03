@@ -1,5 +1,2 @@
 # Cargo global configuration
 # Managed by dotfiles — synced to ~/.cargo/config.toml via cargo/.sync
-#
-# NOTE: sccache is enabled conditionally via RUSTC_WRAPPER in zsh/core.zsh
-# rather than here, so cargo works on machines where sccache isn't installed.
