@@ -2,7 +2,7 @@
 name: merge-resolve
 model: sonnet
 context: fork
-allowed-tools: Bash(git:*), Bash(mergiraf:*), Bash(python3:*), Bash(RUST_LOG=mergiraf*), Read, Edit, Glob
+allowed-tools: Bash(git:*), Bash(mergiraf:*), Bash(python3:*), Read, Edit, Glob
 description: >
   Resolve merge conflicts, rebase conflicts, and cherry-pick failures using mergiraf
   (AST-aware structural merge), git rerere, and kdiff3. Activate when: merge failed,

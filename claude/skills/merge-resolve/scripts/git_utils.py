@@ -17,7 +17,9 @@ def check_mergiraf_support(path):
         ["git", "check-attr", "merge", "--", path],
         capture_output=True, text=True, timeout=5, check=True,
     )
-    return "mergiraf" in result.stdout
+    first_line = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+    parts = first_line.split(":", 2)
+    return len(parts) == 3 and parts[2].strip() == "mergiraf"
 
 
 def has_conflict_markers(content):

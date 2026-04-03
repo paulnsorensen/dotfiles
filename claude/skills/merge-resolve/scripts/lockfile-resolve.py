@@ -89,15 +89,18 @@ def _file_has_conflicts(path):
     try:
         with open(path) as f:
             return has_conflict_markers(f.read())
-    except OSError:
-        return False
+    except OSError as e:
+        raise RuntimeError(f"Failed to read '{path}' while checking for merge conflicts: {e}") from e
 
 
-def manifest_is_clean(strategy_info):
+def manifest_is_clean(strategy_info, work_dir="."):
     manifest = strategy_info.get("manifest")
-    if not manifest or not os.path.exists(manifest):
+    if not manifest:
         return True
-    return not _file_has_conflicts(manifest)
+    manifest_path = os.path.join(work_dir, manifest)
+    if not os.path.exists(manifest_path):
+        return True
+    return not _file_has_conflicts(manifest_path)
 
 
 def resolve_lockfile(path, strategy, dry_run):
@@ -109,15 +112,15 @@ def resolve_lockfile(path, strategy, dry_run):
     info = LOCKFILE_STRATEGIES[filename]
     work_dir = os.path.dirname(os.path.abspath(path)) or "."
 
-    if not manifest_is_clean(info):
+    if not manifest_is_clean(info, work_dir):
         return False, f"manifest '{info['manifest']}' still has conflicts — resolve it first"
 
     if strategy in ("ours", "theirs"):
         git_strategy = "--ours" if strategy == "ours" else "--theirs"
         if dry_run:
-            print(f"  would: git checkout {git_strategy} {path}")
+            print(f"  would: git checkout {git_strategy} -- {path}")
         else:
-            run(["git", "checkout", git_strategy, path])
+            run(["git", "checkout", git_strategy, "--", path])
             print(f"  took {strategy}: {path}")
 
     regen_cmd = info["regen_cmd"]
@@ -131,8 +134,14 @@ def resolve_lockfile(path, strategy, dry_run):
         err = result.stderr.strip() or result.stdout.strip()
         return False, f"regen failed: {err[:200]}"
 
-    run(["git", "add", path])
+    run(["git", "add", "--", path])
     print(f"  staged: {path}")
+    manifest = info.get("manifest")
+    if manifest:
+        manifest_path = os.path.join(work_dir, manifest)
+        if os.path.exists(manifest_path):
+            run(["git", "add", "--", manifest_path])
+            print(f"  staged: {manifest_path}")
     return True, "ok"
 
 

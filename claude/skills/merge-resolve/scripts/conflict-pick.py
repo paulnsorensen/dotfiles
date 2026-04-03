@@ -189,11 +189,13 @@ def _write_and_stage(filepath, resolved, remaining, no_add):
     with open(filepath, "w") as f:
         f.write(resolved)
     if remaining == 0 and not no_add:
-        result = subprocess.run(["git", "add", filepath], capture_output=True, text=True)
+        result = subprocess.run(["git", "add", "--", filepath], capture_output=True, text=True)
         if result.returncode == 0:
             print(f"  staged: {filepath}")
         else:
             print(f"  git add failed: {result.stderr.strip()}", file=sys.stderr)
+            return False
+    return True
 
 
 def main():
@@ -240,8 +242,8 @@ def main():
         print(resolved)
         return
 
-    _write_and_stage(args.file, resolved, remaining, args.no_add)
-    sys.exit(1 if remaining > 0 else 0)
+    staged_ok = _write_and_stage(args.file, resolved, remaining, args.no_add)
+    sys.exit(1 if (remaining > 0 or not staged_ok) else 0)
 
 
 if __name__ == "__main__":
