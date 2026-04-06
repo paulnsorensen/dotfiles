@@ -111,14 +111,6 @@
             "statusMessage": "Restoring session context..."
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"/Users/paul/.claude/hooks/gsd-check-update.js\""
-          }
-        ]
       }
     ],
     "Stop": [
@@ -150,7 +142,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$HOME/.claude/hooks/bash-guard.js\"",
+            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" bash-guard.js",
             "statusMessage": "Checking command..."
           }
         ]
@@ -160,7 +152,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$HOME/.claude/hooks/write-guard.js\"",
+            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" write-guard.js",
             "statusMessage": "Checking write target..."
           }
         ]
@@ -170,7 +162,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$HOME/.claude/hooks/phantom-file-check.js\"",
+            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" phantom-file-check.js",
             "statusMessage": "Checking file..."
           }
         ]
@@ -202,16 +194,6 @@
             "type": "command",
             "command": "node \"$HOME/.claude/hooks/review-reply-guard.js\"",
             "statusMessage": "Checking reply for deferral..."
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"/Users/paul/.claude/hooks/gsd-prompt-guard.js\"",
-            "timeout": 5
           }
         ]
       }
@@ -247,7 +229,10 @@
     "skill-creator@claude-plugins-official": true,
     "github@claude-plugins-official": true,
     "claude-hud@claude-hud": true,
-    "astral@astral-sh": true
+    "code-review-graph@code-review-graph": true,
+    "astral@astral-sh": true,
+    "plugin-dev@claude-plugins-official": true,
+    "cheese-flow@cheese-flow": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {
@@ -266,6 +251,12 @@
       "source": {
         "source": "github",
         "repo": "astral-sh/claude-code-plugins"
+      }
+    },
+    "cheese-flow": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/paulsorensen/Dev/dotfiles/claude/plugins/local/cheese-flow"
       }
     }
   },

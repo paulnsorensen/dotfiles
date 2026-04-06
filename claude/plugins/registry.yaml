@@ -64,6 +64,11 @@ plugins:
     scope: user
     load: true
 
+  plugin-dev@claude-plugins-official:
+    description: Plugin development toolkit for building and testing Claude Code plugins
+    scope: user
+    load: true
+
   skill-creator@claude-plugins-official:
     description: Guided skill creation workflow with component design, implementation, and validation
     scope: user
@@ -76,6 +81,17 @@ plugins:
 
   claude-hud@claude-hud:
     description: Real-time statusline HUD — context usage, rate limits, active tools, agents, tasks
+    scope: user
+    load: true
+
+  code-review-graph@code-review-graph:
+    description: Visualize code review dependencies and relationships as graphs
+    scope: user
+    load: true
+
+  # --- Local plugins (dotfiles) ---
+  cheese-flow@cheese-flow:
+    description: Cheddar Flow agent pipeline — cheese-themed development workflow tools
     scope: user
     load: true
 

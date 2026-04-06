@@ -73,3 +73,5 @@ packages:
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }
+  - tilth: { source: cargo }
+  - qdrant: { source: cargo, dev: true }

@@ -17,7 +17,6 @@ Do not leave TODO/FIXME markers or unimplemented!() stubs.`
 ];
 
 module.exports = {
-  event: 'preToolUse',
   hooks: [{
     matcher: (toolName, input) => {
       if (toolName !== 'Edit' && toolName !== 'Write') return false;

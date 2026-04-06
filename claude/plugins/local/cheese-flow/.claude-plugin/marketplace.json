@@ -1,0 +1,19 @@
+{
+  "name": "cheese-flow",
+  "owner": {
+    "name": "Paul Sorensen"
+  },
+  "metadata": {
+    "description": "Cheddar Flow development tools — cheese-themed agent pipeline for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "cheese-flow",
+      "source": "./",
+      "description": "Cheddar Flow agent pipeline — cheese-themed development workflow tools",
+      "category": "development",
+      "tags": ["cheese", "workflow", "agents", "pipeline"]
+    }
+  ]
+}

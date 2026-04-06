@@ -88,9 +88,7 @@ Cleaned 7 stale test files (> 24 hours old)
 |------|----------|
 | `--sweep` | Delete test files older than 24 hours. Does not run tests. |
 | `--file <path>` | Run tests from an existing file instead of inline code. |
-| `--framework <pytest\|unittest>` | Explicitly specify test framework (default: auto-detect). |
 | `--keep` | Don't clean up test file after run (for inspection). |
-| `--no-venv` | Run without `uv run` (advanced, not recommended). |
 
 ## Gitignore Integration
 

@@ -5,10 +5,9 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = {
-  event: 'preToolUse',
   hooks: [{
     matcher: (toolName) => toolName === 'Read',
-    handler: async (input) => {
+    handler: async (_toolName, input) => {
       const rawPath = input.file_path || input.path;
       if (!rawPath) return null;
       const filePath = path.resolve(rawPath);

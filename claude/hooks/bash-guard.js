@@ -132,7 +132,6 @@ function matchHeuristic(cmd) {
 const ALL_MATCHERS = [matchInstall, matchBruteLookup, matchLegacyTool, matchFileWrite, matchPythonAsTool, matchHeuristic];
 
 module.exports = {
-  event: 'preToolUse',
   hooks: [{
     matcher: (toolName, input) => {
       if (toolName !== 'Bash') return false;

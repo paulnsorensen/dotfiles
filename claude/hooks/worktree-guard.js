@@ -39,7 +39,6 @@ function isAllowedPath(filePath) {
 }
 
 module.exports = {
-  event: 'preToolUse',
   hooks: [{
     matcher: (toolName, input) => {
       if (toolName !== 'Write' && toolName !== 'Edit') return false;

@@ -114,12 +114,18 @@ run_hook() {
         const matched = hook.matcher('$tool', input);
         if (!matched) { console.log('allowed'); process.exit(0); }
         (async () => {
-            const arity = hook.handler.length;
-            let r = arity >= 2 ? await hook.handler('$tool', input) : await hook.handler(input);
+            let r = await hook.handler('$tool', input);
             if (r == null) { console.log('allowed'); return; }
             console.log('blocked: ' + (r.result || 'no reason'));
         })();
     " "$input"
+}
+
+# Run a hook through hook-runner.js (tests the full stdin/stdout protocol)
+run_via_runner() {
+    local hook_file="$1" tool="$2" input="$3"
+    local json="{\"tool_name\":\"$tool\",\"tool_input\":$input}"
+    run bash -c "echo '$json' | node '$HOOKS_DIR/hook-runner.js' '$hook_file'"
 }
 
 setup() {
@@ -133,9 +139,9 @@ teardown() {
 # ── bash-guard: module loading ──────────────────────────────────────
 
 @test "bash-guard: loads as valid node module" {
-    run node -e "const h = require('$HOOKS_DIR/bash-guard.js'); console.log(h.event + ':' + h.hooks.length)"
+    run node -e "const h = require('$HOOKS_DIR/bash-guard.js'); console.log(h.hooks.length)"
     [ "$status" -eq 0 ]
-    [[ "$output" == "preToolUse:1" ]]
+    [[ "$output" == "1" ]]
 }
 
 @test "bash-guard: non-Bash tool is ignored" {
@@ -677,9 +683,9 @@ teardown() {
 # ── write-guard: module loading ─────────────────────────────────────
 
 @test "write-guard: loads as valid node module" {
-    run node -e "const h = require('$HOOKS_DIR/write-guard.js'); console.log(h.event + ':' + h.hooks.length)"
+    run node -e "const h = require('$HOOKS_DIR/write-guard.js'); console.log(h.hooks.length)"
     [ "$status" -eq 0 ]
-    [[ "$output" == "preToolUse:1" ]]
+    [[ "$output" == "1" ]]
 }
 
 @test "write-guard: non-Edit/Write tool is ignored" {
@@ -909,4 +915,86 @@ teardown() {
     run_hook "$HOOKS_DIR/phantom-file-check.js" Read '{"path":"/nonexistent/alternate.txt"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
+}
+
+# ── hook-runner.js protocol bridge ─────────────────────────────────
+
+@test "hook-runner: blocks inline test via stdin/stdout protocol" {
+    run_via_runner bash-guard.js Bash '{"command":"python3 -c \"import os; assert True\""}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision":"block"'* ]]
+    [[ "$output" == *"/test-sandbox"* ]]
+}
+
+@test "hook-runner: allows clean command" {
+    run_via_runner bash-guard.js Bash '{"command":"git status"}'
+    [ "$status" -eq 0 ]
+    [[ -z "$output" ]]
+}
+
+@test "hook-runner: blocks npm install via protocol" {
+    run_via_runner bash-guard.js Bash '{"command":"npm install express"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision":"block"'* ]]
+}
+
+@test "hook-runner: blocks phantom file via protocol" {
+    run_via_runner phantom-file-check.js Read '{"file_path":"/nonexistent/file.txt"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision":"block"'* ]]
+}
+
+@test "hook-runner: allows existing file via protocol" {
+    local real_file="$TEST_HOME/runner-test.txt"
+    echo "content" > "$real_file"
+    local json="{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$real_file\"}}"
+    run bash -c "echo '$json' | node '$HOOKS_DIR/hook-runner.js' 'phantom-file-check.js'"
+    [ "$status" -eq 0 ]
+    [[ -z "$output" ]]
+}
+
+@test "hook-runner: blocks write-guard TODO via protocol" {
+    run_via_runner write-guard.js Write '{"content":"// TODO: fix later","file_path":"test.js"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision":"block"'* ]]
+}
+
+@test "hook-runner: invalid JSON on stdin fails open" {
+    run bash -c "echo 'not json' | node '$HOOKS_DIR/hook-runner.js' 'bash-guard.js' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"invalid JSON"* ]]
+}
+
+@test "hook-runner: missing hook file fails open with error" {
+    run bash -c "echo '{}' | node '$HOOKS_DIR/hook-runner.js' 'nonexistent.js' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"failed to load"* ]]
+}
+
+@test "hook-runner: missing argument exits with error" {
+    run bash -c "echo '{}' | node '$HOOKS_DIR/hook-runner.js' 2>&1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"missing hook file"* ]]
+}
+
+@test "hook-runner: non-matching tool passes through" {
+    run_via_runner bash-guard.js Read '{"file_path":"/some/file.txt"}'
+    [ "$status" -eq 0 ]
+    [[ -z "$output" ]]
+}
+
+@test "hook-runner: output is valid JSON when blocking" {
+    run_via_runner bash-guard.js Bash '{"command":"grep pattern file.txt"}'
+    [ "$status" -eq 0 ]
+    # Verify it parses as JSON with hookSpecificOutput structure
+    echo "$output" | node -e "
+        let d = '';
+        process.stdin.on('data', c => d += c);
+        process.stdin.on('end', () => {
+            const o = JSON.parse(d);
+            if (!o.hookSpecificOutput) process.exit(1);
+            if (o.hookSpecificOutput.hookEventName !== 'PreToolUse') process.exit(1);
+            if (!['block','allow'].includes(o.hookSpecificOutput.permissionDecision)) process.exit(1);
+        });
+    "
 }
