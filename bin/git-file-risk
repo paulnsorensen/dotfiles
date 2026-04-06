@@ -14,7 +14,7 @@ SINCE="90 days ago"
 file_risk() {
     local file="$1"
 
-    if [[ ! -e "$file" ]] && ! git ls-files --error-unmatch "$file" &>/dev/null; then
+    if ! git ls-files --error-unmatch "$file" &>/dev/null 2>&1; then
         echo "{\"file\":\"$file\",\"error\":\"not tracked\"}"
         return
     fi

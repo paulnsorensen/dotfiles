@@ -189,6 +189,21 @@ teardown() {
     [[ "$err" == "not tracked" ]]
 }
 
+@test "git-file-risk: reports error for file that exists on disk but is not tracked" {
+    cd "$REPO_DIR"
+    echo "init" > init.txt
+    git add init.txt
+    git commit -m "init" --quiet
+
+    # File exists in working tree but was never committed
+    touch untracked.txt
+    run "$REAL_BIN/git-file-risk" untracked.txt
+    assert_success
+    local err
+    err=$(echo "$output" | jq -r '.[0].error')
+    [[ "$err" == "not tracked" ]]
+}
+
 # --- Hotspot detection (integration) ---
 
 @test "git-file-risk: hotspot file has high author and change counts" {
