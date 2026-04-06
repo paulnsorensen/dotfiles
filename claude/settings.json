@@ -288,7 +288,9 @@
       ],
       "allowLocalBinding": true
     },
-    "filesystem": {}
+    "filesystem": {
+      "allowWrite": ["~/Dev/.prek"]
+    }
   },
   "skipDangerousModePermissionPrompt": true
 }

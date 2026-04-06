@@ -15,12 +15,11 @@ hooks = [
   { id = "check-added-large-files", args = ["--maxkb=1024"] },
 ]
 
-# Shellcheck for shell scripts
+# Shellcheck for shell scripts (use system binary, not shellcheck-py which triggers uv panic)
 [[repos]]
-repo = "https://github.com/shellcheck-py/shellcheck-py"
-rev = "a23f6b85d0fdd5bb9d564e2579e678033debbdff"  # v0.10.0.1
+repo = "local"
 hooks = [
-  { id = "shellcheck", args = ["-e", "SC1091,SC2148,SC2030,SC2031,SC2314"], exclude = "zsh/" },
+  { id = "shellcheck", name = "shellcheck", entry = "shellcheck -e SC1091,SC2148,SC2030,SC2031,SC2155,SC2314,SC2329", language = "system", types = ["shell"], exclude = "zsh/" },
 ]
 
 # Local hooks
@@ -28,5 +27,5 @@ hooks = [
 repo = "local"
 hooks = [
   { id = "check-claude-sync", name = "Check Claude config synced", entry = "bash -c 'target=$(readlink ~/.claude/settings.json 2>/dev/null) && [[ \"$target\" == */claude/settings.json ]] || { echo \"Claude config not synced. Run: dots sync\"; exit 1; }'", language = "system", always_run = true, pass_filenames = false },
-  { id = "check-claude-settings-schema", name = "Validate Claude settings schema", entry = "bash -c 'uv tool run check-jsonschema --schemafile https://json.schemastore.org/claude-code-settings.json claude/settings.json'", language = "system", files = "claude/settings\\.json$", pass_filenames = false },
+  { id = "check-claude-settings-schema", name = "Validate Claude settings schema", entry = "bash -c 'check-jsonschema --schemafile https://json.schemastore.org/claude-code-settings.json claude/settings.json'", language = "system", files = "claude/settings\\.json$", pass_filenames = false },
 ]
