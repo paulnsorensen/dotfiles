@@ -71,6 +71,10 @@ packages:
   - rust-analyzer
   - vtsls: { source: npm, pkg: "@vtsls/language-server" }
 
+  # Linters
+  - eslint: { source: npm, pkg: "eslint@8" }
+  - markdownlint-cli2: { source: npm }
+
   # Cargo
   - cargo-llvm-cov: { source: cargo }
   - tilth: { source: cargo }

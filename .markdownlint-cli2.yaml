@@ -1,0 +1,12 @@
+config:
+  line-length: false
+  no-inline-html: false
+  first-line-heading: false
+
+ignores:
+  - node_modules/**
+  - .worktrees/**
+  - reference/**
+  - tmux/plugins/**
+  - vim/undo/**
+  - claude/hooks/node_modules/**
