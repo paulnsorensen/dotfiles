@@ -22,6 +22,7 @@ The checklist itself lives in your global instructions (CLAUDE.md) under "Self-E
 ### 1. Gather context
 
 Determine what to evaluate:
+
 - **Last response**: re-read your most recent assistant message
 - **Recent changes**: if code was written or modified, identify the changed files
 
@@ -57,6 +58,7 @@ Only invoke these if the item is relevant — no code changes means items 7-8 ar
 ### 4. Auto-fix violations
 
 For each FAIL:
+
 - Fix the violation directly (remove sycophancy, finish incomplete work, strengthen assertions, etc.)
 - Re-score the item after fixing
 - If the fix requires significant rework, explain what changed
@@ -64,6 +66,7 @@ For each FAIL:
 ### 5. Final output
 
 After fixes, output the updated scorecard with a one-line summary:
+
 - **All PASS**: "Clean. Ready to ship."
 - **Fixes applied**: "Fixed N violations. Review changes above."
 - **Unresolvable**: "N items need user input." (explain what and why)

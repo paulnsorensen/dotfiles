@@ -48,6 +48,7 @@ python3 <skill-dir>/scripts/conflict-summary.py
 ```
 
 This outputs for each conflicted file:
+
 - Language, mergiraf support status, number of hunks
 - Each hunk with line numbers, ours/theirs/base content, and surrounding context
 - Actionable recommendation (which script to use)
@@ -55,6 +56,7 @@ This outputs for each conflicted file:
 For JSON output (scripting): `--json`. For more context: `--context 10`.
 
 If you need raw git info too:
+
 ```bash
 git log --merge --oneline            # What commits are involved?
 ```
@@ -108,6 +110,7 @@ on them, and reports which files resolved cleanly vs which need manual intervent
 After structural resolution, for files that still have conflict markers:
 
 **Check rerere first:**
+
 ```bash
 git rerere status    # Files with recorded resolutions
 git rerere diff      # Show what rerere would apply
@@ -122,6 +125,7 @@ git mergetool <path>
 ```
 
 After manual resolution:
+
 ```bash
 git add <resolved-files>
 # Then continue the interrupted operation:
@@ -147,6 +151,7 @@ git check-attr merge -- <path>
 ```
 
 Common issues:
+
 - **File not registered**: Extension missing from `~/.gitattributes` — regenerate after upgrade
 - **Parse failure**: Syntax error in one of the three versions — mergiraf falls back silently
 - **Size limit**: Very large files (>1MB) may skip structural merge — check with `--size-limit`
@@ -154,11 +159,13 @@ Common issues:
 ### 6. Maintenance Commands
 
 **Regenerate gitattributes after mergiraf upgrade:**
+
 ```bash
 mergiraf languages --gitattributes > ~/.gitattributes
 ```
 
 **Manage rerere state:**
+
 ```bash
 git rerere status          # What's currently being tracked
 git rerere diff            # Pending resolution diffs
@@ -180,6 +187,7 @@ Four scripts and a shared utility module in `<skill-dir>/scripts/` cover the com
 | `git_utils.py` | Shared utilities — conflict detection, mergiraf support check | Internal — imported by other scripts |
 
 **conflict-pick.py** — for file types not handled by mergiraf in this repo (shell scripts, `.gitignore`, or Markdown when `.md` isn't registered in `.gitattributes`):
+
 ```bash
 # Take ours for all hunks
 python3 <skill-dir>/scripts/conflict-pick.py hooks/session-start.sh --ours
@@ -195,6 +203,7 @@ python3 <skill-dir>/scripts/conflict-pick.py config.yaml --grep "timeout" --ours
 ```
 
 **lockfile-resolve.py** — the `cargo.lock` pattern from real sessions: take theirs, regenerate:
+
 ```bash
 # Auto-detect conflicted lockfiles and regenerate (default: theirs + regen)
 python3 <skill-dir>/scripts/lockfile-resolve.py
@@ -228,6 +237,7 @@ Resolution: run the formatter on the merged result after resolving conflicts.
 ### Abort if Stuck
 
 If the conflict state is unrecoverable:
+
 ```bash
 git merge --abort     # or
 git rebase --abort    # or
@@ -258,6 +268,7 @@ and performance tips, read `<skill-dir>/references/mergiraf-guide.md`.
 ## Output
 
 The skill agent aggregates results across all scripts and reports a unified summary:
+
 - Files conflicted: N
 - Resolved (mergiraf): N
 - Resolved (conflict-pick): N

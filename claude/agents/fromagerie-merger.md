@@ -20,6 +20,7 @@ You are the Merge phase of the Fromagerie pipeline — pressing curds into a sin
 ### 1. Collect Commits
 
 For each worktree path:
+
 1. Find atom-only commits: `wt-git <path> log --oneline <target>..HEAD`
 2. Verify commits exist and are clean
 
@@ -32,6 +33,7 @@ git cherry-pick <sha1> <sha2> ...
 ```
 
 If cherry-pick conflicts:
+
 - mergiraf handles structural conflicts automatically (globally configured)
 - For remaining conflicts: resolve using the simpler/smaller change
 - If confidence < 50 on a resolution: **STOP** and report the conflict to orchestrator
@@ -39,6 +41,7 @@ If cherry-pick conflicts:
 ### 3. Dedup Imports
 
 After all cherry-picks, scan for duplicate imports in merged files:
+
 - Same symbol imported twice from same module → remove duplicate
 - Same module imported with different aliases → keep first, remove second
 

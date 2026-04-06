@@ -9,7 +9,7 @@ Let's rubber duck this: $ARGUMENTS
 
 I'll help you think through this clearly. I'm going to ask questions—not give solutions.
 
-## My Questions (answer each one):
+## My Questions (answer each one)
 
 1. **What problem are you actually solving?** (in one sentence)
 

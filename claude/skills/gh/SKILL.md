@@ -65,6 +65,7 @@ gh pr view 42 --json title --template '{{.title}}'
 **Never use heredoc `--body` with `gh pr create`.** The `$(cat <<'EOF' ... EOF)` pattern triggers Claude Code's "hides arguments" heuristic when the body contains `#`-prefixed lines (markdown headers).
 
 Instead:
+
 1. **MCP** (preferred): `create_pull_request` — no shell involved
 2. **`--body-file`** (CLI fallback): Write body with the Write tool to `$TMPDIR/pr-body.md`, then `gh pr create --title "..." --body-file "$TMPDIR/pr-body.md"`
 

@@ -5,6 +5,7 @@ This directory contains the complete Claude Code configuration for the Cheddar F
 ## Setup
 
 Symlinked to `~/.claude/` via the dotfiles sync system:
+
 ```bash
 dots sync
 ```

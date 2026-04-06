@@ -48,6 +48,7 @@ Input: a module, directory, or entire codebase.
 ### Step 1: Identify scope
 
 From the arguments or calling context, extract:
+
 - The changed file paths (or module/directory for comprehensive mode)
 - Any git ref range (e.g., `HEAD~3`, `main..HEAD`)
 - Whether this is focused or comprehensive mode
@@ -73,6 +74,7 @@ Agent(subagent_type="fromage-age-spec", prompt="Focused mode. Check spec adheren
 ```
 
 Each sub-agent prompt MUST include:
+
 - The changed file paths
 - The diff content or git ref range
 - Mode (focused or comprehensive)

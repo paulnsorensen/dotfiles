@@ -68,15 +68,18 @@ Only flag entries where the hook would **always** block them. If a permission is
 An entry is "covered" when a broader permission already exists, either in global settings or elsewhere in the same local file.
 
 **Global coverage** — check if the local entry's command prefix matches a global wildcard:
+
 1. Parse the local entry's first word after `Bash(` as the prefix
 2. If global has `Bash(prefix:*)`, the local entry adds nothing
 
 Examples:
+
 - Local `Bash(git stash:*)` + Global `Bash(git:*)` → covered
 - Local `Bash(which rustup:*)` + Global `Bash(which:*)` → covered
 - Local `Bash(npm install:*)` + Global `Bash(npx:*)` → NOT covered (different prefix)
 
 **Same-file coverage** — also applies to Bash and Read entries within the local file:
+
 - `Read(//path/subdir/**)` is covered by `Read(//path/**)`
 - `Bash(cargo check:*)` is covered by `Bash(cargo:*)`
 - `Bash(python3 -c:*)` is covered by `Bash(python3:*)`
@@ -165,7 +168,7 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 | `cd && git` | `Skill(wt-git)` |
 | `gh pr create --body` | `Skill(gh)` |
 
-3. **Check what's missing**: Compare available skills + hook-required skills against the current allow list. Report missing ones, prioritizing hook-critical skills first.
+1. **Check what's missing**: Compare available skills + hook-required skills against the current allow list. Report missing ones, prioritizing hook-critical skills first.
 
 ### Present as two groups
 
@@ -217,6 +220,7 @@ The user must explicitly say `--apply`, "apply", "do it", "clean it", or similar
 When applying:
 
 1. **Backup** the current file:
+
    ```bash
    mkdir -p ~/.local/state/dotfiles/backups
    cp .claude/settings.local.json ~/.local/state/dotfiles/backups/settings.local.json.$(date +%Y%m%d-%H%M%S)
@@ -229,6 +233,7 @@ When applying:
    - Original JSON formatting (2-space indent)
 
 3. **Report** the result:
+
    ```
    Backed up to: ~/.local/state/dotfiles/backups/settings.local.json.20260319-143022
    Wrote: .claude/settings.local.json

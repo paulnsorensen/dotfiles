@@ -18,7 +18,9 @@ You will receive the spec content, Culture agent exploration summaries, and a **
 Produce a decomposition plan with THREE artifacts:
 
 ### 1. Seed Items
+
 Files/changes that atoms literally cannot compile without:
+
 - Types, interfaces, protocols used by 2+ atoms
 - Lives in `common/` or imported across multiple slices
 - Must exist before atom code can compile
@@ -26,12 +28,15 @@ Files/changes that atoms literally cannot compile without:
 **Heuristic**: If removing this item causes a *compile error* in 2+ atoms, it's seed. If it causes a *runtime error* or *missing feature*, it belongs in an atom or wiring task.
 
 **Size budget**:
+
 - **Soft cap**: total seed < 10K tokens (seed is types/protocols, not implementation)
 - **Hard cap**: total seed < 25K tokens — if larger, restructure: move implementation into atoms, keep only the compile-time contracts in seed
 - Exceeding the hard cap signals the decomposition is front-loading too much work
 
 ### 2. Atoms
+
 Self-contained implementation units. Hard constraints:
+
 - **Zero file overlap**: No file in more than one atom
 - **Token budget**: Each atom < 50,000 estimated tokens
 - **File count**: 2-3 files per atom (1 only if it alone exceeds 25K tokens)
@@ -39,13 +44,16 @@ Self-contained implementation units. Hard constraints:
 - **Barrel files**: If an atom creates a new slice, it MUST include the barrel file (`index.ts`, `__init__.py`, `mod.rs`)
 
 ### 3. Wiring DAG
+
 Integration tasks that connect atoms to each other and to existing code. Each task:
+
 - Has a `type`: barrel_export, di_registration, route_wiring, event_subscription, config_entry, migration
 - Touches exactly ONE file (the connector file)
 - Has explicit `depends_on` edges to other wiring tasks
 - Is small (typically < 5K tokens)
 
 **Wiring overlap rules**:
+
 - Wiring tasks sharing a file MUST have a dependency edge (sequential execution)
 - Cross-branch overlap in the DAG = decomposer error — restructure
 - Wiring tasks may touch files atoms created (add exports, not implementation)
@@ -59,6 +67,7 @@ Read `$TMPDIR/fromagerie-tokei-<slug>.json`. STOP if missing.
 ### 2. Map File Dependencies
 
 For each area of the spec's scope:
+
 - Use LSP `findReferences` to discover shared symbols
 - Use LSP `goToDefinition` through imports to trace module boundaries
 - Use ast-grep to locate key types, interfaces, and functions
@@ -67,6 +76,7 @@ For each area of the spec's scope:
 ### 3. Identify Connectors
 
 From the LSP node list, find files classified as `connector` (or identify them yourself):
+
 - **Name-based**: `container.*`, `registry.*`, `routes.*`, `router.*`, `index.*`, `events.*`, `config.*`
 - **Symbol-based**: Files with `register`, `provide`, `subscribe`, `route`, `export` in public symbols
 - **Structural**: High fanOut, low fanIn, imports from multiple slices
@@ -76,6 +86,7 @@ These files are wiring task targets — they're where new code gets "plugged in.
 ### 4. Detect Test Targets
 
 For each atom's files, find the corresponding test files:
+
 1. **Convention**: `foo.ts` → `foo.test.ts` (co-located) or `tests/foo_test.rs` (mirror)
 2. **Config**: Read `package.json` (jest), `Cargo.toml` (test targets), `pyproject.toml` (testpaths)
 3. **LSP**: `findReferences` from source — if a test file references it, that's a target
@@ -86,6 +97,7 @@ Output a `test_targets` object per atom: `{"command": "vitest run path/to/test.t
 ### 5. Build Wiring DAG
 
 For each connector file:
+
 - What new exports/registrations does it need? → one wiring task per distinct change
 - Does this wiring task depend on another wiring task? (e.g., DI registration depends on barrel export) → add `depends_on` edge
 - If two wiring tasks touch the same file, they MUST have a dependency edge
@@ -148,8 +160,10 @@ If ANY validation fails: re-decompose before outputting.
 
 ### DAG Topology
 ```
+
 W1 ──┬── W2
      └── W3
+
 ```
 
 ### Validation Results

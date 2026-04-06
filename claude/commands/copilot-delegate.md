@@ -27,6 +27,7 @@ When confirming the task with the user (Phase 1 step 3), review the description 
 1. If no `$ARGUMENTS` provided, ask the user what task to delegate.
 
 2. Get the current repo context:
+
    ```
    gh repo view --json nameWithOwner --jq '.nameWithOwner'
    ```
@@ -37,14 +38,17 @@ When confirming the task with the user (Phase 1 step 3), review the description 
    - Ask if a non-default base branch is needed (default: skip, use repo default)
 
 4. Create the agent task:
+
    ```
    gh agent-task create "<task description>"
    ```
 
 5. Immediately capture the task reference. Run:
+
    ```
    gh agent-task list --limit 1
    ```
+
    Parse the output (tab-separated: `description \t #PR \t repo \t status \t timestamp`).
    Extract the **PR number** and **status**.
 
@@ -61,14 +65,17 @@ Poll task status every **90 seconds**, up to a **15-minute** timeout.
 Loop:
 
 1. Wait:
+
    ```
    sleep 90
    ```
 
 2. Check status:
+
    ```
    gh agent-task list --limit 5
    ```
+
    Find the row matching our PR number.
 
 3. Branch on status:

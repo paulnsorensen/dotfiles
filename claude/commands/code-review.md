@@ -23,6 +23,7 @@ Check for previous reviews inline (cheap read):
 ### 2. Select Scope
 
 Use AskUserQuestion with these options:
+
 - **Outside-in overview** — Map full architecture, then drill into each layer
 - **Focus on a specific module** — Deep dive into a particular area
 - **Delta-only review** — Only review what changed since last review (if previous review exists)
@@ -32,6 +33,7 @@ If the user provided an argument, use that as focus and skip this question.
 ### 3. Run Age Review (Comprehensive Mode)
 
 Invoke the `age` skill in **comprehensive mode**. Pass it:
+
 - **Scope**: the selected scope from step 2
 - **Delta context**: if delta mode, the changed files and commit log
 - **Previous review findings**: key items from last review if one exists
@@ -56,6 +58,6 @@ previous_review: <filename of previous review, or "none">
 <age comprehensive report>
 ```
 
-3. Add `.claude/review/` to `.gitignore` if not already present.
-4. Tell the user where the review was saved.
-5. Present findings to the user.
+1. Add `.claude/review/` to `.gitignore` if not already present.
+2. Tell the user where the review was saved.
+3. Present findings to the user.

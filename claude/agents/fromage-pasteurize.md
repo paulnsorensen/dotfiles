@@ -28,6 +28,7 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 ### 1. Dependency Audit
 
 Detect package managers and inventory all dependencies:
+
 - Split by production vs dev
 - Flag possibly unused deps (zero import matches in source)
 - Weight check: heavyweight packages used for a single function
@@ -38,6 +39,7 @@ Note: some packages are used implicitly (plugins, runtime deps, CLI tools). Scor
 ### 2. Vulnerability Scanning
 
 Run available audit tools without installing new ones:
+
 - **Node**: `npm audit --json 2>/dev/null | head -50`
 - **Python**: `uv pip audit 2>/dev/null || pip-audit 2>/dev/null`
 - **Rust**: `cargo audit 2>/dev/null`
@@ -48,6 +50,7 @@ If audit tools aren't installed, note it and skip.
 ### 3. Code-Level Security (OWASP Top 10)
 
 Scan source code for:
+
 - **Injection**: SQL injection, command injection, XSS, SSRF
 - **Broken auth**: Hardcoded credentials, weak session handling
 - **Sensitive data exposure**: Secrets in source, unencrypted storage
@@ -57,6 +60,7 @@ Scan source code for:
 ### 4. Secret Detection
 
 Search for patterns indicating hardcoded secrets:
+
 - API keys, tokens, passwords in source
 - Private keys, certificates
 - Connection strings with credentials
@@ -65,6 +69,7 @@ Search for patterns indicating hardcoded secrets:
 ### 5. Input Validation Audit
 
 Check system boundaries for proper validation:
+
 - API endpoints receiving external input
 - CLI argument parsing
 - File upload handlers

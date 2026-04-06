@@ -30,6 +30,7 @@ how many modifiers stack up. The base score prevents real bugs from starting
 too low.
 
 **Template** (customize categories for your domain):
+
 ```
 | Type | Description | Base score | Cap |
 |------|-------------|------------|-----|
@@ -47,6 +48,7 @@ A finding verified via LSP or grep is categorically different from "this
 looks like it might be an issue."
 
 **Template** (customize verification methods for your domain):
+
 ```
 | Evidence quality | Modifier |
 |------------------|----------|
@@ -67,6 +69,7 @@ is more dangerous than one in stable code. A pre-existing issue not
 introduced by this change is less urgent than a newly introduced one.
 
 **Template** (customize for your domain):
+
 ```
 | Signal | Modifier |
 |--------|----------|
@@ -86,6 +89,7 @@ assessments agree, the finding is robust. If they diverge by >15 points,
 the model is genuinely uncertain — which is valuable information.
 
 **Rules:**
+
 - Define your borderline zone: typically threshold-15 to threshold-1
 - Re-read the full source file (not just the excerpt) before rescoring
 - If scores diverge >15 points → don't surface (ambiguous)

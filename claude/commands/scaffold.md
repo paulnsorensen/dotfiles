@@ -13,12 +13,14 @@ Scaffold a new domain slice: $ARGUMENTS
 ### 1. Parse Arguments
 
 Extract:
+
 - **Slice name** — the domain concept (e.g., `orders`, `pricing`, `notifications`)
 - **Language** — optional, detect from project if not specified. Check for `package.json` (ts), `pyproject.toml`/`uv.lock` (py), `go.mod` (go), `Cargo.toml` (rs).
 
 ### 2. Detect Project Layout
 
 Find the existing domain directory by looking for common patterns:
+
 - `src/domains/` or `src/domain/`
 - `src/`
 - `lib/`
@@ -36,6 +38,7 @@ Verify the slice doesn't already exist. If it does, report what's there and ask 
 Create the minimal viable slice — two files following the Sliced Bread growth pattern ("start with one file per concept"):
 
 **TypeScript:**
+
 ```
 src/domains/{slice-name}/
 ├── index.ts          # Public API (the crust)
@@ -43,16 +46,19 @@ src/domains/{slice-name}/
 ```
 
 `index.ts`:
+
 ```typescript
 export { } from './{slice-name}';
 ```
 
 `{slice-name}.ts`:
+
 ```typescript
 // Core {SliceName} domain logic
 ```
 
 **Python:**
+
 ```
 src/domains/{slice_name}/
 ├── __init__.py       # Public API (the crust)
@@ -60,27 +66,32 @@ src/domains/{slice_name}/
 ```
 
 `__init__.py`:
+
 ```python
 from .{slice_name} import *
 ```
 
 `{slice_name}.py`:
+
 ```python
 """Core {SliceName} domain logic."""
 ```
 
 **Go:**
+
 ```
 pkg/{slicename}/
 └── {slicename}.go    # Package is the public API
 ```
 
 `{slicename}.go`:
+
 ```go
 package {slicename}
 ```
 
 **Rust:**
+
 ```
 src/{slice_name}/
 ├── mod.rs            # Public API

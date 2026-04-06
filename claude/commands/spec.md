@@ -17,6 +17,7 @@ This is upstream of implementation — collaborative design thinking that produc
 ## Dialogue Style
 
 This is a **fluid conversation**, not an interrogation — but with structure for speed:
+
 - Weave questions naturally into discussion
 - Offer **lettered options** (A/B/C/D) so the user can respond quickly ("1A, 2C")
 - Think out loud: "I'm wondering if..."
@@ -76,6 +77,7 @@ In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents 
 | `/fetch` | External code | How other projects solved similar problems, real-world examples |
 
 After agents return, **synthesize key patterns** before continuing the conversation:
+
 - What do 2+ sources agree on? (strong signal)
 - Where do sources contradict? (needs user input)
 - What surprising findings emerged? (surface these)
@@ -83,6 +85,7 @@ After agents return, **synthesize key patterns** before continuing the conversat
 Present synthesis conversationally: "I ran research in parallel — here's what I found across 4 sources: [patterns]. The interesting tension is between X and Y. Which direction feels right?"
 
 In later rounds, use individual skills as needed:
+
 - **`/research`** — Verify specific assumptions, check APIs
 - **`/lookup`** — Targeted code exploration
 - **`/trace`** — Structural code patterns: "what implements this interface?"
@@ -113,6 +116,7 @@ Before diving into *how* to build something, ask whether it should be built at a
 - The request assumes a solution → back up to the problem: "What's actually hurting today?"
 
 Frame these as lettered options too:
+
 ```
 Your YAGNI principle is relevant here. What's driving this work?
    A. I hit a real bug or failure that the current structure made hard to fix
@@ -146,6 +150,7 @@ Should we include integration/E2E verification?
 ## Crystallize
 
 When the conversation feels complete (after 3+ rounds):
+
 - Draft the spec artifact
 - Present for review: "Does this capture our discussion?"
 - Refine based on feedback
@@ -153,6 +158,7 @@ When the conversation feels complete (after 3+ rounds):
 ## Persist
 
 Save and optionally publish:
+
 - Write to `.claude/specs/<slug>.md`
 - Offer: "Want me to create a GitHub Issue from this?"
 - If yes: `gh issue create --title "<title>" --body-file .claude/specs/<slug>.md`
@@ -305,6 +311,7 @@ End-to-end verification scenarios:
 ## Writing User Stories for AI Execution
 
 The spec feeds into `/fromage`. User stories should be:
+
 - **Small** — completable in one focused agent session
 - **Independent** — no story should block another if possible
 - **Verifiable** — acceptance criteria a machine can check, not "works correctly"

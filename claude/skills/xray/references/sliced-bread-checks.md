@@ -84,6 +84,7 @@ slices (e.g. `domains/orders`, `domains/pricing`).
 ## How to Report
 
 For each violation found, report:
+
 - **Which check** (by number and name)
 - **The specific import or pattern** that violates it
 - **Severity** (red/yellow)

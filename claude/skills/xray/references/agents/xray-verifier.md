@@ -12,6 +12,7 @@ traffic light decisions. You deal in facts, not opinions.
 ## Input
 
 You receive:
+
 - `node`: the graph node being verified (id, filePath, symbolName)
 - `testFiles`: test files associated with this node (from analyst or discovery)
 - `specCriteria`: acceptance criteria from the analyst's spec search (may be empty)
@@ -22,6 +23,7 @@ You receive:
 ### Step 1: Execute tests (parallel with Step 2)
 
 Spawn a **whey-drainer** agent (haiku) targeting the node's test files:
+
 - If specific test files are known, pass them directly
 - If not, let whey-drainer detect tests in the node's directory
 - Capture: pass/fail counts, failure details
@@ -29,6 +31,7 @@ Spawn a **whey-drainer** agent (haiku) targeting the node's test files:
 ### Step 2: De-slop scan (parallel with Step 1)
 
 Spawn a sub-agent to run de-slop analysis on the node's source files:
+
 - Read the de-slop skill's references for the relevant language
 - Scan the node's source files for the 9 cross-language patterns
 - Scan for language-specific patterns
@@ -37,17 +40,20 @@ Spawn a sub-agent to run de-slop analysis on the node's source files:
 ### Step 3: Cross-reference with spec
 
 If spec criteria exist from the analyst:
+
 - Map each acceptance criterion to a passing test (by name or assertion content)
 - Identify criteria with no covering test
 - Identify tests that don't map to any criterion (orphan tests)
 
 If no spec criteria:
+
 - Use test names and assertion content to infer what behaviors are tested
 - Flag tests that only assert existence/no-error (weak coverage)
 
 ### Step 4: Build-vs-buy check
 
 Review the node's imports and implementation patterns:
+
 - Are there installed dependencies that provide functionality the code builds
   from scratch?
 - Does the code reimplement common patterns (retry, date parsing, URL building,

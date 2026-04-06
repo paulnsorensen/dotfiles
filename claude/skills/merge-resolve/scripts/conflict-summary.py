@@ -41,18 +41,18 @@ def _parse_single_hunk(lines, i, hunk_number):
 
     ours_lines, i = _collect_lines(
         lines, i,
-        lambda l: l.startswith(MARKER_BASE) or l.startswith(MARKER_SEP),
+        lambda line: line.startswith(MARKER_BASE) or line.startswith(MARKER_SEP),
     )
 
     base_lines = None
     if i < len(lines) and lines[i].startswith(MARKER_BASE):
         i += 1
-        base_lines, i = _collect_lines(lines, i, lambda l: l.startswith(MARKER_SEP))
+        base_lines, i = _collect_lines(lines, i, lambda line: line.startswith(MARKER_SEP))
 
     if i < len(lines) and lines[i].startswith(MARKER_SEP):
         i += 1
 
-    theirs_lines, i = _collect_lines(lines, i, lambda l: l.startswith(MARKER_THEIRS))
+    theirs_lines, i = _collect_lines(lines, i, lambda line: line.startswith(MARKER_THEIRS))
 
     label_theirs = ""
     if i < len(lines):
@@ -121,7 +121,7 @@ def _format_hunk(h, all_lines, context_lines):
         parts.append(f"    + {line}")
 
     if h["base"] is not None:
-        parts.append(f"  base:")
+        parts.append("  base:")
         for line in h["base"].splitlines():
             parts.append(f"    ~ {line}")
 
@@ -227,9 +227,9 @@ def _print_header(files_data, total_hunks):
     print(f"# Conflict Summary: {total_files} file(s), {total_hunks} hunk(s)")
     print(f"#   mergiraf-supported: {mergiraf_yes}  |  unsupported: {mergiraf_no}")
     if mergiraf_yes > 0:
-        print(f"#   → try: python3 <skill>/scripts/batch-resolve.py --dry-run")
+        print("#   → try: python3 <skill>/scripts/batch-resolve.py --dry-run")
     if mergiraf_no > 0:
-        print(f"#   → try: python3 <skill>/scripts/conflict-pick.py <file> --ours|--theirs")
+        print("#   → try: python3 <skill>/scripts/conflict-pick.py <file> --ours|--theirs")
     print()
 
 

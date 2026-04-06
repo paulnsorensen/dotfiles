@@ -50,6 +50,7 @@ Before coding, commit to a clear interaction model:
 **CRITICAL**: The terminal is not a web browser. You have a fixed character grid, no fonts, no subpixel rendering, limited color in some environments, and keybinding conflicts with terminal emulators and multiplexers. Design within these constraints — don't fight them.
 
 Then implement working code that is:
+
 - Fully functional with proper terminal lifecycle management (raw mode, alternate screen, panic/signal cleanup)
 - Immediately usable without reading documentation (discoverable keybindings, status bar hints)
 - Resilient across terminal environments (color fallback, resize handling, multiplexer compatibility)
@@ -87,13 +88,15 @@ Universal conventions — users expect them:
 | `Ctrl-D` / `Ctrl-U` | Half-page down/up | |
 | `n/N` | Next/prev search result | After `/` search |
 
-### Keys to AVOID:
+### Keys to AVOID
+
 - `Ctrl-S` (freezes terminal), `Ctrl-Q` (XON), `Ctrl-Z` (SIGTSTP), `Ctrl-\` (SIGQUIT)
 - `Ctrl-Shift-*` (reserved by terminal emulators)
 - Alt/Option (unreliable on macOS without terminal config)
 - `Ctrl-I` = Tab, `Ctrl-M` = Enter, `Ctrl-H` = Backspace, `Ctrl-[` = Escape (physical collisions)
 
-### Discoverability is non-negotiable:
+### Discoverability is non-negotiable
+
 1. **Status bar hints**: 3-5 most important context-sensitive keybindings, always visible
 2. **`?` help overlay**: Full keybinding reference for the current view
 3. **Which-key popups**: After a prefix key, show available completions
@@ -119,10 +122,11 @@ Use **prefix keys** (`gg`, `dd`) instead of modifier chords for maximum terminal
 
 ## PTY Management
 
-### Full PTY handoff (shelling out) — in this order:
+### Full PTY handoff (shelling out) — in this order
+
 1. Leave alternate screen, 2. Disable mouse capture, 3. Disable raw mode, 4. Show cursor
-5. Spawn child with inherited stdin/stdout/stderr, 6. waitpid()
-7. Re-enable raw mode, 8. Re-enable mouse capture, 9. Re-enter alternate screen, 10. Full redraw
+2. Spawn child with inherited stdin/stdout/stderr, 6. waitpid()
+3. Re-enable raw mode, 8. Re-enable mouse capture, 9. Re-enter alternate screen, 10. Full redraw
 
 **Rust (ratatui + crossterm):**
 
@@ -145,13 +149,16 @@ fn shell_out<B: Backend>(terminal: &mut Terminal<B>, cmd: &str, args: &[&str]) -
 ```
 
 **Python (Textual):**
+
 ```python
 with self.app.suspend():
     os.system("vim file.txt")  # Terminal fully restored during this block
 ```
 
-### Terminal state safety — THE CARDINAL RULE:
+### Terminal state safety — THE CARDINAL RULE
+
 **Always restore terminal state on every exit path: normal exit, panic, signals.**
+
 - Rust (ratatui >= v0.29): `ratatui::init()` handles panic hooks automatically
 - Python (Textual): `App.run()` lifecycle handles cleanup
 - A TUI that corrupts the terminal on crash will be immediately uninstalled
@@ -160,7 +167,8 @@ with self.app.suspend():
 
 ## Color and Terminal Compatibility
 
-### Three tiers with graceful fallback:
+### Three tiers with graceful fallback
+
 | Tier | Detection | Use |
 |------|-----------|-----|
 | Truecolor (24-bit) | `COLORTERM=truecolor` | Default for modern terminals |
@@ -169,12 +177,13 @@ with self.app.suspend():
 
 Disable all color when `NO_COLOR` is set.
 
-### Accessibility:
+### Accessibility
+
 - ~8% of men have color vision deficiency. Use **blue + orange** instead of red + green.
 - Every colored indicator must also have a symbol or text label.
 - Guarantee >= 4.5:1 contrast ratio. Test on light AND dark backgrounds.
 
-### Theme architecture:
+### Theme architecture
 
 Every color choice must answer "what does this color **mean**?" If the answer is "it
 looked nice," it's wrong. Centralize color decisions:
@@ -182,7 +191,8 @@ looked nice," it's wrong. Centralize color decisions:
 - **Rust**: Define a `Theme` struct with semantic slots (`primary`, `surface`, `error`, `muted`). Pass `&theme` to render functions. Use `Color::Reset` for terminal-adaptive fg/bg. See `references/ratatui.md`.
 - **Textual**: Use `.tcss` semantic variables (`$surface`, `$primary`, `$accent`). One `.tcss` file per theme for runtime switching. See `references/textual.md`.
 
-### Resize handling:
+### Resize handling
+
 Handle `SIGWINCH` by recalculating layouts and full redraw. Collapse sidebars below 80 cols, hide metadata below 60. Design for **80x24 minimum**, optimize for 120x40+.
 
 ---
@@ -203,38 +213,47 @@ AI assistants produce these predictable mistakes in TUI code. Check every one be
 presenting output. These are the TUI-specific equivalents of the `de-slop` patterns.
 
 ### 1. Monolithic render function
+
 A 100+ line `ui()` / `render()` with nested layout math and inline styling.
 **Fix:** Delegate to per-panel render functions. Each panel is one function, < 40 lines.
 
 ### 2. Hardcoded colors assuming dark background
+
 `Color::White` on `Color::Black`, or `fg="white"` in Textual — invisible on light terminals.
 **Fix:** Use `Color::Reset` (Rust) or `$surface`/`$text` (Textual). Define a `Theme`, never scatter RGB at use sites.
 
 ### 3. Ignoring terminal size
+
 Renders sidebar at any width, truncates to garbage below 60 cols.
 **Fix:** Check `area.width` and collapse panels responsively. Test at 40, 80, and 200 cols.
 
 ### 4. Blocking the event loop
+
 Network fetch or file I/O inline in the render loop — drops frames, freezes UI.
 **Fix:** Background task via `tokio::spawn` + mpsc (Rust) or `@work` (Textual). Main loop only does recv + draw.
 
 ### 5. No state/view separation
+
 Business logic inside the render closure. Mutations during draw.
 **Fix:** TEA split — `App` struct owns state, `handle_event` mutates, `render` is pure read-only.
 
 ### 6. Missing panic cleanup
+
 Manual `enable_raw_mode()` without panic hook — crash leaves terminal trashed.
 **Fix:** Use `ratatui::init()` (installs panic hook automatically). Textual's `App.run()` handles this.
 
 ### 7. Undiscoverable keybindings
+
 Actions wired to keys but never shown in status bar or `?` help.
 **Fix:** Central keybinding table that feeds BOTH the action handler AND the help display.
 
 ### 8. Excessive comments
+
 `// Create the layout`, `// Handle quit key`, `// Render the list` — narrating every line.
 **Fix:** Delete comments that restate code. TUI code is visual — the structure speaks for itself.
 
 ### 9. Over-abstracted widget hierarchies
+
 `WidgetFactory`, `RenderManager`, `LayoutBuilder` for a 3-panel app.
 **Fix:** Functions, not abstractions. Extract a trait only when 3+ components genuinely share behavior.
 
@@ -257,6 +276,7 @@ The bar is: would your code look at home in these codebases?
 ## Language Guidance
 
 ### Rust: ratatui + crossterm
+
 - Default stack for most TUI projects. Bootstrap: `ratatui::init()` / `ratatui::restore()`.
 - Architecture: **TEA** for simple apps (< 5 interactive elements), **Component trait** for multi-panel apps. See `references/ratatui.md` for concrete skeletons.
 - Key patterns: `StatefulWidget` for scroll/selection state, `Constraint::Fill(1)` for flexible layouts, `Layout::vertical/horizontal` builder style.
@@ -265,6 +285,7 @@ The bar is: would your code look at home in these codebases?
 - Use `fetch` skill with Context7 for ratatui API lookups — the API surface is large.
 
 ### Python: Textual
+
 - Default for rapid prototyping and data exploration TUIs.
 - Architecture: `compose()` + `yield` widget trees, `Screen` push/pop for navigation, `reactive` attributes with `watch_*` callbacks, `Worker` with `@work(exclusive=True)` for async I/O. See `references/textual.md` for patterns.
 - Theming: `.tcss` files with semantic variables (`$surface`, `$primary`, `$accent`). Multiple `.tcss` files for runtime theme switching.
@@ -324,6 +345,7 @@ async def test_main_view(snap_compare):
 ### Integration checklist
 
 Every TUI must be verified against these scenarios:
+
 - **Resize**: 80x24, 120x40, 40x15 — layout adapts, no panics, no overflow
 - **NO_COLOR=1**: text-only indicators still present, no ANSI escapes
 - **tmux**: keybindings work, no conflicts, mouse events pass through

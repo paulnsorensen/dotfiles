@@ -7,6 +7,7 @@ argument-hint: "[directory to scope, or leave blank for full codebase]"
 Run the /nih-audit skill on: $ARGUMENTS
 
 This command invokes the nih-audit skill which handles the full workflow:
+
 1. Detect build system and extract dependencies from manifests
 2. Spawn nih-scanner agent for structural NIH pattern detection
 3. Research library alternatives via parallel research agents

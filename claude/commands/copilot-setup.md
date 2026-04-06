@@ -160,6 +160,7 @@ Replace `{REPLACE_WITH_CI_TOOLS_LIST}` with lines like `- Linting — handled by
 For each detected project type, generate a corresponding instructions file:
 
 **Python** → `.github/instructions/python.instructions.md`:
+
 ```markdown
 ---
 applyTo: "**/*.py"
@@ -174,6 +175,7 @@ applyTo: "**/*.py"
 ```
 
 **Node/TypeScript** → `.github/instructions/typescript.instructions.md`:
+
 ```markdown
 ---
 applyTo: "**/*.{ts,tsx,js,jsx}"
@@ -188,6 +190,7 @@ applyTo: "**/*.{ts,tsx,js,jsx}"
 ```
 
 **Rust** → `.github/instructions/rust.instructions.md`:
+
 ```markdown
 ---
 applyTo: "**/*.rs"
@@ -200,6 +203,7 @@ applyTo: "**/*.rs"
 ```
 
 **Go** → `.github/instructions/go.instructions.md`:
+
 ```markdown
 ---
 applyTo: "**/*.go"
@@ -213,6 +217,7 @@ applyTo: "**/*.go"
 ```
 
 **Shell/Dotfiles** → `.github/instructions/shell.instructions.md`:
+
 ```markdown
 ---
 applyTo: "**/*.{sh,zsh,bash}"

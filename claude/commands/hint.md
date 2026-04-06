@@ -9,7 +9,8 @@ You're stuck on: $ARGUMENTS
 
 I'll give you a HINT, not the answer.
 
-## Hint Levels:
+## Hint Levels
+
 1. **Direction**: Point you toward the right area
 2. **Concept**: Name the pattern or technique that applies
 3. **Partial**: Show a fragment, you complete it

@@ -39,12 +39,14 @@ General-purpose framework for any task where "it depends" is the honest answer.
 Match constraint level to risk. Not all instructions should have the same rigidity.
 
 **High freedom** (guidelines) — multiple valid approaches:
+
 ```
 When writing API error responses, consider consistency with existing format,
 sufficient detail for corrective action, and not leaking internals.
 ```
 
 **Medium freedom** (templates) — preferred pattern exists:
+
 ```
 Database queries should use the repository pattern:
 1. Define in src/repositories/[entity].ts
@@ -53,6 +55,7 @@ Database queries should use the repository pattern:
 ```
 
 **Low freedom** (exact steps) — operations are fragile:
+
 ```
 Production database migrations MUST follow this exact sequence:
 1. Create migration file
@@ -115,6 +118,7 @@ prevent the most common failures.
 ## Combining Patterns
 
 A well-structured judgment-heavy skill uses:
+
 1. Structured reasoning scaffold for the overall decision process
 2. Degrees of freedom matched to risk for each sub-task
 3. "Why" explanations for every constraint

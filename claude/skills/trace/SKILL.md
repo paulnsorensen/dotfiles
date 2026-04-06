@@ -110,47 +110,56 @@ Or use single quotes for the entire argument when possible.
 ## Pattern examples
 
 ### Classes with base classes (Python)
+
 ```bash
 sg --lang python -p 'class $A($B): $$$BODY'
 ```
 
 ### Method definitions (Python)
+
 ```bash
 sg --lang python -p 'def $METHOD(self, $$$ARGS): $$$BODY'
 ```
 
 ### Function calls on objects (TypeScript)
+
 ```bash
 sg --lang typescript -p '$OBJ.save($$$ARGS)'
 ```
 
 ### Async handlers (Python)
+
 ```bash
 sg --lang python -p 'async def $NAME($$$ARGS): $$$BODY'
 ```
 
 ### isinstance checks (Python)
+
 ```bash
 sg --lang python -p 'isinstance($OBJ, $TYPE)'
 ```
 
 ### Inheritance — TypeScript
+
 ```bash
 sg --lang typescript -p 'class $NAME extends $BASE { $$$BODY }'
 ```
 
 ### Interface implementation — TypeScript
+
 ```bash
 sg --lang typescript -p 'class $NAME implements $IFACE { $$$BODY }'
 ```
 
 ### Decorator matching — Python
+
 ```bash
 sg --lang python -p '@$DECORATOR
 def $NAME($$$ARGS): $$$BODY'
 ```
 
 ### Import audit — scoped
+
 ```bash
 sg --lang python -p 'from $MODULE import $NAME' -r src/adapters/
 ```
@@ -158,6 +167,7 @@ sg --lang python -p 'from $MODULE import $NAME' -r src/adapters/
 ## Complex queries (YAML rules)
 
 ### Async functions without try-catch (JavaScript)
+
 ```bash
 sg scan --inline-rules "id: async-no-trycatch
 language: javascript
@@ -174,6 +184,7 @@ rule:
 ```
 
 ### console.log inside class methods (JavaScript)
+
 ```bash
 sg scan --inline-rules "id: console-in-class
 language: javascript
@@ -185,6 +196,7 @@ rule:
 ```
 
 ### Functions with too many parameters (TypeScript)
+
 ```bash
 sg scan --inline-rules "id: too-many-params
 language: typescript
@@ -199,6 +211,7 @@ rule:
 ```
 
 ### Empty except blocks (Python)
+
 ```bash
 sg --lang python -p 'except $E: pass'
 ```
@@ -221,6 +234,7 @@ Return **only** a concise bulleted list. Each bullet must contain:
 - The matched snippet (trimmed to the first meaningful line)
 
 **Example:**
+
 ```
 - src/adapters/postgres_user_repo.py:14 — class PostgresUserRepo(UserRepository):
 - src/adapters/redis_cache.py:8 — class RedisCache(CachePort):
@@ -232,17 +246,20 @@ decides what to read next based on this list.
 ## Hexagonal architecture audit workflow
 
 1. Find all ports:
+
    ```bash
    sg --lang python -p 'class $PORT(ABC): $$$BODY'
    sg --lang python -p 'class $PORT(Protocol): $$$BODY'
    ```
 
 2. Find all implementations:
+
    ```bash
    sg --lang python -p 'class $ADAPTER($PORT): $$$BODY'
    ```
 
 3. Verify adapters don't bleed into domain:
+
    ```bash
    sg --lang python -p 'from $MODULE import $NAME' -r src/domains/
    ```

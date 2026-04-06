@@ -58,22 +58,26 @@ Determine owner/repo from the current git remote. Then fetch both inline review
 threads AND PR-level review bodies:
 
 **Inline review threads** (comments anchored to specific diff lines):
+
 ```
 pull_request_read(method: "get_review_comments", owner, repo, pullNumber)
 ```
 
 **PR-level review bodies** (summary comments submitted with a review):
+
 ```
 pull_request_read(method: "get_reviews", owner, repo, pullNumber)
 ```
 
 Also fetch PR metadata for context:
+
 ```
 pull_request_read(method: "get", owner, repo, pullNumber)
 pull_request_read(method: "get_diff", owner, repo, pullNumber)
 ```
 
 ### Inline threads
+
 Filter to **unresolved threads only** (`is_resolved: false`). Skip outdated
 threads (`is_outdated: true`) unless the user asks to include them.
 
@@ -82,6 +86,7 @@ and its replies). The first comment in a thread is the review suggestion;
 subsequent comments are the conversation.
 
 ### Review bodies
+
 Filter reviews to those with a **non-empty `body`** field. Reviews with empty
 bodies are just containers for inline comments and can be ignored here.
 
@@ -98,6 +103,7 @@ parent review.
 ## Phase 2: Assess Each Thread
 
 For each unresolved thread or review body item, read:
+
 1. The reviewer's suggestion (first comment in thread, or extracted from review body)
 2. Any follow-up discussion
 3. The relevant code from the diff (for inline threads) or the full PR diff (for review body items)
@@ -212,39 +218,51 @@ to move fast on the obvious stuff.
 
 ## Phase 4: Execute
 
-### For FIX items (>= 50):
+### For FIX items (>= 50)
+
 1. Read the relevant source file
 2. Implement the fix
 3. Reply acknowledging the fix:
    - **Inline threads**: reply to the thread:
+
      ```
      add_reply_to_pull_request_comment(owner, repo, pullNumber, commentId, body)
      ```
+
    - **Review body items**: post a PR conversation comment referencing the review:
+
      ```
      add_issue_comment(owner, repo, number: pullNumber, body: "Re: @reviewer's review — Fixed: <brief description>.")
      ```
+
    ```
    Fixed — <brief description of what changed>.
    ```
 
-### For PUSH BACK items (< 30):
+### For PUSH BACK items (< 30)
+
 1. Post the reply:
    - **Inline threads**:
+
      ```
      add_reply_to_pull_request_comment(owner, repo, pullNumber, commentId, body)
      ```
+
    - **Review body items**:
+
      ```
      add_issue_comment(owner, repo, number: pullNumber, body: "Re: @reviewer's review — <pushback explanation>.")
      ```
+
 2. Keep the tone professional and specific — explain *why*, not just *no*
 
-### For ASK items (30-49) after user decides:
+### For ASK items (30-49) after user decides
+
 - Execute as FIX or PUSH BACK based on the user's decision
 - If the user doesn't respond to a specific ASK, leave it unresolved
 
-### After all actions:
+### After all actions
+
 If any code was changed, commit the fixes (using the `commit` skill) and
 push to the PR branch. Present a summary: files modified, threads replied to,
 threads still pending user decision.

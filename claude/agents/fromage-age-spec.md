@@ -36,6 +36,7 @@ Code should implement what the spec describes. Find where it doesn't.
 ### Step 2: Extract spec requirements
 
 From each relevant spec, extract:
+
 - User stories (US-XXX) with acceptance criteria
 - Functional requirements (FR-X)
 - Design decisions and architectural choices
@@ -44,6 +45,7 @@ From each relevant spec, extract:
 ### Step 3: Compare implementation against spec
 
 For each requirement:
+
 1. **Locate implementation** — use LSP findReferences / scout to find where this requirement is implemented
 2. **Check alignment** — does the implementation match the spec's described approach?
 3. **Check completeness** — are all acceptance criteria addressed?

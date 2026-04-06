@@ -19,21 +19,25 @@ Run Python test code in an isolated, sandboxed environment without polluting the
 ## Usage
 
 ### Quick Test
+
 ```bash
 /test-sandbox "assert 1 + 1 == 2"
 ```
 
 ### Test with Imports
+
 ```bash
 /test-sandbox "from src.orders import process_order; assert process_order({}) == expected"
 ```
 
 ### Test from File
+
 ```bash
 /test-sandbox --file tests/test_edge_cases.py
 ```
 
 ### Sweep Stale Tests
+
 ```bash
 /test-sandbox --sweep
 ```
@@ -50,6 +54,7 @@ The skill delegates to sub-agents to keep your main context clean — you only s
 ## Examples
 
 ### Example 1: Quick Assertion
+
 ```
 > /test-sandbox "assert 'hello'.upper() == 'HELLO'"
 
@@ -58,6 +63,7 @@ Wrote: .claude/testing/test_abc123.py
 ```
 
 ### Example 2: Module Test
+
 ```
 > /test-sandbox "from src.auth import verify_token; assert verify_token('valid') is True; assert verify_token('bad') is False"
 
@@ -65,6 +71,7 @@ Wrote: .claude/testing/test_abc123.py
 ```
 
 ### Example 3: Test Failure
+
 ```
 > /test-sandbox "assert 1 + 1 == 3"
 
@@ -75,6 +82,7 @@ File: .claude/testing/test_xyz789.py (not cleaned up for inspection)
 ```
 
 ### Example 4: Sweep
+
 ```
 > /test-sandbox --sweep
 
@@ -104,12 +112,14 @@ On first use, `/test-sandbox` automatically adds `.claude/testing/` to `.gitigno
 ## When to Use This
 
 **Good for**:
+
 - Quick verifications during development
 - Testing a new function before committing
 - Edge case exploration
 - Validation of refactoring
 
 **Not ideal for**:
+
 - Long-term test suites (use `tests/` directory instead)
 - Collaborative tests (tests belong in repo, not `.claude/testing/`)
 - Fixtures or setup that needs persistence (use `conftest.py`)
@@ -117,22 +127,27 @@ On first use, `/test-sandbox` automatically adds `.claude/testing/` to `.gitigno
 ## Tips & Tricks
 
 ### Capture Output
+
 ```
 /test-sandbox "from src.module import fn; result = fn(); assert result > 0; print(f'Result: {result}')"
 ```
 
 ### Multiple Assertions
+
 Separate with semicolons:
+
 ```
 /test-sandbox "from mymodule import Cls; c = Cls(); assert c.x == 1; assert c.y == 2; assert c.z == 3"
 ```
 
 ### Test a Refactor
+
 ```
 /test-sandbox --file src/old_module.py  # Run old module's internal test suite
 ```
 
 ### Debug a Failure
+
 ```
 /test-sandbox --keep "assert my_fn() == expected"  # Don't delete file after failure
 cat .claude/testing/test_*.py  # Inspect the generated test

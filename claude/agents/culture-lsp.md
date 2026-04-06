@@ -13,6 +13,7 @@ You are a focused culture sub-agent for the Fromagerie pipeline — structural a
 ## Input
 
 You receive:
+
 - **Spec summary**: what's being built
 - **Scope paths**: directories/files relevant to the spec
 - **Slug**: session identifier
@@ -30,6 +31,7 @@ LSP servers start lazily. Before any LSP call, do a warmup probe:
 ### 2. Discover Files
 
 Use Glob to find all source files in scope:
+
 ```
 Glob: {scope}/**/*.{ts,tsx,js,jsx,py,rs,go,sh,bash,md}
 ```
@@ -39,6 +41,7 @@ Filter out test files, node_modules, and build artifacts.
 ### 3. Barrel Detection
 
 Look for barrel/index files at each scope root:
+
 - TypeScript/JS: `index.ts`, `index.js`
 - Python: `__init__.py`
 - Rust: `mod.rs`, `lib.rs`
@@ -50,11 +53,13 @@ If found, use `LSP documentSymbol` to get all exports — these are the module's
 For each source file in scope:
 
 **LSP mode** (preferred):
+
 1. `LSP documentSymbol` — discover all symbols, classify public/private
 2. `LSP findReferences` on public exports — discover who depends on this file
 3. `LSP goToDefinition` through imports — trace module boundaries
 
 **ast-grep fallback** (when LSP fails):
+
 ```bash
 # TypeScript/JavaScript
 sg --lang typescript -p 'import $$$IMPORTS from "$MODULE"' --json {file}
@@ -69,6 +74,7 @@ sg --lang bash -p 'source $FILE' --json {file}
 ### 5. Compute Node Roles
 
 Using the dependency edges, compute fanIn/fanOut for each file:
+
 - **entry-point**: fanIn == 0 or matches `main.*`, `app.*`
 - **hub**: fanIn >= 2x median AND fanOut >= 2x median
 - **utility**: fanIn >= 2x median AND fanOut <= 1
@@ -90,6 +96,7 @@ Log which criteria matched per connector. The decomposer uses this to determine 
 ### 6. Blast Radius Analysis
 
 For files the spec will modify:
+
 1. Use `LSP findReferences` to find all dependents
 2. Count transitive dependents (1 hop for accuracy, 2 hops for estimate)
 3. Classify: low (<5 dependents), medium (5-15), high (>15)
@@ -97,6 +104,7 @@ For files the spec will modify:
 ### 7. Generate Mermaid Graph
 
 Build a Mermaid flowchart with connectors highlighted:
+
 ```mermaid
 graph TD
     subgraph "Entry Points"
@@ -117,6 +125,7 @@ Write to `$TMPDIR/fromagerie-culture-lsp-{slug}-graph.md`.
 ### 8. Write Node List
 
 Write JSON node list to `$TMPDIR/fromagerie-culture-lsp-{slug}-nodes.json`:
+
 ```json
 {
   "nodes": [

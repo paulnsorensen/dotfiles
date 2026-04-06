@@ -78,6 +78,7 @@ Fast, offline, zero-setup. Always suggest these as the foundation:
 #### Language-specific hooks (community repos)
 
 **Rust:**
+
 ```toml
 # Local hooks (no external repo needed)
 [[repos]]
@@ -102,6 +103,7 @@ always_run = true
 ```
 
 **Python:**
+
 ```toml
 # Ruff (linter + formatter)
 [[repos]]
@@ -114,6 +116,7 @@ hooks = [
 ```
 
 **TypeScript/JavaScript:**
+
 ```toml
 [[repos]]
 repo = "local"
@@ -136,6 +139,7 @@ pass_filenames = true
 ```
 
 **Go:**
+
 ```toml
 [[repos]]
 repo = "local"
@@ -158,6 +162,7 @@ always_run = true
 ```
 
 **Shell:**
+
 ```toml
 [[repos]]
 repo = "https://github.com/shellcheck-py/shellcheck-py"
@@ -174,6 +179,7 @@ Before writing config, use Context7 MCP to check for current recommended version
 ### 5. Generate or augment prek.toml
 
 **New project**: Generate a complete `prek.toml` with:
+
 1. Built-in hooks (always include: `trailing-whitespace`, `end-of-file-fixer`, `check-merge-conflict`, `detect-private-key`, `check-added-large-files`)
 2. Language-specific hooks based on detection
 3. Comments explaining each section
@@ -183,6 +189,7 @@ Before writing config, use Context7 MCP to check for current recommended version
 ### 6. Install and verify
 
 After writing config:
+
 ```bash
 prek install
 prek run --all-files
@@ -228,6 +235,7 @@ exclude = { glob = ["vendor/**", "dist/**"] }
 ## Migration from pre-commit
 
 If `.pre-commit-config.yaml` exists:
+
 1. prek reads YAML natively — the existing config works as-is
 2. Offer to convert to `prek.toml` for access to prek-only features (glob patterns, `repo: builtin`)
 3. Replace `repo: https://github.com/pre-commit/pre-commit-hooks` with `repo: builtin` where hooks are supported

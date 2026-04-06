@@ -12,6 +12,7 @@ spec search and external research, then synthesizing a verdict.
 ## Input
 
 You receive:
+
 - `node`: the graph node being analyzed (id, filePath, symbolName, type, role, fanIn, fanOut)
 - `edges`: edges involving this node (who imports it, what it imports)
 - `moduleName`: human-readable module name for search context
@@ -38,6 +39,7 @@ node qualifies (e.g. "leaf utility, 42 lines, exports only type aliases").
 ### light
 
 Skip Phases 1 and 2 (spec search, external research). Run only:
+
 - Phase 0 (read contracts)
 - Phase 3 (callers/callees)
 - Phase 3.5 (smells)
@@ -57,6 +59,7 @@ Existing pipeline, unchanged. All phases run.
 ### Phase 0: Read contracts
 
 Read the node's file(s) to understand:
+
 - Public API (exported functions, classes, types)
 - Input/output types
 - Error handling strategy
@@ -67,6 +70,7 @@ Keep this focused — you're reading for contracts, not line-by-line review.
 ### Phase 1: Spec search (parallel) — full only
 
 Spawn TWO parallel haiku agents following `xray-spec-finder.md`:
+
 - **Local spec agent**: Search `.claude/specs/` for related specs
 - **GitHub agent**: Search issues/PRs for related tickets
 
@@ -76,6 +80,7 @@ Wait for both to return.
 
 Using spec context from Phase 1, spawn TWO parallel haiku agents following
 `xray-researcher.md`:
+
 - **Docs agent**: Verify library API usage via Context7
 - **Web agent**: Check patterns and best practices
 
@@ -87,17 +92,20 @@ From the graph edges, build caller and callee lists for this node's exports
 (edge labels carry per-export detail when available):
 
 **Callers** (who imports this node):
+
 - List callers and which exports they use
 - **Summarization rule**: If >5 callers, summarize:
   "{N} callers across {M} files (top 3: {file1}, {file2}, {file3})"
 - Flag any caller using internal details instead of the public API
 
 **Callees** (what this node calls):
+
 - List outgoing dependencies and which symbols are used
 - Same summarization rule for >5 callees
 - Assess: does the public API serve its callers well?
 
 Format as a compact table:
+
 ```
 | Export       | Callers          | Callees          |
 |-------------|-----------------|-----------------|
@@ -120,6 +128,7 @@ Using the scout's `visibility` field and graph edges, check:
   external consumers
 
 Report format:
+
 ```
 ### Encapsulation & Hygiene
 - Dead exports: {list or "none"}
@@ -151,6 +160,7 @@ sg --lang {language} -p 'jest.mock("$MODULE")' --json {test_dir}
 ```
 
 Compute:
+
 - Total test count
 - Value assertions vs existence/no-error assertions ratio
 - Mock count vs direct-call count

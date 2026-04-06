@@ -39,6 +39,7 @@ workspace root config → intermediate configs → the file with the error
 ```
 
 For each build system:
+
 - **Rust**: `Cargo.toml` (workspace root) → member `Cargo.toml` files
 - **Python**: `pyproject.toml` (workspace root with `uv`) → member packages
 - **Node**: root `package.json` → workspace `package.json` files
@@ -64,6 +65,7 @@ Classify the error:
 If the correct version isn't obvious:
 
 1. **Context7 first** — spawn a research agent to fetch current docs for the library:
+
    ```
    Use /fetch or Context7 to check: what is the latest version of <library>?
    What changed between version X and Y?

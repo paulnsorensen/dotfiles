@@ -24,11 +24,13 @@ Run `git diff main..HEAD --stat` and `git log --oneline main..HEAD` to understan
 ### 2. Group into PRs
 
 Priority for grouping:
+
 1. **Sliced Bread boundaries** (primary): files in the same slice belong together
 2. **Logical cohesion** (secondary): changes implementing the same user story group together
 3. **Review size** (tertiary): keep PRs under ~500 lines of diff when possible
 
 **Rules:**
+
 - If all changes form one coherent feature: **1 PR** (most common)
 - If changes split across 2-3 distinct slices: **2-3 PRs**
 - Never exceed 3 PRs — group by closest concern

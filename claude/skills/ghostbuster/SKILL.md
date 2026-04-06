@@ -101,6 +101,7 @@ For each category found, give one concrete example from the findings:
 ### Actionable summary
 
 Group findings by recommended action:
+
 1. **Delete now** — DEAD findings with confidence >= 75
 2. **Human triage** — ZOMBIE findings (spec vs reality mismatch)
 3. **Update specs** — GHOST findings (stale references)

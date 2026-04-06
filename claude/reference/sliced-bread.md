@@ -21,11 +21,13 @@ be needed. The growth pattern (one file → extract sibling → facade + folder)
 structure emerges from actual pressure, not imagination.
 
 **Growth triggers:**
+
 - A file passes ~200 lines or holds 3+ distinct concepts → extract siblings
 - 3+ related files cluster around a sub-concept → create subdirectory
 - A file becomes an import hub for its children → it's now a facade
 
 **Not growth triggers:**
+
 - "We might need this later"
 - "This looks like it could be its own module"
 - A single implementation of a pattern (one adapter, one strategy, one handler)

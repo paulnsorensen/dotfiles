@@ -18,6 +18,7 @@ Rule of thumb: if the work is sequential and interrelated, use `/fromage`. If th
 ## Context Passing
 
 Each phase builds on prior phases. When launching agents, always include:
+
 - **Slug**: kebab-case task identifier derived in Phase 0 (used for spec files, branch names)
 - **Spec summary**: from Phase 2, or the original request if spec was skipped
 - **Exploration findings**: from Phase 3, if it ran (entry points, blast radius, key files)
@@ -32,11 +33,13 @@ Each phase builds on prior phases. When launching agents, always include:
 The orchestrator reads ONE thing: the spec. Everything else is delegated.
 
 The orchestrator MUST NOT:
+
 - Use Read, Grep, or Glob on codebase files (delegate to Culture/Cook agents)
 - Run build/test commands directly (delegate to whey-drainer)
 - Read subagent full reports (work from their returned summaries)
 
 The orchestrator SHOULD:
+
 - Read the spec (`.claude/specs/<slug>.md`) — this is the contract that drives all phase decisions. One read, justified.
 - Work from subagent summaries, not full reports
 - Keep its own context focused on phase orchestration decisions
@@ -51,6 +54,7 @@ After exiting plan mode and reading the spec, the orchestrator pre-digests it fo
 2. For specs >5K chars, write the full spec to `$TMPDIR/fromage-spec-<slug>.md` using the Write tool (TMPDIR is sandbox-allowed, no permission prompt)
 
 Distribution — **prefer inline** to avoid temp file overhead:
+
 - **Curdle**: spec inline if <5K, otherwise temp file path (Curdle reads it itself). Curdle is the planner; it needs every constraint and boundary.
 - **Culture**: spec summary inline in prompt (enough to scope exploration)
 - **Cook**: relevant plan steps + spec summary inline (plan is the primary input)
@@ -103,6 +107,7 @@ This gate is **never skipped**.
 ### Derive Slug
 
 Generate a kebab-case slug from the request (<30 chars). Examples:
+
 - "add dark mode support" → `add-dark-mode`
 - "fix login timeout bug" → `fix-login-timeout`
 
@@ -111,6 +116,7 @@ The slug is used for: spec file (`.claude/specs/<slug>.md`), worktree branch, PR
 ### Parse Flags
 
 If `$ARGUMENTS` contains `--skill <name>`:
+
 1. Extract the skill name and remove the flag from the arguments
 2. Verify `claude/skills/<name>/SKILL.md` exists (error if not found)
 3. Carry the skill name through all subsequent phases
@@ -187,7 +193,7 @@ Should we include integration/E2E verification?
 
 Capture the answer in the spec under a `## Quality Gates` section. These commands become the contract for Phase 9 (Package) — whey-drainer runs exactly these commands.
 
-6. Write spec to `.claude/specs/<slug>.md` — include quality gates and any recommended libraries with justification
+1. Write spec to `.claude/specs/<slug>.md` — include quality gates and any recommended libraries with justification
 
 **Plan mode note**: The orchestrator is in plan mode and cannot write files directly. Delegate spec writing to a haiku agent — pass the spec content in the prompt, the agent writes to `.claude/specs/<slug>.md` and returns confirmation. Similarly, delegate `gh repo view` license checks to a research agent.
 
@@ -206,6 +212,7 @@ Present a structured summary, then ask with lettered approval options:
    - **Red:** User does X incorrectly → system returns error → no state change
 
 AskUserQuestion with options:
+
 ```
    A. Approve — proceed to exploration
    B. Edit — I want to change scope
@@ -233,15 +240,18 @@ Launch Culture agents (sonnet), each targeting a different aspect. Every agent a
 ### Aspects
 
 **`fromage-culture` agents (codebase exploration):**
+
 - **Aspect A**: Entry points and existing patterns relevant to the change
 - **Aspect B**: Blast radius — what existing code will be affected
 - **Aspect C** (medium+): Architecture boundaries and integration points
 
 **Separate research subagents (large only, run in parallel with Culture):**
+
 - **Aspect D**: **External prior art** — spawn a `/research` agent (not `fromage-culture`) to scan how other projects solved similar problems. Use octocode for GitHub examples, Context7 for library docs, WebSearch for blog posts and design rationale. Write findings to `$TMPDIR/fromage-culture-<slug>-prior-art.md`.
 - **Aspect E**: **Dependency and API landscape** — spawn a `/fetch` agent to assess external libraries, APIs, or services this change interacts with. Are there newer/better options? Version constraints? Write to `$TMPDIR/fromage-culture-<slug>-deps.md`.
 
 After agents return:
+
 1. **Synthesize cross-agent patterns** — what do 2+ agents agree on? Where do they contradict?
 2. Pass summaries and full report temp file paths to Curdle
 3. The planner can read the full reports if it needs deeper context
@@ -261,6 +271,7 @@ If library candidates were identified, include them in Curdle's prompt with: pac
 Present the plan as visible text output: architecture decision (one line), files to modify/create, build steps (parallel vs sequential), YAGNI boundaries, adopted libraries (if any).
 
 Then AskUserQuestion with lettered options:
+
 ```
    A. Approve — start implementation
    B. Modify plan — adjust steps
@@ -358,6 +369,7 @@ Implementation. **Never skipped.**
 ### TDD Target
 
 If Phase 5 (Cut) ran, Cook agents receive the test file paths in their prompt. Their job: **make those tests pass**. Include in each Cook prompt:
+
 - Test file paths from Cut (in `changed_files`)
 - Instruction: "Run these tests after implementation. All must pass before you're done."
 
@@ -368,6 +380,7 @@ If Phase 5 (Cut) ran, Cook agents receive the test file paths in their prompt. T
 ### Wave Splitting
 
 When dispatching Cook agents for medium/large tasks:
+
 - Count the files each plan step touches
 - If a single Cook agent would need to touch roughly 8+ files, split into multiple Cook agents (one per independent group) — this is a heuristic, not a hard limit; adjust based on file sizes and complexity
 - Each Cook agent gets a fresh context window — this is the primary mechanism for preventing token accumulation
@@ -388,6 +401,7 @@ Research agents spawned during Cook get `max_turns: 15`.
 ### Design Skill Injection
 
 If a design skill was specified (via Curdle plan's "Design Skill" section or `--skill` flag):
+
 1. Read `claude/skills/<skill-name>/SKILL.md`
 2. Include the skill's markdown body in each Cook agent's prompt
 3. Prefix with: "Apply the following design skill guidelines to your implementation:"
@@ -481,6 +495,7 @@ Present combined findings to user. Fix agreed issues inline.
 ## Phase Transitions
 
 One-line status between phases:
+
 ```
 --- Phase 3 complete --- 7 key files, moderate blast radius. Moving to Curdle...
 ```

@@ -13,6 +13,7 @@ You have ONE job: run tokei, apply multipliers, write the manifest. Dead simple.
 ## Input
 
 You receive:
+
 - **Scope paths**: directories/files to measure
 - **Slug**: session identifier
 

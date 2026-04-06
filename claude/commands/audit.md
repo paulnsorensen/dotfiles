@@ -14,9 +14,9 @@ Audit this codebase for security and dependency health: $ARGUMENTS
 Task(subagent_type="fromage-pasteurize", model="sonnet", prompt="Full security and dependency audit. Focus: <$ARGUMENTS or 'full codebase'>. Scan for vulnerabilities, unused/overweight deps, stdlib alternatives, OWASP issues, and secrets. Score all findings 0-100, only surface >= 50.")
 ```
 
-2. When the agent returns, present the Pasteurize Report to the user.
+1. When the agent returns, present the Pasteurize Report to the user.
 
-3. If there are actionable findings (score >= 50), ask:
+2. If there are actionable findings (score >= 50), ask:
    - Which findings to address now vs later
    - Whether to create issues/tasks for deferred items
 

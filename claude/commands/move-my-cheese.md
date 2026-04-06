@@ -41,6 +41,7 @@ Two tiers of LSP usage — one for move-my-cheese itself, one for the sub-agents
 **How to detect worktree context**: Working directory is under a `.worktrees/` path, or the prompt mentions "worktree" or "parallel agents".
 
 **lsp-probe pattern** for diagnosis (Phase 3a):
+
 ```
 Agent(subagent_type="lsp-probe", prompt="queries:\n  1. hover <file>:<line>\n  2. findReferences <file>:<line> symbol=<name>\n  3. documentSymbol <file>")
 ```
@@ -79,11 +80,13 @@ gh pr checks $ARGUMENTS
 ```
 
 For any failing checks, fetch logs (CLI-only):
+
 ```bash
 gh run view <run-id> --log-failed
 ```
 
 Summarize findings:
+
 - PR title and branch
 - Merge status (clean, conflicts, or blocked)
 - CI failures (infra flake vs real test failure)
@@ -97,17 +100,20 @@ Summarize findings:
 ### Worktree Check
 
 If the PR branch is checked out in another worktree, work from the current branch:
+
 - `git fetch origin <pr-branch> main`
 - `git reset --hard origin/<pr-branch>`
 - `git merge origin/main --no-edit`
 
 If the PR branch is free:
+
 - `git checkout <pr-branch>`
 - `git merge origin/main --no-edit`
 
 ### Conflict Resolution (chisel skill)
 
 If merge conflicts occur:
+
 1. List conflicting files with `git diff --name-only --diff-filter=U`
 2. Use **scout** (`rg '<<<<<<< ' --files-with-matches`) to confirm all conflict markers
 3. For each conflict, Read the file and resolve with **chisel** (Edit tool for precise context-matched replacements)
@@ -138,6 +144,7 @@ Categorize each CI failure from Phase 1 recon:
 ### Smoke Check (diff skill)
 
 Run `/diff` first — catch obvious merge artifacts before wasting a build/test cycle:
+
 - Conflict markers left behind
 - Debug statements
 - Silent failures in merged code
@@ -151,6 +158,7 @@ Skill(skill="make")
 ```
 
 If build fails, understand the failing symbols before fixing with **chisel**:
+
 - **Standalone**: Use `/lookup` — routes to LSP for types/cross-refs, Context7 for external APIs
 - **Worktree context** (dispatched by cheese-convoy): Batch failing symbols into a single **lsp-probe** call — hover for types, findReferences for cross-refs — then fix with chisel
 
@@ -169,6 +177,7 @@ If tests pass: the CI failure was likely infra. Move to Phase 3b.
 ### Fix Strategy (lookup/lsp-probe + scout + chisel skills)
 
 For real test/build failures:
+
 1. Understand the failing symbol — type mismatches, missing methods, changed APIs:
    - **Standalone**: `/lookup` (routes to direct LSP or Context7)
    - **Worktree context**: Batch all failing symbols into one `lsp-probe` call (hover + findReferences)
@@ -180,9 +189,11 @@ For real test/build failures:
 After fixing any tests, apply `/tdd-assertions` to strengthen weak assertions — existence checks, catch-all errors, length-only checks, and no-crash-as-success patterns. AI-generated test fixes are especially prone to these.
 
 If tests fail after fixes, run the fix-and-verify loop (up to 3 rounds):
+
 ```
 Agent(subagent_type="roquefort-wrecker", prompt="Investigate test failures: <details>. Fix test bugs, score code bugs 0-100.")
 ```
+
 Then apply `/tdd-assertions` to the wrecker's output and re-run `/make test` to verify.
 
 ---
@@ -237,6 +248,7 @@ If any finding is < 50 confidence, **ask the user** before acting on it.
 3. If CI failure was purely infrastructure, offer to re-run: `gh run rerun <run-id> --failed` (CLI-only)
 
 Report summary:
+
 - What was wrong (conflicts, test failures, infra flakes)
 - What was fixed (including quality sweep findings)
 - Sweep scores: age report summary + de-slop fix count + respond triage table

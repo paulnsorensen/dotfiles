@@ -15,6 +15,7 @@ for i, item in enumerate(items):
 ```
 
 When you don't need the index at all, just iterate directly:
+
 ```python
 for item in items:
     process(item)

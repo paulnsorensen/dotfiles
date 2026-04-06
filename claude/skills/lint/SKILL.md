@@ -16,6 +16,7 @@ Run all configured linters in a project and report findings grouped by category.
 ## Capabilities
 
 This skill:
+
 - **Detects available linters** from `prek.toml`, `eslintrc`, `pylintrc`, `.shellcheckrc`, etc.
 - **Runs linters** appropriate to changed files (shellcheck for .sh, yamllint for .yaml, etc.)
 - **Aggregates findings** into a structured report
@@ -48,12 +49,14 @@ Scan for linter configuration files:
 ### 2. Run Linters
 
 **Priority order** (fail fast if core linters fail):
+
 1. **Syntax checks** (JSON, YAML, TOML, shell syntax)
 2. **Built-in linters** (prek hooks, shellcheck, yamllint)
 3. **Language-specific linters** (eslint, clippy, pylint)
 4. **Formatters** (prettier, black, rustfmt —check only, don't auto-fix)
 
 **Filtering:**
+
 - Run only linters that match file types changed (e.g., only shellcheck for .sh files)
 - Skip linters with missing config files (unless they're built-in)
 - Respect `.gitignore` and linter exclusions
@@ -81,6 +84,7 @@ Group findings by linter and severity:
 ```
 
 **Report structure:**
+
 - File path and line number for each finding
 - Linter name and error code (for searching solutions)
 - Plain English description of the issue

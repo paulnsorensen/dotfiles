@@ -25,11 +25,13 @@ Use when [trigger 1], [trigger 2], or when user mentions "[keyword1]",
 ### Report Generator
 
 Before (summary-style — never fires):
+
 ```yaml
 description: A skill for generating project status reports.
 ```
 
 After (trigger-style):
+
 ```yaml
 description: >
   Generate project status reports with metrics, blockers, and next steps.
@@ -41,11 +43,13 @@ description: >
 ### PR Review
 
 Before:
+
 ```yaml
 description: Code review assistance for pull requests.
 ```
 
 After:
+
 ```yaml
 description: >
   Analyze pull requests for bugs, security issues, and architectural concerns.
@@ -83,6 +87,7 @@ hook. See `hooks-catalog.md` for the implementation.
 ## Automated Optimization
 
 If you have `claude -p` (Claude Code CLI), use the skill-creator's loop:
+
 1. Create 20 eval queries (10 should-trigger, 10 should-not-trigger)
 2. Make should-trigger queries realistic and messy, not clean abstractions
 3. Make should-not-trigger queries near-misses, not obviously irrelevant

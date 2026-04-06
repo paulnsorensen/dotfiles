@@ -33,11 +33,13 @@ The old rule was "free first, then cheap, then expensive." That led to 85% Octoc
 ### When each source WINS
 
 **Context7** wins when you need specific API surface:
+
 - "What are the options for `serde`'s `#[serde(rename)]`?"
 - "How do I configure Vite's proxy setting?"
 - "What's the Express 5 middleware signature?"
 
 **Serper** wins for factual lookups, entity info, and recency signals:
+
 - "What version of React is current?" → answer box
 - "Who maintains the Tokio crate?" → Knowledge Graph
 - "Is Deno 2 stable yet?" → recency from SERP dates
@@ -45,6 +47,7 @@ The old rule was "free first, then cheap, then expensive." That led to 85% Octoc
 - "When was this CVE published?" → quick fact
 
 **Tavily** wins for how-to content, technical analysis, and best practices:
+
 - "How should I implement rate limiting in Express 5?" → synthesized how-to
 - "Best practices for Rust error handling in async code" → deep technical content
 - "Comparison of connection pooling strategies" → multi-source analysis
@@ -52,11 +55,13 @@ The old rule was "free first, then cheap, then expensive." That led to 85% Octoc
 - "What are the tradeoffs of server components vs client components?" → nuanced comparison
 
 **Codebase** wins for internal patterns:
+
 - "How do we handle auth in this project?"
 - "What's the pattern for error types here?"
 - "Where are the API routes defined?"
 
 **Octocode** wins for real-world open-source examples:
+
 - "How do popular Rust projects structure their CLI args?"
 - "Show me how other repos use `tower` middleware"
 - "What's the common pattern for database migrations in Go?"
@@ -83,6 +88,7 @@ Is it about how open-source projects solve X?
 ### Cost as tiebreaker, not gatekeeper
 
 When two sources could answer equally well:
+
 - Prefer the cheaper one
 - But NEVER skip Tavily just because Serper exists — they answer *different* questions
 - Serper gives you links and metadata; Tavily gives you *content*. If you need content, use Tavily.
@@ -109,6 +115,7 @@ Not every question needs 5 agents. Match effort to the question:
 ### 1. Parse the Research Question
 
 Identify:
+
 - **Primary topic** — what are we researching?
 - **Question type** — factual lookup? how-to? comparison? pattern search?
 - **Complexity** — simple fact, focused question, or deep analysis?
@@ -157,6 +164,7 @@ Agent(
 > Use ONLY the MCP tools specified below."
 
 #### Context7 Fetcher
+
 ```
 You are fetching library documentation via Context7.
 Do NOT use WebSearch or WebFetch. Use ONLY the MCP tools below.
@@ -176,6 +184,7 @@ Skip if the answer is stable, well-known API (Array.map, os.path).
 ```
 
 #### Serper Fetcher
+
 ```
 You are retrieving structured Google SERP data via Serper.
 Do NOT use WebSearch or WebFetch. Use ONLY the MCP tools below.
@@ -203,6 +212,7 @@ Return:
 ```
 
 #### Tavily Fetcher
+
 ```
 You are researching technical concepts via Tavily AI search.
 Do NOT use WebSearch or WebFetch. Use ONLY the MCP tools below.
@@ -234,6 +244,7 @@ Return:
 ```
 
 #### Codebase Fetcher
+
 ```
 You are analyzing our codebase for patterns and usage.
 Do NOT use WebSearch or WebFetch.
@@ -252,6 +263,7 @@ Return:
 ```
 
 #### Octocode Fetcher
+
 ```
 You are searching GitHub for real-world usage patterns.
 Do NOT use WebSearch or WebFetch. Use ONLY the MCP tools below.
@@ -287,6 +299,7 @@ Rate every finding 0-100:
 | 90-100 | Verified | 3+ sources agree with no contradictions. |
 
 Aggregate across sources:
+
 - **3+ sources agree** → Overall 85-100
 - **2 sources agree** → Overall 60-84
 - **Disagreement** → Note why, default to recency/popularity, cap overall at 49
@@ -328,12 +341,14 @@ Only include rows for sources that were actually spawned. Empty rows for skipped
 ## When to Use This Agent
 
 **Use** when you need 2+ sources:
+
 - "How do I set up auth in Express 5?" (docs + Tavily how-to + examples)
 - "What's the best rate limiting pattern?" (Tavily analysis + GitHub examples)
 - "Is library X still maintained?" (Serper recency + GitHub activity)
 - "What does the ecosystem say about [approach]?" (Serper PAA + Tavily articles)
 
 **Don't use** for single-source questions:
+
 - "What does `Array.map` do?" (training data, inline)
 - "How does our auth module work?" (Grep + Read, inline)
 - "Show me React useEffect docs" (Context7 only, use fetch skill)

@@ -1,6 +1,7 @@
 # TypeScript/JavaScript Justfile Recipes
 
 Detect the package manager from lockfiles:
+
 - `bun.lockb` / `bun.lock` -> bun
 - `pnpm-lock.yaml` -> pnpm
 - `yarn.lock` -> yarn

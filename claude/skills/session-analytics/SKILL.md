@@ -53,6 +53,7 @@ duckdb ~/.claude/analytics/sessions.duckdb -json -c "SELECT ..."
 ## Schema
 
 ### `tool_uses`
+
 Flattened from assistant message `content[]` blocks where `type = 'tool_use'`.
 
 | Column | Type | Description |
@@ -75,6 +76,7 @@ Flattened from assistant message `content[]` blocks where `type = 'tool_use'`.
 | gitBranch | VARCHAR | Git branch at time of call |
 
 ### `tool_results`
+
 Flattened from user message `content[]` blocks where `type = 'tool_result'`.
 
 | Column | Type | Description |
@@ -86,6 +88,7 @@ Flattened from user message `content[]` blocks where `type = 'tool_result'`.
 | sessionId | VARCHAR | Session identifier |
 
 ### `stop_events`
+
 Assistant messages where Claude stopped generating.
 
 | Column | Type | Description |
@@ -97,6 +100,7 @@ Assistant messages where Claude stopped generating.
 | gitBranch | VARCHAR | Git branch |
 
 ### `agent_spawns`
+
 Subset of tool_uses for Agent calls.
 
 | Column | Type | Description |
@@ -109,6 +113,7 @@ Subset of tool_uses for Agent calls.
 | cwd | VARCHAR | Working directory |
 
 ### `skill_invocations`
+
 Subset of tool_uses for Skill calls.
 
 | Column | Type | Description |
@@ -120,12 +125,14 @@ Subset of tool_uses for Skill calls.
 | cwd | VARCHAR | Working directory |
 
 ### `mcp_calls`
+
 Subset of tool_uses for MCP server calls (tool_name starts with `mcp__`).
 
 Same columns as `tool_uses`. The tool_name encodes the server and method:
 `mcp__<server>__<method>` (e.g., `mcp__context7__query-docs`).
 
 ### `sessions`
+
 One row per unique (sessionId, cwd, branch) combination.
 
 | Column | Type | Description |
@@ -138,6 +145,7 @@ One row per unique (sessionId, cwd, branch) combination.
 | entry_count | INTEGER | Total JSONL entries in session |
 
 ### `stop_hooks`
+
 System entries with subtype `stop_hook_summary`.
 
 | Column | Type | Description |
@@ -153,6 +161,7 @@ System entries with subtype `stop_hook_summary`.
 | level | VARCHAR | suggestion, warning, etc. |
 
 ### `permission_denials`
+
 Pre-filtered tool_results for permission-related failures.
 
 | Column | Type | Description |
@@ -162,6 +171,7 @@ Pre-filtered tool_results for permission-related failures.
 | timestamp | VARCHAR | ISO timestamp |
 
 ### `raw_entries`
+
 The full unflattened JSONL data. Use only when the materialized tables
 don't have what you need.
 
@@ -170,6 +180,7 @@ don't have what you need.
 Organized by investigation type. Use as starting points — modify for your question.
 
 ### Tool usage frequency
+
 ```sql
 SELECT tool_name, count(*) AS uses
 FROM tool_uses
@@ -178,6 +189,7 @@ ORDER BY uses DESC;
 ```
 
 ### Error rate by tool
+
 ```sql
 SELECT
     tu.tool_name,
@@ -191,6 +203,7 @@ ORDER BY errors DESC;
 ```
 
 ### MCP server usage breakdown
+
 ```sql
 SELECT
     split_part(tool_name, '__', 2) AS server,
@@ -202,6 +215,7 @@ ORDER BY calls DESC;
 ```
 
 ### Skill usage over time
+
 ```sql
 SELECT
     skill_name,
@@ -213,6 +227,7 @@ ORDER BY day DESC, uses DESC;
 ```
 
 ### Busiest sessions
+
 ```sql
 SELECT
     s.sessionId,
@@ -227,6 +242,7 @@ LIMIT 10;
 ```
 
 ### Most common Bash commands
+
 ```sql
 SELECT
     substr(bash_cmd, 1, 80) AS cmd,
@@ -239,7 +255,9 @@ LIMIT 20;
 ```
 
 ### Permission friction audit
+
 What Bash commands get denied most, categorized by root cause:
+
 ```sql
 SELECT
     CASE
@@ -271,7 +289,9 @@ ORDER BY denials DESC;
 ```
 
 ### Bash allowlist gap finder
+
 Commands that succeed but require manual approval (not in allowlist, not blocked by hook):
+
 ```sql
 SELECT
     split_part(bash_cmd, ' ', 1) AS cmd_prefix,
@@ -288,7 +308,9 @@ LIMIT 20;
 ```
 
 ### Python3 usage by purpose
+
 Categorizes inline python3 calls to find skill opportunities:
+
 ```sql
 SELECT
     CASE
@@ -317,7 +339,9 @@ ORDER BY cnt DESC;
 ```
 
 ### MCP routing for a specific skill
+
 Shows which MCPs were called within N minutes of a skill invocation:
+
 ```sql
 -- Replace 'research' with the skill name and adjust window
 WITH skill_windows AS (
@@ -340,7 +364,9 @@ ORDER BY calls DESC;
 ```
 
 ### Agent spawn patterns by skill
+
 Shows which agent types each skill spawns:
+
 ```sql
 SELECT
     si.skill_name,
@@ -357,7 +383,9 @@ ORDER BY si.skill_name, spawns DESC;
 ```
 
 ### Hook impact analysis
+
 Stop hooks that blocked continuation vs allowed:
+
 ```sql
 SELECT
     level,
@@ -371,7 +399,9 @@ LIMIT 20;
 ```
 
 ### Compound command friction
+
 Bash commands with pipes or && that trigger permission prompts:
+
 ```sql
 SELECT
     substr(bash_cmd, 1, 150) AS cmd,
@@ -388,7 +418,9 @@ LIMIT 20;
 ```
 
 ### Tool usage by project
+
 Compare tool patterns across projects:
+
 ```sql
 SELECT
     regexp_extract(cwd, '.*/([^/]+)$', 1) AS project,
@@ -400,6 +432,7 @@ ORDER BY project, uses DESC;
 ```
 
 ### Daily activity heatmap
+
 ```sql
 SELECT
     timestamp::DATE AS day,

@@ -35,6 +35,7 @@ mergiraf merge --git <ancestor> <ours> <theirs> [flags]
 | `-p` | `%P` | File path (used to detect language from extension) |
 
 **Exit codes:**
+
 - `0` — Clean merge, no conflicts
 - `1` — Conflicts remain (written as standard `<<<<<<<` markers)
 
@@ -48,6 +49,7 @@ mergiraf merge <base> <left> <right> -o <output> -p <path-for-language>
 ```
 
 Check for conflict markers in output to determine if resolution is clean:
+
 ```bash
 mergiraf merge base ours theirs -o merged -p file.py
 grep -c '<<<<<<' merged  # 0 = clean, >0 = conflicts remain
@@ -113,6 +115,7 @@ installation required.
 ### 2. Node Matching
 
 A matching algorithm identifies corresponding nodes across the three trees:
+
 - **Exact hash matching** (fast path) for identical subtrees
 - **Similarity scoring** for modified nodes (GumTree-style tree differencing)
 
@@ -188,12 +191,14 @@ the correct Tree-sitter grammar.
 ### File Registration (gitattributes)
 
 Global (applies to all repos):
+
 ```bash
 mergiraf languages --gitattributes > ~/.gitattributes
 # Requires: core.attributesfile = ~/.gitattributes in gitconfig
 ```
 
 Per-repo (overrides global):
+
 ```bash
 mergiraf languages --gitattributes > .gitattributes
 ```
@@ -201,6 +206,7 @@ mergiraf languages --gitattributes > .gitattributes
 ### Disabling for Specific Files
 
 In a repo's `.gitattributes`:
+
 ```
 *.py merge=            # Reset to text merge (overrides global)
 package-lock.json merge=ours   # Always keep ours for lockfiles
@@ -210,6 +216,7 @@ package-lock.json merge=ours   # Always keep ours for lockfiles
 
 After `brew upgrade mergiraf`, regenerate gitattributes to pick up newly
 supported languages:
+
 ```bash
 mergiraf languages --gitattributes > ~/.gitattributes
 ```
@@ -221,6 +228,7 @@ mergiraf languages --gitattributes > ~/.gitattributes
 ### Pattern 1: Parallel Feature Branches with Shared Files
 
 Two features both touch `config.yaml` or a shared `types.ts`:
+
 ```bash
 git merge feature-b
 # mergiraf: both sets of changes included, no conflict
@@ -330,6 +338,7 @@ the merged result after resolution.
 | `pnpm-lock.yaml` | Regenerate: `pnpm install` |
 
 Consider adding to repo `.gitattributes`:
+
 ```
 package-lock.json merge=ours
 yarn.lock merge=ours

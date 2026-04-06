@@ -47,6 +47,7 @@ patterns. Use modules (`mod frontend`, `mod backend`) for true monorepos.
 **Multi-ecosystem naming:** When a project has multiple languages (e.g., Tauri
 with Rust + TypeScript), use ecosystem suffixes to disambiguate overlapping
 concerns:
+
 - `test-rust`, `test-ts` (not generic `test` that hides what runs)
 - `fmt-rust`, `fmt-ts` (each ecosystem's formatter)
 - `lint-rust` (clippy), `lint-ts` (eslint/biome)
@@ -68,6 +69,7 @@ shell scripts in `scripts/` or `bin/`. If found:
 Place `justfile` in the project root. Follow these conventions:
 
 **Structure order:**
+
 1. Settings (`set dotenv-load`, `set shell`, etc.)
 2. Variables (version, binary name, etc.)
 3. Default recipe (first recipe — either `default: check` or `@just --list`)
@@ -76,6 +78,7 @@ Place `justfile` in the project root. Follow these conventions:
 6. Private helpers (`_prefixed` or `[private]`)
 
 **Recipe naming:**
+
 - Use kebab-case: `test-coverage`, `build-release`
 - Use verbs: `build`, `test`, `lint`, `deploy` (not `builder`, `tests`)
 - Group with prefixes for large files: `db-migrate`, `db-seed`, `db-reset`
@@ -92,6 +95,7 @@ test *args:
 ```
 
 **Parameters:**
+
 - Use defaults for optional args: `test filter=""`
 - Use variadic for passthrough: `run *args`
 - Use `+args` (1+ required) sparingly
@@ -110,6 +114,7 @@ Add `set shell := ["bash", "-uc"]` only if recipes need bash-specific features
 After creating the justfile:
 
 **CLAUDE.md** — Add a "Key Commands" or "Common Tasks" section:
+
 ```markdown
 ## Key Commands
 
@@ -125,6 +130,7 @@ Run `just` to see all available recipes.
 Only list the 4-6 most important recipes. Point to `just --list` for the rest.
 
 **README.md** — Add a "Development" or "Getting Started" section:
+
 ```markdown
 ## Development
 
@@ -137,6 +143,7 @@ just install   # Install dependencies
 just test      # Run tests
 just           # See all available commands
 ```
+
 ```
 
 Don't duplicate the full recipe list — `just --list` is self-documenting.
@@ -169,6 +176,7 @@ OPEN := if os() == "macos" { "open" } else { "xdg-open" }
 ```
 
 **Recipe attributes:**
+
 ```just
 [confirm("Deploy to production?")]
 deploy: build test
@@ -187,6 +195,7 @@ _setup:
 ```
 
 **Modules (monorepo):**
+
 ```just
 mod api        # looks for api/justfile or api.just
 mod web
@@ -196,6 +205,7 @@ mod? local     # optional — no error if missing
 ```
 
 **Shebang recipes (multi-line scripts):**
+
 ```just
 analyze:
     #!/usr/bin/env python3

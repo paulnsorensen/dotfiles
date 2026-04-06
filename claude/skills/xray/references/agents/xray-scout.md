@@ -17,6 +17,7 @@ You build dependency graphs using ecosystem-specific CLI tools, LSP, and ast-gre
 ## Input
 
 You receive:
+
 - `targetPath`: directory or file to analyze (relative to repo root)
 - `slug`: session identifier for the output file
 
@@ -25,6 +26,7 @@ You receive:
 ### 1. Discover files
 
 Use Glob to find all source files in the target path:
+
 ```
 Glob: {targetPath}/**/*.{ts,tsx,js,jsx,py,rs,go,sh,bash}
 ```
@@ -43,20 +45,23 @@ call, do a warmup probe:
 ### 1.6. Barrel detection
 
 Look for barrel/index files at the target path root:
+
 - TypeScript/JS: `index.ts`, `index.js`
 - Python: `__init__.py`
 - Rust: `mod.rs`, `lib.rs`
 - Go: (no barrel convention — skip)
 
 If a barrel file is found:
+
 1. Use `LSP documentSymbol` on the barrel file to get all exports
 2. For each export, use `LSP hover` to derive its signature (nullable — some
    symbols like re-exports or constants may not have a meaningful signature)
 3. Record these as `barrelExports` in the graph meta — these are the module's
    public API contract
-3. Set `meta.barrelFile` to the barrel file's path
+4. Set `meta.barrelFile` to the barrel file's path
 
 If no barrel file is found:
+
 - Set `meta.barrelFile` to null, `meta.barrelExports` to empty array
 - Report "No barrel/index file detected" in the scout's return summary
 
@@ -65,32 +70,38 @@ If no barrel file is found:
 Detect the primary language from manifest files, then run the appropriate CLI:
 
 **Detection** (check in order, first match wins):
+
 - `package.json` or `tsconfig.json` in target or ancestors → JS/TS
 - `pyproject.toml` or `setup.py` in target or ancestors → Python
 - `Cargo.toml` in target or ancestors → Rust
 - `go.mod` in target or ancestors → Go
 
 **JS/TS — dependency-cruiser**:
+
 ```bash
 npx depcruise {targetPath} --output-type json --metrics --do-not-follow "node_modules"
 ```
 
 If a Sliced Bread layout is detected (`src/domains/` exists):
+
 ```bash
 npx depcruise {targetPath} --output-type json --metrics --do-not-follow "node_modules" --config references/depcruise-sliced-bread.js
 ```
 
 **Python — pydeps**:
+
 ```bash
 pydeps {targetPath} --show-deps --no-output
 ```
 
 **Rust — cargo-modules**:
+
 ```bash
 cargo modules dependencies --lib --layout dot | dot -Tdot_json
 ```
 
 **Go — go list**:
+
 ```bash
 go list -json ./...
 ```
@@ -164,6 +175,7 @@ Phase 3.5, but excluded from `symbolName` and the dashboard's API surface.
 
 For the **top-level exported symbols only** (not every function), use LSP
 `outgoingCalls` to discover call relationships:
+
 ```
 LSP callHierarchy {file}:{line} outgoing
 ```
@@ -178,6 +190,7 @@ Role computation applies to `type: "module"` nodes only. Symbol-level nodes
 parent module's role and are excluded from fanIn/fanOut computation.
 
 Using the import edge list, compute `fanIn` and `fanOut` for each module node:
+
 - `fanIn` = count of distinct module nodes that have an import edge **to** this node
 - `fanOut` = count of distinct module nodes this node has an import edge **from**
 
@@ -198,6 +211,7 @@ Assign roles in this priority order (first match wins):
 ### 6. Compute DFS order
 
 Topological sort the graph with leaves first:
+
 1. Build adjacency list from import edges (from → to)
 2. Find leaf nodes (nodes with no outgoing import edges)
 3. DFS from all non-leaf roots, recording post-order traversal
@@ -228,6 +242,7 @@ All nodes start with `status: "unverified"` and empty notes/evidence arrays.
 ## Output
 
 Return a brief summary:
+
 - Number of nodes discovered (by role: {N} entry, {N} hub, {N} domain, {N} utility, {N} leaf, {N} terminal)
 - Number of import edges
 - Number of call edges

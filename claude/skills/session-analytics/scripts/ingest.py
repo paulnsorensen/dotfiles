@@ -44,7 +44,7 @@ def main():
     if db_is_fresh() and not force:
         age_min = (time.time() - os.path.getmtime(DB_PATH)) / 60
         print(f"Database is {age_min:.0f}m old (TTL=60m). Skipping ingestion.")
-        print(f"Use --force to re-ingest.")
+        print("Use --force to re-ingest.")
         return
 
     os.makedirs(DB_DIR, exist_ok=True)

@@ -15,6 +15,7 @@ You receive a **skill name** (or agent type) to analyze. The DuckDB database is
 pre-populated at `~/.claude/analytics/sessions.duckdb`.
 
 All queries go through the CLI:
+
 ```bash
 duckdb ~/.claude/analytics/sessions.duckdb -json -c "SQL"
 ```

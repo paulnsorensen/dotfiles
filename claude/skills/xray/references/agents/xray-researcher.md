@@ -14,15 +14,18 @@ The analyst spawns TWO parallel haiku agents from these instructions:
 
 1. From the node's imports, identify external libraries used
 2. For each library:
+
    ```
    resolve-library-id: {library_name}
    query-docs: {library_id} topic="{how the node uses it}"
    ```
+
 3. Verify:
    - Is the API being used correctly? (correct method signatures, expected patterns)
    - Is there a simpler or more idiomatic way to achieve the same result?
    - Are there deprecated APIs being used?
 4. Return structured findings:
+
    ```
    ## Library Verification
    ### {library_name}
@@ -40,12 +43,15 @@ The analyst spawns TWO parallel haiku agents from these instructions:
    - Is the architectural pattern well-established?
    - Are there known pitfalls with this approach?
 2. Search for relevant best practices:
+
    ```
    WebSearch: "{pattern name} best practices {language}"
    WebSearch: "{specific technique} pitfalls"
    ```
+
 3. Keep findings brief — max 3 bullets per search
 4. Return structured findings:
+
    ```
    ## External Research
    - {finding 1}: {source}
@@ -58,6 +64,7 @@ If no external libraries or patterns worth researching, return
 ## Build-vs-Buy Flags
 
 Both agents should flag when:
+
 - Code reimplements functionality available in an installed dependency
 - Code reimplements common patterns (retry logic, date parsing, URL building,
   string templating) that have well-maintained library alternatives

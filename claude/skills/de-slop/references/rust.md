@@ -5,6 +5,7 @@
 LLMs reach for `.clone()` as a universal fix for ownership errors.
 
 **Fix:**
+
 - Use borrowing (`&` and `&mut`) instead
 - Take `&str` instead of `String` in function parameters
 - Use `.as_ref()` on `Option`/`Result` instead of cloning to unwrap
@@ -26,6 +27,7 @@ greet(&my_string);
 Creates runtime panics scattered throughout the codebase.
 
 **Fix:**
+
 - Use `?` operator for error propagation
 - Use `anyhow` or `thiserror` for structured errors
 - Use `if let Some(x)` or `match` for `Option` types
@@ -46,6 +48,7 @@ let config: Config = toml::from_str(&contents)?;
 Losing type safety and adding unnecessary allocations.
 
 **Fix:**
+
 - Accept `&str` or `impl AsRef<str>` in function parameters
 - Use `Cow<'_, str>` when sometimes owned, sometimes borrowed
 - Create newtypes for domain concepts: `struct UserId(String)`
@@ -63,6 +66,7 @@ fn find_user(id: &UserId, name: &str) -> Result<User> { ... }
 C-style `for i in 0..vec.len()` misses safety and optimization.
 
 **Fix:**
+
 - Use `.iter()`, `.map()`, `.filter()`, `.enumerate()`, `.collect()`
 - Use slice patterns: `match vec.as_slice() { [first, ..] => ... }`
 
@@ -83,6 +87,7 @@ for (i, item) in items.iter().enumerate() {
 When ownership gets complex, AI reaches for interior mutability or `unsafe`.
 
 **Fix:**
+
 - Reduce borrow lifetimes so they don't overlap
 - Design structs to own their data
 - Pass short-lived borrows as method parameters
@@ -94,6 +99,7 @@ When ownership gets complex, AI reaches for interior mutability or `unsafe`.
 error/value on failure, printing only `false`.
 
 **Fix:**
+
 - Propagate with `.expect("context")` or `?` to see the real error
 - Check actual values, not just existence
 - For errors, verify the specific variant with `matches!` or check the message
@@ -130,6 +136,7 @@ assert_eq!(count, 3, "expected 3 active workers after spawn");
 `assert!(x.is_none())` prints `assertion failed: false`. `assert_eq!` shows what was actually there.
 
 **Fix:**
+
 - Use `assert_eq!(x, None)` for better failure messages
 - For `is_some()`, extract and check the inner value
 
@@ -148,6 +155,7 @@ assert_eq!(ping["result"]["host_type"].as_str(), Some("daemon"));
 Raw `tokio::time::sleep` before assertions is fragile — passes on fast machines, flakes in CI.
 
 **Fix:**
+
 - Use a `wait_until_async` polling pattern with timeout
 - Sleep-then-assert is only acceptable for testing actual timing behavior
 
@@ -168,6 +176,7 @@ A bare `#[should_panic]` passes on *any* panic — including unrelated ones from
 refactoring. Always pin the expected message.
 
 **Fix:**
+
 - Add `expected = "substring"` to match the intended panic message
 
 ```rust
@@ -191,6 +200,7 @@ fn rejects_empty_input() {
 Tests with zero assertions only prove the code doesn't panic — not that it works.
 
 **Fix:**
+
 - Add assertions on return values or side effects
 - If intentionally testing "no panic", add an explicit comment documenting why
 
@@ -441,23 +451,28 @@ so suppressing them is more defensible. `Complexity` lints need justification.
 ### Legitimate uses (don't flag these)
 
 **Test code:**
+
 - `#[allow(dead_code)]` on test utility functions
 - `#[allow(unused)]` in `mod tests` blocks
 - `#[allow(clippy::unwrap_used)]` in test assertions (idiomatic)
 
 **Framework integration:**
+
 - `#[allow(unused)]` on trait impls required by framework (async frameworks often have dead-looking methods)
 - `#[allow(clippy::must_use_candidate)]` when the framework signature doesn't support `#[must_use]`
 
 **Intentional design:**
+
 - `#[allow(clippy::pedantic)]` at crate level (pedantic lints are opt-in)
 - `#[allow(clippy::cognitive_complexity)]` on state machines or DSLs (legitimately complex, not a bug)
 
 **FFI/interop:**
+
 - `#[allow(non_snake_case)]` / `non_camel_case_types` matching C signatures
 - `#[allow(unsafe_code)]` when wrapping C libraries
 
 **Generated code:**
+
 - `build.rs` output
 - Protobuf/gRPC generated files
 - Macro-generated code inside the macro itself
@@ -472,6 +487,7 @@ AI generates functions that don't exist or uses outdated API patterns
 (e.g., `clap` `App::new` instead of derive macros).
 
 **Fix:**
+
 - Run `cargo check` immediately after generating code
 - Pin specific crate versions
 - Use Clippy: `cargo clippy -- -W clippy::all`

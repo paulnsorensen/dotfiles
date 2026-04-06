@@ -22,7 +22,7 @@ Git and GitHub operations for worktrees without triggering safety heuristics.
 Claude Code's bash safety checks block two common worktree patterns:
 
 1. **`cd /path && git commit`** — triggers "bare repository attack" warning
-2. **`gh pr create --body "$(cat <<'EOF' ## Summary ...)"` ** — triggers "# hides arguments" warning
+2. **`gh pr create --body "$(cat <<'EOF' ## Summary ...)"`** — triggers "# hides arguments" warning
 
 Both cause approval prompts that break automated workflows. Neither can be suppressed via `permissions.allow` or `bypassPermissions`.
 
@@ -113,6 +113,7 @@ wt-git .worktrees/my-task add src/lib.rs src/main.rs
 wt-git .worktrees/my-task commit -m "feat: add feature"
 wt-git .worktrees/my-task push origin claude/my-task
 ```
+
 Then use MCP `create_pull_request` for the PR.
 
 ### Check worktree state

@@ -1,7 +1,7 @@
 # ast-grep Rule Reference
 
 Condensed from the official ast-grep documentation. For full details, see
-https://ast-grep.github.io/llms-full.txt
+<https://ast-grep.github.io/llms-full.txt>
 
 ## Rule categories
 
@@ -186,6 +186,7 @@ matches: my-utility-rule-id
 ## Common patterns by language
 
 ### Python
+
 ```yaml
 # Classes inheriting from ABC
 pattern: 'class $NAME(ABC): $$$BODY'
@@ -202,6 +203,7 @@ rule:
 ```
 
 ### TypeScript / JavaScript
+
 ```yaml
 # Interface implementations
 pattern: 'class $NAME implements $IFACE { $$$BODY }'
@@ -220,6 +222,7 @@ any:
 ```
 
 ### Go
+
 ```yaml
 # Interface definitions
 pattern: 'type $NAME interface { $$$METHODS }'
@@ -237,6 +240,7 @@ pattern: 'type $NAME struct { $$$FIELDS }'
 ```
 
 ### Rust
+
 ```yaml
 # Trait implementations
 pattern: 'impl $TRAIT for $TYPE { $$$BODY }'

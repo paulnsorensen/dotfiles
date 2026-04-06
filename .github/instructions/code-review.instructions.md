@@ -16,6 +16,7 @@ Focus reviews on these categories, in priority order:
 ## CLAUDE.md Validation
 
 When any `CLAUDE.md` file is modified, check:
+
 - Key Commands section documents all new commands/aliases
 - Architecture section reflects actual directory structure
 - Skill Delegation table matches the skills in `claude/skills/`
@@ -25,6 +26,7 @@ When any `CLAUDE.md` file is modified, check:
 ## Claude Skill Validation
 
 When any `claude/skills/*/SKILL.md` is modified, check:
+
 - `allowed-tools` lists only tools the skill actually uses
 - `description` accurately describes when to invoke the skill
 - Tool division is respected (no skill claims capabilities belonging to another tool)

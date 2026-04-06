@@ -25,6 +25,7 @@ ccw-init <slug>
 ```
 
 This single command handles everything:
+
 - Validates git repo
 - Creates worktree at `.worktrees/<slug>/` on branch `claude/<slug>` (or resumes if exists)
 - Symlinks Claude project permissions from main repo

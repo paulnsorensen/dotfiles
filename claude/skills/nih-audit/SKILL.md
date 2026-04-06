@@ -62,6 +62,7 @@ For each manifest, extract dependency names into a flat set:
 | requirements.txt | line-by-line package names |
 
 Store as `depManifest`:
+
 ```json
 {
   "workspaces": {
@@ -164,6 +165,7 @@ Agent(
 ### 2.3 Collect and Deduplicate
 
 Wait for all research agents. For each candidate:
+
 - Map the best library recommendation to the candidate
 - Drop recommendations for libraries already in depManifest
 - Flag stdlib alternatives (no new dep needed — highest value)
@@ -198,9 +200,11 @@ For each candidate, search for signals that NIH was deliberate:
 "avoid dependency on".
 
 **In code**: Search candidate files for comments indicating intent:
+
 ```
 Grep: "intentionally|deliberately|don't use|avoid|instead of|rather than|we chose|NOTE:|DECISION:"
 ```
+
 Scoped to files containing NIH candidates only.
 
 ### 3.3 Check Library-Spec Alignment
@@ -265,6 +269,7 @@ For each candidate with a library recommendation, apply the full 4-step chain:
 #### Step 4: Second independent scoring pass
 
 For EVERY candidate (not just borderlines):
+
 1. Clear your mental state — do not look at the first score
 2. Re-read the NIH code and the library's API fresh
 3. Score independently using the same steps 1-3
@@ -286,6 +291,7 @@ Build the full report in memory. Do NOT write to `$TMPDIR` or any file — retur
 everything inline in the summary response.
 
 For EVERY finding (no threshold filtering — show all candidates):
+
 ```
 ### Finding #N: <Title> (Score: NN) [AMBIGUOUS if passes diverge >20]
 

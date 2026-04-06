@@ -21,6 +21,7 @@ patterns are dangerous and what to do instead.
 ## Blocked patterns
 
 **`git show <ref>:<path>`** — reads raw file contents from any ref.
+
 ```
 git show origin/main:src/lib.rs          # blocked
 git show HEAD~3:package.json             # blocked

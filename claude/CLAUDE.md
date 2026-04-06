@@ -62,6 +62,7 @@ I follow these core engineering principles (enforced by my Cheddar Flow agents):
 ## Python Preference
 
 Always use `uv` for Python projects:
+
 ```bash
 uv run script.py      # Run with dependencies
 uv pip install pkg    # Install packages
@@ -87,11 +88,13 @@ src/
 ```
 
 **Growth pattern:**
+
 1. Start with one file per concept
 2. Extract sibling when crowded
 3. File becomes facade + folder when it wants friends
 
 **Rules:**
+
 - Index/barrel file is the crust — external code imports from here only
 - Don't reach into another slice (import from index, not internals)
 - Models stay pure (no ORM, framework, or adapter imports)
@@ -145,6 +148,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | Session analytics | `/session-analytics` | ad-hoc python3 JSONL parsing |
 
 **Available CLI tools** — these are always installed and in the allowlist. Use them instead of python3 inline scripts:
+
 - **jq** — JSON processing (parse, filter, transform). Use `gh --jq` for GitHub output.
 - **yq** — YAML processing (same syntax as jq)
 - **sd** — regex replacement (Rust sed). Use via `/chisel` skill.

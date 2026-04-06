@@ -33,9 +33,11 @@ gh api repos/{owner}/{repo}/pulls/{pullNumber}/comments
 ```
 
 ### Inline threads
+
 Filter to **unresolved threads only**. Skip outdated threads. Group by thread (first comment = suggestion, rest = conversation).
 
 ### Review bodies
+
 Filter reviews to those with **non-empty `body`**. Empty-body reviews are just containers for inline comments — skip them.
 
 Review bodies are PR-level summaries: Age Review tables, Copilot overviews, `CHANGES_REQUESTED` bodies. A single body may contain multiple suggestions — parse into individual items when possible.
@@ -112,24 +114,28 @@ Include a one-line expansion for each row.
 
 ## Phase 4: Execute
 
-### FIX items (>= 50):
+### FIX items (>= 50)
+
 1. Read the source file
 2. Implement the fix using **chisel**
 3. Reply acknowledging the fix:
    - **Inline threads**: `add_reply_to_pull_request_comment(owner, repo, pullNumber, commentId, body)`
    - **Review body items**: `gh api repos/{owner}/{repo}/issues/{pullNumber}/comments -f body="Re: @reviewer's review — Fixed: <description>."`
 
-### PUSH BACK items (< 30):
+### PUSH BACK items (< 30)
+
 1. Post a professional reply explaining *why*:
    - **Inline threads**: `add_reply_to_pull_request_comment`
    - **Review body items**: `gh api repos/{owner}/{repo}/issues/{pullNumber}/comments -f body="..."`
 2. Cite CLAUDE.md conventions, complexity budget, or early-dev stance when relevant
 3. Skip purely stylistic suggestions (note as SKIP in table)
 
-### ASK items (30-49):
+### ASK items (30-49)
+
 Report these back — the orchestrator or user decides.
 
-### After all actions:
+### After all actions
+
 If code was changed, commit fixes using the **commit** skill. Report: files modified, threads replied to, threads pending user decision.
 
 ## Rules

@@ -56,6 +56,7 @@ Check the project root for marker files in priority order. Use the FIRST match:
 | `pom.xml` | maven | `mvn compile -q 2>&1` |
 
 **Detection rules:**
+
 - For `Justfile`: read it to check which recipes exist. Prefer `check` > `build` > `test`.
   If `check` wraps `cargo check` internally, that's fine — don't double-detect.
 - For `Makefile`: read it and check for `check` target first, then default target.
@@ -77,6 +78,7 @@ scan for documented build/check/test commands. Look for sections like "Key Comma
 - `./scripts/build.sh` — custom build scripts
 
 If CLAUDE.md documents a check/test/build command, use it and note the source:
+
 ```
 ✓ Build passed (dots test, from CLAUDE.md) — clean
 ```
@@ -107,7 +109,7 @@ Extract errors and warnings into structured format. Match against these known pa
 
 | Tool | Error Pattern | Example |
 |---|---|---|
-| Rust/cargo | `error[EXXXX]: msg` + ` --> file:line:col` | `error[E0425]: cannot find value` |
+| Rust/cargo | `error[EXXXX]: msg` + `--> file:line:col` | `error[E0425]: cannot find value` |
 | TypeScript/tsc | `file(line,col): error TSXXXX: msg` | `src/app.ts(12,5): error TS2304` |
 | Go | `file:line:col: msg` | `main.go:15:2: undefined: foo` |
 | Python/mypy | `file:line: error: msg [code]` | `app.py:10: error: incompatible type [arg-type]` |
@@ -119,12 +121,14 @@ Extract errors and warnings into structured format. Match against these known pa
 | Pre-commit | Various — parse each hook's output separately | Hook failures contain tool output |
 
 **Parsing rules:**
+
 - Extract: file path, line number, column (if available), error code (if available), message
 - Truncate messages at 120 characters
 - Distinguish errors from warnings (most tools use the word explicitly)
 - For unknown output formats, look for lines containing `error` or `warning` near file paths
 
 **Multi-step commands** (like `make check` running lock + pre-commit + mypy):
+
 - Track each step's pass/fail separately
 - If a step is skipped (sandbox, missing tool), report it as skipped — not as an error
 - Roll up to a single structured result at the end
@@ -133,13 +137,14 @@ Extract errors and warnings into structured format. Match against these known pa
 
 Use EXACTLY these templates. Do not improvise or add commentary.
 
-### On success (exit code 0, no errors):
+### On success (exit code 0, no errors)
 
 ```
 ✓ Build passed (<tool>) — clean
 ```
 
 Or with warnings:
+
 ```
 ✓ Build passed (<tool>) — 0 errors, <N> warnings
 
@@ -147,7 +152,7 @@ Warnings (<N>):
   <file>:<line>:<col> — <message> [<code>]
 ```
 
-### On failure (exit code non-zero or errors found):
+### On failure (exit code non-zero or errors found)
 
 ```
 ✗ Build failed (<tool>) — <N> errors, <N> warnings
@@ -160,7 +165,7 @@ Warnings (<N>):
   <file>:<line>:<col> — <message> [<code>]
 ```
 
-### On no build system detected:
+### On no build system detected
 
 ```
 ⚠ No build system detected
@@ -169,7 +174,7 @@ Warnings (<N>):
   CLAUDE.md: <not found | no build commands documented>
 ```
 
-### On tool not found:
+### On tool not found
 
 ```
 ✗ Build tool not available — <tool> is not installed
@@ -177,14 +182,14 @@ Warnings (<N>):
   Expected command: <command>
 ```
 
-### On sandbox restriction:
+### On sandbox restriction
 
 ```
 ⚠ Sandbox blocked <tool> — needs write access to <path>
   Run /make from within the target project instead.
 ```
 
-### With skipped steps (multi-step builds):
+### With skipped steps (multi-step builds)
 
 ```
 ✗ Build failed (make check) — 1 error, 0 warnings
@@ -197,7 +202,8 @@ Skipped:
   pre-commit run -a (sandbox restriction)
 ```
 
-### Output caps:
+### Output caps
+
 - Max 50 errors shown. If more: show first 30, then `... and <N> more errors`
 - Max 20 warnings shown. If more: show first 10, then `... and <N> more warnings`
 - Group by file when there are 10+ issues — makes it scannable

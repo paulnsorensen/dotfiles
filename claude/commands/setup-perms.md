@@ -23,15 +23,17 @@ Scaffold a clean `.claude/settings.local.json` with sensible permissions for thi
 
 A project can match multiple types (polyglot). If none match, use base permissions only.
 
-2. **Determine the project root** using the current working directory (the absolute path where Claude Code is running). This path is used to scope destructive commands. Refer to it as `$PWD` below.
+1. **Determine the project root** using the current working directory (the absolute path where Claude Code is running). This path is used to scope destructive commands. Refer to it as `$PWD` below.
 
-3. **Build the allow list** by combining layers. Start with the base layer, then add each detected type's layer.
+2. **Build the allow list** by combining layers. Start with the base layer, then add each detected type's layer.
 
 Commands are split into two categories:
+
 - **Safe (read-only / non-destructive):** unscoped, can run anywhere
 - **Destructive (writes / moves / deletes):** scoped to `$PWD/*` so they only work inside the project
 
 **Base (always included):**
+
 ```
 # Safe — unscoped
 Bash(git *)
@@ -70,6 +72,7 @@ WebSearch
 **IMPORTANT:** Replace `$PWD` with the actual absolute path (e.g. `/Users/paulsorensen/Dev/dotfiles`). Do NOT leave `$PWD` as a literal string in the output.
 
 **Dotfiles/shell layer:**
+
 ```
 Bash(bash *)
 Bash(sh *)
@@ -90,6 +93,7 @@ Bash(alias *)
 ```
 
 **Node/TS layer:**
+
 ```
 Bash(npm *)
 Bash(npx *)
@@ -104,6 +108,7 @@ Bash(vitest *)
 ```
 
 **Python layer:**
+
 ```
 Bash(uv *)
 Bash(python *)
@@ -114,6 +119,7 @@ Bash(ruff *)
 ```
 
 **Rust layer:**
+
 ```
 Bash(cargo *)
 Bash(rustc *)
@@ -121,12 +127,14 @@ Bash(rustup *)
 ```
 
 **Go layer:**
+
 ```
 Bash(go *)
 Bash(gopls *)
 ```
 
 **Ruby layer:**
+
 ```
 Bash(bundle *)
 Bash(ruby *)
@@ -134,9 +142,10 @@ Bash(gem *)
 Bash(rake *)
 ```
 
-3. **Read existing `.claude/settings.local.json`** and extract the `enabledMcpjsonServers` array if present. Preserve it in the output.
+1. **Read existing `.claude/settings.local.json`** and extract the `enabledMcpjsonServers` array if present. Preserve it in the output.
 
-4. **Write `.claude/settings.local.json`** with this structure:
+2. **Write `.claude/settings.local.json`** with this structure:
+
 ```json
 {
   "permissions": {
@@ -147,7 +156,8 @@ Bash(rake *)
 }
 ```
 
-5. **Print a summary** like:
+1. **Print a summary** like:
+
 ```
 Detected: dotfiles, python
 Permissions: 45 rules (base: 27, dotfiles: 16, python: 6)

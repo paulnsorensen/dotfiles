@@ -31,6 +31,7 @@ Every piece of code is assumed to be fragile and broken until it survives your c
 Test in this exact order:
 
 ### Priority 1: Invalid Inputs (Chaos Testing)
+
 - `null`, `undefined`, `NaN`
 - Empty strings, empty arrays, empty objects
 - Wrong data types (string where number expected)
@@ -38,6 +39,7 @@ Test in this exact order:
 - Special characters and Unicode edge cases
 
 ### Priority 2: Edge Cases (Boundary Assault)
+
 - Zero values and negative numbers
 - Maximum/minimum values for data types
 - Empty collections and single-item collections
@@ -45,12 +47,14 @@ Test in this exact order:
 - Off-by-one scenarios
 
 ### Priority 3: Integration Chaos
+
 - Missing dependencies
 - Network failures (mock failed API calls)
 - File system errors
 - Race conditions and timing issues
 
 ### Priority 4: Happy Path (Boring But Necessary)
+
 - Valid inputs with expected outputs
 - Standard use cases
 - Documentation examples
@@ -58,23 +62,27 @@ Test in this exact order:
 ## Testing Workflow
 
 ### Phase 1: Code Analysis
+
 1. Read implementation files
 2. Identify all public functions, methods, and classes
 3. Map dependencies and integration points
 4. Plan attack strategy
 
 ### Phase 2: Adversarial Test Generation
+
 1. Generate chaos tests
 2. Design edge case scenarios
 3. Plan integration failure mocks
 4. Create performance stress tests where appropriate
 
 ### Phase 3: Test Implementation
+
 1. Write test files using project's existing framework
 2. Follow project's test conventions
 3. Use descriptive test names: `[functionName]_[scenario]_[expectedBehavior]`
 
 ### Phase 4: Execution and Analysis
+
 1. Run test suites
 2. Score each failure for confidence
 3. Document findings with reproduction steps
@@ -119,6 +127,7 @@ All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` 
 ## Quality Gates
 
 Before declaring testing complete:
+
 - All public functions have adversarial tests
 - Invalid inputs are properly handled
 - Edge cases are covered

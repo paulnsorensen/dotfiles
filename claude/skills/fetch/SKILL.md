@@ -19,12 +19,14 @@ External knowledge with context window hygiene. Five sources, one budget.
 ## Should I fetch at all?
 
 **Skip — use training data** when:
+
 - Stable, well-known API: `Array.map`, `os.path`, `console.log`, HTTP status codes
 - Single-line answer you're confident in
 - Already fetched this in the current session
 - The question is conceptual, not version-specific
 
 **Fetch** when:
+
 - Library version matters (Next.js 15 vs 14, React 19 hooks, Prisma 6)
 - API is niche or fast-changing (auth libraries, ORMs, cloud SDKs, AI APIs)
 - The user explicitly asks for current or latest docs
@@ -106,6 +108,7 @@ Serper returns URLs and snippets, not extracted content. If you need page text,
 follow up with `scrape(url="<url>")`.
 
 Best for:
+
 - Factual lookups where Google's answer box has the answer
 - Discovering related questions via People Also Ask
 - Entity information via Knowledge Graph
@@ -119,6 +122,7 @@ structured option.
 ### Subagent (broad or uncertain scope)
 
 Delegate to `general-purpose` agent when:
+
 - Broad question spanning multiple concepts
 - Unsure how large the response will be
 - Multiple related pages need cross-referencing
@@ -137,6 +141,7 @@ Use octocode MCP for searching GitHub code — finding implementations, usage ex
 or how a pattern is used across public repos.
 
 Use octocode when:
+
 - Searching for real-world usage examples of an API
 - Finding how an open-source library implements something internally
 - Looking for patterns across multiple repos
@@ -149,6 +154,7 @@ gh skill uses GitHub MCP tools by default (sandbox-safe), with `gh` CLI as fallb
 ### Tavily extract / Serper scrape (read specific pages)
 
 For reading a specific URL's content:
+
 - `tavily_extract(urls=["<url>"], query="<question>")` — AI-processed, relevance-ranked chunks
 - `scrape(url="<url>", includeMarkdown=true)` — raw page content with JSON-LD metadata
 
@@ -158,6 +164,7 @@ is cheaper and includes structured metadata.
 ### Subagent (deep exploration)
 
 Delegate to `general-purpose` agent when:
+
 - Exploration requires reading 3+ files
 - Tracing a call chain across multiple modules
 - Unfamiliar codebase with unclear entry points

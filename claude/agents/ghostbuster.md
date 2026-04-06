@@ -17,6 +17,7 @@ Your four categories of finding tell the orchestrator exactly what kind of decay
 ## Input
 
 You receive:
+
 - **Scope**: directory to scan (or repo root)
 - **Languages**: detected primary language(s), or auto-detect from file extensions
 - **Slug**: session identifier (optional)
@@ -26,6 +27,7 @@ You receive:
 ### 1. LSP Warmup
 
 LSP servers start lazily. Before any LSP call:
+
 1. Call `LSP hover` on the first source file's line 1
 2. If it fails, wait 3s and retry (up to 3 attempts)
 3. If still failing, note the failure and fall back to Grep for reference counting
@@ -56,6 +58,7 @@ Glob: {scope}/**/docs/**/*.md
 ```
 
 For each file found, extract mentioned symbols: function names, type names, endpoint paths, module names. Use patterns like:
+
 - Backtick-wrapped identifiers: `` `functionName` ``, `` `TypeName` ``
 - Code blocks containing function/type definitions
 - References like "the `foo` module" or "calls `bar()`"
@@ -67,6 +70,7 @@ Build a lookup: `{symbol → [spec_file, line_number]}`.
 For each source file, identify exported/public symbols:
 
 **LSP mode** (preferred):
+
 - `LSP documentSymbol` to get all symbols
 - `LSP findReferences` on each exported symbol — count callers outside the defining file
 
@@ -92,6 +96,7 @@ Beyond exports, look for unexported symbols with zero callers within their own f
 - Unused imports (import statements where the imported name has no references)
 
 For commented-out code, use:
+
 ```
 Grep: ^(\s*//){3,} or ^\s*#.*\n\s*#.*\n\s*# (3+ consecutive comment lines that look like disabled code, not documentation)
 ```
@@ -111,6 +116,7 @@ For deleted files, check whether any spec still references them. These are stron
 ### 7. Detect Dormant Chains
 
 For each DEAD candidate from Step 4:
+
 1. Check if any other DEAD candidate lists this symbol as a dependency
 2. If symbol A is DEAD and symbol B's only caller is A, then B is DORMANT
 3. Walk the chain: if A→B→C and A is dead, B and C are both DORMANT
@@ -120,11 +126,13 @@ This catches entire dead subgraphs — utility functions that only served a now-
 ### 8. Cross-Reference Against Specs
 
 For each finding from Steps 4-7:
+
 - Check the spec lookup from Step 3
 - If symbol has 0 references AND appears in a spec → upgrade to ZOMBIE
 - If symbol appears in a spec but doesn't exist in codebase → create GHOST finding
 
 For each spec symbol that has no matching codebase symbol:
+
 - Search for close matches (typos, renames) using fuzzy matching on symbol names
 - Check git log for when the symbol was deleted
 - If a close match exists, note it in the evidence

@@ -29,11 +29,13 @@ If no integers are found — including flags-only invocations like `--all` — a
 ### Query
 
 Use GitHub MCP (sandbox-safe, no bash approval):
+
 ```
 list_pull_requests(state="open", sort="updated", direction="desc")
 ```
 
 **CLI fallback** (if MCP unavailable):
+
 ```bash
 gh pr list --state open --author @me --json number,title,headRefName,mergeable,updatedAt
 ```
@@ -95,6 +97,7 @@ Build a dispatch table from the results:
 ```
 
 **SKIP** any PR that is:
+
 - Draft (unless user says otherwise)
 - Closed or merged
 - BLOCKED mergeable status — ask user before proceeding
@@ -106,6 +109,7 @@ Before consolidation, detect PRs that are outright duplicates (one supersedes an
 ### Overlap Detection
 
 Using the `files` arrays from `gh-pr-batch` output:
+
 1. Build a file → PR mapping from all DISPATCH PRs
 2. Find files touched by 2+ PRs (overlap set)
 3. Score overlap: `shared_files / min(pr_a_files, pr_b_files)`
@@ -121,8 +125,10 @@ Using the `files` arrays from `gh-pr-batch` output:
 ### Combination Workflow
 
 When PRs should be combined:
+
 1. Pick the **target PR** — use `totalCommits` and `updatedAt` from `gh-pr-batch` output (highest commit count wins; break ties by most recent `updatedAt`)
 2. Present the combination plan to the user for approval:
+
    ```
    ## Combination Plan
 
@@ -131,12 +137,14 @@ When PRs should be combined:
    - Absorb: PR #60 (3 commits, all changes covered by #62)
    - Action: Dispatch only #62, close #60 with comment
    ```
+
 3. After user confirms:
    - If target PR already contains all changes from the absorbed PR: close absorbed PR with a comment (`Superseded by #<target>. Changes covered in the target PR.`)
    - If target PR is missing some changes: dispatch a worktree agent for the target that also cherry-picks unique commits from the absorbed PR, then close the absorbed PR
 4. Remove absorbed PRs from the dispatch table
 
 **Close superseded PRs** using GitHub MCP:
+
 ```
 update_pull_request(pullNumber=<absorbed>, state="closed")
 add_issue_comment(number=<absorbed>, body="Superseded by #<target>. Changes merged into the target PR.")
@@ -145,6 +153,7 @@ add_issue_comment(number=<absorbed>, body="Superseded by #<target>. Changes merg
 ### Skip Combination
 
 Skip combination analysis if:
+
 - Only 1 DISPATCH PR remains after filtering
 - User passes `--no-combine` or explicitly says to skip
 
@@ -255,6 +264,7 @@ C. Custom grouping: [specify]
 ### After Approval
 
 For each consolidated group:
+
 1. Mark the **target PR** — the one `/move-my-cheese` runs on
 2. Mark **absorbed PRs** — their unique commits get cherry-picked into the target
 3. Update the dispatch table: one entry per group (not per PR)
@@ -290,6 +300,7 @@ Agent(
 ```
 
 Each worktree agent:
+
 - Invokes `/move-my-cheese` which handles the complete flow (Phases 1-4 including quality sweep)
 - Gets its own isolated copy of the repo (no conflicts between agents)
 - Has `bypassPermissions` mode — all tool calls (Edit, Bash, MCP) run without prompts
@@ -300,6 +311,7 @@ Each worktree agent:
 `acceptEdits` only auto-approves Edit/Write tools. PR rescue requires Bash commands (`gh pr`, `git push`, build/test) and MCP calls (GitHub plugin for PR comments, CI re-runs). Using `acceptEdits` still triggers sandbox prompts for every `gh` heredoc, `git push`, and build command — defeating parallel automation.
 
 `bypassPermissions` is contained here because:
+
 - Each agent runs in an isolated worktree (filesystem containment)
 - The convoy manifest in Phase 1 gives the user a confirm gate before agents launch
 - Prompt instructions restrict push targets (see below) — this is procedural, not enforced by the sandbox
@@ -347,11 +359,14 @@ As each agent completes, collect its report. Build a consolidated convoy report:
 ## Phase 4 — Cleanup
 
 After all agents complete:
+
 1. **Close absorbed PRs** from consolidation (if not already closed by the worktree agent):
+
    ```
    update_pull_request(pullNumber=<absorbed>, state="closed")
    add_issue_comment(number=<absorbed>, body="Consolidated into #<target>. Changes cherry-picked into the target PR.")
    ```
+
 2. **Close superseded PRs** from Phase 1.5 combination (if not already closed)
 3. Report any worktrees that had changes (they persist until merged)
 4. Report any PRs that still have failing CI or unresolved issues

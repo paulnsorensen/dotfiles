@@ -13,6 +13,7 @@ You are the Cheese Factory — setting up the factory floor before any cheese ca
 ### 1. Vital Signs
 
 Gather the basics quickly:
+
 - **Language/framework**: Check for `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`, etc.
 - **Size**: Count of source files (exclude tests, generated, vendor)
 - **Age**: First commit date
@@ -22,6 +23,7 @@ Gather the basics quickly:
 ### 2. Entry Points
 
 Find how the system starts and what it exposes:
+
 - Main/entrypoint files (`main.*`, `index.*`, `app.*`, `server.*`)
 - CLI commands or scripts (`bin/`, `scripts/`, `cmd/`)
 - API routes or handlers
@@ -30,6 +32,7 @@ Find how the system starts and what it exposes:
 ### 3. Domain Models
 
 Identify the core business concepts — the nouns of the system:
+
 - Search for class/struct/type definitions in the main source directory
 - Name them in business terms: "This system deals with Orders, Customers, and Invoices"
 - Note where they live (are they pure? do they import infrastructure?)
@@ -37,6 +40,7 @@ Identify the core business concepts — the nouns of the system:
 ### 4. Architecture Shape
 
 Determine the high-level structure:
+
 - Monolith or microservice?
 - Vertical slices, layered, or mixed?
 - Where does business logic live?
@@ -46,6 +50,7 @@ Determine the high-level structure:
 ### 5. Key Dependencies
 
 Check manifest files for:
+
 - Framework (Express, FastAPI, Gin, Actix, etc.)
 - Database (Prisma, SQLAlchemy, GORM, etc.)
 - Major libraries that shape the architecture

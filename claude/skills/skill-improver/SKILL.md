@@ -51,6 +51,7 @@ Before auditing, gather empirical data from session logs. This step is
 **best-effort** — skip if the database doesn't exist or queries return empty.
 
 1. Run ingestion to ensure fresh data:
+
    ```bash
    python3 ~/Dev/dotfiles/claude/skills/session-analytics/scripts/ingest.py
    ```
@@ -100,6 +101,7 @@ Check: Does the agent have scoring? Does it use category priors? Does it ground
 evidence? Does it re-assess borderline items? Is there a surfacing threshold?
 
 Reference implementations:
+
 - `claude/agents/fromage-age.md` — review findings
 - `claude/agents/fromage-fort.md` — PR comment triage
 - `claude/agents/ricotta-reducer.md` — simplification audit
@@ -122,6 +124,7 @@ exists. Prose constraints ("this is a read-only agent") are weaker than hard
 set `disallowedTools`, that's a finding.
 
 **Skill access** (`skills: [...]`):
+
 - Skills listed = skills the agent MUST use instead of raw equivalents
 - Missing skill = the agent will fall back to bash/grep/manual approaches
 - Over-listing = extra context in the prompt for unused capabilities
@@ -137,6 +140,7 @@ produce or consume too much context degrade their own performance and their
 orchestrator's.
 
 **Fork vs inline** — fork (sub-agent) when:
+
 - Output would exceed ~500 lines (build logs, full test runs, large diffs)
 - Only a summary is needed by the caller, not the raw content
 - The task is independent and idempotent (can be re-run if it fails)
@@ -158,6 +162,7 @@ agent pattern: spawn N focused sub-agents, synthesize results.
 | > 100K tokens | Models increasingly ignore early system prompt instructions |
 
 **Output budgets**:
+
 - Agent prompt definition: aim for <500 lines (~1500 tokens). Beyond that, use
   reference files read on demand (progressive disclosure).
 - Agent working context: budget 20K–40K tokens for active work.
@@ -166,11 +171,13 @@ agent pattern: spawn N focused sub-agents, synthesize results.
 - Inline skill output: should fit in the conversation without scrolling.
 
 **Model selection** — document rationale in the agent, not just the choice:
+
 - `opus` — judgment-heavy tasks (review, architecture, complex reasoning)
 - `sonnet` — implementation, exploration, most general-purpose work
 - `haiku` — focused fetch tasks, simple transforms, token-constrained sub-agents
 
 **Frontmatter controls** (skills only):
+
 - `context: fork` — runs the skill in an isolated subagent context. Use when
   the skill reads 30+ files, produces verbose reports, or needs isolated context.
   Do NOT use on guideline-only skills (no task = subagent returns nothing useful).
@@ -254,6 +261,7 @@ specification for the model's routing decision.
 or when user mentions "[keyword1]", "[keyword2]".`
 
 Check for:
+
 - **Trigger phrases**: Does the description list specific user phrases that
   should activate it? ("improve this skill", "audit this agent", etc.)
 - **Pushy enough**: Anthropic recommends descriptions be assertive to combat
@@ -267,6 +275,7 @@ Check for:
   a user might try? Missing synonyms = missed activations.
 
 **Frontmatter fields** — check for appropriate use of:
+
 - `context: fork` — runs in isolated subagent context. Use when the skill
   reads 30+ files or produces verbose reports. Skills with only guidelines
   (no task) should NOT fork — the subagent gets no actionable prompt.

@@ -30,6 +30,7 @@ console.log(message);
 ```
 
 **Tuned version** (keyword-filtered to avoid overhead on simple prompts):
+
 ```javascript
 const prompt = process.env.USER_PROMPT || '';
 const skillKeywords = ['review', 'test', 'deploy', 'migrate', 'refactor', 'analyze'];

@@ -61,6 +61,7 @@ Run quality gate commands from the spec via `/make`. This is the fastest signal 
 if the build is broken, everything else is moot.
 
 For each quality gate command documented in the spec:
+
 1. Spawn a make agent with the appropriate subcommand
 2. Record pass/fail
 
@@ -98,6 +99,7 @@ with 3s waits. If LSP is unavailable after retries, fall back to ast-grep
 (`sg`) for structural patterns and note degraded confidence.
 
 **ast-grep fallback patterns:**
+
 ```bash
 # Verify exports
 sg --lang typescript -p 'export { $$$NAMES }' --json {file}
@@ -118,6 +120,7 @@ coverage *shape* — mapping test names to requirements via LSP. Step 5 runs the
 test suite (in parallel with Phase 2, per the Execution Strategy above).
 
 1. **Find test files** — Glob for test files in scope:
+
    ```
    {scope}/**/*.test.{ts,tsx,js,jsx}
    {scope}/**/test_*.py

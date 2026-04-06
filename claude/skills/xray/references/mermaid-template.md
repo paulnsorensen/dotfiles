@@ -78,6 +78,7 @@ flowchart TD
 ## Ego-centric View (`map <node>`)
 
 For `map <node>`, generate a subset graph:
+
 - The focal node (bold border)
 - All nodes 1 hop away (direct importers + direct dependencies)
 - Edges between these nodes only

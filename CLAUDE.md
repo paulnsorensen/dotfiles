@@ -9,6 +9,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 ## Key Commands
 
 ### Dotfiles Management
+
 - `dots sync` - Sync dotfiles (symlinks, packages, fonts) with rollback support
 - `dots sync refresh` - Force re-check all packages (bypass cache)
 - `dots update` - Pull latest changes and run sync
@@ -19,10 +20,12 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `dots test` - Run test suite (validates shell loading, git hooks, symlinks, and Claude config sync)
 
 ### Shell Configuration
+
 - `zrl` - Reload zsh configuration after changes
 - `source ~/.zshrc` - Alternative way to reload configuration
 
 ### Claude Code & MCP Management
+
 - `cc` - Alias for `claude`
 - `ccc` - Continue last conversation (`claude --continue`)
 - `ccr` - Resume conversation (`claude --resume`)
@@ -44,6 +47,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `claude-json-prune --apply` - Remove stale entries (creates timestamped backup first)
 
 ### GitHub Helpers
+
 - `gh-pr-review <PR#>` - Bundle PR metadata, diff, and checks for review
 - `gh-pr-prep` - Bundle PR prep context (commits, diff stats, upstream status)
 - `gh-issue-context <issue#>` - Bundle issue metadata and comments
@@ -51,18 +55,21 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `gh-pr-checks-batch <PR#> [PR# ...]` - Batch CI checks for multiple PRs
 
 ### Plugin Management
+
 - `plugin-sync` - Sync plugins from registry.yaml to Claude Code
 - `plugin-sync-dry` - Preview plugin sync changes without applying
 - `plugin-edit` - Edit plugin registry.yaml
 - `plugin-ls` - List currently installed plugins
 
 ### Session Monitoring
+
 - `ccm` - Run Claude session monitor standalone (shows metrics for current directory's session)
 - `ccm --cwd DIR` - Monitor a specific directory's session
 - `ccm --once` - Print metrics once and exit (for scripting)
 - `zjclaude` - Launch zellij with Claude layout (main pane + monitor bar)
 
 ### Common Development Tasks
+
 - `lb` - Open daily logbook (creates markdown file at `~/psorensen/logbook/[date].md`)
 - `uuidg` - Generate UUID and copy to clipboard
 - `cdd` - Navigate to ~/Dev directory
@@ -110,11 +117,13 @@ dotfiles/
 ```
 
 ### Configuration Hierarchy
+
 1. **zshrc** - Main entry point that sources all zsh modules
 2. **zsh/** - Modular configuration files, each handling specific functionality
 3. **claude/** - Claude Code configuration (agents, commands, hooks, MCP)
 
 ### Key Design Patterns
+
 - **Modular Configuration**: Each aspect of the shell is in its own file for maintainability
 - **Theme Consistency**: Chocolate Donut theme managed via tinty across terminal, git, and iTerm2
 - **Performance Optimization**: Git prompt uses caching to avoid slowdowns
@@ -135,11 +144,13 @@ mcps:
 ```
 
 **Scopes:**
+
 - `user` - Available in all projects (recommended for dev tools)
 - `project` - Stored in .mcp.json, shared with team
 - `local` - Machine-specific, gitignored
 
 **Workflow:**
+
 1. Edit registry: `mcp-edit`
 2. Preview changes: `mcp-sync-dry`
 3. Apply changes: `mcp-sync`
@@ -159,6 +170,7 @@ plugins:
 
 **Prerequisites:**
 Marketplaces must be added first:
+
 ```bash
 claude plugin marketplace add anthropics/claude-plugins-official
 claude plugin marketplace add boostvolt/claude-code-lsps
@@ -167,6 +179,7 @@ claude plugin marketplace add jarrodwatts/claude-hud
 ```
 
 **Workflow:**
+
 1. Edit registry: `plugin-edit`
 2. Preview changes: `plugin-sync-dry`
 3. Apply changes: `plugin-sync`
@@ -178,18 +191,21 @@ Claude Code uses that location for plugin cache storage.
 ## Sync System
 
 The `.sync-with-rollback` script provides:
+
 - **Automatic backups** before changes (stored in `~/.local/state/dotfiles/backups/`)
 - **Manifest tracking** of all symlinks
 - **Rollback capability** to any previous state
 - **Per-directory .sync scripts** for custom setup (fonts, iterm2)
 
 **Skip list** (not symlinked to ~):
+
 - `.git`, `.local`, `reference`, `packages`, `packages.yaml`, `brew`, `apt`
 
 ## Important Implementation Details
 
 ### Git Integration
-- Work email: paul.sorensen@uber.com
+
+- Work email: <paul.sorensen@uber.com>
 - Aliases follow oh-my-zsh conventions for familiarity
 - Custom `grb` alias rebases from main (not master)
 - Kdiff3 configured as merge/diff tool
@@ -218,12 +234,14 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 ## Development Notes
 
 ### When Modifying Shell Configuration
+
 1. Changes to prompt require careful testing of git status display
 2. The KEYTIMEOUT=1 setting is crucial for vi mode responsiveness
 3. Path configurations at the top of zshrc are macOS-specific
 4. Run `dots sync` after changes to ensure symlinks are correct
 
 ### When Adding New Aliases or Functions
+
 1. Claude/MCP-related items go in `zsh/claude.zsh`
 2. General utilities go in `zsh/aliases.zsh`
 3. Tool-specific configs get their own file

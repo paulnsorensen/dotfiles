@@ -23,6 +23,7 @@ The orchestrator reads ONE thing: the spec. Everything else is delegated.
 ## Context Passing
 
 Carry forward between phases:
+
 - **Slug**: kebab-case from spec title (<30 chars)
 - **Spec summary**: <2K chars, extracted in Phase 0
 - **Quality gate commands**: from spec's Quality Gates section
@@ -58,17 +59,20 @@ On resume (or after compaction), read `phase_summary` from the manifest to recon
 ### Parse Arguments
 
 If `$ARGUMENTS` contains `--resume <slug>`:
+
 1. Read manifest at `.claude/fromagerie/<slug>/manifest.json`
 2. Skip to the next incomplete phase
 3. Report: "Resuming <slug> from phase <N>"
 
 If `$ARGUMENTS` is empty or path doesn't exist:
+
 1. Invoke `/spec` via Skill tool
 2. Resume fromagerie with the saved spec path
 
 ### Hard Gate: Worktree Check
 
 Run `git rev-parse --git-dir` — if output does NOT contain `/worktrees/`:
+
 1. **Stop.** Ask: "You're on the main branch. Want me to create a worktree with `/worktree <slug>`?"
 2. Only proceed after user is on a worktree OR explicitly says "continue on main".
 
@@ -79,6 +83,7 @@ This gate is **never skipped**.
 Read the spec file. Fail fast if missing: Executive Summary, Problem Statement, User Stories, Quality Gates.
 
 Extract:
+
 - **Spec summary** (<2K chars): what's being built, constraints, scope boundaries
 - **Quality gate commands**: exact commands from Quality Gates section
 - **Slug**: kebab-case from spec title
@@ -104,6 +109,7 @@ After all 3 return: collect summaries, note file paths for tokei manifest and LS
 Launch `fromagerie-decomposer` (opus, plan mode) with spec, culture summaries, tokei manifest path, LSP node list path, and quality gates.
 
 The decomposer produces THREE artifacts:
+
 1. `seed_items[]` — compile-time dependencies for 2+ atoms
 2. `atoms[]` — implementation units with `test_targets` per atom
 3. `wiring[]` — DAG of wiring tasks with `depends_on` edges
@@ -157,6 +163,7 @@ Create manifest at `.claude/fromagerie/<slug>/manifest.json`.
 Update manifest: `"phase": "gate_approved"`.
 
 ### ═══ COMPACTION SEAM C1 ═══
+
 Drop: full spec text, permission manifest, decomposition details.
 Keep: slug, spec summary (2K), manifest path, quality gates.
 
@@ -169,6 +176,7 @@ Seed items are minimal: only shared types/protocols that atoms literally cannot 
 Execute seed inline with Edit/Write (seed is always small enough for the orchestrator to handle directly — this is a deliberate exception to the "never write code" discipline).
 
 For each seed item:
+
 1. Implement the change
 2. Invoke `whey-drainer` to run quality gates — if gates fail, **STOP**
 3. Commit via `/commit` skill
@@ -236,6 +244,7 @@ Collect results as atoms complete. For failed atoms: retry ONCE with error conte
 Update manifest: atom statuses, worktree paths, branch names.
 
 ### ═══ COMPACTION SEAM C2 ═══
+
 Drop: exploration summaries, decomposition details, atom dispatch prompts, atom return summaries.
 Keep: slug, spec summary (2K), manifest path (has atom branches), quality gates.
 Read from disk when needed: wiring DAG from integration manifest.
@@ -333,6 +342,7 @@ this indicates a decomposer error (wiring touched implementation).
 If final merger reports conflicts: **STOP**, report to user. Do not auto-resolve — wiring conflicts mean the decomposition was wrong.
 
 ### ═══ COMPACTION SEAM C3 ═══
+
 Drop: wiring DAG, merger reports, wiring task details.
 Keep: slug, spec path (for spec-verify), quality gates, list of all changed files.
 
@@ -349,18 +359,22 @@ Run full quality gates from spec via `whey-drainer` (haiku). If gates fail: fix 
 Run in this order. Each agent sees the full diff (seed + atoms + wiring).
 
 **Step 1** — Launch in parallel (neither spawns conflicting sub-agents):
+
 - `fromage-press` (sonnet) — adversarial testing on full diff
 - `spec-verify` (opus, forked) — contract verification against spec
 
 **Step 2** — After press + spec-verify return:
+
 - Invoke the `age` skill (focused mode) — spawns 6 parallel review sub-agents on the full diff
 
 **Step 3** — After age skill completes:
+
 - `/de-slop` — syntactic AI pattern cleanup
 
 ### 6c. Synthesize and Fix
 
 Collect all findings. Precedence for conflicts on same code:
+
 1. **spec-verify** (contract violations) — highest
 2. **age** (architectural issues)
 3. **de-slop** (syntactic patterns) — lowest
@@ -436,6 +450,7 @@ After slicer returns: parse the grouping from its report. For each PR group, wri
 ### Publish PRs (orchestrator-owned)
 
 For each PR the slicer defined:
+
 1. Read metadata from `.claude/fromagerie/<slug>/pr-<N>-metadata.json`
 2. Push branch: `git push -u origin <branch>`
 3. Create PR: `gh pr create --head <branch> --title <title> --body-file <path>`

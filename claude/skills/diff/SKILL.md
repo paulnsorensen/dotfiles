@@ -44,6 +44,7 @@ Default to `rg`. Reach for `sg` when the question is about code shape, not text.
 Check the diff for these categories only — in priority order:
 
 **Blockers (must fix before commit):**
+
 - Hardcoded secrets, API keys, tokens, passwords
 - `console.log` / `print` / `fmt.Println` debug statements left in
 - Commented-out code blocks (delete or keep, don't commit commented code)
@@ -52,6 +53,7 @@ Check the diff for these categories only — in priority order:
 - Missing error handling on new I/O operations (file, network, DB)
 
 **Warnings (worth a second look):**
+
 - New dependencies added (pairs with block-install hook)
 - Functions exceeding 40 lines
 - Files exceeding 300 lines
@@ -61,12 +63,14 @@ Check the diff for these categories only — in priority order:
 ### 3. Report
 
 If clean:
+
 ```
 Staged changes look clean. {N} files, {additions}+/{deletions}-.
 Ready to commit.
 ```
 
 If issues found:
+
 ```
 ## Pre-commit Check: {N} files
 

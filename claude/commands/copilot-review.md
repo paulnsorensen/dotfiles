@@ -23,16 +23,19 @@ At command start, call `TaskCreate` for all 4 phases. Mark `in_progress` at phas
 1. Determine the PR number from the argument. If it's a URL, extract the number. If no argument, list open PRs with `gh pr list` and ask which one.
 
 2. Fetch PR metadata:
+
    ```
    gh pr view <number> --json title,body,author,baseRefName,headRefName,url,number,additions,deletions,changedFiles
    ```
 
 3. Fetch the diff:
+
    ```
    gh pr diff <number>
    ```
 
 4. Fetch changed files with line detail:
+
    ```
    gh api repos/{owner}/{repo}/pulls/<number>/files --jq '.[] | {filename, status, additions, deletions, patch}'
    ```
@@ -44,6 +47,7 @@ At command start, call `TaskCreate` for all 4 phases. Mark `in_progress` at phas
 ## Phase 2: Run Age Review (Focused Mode)
 
 Invoke the `age` skill in **focused mode** with:
+
 - PR number, title, and author
 - The full diff from Phase 1
 - Instruction to surface findings >= 50
@@ -59,6 +63,7 @@ When the age skill returns its scored findings:
 2. **Present scored findings** grouped by file, adding disposition:
 
 For each finding, assign:
+
 - `COPILOT_FIX` — Straightforward fix Copilot can handle (add validation, fix logic, delete dead code, inline wrapper, remove restating docstring)
 - `FUTURE_TASK` — Broader context needed, architectural decision, multi-file refactor
 
@@ -71,9 +76,10 @@ For each finding, assign:
 | 2 | 80 | 78 | COUPLING | Domain imports HTTP client | FUTURE_TASK |
 ```
 
-3. Show the **full comment text** for each item:
+1. Show the **full comment text** for each item:
 
 **COPILOT_FIX format:**
+
 ```
 **[CATEGORY]**: Issue description
 
@@ -83,6 +89,7 @@ For each finding, assign:
 ```
 
 **FUTURE_TASK format:**
+
 ```
 **[CATEGORY]**: Issue description
 
@@ -91,7 +98,7 @@ For each finding, assign:
 _Noted for future work — not a Copilot fix._
 ```
 
-4. Ask the user:
+1. Ask the user:
    - Which comments to **post** (default: all)
    - Which to **skip**
    - Any to **edit** before posting
@@ -100,6 +107,7 @@ _Noted for future work — not a Copilot fix._
 ## Phase 4: Post Comments (after user approval)
 
 1. Build JSON payload for `gh api repos/{owner}/{repo}/pulls/<number>/reviews`:
+
    ```json
    {
      "body": "Automated review — items marked for @copilot are actionable fixes.",

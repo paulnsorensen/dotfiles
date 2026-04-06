@@ -25,6 +25,7 @@ Leaves first, confidence bubbles up, evidence backs every verdict.
 ### Parse the target
 
 Determine the target type from $ARGUMENTS:
+
 - **Module path** (e.g. `domains/orders/`, `bin/`): analyze this directory
 - **Spec path** (e.g. `.claude/specs/xray.md`): find the module it describes, analyze that
 - **PR number** (e.g. `#42`): get changed files via `gh pr diff`, analyze those modules
@@ -45,6 +46,7 @@ Look for `.context/xrays/{slug}-graph.json`. If found:
    - Keep `red` nodes as `red` (already flagged)
    - Keep `unverified` nodes as `unverified`
 5. Display resume summary:
+
    ```
    Resumed xray session: {slug}
    Nodes: {verified} verified, {stale} stale (files changed), {remaining} remaining
@@ -55,6 +57,7 @@ If no existing session, create `.context/xrays/` if needed.
 ### Read agent references
 
 Read these references (they're loaded on demand, not upfront):
+
 - `references/graph-schema.json` — graph contract
 - `references/sliced-bread-checks.md` — architecture rules
 - Agent references are read by the agents themselves
@@ -62,6 +65,7 @@ Read these references (they're loaded on demand, not upfront):
 ## Graph Building
 
 Spawn an **xray-scout** agent (sonnet) with:
+
 - `targetPath`: the resolved module path
 - `slug`: the derived slug
 
@@ -103,13 +107,16 @@ Group nodes by their `role` field from the graph. Within each group, sort by
 
 Display the barrel file's public exports from `meta.barrelExports` as the
 module's contract:
+
 ```
 Barrel: {meta.barrelFile}
 Entry points:
   {barrelExports[].name}({signature or "—"})
   ...
 ```
+
 If no barrel file found, display:
+
 ```
 ⚠ No barrel/index file found
 ```
@@ -117,6 +124,7 @@ If no barrel file found, display:
 ### 2. API Surface Summary
 
 List all nodes where `visibility: "public"`, grouped by file:
+
 ```
 Exports:
   {module-a}: {symbolName1}, {symbolName2}, {symbolName3}
@@ -127,6 +135,7 @@ Exports:
 
 Spawn a de-slop scan on the whole target directory. Display results in the
 dashboard:
+
 ```
 Health: {N} de-slop findings across {M} files
   {top 3 findings with file:line}
@@ -135,9 +144,11 @@ Health: {N} de-slop findings across {M} files
 ### 4. Encapsulation Summary
 
 From scout's visibility tagging (counts derived from graph nodes):
+
 ```
 Encapsulation: {N} public exports, {M} private internals
 ```
+
 Issue counts are added here after analyst reports are generated during the DFS loop.
 
 ## Triage
@@ -148,17 +159,20 @@ starting the DFS loop. This determines how deeply each node gets analyzed.
 ### Classification rules
 
 **auto-green** — return immediately, no analysis:
+
 - Leaf node (`role: "leaf"`) with <50 LOC AND exports only types/constants
 - Re-export barrel files (all exports are re-exports, no logic)
 - Generated code (file header contains `@generated`, `auto-generated`, or similar)
 - Terminal nodes (`role: "terminal"`) — always auto-skipped
 
 **light** — skip spec search and external research:
+
 - Leaf node with logic but <100 LOC AND tests exist
 - Utility node (`role: "utility"`) with passing tests
 - Nodes where all children are already green
 
 **full** — complete analysis pipeline:
+
 - Hub nodes (`role: "hub"`) — always full
 - Domain nodes (`role: "domain"`)
 - Entry-point nodes (`role: "entry-point"`)
@@ -211,6 +225,7 @@ Triage: {auto-green|light|full}
 ### 2. Run analysis
 
 Spawn **xray-analyst** (sonnet) for this node with:
+
 - The node data and its edges from the graph (including `role`, `fanIn`, `fanOut`)
 - Module name for search context
 - Session slug
@@ -221,15 +236,18 @@ analyzes contracts, callers, test shape, and architecture, then returns a
 structured node report.
 
 **auto-green nodes**: The analyst returns immediately with evidence. Display:
+
 ```
 ━━━ {symbolName} — Auto-Green ━━━
 {evidence line}
 ```
+
 Auto-confirm as green. Advance to next node without prompting.
 
 ### 3. Run verification
 
 After the analyst returns (light and full only), spawn **xray-verifier** (sonnet) with:
+
 - The node data
 - Test files discovered by the analyst
 - Spec criteria from the analyst's findings
@@ -327,6 +345,7 @@ These commands work at any point in the session:
 The tool proposes a traffic light based on concrete evidence:
 
 **Green** (all must be true):
+
 - Tests exist and pass
 - Spec aligned (when spec exists) or heuristic coverage is high
 - No de-slop findings
@@ -334,12 +353,14 @@ The tool proposes a traffic light based on concrete evidence:
 - No build-vs-buy flags
 
 **Yellow** (any one of):
+
 - Partial test coverage or some tests mock-heavy
 - Minor architecture findings (growth justification, premature structure)
 - Minor de-slop findings (comment pollution, verbose names)
 - Build-vs-buy opportunity (not critical)
 
 **Red** (any one of):
+
 - Tests fail
 - No tests exist
 - Major architecture violation (model purity, dependency direction)
@@ -349,10 +370,12 @@ The tool proposes a traffic light based on concrete evidence:
 ### Confidence propagation
 
 When ALL children of a node are green:
+
 - Parent's proposed confidence starts higher (evidence: "all dependencies verified green")
 - This is a boost, not automatic green — the parent still needs its own analysis
 
 When ANY child is red:
+
 - Parent's analysis must address the red dependency
 - Note: "Depends on {child} which is RED — {reason}"
 
@@ -363,14 +386,17 @@ When ANY child is red:
 After each verdict or on `done`, save:
 
 **Graph JSON** (`.context/xrays/{slug}-graph.json`):
+
 - Updated node statuses, notes, evidence, lastVerified timestamps
 - Current git HEAD SHA in meta.gitSha
 - Updated meta.lastVerified timestamp
 
 **Mermaid graph** (`.context/xrays/{slug}-graph.md`):
+
 - Updated traffic light classDefs on verified nodes
 
 **Session notes** (`.context/xrays/{slug}.md`):
+
 ```markdown
 ---
 slug: {slug}
@@ -413,6 +439,7 @@ When the user says `done` or all nodes are verified:
 
 1. Save final state
 2. Display summary:
+
    ```
    ━━━ XRay Complete: {slug} ━━━
    Green: {N}  Yellow: {M}  Red: {K}  Unverified: {J}
@@ -422,6 +449,7 @@ When the user says `done` or all nodes are verified:
    - {top finding 2}
    - {top finding 3}
    ```
+
 3. Offer next steps:
    - "Run `/wreck` on red nodes to write missing tests?"
    - "Create GitHub issues for red/yellow findings?"

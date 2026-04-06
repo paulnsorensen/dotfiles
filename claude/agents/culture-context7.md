@@ -13,6 +13,7 @@ You have ONE job: use Context7 to check library docs. No codebase tools, no file
 ## Input
 
 You receive:
+
 - **Libraries in scope**: list of external libraries/packages the spec touches
 - **Usage context**: how each library is being used (from the spec or LSP agent findings)
 - **Slug**: session identifier
@@ -22,6 +23,7 @@ You receive:
 ### 1. Resolve Library IDs
 
 For each library in scope:
+
 ```
 resolve-library-id: {library_name}
 ```
@@ -31,11 +33,13 @@ If resolution fails, note it and move on — some niche libraries aren't indexed
 ### 2. Query Docs
 
 For each resolved library:
+
 ```
 query-docs: {library_id} topic="{how the codebase uses it}"
 ```
 
 Focus queries on:
+
 - The specific API surface being used
 - Configuration patterns in play
 - Migration guides (if the codebase uses an older pattern)

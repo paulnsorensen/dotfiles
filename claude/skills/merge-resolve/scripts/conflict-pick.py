@@ -46,7 +46,7 @@ def _parse_one_conflict(lines, i):
 
     ours_lines, i = _collect_lines(
         lines, i,
-        lambda l: bool(MARKER_BASE_RE.match(l) or MARKER_SEP_RE.match(l)),
+        lambda line: bool(MARKER_BASE_RE.match(line) or MARKER_SEP_RE.match(line)),
     )
 
     base_lines = None
@@ -56,12 +56,12 @@ def _parse_one_conflict(lines, i):
         if mb:
             label_base = mb.group(1)
             i += 1
-            base_lines, i = _collect_lines(lines, i, lambda l: bool(MARKER_SEP_RE.match(l)))
+            base_lines, i = _collect_lines(lines, i, lambda line: bool(MARKER_SEP_RE.match(line)))
 
     if i < len(lines) and MARKER_SEP_RE.match(lines[i]):
         i += 1
 
-    theirs_lines, i = _collect_lines(lines, i, lambda l: bool(MARKER_THEIRS_RE.match(l)))
+    theirs_lines, i = _collect_lines(lines, i, lambda line: bool(MARKER_THEIRS_RE.match(line)))
 
     label_theirs = "theirs"
     if i < len(lines):
@@ -160,7 +160,7 @@ def _format_conflict(seg):
 
 
 def _prompt_interactive(seg):
-    print(f"\n--- Conflict hunk ---")
+    print("\n--- Conflict hunk ---")
     print(f"OURS ({seg['label_ours']}):")
     for line in seg["ours"].splitlines():
         print(f"  + {line}")
@@ -168,7 +168,7 @@ def _prompt_interactive(seg):
     for line in seg["theirs"].splitlines():
         print(f"  - {line}")
     if seg["base"] is not None:
-        print(f"BASE:")
+        print("BASE:")
         for line in seg["base"].splitlines():
             print(f"  ~ {line}")
 

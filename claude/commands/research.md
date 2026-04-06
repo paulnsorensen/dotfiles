@@ -24,6 +24,7 @@ Everything after flag extraction is the **research question**.
    - Implications section if present
 
    Use this structure:
+
    ```markdown
    # Research Report: <Topic>
    _Generated: <YYYY-MM-DD>_

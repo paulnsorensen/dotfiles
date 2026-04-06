@@ -7,6 +7,7 @@ argument-hint: "[directory to scope, or leave blank for full codebase]"
 Run the /ghostbuster skill on: $ARGUMENTS
 
 This command invokes the ghostbuster skill which handles the full workflow:
+
 1. Discover source files and detect languages
 2. Collect specs and docs (specs/, CLAUDE.md, README.md, docs/)
 3. Spawn ghostbuster agent for dead code detection + spec cross-referencing
