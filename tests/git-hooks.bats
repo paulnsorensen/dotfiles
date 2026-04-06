@@ -27,8 +27,12 @@ setup() {
 
     # Install prek hooks (prek auto-detects prek.toml in repo root)
     prek install -f >/dev/null 2>&1
-    # Pre-install hook environments so first commit isn't slow
+    # Pre-install hook environments
     prek install-hooks >/dev/null 2>&1 || true
+
+    # Also filter out schema validation hook (needs network)
+    grep -v 'check-claude-settings-schema' "$TEST_REPO/prek.toml" > "$TEST_REPO/prek.toml.tmp"
+    mv "$TEST_REPO/prek.toml.tmp" "$TEST_REPO/prek.toml"
 
     # Initial commit so hooks have something to diff against
     echo "init" > .gitkeep
@@ -122,4 +126,51 @@ EOF
 
     run git commit -m "test commit"
     assert_success
+}
+
+# ── Hook installation health ─────────────────────────────────────────────────
+
+@test "prek install-hooks succeeds without errors" {
+    [[ "$PREK_AVAILABLE" == true ]] || skip "prek not installed"
+    # This catches uv panics, missing tool environments, and broken hook repos.
+    # Previously swallowed with || true — now we assert success.
+    run prek install-hooks
+    assert_success
+}
+
+@test "prek run --all-files succeeds on clean repo" {
+    [[ "$PREK_AVAILABLE" == true ]] || skip "prek not installed"
+    echo "clean file" > clean.txt
+    git add clean.txt prek.toml
+
+    run prek run --all-files
+    assert_success
+}
+
+# ── Hook tool dependencies ────────────────────────────────────────────────────
+
+@test "all prek local hook entry commands are available" {
+    # Parses prek.toml for local hooks with language=system and verifies
+    # each entry command binary exists on PATH. Catches missing tools
+    # before they fail at commit time.
+    local prek_toml="$REAL_DOTFILES_DIR/prek.toml"
+    [[ -f "$prek_toml" ]] || skip "prek.toml not found"
+
+    local failed=0
+    # Extract entry commands from system-language hooks (first word of entry)
+    while IFS= read -r cmd; do
+        [[ -z "$cmd" ]] && continue
+        if ! command -v "$cmd" &>/dev/null; then
+            echo "Missing command: $cmd (required by prek local hook)" >&2
+            failed=1
+        fi
+    done < <(yq -p toml -o json "$prek_toml" \
+        | jq -r '.repos[].hooks[]
+            | select(.language == "system")
+            | .entry
+            | split(" ")[0]
+            | gsub("^bash$"; "bash")' \
+        | sort -u)
+
+    [[ $failed -eq 0 ]]
 }
