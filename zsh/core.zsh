@@ -26,6 +26,9 @@ export PATH="$HOME/.local/bin:$PATH"
 # cargo install puts binaries in ~/.cargo/bin
 [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
 
+# prek cache/logs — use TMPDIR so sandbox environments can write the log
+export PREK_HOME="${TMPDIR:-/tmp}/prek"
+
 # Editor configuration
 export EDITOR="$(which vim)"
 export VISUAL=$EDITOR
