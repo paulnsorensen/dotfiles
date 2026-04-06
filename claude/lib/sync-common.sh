@@ -39,8 +39,8 @@ sync_check_deps() {
 
 sync_compute_diff() {
     local desired_file current_file
-    desired_file=$(mktemp)
-    current_file=$(mktemp)
+    desired_file=$(mktemp "${TMPDIR:-.}/sync-desired.XXXXXX")
+    current_file=$(mktemp "${TMPDIR:-.}/sync-current.XXXXXX")
 
     echo "$DESIRED_NAMES" | grep -v '^$' > "$desired_file" 2>/dev/null || true
     echo "$CURRENT_NAMES" | grep -v '^$' > "$current_file" 2>/dev/null || true

@@ -65,7 +65,7 @@ make_claude_json() {
 }
 
 setup() {
-  TEST_DIR=$(mktemp -d)
+  TEST_DIR=$(mktemp -d "${TMPDIR:-.}/json-prune.XXXXXX")
   export CLAUDE_JSON="$TEST_DIR/claude.json"
   export BACKUP_DIR="$TEST_DIR/backups"
 }

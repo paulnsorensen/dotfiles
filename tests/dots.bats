@@ -54,16 +54,15 @@ teardown() {
 }
 
 @test "dots update shorthand works" {
-    # Just test that 'u' is recognized (don't actually update)
-    run dots u --help 2>&1 || true
-    # Should not say "Unknown command"
-    [[ "$output" != *"Unknown command"* ]]
+    run dots u 2>&1
+    assert_success
+    assert_output_contains "Updating"
 }
 
 @test "dots sync shorthand works" {
-    # Just verify 's' is recognized
-    run timeout 2 dots s --help 2>&1 || true
+    run timeout 2 dots s --help 2>&1
     [[ "$output" != *"Unknown command"* ]]
+    assert_output_contains "Usage"
 }
 
 @test "dots test shorthand works" {
@@ -73,12 +72,13 @@ teardown() {
 
 @test "dots backups command runs" {
     run dots backups
-    # May fail if no backups exist, but should not be "Unknown command"
+    # Exits 0 with backup list, or 1 if no backups dir exists
+    [[ "$output" == *"backup"* || "$output" == *"Backup"* ]]
     [[ "$output" != *"Unknown command"* ]]
 }
 
 @test "dots rollback without args shows help" {
     run dots rollback
-    # Should either show backups or ask for input
-    [[ "$output" =~ "backup" || "$output" =~ "Rollback" || $status -ne 0 ]]
+    assert_failure
+    assert_output_contains "backup"
 }

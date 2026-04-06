@@ -73,7 +73,7 @@ backup_file="$BACKUP_DIR/claude.json.$(date +%Y%m%d-%H%M%S)"
 cp "$CLAUDE_JSON" "$backup_file"
 
 # Apply
-tmpfile=$(mktemp)
+tmpfile=$(mktemp "${TMPDIR:-.}/prune.XXXXXX")
 jq "$filter" "$CLAUDE_JSON" > "$tmpfile"
 mv "$tmpfile" "$CLAUDE_JSON"
 

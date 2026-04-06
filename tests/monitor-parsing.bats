@@ -8,16 +8,16 @@ load monitor_helper
     local d; d="$(make_project "/test/empty")"
     printf '' > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/empty" --once
-    [[ $status -eq 0 || $status -eq 1 ]]
-    assert_not_contains "parse error"
+    [[ $status -eq 0 ]]
+    assert_contains "Turns: 0/0"
 }
 
 @test "whitespace-only JSONL — no crash" {
     local d; d="$(make_project "/test/ws")"
     printf '\n   \n' > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/ws" --once
-    [[ $status -eq 0 || $status -eq 1 ]]
-    assert_not_contains "parse error"
+    [[ $status -eq 0 ]]
+    assert_contains "Turns: 0/0"
 }
 
 # ─── Malformed JSON ────────────────────────────────────────────────
@@ -26,24 +26,25 @@ load monitor_helper
     local d; d="$(make_project "/test/nonjson")"
     printf 'not json\n{broken}\n' > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/nonjson" --once
-    [[ $status -eq 0 || $status -eq 1 ]]
-    assert_not_contains "parse error"
+    [[ $status -eq 0 ]]
+    assert_contains "Turns: 0/0"
 }
 
 @test "truncated JSON mid-write — no crash" {
     local d; d="$(make_project "/test/trunc")"
     { make_assistant_entry 100 50 20 30; printf '{"type":"assistant","message":{"id":"msg_x","model":"clau'; } > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/trunc" --once
-    [[ $status -eq 0 || $status -eq 1 ]]
-    assert_not_contains "parse error"
+    [[ $status -eq 0 ]]
+    assert_contains "In:"
 }
 
 @test "mix of valid and invalid lines — valid lines processed" {
     local d; d="$(make_project "/test/mixed")"
     { make_user_entry; printf 'GARBAGE\n'; make_assistant_entry 500 200 100 50; } > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/mixed" --once
-    [[ $status -eq 0 || $status -eq 1 ]]
-    assert_not_contains "parse error"
+    [[ $status -eq 0 ]]
+    assert_contains "Turns: 1/1"
+    assert_contains "In:"
 }
 
 # ─── Missing fields ────────────────────────────────────────────────
@@ -52,21 +53,24 @@ load monitor_helper
     local d; d="$(make_project "/test/no-usage")"
     printf '{"type":"assistant","message":{"id":"msg_1","model":"claude-opus-4-6","content":[]},"timestamp":"2025-01-01T12:00:00.000Z"}\n' > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/no-usage" --once
-    [[ $status -eq 0 || $status -eq 1 ]]
+    [[ $status -eq 0 ]]
+    assert_contains "In:"
 }
 
 @test "entries missing .type — no crash" {
     local d; d="$(make_project "/test/no-type")"
     printf '{"message":{"role":"user"},"timestamp":"2025-01-01T12:00:00.000Z"}\n' > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/no-type" --once
-    [[ $status -eq 0 || $status -eq 1 ]]
+    [[ $status -eq 0 ]]
+    assert_contains "Turns:"
 }
 
 @test "assistant missing .message.id — no crash" {
     local d; d="$(make_project "/test/no-id")"
     printf '{"type":"assistant","message":{"model":"claude-opus-4-6","content":[],"usage":{"input_tokens":10,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":5}},"timestamp":"2025-01-01T12:00:00.000Z"}\n' > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/no-id" --once
-    [[ $status -eq 0 || $status -eq 1 ]]
+    [[ $status -eq 0 ]]
+    assert_contains "In:"
 }
 
 @test "entries without .timestamp — duration shows --" {
@@ -74,7 +78,8 @@ load monitor_helper
     { printf '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hi"}]},"toolUseResult":null}\n'
       printf '{"type":"assistant","message":{"id":"msg_1","model":"claude-opus-4-6","content":[],"usage":{"input_tokens":100,"cache_read_input_tokens":50,"cache_creation_input_tokens":10,"output_tokens":20}}}\n'; } > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/no-ts" --once
-    [[ $status -eq 0 || $status -eq 1 ]]
+    [[ $status -eq 0 ]]
+    assert_contains "T --"
 }
 
 # ─── Deduplication ─────────────────────────────────────────────────
@@ -98,7 +103,8 @@ load monitor_helper
     local bg=$!
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/concurrent" --once
     wait "$bg" 2>/dev/null || true
-    [[ $status -eq 0 || $status -eq 1 ]]
+    [[ $status -eq 0 ]]
+    assert_contains "In:"
 }
 
 # ─── Large files ───────────────────────────────────────────────────

@@ -4,7 +4,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 GENERATOR="${DOTFILES_DIR}/claude/worktree-settings.sh"
 
 setup() {
-    TMPDIR_TEST="$(mktemp -d)"
+    TMPDIR_TEST="$(mktemp -d "${TMPDIR:-.}/wt-settings.XXXXXX")"
     mkdir -p "${TMPDIR_TEST}/claude/skills/foo" \
              "${TMPDIR_TEST}/claude/skills/bar-baz" \
              "${TMPDIR_TEST}/claude/mcp" \

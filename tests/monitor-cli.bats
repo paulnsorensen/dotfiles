@@ -35,6 +35,5 @@ load monitor_helper
 
 @test "waiting message shows encoded path" {
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/my/test/path" --once
-    [[ $status -ne 0 ]]
-    [[ -n "$output" ]]
+    assert_contains "No active session"
 }

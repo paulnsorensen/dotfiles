@@ -25,7 +25,7 @@ load monitor_helper
     { make_user_entry; make_assistant_entry 2000000 1000000 500000 500000; } > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/big" --once
     [[ $status -eq 0 ]]
-    assert_contains "M"
+    assert_contains "3.5M"
 }
 
 @test "tokens at 1000 boundary — k suffix" {
@@ -33,7 +33,7 @@ load monitor_helper
     { make_user_entry; make_assistant_entry 1000 0 0 0; } > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/1k" --once
     [[ $status -eq 0 ]]
-    assert_contains "k"
+    assert_contains "1.0k"
 }
 
 @test "tokens at 999 — no suffix, raw number" {
@@ -42,7 +42,7 @@ load monitor_helper
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/999" --once
     [[ $status -eq 0 ]]
     local stripped; stripped="$(strip_ansi "$output")"
-    [[ "$stripped" == *"In:999"* ]]
+    [[ "$stripped" == *"In: 999"* ]]
     [[ "$stripped" != *"0.9k"* ]]
 }
 
@@ -51,7 +51,7 @@ load monitor_helper
     { make_user_entry; make_assistant_entry 0 0 0 0; } > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/fmt-0" --once
     [[ $status -eq 0 ]]
-    assert_contains "In:0"
+    assert_contains "In: 0"
 }
 
 # ─── Cache hit rate ────────────────────────────────────────────────
@@ -89,7 +89,7 @@ load monitor_helper
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/ctx-up" --once
     [[ $status -eq 0 ]]
     local stripped; stripped="$(strip_ansi "$output")"
-    [[ "$stripped" == *"^"* ]]
+    [[ "$stripped" =~ Ctx:.*\^ ]]
 }
 
 @test "context shrinking — down trend" {
@@ -99,7 +99,7 @@ load monitor_helper
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/ctx-dn" --once
     [[ $status -eq 0 ]]
     local stripped; stripped="$(strip_ansi "$output")"
-    [[ "$stripped" == *"v"* ]]
+    [[ "$stripped" =~ Ctx:.*v ]]
 }
 
 # ─── Model name ────────────────────────────────────────────────────
@@ -180,6 +180,7 @@ load monitor_helper
     { make_user_entry; make_tool_use_entry "VeryLongToolNameAAAAAAAAAAAA" "msg_1"; } > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/long-tool" --once
     [[ $status -eq 0 ]]
+    assert_contains "In:"
 }
 
 # ─── Skills ────────────────────────────────────────────────────────
@@ -197,6 +198,7 @@ load monitor_helper
     printf '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hi"}]},"toolUseResult":null,"timestamp":"2025-01-01T12:00:00.000Z"}\n{"type":"assistant","message":{"id":"msg_1","model":"claude-opus-4-6","content":[{"type":"tool_use","name":"Skill","id":"tu1","input":null}],"usage":{"input_tokens":100,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":20}},"timestamp":"2025-01-01T12:01:00.000Z"}\n' > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/skill-null" --once
     [[ $status -eq 0 ]]
+    assert_contains "In:"
 }
 
 # ─── Tasks ─────────────────────────────────────────────────────────
@@ -244,6 +246,7 @@ load monitor_helper
     { make_user_entry; make_assistant_entry 100 50 20 30; } > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/path with spaces" --once
     [[ $status -eq 0 ]]
+    assert_contains "In:"
 }
 
 @test "path with dots — session found" {
@@ -251,6 +254,7 @@ load monitor_helper
     { make_user_entry; make_assistant_entry 100 50 20 30; } > "$d/session-001.jsonl"
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/Users/paul.s/my.project" --once
     [[ $status -eq 0 ]]
+    assert_contains "In:"
 }
 
 @test "duration display: recent timestamp — shows s or m" {
@@ -261,5 +265,5 @@ load monitor_helper
     HOME="$FAKE_HOME" run "$MONITOR" --cwd "/test/dur" --once
     [[ $status -eq 0 ]]
     local stripped; stripped="$(strip_ansi "$output")"
-    [[ "$stripped" == *"s"* || "$stripped" == *"m"* ]]
+    [[ "$stripped" =~ T\ [0-9]+[sm] ]]
 }

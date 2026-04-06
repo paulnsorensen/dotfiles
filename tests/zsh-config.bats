@@ -64,7 +64,7 @@ teardown() {
 
     # Should have ripgrep aliases
     grep -q "alias todos=" "$aliases_file"
-    grep -q "alias rgjs=" "$aliases_file"
+    grep -q "alias rga=" "$aliases_file"
 
     # Should have utility aliases
     grep -q "alias uuidg=" "$aliases_file"
@@ -128,9 +128,9 @@ teardown() {
 
     # Test some key ripgrep aliases exist in the file (can't source zsh in bash)
     grep -q "alias todos=" "$aliases_file"
-    grep -q "alias rgjs=" "$aliases_file"
-    grep -q "alias rgts=" "$aliases_file"
-    grep -q "alias rgfunc=" "$aliases_file"
+    grep -q "alias rga=" "$aliases_file"
+    grep -q "alias rgf=" "$aliases_file"
+    grep -q "alias rgc=" "$aliases_file"
 }
 
 @test "fzf configuration has no syntax errors" {
@@ -140,19 +140,16 @@ teardown() {
 }
 
 @test "configuration files have no syntax errors" {
-    # Test each file for syntax errors
-    run zsh -n "$REAL_DOTFILES_DIR/zsh/core.zsh"
-    [[ $status -eq 0 ]]
-
-    run zsh -n "$REAL_DOTFILES_DIR/zsh/aliases.zsh"
-    [[ $status -eq 0 ]]
-
-    run zsh -n "$REAL_DOTFILES_DIR/zsh/completion.zsh"
-    [[ $status -eq 0 ]]
-
-    run zsh -n "$REAL_DOTFILES_DIR/zsh/fzf.zsh"
-    [[ $status -eq 0 ]]
-
-    run zsh -n "$REAL_DOTFILES_DIR/zshrc"
-    [[ $status -eq 0 ]]
+    local failed=0
+    for f in core.zsh aliases.zsh completion.zsh fzf.zsh; do
+        if ! zsh -n "$REAL_DOTFILES_DIR/zsh/$f" 2>/dev/null; then
+            echo "Syntax error in: $f" >&2
+            failed=1
+        fi
+    done
+    if ! zsh -n "$REAL_DOTFILES_DIR/zshrc" 2>/dev/null; then
+        echo "Syntax error in: zshrc" >&2
+        failed=1
+    fi
+    [[ $failed -eq 0 ]]
 }

@@ -180,6 +180,7 @@ console.log(matched ? 'blocked' : 'allowed');
 @test "pre-compact: missing transcript handled gracefully" {
     run bash -c 'echo "{\"transcript_path\": \"/nonexistent/file\"}" | bash '"$HOOKS_DIR/pre-compact.sh"
     [ "$status" -eq 0 ]
+    [[ "$output" != *"Error"* ]]
 }
 
 @test "pre-compact: output format includes section headers" {
