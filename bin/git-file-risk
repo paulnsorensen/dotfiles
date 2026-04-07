@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Per-file git history risk analysis for the Age pipeline
+# Usage: git-file-risk <file> [file ...]
+# Output: JSON array with risk signals per file
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: git-file-risk <file> [file ...]" >&2
+    exit 1
+fi
+
+SINCE="90 days ago"
+
+file_risk() {
+    local file="$1"
+
+    if ! git ls-files --error-unmatch "$file" &>/dev/null 2>&1; then
+        echo "{\"file\":\"$file\",\"error\":\"not tracked\"}"
+        return
+    fi
+
+    local authors changes has_reverts last_change_days staleness
+
+    authors=$(git log --since="$SINCE" --format='%an' -- "$file" 2>/dev/null | sort -u | wc -l | tr -d ' ')
+    changes=$(git log --since="$SINCE" --oneline -- "$file" 2>/dev/null | wc -l | tr -d ' ')
+    has_reverts=$(git log --oneline --grep='revert' -i -- "$file" 2>/dev/null | wc -l | tr -d ' ')
+
+    local last_epoch now_epoch
+    last_epoch=$(git log -1 --format='%ct' -- "$file" 2>/dev/null || echo "0")
+    now_epoch=$(date +%s)
+
+    if [[ "$last_epoch" -eq 0 ]]; then
+        last_change_days=-1
+        staleness="unknown"
+    else
+        last_change_days=$(( (now_epoch - last_epoch) / 86400 ))
+        staleness=$(git log -1 --format='%ar' -- "$file" 2>/dev/null)
+    fi
+
+    printf '{"file":"%s","authors_90d":%d,"changes_90d":%d,"reverts":%d,"last_change_days":%d,"staleness":"%s"}\n' \
+        "$file" "$authors" "$changes" "$has_reverts" "$last_change_days" "$staleness"
+}
+
+echo "["
+first=true
+for file in "$@"; do
+    if [[ "$first" == "true" ]]; then
+        first=false
+    else
+        echo ","
+    fi
+    file_risk "$file"
+done
+echo "]"
