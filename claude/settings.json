@@ -226,13 +226,15 @@
     "playwright@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
+    "plugin-dev@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "github@claude-plugins-official": true,
+    "superpowers@superpowers-marketplace": true,
     "claude-hud@claude-hud": true,
-    "code-review-graph@code-review-graph": true,
+    "code-review-graph@code-review-graph": false,
+    "cheese-flow@cheese-flow": true,
     "astral@astral-sh": true,
-    "plugin-dev@claude-plugins-official": true,
-    "cheese-flow@cheese-flow": true
+    "todoist-flow@todoist-flow": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {
@@ -257,6 +259,18 @@
       "source": {
         "source": "directory",
         "path": "/Users/paulsorensen/Dev/dotfiles/claude/plugins/local/cheese-flow"
+      }
+    },
+    "superpowers-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      }
+    },
+    "todoist-flow": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/paulsorensen/Dev/dotfiles/claude/plugins/local/todoist-flow"
       }
     }
   },
@@ -289,7 +303,9 @@
       "allowLocalBinding": true
     },
     "filesystem": {
-      "allowWrite": ["~/Dev/.prek"]
+      "allowWrite": [
+        "~/Dev/.prek"
+      ]
     }
   },
   "skipDangerousModePermissionPrompt": true

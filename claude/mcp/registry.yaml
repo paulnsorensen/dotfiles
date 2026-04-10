@@ -42,3 +42,11 @@ mcps:
       SERPER_API_KEY: "${SERPER_API_KEY}"
     scope: user
     description: Google SERP data via Serper.dev — web search, Knowledge Graph, People Also Ask, and page scraping
+
+  todoist:
+    command: npx
+    args: ["-y", "@doist/todoist-ai"]
+    env:
+      TODOIST_API_KEY: "${TODOIST_API_KEY}"
+    scope: user
+    description: Official Todoist MCP (Doist-maintained) — invoke only when explicitly requested
