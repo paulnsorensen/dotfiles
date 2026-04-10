@@ -1,5 +1,5 @@
 ---
-name: cheese-flow:hello
+name: hello
 description: Verify cheese-flow plugin is loaded and working
 ---
 
