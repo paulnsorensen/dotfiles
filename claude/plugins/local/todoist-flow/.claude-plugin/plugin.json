@@ -1,0 +1,10 @@
+{
+  "name": "todoist-flow",
+  "description": "Todoist productivity suite — triage overdue tasks, organize projects, review active work, extract reference material",
+  "version": "0.1.0",
+  "author": {
+    "name": "Paul Sorensen"
+  },
+  "license": "MIT",
+  "keywords": ["todoist", "productivity", "triage", "gtd", "task-management"]
+}

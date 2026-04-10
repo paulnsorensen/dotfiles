@@ -1,0 +1,19 @@
+{
+  "name": "todoist-flow",
+  "owner": {
+    "name": "Paul Sorensen"
+  },
+  "metadata": {
+    "description": "Todoist productivity suite — triage overdue tasks, organize projects, review active work, extract reference material",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "todoist-flow",
+      "source": "./",
+      "description": "Todoist productivity suite — triage overdue tasks, organize projects, review active work, extract reference material",
+      "category": "productivity",
+      "tags": ["todoist", "productivity", "triage", "gtd", "task-management"]
+    }
+  ]
+}
