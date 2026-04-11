@@ -115,16 +115,19 @@ Use `AskUserQuestion`: "Have you saved the reference file? Ready to remove these
 If yes, run through the write pipeline (distill → scribe → QA):
 
 **1. Validate reasoning** — spawn todoist-distill:
+
 ```
 Agent(subagent_type: "todoist-distill", prompt: "Validate deletion of these extracted reference tasks. User confirmed file is saved. Tasks: [task IDs and titles]")
 ```
 
 **2. Format commands** — spawn todoist-scribe:
+
 ```
 Agent(subagent_type: "todoist-scribe", prompt: "Format delete-object commands for these extracted tasks: [distill's validated plan]")
 ```
 
 **3. Verify and execute** — spawn todoist-qa:
+
 ```
 Agent(subagent_type: "todoist-qa", prompt: "Verify and execute: [scribe's formatted commands]. Original intent: delete extracted reference tasks after user confirmed save.")
 ```

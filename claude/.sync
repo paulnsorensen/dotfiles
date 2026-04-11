@@ -58,6 +58,10 @@ if command -v claude &>/dev/null; then
     echo "  Running MCP sync..."
     bash "$SOURCE_DIR/mcp/sync.sh" --force
   fi
+  # Ensure local marketplace symlinks exist before plugin sync
+  local_mkt="$HOME/.claude/plugins/marketplaces/local"
+  mkdir -p "$local_mkt/.claude-plugin"
+  [[ -L "$local_mkt/vaudeville" ]] || ln -sf "$HOME/Dev/vaudeville" "$local_mkt/vaudeville"
   if [[ -x "$SOURCE_DIR/plugins/sync.sh" ]]; then
     echo "  Running plugin sync..."
     bash "$SOURCE_DIR/plugins/sync.sh" --force

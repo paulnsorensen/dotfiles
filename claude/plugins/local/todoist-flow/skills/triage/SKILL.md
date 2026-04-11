@@ -18,6 +18,7 @@ Agent(subagent_type: "todoist-fetch", prompt: "Fetch overdue tasks: find-tasks w
 ```
 
 If the user said "triage inbox" or "inbox zero":
+
 ```
 Agent(subagent_type: "todoist-fetch", prompt: "Fetch inbox tasks: find-tasks with filter '#Inbox'. Sort by creation date (oldest first). Include task IDs, titles, priorities, due dates, creation dates, descriptions, and any labels.")
 ```
@@ -58,6 +59,7 @@ After research returns, re-present the task with the research context and ask ag
 Batch decisions and run through the write pipeline (distill → scribe → QA):
 
 **Operation mapping:**
+
 - **Complete**: `complete-tasks`
 - **Reschedule**: `reschedule-tasks` (NEVER update-tasks — preserves recurrence)
 - **Delete**: `delete-object`
@@ -65,16 +67,19 @@ Batch decisions and run through the write pipeline (distill → scribe → QA):
 - **Keep**: No action
 
 **1. Validate reasoning** — spawn todoist-distill:
+
 ```
 Agent(subagent_type: "todoist-distill", prompt: "Validate these triage decisions against user intent: [decisions with task data, user choices, and context]")
 ```
 
 **2. Format commands** — spawn todoist-scribe with validated plan:
+
 ```
 Agent(subagent_type: "todoist-scribe", prompt: "Format these validated triage operations as MCP commands: [distill's validated plan]")
 ```
 
 **3. Verify and execute** — spawn todoist-qa:
+
 ```
 Agent(subagent_type: "todoist-qa", prompt: "Verify and execute: [scribe's formatted commands]. Original intent: [distill's validated plan]")
 ```
@@ -82,6 +87,7 @@ Agent(subagent_type: "todoist-qa", prompt: "Verify and execute: [scribe's format
 ### Step 6: Continue or Finish
 
 After each batch of 5:
+
 - Show running stats: `Completed: X | Rescheduled: X | Deleted: X | Someday: X | Kept: X`
 - Ask: "Continue with next batch? (Y tasks remaining)" via `AskUserQuestion`
 

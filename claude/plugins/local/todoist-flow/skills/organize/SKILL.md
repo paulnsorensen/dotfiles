@@ -22,6 +22,7 @@ Agent(subagent_type: "todoist-fetch", prompt: "Fetch full workspace audit data: 
 Check for these structural problems (from best practices in `${CLAUDE_PLUGIN_ROOT}/references/best-practices.md`):
 
 **Projects:**
+
 - Empty projects (0 tasks) — candidates for archival
 - Oversized projects (>30 tasks without sections) — need sectioning or splitting
 - Too many active projects (>15) — cognitive overload
@@ -29,15 +30,18 @@ Check for these structural problems (from best practices in `${CLAUDE_PLUGIN_ROO
 - Projects without clear outcomes (noun-only names like "Ideas" or "Misc")
 
 **Labels:**
+
 - Orphan labels (exist but used by 0 tasks)
 - Labels used as containers instead of attributes (e.g., `@client-name` with many tasks)
 - Missing high-value labels (`@waiting`, `@deep-work`, `@quick-win` not present)
 
 **Sections:**
+
 - Projects with >30 tasks and no sections
 - Empty sections (cruft)
 
 **Filters:**
+
 - Missing cockpit filters (the user should have at least 3 working views)
 - Suggested filters: Today, Deep Work, Quick Wins, Waiting On, Weekly Review
 
@@ -92,16 +96,19 @@ Use `AskUserQuestion` for approval. For quick wins, batch approval is fine. For 
 Run approved changes through the write pipeline (distill → scribe → QA):
 
 **1. Validate reasoning** — spawn todoist-distill:
+
 ```
 Agent(subagent_type: "todoist-distill", prompt: "Validate these structural changes against user approval: [approved changes with context]")
 ```
 
 **2. Format commands** — spawn todoist-scribe with validated plan:
+
 ```
 Agent(subagent_type: "todoist-scribe", prompt: "Format these validated structural operations as MCP commands: [distill's validated plan]")
 ```
 
 **3. Verify and execute** — spawn todoist-qa:
+
 ```
 Agent(subagent_type: "todoist-qa", prompt: "Verify and execute: [scribe's formatted commands]. Original intent: [distill's validated plan]")
 ```
