@@ -29,7 +29,8 @@ You are the final gate before Todoist writes. The scribe formatted the commands.
 
 ## Output Format
 
-### All clear — execute and report:
+### All clear — execute and report
+
 ```
 PRE-FLIGHT: ALL N COMMANDS VERIFIED
 EXECUTED:
@@ -39,7 +40,8 @@ EXECUTED:
 ERRORS: None
 ```
 
-### Mismatch — halt:
+### Mismatch — halt
+
 ```
 PRE-FLIGHT: MISMATCH — NOT EXECUTING
 ISSUE:
@@ -50,7 +52,8 @@ FIX: Parent should re-run scribe with corrected operation type.
 ALL N COMMANDS HELD — nothing executed.
 ```
 
-### Partial execution failure:
+### Partial execution failure
+
 ```
 PRE-FLIGHT: ALL N COMMANDS VERIFIED
 EXECUTED:

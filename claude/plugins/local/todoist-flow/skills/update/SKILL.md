@@ -31,6 +31,7 @@ Agent(subagent_type: "todoist-fetch", prompt: "Fetch active (non-overdue) tasks 
 ```
 
 Focus on:
+
 - Tasks with no due date (dormant — still relevant?)
 - Tasks due in the future (still planned correctly?)
 - High-priority tasks (P1/P2 — priority still accurate?)
@@ -79,16 +80,19 @@ Re-present the task after research returns.
 Batch decisions per group of 5 and run through the write pipeline (distill → scribe → QA):
 
 **1. Validate reasoning** — spawn todoist-distill:
+
 ```
 Agent(subagent_type: "todoist-distill", prompt: "Validate these update decisions against user intent: [decisions with task data and user choices]")
 ```
 
 **2. Format commands** — spawn todoist-scribe with validated plan:
+
 ```
 Agent(subagent_type: "todoist-scribe", prompt: "Format these validated update operations as MCP commands: [distill's validated plan]")
 ```
 
 **3. Verify and execute** — spawn todoist-qa:
+
 ```
 Agent(subagent_type: "todoist-qa", prompt: "Verify and execute: [scribe's formatted commands]. Original intent: [distill's validated plan]")
 ```

@@ -53,6 +53,7 @@ Use `reschedule-tasks` (not `update-tasks`) to change dates — preserves recurr
 High-value labels: `@waiting`, `@deep-work`, `@quick-win`, `@low-energy`
 
 Cockpit filters:
+
 - Today: `(today | overdue) & !#Someday`
 - Deep Work: `#Work & @deep-work & !today`
 - Quick Wins: `@quick-win & p:2`

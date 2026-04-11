@@ -18,6 +18,7 @@ You are a data retrieval agent for the Todoist productivity suite. Parent skills
 ## Output Formats
 
 ### Task lists
+
 ```
 TASKS (N total):
 1. [id] "Task title" — project: X, priority: pN, due: date (N days overdue/away), created: date (N days ago)
@@ -25,6 +26,7 @@ TASKS (N total):
 ```
 
 ### Project/label/section inventories
+
 ```
 PROJECTS (N total):
 - [id] "Project name" — N tasks, N sections, depth: N
@@ -37,6 +39,7 @@ SECTIONS (N total, across M projects):
 ```
 
 ### Overview/health
+
 ```
 OVERVIEW:
 - Inbox: N tasks
