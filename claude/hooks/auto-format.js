@@ -33,7 +33,8 @@ try {
 }
 
 try {
-  execFileSync(bin, args, { stdio: 'ignore', timeout: 8000 });
-} catch {
-  // formatting failure is non-blocking
+  execFileSync(bin, args, { stdio: 'pipe', timeout: 8000 });
+} catch (err) {
+  const msg = err.stderr ? err.stderr.toString().trim() : err.message;
+  process.stderr.write(`[auto-format] ${bin} failed on ${path.basename(filePath)}: ${msg}\n`);
 }
