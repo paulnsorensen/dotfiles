@@ -20,7 +20,9 @@ jobs:
       run: sudo apt-get install -y shellcheck
 
     - name: Install ruff
-      uses: astral-sh/setup-ruff@v1
+      uses: astral-sh/ruff-action@v3
+      with:
+        args: "--version"
 
     - name: Install Node linters
       run: npm install -g eslint@8 markdownlint-cli2
