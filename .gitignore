@@ -48,11 +48,6 @@ vhs/output/
 # Backup files
 *.bak
 
-# GSD system (experimental, not ready)
-claude/agents/gsd-*
-claude/commands/gsd/
-claude/hooks/gsd-*
-
 # Ralph TUI
 .ralph-tui/
 claude/skills/ralph-tui-*
