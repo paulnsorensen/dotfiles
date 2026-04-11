@@ -3,7 +3,7 @@
 # Bare string = brew (mac) / apt (linux)
 # Key-value = override defaults
 #
-#   source:   brew (default) | cask | tap | cargo
+#   source:   brew (default) | cask | tap | cargo | npm | uv
 #   dev:      only when DOTFILES_DEV=true
 #   apt:      override name for linux
 #   platform: mac | linux (default: both)
@@ -74,6 +74,9 @@ packages:
   # Linters
   - eslint: { source: npm, pkg: "eslint@8" }
   - markdownlint-cli2: { source: npm }
+
+  # uv tools (Python)
+  - ralphify: { source: uv }
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }

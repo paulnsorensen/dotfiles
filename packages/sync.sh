@@ -286,6 +286,39 @@ sync_npm() {
     log_success "NPM sync complete"
 }
 
+########## UV (Python tools via `uv tool install`)
+
+sync_uv() {
+    local uv_pkgs
+    uv_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "uv") | [.key, (.value.pkg // .key)] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    [[ -z "$uv_pkgs" ]] && return 0
+
+    if ! command -v uv &>/dev/null; then
+        log_error "uv not found (install uv first)"
+        FAILED+=("uv")
+        return 0
+    fi
+
+    log_info "Syncing uv tool packages"
+    local installed
+    installed=$(uv tool list 2>/dev/null | awk '/^[a-zA-Z]/ {print $1}' || true)
+
+    while IFS=$'\t' read -r name pkg; do
+        [[ -z "$name" ]] && continue
+        if echo "$installed" | grep -qx "$name"; then
+            echo "  + $name"
+        else
+            echo "  Installing $pkg..."
+            if ! uv tool install "$pkg" </dev/null; then
+                log_error "Failed to install $pkg"
+                FAILED+=("$pkg")
+            fi
+        fi
+    done <<< "$uv_pkgs"
+
+    log_success "UV sync complete"
+}
+
 ########## APT
 
 apt_check_pkg() {
@@ -357,6 +390,7 @@ fi
 sync_cargo
 sync_rustup_proxies
 sync_npm
+sync_uv
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     echo ""
