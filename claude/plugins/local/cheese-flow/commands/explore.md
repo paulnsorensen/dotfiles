@@ -1,4 +1,5 @@
 ---
+name: explore
 description: Code exploration orchestrator. Runs explore-graph, explore-tilth, explore-tokei, and explore-lsp in parallel and synthesizes findings into an XML artifact (map, business context, optional change callstack).
 argument-hint: [--scope <dir>] [--budget <N>] [--out <path>] <query>
 ---

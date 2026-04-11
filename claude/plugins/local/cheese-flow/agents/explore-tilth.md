@@ -1,6 +1,25 @@
 ---
 name: explore-tilth
-description: Tree-sitter smart code reader. Wraps the tilth CLI for symbol lookup, token-budgeted file reads, caller discovery, file blast-radius, and structural codebase maps. Use when the parent needs zero-server-startup structural reads, a budget-capped symbol view, or a quick codebase map without invoking LSP. Returns structured JSON findings.
+description: |
+  Tree-sitter smart code reader. Wraps the tilth CLI for symbol lookup, token-budgeted file reads, caller discovery, file blast-radius, and structural codebase maps. Use when the parent needs zero-server-startup structural reads, a budget-capped symbol view, or a quick codebase map without invoking LSP. Returns structured JSON findings.
+
+  <example>
+  Context: Parent needs a token-budgeted view of a large file without burning context.
+  user: "Show me what's in src/engine/core.rs"
+  assistant: "I'll spawn explore-tilth with --budget 2000 to get a smart view."
+  <commentary>
+  Smart-view reads are tilth's raison d'être — cheaper than Read on large files, no LSP startup cost.
+  </commentary>
+  </example>
+
+  <example>
+  Context: Parent wants a repo-level structural map for orientation.
+  user: "Give me a map of this codebase."
+  assistant: "I'll dispatch explore-tilth with --map --budget 4000."
+  <commentary>
+  Repo map with budget cap — tilth generates structural overviews tree-sitter can produce without LSP warmup.
+  </commentary>
+  </example>
 model: sonnet
 allowed-tools: [Read, Bash(tilth:*), Bash(which tilth), Bash(git status:*)]
 color: yellow

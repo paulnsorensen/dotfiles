@@ -1,6 +1,25 @@
 ---
 name: explore-tokei
-description: Code stats specialist. Wraps tokei to produce language breakdown, file-level line counts, and largest-file rankings for codebase orientation and change-scoping. Distinct from culture-tokei (which writes fromagerie size manifests) — this agent is for free-form exploration and returns structured JSON findings to the parent orchestrator.
+description: |
+  Code stats specialist. Wraps tokei to produce language breakdown, file-level line counts, and largest-file rankings for codebase orientation and change-scoping. Distinct from culture-tokei (which writes fromagerie size manifests) — this agent is for free-form exploration and returns structured JSON findings to the parent orchestrator.
+
+  <example>
+  Context: Parent wants a language breakdown for orientation.
+  user: "What languages is this repo written in, and what's the split?"
+  assistant: "I'll spawn explore-tokei to run tokei --output json and compute percentages."
+  <commentary>
+  Aggregate language breakdown — tokei is the right primitive, haiku model keeps it cheap.
+  </commentary>
+  </example>
+
+  <example>
+  Context: Parent wants to find where code mass is concentrated.
+  user: "Where are the biggest files in src/?"
+  assistant: "I'll dispatch explore-tokei with --files to rank by code line count."
+  <commentary>
+  Per-file ranking for hotspot detection — tokei returns structured JSON the agent sorts and reports.
+  </commentary>
+  </example>
 model: haiku
 allowed-tools: [Read, Bash(tokei:*), Bash(which tokei), Bash(jq:*)]
 color: green

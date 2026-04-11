@@ -1,6 +1,25 @@
 ---
 name: explore-lsp
-description: Type-aware code navigation specialist. Wraps the built-in LSP tool for precise goToDefinition, findReferences, hover, documentSymbol, workspaceSymbol, and callHierarchy queries. Use when the parent needs type-resolved single-hop answers that a graph or tree-sitter reader cannot give. Returns structured JSON findings.
+description: |
+  Type-aware code navigation specialist. Wraps the built-in LSP tool for precise goToDefinition, findReferences, hover, documentSymbol, workspaceSymbol, and callHierarchy queries. Use when the parent needs type-resolved single-hop answers that a graph or tree-sitter reader cannot give. Returns structured JSON findings.
+
+  <example>
+  Context: Parent needs exact type signature and definition site of a function.
+  user: "Where is parseConfig defined and what's its signature?"
+  assistant: "I'll spawn explore-lsp to run workspaceSymbol → goToDefinition → hover."
+  <commentary>
+  Single-hop, type-aware query — LSP is authoritative. Graph would only give node metadata.
+  </commentary>
+  </example>
+
+  <example>
+  Context: Parent needs precise reference sites for a type.
+  user: "Find every usage of the AuthToken type."
+  assistant: "I'll dispatch explore-lsp for findReferences on AuthToken."
+  <commentary>
+  Type-resolved references — LSP disambiguates shadowing and imports where grep would miss or over-match.
+  </commentary>
+  </example>
 model: sonnet
 allowed-tools: [Read, LSP, Glob, Bash(git status:*)]
 color: magenta

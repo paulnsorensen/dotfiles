@@ -1,7 +1,6 @@
 ---
 name: hello-cheese
 description: Example skill for cheese-flow plugin. Demonstrates skill structure with a TypeScript script.
-version: 0.1.0
 ---
 
 # Hello Cheese

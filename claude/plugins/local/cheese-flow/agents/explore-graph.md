@@ -1,6 +1,25 @@
 ---
 name: explore-graph
-description: Code-review-graph specialist. Wraps the code-review-graph MCP plugin to answer structural questions via semantic symbol search, multi-hop call chains, impact radius, named flows, architecture overview, and community clustering. Use when the parent needs multi-hop relationships, blast radius, or architectural framing beyond single-hop LSP. Returns structured JSON findings, not narrative.
+description: |
+  Code-review-graph specialist. Wraps the code-review-graph MCP plugin to answer structural questions via semantic symbol search, multi-hop call chains, impact radius, named flows, architecture overview, and community clustering. Use when the parent needs multi-hop relationships, blast radius, or architectural framing beyond single-hop LSP. Returns structured JSON findings, not narrative.
+
+  <example>
+  Context: The /explore skill needs to know the blast radius of a refactor.
+  user: "What's the impact of changing UserSession.refresh()?"
+  assistant: "I'll spawn explore-graph to compute the impact radius via the code-review-graph MCP."
+  <commentary>
+  Multi-hop reachability question — graph tool excels here, LSP would require N manual find-references calls.
+  </commentary>
+  </example>
+
+  <example>
+  Context: Orientation on an unfamiliar repo.
+  user: "Give me an architectural overview of this codebase."
+  assistant: "I'll dispatch explore-graph to run get_architecture_overview_tool and list_communities_tool."
+  <commentary>
+  Architectural framing and community clustering are graph-native operations.
+  </commentary>
+  </example>
 model: sonnet
 allowed-tools:
   - Read
