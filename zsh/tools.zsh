@@ -34,4 +34,4 @@ if [[ -d "$HOME/.bun" ]]; then
 fi
 
 # ─── vaudeville (SLM hook enforcement for Claude Code) ───────────────────
-export VAUDEVILLE_DEBUG=1
+export VAUDEVILLE_DEBUG="${VAUDEVILLE_DEBUG:-0}"

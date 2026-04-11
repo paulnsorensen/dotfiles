@@ -1,4 +1,4 @@
-const { execFileSync, execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -27,7 +27,7 @@ if (!formatter) process.exit(0);
 const [bin, args] = formatter;
 
 try {
-  execSync(`which ${bin}`, { stdio: 'ignore' });
+  execFileSync('which', [bin], { stdio: 'ignore' });
 } catch {
   process.exit(0);
 }
