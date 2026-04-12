@@ -123,3 +123,54 @@ alias plugin-ls='claude plugin list'
 alias plugin-sync='$CLAUDE_DOTFILES/plugins/sync.sh'
 alias plugin-sync-dry='$CLAUDE_DOTFILES/plugins/sync.sh --dry-run'
 alias plugin-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/plugins/registry.yaml'
+
+# ═══════════════════════════════════════════════════════════════════
+# Ralphify (autonomous coding loops — github.com/computerlovetech/ralphify)
+# ═══════════════════════════════════════════════════════════════════
+# ralph binary is installed via `uv tool install ralphify` and lives in
+# ~/.local/bin. Prefer the pinned path so this works even if PATH is stale.
+ralph() {
+    if [[ -x "$HOME/.local/bin/ralph" ]]; then
+        "$HOME/.local/bin/ralph" "$@"
+    else
+        command ralph "$@"
+    fi
+}
+
+# rw — run a ralph with sensible defaults:
+#   - 30-minute per-iteration timeout
+#   - per-iteration logs captured under <ralph>/logs
+#   - stop on error (-s) so a broken iteration doesn't loop forever
+#   - defaults to -n 50 — sized for an overnight/12-hour run at ~15 min
+#     per iteration. Use guard.sh to stop early when work is done.
+rw() {
+    if [[ -z "$1" || "$1" == "-h" || "$1" == "--help" ]]; then
+        echo "Usage: rw <ralph-path> [extra ralph run flags...]" >&2
+        echo "  rw ralphs/coverage          # sanity check: one iteration" >&2
+        echo "  rw ralphs/coverage -n 50    # up to 10 iterations" >&2
+        echo "  rw ralphs/coverage -n 9999  # effectively unbounded (omit cap)" >&2
+        return 1
+    fi
+    if [[ ! -x "$HOME/.local/bin/ralph" ]] && ! command -v ralph &>/dev/null; then
+        echo "rw: ralph not installed — run: uv tool install ralphify" >&2
+        return 1
+    fi
+    local ralph_path="${1%/}"
+    shift
+    if [[ ! -f "$ralph_path/RALPH.md" ]]; then
+        echo "rw: no RALPH.md at $ralph_path" >&2
+        return 1
+    fi
+    local log_dir="${ralph_path}/logs"
+    if ! mkdir -p "$log_dir"; then
+        echo "rw: failed to create log directory: $log_dir" >&2
+        return 1
+    fi
+    local has_n=0
+    for arg in "$@"; do
+        [[ "$arg" == "-n" || "$arg" == --max-iterations* ]] && has_n=1 && break
+    done
+    local default_n=()
+    (( has_n == 0 )) && default_n=(-n 50)
+    ralph run "$ralph_path" -t 1800 -l "$log_dir" -s "${default_n[@]}" "$@"
+}
