@@ -136,7 +136,7 @@ Show the user:
 
 1. **File tree** of the created directory.
 2. **One sentence** describing what a single iteration will do.
-3. **Suggested first run:** `ralph run <path> -n 10 -t 600 -s -l <path>/logs` — three iterations, ten-minute timeout, stop on error, logs captured. Starting with `-n 10` lets them see the loop work before going unbounded.
+3. **Suggested first run:** `ralph run <path> -n 10 -t 1200 -s -l <path>/logs` — three iterations, twenty-minute timeout, stop on error, logs captured. Starting with `-n 10` lets them see the loop work before going unbounded.
 4. **Shortcut:** mention the `rw` shell function (defined in `zsh/claude.zsh`) — `rw ralphs/<name>` is exactly the suggested command above. To run more iterations: `rw ralphs/<name> -n 10`.
 
 ## Example output

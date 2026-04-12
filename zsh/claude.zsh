@@ -138,7 +138,7 @@ ralph() {
 }
 
 # rw — run a ralph with sensible defaults:
-#   - 10-minute per-iteration timeout
+#   - 20-minute per-iteration timeout
 #   - per-iteration logs captured under <ralph>/logs
 #   - stop on error (-s) so a broken iteration doesn't loop forever
 #   - defaults to -n 10 if the caller didn't pass iteration cap — enough
@@ -172,5 +172,5 @@ rw() {
     done
     local default_n=()
     (( has_n == 0 )) && default_n=(-n 10)
-    ralph run "$ralph_path" -t 600 -l "$log_dir" -s "${default_n[@]}" "$@"
+    ralph run "$ralph_path" -t 1200 -l "$log_dir" -s "${default_n[@]}" "$@"
 }
