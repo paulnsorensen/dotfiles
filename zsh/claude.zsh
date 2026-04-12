@@ -138,16 +138,16 @@ ralph() {
 }
 
 # rw — run a ralph with sensible defaults:
-#   - 20-minute per-iteration timeout
+#   - 30-minute per-iteration timeout
 #   - per-iteration logs captured under <ralph>/logs
 #   - stop on error (-s) so a broken iteration doesn't loop forever
-#   - defaults to -n 10 if the caller didn't pass iteration cap — enough
-#     to make real progress while still capping runaway cost
+#   - defaults to -n 50 — sized for an overnight/12-hour run at ~15 min
+#     per iteration. Use guard.sh to stop early when work is done.
 rw() {
     if [[ -z "$1" || "$1" == "-h" || "$1" == "--help" ]]; then
         echo "Usage: rw <ralph-path> [extra ralph run flags...]" >&2
         echo "  rw ralphs/coverage          # sanity check: one iteration" >&2
-        echo "  rw ralphs/coverage -n 10    # up to 10 iterations" >&2
+        echo "  rw ralphs/coverage -n 50    # up to 10 iterations" >&2
         echo "  rw ralphs/coverage -n 9999  # effectively unbounded (omit cap)" >&2
         return 1
     fi
@@ -171,6 +171,6 @@ rw() {
         [[ "$arg" == "-n" || "$arg" == --max-iterations* ]] && has_n=1 && break
     done
     local default_n=()
-    (( has_n == 0 )) && default_n=(-n 10)
-    ralph run "$ralph_path" -t 1200 -l "$log_dir" -s "${default_n[@]}" "$@"
+    (( has_n == 0 )) && default_n=(-n 50)
+    ralph run "$ralph_path" -t 1800 -l "$log_dir" -s "${default_n[@]}" "$@"
 }
