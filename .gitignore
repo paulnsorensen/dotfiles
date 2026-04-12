@@ -48,6 +48,12 @@ vhs/output/
 # Backup files
 *.bak
 
+# Python cache
+__pycache__/
+
+# DuckDB databases
+*.duckdb
+
 # Ralph TUI
 .ralph-tui/
 claude/skills/ralph-tui-*

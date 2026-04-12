@@ -42,6 +42,7 @@ packages:
   - lazygit
   - just
   - duckdb
+  - watch
   - node: { apt: nodejs }
   - sd
   - vhs
