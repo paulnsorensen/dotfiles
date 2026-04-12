@@ -13,6 +13,22 @@ Examples:
 - `claude -p --dangerously-skip-permissions`
 - `gemini -p --yolo`
 - `cursor-agent -p`
+- `./guard.sh` — a wrapper script that checks a pre-condition before `exec`ing the real agent (short-circuit pattern; see below)
+
+#### Guard script pattern
+
+Point `agent:` at a script that checks whether work remains before invoking the agent. If the check fails, the script exits non-zero and ralphify skips the iteration (no token cost). The script receives the assembled prompt on stdin via `"$@"`.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+TODO="$(dirname "$0")/TODO.md"
+if ! grep -q '^\- \[ \]' "$TODO" 2>/dev/null; then
+  echo "No unchecked items — stopping." >&2
+  exit 1
+fi
+exec claude -p --dangerously-skip-permissions "$@"
+```
 
 ### `commands` (optional, list)
 

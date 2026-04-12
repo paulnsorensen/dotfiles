@@ -44,7 +44,11 @@ def _split_frontmatter(text: str) -> tuple[dict, str]:
         raise ValueError("RALPH.md must start with YAML frontmatter delimited by ---")
     for i in range(1, len(lines)):
         if lines[i].rstrip() == "---":
-            fm = yaml.safe_load("".join(lines[1:i])) or {}
+            fm = yaml.safe_load("".join(lines[1:i]))
+            if fm is None:
+                fm = {}
+            elif not isinstance(fm, dict):
+                raise ValueError("RALPH.md frontmatter must be a YAML mapping")
             body = "".join(lines[i + 1 :])
             return fm, body
     raise ValueError("RALPH.md frontmatter is not closed with ---")
@@ -95,10 +99,21 @@ def _validate_command(i: int, cmd: object) -> tuple[list[str], str | None]:
     return errors, name
 
 
+def _validate_credit(fm: dict) -> list[str]:
+    credit = fm.get("credit")
+    if credit is not None and not isinstance(credit, bool):
+        return ["frontmatter `credit` must be a boolean (true/false)"]
+    return []
+
+
 def _validate_commands(fm: dict) -> tuple[list[str], set[str]]:
     errors: list[str] = []
     declared: set[str] = set()
-    for i, cmd in enumerate(fm.get("commands") or []):
+    raw = fm.get("commands")
+    if raw is not None and not isinstance(raw, list):
+        errors.append("frontmatter `commands` must be a list")
+        return errors, declared
+    for i, cmd in enumerate(raw or []):
         cmd_errors, name = _validate_command(i, cmd)
         errors.extend(cmd_errors)
         if name is not None:
@@ -111,7 +126,11 @@ def _validate_commands(fm: dict) -> tuple[list[str], set[str]]:
 def _validate_args(fm: dict) -> tuple[list[str], set[str]]:
     errors: list[str] = []
     declared: set[str] = set()
-    for i, arg in enumerate(fm.get("args") or []):
+    raw = fm.get("args")
+    if raw is not None and not isinstance(raw, list):
+        errors.append("frontmatter `args` must be a list")
+        return errors, declared
+    for i, arg in enumerate(raw or []):
         if not isinstance(arg, str):
             errors.append(f"args[{i}] must be a string")
             continue
@@ -189,6 +208,7 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
 
     errors.extend(_validate_agent(fm))
+    errors.extend(_validate_credit(fm))
     cmd_errors, declared_commands = _validate_commands(fm)
     errors.extend(cmd_errors)
     arg_errors, declared_args = _validate_args(fm)

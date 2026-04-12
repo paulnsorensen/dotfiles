@@ -138,11 +138,11 @@ ralph() {
 }
 
 # rw — run a ralph with sensible defaults:
-#   - 5-minute per-iteration timeout
+#   - 10-minute per-iteration timeout
 #   - per-iteration logs captured under <ralph>/logs
 #   - stop on error (-s) so a broken iteration doesn't loop forever
-#   - defaults to -n 1 if the caller didn't pass iteration cap, so an
-#     accidental `rw mything` sanity-checks one pass instead of spinning
+#   - defaults to -n 3 if the caller didn't pass iteration cap, so an
+#     accidental `rw mything` sanity-checks a few passes instead of spinning
 rw() {
     if [[ -z "$1" || "$1" == "-h" || "$1" == "--help" ]]; then
         echo "Usage: rw <ralph-path> [extra ralph run flags...]" >&2
@@ -162,12 +162,15 @@ rw() {
         return 1
     fi
     local log_dir="${ralph_path}/logs"
-    mkdir -p "$log_dir"
+    if ! mkdir -p "$log_dir"; then
+        echo "rw: failed to create log directory: $log_dir" >&2
+        return 1
+    fi
     local has_n=0
     for arg in "$@"; do
         [[ "$arg" == "-n" || "$arg" == --max-iterations* ]] && has_n=1 && break
     done
     local default_n=()
-    (( has_n == 0 )) && default_n=(-n 1)
-    ralph run "$ralph_path" -t 300 -l "$log_dir" -s "${default_n[@]}" "$@"
+    (( has_n == 0 )) && default_n=(-n 3)
+    ralph run "$ralph_path" -t 600 -l "$log_dir" -s "${default_n[@]}" "$@"
 }

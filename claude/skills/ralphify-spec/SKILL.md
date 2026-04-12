@@ -1,7 +1,7 @@
 ---
 name: ralphify-spec
 description: Generate a ralphify-approved ralph directory (RALPH.md + optional scripts) from a plain-English description of repetitive or iterative work. Use this skill whenever the user says "ralphify", "create a ralph", "ralph wiggum", "autonomous loop", "/ralphify", references Geoffrey Huntley's Ralph Wiggum method, or asks to wrap iterative work in ralphify (test-until-green, refactor-until-done, lint-until-clean, coverage-until-90, burn-down-todos, resolve-review-comments). Trigger even when the user does not explicitly name ralphify but describes an open-ended loop ("keep fixing tests until they pass", "port files one by one until the directory is done"). Do not trigger for one-shot tasks — ralphs exist for work that benefits from running N times against a stop condition.
-allowed-tools: [Read, Write, Edit, Bash, Glob, Grep]
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
 # ralphify-spec
@@ -54,6 +54,30 @@ If `ralph` is not on `PATH`, fall back to `~/.local/bin/ralph` — that is where
 `REFERENCE.md` is the schema spec. Read it when you need exact rules (required vs optional fields, constraints, defaults). Don't re-derive them from this skill body.
 
 Default agent: `claude -p --dangerously-skip-permissions`, unless the user is on a different agent (Gemini, Cursor agent, etc.).
+
+#### Guard scripts (short-circuit pattern)
+
+When the ralph has a clear "all done" condition checkable before spinning up an agent, wrap the agent call in a guard script and point `agent:` at the script instead:
+
+```bash
+#!/usr/bin/env bash
+# guard.sh — exit 1 to stop ralphify before wasting an agent iteration
+set -euo pipefail
+
+TODO="$(dirname "$0")/TODO.md"
+if ! grep -q '^\- \[ \]' "$TODO" 2>/dev/null; then
+  echo "No unchecked items — stopping." >&2
+  exit 1
+fi
+
+exec claude -p --dangerously-skip-permissions "$@"
+```
+
+```yaml
+agent: ./guard.sh
+```
+
+The guard runs before the agent, so a failed pre-condition skips the iteration entirely (no token cost). Use this when a `check-done.sh` command would still burn an agent invocation just to see "nothing to do". Common guards: grep for remaining TODOs, check coverage threshold, verify lint error count > 0.
 
 Default `commands` picks by stack:
 
@@ -110,7 +134,7 @@ Show the user:
 
 1. **File tree** of the created directory.
 2. **One sentence** describing what a single iteration will do.
-3. **Suggested first run:** `ralph run <path> -n 1 -t 300 -s -l <path>/logs` — one iteration, five-minute timeout, stop on error, logs captured. Starting with `-n 1` lets them sanity-check the prompt before letting the loop run unbounded.
+3. **Suggested first run:** `ralph run <path> -n 3 -t 600 -s -l <path>/logs` — three iterations, ten-minute timeout, stop on error, logs captured. Starting with `-n 3` lets them see the loop work before going unbounded.
 4. **Shortcut:** mention the `rw` shell function (defined in `zsh/claude.zsh`) — `rw ralphs/<name>` is exactly the suggested command above. To run more iterations: `rw ralphs/<name> -n 10`.
 
 ## Example output
@@ -181,4 +205,4 @@ uv run coverage report --format=total
 - Do not pipe or chain commands in `run:`. Use a script instead.
 - Do not leave placeholders without a matching declaration — they render as literal text and confuse the agent.
 - Do not ask the user about ralphify internals. If they wanted to write YAML they would not be here.
-- Do not default to `-n` unbounded on the first run. Start with `-n 1` so the user can eyeball one iteration before committing to the loop.
+- Do not default to `-n` unbounded on the first run. Start with `-n 3` so the user can see the loop work before committing to unbounded runs.
