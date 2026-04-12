@@ -141,8 +141,8 @@ ralph() {
 #   - 10-minute per-iteration timeout
 #   - per-iteration logs captured under <ralph>/logs
 #   - stop on error (-s) so a broken iteration doesn't loop forever
-#   - defaults to -n 3 if the caller didn't pass iteration cap, so an
-#     accidental `rw mything` sanity-checks a few passes instead of spinning
+#   - defaults to -n 10 if the caller didn't pass iteration cap — enough
+#     to make real progress while still capping runaway cost
 rw() {
     if [[ -z "$1" || "$1" == "-h" || "$1" == "--help" ]]; then
         echo "Usage: rw <ralph-path> [extra ralph run flags...]" >&2
@@ -171,6 +171,6 @@ rw() {
         [[ "$arg" == "-n" || "$arg" == --max-iterations* ]] && has_n=1 && break
     done
     local default_n=()
-    (( has_n == 0 )) && default_n=(-n 3)
+    (( has_n == 0 )) && default_n=(-n 10)
     ralph run "$ralph_path" -t 600 -l "$log_dir" -s "${default_n[@]}" "$@"
 }
