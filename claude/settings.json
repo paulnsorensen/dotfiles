@@ -75,6 +75,7 @@
       "mcp__shadcn__*",
       "mcp__tavily__*",
       "mcp__serper__*",
+      "mcp__code-review-graph__*",
       "WebSearch",
       "WebFetch",
       "Skill"
@@ -227,7 +228,6 @@
     "github@claude-plugins-official": true,
     "superpowers@superpowers-marketplace": true,
     "claude-hud@claude-hud": true,
-    "code-review-graph@code-review-graph": false,
     "cheese-flow@cheese-flow": true,
     "astral@astral-sh": true,
     "todoist-flow@todoist-flow": true,
@@ -255,7 +255,7 @@
     "cheese-flow": {
       "source": {
         "source": "directory",
-        "path": "/Users/paulsorensen/Dev/dotfiles/claude/plugins/local/cheese-flow"
+        "path": "/Users/paul/Dev/dotfiles/claude/plugins/local/cheese-flow"
       }
     },
     "superpowers-marketplace": {
@@ -267,7 +267,7 @@
     "todoist-flow": {
       "source": {
         "source": "directory",
-        "path": "/Users/paulsorensen/Dev/dotfiles/claude/plugins/local/todoist-flow"
+        "path": "/Users/paul/Dev/dotfiles/claude/plugins/local/todoist-flow"
       }
     }
   },

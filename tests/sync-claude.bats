@@ -254,6 +254,119 @@ JSON
 }
 
 
+write_local_plugin_fixtures() {
+    local dotfiles_root="$1"
+    local plugin_dir="$dotfiles_root/claude/plugins/local/my-plugin"
+    mkdir -p "$plugin_dir/.claude-plugin"
+    echo '{"name": "my-plugin"}' > "$plugin_dir/.claude-plugin/plugin.json"
+
+    cat > "$dotfiles_root/claude/plugins/registry.yaml" << 'YAML'
+plugins:
+  hookify@official:
+    description: Hook management
+    scope: user
+    load: true
+  my-plugin@my-plugin:
+    description: Local test plugin
+    scope: user
+    load: true
+    path: claude/plugins/local/my-plugin
+YAML
+
+    cat > "$dotfiles_root/claude/settings.json" << 'JSON'
+{
+  "enabledPlugins": {},
+  "extraKnownMarketplaces": {}
+}
+JSON
+}
+
+
+@test "plugin sync: local marketplace path is resolved from dotfiles root" {
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
+    local claude_dir="$dotfiles_root/claude"
+    local mock_dir="$claude_dir/plugins"
+    mkdir -p "$mock_dir" "$claude_dir/lib"
+    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
+    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
+
+    write_local_plugin_fixtures "$dotfiles_root"
+
+    run bash "$mock_dir/sync.sh"
+    assert_success
+
+    local actual_path
+    actual_path=$(jq -r '.extraKnownMarketplaces["my-plugin"].source.path' "$claude_dir/settings.json")
+    [[ "$actual_path" == "$dotfiles_root/claude/plugins/local/my-plugin" ]]
+}
+
+@test "plugin sync: local marketplace dry-run does not modify settings" {
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
+    local claude_dir="$dotfiles_root/claude"
+    local mock_dir="$claude_dir/plugins"
+    mkdir -p "$mock_dir" "$claude_dir/lib"
+    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
+    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
+
+    write_local_plugin_fixtures "$dotfiles_root"
+
+    run bash "$mock_dir/sync.sh" --dry-run
+    assert_success
+    assert_output_contains "[dry-run]"
+    assert_output_contains "my-plugin"
+
+    local actual_path
+    actual_path=$(jq -r '.extraKnownMarketplaces["my-plugin"].source.path // "missing"' "$claude_dir/settings.json")
+    [[ "$actual_path" == "missing" ]]
+}
+
+@test "plugin sync: local marketplace corrects wrong path" {
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
+    local claude_dir="$dotfiles_root/claude"
+    local mock_dir="$claude_dir/plugins"
+    mkdir -p "$mock_dir" "$claude_dir/lib"
+    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
+    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
+
+    write_local_plugin_fixtures "$dotfiles_root"
+    # Set a wrong path
+    jq '.extraKnownMarketplaces["my-plugin"] = {"source": {"source": "directory", "path": "/Users/wrong/path"}}' \
+        "$claude_dir/settings.json" > "$claude_dir/settings.json.tmp" && mv "$claude_dir/settings.json.tmp" "$claude_dir/settings.json"
+
+    run bash "$mock_dir/sync.sh"
+    assert_success
+    assert_output_contains "Updated my-plugin marketplace"
+
+    local actual_path
+    actual_path=$(jq -r '.extraKnownMarketplaces["my-plugin"].source.path' "$claude_dir/settings.json")
+    [[ "$actual_path" == "$dotfiles_root/claude/plugins/local/my-plugin" ]]
+}
+
+@test "plugin sync: local marketplace skips when path already correct" {
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
+    local claude_dir="$dotfiles_root/claude"
+    local mock_dir="$claude_dir/plugins"
+    mkdir -p "$mock_dir" "$claude_dir/lib"
+    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
+    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
+
+    write_local_plugin_fixtures "$dotfiles_root"
+    # Set the correct path
+    jq --arg p "$dotfiles_root/claude/plugins/local/my-plugin" \
+        '.extraKnownMarketplaces["my-plugin"] = {"source": {"source": "directory", "path": $p}}' \
+        "$claude_dir/settings.json" > "$claude_dir/settings.json.tmp" && mv "$claude_dir/settings.json.tmp" "$claude_dir/settings.json"
+
+    run bash "$mock_dir/sync.sh"
+    assert_success
+    assert_output_contains "Local marketplaces up to date"
+    assert_output_not_contains "Updated my-plugin"
+}
+
+
 @test "plugin sync: missing registry file exits with error" {
     local mock_dir
     mock_dir=$(create_mock_sync_dir "$PLUGIN_SYNC" "plugin-noreg")

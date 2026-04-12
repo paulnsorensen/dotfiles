@@ -4,12 +4,15 @@ Cheddar Flow agent pipeline — cheese-themed development workflow tools for Cla
 
 ## Dependencies
 
-**Required plugin:** [`code-review-graph`](https://github.com/anthropics/claude-plugins) — the `explore-graph` sub-agent wraps its MCP tools for structural graph queries (semantic search, call chains, impact radius, flows, architecture overview, communities). Without it, `/explore` still runs but loses the graph dimension.
+**Required MCP:** [`code-review-graph`](https://github.com/tirth8205/code-review-graph) — the `explore-graph` sub-agent wraps its MCP tools for structural graph queries (semantic search, call chains, impact radius, flows, architecture overview, communities). Without it, `/explore` still runs but loses the graph dimension.
 
-Install it first:
+Add it to your MCP registry (`claude/mcp/registry.yaml`) and run `mcp-sync`:
 
-```bash
-claude plugin install code-review-graph
+```yaml
+code-review-graph:
+  command: uvx
+  args: [code-review-graph, serve]
+  scope: user
 ```
 
 ## Commands

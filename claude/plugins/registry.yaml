@@ -84,22 +84,19 @@ plugins:
     scope: user
     load: true
 
-  code-review-graph@code-review-graph:
-    description: Visualize code review dependencies and relationships as graphs
-    scope: user
-    load: true
-
   # --- Local plugins (dotfiles) ---
 
   cheese-flow@cheese-flow:
     description: Cheddar Flow agent pipeline — cheese-themed development workflow tools
     scope: user
     load: true
+    path: claude/plugins/local/cheese-flow
 
   todoist-flow@todoist-flow:
     description: Todoist productivity suite — triage, organize, update, extract reference material
     scope: user
     load: true
+    path: claude/plugins/local/todoist-flow
 
   # --- Local plugins ---
   vaudeville@local:

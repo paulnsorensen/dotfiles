@@ -50,3 +50,9 @@ mcps:
       TODOIST_API_KEY: "${TODOIST_API_KEY}"
     scope: user
     description: Official Todoist MCP (Doist-maintained) — invoke only when explicitly requested
+
+  code-review-graph:
+    command: uvx
+    args: [code-review-graph, serve]
+    scope: user
+    description: Structural code knowledge graph via Tree-sitter — semantic search, call chains, impact radius, flows, communities

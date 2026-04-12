@@ -17,6 +17,8 @@ SETTINGS_FILE="$SCRIPT_DIR/../settings.json"
 # shellcheck source=../lib/sync-common.sh
 source "$SCRIPT_DIR/../lib/sync-common.sh"
 
+DOTFILES_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 sync_parse_args "$@"
 sync_check_deps
 
@@ -27,6 +29,50 @@ fi
 
 echo -e "${BLUE}Plugin Sync - Declarative Plugin Management${NC}"
 echo
+
+# Sync local plugin marketplaces — resolve relative paths to absolute
+sync_local_marketplaces() {
+    local local_entries
+    local_entries=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq -c 'to_entries[] | select(.value.path) | {name: (.key | split("@") | .[1]), path: .value.path}' 2>/dev/null || true)
+    [[ -z "$local_entries" ]] && return 0
+
+    local changed=false
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        local mp_name mp_path abs_path current_path
+        mp_name=$(echo "$entry" | jq -r '.name')
+        mp_path=$(echo "$entry" | jq -r '.path')
+        abs_path="$DOTFILES_DIR/$mp_path"
+
+        if [[ ! -d "$abs_path" ]]; then
+            echo -e "  ${RED}Warning: $mp_name path not found: $abs_path${NC}"
+            continue
+        fi
+
+        current_path=$(jq -r --arg n "$mp_name" '.extraKnownMarketplaces[$n].source.path // ""' "$SETTINGS_FILE" 2>/dev/null || true)
+        if [[ "$current_path" != "$abs_path" ]]; then
+            if $DRY_RUN; then
+                echo -e "  ${BLUE}[dry-run]${NC} Would set $mp_name marketplace → $abs_path"
+            else
+                jq --arg n "$mp_name" --arg p "$abs_path" \
+                    '.extraKnownMarketplaces[$n] = {"source": {"source": "directory", "path": $p}}' \
+                    "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+                echo -e "  ${GREEN}Updated $mp_name marketplace → $abs_path${NC}"
+            fi
+            changed=true
+        fi
+    done < <(echo "$local_entries" | jq -c '.')
+
+    if ! $changed; then
+        echo -e "  ${BLUE}Local marketplaces up to date${NC}"
+    fi
+    echo
+}
+
+if [[ -f "$SETTINGS_FILE" ]]; then
+    echo -e "${BLUE}Syncing local marketplace paths...${NC}"
+    sync_local_marketplaces
+fi
 
 # shellcheck disable=SC2034  # used by sync-common.sh
 DESIRED_NAMES=$(yq '.plugins | keys | .[]' "$REGISTRY_FILE" | sort)

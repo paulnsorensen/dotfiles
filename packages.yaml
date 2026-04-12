@@ -78,6 +78,7 @@ packages:
 
   # uv tools (Python)
   - ralphify: { source: uv }
+  - code-review-graph: { source: uv }
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }

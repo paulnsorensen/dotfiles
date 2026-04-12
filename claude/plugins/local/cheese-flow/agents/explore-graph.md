@@ -25,20 +25,20 @@ allowed-tools:
   - Read
   - Bash(git status:*)
   - Bash(git rev-parse:*)
-  - mcp__plugin_code-review-graph_code-review-graph__semantic_search_nodes_tool
-  - mcp__plugin_code-review-graph_code-review-graph__query_graph_tool
-  - mcp__plugin_code-review-graph_code-review-graph__get_impact_radius_tool
-  - mcp__plugin_code-review-graph_code-review-graph__get_review_context_tool
-  - mcp__plugin_code-review-graph_code-review-graph__get_minimal_context_tool
-  - mcp__plugin_code-review-graph_code-review-graph__get_architecture_overview_tool
-  - mcp__plugin_code-review-graph_code-review-graph__list_communities_tool
-  - mcp__plugin_code-review-graph_code-review-graph__get_community_tool
-  - mcp__plugin_code-review-graph_code-review-graph__list_flows_tool
-  - mcp__plugin_code-review-graph_code-review-graph__get_flow_tool
-  - mcp__plugin_code-review-graph_code-review-graph__get_affected_flows_tool
-  - mcp__plugin_code-review-graph_code-review-graph__find_large_functions_tool
-  - mcp__plugin_code-review-graph_code-review-graph__build_or_update_graph_tool
-  - mcp__plugin_code-review-graph_code-review-graph__list_graph_stats_tool
+  - mcp__code-review-graph__semantic_search_nodes_tool
+  - mcp__code-review-graph__query_graph_tool
+  - mcp__code-review-graph__get_impact_radius_tool
+  - mcp__code-review-graph__get_review_context_tool
+  - mcp__code-review-graph__get_minimal_context_tool
+  - mcp__code-review-graph__get_architecture_overview_tool
+  - mcp__code-review-graph__list_communities_tool
+  - mcp__code-review-graph__get_community_tool
+  - mcp__code-review-graph__list_flows_tool
+  - mcp__code-review-graph__get_flow_tool
+  - mcp__code-review-graph__get_affected_flows_tool
+  - mcp__code-review-graph__find_large_functions_tool
+  - mcp__code-review-graph__build_or_update_graph_tool
+  - mcp__code-review-graph__list_graph_stats_tool
 color: blue
 ---
 

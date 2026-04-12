@@ -8,7 +8,7 @@
   "license": "MIT",
   "keywords": ["cheese", "workflow", "agents", "pipeline", "claude-code"],
   "dependencies": {
-    "plugins": [
+    "mcps": [
       {
         "name": "code-review-graph",
         "reason": "Required by the explore-graph sub-agent for semantic symbol search, multi-hop call chains, impact radius, named flows, architecture overview, and community clustering. Without it, /explore degrades to three sub-agents (tilth, lsp, tokei).",
