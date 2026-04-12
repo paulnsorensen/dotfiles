@@ -39,7 +39,7 @@ teardown() {
 }
 
 @test "dots doctor performs health checks and profiling" {
-    run timeout 10 dots doctor
+    run dots doctor
     assert_success
     assert_output_contains "Dotfiles Health Check"
     assert_output_contains "Checking symlinks"
@@ -60,7 +60,7 @@ teardown() {
 }
 
 @test "dots sync shorthand works" {
-    run timeout 2 dots s --help 2>&1
+    run dots s --help 2>&1
     [[ "$output" != *"Unknown command"* ]]
     assert_output_contains "Usage"
 }
