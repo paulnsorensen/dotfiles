@@ -79,6 +79,8 @@ agent: ./guard.sh
 
 The guard runs before the agent, so a failed pre-condition skips the iteration entirely (no token cost). Use this when a `check-done.sh` command would still burn an agent invocation just to see "nothing to do". Common guards: grep for remaining TODOs, check coverage threshold, verify lint error count > 0.
 
+Set `credit: false` if the repo forbids automated commit trailers — by default ralphify appends a co-author instruction to each iteration's prompt.
+
 Default `commands` picks by stack:
 
 - any repo: `git-log` → `git log --oneline -10`
@@ -105,9 +107,9 @@ commands:
 
 ### 6. Write the prompt body
 
-The body is the prompt piped to the agent every iteration, with `{{ commands.X }}` and `{{ args.X }}` resolved. Because each iteration starts with a fresh context, the prompt must re-establish enough situation every time to be useful. Follow the ralphify-canonical shape:
+The body is the prompt piped to the agent every iteration, with `{{ commands.X }}`, `{{ args.X }}`, and `{{ ralph.X }}` resolved. Because each iteration starts with a fresh context, the prompt must re-establish enough situation every time to be useful. Follow the ralphify-canonical shape:
 
-1. **Role + loop awareness.** "You are an autonomous <role> agent running in a loop." This primes the agent that it is not having a conversation.
+1. **Role + loop awareness.** "You are an autonomous <role> agent running in a loop." This primes the agent that it is not having a conversation. Include `## Iteration: {{ ralph.iteration }}` so the agent knows where it is in the loop — useful for "on final iteration, do cleanup" logic.
 2. **Context-reset acknowledgment.** "Each iteration starts with a fresh context. Your progress lives in the code and git." This stops the agent from trying to remember state across turns.
 3. **Command output sections.** Put `{{ commands.<name> }}` under `## <Title>` headers. The agent can only see what the prompt shows it — if it needs to see failing tests, the prompt needs a `## Test results` section.
 4. **Task section.** State exactly what one iteration of work is. Narrow beats broad: "add tests for one untested function" beats "improve coverage". A fresh-context agent should be able to pick a target and finish it within a single iteration.
@@ -160,6 +162,8 @@ commands:
 ---
 
 You are an autonomous Python testing agent running in a loop. Each iteration starts with a fresh context. Your progress lives in the code and git.
+
+## Iteration: {{ ralph.iteration }}
 
 ## Recent changes
 

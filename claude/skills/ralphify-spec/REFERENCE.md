@@ -70,6 +70,18 @@ Replaced with the combined stdout + stderr of the named command as captured that
 
 Replaced with the CLI argument value. Missing args become empty strings.
 
+### `{{ ralph.<name> }}`
+
+Runtime metadata injected by ralphify. Available names:
+
+| Name | Value |
+|------|-------|
+| `ralph.name` | The ralph's directory name |
+| `ralph.iteration` | Current iteration number (1-indexed) |
+| `ralph.max_iterations` | The `-n` cap, or empty if unbounded |
+
+Useful for iteration-aware prompts: "On iteration {{ ralph.iteration }}, prioritize cleanup over new work."
+
 ## HTML comments
 
 `<!-- ... -->` blocks are stripped from the body before the prompt is assembled. Safe for maintenance notes, TODOs, or rationale for rules — none of it reaches the agent or costs tokens.
