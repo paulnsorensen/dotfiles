@@ -6,14 +6,5 @@
     "name": "Paul Sorensen"
   },
   "license": "MIT",
-  "keywords": ["cheese", "workflow", "agents", "pipeline", "claude-code"],
-  "dependencies": {
-    "mcps": [
-      {
-        "name": "code-review-graph",
-        "reason": "Required by the explore-graph sub-agent for semantic symbol search, multi-hop call chains, impact radius, named flows, architecture overview, and community clustering. Without it, /explore degrades to three sub-agents (tilth, lsp, tokei).",
-        "required": true
-      }
-    ]
-  }
+  "keywords": ["cheese", "workflow", "agents", "pipeline", "claude-code"]
 }
