@@ -358,7 +358,7 @@ Only include rows for sources that were actually spawned. Empty rows for skipped
 ## Implementation Notes
 
 - **Parallel execution**: Use `Agent(run_in_background=true)` for all subagents. Don't poll.
-- **Error handling**: If a subagent fails, note it in the Evidence table and mark N/A
+- **Error handling**: If a subagent fails or returns no results, note it in the Evidence table and mark N/A. **If ANY routed external source (Tavily, Serper, Context7, Octocode) fails or returns N/A, cap Overall Confidence at 49 and prepend a `⚠️ INCOMPLETE RESEARCH` banner to the synthesis.** Do not present local-only findings as if they answer an external research question. The user needs to know which sources couldn't be reached so they can retry or investigate.
 - **Synthesis**: Resolve contradictions and highlight agreements. Don't just list findings.
 - **Evidence table**: Always include so the human can see which sources contributed what
 - **Cost tracking**: Include cost column so the human sees API spend
@@ -386,3 +386,4 @@ Only include rows for sources that were actually spawned. Empty rows for skipped
 - **Octocode empty results**: Common for niche code. Mark "no public examples found" with score 25.
 - **Subagent timeout**: Don't block synthesis. Note in Evidence table and synthesize from available sources.
 - **Flat delegation**: Subagents cannot spawn further subagents. Each fetcher must call MCP tools directly.
+- **Silent source failure is the cardinal sin**: When sub-agents can't reach MCPs (tool not loaded, auth expired, network issue), they return empty or vague local-only answers. The coordinator MUST check that routed sources actually returned data. If a source was routed but came back empty/N/A, the synthesis is incomplete — say so loudly, don't paper over it with local findings.

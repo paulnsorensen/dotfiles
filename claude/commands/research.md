@@ -53,4 +53,8 @@ Everything after flag extraction is the **research question**.
 
    Only include source sections that have entries. Tell the user where the report was saved.
 
-3. **Always display** the synthesized answer in the conversation regardless of whether `--report` was used.
+3. **Validate source coverage** before presenting results. Check the agent's Evidence by Source table:
+   - If ANY routed external source shows "N/A", "not fetched", "failed", or is missing from the table entirely, **warn the user explicitly**: "Sources X and Y could not be reached — findings are based on local/partial data only."
+   - Do NOT present incomplete research as if it were comprehensive. The user relies on this to make decisions.
+
+4. **Always display** the synthesized answer in the conversation regardless of whether `--report` was used.
