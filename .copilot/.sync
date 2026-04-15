@@ -1,0 +1,47 @@
+#!/bin/bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source_config="$script_dir/mcp-config.json"
+target_dir="$HOME/.copilot"
+target_config="$target_dir/mcp-config.json"
+
+die() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 1
+}
+
+if [[ ! -f "$source_config" ]]; then
+  die "missing Copilot MCP config: $source_config"
+fi
+
+if ! command -v uvx >/dev/null 2>&1; then
+  die "uvx is not on PATH. Install uv first, then re-run dots sync."
+fi
+
+if ! command -v code-review-graph >/dev/null 2>&1; then
+  die "code-review-graph is not on PATH. Install it first, then re-run dots sync."
+fi
+
+mkdir -p "$target_dir"
+
+if [[ -L "$target_config" ]]; then
+  rm "$target_config"
+elif [[ -e "$target_config" ]]; then
+  printf 'Backing up existing %s\n' "$target_config"
+  mv "$target_config" "$target_config.bak"
+fi
+
+printf 'Linking %s -> %s\n' "$target_config" "$source_config"
+ln -s "$source_config" "$target_config"
+
+if ! command -v copilot >/dev/null 2>&1; then
+  printf 'Warning: copilot CLI not found; skipped MCP validation.\n' >&2
+  exit 0
+fi
+
+if ! copilot mcp get --config-dir "$target_dir" code-review-graph >/dev/null 2>&1; then
+  die "copilot could not read code-review-graph from $target_config"
+fi
+
+printf 'Copilot config synced\n'

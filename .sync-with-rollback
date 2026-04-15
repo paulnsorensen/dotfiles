@@ -303,6 +303,12 @@ run_sync() {
       ln -s "$dir/$file" ~/."$file"
     done
 
+    # Hidden directories are skipped by the glob loop.
+    if [[ -f "$dir/.copilot/.sync" ]]; then
+      log_info "Running .sync for .copilot."
+      bash "$dir/.copilot/.sync" || log_warning "sync for .copilot failed (non-fatal)"
+    fi
+
     # Install TPM (tmux plugin manager) if not present
     if command -v tmux &>/dev/null && [[ ! -d "$HOME/.tmux/plugins/tpm" ]]; then
       log_info "Installing TPM (tmux plugin manager)..."

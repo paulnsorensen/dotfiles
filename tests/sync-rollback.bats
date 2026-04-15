@@ -251,6 +251,39 @@ SCRIPT
     assert_output_contains "Running .sync for mysubdir"
 }
 
+@test "hidden .copilot .sync runs after visible sync scripts" {
+    cd "$FAKE_DOTFILES"
+    mkdir -p "$FAKE_DOTFILES/mysubdir" "$FAKE_DOTFILES/.copilot"
+    cat > "$FAKE_DOTFILES/mysubdir/.sync" << 'SCRIPT'
+#!/bin/bash
+printf 'VISIBLE_SYNC_RAN\n'
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/mysubdir/.sync"
+    cat > "$FAKE_DOTFILES/.copilot/.sync" << 'SCRIPT'
+#!/bin/bash
+printf 'COPILOT_SYNC_RAN\n'
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/.copilot/.sync"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "Running .sync for mysubdir"
+    assert_output_contains "Running .sync for .copilot"
+
+    local clean_output
+    clean_output=$(strip_colors "$output")
+
+    local visible_line
+    visible_line=$(printf '%s\n' "$clean_output" | awk '/VISIBLE_SYNC_RAN/{print NR; exit}')
+
+    local copilot_line
+    copilot_line=$(printf '%s\n' "$clean_output" | awk '/COPILOT_SYNC_RAN/{print NR; exit}')
+
+    [[ -n "$visible_line" ]]
+    [[ -n "$copilot_line" ]]
+    [[ "$visible_line" -lt "$copilot_line" ]]
+}
+
 @test "QUICK_SYNC skips quick-skippable operations" {
     cd "$FAKE_DOTFILES"
     run bash "$SYNC_SCRIPT" q
