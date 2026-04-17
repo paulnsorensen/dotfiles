@@ -4,9 +4,12 @@ Use this repo-local workflow when docs plus MCPs are enough and no custom Copilo
 
 ## 1. Check what Copilot can see
 
-- Repo copy: `copilot mcp list --config-dir .copilot`
-- Repo copy details: `copilot mcp get --config-dir .copilot code-review-graph`
-- Live user config after sync: `copilot mcp list`
+- Before syncing, set `CONTEXT7_API_KEY` and `TAVILY_API_KEY` in repo `.env` or your shell.
+- Rendered config (after `dots sync`): `copilot --config-dir ~/.copilot mcp list`
+- Rendered server details: `copilot --config-dir ~/.copilot mcp get code-review-graph`
+- Rendered server details: `copilot --config-dir ~/.copilot mcp get context7`
+- Rendered server details: `copilot --config-dir ~/.copilot mcp get tavily`
+- Live user config: `copilot mcp list`
 
 ## 2. Gather local context yourself
 
@@ -28,4 +31,4 @@ Paste the command output you just gathered and ask for one focused task, such as
 - Shell changes: `shellcheck -x -e SC1091 .copilot/.sync`
 - Broader repo regression check: `dots test`
 
-If this repo ever needs reusable Copilot-native hooks, skills, or agents, add a real plugin under `.copilot/plugins/` instead of creating repo-level pseudo-skills.
+If this repo ever needs reusable Copilot-native hooks, skills, or agents, add a real plugin under `.copilot/plugins/` (create the directory then) instead of creating repo-level pseudo-skills.

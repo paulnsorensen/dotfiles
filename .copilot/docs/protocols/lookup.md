@@ -10,8 +10,10 @@ This is a human guide, not a Copilot skill.
 
 ## Commands
 
-- `rg "copilot mcp|code-review-graph|tilth" .copilot CLAUDE.md packages.yaml`
-- `copilot mcp get --config-dir .copilot code-review-graph`
+- `rg "copilot mcp|code-review-graph|context7|tavily|tilth" .copilot CLAUDE.md packages.yaml`
+- `copilot --config-dir ~/.copilot mcp get code-review-graph`
+- `copilot --config-dir ~/.copilot mcp get context7`
+- `copilot --config-dir ~/.copilot mcp get tavily`
 - `tilth .copilot/README.md --budget 800`
 - `code-review-graph status`
 
@@ -21,4 +23,4 @@ This is a human guide, not a Copilot skill.
 
 ## Note
 
-`tilth` is a companion CLI here, not a Copilot plugin packaged inside `.copilot`.
+`context7` and `tavily` are Copilot MCPs here. `tilth` stays a companion CLI, not a Copilot plugin packaged inside `.copilot`.

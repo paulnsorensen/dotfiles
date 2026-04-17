@@ -195,11 +195,13 @@ The `.sync-with-rollback` script provides:
 - **Automatic backups** before changes (stored in `~/.local/state/dotfiles/backups/`)
 - **Manifest tracking** of all symlinks
 - **Rollback capability** to any previous state
-- **Per-directory .sync scripts** for custom setup (fonts, iterm2)
+- **Per-directory .sync scripts** for custom setup (fonts, iterm2, .copilot)
 
-**Skip list** (not symlinked to ~):
+**Skip list** (not symlinked to ~, canonical source is `SYNC_SKIP_LIST` in `.sync-with-rollback`):
 
-- `.git`, `.local`, `reference`, `packages`, `packages.yaml`, `brew`, `apt`
+- `.git`, `.local`, `.worktrees`, `reference`, `packages`, `packages.yaml`, `brew`, `apt`
+
+**Hidden directory dispatch**: visible dirs are iterated by `for file in *` (glob), hidden dirs (starting with `.`) are iterated separately by `sync_hidden_dirs`. Both use the same rule: if `$dir/.sync` exists, run it. This is how `.copilot/.sync` is reached despite being hidden.
 
 ## Important Implementation Details
 

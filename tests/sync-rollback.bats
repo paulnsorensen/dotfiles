@@ -55,6 +55,7 @@ export DOTFILES_STATE_DIR="$TEST_HOME/.local/state/dotfiles"
 export BACKUP_DIR="\$DOTFILES_STATE_DIR/backups/\${BACKUP_TS:-\$(date +%Y%m%d_%H%M%S)}"
 export MANIFEST_FILE="\$DOTFILES_STATE_DIR/current.manifest"
 export ROLLBACK_LOG="\$DOTFILES_STATE_DIR/rollback.log"
+export SYNC_SCRIPT="$SYNC_SCRIPT"
 eval "\$(awk '/^########## Main\$/{exit} {print}' "$SYNC_SCRIPT")"
 if [[ -n "\${FAKE_DIR:-}" ]]; then
     dir="\$FAKE_DIR"
@@ -144,6 +145,7 @@ JSON
         export BACKUP_DIR='\$DOTFILES_STATE_DIR/backups/dummy'
         export MANIFEST_FILE='\$DOTFILES_STATE_DIR/current.manifest'
         export ROLLBACK_LOG='\$DOTFILES_STATE_DIR/rollback.log'
+        export SYNC_SCRIPT='$SYNC_SCRIPT'
         eval \"\$(awk '/^########## Main\$/{exit} {print}' '$SYNC_SCRIPT')\"
         list_backups
     "

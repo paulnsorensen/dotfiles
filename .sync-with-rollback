@@ -6,13 +6,6 @@
 
 set -euo pipefail  # Fail fast on errors
 
-# Colors
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
-
 ########## Variables
 
 dir=$(pwd)
@@ -24,23 +17,18 @@ BACKUP_DIR="${DOTFILES_STATE_DIR}/backups/$(date +%Y%m%d_%H%M%S)"
 MANIFEST_FILE="${DOTFILES_STATE_DIR}/current.manifest"
 ROLLBACK_LOG="${DOTFILES_STATE_DIR}/rollback.log"
 
+# Source helpers from the script's own directory. Test harnesses that eval
+# this file may override the location via SYNC_SCRIPT.
+_sync_script_path="${SYNC_SCRIPT:-${BASH_SOURCE[0]:-}}"
+if [[ -n "$_sync_script_path" ]]; then
+    _sync_script_dir="$(cd "$(dirname "$_sync_script_path")" && pwd)"
+    # shellcheck source=.sync-lib.sh
+    [[ -f "$_sync_script_dir/.sync-lib.sh" ]] && source "$_sync_script_dir/.sync-lib.sh"
+    unset _sync_script_dir
+fi
+unset _sync_script_path
+
 ########## Functions
-
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
 
 # Initialize state directory
 init_state() {
@@ -215,44 +203,9 @@ rollback() {
 
 # Main sync function
 run_sync() {
-    # Initialize state management
     init_state
-
-    # Create backup before changes
     backup_current_state
-
-    # Parse arguments
-    export DOTFILES_DEV=false
-    export QUICK_SYNC=false
-
-    for ARG in "$@"
-    do
-      case $ARG in
-         dev)
-              echo "Setting dev=true"
-              export DOTFILES_DEV=true
-              ;;
-         q)
-              echo "Setting quick_sync=true"
-              export QUICK_SYNC=true
-              ;;
-         refresh|r)
-              echo "Setting force_packages=true"
-              export FORCE_PACKAGES=true
-              ;;
-         rollback)
-              rollback "${2:-}"
-              exit 0
-              ;;
-         list-backups)
-              list_backups
-              exit 0
-              ;;
-         *)
-              # Continue with regular sync
-              ;;
-    esac
-    done
+    parse_sync_args "$@"
 
     # Bootstrap yq (needed by packages/sync.sh to parse YAML)
     if [[ "$(uname)" == "Darwin" ]] && ! command -v yq &>/dev/null; then
@@ -260,86 +213,24 @@ run_sync() {
       brew install yq
     fi
 
-    # Install platform packages
     log_info "Syncing packages"
     bash "$dir/packages/sync.sh"
 
-    # upgrade uv-managed tools
-    if command -v uv &> /dev/null; then
-      log_info "Upgrading uv-managed tools..."
-      uv tool upgrade --all 2>&1 | while read -r line; do
-        log_info "  $line"
-      done
-    fi
+    upgrade_uv_tools
 
     log_info "Creating $olddir for backup of any existing dotfiles in ~"
     mkdir -p "$olddir"
 
     for file in *; do
-      # Skip state management files
-      if [[ "${file}" == ".git" || "${file}" == ".local" || "${file}" == "reference" || "${file}" == ".worktrees" || "${file}" == "packages" || "${file}" == "packages.yaml" || "${file}" == "brew" || "${file}" == "apt" ]]; then
-        continue
-      fi
-
-      # Directories with .sync scripts manage their own setup (e.g. claude/.sync
-      # symlinks items INTO ~/.claude without replacing the whole directory)
-      if [[ -d "$dir/$file" ]] && [[ -f "$dir/$file/.sync" ]]; then
-        log_info "Running .sync for $file."
-        bash "$dir/$file/.sync" || log_warning "sync for $file failed (non-fatal)"
-        continue
-      fi
-
-      if [[ -h ~/."$file" ]]; then
-        log_info "Removing old link to $file"
-        rm ~/."$file"
-      fi
-      if [[ -f ~/."$file" || -d ~/."$file" ]]; then
-        log_info "Moving existing $file from ~ to $olddir"
-        rm -rf "$olddir/.$file" 2>/dev/null || true
-        mv ~/."$file" "$olddir"
-      fi
-
-      log_info "Creating symlink to $file in home directory."
-      ln -s "$dir/$file" ~/."$file"
+        sync_entry "$file"
     done
+    sync_hidden_dirs
 
-    # Hidden directories are skipped by the glob loop.
-    if [[ -f "$dir/.copilot/.sync" ]]; then
-      log_info "Running .sync for .copilot."
-      bash "$dir/.copilot/.sync" || log_warning "sync for .copilot failed (non-fatal)"
-    fi
+    install_tpm
+    install_prek_hooks
 
-    # Install TPM (tmux plugin manager) if not present
-    if command -v tmux &>/dev/null && [[ ! -d "$HOME/.tmux/plugins/tpm" ]]; then
-      log_info "Installing TPM (tmux plugin manager)..."
-      git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm" 2>&1 | while read -r line; do
-        log_info "  $line"
-      done
-      log_info "Installing tmux plugins..."
-      "$HOME/.tmux/plugins/tpm/bin/install_plugins" 2>&1 | while read -r line; do
-        log_info "  $line"
-      done
-    fi
-
-    # Install prek pre-commit hooks
-    if command -v prek &> /dev/null; then
-      # prek refuses to install when core.hooksPath is set — clear it first
-      if git config --local core.hooksPath &>/dev/null; then
-        log_info "Unsetting local core.hooksPath (conflicts with prek)..."
-        git config --local --unset core.hooksPath
-      fi
-      log_info "Installing prek pre-commit hooks..."
-      prek install 2>&1 | while read -r line; do
-        log_info "  $line"
-      done
-    else
-      log_warning "prek not installed, skipping pre-commit hooks"
-    fi
-
-    # Create new manifest after sync
     create_manifest
 
-    # cleanup exported vars
     unset DOTFILES_DEV
 
     log_success "Sync completed successfully!"
