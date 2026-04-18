@@ -154,6 +154,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 **Batch reads are the default** — when you know you'll need more than one file (editing a set, cross-referencing, reviewing), issue a **single** `tilth_read(paths: [a, b, c])` call instead of sequential reads. Batch reads deduplicate outlining work and keep the context compact. Only fall back to individual reads when the second path genuinely depends on the first read's contents.
 
 **Non-code / large file reading**:
+
 - `tilth_read(path, full: true)` — force full content, bypass smart outlining (use for short markdown, configs, etc.)
 - `tilth_read(path, section: "45-89")` — line range with hashline anchors for editing
 - `tilth_read(path, section: "## Heading")` — markdown heading slice
