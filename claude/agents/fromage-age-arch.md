@@ -3,7 +3,7 @@ name: fromage-age-arch
 description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
 model: sonnet
 effort: high
-skills: [scout, trace, lsp]
+skills: [lsp]
 disallowedTools: [Edit, NotebookEdit]
 color: red
 ---

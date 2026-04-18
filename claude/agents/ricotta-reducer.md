@@ -1,8 +1,8 @@
 ---
 name: ricotta-reducer
 description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with 0-100 confidence scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
-tools: Read, Grep, Glob, Bash, LSP, Agent
-skills: [scout, de-slop]
+tools: Bash, LSP, Agent, mcp__tilth__*
+skills: [de-slop]
 model: sonnet
 ---
 

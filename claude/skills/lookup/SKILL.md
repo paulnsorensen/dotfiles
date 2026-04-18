@@ -40,15 +40,15 @@ Then follow the table:
 | Type/signature of a symbol | **LSP** `hover` | **Context7** or **octocode** |
 | Go to definition | **LSP** `goToDefinition` | **Context7** `query-docs` |
 | Who calls this function? | **LSP** `findReferences` | **octocode** `search_code` |
-| Who implements this trait/interface? | **/trace** `sg -p 'impl $T for $S'` | **octocode** `search_code` |
+| Who implements this trait/interface? | **tilth_search** `kind: symbol` | **octocode** `search_code` |
 | All usages of a type | **LSP** `findReferences` | **octocode** `search_code` |
 | Method list on a struct/class | **LSP** `documentSymbol` | **Context7** `query-docs` |
-| What does this function do? | **LSP** `hover` + **Read** the body | **Context7** or **WebFetch** raw source |
-| Find structural patterns | **/trace** `sg --lang X -p 'pattern'` | N/A — use octocode text search |
+| What does this function do? | **LSP** `hover` + **tilth_read** the body | **Context7** or **WebFetch** raw source |
+| Find structural patterns | **tilth_search** `kind: symbol` or `kind: regex` | N/A — use octocode text search |
 | Error type / return type | **LSP** `hover` | **Context7** `query-docs` |
-| Find files by name/pattern | **Glob** (simple) or **fd** via scout (metadata filters) | N/A |
-| Find files by content | **Grep** (simple) or **rg** via scout (aliases, hidden files) | **octocode** `search_code` |
-| List directory contents | **ls** via scout (eza tree view + git status) | **octocode** `view_repo_structure` |
+| Find files by name/pattern | **tilth_files** (glob, gitignore-aware) | N/A |
+| Find files by content | **tilth_search** `kind: content` or `kind: regex` | **octocode** `search_code` |
+| List directory contents | **tilth_files** `pattern: *` | **octocode** `view_repo_structure` |
 
 ### Quick reference by tool
 
@@ -60,20 +60,19 @@ Then follow the table:
 - `documentSymbol` — list all symbols in a file
 - Works on: .rs, .py, .ts, .go, .sh, .yaml, .rb (all 7 LSP plugins)
 
-**ast-grep** (zero config — invoke via `/trace` skill):
+**tilth_search** (MCP, AST-aware — zero config):
 
-- `sg --lang X -p 'pattern'` — structural pattern matching
-- Best for: "find all classes that extend Z", "which functions have >4 params"
-- Works on AST shape, not text — won't false-match comments or strings
-- **Always use `/trace`** — it enforces no-file-read and proper output format
+- `kind: symbol` — finds definitions and usages by symbol name (AST-based, not text)
+- `kind: content` — literal text search across files
+- `kind: regex` — PCRE2 regex search
+- `kind: callers` — all call sites of a symbol
+- `expand: N` — inline top N match source bodies directly in results
+- Best for: "what implements X?", "who calls Y?", "find all uses of Z"
 
-**File finding** (built-in tools or scout skill):
+**tilth_files** (MCP, file discovery):
 
-- **Glob** — find files by name/extension pattern (`**/*.ts`, `src/**/*.rs`)
-- **fd** (via scout) — find files by name, type, size, date (`fd -e rs -t f`)
-- **Grep** (built-in) — search file contents for text patterns
-- **rg** (via scout) — faster content search with .gitignore awareness
-- **NEVER use `find`** — use Glob or fd instead. `find` is blocked by hook.
+- `tilth_files(pattern: "**/*.ts")` — glob with token estimates, gitignore-aware
+- **NEVER use `find`** — use tilth_files instead. `find` is blocked by hook.
 
 **Context7** (MCP, for external libraries):
 
@@ -170,11 +169,11 @@ Not every project has all tools active:
 
 | Situation | Fallback |
 |---|---|
-| No LSP running | ast-grep for structure, Grep for text (last resort) |
+| No LSP running | tilth_search kind:symbol for structure, kind:content for text |
 | Context7 doesn't have the library | octocode search → WebFetch raw source |
 | External crate, no MCP available | `WebSearch` for official docs (via /fetch skill) |
 
-The hierarchy is: **LSP > ast-grep > Grep**. Only fall to the next level
+The hierarchy is: **LSP > tilth_search > Grep**. Only fall to the next level
 when the better tool genuinely isn't available — not because it's easier to type `grep`.
 
 ## Why This Skill Is NOT Forked
@@ -196,7 +195,7 @@ the heavy fetching forks as needed.
 - One lookup per question — don't chain 3 tools when one gives the answer
 - External deps are NEVER solved by grepping local caches
 - If LSP is running, `hover` answers 80% of type questions in one call
-- If you need the skill that each tool delegates to, invoke it: /trace, /lsp, /fetch
+- If you need the skill that each tool delegates to, invoke it: /lsp, /fetch
 
 ## Gotchas
 

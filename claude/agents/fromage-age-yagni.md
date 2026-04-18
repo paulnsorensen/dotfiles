@@ -3,7 +3,7 @@ name: fromage-age-yagni
 description: YAGNI and de-slop reviewer. Finds unjustified dead code, speculative abstractions, passthrough layers, and AI-generated noise. Dead code must have a ticket, spec, or comment justifying its existence.
 model: sonnet
 effort: high
-skills: [scout, lsp]
+skills: [lsp]
 disallowedTools: [NotebookEdit]
 color: red
 ---

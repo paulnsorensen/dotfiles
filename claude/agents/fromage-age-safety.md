@@ -3,7 +3,7 @@ name: fromage-age-safety
 description: Correctness and safety reviewer. Finds bugs, security vulnerabilities, and silent failures. Dimension 1 of the Age review pipeline.
 model: sonnet
 effort: high
-skills: [scout, lsp]
+skills: [lsp]
 disallowedTools: [Edit, NotebookEdit]
 color: red
 ---

@@ -130,13 +130,16 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 
 | Task | Skill | NEVER use instead |
 |------|-------|--------------------|
-| Search files | scout | `find`, `grep`, bare `ls` |
-| Code structure | trace | grep for code shapes |
+| Read file(s) | `tilth_read` (batch `paths[]`) | `Read`, `cat`, `head`, `tail` |
+| Search code | `tilth_search` (`kind: symbol\|content\|regex\|callers`, `expand`) | `Grep`, `rg`, scout for code |
+| Find files | `tilth_files` | `Glob`, `find`, `fd`, bare `ls` |
+| Blast radius | `tilth_deps` (imports + callers) | manual grep for imports |
+| Edit files | `tilth_edit` (hash-anchored, atomic per file) | `Edit`, `sed`, `awk` |
+| Multi-file regex replace | `chisel` (`sd`) | manual Edit loop |
 | Pre-commit check | diff | raw git + manual scanning |
-| File editing | chisel | `sed`, `awk` |
 | Git operations | commit | manual git add/commit |
 | GitHub ops | gh | raw GitHub API |
-| Code navigation | LSP | grep for definitions |
+| Type-aware refs | LSP (`findReferences`, `callHierarchy`) | tilth_search alone when types matter |
 | External docs | fetch | guessing from training data |
 | Worktree isolation | worktree | manual branch + cd |
 | AI slop cleanup | de-slop | ignoring AI tells |
@@ -146,6 +149,8 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | JSON processing | `jq` (pipe or file), `gh --jq` | `python3 -c "import json..."` |
 | YAML processing | `yq` | `python3 -c "import yaml..."` |
 | Session analytics | `/session-analytics` | ad-hoc python3 JSONL parsing |
+
+**Tilth is the default code primitive** — the `tilth` MCP exposes `tilth_read / tilth_search / tilth_files / tilth_deps / tilth_edit` at user scope. Its system prompt tells Claude to replace host Read/Grep/Glob/Edit with tilth equivalents. Host Read/Edit/Grep/Glob remain available as fallbacks only (e.g. tilth hash mismatch, non-code files, binary inspection). The standard editing flow is: `tilth_read` → capture `line:hash` anchors → `tilth_edit` with `edits[]` array → read the post-edit "callers may need updating" warnings and loop.
 
 **Available CLI tools** — these are always installed and in the allowlist. Use them instead of python3 inline scripts:
 

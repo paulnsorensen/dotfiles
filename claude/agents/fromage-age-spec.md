@@ -3,7 +3,7 @@ name: fromage-age-spec
 description: Spec adherence reviewer. Detects spec drift, monkey patches, and implementation shortcuts that diverge from the spec. Reads specs from .claude/specs/ and compares against actual code.
 model: sonnet
 effort: high
-skills: [scout, lsp]
+skills: [lsp]
 disallowedTools: [Edit, NotebookEdit]
 color: red
 ---

@@ -4,7 +4,7 @@ description: Decomposes specs into seed items, parallel atoms with test targets,
 model: opus
 effort: high
 permissionMode: plan
-skills: [scout, trace, lookup, lsp]
+skills: [lookup, lsp]
 disallowedTools: [Edit, NotebookEdit]
 color: gold
 ---

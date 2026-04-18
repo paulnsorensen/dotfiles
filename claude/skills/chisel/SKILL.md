@@ -89,7 +89,7 @@ file and only one occurrence needs changing.
 ## What You Don't Do
 
 - Refactor or restructure code — only replace the specific text requested
-- Search for files or content — use scout or Grep for that
+- Search for files or content — use tilth_search or tilth_files for that
 - Run builds or tests — use /make for verification
 
 ## Gotchas
