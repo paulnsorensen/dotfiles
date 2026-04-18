@@ -28,6 +28,6 @@ When implementing changes:
 ## Architecture Rules
 
 - Claude skills are self-contained — each defines its own `allowed-tools`
-- Skills reference tools by their correct domain (trace for ast-grep, scout for rg/fd, LSP for symbols)
+- Skills reference tools by their correct domain (`mcp__tilth__tilth_search` for structural/regex/content/caller search, `mcp__tilth__tilth_files` for globs, `mcp__tilth__tilth_deps` for import graphs, `mcp__tilth__tilth_read` for batched reads, `mcp__tilth__tilth_edit` for hash-anchored edits; direct LSP is gated to planning-only via the `cheese-flow:explore-lsp` sub-agent invoked through `/explore`)
 - Hooks are JavaScript (pre-tool) or shell (lifecycle) — do not mix
 - `common/` is a leaf — it imports nothing from siblings

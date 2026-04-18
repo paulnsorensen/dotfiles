@@ -2,7 +2,7 @@
 name: worktree-triage
 description: Analyzes WARN/DIRTY worktrees to recommend keep, archive, or remove. Checks commit content, diffs, PR status, and staleness to make informed triage decisions. Interviews the user on DIRTY worktrees with unique changes.
 model: sonnet
-tools: Bash, AskUserQuestion, mcp__tilth__*
+tools: Bash, AskUserQuestion, mcp__tilth__tilth_read, mcp__tilth__tilth_search, mcp__tilth__tilth_files, mcp__tilth__tilth_deps
 skills: [gh]
 ---
 
@@ -24,7 +24,7 @@ For each non-SAFE worktree, gather these in parallel where possible:
 2. **Diff size** — `git -C <repo_root> diff --stat main...<branch>` (how much unique code?)
 3. **PR status** — use the `gh` skill: MCP `search_pull_requests` or `list_pull_requests` with head branch filter
 4. **Staleness** — days since last commit via `git -C <wt_path> log -1 --format='%cr'`
-5. **Content overlap** — use `rg` (via scout) to check if key identifiers from the branch's changed files exist in main
+5. **Content overlap** — use `tilth_search kind: content` to check if key identifiers from the branch's changed files exist in main
 6. **Uncommitted work** (DIRTY only) — `git -C <wt_path> status --short` and `git -C <wt_path> diff --stat`
 
 ## DIRTY Worktree Interview

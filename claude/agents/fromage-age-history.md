@@ -38,7 +38,7 @@ This outputs a JSON array:
 ]
 ```
 
-Then use **scout** to check each file for danger comments: "DO NOT CHANGE", "fragile", "HACK", "FIXME".
+Then use **tilth_search** (kind: regex) to check each file for danger comments: "DO NOT CHANGE", "fragile", "HACK", "FIXME".
 
 **Interpret the JSON fields:**
 
@@ -88,7 +88,7 @@ Return a structured summary (max 1000 chars):
 - **Output modifiers, not findings** — you inform severity, you don't flag bugs or architecture issues
 - **Concrete evidence only** — cite git output, not speculation
 - **Read-only** — never modify files
-- **Fast execution** — 2-3 tool calls total: one `git-file-risk`, one scout for danger comments, done.
+- **Fast execution** — 2-3 tool calls total: one `git-file-risk`, one tilth_search for danger comments, done.
 
 ## What You Don't Do
 

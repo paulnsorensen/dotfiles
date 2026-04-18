@@ -70,9 +70,9 @@ Spawn an **xray-scout** agent (sonnet) with:
 - `slug`: the derived slug
 
 The scout builds the semantic dependency graph using ecosystem dependency tools
-(dependency-cruiser, pydeps, cargo-modules, go list) with ast-grep fallback,
-enriches with LSP, computes node roles, and writes the graph JSON + Mermaid
-visualization.
+(dependency-cruiser, pydeps, cargo-modules, go list) with `tilth_deps` /
+`tilth_search` fallback, computes node roles, and writes the graph JSON +
+Mermaid visualization.
 
 After the scout returns, read the graph JSON and display the opening dashboard:
 
@@ -301,14 +301,20 @@ Present the proposed traffic light and wait for user input:
 - **note: text**: Append to node's notes array. Stay on current node.
 - **skip**: Leave as unverified, advance to next node.
 - **drill symbol**: Expand the node to function-level:
-  - Use LSP `documentSymbol` to list all symbols in the file
-  - Use LSP `callHierarchy` (outgoing) for the drilled symbol
+  - `tilth_search kind: symbol, glob: "<file>", expand: 1` — lists top-level
+    symbols in the file with signatures and siblings
+  - `tilth_search kind: callers, query: "<symbol>"` — outgoing call sites from
+    the drilled symbol (tilth returns both directions of the edge in the
+    `── calls ──` block on the match)
   - Create child nodes in the graph
   - Enter sub-DFS on the expanded children
   - On completion, collapse back and return to the parent node
-- **drill symbol depth=N**: Same as drill but follow outgoing calls N levels deep.
-- **drill symbol callers**: Use LSP `callHierarchy` (incoming) to show who calls
-  this symbol. Display as a flat list, don't enter sub-DFS.
+- **drill symbol depth=N**: Same as drill but follow outgoing calls N levels
+  deep. If a follow-up hop requires type inference across a boundary (e.g.,
+  trait dispatch), escalate that single query through `/explore`
+  (cheese-flow:explore-lsp) — direct LSP calls are disallowed from this skill.
+- **drill symbol callers**: `tilth_search kind: callers, query: "<symbol>"`
+  to show who calls this symbol. Display as a flat list, don't enter sub-DFS.
 - **map**: Regenerate the Mermaid graph at `.context/xrays/{slug}-graph.md` with
   current traffic light classDefs applied. Display the path.
 - **map node**: Generate an ego-centric Mermaid subgraph showing the focal node
@@ -472,7 +478,7 @@ When the user says `done` or all nodes are verified:
 ## Gotchas
 
 - Dependency graph building fails on repos without standard import patterns — fall back to manual node selection
-- LSP `callHierarchy` is not available for all languages — use grep-based fallback
+- `tilth_search kind: callers` covers call-site lookup for all tree-sitter languages; true cross-boundary callHierarchy requires `/explore` (cheese-flow:explore-lsp) — direct LSP is disallowed here
 - `.context/xrays/` directory requires write access — create it if missing
 - Mermaid graphs break above ~50 nodes — split into subgraphs for large modules
 - Sub-agent spawning (xray-scout, xray-analyst, xray-verifier) adds latency — budget 30s per node

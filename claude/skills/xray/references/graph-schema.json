@@ -49,7 +49,7 @@
               "signature": {
                 "type": ["string", "null"],
                 "default": null,
-                "description": "Function signature or type declaration (null for re-exports, constants, or when LSP hover unavailable)"
+                "description": "Function signature or type declaration (null for re-exports, constants, or when tilth_search cannot resolve a signature)"
               },
               "visibility": {
                 "type": "string",

@@ -119,9 +119,9 @@ Test in this exact order:
 | path/to/test-file | What it tests |
 ```
 
-## LSP Integration
+## Navigation Strategy
 
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` for type discovery when writing assertions, auto-diagnostics catch mismatches after edits before running the suite.
+Direct `LSP` tool calls are disallowed from this agent. Use `tilth_search kind: symbol, expand: 1` to read each target function's signature before writing assertions, and rely on the project test runner / `/make` to surface type mismatches. Planning-level type questions go through `/explore` at the orchestrator layer.
 
 ## Quality Gates
 

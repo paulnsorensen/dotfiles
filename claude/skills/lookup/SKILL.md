@@ -4,16 +4,19 @@ model: haiku
 description: >
   Code intelligence router — decides which tool to use when you need to understand
   a symbol, type, API, or code relationship. Language-agnostic: works for Rust,
-  Python, TypeScript, Go, Ruby, Java, and any language with LSP support. Prevents
-  wasteful brute-force lookup anti-patterns: cargo doc + grep, grepping dependency
-  caches (node_modules, site-packages, .cargo/registry, go/pkg/mod, .m2),
-  go doc + grep, python help() + grep, and multi-step find chains. Use this skill
-  BEFORE reaching for bash when the question is "what does X do?", "what's the
-  signature of Y?", "who calls Z?", or "how do I use this API?". Routes to the
-  right tool: LSP for types and cross-refs, ast-grep for structural
-  patterns, Context7 for external docs, octocode for GitHub code search. If you
-  catch yourself about to grep a dependency cache or generate docs just to search
-  them — stop and use this instead.
+  Python, TypeScript, Go, Ruby, Java, and any language tilth/tree-sitter parses.
+  Prevents wasteful brute-force lookup anti-patterns: cargo doc + grep, grepping
+  dependency caches (node_modules, site-packages, .cargo/registry, go/pkg/mod,
+  .m2), go doc + grep, python help() + grep, and multi-step find chains. Use this
+  skill BEFORE reaching for bash when the question is "what does X do?", "what's
+  the signature of Y?", "who calls Z?", or "how do I use this API?". Routes to
+  the right tool: tilth_search for structural patterns (symbol, regex, callers)
+  as the default; `/explore` (cheese-flow:explore-lsp) for type-aware planning
+  queries; Context7 for external docs; octocode for GitHub code search. Direct
+  LSP tool calls are disallowed outside the cheese-flow explore flow — this skill
+  will route you to `/explore` when planning needs type precision. If you catch
+  yourself about to grep a dependency cache, generate docs just to search them,
+  or fire the raw LSP tool — stop and use this instead.
 ---
 
 # lookup
@@ -25,6 +28,17 @@ grep for it, run `cargo doc`, or read files in `node_modules`. Don't. You have
 four purpose-built tools that are faster, cheaper, and don't pollute your context.
 This skill tells you which one to use.
 
+> **LSP is planning-only.** Direct calls to the `LSP` tool from the main session
+> or agents are disallowed. When the answer genuinely requires type resolution
+> (planning a refactor, building a change plan for an unfamiliar flow), invoke
+> `/explore` — its `cheese-flow:explore-lsp` sub-agent is the one sanctioned LSP
+> consumer. For review, verification, and day-to-day navigation, `tilth_search`
+> is the default.
+>
+> **Read in batches.** When you know you need more than one file, issue a single
+> `tilth_read(paths: [a, b, c])` call. Sequential one-off reads are an
+> anti-pattern this skill exists to route away from.
+
 ## Decision Tree
 
 Ask yourself two questions:
@@ -35,32 +49,30 @@ Ask yourself two questions:
 
 Then follow the table:
 
-| What I need | Local code | External dependency |
-|---|---|---|
-| Type/signature of a symbol | **LSP** `hover` | **Context7** or **octocode** |
-| Go to definition | **LSP** `goToDefinition` | **Context7** `query-docs` |
-| Who calls this function? | **LSP** `findReferences` | **octocode** `search_code` |
-| Who implements this trait/interface? | **tilth_search** `kind: symbol` | **octocode** `search_code` |
-| All usages of a type | **LSP** `findReferences` | **octocode** `search_code` |
-| Method list on a struct/class | **LSP** `documentSymbol` | **Context7** `query-docs` |
-| What does this function do? | **LSP** `hover` + **tilth_read** the body | **Context7** or **WebFetch** raw source |
-| Find structural patterns | **tilth_search** `kind: symbol` or `kind: regex` | N/A — use octocode text search |
-| Error type / return type | **LSP** `hover` | **Context7** `query-docs` |
-| Find files by name/pattern | **tilth_files** (glob, gitignore-aware) | N/A |
-| Find files by content | **tilth_search** `kind: content` or `kind: regex` | **octocode** `search_code` |
-| List directory contents | **tilth_files** `pattern: *` | **octocode** `view_repo_structure` |
+| What I need | Local code (default) | Planning needs types (delegate) | External dependency |
+|---|---|---|---|
+| Type/signature of a symbol | **tilth_search** `kind: symbol, expand: 1` | `/explore` → explore-lsp `hover` | **Context7** or **octocode** |
+| Go to definition | **tilth_search** `kind: symbol` | `/explore` → explore-lsp `goToDefinition` | **Context7** `query-docs` |
+| Who calls this function? | **tilth_search** `kind: callers` | `/explore` → explore-lsp `findReferences` | **octocode** `search_code` |
+| Who implements this trait/interface? | **tilth_search** `kind: symbol` | `/explore` → explore-lsp for type-resolved impls | **octocode** `search_code` |
+| All usages of a type | **tilth_search** `kind: symbol` or `kind: callers` | `/explore` → explore-lsp `findReferences` | **octocode** `search_code` |
+| Method list on a struct/class | **tilth_search** `kind: symbol` on the type | `/explore` → explore-lsp `documentSymbol` | **Context7** `query-docs` |
+| What does this function do? | **tilth_read(paths: [...])** with `section:` + **tilth_search** `expand` | — | **Context7** or **WebFetch** raw source |
+| Find structural patterns | **tilth_search** `kind: symbol` or `kind: regex` | — | N/A — use octocode text search |
+| Error type / return type | **tilth_search** `kind: symbol, expand: 1` on the signature | `/explore` → explore-lsp `hover` when inferred | **Context7** `query-docs` |
+| Find files by name/pattern | **tilth_files** (glob, gitignore-aware) | — | N/A |
+| Find files by content | **tilth_search** `kind: content` or `kind: regex` | — | **octocode** `search_code` |
+| List directory contents | **tilth_files** `pattern: *` | — | **octocode** `view_repo_structure` |
+| Read multiple files for editing | **tilth_read(paths: [a, b, c])** — always batch | — | N/A |
+
+"Delegate" means you stop and spawn `/explore` — you do not call the `LSP` tool
+directly. Use it when tilth_search cannot resolve the answer because the
+question is fundamentally about inferred types, overloads, or type-aware
+references (e.g., trait dispatch, generics, TypeScript narrowing).
 
 ### Quick reference by tool
 
-**LSP** (built-in tool, zero setup):
-
-- `hover` — type signature, docs, return type
-- `goToDefinition` — jump to where it's defined
-- `findReferences` — all usages in the project
-- `documentSymbol` — list all symbols in a file
-- Works on: .rs, .py, .ts, .go, .sh, .yaml, .rb (all 7 LSP plugins)
-
-**tilth_search** (MCP, AST-aware — zero config):
+**tilth_search** (MCP, AST-aware — zero config, the default):
 
 - `kind: symbol` — finds definitions and usages by symbol name (AST-based, not text)
 - `kind: content` — literal text search across files
@@ -69,10 +81,26 @@ Then follow the table:
 - `expand: N` — inline top N match source bodies directly in results
 - Best for: "what implements X?", "who calls Y?", "find all uses of Z"
 
+**tilth_read** (MCP, smart reader — batch by default):
+
+- `tilth_read(paths: [a, b, c])` — batch multiple files in one call (preferred)
+- `tilth_read(path, section: "45-89")` — line-range slice with hashline anchors
+- `tilth_read(path, section: "## Heading")` — markdown heading slice
+- `tilth_read(path, full: true)` — force full content for short files
+- **NEVER use `Read`/`cat`/`head`/`tail`** — use `tilth_read` instead.
+
 **tilth_files** (MCP, file discovery):
 
 - `tilth_files(pattern: "**/*.ts")` — glob with token estimates, gitignore-aware
 - **NEVER use `find`** — use tilth_files instead. `find` is blocked by hook.
+
+**cheese-flow:explore-lsp** (via `/explore` skill — planning-only LSP broker):
+
+- Wraps `hover`, `goToDefinition`, `findReferences`, `documentSymbol`,
+  `workspaceSymbol`, `callHierarchy` behind a short-lived sub-agent.
+- Sanctioned use cases: planning a refactor, deriving a change plan, mapping
+  type-resolved flows when the graph/tilth answer is ambiguous.
+- **Do not call the `LSP` tool directly** — `/explore` is the entry point.
 
 **Context7** (MCP, for external libraries):
 
@@ -107,6 +135,18 @@ ri SomeClass | grep "method_name"
 
 **Instead**: Context7 `query-docs` for the library, or octocode to search the repo.
 
+### 1a. Direct `LSP` tool calls
+
+```
+LSP findReferences ...
+LSP hover ...
+```
+
+**Wrong unless you are inside `cheese-flow:explore-lsp`.** Direct LSP use is
+gated to planning-only and routed through `/explore`. For review or
+verification, use `tilth_search kind: callers` or `kind: symbol`. For planning,
+invoke `/explore` and let the explore-lsp sub-agent run LSP.
+
 ### 2. Grepping dependency caches (any ecosystem)
 
 ```bash
@@ -129,7 +169,7 @@ grep -r "public void" ~/.m2/repository/org/some/artifact/
 grep -r "def method" vendor/bundle/ruby/*/gems/some-gem-*/
 ```
 
-**Instead**: LSP `hover` on the symbol where you use it, or Context7 for the docs.
+**Instead**: `tilth_search kind: symbol` on the usage site, or Context7 for the docs.
 
 ### 3. Multi-step find + grep chains
 
@@ -140,7 +180,7 @@ grep -rn "def validate" --include="*.py" | grep -v test
 find . -path "*/some_crate*" -exec grep "fn method" {} \;
 ```
 
-**Instead**: LSP `findReferences` or ast-grep `sg --lang rust -p 'trait CommandBuilder'`.
+**Instead**: `tilth_search kind: symbol, query: 'CommandBuilder'` (or `kind: callers` for call sites).
 
 ### 4. Building code to discover types
 
@@ -151,7 +191,9 @@ tsc --noEmit 2>&1 | grep "Type '"
 mypy src/ 2>&1 | grep "has type"
 ```
 
-**Instead**: LSP `hover` on the expression — it shows the inferred type.
+**Instead**: `tilth_search kind: symbol, expand: 1` on the signature. If the
+type is truly inferred and you're *planning a refactor*, invoke `/explore` and
+let `cheese-flow:explore-lsp` run the `hover` query.
 
 ### 5. Reading entire files for one signature
 
@@ -160,8 +202,20 @@ mypy src/ 2>&1 | grep "has type"
 cat src/lib.rs | grep -A 20 "fn new"
 ```
 
-**Instead**: LSP `documentSymbol` to list all symbols, then `hover` on the one you need.
-Or LSP `goToDefinition` on the symbol.
+**Instead**: `tilth_search kind: symbol, expand: 1` on the signature. For
+multi-file inspection, batch the reads: `tilth_read(paths: [a, b, c], section: "...")`.
+
+### 6. Serial single-file reads when a batch would do
+
+```
+tilth_read(path: "a.rs")
+tilth_read(path: "b.rs")
+tilth_read(path: "c.rs")
+```
+
+**Instead**: `tilth_read(paths: ["a.rs", "b.rs", "c.rs"])` — one call, one
+context hit. Serial reads are only correct when the second path genuinely
+depends on what you learned from the first.
 
 ## When Tools Aren't Available
 
@@ -169,37 +223,41 @@ Not every project has all tools active:
 
 | Situation | Fallback |
 |---|---|
-| No LSP running | tilth_search kind:symbol for structure, kind:content for text |
+| Planning question tilth_search can't resolve | `/explore` (cheese-flow:explore-lsp) — planning-only LSP broker |
+| cheese-flow plugin not installed | tilth_search kind:symbol + kind:callers is usually sufficient for review/verification |
 | Context7 doesn't have the library | octocode search → WebFetch raw source |
 | External crate, no MCP available | `WebSearch` for official docs (via /fetch skill) |
 
-The hierarchy is: **LSP > tilth_search > Grep**. Only fall to the next level
-when the better tool genuinely isn't available — not because it's easier to type `grep`.
+The hierarchy is: **tilth_search > /explore (cheese-flow:explore-lsp) > Grep**.
+Tilth is the default. `/explore` is the sanctioned escalation when planning
+genuinely needs type precision. Grep is only used when none of the above apply.
 
 ## Why This Skill Is NOT Forked
 
-Unlike `/make` or `/fetch`, this skill runs inline — not in a subagent. Two reasons:
+This skill runs inline — not in a sub-agent — because routing is cheap. The
+skill's output is a decision ("use tilth_search kind: callers" or "invoke
+/explore"), not verbose data. There's nothing to isolate from the context
+window.
 
-1. **LSP only works in the foreground context.** Forking would cut off
-   the most powerful tool (hover, findReferences, goToDefinition).
-2. **Routing is cheap.** This skill's output is a decision ("use LSP hover"), not
-   verbose data. There's nothing to isolate from the context window.
-
-The tools this skill routes TO may fork on their own (e.g., `/fetch` forks for
-Context7/octocode lookups). That's fine — the routing decision stays inline,
-the heavy fetching forks as needed.
+The tools this skill routes TO may fork on their own (`/explore` forks four
+sub-agents, `/fetch` forks for Context7/octocode). That's fine — the routing
+decision stays inline, the heavy lifting forks as needed.
 
 ## Rules
 
 - Route FIRST, execute SECOND — decide which tool before running anything
 - One lookup per question — don't chain 3 tools when one gives the answer
 - External deps are NEVER solved by grepping local caches
-- If LSP is running, `hover` answers 80% of type questions in one call
-- If you need the skill that each tool delegates to, invoke it: /lsp, /fetch
+- **Never invoke the `LSP` tool directly.** If the answer truly needs type
+  inference, invoke `/explore` instead.
+- **Batch reads by default.** Multi-file reads use `tilth_read(paths: [...])`,
+  not sequential calls.
+- If you need the skill that each tool delegates to, invoke it: /explore, /fetch
 
 ## Gotchas
 
-- LSP servers start lazily — first `hover` or `goToDefinition` may fail, retry after a moment
 - Context7 library ID resolution sometimes returns wrong package for ambiguous names — verify
-- ast-grep patterns are language-specific — Rust `impl` blocks vs Go `func` declarations have different AST shapes
+- tilth_search patterns are language-agnostic (regex/content) or AST-aware (symbol/callers) — use `kind: symbol` for structural queries
+- tilth_read's smart outlining suppresses symbol bodies in large files — use `section:` or `full: true` when you need the body
 - Training data is often sufficient for well-known libraries — don't fetch docs for stdlib
+- `/explore` takes ~30s for the four sub-agents to return — only escalate when tilth_search genuinely can't answer, not as a warm-up

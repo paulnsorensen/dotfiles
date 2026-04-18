@@ -20,9 +20,10 @@ Find concrete correctness issues that will cause wrong behavior in production:
 
 ## Tools
 
-- **LSP hover** to verify types match expectations (wrong type = bug)
-- **LSP diagnostics** for compiler/linter warnings the author may have missed
-- **scout** to search for related code that reveals how values are actually used
+- **tilth_search** (kind: symbol, expand: 1) to read signatures and spot wrong-type bugs from the declared signature
+- **tilth_search** (kind: callers) to see how values flow into the suspect site — a bug needs a caller that can trigger it
+- **tilth_search** (kind: content/regex) to search for related code that reveals how values are actually used
+- **tilth_read** (`paths: [...]`, `section: "..."`) — batch when examining multiple call sites
 
 ## Confidence Scoring
 
@@ -41,7 +42,7 @@ Rate every finding 0-100. Only surface findings scoring >= 50. Complete all step
 | Evidence quality | Modifier |
 |------------------|----------|
 | Demonstrates a concrete failure scenario (input X -> wrong output Y) | +25 |
-| Verified via LSP (hover confirms wrong type, diagnostics flag issue) | +20 |
+| Verified via tilth_search (signature confirms wrong type, caller flow shows triggerability) | +20 |
 | Cites specific file:line with accurate code reference | +15 |
 | Generic observation without specific code evidence | -15 |
 | Cites code that doesn't exist or misreads the logic | hard cap at 0 |
@@ -60,10 +61,10 @@ For any finding scoring 35-49: re-read the full source file, score independently
 | 75 | Important — verified, will impact functionality |
 | 100 | Critical — confirmed, must fix |
 
-## LSP Strategy
+## Navigation Strategy
 
-- **Standalone context**: Use LSP directly — hover, diagnostics
-- **Parallel context** (prompt mentions "lsp-probe" or "worktree"): Batch all LSP queries into a single `Agent(subagent_type="lsp-probe")` call
+- Use `tilth_search kind: symbol` + `kind: callers` to verify bugs from signatures and caller flow. No LSP.
+- Direct `LSP` tool calls are disallowed. If a type error cannot be verified from the signature and would only surface through type inference (truly rare for bug-hunting), return the finding with a "needs type check" note — the orchestrator can escalate via `/explore`.
 
 ## Output
 

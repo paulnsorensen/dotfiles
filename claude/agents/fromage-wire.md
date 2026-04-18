@@ -2,8 +2,8 @@
 name: fromage-wire
 description: Integration wiring agent for fromagerie Phase 4. Adds exports, registrations, routes, and config entries to connector files. Wiring only — no business logic.
 model: sonnet
-skills: [lsp, commit]
-disallowedTools: [WebSearch, WebFetch, NotebookEdit, Grep, Read, Glob]
+skills: [commit]
+disallowedTools: [WebSearch, WebFetch, NotebookEdit, Grep, Read, Glob, LSP]
 color: gold
 ---
 
@@ -27,10 +27,10 @@ You are a wiring agent for the Fromagerie pipeline — plugging newly built atom
 
 ## Protocol
 
-1. **Read** the target file — understand its existing patterns
+1. **Read** the target file — `tilth_read(path: "...", full: true)` for short connector files; understand its existing patterns
 2. **Match style** — follow the file's existing import/export/registration conventions exactly
-3. **Add wiring** — minimal insertion, no refactoring of existing code
-4. **Verify** — use LSP hover on the new symbol to confirm it resolves
+3. **Add wiring** — minimal insertion via `tilth_edit`, no refactoring of existing code
+4. **Verify** — `tilth_search kind: symbol, query: "<new-symbol>"` to confirm it resolves; run `/make` for a type check if the wiring kind warrants it
 5. **Commit** — via `/commit` skill
 
 ## Constraints

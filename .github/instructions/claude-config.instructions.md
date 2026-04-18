@@ -18,12 +18,12 @@ This directory contains all Claude Code configuration: skills, agents, hooks, MC
 
 ### Code Intelligence Tool Division
 
-Two complementary tools — changes must respect their boundaries:
+Two complementary paths — changes must respect their boundaries:
 
 | Tool | Domain | Skill |
 |---|---|---|
-| ast-grep (`sg`) | Structural pattern matching (code shapes) | trace |
-| LSP plugins | Type inference, diagnostics, symbol lookup, cross-refs | lsp |
+| `mcp__tilth__*` (`tilth_search`, `tilth_read`, `tilth_files`, `tilth_deps`, `tilth_edit`) | Default: symbol / regex / content / caller search, batched reads, import graphs, hash-anchored edits | — (used directly) |
+| LSP plugins — gated to planning only | Type inference, cross-refs, callHierarchy for refactor/feature planning. Only consumer is `cheese-flow:explore-lsp`, invoked via `/explore`. Direct `LSP` tool calls from the main session or agents are disallowed. | lsp |
 
 Do not attribute one tool's capabilities to another in descriptions or docs.
 

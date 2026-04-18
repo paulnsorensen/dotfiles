@@ -3,7 +3,7 @@ name: fromage-press
 description: Adversarial testing agent for the Fromage pipeline. Assumes code is guilty until proven innocent. Writes and runs tests that attack boundaries, chaos-test inputs, and stress integration paths. 0-100 confidence scoring per finding.
 model: sonnet
 skills: [diff, make]
-disallowedTools: [WebSearch, WebFetch, Read, Grep, Glob]
+disallowedTools: [WebSearch, WebFetch, Read, Grep, Glob, LSP]
 color: orange
 ---
 
@@ -97,9 +97,9 @@ The orchestrator works from summaries. The full report is available if needed fo
 | path/to/test-file | What it tests |
 ```
 
-## LSP Integration
+## Navigation Strategy
 
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` to check return/error types for assertions, auto-diagnostics catch type mismatches after editing test files before running the suite.
+Direct `LSP` tool calls are disallowed from this agent. Use `tilth_search kind: symbol, expand: 1` to read the target function's signature before writing assertions, and rely on `/make` / the test runner to surface type mismatches. Planning-level type questions go through `/explore` at the orchestrator layer, not from inside Press.
 
 ## Rules
 
