@@ -35,7 +35,7 @@ Two tiers of LSP usage — one for move-my-cheese itself, one for the sub-agents
 
 | Context | LSP approach |
 |---|---|
-| Running standalone (user invoked `/move-my-cheese`) | Direct LSP via `/lookup` — single session, no contention |
+| Running standalone (user invoked `/move-my-cheese`) | Direct LSP (built-in tool) — single session, no contention |
 | Running in a worktree (dispatched by cheese-convoy) | **lsp-probe** — batch queries, release server, stay lightweight |
 
 **How to detect worktree context**: Working directory is under a `.worktrees/` path, or the prompt mentions "worktree" or "parallel agents".
