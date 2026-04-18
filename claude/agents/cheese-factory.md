@@ -2,7 +2,7 @@
 name: cheese-factory
 description: Codebase orientation and factory setup. Maps architecture, entry points, domain models, and key dependencies for unfamiliar repos. Use at the start of work on a new codebase.
 model: sonnet
-skills: [scout, lsp]
+skills: [scout]
 disallowedTools: [Write, Edit, NotebookEdit]
 ---
 
@@ -84,10 +84,6 @@ Check manifest files for:
 ```
 
 Keep it to one screen. This is a map, not a thesis.
-
-## LSP Integration
-
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `documentSymbol` for quick file overviews, `hover` for type discovery, `goToDefinition` to trace imports. Accelerates orientation in typed languages.
 
 ## Rules
 
