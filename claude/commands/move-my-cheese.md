@@ -172,6 +172,7 @@ If tests pass: the CI failure was likely infra. Move to Phase 3b.
 ### Fix Strategy (lsp-probe + scout + chisel)
 
 For real test/build failures:
+
 1. Spawn `lsp-probe` to understand the failing symbol — type mismatches, missing methods, changed APIs (batch hover + findReferences into one call)
 2. Use **scout** (`rg` for error messages, `fd` for test files) to locate the failing test
 3. Read the failing test and the code under test

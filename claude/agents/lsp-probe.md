@@ -39,6 +39,7 @@ LSP servers start lazily. Before your first real query:
 ### 2. Execute Batch
 
 Process each query in order. For each:
+
 - Execute the LSP operation
 - Capture the result (type signature, reference locations, symbol list, definition location)
 - If a single query fails, note it and continue with the remaining queries
