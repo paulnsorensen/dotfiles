@@ -2,7 +2,7 @@
 name: make
 model: haiku
 context: fork
-allowed-tools: Bash(*), Read, Glob, Grep
+allowed-tools: Bash(*), mcp__tilth__*
 description: >
   You cannot run build commands (cargo check, cargo clippy, go build, npm run build,
   just check, tsc, pytest, etc.) directly — hooks will block them and raw compiler

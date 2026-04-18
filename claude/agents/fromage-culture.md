@@ -3,7 +3,7 @@ name: fromage-culture
 description: Deep codebase exploration agent for the Fromage pipeline. Analyzes entry points, execution flows, data transformations, blast radius, and architecture using LSP and standard search tools.
 model: sonnet
 skills: [diff, lsp]
-disallowedTools: [Edit, NotebookEdit]
+disallowedTools: [Edit, NotebookEdit, Read, Grep, Glob]
 color: yellow
 ---
 

@@ -5,7 +5,7 @@ model: opus
 effort: high
 permissionMode: plan
 skills: [diff, lsp]
-disallowedTools: [Edit, Write, NotebookEdit]
+disallowedTools: [Edit, Write, NotebookEdit, Read, Grep, Glob]
 color: green
 ---
 

@@ -2,7 +2,7 @@
 name: diff
 model: haiku
 context: fork
-allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(rg:*), Bash(sg:*), Bash(delta), Read
+allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(delta), mcp__tilth__*
 description: >
   Quick pre-commit smoke test of staged or unstaged changes. Scans for blockers
   (secrets, debug statements, commented code, silent failures) and warnings

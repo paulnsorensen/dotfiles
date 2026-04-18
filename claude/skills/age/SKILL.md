@@ -11,7 +11,7 @@ description: >
   Do NOT use for implementation (fromage-cook), cleanup fixes (simplify/de-slop),
   or PR comment triage (respond/copilot-review).
 model: opus
-allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git status:*), Read, Glob, Grep, Agent, Write
+allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git status:*), Agent, Write, mcp__tilth__*
 ---
 
 # age

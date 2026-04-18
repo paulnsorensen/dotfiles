@@ -102,7 +102,7 @@ git -C <repo> branch -D claude/<slug-4>
 ## Rules
 
 - NEVER remove or modify any worktrees yourself — you only recommend and output commands
-- Use `rg` (via scout skill) instead of grep for content searches
+- Use `tilth_search` (MCP) instead of grep for content searches
 - Use GitHub MCP tools (via gh skill) instead of raw GitHub API or `gh` CLI for PR checks
 - Run analysis commands in parallel where possible (independent repos/worktrees)
 - If a repo has no WARN/DIRTY worktrees, skip it entirely

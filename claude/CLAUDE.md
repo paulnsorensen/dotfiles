@@ -135,7 +135,6 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | Find files | `tilth_files` | `Glob`, `find`, `fd`, bare `ls` |
 | Blast radius | `tilth_deps` (imports + callers) | manual grep for imports |
 | Edit files | `tilth_edit` (hash-anchored, atomic per file) | `Edit`, `sed`, `awk` |
-| Multi-file regex replace | `chisel` (`sd`) | manual Edit loop |
 | Pre-commit check | diff | raw git + manual scanning |
 | Git operations | commit | manual git add/commit |
 | GitHub ops | gh | raw GitHub API |
@@ -156,12 +155,10 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 
 - **jq** — JSON processing (parse, filter, transform). Use `gh --jq` for GitHub output.
 - **yq** — YAML processing (same syntax as jq)
-- **sd** — regex replacement (Rust sed). Use via `/chisel` skill.
-- **fd** — file finder (Rust find). Use via `/scout` skill.
-- **rg** — content search (Rust grep). Use via Grep tool or `/scout`.
-- **sg** — AST structural search (ast-grep). Use via `/trace` skill.
 - **tokei** — code statistics by language
 - **duckdb** — SQL analytics on local data (used by `/session-analytics`)
+
+Code search, file discovery, and editing go through the `tilth` MCP (`tilth_search`, `tilth_files`, `tilth_read`, `tilth_edit`, `tilth_deps`) — not raw `rg`/`fd`/`sg`/`sd`.
 
 **Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
 

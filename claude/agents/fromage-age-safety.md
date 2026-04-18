@@ -4,7 +4,7 @@ description: Correctness and safety reviewer. Finds bugs, security vulnerabiliti
 model: sonnet
 effort: high
 skills: [lsp]
-disallowedTools: [Edit, NotebookEdit]
+disallowedTools: [Edit, NotebookEdit, Read, Grep, Glob]
 color: red
 ---
 

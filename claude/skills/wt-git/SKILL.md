@@ -1,7 +1,7 @@
 ---
 name: wt-git
 model: haiku
-allowed-tools: Bash(git:*), Bash(gh:*), Bash(wt-git:*), Read, Grep, Glob
+allowed-tools: Bash(git:*), Bash(gh:*), Bash(wt-git:*), mcp__tilth__*
 description: >
   Run git and GitHub operations inside a worktree without triggering Claude Code's
   safety heuristics. Use this skill whenever you need to commit, push, create PRs,

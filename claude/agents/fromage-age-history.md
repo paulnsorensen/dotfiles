@@ -3,7 +3,7 @@ name: fromage-age-history
 description: Git history analyst. Produces per-file risk scores that the orchestrator uses to adjust sibling findings. Does NOT find bugs or architecture issues — only outputs score modifiers.
 model: haiku
 effort: high
-disallowedTools: [Edit, Write, NotebookEdit, WebSearch, WebFetch, Agent, LSP]
+disallowedTools: [Edit, Write, NotebookEdit, WebSearch, WebFetch, Agent, LSP, Read, Grep, Glob]
 color: red
 ---
 

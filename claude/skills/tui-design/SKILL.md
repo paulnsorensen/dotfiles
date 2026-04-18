@@ -2,7 +2,7 @@
 name: tui-design
 model: sonnet
 context: fork
-allowed-tools: Write, Edit, Bash(mkdir:*), mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__tilth__*
+allowed-tools: Write, Bash(mkdir:*), mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__tilth__*
 description: >
   Create distinctive, production-grade terminal user interfaces with high usability
   and professional polish. Use this skill when the user asks to build TUI applications,
@@ -27,7 +27,7 @@ Delegate to the right skill for each phase of TUI development:
 | Understand existing code structure | LSP | Symbol lookup, cross-references, type info |
 | Look up ratatui/Textual/crossterm docs | `fetch` | Context7 for version-specific library docs |
 | Find structural code patterns | `tilth_search` | kind: symbol for "what implements X?" queries |
-| Edit existing files precisely | `chisel` | sd for multi-file replacements, Edit for precision |
+| Edit existing files precisely | `tilth_edit` | Hash-anchored edits, atomic per file |
 | Pre-commit smoke test | `diff` | Catch secrets, debug statements, silent failures |
 | Stage and commit | `commit` | Conventional commits, no force-push |
 | GitHub operations (PR, push) | `gh` | gh CLI for all GitHub ops |

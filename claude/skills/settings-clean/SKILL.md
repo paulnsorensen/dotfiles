@@ -3,7 +3,7 @@ name: settings-clean
 model: haiku
 context: fork
 description: Clean up bloated .claude/settings.local.json by removing redundant, stale, and junk permission entries, and ensure hook-redirected skills are allowed. Use when the user says "clean settings", "prune settings", "settings cleanup", or invokes /settings-clean. Also trigger proactively when you notice a settings.local.json with more than 30 permission entries, or after extended sessions where many one-off Bash permissions have accumulated. This skill only touches settings.local.json (gitignored), never settings.json (committed).
-allowed-tools: Read, Write, Bash(jq:*), Bash(cp:*), Bash(mkdir:*), Bash(mv:*), Bash(date:*)
+allowed-tools: Write, Bash(jq:*), Bash(cp:*), Bash(mkdir:*), Bash(mv:*), Bash(date:*), mcp__tilth__*
 ---
 
 # Settings Clean
@@ -48,8 +48,8 @@ If PreToolUse hooks exist, some Bash commands are blocked regardless of permissi
 | Hook block | Matching allow entries | Hook redirects to |
 |---|---|---|
 | Legacy: `grep`, `egrep`, `fgrep` | `Bash(grep:*)` etc. | `tilth_search` (MCP) |
-| Legacy: `sed` | `Bash(sed:*)` | `/chisel`, Edit |
-| Legacy: `awk` | `Bash(awk:*)` | `/chisel`, Edit |
+| Legacy: `sed` | `Bash(sed:*)` | `tilth_edit` (MCP) |
+| Legacy: `awk` | `Bash(awk:*)` | `tilth_edit` (MCP) |
 | Legacy: `find` | `Bash(find:*)`, specific find commands | `tilth_files` (MCP) |
 | Install: `npm install` | `Bash(npm install:*)` | per-use approval |
 | Install: `pnpm add/install` | `Bash(pnpm add:*)`, `Bash(pnpm install:*)` | per-use approval |
@@ -132,8 +132,8 @@ Recommended deny entries (reinforces hook blocks):
     "Bash(grep:*)"         → tilth_search (MCP)
     "Bash(egrep:*)"        → tilth_search (MCP)
     "Bash(fgrep:*)"        → tilth_search (MCP)
-    "Bash(sed:*)"          → /chisel (sd) or Edit
-    "Bash(awk:*)"          → /chisel (sd) or Edit
+    "Bash(sed:*)"          → tilth_edit (MCP)
+    "Bash(awk:*)"          → tilth_edit (MCP)
     "Bash(find:*)"         → tilth_files (MCP)
 
   Package installs (require per-use approval):
@@ -160,7 +160,7 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 | Hook blocks | Required permission |
 |---|---|
 | `grep`, `egrep`, `fgrep` | `mcp__tilth__*` (tilth_search) |
-| `sed`, `awk` | `Skill(chisel)` |
+| `sed`, `awk` | `mcp__tilth__*` (tilth_edit) |
 | `find` | `mcp__tilth__*` (tilth_files) |
 | `python3 -c` tests | `Skill(test-sandbox)` |
 | dep cache grep, doc+grep | `Skill(lookup)`, `Skill(fetch)` |
@@ -174,8 +174,7 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 
 ```
 Missing permissions — hook-critical (redirect won't work without these):
-  + mcp__tilth__*         ← grep/find/find+grep hooks → tilth_search / tilth_files
-  + Skill(chisel)         ← sed/awk hooks redirect here
+  + mcp__tilth__*         ← grep/find/sed/awk hooks → tilth_search / tilth_files / tilth_edit
   + Skill(test-sandbox)   ← python3 -c hook redirects here
   + Skill(lookup)         ← dep cache/doc grep hooks redirect here
   + Skill(fetch)          ← dep cache/doc grep hooks redirect here

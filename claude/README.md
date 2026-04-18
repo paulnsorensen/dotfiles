@@ -126,10 +126,7 @@ Reusable tool-usage instructions injected into agents and commands.
 
 | Skill | Purpose |
 |-------|---------|
-| `scout` | File search with rg, fd, eza |
-| `trace` | Structural code parsing with ast-grep |
 | `diff` | Pre-commit change review |
-| `chisel` | File editing with sd or Edit tool |
 | `fetch` | External docs via Context7, WebSearch, octocode |
 | `gh` | GitHub operations via gh CLI |
 | `commit` | Git staging and conventional commits |
@@ -139,6 +136,8 @@ Reusable tool-usage instructions injected into agents and commands.
 | `tdd-assertions` | Weak test assertion detection |
 | `respond` | PR review comment triage with confidence scoring |
 | `age` | Staff Engineer code review orchestrator (spawns 6 parallel sub-agents) |
+
+> Code search, file discovery, reading, editing, and blast-radius analysis go through the `tilth` MCP (`tilth_search`, `tilth_files`, `tilth_read`, `tilth_edit`, `tilth_deps`) — not a dedicated skill.
 
 ---
 
@@ -156,7 +155,7 @@ Reusable tool-usage instructions injected into agents and commands.
 |------|-------|---------|
 | `pre-compact.sh` | PreCompact | Saves session context before compaction |
 | `post-compact.sh` | SessionStart (compact) | Restores context after compaction |
-| `post-fresh-start.sh` | SessionStart | Injects `/trace` suggestion on fresh sessions |
+| `post-fresh-start.sh` | SessionStart | Injects tilth MCP usage reminder on fresh sessions |
 | `on-session-end.sh` | UserPromptSubmit | Detects parting language, suggests saving context |
 
 ### Hookify Rules (`hookify/`)

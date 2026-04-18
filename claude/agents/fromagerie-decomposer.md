@@ -5,7 +5,7 @@ model: opus
 effort: high
 permissionMode: plan
 skills: [lookup, lsp]
-disallowedTools: [Edit, NotebookEdit]
+disallowedTools: [Edit, NotebookEdit, Read, Grep, Glob]
 color: gold
 ---
 

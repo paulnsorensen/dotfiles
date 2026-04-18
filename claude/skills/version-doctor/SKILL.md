@@ -10,7 +10,7 @@ description: >
   restructuring the build. If you catch yourself about to rewrite a build config
   or bypass workspace inheritance because of a version error, stop and use this
   skill instead.
-allowed-tools: Read, Grep, Glob, Bash, Agent
+allowed-tools: Bash, Agent, mcp__tilth__*
 ---
 
 # version-doctor

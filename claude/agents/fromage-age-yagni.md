@@ -4,7 +4,7 @@ description: YAGNI and de-slop reviewer. Finds unjustified dead code, speculativ
 model: sonnet
 effort: high
 skills: [lsp]
-disallowedTools: [NotebookEdit]
+disallowedTools: [NotebookEdit, Read, Grep, Glob]
 color: red
 ---
 

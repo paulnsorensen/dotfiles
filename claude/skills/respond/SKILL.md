@@ -15,7 +15,7 @@ description: >
   each suggestion 0-100, and presents a triage table. High-confidence fixes
   (>= 50) execute immediately while the user reviews uncertain items. Do NOT
   use to generate a new review — use /copilot-review for that.
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash(gh:*), Bash(git:*), mcp__plugin_github_github__pull_request_read, mcp__plugin_github_github__add_reply_to_pull_request_comment, mcp__plugin_github_github__add_issue_comment
+allowed-tools: Write, Bash(gh:*), Bash(git:*), mcp__tilth__*, mcp__plugin_github_github__pull_request_read, mcp__plugin_github_github__add_reply_to_pull_request_comment, mcp__plugin_github_github__add_issue_comment
 ---
 
 # Respond: PR Review Triage

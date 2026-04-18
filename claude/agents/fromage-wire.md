@@ -2,8 +2,8 @@
 name: fromage-wire
 description: Integration wiring agent for fromagerie Phase 4. Adds exports, registrations, routes, and config entries to connector files. Wiring only — no business logic.
 model: sonnet
-skills: [chisel, lsp, commit]
-disallowedTools: [WebSearch, WebFetch, NotebookEdit, Grep]
+skills: [lsp, commit]
+disallowedTools: [WebSearch, WebFetch, NotebookEdit, Grep, Read, Glob]
 color: gold
 ---
 

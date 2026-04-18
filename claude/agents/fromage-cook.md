@@ -2,7 +2,8 @@
 name: fromage-cook
 description: Implementation agent for the Fromage pipeline. Executes a specific chunk of the plan, writing code that follows engineering principles and complexity budgets.
 model: sonnet
-skills: [chisel, diff, make, lsp]
+skills: [diff, make, lsp]
+disallowedTools: [Read, Grep, Glob, NotebookEdit]
 color: blue
 ---
 

@@ -2,7 +2,7 @@
 name: culture-lsp
 description: LSP-based structural analysis for fromagerie culture phase. Builds dependency graphs, detects connectors, maps entry points, and measures blast radius. FORBIDS Grep — uses LSP with ast-grep fallback.
 model: sonnet
-disallowedTools: [Grep, Edit, NotebookEdit, WebSearch, WebFetch]
+disallowedTools: [Grep, Edit, NotebookEdit, WebSearch, WebFetch, Read, Glob]
 color: cyan
 ---
 

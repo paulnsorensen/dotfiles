@@ -9,7 +9,7 @@ description: >
   committing test code — AI assistants systematically produce assertions that
   pass when the code is broken, which is the cardinal sin of TDD.
   Trigger proactively on test generation and test review.
-allowed-tools: Read, Edit, Grep, Glob, Bash(rg:*)
+allowed-tools: mcp__tilth__*
 ---
 
 # tdd-assertions

@@ -3,7 +3,7 @@ name: spec-verify
 model: opus
 context: fork
 effort: high
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Agent, LSP
+allowed-tools: Bash(echo:*), Agent, LSP, mcp__tilth__*
 description: >
   Verify that a spec's implementation matches its requirements using LSP structural
   analysis, build verification, and test coverage checking. Use when the user says
