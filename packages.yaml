@@ -83,4 +83,5 @@ packages:
   # Cargo
   - cargo-llvm-cov: { source: cargo }
   - tilth: { source: cargo }
+  - rtk: { source: cargo, git: "https://github.com/rtk-ai/rtk" }
   - qdrant: { source: cargo, dev: true }
