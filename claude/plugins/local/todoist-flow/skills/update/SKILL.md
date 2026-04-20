@@ -67,10 +67,10 @@ The todoist-scribe agent will validate the reworded title against formatting rul
 
 ### Step 5: Handle Research
 
-If `?`, spawn research for context:
+If `?`, invoke the research skill for context:
 
 ```
-Agent(subagent_type: "research", prompt: "Research context for: '[task title]'. [description]. Help the user decide if this task is still relevant.")
+Skill(skill="research", args="Context for: '[task title]'. [description]. Help the user decide if this task is still relevant.")
 ```
 
 Re-present the task after research returns.
