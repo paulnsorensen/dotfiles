@@ -46,8 +46,8 @@ parse_sync_args() {
     export DOTFILES_DEV=false
     export QUICK_SYNC=false
 
-    for ARG in "$@"; do
-      case $ARG in
+    while (( $# )); do
+      case $1 in
          dev)
               echo "Setting dev=true"
               export DOTFILES_DEV=true
@@ -69,6 +69,7 @@ parse_sync_args() {
               exit 0
               ;;
       esac
+      shift
     done
 }
 
