@@ -17,6 +17,7 @@ configs=(
   mcp
   skills
   reference
+  profiles
   CLAUDE.md
   RTK.md
 )

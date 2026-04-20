@@ -1,0 +1,14 @@
+{
+  "env": {
+    "ENABLE_TOOL_SEARCH": "true"
+  },
+  "permissions": {
+    "allow": [
+      "Skill",
+      "Read",
+      "mcp__todoist__*",
+      "mcp__claude_ai_Gmail__*"
+    ]
+  },
+  "skipDangerousModePermissionPrompt": true
+}
