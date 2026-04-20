@@ -247,7 +247,7 @@ Launch Culture agents (sonnet), each targeting a different aspect. Every agent a
 
 **Separate research subagents (large only, run in parallel with Culture):**
 
-- **Aspect D**: **External prior art** — spawn a `/research` agent (not `fromage-culture`) to scan how other projects solved similar problems. Use octocode for GitHub examples, Context7 for library docs, WebSearch for blog posts and design rationale. Write findings to `$TMPDIR/fromage-culture-<slug>-prior-art.md`.
+- **Aspect D**: **External prior art** — invoke the `/research` skill (not `fromage-culture`) to scan how other projects solved similar problems. The skill routes across Context7, Octocode, Serper, and Tavily automatically. Write findings to `$TMPDIR/fromage-culture-<slug>-prior-art.md`.
 - **Aspect E**: **Dependency and API landscape** — spawn a `/fetch` agent to assess external libraries, APIs, or services this change interacts with. Are there newer/better options? Version constraints? Write to `$TMPDIR/fromage-culture-<slug>-deps.md`.
 
 After agents return:
