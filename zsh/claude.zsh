@@ -14,9 +14,55 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # ═══════════════════════════════════════════════════════════════════
 # Quick Access
 # ═══════════════════════════════════════════════════════════════════
-alias cc='claude'
-alias ccc='claude --continue'
-alias ccr='claude --resume'
+# Compute which LSP plugins this repo needs based on tokei line counts.
+# Writes a minimal JSON gate file and prints its path. Prints nothing on failure.
+_cc_lsp_gate() {
+    git rev-parse --is-inside-work-tree &>/dev/null || return 0
+
+    local threshold="${CC_LSP_GATE_THRESHOLD:-50}"
+    local gate_file
+    gate_file="$(mktemp -t claude-lsp-gate).json"
+
+    tokei --output json | jq --argjson t "$threshold" '{
+      enabledPlugins: {
+        "bash-language-server@claude-code-lsps": (([.BASH.code//0,.Shell.code//0,.Zsh.code//0]|add) >= $t),
+        "vtsls@claude-code-lsps":               (([.JavaScript.code//0,.TypeScript.code//0,.TSX.code//0,.JSX.code//0]|add) >= $t),
+        "yaml-language-server@claude-code-lsps": ((.YAML.code//0) >= $t),
+        "rust-analyzer@claude-code-lsps":        ((.Rust.code//0) >= $t),
+        "pyright@claude-code-lsps":              ((.Python.code//0) >= $t),
+        "gopls@claude-code-lsps":               ((.Go.code//0) >= $t)
+      }
+    }' > "$gate_file" || return 0
+
+    echo "$gate_file"
+}
+
+cc() {
+    local gate; gate="$(_cc_lsp_gate)" || gate=""
+    if [[ -n "$gate" ]]; then
+        claude --settings "$gate" "$@"
+    else
+        claude "$@"
+    fi
+}
+
+ccc() {
+    local gate; gate="$(_cc_lsp_gate)" || gate=""
+    if [[ -n "$gate" ]]; then
+        claude --settings "$gate" --continue "$@"
+    else
+        claude --continue "$@"
+    fi
+}
+
+ccr() {
+    local gate; gate="$(_cc_lsp_gate)" || gate=""
+    if [[ -n "$gate" ]]; then
+        claude --settings "$gate" --resume "$@"
+    else
+        claude --resume "$@"
+    fi
+}
 
 # Fresh session: prime MCPs in last conversation, then open it interactively
 ccfresh() {
@@ -40,8 +86,11 @@ alias ccm='claude-monitor'
 # auto-wired if present — drop a new directory in and it works:
 #   CLAUDE.md            → --append-system-prompt-file
 #   settings.json        → --setting-sources "" --settings (no inherited config)
-#   settings-merge.json  → --settings (additive — merges on top of user settings;
-#                          use for per-profile enabledPlugins overrides)
+#   settings-merge.json  → --settings (additive — merges on top of the
+#                          preceding settings layer: user settings when
+#                          there's no settings.json in the profile, or the
+#                          profile's settings.json when both are present.
+#                          Use for per-profile enabledPlugins overrides.)
 #   mcp.json             → --strict-mcp-config --mcp-config (replaces user MCPs)
 #   mcp-add.json         → --mcp-config (additive — adds to user MCPs)
 #   launch.zsh           → sourced; may set extra_args=(...) for --plugin-dir,
@@ -73,6 +122,12 @@ ccp() {
     local args=()
     [[ -f "$profile/CLAUDE.md" ]] && args+=(--append-system-prompt-file "$profile/CLAUDE.md")
     [[ -f "$profile/settings.json" ]] && args+=(--setting-sources "" --settings "$profile/settings.json")
+
+    if [[ ! -f "$profile/settings.json" ]]; then
+        local gate; gate="$(_cc_lsp_gate)" || gate=""
+        [[ -n "$gate" ]] && args+=(--settings "$gate")
+    fi
+
     [[ -f "$profile/settings-merge.json" ]] && args+=(--settings "$profile/settings-merge.json")
     [[ -f "$profile/mcp.json" ]] && args+=(--strict-mcp-config --mcp-config "$profile/mcp.json")
     [[ -f "$profile/mcp-add.json" ]] && args+=(--mcp-config "$profile/mcp-add.json")

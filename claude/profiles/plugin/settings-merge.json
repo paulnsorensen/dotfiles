@@ -1,11 +1,5 @@
 {
   "enabledPlugins": {
-    "bash-language-server@claude-code-lsps": true,
-    "vtsls@claude-code-lsps": true,
-    "yaml-language-server@claude-code-lsps": true,
-    "rust-analyzer@claude-code-lsps": true,
-    "pyright@claude-code-lsps": true,
-    "gopls@claude-code-lsps": true,
     "claude-md-management@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
