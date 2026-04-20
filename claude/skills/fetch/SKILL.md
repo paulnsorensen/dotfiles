@@ -2,14 +2,14 @@
 name: fetch
 model: sonnet
 context: fork
-allowed-tools: WebSearch, WebFetch, gh, Task(subagent_type="general-purpose"), mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__octocode__*, mcp__tavily__tavily_search, mcp__tavily__tavily_extract, mcp__tavily__tavily_research, mcp__serper__*
+allowed-tools: WebSearch, WebFetch, gh, Task(subagent_type="general-purpose"), mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__tavily__tavily_search, mcp__tavily__tavily_extract, mcp__tavily__tavily_research, mcp__serper__*
 description: >
   Fetch external documentation or code while protecting the main context window.
   Use Context7 (preferred, free) for library docs. Use Tavily for technical concepts
   and best practices. Use Serper for factual lookups and Google SERP features.
-  Use octocode for GitHub code search, gh CLI for GitHub ops. Cost-aware routing:
-  free → cheap → expensive. Governs: when to skip and use training data, when to
-  fetch inline vs delegate to a subagent.
+  Use gh CLI for GitHub ops. Cost-aware routing: free → cheap → expensive.
+  Governs: when to skip and use training data, when to fetch inline vs delegate
+  to a subagent.
 ---
 
 # fetch
@@ -42,11 +42,10 @@ Try free tools first, then cheap, then expensive:
 |----------|--------|------|----------|
 | 1 | Context7 | Free (1K calls/mo) | Library/framework API question |
 | 2 | Codebase (Grep/Read) | Free | Local code patterns |
-| 3 | Octocode | Free | GitHub code search, real-world examples |
-| 4 | Serper | ~$0.001/query | Factual lookups, SERP features, news |
-| 5 | Tavily search | ~$0.003-0.008/query | Technical concepts, best practices |
-| 6 | Tavily research | ~$0.12-2.00/call | Deep multi-source exploration (user must request) |
-| 7 | WebSearch/WebFetch | Varies | Legacy fallback if MCPs are down |
+| 3 | Serper | ~$0.001/query | Factual lookups, SERP features, news |
+| 4 | Tavily search | ~$0.003-0.008/query | Technical concepts, best practices |
+| 5 | Tavily research | ~$0.12-2.00/call | Deep multi-source exploration (user must request) |
+| 6 | WebSearch/WebFetch | Varies | Legacy fallback if MCPs are down |
 
 ---
 
@@ -135,17 +134,6 @@ Task(subagent_type="general-purpose", prompt="Look up <specific question> in <li
 
 ## External Code (GitHub / packages)
 
-### Octocode (code search — free)
-
-Use octocode MCP for searching GitHub code — finding implementations, usage examples,
-or how a pattern is used across public repos.
-
-Use octocode when:
-
-- Searching for real-world usage examples of an API
-- Finding how an open-source library implements something internally
-- Looking for patterns across multiple repos
-
 ### gh skill (GitHub ops)
 
 Use the `gh` skill for GitHub operations (PRs, issues, releases, CI checks). The
@@ -183,7 +171,6 @@ Tell the subagent to **return a summary**, not raw file contents.
 | Technical concept, best practice | Tavily search (basic) | ~$0.003 |
 | Deep technical question | Tavily search (advanced) | ~$0.006 |
 | Need to read a specific URL | Tavily extract or Serper scrape | ~$0.001-0.003 |
-| GitHub code search / examples | Octocode inline | Free |
 | Local code search | Grep / Read | Free |
 | Broad or multi-concept docs | general-purpose subagent | Varies |
 | Main context already heavy | Always delegate, never inline | — |
@@ -206,7 +193,6 @@ Tell the subagent to **return a summary**, not raw file contents.
 - Reading full file content before searching for what you need
 - Fetching 5 files inline when a subagent would isolate the bloat
 - Using WebFetch for authenticated GitHub repos (use gh skill / GitHub MCP)
-- Using octocode for GitHub ops (PRs, issues) — that's the gh skill's job
 - Calling any search tool when training data is clearly sufficient
 
 ## Gotchas

@@ -58,7 +58,7 @@ If PreToolUse hooks exist, some Bash commands are blocked regardless of permissi
 | Install: `cargo add` | `Bash(cargo add:*)` | per-use approval |
 | Install: `go get` | `Bash(go get:*)` | per-use approval |
 | Inline tests: `python3 -c` + import/assert | subset of `Bash(python3 -c:*)` | `/test-sandbox` |
-| Dep cache grep | entries with `.cargo/registry`, `node_modules/` etc. | `/lookup`, `/fetch` |
+| Dep cache grep | entries with `.cargo/registry`, `node_modules/` etc. | `/fetch`, LSP hover |
 | Heuristic: `cd && git` | `Bash(cd:*)` (already JUNK) | `/wt-git` |
 
 Only flag entries where the hook would **always** block them. If a permission is broader than the hook pattern (e.g., `Bash(python3:*)` covers both blocked test patterns AND legitimate scripts), KEEP the permission.

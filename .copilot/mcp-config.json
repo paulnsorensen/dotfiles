@@ -1,11 +1,10 @@
 {
   "mcpServers": {
-    "code-review-graph": {
+    "octocode": {
       "type": "local",
-      "command": "uvx",
+      "command": "npx",
       "args": [
-        "code-review-graph",
-        "serve"
+        "octocode-mcp@latest"
       ],
       "tools": [
         "*"

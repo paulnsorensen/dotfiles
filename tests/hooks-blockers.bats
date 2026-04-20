@@ -425,11 +425,11 @@ teardown() {
 
 # ── bash-guard: brute lookup blockers ───────────────────────────────
 
-@test "bash-guard: grepping node_modules is blocked with /lookup reference" {
+@test "bash-guard: grepping node_modules is blocked with /fetch reference" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"grep -r pattern node_modules/express"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/lookup"* ]]
+    [[ "$output" == *"/fetch"* ]]
 }
 
 @test "bash-guard: grepping site-packages is blocked" {
@@ -522,7 +522,7 @@ teardown() {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"cargo doc --open | grep MyStruct"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/fetch"* || "$output" == *"/lookup"* ]]
+    [[ "$output" == *"/fetch"* ]]
 }
 
 @test "bash-guard: go doc piped to grep is blocked" {
@@ -535,7 +535,7 @@ teardown() {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"find . -name *.go -exec grep Handler {} +"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/trace"* || "$output" == *"/lookup"* ]]
+    [[ "$output" == *"/trace"* ]]
 }
 
 @test "bash-guard: find | xargs grep is blocked" {

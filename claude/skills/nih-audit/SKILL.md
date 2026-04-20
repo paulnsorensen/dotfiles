@@ -157,7 +157,7 @@ Agent(
     - Whether it's stdlib, micro-library, or framework
     - One-sentence API example showing how it replaces the NIH code
 
-    Cost-aware: use free sources (Context7, Octocode) first, then Serper, then Tavily.",
+    Cost-aware: use free sources (Context7) first, then Serper, then Tavily.",
   run_in_background=true
 )
 ```

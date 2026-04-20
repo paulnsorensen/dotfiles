@@ -35,7 +35,7 @@ Two tiers of LSP usage — one for move-my-cheese itself, one for the sub-agents
 
 | Context | LSP approach |
 |---|---|
-| Running standalone (user invoked `/move-my-cheese`) | Direct LSP via `/lookup` — single session, no contention |
+| Running standalone (user invoked `/move-my-cheese`) | Direct LSP — single session, no contention |
 | Running in a worktree (dispatched by cheese-convoy) | **lsp-probe** — batch queries, release server, stay lightweight |
 
 **How to detect worktree context**: Working directory is under a `.worktrees/` path, or the prompt mentions "worktree" or "parallel agents".
@@ -159,7 +159,7 @@ Skill(skill="make")
 
 If build fails, understand the failing symbols before fixing with **chisel**:
 
-- **Standalone**: Use `/lookup` — routes to LSP for types/cross-refs, Context7 for external APIs
+- **Standalone**: Direct LSP for types/cross-refs, `/fetch` (Context7) for external APIs
 - **Worktree context** (dispatched by cheese-convoy): Batch failing symbols into a single **lsp-probe** call — hover for types, findReferences for cross-refs — then fix with chisel
 
 Never grep dependency caches.
@@ -179,7 +179,7 @@ If tests pass: the CI failure was likely infra. Move to Phase 3b.
 For real test/build failures:
 
 1. Understand the failing symbol — type mismatches, missing methods, changed APIs:
-   - **Standalone**: `/lookup` (routes to direct LSP or Context7)
+   - **Standalone**: Direct LSP (hover + findReferences) or `/fetch` (Context7)
    - **Worktree context**: Batch all failing symbols into one `lsp-probe` call (hover + findReferences)
 2. Use **scout** (`rg` for error messages, `fd` for test files) to locate the failing test
 3. Read the failing test and the code under test
