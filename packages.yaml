@@ -75,6 +75,7 @@ packages:
   # Linters
   - eslint: { source: npm, pkg: "eslint@8" }
   - markdownlint-cli2: { source: npm }
+  - ccusage: { source: npm }
 
   # uv tools (Python)
   - ralphify: { source: uv }
