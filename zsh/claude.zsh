@@ -125,6 +125,17 @@ alias plugin-sync-dry='$CLAUDE_DOTFILES/plugins/sync.sh --dry-run'
 alias plugin-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/plugins/registry.yaml'
 
 # ═══════════════════════════════════════════════════════════════════
+# RTK — Rust Token Killer (github.com/rtk-ai/rtk)
+# ═══════════════════════════════════════════════════════════════════
+# Claude Code hook is tracked in claude/settings.json, so no Claude init
+# is needed after a fresh `dots sync`. These aliases mirror the commands
+# on https://github.com/rtk-ai/rtk#quick-start for the remaining agents
+# plus a manual Claude refresh. All three are idempotent.
+alias rtk-init-claude='rtk init -g'                       # global
+alias rtk-init-cursor='rtk init -g --agent cursor'        # global
+alias rtk-init-antigravity='rtk init --agent antigravity' # project-scoped, run in project root
+
+# ═══════════════════════════════════════════════════════════════════
 # Ralphify (autonomous coding loops — github.com/computerlovetech/ralphify)
 # ═══════════════════════════════════════════════════════════════════
 # ralph binary is installed via `uv tool install ralphify` and lives in
