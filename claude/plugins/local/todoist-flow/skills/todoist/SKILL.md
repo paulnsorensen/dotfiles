@@ -54,10 +54,10 @@ Present the suggestion but let the user decide. Don't auto-invoke sub-skills.
 
 ## Research Integration
 
-If the user asks for deeper context on their productivity patterns, spawn a research agent:
+If the user asks for deeper context on their productivity patterns, invoke the research skill:
 
 ```
-Agent(subagent_type: "research", prompt: "Research [specific topic the user asked about]")
+Skill(skill="research", args="[specific topic the user asked about]")
 ```
 
 This is opt-in — only when the user explicitly asks for research.

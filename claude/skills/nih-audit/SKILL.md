@@ -135,17 +135,24 @@ Deduplicate candidates that share a category. Group into research queries:
 | FORMAT | "number/currency formatting library for {language}" |
 | COMPARE | "deep equality library for {language}" |
 
-### 2.2 Spawn Research Agents
+### 2.2 Spawn Library Lookup Agents
 
-For each category group (max 5 parallel), spawn a research agent:
+For each category group (max 5 parallel), spawn a general-purpose agent with
+focused MCP access. Library lookup is a 2-source problem (Context7 for API
+surface, Octocode for real-world adoption) — not a full 5-source /research
+call.
 
 ```
 Agent(
-  subagent_type="research",
+  subagent_type="general-purpose",
   model="sonnet",
   prompt="Find well-maintained open-source libraries for: <category description>
     Language: <lang>
     Already installed (DO NOT recommend): <depManifest deps>
+
+    Use ONLY these MCP tools (do NOT use WebSearch or WebFetch):
+    - mcp__context7__resolve-library-id and mcp__context7__query-docs
+    - mcp__octocode__packageSearch and mcp__octocode__githubSearchRepositories
 
     For each library found, return:
     - Name and latest version
@@ -155,9 +162,7 @@ Agent(
     - Last commit date
     - Contributor count
     - Whether it's stdlib, micro-library, or framework
-    - One-sentence API example showing how it replaces the NIH code
-
-    Cost-aware: use free sources (Context7, Octocode) first, then Serper, then Tavily.",
+    - One-sentence API example showing how it replaces the NIH code",
   run_in_background=true
 )
 ```
