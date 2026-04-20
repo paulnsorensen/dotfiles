@@ -56,3 +56,9 @@ mcps:
     args: [code-review-graph, serve]
     scope: user
     description: Structural code knowledge graph via Tree-sitter — semantic search, call chains, impact radius, flows, communities
+
+  tilth:
+    command: tilth
+    args: ["--mcp", "--edit"]
+    scope: user
+    description: Tree-sitter indexed symbol lookup and smart code reading — replaces grep/cat/find for AST-aware navigation
