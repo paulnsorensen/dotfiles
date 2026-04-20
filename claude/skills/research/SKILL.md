@@ -393,7 +393,7 @@ body to disk without ever reading scratch files itself.
 
 ### Synthesis prompt template
 
-```
+````
 You are the synthesis stage of a multi-source research run. Think carefully
 before writing — this is the reasoning-heavy part of the pipeline.
 
@@ -490,7 +490,7 @@ URLs / file:line refs / library doc refs from the scratch files instead.
    ```report-body
    <report markdown here>
    ```
-```
+````
 
 ### Receive the synthesis
 
