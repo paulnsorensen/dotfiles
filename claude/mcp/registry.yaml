@@ -7,6 +7,12 @@
 #   local   - Machine-specific, gitignored
 
 mcps:
+  octocode:
+    command: npx
+    args: [octocode-mcp@latest]
+    scope: user
+    description: GitHub code search and repository tools
+
   context7:
     command: npx
     args: ["-y", "@upstash/context7-mcp"]

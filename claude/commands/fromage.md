@@ -175,7 +175,7 @@ Interactive requirements gathering — a conversation, not an interrogation.
 1. Parse the request: what's clear vs ambiguous
 2. Ask clarifying questions naturally (don't dump a list)
 3. Invoke `/research` when external research is needed
-4. **Library discovery**: Search for existing libraries/packages that could accelerate implementation. Use Context7 (`resolve-library-id` → `query-docs`) to find candidates and check API fit; use Tavily/Serper for maintenance activity and comparisons. Evaluate: maturity, maintenance activity, API fit, **license compatibility** (see below).
+4. **Library discovery**: Search for existing libraries/packages that could accelerate implementation. Use octocode (`packageSearch`) and Context7 (`resolve-library-id` → `query-docs`) to find candidates. Evaluate: maturity, maintenance activity, API fit, **license compatibility** (see below).
 5. **Quality gates** (mandatory when this phase runs): Before writing the spec, ask with lettered options:
 
 ```
@@ -247,7 +247,7 @@ Launch Culture agents (sonnet), each targeting a different aspect. Every agent a
 
 **Separate research subagents (large only, run in parallel with Culture):**
 
-- **Aspect D**: **External prior art** — spawn a `/research` agent (not `fromage-culture`) to scan how other projects solved similar problems. Use Context7 for library docs, Tavily for synthesized articles/analysis, Serper for discovering repos and blog posts. Write findings to `$TMPDIR/fromage-culture-<slug>-prior-art.md`.
+- **Aspect D**: **External prior art** — spawn a `/research` agent (not `fromage-culture`) to scan how other projects solved similar problems. Use octocode for GitHub examples, Context7 for library docs, WebSearch for blog posts and design rationale. Write findings to `$TMPDIR/fromage-culture-<slug>-prior-art.md`.
 - **Aspect E**: **Dependency and API landscape** — spawn a `/fetch` agent to assess external libraries, APIs, or services this change interacts with. Are there newer/better options? Version constraints? Write to `$TMPDIR/fromage-culture-<slug>-deps.md`.
 
 After agents return:
@@ -393,7 +393,7 @@ When a Cook or Culture agent encounters an unfamiliar library/API:
 
 1. **Codebase first**: Grep the codebase for existing usage patterns, or use `/trace` (ast-grep) for structural matches
 2. **Context7 second**: Query library docs via Context7 MCP
-3. **Tavily/Serper third**: Use Tavily for synthesized analysis or Serper to find the package's README/docs pages
+3. **Package README third**: Use octocode to read the package README
 4. **NEVER**: Read library source code. If the answer isn't in steps 1-3, return what you have and flag it as needing research.
 
 Research agents spawned during Cook get `max_turns: 15`.

@@ -130,7 +130,7 @@ Reusable tool-usage instructions injected into agents and commands.
 | `trace` | Structural code parsing with ast-grep |
 | `diff` | Pre-commit change review |
 | `chisel` | File editing with sd or Edit tool |
-| `fetch` | External docs via Context7, Tavily, Serper, WebSearch |
+| `fetch` | External docs via Context7, WebSearch, octocode |
 | `gh` | GitHub operations via gh CLI |
 | `commit` | Git staging and conventional commits |
 | `tui-design` | TUI design and implementation (ratatui, Textual) |
@@ -218,12 +218,8 @@ Managed declaratively via `mcp/registry.yaml`. Sync with `mcp-sync`.
 
 | MCP | Purpose |
 |-----|---------|
+| `octocode` | GitHub code search and repository tools |
 | `context7` | Documentation context for libraries and frameworks |
-| `tavily` | AI-processed web search |
-| `serper` | Google SERP features (answer box, PAA, Knowledge Graph) |
-| `todoist` | Todoist task management |
-| `code-review-graph` | Tree-sitter structural code graph |
-| `tilth` | AST-aware code navigation |
 
 ---
 

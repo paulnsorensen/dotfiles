@@ -65,7 +65,7 @@ Bash(awk $PWD/*)
 Bash(xargs $PWD/*)
 
 # MCP & web
-mcp__context7__*
+mcp__octocode__*
 WebSearch
 ```
 

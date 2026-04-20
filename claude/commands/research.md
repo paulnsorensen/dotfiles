@@ -46,6 +46,9 @@ Everything after flag extraction is the **research question**.
 
    ### Codebase
    - <file:line references>
+
+   ### Open Source
+   - <GitHub repo/file links from Octocode>
    ```
 
    Only include source sections that have entries. Tell the user where the report was saved.
