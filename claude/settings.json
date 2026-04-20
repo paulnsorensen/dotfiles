@@ -144,8 +144,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" bash-guard.js",
-            "statusMessage": "Checking command..."
+            "command": "rtk hook claude"
           }
         ]
       },
@@ -154,7 +153,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "rtk hook claude"
+            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" bash-guard.js",
+            "statusMessage": "Checking command..."
           }
         ]
       },

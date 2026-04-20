@@ -18,6 +18,7 @@ configs=(
   skills
   reference
   CLAUDE.md
+  RTK.md
 )
 
 # Install hook dependencies (wink-nlp for violation classifier)
@@ -51,6 +52,31 @@ for item in "${configs[@]}"; do
     ln -s "$source" "$target"
   fi
 done
+
+# Install RTK hook for Cursor (global). Claude is already configured via the
+# settings.json hook entry tracked in this repo, so no rtk init needed for it.
+# Antigravity is project-scoped — run `rtk init --agent antigravity` inside
+# each project where you want it active; it writes .agents/rules/*.md there.
+#
+# Guard: `rtk init --agent cursor` also rewrites ~/.claude/settings.json on
+# every run, which would clobber our dotfiles symlink. Only invoke it the
+# first time (when Cursor's hooks.json doesn't yet reference rtk).
+cursor_hooks="$HOME/.cursor/hooks.json"
+if command -v rtk &>/dev/null; then
+  if [[ ! -f "$cursor_hooks" ]] || ! grep -q '"rtk hook cursor"' "$cursor_hooks"; then
+    echo "  Initializing rtk for cursor..."
+    rtk init -g --agent cursor --auto-patch --hook-only \
+      || echo "  rtk init --agent cursor failed (non-fatal)"
+    # rtk init touches ~/.claude/settings.json too; restore our symlink.
+    if [[ -f "$CLAUDE_DIR/settings.json" && ! -L "$CLAUDE_DIR/settings.json" ]]; then
+      rm "$CLAUDE_DIR/settings.json" "$CLAUDE_DIR/settings.json.bak" 2>/dev/null || true
+      ln -s "$SOURCE_DIR/settings.json" "$CLAUDE_DIR/settings.json"
+      echo "  Restored settings.json symlink"
+    fi
+  fi
+else
+  echo "  Skipping rtk init (rtk not installed — run 'dots sync' to install)"
+fi
 
 # Sync MCPs and plugins (requires claude CLI)
 if command -v claude &>/dev/null; then
