@@ -46,10 +46,10 @@ Use `AskUserQuestion` to get the user's decision. Accept shorthand: `c`, `r tomo
 
 ### Step 4: Handle "Research" Requests
 
-If the user picks `?` on a task, spawn a research agent to get context:
+If the user picks `?` on a task, invoke the research skill to get context:
 
 ```
-Agent(subagent_type: "research", prompt: "Research context for this task: '[task title]'. [task description if any]. Help the user decide if this is still relevant and what the current state of this topic is.")
+Skill(skill: "research", args: "Context for this task: '[task title]'. [task description if any]. Help the user decide if this is still relevant and what the current state of this topic is.")
 ```
 
 After research returns, re-present the task with the research context and ask again.
