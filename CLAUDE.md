@@ -197,7 +197,7 @@ The `.sync-with-rollback` script provides:
 - **Rollback capability** to any previous state
 - **Per-directory .sync scripts** for custom setup (fonts, iterm2, .copilot)
 
-**Skip list** (not symlinked to ~, canonical source is `SYNC_SKIP_LIST` in `.sync-with-rollback`):
+**Skip list** (not symlinked to ~, canonical source is `SYNC_SKIP_LIST` in `.sync-lib.sh`, which is sourced by `.sync-with-rollback`):
 
 - `.git`, `.local`, `.worktrees`, `reference`, `packages`, `packages.yaml`, `brew`, `apt`
 
