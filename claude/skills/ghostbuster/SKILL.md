@@ -4,7 +4,7 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, LSP
+allowed-tools: Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, LSP, mcp__tilth__*
 description: >
   Dead code forensics and spec cross-reference. Finds unreachable functions,
   orphaned implementations, specs pointing at deleted code, and transitive dead

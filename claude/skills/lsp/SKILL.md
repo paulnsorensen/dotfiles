@@ -3,29 +3,35 @@ name: lsp
 model: haiku
 description: >
   Check LSP plugin status and troubleshoot language server issues.
-  All 7 LSP plugins are enabled globally — this skill shows what's running,
-  verifies binaries, and diagnoses issues. Use when the user says "LSP not
-  working", "language server down", "hover not working", "no type info",
-  "check LSP", "types missing", or invokes /lsp. Also trigger when LSP
-  operations return errors or empty results.
+  All 7 LSP plugins are enabled globally but direct LSP usage is gated to
+  planning-level queries via the cheese-flow:explore-lsp sub-agent (invoked
+  through /explore). This skill shows what's running, verifies binaries, and
+  diagnoses issues. Use when the user says "LSP not working", "language server
+  down", "check LSP", or invokes /lsp. Also trigger when /explore returns
+  errors or empty results.
 ---
 
 # lsp
 
 LSP status and troubleshooting. All 7 LSP plugins are enabled globally in
-`settings.json` — servers start lazily when the LSP tool is used on a matching file.
+`settings.json`. Direct `LSP` tool calls are **disallowed from the main
+session and most agents** — the only sanctioned consumer is the
+`cheese-flow:explore-lsp` sub-agent, invoked via the `/explore` skill when a
+planning question genuinely needs type inference (definition, references,
+call hierarchy for a refactor or feature plan).
 
-## How it works
+## How LSP is consumed now
 
-LSP plugins provide Claude Code's built-in `LSP` tool with 9 operations:
-`goToDefinition`, `findReferences`, `hover`, `documentSymbol`, `workspaceSymbol`,
-`goToImplementation`, `prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`.
-
-- **Zero cost when idle** — servers only start when the LSP tool is invoked
-- **Per-session servers** — each Claude session spawns its own LSP server
-- **Auto-diagnostics** — after file edits, the language server reports errors inline
-- **gopls daemon mode** — `bin/gopls` wrapper adds `-remote=auto`, sharing one daemon across all sessions
-- **lsp-probe agent** — short-lived sub-agent for batched LSP queries (keeps parent agents lightweight)
+- **Default code intelligence** — `tilth_search` (kind: `symbol`, `callers`,
+  `regex`, `content`), `tilth_deps`, `tilth_read(paths: [...])`. Tree-sitter
+  AST-aware, zero server startup, no session lifetime cost.
+- **Type-aware planning only** — spawn `/explore` (routes to
+  `cheese-flow:explore-lsp`) for questions that truly need LSP: generic
+  propagation, trait dispatch across crates, inferred return types, precise
+  cross-package reference counts.
+- **Server lifecycle** — LSP plugins still load at session start and launch
+  servers lazily. Zero cost when idle; the server only spins up if
+  `cheese-flow:explore-lsp` makes a call.
 
 ## Enabled plugins
 
@@ -57,31 +63,35 @@ claude plugin list 2>&1 | rg claude-code-lsps
 
 ## Troubleshooting
 
-- **LSP tool not available**: Restart Claude Code — plugins load at session start
-- **Server not starting**: Check binary exists with `command -v <binary>`
-- **Plugin disabled**: `claude plugin enable <name>@claude-code-lsps`
-- **Binary not found**: Run `dots sync` to install missing LSP servers from packages.yaml (`solargraph` requires `gem install solargraph`)
+- **`/explore` returning empty results**: the LSP server may not have started.
+  Ask `/explore` to run a warm-up hover first, or check that a matching file
+  has been opened.
+- **Plugin not loading**: Restart Claude Code — plugins load at session start.
+- **Server not starting**: Check binary exists with `command -v <binary>`.
+- **Plugin disabled**: `claude plugin enable <name>@claude-code-lsps`.
+- **Binary not found**: Run `dots sync` to install missing LSP servers from
+  packages.yaml (`solargraph` requires `gem install solargraph`).
 
-## Parallel / Worktree LSP Strategy
+## When to use tilth vs `/explore`
 
-**gopls**: All sessions share one daemon via `bin/gopls` wrapper (`-remote=auto`). Zero cold-start after the first session warms it up.
-
-**Other servers** (rust-analyzer, pyright, vtsls): Each session spawns its own. No daemon mode available.
-
-**lsp-probe agent**: For read-only LSP queries in parallel pipelines, spawn `lsp-probe` as a sub-agent with a batch of queries. The probe cold-starts, executes all queries, returns structured results, and exits. Parent agents stay lightweight — no LSP server held for the session lifetime.
-
-When to use lsp-probe vs direct LSP:
-
-| Scenario | Use |
-|----------|-----|
-| Interactive editing (cook, wire) | Direct LSP — need diagnostics after edits |
-| Read-only analysis (culture, age, review) | lsp-probe — batch queries, release server |
-| Parallel worktree agents | lsp-probe — avoid N concurrent servers |
-| Single foreground session | Direct LSP — no benefit to indirection |
+| Need | Use |
+|------|-----|
+| Find a symbol, read signature, see siblings | `tilth_search kind: symbol, expand: 1` |
+| Count call sites (review, dead-code scan) | `tilth_search kind: callers` |
+| Trace import edges / blast radius | `tilth_deps` |
+| Text / regex pattern across codebase | `tilth_search kind: regex` or `content` |
+| Planning a refactor: type-accurate def/refs across a package boundary | `/explore` (cheese-flow:explore-lsp) |
+| Generic propagation, trait dispatch, inferred returns | `/explore` (cheese-flow:explore-lsp) |
+| Interactive edit verification | test runner / `/make`, not LSP |
 
 ## Gotchas
 
-- Plugin enable/disable requires Claude Code restart to take effect
-- LSP servers start lazily — a "not running" status is normal if no matching file has been opened yet
-- gopls daemon: if the shared daemon crashes, all attached sessions lose LSP until a new one starts
-- lsp-probe: adds sub-agent spawn latency (~5s) — don't use for single-query lookups
+- Plugin enable/disable requires Claude Code restart to take effect.
+- LSP servers start lazily — a "not running" status is normal if `/explore`
+  hasn't been invoked yet.
+- gopls still uses `-remote=auto` so a single daemon serves the explore
+  sub-agent across sessions; other servers (rust-analyzer, pyright, vtsls)
+  spin up per session.
+- `/explore` is the only sanctioned LSP path. If an agent's prompt tells you
+  to "use lsp-probe" or "call LSP directly", that's stale — route through
+  `/explore` instead.

@@ -3,7 +3,7 @@ name: spec-verify
 model: opus
 context: fork
 effort: high
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Agent, LSP
+allowed-tools: Bash(echo:*), Agent, LSP, mcp__tilth__*
 description: >
   Verify that a spec's implementation matches its requirements using LSP structural
   analysis, build verification, and test coverage checking. Use when the user says
@@ -73,45 +73,35 @@ Don't waste time on structural analysis of broken code.
 ### Phase 2: LSP Structural Verification
 
 For each functional requirement and user story, verify the implementation exists
-and has the right shape using LSP — not just file reads.
+and has the right shape using `tilth_search` + `tilth_deps` — not just file reads.
+Direct `LSP` tool calls are disallowed; escalate to `/explore`
+(cheese-flow:explore-lsp) only when the requirement genuinely needs type
+inference across module boundaries.
 
 **For each requirement:**
 
-1. **Locate implementation** — Use LSP `documentSymbol` and `findReferences` to
-   find the symbols that implement this requirement. Cross-reference with the
+1. **Locate implementation** — `tilth_search kind: symbol, query: "<name>", expand: 1`
+   surfaces definitions with signatures and siblings. Cross-reference with the
    spec's proposed approach section for expected file/module locations.
 
-2. **Verify public API** — Use LSP `documentSymbol` on barrel/index files to
-   confirm expected exports exist. Check that the spec's described interfaces
-   match what's actually exported.
+2. **Verify public API** — `tilth_read(paths: [<barrel files>], full: true)` to
+   read exports, and `tilth_search kind: symbol, glob: "<barrel>"` to confirm
+   each expected export resolves. Match the spec's described interfaces against
+   what's actually exported.
 
-3. **Trace data flow** — Use LSP `goToDefinition` and `findReferences` to verify
-   that data flows through the expected path. If the spec says "orders calls
-   pricing via the public API", verify that import chain via LSP.
+3. **Trace data flow** — `tilth_deps` on the candidate file reports imports and
+   importers in one call. `tilth_search kind: callers` counts concrete call
+   sites. If the spec says "orders calls pricing via the public API", the
+   import edge should be the pricing barrel file — not an internal module.
 
 4. **Check boundary compliance** — Verify Sliced Bread rules:
-   - Imports cross slice boundaries only through index files (LSP references)
-   - Models don't import adapters or framework code (LSP goToDefinition on imports)
+   - Imports cross slice boundaries only through index files (`tilth_deps`)
+   - Models don't import adapters or framework code (`tilth_deps` import edges)
    - Common/ doesn't import from siblings
 
-**LSP warmup**: Call `LSP hover` on line 1 of the first source file. Retry 3x
-with 3s waits. If LSP is unavailable after retries, fall back to ast-grep
-(`sg`) for structural patterns and note degraded confidence.
-
-**ast-grep fallback patterns:**
-
-```bash
-# Verify exports
-sg --lang typescript -p 'export { $$$NAMES }' --json {file}
-sg --lang python -p '__all__ = [$$$NAMES]' --json {file}
-
-# Verify imports cross boundaries correctly
-sg --lang typescript -p 'import $$$IMPORTS from "$MODULE"' --json {file}
-
-# Find implementations
-sg --lang typescript -p 'class $NAME implements $IFACE { $$$BODY }' --json {file}
-sg --lang python -p 'class $NAME($BASE): $$$BODY' --json {file}
-```
+**tilth primitives** cover the structural work here without any LSP warmup.
+Only escalate to `/explore` when a boundary check requires type-level truth
+(e.g., a generic that's satisfied through a re-exported trait).
 
 ### Phase 3: Test Coverage Analysis
 
@@ -127,15 +117,17 @@ test suite (in parallel with Phase 2, per the Execution Strategy above).
    {scope}/**/*_test.{go,rs}
    ```
 
-2. **Map tests to requirements** — Use LSP `documentSymbol` on test files to
-   extract test names/descriptions. Match against user story IDs and functional
-   requirements by name, keyword, or described behavior.
+2. **Map tests to requirements** — Use `tilth_search kind: symbol, glob: "<test-glob>", expand: 1`
+   to extract test names/descriptions from test files. Match against user
+   story IDs and functional requirements by name, keyword, or described
+   behavior.
 
 3. **Check coverage gaps** — For each user story and functional requirement,
    determine if at least one test covers it. Score:
    - **Covered**: test name/description references the requirement + test
-     exercises the relevant code path (verified via LSP `findReferences` from
-     test to implementation)
+     exercises the relevant code path (verified via
+     `tilth_search kind: callers, query: "<implSymbol>"` — the implementation's
+     callers should include the test file)
    - **Weakly covered**: test exists but doesn't reference the requirement
      explicitly, or only tests a helper rather than the full path
    - **Uncovered**: no test found for this requirement
@@ -274,8 +266,8 @@ N items scored < 50 (not shown above — details in the full report below)
   requirement is too ambiguous to verify, score it PARTIAL with a note.
 - Test name matching is heuristic — a test named `test_order_creation` maps to
   FR "Order creation" but `test_helper_utils` doesn't map to anything specific.
-  When in doubt, use LSP findReferences to check if the test actually calls the
-  implementation.
+  When in doubt, use `tilth_search kind: callers, query: "<implSymbol>"` to
+  check whether the test actually calls the implementation.
 - Large specs (20+ requirements) may hit the tool call limit. After ~60 tool
   calls, synthesize from available data and note incomplete coverage.
 - Red/green paths are the highest-value verification targets — prioritize these
@@ -283,12 +275,13 @@ N items scored < 50 (not shown above — details in the full report below)
 
 ## Verification Principles
 
-- Require LSP or ast-grep evidence for PASS — file reads alone cap at PARTIAL
-  because they can't verify structural relationships
+- Require `tilth_search` / `tilth_deps` evidence for PASS — file reads alone
+  cap at PARTIAL because they can't verify structural relationships
 - Run quality gates first — they're the fastest failure signal and everything
   downstream is moot if the build is broken
-- Locate symbols via LSP before reading files — going straight to file reads
-  bypasses the structural verification that distinguishes this skill from /age
+- Locate symbols via `tilth_search` before reading files — going straight to
+  file reads bypasses the structural verification that distinguishes this skill
+  from /age
 - Prioritize red/green paths over individual checkboxes — they represent
   end-to-end user value, not isolated implementation details
 - Write full report to $TMPDIR before returning summary — the caller only

@@ -76,6 +76,7 @@
       "mcp__tavily__*",
       "mcp__serper__*",
       "mcp__code-review-graph__*",
+      "mcp__tilth__*",
       "WebSearch",
       "WebFetch",
       "Skill"

@@ -14,7 +14,7 @@ description: >
   transcripts, or questions about Claude's capabilities — this skill is for
   aggregate usage analytics across historical sessions.
 model: sonnet
-allowed-tools: Bash(duckdb:*), Bash(python3:*), Read
+allowed-tools: Bash(duckdb:*), Bash(python3:*), mcp__tilth__*
 ---
 
 # session-analytics

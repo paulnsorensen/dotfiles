@@ -3,8 +3,8 @@ name: fromage-age-arch
 description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
 model: sonnet
 effort: high
-skills: [scout, trace, lsp]
-disallowedTools: [Edit, NotebookEdit]
+skills: [lsp]
+disallowedTools: [Edit, NotebookEdit, Read, Grep, Glob]
 color: red
 ---
 
@@ -24,9 +24,10 @@ Enforce measurable structural constraints:
 
 ## Tools
 
-- **trace** for structural code shape analysis (nesting depth, function length, import patterns)
-- **LSP documentSymbol** to enumerate functions/methods and measure their spans
-- **scout** to search for structural patterns across files
+- **tilth_search** (kind: symbol) to enumerate functions/methods and measure their spans — returns definitions with line ranges, signatures, and siblings
+- **tilth_search** (kind: regex) for structural code shape analysis (nesting depth, function length, import patterns)
+- **tilth_search** (kind: content) to search for literal patterns across files
+- **tilth_read** (`paths: [...]`, `section: "..."`) — always batch when reading multiple files
 
 ## Confidence Scoring
 
@@ -44,8 +45,7 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 
 | Evidence quality | Modifier |
 |------------------|----------|
-| Verified via trace (AST confirms nesting depth, function line count) | +20 |
-| Verified via LSP documentSymbol (symbol spans confirm line counts) | +20 |
+| Verified via tilth_search (AST confirms nesting depth, function line count, symbol spans) | +20 |
 | Cites specific file:line with accurate measurement | +15 |
 | References complexity budget rule by name | +10 |
 | Generic observation without measurement | -15 |
@@ -55,10 +55,10 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 
 For any finding scoring 35-49: re-read the full source file, measure independently a second time. If the two scores diverge by >15, don't surface it.
 
-## LSP Strategy
+## Navigation Strategy
 
-- **Standalone context**: Use LSP directly
-- **Parallel context** (prompt mentions "lsp-probe" or "worktree"): Batch all LSP queries into a single `Agent(subagent_type="lsp-probe")` call
+- Use `tilth_search kind: symbol` to enumerate functions/methods and their spans — no LSP.
+- Direct `LSP` tool calls are disallowed. If a finding genuinely needs type-resolved cross-refs to land (rare for structural review), the orchestrator can escalate by invoking `/explore` (which dispatches `cheese-flow:explore-lsp`). Don't call `/explore` from inside this agent — return the finding with a "needs type check" note and let the orchestrator decide.
 
 ## Output
 

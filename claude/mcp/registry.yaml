@@ -56,3 +56,9 @@ mcps:
     args: [code-review-graph, serve]
     scope: user
     description: Structural code knowledge graph via Tree-sitter — semantic search, call chains, impact radius, flows, communities
+
+  tilth:
+    command: tilth
+    args: ["--mcp", "--edit"]
+    scope: user
+    description: AST-aware code intelligence — tilth_search (symbol/content/regex/callers), tilth_read (batch + hashline), tilth_files (glob), tilth_deps (blast radius), tilth_edit (atomic hash-anchored edits). Replaces host Read/Edit/Grep/Glob by default.

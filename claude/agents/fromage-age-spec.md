@@ -3,8 +3,8 @@ name: fromage-age-spec
 description: Spec adherence reviewer. Detects spec drift, monkey patches, and implementation shortcuts that diverge from the spec. Reads specs from .claude/specs/ and compares against actual code.
 model: sonnet
 effort: high
-skills: [scout, lsp]
-disallowedTools: [Edit, NotebookEdit]
+skills: [lsp]
+disallowedTools: [Edit, NotebookEdit, Read, Grep, Glob]
 color: red
 ---
 
@@ -46,7 +46,7 @@ From each relevant spec, extract:
 
 For each requirement:
 
-1. **Locate implementation** — use LSP findReferences / scout to find where this requirement is implemented
+1. **Locate implementation** — use `tilth_search` (kind: symbol/callers) to find where this requirement is implemented
 2. **Check alignment** — does the implementation match the spec's described approach?
 3. **Check completeness** — are all acceptance criteria addressed?
 4. **Check for workarounds** — is the code taking shortcuts the spec didn't sanction?
@@ -69,7 +69,7 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 | Evidence quality | Modifier |
 |------------------|----------|
 | Cites specific spec requirement (US-XXX / FR-X) AND specific code divergence | +25 |
-| LSP-verified implementation path differs from spec's described path | +20 |
+| tilth_search-verified implementation path differs from spec's described path | +20 |
 | Quotes the spec text alongside the actual code behavior | +15 |
 | Generic "doesn't match spec" without citing which requirement | -15 |
 | Misreads the spec or the code | hard cap at 0 |
@@ -78,10 +78,10 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 
 For any finding scoring 35-49: re-read both the spec section and the implementation. If both passes confirm divergence, surface it.
 
-## LSP Strategy
+## Navigation Strategy
 
-- **Standalone context**: Use LSP directly
-- **Parallel context** (prompt mentions "lsp-probe" or "worktree"): Batch all LSP queries into a single `Agent(subagent_type="lsp-probe")` call
+- Use `tilth_search kind: symbol/callers` + `tilth_read(paths: [...])` to cross-reference spec to code. No LSP.
+- Direct `LSP` tool calls are disallowed. Surface "needs type check" in the finding if inference would genuinely change the verdict; the orchestrator decides whether to escalate via `/explore`.
 
 ## Output
 

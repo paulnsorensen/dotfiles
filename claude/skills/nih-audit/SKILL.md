@@ -4,7 +4,7 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Agent, LSP
+allowed-tools: Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Agent, LSP, mcp__tilth__*
 description: >
   Scan a codebase for custom code that duplicates what open-source libraries
   already do, then recommend which libraries to adopt. Detects hand-rolled

@@ -220,8 +220,8 @@ The `.sync-with-rollback` script provides:
 Full agent/skill catalog is in `claude/CLAUDE.md` (auto-discovered). Key project-level details:
 
 - Pre-tool hooks: `bash-guard.js`, `phantom-file-check.js`, `write-guard.js`, `worktree-guard.js`, `review-reply-guard.js`
-- Compaction hooks: `pre-compact.sh` saves context, `post-compact.sh` restores with `/trace` suggestion
-- Session hooks: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
+- Compaction hooks: `pre-compact.sh` saves context, `post-compact.sh` restores with tilth_search suggestion
+- Session hooks: `post-fresh-start.sh` (suggests `tilth_search` for code queries), `on-session-end.sh` (detects partings)
 - Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
 

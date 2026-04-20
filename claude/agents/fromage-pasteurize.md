@@ -2,8 +2,7 @@
 name: fromage-pasteurize
 description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Reusable across pipeline and standalone commands.
 model: sonnet
-skills: [scout]
-disallowedTools: [Write, Edit, NotebookEdit]
+disallowedTools: [Write, Edit, NotebookEdit, Read, Grep, Glob]
 color: red
 ---
 

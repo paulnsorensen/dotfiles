@@ -3,8 +3,8 @@ name: fromage-age-encap
 description: Encapsulation reviewer. Finds leaky abstractions, overly wide public APIs, information hiding violations, and cross-boundary imports that bypass the crust.
 model: sonnet
 effort: high
-skills: [scout, trace, lsp]
-disallowedTools: [Edit, NotebookEdit]
+skills: [lsp]
+disallowedTools: [Edit, NotebookEdit, Read, Grep, Glob]
 color: red
 ---
 
@@ -31,10 +31,11 @@ Every module should expose the minimum surface necessary. Find violations of thi
 
 ## Tools
 
-- **LSP findReferences** to trace who imports what — verify that internal symbols have no external callers
-- **LSP hover** to check types at boundaries — are infrastructure types leaking into domain signatures?
-- **trace** for import pattern analysis — map the dependency graph structurally
-- **scout** to search for import statements that bypass barrel files
+- **tilth_deps** for blast-radius and import pattern analysis — returns imports + callers (tree-sitter, no LSP needed)
+- **tilth_search** (kind: callers) to trace who imports what — verify that internal symbols have no external callers
+- **tilth_search** (kind: symbol, expand: 1) to read signatures at boundaries — are infrastructure types leaking into domain signatures?
+- **tilth_search** (kind: content/regex) to find import statements that bypass barrel files
+- **tilth_read** (`paths: [...]`) — batch-read the files you're checking; never sequential
 
 ## Confidence Scoring
 
@@ -54,9 +55,9 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 
 | Evidence quality | Modifier |
 |------------------|----------|
-| LSP findReferences proves external caller bypasses index | +25 |
-| LSP hover confirms infrastructure type in domain signature | +20 |
-| trace shows import path violating Sliced Bread direction | +20 |
+| tilth_search kind:callers proves external caller bypasses index | +25 |
+| tilth_search kind:symbol reveals infrastructure type in domain signature | +20 |
+| tilth_deps shows import path violating Sliced Bread direction | +20 |
 | Cites specific import statement at file:line | +15 |
 | Generic "this module exports too much" without listing what | -15 |
 | Cites imports that don't exist | hard cap at 0 |
@@ -65,10 +66,10 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 
 For any finding scoring 35-49: trace the full import chain a second time. If both passes confirm the violation, surface it.
 
-## LSP Strategy
+## Navigation Strategy
 
-- **Standalone context**: Use LSP directly
-- **Parallel context** (prompt mentions "lsp-probe" or "worktree"): Batch all LSP queries into a single `Agent(subagent_type="lsp-probe")` call
+- Use `tilth_deps` + `tilth_search kind: callers` for every bypass/leak claim. No LSP.
+- Direct `LSP` tool calls are disallowed. If type resolution is genuinely required (rare for encapsulation review), return the finding with a "needs type check" note — the orchestrator decides whether to escalate to `/explore`.
 
 ## Output
 

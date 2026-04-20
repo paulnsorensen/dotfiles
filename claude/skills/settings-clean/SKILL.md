@@ -3,7 +3,7 @@ name: settings-clean
 model: haiku
 context: fork
 description: Clean up bloated .claude/settings.local.json by removing redundant, stale, and junk permission entries, and ensure hook-redirected skills are allowed. Use when the user says "clean settings", "prune settings", "settings cleanup", or invokes /settings-clean. Also trigger proactively when you notice a settings.local.json with more than 30 permission entries, or after extended sessions where many one-off Bash permissions have accumulated. This skill only touches settings.local.json (gitignored), never settings.json (committed).
-allowed-tools: Read, Write, Bash(jq:*), Bash(cp:*), Bash(mkdir:*), Bash(mv:*), Bash(date:*)
+allowed-tools: Write, Bash(jq:*), Bash(cp:*), Bash(mkdir:*), Bash(mv:*), Bash(date:*), mcp__tilth__*
 ---
 
 # Settings Clean
@@ -47,10 +47,10 @@ If PreToolUse hooks exist, some Bash commands are blocked regardless of permissi
 
 | Hook block | Matching allow entries | Hook redirects to |
 |---|---|---|
-| Legacy: `grep`, `egrep`, `fgrep` | `Bash(grep:*)` etc. | Grep tool, `/scout` |
-| Legacy: `sed` | `Bash(sed:*)` | `/chisel`, Edit |
-| Legacy: `awk` | `Bash(awk:*)` | `/chisel`, Edit |
-| Legacy: `find` | `Bash(find:*)`, specific find commands | Glob, `/scout (fd)` |
+| Legacy: `grep`, `egrep`, `fgrep` | `Bash(grep:*)` etc. | `tilth_search` (MCP) |
+| Legacy: `sed` | `Bash(sed:*)` | `tilth_edit` (MCP) |
+| Legacy: `awk` | `Bash(awk:*)` | `tilth_edit` (MCP) |
+| Legacy: `find` | `Bash(find:*)`, specific find commands | `tilth_files` (MCP) |
 | Install: `npm install` | `Bash(npm install:*)` | per-use approval |
 | Install: `pnpm add/install` | `Bash(pnpm add:*)`, `Bash(pnpm install:*)` | per-use approval |
 | Install: `yarn add` | `Bash(yarn add:*)` | per-use approval |
@@ -129,12 +129,12 @@ Suggest `permissions.deny` entries that reinforce hook blocks. These act as belt
 Recommended deny entries (reinforces hook blocks):
 
   Legacy tools (use dedicated tools instead):
-    "Bash(grep:*)"         → Grep tool or /scout
-    "Bash(egrep:*)"        → Grep tool or /scout
-    "Bash(fgrep:*)"        → Grep tool or /scout
-    "Bash(sed:*)"          → /chisel (sd) or Edit
-    "Bash(awk:*)"          → /chisel (sd) or Edit
-    "Bash(find:*)"         → Glob tool or /scout (fd)
+    "Bash(grep:*)"         → tilth_search (MCP)
+    "Bash(egrep:*)"        → tilth_search (MCP)
+    "Bash(fgrep:*)"        → tilth_search (MCP)
+    "Bash(sed:*)"          → tilth_edit (MCP)
+    "Bash(awk:*)"          → tilth_edit (MCP)
+    "Bash(find:*)"         → tilth_files (MCP)
 
   Package installs (require per-use approval):
     "Bash(npm install:*)"  → approve individually
@@ -157,14 +157,14 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 
 2. **Map hook redirects to required skills**: Each hook block implies a skill that should be allowed:
 
-| Hook blocks | Required skill |
+| Hook blocks | Required permission |
 |---|---|
-| `grep`, `egrep`, `fgrep` | `Skill(scout)` |
-| `sed`, `awk` | `Skill(chisel)` |
-| `find` | `Skill(scout)` |
+| `grep`, `egrep`, `fgrep` | `mcp__tilth__*` (tilth_search) |
+| `sed`, `awk` | `mcp__tilth__*` (tilth_edit) |
+| `find` | `mcp__tilth__*` (tilth_files) |
 | `python3 -c` tests | `Skill(test-sandbox)` |
 | dep cache grep, doc+grep | `Skill(lookup)`, `Skill(fetch)` |
-| find+grep chains | `Skill(trace)`, `Skill(lookup)` |
+| find+grep chains | `mcp__tilth__*` (tilth_search), `Skill(lookup)` |
 | `cd && git` | `Skill(wt-git)` |
 | `gh pr create --body` | `Skill(gh)` |
 
@@ -173,13 +173,11 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 ### Present as two groups
 
 ```
-Missing skills — hook-critical (redirect won't work without these):
-  + Skill(scout)          ← grep/find hooks redirect here
-  + Skill(chisel)         ← sed/awk hooks redirect here
+Missing permissions — hook-critical (redirect won't work without these):
+  + mcp__tilth__*         ← grep/find/sed/awk hooks → tilth_search / tilth_files / tilth_edit
   + Skill(test-sandbox)   ← python3 -c hook redirects here
   + Skill(lookup)         ← dep cache/doc grep hooks redirect here
   + Skill(fetch)          ← dep cache/doc grep hooks redirect here
-  + Skill(trace)          ← find+grep chain hook redirects here
 
 Missing skills — available but not allowed:
   + Skill(diff)

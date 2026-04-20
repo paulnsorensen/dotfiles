@@ -2,7 +2,7 @@
 name: research
 description: Multi-source research coordinator. Spawns parallel fetch subagents for Context7, Tavily, Serper, codebase analysis, and Octocode. Use-case routing (match source to question type, cost as tiebreaker). Synthesizes findings into coherent answer. Use for questions needing 2+ sources (library docs, external concepts, codebase patterns, real-world examples).
 model: sonnet
-tools: Agent, Read, Grep, Glob
+tools: Agent, mcp__tilth__tilth_read, mcp__tilth__tilth_search, mcp__tilth__tilth_files, mcp__tilth__tilth_deps
 disallowedTools: [Edit, Write, NotebookEdit]
 ---
 

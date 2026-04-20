@@ -2,7 +2,7 @@
 name: diff
 model: haiku
 context: fork
-allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(rg:*), Bash(sg:*), Bash(delta), Read
+allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(delta), mcp__tilth__*
 description: >
   Quick pre-commit smoke test of staged or unstaged changes. Scans for blockers
   (secrets, debug statements, commented code, silent failures) and warnings
@@ -33,11 +33,11 @@ If there are no changes at all, say so and stop.
 
 ### Tool Selection
 
-- `sg` — structural checks: empty catch blocks, missing error handling, functions missing return types
-- `rg` — text patterns: TODO/FIXME, console.log, hardcoded secrets, debug statements, commented code
-- `Read` — context: when a pattern match needs surrounding code to judge if it's a real problem
+- `tilth_search kind: regex` — structural checks: empty catch blocks, missing error handling, functions missing return types
+- `tilth_search kind: content` or `kind: regex` — text patterns: TODO/FIXME, console.log, hardcoded secrets, debug statements, commented code
+- `tilth_read` — context: when a pattern match needs surrounding code to judge if it's a real problem
 
-Default to `rg`. Reach for `sg` when the question is about code shape, not text.
+Default to `tilth_search kind: content` for literal text. Use `kind: regex` when the question is about code shape.
 
 ### 2. Scan for Red Flags
 
@@ -98,5 +98,5 @@ This is a quick gate, not a code review. For thorough review, use `/age` or `/co
 
 - Haiku may miss subtle secrets (base64-encoded keys, hex tokens without common prefixes)
 - Binary files in the diff produce noise — skip files detected as binary
-- `sg` pattern matching operates on full files, not diff hunks — patterns may match pre-existing code
+- `tilth_search` matches whole files, not diff hunks — patterns may match pre-existing code
 - Delta pager can interfere with raw diff capture — use `--no-pager` for machine-readable output

@@ -10,7 +10,7 @@ description: >
   cleanup, and pre-commit checks. If code was just written or modified by an AI
   (including you), this skill applies.
 model: sonnet
-allowed-tools: Read, Edit, Grep, Glob, Bash(rg:*), Bash(sg:*)
+allowed-tools: mcp__tilth__*
 ---
 
 # de-slop

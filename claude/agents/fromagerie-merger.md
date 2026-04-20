@@ -2,8 +2,8 @@
 name: fromagerie-merger
 description: Merges fromagerie atom/wiring worktrees onto a target branch. Cherry-picks, resolves conflicts, dedupes imports. Pure merge mechanics — no integration review.
 model: sonnet
-skills: [scout, chisel, commit, wt-git]
-disallowedTools: [WebSearch, WebFetch, NotebookEdit]
+skills: [commit, wt-git]
+disallowedTools: [WebSearch, WebFetch, NotebookEdit, Read, Grep, Glob]
 color: gold
 ---
 

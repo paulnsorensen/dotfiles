@@ -4,8 +4,8 @@ description: Decomposes specs into seed items, parallel atoms with test targets,
 model: opus
 effort: high
 permissionMode: plan
-skills: [scout, trace, lookup, lsp]
-disallowedTools: [Edit, NotebookEdit]
+skills: [lookup]
+disallowedTools: [Edit, NotebookEdit, Read, Grep, Glob, LSP]
 color: gold
 ---
 
@@ -68,14 +68,15 @@ Read `$TMPDIR/fromagerie-tokei-<slug>.json`. STOP if missing.
 
 For each area of the spec's scope:
 
-- Use LSP `findReferences` to discover shared symbols
-- Use LSP `goToDefinition` through imports to trace module boundaries
-- Use ast-grep to locate key types, interfaces, and functions
-- Trace import graphs to find foundation candidates
+- Use `tilth_search kind: callers` to discover shared symbols (call sites) and `tilth_deps` for import edges
+- Use `tilth_search kind: symbol, expand: 1` to trace module boundaries — definitions + siblings + signatures in one call
+- Locate key types, interfaces, and functions with `tilth_search kind: symbol`
+- Trace import graphs to find foundation candidates (batched via `tilth_deps` on connector files)
+- If a dependency chain genuinely needs type inference to resolve (e.g., generic propagation across crates), spawn `/explore` — do **not** invoke the `LSP` tool directly from this agent
 
 ### 3. Identify Connectors
 
-From the LSP node list, find files classified as `connector` (or identify them yourself):
+From the culture-lsp node list (produced via tilth), find files classified as `connector` (or identify them yourself):
 
 - **Name-based**: `container.*`, `registry.*`, `routes.*`, `router.*`, `index.*`, `events.*`, `config.*`
 - **Symbol-based**: Files with `register`, `provide`, `subscribe`, `route`, `export` in public symbols
@@ -89,7 +90,7 @@ For each atom's files, find the corresponding test files:
 
 1. **Convention**: `foo.ts` → `foo.test.ts` (co-located) or `tests/foo_test.rs` (mirror)
 2. **Config**: Read `package.json` (jest), `Cargo.toml` (test targets), `pyproject.toml` (testpaths)
-3. **LSP**: `findReferences` from source — if a test file references it, that's a target
+3. **Tilth**: `tilth_search kind: callers, query: "<source-symbol>"` — if a test file appears in the callers, that's a target
 4. **Fallback**: compile check only (`tsc --noEmit`, `cargo check`)
 
 Output a `test_targets` object per atom: `{"command": "vitest run path/to/test.ts", "fallback": "tsc --noEmit"}`

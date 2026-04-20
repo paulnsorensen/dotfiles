@@ -11,7 +11,7 @@ Focus reviews on these categories, in priority order:
 2. **Silent failures** — Flag empty catch blocks, swallowed errors, missing error handling on I/O operations
 3. **Complexity violations** — Flag functions over 40 lines, files over 300 lines, nesting deeper than 3 levels
 4. **Consistency** — Flag patterns that contradict established conventions in the codebase
-5. **CLAUDE.md quality** — When `CLAUDE.md` or `claude/CLAUDE.md` is in the diff, verify changes are consistent with the tool division (trace for structural, LSP for semantic navigation and type inference)
+5. **CLAUDE.md quality** — When `CLAUDE.md` or `claude/CLAUDE.md` is in the diff, verify changes are consistent with the tool division (tilth is the default for search/edit/read/deps/callers; LSP is gated to planning-only via the `cheese-flow:explore-lsp` sub-agent invoked through `/explore`)
 
 ## CLAUDE.md Validation
 
@@ -30,7 +30,7 @@ When any `claude/skills/*/SKILL.md` is modified, check:
 - `allowed-tools` lists only tools the skill actually uses
 - `description` accurately describes when to invoke the skill
 - Tool division is respected (no skill claims capabilities belonging to another tool)
-- Examples use correct syntax for the tool (e.g., `sg` patterns, `rg` flags)
+- Examples use correct syntax for the tool (e.g., `tilth_search kind: regex` patterns, `tilth_edit` line:hash anchors; direct LSP ops should only appear inside `cheese-flow:explore-lsp` docs)
 
 ## What NOT to Comment On
 

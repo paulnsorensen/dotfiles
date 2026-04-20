@@ -130,13 +130,15 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 
 | Task | Skill | NEVER use instead |
 |------|-------|--------------------|
-| Search files | scout | `find`, `grep`, bare `ls` |
-| Code structure | trace | grep for code shapes |
+| Read file(s) | `tilth_read(paths: [...])` — **always batch** when reading >1 file | `Read`, `cat`, `head`, `tail`, one-by-one `tilth_read` calls |
+| Search code | `tilth_search` (`kind: symbol\|content\|regex\|callers`, `expand`) | `Grep`, `rg`, `sg` for code |
+| Find files | `tilth_files` | `Glob`, `find`, `fd`, bare `ls` |
+| Blast radius | `tilth_deps` (imports + callers) | manual grep for imports |
+| Edit files | `tilth_edit` (hash-anchored, atomic per file) | `Edit`, `sed`, `awk` |
 | Pre-commit check | diff | raw git + manual scanning |
-| File editing | chisel | `sed`, `awk` |
 | Git operations | commit | manual git add/commit |
 | GitHub ops | gh | raw GitHub API |
-| Code navigation | LSP | grep for definitions |
+| Type-aware planning (def/ref/callHierarchy) | `/explore` → `cheese-flow:explore-lsp` sub-agent | direct LSP tool calls; tilth_search alone when types matter |
 | External docs | fetch | guessing from training data |
 | Worktree isolation | worktree | manual branch + cd |
 | AI slop cleanup | de-slop | ignoring AI tells |
@@ -147,20 +149,32 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | YAML processing | `yq` | `python3 -c "import yaml..."` |
 | Session analytics | `/session-analytics` | ad-hoc python3 JSONL parsing |
 
+**Tilth is the default primitive for all text files** — the `tilth` MCP exposes `tilth_read / tilth_search / tilth_files / tilth_deps / tilth_edit` at user scope. Works on code, markdown, JSON, YAML, plaintext — anything tree-sitter or plain UTF-8. Its system prompt tells Claude to replace host Read/Grep/Glob/Edit with tilth equivalents. Host tools are fallback only for: tilth hash mismatch after concurrent edit, or binary file inspection.
+
+**Batch reads are the default** — when you know you'll need more than one file (editing a set, cross-referencing, reviewing), issue a **single** `tilth_read(paths: [a, b, c])` call instead of sequential reads. Batch reads deduplicate outlining work and keep the context compact. Only fall back to individual reads when the second path genuinely depends on the first read's contents.
+
+**Non-code / large file reading**:
+
+- `tilth_read(path, full: true)` — force full content, bypass smart outlining (use for short markdown, configs, etc.)
+- `tilth_read(path, section: "45-89")` — line range with hashline anchors for editing
+- `tilth_read(path, section: "## Heading")` — markdown heading slice
+- `tilth_read(paths: [a, b, c])` — batch multiple files in one call (prefer this)
+- `tilth_read(paths: [a, b], section: "...")` — section slicing also works with batched paths
+
+**Standard editing flow**: batched `tilth_read(paths: [...])` → capture `line:hash` anchors for every file → `tilth_edit` with `edits[]` array → read the post-edit "callers may need updating" warnings and loop.
+
 **Available CLI tools** — these are always installed and in the allowlist. Use them instead of python3 inline scripts:
 
 - **jq** — JSON processing (parse, filter, transform). Use `gh --jq` for GitHub output.
 - **yq** — YAML processing (same syntax as jq)
-- **sd** — regex replacement (Rust sed). Use via `/chisel` skill.
-- **fd** — file finder (Rust find). Use via `/scout` skill.
-- **rg** — content search (Rust grep). Use via Grep tool or `/scout`.
-- **sg** — AST structural search (ast-grep). Use via `/trace` skill.
 - **tokei** — code statistics by language
 - **duckdb** — SQL analytics on local data (used by `/session-analytics`)
 
-**Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
+Code search, file discovery, and editing go through the `tilth` MCP (`tilth_search`, `tilth_files`, `tilth_read`, `tilth_edit`, `tilth_deps`) — not raw `rg`/`fd`/`sg`/`sd`.
 
-**LSP integration** — All 6 LSP plugins are enabled globally (lazy startup, zero cost when idle). Run `/lsp` for status and troubleshooting.
+**Code intelligence routing** — use `/lookup` to decide between tilth_search (AST-aware symbol/regex search — default), cheese-flow:explore-lsp via `/explore` (type inference, cross-refs — **planning only**), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
+
+**LSP is gated to planning only** — direct `LSP` tool calls from the main session or agents are **disallowed**. The LSP plugins are still enabled globally, but the *only* sanctioned consumer is the `cheese-flow:explore-lsp` sub-agent, invoked via the `/explore` skill when you need type-aware planning (definition/reference/callHierarchy for a refactor or feature plan). Agents doing review/verification work use `tilth_search kind: callers` / `kind: symbol` / `tilth_deps` instead. Run `/lsp` for plugin status only.
 
 **Agent permission modes** — `acceptEdits` and `bypassPermissions` only suppress the interactive approval dialog for Edit/Write — they do NOT auto-approve Bash or MCP calls. Bash permissions use a separate allowlist (`permissions.allow` entries like `Bash(git:*)`). In sandboxed environments (Conductor, fresh sessions without your `settings.json`), worktree agents may lack allowlist entries for `git push`, `gh pr create`, etc. **Design pattern**: have isolated agents do code work + commit only, then return control to the orchestrator (which runs in the user's session with full permissions) for push/PR operations.
 
@@ -168,7 +182,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 
-**Agent skill enforcement**: When an agent has `skills: [scout, trace, diff]`, it MUST use those tools. Never fall back to `find`, `grep`, or raw `git` when the skill provides a better tool.
+**Agent skill enforcement**: When an agent has `skills: [diff, lsp, gh]`, it MUST use those skills. Code intelligence goes through `mcp__tilth__*` — never fall back to `find`, `grep`, `sed`, or raw `git` when tilth or a skill provides a better tool.
 
 ## Self-Evaluation Checklist
 

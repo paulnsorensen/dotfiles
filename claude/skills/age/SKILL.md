@@ -11,7 +11,7 @@ description: >
   Do NOT use for implementation (fromage-cook), cleanup fixes (simplify/de-slop),
   or PR comment triage (respond/copilot-review).
 model: opus
-allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git status:*), Read, Glob, Grep, Agent, Write
+allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git status:*), Agent, Write, mcp__tilth__*
 ---
 
 # age
@@ -60,13 +60,13 @@ Run `git diff --stat` (or equivalent) to get the list of changed files if not pr
 Launch ALL SIX sub-agents in a SINGLE message (one message, six Agent tool calls):
 
 ```
-Agent(subagent_type="fromage-age-safety", prompt="Focused mode. Review these changed files for correctness and safety issues:\n\nFiles: <list>\nDiff:\n<diff or ref range>\n\n<lsp strategy hint if applicable>")
+Agent(subagent_type="fromage-age-safety", prompt="Focused mode. Review these changed files for correctness and safety issues:\n\nFiles: <list>\nDiff:\n<diff or ref range>\n\nNavigation: direct LSP disallowed — use tilth_search (kind: symbol | callers | regex), tilth_deps, tilth_read(paths: [...]).")
 
-Agent(subagent_type="fromage-age-arch", prompt="Focused mode. Check complexity budgets and structure for these changed files:\n\nFiles: <list>\nDiff:\n<diff or ref range>\n\n<lsp strategy hint if applicable>")
+Agent(subagent_type="fromage-age-arch", prompt="Focused mode. Check complexity budgets and structure for these changed files:\n\nFiles: <list>\nDiff:\n<diff or ref range>\n\nNavigation: direct LSP disallowed — use tilth_search + tilth_deps.")
 
-Agent(subagent_type="fromage-age-encap", prompt="Focused mode. Check encapsulation and boundary compliance for these changed files:\n\nFiles: <list>\nDiff:\n<diff or ref range>\n\n<lsp strategy hint if applicable>")
+Agent(subagent_type="fromage-age-encap", prompt="Focused mode. Check encapsulation and boundary compliance for these changed files:\n\nFiles: <list>\nDiff:\n<diff or ref range>\n\nNavigation: direct LSP disallowed — use tilth_deps for import edges and tilth_search kind: callers for cross-boundary usage.")
 
-Agent(subagent_type="fromage-age-yagni", prompt="Focused mode. Find unjustified dead code, speculative abstractions, and AI noise in these changed files:\n\nFiles: <list>\nDiff:\n<diff or ref range>\n\n<lsp strategy hint if applicable>")
+Agent(subagent_type="fromage-age-yagni", prompt="Focused mode. Find unjustified dead code, speculative abstractions, and AI noise in these changed files:\n\nFiles: <list>\nDiff:\n<diff or ref range>\n\nNavigation: direct LSP disallowed — use tilth_search kind: callers to verify dead code.")
 
 Agent(subagent_type="fromage-age-history", prompt="Analyze git history for these changed files and provide per-file score modifiers:\n\nFiles: <list>")
 
@@ -78,7 +78,7 @@ Each sub-agent prompt MUST include:
 - The changed file paths
 - The diff content or git ref range
 - Mode (focused or comprehensive)
-- LSP strategy hint (if the calling context mentions "lsp-probe" or "worktree", pass it through)
+- Navigation reminder: direct `LSP` is disallowed — sub-agents use tilth primitives; planning-level type inference escalates to `/explore`
 
 ### Step 3: Merge findings
 

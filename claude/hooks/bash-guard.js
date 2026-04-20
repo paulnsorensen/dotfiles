@@ -8,11 +8,11 @@ const INSTALL_PATTERNS = [
 ];
 
 const LEGACY_TOOLS = [
-  { pattern: /^\s*(grep|egrep|fgrep)\b/, msg: 'Use the built-in Grep tool or /scout (rg). Example: Grep with pattern="..." path="..."' },
-  { pattern: /^\s*sed\b/, msg: 'Use /chisel (sd) or the Edit tool. Example: sd \'pattern\' \'replacement\' file' },
-  { pattern: /\bsed\s+-[^|]*i/, msg: 'Use /chisel (sd) or the Edit tool.' },
-  { pattern: /^\s*awk\b/, msg: 'Use /chisel (sd) or the Edit tool.' },
-  { pattern: /^\s*find\b/, msg: 'Use the Glob tool or /scout (fd). Example: Glob with pattern="**/*.ts"' },
+  { pattern: /^\s*(grep|egrep|fgrep)\b/, msg: 'Use tilth_search (MCP). Example: tilth_search with query="..." kind="content"' },
+  { pattern: /^\s*sed\b/, msg: 'Use tilth_edit (MCP). Example: tilth_read to capture line:hash anchors, then tilth_edit with edits[].' },
+  { pattern: /\bsed\s+-[^|]*i/, msg: 'Use tilth_edit (MCP) — hash-anchored edits, atomic per file.' },
+  { pattern: /^\s*awk\b/, msg: 'Use tilth_edit (MCP) for edits, or tilth_search kind="content" for extraction.' },
+  { pattern: /^\s*find\b/, msg: 'Use tilth_files (MCP). Example: tilth_files with pattern="**/*.ts"' },
 ];
 
 const DEP_CACHES = [
@@ -81,7 +81,7 @@ const PYTHON_AS_TOOL = [
   },
   {
     pattern: /python3?\s+(-c\s+['"$]|<<).*\bimport\s+re\b.*\b(re\.sub|re\.match|re\.search|re\.findall)\b/s,
-    msg: 'Blocked: python3 for regex file manipulation. Use sd (chisel skill) for replacements: sd \'pattern\' \'replacement\' file. Or use the Edit tool for precise edits.',
+    msg: 'Blocked: python3 for regex file manipulation. Use tilth_edit (MCP) — capture line:hash anchors via tilth_read, then apply atomic edits.',
   },
   {
     pattern: /python3?\s+(-c\s+['"$]|<<).*\bimport\s+yaml\b/s,
@@ -112,14 +112,14 @@ function matchInlineTest(cmd) {
 function matchBruteLookup(cmd) {
   for (const { gen, label } of DOC_GREP) {
     if (gen.test(cmd) && /grep|head|tail/.test(cmd))
-      return `Blocked: ${label} + grep for symbol lookup. Use /lookup, /fetch (Context7), or LSP hover.`;
+      return `Blocked: ${label} + grep for symbol lookup. Use tilth_search, /lookup, /fetch (Context7), or /explore for planning-level type queries.`;
   }
   for (const pat of DEP_CACHES) {
-    if (pat.test(cmd)) return `Blocked: grepping dependency cache (${cmd.match(pat)[0]}). Use /lookup, /fetch (Context7), or LSP hover.`;
+    if (pat.test(cmd)) return `Blocked: grepping dependency cache (${cmd.match(pat)[0]}). Use tilth_search, /lookup, /fetch (Context7), or /explore.`;
   }
-  if (/target\/doc\//.test(cmd) && /grep/.test(cmd)) return 'Blocked: grepping generated docs. Use /fetch (Context7) or LSP hover.';
+  if (/target\/doc\//.test(cmd) && /grep/.test(cmd)) return 'Blocked: grepping generated docs. Use /fetch (Context7) or /explore for type info.';
   if (/find\s+.*-exec\s+grep/.test(cmd) || /find\s+.*\|\s*xargs\s+grep/.test(cmd))
-    return 'Blocked: find + grep chain. Use LSP (findReferences), /trace (ast-grep), or /lookup.';
+    return 'Blocked: find + grep chain. Use tilth_search (MCP) or /lookup.';
   return null;
 }
 

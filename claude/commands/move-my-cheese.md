@@ -16,10 +16,10 @@ This command orchestrates across multiple skills:
 | Phase | Skill | Why |
 |---|---|---|
 | Recon | **gh** | PR metadata, CI checks, failed run logs, diff |
-| Explore | **scout** | Search codebase for test files, CI config, related code |
-| Understand | **lookup** | Route to LSP/Context7 for symbol types, cross-refs, API docs |
+| Explore | **tilth_search / tilth_files** | Search codebase for test files, CI config, related code |
+| Understand | **lookup** | Route to tilth_search (default) or `/explore` (cheese-flow:explore-lsp) when planning-level type inference is needed |
 | Diagnose | **diff** | Smoke-test the merged state for obvious issues |
-| Fix | **chisel** | Edit conflict markers, patch test assertions |
+| Fix | **tilth_edit** | Edit conflict markers, patch test assertions |
 | Build | **make** | Build/check with output isolation (forked subagent) |
 | Test | **make test** | Run tests with output isolation (forked subagent) |
 | Assertion check | **tdd-assertions** | Strengthen weak test assertions after fixing tests |
@@ -27,30 +27,11 @@ This command orchestrates across multiple skills:
 | Commit | **commit** | Stage and commit fixes (conventional format) |
 | Push | **gh** | Push to PR branch, re-run failed CI |
 
-## Parallel LSP Strategy
+## Navigation Strategy
 
-Two tiers of LSP usage — one for move-my-cheese itself, one for the sub-agents it always spawns:
+Direct `LSP` tool calls are disallowed from this command and its sub-agents. Default to `tilth_search` (`kind: symbol | callers | regex`) and `tilth_deps` for code intelligence. When a diagnosis genuinely needs planning-level type inference (e.g., trait dispatch, generics, inferred return types across modules), spawn `/explore` via the Agent or Skill tool — that routes to the `cheese-flow:explore-lsp` sub-agent, the only sanctioned LSP consumer.
 
-### move-my-cheese (Phase 3a diagnosis)
-
-| Context | LSP approach |
-|---|---|
-| Running standalone (user invoked `/move-my-cheese`) | Direct LSP via `/lookup` — single session, no contention |
-| Running in a worktree (dispatched by cheese-convoy) | **lsp-probe** — batch queries, release server, stay lightweight |
-
-**How to detect worktree context**: Working directory is under a `.worktrees/` path, or the prompt mentions "worktree" or "parallel agents".
-
-**lsp-probe pattern** for diagnosis (Phase 3a):
-
-```
-Agent(subagent_type="lsp-probe", prompt="queries:\n  1. hover <file>:<line>\n  2. findReferences <file>:<line> symbol=<name>\n  3. documentSymbol <file>")
-```
-
-Batch all LSP queries for a diagnosis pass into one probe invocation.
-
-### Quality sweep sub-agents (Phase 3b)
-
-**Always use lsp-probe** — regardless of whether move-my-cheese is running standalone or in a worktree. The sweep agents (age sub-agents, ricotta-reducer) are spawned as concurrent sub-agents doing read-only analysis. They should never hold a persistent LSP server. The Phase 3b agent prompts signal this explicitly.
+**Sub-agent LSP posture**: The Phase 3b sweep agents (age sub-agents, ricotta-reducer) already have `LSP` in their disallowedTools. Their prompts must not instruct them to hold a server — they navigate with tilth and surface type-level questions for the orchestrator to escalate.
 
 ## Progress Tracking
 
@@ -110,17 +91,17 @@ If the PR branch is free:
 - `git checkout <pr-branch>`
 - `git merge origin/main --no-edit`
 
-### Conflict Resolution (chisel skill)
+### Conflict Resolution (tilth_edit)
 
 If merge conflicts occur:
 
 1. List conflicting files with `git diff --name-only --diff-filter=U`
-2. Use **scout** (`rg '<<<<<<< ' --files-with-matches`) to confirm all conflict markers
-3. For each conflict, Read the file and resolve with **chisel** (Edit tool for precise context-matched replacements)
+2. Use `tilth_search kind: content query: "<<<<<<< "` to confirm all conflict markers
+3. For each conflict, `tilth_read` the file and resolve with `tilth_edit` (hash-anchored precise replacements)
    - Prefer the PR's intent over main's formatting changes
    - Keep both sides when they're additive (new features on both sides)
    - Ask the user for ambiguous conflicts (logic changes on both sides)
-4. Verify resolution: `rg '<<<<<<< |======= |>>>>>>> ' --count` should return no matches
+4. Verify resolution: `tilth_search kind: content query: "<<<<<<<|=======|>>>>>>>"` should return no matches
 5. Stage resolved files and commit the merge
 
 If no conflicts: report clean merge and move on.
@@ -137,8 +118,8 @@ Categorize each CI failure from Phase 1 recon:
 |---|---|
 | **Infra flake** (503, timeout, OOM) | Note it — will resolve on re-run |
 | **Test failure** (assertion error) | Fix the code or test |
-| **Lint/format** (shellcheck, prettier) | Auto-fix with chisel |
-| **Build failure** (compile error, type error) | Fix with lookup + chisel |
+| **Lint/format** (shellcheck, prettier) | Auto-fix with `tilth_edit` |
+| **Build failure** (compile error, type error) | Fix with lookup + `tilth_edit` |
 | **Merge artifact** (conflict markers) | Should have been caught in Phase 2 |
 
 ### Smoke Check (diff skill)
@@ -157,10 +138,10 @@ Run `/make` to verify the merged code compiles. This forks a subagent that absor
 Skill(skill="make")
 ```
 
-If build fails, understand the failing symbols before fixing with **chisel**:
+If build fails, understand the failing symbols before fixing with `tilth_edit`:
 
-- **Standalone**: Use `/lookup` — routes to LSP for types/cross-refs, Context7 for external APIs
-- **Worktree context** (dispatched by cheese-convoy): Batch failing symbols into a single **lsp-probe** call — hover for types, findReferences for cross-refs — then fix with chisel
+- Start with `tilth_search kind: symbol, expand: 1` on the failing identifier and `tilth_search kind: callers` to map impact
+- `/lookup` decides when a question escalates to `/explore` (cheese-flow:explore-lsp) for type inference, or Context7 for external APIs
 
 Never grep dependency caches.
 
@@ -174,16 +155,16 @@ Skill(skill="make", args="test")
 
 If tests pass: the CI failure was likely infra. Move to Phase 3b.
 
-### Fix Strategy (lookup/lsp-probe + scout + chisel skills)
+### Fix Strategy (lookup + tilth)
 
 For real test/build failures:
 
 1. Understand the failing symbol — type mismatches, missing methods, changed APIs:
-   - **Standalone**: `/lookup` (routes to direct LSP or Context7)
-   - **Worktree context**: Batch all failing symbols into one `lsp-probe` call (hover + findReferences)
-2. Use **scout** (`rg` for error messages, `fd` for test files) to locate the failing test
-3. Read the failing test and the code under test
-4. Fix with **chisel** — minimal change, `sd` for pattern fixes, Edit for precise patches
+   - Default: `tilth_search kind: symbol, expand: 1` + `tilth_search kind: callers` to read the signature and map impact
+   - If the failure genuinely needs type inference (trait dispatch, generics, inferred returns), spawn `/explore` — that's the only sanctioned LSP consumer
+2. Use `tilth_search` (`kind: content` for error messages, `tilth_files` for test files) to locate the failing test
+3. `tilth_read(paths: [test_file, source_file])` — batch-read both in one call
+4. Fix with `tilth_edit` — hash-anchored edits, atomic per file
 5. Re-run via `/make test` to verify
 
 After fixing any tests, apply `/tdd-assertions` to strengthen weak assertions — existence checks, catch-all errors, length-only checks, and no-crash-as-success patterns. AI-generated test fixes are especially prone to these.
@@ -204,13 +185,12 @@ After Phase 3a fixes are stable (build passes, tests pass), invoke the `age` ski
 
 ```
 # Invoke the age skill inline — it spawns 6 review sub-agents directly (no nesting).
-# Pass lsp-probe hint so sub-agents batch LSP queries.
 # Follow the age skill protocol: identify scope, launch 6 agents, merge findings.
 # Scope: changes on this branch vs origin/main. Surface findings >= 50.
-# LSP strategy: use lsp-probe for batched queries.
+# Navigation: sub-agents have LSP in disallowedTools; they use tilth_search / tilth_deps / tilth_read.
 
 # In parallel with the age skill's sub-agents, also launch:
-Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 50 confidence. LSP strategy: use lsp-probe for batched queries (findReferences to verify dead code, hover for coupling checks) — batch your LSP needs into one probe call rather than holding a server for the session.")
+Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 50 confidence. Navigation: use tilth_search (kind: callers to verify dead code, kind: symbol for coupling checks) and tilth_deps — direct LSP calls are disallowed.")
 
 # Only if Phase 1 recon found unresolved review comments:
 Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on PR #$ARGUMENTS. Score each 0-100, fix >= 50, push back < 30, report 30-49 for user decision.")
@@ -227,7 +207,7 @@ Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on
 After all three agents return:
 
 1. **Collect findings >= 50 confidence** from age and de-slop reports
-2. **Apply fixes** using chisel — these are typically:
+2. **Apply fixes** using `tilth_edit` — these are typically:
    - Removing unnecessary abstractions or dead code (de-slop)
    - Fixing complexity budget violations (age)
    - Addressing reviewer comments that fromage-fort auto-fixed

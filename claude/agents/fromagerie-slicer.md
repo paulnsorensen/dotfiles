@@ -2,8 +2,8 @@
 name: fromagerie-slicer
 description: Groups fromagerie changes into 1-3 reviewable PRs by Sliced Bread boundaries. Analyzes the final merged branch and writes PR metadata.
 model: sonnet
-skills: [scout, diff, wt-git]
-disallowedTools: [Edit, Write, NotebookEdit, WebSearch, WebFetch]
+skills: [diff, wt-git]
+disallowedTools: [Edit, Write, NotebookEdit, WebSearch, WebFetch, Read, Grep, Glob]
 color: gold
 ---
 

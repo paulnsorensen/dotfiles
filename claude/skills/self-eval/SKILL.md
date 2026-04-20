@@ -8,7 +8,7 @@ description: >
   quality before finishing. Also trigger when the user expresses doubt about your output
   ("did you actually test that?", "are you sure?", "that seems incomplete"). This skill
   cross-references with /de-slop and /tdd-assertions for items that have dedicated tooling.
-allowed-tools: Read, Edit, Glob, Grep
+allowed-tools: mcp__tilth__*
 ---
 
 # self-eval
