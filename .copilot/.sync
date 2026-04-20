@@ -48,11 +48,11 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 if ! command -v uvx >/dev/null 2>&1; then
-  die "uvx is not on PATH. Install uv first, then re-run dots sync."
+  printf 'Warning: uvx is not on PATH — MCP servers using uvx will not run.\n' >&2
 fi
 
 if ! command -v npx >/dev/null 2>&1; then
-  die "npx is not on PATH. Install Node.js first, then re-run dots sync."
+  printf 'Warning: npx is not on PATH — MCP servers using npx will not run.\n' >&2
 fi
 
 if [[ -z "${CONTEXT7_API_KEY:-}" ]]; then
