@@ -28,13 +28,17 @@ calls are first-level and work (Claude Code only permits 1 level of sub-agent
 nesting). To keep the caller's context clean despite running inline:
 
 1. **Fetchers write to scratch files, not the chat.** Each fetcher writes its
-   findings to a per-run scratch directory and returns only a one-line
-   `done: <path>` or `unavailable: <reason>`.
+   findings to a per-run scratch directory under `$TMPDIR` and returns only a
+   one-line `done: <path>` or `unavailable: <reason>`.
 2. **A single synthesis sub-agent (opus) reads the scratch files.** The raw
    fetcher output is read and discarded inside the synthesis sub-agent; only
-   the compact synthesis lands in the caller's context.
-3. **The skill deletes the scratch directory** after synthesis (kept only in
-   `--report` mode for debuggability).
+   the compact synthesis lands in the caller's context. In `--report` mode
+   the same sub-agent also assembles the Sources appendix from the scratch
+   files, so the skill itself never needs to read them.
+3. **The skill deletes the scratch directory** after synthesis. In `--report`
+   mode, the skill writes the sub-agent's report body to the target path and
+   still cleans up the scratch dir (the report itself is the durable
+   artifact).
 
 Net effect: caller sees ~5 "fetcher done" lines plus one compact synthesis.
 No evidence tables, snippets, or URLs bloat the main context.
@@ -67,9 +71,13 @@ Compute the scratch directory for this run:
 
 ```bash
 RUN_ID="$(date +%Y%m%d-%H%M%S)-<slug>"
-RUN_DIR="$(pwd)/.claude/research/tmp/${RUN_ID}"
+RUN_DIR="${TMPDIR:-/tmp}/claude-research-${RUN_ID}"
 mkdir -p "$RUN_DIR"
 ```
+
+`$TMPDIR` is always writable inside sandboxed sessions (ccw worktrees);
+`.claude/` may not be. Scratch files are ephemeral — only `--report` output
+lands in `.claude/research/`.
 
 Where `<slug>` is a 4-6 word kebab-case of the topic. The `RUN_DIR` value is
 passed to every fetcher and to the synthesis sub-agent.
@@ -378,6 +386,11 @@ reads every scratch file, cross-checks sources, applies the mechanical cap,
 and emits a compact answer. Give it permission and budget to reason
 carefully; do not constrain it to a fast-and-loose summary.
 
+If `--report` was passed in Phase 0, include the line `REPORT_MODE: true`
+in the synthesis prompt (see template below). The sub-agent then emits a
+complete report body in addition to the synthesis; the skill writes that
+body to disk without ever reading scratch files itself.
+
 ### Synthesis prompt template
 
 ```
@@ -385,6 +398,8 @@ You are the synthesis stage of a multi-source research run. Think carefully
 before writing — this is the reasoning-heavy part of the pipeline.
 
 Question: <original research question>
+
+REPORT_MODE: <true|false>  # true when caller passed --report
 
 Fetcher status (from the skill):
 - context7: <done|unavailable|not-routed> [path or reason]
@@ -441,59 +456,72 @@ only the distilled answer, the table, and the confidence line.
 
 Do not reference the scratch file paths in the synthesis. Cite concrete
 URLs / file:line refs / library doc refs from the scratch files instead.
-```
 
-### Receive the synthesis
-
-The sub-agent returns the full synthesis block. Pass it through to the user
-verbatim (do not re-summarize).
-
-## Phase 5: Report File (if --report)
-
-If `--report` was specified in Phase 0:
-
-1. Write the synthesis (from Phase 4) plus a Sources appendix to the target
-   path. The Sources appendix is assembled by reading the scratch files with
-   `Bash` + `grep '^- '` on their `## Sources` blocks — this is the ONE place
-   the skill reads scratch content, and only for structured URL extraction.
-
-2. Report layout:
+4. **If `--report` mode is set** (the skill will tell you via a `REPORT_MODE:
+   true` line in this prompt): after the synthesis block, append a complete
+   report body ready to be written to disk. The report body is the ONLY
+   place raw URLs / file refs / repo links go. Format:
 
    ```markdown
    # Research Report: <Topic>
    _Generated: <YYYY-MM-DD>_
 
-   <full synthesis from Phase 4>
+   <full synthesis block you just wrote>
 
    ## Sources
    ### Documentation
-   - <Context7 doc refs>
+   - <Context7 doc refs from scratch files>
 
    ### Web
-   - <URLs from Serper/Tavily>
+   - <URLs from Serper / Tavily scratch files>
 
    ### Codebase
-   - <file:line references>
+   - <file:line references from codebase scratch file>
 
    ### Open Source
-   - <GitHub repo/file links from Octocode>
+   - <GitHub repo / file links from Octocode scratch file>
    ```
 
-   Only include source sections that have entries.
+   Only include source sections that have entries. Extract the URLs / refs
+   by reading the `## Sources` block of each scratch file you have access
+   to. Wrap the report body in a fenced block labelled `report-body` so the
+   skill can split it from the synthesis cleanly:
 
-3. Tell the user where the report was saved.
+   ```report-body
+   <report markdown here>
+   ```
+```
+
+### Receive the synthesis
+
+The sub-agent returns the full synthesis block (and, if `--report` was set, a
+fenced `report-body` block after it). Pass the synthesis block through to the
+user verbatim (do not re-summarize). In `--report` mode, hand the
+`report-body` contents to Phase 5 without reading/inspecting them in the
+skill's own context.
+
+## Phase 5: Report File (if --report)
+
+If `--report` was specified in Phase 0:
+
+1. The synthesis sub-agent from Phase 4 returned a `report-body` fenced
+   block. Write that block's contents verbatim to the target path. Do NOT
+   read scratch files in this phase — the synthesis sub-agent already
+   assembled the Sources appendix.
+
+2. Tell the user where the report was saved.
 
 ## Phase 6: Cleanup
 
-- If `--report` was NOT used: `rm -rf "$RUN_DIR"` — scratch files are
-  throwaway. The synthesis already lives in the caller's message history.
-- If `--report` WAS used: keep `RUN_DIR` for debuggability, but move it under
-  `.claude/research/archive/<RUN_ID>/` so `tmp/` stays clean.
+- Always: `rm -rf "$RUN_DIR"` once the synthesis (and, in `--report` mode,
+  the report write) is complete. Scratch files in `$TMPDIR` are throwaway —
+  the durable artifacts are the synthesis in the caller's message history
+  and, optionally, the report file under `.claude/research/`.
 
 ## What This Skill Never Does
 
-- Read scratch files in the skill's own context (only the synthesis sub-agent
-  reads them, plus a narrow grep-for-URLs pass in `--report` mode)
+- Read scratch files in the skill's own context — the synthesis sub-agent is
+  the ONLY component that reads them, in both normal and `--report` modes
 - Write application code or implement solutions — it informs, never acts
 - Use `tavily_research` (15-250 credits) without explicit user request
 - Spawn all 5 sources for a simple factual question
