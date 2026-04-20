@@ -235,7 +235,6 @@
     "plugin-dev@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "github@claude-plugins-official": true,
-    "superpowers@superpowers-marketplace": true,
     "claude-hud@claude-hud": true,
     "cheese-flow@cheese-flow": true,
     "astral@astral-sh": true,
@@ -265,12 +264,6 @@
       "source": {
         "source": "directory",
         "path": "/Users/paul/Dev/dotfiles/claude/plugins/local/cheese-flow"
-      }
-    },
-    "superpowers-marketplace": {
-      "source": {
-        "source": "github",
-        "repo": "obra/superpowers-marketplace"
       }
     },
     "todoist-flow": {

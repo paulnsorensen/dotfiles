@@ -74,11 +74,6 @@ plugins:
     scope: user
     load: true
 
-  superpowers@superpowers-marketplace:
-    description: Core skills library — TDD, debugging, collaboration patterns, and proven techniques (obra/Jesse Vincent)
-    scope: user
-    load: true
-
   claude-hud@claude-hud:
     description: Real-time statusline HUD — context usage, rate limits, active tools, agents, tasks
     scope: user

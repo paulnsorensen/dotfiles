@@ -1,0 +1,21 @@
+{
+  "enabledPlugins": {
+    "vtsls@claude-code-lsps": true,
+    "yaml-language-server@claude-code-lsps": true,
+    "claude-md-management@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "cheese-flow@cheese-flow": true,
+    "claude-hud@claude-hud": true,
+    "vaudeville@local": true,
+    "bash-language-server@claude-code-lsps": false,
+    "rust-analyzer@claude-code-lsps": false,
+    "pyright@claude-code-lsps": false,
+    "gopls@claude-code-lsps": false,
+    "plugin-dev@claude-plugins-official": false,
+    "skill-creator@claude-plugins-official": false,
+    "github@claude-plugins-official": false,
+    "astral@astral-sh": false,
+    "todoist-flow@todoist-flow": false
+  }
+}

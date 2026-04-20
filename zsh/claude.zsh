@@ -38,13 +38,15 @@ alias ccm='claude-monitor'
 #
 # Each profile is a directory under claude/profiles/<name>/. Files are
 # auto-wired if present — drop a new directory in and it works:
-#   CLAUDE.md       → --append-system-prompt-file
-#   settings.json   → --setting-sources "" --settings (no inherited config)
-#   mcp.json        → --strict-mcp-config --mcp-config (replaces user MCPs)
-#   mcp-add.json    → --mcp-config (additive — adds to user MCPs)
-#   launch.zsh      → sourced; may set extra_args=(...) for --plugin-dir,
-#                     --tools, --dangerously-skip-permissions, etc.
-#                     may set env_vars=(KEY=value ...) for per-profile env.
+#   CLAUDE.md            → --append-system-prompt-file
+#   settings.json        → --setting-sources "" --settings (no inherited config)
+#   settings-merge.json  → --settings (additive — merges on top of user settings;
+#                          use for per-profile enabledPlugins overrides)
+#   mcp.json             → --strict-mcp-config --mcp-config (replaces user MCPs)
+#   mcp-add.json         → --mcp-config (additive — adds to user MCPs)
+#   launch.zsh           → sourced; may set extra_args=(...) for --plugin-dir,
+#                          --tools, --dangerously-skip-permissions, etc.
+#                          may set env_vars=(KEY=value ...) for per-profile env.
 ccp() {
     local profiles_dir="$DOTFILES_DIR/claude/profiles"
     local name="$1"
@@ -71,6 +73,7 @@ ccp() {
     local args=()
     [[ -f "$profile/CLAUDE.md" ]] && args+=(--append-system-prompt-file "$profile/CLAUDE.md")
     [[ -f "$profile/settings.json" ]] && args+=(--setting-sources "" --settings "$profile/settings.json")
+    [[ -f "$profile/settings-merge.json" ]] && args+=(--settings "$profile/settings-merge.json")
     [[ -f "$profile/mcp.json" ]] && args+=(--strict-mcp-config --mcp-config "$profile/mcp.json")
     [[ -f "$profile/mcp-add.json" ]] && args+=(--mcp-config "$profile/mcp-add.json")
 
