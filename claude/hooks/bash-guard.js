@@ -112,14 +112,14 @@ function matchInlineTest(cmd) {
 function matchBruteLookup(cmd) {
   for (const { gen, label } of DOC_GREP) {
     if (gen.test(cmd) && /grep|head|tail/.test(cmd))
-      return `Blocked: ${label} + grep for symbol lookup. Use /lookup, /fetch (Context7), or LSP hover.`;
+      return `Blocked: ${label} + grep for symbol lookup. Use /fetch (Context7) or LSP hover.`;
   }
   for (const pat of DEP_CACHES) {
-    if (pat.test(cmd)) return `Blocked: grepping dependency cache (${cmd.match(pat)[0]}). Use /lookup, /fetch (Context7), or LSP hover.`;
+    if (pat.test(cmd)) return `Blocked: grepping dependency cache (${cmd.match(pat)[0]}). Use /fetch (Context7) or LSP hover.`;
   }
   if (/target\/doc\//.test(cmd) && /grep/.test(cmd)) return 'Blocked: grepping generated docs. Use /fetch (Context7) or LSP hover.';
   if (/find\s+.*-exec\s+grep/.test(cmd) || /find\s+.*\|\s*xargs\s+grep/.test(cmd))
-    return 'Blocked: find + grep chain. Use LSP (findReferences), /trace (ast-grep), or /lookup.';
+    return 'Blocked: find + grep chain. Use LSP (findReferences) or /trace (ast-grep).';
   return null;
 }
 

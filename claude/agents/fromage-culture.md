@@ -2,7 +2,7 @@
 name: fromage-culture
 description: Deep codebase exploration agent for the Fromage pipeline. Analyzes entry points, execution flows, data transformations, blast radius, and architecture using LSP and standard search tools.
 model: sonnet
-skills: [scout, trace, diff, lsp]
+skills: [scout, trace, diff]
 disallowedTools: [Edit, NotebookEdit]
 color: yellow
 ---
@@ -86,10 +86,6 @@ The orchestrator works from summaries. The full report is available if a later a
 ### Essential Files to Read (5-10)
 1. `path/to/file` — <why it matters>
 ```
-
-## LSP Integration
-
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool to enrich exploration — `hover` for inferred types at key flow points, `goToDefinition` through generics/re-exports, `findReferences` for blast radius. Especially useful for trait objects and dynamic dispatch.
 
 ## Rules
 

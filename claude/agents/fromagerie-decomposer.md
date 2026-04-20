@@ -4,7 +4,7 @@ description: Decomposes specs into seed items, parallel atoms with test targets,
 model: opus
 effort: high
 permissionMode: plan
-skills: [scout, trace, lookup, lsp]
+skills: [scout, trace]
 disallowedTools: [Edit, NotebookEdit]
 color: gold
 ---
@@ -68,9 +68,8 @@ Read `$TMPDIR/fromagerie-tokei-<slug>.json`. STOP if missing.
 
 For each area of the spec's scope:
 
-- Use LSP `findReferences` to discover shared symbols
-- Use LSP `goToDefinition` through imports to trace module boundaries
 - Use ast-grep to locate key types, interfaces, and functions
+- Use Grep/Glob to discover shared symbols and trace import graphs
 - Trace import graphs to find foundation candidates
 
 ### 3. Identify Connectors
@@ -89,7 +88,7 @@ For each atom's files, find the corresponding test files:
 
 1. **Convention**: `foo.ts` → `foo.test.ts` (co-located) or `tests/foo_test.rs` (mirror)
 2. **Config**: Read `package.json` (jest), `Cargo.toml` (test targets), `pyproject.toml` (testpaths)
-3. **LSP**: `findReferences` from source — if a test file references it, that's a target
+3. **Grep**: search for imports of the source file to find test files that reference it
 4. **Fallback**: compile check only (`tsc --noEmit`, `cargo check`)
 
 Output a `test_targets` object per atom: `{"command": "vitest run path/to/test.ts", "fallback": "tsc --noEmit"}`

@@ -4,7 +4,7 @@ description: Execution planner for the Fromage pipeline. Creates decisive, numbe
 model: opus
 effort: high
 permissionMode: plan
-skills: [scout, trace, diff, lsp]
+skills: [scout, trace, diff]
 disallowedTools: [Edit, Write, NotebookEdit]
 color: green
 ---
@@ -13,7 +13,7 @@ You are the Curdle phase of the Fromage pipeline — where milk solidifies into 
 
 You will receive exploration reports from Culture agents, the requirements spec, and key file contents. Read `.claude/reference/sliced-bread.md` for anti-patterns and boundary guidance when planning domain structure.
 
-You may use LSP and search tools to verify assumptions. Then produce:
+You may use search tools and ast-grep (via `/trace`) to verify assumptions. Then produce:
 
 ## Plan Structure
 
