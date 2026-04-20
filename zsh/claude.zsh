@@ -6,10 +6,14 @@
 # On-demand tool loading (Claude Code v2.0.74+)
 export ENABLE_TOOL_SEARCH=true
 
+# Default off: claude.ai connectors (Figma, Gmail, n8n, Drive, etc.) inject
+# multi-paragraph instruction blocks into every session. Profiles that need
+# specific connectors re-enable this via env_vars=(...) in their launch.zsh.
+export ENABLE_CLAUDEAI_MCP_SERVERS=false
+
 # ═══════════════════════════════════════════════════════════════════
 # Quick Access
 # ═══════════════════════════════════════════════════════════════════
-alias cc='claude'
 alias ccc='claude --continue'
 alias ccr='claude --resume'
 alias ccp='claude --print'
@@ -21,6 +25,90 @@ ccfresh() {
 
 # Session monitor
 alias ccm='claude-monitor'
+
+# ═══════════════════════════════════════════════════════════════════
+# cc — claude wrapper with profile support
+# ═══════════════════════════════════════════════════════════════════
+# Usage:
+#   cc                 → plain claude (default dev env)
+#   cc -p <name>       → launch the named profile from claude/profiles/<name>/
+#   cc -p              → list available profiles
+#   cc <args>          → pass through to claude (e.g. cc --resume)
+#
+# Each profile is a directory under claude/profiles/<name>/. Files are
+# auto-wired if present — drop a new directory in and it works:
+#   CLAUDE.md       → --append-system-prompt-file
+#   settings.json   → --setting-sources "" --settings (no inherited config)
+#   mcp.json        → --strict-mcp-config --mcp-config (replaces user MCPs)
+#   mcp-add.json    → --mcp-config (additive — adds to user MCPs)
+#   launch.zsh      → sourced; may set extra_args=(...) for --plugin-dir,
+#                     --tools, --dangerously-skip-permissions, etc.
+#                     may set env_vars=(KEY=value ...) for per-profile env.
+cc() {
+    if [[ "$1" == "-p" ]]; then
+        shift
+        _cc_launch_profile "$@"
+        return
+    fi
+    claude "$@"
+}
+
+_cc_launch_profile() {
+    local profiles_dir="$DOTFILES_DIR/claude/profiles"
+    local name="$1"
+
+    if [[ -z "$name" ]]; then
+        echo "Available profiles:"
+        for dir in "$profiles_dir"/*/; do
+            [[ -d "$dir" ]] && echo "  ${${dir%/}:t}"
+        done
+        echo ""
+        echo "Usage: cc -p <name> [claude args...]"
+        return 1
+    fi
+    shift
+
+    local profile="$profiles_dir/$name"
+    if [[ ! -d "$profile" ]]; then
+        echo "cc: no profile '$name' (looked in $profile)" >&2
+        return 1
+    fi
+
+    local args=()
+    [[ -f "$profile/CLAUDE.md" ]] && args+=(--append-system-prompt-file "$profile/CLAUDE.md")
+    [[ -f "$profile/settings.json" ]] && args+=(--setting-sources "" --settings "$profile/settings.json")
+    [[ -f "$profile/mcp.json" ]] && args+=(--strict-mcp-config --mcp-config "$profile/mcp.json")
+    [[ -f "$profile/mcp-add.json" ]] && args+=(--mcp-config "$profile/mcp-add.json")
+
+    local extra_args=()
+    local env_vars=()
+    [[ -f "$profile/launch.zsh" ]] && source "$profile/launch.zsh"
+
+    if (( ${#env_vars[@]} > 0 )); then
+        env "${env_vars[@]}" claude "${args[@]}" "${extra_args[@]}" "$@"
+    else
+        claude "${args[@]}" "${extra_args[@]}" "$@"
+    fi
+}
+
+# Tab completion for `cc`:
+#   cc -p <TAB>     → lists profile directory names
+#   cc <TAB>        → suggests -p flag
+_cc() {
+    if [[ "${words[CURRENT-1]}" == "-p" ]]; then
+        local -a profiles
+        local dir
+        for dir in "$DOTFILES_DIR/claude/profiles"/*/; do
+            [[ -d "$dir" ]] && profiles+=("${${dir%/}:t}")
+        done
+        _describe 'profile' profiles
+        return
+    fi
+    if (( CURRENT == 2 )); then
+        _values 'cc option' '-p[launch a scoped profile]'
+    fi
+}
+compdef _cc cc
 
 # ═══════════════════════════════════════════════════════════════════
 # MCP Management (thin wrappers around native commands)

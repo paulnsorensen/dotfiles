@@ -26,7 +26,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 
 ### Claude Code & MCP Management
 
-- `cc` - Alias for `claude`
+- `cc` - Launch claude (pass-through). `cc -p <name>` launches a scoped profile from `claude/profiles/<name>/`; `cc -p` lists available profiles.
 - `ccc` - Continue last conversation (`claude --continue`)
 - `ccr` - Resume conversation (`claude --resume`)
 - `ccp` - Print mode (`claude --print`)
