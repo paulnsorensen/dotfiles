@@ -97,3 +97,30 @@ ENV
     assert_failure
     assert_output_contains "TAVILY_API_KEY is not set"
 }
+
+@test ".copilot .sync backs up existing non-symlink config before rendering" {
+    local mock_copilot_dir
+    mock_copilot_dir=$(create_mock_copilot_dir)
+
+    cat > "$TEST_HOME/mock-dotfiles/.env" << 'ENV'
+CONTEXT7_API_KEY=context7-secret
+TAVILY_API_KEY=tavily-secret
+ENV
+
+    mkdir -p "$HOME/.copilot"
+    printf 'OLD_CONFIG_SENTINEL\n' > "$HOME/.copilot/mcp-config.json"
+
+    run bash "$mock_copilot_dir/.sync"
+    assert_success
+    assert_output_contains "Backing up existing $HOME/.copilot/mcp-config.json"
+
+    local bak_files=( "$HOME/.copilot/mcp-config.json."*.bak )
+    [[ -f "${bak_files[0]}" ]]
+    run grep -q 'OLD_CONFIG_SENTINEL' "${bak_files[0]}"
+    assert_success
+
+    assert_file_exists "$HOME/.copilot/mcp-config.json"
+    run jq -r '.mcpServers.context7.env.CONTEXT7_API_KEY' "$HOME/.copilot/mcp-config.json"
+    assert_success
+    [[ "$output" == "context7-secret" ]]
+}
