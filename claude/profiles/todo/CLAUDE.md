@@ -12,7 +12,7 @@ This session is scoped exclusively to Todoist task management.
 
 ## What is NOT available
 
-No Bash, Edit, Write, Grep, Glob, WebFetch, WebSearch, Git, GitHub, LSP, or any code-related MCP. This is a productivity session, not a coding session. If you find yourself wanting to write code, stop — the user opened `cc -p todo`, not `claude`.
+No Bash, Edit, Write, Grep, Glob, WebFetch, WebSearch, Git, GitHub, LSP, or any code-related MCP. This is a productivity session, not a coding session. If you find yourself wanting to write code, stop — the user opened `ccp todo`, not `claude`.
 
 Other claude.ai connectors (Figma, Drive, Calendar, n8n) are technically loaded because the connector channel is all-or-nothing, but they are NOT in the permissions allowlist — do not invoke them. Gmail is the only connector intended for use here.
 

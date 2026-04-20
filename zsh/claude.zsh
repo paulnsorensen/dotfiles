@@ -14,9 +14,9 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # ═══════════════════════════════════════════════════════════════════
 # Quick Access
 # ═══════════════════════════════════════════════════════════════════
+alias cc='claude'
 alias ccc='claude --continue'
 alias ccr='claude --resume'
-alias ccp='claude --print'
 
 # Fresh session: prime MCPs in last conversation, then open it interactively
 ccfresh() {
@@ -27,13 +27,14 @@ ccfresh() {
 alias ccm='claude-monitor'
 
 # ═══════════════════════════════════════════════════════════════════
-# cc — claude wrapper with profile support
+# ccp — launch claude with a scoped profile
 # ═══════════════════════════════════════════════════════════════════
 # Usage:
-#   cc                 → plain claude (default dev env)
-#   cc -p <name>       → launch the named profile from claude/profiles/<name>/
-#   cc -p              → list available profiles
-#   cc <args>          → pass through to claude (e.g. cc --resume)
+#   ccp                 → list available profiles and exit
+#   ccp <name>          → launch the named profile from claude/profiles/<name>/
+#   ccp <name> <args>   → pass extra args through to claude
+#
+# For default Claude Code (no profile), use `cc`.
 #
 # Each profile is a directory under claude/profiles/<name>/. Files are
 # auto-wired if present — drop a new directory in and it works:
@@ -44,33 +45,26 @@ alias ccm='claude-monitor'
 #   launch.zsh      → sourced; may set extra_args=(...) for --plugin-dir,
 #                     --tools, --dangerously-skip-permissions, etc.
 #                     may set env_vars=(KEY=value ...) for per-profile env.
-cc() {
-    if [[ "$1" == "-p" ]]; then
-        shift
-        _cc_launch_profile "$@"
-        return
-    fi
-    claude "$@"
-}
-
-_cc_launch_profile() {
+ccp() {
     local profiles_dir="$DOTFILES_DIR/claude/profiles"
     local name="$1"
 
     if [[ -z "$name" ]]; then
         echo "Available profiles:"
-        for dir in "$profiles_dir"/*/; do
-            [[ -d "$dir" ]] && echo "  ${${dir%/}:t}"
+        local dir
+        for dir in "$profiles_dir"/*(/N); do
+            echo "  ${${dir%/}:t}"
         done
         echo ""
-        echo "Usage: cc -p <name> [claude args...]"
-        return 1
+        echo "Usage: ccp <name> [claude args...]"
+        echo "For default Claude Code, use: cc"
+        return 0
     fi
     shift
 
     local profile="$profiles_dir/$name"
     if [[ ! -d "$profile" ]]; then
-        echo "cc: no profile '$name' (looked in $profile)" >&2
+        echo "ccp: no profile '$name' (looked in $profile)" >&2
         return 1
     fi
 
@@ -91,24 +85,16 @@ _cc_launch_profile() {
     fi
 }
 
-# Tab completion for `cc`:
-#   cc -p <TAB>     → lists profile directory names
-#   cc <TAB>        → suggests -p flag
-_cc() {
-    if [[ "${words[CURRENT-1]}" == "-p" ]]; then
-        local -a profiles
-        local dir
-        for dir in "$DOTFILES_DIR/claude/profiles"/*/; do
-            [[ -d "$dir" ]] && profiles+=("${${dir%/}:t}")
-        done
-        _describe 'profile' profiles
-        return
-    fi
-    if (( CURRENT == 2 )); then
-        _values 'cc option' '-p[launch a scoped profile]'
-    fi
+# Tab completion: ccp <TAB> → profile directory names
+_ccp() {
+    local -a profiles
+    local dir
+    for dir in "$DOTFILES_DIR/claude/profiles"/*(/N); do
+        profiles+=("${${dir%/}:t}")
+    done
+    _describe 'profile' profiles
 }
-compdef _cc cc
+compdef _ccp ccp
 
 # ═══════════════════════════════════════════════════════════════════
 # MCP Management (thin wrappers around native commands)

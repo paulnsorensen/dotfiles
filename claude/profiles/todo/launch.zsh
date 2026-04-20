@@ -1,5 +1,5 @@
 # Extra launch args for the `todo` profile.
-# Sourced by `cc -p todo` via _cc_launch_profile.
+# Sourced by `ccp todo`.
 # Adds plugin scoping, tool lockdown, and permission-skip on top of the
 # mcp.json / settings.json / CLAUDE.md that are picked up automatically.
 #

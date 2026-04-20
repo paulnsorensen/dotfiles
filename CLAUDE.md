@@ -26,10 +26,10 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 
 ### Claude Code & MCP Management
 
-- `cc` - Launch claude (pass-through). `cc -p <name>` launches a scoped profile from `claude/profiles/<name>/`; `cc -p` lists available profiles.
+- `cc` - Launch claude (pass-through to `claude`)
 - `ccc` - Continue last conversation (`claude --continue`)
 - `ccr` - Resume conversation (`claude --resume`)
-- `ccp` - Print mode (`claude --print`)
+- `ccp <name>` - Launch a scoped profile from `claude/profiles/<name>/`. Run `ccp` with no args to list available profiles.
 - `ccw <slug>` - Create isolated git worktree and launch Claude inside it (sandboxed)
 - `ccw-init <slug>` - Create/resume a worktree (used by ccw and /worktree skill)
 - `ccw-ls` - List git worktrees
@@ -136,11 +136,11 @@ MCPs are managed declaratively via `claude/mcp/registry.yaml`:
 
 ```yaml
 mcps:
-  octocode:
+  context7:
     command: npx
-    args: [octocode-mcp@latest]
+    args: ["-y", "@upstash/context7-mcp"]
     scope: user
-    description: GitHub code search and repository tools
+    description: Documentation context for libraries and frameworks
 ```
 
 **Scopes:**

@@ -1,5 +1,5 @@
 # Extra launch args for the `fe` profile.
-# Sourced by `cc -p fe` via _cc_launch_profile.
+# Sourced by `ccp fe`.
 #
 # Re-enables claude.ai connectors so the Figma MCP is available for
 # design-to-code flows. Other connectors (Gmail, Drive, Calendar, n8n)
