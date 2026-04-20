@@ -190,3 +190,5 @@ If violations found: fix them, then try stopping again. Use `/diff` to smoke-tes
 ## Troubleshooting
 
 MCPs broken? → `/go`. Agent missing? → `/agents`. LSP down? → `/lsp`.
+
+@RTK.md

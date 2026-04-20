@@ -18,6 +18,7 @@ configs=(
   skills
   reference
   CLAUDE.md
+  RTK.md
 )
 
 # Install hook dependencies (wink-nlp for violation classifier)
@@ -51,6 +52,11 @@ for item in "${configs[@]}"; do
     ln -s "$source" "$target"
   fi
 done
+
+# RTK agent setup is done manually via the `rtk-init-*` aliases in
+# zsh/claude.zsh — running `rtk init` during sync would rewrite
+# ~/.claude/settings.json on every invocation, clobbering our symlink.
+# Claude Code hook is tracked in settings.json above and needs no init.
 
 # Sync MCPs and plugins (requires claude CLI)
 if command -v claude &>/dev/null; then

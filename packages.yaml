@@ -83,4 +83,8 @@ packages:
   # Cargo
   - cargo-llvm-cov: { source: cargo }
   - tilth: { source: cargo }
+  # Install from Git because the crates.io `rtk` collides with the desired package.
+  # If an unrelated `rtk` is already present from `cargo install rtk`, remove it first
+  # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.
+  - rtk: { source: cargo, git: "https://github.com/rtk-ai/rtk" }
   - qdrant: { source: cargo, dev: true }
