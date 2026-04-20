@@ -73,11 +73,16 @@ ENV
     assert_success
     [[ "$output" == "uvx" ]]
 
+    run jq -r '.mcpServers.tilth.command' "$HOME/.copilot/mcp-config.json"
+    assert_success
+    [[ "$output" == "tilth" ]]
+
     run cat "$COPILOT_LOG"
     assert_success
     assert_output_contains "copilot --config-dir $HOME/.copilot mcp get code-review-graph"
     assert_output_contains "copilot --config-dir $HOME/.copilot mcp get context7"
     assert_output_contains "copilot --config-dir $HOME/.copilot mcp get tavily"
+    assert_output_contains "copilot --config-dir $HOME/.copilot mcp get tilth"
 }
 
 @test ".copilot .sync fails when API keys are missing" {

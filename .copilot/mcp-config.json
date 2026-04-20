@@ -38,6 +38,17 @@
       "tools": [
         "*"
       ]
+    },
+    "tilth": {
+      "type": "local",
+      "command": "tilth",
+      "args": [
+        "--mcp",
+        "--edit"
+      ],
+      "tools": [
+        "*"
+      ]
     }
   }
 }
