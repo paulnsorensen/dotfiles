@@ -49,9 +49,10 @@ The skill prints exactly these blocks to the caller's context — nothing else:
    sub-agent.
 4. A single line "Report saved to `<path>`" if `--report` was set.
 
-Do NOT print: scratch file paths, fetcher narration, intermediate debug
-output, or any scratch-file contents. If something doesn't fit the four
-blocks above, it stays silent.
+Do NOT print: fetcher narration, intermediate debug output, raw scratch-file
+contents, or scratch file paths except inside the FETCHER STATUS block
+(where `done: <path>` is bounded internal bookkeeping). If something doesn't
+fit the four blocks above, it stays silent.
 
 ## Phase 0: Argument Parsing and Setup
 
@@ -66,7 +67,7 @@ Compute the scratch directory for this run:
 
 ```bash
 RUN_ID="$(date +%Y%m%d-%H%M%S)-<slug>"
-RUN_DIR=".claude/research/tmp/${RUN_ID}"
+RUN_DIR="$(pwd)/.claude/research/tmp/${RUN_ID}"
 mkdir -p "$RUN_DIR"
 ```
 
