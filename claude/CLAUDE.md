@@ -158,9 +158,21 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 - **tokei** — code statistics by language
 - **duckdb** — SQL analytics on local data (used by `/session-analytics`)
 
-**Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
+**Code intelligence routing:**
 
-**LSP integration** — All 6 LSP plugins are enabled globally (lazy startup, zero cost when idle). Run `/lsp` for status and troubleshooting.
+| Question | Tool | Notes |
+|----------|------|-------|
+| Type/signature of local symbol | LSP `hover` | Via lsp-probe agent or inline in cook/age |
+| Go to definition | LSP `goToDefinition` | Via lsp-probe agent or inline in cook/age |
+| Who calls this? | LSP `findReferences` | Via lsp-probe agent or inline in culture-lsp/age |
+| Structural pattern | ast-grep via `/trace` | All agents |
+| External API docs | Context7 via `/fetch` | All agents |
+| GitHub code examples | octocode | Via `/research` |
+| Find files | Glob (built-in) | All agents |
+| Search content | Grep (built-in) | All agents |
+| Find by metadata (size/date) | `fd` via `/scout` | Rare |
+
+**LSP integration** — All 6 LSP plugins are enabled globally (lazy startup, zero cost when idle). A small set of agents use LSP directly (culture-lsp, fromage-cook, fromage-age-* review agents). All others spawn `lsp-probe` (short-lived sub-agent) when they need type info or cross-refs. Run `/lsp` for status and troubleshooting.
 
 **Agent permission modes** — `acceptEdits` and `bypassPermissions` only suppress the interactive approval dialog for Edit/Write — they do NOT auto-approve Bash or MCP calls. Bash permissions use a separate allowlist (`permissions.allow` entries like `Bash(git:*)`). In sandboxed environments (Conductor, fresh sessions without your `settings.json`), worktree agents may lack allowlist entries for `git push`, `gh pr create`, etc. **Design pattern**: have isolated agents do code work + commit only, then return control to the orchestrator (which runs in the user's session with full permissions) for push/PR operations.
 

@@ -32,9 +32,9 @@ Config files are only for rule authoring (shared lint rules, test infrastructure
 
 ## When to use trace vs. other tools
 
-Use `/lookup` for the full routing decision tree. In short: trace handles
-**structural/shape** questions ("what implements X?", "find all Y that contain Z").
-For semantic queries (calls, references, type inference), use LSP.
+Trace handles **structural/shape** questions ("what implements X?", "find all Y
+that contain Z"). For semantic queries (calls, references, type inference), use
+LSP directly (in cook/age agents) or spawn lsp-probe.
 
 ## Core invocations
 

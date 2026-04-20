@@ -17,7 +17,7 @@ This command orchestrates across multiple skills:
 |---|---|---|
 | Recon | **gh** | PR metadata, CI checks, failed run logs, diff |
 | Explore | **scout** | Search codebase for test files, CI config, related code |
-| Understand | **lookup** | Route to LSP/Context7 for symbol types, cross-refs, API docs |
+| Understand | **lsp-probe** | Spawn short-lived agent for symbol types, cross-refs |
 | Diagnose | **diff** | Smoke-test the merged state for obvious issues |
 | Fix | **chisel** | Edit conflict markers, patch test assertions |
 | Build | **make** | Build/check with output isolation (forked subagent) |
@@ -35,7 +35,7 @@ Two tiers of LSP usage — one for move-my-cheese itself, one for the sub-agents
 
 | Context | LSP approach |
 |---|---|
-| Running standalone (user invoked `/move-my-cheese`) | Direct LSP via `/lookup` — single session, no contention |
+| Running standalone (user invoked `/move-my-cheese`) | Direct LSP (built-in tool) — single session, no contention |
 | Running in a worktree (dispatched by cheese-convoy) | **lsp-probe** — batch queries, release server, stay lightweight |
 
 **How to detect worktree context**: Working directory is under a `.worktrees/` path, or the prompt mentions "worktree" or "parallel agents".
@@ -138,7 +138,7 @@ Categorize each CI failure from Phase 1 recon:
 | **Infra flake** (503, timeout, OOM) | Note it — will resolve on re-run |
 | **Test failure** (assertion error) | Fix the code or test |
 | **Lint/format** (shellcheck, prettier) | Auto-fix with chisel |
-| **Build failure** (compile error, type error) | Fix with lookup + chisel |
+| **Build failure** (compile error, type error) | Fix with lsp-probe + chisel |
 | **Merge artifact** (conflict markers) | Should have been caught in Phase 2 |
 
 ### Smoke Check (diff skill)
@@ -157,12 +157,7 @@ Run `/make` to verify the merged code compiles. This forks a subagent that absor
 Skill(skill="make")
 ```
 
-If build fails, understand the failing symbols before fixing with **chisel**:
-
-- **Standalone**: Use `/lookup` — routes to LSP for types/cross-refs, Context7 for external APIs
-- **Worktree context** (dispatched by cheese-convoy): Batch failing symbols into a single **lsp-probe** call — hover for types, findReferences for cross-refs — then fix with chisel
-
-Never grep dependency caches.
+If build fails, spawn an `lsp-probe` agent to understand the failing symbols (types, signatures, cross-refs) before fixing with **chisel**. Batch all queries (hover for types, findReferences for cross-refs) into a single invocation. For external API docs, use Context7 via `/fetch`. Never grep dependency caches.
 
 ### Run Tests (make test)
 
@@ -174,13 +169,11 @@ Skill(skill="make", args="test")
 
 If tests pass: the CI failure was likely infra. Move to Phase 3b.
 
-### Fix Strategy (lookup/lsp-probe + scout + chisel skills)
+### Fix Strategy (lsp-probe + scout + chisel)
 
 For real test/build failures:
 
-1. Understand the failing symbol — type mismatches, missing methods, changed APIs:
-   - **Standalone**: `/lookup` (routes to direct LSP or Context7)
-   - **Worktree context**: Batch all failing symbols into one `lsp-probe` call (hover + findReferences)
+1. Spawn `lsp-probe` to understand the failing symbol — type mismatches, missing methods, changed APIs (batch hover + findReferences into one call)
 2. Use **scout** (`rg` for error messages, `fd` for test files) to locate the failing test
 3. Read the failing test and the code under test
 4. Fix with **chisel** — minimal change, `sd` for pattern fixes, Edit for precise patches
