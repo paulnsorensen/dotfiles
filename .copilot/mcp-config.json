@@ -1,0 +1,54 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "type": "local",
+      "command": "uvx",
+      "args": [
+        "code-review-graph",
+        "serve"
+      ],
+      "tools": [
+        "*"
+      ]
+    },
+    "context7": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      },
+      "tools": [
+        "*"
+      ]
+    },
+    "tavily": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "tavily-mcp@latest"
+      ],
+      "env": {
+        "TAVILY_API_KEY": "${TAVILY_API_KEY}"
+      },
+      "tools": [
+        "*"
+      ]
+    },
+    "tilth": {
+      "type": "local",
+      "command": "tilth",
+      "args": [
+        "--mcp",
+        "--edit"
+      ],
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}

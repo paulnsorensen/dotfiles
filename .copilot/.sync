@@ -1,0 +1,104 @@
+#!/bin/bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+dotfiles_dir="$(cd "$script_dir/.." && pwd)"
+source_config="$script_dir/mcp-config.json"
+target_dir="$HOME/.copilot"
+target_config="$target_dir/mcp-config.json"
+tmp_config=""
+
+die() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 1
+}
+
+cleanup() {
+  if [[ -n "$tmp_config" && -e "$tmp_config" ]]; then
+    rm -f "$tmp_config"
+  fi
+}
+
+validate_server() {
+  local name="$1"
+
+  if ! copilot --config-dir "$target_dir" mcp get "$name" >/dev/null 2>&1; then
+    die "copilot could not read $name from $target_config"
+  fi
+}
+
+trap cleanup EXIT
+
+# Load local secrets from the repo root if present, matching Claude MCP sync.
+# Valid keys only — shell identifier rules, so leading whitespace or exotic
+# chars don't abort the whole sync under `set -u`.
+if [[ -f "$dotfiles_dir/.env" ]]; then
+  while IFS='=' read -r key val; do
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    export "$key=$val"
+  done < "$dotfiles_dir/.env"
+fi
+
+if [[ ! -f "$source_config" ]]; then
+  die "missing Copilot MCP config: $source_config"
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  die "jq is not on PATH. Install it first, then re-run dots sync."
+fi
+
+if ! command -v uvx >/dev/null 2>&1; then
+  printf 'Warning: uvx is not on PATH — MCP servers using uvx will not run.\n' >&2
+fi
+
+if ! command -v npx >/dev/null 2>&1; then
+  printf 'Warning: npx is not on PATH — MCP servers using npx will not run.\n' >&2
+fi
+
+if [[ -z "${CONTEXT7_API_KEY:-}" ]]; then
+  die "CONTEXT7_API_KEY is not set. Add it to .env or export it before running dots sync."
+fi
+
+if [[ -z "${TAVILY_API_KEY:-}" ]]; then
+  die "TAVILY_API_KEY is not set. Add it to .env or export it before running dots sync."
+fi
+
+mkdir -p "$target_dir"
+
+if [[ -L "$target_config" ]]; then
+  rm "$target_config"
+elif [[ -e "$target_config" ]]; then
+  backup="$target_config.$(date +%Y%m%d_%H%M%S).bak"
+  printf 'Backing up existing %s to %s\n' "$target_config" "$backup"
+  mv "$target_config" "$backup"
+fi
+
+tmp_config="$(mktemp "$target_dir/mcp-config.XXXXXX")"
+
+jq '
+  walk(
+    if type == "string" and test("^\\$\\{[A-Z0-9_]+\\}$") then
+      (
+        capture("^\\$\\{(?<name>[A-Z0-9_]+)\\}$").name as $name
+        | env[$name] // error("missing env var: \($name)")
+      )
+    else
+      .
+    end
+  )
+' "$source_config" > "$tmp_config"
+
+printf 'Rendering %s from %s\n' "$target_config" "$source_config"
+mv "$tmp_config" "$target_config"
+tmp_config=""
+
+if ! command -v copilot >/dev/null 2>&1; then
+  printf 'Warning: copilot CLI not found; skipped MCP validation.\n' >&2
+  exit 0
+fi
+
+while IFS= read -r name; do
+  validate_server "$name"
+done < <(jq -r '.mcpServers | keys[]' "$source_config")
+
+printf 'Copilot config synced\n'
