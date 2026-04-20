@@ -6,6 +6,6 @@ argument-hint: [--report [filepath]] <research question or topic>
 
 Invoke the `research` skill with the user's arguments. The skill parses `--report` itself and handles routing, parallel fetching, synthesis in a sub-agent (opus), and optional report writing.
 
-Pass `$ARGUMENTS` through verbatim via the Skill tool (`skill: "research"`, `args: "$ARGUMENTS"`).
+Pass `$ARGUMENTS` through verbatim via the Skill tool: `Skill(skill="research", args="$ARGUMENTS")`.
 
 Do NOT spawn the research agent — it no longer exists. Do NOT attempt to fetch sources yourself; the skill manages the whole pipeline.
