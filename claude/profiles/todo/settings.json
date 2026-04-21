@@ -10,5 +10,8 @@
       "mcp__claude_ai_Gmail__*"
     ]
   },
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "enabledPlugins": {
+    "todoist-flow@todoist-flow": true
+  }
 }

@@ -4,7 +4,6 @@
 # Marketplaces:
 #   - claude-code-lsps: Language server plugins
 #   - claude-plugins-official: Official workflow plugins
-#   - astral-sh: Astral Python tools (uv, ruff, ty)
 #
 # Usage:
 #   plugin-sync           Sync plugins (install missing)
@@ -69,16 +68,6 @@ plugins:
     scope: user
     load: true
 
-  github@claude-plugins-official:
-    description: Official GitHub MCP server — PRs, issues, repos, code search via remote API
-    scope: user
-    load: true
-
-  superpowers@superpowers-marketplace:
-    description: Core skills library — TDD, debugging, collaboration patterns, and proven techniques (obra/Jesse Vincent)
-    scope: user
-    load: true
-
   claude-hud@claude-hud:
     description: Real-time statusline HUD — context usage, rate limits, active tools, agents, tasks
     scope: user
@@ -104,8 +93,3 @@ plugins:
     scope: user
     load: true
 
-  # --- Astral Python tools ---
-  astral@astral-sh:
-    description: Python skills (uv, ruff, ty) and ty LSP server from Astral
-    scope: user
-    load: true
