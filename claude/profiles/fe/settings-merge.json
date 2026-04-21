@@ -8,7 +8,6 @@
     "vaudeville@local": true,
     "plugin-dev@claude-plugins-official": false,
     "skill-creator@claude-plugins-official": false,
-    "github@claude-plugins-official": false,
     "todoist-flow@todoist-flow": false
   }
 }

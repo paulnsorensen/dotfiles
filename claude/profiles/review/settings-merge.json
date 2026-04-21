@@ -1,7 +1,6 @@
 {
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
-    "github@claude-plugins-official": true,
     "cheese-flow@cheese-flow": true,
     "claude-hud@claude-hud": true,
     "vaudeville@local": true,

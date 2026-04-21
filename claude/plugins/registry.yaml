@@ -68,11 +68,6 @@ plugins:
     scope: user
     load: true
 
-  github@claude-plugins-official:
-    description: Official GitHub MCP server — PRs, issues, repos, code search via remote API
-    scope: user
-    load: true
-
   claude-hud@claude-hud:
     description: Real-time statusline HUD — context usage, rate limits, active tools, agents, tasks
     scope: user
