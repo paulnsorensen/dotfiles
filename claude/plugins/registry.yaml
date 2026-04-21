@@ -4,7 +4,6 @@
 # Marketplaces:
 #   - claude-code-lsps: Language server plugins
 #   - claude-plugins-official: Official workflow plugins
-#   - astral-sh: Astral Python tools (uv, ruff, ty)
 #
 # Usage:
 #   plugin-sync           Sync plugins (install missing)
@@ -99,8 +98,3 @@ plugins:
     scope: user
     load: true
 
-  # --- Astral Python tools ---
-  astral@astral-sh:
-    description: Python skills (uv, ruff, ty) and ty LSP server from Astral
-    scope: user
-    load: true

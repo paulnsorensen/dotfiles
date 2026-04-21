@@ -237,7 +237,6 @@
     "github@claude-plugins-official": true,
     "claude-hud@claude-hud": true,
     "cheese-flow@cheese-flow": true,
-    "astral@astral-sh": true,
     "todoist-flow@todoist-flow": true,
     "vaudeville@local": true
   },
@@ -252,12 +251,6 @@
       "source": {
         "source": "github",
         "repo": "boostvolt/claude-code-lsps"
-      }
-    },
-    "astral-sh": {
-      "source": {
-        "source": "github",
-        "repo": "astral-sh/claude-code-plugins"
       }
     },
     "cheese-flow": {

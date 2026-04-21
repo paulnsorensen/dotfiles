@@ -9,7 +9,6 @@
     "plugin-dev@claude-plugins-official": false,
     "skill-creator@claude-plugins-official": false,
     "github@claude-plugins-official": false,
-    "astral@astral-sh": false,
     "todoist-flow@todoist-flow": false
   }
 }
