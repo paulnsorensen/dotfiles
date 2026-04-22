@@ -1,0 +1,9 @@
+# MCP scope for the `review` profile.
+# Each entry must be a key in claude/mcp/registry.yaml.
+#
+# Rationale: Reviewing a PR needs code navigation and reference-checking,
+# not web search or task management. Keep surface small.
+mcps:
+  - tilth              # AST-aware code read/search (replaces grep/cat)
+  - code-review-graph  # Call chains, impact radius, flows
+  - context7           # Library docs for reviewer questions

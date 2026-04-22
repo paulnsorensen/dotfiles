@@ -67,14 +67,14 @@ mcps:
     command: npx
     args: [context7-mcp@latest]
     scope: user
-  octocode:
+  tavily:
     command: npx
-    args: [octocode-mcp@latest]
+    args: [tavily-mcp@latest]
     scope: user
 YAML
     result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
     assert_has_entry "$result" "mcp__context7__*"
-    assert_has_entry "$result" "mcp__octocode__*"
+    assert_has_entry "$result" "mcp__tavily__*"
 }
 
 @test "worktree-settings: no MCP entries when registry missing" {
@@ -172,5 +172,5 @@ YAML
 
 @test "worktree-settings: real output includes known MCPs" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"
-    assert_has_entry "$result" "mcp__octocode__*"
+    assert_has_entry "$result" "mcp__tilth__*"
 }

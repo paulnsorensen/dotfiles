@@ -1,0 +1,11 @@
+# MCP scope for the `fe` (frontend) profile.
+# Each entry must be a key in claude/mcp/registry.yaml.
+# Non-registry MCPs (shadcn) come from mcp-add.json and are merged at launch.
+#
+# Rationale: FE work needs library docs, AST-aware code navigation, and
+# web research for component patterns. Todoist/serper are noise.
+mcps:
+  - context7           # React / Tailwind / Next.js docs
+  - tilth              # AST-aware code search + read (local)
+  - code-review-graph  # Structural impact radius for refactors
+  - tavily             # Design pattern research

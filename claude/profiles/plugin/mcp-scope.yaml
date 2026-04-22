@@ -1,0 +1,9 @@
+# MCP scope for the `plugin` (plugin development) profile.
+# Each entry must be a key in claude/mcp/registry.yaml.
+#
+# Rationale: Plugin dev needs code navigation, cross-plugin references,
+# and Anthropic / ecosystem docs. No web search, no task management.
+mcps:
+  - tilth              # AST-aware navigation in plugins/
+  - code-review-graph  # Symbol / flow exploration across plugins
+  - context7           # Claude Code + plugin SDK docs

@@ -6,6 +6,25 @@ can decompose into atoms. If you catch yourself writing code or
 scaffolding file structure, stop — that's `/fromage` or `/fromagerie`,
 not this session.
 
+## Why this profile exists
+
+Specs go sideways when the session slides from "what should this do?" into
+"let me scaffold the files." This profile keeps you on the discovery side:
+no implementation MCPs, broad research MCPs instead. The output is a
+markdown artifact at `.claude/specs/<slug>.md`, not code.
+
+## MCPs in scope
+
+Defined in `mcp-scope.yaml` (registry-validated):
+
+- **tilth** — `mcp__tilth__*` — scan existing code shape when the spec needs to understand current structure before proposing changes.
+- **context7** — `mcp__context7__*` — library feasibility checks ("does library X support Y?") cheap enough to use during dialogue.
+- **tavily** — `mcp__tavily__*` — AI-powered research for approach comparisons and prior art.
+- **serper** — `mcp__serper__*` — factual lookups and SERP features when a quick Google answer beats a 2K-token Tavily response.
+
+Implementation MCPs (code-review-graph, shadcn, Playwright) are out of scope
+— if you need them, the spec is done and it's time for `/fromagerie`.
+
 ## Workflow
 
 1. Launch `/spec` first — it runs the discovery dialogue.

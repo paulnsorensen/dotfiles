@@ -3,7 +3,7 @@ name: research
 description: >
   Multi-source research orchestrator. Spawns parallel fetch sub-agents for
   Context7 (library docs), Tavily (technical content), Serper (facts/SERP),
-  codebase analysis, and Octocode (GitHub patterns). Fetchers write findings
+  codebase analysis, and `gh` CLI (GitHub patterns). Fetchers write findings
   to scratch files; a single synthesis sub-agent reads them and returns a
   compact answer, keeping the caller's context clean. Use when the user
   invokes /research, asks "research X", needs 2+ sources for a decision, or
@@ -101,7 +101,7 @@ list** — these are the sources you will spawn in Phase 3. No "maybe," no
 
 ```
 Is it about a specific library API?
-  YES → Context7 (+ Octocode for real-world usage if needed)
+  YES → Context7 (+ gh CLI for real-world usage if needed)
 
 Is it a factual lookup, entity, or "what/who/when" question?
   YES → Serper (fast, structured, cheap)
@@ -110,10 +110,10 @@ Is it a "how should I..." or best practices question?
   YES → Tavily (synthesized content) + maybe Serper (for People Also Ask breadth)
 
 Is it about patterns in our codebase?
-  YES → Codebase Fetcher (+ Octocode if comparing to industry patterns)
+  YES → Codebase Fetcher (+ gh CLI if comparing to industry patterns)
 
 Is it about how open-source projects solve X?
-  YES → Octocode (+ Tavily if needing written analysis/articles about the approach)
+  YES → gh CLI (+ Tavily if needing written analysis/articles about the approach)
 ```
 
 ### When each source wins
@@ -124,7 +124,7 @@ Is it about how open-source projects solve X?
 | **Serper** | Facts, entities, recency, "what/who/when" | ~$0.001/query |
 | **Tavily** | How-to, best practices, technical analysis | ~$0.003-0.008/query |
 | **Codebase** | Internal patterns and constraints | Free |
-| **Octocode** | Real-world OSS usage patterns | Free |
+| **gh CLI** | Real-world OSS usage patterns | Free |
 
 ### Scaling effort to complexity
 
@@ -145,7 +145,7 @@ ROUTING DECISION:
 - Serper: YES (transformed query: "<query>")
 - Context7: NO (not a library API question)
 - Codebase: NO (external question)
-- Octocode: NO
+- gh-github: NO
 ```
 
 ## Phase 3: Execute Fetchers (SPAWN EVERY ROUTED SOURCE)
@@ -208,7 +208,7 @@ Each source performs best with a different query format:
 | Serper | Short Google keywords | `"express 5 rate-limit middleware 2026"` |
 | Tavily | Natural language question | `"How to implement rate limiting in Express 5 with middleware best practices"` |
 | Codebase | Symbol / pattern description | `"rate limiting middleware"` |
-| Octocode | Technical terms + signatures | `"express rate-limit middleware"` |
+| gh CLI | Short repo/code search terms | `gh search code 'express rate-limit middleware --language ts'` |
 
 ### Fetcher prompts
 
@@ -330,11 +330,11 @@ If you find nothing relevant:
 Do not print findings or file contents in your return message.
 ```
 
-#### Octocode Fetcher
+#### gh CLI Fetcher
 
 ```
-You are searching GitHub for real-world OSS patterns.
-Do NOT use WebSearch or WebFetch. Use ONLY the octocode MCP tools.
+You are searching GitHub for real-world OSS patterns via the gh CLI.
+Do NOT use WebSearch or WebFetch. Use ONLY the Bash tool with gh commands.
 
 Topic: <topic>
 Question: <question>
@@ -345,19 +345,22 @@ Find:
 - Observable best practices
 
 Steps:
-1. Use the octocode MCP tools to find relevant repos and code.
-2. Write findings to <RUN_DIR>/octocode.md using the scratch file schema
+1. `gh search code '<query>' --language <lang>` — find relevant files.
+2. `gh search repos '<topic>' --sort stars` — discover canonical repos.
+3. `gh repo view owner/repo` — read README for promising hits.
+4. Max 5 gh calls total.
+5. Write findings to <RUN_DIR>/gh-github.md using the scratch file schema
    (Key patterns as bullets, 1-2 code snippets with repo links).
-3. Return ONLY: "done: <RUN_DIR>/octocode.md"
+6. Return ONLY: "done: <RUN_DIR>/gh-github.md"
 
-If the MCP returns no results or errors:
-- Write a 1-line note to <RUN_DIR>/octocode.md: "Octocode unavailable: <reason>"
+If gh returns no results or errors:
+- Write a 1-line note to <RUN_DIR>/gh-github.md: "gh unavailable: <reason>"
 - Return ONLY: "unavailable: <reason>"
 - Do NOT fall back to local knowledge.
 
-Empty results are NOT failures. If octocode runs but finds no matches for a
+Empty results are NOT failures. If gh runs but finds no matches for a
 niche query, write "No public examples found" to the scratch file with
-confidence 25 and return "done: <RUN_DIR>/octocode.md".
+confidence 25 and return "done: <RUN_DIR>/gh-github.md".
 
 Do not print evidence, URLs, or snippets in your return message.
 ```
@@ -373,7 +376,7 @@ FETCHER STATUS:
 - serper:   done: <RUN_DIR>/serper.md
 - tavily:   unavailable: MCP not reachable
 - codebase: done: <RUN_DIR>/codebase.md
-- octocode: done: <RUN_DIR>/octocode.md
+- gh-github: done: <RUN_DIR>/gh-github.md
 ```
 
 Do NOT read the scratch files yourself. They go to the synthesis sub-agent.
@@ -406,7 +409,7 @@ Fetcher status (from the skill):
 - serper:   ...
 - tavily:   ...
 - codebase: ...
-- octocode: ...
+- gh-github: ...
 
 Read each "done" file with the Read tool. Ignore "unavailable" and
 "not-routed" entries for content purposes but count them in the cap below.
@@ -479,7 +482,7 @@ URLs / file:line refs / library doc refs from the scratch files instead.
    - <file:line references from codebase scratch file>
 
    ### Open Source
-   - <GitHub repo / file links from Octocode scratch file>
+   - <GitHub repo / file links from gh-github scratch file>
    ```
 
    Only include source sections that have entries. Extract the URLs / refs

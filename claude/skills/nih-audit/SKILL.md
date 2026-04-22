@@ -138,9 +138,8 @@ Deduplicate candidates that share a category. Group into research queries:
 ### 2.2 Spawn Library Lookup Agents
 
 For each category group (max 5 parallel), spawn a general-purpose agent with
-focused MCP access. Library lookup is a 2-source problem (Context7 for API
-surface, Octocode for real-world adoption) — not a full 5-source /research
-call.
+focused MCP access. Library lookup primarily uses Context7 for API surface
+and `gh` CLI for repo stats — not a full 5-source /research call.
 
 ```
 Agent(
@@ -150,9 +149,9 @@ Agent(
     Language: <lang>
     Already installed (DO NOT recommend): <depManifest deps>
 
-    Use ONLY these MCP tools (do NOT use WebSearch or WebFetch):
+    Use ONLY these tools (do NOT use WebSearch or WebFetch):
     - mcp__context7__resolve-library-id and mcp__context7__query-docs
-    - mcp__octocode__packageSearch and mcp__octocode__githubSearchRepositories
+    - `gh search repos` / `gh repo view` for GitHub stats
 
     For each library found, return:
     - Name and latest version

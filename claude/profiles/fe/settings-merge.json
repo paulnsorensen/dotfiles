@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Figma__*"
+    ]
+  },
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,

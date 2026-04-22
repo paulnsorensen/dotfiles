@@ -40,16 +40,25 @@ DESIRED_JSON=$(yq -o=json '.mcps' "$REGISTRY_FILE")
 # shellcheck disable=SC2034  # used by sync-common.sh
 DESIRED_NAMES=$(echo "$DESIRED_JSON" | jq -r 'keys[]' | sort)
 
-# Per-name lookup avoids `claude mcp list` which health-checks all servers (~6s)
+# Enumerate all installed MCPs via `claude mcp list` (eats ~6s health-check
+# but it's the only way to discover drift — entries not in the registry must
+# still show up so TO_REMOVE catches them). Filter out `plugin:*` entries —
+# those are managed by the plugin system, not by this sync script.
 CURRENT_NAMES_LIST=()
-for name in $DESIRED_NAMES; do
-    if claude mcp get "$name" &>/dev/null; then
-        CURRENT_NAMES_LIST+=("$name")
-    fi
-done
+while IFS= read -r line; do
+    # Each line looks like: `<name>: <command> <args> - <status>`
+    # Strip from first ': ' onward to get the name.
+    name="${line%%: *}"
+    [[ -z "$name" ]] && continue
+    [[ "$name" == plugin:* ]] && continue
+    # Skip header/status lines that don't match MCP rows
+    [[ "$name" == "Checking MCP server health…" ]] && continue
+    [[ "$name" =~ ^[[:space:]]*$ ]] && continue
+    CURRENT_NAMES_LIST+=("$name")
+done < <(claude mcp list 2>/dev/null | grep -E '^[a-zA-Z]' )
 # shellcheck disable=SC2034  # used by sync-common.sh
 if (( ${#CURRENT_NAMES_LIST[@]} )); then
-    CURRENT_NAMES=$(printf '%s\n' "${CURRENT_NAMES_LIST[@]}" | sort)
+    CURRENT_NAMES=$(printf '%s\n' "${CURRENT_NAMES_LIST[@]}" | sort -u)
 else
     CURRENT_NAMES=""
 fi

@@ -4,6 +4,26 @@ This session is for building and iterating on Claude Code plugins.
 Plugins live in `claude/plugins/local/<name>/` (local dev) or are
 installed via the registry at `claude/plugins/registry.yaml`.
 
+## Why this profile exists
+
+Plugin dev needs heavy reference material (plugin SDK, hook events,
+MCP protocol, skill triggering rules) and cross-referencing against other
+plugins. The default session pulls in Todoist and web-search MCPs that
+distract from plugin authoring. This profile trims to navigation +
+external docs.
+
+## MCPs in scope
+
+Defined in `mcp-scope.yaml` (registry-validated):
+
+- **tilth** — `mcp__tilth__*` — AST-aware navigation inside `claude/plugins/` and cross-plugin symbol lookup.
+- **code-review-graph** — `mcp__code-review-graph__*` — symbol and flow exploration when wiring a new plugin into existing skills.
+- **context7** — `mcp__context7__*` — Claude Code plugin SDK, MCP spec, and related framework docs.
+
+Web search / task / design MCPs are out of scope. If you need GitHub code
+search for reference plugin implementations, use `gh search code` via the
+`/fetch` skill.
+
 ## Preferred skills
 
 | Task | Skill |

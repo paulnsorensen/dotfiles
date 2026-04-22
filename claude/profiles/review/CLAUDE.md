@@ -6,6 +6,25 @@ you find yourself wanting to fix something, file it as a review
 comment instead. The user opened `ccp review` because they want a
 reviewer, not a fixer.
 
+## Why this profile exists
+
+PR reviews fail when the reviewer drifts into fixing. This profile enforces
+the separation mechanically: Edit, Write, and NotebookEdit are denied, so
+the only thing you can do is read, search, and file review comments. A
+fixer session is one `cc` invocation away — it doesn't belong here.
+
+## MCPs in scope
+
+Defined in `mcp-scope.yaml` (registry-validated):
+
+- **tilth** — `mcp__tilth__*` — AST-aware read/search; replaces grep/cat when inspecting the diff's neighborhood.
+- **code-review-graph** — `mcp__code-review-graph__*` — call chains, impact radius, architectural framing for the change under review.
+- **context7** — `mcp__context7__*` — library docs when the diff touches an unfamiliar API and you need to judge correctness.
+
+GitHub plugin MCPs (PRs, review comments) come through the separately-loaded
+github plugin. Web search / task MCPs are out of scope — if a review needs
+web research, use the `/gh` or `/fetch` skills (forked) to keep main context clean.
+
 ## Preferred skills
 
 | Task | Skill |

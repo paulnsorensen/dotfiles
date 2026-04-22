@@ -158,7 +158,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 - **tokei** — code statistics by language
 - **duckdb** — SQL analytics on local data (used by `/session-analytics`)
 
-**Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), Context7 (external docs), and octocode (GitHub search). Don't guess; let lookup route you.
+**Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), and Context7 (external docs + GitHub code reference). Don't guess; let lookup route you.
 
 **LSP integration** — All 6 LSP plugins are enabled globally (lazy startup, zero cost when idle). Run `/lsp` for status and troubleshooting.
 

@@ -70,12 +70,12 @@
       "mcp__claude_ai_Google_Calendar__*",
       "mcp__claude_ai_Excalidraw__*",
       "mcp__claude_ai_Mermaid_Chart__*",
-      "mcp__octocode__*",
       "mcp__plugin_github_github__*",
       "mcp__shadcn__*",
       "mcp__tavily__*",
       "mcp__serper__*",
       "mcp__code-review-graph__*",
+      "mcp__tilth__*",
       "WebSearch",
       "WebFetch",
       "Skill"
@@ -236,6 +236,7 @@
     "skill-creator@claude-plugins-official": true,
     "claude-hud@claude-hud": true,
     "cheese-flow@cheese-flow": true,
+    "todoist-flow@todoist-flow": true,
     "vaudeville@local": true
   },
   "extraKnownMarketplaces": {
@@ -280,7 +281,6 @@
         "context7.com",
         "mcp.context7.com",
         "ui.shadcn.com",
-        "octocode-mcp-host.onrender.com",
         "pypi.org",
         "files.pythonhosted.org",
         "crates.io",

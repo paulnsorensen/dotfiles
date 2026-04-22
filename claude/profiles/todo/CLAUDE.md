@@ -2,6 +2,15 @@
 
 This session is scoped exclusively to Todoist task management.
 
+## Why this profile exists
+
+Productivity flow and coding flow contaminate each other: a Bash-capable
+session invites "while I'm in here, let me fix this bug" and loses the
+task-hygiene thread. This profile is the hard cut: no Bash, no Edit, no
+code MCPs. The `mcp.json` uses `--strict-mcp-config` so only Todoist
+loads, and the permissions allowlist covers only Todoist + Gmail (for
+email-to-task flows).
+
 ## Available capabilities
 
 - **Todoist MCP** — all `mcp__todoist__*` tools for reading, creating, updating, completing, rescheduling tasks and projects

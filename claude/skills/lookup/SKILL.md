@@ -11,7 +11,7 @@ description: >
   BEFORE reaching for bash when the question is "what does X do?", "what's the
   signature of Y?", "who calls Z?", or "how do I use this API?". Routes to the
   right tool: LSP for types and cross-refs, ast-grep for structural
-  patterns, Context7 for external docs, octocode for GitHub code search. If you
+  patterns, Context7 for external docs, gh CLI for GitHub code search. If you
   catch yourself about to grep a dependency cache or generate docs just to search
   them — stop and use this instead.
 ---
@@ -37,18 +37,18 @@ Then follow the table:
 
 | What I need | Local code | External dependency |
 |---|---|---|
-| Type/signature of a symbol | **LSP** `hover` | **Context7** or **octocode** |
+| Type/signature of a symbol | **LSP** `hover` | **Context7** or **gh** `gh search code` |
 | Go to definition | **LSP** `goToDefinition` | **Context7** `query-docs` |
-| Who calls this function? | **LSP** `findReferences` | **octocode** `search_code` |
-| Who implements this trait/interface? | **/trace** `sg -p 'impl $T for $S'` | **octocode** `search_code` |
-| All usages of a type | **LSP** `findReferences` | **octocode** `search_code` |
+| Who calls this function? | **LSP** `findReferences` | **gh** `gh search code` |
+| Who implements this trait/interface? | **/trace** `sg -p 'impl $T for $S'` | **gh** `gh search code` |
+| All usages of a type | **LSP** `findReferences` | **gh** `gh search code` |
 | Method list on a struct/class | **LSP** `documentSymbol` | **Context7** `query-docs` |
 | What does this function do? | **LSP** `hover` + **Read** the body | **Context7** or **WebFetch** raw source |
-| Find structural patterns | **/trace** `sg --lang X -p 'pattern'` | N/A — use octocode text search |
+| Find structural patterns | **/trace** `sg --lang X -p 'pattern'` | N/A — use `gh search code` text search |
 | Error type / return type | **LSP** `hover` | **Context7** `query-docs` |
 | Find files by name/pattern | **Glob** (simple) or **fd** via scout (metadata filters) | N/A |
-| Find files by content | **Grep** (simple) or **rg** via scout (aliases, hidden files) | **octocode** `search_code` |
-| List directory contents | **ls** via scout (eza tree view + git status) | **octocode** `view_repo_structure` |
+| Find files by content | **Grep** (simple) or **rg** via scout (aliases, hidden files) | **gh** `gh search code` |
+| List directory contents | **ls** via scout (eza tree view + git status) | **gh** `gh repo view owner/repo` |
 
 ### Quick reference by tool
 
@@ -80,9 +80,10 @@ Then follow the table:
 - `resolve-library-id` → `query-docs` — version-specific docs + examples
 - Best for: "what's the API of portable-pty?", "how does serde derive work?"
 
-**octocode** (MCP, GitHub code search):
+**gh CLI** (GitHub code search):
 
-- `search_code` — find implementations across public repos
+- `gh search code '<query>' --language <lang>` — find implementations across public repos
+- `gh repo view owner/repo` — inspect repo README and structure
 - Best for: "how do people use this API?", "show me examples of X"
 
 ## Anti-Patterns — NEVER Do These
@@ -106,7 +107,7 @@ pydoc some.module | grep "def method"
 ri SomeClass | grep "method_name"
 ```
 
-**Instead**: Context7 `query-docs` for the library, or octocode to search the repo.
+**Instead**: Context7 `query-docs` for the library, or `gh search code` to search GitHub.
 
 ### 2. Grepping dependency caches (any ecosystem)
 
@@ -171,7 +172,7 @@ Not every project has all tools active:
 | Situation | Fallback |
 |---|---|
 | No LSP running | ast-grep for structure, Grep for text (last resort) |
-| Context7 doesn't have the library | octocode search → WebFetch raw source |
+| Context7 doesn't have the library | `gh search code` → WebFetch raw source |
 | External crate, no MCP available | `WebSearch` for official docs (via /fetch skill) |
 
 The hierarchy is: **LSP > ast-grep > Grep**. Only fall to the next level
@@ -187,7 +188,7 @@ Unlike `/make` or `/fetch`, this skill runs inline — not in a subagent. Two re
    verbose data. There's nothing to isolate from the context window.
 
 The tools this skill routes TO may fork on their own (e.g., `/fetch` forks for
-Context7/octocode lookups). That's fine — the routing decision stays inline,
+Context7/gh lookups). That's fine — the routing decision stays inline,
 the heavy fetching forks as needed.
 
 ## Rules

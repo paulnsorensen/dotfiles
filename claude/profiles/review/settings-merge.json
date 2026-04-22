@@ -1,4 +1,11 @@
 {
+  "permissions": {
+    "deny": [
+      "Edit",
+      "Write",
+      "NotebookEdit"
+    ]
+  },
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
     "cheese-flow@cheese-flow": true,

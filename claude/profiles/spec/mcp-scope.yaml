@@ -1,0 +1,11 @@
+# MCP scope for the `spec` (discovery dialogue) profile.
+# Each entry must be a key in claude/mcp/registry.yaml.
+#
+# Rationale: Spec work is research-heavy — library feasibility checks,
+# prior-art lookup, existing-code scan. No task management, no MCPs
+# tied to implementation.
+mcps:
+  - tilth              # Scan existing code shape to frame the spec
+  - context7           # Library / framework feasibility
+  - tavily             # AI-powered technical research
+  - serper             # SERP / knowledge graph for factual lookups

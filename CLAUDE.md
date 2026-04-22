@@ -89,7 +89,8 @@ dotfiles/
 │   ├── hookify/            # Hookify rules (synced to ~/.claude/ by .sync)
 │   ├── hooks/              # Pre-tool hooks
 │   ├── skills/             # Reusable skill definitions
-│   └── plugins/            # Plugin registry and sync script
+│   ├── profiles/           # Scoped sessions (fe, plugin, review, rtkonly, spec, todo) — launched via `ccp <name>`
+│   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)
 ├── packages.yaml           # Flat package registry (brew, cargo, apt)
 ├── packages/
 │   └── sync.sh             # Package sync with hash cache
@@ -129,6 +130,7 @@ dotfiles/
 - **Performance Optimization**: Git prompt uses caching to avoid slowdowns
 - **Declarative MCP Management**: Single YAML registry synced via native `claude mcp` commands
 - **Rollback Support**: Sync creates backups and manifests for easy rollback
+- **Scoped Profiles**: `claude/profiles/<name>/` bundles a CLAUDE.md + `settings-merge.json` for task-shaped sessions (frontend, spec, review, rtk-only, plugin, todo). `ccp <name>` launches with profile-merged settings, enabling per-profile LSP gating and tool restrictions.
 
 ## MCP (Model Context Protocol) Management
 
@@ -187,6 +189,21 @@ claude plugin marketplace add jarrodwatts/claude-hud
 
 Note: Unlike MCP, the plugins directory is NOT symlinked to ~/.claude because
 Claude Code uses that location for plugin cache storage.
+
+## Profile System
+
+Profiles are scoped sessions at `claude/profiles/<name>/`:
+
+- `CLAUDE.md` — profile-specific instructions (auto-discovered when `ccp <name>` launches inside it)
+- `settings-merge.json` — overlay merged onto the user `settings.json` (permissions, denied tools, LSP gating)
+
+**Existing profiles:** `fe` (frontend + shadcn/Playwright), `plugin` (plugin dev), `review` (read-only PR review), `rtkonly` (experimental — route file I/O through rtk), `spec` (discovery dialogue), `todo` (Todoist-only).
+
+**Launch:** `ccp <name>` — loads profile dir, merges settings, scopes tool surface.
+**Discover:** `ccp` with no args lists available profiles.
+**Add new:** create `claude/profiles/<name>/`, drop in `CLAUDE.md` + optional `settings-merge.json`, run `dots sync`.
+
+**Gotcha:** if your profile relies on an MCP (e.g. tilth in `rtkonly`), add `mcp__<name>__*` to the profile `settings-merge.json` allowlist — otherwise each call prompts even though the server is running.
 
 ## Sync System
 

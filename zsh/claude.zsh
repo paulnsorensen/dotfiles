@@ -91,8 +91,12 @@ alias ccm='claude-monitor'
 #                          there's no settings.json in the profile, or the
 #                          profile's settings.json when both are present.
 #                          Use for per-profile enabledPlugins overrides.)
-#   mcp.json             → --strict-mcp-config --mcp-config (replaces user MCPs)
-#   mcp-add.json         → --mcp-config (additive — adds to user MCPs)
+#   mcp-scope.yaml       → preferred; list of MCP names validated against
+#                          claude/mcp/registry.yaml. Generates a strict mcp.json
+#                          at launch (combined with mcp-add.json if present).
+#   mcp.json             → legacy; hand-written strict mcp config.
+#   mcp-add.json         → additive. Merged into mcp-scope output if both exist;
+#                          otherwise --mcp-config on top of user MCPs.
 #   launch.zsh           → sourced; may set extra_args=(...) for --plugin-dir,
 #                          --tools, --dangerously-skip-permissions, etc.
 #                          may set env_vars=(KEY=value ...) for per-profile env.
@@ -129,8 +133,25 @@ ccp() {
     fi
 
     [[ -f "$profile/settings-merge.json" ]] && args+=(--settings "$profile/settings-merge.json")
-    [[ -f "$profile/mcp.json" ]] && args+=(--strict-mcp-config --mcp-config "$profile/mcp.json")
-    [[ -f "$profile/mcp-add.json" ]] && args+=(--mcp-config "$profile/mcp-add.json")
+    # MCP scoping, tried in order:
+    #   mcp-scope.yaml  → validated subset of registry.yaml + optional mcp-add.json,
+    #                      generated into a tmp mcp.json (preferred, DRY).
+    #   mcp.json        → hand-written strict MCP config (legacy).
+    #   mcp-add.json    → additive only on top of user MCPs (legacy).
+    local generated_mcp=""
+    if [[ -f "$profile/mcp-scope.yaml" ]]; then
+        generated_mcp=$(mktemp "${TMPDIR:-/tmp}/ccp-$name-mcp.XXXXXX")
+        if ! "$DOTFILES_DIR/claude/mcp/gen-profile-mcp.sh" "$name" > "$generated_mcp"; then
+            echo "ccp: failed to generate mcp.json for profile '$name'" >&2
+            rm -f "$generated_mcp"
+            return 1
+        fi
+        args+=(--strict-mcp-config --mcp-config "$generated_mcp")
+    elif [[ -f "$profile/mcp.json" ]]; then
+        args+=(--strict-mcp-config --mcp-config "$profile/mcp.json")
+    elif [[ -f "$profile/mcp-add.json" ]]; then
+        args+=(--mcp-config "$profile/mcp-add.json")
+    fi
 
     local extra_args=()
     local env_vars=()
