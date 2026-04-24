@@ -5,8 +5,21 @@
   "permissions": {
     "allow": [
       "Skill",
+      "Agent",
       "Read",
+      "Write",
+      "Edit",
+      "Grep",
+      "Glob",
+      "Bash",
+      "TaskCreate",
+      "TaskUpdate",
+      "TaskList",
+      "AskUserQuestion",
       "mcp__todoist__*",
+      "mcp__context7__*",
+      "mcp__tavily__*",
+      "mcp__serper__*",
       "mcp__claude_ai_Gmail__*"
     ]
   },
