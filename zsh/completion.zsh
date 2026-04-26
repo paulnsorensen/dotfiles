@@ -73,3 +73,64 @@ _cdd() {
 
 # Register the completion function
 compdef _cdd cdd
+
+# vaudeville completion — subcommands, options, and dynamic rule names
+# Rules live in ~/.vaudeville/rules/*.yaml; tune takes a rule name positionally.
+_vaudeville() {
+  local -a subcmds
+  subcmds=(
+    'watch:Live TUI of rule firings'
+    'setup:Download model and verify inference'
+    'stats:Show classification statistics'
+    'tune:Tune a rule to meet precision/recall/f1 thresholds'
+    'generate:Generate a new rule from instructions'
+  )
+
+  _arguments -C \
+    '(-h --help)'{-h,--help}'[show help]' \
+    '1: :->subcmd' \
+    '*:: :->args' && return 0
+
+  case $state in
+    subcmd)
+      _describe -t commands 'vaudeville subcommand' subcmds
+      ;;
+    args)
+      case $words[1] in
+        watch|stats)
+          _arguments \
+            '--log-path[path to events.jsonl]:log path:_files' \
+            $([[ $words[1] == stats ]] && echo '--json[output raw JSON]')
+          ;;
+        tune)
+          local -a rules
+          local f
+          for f in ~/.vaudeville/rules/*.yaml(N); do
+            rules+=( ${f:t:r} )
+          done
+          _arguments \
+            '--p-min[minimum precision threshold]:precision:' \
+            '--r-min[minimum recall threshold]:recall:' \
+            '--f1-min[minimum F1 threshold]:f1:' \
+            '--rounds[maximum orchestration rounds]:rounds:' \
+            '--tuner-iters[ralph iterations for tune phase]:iters:' \
+            "1:rule name:($rules)"
+          ;;
+        generate)
+          _arguments \
+            '--p-min[minimum precision threshold]:precision:' \
+            '--r-min[minimum recall threshold]:recall:' \
+            '--f1-min[minimum F1 threshold]:f1:' \
+            '--live[run generation in live mode instead of shadow]' \
+            '--rounds[maximum orchestration rounds]:rounds:' \
+            '--tuner-iters[ralph iterations for tune phase]:iters:' \
+            '1:instructions:'
+          ;;
+        setup)
+          _message 'no arguments'
+          ;;
+      esac
+      ;;
+  esac
+}
+compdef _vaudeville vaudeville vdv

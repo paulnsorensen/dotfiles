@@ -278,6 +278,13 @@ alias plugin-sync-dry='$CLAUDE_DOTFILES/plugins/sync.sh --dry-run'
 alias plugin-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/plugins/registry.yaml'
 
 # ═══════════════════════════════════════════════════════════════════
+# Vaudeville (SLM hook enforcement — Claude Code plugin)
+# ═══════════════════════════════════════════════════════════════════
+# Binary is installed via `uv tool install vaudeville` at ~/.local/bin.
+# Tab completion is defined in zsh/completion.zsh and bound to both names.
+alias vdv='vaudeville'
+
+# ═══════════════════════════════════════════════════════════════════
 # RTK — Rust Token Killer (github.com/rtk-ai/rtk)
 # ═══════════════════════════════════════════════════════════════════
 # Claude Code hook is tracked in claude/settings.json, so no Claude init
