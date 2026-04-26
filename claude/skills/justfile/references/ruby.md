@@ -20,7 +20,7 @@ dev:
 console:
     bin/rails console
 
-# Run tests
+# Run tests (coverage enforced via SimpleCov in spec_helper.rb)
 test *args:
     bundle exec rspec {{args}}
 
@@ -72,6 +72,37 @@ build:
 install-local: build
     gem install *.gem
 ```
+
+## Coverage config (spec/spec_helper.rb)
+
+SimpleCov has the **strongest native per-file support** of any ecosystem here — use it.
+
+```ruby
+require 'simplecov'
+
+SimpleCov.start do
+  add_filter '/spec/'
+
+  # Native per-file floor — fails if ANY file drops below this
+  minimum_coverage_by_file 80
+
+  # Global floor
+  minimum_coverage line: 90, branch: 85
+
+  # Ratchet: read committed high-water mark, auto-raise on improvement
+  threshold = File.exist?('.coverage_threshold') \
+    ? File.read('.coverage_threshold').strip.to_f \
+    : 85.0
+  minimum_coverage line: [threshold, 90].max
+
+  at_exit do
+    pct = SimpleCov.result&.covered_percent || 0
+    File.write('.coverage_threshold', pct.round(2).to_s) if pct > threshold
+  end
+end
+```
+
+Commit `.coverage_threshold` to enforce the ratchet in CI. Real-world floors: omniauth=92.5, pagy=100, ViewComponent=100.
 
 ## Notes
 

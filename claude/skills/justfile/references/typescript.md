@@ -33,10 +33,19 @@ build:
 test *args:
     npm test -- {{args}}
 
-# Lint
+# Lint (static analysis only — not typechecking)
 lint:
     npx eslint src/
-    npx tsc --noEmit
+
+# Full build pipeline — hard-gate the coverage step
+# (see SKILL.md "Token-optimized output" for the rtk test/err pattern)
+build:
+    npm install
+    npm run format
+    npm run lint:fix
+    npm run typecheck
+    npm run build
+    rtk test npm run test:coverage
 
 # Format
 fmt:
@@ -50,6 +59,12 @@ typecheck:
 clean:
     rm -rf dist/ node_modules/.cache
 ```
+
+**Keep `lint` and `typecheck` as separate recipes and separate npm scripts.**
+Conflating them (e.g. `"lint": "tsc --noEmit"`) breaks rtk's `npm run <script>`
+wrapper, which infers tool output format from the script name. More importantly,
+the name is a lie — ESLint/biome lints, tsc typechecks. Name the script after
+what it runs.
 
 ## Bun variant
 

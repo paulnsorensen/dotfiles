@@ -62,11 +62,34 @@ clean:
 watch *args:
     cargo watch -x "test" -x "clippy" {{args}}
 
-# Coverage (requires cargo-llvm-cov)
+# Coverage report (requires cargo-llvm-cov, preferred over cargo-tarpaulin)
 coverage:
-    cargo llvm-cov --html
+    cargo llvm-cov --all-features --workspace --html
     @echo "Report: target/llvm-cov/html/index.html"
+
+# Enforce coverage threshold (fails if below)
+cov-check:
+    cargo llvm-cov --all-features --workspace \
+        --fail-under-lines 80 \
+        --fail-under-functions 70
+
+# Ratchet: never let overall coverage regress (reads/writes .coverage-baseline)
+cov-ratchet:
+    #!/usr/bin/env bash
+    cargo llvm-cov --all-features --workspace --json --summary-only \
+        > /tmp/llvm-cov.json
+    CURRENT=$(jq '.data[0].totals.lines.percent' /tmp/llvm-cov.json)
+    BASELINE=$(cat .coverage-baseline 2>/dev/null || echo 0)
+    awk -v c="$CURRENT" -v b="$BASELINE" 'BEGIN{exit !(c>=b)}' \
+        && echo "$CURRENT" > .coverage-baseline \
+        || { echo "Coverage regression: $CURRENT% < $BASELINE%"; exit 1; }
 ```
+
+## Coverage notes
+
+- **Per-file thresholds**: not native in cargo-llvm-cov as of 2026 (issue #3693). The ratchet approach is the best available alternative.
+- **cargo-llvm-cov over cargo-tarpaulin**: faster, LLVM-native, better JSON/lcov output, and actively maintained. Use tarpaulin only if the project already depends on it.
+- Commit `.coverage-baseline` to source control so CI enforces the ratchet.
 
 ## Notes
 

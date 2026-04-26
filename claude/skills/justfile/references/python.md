@@ -28,9 +28,25 @@ run *args:
 test *args:
     uv run pytest {{args}}
 
-# Run tests with coverage
+# Run tests with coverage (threshold enforced via pyproject.toml)
 test-coverage:
-    uv run pytest --cov=src --cov-report=html --cov-report=term-missing
+    uv run pytest --cov=src --cov-report=html --cov-report=json --cov-report=term-missing
+
+# Per-file coverage gate (workaround — no native pytest-cov support as of 2026)
+cov-per-file MIN="70":
+    uv run pytest --cov=src --cov-report=json -q
+    jq -r --argjson min {{MIN}} \
+        '.files | to_entries[] | select(.value.summary.percent_covered < $min) | "\(.key): \(.value.summary.percent_covered | round)%"' \
+        coverage.json | (! grep . || { echo "Files below {{MIN}}%"; exit 1; })
+
+# Ratchet: never let overall coverage regress (reads/writes .coverage-baseline)
+cov-ratchet:
+    #!/usr/bin/env bash
+    CUR=$(jq '.totals.percent_covered' coverage.json)
+    BASE=$(cat .coverage-baseline 2>/dev/null || echo 0)
+    awk -v c=$CUR -v b=$BASE 'BEGIN{exit !(c>=b)}' \
+        && echo $CUR > .coverage-baseline \
+        || { echo "Coverage regression: $CUR% < $BASE%"; exit 1; }
 
 # Lint (check only)
 lint:
@@ -60,6 +76,21 @@ clean:
     find . -name "*.pyc" -delete
     rm -rf .coverage htmlcov/ dist/ build/ *.egg-info
 ```
+
+## Coverage config (pyproject.toml)
+
+```toml
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = false
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=src --cov-report=term-missing --cov-report=json --cov-fail-under=85"
+```
+
+The `fail_under` in `[tool.coverage.report]` is the single source of truth — it's what `--cov-fail-under` reads. Per-file thresholds are not natively supported (pytest-cov issue #444); use the `cov-per-file` recipe above as a workaround. Commit `.coverage-baseline` to enforce ratcheting in CI.
 
 ## Notes
 

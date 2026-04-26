@@ -109,7 +109,76 @@ set dotenv-load := true
 Add `set shell := ["bash", "-uc"]` only if recipes need bash-specific features
 (arrays, process substitution). The default `/bin/sh` is fine for most recipes.
 
-### 4. Update project docs
+### 4. Token-optimized output (for LLM-driven builds)
+
+When a `just` recipe runs inside an LLM agent's context (Claude Code, Cursor,
+Conductor workspaces, CI logs piped back to an agent), output verbosity
+translates directly to token cost. `just` echoes each recipe line, then the
+underlying tool prints its own banner and output — a typical TS build pipeline
+is 60+ lines, most of it low-signal.
+
+**Levers, ordered by effort:**
+
+1. **`@` prefix + tool flags** (~60 → ~15 lines). Silences recipe echo; pass
+   `--silent --no-audit --no-fund` to npm to drop banner/audit/fund noise.
+
+2. **Skip coverage in the default recipe.** Coverage tables are ~15 lines.
+   Use `npm test` (or `cargo test`) in `build`; keep `test:coverage` in
+   `build-ci` where the CI logs aren't paying per-token.
+
+3. **`rtk rewrite` shell wrap** (recommended when rtk is installed). Route
+   every recipe line through `rtk rewrite`; rtk ships deterministic filters
+   for 100+ tools (cargo, npm, pytest, go, git, biome, vitest) that trim
+   banners, dedupe, and truncate. Unknown commands fall through untouched.
+
+   ```just
+   set shell := ["bash", "-c", "set -euo pipefail; if r=$(rtk rewrite \"$0\" 2>/dev/null); then eval \"$r\"; else eval \"$0\"; fi"]
+   ```
+
+   rtk's `[tee] mode = "failures"` config (default in recent versions) means
+   every `rtk <wrapper>` invocation tees to `~/.local/share/rtk/tee/*.log`
+   and its filter decides what to echo live. Run `rtk config` to confirm.
+
+4. **Hard-gate the noisy step with `rtk err` / `rtk test`.** The shell wrap
+   gets you filtered output, but some filters (notably vitest) still print
+   useful-but-verbose blocks — coverage tables, summaries — on success. For
+   the single noisiest recipe line, wrap it explicitly to suppress *all*
+   output on success and surface full output only on failure:
+
+   ```just
+   build:
+       npm install
+       npm run lint:fix
+       npm run build
+       rtk test npm run test:coverage   # silent on pass, full dump on fail
+   ```
+
+   - `rtk test CMD` — show only test failures
+   - `rtk err CMD` — show only errors/warnings (use for non-test commands)
+
+   `rtk rewrite` sees `rtk test ...` / `rtk err ...` as already-wrapped and
+   falls through, so the shell wrap and the explicit gate compose cleanly.
+
+   **Don't hard-gate every line** — success-case output like "Formatted 13
+   files" or "Installed 42 packages in 1s" is signal that confirms the step
+   actually ran. Gate only the one or two recipe lines that dominate the
+   success-case token budget (usually coverage, sometimes a slow build).
+
+5. **`quiet_on_success` wrapper** (portable fallback when rtk isn't
+   available). Buffer output, print only on failure:
+
+   ```bash
+   quiet_on_success() { local out; if ! out=$("$@" 2>&1); then echo "$out"; return 1; fi; }
+   ```
+
+**npm script-naming gotcha:** rtk's `npm run <script>` wrapper infers the
+underlying tool from the script name (e.g. `lint` → ESLint parser). If your
+`lint` script actually runs `tsc --noEmit`, rtk will try to parse tsc output
+as ESLint JSON and fail. Rename to `typecheck` — it's semantically correct
+(biome/eslint lints, tsc typechecks) and removes the collision. Apply the
+same principle to any script name that lies about its tool.
+
+### 5. Update project docs
 
 After creating the justfile:
 
