@@ -21,6 +21,12 @@
       "mcp__tavily__*",
       "mcp__serper__*",
       "mcp__claude_ai_Gmail__*"
+    ],
+    "deny": [
+      "LSP",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch"
     ]
   },
   "skipDangerousModePermissionPrompt": true,

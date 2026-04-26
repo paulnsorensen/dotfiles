@@ -144,11 +144,22 @@ Reusable tool-usage instructions injected into agents and commands.
 
 ## Hooks (`hooks/`)
 
+Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to apply changes).
+
 ### Pre-Tool Hooks (JavaScript)
 
-**block-install.js** -- Requires human approval for package installations. Triggers on `npm install`, `yarn add`, `pnpm add`, `pip install`, `go get`, `cargo add`.
+| Hook | Tool match | Purpose |
+|------|-----------|---------|
+| `bash-guard.js` | Bash | Blocks dangerous shell patterns before execution |
+| `write-guard.js` | Write | Blocks writes to disallowed paths |
+| `phantom-file-check.js` | Read | Prevents reading non-existent files (anti-hallucination) |
+| `review-reply-guard.js` | GitHub PR reply MCPs | Catches deferral language in PR review replies |
 
-**phantom-file-check.js** -- Prevents reading non-existent files (anti-hallucination). Checks `fs.existsSync()` before allowing Read tool calls.
+### Post-Tool Hooks
+
+| Hook | Tool match | Purpose |
+|------|-----------|---------|
+| `auto-format.js` | Edit, Write | Runs project formatter on edited files |
 
 ### Lifecycle Hooks (Shell)
 
@@ -158,6 +169,8 @@ Reusable tool-usage instructions injected into agents and commands.
 | `post-compact.sh` | SessionStart (compact) | Restores context after compaction |
 | `post-fresh-start.sh` | SessionStart | Injects `/trace` suggestion on fresh sessions |
 | `on-session-end.sh` | UserPromptSubmit | Detects parting language, suggests saving context |
+| Stop guard (inline agent) | Stop | Catches hesitation around commit/push/PR creation |
+| `rtk hook claude` | PreToolUse Bash | Token-optimizing command rewriter |
 
 ### Hookify Rules (`hookify/`)
 
@@ -186,39 +199,58 @@ Add new rules to `claude/hookify/` as `hookify.<name>.local.md` files. Run `dots
 
 ### Enabled Plugins
 
-**LSP Plugins** (from `boostvolt/claude-code-lsps`):
+Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
+
+**LSP Plugins** (from `boostvolt/claude-code-lsps`, lazy-start per file type):
 
 | Plugin | Language |
 |--------|----------|
+| `bash-language-server` | Bash/shell |
+| `vtsls` | TypeScript/JavaScript |
+| `yaml-language-server` | YAML |
+| `rust-analyzer` | Rust |
 | `pyright` | Python |
 | `gopls` | Go |
-| `rust-analyzer` | Rust |
-| `vtsls` | TypeScript/JS |
-| `solargraph` | Ruby |
-| `bash-language-server` | Bash |
-| `yaml-language-server` | YAML |
 
 **Workflow Plugins** (from `anthropics/claude-code-plugins`):
 
 | Plugin | Purpose |
 |--------|---------|
-| `code-simplifier` | Code cleanup and simplification |
-| `hookify` | Create hooks from conversation analysis |
 | `claude-md-management` | CLAUDE.md audit and maintenance |
 | `playwright` | Browser testing and automation |
-| `ralph-loop` | Iterative convergent loops |
 | `frontend-design` | UI/UX implementation |
+| `plugin-dev` | Plugin development toolkit |
 | `skill-creator` | Guided skill creation |
+
+**Other Marketplaces**:
+
+| Plugin | Source | Purpose |
+|--------|--------|---------|
+| `claude-hud` | `jarrodwatts/claude-hud` | Statusline HUD |
+| `cheese-flow` | in-repo (`claude/plugins/local/cheese-flow`) | Cheddar Flow agent pipeline |
+| `todoist-flow` | in-repo (`claude/plugins/local/todoist-flow`) | Todoist productivity suite |
+| `vaudeville` | local (`~/Dev/vaudeville`) | SLM-powered semantic hook enforcement |
 
 ---
 
 ## MCP Servers
 
-Managed declaratively via `mcp/registry.yaml`. Sync with `mcp-sync`.
+Managed declaratively via `mcp/registry.yaml`. Sync with `mcp-sync` (run `mcp-ls` to verify).
 
 | MCP | Purpose |
 |-----|---------|
-| `context7` | Documentation context for libraries and frameworks |
+| `context7` | Library/framework docs (React, Tailwind, Next.js, …) |
+| `tilth` | AST-aware code search/read (replaces grep/cat for code navigation) |
+| `code-review-graph` | Persistent code knowledge graph; impact radius, call chains, architectural framing |
+| `tavily` | AI-powered technical research |
+| `serper` | Google SERP for factual lookups |
+| `todoist` | Todoist task/project management |
+
+Profile-only MCPs (loaded per-profile via `--mcp-config`, not registry-managed):
+
+| MCP | Profile | Purpose |
+|-----|---------|---------|
+| `shadcn` | `fe` | Component registry for frontend work |
 
 ---
 

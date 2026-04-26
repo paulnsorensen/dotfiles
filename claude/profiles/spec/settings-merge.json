@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": [
+      "NotebookEdit"
+    ]
+  },
+  "enabledPlugins": {
+    "claude-md-management@claude-plugins-official": true,
+    "cheese-flow@cheese-flow": true,
+    "claude-hud@claude-hud": true,
+    "vaudeville@local": true,
+    "plugin-dev@claude-plugins-official": false,
+    "skill-creator@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false,
+    "playwright@claude-plugins-official": false,
+    "todoist-flow@todoist-flow": false
+  }
+}

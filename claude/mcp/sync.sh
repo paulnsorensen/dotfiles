@@ -42,20 +42,21 @@ DESIRED_NAMES=$(echo "$DESIRED_JSON" | jq -r 'keys[]' | sort)
 
 # Enumerate all installed MCPs via `claude mcp list` (eats ~6s health-check
 # but it's the only way to discover drift — entries not in the registry must
-# still show up so TO_REMOVE catches them). Filter out `plugin:*` entries —
-# those are managed by the plugin system, not by this sync script.
+# still show up so TO_REMOVE catches them). `claude mcp list` has no JSON
+# flag as of Claude Code 1.0, so we parse the human format strictly:
+#   <name>: <command> <args> - <✓ Connected | ✗ Failed to connect>
+# The regex requires a name + ": " + non-empty command, which excludes the
+# "Checking MCP server health…" banner and any future banner Anthropic adds.
+# `plugin:<marketplace>:<name>` rows are filtered separately — those are
+# managed by the plugin system, not this script.
 CURRENT_NAMES_LIST=()
 while IFS= read -r line; do
-    # Each line looks like: `<name>: <command> <args> - <status>`
-    # Strip from first ': ' onward to get the name.
-    name="${line%%: *}"
-    [[ -z "$name" ]] && continue
-    [[ "$name" == plugin:* ]] && continue
-    # Skip header/status lines that don't match MCP rows
-    [[ "$name" == "Checking MCP server health…" ]] && continue
-    [[ "$name" =~ ^[[:space:]]*$ ]] && continue
+    # Strict shape match: name has [a-zA-Z0-9_-], then ": " then a command.
+    [[ "$line" =~ ^([a-zA-Z0-9_-]+):[[:space:]]+[^[:space:]] ]] || continue
+    name="${BASH_REMATCH[1]}"
+    [[ "$name" == plugin* ]] && continue
     CURRENT_NAMES_LIST+=("$name")
-done < <(claude mcp list 2>/dev/null | grep -E '^[a-zA-Z]' )
+done < <(claude mcp list 2>/dev/null)
 # shellcheck disable=SC2034  # used by sync-common.sh
 if (( ${#CURRENT_NAMES_LIST[@]} )); then
     CURRENT_NAMES=$(printf '%s\n' "${CURRENT_NAMES_LIST[@]}" | sort -u)

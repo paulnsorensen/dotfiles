@@ -1,9 +1,13 @@
 # Plugin Registry - Source of truth for Claude Code plugins
 #
 # Format: <plugin>@<marketplace>
-# Marketplaces:
-#   - claude-code-lsps: Language server plugins
-#   - claude-plugins-official: Official workflow plugins
+# Marketplaces (all registered in settings.json:extraKnownMarketplaces or built-in):
+#   - claude-code-lsps:           Language server plugins (boostvolt/claude-code-lsps)
+#   - claude-plugins-official:    Official workflow plugins (anthropics/claude-code-plugins)
+#   - claude-hud:                 Statusline HUD (jarrodwatts/claude-hud)
+#   - cheese-flow:                In-repo Cheddar Flow plugin (directory source)
+#   - todoist-flow:               In-repo Todoist productivity plugin (directory source)
+#   - local:                      Out-of-repo local plugins; `path:` resolves the source dir
 #
 # Usage:
 #   plugin-sync           Sync plugins (install missing)
@@ -87,9 +91,9 @@ plugins:
     load: true
     path: claude/plugins/local/todoist-flow
 
-  # --- Local plugins ---
+  # --- Out-of-repo local plugins (path resolved at sync time) ---
   vaudeville@local:
     description: SLM-powered semantic hook enforcement via local Phi-3-mini
     scope: user
     load: true
-
+    path: ~/Dev/vaudeville

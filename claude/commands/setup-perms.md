@@ -36,24 +36,24 @@ Commands are split into two categories:
 
 ```
 # Safe — unscoped
-Bash(git *)
-Bash(ls *)
-Bash(cat *)
-Bash(head *)
-Bash(tail *)
-Bash(wc *)
-Bash(which *)
-Bash(echo *)
-Bash(grep *)
-Bash(find *)
-Bash(diff *)
-Bash(sort *)
-Bash(tr *)
-Bash(test *)
-Bash([ *)
+Bash(git:*)
+Bash(ls:*)
+Bash(cat:*)
+Bash(head:*)
+Bash(tail:*)
+Bash(wc:*)
+Bash(which:*)
+Bash(echo:*)
+Bash(grep:*)
+Bash(find:*)
+Bash(diff:*)
+Bash(sort:*)
+Bash(tr:*)
+Bash(test:*)
+Bash([:*)
 Bash(true)
 Bash(false)
-Bash(gh *)
+Bash(gh:*)
 
 # Destructive — scoped to project
 Bash(mkdir $PWD/*)
@@ -73,72 +73,72 @@ WebSearch
 **Dotfiles/shell layer:**
 
 ```
-Bash(bash *)
-Bash(sh *)
-Bash(zsh *)
-Bash(source *)
-Bash(shellcheck *)
-Bash(brew *)
-Bash(yq *)
-Bash(jq *)
-Bash(bats *)
-Bash(tinty *)
-Bash(home-manager *)
-Bash(nix *)
-Bash(plutil *)
-Bash(claude *)
-Bash(python3 *)
-Bash(alias *)
+Bash(bash:*)
+Bash(sh:*)
+Bash(zsh:*)
+Bash(source:*)
+Bash(shellcheck:*)
+Bash(brew:*)
+Bash(yq:*)
+Bash(jq:*)
+Bash(bats:*)
+Bash(tinty:*)
+Bash(home-manager:*)
+Bash(nix:*)
+Bash(plutil:*)
+Bash(claude:*)
+Bash(python3:*)
+Bash(alias:*)
 ```
 
 **Node/TS layer:**
 
 ```
-Bash(npm *)
-Bash(npx *)
-Bash(node *)
-Bash(pnpm *)
-Bash(yarn *)
-Bash(tsc *)
-Bash(eslint *)
-Bash(prettier *)
-Bash(jest *)
-Bash(vitest *)
+Bash(npm:*)
+Bash(npx:*)
+Bash(node:*)
+Bash(pnpm:*)
+Bash(yarn:*)
+Bash(tsc:*)
+Bash(eslint:*)
+Bash(prettier:*)
+Bash(jest:*)
+Bash(vitest:*)
 ```
 
 **Python layer:**
 
 ```
-Bash(uv *)
-Bash(python *)
-Bash(python3 *)
-Bash(pytest *)
-Bash(mypy *)
-Bash(ruff *)
+Bash(uv:*)
+Bash(python:*)
+Bash(python3:*)
+Bash(pytest:*)
+Bash(mypy:*)
+Bash(ruff:*)
 ```
 
 **Rust layer:**
 
 ```
-Bash(cargo *)
-Bash(rustc *)
-Bash(rustup *)
+Bash(cargo:*)
+Bash(rustc:*)
+Bash(rustup:*)
 ```
 
 **Go layer:**
 
 ```
-Bash(go *)
-Bash(gopls *)
+Bash(go:*)
+Bash(gopls:*)
 ```
 
 **Ruby layer:**
 
 ```
-Bash(bundle *)
-Bash(ruby *)
-Bash(gem *)
-Bash(rake *)
+Bash(bundle:*)
+Bash(ruby:*)
+Bash(gem:*)
+Bash(rake:*)
 ```
 
 1. **Read existing `.claude/settings.local.json`** and extract the `enabledMcpjsonServers` array if present. Preserve it in the output.
