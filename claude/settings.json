@@ -52,7 +52,6 @@
       "Bash(yq:*)",
       "Bash(jq:*)",
       "Bash(procs:*)",
-      "Bash(do:*)",
       "Bash(claude:*)",
       "Bash(cargo clippy:*)",
       "Bash(cargo fmt:*)",
