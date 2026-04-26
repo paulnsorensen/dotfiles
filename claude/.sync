@@ -69,6 +69,26 @@ if command -v claude &>/dev/null; then
   local_mkt="$HOME/.claude/plugins/marketplaces/local"
   mkdir -p "$local_mkt/.claude-plugin"
   [[ -L "$local_mkt/vaudeville" ]] || ln -sf "$HOME/Dev/vaudeville" "$local_mkt/vaudeville"
+
+  # Keep vaudeville plugin cache pointing at live source under ~/Dev/vaudeville
+  # so each `dots sync` picks up the latest commits without a reinstall dance.
+  if [[ -f "$HOME/Dev/vaudeville/.claude-plugin/plugin.json" ]]; then
+    vaud_ver=$(jq -r '.version // "0.1.0"' "$HOME/Dev/vaudeville/.claude-plugin/plugin.json")
+    vaud_cache="$HOME/.claude/plugins/cache/local/vaudeville/$vaud_ver"
+    mkdir -p "$(dirname "$vaud_cache")"
+    if [[ ! -L "$vaud_cache" ]] || [[ "$(readlink "$vaud_cache")" != "$HOME/Dev/vaudeville" ]]; then
+      rm -rf "$vaud_cache"
+      ln -sf "$HOME/Dev/vaudeville" "$vaud_cache"
+      echo "  Linked vaudeville cache → ~/Dev/vaudeville (v$vaud_ver)"
+    fi
+    # Prune orphan version dirs from previous vaudeville versions
+    for old in "$HOME/.claude/plugins/cache/local/vaudeville"/*; do
+      [[ -e "$old" ]] || continue
+      [[ "$(basename "$old")" == "$vaud_ver" ]] && continue
+      rm -rf "$old"
+      echo "  Pruned stale vaudeville cache: $(basename "$old")"
+    done
+  fi
   if [[ -x "$SOURCE_DIR/plugins/sync.sh" ]]; then
     echo "  Running plugin sync..."
     bash "$SOURCE_DIR/plugins/sync.sh" --force
