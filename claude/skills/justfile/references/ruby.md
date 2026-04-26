@@ -86,14 +86,11 @@ SimpleCov.start do
   # Native per-file floor — fails if ANY file drops below this
   minimum_coverage_by_file 80
 
-  # Global floor
-  minimum_coverage line: 90, branch: 85
-
   # Ratchet: read committed high-water mark, auto-raise on improvement
   threshold = File.exist?('.coverage_threshold') \
     ? File.read('.coverage_threshold').strip.to_f \
     : 85.0
-  minimum_coverage line: [threshold, 90].max
+  minimum_coverage line: [threshold, 90].max, branch: 85
 
   at_exit do
     pct = SimpleCov.result&.covered_percent || 0

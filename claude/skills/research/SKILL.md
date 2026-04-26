@@ -345,7 +345,7 @@ Find:
 - Observable best practices
 
 Steps:
-1. `gh search code '<query>' --language <lang>` — find relevant files.
+1. `gh search code '<query>' --language=<lang>` — find relevant files. Keep flags OUTSIDE the quoted query (e.g. `gh search code 'rate limit middleware' --language=ts`); flags inside the quotes become literal search terms.
 2. `gh search repos '<topic>' --sort stars` — discover canonical repos.
 3. `gh repo view owner/repo` — read README for promising hits.
 4. Max 5 gh calls total.

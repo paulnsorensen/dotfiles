@@ -74,63 +74,17 @@ _cdd() {
 # Register the completion function
 compdef _cdd cdd
 
-# vaudeville completion — subcommands, options, and dynamic rule names
-# Rules live in ~/.vaudeville/rules/*.yaml; tune takes a rule name positionally.
-_vaudeville() {
-  local -a subcmds
-  subcmds=(
-    'watch:Live TUI of rule firings'
-    'setup:Download model and verify inference'
-    'stats:Show classification statistics'
-    'tune:Tune a rule to meet precision/recall/f1 thresholds'
-    'generate:Generate a new rule from instructions'
-  )
-
-  _arguments -C \
-    '(-h --help)'{-h,--help}'[show help]' \
-    '1: :->subcmd' \
-    '*:: :->args' && return 0
-
-  case $state in
-    subcmd)
-      _describe -t commands 'vaudeville subcommand' subcmds
-      ;;
-    args)
-      case $words[1] in
-        watch|stats)
-          _arguments \
-            '--log-path[path to events.jsonl]:log path:_files' \
-            $([[ $words[1] == stats ]] && echo '--json[output raw JSON]')
-          ;;
-        tune)
-          local -a rules
-          local f
-          for f in ~/.vaudeville/rules/*.yaml(N); do
-            rules+=( ${f:t:r} )
-          done
-          _arguments \
-            '--p-min[minimum precision threshold]:precision:' \
-            '--r-min[minimum recall threshold]:recall:' \
-            '--f1-min[minimum F1 threshold]:f1:' \
-            '--rounds[maximum orchestration rounds]:rounds:' \
-            '--tuner-iters[ralph iterations for tune phase]:iters:' \
-            "1:rule name:($rules)"
-          ;;
-        generate)
-          _arguments \
-            '--p-min[minimum precision threshold]:precision:' \
-            '--r-min[minimum recall threshold]:recall:' \
-            '--f1-min[minimum F1 threshold]:f1:' \
-            '--live[run generation in live mode instead of shadow]' \
-            '--rounds[maximum orchestration rounds]:rounds:' \
-            '--tuner-iters[ralph iterations for tune phase]:iters:' \
-            '1:instructions:'
-          ;;
-        setup)
-          _message 'no arguments'
-          ;;
-      esac
-      ;;
-  esac
+# vaudeville completion — delegate to argcomplete (vaudeville's argparse-based CLI
+# already declares every subcommand, flag, and choice). Stays in sync automatically.
+# register-python-argcomplete ships inside vaudeville's uv tool venv but isn't on
+# PATH, so locate it via `uv tool dir` with a fallback to the conventional path.
+_vaudeville_register_argcomplete() {
+  local registrar
+  registrar=$(command -v register-python-argcomplete 2>/dev/null) \
+    || registrar="${HOME}/.local/share/uv/tools/vaudeville/bin/register-python-argcomplete"
+  [[ -x "$registrar" ]] || return 1
+  eval "$("$registrar" vaudeville)"
+  compdef _python_argcomplete vdv 2>/dev/null
 }
-compdef _vaudeville vaudeville vdv
+command -v vaudeville &>/dev/null && _vaudeville_register_argcomplete
+unset -f _vaudeville_register_argcomplete

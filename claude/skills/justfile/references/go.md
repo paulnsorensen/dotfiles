@@ -40,8 +40,10 @@ cov-check MIN="80":
     go tool cover -func=coverage.out | tail -1 | \
         awk -v min={{MIN}} '{gsub(/%/,"",$3); if ($3+0 < min) {printf "FAIL: %s%% < %s%%\n", $3, min; exit 1}}'
 
-# Per-package coverage gate
-cov-per-package MIN="75":
+# Per-function coverage gate
+# `go tool cover -func` emits one row per function (path/file.go:line:\tname\tNN.N%),
+# not per package — there is no native per-package threshold in the Go toolchain.
+cov-per-func MIN="75":
     go test -coverprofile=coverage.out ./...
     go tool cover -func=coverage.out | awk -v min={{MIN}} '
         /^total:/ {next}
@@ -92,7 +94,7 @@ build-all:
 ## Coverage notes
 
 - Go's toolchain has no `--fail-under` flag — thresholds always require a shell script or awk one-liner.
-- The awk pattern above is the OSS idiom; some projects use env-var `COVERAGE_THRESHOLD` instead of a just parameter.
+- The awk pattern above is one common approach; some projects use env-var `COVERAGE_THRESHOLD` instead of a just parameter, or the `go-test-coverage` tool for declarative thresholds via YAML.
 - Commit `.coverage-baseline` to enforce the ratchet in CI.
 
 ## Notes

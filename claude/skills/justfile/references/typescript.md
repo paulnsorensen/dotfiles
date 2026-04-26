@@ -37,16 +37,6 @@ test *args:
 lint:
     npx eslint src/
 
-# Full build pipeline — hard-gate the coverage step
-# (see SKILL.md "Token-optimized output" for the rtk test/err pattern)
-build:
-    npm install
-    npm run format
-    npm run lint:fix
-    npm run typecheck
-    npm run build
-    rtk test npm run test:coverage
-
 # Format
 fmt:
     npx prettier --write .
@@ -54,6 +44,16 @@ fmt:
 # Type check only
 typecheck:
     npx tsc --noEmit
+
+# Full CI pipeline — hard-gate the coverage step
+# (see references/rtk.md for the rtk test/err pattern)
+build-ci:
+    npm install
+    just fmt
+    just lint
+    just typecheck
+    just build
+    rtk test npm run test:coverage
 
 # Clean
 clean:
