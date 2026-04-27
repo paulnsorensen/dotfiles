@@ -33,16 +33,30 @@ echo
 # Sync local plugin marketplaces — resolve relative paths to absolute
 sync_local_marketplaces() {
     local local_entries
-    local_entries=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq -c 'to_entries[] | select(.value.path) | {name: (.key | split("@") | .[1]), path: .value.path}' 2>/dev/null || true)
+    local_entries=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq -c 'to_entries[] | select(.value.path) | {plugin: (.key | split("@") | .[0]), name: (.key | split("@") | .[1]), path: .value.path}' 2>/dev/null || true)
     [[ -z "$local_entries" ]] && return 0
 
     local changed=false
     while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
-        local mp_name mp_path abs_path current_path
+        local plugin_name mp_name mp_path abs_path current_path
+        plugin_name=$(echo "$entry" | jq -r '.plugin')
         mp_name=$(echo "$entry" | jq -r '.name')
         mp_path=$(echo "$entry" | jq -r '.path')
-        abs_path="$DOTFILES_DIR/$mp_path"
+
+        # Skip shared marketplaces (e.g. `@local`) — those are registered manually
+        # via `claude plugin marketplace add` and may host multiple plugins.
+        # Only auto-manage one-plugin-per-marketplace entries.
+        if [[ "$mp_name" != "$plugin_name" ]]; then
+            continue
+        fi
+
+        # shellcheck disable=SC2088  # literal "~/" pattern, expanded explicitly below
+        case "$mp_path" in
+            "~/"*) abs_path="${HOME}/${mp_path#"~/"}" ;;
+            /*)    abs_path="$mp_path" ;;
+            *)     abs_path="$DOTFILES_DIR/$mp_path" ;;
+        esac
 
         if [[ ! -d "$abs_path" ]]; then
             echo -e "  ${RED}Warning: $mp_name path not found: $abs_path${NC}"

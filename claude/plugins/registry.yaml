@@ -5,7 +5,6 @@
 #   - claude-code-lsps:           Language server plugins (boostvolt/claude-code-lsps)
 #   - claude-plugins-official:    Official workflow plugins (anthropics/claude-code-plugins)
 #   - claude-hud:                 Statusline HUD (jarrodwatts/claude-hud)
-#   - cheese-flow:                In-repo Cheddar Flow plugin (directory source)
 #   - todoist-flow:               In-repo Todoist productivity plugin (directory source)
 #   - local:                      Out-of-repo local plugins; `path:` resolves the source dir
 #
@@ -79,12 +78,6 @@ plugins:
 
   # --- Local plugins (dotfiles) ---
 
-  cheese-flow@cheese-flow:
-    description: Cheddar Flow agent pipeline — cheese-themed development workflow tools
-    scope: user
-    load: true
-    path: claude/plugins/local/cheese-flow
-
   todoist-flow@todoist-flow:
     description: Todoist productivity suite — triage, organize, update, extract reference material
     scope: user
@@ -97,3 +90,9 @@ plugins:
     scope: user
     load: true
     path: ~/Dev/vaudeville
+
+  cheese-flow@local:
+    description: Opinionated coding harness plugin scaffold for portable agents and skills
+    scope: user
+    load: true
+    path: ~/Dev/cheese-flow
