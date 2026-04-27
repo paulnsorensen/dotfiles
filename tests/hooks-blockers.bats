@@ -238,11 +238,11 @@ teardown() {
 
 # ── bash-guard: legacy tool blockers ────────────────────────────────
 
-@test "bash-guard: bare grep is blocked with /scout reference" {
+@test "bash-guard: bare grep is blocked with cheez-search reference" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"grep pattern file.txt"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/scout"* ]]
+    [[ "$output" == *"cheez-search"* ]]
 }
 
 @test "bash-guard: bare egrep is blocked" {
@@ -267,7 +267,7 @@ teardown() {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"sed s/foo/bar/ file.txt"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/chisel"* ]]
+    [[ "$output" == *"cheez-write"* ]]
 }
 
 @test "bash-guard: awk with leading whitespace is blocked" {
@@ -282,11 +282,11 @@ teardown() {
     [[ "$output" == blocked:* ]]
 }
 
-@test "bash-guard: bare sed is blocked with /chisel reference" {
+@test "bash-guard: bare sed is blocked with cheez-write reference" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"sed -i s/foo/bar/ file.txt"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/chisel"* ]]
+    [[ "$output" == *"cheez-write"* ]]
 }
 
 @test "bash-guard: sed -i in pipeline is blocked" {
@@ -295,18 +295,18 @@ teardown() {
     [[ "$output" == blocked:* ]]
 }
 
-@test "bash-guard: bare find is blocked with /scout reference" {
+@test "bash-guard: bare find is blocked with cheez-search reference" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"find . -name *.ts"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/scout"* ]]
+    [[ "$output" == *"cheez-search"* ]]
 }
 
-@test "bash-guard: bare awk is blocked with /chisel reference" {
+@test "bash-guard: bare awk is blocked with cheez-write reference" {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"awk -F, file.txt"}'
     [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/chisel"* ]]
+    [[ "$output" == *"cheez-write"* ]]
 }
 
 @test "bash-guard: piped grep (ls | grep) is allowed" {

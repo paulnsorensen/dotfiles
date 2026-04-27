@@ -145,6 +145,7 @@ Use when:
 - Searching for real-world usage examples of an API (`gh search code '<query>'`)
 - Inspecting a specific repo's README/structure (`gh repo view owner/repo`)
 - Finding popular implementations (`gh search repos '<topic>' --sort stars`)
+
 ### gh skill (GitHub ops)
 
 Use the `gh` skill for GitHub operations (PRs, issues, releases, CI checks). The
