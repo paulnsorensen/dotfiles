@@ -132,7 +132,7 @@ After execution, re-fetch overview and show before/after:
 If the user wants advice on how to structure a specific domain (e.g., "how should I organize my home renovation project?"), invoke the research skill:
 
 ```
-Skill(skill="cheese-flow:research", args="Best practices for organizing [domain] tasks in a task management system. Suggest project structure, sections, and labels.")
+Skill(skill="todoist-flow:research", args="Best practices for organizing [domain] tasks in a task management system. Suggest project structure, sections, and labels.")
 ```
 
 ## Key Principles

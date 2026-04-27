@@ -70,7 +70,7 @@ The todoist-scribe agent will validate the reworded title against formatting rul
 If `?`, invoke the research skill for context:
 
 ```
-Skill(skill="cheese-flow:research", args="Context for: '[task title]'. [description]. Help the user decide if this task is still relevant.")
+Skill(skill="todoist-flow:research", args="Context for: '[task title]'. [description]. Help the user decide if this task is still relevant.")
 ```
 
 Re-present the task after research returns.

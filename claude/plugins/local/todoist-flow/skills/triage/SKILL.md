@@ -49,7 +49,7 @@ Use `AskUserQuestion` to get the user's decision. Accept shorthand: `c`, `r tomo
 If the user picks `?` on a task, invoke the research skill to get context:
 
 ```
-Skill(skill="cheese-flow:research", args="Context for this task: '[task title]'. [task description if any]. Help the user decide if this is still relevant and what the current state of this topic is.")
+Skill(skill="todoist-flow:research", args="Context for this task: '[task title]'. [task description if any]. Help the user decide if this is still relevant and what the current state of this topic is.")
 ```
 
 After research returns, re-present the task with the research context and ask again.

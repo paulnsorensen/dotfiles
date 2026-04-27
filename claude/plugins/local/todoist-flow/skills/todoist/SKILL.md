@@ -57,7 +57,7 @@ Present the suggestion but let the user decide. Don't auto-invoke sub-skills.
 If the user asks for deeper context on their productivity patterns, invoke the research skill:
 
 ```
-Skill(skill="cheese-flow:research", args="[specific topic the user asked about]")
+Skill(skill="todoist-flow:research", args="[specific topic the user asked about]")
 ```
 
 This is opt-in — only when the user explicitly asks for research.
