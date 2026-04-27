@@ -2,7 +2,7 @@
 name: nih-scanner
 description: Structural NIH pattern scanner. Uses LSP and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list with usage counts and categories. Does not judge — the orchestrator scores and filters.
 model: sonnet
-skills: [trace, lsp]
+skills: [cheese-flow:cheez-search, lsp]
 disallowedTools: [Edit, Write, NotebookEdit, WebSearch, WebFetch]
 ---
 

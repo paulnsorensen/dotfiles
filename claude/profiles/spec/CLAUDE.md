@@ -30,7 +30,7 @@ Implementation MCPs (code-review-graph, shadcn, Playwright) are out of scope
 1. Launch `/spec` first — it runs the discovery dialogue.
 2. Ask questions until the problem is framed. Don't assume; the user
    will tell you when the spec is ready.
-3. For library/feasibility checks, use Context7 (`/fetch`) or `/research`
+3. For library/feasibility checks, use Context7 (`/fetch`) or `/briesearch`
    — cheap to validate an assumption before it bakes into the spec.
 4. Write the spec to `.claude/specs/<slug>.md`. Don't write anywhere else.
 5. When spec lands, recommend `/fromagerie .claude/specs/<slug>.md` — do not run it from this session.

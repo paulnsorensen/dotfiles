@@ -113,7 +113,7 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 
 | Category | Key Skills |
 |----------|-----------|
-| Planning | `/fromage`, `/fromagerie`, `/spec`, `/duck`, `/research` |
+| Planning | `/fromage`, `/fromagerie`, `/spec`, `/duck`, `/briesearch` |
 | Review | `/age`, `/code-review`, `/audit`, `/simplifier`, `/self-eval`, `/skill-improver` |
 | Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit), `/de-slop` (AI anti-patterns) |
 | PR Response | `/respond` (confidence-rated review triage), `/copilot-review`, `/copilot-delegate` |
@@ -130,14 +130,16 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 
 | Task | Skill | NEVER use instead |
 |------|-------|--------------------|
-| Search files | scout | `find`, `grep`, bare `ls` |
-| Code structure | trace | grep for code shapes |
+| Code/content search | `cheese-flow:cheez-search` | `find`, `grep`, `rg`, `fd`, `sg` |
+| Read code | `cheese-flow:cheez-read` | `cat`, `head`, `tail`, raw `Read` for code |
+| File editing | `cheese-flow:cheez-write` | `sed`, `awk`, raw `Edit` for code blocks |
+| Directory listings | scout (`ls -T`, eza) | `find -type d`, plain `ls` |
 | Pre-commit check | diff | raw git + manual scanning |
-| File editing | chisel | `sed`, `awk` |
 | Git operations | commit | manual git add/commit |
 | GitHub ops | gh | raw GitHub API |
 | Code navigation | LSP | grep for definitions |
 | External docs | fetch | guessing from training data |
+| Multi-source research | `/briesearch` | guessing or skipping research |
 | Worktree isolation | worktree | manual branch + cd |
 | AI slop cleanup | de-slop | ignoring AI tells |
 | Weak test assertions | tdd-assertions | truthy checks, catch-all errors |
@@ -151,14 +153,18 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 
 - **jq** — JSON processing (parse, filter, transform). Use `gh --jq` for GitHub output.
 - **yq** — YAML processing (same syntax as jq)
-- **sd** — regex replacement (Rust sed). Use via `/chisel` skill.
-- **fd** — file finder (Rust find). Use via `/scout` skill.
-- **rg** — content search (Rust grep). Use via Grep tool or `/scout`.
-- **sg** — AST structural search (ast-grep). Use via `/trace` skill.
 - **tokei** — code statistics by language
 - **duckdb** — SQL analytics on local data (used by `/session-analytics`)
 
-**Code intelligence routing** — use `/lookup` to decide between trace (AST shape), LSP (type inference, cross-refs), and Context7 (external docs + GitHub code reference). Don't guess; let lookup route you.
+For code/content search, file editing, and reading code, use the cheese-flow
+plugin's tilth-MCP-backed skills (`cheez-search`, `cheez-write`, `cheez-read`)
+instead of raw `rg`/`fd`/`sg`/`sd`/`cat`. They're hash-anchored, AST-aware,
+and far cheaper in tokens than blind text grep + full file reads.
+
+**Code intelligence routing** — use `/lookup` to decide between
+`cheese-flow:cheez-search` (AST shape), LSP (type inference, cross-refs),
+and Context7 (external docs + GitHub code reference). Don't guess; let
+lookup route you.
 
 **LSP integration** — All 6 LSP plugins are enabled globally (lazy startup, zero cost when idle). Run `/lsp` for status and troubleshooting.
 
@@ -168,7 +174,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 
 **Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
 
-**Agent skill enforcement**: When an agent has `skills: [scout, trace, diff]`, it MUST use those tools. Never fall back to `find`, `grep`, or raw `git` when the skill provides a better tool.
+**Agent skill enforcement**: When an agent has `skills: [...]`, it MUST use those tools. Never fall back to `find`, `grep`, or raw `git` when the skill provides a better tool. Code-search agents use `cheese-flow:cheez-search`; code-edit agents use `cheese-flow:cheez-write`.
 
 ## Self-Evaluation Checklist
 

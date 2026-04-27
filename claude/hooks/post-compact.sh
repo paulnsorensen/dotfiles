@@ -13,7 +13,7 @@ if [[ -f "$CONTEXT_FILE" ]]; then
   rm -f "$CONTEXT_FILE"
 fi
 
-REMINDER="COMPACTION COMPLETE — context restored. Use /trace for structural code queries (pattern matching, architecture mapping, code shape analysis). Use Grep/Glob for text search."
+REMINDER="COMPACTION COMPLETE — context restored. Use cheese-flow:cheez-search for AST-aware code/content search. Use cheese-flow:cheez-read for code reading and cheese-flow:cheez-write for hash-anchored edits."
 
 if [[ -n "$SAVED_CONTEXT" ]]; then
   FULL_CONTEXT="$REMINDER

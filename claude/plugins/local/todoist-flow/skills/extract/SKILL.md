@@ -154,7 +154,7 @@ Removed from Todoist: X tasks
 If the user wants to evaluate whether a candidate is truly reference material vs. actionable:
 
 ```
-Skill(skill="research", args="Is '[task title]' something actionable or reference material? Context: [description]. Help decide if this belongs in a task list or a reference doc.")
+Skill(skill="cheese-flow:research", args="Is '[task title]' something actionable or reference material? Context: [description]. Help decide if this belongs in a task list or a reference doc.")
 ```
 
 ## Key Principles

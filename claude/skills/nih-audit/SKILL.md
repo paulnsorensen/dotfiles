@@ -139,7 +139,7 @@ Deduplicate candidates that share a category. Group into research queries:
 
 For each category group (max 5 parallel), spawn a general-purpose agent with
 focused MCP access. Library lookup primarily uses Context7 for API surface
-and `gh` CLI for repo stats — not a full 5-source /research call.
+and `gh` CLI for repo stats — not a full /briesearch call.
 
 ```
 Agent(

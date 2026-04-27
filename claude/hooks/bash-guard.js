@@ -8,11 +8,11 @@ const INSTALL_PATTERNS = [
 ];
 
 const LEGACY_TOOLS = [
-  { pattern: /^\s*(grep|egrep|fgrep)\b/, msg: 'Use the built-in Grep tool or /scout (rg). Example: Grep with pattern="..." path="..."' },
-  { pattern: /^\s*sed\b/, msg: 'Use /chisel (sd) or the Edit tool. Example: sd \'pattern\' \'replacement\' file' },
-  { pattern: /\bsed\s+-[^|]*i/, msg: 'Use /chisel (sd) or the Edit tool.' },
-  { pattern: /^\s*awk\b/, msg: 'Use /chisel (sd) or the Edit tool.' },
-  { pattern: /^\s*find\b/, msg: 'Use the Glob tool or /scout (fd). Example: Glob with pattern="**/*.ts"' },
+  { pattern: /^\s*(grep|egrep|fgrep)\b/, msg: 'Use cheese-flow:cheez-search (AST-aware) or the built-in Grep tool.' },
+  { pattern: /^\s*sed\b/, msg: 'Use cheese-flow:cheez-write or the Edit tool.' },
+  { pattern: /\bsed\s+-[^|]*i/, msg: 'Use cheese-flow:cheez-write or the Edit tool.' },
+  { pattern: /^\s*awk\b/, msg: 'Use cheese-flow:cheez-write or the Edit tool.' },
+  { pattern: /^\s*find\b/, msg: 'Use cheese-flow:cheez-search (with glob: filter) or the Glob tool.' },
 ];
 
 const DEP_CACHES = [
@@ -119,7 +119,7 @@ function matchBruteLookup(cmd) {
   }
   if (/target\/doc\//.test(cmd) && /grep/.test(cmd)) return 'Blocked: grepping generated docs. Use /fetch (Context7) or LSP hover.';
   if (/find\s+.*-exec\s+grep/.test(cmd) || /find\s+.*\|\s*xargs\s+grep/.test(cmd))
-    return 'Blocked: find + grep chain. Use LSP (findReferences), /trace (ast-grep), or /lookup.';
+    return 'Blocked: find + grep chain. Use LSP (findReferences), cheese-flow:cheez-search, or /lookup.';
   return null;
 }
 

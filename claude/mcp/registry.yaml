@@ -7,25 +7,14 @@
 #   local   - Machine-specific, gitignored
 
 mcps:
-  context7:
-    command: npx
-    args: ["-y", "@upstash/context7-mcp"]
-    env:
-      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
-    scope: user
-    description: Documentation context for libraries and frameworks
+  # context7, tavily, tilth — provided by the cheese-flow plugin's .mcp.json
+  # (~/Dev/cheese-flow/.mcp.json). Plugin MCPs are session-wide and accessible
+  # to all skills/agents. Registering them here too would spawn duplicate
+  # processes per session.
 
   # shadcn lives in the FE profile only — see claude/profiles/fe/mcp-add.json.
   # Installing user-scope loads its tool schemas in every session even though
   # shadcn is only useful for FE work.
-
-  tavily:
-    command: npx
-    args: ["-y", "tavily-mcp@latest"]
-    env:
-      TAVILY_API_KEY: "${TAVILY_API_KEY}"
-    scope: user
-    description: Web search and research via Tavily AI search API
 
   serper:
     command: npx
@@ -48,9 +37,3 @@ mcps:
     args: [code-review-graph, serve]
     scope: user
     description: Structural code knowledge graph via Tree-sitter — semantic search, call chains, impact radius, flows, communities
-
-  tilth:
-    command: tilth
-    args: ["--mcp", "--edit"]
-    scope: user
-    description: Tree-sitter indexed symbol lookup and smart code reading — replaces grep/cat/find for AST-aware navigation

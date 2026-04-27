@@ -17,6 +17,6 @@ fi
 jq -n '{
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "Fresh session started. Use /trace for structural code queries (pattern matching, architecture mapping, code shape analysis). Use Grep/Glob for text search."
+    "additionalContext": "Fresh session started. Use cheese-flow:cheez-search for AST-aware code/content search. Use cheese-flow:cheez-read for code reading and cheese-flow:cheez-write for hash-anchored edits."
   }
 }'

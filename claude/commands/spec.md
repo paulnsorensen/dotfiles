@@ -71,8 +71,8 @@ In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents 
 
 | Agent | Source | What to Find |
 |-------|--------|-------------|
-| `/research` | Web + docs | Prior art, competitor approaches, relevant blog posts, library options |
-| `/lookup` → `/trace` | Codebase | Existing patterns, public API surface, architectural boundaries |
+| `/briesearch` | Web + docs | Prior art, competitor approaches, relevant blog posts, library options |
+| `/lookup` → `cheese-flow:cheez-search` | Codebase | Existing patterns, public API surface, architectural boundaries |
 | LSP | Cross-refs | Call chains, dependency direction, blast radius of the change |
 | `/fetch` | External code | How other projects solved similar problems, real-world examples |
 
@@ -86,9 +86,9 @@ Present synthesis conversationally: "I ran research in parallel — here's what 
 
 In later rounds, use individual skills as needed:
 
-- **`/research`** — Verify specific assumptions, check APIs
+- **`/briesearch`** — Verify specific assumptions, check APIs
 - **`/lookup`** — Targeted code exploration
-- **`/trace`** — Structural code patterns: "what implements this interface?"
+- **`cheese-flow:cheez-search`** — Structural code patterns: "what implements this interface?"
 - **LSP** — Cross-reference tracing and symbol navigation
 
 **Beat 3 — Summarize** (every 2 rounds)
@@ -99,9 +99,9 @@ Periodically check alignment: "Here's where we are so far... Does this direction
 | Round | Focus | Skills |
 |-------|-------|--------|
 | 1 | Problem, users, success criteria, constraints | Light code reading to ground questions in reality |
-| 2 | Scope, non-goals, existing landscape | `/lookup`, `/research` |
-| 3 | Design options, tradeoffs, quality gates | `/lookup`, `/trace` |
-| 4+ | Refinement, edge cases, acceptance criteria | `/research` as needed |
+| 2 | Scope, non-goals, existing landscape | `/lookup`, `/briesearch` |
+| 3 | Design options, tradeoffs, quality gates | `/lookup`, `cheese-flow:cheez-search` |
+| 4+ | Refinement, edge cases, acceptance criteria | `/briesearch` as needed |
 
 Round 1 doesn't need formal skill invocations, but **do read relevant code** before asking questions. Grounding questions in what actually exists ("I see you already have a `FooAdapter` — is the pain that it doesn't cover X, or that it's too coupled to Y?") produces better answers than abstract interrogation.
 

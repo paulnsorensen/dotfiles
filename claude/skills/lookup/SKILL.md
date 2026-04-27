@@ -40,14 +40,14 @@ Then follow the table:
 | Type/signature of a symbol | **LSP** `hover` | **Context7** or **gh** `gh search code` |
 | Go to definition | **LSP** `goToDefinition` | **Context7** `query-docs` |
 | Who calls this function? | **LSP** `findReferences` | **gh** `gh search code` |
-| Who implements this trait/interface? | **/trace** `sg -p 'impl $T for $S'` | **gh** `gh search code` |
+| Who implements this trait/interface? | **cheese-flow:cheez-search** (callers/structural) | **gh** `gh search code` |
 | All usages of a type | **LSP** `findReferences` | **gh** `gh search code` |
 | Method list on a struct/class | **LSP** `documentSymbol` | **Context7** `query-docs` |
 | What does this function do? | **LSP** `hover` + **Read** the body | **Context7** or **WebFetch** raw source |
-| Find structural patterns | **/trace** `sg --lang X -p 'pattern'` | N/A — use `gh search code` text search |
+| Find structural patterns | **cheese-flow:cheez-search** (tilth tree-sitter) | N/A — use `gh search code` text search |
 | Error type / return type | **LSP** `hover` | **Context7** `query-docs` |
-| Find files by name/pattern | **Glob** (simple) or **fd** via scout (metadata filters) | N/A |
-| Find files by content | **Grep** (simple) or **rg** via scout (aliases, hidden files) | **gh** `gh search code` |
+| Find files by name/pattern | **cheese-flow:cheez-search** (`glob:` filter) | N/A |
+| Find files by content | **cheese-flow:cheez-search** (kind=content) | **gh** `gh search code` |
 | List directory contents | **ls** via scout (eza tree view + git status) | **gh** `gh repo view owner/repo` |
 
 ### Quick reference by tool
@@ -60,20 +60,20 @@ Then follow the table:
 - `documentSymbol` — list all symbols in a file
 - Works on: .rs, .py, .ts, .go, .sh, .yaml, .rb (all 7 LSP plugins)
 
-**ast-grep** (zero config — invoke via `/trace` skill):
+**cheese-flow:cheez-search** (tilth MCP, AST + text):
 
-- `sg --lang X -p 'pattern'` — structural pattern matching
-- Best for: "find all classes that extend Z", "which functions have >4 params"
-- Works on AST shape, not text — won't false-match comments or strings
-- **Always use `/trace`** — it enforces no-file-read and proper output format
+- `kind=symbol` (default) — find definitions and usages by name
+- `kind=content` — string/comment search across the codebase
+- `kind=callers` — find who invokes a function
+- `glob:*.ts` filter — restrict to file patterns
+- Tree-sitter structural matching, definitions ranked first
+- Best for: "find all classes that extend Z", "who calls this function", "find usages of X"
 
-**File finding** (built-in tools or scout skill):
+**File finding** (cheez-search):
 
-- **Glob** — find files by name/extension pattern (`**/*.ts`, `src/**/*.rs`)
-- **fd** (via scout) — find files by name, type, size, date (`fd -e rs -t f`)
-- **Grep** (built-in) — search file contents for text patterns
-- **rg** (via scout) — faster content search with .gitignore awareness
-- **NEVER use `find`** — use Glob or fd instead. `find` is blocked by hook.
+- Use `cheez-search` with a `glob:` filter to find files by name/extension
+- For directory listings (tree views, git status), use `ls` via scout (eza)
+- **NEVER use `find`** — blocked by hook. Use `cheez-search` instead.
 
 **Context7** (MCP, for external libraries):
 
@@ -142,7 +142,7 @@ grep -rn "def validate" --include="*.py" | grep -v test
 find . -path "*/some_crate*" -exec grep "fn method" {} \;
 ```
 
-**Instead**: LSP `findReferences` or ast-grep `sg --lang rust -p 'trait CommandBuilder'`.
+**Instead**: LSP `findReferences` or `cheese-flow:cheez-search` for symbol/structural lookup.
 
 ### 4. Building code to discover types
 
@@ -163,7 +163,8 @@ cat src/lib.rs | grep -A 20 "fn new"
 ```
 
 **Instead**: LSP `documentSymbol` to list all symbols, then `hover` on the one you need.
-Or LSP `goToDefinition` on the symbol.
+Or LSP `goToDefinition` on the symbol. Or `cheese-flow:cheez-read` for hash-anchored
+section reads.
 
 ## When Tools Aren't Available
 
@@ -171,11 +172,12 @@ Not every project has all tools active:
 
 | Situation | Fallback |
 |---|---|
-| No LSP running | ast-grep for structure, Grep for text (last resort) |
+| No LSP running | `cheese-flow:cheez-search` (tilth tree-sitter) |
 | Context7 doesn't have the library | `gh search code` → WebFetch raw source |
 | External crate, no MCP available | `WebSearch` for official docs (via /fetch skill) |
+| tilth MCP unavailable | Grep (last resort) |
 
-The hierarchy is: **LSP > ast-grep > Grep**. Only fall to the next level
+The hierarchy is: **LSP > cheez-search > Grep**. Only fall to the next level
 when the better tool genuinely isn't available — not because it's easier to type `grep`.
 
 ## Why This Skill Is NOT Forked
@@ -197,11 +199,11 @@ the heavy fetching forks as needed.
 - One lookup per question — don't chain 3 tools when one gives the answer
 - External deps are NEVER solved by grepping local caches
 - If LSP is running, `hover` answers 80% of type questions in one call
-- If you need the skill that each tool delegates to, invoke it: /trace, /lsp, /fetch
+- If you need the skill that each tool delegates to, invoke it: cheese-flow:cheez-search, /lsp, /fetch
 
 ## Gotchas
 
 - LSP servers start lazily — first `hover` or `goToDefinition` may fail, retry after a moment
 - Context7 library ID resolution sometimes returns wrong package for ambiguous names — verify
-- ast-grep patterns are language-specific — Rust `impl` blocks vs Go `func` declarations have different AST shapes
+- cheez-search requires tilth MCP (provided by cheese-flow plugin) — hard-fails if disabled
 - Training data is often sufficient for well-known libraries — don't fetch docs for stdlib

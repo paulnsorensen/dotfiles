@@ -174,7 +174,7 @@ Interactive requirements gathering — a conversation, not an interrogation.
 
 1. Parse the request: what's clear vs ambiguous
 2. Ask clarifying questions naturally (don't dump a list)
-3. Invoke `/research` when external research is needed
+3. Invoke `/briesearch` when external research is needed
 4. **Library discovery**: Search for existing libraries/packages that could accelerate implementation. Use Context7 (`resolve-library-id` → `query-docs`) to find candidates. Evaluate: maturity, maintenance activity, API fit, **license compatibility** (see below).
 5. **Quality gates** (mandatory when this phase runs): Before writing the spec, ask with lettered options:
 
@@ -247,7 +247,7 @@ Launch Culture agents (sonnet), each targeting a different aspect. Every agent a
 
 **Separate research subagents (large only, run in parallel with Culture):**
 
-- **Aspect D**: **External prior art** — invoke the `/research` skill (not `fromage-culture`) to scan how other projects solved similar problems. The skill routes across Context7, Serper, and Tavily automatically. Pass `--report $TMPDIR/fromage-culture-<slug>-prior-art.md` so the findings file is created.
+- **Aspect D**: **External prior art** — invoke the `/briesearch` command (cheese-flow plugin, not `fromage-culture`) to scan how other projects solved similar problems. The skill routes across Context7 and Tavily automatically. Pass `--report $TMPDIR/fromage-culture-<slug>-prior-art.md` so the findings file is created.
 - **Aspect E**: **Dependency and API landscape** — spawn a `/fetch` agent to assess external libraries, APIs, or services this change interacts with. Are there newer/better options? Version constraints? Write to `$TMPDIR/fromage-culture-<slug>-deps.md`.
 
 After agents return:
@@ -391,7 +391,7 @@ When dispatching Cook agents for medium/large tasks:
 
 When a Cook or Culture agent encounters an unfamiliar library/API:
 
-1. **Codebase first**: Grep the codebase for existing usage patterns, or use `/trace` (ast-grep) for structural matches
+1. **Codebase first**: Use `cheese-flow:cheez-search` for existing usage patterns and structural matches
 2. **Context7 second**: Query library docs via Context7 MCP
 3. **Package README third**: Use `gh repo view` or Context7 to read the package README
 4. **NEVER**: Read library source code. If the answer isn't in steps 1-3, return what you have and flag it as needing research.

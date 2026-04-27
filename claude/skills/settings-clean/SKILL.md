@@ -48,8 +48,8 @@ If PreToolUse hooks exist, some Bash commands are blocked regardless of permissi
 | Hook block | Matching allow entries | Hook redirects to |
 |---|---|---|
 | Legacy: `grep`, `egrep`, `fgrep` | `Bash(grep:*)` etc. | Grep tool, `/scout` |
-| Legacy: `sed` | `Bash(sed:*)` | `/chisel`, Edit |
-| Legacy: `awk` | `Bash(awk:*)` | `/chisel`, Edit |
+| Legacy: `sed` | `Bash(sed:*)` | `cheese-flow:cheez-write`, Edit |
+| Legacy: `awk` | `Bash(awk:*)` | `cheese-flow:cheez-write`, Edit |
 | Legacy: `find` | `Bash(find:*)`, specific find commands | Glob, `/scout (fd)` |
 | Install: `npm install` | `Bash(npm install:*)` | per-use approval |
 | Install: `pnpm add/install` | `Bash(pnpm add:*)`, `Bash(pnpm install:*)` | per-use approval |
@@ -132,8 +132,8 @@ Recommended deny entries (reinforces hook blocks):
     "Bash(grep:*)"         → Grep tool or /scout
     "Bash(egrep:*)"        → Grep tool or /scout
     "Bash(fgrep:*)"        → Grep tool or /scout
-    "Bash(sed:*)"          → /chisel (sd) or Edit
-    "Bash(awk:*)"          → /chisel (sd) or Edit
+    "Bash(sed:*)"          → cheese-flow:cheez-write or Edit
+    "Bash(awk:*)"          → cheese-flow:cheez-write or Edit
     "Bash(find:*)"         → Glob tool or /scout (fd)
 
   Package installs (require per-use approval):

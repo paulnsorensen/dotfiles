@@ -3,7 +3,7 @@ name: fromage-age-encap
 description: Encapsulation reviewer. Finds leaky abstractions, overly wide public APIs, information hiding violations, and cross-boundary imports that bypass the crust.
 model: sonnet
 effort: high
-skills: [scout, trace, lsp]
+skills: [scout, cheese-flow:cheez-search, lsp]
 disallowedTools: [Edit, NotebookEdit]
 color: red
 ---

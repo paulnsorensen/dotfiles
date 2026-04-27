@@ -71,7 +71,7 @@ Slash commands invoked with `/command-name`.
 | `/setup-perms` | Scaffold `.claude/settings.local.json` with project permissions |
 | `/onboard` | Quick codebase orientation for an unfamiliar repo |
 | `/pull` | Pull latest from main |
-| `/research` | Multi-source research: library docs, codebase analysis, prior art |
+| `/briesearch` | Multi-source research: library docs, codebase analysis, prior art (cheese-flow plugin) |
 
 ### Learning Commands
 
@@ -111,7 +111,6 @@ Specialized agents invoked via Task tool with `subagent_type`.
 | Agent | Purpose |
 |-------|---------|
 | `cheese-factory` | Codebase orientation and mapping |
-| `research` | Multi-source research coordinator |
 | `ricotta-reducer` | Code distillation and simplification (analysis only) |
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
@@ -126,10 +125,11 @@ Reusable tool-usage instructions injected into agents and commands.
 
 | Skill | Purpose |
 |-------|---------|
-| `scout` | File search with rg, fd, eza |
-| `trace` | Structural code parsing with ast-grep |
+| `scout` | Directory listings (eza); delegates code search to `cheese-flow:cheez-search` |
+| `cheese-flow:cheez-search` | AST-aware code/content search via tilth MCP (replaces trace) |
+| `cheese-flow:cheez-read` | Hash-anchored code reading via tilth MCP |
+| `cheese-flow:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |
 | `diff` | Pre-commit change review |
-| `chisel` | File editing with sd or Edit tool |
 | `fetch` | External docs via Context7, WebSearch, Tavily |
 | `gh` | GitHub operations via gh CLI |
 | `commit` | Git staging and conventional commits |
@@ -167,7 +167,7 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 |------|-------|---------|
 | `pre-compact.sh` | PreCompact | Saves session context before compaction |
 | `post-compact.sh` | SessionStart (compact) | Restores context after compaction |
-| `post-fresh-start.sh` | SessionStart | Injects `/trace` suggestion on fresh sessions |
+| `post-fresh-start.sh` | SessionStart | Injects `cheese-flow:cheez-search` suggestion on fresh sessions |
 | `on-session-end.sh` | UserPromptSubmit | Detects parting language, suggests saving context |
 | Stop guard (inline agent) | Stop | Catches hesitation around commit/push/PR creation |
 | `rtk hook claude` | PreToolUse Bash | Token-optimizing command rewriter |
@@ -227,7 +227,7 @@ Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 | Plugin | Source | Purpose |
 |--------|--------|---------|
 | `claude-hud` | `jarrodwatts/claude-hud` | Statusline HUD |
-| `cheese-flow` | in-repo (`claude/plugins/local/cheese-flow`) | Cheddar Flow agent pipeline |
+| `cheese-flow` | local (`~/Dev/cheese-flow`) | Cheddar Flow agent pipeline + tilth MCP + cheez-* skills |
 | `todoist-flow` | in-repo (`claude/plugins/local/todoist-flow`) | Todoist productivity suite |
 | `vaudeville` | local (`~/Dev/vaudeville`) | SLM-powered semantic hook enforcement |
 
@@ -237,14 +237,22 @@ Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 
 Managed declaratively via `mcp/registry.yaml`. Sync with `mcp-sync` (run `mcp-ls` to verify).
 
+User-scope MCPs (registered here):
+
 | MCP | Purpose |
 |-----|---------|
-| `context7` | Library/framework docs (React, Tailwind, Next.js, …) |
-| `tilth` | AST-aware code search/read (replaces grep/cat for code navigation) |
 | `code-review-graph` | Persistent code knowledge graph; impact radius, call chains, architectural framing |
-| `tavily` | AI-powered technical research |
 | `serper` | Google SERP for factual lookups |
 | `todoist` | Todoist task/project management |
+
+Plugin-provided MCPs (declared by `cheese-flow`'s `.mcp.json`, session-wide and accessible to all skills):
+
+| MCP | Provider | Purpose |
+|-----|----------|---------|
+| `context7` | cheese-flow | Library/framework docs (React, Tailwind, Next.js, …) |
+| `tavily` | cheese-flow | AI-powered technical research |
+| `tilth` | cheese-flow | AST-aware code search/read; backs `cheez-*` skills |
+| `milknado` | cheese-flow | Mikado-method change graph for `milknado-*` skills |
 
 Profile-only MCPs (loaded per-profile via `--mcp-config`, not registry-managed):
 
