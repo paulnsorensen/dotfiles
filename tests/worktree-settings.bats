@@ -4,7 +4,9 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 GENERATOR="${DOTFILES_DIR}/claude/worktree-settings.sh"
 
 setup() {
-    TMPDIR_TEST="$(mktemp -d "${TMPDIR:-.}/wt-settings.XXXXXX")"
+    # Force absolute path. CI runners typically don't set $TMPDIR, and a
+    # relative TMPDIR_TEST breaks plugin path resolution in worktree-settings.sh.
+    TMPDIR_TEST="$(mktemp -d "${TMPDIR:-/tmp}/wt-settings.XXXXXX")"
     mkdir -p "${TMPDIR_TEST}/claude/skills/foo" \
              "${TMPDIR_TEST}/claude/skills/bar-baz" \
              "${TMPDIR_TEST}/claude/mcp" \
@@ -208,6 +210,8 @@ YAML
 
 @test "worktree-settings: real output includes known MCPs" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"
-    # tilth lives in the cheese-flow plugin's .mcp.json (not user-scope).
-    assert_has_entry "$result" "mcp__plugin_cheese-flow_tilth__*"
+    # serper is a deterministic user-scope entry in claude/mcp/registry.yaml.
+    # Plugin-sourced MCPs (e.g. cheese-flow's tilth) require an .mcp.json that
+    # may not exist in CI, so assert against the in-repo registry instead.
+    assert_has_entry "$result" "mcp__serper__*"
 }

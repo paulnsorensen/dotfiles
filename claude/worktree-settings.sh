@@ -37,29 +37,40 @@ if [[ -f "${MCP_REGISTRY}" ]]; then
 fi
 
 # Resolve a plugin's .mcp.json path. Prefer registry `path:` (for local plugins),
-# fall back to the marketplace cache. Always returns 0; emits empty string when
-# no .mcp.json is present (skill-only plugins).
+# fall back to the marketplace cache. Emits empty string when no .mcp.json is
+# present (skill-only plugins).
 locate_plugin_mcp() {
     local plugin="$1" marketplace="$2" path_field="$3"
     if [[ -n "${path_field}" && "${path_field}" != "null" ]]; then
         local expanded="${path_field/#\~/${HOME}}"
-        [[ "${expanded}" != /* ]] && expanded="${DOTFILES}/${expanded}"
+        if [[ "${expanded}" != /* ]]; then
+            expanded="${DOTFILES}/${expanded}"
+        fi
         if [[ -f "${expanded}/.mcp.json" ]]; then
             echo "${expanded}/.mcp.json"
             return 0
         fi
     fi
+    # Preserve caller's nullglob state so we don't leak the option globally.
+    local nullglob_was_set=0
+    if shopt -q nullglob; then
+        nullglob_was_set=1
+    fi
     shopt -s nullglob
     local candidates=("${PLUGIN_CACHE}/${marketplace}/${plugin}"/*/.mcp.json)
-    shopt -u nullglob
-    [[ ${#candidates[@]} -gt 0 ]] && echo "${candidates[0]}"
-    return 0
+    if [[ ${nullglob_was_set} -eq 0 ]]; then
+        shopt -u nullglob
+    fi
+    if [[ ${#candidates[@]} -gt 0 ]]; then
+        echo "${candidates[0]}"
+    fi
 }
 
 # Plugin .mcp.json may use either `{ "mcpServers": { name: ... } }` or a flat
-# `{ name: ... }` layout. Return server names, one per line.
+# `{ name: ... }` layout. Return server names, one per line. Errors from jq
+# (missing/invalid file) propagate so the script fails loudly under set -e.
 read_mcp_servers() {
-    jq -r 'if has("mcpServers") then .mcpServers | keys[] else keys[] end' "$1" 2>/dev/null
+    jq -r 'if has("mcpServers") then .mcpServers | keys[] else keys[] end' "$1"
 }
 
 if [[ -f "${PLUGIN_REGISTRY}" ]]; then
@@ -73,9 +84,11 @@ if [[ -f "${PLUGIN_REGISTRY}" ]]; then
         mcp_file="$(locate_plugin_mcp "${plugin}" "${marketplace}" "${path_field}")"
         [[ -z "${mcp_file}" ]] && continue
 
+        # Capture servers via command substitution so jq failures trip set -e.
+        servers="$(read_mcp_servers "${mcp_file}")"
         while IFS= read -r server; do
             [[ -n "${server}" ]] && perms+=("mcp__plugin_${plugin}_${server}__*")
-        done < <(read_mcp_servers "${mcp_file}")
+        done <<< "${servers}"
     done < <(yq -r '.plugins | keys[]' "${PLUGIN_REGISTRY}")
 fi
 
