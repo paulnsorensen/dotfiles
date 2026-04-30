@@ -18,7 +18,7 @@ When the agent returns, present the orientation map to the user.
 
 ## What This Is NOT
 
-- Not a code review (use `/code-review` or `/age`)
+- Not a code review (use `/code-review` or `/cheese-flow:age`)
 - Not a security audit (use `/audit`)
 - Not a planning session (use `/fromage`)
 - Not persistent — does not save to `.claude/review/`

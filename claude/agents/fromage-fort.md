@@ -117,7 +117,7 @@ Include a one-line expansion for each row.
 ### FIX items (>= 50)
 
 1. Read the source file
-2. Implement the fix using **chisel**
+2. Implement the fix using **`cheese-flow:cheez-write`** (hash-anchored edits via tilth MCP)
 3. Reply acknowledging the fix:
    - **Inline threads**: `add_reply_to_pull_request_comment(owner, repo, pullNumber, commentId, body)`
    - **Review body items**: `gh api repos/{owner}/{repo}/issues/{pullNumber}/comments -f body="Re: @reviewer's review — Fixed: <description>."`

@@ -92,7 +92,7 @@ If issues found:
 - Add docstrings or comments
 - Run tests (that's a separate step)
 
-This is a quick gate, not a code review. For thorough review, use `/age` or `/code-review`.
+This is a quick gate, not a code review. For thorough review, use `/cheese-flow:age` or `/code-review`.
 
 ## Gotchas
 

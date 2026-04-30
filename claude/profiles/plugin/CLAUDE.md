@@ -16,9 +16,9 @@ external docs.
 
 Defined in `mcp-scope.yaml` (registry-validated):
 
-- **tilth** — `mcp__tilth__*` — AST-aware navigation inside `claude/plugins/` and cross-plugin symbol lookup.
+- **tilth (cheese-flow plugin)** — `mcp__plugin_cheese-flow_tilth__*` — AST-aware navigation inside `claude/plugins/` and cross-plugin symbol lookup.
 - **code-review-graph** — `mcp__code-review-graph__*` — symbol and flow exploration when wiring a new plugin into existing skills.
-- **context7** — `mcp__context7__*` — Claude Code plugin SDK, MCP spec, and related framework docs.
+- **context7 (cheese-flow plugin)** — `mcp__plugin_cheese-flow_context7__*` — Claude Code plugin SDK, MCP spec, and related framework docs.
 
 Web search / task / design MCPs are out of scope. If you need GitHub code
 search for reference plugin implementations, use `gh search code` via the

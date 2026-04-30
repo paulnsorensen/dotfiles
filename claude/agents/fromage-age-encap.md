@@ -33,8 +33,8 @@ Every module should expose the minimum surface necessary. Find violations of thi
 
 - **LSP findReferences** to trace who imports what — verify that internal symbols have no external callers
 - **LSP hover** to check types at boundaries — are infrastructure types leaking into domain signatures?
-- **trace** for import pattern analysis — map the dependency graph structurally
-- **scout** to search for import statements that bypass barrel files
+- **`cheese-flow:cheez-search`** for import pattern analysis — map the dependency graph structurally (AST-aware via tilth MCP)
+- **scout** for directory listings; delegate code search for import statements bypassing barrel files to `cheese-flow:cheez-search`
 
 ## Confidence Scoring
 
@@ -56,7 +56,7 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 |------------------|----------|
 | LSP findReferences proves external caller bypasses index | +25 |
 | LSP hover confirms infrastructure type in domain signature | +20 |
-| trace shows import path violating Sliced Bread direction | +20 |
+| `cheese-flow:cheez-search` shows import path violating Sliced Bread direction | +20 |
 | Cites specific import statement at file:line | +15 |
 | Generic "this module exports too much" without listing what | -15 |
 | Cites imports that don't exist | hard cap at 0 |

@@ -23,14 +23,14 @@ Delegate to the right skill for each phase of TUI development:
 
 | Phase | Skill | Why |
 |-------|-------|-----|
-| Search codebase for patterns | `scout` | rg/fd for fast file and content search |
+| Search codebase for patterns | `cheese-flow:cheez-search` | AST-aware code search via tilth MCP |
 | Understand existing code structure | LSP | Symbol lookup, cross-references, type info |
 | Look up ratatui/Textual/crossterm docs | `fetch` | Context7 for version-specific library docs |
-| Find structural code patterns | `trace` | ast-grep for "what implements X?" questions |
-| Edit existing files precisely | `chisel` | sd for multi-file replacements, Edit for precision |
+| Find structural code patterns | `cheese-flow:cheez-search` | tree-sitter "what implements X?" questions |
+| Edit existing files precisely | `cheese-flow:cheez-write` | hash-anchored edits via tilth MCP |
 | Pre-commit smoke test | `diff` | Catch secrets, debug statements, silent failures |
 | Stage and commit | `commit` | Conventional commits, no force-push |
-| GitHub operations (PR, push) | `gh` | gh CLI for all GitHub ops |
+| GitHub operations (PR, push) | `cheese-flow:gh` | gh CLI for all GitHub ops |
 
 **Use `fetch` with Context7 FIRST** when working with ratatui, crossterm, Textual, Rich, or
 cursive APIs. These libraries evolve fast — don't rely on training data for API specifics.

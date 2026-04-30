@@ -19,7 +19,7 @@ This command orchestrates across multiple skills:
 | Explore | **scout** | Search codebase for test files, CI config, related code |
 | Understand | **lookup** | Route to LSP/Context7 for symbol types, cross-refs, API docs |
 | Diagnose | **diff** | Smoke-test the merged state for obvious issues |
-| Fix | **chisel** | Edit conflict markers, patch test assertions |
+| Fix | **cheese-flow:cheez-write** | Edit conflict markers, patch test assertions |
 | Build | **make** | Build/check with output isolation (forked subagent) |
 | Test | **make test** | Run tests with output isolation (forked subagent) |
 | Assertion check | **tdd-assertions** | Strengthen weak test assertions after fixing tests |
@@ -110,13 +110,13 @@ If the PR branch is free:
 - `git checkout <pr-branch>`
 - `git merge origin/main --no-edit`
 
-### Conflict Resolution (chisel skill)
+### Conflict Resolution (cheese-flow:cheez-write skill)
 
 If merge conflicts occur:
 
 1. List conflicting files with `git diff --name-only --diff-filter=U`
 2. Use **scout** (`rg '<<<<<<< ' --files-with-matches`) to confirm all conflict markers
-3. For each conflict, Read the file and resolve with **chisel** (Edit tool for precise context-matched replacements)
+3. For each conflict, Read the file and resolve with **cheese-flow:cheez-write** (Edit tool for precise context-matched replacements)
    - Prefer the PR's intent over main's formatting changes
    - Keep both sides when they're additive (new features on both sides)
    - Ask the user for ambiguous conflicts (logic changes on both sides)
@@ -137,8 +137,8 @@ Categorize each CI failure from Phase 1 recon:
 |---|---|
 | **Infra flake** (503, timeout, OOM) | Note it — will resolve on re-run |
 | **Test failure** (assertion error) | Fix the code or test |
-| **Lint/format** (shellcheck, prettier) | Auto-fix with chisel |
-| **Build failure** (compile error, type error) | Fix with lookup + chisel |
+| **Lint/format** (shellcheck, prettier) | Auto-fix with cheese-flow:cheez-write |
+| **Build failure** (compile error, type error) | Fix with lookup + cheese-flow:cheez-write |
 | **Merge artifact** (conflict markers) | Should have been caught in Phase 2 |
 
 ### Smoke Check (diff skill)
@@ -157,10 +157,10 @@ Run `/make` to verify the merged code compiles. This forks a subagent that absor
 Skill(skill="make")
 ```
 
-If build fails, understand the failing symbols before fixing with **chisel**:
+If build fails, understand the failing symbols before fixing with **cheese-flow:cheez-write**:
 
 - **Standalone**: Use `/lookup` — routes to LSP for types/cross-refs, Context7 for external APIs
-- **Worktree context** (dispatched by cheese-convoy): Batch failing symbols into a single **lsp-probe** call — hover for types, findReferences for cross-refs — then fix with chisel
+- **Worktree context** (dispatched by cheese-convoy): Batch failing symbols into a single **lsp-probe** call — hover for types, findReferences for cross-refs — then fix with cheese-flow:cheez-write
 
 Never grep dependency caches.
 
@@ -174,7 +174,7 @@ Skill(skill="make", args="test")
 
 If tests pass: the CI failure was likely infra. Move to Phase 3b.
 
-### Fix Strategy (lookup/lsp-probe + scout + chisel skills)
+### Fix Strategy (lookup/lsp-probe + scout + cheese-flow:cheez-write skills)
 
 For real test/build failures:
 
@@ -183,7 +183,7 @@ For real test/build failures:
    - **Worktree context**: Batch all failing symbols into one `lsp-probe` call (hover + findReferences)
 2. Use **scout** (`rg` for error messages, `fd` for test files) to locate the failing test
 3. Read the failing test and the code under test
-4. Fix with **chisel** — minimal change, `sd` for pattern fixes, Edit for precise patches
+4. Fix with **cheese-flow:cheez-write** — minimal change, `sd` for pattern fixes, Edit for precise patches
 5. Re-run via `/make test` to verify
 
 After fixing any tests, apply `/tdd-assertions` to strengthen weak assertions — existence checks, catch-all errors, length-only checks, and no-crash-as-success patterns. AI-generated test fixes are especially prone to these.
@@ -227,7 +227,7 @@ Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on
 After all three agents return:
 
 1. **Collect findings >= 50 confidence** from age and de-slop reports
-2. **Apply fixes** using chisel — these are typically:
+2. **Apply fixes** using cheese-flow:cheez-write — these are typically:
    - Removing unnecessary abstractions or dead code (de-slop)
    - Fixing complexity budget violations (age)
    - Addressing reviewer comments that fromage-fort auto-fixed

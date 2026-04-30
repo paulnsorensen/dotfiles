@@ -228,7 +228,7 @@ Do NOT proceed without approval — the spec is the contract.
 
 ## Phase 3 — Culture (Sonnet, parallel)
 
-Launch Culture agents (sonnet), each targeting a different aspect. Every agent applies the full trace checklist (data transformations, state changes, cross-cutting concerns, configuration) to their assigned scope.
+Launch Culture agents (sonnet), each targeting a different aspect. Every agent applies the full culture checklist (data transformations, state changes, cross-cutting concerns, configuration) to their assigned scope.
 
 ### Agent Count by Complexity
 

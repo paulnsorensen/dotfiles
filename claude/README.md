@@ -17,7 +17,7 @@ This creates symlinks for `agents/`, `commands/`, `hooks/`, `skills/`, `settings
 ```
 claude/
 ├── agents/           # Specialist agents (Fromage pipeline + standalone)
-├── commands/         # Slash commands (/fromage, /spec, /age, etc.)
+├── commands/         # Slash commands (/fromage, /spec, /onboard, etc.)
 ├── hooks/            # Pre-tool enforcement hooks + lifecycle hooks
 ├── mcp/              # MCP registry and sync script
 │   ├── registry.yaml # Source of truth for MCP servers
@@ -53,7 +53,7 @@ Slash commands invoked with `/command-name`.
 | Command | Use When |
 |---------|----------|
 | `/diff` | Pre-commit smoke test -- catch secrets, debug statements, silent failures |
-| `/age` | Staff Engineer code review of recent changes (fromage-age, focused mode) |
+| `/cheese-flow:age` | Staff Engineer code review (8 orthogonal LLM dimensions, hash-anchored sidecar JSON) |
 | `/code-review` | Deep dive -- full architectural walkthrough with persistent history |
 | `/simplifier` | Reduction -- strip genAI bloat, enforce YAGNI (invokes ricotta-reducer) |
 | `/copilot-review` | PR review -- analyze, present findings, route fixes to Copilot |
@@ -104,7 +104,7 @@ Specialized agents invoked via Task tool with `subagent_type`.
 | `fromage-age-history` | Age | Git history risk signals → per-file score modifiers |
 | `fromage-age-spec` | Age | Spec drift, monkey patches, missing implementations |
 
-> **Note**: The `age` orchestration is a **skill** (`skills/age/SKILL.md`), not an agent. It runs inline in the caller's context and spawns the 6 sub-agents as first-level agents — no nested agent depth issues.
+> **Note**: The Age phase is owned by the cheese-flow plugin's `cheese-flow:age` skill (8 orthogonal LLM dimensions). The local `fromage-age-*` agents above remain as inputs to `/fromage` Phase 8 until that pipeline is migrated to `cheese-flow:age` (see `.claude/specs/cheese-flow-migration.md` Phase 3).
 
 ### Standalone Agents
 
@@ -131,14 +131,15 @@ Reusable tool-usage instructions injected into agents and commands.
 | `cheese-flow:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |
 | `diff` | Pre-commit change review |
 | `fetch` | External docs via Context7, WebSearch, Tavily |
-| `gh` | GitHub operations via gh CLI |
+| `cheese-flow:gh` | GitHub operations via gh CLI (cheese-flow plugin) |
+| `cheese-flow:merge-resolve` | Merge / rebase / cherry-pick conflict resolution (cheese-flow plugin) |
 | `commit` | Git staging and conventional commits |
 | `tui-design` | TUI design and implementation (ratatui, Textual) |
 | `worktree` | Isolated git worktree management |
 | `de-slop` | AI code anti-pattern detection and fixes |
 | `tdd-assertions` | Weak test assertion detection |
 | `respond` | PR review comment triage with confidence scoring |
-| `age` | Staff Engineer code review orchestrator (spawns 6 parallel sub-agents) |
+| `cheese-flow:age` | Staff Engineer code review (8 orthogonal LLM dimensions, hash-anchored sidecar JSON) |
 
 ---
 

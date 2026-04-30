@@ -457,7 +457,7 @@ When the user says `done` or all nodes are verified:
 
 ## Out of Scope
 
-- Not `/age` — that reviews diffs between commits. This reviews design.
+- Not `/cheese-flow:age` — that reviews diffs between commits. This reviews design.
 - Not `/de-slop` standalone — de-slop runs as part of xray verification.
 - Not `/test` — test execution is delegated to whey-drainer within xray.
 - Not a CI gate — this is interactive, human-in-the-loop verification.
@@ -466,7 +466,7 @@ When the user says `done` or all nodes are verified:
 
 - Auto-fix findings — suggest /de-slop or /wreck instead, let the user decide
 - Run without user confirmation at each node — this is interactive by design
-- Replace /age or /code-review — xray verifies design decisions, not code quality
+- Replace /cheese-flow:age or /code-review — xray verifies design decisions, not code quality
 - Write tests — delegate to /wreck for adversarial testing
 
 ## Gotchas

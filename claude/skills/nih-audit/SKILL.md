@@ -19,7 +19,7 @@ description: >
   user asks to compare their custom implementation against existing packages, or
   says things like "should we just use lodash for this" or "is there a crate
   that does what our helper does". Do NOT use for security vulnerability scanning
-  (/audit), code quality review (/age), or dead code removal (/simplifier).
+  (/audit), code quality review (/cheese-flow:age), or dead code removal (/simplifier).
 ---
 
 # /nih-audit — Not Invented Here Audit

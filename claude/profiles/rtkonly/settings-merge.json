@@ -2,7 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(rtk:*)",
-      "mcp__tilth__*"
+      "mcp__plugin_cheese-flow_tilth__*"
     ]
   }
 }

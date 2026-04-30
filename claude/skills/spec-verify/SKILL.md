@@ -11,7 +11,7 @@ description: >
   "spec coverage", "verify acceptance criteria", or invokes /spec-verify with a spec
   path. Also trigger after /fromage or /fromagerie completes to validate the result
   against the original spec. Do NOT use for writing code — this is verification only.
-  Do NOT use for general code review — use /age or /code-review for that.
+  Do NOT use for general code review — use /cheese-flow:age or /code-review for that.
 ---
 
 # spec-verify
@@ -262,7 +262,7 @@ N items scored < 50 (not shown above — details in the full report below)
 - Write or modify implementation code — verification only
 - Write tests — use `/wreck` for that
 - Fix build failures — report them, let the caller decide
-- Review code quality or style — use `/age` for that
+- Review code quality or style — use `/cheese-flow:age` for that
 - Run outside the spec's scope — verify what the spec describes, nothing more
 - Assign PASS without LSP or ast-grep evidence — file reads alone cap at PARTIAL
 
@@ -288,7 +288,7 @@ N items scored < 50 (not shown above — details in the full report below)
 - Run quality gates first — they're the fastest failure signal and everything
   downstream is moot if the build is broken
 - Locate symbols via LSP before reading files — going straight to file reads
-  bypasses the structural verification that distinguishes this skill from /age
+  bypasses the structural verification that distinguishes this skill from /cheese-flow:age
 - Prioritize red/green paths over individual checkboxes — they represent
   end-to-end user value, not isolated implementation details
 - Write full report to $TMPDIR before returning summary — the caller only

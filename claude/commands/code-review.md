@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Comprehensive code review with persistent history. Invokes the age skill in comprehensive mode for full architectural audit.
+description: Comprehensive code review with persistent history. Invokes the cheese-flow:age skill in --comprehensive mode for full architectural audit.
 argument-hint: "[module or class to focus on, or leave blank for full overview]"
 ---
 
@@ -32,13 +32,13 @@ If the user provided an argument, use that as focus and skip this question.
 
 ### 3. Run Age Review (Comprehensive Mode)
 
-Invoke the `age` skill in **comprehensive mode**. Pass it:
+Invoke the `cheese-flow:age` skill with `--comprehensive`. Pass it:
 
-- **Scope**: the selected scope from step 2
+- **Scope**: the selected scope from step 2 (use `--scope <path>` if focused on a module)
 - **Delta context**: if delta mode, the changed files and commit log
 - **Previous review findings**: key items from last review if one exists
 
-The skill will spawn 6 parallel review sub-agents, merge findings, and present a comprehensive report.
+The skill fans out 8 orthogonal dimensions in parallel, synthesizes a stake-weighted report, and emits hash-anchored sidecar JSON to `.cheese/age/<slug>.*`.
 
 ### 4. Persist the Review
 

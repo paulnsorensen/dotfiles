@@ -114,11 +114,11 @@ I use the Cheddar Flow. Run `/agents` for the full catalog of agents and skills.
 | Category | Key Skills |
 |----------|-----------|
 | Planning | `/fromage`, `/fromagerie`, `/spec`, `/duck`, `/briesearch` |
-| Review | `/age`, `/code-review`, `/audit`, `/simplifier`, `/self-eval`, `/skill-improver` |
+| Review | `/cheese-flow:age`, `/code-review`, `/audit`, `/simplifier`, `/self-eval`, `/skill-improver` |
 | Cleanup | `/simplify` (built-in, auto-fix), `/simplifier` (ricotta-reducer, scored audit), `/de-slop` (AI anti-patterns) |
 | PR Response | `/respond` (confidence-rated review triage), `/copilot-review`, `/copilot-delegate` |
 | Testing | `/wreck`, `/test`, `/diff`, `/tdd-assertions`, `/pingpong` |
-| GitHub | `/move-my-cheese <PR#>`, `/cheese-convoy [PR# PR# ...]` |
+| GitHub | `/move-my-cheese <PR#>`, `/cheese-convoy [PR# PR# ...]`, `/cheese-flow:gh` |
 | Setup | `/lsp`, `/pull`, `/worktree`, `/scaffold` |
 | Learning | `/agents`, `/explain`, `/hint`, `/xray`, `/onboard` |
 
@@ -136,7 +136,7 @@ When a skill is available, use it — never fall back to raw bash equivalents.
 | Directory listings | scout (`ls -T`, eza) | `find -type d`, plain `ls` |
 | Pre-commit check | diff | raw git + manual scanning |
 | Git operations | commit | manual git add/commit |
-| GitHub ops | gh | raw GitHub API |
+| GitHub ops | `cheese-flow:gh` | raw GitHub API |
 | Code navigation | LSP | grep for definitions |
 | External docs | fetch | guessing from training data |
 | Multi-source research | `/briesearch` | guessing or skipping research |
@@ -170,9 +170,9 @@ lookup route you.
 
 **Agent permission modes** — `acceptEdits` and `bypassPermissions` only suppress the interactive approval dialog for Edit/Write — they do NOT auto-approve Bash or MCP calls. Bash permissions use a separate allowlist (`permissions.allow` entries like `Bash(git:*)`). In sandboxed environments (Conductor, fresh sessions without your `settings.json`), worktree agents may lack allowlist entries for `git push`, `gh pr create`, etc. **Design pattern**: have isolated agents do code work + commit only, then return control to the orchestrator (which runs in the user's session with full permissions) for push/PR operations.
 
-**Agent nesting rule** — Claude Code supports only 1 level of sub-agent nesting. If an orchestrator needs to spawn sub-agents, convert it to a skill. Skills run inline in the caller's context, so their `Agent()` calls create first-level sub-agents. Example: `age` is a skill (not an agent) because it spawns 6 parallel review sub-agents.
+**Agent nesting rule** — Claude Code supports only 1 level of sub-agent nesting. If an orchestrator needs to spawn sub-agents, convert it to a skill. Skills run inline in the caller's context, so their `Agent()` calls create first-level sub-agents. Example: `cheese-flow:age` is a skill (not an agent) because it spawns 8 parallel review sub-agents.
 
-**Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch` all fork), not the main context window.
+**Context pollution rule**: Verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `cheese-flow:gh`, `fetch` all fork), not the main context window.
 
 **Agent skill enforcement**: When an agent has `skills: [...]`, it MUST use those tools. Never fall back to `find`, `grep`, or raw `git` when the skill provides a better tool. Code-search agents use `cheese-flow:cheez-search`; code-edit agents use `cheese-flow:cheez-write`.
 

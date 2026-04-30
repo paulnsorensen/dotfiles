@@ -24,9 +24,9 @@ Enforce measurable structural constraints:
 
 ## Tools
 
-- **trace** for structural code shape analysis (nesting depth, function length, import patterns)
+- **`cheese-flow:cheez-search`** for structural code shape analysis (nesting depth, function length, import patterns) — AST-aware via tilth MCP
 - **LSP documentSymbol** to enumerate functions/methods and measure their spans
-- **scout** to search for structural patterns across files
+- **scout** for directory listings; delegate code search to `cheese-flow:cheez-search`
 
 ## Confidence Scoring
 
@@ -44,7 +44,7 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 
 | Evidence quality | Modifier |
 |------------------|----------|
-| Verified via trace (AST confirms nesting depth, function line count) | +20 |
+| Verified via `cheese-flow:cheez-search` (AST confirms nesting depth, function line count) | +20 |
 | Verified via LSP documentSymbol (symbol spans confirm line counts) | +20 |
 | Cites specific file:line with accurate measurement | +15 |
 | References complexity budget rule by name | +10 |

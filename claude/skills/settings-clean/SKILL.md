@@ -159,14 +159,14 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 
 | Hook blocks | Required skill |
 |---|---|
-| `grep`, `egrep`, `fgrep` | `Skill(scout)` |
-| `sed`, `awk` | `Skill(chisel)` |
-| `find` | `Skill(scout)` |
+| `grep`, `egrep`, `fgrep` | `Skill(cheese-flow:cheez-search)` |
+| `sed`, `awk` | `Skill(cheese-flow:cheez-write)` |
+| `find` | `Skill(scout)`, `Skill(cheese-flow:cheez-search)` |
 | `python3 -c` tests | `Skill(test-sandbox)` |
 | dep cache grep, doc+grep | `Skill(lookup)`, `Skill(fetch)` |
-| find+grep chains | `Skill(trace)`, `Skill(lookup)` |
+| find+grep chains | `Skill(cheese-flow:cheez-search)`, `Skill(lookup)` |
 | `cd && git` | `Skill(wt-git)` |
-| `gh pr create --body` | `Skill(gh)` |
+| `gh pr create --body` | `Skill(cheese-flow:gh)` |
 
 1. **Check what's missing**: Compare available skills + hook-required skills against the current allow list. Report missing ones, prioritizing hook-critical skills first.
 
@@ -174,12 +174,12 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 
 ```
 Missing skills — hook-critical (redirect won't work without these):
-  + Skill(scout)          ← grep/find hooks redirect here
-  + Skill(chisel)         ← sed/awk hooks redirect here
-  + Skill(test-sandbox)   ← python3 -c hook redirects here
-  + Skill(lookup)         ← dep cache/doc grep hooks redirect here
-  + Skill(fetch)          ← dep cache/doc grep hooks redirect here
-  + Skill(trace)          ← find+grep chain hook redirects here
+  + Skill(scout)                     ← find hooks redirect here (directory listings)
+  + Skill(cheese-flow:cheez-search)  ← grep/find hooks redirect here (AST-aware code search)
+  + Skill(cheese-flow:cheez-write)   ← sed/awk hooks redirect here (hash-anchored edits)
+  + Skill(test-sandbox)              ← python3 -c hook redirects here
+  + Skill(lookup)                    ← dep cache/doc grep hooks redirect here
+  + Skill(fetch)                     ← dep cache/doc grep hooks redirect here
 
 Missing skills — available but not allowed:
   + Skill(diff)

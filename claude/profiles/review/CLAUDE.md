@@ -17,9 +17,9 @@ fixer session is one `cc` invocation away — it doesn't belong here.
 
 Defined in `mcp-scope.yaml` (registry-validated):
 
-- **tilth** — `mcp__tilth__*` — AST-aware read/search; replaces grep/cat when inspecting the diff's neighborhood.
+- **tilth (cheese-flow plugin)** — `mcp__plugin_cheese-flow_tilth__*` — AST-aware read/search; replaces grep/cat when inspecting the diff's neighborhood.
 - **code-review-graph** — `mcp__code-review-graph__*` — call chains, impact radius, architectural framing for the change under review.
-- **context7** — `mcp__context7__*` — library docs when the diff touches an unfamiliar API and you need to judge correctness.
+- **context7 (cheese-flow plugin)** — `mcp__plugin_cheese-flow_context7__*` — library docs when the diff touches an unfamiliar API and you need to judge correctness.
 
 GitHub plugin MCPs (PRs, review comments) come through the separately-loaded
 github plugin. Web search / task MCPs are out of scope — if a review needs

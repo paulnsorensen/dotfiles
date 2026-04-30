@@ -15,10 +15,10 @@ helps and pulls in the claude.ai Figma connector for design-to-code flow.
 Defined in `mcp-scope.yaml` (registry-validated) plus `mcp-add.json` (local):
 
 - **shadcn** — `mcp__shadcn__*` — component registry; use over copy-pasting JSX.
-- **context7** — `mcp__context7__*` — React, Tailwind, Next.js, and other lib docs.
-- **tilth** — `mcp__tilth__*` — AST-aware search/read when navigating components.
+- **context7 (cheese-flow plugin)** — `mcp__plugin_cheese-flow_context7__*` — React, Tailwind, Next.js, and other lib docs.
+- **tilth (cheese-flow plugin)** — `mcp__plugin_cheese-flow_tilth__*` — AST-aware search/read when navigating components.
 - **code-review-graph** — `mcp__code-review-graph__*` — blast radius when refactoring shared components.
-- **tavily** — `mcp__tavily__*` — pattern research ("how do people build X in Next.js 15?").
+- **tavily (cheese-flow plugin)** — `mcp__plugin_cheese-flow_tavily__*` — pattern research ("how do people build X in Next.js 15?").
 - **Playwright (plugin)** — `mcp__plugin_playwright_playwright__*` — browser verification.
 - **claude.ai Figma** — `mcp__claude_ai_Figma__*` — design context when user shares a figma.com URL.
 

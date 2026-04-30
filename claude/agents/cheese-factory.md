@@ -95,4 +95,4 @@ All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `documen
 - **One screen** — if it doesn't fit on one screen, it's too long
 - **Business terms** — name things by what they do, not their technical type
 - **No scoring** — this is recon, not review
-- **No recommendations** — save that for `/code-review` or `/age`
+- **No recommendations** — save that for `/code-review` or `/cheese-flow:age`
