@@ -123,6 +123,12 @@ LAYOUT
     [[ $status -eq 0 ]]
 }
 
+@test ".zprofile has valid syntax" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -n "$DOTFILES_DIR/.zprofile"
+    [[ $status -eq 0 ]]
+}
+
 @test "all bash scripts pass shellcheck" {
     command -v shellcheck &>/dev/null || skip "shellcheck not installed"
     local failed=0

@@ -1,30 +1,34 @@
 # dotfiles by @paulnsorensen (with a lot of copying from others)
 
-# Platform detection (used by modules for OS-specific behavior)
-case "$OSTYPE" in
-  darwin*)  export DOTFILES_OS="macos" ;;
-  linux*)   export DOTFILES_OS="linux" ;;
-esac
+export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
+export DEV_DIR="${DEV_DIR:-$HOME/Dev}"
+
+if [[ -z "${DOTFILES_OS:-}" ]]; then
+  case "$OSTYPE" in
+    darwin*) export DOTFILES_OS="macos" ;;
+    linux*) export DOTFILES_OS="linux" ;;
+  esac
+fi
 
 # Source zsh configuration files in order
-source "$HOME/Dev/dotfiles/zsh/core.zsh"
-source "$HOME/Dev/dotfiles/zsh/colors.zsh"    # Chocolate Donut palette (must come before fzf/prompt)
-source "$HOME/Dev/dotfiles/zsh/aliases.zsh"
-source "$HOME/Dev/dotfiles/zsh/completion.zsh"
-source "$HOME/Dev/dotfiles/zsh/fzf.zsh"
-source "$HOME/Dev/dotfiles/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
-source "$HOME/Dev/dotfiles/zsh/zellij.zsh"    # Zellij aliases and helpers
+source "$DOTFILES_DIR/zsh/core.zsh"
+source "$DOTFILES_DIR/zsh/colors.zsh"    # Chocolate Donut palette (must come before fzf/prompt)
+source "$DOTFILES_DIR/zsh/aliases.zsh"
+source "$DOTFILES_DIR/zsh/completion.zsh"
+source "$DOTFILES_DIR/zsh/fzf.zsh"
+source "$DOTFILES_DIR/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
+source "$DOTFILES_DIR/zsh/zellij.zsh"    # Zellij aliases and helpers
 
 # Source local customizations early (sets DOTFILES_PROMPT, etc.)
-[ -f $HOME/.zshrc.local ] && source $HOME/.zshrc.local
+[[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 
 # Prompt selection — set DOTFILES_PROMPT=starship in ~/.zshrc.local to use starship
 if [[ "$DOTFILES_PROMPT" == "starship" ]] && command -v starship &>/dev/null; then
   eval "$(starship init zsh)"
 else
-  source "$HOME/Dev/dotfiles/zsh/prompt.zsh"
+  source "$DOTFILES_DIR/zsh/prompt.zsh"
 fi
 
-source "$HOME/Dev/dotfiles/zsh/claude.zsh"
+source "$DOTFILES_DIR/zsh/claude.zsh"
 
 clear

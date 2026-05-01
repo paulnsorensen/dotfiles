@@ -9,6 +9,8 @@ setup() {
     mkdir -p "$TEST_HOME/Dev/dotfiles/zsh"
     cp "$REAL_DOTFILES_DIR/zsh"/*.zsh "$TEST_HOME/Dev/dotfiles/zsh/" 2>/dev/null || true
     cp "$REAL_DOTFILES_DIR/zshrc" "$TEST_HOME/.zshrc"
+    cp "$REAL_DOTFILES_DIR/.zprofile" "$TEST_HOME/.zprofile"
+    chmod 700 "$TEST_HOME" "$TEST_HOME/Dev" "$TEST_HOME/Dev/dotfiles" "$TEST_HOME/Dev/dotfiles/zsh"
 }
 
 teardown() {
@@ -17,7 +19,9 @@ teardown() {
 
 @test "simplified zsh architecture has correct files" {
     # Core files should exist
+    assert_file_exists "$REAL_DOTFILES_DIR/.zprofile"
     assert_file_exists "$REAL_DOTFILES_DIR/zsh/core.zsh"
+    assert_file_exists "$REAL_DOTFILES_DIR/zsh/profile.zsh"
     assert_file_exists "$REAL_DOTFILES_DIR/zsh/aliases.zsh"
     assert_file_exists "$REAL_DOTFILES_DIR/zsh/completion.zsh"
     assert_file_exists "$REAL_DOTFILES_DIR/zsh/prompt.zsh"
@@ -33,11 +37,18 @@ teardown() {
     [[ ! -d "$REAL_DOTFILES_DIR/zsh/cache" ]]
 }
 
-@test "core.zsh contains essential settings" {
-    local core_file="$REAL_DOTFILES_DIR/zsh/core.zsh"
+@test "profile.zsh contains login shell environment" {
+    local profile_file="$REAL_DOTFILES_DIR/zsh/profile.zsh"
 
-    # Should have DEV_DIR export
-    grep -q "export DEV_DIR" "$core_file"
+    grep -q 'export DOTFILES_DIR=' "$profile_file"
+    grep -q 'export DEV_DIR=' "$profile_file"
+    grep -q 'export PREK_HOME=' "$profile_file"
+    grep -q 'export DOTFILES_PROFILE_LOADED=1' "$profile_file"
+    grep -q 'pyenv init' "$profile_file"
+}
+
+@test "core.zsh contains essential interactive settings" {
+    local core_file="$REAL_DOTFILES_DIR/zsh/core.zsh"
 
     # Should have history configuration
     grep -q "HISTFILE" "$core_file"
@@ -97,6 +108,32 @@ teardown() {
     ! grep -q "for config_file" "$zshrc_file"
 }
 
+@test ".zprofile sources login environment and .zprofile.local" {
+    cat > "$TEST_HOME/.zprofile.local" <<'EOF'
+export ZPROFILE_LOCAL_MARKER="loaded"
+EOF
+
+    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" zsh -lc 'printf "MARKER:%s|%s|%s|%s\n" "$DOTFILES_PROFILE_LOADED" "$DOTFILES_DIR" "$DEV_DIR" "$ZPROFILE_LOCAL_MARKER"'
+
+    [[ $status -eq 0 ]]
+    assert_output_contains "MARKER:1|$TEST_HOME/Dev/dotfiles|$TEST_HOME/Dev|loaded"
+}
+
+@test "login interactive shell loads both .zprofile.local and .zshrc.local" {
+    cat > "$TEST_HOME/.zprofile.local" <<'EOF'
+export ZPROFILE_LOCAL_MARKER="profile"
+EOF
+
+    cat > "$TEST_HOME/.zshrc.local" <<'EOF'
+export ZSHRC_LOCAL_MARKER="${ZPROFILE_LOCAL_MARKER}-rc"
+EOF
+
+    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" TERM=dumb zsh -lic 'printf "MARKER:%s|%s\n" "$ZPROFILE_LOCAL_MARKER" "$ZSHRC_LOCAL_MARKER"'
+
+    [[ $status -eq 0 ]]
+    assert_output_contains "MARKER:profile|profile-rc"
+}
+
 @test "cdd function works with DEV_DIR" {
     # Create mock Dev directory
     mkdir -p "$TEST_HOME/Dev/project1"
@@ -149,6 +186,10 @@ teardown() {
     done
     if ! zsh -n "$REAL_DOTFILES_DIR/zshrc" 2>/dev/null; then
         echo "Syntax error in: zshrc" >&2
+        failed=1
+    fi
+    if ! zsh -n "$REAL_DOTFILES_DIR/.zprofile" 2>/dev/null; then
+        echo "Syntax error in: .zprofile" >&2
         failed=1
     fi
     [[ $failed -eq 0 ]]
