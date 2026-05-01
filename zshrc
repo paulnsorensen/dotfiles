@@ -1,7 +1,7 @@
 # dotfiles by @paulnsorensen (with a lot of copying from others)
 
-export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
-export DEV_DIR="${DEV_DIR:-$HOME/Dev}"
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
+DEV_DIR="${DEV_DIR:-$HOME/Dev}"
 
 # Non-login interactive shells still need OS detection for sourced modules.
 if [[ -z "${DOTFILES_OS:-}" ]]; then
