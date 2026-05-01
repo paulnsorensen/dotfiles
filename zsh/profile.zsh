@@ -36,7 +36,8 @@ export LESS="${LESS:--i -M -R}"
 
 if command -v pyenv 1>/dev/null 2>&1; then
   eval "$(pyenv init -)"
-  path_prepend "$DOTFILES_DIR/bin"
+  path=("${(@)path:#$DOTFILES_DIR/bin}")
+  path=("$DOTFILES_DIR/bin" $path)
 fi
 
 if [[ -f "$DOTFILES_DIR/.env" ]]; then
