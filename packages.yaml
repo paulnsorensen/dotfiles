@@ -59,7 +59,7 @@ packages:
 
   # Dev (DOTFILES_DEV=true)
   - pyenv: { dev: true }
-  - uv: { dev: true }
+  - uv
   - rustup: { dev: true }
   - docker: { source: cask, dev: true, platform: mac }
   - npm: { platform: linux, dev: true }       # On mac, npm comes with `brew install node`
@@ -80,6 +80,7 @@ packages:
   # uv tools (Python)
   - ralphify: { source: uv }
   - code-review-graph: { source: uv }
+  - check-jsonschema: { source: uv }
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }
