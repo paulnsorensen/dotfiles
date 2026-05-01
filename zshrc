@@ -3,6 +3,7 @@
 export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
 export DEV_DIR="${DEV_DIR:-$HOME/Dev}"
 
+# Non-login interactive shells still need OS detection for sourced modules.
 if [[ -z "${DOTFILES_OS:-}" ]]; then
   case "$OSTYPE" in
     darwin*) export DOTFILES_OS="macos" ;;

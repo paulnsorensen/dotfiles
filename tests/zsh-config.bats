@@ -43,6 +43,8 @@ teardown() {
     grep -q 'export DOTFILES_DIR=' "$profile_file"
     grep -q 'export DEV_DIR=' "$profile_file"
     grep -q 'export PREK_HOME=' "$profile_file"
+    grep -q 'export EDITOR=' "$profile_file"
+    grep -q 'export PAGER=' "$profile_file"
     grep -q 'export DOTFILES_PROFILE_LOADED=1' "$profile_file"
     grep -q 'pyenv init' "$profile_file"
 }
@@ -54,9 +56,6 @@ teardown() {
     grep -q "HISTFILE" "$core_file"
     grep -q "HISTSIZE" "$core_file"
     grep -q "SAVEHIST" "$core_file"
-
-    # Should have editor configuration
-    grep -q "export EDITOR" "$core_file"
 
     # Should have vi mode setup
     grep -q "setopt VI" "$core_file"

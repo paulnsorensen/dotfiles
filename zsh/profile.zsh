@@ -4,7 +4,8 @@ path_prepend() {
   local dir="$1"
 
   [[ -d "$dir" ]] || return 0
-  [[ " ${path[*]} " == *" $dir "* ]] || path=("$dir" $path)
+  path=("${(@)path:#$dir}")
+  path=("$dir" $path)
 }
 
 export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"

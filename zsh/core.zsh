@@ -1,14 +1,6 @@
 # core.zsh - Essential environment and settings
 # This file sets up the foundation for the shell environment
 
-export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
-export DEV_DIR="${DEV_DIR:-$HOME/Dev}"
-export PREK_HOME="${PREK_HOME:-$HOME/Dev/.prek}"
-export EDITOR="${EDITOR:-$(command -v vim)}"
-export VISUAL="${VISUAL:-$EDITOR}"
-export PAGER="${PAGER:-less}"
-export LESS="${LESS:--i -M -R}"  # case insensitive searching, status line, and colors
-
 # Shell behavior
 setopt VI                    # Vi editing mode
 setopt NO_BEEP              # Never ever beep. Ever
