@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Assumes the source state stays nested at .frameworks/chezmoi/source-state.
 DOTFILES_DIR="{{ .chezmoi.sourceDir }}/../../.."
 bash "$DOTFILES_DIR/packages/sync.sh"

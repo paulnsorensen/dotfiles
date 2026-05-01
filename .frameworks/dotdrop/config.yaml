@@ -18,9 +18,9 @@ actions:
     ghostty: bash ./ghostty/.sync
     claude: bash ./claude/.sync
     copilot: bash ./.copilot/.sync
-    fonts: bash ./fonts/.sync
-    iterm2: bash ./iterm2/.sync
-    macos: bash ./macos/.sync
+    fonts: if [[ "$(uname)" == "Darwin" ]]; then bash ./fonts/.sync; fi
+    iterm2: if [[ "$(uname)" == "Darwin" ]]; then bash ./iterm2/.sync; fi
+    macos: if [[ "$(uname)" == "Darwin" ]]; then bash ./macos/.sync; fi
 
 dotfiles:
   zshrc:

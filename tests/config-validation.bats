@@ -165,9 +165,17 @@ LAYOUT
     [[ -z "$bad" ]]
 }
 
-@test "zsh config does not hardcode the dotfiles repo path" {
+@test "shell config does not hardcode the dotfiles repo path" {
     local matches
-    matches=$(grep -R -nE '(\$HOME|~)/Dev/dotfiles' "$DOTFILES_DIR/zsh" "$DOTFILES_DIR/zshrc" || true)
+    matches=$(grep -R -nE '(\$HOME|~)/Dev/dotfiles' \
+        "$DOTFILES_DIR/bin" \
+        "$DOTFILES_DIR/zsh" \
+        "$DOTFILES_DIR/.frameworks" \
+        "$DOTFILES_DIR/zshrc" \
+        "$DOTFILES_DIR/.sync" \
+        "$DOTFILES_DIR/.sync-lib.sh" \
+        "$DOTFILES_DIR/.sync-with-rollback" \
+        "$DOTFILES_DIR/packages/sync.sh" || true)
     [[ -z "$matches" ]]
 }
 
