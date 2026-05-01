@@ -9,14 +9,14 @@ And I made my own theme, but I'm pretty sure I ripped that off too:
 
 ## Current sync path
 
-The default install path is still `dots sync`, backed by `/home/runner/work/dotfiles/dotfiles/.sync-with-rollback` with the legacy `/home/runner/work/dotfiles/dotfiles/.sync` kept as a fallback.
+The default install path is still `dots sync`, backed by `.sync-with-rollback` with the legacy `.sync` kept as a fallback.
 
 ## Framework comparison foundations
 
-Comparison foundations now live under `/home/runner/work/dotfiles/dotfiles/.frameworks/`:
+Comparison foundations now live under `.frameworks/`:
 
 - `chezmoi/` — preferred long-term candidate for templating, multi-machine setup, and secrets
 - `dotbot/` — minimal-migration candidate that mirrors the current link + shell flow
 - `dotdrop/` — profile-oriented candidate for macOS/Linux split installs and action-driven setup
 
-See `/home/runner/work/dotfiles/dotfiles/.frameworks/README.md` for commands and tradeoffs.
+See `.frameworks/README.md` for commands and tradeoffs.

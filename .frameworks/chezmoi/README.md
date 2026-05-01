@@ -11,13 +11,13 @@ This source state keeps the current repository layout intact while letting Chezm
 
 ## Mapped scripts
 
-- `run_once_before_10-packages.sh.tmpl` → `/home/runner/work/dotfiles/dotfiles/packages/sync.sh`
+- `run_once_before_10-packages.sh.tmpl` → `packages/sync.sh`
 - `run_once_after_20-custom-sync.sh.tmpl` → existing per-directory `.sync` installers
 
 ## Try it
 
 ```bash
-cd /home/runner/work/dotfiles/dotfiles
+cd <dotfiles-repo>
 chezmoi --source "$PWD/.frameworks/chezmoi/source-state" diff
 chezmoi --source "$PWD/.frameworks/chezmoi/source-state" apply --dry-run
 ```

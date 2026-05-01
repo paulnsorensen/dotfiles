@@ -11,7 +11,7 @@ This foundation keeps the current repository as the `dotpath`, then uses dotdrop
 ## Try it
 
 ```bash
-cd /home/runner/work/dotfiles/dotfiles
+cd <dotfiles-repo>
 ./.frameworks/dotdrop/install.sh files -p macos
 ./.frameworks/dotdrop/install.sh install -p macos -t
 ./.frameworks/dotdrop/install.sh compare -p macos
