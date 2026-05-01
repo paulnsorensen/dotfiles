@@ -1,5 +1,6 @@
 # dotfiles by @paulnsorensen (with a lot of copying from others)
 
+# Fallbacks for direct interactive shells that start without a login parent.
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
 DEV_DIR="${DEV_DIR:-$HOME/Dev}"
 

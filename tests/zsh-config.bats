@@ -111,7 +111,12 @@ teardown() {
 export ZPROFILE_LOCAL_MARKER="loaded"
 EOF
 
-    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" zsh -lc 'printf "DOTFILES_PROFILE_LOADED=%s\nDOTFILES_DIR=%s\nDEV_DIR=%s\nZPROFILE_LOCAL_MARKER=%s\n" "$DOTFILES_PROFILE_LOADED" "$DOTFILES_DIR" "$DEV_DIR" "$ZPROFILE_LOCAL_MARKER"'
+    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" zsh -lc '
+        printf "DOTFILES_PROFILE_LOADED=%s\n" "$DOTFILES_PROFILE_LOADED"
+        printf "DOTFILES_DIR=%s\n" "$DOTFILES_DIR"
+        printf "DEV_DIR=%s\n" "$DEV_DIR"
+        printf "ZPROFILE_LOCAL_MARKER=%s\n" "$ZPROFILE_LOCAL_MARKER"
+    '
 
     [[ $status -eq 0 ]]
     assert_output_contains "DOTFILES_PROFILE_LOADED=1"
@@ -129,7 +134,10 @@ EOF
 export ZSHRC_LOCAL_MARKER="${ZPROFILE_LOCAL_MARKER}-rc"
 EOF
 
-    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" TERM=dumb zsh -lic 'printf "ZPROFILE_LOCAL_MARKER=%s\nZSHRC_LOCAL_MARKER=%s\n" "$ZPROFILE_LOCAL_MARKER" "$ZSHRC_LOCAL_MARKER"'
+    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" TERM=dumb zsh -lic '
+        printf "ZPROFILE_LOCAL_MARKER=%s\n" "$ZPROFILE_LOCAL_MARKER"
+        printf "ZSHRC_LOCAL_MARKER=%s\n" "$ZSHRC_LOCAL_MARKER"
+    '
 
     [[ $status -eq 0 ]]
     assert_output_contains "ZPROFILE_LOCAL_MARKER=profile"
