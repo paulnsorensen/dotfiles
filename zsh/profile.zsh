@@ -46,6 +46,4 @@ if [[ -f "$DOTFILES_DIR/.env" ]]; then
     export "$key=$val"
   done < "$DOTFILES_DIR/.env"
 fi
-
-unset -f path_prepend
 export DOTFILES_PROFILE_LOADED=1
