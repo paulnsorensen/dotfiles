@@ -234,6 +234,18 @@ The `.sync-with-rollback` script provides:
 - Pre-commit hooks via prek (secrets, shellcheck, large files, claude sync)
 - **Skipping hooks**: Use `git commit --no-verify` if prek blocks a commit and you need to override (rare)
 
+### Window Management (yabai + skhd)
+
+Tiling window manager + hotkey daemon for macOS, installed from the `koekeishiya/formulae` brew tap and started as background services by `yabai/.sync`. Configs live at `yabai/yabairc` and `yabai/skhdrc` and are symlinked to `~/.yabairc` / `~/.skhdrc`.
+
+- **Modifier ladder**: `ctrl+alt` for focus/layout, `ctrl+alt+shift` for swap/move, `cmd+alt` for resize.
+- **Vim navigation**: `ctrl+alt+hjkl` focus, `ctrl+alt+shift+hjkl` swap, `cmd+alt+hjkl` resize.
+- **Spaces**: `ctrl+alt+1..4` focus, `ctrl+alt+shift+1..4` move-and-follow. macOS spaces must be created manually in Mission Control first — yabai cannot create them with SIP enabled.
+- **Snap-to-grid for floating windows**: `ctrl+alt+arrows` for halves, `ctrl+alt+u/i/n/m` for quarters, `ctrl+alt+return` for fullscreen. Auto-floats a tiled window before snapping.
+- **Reload**: `ctrl+alt+shift+r` restarts both services after config edits.
+- **First-time setup**: grant Accessibility (and optionally Screen Recording) to `yabai` and `skhd` in System Settings → Privacy & Security after `dots sync`.
+- **SIP**: opacity, removing title bars, and cross-space window movement require SIP partially disabled. The basic tile/focus/swap loop works with SIP on.
+
 ### Claude Code Integration
 
 Full agent/skill catalog is in `claude/CLAUDE.md` (auto-discovered). Key project-level details:
