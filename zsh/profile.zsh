@@ -25,6 +25,7 @@ if [[ "$DOTFILES_OS" == "macos" ]]; then
   unset _brew_prefix
 fi
 
+# Start with dotfiles/bin first; pyenv init below may reorder PATH.
 path_prepend "$DOTFILES_DIR/bin"
 path_prepend "$HOME/.local/bin"
 path_prepend "$HOME/.cargo/bin"
