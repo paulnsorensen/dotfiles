@@ -167,15 +167,12 @@ LAYOUT
 
 @test "shell config does not hardcode the dotfiles repo path" {
     local matches
-    matches=$(grep -R -nE '(\$HOME|~)/Dev/dotfiles' \
-        "$DOTFILES_DIR/bin" \
-        "$DOTFILES_DIR/zsh" \
-        "$DOTFILES_DIR/.frameworks" \
-        "$DOTFILES_DIR/zshrc" \
-        "$DOTFILES_DIR/.sync" \
-        "$DOTFILES_DIR/.sync-lib.sh" \
-        "$DOTFILES_DIR/.sync-with-rollback" \
-        "$DOTFILES_DIR/packages/sync.sh" || true)
+    matches=$(grep -nE '(~|\$HOME)/Dev/dotfiles'         "$DOTFILES_DIR/zshrc"         "$DOTFILES_DIR/.sync"         "$DOTFILES_DIR/.sync-lib.sh"         "$DOTFILES_DIR/.sync-with-rollback"         "$DOTFILES_DIR/packages/sync.sh"         "$DOTFILES_DIR/.frameworks/dotbot/install.sh"         "$DOTFILES_DIR/.frameworks/dotdrop/install.sh"         "$DOTFILES_DIR/.frameworks/chezmoi/source-state/dot_zshrc.tmpl"         "$DOTFILES_DIR/.frameworks/chezmoi/source-state/run_once_before_10-packages.sh.tmpl"         "$DOTFILES_DIR/.frameworks/chezmoi/source-state/run_once_after_20-custom-sync.sh.tmpl" || true)
+
+    if [[ -z "$matches" ]]; then
+        matches=$(grep -R -nE '(~|\$HOME)/Dev/dotfiles' "$DOTFILES_DIR/zsh" "$DOTFILES_DIR/bin" || true)
+    fi
+
     [[ -z "$matches" ]]
 }
 

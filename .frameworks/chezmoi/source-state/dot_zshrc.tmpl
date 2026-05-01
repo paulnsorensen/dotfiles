@@ -1,5 +1,6 @@
 # Generated from the Chezmoi comparison foundation.
-# Assumes the source state stays nested at .frameworks/chezmoi/source-state.
+# IMPORTANT: this template intentionally assumes the source state stays nested
+# at .frameworks/chezmoi/source-state so it can reach the current repo root.
 export DOTFILES_DIR="{{ .chezmoi.sourceDir }}/../../.."
 
 # Platform detection (used by modules for OS-specific behavior)
