@@ -1,0 +1,26 @@
+- defaults:
+    link:
+      create: true
+      relink: true
+- link:
+    ~/.zshrc: zshrc
+    ~/.gitconfig: gitconfig
+    ~/.gitattributes: gitattributes
+    ~/.tmux.conf: tmux.conf
+    ~/.vimrc: vimrc
+    ~/.zsh: zsh
+    ~/.vim: vim
+- shell:
+    - [bash ./packages/sync.sh, Sync packages from packages.yaml]
+    - [bash ./theme/.sync, Generate theme assets]
+    - [bash ./atuin/.sync, Sync atuin config]
+    - [bash ./cargo/.sync, Sync cargo config]
+    - [bash ./starship/.sync, Sync starship config]
+    - [bash ./yazi/.sync, Sync yazi config]
+    - [bash ./zellij/.sync, Sync zellij config]
+    - [bash ./ghostty/.sync, Sync ghostty config]
+    - [bash ./claude/.sync, Sync Claude Code config]
+    - [bash ./.copilot/.sync, Sync Copilot MCP config]
+    - [bash ./fonts/.sync, Install optional fonts]
+    - [bash ./iterm2/.sync, Sync iTerm2 config]
+    - [bash ./macos/.sync, Sync macOS LaunchAgents]

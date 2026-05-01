@@ -164,3 +164,19 @@ LAYOUT
     bad=$(yq -r '.packages[] | select(kind == "map") | select((keys | length) == 1 | not)' "$DOTFILES_DIR/packages.yaml" 2>/dev/null)
     [[ -z "$bad" ]]
 }
+
+@test "zsh config does not hardcode the dotfiles repo path" {
+    local matches
+    matches=$(grep -R -nE '(\$HOME|~)/Dev/dotfiles' "$DOTFILES_DIR/zsh" "$DOTFILES_DIR/zshrc" || true)
+    [[ -z "$matches" ]]
+}
+
+@test "dotbot comparison config is valid YAML" {
+    run yq '.' "$DOTFILES_DIR/.frameworks/dotbot/install.conf.yaml"
+    [[ $status -eq 0 ]]
+}
+
+@test "dotdrop comparison config is valid YAML" {
+    run yq '.' "$DOTFILES_DIR/.frameworks/dotdrop/config.yaml"
+    [[ $status -eq 0 ]]
+}

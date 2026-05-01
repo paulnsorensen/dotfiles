@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DOTFILES_DIR="{{ .chezmoi.sourceDir }}/../../.."
+scripts=(
+  theme/.sync
+  atuin/.sync
+  cargo/.sync
+  starship/.sync
+  yazi/.sync
+  zellij/.sync
+  ghostty/.sync
+  claude/.sync
+  .copilot/.sync
+  fonts/.sync
+  iterm2/.sync
+  macos/.sync
+)
+
+for script in "${scripts[@]}"; do
+  bash "$DOTFILES_DIR/$script"
+done

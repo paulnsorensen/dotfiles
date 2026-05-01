@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DOTFILES_DIR="{{ .chezmoi.sourceDir }}/../../.."
+bash "$DOTFILES_DIR/packages/sync.sh"

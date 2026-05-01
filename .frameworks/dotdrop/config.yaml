@@ -1,0 +1,80 @@
+config:
+  backup: true
+  create: true
+  dotpath: ../..
+  link_dotfile_default: absolute
+
+actions:
+  pre:
+    packages: bash ./packages/sync.sh
+    packages_dev: DOTFILES_DEV=true bash ./packages/sync.sh
+  post:
+    theme: bash ./theme/.sync
+    atuin: bash ./atuin/.sync
+    cargo: bash ./cargo/.sync
+    starship: bash ./starship/.sync
+    yazi: bash ./yazi/.sync
+    zellij: bash ./zellij/.sync
+    ghostty: bash ./ghostty/.sync
+    claude: bash ./claude/.sync
+    copilot: bash ./.copilot/.sync
+    fonts: bash ./fonts/.sync
+    iterm2: bash ./iterm2/.sync
+    macos: bash ./macos/.sync
+
+dotfiles:
+  zshrc:
+    src: zshrc
+    dst: ~/.zshrc
+  gitconfig:
+    src: gitconfig
+    dst: ~/.gitconfig
+  gitattributes:
+    src: gitattributes
+    dst: ~/.gitattributes
+  tmux_conf:
+    src: tmux.conf
+    dst: ~/.tmux.conf
+  vimrc:
+    src: vimrc
+    dst: ~/.vimrc
+  zsh_dir:
+    src: zsh
+    dst: ~/.zsh
+  vim_dir:
+    src: vim
+    dst: ~/.vim
+
+profiles:
+  base:
+    dotfiles:
+      - zshrc
+      - gitconfig
+      - gitattributes
+      - tmux_conf
+      - vimrc
+      - zsh_dir
+      - vim_dir
+    actions:
+      - packages
+      - theme
+      - atuin
+      - cargo
+      - starship
+      - yazi
+      - zellij
+      - ghostty
+      - claude
+      - copilot
+  macos:
+    include:
+      - base
+    actions:
+      - fonts
+      - iterm2
+      - macos
+  linux-dev:
+    include:
+      - base
+    actions:
+      - packages_dev

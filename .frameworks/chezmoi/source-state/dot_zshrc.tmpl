@@ -1,4 +1,5 @@
-# dotfiles by @paulnsorensen (with a lot of copying from others)
+# Generated from the Chezmoi comparison foundation.
+export DOTFILES_DIR="{{ .chezmoi.sourceDir }}/../../.."
 
 # Platform detection (used by modules for OS-specific behavior)
 case "$OSTYPE" in
@@ -6,22 +7,17 @@ case "$OSTYPE" in
   linux*)   export DOTFILES_OS="linux" ;;
 esac
 
-# Resolve the dotfiles repo from the symlinked ~/.zshrc unless already set.
-export DOTFILES_DIR="${DOTFILES_DIR:-${${(%):-%N}:A:h}}"
-
 # Source zsh configuration files in order
 source "$DOTFILES_DIR/zsh/core.zsh"
-source "$DOTFILES_DIR/zsh/colors.zsh"    # Chocolate Donut palette (must come before fzf/prompt)
+source "$DOTFILES_DIR/zsh/colors.zsh"
 source "$DOTFILES_DIR/zsh/aliases.zsh"
 source "$DOTFILES_DIR/zsh/completion.zsh"
 source "$DOTFILES_DIR/zsh/fzf.zsh"
-source "$DOTFILES_DIR/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
-source "$DOTFILES_DIR/zsh/zellij.zsh"    # Zellij aliases and helpers
+source "$DOTFILES_DIR/zsh/tools.zsh"
+source "$DOTFILES_DIR/zsh/zellij.zsh"
 
-# Source local customizations early (sets DOTFILES_PROMPT, etc.)
 [[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 
-# Prompt selection — set DOTFILES_PROMPT=starship in ~/.zshrc.local to use starship
 if [[ "$DOTFILES_PROMPT" == "starship" ]] && command -v starship &>/dev/null; then
   eval "$(starship init zsh)"
 else

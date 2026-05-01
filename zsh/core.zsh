@@ -2,7 +2,7 @@
 # This file sets up the foundation for the shell environment
 
 # Essential directories
-export DOTFILES_DIR="$HOME/Dev/dotfiles"
+export DOTFILES_DIR="${DOTFILES_DIR:-${${(%):-%N}:A:h:h}}"
 export DEV_DIR="$HOME/Dev"
 
 # PATH configuration (matching zshrc)
