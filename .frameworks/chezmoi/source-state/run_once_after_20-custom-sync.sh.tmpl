@@ -19,5 +19,10 @@ scripts=(
 )
 
 for script in "${scripts[@]}"; do
+  case "$script" in
+    fonts/.sync|iterm2/.sync|macos/.sync)
+      [[ "$(uname)" == "Darwin" ]] || continue
+      ;;
+  esac
   bash "$DOTFILES_DIR/$script"
 done
