@@ -36,6 +36,7 @@ export LESS="${LESS:--i -M -R}"
 
 if command -v pyenv 1>/dev/null 2>&1; then
   eval "$(pyenv init -)"
+  # pyenv prepends its shims; move dotfiles/bin back to the front.
   path_prepend "$DOTFILES_DIR/bin"
 fi
 

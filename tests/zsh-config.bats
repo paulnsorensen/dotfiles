@@ -10,7 +10,6 @@ setup() {
     cp "$REAL_DOTFILES_DIR/zsh"/*.zsh "$TEST_HOME/Dev/dotfiles/zsh/" 2>/dev/null || true
     cp "$REAL_DOTFILES_DIR/zshrc" "$TEST_HOME/.zshrc"
     cp "$REAL_DOTFILES_DIR/.zprofile" "$TEST_HOME/.zprofile"
-    chmod 700 "$TEST_HOME" "$TEST_HOME/Dev" "$TEST_HOME/Dev/dotfiles" "$TEST_HOME/Dev/dotfiles/zsh"
 }
 
 teardown() {
@@ -112,10 +111,13 @@ teardown() {
 export ZPROFILE_LOCAL_MARKER="loaded"
 EOF
 
-    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" zsh -lc 'printf "MARKER:%s|%s|%s|%s\n" "$DOTFILES_PROFILE_LOADED" "$DOTFILES_DIR" "$DEV_DIR" "$ZPROFILE_LOCAL_MARKER"'
+    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" zsh -lc 'printf "DOTFILES_PROFILE_LOADED=%s\nDOTFILES_DIR=%s\nDEV_DIR=%s\nZPROFILE_LOCAL_MARKER=%s\n" "$DOTFILES_PROFILE_LOADED" "$DOTFILES_DIR" "$DEV_DIR" "$ZPROFILE_LOCAL_MARKER"'
 
     [[ $status -eq 0 ]]
-    assert_output_contains "MARKER:1|$TEST_HOME/Dev/dotfiles|$TEST_HOME/Dev|loaded"
+    assert_output_contains "DOTFILES_PROFILE_LOADED=1"
+    assert_output_contains "DOTFILES_DIR=$TEST_HOME/Dev/dotfiles"
+    assert_output_contains "DEV_DIR=$TEST_HOME/Dev"
+    assert_output_contains "ZPROFILE_LOCAL_MARKER=loaded"
 }
 
 @test "login interactive shell loads both .zprofile.local and .zshrc.local" {
@@ -127,10 +129,11 @@ EOF
 export ZSHRC_LOCAL_MARKER="${ZPROFILE_LOCAL_MARKER}-rc"
 EOF
 
-    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" TERM=dumb zsh -lic 'printf "MARKER:%s|%s\n" "$ZPROFILE_LOCAL_MARKER" "$ZSHRC_LOCAL_MARKER"'
+    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" TERM=dumb zsh -lic 'printf "ZPROFILE_LOCAL_MARKER=%s\nZSHRC_LOCAL_MARKER=%s\n" "$ZPROFILE_LOCAL_MARKER" "$ZSHRC_LOCAL_MARKER"'
 
     [[ $status -eq 0 ]]
-    assert_output_contains "MARKER:profile|profile-rc"
+    assert_output_contains "ZPROFILE_LOCAL_MARKER=profile"
+    assert_output_contains "ZSHRC_LOCAL_MARKER=profile-rc"
 }
 
 @test "cdd function works with DEV_DIR" {
