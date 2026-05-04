@@ -31,6 +31,7 @@ log_error() {
 # Directory names that are never symlinked or dispatched to.
 # Documented in CLAUDE.md — keep these in sync.
 SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "packages.yaml" "brew" "apt")
+SYNC_HIDDEN_FILES=(".zprofile")
 
 is_skipped() {
     local name="$1"
@@ -123,6 +124,22 @@ sync_hidden_dirs() {
 
         log_info "Running .sync for $name."
         bash "$entry.sync" || log_warning "sync for $name failed (non-fatal)"
+    done
+}
+
+# Dispatch hidden files from allowlist (e.g. .zprofile)
+# Unlike sync_hidden_dirs which looks for .sync scripts, this copies
+# specific files to ~ via symlink for config that needs to live in $HOME.
+sync_hidden_files() {
+    local dir="$1"
+    local file name
+    for file in "$dir"/.[!.]*; do
+        [[ -f "$file" ]] || continue
+        name="$(basename "$file")"
+        # Only sync files on the allowlist
+        [[ " ${SYNC_HIDDEN_FILES[*]} " == *" $name "* ]] || continue
+        is_skipped "$name" && continue
+        sync_entry "$name"
     done
 }
 

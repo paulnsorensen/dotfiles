@@ -224,6 +224,7 @@ run_sync() {
     for file in *; do
         sync_entry "$file"
     done
+    sync_hidden_files "$dir"
     sync_hidden_dirs
 
     install_tpm
