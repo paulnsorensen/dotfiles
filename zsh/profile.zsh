@@ -5,7 +5,7 @@ path_prepend() {
 
   [[ -d "$dir" ]] || return 0
   path=("${(@)path:#$dir}")
-  path=("$dir" $path)
+  path=("$dir" "${(@)path}")
 }
 
 export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
@@ -19,10 +19,12 @@ esac
 
 if [[ "$DOTFILES_OS" == "macos" ]]; then
   path_prepend "/opt/homebrew/bin"
-  _brew_prefix="$(brew --prefix 2>/dev/null)"
-  path_prepend "${_brew_prefix}/opt/openssl/bin"
-  path_prepend "${_brew_prefix}/opt/rustup/bin"
-  unset _brew_prefix
+  if command -v brew &>/dev/null; then
+    _brew_prefix="$(brew --prefix)"
+    path_prepend "${_brew_prefix}/opt/openssl/bin"
+    path_prepend "${_brew_prefix}/opt/rustup/bin"
+    unset _brew_prefix
+  fi
 fi
 
 # Start with dotfiles/bin first; pyenv init below may reorder PATH.
@@ -47,4 +49,4 @@ if [[ -f "$DOTFILES_DIR/.env" ]]; then
     export "$key=$val"
   done < "$DOTFILES_DIR/.env"
 fi
-export DOTFILES_PROFILE_LOADED=1
+unfunction path_prepend

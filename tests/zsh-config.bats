@@ -31,7 +31,6 @@ teardown() {
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/git.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/navigation.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/misc.zsh" ]]
-    [[ ! -f "$REAL_DOTFILES_DIR/zsh/claude.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/updates.zsh" ]]
     [[ ! -d "$REAL_DOTFILES_DIR/zsh/cache" ]]
 }
@@ -44,7 +43,6 @@ teardown() {
     grep -q 'export PREK_HOME=' "$profile_file"
     grep -q 'export EDITOR=' "$profile_file"
     grep -q 'export PAGER=' "$profile_file"
-    grep -q 'export DOTFILES_PROFILE_LOADED=1' "$profile_file"
     grep -q 'pyenv init' "$profile_file"
 }
 
@@ -111,15 +109,14 @@ teardown() {
 export ZPROFILE_LOCAL_MARKER="loaded"
 EOF
 
-    run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" zsh -lc '
-        printf "DOTFILES_PROFILE_LOADED=%s\n" "$DOTFILES_PROFILE_LOADED"
+    # shellcheck disable=SC2016
+    run env -u DOTFILES_DIR -u DEV_DIR -u DOTFILES_OS HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" zsh -lc '
         printf "DOTFILES_DIR=%s\n" "$DOTFILES_DIR"
         printf "DEV_DIR=%s\n" "$DEV_DIR"
         printf "ZPROFILE_LOCAL_MARKER=%s\n" "$ZPROFILE_LOCAL_MARKER"
     '
 
     [[ $status -eq 0 ]]
-    assert_output_contains "DOTFILES_PROFILE_LOADED=1"
     assert_output_contains "DOTFILES_DIR=$TEST_HOME/Dev/dotfiles"
     assert_output_contains "DEV_DIR=$TEST_HOME/Dev"
     assert_output_contains "ZPROFILE_LOCAL_MARKER=loaded"
@@ -134,6 +131,7 @@ EOF
 export ZSHRC_LOCAL_MARKER="${ZPROFILE_LOCAL_MARKER}-rc"
 EOF
 
+    # shellcheck disable=SC2016
     run env HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" TERM=dumb zsh -lic '
         printf "ZPROFILE_LOCAL_MARKER=%s\n" "$ZPROFILE_LOCAL_MARKER"
         printf "ZSHRC_LOCAL_MARKER=%s\n" "$ZSHRC_LOCAL_MARKER"

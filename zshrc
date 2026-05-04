@@ -1,10 +1,12 @@
 # dotfiles by @paulnsorensen (with a lot of copying from others)
 
 # Fallbacks for direct interactive shells that start without a login parent.
-DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
-DEV_DIR="${DEV_DIR:-$HOME/Dev}"
+# Exported so subprocesses inherit them (matches prior core.zsh behavior).
+export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
+export DEV_DIR="${DEV_DIR:-$HOME/Dev}"
 
-# Non-login interactive shells still need OS detection for sourced modules.
+# Non-login interactive shells skip .zprofile (e.g. VS Code terminals,
+# tmux new windows), so we re-detect OS here. Login shells already set this.
 if [[ -z "$DOTFILES_OS" ]]; then
   case "$OSTYPE" in
     darwin*) export DOTFILES_OS="macos" ;;
