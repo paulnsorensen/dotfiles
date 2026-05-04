@@ -123,6 +123,12 @@ LAYOUT
     [[ $status -eq 0 ]]
 }
 
+@test ".zprofile has valid syntax" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -n "$DOTFILES_DIR/.zprofile"
+    [[ $status -eq 0 ]]
+}
+
 @test "all bash scripts pass shellcheck" {
     command -v shellcheck &>/dev/null || skip "shellcheck not installed"
     local failed=0
@@ -163,4 +169,11 @@ LAYOUT
     local bad
     bad=$(yq -r '.packages[] | select(kind == "map") | select((keys | length) == 1 | not)' "$DOTFILES_DIR/packages.yaml" 2>/dev/null)
     [[ -z "$bad" ]]
+}
+@test "sync_hidden_files function is defined in .sync-lib.sh" {
+    # Verify the sync infrastructure supports hidden file symlinks
+    [[ -f "$DOTFILES_DIR/.sync-lib.sh" ]] || skip ".sync-lib.sh not found"
+    grep -q "sync_hidden_files()" "$DOTFILES_DIR/.sync-lib.sh" || { echo "sync_hidden_files function not found" >&2; return 1; }
+    grep -q "SYNC_HIDDEN_FILES" "$DOTFILES_DIR/.sync-lib.sh" || { echo "SYNC_HIDDEN_FILES array not found" >&2; return 1; }
+    grep -q ".zprofile" "$DOTFILES_DIR/.sync-lib.sh" || { echo ".zprofile not in SYNC_HIDDEN_FILES allowlist" >&2; return 1; }
 }

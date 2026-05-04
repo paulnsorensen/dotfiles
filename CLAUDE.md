@@ -111,10 +111,11 @@ dotfiles/
 │   ├── completion.zsh      # Zsh completion system
 │   ├── core.zsh            # Core environment setup
 │   ├── fzf.zsh             # Fuzzy finder setup
+│   ├── profile.zsh         # Login-time PATH and env (sourced by .zprofile)
 │   └── prompt.zsh          # Custom powerline prompt
 ├── zshrc                   # Main zsh entry point
+├── .zprofile               # Login shell setup (sources profile.zsh)
 ├── .sync-with-rollback     # Main sync script with state management
-└── CLAUDE.md               # This file
 ```
 
 ### Configuration Hierarchy
@@ -282,5 +283,5 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 4. **Vi Mode**: Shell is in vi mode by default
 5. **MCP Scope**: Use `user` scope for dev tools, `project` for team-shared MCPs
 6. **Reference Folder**: Put reference docs in `reference/` (gitignored, not symlinked)
-7. **zsh Loading Order**: Files in `zsh/` are sourced in the order they appear in `zshrc`. If you add a new config file, edit `zshrc` to source it at the right point. For example, completions must load before `fzf.zsh` or keybindings might conflict.
+7. **zsh Loading Order**: Files in `zsh/` (except `profile.zsh`) are sourced in the order they appear in `zshrc`. `profile.zsh` is sourced from `.zprofile` instead because it sets up login-time environment that should run once per login session, not on every interactive shell start.
 8. **Pre-Commit Hook Failures**: If prek blocks a commit (e.g., detected secrets), fix the issue before retrying. Only use `--no-verify` for temporary overrides. Check `prek.toml` to understand what's being checked.
