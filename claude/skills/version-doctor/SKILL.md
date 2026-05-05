@@ -88,7 +88,7 @@ Apply the minimum change:
 
 ### Step 5: Verify
 
-Run the build to confirm the fix works. Use `/make` if available, otherwise:
+Run the build to confirm the fix works (rtk filters output automatically):
 
 | Build System | Verify Command |
 |-------------|----------------|

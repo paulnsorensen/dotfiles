@@ -149,13 +149,9 @@ Run `/diff` first — catch obvious merge artifacts before wasting a build/test 
 - Debug statements
 - Silent failures in merged code
 
-### Build Check (make skill)
+### Build Check
 
-Run `/make` to verify the merged code compiles. This forks a subagent that absorbs verbose output and returns structured errors:
-
-```
-Skill(skill="make")
-```
+Run the project's build command directly (`cargo check`, `tsc --noEmit`, `go build ./...`, `uv run mypy .`, etc.) — the `rtk hook claude` PreToolUse hook auto-rewrites and filters output to structured errors.
 
 If build fails, understand the failing symbols before fixing with **chisel**:
 
@@ -164,13 +160,9 @@ If build fails, understand the failing symbols before fixing with **chisel**:
 
 Never grep dependency caches.
 
-### Run Tests (make test)
+### Run Tests
 
-Run `/make test` to execute the test suite with output isolation:
-
-```
-Skill(skill="make", args="test")
-```
+Run the project's test command directly (`cargo test`, `npm test`, `go test ./...`, `uv run pytest`, etc.) — rtk filters test runner output via its `pytest`, `jest`, `vitest`, and `cargo` subcommands.
 
 If tests pass: the CI failure was likely infra. Move to Phase 3b.
 
@@ -184,7 +176,7 @@ For real test/build failures:
 2. Use **scout** (`rg` for error messages, `fd` for test files) to locate the failing test
 3. Read the failing test and the code under test
 4. Fix with **chisel** — minimal change, `sd` for pattern fixes, Edit for precise patches
-5. Re-run via `/make test` to verify
+5. Re-run the test command to verify
 
 After fixing any tests, apply `/tdd-assertions` to strengthen weak assertions — existence checks, catch-all errors, length-only checks, and no-crash-as-success patterns. AI-generated test fixes are especially prone to these.
 
@@ -194,7 +186,7 @@ If tests fail after fixes, run the fix-and-verify loop (up to 3 rounds):
 Agent(subagent_type="roquefort-wrecker", prompt="Investigate test failures: <details>. Fix test bugs, score code bugs 0-100.")
 ```
 
-Then apply `/tdd-assertions` to the wrecker's output and re-run `/make test` to verify.
+Then apply `/tdd-assertions` to the wrecker's output and re-run the test command to verify.
 
 ---
 
@@ -231,7 +223,7 @@ After all three agents return:
    - Removing unnecessary abstractions or dead code (de-slop)
    - Fixing complexity budget violations (age)
    - Addressing reviewer comments that fromage-fort auto-fixed
-3. **Re-run `/make test`** to verify fixes didn't break anything
+3. **Re-run the test command** to verify fixes didn't break anything
 4. If fromage-fort fixed code, those changes are already in the working tree — just verify and commit together
 
 If any finding is < 50 confidence, **ask the user** before acting on it.

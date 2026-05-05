@@ -57,15 +57,14 @@ LSP results.
 
 ### Phase 1: Quality Gates (build + lint)
 
-Run quality gate commands from the spec via `/make`. This is the fastest signal —
-if the build is broken, everything else is moot.
+Run quality gate commands from the spec directly — the `rtk hook claude` PreToolUse hook filters build output automatically. This is the fastest signal — if the build is broken, everything else is moot.
 
 For each quality gate command documented in the spec:
 
-1. Spawn a make agent with the appropriate subcommand
+1. Run the command (rtk rewrites it transparently)
 2. Record pass/fail
 
-If no quality gates are documented, run `/make check` as a baseline.
+If no quality gates are documented, run the project's default build check (`cargo check`, `tsc --noEmit`, `go build ./...`, `uv run mypy .`, etc.) as a baseline.
 
 **Stop gate**: If quality gates fail, report immediately with the failures.
 Don't waste time on structural analysis of broken code.

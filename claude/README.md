@@ -172,20 +172,6 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 | Stop guard (inline agent) | Stop | Catches hesitation around commit/push/PR creation |
 | `rtk hook claude` | PreToolUse Bash | Token-optimizing command rewriter |
 
-### Hookify Rules (`hookify/`)
-
-Managed hookify rules synced to `~/.claude/` by `claude/.sync`. These fire automatically — no skill invocation needed.
-
-| Rule | Event | Action | What it catches |
-|------|-------|--------|-----------------|
-| `warn-deferred-stop` | stop | warn | Deferred work at session end (for now, out of scope, would need to) |
-| `warn-placeholder-code` | file | warn | TODO/FIXME/`unimplemented!()` in written code |
-| `warn-ellipsis-code` | file | warn | `// ...` and "rest is similar" hand-waves |
-
-Add new rules to `claude/hookify/` as `hookify.<name>.local.md` files. Run `dots sync` to symlink them to `~/.claude/`.
-
----
-
 ## Settings (`settings.json`)
 
 ```json

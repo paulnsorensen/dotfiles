@@ -30,10 +30,15 @@ fi
 echo -e "${BLUE}Plugin Sync - Declarative Plugin Management${NC}"
 echo
 
+# Filter expression: keep plugins whose `gate` is unset or whose env var is "true".
+# `$g` is a jq variable, not a shell var — single quotes are intentional.
+# shellcheck disable=SC2016
+GATE_FILTER='select((.value.gate // "") as $g | $g == "" or (env[$g] // "false") == "true")'
+
 # Sync local plugin marketplaces — resolve relative paths to absolute
 sync_local_marketplaces() {
     local local_entries
-    local_entries=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq -c 'to_entries[] | select(.value.path) | {plugin: (.key | split("@") | .[0]), name: (.key | split("@") | .[1]), path: .value.path}' 2>/dev/null || true)
+    local_entries=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq -c "to_entries[] | $GATE_FILTER | select(.value.path) | {plugin: (.key | split(\"@\") | .[0]), name: (.key | split(\"@\") | .[1]), path: .value.path}" 2>/dev/null || true)
     [[ -z "$local_entries" ]] && return 0
 
     local changed=false
@@ -83,13 +88,45 @@ sync_local_marketplaces() {
     echo
 }
 
+# Drop `extraKnownMarketplaces` entries for plugins whose gate is closed,
+# mirroring the safety constraint of the add path: only auto-managed entries
+# (mp_name == plugin_name) are touched. Shared marketplaces like `@local` may
+# host multiple plugins and stay registered.
+remove_gated_off_marketplaces() {
+    local stale_names
+    stale_names=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq -r '
+        to_entries[]
+        | select(.value.path) | select(.value.gate)
+        | select((env[.value.gate] // "false") != "true")
+        | (.key | split("@"))
+        | select(.[0] == .[1]) | .[0]
+    ' 2>/dev/null || true)
+    [[ -z "$stale_names" ]] && return 0
+
+    while IFS= read -r mp_name; do
+        [[ -z "$mp_name" ]] && continue
+        local has
+        has=$(jq --arg n "$mp_name" '.extraKnownMarketplaces // {} | has($n)' "$SETTINGS_FILE")
+        [[ "$has" == "true" ]] || continue
+
+        if $DRY_RUN; then
+            echo -e "  ${BLUE}[dry-run]${NC} Would remove $mp_name marketplace (gate closed)"
+        else
+            jq --arg n "$mp_name" 'del(.extraKnownMarketplaces[$n])' \
+                "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+            echo -e "  ${GREEN}Removed $mp_name marketplace (gate closed)${NC}"
+        fi
+    done <<< "$stale_names"
+}
+
 if [[ -f "$SETTINGS_FILE" ]]; then
     echo -e "${BLUE}Syncing local marketplace paths...${NC}"
     sync_local_marketplaces
+    remove_gated_off_marketplaces
 fi
 
 # shellcheck disable=SC2034  # used by sync-common.sh
-DESIRED_NAMES=$(yq '.plugins | keys | .[]' "$REGISTRY_FILE" | sort)
+DESIRED_NAMES=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq -r "to_entries[] | $GATE_FILTER | .key" | sort)
 
 # shellcheck disable=SC2034  # used by sync-common.sh
 if [[ -f "$SETTINGS_FILE" ]] && jq -e '.enabledPlugins' "$SETTINGS_FILE" &>/dev/null; then
@@ -130,7 +167,7 @@ sync_handle_removals "Plugins"
 if [[ -f "$SETTINGS_FILE" ]]; then
     echo -e "${BLUE}Syncing enabledPlugins in settings.json...${NC}"
 
-    ENABLED_JSON=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq 'to_entries | map({(.key): (.value.load // false)}) | add')
+    ENABLED_JSON=$(yq -o=json '.plugins' "$REGISTRY_FILE" | jq "to_entries | map($GATE_FILTER) | map({(.key): (.value.load // false)}) | add // {}")
 
     if $DRY_RUN; then
         echo -e "  ${BLUE}[dry-run]${NC} Would set enabledPlugins to:"

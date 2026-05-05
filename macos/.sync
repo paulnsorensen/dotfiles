@@ -14,6 +14,15 @@ readonly LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 
 mkdir -p "$LAUNCH_AGENTS_DIR"
 
+# Enable two-finger right-click on trackpad
+defaults write com.apple.driver.AppleMultitouchTrackpad TrackpadRightClick -bool true
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRightClick -bool true
+defaults write NSGlobalDomain com.apple.trackpad.enableSecondaryClick -bool true
+
+# Enable right-click (secondary click) on Magic Mouse
+defaults write com.apple.driver.AppleBluetoothMultitouch.mouse MouseButtonMode -string TwoButton
+defaults write com.apple.AppleMultitouchMouse mouseButtonMode -string TwoButton
+
 for plist in "$SCRIPT_DIR"/*.plist; do
     [[ -f "$plist" ]] || continue
     name="$(basename "$plist")"

@@ -156,3 +156,13 @@ fi
 if command -v tokei &>/dev/null; then
     alias loc='tokei'
 fi
+
+# =============================================================================
+# Agent Skills (`gh skill install` — harness-agnostic; targets each agent in
+# $SKILL_HARNESSES from .env: claude-code, cursor, codex, github-copilot, etc.)
+# =============================================================================
+alias skill='gh skill'
+alias skill-ls='gh skill update --all --dry-run'
+alias skill-sync='$DOTFILES_DIR/skills-install/sync.sh'
+alias skill-sync-dry='$DOTFILES_DIR/skills-install/sync.sh --dry-run'
+alias skill-edit='${EDITOR:-vim} $DOTFILES_DIR/skills-install/registry.yaml'
