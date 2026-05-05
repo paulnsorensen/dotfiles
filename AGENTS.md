@@ -95,7 +95,6 @@ dotfiles/
 │   │   └── sync.sh         # Declarative MCP sync script
 │   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/fromage, /fromagerie, /spec, etc.)
-│   ├── hookify/            # Hookify rules (synced to ~/.claude/ by .sync)
 │   ├── hooks/              # Pre-tool hooks
 │   ├── skills/             # Dotfiles-owned skill sources (per-skill symlinked into ~/.claude/skills/)
 │   ├── profiles/           # Scoped sessions (fe, plugin, review, rtkonly, spec, todo) — launched via `ccp <name>`
@@ -110,8 +109,7 @@ dotfiles/
 ├── iterm2/                 # iTerm2 preferences
 ├── reference/              # Reference docs (gitignored)
 ├── .claude/
-│   ├── specs/              # Tabled feature specs (.claude/specs/<slug>.md)
-│   └── hookify.*.local.md  # Active hookify rules (synced into ~/.claude/ from claude/hookify/, plus any local-only)
+│   └── specs/              # Tabled feature specs (.claude/specs/<slug>.md)
 ├── vim/                    # Vim configuration
 ├── vimrc                   # Vim settings
 ├── zsh/                    # Modular zsh configuration
@@ -176,8 +174,8 @@ Plugins are managed declaratively via `claude/plugins/registry.yaml`:
 
 ```yaml
 plugins:
-  hookify@claude-plugins-official:
-    description: Create hooks to prevent unwanted behaviors by analyzing conversation patterns
+  claude-md-management@claude-plugins-official:
+    description: Audit and improve CLAUDE.md files
     scope: user
 ```
 
@@ -266,7 +264,6 @@ Full agent/skill catalog is in `claude/CLAUDE.md` (auto-discovered). Key project
 - Pre-tool hooks: `bash-guard.js`, `phantom-file-check.js`, `write-guard.js`, `worktree-guard.js`, `review-reply-guard.js`
 - Compaction hooks: `pre-compact.sh` saves context, `post-compact.sh` restores with `/trace` suggestion
 - Session hooks: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
-- Hookify rules in `.claude/hookify.*.local.md` — active immediately, no restart needed
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
 
 ## Pre-Commit Hooks (prek)

@@ -63,14 +63,13 @@ All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool after edits 
 
 ## Build Verification
 
-Use `/make` to verify your changes compile. It runs in a forked subagent, absorbs verbose compiler output, and returns only structured errors with file:line:col locations. This keeps your context window clean and avoids hook violations from raw build commands.
+Run build commands directly — the `rtk hook claude` PreToolUse hook auto-rewrites them (`cargo check` → `rtk cargo check`, etc.) and filters output to structured errors. RTK covers cargo, npm, tsc, pytest, mypy, go, jest, vitest, eslint, ruff, prettier, golangci-lint, and more.
 
-- `/make` or `/make check` — type-check
-- `/make lint` — linter (clippy, ruff, eslint)
-- `/make test` — run tests
-- `/make fmt` — check formatting
-
-NEVER run `cargo check`, `cargo clippy`, `go build`, `npm run build`, or similar build commands directly — they pollute context with noise and may be blocked by hooks.
+- `cargo check` / `cargo clippy` — type-check, lint
+- `npm run build` / `tsc --noEmit` — TypeScript
+- `go build ./...` / `golangci-lint run` — Go
+- `uv run pytest` / `uv run mypy .` — Python
+- `cargo test` / `npm test` / `go test ./...` — tests
 
 ## What You Don't Do
 
