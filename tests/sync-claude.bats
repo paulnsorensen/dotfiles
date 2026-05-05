@@ -459,3 +459,24 @@ setup_gated_sync_dir() {
     has_gated=$(jq '.enabledPlugins | has("gated-plugin@gated-plugin")' "$dotfiles_root/claude/settings.json")
     [[ "$has_gated" == "true" ]]
 }
+
+@test "plugin sync: gated-off marketplace entry is removed from extraKnownMarketplaces" {
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles-gate-cleanup" && cd "$TEST_HOME/dotfiles-gate-cleanup" && pwd -P)"
+    setup_gated_sync_dir "$dotfiles_root"
+
+    # First sync with gate on, so the marketplace gets registered.
+    run env TEST_GATE=true bash "$dotfiles_root/claude/plugins/sync.sh" --force
+    assert_success
+    local has_mp
+    has_mp=$(jq '.extraKnownMarketplaces | has("gated-plugin")' "$dotfiles_root/claude/settings.json")
+    [[ "$has_mp" == "true" ]]
+
+    # Second sync with gate off should remove the stale marketplace entry.
+    unset TEST_GATE
+    run bash "$dotfiles_root/claude/plugins/sync.sh" --force
+    assert_success
+    assert_output_contains "Removed gated-plugin marketplace"
+    has_mp=$(jq '.extraKnownMarketplaces | has("gated-plugin")' "$dotfiles_root/claude/settings.json")
+    [[ "$has_mp" == "false" ]]
+}
