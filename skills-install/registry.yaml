@@ -1,0 +1,20 @@
+# Skill Install Registry — source repos to sync via `gh skill install`
+#
+# Each entry is a GitHub repo in OWNER/REPO format. Skills are auto-discovered
+# from `skills/<name>/SKILL.md` per the agentskills.io specification.
+#
+# Optional fields:
+#   skills:  explicit list of skill names (overrides auto-discovery)
+#   pin:     git tag or commit SHA for reproducibility
+#   force:   overwrite existing skills (default: true)
+#
+# Harnesses are configured in .env via SKILL_HARNESSES (space-separated).
+#
+# Usage:
+#   skill-sync           Install/update all skills for each configured harness
+#   skill-sync-dry       Preview changes
+#   skill-ls             List installed skills (gh skill update --dry-run --all)
+
+sources:
+  paulnsorensen/easy-cheese:
+    description: Portable agent skills toolkit — mold, cook, press, age, cure, melt, plus cheez-* tilth-backed code intelligence
