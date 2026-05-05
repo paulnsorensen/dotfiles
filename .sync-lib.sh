@@ -29,7 +29,7 @@ log_error() {
 }
 
 # Directory names that are never symlinked or dispatched to.
-# Documented in CLAUDE.md — keep these in sync.
+# Documented in AGENTS.md — keep these in sync.
 SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "packages.yaml" "brew" "apt")
 
 is_skipped() {
