@@ -5,10 +5,42 @@ load test_helper
 
 setup() {
     setup_test_env
+    export MOCK_BIN="$TEST_HOME/bin"
+    export DOTS_TEST_LOG="$TEST_HOME/dots-sync.log"
+    mkdir -p "$MOCK_BIN"
+    export PATH="$MOCK_BIN:$PATH"
 }
 
 teardown() {
     teardown_test_env
+}
+
+create_mock_sync_dotfiles() {
+    export FAKE_DOTFILES="$TEST_HOME/mock-dotfiles"
+    mkdir -p "$FAKE_DOTFILES/packages"
+
+    cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
+#!/bin/bash
+printf 'packages DOTFILES_DEV=%s QUICK_SYNC=%s FORCE_PACKAGES=%s\n' \
+  "${DOTFILES_DEV:-unset}" "${QUICK_SYNC:-unset}" "${FORCE_PACKAGES:-unset}" >> "$DOTS_TEST_LOG"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+
+    cat > "$FAKE_DOTFILES/.sync-with-rollback" << 'SCRIPT'
+#!/bin/bash
+printf 'legacy %s DOTFILES_DEV=%s QUICK_SYNC=%s FORCE_PACKAGES=%s\n' \
+  "$*" "${DOTFILES_DEV:-unset}" "${QUICK_SYNC:-unset}" "${FORCE_PACKAGES:-unset}" >> "$DOTS_TEST_LOG"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/.sync-with-rollback"
+}
+
+install_mock_chezmoi() {
+    mkdir -p "$FAKE_DOTFILES/chezmoi"
+    cat > "$MOCK_BIN/chezmoi" << 'SCRIPT'
+#!/bin/bash
+printf 'chezmoi %s\n' "$*" >> "$DOTS_TEST_LOG"
+SCRIPT
+    chmod +x "$MOCK_BIN/chezmoi"
 }
 
 @test "dots command exists and is executable" {
@@ -84,15 +116,91 @@ STUB
 }
 
 @test "dots update shorthand works" {
-    run dots u 2>&1
+    local fake_update_dir="$TEST_HOME/update-dotfiles"
+    mkdir -p "$fake_update_dir"
+    cat > "$MOCK_BIN/git" << 'SCRIPT'
+#!/bin/bash
+case "$1" in
+    fetch) exit 0 ;;
+    rev-parse) echo "abc123" ;;
+    merge-base) echo "abc123" ;;
+    *) exit 0 ;;
+esac
+SCRIPT
+    chmod +x "$MOCK_BIN/git"
+
+    run env DOTFILES_DIR="$fake_update_dir" PATH="$MOCK_BIN:$PATH" dots u 2>&1
     assert_success
     assert_output_contains "Updating"
+    assert_output_contains "Already up to date"
 }
 
 @test "dots sync shorthand works" {
     run dots s --help 2>&1
     [[ "$output" != *"Unknown command"* ]]
     assert_output_contains "Usage"
+}
+
+@test "dots sync runs packages then legacy sync then chezmoi" {
+    create_mock_sync_dotfiles
+    install_mock_chezmoi
+
+    run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" PATH="$MOCK_BIN:$PATH" \
+        dots sync dev q refresh
+    assert_success
+
+    assert_file_exists "$DOTS_TEST_LOG"
+    run cat "$DOTS_TEST_LOG"
+    assert_success
+    assert_output_contains "packages DOTFILES_DEV=true QUICK_SYNC=true FORCE_PACKAGES=true"
+    assert_output_contains "legacy no-packages dev q refresh DOTFILES_DEV=true QUICK_SYNC=true FORCE_PACKAGES=true"
+    assert_output_contains "chezmoi apply --source $FAKE_DOTFILES/chezmoi"
+
+    local packages_line legacy_line chezmoi_line
+    packages_line=$(grep -n '^packages ' "$DOTS_TEST_LOG" | cut -d: -f1)
+    legacy_line=$(grep -n '^legacy ' "$DOTS_TEST_LOG" | cut -d: -f1)
+    chezmoi_line=$(grep -n '^chezmoi ' "$DOTS_TEST_LOG" | cut -d: -f1)
+    [[ "$packages_line" -lt "$legacy_line" ]]
+    [[ "$legacy_line" -lt "$chezmoi_line" ]]
+}
+
+@test "dots sync preserves quick sync for packages and legacy args" {
+    create_mock_sync_dotfiles
+
+    run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" PATH="$MOCK_BIN:$PATH" \
+        dots sync q
+    assert_success
+
+    run cat "$DOTS_TEST_LOG"
+    assert_success
+    assert_output_contains "packages DOTFILES_DEV=false QUICK_SYNC=true FORCE_PACKAGES=unset"
+    assert_output_contains "legacy no-packages q DOTFILES_DEV=false QUICK_SYNC=true FORCE_PACKAGES=unset"
+}
+
+@test "dots packages command runs package sync only" {
+    create_mock_sync_dotfiles
+
+    run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" PATH="$MOCK_BIN:$PATH" \
+        dots packages refresh
+    assert_success
+
+    run cat "$DOTS_TEST_LOG"
+    assert_success
+    assert_output_contains "packages DOTFILES_DEV=false QUICK_SYNC=false FORCE_PACKAGES=true"
+    [[ "$output" != *"legacy"* ]]
+}
+
+@test "dots p shorthand runs package sync only" {
+    create_mock_sync_dotfiles
+
+    run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" PATH="$MOCK_BIN:$PATH" \
+        dots p dev
+    assert_success
+
+    run cat "$DOTS_TEST_LOG"
+    assert_success
+    assert_output_contains "packages DOTFILES_DEV=true QUICK_SYNC=false FORCE_PACKAGES=unset"
+    [[ "$output" != *"legacy"* ]]
 }
 
 @test "dots test shorthand works" {

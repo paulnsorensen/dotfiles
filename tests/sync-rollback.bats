@@ -40,8 +40,13 @@ MOCK
     done
 
     # Mock packages/sync.sh
+    export PACKAGES_LOG="$TEST_HOME/packages.log"
     mkdir -p "$FAKE_DOTFILES/packages"
-    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/packages/sync.sh"
+    cat > "$FAKE_DOTFILES/packages/sync.sh" << 'MOCK'
+#!/bin/bash
+printf 'packages\n' >> "$PACKAGES_LOG"
+exit 0
+MOCK
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
 
     export PATH="$MOCK_BIN:$PATH"
@@ -177,6 +182,21 @@ JSON
     run bash "$SYNC_SCRIPT"
     assert_success
     assert_output_contains "Sync completed successfully"
+}
+
+@test "no-packages skips package sync but still runs legacy sync" {
+    cd "$FAKE_DOTFILES"
+    echo "alias foo=bar" > "$FAKE_DOTFILES/myaliases"
+
+    run bash "$SYNC_SCRIPT" no-packages
+    assert_success
+    assert_output_contains "Skipping packages (handled by caller)"
+    assert_output_contains "Sync completed successfully"
+    [[ ! -f "$PACKAGES_LOG" ]]
+
+    local resolved_home
+    resolved_home=$(cd "$TEST_HOME" && pwd -P)
+    [[ -L "$resolved_home/.myaliases" ]]
 }
 
 @test "dev argument sets DOTFILES_DEV=true" {

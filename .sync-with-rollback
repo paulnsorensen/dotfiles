@@ -213,8 +213,12 @@ run_sync() {
       brew install yq
     fi
 
-    log_info "Syncing packages"
-    bash "$dir/packages/sync.sh"
+    if [[ "${DOTFILES_SKIP_PACKAGES:-false}" == "true" ]]; then
+      log_info "Skipping packages (handled by caller)"
+    else
+      log_info "Syncing packages"
+      bash "$dir/packages/sync.sh"
+    fi
 
     upgrade_uv_tools
 
@@ -232,6 +236,7 @@ run_sync() {
     create_manifest
 
     unset DOTFILES_DEV
+    unset DOTFILES_SKIP_PACKAGES
 
     log_success "Sync completed successfully!"
     echo

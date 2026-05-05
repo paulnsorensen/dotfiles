@@ -37,6 +37,7 @@ ${BLUE}Commands:${NC}
   ${GREEN}update${NC}          Pull latest changes and run sync
   ${GREEN}sync${NC}            Run the sync script (with rollback support)
   ${GREEN}upgrade${NC}         Upgrade installed packages (brew/cargo/npm/uv)
+  ${GREEN}packages${NC}        Sync packages only
   ${GREEN}status${NC}          Show git status of dotfiles
   ${GREEN}rollback [id]${NC}   Rollback to a previous state
   ${GREEN}backups${NC}         List available backups
@@ -49,6 +50,7 @@ ${BLUE}Quick Actions:${NC}
   ${GREEN}dots${NC}            Show status (same as 'dots status')
   ${GREEN}dots u${NC}          Update (shorthand)
   ${GREEN}dots s${NC}          Sync (shorthand)
+  ${GREEN}dots p${NC}          Sync packages only (shorthand)
   ${GREEN}dots s refresh${NC}  Force re-check all packages (bypass cache)
   ${GREEN}dots up${NC}         Upgrade packages (shorthand)
   ${GREEN}dots t${NC}          Test (shorthand)
@@ -61,6 +63,65 @@ ${BLUE}Examples:${NC}
 
 EOF
 )"
+}
+
+set_sync_env() {
+    export DOTFILES_DEV=false
+    export QUICK_SYNC=false
+    unset FORCE_PACKAGES
+
+    while (( $# )); do
+        case "$1" in
+            dev)
+                export DOTFILES_DEV=true
+                ;;
+            q)
+                export QUICK_SYNC=true
+                ;;
+            refresh|r)
+                export FORCE_PACKAGES=true
+                ;;
+            help|--help|-h)
+                show_help
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}Unrecognized sync arg: $1${NC}" >&2
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
+do_packages() {
+    set_sync_env "$@"
+    echo -e "${BLUE}Syncing packages...${NC}"
+    cd_dotfiles
+
+    if [[ ! -x "$DOTFILES_DIR/packages/sync.sh" ]]; then
+        echo -e "${RED}Package sync script not found: $DOTFILES_DIR/packages/sync.sh${NC}" >&2
+        exit 1
+    fi
+
+    "$DOTFILES_DIR/packages/sync.sh"
+}
+
+do_chezmoi_apply() {
+    local source_dir="$DOTFILES_DIR/chezmoi"
+
+    if [[ ! -d "$source_dir" ]]; then
+        echo -e "${YELLOW}chezmoi source not found, skipping apply${NC}"
+        return 0
+    fi
+
+    if ! command -v chezmoi &>/dev/null; then
+        echo -e "${YELLOW}chezmoi not installed, skipping apply${NC}"
+        return 0
+    fi
+
+    echo -e "${BLUE}Applying chezmoi source...${NC}"
+    chezmoi apply --source "$source_dir"
 }
 
 # Update dotfiles
@@ -89,7 +150,7 @@ do_update() {
         echo -e "${GREEN}✅ Updated successfully!${NC}"
         echo
         echo -e "${BLUE}Running sync...${NC}"
-        "$DOTFILES_DIR/.sync-with-rollback" || "$DOTFILES_DIR/.sync"
+        do_sync
     else
         echo -e "${YELLOW}⚠️  Local changes detected${NC}" >&2
         echo "Please commit or stash your changes first" >&2
@@ -100,14 +161,19 @@ do_update() {
 
 # Sync dotfiles
 do_sync() {
+    set_sync_env "$@"
     echo -e "${BLUE}🔄 Syncing dotfiles...${NC}"
     cd_dotfiles
 
+    do_packages "$@"
+
     if [[ -f "$DOTFILES_DIR/.sync-with-rollback" ]]; then
-        "$DOTFILES_DIR/.sync-with-rollback" "$@"
+        "$DOTFILES_DIR/.sync-with-rollback" no-packages "$@"
     else
         "$DOTFILES_DIR/.sync" "$@"
     fi
+
+    do_chezmoi_apply
 }
 
 # Show status
@@ -287,6 +353,10 @@ case "${1:-status}" in
         echo -e "${BLUE}⬆️  Upgrading packages...${NC}"
         cd_dotfiles
         UPGRADE_MODE=true bash "$DOTFILES_DIR/packages/sync.sh"
+        ;;
+    packages|p)
+        shift
+        do_packages "$@"
         ;;
     status|st)
         do_status

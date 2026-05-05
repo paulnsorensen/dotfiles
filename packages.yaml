@@ -42,6 +42,7 @@ packages:
   - mergiraf
   - lazygit
   - just
+  - chezmoi
   - duckdb
   - watch
   - node: { apt: nodejs }

@@ -24,7 +24,12 @@ setup() {
 
     write_mock_brew
     write_mock_cargo
-    export PATH="$MOCK_BIN:$PATH"
+
+    local real_yq
+    real_yq=$(command -v yq)
+    ln -s "$real_yq" "$MOCK_BIN/yq"
+
+    export PATH="$MOCK_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
 }
 
 teardown() {
@@ -113,13 +118,13 @@ run_sync() {
     done <<< "$output"
 }
 
-@test "all source values are brew, cask, tap, or cargo" {
+@test "all source values are brew, cask, tap, cargo, npm, or uv" {
     run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source != null) | .value.source' \
         "$REAL_DOTFILES_DIR/packages.yaml"
     assert_success
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
-        [[ "$source" == "brew" || "$source" == "cask" || "$source" == "tap" || "$source" == "cargo" || "$source" == "npm" ]]
+        [[ "$source" == "brew" || "$source" == "cask" || "$source" == "tap" || "$source" == "cargo" || "$source" == "npm" || "$source" == "uv" ]]
     done <<< "$output"
 }
 
@@ -281,7 +286,7 @@ run_sync() {
     run_sync
 
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
-    assert_output_contains "failed to install"
+    assert_output_contains "Failed to install jq"
     assert_output_contains "cache NOT saved"
 }
 

@@ -44,9 +44,13 @@ is_skipped() {
 # Parse run_sync arguments into exported env vars
 parse_sync_args() {
     export DOTFILES_DEV=false
+    export DOTFILES_SKIP_PACKAGES=false
 
     while (( $# )); do
       case $1 in
+         no-packages)
+              export DOTFILES_SKIP_PACKAGES=true
+              ;;
          dev)
               echo "Setting dev=true"
               export DOTFILES_DEV=true
