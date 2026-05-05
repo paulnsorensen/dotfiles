@@ -57,8 +57,8 @@ YAML
 write_plugin_fixtures() {
     cat > "$TEST_HOME/plugin-registry.yaml" << 'YAML'
 plugins:
-  hookify@official:
-    description: Hook management
+  formatter@official:
+    description: Code formatter
     scope: user
     load: true
   linter@community:
@@ -262,8 +262,8 @@ write_local_plugin_fixtures() {
 
     cat > "$dotfiles_root/claude/plugins/registry.yaml" << 'YAML'
 plugins:
-  hookify@official:
-    description: Hook management
+  formatter@official:
+    description: Code formatter
     scope: user
     load: true
   my-plugin@my-plugin:
@@ -387,7 +387,7 @@ JSON
     run bash "$mock_dir/sync.sh" --dry-run
     assert_success
     assert_output_contains "[dry-run]"
-    assert_output_contains "hookify@official"
+    assert_output_contains "formatter@official"
     assert_output_contains "linter@community"
     [ ! -f "$CLAUDE_LOG" ] || ! grep -q "claude plugin install" "$CLAUDE_LOG"
 }
@@ -400,8 +400,8 @@ write_gated_plugin_fixtures() {
     echo '{"name": "gated-plugin"}' > "$plugin_dir/.claude-plugin/plugin.json"
     cat > "$dotfiles_root/claude/plugins/registry.yaml" << 'YAML'
 plugins:
-  hookify@official:
-    description: Hook management
+  formatter@official:
+    description: Code formatter
     scope: user
     load: true
   gated-plugin@gated-plugin:
@@ -441,7 +441,7 @@ setup_gated_sync_dir() {
 
     local has_gated has_ungated
     has_gated=$(jq '.enabledPlugins | has("gated-plugin@gated-plugin")' "$dotfiles_root/claude/settings.json")
-    has_ungated=$(jq '.enabledPlugins | has("hookify@official")' "$dotfiles_root/claude/settings.json")
+    has_ungated=$(jq '.enabledPlugins | has("formatter@official")' "$dotfiles_root/claude/settings.json")
     [[ "$has_gated" == "false" ]]
     [[ "$has_ungated" == "true" ]]
 }

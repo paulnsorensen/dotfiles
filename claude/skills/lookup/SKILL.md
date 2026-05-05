@@ -182,7 +182,7 @@ when the better tool genuinely isn't available — not because it's easier to ty
 
 ## Why This Skill Is NOT Forked
 
-Unlike `/make` or `/fetch`, this skill runs inline — not in a subagent. Two reasons:
+Unlike `/fetch`, this skill runs inline — not in a subagent. Two reasons:
 
 1. **LSP only works in the foreground context.** Forking would cut off
    the most powerful tool (hover, findReferences, goToDefinition).

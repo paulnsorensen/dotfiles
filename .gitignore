@@ -25,7 +25,7 @@ iterm2/com.googlecode.iterm2.plist
 claude/hooks/node_modules/
 claude/hooks/package-lock.json
 
-# Claude Code local state (hookify rules, settings.local.json, specs)
+# Claude Code local state (settings.local.json, specs)
 .claude/
 
 # Claude test sandbox (temporary test files from /test-sandbox skill)
