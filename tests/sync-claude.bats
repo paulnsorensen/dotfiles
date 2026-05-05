@@ -391,3 +391,92 @@ JSON
     assert_output_contains "linter@community"
     [ ! -f "$CLAUDE_LOG" ] || ! grep -q "claude plugin install" "$CLAUDE_LOG"
 }
+
+
+write_gated_plugin_fixtures() {
+    local dotfiles_root="$1"
+    local plugin_dir="$dotfiles_root/claude/plugins/local/gated-plugin"
+    mkdir -p "$plugin_dir/.claude-plugin"
+    echo '{"name": "gated-plugin"}' > "$plugin_dir/.claude-plugin/plugin.json"
+    cat > "$dotfiles_root/claude/plugins/registry.yaml" << 'YAML'
+plugins:
+  hookify@official:
+    description: Hook management
+    scope: user
+    load: true
+  gated-plugin@gated-plugin:
+    description: Gated test plugin
+    scope: user
+    load: true
+    path: claude/plugins/local/gated-plugin
+    gate: TEST_GATE
+YAML
+    cat > "$dotfiles_root/claude/settings.json" << 'JSON'
+{
+  "enabledPlugins": {},
+  "extraKnownMarketplaces": {}
+}
+JSON
+}
+
+setup_gated_sync_dir() {
+    local dotfiles_root="$1"
+    local claude_dir="$dotfiles_root/claude"
+    local mock_dir="$claude_dir/plugins"
+    mkdir -p "$mock_dir" "$claude_dir/lib"
+    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
+    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
+    write_gated_plugin_fixtures "$dotfiles_root"
+}
+
+@test "plugin sync: gated plugin excluded from enabledPlugins when gate env var unset" {
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles-gate-off" && cd "$TEST_HOME/dotfiles-gate-off" && pwd -P)"
+    setup_gated_sync_dir "$dotfiles_root"
+
+    unset TEST_GATE
+    run bash "$dotfiles_root/claude/plugins/sync.sh" --force
+    assert_success
+    assert_output_not_contains "gated-plugin@gated-plugin"
+
+    local has_gated has_ungated
+    has_gated=$(jq '.enabledPlugins | has("gated-plugin@gated-plugin")' "$dotfiles_root/claude/settings.json")
+    has_ungated=$(jq '.enabledPlugins | has("hookify@official")' "$dotfiles_root/claude/settings.json")
+    [[ "$has_gated" == "false" ]]
+    [[ "$has_ungated" == "true" ]]
+}
+
+@test "plugin sync: gated plugin included in enabledPlugins when gate env var is true" {
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles-gate-on" && cd "$TEST_HOME/dotfiles-gate-on" && pwd -P)"
+    setup_gated_sync_dir "$dotfiles_root"
+
+    run env TEST_GATE=true bash "$dotfiles_root/claude/plugins/sync.sh" --force
+    assert_success
+    assert_output_contains "gated-plugin@gated-plugin"
+
+    local has_gated
+    has_gated=$(jq '.enabledPlugins | has("gated-plugin@gated-plugin")' "$dotfiles_root/claude/settings.json")
+    [[ "$has_gated" == "true" ]]
+}
+
+@test "plugin sync: gated-off marketplace entry is removed from extraKnownMarketplaces" {
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles-gate-cleanup" && cd "$TEST_HOME/dotfiles-gate-cleanup" && pwd -P)"
+    setup_gated_sync_dir "$dotfiles_root"
+
+    # First sync with gate on, so the marketplace gets registered.
+    run env TEST_GATE=true bash "$dotfiles_root/claude/plugins/sync.sh" --force
+    assert_success
+    local has_mp
+    has_mp=$(jq '.extraKnownMarketplaces | has("gated-plugin")' "$dotfiles_root/claude/settings.json")
+    [[ "$has_mp" == "true" ]]
+
+    # Second sync with gate off should remove the stale marketplace entry.
+    unset TEST_GATE
+    run bash "$dotfiles_root/claude/plugins/sync.sh" --force
+    assert_success
+    assert_output_contains "Removed gated-plugin marketplace"
+    has_mp=$(jq '.extraKnownMarketplaces | has("gated-plugin")' "$dotfiles_root/claude/settings.json")
+    [[ "$has_mp" == "false" ]]
+}

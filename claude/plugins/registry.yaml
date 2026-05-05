@@ -77,12 +77,14 @@ plugins:
     load: true
 
   # --- Local plugins (dotfiles) ---
+  # Gated entries are skipped unless the named env var is "true" (see .env.example).
 
   todoist-flow@todoist-flow:
     description: Todoist productivity suite — triage, organize, update, extract reference material
     scope: user
     load: true
     path: claude/plugins/local/todoist-flow
+    gate: TODOIST
 
   # --- Out-of-repo local plugins (path resolved at sync time) ---
   vaudeville@local:
@@ -90,9 +92,11 @@ plugins:
     scope: user
     load: true
     path: ~/Dev/vaudeville
+    gate: VAUDEVILLE
 
   cheese-flow@local:
     description: Opinionated coding harness plugin scaffold for portable agents and skills
     scope: user
     load: true
     path: ~/Dev/cheese-flow
+    gate: CHEESE_FLOW
