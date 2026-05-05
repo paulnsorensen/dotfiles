@@ -8,19 +8,24 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Create ~/.claude if it doesn't exist
 mkdir -p "$CLAUDE_DIR"
 
-# Config to symlink (note: plugins NOT included - Claude uses that dir for plugin cache)
+# Config to symlink (note: plugins NOT included - Claude uses that dir for plugin cache;
+# skills handled separately via sync_skills_per_subdir so gh skill install can deposit
+# its own subdirs alongside dotfiles-owned skills)
 configs=(
   agents
   commands
   hooks
   settings.json
   mcp
-  skills
   reference
   profiles
   CLAUDE.md
   RTK.md
 )
+
+# Per-skill symlink sync — see claude/lib/skills-sync.sh for the rule.
+# shellcheck disable=SC1091
+source "$SOURCE_DIR/lib/skills-sync.sh"
 
 # Install hook dependencies (wink-nlp for violation classifier)
 if [[ -f "$SOURCE_DIR/hooks/package.json" ]]; then
@@ -53,6 +58,8 @@ for item in "${configs[@]}"; do
     ln -s "$source" "$target"
   fi
 done
+
+sync_skills_per_subdir "$SOURCE_DIR/skills" "$CLAUDE_DIR/skills"
 
 # RTK agent setup is done manually via the `rtk-init-*` aliases in
 # zsh/claude.zsh — running `rtk init` during sync would rewrite
