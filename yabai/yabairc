@@ -46,5 +46,3 @@ yabai -m rule --add title="^Settings$"           manage=off
 # refocus mouse target if a destroyed window leaves no obvious focus
 yabai -m signal --add event=window_destroyed \
   action="yabai -m query --windows --window &>/dev/null || yabai -m window --focus mouse &>/dev/null"
-
-echo "yabairc loaded"

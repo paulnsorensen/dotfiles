@@ -98,6 +98,7 @@ dotfiles/
 ├── gitconfig               # Git configuration
 ├── prek.toml               # Pre-commit hooks config (prek)
 ├── iterm2/                 # iTerm2 preferences
+├── yabai/                  # yabai + skhd window manager config
 ├── reference/              # Reference docs (gitignored)
 ├── .claude/
 │   ├── specs/              # Tabled feature specs (.claude/specs/<slug>.md)
@@ -111,7 +112,8 @@ dotfiles/
 │   ├── completion.zsh      # Zsh completion system
 │   ├── core.zsh            # Core environment setup
 │   ├── fzf.zsh             # Fuzzy finder setup
-│   └── prompt.zsh          # Custom powerline prompt
+│   ├── prompt.zsh          # Custom powerline prompt
+│   └── yabai.zsh           # Yabai/skhd reload alias
 ├── zshrc                   # Main zsh entry point
 ├── .sync-with-rollback     # Main sync script with state management
 └── CLAUDE.md               # This file
@@ -238,10 +240,11 @@ The `.sync-with-rollback` script provides:
 
 Tiling window manager + hotkey daemon for macOS, installed from the `koekeishiya/formulae` brew tap and started as background services by `yabai/.sync`. Configs live at `yabai/yabairc` and `yabai/skhdrc` and are symlinked to `~/.yabairc` / `~/.skhdrc`.
 
-- **Modifier ladder**: `ctrl+alt` for focus/layout, `ctrl+alt+shift` for swap/move, `cmd+alt` for resize.
+- **Modifier ladder**: `ctrl+alt` for focus/layout, `ctrl+alt+shift` for swap/move, `cmd+alt` for resize, `ctrl+cmd+alt` for SizeUp-style window/space ops.
 - **Vim navigation**: `ctrl+alt+hjkl` focus, `ctrl+alt+shift+hjkl` swap, `cmd+alt+hjkl` resize.
 - **Spaces**: `ctrl+alt+1..4` focus, `ctrl+alt+shift+1..4` move-and-follow. macOS spaces must be created manually in Mission Control first — yabai cannot create them with SIP enabled.
 - **Snap-to-grid for floating windows**: `ctrl+alt+arrows` for halves, `ctrl+alt+u/i/n/m` for quarters, `ctrl+alt+return` for fullscreen. Auto-floats a tiled window before snapping.
+- **SizeUp chords**: `ctrl+cmd+alt+m` toggles zoom-fullscreen (window covers display, others hide underneath), `ctrl+cmd+alt+n` rotates the BSP tree 90°.
 - **Reload**: `ctrl+alt+shift+r` restarts both services after config edits.
 - **First-time setup**: grant Accessibility (and optionally Screen Recording) to `yabai` and `skhd` in System Settings → Privacy & Security after `dots sync`.
 - **SIP**: opacity, removing title bars, and cross-space window movement require SIP partially disabled. The basic tile/focus/swap loop works with SIP on.

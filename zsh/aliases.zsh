@@ -156,8 +156,3 @@ fi
 if command -v tokei &>/dev/null; then
     alias loc='tokei'
 fi
-
-# yabai + skhd - reload both window-manager services
-if command -v yabai &>/dev/null && command -v skhd &>/dev/null; then
-    alias yr='yabai --restart-service && skhd --restart-service'
-fi
