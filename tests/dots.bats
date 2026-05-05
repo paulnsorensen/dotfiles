@@ -154,7 +154,7 @@ SCRIPT
     assert_success
     assert_output_contains "packages DOTFILES_DEV=true QUICK_SYNC=true FORCE_PACKAGES=true"
     assert_output_contains "legacy no-packages dev q refresh DOTFILES_DEV=true QUICK_SYNC=true FORCE_PACKAGES=true"
-    assert_output_contains "chezmoi apply --source $FAKE_DOTFILES/chezmoi"
+    assert_output_contains "chezmoi apply"
 
     local packages_line legacy_line chezmoi_line
     packages_line=$(grep -n '^packages ' "$DOTS_TEST_LOG" | cut -d: -f1)

@@ -108,9 +108,7 @@ do_packages() {
 }
 
 do_chezmoi_apply() {
-    local source_dir="$DOTFILES_DIR/chezmoi"
-
-    if [[ ! -d "$source_dir" ]]; then
+    if [[ ! -d "$DOTFILES_DIR/chezmoi" ]]; then
         echo -e "${YELLOW}chezmoi source not found, skipping apply${NC}"
         return 0
     fi
@@ -120,8 +118,9 @@ do_chezmoi_apply() {
         return 0
     fi
 
+    # sourceDir is configured in ~/.config/chezmoi/chezmoi.toml by chezmoi/.sync.
     echo -e "${BLUE}Applying chezmoi source...${NC}"
-    chezmoi apply --source "$source_dir"
+    chezmoi apply
 }
 
 # Update dotfiles
