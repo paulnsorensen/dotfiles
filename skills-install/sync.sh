@@ -93,11 +93,14 @@ install_skill() {
         return 0
     fi
 
-    if err=$(gh "${args[@]}" 2>&1 >/dev/null); then
+    local output
+    if output=$(gh "${args[@]}" 2>&1); then
         echo -e "    ${GREEN}✓${NC} $skill → $harness"
     else
         echo -e "    ${RED}✗${NC} $skill → $harness"
-        [[ -n "$err" ]] && echo -e "      ${RED}$err${NC}" | head -3
+        if [[ -n "$output" ]]; then
+            echo "$output" | head -3 | sed -e "s/^/      /"
+        fi
     fi
 }
 
@@ -108,8 +111,8 @@ if [[ -z "$SOURCES" ]]; then
 fi
 
 for repo in $SOURCES; do
-    description=$(yq ".sources.\"$repo\".description // \"\"" "$REGISTRY_FILE")
-    pin=$(yq ".sources.\"$repo\".pin // \"\"" "$REGISTRY_FILE")
+    description=$(yq -r ".sources.\"$repo\".description // \"\"" "$REGISTRY_FILE")
+    pin=$(yq -r ".sources.\"$repo\".pin // \"\"" "$REGISTRY_FILE")
 
     echo -e "${BLUE}Source:${NC} $repo"
     [[ -n "$description" ]] && echo "  $description"
