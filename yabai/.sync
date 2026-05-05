@@ -1,0 +1,38 @@
+#!/bin/bash
+# Symlink yabai + skhd configs and ensure brew services are running.
+
+set -euo pipefail
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "yabai/.sync: skipping (not macOS)" >&2
+    exit 0
+fi
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! command -v yabai >/dev/null 2>&1; then
+    echo "yabai/.sync: yabai not installed yet (run dots sync to install)" >&2
+    exit 0
+fi
+if ! command -v skhd >/dev/null 2>&1; then
+    echo "yabai/.sync: skhd not installed yet (run dots sync to install)" >&2
+    exit 0
+fi
+
+ln -sfn "$SCRIPT_DIR/yabairc" "$HOME/.yabairc"
+ln -sfn "$SCRIPT_DIR/skhdrc"  "$HOME/.skhdrc"
+chmod +x "$SCRIPT_DIR/yabairc"
+
+services_ok=true
+if ! brew services list 2>/dev/null | awk '$1=="yabai" && $2=="started" {f=1} END {exit !f}'; then
+    brew services start yabai >/dev/null 2>&1 || { echo "yabai/.sync: failed to start yabai service" >&2; services_ok=false; }
+fi
+if ! brew services list 2>/dev/null | awk '$1=="skhd" && $2=="started" {f=1} END {exit !f}'; then
+    brew services start skhd >/dev/null 2>&1 || { echo "yabai/.sync: failed to start skhd service" >&2; services_ok=false; }
+fi
+
+if $services_ok; then
+    echo "yabai/.sync: configs linked, services running"
+else
+    echo "yabai/.sync: configs linked, but one or more services failed to start (see stderr)"
+fi

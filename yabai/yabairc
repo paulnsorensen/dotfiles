@@ -1,0 +1,48 @@
+#!/usr/bin/env sh
+# yabai window manager configuration
+
+# layout
+yabai -m config layout                      bsp
+yabai -m config top_padding                 8
+yabai -m config bottom_padding              8
+yabai -m config left_padding                8
+yabai -m config right_padding               8
+yabai -m config window_gap                  8
+
+yabai -m config window_origin_display       default
+yabai -m config window_placement            second_child
+yabai -m config split_ratio                 0.50
+yabai -m config auto_balance                off
+
+# mouse
+yabai -m config mouse_modifier              alt
+yabai -m config mouse_action1               move
+yabai -m config mouse_action2               resize
+yabai -m config mouse_drop_action           swap
+yabai -m config focus_follows_mouse         autoraise
+yabai -m config mouse_follows_focus         off
+
+# visuals — uncomment if SIP is partially disabled
+# yabai -m config window_shadow             on
+# yabai -m config window_opacity            on
+# yabai -m config active_window_opacity     1.0
+# yabai -m config normal_window_opacity     0.92
+
+# float rules — apps that never tile cleanly
+yabai -m rule --add app="^System Settings$"      manage=off
+yabai -m rule --add app="^System Information$"   manage=off
+yabai -m rule --add app="^Calculator$"           manage=off
+yabai -m rule --add app="^Calendar$"             manage=off
+yabai -m rule --add app="^1Password.*$"          manage=off
+yabai -m rule --add app="^Karabiner-Elements$"   manage=off
+yabai -m rule --add app="^Disk Utility$"         manage=off
+yabai -m rule --add app="^App Store$"            manage=off
+yabai -m rule --add app="^Activity Monitor$"     manage=off
+yabai -m rule --add app="^Archive Utility$"      manage=off
+yabai -m rule --add app="^Finder$" title="(Copy|Move|Info|Bin)" manage=off
+yabai -m rule --add title="^Preferences$"        manage=off
+yabai -m rule --add title="^Settings$"           manage=off
+
+# refocus mouse target if a destroyed window leaves no obvious focus
+yabai -m signal --add event=window_destroyed \
+  action="yabai -m query --windows --window &>/dev/null || yabai -m window --focus mouse &>/dev/null"
