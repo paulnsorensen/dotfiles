@@ -36,7 +36,13 @@ fi
 echo -e "${BLUE}MCP Sync - Declarative MCP Management${NC}"
 echo
 
-DESIRED_JSON=$(yq -o=json '.mcps' "$REGISTRY_FILE")
+# Filter out entries whose `gate_unless: VAR` env var is "true". This lets
+# the registry defer to a plugin-bundled MCP (e.g. tilth via cheese-flow's
+# .mcp.json) when the plugin is active, while still installing the MCP when
+# the plugin is off — avoiding duplicate processes either way.
+# shellcheck disable=SC2016  # $g is jq, not shell
+GATE_FILTER='to_entries | map(select((.value.gate_unless // "") as $g | $g == "" or (env[$g] // "false") != "true")) | from_entries'
+DESIRED_JSON=$(yq -o=json '.mcps' "$REGISTRY_FILE" | jq "$GATE_FILTER")
 # shellcheck disable=SC2034  # used by sync-common.sh
 DESIRED_NAMES=$(echo "$DESIRED_JSON" | jq -r 'keys[]' | sort)
 

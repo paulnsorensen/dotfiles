@@ -104,16 +104,6 @@
         ]
       },
       {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" worktree-guard.js",
-            "statusMessage": "Checking worktree scope..."
-          }
-        ]
-      },
-      {
         "matcher": "Read",
         "hooks": [
           {

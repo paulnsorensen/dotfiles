@@ -152,7 +152,7 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 |------|-----------|---------|
 | `bash-guard.js` | _(disabled)_ | Patterns kept in tree for reference; not registered in settings |
 | `write-guard.js` | Edit, Write | Blocks placeholder/lazy code and inline test snippets |
-| `worktree-guard.js` | Edit, Write | Blocks writes outside the active git worktree |
+| `worktree-guard.js` | _(disabled)_ | File kept in tree for reference; not registered in settings |
 | `phantom-file-check.js` | Read | Prevents reading non-existent files (anti-hallucination) |
 
 ### Post-Tool Hooks
@@ -225,14 +225,15 @@ User-scope MCPs (registered here):
 | `code-review-graph` | Persistent code knowledge graph; impact radius, call chains, architectural framing |
 | `serper` | Google SERP for factual lookups |
 | `todoist` | Todoist task/project management |
+| `tilth` | AST-aware code search/read/edit (Tree-sitter); backs `cheez-*` skills. Gated by `gate_unless: CHEESE_FLOW` — installed only when the cheese-flow plugin is dark, since the plugin bundles its own tilth MCP |
 
-Plugin-provided MCPs (declared by `cheese-flow`'s `.mcp.json`, session-wide and accessible to all skills):
+Plugin-provided MCPs (declared by `cheese-flow`'s `.mcp.json` when `CHEESE_FLOW=true`, session-wide and accessible to all skills):
 
 | MCP | Provider | Purpose |
 |-----|----------|---------|
 | `context7` | cheese-flow | Library/framework docs (React, Tailwind, Next.js, …) |
 | `tavily` | cheese-flow | AI-powered technical research |
-| `tilth` | cheese-flow | AST-aware code search/read; backs `cheez-*` skills |
+| `tilth` | cheese-flow | AST-aware code search/read; backs `cheez-*` skills (supersedes the registry entry above when active) |
 | `milknado` | cheese-flow | Mikado-method change graph for `milknado-*` skills |
 
 Profile-only MCPs (loaded per-profile via `--mcp-config`, not registry-managed):
