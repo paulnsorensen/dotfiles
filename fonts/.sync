@@ -6,11 +6,6 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 0
 fi
 
-if [[ "${QUICK_SYNC:-false}" == "true" ]]; then
-  echo "Quick sync, skipping fonts"
-  exit 0
-fi
-
 fonts=(hack hack-nerd-font fira-code monoid)
 
 # Map cask name to font filename glob for manual install detection

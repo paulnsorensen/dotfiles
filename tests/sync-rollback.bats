@@ -186,13 +186,6 @@ JSON
     assert_output_contains "Setting dev=true"
 }
 
-@test "q argument sets QUICK_SYNC=true" {
-    cd "$FAKE_DOTFILES"
-    run bash "$SYNC_SCRIPT" q
-    assert_success
-    assert_output_contains "Setting quick_sync=true"
-}
-
 @test "refresh argument sets FORCE_PACKAGES=true" {
     cd "$FAKE_DOTFILES"
     run bash "$SYNC_SCRIPT" refresh
@@ -284,12 +277,4 @@ SCRIPT
     [[ -n "$visible_line" ]]
     [[ -n "$copilot_line" ]]
     [[ "$visible_line" -lt "$copilot_line" ]]
-}
-
-@test "QUICK_SYNC skips quick-skippable operations" {
-    cd "$FAKE_DOTFILES"
-    run bash "$SYNC_SCRIPT" q
-    assert_success
-    assert_output_contains "Setting quick_sync=true"
-    assert_output_contains "Sync completed successfully"
 }

@@ -5,11 +5,6 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 0
 fi
 
-if [[ "${QUICK_SYNC:-false}" == "true" ]]; then
-  echo "Quick sync, skipping iterm"
-  exit 0
-fi
-
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

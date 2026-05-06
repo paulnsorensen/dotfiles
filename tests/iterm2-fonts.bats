@@ -94,12 +94,6 @@ run_iterm_scrub() {
     assert_output_contains "Not on mac, skipping iterm2"
 }
 
-@test "iterm2 sync: skips when QUICK_SYNC=true" {
-    QUICK_SYNC=true run_iterm_sync
-    assert_success
-    assert_output_contains "Quick sync, skipping iterm"
-}
-
 @test "iterm2 sync: sed expands placeholders in base plist" {
     create_base_plist
     touch "$ITERM_DIR/background/i_know_how_to_make_ducks.png"
@@ -198,12 +192,6 @@ with open('$resolved_iterm/com.googlecode.iterm2.plist', 'wb') as f:
     run bash "$FONTS_SYNC"
     assert_success
     assert_output_contains "Not on mac, skipping fonts"
-}
-
-@test "fonts sync: skips when QUICK_SYNC=true" {
-    QUICK_SYNC=true run bash "$FONTS_SYNC"
-    assert_success
-    assert_output_contains "Quick sync, skipping fonts"
 }
 
 @test "fonts sync: maps font names to correct file patterns" {

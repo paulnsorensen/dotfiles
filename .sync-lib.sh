@@ -44,17 +44,12 @@ is_skipped() {
 # Parse run_sync arguments into exported env vars
 parse_sync_args() {
     export DOTFILES_DEV=false
-    export QUICK_SYNC=false
 
     while (( $# )); do
       case $1 in
          dev)
               echo "Setting dev=true"
               export DOTFILES_DEV=true
-              ;;
-         q)
-              echo "Setting quick_sync=true"
-              export QUICK_SYNC=true
               ;;
          refresh|r)
               echo "Setting force_packages=true"
