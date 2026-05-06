@@ -21,7 +21,37 @@ teardown() {
     assert_output_contains "Usage: dots [command] [args]"
     assert_output_contains "update"
     assert_output_contains "sync"
+    assert_output_contains "upgrade"
     assert_output_contains "rollback"
+}
+
+@test "dots upgrade dispatches to packages/sync.sh with UPGRADE_MODE=true" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    mkdir -p "$stub_dir/packages" "$stub_dir/bin"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    cat > "$stub_dir/packages/sync.sh" <<'STUB'
+#!/bin/bash
+echo "stub-sync UPGRADE_MODE=${UPGRADE_MODE:-unset}"
+STUB
+    chmod +x "$stub_dir/packages/sync.sh"
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
+    assert_success
+    assert_output_contains "Upgrading packages"
+    assert_output_contains "stub-sync UPGRADE_MODE=true"
+}
+
+@test "dots up shorthand routes to upgrade" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    mkdir -p "$stub_dir/packages" "$stub_dir/bin"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    cat > "$stub_dir/packages/sync.sh" <<'STUB'
+#!/bin/bash
+echo "stub-sync UPGRADE_MODE=${UPGRADE_MODE:-unset}"
+STUB
+    chmod +x "$stub_dir/packages/sync.sh"
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" up
+    assert_success
+    assert_output_contains "stub-sync UPGRADE_MODE=true"
 }
 
 @test "dots with no arguments shows status" {

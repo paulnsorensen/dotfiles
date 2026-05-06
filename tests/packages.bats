@@ -305,11 +305,34 @@ run_sync() {
 
 # --- Integration: missing toolchain ---
 
+# Build a curated PATH for "missing toolchain" tests. Keeps real yq/jq/shasum
+# (sync.sh needs them) but excludes any directory that holds an executable
+# cargo or rustup, so `command -v cargo` actually fails when MOCK_BIN/cargo
+# is removed.
+scrub_toolchain_path() {
+    local entry filtered=""
+    local -a needed=(yq jq shasum sha256sum git awk sed grep cut sort tr head tail)
+    local stub="$TEST_HOME/toolchain-stub"
+    mkdir -p "$stub"
+    for tool in "${needed[@]}"; do
+        local src
+        src=$(command -v "$tool" 2>/dev/null || true)
+        [[ -n "$src" && ! -e "$stub/$tool" ]] && ln -sf "$src" "$stub/$tool"
+    done
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        [[ -x "$entry/cargo" ]] && continue
+        [[ -x "$entry/rustup" ]] && continue
+        filtered+="$entry:"
+    done <<< "$(echo "$PATH" | tr ':' '\n')"
+    echo "$stub:${filtered%:}"
+}
+
 @test "sync counts missing cargo AND rustup as failure (no cache saved)" {
     write_test_yaml
     rm -f "$MOCK_BIN/cargo" "$MOCK_BIN/rustup"
 
-    run_sync
+    PATH="$MOCK_BIN:$(scrub_toolchain_path)" run_sync
 
     assert_output_contains "cargo not found"
     assert_output_contains "cache NOT saved"
@@ -319,6 +342,10 @@ run_sync() {
 @test "sync bootstraps rust toolchain when rustup exists but cargo missing" {
     write_test_yaml
     rm -f "$MOCK_BIN/cargo"
+
+    # Mock rustup must take precedence over host rustup, AND host cargo
+    # must not satisfy the initial `command -v cargo` check.
+    export PATH="$MOCK_BIN:$(scrub_toolchain_path)"
 
     # Mock rustup that creates a mock cargo on "default stable"
     cat > "$MOCK_BIN/rustup" << MOCKRUSTUP
@@ -343,15 +370,66 @@ MOCKRUSTUP
     assert_success
 
     assert_output_contains "Bootstrapping Rust stable toolchain"
-    grep -q "cargo install --git" "$CARGO_LOG"
+    grep -q "rustup default stable" "$CARGO_LOG"
+    grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
 }
 
-# --- Integration: QUICK_SYNC ---
+# --- Integration: UPGRADE_MODE ---
 
-@test "QUICK_SYNC skips everything" {
+@test "UPGRADE_MODE bypasses cache" {
     write_test_yaml
-    QUICK_SYNC=true run bash "$SYNC_SCRIPT"
+    save_cache_now() {
+        shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
+    }
+    save_cache_now
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "Quick sync, skipping"
-    [[ ! -f "$BREW_LOG" ]]
+    assert_output_contains "UPGRADE_MODE set, bypassing cache"
+}
+
+@test "UPGRADE_MODE runs brew upgrade after install loop" {
+    write_test_yaml
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    grep -q "brew update" "$BREW_LOG"
+    grep -q "brew upgrade" "$BREW_LOG"
+}
+
+@test "UPGRADE_MODE re-installs cargo packages with --force when already installed" {
+    write_test_yaml
+    cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
+#!/bin/bash
+echo "cargo $*" >> "$CARGO_LOG"
+case "$1" in
+    install)
+        if [[ "$2" == "--list" ]]; then
+            echo "cargo-llvm-cov v0.1.0:"
+            echo "    cargo-llvm-cov"
+        fi
+        ;;
+esac
+exit 0
+MOCKCARGO
+    chmod +x "$MOCK_BIN/cargo"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    grep -q "cargo install --force cargo-llvm-cov" "$CARGO_LOG"
+    assert_output_contains "Upgrading cargo-llvm-cov"
+}
+
+@test "non-upgrade mode does NOT pass --force to cargo install" {
+    write_test_yaml
+    run_sync
+    assert_success
+    ! grep -q -- "--force" "$CARGO_LOG"
+}
+
+@test "UPGRADE_MODE skips cargo --force when package not yet installed" {
+    write_test_yaml
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    # cargo-llvm-cov is not in the (empty) installed list, so install path runs without --force
+    grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
+    ! grep -q "cargo install --force cargo-llvm-cov" "$CARGO_LOG"
 }

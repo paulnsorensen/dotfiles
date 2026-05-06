@@ -36,6 +36,7 @@ ${GREEN}Usage:${NC} dots [command] [args]
 ${BLUE}Commands:${NC}
   ${GREEN}update${NC}          Pull latest changes and run sync
   ${GREEN}sync${NC}            Run the sync script (with rollback support)
+  ${GREEN}upgrade${NC}         Upgrade installed packages (brew/cargo/npm/uv)
   ${GREEN}status${NC}          Show git status of dotfiles
   ${GREEN}rollback [id]${NC}   Rollback to a previous state
   ${GREEN}backups${NC}         List available backups
@@ -49,6 +50,7 @@ ${BLUE}Quick Actions:${NC}
   ${GREEN}dots u${NC}          Update (shorthand)
   ${GREEN}dots s${NC}          Sync (shorthand)
   ${GREEN}dots s refresh${NC}  Force re-check all packages (bypass cache)
+  ${GREEN}dots up${NC}         Upgrade packages (shorthand)
   ${GREEN}dots t${NC}          Test (shorthand)
 
 ${BLUE}Examples:${NC}
@@ -280,6 +282,11 @@ case "${1:-status}" in
     sync|s)
         shift
         do_sync "$@"
+        ;;
+    upgrade|up)
+        echo -e "${BLUE}⬆️  Upgrading packages...${NC}"
+        cd_dotfiles
+        UPGRADE_MODE=true bash "$DOTFILES_DIR/packages/sync.sh"
         ;;
     status|st)
         do_status

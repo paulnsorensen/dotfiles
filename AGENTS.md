@@ -12,6 +12,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 
 - `dots sync` - Sync dotfiles (symlinks, packages, fonts) with rollback support
 - `dots sync refresh` - Force re-check all packages (bypass cache)
+- `dots upgrade` (or `dots up`) - Upgrade installed packages (brew/cargo/npm/uv tools)
 - `dots update` - Pull latest changes and run sync
 - `dots status` - Show git status of dotfiles
 - `dots rollback [id]` - Rollback to a previous state
@@ -65,9 +66,9 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 
 ### Agent Skill Management (`gh skill install`)
 
-Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`).
+Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`). Auto-runs as part of `dots sync` via `skills-install/.sync` (skipped when `gh skill` is unavailable).
 
-- `skill-sync` - Install skills from `skills-install/registry.yaml` into each configured harness
+- `skill-sync` - Install skills from `skills-install/registry.yaml` into each configured harness (also fires during `dots sync`)
 - `skill-sync-dry` - Preview skill installs without making changes
 - `skill-edit` - Edit skill install registry
 - `skill-ls` - Check installed skills for updates (`gh skill update --all --dry-run`)
@@ -312,7 +313,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | Plugin | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages.yaml` (repo root) | `dots sync` | Use `dots sync refresh` to force re-check |
-| Skill | `skills-install/registry.yaml` | `skill-sync` | Set `SKILL_HARNESSES` in `.env`. Harness-agnostic: gh skill install writes to each agent's skills dir; for claude-code, lands in `~/.claude/skills/` alongside dotfiles' per-skill symlinks |
+| Skill | `skills-install/registry.yaml` | `dots sync` (or `skill-sync`) | Set `SKILL_HARNESSES` in `.env`. Harness-agnostic: `gh skill install` writes to each agent's skills dir; for claude-code, lands in `~/.claude/skills/` alongside dotfiles' per-skill symlinks. Auto-runs via `skills-install/.sync`. |
 
 ## Important Gotchas
 

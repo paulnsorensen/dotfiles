@@ -27,11 +27,6 @@ log_success() { echo -e "${GREEN}[packages]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[packages]${NC} $1" >&2; }
 log_error()   { echo -e "${RED}[packages]${NC} $1" >&2; }
 
-if [[ "${QUICK_SYNC:-false}" == "true" ]]; then
-    log_info "Quick sync, skipping packages"
-    exit 0
-fi
-
 if [[ ! -f "$PACKAGES_FILE" ]]; then
     log_warning "packages.yaml not found"
     exit 0
@@ -42,6 +37,10 @@ fi
 check_cache() {
     if [[ "${FORCE_PACKAGES:-false}" == "true" ]]; then
         log_info "FORCE_PACKAGES set, bypassing cache"
+        return 1
+    fi
+    if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
+        log_info "UPGRADE_MODE set, bypassing cache"
         return 1
     fi
     [[ -f "$CACHE_FILE" ]] || return 1
@@ -164,6 +163,12 @@ sync_brew() {
         brew_install_pkgs "Dev casks" "$(get_source_pkgs "cask" "--dev")" "$installed_casks" --cask
     fi
 
+    if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
+        log_info "Upgrading brew packages..."
+        brew update </dev/null || log_warning "brew update failed"
+        brew upgrade </dev/null || log_warning "brew upgrade failed"
+    fi
+
     log_success "Brew sync complete"
 }
 
@@ -201,25 +206,37 @@ sync_cargo() {
     fi
 
     log_info "Syncing cargo packages"
-    local installed
+    local installed upgrade
     installed=$(cargo install --list 2>/dev/null | grep -E '^\S' | cut -d' ' -f1 || true)
+    upgrade="${UPGRADE_MODE:-false}"
 
     while IFS=$'\t' read -r name git_url; do
         [[ -z "$name" ]] && continue
-        if echo "$installed" | grep -qx "$name"; then
+        local already=false
+        echo "$installed" | grep -qx "$name" && already=true
+
+        if $already && [[ "$upgrade" != "true" ]]; then
             echo "  + $name"
-        elif [[ -n "$git_url" ]]; then
-            echo "  Installing $name from $git_url..."
-            if ! cargo install --git "$git_url" "$name" </dev/null; then
-                log_error "Failed to install $name"
-                FAILED+=("$name")
-            fi
+            continue
+        fi
+
+        local action="Installing"
+        local install_args=()
+        if $already; then
+            action="Upgrading"
+            install_args+=(--force)
+        fi
+        [[ -n "$git_url" ]] && install_args+=(--git "$git_url")
+        install_args+=("$name")
+
+        if [[ -n "$git_url" ]]; then
+            echo "  $action $name from $git_url..."
         else
-            echo "  Installing $name..."
-            if ! cargo install "$name" </dev/null; then
-                log_error "Failed to install $name"
-                FAILED+=("$name")
-            fi
+            echo "  $action $name..."
+        fi
+        if ! cargo install "${install_args[@]}" </dev/null; then
+            log_error "Failed to install $name"
+            FAILED+=("$name")
         fi
     done <<< "$cargo_pkgs"
 
@@ -267,19 +284,27 @@ sync_npm() {
     fi
 
     log_info "Syncing npm packages"
-    local installed
+    local installed upgrade
     installed=$(npm ls -g --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' || true)
+    upgrade="${UPGRADE_MODE:-false}"
 
     while IFS=$'\t' read -r name pkg; do
         [[ -z "$name" ]] && continue
-        if echo "$installed" | grep -qx "$pkg"; then
+        local already
+        already=false
+        echo "$installed" | grep -qx "$pkg" && already=true
+
+        if $already && [[ "$upgrade" != "true" ]]; then
             echo "  + $name"
-        else
-            echo "  Installing $pkg..."
-            if ! npm install -g "$pkg" </dev/null; then
-                log_error "Failed to install $pkg"
-                FAILED+=("$pkg")
-            fi
+            continue
+        fi
+
+        local action="Installing"
+        $already && action="Upgrading"
+        echo "  $action $pkg..."
+        if ! npm install -g "$pkg" </dev/null; then
+            log_error "Failed to $action $pkg"
+            FAILED+=("$pkg")
         fi
     done <<< "$npm_pkgs"
 
@@ -315,6 +340,11 @@ sync_uv() {
             fi
         fi
     done <<< "$uv_pkgs"
+
+    if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
+        log_info "Upgrading uv tools..."
+        uv tool upgrade --all </dev/null || log_warning "uv tool upgrade --all failed"
+    fi
 
     log_success "UV sync complete"
 }
@@ -394,7 +424,8 @@ sync_uv
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     echo ""
-    log_error "Failed to install ${#FAILED[@]} package(s): ${FAILED[*]}"
+    log_error "failed to install ${#FAILED[@]} package(s): ${FAILED[*]}"
+    log_warning "cache NOT saved due to install failures"
     exit 1
 fi
 
