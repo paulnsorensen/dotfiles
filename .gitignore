@@ -42,6 +42,9 @@ vim/undo/
 # Workspace-local notebooks and context
 .context/
 
+# Cheese-flow research scratch (briesearch, /research outputs)
+.cheese/
+
 # VHS recording output
 vhs/output/
 
