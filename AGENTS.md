@@ -60,6 +60,8 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `plugin-sync-dry` - Preview plugin sync changes without applying
 - `plugin-edit` - Edit plugin registry.yaml
 - `plugin-ls` - List currently installed plugins
+- `cf-refresh` - Rebuild the cheese-flow plugin cache from `~/Dev/cheese-flow` (use after editing the plugin in-place)
+- `plugin-refresh <plugin> [marketplace]` - Generic version of cf-refresh for any local plugin (defaults to cheese-flow@local)
 
 ### Agent Skill Management (`gh skill install`)
 

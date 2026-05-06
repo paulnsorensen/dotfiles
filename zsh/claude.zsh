@@ -277,6 +277,38 @@ alias plugin-sync='$CLAUDE_DOTFILES/plugins/sync.sh'
 alias plugin-sync-dry='$CLAUDE_DOTFILES/plugins/sync.sh --dry-run'
 alias plugin-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/plugins/registry.yaml'
 
+# Refresh a local plugin's cache so edits in the source dir take effect.
+# Claude Code copies plugins into ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/
+# at install time, keyed by version. Same-version edits in the source don't propagate
+# until the cache is rebuilt. This nukes the version dir and reinstalls.
+#
+# Usage: cf-refresh                    # refresh cheese-flow@local (default)
+#        cf-refresh vaudeville         # refresh vaudeville@local
+#        cf-refresh <plugin> <market>  # refresh <plugin>@<market>
+plugin-refresh() {
+    local plugin_name="${1:-cheese-flow}"
+    local marketplace="${2:-local}"
+    local cache_dir="$HOME/.claude/plugins/cache/$marketplace/$plugin_name"
+
+    echo "Refreshing $plugin_name@$marketplace"
+
+    echo "  → marketplace update $marketplace"
+    claude plugin marketplace update "$marketplace" || return 1
+
+    if [[ -d "$cache_dir" ]]; then
+        echo "  → clearing $cache_dir"
+        rm -rf "$cache_dir"
+    fi
+
+    echo "  → reinstalling $plugin_name"
+    if ! claude plugin update "$plugin_name" -s user 2>/dev/null; then
+        claude plugin install -s user "$plugin_name@$marketplace" || return 1
+    fi
+
+    echo "Done. Restart Claude Code to apply."
+}
+alias cf-refresh='plugin-refresh cheese-flow local'
+
 # ═══════════════════════════════════════════════════════════════════
 # Vaudeville (SLM hook enforcement — Claude Code plugin)
 # ═══════════════════════════════════════════════════════════════════
