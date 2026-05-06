@@ -150,10 +150,10 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 | Hook | Tool match | Purpose |
 |------|-----------|---------|
-| `bash-guard.js` | Bash | Blocks dangerous shell patterns before execution |
-| `write-guard.js` | Write | Blocks writes to disallowed paths |
+| `bash-guard.js` | _(disabled)_ | Patterns kept in tree for reference; not registered in settings |
+| `write-guard.js` | Edit, Write | Blocks placeholder/lazy code and inline test snippets |
+| `worktree-guard.js` | Edit, Write | Blocks writes outside the active git worktree |
 | `phantom-file-check.js` | Read | Prevents reading non-existent files (anti-hallucination) |
-| `review-reply-guard.js` | GitHub PR reply MCPs | Catches deferral language in PR review replies |
 
 ### Post-Tool Hooks
 
@@ -161,15 +161,10 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 |------|-----------|---------|
 | `auto-format.js` | Edit, Write | Runs project formatter on edited files |
 
-### Lifecycle Hooks (Shell)
+### Other
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `pre-compact.sh` | PreCompact | Saves session context before compaction |
-| `post-compact.sh` | SessionStart (compact) | Restores context after compaction |
-| `post-fresh-start.sh` | SessionStart | Injects `cheese-flow:cheez-search` suggestion on fresh sessions |
-| `on-session-end.sh` | UserPromptSubmit | Detects parting language, suggests saving context |
-| Stop guard (inline agent) | Stop | Catches hesitation around commit/push/PR creation |
 | `rtk hook claude` | PreToolUse Bash | Token-optimizing command rewriter |
 
 ## Settings (`settings.json`)

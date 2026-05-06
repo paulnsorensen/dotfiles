@@ -922,7 +922,7 @@ teardown() {
 @test "hook-runner: blocks inline test via stdin/stdout protocol" {
     run_via_runner bash-guard.js Bash '{"command":"python3 -c \"import os; assert True\""}'
     [ "$status" -eq 0 ]
-    [[ "$output" == *'"permissionDecision":"block"'* ]]
+    [[ "$output" == *'"permissionDecision":"deny"'* ]]
     [[ "$output" == *"/test-sandbox"* ]]
 }
 
@@ -935,13 +935,13 @@ teardown() {
 @test "hook-runner: blocks npm install via protocol" {
     run_via_runner bash-guard.js Bash '{"command":"npm install express"}'
     [ "$status" -eq 0 ]
-    [[ "$output" == *'"permissionDecision":"block"'* ]]
+    [[ "$output" == *'"permissionDecision":"deny"'* ]]
 }
 
 @test "hook-runner: blocks phantom file via protocol" {
     run_via_runner phantom-file-check.js Read '{"file_path":"/nonexistent/file.txt"}'
     [ "$status" -eq 0 ]
-    [[ "$output" == *'"permissionDecision":"block"'* ]]
+    [[ "$output" == *'"permissionDecision":"deny"'* ]]
 }
 
 @test "hook-runner: allows existing file via protocol" {
@@ -956,7 +956,7 @@ teardown() {
 @test "hook-runner: blocks write-guard TODO via protocol" {
     run_via_runner write-guard.js Write '{"content":"// TODO: fix later","file_path":"test.js"}'
     [ "$status" -eq 0 ]
-    [[ "$output" == *'"permissionDecision":"block"'* ]]
+    [[ "$output" == *'"permissionDecision":"deny"'* ]]
 }
 
 @test "hook-runner: invalid JSON on stdin fails open" {
@@ -994,7 +994,7 @@ teardown() {
             const o = JSON.parse(d);
             if (!o.hookSpecificOutput) process.exit(1);
             if (o.hookSpecificOutput.hookEventName !== 'PreToolUse') process.exit(1);
-            if (!['block','allow'].includes(o.hookSpecificOutput.permissionDecision)) process.exit(1);
+            if (!['deny','allow','ask','defer'].includes(o.hookSpecificOutput.permissionDecision)) process.exit(1);
         });
     "
 }

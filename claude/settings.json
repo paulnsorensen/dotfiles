@@ -83,62 +83,6 @@
     "defaultMode": "auto"
   },
   "hooks": {
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/bash \"$HOME/.claude/hooks/pre-compact.sh\"",
-            "statusMessage": "Saving session context...",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/bash \"$HOME/.claude/hooks/post-fresh-start.sh\"",
-            "statusMessage": "Priming session context..."
-          }
-        ]
-      },
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/bash \"$HOME/.claude/hooks/post-compact.sh\"",
-            "statusMessage": "Restoring session context..."
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "agent",
-            "prompt": "Check if the assistant's last message is asking the user for permission to commit, push, or create a PR.\n\nHook context: $ARGUMENTS\n\nLook at last_assistant_message for patterns like:\n- \"Should I commit?\", \"Want me to commit?\", \"Ready to commit?\"\n- \"Should I push?\", \"Want me to push?\", \"Ready to push?\"\n- \"Should I create a PR?\", \"Want me to create a pull request?\"\n- \"Let me know when you're ready to...\"\n- \"Would you like me to commit/push/create a PR?\"\n- Ending with a question about committing, pushing, or PR creation\n\nIf the message is asking permission to commit, push, or create a PR, respond:\nWARN — Don't ask. Commit your changes, push, and open a PR.\n\nOtherwise respond: ALLOW\n\nOnly match clear commit/push/PR permission-asking. Do not match general questions about the code or approach.",
-            "timeout": 60,
-            "model": "haiku",
-            "statusMessage": "Checking for commit hesitation..."
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/bash \"$HOME/.claude/hooks/on-session-end.sh\""
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -150,22 +94,22 @@
         ]
       },
       {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" bash-guard.js",
-            "statusMessage": "Checking command..."
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
             "command": "node \"$HOME/.claude/hooks/hook-runner.js\" write-guard.js",
             "statusMessage": "Checking write target..."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" worktree-guard.js",
+            "statusMessage": "Checking worktree scope..."
           }
         ]
       },
@@ -176,36 +120,6 @@
             "type": "command",
             "command": "node \"$HOME/.claude/hooks/hook-runner.js\" phantom-file-check.js",
             "statusMessage": "Checking file..."
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__plugin_github_github__add_reply_to_pull_request_comment",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/review-reply-guard.js\"",
-            "statusMessage": "Checking reply for deferral..."
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__plugin_github_github__add_issue_comment",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/review-reply-guard.js\"",
-            "statusMessage": "Checking reply for deferral..."
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__plugin_github_github__pull_request_review_write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/review-reply-guard.js\"",
-            "statusMessage": "Checking reply for deferral..."
           }
         ]
       }
