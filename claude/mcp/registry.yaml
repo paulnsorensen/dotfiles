@@ -64,6 +64,6 @@ mcps:
 
   code-review-graph:
     command: uvx
-    args: [code-review-graph, serve]
+    args: ["--from", "code-review-graph[embeddings]", "code-review-graph", "serve"]
     scope: user
-    description: Structural code knowledge graph via Tree-sitter — semantic search, call chains, impact radius, flows, communities
+    description: Structural code knowledge graph via Tree-sitter — semantic search (sentence-transformers), call chains, impact radius, flows, communities
