@@ -67,24 +67,31 @@ EOF
     grep -qF 'sourceDir = "/some/user/override"' "$config"
 }
 
-@test "chezmoi/.sync writes atomically via mktemp + mv" {
-    # Verify the script doesn't leave a stray tmp file behind on success.
+@test "chezmoi/.sync produces a well-formed chezmoi.toml on success" {
+    # Outcome-correctness check: after a successful run the config file
+    # exists, is non-empty, contains the expected sourceDir line, and the
+    # mktemp scratch file has been cleaned up from the config dir.
+    # (Atomicity itself isn't directly testable in bash without fault
+    # injection — that property is enforced by mv -f's rename(2) on
+    # same-fs sources, which the script ensures by mktemp'ing into the
+    # config dir directly.)
     [[ ! -e "$HOME/.config/chezmoi/chezmoi.toml" ]]
 
     run bash "$CHEZMOI_SYNC"
     assert_success
 
-    # No leftover tmp files in $TMPDIR matching the mktemp pattern.
-    # (mktemp's default pattern is tmp.XXXXXXXXXX; we don't enumerate all
-    # of /tmp here but we verify the config file landed and is well-formed.)
     assert_file_exists "$HOME/.config/chezmoi/chezmoi.toml"
 
-    # File is non-empty and has the expected single sourceDir line plus
-    # the generated comment block — proves the mv completed atomically.
     local content
     content=$(cat "$HOME/.config/chezmoi/chezmoi.toml")
     [[ -n "$content" ]]
     grep -qF "sourceDir = \"$REAL_DOTFILES_DIR/chezmoi\"" "$HOME/.config/chezmoi/chezmoi.toml"
+
+    # No mktemp scratch file left behind in the config dir.
+    if compgen -G "$HOME/.config/chezmoi/chezmoi-toml.*" >/dev/null; then
+        echo "leftover mktemp scratch file in config dir" >&2
+        return 1
+    fi
 }
 
 # ── source-tree scaffold invariants ────────────────────────────────────
