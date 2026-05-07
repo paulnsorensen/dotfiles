@@ -203,6 +203,83 @@ SCRIPT
     [[ "$output" != *"legacy"* ]]
 }
 
+@test "dots sync refresh round-trips FORCE_PACKAGES and still invokes chezmoi apply" {
+    # Focused regression: refresh alone (no dev/q) must reach the packages
+    # stage with FORCE_PACKAGES=true AND still trigger chezmoi apply at the
+    # tail of the chain. The existing `dots sync runs packages then legacy
+    # sync then chezmoi` test combines refresh with dev+q, masking whether
+    # refresh-only would round-trip correctly.
+    create_mock_sync_dotfiles
+    install_mock_chezmoi
+
+    run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" PATH="$MOCK_BIN:$PATH" \
+        dots sync refresh
+    assert_success
+
+    run cat "$DOTS_TEST_LOG"
+    assert_success
+    assert_output_contains "packages DOTFILES_DEV=false QUICK_SYNC=false FORCE_PACKAGES=true"
+    assert_output_contains "legacy no-packages refresh DOTFILES_DEV=false QUICK_SYNC=false FORCE_PACKAGES=true"
+    assert_output_contains "chezmoi apply"
+}
+
+@test "dots sync skips chezmoi apply with warning when chezmoi/ source is missing" {
+    # do_chezmoi_apply short-circuits when $DOTFILES_DIR/chezmoi/ is absent.
+    # Build a minimal fake DOTFILES_DIR with packages/ but no chezmoi/ subdir.
+    # NOTE: don't call install_mock_chezmoi — that helper creates the chezmoi/
+    # source dir as a side effect, which would defeat the test premise.
+    export FAKE_DOTFILES="$TEST_HOME/no-chezmoi-dotfiles"
+    mkdir -p "$FAKE_DOTFILES/packages"
+
+    cat > "$FAKE_DOTFILES/packages/sync.sh" <<'SCRIPT'
+#!/bin/bash
+exit 0
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+
+    cat > "$FAKE_DOTFILES/.sync-with-rollback" <<'SCRIPT'
+#!/bin/bash
+exit 0
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/.sync-with-rollback"
+
+    # Install just the chezmoi binary mock (without the source-dir side effect).
+    cat > "$MOCK_BIN/chezmoi" <<SCRIPT
+#!/bin/bash
+printf 'chezmoi %s\n' "\$*" >> "$DOTS_TEST_LOG"
+SCRIPT
+    chmod +x "$MOCK_BIN/chezmoi"
+
+    run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" PATH="$MOCK_BIN:$PATH" \
+        dots sync
+    assert_success
+    assert_output_contains "chezmoi source not found, skipping apply"
+
+    # Negative assertion: chezmoi binary was never invoked.
+    if [[ -f "$DOTS_TEST_LOG" ]]; then
+        run cat "$DOTS_TEST_LOG"
+        if [[ "$output" == *"chezmoi"* ]]; then
+            echo "chezmoi was invoked despite missing source dir" >&2
+            return 1
+        fi
+    fi
+}
+
+@test "dots sync skips chezmoi apply with warning when chezmoi binary is missing" {
+    # do_chezmoi_apply checks chezmoi/ source first, then `command -v chezmoi`.
+    # To exercise the second branch the source dir must exist; the binary
+    # must not be on PATH.
+    create_mock_sync_dotfiles
+    mkdir -p "$FAKE_DOTFILES/chezmoi"
+    # Deliberately do NOT install_mock_chezmoi — leave the binary missing.
+
+    run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" \
+        PATH="$REAL_DOTFILES_DIR/bin:$MOCK_BIN:/usr/bin:/bin" \
+        dots sync
+    assert_success
+    assert_output_contains "chezmoi not installed, skipping apply"
+}
+
 @test "dots test shorthand works" {
     run dots t --help
     assert_success
