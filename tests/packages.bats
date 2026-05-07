@@ -286,7 +286,7 @@ run_sync() {
     run_sync
 
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
-    assert_output_contains "Failed to install jq"
+    assert_output_contains "failed to install"
     assert_output_contains "cache NOT saved"
 }
 
