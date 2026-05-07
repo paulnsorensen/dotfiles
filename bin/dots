@@ -91,7 +91,8 @@ set_sync_env() {
 }
 
 do_packages() {
-    set_sync_env "$@"
+    # Assumes env is already set by set_sync_env. Callers must invoke
+    # set_sync_env first; do_packages is a leaf that never parses args.
     echo -e "${BLUE}Syncing packages...${NC}"
     cd_dotfiles
 
@@ -104,17 +105,20 @@ do_packages() {
 }
 
 do_chezmoi_apply() {
-    if [[ ! -d "$DOTFILES_DIR/chezmoi" ]]; then
-        echo -e "${YELLOW}chezmoi source not found, skipping apply${NC}"
-        return 0
-    fi
-
     if ! command -v chezmoi &>/dev/null; then
         echo -e "${YELLOW}chezmoi not installed, skipping apply${NC}"
         return 0
     fi
 
-    # sourceDir is configured in ~/.config/chezmoi/chezmoi.toml by chezmoi/.sync.
+    # The contract between dots and chezmoi is the chezmoi.toml that
+    # chezmoi/.sync writes — not the source dir layout. Guarding on the
+    # toml's existence keeps the boundary clean and still short-circuits
+    # cleanly on first run before chezmoi/.sync has been called.
+    if [[ ! -f "$HOME/.config/chezmoi/chezmoi.toml" ]]; then
+        echo -e "${YELLOW}chezmoi not configured, skipping apply${NC}"
+        return 0
+    fi
+
     echo -e "${BLUE}Applying chezmoi source...${NC}"
     chezmoi apply
 }
@@ -155,12 +159,20 @@ do_update() {
 }
 
 # Sync dotfiles
+#
+# Args: dev, refresh|r — parsed once into env vars (DOTFILES_DEV,
+# FORCE_PACKAGES) by set_sync_env. From there the env-var contract is
+# the carrier; we don't pass raw "$@" to internal helpers. The "$@"
+# does flow through to .sync-with-rollback because that's a separate
+# process whose own arg parser (parse_sync_args in .sync-lib.sh) reads
+# them — adding "no-packages" tells it to skip its package step since
+# do_packages already ran.
 do_sync() {
     set_sync_env "$@"
     echo -e "${BLUE}🔄 Syncing dotfiles...${NC}"
     cd_dotfiles
 
-    do_packages "$@"
+    do_packages
 
     if [[ -f "$DOTFILES_DIR/.sync-with-rollback" ]]; then
         "$DOTFILES_DIR/.sync-with-rollback" no-packages "$@"
@@ -351,7 +363,8 @@ case "${1:-status}" in
         ;;
     packages|p)
         shift
-        do_packages "$@"
+        set_sync_env "$@"
+        do_packages
         ;;
     status|st)
         do_status

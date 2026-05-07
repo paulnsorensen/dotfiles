@@ -41,6 +41,11 @@ install_mock_chezmoi() {
 printf 'chezmoi %s\n' "$*" >> "$DOTS_TEST_LOG"
 SCRIPT
     chmod +x "$MOCK_BIN/chezmoi"
+
+    # do_chezmoi_apply now guards on the chezmoi.toml contract.
+    # Stub one so the apply branch runs end-to-end in mocked tests.
+    mkdir -p "$HOME/.config/chezmoi"
+    printf 'sourceDir = "%s/chezmoi"\n' "$FAKE_DOTFILES" > "$HOME/.config/chezmoi/chezmoi.toml"
 }
 
 @test "dots command exists and is executable" {
@@ -210,54 +215,36 @@ SCRIPT
     assert_output_contains "chezmoi apply"
 }
 
-@test "dots sync skips chezmoi apply with warning when chezmoi/ source is missing" {
-    # do_chezmoi_apply short-circuits when $DOTFILES_DIR/chezmoi/ is absent.
-    # Build a minimal fake DOTFILES_DIR with packages/ but no chezmoi/ subdir.
-    # NOTE: don't call install_mock_chezmoi — that helper creates the chezmoi/
-    # source dir as a side effect, which would defeat the test premise.
-    export FAKE_DOTFILES="$TEST_HOME/no-chezmoi-dotfiles"
-    mkdir -p "$FAKE_DOTFILES/packages"
-
-    cat > "$FAKE_DOTFILES/packages/sync.sh" <<'SCRIPT'
-#!/bin/bash
-exit 0
-SCRIPT
-    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
-
-    cat > "$FAKE_DOTFILES/.sync-with-rollback" <<'SCRIPT'
-#!/bin/bash
-exit 0
-SCRIPT
-    chmod +x "$FAKE_DOTFILES/.sync-with-rollback"
-
-    # Install just the chezmoi binary mock (without the source-dir side effect).
-    cat > "$MOCK_BIN/chezmoi" <<SCRIPT
-#!/bin/bash
-printf 'chezmoi %s\n' "\$*" >> "$DOTS_TEST_LOG"
-SCRIPT
-    chmod +x "$MOCK_BIN/chezmoi"
+@test "dots sync skips chezmoi apply with warning when chezmoi.toml is missing" {
+    # do_chezmoi_apply guards on the chezmoi.toml contract — the file that
+    # chezmoi/.sync writes. If chezmoi.toml is absent (e.g. first sync
+    # against a tree without a chezmoi/.sync, or chezmoi was never wired),
+    # apply is skipped with a warning. The chezmoi binary is present.
+    create_mock_sync_dotfiles
+    install_mock_chezmoi  # creates binary AND a stub chezmoi.toml
+    # Override: this test specifically wants chezmoi.toml absent.
+    rm -f "$HOME/.config/chezmoi/chezmoi.toml"
+    [[ ! -f "$HOME/.config/chezmoi/chezmoi.toml" ]]
 
     run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" PATH="$MOCK_BIN:$PATH" \
         dots sync
     assert_success
-    assert_output_contains "chezmoi source not found, skipping apply"
+    assert_output_contains "chezmoi not configured, skipping apply"
 
-    # Negative assertion: chezmoi binary was never invoked.
+    # Negative: chezmoi binary not invoked when the toml is missing.
     if [[ -f "$DOTS_TEST_LOG" ]]; then
         run cat "$DOTS_TEST_LOG"
         if [[ "$output" == *"chezmoi"* ]]; then
-            echo "chezmoi was invoked despite missing source dir" >&2
+            echo "chezmoi was invoked despite missing chezmoi.toml" >&2
             return 1
         fi
     fi
 }
 
 @test "dots sync skips chezmoi apply with warning when chezmoi binary is missing" {
-    # do_chezmoi_apply checks chezmoi/ source first, then `command -v chezmoi`.
-    # To exercise the second branch the source dir must exist; the binary
-    # must not be on PATH.
+    # do_chezmoi_apply checks the binary first, then chezmoi.toml.
+    # Binary missing on PATH → warning, no apply.
     create_mock_sync_dotfiles
-    mkdir -p "$FAKE_DOTFILES/chezmoi"
     # Deliberately do NOT install_mock_chezmoi — leave the binary missing.
 
     run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" \
