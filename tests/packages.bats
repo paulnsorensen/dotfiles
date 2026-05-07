@@ -113,13 +113,13 @@ run_sync() {
     done <<< "$output"
 }
 
-@test "all source values are brew, cask, tap, or cargo" {
+@test "all source values are brew, cask, tap, cargo, npm, or uv" {
     run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source != null) | .value.source' \
         "$REAL_DOTFILES_DIR/packages.yaml"
     assert_success
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
-        [[ "$source" == "brew" || "$source" == "cask" || "$source" == "tap" || "$source" == "cargo" || "$source" == "npm" ]]
+        [[ "$source" == "brew" || "$source" == "cask" || "$source" == "tap" || "$source" == "cargo" || "$source" == "npm" || "$source" == "uv" ]]
     done <<< "$output"
 }
 
