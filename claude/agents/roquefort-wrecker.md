@@ -122,7 +122,7 @@ Test in this exact order:
 
 ## LSP Integration
 
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` for type discovery when writing assertions, auto-diagnostics catch mismatches after edits before running the suite.
+LSP plugins ship installed but disabled by default — opt in per-project via `cc-lsp-local`. When enabled, use the built-in `LSP` tool — `hover` for type discovery when writing assertions, auto-diagnostics catch mismatches after edits before running the suite.
 
 ## Quality Gates
 

@@ -1,0 +1,95 @@
+#!/bin/bash
+# cc-lsp-local — Enable LSP plugins in the current project based on tokei.
+#
+# Writes (merges) `enabledPlugins` into `.claude/settings.local.json` in the
+# git root (or cwd if not in a repo). Persistent companion to the ephemeral
+# `_cc_lsp_gate` used by the cc/ccc/ccr/ccp shell wrappers.
+#
+# The repo-level user settings ship with all LSP plugins disabled; this script
+# is how you opt them back in for projects that need them.
+#
+# Usage:
+#   cc-lsp-local                  # write gate to .claude/settings.local.json
+#   cc-lsp-local --dry-run        # print what would be written
+#   cc-lsp-local --threshold 100  # only enable LSPs above N code-lines (default 50)
+#   cc-lsp-local --print          # print the gate JSON to stdout, nothing written
+#
+# Env: CC_LSP_GATE_THRESHOLD=<n> overrides the default threshold.
+
+set -euo pipefail
+
+DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=../claude/lib/lsp-gate.sh
+source "$DOTFILES_DIR/claude/lib/lsp-gate.sh"
+
+THRESHOLD="${CC_LSP_GATE_THRESHOLD:-50}"
+DRY_RUN=false
+PRINT_ONLY=false
+
+usage() {
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run)   DRY_RUN=true ;;
+        --print)     PRINT_ONLY=true ;;
+        --threshold) THRESHOLD="$2"; shift ;;
+        -h|--help)   usage 0 ;;
+        *)           echo "cc-lsp-local: unknown arg: $1" >&2; usage 1 ;;
+    esac
+    shift
+done
+
+if ! command -v tokei >/dev/null; then
+    echo "cc-lsp-local: tokei not found (install: brew install tokei)" >&2
+    exit 1
+fi
+if ! command -v jq >/dev/null; then
+    echo "cc-lsp-local: jq not found (install: brew install jq)" >&2
+    exit 1
+fi
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+SETTINGS="$ROOT/.claude/settings.local.json"
+
+GATE_JSON="$(lsp_gate_compute "$THRESHOLD")" || {
+    echo "cc-lsp-local: failed to compute gate (tokei/jq error)" >&2
+    exit 1
+}
+
+if $PRINT_ONLY; then
+    echo "$GATE_JSON" | jq '{enabledPlugins: .}'
+    exit 0
+fi
+
+# Merge: replace `enabledPlugins` only, preserve everything else (permissions, etc).
+MERGED="$(jq --argjson gate "$GATE_JSON" '. + {enabledPlugins: $gate}' \
+    <(test -f "$SETTINGS" && cat "$SETTINGS" || echo '{}'))"
+
+# Summary: show enabled vs skipped, sorted, with counts.
+ENABLED="$(echo "$GATE_JSON" | jq -r 'to_entries[] | select(.value) | .key' | sort)"
+SKIPPED="$(echo "$GATE_JSON" | jq -r 'to_entries[] | select(.value | not) | .key' | sort)"
+EN_COUNT="$(echo -n "$ENABLED" | grep -c . || true)"
+SK_COUNT="$(echo -n "$SKIPPED" | grep -c . || true)"
+
+if $DRY_RUN; then
+    echo "[dry-run] would write to $SETTINGS:"
+    echo "$MERGED" | jq .
+else
+    mkdir -p "$ROOT/.claude"
+    printf '%s\n' "$MERGED" | jq . > "$SETTINGS"
+    echo "Wrote $SETTINGS"
+fi
+
+echo
+echo "Threshold: ${THRESHOLD} code lines"
+echo "Enabled (${EN_COUNT}):"
+# shellcheck disable=SC2001 # parameter expansion can't elegantly prepend per-line
+[[ -n "$ENABLED" ]] && echo "$ENABLED" | sed 's/^/  + /' || echo "  (none — no language above threshold)"
+echo "Disabled (${SK_COUNT}):"
+# shellcheck disable=SC2001 # parameter expansion can't elegantly prepend per-line
+[[ -n "$SKIPPED" ]] && echo "$SKIPPED" | sed 's/^/  - /' || true
+echo
+echo "Restart Claude Code in this directory for changes to take effect."

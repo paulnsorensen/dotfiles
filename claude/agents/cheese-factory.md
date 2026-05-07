@@ -87,7 +87,7 @@ Keep it to one screen. This is a map, not a thesis.
 
 ## LSP Integration
 
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `documentSymbol` for quick file overviews, `hover` for type discovery, `goToDefinition` to trace imports. Accelerates orientation in typed languages.
+LSP plugins ship installed but disabled by default — opt in per-project via `cc-lsp-local`. When enabled, use the built-in `LSP` tool — `documentSymbol` for quick file overviews, `hover` for type discovery, `goToDefinition` to trace imports. Accelerates orientation in typed languages. If `LSP` returns empty, the project hasn't opted in — fall back to cheez-search.
 
 ## Rules
 

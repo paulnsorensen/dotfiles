@@ -63,6 +63,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `plugin-ls` - List currently installed plugins
 - `cf-refresh` - Rebuild the cheese-flow plugin cache from `~/Dev/cheese-flow` (use after editing the plugin in-place)
 - `plugin-refresh <plugin> [marketplace]` - Generic version of cf-refresh for any local plugin (defaults to cheese-flow@local)
+- `cc-lsp-local` - Enable LSP plugins in current project based on tokei (writes `.claude/settings.local.json`). Use `--dry-run` / `--print` / `--threshold N`. LSPs ship disabled at the user level; this is the per-project opt-in.
 
 ### Agent Skill Management (`gh skill install`)
 

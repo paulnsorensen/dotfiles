@@ -89,7 +89,7 @@ The orchestrator works from summaries. The full report is available if a later a
 
 ## LSP Integration
 
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool to enrich exploration — `hover` for inferred types at key flow points, `goToDefinition` through generics/re-exports, `findReferences` for blast radius. Especially useful for trait objects and dynamic dispatch.
+LSP plugins ship installed but disabled by default — opt in per-project via `cc-lsp-local`. When enabled, use the built-in `LSP` tool to enrich exploration — `hover` for inferred types at key flow points, `goToDefinition` through generics/re-exports, `findReferences` for blast radius. Especially useful for trait objects and dynamic dispatch.
 
 ## Rules
 

@@ -1,0 +1,291 @@
+---
+allowed-tools: mcp__tilth__tilth_read, mcp__tilth__tilth_files, mcp__tilth__tilth_deps
+compatibility: Requires tilth MCP server.
+description: This skill should be used when the user asks to read, view, show, open, or display the contents of a file or directory — phrases like "read src/auth.ts", "show me this file", "what's in this directory", "view lines 44-89", "look at the imports". Replaces cat / head / tail / less / more / bat / ls / tree / eza / find / fd / Read / Glob with AST-aware tilth MCP reading and file listing. Use even when the user says "cat", "less", "bat", "tree", "ls", "find", "fd", or "open the file" — never call host Read, Glob, or any shell file viewer / lister directly. If tilth MCP is unavailable, stop and report rather than fall back. Do NOT use for searching symbols or text (use cheez-search), editing code (use cheez-write), or git/gh operations.
+license: MIT
+metadata:
+    github-path: skills/cheez-read
+    github-ref: refs/tags/v0.0.4
+    github-repo: https://github.com/paulnsorensen/easy-cheese
+    github-tree-sha: ccbed2069b47eecd380b13a0081779c737bee545
+name: cheez-read
+---
+# cheez-read
+
+> **Hard dependency**: If `mcp__tilth__tilth_read` is unavailable, stop immediately and report
+> "tilth MCP server is not loaded — cannot proceed." Do NOT fall back to `cat`, `Read`, `Glob`,
+> or any host tool. Install via `tilth install <host>` (see README "Installing tilth MCP").
+
+## Capability detection
+
+Before the first call, verify tilth is reachable:
+
+1. Check that `mcp__tilth__tilth_read` is in your tool list. If absent, stop and report `"tilth MCP server is not loaded — cannot proceed."`
+2. Make a minimal probe call: `tilth_read(path: "README.md", section: "1-1")`. If the response is a JSON-RPC error or transport failure, stop and report `"tilth MCP server present but unhealthy: <error>"`.
+3. Any other failure (file not found, bad section range, etc.) is a **content** issue — proceed normally and report the result.
+
+Smart code reading via **tilth MCP** (`tilth_read`, `tilth_files`, `tilth_deps`).
+tilth replaces cat/head/tail with AST-aware file reading that understands code structure.
+
+---
+
+## Examples
+
+### "Show me `src/auth.ts`"
+
+```
+tilth_read(path: "src/auth.ts")
+```
+
+Small files come back with full content and a header (`# src/auth.ts (258
+lines, ~3.4k tokens) [full]`); large files get the structural outline
+automatically.
+
+### "Read the `handleAuth` function in edit mode so I can change it"
+
+```
+tilth_read(path: "src/auth.ts", section: "44-89", edit: true)
+```
+
+```text
+44:b2c|export function handleAuth(req, res, next) {
+45:c3d|  const token = req.headers.authorization?.split(' ')[1];
+...
+89:e1d|}
+```
+
+The `edit: true` flag (or `--edit` in CLI mode) emits hash anchors. Capture
+`44:b2c` and `89:e1d` and pass them to cheez-write.
+
+### "List every TypeScript file under `src/handlers/`"
+
+```
+tilth_files(glob: "*.ts", scope: "src/handlers/")
+```
+
+```text
+src/handlers/auth.ts      (~1.8k tokens)
+src/handlers/orders.ts    (~3.1k tokens)
+src/handlers/webhooks.ts  (~620 tokens)
+```
+
+Token estimates let you decide what to read in full vs outline before you
+spend any context on it.
+
+---
+
+## Core Principle: Read Smart, Not More
+
+tilth decides what to show based on file size and structure:
+- **Small files** → full content with line numbers
+- **Large files** → structural outline with line ranges
+- **Binary/generated** → skipped with type indicator
+
+This means you never waste tokens on a giant lockfile or minified bundle.
+
+---
+
+## MCP Tool Reference
+
+### tilth_read — Smart File Reading
+
+```
+tilth_read(path: "src/auth.ts")
+```
+
+**Output for small files:**
+```
+# src/auth.ts (258 lines, ~3.4k tokens) [full]
+
+1 │ import express from 'express';
+2 │ import jwt from 'jsonwebtoken';
+...
+```
+
+**Output for large files (automatic outline):**
+```
+# src/auth.ts (1240 lines, ~16k tokens) [outline]
+
+[1-12]   imports: express(2), jsonwebtoken, @/config
+[14-22]  interface AuthConfig
+[24-42]  fn validateToken(token: string): Claims | null
+[44-89]  export fn handleAuth(req, res, next)
+[91-258] export class AuthManager
+  [99-130]  fn authenticate(credentials)
+  [132-180] fn authorize(user, resource)
+```
+
+**Drilling into sections:**
+```
+# Line range
+tilth_read(path: "src/auth.ts", section: "44-89")
+
+# Markdown heading
+tilth_read(path: "docs/guide.md", section: "## Installation")
+```
+
+**Multiple files in one call:**
+```
+tilth_read(paths: ["src/auth.ts", "src/routes.ts", "src/middleware.ts"])
+```
+
+---
+
+## Hash Anchors — The Edit Bridge
+
+When reading files in **edit mode**, tilth outputs **hash-anchored lines**:
+
+```
+42:a3f|  let x = compute();
+43:f1b|  return x;
+```
+
+The format is `<line>:<hash>|<content>`.
+
+> Plain reads use a `│` (U+2502) column separator. **Edit-mode reads** (the
+> ones you need for cheez-write) use `:<hash>|` — note the ASCII pipe and
+> the colon. Anchors are only emitted when tilth is run in `--edit` mode.
+
+**Why this matters:**
+- These hashes uniquely identify the line content
+- They're used by `tilth_edit` (cheez-write) for precise edits
+- If the file changes, hashes won't match → edit is rejected safely
+- You MUST read before editing to get current hashes
+
+**Memorize anchors for functions you'll edit:**
+- Note the start hash of function definitions
+- Note the end hash for multi-line replacements
+- Pass these to cheez-write later
+
+---
+
+## tilth_files — Directory Listing
+
+Replaces `ls`, `find`, `pwd`, and the Glob tool.
+
+```
+tilth_files(glob: "**/*.ts", scope: "src/")
+```
+
+**Output:**
+```
+src/auth.ts  (~3.4k tokens)
+src/routes.ts  (~2.1k tokens)
+src/middleware.ts  (~1.8k tokens)
+```
+
+Token estimates help you decide what to read in full vs outline.
+
+**Common patterns:**
+```
+# All TypeScript files
+tilth_files(glob: "**/*.ts")
+
+# Test files only
+tilth_files(glob: "**/*.test.ts")
+
+# Specific directory
+tilth_files(glob: "*", scope: "src/handlers/")
+
+# Exclude patterns (negation in the same glob)
+tilth_files(glob: "!*_test.go", scope: ".")
+```
+
+---
+
+## tilth_deps — Blast Radius Check
+
+```
+tilth_deps(path: "src/auth.ts")
+```
+
+Use **only** before refactoring (rename, signature change, removal). For
+output format and the file-vs-symbol distinction, see the shared reference
+in cheez-search:
+[`../cheez-search/references/tilth-deps.md`](../cheez-search/references/tilth-deps.md).
+
+---
+
+## Session Memory (Deduplication)
+
+tilth tracks what you've read in the current session:
+- Re-reading the same section shows `[shown earlier]` instead of full content
+- This saves significant tokens over long sessions
+- Forces you to reference memorized anchors instead of re-reading
+
+**Implication:** Read once, memorize anchors, reference later.
+
+---
+
+## Reading Protocol
+
+### For Understanding Code
+
+1. **Start with outline** (let tilth auto-decide):
+   ```
+   tilth_read(path: "src/auth.ts")
+   ```
+
+2. **Drill into relevant sections:**
+   ```
+   tilth_read(path: "src/auth.ts", section: "44-89")
+   ```
+
+3. **Check dependencies if needed:**
+   ```
+   tilth_deps(path: "src/auth.ts")
+   ```
+
+### For Preparing Edits
+
+1. **Read the target section to get hash anchors:**
+   ```
+   tilth_read(path: "src/auth.ts", section: "44-89")
+   ```
+
+2. **Memorize:**
+   - Start anchor: `44:a3f`
+   - End anchor: `89:b7c`
+
+3. **Pass these to cheez-write** (tilth_edit) for the edit.
+
+### For Exploring a Directory
+
+1. **List files with token estimates:**
+   ```
+   tilth_files(glob: "*", scope: "src/handlers/")
+   ```
+
+2. **Read small files fully, outline large ones:**
+   ```
+   tilth_read(paths: ["small.ts", "large.ts"])
+   ```
+
+---
+
+## DO NOT
+
+- **DO NOT use cat / head / tail / less / more / bat** to view code — use `tilth_read`. Hash anchors and outline-vs-full token budgeting only work through tilth.
+- **DO NOT use ls / tree / eza / find / fd to enumerate code files** — use `tilth_files`. Token estimates and `.gitignore` filtering only work through tilth.
+- **DO NOT use the host Read or Glob tools** on code paths — they bypass tilth's session deduplication and emit no anchors.
+- **DO NOT re-read files** shown earlier — reference your notes.
+- **DO NOT use for searching** — use cheez-search.
+- **DO NOT use for editing** — use cheez-write.
+- **DO NOT ignore hash anchors** — you'll need them for edits.
+
+---
+
+## Output Token Budget
+
+tilth uses ~6000 tokens as the outline threshold. Files under this show in full;
+files over this get structural outlines. Use `section` to get hashlined content
+for specific ranges when preparing edits on large files.
+
+---
+
+## What This Skill Doesn't Do
+
+- **Search for symbols or text** — use cheez-search.
+- **Edit files** — use cheez-write.
+- **Run code or tests** — use appropriate build/test skills.
+- **Commit changes** — use git/gh skills.

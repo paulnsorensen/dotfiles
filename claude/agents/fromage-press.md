@@ -99,7 +99,7 @@ The orchestrator works from summaries. The full report is available if needed fo
 
 ## LSP Integration
 
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` to check return/error types for assertions, auto-diagnostics catch type mismatches after editing test files before running the suite.
+LSP plugins ship installed but disabled by default — opt in per-project via `cc-lsp-local`. When enabled, use the built-in `LSP` tool — `hover` to check return/error types for assertions, auto-diagnostics catch type mismatches after editing test files before running the suite.
 
 ## Rules
 
