@@ -67,16 +67,12 @@ EOF
 
 set_sync_env() {
     export DOTFILES_DEV=false
-    export QUICK_SYNC=false
     unset FORCE_PACKAGES
 
     while (( $# )); do
         case "$1" in
             dev)
                 export DOTFILES_DEV=true
-                ;;
-            q)
-                export QUICK_SYNC=true
                 ;;
             refresh|r)
                 export FORCE_PACKAGES=true

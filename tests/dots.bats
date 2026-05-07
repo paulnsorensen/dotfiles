@@ -21,15 +21,15 @@ create_mock_sync_dotfiles() {
 
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
-printf 'packages DOTFILES_DEV=%s QUICK_SYNC=%s FORCE_PACKAGES=%s\n' \
-  "${DOTFILES_DEV:-unset}" "${QUICK_SYNC:-unset}" "${FORCE_PACKAGES:-unset}" >> "$DOTS_TEST_LOG"
+printf 'packages DOTFILES_DEV=%s FORCE_PACKAGES=%s\n' \
+  "${DOTFILES_DEV:-unset}" "${FORCE_PACKAGES:-unset}" >> "$DOTS_TEST_LOG"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
 
     cat > "$FAKE_DOTFILES/.sync-with-rollback" << 'SCRIPT'
 #!/bin/bash
-printf 'legacy %s DOTFILES_DEV=%s QUICK_SYNC=%s FORCE_PACKAGES=%s\n' \
-  "$*" "${DOTFILES_DEV:-unset}" "${QUICK_SYNC:-unset}" "${FORCE_PACKAGES:-unset}" >> "$DOTS_TEST_LOG"
+printf 'legacy %s DOTFILES_DEV=%s FORCE_PACKAGES=%s\n' \
+  "$*" "${DOTFILES_DEV:-unset}" "${FORCE_PACKAGES:-unset}" >> "$DOTS_TEST_LOG"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/.sync-with-rollback"
 }
@@ -146,14 +146,14 @@ SCRIPT
     install_mock_chezmoi
 
     run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" PATH="$MOCK_BIN:$PATH" \
-        dots sync dev q refresh
+        dots sync dev refresh
     assert_success
 
     assert_file_exists "$DOTS_TEST_LOG"
     run cat "$DOTS_TEST_LOG"
     assert_success
-    assert_output_contains "packages DOTFILES_DEV=true QUICK_SYNC=true FORCE_PACKAGES=true"
-    assert_output_contains "legacy no-packages dev q refresh DOTFILES_DEV=true QUICK_SYNC=true FORCE_PACKAGES=true"
+    assert_output_contains "packages DOTFILES_DEV=true FORCE_PACKAGES=true"
+    assert_output_contains "legacy no-packages dev refresh DOTFILES_DEV=true FORCE_PACKAGES=true"
     assert_output_contains "chezmoi apply"
 
     local packages_line legacy_line chezmoi_line
@@ -162,19 +162,6 @@ SCRIPT
     chezmoi_line=$(grep -n '^chezmoi ' "$DOTS_TEST_LOG" | cut -d: -f1)
     [[ "$packages_line" -lt "$legacy_line" ]]
     [[ "$legacy_line" -lt "$chezmoi_line" ]]
-}
-
-@test "dots sync preserves quick sync for packages and legacy args" {
-    create_mock_sync_dotfiles
-
-    run env DOTFILES_DIR="$FAKE_DOTFILES" DOTS_TEST_LOG="$DOTS_TEST_LOG" PATH="$MOCK_BIN:$PATH" \
-        dots sync q
-    assert_success
-
-    run cat "$DOTS_TEST_LOG"
-    assert_success
-    assert_output_contains "packages DOTFILES_DEV=false QUICK_SYNC=true FORCE_PACKAGES=unset"
-    assert_output_contains "legacy no-packages q DOTFILES_DEV=false QUICK_SYNC=true FORCE_PACKAGES=unset"
 }
 
 @test "dots packages command runs package sync only" {
@@ -186,7 +173,7 @@ SCRIPT
 
     run cat "$DOTS_TEST_LOG"
     assert_success
-    assert_output_contains "packages DOTFILES_DEV=false QUICK_SYNC=false FORCE_PACKAGES=true"
+    assert_output_contains "packages DOTFILES_DEV=false FORCE_PACKAGES=true"
     [[ "$output" != *"legacy"* ]]
 }
 
@@ -199,7 +186,7 @@ SCRIPT
 
     run cat "$DOTS_TEST_LOG"
     assert_success
-    assert_output_contains "packages DOTFILES_DEV=true QUICK_SYNC=false FORCE_PACKAGES=unset"
+    assert_output_contains "packages DOTFILES_DEV=true FORCE_PACKAGES=unset"
     [[ "$output" != *"legacy"* ]]
 }
 
@@ -218,8 +205,8 @@ SCRIPT
 
     run cat "$DOTS_TEST_LOG"
     assert_success
-    assert_output_contains "packages DOTFILES_DEV=false QUICK_SYNC=false FORCE_PACKAGES=true"
-    assert_output_contains "legacy no-packages refresh DOTFILES_DEV=false QUICK_SYNC=false FORCE_PACKAGES=true"
+    assert_output_contains "packages DOTFILES_DEV=false FORCE_PACKAGES=true"
+    assert_output_contains "legacy no-packages refresh DOTFILES_DEV=false FORCE_PACKAGES=true"
     assert_output_contains "chezmoi apply"
 }
 
