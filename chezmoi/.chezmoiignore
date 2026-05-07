@@ -1,3 +1,7 @@
-# Placeholder source dir. Remove or narrow this when real chezmoi-managed
-# files are added.
+# Phase 0 placeholder: ignore everything until real chezmoi-managed files
+# are added. The chezmoi/ directory is wired up by chezmoi/.sync but no
+# files are managed yet — the migration plan in
+# .cheese/specs/chezmoi-migration.md narrows this in Phase 1.
+#
+# REMOVE WHEN PHASE 1 NARROWS THIS to specific exclusions only.
 *
