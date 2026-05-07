@@ -1,73 +1,60 @@
 # skhd hotkey daemon configuration
 #
-# Modifier ladder:
-#   ctrl + alt          → focus / non-destructive
-#   ctrl + alt + shift  → swap / move (destructive)
-#   cmd  + alt          → resize
-#   ctrl + cmd + alt    → SizeUp-compatible window/space ops
+# Unified modifier ladder:
+#   ctrl + alt + cmd            → primary action (snap, focus, layout)
+#   shift + ctrl + alt + cmd    → destructive variant (swap, move, restart)
+#
+# Mouse drag with cmd held (yabairc mouse_modifier=cmd) covers move/resize.
+# Native macOS handles space focus via ctrl + 1..4.
 
-# focus
-ctrl + alt - h : yabai -m window --focus west
-ctrl + alt - j : yabai -m window --focus south
-ctrl + alt - k : yabai -m window --focus north
-ctrl + alt - l : yabai -m window --focus east
+# ---------- Snap (SizeUp-style window positioning) ----------
+# halves — toggle float first if window is tiled, then snap to grid
+ctrl + alt + cmd - left  : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 1:2:0:0:1:1
+ctrl + alt + cmd - right : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 1:2:1:0:1:1
+ctrl + alt + cmd - up    : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 2:1:0:0:1:1
+ctrl + alt + cmd - down  : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 2:1:0:1:1:1
 
-# swap
-ctrl + shift + alt - h : yabai -m window --swap west
-ctrl + shift + alt - j : yabai -m window --swap south
-ctrl + shift + alt - k : yabai -m window --swap north
-ctrl + shift + alt - l : yabai -m window --swap east
+# quarters (clockwise from top-left: 1=TL, 2=TR, 3=BR, 4=BL)
+ctrl + alt + cmd - 1 : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 2:2:0:0:1:1
+ctrl + alt + cmd - 2 : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 2:2:1:0:1:1
+ctrl + alt + cmd - 3 : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 2:2:1:1:1:1
+ctrl + alt + cmd - 4 : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 2:2:0:1:1:1
 
-# resize
-cmd + alt - h : yabai -m window --resize left:-50:0  ; yabai -m window --resize right:-50:0
-cmd + alt - l : yabai -m window --resize right:50:0  ; yabai -m window --resize left:50:0
-cmd + alt - j : yabai -m window --resize bottom:0:50 ; yabai -m window --resize top:0:50
-cmd + alt - k : yabai -m window --resize top:0:-50   ; yabai -m window --resize bottom:0:-50
+# center, maximize (SizeUp-style fills display), native fullscreen, BSP zoom
+ctrl + alt + cmd - c : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 4:4:1:1:2:2
+ctrl + alt + cmd - m : yabai -m query --windows --window | jq -er '."is-floating" == false' && yabai -m window --toggle float ; yabai -m window --grid 1:1:0:0:1:1
+ctrl + alt + cmd - f : yabai -m window --toggle native-fullscreen
+ctrl + alt + cmd - z : yabai -m window --toggle zoom-fullscreen
 
-# layout
-ctrl + alt - space : yabai -m window --toggle float
-ctrl + alt - t     : yabai -m space  --layout bsp
-ctrl + alt - s     : yabai -m space  --layout stack
-ctrl + alt - 0     : yabai -m space  --balance
+# ---------- Focus (BSP nav) ----------
+ctrl + alt + cmd - h : yabai -m window --focus west
+ctrl + alt + cmd - j : yabai -m window --focus south
+ctrl + alt + cmd - k : yabai -m window --focus north
+ctrl + alt + cmd - l : yabai -m window --focus east
 
-# SizeUp-compatible chords
-ctrl + cmd + alt - m : yabai -m window --toggle zoom-fullscreen
-ctrl + cmd + alt - n : yabai -m space  --rotate 90
+# ---------- Layout state ----------
+ctrl + alt + cmd - space : yabai -m window --toggle float
+ctrl + alt + cmd - t     : yabai -m space  --layout bsp
+ctrl + alt + cmd - s     : yabai -m space  --layout stack
+ctrl + alt + cmd - 0     : yabai -m space  --balance
+ctrl + alt + cmd - r     : yabai -m space  --rotate 90
 
-# spaces — focus
-ctrl + alt - 1 : yabai -m space --focus 1
-ctrl + alt - 2 : yabai -m space --focus 2
-ctrl + alt - 3 : yabai -m space --focus 3
-ctrl + alt - 4 : yabai -m space --focus 4
+# ---------- Destructive / move (shift + ^⌥⌘) ----------
+# swap windows by direction
+shift + ctrl + alt + cmd - h : yabai -m window --swap west
+shift + ctrl + alt + cmd - j : yabai -m window --swap south
+shift + ctrl + alt + cmd - k : yabai -m window --swap north
+shift + ctrl + alt + cmd - l : yabai -m window --swap east
 
-# spaces — move active window + follow
-ctrl + shift + alt - 1 : yabai -m window --space 1 ; yabai -m space --focus 1
-ctrl + shift + alt - 2 : yabai -m window --space 2 ; yabai -m space --focus 2
-ctrl + shift + alt - 3 : yabai -m window --space 3 ; yabai -m space --focus 3
-ctrl + shift + alt - 4 : yabai -m window --space 4 ; yabai -m space --focus 4
+# send active window to prev/next display
+shift + ctrl + alt + cmd - left  : yabai -m window --display prev ; yabai -m display --focus prev
+shift + ctrl + alt + cmd - right : yabai -m window --display next ; yabai -m display --focus next
 
-# snap-to-grid (auto-float if currently tiled)
-ctrl + alt - left : yabai -m query --windows --window \
-    | jq -er ".\"is-floating\" == false" \
-    && yabai -m window --toggle float ; yabai -m window --grid 1:2:0:0:1:1
-ctrl + alt - right : yabai -m query --windows --window \
-    | jq -er ".\"is-floating\" == false" \
-    && yabai -m window --toggle float ; yabai -m window --grid 1:2:1:0:1:1
-ctrl + alt - up : yabai -m query --windows --window \
-    | jq -er ".\"is-floating\" == false" \
-    && yabai -m window --toggle float ; yabai -m window --grid 2:1:0:0:1:1
-ctrl + alt - down : yabai -m query --windows --window \
-    | jq -er ".\"is-floating\" == false" \
-    && yabai -m window --toggle float ; yabai -m window --grid 2:1:0:1:1:1
+# move active window to space N and follow
+shift + ctrl + alt + cmd - 1 : yabai -m window --space 1 ; yabai -m space --focus 1
+shift + ctrl + alt + cmd - 2 : yabai -m window --space 2 ; yabai -m space --focus 2
+shift + ctrl + alt + cmd - 3 : yabai -m window --space 3 ; yabai -m space --focus 3
+shift + ctrl + alt + cmd - 4 : yabai -m window --space 4 ; yabai -m space --focus 4
 
-# quarters (assume already floating)
-ctrl + alt - u : yabai -m window --grid 2:2:0:0:1:1
-ctrl + alt - i : yabai -m window --grid 2:2:1:0:1:1
-ctrl + alt - n : yabai -m window --grid 2:2:0:1:1:1
-ctrl + alt - m : yabai -m window --grid 2:2:1:1:1:1
-
-# floating fullscreen
-ctrl + alt - return : yabai -m window --grid 1:1:0:0:1:1
-
-# reload
-ctrl + shift + alt - r : yabai --restart-service ; skhd --restart-service
+# restart services
+shift + ctrl + alt + cmd - r : yabai --restart-service ; skhd --restart-service

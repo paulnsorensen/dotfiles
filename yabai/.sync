@@ -1,5 +1,8 @@
 #!/bin/bash
-# Symlink yabai + skhd configs and ensure brew services are running.
+# Symlink yabai + skhd configs and ensure their launchd services are running.
+#
+# koekeishiya/formulae no longer ships brew-services plists, so we use each
+# tool's built-in `--install-service` / `--start-service` instead.
 
 set -euo pipefail
 
@@ -23,13 +26,34 @@ ln -sfn "$SCRIPT_DIR/yabairc" "$HOME/.yabairc"
 ln -sfn "$SCRIPT_DIR/skhdrc"  "$HOME/.skhdrc"
 chmod +x "$SCRIPT_DIR/yabairc"
 
+# Ensure a koekeishiya launchd service is installed and running.
+# Args: <name> <plist-label>
+ensure_koekeishiya_service() {
+    local name="$1"
+    local label="$2"
+    local plist="$HOME/Library/LaunchAgents/$label.plist"
+
+    if [[ ! -f "$plist" ]]; then
+        if ! "$name" --install-service 2>/dev/null; then
+            echo "yabai/.sync: $name --install-service failed" >&2
+            return 1
+        fi
+    fi
+
+    # Already loaded and running → done.
+    if launchctl print "gui/$(id -u)/$label" 2>/dev/null | grep -q "state = running"; then
+        return 0
+    fi
+
+    if ! "$name" --start-service 2>/dev/null; then
+        echo "yabai/.sync: $name --start-service failed — grant Accessibility to $name in System Settings" >&2
+        return 1
+    fi
+}
+
 services_ok=true
-if ! brew services list 2>/dev/null | awk '$1=="yabai" && $2=="started" {f=1} END {exit !f}'; then
-    brew services start yabai >/dev/null 2>&1 || { echo "yabai/.sync: failed to start yabai service" >&2; services_ok=false; }
-fi
-if ! brew services list 2>/dev/null | awk '$1=="skhd" && $2=="started" {f=1} END {exit !f}'; then
-    brew services start skhd >/dev/null 2>&1 || { echo "yabai/.sync: failed to start skhd service" >&2; services_ok=false; }
-fi
+ensure_koekeishiya_service yabai com.asmvik.yabai     || services_ok=false
+ensure_koekeishiya_service skhd  com.koekeishiya.skhd || services_ok=false
 
 if $services_ok; then
     echo "yabai/.sync: configs linked, services running"
