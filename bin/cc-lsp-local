@@ -1,4 +1,5 @@
 #!/bin/bash
+# === usage-start ===
 # cc-lsp-local — Enable LSP plugins in the current project based on tokei.
 #
 # Writes (merges) `enabledPlugins` into `.claude/settings.local.json` in the
@@ -15,6 +16,7 @@
 #   cc-lsp-local --print          # print the gate JSON to stdout, nothing written
 #
 # Env: CC_LSP_GATE_THRESHOLD=<n> overrides the default threshold.
+# === usage-end ===
 
 set -euo pipefail
 
@@ -27,7 +29,9 @@ DRY_RUN=false
 PRINT_ONLY=false
 
 usage() {
-    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '/^# === usage-start ===$/,/^# === usage-end ===$/p' "$0" \
+        | grep -v '^# === usage-' \
+        | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -65,8 +69,17 @@ if $PRINT_ONLY; then
 fi
 
 # Merge: replace `enabledPlugins` only, preserve everything else (permissions, etc).
-MERGED="$(jq --argjson gate "$GATE_JSON" '. + {enabledPlugins: $gate}' \
-    <(test -f "$SETTINGS" && cat "$SETTINGS" || echo '{}'))"
+# Read the existing file in a guarded step so a read error never silently
+# collapses to '{}' and overwrites unrelated keys on the next write.
+if [[ -f "$SETTINGS" ]]; then
+    if ! EXISTING="$(cat "$SETTINGS")"; then
+        echo "cc-lsp-local: cannot read $SETTINGS — refusing to overwrite" >&2
+        exit 1
+    fi
+else
+    EXISTING='{}'
+fi
+MERGED="$(jq --argjson gate "$GATE_JSON" '. + {enabledPlugins: $gate}' <<<"$EXISTING")"
 
 # Summary: show enabled vs skipped, sorted, with counts.
 ENABLED="$(echo "$GATE_JSON" | jq -r 'to_entries[] | select(.value) | .key' | sort)"

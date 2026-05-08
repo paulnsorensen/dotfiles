@@ -22,7 +22,10 @@ _cc_lsp_gate() {
     git rev-parse --is-inside-work-tree &>/dev/null || return 0
 
     # shellcheck source=../claude/lib/lsp-gate.sh
-    source "$DOTFILES_DIR/claude/lib/lsp-gate.sh" 2>/dev/null || return 0
+    if ! source "$DOTFILES_DIR/claude/lib/lsp-gate.sh"; then
+        echo "_cc_lsp_gate: cannot source $DOTFILES_DIR/claude/lib/lsp-gate.sh — LSPs disabled this session" >&2
+        return 0
+    fi
 
     local gate_file
     gate_file="$(mktemp -t claude-lsp-gate).json"
