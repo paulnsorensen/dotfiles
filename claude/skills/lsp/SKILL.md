@@ -3,8 +3,9 @@ name: lsp
 model: haiku
 description: >
   Check LSP plugin status and troubleshoot language server issues.
-  All 7 LSP plugins are enabled globally — this skill shows what's running,
-  verifies binaries, and diagnoses issues. Use when the user says "LSP not
+  LSP plugins ship installed but disabled at the user level — this skill shows
+  what's running, verifies binaries, diagnoses issues, and points at the
+  per-project opt-in (`cc-lsp-local`). Use when the user says "LSP not
   working", "language server down", "hover not working", "no type info",
   "check LSP", "types missing", or invokes /lsp. Also trigger when LSP
   operations return errors or empty results.
@@ -12,8 +13,11 @@ description: >
 
 # lsp
 
-LSP status and troubleshooting. All 7 LSP plugins are enabled globally in
-`settings.json` — servers start lazily when the LSP tool is used on a matching file.
+LSP status and troubleshooting. LSP plugins are installed at the user level but
+**disabled by default** — opt in per project via `cc-lsp-local` (writes
+`.claude/settings.local.json`) or per session via the `cc` / `ccc` / `ccr` /
+`ccp` shell wrappers (ephemeral tokei-driven gate). Servers start lazily once
+enabled and the LSP tool hits a matching file.
 
 ## How it works
 

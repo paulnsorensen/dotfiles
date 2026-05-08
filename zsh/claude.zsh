@@ -16,23 +16,26 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # ═══════════════════════════════════════════════════════════════════
 # Compute which LSP plugins this repo needs based on tokei line counts.
 # Writes a minimal JSON gate file and prints its path. Prints nothing on failure.
+# Persistent companion: bin/cc-lsp-local writes the same shape into
+# .claude/settings.local.json instead of an ephemeral tmp file.
 _cc_lsp_gate() {
+    emulate -L zsh
+    setopt pipe_fail
     git rev-parse --is-inside-work-tree &>/dev/null || return 0
 
-    local threshold="${CC_LSP_GATE_THRESHOLD:-50}"
-    local gate_file
-    gate_file="$(mktemp -t claude-lsp-gate).json"
+    # shellcheck source=../claude/lib/lsp-gate.sh
+    if ! source "$DOTFILES_DIR/claude/lib/lsp-gate.sh"; then
+        echo "_cc_lsp_gate: cannot source $DOTFILES_DIR/claude/lib/lsp-gate.sh — LSPs disabled this session" >&2
+        return 0
+    fi
 
-    tokei --output json | jq --argjson t "$threshold" '{
-      enabledPlugins: {
-        "bash-language-server@claude-code-lsps": (([.BASH.code//0,.Shell.code//0,.Zsh.code//0]|add) >= $t),
-        "vtsls@claude-code-lsps":               (([.JavaScript.code//0,.TypeScript.code//0,.TSX.code//0,.JSX.code//0]|add) >= $t),
-        "yaml-language-server@claude-code-lsps": ((.YAML.code//0) >= $t),
-        "rust-analyzer@claude-code-lsps":        ((.Rust.code//0) >= $t),
-        "pyright@claude-code-lsps":              ((.Python.code//0) >= $t),
-        "gopls@claude-code-lsps":               ((.Go.code//0) >= $t)
-      }
-    }' > "$gate_file" || return 0
+    local gate_json
+    gate_json="$(lsp_gate_compute "${CC_LSP_GATE_THRESHOLD:-50}" | jq '{enabledPlugins: .}')" || return 0
+    [[ -n "$gate_json" ]] || return 0
+
+    local gate_file
+    gate_file="$(mktemp -t claude-lsp-gate)" || return 0
+    printf '%s\n' "$gate_json" > "$gate_file" || return 0
 
     echo "$gate_file"
 }
@@ -276,6 +279,11 @@ alias plugin-ls='claude plugin list'
 alias plugin-sync='$CLAUDE_DOTFILES/plugins/sync.sh'
 alias plugin-sync-dry='$CLAUDE_DOTFILES/plugins/sync.sh --dry-run'
 alias plugin-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/plugins/registry.yaml'
+
+# Project-local LSP opt-in: writes tokei-driven enabledPlugins into
+# .claude/settings.local.json (gitignored). LSPs are off in user-level
+# settings by default; run this once per project that needs them.
+alias cc-lsp-local='$DOTFILES_DIR/bin/cc-lsp-local'
 
 # Refresh a local plugin's cache so edits in the source dir take effect.
 # Claude Code copies plugins into ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/

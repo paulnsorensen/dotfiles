@@ -10,7 +10,7 @@ lint: lint-shell lint-python lint-js lint-markdown
 # shellcheck on shell scripts
 lint-shell:
     shellcheck -x -e SC1091 bin/* .sync .sync-with-rollback
-    shellcheck -x -e SC1091 -s bash claude/hooks/*.sh claude/mcp/sync.sh claude/plugins/sync.sh claude/lib/sync-common.sh
+    shellcheck -x -e SC1091 -s bash claude/mcp/sync.sh claude/plugins/sync.sh claude/lib/sync-common.sh
     shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh
     @echo "shellcheck: ok"
 
