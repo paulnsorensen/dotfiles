@@ -167,6 +167,7 @@ and Context7 (external docs + GitHub code reference). Don't guess; let
 lookup route you.
 
 **LSP integration** — All 6 LSP plugins ship installed but **disabled at the user level**; opt in per project. Two paths:
+
 - Ephemeral (per-session): `cc` / `ccc` / `ccr` / `ccp <profile>` invoke `_cc_lsp_gate` (tokei-driven) and pass a tmp settings file via `--settings`.
 - Persistent (per-project): run `cc-lsp-local` once in the project to write `enabledPlugins` into `.claude/settings.local.json` (gitignored). Threshold defaults to 50 code lines per language; override with `--threshold N` or `CC_LSP_GATE_THRESHOLD`.
 
