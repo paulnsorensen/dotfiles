@@ -17,20 +17,25 @@ LSP_PLUGINS=(
 setup() {
     setup_test_env
 
+    # Mock tokei so tests run on Linux CI (tokei is a brew/cargo dep on dev
+    # machines but absent from GitHub-hosted runners). Returns a fixed shape:
+    # ~100 BASH lines, everything else 0. This lets us drive deterministic
+    # threshold assertions without depending on tokei being installed.
+    MOCK_BIN="$TEST_HOME/mock-bin"
+    mkdir -p "$MOCK_BIN"
+    cat > "$MOCK_BIN/tokei" <<'TOKEI'
+#!/bin/bash
+echo '{"BASH":{"code":100},"Shell":{"code":0},"Zsh":{"code":0},"JavaScript":{"code":0},"TypeScript":{"code":0},"TSX":{"code":0},"JSX":{"code":0},"YAML":{"code":0},"Rust":{"code":0},"Python":{"code":0},"Go":{"code":0}}'
+TOKEI
+    chmod +x "$MOCK_BIN/tokei"
+    export PATH="$MOCK_BIN:$PATH"
+
     PROJECT_DIR="$TEST_HOME/project"
     mkdir -p "$PROJECT_DIR"
     git -C "$PROJECT_DIR" init -q
     git -C "$PROJECT_DIR" config user.email "t@t.com"
     git -C "$PROJECT_DIR" config user.name "T"
-    # Shell-heavy content so bash-language-server crosses default threshold.
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-        printf '#!/bin/bash\n' > "$PROJECT_DIR/script-${i}.sh"
-        for _ in $(seq 1 10); do
-            printf 'echo "filler line"\n' >> "$PROJECT_DIR/script-${i}.sh"
-        done
-    done
-    git -C "$PROJECT_DIR" add .
-    git -C "$PROJECT_DIR" commit -q -m "init"
+    git -C "$PROJECT_DIR" commit --allow-empty -q -m "init"
     cd "$PROJECT_DIR" || return 1
 }
 

@@ -197,7 +197,11 @@ run_auto_format() {
     [ "$status" -eq 0 ]
 }
 
-@test "settings: worktree guard is wired for Edit and Write" {
+@test "settings: worktree guard is NOT wired (disengaged in ae3a99e)" {
+    # worktree-guard.js stays in claude/hooks/ for reference but is no
+    # longer registered as a PreToolUse hook (commit ae3a99e). Asserting
+    # the negative locks in the disengagement so a future settings edit
+    # can't silently re-wire it.
     run jq -e '.hooks.PreToolUse[] | select(.matcher == "Edit|Write") | .hooks[] | select(.command | contains("worktree-guard.js"))' "$REAL_DOTFILES_DIR/claude/settings.json"
-    [ "$status" -eq 0 ]
+    [ "$status" -ne 0 ]
 }
