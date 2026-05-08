@@ -99,10 +99,16 @@ fi
 echo
 echo "Threshold: ${THRESHOLD} code lines"
 echo "Enabled (${EN_COUNT}):"
-# shellcheck disable=SC2001 # parameter expansion can't elegantly prepend per-line
-[[ -n "$ENABLED" ]] && echo "$ENABLED" | sed 's/^/  + /' || echo "  (none — no language above threshold)"
+if [[ -n "$ENABLED" ]]; then
+    # shellcheck disable=SC2001 # parameter expansion can't elegantly prepend per-line
+    echo "$ENABLED" | sed 's/^/  + /'
+else
+    echo "  (none — no language above threshold)"
+fi
 echo "Disabled (${SK_COUNT}):"
-# shellcheck disable=SC2001 # parameter expansion can't elegantly prepend per-line
-[[ -n "$SKIPPED" ]] && echo "$SKIPPED" | sed 's/^/  - /' || true
+if [[ -n "$SKIPPED" ]]; then
+    # shellcheck disable=SC2001 # parameter expansion can't elegantly prepend per-line
+    echo "$SKIPPED" | sed 's/^/  - /'
+fi
 echo
 echo "Restart Claude Code in this directory for changes to take effect."
