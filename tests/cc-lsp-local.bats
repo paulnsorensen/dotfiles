@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for bin/cc-lsp-local — persistent project-local LSP opt-in.
 
+bats_require_minimum_version 1.5.0
+
 load test_helper
 
 CC_LSP_LOCAL="$REAL_DOTFILES_DIR/bin/cc-lsp-local"
@@ -178,13 +180,43 @@ JSON
 {"permissions": {"allow": ["important"]}}
 JSON
     chmod 000 .claude/settings.local.json
-    # Trap so chmod always restores even when the assertion fails.
-    trap 'chmod 644 .claude/settings.local.json 2>/dev/null || true' RETURN
 
-    run "$CC_LSP_LOCAL"
+    run --separate-stderr "$CC_LSP_LOCAL"
     chmod 644 .claude/settings.local.json
     [ "$status" -eq 1 ]
-    [[ "$output" == *"refusing to overwrite"* ]]
+    # Message must be on stderr, not stdout — exit code alone is too easy
+    # to satisfy by accident from an unrelated set -e tripwire.
+    [[ "$stderr" == *"refusing to overwrite"* ]]
+    [[ "$output" != *"refusing to overwrite"* ]]
     # Original content is intact (would have been '{}' if guard had failed).
     [[ "$(jq -r '.permissions.allow[0]' .claude/settings.local.json)" == "important" ]]
+}
+
+# ── mock-vs-gate-library contract ─────────────────────────────────────────────
+
+@test "mock tokei shape covers every language bucket lsp_gate_compute reads" {
+    # Guard against silent drift: if a new language is added to lsp-gate.sh,
+    # the mock must be extended too. jq's `//0` default would otherwise
+    # silently treat the new language as zero, hiding broken assertions.
+    local gate_lib="$REAL_DOTFILES_DIR/claude/lib/lsp-gate.sh"
+    local langs
+    langs="$(grep -oE '\.[A-Z][A-Za-z]+\.code' "$gate_lib" \
+        | sed 's/^\.//; s/\.code$//' | sort -u)"
+    [ -n "$langs" ]
+
+    local mock_json
+    mock_json="$("$MOCK_BIN/tokei" --output json)"
+
+    local missing=()
+    while IFS= read -r lang; do
+        if ! echo "$mock_json" | jq -e --arg k "$lang" 'has($k)' >/dev/null; then
+            missing+=("$lang")
+        fi
+    done <<< "$langs"
+
+    [ "${#missing[@]}" -eq 0 ] || {
+        echo "Mock tokei is missing language buckets referenced by $gate_lib:" >&2
+        printf '  - %s\n' "${missing[@]}" >&2
+        return 1
+    }
 }
