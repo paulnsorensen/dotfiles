@@ -19,6 +19,8 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # Persistent companion: bin/cc-lsp-local writes the same shape into
 # .claude/settings.local.json instead of an ephemeral tmp file.
 _cc_lsp_gate() {
+    emulate -L zsh
+    setopt pipe_fail
     git rev-parse --is-inside-work-tree &>/dev/null || return 0
 
     # shellcheck source=../claude/lib/lsp-gate.sh
@@ -27,10 +29,13 @@ _cc_lsp_gate() {
         return 0
     fi
 
+    local gate_json
+    gate_json="$(lsp_gate_compute "${CC_LSP_GATE_THRESHOLD:-50}" | jq '{enabledPlugins: .}')" || return 0
+    [[ -n "$gate_json" ]] || return 0
+
     local gate_file
-    gate_file="$(mktemp -t claude-lsp-gate).json"
-    lsp_gate_compute "${CC_LSP_GATE_THRESHOLD:-50}" \
-        | jq '{enabledPlugins: .}' > "$gate_file" || return 0
+    gate_file="$(mktemp -t claude-lsp-gate)" || return 0
+    printf '%s\n' "$gate_json" > "$gate_file" || return 0
 
     echo "$gate_file"
 }
