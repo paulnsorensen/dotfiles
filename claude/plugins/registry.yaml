@@ -14,36 +14,39 @@
 #   plugin-ls             List installed plugins
 
 plugins:
-  # --- LSP plugins (globally enabled, servers start lazily per file type) ---
+  # --- LSP plugins (installed but disabled by default; opt-in per project) ---
+  # Enable via:
+  #   cc / ccc / ccr / ccp <profile>  → ephemeral gate via _cc_lsp_gate (tokei-driven)
+  #   cc-lsp-local                    → persistent project-local opt-in (.claude/settings.local.json)
   bash-language-server@claude-code-lsps:
     description: Bash/shell script language server (.sh, .bash, .zsh)
     scope: user
-    load: true
+    load: false
 
   vtsls@claude-code-lsps:
     description: TypeScript/JavaScript language server (.ts, .tsx, .js, .jsx)
     scope: user
-    load: true
+    load: false
 
   yaml-language-server@claude-code-lsps:
     description: YAML language server (.yaml, .yml)
     scope: user
-    load: true
+    load: false
 
   rust-analyzer@claude-code-lsps:
     description: Rust language server (.rs)
     scope: user
-    load: true
+    load: false
 
   pyright@claude-code-lsps:
     description: Python type checking and language server (.py, .pyi)
     scope: user
-    load: true
+    load: false
 
   gopls@claude-code-lsps:
     description: Go language server (.go)
     scope: user
-    load: true
+    load: false
 
   # --- Workflow plugins ---
   claude-md-management@claude-plugins-official:

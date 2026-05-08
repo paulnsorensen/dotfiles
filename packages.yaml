@@ -94,4 +94,3 @@ packages:
   # If an unrelated `rtk` is already present from `cargo install rtk`, remove it first
   # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.
   - rtk: { source: cargo, git: "https://github.com/rtk-ai/rtk" }
-  - qdrant: { source: cargo, dev: true }
