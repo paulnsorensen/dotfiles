@@ -1,7 +1,7 @@
 ---
 name: claude-local
 model: sonnet
-allowed-tools: Read, Write, Edit, Bash(git:*), Bash(grep:*), Bash(test:*), Bash(touch:*), Bash(mkdir:*), Glob
+allowed-tools: Read, Write, Edit, Bash(git:*), Bash(grep:*), Bash(test:*), Bash(touch:*), Bash(mkdir:*), Bash(printf:*), Glob
 description: >
   Distill the user's global ~/.claude/CLAUDE.md into a project-scoped
   CLAUDE.local.md (gitignored) for repos they're contributing to but
@@ -27,9 +27,9 @@ slim, project-relevant overlay — not a copy of `~/.claude/CLAUDE.md`.
 
 ## Why this exists
 
-The global `~/.claude/CLAUDE.md` is large (~500 lines) and tuned for the
-user's own work — personal communication style, owned-architecture rules,
-early-development stances. When the user contributes to someone else's
+The global `~/.claude/CLAUDE.md` is tuned for the user's own work —
+personal communication style, owned-architecture rules, early-development
+stances. When the user contributes to someone else's
 repo they want their *engineering* preferences applied (coding principles,
 skill delegation, self-eval) without dragging in the personal flair or
 architectural opinions that don't apply to a codebase they don't own.
@@ -106,14 +106,15 @@ judgment to bring.
 - **Coding principles.** Input validation, fail-fast, loose coupling,
   YAGNI, real-world models, immutable patterns. These are language- and
   project-agnostic and travel everywhere.
-- **Complexity budget.** Function/file/parameter/nesting limits.
-- **Skill delegation table.** The substitutions are the highest-leverage
-  thing in the global — `cheez-search` over `grep`, `cheez-read` over
-  `cat`, `cheez-write` over `sed`, `jq`/`yq` over inline `python3 -c`,
-  `gh` over raw GitHub API. These apply in any repo.
-- **Self-evaluation checklist.** The 8-item anti-pattern scan
-  (sycophancy, premature completion, dismissing failures, hedging, scope
-  reduction, false confidence, AI slop, weak assertions). Universal.
+- **Operational rules.** Skill-over-bash delegation (`cheez-search` over
+  `grep`, `cheez-read` over `cat`, `cheez-write` over `sed`, `jq`/`yq`
+  over inline `python3 -c`, `gh` over raw GitHub API), CLI tools
+  (jq/yq/tokei/duckdb), agent permission model (bypassPermissions ≠ Bash
+  bypass), agent nesting limits. These apply in any repo.
+- **Self-evaluation guidance.** The brief `/self-eval` reference and its
+  8-item anti-pattern summary (sycophancy, premature completion, dismissing
+  failures, hedging, scope reduction, false confidence, AI slop, weak
+  assertions). Universal.
 - **Build system rules.** "Fix the version, don't restructure the build"
   — this is hard-won and applies to any project's deps.
 
@@ -228,7 +229,7 @@ if ! grep -qxF "CLAUDE.local.md" "$EXCLUDES"; then
 fi
 
 # 3. Verify Git actually ignores the new file
-cd "$REPO_ROOT" && git check-ignore CLAUDE.local.md
+git -C "$REPO_ROOT" check-ignore CLAUDE.local.md
 ```
 
 If `git check-ignore` returns non-zero (file not ignored), surface the

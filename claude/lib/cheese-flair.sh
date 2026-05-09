@@ -22,6 +22,12 @@ set -uo pipefail
 
 CHEESE_FLAIR_BANK="${CHEESE_FLAIR_BANK:-${HOME}/.claude/reference/cheese-flair.md}"
 
+# Fail fast in CLI context; no-op gracefully when sourced (hook context).
+if [[ ! -f "$CHEESE_FLAIR_BANK" ]]; then
+    printf 'cheese-flair: bank not found: %s\n' "$CHEESE_FLAIR_BANK" >&2
+    [[ "${BASH_SOURCE[0]}" == "${0}" ]] && exit 1
+fi
+
 # Pick N distinct lines at random from stdin. Prefer GNU shuf; fall back
 # to a Fisher-Yates shuffle in awk so the script works on macOS without
 # coreutils installed.
@@ -182,6 +188,7 @@ _cheese_variety_pick() {
 }
 
 cheese_sample() {
+    [[ -f "$CHEESE_FLAIR_BANK" ]] || { printf 'cheese-flair: bank not found, skipping flair\n' >&2; return 0; }
     printf '## Cheese flair (rotating each session)\n\n'
     printf -- '- Addresses:\n'
     printf -- '  - %s\n' 'Cheese Lord'
