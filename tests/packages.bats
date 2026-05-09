@@ -119,7 +119,10 @@ run_sync() {
     assert_success
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
-        [[ "$source" == "brew" || "$source" == "cask" || "$source" == "tap" || "$source" == "cargo" || "$source" == "npm" || "$source" == "uv" ]]
+        if [[ "$source" != "brew" && "$source" != "cask" && "$source" != "tap" && "$source" != "cargo" && "$source" != "npm" && "$source" != "uv" ]]; then
+            echo "Invalid source value: $source" >&2
+            return 1
+        fi
     done <<< "$output"
 }
 
