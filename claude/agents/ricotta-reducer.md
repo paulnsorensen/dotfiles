@@ -184,7 +184,7 @@ Categories: `DELETE`, `INLINE`, `EXTRACT`, `UNDOCUMENT`, `DECOUPLE`
 
 ## LSP Integration
 
-All 7 LSP plugins are enabled globally.
+LSP plugins ship installed but disabled by default — opt in per-project via `cc-lsp-local`.
 
 | Context | Strategy |
 |---|---|
