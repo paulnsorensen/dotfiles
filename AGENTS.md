@@ -275,12 +275,14 @@ Full agent/skill catalog is in `claude/CLAUDE.md` (auto-discovered). Key project
 
 Tiling window manager + hotkey daemon for macOS, installed from the `koekeishiya/formulae` brew tap and started as background services by `yabai/.sync`. Configs live at `yabai/yabairc` and `yabai/skhdrc` and are symlinked to `~/.yabairc` / `~/.skhdrc`.
 
-- **Modifier ladder**: `ctrl+alt` for focus/layout, `ctrl+alt+shift` for swap/move, `cmd+alt` for resize, `ctrl+cmd+alt` for SizeUp-style window/space ops.
-- **Vim navigation**: `ctrl+alt+hjkl` focus, `ctrl+alt+shift+hjkl` swap, `cmd+alt+hjkl` resize.
-- **Spaces**: `ctrl+alt+1..4` focus, `ctrl+alt+shift+1..4` move-and-follow. macOS spaces must be created manually in Mission Control first — yabai cannot create them with SIP enabled.
-- **Snap-to-grid for floating windows**: `ctrl+alt+arrows` for halves, `ctrl+alt+u/i/n/m` for quarters, `ctrl+alt+return` for fullscreen. Auto-floats a tiled window before snapping.
-- **SizeUp chords**: `ctrl+cmd+alt+m` toggles zoom-fullscreen (window covers display, others hide underneath), `ctrl+cmd+alt+n` rotates the BSP tree 90°.
-- **Reload**: `ctrl+alt+shift+r` restarts both services after config edits.
+- **Modifier ladder**: `ctrl+alt+cmd` for primary actions (snap, focus, layout); `shift+ctrl+alt+cmd` for destructive variants (swap, move-to-space, send-to-display, restart). Mouse drag uses `cmd` (set via `mouse_modifier=cmd` in `yabairc`).
+- **Vim navigation**: `ctrl+alt+cmd+hjkl` focus; `shift+ctrl+alt+cmd+hjkl` swap. Resize is mouse-drag only — no keyboard resize bindings.
+- **Spaces**: `shift+ctrl+alt+cmd+1..4` move-and-follow. Direct space focus is delegated to native macOS (`ctrl+1..4`, configurable in System Settings → Keyboard → Mission Control). macOS spaces must be created manually in Mission Control first — yabai cannot create them with SIP enabled.
+- **Snap-to-grid (auto-floats tiled windows)**: `ctrl+alt+cmd+arrows` for halves, `ctrl+alt+cmd+1..4` for quarters (clockwise from top-left: 1=TL, 2=TR, 3=BR, 4=BL), `ctrl+alt+cmd+m` for SizeUp-style maximize, `ctrl+alt+cmd+c` to center.
+- **Fullscreen / zoom**: `ctrl+alt+cmd+f` toggles native macOS fullscreen; `ctrl+alt+cmd+z` toggles BSP zoom-fullscreen (window covers display, others hide underneath).
+- **Layout**: `ctrl+alt+cmd+space` toggle float, `ctrl+alt+cmd+t` BSP layout, `ctrl+alt+cmd+s` stack layout, `ctrl+alt+cmd+0` balance, `ctrl+alt+cmd+r` rotate BSP tree 90°.
+- **Send to display**: `shift+ctrl+alt+cmd+left/right` moves the active window to the previous/next display and follows.
+- **Reload**: `shift+ctrl+alt+cmd+r` restarts both services after config edits.
 - **First-time setup**: grant Accessibility (and optionally Screen Recording) to `yabai` and `skhd` in System Settings → Privacy & Security after `dots sync`.
 - **SIP**: opacity, removing title bars, and cross-space window movement require SIP partially disabled. The basic tile/focus/swap loop works with SIP on.
 
