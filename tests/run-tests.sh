@@ -74,7 +74,7 @@ run_tests() {
     if [[ -n "$SPECIFIC_TEST" ]]; then
         test_files="$SPECIFIC_TEST"
     else
-        test_files="dots-simple.bats dots.bats git-hooks.bats sync.bats config-validation.bats prompt.bats sync-claude.bats sync-rollback.bats hooks-blockers.bats hooks-session.bats iterm2-fonts.bats worktree-settings.bats copilot-sync.bats skills-install.bats sync-skills.bats packages.bats"
+        test_files="dots-simple.bats dots.bats git-hooks.bats sync.bats config-validation.bats prompt.bats sync-claude.bats sync-rollback.bats hooks-blockers.bats hooks-session.bats iterm2-fonts.bats worktree-settings.bats copilot-sync.bats skills-install.bats sync-skills.bats packages.bats cheese-flair.bats"
     fi
 
     # Count total tests
