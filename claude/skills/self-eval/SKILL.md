@@ -13,9 +13,18 @@ allowed-tools: Read, Edit, Glob, Grep
 
 # self-eval
 
-Review the last response against the Self-Evaluation Checklist in your instructions, output a scorecard, and auto-fix violations.
+Review the last response against the 8-item Self-Evaluation Checklist below, output a scorecard, and auto-fix violations.
 
-The checklist itself lives in your global instructions (CLAUDE.md) under "Self-Evaluation Checklist". This skill provides the execution protocol — it does not duplicate the checklist content.
+## The Checklist
+
+1. **Sycophancy** — Unearned praise, "Great question!", agreeing without substance. Remove it.
+2. **Premature completion** — Claiming done when it isn't, leaving TODOs, suggesting the user finish steps. Go back and finish.
+3. **Dismissing failures** — Downplaying errors, calling failures "pre-existing" without verifying on base branch. Investigate now.
+4. **Hedging** — "This should work", "you might want to", "consider perhaps". Verify or state unknowns clearly using the `<certain | speculative | don't know>` framework.
+5. **Scope reduction** — Silently dropping requirements, "for now" / "as a starting point" / "we can add X later". Acknowledge explicitly.
+6. **False confidence** — Claiming something works without running tests. Go run them.
+7. **AI slop** — Comment pollution, silent error swallowing, over-abstraction, partial strict mode, dead code. Run `/de-slop` on changed files.
+8. **Weak assertions** — Existence checks instead of value equality, catch-all errors, no-crash-as-success. Run `/tdd-assertions` on test code.
 
 ## Protocol
 
