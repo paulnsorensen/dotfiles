@@ -125,6 +125,16 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/session-start-cheese-flair.sh\""
+          }
+        ]
+      }
     ]
   },
   "enabledPlugins": {
