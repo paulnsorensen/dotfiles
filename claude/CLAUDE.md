@@ -166,7 +166,11 @@ and far cheaper in tokens than blind text grep + full file reads.
 and Context7 (external docs + GitHub code reference). Don't guess; let
 lookup route you.
 
-**LSP integration** — All 6 LSP plugins are enabled globally (lazy startup, zero cost when idle). Run `/lsp` for status and troubleshooting.
+**LSP integration** — All 6 LSP plugins ship installed but **disabled at the user level**; opt in per project. Two paths:
+- Ephemeral (per-session): `cc` / `ccc` / `ccr` / `ccp <profile>` invoke `_cc_lsp_gate` (tokei-driven) and pass a tmp settings file via `--settings`.
+- Persistent (per-project): run `cc-lsp-local` once in the project to write `enabledPlugins` into `.claude/settings.local.json` (gitignored). Threshold defaults to 50 code lines per language; override with `--threshold N` or `CC_LSP_GATE_THRESHOLD`.
+
+Run `/lsp` for status and troubleshooting.
 
 **Agent permission modes** — `acceptEdits` and `bypassPermissions` only suppress the interactive approval dialog for Edit/Write — they do NOT auto-approve Bash or MCP calls. Bash permissions use a separate allowlist (`permissions.allow` entries like `Bash(git:*)`). In sandboxed environments (Conductor, fresh sessions without your `settings.json`), worktree agents may lack allowlist entries for `git push`, `gh pr create`, etc. **Design pattern**: have isolated agents do code work + commit only, then return control to the orchestrator (which runs in the user's session with full permissions) for push/PR operations.
 

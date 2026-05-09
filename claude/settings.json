@@ -128,12 +128,12 @@
     ]
   },
   "enabledPlugins": {
-    "bash-language-server@claude-code-lsps": true,
-    "vtsls@claude-code-lsps": true,
-    "yaml-language-server@claude-code-lsps": true,
-    "rust-analyzer@claude-code-lsps": true,
-    "pyright@claude-code-lsps": true,
-    "gopls@claude-code-lsps": true,
+    "bash-language-server@claude-code-lsps": false,
+    "vtsls@claude-code-lsps": false,
+    "yaml-language-server@claude-code-lsps": false,
+    "rust-analyzer@claude-code-lsps": false,
+    "pyright@claude-code-lsps": false,
+    "gopls@claude-code-lsps": false,
     "claude-md-management@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,

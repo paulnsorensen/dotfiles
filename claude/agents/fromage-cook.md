@@ -59,7 +59,7 @@ If your prompt includes design skill content, apply it alongside the plan steps.
 
 ## LSP Integration
 
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool after edits — `hover` for type checks, `findReferences` to verify callers, `documentSymbol` to orient in a file. Auto-diagnostics surface type errors after edits without running a full build. Faster than `cargo check` or `npm test` for quick verification.
+LSP plugins ship installed but disabled by default — opt in per-project via `cc-lsp-local`. When enabled, use the built-in `LSP` tool after edits — `hover` for type checks, `findReferences` to verify callers, `documentSymbol` to orient in a file. Auto-diagnostics surface type errors after edits without running a full build. Faster than `cargo check` or `npm test` for quick verification. If `LSP` returns empty, fall back to the language's own checker.
 
 ## Build Verification
 
