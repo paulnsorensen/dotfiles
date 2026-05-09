@@ -92,6 +92,7 @@ Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env
 ```
 dotfiles/
 ├── bin/                    # CLI tools (dots command)
+├── chezmoi/                # Chezmoi-managed templates (gitconfig, .copilot/mcp-config.json)
 ├── claude/                 # Claude Code configuration
 │   ├── mcp/
 │   │   ├── registry.yaml   # MCP source of truth
@@ -230,9 +231,43 @@ The `.sync-with-rollback` script provides:
 
 **Skip list** (not symlinked to ~, canonical source is `SYNC_SKIP_LIST` in `.sync-lib.sh`, which is sourced by `.sync-with-rollback`):
 
-- `.git`, `.local`, `.worktrees`, `reference`, `packages`, `packages.yaml`, `brew`, `apt`
+- `.git`, `.local`, `.worktrees`, `reference`, `packages`, `packages.yaml`, `brew`, `apt`, `chezmoi`
 
 **Hidden directory dispatch**: visible dirs are iterated by `for file in *` (glob), hidden dirs (starting with `.`) are iterated separately by `sync_hidden_dirs`. Both use the same rule: if `$dir/.sync` exists, run it. This is how `.copilot/.sync` is reached despite being hidden.
+
+## Chezmoi-Managed Files
+
+A subset of dotfiles is rendered by [chezmoi](https://chezmoi.io/) instead of symlinked. Chezmoi handles per-machine templating (work vs personal git email), per-OS branching, and secret injection — things plain symlinks can't do. The rest of the repo continues to use the symlink + `.sync` system.
+
+**Source:** `chezmoi/` subdirectory of this repo. Currently manages:
+
+- `~/.gitconfig` — `chezmoi/private_dot_gitconfig.tmpl` (templated email, work-only `[url]` redirects)
+- `~/.copilot/mcp-config.json` — `chezmoi/private_dot_copilot/mcp-config.json.tmpl` (env-rendered API keys, fails fast if unset)
+
+**First-init (interactive):** `dots sync` invokes `chezmoi init --source ~/dotfiles/chezmoi` if `~/.config/chezmoi/chezmoi.toml` is missing. The `.chezmoi.toml.tmpl` prompts for: `email`, `work`, `personal`, `dev`, `cheese_flow`, `vaudeville`, `todoist`. Answers persist to `~/.config/chezmoi/chezmoi.toml` and aren't re-prompted.
+
+**Subsequent runs:** `dots sync` calls `chezmoi --source ~/dotfiles/chezmoi apply`. Non-interactive.
+
+**Inspect / debug:**
+
+```bash
+chezmoi --source ~/dotfiles/chezmoi diff              # what would change
+chezmoi --source ~/dotfiles/chezmoi data              # dump rendered template namespace
+chezmoi --source ~/dotfiles/chezmoi execute-template < FILE.tmpl
+chezmoi doctor                                        # health check
+```
+
+**Re-prompt:** delete `~/.config/chezmoi/chezmoi.toml` and re-run `dots sync` (or `chezmoi init --source ~/dotfiles/chezmoi` directly).
+
+**Adding a file:** drop a templated source under `chezmoi/` using the [chezmoi naming attributes](https://chezmoi.io/reference/source-state-attributes/) (`private_`, `dot_`, `executable_`, `encrypted_`, `.tmpl`). Reference data via `{{ .email }}`, `{{ .work }}`, etc. — see the existing templates for patterns. Add a corresponding test to `tests/chezmoi.bats`.
+
+**Secrets upgrade path:** `mcp-config.json.tmpl` uses `{{ env "..." }}` today. Swap to `{{ onepasswordRead "op://<vault>/<item>/credential" }}` once 1Password CLI is set up; remove the corresponding `.env` entries.
+
+**Hard rules** (from the chezmoi skill):
+
+1. Never commit plaintext secrets to `chezmoi/`. Use `encrypted_` or `{{ env }}` / `{{ onepasswordRead }}`.
+2. Never edit chezmoi-managed source files via the target path. Use `chezmoi edit ~/.gitconfig` so templating round-trips correctly.
+3. Always `chezmoi --source ~/dotfiles/chezmoi diff` before applying when you've changed templates.
 
 ## Shell Scripts: Functions Need Tests
 

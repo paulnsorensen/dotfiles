@@ -1,0 +1,24 @@
+{{/*
+First-init prompts. Answers persist to ~/.config/chezmoi/chezmoi.toml so
+subsequent `chezmoi apply` runs are non-interactive.
+
+Re-prompt by deleting ~/.config/chezmoi/chezmoi.toml and re-running
+`chezmoi --source ~/dotfiles/chezmoi init`.
+*/ -}}
+
+{{- $email       := promptStringOnce . "email"       "Git email address" -}}
+{{- $work        := promptBoolOnce   . "work"        "Is this a work machine?" -}}
+{{- $personal    := promptBoolOnce   . "personal"    "Is this a personal machine?" -}}
+{{- $dev         := promptBoolOnce   . "dev"         "Install dev packages (DOTFILES_DEV)?" -}}
+{{- $cheese_flow := promptBoolOnce   . "cheese_flow" "Enable cheese-flow plugin?" -}}
+{{- $vaudeville  := promptBoolOnce   . "vaudeville"  "Enable vaudeville plugin?" -}}
+{{- $todoist     := promptBoolOnce   . "todoist"     "Enable todoist-flow plugin?" -}}
+
+[data]
+email       = {{ $email | quote }}
+work        = {{ $work }}
+personal    = {{ $personal }}
+dev         = {{ $dev }}
+cheese_flow = {{ $cheese_flow }}
+vaudeville  = {{ $vaudeville }}
+todoist     = {{ $todoist }}

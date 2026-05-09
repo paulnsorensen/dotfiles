@@ -226,6 +226,8 @@ run_sync() {
     done
     sync_hidden_dirs
 
+    chezmoi_apply "$dir/chezmoi"
+
     install_tpm
     install_prek_hooks
 

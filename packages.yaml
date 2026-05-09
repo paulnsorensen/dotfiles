@@ -29,6 +29,7 @@ packages:
   - tmux
   - tinty
   - prek
+  - chezmoi
   - starship
   - zellij
   - zoxide

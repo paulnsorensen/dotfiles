@@ -30,7 +30,7 @@ log_error() {
 
 # Directory names that are never symlinked or dispatched to.
 # Documented in AGENTS.md — keep these in sync.
-SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "packages.yaml" "brew" "apt")
+SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "packages.yaml" "brew" "apt" "chezmoi")
 
 is_skipped() {
     local name="$1"
@@ -134,6 +134,44 @@ install_tpm() {
     "$HOME/.tmux/plugins/tpm/bin/install_plugins" 2>&1 | while read -r line; do
       log_info "  $line"
     done
+}
+
+# Apply chezmoi-managed templates (gitconfig, .copilot/mcp-config.json, etc.)
+# Source dir is $dotfiles/chezmoi. On first run renders ~/.config/chezmoi/chezmoi.toml
+# from .chezmoi.toml.tmpl (interactive prompts); subsequent runs are non-interactive.
+chezmoi_apply() {
+    local source_dir="${1:?source dir required}"
+
+    if ! command -v chezmoi &>/dev/null; then
+        log_warning "chezmoi not installed, skipping template apply"
+        log_warning "  Add 'chezmoi' to packages.yaml and re-run 'dots sync'"
+        return 0
+    fi
+
+    if [[ ! -d "$source_dir" ]]; then
+        log_warning "chezmoi source dir not found: $source_dir"
+        return 0
+    fi
+
+    if [[ ! -f "$HOME/.config/chezmoi/chezmoi.toml" ]]; then
+        if [[ -t 0 ]]; then
+            log_info "First-run chezmoi init (will prompt for email, work/personal, etc.)"
+            if ! chezmoi init --source "$source_dir"; then
+                log_error "chezmoi init failed"
+                return 1
+            fi
+        else
+            log_warning "No ~/.config/chezmoi/chezmoi.toml and stdin is not a TTY"
+            log_warning "  Run manually: chezmoi init --source $source_dir"
+            return 0
+        fi
+    fi
+
+    log_info "Applying chezmoi templates from $source_dir"
+    if ! chezmoi --source "$source_dir" apply; then
+        log_error "chezmoi apply failed (run 'chezmoi --source $source_dir diff' to inspect)"
+        return 1
+    fi
 }
 
 # Install prek pre-commit hooks (clears conflicting core.hooksPath first)
