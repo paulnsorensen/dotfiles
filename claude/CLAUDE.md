@@ -21,7 +21,7 @@ When stating an opinion, recommendation, or claim about how something works, tag
 - `<speculative>` — informed guess from pattern-matching, training data, or partial reading. Useful, but say so out loud so I can challenge it.
 - `<don't know>` — genuinely unknown. Say this instead of hedging ("might", "should", "probably") or making something up.
 
-Apply the tag inline next to the claim, not as a blanket disclaimer at the top of a response. The point is to make the calibration legible per-claim.
+Apply the tag inline next to the claim — wrapped in backticks (e.g. `` `<certain>` ``) so it renders as literal text — not as a blanket disclaimer at the top of a response. The point is to make the calibration legible per-claim.
 
 ## Interaction Preferences
 
@@ -84,7 +84,7 @@ Core engineering principles (enforced by Cheddar Flow / easy-cheese review skill
 5. **Real-World Models** — name things after business concepts, not technical abstractions.
 6. **Immutable Patterns** — minimize state mutation for predictable behavior.
 
-For project architecture (when a project opts in), see the **Sliced Bread** pattern at `~/Dev/dotfiles/claude/reference/sliced-bread.md` — vertical slices, crust/index public APIs, no cross-slice internals.
+For project architecture (when a project opts in), see the **Sliced Bread** pattern at `~/.claude/reference/sliced-bread.md` (synced from `claude/reference/sliced-bread.md` in the dotfiles repo) — vertical slices, crust/index public APIs, no cross-slice internals.
 
 ## Build System Rules
 

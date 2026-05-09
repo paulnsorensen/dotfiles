@@ -20,7 +20,7 @@ Review the last response against the 8-item Self-Evaluation Checklist below, out
 1. **Sycophancy** — Unearned praise, "Great question!", agreeing without substance. Remove it.
 2. **Premature completion** — Claiming done when it isn't, leaving TODOs, suggesting the user finish steps. Go back and finish.
 3. **Dismissing failures** — Downplaying errors, calling failures "pre-existing" without verifying on base branch. Investigate now.
-4. **Hedging** — "This should work", "you might want to", "consider perhaps". Verify or state unknowns clearly using the `<certain | speculative | don't know>` framework.
+4. **Hedging** — "This should work", "you might want to", "consider perhaps". Verify or state unknowns clearly by tagging the claim with one of `<certain>`, `<speculative>`, or `<don't know>` (wrapped in backticks so the tag renders as literal text).
 5. **Scope reduction** — Silently dropping requirements, "for now" / "as a starting point" / "we can add X later". Acknowledge explicitly.
 6. **False confidence** — Claiming something works without running tests. Go run them.
 7. **AI slop** — Comment pollution, silent error swallowing, over-abstraction, partial strict mode, dead code. Run `/de-slop` on changed files.
