@@ -113,13 +113,16 @@ run_sync() {
     done <<< "$output"
 }
 
-@test "all source values are brew, cask, tap, or cargo" {
+@test "all source values are brew, cask, tap, cargo, npm, or uv" {
     run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source != null) | .value.source' \
         "$REAL_DOTFILES_DIR/packages.yaml"
     assert_success
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
-        [[ "$source" == "brew" || "$source" == "cask" || "$source" == "tap" || "$source" == "cargo" || "$source" == "npm" ]]
+        if [[ "$source" != "brew" && "$source" != "cask" && "$source" != "tap" && "$source" != "cargo" && "$source" != "npm" && "$source" != "uv" ]]; then
+            echo "Invalid source value: $source" >&2
+            return 1
+        fi
     done <<< "$output"
 }
 
@@ -140,6 +143,8 @@ run_sync() {
 # --- Integration: sync installs the right packages ---
 
 @test "sync installs bare-string formulae via brew" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
     write_test_yaml
     run_sync
     assert_success
@@ -149,6 +154,8 @@ run_sync() {
 }
 
 @test "sync installs map formulae (fd, node) via brew" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
     write_test_yaml
     run_sync
     assert_success
@@ -178,6 +185,8 @@ run_sync() {
 }
 
 @test "sync processes taps before formulae" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
     write_test_yaml
     run_sync
     assert_success
@@ -221,6 +230,8 @@ run_sync() {
 }
 
 @test "sync skips already-installed packages" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
     write_test_yaml
     write_mock_brew "curl"
 
@@ -264,6 +275,8 @@ run_sync() {
 }
 
 @test "FORCE_PACKAGES bypasses valid cache" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
     write_test_yaml
     shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
 
@@ -275,6 +288,8 @@ run_sync() {
 }
 
 @test "sync does NOT save cache when brew install fails" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
     write_test_yaml
     write_mock_brew "" "" "jq"
 
@@ -286,6 +301,8 @@ run_sync() {
 }
 
 @test "sync retries after previous failure (no cache)" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
     write_test_yaml
     write_mock_brew "" "" "jq"
 
@@ -388,6 +405,8 @@ MOCKRUSTUP
 }
 
 @test "UPGRADE_MODE runs brew upgrade after install loop" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
     write_test_yaml
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
