@@ -34,6 +34,7 @@ Apply the tag inline next to the claim — wrapped in backticks (e.g. `` `<certa
 Don't assume. Don't hide confusion. Surface tradeoffs.
 
 Before implementing:
+
 - State your assumptions explicitly. If uncertain, ask.
 - If multiple interpretations exist, present them — don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
@@ -67,6 +68,7 @@ Touch only what you must. Clean up only your own mess.
 Define success before coding. Loop until verified.
 
 Translate fuzzy asks into verifiable goals:
+
 - "Add validation" → "Write tests for invalid inputs, then make them pass"
 - "Fix the bug" → "Write a test that reproduces it, then make it pass"
 - "Refactor X" → "Ensure tests pass before and after"

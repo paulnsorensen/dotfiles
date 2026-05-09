@@ -239,6 +239,7 @@ something the user doesn't expect. Don't silently move on.
 ### 8. Report
 
 Tell the user:
+
 - Where `CLAUDE.local.md` was written (full path).
 - Which sections you kept and which you dropped, with one-line reasons
   for non-obvious calls (e.g., "dropped Python preference — no
