@@ -197,7 +197,7 @@ run_auto_format() {
     [ "$status" -eq 0 ]
 }
 
-@test "settings: worktree guard is wired for Edit and Write" {
-    run jq -e '.hooks.PreToolUse[] | select(.matcher == "Edit|Write") | .hooks[] | select(.command | contains("worktree-guard.js"))' "$REAL_DOTFILES_DIR/claude/settings.json"
-    [ "$status" -eq 0 ]
+@test "settings: worktree guard is NOT wired (disengaged)" {
+    run jq -e '.hooks.PreToolUse[]?.hooks[]? | select(.command | contains("worktree-guard.js"))' "$REAL_DOTFILES_DIR/claude/settings.json"
+    [ "$status" -ne 0 ]
 }

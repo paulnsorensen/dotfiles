@@ -74,7 +74,12 @@ do_update() {
         exit 1
     }
 
-    # Check if we're behind
+    # Check if we're behind (skip cleanly if no upstream is configured)
+    if ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  No upstream configured for current branch, skipping update${NC}"
+        return 0
+    fi
+
     LOCAL=$(git rev-parse HEAD)
     REMOTE=$(git rev-parse '@{u}')
     BASE=$(git merge-base HEAD '@{u}')
