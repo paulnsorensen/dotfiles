@@ -103,12 +103,12 @@ setup() {
     [[ "$seen" == *"The Lord of the Rings"* ]]
 }
 
-@test "cheese_sample emits Address and Quotes lines" {
+@test "cheese_sample emits Addresses and Quotes lines" {
     # shellcheck source=/dev/null
     source "$LIB"
     run cheese_sample
     assert_success
-    assert_output_contains "Address:"
+    assert_output_contains "Addresses:"
     assert_output_contains "Quotes:"
 }
 
@@ -116,7 +116,7 @@ setup() {
     run bash "$LIB" sample
     assert_success
     assert_output_contains "Cheese flair"
-    assert_output_contains "Address:"
+    assert_output_contains "Addresses:"
 }
 
 @test "CLI: name subcommand defaults to weighted and is non-empty" {
@@ -186,13 +186,53 @@ setup() {
     [[ "$distinct_count" -eq 3 ]]
 }
 
-@test "cheese_sample emits exactly three quote bullets" {
+@test "cheese_names 3 returns three distinct lines" {
+    # shellcheck source=/dev/null
+    source "$LIB"
+    for _ in 1 2 3 4 5; do
+        local names line_count distinct_count
+        names="$(cheese_names 3)"
+        line_count="$(printf '%s\n' "$names" | wc -l | tr -d ' ')"
+        [[ "$line_count" -eq 3 ]]
+        distinct_count="$(printf '%s\n' "$names" | sort -u | wc -l | tr -d ' ')"
+        [[ "$distinct_count" -eq 3 ]]
+    done
+}
+
+@test "cheese_names preserves Cheese Lord weight (>=40% of slots across many draws)" {
+    # shellcheck source=/dev/null
+    source "$LIB"
+    local total_slots=0 lord_slots=0
+    for _ in $(seq 1 50); do
+        while IFS= read -r line; do
+            total_slots=$((total_slots + 1))
+            [[ "$line" == "Cheese Lord" ]] && lord_slots=$((lord_slots + 1))
+        done < <(cheese_names 3)
+    done
+    # 50 calls × 3 slots = 150 total. With ~50% weight and dedup pressure
+    # Cheese Lord still hits roughly half the picks. Allow 30-90% range.
+    [[ "$total_slots" -eq 150 ]]
+    [[ "$lord_slots" -ge 45 ]]
+    [[ "$lord_slots" -le 135 ]]
+}
+
+@test "cheese_sample emits three address bullets and three quote bullets" {
     # shellcheck source=/dev/null
     source "$LIB"
     local sample bullets
     sample="$(cheese_sample)"
     bullets="$(printf '%s\n' "$sample" | grep -c '^  - ')"
-    [[ "$bullets" -eq 3 ]]
+    [[ "$bullets" -eq 6 ]]
+}
+
+@test "CLI: names subcommand defaults to 3 distinct draws" {
+    run bash "$LIB" names
+    assert_success
+    local line_count distinct_count
+    line_count="$(printf '%s\n' "$output" | wc -l | tr -d ' ')"
+    [[ "$line_count" -eq 3 ]]
+    distinct_count="$(printf '%s\n' "$output" | sort -u | wc -l | tr -d ' ')"
+    [[ "$distinct_count" -eq 3 ]]
 }
 
 @test "CLI: name curated subcommand returns a curated entry" {

@@ -9,13 +9,14 @@
 #   ~50% Cheese Lord  ~25% Big hitters  ~25% full bank (curated + generated)
 #
 # CLI:
-#   bash cheese-flair.sh sample                 # name + 3 quotes (hook output)
+#   bash cheese-flair.sh sample                 # 3 names + 3 quotes (hook output)
 #   bash cheese-flair.sh name [mode]            # mode = weighted|curated|generated|mixed|big-hitter
-#   bash cheese-flair.sh quote [count]          # count defaults to 1
+#   bash cheese-flair.sh names [count]          # count distinct weighted draws
+#   bash cheese-flair.sh quote [count]          # count distinct quote draws
 #
-# Sourceable: `source cheese-flair.sh` exposes cheese_name, cheese_quote,
-# cheese_quotes, cheese_sample, cheese_curated_name, cheese_generate_name,
-# cheese_big_hitter.
+# Sourceable: `source cheese-flair.sh` exposes cheese_name, cheese_names,
+# cheese_quote, cheese_quotes, cheese_sample, cheese_curated_name,
+# cheese_generate_name, cheese_big_hitter.
 
 set -uo pipefail
 
@@ -144,9 +145,30 @@ cheese_quote() {
     cheese_quotes 1
 }
 
+# Emit N distinct weighted name draws via rejection sampling.
+# With ~50% Cheese Lord weight, getting 3 distinct names averages ~5-6
+# attempts, well under the 50-attempt cap.
+cheese_names() {
+    local count="${1:-1}"
+    local picked=()
+    local name attempts=0
+    local NL=$'\n'
+    local seen="$NL"
+    while (( ${#picked[@]} < count && attempts < 50 )); do
+        attempts=$((attempts + 1))
+        name="$(cheese_name)"
+        if [[ "$seen" != *"${NL}${name}${NL}"* ]]; then
+            picked+=("$name")
+            seen="${seen}${name}${NL}"
+        fi
+    done
+    printf '%s\n' "${picked[@]+"${picked[@]}"}"
+}
+
 cheese_sample() {
     printf '## Cheese flair (rotating each session)\n\n'
-    printf -- '- Address: %s\n' "$(cheese_name)"
+    printf -- '- Addresses:\n'
+    cheese_names 3 | sed 's/^/  - /'
     printf -- '- Quotes:\n'
     cheese_quotes 3 | sed 's/^/  - /'
 }
@@ -156,10 +178,14 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     case "${1:-sample}" in
         sample) cheese_sample ;;
         name)   cheese_name "${2:-weighted}" ;;
+        names)  cheese_names "${2:-3}" ;;
         quote)  cheese_quotes "${2:-1}" ;;
         *)
             cat >&2 <<'USAGE'
-Usage: cheese-flair {sample | name [weighted|curated|generated|mixed|big-hitter] | quote [count]}
+Usage: cheese-flair {sample
+                   | name  [weighted|curated|generated|mixed|big-hitter]
+                   | names [count]
+                   | quote [count]}
 USAGE
             exit 2
             ;;
