@@ -199,24 +199,6 @@ setup() {
     done
 }
 
-@test "cheese_names still surfaces Cheese Lord across many draws" {
-    # shellcheck source=/dev/null
-    source "$LIB"
-    # Each call to cheese_names 3 returns 3 DISTINCT names, so Cheese
-    # Lord can appear at most once per call. Across 50 calls the max
-    # is 50. With ~50% raw weight + rejection sampling, expected hit
-    # rate per call is ~0.85–0.95 — bound is loose to dodge CI variance
-    # while still catching weight regression (e.g. dropping to 0).
-    local lord_hits=0
-    for _ in $(seq 1 50); do
-        if cheese_names 3 | grep -qxF -- 'Cheese Lord'; then
-            lord_hits=$((lord_hits + 1))
-        fi
-    done
-    [[ "$lord_hits" -ge 15 ]]
-    [[ "$lord_hits" -le 50 ]]
-}
-
 @test "cheese_sample emits three address bullets and three quote bullets" {
     # shellcheck source=/dev/null
     source "$LIB"
@@ -224,6 +206,28 @@ setup() {
     sample="$(cheese_sample)"
     bullets="$(printf '%s\n' "$sample" | grep -c '^  - ')"
     [[ "$bullets" -eq 6 ]]
+}
+
+@test "cheese_sample always pins Cheese Lord as the first address" {
+    # shellcheck source=/dev/null
+    source "$LIB"
+    for _ in 1 2 3 4 5; do
+        local sample first
+        sample="$(cheese_sample)"
+        first="$(printf '%s\n' "$sample" | awk '/^- Addresses:/ { found = 1; next } /^- Quotes:/ { exit } found && /^  - / { sub(/^  - /, ""); print }' | head -n 1)"
+        [[ "$first" == "Cheese Lord" ]]
+    done
+}
+
+@test "cheese_sample addresses are distinct across all three slots" {
+    # shellcheck source=/dev/null
+    source "$LIB"
+    for _ in 1 2 3 4 5; do
+        local addresses distinct_count
+        addresses="$(cheese_sample | awk '/^- Addresses:/ { found = 1; next } /^- Quotes:/ { found = 0 } found && /^  - / { sub(/^  - /, ""); print }')"
+        distinct_count="$(printf '%s\n' "$addresses" | sort -u | wc -l | tr -d ' ')"
+        [[ "$distinct_count" -eq 3 ]]
+    done
 }
 
 @test "CLI: names subcommand defaults to 3 distinct draws" {

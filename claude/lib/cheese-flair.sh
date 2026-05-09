@@ -165,10 +165,34 @@ cheese_names() {
     printf '%s\n' "${picked[@]+"${picked[@]}"}"
 }
 
+# Pick a name for sample slots 2-3: a mixed pick that isn't "Cheese
+# Lord" (slot 1 is pinned). Probability of a mixed pick returning
+# Cheese Lord is ~1% (1/25 of the 50% curated path), so 5 retries is
+# overkill but cheap.
+_cheese_variety_pick() {
+    local pick
+    for _ in 1 2 3 4 5; do
+        pick="$(_cheese_mixed_pick)"
+        if [[ "$pick" != "Cheese Lord" ]]; then
+            printf '%s\n' "$pick"
+            return
+        fi
+    done
+    cheese_generate_name
+}
+
 cheese_sample() {
     printf '## Cheese flair (rotating each session)\n\n'
     printf -- '- Addresses:\n'
-    cheese_names 3 | sed 's/^/  - /'
+    printf -- '  - %s\n' 'Cheese Lord'
+    local pick1 pick2 attempts=0
+    pick1="$(_cheese_variety_pick)"
+    pick2="$(_cheese_variety_pick)"
+    while [[ "$pick2" == "$pick1" ]] && (( attempts < 20 )); do
+        pick2="$(_cheese_variety_pick)"
+        attempts=$((attempts + 1))
+    done
+    printf -- '  - %s\n  - %s\n' "$pick1" "$pick2"
     printf -- '- Quotes:\n'
     cheese_quotes 3 | sed 's/^/  - /'
 }
