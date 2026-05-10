@@ -21,7 +21,7 @@ ROLLBACK_LOG="${DOTFILES_STATE_DIR}/rollback.log"
 # this file may override the location via SYNC_SCRIPT.
 _sync_script_path="${SYNC_SCRIPT:-${BASH_SOURCE[0]:-}}"
 if [[ -n "$_sync_script_path" ]]; then
-    _sync_script_dir="$(cd "$(dirname "$_sync_script_path")" && pwd)"
+    _sync_script_dir="$(cd "${_sync_script_path%/*}" && pwd)"
     # shellcheck source=.sync-lib.sh
     [[ -f "$_sync_script_dir/.sync-lib.sh" ]] && source "$_sync_script_dir/.sync-lib.sh"
     unset _sync_script_dir
@@ -176,7 +176,7 @@ rollback() {
 
     # Restore backed up files
     for file in "${backup_path}"/*; do
-        file=$(basename "$file")
+        file="${file##*/}"
         if [[ "${file}" != "manifest" && "${file}" != "metadata.json" && "${file}" != "manifest.backup" ]]; then
             log_info "Restoring ${file}"
             cp -r "${backup_path}/${file}" "${HOME}/" 2>/dev/null || true
@@ -282,7 +282,7 @@ clean_backups() {
         log_info "Deleting $delete_count old backup(s), keeping $keep most recent..."
         for b in "${to_delete[@]}"; do
             local name
-            name=$(basename "$b")
+            name="${b##*/}"
             rm -rf "$b"
             log_info "Deleted $name"
         done
