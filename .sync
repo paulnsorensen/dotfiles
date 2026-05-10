@@ -63,7 +63,7 @@ for path in "$dir"/*; do
     mv "${HOME}/.$file" "$olddir"
   fi
 
-  if [[ -d "$dir/$file" ]] && [[ -f "$dir/$file/.sync" ]]; then
+  if [[ -d "$dir/$file" && -f "$dir/$file/.sync" ]]; then
     echo "Running .sync for $file."
     bash "$dir/$file/.sync"
   else

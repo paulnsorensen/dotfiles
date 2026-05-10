@@ -85,7 +85,7 @@ sync_entry() {
 
     # Directories with .sync scripts manage their own setup (e.g. claude/.sync
     # symlinks items INTO ~/.claude without replacing the whole directory)
-    if [[ -d "$dir/$file" ]] && [[ -f "$dir/$file/.sync" ]]; then
+    if [[ -d "$dir/$file" && -f "$dir/$file/.sync" ]]; then
         log_info "Running .sync for $file."
         bash "$dir/$file/.sync" || log_warning "sync for $file failed (non-fatal)"
         return 0

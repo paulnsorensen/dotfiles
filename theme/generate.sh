@@ -92,7 +92,7 @@ hex_to_256() {
 
   # Grayscale ramp (232-255)
   local i cv
-  for i in $(seq 0 23); do
+  for i in {0..23}; do
     cv=$(( 8 + 10 * i ))
     d=$(( (r-cv)*(r-cv) + (g-cv)*(g-cv) + (b-cv)*(b-cv) ))
     if [[ $d -lt $best_dist ]]; then
