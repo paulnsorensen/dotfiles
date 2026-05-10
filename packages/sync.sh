@@ -391,7 +391,7 @@ sync_apt() {
         done <<< "$(get_platform_pkgs "--dev")"
     fi
 
-    if [[ ${#missing[@]} -gt 0 ]]; then
+    if ((${#missing[@]})); then
         echo ""
         log_warning "Missing packages: ${missing[*]}"
         echo "  sudo apt-get install -y ${missing[*]}"
@@ -422,7 +422,7 @@ sync_rustup_proxies
 sync_npm
 sync_uv
 
-if [[ ${#FAILED[@]} -gt 0 ]]; then
+if ((${#FAILED[@]})); then
     echo ""
     log_error "failed to install ${#FAILED[@]} package(s): ${FAILED[*]}"
     log_warning "cache NOT saved due to install failures"

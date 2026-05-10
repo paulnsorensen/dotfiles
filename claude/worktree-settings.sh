@@ -61,7 +61,7 @@ locate_plugin_mcp() {
     if [[ ${nullglob_was_set} -eq 0 ]]; then
         shopt -u nullglob
     fi
-    if [[ ${#candidates[@]} -gt 0 ]]; then
+    if ((${#candidates[@]})); then
         echo "${candidates[0]}"
     fi
 }

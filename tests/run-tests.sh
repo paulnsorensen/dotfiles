@@ -31,7 +31,7 @@ VERBOSE=false
 SPECIFIC_TEST=""
 WATCH=false
 
-while [[ $# -gt 0 ]]; do
+while (($#)); do
     case $1 in
         -v|--verbose)
             VERBOSE=true
