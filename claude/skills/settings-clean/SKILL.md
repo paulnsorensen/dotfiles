@@ -39,30 +39,6 @@ These entries are bugs or nonsense. They never match real commands.
 | `Bash(for *)`, `Bash(if *)`, `Bash(while *)` | Shell keywords captured mid-compound-command |
 | Exact duplicate of another entry in the same file | Redundant |
 
-### HOOK-BLOCKED — permission is pointless because a hook blocks execution
-
-If PreToolUse hooks exist, some Bash commands are blocked regardless of permissions. A permission entry for a blocked command just skips the user prompt — only for the hook to reject it anyway.
-
-**From bash-guard.js:**
-
-| Hook block | Matching allow entries | Hook redirects to |
-|---|---|---|
-| Legacy: `grep`, `egrep`, `fgrep` | `Bash(grep:*)` etc. | Grep tool, `/scout` |
-| Legacy: `sed` | `Bash(sed:*)` | `cheese-flow:cheez-write`, Edit |
-| Legacy: `awk` | `Bash(awk:*)` | `cheese-flow:cheez-write`, Edit |
-| Legacy: `find` | `Bash(find:*)`, specific find commands | Glob, `/scout (fd)` |
-| Install: `npm install` | `Bash(npm install:*)` | per-use approval |
-| Install: `pnpm add/install` | `Bash(pnpm add:*)`, `Bash(pnpm install:*)` | per-use approval |
-| Install: `yarn add` | `Bash(yarn add:*)` | per-use approval |
-| Install: `pip install` | `Bash(pip install:*)` | per-use approval |
-| Install: `cargo add` | `Bash(cargo add:*)` | per-use approval |
-| Install: `go get` | `Bash(go get:*)` | per-use approval |
-| Inline tests: `python3 -c` + import/assert | subset of `Bash(python3 -c:*)` | `/test-sandbox` |
-| Dep cache grep | entries with `.cargo/registry`, `node_modules/` etc. | `/lookup`, `/fetch` |
-| Heuristic: `cd && git` | `Bash(cd:*)` (already JUNK) | `/wt-git` |
-
-Only flag entries where the hook would **always** block them. If a permission is broader than the hook pattern (e.g., `Bash(python3:*)` covers both blocked test patterns AND legitimate scripts), KEEP the permission.
-
 ### COVERED — remove if already handled
 
 An entry is "covered" when a broader permission already exists, either in global settings or elsewhere in the same local file.

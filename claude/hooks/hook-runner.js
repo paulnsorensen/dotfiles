@@ -3,7 +3,7 @@
 // module.exports { hooks: [{ matcher, handler }] } format.
 //
 // Usage in settings.json:
-//   "command": "node hook-runner.js bash-guard.js"
+//   "command": "node hook-runner.js write-guard.js"
 //
 // Protocol: stdin = JSON { tool_name, tool_input, ... }
 //           stdout = JSON { hookSpecificOutput: { permissionDecision, ... } }

@@ -150,7 +150,6 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 | Hook | Tool match | Purpose |
 |------|-----------|---------|
-| `bash-guard.js` | _(disabled)_ | Patterns kept in tree for reference; not registered in settings |
 | `write-guard.js` | Edit, Write | Blocks placeholder/lazy code and inline test snippets |
 | `worktree-guard.js` | _(disabled)_ | File kept in tree for reference; not registered in settings |
 | `phantom-file-check.js` | Read | Prevents reading non-existent files (anti-hallucination) |
