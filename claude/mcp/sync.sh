@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 REGISTRY_FILE="$SCRIPT_DIR/registry.yaml"
 
 # shellcheck source=../lib/sync-common.sh

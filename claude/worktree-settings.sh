@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-DOTFILES="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
+DOTFILES="${1:-$(cd "${0%/*}/.." && pwd)}"
 SKILLS_DIR="${DOTFILES}/claude/skills"
 MCP_REGISTRY="${DOTFILES}/claude/mcp/registry.yaml"
 PLUGIN_REGISTRY="${DOTFILES}/claude/plugins/registry.yaml"

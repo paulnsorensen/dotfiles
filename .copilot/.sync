@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script_dir="$(cd "${BASH_SOURCE%/*}" && pwd)"
 dotfiles_dir="$(cd "$script_dir/.." && pwd)"
 source_config="$script_dir/mcp-config.json"
 target_dir="$HOME/.copilot"

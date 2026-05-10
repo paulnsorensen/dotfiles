@@ -14,7 +14,7 @@
 #   gen-profile-mcp.sh <profile-name> > mcp.json
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 DOTFILES_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REGISTRY="$DOTFILES_DIR/claude/mcp/registry.yaml"
 

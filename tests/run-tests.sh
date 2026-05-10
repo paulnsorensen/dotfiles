@@ -12,7 +12,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Get script directory
-TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+TESTS_DIR="$(cd "${0%/*}" && pwd)"
 cd "$TESTS_DIR"
 
 # Check if bats is installed
