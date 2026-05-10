@@ -3,7 +3,7 @@
 set -euo pipefail
 
 CLAUDE_DIR="$HOME/.claude"
-SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 
 # Create ~/.claude if it doesn't exist
 mkdir -p "$CLAUDE_DIR"
@@ -87,7 +87,7 @@ sync_vaudeville_cache() {
   local vaud_ver vaud_cache
   vaud_ver=$(jq -r '.version // "0.1.0"' "$plugin_json")
   vaud_cache="$HOME/.claude/plugins/cache/local/vaudeville/$vaud_ver"
-  mkdir -p "$(dirname "$vaud_cache")"
+  mkdir -p "${vaud_cache%/*}"
 
   if [[ ! -L "$vaud_cache" ]] || [[ "$(readlink "$vaud_cache")" != "$HOME/Dev/vaudeville" ]]; then
     rm -rf "$vaud_cache"
@@ -98,9 +98,9 @@ sync_vaudeville_cache() {
   local old
   for old in "$HOME/.claude/plugins/cache/local/vaudeville"/*; do
     [[ -e "$old" ]] || continue
-    [[ "$(basename "$old")" == "$vaud_ver" ]] && continue
+    [[ "${old##*/}" == "$vaud_ver" ]] && continue
     rm -rf "$old"
-    echo "  Pruned stale vaudeville cache: $(basename "$old")"
+    echo "  Pruned stale vaudeville cache: ${old##*/}"
   done
 }
 

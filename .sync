@@ -9,7 +9,7 @@
 
 ########## Variables
 
-dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+dir="$(cd "${BASH_SOURCE%/*}" && pwd)"
 readonly dir
 source "${dir}/.vars"
 
@@ -53,7 +53,7 @@ echo "...done"
 # move any existing dotfiles in homedir to dotfiles_old directory, then create
 # symlinks
 for path in "$dir"/*; do
-  file=$(basename "$path")
+  file=${path##*/}
   if [[ -h "${HOME}/.$file" ]]; then
     echo "Removing old link to $file"
     rm "${HOME}/.$file"

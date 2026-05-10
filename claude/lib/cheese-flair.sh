@@ -177,7 +177,7 @@ cheese_names() {
 # overkill but cheap.
 _cheese_variety_pick() {
     local pick
-    for _ in 1 2 3 4 5; do
+    for _ in {1..5}; do
         pick="$(_cheese_mixed_pick)"
         if [[ "$pick" != "Cheese Lord" ]]; then
             printf '%s\n' "$pick"

@@ -7,8 +7,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(dirname "$SCRIPT_DIR")"
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+REPO_DIR="${SCRIPT_DIR%/*}"
 PACKAGES_FILE="${PACKAGES_FILE:-$REPO_DIR/packages.yaml}"
 CACHE_DIR="${CACHE_DIR:-${HOME}/.local/state/dotfiles}"
 CACHE_FILE="${CACHE_FILE:-$CACHE_DIR/packages.hash}"

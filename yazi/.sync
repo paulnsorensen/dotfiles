@@ -3,9 +3,9 @@
 set -euo pipefail
 
 DEST="$HOME/.config/yazi"
-SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 
-mkdir -p "$(dirname "$DEST")"
+mkdir -p "${DEST%/*}"
 
 if [[ -L "$DEST" ]]; then
     rm "$DEST"

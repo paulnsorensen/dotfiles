@@ -4,8 +4,8 @@
 # Targets: zsh/colors.zsh, vimrc highlights, iterm2 plist, bin/colors
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(dirname "$SCRIPT_DIR")"
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+REPO_DIR="${SCRIPT_DIR%/*}"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -75,11 +75,11 @@ hex_to_256() {
 
   # 6x6x6 color cube (indices 16-231)
   local ri gi bi cr cg cb d
-  for ri in 0 1 2 3 4 5; do
+  for ri in {0..5}; do
     if [[ $ri -eq 0 ]]; then cr=0; else cr=$(( 55 + 40 * ri )); fi
-    for gi in 0 1 2 3 4 5; do
+    for gi in {0..5}; do
       if [[ $gi -eq 0 ]]; then cg=0; else cg=$(( 55 + 40 * gi )); fi
-      for bi in 0 1 2 3 4 5; do
+      for bi in {0..5}; do
         if [[ $bi -eq 0 ]]; then cb=0; else cb=$(( 55 + 40 * bi )); fi
         d=$(( (r-cr)*(r-cr) + (g-cg)*(g-cg) + (b-cb)*(b-cb) ))
         if [[ $d -lt $best_dist ]]; then
