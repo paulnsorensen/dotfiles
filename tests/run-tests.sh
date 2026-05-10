@@ -83,7 +83,7 @@ run_tests() {
         if [[ -f "$file" ]]; then
             local count
             count=$(grep -c "^@test" "$file" || true)
-            total_tests=$((total_tests + count))
+            ((total_tests += count))
         fi
     done
 
