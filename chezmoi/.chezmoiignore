@@ -1,0 +1,4 @@
+# chezmoi only manages the claude/skills tree right now. Anything that lands
+# in the source dir but isn't a run_onchange_install-* script is ignored so
+# stray files cannot trigger a sync.
+README*

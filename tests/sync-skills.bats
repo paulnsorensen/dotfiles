@@ -1,20 +1,17 @@
 #!/usr/bin/env bats
 #
-# Tests for claude/lib/skills-sync.sh: sync_skills_per_subdir.
+# Tests for skills-install/install-local.sh.
 #
-# The function symlinks each subdirectory of <source_dir> into <target_dir>:
-#   - migrates a legacy directory-symlink at <target_dir> to a real dir
-#   - preserves real directories already present (gh-installed skills)
-#   - cleans up stale symlinks pointing at skills no longer in source
-#
-# We source the lib directly (no top-level side effects) and exercise it
-# against scratch directories under $TEST_HOME.
+# The installer copies each subdirectory of <source_dir> into <target_dir>
+# as real files (not symlinks), so gh-installed skills can coexist alongside
+# dotfiles-owned ones. Ownership is tracked via <target_dir>/.dotfiles-managed
+# so the installer never deletes a skill it didn't put there.
 
 # shellcheck disable=SC1090,SC2317
 
 load test_helper
 
-SKILLS_SYNC_LIB="$REAL_DOTFILES_DIR/claude/lib/skills-sync.sh"
+INSTALL_SCRIPT="$REAL_DOTFILES_DIR/skills-install/install-local.sh"
 
 setup() {
     setup_test_env
@@ -22,190 +19,151 @@ setup() {
     export SRC="$TEST_HOME/dotfiles/skills"
     export DST="$TEST_HOME/.claude/skills"
     mkdir -p "$SRC" "$(dirname "$DST")"
-
-    # shellcheck source=/dev/null
-    source "$SKILLS_SYNC_LIB"
 }
 
 teardown() { teardown_test_env; }
 
-# Make a fake skill directory under $SRC.
 make_source_skill() {
     local name="$1"
     mkdir -p "$SRC/$name"
     printf '# %s\n' "$name" > "$SRC/$name/SKILL.md"
 }
 
-# ─── happy path ────────────────────────────────────────────────────────
-
-@test "sync_skills_per_subdir: missing source dir is a no-op (returns 0)" {
+@test "install-local: missing source dir exits non-zero" {
     rm -rf "$SRC"
-    [[ ! -d "$SRC" ]]
-
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-    [[ ! -e "$DST" ]]
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 1 ]]
 }
 
-@test "sync_skills_per_subdir: empty source creates target dir but no symlinks" {
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
+@test "install-local: wrong arg count exits 2" {
+    run "$INSTALL_SCRIPT" "$SRC"
+    [[ "$status" -eq 2 ]]
+}
+
+@test "install-local: empty source creates target dir + empty manifest" {
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
     [[ -d "$DST" ]]
-    [[ ! -L "$DST" ]]
-
-    # No entries inside
-    run bash -c "ls -A '$DST' | wc -l | tr -d ' '"
-    assert_success
-    [[ "$output" == "0" ]]
+    [[ -f "$DST/.dotfiles-managed" ]]
+    [[ ! -s "$DST/.dotfiles-managed" ]]
 }
 
-@test "sync_skills_per_subdir: each subdir of source becomes a symlink in target" {
+@test "install-local: each source skill becomes a real directory in target" {
     make_source_skill commit
-    make_source_skill de-slop
     make_source_skill diff
 
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
 
-    for name in commit de-slop diff; do
-        assert_symlink "$DST/$name" "$SRC/$name"
-        # Symlink resolves to a readable file
-        [[ -f "$DST/$name/SKILL.md" ]]
-    done
+    [[ -d "$DST/commit" && ! -L "$DST/commit" ]]
+    [[ -d "$DST/diff" && ! -L "$DST/diff" ]]
+    [[ -f "$DST/commit/SKILL.md" ]]
+    grep -Fxq commit "$DST/.dotfiles-managed"
+    grep -Fxq diff   "$DST/.dotfiles-managed"
 }
 
-@test "sync_skills_per_subdir: ignores plain files inside source (only symlinks dirs)" {
+@test "install-local: copies real files (target survives source deletion)" {
     make_source_skill commit
-    printf 'README\n' > "$SRC/README.md"
+    "$INSTALL_SCRIPT" "$SRC" "$DST"
 
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
+    rm -rf "$SRC/commit"
+    [[ -f "$DST/commit/SKILL.md" ]]
+    [[ "$(cat "$DST/commit/SKILL.md")" == "# commit" ]]
+}
 
-    assert_symlink "$DST/commit" "$SRC/commit"
+@test "install-local: idempotent — re-running refreshes content without churn" {
+    make_source_skill commit
+    "$INSTALL_SCRIPT" "$SRC" "$DST"
+
+    printf '# updated\n' > "$SRC/commit/SKILL.md"
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+    [[ "$(cat "$DST/commit/SKILL.md")" == "# updated" ]]
+}
+
+@test "install-local: unmanaged real directory at target is preserved with WARN" {
+    mkdir -p "$DST"
+    mkdir -p "$DST/gh-installed"
+    printf 'external\n' > "$DST/gh-installed/SKILL.md"
+    make_source_skill commit
+
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+    [[ -f "$DST/gh-installed/SKILL.md" ]]
+    [[ "$(cat "$DST/gh-installed/SKILL.md")" == "external" ]]
+    [[ -d "$DST/commit" ]]
+}
+
+@test "install-local: name collision (gh-installed skill named like dotfiles skill) is skipped" {
+    mkdir -p "$DST"
+    mkdir -p "$DST/commit"
+    printf 'external commit\n' > "$DST/commit/SKILL.md"
+
+    make_source_skill commit
+
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+    [[ "${output}" == *"WARN"*"unmanaged"* ]]
+    [[ "$(cat "$DST/commit/SKILL.md")" == "external commit" ]]
+}
+
+@test "install-local: skill dropped from source is removed from target" {
+    make_source_skill commit
+    make_source_skill diff
+    "$INSTALL_SCRIPT" "$SRC" "$DST"
+
+    rm -rf "$SRC/diff"
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+
+    [[ "$status" -eq 0 ]]
+    [[ -d "$DST/commit" ]]
+    [[ ! -e "$DST/diff" ]]
+    grep -Fxq commit "$DST/.dotfiles-managed"
+    ! grep -Fxq diff "$DST/.dotfiles-managed"
+}
+
+@test "install-local: dangling symlinks at target are cleaned up" {
+    mkdir -p "$DST"
+    ln -s "$SRC/nonexistent" "$DST/stale"
+    make_source_skill commit
+
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+    [[ ! -e "$DST/stale" && ! -L "$DST/stale" ]]
+}
+
+@test "install-local: legacy per-skill symlink at target is replaced by a real copy" {
+    make_source_skill commit
+    mkdir -p "$DST"
+    ln -s "$SRC/commit" "$DST/commit"
+
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+
+    [[ -d "$DST/commit" && ! -L "$DST/commit" ]]
+    [[ "$(cat "$DST/commit/SKILL.md")" == "# commit" ]]
+
+    rm -rf "$SRC/commit"
+    [[ -f "$DST/commit/SKILL.md" ]]
+}
+
+@test "install-local: ignores plain files in source (only directories are skills)" {
+    make_source_skill commit
+    printf 'not a skill\n' > "$SRC/README.md"
+
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+    [[ -d "$DST/commit" ]]
     [[ ! -e "$DST/README.md" ]]
 }
 
-# ─── idempotence ───────────────────────────────────────────────────────
+@test "install-local: nested files inside a skill are preserved" {
+    mkdir -p "$SRC/lint/references"
+    printf '# lint\n' > "$SRC/lint/SKILL.md"
+    printf 'rust\n' > "$SRC/lint/references/rust.md"
 
-@test "sync_skills_per_subdir: re-running is idempotent (refreshes existing symlinks)" {
-    make_source_skill commit
-
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-    assert_symlink "$DST/commit" "$SRC/commit"
-
-    # Run again. Symlink should still point to the same target, no error.
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-    assert_symlink "$DST/commit" "$SRC/commit"
-}
-
-# ─── coexistence with gh-installed real directories ────────────────────
-
-@test "sync_skills_per_subdir: real directory at target name is preserved with WARN" {
-    # Pretend `gh skill install` created a real dir for the same name.
-    make_source_skill age
-    mkdir -p "$DST"
-    mkdir -p "$DST/age"
-    printf 'gh-installed\n' > "$DST/age/marker.txt"
-
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-    assert_output_contains "WARN: $DST/age is a real directory"
-
-    # Real dir untouched, no symlink created
-    [[ -d "$DST/age" ]]
-    [[ ! -L "$DST/age" ]]
-    [[ -f "$DST/age/marker.txt" ]]
-}
-
-@test "sync_skills_per_subdir: real and dotfiles skills coexist alongside each other" {
-    make_source_skill commit
-    make_source_skill diff
-    mkdir -p "$DST/external-installed"
-    printf 'external\n' > "$DST/external-installed/SKILL.md"
-
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-
-    assert_symlink "$DST/commit" "$SRC/commit"
-    assert_symlink "$DST/diff" "$SRC/diff"
-    [[ -d "$DST/external-installed" ]]
-    [[ ! -L "$DST/external-installed" ]]
-    [[ -f "$DST/external-installed/SKILL.md" ]]
-}
-
-# ─── stale symlink cleanup ─────────────────────────────────────────────
-
-@test "sync_skills_per_subdir: removes dangling symlink when skill is deleted from source" {
-    make_source_skill commit
-    make_source_skill diff
-
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-    assert_symlink "$DST/commit" "$SRC/commit"
-    assert_symlink "$DST/diff" "$SRC/diff"
-
-    # Delete one skill from source and re-run
-    rm -rf "$SRC/diff"
-
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-    assert_output_contains "Removed stale skill symlink: diff"
-
-    assert_symlink "$DST/commit" "$SRC/commit"
-    [[ ! -e "$DST/diff" ]]
-    [[ ! -L "$DST/diff" ]]
-}
-
-@test "sync_skills_per_subdir: does not touch non-symlink entries during stale cleanup" {
-    make_source_skill commit
-    mkdir -p "$DST/external-installed"
-    printf 'real\n' > "$DST/external-installed/SKILL.md"
-
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-
-    [[ -d "$DST/external-installed" ]]
-    [[ ! -L "$DST/external-installed" ]]
-    [[ -f "$DST/external-installed/SKILL.md" ]]
-}
-
-# ─── legacy directory-symlink migration ────────────────────────────────
-
-@test "sync_skills_per_subdir: migrates legacy directory symlink to real dir + per-skill symlinks" {
-    # Old layout: ~/.claude/skills was a symlink to dotfiles/claude/skills/.
-    rm -rf "$DST"
-    ln -s "$SRC" "$DST"
-    [[ -L "$DST" ]]
-
-    make_source_skill commit
-    make_source_skill diff
-
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-    assert_output_contains "Migrated $DST from directory symlink to per-skill symlinks"
-
-    # Now a real directory containing per-skill symlinks
-    [[ -d "$DST" ]]
-    [[ ! -L "$DST" ]]
-    assert_symlink "$DST/commit" "$SRC/commit"
-    assert_symlink "$DST/diff" "$SRC/diff"
-}
-
-@test "sync_skills_per_subdir: does not crash when source equals target ancestor (post-migration safety)" {
-    # After migration, target is real and source is unchanged. Sanity check
-    # that running once more from this state stays idempotent.
-    make_source_skill commit
-    rm -rf "$DST"
-    ln -s "$SRC" "$DST"
-
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-    run sync_skills_per_subdir "$SRC" "$DST"
-    assert_success
-
-    [[ -d "$DST" ]]
-    [[ ! -L "$DST" ]]
-    assert_symlink "$DST/commit" "$SRC/commit"
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+    [[ -f "$DST/lint/SKILL.md" ]]
+    [[ -f "$DST/lint/references/rust.md" ]]
 }

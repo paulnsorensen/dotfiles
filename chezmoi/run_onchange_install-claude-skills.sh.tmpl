@@ -1,0 +1,15 @@
+#!/bin/bash
+# run_onchange — re-runs whenever the dotfiles claude/skills tree changes.
+#
+# The skills source-tree hash below is embedded by chezmoi at template render
+# time. chezmoi hashes the *rendered* script; whenever the embedded hash
+# changes, chezmoi reruns this script.
+#
+# Skills tree hash: {{ output "sh" "-c" (printf "cd %q/.. && git ls-files -s claude/skills 2>/dev/null | shasum -a 256 | cut -d' ' -f1 || find %q/../claude/skills -type f -not -name .DS_Store -exec shasum -a 256 {} + 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+DOTFILES_ROOT="{{ .chezmoi.sourceDir }}/.."
+exec "$DOTFILES_ROOT/skills-install/install-local.sh" \
+    "$DOTFILES_ROOT/claude/skills" \
+    "$HOME/.claude/skills"
