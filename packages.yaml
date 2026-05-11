@@ -93,5 +93,6 @@ packages:
   # Install from Git because the crates.io `rtk` collides with the desired package.
   # If an unrelated `rtk` is already present from `cargo install rtk`, remove it first
   # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.
-  - rtk: { source: cargo, git: "https://github.com/rtk-ai/rtk" }
+  # Pin to `master` (stable releases); the default branch `develop` lags behind.
+  - rtk: { source: cargo, git: "https://github.com/rtk-ai/rtk", branch: master }
   - qdrant: { source: cargo, dev: true }

@@ -176,7 +176,7 @@ sync_brew() {
 
 sync_cargo() {
     local cargo_pkgs
-    cargo_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "cargo") | [.key, (.value.git // "")] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    cargo_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "cargo") | [.key, (.value.git // ""), (.value.branch // "")] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$cargo_pkgs" ]] && return 0
 
     if ! command -v cargo &>/dev/null; then
@@ -210,7 +210,7 @@ sync_cargo() {
     installed=$(cargo install --list 2>/dev/null | grep -E '^\S' | cut -d' ' -f1 || true)
     upgrade="${UPGRADE_MODE:-false}"
 
-    while IFS=$'\t' read -r name git_url; do
+    while IFS=$'\t' read -r name git_url branch; do
         [[ -z "$name" ]] && continue
         local already=false
         echo "$installed" | grep -qx "$name" && already=true
@@ -227,10 +227,13 @@ sync_cargo() {
             install_args+=(--force)
         fi
         [[ -n "$git_url" ]] && install_args+=(--git "$git_url")
+        [[ -n "$branch" ]] && install_args+=(--branch "$branch")
         install_args+=("$name")
 
         if [[ -n "$git_url" ]]; then
-            echo "  $action $name from $git_url..."
+            local source_desc="$git_url"
+            [[ -n "$branch" ]] && source_desc="$source_desc#$branch"
+            echo "  $action $name from $source_desc..."
         else
             echo "  $action $name..."
         fi
