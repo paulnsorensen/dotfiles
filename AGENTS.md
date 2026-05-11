@@ -284,6 +284,17 @@ Tiling window manager + hotkey daemon for macOS, installed from the `koekeishiya
 - **First-time setup**: grant Accessibility (and optionally Screen Recording) to `yabai` and `skhd` in System Settings → Privacy & Security after `dots sync`.
 - **SIP**: opacity, removing title bars, and cross-space window movement require SIP partially disabled. The basic tile/focus/swap loop works with SIP on.
 
+### Code Review Graph Daemon (macOS)
+
+`code-review-graph` (uv tool) ships a persistent knowledge-graph daemon that watches per-repo working trees and feeds the matching MCP server. Boot-time start + repo discovery are handled by `code-review-graph/.sync`:
+
+- **launchd agent**: `code-review-graph/com.coderevgraph.daemon.plist.tmpl` is rendered (substituting `__HOME__` / `__CRG_BIN__`) into `~/Library/LaunchAgents/com.coderevgraph.daemon.plist`. `RunAtLoad=true`, `KeepAlive` on crash. The plist sets `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` — without it the daemon's per-repo watcher forks crash on the macOS CoreFoundation fork-safety check.
+- **Repo discovery**: `discover_dev_repos` (in `sync-lib.sh`) walks `~/Dev/*` and emits `<path>\t<alias>` for every git repo (skips symlinks, dotfiles, non-git dirs). `diff_repo_sets` produces ADD/REMOVE deltas against `code-review-graph repos` output; `.sync` calls `register`/`unregister` + `daemon add`/`remove` to reconcile.
+- **Bouncing**: the launchd agent is restarted only when either the plist content or the watch list changes (via the per-repo CLI calls). Restart sequence is `daemon stop` → `pkill` orphan watchers → `launchctl bootout` → `cp` plist → `launchctl bootstrap`. Reconciliation always runs before the bounce so the daemon reads the final config at startup.
+- **Logs**: launchd-managed stdout/stderr at `~/.code-review-graph/logs/launchd.{out,err}.log`; per-watcher logs in the same dir.
+- **Gotcha**: `code-review-graph daemon status` looks at `~/.code-review-graph/daemon.pid`, which `--foreground` mode does NOT write. So `daemon status` will report "not running" even when launchd has the daemon up — use `launchctl print gui/$UID/com.coderevgraph.daemon` or `/bin/ps` to verify.
+- **Override `~/Dev` root**: set `CRG_DEV_ROOT=/some/other/path` before running `.sync` to point at a different repo root.
+
 ## Pre-Commit Hooks (prek)
 
 Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run automatically on commit and include: trailing whitespace, secret detection, shellcheck, large file checks, and a claude config sync check. Run `prek install` after cloning to set up hooks.

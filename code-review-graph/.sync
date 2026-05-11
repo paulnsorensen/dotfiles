@@ -1,0 +1,90 @@
+#!/bin/bash
+# Install launchd agent for code-review-graph daemon and sync
+# ~/Dev/* git repos into its watch list.
+#
+# Skipped on non-macOS. Idempotent: re-running reconciles the watch list
+# (add new repos, remove ones that have disappeared) and reloads the
+# launchd agent only when the plist content changes.
+
+set -euo pipefail
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "code-review-graph/.sync: skipping (not macOS)" >&2
+    exit 0
+fi
+
+readonly SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+# shellcheck source=sync-lib.sh
+source "$SCRIPT_DIR/sync-lib.sh"
+
+readonly DEV_ROOT="${CRG_DEV_ROOT:-$HOME/Dev}"
+readonly LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
+readonly PLIST_NAME="com.coderevgraph.daemon.plist"
+readonly PLIST_TARGET="$LAUNCH_AGENTS/$PLIST_NAME"
+readonly PLIST_TEMPLATE="$SCRIPT_DIR/com.coderevgraph.daemon.plist.tmpl"
+
+if ! command -v code-review-graph >/dev/null 2>&1; then
+    echo "code-review-graph/.sync: code-review-graph not installed (run dots sync to install)" >&2
+    exit 0
+fi
+
+mkdir -p "$LAUNCH_AGENTS" "$HOME/.code-review-graph/logs"
+
+tmp_plist="$(mktemp)"
+desired_file="$(mktemp)"
+current_file="$(mktemp)"
+trap 'rm -f "$tmp_plist" "$desired_file" "$current_file"' EXIT
+
+# 1. Reconcile watch list with ~/Dev/* git repos. Done BEFORE bootstrapping
+# the launchd agent so the daemon reads the final config at startup.
+discover_dev_repos "$DEV_ROOT" > "$desired_file"
+# Format: "  <path>  (<alias>)" — strip leading whitespace, convert " (alias)" tail to "\talias"
+code-review-graph repos 2>/dev/null \
+    | sed -E 's/^[[:space:]]+//; s/  \(([^)]+)\)$/\t\1/' \
+    > "$current_file"
+
+added=0
+removed=0
+while IFS=$'\t' read -r op a b; do
+    case "$op" in
+        ADD)
+            if code-review-graph register --alias "$b" "$a" >/dev/null 2>&1; then
+                code-review-graph daemon add --alias "$b" "$a" >/dev/null 2>&1 || true
+                echo "  + $b ($a)"
+                added=$((added + 1))
+            fi
+            ;;
+        REMOVE)
+            code-review-graph daemon remove "$a" >/dev/null 2>&1 || true
+            code-review-graph unregister "$a" >/dev/null 2>&1 || true
+            echo "  - $a"
+            removed=$((removed + 1))
+            ;;
+    esac
+done < <(diff_repo_sets "$desired_file" "$current_file")
+
+# 2. Render plist; only swap in if content differs (avoids unnecessary bounces).
+if ! render_plist "$PLIST_TEMPLATE" "$tmp_plist"; then
+    echo "code-review-graph/.sync: failed to render plist (template or binary missing)" >&2
+    exit 1
+fi
+
+plist_changed=true
+[[ -f "$PLIST_TARGET" ]] && cmp -s "$tmp_plist" "$PLIST_TARGET" && plist_changed=false
+
+# Need a bounce if the plist content changed OR the watch list changed
+# (so the daemon re-reads it). No-op only when nothing's moved.
+if $plist_changed || (( added + removed > 0 )); then
+    # Kill any pre-launchd daemon + orphan watcher processes; ignore failures.
+    code-review-graph daemon stop >/dev/null 2>&1 || true
+    pkill -f 'code-review-graph (daemon start|watch --repo)' 2>/dev/null || true
+    launchctl bootout "gui/$(id -u)/com.coderevgraph.daemon" 2>/dev/null || true
+    cp "$tmp_plist" "$PLIST_TARGET"
+    launchctl bootstrap "gui/$(id -u)" "$PLIST_TARGET"
+    echo "code-review-graph/.sync: launchd agent (re)started"
+else
+    echo "code-review-graph/.sync: launchd agent up-to-date"
+fi
+
+watched=$(wc -l < "$desired_file" | tr -d ' ')
+echo "code-review-graph/.sync: watching $watched repos under $DEV_ROOT (+$added -$removed)"
