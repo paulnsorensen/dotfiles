@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.coderevgraph.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__CRG_BIN__</string>
+        <string>daemon</string>
+        <string>start</string>
+        <string>--foreground</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>__HOME__</string>
+        <key>PATH</key>
+        <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <!-- macOS CoreFoundation kills python multiprocessing forks unless this is set. -->
+        <!-- The daemon spawns one watcher subprocess per repo, so without this every -->
+        <!-- child crashes on the fork-without-exec safety check. -->
+        <key>OBJC_DISABLE_INITIALIZE_FORK_SAFETY</key>
+        <string>YES</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>__HOME__</string>
+    <key>StandardOutPath</key>
+    <string>__HOME__/.code-review-graph/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.code-review-graph/logs/launchd.err.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

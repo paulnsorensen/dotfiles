@@ -12,6 +12,7 @@ lint-shell:
     shellcheck -x -e SC1091 bin/* .sync .sync-with-rollback
     shellcheck -x -e SC1091 -s bash claude/mcp/sync.sh claude/plugins/sync.sh claude/lib/sync-common.sh claude/lib/cheese-flair.sh
     shellcheck -x -e SC1091 -s bash claude/hooks/session-start-cheese-flair.sh
+    shellcheck -x -e SC1091,SC2155 -s bash code-review-graph/.sync code-review-graph/sync-lib.sh
     shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh
     @echo "shellcheck: ok"
 
