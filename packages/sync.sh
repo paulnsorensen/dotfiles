@@ -226,6 +226,11 @@ sync_cargo() {
             action="Upgrading"
             install_args+=(--force)
         fi
+        if [[ -n "$branch" && -z "$git_url" ]]; then
+            log_error "Invalid cargo package config for $name: branch requires git_url"
+            FAILED+=("$name")
+            continue
+        fi
         [[ -n "$git_url" ]] && install_args+=(--git "$git_url")
         [[ -n "$branch" ]] && install_args+=(--branch "$branch")
         install_args+=("$name")
