@@ -1,6 +1,6 @@
 ---
 name: whey-drainer
-description: Runs existing tests and returns only failures and summary counts. Use this agent to validate code without flooding the parent context with verbose test output. Does NOT write tests — use roquefort-wrecker or fromage-press for that.
+description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — call from /cook taste-test, /press, or /cure post-fix to gate the next step on test pass. Does NOT write tests.
 model: haiku
 tools: Bash, Read, Glob, Grep
 skills: [scout]
