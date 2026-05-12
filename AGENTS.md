@@ -244,20 +244,22 @@ A subset of dotfiles is rendered by [chezmoi](https://chezmoi.io/) instead of sy
 - `~/.gitconfig` — `chezmoi/private_dot_gitconfig.tmpl` (templated email, work-only `[url]` redirects)
 - `~/.copilot/mcp-config.json` — `chezmoi/private_dot_copilot/mcp-config.json.tmpl` (env-rendered API keys, fails fast if unset)
 
-**First-init (interactive):** `dots sync` invokes `chezmoi init --source ~/dotfiles/chezmoi` if `~/.config/chezmoi/chezmoi.toml` is missing. The `.chezmoi.toml.tmpl` prompts for: `email`, `work`, `personal`, `dev`, `cheese_flow`, `vaudeville`, `todoist`. Answers persist to `~/.config/chezmoi/chezmoi.toml` and aren't re-prompted.
+`$DOTFILES` below is the absolute path to your clone of this repo (e.g. `~/Dev/dotfiles`).
 
-**Subsequent runs:** `dots sync` calls `chezmoi --source ~/dotfiles/chezmoi apply`. Non-interactive.
+**First-init (interactive):** `dots sync` invokes `chezmoi init --source $DOTFILES/chezmoi` if `~/.config/chezmoi/chezmoi.toml` is missing. The `.chezmoi.toml.tmpl` prompts for: `email`, `work`. Answers persist to `~/.config/chezmoi/chezmoi.toml` and aren't re-prompted.
+
+**Subsequent runs:** `dots sync` calls `chezmoi --source $DOTFILES/chezmoi apply`. Non-interactive.
 
 **Inspect / debug:**
 
 ```bash
-chezmoi --source ~/dotfiles/chezmoi diff              # what would change
-chezmoi --source ~/dotfiles/chezmoi data              # dump rendered template namespace
-chezmoi --source ~/dotfiles/chezmoi execute-template < FILE.tmpl
-chezmoi doctor                                        # health check
+chezmoi --source $DOTFILES/chezmoi diff              # what would change
+chezmoi --source $DOTFILES/chezmoi data              # dump rendered template namespace
+chezmoi --source $DOTFILES/chezmoi execute-template < FILE.tmpl
+chezmoi doctor                                       # health check
 ```
 
-**Re-prompt:** delete `~/.config/chezmoi/chezmoi.toml` and re-run `dots sync` (or `chezmoi init --source ~/dotfiles/chezmoi` directly).
+**Re-prompt:** delete `~/.config/chezmoi/chezmoi.toml` and re-run `dots sync` (or `chezmoi init --source $DOTFILES/chezmoi` directly).
 
 **Adding a file:** drop a templated source under `chezmoi/` using the [chezmoi naming attributes](https://chezmoi.io/reference/source-state-attributes/) (`private_`, `dot_`, `executable_`, `encrypted_`, `.tmpl`). Reference data via `{{ .email }}`, `{{ .work }}`, etc. — see the existing templates for patterns. Add a corresponding test to `tests/chezmoi.bats`.
 
@@ -268,6 +270,9 @@ chezmoi doctor                                        # health check
 1. Never commit plaintext secrets to `chezmoi/`. Use `encrypted_` or `{{ env }}` / `{{ onepasswordRead }}`.
 2. Never edit chezmoi-managed source files via the target path. Use `chezmoi edit ~/.gitconfig` so templating round-trips correctly.
 3. Always `chezmoi --source ~/dotfiles/chezmoi diff` before applying when you've changed templates.
+4. `prompt*` template functions (`promptStringOnce`, `promptBoolOnce`, …) belong **only** in `.chezmoi.toml.tmpl`. A `prompt*` call inside a regular dotfile template re-prompts on every `apply` / `diff` / `status`, which breaks `dots sync`. Pull the value through `[data]` instead.
+
+**File-naming reference.** Prefix order is rigid and depends on the target type — see [chezmoi source-state attributes](https://chezmoi.io/reference/source-state-attributes/) before adding `encrypted_private_dot_…`-style names. Common prefixes: `dot_` (leading `.`), `private_` (mode 0600), `executable_`, `encrypted_`, `exact_` (dirs: delete unmanaged children — handle with care), `create_` (never overwrite), `modify_` (script/template edits existing target).
 
 ## Shell Scripts: Functions Need Tests
 
