@@ -139,7 +139,7 @@ MCPs broken? → `/go`. Agent missing? → `/agents`. LSP down? → `/lsp`.
 
 ## 12 Rules
 
-These rules apply to every task in this project unless explicitly overridden.
+These rules apply to every task across all projects in this environment unless explicitly overridden.
 Bias: caution over speed on non-trivial work. Use judgment on trivial tasks.
 
 ### Rule 1 — Think Before Coding
