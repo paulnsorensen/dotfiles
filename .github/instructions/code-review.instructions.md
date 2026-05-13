@@ -19,13 +19,13 @@ When any `CLAUDE.md` file is modified, check:
 
 - Key Commands section documents all new commands/aliases
 - Architecture section reflects actual directory structure
-- Skill Delegation table matches the skills in `claude/skills/`
+- Skill Delegation table matches the skills in `skills/`
 - No duplicate information between `CLAUDE.md` (project) and `claude/CLAUDE.md` (global)
 - Complexity Budget numbers are consistent across all files
 
 ## Claude Skill Validation
 
-When any `claude/skills/*/SKILL.md` is modified, check:
+When any `skills/*/SKILL.md` is modified, check:
 
 - `allowed-tools` lists only tools the skill actually uses
 - `description` accurately describes when to invoke the skill

@@ -53,7 +53,7 @@ Before auditing, gather empirical data from session logs. This step is
 1. Run ingestion to ensure fresh data:
 
    ```bash
-   python3 ~/Dev/dotfiles/claude/skills/session-analytics/scripts/ingest.py
+   python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py
    ```
 
 2. Spawn **three parallel sub-agents** (all sonnet, read-only):

@@ -32,13 +32,14 @@ This is a personal dotfiles repository for a macOS developer environment. It con
 ```
 dotfiles/
   bin/          CLI tools (dots command)
-  claude/       Claude Code config (agents, commands, hooks, skills, MCP)
+  claude/       Claude Code config (agents, commands, hooks, MCP)
+  skills/       Agent skill sources (synced to ~/.claude/skills via chezmoi)
   zsh/          Modular shell config files (sourced by zshrc)
   .github/      Copilot and workflow config
 ```
 
 - `zsh/` files are sourced in order defined by `zshrc` — ordering matters
-- `claude/skills/` are self-contained — each has its own SKILL.md with allowed-tools
+- `skills/` are self-contained — each has its own SKILL.md with allowed-tools
 - `claude/agents/` reference skills by name in their frontmatter
 - Claude config syncs to `~/.claude/` via `dots sync`
 
