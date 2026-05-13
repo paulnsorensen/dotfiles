@@ -149,6 +149,7 @@ These have become tics. They either hedge, inflate, or substitute a cliché for 
 | surface (as verb) | mention, flag, call out, show |
 | ergonomic / ergonomics | readable, clean, easy to use |
 | guardrails _(abstract)_ | constraints, checks, limits |
+| not my changes / pre-existing _(unverified)_ | cite evidence: base-branch run ID, `git blame`, or commit hash — otherwise fix it |
 
 ## Troubleshooting
 
