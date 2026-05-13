@@ -169,15 +169,15 @@ Strong success criteria let you loop independently.
 
 ### Rule 5 — Use the model only for judgment calls
 
-Use me for: classification, drafting, summarization, extraction.
-Do NOT use me for: routing, retries, deterministic transforms.
+Use me for: classification, drafting, summarization, extraction, and tool/skill selection (which requires reading the situation).
+Do NOT use me for: deterministic transforms, retries, or product/system routing logic where code can decide.
 If code can answer, code answers.
 
 ### Rule 6 — Token budgets are not advisory
 
-Per-task: 4,000 tokens. Per-session: 30,000 tokens.
-If approaching budget, summarize and start fresh.
-Surface the breach. Do not silently overrun.
+Treat context as a finite resource. Push verbose operations (long diffs, large log dumps, full test output) into sub-agents or forked skills.
+If a step is about to balloon context, summarize and start fresh instead of silently overrunning.
+Surface the breach — don't hide it.
 
 ### Rule 7 — Surface conflicts, don't average them
 
