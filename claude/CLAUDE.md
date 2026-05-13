@@ -111,7 +111,7 @@ For project architecture (when a project opts in), see the **Sliced Bread** patt
 
 ## Operational Rules
 
-- **Skill > raw bash**: when a skill exists for the task (search, edit, read, commit, gh, lsp, fetch, worktree), use it. Skill descriptions enumerate the bash equivalents they replace.
+- **Skill > raw bash**: when a skill exists for the task, use it. Skill descriptions enumerate the bash equivalents they replace.
 - **Available CLI tools** — always installed and allowlisted; reach for these instead of inline `python3` scripts:
   - **jq** — JSON. Use `gh --jq` for GitHub output.
   - **yq** — YAML (jq syntax).
@@ -119,13 +119,12 @@ For project architecture (when a project opts in), see the **Sliced Bread** patt
   - **duckdb** — SQL analytics on local data (used by `/session-analytics`).
 - **Agent permission modes**: `acceptEdits` and `bypassPermissions` only suppress the Edit/Write dialog — they do **not** bypass the Bash/MCP allowlist. In sandboxed environments (Conductor, fresh sessions), worktree agents may lack `git push` / `gh pr create` permissions. Pattern: have isolated agents do code work + commit only; return to the orchestrator for push/PR.
 - **Agent nesting**: Claude Code supports 1 level of sub-agent nesting. Orchestrators that need to fan out should be skills (which run inline in the caller's context, so their `Agent()` calls are first-level).
-- **Context pollution**: verbose operations (long git logs, large diffs, full test output) belong in sub-agents or forked skills (`diff`, `gh`, `fetch`), not the main context window.
 
 ## Self-Evaluation
 
 Run `/self-eval` before finishing any response that writes or changes code. It's the source of truth for the anti-pattern checklist (sycophancy, premature completion, dismissing failures, hedging, scope reduction, false confidence, AI slop, weak assertions) and delegates to `/de-slop` and `/tdd-assertions` automatically.
 
-If violations found: fix them, then try stopping again. Use `/diff` to smoke-test staged changes before committing.
+If violations found: fix them, then try stopping again.
 
 ## Banned Phrases
 
@@ -199,9 +198,5 @@ If you genuinely think a convention is harmful, flag it. Don't fork silently.
 "Tests pass" is wrong if any were skipped.
 Never claim green on partial work — lying about completion is the cardinal sin.
 Default to flagging uncertainty, not hiding it.
-
-## Troubleshooting
-
-MCPs broken? → `/go`. Agent missing? → `/agents`. LSP down? → `/lsp`.
 
 @RTK.md
