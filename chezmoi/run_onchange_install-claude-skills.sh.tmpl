@@ -5,7 +5,11 @@
 # time. chezmoi hashes the *rendered* script; whenever the embedded hash
 # changes, chezmoi reruns this script.
 #
-# Skills tree hash: {{ output "sh" "-c" (printf "cd %q/.. && git ls-files -s claude/skills 2>/dev/null | shasum -a 256 | cut -d' ' -f1 || find %q/../claude/skills -type f -not -name .DS_Store -exec shasum -a 256 {} + 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir) }}
+# Hash strategy: walk the working tree (not the git index), sort the file
+# list for determinism, then shasum file contents. Captures unstaged edits
+# the index hash would miss, and produces the same digest across machines.
+#
+# Skills tree hash: {{ output "sh" "-c" (printf "find %q/../claude/skills -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir) }}
 
 set -euo pipefail
 

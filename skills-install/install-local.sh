@@ -78,6 +78,7 @@ for entry in "$target_dir"/*; do
 done
 shopt -u nullglob
 
+managed_names=()
 for name in ${new_names[@]+"${new_names[@]}"}; do
     src="$source_dir/$name"
     dst="$target_dir/$name"
@@ -90,10 +91,11 @@ for name in ${new_names[@]+"${new_names[@]}"}; do
     [[ -L "$dst" ]] && rm -- "$dst"
     [[ -d "$dst" ]] && rm -rf -- "$dst"
     cp -R "$src" "$dst"
+    managed_names+=("$name")
 done
 
-if ((${#new_names[@]})); then
-    printf '%s\n' ${new_names[@]+"${new_names[@]}"} | LC_ALL=C sort > "$manifest"
+if ((${#managed_names[@]})); then
+    printf '%s\n' ${managed_names[@]+"${managed_names[@]}"} | LC_ALL=C sort > "$manifest"
 else
     : > "$manifest"
 fi

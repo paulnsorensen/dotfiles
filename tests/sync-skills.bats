@@ -105,6 +105,28 @@ make_source_skill() {
     [[ "$status" -eq 0 ]]
     [[ "${output}" == *"WARN"*"unmanaged"* ]]
     [[ "$(cat "$DST/commit/SKILL.md")" == "external commit" ]]
+
+    # The skipped name must NOT be recorded as dotfiles-managed — otherwise a
+    # future run with the source skill removed would delete the gh-installed
+    # directory we just preserved.
+    ! grep -Fxq commit "$DST/.dotfiles-managed"
+}
+
+@test "install-local: collision-skipped skill survives source removal" {
+    # Regression test for the manifest bug: even after the source skill is
+    # deleted, the collided external dir must remain because it was never
+    # claimed in the manifest.
+    mkdir -p "$DST/commit"
+    printf 'external commit\n' > "$DST/commit/SKILL.md"
+    make_source_skill commit
+
+    "$INSTALL_SCRIPT" "$SRC" "$DST"
+
+    rm -rf "$SRC/commit"
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+    [[ -f "$DST/commit/SKILL.md" ]]
+    [[ "$(cat "$DST/commit/SKILL.md")" == "external commit" ]]
 }
 
 @test "install-local: skill dropped from source is removed from target" {

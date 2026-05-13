@@ -37,10 +37,13 @@ fi
 # the user's sourceDir override or any other config edit, dots sync still
 # wires everything else.
 if command -v chezmoi &>/dev/null; then
-    if chezmoi apply --force >/dev/null 2>&1; then
+    apply_log=$(mktemp "${TMPDIR:-/tmp}/chezmoi-apply.XXXXXX")
+    trap 'rm -f "$apply_log"' EXIT
+    if chezmoi apply --force >"$apply_log" 2>&1; then
         echo "  chezmoi apply complete"
     else
-        echo "  WARN: chezmoi apply failed (skills may be out of sync)" >&2
+        echo "  WARN: chezmoi apply failed (skills may be out of sync):" >&2
+        sed 's/^/    /' "$apply_log" >&2
     fi
 else
     echo "  Skipping chezmoi apply (chezmoi not installed); skills will not sync"
