@@ -105,6 +105,18 @@ EOF
     fi
 }
 
+@test "chezmoi/run_onchange template guards Phase 2 behind 'gh skill --help'" {
+    # Spec invariant (PR #2 §3): the external installer must skip silently
+    # when gh is missing or `gh skill` is unavailable. Without this guard, a
+    # machine without gh would fail chezmoi apply on every run.
+    grep -qF 'command -v gh' "$INSTALLER_TMPL"
+    grep -qF 'gh skill --help' "$INSTALLER_TMPL"
+    # Phase 2 must also tolerate per-invocation failure so a flaky network
+    # doesn't break chezmoi apply.
+    grep -qF 'install-external.sh' "$INSTALLER_TMPL"
+    grep -qE 'install-external\.sh.*\|\| *true' "$INSTALLER_TMPL"
+}
+
 @test "chezmoi/.chezmoiignore excludes lib/ so helpers aren't applied to \$HOME" {
     local ignore="$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
     assert_file_exists "$ignore"
