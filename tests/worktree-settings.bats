@@ -7,8 +7,8 @@ setup() {
     # Force absolute path. CI runners typically don't set $TMPDIR, and a
     # relative TMPDIR_TEST breaks plugin path resolution in worktree-settings.sh.
     TMPDIR_TEST="$(mktemp -d "${TMPDIR:-/tmp}/wt-settings.XXXXXX")"
-    mkdir -p "${TMPDIR_TEST}/claude/skills/foo" \
-             "${TMPDIR_TEST}/claude/skills/bar-baz" \
+    mkdir -p "${TMPDIR_TEST}/skills/foo" \
+             "${TMPDIR_TEST}/skills/bar-baz" \
              "${TMPDIR_TEST}/claude/mcp" \
              "${TMPDIR_TEST}/claude/plugins"
 }
@@ -56,7 +56,7 @@ assert_no_entry() {
 }
 
 @test "worktree-settings: no skill entries when skills dir missing" {
-    rm -rf "${TMPDIR_TEST}/claude/skills"
+    rm -rf "${TMPDIR_TEST}/skills"
     result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
     count="$(jq '[.permissions.allow[] | select(startswith("Skill("))] | length' <<< "$result")"
     [[ "$count" -eq 0 ]]

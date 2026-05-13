@@ -9,11 +9,11 @@
 # list for determinism, then shasum file contents. Captures unstaged edits
 # the index hash would miss, and produces the same digest across machines.
 #
-# Skills tree hash: {{ output "sh" "-c" (printf "find %q/../claude/skills -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir) }}
+# Skills tree hash: {{ output "sh" "-c" (printf "find %q/../skills -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir) }}
 
 set -euo pipefail
 
 DOTFILES_ROOT="{{ .chezmoi.sourceDir }}/.."
 exec "$DOTFILES_ROOT/skills-install/install-local.sh" \
-    "$DOTFILES_ROOT/claude/skills" \
+    "$DOTFILES_ROOT/skills" \
     "$HOME/.claude/skills"
