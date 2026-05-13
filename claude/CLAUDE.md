@@ -89,7 +89,7 @@ For multi-step tasks, state the plan as `step → verify` pairs. Strong success 
 
 ## Coding Principles
 
-Core engineering principles (enforced by Cheddar Flow / easy-cheese review skills):
+Core engineering principles (enforced by cheese-flow / easy-cheese review skills):
 
 1. **Input Validation** — trust nothing from external sources.
 2. **Fail Fast and Loud** — handle errors where they occur, no silent failures.
@@ -98,15 +98,15 @@ Core engineering principles (enforced by Cheddar Flow / easy-cheese review skill
 5. **Real-World Models** — name things after business concepts, not technical abstractions.
 6. **Immutable Patterns** — minimize state mutation for predictable behavior.
 
-For project architecture (when a project opts in), see the **Sliced Bread** pattern at `~/.claude/reference/sliced-bread.md` (synced from `claude/reference/sliced-bread.md` in the dotfiles repo) — vertical slices, crust/index public APIs, no cross-slice internals.
+For project architecture (when a project opts in), see the **Sliced Bread** pattern at `~/.claude/reference/sliced-bread.md` — vertical slices, crust/index public APIs, no cross-slice internals.
 
 ## Build System Rules
 
 - Always read workspace/root config before modifying child build files (Cargo.toml, package.json, pyproject.toml, go.work)
 - Version mismatch = fix the version, not restructure the build
 - Never replace inherited/workspace config with standalone config
-- If a build error occurs after your change, check versions first — the approach is likely correct
-- When unsure about valid versions, use `/fetch` or Context7 before guessing
+- When a build breaks after your change, check versions before reverting — version mismatch is the usual cause, not your approach
+- When unsure about valid versions, use Context7 before guessing
 - Use `/version-doctor` for dependency conflicts and version resolution
 
 ## Operational Rules
