@@ -38,6 +38,7 @@ fi
 # Source .env for SKILL_HARNESSES
 if [[ -f "$DOTFILES_DIR/.env" ]]; then
     while IFS='=' read -r key val; do
+        key="${key#export }"
         [[ -z "$key" || "$key" =~ ^# ]] && continue
         # Strip surrounding quotes from value (env loader is naive)
         val="${val%\"}"

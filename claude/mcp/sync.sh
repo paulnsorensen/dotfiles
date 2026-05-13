@@ -23,6 +23,7 @@ sync_check_deps
 DOTFILES_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 if [[ -f "$DOTFILES_DIR/.env" ]]; then
     while IFS='=' read -r key val; do
+        key="${key#export }"
         [[ -z "$key" || "$key" =~ ^# ]] && continue
         export "$key=$val"
     done < "$DOTFILES_DIR/.env"

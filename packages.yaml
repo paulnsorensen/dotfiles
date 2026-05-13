@@ -87,10 +87,11 @@ packages:
   - code-review-graph: { source: uv }
   - check-jsonschema: { source: uv }
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
+  - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }
-  - tilth: { source: cargo }
+  - tilth: { source: cargo, git: "https://github.com/paulnsorensen/tilth", branch: main }
   # Install from Git because the crates.io `rtk` collides with the desired package.
   # If an unrelated `rtk` is already present from `cargo install rtk`, remove it first
   # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.

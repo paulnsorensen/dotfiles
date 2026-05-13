@@ -25,6 +25,9 @@ iterm2/com.googlecode.iterm2.plist
 claude/hooks/node_modules/
 claude/hooks/package-lock.json
 
+# Harness-managed agent skill cache (written by `gh skill install`)
+.agents/
+
 # Claude Code local state (settings.local.json, specs)
 .claude/
 
