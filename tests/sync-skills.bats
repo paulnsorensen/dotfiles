@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# Tests for skills-install/install-local.sh.
+# Tests for chezmoi/lib/install-local.sh.
 #
 # The installer copies each subdirectory of <source_dir> into <target_dir>
 # as real files (not symlinks), so gh-installed skills can coexist alongside
@@ -11,7 +11,7 @@
 
 load test_helper
 
-INSTALL_SCRIPT="$REAL_DOTFILES_DIR/skills-install/install-local.sh"
+INSTALL_SCRIPT="$REAL_DOTFILES_DIR/chezmoi/lib/install-local.sh"
 
 setup() {
     setup_test_env
@@ -177,6 +177,30 @@ make_source_skill() {
     [[ "$status" -eq 0 ]]
     [[ -d "$DST/commit" ]]
     [[ ! -e "$DST/README.md" ]]
+}
+
+@test "install-local: subdir without SKILL.md is skipped (not a skill)" {
+    make_source_skill commit
+    # Create a stray subdir that has files but no SKILL.md — it must be skipped.
+    mkdir -p "$SRC/not-a-skill/references"
+    printf 'random\n' > "$SRC/not-a-skill/references/notes.md"
+
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+    [[ -d "$DST/commit" ]]
+    [[ ! -e "$DST/not-a-skill" ]]
+    grep -Fxq commit "$DST/.dotfiles-managed"
+    ! grep -Fxq not-a-skill "$DST/.dotfiles-managed"
+}
+
+@test "install-local: ignores _registry.yaml file in source root" {
+    make_source_skill commit
+    printf 'sources: {}\n' > "$SRC/_registry.yaml"
+
+    run "$INSTALL_SCRIPT" "$SRC" "$DST"
+    [[ "$status" -eq 0 ]]
+    [[ -d "$DST/commit" ]]
+    [[ ! -e "$DST/_registry.yaml" ]]
 }
 
 @test "install-local: nested files inside a skill are preserved" {

@@ -1,23 +1,31 @@
 #!/bin/bash
 #
-# sync.sh - Install agent skills via `gh skill install` per harness
+# install-external.sh — Install agent skills via `gh skill install` per harness
 #
 # Reads SKILL_HARNESSES from .env (space-separated agent IDs) and installs
-# every skill discovered in each source repo from registry.yaml into each
-# harness at user scope.
+# every skill discovered in each source repo from the given registry into
+# each harness at user scope.
 #
 # Usage:
-#   ./sync.sh           Install/update all skills for each configured harness
-#   ./sync.sh --dry-run Show what would change without making changes
+#   install-external.sh <registry_path>           Install/update all skills
+#   install-external.sh <registry_path> --dry-run Show what would change
 #
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
-DOTFILES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REGISTRY_FILE="$DOTFILES_DIR/skills/_registry.yaml"
+if [[ $# -lt 1 ]]; then
+    echo "Usage: $0 <registry_path> [--dry-run]" >&2
+    exit 2
+fi
 
-# shellcheck source=claude/lib/sync-common.sh
+REGISTRY_FILE="$1"
+shift
+
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+# Script lives at chezmoi/lib/, dotfiles root is two levels up.
+DOTFILES_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# shellcheck source=../../claude/lib/sync-common.sh
 source "$DOTFILES_DIR/claude/lib/sync-common.sh"
 
 sync_parse_args "$@"

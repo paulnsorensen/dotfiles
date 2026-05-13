@@ -1,10 +1,13 @@
 #!/usr/bin/env bats
 #
-# Tests for skills-install/sync.sh and skills-install/registry.yaml.
+# Tests for chezmoi/lib/install-external.sh and skills/_registry.yaml.
 #
-# Strategy: copy sync.sh + the shared sync-common.sh into a fake dotfiles
-# tree under $TEST_HOME, write a per-test registry.yaml and .env, then run
-# the script with a mocked `gh` on $PATH. yq and jq are real.
+# Strategy: copy install-external.sh + the shared sync-common.sh into a fake
+# dotfiles tree under $TEST_HOME, write a per-test registry and .env, then
+# run the script with a mocked `gh` on $PATH. yq and jq are real.
+#
+# The helper takes the registry path as its first argument:
+#   install-external.sh <registry_path>
 
 load test_helper
 
@@ -12,7 +15,7 @@ setup() {
     setup_test_env
 
     export MOCK_DOTFILES="$TEST_HOME/mock-dotfiles"
-    export MOCK_SKILLS_DIR="$MOCK_DOTFILES/skills-install"
+    export MOCK_SKILLS_DIR="$MOCK_DOTFILES/chezmoi/lib"
     export MOCK_REGISTRY_DIR="$MOCK_DOTFILES/skills"
     export MOCK_REGISTRY_FILE="$MOCK_REGISTRY_DIR/_registry.yaml"
     export MOCK_LIB_DIR="$MOCK_DOTFILES/claude/lib"
@@ -21,9 +24,9 @@ setup() {
 
     mkdir -p "$MOCK_SKILLS_DIR" "$MOCK_REGISTRY_DIR" "$MOCK_LIB_DIR" "$MOCK_BIN"
 
-    cp "$REAL_DOTFILES_DIR/skills-install/sync.sh" "$MOCK_SKILLS_DIR/sync.sh"
+    cp "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" "$MOCK_SKILLS_DIR/install-external.sh"
     cp "$REAL_DOTFILES_DIR/claude/lib/sync-common.sh" "$MOCK_LIB_DIR/sync-common.sh"
-    chmod +x "$MOCK_SKILLS_DIR/sync.sh"
+    chmod +x "$MOCK_SKILLS_DIR/install-external.sh"
 
     # Mocked `gh` — every invocation is logged. Default: succeed.
     # Behavior is configured per-test via $GH_BEHAVIOR:
@@ -100,7 +103,7 @@ EOF
 }
 
 run_sync() {
-    run bash "$MOCK_SKILLS_DIR/sync.sh" "$@"
+    run bash "$MOCK_SKILLS_DIR/install-external.sh" "$MOCK_REGISTRY_FILE" "$@"
 }
 
 # ─── empty harness behavior ────────────────────────────────────────────
