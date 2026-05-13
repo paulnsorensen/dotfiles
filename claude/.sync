@@ -11,9 +11,9 @@ mkdir -p "$CLAUDE_DIR"
 # Config to symlink. NOT included here:
 #   - plugins/  — Claude uses that path as plugin cache
 #   - skills/   — copied (not symlinked) by chezmoi via
-#                 chezmoi/run_onchange_install-claude-skills.sh.tmpl so
-#                 gh-installed skills can drop real dirs alongside without
-#                 fighting a directory symlink.
+#                 chezmoi/.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl
+#                 so gh-installed skills can drop real dirs alongside
+#                 without fighting a directory symlink.
 configs=(
   agents
   commands

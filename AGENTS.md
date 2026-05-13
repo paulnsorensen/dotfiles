@@ -102,7 +102,7 @@ dotfiles/
 │   ├── skills/             # Dotfiles-owned skill sources (copied into ~/.claude/skills/ by chezmoi)
 │   ├── profiles/           # Scoped sessions (fe, plugin, review, rtkonly, spec, todo) — launched via `ccp <name>`
 │   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)
-├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` and runs `run_onchange_install-claude-skills.sh.tmpl`, which copies claude/skills/ into ~/.claude/skills/ on every change.
+├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` and runs `.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl`, which copies claude/skills/ into ~/.claude/skills/ on every change.
 ├── skills-install/         # External-skill registry + installers. `sync.sh` runs `gh skill install` per harness; `install-local.sh` is the harness-agnostic copier invoked by chezmoi for the dotfiles-owned tree.
 ├── packages.yaml           # Flat package registry (brew, cargo, apt)
 ├── packages/
@@ -315,7 +315,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages.yaml` (repo root) | `dots sync` | Use `dots sync refresh` to force re-check |
 | Skill (external) | `skills-install/registry.yaml` | `dots sync` (or `skill-sync`) | Set `SKILL_HARNESSES` in `.env`. `gh skill install` writes to each agent's skills dir (for claude-code: `~/.claude/skills/<name>/` as a real dir). Auto-runs via `skills-install/.sync`. |
-| Skill (dotfiles-owned) | `claude/skills/<name>/` | `dots sync` | chezmoi's `run_onchange_install-claude-skills.sh.tmpl` re-copies every skill into `~/.claude/skills/<name>/` whenever the source tree hash changes. Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
+| Skill (dotfiles-owned) | `claude/skills/<name>/` | `dots sync` | chezmoi's `.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl` re-copies every skill into `~/.claude/skills/<name>/` whenever the source tree hash changes. Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
 
 ## Important Gotchas
 

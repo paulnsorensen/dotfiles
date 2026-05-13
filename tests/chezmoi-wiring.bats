@@ -8,7 +8,7 @@ load test_helper
 setup() {
     setup_test_env
     export CHEZMOI_SYNC="$REAL_DOTFILES_DIR/chezmoi/.sync"
-    export INSTALLER_TMPL="$REAL_DOTFILES_DIR/chezmoi/run_onchange_install-claude-skills.sh.tmpl"
+    export INSTALLER_TMPL="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl"
 }
 
 teardown() { teardown_test_env; }
