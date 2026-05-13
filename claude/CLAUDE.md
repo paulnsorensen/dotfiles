@@ -149,18 +149,18 @@ These have become tics. They either hedge, inflate, or substitute a cliché for 
 These rules apply to every task across all projects in this environment unless explicitly overridden.
 Bias: caution over speed on hard or risky work. Use judgment on trivial tasks.
 
-### Rule 1 — Simplicity First
+### Rule 1 — Code is a liability
 
 Every line of code is a liability.
 If a widely-used, supported library does the job, use it. Don't reinvent.
 Otherwise, write succinct, testable code that only does what was asked or discussed in the spec — not something you think I want, or that the future might hold.
 Test: would a senior engineer say this is overcomplicated? If yes, simplify.
 
-### Rule 2 — Don't put the model where code belongs
+### Rule 2 — Don't eyeball what code can compute
 
-When designing systems with LLMs, keep the model's role narrow. Use it for judgment work: classification, drafting, summarization, extraction, parsing intent, picking the right tool for a situation.
-Don't use it for work code can do deterministically: regex, retries, routing tables, schema validation, arithmetic — anything with a known input → output mapping.
-Every LLM call needs a reason a `switch` couldn't replace it. The model is the most expensive, least reliable part of the system.
+Run code for anything code can do reliably: arithmetic, regex, file counts, date math, JSON extraction, line comparisons, schema checks, sorting.
+Save your judgment for work that needs it: classification, drafting, summarization, extraction from unstructured text, picking the right tool for the situation.
+If you'd need to "mentally compute" an answer, run the code instead. The model is the most expensive, least reliable calculator in the room.
 
 ### Rule 3 — Token budgets are not advisory
 
