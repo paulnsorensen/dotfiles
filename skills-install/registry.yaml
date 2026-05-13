@@ -20,3 +20,5 @@
 sources:
   paulnsorensen/easy-cheese:
     description: Portable agent skills toolkit — mold, cook, press, age, cure, melt, plus cheez-* tilth-backed code intelligence
+  lsp-client/lsp-skill:
+    description: LSP integration skill
