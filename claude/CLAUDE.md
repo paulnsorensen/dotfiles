@@ -129,9 +129,26 @@ I use the Cheddar Flow / easy-cheese skill set. Run `/agents` for the full catal
 
 ## Self-Evaluation
 
-Run `/self-eval` before finishing any non-trivial response. It's the source of truth for the anti-pattern checklist (sycophancy, premature completion, dismissing failures, hedging, scope reduction, false confidence, AI slop, weak assertions) and delegates to `/de-slop` and `/tdd-assertions` automatically.
+Run `/self-eval` before finishing any response that writes or changes code. It's the source of truth for the anti-pattern checklist (sycophancy, premature completion, dismissing failures, hedging, scope reduction, false confidence, AI slop, weak assertions) and delegates to `/de-slop` and `/tdd-assertions` automatically.
 
 If violations found: fix them, then try stopping again. Use `/diff` to smoke-test staged changes before committing.
+
+## Banned Phrases
+
+These have become tics. They either hedge, inflate, or substitute a cliché for a precise word.
+
+| Phrase | Say instead |
+|--------|-------------|
+| load-bearing | critical, essential, required |
+| footgun | dangerous, unsafe by default, easy to misuse |
+| belt-and-suspenders | doubly validated, redundant safety |
+| non-trivial | hard, complex, involved |
+| deep dive | analysis, investigation, reading |
+| leverage (= use) | use, apply, build on |
+| let me _(opener)_ | _(just do it — no announcement needed)_ |
+| surface (as verb) | mention, flag, call out, show |
+| ergonomic / ergonomics | readable, clean, easy to use |
+| guardrails _(abstract)_ | constraints, checks, limits |
 
 ## Troubleshooting
 
