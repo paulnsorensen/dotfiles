@@ -1,6 +1,6 @@
 ---
 name: lsp-probe
-description: Short-lived LSP query broker. Cold-starts a server, executes a batch of LSP operations, returns structured results, and exits. Keeps parent agents lightweight by scoping LSP lifecycle to a single batch. Use instead of direct LSP calls when the parent doesn't need a persistent server.
+description: Short-lived LSP query broker. Cold-starts a server, executes a batch of LSP operations, returns structured results (~2 KB digest), and exits. Keeps parent agents lightweight by scoping LSP lifecycle to a single batch. Use instead of direct LSP calls when the parent doesn't need a persistent server. Fits easy-cheese's "small, fast, read-only sub-agent" contract for /culture, /mold, /cook, and /age symbol-lookup forks.
 model: haiku
 tools: [LSP, Read, Glob, Bash]
 color: blue

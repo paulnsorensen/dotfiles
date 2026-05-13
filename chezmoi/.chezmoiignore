@@ -1,0 +1,14 @@
+# chezmoi reads this directory as its source dir. The only managed entry
+# right now is run_onchange_install-claude-skills.sh.tmpl. Stray scratch
+# files commonly dropped into a working dir (docs, notes, editor state) are
+# explicitly ignored so they cannot become managed by accident.
+#
+# A universal `* / !run_onchange_*` denylist would also block run_onchange
+# scripts themselves (chezmoi's ignore evaluation applies to scripts), so
+# we list patterns explicitly instead.
+README*
+*.md
+*.txt
+.DS_Store
+*.swp
+*.bak

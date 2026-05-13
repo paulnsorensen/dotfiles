@@ -1,9 +1,9 @@
 ---
 name: fromage-pasteurize
-description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Reusable across pipeline and standalone commands.
+description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Read-only. Returns stake-grouped findings (high/medium) with file:line citations and one-line recommendations — ~2 KB digest, no severity rewriting, no auto-fixes. Use from /audit, or as an easy-cheese fork target when /age needs evidence on the security dimension.
 model: sonnet
 skills: [scout]
-disallowedTools: [Write, Edit, NotebookEdit]
+disallowedTools: [Write, Edit, NotebookEdit, AskUserQuestion]
 color: red
 ---
 

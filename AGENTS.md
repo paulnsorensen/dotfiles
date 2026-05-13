@@ -99,10 +99,11 @@ dotfiles/
 │   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/fromage, /fromagerie, /spec, etc.)
 │   ├── hooks/              # Pre-tool hooks
-│   ├── skills/             # Dotfiles-owned skill sources (per-skill symlinked into ~/.claude/skills/)
+│   ├── skills/             # Dotfiles-owned skill sources (copied into ~/.claude/skills/ by chezmoi)
 │   ├── profiles/           # Scoped sessions (fe, plugin, review, rtkonly, spec, todo) — launched via `ccp <name>`
 │   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)
-├── skills-install/         # `gh skill install` registry + sync (harness-agnostic — see SKILL_HARNESSES in .env)
+├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` and runs `.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl`, which copies claude/skills/ into ~/.claude/skills/ on every change.
+├── skills-install/         # External-skill registry + installers. `sync.sh` runs `gh skill install` per harness; `install-local.sh` is the harness-agnostic copier invoked by chezmoi for the dotfiles-owned tree.
 ├── packages.yaml           # Flat package registry (brew, cargo, apt)
 ├── packages/
 │   └── sync.sh             # Package sync with hash cache
@@ -313,7 +314,8 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | Plugin | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages.yaml` (repo root) | `dots sync` | Use `dots sync refresh` to force re-check |
-| Skill | `skills-install/registry.yaml` | `dots sync` (or `skill-sync`) | Set `SKILL_HARNESSES` in `.env`. Harness-agnostic: `gh skill install` writes to each agent's skills dir; for claude-code, lands in `~/.claude/skills/` alongside dotfiles' per-skill symlinks. Auto-runs via `skills-install/.sync`. |
+| Skill (external) | `skills-install/registry.yaml` | `dots sync` (or `skill-sync`) | Set `SKILL_HARNESSES` in `.env`. `gh skill install` writes to each agent's skills dir (for claude-code: `~/.claude/skills/<name>/` as a real dir). Auto-runs via `skills-install/.sync`. |
+| Skill (dotfiles-owned) | `claude/skills/<name>/` | `dots sync` | chezmoi's `.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl` re-copies every skill into `~/.claude/skills/<name>/` whenever the source tree hash changes. Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
 
 ## Important Gotchas
 
