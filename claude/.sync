@@ -119,4 +119,13 @@ else
   echo "  Skipping MCP/plugin sync (claude CLI not found)"
 fi
 
+# Drop stale per-project entries from ~/.claude.json (worktrees that no
+# longer exist on disk). The pruner takes a timestamped backup before
+# touching the file, so failures are recoverable.
+prune_script="$SOURCE_DIR/../bin/claude-json-prune"
+if [[ -x "$prune_script" && -f "$HOME/.claude.json" ]]; then
+  echo "  Pruning stale ~/.claude.json project entries..."
+  "$prune_script" --apply || echo "  WARN: claude-json-prune failed (non-fatal)" >&2
+fi
+
 echo "Claude config synced"
