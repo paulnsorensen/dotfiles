@@ -143,7 +143,7 @@ EOF
     run bash "$CHEZMOI_SYNC"
     assert_success
 
-    # The installer reads from the real dotfiles claude/skills tree.
+    # The installer reads from the real dotfiles skills/ tree.
     # We just need to assert that chezmoi apply triggers the run_onchange
     # script, which exec's install-local.sh. After apply, at least one
     # known dotfiles-owned skill should land at ~/.claude/skills/ as a real
