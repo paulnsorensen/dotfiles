@@ -33,7 +33,7 @@ EOF
 fi
 
 # Trigger chezmoi apply so the run_onchange skill installer runs whenever
-# the dotfiles/claude/skills tree changes. Non-fatal — if chezmoi rejects
+# the dotfiles/skills tree changes. Non-fatal — if chezmoi rejects
 # the user's sourceDir override or any other config edit, dots sync still
 # wires everything else.
 if command -v chezmoi &>/dev/null; then

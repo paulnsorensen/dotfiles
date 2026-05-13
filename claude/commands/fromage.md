@@ -118,7 +118,7 @@ The slug is used for: spec file (`.claude/specs/<slug>.md`), worktree branch, PR
 If `$ARGUMENTS` contains `--skill <name>`:
 
 1. Extract the skill name and remove the flag from the arguments
-2. Verify `claude/skills/<name>/SKILL.md` exists (error if not found)
+2. Verify `skills/<name>/SKILL.md` exists (error if not found)
 3. Carry the skill name through all subsequent phases
 4. This overrides any skill detected by Curdle
 
@@ -402,7 +402,7 @@ Research agents spawned during Cook get `max_turns: 15`.
 
 If a design skill was specified (via Curdle plan's "Design Skill" section or `--skill` flag):
 
-1. Read `claude/skills/<skill-name>/SKILL.md`
+1. Read `skills/<skill-name>/SKILL.md`
 2. Include the skill's markdown body in each Cook agent's prompt
 3. Prefix with: "Apply the following design skill guidelines to your implementation:"
 
