@@ -158,7 +158,7 @@ MCPs broken? → `/go`. Agent missing? → `/agents`. LSP down? → `/lsp`.
 ## 12 Rules
 
 These rules apply to every task across all projects in this environment unless explicitly overridden.
-Bias: caution over speed on non-trivial work. Use judgment on trivial tasks.
+Bias: caution over speed on hard or risky work. Use judgment on trivial tasks.
 
 ### Rule 1 — Think Before Coding
 
@@ -195,9 +195,9 @@ If code can answer, code answers.
 
 Treat context as a finite resource. Push verbose operations (long diffs, large log dumps, full test output) into sub-agents or forked skills.
 If a step is about to balloon context, summarize and start fresh instead of silently overrunning.
-Surface the breach — don't hide it.
+Call it out — don't hide it.
 
-### Rule 7 — Surface conflicts, don't average them
+### Rule 7 — Flag conflicts, don't average them
 
 If two patterns contradict, pick one (more recent / more tested).
 Explain why. Flag the other for cleanup.
@@ -222,12 +222,12 @@ If you lose track, stop and restate.
 ### Rule 11 — Match the codebase's conventions, even if you disagree
 
 Conformance > taste inside the codebase.
-If you genuinely think a convention is harmful, surface it. Don't fork silently.
+If you genuinely think a convention is harmful, flag it. Don't fork silently.
 
 ### Rule 12 — Fail loud
 
 "Completed" is wrong if anything was skipped silently.
 "Tests pass" is wrong if any were skipped.
-Default to surfacing uncertainty, not hiding it.
+Default to flagging uncertainty, not hiding it.
 
 @RTK.md
