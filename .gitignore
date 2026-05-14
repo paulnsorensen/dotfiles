@@ -62,7 +62,7 @@ __pycache__/
 
 # Ralph TUI
 .ralph-tui/
-claude/skills/ralph-tui-*
+skills/ralph-tui-*
 
 # tmux (plugins managed by TPM, theme rebuilt on dots sync)
 tmux/plugins/

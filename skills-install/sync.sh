@@ -14,8 +14,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
-REGISTRY_FILE="$SCRIPT_DIR/registry.yaml"
 DOTFILES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REGISTRY_FILE="$DOTFILES_DIR/skills/_registry.yaml"
 
 # shellcheck source=claude/lib/sync-common.sh
 source "$DOTFILES_DIR/claude/lib/sync-common.sh"

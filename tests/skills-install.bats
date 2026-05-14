@@ -13,11 +13,13 @@ setup() {
 
     export MOCK_DOTFILES="$TEST_HOME/mock-dotfiles"
     export MOCK_SKILLS_DIR="$MOCK_DOTFILES/skills-install"
+    export MOCK_REGISTRY_DIR="$MOCK_DOTFILES/skills"
+    export MOCK_REGISTRY_FILE="$MOCK_REGISTRY_DIR/_registry.yaml"
     export MOCK_LIB_DIR="$MOCK_DOTFILES/claude/lib"
     export MOCK_BIN="$TEST_HOME/bin"
     export GH_LOG="$TEST_HOME/gh.log"
 
-    mkdir -p "$MOCK_SKILLS_DIR" "$MOCK_LIB_DIR" "$MOCK_BIN"
+    mkdir -p "$MOCK_SKILLS_DIR" "$MOCK_REGISTRY_DIR" "$MOCK_LIB_DIR" "$MOCK_BIN"
 
     cp "$REAL_DOTFILES_DIR/skills-install/sync.sh" "$MOCK_SKILLS_DIR/sync.sh"
     cp "$REAL_DOTFILES_DIR/claude/lib/sync-common.sh" "$MOCK_LIB_DIR/sync-common.sh"
@@ -82,7 +84,7 @@ teardown() {
 write_registry() {
     local repo="${1:-acme/widgets}"
     local body="${2:-}"
-    cat > "$MOCK_SKILLS_DIR/registry.yaml" <<EOF
+    cat > "$MOCK_REGISTRY_FILE" <<EOF
 sources:
   $repo:
     description: test source
@@ -131,7 +133,7 @@ run_sync() {
 
 @test "skill sync: missing registry.yaml fails fast" {
     write_env "claude-code"
-    rm -f "$MOCK_SKILLS_DIR/registry.yaml"
+    rm -f "$MOCK_REGISTRY_FILE"
 
     run_sync
     assert_failure
@@ -139,7 +141,7 @@ run_sync() {
 }
 
 @test "skill sync: empty sources map exits with 'No sources defined'" {
-    cat > "$MOCK_SKILLS_DIR/registry.yaml" <<'EOF'
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
 sources: {}
 EOF
     write_env "claude-code"
@@ -263,7 +265,7 @@ EOF
 # ─── multi-source registry ─────────────────────────────────────────────
 
 @test "skill sync: handles multiple sources" {
-    cat > "$MOCK_SKILLS_DIR/registry.yaml" <<'EOF'
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
 sources:
   acme/widgets:
     description: first
@@ -290,13 +292,13 @@ EOF
 # ─── registry.yaml shape (live registry) ───────────────────────────────
 
 @test "registry.yaml: real registry parses cleanly with yq" {
-    run yq '.sources | keys' "$REAL_DOTFILES_DIR/skills-install/registry.yaml"
+    run yq '.sources | keys' "$REAL_DOTFILES_DIR/skills/_registry.yaml"
     assert_success
     [[ -n "$output" ]]
 }
 
 @test "registry.yaml: every source key matches OWNER/REPO format" {
-    run yq -r '.sources | keys | .[]' "$REAL_DOTFILES_DIR/skills-install/registry.yaml"
+    run yq -r '.sources | keys | .[]' "$REAL_DOTFILES_DIR/skills/_registry.yaml"
     assert_success
     [[ -n "$output" ]]
 
@@ -310,7 +312,7 @@ EOF
 }
 
 @test "registry.yaml: top-level shape is exactly { sources: ... }" {
-    run yq -r 'keys | .[]' "$REAL_DOTFILES_DIR/skills-install/registry.yaml"
+    run yq -r 'keys | .[]' "$REAL_DOTFILES_DIR/skills/_registry.yaml"
     assert_success
     [[ "$output" == "sources" ]]
 }
@@ -331,7 +333,7 @@ EOF
             )
         )
       | .[]
-    ' "$REAL_DOTFILES_DIR/skills-install/registry.yaml"
+    ' "$REAL_DOTFILES_DIR/skills/_registry.yaml"
     assert_success
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue

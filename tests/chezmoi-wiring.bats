@@ -74,13 +74,26 @@ EOF
 @test "chezmoi/run_onchange template references install-local.sh" {
     assert_file_exists "$INSTALLER_TMPL"
     grep -qF 'skills-install/install-local.sh' "$INSTALLER_TMPL"
-    grep -qF 'claude/skills' "$INSTALLER_TMPL"
+    # shellcheck disable=SC2016 # literal text in the template, not a shell expansion
+    grep -qF '$DOTFILES_ROOT/skills' "$INSTALLER_TMPL"
     grep -qF '.claude/skills' "$INSTALLER_TMPL"
 }
 
 @test "chezmoi/run_onchange template embeds a content hash so chezmoi re-runs on changes" {
     grep -qF 'Skills tree hash:' "$INSTALLER_TMPL"
     grep -qF 'output' "$INSTALLER_TMPL"
+}
+
+@test "chezmoi/run_onchange template hashes the same tree it installs from" {
+    # Locks PR #1's flatten: hash-line tree path and installer source arg
+    # must agree. Reverting one without the other would silently de-sync
+    # the run_onchange trigger from the install source.
+    grep -qF '/../skills -type f' "$INSTALLER_TMPL"
+    # And the old nested path must be gone from both the hash and the exec line.
+    if grep -qF '/../claude/skills' "$INSTALLER_TMPL"; then
+        echo "template still references the pre-flatten claude/skills tree" >&2
+        return 1
+    fi
 }
 
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────
