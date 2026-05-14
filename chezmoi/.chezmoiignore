@@ -12,3 +12,7 @@ README*
 .DS_Store
 *.swp
 *.bak
+# Helper scripts the run_onchange template invokes via {{ .chezmoi.sourceDir }}/lib/.
+# They live inside the source dir for colocation, but chezmoi must not apply
+# them as $HOME files.
+lib/

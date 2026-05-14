@@ -1,5 +1,5 @@
 #!/bin/bash
-# run_onchange — re-runs whenever the dotfiles claude/skills tree changes.
+# run_onchange — re-runs whenever the dotfiles skills tree changes.
 #
 # The skills source-tree hash below is embedded by chezmoi at template render
 # time. chezmoi hashes the *rendered* script; whenever the embedded hash
@@ -8,12 +8,23 @@
 # Hash strategy: walk the working tree (not the git index), sort the file
 # list for determinism, then shasum file contents. Captures unstaged edits
 # the index hash would miss, and produces the same digest across machines.
+# Hashing every file under skills/ (including _registry.yaml) means registry
+# edits trigger reruns too.
 #
 # Skills tree hash: {{ output "sh" "-c" (printf "find %q/../skills -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir) }}
 
 set -euo pipefail
 
-DOTFILES_ROOT="{{ .chezmoi.sourceDir }}/.."
-exec "$DOTFILES_ROOT/skills-install/install-local.sh" \
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+
+# Phase 1: dotfiles-owned skills → ~/.claude/skills (always runs).
+"$SOURCE_DIR/lib/install-local.sh" \
     "$DOTFILES_ROOT/skills" \
     "$HOME/.claude/skills"
+
+# Phase 2: external skills via `gh skill install` (best-effort, non-fatal).
+# Skip silently when gh or `gh skill` is unavailable.
+if command -v gh &>/dev/null && gh skill --help &>/dev/null; then
+    "$SOURCE_DIR/lib/install-external.sh" "$DOTFILES_ROOT/skills/_registry.yaml" || true
+fi

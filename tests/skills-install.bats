@@ -1,10 +1,13 @@
 #!/usr/bin/env bats
 #
-# Tests for skills-install/sync.sh and skills-install/registry.yaml.
+# Tests for chezmoi/lib/install-external.sh and skills/_registry.yaml.
 #
-# Strategy: copy sync.sh + the shared sync-common.sh into a fake dotfiles
-# tree under $TEST_HOME, write a per-test registry.yaml and .env, then run
-# the script with a mocked `gh` on $PATH. yq and jq are real.
+# Strategy: copy install-external.sh + the shared sync-common.sh into a fake
+# dotfiles tree under $TEST_HOME, write a per-test registry and .env, then
+# run the script with a mocked `gh` on $PATH. yq and jq are real.
+#
+# The helper takes the registry path as its first argument:
+#   install-external.sh <registry_path>
 
 load test_helper
 
@@ -12,7 +15,7 @@ setup() {
     setup_test_env
 
     export MOCK_DOTFILES="$TEST_HOME/mock-dotfiles"
-    export MOCK_SKILLS_DIR="$MOCK_DOTFILES/skills-install"
+    export MOCK_SKILLS_DIR="$MOCK_DOTFILES/chezmoi/lib"
     export MOCK_REGISTRY_DIR="$MOCK_DOTFILES/skills"
     export MOCK_REGISTRY_FILE="$MOCK_REGISTRY_DIR/_registry.yaml"
     export MOCK_LIB_DIR="$MOCK_DOTFILES/claude/lib"
@@ -21,9 +24,9 @@ setup() {
 
     mkdir -p "$MOCK_SKILLS_DIR" "$MOCK_REGISTRY_DIR" "$MOCK_LIB_DIR" "$MOCK_BIN"
 
-    cp "$REAL_DOTFILES_DIR/skills-install/sync.sh" "$MOCK_SKILLS_DIR/sync.sh"
+    cp "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" "$MOCK_SKILLS_DIR/install-external.sh"
     cp "$REAL_DOTFILES_DIR/claude/lib/sync-common.sh" "$MOCK_LIB_DIR/sync-common.sh"
-    chmod +x "$MOCK_SKILLS_DIR/sync.sh"
+    chmod +x "$MOCK_SKILLS_DIR/install-external.sh"
 
     # Mocked `gh` — every invocation is logged. Default: succeed.
     # Behavior is configured per-test via $GH_BEHAVIOR:
@@ -100,7 +103,7 @@ EOF
 }
 
 run_sync() {
-    run bash "$MOCK_SKILLS_DIR/sync.sh" "$@"
+    run bash "$MOCK_SKILLS_DIR/install-external.sh" "$MOCK_REGISTRY_FILE" "$@"
 }
 
 # ─── empty harness behavior ────────────────────────────────────────────
@@ -287,6 +290,85 @@ EOF
     assert_success
     run grep -F 'gh skill install beta/gadgets zulu --agent claude-code' "$GH_LOG"
     assert_success
+}
+
+# ─── .env loader edge cases ────────────────────────────────────────────
+# The loader is naive by design (spec PR #1 Group A): it strips an optional
+# `export ` prefix and strips surrounding double quotes. These tests lock
+# that contract so a future "simplification" can't silently break harness
+# installs.
+
+@test "skill sync: .env loader honors 'export ' prefix" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    cat > "$MOCK_DOTFILES/.env" <<'EOF'
+export SKILL_HARNESSES="claude-code cursor"
+EOF
+    unset SKILL_HARNESSES
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "Harnesses: claude-code cursor"
+    assert_output_contains "gh skill install acme/widgets alpha --agent claude-code --scope user --force"
+    assert_output_contains "gh skill install acme/widgets alpha --agent cursor --scope user --force"
+}
+
+@test "skill sync: .env loader accepts unquoted value" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    cat > "$MOCK_DOTFILES/.env" <<'EOF'
+SKILL_HARNESSES=claude-code
+EOF
+    unset SKILL_HARNESSES
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "Harnesses: claude-code"
+    assert_output_contains "gh skill install acme/widgets alpha --agent claude-code --scope user --force"
+}
+
+@test "skill sync: .env loader skips comment lines and blank lines" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    cat > "$MOCK_DOTFILES/.env" <<'EOF'
+# This is a comment
+
+SKILL_HARNESSES="claude-code"
+# Trailing comment
+EOF
+    unset SKILL_HARNESSES
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "Harnesses: claude-code"
+}
+
+# ─── tooling preflight ─────────────────────────────────────────────────
+
+@test "skill sync: missing 'gh skill' subcommand fails fast with upgrade hint" {
+    # Override the mock gh so `gh skill --help` fails. The script's preflight
+    # must catch this before doing any work.
+    cat > "$MOCK_BIN/gh" <<'MOCK'
+#!/bin/bash
+printf 'gh %s\n' "$*" >> "${GH_LOG:-/dev/null}"
+case "$1 $2" in
+    "skill --help") exit 1 ;;
+esac
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/gh"
+
+    write_registry
+    write_env "claude-code"
+
+    run_sync
+    assert_failure
+    assert_output_contains "'gh skill' subcommand not available"
+    assert_output_contains "v2.90"
+
+    # No install attempted.
+    run grep -c 'gh skill install' "$GH_LOG"
+    [[ "$output" == "0" ]]
 }
 
 # ─── registry.yaml shape (live registry) ───────────────────────────────

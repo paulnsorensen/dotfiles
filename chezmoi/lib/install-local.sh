@@ -13,6 +13,11 @@
 #   - Skills dropped from the dotfiles source are removed from the target on
 #     the next run, but only if the manifest claims them.
 #
+# Skill contract: a source subdirectory is treated as a skill only when it
+# contains a SKILL.md at its root. Loose files at the source root (including
+# _registry.yaml, which lives next to the skill dirs) are ignored — the
+# `for src in "$source_dir"/*/` glob below already skips files.
+#
 # Bash 3.2 compatible (macOS /bin/bash).
 #
 # Usage:
@@ -46,9 +51,13 @@ is_old_managed() {
     printf '%s\n' "$old_managed" | grep -Fxq "$1"
 }
 
+# Collect only subdirs that have SKILL.md at their root — the formal skill
+# contract. Subdirs without SKILL.md (e.g. stray references/, scratch dirs)
+# are silently skipped so they cannot pollute the target.
 new_names=()
 for src in "$source_dir"/*/; do
     [[ -d "$src" ]] || continue
+    [[ -f "$src/SKILL.md" ]] || continue
     new_names+=("$(basename "$src")")
 done
 

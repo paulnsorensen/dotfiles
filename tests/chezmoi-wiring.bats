@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tests for chezmoi/.sync — first-time wiring, idempotence, and the
 # run_onchange installer script that copies dotfiles-owned skills into
-# ~/.claude/skills via skills-install/install-local.sh.
+# ~/.claude/skills via chezmoi/lib/install-local.sh.
 
 load test_helper
 
@@ -71,12 +71,21 @@ EOF
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/.chezmoiroot"
 }
 
-@test "chezmoi/run_onchange template references install-local.sh" {
+@test "chezmoi/run_onchange template references both helpers under chezmoi/lib" {
     assert_file_exists "$INSTALLER_TMPL"
-    grep -qF 'skills-install/install-local.sh' "$INSTALLER_TMPL"
+    grep -qF 'lib/install-local.sh' "$INSTALLER_TMPL"
+    grep -qF 'lib/install-external.sh' "$INSTALLER_TMPL"
     # shellcheck disable=SC2016 # literal text in the template, not a shell expansion
     grep -qF '$DOTFILES_ROOT/skills' "$INSTALLER_TMPL"
     grep -qF '.claude/skills' "$INSTALLER_TMPL"
+    grep -qF '_registry.yaml' "$INSTALLER_TMPL"
+}
+
+@test "chezmoi/run_onchange template no longer references skills-install/" {
+    if grep -qF 'skills-install/' "$INSTALLER_TMPL"; then
+        echo "template still references the deleted skills-install/ directory" >&2
+        return 1
+    fi
 }
 
 @test "chezmoi/run_onchange template embeds a content hash so chezmoi re-runs on changes" {
@@ -94,6 +103,36 @@ EOF
         echo "template still references the pre-flatten claude/skills tree" >&2
         return 1
     fi
+}
+
+@test "chezmoi/run_onchange template guards Phase 2 behind 'gh skill --help'" {
+    # Spec invariant (PR #2 §3): the external installer must skip silently
+    # when gh is missing or `gh skill` is unavailable. Without this guard, a
+    # machine without gh would fail chezmoi apply on every run.
+    grep -qF 'command -v gh' "$INSTALLER_TMPL"
+    grep -qF 'gh skill --help' "$INSTALLER_TMPL"
+    # Phase 2 must also tolerate per-invocation failure so a flaky network
+    # doesn't break chezmoi apply.
+    grep -qF 'install-external.sh' "$INSTALLER_TMPL"
+    grep -qE 'install-external\.sh.*\|\| *true' "$INSTALLER_TMPL"
+}
+
+@test "chezmoi/.chezmoiignore excludes lib/ so helpers aren't applied to \$HOME" {
+    local ignore="$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+    assert_file_exists "$ignore"
+    grep -qE '^lib(/|$)' "$ignore"
+}
+
+@test "skills-install/ directory is gone from the repo" {
+    [[ ! -e "$REAL_DOTFILES_DIR/skills-install" ]]
+}
+
+@test "chezmoi/lib/install-local.sh exists and is executable" {
+    [[ -x "$REAL_DOTFILES_DIR/chezmoi/lib/install-local.sh" ]]
+}
+
+@test "chezmoi/lib/install-external.sh exists and is executable" {
+    [[ -x "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" ]]
 }
 
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────
