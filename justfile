@@ -17,7 +17,7 @@ lint-shell:
 
 # ruff on python files
 lint-python:
-    ruff check claude/skills/merge-resolve/scripts/ claude/skills/session-analytics/scripts/
+    ruff check skills/merge-resolve/scripts/ skills/session-analytics/scripts/
 
 # eslint on JS hooks (eslint v8 for --no-eslintrc support)
 lint-js:
@@ -28,6 +28,24 @@ lint-js:
 # markdownlint on markdown files
 lint-markdown:
     markdownlint-cli2 '**/*.md'
+
+# autofix where supported (shellcheck has no autofix)
+lint-fix: lint-python-fix lint-js-fix lint-markdown-fix
+
+# ruff --fix + ruff format
+lint-python-fix:
+    ruff check --fix skills/merge-resolve/scripts/ skills/session-analytics/scripts/
+    ruff format skills/merge-resolve/scripts/ skills/session-analytics/scripts/
+
+# eslint --fix
+lint-js-fix:
+    cd claude/hooks && eslint --fix --no-eslintrc --env node --env es2020 \
+        --rule '{"no-undef": "error", "no-unused-vars": "warn", "no-redeclare": "error"}' \
+        *.js
+
+# markdownlint --fix
+lint-markdown-fix:
+    markdownlint-cli2 --fix '**/*.md'
 
 # run all tests
 test *ARGS:
