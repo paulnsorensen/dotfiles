@@ -20,7 +20,7 @@ When implementing changes:
 - Shell scripts must use `set -euo pipefail` at the top
 - Quote all variable expansions: `"$var"`, never bare `$var`
 - New zsh config files must be sourced from `zshrc` at the correct load order point
-- New Claude skills go in `claude/skills/<name>/SKILL.md` with frontmatter
+- New Claude skills go in `skills/<name>/SKILL.md` with frontmatter
 - New Claude agents go in `claude/agents/<name>.md` with frontmatter
 - New MCP servers go in `claude/mcp/registry.yaml`, not hardcoded JSON
 - Run `dots sync` after any changes to files that get symlinked to `~/.claude/`

@@ -160,9 +160,11 @@ fi
 # =============================================================================
 # Agent Skills (`gh skill install` — harness-agnostic; targets each agent in
 # $SKILL_HARNESSES from .env: claude-code, cursor, codex, github-copilot, etc.)
+# External skills come from skills/_registry.yaml; the installer lives at
+# chezmoi/lib/install-external.sh (invoked by chezmoi's run_onchange script).
 # =============================================================================
 alias skill='gh skill'
 alias skill-ls='gh skill update --all --dry-run'
-alias skill-sync='$DOTFILES_DIR/skills-install/sync.sh'
-alias skill-sync-dry='$DOTFILES_DIR/skills-install/sync.sh --dry-run'
+alias skill-sync='bash $DOTFILES_DIR/chezmoi/lib/install-external.sh $DOTFILES_DIR/skills/_registry.yaml'
+alias skill-sync-dry='bash $DOTFILES_DIR/chezmoi/lib/install-external.sh $DOTFILES_DIR/skills/_registry.yaml --dry-run'
 alias skill-edit='${EDITOR:-vim} $DOTFILES_DIR/skills/_registry.yaml'

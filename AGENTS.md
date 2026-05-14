@@ -66,11 +66,11 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 
 ### Agent Skill Management (`gh skill install`)
 
-Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`). Auto-runs as part of `dots sync` via `skills-install/.sync` (skipped when `gh skill` is unavailable).
+Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`). Auto-runs as part of `dots sync` via chezmoi's `run_onchange_install-claude-skills.sh.tmpl`, which invokes `chezmoi/lib/install-external.sh` (skipped silently when `gh skill` is unavailable).
 
-- `skill-sync` - Install skills from `skills-install/registry.yaml` into each configured harness (also fires during `dots sync`)
+- `skill-sync` - Install external skills from `skills/_registry.yaml` into each configured harness (also fires during `dots sync` via chezmoi)
 - `skill-sync-dry` - Preview skill installs without making changes
-- `skill-edit` - Edit skill install registry
+- `skill-edit` - Edit `skills/_registry.yaml`
 - `skill-ls` - Check installed skills for updates (`gh skill update --all --dry-run`)
 
 ### Session Monitoring
@@ -99,11 +99,10 @@ dotfiles/
 │   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/fromage, /fromagerie, /spec, etc.)
 │   ├── hooks/              # Pre-tool hooks
-│   ├── skills/             # Dotfiles-owned skill sources (copied into ~/.claude/skills/ by chezmoi)
 │   ├── profiles/           # Scoped sessions (fe, plugin, review, rtkonly, spec, todo) — launched via `ccp <name>`
 │   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)
-├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` and runs `.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl`, which copies claude/skills/ into ~/.claude/skills/ on every change.
-├── skills-install/         # External-skill registry + installers. `sync.sh` runs `gh skill install` per harness; `install-local.sh` is the harness-agnostic copier invoked by chezmoi for the dotfiles-owned tree.
+├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Copied to ~/.claude/skills/ by chezmoi.
+├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` and runs `.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl`, which invokes `chezmoi/lib/install-local.sh` (copies dotfiles-owned skills into ~/.claude/skills/) and `chezmoi/lib/install-external.sh` (runs `gh skill install` per harness).
 ├── packages.yaml           # Flat package registry (brew, cargo, apt)
 ├── packages/
 │   └── sync.sh             # Package sync with hash cache
@@ -243,9 +242,9 @@ The `.sync-with-rollback` script provides:
 
 **How to apply:**
 
-- New shell logic goes into a named function in a sourced library (e.g. `.sync-lib.sh`, `claude/lib/sync-common.sh`, `skills-install/sync.sh`), not as a free-floating block inside a `.sync` script.
+- New shell logic goes into a named function in a sourced library (e.g. `.sync-lib.sh`, `claude/lib/sync-common.sh`, `chezmoi/lib/install-external.sh`), not as a free-floating block inside a `.sync` script.
 - The function takes its inputs as arguments (no hidden globals beyond logging colors and explicitly-documented env vars).
-- A corresponding `tests/<area>.bats` file exercises every branch the function can take. Mock external commands (`gh`, `claude`, `yq`, `jq`) by putting fakes earlier on `$PATH` — see `tests/copilot-sync.bats` and `tests/skills-install.bats` for the pattern.
+- A corresponding `tests/<area>.bats` file exercises every branch the function can take. Mock external commands (`gh`, `claude`, `yq`, `jq`) by putting fakes earlier on `$PATH` — see `tests/copilot-sync.bats` and `tests/skills-external.bats` for the pattern.
 - `.sync` and the top-level orchestrators stay thin: parse args, source the library, dispatch to functions. If a `.sync` script grows logic that can't be invoked from a test, refactor it into a function first.
 - Add new test files to `tests/run-tests.sh` so `dots test` runs them.
 
@@ -314,8 +313,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | Plugin | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages.yaml` (repo root) | `dots sync` | Use `dots sync refresh` to force re-check |
-| Skill (external) | `skills-install/registry.yaml` | `dots sync` (or `skill-sync`) | Set `SKILL_HARNESSES` in `.env`. `gh skill install` writes to each agent's skills dir (for claude-code: `~/.claude/skills/<name>/` as a real dir). Auto-runs via `skills-install/.sync`. |
-| Skill (dotfiles-owned) | `claude/skills/<name>/` | `dots sync` | chezmoi's `.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl` re-copies every skill into `~/.claude/skills/<name>/` whenever the source tree hash changes. Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
+| Skill | `skills/` (dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` for the external-only fast path) | chezmoi's `run_onchange_install-claude-skills.sh.tmpl` invokes `chezmoi/lib/install-local.sh` (copies each `skills/<name>/` into `~/.claude/skills/<name>/`) and, when `gh skill` is present, `chezmoi/lib/install-external.sh` (runs `gh skill install` per harness from `SKILL_HARNESSES`). Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
 
 ## Important Gotchas
 

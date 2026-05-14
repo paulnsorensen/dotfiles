@@ -2,7 +2,7 @@
 # Generate a worktree settings.local.json from dotfiles sources of truth.
 #
 # Sources:
-#   claude/skills/*/             → Skill(name) permissions
+#   skills/*/                    → Skill(name) permissions
 #   claude/mcp/registry.yaml     → mcp__name__* permissions (user-scope MCPs)
 #   claude/plugins/registry.yaml → mcp__plugin_<plugin>_<server>__* per server
 #                                  declared in each plugin's .mcp.json

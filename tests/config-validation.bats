@@ -164,3 +164,34 @@ LAYOUT
     bad=$(yq -r '.packages[] | select(kind == "map") | select((keys | length) == 1 | not)' "$DOTFILES_DIR/packages.yaml" 2>/dev/null)
     [[ -z "$bad" ]]
 }
+
+# ── skill-* aliases (post-flatten chezmoi wiring) ─────────────────────────────
+# Locks the skill-sync / skill-sync-dry / skill-edit alias bodies to the
+# chezmoi/lib/ installers and skills/_registry.yaml. Without these, a future
+# rename of the helpers or registry would silently de-sync the aliases and
+# every dev's `skill-sync` would fail at runtime, not at test time.
+
+@test "skill-sync alias points at chezmoi/lib/install-external.sh + skills/_registry.yaml" {
+    local aliases_file="$DOTFILES_DIR/zsh/aliases.zsh"
+    grep -qE "^alias skill-sync='bash \\\$DOTFILES_DIR/chezmoi/lib/install-external\\.sh \\\$DOTFILES_DIR/skills/_registry\\.yaml'" "$aliases_file"
+    grep -qE "^alias skill-sync-dry='bash \\\$DOTFILES_DIR/chezmoi/lib/install-external\\.sh \\\$DOTFILES_DIR/skills/_registry\\.yaml --dry-run'" "$aliases_file"
+    grep -qE "^alias skill-edit='\\\$\\{EDITOR:-vim\\} \\\$DOTFILES_DIR/skills/_registry\\.yaml'" "$aliases_file"
+}
+
+@test "skill-* alias targets resolve to real executables and the registry exists" {
+    [[ -x "$DOTFILES_DIR/chezmoi/lib/install-external.sh" ]]
+    [[ -f "$DOTFILES_DIR/skills/_registry.yaml" ]]
+}
+
+@test "skill-* aliases do not reference the pre-flatten skills-install/ or claude/skills paths" {
+    local aliases_file="$DOTFILES_DIR/zsh/aliases.zsh"
+    # Inspect only the alias bodies. The surrounding comment block legitimately
+    # describes the new layout; we only want to fail if a *definition* drifts.
+    run grep -E "^alias skill-" "$aliases_file"
+    [[ $status -eq 0 ]]
+    if echo "$output" | grep -qE 'skills-install/|claude/skills'; then
+        echo "skill-* alias body still references pre-flatten paths:" >&2
+        echo "$output" >&2
+        return 1
+    fi
+}

@@ -18,7 +18,7 @@ Claude Code's permission system only appends to `permissions.allow` — it never
 LOCAL:   .claude/settings.local.json     (in the current project root)
 GLOBAL:  ~/.claude/settings.json          (user-wide settings)
 HOOKS:   claude/hooks/*.js                (PreToolUse hooks — for hook-blocked detection)
-SKILLS:  claude/skills/*/SKILL.md         (available skills — for missing skill detection)
+SKILLS:  skills/*/SKILL.md                (available skills — for missing skill detection)
 ```
 
 If the local file doesn't exist or has no `permissions.allow`, skip to Step 6 (skill additions may still apply).
@@ -129,7 +129,7 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 
 ### How to detect
 
-1. **Scan available skills**: Read `claude/skills/*/SKILL.md` to find all skill names. If the skills directory doesn't exist in the current project, check `~/Dev/dotfiles/claude/skills/` (the canonical source).
+1. **Scan available skills**: Read `skills/*/SKILL.md` to find all skill names. If the skills directory doesn't exist in the current project, check `~/Dev/dotfiles/skills/` (the canonical source).
 
 2. **Map hook redirects to required skills**: Each hook block implies a skill that should be allowed:
 
