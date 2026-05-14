@@ -1,5 +1,5 @@
 ---
-applyTo: "claude/**"
+applyTo: "{claude,skills}/**"
 ---
 
 ## Claude Code Configuration
