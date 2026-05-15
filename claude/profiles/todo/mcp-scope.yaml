@@ -1,5 +1,5 @@
 # MCP scope for the `todo` profile.
-# Each entry must be a key in claude/mcp/registry.yaml.
+# Each entry must be a key in agents/mcp/registry.yaml.
 #
 # Rationale: Productivity flow is the primary purpose, but /research is
 # useful when a task requires a fact-check or library doc lookup before

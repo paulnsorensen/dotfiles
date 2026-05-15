@@ -9,7 +9,7 @@ setup() {
     TMPDIR_TEST="$(mktemp -d "${TMPDIR:-/tmp}/wt-settings.XXXXXX")"
     mkdir -p "${TMPDIR_TEST}/skills/foo" \
              "${TMPDIR_TEST}/skills/bar-baz" \
-             "${TMPDIR_TEST}/claude/mcp" \
+             "${TMPDIR_TEST}/agents/mcp" \
              "${TMPDIR_TEST}/claude/plugins"
 }
 
@@ -63,7 +63,7 @@ assert_no_entry() {
 }
 
 @test "worktree-settings: discovers MCPs from registry" {
-    cat > "${TMPDIR_TEST}/claude/mcp/registry.yaml" <<'YAML'
+    cat > "${TMPDIR_TEST}/agents/mcp/registry.yaml" <<'YAML'
 mcps:
   context7:
     command: npx
@@ -178,7 +178,7 @@ JSON
 }
 
 @test "worktree-settings: permissions are sorted" {
-    cat > "${TMPDIR_TEST}/claude/mcp/registry.yaml" <<'YAML'
+    cat > "${TMPDIR_TEST}/agents/mcp/registry.yaml" <<'YAML'
 mcps:
   zebra:
     command: zebra-mcp
@@ -210,7 +210,7 @@ YAML
 
 @test "worktree-settings: real output includes known MCPs" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"
-    # serper is a deterministic user-scope entry in claude/mcp/registry.yaml.
+    # serper is a deterministic user-scope entry in agents/mcp/registry.yaml.
     # Plugin-sourced MCPs (e.g. cheese-flow's tilth) require an .mcp.json that
     # may not exist in CI, so assert against the in-repo registry instead.
     assert_has_entry "$result" "mcp__serper__*"

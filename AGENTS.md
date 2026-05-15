@@ -92,17 +92,22 @@ Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env
 ```
 dotfiles/
 ├── bin/                    # CLI tools (dots command)
-├── claude/                 # Claude Code configuration
-│   ├── mcp/
-│   │   ├── registry.yaml   # MCP source of truth
-│   │   └── sync.sh         # Declarative MCP sync script
+├── agents/                 # Harness-agnostic agent config (shared by Claude + Codex)
+│   ├── AGENTS.md           # Global coding-agent preferences. Copied to ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md by chezmoi.
+│   ├── RTK.md              # RTK proxy reference (Claude only — copied to ~/.claude/RTK.md by chezmoi).
+│   └── mcp/
+│       ├── registry.yaml   # MCP source of truth (per-entry `harnesses: [claude, codex]`)
+│       └── sync.sh         # Declarative MCP sync — loops over harnesses, calls native `<harness> mcp add/list/remove`.
+├── claude/                 # Claude Code-specific configuration
 │   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/fromage, /fromagerie, /spec, etc.)
 │   ├── hooks/              # Pre-tool hooks
 │   ├── profiles/           # Scoped sessions (fe, plugin, review, rtkonly, spec, todo) — launched via `ccp <name>`
 │   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)
+├── codex/                  # OpenAI Codex CLI-specific configuration
+│   └── config.toml         # Base ~/.codex/config.toml — copied on first install only, then user-owned (MCP entries written by sync.sh).
 ├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Copied to ~/.claude/skills/ by chezmoi.
-├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` and runs `.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl`, which invokes `chezmoi/lib/install-local.sh` (copies dotfiles-owned skills into ~/.claude/skills/) and `chezmoi/lib/install-external.sh` (runs `gh skill install` per harness).
+├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` and runs run_onchange scripts: install-claude-skills (skills/ → ~/.claude/skills/), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-mcp (drives agents/mcp/sync.sh --force).
 ├── packages.yaml           # Flat package registry (brew, cargo, apt)
 ├── packages/
 │   └── sync.sh             # Package sync with hash cache
@@ -142,36 +147,38 @@ dotfiles/
 - **Modular Configuration**: Each aspect of the shell is in its own file for maintainability
 - **Theme Consistency**: Chocolate Donut theme managed via tinty across terminal, git, and iTerm2
 - **Performance Optimization**: Git prompt uses caching to avoid slowdowns
-- **Declarative MCP Management**: Single YAML registry synced via native `claude mcp` commands
+- **Declarative MCP Management**: Single YAML registry at `agents/mcp/registry.yaml`, applied to every installed harness (Claude, Codex) via their native `mcp add/remove` CLIs
 - **Rollback Support**: Sync creates backups and manifests for easy rollback
 - **Scoped Profiles**: `claude/profiles/<name>/` bundles a CLAUDE.md + `settings-merge.json` for task-shaped sessions (frontend, spec, review, rtk-only, plugin, todo). `ccp <name>` launches with profile-merged settings, enabling per-profile LSP gating and tool restrictions.
 
 ## MCP (Model Context Protocol) Management
 
-MCPs are managed declaratively via `claude/mcp/registry.yaml`:
+MCPs are managed declaratively via `agents/mcp/registry.yaml`. One registry, multiple harnesses:
 
 ```yaml
 mcps:
   context7:
     command: npx
     args: ["-y", "@upstash/context7-mcp"]
-    scope: user
+    scope: user                       # claude-only — codex ignores
+    harnesses: [claude, codex]        # optional; default is both
+    gate_unless: CHEESE_FLOW          # claude-only — skip install when plugin provides it
     description: Documentation context for libraries and frameworks
 ```
 
-**Scopes:**
+**Per-entry fields:**
 
-- `user` - Available in all projects (recommended for dev tools)
-- `project` - Stored in .mcp.json, shared with team
-- `local` - Machine-specific, gitignored
+- `harnesses` (optional) — list of harness names to install into. Default: `[claude, codex]`.
+- `scope` (claude-only) — `user`, `project`, or `local`. Codex has no scopes.
+- `gate_unless` (claude-only) — skip install when env var equals `"true"` (defer to a plugin's bundled MCP).
 
 **Workflow:**
 
 1. Edit registry: `mcp-edit`
 2. Preview changes: `mcp-sync-dry`
-3. Apply changes: `mcp-sync`
+3. Apply changes: `mcp-sync` (interactive removal prompts) or let `dots sync` drive it via chezmoi's `run_onchange_install-mcp.sh.tmpl` (uses `--force` non-interactively).
 
-The sync script uses native `claude mcp add/remove` commands, not direct JSON manipulation.
+`agents/mcp/sync.sh` loops over harnesses, calling native `claude mcp add/list/remove` and `codex mcp add/list/remove` per entry. A missing harness CLI is skipped silently.
 
 ## Plugin Management
 
@@ -309,7 +316,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 
 | Type | Registry | Sync command | Notes |
 |------|----------|--------------|-------|
-| MCP | `claude/mcp/registry.yaml` | `mcp-sync` | Restart Claude Code after |
+| MCP | `agents/mcp/registry.yaml` | `mcp-sync` (or `dots sync`) | Restart Claude / Codex after; entries flow to both harnesses by default |
 | Plugin | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages.yaml` (repo root) | `dots sync` | Use `dots sync refresh` to force re-check |

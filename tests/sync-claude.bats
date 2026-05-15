@@ -1,11 +1,12 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC1090,SC2034,SC2317
-# Tests for Claude sync infrastructure (sync-common.sh, mcp/sync.sh, plugins/sync.sh)
+# Tests for the harness sync infrastructure: sync-common.sh (shared kernel),
+# agents/mcp/sync.sh (multi-harness MCP sync), claude/plugins/sync.sh.
 
 load test_helper
 
 SYNC_COMMON="$REAL_DOTFILES_DIR/claude/lib/sync-common.sh"
-MCP_SYNC="$REAL_DOTFILES_DIR/claude/mcp/sync.sh"
+MCP_SYNC="$REAL_DOTFILES_DIR/agents/mcp/sync.sh"
 PLUGIN_SYNC="$REAL_DOTFILES_DIR/claude/plugins/sync.sh"
 
 setup() {
@@ -36,6 +37,18 @@ create_mock_sync_dir() {
     cp "$SYNC_COMMON" "$mock_dir/../lib/sync-common.sh"
     cp "$src_script" "$mock_dir/sync.sh"
     echo "$mock_dir"
+}
+
+# agents/mcp/sync.sh sources ../../claude/lib/sync-common.sh — two levels up
+# instead of one. Build the deeper mock tree so the relative source path
+# resolves the same way it does in the real repo.
+create_mock_mcp_sync_dir() {
+    local name="$1"
+    local root="$TEST_HOME/$name"
+    mkdir -p "$root/agents/mcp" "$root/claude/lib"
+    cp "$SYNC_COMMON" "$root/claude/lib/sync-common.sh"
+    cp "$MCP_SYNC" "$root/agents/mcp/sync.sh"
+    echo "$root/agents/mcp"
 }
 
 write_mcp_registry() {
@@ -223,18 +236,18 @@ JSON
 
 @test "mcp sync: missing registry file exits with error" {
     local mock_dir
-    mock_dir=$(create_mock_sync_dir "$MCP_SYNC" "mcp-noreg")
-    run bash "$mock_dir/sync.sh"
+    mock_dir=$(create_mock_mcp_sync_dir "mcp-noreg")
+    run bash "$mock_dir/sync.sh" --harness claude
     assert_failure
-    assert_output_contains "Registry file not found"
+    assert_output_contains "registry.yaml not found"
 }
 
 @test "mcp sync: dry-run shows plan without executing" {
     write_mcp_registry
     local mock_dir
-    mock_dir=$(create_mock_sync_dir "$MCP_SYNC" "mcp-sync")
+    mock_dir=$(create_mock_mcp_sync_dir "mcp-sync")
     cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
-    run bash "$mock_dir/sync.sh" --dry-run
+    run bash "$mock_dir/sync.sh" --dry-run --harness claude
     assert_success
     assert_output_contains "[dry-run]"
     assert_output_contains "alpha"
@@ -245,9 +258,9 @@ JSON
 @test "mcp sync: adds new MCPs with correct scope and args" {
     write_mcp_registry
     local mock_dir
-    mock_dir=$(create_mock_sync_dir "$MCP_SYNC" "mcp-add")
+    mock_dir=$(create_mock_mcp_sync_dir "mcp-add")
     cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
-    run bash "$mock_dir/sync.sh"
+    run bash "$mock_dir/sync.sh" --harness claude
     assert_success
     grep -q "claude mcp add -s user alpha -- npx alpha-mcp@latest" "$CLAUDE_LOG"
     grep -q "claude mcp add -s project beta -- node beta-server.js" "$CLAUDE_LOG"

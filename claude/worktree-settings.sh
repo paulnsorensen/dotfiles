@@ -3,7 +3,7 @@
 #
 # Sources:
 #   skills/*/                    → Skill(name) permissions
-#   claude/mcp/registry.yaml     → mcp__name__* permissions (user-scope MCPs)
+#   agents/mcp/registry.yaml     → mcp__name__* permissions (user-scope MCPs)
 #   claude/plugins/registry.yaml → mcp__plugin_<plugin>_<server>__* per server
 #                                  declared in each plugin's .mcp.json
 #   claude/settings.json         → mcp__claude_ai_* entries (Claude.ai integrations)
@@ -15,7 +15,7 @@ set -euo pipefail
 
 DOTFILES="${1:-$(cd "${0%/*}/.." && pwd)}"
 SKILLS_DIR="${DOTFILES}/skills"
-MCP_REGISTRY="${DOTFILES}/claude/mcp/registry.yaml"
+MCP_REGISTRY="${DOTFILES}/agents/mcp/registry.yaml"
 PLUGIN_REGISTRY="${DOTFILES}/claude/plugins/registry.yaml"
 SETTINGS_JSON="${DOTFILES}/claude/settings.json"
 PLUGIN_CACHE="${HOME}/.claude/plugins/cache"

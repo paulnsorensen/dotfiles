@@ -92,7 +92,7 @@ alias ccm='claude-monitor'
 #                          profile's settings.json when both are present.
 #                          Use for per-profile enabledPlugins overrides.)
 #   mcp-scope.yaml       → preferred; list of MCP names validated against
-#                          claude/mcp/registry.yaml. Generates a strict mcp.json
+#                          agents/mcp/registry.yaml. Generates a strict mcp.json
 #                          at launch (combined with mcp-add.json if present).
 #   mcp.json             → legacy; hand-written strict mcp config.
 #   mcp-add.json         → additive. Merged into mcp-scope output if both exist;
@@ -141,7 +141,7 @@ ccp() {
     local generated_mcp=""
     if [[ -f "$profile/mcp-scope.yaml" ]]; then
         generated_mcp=$(mktemp "${TMPDIR:-/tmp}/ccp-$name-mcp.XXXXXX")
-        if ! "$DOTFILES_DIR/claude/mcp/gen-profile-mcp.sh" "$name" > "$generated_mcp"; then
+        if ! "$DOTFILES_DIR/claude/lib/gen-profile-mcp.sh" "$name" > "$generated_mcp"; then
             echo "ccp: failed to generate mcp.json for profile '$name'" >&2
             rm -f "$generated_mcp"
             return 1
@@ -179,12 +179,13 @@ compdef _ccp ccp
 # MCP Management (thin wrappers around native commands)
 # ═══════════════════════════════════════════════════════════════════
 CLAUDE_DOTFILES="$DOTFILES_DIR/claude"
+AGENTS_DOTFILES="$DOTFILES_DIR/agents"
 
 alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'
-alias mcp-sync='$CLAUDE_DOTFILES/mcp/sync.sh'
-alias mcp-sync-dry='$CLAUDE_DOTFILES/mcp/sync.sh --dry-run'
-alias mcp-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/mcp/registry.yaml'
+alias mcp-sync='$AGENTS_DOTFILES/mcp/sync.sh'
+alias mcp-sync-dry='$AGENTS_DOTFILES/mcp/sync.sh --dry-run'
+alias mcp-edit='${EDITOR:-vim} $AGENTS_DOTFILES/mcp/registry.yaml'
 
 # Add user-scoped MCP (available in all projects)
 mcp-add() {
