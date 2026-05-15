@@ -1,0 +1,9 @@
+# skhd hotkey daemon configuration
+#
+# Yabai bindings were removed when the tiling window manager was pulled out.
+# Add new shortcuts below — each line binds a chord to a shell command.
+#
+# Reference: https://github.com/koekeishiya/skhd
+#
+# Example:
+#   cmd + alt - return : open -a iTerm

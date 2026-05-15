@@ -110,7 +110,7 @@ dotfiles/
 ├── gitconfig               # Git configuration
 ├── prek.toml               # Pre-commit hooks config (prek)
 ├── iterm2/                 # iTerm2 preferences
-├── yabai/                  # yabai + skhd window manager config
+├── skhd/                   # skhd hotkey daemon config
 ├── reference/              # Reference docs (gitignored)
 ├── .claude/
 │   └── specs/              # Tabled feature specs (.claude/specs/<slug>.md)
@@ -124,7 +124,7 @@ dotfiles/
 │   ├── core.zsh            # Core environment setup
 │   ├── fzf.zsh             # Fuzzy finder setup
 │   ├── prompt.zsh          # Custom powerline prompt
-│   └── yabai.zsh           # Yabai/skhd reload alias
+│   └── skhd.zsh            # skhd reload alias
 ├── zshrc                   # Main zsh entry point
 ├── .sync-with-rollback     # Main sync script with state management
 ├── AGENTS.md               # This file — agent instructions for the repo
@@ -271,18 +271,13 @@ Full agent/skill catalog is in `claude/CLAUDE.md` (auto-discovered). Key project
 - Session hooks: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
 
-### Window Management (yabai + skhd)
+### Hotkey Daemon (skhd)
 
-Tiling window manager + hotkey daemon for macOS, installed from the `koekeishiya/formulae` brew tap and started as background services by `yabai/.sync`. Configs live at `yabai/yabairc` and `yabai/skhdrc` and are symlinked to `~/.yabairc` / `~/.skhdrc`.
+Hotkey daemon for macOS, installed from the `koekeishiya/formulae` brew tap and started as a background service by `skhd/.sync`. Config lives at `skhd/skhdrc` and is symlinked to `~/.skhdrc`. Yabai was removed; the file is intentionally an empty skeleton — add bindings as needed.
 
-- **Modifier ladder**: `ctrl+alt` for focus/layout, `ctrl+alt+shift` for swap/move, `cmd+alt` for resize, `ctrl+cmd+alt` for SizeUp-style window/space ops.
-- **Vim navigation**: `ctrl+alt+hjkl` focus, `ctrl+alt+shift+hjkl` swap, `cmd+alt+hjkl` resize.
-- **Spaces**: `ctrl+alt+1..4` focus, `ctrl+alt+shift+1..4` move-and-follow. macOS spaces must be created manually in Mission Control first — yabai cannot create them with SIP enabled.
-- **Snap-to-grid for floating windows**: `ctrl+alt+arrows` for halves, `ctrl+alt+u/i/n/m` for quarters, `ctrl+alt+return` for fullscreen. Auto-floats a tiled window before snapping.
-- **SizeUp chords**: `ctrl+cmd+alt+m` toggles zoom-fullscreen (window covers display, others hide underneath), `ctrl+cmd+alt+n` rotates the BSP tree 90°.
-- **Reload**: `ctrl+alt+shift+r` restarts both services after config edits.
-- **First-time setup**: grant Accessibility (and optionally Screen Recording) to `yabai` and `skhd` in System Settings → Privacy & Security after `dots sync`.
-- **SIP**: opacity, removing title bars, and cross-space window movement require SIP partially disabled. The basic tile/focus/swap loop works with SIP on.
+- **Reload**: `skr` (alias) or `skhd --restart-service` after editing `skhd/skhdrc`.
+- **First-time setup**: grant Accessibility to `skhd` in System Settings → Privacy & Security after `dots sync`.
+- **Syntax reference**: <https://github.com/koekeishiya/skhd>. Hotkeys can run any shell command via `$SHELL -c`, support modal/chord modes, application-specific bindings, and key synthesis (`-k`).
 
 ## Pre-Commit Hooks (prek)
 
