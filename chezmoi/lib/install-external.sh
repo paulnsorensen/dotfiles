@@ -74,6 +74,24 @@ fi
 echo -e "${BLUE}Harnesses:${NC} $HARNESSES"
 echo
 
+# Cache: skip when registry content + harness list match the last successful
+# run. Bust with --force, by deleting $CACHE_FILE, or by running
+# `gh skill update --all` to pull upstream changes.
+CACHE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/skill-external-hash"
+REGISTRY_DIGEST=$(shasum -a 256 "$REGISTRY_FILE" | awk '{print $1}')
+COMBINED_DIGEST=$(printf '%s\n%s\n' "$REGISTRY_DIGEST" "$HARNESSES" | shasum -a 256 | awk '{print $1}')
+
+if ! $FORCE && ! $DRY_RUN && [[ -f "$CACHE_FILE" ]] && [[ "$(cat "$CACHE_FILE" 2>/dev/null)" == "$COMBINED_DIGEST" ]]; then
+    echo -e "${GREEN}Registry + harnesses unchanged since last sync — skipping.${NC}"
+    echo "  Pass --force, delete $CACHE_FILE, or run 'gh skill update --all' to refresh."
+    exit 0
+fi
+
+# Failure counter shared across parallel subshells via tempfile (one line per fail).
+FAIL_COUNTER=$(mktemp "${TMPDIR:-/tmp}/skill-fail.XXXXXX")
+export FAIL_COUNTER
+trap 'rm -f "$FAIL_COUNTER"' EXIT
+
 # Resolve skills for a source repo: explicit list from registry, or auto-discover
 # via GitHub API. Echoes one skill name per line.
 resolve_skills() {
@@ -107,6 +125,7 @@ install_skill() {
         echo -e "    ${GREEN}✓${NC} $skill → $harness"
     else
         echo -e "    ${RED}✗${NC} $skill → $harness"
+        echo x >> "$FAIL_COUNTER"
         if [[ -n "$output" ]]; then
             echo "$output" | head -3 | sed -e "s/^/      /"
         fi
@@ -137,15 +156,36 @@ for repo in $SOURCES; do
     echo -e "  ${BLUE}Skills ($skill_count):${NC} $(echo "$skills" | tr '\n' ' ')"
     echo
 
+    # Parallel fan-out: one subshell per harness. Each writes to stdout +
+    # the shared $FAIL_COUNTER tempfile. Output interleaves across harnesses,
+    # but every install line is self-identifying ("✓ <skill> → <harness>").
+    pids=()
     for harness in $HARNESSES; do
-        echo -e "  ${BLUE}→ $harness${NC}"
-        while IFS= read -r skill; do
-            [[ -z "$skill" ]] && continue
-            install_skill "$repo" "$skill" "$harness" "$pin"
-        done <<< "$skills"
-        echo
+        {
+            while IFS= read -r skill; do
+                [[ -z "$skill" ]] && continue
+                install_skill "$repo" "$skill" "$harness" "$pin"
+            done <<< "$skills"
+        } &
+        pids+=("$!")
     done
+    for pid in "${pids[@]}"; do
+        wait "$pid"
+    done
+    echo
 done
+
+fail_count=0
+if [[ -s "$FAIL_COUNTER" ]]; then
+    fail_count=$(wc -l < "$FAIL_COUNTER" | tr -d ' ')
+fi
+
+if [[ "$fail_count" -gt 0 ]]; then
+    echo -e "${YELLOW}$fail_count install(s) failed — cache not updated. Re-run to retry.${NC}"
+elif ! $DRY_RUN; then
+    mkdir -p "$(dirname "$CACHE_FILE")"
+    echo "$COMBINED_DIGEST" > "$CACHE_FILE"
+fi
 
 echo -e "${GREEN}Sync complete!${NC}"
 echo

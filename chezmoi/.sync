@@ -36,14 +36,16 @@ fi
 # the dotfiles/skills tree changes. Non-fatal — if chezmoi rejects
 # the user's sourceDir override or any other config edit, dots sync still
 # wires everything else.
+#
+# Stream output live (sed indent, set -o pipefail preserves chezmoi's exit
+# code). The skill installer runs serial `gh skill install` per
+# (source × skill × harness); without live output the user sees nothing
+# for the multi-minute install loop.
 if command -v chezmoi &>/dev/null; then
-    apply_log=$(mktemp "${TMPDIR:-/tmp}/chezmoi-apply.XXXXXX")
-    trap 'rm -f "$apply_log"' EXIT
-    if chezmoi apply --force >"$apply_log" 2>&1; then
+    if chezmoi apply --force 2>&1 | sed 's/^/  /'; then
         echo "  chezmoi apply complete"
     else
-        echo "  WARN: chezmoi apply failed (skills may be out of sync):" >&2
-        sed 's/^/    /' "$apply_log" >&2
+        echo "  WARN: chezmoi apply failed (skills may be out of sync)" >&2
     fi
 else
     echo "  Skipping chezmoi apply (chezmoi not installed); skills will not sync"

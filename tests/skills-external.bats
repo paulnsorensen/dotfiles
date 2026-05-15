@@ -373,6 +373,127 @@ MOCK
 
 # ─── registry.yaml shape (live registry) ───────────────────────────────
 
+# ─── cache: skip-if-unchanged ──────────────────────────────────────────
+# install-external.sh writes $XDG_STATE_HOME/dotfiles/skill-external-hash
+# (or ~/.local/state/...) after a successful run, then early-exits on
+# subsequent runs when the (registry content + harness list) digest matches.
+# This is the optimization that turns a multi-minute re-sync into a no-op.
+
+@test "skill sync: second run with unchanged registry+harnesses early-exits and runs no installs" {
+    write_registry "acme/widgets" "    skills:
+      - alpha
+      - bravo"
+    write_env "claude-code"
+
+    run_sync
+    assert_success
+
+    # First run did real installs (2 skills × 1 harness = 2 calls).
+    run grep -c 'gh skill install' "$GH_LOG"
+    [[ "$output" == "2" ]]
+
+    # Cache file was written
+    assert_file_exists "$HOME/.local/state/dotfiles/skill-external-hash"
+
+    # Reset log, then run again with no changes — should skip entirely.
+    : > "$GH_LOG"
+    run_sync
+    assert_success
+    assert_output_contains "unchanged since last sync"
+
+    # Zero install calls on the second run.
+    run grep -c 'gh skill install' "$GH_LOG"
+    [[ "$output" == "0" ]]
+}
+
+@test "skill sync: --force bypasses the cache even when registry is unchanged" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "claude-code"
+
+    # Prime the cache via a first successful run.
+    run_sync
+    assert_success
+
+    # Second run with --force should re-install despite matching cache.
+    : > "$GH_LOG"
+    run_sync --force
+    assert_success
+    run grep -c 'gh skill install acme/widgets alpha' "$GH_LOG"
+    [[ "$output" == "1" ]]
+}
+
+@test "skill sync: registry change busts the cache (re-installs)" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "claude-code"
+
+    run_sync
+    assert_success
+
+    # Change the registry — add a second skill.
+    write_registry "acme/widgets" "    skills:
+      - alpha
+      - bravo"
+
+    : > "$GH_LOG"
+    run_sync
+    assert_success
+    # Cache invalidated, real installs happen again
+    run grep -c 'gh skill install' "$GH_LOG"
+    [[ "$output" == "2" ]]
+}
+
+@test "skill sync: harness change busts the cache" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "claude-code"
+
+    run_sync
+    assert_success
+
+    # Same registry, different harness set
+    write_env "claude-code cursor"
+
+    : > "$GH_LOG"
+    run_sync
+    assert_success
+    run grep -c 'gh skill install' "$GH_LOG"
+    [[ "$output" == "2" ]]
+}
+
+@test "skill sync: --dry-run does not write the cache file" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "claude-code"
+
+    run_sync --dry-run
+    assert_success
+
+    if [[ -f "$HOME/.local/state/dotfiles/skill-external-hash" ]]; then
+        echo "dry-run wrote the cache file" >&2
+        return 1
+    fi
+}
+
+@test "skill sync: failed installs do not write the cache" {
+    write_registry "acme/widgets" "    skills:
+      - alpha
+      - bravo"
+    write_env "claude-code"
+    export GH_BEHAVIOR="fail-skill-install"
+
+    run_sync
+    assert_success  # script does not abort on per-skill failure
+
+    if [[ -f "$HOME/.local/state/dotfiles/skill-external-hash" ]]; then
+        echo "cache written despite failures" >&2
+        return 1
+    fi
+    assert_output_contains "install(s) failed"
+    assert_output_contains "cache not updated"
+}
+
 @test "registry.yaml: real registry parses cleanly with yq" {
     run yq '.sources | keys' "$REAL_DOTFILES_DIR/skills/_registry.yaml"
     assert_success
