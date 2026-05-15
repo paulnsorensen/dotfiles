@@ -4,7 +4,7 @@
 # Reads:
 #   claude/profiles/<name>/mcp-scope.yaml   (required — list of MCP names)
 #   claude/profiles/<name>/mcp-add.json     (optional — profile-local MCPs)
-#   claude/mcp/registry.yaml                (parent registry, source of truth)
+#   agents/mcp/registry.yaml                (parent registry, source of truth)
 #
 # Validates each mcp-scope entry against the parent registry.
 # Expands ${VAR} references in env values from .env + current shell.
@@ -16,7 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 DOTFILES_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-REGISTRY="$DOTFILES_DIR/claude/mcp/registry.yaml"
+REGISTRY="$DOTFILES_DIR/agents/mcp/registry.yaml"
 
 profile="${1:-}"
 [[ -n "$profile" ]] || { echo "usage: gen-profile-mcp.sh <profile-name>" >&2; exit 1; }

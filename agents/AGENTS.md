@@ -1,6 +1,9 @@
-# Global Claude Code Preferences
+# Global Coding Agent Preferences
 
 Personal preferences and standards that apply across all projects.
+
+Read by every coding agent on this machine — chezmoi copies this file to
+`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` on `dots sync`.
 
 ## Communication Style
 

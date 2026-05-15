@@ -1,0 +1,15 @@
+#!/bin/bash
+# run_onchange — re-runs whenever the dotfiles codex/ source tree changes.
+#
+# Reruns when any file under codex/ changes. The hash below is computed by
+# chezmoi at template render time over the rendered script; chezmoi reruns
+# whenever the embedded hash changes.
+#
+# Codex source-tree hash: {{ output "sh" "-c" (printf "find %q/../codex -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+
+"$SOURCE_DIR/lib/install-codex.sh" "$DOTFILES_ROOT/codex"

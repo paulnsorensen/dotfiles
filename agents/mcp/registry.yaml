@@ -1,22 +1,23 @@
-# MCP Registry - Source of truth for Claude Code MCP servers
-# Run `mcp-sync` to sync this to your Claude Code installation
+# MCP Registry - Source of truth for coding-agent MCP servers
+# Run `mcp-sync` (or `dots sync`) to apply this to every installed harness.
 #
-# Scopes:
-#   user    - Available in all projects (recommended for dev tools)
-#   project - Stored in .mcp.json, shared with team
-#   local   - Machine-specific, gitignored
-#
-# Gating:
-#   gate_unless: VAR  - skip install when env var VAR == "true"
-#                       (used to defer to a plugin's bundled MCP when active)
+# Per-entry fields:
+#   command      — stdio launcher (required unless `url` is set)
+#   args         — array of arg strings
+#   url          — for streamable HTTP servers (Codex only; Claude uses command form)
+#   env          — env vars; values can reference shell vars via "${VAR}"
+#   scope        — claude-only: user | project | local (default user)
+#   harnesses    — list of harness names to install into; default: [claude, codex]
+#   gate_unless  — claude-only: skip install when env var == "true" (defer to a plugin's bundled MCP)
+#   description  — human-readable purpose
 
 mcps:
   # context7, tavily — provided by the cheese-flow plugin's .mcp.json when
   # CHEESE_FLOW=true. Plugin MCPs are session-wide and accessible to all
-  # skills/agents. Registering them here too would spawn duplicate processes.
-  # tilth is registered below with gate_unless so we keep cheez-* working
-  # whenever cheese-flow is dark.
-
+  # skills/agents. Registering them here too would spawn duplicate processes
+  # under Claude. Codex has no plugin system, so gate_unless is ignored there
+  # and the entry installs normally.
+  #
   # shadcn lives in the FE profile only — see claude/profiles/fe/mcp-add.json.
   # Installing user-scope loads its tool schemas in every session even though
   # shadcn is only useful for FE work.
