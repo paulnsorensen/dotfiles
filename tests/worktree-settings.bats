@@ -227,8 +227,8 @@ YAML
 @test "worktree-settings: real output includes known skills" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"
     assert_has_entry "$result" "Skill(scout)"
-    assert_has_entry "$result" "Skill(commit)"
-    assert_has_entry "$result" "Skill(gh)"
+    assert_has_entry "$result" "Skill(self-eval)"
+    assert_has_entry "$result" "Skill(de-slop)"
 }
 
 @test "worktree-settings: real output includes known MCPs" {
