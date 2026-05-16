@@ -1,0 +1,64 @@
+#!/bin/bash
+# Confirm Alfred's sync folder points at this dotfiles directory.
+#
+# Alfred's preference data lives in an `Alfred.alfredpreferences` package.
+# Pointing Alfred's Sync Folder (Advanced tab) at $DOTFILES_DIR/alfred/
+# makes that package file-backed so it can be committed to the repo.
+#
+# One-time setup on a new machine:
+#   1. Install Alfred:    brew install --cask alfred
+#   2. Open Alfred → Preferences → Advanced → "Set sync folder…"
+#   3. Choose THIS directory (alfred/) inside the dotfiles repo
+#   4. Restart Alfred — it will now read & write Alfred.alfredpreferences here
+#   5. Configure hotkeys (Cmd+Space for the main bar, etc.) and they persist
+#
+# A few preferences are intentionally per-machine and won't sync:
+#   - Main Alfred hotkey
+#   - Currently selected theme
+#   - Clipboard History enable + history data
+# See: https://www.alfredapp.com/help/advanced/sync/
+
+set -euo pipefail
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "alfred/.sync: skipping (not macOS)" >&2
+    exit 0
+fi
+
+readonly SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+readonly ALFRED_PREFS_JSON="$HOME/Library/Application Support/Alfred/prefs.json"
+readonly ALFRED_PACKAGE="$SCRIPT_DIR/Alfred.alfredpreferences"
+
+if ! [[ -d "/Applications/Alfred.app" || -d "/Applications/Alfred 5.app" ]]; then
+    echo "alfred/.sync: Alfred not installed — install via: brew install --cask alfred" >&2
+    exit 0
+fi
+
+if [[ ! -f "$ALFRED_PREFS_JSON" ]]; then
+    echo "alfred/.sync: Alfred has never run on this machine — launch it once, then re-run dots sync" >&2
+    exit 0
+fi
+
+current_folder=""
+if command -v jq >/dev/null 2>&1; then
+    current_folder=$(jq -r '.current // empty' "$ALFRED_PREFS_JSON" 2>/dev/null || true)
+fi
+
+if [[ "$current_folder" == "$SCRIPT_DIR" ]]; then
+    echo "alfred/.sync: sync folder already points at $SCRIPT_DIR"
+    if [[ ! -d "$ALFRED_PACKAGE" ]]; then
+        echo "              note: no Alfred.alfredpreferences package in this dir yet —" >&2
+        echo "                    it will be created when Alfred next saves preferences" >&2
+    fi
+    exit 0
+fi
+
+# Sync folder is set to something else (or unset) — instruct, don't force.
+echo "alfred/.sync: Alfred sync folder is not pointing at this dotfiles dir."
+echo "              current: ${current_folder:-<unset>}"
+echo "              target:  $SCRIPT_DIR"
+echo
+echo "              One-time setup:"
+echo "                Alfred → Preferences → Advanced → Set sync folder…"
+echo "                pick: $SCRIPT_DIR"
+echo "                then restart Alfred."
