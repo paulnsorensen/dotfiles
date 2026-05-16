@@ -3,7 +3,7 @@
 # Bare string = brew (mac) / apt (linux)
 # Key-value = override defaults
 #
-#   source:   brew (default) | cask | tap | cargo | npm | uv
+#   source:   brew (default) | cask | tap | cargo | npm | uv | gh-extension
 #   dev:      only when DOTFILES_DEV=true
 #   apt:      override name for linux
 #   platform: mac | linux (default: both)
@@ -94,6 +94,9 @@ packages:
   - check-jsonschema: { source: uv }
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
   - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API
+
+  # gh CLI extensions
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack }   # native PR-stack management (used by /pr-stack)
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }

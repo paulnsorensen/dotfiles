@@ -356,6 +356,45 @@ sync_uv() {
     log_success "UV sync complete"
 }
 
+########## gh extensions
+
+sync_gh_extensions() {
+    local ext_pkgs
+    ext_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "gh-extension") | [.key, (.value.pkg // .key)] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    [[ -z "$ext_pkgs" ]] && return 0
+
+    if ! command -v gh &>/dev/null; then
+        log_error "gh not found (install gh first)"
+        FAILED+=("gh")
+        return 0
+    fi
+
+    log_info "Syncing gh extensions"
+    local installed
+    # gh extension list emits tab-separated rows: "gh <name>\t<owner>/<repo>\t<version>"
+    installed=$(gh extension list 2>/dev/null | awk -F'\t' '{print $2}' || true)
+
+    while IFS=$'\t' read -r name pkg; do
+        [[ -z "$name" ]] && continue
+        if echo "$installed" | grep -qx "$pkg"; then
+            echo "  + $name"
+        else
+            echo "  Installing $pkg..."
+            if ! gh extension install "$pkg" </dev/null; then
+                log_error "Failed to install $pkg"
+                FAILED+=("$pkg")
+            fi
+        fi
+    done <<< "$ext_pkgs"
+
+    if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
+        log_info "Upgrading gh extensions..."
+        gh extension upgrade --all </dev/null || log_warning "gh extension upgrade --all failed"
+    fi
+
+    log_success "gh extensions sync complete"
+}
+
 ########## APT
 
 apt_check_pkg() {
@@ -428,6 +467,7 @@ sync_cargo
 sync_rustup_proxies
 sync_npm
 sync_uv
+sync_gh_extensions
 
 if ((${#FAILED[@]})); then
     echo ""
