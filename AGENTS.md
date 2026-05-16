@@ -108,8 +108,8 @@ dotfiles/
 │   └── config.toml         # Base ~/.codex/config.toml — copied on first install only, then user-owned (MCP entries written by sync.sh).
 ├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Copied to ~/.claude/skills/ by chezmoi.
 ├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-claude-skills (skills/ → ~/.claude/skills/), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-mcp (drives agents/mcp/sync.sh --force).
-├── packages.yaml           # Flat package registry (brew, cargo, apt)
 ├── packages/
+│   ├── packages.yaml       # Flat package registry (brew, cargo, apt)
 │   └── sync.sh             # Package sync with hash cache
 ├── fonts/                  # Font installation (.sync script)
 ├── prek.toml               # Pre-commit hooks config (prek)
@@ -236,7 +236,7 @@ The `.sync-with-rollback` script provides:
 
 **Skip list** (not symlinked to ~, canonical source is `SYNC_SKIP_LIST` in `.sync-lib.sh`, which is sourced by `.sync-with-rollback`):
 
-- `.git`, `.local`, `.worktrees`, `reference`, `packages`, `packages.yaml`, `brew`, `apt`, `agents`, `codex`
+- `.git`, `.local`, `.worktrees`, `reference`, `packages`, `brew`, `apt`, `agents`, `codex`
 
 **Hidden directory dispatch**: visible dirs are iterated by `for file in *` (glob), hidden dirs (starting with `.`) are iterated separately by `sync_hidden_dirs`. Both use the same rule: if `$dir/.sync` exists, run it. `chezmoi/` is a visible dir that owns its own `.sync` and is dispatched via the same mechanism (no SYNC_SKIP_LIST entry needed — the `.sync` short-circuit happens before symlinking).
 
@@ -355,7 +355,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | MCP | `agents/mcp/registry.yaml` | `mcp-sync` (or `dots sync`) | Restart Claude / Codex after; entries flow to both harnesses by default |
 | Plugin | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
-| Package | `packages.yaml` (repo root) | `dots sync` | Use `dots sync refresh` to force re-check |
+| Package | `packages/packages.yaml` | `dots sync` | Use `dots sync refresh` to force re-check |
 | Skill | `skills/` (dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` for the external-only fast path) | chezmoi's `run_onchange_install-claude-skills.sh.tmpl` invokes `chezmoi/lib/install-local.sh` (copies each `skills/<name>/` into `~/.claude/skills/<name>/`) and, when `gh skill` is present, `chezmoi/lib/install-external.sh` (runs `gh skill install` per harness from `SKILL_HARNESSES`). Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
 
 ## Important Gotchas
