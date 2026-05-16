@@ -30,10 +30,18 @@ if [[ -d "${SKILLS_DIR}" ]]; then
     done
 fi
 
+# Honor per-entry `harnesses:` — a `harnesses: [codex]` entry isn't installed
+# in Claude, so granting `mcp__name__*` here would be a permission for a
+# server that doesn't exist. Missing/unset field defaults to both harnesses.
 if [[ -f "${MCP_REGISTRY}" ]]; then
     while IFS= read -r name; do
         [[ -n "${name}" ]] && perms+=("mcp__${name}__*")
-    done < <(yq -r '.mcps | keys[]' "${MCP_REGISTRY}")
+    done < <(yq -r '
+        .mcps
+        | to_entries
+        | map(select((.value.harnesses // ["claude","codex"]) | contains(["claude"])))
+        | .[].key
+    ' "${MCP_REGISTRY}")
 fi
 
 # Resolve a plugin's .mcp.json path. Prefer registry `path:` (for local plugins),

@@ -79,6 +79,29 @@ YAML
     assert_has_entry "$result" "mcp__tavily__*"
 }
 
+@test "worktree-settings: filters MCP registry by harnesses field" {
+    cat > "${TMPDIR_TEST}/agents/mcp/registry.yaml" <<'YAML'
+mcps:
+  both-default:
+    command: a
+  claude-only:
+    command: b
+    harnesses: [claude]
+  codex-only:
+    command: c
+    harnesses: [codex]
+  both-explicit:
+    command: d
+    harnesses: [claude, codex]
+YAML
+    result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
+    assert_has_entry "$result" "mcp__both-default__*"
+    assert_has_entry "$result" "mcp__claude-only__*"
+    assert_has_entry "$result" "mcp__both-explicit__*"
+    # codex-only entries must not leak into Claude worktree permissions
+    assert_no_entry "$result" "mcp__codex-only__*"
+}
+
 @test "worktree-settings: no MCP entries when registry missing" {
     result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
     count="$(jq '[.permissions.allow[] | select(startswith("mcp__")) | select(startswith("mcp__plugin_") | not) | select(startswith("mcp__claude_ai_") | not)] | length' <<< "$result")"
