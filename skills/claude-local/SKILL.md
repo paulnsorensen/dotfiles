@@ -142,10 +142,14 @@ judgment to bring.
 - **Workflow / Cheddar Flow** beyond a brief reference. The full skill
   catalog is in the global file; the local overlay just needs to remind
   Claude that `/age`, `/cure`, `/respond`, `/de-slop`, and
-  `/tdd-assertions` exist and are preferred. Skip `/fromage` and
-  `/fromagerie` unless the project is large enough to warrant them
-  (>10k LOC, multi-domain) — for typical contributions a single PR
-  cycle is the right granularity.
+  `/tdd-assertions` exist and are preferred. Only list shortcuts that
+  actually resolve on this machine — `/age`, `/cure`, `/respond` ship
+  via `gh skill install` (skillz-that-grillz / easy-cheese), so check
+  `~/.claude/skills/<name>/` exists before listing them; drop any that
+  don't and note in the file that external skill sync hasn't run yet.
+  Skip `/fromage` and `/fromagerie` unless the project is large enough
+  to warrant them (>10k LOC, multi-domain) — for typical contributions
+  a single PR cycle is the right granularity.
 - **Troubleshooting one-liners** (`/go`, `/agents`, `/lsp`) — meta-tool
   state, irrelevant to any project.
 - **RTK** — the rtk proxy is a personal tooling layer; it's auto-applied
@@ -193,8 +197,9 @@ language-specific tooling only when applicable>
 
 ## Workflow shortcuts
 
-<brief reference: /age, /cure, /respond, /de-slop, /tdd-assertions —
-no full descriptions; these are reminders for Claude>
+<brief reference: only the shortcuts confirmed present in
+~/.claude/skills/ at distill time — no full descriptions; these are
+reminders for Claude>
 
 ## Build system
 
