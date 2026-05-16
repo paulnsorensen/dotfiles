@@ -1,2 +1,12 @@
 # Cargo global configuration
 # Managed by dotfiles — synced to ~/.cargo/config.toml via cargo/.sync
+
+# Wrap rustc with sccache for cross-project / cross-branch compile caching.
+# Requires CARGO_INCREMENTAL=0 (set in zsh/tools.zsh) — sccache cannot cache
+# incremental builds.
+[build]
+rustc-wrapper = "sccache"
+
+# Linker: leave at default. Apple's ld (Xcode 15+, currently ld-1267) is the
+# fast parallel rewrite and beats lld for Mach-O on Apple Silicon. Don't add
+# `-fuse-ld=lld` here unless benchmarks on this machine prove otherwise.

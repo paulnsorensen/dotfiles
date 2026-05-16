@@ -51,6 +51,10 @@ packages:
   - gettext
   - taf2/tap/mdvi
 
+  # Rust build acceleration
+  - sccache                                   # rustc wrapper for compile caching
+  - cargo-nextest                             # faster, parallel test runner
+
   # macOS-only
   - mas: { platform: mac }                    # Mac App Store CLI
   - trash: { platform: mac }                  # Move to Trash (safer rm)

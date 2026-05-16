@@ -157,6 +157,12 @@ if command -v tokei &>/dev/null; then
     alias loc='tokei'
 fi
 
+# cargo-nextest - faster parallel test runner
+if command -v cargo-nextest &>/dev/null; then
+    alias cn='cargo nextest run'
+    alias cnf='cargo nextest run --failure-output immediate-final'
+fi
+
 # =============================================================================
 # Agent Skills (`gh skill install` — harness-agnostic; targets each agent in
 # $SKILL_HARNESSES from .env: claude-code, cursor, codex, github-copilot, etc.)

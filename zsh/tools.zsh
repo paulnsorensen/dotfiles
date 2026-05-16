@@ -33,5 +33,15 @@ if [[ -d "$HOME/.bun" ]]; then
     [[ -s "$BUN_INSTALL/_bun" ]] && source "$BUN_INSTALL/_bun"
 fi
 
+# ─── sccache (Rust compile cache) ────────────────────────────────────────
+# RUSTC_WRAPPER lives in cargo/config.toml ([build] rustc-wrapper = "sccache")
+# so it applies to every cargo invocation, not just interactive shells.
+# sccache cannot wrap incremental builds, so we must disable them globally.
+# Tradeoff: net win for branch-switching / clean builds, net loss for small
+# in-place edits in a single project.
+if command -v sccache &>/dev/null; then
+    export CARGO_INCREMENTAL=0
+fi
+
 # ─── vaudeville (SLM hook enforcement for Claude Code) ───────────────────
 export VAUDEVILLE_DEBUG="${VAUDEVILLE_DEBUG:-0}"
