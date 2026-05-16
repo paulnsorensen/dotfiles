@@ -668,11 +668,11 @@ MOCK
 @test "mcp_resolve_env_value expands \${VAR} references" {
     source "$MCP_LIB"
     export DRIFT_TEST_KEY=resolved-secret
-    # shellcheck disable=SC2016  # intentional: testing literal ${VAR} expansion inside the function
-    [[ "$(mcp_resolve_env_value '${DRIFT_TEST_KEY}')" == "resolved-secret" ]]
-    [[ "$(mcp_resolve_env_value 'plain-string')" == "plain-string" ]]
-    # shellcheck disable=SC2016
-    [[ "$(mcp_resolve_env_value '${UNSET_DRIFT_KEY}')" == "" ]]
+    # `\$` inside double quotes is a literal $, so the function gets the
+    # unexpanded reference and does the expansion itself (what we're testing).
+    [[ "$(mcp_resolve_env_value "\${DRIFT_TEST_KEY}")" == "resolved-secret" ]]
+    [[ "$(mcp_resolve_env_value "plain-string")" == "plain-string" ]]
+    [[ "$(mcp_resolve_env_value "\${UNSET_DRIFT_KEY}")" == "" ]]
 }
 
 @test "mcp_filter_for_harness honors per-entry harnesses list" {
