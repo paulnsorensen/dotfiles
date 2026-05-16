@@ -55,6 +55,32 @@ EOF
     grep -qF 'sourceDir = "/some/user/override"' "$config"
 }
 
+@test "chezmoi/.sync applies from current checkout even when config has an old sourceDir" {
+    local fake_bin="$TEST_HOME/fake-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/chezmoi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$HOME/chezmoi-args.log"
+exit 0
+SH
+    chmod +x "$fake_bin/chezmoi"
+
+    local config="$HOME/.config/chezmoi/chezmoi.toml"
+    mkdir -p "$(dirname "$config")"
+    cat > "$config" <<'EOF'
+sourceDir = "/some/stale/checkout/chezmoi"
+EOF
+
+    PATH="$fake_bin:$PATH"
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+    grep -qF 'sourceDir = "/some/stale/checkout/chezmoi"' "$config"
+
+    local args
+    args=$(tr '\n' ' ' < "$HOME/chezmoi-args.log")
+    [[ "$args" == "--source $REAL_DOTFILES_DIR/chezmoi apply --force " ]]
+}
+
 @test "chezmoi/.sync cleans up its mktemp scratch file" {
     run bash "$CHEZMOI_SYNC"
     assert_success
