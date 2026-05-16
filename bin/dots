@@ -229,6 +229,19 @@ do_doctor() {
         echo -e "  ${RED}✗ Missing: ${missing_deps[*]}${NC}"
     fi
 
+    # Check chezmoi health (deps, paths, encryption backends)
+    echo -e "${BLUE}Checking chezmoi...${NC}"
+    if command -v chezmoi &>/dev/null; then
+        chezmoi --source "$DOTFILES_DIR/chezmoi" doctor 2>&1 | sed 's/^/  /'
+        if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+            issues=$((issues + 1))
+        fi
+    else
+        echo -e "  ${YELLOW}⚠ chezmoi not installed${NC}"
+        echo -e "    Run: ${GREEN}dots sync${NC}"
+        issues=$((issues + 1))
+    fi
+
     # Check VS Code settings if they exist
     if [[ -d "$DOTFILES_DIR/vscode" ]]; then
         echo -e "${BLUE}Checking VS Code configuration...${NC}"

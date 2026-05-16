@@ -1,0 +1,17 @@
+{{- /*
+First-init prompts. `chezmoi init` renders this template once and persists
+the result to ~/.config/chezmoi/chezmoi.toml; subsequent `chezmoi apply`
+runs are non-interactive and read [data] from that file.
+
+Re-prompt by deleting ~/.config/chezmoi/chezmoi.toml and re-running
+`chezmoi init --source $DOTFILES/chezmoi` (or `dots sync`).
+
+sourceDir is captured via {{ .chezmoi.sourceDir }} so chezmoi remembers
+which dotfiles clone to read from on subsequent runs.
+*/ -}}
+
+sourceDir = "{{ .chezmoi.sourceDir }}"
+
+[data]
+email = {{ promptStringOnce . "email" "Git email" "paulnsorensen@gmail.com" | quote }}
+work  = {{ promptBoolOnce   . "work"  "Is this a work machine?" false }}

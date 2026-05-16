@@ -107,12 +107,11 @@ dotfiles/
 ├── codex/                  # OpenAI Codex CLI-specific configuration
 │   └── config.toml         # Base ~/.codex/config.toml — copied on first install only, then user-owned (MCP entries written by sync.sh).
 ├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Copied to ~/.claude/skills/ by chezmoi.
-├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` and runs run_onchange scripts: install-claude-skills (skills/ → ~/.claude/skills/), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-mcp (drives agents/mcp/sync.sh --force).
+├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-claude-skills (skills/ → ~/.claude/skills/), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-mcp (drives agents/mcp/sync.sh --force).
 ├── packages.yaml           # Flat package registry (brew, cargo, apt)
 ├── packages/
 │   └── sync.sh             # Package sync with hash cache
 ├── fonts/                  # Font installation (.sync script)
-├── gitconfig               # Git configuration
 ├── prek.toml               # Pre-commit hooks config (prek)
 ├── iterm2/                 # iTerm2 preferences
 ├── skhd/                   # skhd hotkey daemon config
@@ -233,13 +232,55 @@ The `.sync-with-rollback` script provides:
 - **Automatic backups** before changes (stored in `~/.local/state/dotfiles/backups/`)
 - **Manifest tracking** of all symlinks
 - **Rollback capability** to any previous state
-- **Per-directory .sync scripts** for custom setup (fonts, iterm2, .copilot)
+- **Per-directory .sync scripts** for custom setup (fonts, iterm2, chezmoi)
 
 **Skip list** (not symlinked to ~, canonical source is `SYNC_SKIP_LIST` in `.sync-lib.sh`, which is sourced by `.sync-with-rollback`):
 
 - `.git`, `.local`, `.worktrees`, `reference`, `packages`, `packages.yaml`, `brew`, `apt`, `agents`, `codex`
 
-**Hidden directory dispatch**: visible dirs are iterated by `for file in *` (glob), hidden dirs (starting with `.`) are iterated separately by `sync_hidden_dirs`. Both use the same rule: if `$dir/.sync` exists, run it. This is how `.copilot/.sync` is reached despite being hidden.
+**Hidden directory dispatch**: visible dirs are iterated by `for file in *` (glob), hidden dirs (starting with `.`) are iterated separately by `sync_hidden_dirs`. Both use the same rule: if `$dir/.sync` exists, run it. `chezmoi/` is a visible dir that owns its own `.sync` and is dispatched via the same mechanism (no SYNC_SKIP_LIST entry needed — the `.sync` short-circuit happens before symlinking).
+
+## Chezmoi-Managed Files
+
+A subset of dotfiles is rendered by [chezmoi](https://chezmoi.io/) instead of symlinked. Chezmoi handles per-machine templating (work vs personal git email), per-OS branching, and secret injection — things plain symlinks can't do. Everything else continues to use the symlink + `.sync` system.
+
+`$DOTFILES` below is the absolute path to your clone of this repo (e.g. `~/Dev/dotfiles`).
+
+**Source:** `chezmoi/` subdirectory of this repo. Currently manages:
+
+- `~/.gitconfig` — `chezmoi/private_dot_gitconfig.tmpl` (templated email, work-only `[url]` redirects)
+- `~/.copilot/mcp-config.json` — `chezmoi/private_dot_copilot/mcp-config.json.tmpl` (env-rendered API keys, fails fast if unset)
+- `~/.claude/skills/`, `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/config.toml`, and MCP entries — handled by `run_onchange_*` scripts under `chezmoi/.chezmoiscripts/` that fork to helpers in `chezmoi/lib/`
+
+**First-init (interactive):** `dots sync` dispatches to `chezmoi/.sync`, which invokes `chezmoi init --source $DOTFILES/chezmoi` if `~/.config/chezmoi/chezmoi.toml` is missing. The `.chezmoi.toml.tmpl` prompts for: `email`, `work`. Answers persist to `~/.config/chezmoi/chezmoi.toml` (alongside the persisted `sourceDir`) and aren't re-prompted.
+
+**Subsequent runs:** `dots sync` calls `chezmoi apply --force` via `chezmoi/.sync`. Non-interactive.
+
+**Non-TTY fallback:** if `dots sync` runs without a controlling terminal (CI, automated provisioning) and the config is missing, `chezmoi/.sync` writes a minimal stub with sourceDir only. Templates that depend on `[data]` fall back to declared defaults; missing required env vars (e.g. `CONTEXT7_API_KEY`) fail loud.
+
+**Inspect / debug:**
+
+```bash
+chezmoi --source $DOTFILES/chezmoi diff              # what would change
+chezmoi --source $DOTFILES/chezmoi data              # dump rendered template namespace
+chezmoi --source $DOTFILES/chezmoi execute-template < FILE.tmpl
+chezmoi doctor                                       # health check (also wired into `dots doctor`)
+```
+
+**Re-prompt:** delete `~/.config/chezmoi/chezmoi.toml` and re-run `dots sync` (or `chezmoi init --source $DOTFILES/chezmoi` directly).
+
+**Adding a file:** drop a templated source under `chezmoi/` using the [chezmoi naming attributes](https://chezmoi.io/reference/source-state-attributes/) (`private_`, `dot_`, `executable_`, `encrypted_`, `.tmpl`). Reference data via `{{ .email }}`, `{{ .work }}`, etc. — see the existing templates for patterns. Add a corresponding test to `tests/chezmoi-wiring.bats`.
+
+**Secrets upgrade path:** `mcp-config.json.tmpl` uses `{{ env "..." }}` today. Swap to `{{ onepasswordRead "op://<vault>/<item>/credential" }}` once 1Password CLI is set up; remove the corresponding `.env` entries.
+
+**Hard rules** (from the chezmoi skill):
+
+1. Never commit plaintext secrets to `chezmoi/`. Use `encrypted_` or `{{ env }}` / `{{ onepasswordRead }}`.
+2. Never edit chezmoi-managed source files via the target path. Use `chezmoi edit ~/.gitconfig` so templating round-trips correctly.
+3. Always `chezmoi --source $DOTFILES/chezmoi diff` before applying when you've changed templates.
+4. `prompt*` template functions (`promptStringOnce`, `promptBoolOnce`, …) belong **only** in `.chezmoi.toml.tmpl`. A `prompt*` call inside a regular dotfile template re-prompts on every `apply` / `diff` / `status`, which breaks `dots sync`. Pull the value through `[data]` instead.
+
+**File-naming reference.** Prefix order is rigid and depends on the target type — see [chezmoi source-state attributes](https://chezmoi.io/reference/source-state-attributes/) before adding `encrypted_private_dot_…`-style names. Common prefixes: `dot_` (leading `.`), `private_` (mode 0600), `executable_`, `encrypted_`, `exact_` (dirs: delete unmanaged children — handle with care), `create_` (never overwrite), `modify_` (script/template edits existing target).
 
 ## Shell Scripts: Functions Need Tests
 
@@ -251,7 +292,7 @@ The `.sync-with-rollback` script provides:
 
 - New shell logic goes into a named function in a sourced library (e.g. `.sync-lib.sh`, `claude/lib/sync-common.sh`, `chezmoi/lib/install-external.sh`), not as a free-floating block inside a `.sync` script.
 - The function takes its inputs as arguments (no hidden globals beyond logging colors and explicitly-documented env vars).
-- A corresponding `tests/<area>.bats` file exercises every branch the function can take. Mock external commands (`gh`, `claude`, `yq`, `jq`) by putting fakes earlier on `$PATH` — see `tests/copilot-sync.bats` and `tests/skills-external.bats` for the pattern.
+- A corresponding `tests/<area>.bats` file exercises every branch the function can take. Mock external commands (`gh`, `claude`, `yq`, `jq`, `chezmoi`) by putting fakes earlier on `$PATH` — see `tests/chezmoi-wiring.bats` and `tests/skills-external.bats` for the pattern.
 - `.sync` and the top-level orchestrators stay thin: parse args, source the library, dispatch to functions. If a `.sync` script grows logic that can't be invoked from a test, refactor it into a function first.
 - Add new test files to `tests/run-tests.sh` so `dots test` runs them.
 
