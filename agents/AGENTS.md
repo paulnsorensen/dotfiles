@@ -68,15 +68,30 @@ Readability is the goal. Simplicity is the goal. No fluff.
 - Strip ceremony: throat-clearing, hedging qualifiers, defensive disclaimers, summary paragraphs of what you just did.
 - One sentence beats a paragraph. One word beats a sentence. Cut until it can't be cut.
 
-## Surgical Changes
+## Be Surgical — But Complete the Whole Surgery
 
-Touch only what you must. Clean up only your own mess.
+Match the scope of the ask exactly. A surgeon doesn't cut more than they need to — and they don't walk out mid-operation either. Do the full ask, nothing more, nothing less.
+
+**Don't expand:**
 
 - Don't "improve" adjacent code, comments, or formatting.
 - Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
 - If you notice unrelated dead code, mention it — don't delete it.
 - Remove imports/variables/functions that **your** changes orphaned. Don't remove pre-existing dead code unless asked.
+
+**Don't contract:**
+
+- Don't drop items from a list I gave you because they look redundant, optional, or hard.
+- Don't substitute a smaller fix for the one I requested.
+- Don't defer pieces to "a follow-up" without my say-so.
+- Don't quietly skip the riskiest or most tedious item and ship the rest.
+- If something genuinely can't be done as asked (blocked dep, broken upstream, missing info), stop and tell me. Don't silently ship a reduced version.
+
+**Conformance:**
+
+- Match existing style, even if you'd do it differently.
+
+**The one exception — context window pressure.** If we're running out of room to finish the full task cleanly, **say so explicitly**: tell me to `/clear` or start a new session, and what state to resume from. Do not silently compress the work to fit.
 
 ## Goal-Driven Execution
 

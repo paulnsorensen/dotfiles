@@ -10,7 +10,7 @@
 
 packages:
   - tinted-theming/tinted: { source: tap }
-  - koekeishiya/formulae: { source: tap }     # yabai + skhd
+  - koekeishiya/formulae: { source: tap }     # skhd
 
   # Core CLI
   - jq
@@ -55,8 +55,7 @@ packages:
   - mas: { platform: mac }                    # Mac App Store CLI
   - trash: { platform: mac }                  # Move to Trash (safer rm)
   - terminal-notifier: { platform: mac }      # macOS notifications from terminal
-  - yabai: { platform: mac }                  # Tiling window manager (from koekeishiya/formulae tap)
-  - skhd: { platform: mac }                   # Hotkey daemon for yabai (from koekeishiya/formulae tap)
+  - skhd: { platform: mac }                   # Hotkey daemon (from koekeishiya/formulae tap)
 
   # Linux-only
   - xclip: { platform: linux }

@@ -26,6 +26,6 @@ else
 fi
 
 source "$HOME/Dev/dotfiles/zsh/claude.zsh"
-source "$HOME/Dev/dotfiles/zsh/yabai.zsh"
+source "$HOME/Dev/dotfiles/zsh/skhd.zsh"
 
 clear

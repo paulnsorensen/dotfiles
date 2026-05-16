@@ -1,0 +1,28 @@
+#!/bin/bash
+# Symlink skhd config and ensure the brew service is running.
+
+set -euo pipefail
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "skhd/.sync: skipping (not macOS)" >&2
+    exit 0
+fi
+
+readonly SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+
+if ! command -v skhd >/dev/null 2>&1; then
+    echo "skhd/.sync: skhd not installed yet (run dots sync to install)" >&2
+    exit 0
+fi
+
+ln -sfn "$SCRIPT_DIR/skhdrc" "$HOME/.skhdrc"
+
+if ! brew services list 2>/dev/null | awk '$1=="skhd" && $2=="started" {f=1} END {exit !f}'; then
+    if brew services start skhd >/dev/null 2>&1; then
+        echo "skhd/.sync: config linked, service started"
+    else
+        echo "skhd/.sync: config linked, but service failed to start (see stderr)" >&2
+    fi
+else
+    echo "skhd/.sync: config linked, service already running"
+fi

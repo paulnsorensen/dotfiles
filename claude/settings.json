@@ -139,9 +139,7 @@
     "frontend-design@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "claude-hud@claude-hud": true,
-    "todoist-flow@todoist-flow": true,
-    "vaudeville@local": true
+    "claude-hud@claude-hud": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {
@@ -154,12 +152,6 @@
       "source": {
         "source": "github",
         "repo": "boostvolt/claude-code-lsps"
-      }
-    },
-    "todoist-flow": {
-      "source": {
-        "source": "directory",
-        "path": "/Users/paul/Dev/dotfiles/claude/plugins/local/todoist-flow"
       }
     }
   },
