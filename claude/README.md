@@ -10,7 +10,7 @@ Symlinked to `~/.claude/` via the dotfiles sync system:
 dots sync
 ```
 
-This creates symlinks for `agents/`, `commands/`, `hooks/`, `skills/`, `settings.json`, and `mcp/`.
+This creates symlinks for `agents/`, `commands/`, `hooks/`, `skills/`, and `settings.json`. The shared MCP registry now lives at the repo-root `agents/mcp/` (copied to both Claude and Codex by chezmoi).
 
 ## Directory Structure
 
@@ -19,9 +19,7 @@ claude/
 ├── agents/           # Specialist agents (Fromage pipeline + standalone)
 ├── commands/         # Slash commands (/fromage, /spec, /age, etc.)
 ├── hooks/            # Pre-tool enforcement hooks + lifecycle hooks
-├── mcp/              # MCP registry and sync script
-│   ├── registry.yaml # Source of truth for MCP servers
-│   └── sync.sh       # Declarative sync via native claude mcp commands
+├── lib/              # Shared sync helpers (sync-common.sh, gen-profile-mcp.sh)
 ├── plugins/          # Plugin registry and sync script
 │   ├── registry.yaml # Source of truth for plugins
 │   └── sync.sh       # Declarative sync via native claude plugin commands
@@ -29,9 +27,10 @@ claude/
 ├── settings.json     # Claude Code settings (env, permissions, hooks, plugins)
 ├── .sync             # Sync script for dotfiles integration
 ├── .gitignore        # Excludes local state
-├── CLAUDE.md         # Project instructions (this is separate from this README)
 └── README.md         # This file
 ```
+
+> The shared global agent instructions live at `agents/AGENTS.md` (repo root) and are copied to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` by chezmoi. The MCP registry lives at `agents/mcp/registry.yaml` and is applied to both harnesses by `agents/mcp/sync.sh`.
 
 ---
 
@@ -215,7 +214,7 @@ Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 
 ## MCP Servers
 
-Managed declaratively via `mcp/registry.yaml`. Sync with `mcp-sync` (run `mcp-ls` to verify).
+Managed declaratively via the shared registry at `agents/mcp/registry.yaml` (driven by `agents/mcp/sync.sh`). Sync with `mcp-sync` (run `mcp-ls` to verify). Entries default to both harnesses; set `harnesses: [claude]` or `[codex]` to target one.
 
 User-scope MCPs (registered here):
 

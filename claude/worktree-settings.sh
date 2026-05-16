@@ -3,7 +3,7 @@
 #
 # Sources:
 #   skills/*/                    → Skill(name) permissions
-#   claude/mcp/registry.yaml     → mcp__name__* permissions (user-scope MCPs)
+#   agents/mcp/registry.yaml     → mcp__name__* permissions (user-scope MCPs)
 #   claude/plugins/registry.yaml → mcp__plugin_<plugin>_<server>__* per server
 #                                  declared in each plugin's .mcp.json
 #   claude/settings.json         → mcp__claude_ai_* entries (Claude.ai integrations)
@@ -15,7 +15,7 @@ set -euo pipefail
 
 DOTFILES="${1:-$(cd "${0%/*}/.." && pwd)}"
 SKILLS_DIR="${DOTFILES}/skills"
-MCP_REGISTRY="${DOTFILES}/claude/mcp/registry.yaml"
+MCP_REGISTRY="${DOTFILES}/agents/mcp/registry.yaml"
 PLUGIN_REGISTRY="${DOTFILES}/claude/plugins/registry.yaml"
 SETTINGS_JSON="${DOTFILES}/claude/settings.json"
 PLUGIN_CACHE="${HOME}/.claude/plugins/cache"
@@ -30,10 +30,18 @@ if [[ -d "${SKILLS_DIR}" ]]; then
     done
 fi
 
+# Honor per-entry `harnesses:` — a `harnesses: [codex]` entry isn't installed
+# in Claude, so granting `mcp__name__*` here would be a permission for a
+# server that doesn't exist. Missing/unset field defaults to both harnesses.
 if [[ -f "${MCP_REGISTRY}" ]]; then
     while IFS= read -r name; do
         [[ -n "${name}" ]] && perms+=("mcp__${name}__*")
-    done < <(yq -r '.mcps | keys[]' "${MCP_REGISTRY}")
+    done < <(yq -r '
+        .mcps
+        | to_entries
+        | map(select((.value.harnesses // ["claude","codex"]) | contains(["claude"])))
+        | .[].key
+    ' "${MCP_REGISTRY}")
 fi
 
 # Resolve a plugin's .mcp.json path. Prefer registry `path:` (for local plugins),

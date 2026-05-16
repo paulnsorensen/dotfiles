@@ -11,7 +11,7 @@ Focus reviews on these categories, in priority order:
 2. **Silent failures** — Flag empty catch blocks, swallowed errors, missing error handling on I/O operations
 3. **Complexity violations** — Flag functions over 40 lines, files over 300 lines, nesting deeper than 3 levels
 4. **Consistency** — Flag patterns that contradict established conventions in the codebase
-5. **CLAUDE.md quality** — When `CLAUDE.md` or `claude/CLAUDE.md` is in the diff, verify changes are consistent with the tool division (trace for structural, LSP for semantic navigation and type inference)
+5. **CLAUDE.md quality** — When `CLAUDE.md`, `AGENTS.md`, or `agents/AGENTS.md` is in the diff, verify changes are consistent with the tool division (trace for structural, LSP for semantic navigation and type inference)
 
 ## CLAUDE.md Validation
 
@@ -20,7 +20,7 @@ When any `CLAUDE.md` file is modified, check:
 - Key Commands section documents all new commands/aliases
 - Architecture section reflects actual directory structure
 - Skill Delegation table matches the skills in `skills/`
-- No duplicate information between `CLAUDE.md` (project) and `claude/CLAUDE.md` (global)
+- No duplicate information between `CLAUDE.md`/`AGENTS.md` (project) and `agents/AGENTS.md` (global)
 - Complexity Budget numbers are consistent across all files
 
 ## Claude Skill Validation

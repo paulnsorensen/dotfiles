@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC1090,SC2034,SC2317
-# Tests for Claude sync infrastructure (sync-common.sh, mcp/sync.sh, plugins/sync.sh)
+# Tests for the harness sync infrastructure: sync-common.sh (shared kernel),
+# agents/mcp/sync.sh (multi-harness MCP sync), claude/plugins/sync.sh.
 
 load test_helper
 
 SYNC_COMMON="$REAL_DOTFILES_DIR/claude/lib/sync-common.sh"
-MCP_SYNC="$REAL_DOTFILES_DIR/claude/mcp/sync.sh"
+MCP_SYNC="$REAL_DOTFILES_DIR/agents/mcp/sync.sh"
+MCP_LIB="$REAL_DOTFILES_DIR/agents/mcp/lib.sh"
 PLUGIN_SYNC="$REAL_DOTFILES_DIR/claude/plugins/sync.sh"
 
 setup() {
@@ -36,6 +38,19 @@ create_mock_sync_dir() {
     cp "$SYNC_COMMON" "$mock_dir/../lib/sync-common.sh"
     cp "$src_script" "$mock_dir/sync.sh"
     echo "$mock_dir"
+}
+
+# agents/mcp/sync.sh sources ../../claude/lib/sync-common.sh — two levels up
+# instead of one. Build the deeper mock tree so the relative source path
+# resolves the same way it does in the real repo.
+create_mock_mcp_sync_dir() {
+    local name="$1"
+    local root="$TEST_HOME/$name"
+    mkdir -p "$root/agents/mcp" "$root/claude/lib"
+    cp "$SYNC_COMMON" "$root/claude/lib/sync-common.sh"
+    cp "$MCP_SYNC" "$root/agents/mcp/sync.sh"
+    cp "$MCP_LIB"  "$root/agents/mcp/lib.sh"
+    echo "$root/agents/mcp"
 }
 
 write_mcp_registry() {
@@ -223,18 +238,18 @@ JSON
 
 @test "mcp sync: missing registry file exits with error" {
     local mock_dir
-    mock_dir=$(create_mock_sync_dir "$MCP_SYNC" "mcp-noreg")
-    run bash "$mock_dir/sync.sh"
+    mock_dir=$(create_mock_mcp_sync_dir "mcp-noreg")
+    run bash "$mock_dir/sync.sh" --harness claude
     assert_failure
-    assert_output_contains "Registry file not found"
+    assert_output_contains "registry.yaml not found"
 }
 
 @test "mcp sync: dry-run shows plan without executing" {
     write_mcp_registry
     local mock_dir
-    mock_dir=$(create_mock_sync_dir "$MCP_SYNC" "mcp-sync")
+    mock_dir=$(create_mock_mcp_sync_dir "mcp-sync")
     cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
-    run bash "$mock_dir/sync.sh" --dry-run
+    run bash "$mock_dir/sync.sh" --dry-run --harness claude
     assert_success
     assert_output_contains "[dry-run]"
     assert_output_contains "alpha"
@@ -245,9 +260,9 @@ JSON
 @test "mcp sync: adds new MCPs with correct scope and args" {
     write_mcp_registry
     local mock_dir
-    mock_dir=$(create_mock_sync_dir "$MCP_SYNC" "mcp-add")
+    mock_dir=$(create_mock_mcp_sync_dir "mcp-add")
     cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
-    run bash "$mock_dir/sync.sh"
+    run bash "$mock_dir/sync.sh" --harness claude
     assert_success
     grep -q "claude mcp add -s user alpha -- npx alpha-mcp@latest" "$CLAUDE_LOG"
     grep -q "claude mcp add -s project beta -- node beta-server.js" "$CLAUDE_LOG"
@@ -479,4 +494,208 @@ setup_gated_sync_dir() {
     assert_output_contains "Removed gated-plugin marketplace"
     has_mp=$(jq '.extraKnownMarketplaces | has("gated-plugin")' "$dotfiles_root/claude/settings.json")
     [[ "$has_mp" == "false" ]]
+}
+
+
+# ─── codex MCP path + new bug-fix coverage ──────────────────────────────
+
+write_mcp_registry_multi_harness() {
+    # alpha → both harnesses; beta → claude only; gamma → codex only; delta
+    # → both, but gated_unless GATE_VAR=true (claude-only gate).
+    cat > "$TEST_HOME/registry.yaml" << 'YAML'
+mcps:
+  alpha:
+    command: npx
+    args: [alpha-mcp@latest]
+    scope: user
+    description: Both harnesses
+  beta:
+    command: node
+    args: [beta-server.js]
+    scope: project
+    harnesses: [claude]
+    description: Claude only
+  gamma:
+    command: gamma
+    args: [--start]
+    harnesses: [codex]
+    description: Codex only
+  delta:
+    command: delta
+    args: []
+    gate_unless: GATE_VAR
+    description: Gated for claude only
+YAML
+}
+
+install_mock_codex() {
+    # Mock `codex mcp list --json` returns nothing by default; tests that need
+    # a populated harness can re-write the mock to emit canned JSON.
+    export CODEX_LOG="$TEST_HOME/codex.log"
+    cat > "$MOCK_BIN/codex" << 'MOCK'
+#!/bin/bash
+echo "codex $*" >> "${CODEX_LOG:-/dev/null}"
+case "$1" in
+    mcp)
+        case "$2" in
+            list)
+                # --json present? emit empty array; else emit nothing
+                for a in "$@"; do [[ "$a" == "--json" ]] && { echo '[]'; exit 0; }; done
+                exit 0 ;;
+            add|remove) exit 0 ;;
+        esac ;;
+esac
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/codex"
+}
+
+@test "mcp sync: --harness codex skips when codex CLI missing" {
+    write_mcp_registry_multi_harness
+    local mock_dir; mock_dir=$(create_mock_mcp_sync_dir "mcp-codex-missing")
+    cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
+    # Isolate PATH so a real `codex` binary on the dev machine doesn't satisfy `command -v codex`.
+    PATH="$MOCK_BIN:/usr/bin:/bin:/opt/homebrew/bin" run bash "$mock_dir/sync.sh" --harness codex
+    assert_success
+    assert_output_contains "Skipping codex"
+}
+
+@test "mcp sync: codex add wires --env, --, and command/args correctly" {
+    install_mock_codex
+    write_mcp_registry_multi_harness
+    local mock_dir; mock_dir=$(create_mock_mcp_sync_dir "mcp-codex-add")
+    cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
+    run bash "$mock_dir/sync.sh" --harness codex
+    assert_success
+    # alpha is both-harness; gamma is codex-only; beta is claude-only and must
+    # NOT appear in the codex log; delta has no `harnesses:` so it also flows
+    # to codex (gate_unless is claude-only).
+    grep -q "codex mcp add alpha -- npx alpha-mcp@latest" "$CODEX_LOG"
+    grep -q "codex mcp add gamma -- gamma --start" "$CODEX_LOG"
+    grep -q "codex mcp add delta -- delta" "$CODEX_LOG"
+    ! grep -q "codex mcp add beta" "$CODEX_LOG"
+}
+
+@test "mcp sync: codex harness filter excludes claude-only entries" {
+    install_mock_codex
+    write_mcp_registry_multi_harness
+    local mock_dir; mock_dir=$(create_mock_mcp_sync_dir "mcp-codex-filter")
+    cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
+    run bash "$mock_dir/sync.sh" --dry-run --harness codex
+    assert_success
+    assert_output_contains "alpha"
+    assert_output_contains "gamma"
+    assert_output_contains "delta"
+    assert_output_not_contains "beta"
+}
+
+@test "mcp sync: gate_unless does NOT apply to codex (claude-only gate)" {
+    install_mock_codex
+    write_mcp_registry_multi_harness
+    local mock_dir; mock_dir=$(create_mock_mcp_sync_dir "mcp-codex-gate")
+    cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
+    # GATE_VAR=true would suppress delta for claude, but codex must still install it.
+    run env GATE_VAR=true bash "$mock_dir/sync.sh" --harness codex
+    assert_success
+    grep -q "codex mcp add delta" "$CODEX_LOG"
+}
+
+@test "mcp sync: failed add bubbles up as non-zero exit" {
+    write_mcp_registry_multi_harness
+    local mock_dir; mock_dir=$(create_mock_mcp_sync_dir "mcp-fail-exit")
+    cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
+    # Re-mock claude so `mcp add` fails.
+    cat > "$MOCK_BIN/claude" << 'MOCK'
+#!/bin/bash
+echo "claude $*" >> "${CLAUDE_LOG:-/dev/null}"
+case "$1" in
+    mcp)  case "$2" in get) exit 1;; add) echo "boom" >&2; exit 7;; remove) exit 0;; esac;;
+esac
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/claude"
+    run bash "$mock_dir/sync.sh" --harness claude
+    assert_failure
+    assert_output_contains "add failure"
+}
+
+@test "mcp_load_dotenv strips quotes, normalises indentation, rejects bad identifiers" {
+    source "$MCP_LIB"
+    local envf="$TEST_HOME/.env-mixed"
+    cat > "$envf" <<'ENV'
+# comment
+   # indented comment
+GOOD_KEY=plain-value
+QUOTED_KEY="quoted with spaces"
+SINGLE='single-quoted'
+  INDENTED_KEY=indented-value
+NAME WITH SPACE=ignored
+1BAD_LEADING_DIGIT=also-ignored
+export EXPORTED=exported-value
+ENV
+    unset GOOD_KEY QUOTED_KEY SINGLE INDENTED_KEY EXPORTED \
+          "NAME WITH SPACE" 1BAD_LEADING_DIGIT 2>/dev/null || true
+    mcp_load_dotenv "$envf"
+    [[ "${GOOD_KEY:-}"     == "plain-value" ]]
+    [[ "${QUOTED_KEY:-}"   == "quoted with spaces" ]]
+    [[ "${SINGLE:-}"       == "single-quoted" ]]
+    # Indented keys parse correctly (no crash under set -euo pipefail).
+    [[ "${INDENTED_KEY:-}" == "indented-value" ]]
+    [[ "${EXPORTED:-}"     == "exported-value" ]]
+    # Malformed identifiers are silently skipped.
+    ! env | grep -q '^1BAD_LEADING_DIGIT='
+}
+
+@test "mcp_claude_get_scope anchors on Scope: field, ignores arg text" {
+    source "$MCP_LIB"
+    # Mock claude that simulates an MCP whose Args block contains "user"
+    cat > "$MOCK_BIN/claude" << 'MOCK'
+#!/bin/bash
+if [[ "$1" == "mcp" && "$2" == "get" ]]; then
+    cat <<INFO
+  Scope: project
+  Command: /opt/tool
+  Args: --user-agent custom-ua --user-data-dir /tmp/user
+INFO
+fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/claude"
+    result=$(mcp_claude_get_scope some-mcp)
+    [[ "$result" == "project" ]]
+}
+
+@test "mcp_resolve_env_value expands \${VAR} references" {
+    source "$MCP_LIB"
+    export DRIFT_TEST_KEY=resolved-secret
+    # `\$` inside double quotes is a literal $, so the function gets the
+    # unexpanded reference and does the expansion itself (what we're testing).
+    [[ "$(mcp_resolve_env_value "\${DRIFT_TEST_KEY}")" == "resolved-secret" ]]
+    [[ "$(mcp_resolve_env_value "plain-string")" == "plain-string" ]]
+    [[ "$(mcp_resolve_env_value "\${UNSET_DRIFT_KEY}")" == "" ]]
+}
+
+@test "mcp_filter_for_harness honors per-entry harnesses list" {
+    source "$MCP_LIB"
+    local json='{"a":{"command":"x"},"b":{"command":"y","harnesses":["claude"]},"c":{"command":"z","harnesses":["codex"]}}'
+    local claude_out codex_out
+    claude_out=$(mcp_filter_for_harness claude "$json" | jq -r 'keys | sort | join(",")')
+    codex_out=$(mcp_filter_for_harness  codex  "$json" | jq -r 'keys | sort | join(",")')
+    [[ "$claude_out" == "a,b" ]]
+    [[ "$codex_out"  == "a,c" ]]
+}
+
+@test "mcp_filter_for_harness applies gate_unless for claude only" {
+    source "$MCP_LIB"
+    local json='{"gated":{"command":"x","gate_unless":"GATE_ON"}}'
+    # `export` is required: jq's `env[$g]` only sees exported vars, and the
+    # mcp_filter_for_harness call forks a child jq process. A bare `GATE_ON=
+    # true` would only set a shell-local var that jq cannot read.
+    export GATE_ON=true
+    local claude_keys codex_keys
+    claude_keys=$(mcp_filter_for_harness claude "$json" | jq -r 'keys | length')
+    codex_keys=$( mcp_filter_for_harness codex  "$json" | jq -r 'keys | length')
+    unset GATE_ON
+    [[ "$claude_keys" == "0" ]]   # claude gated off
+    [[ "$codex_keys"  == "1" ]]   # codex ignores gate_unless
 }

@@ -68,7 +68,7 @@ These are commands the user ran once during a session. They accumulate fast and 
 
 | Pattern | Example |
 |---|---|
-| Hardcoded absolute home path (`/Users/`, `/home/`, or `~/`) | `Bash(bash /Users/paul/Dev/dotfiles/claude/mcp/sync.sh ...)` |
+| Hardcoded absolute home path (`/Users/`, `/home/`, or `~/`) | `Bash(bash /Users/paul/Dev/dotfiles/agents/mcp/sync.sh ...)` |
 | Pipe chains (`\|`) | `Bash(... 2>&1 \| grep -i ...)` |
 | Command joiners (`;`, `&&`, `\|\|`) | `Bash(command -v cargo && cargo --version)` |
 | Stderr redirects (`2>&1`, `2>/dev/null`) | Debug output capture |

@@ -1,0 +1,12 @@
+# Codex CLI base configuration. chezmoi installs this to ~/.codex/config.toml
+# only on first run — subsequent edits in $HOME survive, and `codex mcp add`
+# (driven by agents/mcp/sync.sh) writes server entries directly into this
+# file without going through chezmoi.
+#
+# Reference: https://developers.openai.com/codex/config-reference
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true

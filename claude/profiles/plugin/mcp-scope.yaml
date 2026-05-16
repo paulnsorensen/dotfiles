@@ -1,5 +1,5 @@
 # MCP scope for the `plugin` (plugin development) profile.
-# Each entry must be a key in claude/mcp/registry.yaml.
+# Each entry must be a key in agents/mcp/registry.yaml.
 #
 # Rationale: Plugin dev needs code navigation, cross-plugin references,
 # and Anthropic / ecosystem docs. No web search, no task management.

@@ -30,7 +30,7 @@ log_error() {
 
 # Directory names that are never symlinked or dispatched to.
 # Documented in AGENTS.md — keep these in sync.
-SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "packages.yaml" "brew" "apt")
+SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "packages.yaml" "brew" "apt" "agents" "codex")
 
 is_skipped() {
     local name="$1"

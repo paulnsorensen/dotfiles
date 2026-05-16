@@ -12,7 +12,7 @@ This directory contains Claude Code configuration: agents, hooks, MCP servers, p
 - `claude/agents/*.md` — Agent definitions with YAML frontmatter (skills list, model)
 - `claude/hooks/*.js` — Pre-tool hooks (JavaScript, `module.exports` pattern)
 - `claude/hooks/*.sh` — Lifecycle hooks (shell, runs at session events)
-- `claude/mcp/registry.yaml` — MCP server registry (source of truth)
+- `agents/mcp/registry.yaml` — MCP server registry (source of truth, shared across harnesses)
 - `claude/plugins/registry.yaml` — Plugin registry
 - `claude/settings.json` — Permissions, environment, hooks, enabled plugins
 

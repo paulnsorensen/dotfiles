@@ -141,7 +141,7 @@ LAYOUT
 # ── MCP & Plugin sync scripts ────────────────────────────────────────────────
 
 @test "MCP registry is valid YAML" {
-    local registry="$DOTFILES_DIR/claude/mcp/registry.yaml"
+    local registry="$DOTFILES_DIR/agents/mcp/registry.yaml"
     [[ -f "$registry" ]] || skip "MCP registry not found"
     run yq '.' "$registry"
     [[ $status -eq 0 ]]

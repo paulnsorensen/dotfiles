@@ -14,16 +14,18 @@ mkdir -p "$CLAUDE_DIR"
 #                 chezmoi/.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl
 #                 so gh-installed skills can drop real dirs alongside
 #                 without fighting a directory symlink.
+#   - CLAUDE.md, RTK.md — copied (not symlinked) by chezmoi via
+#                 chezmoi/.chezmoiscripts/run_onchange_install-agents-doc.sh.tmpl
+#                 from the shared agents/ source so Codex sees the same content.
+#   - mcp/      — the registry moved to agents/mcp/; chezmoi drives the sync
+#                 via run_onchange_install-mcp.sh.tmpl across all harnesses.
 configs=(
   agents
   commands
   hooks
   settings.json
-  mcp
   reference
   profiles
-  CLAUDE.md
-  RTK.md
 )
 
 # Install hook dependencies (wink-nlp for violation classifier)
@@ -101,19 +103,22 @@ sync_vaudeville_cache() {
   done
 }
 
-# Sync MCPs and plugins (requires claude CLI)
+# MCP sync moved to chezmoi (see run_onchange_install-mcp.sh.tmpl).
+# Plugin sync stays here — it's claude-only and tied to local marketplace setup.
 if command -v claude &>/dev/null; then
-  if [[ -x "$SOURCE_DIR/mcp/sync.sh" ]]; then
-    echo "  Running MCP sync..."
-    bash "$SOURCE_DIR/mcp/sync.sh" --force
-  fi
   sync_vaudeville_cache
   if [[ -x "$SOURCE_DIR/plugins/sync.sh" ]]; then
     echo "  Running plugin sync..."
     bash "$SOURCE_DIR/plugins/sync.sh" --force
   fi
 else
-  echo "  Skipping MCP/plugin sync (claude CLI not found)"
+  echo "  Skipping plugin sync (claude CLI not found)"
+fi
+
+# Clean up the legacy ~/.claude/mcp symlink — registry moved to agents/mcp/.
+if [[ -L "$CLAUDE_DIR/mcp" ]]; then
+  rm "$CLAUDE_DIR/mcp"
+  echo "  Removed legacy ~/.claude/mcp symlink"
 fi
 
 # Drop stale per-project entries from ~/.claude.json (worktrees that no
