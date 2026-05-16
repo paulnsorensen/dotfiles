@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
+if (( $# != 1 )); then
     echo "Usage: $0 <source_dir>" >&2
     exit 2
 fi

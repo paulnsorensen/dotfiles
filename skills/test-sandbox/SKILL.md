@@ -161,7 +161,7 @@ cat .claude/testing/test_*.py  # Inspect the generated test
 - **Cleanup**: Automatic after run (unless `--keep` flag used)
 - **Gitignore**: Idempotent (safe to run multiple times)
 
-See `claude/CLAUDE.md` for sub-agent delegation patterns and context discipline rules.
+See `agents/AGENTS.md` for sub-agent delegation patterns and context discipline rules.
 
 ## Gotchas
 

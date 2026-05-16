@@ -2,9 +2,8 @@
 # Run `mcp-sync` (or `dots sync`) to apply this to every installed harness.
 #
 # Per-entry fields:
-#   command      — stdio launcher (required unless `url` is set)
+#   command      — stdio launcher (required)
 #   args         — array of arg strings
-#   url          — for streamable HTTP servers (Codex only; Claude uses command form)
 #   env          — env vars; values can reference shell vars via "${VAR}"
 #   scope        — claude-only: user | project | local (default user)
 #   harnesses    — list of harness names to install into; default: [claude, codex]
