@@ -55,22 +55,22 @@ EOF
     fi
 fi
 
-# Trigger chezmoi apply so the run_onchange installers and templated
-# dotfiles (gitconfig, copilot/mcp-config.json) render. Non-fatal — if
-# chezmoi rejects the user's sourceDir override, a required template env
-# var is unset, or any other config edit fails, dots sync still wires
-# everything else.
+# Trigger chezmoi apply from this checkout so workspace syncs use the source
+# tree that launched dots sync, not a stale sourceDir preserved in
+# ~/.config/chezmoi/chezmoi.toml. This renders the run_onchange installers
+# and templated dotfiles (gitconfig, copilot/mcp-config.json). Non-fatal — if
+# chezmoi rejects the source, a required template env var is unset, or any
+# other config edit fails, dots sync still wires everything else.
 #
 # Stream output live (sed indent, set -o pipefail preserves chezmoi's exit
-# code). The skill installer runs serial `gh skill install` per
-# (source × skill × harness); without live output the user sees nothing
-# for the multi-minute install loop.
+# code). Some run_onchange scripts can take a while, so live output avoids an
+# apparently hung dots sync.
 if command -v chezmoi &>/dev/null; then
-    if chezmoi apply --force 2>&1 | sed 's/^/  /'; then
+    if chezmoi --source "$script_dir" apply --force 2>&1 | sed 's/^/  /'; then
         echo "  chezmoi apply complete"
     else
-        echo "  WARN: chezmoi apply failed (templates or skills may be out of sync)" >&2
+        echo "  WARN: chezmoi apply failed (chezmoi-managed files may be out of sync)" >&2
     fi
 else
-    echo "  Skipping chezmoi apply (chezmoi not installed); skills and templates will not sync"
+    echo "  Skipping chezmoi apply (chezmoi not installed); chezmoi-managed files will not sync"
 fi
