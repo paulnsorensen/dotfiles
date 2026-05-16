@@ -17,7 +17,7 @@ lint-shell:
 
 # ruff on python files
 lint-python:
-    ruff check skills/merge-resolve/scripts/ skills/session-analytics/scripts/
+    ruff check skills/session-analytics/scripts/
 
 # eslint on JS hooks (eslint v8 for --no-eslintrc support)
 lint-js:
@@ -34,8 +34,8 @@ lint-fix: lint-python-fix lint-js-fix lint-markdown-fix
 
 # ruff --fix + ruff format
 lint-python-fix:
-    ruff check --fix skills/merge-resolve/scripts/ skills/session-analytics/scripts/
-    ruff format skills/merge-resolve/scripts/ skills/session-analytics/scripts/
+    ruff check --fix skills/session-analytics/scripts/
+    ruff format skills/session-analytics/scripts/
 
 # eslint --fix
 lint-js-fix:
