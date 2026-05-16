@@ -141,7 +141,7 @@ judgment to bring.
   almost certainly has users.
 - **Workflow / Cheddar Flow** beyond a brief reference. The full skill
   catalog is in the global file; the local overlay just needs to remind
-  Claude that `/age`, `/cure`, `/respond`, `/diff`, `/de-slop`, and
+  Claude that `/age`, `/cure`, `/respond`, `/de-slop`, and
   `/tdd-assertions` exist and are preferred. Skip `/fromage` and
   `/fromagerie` unless the project is large enough to warrant them
   (>10k LOC, multi-domain) — for typical contributions a single PR
@@ -193,7 +193,7 @@ language-specific tooling only when applicable>
 
 ## Workflow shortcuts
 
-<brief reference: /age, /cure, /respond, /diff, /de-slop, /tdd-assertions —
+<brief reference: /age, /cure, /respond, /de-slop, /tdd-assertions —
 no full descriptions; these are reminders for Claude>
 
 ## Build system

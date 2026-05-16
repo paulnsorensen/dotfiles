@@ -60,7 +60,6 @@ Use **PASS**, **FAIL**, **WARN** (acknowledged deviation), or **DEFER** (delegat
 
 - **Item 7 (AI slop)**: If code was written or modified, invoke `/de-slop` on the changed files. Mark DEFER until results return, then update to PASS/FAIL.
 - **Item 8 (Weak assertions)**: If test code was written or modified, invoke `/tdd-assertions` on test files. Mark DEFER until results return, then update to PASS/FAIL.
-- **Pre-commit check**: If changes are staged, suggest `/diff` for smoke testing.
 
 Only invoke these if the item is relevant — no code changes means items 7-8 are automatic PASS.
 

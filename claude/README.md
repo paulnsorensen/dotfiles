@@ -51,7 +51,6 @@ Slash commands invoked with `/command-name`.
 
 | Command | Use When |
 |---------|----------|
-| `/diff` | Pre-commit smoke test -- catch secrets, debug statements, silent failures |
 | `/age` | Staff Engineer code review of recent changes (fromage-age, focused mode) |
 | `/code-review` | Deep dive -- full architectural walkthrough with persistent history |
 | `/simplifier` | Reduction -- strip genAI bloat, enforce YAGNI (invokes ricotta-reducer) |
