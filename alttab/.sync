@@ -1,0 +1,43 @@
+#!/bin/bash
+# Restore AltTab preferences from a captured plist (if one is committed).
+#
+# AltTab's defaults schema isn't fully documented and changes between
+# versions, so the honest approach is: configure once via the UI on one
+# machine, capture the plist into this dir, commit, and import on sync.
+#
+# Capture workflow (run on a configured machine):
+#   bash alttab/.export
+#
+# Restore workflow (this script, runs as part of `dots sync`):
+#   defaults import com.lwouis.alt-tab-macos alttab/com.lwouis.alt-tab-macos.plist
+
+set -euo pipefail
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "alttab/.sync: skipping (not macOS)" >&2
+    exit 0
+fi
+
+readonly SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+readonly BUNDLE="com.lwouis.alt-tab-macos"
+readonly PLIST="$SCRIPT_DIR/${BUNDLE}.plist"
+
+if ! [[ -d "/Applications/AltTab.app" ]]; then
+    echo "alttab/.sync: AltTab not installed — install via: brew install --cask alt-tab" >&2
+    exit 0
+fi
+
+if [[ ! -f "$PLIST" ]]; then
+    echo "alttab/.sync: no captured plist at $PLIST yet" >&2
+    echo "              configure AltTab once via the UI, then run:" >&2
+    echo "                bash $SCRIPT_DIR/.export" >&2
+    echo "              recommended one-time settings:" >&2
+    echo "                - Hold shortcut 1: Option (so Opt+Tab triggers it)" >&2
+    echo "                - Show windows: from all spaces" >&2
+    echo "                - Show minimized windows: yes" >&2
+    echo "                - Hidden apps: visible (so you can restore minimized)" >&2
+    exit 0
+fi
+
+defaults import "$BUNDLE" "$PLIST"
+echo "alttab/.sync: imported preferences from $(basename "$PLIST") — restart AltTab to load"
