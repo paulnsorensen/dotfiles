@@ -100,4 +100,3 @@ packages:
   # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.
   # Pin to `master` (stable releases); the default branch `develop` lags behind.
   - rtk: { source: cargo, git: "https://github.com/rtk-ai/rtk", branch: master }
-  - qdrant: { source: cargo, dev: true }

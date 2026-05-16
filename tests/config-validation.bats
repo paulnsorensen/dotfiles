@@ -87,7 +87,7 @@ LAYOUT
 # ── Atuin ─────────────────────────────────────────────────────────────────────
 
 @test "atuin config is valid TOML" {
-    local config="$DOTFILES_DIR/atuin/config.toml"
+    local config="$DOTFILES_DIR/chezmoi/dot_config/atuin/config.toml"
     [[ -f "$config" ]] || skip "atuin config not found"
     # yq can validate TOML
     run yq '.' "$config" -p toml -o json
@@ -97,7 +97,7 @@ LAYOUT
 # ── Yazi ──────────────────────────────────────────────────────────────────────
 
 @test "yazi config is valid TOML" {
-    local config="$DOTFILES_DIR/yazi/yazi.toml"
+    local config="$DOTFILES_DIR/chezmoi/dot_config/yazi/yazi.toml"
     [[ -f "$config" ]] || skip "yazi config not found"
     run yq '.' "$config" -p toml -o json
     [[ $status -eq 0 ]]
@@ -155,13 +155,13 @@ LAYOUT
 }
 
 @test "packages.yaml is valid YAML" {
-    run yq '.' "$DOTFILES_DIR/packages.yaml"
+    run yq '.' "$DOTFILES_DIR/packages/packages.yaml"
     [[ $status -eq 0 ]]
 }
 
 @test "packages.yaml map entries have exactly one key (the name)" {
     local bad
-    bad=$(yq -r '.packages[] | select(kind == "map") | select((keys | length) == 1 | not)' "$DOTFILES_DIR/packages.yaml" 2>/dev/null)
+    bad=$(yq -r '.packages[] | select(kind == "map") | select((keys | length) == 1 | not)' "$DOTFILES_DIR/packages/packages.yaml" 2>/dev/null)
     [[ -z "$bad" ]]
 }
 

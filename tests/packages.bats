@@ -99,13 +99,13 @@ run_sync() {
 # --- Schema validation (against real packages.yaml) ---
 
 @test "packages.yaml is valid YAML" {
-    run yq '.' "$REAL_DOTFILES_DIR/packages.yaml"
+    run yq '.' "$REAL_DOTFILES_DIR/packages/packages.yaml"
     assert_success
 }
 
 @test "all platform values are mac or linux" {
     run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.platform != null) | .value.platform' \
-        "$REAL_DOTFILES_DIR/packages.yaml"
+        "$REAL_DOTFILES_DIR/packages/packages.yaml"
     assert_success
     while IFS= read -r platform; do
         [[ -z "$platform" ]] && continue
@@ -115,7 +115,7 @@ run_sync() {
 
 @test "all source values are brew, cask, tap, cargo, npm, or uv" {
     run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source != null) | .value.source' \
-        "$REAL_DOTFILES_DIR/packages.yaml"
+        "$REAL_DOTFILES_DIR/packages/packages.yaml"
     assert_success
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
@@ -129,8 +129,8 @@ run_sync() {
 @test "no duplicate package names" {
     local names
     names=$(
-        yq -r '.packages[] | select(kind == "scalar")' "$REAL_DOTFILES_DIR/packages.yaml"
-        yq -r '.packages[] | select(kind == "map") | to_entries[0] | .key' "$REAL_DOTFILES_DIR/packages.yaml"
+        yq -r '.packages[] | select(kind == "scalar")' "$REAL_DOTFILES_DIR/packages/packages.yaml"
+        yq -r '.packages[] | select(kind == "map") | to_entries[0] | .key' "$REAL_DOTFILES_DIR/packages/packages.yaml"
     )
     local dupes
     dupes=$(echo "$names" | sort | uniq -d)
