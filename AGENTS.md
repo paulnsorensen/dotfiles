@@ -256,7 +256,7 @@ A subset of dotfiles is rendered by [chezmoi](https://chezmoi.io/) instead of sy
 
 **Subsequent runs:** `dots sync` calls `chezmoi apply --force` via `chezmoi/.sync`. Non-interactive.
 
-**Non-TTY fallback:** if `dots sync` runs without a controlling terminal (CI, automated provisioning) and the config is missing, `chezmoi/.sync` writes a minimal stub with sourceDir only. Templates that depend on `[data]` fall back to declared defaults; missing required env vars (e.g. `CONTEXT7_API_KEY`) fail loud.
+**Non-TTY fallback:** if `dots sync` runs without a controlling terminal (CI, automated provisioning) and the config is missing, `chezmoi/.sync` writes a `sourceDir`-only stub. The subsequent `chezmoi apply` will then fail loudly on any template that reads `[data]` (e.g. the gitconfig email) — none of the apply-time templates declare in-template defaults. Run `dots sync` from a TTY (or `chezmoi init --source $DOTFILES/chezmoi` directly) to populate `[data]`. Missing required env vars (e.g. `CONTEXT7_API_KEY`) likewise fail loud.
 
 **Inspect / debug:**
 

@@ -30,15 +30,12 @@ if [[ ! -f "$config_file" ]]; then
     mkdir -p "$config_dir"
     if command -v chezmoi &>/dev/null && [[ -t 0 ]] && [[ -f "$script_dir/.chezmoi.toml.tmpl" ]]; then
         echo "  First-run chezmoi init (prompts for email and work-machine flag)"
-        if chezmoi init --source "$script_dir"; then
-            echo "  Wrote chezmoi.toml from .chezmoi.toml.tmpl"
-        else
-            echo "  WARN: chezmoi init failed; falling back to minimal config" >&2
-            tmp_file=$(mktemp "$config_dir/chezmoi-toml.XXXXXX")
-            trap 'rm -f "$tmp_file"' EXIT
-            printf 'sourceDir = "%s"\n' "$script_dir" > "$tmp_file"
-            mv -f "$tmp_file" "$config_file"
-        fi
+        # No stub fallback on init failure: this guard never re-runs once
+        # chezmoi.toml exists, so a stub here would silently strand the user
+        # without a [data] section and they'd never be re-prompted. Better to
+        # fail loud and let them re-run dots sync.
+        chezmoi init --source "$script_dir"
+        echo "  Wrote chezmoi.toml from .chezmoi.toml.tmpl"
     else
         # No TTY, no chezmoi, or no template → write the minimum so
         # subsequent invocations find sourceDir. User can run
