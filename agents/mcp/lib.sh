@@ -215,8 +215,11 @@ mcp_detect_drift() {
             claude) current=$(mcp_claude_current_signature "$name") ;;
             codex)  current=$(mcp_codex_current_signature  "$name") ;;
         esac
-        [[ "$desired" != "$current" ]] && echo "$name"
+        if [[ "$desired" != "$current" ]]; then
+            echo "$name"
+        fi
     done <<<"$EXISTING"
+    return 0
 }
 
 # ─── per-harness orchestration ──────────────────────────────────────────
