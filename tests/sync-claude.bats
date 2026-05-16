@@ -688,10 +688,14 @@ MOCK
 @test "mcp_filter_for_harness applies gate_unless for claude only" {
     source "$MCP_LIB"
     local json='{"gated":{"command":"x","gate_unless":"GATE_ON"}}'
-    GATE_ON=true
+    # `export` is required: jq's `env[$g]` only sees exported vars, and the
+    # mcp_filter_for_harness call forks a child jq process. A bare `GATE_ON=
+    # true` would only set a shell-local var that jq cannot read.
+    export GATE_ON=true
     local claude_keys codex_keys
     claude_keys=$(mcp_filter_for_harness claude "$json" | jq -r 'keys | length')
     codex_keys=$( mcp_filter_for_harness codex  "$json" | jq -r 'keys | length')
+    unset GATE_ON
     [[ "$claude_keys" == "0" ]]   # claude gated off
     [[ "$codex_keys"  == "1" ]]   # codex ignores gate_unless
 }
