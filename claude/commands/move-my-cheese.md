@@ -141,14 +141,6 @@ Categorize each CI failure from Phase 1 recon:
 | **Build failure** (compile error, type error) | Fix with lookup + chisel |
 | **Merge artifact** (conflict markers) | Should have been caught in Phase 2 |
 
-### Smoke Check (diff skill)
-
-Run `/diff` first — catch obvious merge artifacts before wasting a build/test cycle:
-
-- Conflict markers left behind
-- Debug statements
-- Silent failures in merged code
-
 ### Build Check
 
 Run the project's build command directly (`cargo check`, `tsc --noEmit`, `go build ./...`, `uv run mypy .`, etc.) — the `rtk hook claude` PreToolUse hook auto-rewrites and filters output to structured errors.

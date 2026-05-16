@@ -16,23 +16,90 @@ teardown() { teardown_test_env; }
 
 # ── chezmoi/.sync wiring ────────────────────────────────────────────────
 
-@test "chezmoi/.sync creates chezmoi.toml on fresh setup" {
+# Helper: drop a fake chezmoi binary on PATH that records its args and
+# (optionally) writes a config file when invoked as `chezmoi init`. Returns
+# the bin-dir path so callers can extend PATH themselves.
+make_fake_chezmoi() {
+    local fake_bin="$TEST_HOME/fake-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/chezmoi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "$HOME/chezmoi-args.log"
+if [[ "$1" == "init" ]]; then
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
+sourceDir = "$3"
+
+[data]
+email = "init-mock@example.com"
+work = false
+TOML
+fi
+exit 0
+SH
+    chmod +x "$fake_bin/chezmoi"
+    echo "$fake_bin"
+}
+
+@test "chezmoi/.sync: missing config + chezmoi present + no TTY fails loud" {
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
     [[ ! -e "$HOME/.config/chezmoi/chezmoi.toml" ]]
 
     run bash "$CHEZMOI_SYNC"
-    assert_success
-
-    assert_file_exists "$HOME/.config/chezmoi/chezmoi.toml"
-    grep -qF "sourceDir = \"$REAL_DOTFILES_DIR/chezmoi\"" "$HOME/.config/chezmoi/chezmoi.toml"
+    assert_failure
+    assert_output_contains "no TTY available to run init"
+    # Critical: we must NOT write a stub. The whole point of the change is to
+    # avoid the no-[data] zombie config that masked PR #167.
+    [[ ! -e "$HOME/.config/chezmoi/chezmoi.toml" ]]
 }
 
-@test "chezmoi/.sync is a no-op when chezmoi.toml already exists (preserves user edits)" {
+@test "chezmoi/.sync: missing config + chezmoi absent exits clean without stub" {
+    # Strip homebrew/cargo dirs from PATH so chezmoi resolves as not-found.
+    # Keep /usr/bin + /bin so the script's core tools (rm, grep, mkdir, sed)
+    # still work — clearing PATH entirely would break the script and the
+    # bats teardown.
+    PATH="/usr/bin:/bin"
+
     run bash "$CHEZMOI_SYNC"
     assert_success
+    assert_output_contains "Skipping chezmoi setup"
+    [[ ! -e "$HOME/.config/chezmoi/chezmoi.toml" ]]
+}
+
+@test "chezmoi/.sync: stale stub (sourceDir but no [data]) + no TTY fails loud" {
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+# Pre-fix non-TTY fallback that PR #168 removes.
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+EOF
+
+    run bash "$CHEZMOI_SYNC"
+    assert_failure
+    assert_output_contains "no [data] block"
+    # Stub left in place for the user to inspect/delete manually.
+    [[ -f "$HOME/.config/chezmoi/chezmoi.toml" ]]
+}
+
+@test "chezmoi/.sync: valid config (sourceDir + [data]) is preserved (no churn)" {
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
 
     local config="$HOME/.config/chezmoi/chezmoi.toml"
+    mkdir -p "$(dirname "$config")"
     cat > "$config" <<EOF
 sourceDir = "/some/user/override"
+
+[data]
+email = "user@example.com"
+work = false
 
 [diff]
 exclude = ["scripts"]
@@ -57,19 +124,17 @@ EOF
 }
 
 @test "chezmoi/.sync applies from current checkout even when config has an old sourceDir" {
-    local fake_bin="$TEST_HOME/fake-bin"
-    mkdir -p "$fake_bin"
-    cat > "$fake_bin/chezmoi" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$@" > "$HOME/chezmoi-args.log"
-exit 0
-SH
-    chmod +x "$fake_bin/chezmoi"
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
 
     local config="$HOME/.config/chezmoi/chezmoi.toml"
     mkdir -p "$(dirname "$config")"
     cat > "$config" <<'EOF'
 sourceDir = "/some/stale/checkout/chezmoi"
+
+[data]
+email = "stale@example.com"
+work = false
 EOF
 
     PATH="$fake_bin:$PATH"
@@ -77,19 +142,150 @@ EOF
     assert_success
     grep -qF 'sourceDir = "/some/stale/checkout/chezmoi"' "$config"
 
+    # Only the apply call should land in the args log — no init, no other
+    # invocations.
     local args
     args=$(tr '\n' ' ' < "$HOME/chezmoi-args.log")
     [[ "$args" == "--source $REAL_DOTFILES_DIR/chezmoi apply --force " ]]
 }
 
-@test "chezmoi/.sync cleans up its mktemp scratch file" {
+# ── legacy symlink migration ───────────────────────────────────────────
+
+@test "chezmoi/.sync removes dangling ~/.gitconfig symlink pointing into dotfiles" {
+    # Simulate the post-#167 state: ~/.gitconfig still symlinked at the old
+    # pre-chezmoi location, target file deleted.
+    ln -s "$REAL_DOTFILES_DIR/gitconfig" "$HOME/.gitconfig"
+    [[ -L "$HOME/.gitconfig" ]]
+    [[ ! -e "$HOME/.gitconfig" ]]  # dangling
+
+    # Pre-populate a valid config so the script doesn't bail on missing
+    # config before reaching the migration step.
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+
+    # Mock chezmoi so apply is a no-op (we're testing migration, not apply).
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
     run bash "$CHEZMOI_SYNC"
     assert_success
+    [[ ! -L "$HOME/.gitconfig" ]]
+    [[ ! -e "$HOME/.gitconfig" ]]
+    assert_output_contains "Removed legacy dotfiles symlink"
+}
 
-    if compgen -G "$HOME/.config/chezmoi/chezmoi-toml.*" >/dev/null; then
-        echo "leftover mktemp scratch file in config dir" >&2
-        return 1
-    fi
+@test "chezmoi/.sync removes live ~/.gitconfig symlink that resolves into dotfiles" {
+    # Symlink to a real file inside the dotfiles checkout — live, not dangling.
+    # Migration must still claim this path because chezmoi will overwrite it.
+    local fake_target="$REAL_DOTFILES_DIR/chezmoi/.gitattributes"
+    [[ -f "$fake_target" ]]  # sanity check
+    ln -s "$fake_target" "$HOME/.gitconfig"
+    [[ -L "$HOME/.gitconfig" ]]
+    [[ -e "$HOME/.gitconfig" ]]
+
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+    [[ ! -e "$HOME/.gitconfig" ]]
+}
+
+@test "chezmoi/.sync preserves real file at ~/.gitconfig (no migration)" {
+    # If the user already has a real ~/.gitconfig (chezmoi-rendered or
+    # hand-edited), the migration must not touch it.
+    printf '[user]\n\temail = real@example.com\n' > "$HOME/.gitconfig"
+    [[ -f "$HOME/.gitconfig" && ! -L "$HOME/.gitconfig" ]]
+
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+    [[ -f "$HOME/.gitconfig" && ! -L "$HOME/.gitconfig" ]]
+    grep -qF 'real@example.com' "$HOME/.gitconfig"
+}
+
+@test "chezmoi/.sync preserves ~/.gitconfig symlink pointing outside dotfiles" {
+    # Symlink to a path outside the dotfiles checkout (e.g. user manages
+    # their own gitconfig via a different tool). Migration must not touch it.
+    local outside_target="$TEST_HOME/elsewhere/gitconfig"
+    mkdir -p "$(dirname "$outside_target")"
+    printf '[user]\n\temail = elsewhere@example.com\n' > "$outside_target"
+    ln -s "$outside_target" "$HOME/.gitconfig"
+    [[ -L "$HOME/.gitconfig" ]]
+
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+    [[ -L "$HOME/.gitconfig" ]]
+    [[ "$(readlink "$HOME/.gitconfig")" == "$outside_target" ]]
+}
+
+@test "chezmoi/.sync migrates ~/.copilot/mcp-config.json legacy symlink too" {
+    # Smoke test that the migration list covers the other chezmoi-managed
+    # path. Real-world this was a regular file, but if anyone left a
+    # dotfiles-pointing symlink during a half-migration it must still be
+    # claimed.
+    mkdir -p "$HOME/.copilot"
+    ln -s "$REAL_DOTFILES_DIR/nonexistent-mcp.json" "$HOME/.copilot/mcp-config.json"
+    [[ -L "$HOME/.copilot/mcp-config.json" ]]
+
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+    [[ ! -e "$HOME/.copilot/mcp-config.json" ]]
 }
 
 # ── source-tree scaffold ────────────────────────────────────────────────
