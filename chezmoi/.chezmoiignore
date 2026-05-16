@@ -1,5 +1,6 @@
-# chezmoi reads this directory as its source dir. The only managed entry
-# right now is run_onchange_install-claude-skills.sh.tmpl. Stray scratch
+# chezmoi reads this directory as its source dir. Managed entries include
+# `private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`,
+# and the run_onchange installers under .chezmoiscripts/. Stray scratch
 # files commonly dropped into a working dir (docs, notes, editor state) are
 # explicitly ignored so they cannot become managed by accident.
 #
@@ -12,6 +13,9 @@ README*
 .DS_Store
 *.swp
 *.bak
+# Git-only metadata: lives in the source dir to enforce LF endings on
+# templates, but chezmoi must never try to render or apply it.
+.gitattributes
 # Helper scripts the run_onchange template invokes via {{ .chezmoi.sourceDir }}/lib/.
 # They live inside the source dir for colocation, but chezmoi must not apply
 # them as $HOME files.

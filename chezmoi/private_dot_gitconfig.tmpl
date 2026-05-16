@@ -1,6 +1,6 @@
 [user]
 	name = Paul Sorensen
-	email = paulnsorensen@gmail.com
+	email = {{ .email }}
 
 [core]
     attributesfile = ~/.gitattributes
@@ -55,6 +55,7 @@
     name = mergiraf
     driver = mergiraf merge --git "%O" "%A" "%B" -s "%S" -x "%X" -y "%Y" -p "%P"
 
+{{- if .work }}
 [url "ssh://code.uber.internal/"]
 	insteadOf = https://code.uber.internal/
 [url "ssh://config.uber.internal/"]
@@ -63,6 +64,7 @@
 	followRedirects = true
 [http "https://gopkg.in"]
 	followRedirects = true
+{{- end }}
 [rerere]
 	enabled = true
 [include]

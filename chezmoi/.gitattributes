@@ -1,0 +1,3 @@
+# Force LF line endings for all chezmoi sources. CRLF in a templated
+# shell script renders as a broken shebang on Linux/macOS.
+* text eol=lf

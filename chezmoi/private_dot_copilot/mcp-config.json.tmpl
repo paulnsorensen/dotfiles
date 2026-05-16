@@ -1,3 +1,17 @@
+{{- /*
+Renders ~/.copilot/mcp-config.json with API keys at apply time.
+
+Today: keys come from $CONTEXT7_API_KEY / $TAVILY_API_KEY (sourced from
+dotfiles/.env on shell init). To swap to 1Password instead, replace the
+two `env "..."` calls below with `onepasswordRead "op://<vault>/<item>/credential"`
+and add `op` to packages.yaml. See references/secrets.md.
+
+Fails fast if a required env var is missing.
+*/ -}}
+{{- $context7 := env "CONTEXT7_API_KEY" -}}
+{{- $tavily   := env "TAVILY_API_KEY" -}}
+{{- if eq $context7 "" }}{{ fail "CONTEXT7_API_KEY is not set in environment" }}{{ end -}}
+{{- if eq $tavily   "" }}{{ fail "TAVILY_API_KEY is not set in environment" }}{{ end -}}
 {
   "mcpServers": {
     "code-review-graph": {
@@ -19,7 +33,7 @@
         "@upstash/context7-mcp"
       ],
       "env": {
-        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+        "CONTEXT7_API_KEY": {{ $context7 | quote }}
       },
       "tools": [
         "*"
@@ -33,7 +47,7 @@
         "tavily-mcp@latest"
       ],
       "env": {
-        "TAVILY_API_KEY": "${TAVILY_API_KEY}"
+        "TAVILY_API_KEY": {{ $tavily | quote }}
       },
       "tools": [
         "*"
