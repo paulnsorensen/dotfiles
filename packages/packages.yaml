@@ -11,6 +11,7 @@
 packages:
   - tinted-theming/tinted: { source: tap }
   - koekeishiya/formulae: { source: tap }     # skhd
+  - oven-sh/bun: { source: tap }              # bun
 
   # Core CLI
   - jq
@@ -46,6 +47,7 @@ packages:
   - duckdb
   - watch
   - node: { apt: nodejs }
+  - bun                                       # JS/TS runtime required by jmux
   - sd
   - vhs
   - gettext
