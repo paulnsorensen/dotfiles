@@ -125,6 +125,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tmux set-option @jmux-attention 1 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "enabledPlugins": {
