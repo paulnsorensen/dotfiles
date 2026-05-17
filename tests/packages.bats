@@ -21,9 +21,11 @@ setup() {
 
     export BREW_LOG="$TEST_HOME/brew.log"
     export CARGO_LOG="$TEST_HOME/cargo.log"
+    export GH_LOG="$TEST_HOME/gh.log"
 
     write_mock_brew
     write_mock_cargo
+    write_mock_gh
     export PATH="$MOCK_BIN:$PATH"
 }
 
@@ -75,6 +77,36 @@ MOCKCARGO
     chmod +x "$MOCK_BIN/cargo"
 }
 
+# Usage: write_mock_gh [installed_repos] [fail_repo]
+#   installed_repos: newline-separated list of "owner/repo" already installed
+#   fail_repo:       exit non-zero when `gh extension install` is asked for this repo
+write_mock_gh() {
+    local installed="${1:-}" fail_repo="${2:-}"
+    cat > "$MOCK_BIN/gh" << MOCKGH
+#!/bin/bash
+echo "gh \$*" >> "$GH_LOG"
+case "\$1" in
+    extension)
+        case "\$2" in
+            list)
+                while IFS= read -r repo; do
+                    [[ -z "\$repo" ]] && continue
+                    printf 'gh %s\t%s\tv0.0.0\n' "\${repo##*/gh-}" "\$repo"
+                done <<< "$installed"
+                ;;
+            install)
+                if [[ -n "$fail_repo" && "\$3" == "$fail_repo" ]]; then
+                    exit 1
+                fi
+                ;;
+        esac
+        ;;
+esac
+exit 0
+MOCKGH
+    chmod +x "$MOCK_BIN/gh"
+}
+
 write_test_yaml() {
     cat > "$PACKAGES_FILE" << 'YAML'
 packages:
@@ -89,6 +121,7 @@ packages:
   - npm: { platform: linux, dev: true }
   - pyenv: { dev: true }
   - cargo-llvm-cov: { source: cargo }
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack }
 YAML
 }
 
@@ -113,16 +146,19 @@ run_sync() {
     done <<< "$output"
 }
 
-@test "all source values are brew, cask, tap, cargo, npm, or uv" {
+@test "all source values are brew, cask, tap, cargo, npm, uv, or gh-extension" {
     run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source != null) | .value.source' \
         "$REAL_DOTFILES_DIR/packages/packages.yaml"
     assert_success
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
-        if [[ "$source" != "brew" && "$source" != "cask" && "$source" != "tap" && "$source" != "cargo" && "$source" != "npm" && "$source" != "uv" ]]; then
-            echo "Invalid source value: $source" >&2
-            return 1
-        fi
+        case "$source" in
+            brew|cask|tap|cargo|npm|uv|gh-extension) ;;
+            *)
+                echo "Invalid source value: $source" >&2
+                return 1
+                ;;
+        esac
     done <<< "$output"
 }
 
@@ -248,6 +284,55 @@ run_sync() {
     assert_success
 
     grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
+}
+
+@test "sync installs gh extensions" {
+    write_test_yaml
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack" "$GH_LOG"
+}
+
+@test "sync skips gh extension that is already installed" {
+    write_test_yaml
+    write_mock_gh "github/gh-stack"
+
+    run_sync
+    assert_success
+
+    ! grep -q "gh extension install" "$GH_LOG"
+}
+
+@test "sync records failure when gh extension install fails" {
+    write_test_yaml
+    write_mock_gh "" "github/gh-stack"
+
+    run_sync
+
+    assert_output_contains "Failed to install github/gh-stack"
+    assert_output_contains "cache NOT saved"
+    [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+}
+
+@test "UPGRADE_MODE runs gh extension upgrade --all" {
+    write_test_yaml
+    write_mock_gh "github/gh-stack"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q "gh extension upgrade --all" "$GH_LOG"
+}
+
+@test "non-upgrade mode does NOT call gh extension upgrade" {
+    write_test_yaml
+    write_mock_gh "github/gh-stack"
+
+    run_sync
+    assert_success
+
+    ! grep -q "gh extension upgrade" "$GH_LOG"
 }
 
 # --- Integration: cache behavior ---
