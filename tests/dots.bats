@@ -54,6 +54,15 @@ STUB
     assert_output_contains "stub-sync UPGRADE_MODE=true"
     assert_output_contains "Refreshing remote skills"
     assert_output_contains "stub-skill-sync args=$stub_dir/skills/_registry.yaml --force"
+
+    # Lock down ordering: package sync must run before skill refresh.
+    local pkg_line skill_line
+    pkg_line=$(printf '%s\n' "$output" | grep -n 'stub-sync UPGRADE_MODE=true' | head -1 | cut -d: -f1)
+    skill_line=$(printf '%s\n' "$output" | grep -n 'stub-skill-sync args=' | head -1 | cut -d: -f1)
+    [[ "$pkg_line" -lt "$skill_line" ]] || {
+        echo "Expected package sync before skill refresh; got pkg=$pkg_line skill=$skill_line" >&2
+        return 1
+    }
 }
 
 @test "dots up shorthand routes to upgrade (packages + skill refresh)" {
