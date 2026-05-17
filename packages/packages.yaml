@@ -12,6 +12,7 @@ packages:
   - tinted-theming/tinted: { source: tap }
   - koekeishiya/formulae: { source: tap }     # skhd
   - oven-sh/bun: { source: tap }              # bun
+  - anomalyco/tap: { source: tap }            # opencode
 
   # Core CLI
   - jq
@@ -52,6 +53,7 @@ packages:
   - vhs
   - gettext
   - taf2/tap/mdvi
+  - anomalyco/tap/opencode                    # open-source AI coding agent (fresher than homebrew-core)
 
   # Rust build acceleration
   - sccache                                   # rustc wrapper for compile caching
