@@ -494,6 +494,151 @@ MOCK
     assert_output_contains "cache not updated"
 }
 
+@test "skill sync: cache digest is sha256(sha256(registry) + LF + harnesses + LF)" {
+    # Locks down the exact digest formula. If a refactor changes the
+    # algorithm, this test fails and forces a conscious decision about
+    # cache invalidation across machines.
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "claude-code cursor"
+
+    run_sync
+    assert_success
+
+    local cache_file="$HOME/.local/state/dotfiles/skill-external-hash"
+    assert_file_exists "$cache_file"
+
+    local registry_digest combined_digest actual
+    registry_digest=$(shasum -a 256 "$MOCK_REGISTRY_FILE" | awk '{print $1}')
+    combined_digest=$(printf '%s\n%s\n' "$registry_digest" "claude-code cursor" \
+        | shasum -a 256 | awk '{print $1}')
+    actual=$(cat "$cache_file")
+
+    [[ "$actual" == "$combined_digest" ]] || {
+        echo "Cache digest mismatch" >&2
+        echo "  expected: $combined_digest" >&2
+        echo "  actual:   $actual" >&2
+        return 1
+    }
+}
+
+@test "skill sync: cache is blind to upstream skill-set changes (known gap)" {
+    # Regression test for the bug that hid /cheese-factory: when a source
+    # repo gains a new skill upstream but the local registry + harness
+    # list are unchanged, the cache short-circuits and the new skill is
+    # never installed. This is the design boundary documented in
+    # install-external.sh ("run 'gh skill update --all' to pull upstream
+    # changes"). If we ever fix the gap by, e.g., folding the discovered
+    # skill list into the digest or adding a TTL, flip this test to
+    # assert the new behavior.
+    write_registry "acme/widgets"  # auto-discovery, no explicit skills:
+    write_env "claude-code"
+
+    # First run: mock returns 3 skills.
+    run_sync
+    assert_success
+    run grep -c 'gh skill install acme/widgets' "$GH_LOG"
+    [[ "$output" == "3" ]]
+
+    # Upstream "adds" a new skill — swap the mock to return 4.
+    cat > "$MOCK_BIN/gh" << 'MOCK'
+#!/bin/bash
+printf 'gh %s\n' "$*" >> "${GH_LOG:-/dev/null}"
+case "$1" in
+    skill)
+        case "$2" in
+            --help|install) exit 0 ;;
+        esac
+        exit 0
+        ;;
+    api)
+        if [[ "$2" == repos/*/contents/skills ]]; then
+            cat <<'JSON'
+[
+  {"name": "alpha", "type": "dir"},
+  {"name": "bravo", "type": "dir"},
+  {"name": "charlie", "type": "dir"},
+  {"name": "delta",  "type": "dir"}
+]
+JSON
+            exit 0
+        fi
+        exit 0
+        ;;
+esac
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/gh"
+
+    : > "$GH_LOG"
+    run_sync
+    assert_success
+
+    # The gap: cache hit, no installs, new skill never reaches the harness.
+    assert_output_contains "unchanged since last sync"
+    run grep -c 'gh skill install' "$GH_LOG"
+    [[ "$output" == "0" ]] || {
+        echo "Expected 0 installs on cache hit, got $output" >&2
+        return 1
+    }
+    run grep -c 'gh skill install acme/widgets delta' "$GH_LOG"
+    [[ "$output" == "0" ]] || {
+        echo "delta was installed — upstream gap may be fixed; update this test" >&2
+        return 1
+    }
+}
+
+@test "skill sync: --force pulls in upstream skill additions (the documented workaround)" {
+    # Companion to the upstream-blindness test: confirms the user-facing
+    # escape hatch (skill-sync --force) actually works to pick up new
+    # skills when the registry hasn't changed.
+    write_registry "acme/widgets"
+    write_env "claude-code"
+
+    run_sync
+    assert_success
+
+    # Upstream gains a skill.
+    cat > "$MOCK_BIN/gh" << 'MOCK'
+#!/bin/bash
+printf 'gh %s\n' "$*" >> "${GH_LOG:-/dev/null}"
+case "$1" in
+    skill)
+        case "$2" in
+            --help|install) exit 0 ;;
+        esac
+        exit 0
+        ;;
+    api)
+        if [[ "$2" == repos/*/contents/skills ]]; then
+            cat <<'JSON'
+[
+  {"name": "alpha", "type": "dir"},
+  {"name": "bravo", "type": "dir"},
+  {"name": "charlie", "type": "dir"},
+  {"name": "delta",  "type": "dir"}
+]
+JSON
+            exit 0
+        fi
+        exit 0
+        ;;
+esac
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/gh"
+
+    : > "$GH_LOG"
+    run_sync --force
+    assert_success
+
+    run grep -c 'gh skill install acme/widgets delta --agent claude-code' "$GH_LOG"
+    [[ "$output" == "1" ]] || {
+        echo "delta install missing under --force" >&2
+        return 1
+    }
+}
+
 @test "registry.yaml: real registry parses cleanly with yq" {
     run yq '.sources | keys' "$REAL_DOTFILES_DIR/skills/_registry.yaml"
     assert_success

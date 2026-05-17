@@ -36,7 +36,7 @@ ${GREEN}Usage:${NC} dots [command] [args]
 ${BLUE}Commands:${NC}
   ${GREEN}update${NC}          Pull latest changes and run sync
   ${GREEN}sync${NC}            Run the sync script (with rollback support)
-  ${GREEN}upgrade${NC}         Upgrade installed packages (brew/cargo/npm/uv)
+  ${GREEN}upgrade${NC}         Upgrade installed packages and refresh remote skills
   ${GREEN}status${NC}          Show git status of dotfiles
   ${GREEN}rollback [id]${NC}   Rollback to a previous state
   ${GREEN}backups${NC}         List available backups
@@ -305,6 +305,13 @@ case "${1:-status}" in
         echo -e "${BLUE}⬆️  Upgrading packages...${NC}"
         cd_dotfiles
         UPGRADE_MODE=true bash "$DOTFILES_DIR/packages/sync.sh"
+
+        echo
+        echo -e "${BLUE}⬆️  Refreshing remote skills...${NC}"
+        if ! bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
+                "$DOTFILES_DIR/skills/_registry.yaml" --force; then
+            echo -e "${YELLOW}⚠️  Remote skills refresh failed (continuing)${NC}" >&2
+        fi
         ;;
     status|st)
         do_status
