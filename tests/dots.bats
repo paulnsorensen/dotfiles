@@ -25,33 +25,61 @@ teardown() {
     assert_output_contains "rollback"
 }
 
-@test "dots upgrade dispatches to packages/sync.sh with UPGRADE_MODE=true" {
-    local stub_dir="$TEST_HOME/stub-dotfiles"
-    mkdir -p "$stub_dir/packages" "$stub_dir/bin"
+# Stub a dotfiles tree wired for `dots upgrade`: packages/sync.sh prints its
+# UPGRADE_MODE, install-external.sh prints its args. Both must be invoked.
+stub_upgrade_dotfiles() {
+    local stub_dir="$1"
+    mkdir -p "$stub_dir/packages" "$stub_dir/bin" \
+             "$stub_dir/chezmoi/lib" "$stub_dir/skills"
     cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
     cat > "$stub_dir/packages/sync.sh" <<'STUB'
 #!/bin/bash
 echo "stub-sync UPGRADE_MODE=${UPGRADE_MODE:-unset}"
 STUB
-    chmod +x "$stub_dir/packages/sync.sh"
+    cat > "$stub_dir/chezmoi/lib/install-external.sh" <<'STUB'
+#!/bin/bash
+echo "stub-skill-sync args=$*"
+STUB
+    : > "$stub_dir/skills/_registry.yaml"
+    chmod +x "$stub_dir/packages/sync.sh" \
+             "$stub_dir/chezmoi/lib/install-external.sh"
+}
+
+@test "dots upgrade runs packages/sync.sh with UPGRADE_MODE=true, then skill-sync --force" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
     DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
     assert_success
     assert_output_contains "Upgrading packages"
     assert_output_contains "stub-sync UPGRADE_MODE=true"
+    assert_output_contains "Refreshing remote skills"
+    assert_output_contains "stub-skill-sync args=$stub_dir/skills/_registry.yaml --force"
 }
 
-@test "dots up shorthand routes to upgrade" {
+@test "dots up shorthand routes to upgrade (packages + skill refresh)" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
-    mkdir -p "$stub_dir/packages" "$stub_dir/bin"
-    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
-    cat > "$stub_dir/packages/sync.sh" <<'STUB'
-#!/bin/bash
-echo "stub-sync UPGRADE_MODE=${UPGRADE_MODE:-unset}"
-STUB
-    chmod +x "$stub_dir/packages/sync.sh"
+    stub_upgrade_dotfiles "$stub_dir"
     DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" up
     assert_success
     assert_output_contains "stub-sync UPGRADE_MODE=true"
+    assert_output_contains "stub-skill-sync args=$stub_dir/skills/_registry.yaml --force"
+}
+
+@test "dots upgrade keeps going when skill-sync fails (warns but exits 0)" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    # Replace skill-sync stub with a failing one
+    cat > "$stub_dir/chezmoi/lib/install-external.sh" <<'STUB'
+#!/bin/bash
+echo "stub-skill-sync FAILING" >&2
+exit 1
+STUB
+    chmod +x "$stub_dir/chezmoi/lib/install-external.sh"
+
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
+    assert_success  # package upgrade is the primary action; skill failure shouldn't abort
+    assert_output_contains "stub-sync UPGRADE_MODE=true"
+    assert_output_contains "Remote skills refresh failed"
 }
 
 @test "dots with no arguments shows status" {
