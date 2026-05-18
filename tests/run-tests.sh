@@ -28,7 +28,7 @@ fi
 
 # Parse arguments
 VERBOSE=false
-SPECIFIC_TEST=""
+SPECIFIC_TESTS=()
 WATCH=false
 
 while (($#)); do
@@ -42,7 +42,7 @@ while (($#)); do
             shift
             ;;
         -h|--help)
-            echo "Usage: $0 [OPTIONS] [test-file]"
+            echo "Usage: $0 [OPTIONS] [test-file ...]"
             echo
             echo "Options:"
             echo "  -v, --verbose    Show verbose output"
@@ -50,14 +50,15 @@ while (($#)); do
             echo "  -h, --help       Show this help message"
             echo
             echo "Examples:"
-            echo "  $0                    # Run all tests"
-            echo "  $0 dots.bats          # Run specific test file"
-            echo "  $0 -v                 # Run with verbose output"
-            echo "  $0 -w                 # Watch mode"
+            echo "  $0                            # Run all tests"
+            echo "  $0 dots.bats                  # Run a single test file"
+            echo "  $0 a.bats b.bats              # Run multiple test files"
+            echo "  $0 -v                         # Run with verbose output"
+            echo "  $0 -w                         # Watch mode"
             exit 0
             ;;
         *)
-            SPECIFIC_TEST="$1"
+            SPECIFIC_TESTS+=("$1")
             shift
             ;;
     esac
@@ -71,8 +72,8 @@ run_tests() {
     echo
 
     local test_files
-    if [[ -n "$SPECIFIC_TEST" ]]; then
-        test_files="$SPECIFIC_TEST"
+    if (( ${#SPECIFIC_TESTS[@]} > 0 )); then
+        test_files="${SPECIFIC_TESTS[*]}"
     else
         test_files="dots-simple.bats dots.bats git-hooks.bats sync.bats config-validation.bats prompt.bats sync-claude.bats sync-rollback.bats hooks-blockers.bats hooks-session.bats iterm2-fonts.bats worktree-settings.bats skills-external.bats skills-local.bats chezmoi-wiring.bats install-codex.bats install-agents-doc.bats packages.bats cheese-flair.bats mcp-lib.bats agents-hooks-sync.bats"
     fi

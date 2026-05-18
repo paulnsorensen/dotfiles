@@ -16,9 +16,14 @@ setup() {
     assert_file_exists "$BANK"
 }
 
-@test "lib script exists and is executable" {
+@test "lib script exists and is sourceable" {
+    # The lib is always invoked via `bash cheese-flair.sh ...` (CLI mode) or
+    # `source cheese-flair.sh` (hook mode) — never executed directly — so
+    # the file is intentionally NOT marked +x. Assert it stays that way so
+    # downstream deployment (install-shared-assets.sh) inherits a plain
+    # mode, matching the assertion in agents-hooks-sync.bats.
     assert_file_exists "$LIB"
-    [[ -x "$LIB" ]]
+    [[ ! -x "$LIB" ]]
 }
 
 @test "hook script exists and is executable" {

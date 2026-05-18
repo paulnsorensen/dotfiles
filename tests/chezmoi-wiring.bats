@@ -288,6 +288,94 @@ EOF
     [[ ! -e "$HOME/.copilot/mcp-config.json" ]]
 }
 
+# ── prelink_claude_writethrough (first-install symlink ordering) ───────
+#
+# Regression guard for the first-install race between chezmoi/.sync (runs
+# first alphabetically) and claude/.sync (creates the ~/.claude/{hooks,
+# reference} symlinks). Without the prelink, chezmoi's run_onchange
+# install-hooks template lands files inside a real ~/.claude/hooks/ dir
+# that claude/.sync later backs up — orphaning the deployed hook.
+
+@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference} on a fresh install" {
+    # No ~/.claude at all — fresh-box state.
+    [[ ! -e "$HOME/.claude" ]]
+
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+
+    [[ -L "$HOME/.claude/hooks" ]]
+    [[ "$(readlink "$HOME/.claude/hooks")"     == "$REAL_DOTFILES_DIR/claude/hooks"     ]]
+    [[ -L "$HOME/.claude/reference" ]]
+    [[ "$(readlink "$HOME/.claude/reference")" == "$REAL_DOTFILES_DIR/claude/reference" ]]
+}
+
+@test "chezmoi/.sync prelink is idempotent (existing correct symlink preserved)" {
+    mkdir -p "$HOME/.claude"
+    ln -s "$REAL_DOTFILES_DIR/claude/hooks"     "$HOME/.claude/hooks"
+    ln -s "$REAL_DOTFILES_DIR/claude/reference" "$HOME/.claude/reference"
+
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+    # Symlinks unchanged.
+    [[ "$(readlink "$HOME/.claude/hooks")"     == "$REAL_DOTFILES_DIR/claude/hooks"     ]]
+    [[ "$(readlink "$HOME/.claude/reference")" == "$REAL_DOTFILES_DIR/claude/reference" ]]
+    # Prelink message only fires when it actually creates a link.
+    [[ "$output" != *"Pre-linked"* ]]
+}
+
+@test "chezmoi/.sync prelink does not clobber a pre-existing real directory" {
+    # If the user already has a real ~/.claude/hooks/ (e.g. a half-migrated
+    # state), prelink must leave it alone — claude/.sync's backup pass is
+    # the only thing that should touch real dirs at those paths.
+    mkdir -p "$HOME/.claude/hooks"
+    echo "user file" > "$HOME/.claude/hooks/sentinel"
+
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+    # Real dir + its contents preserved untouched.
+    [[ -d "$HOME/.claude/hooks" && ! -L "$HOME/.claude/hooks" ]]
+    [[ "$(cat "$HOME/.claude/hooks/sentinel")" == "user file" ]]
+}
+
 # ── source-tree scaffold ────────────────────────────────────────────────
 
 @test "chezmoi/.chezmoiroot exists" {

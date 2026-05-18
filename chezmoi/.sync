@@ -111,6 +111,30 @@ EOF
     fi
 fi
 
+# Pre-create the ~/.claude symlinks that chezmoi's run_onchange templates
+# write through. On a fresh install, claude/.sync runs *after* chezmoi/.sync
+# (alphabetical iteration in .sync-with-rollback), so without these links
+# chezmoi would create real ~/.claude/{hooks,reference}/ directories that
+# claude/.sync would then back up — orphaning anything chezmoi just wrote
+# (e.g. session-start-cheese-flair.sh). The claude/.sync pass later rebuilds
+# these symlinks idempotently. Codex has no symlink layer, so this is
+# claude-only.
+prelink_claude_writethrough() {
+    local claude_dir="$HOME/.claude"
+    local item link source
+    mkdir -p "$claude_dir"
+    for item in hooks reference; do
+        link="$claude_dir/$item"
+        source="$dotfiles_dir/claude/$item"
+        [[ -d "$source" ]] || continue
+        # Already a symlink, or a real path claude/.sync will own — leave alone.
+        [[ -e "$link" || -L "$link" ]] && continue
+        ln -s "$source" "$link"
+        echo "  Pre-linked $link -> $source (for chezmoi write-through)"
+    done
+}
+prelink_claude_writethrough
+
 # Trigger chezmoi apply from this checkout so workspace syncs use the source
 # tree that launched dots sync, not a stale sourceDir preserved in
 # ~/.config/chezmoi/chezmoi.toml. Non-fatal — if chezmoi rejects the source
