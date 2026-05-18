@@ -42,6 +42,7 @@ ${BLUE}Commands:${NC}
   ${GREEN}backups${NC}         List available backups
   ${GREEN}clean${NC}           Prune old backups (--keep=N, --dry-run)
   ${GREEN}doctor${NC}          Run health checks and profile shell
+  ${GREEN}profile${NC}         Manage harness-agnostic agent profiles (run 'dots profile help')
   ${GREEN}test${NC}            Run test suite
   ${GREEN}help${NC}            Show this help message
 
@@ -329,6 +330,10 @@ case "${1:-status}" in
         ;;
     doctor|d)
         do_doctor
+        ;;
+    profile|p)
+        shift
+        "$DOTFILES_DIR/agent-profile/ap" "$@"
         ;;
     test|t)
         shift
