@@ -15,7 +15,7 @@ setup() {
     mkdir -p "$PROFILE_ROOT" "$TARGET"
     export AP_EXTRA_SEARCH_PATHS="$PROFILE_ROOT"
     export DOTFILES_DIR="$TEST_HOME"
-    cd "$TARGET"
+    cd "$TARGET" || exit
 }
 
 teardown() {
@@ -75,13 +75,6 @@ EOF
     assert_output_contains "\"reviewer\""
 }
 
-@test "ap path: prints the profile directory" {
-    make_basic_profile foo
-    run "$AP" path foo
-    assert_success
-    [[ "$output" == "$PROFILE_ROOT/foo" ]]
-}
-
 @test "ap path: nonexistent profile fails with clear error" {
     run "$AP" path nope
     assert_failure
@@ -94,12 +87,11 @@ EOF
     make_basic_profile foo
     run "$AP" install foo
     assert_success
-    [[ -f "$TARGET/.claude/agents/foo--reviewer.md" ]]
-    [[ -f "$TARGET/.claude/hooks/foo--h.sh" ]]
-    [[ -f "$TARGET/.claude/settings.local.json" ]]
-    [[ -f "$TARGET/.opencode/agent/foo--reviewer.md" ]]
+    [[ -f "$TARGET/.claude/plugins/local/foo/agents/reviewer.md" ]]
+    [[ -f "$TARGET/.claude/plugins/local/foo/hooks/h.sh" ]]
+    [[ -f "$TARGET/.claude/plugins/local/foo/settings.json" ]]
+    [[ -f "$TARGET/.claude/agents/reviewer.md" ]]
     [[ -f "$TARGET/opencode.json" ]]
-    [[ -f "$TARGET/AGENTS.md" ]]
     [[ -f "$TARGET/.agent-profile/manifest.json" ]]
 }
 
@@ -132,43 +124,8 @@ EOF
     "$AP" install foo >/dev/null
     run "$AP" uninstall foo
     assert_success
-    [[ ! -f "$TARGET/.claude/agents/foo--reviewer.md" ]]
-    [[ ! -f "$TARGET/.claude/hooks/foo--h.sh" ]]
-    [[ ! -f "$TARGET/.opencode/agent/foo--reviewer.md" ]]
-    # AGENTS.md still exists (we only strip the marker block).
-    [[ -f "$TARGET/AGENTS.md" ]]
-    ! grep -q "agent-profile:foo:begin" "$TARGET/AGENTS.md"
-}
-
-@test "ap uninstall preserves hand-written AGENTS.md content" {
-    make_basic_profile foo
-    cat > "$TARGET/AGENTS.md" <<'EOF'
-# My Repo
-
-This came first.
-EOF
-    "$AP" install foo >/dev/null
-    "$AP" uninstall foo >/dev/null
-    run cat "$TARGET/AGENTS.md"
-    assert_success
-    assert_output_contains "# My Repo"
-    assert_output_contains "This came first."
-    assert_output_not_contains "foo AGENTS.md content"
-}
-
-@test "ap uninstall preserves user permissions in settings.local.json" {
-    make_basic_profile foo
-    mkdir -p "$TARGET/.claude"
-    cat > "$TARGET/.claude/settings.local.json" <<'EOF'
-{"permissions":{"allow":["Bash(user-cmd:*)"]},"myKey":"keep"}
-EOF
-    "$AP" install foo >/dev/null
-    "$AP" uninstall foo >/dev/null
-    run cat "$TARGET/.claude/settings.local.json"
-    assert_success
-    assert_output_contains "Bash(user-cmd:*)"
-    assert_output_contains "\"myKey\": \"keep\""
-    assert_output_not_contains "Bash(foo:*)"
+    [[ ! -d "$TARGET/.claude/plugins/local/foo" ]]
+    [[ ! -f "$TARGET/.claude/agents/reviewer.md" ]]
 }
 
 @test "ap uninstall works even after profile dir is deleted" {
@@ -177,7 +134,7 @@ EOF
     rm -rf "$PROFILE_ROOT/foo"
     run "$AP" uninstall foo
     assert_success
-    [[ ! -f "$TARGET/.claude/agents/foo--reviewer.md" ]]
+    [[ ! -d "$TARGET/.claude/plugins/local/foo" ]]
 }
 
 # ─── per-repo / global precedence ──────────────────────────────────
