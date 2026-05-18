@@ -170,7 +170,7 @@ _copilot_write_hooks() {
         local payload
         payload=$(jq -c 'del(._source_dir, .harnesses, .fallback)' <<<"$item")
         if [[ -n "$script" && -f "$source_dir/$script" ]]; then
-            local script_rel=".github/hooks/$(basename "$script")"
+            local script_rel; script_rel=".github/hooks/$(basename "$script")"
             local script_abs="${target%/}/${script_rel}"
             cp "$source_dir/$script" "$script_abs"
             chmod +x "$script_abs" 2>/dev/null || true
