@@ -75,8 +75,8 @@ Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env
 
 ### Skillshare Management
 
-- `ss` - Run `skillshare`
-- `ss-sync` - Sync project-mode skillshare agents/extras (`skillshare sync -p --all`)
+- `sksh` - Run `skillshare`
+- `sksh-sync` - Sync project-mode skillshare agents/extras (`skillshare sync -p --all`)
 
 ### Session Monitoring
 

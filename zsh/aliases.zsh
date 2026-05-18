@@ -171,8 +171,8 @@ fi
 # =============================================================================
 # Skillshare (portable skills/agents/extras)
 # =============================================================================
-alias ss='skillshare'
-alias ss-sync='skillshare sync -p --all'
+alias sksh='skillshare'
+alias sksh-sync='skillshare sync -p --all'
 
 # =============================================================================
 # Agent Skills (`gh skill install` — harness-agnostic; targets each agent in

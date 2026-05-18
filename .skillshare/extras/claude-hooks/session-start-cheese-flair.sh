@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SessionStart hook: inject a rotating cheese flair sample (3 address
+# SessionStart hook: injects a rotating cheese flair sample (3 address
 # suggestions + 3 quotes) so the principal CLAUDE.md doesn't carry the
 # full bank.
 #
