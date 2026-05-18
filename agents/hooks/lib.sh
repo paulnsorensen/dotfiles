@@ -32,10 +32,20 @@ set -euo pipefail
 
 hook_filter_for_harness() {
     local harness="$1" json="$2"
-    local bad
+    local missing bad
+    # Require `event` explicitly — silently defaulting it would let a typo
+    # ("evnt: PostToolUse") land in the SessionStart slot.
+    missing=$(jq -r <<<"$json" '
+        to_entries
+        | map(select(.value.event == null))
+        | .[0].key // ""')
+    if [[ -n "$missing" ]]; then
+        echo -e "${RED}hook_filter_for_harness: entry '$missing' is missing the required 'event' field.${NC}" >&2
+        return 1
+    fi
     bad=$(jq -r <<<"$json" '
         to_entries
-        | map(select((.value.event // "SessionStart") != "SessionStart"))
+        | map(select(.value.event != "SessionStart"))
         | .[0].key // ""')
     if [[ -n "$bad" ]]; then
         echo -e "${RED}hook_filter_for_harness: entry '$bad' has event != SessionStart;${NC}" >&2
@@ -197,8 +207,23 @@ hook_codex_apply() {
     #   2. Drop any pre-existing SessionStart entry whose first hook command matches.
     #   3. Append the fresh entry.
     #   4. Convert merged JSON back to TOML.
-    local current_json desired_block merged tmp
-    current_json=$(yq -p=toml -o=json '.' "$CODEX_CONFIG_FILE" 2>/dev/null || printf '{}')
+    #
+    # Treat an empty file (first-time init) as {} so a fresh install works.
+    # A non-empty file that fails to parse is the user's config in a broken
+    # state — abort with a diagnostic rather than overwrite it with {}.
+    local current_json desired_block merged tmp yq_err
+    if [[ -s "$CODEX_CONFIG_FILE" ]]; then
+        yq_err=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.err")
+        if ! current_json=$(yq -p=toml -o=json '.' "$CODEX_CONFIG_FILE" 2>"$yq_err"); then
+            echo -e "${RED}    refusing to overwrite unparseable $CODEX_CONFIG_FILE:${NC}" >&2
+            sed 's/^/      /' "$yq_err" >&2
+            rm -f "$yq_err"
+            return 1
+        fi
+        rm -f "$yq_err"
+    else
+        current_json='{}'
+    fi
     [[ -z "$current_json" ]] && current_json='{}'
 
     local inner

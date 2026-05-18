@@ -209,8 +209,9 @@ hooks:
 
 **Per-entry fields:**
 
-- `event` — Claude / Codex event name (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`).
+- `event` — Claude / Codex event name. Only `SessionStart` is currently wired; the backends in `agents/hooks/lib.sh` fail loud on any other value. Extend the backends before registering `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, or `Stop` entries.
 - `script` — repo-relative path; chezmoi deploys to `~/.<harness>/hooks/<basename>`.
+- `shared_assets` (optional) — list of repo-relative paths under `agents/<subdir>/<file>` that the hook script reads at runtime (libs, banks, …). Each is deployed to `~/.<harness>/<subdir>/<file>`. Adding a new hook is a pure registry edit — the chezmoi installer iterates `hooks` and copies every `(script ∪ shared_assets) × harnesses` pair.
 - `harnesses` (optional) — list; default `[claude, codex]`.
 - `matcher` — codex-only regex against the event's `source` field (`startup|resume|clear` for SessionStart). Claude SessionStart entries do not use matchers and the field is ignored there.
 - `timeout` — seconds (verified against `developers.openai.com/codex/hooks` — "timeout is in seconds"; Claude uses the same unit).

@@ -368,18 +368,23 @@ SH
     grep -qF "new content" "$target"
 }
 
-@test "chezmoi run_onchange installer template exists and invokes the sync script" {
+@test "chezmoi run_onchange installer template exists and drives a registry-iterated deploy" {
+    # Asserts the *structure* of the template: it must source the registry,
+    # iterate per (asset × harness), and hand each pair to the installer +
+    # sync.sh. Per-asset literals are NOT asserted here — adding a new hook
+    # must be a registry edit, not a template edit. The runtime payload is
+    # covered by "chezmoi installer flow deploys every registry asset…".
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_install-hooks.sh.tmpl"
     assert_file_exists "$tmpl"
     grep -qF 'install-shared-assets.sh' "$tmpl"
     grep -qF 'agents/hooks/sync.sh' "$tmpl"
-    grep -qF '.claude/hooks/session-start-cheese-flair.sh' "$tmpl"
-    grep -qF '.codex/hooks/session-start-cheese-flair.sh' "$tmpl"
-    grep -qF '.claude/lib/cheese-flair.sh' "$tmpl"
-    grep -qF '.codex/lib/cheese-flair.sh' "$tmpl"
-    grep -qF '.claude/reference/cheese-flair.md' "$tmpl"
-    grep -qF '.codex/reference/cheese-flair.md' "$tmpl"
+    grep -qF 'agents/hooks/registry.yaml' "$tmpl"
+    grep -qF 'yq -p=yaml -o=json' "$tmpl"
+    grep -qF 'shared_assets' "$tmpl"
     grep -qF 'Hooks asset hash:' "$tmpl"
+    # No hardcoded asset literals — must be derived from the registry.
+    ! grep -qF 'session-start-cheese-flair.sh' "$tmpl"
+    ! grep -qF 'cheese-flair.md' "$tmpl"
 }
 
 # ── hardening: filter honors per-entry harnesses list ──────────────────
@@ -411,6 +416,16 @@ SH
     [[ "$status" -ne 0 ]]
     [[ "$output" == *"event != SessionStart"* ]]
     [[ "$output" == *"future"* ]]
+}
+
+@test "hook_filter_for_harness fails loud when the event field is missing" {
+    # A typo'd field name ("evnt: SessionStart") would silently default
+    # event to SessionStart without this guard, hiding the malformed entry.
+    local reg='{"typo":{"script":"x.sh"}}'
+    run hook_filter_for_harness claude "$reg"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"missing the required 'event' field"* ]]
+    [[ "$output" == *"typo"* ]]
 }
 
 # ── hardening: codex backend parity with claude on preservation + drift
@@ -580,42 +595,144 @@ TOML
     [[ ! -x "$target" ]]
 }
 
+@test "chezmoi installer iteration handles a synthetic multi-hook registry" {
+    # Reimplements the yq|jq pipeline from run_onchange_install-hooks.sh.tmpl
+    # against a registry with two hooks — one with shared_assets, one without,
+    # and one that opts out of codex via `harnesses: [claude]`. Asserts every
+    # (asset × harness) pair the template would deploy ends up in the emitted
+    # set. Locks the registry contract: adding a new hook must not require
+    # touching the installer template.
+    local synth="$TEST_HOME/synth-registry.yaml"
+    cat > "$synth" <<'YAML'
+hooks:
+  session-start-cheese-flair:
+    event: SessionStart
+    script: agents/hooks/session-start-cheese-flair.sh
+    shared_assets:
+      - agents/lib/cheese-flair.sh
+      - agents/reference/cheese-flair.md
+    harnesses: [claude, codex]
+  user-prompt-cheese-budget:
+    event: SessionStart
+    script: agents/hooks/user-prompt-cheese-budget.sh
+    harnesses: [claude]
+YAML
+    local pairs
+    pairs=$(yq -p=yaml -o=json '.hooks' "$synth" | jq -r '
+        to_entries[]
+        | .value as $h
+        | ($h.harnesses // ["claude","codex"])[] as $harness
+        | ([$h.script] + ($h.shared_assets // []))[] as $asset
+        | "\($asset)\t\($harness)"
+    ' | LC_ALL=C sort -u)
+
+    # cheese-flair: 3 assets × 2 harnesses = 6.  cheese-budget: 1 × 1 = 1.
+    [[ "$(wc -l <<<"$pairs" | tr -d ' ')" -eq 7 ]]
+    grep -qF $'agents/hooks/session-start-cheese-flair.sh\tclaude' <<<"$pairs"
+    grep -qF $'agents/hooks/session-start-cheese-flair.sh\tcodex'  <<<"$pairs"
+    grep -qF $'agents/lib/cheese-flair.sh\tclaude'                 <<<"$pairs"
+    grep -qF $'agents/lib/cheese-flair.sh\tcodex'                  <<<"$pairs"
+    grep -qF $'agents/reference/cheese-flair.md\tclaude'           <<<"$pairs"
+    grep -qF $'agents/reference/cheese-flair.md\tcodex'            <<<"$pairs"
+    grep -qF $'agents/hooks/user-prompt-cheese-budget.sh\tclaude'  <<<"$pairs"
+    # cheese-budget opted out of codex — must NOT appear there.
+    ! grep -qF $'agents/hooks/user-prompt-cheese-budget.sh\tcodex' <<<"$pairs"
+}
+
+@test "install-shared-assets.sh clears stale +x when source is no longer executable" {
+    # A previous deploy left the target executable; the source has since
+    # become a plain file (e.g. script demoted to data). cp -f preserves
+    # the destination mode, so without an explicit chmod -x the target
+    # would keep its old +x bit.
+    local installer="$REAL_DOTFILES_DIR/chezmoi/lib/install-shared-assets.sh"
+    local src="$TEST_HOME/now-plain.md"
+    echo "# bank" > "$src"
+    chmod 644 "$src"
+    local target="$TEST_HOME/out/now-plain.md"
+
+    # Pre-existing executable target from a prior deploy.
+    mkdir -p "$(dirname "$target")"
+    echo "stale" > "$target"
+    chmod 755 "$target"
+    [[ -x "$target" ]]
+
+    run bash "$installer" "$src" "$target"
+    assert_success
+    [[ ! -x "$target" ]]
+}
+
+# ── codex backend: abort on unparseable user-owned config ──────────────
+
+@test "hook_codex_apply aborts with diagnostic when existing config.toml is unparseable" {
+    # A user's broken TOML must not be silently overwritten with the synced
+    # block. The previous behaviour fell through to '{}' on parse error,
+    # destroying every other top-level key.
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    cat > "$CODEX_CONFIG_FILE" <<'TOML'
+this is = not valid = TOML at all
+[[hooks.SessionStart
+TOML
+    local before; before=$(cat "$CODEX_CONFIG_FILE")
+
+    run hook_codex_apply session-start-cheese-flair
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"refusing to overwrite unparseable"* ]]
+    # File must be untouched.
+    [[ "$(cat "$CODEX_CONFIG_FILE")" == "$before" ]]
+}
+
+@test "hook_codex_apply treats an empty config.toml as fresh {} (first-time install)" {
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    : > "$CODEX_CONFIG_FILE"   # zero-byte file
+    run hook_codex_apply session-start-cheese-flair
+    assert_success
+    [[ -s "$CODEX_CONFIG_FILE" ]]
+    grep -q 'SessionStart' "$CODEX_CONFIG_FILE"
+}
+
 # ── end-to-end: installer + sync mirror chezmoi run_onchange behaviour ──
-# Walks the same sequence the chezmoi template uses (six install-shared-assets.sh
-# copies + one agents/hooks/sync.sh) against a fake $HOME, then asserts the
-# six deployed files exist with the right modes and the Codex TOML carries
-# the expected matcher/command/timeout. Locks acceptance criterion #1 at
-# the integration level — a unit grep against the template source would
-# miss a regression where INSTALLER paths drift or sync.sh stops upserting.
-@test "chezmoi installer flow deploys six files and writes the expected Codex TOML block" {
+# Reimplements the registry-driven iteration the chezmoi template runs
+# against a fake $HOME, then asserts every (asset × harness) pair landed
+# at the expected path with the right mode and the Codex TOML carries the
+# expected matcher/command/timeout. Locks acceptance criterion #1 at the
+# integration level — a regression in the iteration logic, INSTALLER
+# resolution, or sync.sh upsert would fail this test.
+@test "chezmoi installer flow deploys every registry asset and writes the expected Codex TOML block" {
     local installer="$REAL_DOTFILES_DIR/chezmoi/lib/install-shared-assets.sh"
     local sync_script="$REAL_DOTFILES_DIR/agents/hooks/sync.sh"
     local source_root="$REAL_DOTFILES_DIR"
+    local registry="$source_root/agents/hooks/registry.yaml"
 
-    # Mirror run_onchange_install-hooks.sh.tmpl: copy the trio into both
-    # ~/.claude/ and ~/.codex/ subtrees under TEST_HOME.
-    bash "$installer" "$source_root/agents/hooks/session-start-cheese-flair.sh" \
-        "$HOME/.claude/hooks/session-start-cheese-flair.sh" \
-        "$HOME/.codex/hooks/session-start-cheese-flair.sh"
+    # Mirror run_onchange_install-hooks.sh.tmpl: iterate every
+    # (asset × harness) pair declared in the registry.
+    local pairs deployed_count
+    pairs=$(yq -p=yaml -o=json '.hooks' "$registry" | jq -r '
+        to_entries[]
+        | .value as $h
+        | ($h.harnesses // ["claude","codex"])[] as $harness
+        | ([$h.script] + ($h.shared_assets // []))[] as $asset
+        | "\($asset)\t\($harness)"
+    ' | LC_ALL=C sort -u)
+    deployed_count=0
+    while IFS=$'\t' read -r asset harness; do
+        [[ -z "$asset" ]] && continue
+        local rel="${asset#agents/}"
+        local target="$HOME/.$harness/$rel"
+        bash "$installer" "$source_root/$asset" "$target"
+        [[ -f "$target" ]]
+        # The hook script lives under hooks/ and must stay executable;
+        # everything else (lib, reference bank) must be plain.
+        case "$rel" in
+            hooks/*) [[ -x "$target" ]] ;;
+            *)       [[ ! -x "$target" ]] ;;
+        esac
+        deployed_count=$((deployed_count + 1))
+    done <<<"$pairs"
 
-    bash "$installer" "$source_root/agents/lib/cheese-flair.sh" \
-        "$HOME/.claude/lib/cheese-flair.sh" \
-        "$HOME/.codex/lib/cheese-flair.sh"
-
-    bash "$installer" "$source_root/agents/reference/cheese-flair.md" \
-        "$HOME/.claude/reference/cheese-flair.md" \
-        "$HOME/.codex/reference/cheese-flair.md"
-
-    # All six deployed files exist; the hook scripts are executable, the
-    # lib + bank are not (they get sourced/read, not exec'd).
-    [[ -f "$HOME/.claude/hooks/session-start-cheese-flair.sh" ]]
-    [[ -f "$HOME/.codex/hooks/session-start-cheese-flair.sh"  ]]
-    [[ -x "$HOME/.claude/hooks/session-start-cheese-flair.sh" ]]
-    [[ -x "$HOME/.codex/hooks/session-start-cheese-flair.sh"  ]]
-    [[ -f "$HOME/.claude/lib/cheese-flair.sh"  ]]
-    [[ -f "$HOME/.codex/lib/cheese-flair.sh"   ]]
-    [[ -f "$HOME/.claude/reference/cheese-flair.md" ]]
-    [[ -f "$HOME/.codex/reference/cheese-flair.md"  ]]
+    # cheese-flair entry contributes 3 assets × 2 harnesses = 6 today.
+    # The assertion is bounded but the iteration is generic: adding a
+    # second hook will increase the count without breaking the test.
+    [[ "$deployed_count" -ge 6 ]]
 
     # Then run the sync against the fake codex config (claude side untouched
     # — we point CLAUDE_SETTINGS_FILE at a temp file so the real in-repo

@@ -1,12 +1,14 @@
 #!/bin/bash
 # run_onchange — re-runs whenever any harness-agnostic hook asset changes.
 #
-# Reruns when agents/hooks/, agents/lib/cheese-flair.sh, or
-# agents/reference/cheese-flair.md change. The hash below is computed by
-# chezmoi at template render time over the rendered script; chezmoi reruns
-# whenever the embedded hash changes.
+# The asset list is derived from agents/hooks/registry.yaml at run-time:
+# every hook entry's `script` and `shared_assets` are deployed into each
+# `harnesses` entry's home (default [claude, codex]). The hash below is
+# coarse — anything under agents/{hooks,lib,reference}/ — so adding files
+# in those dirs always triggers a redeploy without having to teach chezmoi
+# the registry shape.
 #
-# Hooks asset hash: {{ output "sh" "-c" (printf "{ find %q/../agents/hooks -type f -not -name .DS_Store -print0 2>/dev/null; printf '\\0%%s' %q/../agents/lib/cheese-flair.sh %q/../agents/reference/cheese-flair.md; } | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
+# Hooks asset hash: {{ output "sh" "-c" (printf "find %q/../agents/hooks %q/../agents/lib %q/../agents/reference -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
 
 set -euo pipefail
 
@@ -14,21 +16,27 @@ SOURCE_DIR="{{ .chezmoi.sourceDir }}"
 DOTFILES_ROOT="$SOURCE_DIR/.."
 INSTALLER="$SOURCE_DIR/lib/install-shared-assets.sh"
 SYNC_SCRIPT="$DOTFILES_ROOT/agents/hooks/sync.sh"
+REGISTRY="$DOTFILES_ROOT/agents/hooks/registry.yaml"
 
-# Copy the hook script, the lib, and the bank into each harness's home so
-# the self-locating preamble in the hook script resolves correctly under
-# both ~/.claude and ~/.codex.
-"$INSTALLER" "$DOTFILES_ROOT/agents/hooks/session-start-cheese-flair.sh" \
-    "$HOME/.claude/hooks/session-start-cheese-flair.sh" \
-    "$HOME/.codex/hooks/session-start-cheese-flair.sh"
-
-"$INSTALLER" "$DOTFILES_ROOT/agents/lib/cheese-flair.sh" \
-    "$HOME/.claude/lib/cheese-flair.sh" \
-    "$HOME/.codex/lib/cheese-flair.sh"
-
-"$INSTALLER" "$DOTFILES_ROOT/agents/reference/cheese-flair.md" \
-    "$HOME/.claude/reference/cheese-flair.md" \
-    "$HOME/.codex/reference/cheese-flair.md"
+# Emit one `<asset_repo_path>\t<harness>` pair per (script ∪ shared_assets)
+# × (harness) combination, deduped. Adding a hook is then a pure registry
+# edit — the installer picks it up automatically on the next run.
+yq -p=yaml -o=json '.hooks' "$REGISTRY" | jq -r '
+    to_entries[]
+    | .value as $h
+    | ($h.harnesses // ["claude","codex"])[] as $harness
+    | ([$h.script] + ($h.shared_assets // []))[] as $asset
+    | "\($asset)\t\($harness)"
+' | LC_ALL=C sort -u | while IFS=$'\t' read -r asset harness; do
+    # asset is repo-relative ("agents/<subdir>/<file>"). Strip the
+    # leading "agents/" so it maps cleanly into the harness home.
+    case "$asset" in
+        agents/*) rel="${asset#agents/}" ;;
+        *)  echo "install-hooks: asset must live under agents/: $asset" >&2
+            exit 1 ;;
+    esac
+    "$INSTALLER" "$DOTFILES_ROOT/$asset" "$HOME/.$harness/$rel"
+done
 
 # Reconcile claude/settings.json + ~/.codex/config.toml against the
 # registry. The sync is purely additive and idempotent (no removal
