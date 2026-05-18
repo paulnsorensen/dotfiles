@@ -169,6 +169,12 @@ if command -v cargo-nextest &>/dev/null; then
 fi
 
 # =============================================================================
+# Skillshare (portable skills/agents/extras)
+# =============================================================================
+alias ss='skillshare'
+alias ss-sync='skillshare sync -p --all'
+
+# =============================================================================
 # Agent Skills (`gh skill install` — harness-agnostic; targets each agent in
 # $SKILL_HARNESSES from .env: claude-code, cursor, codex, github-copilot, etc.)
 # External skills come from skills/_registry.yaml; the installer lives at

@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/runkids/skillshare/main/schemas/project-config.schema.json
+# Project-mode skillshare source for agent/hook assets that still sync through dots.
+target_naming: standard
+targets:
+  - name: claude
+    agents:
+      path: claude/agents
+      mode: merge
+extras:
+  - name: claude-hooks
+    targets:
+      - path: claude/hooks
+        mode: merge
