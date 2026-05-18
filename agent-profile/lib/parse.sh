@@ -2,15 +2,22 @@
 # parse.sh — Manifest parsing + include resolution for agent profiles.
 #
 # A profile is a directory containing `profile.yaml` plus payload files
-# (agents/, skills/, commands/, hooks/, AGENTS.md). `ap_parse_manifest`
-# emits the fully-resolved manifest as a single JSON document on stdout:
-# arrays from included profiles are concatenated (includes first), each
-# item carries a `_source_dir` pointing at the profile dir that owns its
-# payload files, and `agents_md_blocks` is a list of {name, content}
-# pairs ready for renderers to splice into a target AGENTS.md.
+# (agents/, skills/, commands/, hooks/). `ap_parse_manifest` emits the
+# fully-resolved manifest as a single JSON document on stdout: arrays
+# from included profiles are concatenated (includes first), each item
+# carries a `_source_dir` pointing at the profile dir that owns its
+# payload files.
 #
 # Sourced by agent-profile/ap and the bats tests; not meant to be run
 # standalone.
+#
+# Schema notes:
+# - `models:` map on agent / command items is preserved verbatim so
+#   renderers can branch on `.models.<harness>`. Sentinel value
+#   `inherit` (Cursor) means "use session model" and renders no override.
+# - Legacy `fallback:` and `agents_md_path:` fields are stripped at parse
+#   time. The pre-reshape AGENTS.md splice path is gone — chezmoi owns
+#   global AGENTS.md and per-repo profiles never edit any AGENTS.md.
 
 set -euo pipefail
 
@@ -31,14 +38,6 @@ ap_parse_one() {
     local json
     json=$(yq -o=json '.' "$manifest")
 
-    # AGENTS.md content: prefer agents_md_path field, else fall back to
-    # AGENTS.md in the profile dir, else empty.
-    local md_path md_content=""
-    md_path=$(jq -r '.agents_md_path // "AGENTS.md"' <<<"$json")
-    if [[ -f "$profile_dir/$md_path" ]]; then
-        md_content=$(cat "$profile_dir/$md_path")
-    fi
-
     local name
     name=$(jq -r '.name // ""' <<<"$json")
     [[ -n "$name" ]] || {
@@ -48,22 +47,19 @@ ap_parse_one() {
 
     # Inject _source_dir into every item-bearing array and assemble the
     # canonical structure. Defaults for absent sections = empty array/object.
+    # `fallback` and `agents_md_path` are stripped — legacy splice path.
     jq \
         --arg sd "$profile_dir" \
-        --arg md "$md_content" \
         '
         {
           name:        (.name // ""),
           description: (.description // ""),
           include:     (.include // []),
-          agents_md_blocks: (if ($md | length) > 0
-                              then [{name: (.name // ""), content: $md}]
-                              else [] end),
-          mcps:     ((.mcps     // []) | map(. + {_source_dir: $sd})),
-          agents:   ((.agents   // []) | map(. + {_source_dir: $sd})),
-          skills:   ((.skills   // []) | map(. + {_source_dir: $sd})),
-          commands: ((.commands // []) | map(. + {_source_dir: $sd})),
-          hooks:    ((.hooks    // []) | map(. + {_source_dir: $sd})),
+          mcps:     ((.mcps     // []) | map(del(.fallback) + {_source_dir: $sd})),
+          agents:   ((.agents   // []) | map(del(.fallback) + {_source_dir: $sd})),
+          skills:   ((.skills   // []) | map(del(.fallback) + {_source_dir: $sd})),
+          commands: ((.commands // []) | map(del(.fallback) + {_source_dir: $sd})),
+          hooks:    ((.hooks    // []) | map(del(.fallback) + {_source_dir: $sd})),
           settings: (.settings // {})
         }' <<<"$json"
 }
@@ -101,10 +97,9 @@ _ap_parse_with_includes() {
     includes=$(jq -r '.include[]?' <<<"$self")
 
     # Resolve & parse each include, then fold them into an accumulator.
-    # Includes come first so the current profile's AGENTS.md / overrides
-    # appear last (i.e. take visual precedence in concatenated text).
+    # Includes come first so the current profile's overrides appear last
+    # (i.e. take precedence in the merge).
     local merged='{
-      "agents_md_blocks": [],
       "mcps": [], "agents": [], "skills": [],
       "commands": [], "hooks": [],
       "settings": {}
@@ -135,7 +130,6 @@ _ap_merge_two() {
     local a="$1" b="$2"
     jq -n --argjson a "$a" --argjson b "$b" '
         {
-          agents_md_blocks: ($a.agents_md_blocks + $b.agents_md_blocks),
           mcps:     ($a.mcps     + $b.mcps),
           agents:   ($a.agents   + $b.agents),
           skills:   ($a.skills   + $b.skills),

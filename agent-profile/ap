@@ -13,8 +13,10 @@
 # $DOTFILES_DIR/profiles/<n>. Lets per-repo profiles shadow globals.
 #
 # Per-invocation globals: each renderer appends to _AP_OUT_FILES (regular
-# files) and _AP_AGENTS_MD_FILES (AGENTS.md it edited). The CLI records
-# both into <target>/.agent-profile/manifest.json so uninstall is exact.
+# files). The CLI records these into <target>/.agent-profile/manifest.json
+# so uninstall is exact. The pre-reshape AGENTS.md splice path is gone —
+# chezmoi owns global AGENTS.md and per-repo profiles never edit any
+# AGENTS.md.
 
 set -euo pipefail
 
@@ -27,8 +29,8 @@ source "$SCRIPT_DIR/lib/parse.sh"
 source "$SCRIPT_DIR/lib/discover.sh"
 # shellcheck source=./lib/manifest.sh
 source "$SCRIPT_DIR/lib/manifest.sh"
-# shellcheck source=./lib/agents_md.sh
-source "$SCRIPT_DIR/lib/agents_md.sh"
+# shellcheck source=./lib/shared_writer.sh
+source "$SCRIPT_DIR/lib/shared_writer.sh"
 # shellcheck source=./renderers/claude.sh
 source "$SCRIPT_DIR/renderers/claude.sh"
 # shellcheck source=./renderers/codex.sh
@@ -136,7 +138,6 @@ cmd_describe() {
     echo
     jq '{
         name, description,
-        include_count: (.agents_md_blocks | length),
         mcps:     [.mcps[].name],
         agents:   [.agents[].name],
         skills:   [.skills[].name],
@@ -167,10 +168,9 @@ cmd_install() {
 
     ap_manifest_init "$TARGET"
 
-    # Reset our per-render trackers; renderers append to these.
+    # Reset our per-render tracker; renderers append to _AP_OUT_FILES.
     local h; for h in "${HARNESSES[@]}"; do
         _AP_OUT_FILES=()
-        _AP_AGENTS_MD_FILES=()
         echo -e "  ${CYAN}━━ $h ━━${NC}"
         case "$h" in
             claude)   claude_render   "$merged" "$TARGET" ;;
@@ -181,9 +181,6 @@ cmd_install() {
         local f
         for f in "${_AP_OUT_FILES[@]+"${_AP_OUT_FILES[@]}"}"; do
             ap_manifest_record_file "$TARGET" "$name" "$f"
-        done
-        for f in "${_AP_AGENTS_MD_FILES[@]+"${_AP_AGENTS_MD_FILES[@]}"}"; do
-            ap_manifest_record_agents_md "$TARGET" "$name" "$f"
         done
     done
 
@@ -224,12 +221,6 @@ cmd_uninstall() {
             opencode) declare -F opencode_clean >/dev/null && opencode_clean "$merged" "$TARGET" ;;
         esac
     done
-
-    # Strip AGENTS.md marker blocks.
-    local md
-    while IFS= read -r md; do
-        [[ -n "$md" ]] && ap_strip_agents_md "$TARGET/$md" "$name"
-    done < <(ap_manifest_agents_md "$TARGET" "$name")
 
     # Delete every file we recorded. Skip-if-missing in case the user
     # deleted some by hand.
