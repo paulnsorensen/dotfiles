@@ -37,12 +37,16 @@ source "$SCRIPT_DIR/renderers/claude.sh"
 source "$SCRIPT_DIR/renderers/codex.sh"
 # shellcheck source=./renderers/opencode.sh
 source "$SCRIPT_DIR/renderers/opencode.sh"
+# shellcheck source=./renderers/cursor.sh
+source "$SCRIPT_DIR/renderers/cursor.sh"
+# shellcheck source=./renderers/copilot.sh
+source "$SCRIPT_DIR/renderers/copilot.sh"
 
 GREEN='\033[0;32m'; BLUE='\033[0;34m'
 RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 [[ -t 1 ]] || { GREEN=''; BLUE=''; RED=''; CYAN=''; NC=''; }
 
-ALL_HARNESSES=(claude codex opencode)
+ALL_HARNESSES=(claude codex opencode cursor copilot)
 
 usage() {
     cat <<EOF
@@ -107,8 +111,8 @@ validate_harnesses() {
     local h
     for h in "${HARNESSES[@]}"; do
         case "$h" in
-            claude|codex|opencode) ;;
-            *) echo -e "${RED}ap: unknown harness '$h' (valid: claude|codex|opencode)${NC}" >&2; exit 1 ;;
+            claude|codex|opencode|cursor|copilot) ;;
+            *) echo -e "${RED}ap: unknown harness '$h' (valid: claude|codex|opencode|cursor|copilot)${NC}" >&2; exit 1 ;;
         esac
     done
 }
@@ -168,7 +172,9 @@ cmd_install() {
 
     ap_manifest_init "$TARGET"
 
-    # Reset our per-render tracker; renderers append to _AP_OUT_FILES.
+    # Accumulate new files across all harnesses so we can diff against the
+    # prior install record and clear orphans before re-recording.
+    local -a all_new_files=()
     local h; for h in "${HARNESSES[@]}"; do
         _AP_OUT_FILES=()
         echo -e "  ${CYAN}━━ $h ━━${NC}"
@@ -176,13 +182,36 @@ cmd_install() {
             claude)   claude_render   "$merged" "$TARGET" ;;
             codex)    codex_render    "$merged" "$TARGET" ;;
             opencode) opencode_render "$merged" "$TARGET" ;;
+            cursor)   cursor_render   "$merged" "$TARGET" ;;
+            copilot)  copilot_render  "$merged" "$TARGET" ;;
         esac
-        # Persist what we created so uninstall can reverse it.
         local f
         for f in "${_AP_OUT_FILES[@]+"${_AP_OUT_FILES[@]}"}"; do
-            ap_manifest_record_file "$TARGET" "$name" "$f"
+            all_new_files+=("$f")
         done
     done
+
+    # Build a JSON array of new files (deduped). On a re-install, drop
+    # any orphans (files in the old record but not in the new set) from
+    # disk before overwriting the manifest's files list with the new one.
+    # ap_manifest_diff_and_clean honours ref-counting so shared paths
+    # claimed by other profiles stay on disk.
+    local new_files_json
+    if ((${#all_new_files[@]})); then
+        new_files_json=$(printf '%s\n' "${all_new_files[@]}" | jq -R . | jq -sc 'unique')
+    else
+        new_files_json='[]'
+    fi
+    ap_manifest_diff_and_clean "$TARGET" "$name" "$new_files_json"
+
+    # Replace this profile's files list atomically (rather than appending
+    # via ap_manifest_record_file, which would keep stale entries). The
+    # manifest already passed validation via ap_manifest_init.
+    local mpath; mpath=$(ap_manifest_path "$TARGET")
+    local mtmp; mtmp=$(mktemp)
+    jq --arg p "$name" --argjson f "$new_files_json" '
+        .[$p] = ((.[$p] // {}) | .files = $f)
+    ' "$mpath" > "$mtmp" && mv "$mtmp" "$mpath"
 
     # Cache the resolved manifest so uninstall can pass it to *_clean
     # for surgical edits to merged files even if the profile dir gets
@@ -219,14 +248,21 @@ cmd_uninstall() {
             claude)   declare -F claude_clean   >/dev/null && claude_clean   "$merged" "$TARGET" ;;
             codex)    declare -F codex_clean    >/dev/null && codex_clean    "$merged" "$TARGET" ;;
             opencode) declare -F opencode_clean >/dev/null && opencode_clean "$merged" "$TARGET" ;;
+            cursor)   declare -F cursor_clean   >/dev/null && cursor_clean   "$merged" "$TARGET" ;;
+            copilot)  declare -F copilot_clean  >/dev/null && copilot_clean  "$merged" "$TARGET" ;;
         esac
     done
 
-    # Delete every file we recorded. Skip-if-missing in case the user
-    # deleted some by hand.
+    # Delete every file we recorded — but keep paths still claimed by
+    # another installed profile (shared `.mcp.json`, `opencode.json`,
+    # cross-harness `.claude/agents/<n>.md`).
     local f
     while IFS= read -r f; do
         [[ -z "$f" ]] && continue
+        if ap_manifest_other_profiles_claim_file "$TARGET" "$name" "$f"; then
+            echo -e "  ${BLUE}↳${NC} keeping $f (claimed by another profile)"
+            continue
+        fi
         local abs="$TARGET/$f"
         if [[ -e "$abs" || -L "$abs" ]]; then
             rm -rf -- "$abs"
@@ -239,12 +275,12 @@ cmd_uninstall() {
 
 cmd_launch() {
     local harness="${REMAINING[0]:-}"
-    [[ -n "$harness" ]] || { echo -e "${RED}ap launch: harness required (claude|codex|opencode)${NC}" >&2; exit 1; }
+    [[ -n "$harness" ]] || { echo -e "${RED}ap launch: harness required (claude|codex|opencode|cursor|copilot)${NC}" >&2; exit 1; }
     local name="${REMAINING[1]:-}"
     local -a passthrough=("${REMAINING[@]:2}")
 
     case "$harness" in
-        claude|codex|opencode) ;;
+        claude|codex|opencode|cursor|copilot) ;;
         *) echo -e "${RED}ap launch: unknown harness '$harness'${NC}" >&2; exit 1 ;;
     esac
 
