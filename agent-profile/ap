@@ -1,0 +1,318 @@
+#!/usr/bin/env bash
+# ap — Agent-profile CLI (harness-agnostic). Invoked via `dots profile`.
+#
+# Subcommands:
+#   list                          List discoverable profiles
+#   describe <name>               Print resolved manifest + render plan
+#   path <name>                   Print the profile dir (for editor jumps)
+#   install <name> [opts]         Render profile into $PWD for one/all harnesses
+#   uninstall <name> [opts]       Reverse a prior install (manifest-driven)
+#   launch <harness> [name] [..]  Install (if needed) then exec the harness
+#
+# Search order for profiles: $PWD/.agent-profiles/<n> then
+# $DOTFILES_DIR/profiles/<n>. Lets per-repo profiles shadow globals.
+#
+# Per-invocation globals: each renderer appends to _AP_OUT_FILES (regular
+# files). The CLI records these into <target>/.agent-profile/manifest.json
+# so uninstall is exact. The pre-reshape AGENTS.md splice path is gone —
+# chezmoi owns global AGENTS.md and per-repo profiles never edit any
+# AGENTS.md.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# shellcheck source=./lib/parse.sh
+source "$SCRIPT_DIR/lib/parse.sh"
+# shellcheck source=./lib/discover.sh
+source "$SCRIPT_DIR/lib/discover.sh"
+# shellcheck source=./lib/manifest.sh
+source "$SCRIPT_DIR/lib/manifest.sh"
+# shellcheck source=./lib/shared_writer.sh
+source "$SCRIPT_DIR/lib/shared_writer.sh"
+# shellcheck source=./renderers/claude.sh
+source "$SCRIPT_DIR/renderers/claude.sh"
+# shellcheck source=./renderers/codex.sh
+source "$SCRIPT_DIR/renderers/codex.sh"
+# shellcheck source=./renderers/opencode.sh
+source "$SCRIPT_DIR/renderers/opencode.sh"
+# shellcheck source=./renderers/cursor.sh
+source "$SCRIPT_DIR/renderers/cursor.sh"
+# shellcheck source=./renderers/copilot.sh
+source "$SCRIPT_DIR/renderers/copilot.sh"
+
+GREEN='\033[0;32m'; BLUE='\033[0;34m'
+RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
+[[ -t 1 ]] || { GREEN=''; BLUE=''; RED=''; CYAN=''; NC=''; }
+
+ALL_HARNESSES=(claude codex opencode cursor copilot)
+
+usage() {
+    cat <<EOF
+Usage: dots profile <command> [args]
+
+Commands:
+  list                          List available profiles
+  describe <name>               Show resolved manifest for a profile
+  path <name>                   Print profile source dir
+  install <name> [opts]         Render profile into current dir
+  uninstall <name> [opts]       Remove a previously-installed profile
+  launch <harness> [name] [..]  Install + exec the named harness CLI
+  help                          Show this message
+
+Install/uninstall options:
+  --harness <h>[,<h>...]        Limit to specific harnesses (default: all)
+  --target <dir>                Render into <dir> instead of \$PWD
+  --profile-src <dir>           Extra search root for profile lookup
+
+Examples:
+  dots profile list
+  dots profile install rust --harness claude
+  dots profile launch claude rust -- --resume
+  dots profile uninstall rust
+EOF
+}
+
+# ─── helpers ─────────────────────────────────────────────────────────
+
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 \
+        || { echo -e "${RED}ap: required command not found: $1${NC}" >&2; exit 1; }
+}
+
+# Parse `--harness`, `--target`, `--profile-src` out of "$@", leaving
+# positionals + any pass-through args in REMAINING.
+parse_common_opts() {
+    HARNESSES=("${ALL_HARNESSES[@]}")
+    TARGET="$PWD"
+    REMAINING=()
+    while (($#)); do
+        case "$1" in
+            --harness)
+                IFS=',' read -r -a HARNESSES <<<"$2"; shift 2 ;;
+            --harness=*)
+                IFS=',' read -r -a HARNESSES <<<"${1#*=}"; shift ;;
+            --target)
+                TARGET="$(cd "$2" && pwd)"; shift 2 ;;
+            --target=*)
+                TARGET="$(cd "${1#*=}" && pwd)"; shift ;;
+            --profile-src)
+                export AP_EXTRA_SEARCH_PATHS="${AP_EXTRA_SEARCH_PATHS:+$AP_EXTRA_SEARCH_PATHS:}$2"; shift 2 ;;
+            --profile-src=*)
+                export AP_EXTRA_SEARCH_PATHS="${AP_EXTRA_SEARCH_PATHS:+$AP_EXTRA_SEARCH_PATHS:}${1#*=}"; shift ;;
+            --) shift; REMAINING+=("$@"); break ;;
+            *)  REMAINING+=("$1"); shift ;;
+        esac
+    done
+}
+
+validate_harnesses() {
+    local h
+    for h in "${HARNESSES[@]}"; do
+        case "$h" in
+            claude|codex|opencode|cursor|copilot) ;;
+            *) echo -e "${RED}ap: unknown harness '$h' (valid: claude|codex|opencode|cursor|copilot)${NC}" >&2; exit 1 ;;
+        esac
+    done
+}
+
+# ─── subcommands ─────────────────────────────────────────────────────
+
+cmd_list() {
+    local rows; rows=$(ap_list_profiles)
+    [[ -z "$rows" ]] && { echo "(no profiles found in $PWD/.agent-profiles or $DOTFILES_DIR/profiles)"; return 0; }
+    echo -e "${CYAN}Available profiles:${NC}"
+    while IFS=$'\t' read -r name root; do
+        local desc=""
+        if [[ -f "$root/$name/profile.yaml" ]]; then
+            desc=$(yq -r '.description // ""' "$root/$name/profile.yaml" 2>/dev/null || echo "")
+        fi
+        printf "  ${GREEN}%-20s${NC} %s\n" "$name" "$desc"
+        printf "    ${BLUE}↳${NC} %s\n" "$root/$name"
+    done <<<"$rows"
+}
+
+cmd_describe() {
+    local name="$1"
+    local dir; dir=$(ap_find_profile_dir "$name") \
+        || { echo -e "${RED}ap: profile '$name' not found${NC}" >&2; exit 1; }
+    local merged; merged=$(ap_parse_manifest "$dir")
+    echo -e "${CYAN}Profile: $name${NC}  ${BLUE}($dir)${NC}"
+    echo
+    jq '{
+        name, description,
+        mcps:     [.mcps[].name],
+        agents:   [.agents[].name],
+        skills:   [.skills[].name],
+        commands: [.commands[].name],
+        hooks:    [.hooks[] | {event, matcher, harnesses: (.harnesses // ["claude"])}],
+        permissions: (.settings.permissions_allow // [])
+    }' <<<"$merged"
+}
+
+cmd_path() {
+    local dir; dir=$(ap_find_profile_dir "$1") \
+        || { echo -e "${RED}ap: profile '$1' not found${NC}" >&2; exit 1; }
+    echo "$dir"
+}
+
+cmd_install() {
+    local name="${REMAINING[0]:-}"
+    [[ -n "$name" ]] || { echo -e "${RED}ap install: profile name required${NC}" >&2; exit 1; }
+
+    local dir; dir=$(ap_find_profile_dir "$name") \
+        || { echo -e "${RED}ap: profile '$name' not found${NC}" >&2; exit 1; }
+
+    echo -e "${BLUE}→ Installing profile '$name' from $dir${NC}"
+    echo -e "  target:   $TARGET"
+    echo -e "  harness:  ${HARNESSES[*]}"
+
+    local merged; merged=$(ap_parse_manifest "$dir")
+
+    ap_manifest_init "$TARGET"
+
+    # Accumulate new files across all harnesses so we can diff against the
+    # prior install record and clear orphans before re-recording.
+    local -a all_new_files=()
+    local h; for h in "${HARNESSES[@]}"; do
+        _AP_OUT_FILES=()
+        echo -e "  ${CYAN}━━ $h ━━${NC}"
+        case "$h" in
+            claude)   claude_render   "$merged" "$TARGET" ;;
+            codex)    codex_render    "$merged" "$TARGET" ;;
+            opencode) opencode_render "$merged" "$TARGET" ;;
+            cursor)   cursor_render   "$merged" "$TARGET" ;;
+            copilot)  copilot_render  "$merged" "$TARGET" ;;
+        esac
+        local f
+        for f in "${_AP_OUT_FILES[@]+"${_AP_OUT_FILES[@]}"}"; do
+            all_new_files+=("$f")
+        done
+    done
+
+    # Build a JSON array of new files (deduped). On a re-install, drop
+    # any orphans (files in the old record but not in the new set) from
+    # disk before overwriting the manifest's files list with the new one.
+    # ap_manifest_diff_and_clean honours ref-counting so shared paths
+    # claimed by other profiles stay on disk.
+    local new_files_json
+    if ((${#all_new_files[@]})); then
+        new_files_json=$(printf '%s\n' "${all_new_files[@]}" | jq -R . | jq -sc 'unique')
+    else
+        new_files_json='[]'
+    fi
+    ap_manifest_diff_and_clean "$TARGET" "$name" "$new_files_json"
+
+    # Replace this profile's files list atomically (rather than appending
+    # via ap_manifest_record_file, which would keep stale entries). The
+    # manifest already passed validation via ap_manifest_init.
+    local mpath; mpath=$(ap_manifest_path "$TARGET")
+    local mtmp; mtmp=$(mktemp)
+    jq --arg p "$name" --argjson f "$new_files_json" '
+        .[$p] = ((.[$p] // {}) | .files = $f)
+    ' "$mpath" > "$mtmp" && mv "$mtmp" "$mpath"
+
+    # Cache the resolved manifest so uninstall can pass it to *_clean
+    # for surgical edits to merged files even if the profile dir gets
+    # deleted from disk later.
+    ap_manifest_record_merged_json "$TARGET" "$name" "$merged"
+
+    echo -e "${GREEN}✓ Installed${NC}"
+}
+
+cmd_uninstall() {
+    local name="${REMAINING[0]:-}"
+    [[ -n "$name" ]] || { echo -e "${RED}ap uninstall: profile name required${NC}" >&2; exit 1; }
+
+    echo -e "${BLUE}→ Uninstalling profile '$name' from $TARGET${NC}"
+
+    # Prefer the cached merged_json from install-time so renderers can
+    # surgically undo their merges. If it isn't there (manifest from an
+    # older install, or hand-deleted), fall back to re-parsing the
+    # profile dir if still on disk, else pass a stub by name.
+    local merged=""
+    merged=$(ap_manifest_merged_json "$TARGET" "$name")
+    if [[ -z "$merged" ]]; then
+        local dir
+        if dir=$(ap_find_profile_dir "$name" 2>/dev/null); then
+            merged=$(ap_parse_manifest "$dir")
+        else
+            merged=$(jq -n --arg n "$name" '{name: $n, mcps: [], settings: {}}')
+        fi
+    fi
+
+    local h
+    for h in "${HARNESSES[@]}"; do
+        case "$h" in
+            claude)   declare -F claude_clean   >/dev/null && claude_clean   "$merged" "$TARGET" ;;
+            codex)    declare -F codex_clean    >/dev/null && codex_clean    "$merged" "$TARGET" ;;
+            opencode) declare -F opencode_clean >/dev/null && opencode_clean "$merged" "$TARGET" ;;
+            cursor)   declare -F cursor_clean   >/dev/null && cursor_clean   "$merged" "$TARGET" ;;
+            copilot)  declare -F copilot_clean  >/dev/null && copilot_clean  "$merged" "$TARGET" ;;
+        esac
+    done
+
+    # Delete every file we recorded — but keep paths still claimed by
+    # another installed profile (shared `.mcp.json`, `opencode.json`,
+    # cross-harness `.claude/agents/<n>.md`).
+    local f
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        if ap_manifest_other_profiles_claim_file "$TARGET" "$name" "$f"; then
+            echo -e "  ${BLUE}↳${NC} keeping $f (claimed by another profile)"
+            continue
+        fi
+        local abs="$TARGET/$f"
+        if [[ -e "$abs" || -L "$abs" ]]; then
+            rm -rf -- "$abs"
+        fi
+    done < <(ap_manifest_files "$TARGET" "$name")
+
+    ap_manifest_clear "$TARGET" "$name"
+    echo -e "${GREEN}✓ Uninstalled${NC}"
+}
+
+cmd_launch() {
+    local harness="${REMAINING[0]:-}"
+    [[ -n "$harness" ]] || { echo -e "${RED}ap launch: harness required (claude|codex|opencode|cursor|copilot)${NC}" >&2; exit 1; }
+    local name="${REMAINING[1]:-}"
+    local -a passthrough=("${REMAINING[@]:2}")
+
+    case "$harness" in
+        claude|codex|opencode|cursor|copilot) ;;
+        *) echo -e "${RED}ap launch: unknown harness '$harness'${NC}" >&2; exit 1 ;;
+    esac
+
+    if [[ -n "$name" ]]; then
+        # Re-render before exec — cheap, idempotent, picks up any
+        # edits to the profile dir since last launch.
+        HARNESSES=("$harness")
+        cmd_install
+    fi
+
+    echo -e "${BLUE}→ exec $harness ${passthrough[*]:-}${NC}"
+    exec "$harness" "${passthrough[@]+"${passthrough[@]}"}"
+}
+
+# ─── dispatch ────────────────────────────────────────────────────────
+
+require_cmd jq
+require_cmd yq
+
+main() {
+    local sub="${1:-help}"
+    shift || true
+    case "$sub" in
+        list|ls)         cmd_list ;;
+        describe|desc)   cmd_describe "${1:?profile name required}" ;;
+        path)            cmd_path "${1:?profile name required}" ;;
+        install)         parse_common_opts "$@"; validate_harnesses; cmd_install ;;
+        uninstall|rm)    parse_common_opts "$@"; validate_harnesses; cmd_uninstall ;;
+        launch)          parse_common_opts "$@"; cmd_launch ;;
+        help|-h|--help)  usage ;;
+        *) echo -e "${RED}ap: unknown subcommand '$sub'${NC}" >&2; usage >&2; exit 1 ;;
+    esac
+}
+
+main "$@"

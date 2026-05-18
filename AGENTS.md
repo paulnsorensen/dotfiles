@@ -18,6 +18,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `dots rollback [id]` - Rollback to a previous state
 - `dots backups` - List available backups
 - `dots doctor` - Run health checks and profile shell
+- `dots profile <cmd>` - Manage harness-agnostic agent profiles (see "Agent Profiles" below)
 - `dots test` - Run test suite (validates shell loading, git hooks, symlinks, and Claude config sync)
 
 ### Shell Configuration
@@ -121,6 +122,13 @@ dotfiles/
 │   └── config.toml         # Base ~/.codex/config.toml — copied on first install only, then user-owned (MCP entries written by sync.sh).
 ├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Copied to ~/.claude/skills/ by chezmoi.
 ├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-claude-skills (skills/ → ~/.claude/skills/), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-mcp (drives agents/mcp/sync.sh --force), install-hooks (copies agents/hooks/*, agents/lib/cheese-flair.sh, agents/reference/cheese-flair.md into both harnesses then drives agents/hooks/sync.sh).
+├── agent-profile/          # Per-repo profile loader (drives `dots profile`) — installs subsets of the global agents/ registry into a target repo
+│   ├── ap                  # Main CLI (list/describe/install/uninstall/launch)
+│   ├── lib/                # parse, discover, manifest helpers
+│   └── renderers/          # Per-harness emitters: claude.sh (native plugin packager), codex.sh, opencode.sh, cursor.sh, copilot.sh
+├── profiles/               # Per-repo profile library — drop-in agent bundles installable into target repos
+│   ├── base/               # Generic coding-agent baseline (included by other profiles)
+│   └── rust/               # Example language-specific profile
 ├── packages/
 │   ├── packages.yaml       # Flat package registry (brew, cargo, apt)
 │   └── sync.sh             # Package sync with hash cache
@@ -224,6 +232,72 @@ hooks:
 3. Apply changes: `hook-sync` (or let `dots sync` drive it via chezmoi's `run_onchange_install-hooks.sh.tmpl`, which copies the script + lib + bank into each harness's `$HOME/.<harness>/{hooks,lib,reference}/` then runs `agents/hooks/sync.sh`).
 
 `agents/hooks/sync.sh` uses per-harness file backends — `jq` over `claude/settings.json` for Claude, `yq -p=toml` over `~/.codex/config.toml` for Codex. Each upsert is idempotent; every unrelated top-level key (including other SessionStart entries, `[mcp_servers]`, `approval_policy`, …) is preserved. The hook script itself is self-locating: it resolves its lib and bank from `$SCRIPT_DIR/../lib` and `$SCRIPT_DIR/../reference`, so the same file runs identically under `~/.claude/` and `~/.codex/`.
+
+## Agent Profiles (`dots profile`) — per-repo overlay
+
+Per-repo overlay that installs a *subset* of the global `agents/` + `skills/` + `claude/` registries into a target repository. Where `dots sync` + chezmoi handles the **global** layer (every harness, every machine), `dots profile install` handles the **per-repo** layer — drop a focused bundle into the repo you're currently in.
+
+**Discovery order** (first match wins):
+
+1. `$PWD/.agent-profiles/<name>/` — per-repo override
+2. `$DOTFILES_DIR/profiles/<name>/` — repo-shipped library
+
+**Commands:**
+
+```bash
+dots profile list                          # Discover profiles
+dots profile describe <name>               # Show resolved (post-include) manifest
+dots profile install <name> [--harness h]  # Render into $PWD
+dots profile uninstall <name>              # Surgical removal via manifest
+dots profile launch <harness> [name]       # Install + exec the harness CLI
+```
+
+**Target harnesses:** Claude Code, Codex, opencode, Cursor, Copilot CLI.
+
+**Per-harness mapping** (post-reshape):
+
+| Concept       | Claude                                                | Codex                                       | opencode                                | Cursor                                | Copilot CLI                           |
+|---------------|-------------------------------------------------------|---------------------------------------------|-----------------------------------------|---------------------------------------|---------------------------------------|
+| Bundle root   | `.claude/plugins/local/<name>/`                       | n/a (no bundle concept)                     | n/a (loose files)                       | n/a (loose files)                     | n/a (loose files)                     |
+| Subagent      | plugin `agents/<n>.md`                                | `.codex/agents/<n>.toml` (TOML)             | reads shared `.claude/agents/<n>.md`    | reads shared `.claude/agents/<n>.md`  | `.github/agents/<n>.agent.md`         |
+| Skill         | plugin `skills/<n>/SKILL.md`                          | reads shared `.agents/skills/<n>/SKILL.md`  | reads shared `.agents/skills/<n>/SKILL.md` | reads shared `.agents/skills/<n>/SKILL.md` | `.github/skills/<n>/SKILL.md`        |
+| Slash command | plugin `commands/<n>.md`                              | skip (deprecated on Codex — use skills)     | `.opencode/commands/<n>.md` (**plural**) | `.cursor/commands/<n>.md`             | skip (no equivalent)                  |
+| Hook          | plugin `hooks/` + `plugin.json` event wiring          | `.codex/hooks.json` (6 events)              | skip (TS plugins only)                  | `.cursor/hooks.json` (22 events)      | `.github/hooks/<n>.json` (13 events)  |
+| MCP           | plugin `.mcp.json`                                    | `[mcp_servers]` in `.codex/config.toml`     | `opencode.json` `mcp.*`                 | `.cursor/mcp.json` `{mcpServers}`     | `.copilot/mcp-config.json` (requires `tools: ["*"]`) |
+| Prose         | shared global `AGENTS.md` (chezmoi)                   | shared global `AGENTS.md` (chezmoi)         | shared global `AGENTS.md` (chezmoi)     | shared global `AGENTS.md` (chezmoi)   | shared global `AGENTS.md` (chezmoi)   |
+| Permissions   | plugin `settings.json` `permissions.allow`            | n/a (sandbox/approval in `config.toml`)     | `opencode.json` `permission.bash` (raw globs) | n/a (UI/hooks only)                  | skip (`--deny-tool` CLI flags, runtime only) |
+
+**Shared-path strategy.** To minimize writes, the renderer leans on cross-harness shared paths:
+
+- `.agents/skills/<name>/SKILL.md` — read by Codex, opencode, and Cursor (3 of 5).
+- `.claude/agents/<name>.md` — read by Claude (via plugin re-export), opencode, and Cursor (3 of 5).
+
+The shared file is written once. A harness-specific override file is only emitted when (a) the harness has no path in the shared coverage (Copilot for skills + agents; Claude for skills via plugin packaging; Codex for subagents via TOML) or (b) the profile pins a per-harness model for that harness (see `models:` below).
+
+**`models:` schema.** Optional per-harness override map on subagent and slash-command items only (skills/hooks/rules have no model field on any harness). Keys are harness names (`claude`, `codex`, `opencode`, `cursor`, `copilot`); values are model identifiers. When `models.<harness>` is set, the renderer writes a harness-specific override file containing the body plus a `model:` frontmatter line — harness precedence ensures the override wins for that harness alone. Absent keys fall back to the shared file (no override). The sentinel value `inherit` (used for Cursor) means "use session model" and renders no override file.
+
+```yaml
+agents:
+  - name: rust-reviewer
+    body_path: agents/rust-reviewer.md
+    models:                              # OPTIONAL per-harness override map
+      claude: opus
+      codex: gpt-5
+      opencode: anthropic/claude-opus-4-7
+      cursor: inherit                    # sentinel — no override file written
+      # copilot key absent → Copilot ignores model field anyway
+commands:
+  - name: clippy
+    body_path: commands/clippy.md
+    models:
+      claude: haiku
+```
+
+**AGENTS.md.** The per-repo profile system never edits any AGENTS.md — chezmoi owns the global `agents/AGENTS.md` and syncs it to every installed harness. Prose for all five harnesses is delivered through that shared global file, not through per-repo splicing.
+
+**Uninstall safety:** install records every per-file artifact in `.agent-profile/manifest.json` and ref-counts shared-file entries by profile name (see `agent-profile/lib/manifest.sh`). Uninstall removes per-profile files outright and surgically removes only entries no other installed profile still references — user-added entries always survive.
+
+**Adding a profile:** create `profiles/<name>/` with `profile.yaml` (+ payloads), or stash a per-repo override under `<repo>/.agent-profiles/<name>/`. See `agent-profile/lib/parse.sh` for schema parsing and `tests/agent-profile-*.bats` for behavioral contracts.
 
 ## Plugin Management
 
@@ -404,6 +478,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages/packages.yaml` | `dots sync` | Use `dots sync refresh` to force re-check |
 | Skill | `skills/` (dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` for the external-only fast path) | chezmoi's `run_onchange_install-claude-skills.sh.tmpl` invokes `chezmoi/lib/install-local.sh` (copies each `skills/<name>/` into `~/.claude/skills/<name>/`) and, when `gh skill` is present, `chezmoi/lib/install-external.sh` (runs `gh skill install` per harness from `SKILL_HARNESSES`). Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
+| Profile | `profiles/<name>/profile.yaml` (or per-repo `.agent-profiles/<name>/`) | `dots profile install <name>` (per target repo) | Harness-agnostic — Claude/Codex/opencode rendered together; uninstall is surgical via `.agent-profile/manifest.json`. See "Agent Profiles" section above. |
 
 ## Important Gotchas
 
