@@ -235,9 +235,6 @@ hooks:
 
 ## Agent Profiles (`dots profile`) — per-repo overlay
 
-> [!NOTE]
-> This section describes the *target* shape after the PR #177 reshape (Path C2). The current code matches the original PR (Claude renderer present, AGENTS.md splice, no Cursor/Copilot). The reshape lands in follow-up commits on this branch.
-
 Per-repo overlay that installs a *subset* of the global `agents/` + `skills/` + `claude/` registries into a target repository. Where `dots sync` + chezmoi handles the **global** layer (every harness, every machine), `dots profile install` handles the **per-repo** layer — drop a focused bundle into the repo you're currently in.
 
 **Discovery order** (first match wins):
@@ -255,23 +252,50 @@ dots profile uninstall <name>              # Surgical removal via manifest
 dots profile launch <harness> [name]       # Install + exec the harness CLI
 ```
 
-**Target harnesses:** Claude Code, opencode, Codex, Cursor, Copilot CLI.
+**Target harnesses:** Claude Code, Codex, opencode, Cursor, Copilot CLI.
 
 **Per-harness mapping** (post-reshape):
 
-| Concept     | claude                                | codex                  | opencode                          | cursor                             | copilot                  |
-|-------------|---------------------------------------|------------------------|-----------------------------------|------------------------------------|--------------------------|
-| Bundle      | `.claude/plugins/local/<name>/` (native plugin) | n/a (codex has no plugins) | `.opencode/` files          | `.cursor/rules/` files             | n/a                      |
-| MCPs        | `.claude/plugins/local/<name>/.mcp.json` | skip (warn — global only) | `opencode.json` `mcp.*`        | `.cursor/mcp.json`                 | `.copilot/mcp-config.json` |
-| Agents      | plugin `agents/*.md`                  | inline into AGENTS.md  | `.opencode/agent/<p>--<n>.md`     | inline into `.cursor/rules/`       | inline into AGENTS.md    |
-| Skills      | plugin `skills/<name>/`               | inline into AGENTS.md  | inline into AGENTS.md             | inline into `.cursor/rules/`       | inline into AGENTS.md    |
-| Commands    | plugin `commands/*.md`                | skip (warn)            | `.opencode/command/<p>--<n>.md`   | skip (warn)                        | skip (warn)              |
-| Hooks       | plugin `hooks/` + `plugin.json`       | skip (warn)            | skip (no shell hooks)             | skip (no hooks)                    | skip (no hooks)          |
-| Permissions | plugin `settings.json` `permissions`  | n/a                    | `opencode.json` `permission.bash` | n/a                                | n/a                      |
+| Concept       | Claude                                                | Codex                                       | opencode                                | Cursor                                | Copilot CLI                           |
+|---------------|-------------------------------------------------------|---------------------------------------------|-----------------------------------------|---------------------------------------|---------------------------------------|
+| Bundle root   | `.claude/plugins/local/<name>/`                       | n/a (no bundle concept)                     | n/a (loose files)                       | n/a (loose files)                     | n/a (loose files)                     |
+| Subagent      | plugin `agents/<n>.md`                                | `.codex/agents/<n>.toml` (TOML)             | reads shared `.claude/agents/<n>.md`    | reads shared `.claude/agents/<n>.md`  | `.github/agents/<n>.agent.md`         |
+| Skill         | plugin `skills/<n>/SKILL.md`                          | reads shared `.agents/skills/<n>/SKILL.md`  | reads shared `.agents/skills/<n>/SKILL.md` | reads shared `.agents/skills/<n>/SKILL.md` | `.github/skills/<n>/SKILL.md`        |
+| Slash command | plugin `commands/<n>.md`                              | skip (deprecated on Codex — use skills)     | `.opencode/commands/<n>.md` (**plural**) | `.cursor/commands/<n>.md`             | skip (no equivalent)                  |
+| Hook          | plugin `hooks/` + `plugin.json` event wiring          | `.codex/hooks.json` (6 events)              | skip (TS plugins only)                  | `.cursor/hooks.json` (22 events)      | `.github/hooks/<n>.json` (13 events)  |
+| MCP           | plugin `.mcp.json`                                    | `[mcp_servers]` in `.codex/config.toml`     | `opencode.json` `mcp.*`                 | `.cursor/mcp.json` `{mcpServers}`     | `.copilot/mcp-config.json` (requires `tools: ["*"]`) |
+| Prose         | shared global `AGENTS.md` (chezmoi)                   | shared global `AGENTS.md` (chezmoi)         | shared global `AGENTS.md` (chezmoi)     | shared global `AGENTS.md` (chezmoi)   | shared global `AGENTS.md` (chezmoi)   |
+| Permissions   | plugin `settings.json` `permissions.allow`            | n/a (sandbox/approval in `config.toml`)     | `opencode.json` `permission.bash` (raw globs) | n/a (UI/hooks only)                  | skip (`--deny-tool` CLI flags, runtime only) |
 
-**AGENTS.md splice:** removed in the reshape. chezmoi syncs `agents/AGENTS.md` globally; the per-repo profile system does *not* edit any AGENTS.md in place. Inline-fallback content (agents/skills targeting harnesses without a native concept) is written to a profile-scoped sidecar file (TBD) rather than spliced into the global AGENTS.md.
+**Shared-path strategy.** To minimize writes, the renderer leans on cross-harness shared paths:
 
-**Uninstall safety:** install records every per-file artifact in `.agent-profile/manifest.json` and ref-counts shared-file entries by profile name. Uninstall removes per-profile files outright and surgically removes only entries no other installed profile still references — user-added entries always survive.
+- `.agents/skills/<name>/SKILL.md` — read by Codex, opencode, and Cursor (3 of 5).
+- `.claude/agents/<name>.md` — read by Claude (via plugin re-export), opencode, and Cursor (3 of 5).
+
+The shared file is written once. A harness-specific override file is only emitted when (a) the harness has no path in the shared coverage (Copilot for skills + agents; Claude for skills via plugin packaging; Codex for subagents via TOML) or (b) the profile pins a per-harness model for that harness (see `models:` below).
+
+**`models:` schema.** Optional per-harness override map on subagent and slash-command items only (skills/hooks/rules have no model field on any harness). Keys are harness names (`claude`, `codex`, `opencode`, `cursor`, `copilot`); values are model identifiers. When `models.<harness>` is set, the renderer writes a harness-specific override file containing the body plus a `model:` frontmatter line — harness precedence ensures the override wins for that harness alone. Absent keys fall back to the shared file (no override). The sentinel value `inherit` (used for Cursor) means "use session model" and renders no override file.
+
+```yaml
+agents:
+  - name: rust-reviewer
+    body_path: agents/rust-reviewer.md
+    models:                              # OPTIONAL per-harness override map
+      claude: opus
+      codex: gpt-5
+      opencode: anthropic/claude-opus-4-7
+      cursor: inherit                    # sentinel — no override file written
+      # copilot key absent → Copilot ignores model field anyway
+commands:
+  - name: clippy
+    body_path: commands/clippy.md
+    models:
+      claude: haiku
+```
+
+**AGENTS.md.** The per-repo profile system never edits any AGENTS.md — chezmoi owns the global `agents/AGENTS.md` and syncs it to every installed harness. Prose for all five harnesses is delivered through that shared global file, not through per-repo splicing.
+
+**Uninstall safety:** install records every per-file artifact in `.agent-profile/manifest.json` and ref-counts shared-file entries by profile name (see `agent-profile/lib/manifest.sh`). Uninstall removes per-profile files outright and surgically removes only entries no other installed profile still references — user-added entries always survive.
 
 **Adding a profile:** create `profiles/<name>/` with `profile.yaml` (+ payloads), or stash a per-repo override under `<repo>/.agent-profiles/<name>/`. See `agent-profile/lib/parse.sh` for schema parsing and `tests/agent-profile-*.bats` for behavioral contracts.
 
