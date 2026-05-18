@@ -176,6 +176,7 @@ LAYOUT
         [[ -f "$DOTFILES_DIR/.skillshare/agents/$agent" ]]
         [[ -L "$DOTFILES_DIR/claude/agents/$agent" ]]
         [[ "$(readlink "$DOTFILES_DIR/claude/agents/$agent")" == "../../.skillshare/agents/$agent" ]]
+        [[ -f "$DOTFILES_DIR/claude/agents/$agent" ]]
     done
 }
 
@@ -185,6 +186,7 @@ LAYOUT
         [[ -f "$DOTFILES_DIR/.skillshare/extras/claude-hooks/$hook" ]]
         [[ -L "$DOTFILES_DIR/claude/hooks/$hook" ]]
         [[ "$(readlink "$DOTFILES_DIR/claude/hooks/$hook")" == "../../.skillshare/extras/claude-hooks/$hook" ]]
+        [[ -f "$DOTFILES_DIR/claude/hooks/$hook" ]]
     done
 }
 

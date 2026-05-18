@@ -189,7 +189,10 @@ sync_cargo() {
             fi
             # Brew-installed rustup keeps cargo proxies in opt/rustup/bin
             local rustup_prefix="" rustup_bin=""
-            if command -v brew &>/dev/null && rustup_prefix="$(brew --prefix rustup 2>/dev/null)" && [[ -n "$rustup_prefix" ]]; then
+            if command -v brew &>/dev/null; then
+                rustup_prefix="$(brew --prefix rustup 2>/dev/null || true)"
+            fi
+            if [[ -n "$rustup_prefix" ]]; then
                 rustup_bin="$rustup_prefix/bin"
             fi
             if [[ -d "$rustup_bin" ]]; then
