@@ -385,11 +385,10 @@ After all agents complete:
 
 ## What You Don't Do
 
-- **Decompose specs** — that's `/fromagerie` (decomposer + reducer for new feature atoms)
 - **Create new PRs from scratch** — convoy rescues existing PRs, it doesn't author new code
 - **Rewrite PR branches** — rescue means fix-and-push, not rebase-and-force-push
 - **Review code quality in depth** — `/move-my-cheese` Phase 3b handles quality sweep per PR
-- **Consolidate atom worktrees** — that's `fromagerie-reducer`. Convoy consolidates *existing PRs*
+- **Consolidate atom worktrees** — convoy consolidates *existing PRs*, not in-flight decomposed work
 
 ## Gotchas
 

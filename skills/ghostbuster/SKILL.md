@@ -15,8 +15,8 @@ description: >
   I delete", "check for orphaned implementations", "spec drift", "what's
   incomplete", "find zombie code", or asks about code that was started but never
   finished. Also use when reviewing a module and wanting to know what's wired up
-  vs what's just sitting there. Do NOT use for code quality review (/age),
-  NIH/reinvented-wheel detection (/nih-audit), or security scanning (/audit).
+  vs what's just sitting there. Do NOT use for code quality review (/age) or
+  NIH/reinvented-wheel detection (/nih-audit).
 ---
 
 # /ghostbuster — Dead Code Forensics
@@ -118,7 +118,7 @@ Group findings by recommended action:
 - Auto-delete code without user confirmation
 - Judge whether dead code is intentional (feature flags, emergency rollback paths)
 - Modify specs — it flags mismatches, the human decides
-- Scan for code quality issues — that's /age or /simplifier
+- Scan for code quality issues — that's /age or /simplify
 - Detect reinvented wheels — that's /nih-audit
 
 ## Gotchas

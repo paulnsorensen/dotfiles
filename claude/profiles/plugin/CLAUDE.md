@@ -21,8 +21,8 @@ Defined in `mcp-scope.yaml` (registry-validated):
 - **context7** — `mcp__context7__*` — Claude Code plugin SDK, MCP spec, and related framework docs.
 
 Web search / task / design MCPs are out of scope. If you need GitHub code
-search for reference plugin implementations, use `gh search code` via the
-`/fetch` skill.
+search for reference plugin implementations, use `gh search code` directly
+or via the `/gh` skill.
 
 ## Preferred skills
 

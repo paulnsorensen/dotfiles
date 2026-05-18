@@ -4,7 +4,7 @@ description: >
   Detect and fix AI-generated code anti-patterns ("slop") across Rust, Python,
   TypeScript, Go, and Shell. Use this skill whenever you generate or edit code,
   when the user says "de-slop", "clean up AI code", "remove AI slop", or during
-  /simplify and /fromage flows. Also use as a mental checklist before committing
+  /simplify and /cook flows. Also use as a mental checklist before committing
   any code — AI assistants produce systematically predictable mistakes and this
   skill is the antidote. Trigger proactively on code review, post-generation
   cleanup, and pre-commit checks. If code was just written or modified by an AI
@@ -28,7 +28,7 @@ This skill teaches you what to catch and how to fix it.
 
 - **After generating code** — review your own output before presenting it
 - **During /simplify** — run before and after the simplifier pass
-- **In /fromage** — part of the Cook's hygiene checklist
+- **In /cook** — part of the implementation hygiene checklist
 - **Pre-commit** — prek hooks catch common slop in staged changes
 - **On demand** — user says "de-slop", "clean up AI code", etc.
 

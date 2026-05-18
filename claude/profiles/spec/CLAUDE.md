@@ -1,9 +1,9 @@
 # Spec Profile
 
 This session is **discovery dialogue**, not implementation. The goal is
-to produce a crisp spec at `.claude/specs/<slug>.md` that `/fromagerie`
-can decompose into atoms. If you catch yourself writing code or
-scaffolding file structure, stop — that's `/fromage` or `/fromagerie`,
+to produce a crisp spec at `.claude/specs/<slug>.md` that can drive
+implementation. If you catch yourself writing code or scaffolding file
+structure, stop — that's `/cook` (or `/ultracook` for autonomous flows),
 not this session.
 
 ## Why this profile exists
@@ -23,17 +23,17 @@ Defined in `mcp-scope.yaml` (registry-validated):
 - **serper** — `mcp__serper__*` — factual lookups and SERP features when a quick Google answer beats a 2K-token Tavily response.
 
 Implementation MCPs (code-review-graph, shadcn, Playwright) are out of scope
-— if you need them, the spec is done and it's time for `/fromagerie`.
+— if you need them, the spec is done and it's time for `/cook`.
 
 ## Workflow
 
 1. Launch `/spec` first — it runs the discovery dialogue.
 2. Ask questions until the problem is framed. Don't assume; the user
    will tell you when the spec is ready.
-3. For library/feasibility checks, use Context7 (`/fetch`) or `/briesearch`
+3. For library/feasibility checks, use Context7 directly or `/briesearch`
    — cheap to validate an assumption before it bakes into the spec.
 4. Write the spec to `.claude/specs/<slug>.md`. Don't write anywhere else.
-5. When spec lands, recommend `/fromagerie .claude/specs/<slug>.md` — do not run it from this session.
+5. When spec lands, recommend `/cook .claude/specs/<slug>.md` (or `/ultracook` for autonomous) — do not run it from this session.
 
 ## Defaults
 
@@ -48,7 +48,7 @@ Implementation MCPs (code-review-graph, shadcn, Playwright) are out of scope
 ## Hard constraints
 
 - Write only to `.claude/specs/**`. No touching source, tests, config.
-- Don't run the implementation pipeline (`/fromage`, `/fromagerie`,
-  `/cook`) from this session — hand off instead.
+- Don't run the implementation pipeline (`/cook`, `/ultracook`) from
+  this session — hand off instead.
 - No scope creep: "while I'm at it, let me also spec the Y feature"
   is the trap. One spec per session.

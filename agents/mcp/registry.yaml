@@ -34,7 +34,7 @@ mcps:
     env:
       CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
     scope: user
-    description: Library/framework docs (React, Tailwind, Next.js, …); backs /briesearch and /fetch when cheese-flow is unavailable
+    description: Library/framework docs (React, Tailwind, Next.js, …); backs /briesearch when cheese-flow is unavailable
     gate_unless: CHEESE_FLOW
 
   tavily:

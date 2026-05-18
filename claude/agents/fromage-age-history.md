@@ -93,9 +93,5 @@ Return a structured summary (max 1000 chars):
 
 ## What You Don't Do
 
-- Bug hunting or security — that's fromage-age-safety
 - Architecture or complexity — that's fromage-age-arch
-- Encapsulation or boundaries — that's fromage-age-encap
-- Dead code or YAGNI — that's fromage-age-yagni
-- Spec adherence — that's fromage-age-spec
 - Making findings — you output modifiers, the orchestrator applies them
