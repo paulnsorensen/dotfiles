@@ -18,6 +18,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `dots rollback [id]` - Rollback to a previous state
 - `dots backups` - List available backups
 - `dots doctor` - Run health checks and profile shell
+- `dots profile <cmd>` - Manage harness-agnostic agent profiles (see "Agent Profiles" below)
 - `dots test` - Run test suite (validates shell loading, git hooks, symlinks, and Claude config sync)
 
 ### Shell Configuration
@@ -108,6 +109,13 @@ dotfiles/
 │   └── config.toml         # Base ~/.codex/config.toml — copied on first install only, then user-owned (MCP entries written by sync.sh).
 ├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Copied to ~/.claude/skills/ by chezmoi.
 ├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-claude-skills (skills/ → ~/.claude/skills/), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-mcp (drives agents/mcp/sync.sh --force).
+├── agent-profile/          # Harness-agnostic profile loader (drives `dots profile`)
+│   ├── ap                  # Main CLI (list/describe/install/uninstall/launch)
+│   ├── lib/                # parse, discover, manifest, agents_md helpers
+│   └── renderers/          # Per-harness emitters: claude.sh, codex.sh, opencode.sh
+├── profiles/               # Global, shareable profile library — drop-in agent bundles
+│   ├── base/               # Generic coding-agent baseline (included by other profiles)
+│   └── rust/               # Example language-specific profile (AGENTS.md + agent + skill + hook + MCP)
 ├── packages/
 │   ├── packages.yaml       # Flat package registry (brew, cargo, apt)
 │   └── sync.sh             # Package sync with hash cache
@@ -178,6 +186,57 @@ mcps:
 3. Apply changes: `mcp-sync` (interactive removal prompts) or let `dots sync` drive it via chezmoi's `run_onchange_install-mcp.sh.tmpl` (uses `--force` non-interactively).
 
 `agents/mcp/sync.sh` loops over harnesses, calling native `claude mcp add/list/remove` and `codex mcp add/list/remove` per entry. A missing harness CLI is skipped silently.
+
+## Agent Profiles (`dots profile`)
+
+Harness-agnostic, drop-in bundles of AGENTS.md prose + subagents + skills + slash commands + hooks + MCPs. One canonical `profile.yaml` per profile; per-harness renderers translate it into native `.claude/`, `.codex/`, `.opencode/`, AGENTS.md, `.mcp.json`, and `opencode.json` artifacts.
+
+**Discovery order** (first match wins):
+
+1. `$PWD/.agent-profiles/<name>/` — per-repo override
+2. `$DOTFILES_DIR/profiles/<name>/` — global library
+
+**Commands:**
+
+```bash
+dots profile list                          # Discover profiles
+dots profile describe <name>               # Show resolved (post-include) manifest
+dots profile install <name> [--harness h]  # Render into $PWD
+dots profile uninstall <name>              # Surgical removal via manifest
+dots profile launch <harness> [name]       # Install + exec the harness CLI
+```
+
+**Schema** (see `profiles/rust/profile.yaml` for the canonical example):
+
+```yaml
+name: rust
+description: Rust toolchain conventions + idiomatic reviewer
+include: [base]              # explicit composition; cycles are rejected
+agents_md_path: AGENTS.md    # appended to target AGENTS.md inside marker block
+mcps:     [...]              # project-scope MCPs (per-entry `harnesses:` allowed)
+agents:   [...]              # subagent defs; `fallback: inline|skip` for harnesses w/o native agents
+skills:   [...]              # full skill dirs copied; `fallback: inline` inlines SKILL.md into AGENTS.md
+commands: [...]              # slash commands; codex skips with warning
+hooks:    [...]              # claude-only by default; opt in via `harnesses:`
+settings:
+  permissions_allow: [...]   # claude format `Bash(cmd:*)`; opencode renderer translates to `cmd *`
+```
+
+**Per-harness mapping:**
+
+| Concept     | claude                          | codex                       | opencode                  |
+|-------------|---------------------------------|-----------------------------|---------------------------|
+| AGENTS.md   | spliced via `<!-- ... -->` marker block | same                | same                      |
+| MCPs        | `.mcp.json` (project-scope)     | skip (warn — global only)   | `opencode.json` `mcp.*`   |
+| Agents      | `.claude/agents/<p>--<n>.md`    | inline into AGENTS.md       | `.opencode/agent/<p>--<n>.md` |
+| Skills      | `.claude/skills/<p>--<n>/`      | inline into AGENTS.md       | inline into AGENTS.md     |
+| Commands    | `.claude/commands/<p>--<n>.md`  | skip (warn)                 | `.opencode/command/<p>--<n>.md` |
+| Hooks       | `.claude/settings.local.json` + `.claude/hooks/<p>--*.sh` | skip | skip               |
+| Permissions | `settings.local.json` `permissions.allow` | n/a            | `opencode.json` `permission.bash` |
+
+**Uninstall safety:** install records every per-file artifact in `.agent-profile/manifest.json` and caches the resolved profile JSON. Uninstall removes per-profile files outright, strips AGENTS.md marker blocks in place, and surgically removes only the permission/MCP entries the renderer authored from shared files — user-added entries survive.
+
+**Adding a profile:** create `profiles/<name>/` with `profile.yaml` (+ payloads), or stash a per-repo override under `<repo>/.agent-profiles/<name>/`. See `agent-profile/lib/parse.sh` for schema parsing and `tests/agent-profile-*.bats` for behavioral contracts.
 
 ## Plugin Management
 
@@ -357,6 +416,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages/packages.yaml` | `dots sync` | Use `dots sync refresh` to force re-check |
 | Skill | `skills/` (dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` for the external-only fast path) | chezmoi's `run_onchange_install-claude-skills.sh.tmpl` invokes `chezmoi/lib/install-local.sh` (copies each `skills/<name>/` into `~/.claude/skills/<name>/`) and, when `gh skill` is present, `chezmoi/lib/install-external.sh` (runs `gh skill install` per harness from `SKILL_HARNESSES`). Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
+| Profile | `profiles/<name>/profile.yaml` (or per-repo `.agent-profiles/<name>/`) | `dots profile install <name>` (per target repo) | Harness-agnostic — Claude/Codex/opencode rendered together; uninstall is surgical via `.agent-profile/manifest.json`. See "Agent Profiles" section above. |
 
 ## Important Gotchas
 
