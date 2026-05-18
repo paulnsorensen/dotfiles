@@ -1,0 +1,37 @@
+# Hook Registry — Source of truth for harness-agnostic coding-agent hooks.
+# Run `hook-sync` (or `dots sync`) to apply this to every installed harness.
+#
+# Per-entry fields:
+#   event          — must be SessionStart today; the registry shape will
+#                    extend to UserPromptSubmit | PreToolUse | PostToolUse
+#                    | Stop once the backends in lib.sh parameterise the
+#                    event slot. hook_filter_for_harness fails loud on any
+#                    other value.
+#   script         — repo-relative path to the hook script (deployed per
+#                    harness into $HOME/.<harness>/hooks/<basename>)
+#   shared_assets  — optional list of repo-relative paths to data files the
+#                    hook script reads at runtime (libs, banks, …). Each
+#                    asset path must live under agents/<subdir>/<file> and
+#                    is deployed to $HOME/.<harness>/<subdir>/<file>. The
+#                    chezmoi installer derives its copy list from this
+#                    field, so adding a new hook is purely a registry edit.
+#   harnesses      — list of harness names to install into;
+#                    default: [claude, codex]
+#   matcher        — codex-only regex against the event's `source` field
+#                    (SessionStart: startup|resume|clear). Claude ignores;
+#                    its SessionStart entries have no matcher.
+#   timeout        — seconds (verified against
+#                    developers.openai.com/codex/hooks → "timeout is in
+#                    seconds"; Claude uses the same unit)
+#   description    — human-readable purpose
+hooks:
+  session-start-cheese-flair:
+    event: SessionStart
+    script: agents/hooks/session-start-cheese-flair.sh
+    shared_assets:
+      - agents/lib/cheese-flair.sh
+      - agents/reference/cheese-flair.md
+    harnesses: [claude, codex]
+    matcher: "startup|resume"
+    timeout: 5
+    description: Rotating cheese flair sample injected at session start

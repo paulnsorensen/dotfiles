@@ -44,6 +44,10 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `mcp-edit` - Edit MCP registry.yaml
 - `mcp-ls` - List currently configured MCPs
 - `mcp-add <name> <cmd> [args...]` - Add a user-scoped MCP
+- `hook-sync` - Sync harness-agnostic hooks (cheese-flair SessionStart) to Claude + Codex
+- `hook-sync-dry` - Preview hook sync changes without applying
+- `hook-edit` - Edit hook registry.yaml
+- `hook-ls` - List configured hooks
 - `claude-json-prune` - Preview stale project entries in ~/.claude.json (dry run)
 - `claude-json-prune --apply` - Remove stale entries (creates timestamped backup first)
 
@@ -95,9 +99,18 @@ dotfiles/
 ├── agents/                 # Harness-agnostic agent config (shared by Claude + Codex)
 │   ├── AGENTS.md           # Global coding-agent preferences. Copied to ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md by chezmoi.
 │   ├── RTK.md              # RTK proxy reference (Claude only — copied to ~/.claude/RTK.md by chezmoi).
-│   └── mcp/
-│       ├── registry.yaml   # MCP source of truth (per-entry `harnesses: [claude, codex]`)
-│       └── sync.sh         # Declarative MCP sync — loops over harnesses, calls native `<harness> mcp add/list/remove`.
+│   ├── mcp/
+│   │   ├── registry.yaml   # MCP source of truth (per-entry `harnesses: [claude, codex]`)
+│   │   └── sync.sh         # Declarative MCP sync — loops over harnesses, calls native `<harness> mcp add/list/remove`.
+│   ├── hooks/
+│   │   ├── registry.yaml   # Hook source of truth (per-entry `harnesses: [claude, codex]`, matcher, timeout)
+│   │   ├── sync.sh         # Declarative hook sync — jq-edits claude/settings.json + yq-edits ~/.codex/config.toml.
+│   │   ├── lib.sh          # Per-harness backend helpers (drift signature, upsert, detect).
+│   │   └── session-start-cheese-flair.sh  # SessionStart hook — self-locating; deployed to both harnesses.
+│   ├── lib/
+│   │   └── cheese-flair.sh # Weighted name generator + quote picker (used by the SessionStart hook).
+│   └── reference/
+│       └── cheese-flair.md # The names + quote bank read by cheese-flair.sh.
 ├── claude/                 # Claude Code-specific configuration
 │   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/fromage, /fromagerie, /spec, etc.)
@@ -107,7 +120,7 @@ dotfiles/
 ├── codex/                  # OpenAI Codex CLI-specific configuration
 │   └── config.toml         # Base ~/.codex/config.toml — copied on first install only, then user-owned (MCP entries written by sync.sh).
 ├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Copied to ~/.claude/skills/ by chezmoi.
-├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-claude-skills (skills/ → ~/.claude/skills/), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-mcp (drives agents/mcp/sync.sh --force).
+├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-claude-skills (skills/ → ~/.claude/skills/), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-mcp (drives agents/mcp/sync.sh --force), install-hooks (copies agents/hooks/*, agents/lib/cheese-flair.sh, agents/reference/cheese-flair.md into both harnesses then drives agents/hooks/sync.sh).
 ├── packages/
 │   ├── packages.yaml       # Flat package registry (brew, cargo, apt)
 │   └── sync.sh             # Package sync with hash cache
@@ -178,6 +191,39 @@ mcps:
 3. Apply changes: `mcp-sync` (interactive removal prompts) or let `dots sync` drive it via chezmoi's `run_onchange_install-mcp.sh.tmpl` (uses `--force` non-interactively).
 
 `agents/mcp/sync.sh` loops over harnesses, calling native `claude mcp add/list/remove` and `codex mcp add/list/remove` per entry. A missing harness CLI is skipped silently.
+
+## Hook Management
+
+Harness-agnostic hooks (Claude SessionStart / Codex `[[hooks.SessionStart]]`, etc.) are declared in `agents/hooks/registry.yaml`. One registry, one source of truth, deployed to every harness:
+
+```yaml
+hooks:
+  session-start-cheese-flair:
+    event: SessionStart
+    script: agents/hooks/session-start-cheese-flair.sh
+    harnesses: [claude, codex]
+    matcher: "startup|resume"   # codex-only — claude ignores
+    timeout: 5                  # seconds (both harnesses)
+    description: Rotating cheese flair sample injected at session start
+```
+
+**Per-entry fields:**
+
+- `event` — Claude / Codex event name. Only `SessionStart` is currently wired; the backends in `agents/hooks/lib.sh` fail loud on any other value. Extend the backends before registering `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, or `Stop` entries.
+- `script` — repo-relative path; chezmoi deploys to `~/.<harness>/hooks/<basename>`.
+- `shared_assets` (optional) — list of repo-relative paths under `agents/<subdir>/<file>` that the hook script reads at runtime (libs, banks, …). Each is deployed to `~/.<harness>/<subdir>/<file>`. Adding a new hook is a pure registry edit — the chezmoi installer iterates `hooks` and copies every `(script ∪ shared_assets) × harnesses` pair.
+- `harnesses` (optional) — list; default `[claude, codex]`.
+- `matcher` — codex-only regex against the event's `source` field (`startup|resume|clear` for SessionStart). Claude SessionStart entries do not use matchers and the field is ignored there.
+- `timeout` — seconds (verified against `developers.openai.com/codex/hooks` — "timeout is in seconds"; Claude uses the same unit).
+- `description` — human-readable purpose.
+
+**Workflow:**
+
+1. Edit registry: `hook-edit`
+2. Preview changes: `hook-sync-dry`
+3. Apply changes: `hook-sync` (or let `dots sync` drive it via chezmoi's `run_onchange_install-hooks.sh.tmpl`, which copies the script + lib + bank into each harness's `$HOME/.<harness>/{hooks,lib,reference}/` then runs `agents/hooks/sync.sh`).
+
+`agents/hooks/sync.sh` uses per-harness file backends — `jq` over `claude/settings.json` for Claude, `yq -p=toml` over `~/.codex/config.toml` for Codex. Each upsert is idempotent; every unrelated top-level key (including other SessionStart entries, `[mcp_servers]`, `approval_policy`, …) is preserved. The hook script itself is self-locating: it resolves its lib and bank from `$SCRIPT_DIR/../lib` and `$SCRIPT_DIR/../reference`, so the same file runs identically under `~/.claude/` and `~/.codex/`.
 
 ## Plugin Management
 
@@ -353,6 +399,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | Type | Registry | Sync command | Notes |
 |------|----------|--------------|-------|
 | MCP | `agents/mcp/registry.yaml` | `mcp-sync` (or `dots sync`) | Restart Claude / Codex after; entries flow to both harnesses by default |
+| Hook | `agents/hooks/registry.yaml` | `hook-sync` (or `dots sync`) | Harness-agnostic SessionStart/PreTool/etc. hooks; chezmoi copies the script + lib + bank into both `~/.claude/` and `~/.codex/` then drives `agents/hooks/sync.sh` |
 | Plugin | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages/packages.yaml` | `dots sync` | Use `dots sync refresh` to force re-check |
