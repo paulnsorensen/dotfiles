@@ -9,9 +9,9 @@ description: >
   analysis, build verification, and test coverage checking. Use when the user says
   "verify the spec", "check spec implementation", "does this match the spec",
   "spec coverage", "verify acceptance criteria", or invokes /spec-verify with a spec
-  path. Also trigger after /fromage or /fromagerie completes to validate the result
-  against the original spec. Do NOT use for writing code — this is verification only.
-  Do NOT use for general code review — use /age or /code-review for that.
+  path. Also trigger after `/cure` completes to validate the result against the
+  original spec. Do NOT use for writing code — this is verification only.
+  Do NOT use for general code review — use /age for that.
 ---
 
 # spec-verify

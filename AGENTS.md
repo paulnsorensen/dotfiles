@@ -100,7 +100,7 @@ dotfiles/
 │       └── sync.sh         # Declarative MCP sync — loops over harnesses, calls native `<harness> mcp add/list/remove`.
 ├── claude/                 # Claude Code-specific configuration
 │   ├── agents/             # Cheese-themed specialist agents
-│   ├── commands/           # Slash commands (/fromage, /fromagerie, /spec, etc.)
+│   ├── commands/           # Slash commands (/spec, /wreck, /test, etc.)
 │   ├── hooks/              # Pre-tool hooks
 │   ├── profiles/           # Scoped sessions (fe, plugin, review, rtkonly, spec, todo) — launched via `ccp <name>`
 │   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)

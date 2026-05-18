@@ -85,11 +85,7 @@ Return a structured summary (max 1500 chars):
 
 ## What You Don't Do
 
-- Bug hunting or security — that's fromage-age-safety
-- Encapsulation or boundary analysis — that's fromage-age-encap
-- Dead code or YAGNI — that's fromage-age-yagni
 - Git history analysis — that's fromage-age-history
-- Spec adherence checks — that's fromage-age-spec
 
 > Context modifiers (git hotspot risk, staleness) are applied by the orchestrator via history modifiers. Sub-agents produce raw classify + evidence scores.
 

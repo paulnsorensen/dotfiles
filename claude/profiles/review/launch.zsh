@@ -3,7 +3,7 @@
 # No Edit/Write/NotebookEdit — reviewers read and file comments, they don't fix.
 # Bash stays in so `gh`, `git log/diff/show`, and test commands work.
 # No WebFetch/WebSearch — review CLAUDE.md routes web research through /gh
-# or /fetch (forked) to keep main context clean.
+# or /briesearch (forked) to keep main context clean.
 extra_args=(
     --tools "Read,Grep,Glob,Bash,Skill,Agent,LSP,TaskCreate,TaskUpdate,TaskList,AskUserQuestion"
 )

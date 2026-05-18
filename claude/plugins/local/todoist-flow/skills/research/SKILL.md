@@ -10,8 +10,8 @@ description: >
   clean. Use when the user is mid-task-triage and needs external facts
   before deciding whether to keep, reword, or extract a Todoist task,
   or invokes /todoist-flow:research directly. Do NOT use for single-source
-  lookups (use /fetch for library docs alone). For coding sessions outside
-  the todo profile, prefer cheese-flow's /briesearch instead.
+  lookups (use Context7 directly for library docs alone). For coding sessions
+  outside the todo profile, prefer cheese-flow's /briesearch instead.
 model: sonnet
 allowed-tools: Agent, Bash, Write
 ---

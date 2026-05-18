@@ -23,15 +23,14 @@ Defined in `mcp-scope.yaml` (registry-validated):
 
 GitHub plugin MCPs (PRs, review comments) come through the separately-loaded
 github plugin. Web search / task MCPs are out of scope — if a review needs
-web research, use the `/gh` or `/fetch` skills (forked) to keep main context clean.
+web research, use the `/gh` or `/briesearch` skills (forked) to keep main context clean.
 
 ## Preferred skills
 
 | Task | Skill |
 |------|-------|
 | Respond to PR review comments | `/respond` |
-| Full PR review pass | `/code-review` or `/age` |
-| Security/dependency audit | `/audit` |
+| Full PR review pass | `/age` |
 | Dead code / AI slop sweep | `/ghostbuster`, `/de-slop` |
 | Route Copilot fixes back to PR | `/copilot-review` |
 | GitHub operations | `/gh` (forked — doesn't pollute main context) |

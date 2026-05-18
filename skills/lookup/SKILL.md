@@ -174,7 +174,7 @@ Not every project has all tools active:
 |---|---|
 | No LSP running | `cheese-flow:cheez-search` (tilth tree-sitter) |
 | Context7 doesn't have the library | `gh search code` → WebFetch raw source |
-| External crate, no MCP available | `WebSearch` for official docs (via /fetch skill) |
+| External crate, no MCP available | `WebSearch` for official docs (or use `/briesearch`) |
 | tilth MCP unavailable | Grep (last resort) |
 
 The hierarchy is: **LSP > cheez-search > Grep**. Only fall to the next level
@@ -182,15 +182,15 @@ when the better tool genuinely isn't available — not because it's easier to ty
 
 ## Why This Skill Is NOT Forked
 
-Unlike `/fetch`, this skill runs inline — not in a subagent. Two reasons:
+Unlike `/briesearch`, this skill runs inline — not in a subagent. Two reasons:
 
 1. **LSP only works in the foreground context.** Forking would cut off
    the most powerful tool (hover, findReferences, goToDefinition).
 2. **Routing is cheap.** This skill's output is a decision ("use LSP hover"), not
    verbose data. There's nothing to isolate from the context window.
 
-The tools this skill routes TO may fork on their own (e.g., `/fetch` forks for
-Context7/gh lookups). That's fine — the routing decision stays inline,
+The tools this skill routes TO may fork on their own (e.g., `/briesearch` forks
+for Context7/gh lookups). That's fine — the routing decision stays inline,
 the heavy fetching forks as needed.
 
 ## Rules
@@ -199,7 +199,7 @@ the heavy fetching forks as needed.
 - One lookup per question — don't chain 3 tools when one gives the answer
 - External deps are NEVER solved by grepping local caches
 - If LSP is running, `hover` answers 80% of type questions in one call
-- If you need the skill that each tool delegates to, invoke it: cheese-flow:cheez-search, /lsp, /fetch
+- If you need the skill that each tool delegates to, invoke it: cheese-flow:cheez-search, /lsp, /briesearch
 
 ## Gotchas
 

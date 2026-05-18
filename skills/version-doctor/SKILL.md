@@ -67,7 +67,7 @@ If the correct version isn't obvious:
 1. **Context7 first** — spawn a research agent to fetch current docs for the library:
 
    ```
-   Use /fetch or Context7 to check: what is the latest version of <library>?
+   Use Context7 to check: what is the latest version of <library>?
    What changed between version X and Y?
    ```
 

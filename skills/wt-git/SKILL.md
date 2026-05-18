@@ -6,7 +6,7 @@ description: >
   Run git and GitHub operations inside a worktree without triggering Claude Code's
   safety heuristics. Use this skill whenever you need to commit, push, create PRs,
   or run any git command in a worktree you're not currently inside — especially from
-  orchestrator agents, /fromage, /move-my-cheese, or /cheese-convoy. Also use when
+  orchestrator agents, /move-my-cheese, or /cheese-convoy. Also use when
   you catch yourself about to write "cd <path> && git" or "gh pr create --body" with
   a heredoc. This skill exists because Claude Code's Seatbelt sandbox blocks two
   legitimate patterns: compound cd+git commands ("bare repository attack" heuristic)
