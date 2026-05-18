@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
-# Core tests for agent-profile/lib/* (parse, discover, manifest,
-# agents_md). Render + CLI tests live in sibling .bats files.
+# Core tests for agent-profile/lib/* (parse, discover, manifest).
+# Render + CLI tests live in sibling .bats files.
 
 load test_helper
 
@@ -15,8 +15,6 @@ setup() {
     source "$AP_DIR/lib/discover.sh"
     # shellcheck source=../agent-profile/lib/manifest.sh
     source "$AP_DIR/lib/manifest.sh"
-    # shellcheck source=../agent-profile/lib/agents_md.sh
-    source "$AP_DIR/lib/agents_md.sh"
 
     # Sandbox lookup roots so PWD/.agent-profiles and the real
     # $DOTFILES_DIR/profiles tree do not bleed into the test.
@@ -24,7 +22,7 @@ setup() {
     mkdir -p "$PROFILE_ROOT"
     export AP_EXTRA_SEARCH_PATHS="$PROFILE_ROOT"
     export DOTFILES_DIR="$TEST_HOME"   # forces global root to a known empty path
-    cd "$TEST_HOME"
+    cd "$TEST_HOME" || return
 }
 
 teardown() {
@@ -32,15 +30,12 @@ teardown() {
 }
 
 # Materializes a profile dir under $PROFILE_ROOT/<name>/ with the
-# given profile.yaml contents. Optional second arg: AGENTS.md body.
+# given profile.yaml contents.
 make_profile() {
-    local name="$1" yaml="$2" md="${3:-}"
+    local name="$1" yaml="$2"
     local dir="$PROFILE_ROOT/$name"
     mkdir -p "$dir"
     printf '%s\n' "$yaml" > "$dir/profile.yaml"
-    if [[ -n "$md" ]]; then
-        printf '%s\n' "$md" > "$dir/AGENTS.md"
-    fi
     return 0
 }
 
@@ -73,22 +68,6 @@ hooks:
     [[ $(jq -r '.hooks[0]._source_dir'  <<<"$output") == "$PROFILE_ROOT/srctest" ]]
 }
 
-@test "ap_parse_one: AGENTS.md becomes a single block when present" {
-    make_profile mdtest "name: mdtest" "# Hello world"
-    run ap_parse_one "$PROFILE_ROOT/mdtest"
-    assert_success
-    [[ $(jq -r '.agents_md_blocks | length'   <<<"$output") == "1" ]]
-    [[ $(jq -r '.agents_md_blocks[0].name'    <<<"$output") == "mdtest" ]]
-    [[ $(jq -r '.agents_md_blocks[0].content' <<<"$output") == "# Hello world" ]]
-}
-
-@test "ap_parse_one: missing AGENTS.md → empty agents_md_blocks" {
-    make_profile nomd "name: nomd"
-    run ap_parse_one "$PROFILE_ROOT/nomd"
-    assert_success
-    [[ $(jq -r '.agents_md_blocks | length' <<<"$output") == "0" ]]
-}
-
 @test "ap_parse_one: missing name field fails loudly" {
     make_profile nameless "description: noname"
     run ap_parse_one "$PROFILE_ROOT/nameless"
@@ -117,17 +96,6 @@ settings:
     [[ $(jq -r '.agents[0].name' <<<"$output") == "a" ]]
     [[ $(jq -r '.agents[1].name' <<<"$output") == "b" ]]
     [[ $(jq -r '.settings.permissions_allow | length' <<<"$output") == "2" ]]
-}
-
-@test "ap_parse_manifest: AGENTS.md blocks ordered base-first" {
-    make_profile base "name: base" "BASE BODY"
-    make_profile leaf "name: leaf
-include: [base]" "LEAF BODY"
-    run ap_parse_manifest "$PROFILE_ROOT/leaf"
-    assert_success
-    [[ $(jq -r '.agents_md_blocks[0].name'    <<<"$output") == "base" ]]
-    [[ $(jq -r '.agents_md_blocks[0].content' <<<"$output") == "BASE BODY" ]]
-    [[ $(jq -r '.agents_md_blocks[1].name'    <<<"$output") == "leaf" ]]
 }
 
 @test "ap_parse_manifest: permissions de-dup via unique" {
@@ -190,7 +158,7 @@ EOF
     export DOTFILES_DIR="$TEST_HOME/global-root"
     mkdir -p "$DOTFILES_DIR/profiles"
     cp -R "$PROFILE_ROOT/dup" "$DOTFILES_DIR/profiles/"
-    cd "$TEST_HOME"
+    cd "$TEST_HOME" || return
     run ap_find_profile_dir dup
     assert_success
     [[ "$output" == "$TEST_HOME/.agent-profiles/dup" ]]
@@ -212,14 +180,10 @@ EOF
     mkdir -p "$t"
     ap_manifest_record_file "$t" rust ".claude/foo.md"
     ap_manifest_record_file "$t" rust ".claude/bar.md"
-    ap_manifest_record_agents_md "$t" rust "AGENTS.md"
     run ap_manifest_files "$t" rust
     assert_success
     assert_output_contains ".claude/foo.md"
     assert_output_contains ".claude/bar.md"
-    run ap_manifest_agents_md "$t" rust
-    assert_success
-    [[ "$output" == "AGENTS.md" ]]
     ap_manifest_clear "$t" rust
     run ap_manifest_files "$t" rust
     assert_success
@@ -235,61 +199,184 @@ EOF
     [[ $(jq -r '.name' <<<"$output") == "rust" ]]
 }
 
-# ─── agents_md splice ───────────────────────────────────────────────
+# ─── manifest correctness: ref-counting (Bug 1) ─────────────────────
 
-@test "ap_splice_agents_md: appends marker block to fresh file" {
-    local f="$TEST_HOME/AGENTS.md"
-    ap_splice_agents_md "$f" rust "BODY GOES HERE"
-    run cat "$f"
+@test "manifest: ap_manifest_other_profiles_claim_file: true when shared" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t"
+    # Both profiles A and B record the same shared file.
+    ap_manifest_record_file "$t" alpha ".mcp.json"
+    ap_manifest_record_file "$t" beta  ".mcp.json"
+    # When uninstalling alpha, beta still claims `.mcp.json`.
+    run ap_manifest_other_profiles_claim_file "$t" alpha ".mcp.json"
     assert_success
-    assert_output_contains "<!-- agent-profile:rust:begin -->"
-    assert_output_contains "BODY GOES HERE"
-    assert_output_contains "<!-- agent-profile:rust:end -->"
 }
 
-@test "ap_splice_agents_md: re-splice replaces in place (idempotent)" {
-    local f="$TEST_HOME/AGENTS.md"
-    echo "# Pre-existing" > "$f"
-    ap_splice_agents_md "$f" rust "v1 body"
-    ap_splice_agents_md "$f" rust "v2 body"
-    run cat "$f"
-    assert_success
-    assert_output_contains "v2 body"
-    assert_output_not_contains "v1 body"
-    assert_output_contains "# Pre-existing"
+@test "manifest: ap_manifest_other_profiles_claim_file: false when no other claimant" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t"
+    ap_manifest_record_file "$t" alpha ".mcp.json"
+    # Only alpha claims it.
+    run ap_manifest_other_profiles_claim_file "$t" alpha ".mcp.json"
+    assert_failure
 }
 
-@test "ap_splice_agents_md: preserves user content above/below" {
-    local f="$TEST_HOME/AGENTS.md"
-    cat > "$f" <<EOF
-# Project
-Hand-written.
-EOF
-    ap_splice_agents_md "$f" rust "RUST BODY"
-    run cat "$f"
-    assert_success
-    assert_output_contains "Hand-written."
-    assert_output_contains "RUST BODY"
+@test "manifest: ap_manifest_other_profiles_claim_file: false when current profile is the only listed" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t"
+    ap_manifest_record_file "$t" alpha ".claude/agents/shared.md"
+    ap_manifest_record_file "$t" beta  ".something-else.md"
+    # alpha claims `.claude/agents/shared.md`; beta does not.
+    run ap_manifest_other_profiles_claim_file "$t" alpha ".claude/agents/shared.md"
+    assert_failure
 }
 
-@test "ap_strip_agents_md: removes only the named profile's block" {
-    local f="$TEST_HOME/AGENTS.md"
-    echo "# Header" > "$f"
-    ap_splice_agents_md "$f" rust "rust body"
-    ap_splice_agents_md "$f" go   "go body"
-    ap_strip_agents_md  "$f" rust
-    run cat "$f"
-    assert_success
-    assert_output_contains "go body"
-    assert_output_not_contains "rust body"
-    assert_output_contains "# Header"
+@test "manifest: ref-counting proves shared .mcp.json survives one-profile uninstall" {
+    # End-to-end shape: install A (writes .mcp.json), install B (writes
+    # .mcp.json), uninstall A using the ref-counted decision — the file
+    # stays because B still claims it.
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t"
+    # Simulate renderers writing the shared file.
+    echo '{"mcpServers":{"x":{"command":"a"}}}' > "$t/.mcp.json"
+    ap_manifest_record_file "$t" alpha ".mcp.json"
+    # B overwrites with merged content (mimicking renderer merge).
+    echo '{"mcpServers":{"x":{"command":"b"}}}' > "$t/.mcp.json"
+    ap_manifest_record_file "$t" beta ".mcp.json"
+
+    # Mimic the cmd_uninstall decision: only rm if no other claimant.
+    local f abs
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        if ap_manifest_other_profiles_claim_file "$t" alpha "$f"; then
+            continue
+        fi
+        abs="$t/$f"
+        [[ -e "$abs" || -L "$abs" ]] && rm -rf -- "$abs"
+    done < <(ap_manifest_files "$t" alpha)
+    ap_manifest_clear "$t" alpha
+
+    [[ -f "$t/.mcp.json" ]]
+    # Beta's content still on disk.
+    run cat "$t/.mcp.json"
+    assert_output_contains '"command":"b"'
 }
 
-@test "ap_strip_agents_md: no-op when block not present" {
-    local f="$TEST_HOME/AGENTS.md"
-    echo "# Just a file" > "$f"
-    ap_strip_agents_md "$f" rust
-    run cat "$f"
-    assert_success
-    [[ "$output" == "# Just a file" ]]
+# ─── manifest correctness: orphan cleanup on re-install (Bug 2) ─────
+
+@test "manifest: ap_manifest_diff_and_clean: removes dropped files from disk" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t/.claude"
+    # Initial install: profile owns two files.
+    touch "$t/.claude/foo.md" "$t/.claude/bar.md"
+    ap_manifest_record_file "$t" rust ".claude/foo.md"
+    ap_manifest_record_file "$t" rust ".claude/bar.md"
+
+    # Re-install emits only foo.md now → bar.md is orphaned.
+    ap_manifest_diff_and_clean "$t" rust '[".claude/foo.md"]'
+
+    [[ -f "$t/.claude/foo.md" ]]
+    [[ ! -e "$t/.claude/bar.md" ]]
+}
+
+@test "manifest: ap_manifest_diff_and_clean: keeps dropped file if another profile claims it" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t"
+    touch "$t/shared.json"
+    ap_manifest_record_file "$t" alpha "shared.json"
+    ap_manifest_record_file "$t" beta  "shared.json"
+
+    # Re-install of alpha drops shared.json, but beta still owns it.
+    ap_manifest_diff_and_clean "$t" alpha '[]'
+
+    [[ -f "$t/shared.json" ]]
+}
+
+@test "manifest: ap_manifest_diff_and_clean: no-op when nothing dropped" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t/.claude"
+    touch "$t/.claude/foo.md"
+    ap_manifest_record_file "$t" rust ".claude/foo.md"
+
+    # Re-install emits same file → no diff.
+    ap_manifest_diff_and_clean "$t" rust '[".claude/foo.md"]'
+
+    [[ -f "$t/.claude/foo.md" ]]
+}
+
+@test "manifest: re-install orphan cleanup end-to-end (file Y dropped)" {
+    # Install profile A emitting file Y → modify A to drop Y → reinstall A
+    # → Y is gone.
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t/.claude"
+    touch "$t/.claude/keep.md" "$t/.claude/dropme.md"
+    ap_manifest_record_file "$t" rust ".claude/keep.md"
+    ap_manifest_record_file "$t" rust ".claude/dropme.md"
+
+    # Simulate re-install: renderers re-emit only keep.md.
+    ap_manifest_diff_and_clean "$t" rust '[".claude/keep.md"]'
+
+    [[ -f "$t/.claude/keep.md" ]]
+    [[ ! -e "$t/.claude/dropme.md" ]]
+}
+
+# ─── manifest correctness: corrupt manifest (Bug 3) ─────────────────
+
+@test "manifest: corrupt JSON in manifest fails loudly on read" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t/.agent-profile"
+    # Truncate / write garbage.
+    printf 'not-valid-json{' > "$t/.agent-profile/manifest.json"
+
+    run ap_manifest_files "$t" rust
+    assert_failure
+    [[ "$status" -eq 1 ]]
+    assert_output_contains "manifest"
+    assert_output_contains "corrupt"
+}
+
+@test "manifest: corrupt non-object top level fails loudly" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t/.agent-profile"
+    # Valid JSON but wrong shape.
+    printf '["not-an-object"]' > "$t/.agent-profile/manifest.json"
+
+    run ap_manifest_files "$t" rust
+    assert_failure
+    [[ "$status" -eq 1 ]]
+    assert_output_contains "manifest"
+    assert_output_contains "corrupt"
+}
+
+@test "manifest: corrupt per-profile entry (non-object) fails loudly" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t/.agent-profile"
+    # Top-level object, but a profile entry is a string.
+    printf '{"rust":"oops"}' > "$t/.agent-profile/manifest.json"
+
+    run ap_manifest_files "$t" rust
+    assert_failure
+    [[ "$status" -eq 1 ]]
+    assert_output_contains "manifest"
+    assert_output_contains "corrupt"
+}
+
+@test "manifest: corrupt manifest also fails on merged_json read" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t/.agent-profile"
+    printf 'garbage' > "$t/.agent-profile/manifest.json"
+
+    run ap_manifest_merged_json "$t" rust
+    assert_failure
+    assert_output_contains "corrupt"
+}
+
+@test "manifest: corrupt manifest fails on profiles listing" {
+    local t="$TEST_HOME/tgt"
+    mkdir -p "$t/.agent-profile"
+    printf '][' > "$t/.agent-profile/manifest.json"
+
+    run ap_manifest_profiles "$t"
+    assert_failure
+    assert_output_contains "corrupt"
 }
