@@ -17,18 +17,15 @@ agents:
     description: Reviews Rust code for idiomatic patterns, lifetimes, and clippy-clean style.
     tools: [Read, Grep, Glob, Bash]
     body_path: agents/rust-reviewer.md
-    fallback: inline      # codex/opencode without native agents fold this into AGENTS.md
 
 skills:
   - name: cargo-workflow
     path: skills/cargo-workflow
-    fallback: inline
 
 commands:
   - name: clippy
     description: Run cargo clippy and propose fixes
     body_path: commands/clippy.md
-    fallback: skip
 
 hooks:
   - event: PreToolUse
