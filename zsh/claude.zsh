@@ -187,6 +187,14 @@ alias mcp-sync='$AGENTS_DOTFILES/mcp/sync.sh'
 alias mcp-sync-dry='$AGENTS_DOTFILES/mcp/sync.sh --dry-run'
 alias mcp-edit='${EDITOR:-vim} $AGENTS_DOTFILES/mcp/registry.yaml'
 
+# ═══════════════════════════════════════════════════════════════════
+# Hook Management (harness-agnostic — Claude + Codex)
+# ═══════════════════════════════════════════════════════════════════
+alias hook-sync='$AGENTS_DOTFILES/hooks/sync.sh'
+alias hook-sync-dry='$AGENTS_DOTFILES/hooks/sync.sh --dry-run'
+alias hook-edit='${EDITOR:-vim} $AGENTS_DOTFILES/hooks/registry.yaml'
+alias hook-ls='yq -r ".hooks | keys | .[]" $AGENTS_DOTFILES/hooks/registry.yaml'
+
 # Add user-scoped MCP (available in all projects)
 mcp-add() {
     if [[ -z "$1" || -z "$2" ]]; then

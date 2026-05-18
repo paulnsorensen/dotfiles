@@ -121,7 +121,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/session-start-cheese-flair.sh\""
+            "command": "bash \"$HOME/.claude/hooks/session-start-cheese-flair.sh\"",
+            "timeout": 5
           }
         ]
       }

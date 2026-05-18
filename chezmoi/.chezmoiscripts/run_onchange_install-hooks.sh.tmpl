@@ -1,0 +1,44 @@
+#!/bin/bash
+# run_onchange — re-runs whenever any harness-agnostic hook asset changes.
+#
+# The asset list is derived from agents/hooks/registry.yaml at run-time:
+# every hook entry's `script` and `shared_assets` are deployed into each
+# `harnesses` entry's home (default [claude, codex]). The hash below is
+# coarse — anything under agents/{hooks,lib,reference}/ — so adding files
+# in those dirs always triggers a redeploy without having to teach chezmoi
+# the registry shape.
+#
+# Hooks asset hash: {{ output "sh" "-c" (printf "find %q/../agents/hooks %q/../agents/lib %q/../agents/reference -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+INSTALLER="$SOURCE_DIR/lib/install-shared-assets.sh"
+SYNC_SCRIPT="$DOTFILES_ROOT/agents/hooks/sync.sh"
+REGISTRY="$DOTFILES_ROOT/agents/hooks/registry.yaml"
+
+# Emit one `<asset_repo_path>\t<harness>` pair per (script ∪ shared_assets)
+# × (harness) combination, deduped. Adding a hook is then a pure registry
+# edit — the installer picks it up automatically on the next run.
+yq -p=yaml -o=json '.hooks' "$REGISTRY" | jq -r '
+    to_entries[]
+    | .value as $h
+    | ($h.harnesses // ["claude","codex"])[] as $harness
+    | ([$h.script] + ($h.shared_assets // []))[] as $asset
+    | "\($asset)\t\($harness)"
+' | LC_ALL=C sort -u | while IFS=$'\t' read -r asset harness; do
+    # asset is repo-relative ("agents/<subdir>/<file>"). Strip the
+    # leading "agents/" so it maps cleanly into the harness home.
+    case "$asset" in
+        agents/*) rel="${asset#agents/}" ;;
+        *)  echo "install-hooks: asset must live under agents/: $asset" >&2
+            exit 1 ;;
+    esac
+    "$INSTALLER" "$DOTFILES_ROOT/$asset" "$HOME/.$harness/$rel"
+done
+
+# Reconcile claude/settings.json + ~/.codex/config.toml against the
+# registry. The sync is purely additive and idempotent (no removal
+# prompts), so no --force flag is needed.
+bash "$SYNC_SCRIPT"

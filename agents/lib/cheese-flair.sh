@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # cheese-flair: weighted name generator + quote picker.
 #
-# Reads ~/.claude/reference/cheese-flair.md by default. Used by the
-# SessionStart hook to inject a fresh sample each session, so the
-# principal CLAUDE.md stays slim.
+# Reads the bank pointed to by $CHEESE_FLAIR_BANK (the SessionStart hook
+# sets this to its own harness-local bank). Falls back to the Claude bank
+# and then the Codex bank for direct CLI use. Used by the SessionStart
+# hook in both Claude and Codex to inject a fresh sample each session, so
+# the principal agents-doc stays slim.
 #
 # Default name distribution (mode=weighted):
 #   ~50% Cheese Lord  ~25% Big hitters  ~25% full bank (curated + generated)
@@ -20,7 +22,16 @@
 
 set -uo pipefail
 
-CHEESE_FLAIR_BANK="${CHEESE_FLAIR_BANK:-${HOME}/.claude/reference/cheese-flair.md}"
+# Resolve the bank: explicit env override > Claude home > Codex home.
+if [[ -z "${CHEESE_FLAIR_BANK:-}" ]]; then
+    if [[ -f "${HOME}/.claude/reference/cheese-flair.md" ]]; then
+        CHEESE_FLAIR_BANK="${HOME}/.claude/reference/cheese-flair.md"
+    elif [[ -f "${HOME}/.codex/reference/cheese-flair.md" ]]; then
+        CHEESE_FLAIR_BANK="${HOME}/.codex/reference/cheese-flair.md"
+    else
+        CHEESE_FLAIR_BANK="${HOME}/.claude/reference/cheese-flair.md"
+    fi
+fi
 
 # Fail fast in CLI context; no-op gracefully when sourced (hook context).
 if [[ ! -f "$CHEESE_FLAIR_BANK" ]]; then
