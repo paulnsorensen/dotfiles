@@ -60,7 +60,6 @@ Slash commands invoked with `/command-name`.
 | Command | Description |
 |---------|-------------|
 | `/setup-perms` | Scaffold `.claude/settings.local.json` with project permissions |
-| `/onboard` | Quick codebase orientation for an unfamiliar repo |
 | `/briesearch` | Multi-source research: library docs, codebase analysis, prior art (cheese-flow plugin) |
 
 ### Learning Commands

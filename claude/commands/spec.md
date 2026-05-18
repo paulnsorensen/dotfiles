@@ -322,7 +322,7 @@ The spec feeds into `/cook`. User stories should be:
 - Simple changes → `/cook` directly
 - Bug fixes → just fix it
 - User already has clear spec → skip to implementation
-- Pure research → `/briesearch` or `/onboard`
+- Pure research → `/briesearch`
 
 ## When to Use /spec
 
