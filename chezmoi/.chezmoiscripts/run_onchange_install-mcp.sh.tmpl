@@ -17,9 +17,11 @@ SOURCE_DIR="{{ .chezmoi.sourceDir }}"
 DOTFILES_ROOT="$SOURCE_DIR/.."
 SYNC_SCRIPT="$DOTFILES_ROOT/agents/mcp/sync.sh"
 
-# Skip entirely if neither harness CLI is on PATH — saves a noisy block on
+# Skip entirely if no harness CLI is on PATH — saves a noisy block on
 # fresh machines before `dots sync` finishes installing brew packages.
-if ! command -v claude &>/dev/null && ! command -v codex &>/dev/null; then
+if ! command -v claude   &>/dev/null \
+&& ! command -v codex    &>/dev/null \
+&& ! command -v opencode &>/dev/null; then
     echo "  Skipping MCP sync (no harness CLI found)"
     exit 0
 fi

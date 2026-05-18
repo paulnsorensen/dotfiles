@@ -96,12 +96,12 @@ Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env
 ```
 dotfiles/
 ├── bin/                    # CLI tools (dots command)
-├── agents/                 # Harness-agnostic agent config (shared by Claude + Codex)
+├── agents/                 # Harness-agnostic agent config (shared by Claude + Codex + opencode)
 │   ├── AGENTS.md           # Global coding-agent preferences. Copied to ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md by chezmoi.
 │   ├── RTK.md              # RTK proxy reference (Claude only — copied to ~/.claude/RTK.md by chezmoi).
 │   ├── mcp/
-│   │   ├── registry.yaml   # MCP source of truth (per-entry `harnesses: [claude, codex]`)
-│   │   └── sync.sh         # Declarative MCP sync — loops over harnesses, calls native `<harness> mcp add/list/remove`.
+│   │   ├── registry.yaml   # MCP source of truth (per-entry `harnesses: [claude, codex, opencode]`)
+│   │   └── sync.sh         # Declarative MCP sync — loops over harnesses; claude/codex use native CLIs, opencode jq-edits ~/.config/opencode/opencode.json.
 │   ├── hooks/
 │   │   ├── registry.yaml   # Hook source of truth (per-entry `harnesses: [claude, codex]`, matcher, timeout)
 │   │   ├── sync.sh         # Declarative hook sync — jq-edits claude/settings.json + yq-edits ~/.codex/config.toml.
@@ -119,6 +119,7 @@ dotfiles/
 │   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)
 ├── codex/                  # OpenAI Codex CLI-specific configuration
 │   └── config.toml         # Base ~/.codex/config.toml — copied on first install only, then user-owned (MCP entries written by sync.sh).
+│                           # opencode TUI/config lives under chezmoi/dot_config/opencode/ (theme + tui.json always-managed; opencode.json scaffolded once).
 ├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Copied to ~/.claude/skills/ by chezmoi.
 ├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-claude-skills (skills/ → ~/.claude/skills/), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-mcp (drives agents/mcp/sync.sh --force), install-hooks (copies agents/hooks/*, agents/lib/cheese-flair.sh, agents/reference/cheese-flair.md into both harnesses then drives agents/hooks/sync.sh).
 ├── packages/
@@ -159,7 +160,7 @@ dotfiles/
 - **Modular Configuration**: Each aspect of the shell is in its own file for maintainability
 - **Theme Consistency**: Chocolate Donut theme managed via tinty across terminal, git, and iTerm2
 - **Performance Optimization**: Git prompt uses caching to avoid slowdowns
-- **Declarative MCP Management**: Single YAML registry at `agents/mcp/registry.yaml`, applied to every installed harness (Claude, Codex) via their native `mcp add/remove` CLIs
+- **Declarative MCP Management**: Single YAML registry at `agents/mcp/registry.yaml`, applied to every installed harness (Claude, Codex, opencode). Claude/Codex use their native `mcp add/remove` CLIs; opencode has no non-interactive CLI, so the sync jq-edits `~/.config/opencode/opencode.json` in place.
 - **Rollback Support**: Sync creates backups and manifests for easy rollback
 - **Scoped Profiles**: `claude/profiles/<name>/` bundles a CLAUDE.md + `settings-merge.json` for task-shaped sessions (frontend, spec, review, rtk-only, plugin, todo). `ccp <name>` launches with profile-merged settings, enabling per-profile LSP gating and tool restrictions.
 
@@ -172,17 +173,23 @@ mcps:
   context7:
     command: npx
     args: ["-y", "@upstash/context7-mcp"]
-    scope: user                       # claude-only — codex ignores
-    harnesses: [claude, codex]        # optional; default is both
-    gate_unless: CHEESE_FLOW          # claude-only — skip install when plugin provides it
+    scope: user                                # claude-only — codex/opencode ignore
+    harnesses: [claude, codex, opencode]       # optional; default is all three
+    gate_unless: CHEESE_FLOW                   # claude-only — skip install when plugin provides it
     description: Documentation context for libraries and frameworks
 ```
 
 **Per-entry fields:**
 
-- `harnesses` (optional) — list of harness names to install into. Default: `[claude, codex]`.
-- `scope` (claude-only) — `user`, `project`, or `local`. Codex has no scopes.
+- `harnesses` (optional) — list of harness names to install into. Default: `[claude, codex, opencode]`.
+- `scope` (claude-only) — `user`, `project`, or `local`. Codex/opencode have no scopes.
 - `gate_unless` (claude-only) — skip install when env var equals `"true"` (defer to a plugin's bundled MCP).
+
+**Per-harness backends:**
+
+- **claude** — native `claude mcp add/list/remove/get` (text; scope-aware).
+- **codex** — native `codex mcp add/list/remove --json` (no scopes).
+- **opencode** — no non-interactive CLI; the sync jq-edits `~/.config/opencode/opencode.json` directly. Set `OPENCODE_CONFIG` to override the target path (used by tests). On first run the sync seeds a minimal `{"$schema": ".../config.json"}` file if absent.
 
 **Workflow:**
 
@@ -190,7 +197,7 @@ mcps:
 2. Preview changes: `mcp-sync-dry`
 3. Apply changes: `mcp-sync` (interactive removal prompts) or let `dots sync` drive it via chezmoi's `run_onchange_install-mcp.sh.tmpl` (uses `--force` non-interactively).
 
-`agents/mcp/sync.sh` loops over harnesses, calling native `claude mcp add/list/remove` and `codex mcp add/list/remove` per entry. A missing harness CLI is skipped silently.
+`agents/mcp/sync.sh` loops over harnesses; missing harness CLIs are skipped silently.
 
 ## Hook Management
 
@@ -255,6 +262,18 @@ claude plugin marketplace add jarrodwatts/claude-hud
 
 Note: Unlike MCP, the plugins directory is NOT symlinked to ~/.claude because
 Claude Code uses that location for plugin cache storage.
+
+## opencode Settings
+
+opencode's user-wide settings live under `chezmoi/dot_config/opencode/` and apply to `~/.config/opencode/`:
+
+- `opencode.json` (`create_opencode.json` source) — first-run scaffold with `formatter: true` (built-in formatters on save). Chezmoi's `create_` prefix means this is never overwritten on subsequent applies, so the MCP sync (and any manual edits) survive.
+- `tui.json` — always-managed. Sets `theme: "chocolate-donut"` and rebinds `editor_open` to `ctrl+o` so the text box can pop out to `$EDITOR` (vim). opencode has no native modal vim editing in the input; this is the closest workflow.
+- `themes/chocolate-donut.json` — always-managed. Custom opencode theme derived from `theme/schemes/chocolate-donut.yaml` (the base24 palette).
+
+MCP entries are managed by `agents/mcp/registry.yaml` (see [MCP Management](#mcp-model-context-protocol-management)) — `mcp-sync` jq-writes the `mcp` object into `~/.config/opencode/opencode.json` without touching the rest of the file.
+
+**Migrating from a hand-rolled `opencode.jsonc`:** the scaffold writes to `opencode.json`, not `.jsonc`. If you already have a non-trivial `~/.config/opencode/opencode.jsonc`, merge its contents into `opencode.json` and delete the `.jsonc` (opencode reads either, having both is just confusing).
 
 ## Profile System
 
@@ -398,7 +417,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 
 | Type | Registry | Sync command | Notes |
 |------|----------|--------------|-------|
-| MCP | `agents/mcp/registry.yaml` | `mcp-sync` (or `dots sync`) | Restart Claude / Codex after; entries flow to both harnesses by default |
+| MCP | `agents/mcp/registry.yaml` | `mcp-sync` (or `dots sync`) | Restart Claude / Codex / opencode after; entries flow to all three harnesses by default. opencode entries are jq-written into `~/.config/opencode/opencode.json` (no native CLI). |
 | Hook | `agents/hooks/registry.yaml` | `hook-sync` (or `dots sync`) | Harness-agnostic SessionStart/PreTool/etc. hooks; chezmoi copies the script + lib + bank into both `~/.claude/` and `~/.codex/` then drives `agents/hooks/sync.sh` |
 | Plugin | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
