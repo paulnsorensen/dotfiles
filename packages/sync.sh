@@ -322,7 +322,9 @@ sync_npm() {
 
 sync_uv() {
     local uv_pkgs
-    uv_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "uv") | [.key, (.value.pkg // .key)] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    # `flags` is emitted as a space-joined string in the third TSV column.
+    # Empty / missing flags collapse to an empty field.
+    uv_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "uv") | [.key, (.value.pkg // .key), ((.value.flags // []) | join(" "))] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$uv_pkgs" ]] && return 0
 
     if ! command -v uv &>/dev/null; then
@@ -335,13 +337,15 @@ sync_uv() {
     local installed
     installed=$(uv tool list 2>/dev/null | awk '/^[a-zA-Z]/ {print $1}' || true)
 
-    while IFS=$'\t' read -r name pkg; do
+    while IFS=$'\t' read -r name pkg flags_str; do
         [[ -z "$name" ]] && continue
+        # shellcheck disable=SC2206  # word-splitting on flags_str is intentional
+        local flags_array=($flags_str)
         if echo "$installed" | grep -qx "$name"; then
             echo "  + $name"
         else
-            echo "  Installing $pkg..."
-            if ! uv tool install "$pkg" </dev/null; then
+            echo "  Installing $pkg${flags_str:+ ($flags_str)}..."
+            if ! uv tool install ${flags_array[@]+"${flags_array[@]}"} "$pkg" </dev/null; then
                 log_error "Failed to install $pkg"
                 FAILED+=("$pkg")
             fi
