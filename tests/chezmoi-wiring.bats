@@ -606,3 +606,83 @@ TOML
     grep -qF 'ssh://code.uber.internal/' "$HOME/.gitconfig"
     grep -qF 'gopkg.uberinternal.com' "$HOME/.gitconfig"
 }
+
+# ── serena config (modify_ pattern) ────────────────────────────────────────
+# Serena ships ~165 lines of inline-documented defaults; we only want to
+# override three keys (web_dashboard, web_dashboard_open_on_launch,
+# excluded_tools). A full-content chezmoi template would freeze Serena's
+# defaults at the version we wrote against and strip the inline docs —
+# anything Serena adds in a future release would silently disappear. The
+# `modify_` pattern lets yq patch only the keys we care about while
+# preserving everything else.
+
+setup_serena_chezmoi_env() {
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+work = false
+TOML
+    export CONTEXT7_API_KEY="test-context7-key"
+    export TAVILY_API_KEY="test-tavily-key"
+}
+
+@test "serena: chezmoi source has modify_ script (not a full-content template)" {
+    assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/dot_serena/modify_serena_config.yml"
+    [[ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_serena/serena_config.yml.tmpl" ]] \
+        || { echo "stray full-content template — should be removed in favor of modify_" >&2; return 1; }
+}
+
+@test "serena: modify_ script flips the three managed overrides" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    command -v yq      >/dev/null 2>&1 || skip "yq not installed"
+    setup_serena_chezmoi_env
+
+    # Seed a representative existing config with non-default values for the
+    # three keys we override. The modify_ script must drive them to false / [].
+    mkdir -p "$HOME/.serena"
+    cat > "$HOME/.serena/serena_config.yml" <<YAML
+# Serena config (test fixture)
+language_backend: LSP
+web_dashboard: true
+web_dashboard_open_on_launch: true
+excluded_tools:
+  - some_tool
+tool_timeout: 240
+YAML
+
+    run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+
+    [[ "$(yq '.web_dashboard'                 "$HOME/.serena/serena_config.yml")" == "false" ]]
+    [[ "$(yq '.web_dashboard_open_on_launch'  "$HOME/.serena/serena_config.yml")" == "false" ]]
+    [[ "$(yq '.excluded_tools | length'       "$HOME/.serena/serena_config.yml")" == "0" ]]
+    # And keys we don't touch must survive intact.
+    [[ "$(yq '.language_backend' "$HOME/.serena/serena_config.yml")" == "LSP" ]]
+    [[ "$(yq '.tool_timeout'     "$HOME/.serena/serena_config.yml")" == "240" ]]
+}
+
+@test "serena: modify_ script preserves Serena's inline doc comments" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    command -v yq      >/dev/null 2>&1 || skip "yq not installed"
+    setup_serena_chezmoi_env
+
+    mkdir -p "$HOME/.serena"
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+# upstream Serena docs — must survive the modify_ pass
+# Possible values are:
+#  * LSP: Use the language server protocol (LSP)
+language_backend: LSP
+web_dashboard: true
+web_dashboard_open_on_launch: true
+excluded_tools: []
+YAML
+
+    run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+
+    grep -qF 'upstream Serena docs'           "$HOME/.serena/serena_config.yml"
+    grep -qF 'Use the language server protocol' "$HOME/.serena/serena_config.yml"
+}

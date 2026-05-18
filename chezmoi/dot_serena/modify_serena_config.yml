@@ -1,0 +1,41 @@
+#!/bin/sh
+# Patch a tiny subset of ~/.serena/serena_config.yml while preserving every
+# other key + Serena's inline documentation. Stdin is the current file
+# contents (empty on first install); stdout becomes the new file contents.
+#
+# Source-of-truth defaults are Serena's. We only override:
+#   web_dashboard                 → false  (no auto-browser tab)
+#   web_dashboard_open_on_launch  → false  (and no tray icon noise)
+#   excluded_tools                → []     (sentinel; populate as needed)
+
+set -eu
+
+if ! command -v yq >/dev/null 2>&1; then
+    # yq is in packages.yaml so this branch is for unusual environments
+    # (e.g. partial bootstrap). Pass the file through unchanged rather than
+    # corrupt it.
+    cat
+    exit 0
+fi
+
+existing=$(cat)
+
+# First-time install: Serena binary may be on PATH (uv tool install ran)
+# but `serena init` hasn't yet, so the target file is empty. Bootstrap.
+if [ -z "$existing" ] && command -v serena >/dev/null 2>&1; then
+    serena init >/dev/null 2>&1 || true
+    [ -f "$HOME/.serena/serena_config.yml" ] \
+        && existing=$(cat "$HOME/.serena/serena_config.yml")
+fi
+
+if [ -z "$existing" ]; then
+    # shellcheck disable=SC2016  # literal backticks in the message, not expansion
+    printf '# serena not initialized; run `serena init`, then `chezmoi apply` again\n'
+    exit 0
+fi
+
+printf '%s' "$existing" | yq '
+    .web_dashboard = false |
+    .web_dashboard_open_on_launch = false |
+    .excluded_tools = []
+'

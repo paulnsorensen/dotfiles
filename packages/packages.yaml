@@ -7,6 +7,8 @@
 #   dev:      only when DOTFILES_DEV=true
 #   apt:      override name for linux
 #   platform: mac | linux (default: both)
+#   flags:    extra args spliced into the installer (uv source only;
+#             e.g. ["--python", "3.13", "--prerelease=allow"])
 
 packages:
   - tinted-theming/tinted: { source: tap }
@@ -98,6 +100,10 @@ packages:
   - check-jsonschema: { source: uv }
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
   - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API
+  # Serena pins Python 3.13 and ships pre-release builds on PyPI; the `flags`
+  # array is passed through to `uv tool install` verbatim. Exposes the `serena`
+  # binary, which the MCP registry invokes per harness via --context.
+  - serena-agent: { source: uv, flags: ["--python", "3.13", "--prerelease=allow"] }
 
   # gh CLI extensions
   - gh-stack: { source: gh-extension, pkg: github/gh-stack }   # native PR-stack management (used by /pr-stack)
