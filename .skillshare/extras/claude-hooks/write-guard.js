@@ -1,6 +1,5 @@
 const RULES = [
   {
-    // Matches lazy placeholders: // ..., # ..., /* ... */, or prose like "... remaining".
     pattern: /(\/\/\s*\.\.\.|#\s*\.\.\.|\/\*\s*\.\.\.\s*\*\/|\.{3}\s*(rest|remaining|similar|same))/,
     msg: `Ellipsis/lazy code detected. Write the actual code — every line. No shortcuts.
 If the pattern truly repeats, use a loop or function.`
