@@ -1,11 +1,12 @@
 #!/usr/bin/env bats
-# Tests for claude/lib/cheese-flair.sh — name generator and quote picker
-# backing the SessionStart cheese-flair hook.
+# Tests for agents/lib/cheese-flair.sh — name generator and quote picker
+# backing the SessionStart cheese-flair hook. Lives under agents/ because
+# the lib is harness-agnostic and consumed by both Claude and Codex.
 
 load test_helper
 
-LIB="$REAL_DOTFILES_DIR/claude/lib/cheese-flair.sh"
-BANK="$REAL_DOTFILES_DIR/claude/reference/cheese-flair.md"
+LIB="$REAL_DOTFILES_DIR/agents/lib/cheese-flair.sh"
+BANK="$REAL_DOTFILES_DIR/agents/reference/cheese-flair.md"
 
 setup() {
     export CHEESE_FLAIR_BANK="$BANK"
@@ -21,7 +22,7 @@ setup() {
 }
 
 @test "hook script exists and is executable" {
-    local hook="$REAL_DOTFILES_DIR/claude/hooks/session-start-cheese-flair.sh"
+    local hook="$REAL_DOTFILES_DIR/agents/hooks/session-start-cheese-flair.sh"
     assert_file_exists "$hook"
     [[ -x "$hook" ]]
 }
@@ -256,4 +257,106 @@ setup() {
     run bash -c "bash '$LIB' not-a-thing 2>&1"
     assert_failure
     assert_output_contains "Usage:"
+}
+
+# ── hardening: self-locating hook script under deployed layout ────────
+# These tests simulate the chezmoi-deployed layout under a temp $HOME
+# and run the hook script directly — no CHEESE_FLAIR_BANK override — so
+# the script's $SCRIPT_DIR/../{lib,reference} resolution must do the work.
+
+_deploy_harness_layout() {
+    local harness="$1" root="$2"
+    mkdir -p "$root/.$harness/hooks" "$root/.$harness/lib" "$root/.$harness/reference"
+    cp "$REAL_DOTFILES_DIR/agents/hooks/session-start-cheese-flair.sh" "$root/.$harness/hooks/"
+    cp "$REAL_DOTFILES_DIR/agents/lib/cheese-flair.sh"                 "$root/.$harness/lib/"
+    cp "$REAL_DOTFILES_DIR/agents/reference/cheese-flair.md"           "$root/.$harness/reference/"
+    chmod +x "$root/.$harness/hooks/session-start-cheese-flair.sh"
+}
+
+@test "hook script self-locates lib + bank under deployed ~/.claude layout" {
+    local root="${TMPDIR:-/tmp}/cheese-flair-deploy-claude-$$"
+    rm -rf "$root"
+    _deploy_harness_layout claude "$root"
+
+    # Critically: no CHEESE_FLAIR_BANK env var → script must self-locate.
+    run bash -c "unset CHEESE_FLAIR_BANK; HOME='$root' bash '$root/.claude/hooks/session-start-cheese-flair.sh'"
+    assert_success
+    assert_output_contains "Cheese flair"
+    assert_output_contains "Addresses:"
+    assert_output_contains "Quotes:"
+    # First address bullet must be pinned.
+    [[ "$output" == *"  - Cheese Lord"* ]]
+
+    rm -rf "$root"
+}
+
+@test "hook script self-locates lib + bank under deployed ~/.codex layout" {
+    local root="${TMPDIR:-/tmp}/cheese-flair-deploy-codex-$$"
+    rm -rf "$root"
+    _deploy_harness_layout codex "$root"
+
+    run bash -c "unset CHEESE_FLAIR_BANK; HOME='$root' bash '$root/.codex/hooks/session-start-cheese-flair.sh'"
+    assert_success
+    assert_output_contains "Cheese flair"
+    assert_output_contains "Addresses:"
+    assert_output_contains "Quotes:"
+    [[ "$output" == *"  - Cheese Lord"* ]]
+
+    rm -rf "$root"
+}
+
+@test "hook script silently no-ops with exit 0 when its lib is missing" {
+    local root="${TMPDIR:-/tmp}/cheese-flair-no-lib-$$"
+    rm -rf "$root"
+    _deploy_harness_layout claude "$root"
+    rm "$root/.claude/lib/cheese-flair.sh"
+
+    run bash -c "unset CHEESE_FLAIR_BANK; HOME='$root' bash '$root/.claude/hooks/session-start-cheese-flair.sh'"
+    assert_success
+    [[ -z "$output" ]]
+
+    rm -rf "$root"
+}
+
+@test "hook script output shape matches across both harnesses (3 addresses + 3 quotes)" {
+    # Spec acceptance criterion #5: Codex hook output shape matches Claude.
+    local root="${TMPDIR:-/tmp}/cheese-flair-shape-$$"
+    rm -rf "$root"
+    _deploy_harness_layout claude "$root"
+    _deploy_harness_layout codex  "$root"
+
+    local claude_bullets codex_bullets
+    claude_bullets=$(bash -c "unset CHEESE_FLAIR_BANK; HOME='$root' bash '$root/.claude/hooks/session-start-cheese-flair.sh'" | grep -c '^  - ')
+    codex_bullets=$( bash -c "unset CHEESE_FLAIR_BANK; HOME='$root' bash '$root/.codex/hooks/session-start-cheese-flair.sh'"  | grep -c '^  - ')
+    [[ "$claude_bullets" -eq 6 ]]
+    [[ "$codex_bullets"  -eq 6 ]]
+
+    rm -rf "$root"
+}
+
+# ── hardening: lib bank fallback chain ─────────────────────────────────
+
+@test "lib sources its bank from ~/.codex when ~/.claude is absent and no env override" {
+    local root="${TMPDIR:-/tmp}/cheese-flair-codex-only-$$"
+    rm -rf "$root"
+    mkdir -p "$root/.codex/reference"
+    cp "$REAL_DOTFILES_DIR/agents/reference/cheese-flair.md" "$root/.codex/reference/"
+
+    run bash -c "unset CHEESE_FLAIR_BANK; HOME='$root' bash '$LIB' quote"
+    assert_success
+    [[ "$output" == *" — "* ]]
+
+    rm -rf "$root"
+}
+
+@test "lib CLI emits 'bank not found' diagnostic and exits non-zero when no bank exists" {
+    local root="${TMPDIR:-/tmp}/cheese-flair-nobank-$$"
+    rm -rf "$root"
+    mkdir -p "$root"
+
+    run bash -c "unset CHEESE_FLAIR_BANK; HOME='$root' bash '$LIB' name 2>&1"
+    assert_failure
+    assert_output_contains "bank not found"
+
+    rm -rf "$root"
 }
