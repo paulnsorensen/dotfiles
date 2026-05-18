@@ -45,6 +45,7 @@ packages:
   - lazygit
   - just
   - chezmoi
+  - skillshare
   - duckdb
   - watch
   - node: { apt: nodejs }

@@ -73,6 +73,11 @@ Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env
 - `skill-edit` - Edit `skills/_registry.yaml`
 - `skill-ls` - Check installed skills for updates (`gh skill update --all --dry-run`)
 
+### Skillshare Management
+
+- `sksh` - Run `skillshare`
+- `sksh-sync` - Sync project-mode skillshare agents/extras (`skillshare sync -p --all`)
+
 ### Session Monitoring
 
 - `ccm` - Run Claude session monitor standalone (shows metrics for current directory's session)

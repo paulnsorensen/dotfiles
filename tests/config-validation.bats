@@ -165,6 +165,31 @@ LAYOUT
     [[ -z "$bad" ]]
 }
 
+@test "skillshare project config is valid YAML" {
+    run yq '.' "$DOTFILES_DIR/.skillshare/config.yaml"
+    [[ $status -eq 0 ]]
+}
+
+@test "converted skillshare agents stay wired into claude agents" {
+    local agent
+    for agent in ghostbuster.md worktree-triage.md lsp-probe.md; do
+        [[ -f "$DOTFILES_DIR/.skillshare/agents/$agent" ]]
+        [[ -L "$DOTFILES_DIR/claude/agents/$agent" ]]
+        [[ "$(readlink "$DOTFILES_DIR/claude/agents/$agent")" == "../../.skillshare/agents/$agent" ]]
+        [[ -f "$DOTFILES_DIR/claude/agents/$agent" ]]
+    done
+}
+
+@test "converted skillshare hooks stay wired into claude hooks" {
+    local hook
+    for hook in write-guard.js phantom-file-check.js session-start-cheese-flair.sh; do
+        [[ -f "$DOTFILES_DIR/.skillshare/extras/claude-hooks/$hook" ]]
+        [[ -L "$DOTFILES_DIR/claude/hooks/$hook" ]]
+        [[ "$(readlink "$DOTFILES_DIR/claude/hooks/$hook")" == "../../.skillshare/extras/claude-hooks/$hook" ]]
+        [[ -f "$DOTFILES_DIR/claude/hooks/$hook" ]]
+    done
+}
+
 # ── skill-* aliases (post-flatten chezmoi wiring) ─────────────────────────────
 # Locks the skill-sync / skill-sync-dry / skill-edit alias bodies to the
 # chezmoi/lib/ installers and skills/_registry.yaml. Without these, a future
