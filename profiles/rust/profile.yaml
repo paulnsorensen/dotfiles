@@ -1,0 +1,43 @@
+# Rust profile — example of a language-specific profile that composes
+# the base profile and adds a rust-reviewer subagent, a /clippy command,
+# a pre-bash cargo-check hook, and project-scope rust-analyzer MCP.
+#
+# Drop this whole tree into <repo>/.agent-profiles/rust/ for a per-repo
+# variant, or use the global one from $DOTFILES_DIR/profiles/rust/.
+
+name: rust
+description: Rust toolchain conventions, clippy command, idiomatic reviewer
+include:
+  - base
+
+agents_md_path: AGENTS.md
+
+agents:
+  - name: rust-reviewer
+    description: Reviews Rust code for idiomatic patterns, lifetimes, and clippy-clean style.
+    tools: [Read, Grep, Glob, Bash]
+    body_path: agents/rust-reviewer.md
+    fallback: inline      # codex/opencode without native agents fold this into AGENTS.md
+
+skills:
+  - name: cargo-workflow
+    path: skills/cargo-workflow
+    fallback: inline
+
+commands:
+  - name: clippy
+    description: Run cargo clippy and propose fixes
+    body_path: commands/clippy.md
+    fallback: skip
+
+hooks:
+  - event: PreToolUse
+    matcher: "Bash"
+    script: hooks/cargo-check.sh
+    harnesses: [claude]   # opt-in per harness; default = claude only
+
+settings:
+  permissions_allow:
+    - "Bash(cargo:*)"
+    - "Bash(rustc:*)"
+    - "Bash(rustup:*)"
