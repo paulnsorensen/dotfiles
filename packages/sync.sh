@@ -188,9 +188,12 @@ sync_cargo() {
                 return 0
             fi
             # Brew-installed rustup keeps cargo proxies in opt/rustup/bin
-            local rustup_bin
-            rustup_bin="$(brew --prefix rustup 2>/dev/null)/bin"
-            if [[ -d "$rustup_bin" ]]; then
+            local rustup_prefix="" rustup_bin=""
+            if command -v brew &>/dev/null; then
+                rustup_prefix="$(brew --prefix rustup 2>/dev/null || true)"
+                [[ -n "$rustup_prefix" ]] && rustup_bin="$rustup_prefix/bin"
+            fi
+            if [[ -n "$rustup_bin" && -d "$rustup_bin" ]]; then
                 export PATH="$rustup_bin:$PATH"
             elif [[ -f "$HOME/.cargo/env" ]]; then
                 # shellcheck disable=SC1091
