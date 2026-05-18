@@ -40,6 +40,13 @@ claude_render() {
     _claude_write_hooks       "$merged_json" "$target" "$profile"
     _claude_write_mcp_json    "$merged_json" "$target" "$profile"
     _claude_write_settings    "$merged_json" "$target" "$profile"
+
+    # Track the plugin dir root so uninstall removes the whole tree
+    # (including empty sub-dirs we mkdir'd above). Without this, the
+    # per-file rm leaves empty agents/, hooks/, commands/, skills/,
+    # .claude-plugin/ behind. Spec Task 14 requires the entire plugin
+    # dir to be removed on uninstall.
+    _claude_track "$target" "$plugin_dir"
 }
 
 # Track a file relative to <target>, deduping.
