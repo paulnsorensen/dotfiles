@@ -192,7 +192,7 @@ sync_cargo() {
             if command -v brew &>/dev/null && rustup_prefix="$(brew --prefix rustup 2>/dev/null)" && [[ -n "$rustup_prefix" ]]; then
                 rustup_bin="$rustup_prefix/bin"
             fi
-            if [[ -n "$rustup_bin" && -d "$rustup_bin" ]]; then
+            if [[ -d "$rustup_bin" ]]; then
                 export PATH="$rustup_bin:$PATH"
             elif [[ -f "$HOME/.cargo/env" ]]; then
                 # shellcheck disable=SC1091
