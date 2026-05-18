@@ -58,7 +58,7 @@ done
 
 mcp_load_dotenv "$DOTFILES_DIR/.env"
 
-for cmd in yq jq; do
+for cmd in yq jq chezmoi; do
     command -v "$cmd" &>/dev/null \
         || { echo -e "${RED}Error: $cmd not found${NC}" >&2; exit 1; }
 done
@@ -66,15 +66,21 @@ done
 [[ -f "$REGISTRY_FILE" ]] \
     || { echo -e "${RED}Error: $REGISTRY_FILE not found${NC}" >&2; exit 1; }
 
-REGISTRY_JSON=$(yq -o=json '.mcps' "$REGISTRY_FILE")
-
 echo -e "${BLUE}MCP Sync - Declarative MCP Management${NC}"
 
+# Render the registry once per harness so `args` strings can branch on
+# `{{ env "HARNESS" }}`. mcp_sync_harness reads REGISTRY_JSON from its env.
+sync_for_harness() {
+    local h="$1"
+    REGISTRY_JSON=$(HARNESS="$h" chezmoi execute-template < "$REGISTRY_FILE" | yq -o=json '.mcps')
+    mcp_sync_harness "$h"
+}
+
 if [[ -n "$ONLY_HARNESS" ]]; then
-    mcp_sync_harness "$ONLY_HARNESS"
+    sync_for_harness "$ONLY_HARNESS"
 else
     for h in claude codex; do
-        mcp_sync_harness "$h"
+        sync_for_harness "$h"
     done
 fi
 

@@ -37,6 +37,11 @@ claude/reference/cheese-flair.md
 # Harness-managed agent skill cache (written by `gh skill install`)
 .agents/
 
+# Serena's project-local data (memories, caches) — written when Serena's MCP
+# server runs against this directory. Our config + global state live under
+# ~/.serena/; this dir is per-project runtime state, not source.
+.serena/
+
 # Claude Code local state (settings.local.json, specs)
 .claude/
 
