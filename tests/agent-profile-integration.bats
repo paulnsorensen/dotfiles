@@ -417,6 +417,30 @@ EOF
     [[ ! -e "$TARGET/.claude/plugins/local/multi" ]]
 }
 
+# ─── uninstall --harness honors all cleaners ─────────────────────────
+
+@test "integration: uninstall --harness still cleans shared/merged files" {
+    # Regression for the Copilot finding on cmd_uninstall: a partial
+    # uninstall used to skip the un-selected cleaners, orphaning entries
+    # in merged files like opencode.json. cmd_uninstall now forces every
+    # cleaner to run regardless of --harness so shared/merged files stay
+    # consistent with the manifest.
+    make_full_profile
+
+    "$AP" install multi >/dev/null
+
+    # opencode.json has the profile-authored MCP entry because the MCP
+    # is harnessed to opencode.
+    [[ -f "$TARGET/opencode.json" ]]
+    [[ "$(jq -r '.mcp.omni.command[0]' "$TARGET/opencode.json")" == "/bin/true" ]]
+
+    # Uninstall with only --harness claude. opencode_clean must still
+    # run, evicting `omni` from opencode.json.
+    "$AP" uninstall multi --harness claude >/dev/null
+
+    [[ "$(jq -r '.mcp // {} | has("omni")' "$TARGET/opencode.json")" == "false" ]]
+}
+
 # ─── unknown-harness rejection at dispatch ──────────────────────────
 
 @test "integration: unknown harness in --harness rejects before any renderer runs" {
