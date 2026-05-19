@@ -38,13 +38,13 @@ mcp_filter_for_harness() {
         # shellcheck disable=SC2016
         jq <<<"$json" '
             to_entries
-            | map(select(((.value.harnesses // ["claude","codex"]) | index("claude")) != null))
+            | map(select(((.value.harnesses // ["claude","codex","opencode"]) | index("claude")) != null))
             | map(select((.value.gate_unless // "") as $g | $g == "" or (env[$g] // "false") != "true"))
             | from_entries'
     else
         jq --arg h "$harness" <<<"$json" '
             to_entries
-            | map(select(((.value.harnesses // ["claude","codex"]) | index($h)) != null))
+            | map(select(((.value.harnesses // ["claude","codex","opencode"]) | index($h)) != null))
             | from_entries'
     fi
 }
@@ -68,17 +68,56 @@ mcp_codex_list_current() {
 }
 
 # Pin the grep to the Scope field so an MCP whose args contain `--user-agent`
-# (or similar) cannot falsely scope as "user".
+# (or similar) cannot falsely scope as "user". Single awk pass replaces the
+# sed | head -1 | tr pipeline; `exit` after the first match takes the place
+# of `head -1`, `tolower()` the place of `tr`.
 mcp_claude_get_scope() {
     local scope
-    scope=$(claude mcp get "$1" 2>/dev/null \
-        | sed -n 's/^[[:space:]]*Scope:[[:space:]]*//p' \
-        | head -1 | tr '[:upper:]' '[:lower:]')
+    scope=$(claude mcp get "$1" 2>/dev/null | awk '
+        /^[[:space:]]*Scope:[[:space:]]*/ {
+            sub(/^[[:space:]]*Scope:[[:space:]]*/, "")
+            print tolower($0); exit
+        }')
     case "$scope" in user|project|local) echo "$scope" ;; *) echo "local" ;; esac
 }
 
 mcp_claude_remove() { claude mcp remove "$1" -s "$2"; }
 mcp_codex_remove()  { codex  mcp remove "$1"; }
+
+# ─── opencode primitives ────────────────────────────────────────────────
+# opencode has no non-interactive `mcp add`/`mcp remove`, so we jq-edit
+# ~/.config/opencode/opencode.json in place. OPENCODE_CONFIG overrides the
+# target path (tests).
+
+mcp_opencode_config_path() {
+    echo "${OPENCODE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json}"
+}
+
+mcp_opencode_ensure_config() {
+    local cfg; cfg=$(mcp_opencode_config_path)
+    mkdir -p "${cfg%/*}"
+    if [[ ! -s "$cfg" ]]; then
+        # Mirror chezmoi's create_opencode.json scaffold so a sync-before-chezmoi
+        # ordering doesn't leave formatter disabled. `create_` won't overwrite.
+        # shellcheck disable=SC2016  # $schema is a literal JSON key, not a shell var
+        echo '{"$schema": "https://opencode.ai/config.json", "formatter": true}' > "$cfg"
+    fi
+}
+
+mcp_opencode_list_current() {
+    local cfg; cfg=$(mcp_opencode_config_path)
+    [[ -f "$cfg" ]] || return 0
+    jq -r '.mcp // {} | keys[]' "$cfg" 2>/dev/null | sort -u
+}
+
+mcp_opencode_remove() {
+    local name="$1" cfg tmp
+    cfg=$(mcp_opencode_config_path)
+    [[ -f "$cfg" ]] || return 0
+    tmp=$(mktemp)
+    jq --arg n "$name" 'if .mcp then .mcp |= del(.[$n]) else . end' "$cfg" > "$tmp" \
+        && mv "$tmp" "$cfg"
+}
 
 # ─── drift signatures ───────────────────────────────────────────────────
 # Returns "<cmd>\t<args>\t<sorted-env>" for a stable equality check.
@@ -107,12 +146,18 @@ mcp_resolved_env_csv() {
 }
 
 mcp_desired_signature() {
-    local name="$1" cmd args env_json env_csv
+    local name="$1" harness="${2:-}" cmd args env_json env_csv
     cmd=$(jq      -r --arg n "$name" '.[$n].command // ""'        <<<"$HARNESS_DESIRED_JSON")
     args=$(jq     -r --arg n "$name" '.[$n].args // [] | join(" ")' <<<"$HARNESS_DESIRED_JSON")
     env_json=$(jq -c --arg n "$name" '.[$n].env // {}'              <<<"$HARNESS_DESIRED_JSON")
     env_csv=$(mcp_resolved_env_csv "$env_json")
-    printf '%s\t%s\t%s\n' "$cmd" "$args" "$env_csv"
+    # opencode entries carry an `enabled` flag; sync always writes it true,
+    # so append it to the signature so user-disabled servers register as drift.
+    if [[ "$harness" == "opencode" ]]; then
+        printf '%s\t%s\t%s\ttrue\n' "$cmd" "$args" "$env_csv"
+    else
+        printf '%s\t%s\t%s\n' "$cmd" "$args" "$env_csv"
+    fi
 }
 
 mcp_claude_current_signature() {
@@ -126,7 +171,8 @@ mcp_claude_current_signature() {
         capture && /^[[:space:]]*[A-Z_][A-Za-z0-9_]*=/ { sub(/^[[:space:]]+/, ""); print; next }
         capture { capture=0 }
     ' <<<"$info" | sort)
-    [[ -n "$env_block" ]] && env_csv=$(paste -sd',' - <<<"$env_block")
+    # Join with commas via parameter expansion; avoids forking `paste`.
+    [[ -n "$env_block" ]] && env_csv="${env_block//$'\n'/,}"
     printf '%s\t%s\t%s\n' "$cmd" "$args" "$env_csv"
 }
 
@@ -146,14 +192,38 @@ mcp_codex_current_signature() {
     printf '%s\t%s\t%s\n' "$cmd" "$args" "$env_csv"
 }
 
+# opencode stores command + args as a single JSON array under `.command`.
+# Split into "cmd" (first element) and "args" (rest, space-joined) so the
+# signature lines up with mcp_desired_signature's format. `enabled` is
+# included so a user-flipped enabled:false is detected as drift — sync
+# always writes enabled:true via mcp_opencode_add.
+mcp_opencode_current_signature() {
+    local cfg; cfg=$(mcp_opencode_config_path)
+    [[ -f "$cfg" ]] || { printf '\t\t\ttrue\n'; return; }
+    local entry
+    entry=$(jq --arg n "$1" '.mcp[$n] // empty' "$cfg" 2>/dev/null)
+    [[ -z "$entry" || "$entry" == "null" ]] && { printf '\t\t\ttrue\n'; return; }
+    local cmd args env_json env_csv enabled
+    cmd=$(     jq -r '(.command // [])[0] // ""'              <<<"$entry")
+    args=$(    jq -r '(.command // [])[1:] | join(" ")'       <<<"$entry")
+    env_json=$(jq -c '.environment // {}'                     <<<"$entry")
+    env_csv=$(mcp_resolved_env_csv "$env_json")
+    # `// true` would also default on enabled:false (jq treats false as empty).
+    enabled=$( jq -r 'if has("enabled") then .enabled else true end | tostring' <<<"$entry")
+    printf '%s\t%s\t%s\t%s\n' "$cmd" "$args" "$env_csv" "$enabled"
+}
+
 # ─── add ────────────────────────────────────────────────────────────────
 # `env_flags` is returned via a global because bash 3.2 (macOS default)
 # lacks namerefs for arrays. The caller must `env_flags=()` first.
 
-mcp_build_env_flags() {
-    local name="$1" flag_prefix="$2"  # "-e" (claude) or "--env" (codex)
-    env_flags=()
-    local env_json key val var
+# Yields TAB-separated "key<TAB>value" lines for the named registry entry's
+# env block, with ${VAR} placeholders resolved against the live env. Returns
+# 1 (and emits a diagnostic to stderr) if any referenced var is unset; empty
+# env block returns 0 with no output. Shared by claude/codex flag builders
+# and the opencode JSON builder so the resolve+diagnostic logic lives once.
+_mcp_resolved_env_pairs() {
+    local name="$1" env_json key val var
     env_json=$(jq -c --arg n "$name" '.[$n].env // {}' <<<"$HARNESS_DESIRED_JSON")
     [[ "$env_json" == "{}" ]] && return 0
     while IFS='=' read -r key val; do
@@ -165,8 +235,19 @@ mcp_build_env_flags() {
             fi
             val="${!var}"
         fi
-        env_flags+=("$flag_prefix" "${key}=${val}")
+        printf '%s\t%s\n' "$key" "$val"
     done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"$env_json")
+}
+
+mcp_build_env_flags() {
+    local name="$1" flag_prefix="$2"  # "-e" (claude) or "--env" (codex)
+    env_flags=()
+    local pairs key val
+    pairs=$(_mcp_resolved_env_pairs "$name") || return 1
+    [[ -z "$pairs" ]] && return 0
+    while IFS=$'\t' read -r key val; do
+        env_flags+=("$flag_prefix" "${key}=${val}")
+    done <<<"$pairs"
 }
 
 mcp_claude_add() {
@@ -200,6 +281,39 @@ mcp_codex_add() {
         "$command" ${args_array[@]+"${args_array[@]}"} >/dev/null
 }
 
+# Build the JSON array opencode expects under `.command` — first element is
+# the launcher, remaining elements are its args.
+mcp_opencode_build_command_array() {
+    jq -c --arg n "$1" '[.[$n].command] + (.[$n].args // [])' <<<"$HARNESS_DESIRED_JSON"
+}
+
+# Build opencode's JSON env object by collecting the shared resolved-pair
+# stream into a jq-merged object. Returns 1 on any unset ${VAR} reference.
+mcp_opencode_build_env_json() {
+    local name="$1" pairs key val env_out='{}'
+    pairs=$(_mcp_resolved_env_pairs "$name") || return 1
+    [[ -z "$pairs" ]] && { echo '{}'; return 0; }
+    while IFS=$'\t' read -r key val; do
+        env_out=$(jq -c --arg k "$key" --arg v "$val" '. + {($k): $v}' <<<"$env_out")
+    done <<<"$pairs"
+    echo "$env_out"
+}
+
+mcp_opencode_add() {
+    local name="$1" cfg cmd_array env_json entry tmp
+    cfg=$(mcp_opencode_config_path)
+    mcp_opencode_ensure_config
+    cmd_array=$(mcp_opencode_build_command_array "$name")
+    env_json=$(mcp_opencode_build_env_json "$name") || return 1
+    entry=$(jq -n --argjson cmd "$cmd_array" --argjson env "$env_json" '
+        {type:"local", command:$cmd, enabled:true}
+        + (if ($env | length) > 0 then {environment:$env} else {} end)')
+    tmp=$(mktemp)
+    jq --arg n "$name" --argjson entry "$entry" \
+        '.mcp = ((.mcp // {}) | .[$n] = $entry)' "$cfg" > "$tmp" \
+        && mv "$tmp" "$cfg"
+}
+
 # ─── drift detection ────────────────────────────────────────────────────
 # Reads EXISTING (set by sync_compute_diff). Emits drifted names, one per
 # line; empty output means no drift.
@@ -210,10 +324,11 @@ mcp_detect_drift() {
     local name desired current
     while read -r name; do
         [[ -z "$name" ]] && continue
-        desired=$(mcp_desired_signature "$name")
+        desired=$(mcp_desired_signature "$name" "$harness")
         case "$harness" in
-            claude) current=$(mcp_claude_current_signature "$name") ;;
-            codex)  current=$(mcp_codex_current_signature  "$name") ;;
+            claude)   current=$(mcp_claude_current_signature   "$name") ;;
+            codex)    current=$(mcp_codex_current_signature    "$name") ;;
+            opencode) current=$(mcp_opencode_current_signature "$name") ;;
         esac
         if [[ "$desired" != "$current" ]]; then
             echo "$name"
@@ -228,12 +343,10 @@ mcp_detect_drift() {
 
 mcp_sync_harness() {
     local harness="$1"
-
-    case "$harness" in
-        claude) command -v claude &>/dev/null || { echo -e "${YELLOW}Skipping claude (CLI not found)${NC}"; return 0; } ;;
-        codex)  command -v codex  &>/dev/null || { echo -e "${YELLOW}Skipping codex  (CLI not found)${NC}"; return 0; } ;;
-        *) echo -e "${RED}Unknown harness: $harness${NC}" >&2; return 1 ;;
-    esac
+    local rc=0
+    _mcp_harness_cli_check "$harness" || rc=$?
+    (( rc == 1 )) && return 0
+    (( rc == 2 )) && return 1
 
     echo
     echo -e "${BLUE}━━━ ${harness} ━━━${NC}"
@@ -241,19 +354,7 @@ mcp_sync_harness() {
     HARNESS_DESIRED_JSON=$(mcp_filter_for_harness "$harness" "$REGISTRY_JSON")
     DESIRED_NAMES=$(jq -r 'keys[]' <<<"$HARNESS_DESIRED_JSON" | sort)
 
-    case "$harness" in
-        claude) CURRENT_NAMES=$(mcp_claude_list_current) ;;
-        codex)  CURRENT_NAMES=$(mcp_codex_list_current) ;;
-    esac
-
-    get_description() { jq -r --arg n "$1" '.[$n].description // ""' <<<"$HARNESS_DESIRED_JSON"; }
-    if [[ "$harness" == "claude" ]]; then
-        get_item_scope() { mcp_claude_get_scope "$1"; }
-        remove_item()   { mcp_claude_remove "$1" "$2"; }
-    else
-        get_item_scope() { echo "user"; }
-        remove_item()   { mcp_codex_remove "$1"; }
-    fi
+    _mcp_setup_harness_dispatch "$harness"
 
     sync_compute_diff
 
@@ -266,6 +367,41 @@ mcp_sync_harness() {
     _mcp_apply_adds    "$harness"
 
     sync_handle_removals "$harness MCPs"
+}
+
+# Returns 0 if CLI is installed, 1 to skip (CLI absent), 2 on unknown harness.
+_mcp_harness_cli_check() {
+    local harness="$1"
+    case "$harness" in
+        claude)   command -v claude   &>/dev/null || { echo -e "${YELLOW}Skipping claude   (CLI not found)${NC}"; return 1; } ;;
+        codex)    command -v codex    &>/dev/null || { echo -e "${YELLOW}Skipping codex    (CLI not found)${NC}"; return 1; } ;;
+        opencode) command -v opencode &>/dev/null || { echo -e "${YELLOW}Skipping opencode (CLI not found)${NC}"; return 1; } ;;
+        *) echo -e "${RED}Unknown harness: $harness${NC}" >&2; return 2 ;;
+    esac
+}
+
+# Defines CURRENT_NAMES + the get_item_scope / remove_item / get_description
+# closures consumed by sync-common.sh. One place to extend per new harness.
+_mcp_setup_harness_dispatch() {
+    local harness="$1"
+    get_description() { jq -r --arg n "$1" '.[$n].description // ""' <<<"$HARNESS_DESIRED_JSON"; }
+    case "$harness" in
+        claude)
+            CURRENT_NAMES=$(mcp_claude_list_current)
+            get_item_scope() { mcp_claude_get_scope "$1"; }
+            remove_item()    { mcp_claude_remove "$1" "$2"; }
+            ;;
+        codex)
+            CURRENT_NAMES=$(mcp_codex_list_current)
+            get_item_scope() { echo "user"; }
+            remove_item()    { mcp_codex_remove "$1"; }
+            ;;
+        opencode)
+            CURRENT_NAMES=$(mcp_opencode_list_current)
+            get_item_scope() { echo "user"; }
+            remove_item()    { mcp_opencode_remove "$1"; }
+            ;;
+    esac
 }
 
 # Folds drifted-entry names into TO_ADD (they get removed first, then
@@ -317,8 +453,9 @@ _mcp_apply_adds() {
         echo -n "  Adding $name... "
         local err rc=0
         case "$harness" in
-            claude) err=$(mcp_claude_add "$name" 2>&1) || rc=$? ;;
-            codex)  err=$(mcp_codex_add  "$name" 2>&1) || rc=$? ;;
+            claude)   err=$(mcp_claude_add   "$name" 2>&1) || rc=$? ;;
+            codex)    err=$(mcp_codex_add    "$name" 2>&1) || rc=$? ;;
+            opencode) err=$(mcp_opencode_add "$name" 2>&1) || rc=$? ;;
         esac
         if (( rc == 0 )); then
             echo -e "${GREEN}done${NC}"
