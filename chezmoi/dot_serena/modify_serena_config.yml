@@ -10,6 +10,9 @@
 
 set -eu
 
+# shellcheck disable=SC2016  # literal backticks in the message, not expansion
+PLACEHOLDER='# serena not initialized; run `serena init`, then `chezmoi apply` again'
+
 if ! command -v yq >/dev/null 2>&1; then
     # yq is in packages.yaml so this branch is for unusual environments
     # (e.g. partial bootstrap). Pass the file through unchanged rather than
@@ -20,17 +23,25 @@ fi
 
 existing=$(cat)
 
-# First-time install: Serena binary may be on PATH (uv tool install ran)
-# but `serena init` hasn't yet, so the target file is empty. Bootstrap.
+# Treat a previously-written placeholder as still-empty so the next apply
+# re-bootstraps once serena is on PATH. Without this, yq would later eat
+# the comment and emit a 3-key stub, permanently losing Serena's ~165
+# lines of inline-documented defaults.
+if [ "$existing" = "$PLACEHOLDER" ]; then
+    existing=
+fi
+
+# First-time install (or re-bootstrap after placeholder): adopt the live
+# ~/.serena/serena_config.yml if it exists, else run `serena init` to
+# create one. Either way, the resulting config is what we patch.
 if [ -z "$existing" ] && command -v serena >/dev/null 2>&1; then
-    serena init >/dev/null 2>&1 || true
+    [ -f "$HOME/.serena/serena_config.yml" ] || serena init >/dev/null 2>&1 || true
     [ -f "$HOME/.serena/serena_config.yml" ] \
         && existing=$(cat "$HOME/.serena/serena_config.yml")
 fi
 
 if [ -z "$existing" ]; then
-    # shellcheck disable=SC2016  # literal backticks in the message, not expansion
-    printf '# serena not initialized; run `serena init`, then `chezmoi apply` again\n'
+    printf '%s\n' "$PLACEHOLDER"
     exit 0
 fi
 

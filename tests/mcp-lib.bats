@@ -135,6 +135,7 @@ MOCK
 # execute-template` per harness, so the same entry can produce different
 # argv for Claude vs Codex (used by Serena's --context=claude-code|codex).
 @test "sync.sh --dry-run: per-harness templating swaps args based on HARNESS env" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
     write_claude_stub
     write_codex_stub
 
