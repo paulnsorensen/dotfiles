@@ -52,7 +52,7 @@ while (($#)); do
 Usage: $0 [--dry-run] [--force] [--harness NAME]
   --dry-run         Show what would change without making changes
   --force           Remove extras without prompting
-  --harness NAME    Only sync the named harness (claude|codex)
+  --harness NAME    Only sync the named harness (claude|codex|opencode)
 EOF
             exit 0 ;;
     esac

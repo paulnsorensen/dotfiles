@@ -119,13 +119,13 @@ JSON
 
 @test "mcp_opencode_current_signature matches mcp_desired_signature when in sync" {
     cat > "$OPENCODE_CONFIG" <<'JSON'
-{"mcp": {"context7": {"type":"local","command":["npx","-y","@upstash/context7-mcp"]}}}
+{"mcp": {"context7": {"type":"local","command":["npx","-y","@upstash/context7-mcp"],"enabled":true}}}
 JSON
     export HARNESS_DESIRED_JSON='{
       "context7": {"command": "npx", "args": ["-y", "@upstash/context7-mcp"]}
     }'
     local desired current
-    desired=$(mcp_desired_signature           context7)
+    desired=$(mcp_desired_signature           context7 opencode)
     current=$(mcp_opencode_current_signature  context7)
     [[ "$desired" == "$current" ]] || {
         echo "desired=[$desired] current=[$current]" >&2
@@ -141,9 +141,25 @@ JSON
       "context7": {"command": "npx", "args": ["-y", "@upstash/context7-mcp@2"]}
     }'
     local desired current
-    desired=$(mcp_desired_signature           context7)
+    desired=$(mcp_desired_signature           context7 opencode)
     current=$(mcp_opencode_current_signature  context7)
     [[ "$desired" != "$current" ]]
+}
+
+@test "mcp_opencode_current_signature flags drift when enabled flipped to false" {
+    cat > "$OPENCODE_CONFIG" <<'JSON'
+{"mcp": {"context7": {"type":"local","command":["npx","-y","@upstash/context7-mcp"],"enabled":false}}}
+JSON
+    export HARNESS_DESIRED_JSON='{
+      "context7": {"command": "npx", "args": ["-y", "@upstash/context7-mcp"]}
+    }'
+    local desired current
+    desired=$(mcp_desired_signature           context7 opencode)
+    current=$(mcp_opencode_current_signature  context7)
+    [[ "$desired" != "$current" ]] || {
+        echo "expected drift; desired=[$desired] current=[$current]" >&2
+        return 1
+    }
 }
 
 @test "mcp_detect_drift (opencode) returns drifted names with exit 0" {
