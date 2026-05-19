@@ -28,6 +28,12 @@ ap_find_profile_dir() {
     local name="$1"
     [[ -n "$name" ]] || { echo "ap_find_profile_dir: empty name" >&2; return 1; }
 
+    # parse.sh validates names that come in via include resolution, but
+    # CLI invocations (ap install <name>) hit this function directly.
+    # Reject any name a profile-yaml validator would reject so the
+    # candidate concatenation below can't escape the search roots.
+    _ap_validate_name "profile name" "$name" "ap_find_profile_dir" || return 1
+
     local root candidate
     while IFS= read -r root; do
         candidate="$root/$name"

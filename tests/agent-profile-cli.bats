@@ -182,3 +182,44 @@ EOF
     assert_failure
     assert_output_contains "profile name required"
 }
+
+@test "ap install: CLI name with .. traversal is rejected" {
+    # Defense against `ap install ../escape` — discover.sh used to
+    # concatenate the name into each search root without validating
+    # the path components.
+    make_basic_profile foo
+    run "$AP" install "../foo"
+    assert_failure
+    assert_output_contains "invalid profile name"
+}
+
+@test "ap install: CLI name with / separator is rejected" {
+    make_basic_profile foo
+    run "$AP" install "x/y"
+    assert_failure
+    assert_output_contains "invalid profile name"
+}
+
+# ─── launch (regression — REMAINING was indexed wrong) ──────────────
+
+@test "ap launch <harness> <name>: installs the profile, not the harness name" {
+    # Regression for the Copilot finding: cmd_launch passed REMAINING
+    # through to cmd_install unmodified, so cmd_install read REMAINING[0]
+    # (the harness name) as the profile to install. The fix is to rewrite
+    # REMAINING with just the profile name before delegating.
+    #
+    # We can't let cmd_launch actually `exec "$harness"` here, so stub
+    # the harness binary to a no-op on PATH and verify the install ran
+    # for the named profile (not the harness-named one).
+    make_basic_profile foo
+    local stubdir="$TEST_HOME/stubbin"
+    mkdir -p "$stubdir"
+    printf '#!/bin/bash\nexit 0\n' > "$stubdir/claude"
+    chmod +x "$stubdir/claude"
+    PATH="$stubdir:$PATH" run "$AP" launch claude foo --target "$TARGET"
+    assert_success
+    # The 'foo' plugin dir should exist; a 'claude' plugin dir (the
+    # buggy outcome) should NOT.
+    [[ -d "$TARGET/.claude/plugins/local/foo" ]]
+    [[ ! -d "$TARGET/.claude/plugins/local/claude" ]]
+}

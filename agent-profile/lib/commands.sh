@@ -80,11 +80,7 @@ cmd_install() {
         done
     done
 
-    # Build a JSON array of new files (deduped). On a re-install, drop
-    # any orphans (files in the old record but not in the new set) from
-    # disk before overwriting the manifest's files list with the new one.
-    # ap_manifest_diff_and_clean honours ref-counting so shared paths
-    # claimed by other profiles stay on disk.
+    # Build a JSON array of new files (deduped).
     local new_files_json
     if ((${#all_new_files[@]})); then
         new_files_json=$(printf '%s\n' "${all_new_files[@]}" \
@@ -92,16 +88,50 @@ cmd_install() {
     else
         new_files_json='[]'
     fi
-    ap_manifest_diff_and_clean "$TARGET" "$name" "$new_files_json"
 
-    # Replace this profile's files list atomically (rather than appending
-    # via ap_manifest_record_file, which would keep stale entries). The
-    # manifest already passed validation via ap_manifest_init.
+    # Orphan detection on re-install. On a full install, every previously
+    # tracked file is a candidate for orphan removal. On a selective
+    # install (--harness <subset>), only files whose path prefix maps
+    # to one of the selected harnesses count as candidates — files left
+    # by other harnesses (`.codex/`, `.opencode/`, …) are preserved on
+    # disk AND in the manifest. The path-prefix classifier in
+    # manifest.sh (`_ap_path_owners`) drives both the disk-side cleanup
+    # via diff_and_clean and the manifest-side union below.
     local mpath; mpath=$(ap_manifest_path "$TARGET")
     local mtmp; mtmp=$(mktemp)
-    jq --arg p "$name" --argjson f "$new_files_json" '
-        .[$p] = ((.[$p] // {}) | .files = $f)
-    ' "$mpath" > "$mtmp" && mv "$mtmp" "$mpath"
+    if (( ${#HARNESSES[@]} == ${#ALL_HARNESSES[@]} )); then
+        ap_manifest_diff_and_clean "$TARGET" "$name" "$new_files_json"
+        jq --arg p "$name" --argjson f "$new_files_json" '
+            .[$p] = ((.[$p] // {}) | .files = $f)
+        ' "$mpath" > "$mtmp" && mv "$mtmp" "$mpath"
+    else
+        ap_manifest_diff_and_clean "$TARGET" "$name" "$new_files_json" "${HARNESSES[*]}"
+        # Build the in-scope orphan list so the manifest entry drops
+        # them too. Without this prune, the manifest would keep listing
+        # files we just removed from disk on the previous line.
+        local -a in_scope_orphans=()
+        local old_f owners_block
+        while IFS= read -r old_f; do
+            [[ -z "$old_f" ]] && continue
+            # In new set? Not an orphan.
+            jq -e --arg x "$old_f" --argjson n "$new_files_json" \
+                '$n | index($x) != null' >/dev/null <<<"" && continue
+            owners_block=$(_ap_path_owners "$old_f")
+            _ap_owner_overlap "${HARNESSES[*]}" "$owners_block" \
+                && in_scope_orphans+=("$old_f")
+        done < <(jq -r --arg p "$name" '.[$p].files[]? // empty' "$mpath")
+        local orphans_json='[]'
+        if ((${#in_scope_orphans[@]})); then
+            orphans_json=$(printf '%s\n' "${in_scope_orphans[@]}" \
+                | jq -Rsc 'split("\n") | map(select(. != "")) | unique')
+        fi
+        jq --arg p "$name" \
+            --argjson f "$new_files_json" \
+            --argjson drop "$orphans_json" '
+            .[$p] = ((.[$p] // {})
+                     | .files = ((((.files // []) - $drop) + $f) | unique))
+        ' "$mpath" > "$mtmp" && mv "$mtmp" "$mpath"
+    fi
 
     # Cache the resolved manifest so uninstall can pass it to *_clean
     # for surgical edits to merged files even if the profile dir gets
@@ -185,8 +215,11 @@ cmd_launch() {
 
     if [[ -n "$name" ]]; then
         # Re-render before exec — cheap, idempotent, picks up any
-        # edits to the profile dir since last launch.
+        # edits to the profile dir since last launch. cmd_install reads
+        # the profile name from REMAINING[0], so swap the harness arg
+        # out before delegating.
         HARNESSES=("$harness")
+        REMAINING=("$name")
         cmd_install
     fi
 

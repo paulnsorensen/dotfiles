@@ -172,16 +172,16 @@ _cursor_write_hooks() {
             [.hooks[] | select((.harnesses // ["claude"]) | index("cursor") != null)][$idx]._source_dir
         ' <<<"$merged_json")
         src="$source_dir/$script_rel"
-        if [[ -f "$src" ]]; then
-            local base; base=$(basename "$script_rel")
-            cp "$src" "$target/.cursor/hooks/$base"
-            chmod +x "$target/.cursor/hooks/$base" 2>/dev/null || true
-            dest_rel=".cursor/hooks/$base"
-            _AP_OUT_FILES+=("$dest_rel")
-            resolved=$(jq -c --argjson h "$h" --arg cmd "$dest_rel" '. + [$h | .command = $cmd]' <<<"$resolved")
-        else
-            resolved=$(jq -c --argjson h "$h" '. + [$h]' <<<"$resolved")
+        if [[ ! -f "$src" ]]; then
+            echo "cursor_render: hook script not found: $src" >&2
+            return 1
         fi
+        local base; base=$(basename "$script_rel")
+        cp "$src" "$target/.cursor/hooks/$base"
+        chmod +x "$target/.cursor/hooks/$base"
+        dest_rel=".cursor/hooks/$base"
+        _AP_OUT_FILES+=("$dest_rel")
+        resolved=$(jq -c --argjson h "$h" --arg cmd "$dest_rel" '. + [$h | .command = $cmd]' <<<"$resolved")
         ((++i))
     done
 
@@ -250,4 +250,13 @@ cursor_clean() {
         )
         | if .mcpServers == {} then del(.mcpServers) else . end
         ' "$cfg" > "$tmp" && mv "$tmp" "$cfg"
+
+    # Bootstrapped file with no remaining content — clean it up so
+    # uninstall on a fresh target leaves nothing behind. The install
+    # path seeds `.cursor/mcp.json` with `{}` and then merges entries;
+    # an empty `{}` after the surgical removal means we were the only
+    # writer.
+    if [[ "$(jq -c '.' "$cfg")" == "{}" ]]; then
+        rm -f "$cfg"
+    fi
 }

@@ -147,16 +147,23 @@ _codex_write_hooks() {
         source_dir=$(jq -r '._source_dir'        <<<"$item")
         timeout=$(   jq -r '.timeout // empty'   <<<"$item")
 
+        if [[ -z "$script" ]]; then
+            echo "codex_render: hook event '$event' is missing 'script' (profile $source_dir)" >&2
+            return 1
+        fi
+        if [[ ! -f "$source_dir/$script" ]]; then
+            echo "codex_render: hook script not found: $source_dir/$script" >&2
+            return 1
+        fi
+
         local base; base=$(basename "$script")
         local rel_script=".codex/hooks/${base}"
         local abs_script="${target%/}/${rel_script}"
 
         mkdir -p "$(dirname "$abs_script")"
-        if [[ -n "$script" && -f "$source_dir/$script" ]]; then
-            cp "$source_dir/$script" "$abs_script"
-            chmod +x "$abs_script"
-            _AP_OUT_FILES+=("$rel_script")
-        fi
+        cp "$source_dir/$script" "$abs_script"
+        chmod +x "$abs_script"
+        _AP_OUT_FILES+=("$rel_script")
 
         records=$(jq \
             --arg ev "$event" \
@@ -267,8 +274,11 @@ codex_clean() {
 
     local current_json
     if ! current_json=$(yq -p=toml -o=json '.' "$cfg" 2>/dev/null); then
-        echo "    codex_clean: cannot parse $cfg, skipping" >&2
-        return 0
+        # Symmetry with install: codex_render fails loudly on the same
+        # condition. A silent skip here leaves the profile's MCP
+        # entries in place while the rest of uninstall reports success.
+        echo "    codex_clean: cannot parse $cfg" >&2
+        return 1
     fi
 
     local merged

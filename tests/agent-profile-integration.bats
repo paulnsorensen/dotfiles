@@ -417,6 +417,31 @@ EOF
     [[ ! -e "$TARGET/.claude/plugins/local/multi" ]]
 }
 
+# ─── selective install preserves other-harness artefacts ────────────
+
+@test "integration: re-install --harness <subset> keeps other-harness files" {
+    # Regression for the Copilot finding on cmd_install: a re-install
+    # with --harness claude after a full install used to compute
+    # new_files_json from just the claude artefacts, then diff against
+    # the entire profile manifest. The non-claude files showed up as
+    # orphans and got deleted. cmd_install now unions on selective
+    # installs and only diff-and-cleans on full-harness installs.
+    make_full_profile
+
+    "$AP" install multi >/dev/null
+    [[ -f "$TARGET/.codex/agents/shared-agent.toml" ]]
+    [[ -d "$TARGET/.agents/skills/widget" ]]
+
+    "$AP" install multi --harness claude >/dev/null
+
+    # Other-harness artefacts still on disk.
+    [[ -f "$TARGET/.codex/agents/shared-agent.toml" ]]
+    [[ -d "$TARGET/.agents/skills/widget" ]]
+    [[ -f "$TARGET/.github/agents/shared-agent.agent.md" ]]
+    [[ -f "$TARGET/.cursor/commands/do-thing.md" ]]
+    [[ -f "$TARGET/.opencode/commands/do-thing.md" ]]
+}
+
 # ─── uninstall --harness honors all cleaners ─────────────────────────
 
 @test "integration: uninstall --harness still cleans shared/merged files" {
@@ -435,10 +460,14 @@ EOF
     [[ "$(jq -r '.mcp.omni.command[0]' "$TARGET/opencode.json")" == "/bin/true" ]]
 
     # Uninstall with only --harness claude. opencode_clean must still
-    # run, evicting `omni` from opencode.json.
+    # run, evicting `omni` from opencode.json. The bootstrap leaves the
+    # file with only the `$schema` key, which opencode_clean then
+    # removes entirely.
     "$AP" uninstall multi --harness claude >/dev/null
 
-    [[ "$(jq -r '.mcp // {} | has("omni")' "$TARGET/opencode.json")" == "false" ]]
+    if [[ -f "$TARGET/opencode.json" ]]; then
+        [[ "$(jq -r '.mcp // {} | has("omni")' "$TARGET/opencode.json")" == "false" ]]
+    fi
 }
 
 # ─── unknown-harness rejection at dispatch ──────────────────────────

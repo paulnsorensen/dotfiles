@@ -139,6 +139,48 @@ ap_manifest_other_profiles_claim_file() {
     (( hit > 0 ))
 }
 
+# Classify a manifest-tracked path back to the set of harnesses whose
+# renderer could have written it. Used by selective-install orphan
+# detection so a `--harness claude` re-run doesn't delete files the
+# other harnesses still claim.
+#
+# Echo a newline-separated list of harness names; empty list means we
+# don't know (treat as "any harness could own it" so the caller keeps
+# the file).
+_ap_path_owners() {
+    local file="$1"
+    case "$file" in
+        .claude/plugins/local/*) echo claude ;;
+        # Top-level .claude/agents/<n>.md is the cross-harness shared
+        # write target — claude, opencode, and cursor all write there
+        # via ap_write_shared_claude_agent.
+        .claude/agents/*) printf '%s\n' claude opencode cursor ;;
+        .codex/*)         echo codex ;;
+        .cursor/*)        echo cursor ;;
+        .opencode/*)      echo opencode ;;
+        .github/*)        echo copilot ;;
+        # .agents/skills/<n>/ is shared by codex+opencode+cursor.
+        .agents/skills/*) printf '%s\n' codex opencode cursor ;;
+        *)                ;;  # unknown — empty list
+    esac
+}
+
+# Return 0 (true) when at least one of $1 (whitespace-separated
+# harnesses) is in $2 (newline-separated list of harness names the
+# file could belong to). Empty owner list returns 1 (don't claim
+# ownership, let the caller preserve the file).
+_ap_owner_overlap() {
+    local selected="$1" owners="$2"
+    [[ -n "$owners" ]] || return 1
+    local s o
+    for s in $selected; do
+        while IFS= read -r o; do
+            [[ "$s" == "$o" ]] && return 0
+        done <<<"$owners"
+    done
+    return 1
+}
+
 # On re-install of <profile>, compute `dropped = old_files - new_files`
 # and physically remove every dropped path from <target>, then update the
 # manifest to drop those entries. Files still claimed by another profile
@@ -149,9 +191,16 @@ ap_manifest_other_profiles_claim_file() {
 # emitted for this profile (`_AP_OUT_FILES` flattened across all
 # harnesses, deduped).
 #
+# Optional <harnesses> (space-separated). When supplied, only files
+# whose path prefix maps to at least one of those harnesses count as
+# orphan candidates — a `--harness claude` re-install won't touch
+# .codex/, .cursor/, .opencode/, .github/, or .agents/skills/ entries
+# left by a prior full install.
+#
 # Safe to call when no prior install exists (old_files is empty → no-op).
 ap_manifest_diff_and_clean() {
     local target="$1" profile="$2" new_files_json="$3"
+    local selected_harnesses="${4:-}"
     local path; path=$(ap_manifest_path "$target")
     [[ -f "$path" ]] || return 0
     _ap_manifest_validate "$path"
@@ -166,9 +215,15 @@ ap_manifest_diff_and_clean() {
 
     [[ -z "$dropped" ]] && return 0
 
-    local f abs
+    local f abs owners
     while IFS= read -r f; do
         [[ -z "$f" ]] && continue
+        if [[ -n "$selected_harnesses" ]]; then
+            owners=$(_ap_path_owners "$f")
+            # File's writer set doesn't intersect the selected harnesses
+            # — preserve it (the user only asked to refresh a subset).
+            _ap_owner_overlap "$selected_harnesses" "$owners" || continue
+        fi
         if ap_manifest_other_profiles_claim_file "$target" "$profile" "$f"; then
             # Another profile still owns it — leave the file on disk.
             continue

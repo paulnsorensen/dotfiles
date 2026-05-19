@@ -215,6 +215,27 @@ include: [a]"
     assert_output_contains "cycle detected"
 }
 
+@test "ap_parse_manifest: diamond DAG (A→{B,C}, B→D, C→D) is allowed" {
+    # Regression for Copilot's claim that _AP_VISITED would falsely
+    # report a cycle on the second branch sharing D. It doesn't:
+    # recursive calls run via \$(...) subshells, so _AP_VISITED
+    # modifications are scoped to each subshell. The current-stack
+    # semantics fall out for free; the global accumulator concern is
+    # cosmetic. Locks the behaviour so a refactor away from subshell
+    # recursion can't silently regress it.
+    make_profile dag_a "name: dag_a
+include: [dag_b, dag_c]"
+    make_profile dag_b "name: dag_b
+include: [dag_d]"
+    make_profile dag_c "name: dag_c
+include: [dag_d]"
+    make_profile dag_d "name: dag_d
+description: shared base"
+    run ap_parse_manifest "$PROFILE_ROOT/dag_a"
+    assert_success
+    [[ $(jq -r '.name' <<<"$output") == "dag_a" ]]
+}
+
 @test "ap_parse_manifest: missing include errors with profile name" {
     make_profile orphan "name: orphan
 include: [nonexistent]"

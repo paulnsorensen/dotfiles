@@ -237,4 +237,17 @@ opencode_clean() {
         )
         | if .permission == {} then del(.permission) else . end
         ' "$cfg" > "$tmp" && mv "$tmp" "$cfg"
+
+    # If we bootstrapped opencode.json (no pre-existing user content),
+    # uninstall should leave a clean target. After the surgical edit
+    # above the file contains only the schema stub we wrote in
+    # `_opencode_write_opencode_json`. Treat that exact shape as
+    # "owned by this profile" and remove the file.
+    local remaining_keys schema_only
+    remaining_keys=$(jq -c 'keys' "$cfg")
+    # shellcheck disable=SC2016  # JSON literal — single quotes intentional
+    schema_only='["$schema"]'
+    if [[ "$remaining_keys" == "$schema_only" ]]; then
+        rm -f "$cfg"
+    fi
 }

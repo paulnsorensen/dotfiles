@@ -197,8 +197,15 @@ _claude_write_hooks() {
         matcher=$(   jq -r '.matcher // ""' <<<"$item")
         script=$(    jq -r '.script // ""'  <<<"$item")
         source_dir=$(jq -r '._source_dir'   <<<"$item")
+        if [[ -z "$script" ]]; then
+            echo "claude_render: hook event '$event' is missing 'script' (profile $source_dir)" >&2
+            return 1
+        fi
         local src="$source_dir/$script"
-        [[ -f "$src" ]] || { ((++i)); continue; }
+        if [[ ! -f "$src" ]]; then
+            echo "claude_render: hook script not found: $src" >&2
+            return 1
+        fi
 
         local basename; basename=$(basename "$script")
         local dst="$plugin_dir/hooks/$basename"

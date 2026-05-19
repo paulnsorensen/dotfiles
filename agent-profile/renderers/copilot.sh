@@ -152,31 +152,33 @@ _copilot_write_hooks() {
         script=$(    jq -r '.script // ""'  <<<"$item")
         source_dir=$(jq -r '._source_dir'   <<<"$item")
 
-        # Derive a hook name from the script basename (sans ext), falling
-        # back to event when no script is set.
-        local base name
-        if [[ -n "$script" ]]; then
-            base=$(basename "$script")
-            name="${base%.*}"
-        else
-            name="$event"
+        if [[ -z "$script" ]]; then
+            echo "copilot_render: hook event '$event' is missing 'script' (profile $source_dir)" >&2
+            return 1
         fi
+        if [[ ! -f "$source_dir/$script" ]]; then
+            echo "copilot_render: hook script not found: $source_dir/$script" >&2
+            return 1
+        fi
+
+        # Derive a hook name from the script basename (sans ext).
+        local base name
+        base=$(basename "$script")
+        name="${base%.*}"
 
         local rel=".github/hooks/${name}.json"
         local abs="${target%/}/${rel}"
         mkdir -p "$(dirname "$abs")"
         # Strip internal fields; the rest of the item becomes the hook
-        # JSON. Copy the script alongside if provided.
+        # JSON. Copy the script alongside.
         local payload
         payload=$(jq -c 'del(._source_dir, .harnesses, .fallback)' <<<"$item")
-        if [[ -n "$script" && -f "$source_dir/$script" ]]; then
-            local script_rel; script_rel=".github/hooks/$(basename "$script")"
-            local script_abs="${target%/}/${script_rel}"
-            cp "$source_dir/$script" "$script_abs"
-            chmod +x "$script_abs" 2>/dev/null || true
-            payload=$(jq -c --arg s "$script_rel" '.script = $s' <<<"$payload")
-            _AP_OUT_FILES+=("$script_rel")
-        fi
+        local script_rel; script_rel=".github/hooks/$base"
+        local script_abs="${target%/}/${script_rel}"
+        cp "$source_dir/$script" "$script_abs"
+        chmod +x "$script_abs"
+        payload=$(jq -c --arg s "$script_rel" '.script = $s' <<<"$payload")
+        _AP_OUT_FILES+=("$script_rel")
         jq '.' <<<"$payload" > "$abs"
         _AP_OUT_FILES+=("$rel")
         ((++i))
@@ -245,4 +247,13 @@ copilot_clean() {
         )
         | if .mcpServers == {} then del(.mcpServers) else . end
         ' "$cfg" > "$tmp" && mv "$tmp" "$cfg"
+
+    # Bootstrapped file with no remaining content — clean up so
+    # uninstall on a fresh target leaves nothing behind. The install
+    # path seeds the file with `{"mcpServers": {}}` and then merges
+    # entries; an empty `{}` after the surgical removal means we were
+    # the only writer.
+    if [[ "$(jq -c '.' "$cfg")" == "{}" ]]; then
+        rm -f "$cfg"
+    fi
 }
