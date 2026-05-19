@@ -246,8 +246,9 @@ Per-repo overlay that installs a *subset* of the global `agents/` + `skills/` + 
 
 **Discovery order** (first match wins):
 
-1. `$PWD/.agent-profiles/<name>/` — per-repo override
-2. `$DOTFILES_DIR/profiles/<name>/` — repo-shipped library
+1. `$AP_EXTRA_SEARCH_PATHS` entries (colon-separated; also fed by `--profile-src <dir>`) — ad-hoc roots
+2. `$PWD/.agent-profiles/<name>/` — per-repo override
+3. `$DOTFILES_DIR/profiles/<name>/` — repo-shipped library
 
 **Commands:**
 

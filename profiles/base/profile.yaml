@@ -5,8 +5,6 @@
 name: base
 description: Generic coding-agent baseline (style, safety, AGENTS.md notes)
 
-agents_md_path: AGENTS.md
-
 settings:
   permissions_allow:
     - "Bash(git status:*)"
