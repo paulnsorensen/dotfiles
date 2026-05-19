@@ -18,8 +18,8 @@ description: >
   implementations, or wants to find dependency opportunities. Also use when the
   user asks to compare their custom implementation against existing packages, or
   says things like "should we just use lodash for this" or "is there a crate
-  that does what our helper does". Do NOT use for security vulnerability scanning
-  (/audit), code quality review (/age), or dead code removal (/simplifier).
+  that does what our helper does". Do NOT use for code quality review (/age) or
+  dead code removal (/simplify).
 ---
 
 # /nih-audit — Not Invented Here Audit

@@ -4,7 +4,7 @@ description: >
   Discovery dialogue to architect a feature and produce a spec with user stories,
   quality gates, and implementation paths. Use when scope is unclear, features touch
   multiple systems, or architectural tradeoffs need exploration. Produces a spec
-  artifact that feeds directly into /fromage for implementation. Also trigger when
+  artifact that feeds directly into /cook for implementation. Also trigger when
   the user says "spec this out", "plan this feature", "write requirements for",
   "PRD for", or "what would it take to build".
 argument-hint: <what you want to build>
@@ -12,7 +12,7 @@ argument-hint: <what you want to build>
 
 Facilitate a discovery dialogue to architect: $ARGUMENTS
 
-This is upstream of implementation — collaborative design thinking that produces a spec artifact ready for `/fromage` execution.
+This is upstream of implementation — collaborative design thinking that produces a spec artifact ready for `/cook` (or `/ultracook` for autonomous flows).
 
 ## Dialogue Style
 
@@ -74,7 +74,7 @@ In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents 
 | `/briesearch` | Web + docs | Prior art, competitor approaches, relevant blog posts, library options |
 | `/lookup` → `cheese-flow:cheez-search` | Codebase | Existing patterns, public API surface, architectural boundaries |
 | LSP | Cross-refs | Call chains, dependency direction, blast radius of the change |
-| `/fetch` | External code | How other projects solved similar problems, real-world examples |
+| `gh search code` | External code | How other projects solved similar problems, real-world examples |
 
 After agents return, **synthesize key patterns** before continuing the conversation:
 
@@ -162,7 +162,7 @@ Save and optionally publish:
 - Write to `.claude/specs/<slug>.md`
 - Offer: "Want me to create a GitHub Issue from this?"
 - If yes: `gh issue create --title "<title>" --body-file .claude/specs/<slug>.md`
-- Offer: "Ready to start implementation with `/fromage`?"
+- Offer: "Ready to start implementation with `/cook` (or `/ultracook` for autonomous)?"
 
 ## Spec Artifact Format
 
@@ -276,7 +276,7 @@ Synthesized findings from the parallel research burst:
 - **Tension**: Where sources disagreed and the decision we made
 
 ## Areas for Further Exploration
-Items that need deeper investigation during /fromage execution:
+Items that need deeper investigation during implementation:
 - [ ] Area 1 — what needs drill-down and why
 - [ ] Area 2
 
@@ -310,7 +310,7 @@ End-to-end verification scenarios:
 
 ## Writing User Stories for AI Execution
 
-The spec feeds into `/fromage`. User stories should be:
+The spec feeds into `/cook`. User stories should be:
 
 - **Small** — completable in one focused agent session
 - **Independent** — no story should block another if possible
@@ -319,10 +319,10 @@ The spec feeds into `/fromage`. User stories should be:
 
 ## When NOT to Use /spec
 
-- Simple changes → `/fromage` directly
+- Simple changes → `/cook` directly
 - Bug fixes → just fix it
 - User already has clear spec → skip to implementation
-- Pure research → `/research` or `/onboard`
+- Pure research → `/briesearch`
 
 ## When to Use /spec
 

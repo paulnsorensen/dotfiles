@@ -114,7 +114,7 @@ dotfiles/
 │       └── cheese-flair.md # The names + quote bank read by cheese-flair.sh.
 ├── claude/                 # Claude Code-specific configuration
 │   ├── agents/             # Cheese-themed specialist agents
-│   ├── commands/           # Slash commands (/fromage, /fromagerie, /spec, etc.)
+│   ├── commands/           # Slash commands (/spec, /wreck, /test, etc.)
 │   ├── hooks/              # Pre-tool hooks
 │   ├── profiles/           # Scoped sessions (fe, plugin, review, rtkonly, spec, todo) — launched via `ccp <name>`
 │   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)

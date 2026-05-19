@@ -102,7 +102,6 @@ evidence? Does it re-assess borderline items? Is there a surfacing threshold?
 
 Reference implementations:
 
-- `claude/agents/fromage-age.md` — review findings
 - `claude/agents/fromage-fort.md` — PR comment triage
 - `claude/agents/ricotta-reducer.md` — simplification audit
 
@@ -215,9 +214,9 @@ complex character") is more effective than a paragraph of role description.
 
 **Negative constraints** ("What You Don't Do"): Explicit sections listing what
 the agent must NOT do significantly reduce scope creep and overlap with adjacent
-pipeline phases. Every pipeline agent should have one. Example from fromage-cook:
-"Make design decisions... Add tests... Review code quality" — all belong to
-other phases.
+pipeline phases. Every pipeline agent should have one. Example: an implementation
+agent's "What You Don't Do" might list "Make design decisions... Add tests...
+Review code quality" — all belong to other phases.
 
 **Decision scaffolds for judgment tasks**: Skills that use "always/never" for
 judgment tasks should use a structured reasoning scaffold (Classify → Ground → Context → Reassess) or

@@ -17,7 +17,7 @@ This creates symlinks for `agents/`, `commands/`, `hooks/`, `skills/`, and `sett
 ```
 claude/
 ├── agents/           # Specialist agents (Fromage pipeline + standalone)
-├── commands/         # Slash commands (/fromage, /spec, /age, etc.)
+├── commands/         # Slash commands (/spec, /wreck, /test, etc.)
 ├── hooks/            # Pre-tool enforcement hooks + lifecycle hooks
 ├── lib/              # Shared sync helpers (sync-common.sh, gen-profile-mcp.sh)
 ├── plugins/          # Plugin registry and sync script
@@ -42,22 +42,16 @@ Slash commands invoked with `/command-name`.
 
 | Command | Description |
 |---------|-------------|
-| `/fromage` | Intelligent cheese-making pipeline (Preparing -> Pasteurize -> Culture -> Curdle -> Cut -> Cook -> Press -> Age -> Package) |
 | `/spec` | Discovery dialogue to architect a feature and produce a specification |
 | `/scaffold` | Scaffold a new domain slice following Sliced Bread architecture |
-| `/worktree` | Create an isolated git worktree for a task |
 
 ### Review & Quality Commands
 
 | Command | Use When |
 |---------|----------|
-| `/age` | Staff Engineer code review of recent changes (fromage-age, focused mode) |
-| `/code-review` | Deep dive -- full architectural walkthrough with persistent history |
-| `/simplifier` | Reduction -- strip genAI bloat, enforce YAGNI (invokes ricotta-reducer) |
 | `/copilot-review` | PR review -- analyze, present findings, route fixes to Copilot |
 | `/copilot-delegate` | Delegate PR fixes to GitHub Copilot via inline comments |
 | `/copilot-setup` | Generate GitHub Copilot agent and review instructions for a repo |
-| `/audit` | Security and dependency health audit (fromage-pasteurize) |
 | `/wreck` | Adversarial test writer (roquefort-wrecker) |
 | `/test` | Run existing tests via whey-drainer, returns concise summary |
 
@@ -65,10 +59,7 @@ Slash commands invoked with `/command-name`.
 
 | Command | Description |
 |---------|-------------|
-| `/agents` | Control panel listing all agents, skills, and commands |
 | `/setup-perms` | Scaffold `.claude/settings.local.json` with project permissions |
-| `/onboard` | Quick codebase orientation for an unfamiliar repo |
-| `/pull` | Pull latest from main |
 | `/briesearch` | Multi-source research: library docs, codebase analysis, prior art (cheese-flow plugin) |
 
 ### Learning Commands
@@ -86,32 +77,20 @@ Slash commands invoked with `/command-name`.
 
 Specialized agents invoked via Task tool with `subagent_type`.
 
-### Fromage Pipeline Agents
-
-| Agent | Phase | Purpose |
-|-------|-------|---------|
-| `fromage-pasteurize` | Pasteurize | Security and dependency health audit |
-| `fromage-culture` | Culture | Read-only codebase exploration |
-| `fromage-curdle` | Curdle | Execution plan creation (plan mode) |
-| `fromage-cook` | Cook | Implementation |
-| `fromage-press` | Press | Adversarial testing |
-| `fromage-age-safety` | Age | Correctness & safety (bugs, security, silent failures) |
-| `fromage-age-arch` | Age | Complexity budgets, nesting smells, file structure |
-| `fromage-age-encap` | Age | Encapsulation, leaky abstractions, boundary violations |
-| `fromage-age-yagni` | Age | Dead code (must be justified), speculative abstractions, AI noise |
-| `fromage-age-history` | Age | Git history risk signals → per-file score modifiers |
-| `fromage-age-spec` | Age | Spec drift, monkey patches, missing implementations |
-
-> **Note**: The `age` orchestration is a **skill** (`skills/age/SKILL.md`), not an agent. It runs inline in the caller's context and spawns the 6 sub-agents as first-level agents — no nested agent depth issues.
-
-### Standalone Agents
+### Review & Test Agents
 
 | Agent | Purpose |
 |-------|---------|
-| `cheese-factory` | Codebase orientation and mapping |
+| `fromage-pasteurize` | Security and dependency health audit (invoked by `/copilot-review`) |
+| `fromage-fort` | PR review comment responder with confidence scoring |
+| `fromage-age-arch` | Complexity budgets, nesting smells, file structure |
+| `fromage-age-history` | Git history risk signals → per-file score modifiers |
 | `ricotta-reducer` | Code distillation and simplification (analysis only) |
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
+| `nih-scanner` | Structural NIH pattern scanner |
+| `lsp-probe` | Short-lived LSP query broker for batch operations |
+| `worktree-triage` | Stale-worktree triage recommendations |
 
 All review/analysis agents use 0-100 confidence scoring (>= 50 to surface findings).
 
@@ -127,8 +106,6 @@ Reusable tool-usage instructions injected into agents and commands.
 | `cheese-flow:cheez-search` | AST-aware code/content search via tilth MCP (replaces trace) |
 | `cheese-flow:cheez-read` | Hash-anchored code reading via tilth MCP |
 | `cheese-flow:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |
-| `diff` | Pre-commit change review |
-| `fetch` | External docs via Context7, WebSearch, Tavily |
 | `gh` | GitHub operations via gh CLI |
 | `commit` | Git staging and conventional commits |
 | `tui-design` | TUI design and implementation (ratatui, Textual) |

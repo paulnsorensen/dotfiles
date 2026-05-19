@@ -142,11 +142,9 @@ judgment to bring.
 - **Workflow / Cheddar Flow** beyond a brief reference. The full skill
   catalog is in the global file; the local overlay just needs to remind
   Claude that `/age`, `/cure`, `/respond`, `/de-slop`, and
-  `/tdd-assertions` exist and are preferred. Skip `/fromage` and
-  `/fromagerie` unless the project is large enough to warrant them
-  (>10k LOC, multi-domain) — for typical contributions a single PR
-  cycle is the right granularity.
-- **Troubleshooting one-liners** (`/go`, `/agents`, `/lsp`) — meta-tool
+  `/tdd-assertions` exist and are preferred. For autonomous flows on
+  large changes, `/ultracook` chains cook → press → age → cure.
+- **Troubleshooting one-liners** (`/go`, `/lsp`) — meta-tool
   state, irrelevant to any project.
 - **RTK** — the rtk proxy is a personal tooling layer; it's auto-applied
   by hooks regardless and doesn't need to be repeated in a project file.

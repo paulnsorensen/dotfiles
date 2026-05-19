@@ -466,7 +466,7 @@ When the user says `done` or all nodes are verified:
 
 - Auto-fix findings — suggest /de-slop or /wreck instead, let the user decide
 - Run without user confirmation at each node — this is interactive by design
-- Replace /age or /code-review — xray verifies design decisions, not code quality
+- Replace /age — xray verifies design decisions, not code quality
 - Write tests — delegate to /wreck for adversarial testing
 
 ## Gotchas

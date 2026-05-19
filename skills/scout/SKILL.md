@@ -60,7 +60,7 @@ ls -la --git                # long listing with git status
 - Edit or modify files — use `cheese-flow:cheez-write`
 - Read file contents — use `cheese-flow:cheez-read`
 - Search code structure or text — use `cheese-flow:cheez-search`
-- Fetch external docs — use `/fetch`
+- Fetch external docs — use Context7 directly or `/briesearch`
 
 ## Gotchas
 
