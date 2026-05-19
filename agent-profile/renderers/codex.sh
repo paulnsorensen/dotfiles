@@ -66,7 +66,7 @@ _codex_write_agents() {
         } > "$abs"
         _AP_OUT_FILES+=("$rel")
 
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -106,7 +106,7 @@ _codex_write_skills() {
         else
             echo "    codex: skill '$name' source dir missing: $src" >&2
         fi
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -137,7 +137,7 @@ _codex_write_hooks() {
             (.harnesses // ["claude"]) | index("codex") != null
         ' <<<"$item")
         if [[ "$in_codex" != "true" ]]; then
-            i=$((i + 1)); continue
+            ((++i)); continue
         fi
 
         local event matcher script source_dir timeout
@@ -168,7 +168,7 @@ _codex_write_hooks() {
                     + (if $to == "" then {} else {timeout:($to|tonumber)} end))]' \
             <<<"$records")
 
-        i=$((i + 1))
+        ((++i))
     done
 
     local rel=".codex/hooks.json"
@@ -240,7 +240,7 @@ _codex_warn_commands() {
     while (( i < count )); do
         local name; name=$(jq -r ".commands[$i].name" <<<"$merged_json")
         echo "    codex: skipping command '$name' (slash commands deprecated, use skills)" >&2
-        i=$((i + 1))
+        ((++i))
     done
 }
 

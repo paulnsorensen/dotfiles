@@ -136,7 +136,7 @@ ap_manifest_other_profiles_claim_file() {
          | select(.key != $p)
          | select((.value.files // []) | index($f))] | length
     ' "$path")
-    [[ "$hit" -gt 0 ]]
+    (( hit > 0 ))
 }
 
 # On re-install of <profile>, compute `dropped = old_files - new_files`

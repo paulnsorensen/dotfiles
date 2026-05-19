@@ -76,7 +76,7 @@ _cursor_write_agents() {
                 ap_render_model_override "$target" cursor agent "$name" "$source_dir/$body_path" "$model"
             fi
         fi
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -94,7 +94,7 @@ _cursor_write_skills() {
         if [[ -n "$path" && -d "$src" ]]; then
             ap_copy_shared_skill "$target" "$name" "$src"
         fi
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -129,7 +129,7 @@ _cursor_write_commands() {
             fi
         } > "$out"
         _AP_OUT_FILES+=("${out#"$target"/}")
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -182,10 +182,10 @@ _cursor_write_hooks() {
         else
             resolved=$(jq -c --argjson h "$h" '. + [$h]' <<<"$resolved")
         fi
-        i=$((i + 1))
+        ((++i))
     done
 
-    echo "$resolved" | jq '.' > "$out"
+    jq '.' <<<"$resolved" > "$out"
     _AP_OUT_FILES+=(".cursor/hooks.json")
 }
 

@@ -119,7 +119,7 @@ _claude_write_agents() {
                  + (if $tools != "" then {tools:$tools} else {} end)')
             ap_write_shared_claude_agent "$target" "$name" "$body_abs" "$fm"
         fi
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -142,7 +142,7 @@ _claude_write_skills() {
             cp -R "$src" "$dst"
             _claude_track "$target" "$dst"
         fi
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -171,7 +171,7 @@ _claude_write_commands() {
             [[ -n "$body_path" && -f "$source_dir/$body_path" ]] && cat "$source_dir/$body_path"
         } > "$out"
         _claude_track "$target" "$out"
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -190,7 +190,7 @@ _claude_write_hooks() {
         local item; item=$(jq -c ".hooks[$i]" <<<"$merged_json")
         local harnesses
         harnesses=$(jq -r '(.harnesses // ["claude"]) | join(",")' <<<"$item")
-        case ",$harnesses," in *,claude,*) ;; *) i=$((i+1)); continue ;; esac
+        case ",$harnesses," in *,claude,*) ;; *) ((++i)); continue ;; esac
 
         local event matcher script source_dir
         event=$(     jq -r '.event'         <<<"$item")
@@ -198,7 +198,7 @@ _claude_write_hooks() {
         script=$(    jq -r '.script // ""'  <<<"$item")
         source_dir=$(jq -r '._source_dir'   <<<"$item")
         local src="$source_dir/$script"
-        [[ -f "$src" ]] || { i=$((i+1)); continue; }
+        [[ -f "$src" ]] || { ((++i)); continue; }
 
         local basename; basename=$(basename "$script")
         local dst="$plugin_dir/hooks/$basename"
@@ -218,7 +218,7 @@ _claude_write_hooks() {
             }])
             ' <<<"$hook_entries")
         wrote_any=1
-        i=$((i + 1))
+        ((++i))
     done
 
     [[ "$wrote_any" -eq 1 ]] || return 0

@@ -54,7 +54,7 @@ _opencode_write_agents() {
         if [[ -n "$body_path" && -f "$source_dir/$body_path" ]]; then
             body_abs="$source_dir/$body_path"
         fi
-        [[ -n "$body_abs" ]] || { i=$((i+1)); continue; }
+        [[ -n "$body_abs" ]] || { ((++i)); continue; }
 
         if [[ -n "$model" && "$model" != "inherit" ]]; then
             # opencode singular `.opencode/agent/<n>.md` override.
@@ -71,7 +71,7 @@ _opencode_write_agents() {
             } | with_entries(select(.value != "" and .value != null))' <<<"$item")
             ap_write_shared_claude_agent "$target" "$name" "$body_abs" "$fm"
         fi
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -90,7 +90,7 @@ _opencode_write_skills() {
         if [[ -n "$path" && -d "$source_dir/$path" ]]; then
             ap_copy_shared_skill "$target" "$name" "$source_dir/$path"
         fi
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -114,7 +114,7 @@ _opencode_write_commands() {
         if [[ -n "$body_path" && -f "$source_dir/$body_path" ]]; then
             body_abs="$source_dir/$body_path"
         fi
-        [[ -n "$body_abs" ]] || { i=$((i+1)); continue; }
+        [[ -n "$body_abs" ]] || { ((++i)); continue; }
 
         if [[ -n "$model" && "$model" != "inherit" ]]; then
             ap_render_model_override "$target" opencode command \
@@ -133,7 +133,7 @@ _opencode_write_commands() {
             } > "$out"
             _AP_OUT_FILES+=("$out_rel")
         fi
-        i=$((i + 1))
+        ((++i))
     done
 }
 

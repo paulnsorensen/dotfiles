@@ -101,7 +101,7 @@ _copilot_write_agents() {
             fi
         } > "$abs"
         _AP_OUT_FILES+=("$rel")
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -121,7 +121,7 @@ _copilot_write_skills() {
         local src="$source_dir/$path"
         if [[ ! -d "$src" ]]; then
             echo "copilot: skill '$name' source dir not found: $src" >&2
-            i=$((i + 1))
+            ((++i))
             continue
         fi
 
@@ -131,7 +131,7 @@ _copilot_write_skills() {
         mkdir -p "$(dirname "$abs")"
         cp -R "$src" "$abs"
         _AP_OUT_FILES+=("$rel")
-        i=$((i + 1))
+        ((++i))
     done
 }
 
@@ -145,7 +145,7 @@ _copilot_write_hooks() {
         local item; item=$(jq -c ".hooks[$i]" <<<"$merged_json")
         local in_scope
         in_scope=$(jq -r '(.harnesses // ["claude"]) | index("copilot") != null' <<<"$item")
-        if [[ "$in_scope" != "true" ]]; then i=$((i + 1)); continue; fi
+        if [[ "$in_scope" != "true" ]]; then ((++i)); continue; fi
 
         local event script source_dir
         event=$(     jq -r '.event'         <<<"$item")
@@ -177,9 +177,9 @@ _copilot_write_hooks() {
             payload=$(jq -c --arg s "$script_rel" '.script = $s' <<<"$payload")
             _AP_OUT_FILES+=("$script_rel")
         fi
-        printf '%s\n' "$payload" | jq '.' > "$abs"
+        jq '.' <<<"$payload" > "$abs"
         _AP_OUT_FILES+=("$rel")
-        i=$((i + 1))
+        ((++i))
     done
 }
 
