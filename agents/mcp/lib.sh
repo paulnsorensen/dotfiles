@@ -68,12 +68,16 @@ mcp_codex_list_current() {
 }
 
 # Pin the grep to the Scope field so an MCP whose args contain `--user-agent`
-# (or similar) cannot falsely scope as "user".
+# (or similar) cannot falsely scope as "user". Single awk pass replaces the
+# sed | head -1 | tr pipeline; `exit` after the first match takes the place
+# of `head -1`, `tolower()` the place of `tr`.
 mcp_claude_get_scope() {
     local scope
-    scope=$(claude mcp get "$1" 2>/dev/null \
-        | sed -n 's/^[[:space:]]*Scope:[[:space:]]*//p' \
-        | head -1 | tr '[:upper:]' '[:lower:]')
+    scope=$(claude mcp get "$1" 2>/dev/null | awk '
+        /^[[:space:]]*Scope:[[:space:]]*/ {
+            sub(/^[[:space:]]*Scope:[[:space:]]*/, "")
+            print tolower($0); exit
+        }')
     case "$scope" in user|project|local) echo "$scope" ;; *) echo "local" ;; esac
 }
 
@@ -91,7 +95,7 @@ mcp_opencode_config_path() {
 
 mcp_opencode_ensure_config() {
     local cfg; cfg=$(mcp_opencode_config_path)
-    mkdir -p "$(dirname "$cfg")"
+    mkdir -p "${cfg%/*}"
     if [[ ! -s "$cfg" ]]; then
         # Mirror chezmoi's create_opencode.json scaffold so a sync-before-chezmoi
         # ordering doesn't leave formatter disabled. `create_` won't overwrite.
@@ -167,7 +171,8 @@ mcp_claude_current_signature() {
         capture && /^[[:space:]]*[A-Z_][A-Za-z0-9_]*=/ { sub(/^[[:space:]]+/, ""); print; next }
         capture { capture=0 }
     ' <<<"$info" | sort)
-    [[ -n "$env_block" ]] && env_csv=$(paste -sd',' - <<<"$env_block")
+    # Join with commas via parameter expansion; avoids forking `paste`.
+    [[ -n "$env_block" ]] && env_csv="${env_block//$'\n'/,}"
     printf '%s\t%s\t%s\n' "$cmd" "$args" "$env_csv"
 }
 

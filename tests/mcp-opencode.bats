@@ -37,9 +37,10 @@ teardown() {
 
 @test "mcp_opencode_ensure_config leaves an existing file untouched" {
     printf '{"theme":"chocolate-donut","formatter":true}' > "$OPENCODE_CONFIG"
-    local before; before=$(shasum -a 256 "$OPENCODE_CONFIG" | awk '{print $1}')
+    local before after _
+    read -r before _ < <(shasum -a 256 "$OPENCODE_CONFIG")
     mcp_opencode_ensure_config
-    local after;  after=$(shasum  -a 256 "$OPENCODE_CONFIG" | awk '{print $1}')
+    read -r after  _ < <(shasum -a 256 "$OPENCODE_CONFIG")
     [[ "$before" == "$after" ]]
 }
 
