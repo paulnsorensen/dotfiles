@@ -39,34 +39,33 @@ _cc_lsp_gate() {
 
 cc() {
     local gate; gate="$(_cc_lsp_gate)" || gate=""
-    if [[ -n "$gate" ]]; then
-        claude --settings "$gate" "$@"
-    else
-        claude "$@"
-    fi
+    local -a flags=()
+    [[ -n "$gate" ]] && flags+=(--settings "$gate")
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    claude "${flags[@]}" "$@"
 }
 
 ccc() {
     local gate; gate="$(_cc_lsp_gate)" || gate=""
-    if [[ -n "$gate" ]]; then
-        claude --settings "$gate" --continue "$@"
-    else
-        claude --continue "$@"
-    fi
+    local -a flags=()
+    [[ -n "$gate" ]] && flags+=(--settings "$gate")
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    claude "${flags[@]}" --continue "$@"
 }
 
 ccr() {
     local gate; gate="$(_cc_lsp_gate)" || gate=""
-    if [[ -n "$gate" ]]; then
-        claude --settings "$gate" --resume "$@"
-    else
-        claude --resume "$@"
-    fi
+    local -a flags=()
+    [[ -n "$gate" ]] && flags+=(--settings "$gate")
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    claude "${flags[@]}" --resume "$@"
 }
 
 # Fresh session: prime MCPs in last conversation, then open it interactively
 ccfresh() {
-  claude --continue -p '/go' && claude --continue
+  local -a flags=()
+  [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+  claude "${flags[@]}" --continue -p '/go' && claude "${flags[@]}" --continue
 }
 
 # Session monitor
