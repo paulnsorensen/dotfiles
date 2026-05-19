@@ -1,14 +1,21 @@
 # MCP Registry - Source of truth for coding-agent MCP servers
+# (template var $h, set on the next line, is the active harness for this
+# render pass — sync.sh sets HARNESS=<name>. Entries may reference $h to
+# branch per-harness without restating the env lookup.)
+# {{ $h := env "HARNESS" }}
+#
 # Run `mcp-sync` (or `dots sync`) to apply this to every installed harness.
 #
 # Per-entry fields:
 #   command      — stdio launcher (required)
 #   args         — array of arg strings. Rendered through `chezmoi execute-template`
-#                  before YAML parsing, with HARNESS=<claude|codex> in the env,
-#                  so you can branch per-harness inline with Go-template syntax:
-#                      args: ["--context={{ if eq (env "HARNESS") "claude" }}claude-code{{ else }}codex{{ end }}"]
-#                  Existing ${VAR} bash-style env refs (resolved later in mcp_build_env_flags)
-#                  are untouched by the templating pass.
+#                  per harness; the active harness name is exposed as the
+#                  Go-template var $h. Branch inline only when an entry actually
+#                  diverges — see the `serena` entry below for a worked example.
+#                  Default to $h so future harnesses inherit their bare name
+#                  without another schema edit. Existing ${VAR} bash-style env
+#                  refs (resolved later in mcp_build_env_flags) are untouched
+#                  by the templating pass.
 #   env          — env vars; values can reference shell vars via "${VAR}"
 #   scope        — claude-only: user | project | local (default user)
 #   harnesses    — list of harness names to install into; default: [claude, codex, opencode]
@@ -81,7 +88,7 @@ mcps:
     command: serena
     args:
       - start-mcp-server
-      - --context={{ if eq (env "HARNESS") "claude" }}claude-code{{ else }}codex{{ end }}
+      - --context={{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}
       - --project-from-cwd
     scope: user
     description: Semantic code intel via LSP (symbols, references, refactors). Tools tailored per harness via --context.

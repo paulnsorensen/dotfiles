@@ -191,14 +191,16 @@ mcps:
 - **codex** — native `codex mcp add/list/remove --json` (no scopes).
 - **opencode** — no non-interactive CLI; the sync jq-edits `~/.config/opencode/opencode.json` directly. Set `OPENCODE_CONFIG` to override the target path (used by tests). On first run the sync seeds a minimal `{"$schema": ".../config.json"}` file if absent.
 
-**Per-harness `args` via Go templates.** `agents/mcp/sync.sh` runs the registry through `chezmoi execute-template` once per harness with `HARNESS=<claude|codex>` exported, so a single entry can produce different argv per harness without adding new keys to the schema. Serena uses this:
+**Per-harness `args` via Go templates.** `agents/mcp/sync.sh` runs the registry through `chezmoi execute-template` once per harness with `HARNESS=<claude|codex>` exported. The registry preamble aliases that into `$h` so entries can branch inline without restating the env lookup. Default to `{{ $h }}` so new harnesses inherit their bare name without another schema edit. Serena uses this:
 
 ```yaml
+{{- $h := env "HARNESS" -}}
+...
 serena:
   command: serena
   args:
     - start-mcp-server
-    - --context={{ if eq (env "HARNESS") "claude" }}claude-code{{ else }}codex{{ end }}
+    - --context={{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}
     - --project-from-cwd
 ```
 
