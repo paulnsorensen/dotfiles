@@ -6,7 +6,13 @@
 # Source-of-truth defaults are Serena's. We only override:
 #   web_dashboard                 → false  (no auto-browser tab)
 #   web_dashboard_open_on_launch  → false  (and no tray icon noise)
-#   excluded_tools                → []     (sentinel; populate as needed)
+#   excluded_tools                → memory + onboarding tools
+#       Rationale: Serena's parallel memory system (~/.serena/memories/)
+#       collides with our MEMORY.md auto-memory under
+#       ~/.claude/projects/-Users-paul-Dev-dotfiles/memory/. Scope serena
+#       to its LSP-grounded retrieval + symbol-edit surface only.
+#       `onboarding` exists solely to bootstrap memory files, so it goes
+#       with the rest.
 
 set -eu
 
@@ -53,5 +59,13 @@ fi
 printf '%s' "$existing" | yq '
     .web_dashboard = false |
     .web_dashboard_open_on_launch = false |
-    .excluded_tools = []
+    .excluded_tools = [
+        "write_memory",
+        "read_memory",
+        "list_memories",
+        "delete_memory",
+        "rename_memory",
+        "edit_memory",
+        "onboarding"
+    ]
 '

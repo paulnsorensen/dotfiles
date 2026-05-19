@@ -138,6 +138,32 @@ For project architecture (when a project opts in), see the **Sliced Bread** patt
 - **Agent permission modes**: `acceptEdits` and `bypassPermissions` only suppress the Edit/Write dialog — they do **not** bypass the Bash/MCP allowlist. In sandboxed environments (Conductor, fresh sessions), worktree agents may lack `git push` / `gh pr create` permissions. Pattern: have isolated agents do code work + commit only; return to the orchestrator for push/PR.
 - **Agent nesting**: Claude Code supports 1 level of sub-agent nesting. Orchestrators that need to fan out should be skills (which run inline in the caller's context, so their `Agent()` calls are first-level).
 
+## Code-Intelligence Routing
+
+Three MCPs cover code intelligence; they layer rather than overlap.
+
+- **tilth** — file I/O floor: `tilth_search`, `tilth_read`, `tilth_list`, `tilth_write` (+ `tilth_deps`, `tilth_diff`). Default for read/grep/edit; replaces host Grep/Read/Edit/Glob.
+- **serena** — LSP-grounded symbol layer: `find_symbol`, `find_referencing_symbols`, `find_declaration`, `find_implementations`, `get_symbols_overview`, `get_diagnostics_for_file`, `rename_symbol`, `safe_delete_symbol`, `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`, `replace_content`. Use when ground-truth semantics matter (overloads, generics, dispatch, type info). Memory tools and `onboarding` are excluded in `~/.serena/serena_config.yml` — do not try to call them.
+- **code-review-graph** — project-scale graph: `get_impact_radius_tool`, `get_affected_flows_tool`, `get_review_context_tool`, `get_minimal_context_tool`, `get_architecture_overview_tool`, `list_communities_tool`, `semantic_search_nodes_tool`. Use for blast-radius, "what does this codebase do", and review-scope queries — not for routine search.
+
+### Editing: serena vs tilth
+
+Pick by edit *shape*, not preference. Serena is more context-efficient for symbol-bounded edits (no need to re-ship the surrounding body); tilth wins for everything else, and for the read-step that precedes either.
+
+| Edit shape | Pick |
+|---|---|
+| Replace whole function / method / class body | `serena.replace_symbol_body` |
+| Insert relative to a known symbol | `serena.insert_before_symbol` / `insert_after_symbol` |
+| Rename a symbol across the codebase | `serena.rename_symbol` (one LSP call vs N text replaces, and correct under overloads) |
+| Safe-delete an unused symbol | `serena.safe_delete_symbol` |
+| Sub-symbol edit (slice inside a function) | `tilth_write` hash-anchor — serena would force shipping the whole body |
+| Imports, config (YAML/JSON/TOML), Markdown, shell | `tilth_write` |
+| Create new file | `tilth_write` overwrite — serena has no create-file tool |
+| Bulk pattern across files | `tilth_search` + `tilth_write` batch |
+| Language without LSP support here | `tilth_write` |
+
+Read-step matters too: serena's `get_symbols_overview` + `find_symbol(include_body=true)` pulls only the target symbol out of a large file. Reach for that when you only need one function from a long file — that's where the real context win is, not the write step.
+
 ## Self-Evaluation
 
 Run `/self-eval` before finishing any response that writes or changes code. It's the source of truth for the anti-pattern checklist (sycophancy, premature completion, dismissing failures, hedging, scope reduction, false confidence, AI slop, weak assertions) and delegates to `/de-slop` and `/tdd-assertions` automatically.
