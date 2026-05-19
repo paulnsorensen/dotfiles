@@ -87,7 +87,8 @@ cmd_install() {
     # claimed by other profiles stay on disk.
     local new_files_json
     if ((${#all_new_files[@]})); then
-        new_files_json=$(printf '%s\n' "${all_new_files[@]}" | jq -R . | jq -sc 'unique')
+        new_files_json=$(printf '%s\n' "${all_new_files[@]}" \
+            | jq -Rsc 'split("\n") | map(select(. != "")) | unique')
     else
         new_files_json='[]'
     fi

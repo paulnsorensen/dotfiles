@@ -195,11 +195,10 @@ _ap_parse_with_includes() {
 
     merged=$(_ap_merge_two "$merged" "$self")
     # Surface top-level identity from the outermost profile, not the
-    # accumulator (which has no name/description of its own).
-    jq \
-        --arg name "$(jq -r '.name' <<<"$self")" \
-        --arg desc "$(jq -r '.description' <<<"$self")" \
-        '. + {name: $name, description: $desc}' <<<"$merged"
+    # accumulator (which has no name/description of its own). Read
+    # name/description directly from $self via {name, description}
+    # shorthand — drops the two extra `jq -r` forks the old form needed.
+    jq --argjson m "$merged" '$m + {name, description}' <<<"$self"
 }
 
 # Concatenate arrays, deep-merge settings.permissions_allow (uniq).
