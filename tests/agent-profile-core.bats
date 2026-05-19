@@ -75,6 +75,100 @@ hooks:
     assert_output_contains "missing required field 'name'"
 }
 
+# ─── input validation (path traversal / shell-meta guards) ──────────
+
+@test "ap_parse_one: profile name with shell-meta fails loudly" {
+    make_profile bad "name: bad\$name"
+    run ap_parse_one "$PROFILE_ROOT/bad"
+    assert_failure
+    assert_output_contains "invalid profile name"
+}
+
+@test "ap_parse_one: item name with shell-meta fails loudly" {
+    make_profile shellmeta "name: shellmeta
+agents:
+  - name: 'a;b'
+    body_path: agents/a.md"
+    run ap_parse_one "$PROFILE_ROOT/shellmeta"
+    assert_failure
+    assert_output_contains "invalid item name"
+}
+
+@test "ap_parse_one: body_path with .. traversal fails loudly" {
+    make_profile traverse "name: traverse
+agents:
+  - name: a
+    body_path: ../../etc/passwd"
+    run ap_parse_one "$PROFILE_ROOT/traverse"
+    assert_failure
+    assert_output_contains "invalid body_path"
+    assert_output_contains "must not contain '..'"
+}
+
+@test "ap_parse_one: absolute body_path fails loudly" {
+    make_profile absolute "name: absolute
+agents:
+  - name: a
+    body_path: /etc/passwd"
+    run ap_parse_one "$PROFILE_ROOT/absolute"
+    assert_failure
+    assert_output_contains "invalid body_path"
+    assert_output_contains "must be relative"
+}
+
+@test "ap_parse_one: hook script with .. traversal fails loudly" {
+    make_profile hooktraverse "name: hooktraverse
+hooks:
+  - event: SessionStart
+    script: ../outside.sh"
+    run ap_parse_one "$PROFILE_ROOT/hooktraverse"
+    assert_failure
+    assert_output_contains "invalid script"
+    assert_output_contains "must not contain '..'"
+}
+
+@test "ap_parse_one: skill path with .. traversal fails loudly" {
+    make_profile skilltraverse "name: skilltraverse
+skills:
+  - name: s
+    path: skills/../../escape"
+    run ap_parse_one "$PROFILE_ROOT/skilltraverse"
+    assert_failure
+    assert_output_contains "invalid path"
+}
+
+@test "ap_parse_one: dots-only names that aren't '..' still pass" {
+    # 'foo..bar' has a '..' substring but no '..' path component — must
+    # be accepted so legitimate names like 'a..b' (allowed by the regex)
+    # round-trip cleanly.
+    make_profile dots "name: dots
+agents:
+  - name: a..b
+    body_path: agents/a..b.md"
+    run ap_parse_one "$PROFILE_ROOT/dots"
+    assert_success
+}
+
+@test "ap_parse_one: bare '..' name is rejected (escapes plugin root)" {
+    # The regex accepts '..' (two allowed chars). We also reject the
+    # literal so a profile or item name can't resolve to a parent dir
+    # component at mkdir/cp time.
+    make_profile dotdot "name: '..'"
+    run ap_parse_one "$PROFILE_ROOT/dotdot"
+    assert_failure
+    assert_output_contains "must not be '.' or '..'"
+}
+
+@test "ap_parse_one: bare '.' item name is rejected" {
+    make_profile dot "name: dot
+agents:
+  - name: '.'
+    body_path: agents/x.md"
+    run ap_parse_one "$PROFILE_ROOT/dot"
+    assert_failure
+    assert_output_contains "must not be '.' or '..'"
+}
+
 # ─── ap_parse_manifest (includes) ───────────────────────────────────
 
 @test "ap_parse_manifest: include concatenates arrays (includes first)" {

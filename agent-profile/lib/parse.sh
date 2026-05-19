@@ -21,6 +21,51 @@
 
 set -euo pipefail
 
+# ─── input validation ───────────────────────────────────────────────────
+# Profile manifests come from on-disk YAML that may be authored outside
+# this repo (per-repo overrides under $PWD/.agent-profiles/). Anything
+# we feed into file IO has to be constrained before _source_dir is
+# attached and renderers start opening paths.
+#
+# - Names (profile name + every item.name) must match [A-Za-z0-9._-]+ so
+#   they map cleanly onto filenames across all five harness layouts.
+# - Path-like fields (body_path, path, script) must be relative and free
+#   of `..` components — otherwise a crafted profile could read outside
+#   its profile dir or write outside the target tree.
+
+_ap_validate_name() {
+    local what="$1" value="$2" where="$3"
+    [[ -n "$value" ]] || return 0
+    [[ "$value" =~ ^[A-Za-z0-9._-]+$ ]] || {
+        echo "ap_parse: invalid $what '$value' in $where (must match [A-Za-z0-9._-]+)" >&2
+        return 1
+    }
+    # The regex above accepts bare `.` and `..` because they're non-empty
+    # sequences of allowed characters. Both resolve to directory
+    # components at install time (`mkdir -p .claude/plugins/local/..`
+    # would escape the plugin root) so the relpath guard alone is not
+    # enough — we reject the two literals here.
+    [[ "$value" != "." && "$value" != ".." ]] || {
+        echo "ap_parse: invalid $what '$value' in $where (must not be '.' or '..')" >&2
+        return 1
+    }
+}
+
+_ap_validate_relpath() {
+    local what="$1" value="$2" where="$3"
+    [[ -n "$value" ]] || return 0
+    case "$value" in
+        /*)
+            echo "ap_parse: invalid $what '$value' in $where (must be relative, not absolute)" >&2
+            return 1 ;;
+    esac
+    case "/$value/" in
+        *"/../"*)
+            echo "ap_parse: invalid $what '$value' in $where (must not contain '..' components)" >&2
+            return 1 ;;
+    esac
+}
+
 # ─── single-profile parse ───────────────────────────────────────────────
 # Reads profile.yaml, returns normalized JSON with defaults filled in.
 # Each item in agents/skills/commands/hooks gets a _source_dir field so
@@ -44,6 +89,38 @@ ap_parse_one() {
         echo "ap_parse_one: $manifest is missing required field 'name'" >&2
         return 1
     }
+    _ap_validate_name "profile name" "$name" "$manifest" || return 1
+
+    # Validate every item name + path-like field. Empty values are
+    # tolerated (defaults are applied below); only non-empty values are
+    # checked for traversal / shell-meta. Each field is queried in its
+    # own jq pass so missing values stay empty and don't collide with
+    # other fields under IFS-whitespace field splitting.
+    local v
+    while IFS= read -r v; do
+        _ap_validate_name "include" "$v" "$manifest" || return 1
+    done < <(jq -r '.include[]? // empty' <<<"$json")
+
+    while IFS= read -r v; do
+        _ap_validate_name "item name" "$v" "$manifest" || return 1
+    done < <(jq -r '
+        [.mcps[]?, .agents[]?, .skills[]?, .commands[]?, .hooks[]?]
+        | .[].name // empty
+    ' <<<"$json")
+
+    while IFS= read -r v; do
+        _ap_validate_relpath "body_path" "$v" "$manifest" || return 1
+    done < <(jq -r '
+        [.agents[]?, .commands[]?] | .[].body_path // empty
+    ' <<<"$json")
+
+    while IFS= read -r v; do
+        _ap_validate_relpath "path" "$v" "$manifest" || return 1
+    done < <(jq -r '.skills[]?.path // empty' <<<"$json")
+
+    while IFS= read -r v; do
+        _ap_validate_relpath "script" "$v" "$manifest" || return 1
+    done < <(jq -r '.hooks[]?.script // empty' <<<"$json")
 
     # Inject _source_dir into every item-bearing array and assemble the
     # canonical structure. Defaults for absent sections = empty array/object.
