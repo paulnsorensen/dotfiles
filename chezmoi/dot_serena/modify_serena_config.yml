@@ -33,11 +33,16 @@ fi
 
 # First-time install (or re-bootstrap after placeholder): adopt the live
 # ~/.serena/serena_config.yml if it exists, else run `serena init` to
-# create one. Either way, the resulting config is what we patch.
+# create one. Either way, the resulting config is what we patch. Apply the
+# same placeholder filter to the live-file read — chezmoi may have written
+# the placeholder to disk on a prior apply, so the live file is "ours" too
+# and round-tripping it into yq would emit the 3-key stub we're avoiding.
 if [ -z "$existing" ] && command -v serena >/dev/null 2>&1; then
     [ -f "$HOME/.serena/serena_config.yml" ] || serena init >/dev/null 2>&1 || true
-    [ -f "$HOME/.serena/serena_config.yml" ] \
-        && existing=$(cat "$HOME/.serena/serena_config.yml")
+    if [ -f "$HOME/.serena/serena_config.yml" ]; then
+        existing=$(cat "$HOME/.serena/serena_config.yml")
+        [ "$existing" = "$PLACEHOLDER" ] && existing=
+    fi
 fi
 
 if [ -z "$existing" ]; then

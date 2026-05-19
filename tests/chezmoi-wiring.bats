@@ -686,3 +686,41 @@ YAML
     grep -qF 'upstream Serena docs'           "$HOME/.serena/serena_config.yml"
     grep -qF 'Use the language server protocol' "$HOME/.serena/serena_config.yml"
 }
+
+# Regression: the placeholder we write when serena isn't on PATH must not
+# round-trip through yq on a subsequent apply. The bug it guards against:
+# stdin matches PLACEHOLDER → filter resets `existing=` → bootstrap branch
+# reads `~/.serena/serena_config.yml` (which IS the placeholder, since
+# chezmoi just wrote it last apply) → `existing` is re-populated with the
+# placeholder text → yq sees a non-empty input and emits a 3-key stub,
+# permanently destroying Serena's ~165 lines of inline-documented defaults.
+@test "serena: modify_ script does NOT round-trip the placeholder through yq" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    command -v yq      >/dev/null 2>&1 || skip "yq not installed"
+    setup_serena_chezmoi_env
+
+    mkdir -p "$HOME/.serena"
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+# serena not initialized; run `serena init`, then `chezmoi apply` again
+YAML
+
+    # Build a minimal PATH that has chezmoi + yq but not serena. The bug
+    # fires only when `command -v serena` succeeds AND the live config is
+    # the placeholder. To exercise the placeholder-loop protection honestly
+    # we need serena off PATH so the bootstrap branch's live-file read is
+    # the only contamination source.
+    local chezmoi_dir yq_dir minimal_path
+    chezmoi_dir=$(dirname "$(command -v chezmoi)")
+    yq_dir=$(dirname "$(command -v yq)")
+    minimal_path="/usr/bin:/bin:$chezmoi_dir:$yq_dir"
+    [ -z "$(PATH="$minimal_path" command -v serena 2>/dev/null)" ] \
+        || skip "serena found on minimal PATH; cannot isolate bootstrap branch"
+
+    PATH="$minimal_path" run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+
+    # Placeholder must survive — both as the comment AND as the *only*
+    # content. The bug would replace it with `web_dashboard: false\n...`.
+    grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
+    ! grep -qE '^web_dashboard:' "$HOME/.serena/serena_config.yml"
+}
