@@ -17,7 +17,7 @@ This command orchestrates across multiple skills:
 |---|---|---|
 | Recon | **gh** | PR metadata, CI checks, failed run logs, diff |
 | Explore | **scout** | Search codebase for test files, CI config, related code |
-| Understand | **lookup** | Route to LSP/Context7 for symbol types, cross-refs, API docs |
+| Understand | **Serena MCP** | `mcp__serena__find_symbol` / `find_referencing_symbols` for symbol types and cross-refs; Context7 for external API docs |
 | Diagnose | **diff** | Smoke-test the merged state for obvious issues |
 | Fix | **chisel** | Edit conflict markers, patch test assertions |
 | Build | **make** | Build/check with output isolation (forked subagent) |
@@ -26,31 +26,6 @@ This command orchestrates across multiple skills:
 | Quality sweep | **age**, **ricotta-reducer**, **respond** | Parallel review agents (see Phase 3b) |
 | Commit | **commit** | Stage and commit fixes (conventional format) |
 | Push | **gh** | Push to PR branch, re-run failed CI |
-
-## Parallel LSP Strategy
-
-Two tiers of LSP usage — one for move-my-cheese itself, one for the sub-agents it always spawns:
-
-### move-my-cheese (Phase 3a diagnosis)
-
-| Context | LSP approach |
-|---|---|
-| Running standalone (user invoked `/move-my-cheese`) | Direct LSP via `/lookup` — single session, no contention |
-| Running in a worktree (dispatched by cheese-convoy) | **lsp-probe** — batch queries, release server, stay lightweight |
-
-**How to detect worktree context**: Working directory is under a `.worktrees/` path, or the prompt mentions "worktree" or "parallel agents".
-
-**lsp-probe pattern** for diagnosis (Phase 3a):
-
-```
-Agent(subagent_type="lsp-probe", prompt="queries:\n  1. hover <file>:<line>\n  2. findReferences <file>:<line> symbol=<name>\n  3. documentSymbol <file>")
-```
-
-Batch all LSP queries for a diagnosis pass into one probe invocation.
-
-### Quality sweep sub-agents (Phase 3b)
-
-**Always use lsp-probe** — regardless of whether move-my-cheese is running standalone or in a worktree. The sweep agents (age sub-agents, ricotta-reducer) are spawned as concurrent sub-agents doing read-only analysis. They should never hold a persistent LSP server. The Phase 3b agent prompts signal this explicitly.
 
 ## Progress Tracking
 
@@ -138,17 +113,14 @@ Categorize each CI failure from Phase 1 recon:
 | **Infra flake** (503, timeout, OOM) | Note it — will resolve on re-run |
 | **Test failure** (assertion error) | Fix the code or test |
 | **Lint/format** (shellcheck, prettier) | Auto-fix with chisel |
-| **Build failure** (compile error, type error) | Fix with lookup + chisel |
+| **Build failure** (compile error, type error) | Fix with Serena lookups + chisel |
 | **Merge artifact** (conflict markers) | Should have been caught in Phase 2 |
 
 ### Build Check
 
 Run the project's build command directly (`cargo check`, `tsc --noEmit`, `go build ./...`, `uv run mypy .`, etc.) — the `rtk hook claude` PreToolUse hook auto-rewrites and filters output to structured errors.
 
-If build fails, understand the failing symbols before fixing with **chisel**:
-
-- **Standalone**: Use `/lookup` — routes to LSP for types/cross-refs, Context7 for external APIs
-- **Worktree context** (dispatched by cheese-convoy): Batch failing symbols into a single **lsp-probe** call — hover for types, findReferences for cross-refs — then fix with chisel
+If build fails, understand the failing symbols before fixing with **chisel** — use the Serena MCP (`mcp__serena__find_symbol` for type signatures, `find_referencing_symbols` for cross-refs) for local code, and Context7 (`query-docs`) for external APIs.
 
 Never grep dependency caches.
 
@@ -158,13 +130,13 @@ Run the project's test command directly (`cargo test`, `npm test`, `go test ./..
 
 If tests pass: the CI failure was likely infra. Move to Phase 3b.
 
-### Fix Strategy (lookup/lsp-probe + scout + chisel skills)
+### Fix Strategy (Serena + scout + chisel skills)
 
 For real test/build failures:
 
 1. Understand the failing symbol — type mismatches, missing methods, changed APIs:
-   - **Standalone**: `/lookup` (routes to direct LSP or Context7)
-   - **Worktree context**: Batch all failing symbols into one `lsp-probe` call (hover + findReferences)
+   - Local code: `mcp__serena__find_symbol` (signature + body) and `find_referencing_symbols` (cross-refs)
+   - External API: Context7 `query-docs`
 2. Use **scout** (`rg` for error messages, `fd` for test files) to locate the failing test
 3. Read the failing test and the code under test
 4. Fix with **chisel** — minimal change, `sd` for pattern fixes, Edit for precise patches
@@ -188,13 +160,12 @@ After Phase 3a fixes are stable (build passes, tests pass), invoke the `age` ski
 
 ```
 # Invoke the age skill inline — it spawns 6 review sub-agents directly (no nesting).
-# Pass lsp-probe hint so sub-agents batch LSP queries.
 # Follow the age skill protocol: identify scope, launch 6 agents, merge findings.
 # Scope: changes on this branch vs origin/main. Surface findings >= 50.
-# LSP strategy: use lsp-probe for batched queries.
+# Symbol intelligence: sub-agents use the Serena MCP for structural reads.
 
 # In parallel with the age skill's sub-agents, also launch:
-Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 50 confidence. LSP strategy: use lsp-probe for batched queries (findReferences to verify dead code, hover for coupling checks) — batch your LSP needs into one probe call rather than holding a server for the session.")
+Agent(subagent_type="ricotta-reducer", prompt="Review the changed files on this branch vs origin/main. Strip genAI bloat, speculative abstractions, unnecessary docs. Categorize by DELETE/INLINE/UNDOCUMENT/DECOUPLE. Only surface findings >= 50 confidence. Use the Serena MCP for structural reads (mcp__serena__find_referencing_symbols to verify dead code, find_symbol with include_body for coupling checks).")
 
 # Only if Phase 1 recon found unresolved review comments:
 Agent(subagent_type="fromage-fort", prompt="Triage unresolved review comments on PR #$ARGUMENTS. Score each 0-100, fix >= 50, push back < 30, report 30-49 for user decision.")

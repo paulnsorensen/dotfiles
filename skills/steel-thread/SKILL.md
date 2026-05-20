@@ -17,8 +17,8 @@ description: >
   Triggers on: /steel-thread, "trace this through", "map the X flow", "blast
   radius for Y", "what touches Z", "find the entry point for", "where does X
   get called from", "is there a new endpoint I added", "what's affected by
-  this change". Do NOT use for single-symbol lookups (use /lookup), filesystem
-  search (use /scout), or dead code detection (use /ghostbuster).
+  this change". Do NOT use for single-symbol lookups (use the Serena MCP),
+  filesystem search (use /scout), or dead code detection (use /ghostbuster).
 license: MIT
 ---
 
@@ -330,8 +330,9 @@ update this skill.
   CRG. Complementary: `/xray` for *did this implementation satisfy the spec*;
   `/steel-thread` for *where does this concept actually live and what touches
   it*.
-- `/lookup` — single-symbol code intelligence. Faster for "what's the
-  signature of Y" or "who calls Z" when you already have the exact symbol.
+- Serena MCP (`mcp__serena__find_symbol`, `find_referencing_symbols`) —
+  single-symbol code intelligence. Faster for "what's the signature of Y"
+  or "who calls Z" when you already have the exact symbol.
 - `/ghostbuster` — dead code / stale spec detection. Disjoint concern.
 - `/briesearch` — for researching the external CRG API surface or new
   releases when this skill's `references/api.md` falls behind.

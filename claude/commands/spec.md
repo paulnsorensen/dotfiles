@@ -72,8 +72,8 @@ In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents 
 | Agent | Source | What to Find |
 |-------|--------|-------------|
 | `/briesearch` | Web + docs | Prior art, competitor approaches, relevant blog posts, library options |
-| `/lookup` → `cheese-flow:cheez-search` | Codebase | Existing patterns, public API surface, architectural boundaries |
-| LSP | Cross-refs | Call chains, dependency direction, blast radius of the change |
+| `cheese-flow:cheez-search` | Codebase | Existing patterns, public API surface, architectural boundaries |
+| Serena MCP (`mcp__serena__*`) | Cross-refs | Call chains, references, blast radius of the change |
 | `gh search code` | External code | How other projects solved similar problems, real-world examples |
 
 After agents return, **synthesize key patterns** before continuing the conversation:
@@ -87,9 +87,8 @@ Present synthesis conversationally: "I ran research in parallel — here's what 
 In later rounds, use individual skills as needed:
 
 - **`/briesearch`** — Verify specific assumptions, check APIs
-- **`/lookup`** — Targeted code exploration
+- **Serena MCP** (`mcp__serena__find_symbol`, `find_referencing_symbols`) — Targeted symbol lookup and cross-reference tracing
 - **`cheese-flow:cheez-search`** — Structural code patterns: "what implements this interface?"
-- **LSP** — Cross-reference tracing and symbol navigation
 
 **Beat 3 — Summarize** (every 2 rounds)
 Periodically check alignment: "Here's where we are so far... Does this direction feel right?"
@@ -99,8 +98,8 @@ Periodically check alignment: "Here's where we are so far... Does this direction
 | Round | Focus | Skills |
 |-------|-------|--------|
 | 1 | Problem, users, success criteria, constraints | Light code reading to ground questions in reality |
-| 2 | Scope, non-goals, existing landscape | `/lookup`, `/briesearch` |
-| 3 | Design options, tradeoffs, quality gates | `/lookup`, `cheese-flow:cheez-search` |
+| 2 | Scope, non-goals, existing landscape | Serena MCP, `/briesearch` |
+| 3 | Design options, tradeoffs, quality gates | Serena MCP, `cheese-flow:cheez-search` |
 | 4+ | Refinement, edge cases, acceptance criteria | `/briesearch` as needed |
 
 Round 1 doesn't need formal skill invocations, but **do read relevant code** before asking questions. Grounding questions in what actually exists ("I see you already have a `FooAdapter` — is the pain that it doesn't cover X, or that it's too coupled to Y?") produces better answers than abstract interrogation.
@@ -212,7 +211,7 @@ What we're explicitly NOT doing.
 ## Context
 
 ### Existing Landscape
-What already exists? (from /lookup and /research findings)
+What already exists? (from Serena MCP and `/briesearch` findings)
 
 ### Constraints
 Technical, business, or timeline constraints.
@@ -265,7 +264,7 @@ What could go wrong and how we'd handle it:
 - **Risk**: <what could fail> → **Mitigation**: <how we prevent or recover>
 
 ## Implementation Notes
-- Key files/modules to touch (from /lookup findings)
+- Key files/modules to touch (from Serena MCP findings)
 - Patterns to follow
 - Pitfalls to avoid
 
@@ -315,7 +314,7 @@ The spec feeds into `/cook`. User stories should be:
 - **Small** — completable in one focused agent session
 - **Independent** — no story should block another if possible
 - **Verifiable** — acceptance criteria a machine can check, not "works correctly"
-- **Explicit** — include file paths, module names, patterns from `/lookup` findings
+- **Explicit** — include file paths, module names, patterns from Serena MCP lookups
 
 ## When NOT to Use /spec
 

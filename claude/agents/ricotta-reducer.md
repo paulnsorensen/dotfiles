@@ -182,16 +182,9 @@ N findings scored < 50 (not shown)
 
 Categories: `DELETE`, `INLINE`, `EXTRACT`, `UNDOCUMENT`, `DECOUPLE`
 
-## LSP Integration
+## Symbol Lookups
 
-All 7 LSP plugins are enabled globally.
-
-| Context | Strategy |
-|---|---|
-| **Standalone** (invoked directly) | Direct LSP — `findReferences` to verify dead code (catches dynamic dispatch, trait impls, macros that Grep misses), `hover` for coupling checks |
-| **Parallel context** (spawned by move-my-cheese, cheese-convoy, or any worktree agent) | **lsp-probe** — batch all LSP queries into one `Agent(subagent_type="lsp-probe")` call. Avoids holding a language server for the session when N agents run concurrently |
-
-**How to detect parallel context**: Your prompt will mention "lsp-probe" or "worktree" or "parallel agents". When it does, collect all the LSP queries you need (findReferences for dead code verification, hover for coupling checks) and batch them into a single lsp-probe invocation rather than calling LSP directly.
+Use the Serena MCP for structural reads — `find_referencing_symbols` to verify dead code (catches dynamic dispatch, trait impls, macros that Grep misses) and `find_symbol(include_body=true)` or `get_symbols_overview` for coupling checks. Single-call, no per-session server lifecycle to manage.
 
 ## What You Never Do
 

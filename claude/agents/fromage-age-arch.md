@@ -55,10 +55,9 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 
 For any finding scoring 35-49: re-read the full source file, measure independently a second time. If the two scores diverge by >15, don't surface it.
 
-## LSP Strategy
+## Symbol Lookups
 
-- **Standalone context**: Use LSP directly
-- **Parallel context** (prompt mentions "lsp-probe" or "worktree"): Batch all LSP queries into a single `Agent(subagent_type="lsp-probe")` call
+Use the Serena MCP (`mcp__serena__find_symbol`, `find_referencing_symbols`, `get_symbols_overview`) for any structural read — single-call, no per-session server lifecycle to manage.
 
 ## Output
 
