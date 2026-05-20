@@ -193,6 +193,88 @@ hook_codex_current_signature() {
     printf '%s\t%s\t%s\n' "$deployed" "$current_matcher" "$current_timeout"
 }
 
+# Read the current Codex config and print JSON for the merge step on stdout.
+# Empty file → '{}' (first-time init). Non-empty + unparseable → abort with
+# the yq diagnostic — the file is the user's config in a broken state, and
+# overwriting it with '{}' would silently nuke their settings.
+_hook_codex_read_current_json() {
+    [[ ! -s "$CODEX_CONFIG_FILE" ]] && { printf '%s\n' '{}'; return 0; }
+
+    local yq_err out rc=0
+    yq_err=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.err")
+    out=$(yq -p=toml -o=json '.' "$CODEX_CONFIG_FILE" 2>"$yq_err") || rc=$?
+    if (( rc != 0 )); then
+        echo -e "${RED}    refusing to overwrite unparseable $CODEX_CONFIG_FILE:${NC}" >&2
+        sed 's/^/      /' "$yq_err" >&2
+        rm -f "$yq_err"
+        return 1
+    fi
+    rm -f "$yq_err"
+    [[ -z "$out" ]] && out='{}'
+    printf '%s\n' "$out"
+}
+
+# Round-trip read-back + top-level key preservation. Refuses the mv if yq
+# can't re-parse the freshly written TOML, if the pre-image was non-empty
+# but unparseable (sentinel for malformed user file we just regenerated
+# from current_json), or if any top-level key from the pre-image is
+# missing in the post-image — silently truncating the user's codex
+# config is the regression this guard exists to prevent.
+#
+# Capture each `yq` exit status explicitly: under `set -e`, an unguarded
+# `$(yq ...)` that returns non-zero aborts the function before the temp
+# file is cleaned up.
+_hook_codex_validate_writeback() {
+    local tmp="$1"
+    local rc=0
+    yq -p=toml '.' "$tmp" >/dev/null 2>&1 || rc=$?
+    if (( rc != 0 )); then
+        echo -e "${RED}    yq emitted unparseable TOML; refusing to overwrite $CODEX_CONFIG_FILE${NC}" >&2
+        return 1
+    fi
+    [[ -s "$CODEX_CONFIG_FILE" ]] || return 0
+
+    local before_keys after_keys
+    rc=0
+    before_keys=$(yq -p=toml -o=json 'keys | sort | .[]' "$CODEX_CONFIG_FILE" 2>/dev/null) || rc=$?
+    if (( rc != 0 )) || [[ -z "$before_keys" ]]; then
+        echo -e "${RED}    refusing to overwrite $CODEX_CONFIG_FILE: pre-image is non-empty but yq cannot parse it${NC}" >&2
+        return 1
+    fi
+    rc=0
+    after_keys=$(yq -p=toml -o=json 'keys | sort | .[]' "$tmp" 2>/dev/null) || rc=$?
+    if (( rc != 0 )); then
+        echo -e "${RED}    yq failed to read back $tmp for key comparison${NC}" >&2
+        return 1
+    fi
+
+    local missing
+    missing=$(comm -23 <(echo "$before_keys") <(echo "$after_keys"))
+    if [[ -n "$missing" ]]; then
+        echo -e "${RED}    refusing to overwrite $CODEX_CONFIG_FILE: rewrite would drop top-level key(s):${NC}" >&2
+        local indented="${missing//$'\n'/$'\n      '}"
+        printf '      %s\n' "$indented" >&2
+        return 1
+    fi
+}
+
+# Build the desired [[hooks.SessionStart]] block as JSON. Branches on
+# matcher/timeout presence because Codex's TOML parser treats `matcher = ""`
+# differently from a missing matcher field.
+_hook_codex_build_session_start_block() {
+    local cmd="$1" matcher="$2" timeout="$3"
+    local inner
+    inner='{"type":"command","command":'"$(jq -Rn --arg c "$cmd" '$c')"'}'
+    if [[ -n "$timeout" ]]; then
+        inner=$(jq --argjson t "$timeout" '. + {timeout: $t}' <<<"$inner")
+    fi
+    if [[ -n "$matcher" ]]; then
+        jq -n --arg m "$matcher" --argjson h "$inner" '{matcher: $m, hooks: [$h]}'
+    else
+        jq -n --argjson h "$inner" '{hooks: [$h]}'
+    fi
+}
+
 hook_codex_apply() {
     local name="$1" script matcher timeout cmd
     script=$( jq -r --arg n "$name" '.[$n].script // ""'      <<<"$HARNESS_DESIRED_JSON")
@@ -203,41 +285,12 @@ hook_codex_apply() {
     mkdir -p "$(dirname "$CODEX_CONFIG_FILE")"
     [[ -f "$CODEX_CONFIG_FILE" ]] || : > "$CODEX_CONFIG_FILE"
 
-    # Build the desired block as JSON, then merge:
-    #   1. Convert current TOML to JSON.
-    #   2. Drop any pre-existing SessionStart entry whose first hook command matches.
-    #   3. Append the fresh entry.
-    #   4. Convert merged JSON back to TOML.
-    #
-    # Treat an empty file (first-time init) as {} so a fresh install works.
-    # A non-empty file that fails to parse is the user's config in a broken
-    # state — abort with a diagnostic rather than overwrite it with {}.
-    local current_json desired_block merged tmp yq_err
-    if [[ -s "$CODEX_CONFIG_FILE" ]]; then
-        yq_err=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.err")
-        if ! current_json=$(yq -p=toml -o=json '.' "$CODEX_CONFIG_FILE" 2>"$yq_err"); then
-            echo -e "${RED}    refusing to overwrite unparseable $CODEX_CONFIG_FILE:${NC}" >&2
-            sed 's/^/      /' "$yq_err" >&2
-            rm -f "$yq_err"
-            return 1
-        fi
-        rm -f "$yq_err"
-    else
-        current_json='{}'
-    fi
-    [[ -z "$current_json" ]] && current_json='{}'
-
-    local inner
-    inner='{"type":"command","command":'"$(jq -Rn --arg c "$cmd" '$c')"'}'
-    if [[ -n "$timeout" ]]; then
-        inner=$(jq --argjson t "$timeout" '. + {timeout: $t}' <<<"$inner")
-    fi
-    if [[ -n "$matcher" ]]; then
-        desired_block=$(jq -n --arg m "$matcher" --argjson h "$inner" \
-            '{matcher: $m, hooks: [$h]}')
-    else
-        desired_block=$(jq -n --argjson h "$inner" '{hooks: [$h]}')
-    fi
+    # Merge plan: TOML → JSON → drop prior entry for this command → append
+    # fresh entry → JSON → TOML. Helpers handle reading the pre-image,
+    # building the desired block, and validating the post-image.
+    local current_json desired_block merged tmp
+    current_json=$(_hook_codex_read_current_json) || return 1
+    desired_block=$(_hook_codex_build_session_start_block "$cmd" "$matcher" "$timeout")
 
     merged=$(jq --arg c "$cmd" --argjson b "$desired_block" '
         .hooks //= {}
@@ -252,38 +305,9 @@ hook_codex_apply() {
         rm -f "$tmp"
         return 1
     fi
-    # Round-trip read-back: yq must be able to re-parse what it just wrote,
-    # and any top-level keys the user had (e.g. [mcp_servers], approval_policy)
-    # must survive the rewrite. Refuse the mv if either invariant fails —
-    # silently truncating the user's codex config is the kind of regression
-    # this whole apply step exists to avoid.
-    if ! yq -p=toml '.' "$tmp" >/dev/null 2>&1; then
-        echo -e "${RED}    yq emitted unparseable TOML; refusing to overwrite $CODEX_CONFIG_FILE${NC}" >&2
+    if ! _hook_codex_validate_writeback "$tmp"; then
         rm -f "$tmp"
         return 1
-    fi
-    if [[ -s "$CODEX_CONFIG_FILE" ]]; then
-        local before_keys after_keys
-        # If the pre-image is non-empty but yq can't parse it (malformed TOML),
-        # before_keys will be empty and `comm` will report no drift even though
-        # a rewrite would silently lose the user's whole file. Refuse the mv
-        # in that case — the earlier parse already converted it to current_json,
-        # but a fresh parse here on the saved file is the safer signal.
-        before_keys=$(yq -p=toml -o=json 'keys | sort | .[]' "$CODEX_CONFIG_FILE" 2>/dev/null)
-        if [[ -z "$before_keys" ]]; then
-            echo -e "${RED}    refusing to overwrite $CODEX_CONFIG_FILE: pre-image is non-empty but yq cannot parse it${NC}" >&2
-            rm -f "$tmp"
-            return 1
-        fi
-        after_keys=$(yq -p=toml -o=json 'keys | sort | .[]' "$tmp"               2>/dev/null)
-        local missing
-        missing=$(comm -23 <(echo "$before_keys") <(echo "$after_keys"))
-        if [[ -n "$missing" ]]; then
-            echo -e "${RED}    refusing to overwrite $CODEX_CONFIG_FILE: rewrite would drop top-level key(s):${NC}" >&2
-            echo "$missing" | sed 's/^/      /' >&2
-            rm -f "$tmp"
-            return 1
-        fi
     fi
     mv "$tmp" "$CODEX_CONFIG_FILE"
 }

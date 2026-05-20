@@ -690,6 +690,71 @@ TOML
     grep -q 'SessionStart' "$CODEX_CONFIG_FILE"
 }
 
+# ── safety guards added in PR #188 ──
+# These exercise the round-trip read-back + top-level key-preservation
+# checks that protect the user's codex config from silent truncation. The
+# refusal paths share the diagnostic "refusing to overwrite" so tests
+# match on that plus the file's untouched contents.
+
+@test "hook_codex_apply preserves unrelated top-level keys (approval_policy)" {
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    cat > "$CODEX_CONFIG_FILE" <<'TOML'
+approval_policy = "on-request"
+sandbox_mode = "read-only"
+TOML
+    run hook_codex_apply session-start-cheese-flair
+    assert_success
+    grep -q 'approval_policy' "$CODEX_CONFIG_FILE"
+    grep -q 'sandbox_mode' "$CODEX_CONFIG_FILE"
+    grep -q 'SessionStart' "$CODEX_CONFIG_FILE"
+}
+
+@test "hook_codex_apply preserves [mcp_servers] across the sync" {
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    cat > "$CODEX_CONFIG_FILE" <<'TOML'
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+TOML
+    run hook_codex_apply session-start-cheese-flair
+    assert_success
+    grep -q 'mcp_servers' "$CODEX_CONFIG_FILE"
+    grep -q 'context7' "$CODEX_CONFIG_FILE"
+    grep -q 'SessionStart' "$CODEX_CONFIG_FILE"
+}
+
+@test "hook_codex_apply refuses to overwrite when emitted TOML is empty (sanity)" {
+    # Stub yq inside this test only — yq emits empty output but exits 0.
+    # The round-trip read-back catches it because `keys` on null fails.
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    cat > "$CODEX_CONFIG_FILE" <<'TOML'
+approval_policy = "on-request"
+TOML
+    local before; before=$(cat "$CODEX_CONFIG_FILE")
+    local stub_bin="$BATS_TEST_TMPDIR/stub-bin"
+    mkdir -p "$stub_bin"
+    cat > "$stub_bin/yq" <<'STUB'
+#!/bin/bash
+# Pass through for everything except the json→toml emit step, which we
+# silently truncate to exercise the post-image validation.
+for arg in "$@"; do
+    if [[ "$arg" == "-p=json" ]]; then
+        # consume stdin so the pipeline doesn't SIGPIPE the caller
+        cat >/dev/null
+        # produce empty output
+        exit 0
+    fi
+done
+exec /opt/homebrew/bin/yq "$@"
+STUB
+    chmod +x "$stub_bin/yq"
+    PATH="$stub_bin:$PATH" run hook_codex_apply session-start-cheese-flair
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"refusing to overwrite"* || "$output" == *"failed to read back"* ]]
+    # Original file must be untouched.
+    [[ "$(cat "$CODEX_CONFIG_FILE")" == "$before" ]]
+}
+
 # ── end-to-end: installer + sync mirror chezmoi run_onchange behaviour ──
 # Reimplements the registry-driven iteration the chezmoi template runs
 # against a fake $HOME, then asserts every (asset × harness) pair landed
