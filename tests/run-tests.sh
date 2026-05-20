@@ -80,6 +80,11 @@ run_tests() {
         for _f in *.bats; do
             [[ -f "$_f" ]] && _found+=("$_f")
         done
+        if (( ${#_found[@]} == 0 )); then
+            echo -e "${RED}✘ No *.bats files found in $TESTS_DIR${NC}" >&2
+            echo "  (Did the working directory get clobbered, or is this a vendored copy?)" >&2
+            return 1
+        fi
         test_files="${_found[*]}"
     fi
 
