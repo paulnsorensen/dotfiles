@@ -3,7 +3,7 @@ name: spec-verify
 model: opus
 context: fork
 effort: high
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Agent, mcp__serena__*
+allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Bash(cargo check:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(tsc:*), Bash(npm run:*), Bash(pnpm:*), Bash(yarn:*), Bash(go build:*), Bash(go vet:*), Bash(go test:*), Bash(uv run:*), Bash(python -m:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(prek:*), Bash(rtk:*), Agent, mcp__serena__*
 description: >
   Verify that a spec's implementation matches its requirements using Serena MCP
   structural analysis, build verification, and test coverage checking. Use when the

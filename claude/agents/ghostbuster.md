@@ -209,7 +209,7 @@ Write the full JSON report to `$TMPDIR/ghostbuster-{slug}.json`. The JSON schema
     "languages": ["typescript", "python"],
     "filesScanned": 42,
     "specsFound": 3,
-    "lspAvailable": true,
+    "serenaAvailable": true,
     "gitHistoryUsed": true
   },
   "findings": [
@@ -266,11 +266,11 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 
 ## Gotchas
 
-- **Dynamic dispatch hides callers**: Trait impls (Rust), interface implementations (Go/TS), duck typing (Python) mean LSP `findReferences` can miss callers. Score types/interfaces lower.
-- **Codegen and macros**: Rust `derive` macros, Python decorators, and TS decorators can generate callers invisible to LSP. If a symbol has a decorator/derive attribute, reduce confidence by 10.
+- **Dynamic dispatch hides callers**: Trait impls (Rust), interface implementations (Go/TS), duck typing (Python) mean Serena's `find_referencing_symbols` (LSP-backed) can miss callers. Score types/interfaces lower.
+- **Codegen and macros**: Rust `derive` macros, Python decorators, and TS decorators can generate callers invisible to Serena. If a symbol has a decorator/derive attribute, reduce confidence by 10.
 - **Re-exports**: A symbol exported from a barrel file may appear to have 0 direct callers but is the module's public API. Check barrel files before flagging.
 - **Test helpers**: Functions in test files with 0 callers outside tests aren't dead — they're test infrastructure. Apply the -10 modifier, don't auto-flag.
-- **Shell functions**: Shell functions defined in sourced files (`. script.sh` or `source script.sh`) won't show up in LSP. Use Grep exclusively for shell.
+- **Shell functions**: Shell functions defined in sourced files (`. script.sh` or `source script.sh`) won't show up in Serena's symbol index — no LSP backend covers shell. Use Grep exclusively for shell.
 - **Spec format variance**: Some specs use backticks, some use prose references, some use code blocks. Cast a wide net when parsing — regex for `functionName`, not just `` `functionName` ``.
 - **User-invoked functions**: Shell functions, CLI commands, and `main()` entry points are called from the terminal, not from code. Zero grep references is expected. Check if the function is in a sourced file or bin/ directory before flagging.
 - **Documentation references are GHOST sources too**: CLAUDE.md, README.md, and docs/ files reference code symbols just like specs do. The test run's highest-confidence findings were GHOSTs from CLAUDE.md, not spec files.

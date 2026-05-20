@@ -164,7 +164,7 @@ to `$TMPDIR` or any file):
   "scanMeta": {
     "languages": ["typescript"],
     "filesScanned": 42,
-    "lspAvailable": true,
+    "serenaAvailable": true,
     "scope": "src/"
   },
   "candidates": [
