@@ -3,14 +3,14 @@
 # sync.sh — Declarative hook sync across coding-agent harnesses (Claude, Codex).
 #
 # Reads agents/hooks/registry.yaml and brings each harness's config in line:
-# upserts the SessionStart entry into claude/settings.json (in-repo) for
+# upserts supported event entries into claude/settings.json (in-repo) for
 # Claude, and into ~/.codex/config.toml for Codex. Idempotent — re-runs
 # with no registry changes make no file edits. Preserves every other
 # top-level config key.
 #
 # Backends:
-#   claude — jq-edits $REPO/claude/settings.json under .hooks.SessionStart[]
-#   codex  — yq-edits $HOME/.codex/config.toml under [[hooks.SessionStart]]
+#   claude — jq-edits $REPO/claude/settings.json under .hooks.<event>[]
+#   codex  — yq-edits $HOME/.codex/config.toml under [[hooks.<event>]]
 #
 # Usage:
 #   ./sync.sh                Sync hooks (idempotent upsert per entry)

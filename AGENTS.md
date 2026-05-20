@@ -106,7 +106,8 @@ dotfiles/
 │   │   ├── registry.yaml   # Hook source of truth (per-entry `harnesses: [claude, codex]`, matcher, timeout)
 │   │   ├── sync.sh         # Declarative hook sync — jq-edits claude/settings.json + yq-edits ~/.codex/config.toml.
 │   │   ├── lib.sh          # Per-harness backend helpers (drift signature, upsert, detect).
-│   │   └── session-start-cheese-flair.sh  # SessionStart hook — self-locating; deployed to both harnesses.
+│   │   ├── session-start-cheese-flair.sh  # SessionStart hook — self-locating; deployed to both harnesses.
+│   │   └── jmux-attention.sh # Stop hook — marks jmux tmux sessions as needing attention.
 │   ├── lib/
 │   │   └── cheese-flair.sh # Weighted name generator + quote picker (used by the SessionStart hook).
 │   └── reference/
@@ -222,10 +223,17 @@ The bash-style `${VAR}` env substitution used by `env:` blocks runs in a later p
 
 ## Hook Management
 
-Harness-agnostic hooks (Claude SessionStart / Codex `[[hooks.SessionStart]]`, etc.) are declared in `agents/hooks/registry.yaml`. One registry, one source of truth, deployed to every harness:
+Harness-agnostic hooks (Claude `SessionStart` / `Stop`, Codex `[[hooks.SessionStart]]` / `[[hooks.Stop]]`, etc.) are declared in `agents/hooks/registry.yaml`. One registry, one source of truth, deployed to every harness:
 
 ```yaml
 hooks:
+  jmux-attention:
+    event: Stop
+    script: agents/hooks/jmux-attention.sh
+    harnesses: [claude, codex]
+    timeout: 5
+    description: Mark the current jmux tmux session as needing attention when an agent stops
+
   session-start-cheese-flair:
     event: SessionStart
     script: agents/hooks/session-start-cheese-flair.sh
@@ -237,7 +245,7 @@ hooks:
 
 **Per-entry fields:**
 
-- `event` — Claude / Codex event name. Only `SessionStart` is currently wired; the backends in `agents/hooks/lib.sh` fail loud on any other value. Extend the backends before registering `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, or `Stop` entries.
+- `event` — Claude / Codex event name. `SessionStart` and `Stop` are wired; the backends in `agents/hooks/lib.sh` fail loud on any other value. Extend the backends before registering `UserPromptSubmit`, `PreToolUse`, or `PostToolUse` entries.
 - `script` — repo-relative path; chezmoi deploys to `~/.<harness>/hooks/<basename>`.
 - `shared_assets` (optional) — list of repo-relative paths under `agents/<subdir>/<file>` that the hook script reads at runtime (libs, banks, …). Each is deployed to `~/.<harness>/<subdir>/<file>`. Adding a new hook is a pure registry edit — the chezmoi installer iterates `hooks` and copies every `(script ∪ shared_assets) × harnesses` pair.
 - `harnesses` (optional) — list; default `[claude, codex]`.
@@ -399,10 +407,25 @@ chezmoi doctor                                       # health check (also wired 
 
 Full agent/skill catalog is in `agents/AGENTS.md` (copied to `~/.claude/CLAUDE.md` by chezmoi). Key project-level details:
 
-- Pre-tool hooks: `phantom-file-check.js`, `write-guard.js`, `review-reply-guard.js` (`worktree-guard.js` exists but is currently disengaged)
-- Compaction hooks: `pre-compact.sh` saves context, `post-compact.sh` restores with `/trace` suggestion
-- Session hooks: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
-- `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
+- **Pre-tool hooks**: `phantom-file-check.js`, `write-guard.js`, `review-reply-guard.js` (`worktree-guard.js` exists but is currently disengaged)
+- **Compaction hooks**: `pre-compact.sh` saves context, `post-compact.sh` restores with `/trace` suggestion
+- **Session hooks**: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
+- **`ccw` worktrees** are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
+
+### jmux Integration
+
+[jmux](https://github.com/jarredkenny/jmux) is a tmux workspace for running multiple coding agents in parallel with a persistent sidebar showing session status, attention flags, and integrated diff review.
+
+**Setup**: `agents/hooks/registry.yaml` manages the jmux `Stop` attention hook for Claude and Codex. Run `hook-sync` (or `dots sync`) after registry changes.
+
+**Current configuration**: `claude/settings.json` includes a managed `Stop` hook with the command:
+```json
+"command": "bash \"$HOME/.claude/hooks/jmux-attention.sh\""
+```
+
+**Usage**: Start jmux with `jmux`, create sessions for different projects, and run Claude Code in each. When Claude finishes, an orange `!` appears in the sidebar. Switch with `Ctrl-Shift-Up/Down` to review work. The diff panel (`Ctrl-a g`) shows changes using hunk.
+
+**Harnesses**: jmux works with any terminal-based agent (Claude Code, Codex, opencode, etc.). The dotfiles-managed attention hook currently covers Claude and Codex. opencode should wait for a stable native completion hook before adding jmux attention integration.
 
 ### Hotkey Daemon (skhd)
 

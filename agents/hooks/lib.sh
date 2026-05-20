@@ -13,7 +13,7 @@
 #
 # Claude backend reconciles claude/settings.json (in-repo, jq in-place).
 # Codex backend reconciles ~/.codex/config.toml (yq -p=toml -o=toml).
-# Only the SessionStart slot for each registered hook is managed; all
+# Only the SessionStart and Stop slots for each registered hook are managed; all
 # other top-level keys and unmanaged hook entries are preserved.
 #
 # shellcheck disable=SC2034,SC2329
@@ -24,11 +24,9 @@ set -euo pipefail
 
 # ─── registry filtering ─────────────────────────────────────────────────
 #
-# Asserts `event == SessionStart` on every entry. The backends below only
-# wire the SessionStart slot; routing a `PostToolUse` entry through them
-# would silently land in the wrong slot. When a second event type ships,
-# parameterise the slot in the backends and drop this guard at the same
-# time.
+# Asserts every entry targets an event wired by the backends below. Routing a
+# new event through this file before adding backend support would silently land
+# in the wrong slot.
 
 hook_filter_for_harness() {
     local harness="$1" json="$2"
@@ -45,11 +43,11 @@ hook_filter_for_harness() {
     fi
     bad=$(jq -r <<<"$json" '
         to_entries
-        | map(select(.value.event != "SessionStart"))
+        | map(select((.value.event | IN("SessionStart", "Stop")) | not))
         | .[0].key // ""')
     if [[ -n "$bad" ]]; then
-        echo -e "${RED}hook_filter_for_harness: entry '$bad' has event != SessionStart;${NC}" >&2
-        echo -e "${RED}  only SessionStart is wired in this sync. Add backend support before registering.${NC}" >&2
+        echo -e "${RED}hook_filter_for_harness: entry '$bad' has unsupported event;${NC}" >&2
+        echo -e "${RED}  only SessionStart and Stop are wired in this sync. Add backend support before registering.${NC}" >&2
         return 1
     fi
     jq --arg h "$harness" <<<"$json" '
@@ -83,6 +81,11 @@ hook_codex_command() {
     printf 'bash $HOME/.codex/hooks/%s\n' "$base"
 }
 
+hook_event() {
+    local name="$1"
+    jq -r --arg n "$name" '.[$n].event' <<<"$HARNESS_DESIRED_JSON"
+}
+
 # ─── drift signature ────────────────────────────────────────────────────
 
 hook_desired_signature() {
@@ -98,22 +101,23 @@ hook_desired_signature() {
 # The settings file is checked into the repo; sync writes it in place.
 
 hook_claude_current_signature() {
-    local name="$1" script matcher timeout deployed cmd current_cmd current_timeout
+    local name="$1" event script matcher timeout deployed cmd current_cmd current_timeout
     [[ -f "$CLAUDE_SETTINGS_FILE" ]] || { printf '\t\t\n'; return; }
 
+    event=$( hook_event "$name" )
     script=$( jq -r --arg n "$name" '.[$n].script // ""'  <<<"$HARNESS_DESIRED_JSON")
     matcher=$(jq -r --arg n "$name" '.[$n].matcher // ""' <<<"$HARNESS_DESIRED_JSON")
     deployed=$(hook_deployed_path claude "$script")
     cmd="bash \"$deployed\""
 
-    # Find the first SessionStart entry whose first hook command matches.
-    current_cmd=$(jq -r --arg c "$cmd" '
-        .hooks.SessionStart // []
+    # Find the first entry for the target event whose first hook command matches.
+    current_cmd=$(jq -r --arg e "$event" --arg c "$cmd" '
+        .hooks[$e] // []
         | map(select((.hooks // [])[0].command == $c))
         | (.[0].hooks // [])[0].command // ""
     ' "$CLAUDE_SETTINGS_FILE")
-    current_timeout=$(jq -r --arg c "$cmd" '
-        .hooks.SessionStart // []
+    current_timeout=$(jq -r --arg e "$event" --arg c "$cmd" '
+        .hooks[$e] // []
         | map(select((.hooks // [])[0].command == $c))
         | (.[0].hooks // [])[0].timeout // empty
     ' "$CLAUDE_SETTINGS_FILE")
@@ -122,14 +126,15 @@ hook_claude_current_signature() {
         printf '\t\t\n'
         return
     fi
-    # Claude has no matcher for SessionStart; reuse the desired matcher
+    # Claude has no matcher for these events; reuse the desired matcher
     # for comparison so signatures stay equal once installed.
     printf '%s\t%s\t%s\n' "$deployed" "$matcher" "$current_timeout"
 }
 
-# Upsert the SessionStart hook entry in claude/settings.json. Idempotent.
+# Upsert the hook entry in claude/settings.json. Idempotent.
 hook_claude_apply() {
-    local name="$1" script timeout deployed cmd
+    local name="$1" event script timeout deployed cmd
+    event=$( hook_event "$name" )
     script=$( jq -r --arg n "$name" '.[$n].script // ""'      <<<"$HARNESS_DESIRED_JSON")
     timeout=$(jq -r --arg n "$name" '.[$n].timeout // empty' <<<"$HARNESS_DESIRED_JSON")
     deployed=$(hook_deployed_path claude "$script")
@@ -142,18 +147,18 @@ hook_claude_apply() {
     tmp=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.json")
     # Strip any prior entry for this command, then append a fresh one.
     if [[ -n "$timeout" ]]; then
-        jq --arg c "$cmd" --argjson t "$timeout" '
+        jq --arg e "$event" --arg c "$cmd" --argjson t "$timeout" '
             .hooks //= {}
-            | .hooks.SessionStart //= []
-            | .hooks.SessionStart |= (map(select(((.hooks // [])[0].command // "") != $c)))
-            | .hooks.SessionStart += [{ "hooks": [{ "type": "command", "command": $c, "timeout": $t }] }]
+            | .hooks[$e] //= []
+            | .hooks[$e] |= (map(select(((.hooks // [])[0].command // "") != $c)))
+            | .hooks[$e] += [{ "hooks": [{ "type": "command", "command": $c, "timeout": $t }] }]
         ' "$CLAUDE_SETTINGS_FILE" > "$tmp"
     else
-        jq --arg c "$cmd" '
+        jq --arg e "$event" --arg c "$cmd" '
             .hooks //= {}
-            | .hooks.SessionStart //= []
-            | .hooks.SessionStart |= (map(select(((.hooks // [])[0].command // "") != $c)))
-            | .hooks.SessionStart += [{ "hooks": [{ "type": "command", "command": $c }] }]
+            | .hooks[$e] //= []
+            | .hooks[$e] |= (map(select(((.hooks // [])[0].command // "") != $c)))
+            | .hooks[$e] += [{ "hooks": [{ "type": "command", "command": $c }] }]
         ' "$CLAUDE_SETTINGS_FILE" > "$tmp"
     fi
     mv "$tmp" "$CLAUDE_SETTINGS_FILE"
@@ -161,23 +166,25 @@ hook_claude_apply() {
 
 # ─── Codex: yq over ~/.codex/config.toml ────────────────────────────────
 # Preserves every other top-level key (approval_policy, sandbox_mode,
-# [mcp_servers], …). Only the entries under [[hooks.SessionStart]] with a
-# matching command get rewritten.
+# [mcp_servers], …). Only entries under the target hook event with a matching
+# command get rewritten.
 
 hook_codex_current_signature() {
-    local name="$1" script matcher timeout deployed cmd current_cmd current_matcher current_timeout
+    local name="$1" event script matcher timeout deployed cmd current_cmd current_matcher current_timeout
     [[ -f "$CODEX_CONFIG_FILE" ]] || { printf '\t\t\n'; return; }
 
+    event=$( hook_event "$name" )
     script=$( jq -r --arg n "$name" '.[$n].script // ""'  <<<"$HARNESS_DESIRED_JSON")
     matcher=$(jq -r --arg n "$name" '.[$n].matcher // ""' <<<"$HARNESS_DESIRED_JSON")
     cmd=$(hook_codex_command "$script")
     deployed=$(hook_deployed_path codex "$script")
 
-    # yq toml→json then jq finds the SessionStart block whose inner hook
-    # command matches.
+    # yq toml→json then jq finds the target-event block whose inner hook command matches.
     local block_json
-    block_json=$(yq -p=toml -o=json '.hooks.SessionStart // []' "$CODEX_CONFIG_FILE" 2>/dev/null \
-                 | jq --arg c "$cmd" '
+    block_json=$(yq -p=toml -o=json '.' "$CODEX_CONFIG_FILE" 2>/dev/null \
+                 | jq --arg e "$event" --arg c "$cmd" '
+                     .hooks[$e] // []
+                     |
                      map(select(((.hooks // [])[0].command // "") == $c))
                      | .[0] // {}' 2>/dev/null) || { printf '\t\t\n'; return; }
 
@@ -193,7 +200,8 @@ hook_codex_current_signature() {
 }
 
 hook_codex_apply() {
-    local name="$1" script matcher timeout cmd
+    local name="$1" event script matcher timeout cmd
+    event=$( hook_event "$name" )
     script=$( jq -r --arg n "$name" '.[$n].script // ""'      <<<"$HARNESS_DESIRED_JSON")
     matcher=$(jq -r --arg n "$name" '.[$n].matcher // ""'     <<<"$HARNESS_DESIRED_JSON")
     timeout=$(jq -r --arg n "$name" '.[$n].timeout // empty' <<<"$HARNESS_DESIRED_JSON")
@@ -204,7 +212,7 @@ hook_codex_apply() {
 
     # Build the desired block as JSON, then merge:
     #   1. Convert current TOML to JSON.
-    #   2. Drop any pre-existing SessionStart entry whose first hook command matches.
+    #   2. Drop any pre-existing entry for this event whose first hook command matches.
     #   3. Append the fresh entry.
     #   4. Convert merged JSON back to TOML.
     #
@@ -238,11 +246,11 @@ hook_codex_apply() {
         desired_block=$(jq -n --argjson h "$inner" '{hooks: [$h]}')
     fi
 
-    merged=$(jq --arg c "$cmd" --argjson b "$desired_block" '
+    merged=$(jq --arg e "$event" --arg c "$cmd" --argjson b "$desired_block" '
         .hooks //= {}
-        | .hooks.SessionStart //= []
-        | .hooks.SessionStart |= (map(select(((.hooks // [])[0].command // "") != $c)))
-        | .hooks.SessionStart += [$b]
+        | .hooks[$e] //= []
+        | .hooks[$e] |= (map(select(((.hooks // [])[0].command // "") != $c)))
+        | .hooks[$e] += [$b]
     ' <<<"$current_json")
 
     tmp=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.toml")

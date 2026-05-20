@@ -2,11 +2,8 @@
 # Run `hook-sync` (or `dots sync`) to apply this to every installed harness.
 #
 # Per-entry fields:
-#   event          — must be SessionStart today; the registry shape will
-#                    extend to UserPromptSubmit | PreToolUse | PostToolUse
-#                    | Stop once the backends in lib.sh parameterise the
-#                    event slot. hook_filter_for_harness fails loud on any
-#                    other value.
+#   event          — supported events: SessionStart, Stop. Registering any
+#                    other event fails loud until the backends wire that slot.
 #   script         — repo-relative path to the hook script (deployed per
 #                    harness into $HOME/.<harness>/hooks/<basename>)
 #   shared_assets  — optional list of repo-relative paths to data files the
@@ -25,6 +22,13 @@
 #                    seconds"; Claude uses the same unit)
 #   description    — human-readable purpose
 hooks:
+  jmux-attention:
+    event: Stop
+    script: agents/hooks/jmux-attention.sh
+    harnesses: [claude, codex]
+    timeout: 5
+    description: Mark the current jmux tmux session as needing attention when an agent stops
+
   session-start-cheese-flair:
     event: SessionStart
     script: agents/hooks/session-start-cheese-flair.sh
