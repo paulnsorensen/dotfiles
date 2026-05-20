@@ -278,3 +278,60 @@ SCRIPT
     [[ -n "$copilot_line" ]]
     [[ "$visible_line" -lt "$copilot_line" ]]
 }
+
+
+# rollback() restore loop — guard the dotglob fix and the symlink-conflict
+# fallthrough on broken symlinks. The restore loop iterates the backup dir
+# with the bash default glob, which skips dotfiles unless dotglob is set;
+# the symlink restore uses [[ -e || -L ]] so broken symlinks count as
+# conflicts. Both are easy to silently regress on.
+
+# Helper: prep a backup dir + manifest, then run rollback non-interactively.
+_prep_rollback_backup() {
+    local backup_id="$1"
+    local bk="$TEST_HOME/.local/state/dotfiles/backups/$backup_id"
+    mkdir -p "$bk"
+    # metadata.json is required for backup discovery, but not for rollback
+    # itself; include it for parity with real backups.
+    echo "{}" > "$bk/metadata.json"
+    echo "$bk"
+}
+
+@test "rollback restores dotfiles (dotglob)" {
+    local backup_id="20250101_120000"
+    local bk
+    bk=$(_prep_rollback_backup "$backup_id")
+    # Place a dotfile in the backup — the default bash glob would skip it.
+    echo "restored zshrc" > "$bk/.zshrc"
+    # Empty manifest so the symlink-restore loop is a no-op.
+    : > "$bk/manifest"
+
+    # Pre-existing target with different content — rollback must replace it.
+    echo "stale zshrc" > "$TEST_HOME/.zshrc"
+
+    BACKUP_TS="$backup_id" run bash -c "echo y | call-sync-fn rollback $backup_id"
+    assert_success
+    assert_file_exists "$TEST_HOME/.zshrc"
+    run cat "$TEST_HOME/.zshrc"
+    assert_output_contains "restored zshrc"
+}
+
+@test "rollback flags broken symlinks at conflicting paths" {
+    local backup_id="20250101_120001"
+    local bk
+    bk=$(_prep_rollback_backup "$backup_id")
+    # Manifest declares a symlink the rollback should recreate.
+    local link="$TEST_HOME/.broken_link"
+    local target="$bk/restored-target"
+    echo "target" > "$target"
+    printf '%s:%s\n' "$link" "$target" > "$bk/manifest"
+
+    # Leave a dangling symlink at the destination — `[[ -e ]]` alone
+    # returns false on broken symlinks, so the conflict counter would
+    # silently fail to fire without the `-L` guard.
+    ln -s "$TEST_HOME/does-not-exist" "$link"
+
+    BACKUP_TS="$backup_id" run bash -c "echo y | call-sync-fn rollback $backup_id"
+    assert_success
+    assert_output_contains "symlink(s) skipped"
+}

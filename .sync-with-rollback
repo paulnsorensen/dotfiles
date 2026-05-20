@@ -186,18 +186,37 @@ rollback() {
     # the current target first so the restore is a *replace* rather than a
     # merge (cp -r merges, leaving stale files behind that weren't in the
     # backup); -f stops cp from prompting on read-only targets.
+    #
+    # Enable dotglob so the loop sees backed-up dotfiles (.zshrc, .vimrc,
+    # …) — bash globs skip leading-dot entries by default, and missing
+    # those would mean rollback restored almost nothing.
     local restore_failed=0
+    # `shopt -p X Y` returns non-zero when any listed option is unset, which
+    # would abort under `set -e`. Suppress the rc — we only need the printable
+    # restore snippet, not the "are they currently set?" verdict.
+    local prev_dotglob
+    prev_dotglob=$(shopt -p dotglob nullglob || true)
+    shopt -s dotglob nullglob
     for file in "${backup_path}"/*; do
         file="${file##*/}"
         if [[ "${file}" != "manifest" && "${file}" != "metadata.json" && "${file}" != "manifest.backup" ]]; then
             log_info "Restoring ${file}"
-            rm -rf "${HOME:?}/${file}" 2>/dev/null || true
+            # rm before cp so directories get *replaced*, not merged. If rm
+            # fails (immutable bit, permission denied, …) cp would silently
+            # merge into the existing tree and leave stale files behind —
+            # treat that as a restore failure and skip the cp.
+            if ! rm -rf "${HOME:?}/${file}"; then
+                log_error "  Failed to clear ${file} before restore"
+                restore_failed=$((restore_failed + 1))
+                continue
+            fi
             if ! cp -rf "${backup_path}/${file}" "${HOME}/"; then
                 log_error "  Failed to restore ${file}"
                 restore_failed=$((restore_failed + 1))
             fi
         fi
     done
+    eval "$prev_dotglob"
     if (( restore_failed > 0 )); then
         log_warning "${restore_failed} file(s) failed to restore — system may be inconsistent."
     fi
