@@ -114,19 +114,21 @@ fi
 # Pre-create the ~/.claude symlinks that chezmoi's run_onchange templates
 # write through. On a fresh install, claude/.sync runs *after* chezmoi/.sync
 # (alphabetical iteration in .sync-with-rollback), so without these links
-# chezmoi would create real ~/.claude/{hooks,reference}/ directories that
-# claude/.sync would then back up — orphaning anything chezmoi just wrote
-# (e.g. session-start-cheese-flair.sh). The claude/.sync pass later rebuilds
-# these symlinks idempotently. Codex has no symlink layer, so this is
-# claude-only.
+# chezmoi would create real ~/.claude/{hooks,reference}/ directories — or a
+# real ~/.claude/settings.json file the moment `claude mcp add` or
+# `claude plugin install` touches user-scope state — that claude/.sync would
+# then back up, orphaning anything chezmoi just wrote (e.g.
+# session-start-cheese-flair.sh, the freshly-installed MCP entries). The
+# claude/.sync pass later rebuilds these symlinks idempotently. Codex has no
+# symlink layer, so this is claude-only.
 prelink_claude_writethrough() {
     local claude_dir="$HOME/.claude"
     local item link source
     mkdir -p "$claude_dir"
-    for item in hooks reference; do
+    for item in hooks reference settings.json; do
         link="$claude_dir/$item"
         source="$dotfiles_dir/claude/$item"
-        [[ -d "$source" ]] || continue
+        [[ -e "$source" ]] || continue
         # Already a symlink, or a real path claude/.sync will own — leave alone.
         [[ -e "$link" || -L "$link" ]] && continue
         ln -s "$source" "$link"

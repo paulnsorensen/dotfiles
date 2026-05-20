@@ -292,11 +292,13 @@ EOF
 #
 # Regression guard for the first-install race between chezmoi/.sync (runs
 # first alphabetically) and claude/.sync (creates the ~/.claude/{hooks,
-# reference} symlinks). Without the prelink, chezmoi's run_onchange
-# install-hooks template lands files inside a real ~/.claude/hooks/ dir
-# that claude/.sync later backs up — orphaning the deployed hook.
+# reference, settings.json} symlinks). Without the prelink, chezmoi's
+# run_onchange install-hooks template lands files inside a real
+# ~/.claude/hooks/ dir, and `claude mcp add`/`claude plugin install` land
+# a real ~/.claude/settings.json file — both of which claude/.sync later
+# backs up to .bak, orphaning everything chezmoi just wrote.
 
-@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference} on a fresh install" {
+@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference,settings.json} on a fresh install" {
     # No ~/.claude at all — fresh-box state.
     [[ ! -e "$HOME/.claude" ]]
 
@@ -320,12 +322,15 @@ EOF
     [[ "$(readlink "$HOME/.claude/hooks")"     == "$REAL_DOTFILES_DIR/claude/hooks"     ]]
     [[ -L "$HOME/.claude/reference" ]]
     [[ "$(readlink "$HOME/.claude/reference")" == "$REAL_DOTFILES_DIR/claude/reference" ]]
+    [[ -L "$HOME/.claude/settings.json" ]]
+    [[ "$(readlink "$HOME/.claude/settings.json")" == "$REAL_DOTFILES_DIR/claude/settings.json" ]]
 }
 
 @test "chezmoi/.sync prelink is idempotent (existing correct symlink preserved)" {
     mkdir -p "$HOME/.claude"
-    ln -s "$REAL_DOTFILES_DIR/claude/hooks"     "$HOME/.claude/hooks"
-    ln -s "$REAL_DOTFILES_DIR/claude/reference" "$HOME/.claude/reference"
+    ln -s "$REAL_DOTFILES_DIR/claude/hooks"         "$HOME/.claude/hooks"
+    ln -s "$REAL_DOTFILES_DIR/claude/reference"     "$HOME/.claude/reference"
+    ln -s "$REAL_DOTFILES_DIR/claude/settings.json" "$HOME/.claude/settings.json"
 
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
@@ -343,8 +348,9 @@ EOF
     run bash "$CHEZMOI_SYNC"
     assert_success
     # Symlinks unchanged.
-    [[ "$(readlink "$HOME/.claude/hooks")"     == "$REAL_DOTFILES_DIR/claude/hooks"     ]]
-    [[ "$(readlink "$HOME/.claude/reference")" == "$REAL_DOTFILES_DIR/claude/reference" ]]
+    [[ "$(readlink "$HOME/.claude/hooks")"         == "$REAL_DOTFILES_DIR/claude/hooks"         ]]
+    [[ "$(readlink "$HOME/.claude/reference")"     == "$REAL_DOTFILES_DIR/claude/reference"     ]]
+    [[ "$(readlink "$HOME/.claude/settings.json")" == "$REAL_DOTFILES_DIR/claude/settings.json" ]]
     # Prelink message only fires when it actually creates a link.
     [[ "$output" != *"Pre-linked"* ]]
 }
@@ -374,6 +380,33 @@ EOF
     # Real dir + its contents preserved untouched.
     [[ -d "$HOME/.claude/hooks" && ! -L "$HOME/.claude/hooks" ]]
     [[ "$(cat "$HOME/.claude/hooks/sentinel")" == "user file" ]]
+}
+
+@test "chezmoi/.sync prelink does not clobber a pre-existing real settings.json" {
+    # If the user has a hand-rolled ~/.claude/settings.json before adopting
+    # dotfiles, prelink must leave it alone — claude/.sync's backup pass owns
+    # real files at that path.
+    mkdir -p "$HOME/.claude"
+    echo '{"user":"keep"}' > "$HOME/.claude/settings.json"
+
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+
+    local fake_bin
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$PATH"
+
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+    # Real file preserved untouched.
+    [[ -f "$HOME/.claude/settings.json" && ! -L "$HOME/.claude/settings.json" ]]
+    [[ "$(cat "$HOME/.claude/settings.json")" == '{"user":"keep"}' ]]
 }
 
 # ── source-tree scaffold ────────────────────────────────────────────────
