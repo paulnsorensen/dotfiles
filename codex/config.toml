@@ -8,5 +8,11 @@
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 
+# `model_instructions_file` is set into the live ~/.codex/config.toml at sync
+# time by chezmoi/.chezmoiscripts/run_onchange_install-prompts.sh.tmpl using
+# an absolute path — TOML does not expand `~`, so we cannot bake it into this
+# seed file. The same script keeps ~/.codex/preamble.md in sync with
+# agents/preamble.md.
+
 [sandbox_workspace_write]
 network_access = true

@@ -37,11 +37,14 @@ _cc_lsp_gate() {
     echo "$gate_file"
 }
 
+# preamble.md replaces Claude's baked system prompt via --system-prompt-file.
+# CLAUDE.md auto-discovery, hooks, LSP gate, plugins, auto-memory all stay
+# active — only Anthropic's system prompt is swapped out.
 cc() {
     local gate; gate="$(_cc_lsp_gate)" || gate=""
     local -a flags=()
     [[ -n "$gate" ]] && flags+=(--settings "$gate")
-    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
     claude "${flags[@]}" "$@"
 }
 
@@ -49,7 +52,7 @@ ccc() {
     local gate; gate="$(_cc_lsp_gate)" || gate=""
     local -a flags=()
     [[ -n "$gate" ]] && flags+=(--settings "$gate")
-    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
     claude "${flags[@]}" --continue "$@"
 }
 
@@ -57,14 +60,14 @@ ccr() {
     local gate; gate="$(_cc_lsp_gate)" || gate=""
     local -a flags=()
     [[ -n "$gate" ]] && flags+=(--settings "$gate")
-    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
     claude "${flags[@]}" --resume "$@"
 }
 
 # Fresh session: prime MCPs in last conversation, then open it interactively
 ccfresh() {
   local -a flags=()
-  [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+  [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
   claude "${flags[@]}" --continue -p '/go' && claude "${flags[@]}" --continue
 }
 

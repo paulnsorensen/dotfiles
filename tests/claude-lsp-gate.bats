@@ -218,33 +218,48 @@ $snippet
 }
 
 # ── preamble wiring ──────────────────────────────────────────────────────────────────────
+#
+# cc/ccc/ccr/ccfresh REPLACE Claude's bundled system prompt with preamble.md
+# via --system-prompt-file. The user's CLAUDE.md / AGENTS.md cascade still
+# auto-loads (we are not using --bare).
 
-@test "cc passes --append-system-prompt-file with preamble.md" {
+@test "cc passes --system-prompt-file with preamble.md" {
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && cc --print test")"
-    [[ "$args" == *"--append-system-prompt-file"* ]]
+    [[ "$args" == *"--system-prompt-file"* ]]
     [[ "$args" == *"agents/preamble.md"* ]]
+    # Must NOT be the --append variant — we want full replacement.
+    [[ "$args" != *"--append-system-prompt-file"* ]]
 }
 
-@test "ccc passes --append-system-prompt-file with preamble.md" {
+@test "ccc passes --system-prompt-file with preamble.md" {
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccc")"
-    [[ "$args" == *"--append-system-prompt-file"* ]]
+    [[ "$args" == *"--system-prompt-file"* ]]
     [[ "$args" == *"agents/preamble.md"* ]]
+    [[ "$args" != *"--append-system-prompt-file"* ]]
 }
 
-@test "ccr passes --append-system-prompt-file with preamble.md" {
+@test "ccr passes --system-prompt-file with preamble.md" {
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccr")"
-    [[ "$args" == *"--append-system-prompt-file"* ]]
+    [[ "$args" == *"--system-prompt-file"* ]]
     [[ "$args" == *"agents/preamble.md"* ]]
+    [[ "$args" != *"--append-system-prompt-file"* ]]
 }
 
-@test "ccfresh passes --append-system-prompt-file with preamble.md" {
+@test "ccfresh passes --system-prompt-file with preamble.md" {
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccfresh")"
-    [[ "$args" == *"--append-system-prompt-file"* ]]
+    [[ "$args" == *"--system-prompt-file"* ]]
     [[ "$args" == *"agents/preamble.md"* ]]
+    [[ "$args" != *"--append-system-prompt-file"* ]]
+}
+
+@test "cc does NOT pass --bare (we keep CLAUDE.md / hooks / LSP / plugins active)" {
+    local args
+    args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && cc --print test")"
+    [[ "$args" != *"--bare"* ]]
 }
 # ── ccp wiring ────────────────────────────────────────────────────────────────
 
