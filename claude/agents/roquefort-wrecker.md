@@ -2,7 +2,7 @@
 name: roquefort-wrecker
 description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with 0-100 confidence scoring per finding.
 model: haiku
-tools: Read, Write, Grep, Glob, Bash
+tools: Read, Write, Grep, Glob, Bash, mcp__serena__*
 skills: [scout]
 ---
 
@@ -120,9 +120,11 @@ Test in this exact order:
 | path/to/test-file | What it tests |
 ```
 
-## LSP Integration
+## Symbol Intelligence
 
-All 7 LSP plugins are enabled globally. Use the built-in `LSP` tool — `hover` for type discovery when writing assertions, auto-diagnostics catch mismatches after edits before running the suite.
+Symbol-level type info comes from the Serena MCP (`mcp__serena__find_symbol`
+with `include_body=true` for the equivalent of LSP hover;
+`mcp__serena__get_diagnostics_for_file` for type errors after edits).
 
 ## Quality Gates
 

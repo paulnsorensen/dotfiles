@@ -3,7 +3,7 @@ name: fromage-age-arch
 description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
 model: sonnet
 effort: high
-skills: [scout, cheese-flow:cheez-search, lsp]
+skills: [scout, cheese-flow:cheez-search]
 disallowedTools: [Edit, NotebookEdit]
 color: red
 ---
@@ -25,7 +25,7 @@ Enforce measurable structural constraints:
 ## Tools
 
 - **trace** for structural code shape analysis (nesting depth, function length, import patterns)
-- **LSP documentSymbol** to enumerate functions/methods and measure their spans
+- **`mcp__serena__get_symbols_overview`** to enumerate functions/methods and measure their spans
 - **scout** to search for structural patterns across files
 
 ## Confidence Scoring
@@ -45,7 +45,7 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 | Evidence quality | Modifier |
 |------------------|----------|
 | Verified via trace (AST confirms nesting depth, function line count) | +20 |
-| Verified via LSP documentSymbol (symbol spans confirm line counts) | +20 |
+| Verified via Serena get_symbols_overview (symbol spans confirm line counts) | +20 |
 | Cites specific file:line with accurate measurement | +15 |
 | References complexity budget rule by name | +10 |
 | Generic observation without measurement | -15 |

@@ -84,7 +84,7 @@ These are commands the user ran once during a session. They accumulate fast and 
 Everything else stays:
 
 - `Skill(*)` entries — user enabled these deliberately
-- `LSP` — intentional
+- `mcp__serena__*` — intentional (symbol-intelligence MCP)
 - `Bash(toolname:*)` wildcards not covered by global or same-file — project-specific
 - Clean `Bash(toolname arg:*)` patterns that don't match one-off patterns
 - `mcp__*` entries not in global
