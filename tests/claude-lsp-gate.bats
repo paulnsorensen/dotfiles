@@ -12,9 +12,15 @@ LSP_PLUGINS=(
     "gopls@claude-code-lsps"
 )
 
+# Skip the calling test when zsh is missing. MUST be called directly from the
+# test body (not via `run` or `$(...)`) — `skip` only flips BATS_TEST_SKIPPED
+# in the current shell, so subshell calls would be silently lost.
+require_zsh() {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+}
+
 # Run a zsh snippet with claude.zsh sourced. Errors from compdef are suppressed.
 zsh_run() {
-    command -v zsh &>/dev/null || skip "zsh not installed"
     local snippet="$1"
     DOTFILES_DIR="$DOTFILES_DIR" zsh -c "
 source '$REAL_DOTFILES_DIR/zsh/claude.zsh' 2>/dev/null || true
@@ -49,7 +55,7 @@ teardown() {
 # ── syntax ────────────────────────────────────────────────────────────────────
 
 @test "claude.zsh has no syntax errors" {
-    command -v zsh &>/dev/null || skip "zsh not installed"
+    require_zsh
     run zsh -n "$REAL_DOTFILES_DIR/zsh/claude.zsh"
     [[ $status -eq 0 ]]
 }
@@ -76,12 +82,14 @@ teardown() {
 # ── gate helper ───────────────────────────────────────────────────────────────
 
 @test "_cc_lsp_gate prints nothing outside a git repo" {
+    require_zsh
     run zsh_run "cd /tmp && _cc_lsp_gate"
     [[ $status -eq 0 ]]
     [[ -z "$output" ]]
 }
 
 @test "_cc_lsp_gate prints a file path inside a git repo" {
+    require_zsh
     run zsh_run "cd '$GATE_REPO' && _cc_lsp_gate"
     [[ $status -eq 0 ]]
     [[ -n "$output" ]]
@@ -89,6 +97,7 @@ teardown() {
 }
 
 @test "_cc_lsp_gate output is valid JSON" {
+    require_zsh
     local gate_file
     gate_file="$(zsh_run "cd '$REAL_DOTFILES_DIR' && _cc_lsp_gate")"
     [[ -n "$gate_file" ]]
@@ -96,6 +105,7 @@ teardown() {
 }
 
 @test "_cc_lsp_gate output contains exactly the 6 LSP plugin keys" {
+    require_zsh
     local gate_file
     gate_file="$(zsh_run "cd '$REAL_DOTFILES_DIR' && _cc_lsp_gate")"
     [[ -n "$gate_file" ]]
@@ -111,6 +121,7 @@ teardown() {
 }
 
 @test "_cc_lsp_gate values are booleans not strings" {
+    require_zsh
     local gate_file
     gate_file="$(zsh_run "cd '$REAL_DOTFILES_DIR' && _cc_lsp_gate")"
     [[ -n "$gate_file" ]]
@@ -121,6 +132,7 @@ teardown() {
 }
 
 @test "_cc_lsp_gate threshold 999999 disables all LSPs" {
+    require_zsh
     local gate_file
     gate_file="$(CC_LSP_GATE_THRESHOLD=999999 zsh_run "
 export CC_LSP_GATE_THRESHOLD=999999
@@ -134,6 +146,7 @@ _cc_lsp_gate")"
 }
 
 @test "_cc_lsp_gate threshold 1 enables at least one LSP in this repo" {
+    require_zsh
     local gate_file
     gate_file="$(CC_LSP_GATE_THRESHOLD=1 zsh_run "
 export CC_LSP_GATE_THRESHOLD=1
@@ -147,6 +160,7 @@ _cc_lsp_gate")"
 }
 
 @test "_cc_lsp_gate enables bash-language-server for this shell-heavy repo" {
+    require_zsh
     local gate_file
     gate_file="$(CC_LSP_GATE_THRESHOLD=50 zsh_run "
 export CC_LSP_GATE_THRESHOLD=50
@@ -160,6 +174,7 @@ _cc_lsp_gate")"
 }
 
 @test "_cc_lsp_gate disables rust-analyzer for this non-Rust repo" {
+    require_zsh
     local gate_file
     gate_file="$(zsh_run "cd '$REAL_DOTFILES_DIR' && _cc_lsp_gate")"
     [[ -n "$gate_file" ]]
@@ -170,6 +185,7 @@ _cc_lsp_gate")"
 }
 
 @test "_cc_lsp_gate disables gopls for this non-Go repo" {
+    require_zsh
     local gate_file
     gate_file="$(zsh_run "cd '$REAL_DOTFILES_DIR' && _cc_lsp_gate")"
     [[ -n "$gate_file" ]]
@@ -183,7 +199,6 @@ _cc_lsp_gate")"
 
 # Direct zsh invocation with explicit env — more reliable than zsh_run for PATH-sensitive tests.
 zsh_with_mock() {
-    command -v zsh &>/dev/null || skip "zsh not installed"
     local snippet="$1"
     DOTFILES_DIR="$DOTFILES_DIR" PATH="$MOCK_BIN:$PATH" zsh -c "
 source '$REAL_DOTFILES_DIR/zsh/claude.zsh' 2>/dev/null || true
@@ -192,6 +207,7 @@ $snippet
 }
 
 @test "cc passes --settings gate file when inside a git repo" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && cc --print test")"
     [[ "$args" == *"--settings"* ]]
@@ -199,12 +215,14 @@ $snippet
 }
 
 @test "cc passes no --settings flag outside a git repo" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd /tmp && cc --print test")"
     [[ "$args" != *"claude-lsp-gate"* ]]
 }
 
 @test "ccc passes --settings and --continue in a git repo" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccc")"
     [[ "$args" == *"--settings"* ]]
@@ -213,6 +231,7 @@ $snippet
 }
 
 @test "ccr passes --settings and --resume in a git repo" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccr")"
     [[ "$args" == *"--settings"* ]]
@@ -227,6 +246,7 @@ $snippet
 # auto-loads (we are not using --bare).
 
 @test "cc passes --system-prompt-file with preamble.md" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && cc --print test")"
     [[ "$args" == *"--system-prompt-file"* ]]
@@ -236,6 +256,7 @@ $snippet
 }
 
 @test "ccc passes --system-prompt-file with preamble.md" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccc")"
     [[ "$args" == *"--system-prompt-file"* ]]
@@ -244,6 +265,7 @@ $snippet
 }
 
 @test "ccr passes --system-prompt-file with preamble.md" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccr")"
     [[ "$args" == *"--system-prompt-file"* ]]
@@ -252,6 +274,7 @@ $snippet
 }
 
 @test "ccfresh passes --system-prompt-file with preamble.md" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccfresh")"
     [[ "$args" == *"--system-prompt-file"* ]]
@@ -260,6 +283,7 @@ $snippet
 }
 
 @test "cc does NOT pass --bare (we keep CLAUDE.md / hooks / LSP / plugins active)" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && cc --print test")"
     [[ "$args" != *"--bare"* ]]
@@ -267,6 +291,7 @@ $snippet
 # ── ccp wiring ────────────────────────────────────────────────────────────────
 
 @test "ccp fe injects gate file before settings-merge.json" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccp fe")"
     [[ "$args" == *"claude-lsp-gate"* ]]
@@ -279,18 +304,21 @@ $snippet
 }
 
 @test "ccp todo skips gate (profile has full-replace settings.json)" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccp todo")"
     [[ "$args" != *"claude-lsp-gate"* ]]
 }
 
 @test "ccp plugin injects gate (no full-replace settings.json)" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccp plugin")"
     [[ "$args" == *"claude-lsp-gate"* ]]
 }
 
 @test "ccp review injects gate (no full-replace settings.json)" {
+    require_zsh
     local args
     args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccp review")"
     [[ "$args" == *"claude-lsp-gate"* ]]
