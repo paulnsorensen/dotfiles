@@ -182,11 +182,11 @@ These have become tics. They either hedge, inflate, or substitute a cliché for 
 | non-trivial | hard, complex, involved |
 | deep dive | analysis, investigation, reading |
 | leverage (= use) | use, apply, build on |
-| let me _(opener)_ | _(just do it — no announcement needed)_ |
+| let me *(opener)* | *(just do it — no announcement needed)* |
 | surface (as verb) | mention, flag, call out, show |
 | ergonomic / ergonomics | readable, clean, easy to use |
-| guardrails _(abstract)_ | constraints, checks, limits |
-| not my changes / pre-existing _(unverified)_ | cite evidence: base-branch run ID, `git blame`, or commit hash — otherwise fix it |
+| guardrails *(abstract)* | constraints, checks, limits |
+| not my changes / pre-existing *(unverified)* | cite evidence: base-branch run ID, `git blame`, or commit hash — otherwise fix it |
 
 ## Rules
 

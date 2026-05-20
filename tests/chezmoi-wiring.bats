@@ -658,7 +658,12 @@ YAML
 
     [[ "$(yq '.web_dashboard'                 "$HOME/.serena/serena_config.yml")" == "false" ]]
     [[ "$(yq '.web_dashboard_open_on_launch'  "$HOME/.serena/serena_config.yml")" == "false" ]]
-    [[ "$(yq '.excluded_tools | length'       "$HOME/.serena/serena_config.yml")" == "0" ]]
+    # excluded_tools is overridden with the managed memory + onboarding list,
+    # replacing whatever was there (here: ["some_tool"]).
+    [[ "$(yq '.excluded_tools | length'       "$HOME/.serena/serena_config.yml")" == "7" ]]
+    [[ "$(yq '.excluded_tools | .[0]'         "$HOME/.serena/serena_config.yml")" == "write_memory" ]]
+    [[ "$(yq '.excluded_tools | contains(["onboarding"])' "$HOME/.serena/serena_config.yml")" == "true" ]]
+    [[ "$(yq '.excluded_tools | contains(["some_tool"])'  "$HOME/.serena/serena_config.yml")" == "false" ]]
     # And keys we don't touch must survive intact.
     [[ "$(yq '.language_backend' "$HOME/.serena/serena_config.yml")" == "LSP" ]]
     [[ "$(yq '.tool_timeout'     "$HOME/.serena/serena_config.yml")" == "240" ]]

@@ -119,9 +119,11 @@ This bypasses the blanket `.serena/` ignore for that one file. If many repos nee
 After editing, confirm the config took effect:
 
 1. **Render the rendered system prompt** — quickest sanity check that serena parsed the file:
+
    ```bash
    serena print-system-prompt "$(pwd)"
    ```
+
    Look for your project name, language list, and excluded tools in the output.
 
 2. **Probe a symbol** — exercise the LSP layer:
