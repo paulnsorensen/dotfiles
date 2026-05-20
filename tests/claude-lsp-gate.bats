@@ -14,6 +14,7 @@ LSP_PLUGINS=(
 
 # Run a zsh snippet with claude.zsh sourced. Errors from compdef are suppressed.
 zsh_run() {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     local snippet="$1"
     DOTFILES_DIR="$DOTFILES_DIR" zsh -c "
 source '$REAL_DOTFILES_DIR/zsh/claude.zsh' 2>/dev/null || true
@@ -48,6 +49,7 @@ teardown() {
 # ── syntax ────────────────────────────────────────────────────────────────────
 
 @test "claude.zsh has no syntax errors" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     run zsh -n "$REAL_DOTFILES_DIR/zsh/claude.zsh"
     [[ $status -eq 0 ]]
 }
@@ -181,6 +183,7 @@ _cc_lsp_gate")"
 
 # Direct zsh invocation with explicit env — more reliable than zsh_run for PATH-sensitive tests.
 zsh_with_mock() {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     local snippet="$1"
     DOTFILES_DIR="$DOTFILES_DIR" PATH="$MOCK_BIN:$PATH" zsh -c "
 source '$REAL_DOTFILES_DIR/zsh/claude.zsh' 2>/dev/null || true
