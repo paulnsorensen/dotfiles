@@ -89,7 +89,6 @@ Specialized agents invoked via Task tool with `subagent_type`.
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
 | `nih-scanner` | Structural NIH pattern scanner |
-| `lsp-probe` | Short-lived LSP query broker for batch operations |
 | `worktree-triage` | Stale-worktree triage recommendations |
 
 All review/analysis agents use 0-100 confidence scoring (>= 50 to surface findings).
@@ -156,16 +155,9 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 
-**LSP Plugins** (from `boostvolt/claude-code-lsps`, lazy-start per file type):
-
-| Plugin | Language |
-|--------|----------|
-| `bash-language-server` | Bash/shell |
-| `vtsls` | TypeScript/JavaScript |
-| `yaml-language-server` | YAML |
-| `rust-analyzer` | Rust |
-| `pyright` | Python |
-| `gopls` | Go |
+Symbol-level code intelligence is provided by the Serena MCP (see
+`agents/mcp/registry.yaml`); the per-language LSP plugins from
+`boostvolt/claude-code-lsps` were removed once Serena went cross-harness.
 
 **Workflow Plugins** (from `anthropics/claude-code-plugins`):
 

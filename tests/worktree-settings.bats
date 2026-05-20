@@ -108,7 +108,7 @@ YAML
     [[ "$count" -eq 0 ]]
 }
 
-@test "worktree-settings: discovers non-LSP plugins via .mcp.json" {
+@test "worktree-settings: discovers plugins with an .mcp.json (skips skill-only)" {
     # Local plugin with mcpServers wrapper exposing two distinct servers.
     mkdir -p "${TMPDIR_TEST}/plugins/multi-srv"
     cat > "${TMPDIR_TEST}/plugins/multi-srv/.mcp.json" <<'JSON'
@@ -128,9 +128,6 @@ JSON
 JSON
     cat > "${TMPDIR_TEST}/claude/plugins/registry.yaml" <<YAML
 plugins:
-  vtsls@claude-code-lsps:
-    description: TypeScript LSP
-    scope: user
   multi-srv@local:
     description: Multi-server plugin
     scope: user
@@ -147,8 +144,6 @@ YAML
     assert_has_entry "$result" "mcp__plugin_multi-srv_alpha__*"
     assert_has_entry "$result" "mcp__plugin_multi-srv_beta__*"
     assert_has_entry "$result" "mcp__plugin_single-flat_single-flat__*"
-    # LSP plugins never produce MCP entries.
-    assert_no_entry "$result" "mcp__plugin_vtsls_vtsls__*"
     # Skill-only plugins (no .mcp.json) produce no entries.
     assert_no_entry "$result" "mcp__plugin_no-mcp_no-mcp__*"
 }

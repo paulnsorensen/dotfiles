@@ -5,5 +5,5 @@
 # No WebFetch/WebSearch — review CLAUDE.md routes web research through /gh
 # or /briesearch (forked) to keep main context clean.
 extra_args=(
-    --tools "Read,Grep,Glob,Bash,Skill,Agent,LSP,TaskCreate,TaskUpdate,TaskList,AskUserQuestion"
+    --tools "Read,Grep,Glob,Bash,Skill,Agent,TaskCreate,TaskUpdate,TaskList,AskUserQuestion"
 )
