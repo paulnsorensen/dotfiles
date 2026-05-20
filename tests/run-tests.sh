@@ -75,7 +75,12 @@ run_tests() {
     if (( ${#SPECIFIC_TESTS[@]} > 0 )); then
         test_files="${SPECIFIC_TESTS[*]}"
     else
-        test_files="dots-simple.bats dots.bats git-hooks.bats sync.bats config-validation.bats prompt.bats sync-claude.bats sync-rollback.bats hooks-blockers.bats hooks-session.bats iterm2-fonts.bats worktree-settings.bats skills-external.bats skills-local.bats chezmoi-wiring.bats install-codex.bats install-agents-doc.bats install-prompts.bats packages.bats cheese-flair.bats mcp-lib.bats mcp-opencode.bats agents-hooks-sync.bats cursor-plugin.bats"
+        # Glob every .bats file in this dir so new tests pick up automatically.
+        local _f _found=()
+        for _f in *.bats; do
+            [[ -f "$_f" ]] && _found+=("$_f")
+        done
+        test_files="${_found[*]}"
     fi
 
     # Count total tests
