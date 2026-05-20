@@ -41,14 +41,15 @@ teardown() {
 
 # ── registry ───────────────────────────────────────────────────────────
 
-@test "registry.yaml exists and contains session-start-cheese-flair" {
+@test "registry.yaml exists and contains managed hook entries" {
     assert_file_exists "$REGISTRY_FILE"
     local names
     names=$(yq -r '.hooks | keys | .[]' "$REGISTRY_FILE")
+    [[ "$names" == *"jmux-attention"* ]]
     [[ "$names" == *"session-start-cheese-flair"* ]]
 }
 
-@test "registry entry declares both harnesses, matcher, timeout, script" {
+@test "session-start registry entry declares both harnesses, matcher, timeout, script" {
     local entry
     entry=$(yq -o=json '.hooks."session-start-cheese-flair"' "$REGISTRY_FILE")
     [[ "$(jq -r '.event'     <<<"$entry")" == "SessionStart" ]]
@@ -59,12 +60,60 @@ teardown() {
     [[ "$(jq -r '.harnesses[1]' <<<"$entry")" == "codex"  ]]
 }
 
-@test "hook_filter_for_harness includes the entry for both claude and codex" {
+@test "jmux attention registry entry declares Stop event for both harnesses" {
+    local entry
+    entry=$(yq -o=json '.hooks."jmux-attention"' "$REGISTRY_FILE")
+    [[ "$(jq -r '.event'     <<<"$entry")" == "Stop" ]]
+    [[ "$(jq -r '.script'    <<<"$entry")" == "agents/hooks/jmux-attention.sh" ]]
+    [[ "$(jq -r '.timeout'   <<<"$entry")" == "5" ]]
+    [[ "$(jq -r '.harnesses[0]' <<<"$entry")" == "claude" ]]
+    [[ "$(jq -r '.harnesses[1]' <<<"$entry")" == "codex"  ]]
+}
+
+@test "jmux attention hook no-ops outside tmux" {
+    local marker="$TEST_HOME/tmux-called"
+    local fake_bin="$TEST_HOME/fake-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/tmux" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" > "$marker"
+SH
+    chmod +x "$fake_bin/tmux"
+
+    PATH="$fake_bin:$PATH" run bash "$REAL_DOTFILES_DIR/agents/hooks/jmux-attention.sh"
+
+    assert_success
+    [[ "$output" == "" ]]
+    [[ ! -e "$marker" ]]
+}
+
+@test "jmux attention hook marks tmux session when TMUX is set" {
+    local marker="$TEST_HOME/tmux-called"
+    local fake_bin="$TEST_HOME/fake-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/tmux" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" > "$marker"
+SH
+    chmod +x "$fake_bin/tmux"
+
+    TMUX=/tmp/fake-tmux PATH="$fake_bin:$PATH" run bash "$REAL_DOTFILES_DIR/agents/hooks/jmux-attention.sh"
+
+    assert_success
+    [[ "$output" == "" ]]
+    [[ "$(< "$marker")" == "set-option -q @jmux-attention 1" ]]
+}
+
+@test "hook_filter_for_harness includes shared entries for both claude and codex" {
     local c x
     c=$(hook_filter_for_harness claude "$REGISTRY_JSON")
     x=$(hook_filter_for_harness codex  "$REGISTRY_JSON")
-    [[ "$(jq -r 'keys[]' <<<"$c")" == "session-start-cheese-flair" ]]
-    [[ "$(jq -r 'keys[]' <<<"$x")" == "session-start-cheese-flair" ]]
+    [[ "$(jq -r 'keys | length' <<<"$c")" == "2" ]]
+    [[ "$(jq -r 'keys | length' <<<"$x")" == "2" ]]
+    [[ "$(jq -r 'has("jmux-attention")' <<<"$c")" == "true" ]]
+    [[ "$(jq -r 'has("session-start-cheese-flair")' <<<"$c")" == "true" ]]
+    [[ "$(jq -r 'has("jmux-attention")' <<<"$x")" == "true" ]]
+    [[ "$(jq -r 'has("session-start-cheese-flair")' <<<"$x")" == "true" ]]
 }
 
 # ── deployed-path resolver ─────────────────────────────────────────────
@@ -72,12 +121,16 @@ teardown() {
 @test "hook_deployed_path returns harness-specific \$HOME path" {
     [[ "$(hook_deployed_path claude agents/hooks/session-start-cheese-flair.sh)" == "\$HOME/.claude/hooks/session-start-cheese-flair.sh" ]]
     [[ "$(hook_deployed_path codex  agents/hooks/session-start-cheese-flair.sh)" == "\$HOME/.codex/hooks/session-start-cheese-flair.sh" ]]
+    [[ "$(hook_deployed_path claude agents/hooks/jmux-attention.sh)" == "\$HOME/.claude/hooks/jmux-attention.sh" ]]
+    [[ "$(hook_deployed_path codex  agents/hooks/jmux-attention.sh)" == "\$HOME/.codex/hooks/jmux-attention.sh" ]]
 }
 
 @test "hook_codex_command builds bash invocation with \$HOME" {
     local cmd
     cmd=$(hook_codex_command agents/hooks/session-start-cheese-flair.sh)
     [[ "$cmd" == 'bash $HOME/.codex/hooks/session-start-cheese-flair.sh' ]]
+    cmd=$(hook_codex_command agents/hooks/jmux-attention.sh)
+    [[ "$cmd" == 'bash $HOME/.codex/hooks/jmux-attention.sh' ]]
 }
 
 # ── drift signatures ───────────────────────────────────────────────────
@@ -89,6 +142,11 @@ teardown() {
     # Claude path differs from codex; matcher + timeout match.
     [[ "$c" == *"/.claude/hooks/session-start-cheese-flair.sh"$'\t'"startup|resume"$'\t'"5" ]]
     [[ "$x" == *"/.codex/hooks/session-start-cheese-flair.sh"$'\t'"startup|resume"$'\t'"5"  ]]
+
+    c=$(hook_desired_signature jmux-attention claude)
+    x=$(hook_desired_signature jmux-attention codex)
+    [[ "$c" == *"/.claude/hooks/jmux-attention.sh"$'\t'$'\t'"5" ]]
+    [[ "$x" == *"/.codex/hooks/jmux-attention.sh"$'\t'$'\t'"5"  ]]
 }
 
 # ── claude backend: idempotent upsert ──────────────────────────────────
@@ -111,6 +169,22 @@ JSON
     [[ "$(jq -r '.permissions.allow[0]' "$CLAUDE_SETTINGS_FILE")" == "Edit" ]]
 }
 
+@test "claude upsert adds Stop entry for jmux attention when missing" {
+    cat > "$CLAUDE_SETTINGS_FILE" <<'JSON'
+{ "permissions": { "allow": ["Edit"] } }
+JSON
+
+    hook_claude_apply jmux-attention
+    [[ $? -eq 0 ]]
+
+    local cmd timeout
+    cmd=$(jq -r '.hooks.Stop[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")
+    timeout=$(jq -r '.hooks.Stop[0].hooks[0].timeout' "$CLAUDE_SETTINGS_FILE")
+    [[ "$cmd" == 'bash "$HOME/.claude/hooks/jmux-attention.sh"' ]]
+    [[ "$timeout" == "5" ]]
+    [[ "$(jq -r '.permissions.allow[0]' "$CLAUDE_SETTINGS_FILE")" == "Edit" ]]
+}
+
 @test "claude upsert is idempotent on second run (no duplicate entries)" {
     cat > "$CLAUDE_SETTINGS_FILE" <<'JSON'
 { "hooks": {} }
@@ -122,6 +196,28 @@ JSON
     local count
     count=$(jq '.hooks.SessionStart | length' "$CLAUDE_SETTINGS_FILE")
     [[ "$count" == "1" ]]
+}
+
+@test "claude Stop upsert is idempotent and preserves unrelated Stop entries" {
+    cat > "$CLAUDE_SETTINGS_FILE" <<'JSON'
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "bash $HOME/other-stop-hook.sh" }] }
+    ]
+  }
+}
+JSON
+    hook_claude_apply jmux-attention
+    hook_claude_apply jmux-attention
+
+    local count first_cmd second_cmd
+    count=$(jq '.hooks.Stop | length' "$CLAUDE_SETTINGS_FILE")
+    first_cmd=$(jq -r '.hooks.Stop[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")
+    second_cmd=$(jq -r '.hooks.Stop[1].hooks[0].command' "$CLAUDE_SETTINGS_FILE")
+    [[ "$count" == "2" ]]
+    [[ "$first_cmd" == 'bash $HOME/other-stop-hook.sh' ]]
+    [[ "$second_cmd" == 'bash "$HOME/.claude/hooks/jmux-attention.sh"' ]]
 }
 
 @test "claude upsert preserves unrelated SessionStart entries" {
@@ -179,6 +275,7 @@ JSON
 @test "hook_detect_changes (claude): empty when in sync" {
     echo '{}' > "$CLAUDE_SETTINGS_FILE"
     hook_claude_apply session-start-cheese-flair
+    hook_claude_apply jmux-attention
     local changed
     changed=$(hook_detect_changes claude)
     [[ -z "$changed" ]]
@@ -189,7 +286,8 @@ JSON
     echo '{}' > "$CLAUDE_SETTINGS_FILE"
     local changed
     changed=$(hook_detect_changes claude)
-    [[ "$changed" == "session-start-cheese-flair" ]]
+    grep -qFx "session-start-cheese-flair" <<<"$changed"
+    grep -qFx "jmux-attention" <<<"$changed"
 }
 
 # ── codex backend: TOML upsert preserving other keys ───────────────────
@@ -223,6 +321,17 @@ TOML
     grep -qF 'timeout = 5'                            "$CODEX_CONFIG_FILE"
 }
 
+@test "codex upsert writes Stop block for jmux attention" {
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    : > "$CODEX_CONFIG_FILE"
+
+    hook_codex_apply jmux-attention
+
+    [[ "$(yq -p=toml -o=json '.hooks.Stop | length' "$CODEX_CONFIG_FILE")" == "1" ]]
+    [[ "$(yq -p=toml -o=json '.hooks.Stop[0].hooks[0].command' "$CODEX_CONFIG_FILE")" == '"bash $HOME/.codex/hooks/jmux-attention.sh"' ]]
+    [[ "$(yq -p=toml -o=json '.hooks.Stop[0].hooks[0].timeout' "$CODEX_CONFIG_FILE")" == "5" ]]
+}
+
 @test "codex upsert is idempotent (re-run produces no new SessionStart blocks)" {
     HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
     : > "$CODEX_CONFIG_FILE"
@@ -234,6 +343,27 @@ TOML
     local count
     count=$(yq -p=toml -o=json '.hooks.SessionStart | length' "$CODEX_CONFIG_FILE")
     [[ "$count" == "1" ]]
+}
+
+@test "codex Stop upsert is idempotent and preserves unrelated Stop entries" {
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    cat > "$CODEX_CONFIG_FILE" <<'TOML'
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "bash $HOME/other-stop-hook.sh"
+timeout = 10
+TOML
+
+    hook_codex_apply jmux-attention
+    hook_codex_apply jmux-attention
+
+    local count
+    count=$(yq -p=toml -o=json '.hooks.Stop | length' "$CODEX_CONFIG_FILE")
+    [[ "$count" == "2" ]]
+    [[ "$(yq -p=toml -o=json '.hooks.Stop[0].hooks[0].command' "$CODEX_CONFIG_FILE")" == '"bash $HOME/other-stop-hook.sh"' ]]
+    [[ "$(yq -p=toml -o=json '.hooks.Stop[1].hooks[0].command' "$CODEX_CONFIG_FILE")" == '"bash $HOME/.codex/hooks/jmux-attention.sh"' ]]
 }
 
 @test "codex upsert creates config.toml when it does not exist" {
@@ -251,6 +381,7 @@ TOML
     HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
     : > "$CODEX_CONFIG_FILE"
     hook_codex_apply session-start-cheese-flair
+    hook_codex_apply jmux-attention
     local changed
     changed=$(hook_detect_changes codex)
     [[ -z "$changed" ]]
@@ -269,7 +400,8 @@ timeout = 99
 TOML
     local changed
     changed=$(hook_detect_changes codex)
-    [[ "$changed" == "session-start-cheese-flair" ]]
+    grep -qFx "session-start-cheese-flair" <<<"$changed"
+    grep -qFx "jmux-attention" <<<"$changed"
 }
 
 # ── full sync.sh end-to-end ────────────────────────────────────────────
@@ -290,6 +422,7 @@ TOML
     run bash "$REAL_DOTFILES_DIR/agents/hooks/sync.sh" --dry-run
     assert_success
     assert_output_contains "To upsert"
+    assert_output_contains "jmux-attention"
     assert_output_contains "session-start-cheese-flair"
 }
 
@@ -302,6 +435,7 @@ TOML
 
     # Claude side upserted.
     [[ "$(jq '.hooks.SessionStart | length' "$CLAUDE_SETTINGS_FILE")" == "1" ]]
+    [[ "$(jq '.hooks.Stop | length' "$CLAUDE_SETTINGS_FILE")" == "1" ]]
     # Codex side untouched (file still empty).
     [[ ! -s "$CODEX_CONFIG_FILE" ]]
 }
@@ -322,6 +456,7 @@ JSON
     after=$(shasum -a 256 "$CLAUDE_SETTINGS_FILE" | awk '{print $1}')
     [[ "$before" == "$after" ]]
     grep -qF '[[hooks.SessionStart]]' "$CODEX_CONFIG_FILE"
+    [[ "$(yq -p=toml -o=json '.hooks.Stop | length' "$CODEX_CONFIG_FILE")" == "1" ]]
 }
 
 # ── chezmoi installer ──────────────────────────────────────────────────
@@ -407,15 +542,22 @@ SH
     [[ "$(jq -r 'keys | length' <<<"$for_codex")"  == "1" ]]
 }
 
-@test "hook_filter_for_harness fails loud when an entry has event != SessionStart" {
-    # Asserts the only-SessionStart-wired guard in lib.sh. Adding a hook
-    # with event: PostToolUse without first wiring backends for that slot
-    # would silently land it under SessionStart — this test catches that.
+@test "hook_filter_for_harness fails loud when an entry has an unsupported event" {
+    # Asserts the event guard in lib.sh. Adding a hook with event:
+    # PostToolUse without first wiring backends for that slot would silently
+    # land it under the wrong event — this test catches that.
     local reg='{"future":{"event":"PostToolUse","script":"x.sh"}}'
     run hook_filter_for_harness claude "$reg"
     [[ "$status" -ne 0 ]]
-    [[ "$output" == *"event != SessionStart"* ]]
+    [[ "$output" == *"unsupported event"* ]]
     [[ "$output" == *"future"* ]]
+}
+
+@test "hook_filter_for_harness accepts Stop entries" {
+    local reg='{"stopper":{"event":"Stop","script":"x.sh"}}'
+    local filtered
+    filtered=$(hook_filter_for_harness claude "$reg")
+    [[ "$(jq -r 'keys[]' <<<"$filtered")" == "stopper" ]]
 }
 
 @test "hook_filter_for_harness fails loud when the event field is missing" {
@@ -518,7 +660,8 @@ timeout = 5
 TOML
     local changed
     changed=$(hook_detect_changes codex)
-    [[ "$changed" == "session-start-cheese-flair" ]]
+    grep -qFx "session-start-cheese-flair" <<<"$changed"
+    grep -qFx "jmux-attention" <<<"$changed"
 }
 
 # ── hardening: in-repo claude/settings.json content lock ───────────────
@@ -544,6 +687,24 @@ TOML
     [[ "$timeout" == "5" ]]
 }
 
+@test "claude/settings.json carries the managed jmux Stop entry with timeout 5" {
+    local settings="$REAL_DOTFILES_DIR/claude/settings.json"
+    [[ "$(jq -r '.hooks.Stop | length' "$settings")" -ge 1 ]]
+    local cmd timeout
+    cmd=$(jq -r '
+        .hooks.Stop
+        | map(select(((.hooks // [])[0].command // "") | test("jmux-attention.sh")))
+        | .[0].hooks[0].command
+    ' "$settings")
+    timeout=$(jq -r '
+        .hooks.Stop
+        | map(select(((.hooks // [])[0].command // "") | test("jmux-attention.sh")))
+        | .[0].hooks[0].timeout
+    ' "$settings")
+    [[ "$cmd" == 'bash "$HOME/.claude/hooks/jmux-attention.sh"' ]]
+    [[ "$timeout" == "5" ]]
+}
+
 @test "claude/settings.json sync against itself is a no-op" {
     # Run sync against the real in-repo settings file (copied) and assert
     # the produced state matches byte-for-byte after a re-run — locks the
@@ -552,6 +713,7 @@ TOML
     local before
     before=$(jq -S . "$CLAUDE_SETTINGS_FILE")
     hook_claude_apply session-start-cheese-flair
+    hook_claude_apply jmux-attention
     local after
     after=$(jq -S . "$CLAUDE_SETTINGS_FILE")
     [[ "$before" == "$after" ]]
@@ -605,6 +767,10 @@ TOML
     local synth="$TEST_HOME/synth-registry.yaml"
     cat > "$synth" <<'YAML'
 hooks:
+  jmux-attention:
+    event: Stop
+    script: agents/hooks/jmux-attention.sh
+    harnesses: [claude, codex]
   session-start-cheese-flair:
     event: SessionStart
     script: agents/hooks/session-start-cheese-flair.sh
@@ -626,17 +792,19 @@ YAML
         | "\($asset)\t\($harness)"
     ' | LC_ALL=C sort -u)
 
-    # cheese-flair: 3 assets × 2 harnesses = 6.  cheese-budget: 1 × 1 = 1.
-    [[ "$(wc -l <<<"$pairs" | tr -d ' ')" -eq 7 ]]
-    grep -qF $'agents/hooks/session-start-cheese-flair.sh\tclaude' <<<"$pairs"
-    grep -qF $'agents/hooks/session-start-cheese-flair.sh\tcodex'  <<<"$pairs"
-    grep -qF $'agents/lib/cheese-flair.sh\tclaude'                 <<<"$pairs"
-    grep -qF $'agents/lib/cheese-flair.sh\tcodex'                  <<<"$pairs"
-    grep -qF $'agents/reference/cheese-flair.md\tclaude'           <<<"$pairs"
-    grep -qF $'agents/reference/cheese-flair.md\tcodex'            <<<"$pairs"
-    grep -qF $'agents/hooks/user-prompt-cheese-budget.sh\tclaude'  <<<"$pairs"
+    # jmux-attention: 1 × 2 = 2. cheese-flair: 3 × 2 = 6. cheese-budget: 1 × 1 = 1.
+    [[ "$(wc -l <<<"$pairs" | tr -d ' ')" -eq 9 ]]
+    grep -Fxq $'agents/hooks/jmux-attention.sh\tclaude'               <<<"$pairs"
+    grep -Fxq $'agents/hooks/jmux-attention.sh\tcodex'                <<<"$pairs"
+    grep -Fxq $'agents/hooks/session-start-cheese-flair.sh\tclaude'   <<<"$pairs"
+    grep -Fxq $'agents/hooks/session-start-cheese-flair.sh\tcodex'    <<<"$pairs"
+    grep -Fxq $'agents/lib/cheese-flair.sh\tclaude'                   <<<"$pairs"
+    grep -Fxq $'agents/lib/cheese-flair.sh\tcodex'                    <<<"$pairs"
+    grep -Fxq $'agents/reference/cheese-flair.md\tclaude'             <<<"$pairs"
+    grep -Fxq $'agents/reference/cheese-flair.md\tcodex'              <<<"$pairs"
+    grep -Fxq $'agents/hooks/user-prompt-cheese-budget.sh\tclaude'    <<<"$pairs"
     # cheese-budget opted out of codex — must NOT appear there.
-    ! grep -qF $'agents/hooks/user-prompt-cheese-budget.sh\tcodex' <<<"$pairs"
+    ! grep -Fxq $'agents/hooks/user-prompt-cheese-budget.sh\tcodex'   <<<"$pairs"
 }
 
 @test "install-shared-assets.sh clears stale +x when source is no longer executable" {
@@ -694,7 +862,7 @@ TOML
 # Reimplements the registry-driven iteration the chezmoi template runs
 # against a fake $HOME, then asserts every (asset × harness) pair landed
 # at the expected path with the right mode and the Codex TOML carries the
-# expected matcher/command/timeout. Locks acceptance criterion #1 at the
+# expected SessionStart and Stop hook blocks. Locks acceptance criterion #1 at the
 # integration level — a regression in the iteration logic, INSTALLER
 # resolution, or sync.sh upsert would fail this test.
 @test "chezmoi installer flow deploys every registry asset and writes the expected Codex TOML block" {
@@ -729,10 +897,10 @@ TOML
         deployed_count=$((deployed_count + 1))
     done <<<"$pairs"
 
-    # cheese-flair entry contributes 3 assets × 2 harnesses = 6 today.
+    # jmux-attention contributes 1 asset × 2 harnesses; cheese-flair contributes 3 assets × 2 harnesses.
     # The assertion is bounded but the iteration is generic: adding a
     # second hook will increase the count without breaking the test.
-    [[ "$deployed_count" -ge 6 ]]
+    [[ "$deployed_count" -ge 8 ]]
 
     # Then run the sync against the fake codex config (claude side untouched
     # — we point CLAUDE_SETTINGS_FILE at a temp file so the real in-repo
@@ -746,18 +914,24 @@ TOML
         run bash "$sync_script"
     assert_success
 
-    # Codex TOML must contain the expected block with matcher/command/timeout.
+    # Codex TOML must contain the expected SessionStart block with matcher/command/timeout.
     [[ -f "$fake_codex" ]]
-    local matcher cmd timeout
+    local matcher cmd timeout stop_cmd stop_timeout
     matcher=$(yq -p=toml -o=json '.hooks.SessionStart[0].matcher'              "$fake_codex")
     cmd=$(    yq -p=toml -o=json '.hooks.SessionStart[0].hooks[0].command'     "$fake_codex")
     timeout=$(yq -p=toml -o=json '.hooks.SessionStart[0].hooks[0].timeout'     "$fake_codex")
     [[ "$matcher" == '"startup|resume"' ]]
     [[ "$cmd"     == '"bash $HOME/.codex/hooks/session-start-cheese-flair.sh"' ]]
     [[ "$timeout" == "5" ]]
+    stop_cmd=$(    yq -p=toml -o=json '.hooks.Stop[0].hooks[0].command'     "$fake_codex")
+    stop_timeout=$(yq -p=toml -o=json '.hooks.Stop[0].hooks[0].timeout'     "$fake_codex")
+    [[ "$stop_cmd"     == '"bash $HOME/.codex/hooks/jmux-attention.sh"' ]]
+    [[ "$stop_timeout" == "5" ]]
 
-    # Claude side mirror — the sync wrote a SessionStart entry into the fake
-    # settings file pointing at the deployed hook.
+    # Claude side mirror — the sync wrote SessionStart and Stop entries into
+    # the fake settings file pointing at the deployed hooks.
     [[ "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$fake_claude")" == 'bash "$HOME/.claude/hooks/session-start-cheese-flair.sh"' ]]
     [[ "$(jq -r '.hooks.SessionStart[0].hooks[0].timeout' "$fake_claude")" == "5" ]]
+    [[ "$(jq -r '.hooks.Stop[0].hooks[0].command' "$fake_claude")" == 'bash "$HOME/.claude/hooks/jmux-attention.sh"' ]]
+    [[ "$(jq -r '.hooks.Stop[0].hooks[0].timeout' "$fake_claude")" == "5" ]]
 }

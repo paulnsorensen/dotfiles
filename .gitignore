@@ -31,6 +31,7 @@ claude/hooks/package-lock.json
 # writes back through the symlink and the regenerated copy reappears
 # inside the repo. Ignore those copies to keep worktrees clean.
 claude/hooks/session-start-cheese-flair.sh
+claude/hooks/jmux-attention.sh
 claude/lib/cheese-flair.sh
 claude/reference/cheese-flair.md
 
