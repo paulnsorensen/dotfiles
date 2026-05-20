@@ -399,7 +399,7 @@ chezmoi doctor                                       # health check (also wired 
 
 Full agent/skill catalog is in `agents/AGENTS.md` (copied to `~/.claude/CLAUDE.md` by chezmoi). Key project-level details:
 
-- Pre-tool hooks: `phantom-file-check.js`, `write-guard.js`, `review-reply-guard.js` (`worktree-guard.js` exists but is currently disengaged)
+- Pre-tool hooks: `phantom-file-check.js`, `review-reply-guard.js` (write-guard / worktree-guard were removed in PR #189)
 - Compaction hooks: `pre-compact.sh` saves context, `post-compact.sh` restores with `/trace` suggestion
 - Session hooks: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`
