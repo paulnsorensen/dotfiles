@@ -77,7 +77,7 @@ teardown() {
 @test "hook_codex_command builds bash invocation with \$HOME" {
     local cmd
     cmd=$(hook_codex_command agents/hooks/session-start-cheese-flair.sh)
-    [[ "$cmd" == 'bash $HOME/.codex/hooks/session-start-cheese-flair.sh' ]]
+    [[ "$cmd" == 'bash "$HOME/.codex/hooks/session-start-cheese-flair.sh"' ]]
 }
 
 # ── drift signatures ───────────────────────────────────────────────────
@@ -219,7 +219,7 @@ TOML
     grep -qF '[mcp_servers.context7]'                 "$CODEX_CONFIG_FILE"
     grep -qF '[[hooks.SessionStart]]'                 "$CODEX_CONFIG_FILE"
     grep -qF 'matcher = "startup|resume"'             "$CODEX_CONFIG_FILE"
-    grep -qF 'command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"' "$CODEX_CONFIG_FILE"
+    grep -qF 'command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""' "$CODEX_CONFIG_FILE"
     grep -qF 'timeout = 5'                            "$CODEX_CONFIG_FILE"
 }
 
@@ -264,7 +264,7 @@ matcher = "startup|resume"
 
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 99
 TOML
     local changed
@@ -448,7 +448,7 @@ TOML
     count=$(yq -p=toml -o=json '.hooks.SessionStart | length' "$CODEX_CONFIG_FILE")
     [[ "$count" == "2" ]]
     grep -qF 'command = "bash $HOME/other-hook.sh"' "$CODEX_CONFIG_FILE"
-    grep -qF 'command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"' "$CODEX_CONFIG_FILE"
+    grep -qF 'command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""' "$CODEX_CONFIG_FILE"
 }
 
 @test "codex upsert preserves entries under other event types (UserPromptSubmit)" {
@@ -495,7 +495,7 @@ matcher = "something-else"
 
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 5
 TOML
     local cur des
@@ -513,7 +513,7 @@ matcher = "wrong"
 
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 5
 TOML
     local changed
@@ -753,7 +753,7 @@ TOML
     cmd=$(    yq -p=toml -o=json '.hooks.SessionStart[0].hooks[0].command'     "$fake_codex")
     timeout=$(yq -p=toml -o=json '.hooks.SessionStart[0].hooks[0].timeout'     "$fake_codex")
     [[ "$matcher" == '"startup|resume"' ]]
-    [[ "$cmd"     == '"bash $HOME/.codex/hooks/session-start-cheese-flair.sh"' ]]
+    [[ "$cmd"     == '"bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""' ]]
     [[ "$timeout" == "5" ]]
 
     # Claude side mirror — the sync wrote a SessionStart entry into the fake

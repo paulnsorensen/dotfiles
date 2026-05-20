@@ -74,13 +74,14 @@ hook_deployed_path() {
 
 # Codex uses a literal command string; the bash invocation gets the
 # deployed path inlined with $HOME expanded by the shell at hook run-time.
+# Quoted so a $HOME containing whitespace doesn't word-split.
 hook_codex_command() {
     local script_rel="$1"
     local base; base=$(basename "$script_rel")
     # shellcheck disable=SC2016
     # The single-quoted $HOME is intentional — it lands in the TOML file
     # literally and Codex's hook runner expands it at hook run-time.
-    printf 'bash $HOME/.codex/hooks/%s\n' "$base"
+    printf 'bash "$HOME/.codex/hooks/%s"\n' "$base"
 }
 
 # ─── drift signature ────────────────────────────────────────────────────
@@ -246,7 +247,44 @@ hook_codex_apply() {
     ' <<<"$current_json")
 
     tmp=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.toml")
-    yq -p=json -o=toml '.' <<<"$merged" > "$tmp"
+    if ! yq -p=json -o=toml '.' <<<"$merged" > "$tmp" 2>/dev/null; then
+        echo -e "${RED}    yq failed to emit TOML; refusing to overwrite $CODEX_CONFIG_FILE${NC}" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+    # Round-trip read-back: yq must be able to re-parse what it just wrote,
+    # and any top-level keys the user had (e.g. [mcp_servers], approval_policy)
+    # must survive the rewrite. Refuse the mv if either invariant fails —
+    # silently truncating the user's codex config is the kind of regression
+    # this whole apply step exists to avoid.
+    if ! yq -p=toml '.' "$tmp" >/dev/null 2>&1; then
+        echo -e "${RED}    yq emitted unparseable TOML; refusing to overwrite $CODEX_CONFIG_FILE${NC}" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+    if [[ -s "$CODEX_CONFIG_FILE" ]]; then
+        local before_keys after_keys
+        # If the pre-image is non-empty but yq can't parse it (malformed TOML),
+        # before_keys will be empty and `comm` will report no drift even though
+        # a rewrite would silently lose the user's whole file. Refuse the mv
+        # in that case — the earlier parse already converted it to current_json,
+        # but a fresh parse here on the saved file is the safer signal.
+        before_keys=$(yq -p=toml -o=json 'keys | sort | .[]' "$CODEX_CONFIG_FILE" 2>/dev/null)
+        if [[ -z "$before_keys" ]]; then
+            echo -e "${RED}    refusing to overwrite $CODEX_CONFIG_FILE: pre-image is non-empty but yq cannot parse it${NC}" >&2
+            rm -f "$tmp"
+            return 1
+        fi
+        after_keys=$(yq -p=toml -o=json 'keys | sort | .[]' "$tmp"               2>/dev/null)
+        local missing
+        missing=$(comm -23 <(echo "$before_keys") <(echo "$after_keys"))
+        if [[ -n "$missing" ]]; then
+            echo -e "${RED}    refusing to overwrite $CODEX_CONFIG_FILE: rewrite would drop top-level key(s):${NC}" >&2
+            echo "$missing" | sed 's/^/      /' >&2
+            rm -f "$tmp"
+            return 1
+        fi
+    fi
     mv "$tmp" "$CODEX_CONFIG_FILE"
 }
 
