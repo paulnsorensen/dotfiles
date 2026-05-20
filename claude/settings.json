@@ -106,7 +106,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
@@ -146,8 +146,7 @@
     "plugin-dev@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "claude-hud@claude-hud": true,
-    "todoist-flow@todoist-flow": true,
-    "vaudeville@local": true
+    "todoist-flow@todoist-flow": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {
@@ -199,5 +198,6 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark-daltonized",
   "editorMode": "vim",
+  "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true
 }

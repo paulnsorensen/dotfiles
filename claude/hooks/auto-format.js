@@ -26,6 +26,12 @@ async function main() {
 
   if (event.hook_event_name && event.hook_event_name !== 'PostToolUse') process.exit(0);
 
+  // Only format file-editing tools. settings.json matcher already filters,
+  // but verify here so a future PostToolUse for Bash/Read can't accidentally
+  // try to format `tool_input.file_path` and surface a confusing error.
+  const FILE_EDITING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit']);
+  if (event.tool_name && !FILE_EDITING_TOOLS.has(event.tool_name)) process.exit(0);
+
   const filePath = resolveEditedPath(event);
   if (!filePath || !fs.existsSync(filePath)) process.exit(0);
 
