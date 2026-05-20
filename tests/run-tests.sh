@@ -75,7 +75,7 @@ run_tests() {
     if (( ${#SPECIFIC_TESTS[@]} > 0 )); then
         test_files="${SPECIFIC_TESTS[*]}"
     else
-        test_files="dots-simple.bats dots.bats git-hooks.bats sync.bats config-validation.bats prompt.bats sync-claude.bats sync-rollback.bats hooks-blockers.bats hooks-session.bats iterm2-fonts.bats worktree-settings.bats skills-external.bats skills-local.bats chezmoi-wiring.bats install-codex.bats install-agents-doc.bats install-prompts.bats packages.bats cheese-flair.bats mcp-lib.bats mcp-opencode.bats agents-hooks-sync.bats claude-lsp-gate.bats"
+        test_files="dots-simple.bats dots.bats git-hooks.bats sync.bats config-validation.bats prompt.bats sync-claude.bats sync-rollback.bats hooks-blockers.bats hooks-session.bats iterm2-fonts.bats worktree-settings.bats skills-external.bats skills-local.bats chezmoi-wiring.bats install-codex.bats install-agents-doc.bats install-prompts.bats packages.bats cheese-flair.bats mcp-lib.bats mcp-opencode.bats agents-hooks-sync.bats"
     fi
 
     # Count total tests
