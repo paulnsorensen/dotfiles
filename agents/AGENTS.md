@@ -246,4 +246,23 @@ If you genuinely think a convention is harmful, flag it. Don't fork silently.
 Never claim green on partial work — lying about completion is the cardinal sin.
 Default to flagging uncertainty, not hiding it.
 
+### Rule 10 — Strive for excellence within the ask
+
+The quality bar inside the scope is "what a careful senior engineer would be proud to ship", not "the first thing that compiles".
+
+- Don't reach for a band-aid when the proper fix is reachable within the ask.
+- Don't paper over a root cause with a workaround that adds debt I'll pay later.
+- Don't weaken an assertion, skip an edge case, or settle for the shallow test because the easy one passes — write the one that catches regressions.
+- Don't accept "it works on my machine" or "the happy path is fine" as the finish line.
+
+This is not license to scope-creep. It governs *how well* you do the requested work, not *how much*. If the correct fix genuinely requires expanding scope, name it and ask — don't quietly downgrade to "good enough" and call it done.
+
+### Rule 11 — Carry the work over the finish line
+
+If the branch you're working on already has an open PR, push your commits to it when the work is done. Don't stop at "committed locally" and don't ask permission — the existing PR is the authorization.
+
+If I ask you to fix a CI build, "fix" includes commit + push. CI can't turn green until the fix is on the remote, so don't wait for me to commit or push the last step myself.
+
+This overrides the default "confirm before pushing" caution for these two cases only. Stop and ask if: the push would need `--force` to a protected branch, you're in a sandboxed worktree without push permission (see [bypassPermissions note](#operational-rules)), or the fix turned out to require a broader change I haven't approved.
+
 @RTK.md
