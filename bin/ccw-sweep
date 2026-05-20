@@ -56,12 +56,43 @@ SKIPPED=0
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
+# Resolve the repo's default branch (main / master / trunk / …) from
+# refs/remotes/origin/HEAD. If that's not set, probe the conventional
+# alternatives explicitly before defaulting — falling back to a literal
+# "main" against a repo whose actual default is "master" or "trunk" would
+# silently make every worktree look NOT-merged.
+# Output is the branch name without the "origin/" prefix; second arg
+# (out by reference is impractical in bash, so we use an env var) carries
+# a confidence note for the caller to log.
+resolve_default_branch() {
+    local repo_root="$1"
+    local head_ref candidate
+    head_ref="$(git -C "$repo_root" symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null || true)"
+    if [[ -n "$head_ref" ]]; then
+        echo "${head_ref#refs/remotes/origin/}"
+        return 0
+    fi
+    for candidate in main master trunk develop; do
+        if git -C "$repo_root" rev-parse --verify --quiet "refs/remotes/origin/$candidate" >/dev/null 2>&1; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    # No remote default branch resolvable. Emit a name anyway so the
+    # caller can fail loudly downstream with a meaningful "unknown
+    # default" message in its merge-status reasons.
+    echo ""
+    return 1
+}
+
 check_worktree() {
     local wt_path="$1"
     local repo_root="$2"
+    local default_branch="$3"
     local slug
     slug="$(basename "$wt_path")"
     local branch="claude/${slug}"
+    local default_remote="origin/${default_branch}"
 
     local status="SAFE"
     local reasons=()
@@ -106,37 +137,56 @@ check_worktree() {
     # Determine merge status — always check the worktree's actual content
     local is_merged=false
 
-    # Step 1: git branch --merged (only if branch ref exists)
+    # Step 1: git branch --merged against the remote default branch
+    # (the local ref is often stale; origin/<default> matches what's on GitHub)
     if $branch_exists; then
         local merged
-        merged="$(git -C "$repo_root" branch --merged main 2>/dev/null | sed 's/^[ *]*//')"
+        merged="$(git -C "$repo_root" branch --merged "$default_remote" 2>/dev/null | sed 's/^[ *]*//')"
         if echo "$merged" | grep -qx "$branch"; then
             is_merged=true
-            reasons+=("merged into main")
+            reasons+=("merged into ${default_branch}")
         fi
     fi
 
     # Step 2: squash-merged PR check (only if branch ref exists)
     if ! $is_merged && $branch_exists && command -v gh &>/dev/null; then
-        local pr_state
-        pr_state="$(gh pr list --repo "$(git -C "$repo_root" remote get-url origin 2>/dev/null)" \
-            --head "$branch" --state all --json state --jq '.[0].state' 2>/dev/null || true)"
-        if [[ "$pr_state" == "MERGED" ]]; then
-            is_merged=true
-            reasons+=("PR squash-merged")
-        elif [[ "$pr_state" == "CLOSED" ]]; then
-            reasons+=("PR closed without merge")
+        local origin_url repo_slug
+        origin_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
+        # Normalise to OWNER/REPO for gh --repo (handles both git@github.com:o/r.git
+        # and https://github.com/o/r forms; strips trailing .git).
+        repo_slug="$(echo "$origin_url" \
+            | sed -E 's#^(git@github\.com:|https?://[^/]+/)##; s#\.git$##')"
+        if [[ -n "$repo_slug" ]]; then
+            local pr_state
+            pr_state="$(gh pr list --repo "$repo_slug" \
+                --head "$branch" --state all --json state --jq '.[0].state' 2>/dev/null || true)"
+            if [[ "$pr_state" == "MERGED" ]]; then
+                is_merged=true
+                reasons+=("PR squash-merged")
+            elif [[ "$pr_state" == "CLOSED" ]]; then
+                reasons+=("PR closed without merge")
+            fi
         fi
     fi
 
-    # Step 3: diff worktree HEAD against main (works even if branch ref is gone)
-    # This is the ground truth — empty diff means all content is in main
+    # Step 3: count commits the worktree has that aren't in origin/<default>.
+    # Zero = fully merged. Using rev-list --count avoids the --stat false-positive
+    # (empty stat output for whitespace-only or noop-merge commits would have
+    # been read as "merged" before).
+    #
+    # If rev-list itself errors (missing default ref, unrelated histories), we
+    # cannot conclude *anything* about merge status — do NOT silently fall
+    # through to "NOT merged" because that would force the worktree into WARN
+    # on a real tooling failure. Record the ambiguity explicitly and let the
+    # downstream NOT-merged check fire under the same banner.
     if ! $is_merged; then
-        local diff_stat
-        diff_stat="$(git -C "$wt_path" diff --stat main...HEAD -- 2>/dev/null)"
-        if [[ -z "$diff_stat" ]]; then
+        local ahead_default rc=0
+        ahead_default="$(git -C "$wt_path" rev-list --count "${default_remote}..HEAD" 2>/dev/null)" || rc=$?
+        if (( rc != 0 )); then
+            reasons+=("rev-list against ${default_remote} failed (rc=${rc})")
+        elif [[ "$ahead_default" == "0" ]]; then
             is_merged=true
-            reasons+=("diff vs main is empty")
+            reasons+=("0 commits ahead of ${default_remote}")
         fi
     fi
 
@@ -144,7 +194,7 @@ check_worktree() {
         if [[ "$status" == "SAFE" ]]; then
             status="WARN"
         fi
-        reasons+=("NOT merged into main")
+        reasons+=("NOT merged into ${default_branch}")
     fi
 
     # Check for unpushed commits (only if branch ref exists)
@@ -161,15 +211,15 @@ check_worktree() {
                 reasons+=("${ahead} unpushed commit(s)")
             fi
         else
-            # No upstream — check if there are commits beyond main
+            # No upstream — check if there are commits beyond the default branch
             if ! $is_merged; then
                 local ahead_main
-                ahead_main="$(git -C "$wt_path" rev-list --count 'main..HEAD' 2>/dev/null || echo 0)"
+                ahead_main="$(git -C "$wt_path" rev-list --count "${default_remote}..HEAD" 2>/dev/null || echo 0)"
                 if (( ahead_main > 0 )); then
                     if [[ "$status" == "SAFE" ]]; then
                         status="WARN"
                     fi
-                    reasons+=("${ahead_main} commit(s) ahead of main, no upstream")
+                    reasons+=("${ahead_main} commit(s) ahead of ${default_branch}, no upstream")
                 fi
             fi
         fi
@@ -277,8 +327,17 @@ while IFS= read -r -u3 wt_root; do
         continue
     fi
 
-    # Fetch latest to ensure merge status is accurate
-    git -C "$repo_root" fetch --quiet 2>/dev/null || true
+    # Fetch latest so merge status reflects the remote, not stale local refs.
+    # If fetch fails (offline, auth, rate limit) we MUST NOT proceed silently —
+    # the merge-status logic would then run against stale refs and risk
+    # deleting unmerged work. Capture stderr so the user sees *why* it failed.
+    fetch_err="$(git -C "$repo_root" fetch --quiet 2>&1 >/dev/null)" && fetch_rc=0 || fetch_rc=$?
+    if (( fetch_rc != 0 )); then
+        echo -e "${CYAN}${repo_name}${RESET} ${YELLOW}— fetch failed, refs may be stale; skipping${RESET}"
+        [[ -n "$fetch_err" ]] && echo -e "  ${DIM}${fetch_err}${RESET}"
+        echo ""
+        continue
+    fi
 
     # Collect worktrees in this repo
     local_wts=()
@@ -289,11 +348,22 @@ while IFS= read -r -u3 wt_root; do
         continue
     fi
 
+    # Resolve the repo's default branch. If we can't determine it (no
+    # origin/HEAD AND none of main/master/trunk/develop exists on origin),
+    # skip the repo — running merge checks against a nonexistent ref would
+    # mark every worktree as NOT-merged and risk false-positive removals.
+    if ! default_branch="$(resolve_default_branch "$repo_root")" || [[ -z "$default_branch" ]]; then
+        echo -e "${CYAN}${repo_name}${RESET} ${YELLOW}— could not resolve a remote default branch; skipping${RESET}"
+        echo -e "  ${DIM}origin/HEAD is unset and origin/{main,master,trunk,develop} all missing${RESET}"
+        echo ""
+        continue
+    fi
+
     FOUND_REPOS=$((FOUND_REPOS + 1))
-    echo -e "${CYAN}${repo_name}${RESET} ${DIM}(${#local_wts[@]} worktree(s))${RESET}"
+    echo -e "${CYAN}${repo_name}${RESET} ${DIM}(${#local_wts[@]} worktree(s), default: ${default_branch})${RESET}"
 
     for wt_path in "${local_wts[@]}"; do
-        check_worktree "$wt_path" "$repo_root" || true
+        check_worktree "$wt_path" "$repo_root" "$default_branch" || true
     done
     echo ""
 

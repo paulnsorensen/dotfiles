@@ -40,8 +40,6 @@ if [[ -d "${CLAUDE_PROJECTS_DIR}/${main_key}" ]] && [[ ! -L "${CLAUDE_PROJECTS_D
     echo "Linked permissions: ${wt_key} → ${main_key}" >&2
 fi
 
-git -C "${wt_dir}" config core.hooksPath /dev/null 2>/dev/null
-
 claude_local="${wt_dir}/.claude/settings.local.json"
 if [[ ! -f "${claude_local}" ]]; then
     mkdir -p "${wt_dir}/.claude"
@@ -50,11 +48,21 @@ if [[ ! -f "${claude_local}" ]]; then
     tmp="${claude_local}.tmp"
 
     if [[ -f "${generator}" ]]; then
-        bash "${generator}" "${dotfiles_root}" > "${tmp}" && mv "${tmp}" "${claude_local}"
+        if ! bash "${generator}" "${dotfiles_root}" > "${tmp}"; then
+            rm -f "${tmp}"
+            echo "worktree-settings generator failed for ${dotfiles_root}" >&2
+            exit 1
+        fi
+        mv "${tmp}" "${claude_local}"
         echo "Generated worktree settings ($(jq '.permissions.allow | length' "${claude_local}") permissions)" >&2
     else
         readonly SANDBOX_CONFIG='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":["~/.cache/prek"]}}}'
-        echo "$SANDBOX_CONFIG" | jq . > "${tmp}" && mv "${tmp}" "${claude_local}"
+        if ! echo "$SANDBOX_CONFIG" | jq . > "${tmp}"; then
+            rm -f "${tmp}"
+            echo "Failed to write sandbox settings" >&2
+            exit 1
+        fi
+        mv "${tmp}" "${claude_local}"
         echo "Created sandbox-only settings" >&2
     fi
 fi
