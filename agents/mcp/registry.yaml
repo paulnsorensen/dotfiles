@@ -1,9 +1,21 @@
 # MCP Registry - Source of truth for coding-agent MCP servers
+# (template var $h, set on the next line, is the active harness for this
+# render pass — sync.sh sets HARNESS=<name>. Entries may reference $h to
+# branch per-harness without restating the env lookup.)
+# {{ $h := env "HARNESS" }}
+#
 # Run `mcp-sync` (or `dots sync`) to apply this to every installed harness.
 #
 # Per-entry fields:
 #   command      — stdio launcher (required)
-#   args         — array of arg strings
+#   args         — array of arg strings. Rendered through `chezmoi execute-template`
+#                  per harness; the active harness name is exposed as the
+#                  Go-template var $h. Branch inline only when an entry actually
+#                  diverges — see the `serena` entry below for a worked example.
+#                  Default to $h so future harnesses inherit their bare name
+#                  without another schema edit. Existing ${VAR} bash-style env
+#                  refs (resolved later in mcp_build_env_flags) are untouched
+#                  by the templating pass.
 #   env          — env vars; values can reference shell vars via "${VAR}"
 #   scope        — claude-only: user | project | local (default user)
 #   harnesses    — list of harness names to install into; default: [claude, codex, opencode]
@@ -67,3 +79,16 @@ mcps:
     args: ["--from", "code-review-graph[embeddings]", "code-review-graph", "serve"]
     scope: user
     description: Structural code knowledge graph via Tree-sitter — semantic search (sentence-transformers), call chains, impact radius, flows, communities
+
+  # Serena's per-harness contexts already strip tools that duplicate built-ins
+  # (Read/Write/Bash etc.). Server-wide further filtering lives in
+  # ~/.serena/serena_config.yml under `excluded_tools` / `included_optional_tools`
+  # / `fixed_tools` — applies to every harness uniformly.
+  serena:
+    command: serena
+    args:
+      - start-mcp-server
+      - --context={{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}
+      - --project-from-cwd
+    scope: user
+    description: Semantic code intel via LSP (symbols, references, refactors). Tools tailored per harness via --context.

@@ -191,6 +191,27 @@ mcps:
 - **codex** — native `codex mcp add/list/remove --json` (no scopes).
 - **opencode** — no non-interactive CLI; the sync jq-edits `~/.config/opencode/opencode.json` directly. Set `OPENCODE_CONFIG` to override the target path (used by tests). On first run the sync seeds a minimal `{"$schema": ".../config.json"}` file if absent.
 
+**Per-harness `args` via Go templates.** `agents/mcp/sync.sh` runs the registry through `chezmoi execute-template` once per harness with `HARNESS=<claude|codex>` exported. The registry preamble aliases that into `$h` so entries can branch inline without restating the env lookup. Default to `{{ $h }}` so new harnesses inherit their bare name without another schema edit. Serena uses this:
+
+```yaml
+{{- $h := env "HARNESS" -}}
+...
+serena:
+  command: serena
+  args:
+    - start-mcp-server
+    - --context={{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}
+    - --project-from-cwd
+```
+
+The bash-style `${VAR}` env substitution used by `env:` blocks runs in a later pass (`mcp_build_env_flags`) and is untouched by the templating step.
+
+**Filtering which tools an MCP exposes.** No MCP-spec-level mechanism exists; the practical answers are:
+
+- **Server-side (uniform across harnesses):** the cleanest path when supported by the server. Serena reads `~/.serena/serena_config.yml` — set `excluded_tools` (blacklist), `included_optional_tools` (whitelist additions), or `fixed_tools` (exact tool set, replaces defaults). Per-harness `--context=claude-code|codex` already excludes Read/Write/Bash duplicates upstream.
+- **Claude-side:** `mcp__<server>__<tool>` glob patterns in `permissions.allow` / `permissions.deny` (used by `claude/profiles/*/settings-merge.json`).
+- **Codex-side:** per-tool filtering is not exposed by `codex mcp` — only per-server enable/disable.
+
 **Workflow:**
 
 1. Edit registry: `mcp-edit`

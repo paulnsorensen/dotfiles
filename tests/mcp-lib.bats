@@ -131,6 +131,43 @@ MOCK
     [[ -z "$output" ]] || { echo "expected empty output, got: [$output]" >&2; return 1; }
 }
 
+# End-to-end: registry `args` strings are rendered through `chezmoi
+# execute-template` per harness, so the same entry can produce different
+# argv for Claude vs Codex (used by Serena's --context=claude-code|codex).
+@test "sync.sh --dry-run: per-harness templating swaps args based on HARNESS env" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    write_claude_stub
+    write_codex_stub
+
+    cat > "$MOCK_BIN/claude" << 'MOCK'
+#!/bin/bash
+if [[ "$1" == mcp && "$2" == list ]]; then exit 0; fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/claude"
+    export CODEX_STUB_JSON='[]'
+
+    local fake_dotfiles="$TEST_HOME/fake-dotfiles"
+    mkdir -p "$fake_dotfiles/agents/mcp" "$fake_dotfiles/claude/lib"
+    cp "$REAL_DOTFILES_DIR/agents/mcp/sync.sh" "$fake_dotfiles/agents/mcp/sync.sh"
+    cp "$REAL_DOTFILES_DIR/agents/mcp/lib.sh"  "$fake_dotfiles/agents/mcp/lib.sh"
+    cp "$REAL_DOTFILES_DIR/claude/lib/sync-common.sh" "$fake_dotfiles/claude/lib/sync-common.sh"
+    cat > "$fake_dotfiles/agents/mcp/registry.yaml" << 'YAML'
+mcps:
+  picky:
+    command: picky
+    args:
+      - --mode={{ if eq (env "HARNESS") "claude" }}claude-mode{{ else }}codex-mode{{ end }}
+    scope: user
+    description: per-harness templating fixture
+YAML
+
+    run bash "$fake_dotfiles/agents/mcp/sync.sh" --dry-run
+    assert_success
+    assert_output_contains "picky --mode=claude-mode"
+    assert_output_contains "picky --mode=codex-mode"
+}
+
 # End-to-end: the exact failure mode chezmoi reported. Drives sync.sh in
 # dry-run with both harnesses in sync — pre-fix this hit exit 1 silently,
 # now it must print "Sync complete!" and exit 0.
