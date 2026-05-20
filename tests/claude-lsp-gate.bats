@@ -217,6 +217,35 @@ $snippet
     [[ "$args" == *"claude-lsp-gate"* ]]
 }
 
+# ── preamble wiring ──────────────────────────────────────────────────────────────────────
+
+@test "cc passes --append-system-prompt-file with preamble.md" {
+    local args
+    args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && cc --print test")"
+    [[ "$args" == *"--append-system-prompt-file"* ]]
+    [[ "$args" == *"agents/preamble.md"* ]]
+}
+
+@test "ccc passes --append-system-prompt-file with preamble.md" {
+    local args
+    args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccc")"
+    [[ "$args" == *"--append-system-prompt-file"* ]]
+    [[ "$args" == *"agents/preamble.md"* ]]
+}
+
+@test "ccr passes --append-system-prompt-file with preamble.md" {
+    local args
+    args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccr")"
+    [[ "$args" == *"--append-system-prompt-file"* ]]
+    [[ "$args" == *"agents/preamble.md"* ]]
+}
+
+@test "ccfresh passes --append-system-prompt-file with preamble.md" {
+    local args
+    args="$(zsh_with_mock "cd '$REAL_DOTFILES_DIR' && ccfresh")"
+    [[ "$args" == *"--append-system-prompt-file"* ]]
+    [[ "$args" == *"agents/preamble.md"* ]]
+}
 # ── ccp wiring ────────────────────────────────────────────────────────────────
 
 @test "ccp fe injects gate file before settings-merge.json" {
