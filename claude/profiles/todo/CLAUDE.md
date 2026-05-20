@@ -15,6 +15,13 @@ and do cross-source research before committing work to a task.
 and Serper load. The permissions allowlist covers those MCPs plus Gmail (for
 email-to-task flows).
 
+**Why this profile ships `settings.json` (full override) instead of the
+`settings-merge.json` overlay every other profile uses:** the strict MCP
+posture only works as a full replacement — a merge would inherit the user's
+broad MCP/tool surface and defeat the point. `Bash` is scoped to a handful
+of read-only commands so the profile can call `gh`, `jq`, and `git log/diff`
+without unlocking arbitrary shell.
+
 ## Available capabilities
 
 - **Todoist MCP** — all `mcp__todoist__*` tools for reading, creating, updating, completing, rescheduling tasks and projects
