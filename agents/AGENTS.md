@@ -142,9 +142,13 @@ For project architecture (when a project opts in), see the **Sliced Bread** patt
 
 Three MCPs cover code intelligence; they layer rather than overlap.
 
-- **tilth** — file I/O floor: `tilth_search`, `tilth_read`, `tilth_list`, `tilth_write` (+ `tilth_deps`, `tilth_diff`). Default for read/grep/edit; replaces host Grep/Read/Edit/Glob.
-- **serena** — LSP-grounded symbol layer: `find_symbol`, `find_referencing_symbols`, `find_declaration`, `find_implementations`, `get_symbols_overview`, `get_diagnostics_for_file`, `rename_symbol`, `safe_delete_symbol`, `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`, `replace_content`. Use when ground-truth semantics matter (overloads, generics, dispatch, type info). Memory tools and `onboarding` are excluded in `~/.serena/serena_config.yml` — do not try to call them.
-- **code-review-graph** — project-scale graph: `get_impact_radius_tool`, `get_affected_flows_tool`, `get_review_context_tool`, `get_minimal_context_tool`, `get_architecture_overview_tool`, `list_communities_tool`, `semantic_search_nodes_tool`. Use for blast-radius, "what does this codebase do", and review-scope queries — not for routine search.
+- **tilth** — file I/O floor. Default for read/grep/edit; replaces host Grep/Read/Edit/Glob.
+- **serena** — LSP-grounded symbol layer. Use when ground-truth semantics matter (overloads, generics, dispatch, type info). Memory tools and `onboarding` are excluded in `~/.serena/serena_config.yml` — do not try to call them.
+- **code-review-graph** — project-scale graph. Use for blast-radius, "what does this codebase do", and review-scope queries — not for routine search.
+
+Built-in `Read` / `Edit` / `Write` / `Glob` / `Grep` are last-resort: use only when the file is outside the workspace, no MCP server can parse it, or a multi-file regex doesn't fit an MCP equivalent.
+
+Claude sessions get task-to-tool tables and a routing self-check via `agents/preamble.md` (loaded as `--append-system-prompt-file`). Codex/opencode users: discover tools via `mcp list` or the server's own descriptions.
 
 ### Editing: serena vs tilth
 

@@ -1,20 +1,6 @@
 # Preamble — MCP tool routing
 
-This project provides three MCP servers that supersede built-in file tools for different shapes of work. Use the right one — built-ins are last-resort.
-
-## Routing rules
-
-| Question shape | MCP | Example tools |
-|---|---|---|
-| Read / list / search / edit any file | **tilth** (default) | `tilth_read`, `tilth_search`, `tilth_list`, `tilth_write` |
-| Symbol-level read or edit on code | **Serena** | `find_symbol`, `find_referencing_symbols`, `replace_symbol_body`, `rename_symbol` |
-| Graph-level analysis on code | **code-review-graph** | `get_impact_radius_tool`, `get_review_context_tool`, `get_architecture_overview_tool`, `semantic_search_nodes_tool` |
-
-Built-in `Read` / `Edit` / `Write` / `Glob` / `Grep` are acceptable only when:
-
-- The file is outside the workspace.
-- No MCP server can parse the file (binaries, malformed code).
-- A regex search across many files doesn't fit any MCP equivalent — and even then, follow-up reads/edits on matched code files go back through the right MCP.
+Reinforces `~/.claude/CLAUDE.md`'s Code-Intelligence Routing section. That section says *which* MCP to pick by shape; this one gives the task-to-tool tables and the pre-call self-check.
 
 The `cheez-search` / `cheez-read` / `cheez-write` skills route through tilth — use them instead of host `Read` / `Edit` / `Write` / `Grep` whenever they're available.
 
