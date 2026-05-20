@@ -68,7 +68,9 @@ create_manifest() {
 }
 
 # Directories managed by .sync scripts — their config is symlinked,
-# the rest is runtime data that shouldn't be backed up
+# the rest is runtime data that shouldn't be backed up. This is layered on
+# top of SYNC_SKIP_LIST (from .sync-lib.sh): anything in either list is
+# excluded from the backup loop.
 BACKUP_EXCLUDE=("claude")
 
 # Backup current dotfiles before making changes
@@ -82,6 +84,10 @@ backup_current_state() {
 
     # Backup existing dotfiles
     for file in *; do
+        # Skip directories that are never symlinked (.git, .local, agents/, …) —
+        # otherwise the backup loop touches every top-level dir, including the
+        # ones documented as out-of-scope in SYNC_SKIP_LIST.
+        is_skipped "$file" && continue
         # Skip directories managed by .sync scripts (runtime data, not config)
         if printf '%s\n' "${BACKUP_EXCLUDE[@]}" | grep -qx "$file"; then
             continue
@@ -174,23 +180,47 @@ rollback() {
         done < "${MANIFEST_FILE}"
     fi
 
-    # Restore backed up files
+    # Restore backed up files. Surface any cp failure — a silent failure
+    # here looks identical to "rollback succeeded" but leaves the system
+    # in an inconsistent half-rolled-back state. For directories, remove
+    # the current target first so the restore is a *replace* rather than a
+    # merge (cp -r merges, leaving stale files behind that weren't in the
+    # backup); -f stops cp from prompting on read-only targets.
+    local restore_failed=0
     for file in "${backup_path}"/*; do
         file="${file##*/}"
         if [[ "${file}" != "manifest" && "${file}" != "metadata.json" && "${file}" != "manifest.backup" ]]; then
             log_info "Restoring ${file}"
-            cp -r "${backup_path}/${file}" "${HOME}/" 2>/dev/null || true
+            rm -rf "${HOME:?}/${file}" 2>/dev/null || true
+            if ! cp -rf "${backup_path}/${file}" "${HOME}/"; then
+                log_error "  Failed to restore ${file}"
+                restore_failed=$((restore_failed + 1))
+            fi
         fi
     done
+    if (( restore_failed > 0 )); then
+        log_warning "${restore_failed} file(s) failed to restore — system may be inconsistent."
+    fi
 
-    # Restore symlinks from manifest
+    # Restore symlinks from manifest. If a path already exists (real file
+    # OR broken symlink left over from a partial rollback), warn instead of
+    # silently skipping. `[[ -e ]]` alone is false for dangling symlinks,
+    # so add `-L` to catch those too — the conflict-detection contract is
+    # "anything occupying that path", not "anything readable through it".
     if [[ -f "${backup_path}/manifest" ]]; then
+        local symlink_conflicts=0
         while IFS=: read -r link target; do
-            if [[ ! -e "${link}" && -e "${target}" ]]; then
+            if [[ -e "${link}" || -L "${link}" ]]; then
+                log_warning "Skipping symlink ${link} — path already exists (rollback may be incomplete)"
+                symlink_conflicts=$((symlink_conflicts + 1))
+            elif [[ -e "${target}" ]]; then
                 log_info "Recreating symlink ${link}"
                 ln -s "${target}" "${link}"
             fi
         done < "${backup_path}/manifest"
+        if (( symlink_conflicts > 0 )); then
+            log_warning "${symlink_conflicts} symlink(s) skipped due to existing files at the same path."
+        fi
     fi
 
     # Restore the manifest

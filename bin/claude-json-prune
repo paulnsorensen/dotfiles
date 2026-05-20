@@ -61,20 +61,16 @@ if ! $apply; then
   exit 0
 fi
 
-# Build jq filter to delete all stale paths
-filter='.'
-for p in "${stale_paths[@]}"; do
-  filter="$filter | del(.projects[\"$p\"])"
-done
-
 # Backup
 mkdir -p "$BACKUP_DIR"
 backup_file="$BACKUP_DIR/claude.json.$(date +%Y%m%d-%H%M%S)"
 cp "$CLAUDE_JSON" "$backup_file"
 
-# Apply
+# Apply — pass paths as jq positional args so quotes/backslashes in path
+# strings can't escape into the filter.
 tmpfile=$(mktemp "${TMPDIR:-.}/prune.XXXXXX")
-jq "$filter" "$CLAUDE_JSON" > "$tmpfile"
+jq --args 'reduce $ARGS.positional[] as $p (.; del(.projects[$p]))' \
+    "$CLAUDE_JSON" -- "${stale_paths[@]}" > "$tmpfile"
 mv "$tmpfile" "$CLAUDE_JSON"
 
 new_total=$(jq '.projects | keys | length' "$CLAUDE_JSON")
