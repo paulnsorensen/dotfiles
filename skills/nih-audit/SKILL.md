@@ -4,7 +4,7 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Agent, LSP
+allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Agent, mcp__serena__*
 description: >
   Scan a codebase for custom code that duplicates what open-source libraries
   already do, then recommend which libraries to adopt. Detects hand-rolled
@@ -251,7 +251,7 @@ For each candidate with a library recommendation, apply the full 4-step chain:
 
 | Evidence | Modifier |
 |----------|----------|
-| LSP-verified usage count (exact caller list) | +15 |
+| Serena-verified usage count (exact caller list) | +15 |
 | Library has >10K weekly downloads + MIT/Apache | +20 |
 | ast-grep pattern match + code read confirms NIH | +15 |
 | NIH code has recent bug fixes (git blame) | +10 |
@@ -384,7 +384,7 @@ recommendation above threshold):
 ## Gotchas
 
 - **ast-grep patterns are approximate**: A `clearTimeout` + `setTimeout` combo isn't always a debounce. The orchestrator's scoring step (Phase 4) catches generic matches via the -15 modifier.
-- **LSP cold start**: First scan in a session may miss results due to LSP warmup. The nih-scanner has a warmup protocol, but note failures.
+- **Serena cold start**: First scan in a session may miss results if the Serena MCP hasn't indexed the project yet. The nih-scanner has an availability check, but note failures.
 - **Stdlib alternatives are the highest value**: `crypto.randomUUID()` replacing a hand-rolled UUID is a no-brainer (no new dep). Always score these highest.
 - **"Already installed" is the most common false positive**: A codebase that has lodash installed but hand-rolls `deepClone` might have done so intentionally (bundle size). The spec/comment check catches this.
 - **Monorepo dep scoping**: A function in `packages/api/` might be NIH in that workspace but the library is installed in `packages/web/`. Each workspace's depManifest is independent.
