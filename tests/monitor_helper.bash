@@ -4,6 +4,16 @@
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export MONITOR="$DOTFILES_DIR/bin/claude-monitor"
 
+# claude-monitor uses macOS `date -j -f` syntax which Linux's coreutils
+# date doesn't accept. Skip the whole monitor test suite on non-Darwin
+# until the script is portable. Pre-existing — surfaced by run-tests.sh
+# now globbing all .bats files instead of using a hardcoded list.
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    setup() {
+        skip "claude-monitor needs macOS-only date(1) syntax"
+    }
+fi
+
 strip_ansi() {
     printf '%s' "$1" | sed $'s/\x1b\\[[0-9;]*[mK]//g'
 }
