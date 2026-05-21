@@ -61,6 +61,9 @@ packages:
   - sccache                                   # rustc wrapper for compile caching
   - cargo-nextest                             # faster, parallel test runner
 
+  # Rust build deps (transitive native toolchain requirements)
+  - protobuf                                  # protoc — required by lance-encoding build script (hallouminate)
+
   # macOS-only
   - mas: { platform: mac }                    # Mac App Store CLI
   - trash: { platform: mac }                  # Move to Trash (safer rm)
@@ -111,6 +114,7 @@ packages:
   # Cargo
   - cargo-llvm-cov: { source: cargo }
   - tilth: { source: cargo, git: "https://github.com/paulnsorensen/tilth", branch: main }
+  - hallouminate: { source: cargo, git: "https://github.com/paulnsorensen/hallouminate", branch: main }
   # Install from Git because the crates.io `rtk` collides with the desired package.
   # If an unrelated `rtk` is already present from `cargo install rtk`, remove it first
   # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.
