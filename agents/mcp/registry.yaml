@@ -40,6 +40,12 @@ mcps:
     description: AST-aware code search/read/edit (Tree-sitter); backs cheez-* skills when cheese-flow is unavailable
     gate_unless: CHEESE_FLOW
 
+  hallouminate:
+    command: hallouminate
+    args: ["serve"]
+    scope: user
+    description: Per-repo markdown wiki — semantic search (LanceDB + fastembed) and add/read/delete_markdown for LLM-authored notes
+
   context7:
     command: npx
     args: ["-y", "@upstash/context7-mcp"]
