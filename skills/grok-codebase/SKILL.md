@@ -214,6 +214,7 @@ exercise tests all four pillars at once and is the strongest grok artifact.
 gloss per hop.
 
 Then `Write` `.cheese/grok/<repo>/summary.md` containing:
+
 1. One-paragraph elevator pitch of the codebase.
 2. The four-pillar table.
 3. The end-to-end trace.
