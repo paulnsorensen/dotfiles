@@ -16,6 +16,44 @@ teardown() { teardown_test_env; }
 
 # ── chezmoi/.sync wiring ────────────────────────────────────────────────
 
+# Helper: drop a fake `gh` binary on PATH that satisfies the PR #196 Phase 2
+# preflight checks (`gh skill --help`, `gh auth status`) so `chezmoi apply`
+# doesn't abort in CI runners where gh exists but isn't authenticated.
+# Also no-ops `gh skill install` and `gh api .../contents/skills` so any
+# downstream install loop completes without network access.
+make_fake_gh() {
+    local fake_bin="${1:-$TEST_HOME/fake-bin}"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/gh" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+    skill)
+        # gh skill --help / gh skill install ... — both succeed, no-op.
+        exit 0
+        ;;
+    auth)
+        # gh auth status — succeed.
+        exit 0
+        ;;
+    api)
+        # gh api repos/<owner>/<repo>/contents/skills — return empty so
+        # install-external.sh's resolve_skills yields no candidates.
+        echo "[]"
+        exit 0
+        ;;
+    *)
+        # Fail loud on unexpected subcommands so a future code path that
+        # adds a new `gh <foo>` call surfaces a fixture gap instead of
+        # silently fake-succeeding.
+        echo "fake gh: unexpected invocation: gh $*" >&2
+        exit 99
+        ;;
+esac
+SH
+    chmod +x "$fake_bin/gh"
+    echo "$fake_bin"
+}
+
 # Helper: drop a fake chezmoi binary on PATH that records its args and
 # (optionally) writes a config file when invoked as `chezmoi init`. Returns
 # the bin-dir path so callers can extend PATH themselves.
@@ -449,16 +487,22 @@ EOF
     fi
 }
 
-@test "chezmoi/run_onchange template guards Phase 2 behind 'gh skill --help'" {
-    # Spec invariant (PR #2 §3): the external installer must skip silently
-    # when gh is missing or `gh skill` is unavailable. Without this guard, a
-    # machine without gh would fail chezmoi apply on every run.
+@test "chezmoi/run_onchange template fails loud when gh / gh skill / gh auth missing" {
+    # Spec invariant (PR #196): the external installer must FAIL LOUD when
+    # gh, the `gh skill` subcommand, or gh auth is missing — not skip
+    # silently, and not swallow per-invocation failure with `|| true`.
+    # Silent skip + `|| true` masked silent partial installs (the bug PR
+    # #196 fixes); guarding against regression of either swallow path is
+    # the whole point of this assertion.
     grep -qF 'command -v gh' "$INSTALLER_TMPL"
     grep -qF 'gh skill --help' "$INSTALLER_TMPL"
-    # Phase 2 must also tolerate per-invocation failure so a flaky network
-    # doesn't break chezmoi apply.
+    grep -qF 'gh auth status' "$INSTALLER_TMPL"
     grep -qF 'install-external.sh' "$INSTALLER_TMPL"
-    grep -qE 'install-external\.sh.*\|\| *true' "$INSTALLER_TMPL"
+    # Must NOT tolerate per-invocation failure; the `|| true` swallow is gone.
+    if grep -qE 'install-external\.sh.*\|\| *true' "$INSTALLER_TMPL"; then
+        echo "install-external.sh invocation still has '|| true' — silent partial install regression risk" >&2
+        return 1
+    fi
 }
 
 @test "chezmoi/.chezmoiignore excludes lib/ so helpers aren't applied to \$HOME" {
@@ -477,6 +521,57 @@ EOF
 
 @test "chezmoi/lib/install-external.sh exists and is executable" {
     [[ -x "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" ]]
+}
+
+@test "install-external.sh exits non-zero when a gh skill install fails (PR #196 regression)" {
+    # Spec invariant (PR #196 finding 3): install-external.sh MUST propagate
+    # failure so the chezmoi run_onchange records the apply as failed and
+    # reruns next `dots sync`, rather than marking success and skipping
+    # until the skills-tree hash changes. Without this exit-1, silent
+    # partial installs persist — the exact bug PR #196 was filed to fix.
+    local fake_bin="$TEST_HOME/fake-bin-failing-install"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/gh" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+    skill)
+        # `gh skill --help` succeeds; `gh skill install ...` fails.
+        if [[ "${2:-}" == "install" ]]; then
+            echo "fake: simulated install failure" >&2
+            exit 1
+        fi
+        exit 0
+        ;;
+    *)
+        echo "fake gh: unexpected invocation: gh $*" >&2
+        exit 99
+        ;;
+esac
+SH
+    chmod +x "$fake_bin/gh"
+    PATH="$fake_bin:$PATH"
+
+    # Minimal registry with explicit `skills:` to avoid the `gh api` discovery
+    # path (we only need install_skill to fire).
+    local registry="$TEST_HOME/test-registry.yaml"
+    cat > "$registry" <<YAML
+sources:
+  fake/repo:
+    description: regression fixture for PR #196 finding 3
+    skills:
+      - fake-skill
+YAML
+
+    # Force a non-empty harness list so the script doesn't early-exit at the
+    # SKILL_HARNESSES-empty branch. On dev machines the script will then
+    # re-source the real .env's SKILL_HARNESSES on top of this value — that's
+    # harmless here because every fake install fails regardless of which
+    # harnesses are in the loop.
+    export SKILL_HARNESSES="test-harness"
+
+    run "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" "$registry"
+    assert_failure
+    assert_output_contains "install(s) failed"
 }
 
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────
@@ -547,6 +642,14 @@ EOF
 @test "chezmoi apply triggers the skill installer (real files in ~/.claude/skills)" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
+    # PR #196: Phase 2 of the run_onchange installer now fails loud when
+    # `gh auth status` returns non-zero. CI runners have gh installed but
+    # unauthenticated, so stub a fake gh that satisfies all three preflight
+    # checks. Phase 1 (install-local.sh) is what this test actually asserts.
+    local fake_gh_bin
+    fake_gh_bin=$(make_fake_gh)
+    PATH="$fake_gh_bin:$PATH"
+
     # Templated dotfiles need [data] for .email and env vars for the
     # copilot template's fail-fast guard. Bootstrap both before .sync runs
     # so chezmoi apply renders cleanly.
@@ -601,6 +704,13 @@ TOML
 @test "copilot template fails fast when CONTEXT7_API_KEY is unset" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
+    # PR #196: stub fake gh so the run_onchange installer's `gh auth status`
+    # check doesn't fail first and mask the copilot template's fail-fast
+    # error (which is what this test actually asserts).
+    local fake_gh_bin
+    fake_gh_bin=$(make_fake_gh)
+    PATH="$fake_gh_bin:$PATH"
+
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
 sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
@@ -619,6 +729,12 @@ TOML
 
 @test "gitconfig template renders Uber URL redirects when work=true" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    # PR #196: stub fake gh so the run_onchange installer's `gh auth status`
+    # check doesn't abort chezmoi apply before the gitconfig template runs.
+    local fake_gh_bin
+    fake_gh_bin=$(make_fake_gh)
+    PATH="$fake_gh_bin:$PATH"
 
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
