@@ -113,6 +113,7 @@ packages:
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }
+  - cargo-update: { source: cargo }            # provides `cargo install-update` for idempotent `dots up`
   - tilth: { source: cargo, git: "https://github.com/paulnsorensen/tilth", branch: main }
   - hallouminate: { source: cargo, git: "https://github.com/paulnsorensen/hallouminate", branch: main }
   # Install from Git because the crates.io `rtk` collides with the desired package.
