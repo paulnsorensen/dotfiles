@@ -92,9 +92,15 @@ mcps:
   # / `fixed_tools` — applies to every harness uniformly.
   serena:
     command: serena
+    # CLI flags override ~/.serena/serena_config.yml. We force the dashboard
+    # off here (not just in the yaml) because serena rewrites its own config
+    # on every launch to append the projects list, which stomps our
+    # chezmoi-managed `web_dashboard: false` back to the upstream default.
     args:
       - start-mcp-server
       - --context={{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}
       - --project-from-cwd
+      - --enable-web-dashboard=false
+      - --open-web-dashboard=false
     scope: user
     description: Semantic code intel via LSP (symbols, references, refactors). Tools tailored per harness via --context.
