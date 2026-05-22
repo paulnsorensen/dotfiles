@@ -305,11 +305,26 @@ sync_npm() {
     # In upgrade mode, ask npm once which globals are outdated. Anything
     # not in this set is at latest and gets skipped — no more
     # reinstall-every-package every `dots up`. `npm outdated -g` exits
-    # non-zero when packages are outdated (deliberate, per docs), so we
-    # don't gate on its exit code.
+    # non-zero when packages are outdated (deliberate, per docs); the
+    # real failure mode we guard against is registry / network / auth
+    # errors, where stdout is empty or non-JSON. In that case we don't
+    # know what's outdated, so fall back to the old "upgrade everything
+    # already-installed" behavior rather than silently skipping every
+    # package as "(latest)".
     outdated=""
+    local outdated_unknown=false
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
-        outdated=$(npm outdated -g --json 2>/dev/null | jq -r 'keys[]?' 2>/dev/null || true)
+        local outdated_raw outdated_stderr
+        outdated_stderr=$(mktemp)
+        outdated_raw=$(npm outdated -g --json 2>"$outdated_stderr") || true
+        if echo "$outdated_raw" | jq -e 'type == "object"' &>/dev/null; then
+            outdated=$(echo "$outdated_raw" | jq -r 'keys[]?' 2>/dev/null || true)
+        else
+            outdated_unknown=true
+            log_warning "npm outdated -g failed; upgrading all installed globals instead"
+            [[ -s "$outdated_stderr" ]] && log_warning "  $(head -1 "$outdated_stderr")"
+        fi
+        rm -f "$outdated_stderr"
     fi
 
     while IFS=$'\t' read -r name pkg; do
@@ -322,7 +337,7 @@ sync_npm() {
                 echo "  + $name"
                 continue
             fi
-            if ! echo "$outdated" | grep -qx "$pkg"; then
+            if ! $outdated_unknown && ! echo "$outdated" | grep -qx "$pkg"; then
                 echo "  + $name (latest)"
                 continue
             fi
