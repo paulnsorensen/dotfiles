@@ -94,6 +94,10 @@ setup() {
 }
 
 teardown() {
+  # bats runs teardown even when setup() skipped before creating the
+  # fixtures. Guard against that: without SCAN/ORIGINAL_HOME set, the
+  # rm below would target the real $HOME (SCAN="") and wipe it.
+  [[ -n "${SCAN:-}" && -n "${ORIGINAL_HOME:-}" ]] || return 0
   rm -rf "$SCAN" "$HOME"
   export HOME="$ORIGINAL_HOME"
 }
