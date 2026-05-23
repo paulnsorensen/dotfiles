@@ -335,3 +335,59 @@ _prep_rollback_backup() {
     assert_success
     assert_output_contains "symlink(s) skipped"
 }
+
+@test "rollback replaces directories instead of merging" {
+    local backup_id="20250101_120002"
+    local bk
+    bk=$(_prep_rollback_backup "$backup_id")
+    # Backup holds a directory with a single file.
+    mkdir -p "$bk/.config"
+    echo "from backup" > "$bk/.config/keep.conf"
+    : > "$bk/manifest"
+
+    # Pre-existing target dir with a stale file absent from the backup. A
+    # merging restore (cp -r without the rm) would leave stale.conf behind;
+    # the rm-before-cp replace must delete it. Without this case a regression
+    # that drops the `rm` still passes the file-based dotglob test.
+    mkdir -p "$TEST_HOME/.config"
+    echo "stale" > "$TEST_HOME/.config/stale.conf"
+
+    BACKUP_TS="$backup_id" run bash -c "echo y | call-sync-fn rollback $backup_id"
+    assert_success
+    assert_file_exists "$TEST_HOME/.config/keep.conf"
+    [[ ! -e "$TEST_HOME/.config/stale.conf" ]] || {
+        echo "stale.conf survived — restore merged instead of replacing" >&2
+        false
+    }
+}
+
+@test "rollback surfaces and counts restore failures" {
+    # Root bypasses the directory-permission bits this test relies on to
+    # force `rm` to fail, so the failure branch can't be provoked as root.
+    [[ "$(id -u)" -eq 0 ]] && skip "needs non-root to enforce a permission failure"
+
+    local backup_id="20250101_120003"
+    local bk
+    bk=$(_prep_rollback_backup "$backup_id")
+    mkdir -p "$bk/.config"
+    echo "from backup" > "$bk/.config/keep.conf"
+    : > "$bk/manifest"
+
+    # Pre-existing target dir rollback cannot clear: a child file inside a
+    # directory stripped of write permission. `rm -rf` needs write+execute on
+    # the dir to unlink its contents, so the rm-before-cp fails → the restore
+    # is counted and the "failed to restore" warning fires. This is the PR's
+    # headline "surface restore failures" behaviour.
+    mkdir -p "$TEST_HOME/.config"
+    echo "locked" > "$TEST_HOME/.config/locked.conf"
+    chmod 500 "$TEST_HOME/.config"
+
+    BACKUP_TS="$backup_id" run bash -c "echo y | call-sync-fn rollback $backup_id"
+    # Restore perms before asserting so a failed assertion can't leave the
+    # tree unremovable for teardown.
+    chmod 700 "$TEST_HOME/.config"
+
+    # rollback continues past the failure (returns 0) but reports it.
+    assert_success
+    assert_output_contains "file(s) failed to restore"
+}
