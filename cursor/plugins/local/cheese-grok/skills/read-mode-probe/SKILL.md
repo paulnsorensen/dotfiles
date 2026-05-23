@@ -24,6 +24,7 @@ they're enforced. Catalog what would happen if each invariant were
 violated (silent corruption? hard panic? rejected request?).
 
 Tool order:
+
 1. `mcp__serena__find_symbol` for the central type/function.
 2. `mcp__tilth__tilth_grok` to pull its callers + tests in one shot.
 3. `mcp__serena__find_referencing_symbols` to find every check site.
@@ -35,6 +36,7 @@ from its entry point to its persistence or external use. Name every
 file:line where the value is read, transformed, or written.
 
 Tool order:
+
 1. `mcp__tilth__tilth_search` (kind=content) for the literal name.
 2. `mcp__serena__find_referencing_symbols` on each definition site.
 3. `mcp__code-review-graph__get_affected_flows_tool` for the
@@ -48,6 +50,7 @@ triggered, who catches it (if anyone), and whether it's recoverable
 or terminal.
 
 Tool order:
+
 1. `mcp__tilth__tilth_grok(target=<function>)` for body + callers.
 2. `mcp__tilth__tilth_search(query="catch,try,Result,Err,panic,throw,reject")`
    to find the surrounding error machinery.
@@ -59,6 +62,7 @@ allocations. Sort findings by likely impact — flag the worst offender
 first.
 
 Tool order:
+
 1. `mcp__code-review-graph__get_hub_nodes_tool` for high-fan-in
    functions.
 2. `mcp__code-review-graph__find_large_functions_tool` for >150-LOC
@@ -72,6 +76,7 @@ Audit input validation, authz checks, secret handling, deserialization
 sinks, SQL/shell injection vectors, SSRF, prototype pollution.
 
 Tool order:
+
 1. `mcp__tilth__tilth_search(query="JSON.parse,eval,exec,Function,vm,child_process,spawn")`
    for deserialization + exec sinks.
 2. `mcp__tilth__tilth_search(query="req.body,req.params,req.query,process.argv")`
