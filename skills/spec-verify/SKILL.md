@@ -3,32 +3,32 @@ name: spec-verify
 model: opus
 context: fork
 effort: high
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Agent, LSP
+allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Bash(cargo check:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(tsc:*), Bash(npm run:*), Bash(pnpm:*), Bash(yarn:*), Bash(go build:*), Bash(go vet:*), Bash(go test:*), Bash(uv run:*), Bash(python -m:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(prek:*), Bash(rtk:*), Agent, mcp__serena__*
 description: >
-  Verify that a spec's implementation matches its requirements using LSP structural
-  analysis, build verification, and test coverage checking. Use when the user says
-  "verify the spec", "check spec implementation", "does this match the spec",
-  "spec coverage", "verify acceptance criteria", or invokes /spec-verify with a spec
-  path. Also trigger after `/cure` completes to validate the result against the
-  original spec. Do NOT use for writing code — this is verification only.
-  Do NOT use for general code review — use /age for that.
+  Verify that a spec's implementation matches its requirements using Serena MCP
+  structural analysis, build verification, and test coverage checking. Use when the
+  user says "verify the spec", "check spec implementation", "does this match the
+  spec", "spec coverage", "verify acceptance criteria", or invokes /spec-verify
+  with a spec path. Also trigger after `/cure` completes to validate the result
+  against the original spec. Do NOT use for writing code — this is verification
+  only. Do NOT use for general code review — use /age for that.
 ---
 
 # spec-verify
 
-Verify implementation against spec. Trust LSP, not vibes.
+Verify implementation against spec. Trust the symbol graph, not vibes.
 
 You are the spec verification agent. You read a spec document (produced by `/spec`),
 then systematically verify that the implementation satisfies every user story,
-functional requirement, and quality gate — using LSP for structural verification,
-builds for correctness, and test analysis for coverage.
+functional requirement, and quality gate — using the Serena MCP for structural
+verification, builds for correctness, and test analysis for coverage.
 
 ## Input
 
 A path to a spec file (`.claude/specs/<slug>.md`). If no path given, list available
 specs and ask.
 
-Optional: `--quick` flag skips LSP deep analysis and test coverage, only checks
+Optional: `--quick` flag skips Serena deep analysis and test coverage, only checks
 quality gates and requirement mapping.
 
 ## Protocol
@@ -50,10 +50,10 @@ Build a verification checklist from these. Each item gets a status:
 ### Execution Strategy
 
 Phase 1 (quality gates) runs first — it's a stop gate. If it passes, spawn
-Phase 2 (LSP verification) and Phase 3 step 5 (test execution via whey-drainer)
+Phase 2 (Serena verification) and Phase 3 step 5 (test execution via whey-drainer)
 in parallel. Phase 3 steps 1-4 (coverage shape analysis) and Phase 4
 (acceptance criteria) run sequentially after Phase 2 because they depend on
-LSP results.
+Serena results.
 
 ### Phase 1: Quality Gates (build + lint)
 
@@ -69,33 +69,36 @@ If no quality gates are documented, run the project's default build check (`carg
 **Stop gate**: If quality gates fail, report immediately with the failures.
 Don't waste time on structural analysis of broken code.
 
-### Phase 2: LSP Structural Verification
+### Phase 2: Serena Structural Verification
 
 For each functional requirement and user story, verify the implementation exists
-and has the right shape using LSP — not just file reads.
+and has the right shape using the Serena MCP — not just file reads.
 
 **For each requirement:**
 
-1. **Locate implementation** — Use LSP `documentSymbol` and `findReferences` to
-   find the symbols that implement this requirement. Cross-reference with the
-   spec's proposed approach section for expected file/module locations.
+1. **Locate implementation** — Use `mcp__serena__get_symbols_overview` and
+   `mcp__serena__find_referencing_symbols` to find the symbols that implement
+   this requirement. Cross-reference with the spec's proposed approach section
+   for expected file/module locations.
 
-2. **Verify public API** — Use LSP `documentSymbol` on barrel/index files to
-   confirm expected exports exist. Check that the spec's described interfaces
-   match what's actually exported.
+2. **Verify public API** — Use `mcp__serena__get_symbols_overview` on barrel/index
+   files to confirm expected exports exist. Check that the spec's described
+   interfaces match what's actually exported.
 
-3. **Trace data flow** — Use LSP `goToDefinition` and `findReferences` to verify
-   that data flows through the expected path. If the spec says "orders calls
-   pricing via the public API", verify that import chain via LSP.
+3. **Trace data flow** — Use `mcp__serena__find_declaration` (the Serena
+   equivalent of go-to-definition) and `mcp__serena__find_referencing_symbols`
+   to verify that data flows through the expected path. If the spec says
+   "orders calls pricing via the public API", verify that import chain through
+   Serena.
 
 4. **Check boundary compliance** — Verify Sliced Bread rules:
-   - Imports cross slice boundaries only through index files (LSP references)
-   - Models don't import adapters or framework code (LSP goToDefinition on imports)
+   - Imports cross slice boundaries only through index files (Serena `find_referencing_symbols`)
+   - Models don't import adapters or framework code (`find_declaration` on imports)
    - Common/ doesn't import from siblings
 
-**LSP warmup**: Call `LSP hover` on line 1 of the first source file. Retry 3x
-with 3s waits. If LSP is unavailable after retries, fall back to ast-grep
-(`sg`) for structural patterns and note degraded confidence.
+**Serena availability check**: Call `mcp__serena__get_symbols_overview` on the
+first source file. If it errors, fall back to ast-grep (`sg`) for structural
+patterns and note degraded confidence.
 
 **ast-grep fallback patterns:**
 
@@ -115,7 +118,7 @@ sg --lang python -p 'class $NAME($BASE): $$$BODY' --json {file}
 ### Phase 3: Test Coverage Analysis
 
 Verify that tests exist and cover the spec's requirements. Steps 1-4 analyze
-coverage *shape* — mapping test names to requirements via LSP. Step 5 runs the
+coverage *shape* — mapping test names to requirements via Serena. Step 5 runs the
 test suite (in parallel with Phase 2, per the Execution Strategy above).
 
 1. **Find test files** — Glob for test files in scope:
@@ -126,14 +129,14 @@ test suite (in parallel with Phase 2, per the Execution Strategy above).
    {scope}/**/*_test.{go,rs}
    ```
 
-2. **Map tests to requirements** — Use LSP `documentSymbol` on test files to
+2. **Map tests to requirements** — Use `mcp__serena__get_symbols_overview` on test files to
    extract test names/descriptions. Match against user story IDs and functional
    requirements by name, keyword, or described behavior.
 
 3. **Check coverage gaps** — For each user story and functional requirement,
    determine if at least one test covers it. Score:
    - **Covered**: test name/description references the requirement + test
-     exercises the relevant code path (verified via LSP `findReferences` from
+     exercises the relevant code path (verified via `mcp__serena__find_referencing_symbols` from
      test to implementation)
    - **Weakly covered**: test exists but doesn't reference the requirement
      explicitly, or only tests a helper rather than the full path
@@ -150,18 +153,18 @@ test suite (in parallel with Phase 2, per the Execution Strategy above).
 
 For each user story's acceptance criteria (checkbox items):
 
-1. **Structural check** — Use LSP to verify the described behavior has a code
+1. **Structural check** — Use Serena to verify the described behavior has a code
    path. E.g., "user can filter by date" → find a filter function that accepts
    date parameters.
 
 2. **Test check** — Verify a test exercises this specific criterion.
 
 3. **Score the criterion**:
-   - `PASS` — Code path exists (LSP-verified) AND test covers it
+   - `PASS` — Code path exists (Serena-verified) AND test covers it
    - `PARTIAL` — Code path exists but no specific test, OR test exists but
-     code path couldn't be LSP-verified
+     code path couldn't be Serena-verified
    - `FAIL` — Neither code path nor test found
-   - `UNTESTED` — Code path exists (LSP-verified) but zero test coverage
+   - `UNTESTED` — Code path exists (Serena-verified) but zero test coverage
 
 ## Scoring
 
@@ -172,7 +175,7 @@ Each verification item uses 0-100 confidence scoring:
 | Type | Base | Cap |
 |------|------|-----|
 | Quality gate (build/lint) | 90 | 100 |
-| Functional requirement (LSP-verified) | 60 | 100 |
+| Functional requirement (Serena-verified) | 60 | 100 |
 | User story acceptance criterion | 50 | 95 |
 | Test coverage mapping | 40 | 90 |
 | Boundary/architecture compliance | 45 | 95 |
@@ -181,11 +184,11 @@ Each verification item uses 0-100 confidence scoring:
 
 | Evidence | Modifier |
 |----------|----------|
-| LSP-verified (goToDefinition, findReferences) | +25 |
+| Serena-verified (find_declaration, find_referencing_symbols) | +25 |
 | ast-grep structural match | +15 |
 | Test explicitly references requirement | +15 |
-| File/symbol name matches but not LSP-verified | +5 |
-| Inferred from file read only (no LSP) | -10 |
+| File/symbol name matches but not Serena-verified | +5 |
+| Inferred from file read only (no Serena) | -10 |
 
 **Step 3: Context modifiers**
 
@@ -197,7 +200,7 @@ Each verification item uses 0-100 confidence scoring:
 | Multiple tests cover same requirement | +5 |
 
 **Step 4: Borderline re-assessment** — Items scoring 55-69: re-verify with a
-second LSP pass. If scores diverge >15, mark as `PARTIAL` rather than making
+second Serena pass. If scores diverge >15, mark as `PARTIAL` rather than making
 a definitive call.
 
 **Surfacing threshold**: >= 50 for PASS. < 50 = PARTIAL or FAIL depending on
@@ -224,7 +227,7 @@ context window. Lead with the summary, then the details.
 ### Requirements Coverage
 | ID | Requirement | Status | Confidence | Evidence |
 |----|-------------|--------|------------|----------|
-| FR-1 | Order creation | PASS | 92 | LSP: OrderService.create verified, 3 tests |
+| FR-1 | Order creation | PASS | 92 | Serena: OrderService.create verified, 3 tests |
 | FR-2 | Price calculation | PARTIAL | 65 | Code exists, no test for edge case |
 | US-001 | User can place order | PASS | 88 | 4/4 acceptance criteria met |
 
@@ -263,17 +266,17 @@ N items scored < 50 (not shown above — details in the full report below)
 - Fix build failures — report them, let the caller decide
 - Review code quality or style — use `/age` for that
 - Run outside the spec's scope — verify what the spec describes, nothing more
-- Assign PASS without LSP or ast-grep evidence — file reads alone cap at PARTIAL
+- Assign PASS without Serena or ast-grep evidence — file reads alone cap at PARTIAL
 
 ## Gotchas
 
-- LSP may not be available for all languages — ast-grep fallback is less precise
+- Serena may not be available for all languages — ast-grep fallback is less precise
   but still structural. Note degraded confidence in the report.
 - Spec quality varies — vague requirements get lower confidence scores. If a
   requirement is too ambiguous to verify, score it PARTIAL with a note.
 - Test name matching is heuristic — a test named `test_order_creation` maps to
   FR "Order creation" but `test_helper_utils` doesn't map to anything specific.
-  When in doubt, use LSP findReferences to check if the test actually calls the
+  When in doubt, use `mcp__serena__find_referencing_symbols` to check if the test actually calls the
   implementation.
 - Large specs (20+ requirements) may hit the tool call limit. After ~60 tool
   calls, synthesize from available data and note incomplete coverage.
@@ -282,11 +285,11 @@ N items scored < 50 (not shown above — details in the full report below)
 
 ## Verification Principles
 
-- Require LSP or ast-grep evidence for PASS — file reads alone cap at PARTIAL
+- Require Serena or ast-grep evidence for PASS — file reads alone cap at PARTIAL
   because they can't verify structural relationships
 - Run quality gates first — they're the fastest failure signal and everything
   downstream is moot if the build is broken
-- Locate symbols via LSP before reading files — going straight to file reads
+- Locate symbols via Serena before reading files — going straight to file reads
   bypasses the structural verification that distinguishes this skill from /age
 - Prioritize red/green paths over individual checkboxes — they represent
   end-to-end user value, not isolated implementation details

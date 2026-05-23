@@ -249,7 +249,13 @@ EOF
     assert_output_contains "gh skill install acme/widgets alpha --agent claude-code --scope user --force --pin v1.2.3"
 }
 
-@test "skill sync: failed install is reported but doesn't abort other installs" {
+@test "skill sync: every install in the batch is attempted, then script exits non-zero on per-skill failure" {
+    # PR #196 finding 3: the script must run every install in the batch
+    # (so partial failures don't mask each other) and THEN propagate
+    # non-zero so the chezmoi run_onchange records the apply as failed
+    # and reruns next sync. Pre-#196 this exited 0, which silently
+    # marked the chezmoi apply successful → no retry → partial installs
+    # persisted until the skills-tree hash changed.
     write_registry "acme/widgets" "    skills:
       - alpha
       - bravo"
@@ -257,8 +263,8 @@ EOF
     export GH_BEHAVIOR="fail-skill-install"
 
     run_sync
-    assert_success  # script itself doesn't bail on per-skill failure
-    # Both skills attempted, both shown as failed
+    assert_failure  # PR #196: per-skill failure now propagates exit 1
+    # Both skills attempted before exit — script does NOT bail on first failure
     local stripped
     stripped=$(strip_colors "$output")
     [[ "$stripped" == *"✗ alpha → claude-code"* ]]
@@ -476,7 +482,9 @@ MOCK
     fi
 }
 
-@test "skill sync: failed installs do not write the cache" {
+@test "skill sync: failed installs do not write the cache (and propagate exit 1)" {
+    # PR #196 finding 3: cache must stay un-written on any failure, AND
+    # the script must exit non-zero so the run_onchange retries.
     write_registry "acme/widgets" "    skills:
       - alpha
       - bravo"
@@ -484,7 +492,7 @@ MOCK
     export GH_BEHAVIOR="fail-skill-install"
 
     run_sync
-    assert_success  # script does not abort on per-skill failure
+    assert_failure  # PR #196: per-skill failure propagates exit 1
 
     if [[ -f "$HOME/.local/state/dotfiles/skill-external-hash" ]]; then
         echo "cache written despite failures" >&2

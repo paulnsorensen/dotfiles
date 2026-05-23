@@ -32,6 +32,11 @@ log_error() {
 # Documented in AGENTS.md — keep these in sync.
 SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "brew" "apt" "agents" "codex")
 
+# Failure ledger — every .sync script that exits non-zero appends its name
+# here. .sync-with-rollback inspects this at the end of run_sync, prints a
+# summary, and exits non-zero so a partial sync doesn't masquerade as green.
+SYNC_FAILURES=()
+
 is_skipped() {
     local name="$1"
     local skip
@@ -87,7 +92,10 @@ sync_entry() {
     # symlinks items INTO ~/.claude without replacing the whole directory)
     if [[ -d "$dir/$file" && -f "$dir/$file/.sync" ]]; then
         log_info "Running .sync for $file."
-        bash "$dir/$file/.sync" || log_warning "sync for $file failed (non-fatal)"
+        if ! bash "$dir/$file/.sync"; then
+            log_error "sync for $file FAILED (continuing — will report at end)"
+            SYNC_FAILURES+=("$file")
+        fi
         return 0
     fi
 
@@ -117,7 +125,10 @@ sync_hidden_dirs() {
         [[ -f "$entry.sync" ]] || continue
 
         log_info "Running .sync for $name."
-        bash "$entry.sync" || log_warning "sync for $name failed (non-fatal)"
+        if ! bash "$entry.sync"; then
+            log_error "sync for $name FAILED (continuing — will report at end)"
+            SYNC_FAILURES+=("$name")
+        fi
     done
 }
 

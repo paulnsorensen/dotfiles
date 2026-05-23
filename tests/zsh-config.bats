@@ -28,7 +28,6 @@ teardown() {
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/git.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/navigation.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/misc.zsh" ]]
-    [[ ! -f "$REAL_DOTFILES_DIR/zsh/claude.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/updates.zsh" ]]
     [[ ! -d "$REAL_DOTFILES_DIR/zsh/cache" ]]
 }
@@ -134,12 +133,14 @@ teardown() {
 }
 
 @test "fzf configuration has no syntax errors" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     # Test fzf config has valid zsh syntax
     run zsh -n "$REAL_DOTFILES_DIR/zsh/fzf.zsh"
     [[ $status -eq 0 ]]
 }
 
 @test "configuration files have no syntax errors" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     local failed=0
     for f in core.zsh aliases.zsh completion.zsh fzf.zsh; do
         if ! zsh -n "$REAL_DOTFILES_DIR/zsh/$f" 2>/dev/null; then

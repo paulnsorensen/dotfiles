@@ -108,6 +108,9 @@ add_diverged_worktree() {
 }
 
 setup() {
+  # Fixtures are now origin-backed (create_repo provisions a bare origin and
+  # sets origin/HEAD), so the default-branch resolution that ccw-sweep relies
+  # on works without network or repo-specific config — the tests run in CI.
   SCAN=$(mktemp -d "${TMPDIR:-.}/ccw-scan.XXXXXX")
   # Isolate HOME so remove_worktree doesn't touch real ~/.claude
   ORIGINAL_HOME="$HOME"
@@ -116,6 +119,10 @@ setup() {
 }
 
 teardown() {
+  # bats runs teardown even if setup() errored before creating the fixtures.
+  # Guard against that: without SCAN/ORIGINAL_HOME set, the rm below would
+  # target the real $HOME (SCAN="") and wipe it.
+  [[ -n "${SCAN:-}" && -n "${ORIGINAL_HOME:-}" ]] || return 0
   rm -rf "$SCAN" "$HOME"
   export HOME="$ORIGINAL_HOME"
 }
