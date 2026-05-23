@@ -111,10 +111,15 @@ setup() {
   # Fixtures are now origin-backed (create_repo provisions a bare origin and
   # sets origin/HEAD), so the default-branch resolution that ccw-sweep relies
   # on works without network or repo-specific config — the tests run in CI.
-  SCAN=$(mktemp -d "${TMPDIR:-.}/ccw-scan.XXXXXX")
+  #
+  # SCAN/HOME must be ABSOLUTE: every helper uses `git -C "$repo" …` with a
+  # path derived from SCAN, and a relative remote/worktree URL resolves
+  # against $repo (not the CWD), which silently breaks. CI has no TMPDIR, so
+  # mktemp's "." fallback would yield relative paths — pwd-resolve to absolute.
+  SCAN=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/ccw-scan.XXXXXX")" && pwd)
   # Isolate HOME so remove_worktree doesn't touch real ~/.claude
   ORIGINAL_HOME="$HOME"
-  HOME=$(mktemp -d "${TMPDIR:-.}/ccw-home.XXXXXX")
+  HOME=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/ccw-home.XXXXXX")" && pwd)
   export HOME
 }
 
