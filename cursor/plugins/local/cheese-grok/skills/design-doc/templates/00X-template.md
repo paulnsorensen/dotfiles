@@ -51,7 +51,9 @@ without changing the rationale, you have not written real
 alternatives — go again.
 
 ### Alternative A
+
 ### Alternative B
+
 ### Alternative C — Do nothing
 
 ## Risks & Mitigations (your words; specific, not generic)
