@@ -8,7 +8,8 @@ AI critiques rather than authors.
 
 | Primitive | What it does |
 |---|---|
-| **`/grok-codebase`** (skill) | Maps a repo using the four-pillar model — Building Blocks → Entry Points → Infrastructure → Egress — then runs an adaptive Socratic quiz to lock it into long-term understanding. |
+| **`/grok-codebase`** (skill) | Maps a repo using the four-pillar model — Building Blocks → Entry Points → Infrastructure → Egress — then runs an adaptive Socratic quiz to lock it into long-term understanding. Multi-session, ≤30k tokens. |
+| **`/tour`** (skill) | Single-session sibling of `/grok-codebase`. Layered summary (project purpose → module map → call graph for the pointed-at thing) with file:line citations. Anchors on entry points; stops after answering. ≤10k tokens. |
 | **`/design-doc`** (skill) | Drives a spine-first authoring workflow where you write Context / Problem / Goals / Non-Goals / Alternatives / Risks; the AI is restricted to critique, expansion, and copyedit. |
 | **`/read-mode-probe`** (skill) | Five probes (invariant, data-flow, error-path, hot-path, security) that return numbered findings with confidence + citations, never edits. |
 | `reader-companion.mdc` (rule) | Always-on reader-first stance with file:line citation requirement and banned-phrase list. |
@@ -37,9 +38,12 @@ deployed by `mcp-sync` (or `dots sync`) into `~/.cursor/mcp.json`.
 
 ## Trigger phrases
 
-- **Grok:** "grok this repo", "help me understand this codebase",
-  "onboard me", "give me a read-only tour", "map the architecture",
-  "walk me through this code", "quiz me on this repo".
+- **Grok (deep, multi-session):** "grok this repo", "onboard me",
+  "memorize this project", "lock this codebase into memory",
+  "quiz me on this repo", "help me understand this codebase deeply".
+- **Tour (lightweight, single session):** "tour this repo", "give me
+  a tour", "what does this project do", "trace how X works", "where
+  is Y implemented", "show me how this works".
 - **Design doc:** "draft a design doc", "RFC for X", "ADR for Y",
   "tech spec", "review my design doc", "tighten this draft".
 - **Probe:** "probe this", "what are the invariants here", "where
