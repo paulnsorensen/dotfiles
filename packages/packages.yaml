@@ -72,6 +72,7 @@ packages:
   - emdash: { source: cask, platform: mac }   # Desktop UI for running coding agents in parallel
   - claude-code: { source: cask, platform: mac } # Claude Code — terminal AI coding assistant
   - cursor: { source: cask, platform: mac }    # Cursor — AI code editor
+  - obsidian: { source: cask, platform: mac }  # Obsidian — Markdown knowledge base
 
   # Linux-only
   - xclip: { platform: linux }
