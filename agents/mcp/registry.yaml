@@ -64,14 +64,6 @@ mcps:
     description: AI-powered technical web research; backs /briesearch when cheese-flow is unavailable
     gate_unless: CHEESE_FLOW
 
-  serper:
-    command: npx
-    args: ["-y", "serper-search-scrape-mcp-server"]
-    env:
-      SERPER_API_KEY: "${SERPER_API_KEY}"
-    scope: user
-    description: Google SERP data via Serper.dev — web search, Knowledge Graph, People Also Ask, and page scraping
-
   todoist:
     command: npx
     args: ["-y", "@doist/todoist-ai"]

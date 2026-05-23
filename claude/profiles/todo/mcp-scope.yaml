@@ -3,11 +3,10 @@
 #
 # Rationale: Productivity flow is the primary purpose, but /research is
 # useful when a task requires a fact-check or library doc lookup before
-# it can be scoped. Context7, Tavily, and Serper back the /research skill;
+# it can be scoped. Context7 and Tavily back the /research skill;
 # Todoist remains the core. No tilth/code-review-graph — this is not a
 # coding session.
 mcps:
   - todoist
   - context7
   - tavily
-  - serper

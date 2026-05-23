@@ -47,7 +47,6 @@
       "mcp__todoist__*",
       "mcp__context7__*",
       "mcp__tavily__*",
-      "mcp__serper__*",
       "mcp__claude_ai_Gmail__*"
     ],
     "deny": [
