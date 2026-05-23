@@ -38,13 +38,13 @@ mcp_filter_for_harness() {
         # shellcheck disable=SC2016
         jq <<<"$json" '
             to_entries
-            | map(select(((.value.harnesses // ["claude","codex","opencode"]) | index("claude")) != null))
+            | map(select(((.value.harnesses // ["claude","codex","opencode","cursor"]) | index("claude")) != null))
             | map(select((.value.gate_unless // "") as $g | $g == "" or (env[$g] // "false") != "true"))
             | from_entries'
     else
         jq --arg h "$harness" <<<"$json" '
             to_entries
-            | map(select(((.value.harnesses // ["claude","codex","opencode"]) | index($h)) != null))
+            | map(select(((.value.harnesses // ["claude","codex","opencode","cursor"]) | index($h)) != null))
             | from_entries'
     fi
 }
@@ -126,6 +126,68 @@ mcp_opencode_remove() {
     [[ -f "$cfg" ]] || return 0
     tmp=$(mktemp)
     jq --arg n "$name" 'if .mcp then .mcp |= del(.[$n]) else . end' "$cfg" > "$tmp" \
+        && mv "$tmp" "$cfg"
+}
+
+# ─── cursor primitives ──────────────────────────────────────────────────
+# Cursor uses ~/.cursor/mcp.json (global) with the same `mcpServers` schema
+# as Claude Desktop. No non-interactive `cursor mcp` CLI exists, so we
+# jq-edit the file directly. CURSOR_CONFIG overrides the target path (tests).
+
+mcp_cursor_config_path() {
+    echo "${CURSOR_CONFIG:-$HOME/.cursor/mcp.json}"
+}
+
+mcp_cursor_ensure_config() {
+    local cfg; cfg=$(mcp_cursor_config_path)
+    mkdir -p "${cfg%/*}"
+    if [[ ! -s "$cfg" ]]; then
+        echo '{"mcpServers": {}}' > "$cfg"
+    fi
+}
+
+mcp_cursor_list_current() {
+    local cfg; cfg=$(mcp_cursor_config_path)
+    [[ -f "$cfg" ]] || return 0
+    jq -r '.mcpServers // {} | keys[]' "$cfg" 2>/dev/null | sort -u
+}
+
+mcp_cursor_remove() {
+    local name="$1" cfg tmp
+    cfg=$(mcp_cursor_config_path)
+    [[ -f "$cfg" ]] || return 0
+    tmp=$(mktemp)
+    jq --arg n "$name" 'if .mcpServers then .mcpServers |= del(.[$n]) else . end' "$cfg" > "$tmp" \
+        && mv "$tmp" "$cfg"
+}
+
+mcp_cursor_current_signature() {
+    local cfg; cfg=$(mcp_cursor_config_path)
+    [[ -f "$cfg" ]] || { printf '\t\t\n'; return; }
+    local entry
+    entry=$(jq --arg n "$1" '.mcpServers[$n] // empty' "$cfg" 2>/dev/null)
+    [[ -z "$entry" || "$entry" == "null" ]] && { printf '\t\t\n'; return; }
+    local cmd args env_json env_csv
+    cmd=$(     jq -r '.command // ""'                       <<<"$entry")
+    args=$(    jq -r '(.args // []) | join(" ")'             <<<"$entry")
+    env_json=$(jq -c '.env // {}'                            <<<"$entry")
+    env_csv=$(mcp_resolved_env_csv "$env_json")
+    printf '%s\t%s\t%s\n' "$cmd" "$args" "$env_csv"
+}
+
+mcp_cursor_add() {
+    local name="$1" cfg cmd args_array env_json entry tmp
+    cfg=$(mcp_cursor_config_path)
+    mcp_cursor_ensure_config
+    cmd=$(jq -r --arg n "$name" '.[$n].command' <<<"$HARNESS_DESIRED_JSON")
+    args_array=$(jq -c --arg n "$name" '.[$n].args // []' <<<"$HARNESS_DESIRED_JSON")
+    env_json=$(mcp_opencode_build_env_json "$name") || return 1
+    entry=$(jq -n --arg cmd "$cmd" --argjson args "$args_array" --argjson env "$env_json" '
+        {command:$cmd, args:$args}
+        + (if ($env | length) > 0 then {env:$env} else {} end)')
+    tmp=$(mktemp)
+    jq --arg n "$name" --argjson entry "$entry" \
+        '.mcpServers = ((.mcpServers // {}) | .[$n] = $entry)' "$cfg" > "$tmp" \
         && mv "$tmp" "$cfg"
 }
 
@@ -249,6 +311,22 @@ _mcp_resolved_env_pairs() {
     done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"$env_json")
 }
 
+# Echoes the name of the first ${VAR}-style env reference in the entry's env
+# block that is unset in the live environment; empty output if all are set or
+# there is no env block. Quiet (no diagnostics) — used to decide whether an
+# `optional` MCP should be skipped non-fatally.
+_mcp_first_unset_env_var() {
+    local name="$1" env_json val var
+    env_json=$(jq -c --arg n "$name" '.[$n].env // {}' <<<"$HARNESS_DESIRED_JSON")
+    [[ "$env_json" == "{}" ]] && return 0
+    while IFS= read -r val; do
+        if [[ "$val" =~ ^\$\{([^}]+)\}$ ]]; then
+            var="${BASH_REMATCH[1]}"
+            [[ -z "${!var:-}" ]] && { printf '%s' "$var"; return 0; }
+        fi
+    done < <(jq -r '.[]' <<<"$env_json")
+}
+
 mcp_build_env_flags() {
     local name="$1" flag_prefix="$2"  # "-e" (claude) or "--env" (codex)
     env_flags=()
@@ -339,6 +417,7 @@ mcp_detect_drift() {
             claude)   current=$(mcp_claude_current_signature   "$name") ;;
             codex)    current=$(mcp_codex_current_signature    "$name") ;;
             opencode) current=$(mcp_opencode_current_signature "$name") ;;
+            cursor)   current=$(mcp_cursor_current_signature   "$name") ;;
         esac
         if [[ "$desired" != "$current" ]]; then
             echo "$name"
@@ -386,6 +465,19 @@ _mcp_harness_cli_check() {
         claude)   command -v claude   &>/dev/null || { echo -e "${YELLOW}Skipping claude   (CLI not found)${NC}"; return 1; } ;;
         codex)    command -v codex    &>/dev/null || { echo -e "${YELLOW}Skipping codex    (CLI not found)${NC}"; return 1; } ;;
         opencode) command -v opencode &>/dev/null || { echo -e "${YELLOW}Skipping opencode (CLI not found)${NC}"; return 1; } ;;
+        # Cursor has no CLI for MCP management — we jq-edit ~/.cursor/mcp.json
+        # directly. Gate on a directory or app-bundle probe so we silently skip
+        # machines that don't run Cursor. CURSOR_CONFIG overrides the probe for
+        # tests (bats writes to a scratch path).
+        cursor)
+            if [[ -z "${CURSOR_CONFIG:-}" ]] \
+                && [[ ! -d "$HOME/.cursor" ]] \
+                && [[ ! -d "/Applications/Cursor.app" ]] \
+                && ! command -v cursor &>/dev/null; then
+                echo -e "${YELLOW}Skipping cursor   (no ~/.cursor, no Cursor.app, no CLI)${NC}"
+                return 1
+            fi
+            ;;
         *) echo -e "${RED}Unknown harness: $harness${NC}" >&2; return 2 ;;
     esac
 }
@@ -410,6 +502,11 @@ _mcp_setup_harness_dispatch() {
             CURRENT_NAMES=$(mcp_opencode_list_current)
             get_item_scope() { echo "user"; }
             remove_item()    { mcp_opencode_remove "$1"; }
+            ;;
+        cursor)
+            CURRENT_NAMES=$(mcp_cursor_list_current)
+            get_item_scope() { echo "user"; }
+            remove_item()    { mcp_cursor_remove "$1"; }
             ;;
     esac
 }
@@ -453,6 +550,18 @@ _mcp_apply_adds() {
     echo -e "${GREEN}Adding MCPs...${NC}"
     while read -r name; do
         [[ -z "$name" ]] && continue
+        # Optional entries whose credentials aren't configured are skipped
+        # non-fatally: keeps the registry entry without failing the sync when
+        # the user hasn't set the API key (e.g. todoist without TODOIST_API_KEY).
+        local optional unset_var
+        optional=$(jq -r --arg n "$name" '.[$n].optional // false' <<<"$HARNESS_DESIRED_JSON")
+        if [[ "$optional" == "true" ]]; then
+            unset_var=$(_mcp_first_unset_env_var "$name")
+            if [[ -n "$unset_var" ]]; then
+                echo -e "  ${YELLOW}skipping $name (optional; \$$unset_var unset)${NC}"
+                continue
+            fi
+        fi
         if $DRY_RUN; then
             local cmd args
             cmd=$( jq -r --arg n "$name" '.[$n].command // ""'              <<<"$HARNESS_DESIRED_JSON")
@@ -466,6 +575,7 @@ _mcp_apply_adds() {
             claude)   err=$(mcp_claude_add   "$name" 2>&1) || rc=$? ;;
             codex)    err=$(mcp_codex_add    "$name" 2>&1) || rc=$? ;;
             opencode) err=$(mcp_opencode_add "$name" 2>&1) || rc=$? ;;
+            cursor)   err=$(mcp_cursor_add   "$name" 2>&1) || rc=$? ;;
         esac
         if (( rc == 0 )); then
             echo -e "${GREEN}done${NC}"

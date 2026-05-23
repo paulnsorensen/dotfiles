@@ -205,31 +205,26 @@ sync_cargo() {
     fi
 
     log_info "Syncing cargo packages"
-    local installed upgrade
+    local installed
     installed=$(cargo install --list 2>/dev/null | grep -E '^\S' | cut -d' ' -f1 || true)
-    upgrade="${UPGRADE_MODE:-false}"
 
+    # Install pass — only touch packages that aren't installed yet. The
+    # upgrade pass below handles already-installed packages idempotently
+    # (via cargo-install-update) instead of force-reinstalling every time.
     while IFS=$'\t' read -r name git_url branch; do
         [[ -z "$name" ]] && continue
-        local already=false
-        echo "$installed" | grep -qx "$name" && already=true
-
-        if $already && [[ "$upgrade" != "true" ]]; then
+        if echo "$installed" | grep -qx "$name"; then
             echo "  + $name"
             continue
         fi
 
-        local action="Installing"
-        local install_args=()
-        if $already; then
-            action="Upgrading"
-            install_args+=(--force)
-        fi
         if [[ -n "$branch" && -z "$git_url" ]]; then
             log_error "Invalid cargo package config for $name: branch requires git_url"
             FAILED+=("$name")
             continue
         fi
+
+        local install_args=()
         [[ -n "$git_url" ]] && install_args+=(--git "$git_url")
         [[ -n "$branch" ]] && install_args+=(--branch "$branch")
         install_args+=("$name")
@@ -237,15 +232,28 @@ sync_cargo() {
         if [[ -n "$git_url" ]]; then
             local source_desc="$git_url"
             [[ -n "$branch" ]] && source_desc="$source_desc#$branch"
-            echo "  $action $name from $source_desc..."
+            echo "  Installing $name from $source_desc..."
         else
-            echo "  $action $name..."
+            echo "  Installing $name..."
         fi
         if ! cargo install "${install_args[@]}" </dev/null; then
             log_error "Failed to install $name"
             FAILED+=("$name")
         fi
     done <<< "$cargo_pkgs"
+
+    # Upgrade pass — cargo-install-update checks crates.io / git tip per
+    # package and skips anything already at latest. Avoids the previous
+    # force-reinstall-everything-every-time behavior of `dots up`.
+    if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
+        if command -v cargo-install-update &>/dev/null; then
+            log_info "Upgrading cargo packages (skipping up-to-date)..."
+            cargo install-update --all --git </dev/null || log_warning "cargo install-update failed"
+        else
+            log_warning "cargo-update not installed — skipping cargo upgrade pass"
+            log_warning "  Install with: cargo install cargo-update"
+        fi
+    fi
 
     log_success "Cargo sync complete"
 }
@@ -291,19 +299,48 @@ sync_npm() {
     fi
 
     log_info "Syncing npm packages"
-    local installed upgrade
+    local installed outdated
     installed=$(npm ls -g --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' || true)
-    upgrade="${UPGRADE_MODE:-false}"
+
+    # In upgrade mode, ask npm once which globals are outdated. Anything
+    # not in this set is at latest and gets skipped — no more
+    # reinstall-every-package every `dots up`. `npm outdated -g` exits
+    # non-zero when packages are outdated (deliberate, per docs); the
+    # real failure mode we guard against is registry / network / auth
+    # errors, where stdout is empty or non-JSON. In that case we don't
+    # know what's outdated, so fall back to the old "upgrade everything
+    # already-installed" behavior rather than silently skipping every
+    # package as "(latest)".
+    outdated=""
+    local outdated_unknown=false
+    if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
+        local outdated_raw outdated_stderr
+        outdated_stderr=$(mktemp)
+        outdated_raw=$(npm outdated -g --json 2>"$outdated_stderr") || true
+        if echo "$outdated_raw" | jq -e 'type == "object"' &>/dev/null; then
+            outdated=$(echo "$outdated_raw" | jq -r 'keys[]?' 2>/dev/null || true)
+        else
+            outdated_unknown=true
+            log_warning "npm outdated -g failed; upgrading all installed globals instead"
+            [[ -s "$outdated_stderr" ]] && log_warning "  $(head -1 "$outdated_stderr")"
+        fi
+        rm -f "$outdated_stderr"
+    fi
 
     while IFS=$'\t' read -r name pkg; do
         [[ -z "$name" ]] && continue
-        local already
-        already=false
+        local already=false
         echo "$installed" | grep -qx "$pkg" && already=true
 
-        if $already && [[ "$upgrade" != "true" ]]; then
-            echo "  + $name"
-            continue
+        if $already; then
+            if [[ "${UPGRADE_MODE:-false}" != "true" ]]; then
+                echo "  + $name"
+                continue
+            fi
+            if ! $outdated_unknown && ! echo "$outdated" | grep -qx "$pkg"; then
+                echo "  + $name (latest)"
+                continue
+            fi
         fi
 
         local action="Installing"

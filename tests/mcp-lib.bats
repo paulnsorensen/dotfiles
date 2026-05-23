@@ -220,3 +220,42 @@ YAML
     assert_success
     assert_output_contains "Sync complete!"
 }
+
+# `optional: true` lets an MCP gated on a credential be skipped non-fatally
+# when that credential is absent — keeps the registry entry without turning
+# `dots sync` red (the todoist-without-TODOIST_API_KEY case).
+@test "_mcp_apply_adds: optional MCP with unset env var is skipped, not counted as failure" {
+    export DRY_RUN=false
+    unset OPTIONAL_KEY_XYZ 2>/dev/null || true
+    # The literal ${OPTIONAL_KEY_XYZ} is a registry env-ref placeholder resolved
+    # by the sync at runtime, not the shell — single quotes are intentional.
+    # shellcheck disable=SC2016
+    export HARNESS_DESIRED_JSON='{
+      "toddy": {"command": "npx", "args": ["-y", "x"], "env": {"K": "${OPTIONAL_KEY_XYZ}"}, "optional": true}
+    }'
+    export TO_ADD="toddy"
+
+    ADD_FAILURES=0
+    _mcp_apply_adds claude > "$TEST_HOME/adds.out" 2>&1
+
+    [ "$ADD_FAILURES" -eq 0 ] || { echo "expected 0 failures, got $ADD_FAILURES" >&2; cat "$TEST_HOME/adds.out" >&2; return 1; }
+    grep -q "skipping toddy (optional" "$TEST_HOME/adds.out" || { echo "expected skip notice:" >&2; cat "$TEST_HOME/adds.out" >&2; return 1; }
+}
+
+# Contrast: a NON-optional MCP with an unset env var must still fail loud, so
+# genuinely-required credentials aren't silently dropped.
+@test "_mcp_apply_adds: non-optional MCP with unset env var still counts as a failure" {
+    export DRY_RUN=false
+    unset REQUIRED_KEY_XYZ 2>/dev/null || true
+    # shellcheck disable=SC2016  # literal ${VAR} placeholder is intentional (see above)
+    export HARNESS_DESIRED_JSON='{
+      "reqd": {"command": "npx", "args": ["-y", "x"], "env": {"K": "${REQUIRED_KEY_XYZ}"}}
+    }'
+    export TO_ADD="reqd"
+
+    ADD_FAILURES=0
+    _mcp_apply_adds claude > "$TEST_HOME/adds.out" 2>&1 || true
+
+    [ "$ADD_FAILURES" -eq 1 ] || { echo "expected 1 failure, got $ADD_FAILURES" >&2; cat "$TEST_HOME/adds.out" >&2; return 1; }
+    grep -q "failed" "$TEST_HOME/adds.out" || { echo "expected failure notice:" >&2; cat "$TEST_HOME/adds.out" >&2; return 1; }
+}

@@ -1,63 +1,106 @@
 // worktree-guard.js
-// When running in a git worktree, blocks Write/Edit to files outside the worktree root.
-// Prevents agents from accidentally modifying main repo or other worktrees.
+// When running in a git worktree, blocks writes to files outside the worktree
+// root. Prevents agents from accidentally modifying the main repo or sibling
+// worktrees. Covers Edit, Write, MultiEdit, and the tilth_write MCP writer.
+//
+// Enforced by default in a worktree (opt-out):
+//   CLAUDE_WORKTREE_GUARD=0|false|off|no   → disable entirely
+// Allowed-path escape hatch (writable even outside the worktree):
+//   built-in: worktree root, $TMPDIR, /tmp, ~/.claude/, any .cheese/ dir
+//   extra:    CLAUDE_WORKTREE_GUARD_ALLOW=/abs/prefix,/another  (comma-separated)
 
 const { execSync } = require('child_process');
 const path = require('path');
 
-let worktreeRoot = null;
-let isWorktree = null;
+const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'mcp__tilth__tilth_write']);
 
-function detectWorktree() {
-  if (isWorktree !== null) return isWorktree;
+function isDisabled() {
+  const v = (process.env.CLAUDE_WORKTREE_GUARD || '').trim().toLowerCase();
+  return v === '0' || v === 'false' || v === 'off' || v === 'no';
+}
+
+let cache = null; // { isWorktree, worktreeRoot } — one event per process, so safe.
+
+function detectWorktree(cwd) {
+  if (cache) return cache;
+  let isWorktree = false;
+  let worktreeRoot = null;
   try {
-    const gitDir = execSync('git rev-parse --git-dir', {
-      encoding: 'utf8',
-      timeout: 3000
-    }).trim();
+    const opts = { encoding: 'utf8', timeout: 3000, cwd };
+    const gitDir = execSync('git rev-parse --git-dir', opts).trim();
     isWorktree = gitDir.includes('/worktrees/');
     if (isWorktree) {
-      worktreeRoot = execSync('git rev-parse --show-toplevel', {
-        encoding: 'utf8',
-        timeout: 3000
-      }).trim();
+      worktreeRoot = execSync('git rev-parse --show-toplevel', opts).trim();
     }
   } catch {
     isWorktree = false;
   }
-  return isWorktree;
+  cache = { isWorktree, worktreeRoot };
+  return cache;
 }
 
-function isAllowedPath(filePath) {
-  const resolved = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(process.cwd(), filePath);
-  if (resolved.startsWith(worktreeRoot + '/')) return true;
-  if (resolved === worktreeRoot) return true;
-  if (/^(\/private)?\/tmp\//.test(resolved)) return true;
+function allowedPrefixes(worktreeRoot) {
+  const prefixes = [worktreeRoot];
   const home = process.env.HOME || '';
-  if (resolved.startsWith(home + '/.claude/')) return true;
+  if (home) prefixes.push(path.join(home, '.claude'));
+  const tmp = process.env.TMPDIR;
+  if (tmp) prefixes.push(tmp.replace(/\/$/, ''));
+  const extra = (process.env.CLAUDE_WORKTREE_GUARD_ALLOW || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return prefixes.concat(extra);
+}
+
+function isAllowedPath(filePath, worktreeRoot, cwd) {
+  const resolved = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(cwd, filePath);
+  // /tmp and /private/tmp (macOS) are always writable scratch.
+  if (/^(\/private)?\/tmp(\/|$)/.test(resolved)) return true;
+  // Any .cheese/ artifact dir (specs, rfds, reports) is always writable.
+  if (/(^|\/)\.cheese(\/|$)/.test(resolved)) return true;
+  for (const prefix of allowedPrefixes(worktreeRoot)) {
+    if (!prefix) continue;
+    if (resolved === prefix || resolved.startsWith(prefix + '/')) return true;
+  }
   return false;
+}
+
+function targetPaths(toolName, input) {
+  if (!EDIT_TOOLS.has(toolName)) return [];
+  if (Array.isArray(input.files)) {
+    return input.files.filter((f) => f && f.path).map((f) => f.path);
+  }
+  const single = input.file_path || input.path;
+  return single ? [single] : [];
 }
 
 module.exports = {
   hooks: [{
-    matcher: (toolName, input) => {
-      if (toolName !== 'Write' && toolName !== 'Edit') return false;
-      if (!detectWorktree()) return false;
-      const filePath = input.file_path || '';
-      return !isAllowedPath(filePath);
+    matcher: (toolName, input, event) => {
+      if (isDisabled()) return false;
+      if (!EDIT_TOOLS.has(toolName)) return false;
+      const cwd = (event && event.cwd) || process.cwd();
+      const { isWorktree, worktreeRoot } = detectWorktree(cwd);
+      if (!isWorktree) return false;
+      return targetPaths(toolName, input).some((p) => !isAllowedPath(p, worktreeRoot, cwd));
     },
-    handler: async (_toolName, input) => {
-      const filePath = input.file_path || '';
+    handler: async (toolName, input, event) => {
+      const cwd = (event && event.cwd) || process.cwd();
+      const { worktreeRoot } = detectWorktree(cwd);
+      const blocked = targetPaths(toolName, input).filter((p) => !isAllowedPath(p, worktreeRoot, cwd));
       return {
-        result: `Blocked: write to ${filePath} — outside worktree root (${worktreeRoot}).
+        result: `Blocked: write to ${blocked.join(', ')} — outside worktree root (${worktreeRoot}).
 
 In a worktree, writes are scoped to:
 - ${worktreeRoot}/ (worktree files)
-- $TMPDIR (temp reports)
+- $TMPDIR, /tmp (scratch)
 - ~/.claude/ (memories, specs)
+- any .cheese/ dir (specs, rfds, reports)
+- CLAUDE_WORKTREE_GUARD_ALLOW prefixes
 
-If you need to modify files outside the worktree, ask the Cheese Lord.`
+Disable this guard: export CLAUDE_WORKTREE_GUARD=0
+Allow more paths:   export CLAUDE_WORKTREE_GUARD_ALLOW=/abs/prefix,...`,
       };
-    }
-  }]
+    },
+  }],
 };

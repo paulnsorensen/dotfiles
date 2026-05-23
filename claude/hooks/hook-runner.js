@@ -2,8 +2,8 @@
 // Bridge between Claude Code's stdin/stdout hook protocol and
 // module.exports { hooks: [{ matcher, handler }] } format.
 //
-// Usage in settings.json:
-//   "command": "node hook-runner.js write-guard.js"
+// Usage in settings.json (one or more hook files, run in order):
+//   "command": "node hook-runner.js write-guard.js worktree-guard.js"
 //
 // Protocol: stdin = JSON { tool_name, tool_input, ... }
 //           stdout = JSON { hookSpecificOutput: { permissionDecision, ... } }
@@ -11,18 +11,22 @@
 
 const path = require('path');
 
-const hookFile = process.argv[2];
-if (!hookFile) {
+const hookFiles = process.argv.slice(2);
+if (hookFiles.length === 0) {
   console.error('hook-runner: missing hook file argument');
   process.exit(1);
 }
 
-let mod;
-try {
-  mod = require(path.resolve(__dirname, hookFile));
-} catch (err) {
-  console.error(`hook-runner: failed to load ${hookFile}: ${err.message}`);
-  process.exit(0); // fail-open: broken hook should not block all tool calls
+// Load every requested hook module, fail-open per file: a broken hook should
+// not block all tool calls, nor stop sibling hooks from loading.
+const hooks = [];
+for (const hookFile of hookFiles) {
+  try {
+    const mod = require(path.resolve(__dirname, hookFile));
+    if (mod && Array.isArray(mod.hooks)) hooks.push(...mod.hooks);
+  } catch (err) {
+    console.error(`hook-runner: failed to load ${hookFile}: ${err.message}`);
+  }
 }
 
 function block(reason) {
@@ -71,7 +75,7 @@ process.stdin.on('end', async () => {
     process.exit(0); // fail-open on malformed input
   }
 
-  for (const hook of mod.hooks || []) {
+  for (const hook of hooks) {
     if (await runHook(hook, event)) break;
   }
 });
