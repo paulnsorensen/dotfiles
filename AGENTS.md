@@ -186,6 +186,7 @@ mcps:
 - `harnesses` (optional) — list of harness names to install into. Default: `[claude, codex, opencode]`.
 - `scope` (claude-only) — `user`, `project`, or `local`. Codex/opencode have no scopes.
 - `gate_unless` (claude-only) — skip install when env var equals `"true"` (defer to a plugin's bundled MCP).
+- `optional` — when `true`, skip this MCP non-fatally if any `${VAR}` it references is unset, instead of failing the sync. For MCPs gated on a credential the user may not have configured (e.g. `todoist` without `TODOIST_API_KEY`).
 
 **Per-harness backends:**
 

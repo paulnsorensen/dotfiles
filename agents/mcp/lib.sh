@@ -301,6 +301,22 @@ _mcp_resolved_env_pairs() {
     done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"$env_json")
 }
 
+# Echoes the name of the first ${VAR}-style env reference in the entry's env
+# block that is unset in the live environment; empty output if all are set or
+# there is no env block. Quiet (no diagnostics) — used to decide whether an
+# `optional` MCP should be skipped non-fatally.
+_mcp_first_unset_env_var() {
+    local name="$1" env_json val var
+    env_json=$(jq -c --arg n "$name" '.[$n].env // {}' <<<"$HARNESS_DESIRED_JSON")
+    [[ "$env_json" == "{}" ]] && return 0
+    while IFS= read -r val; do
+        if [[ "$val" =~ ^\$\{([^}]+)\}$ ]]; then
+            var="${BASH_REMATCH[1]}"
+            [[ -z "${!var:-}" ]] && { printf '%s' "$var"; return 0; }
+        fi
+    done < <(jq -r '.[]' <<<"$env_json")
+}
+
 mcp_build_env_flags() {
     local name="$1" flag_prefix="$2"  # "-e" (claude) or "--env" (codex)
     env_flags=()
@@ -524,6 +540,18 @@ _mcp_apply_adds() {
     echo -e "${GREEN}Adding MCPs...${NC}"
     while read -r name; do
         [[ -z "$name" ]] && continue
+        # Optional entries whose credentials aren't configured are skipped
+        # non-fatally: keeps the registry entry without failing the sync when
+        # the user hasn't set the API key (e.g. todoist without TODOIST_API_KEY).
+        local optional unset_var
+        optional=$(jq -r --arg n "$name" '.[$n].optional // false' <<<"$HARNESS_DESIRED_JSON")
+        if [[ "$optional" == "true" ]]; then
+            unset_var=$(_mcp_first_unset_env_var "$name")
+            if [[ -n "$unset_var" ]]; then
+                echo -e "  ${YELLOW}skipping $name (optional; \$$unset_var unset)${NC}"
+                continue
+            fi
+        fi
         if $DRY_RUN; then
             local cmd args
             cmd=$( jq -r --arg n "$name" '.[$n].command // ""'              <<<"$HARNESS_DESIRED_JSON")
