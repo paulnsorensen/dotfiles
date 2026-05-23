@@ -287,6 +287,18 @@ plugin-refresh() {
 alias cf-refresh='plugin-refresh cheese-flow local'
 
 # ═══════════════════════════════════════════════════════════════════
+# Cursor plugins (local source-of-truth lives in dotfiles/cursor/)
+# ═══════════════════════════════════════════════════════════════════
+# Cursor reads ~/.cursor/{skills,rules,commands,hooks,modes.json,hooks.json,
+# mcp.json}. The plugin source under cursor/plugins/local/ is deployed there
+# by chezmoi's run_onchange_install-cursor-plugins.sh.tmpl, which dispatches
+# to chezmoi/lib/install-cursor-plugin.sh per plugin folder. MCPs flow via
+# agents/mcp/sync.sh's cursor harness (jq-edits ~/.cursor/mcp.json).
+alias cursor-plugin-edit='${EDITOR:-vim} $DOTFILES_DIR/cursor/plugins/local'
+alias cursor-plugin-sync='chezmoi apply --force --source $DOTFILES_DIR/chezmoi'
+alias cursor-plugin-ls='ls -la ~/.cursor/skills/ ~/.cursor/rules/ ~/.cursor/commands/ ~/.cursor/hooks/ 2>/dev/null'
+
+# ═══════════════════════════════════════════════════════════════════
 # Vaudeville (SLM hook enforcement — Claude Code plugin)
 # ═══════════════════════════════════════════════════════════════════
 # Binary is installed via `uv tool install vaudeville` at ~/.local/bin.

@@ -1,0 +1,39 @@
+#!/bin/bash
+# run_onchange — re-runs whenever the dotfiles cursor/plugins/local tree changes.
+#
+# Hash strategy mirrors run_onchange_install-claude-skills: walk the working
+# tree under cursor/plugins/local, sort for determinism, shasum file contents.
+#
+# Cursor plugins hash: {{ output "sh" "-c" (printf "find %q/../cursor/plugins/local -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+PLUGINS_DIR="$DOTFILES_ROOT/cursor/plugins/local"
+
+if ! command -v jq &>/dev/null; then
+    echo "Error: jq not found. Install with: brew install jq" >&2
+    exit 1
+fi
+
+if [[ ! -d "$PLUGINS_DIR" ]]; then
+    # Nothing to install — leave the user's ~/.cursor alone.
+    exit 0
+fi
+
+# Iterate each plugin folder under cursor/plugins/local and install it.
+# Each plugin tracks its own contributions via per-target manifests, so
+# multiple plugins coexist without trampling each other.
+shopt -s nullglob
+plugin_count=0
+for plugin in "$PLUGINS_DIR"/*/; do
+    [[ -f "$plugin/.cursor-plugin/plugin.json" ]] || continue
+    "$SOURCE_DIR/lib/install-cursor-plugin.sh" "$plugin"
+    plugin_count=$((plugin_count + 1))
+done
+shopt -u nullglob
+
+if (( plugin_count == 0 )); then
+    echo "No Cursor plugins found in $PLUGINS_DIR"
+fi

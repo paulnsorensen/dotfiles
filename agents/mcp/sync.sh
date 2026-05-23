@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # sync.sh — Declarative MCP sync across coding-agent harnesses
-#           (Claude, Codex, opencode).
+#           (Claude, Codex, opencode, Cursor).
 #
 # Reads agents/mcp/registry.yaml and brings each installed harness in line:
 # adds missing servers, re-adds drifted ones (command/args/env), prompts (or
@@ -13,12 +13,14 @@
 #   codex    — `codex mcp add/list/remove --json`   (JSON; no scopes)
 #   opencode — jq-edits ~/.config/opencode/opencode.json directly
 #              (no non-interactive CLI; OPENCODE_CONFIG overrides path)
+#   cursor   — jq-edits ~/.cursor/mcp.json directly (mcpServers schema,
+#              identical to Claude Desktop; CURSOR_CONFIG overrides path)
 #
 # Usage:
 #   ./sync.sh                Sync MCPs (add missing, prompt to remove extras)
 #   ./sync.sh --dry-run      Show what would change without making changes
 #   ./sync.sh --force        Remove extras without prompting (used by dots sync)
-#   ./sync.sh --harness NAME Only sync the named harness (claude|codex|opencode)
+#   ./sync.sh --harness NAME Only sync the named harness (claude|codex|opencode|cursor)
 #
 # Exit status is non-zero if any `add` call failed, so chezmoi / dots sync
 # can surface partial-failure cases instead of reporting green.
@@ -52,7 +54,7 @@ while (($#)); do
 Usage: $0 [--dry-run] [--force] [--harness NAME]
   --dry-run         Show what would change without making changes
   --force           Remove extras without prompting
-  --harness NAME    Only sync the named harness (claude|codex|opencode)
+  --harness NAME    Only sync the named harness (claude|codex|opencode|cursor)
 EOF
             exit 0 ;;
     esac
@@ -82,7 +84,7 @@ sync_for_harness() {
 if [[ -n "$ONLY_HARNESS" ]]; then
     sync_for_harness "$ONLY_HARNESS"
 else
-    for h in claude codex opencode; do
+    for h in claude codex opencode cursor; do
         sync_for_harness "$h"
     done
 fi

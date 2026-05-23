@@ -18,7 +18,7 @@
 #                  by the templating pass.
 #   env          — env vars; values can reference shell vars via "${VAR}"
 #   scope        — claude-only: user | project | local (default user)
-#   harnesses    — list of harness names to install into; default: [claude, codex, opencode]
+#   harnesses    — list of harness names to install into; default: [claude, codex, opencode, cursor]
 #   gate_unless  — claude-only: skip install when env var == "true" (defer to a plugin's bundled MCP)
 #   description  — human-readable purpose
 
