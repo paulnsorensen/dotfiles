@@ -139,19 +139,26 @@ prelink_claude_writethrough
 
 # Trigger chezmoi apply from this checkout so workspace syncs use the source
 # tree that launched dots sync, not a stale sourceDir preserved in
-# ~/.config/chezmoi/chezmoi.toml. Non-fatal — if chezmoi rejects the source
-# or a required template env var is unset, dots sync still wires everything
-# else.
+# ~/.config/chezmoi/chezmoi.toml. Partial-OK — we don't abort the rest of
+# dots sync if chezmoi fails, but we DO propagate the failure as our exit
+# code so .sync-lib.sh records us in SYNC_FAILURES and .sync-with-rollback
+# surfaces it in the final summary. Silent partial-install regressions are
+# what trapped a missing SessionStart hook for hours.
 #
 # Stream output live (sed indent, set -o pipefail preserves chezmoi's exit
 # code). Some run_onchange scripts can take a while, so live output avoids
 # an apparently hung dots sync.
+chezmoi_status=0
 if command -v chezmoi &>/dev/null; then
     if chezmoi --source "$script_dir" apply --force 2>&1 | sed 's/^/  /'; then
         echo "  chezmoi apply complete"
     else
-        echo "  WARN: chezmoi apply failed (chezmoi-managed files may be out of sync)" >&2
+        chezmoi_status=$?
+        echo "  ERROR: chezmoi apply failed (exit $chezmoi_status) — alphabetically-later run_onchange installers were skipped" >&2
+        echo "         Common cause: 'gh auth status' failing → run 'gh auth login' and re-run 'dots sync'." >&2
     fi
 else
     echo "  Skipping chezmoi apply (chezmoi not installed); chezmoi-managed files will not sync"
 fi
+
+exit "$chezmoi_status"
