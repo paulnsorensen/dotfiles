@@ -399,7 +399,7 @@ chezmoi doctor                                       # health check (also wired 
 
 Full agent/skill catalog is in `agents/AGENTS.md` (copied to `~/.claude/CLAUDE.md` by chezmoi). Key project-level details:
 
-- Pre-tool hooks: `phantom-file-check.js`, `review-reply-guard.js` (write-guard / worktree-guard were removed in PR #189)
+- Pre-tool hooks: `phantom-file-check.js` (Read), `write-guard.js` + `worktree-guard.js` (Edit/Write/MultiEdit/tilth_write), `bash-guard.js` (Bash — blocks dangerous `rm -rf`), `review-reply-guard.js`. `worktree-guard.js` is opt-out: it enforces inside a git worktree by default; set `CLAUDE_WORKTREE_GUARD=0` to disable, or `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2` to extend its allowlist (worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, and any `.cheese/` dir are always allowed).
 - Compaction hooks: `pre-compact.sh` saves context, `post-compact.sh` restores with `/trace` suggestion
 - Session hooks: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`

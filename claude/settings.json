@@ -89,6 +89,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" bash-guard.js",
+            "statusMessage": "Checking command safety..."
+          },
+          {
+            "type": "command",
             "command": "rtk hook claude"
           }
         ]
@@ -102,11 +107,21 @@
             "statusMessage": "Checking file..."
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|mcp__tilth__tilth_write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" write-guard.js worktree-guard.js",
+            "statusMessage": "Checking write..."
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Edit|Write|MultiEdit|mcp__tilth__tilth_write",
         "hooks": [
           {
             "type": "command",
