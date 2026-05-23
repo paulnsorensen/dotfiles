@@ -10,17 +10,13 @@ NC='\033[0m'
 
 echo -e "${BLUE}Installing bats testing framework...${NC}"
 
-# Install via Homebrew (macOS)
+# Install via Homebrew (macOS). The bats-assert/support/file helper libraries
+# are no longer kept in the kaos/shell tap (deprecated); the test_helper.bash
+# in this directory rolls its own assert_* equivalents and does not load them.
 if [[ "$OSTYPE" == "darwin"* ]]; then
     if command -v brew &>/dev/null; then
         echo "Installing bats-core via Homebrew..."
         brew install bats-core
-
-        # Install helpful bats libraries
-        brew tap kaos/shell
-        brew install bats-assert
-        brew install bats-support
-        brew install bats-file
     else
         echo -e "${YELLOW}Homebrew not found. Install manually:${NC}" >&2
         echo "  git clone https://github.com/bats-core/bats-core.git" >&2

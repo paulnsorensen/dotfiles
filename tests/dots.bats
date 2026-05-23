@@ -139,7 +139,11 @@ STUB
 
 @test "dots backups command runs" {
     run dots backups
-    # Exits 0 with backup list, or 1 if no backups dir exists
+    # `list_backups` returns 1 (with a "No backups found" warning) when the
+    # backups directory doesn't exist yet, and 0 otherwise. Either is fine,
+    # but the command must mention "backup(s)" in either path and must NOT
+    # surface "Unknown command".
+    [[ "$status" -eq 0 || "$status" -eq 1 ]]
     [[ "$output" == *"backup"* || "$output" == *"Backup"* ]]
     [[ "$output" != *"Unknown command"* ]]
 }
