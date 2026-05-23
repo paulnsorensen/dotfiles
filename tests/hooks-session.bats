@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # Tests for session/post-tool hooks.
 #
-# auto-format.js is the only registered PostToolUse hook (worktree-guard /
-# write-guard were removed in PR #189).
+# auto-format.js is the only registered PostToolUse hook. (write-guard and
+# worktree-guard are PreToolUse hooks — their tests live in hooks-blockers.bats.)
 
 load test_helper
 

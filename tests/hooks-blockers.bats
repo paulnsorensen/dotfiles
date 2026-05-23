@@ -315,6 +315,30 @@ teardown() {
     [[ "$output" == "allowed" ]]
 }
 
+@test "write-guard: extensionless Makefile is skipped (inline-test rule)" {
+    run_hook "$HOOKS_DIR/write-guard.js" Write '{"file_path":"Makefile","content":"\tpython3 -c \"import os\""}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "write-guard: extensionless justfile is skipped (inline-test rule)" {
+    run_hook "$HOOKS_DIR/write-guard.js" Write '{"file_path":"justfile","content":"cat <<EOF"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "write-guard: path/to/Makefile is skipped (basename match)" {
+    run_hook "$HOOKS_DIR/write-guard.js" Write '{"file_path":"sub/dir/Makefile","content":"cat <<X"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "write-guard: Makefile.py is NOT skipped (real extension wins)" {
+    run_hook "$HOOKS_DIR/write-guard.js" Write '{"file_path":"Makefile.py","content":"python3 -c \"import os\""}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
 # ── bash-guard.js ────────────────────────────────────────────────────
 
 @test "bash-guard: rm -rf / is blocked" {
@@ -465,6 +489,42 @@ teardown() {
     run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"echo hi && rm -rf /tmp/foo && ls"}'
     [ "$status" -eq 0 ]
     [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: rm -rf /private/tmp/x is allowed (macOS /tmp firmlink)" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"rm -rf /private/tmp/scratch"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: rm -rf /var/folders/.../T is allowed (macOS \$TMPDIR)" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"rm -rf /var/folders/ab/cd/T/build"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: rm -rf /private/var/folders/... is allowed (firmlinked \$TMPDIR)" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"rm -rf /private/var/folders/ab/T/build"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "bash-guard: rm -rf /var/log is still blocked (non-temp system dir)" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"rm -rf /var/log"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: rm -rf /private/etc is still blocked (firmlinked system dir)" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"rm -rf /private/etc"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "bash-guard: rm -rf /private (bare) is still blocked" {
+    run_hook "$HOOKS_DIR/bash-guard.js" Bash '{"command":"rm -rf /private"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
 }
 
 # ── worktree-guard.js ────────────────────────────────────────────────

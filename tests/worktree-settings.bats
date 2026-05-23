@@ -228,8 +228,9 @@ YAML
 
 @test "worktree-settings: real output includes known MCPs" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"
-    # serper is a deterministic user-scope entry in agents/mcp/registry.yaml.
-    # Plugin-sourced MCPs (e.g. cheese-flow's tilth) require an .mcp.json that
-    # may not exist in CI, so assert against the in-repo registry instead.
-    assert_has_entry "$result" "mcp__serper__*"
+    # serena is an unconditional user-scope entry in agents/mcp/registry.yaml
+    # (no gate_unless, no required credentials). Plugin-sourced MCPs (e.g.
+    # cheese-flow's tilth) require an .mcp.json that may not exist in CI, so
+    # assert against this in-repo registry entry instead.
+    assert_has_entry "$result" "mcp__serena__*"
 }

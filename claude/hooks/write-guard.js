@@ -17,7 +17,7 @@ Do not leave TODO/FIXME markers or unimplemented!() stubs.`,
   },
   {
     pattern: /(?:python3?\s+-c\s+['"][^'"]*(?:import|assert|print\s*\()|cat\s+<<)/,
-    skipFiles: /\.(md|sh|bash|yml|yaml|toml|Makefile|justfile)$/,
+    skipFiles: /(\.(md|sh|bash|yml|yaml|toml)$)|((^|\/)(Makefile|GNUmakefile|[Jj]ustfile)$)/,
     msg: `Inline test code detected. Use /test-sandbox or /wreck to write a proper test file.`,
   },
 ];

@@ -21,10 +21,16 @@ function isHomeRooted(t) {
 function isDangerousTarget(rawTarget) {
   const t = stripQuotes(rawTarget.trim());
   if (!t) return false;
+  // Scratch roots are safe even though they sit under system paths. /tmp and
+  // the macOS per-user temp (/var/folders/...) are reachable both directly and
+  // via the /private firmlink, so allow both forms BEFORE the system-dir rule.
+  if (/^(\/private)?\/tmp(\/|$)/.test(t)) return false;
+  if (/^(\/private)?\/var\/folders(\/|$)/.test(t)) return false;
   if (t === '/' || t === '/*' || t === '/.') return true;
   if (isHomeRooted(t)) return true;
-  // Absolute OS system dirs — dangerous at any depth.
-  if (/^\/(bin|sbin|usr|etc|var|lib|lib64|opt|System|Library|private|dev|boot|proc|sys|root)(\/|$)/.test(t)) return true;
+  // Absolute OS system dirs — dangerous at any depth (also via /private/...).
+  if (/^(\/private)?\/(bin|sbin|usr|etc|var|lib|lib64|opt|System|Library|dev|boot|proc|sys|root)(\/|$)/.test(t)) return true;
+  if (/^\/private(\/|$)/.test(t)) return true;
   // User-data roots — dangerous only when shallow (the root or a single user dir).
   if (/^\/(Users|home)(\/[^/]+)?\/?$/.test(t)) return true;
   // Current dir / parent traversal.
