@@ -264,7 +264,7 @@ _hook_codex_validate_writeback() {
 _hook_codex_build_session_start_block() {
     local cmd="$1" matcher="$2" timeout="$3"
     local inner
-    inner='{"type":"command","command":'"$(jq -Rn --arg c "$cmd" '$c')"'}'
+    inner=$(jq -n --arg c "$cmd" '{type: "command", command: $c}')
     if [[ -n "$timeout" ]]; then
         inner=$(jq --argjson t "$timeout" '. + {timeout: $t}' <<<"$inner")
     fi

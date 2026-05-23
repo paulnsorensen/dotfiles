@@ -724,33 +724,41 @@ TOML
 }
 
 @test "hook_codex_apply refuses to overwrite when emitted TOML is empty (sanity)" {
-    # Stub yq inside this test only — yq emits empty output but exits 0.
-    # The round-trip read-back catches it because `keys` on null fails.
+    # Stub yq inside this test only — the json→toml emit step produces empty
+    # output but exits 0, so the temp file written back is empty. The
+    # post-image read-back then fails on `keys` of the null doc, which is the
+    # branch this test pins.
     HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
     cat > "$CODEX_CONFIG_FILE" <<'TOML'
 approval_policy = "on-request"
 TOML
     local before; before=$(cat "$CODEX_CONFIG_FILE")
+    # Resolve the real yq before PATH is shadowed, so the stub can delegate
+    # every non-emit call to it on any platform (Homebrew Intel/ARM, Linux CI).
+    local real_yq; real_yq=$(command -v yq)
     local stub_bin="$BATS_TEST_TMPDIR/stub-bin"
     mkdir -p "$stub_bin"
-    cat > "$stub_bin/yq" <<'STUB'
+    cat > "$stub_bin/yq" <<STUB
 #!/bin/bash
 # Pass through for everything except the json→toml emit step, which we
 # silently truncate to exercise the post-image validation.
-for arg in "$@"; do
-    if [[ "$arg" == "-p=json" ]]; then
+for arg in "\$@"; do
+    if [[ "\$arg" == "-p=json" ]]; then
         # consume stdin so the pipeline doesn't SIGPIPE the caller
         cat >/dev/null
         # produce empty output
         exit 0
     fi
 done
-exec /opt/homebrew/bin/yq "$@"
+exec "$real_yq" "\$@"
 STUB
     chmod +x "$stub_bin/yq"
     PATH="$stub_bin:$PATH" run hook_codex_apply session-start-cheese-flair
     [[ "$status" -ne 0 ]]
-    [[ "$output" == *"refusing to overwrite"* || "$output" == *"failed to read back"* ]]
+    # Must fail on the post-image read-back, not the pre-image read. Matching
+    # the specific diagnostic prevents a regression to the earlier branch
+    # (which emits "refusing to overwrite unparseable") from passing silently.
+    [[ "$output" == *"failed to read back"* ]]
     # Original file must be untouched.
     [[ "$(cat "$CODEX_CONFIG_FILE")" == "$before" ]]
 }
