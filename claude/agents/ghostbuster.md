@@ -24,13 +24,13 @@ You receive:
 
 ## Protocol
 
-### 1. LSP Warmup
+### 1. Serena availability check
 
-LSP servers start lazily. Before any LSP call:
+Symbol intelligence is provided by the Serena MCP. Before any
+`mcp__serena__*` call:
 
-1. Call `LSP hover` on the first source file's line 1
-2. If it fails, wait 3s and retry (up to 3 attempts)
-3. If still failing, note the failure and fall back to Grep for reference counting
+1. Call `mcp__serena__get_symbols_overview` on the first source file
+2. If it errors, note the failure and fall back to Grep for reference counting
 
 ### 2. Discover Files
 
@@ -69,12 +69,12 @@ Build a lookup: `{symbol → [spec_file, line_number]}`.
 
 For each source file, identify exported/public symbols:
 
-**LSP mode** (preferred):
+**Serena mode** (preferred):
 
-- `LSP documentSymbol` to get all symbols
-- `LSP findReferences` on each exported symbol — count callers outside the defining file
+- `mcp__serena__get_symbols_overview` to list top-level symbols in each file
+- `mcp__serena__find_referencing_symbols` on each exported symbol — count callers outside the defining file
 
-**Grep fallback** (when LSP unavailable):
+**Grep fallback** (when Serena unavailable):
 
 | Language | Export pattern |
 |----------|---------------|
@@ -127,7 +127,7 @@ This catches entire dead subgraphs — utility functions that only served a now-
 
 For each finding from Steps 4-7:
 
-- Check the spec lookup from Step 3
+- Check the spec mapping from Step 3
 - If symbol has 0 references AND appears in a spec → upgrade to ZOMBIE
 - If symbol appears in a spec but doesn't exist in codebase → create GHOST finding
 
@@ -164,7 +164,7 @@ Rate every finding 0-100. Only surface findings >= 50.
 
 | Evidence | Modifier |
 |----------|----------|
-| Verified via LSP `findReferences` returns 0 | +20 |
+| Verified via Serena `find_referencing_symbols` returns 0 | +20 |
 | Grep confirms zero matches across codebase | +15 |
 | Last git touch > 6 months ago | +10 |
 | Last git touch > 3 months ago | +5 |
@@ -209,7 +209,7 @@ Write the full JSON report to `$TMPDIR/ghostbuster-{slug}.json`. The JSON schema
     "languages": ["typescript", "python"],
     "filesScanned": 42,
     "specsFound": 3,
-    "lspAvailable": true,
+    "serenaAvailable": true,
     "gitHistoryUsed": true
   },
   "findings": [
@@ -223,7 +223,7 @@ Write the full JSON report to `$TMPDIR/ghostbuster-{slug}.json`. The JSON schema
         "referenceCount": 0,
         "specMentions": [],
         "lastGitTouch": "2025-08-14",
-        "verifiedVia": "LSP findReferences"
+        "verifiedVia": "Serena find_referencing_symbols"
       },
       "action": "Safe to delete — zero callers, no spec references, untouched for 7 months"
     }
@@ -235,7 +235,7 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 
 ```
 ## Ghostbuster Summary
-**Scope**: {scope} | **Files**: N | **Specs/Docs**: N | **LSP**: yes/no
+**Scope**: {scope} | **Files**: N | **Specs/Docs**: N | **Serena**: yes/no
 **Findings >= 50**:
 | # | Score | Category | File:Symbol | Action |
 |---|-------|----------|-------------|--------|
@@ -255,7 +255,7 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 
 ## Rules
 
-- LSP first for symbol-aware reference counting, Grep as backup — LSP is generally more accurate than text search but can still miss callers under heavy dynamic dispatch or codegen (see Gotchas)
+- Serena first for symbol-aware reference counting, Grep as backup — Serena's LSP backing is generally more accurate than text search but can still miss callers under heavy dynamic dispatch or codegen (see Gotchas)
 - Budget ~40 tool calls. Prioritize: utility dirs → domain code → infrastructure
 - Include the file path and symbol name for every finding — vague findings are useless
 - Specs can live anywhere: `.claude/specs/`, `docs/specs/`, `specs/`, `SPEC.md` — glob broadly
@@ -266,11 +266,11 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 
 ## Gotchas
 
-- **Dynamic dispatch hides callers**: Trait impls (Rust), interface implementations (Go/TS), duck typing (Python) mean LSP `findReferences` can miss callers. Score types/interfaces lower.
-- **Codegen and macros**: Rust `derive` macros, Python decorators, and TS decorators can generate callers invisible to LSP. If a symbol has a decorator/derive attribute, reduce confidence by 10.
+- **Dynamic dispatch hides callers**: Trait impls (Rust), interface implementations (Go/TS), duck typing (Python) mean Serena's `find_referencing_symbols` (LSP-backed) can miss callers. Score types/interfaces lower.
+- **Codegen and macros**: Rust `derive` macros, Python decorators, and TS decorators can generate callers invisible to Serena. If a symbol has a decorator/derive attribute, reduce confidence by 10.
 - **Re-exports**: A symbol exported from a barrel file may appear to have 0 direct callers but is the module's public API. Check barrel files before flagging.
 - **Test helpers**: Functions in test files with 0 callers outside tests aren't dead — they're test infrastructure. Apply the -10 modifier, don't auto-flag.
-- **Shell functions**: Shell functions defined in sourced files (`. script.sh` or `source script.sh`) won't show up in LSP. Use Grep exclusively for shell.
+- **Shell functions**: Shell functions defined in sourced files (`. script.sh` or `source script.sh`) won't show up in Serena's symbol index — no LSP backend covers shell. Use Grep exclusively for shell.
 - **Spec format variance**: Some specs use backticks, some use prose references, some use code blocks. Cast a wide net when parsing — regex for `functionName`, not just `` `functionName` ``.
 - **User-invoked functions**: Shell functions, CLI commands, and `main()` entry points are called from the terminal, not from code. Zero grep references is expected. Check if the function is in a sourced file or bin/ directory before flagging.
 - **Documentation references are GHOST sources too**: CLAUDE.md, README.md, and docs/ files reference code symbols just like specs do. The test run's highest-confidence findings were GHOSTs from CLAUDE.md, not spec files.

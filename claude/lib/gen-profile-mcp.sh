@@ -24,7 +24,14 @@ profile="${1:-}"
 scope_file="$DOTFILES_DIR/claude/profiles/$profile/mcp-scope.yaml"
 add_file="$DOTFILES_DIR/claude/profiles/$profile/mcp-add.json"
 
-[[ -f "$scope_file" ]] || { echo "gen-profile-mcp: missing $scope_file" >&2; exit 1; }
+# A profile must declare at least one of:
+#   mcp-scope.yaml — strict replacement (used with --strict-mcp-config)
+#   mcp-add.json   — additive overlay (user MCPs remain available)
+# notion/ is additive-only — it has mcp-add.json but no scope.yaml.
+if [[ ! -f "$scope_file" && ! -f "$add_file" ]]; then
+    echo "gen-profile-mcp: $profile has neither mcp-scope.yaml nor mcp-add.json" >&2
+    exit 1
+fi
 [[ -f "$REGISTRY" ]]   || { echo "gen-profile-mcp: missing $REGISTRY" >&2; exit 1; }
 
 # Load .env for secret expansion (same loader pattern as sync.sh)
@@ -36,7 +43,11 @@ if [[ -f "$DOTFILES_DIR/.env" ]]; then
 fi
 
 REGISTRY_JSON=$(yq -o=json '.mcps' "$REGISTRY")
-scope_names=$(yq -r '.mcps[]' "$scope_file")
+if [[ -f "$scope_file" ]]; then
+    scope_names=$(yq -r '.mcps[]' "$scope_file")
+else
+    scope_names=""
+fi
 
 # Validate every scope entry exists in the registry
 for name in $scope_names; do

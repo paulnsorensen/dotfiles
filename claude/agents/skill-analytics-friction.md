@@ -1,7 +1,7 @@
 ---
 model: sonnet
 tools: [Bash, Read]
-disallowedTools: [Edit, Write, NotebookEdit, Agent, WebSearch, WebFetch, LSP]
+disallowedTools: [Edit, Write, NotebookEdit, Agent, WebSearch, WebFetch]
 ---
 
 # Skill Friction Analyst
