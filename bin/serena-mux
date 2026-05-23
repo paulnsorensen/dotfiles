@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# serena-mux — one serena daemon per (project root, harness); stdio clients bridge in.
+#
+# Why: stdio-transport MCP servers spawn a subprocess per client, so two Claude
+# sessions in the same worktree (or one Conductor Claude + a sub-agent Claude)
+# each start their own serena and each pop a web dashboard. This wrapper
+# coalesces them — first client spawns a long-lived serena listening on
+# streamable-http, subsequent clients in the same project root share it.
+#
+# Patterns cribbed from ~/Dev/vaudeville:
+#   - mkdir(spawn.lock) as the atomic spawn gate (session-start.sh:93-104)
+#   - PID-alive + stale-cleanup dance (session-start.sh:62-91)
+#   - socket-ready polling loop (session-start.sh:127-138)
+#   - nohup … & disown for full parent detach (session-start.sh:116-123)
+#
+# Usage (called by MCP harness via registry.yaml):
+#   serena-mux
+#
+# Environment:
+#   SERENA_MUX_HARNESS  — "claude-code" | "codex" | "opencode" (default: claude-code)
+#   SERENA_MUX_DEBUG    — non-empty: keep daemon log + write trace to stderr
+#   SERENA_MUX_PROXY_VERSION — pin for mcp-proxy (default: 0.12.0)
+#   SERENA_MUX_LOG_DIR  — dir for the persistent decision log
+#                         (default: ${XDG_STATE_HOME:-~/.local/state}/dotfiles/logs)
+#
+# Persistent log: one line per invocation (spawn|reuse|reap) is appended to
+#   <log dir>/serena-mux.log — always on, so you can confirm coalescing is
+#   working without enabling DEBUG or digging through the harness MCP logs.
+#
+# Exit codes:
+#   0   — bridged stdio cleanly
+#   2   — serena binary missing
+#   3   — uvx missing (needed for mcp-proxy bridge)
+#   4   — daemon failed to start within timeout
+
+set -euo pipefail
+
+# --- Dependencies --------------------------------------------------------
+
+if ! command -v serena >/dev/null 2>&1; then
+    echo "[serena-mux] serena binary not found on PATH" >&2
+    exit 2
+fi
+
+if ! command -v uvx >/dev/null 2>&1; then
+    echo "[serena-mux] uvx not found on PATH (needed for mcp-proxy bridge)" >&2
+    exit 3
+fi
+
+# --- Identity ------------------------------------------------------------
+
+harness="${SERENA_MUX_HARNESS:-claude-code}"
+
+# Resolve project root the same way serena's --project-from-cwd would, so
+# that a wrapper invocation from any subdir of the worktree reuses the
+# same daemon.
+root=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+
+# slug = first 12 chars of sha256("$root|$harness"). Different harnesses
+# need different daemons because serena's --context= controls which tools
+# are exposed, and that's set at daemon-start time.
+slug=$(printf '%s|%s' "$root" "$harness" | shasum -a 256 | head -c12)
+
+# Per-UID runtime dir prevents another local user from racing on our
+# socket/pid paths (same rationale as vaudeville/core/paths.py:12).
+uid=$(id -u)
+runtime_root="${SERENA_MUX_RUNTIME_DIR:-${TMPDIR:-/tmp}/serena-mux-$uid}"
+state="$runtime_root/$slug"
+
+mkdir -p "$runtime_root" || {
+    echo "[serena-mux] cannot create runtime dir $runtime_root" >&2
+    exit 1
+}
+chmod 0700 "$runtime_root" 2>/dev/null || true
+mkdir -p "$state"
+
+pidfile="$state/pid"
+portfile="$state/port"
+logfile="$state/log"
+spawn_lock="$state/spawn.lock"
+
+trace() {
+    [[ -n ${SERENA_MUX_DEBUG:-} ]] && printf '[serena-mux] %s\n' "$*" >&2 || true
+}
+
+# Persistent decision log — one line per invocation (spawn|reuse|reap), so we
+# can confirm the mux is coalescing daemons without enabling DEBUG or digging
+# through the harness's MCP stderr capture. Always on; never fatal.
+log_dir="${SERENA_MUX_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/logs}"
+log() { # <event> <detail...>
+    local event=$1
+    shift
+    mkdir -p "$log_dir" 2>/dev/null || return 0
+    printf '%s [serena-mux] %-5s root=%s harness=%s slug=%s %s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$event" "$root" "$harness" "$slug" "$*" \
+        >>"$log_dir/serena-mux.log" 2>/dev/null || true
+}
+
+trace "root=$root harness=$harness slug=$slug"
+
+# --- Reap dead daemon ----------------------------------------------------
+
+daemon_alive=0
+if [[ -f $pidfile ]]; then
+    pid=$(<"$pidfile")
+    if [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null; then
+        daemon_alive=1
+        trace "existing daemon alive at pid=$pid"
+        log reuse "pid=$pid port=$(cat "$portfile" 2>/dev/null || true)"
+    else
+        trace "stale pidfile (pid=$pid) — cleaning up"
+        log reap "dead_pid=$pid"
+        rm -f "$pidfile" "$portfile"
+    fi
+fi
+
+# --- Spawn if needed -----------------------------------------------------
+
+wait_for_port_listen() {
+    # Args: port, max_attempts (each 0.1s)
+    local port=$1 attempts=$2 i
+    for ((i = 0; i < attempts; i++)); do
+        if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
+spawn_daemon() {
+    # Spawn a detached serena daemon and populate $pidfile + $portfile.
+    # Caller must hold the spawn lock. Exits 4 on failure.
+    local port daemon_pid
+    port=$(python3 -c '
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+') || {
+        echo "[serena-mux] could not allocate free port" >&2
+        exit 4
+    }
+    trace "spawning daemon on port=$port"
+
+    # nohup + </dev/null + & + disown detaches fully (macOS has no setsid).
+    # --enable-web-dashboard=false + --open-web-dashboard=false belong on
+    # the daemon, not on every client.
+    nohup serena start-mcp-server \
+        --transport streamable-http \
+        --host 127.0.0.1 --port "$port" \
+        --context "$harness" \
+        --project "$root" \
+        --enable-web-dashboard=false \
+        --open-web-dashboard=false \
+        >>"$logfile" 2>&1 </dev/null &
+    daemon_pid=$!
+    disown "$daemon_pid" 2>/dev/null || true
+
+    echo "$daemon_pid" >"$pidfile"
+    echo "$port" >"$portfile"
+
+    if ! wait_for_port_listen "$port" 50; then
+        echo "[serena-mux] daemon did not start listening within 5s — see $logfile" >&2
+        kill -9 "$daemon_pid" 2>/dev/null || true
+        rm -f "$pidfile" "$portfile"
+        exit 4
+    fi
+    trace "daemon listening on port=$port"
+    log spawn "pid=$daemon_pid port=$port"
+}
+
+# spawn_lock is a directory created atomically via mkdir. Only one wrapper
+# wins the race. We release it explicitly before exec'ing into mcp-proxy
+# because exec bypasses bash's EXIT traps — leaving the lock on disk would
+# wedge the next invocation.
+release_spawn_lock() {
+    rmdir "$spawn_lock" 2>/dev/null || true
+}
+
+if (( daemon_alive == 0 )); then
+    if mkdir "$spawn_lock" 2>/dev/null; then
+        # Belt-and-suspenders: clean up if we die unexpectedly before the
+        # explicit release below. (The explicit release is the load-bearing
+        # one for the happy `exec` path.)
+        trap release_spawn_lock EXIT
+        spawn_daemon
+        release_spawn_lock
+        trap - EXIT
+    else
+        # Lost the race. Wait for the winner to publish pid + port. If the
+        # winner crashed mid-spawn (lock stuck, no pid file), force-recover
+        # by taking over the lock ourselves and spawning.
+        trace "another wrapper is spawning — waiting"
+        winner_ready=0
+        for ((i = 0; i < 100; i++)); do
+            if [[ -f $pidfile && -f $portfile ]]; then
+                winner_ready=1
+                break
+            fi
+            sleep 0.1
+        done
+        if (( winner_ready == 0 )); then
+            trace "winner appears stuck — force-releasing lock and spawning"
+            release_spawn_lock
+            if mkdir "$spawn_lock" 2>/dev/null; then
+                trap release_spawn_lock EXIT
+                spawn_daemon
+                release_spawn_lock
+                trap - EXIT
+            elif [[ ! -f $portfile ]]; then
+                echo "[serena-mux] could not recover stuck spawn lock" >&2
+                exit 4
+            fi
+        fi
+    fi
+fi
+
+# --- Bridge stdio ↔ daemon HTTP -----------------------------------------
+
+port=$(<"$portfile")
+proxy_version="${SERENA_MUX_PROXY_VERSION:-0.12.0}"
+
+trace "bridging stdio to http://127.0.0.1:$port/mcp via mcp-proxy@$proxy_version"
+
+# exec replaces this shell — the MCP client now talks straight to mcp-proxy,
+# which talks streamable-http to the serena daemon.
+exec uvx --from "mcp-proxy==$proxy_version" mcp-proxy \
+    --transport=streamablehttp \
+    "http://127.0.0.1:$port/mcp"
