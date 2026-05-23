@@ -70,7 +70,7 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 
 ### Agent Skill Management (`gh skill install`)
 
-Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`). Auto-runs as part of `dots sync` via chezmoi's `run_onchange_install-claude-skills.sh.tmpl`, which invokes `chezmoi/lib/install-external.sh`. Requires `gh` (v2.90+ with `skill` subcommand) and `gh auth login` — `dots sync` exits 1 if either is missing.
+Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`). Auto-runs as part of `dots sync` via chezmoi's `run_onchange_after_install-claude-skills.sh.tmpl`, which invokes `chezmoi/lib/install-external.sh`. Requires `gh` (v2.90+ with `skill` subcommand) and `gh auth login` — `dots sync` exits 1 if either is missing.
 
 - `skill-sync` - Install external skills from `skills/_registry.yaml` into each configured harness (also fires during `dots sync` via chezmoi)
 - `skill-sync-dry` - Preview skill installs without making changes
@@ -218,7 +218,7 @@ The bash-style `${VAR}` env substitution used by `env:` blocks runs in a later p
 
 1. Edit registry: `mcp-edit`
 2. Preview changes: `mcp-sync-dry`
-3. Apply changes: `mcp-sync` (interactive removal prompts) or let `dots sync` drive it via chezmoi's `run_onchange_install-mcp.sh.tmpl` (uses `--force` non-interactively).
+3. Apply changes: `mcp-sync` (interactive removal prompts) or let `dots sync` drive it via chezmoi's `run_onchange_after_install-mcp.sh.tmpl` (uses `--force` non-interactively).
 
 `agents/mcp/sync.sh` loops over harnesses; missing harness CLIs are skipped silently.
 
@@ -251,7 +251,7 @@ hooks:
 
 1. Edit registry: `hook-edit`
 2. Preview changes: `hook-sync-dry`
-3. Apply changes: `hook-sync` (or let `dots sync` drive it via chezmoi's `run_onchange_install-hooks.sh.tmpl`, which copies the script + lib + bank into each harness's `$HOME/.<harness>/{hooks,lib,reference}/` then runs `agents/hooks/sync.sh`).
+3. Apply changes: `hook-sync` (or let `dots sync` drive it via chezmoi's `run_onchange_after_install-hooks.sh.tmpl`, which copies the script + lib + bank into each harness's `$HOME/.<harness>/{hooks,lib,reference}/` then runs `agents/hooks/sync.sh`).
 
 `agents/hooks/sync.sh` uses per-harness file backends — `jq` over `claude/settings.json` for Claude, `yq -p=toml` over `~/.codex/config.toml` for Codex. Each upsert is idempotent; every unrelated top-level key (including other SessionStart entries, `[mcp_servers]`, `approval_policy`, …) is preserved. The hook script itself is self-locating: it resolves its lib and bank from `$SCRIPT_DIR/../lib` and `$SCRIPT_DIR/../reference`, so the same file runs identically under `~/.claude/` and `~/.codex/`.
 
@@ -481,10 +481,10 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | MCP | `agents/mcp/registry.yaml` | `mcp-sync` (or `dots sync`) | Restart Claude / Codex / opencode / Cursor after; entries flow to all four harnesses by default. opencode entries are jq-written into `~/.config/opencode/opencode.json`; Cursor entries are jq-written into `~/.cursor/mcp.json` (`mcpServers` schema; no native CLI). |
 | Hook | `agents/hooks/registry.yaml` | `hook-sync` (or `dots sync`) | Harness-agnostic SessionStart/PreTool/etc. hooks; chezmoi copies the script + lib + bank into both `~/.claude/` and `~/.codex/` then drives `agents/hooks/sync.sh` |
 | Plugin (Claude) | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
-| Plugin (Cursor) | `cursor/plugins/local/<name>/` (per-plugin manifest at `.cursor-plugin/plugin.json`) | `cursor-plugin-sync` (or `dots sync`) | chezmoi's `run_onchange_install-cursor-plugins.sh.tmpl` drives `chezmoi/lib/install-cursor-plugin.sh` per plugin, deploying to `~/.cursor/{skills,rules,commands,hooks}/` and jq-merging `hooks.json` + `modes.json`. Per-collection manifests at `<target>/.dotfiles-managed-<plugin>` track ownership. Restart Cursor after. |
+| Plugin (Cursor) | `cursor/plugins/local/<name>/` (per-plugin manifest at `.cursor-plugin/plugin.json`) | `cursor-plugin-sync` (or `dots sync`) | chezmoi's `run_onchange_after_install-cursor-plugins.sh.tmpl` drives `chezmoi/lib/install-cursor-plugin.sh` per plugin, deploying to `~/.cursor/{skills,rules,commands,hooks}/` and jq-merging `hooks.json` + `modes.json`. Per-collection manifests at `<target>/.dotfiles-managed-<plugin>` track ownership. Restart Cursor after. |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages/packages.yaml` | `dots sync` | Use `dots sync refresh` to force re-check |
-| Skill | `skills/` (dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` for the external-only fast path) | chezmoi's `run_onchange_install-claude-skills.sh.tmpl` invokes `chezmoi/lib/install-local.sh` (copies each `skills/<name>/` into `~/.claude/skills/<name>/`) and, when `gh skill` is present, `chezmoi/lib/install-external.sh` (runs `gh skill install` per harness from `SKILL_HARNESSES`). Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
+| Skill | `skills/` (dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` for the external-only fast path) | chezmoi's `run_onchange_after_install-claude-skills.sh.tmpl` invokes `chezmoi/lib/install-local.sh` (copies each `skills/<name>/` into `~/.claude/skills/<name>/`) and, when `gh skill` is present, `chezmoi/lib/install-external.sh` (runs `gh skill install` per harness from `SKILL_HARNESSES`). Ownership tracked via `~/.claude/skills/.dotfiles-managed`; gh-installed dirs are left untouched. |
 
 ## Important Gotchas
 

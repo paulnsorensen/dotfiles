@@ -20,7 +20,7 @@ AI critiques rather than authors.
 ## Install (via dotfiles)
 
 This plugin is installed automatically by `dots sync` (chezmoi's
-`run_onchange_install-cursor-plugins.sh.tmpl` deploys it into your
+`run_onchange_after_install-cursor-plugins.sh.tmpl` deploys it into your
 `~/.cursor/` auto-discovery directories).
 
 To verify after `dots sync`:
