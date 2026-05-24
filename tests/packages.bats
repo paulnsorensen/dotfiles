@@ -335,6 +335,71 @@ run_sync() {
     ! grep -q "gh extension upgrade" "$GH_LOG"
 }
 
+# --- Integration: apt custom-source (apt_install) ---
+
+# Force the Linux apt path on any host by mocking uname + apt tooling.
+# dpkg -s exits non-zero (nothing installed) so every package reads as missing.
+mock_linux_apt() {
+    cat > "$MOCK_BIN/uname" << 'EOF'
+#!/bin/bash
+echo "Linux"
+EOF
+    cat > "$MOCK_BIN/apt-get" << 'EOF'
+#!/bin/bash
+exit 0
+EOF
+    cat > "$MOCK_BIN/dpkg" << 'EOF'
+#!/bin/bash
+exit 1
+EOF
+    chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/apt-get" "$MOCK_BIN/dpkg"
+}
+
+@test "apt routes apt_install packages to the custom-source section" {
+    mock_linux_apt
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - curl
+  - tailscale: { platform: linux, apt_install: "curl -fsSL https://tailscale.com/install.sh | sh" }
+YAML
+
+    run_sync
+    assert_success
+
+    # Custom installer surfaced verbatim, under the custom-source warning.
+    assert_output_contains "needing a custom apt source"
+    assert_output_contains "https://tailscale.com/install.sh"
+    # Ordinary missing packages still go through the plain apt-get batch line…
+    assert_output_contains "sudo apt-get install -y"
+    # …but tailscale must NOT be lumped into that batch line.
+    local batch
+    batch=$(grep -E 'sudo apt-get install -y' <<< "$output")
+    ! grep -q "tailscale" <<< "$batch"
+}
+
+@test "apt skips an installed apt_install package (no custom command shown)" {
+    mock_linux_apt
+    # dpkg reports tailscale present; everything else missing.
+    cat > "$MOCK_BIN/dpkg" << 'EOF'
+#!/bin/bash
+[[ "$2" == "tailscale" ]] && exit 0
+exit 1
+EOF
+    chmod +x "$MOCK_BIN/dpkg"
+
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - tailscale: { platform: linux, apt_install: "curl -fsSL https://tailscale.com/install.sh | sh" }
+YAML
+
+    run_sync
+    assert_success
+
+    assert_output_contains "+ tailscale"
+    ! grep -q "needs a custom apt source" <<< "$output"
+    ! grep -q "install.sh" <<< "$output"
+}
+
 # --- Integration: cache behavior ---
 
 @test "sync saves cache on success" {

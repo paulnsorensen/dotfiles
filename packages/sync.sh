@@ -438,10 +438,19 @@ sync_gh_extensions() {
 
 ########## APT
 
+# Custom apt_install command for a linux package name (apt override or entry
+# key). Empty when the package has no apt_install field. Plain yq lookup —
+# avoids bash-4 associative arrays so the apt path runs under bash 3.2 too.
+apt_custom_cmd() {
+    local pkg="$1"
+    yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select((.value.apt // .key) == \"$pkg\" and .value.apt_install != null) | .value.apt_install" "$PACKAGES_FILE" 2>/dev/null | head -1
+}
+
+# Classifies one package into the right global bucket. Uses plain global
+# arrays (APT_MISSING / APT_CUSTOM_MISSING) rather than namerefs so it works
+# on bash 3.2 (macOS) as well as the bash 4.3+ on real apt hosts.
 apt_check_pkg() {
     local pkg="$1"
-    # shellcheck disable=SC2178  # nameref to caller's array
-    local -n _missing="$2"
     if [[ "$pkg" == "yq" ]]; then
         if command -v yq &>/dev/null; then
             echo "  + $pkg"
@@ -452,9 +461,14 @@ apt_check_pkg() {
     fi
     if dpkg -s "$pkg" &>/dev/null; then
         echo "  + $pkg"
+        return
+    fi
+    if printf '%s\n' "$APT_CUSTOM_NAMES" | grep -qx "$pkg"; then
+        echo "  - $pkg (missing — needs custom apt source)"
+        APT_CUSTOM_MISSING+=("$pkg")
     else
         echo "  - $pkg (missing)"
-        _missing+=("$pkg")
+        APT_MISSING+=("$pkg")
     fi
 }
 
@@ -462,26 +476,40 @@ sync_apt() {
     command -v apt-get &>/dev/null || return 0
 
     log_info "Checking apt packages"
-    local missing=()
+    APT_MISSING=()
+    APT_CUSTOM_MISSING=()
+    # Newline-separated linux package names that carry a custom apt_install
+    # command (outside the default apt repos, e.g. Tailscale's own source).
+    APT_CUSTOM_NAMES="$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.apt_install != null) | (.value.apt // .key)' "$PACKAGES_FILE" 2>/dev/null)"
 
     echo -e "\n${GREEN}Packages:${NC}"
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
-        apt_check_pkg "$pkg" missing
+        apt_check_pkg "$pkg"
     done <<< "$(get_platform_pkgs)"
 
     if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
         echo -e "\n${GREEN}Dev packages:${NC}"
         while IFS= read -r pkg; do
             [[ -z "$pkg" ]] && continue
-            apt_check_pkg "$pkg" missing
+            apt_check_pkg "$pkg"
         done <<< "$(get_platform_pkgs "--dev")"
     fi
 
-    if ((${#missing[@]})); then
+    if ((${#APT_MISSING[@]})); then
         echo ""
-        log_warning "Missing packages: ${missing[*]}"
-        echo "  sudo apt-get install -y ${missing[*]}"
+        log_warning "Missing packages: ${APT_MISSING[*]}"
+        echo "  sudo apt-get install -y ${APT_MISSING[*]}"
+    fi
+
+    if ((${#APT_CUSTOM_MISSING[@]})); then
+        echo ""
+        log_warning "Packages needing a custom apt source (run the listed command):"
+        local p
+        for p in "${APT_CUSTOM_MISSING[@]}"; do
+            echo "  $p:"
+            echo "    $(apt_custom_cmd "$p")"
+        done
     fi
 }
 
