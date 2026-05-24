@@ -34,7 +34,6 @@ packages:
   - tinty
   - prek
   - starship
-  - zellij
   - zoxide
   - atuin
   - bottom

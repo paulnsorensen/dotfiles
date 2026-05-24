@@ -77,13 +77,6 @@ Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env
 - `skill-edit` - Edit `skills/_registry.yaml`
 - `skill-ls` - Check installed skills for updates (`gh skill update --all --dry-run`)
 
-### Session Monitoring
-
-- `ccm` - Run Claude session monitor standalone (shows metrics for current directory's session)
-- `ccm --cwd DIR` - Monitor a specific directory's session
-- `ccm --once` - Print metrics once and exit (for scripting)
-- `zjclaude` - Launch zellij with Claude layout (main pane + monitor bar)
-
 ### Common Development Tasks
 
 - `lb` - Open daily logbook (creates markdown file at `~/psorensen/logbook/[date].md`)

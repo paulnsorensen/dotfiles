@@ -13,7 +13,6 @@ source "$HOME/Dev/dotfiles/zsh/aliases.zsh"
 source "$HOME/Dev/dotfiles/zsh/completion.zsh"
 source "$HOME/Dev/dotfiles/zsh/fzf.zsh"
 source "$HOME/Dev/dotfiles/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
-source "$HOME/Dev/dotfiles/zsh/zellij.zsh"    # Zellij aliases and helpers
 
 # Source local customizations early (sets DOTFILES_PROMPT, etc.)
 [ -f $HOME/.zshrc.local ] && source $HOME/.zshrc.local

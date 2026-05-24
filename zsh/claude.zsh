@@ -43,9 +43,6 @@ ccfresh() {
   claude "${flags[@]}" --continue -p '/go' && claude "${flags[@]}" --continue
 }
 
-# Session monitor
-alias ccm='claude-monitor'
-
 # ═══════════════════════════════════════════════════════════════════
 # ccp — launch claude with a scoped profile
 # ═══════════════════════════════════════════════════════════════════
