@@ -18,8 +18,11 @@
 #                  by the templating pass.
 #   env          — env vars; values can reference shell vars via "${VAR}"
 #   scope        — claude-only: user | project | local (default user)
-#   harnesses    — list of harness names to install into; default: [claude, codex, opencode]
+#   harnesses    — list of harness names to install into; default: [claude, codex, opencode, cursor]
 #   gate_unless  — claude-only: skip install when env var == "true" (defer to a plugin's bundled MCP)
+#   optional     — when true, skip this MCP non-fatally if any ${VAR} it
+#                  references is unset (instead of failing the sync). Use for
+#                  MCPs gated on a credential the user may not have configured.
 #   description  — human-readable purpose
 
 mcps:
@@ -40,6 +43,12 @@ mcps:
     description: AST-aware code search/read/edit (Tree-sitter); backs cheez-* skills when cheese-flow is unavailable
     gate_unless: CHEESE_FLOW
 
+  hallouminate:
+    command: hallouminate
+    args: ["serve"]
+    scope: user
+    description: Per-repo markdown wiki — semantic search (LanceDB + fastembed) and add/read/delete_markdown for LLM-authored notes
+
   context7:
     command: npx
     args: ["-y", "@upstash/context7-mcp"]
@@ -58,20 +67,13 @@ mcps:
     description: AI-powered technical web research; backs /briesearch when cheese-flow is unavailable
     gate_unless: CHEESE_FLOW
 
-  serper:
-    command: npx
-    args: ["-y", "serper-search-scrape-mcp-server"]
-    env:
-      SERPER_API_KEY: "${SERPER_API_KEY}"
-    scope: user
-    description: Google SERP data via Serper.dev — web search, Knowledge Graph, People Also Ask, and page scraping
-
   todoist:
     command: npx
     args: ["-y", "@doist/todoist-ai"]
     env:
       TODOIST_API_KEY: "${TODOIST_API_KEY}"
     scope: user
+    optional: true   # skip non-fatally when TODOIST_API_KEY is unset
     description: Official Todoist MCP (Doist-maintained) — invoke only when explicitly requested
 
   code-review-graph:
@@ -86,9 +88,15 @@ mcps:
   # / `fixed_tools` — applies to every harness uniformly.
   serena:
     command: serena
+    # CLI flags override ~/.serena/serena_config.yml. We force the dashboard
+    # off here (not just in the yaml) because serena rewrites its own config
+    # on every launch to append the projects list, which stomps our
+    # chezmoi-managed `web_dashboard: false` back to the upstream default.
     args:
       - start-mcp-server
       - --context={{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}
       - --project-from-cwd
+      - --enable-web-dashboard=false
+      - --open-web-dashboard=false
     scope: user
     description: Semantic code intel via LSP (symbols, references, refactors). Tools tailored per harness via --context.

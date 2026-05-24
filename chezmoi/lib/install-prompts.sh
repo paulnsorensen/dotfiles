@@ -75,7 +75,11 @@ install_prompts_wire_codex() {
     local current
     current="$(yq -p=toml '.model_instructions_file // ""' "$codex_config" 2>/dev/null || true)"
     if [[ "$current" != "$codex_prompt" ]]; then
-        yq -p=toml -o=toml -i ".model_instructions_file = \"$codex_prompt\"" "$codex_config"
+        # Pass the path via env so a quote/backslash in $codex_prompt can't
+        # escape into the yq filter and corrupt the file.
+        CODEX_PROMPT_PATH="$codex_prompt" \
+            yq -p=toml -o=toml -i '.model_instructions_file = strenv(CODEX_PROMPT_PATH)' \
+            "$codex_config"
         echo "  Set model_instructions_file in $codex_config"
     fi
 }

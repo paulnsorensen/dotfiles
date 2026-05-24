@@ -97,6 +97,17 @@ run_sync() {
 
     unset DOTFILES_DEV
 
+    if (( ${#SYNC_FAILURES[@]} > 0 )); then
+        echo
+        log_error "Sync completed with FAILURES in: ${SYNC_FAILURES[*]}"
+        log_error "Configuration is partially applied — those areas may be stale."
+        log_error "Re-run 'dots sync' after fixing the underlying cause."
+        echo
+        log_info "Backup saved at: ${BACKUP_DIR}"
+        log_info "To rollback, run: $0 rollback ${BACKUP_DIR##*/}"
+        exit 1
+    fi
+
     log_success "Sync completed successfully!"
 }
 

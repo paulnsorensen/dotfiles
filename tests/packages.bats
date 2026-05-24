@@ -499,7 +499,11 @@ MOCKRUSTUP
     grep -q "brew upgrade" "$BREW_LOG"
 }
 
-@test "UPGRADE_MODE re-installs cargo packages with --force when already installed" {
+@test "UPGRADE_MODE runs cargo-install-update --all --git instead of per-package --force" {
+    # New idempotent contract (PR #197): the install pass only handles
+    # *missing* packages, and the upgrade pass delegates to
+    # cargo-install-update so already-current crates are skipped
+    # instead of force-reinstalled every `dots up`.
     write_test_yaml
     cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
 #!/bin/bash
@@ -516,10 +520,52 @@ exit 0
 MOCKCARGO
     chmod +x "$MOCK_BIN/cargo"
 
+    # Just needs to exist on PATH so `command -v cargo-install-update`
+    # succeeds in sync.sh; the actual `cargo install-update …` call
+    # dispatches through the cargo mock above (cargo subcommand
+    # resolution happens inside real cargo, not in the test shell).
+    cat > "$MOCK_BIN/cargo-install-update" << 'MOCKUPDATE'
+#!/bin/bash
+exit 0
+MOCKUPDATE
+    chmod +x "$MOCK_BIN/cargo-install-update"
+
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
-    grep -q "cargo install --force cargo-llvm-cov" "$CARGO_LOG"
-    assert_output_contains "Upgrading cargo-llvm-cov"
+    # Install pass skips already-installed crate — no per-package
+    # `cargo install cargo-llvm-cov` call at all.
+    ! grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
+    ! grep -q -- "--force" "$CARGO_LOG"
+    # Upgrade pass delegates to `cargo install-update --all --git`.
+    grep -q "cargo install-update --all --git" "$CARGO_LOG"
+    assert_output_contains "Upgrading cargo packages"
+}
+
+@test "UPGRADE_MODE warns when cargo-install-update is not installed" {
+    # Missing-binary fallback: dots up should keep going with a loud
+    # warning instead of silently noop-ing or crashing.
+    write_test_yaml
+    cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
+#!/bin/bash
+echo "cargo $*" >> "$CARGO_LOG"
+case "$1" in
+    install)
+        if [[ "$2" == "--list" ]]; then
+            echo "cargo-llvm-cov v0.1.0:"
+            echo "    cargo-llvm-cov"
+        fi
+        ;;
+esac
+exit 0
+MOCKCARGO
+    chmod +x "$MOCK_BIN/cargo"
+    # Deliberately do NOT install a cargo-install-update mock.
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "cargo-update not installed"
+    # And the install pass still skips the already-installed crate.
+    ! grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
 }
 
 @test "non-upgrade mode does NOT pass --force to cargo install" {

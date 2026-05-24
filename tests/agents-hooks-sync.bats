@@ -77,7 +77,7 @@ teardown() {
 @test "hook_codex_command builds bash invocation with \$HOME" {
     local cmd
     cmd=$(hook_codex_command agents/hooks/session-start-cheese-flair.sh)
-    [[ "$cmd" == 'bash $HOME/.codex/hooks/session-start-cheese-flair.sh' ]]
+    [[ "$cmd" == 'bash "$HOME/.codex/hooks/session-start-cheese-flair.sh"' ]]
 }
 
 # ── drift signatures ───────────────────────────────────────────────────
@@ -219,7 +219,7 @@ TOML
     grep -qF '[mcp_servers.context7]'                 "$CODEX_CONFIG_FILE"
     grep -qF '[[hooks.SessionStart]]'                 "$CODEX_CONFIG_FILE"
     grep -qF 'matcher = "startup|resume"'             "$CODEX_CONFIG_FILE"
-    grep -qF 'command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"' "$CODEX_CONFIG_FILE"
+    grep -qF 'command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""' "$CODEX_CONFIG_FILE"
     grep -qF 'timeout = 5'                            "$CODEX_CONFIG_FILE"
 }
 
@@ -264,7 +264,7 @@ matcher = "startup|resume"
 
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 99
 TOML
     local changed
@@ -374,7 +374,7 @@ SH
     # sync.sh. Per-asset literals are NOT asserted here — adding a new hook
     # must be a registry edit, not a template edit. The runtime payload is
     # covered by "chezmoi installer flow deploys every registry asset…".
-    local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_install-hooks.sh.tmpl"
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-hooks.sh.tmpl"
     assert_file_exists "$tmpl"
     grep -qF 'install-shared-assets.sh' "$tmpl"
     grep -qF 'agents/hooks/sync.sh' "$tmpl"
@@ -448,7 +448,7 @@ TOML
     count=$(yq -p=toml -o=json '.hooks.SessionStart | length' "$CODEX_CONFIG_FILE")
     [[ "$count" == "2" ]]
     grep -qF 'command = "bash $HOME/other-hook.sh"' "$CODEX_CONFIG_FILE"
-    grep -qF 'command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"' "$CODEX_CONFIG_FILE"
+    grep -qF 'command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""' "$CODEX_CONFIG_FILE"
 }
 
 @test "codex upsert preserves entries under other event types (UserPromptSubmit)" {
@@ -495,7 +495,7 @@ matcher = "something-else"
 
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 5
 TOML
     local cur des
@@ -513,7 +513,7 @@ matcher = "wrong"
 
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 5
 TOML
     local changed
@@ -596,7 +596,7 @@ TOML
 }
 
 @test "chezmoi installer iteration handles a synthetic multi-hook registry" {
-    # Reimplements the yq|jq pipeline from run_onchange_install-hooks.sh.tmpl
+    # Reimplements the yq|jq pipeline from run_onchange_after_install-hooks.sh.tmpl
     # against a registry with two hooks — one with shared_assets, one without,
     # and one that opts out of codex via `harnesses: [claude]`. Asserts every
     # (asset × harness) pair the template would deploy ends up in the emitted
@@ -690,6 +690,79 @@ TOML
     grep -q 'SessionStart' "$CODEX_CONFIG_FILE"
 }
 
+# ── safety guards added in PR #188 ──
+# These exercise the round-trip read-back + top-level key-preservation
+# checks that protect the user's codex config from silent truncation. The
+# refusal paths share the diagnostic "refusing to overwrite" so tests
+# match on that plus the file's untouched contents.
+
+@test "hook_codex_apply preserves unrelated top-level keys (approval_policy)" {
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    cat > "$CODEX_CONFIG_FILE" <<'TOML'
+approval_policy = "on-request"
+sandbox_mode = "read-only"
+TOML
+    run hook_codex_apply session-start-cheese-flair
+    assert_success
+    grep -q 'approval_policy' "$CODEX_CONFIG_FILE"
+    grep -q 'sandbox_mode' "$CODEX_CONFIG_FILE"
+    grep -q 'SessionStart' "$CODEX_CONFIG_FILE"
+}
+
+@test "hook_codex_apply preserves [mcp_servers] across the sync" {
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    cat > "$CODEX_CONFIG_FILE" <<'TOML'
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+TOML
+    run hook_codex_apply session-start-cheese-flair
+    assert_success
+    grep -q 'mcp_servers' "$CODEX_CONFIG_FILE"
+    grep -q 'context7' "$CODEX_CONFIG_FILE"
+    grep -q 'SessionStart' "$CODEX_CONFIG_FILE"
+}
+
+@test "hook_codex_apply refuses to overwrite when emitted TOML is empty (sanity)" {
+    # Stub yq inside this test only — the json→toml emit step produces empty
+    # output but exits 0, so the temp file written back is empty. The
+    # post-image read-back then fails on `keys` of the null doc, which is the
+    # branch this test pins.
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    cat > "$CODEX_CONFIG_FILE" <<'TOML'
+approval_policy = "on-request"
+TOML
+    local before; before=$(cat "$CODEX_CONFIG_FILE")
+    # Resolve the real yq before PATH is shadowed, so the stub can delegate
+    # every non-emit call to it on any platform (Homebrew Intel/ARM, Linux CI).
+    local real_yq; real_yq=$(command -v yq)
+    local stub_bin="$BATS_TEST_TMPDIR/stub-bin"
+    mkdir -p "$stub_bin"
+    cat > "$stub_bin/yq" <<STUB
+#!/bin/bash
+# Pass through for everything except the json→toml emit step, which we
+# silently truncate to exercise the post-image validation.
+for arg in "\$@"; do
+    if [[ "\$arg" == "-p=json" ]]; then
+        # consume stdin so the pipeline doesn't SIGPIPE the caller
+        cat >/dev/null
+        # produce empty output
+        exit 0
+    fi
+done
+exec "$real_yq" "\$@"
+STUB
+    chmod +x "$stub_bin/yq"
+    PATH="$stub_bin:$PATH" run hook_codex_apply session-start-cheese-flair
+    [[ "$status" -ne 0 ]]
+    # Must fail on the post-image read-back, not the pre-image read. Matching
+    # the specific diagnostic prevents a regression to the earlier branch
+    # (which emits "refusing to overwrite unparseable") from passing silently.
+    [[ "$output" == *"failed to read back"* ]]
+    # Original file must be untouched.
+    [[ "$(cat "$CODEX_CONFIG_FILE")" == "$before" ]]
+}
+
 # ── end-to-end: installer + sync mirror chezmoi run_onchange behaviour ──
 # Reimplements the registry-driven iteration the chezmoi template runs
 # against a fake $HOME, then asserts every (asset × harness) pair landed
@@ -703,7 +776,7 @@ TOML
     local source_root="$REAL_DOTFILES_DIR"
     local registry="$source_root/agents/hooks/registry.yaml"
 
-    # Mirror run_onchange_install-hooks.sh.tmpl: iterate every
+    # Mirror run_onchange_after_install-hooks.sh.tmpl: iterate every
     # (asset × harness) pair declared in the registry.
     local pairs deployed_count
     pairs=$(yq -p=yaml -o=json '.hooks' "$registry" | jq -r '
@@ -753,7 +826,7 @@ TOML
     cmd=$(    yq -p=toml -o=json '.hooks.SessionStart[0].hooks[0].command'     "$fake_codex")
     timeout=$(yq -p=toml -o=json '.hooks.SessionStart[0].hooks[0].timeout'     "$fake_codex")
     [[ "$matcher" == '"startup|resume"' ]]
-    [[ "$cmd"     == '"bash $HOME/.codex/hooks/session-start-cheese-flair.sh"' ]]
+    [[ "$cmd"     == '"bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""' ]]
     [[ "$timeout" == "5" ]]
 
     # Claude side mirror — the sync wrote a SessionStart entry into the fake

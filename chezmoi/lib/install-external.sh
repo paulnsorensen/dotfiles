@@ -181,8 +181,15 @@ if [[ -s "$FAIL_COUNTER" ]]; then
 fi
 
 if [[ "$fail_count" -gt 0 ]]; then
-    echo -e "${YELLOW}$fail_count install(s) failed — cache not updated. Re-run to retry.${NC}"
-elif ! $DRY_RUN; then
+    # Fail loud: propagate non-zero so the chezmoi run_onchange records the
+    # apply as failed and reruns next `dots sync` instead of marking success
+    # and skipping until the skills tree hash changes (the silent partial
+    # install regression mode).
+    echo -e "${RED}$fail_count install(s) failed — cache not updated. Re-run to retry.${NC}" >&2
+    exit 1
+fi
+
+if ! $DRY_RUN; then
     mkdir -p "$(dirname "$CACHE_FILE")"
     echo "$COMBINED_DIGEST" > "$CACHE_FILE"
 fi

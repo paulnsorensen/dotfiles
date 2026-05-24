@@ -8,4 +8,3 @@ mcps:
   - tilth              # Scan existing code shape to frame the spec
   - context7           # Library / framework feasibility
   - tavily             # AI-powered technical research
-  - serper             # SERP / knowledge graph for factual lookups
