@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for sync and rollback functionality
+# Tests for sync state/manifest/symlink functionality
 
 load test_helper
 
@@ -42,37 +42,6 @@ teardown() {
 
     assert_file_exists "$MANIFEST_FILE"
     grep -q ".bashrc" "$MANIFEST_FILE"
-}
-
-@test "rollback script lists backups" {
-    # Create mock backup directories
-    mkdir -p "$DOTFILES_STATE_DIR/backups/20240101_120000"
-    mkdir -p "$DOTFILES_STATE_DIR/backups/20240102_120000"
-
-    # Create metadata files
-    echo '{"timestamp": "2024-01-01T12:00:00Z"}' > \
-        "$DOTFILES_STATE_DIR/backups/20240101_120000/metadata.json"
-
-    # List backups (simulated)
-    backups=$(ls "$DOTFILES_STATE_DIR/backups")
-    [[ -n "$backups" ]]
-    [[ "$backups" == *"20240101_120000"* ]]
-    [[ "$backups" == *"20240102_120000"* ]]
-}
-
-@test "backup preserves existing files" {
-    # Create existing file that would be overwritten
-    echo "original content" > "$TEST_HOME/.bashrc"
-
-    # Create backup directory
-    BACKUP_DIR="$DOTFILES_STATE_DIR/backups/test_backup"
-    mkdir -p "$BACKUP_DIR"
-
-    # Backup the file
-    cp "$TEST_HOME/.bashrc" "$BACKUP_DIR/.bashrc"
-
-    assert_file_exists "$BACKUP_DIR/.bashrc"
-    grep -q "original content" "$BACKUP_DIR/.bashrc"
 }
 
 @test "sync creates symlinks correctly" {

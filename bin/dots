@@ -35,12 +35,10 @@ ${GREEN}Usage:${NC} dots [command] [args]
 
 ${BLUE}Commands:${NC}
   ${GREEN}update${NC}          Pull latest changes and run sync
-  ${GREEN}sync${NC}            Run the sync script (with rollback support)
+  ${GREEN}sync${NC}            Run the sync script
   ${GREEN}upgrade${NC}         Upgrade installed packages and refresh remote skills
   ${GREEN}status${NC}          Show git status of dotfiles
-  ${GREEN}rollback [id]${NC}   Rollback to a previous state
-  ${GREEN}backups${NC}         List available backups
-  ${GREEN}clean${NC}           Prune old backups (--keep=N, --dry-run)
+  ${GREEN}rollback${NC}        Show how to undo a sync (git revert + dots sync)
   ${GREEN}doctor${NC}          Run health checks and profile shell
   ${GREEN}test${NC}            Run test suite
   ${GREEN}help${NC}            Show this help message
@@ -55,7 +53,7 @@ ${BLUE}Quick Actions:${NC}
 
 ${BLUE}Examples:${NC}
   dots update      # Pull changes and sync
-  dots rollback    # Interactive rollback
+  dots rollback    # Show the git revert undo path
   dots doctor      # Health checks + shell performance
   dots test        # Run test suite
 
@@ -319,15 +317,12 @@ case "${1:-status}" in
         do_status
         ;;
     rollback|rb)
-        shift
-        "$DOTFILES_DIR/.sync-with-rollback" rollback "$@"
-        ;;
-    backups|b)
-        "$DOTFILES_DIR/.sync-with-rollback" list-backups
-        ;;
-    clean|c)
-        shift
-        "$DOTFILES_DIR/.sync-with-rollback" clean "$@"
+        echo -e "${BLUE}Rollback is now git-backed.${NC} The custom backup/restore layer was retired —"
+        echo "chezmoi's git-tracked source tree is the undo story. To revert a sync:"
+        echo
+        echo -e "  ${GREEN}cd $DOTFILES_DIR${NC}"
+        echo -e "  ${GREEN}git revert <commit>${NC}   # or: git checkout <ref> -- <path>"
+        echo -e "  ${GREEN}dots sync${NC}              # re-apply the reverted state"
         ;;
     doctor|d)
         do_doctor

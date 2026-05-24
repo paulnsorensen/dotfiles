@@ -55,14 +55,6 @@ parse_sync_args() {
               echo "Setting force_packages=true"
               export FORCE_PACKAGES=true
               ;;
-         rollback)
-              rollback "${2:-}"
-              exit 0
-              ;;
-         list-backups)
-              list_backups
-              exit 0
-              ;;
       esac
       shift
     done
