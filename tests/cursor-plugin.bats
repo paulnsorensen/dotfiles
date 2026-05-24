@@ -73,9 +73,18 @@ teardown() {
     [[ -x "$CURSOR_HOME/hooks/block-destructive.sh" ]]
     [[ -x "$CURSOR_HOME/hooks/session-summary.sh" ]]
 
-    # Per-collection manifests stamped with the plugin name.
-    grep -Fxq grok-codebase "$CURSOR_HOME/skills/.dotfiles-managed-cheese-grok"
-    grep -Fxq reader-companion.mdc "$CURSOR_HOME/rules/.dotfiles-managed-cheese-grok"
+    # Machine-level manifest records relpaths under the plugin key
+    # (replacing the old per-dir .dotfiles-managed-<plugin> markers).
+    local manifest="$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    [[ -f "$manifest" ]]
+    jq -e '.["cheese-grok"].files | index("skills/grok-codebase")' "$manifest"
+    jq -e '.["cheese-grok"].files | index("rules/reader-companion.mdc")' "$manifest"
+    jq -e '.["cheese-grok"].files | index("commands/tighten.md")' "$manifest"
+    jq -e '.["cheese-grok"].files | index("hooks/block-destructive.sh")' "$manifest"
+
+    # Per-dir markers are gone (migrated to the manifest).
+    [[ ! -e "$CURSOR_HOME/skills/.dotfiles-managed-cheese-grok" ]]
+    [[ ! -e "$CURSOR_HOME/rules/.dotfiles-managed-cheese-grok" ]]
 }
 
 @test "install-cursor-plugin: merges hooks.json with deployed absolute paths" {
@@ -176,6 +185,220 @@ teardown() {
     "$INSTALL_SCRIPT" "$scratch" "$CURSOR_HOME" >/dev/null
     run jq -r '.modes.reader // "absent"' "$CURSOR_HOME/modes.json"
     assert_output_contains "absent"
+}
+
+# ─── target guard (B) ───────────────────────────────────────────────────
+
+@test "install-cursor-plugin: refuses deploy into the dotfiles repo root" {
+    run "$INSTALL_SCRIPT" "$PLUGIN_SRC" "$REAL_DOTFILES_DIR"
+    [[ "$status" -ne 0 ]]
+    assert_output_contains "refusing to deploy into the dotfiles repo"
+    # Wrote nothing into the repo.
+    [[ ! -e "$REAL_DOTFILES_DIR/.dotfiles-cursor-manifest.json" ]]
+}
+
+@test "install-cursor-plugin: refuses deploy into a subpath of the repo" {
+    local target="$REAL_DOTFILES_DIR/nonexistent-deploy-target"
+    run "$INSTALL_SCRIPT" "$PLUGIN_SRC" "$target"
+    [[ "$status" -ne 0 ]]
+    assert_output_contains "refusing to deploy into the dotfiles repo"
+    [[ ! -e "$target" ]]
+}
+
+# ─── merge integrity: validated_mv (C) ──────────────────────────────────
+
+@test "validated_mv: refuses a merge that would drop a pre-existing top-level key" {
+    source "$INSTALL_SCRIPT"
+    local dst="$TEST_HOME/d.json" tmp="$TEST_HOME/t.json"
+    printf '{"version":1,"hooks":{},"userKey":true}\n' > "$dst"
+    # tmp drops "userKey" and "version" — the silent-truncation class.
+    printf '{"hooks":{"a":[]}}\n' > "$tmp"
+
+    run validated_mv "$tmp" "$dst"
+    [[ "$status" -ne 0 ]]
+    assert_output_contains "would drop top-level keys"
+
+    # Destination left intact.
+    run jq -r '.userKey' "$dst"; assert_output_contains "true"
+    run jq -r '.version' "$dst"; assert_output_contains "1"
+}
+
+@test "validated_mv: allows a nested-only change that keeps every top-level key" {
+    source "$INSTALL_SCRIPT"
+    local dst="$TEST_HOME/d.json" tmp="$TEST_HOME/t.json"
+    printf '{"version":1,"hooks":{"a":[1]}}\n' > "$dst"
+    printf '{"version":1,"hooks":{"a":[1,2,3]}}\n' > "$tmp"
+
+    run validated_mv "$tmp" "$dst"
+    assert_success
+    run jq -c '.hooks.a' "$dst"
+    assert_output_contains "[1,2,3]"
+}
+
+@test "validated_mv: refuses to mv a tmp file that is not valid JSON" {
+    source "$INSTALL_SCRIPT"
+    local dst="$TEST_HOME/d.json" tmp="$TEST_HOME/t.json"
+    printf '{"version":1}\n' > "$dst"
+    printf 'not json{' > "$tmp"
+
+    run validated_mv "$tmp" "$dst"
+    [[ "$status" -ne 0 ]]
+    assert_output_contains "not valid JSON"
+
+    # Destination untouched — a bad merge never reaches disk.
+    run jq -r '.version' "$dst"; assert_output_contains "1"
+}
+
+# ─── collision guard (D) ─────────────────────────────────────────────────
+
+@test "install-cursor-plugin: warns and skips a foreign same-named skill" {
+    # Pre-seed a foreign skill dir claimed by no manifest (gh-installed style).
+    mkdir -p "$CURSOR_HOME/skills/grok-codebase"
+    printf '# foreign\n' > "$CURSOR_HOME/skills/grok-codebase/SKILL.md"
+
+    run "$INSTALL_SCRIPT" "$PLUGIN_SRC" "$CURSOR_HOME"
+    assert_success
+    assert_output_contains "skipping skills/grok-codebase"
+
+    # Foreign content survives untouched (not clobbered by the plugin copy).
+    run cat "$CURSOR_HOME/skills/grok-codebase/SKILL.md"
+    assert_output_contains "# foreign"
+
+    # Skipped item was NOT recorded as ours.
+    run jq -r '.["cheese-grok"].files | index("skills/grok-codebase") // "absent"' \
+        "$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    assert_output_contains "absent"
+
+    # A non-colliding plugin skill still deployed and recorded.
+    [[ -f "$CURSOR_HOME/skills/design-doc/SKILL.md" ]]
+    run jq -e '.["cheese-grok"].files | index("skills/design-doc")' \
+        "$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    assert_success
+}
+
+@test "install-cursor-plugin: collision guard also covers commands (not just skills)" {
+    # Proves claim_or_skip is wired through deploy_files, not only
+    # deploy_skills: a foreign command file claimed by no manifest is
+    # skipped, never clobbered.
+    mkdir -p "$CURSOR_HOME/commands"
+    printf '# foreign cmd\n' > "$CURSOR_HOME/commands/tighten.md"
+
+    run "$INSTALL_SCRIPT" "$PLUGIN_SRC" "$CURSOR_HOME"
+    assert_success
+    assert_output_contains "skipping commands/tighten.md"
+
+    # Foreign content survives, and was not recorded as ours.
+    run cat "$CURSOR_HOME/commands/tighten.md"
+    assert_output_contains "# foreign cmd"
+    run jq -r '.["cheese-grok"].files | index("commands/tighten.md") // "absent"' \
+        "$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    assert_output_contains "absent"
+
+    # A non-colliding command still deployed.
+    [[ -f "$CURSOR_HOME/commands/reading-probes.md" ]]
+}
+
+# ─── machine-level manifest (#181 pattern) ──────────────────────────────
+
+@test "manifest: diff-clean keeps a path another plugin still claims (ref-count)" {
+    source "$INSTALL_SCRIPT"
+    cursor_home="$CURSOR_HOME"
+    MANIFEST="$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    mkdir -p "$CURSOR_HOME/skills/shared"
+    printf '{"p1":{"files":["skills/shared"]},"p2":{"files":["skills/shared"]}}\n' > "$MANIFEST"
+
+    # p1 drops skills/shared; p2 still claims it.
+    manifest_diff_clean p1 '[]'
+    [[ -d "$CURSOR_HOME/skills/shared" ]]
+}
+
+@test "manifest: diff-clean removes a path no other plugin claims" {
+    source "$INSTALL_SCRIPT"
+    cursor_home="$CURSOR_HOME"
+    MANIFEST="$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    mkdir -p "$CURSOR_HOME/skills/solo"
+    printf '{"p1":{"files":["skills/solo"]}}\n' > "$MANIFEST"
+
+    manifest_diff_clean p1 '[]'
+    [[ ! -e "$CURSOR_HOME/skills/solo" ]]
+}
+
+@test "install-cursor-plugin: corrupt manifest fails loud on read" {
+    printf 'not json at all' > "$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    run "$INSTALL_SCRIPT" "$PLUGIN_SRC" "$CURSOR_HOME"
+    [[ "$status" -ne 0 ]]
+    assert_output_contains "manifest corrupt"
+}
+
+@test "manifest_validate: rejects a non-object top-level (valid JSON array)" {
+    source "$INSTALL_SCRIPT"
+    MANIFEST="$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    printf '[]\n' > "$MANIFEST"
+    run manifest_validate
+    [[ "$status" -ne 0 ]]
+    assert_output_contains "top-level must be an object"
+}
+
+@test "manifest_validate: rejects an entry missing its files[] array" {
+    source "$INSTALL_SCRIPT"
+    MANIFEST="$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    printf '{"cheese-grok":{"nope":true}}\n' > "$MANIFEST"
+    run manifest_validate
+    [[ "$status" -ne 0 ]]
+    assert_output_contains "missing files"
+}
+
+@test "install-cursor-plugin: drops a skill removed from plugin source on re-run" {
+    local scratch="$TEST_HOME/scratch-plugin"
+    cp -R "$PLUGIN_SRC" "$scratch"
+
+    "$INSTALL_SCRIPT" "$scratch" "$CURSOR_HOME" >/dev/null
+    [[ -d "$CURSOR_HOME/skills/tour" ]]
+
+    rm -rf "$scratch/skills/tour"
+    "$INSTALL_SCRIPT" "$scratch" "$CURSOR_HOME" >/dev/null
+
+    # Dropped skill gone from disk and from the manifest.
+    [[ ! -e "$CURSOR_HOME/skills/tour" ]]
+    run jq -r '.["cheese-grok"].files | index("skills/tour") // "absent"' \
+        "$CURSOR_HOME/.dotfiles-cursor-manifest.json"
+    assert_output_contains "absent"
+    # Survivors intact.
+    [[ -d "$CURSOR_HOME/skills/design-doc" ]]
+}
+
+# ─── .gitignore: deploy outputs ignored, plugin source tracked (B1) ─────
+
+@test "gitignore: cursor deploy outputs are ignored but plugin source is tracked" {
+    # A deploy mis-pointed at the repo would recreate the ~/.cursor outputs
+    # under cursor/. The .gitignore stanza keeps them out of version control
+    # while leaving cursor/plugins/ (the tracked source) committable.
+    local d
+    for d in commands hooks rules skills; do
+        run git -C "$REAL_DOTFILES_DIR" check-ignore "cursor/$d/anything"
+        assert_success   # exit 0 == path is ignored
+    done
+    local f
+    for f in hooks.json mcp.json modes.json; do
+        run git -C "$REAL_DOTFILES_DIR" check-ignore "cursor/$f"
+        assert_success
+    done
+
+    # The tracked plugin source must NOT be ignored.
+    run git -C "$REAL_DOTFILES_DIR" check-ignore \
+        "cursor/plugins/local/cheese-grok/.cursor-plugin/plugin.json"
+    assert_failure   # exit 1 == not ignored
+}
+
+# ─── /cursor skill discovery (A, criterion 1) ───────────────────────────
+
+@test "skills/cursor: frontmatter name is 'cursor' so it loads as /cursor" {
+    # Skill discovery keys on the frontmatter name; a rename here silently
+    # breaks the /cursor command after dots sync.
+    local skill="$REAL_DOTFILES_DIR/skills/cursor/SKILL.md"
+    [[ -f "$skill" ]]
+    run grep -qE '^name:[[:space:]]+cursor[[:space:]]*$' "$skill"
+    assert_success
 }
 
 # ─── agents/mcp/lib.sh cursor backend ───────────────────────────────────

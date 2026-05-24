@@ -34,6 +34,18 @@ claude/hooks/session-start-cheese-flair.sh
 claude/lib/cheese-flair.sh
 claude/reference/cheese-flair.md
 
+# Cursor Layer-A deploy outputs. These land in ~/.cursor at sync time; a
+# deploy mis-pointed at the repo would recreate them here. Only the plugin
+# source under cursor/plugins/ is tracked. install-cursor-plugin.sh now
+# refuses an in-repo target, but ignore the outputs as a second line.
+cursor/commands/
+cursor/hooks/
+cursor/rules/
+cursor/skills/
+cursor/hooks.json
+cursor/mcp.json
+cursor/modes.json
+
 # Harness-managed agent skill cache (written by `gh skill install`)
 .agents/
 
