@@ -7,6 +7,8 @@
 #   dev:      only when DOTFILES_DEV=true
 #   apt:      override name for linux
 #   platform: mac | linux (default: both)
+#   flags:    extra args spliced into the installer (uv source only;
+#             e.g. ["--python", "3.13", "--prerelease=allow"])
 
 packages:
   - tinted-theming/tinted: { source: tap }
@@ -59,12 +61,18 @@ packages:
   - sccache                                   # rustc wrapper for compile caching
   - cargo-nextest                             # faster, parallel test runner
 
+  # Rust build deps (transitive native toolchain requirements)
+  - protobuf                                  # protoc — required by lance-encoding build script (hallouminate)
+
   # macOS-only
   - mas: { platform: mac }                    # Mac App Store CLI
   - trash: { platform: mac }                  # Move to Trash (safer rm)
   - terminal-notifier: { platform: mac }      # macOS notifications from terminal
   - skhd: { platform: mac }                   # Hotkey daemon (from koekeishiya/formulae tap)
   - emdash: { source: cask, platform: mac }   # Desktop UI for running coding agents in parallel
+  - claude-code: { source: cask, platform: mac } # Claude Code — terminal AI coding assistant
+  - cursor: { source: cask, platform: mac }    # Cursor — AI code editor
+  - obsidian: { source: cask, platform: mac }  # Obsidian — Markdown knowledge base
 
   # Linux-only
   - xclip: { platform: linux }
@@ -98,13 +106,19 @@ packages:
   - check-jsonschema: { source: uv }
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
   - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API
+  # Serena pins Python 3.13 and ships pre-release builds on PyPI; the `flags`
+  # array is passed through to `uv tool install` verbatim. Exposes the `serena`
+  # binary, which the MCP registry invokes per harness via --context.
+  - serena-agent: { source: uv, flags: ["--python", "3.13", "--prerelease=allow"] }
 
   # gh CLI extensions
   - gh-stack: { source: gh-extension, pkg: github/gh-stack }   # native PR-stack management (used by /pr-stack)
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }
+  - cargo-update: { source: cargo }            # provides `cargo install-update` for idempotent `dots up`
   - tilth: { source: cargo, git: "https://github.com/paulnsorensen/tilth", branch: main }
+  - hallouminate: { source: cargo, git: "https://github.com/paulnsorensen/hallouminate", branch: main }
   # Install from Git because the crates.io `rtk` collides with the desired package.
   # If an unrelated `rtk` is already present from `cargo install rtk`, remove it first
   # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.

@@ -285,7 +285,7 @@ For each dispatch entry (group or standalone PR), launch an agent **in a worktre
 Agent(
   isolation="worktree",
   mode="bypassPermissions",
-  prompt="Use the Skill tool to invoke skill='move-my-cheese' with args='<PR#>'. This runs the full PR rescue workflow. You are running in a worktree alongside other parallel agents — use lsp-probe for all LSP queries (batch hover/findReferences/documentSymbol into probe calls) to avoid N concurrent language servers. After the skill completes, report: what was wrong, what was fixed, quality sweep findings, and CI status."
+  prompt="Use the Skill tool to invoke skill='move-my-cheese' with args='<PR#>'. This runs the full PR rescue workflow. You are running in a worktree alongside other parallel agents — use the Serena MCP for symbol intelligence (mcp__serena__find_symbol, find_referencing_symbols, get_symbols_overview) rather than direct file scans. After the skill completes, report: what was wrong, what was fixed, quality sweep findings, and CI status."
 )
 ```
 
@@ -295,7 +295,7 @@ Agent(
 Agent(
   isolation="worktree",
   mode="bypassPermissions",
-  prompt="Use the Skill tool to invoke skill='move-my-cheese' with args='<target PR#>'. You are running in a worktree alongside other parallel agents — use lsp-probe for all LSP queries (batch hover/findReferences/documentSymbol into probe calls) to avoid N concurrent language servers. After rescue completes, cherry-pick unique commits from the absorbed PR branches (<branch list>) that aren't already in the target. Resolve any cherry-pick conflicts (prefer the target's intent). Then report: what was wrong, what was fixed, what was cherry-picked from each absorbed PR, quality sweep findings, and CI status."
+  prompt="Use the Skill tool to invoke skill='move-my-cheese' with args='<target PR#>'. You are running in a worktree alongside other parallel agents — use the Serena MCP for symbol intelligence (mcp__serena__find_symbol, find_referencing_symbols, get_symbols_overview) rather than direct file scans. After rescue completes, cherry-pick unique commits from the absorbed PR branches (<branch list>) that aren't already in the target. Resolve any cherry-pick conflicts (prefer the target's intent). Then report: what was wrong, what was fixed, what was cherry-picked from each absorbed PR, quality sweep findings, and CI status."
 )
 ```
 

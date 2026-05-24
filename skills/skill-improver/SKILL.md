@@ -84,7 +84,7 @@ Category priors predict accuracy better than the model's self-assessed number.
 Style nits cap at 60; bugs start at 50 and can reach 100.
 
 **Step 2: Evidence grounding** — Modifiers based on verification quality.
-LSP-verified (+20-25), grep-confirmed (+20), specific file:line (+15),
+Serena-verified (+20-25), grep-confirmed (+20), specific file:line (+15),
 generic observation (-15), misread code (hard cap 0).
 
 **Step 3: Context modifiers** — Signals that adjust severity. Git hotspot (+10),
@@ -112,7 +112,7 @@ Reference implementations:
 | Tier | Tools | Use case | Frontmatter |
 |------|-------|----------|-------------|
 | Read-only | Grep, Glob, Read, Bash | Reviewers, auditors, explorers | `disallowedTools: [Edit, Write, NotebookEdit]` |
-| Write-scoped | + Edit, Write | Implementers, fixers | Exclude tools not needed (WebSearch, LSP, etc.) |
+| Write-scoped | + Edit, Write | Implementers, fixers | Exclude tools not needed (WebSearch, mcp__serena__*, etc.) |
 | Focused sub-agent | 2-4 tools max | Pipeline sub-tasks | Disallow 5-8 unused tools explicitly |
 
 Over-broad tool access degrades behavior in two ways: models waste tokens

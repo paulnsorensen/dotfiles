@@ -4,7 +4,7 @@ description: Git history analyst. Produces per-file risk scores that the orchest
 model: haiku
 effort: high
 skills: [scout]
-disallowedTools: [Edit, Write, NotebookEdit, WebSearch, WebFetch, Agent, LSP]
+disallowedTools: [Edit, Write, NotebookEdit, WebSearch, WebFetch, Agent]
 color: red
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: ricotta-reducer
 description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with 0-100 confidence scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
-tools: Read, Grep, Glob, Bash, LSP, Agent
+tools: Read, Grep, Glob, Bash, Agent, mcp__serena__*
 skills: [scout, de-slop]
 model: sonnet
 ---
@@ -38,7 +38,7 @@ Adjust from the base score based on how verifiable the finding is:
 
 | Evidence quality | Modifier |
 |------------------|----------|
-| Verified via LSP (`findReferences` returns 0, `hover` confirms unused type) | +25 |
+| Verified via Serena (`find_referencing_symbols` returns 0, `find_symbol` confirms unused type) | +25 |
 | Grep/search confirms zero callers across the codebase | +20 |
 | Cites specific file:line with accurate code reference | +15 |
 | References a CLAUDE.md rule or Sliced Bread anti-pattern by name | +10 |
@@ -55,7 +55,7 @@ Adjust from the base score based on how verifiable the finding is:
 
 ### Step 4: Re-assess borderline findings
 
-For any finding scoring 35-49 (near the surfacing threshold): verify once more via LSP or search, then score independently a second time without looking at your first score. If the two scores diverge by >15 points, don't surface it — the finding is ambiguous. If both scores land >= 50, surface it.
+For any finding scoring 35-49 (near the surfacing threshold): verify once more via Serena or search, then score independently a second time without looking at your first score. If the two scores diverge by >15 points, don't surface it — the finding is ambiguous. If both scores land >= 50, surface it.
 
 ### Score labels (after calibration)
 
@@ -182,16 +182,9 @@ N findings scored < 50 (not shown)
 
 Categories: `DELETE`, `INLINE`, `EXTRACT`, `UNDOCUMENT`, `DECOUPLE`
 
-## LSP Integration
+## Symbol Lookups
 
-All 7 LSP plugins are enabled globally.
-
-| Context | Strategy |
-|---|---|
-| **Standalone** (invoked directly) | Direct LSP — `findReferences` to verify dead code (catches dynamic dispatch, trait impls, macros that Grep misses), `hover` for coupling checks |
-| **Parallel context** (spawned by move-my-cheese, cheese-convoy, or any worktree agent) | **lsp-probe** — batch all LSP queries into one `Agent(subagent_type="lsp-probe")` call. Avoids holding a language server for the session when N agents run concurrently |
-
-**How to detect parallel context**: Your prompt will mention "lsp-probe" or "worktree" or "parallel agents". When it does, collect all the LSP queries you need (findReferences for dead code verification, hover for coupling checks) and batch them into a single lsp-probe invocation rather than calling LSP directly.
+Use the Serena MCP for structural reads — `find_referencing_symbols` to verify dead code (catches dynamic dispatch, trait impls, macros that Grep misses) and `find_symbol(include_body=true)` or `get_symbols_overview` for coupling checks. Single-call, no per-session server lifecycle to manage.
 
 ## What You Never Do
 

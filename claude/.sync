@@ -15,16 +15,16 @@ mkdir -p "$CLAUDE_DIR"
 #                 so gh-installed skills can drop real dirs alongside
 #                 without fighting a directory symlink.
 #   - CLAUDE.md, RTK.md — copied (not symlinked) by chezmoi via
-#                 chezmoi/.chezmoiscripts/run_onchange_install-agents-doc.sh.tmpl
+#                 chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl
 #                 from the shared agents/ source so Codex sees the same content.
 #   - mcp/      — the registry moved to agents/mcp/; chezmoi drives the sync
-#                 via run_onchange_install-mcp.sh.tmpl across all harnesses.
+#                 via run_onchange_after_install-mcp.sh.tmpl across all harnesses.
 #
 # `hooks/`, `lib/`, and `reference/` STAY symlinked because they still hold
 # Claude-only assets (auto-format.js, gen-profile-mcp.sh, sliced-bread.md, …).
 # The cheese-flair trio (session-start-cheese-flair.sh, cheese-flair.sh,
 # cheese-flair.md) lives canonically under agents/ and is deployed into both
-# harnesses by chezmoi/.chezmoiscripts/run_onchange_install-hooks.sh.tmpl.
+# harnesses by chezmoi/.chezmoiscripts/run_onchange_after_install-hooks.sh.tmpl.
 # Because the Claude side writes through the directory symlinks above, the
 # regenerated copies reappear inside claude/{hooks,lib,reference}/ — those
 # three paths are gitignored.

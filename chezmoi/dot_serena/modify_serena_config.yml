@@ -1,0 +1,71 @@
+#!/bin/sh
+# Patch a tiny subset of ~/.serena/serena_config.yml while preserving every
+# other key + Serena's inline documentation. Stdin is the current file
+# contents (empty on first install); stdout becomes the new file contents.
+#
+# Source-of-truth defaults are Serena's. We only override:
+#   web_dashboard                 → false  (no auto-browser tab)
+#   web_dashboard_open_on_launch  → false  (and no tray icon noise)
+#   excluded_tools                → memory + onboarding tools
+#       Rationale: Serena's parallel memory system (~/.serena/memories/)
+#       collides with our MEMORY.md auto-memory under
+#       ~/.claude/projects/-Users-paul-Dev-dotfiles/memory/. Scope serena
+#       to its LSP-grounded retrieval + symbol-edit surface only.
+#       `onboarding` exists solely to bootstrap memory files, so it goes
+#       with the rest.
+
+set -eu
+
+# shellcheck disable=SC2016  # literal backticks in the message, not expansion
+PLACEHOLDER='# serena not initialized; run `serena init`, then `chezmoi apply` again'
+
+if ! command -v yq >/dev/null 2>&1; then
+    # yq is in packages.yaml so this branch is for unusual environments
+    # (e.g. partial bootstrap). Pass the file through unchanged rather than
+    # corrupt it.
+    cat
+    exit 0
+fi
+
+existing=$(cat)
+
+# Treat a previously-written placeholder as still-empty so the next apply
+# re-bootstraps once serena is on PATH. Without this, yq would later eat
+# the comment and emit a 3-key stub, permanently losing Serena's ~165
+# lines of inline-documented defaults.
+if [ "$existing" = "$PLACEHOLDER" ]; then
+    existing=
+fi
+
+# First-time install (or re-bootstrap after placeholder): adopt the live
+# ~/.serena/serena_config.yml if it exists, else run `serena init` to
+# create one. Either way, the resulting config is what we patch. Apply the
+# same placeholder filter to the live-file read — chezmoi may have written
+# the placeholder to disk on a prior apply, so the live file is "ours" too
+# and round-tripping it into yq would emit the 3-key stub we're avoiding.
+if [ -z "$existing" ] && command -v serena >/dev/null 2>&1; then
+    [ -f "$HOME/.serena/serena_config.yml" ] || serena init >/dev/null 2>&1 || true
+    if [ -f "$HOME/.serena/serena_config.yml" ]; then
+        existing=$(cat "$HOME/.serena/serena_config.yml")
+        [ "$existing" = "$PLACEHOLDER" ] && existing=
+    fi
+fi
+
+if [ -z "$existing" ]; then
+    printf '%s\n' "$PLACEHOLDER"
+    exit 0
+fi
+
+printf '%s' "$existing" | yq '
+    .web_dashboard = false |
+    .web_dashboard_open_on_launch = false |
+    .excluded_tools = [
+        "write_memory",
+        "read_memory",
+        "list_memories",
+        "delete_memory",
+        "rename_memory",
+        "edit_memory",
+        "onboarding"
+    ]
+'

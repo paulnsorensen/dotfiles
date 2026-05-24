@@ -14,59 +14,33 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # ═══════════════════════════════════════════════════════════════════
 # Quick Access
 # ═══════════════════════════════════════════════════════════════════
-# Compute which LSP plugins this repo needs based on tokei line counts.
-# Writes a minimal JSON gate file and prints its path. Prints nothing on failure.
-_cc_lsp_gate() {
-    git rev-parse --is-inside-work-tree &>/dev/null || return 0
-
-    local threshold="${CC_LSP_GATE_THRESHOLD:-50}"
-    local gate_file
-    gate_file="$(mktemp -t claude-lsp-gate).json"
-
-    tokei --output json | jq --argjson t "$threshold" '{
-      enabledPlugins: {
-        "bash-language-server@claude-code-lsps": (([.BASH.code//0,.Shell.code//0,.Zsh.code//0]|add) >= $t),
-        "vtsls@claude-code-lsps":               (([.JavaScript.code//0,.TypeScript.code//0,.TSX.code//0,.JSX.code//0]|add) >= $t),
-        "yaml-language-server@claude-code-lsps": ((.YAML.code//0) >= $t),
-        "rust-analyzer@claude-code-lsps":        ((.Rust.code//0) >= $t),
-        "pyright@claude-code-lsps":              ((.Python.code//0) >= $t),
-        "gopls@claude-code-lsps":               ((.Go.code//0) >= $t)
-      }
-    }' > "$gate_file" || return 0
-
-    echo "$gate_file"
-}
-
+# preamble.md replaces Claude's baked system prompt via --system-prompt-file.
+# CLAUDE.md auto-discovery, hooks, plugins, auto-memory all stay active —
+# only Anthropic's system prompt is swapped out. Symbol-level reads/edits
+# now route through Serena (MCP) instead of dynamically gated LSP plugins.
 cc() {
-    local gate; gate="$(_cc_lsp_gate)" || gate=""
-    if [[ -n "$gate" ]]; then
-        claude --settings "$gate" "$@"
-    else
-        claude "$@"
-    fi
+    local -a flags=()
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    claude "${flags[@]}" "$@"
 }
 
 ccc() {
-    local gate; gate="$(_cc_lsp_gate)" || gate=""
-    if [[ -n "$gate" ]]; then
-        claude --settings "$gate" --continue "$@"
-    else
-        claude --continue "$@"
-    fi
+    local -a flags=()
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    claude "${flags[@]}" --continue "$@"
 }
 
 ccr() {
-    local gate; gate="$(_cc_lsp_gate)" || gate=""
-    if [[ -n "$gate" ]]; then
-        claude --settings "$gate" --resume "$@"
-    else
-        claude --resume "$@"
-    fi
+    local -a flags=()
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    claude "${flags[@]}" --resume "$@"
 }
 
 # Fresh session: prime MCPs in last conversation, then open it interactively
 ccfresh() {
-  claude --continue -p '/go' && claude --continue
+  local -a flags=()
+  [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+  claude "${flags[@]}" --continue -p '/go' && claude "${flags[@]}" --continue
 }
 
 # Session monitor
@@ -126,12 +100,6 @@ ccp() {
     local args=()
     [[ -f "$profile/CLAUDE.md" ]] && args+=(--append-system-prompt-file "$profile/CLAUDE.md")
     [[ -f "$profile/settings.json" ]] && args+=(--setting-sources "" --settings "$profile/settings.json")
-
-    if [[ ! -f "$profile/settings.json" ]]; then
-        local gate; gate="$(_cc_lsp_gate)" || gate=""
-        [[ -n "$gate" ]] && args+=(--settings "$gate")
-    fi
-
     [[ -f "$profile/settings-merge.json" ]] && args+=(--settings "$profile/settings-merge.json")
     # MCP scoping, tried in order:
     #   mcp-scope.yaml  → validated subset of registry.yaml + optional mcp-add.json,
@@ -247,7 +215,7 @@ ccw() {
     wt_path="$(echo "$result" | jq -er '.path')" || { echo "ccw: failed to parse worktree path" >&2; return 1; }
     [[ -d "$wt_path" ]] || { echo "ccw: worktree path not found: $wt_path" >&2; return 1; }
 
-    cd "${wt_path}" && claude "$@"
+    cd "${wt_path}" && cc "$@"
 }
 
 # Clean worktrees — single-repo (current dir) or full sweep (~/Dev)
@@ -317,6 +285,18 @@ plugin-refresh() {
     echo "Done. Restart Claude Code to apply."
 }
 alias cf-refresh='plugin-refresh cheese-flow local'
+
+# ═══════════════════════════════════════════════════════════════════
+# Cursor plugins (local source-of-truth lives in dotfiles/cursor/)
+# ═══════════════════════════════════════════════════════════════════
+# Cursor reads ~/.cursor/{skills,rules,commands,hooks,modes.json,hooks.json,
+# mcp.json}. The plugin source under cursor/plugins/local/ is deployed there
+# by chezmoi's run_onchange_install-cursor-plugins.sh.tmpl, which dispatches
+# to chezmoi/lib/install-cursor-plugin.sh per plugin folder. MCPs flow via
+# agents/mcp/sync.sh's cursor harness (jq-edits ~/.cursor/mcp.json).
+alias cursor-plugin-edit='${EDITOR:-vim} $DOTFILES_DIR/cursor/plugins/local'
+alias cursor-plugin-sync='chezmoi apply --force --source $DOTFILES_DIR/chezmoi'
+alias cursor-plugin-ls='ls -la ~/.cursor/skills/ ~/.cursor/rules/ ~/.cursor/commands/ ~/.cursor/hooks/ 2>/dev/null'
 
 # ═══════════════════════════════════════════════════════════════════
 # Vaudeville (SLM hook enforcement — Claude Code plugin)

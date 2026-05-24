@@ -3,14 +3,20 @@
     "deny": [
       "Edit",
       "Write",
-      "NotebookEdit"
+      "NotebookEdit",
+      "mcp__tilth__tilth_write",
+      "mcp__serena__replace_symbol_body",
+      "mcp__serena__replace_content",
+      "mcp__serena__insert_before_symbol",
+      "mcp__serena__insert_after_symbol",
+      "mcp__serena__rename_symbol",
+      "mcp__serena__safe_delete_symbol"
     ]
   },
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
     "cheese-flow@cheese-flow": true,
     "claude-hud@claude-hud": true,
-    "vaudeville@local": true,
     "plugin-dev@claude-plugins-official": false,
     "skill-creator@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": false,

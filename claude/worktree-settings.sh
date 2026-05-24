@@ -86,7 +86,6 @@ if [[ -f "${PLUGIN_REGISTRY}" ]]; then
         [[ -z "${key}" ]] && continue
         plugin="${key%%@*}"
         marketplace="${key#*@}"
-        [[ "${marketplace}" == "claude-code-lsps" ]] && continue
 
         path_field="$(yq -r ".plugins[\"${key}\"].path // \"\"" "${PLUGIN_REGISTRY}")"
         mcp_file="$(locate_plugin_mcp "${plugin}" "${marketplace}" "${path_field}")"

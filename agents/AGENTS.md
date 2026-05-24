@@ -138,6 +138,36 @@ For project architecture (when a project opts in), see the **Sliced Bread** patt
 - **Agent permission modes**: `acceptEdits` and `bypassPermissions` only suppress the Edit/Write dialog — they do **not** bypass the Bash/MCP allowlist. In sandboxed environments (Conductor, fresh sessions), worktree agents may lack `git push` / `gh pr create` permissions. Pattern: have isolated agents do code work + commit only; return to the orchestrator for push/PR.
 - **Agent nesting**: Claude Code supports 1 level of sub-agent nesting. Orchestrators that need to fan out should be skills (which run inline in the caller's context, so their `Agent()` calls are first-level).
 
+## Code-Intelligence Routing
+
+Three MCPs cover code intelligence; they layer rather than overlap.
+
+- **tilth** — file I/O floor. Default for read/grep/edit; replaces host Grep/Read/Edit/Glob.
+- **serena** — LSP-grounded symbol layer. Use when ground-truth semantics matter (overloads, generics, dispatch, type info). Memory tools and `onboarding` are excluded in `~/.serena/serena_config.yml` — do not try to call them.
+- **code-review-graph** — project-scale graph. Use for blast-radius, "what does this codebase do", and review-scope queries — not for routine search.
+
+Built-in `Read` / `Edit` / `Write` / `Glob` / `Grep` are last-resort: use only when the file is outside the workspace, no MCP server can parse it, or a multi-file regex doesn't fit an MCP equivalent.
+
+Every harness gets task-to-tool tables and a routing self-check via `agents/preamble.md`, wired in as the *replacement* for the bundled system prompt: Claude Code via `--system-prompt-file` (cc/ccc/ccr/ccfresh in `zsh/claude.zsh`), Codex via `model_instructions_file` in `~/.codex/config.toml`, opencode via `~/.config/opencode/agents/build.md`. The user-side AGENTS.md / CLAUDE.md cascade still loads on top of the replaced prompt — this section is what you're reading from it.
+
+### Editing: serena vs tilth
+
+Pick by edit *shape*, not preference. Serena is more context-efficient for symbol-bounded edits (no need to re-ship the surrounding body); tilth wins for everything else, and for the read-step that precedes either.
+
+| Edit shape | Pick |
+|---|---|
+| Replace whole function / method / class body | `serena.replace_symbol_body` |
+| Insert relative to a known symbol | `serena.insert_before_symbol` / `insert_after_symbol` |
+| Rename a symbol across the codebase | `serena.rename_symbol` (one LSP call vs N text replaces, and correct under overloads) |
+| Safe-delete an unused symbol | `serena.safe_delete_symbol` |
+| Sub-symbol edit (slice inside a function) | `tilth_write` hash-anchor — serena would force shipping the whole body |
+| Imports, config (YAML/JSON/TOML), Markdown, shell | `tilth_write` |
+| Create new file | `tilth_write` overwrite — serena has no create-file tool |
+| Bulk pattern across files | `tilth_search` + `tilth_write` batch |
+| Language without LSP support here | `tilth_write` |
+
+Read-step matters too: serena's `get_symbols_overview` + `find_symbol(include_body=true)` pulls only the target symbol out of a large file. Reach for that when you only need one function from a long file — that's where the real context win is, not the write step.
+
 ## Self-Evaluation
 
 Run `/self-eval` before finishing any response that writes or changes code. It's the source of truth for the anti-pattern checklist (sycophancy, premature completion, dismissing failures, hedging, scope reduction, false confidence, AI slop, weak assertions) and delegates to `/de-slop` and `/tdd-assertions` automatically.
@@ -156,11 +186,11 @@ These have become tics. They either hedge, inflate, or substitute a cliché for 
 | non-trivial | hard, complex, involved |
 | deep dive | analysis, investigation, reading |
 | leverage (= use) | use, apply, build on |
-| let me _(opener)_ | _(just do it — no announcement needed)_ |
+| let me *(opener)* | *(just do it — no announcement needed)* |
 | surface (as verb) | mention, flag, call out, show |
 | ergonomic / ergonomics | readable, clean, easy to use |
-| guardrails _(abstract)_ | constraints, checks, limits |
-| not my changes / pre-existing _(unverified)_ | cite evidence: base-branch run ID, `git blame`, or commit hash — otherwise fix it |
+| guardrails *(abstract)* | constraints, checks, limits |
+| not my changes / pre-existing *(unverified)* | cite evidence: base-branch run ID, `git blame`, or commit hash — otherwise fix it |
 
 ## Rules
 
@@ -219,5 +249,24 @@ If you genuinely think a convention is harmful, flag it. Don't fork silently.
 "Tests pass" is wrong if any were skipped.
 Never claim green on partial work — lying about completion is the cardinal sin.
 Default to flagging uncertainty, not hiding it.
+
+### Rule 10 — Strive for excellence within the ask
+
+The quality bar inside the scope is "what a careful senior engineer would be proud to ship", not "the first thing that compiles".
+
+- Don't reach for a band-aid when the proper fix is reachable within the ask.
+- Don't paper over a root cause with a workaround that adds debt I'll pay later.
+- Don't weaken an assertion, skip an edge case, or settle for the shallow test because the easy one passes — write the one that catches regressions.
+- Don't accept "it works on my machine" or "the happy path is fine" as the finish line.
+
+This is not license to scope-creep. It governs *how well* you do the requested work, not *how much*. If the correct fix genuinely requires expanding scope, name it and ask — don't quietly downgrade to "good enough" and call it done.
+
+### Rule 11 — Carry the work over the finish line
+
+If the branch you're working on already has an open PR, push your commits to it when the work is done. Don't stop at "committed locally" and don't ask permission — the existing PR is the authorization.
+
+If I ask you to fix a CI build, "fix" includes commit + push. CI can't turn green until the fix is on the remote, so don't wait for me to commit or push the last step myself.
+
+This overrides the default "confirm before pushing" caution for these two cases only. Stop and ask if: the push would need `--force` to a protected branch, you're in a sandboxed worktree without push permission (see [bypassPermissions note](#operational-rules)), or the fix turned out to require a broader change I haven't approved.
 
 @RTK.md

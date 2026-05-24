@@ -8,6 +8,19 @@ set -euo pipefail
 DOTFILES_DIR="${DOTFILES_DIR:-${HOME}/Dev/dotfiles}"
 DOTFILES_STATE_DIR="${DOTFILES_STATE_DIR:-${HOME}/.local/state/dotfiles}"
 
+# Load .env so downstream sync steps (chezmoi apply, install-external.sh,
+# etc.) get API keys regardless of how `dots` was invoked. zsh/core.zsh only
+# fires for interactive zsh — running `dots sync` from bash, a script, or a
+# non-interactive shell would otherwise leave CONTEXT7_API_KEY / TAVILY_API_KEY
+# unset and abort `chezmoi apply` at the copilot template, skipping every
+# template that sorts after it (including ~/.gitconfig).
+if [[ -f "$DOTFILES_DIR/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$DOTFILES_DIR/.env"
+    set +a
+fi
+
 # Colors
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -309,9 +322,23 @@ case "${1:-status}" in
 
         echo
         echo -e "${BLUE}⬆️  Refreshing remote skills...${NC}"
-        if ! bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
-                "$DOTFILES_DIR/skills/_registry.yaml" --force; then
-            echo -e "${YELLOW}⚠️  Remote skills refresh failed (continuing)${NC}" >&2
+        # Short-circuit when gh confirms every installed skill is at latest.
+        # Avoids re-running gh skill install --force across N harnesses ×
+        # ~24 skills when nothing's moved upstream.
+        NEED_SKILL_REFRESH=true
+        if command -v gh &>/dev/null \
+                && gh skill --help &>/dev/null \
+                && gh auth status &>/dev/null; then
+            if gh skill update --all --dry-run 2>&1 | grep -q "All skills are up to date"; then
+                NEED_SKILL_REFRESH=false
+                echo "  All gh-managed skills up to date — skipping refresh"
+            fi
+        fi
+        if [[ "$NEED_SKILL_REFRESH" == "true" ]]; then
+            if ! bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
+                    "$DOTFILES_DIR/skills/_registry.yaml" --force; then
+                echo -e "${YELLOW}⚠️  Remote skills refresh failed (continuing)${NC}" >&2
+            fi
         fi
         ;;
     status|st)

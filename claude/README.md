@@ -89,7 +89,6 @@ Specialized agents invoked via Task tool with `subagent_type`.
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
 | `nih-scanner` | Structural NIH pattern scanner |
-| `lsp-probe` | Short-lived LSP query broker for batch operations |
 | `worktree-triage` | Stale-worktree triage recommendations |
 
 All review/analysis agents use 0-100 confidence scoring (>= 50 to surface findings).
@@ -125,15 +124,17 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 | Hook | Tool match | Purpose |
 |------|-----------|---------|
-| `write-guard.js` | Edit, Write | Blocks placeholder/lazy code and inline test snippets |
-| `worktree-guard.js` | _(disabled)_ | File kept in tree for reference; not registered in settings |
 | `phantom-file-check.js` | Read | Prevents reading non-existent files (anti-hallucination) |
+| `write-guard.js` | Edit, Write, MultiEdit, tilth_write | Blocks placeholder/lazy code — ellipsis, `TODO`/`FIXME`/`HACK`, and inline test snippets |
+| `worktree-guard.js` | Edit, Write, MultiEdit, tilth_write | In a git worktree, blocks writes outside the worktree root. **Opt-out**: enforces by default; `CLAUDE_WORKTREE_GUARD=0` disables it. Extend the allowlist with `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2`. Always allowed: worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, any `.cheese/` dir |
+| `bash-guard.js` | Bash | Blocks dangerous `rm -rf` — filesystem root, `~`/`$HOME`, `..` traversal, absolute system dirs, bare globs. Relative subdir deletes (`node_modules`, `dist`) are allowed |
+| `review-reply-guard.js` | Bash (`gh api … /pulls/.../comments`) | Blocks PR review-comment replies that omit the `in_reply_to` field |
 
 ### Post-Tool Hooks
 
 | Hook | Tool match | Purpose |
 |------|-----------|---------|
-| `auto-format.js` | Edit, Write | Runs project formatter on edited files |
+| `auto-format.js` | Edit, Write, MultiEdit, tilth_write | Runs the project formatter on edited files (formats every file in a `tilth_write` batch) |
 
 ### Other
 
@@ -156,16 +157,9 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 
-**LSP Plugins** (from `boostvolt/claude-code-lsps`, lazy-start per file type):
-
-| Plugin | Language |
-|--------|----------|
-| `bash-language-server` | Bash/shell |
-| `vtsls` | TypeScript/JavaScript |
-| `yaml-language-server` | YAML |
-| `rust-analyzer` | Rust |
-| `pyright` | Python |
-| `gopls` | Go |
+Symbol-level code intelligence is provided by the Serena MCP (see
+`agents/mcp/registry.yaml`); the per-language LSP plugins from
+`boostvolt/claude-code-lsps` were removed once Serena went cross-harness.
 
 **Workflow Plugins** (from `anthropics/claude-code-plugins`):
 
@@ -197,7 +191,6 @@ User-scope MCPs (registered here):
 | MCP | Purpose |
 |-----|---------|
 | `code-review-graph` | Persistent code knowledge graph; impact radius, call chains, architectural framing |
-| `serper` | Google SERP for factual lookups |
 | `todoist` | Todoist task/project management |
 | `tilth` | AST-aware code search/read/edit (Tree-sitter); backs `cheez-*` skills. Gated by `gate_unless: CHEESE_FLOW` — installed only when the cheese-flow plugin is dark, since the plugin bundles its own tilth MCP |
 

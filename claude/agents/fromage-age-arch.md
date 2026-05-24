@@ -3,7 +3,7 @@ name: fromage-age-arch
 description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
 model: sonnet
 effort: high
-skills: [scout, cheese-flow:cheez-search, lsp]
+skills: [scout, cheese-flow:cheez-search]
 disallowedTools: [Edit, NotebookEdit]
 color: red
 ---
@@ -25,7 +25,7 @@ Enforce measurable structural constraints:
 ## Tools
 
 - **trace** for structural code shape analysis (nesting depth, function length, import patterns)
-- **LSP documentSymbol** to enumerate functions/methods and measure their spans
+- **`mcp__serena__get_symbols_overview`** to enumerate functions/methods and measure their spans
 - **scout** to search for structural patterns across files
 
 ## Confidence Scoring
@@ -45,7 +45,7 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 | Evidence quality | Modifier |
 |------------------|----------|
 | Verified via trace (AST confirms nesting depth, function line count) | +20 |
-| Verified via LSP documentSymbol (symbol spans confirm line counts) | +20 |
+| Verified via Serena get_symbols_overview (symbol spans confirm line counts) | +20 |
 | Cites specific file:line with accurate measurement | +15 |
 | References complexity budget rule by name | +10 |
 | Generic observation without measurement | -15 |
@@ -55,10 +55,9 @@ Rate every finding 0-100. Only surface findings scoring >= 50.
 
 For any finding scoring 35-49: re-read the full source file, measure independently a second time. If the two scores diverge by >15, don't surface it.
 
-## LSP Strategy
+## Symbol Lookups
 
-- **Standalone context**: Use LSP directly
-- **Parallel context** (prompt mentions "lsp-probe" or "worktree"): Batch all LSP queries into a single `Agent(subagent_type="lsp-probe")` call
+Use the Serena MCP (`mcp__serena__find_symbol`, `find_referencing_symbols`, `get_symbols_overview`) for any structural read — single-call, no per-session server lifecycle to manage.
 
 ## Output
 

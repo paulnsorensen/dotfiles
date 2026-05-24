@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # sync.sh — Declarative MCP sync across coding-agent harnesses
-#           (Claude, Codex, opencode).
+#           (Claude, Codex, opencode, Cursor).
 #
 # Reads agents/mcp/registry.yaml and brings each installed harness in line:
 # adds missing servers, re-adds drifted ones (command/args/env), prompts (or
@@ -13,12 +13,14 @@
 #   codex    — `codex mcp add/list/remove --json`   (JSON; no scopes)
 #   opencode — jq-edits ~/.config/opencode/opencode.json directly
 #              (no non-interactive CLI; OPENCODE_CONFIG overrides path)
+#   cursor   — jq-edits ~/.cursor/mcp.json directly (mcpServers schema,
+#              identical to Claude Desktop; CURSOR_CONFIG overrides path)
 #
 # Usage:
 #   ./sync.sh                Sync MCPs (add missing, prompt to remove extras)
 #   ./sync.sh --dry-run      Show what would change without making changes
 #   ./sync.sh --force        Remove extras without prompting (used by dots sync)
-#   ./sync.sh --harness NAME Only sync the named harness (claude|codex|opencode)
+#   ./sync.sh --harness NAME Only sync the named harness (claude|codex|opencode|cursor)
 #
 # Exit status is non-zero if any `add` call failed, so chezmoi / dots sync
 # can surface partial-failure cases instead of reporting green.
@@ -52,7 +54,7 @@ while (($#)); do
 Usage: $0 [--dry-run] [--force] [--harness NAME]
   --dry-run         Show what would change without making changes
   --force           Remove extras without prompting
-  --harness NAME    Only sync the named harness (claude|codex|opencode)
+  --harness NAME    Only sync the named harness (claude|codex|opencode|cursor)
 EOF
             exit 0 ;;
     esac
@@ -61,7 +63,7 @@ done
 
 mcp_load_dotenv "$DOTFILES_DIR/.env"
 
-for cmd in yq jq; do
+for cmd in yq jq chezmoi; do
     command -v "$cmd" &>/dev/null \
         || { echo -e "${RED}Error: $cmd not found${NC}" >&2; exit 1; }
 done
@@ -69,15 +71,21 @@ done
 [[ -f "$REGISTRY_FILE" ]] \
     || { echo -e "${RED}Error: $REGISTRY_FILE not found${NC}" >&2; exit 1; }
 
-REGISTRY_JSON=$(yq -o=json '.mcps' "$REGISTRY_FILE")
-
 echo -e "${BLUE}MCP Sync - Declarative MCP Management${NC}"
 
+# Render the registry once per harness so `args` strings can branch on
+# `{{ env "HARNESS" }}`. mcp_sync_harness reads REGISTRY_JSON from its env.
+sync_for_harness() {
+    local h="$1"
+    REGISTRY_JSON=$(HARNESS="$h" chezmoi execute-template < "$REGISTRY_FILE" | yq -o=json '.mcps')
+    mcp_sync_harness "$h"
+}
+
 if [[ -n "$ONLY_HARNESS" ]]; then
-    mcp_sync_harness "$ONLY_HARNESS"
+    sync_for_harness "$ONLY_HARNESS"
 else
-    for h in claude codex opencode; do
-        mcp_sync_harness "$h"
+    for h in claude codex opencode cursor; do
+        sync_for_harness "$h"
     done
 fi
 
