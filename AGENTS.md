@@ -349,10 +349,12 @@ Profiles are scoped sessions at `claude/profiles/<name>/`:
 
 The `.sync-with-rollback` script provides:
 
-- **Automatic backups** before changes (stored in `~/.local/state/dotfiles/backups/`)
 - **Manifest tracking** of all symlinks
-- **Rollback capability** to any previous state
 - **Per-directory .sync scripts** for custom setup (fonts, iterm2, chezmoi)
+
+> **Migrating to chezmoi (in progress — see `.cheese/specs/chezmoi-consolidation.md`).** The custom symlink + rollback system is being retired in favour of chezmoi pure-copy deployment. **Stage 1 (done):** the backup/restore/rollback subsystem is deleted. `dots rollback` no longer snapshots — it prints the git-backed undo path (`git revert` + `dots sync`); `dots backups`/`dots clean` are removed. The symlink loop in `.sync-with-rollback` is untouched until later stages.
+
+**`bin/` PATH decision (Risk 2 / criterion 7):** `bin/` is **never** copied or symlinked into `$HOME`. It runs live from the clone via `export PATH="$DOTFILES_DIR/bin:$PATH"` in `zsh/core.zsh`. The chezmoi migration keeps this — there is no `dot_bin` source entry — so edits to `dots`/`gh-*` helpers are live immediately with no `chezmoi apply` step. This is the chosen option (PATH-from-clone, not copy-and-apply); it preserves the in-repo dev loop for the repo's own tooling.
 
 **Skip list** (not symlinked to ~, canonical source is `SYNC_SKIP_LIST` in `.sync-lib.sh`, which is sourced by `.sync-with-rollback`):
 

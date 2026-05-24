@@ -9,7 +9,7 @@ lint: lint-shell lint-python lint-js lint-markdown
 
 # shellcheck on shell scripts
 lint-shell:
-    shellcheck -x -e SC1091 bin/* .sync .sync-with-rollback
+    shellcheck -x -e SC1091 bin/* .sync-with-rollback
     shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh claude/lib/gen-profile-mcp.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-codex.sh chezmoi/lib/install-shared-assets.sh
     shellcheck -x -e SC1091 -s bash agents/hooks/session-start-cheese-flair.sh
     shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh tests/serena-smoke.sh

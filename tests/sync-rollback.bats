@@ -54,7 +54,6 @@ export HOME="$TEST_HOME"
 export DOTFILES_STATE_DIR="$TEST_HOME/.local/state/dotfiles"
 export BACKUP_DIR="\$DOTFILES_STATE_DIR/backups/\${BACKUP_TS:-\$(date +%Y%m%d_%H%M%S)}"
 export MANIFEST_FILE="\$DOTFILES_STATE_DIR/current.manifest"
-export ROLLBACK_LOG="\$DOTFILES_STATE_DIR/rollback.log"
 export SYNC_SCRIPT="$SYNC_SCRIPT"
 eval "\$(awk '/^########## Main\$/{exit} {print}' "$SYNC_SCRIPT")"
 if [[ -n "\${FAKE_DIR:-}" ]]; then
@@ -97,80 +96,6 @@ teardown() {
     assert_output_contains "$TEST_HOME/.somefile:$FAKE_DOTFILES/somefile"
     unset FAKE_DIR
 }
-
-@test "backup_current_state copies manifest and writes metadata.json" {
-    export FAKE_DIR="$FAKE_DOTFILES"
-    local bkbase="$TEST_HOME/.local/state/dotfiles/backups"
-    mkdir -p "$TEST_HOME/.local/state/dotfiles"
-    echo "/home/.foo:/dotfiles/foo" > "$TEST_HOME/.local/state/dotfiles/current.manifest"
-    echo "content" > "$TEST_HOME/.testcfg"
-    echo "content" > "$FAKE_DOTFILES/testcfg"
-
-    run call-sync-fn backup_current_state
-    assert_success
-
-    local bkdir
-    bkdir=$(ls -dt "$bkbase"/*/ | head -1)
-    assert_file_exists "$bkdir/manifest"
-    assert_file_exists "$bkdir/metadata.json"
-    run cat "$bkdir/metadata.json"
-    assert_output_contains '"timestamp"'
-    assert_output_contains '"git_commit"'
-    unset FAKE_DIR
-}
-
-@test "list_backups lists backup dirs with timestamps" {
-    local bk="$TEST_HOME/.local/state/dotfiles/backups/20250101_120000"
-    mkdir -p "$bk"
-    cat > "$bk/metadata.json" << 'JSON'
-{
-    "timestamp": "2025-01-01T12:00:00Z",
-    "directory": "/dotfiles",
-    "git_commit": "abc123",
-    "git_branch": "main"
-}
-JSON
-    run call-sync-fn list_backups
-    assert_success
-    assert_output_contains "20250101_120000"
-    assert_output_contains "2025-01-01T12:00:00Z"
-}
-
-@test "list_backups returns 1 when no backups exist" {
-    rm -rf "$TEST_HOME/.local/state/dotfiles/backups"
-    # Inline source to avoid call-sync-fn's mkdir which recreates backups/
-    run bash -c "
-        export HOME='$TEST_HOME'
-        export DOTFILES_STATE_DIR='$TEST_HOME/.local/state/dotfiles'
-        export BACKUP_DIR='\$DOTFILES_STATE_DIR/backups/dummy'
-        export MANIFEST_FILE='\$DOTFILES_STATE_DIR/current.manifest'
-        export ROLLBACK_LOG='\$DOTFILES_STATE_DIR/rollback.log'
-        export SYNC_SCRIPT='$SYNC_SCRIPT'
-        eval \"\$(awk '/^########## Main\$/{exit} {print}' '$SYNC_SCRIPT')\"
-        list_backups
-    "
-    assert_failure
-    assert_output_contains "No backups found"
-}
-
-@test "clean_backups keeps N recent and deletes older ones" {
-    local base="$TEST_HOME/.local/state/dotfiles/backups"
-    mkdir -p "$base"
-    for i in 1 2 3 4 5; do
-        mkdir -p "$base/2025010${i}_120000"
-        echo "{}" > "$base/2025010${i}_120000/metadata.json"
-        touch -t "2025010${i}1200" "$base/2025010${i}_120000"
-    done
-
-    # call-sync-fn creates an additional backup dir with current timestamp
-    # so 5 fixture dirs + 1 from call-sync-fn = 6 total, keep 3 to verify pruning
-    run call-sync-fn clean_backups 3
-    assert_success
-    [ -d "$base/20250105_120000" ]
-    [ ! -d "$base/20250101_120000" ]
-    [ ! -d "$base/20250102_120000" ]
-}
-
 
 @test "no args runs default sync" {
     cd "$FAKE_DOTFILES"

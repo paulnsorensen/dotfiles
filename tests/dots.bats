@@ -137,19 +137,21 @@ STUB
     assert_success
 }
 
-@test "dots backups command runs" {
+@test "dots backups command is retired" {
     run dots backups
-    # `list_backups` returns 1 (with a "No backups found" warning) when the
-    # backups directory doesn't exist yet, and 0 otherwise. Either is fine,
-    # but the command must mention "backup(s)" in either path and must NOT
-    # surface "Unknown command".
-    [[ "$status" -eq 0 || "$status" -eq 1 ]]
-    [[ "$output" == *"backup"* || "$output" == *"Backup"* ]]
-    [[ "$output" != *"Unknown command"* ]]
+    assert_failure
+    assert_output_contains "Unknown command"
 }
 
-@test "dots rollback without args shows help" {
-    run dots rollback
+@test "dots clean command is retired" {
+    run dots clean
     assert_failure
-    assert_output_contains "backup"
+    assert_output_contains "Unknown command"
+}
+
+@test "dots rollback points at the git-revert undo path" {
+    run dots rollback
+    assert_success
+    assert_output_contains "git revert"
+    assert_output_contains "dots sync"
 }
