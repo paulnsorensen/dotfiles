@@ -166,6 +166,11 @@ sync_brew() {
         log_info "Upgrading brew packages..."
         brew update </dev/null || log_warning "brew update failed"
         brew upgrade </dev/null || log_warning "brew upgrade failed"
+        # Casks flagged `auto_updates true` (e.g. Cursor) are skipped by a plain
+        # `brew upgrade`; --greedy-auto-updates version-checks them and reinstalls
+        # only on a diff. Excludes `version :latest` casks (no version to compare,
+        # would reinstall every run).
+        brew upgrade --cask --greedy-auto-updates </dev/null || log_warning "brew cask upgrade failed"
     fi
 
     log_success "Brew sync complete"
