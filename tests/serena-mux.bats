@@ -125,9 +125,10 @@ teardown() {
     [ -n "$pid" ]
     [ -n "$port" ]
 
-    # Daemon should be alive and listening.
+    # Daemon should be alive and listening (portable /dev/tcp connect — no lsof).
+    # Subshell so the opened fd auto-closes on exit and never touches bats's fd 3.
     kill -0 "$pid"
-    lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null
+    (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null
 
     # uvx was invoked with the right URL.
     grep -q "http://127.0.0.1:$port/mcp" "$MOCK_UVX_LOG"
@@ -220,7 +221,10 @@ teardown() {
 @test "serena-mux: writes a 0700 runtime root" {
     run serena-mux
     [ "$status" -eq 0 ]
-    perms=$(stat -f '%Lp' "$SERENA_MUX_RUNTIME_DIR" 2>/dev/null || stat -c '%a' "$SERENA_MUX_RUNTIME_DIR")
+    # GNU stat first: on Linux `stat -f` means --file-system (it succeeds with
+    # the wrong output, so a BSD-first probe never falls through). macOS errors
+    # on `-c` and falls back to the BSD `-f` form.
+    perms=$(stat -c '%a' "$SERENA_MUX_RUNTIME_DIR" 2>/dev/null || stat -f '%Lp' "$SERENA_MUX_RUNTIME_DIR")
     [ "$perms" = "700" ]
 }
 

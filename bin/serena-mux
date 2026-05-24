@@ -80,7 +80,9 @@ logfile="$state/log"
 spawn_lock="$state/spawn.lock"
 
 trace() {
-    [[ -n ${SERENA_MUX_DEBUG:-} ]] && printf '[serena-mux] %s\n' "$*" >&2 || true
+    if [[ -n ${SERENA_MUX_DEBUG:-} ]]; then
+        printf '[serena-mux] %s\n' "$*" >&2
+    fi
 }
 
 # Persistent decision log — one line per invocation (spawn|reuse|reap), so we
@@ -117,10 +119,12 @@ fi
 # --- Spawn if needed -----------------------------------------------------
 
 wait_for_port_listen() {
-    # Args: port, max_attempts (each 0.1s)
+    # Args: port, max_attempts (each 0.1s). Probes readiness with bash's
+    # /dev/tcp pseudo-device rather than lsof — no external dependency, and
+    # lsof isn't guaranteed on every runner/CI image.
     local port=$1 attempts=$2 i
     for ((i = 0; i < attempts; i++)); do
-        if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+        if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
             return 0
         fi
         sleep 0.1
