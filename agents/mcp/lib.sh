@@ -60,7 +60,17 @@ mcp_claude_list_current() {
 }
 
 mcp_codex_list_current() {
-    codex mcp list --json 2>/dev/null | jq -r '
+    # Capture codex's exit code explicitly: a non-zero exit (CLI bug, auth
+    # failure, malformed config) must NOT be silently treated as "no current
+    # MCPs" — that would trigger an `add` for every desired entry and
+    # collide with the existing ones.
+    local raw rc=0
+    raw=$(codex mcp list --json 2>/dev/null) || rc=$?
+    if (( rc != 0 )); then
+        echo -e "${RED}    codex mcp list --json failed (exit $rc); aborting codex sync${NC}" >&2
+        return "$rc"
+    fi
+    jq -r <<<"$raw" '
         if type == "array" then .[].name
         elif type == "object" and has("servers") then .servers[].name
         elif type == "object" then keys[]

@@ -226,11 +226,15 @@ YAML
     assert_has_entry "$result" "Skill(de-slop)"
 }
 
-@test "worktree-settings: real output includes known MCPs" {
+@test "worktree-settings: real output includes registry MCPs" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"
-    # serena is an unconditional user-scope entry in agents/mcp/registry.yaml
-    # (no gate_unless, no required credentials). Plugin-sourced MCPs (e.g.
-    # cheese-flow's tilth) require an .mcp.json that may not exist in CI, so
-    # assert against this in-repo registry entry instead.
-    assert_has_entry "$result" "mcp__serena__*"
+    # Assert structurally, not by a specific server name. Excluding
+    # plugin-sourced (mcp__plugin_*, need an .mcp.json absent in CI) and
+    # Claude.ai (mcp__claude_ai_*, pulled from settings.json) entries leaves
+    # only agents/mcp/registry.yaml user-scope servers — the generator must
+    # emit at least one. Pinning a single name (the old mcp__serper__* /
+    # mcp__serena__* form) silently went stale when that server was renamed.
+    local registry_mcps
+    registry_mcps="$(jq '[.permissions.allow[] | select(startswith("mcp__")) | select(startswith("mcp__plugin_") | not) | select(startswith("mcp__claude_ai_") | not)] | length' <<< "$result")"
+    (( registry_mcps >= 1 ))
 }
