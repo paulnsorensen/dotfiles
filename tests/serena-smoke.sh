@@ -28,7 +28,9 @@ fi
 OUT="$(mktemp)"
 PID=""
 cleanup() {
-    [[ -n "$PID" ]] && kill "$PID" 2>/dev/null || true
+    if [[ -n "$PID" ]]; then
+        kill "$PID" 2>/dev/null || true
+    fi
     rm -f "$OUT"
 }
 trap cleanup EXIT
