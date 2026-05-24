@@ -1,70 +1,8 @@
 #!/usr/bin/env bats
 # Validate config files for Rust CLI tools and other managed configs
-# Catches breakage from version upgrades (e.g., zellij 0.43 removing NewFloatingPane)
+# Catches breakage from version upgrades (e.g., a starship schema change)
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
-
-# ── Zellij ────────────────────────────────────────────────────────────────────
-
-@test "zellij config.kdl parses without errors" {
-    command -v zellij &>/dev/null || skip "zellij not installed"
-    run zellij setup --check
-    [[ $status -eq 0 ]]
-}
-
-@test "zellij config.kdl exists" {
-    [[ -f "$DOTFILES_DIR/zellij/config.kdl" ]]
-}
-
-@test "zellij layouts parse correctly" {
-    command -v zellij &>/dev/null || skip "zellij not installed"
-
-    # Use a temp zellij config dir to avoid corrupting real config (hard links!)
-    local tmp_config="$BATS_TMPDIR/zellij-test-$$"
-    mkdir -p "$tmp_config/layouts"
-    cp "$HOME/.config/zellij/config.kdl" "$tmp_config/config.kdl"
-
-    local failed=0
-    for layout in "$DOTFILES_DIR"/zellij/layouts/*.kdl; do
-        [[ -f "$layout" ]] || continue
-        cp "$layout" "$tmp_config/layouts/default.kdl"
-        if ! XDG_CONFIG_HOME="$tmp_config/.." zellij setup --check &>/dev/null; then
-            echo "Layout failed validation: $(basename "$layout")" >&2
-            failed=1
-        fi
-    done
-    rm -rf "$tmp_config"
-    [[ $failed -eq 0 ]]
-}
-
-@test "zjclaude generated layout is valid KDL" {
-    command -v zellij &>/dev/null || skip "zellij not installed"
-
-    # Use a temp zellij config dir (never touch real config)
-    local tmp_config="$BATS_TMPDIR/zellij-zjclaude-$$"
-    mkdir -p "$tmp_config/layouts"
-    cp "$HOME/.config/zellij/config.kdl" "$tmp_config/config.kdl"
-
-    # Generate the layout exactly as zjclaude would
-    cat > "$tmp_config/layouts/default.kdl" <<LAYOUT
-layout {
-    pane size=1 borderless=true {
-        plugin location="zellij:compact-bar"
-    }
-    pane focus=true cwd="$PWD" {
-        command "claude"
-    }
-    pane size=2 borderless=true name="monitor" cwd="$PWD" {
-        command "claude-monitor"
-        args "--cwd" "$PWD"
-    }
-}
-LAYOUT
-
-    run bash -c "XDG_CONFIG_HOME='$tmp_config/..' zellij setup --check"
-    rm -rf "$tmp_config"
-    [[ $status -eq 0 ]]
-}
 
 # ── Starship ──────────────────────────────────────────────────────────────────
 
