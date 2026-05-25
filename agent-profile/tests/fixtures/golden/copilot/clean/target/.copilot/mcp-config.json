@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "user-mcp": {
+      "command": "y",
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}
