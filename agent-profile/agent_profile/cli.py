@@ -106,7 +106,7 @@ def _describe_view(merged: dict[str, Any]) -> dict[str, Any]:
             {
                 "event": h.get("event"),
                 "matcher": h.get("matcher"),
-                "harnesses": h.get("harnesses", ["claude"]),
+                "harnesses": h.get("harnesses") or ["claude"],
             }
             for h in merged.get("hooks", [])
         ],
