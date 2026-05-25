@@ -1,0 +1,12 @@
+# Base profile — shared baseline that other profiles `include:`.
+# Keeps generic coding-agent guidance in one place; language profiles
+# (rust, go, etc.) inherit it and layer language-specific pieces on top.
+
+name: base
+description: Generic coding-agent baseline (style, safety, AGENTS.md notes)
+
+settings:
+  permissions_allow:
+    - "Bash(git status:*)"
+    - "Bash(git diff:*)"
+    - "Bash(git log:*)"

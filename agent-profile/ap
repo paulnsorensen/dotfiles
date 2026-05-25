@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# ap — Agent-profile CLI (harness-agnostic). Invoked via `dots profile`.
+#
+# Subcommands:
+#   list                          List discoverable profiles
+#   describe <name>               Print resolved manifest + render plan
+#   path <name>                   Print the profile dir (for editor jumps)
+#   install <name> [opts]         Render profile into $PWD for one/all harnesses
+#   uninstall <name> [opts]       Reverse a prior install (manifest-driven)
+#   launch <harness> [name] [..]  Install (if needed) then exec the harness
+#
+# Search order for profiles: $PWD/.agent-profiles/<n> then
+# $DOTFILES_DIR/profiles/<n>. Lets per-repo profiles shadow globals.
+#
+# Per-invocation globals: each renderer appends to _AP_OUT_FILES (regular
+# files). The CLI records these into <target>/.agent-profile/manifest.json
+# so uninstall is exact. The pre-reshape AGENTS.md splice path is gone —
+# chezmoi owns global AGENTS.md and per-repo profiles never edit any
+# AGENTS.md.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# shellcheck source=./lib/parse.sh
+source "$SCRIPT_DIR/lib/parse.sh"
+# shellcheck source=./lib/discover.sh
+source "$SCRIPT_DIR/lib/discover.sh"
+# shellcheck source=./lib/manifest.sh
+source "$SCRIPT_DIR/lib/manifest.sh"
+# shellcheck source=./lib/shared_writer.sh
+source "$SCRIPT_DIR/lib/shared_writer.sh"
+# shellcheck source=./renderers/claude.sh
+source "$SCRIPT_DIR/renderers/claude.sh"
+# shellcheck source=./renderers/codex.sh
+source "$SCRIPT_DIR/renderers/codex.sh"
+# shellcheck source=./renderers/opencode.sh
+source "$SCRIPT_DIR/renderers/opencode.sh"
+# shellcheck source=./renderers/cursor.sh
+source "$SCRIPT_DIR/renderers/cursor.sh"
+# shellcheck source=./renderers/copilot.sh
+source "$SCRIPT_DIR/renderers/copilot.sh"
+# Subcommand handlers — must source AFTER renderers + libs so cmd_install /
+# cmd_uninstall can call the *_render and *_clean entry points.
+# shellcheck source=./lib/commands.sh
+source "$SCRIPT_DIR/lib/commands.sh"
+
+# Color globals + ALL_HARNESSES are read from cmd_* handlers in
+# lib/commands.sh (sourced above). Shellcheck can't resolve cross-file
+# usage when source paths are dynamic, so silence SC2034 across the
+# whole block.
+# shellcheck disable=SC2034
+{
+    GREEN='\033[0;32m'; BLUE='\033[0;34m'
+    RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
+    [[ -t 1 ]] || { GREEN=''; BLUE=''; RED=''; CYAN=''; NC=''; }
+    ALL_HARNESSES=(claude codex opencode cursor copilot)
+}
+
+usage() {
+    cat <<EOF
+Usage: dots profile <command> [args]
+
+Commands:
+  list                          List available profiles
+  describe <name>               Show resolved manifest for a profile
+  path <name>                   Print profile source dir
+  install <name> [opts]         Render profile into current dir
+  uninstall <name> [opts]       Remove a previously-installed profile
+  launch <harness> [name] [..]  Install + exec the named harness CLI
+  help                          Show this message
+
+Install/launch options:
+  --harness <h>[,<h>...]        Limit to specific harnesses (default: all)
+  --target <dir>                Render into <dir> instead of \$PWD
+  --profile-src <dir>           Extra search root for profile lookup
+
+Uninstall accepts --target and --profile-src. --harness is honored but
+limited: every cleaner still runs (shared/merged files like
+opencode.json, .mcp.json carry profile-authored entries across the
+harness boundary; a partial cleanup would leave dangling entries).
+
+Examples:
+  dots profile list
+  dots profile install rust --harness claude
+  dots profile launch claude rust -- --resume
+  dots profile uninstall rust
+EOF
+}
+
+# ─── helpers ─────────────────────────────────────────────────────────
+
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 \
+        || { echo -e "${RED}ap: required command not found: $1${NC}" >&2; exit 1; }
+}
+
+# Parse `--harness`, `--target`, `--profile-src` out of "$@", leaving
+# positionals + any pass-through args in REMAINING. HARNESSES, TARGET,
+# REMAINING are consumed by cmd_* handlers in lib/commands.sh; shellcheck
+# can't see those uses across the dynamic source path.
+# shellcheck disable=SC2034
+parse_common_opts() {
+    HARNESSES=("${ALL_HARNESSES[@]}")
+    TARGET="$PWD"
+    REMAINING=()
+    while (($#)); do
+        case "$1" in
+            --harness)
+                IFS=',' read -r -a HARNESSES <<<"$2"; shift 2 ;;
+            --harness=*)
+                IFS=',' read -r -a HARNESSES <<<"${1#*=}"; shift ;;
+            --target)
+                TARGET="$(cd "$2" && pwd)"; shift 2 ;;
+            --target=*)
+                TARGET="$(cd "${1#*=}" && pwd)"; shift ;;
+            --profile-src)
+                export AP_EXTRA_SEARCH_PATHS="${AP_EXTRA_SEARCH_PATHS:+$AP_EXTRA_SEARCH_PATHS:}$2"; shift 2 ;;
+            --profile-src=*)
+                export AP_EXTRA_SEARCH_PATHS="${AP_EXTRA_SEARCH_PATHS:+$AP_EXTRA_SEARCH_PATHS:}${1#*=}"; shift ;;
+            --) shift; REMAINING+=("$@"); break ;;
+            *)  REMAINING+=("$1"); shift ;;
+        esac
+    done
+}
+
+validate_harnesses() {
+    local h
+    for h in "${HARNESSES[@]}"; do
+        case "$h" in
+            claude|codex|opencode|cursor|copilot) ;;
+            *) echo -e "${RED}ap: unknown harness '$h' (valid: claude|codex|opencode|cursor|copilot)${NC}" >&2; exit 1 ;;
+        esac
+    done
+}
+
+# Subcommand handlers (cmd_list / cmd_describe / cmd_path /
+# cmd_install / cmd_uninstall / cmd_launch) live in lib/commands.sh.
+
+# ─── dispatch ────────────────────────────────────────────────────────
+
+require_cmd jq
+require_cmd yq
+
+main() {
+    local sub="${1:-help}"
+    shift || true
+    case "$sub" in
+        list|ls)         cmd_list ;;
+        describe|desc)   cmd_describe "${1:?profile name required}" ;;
+        path)            cmd_path "${1:?profile name required}" ;;
+        install)         parse_common_opts "$@"; validate_harnesses; cmd_install ;;
+        uninstall|rm)    parse_common_opts "$@"; validate_harnesses; cmd_uninstall ;;
+        launch)          parse_common_opts "$@"; cmd_launch ;;
+        help|-h|--help)  usage ;;
+        *) echo -e "${RED}ap: unknown subcommand '$sub'${NC}" >&2; usage >&2; exit 1 ;;
+    esac
+}
+
+main "$@"

@@ -6,8 +6,15 @@ REAL_DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export REAL_DOTFILES_DIR
 export PATH="$REAL_DOTFILES_DIR/bin:$PATH"
 
-# Test environment setup
-export TEST_HOME="${TMPDIR:-/tmp}/dotfiles-test-$$"
+# Test environment setup. Canonicalize via mkdir + cd + pwd -P so the
+# value matches what `ap_find_profile_dir` returns: that function does
+# `(cd "$candidate" && pwd)` which on macOS resolves /tmp → /private/tmp.
+# Without canonicalizing here, tests that compare a constructed path
+# against the function's output fail despite the discovery being correct.
+TEST_HOME="${TMPDIR:-/tmp}/dotfiles-test-$$"
+mkdir -p "$TEST_HOME"
+TEST_HOME="$(cd "$TEST_HOME" && pwd -P)"
+export TEST_HOME
 
 # Override DOTFILES_DIR for tests to point to the real location
 export DOTFILES_DIR="$REAL_DOTFILES_DIR"
