@@ -205,6 +205,8 @@ def cmd_install(
         written = renderer.render(manifest, target)
         all_new_files.extend(written)
 
+    _fetch_external_skills(manifest, harnesses, colors, out)
+
     new_files = sorted(set(all_new_files))
 
     if len(harnesses) == len(ALL_HARNESSES):
@@ -218,6 +220,42 @@ def cmd_install(
 
     print(f"{colors.GREEN}✓ Installed{colors.NC}", file=out)
     return 0
+
+
+def _skill_fetch_runner(argv: list[str]) -> int:
+    """Default ``gh skill install`` runner. Indirected through a module-level
+    name so tests can monkeypatch it without spawning ``gh``."""
+    from agent_profile.fetch import _default_runner
+
+    return _default_runner(argv)
+
+
+def _fetch_external_skills(
+    manifest: Any,
+    harnesses: list[str],
+    colors: _Colors,
+    out: Any,
+) -> None:
+    """Fetch every ``source:`` skill into each in-scope harness via
+    ``gh skill install`` (spec curd 4). ``path:`` skills are copied by the
+    renderers, so they are excluded here."""
+    from agent_profile.fetch import external_skills, fetch_external_skill
+
+    ext = external_skills(manifest.skills)
+    if not ext:
+        return
+    for h in harnesses:
+        for skill in ext:
+            name = skill.get("name")
+            pin = skill.get("pin")
+            print(
+                f"  {colors.BLUE}↳{colors.NC} fetching skill "
+                f"{skill['source']} {name or ''} -> {h}".rstrip(),
+                file=out,
+            )
+            fetch_external_skill(
+                skill["source"], name, pin, h, _skill_fetch_runner
+            )
 
 
 def _set_files(target: Path, profile: str, new_files: list[str]) -> None:

@@ -38,6 +38,7 @@ from agent_profile import shared
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import (
     body_abs,
+    copy_hook_shared_assets,
     hooks_for,
     mcp_server_entry,
     mcps_for,
@@ -165,8 +166,10 @@ class ClaudeRenderer:
         out: list[str],
     ) -> None:
         for item in manifest.skills:
-            name = item["name"]
             path = item.get("path") or ""
+            if not path:
+                continue  # source: (gh-fetched) skill — handled by cmd_install
+            name = item["name"]
             src = Path(item["_source_dir"]) / path
             dst = plugin_dir / "skills" / name
             if src.is_dir():
@@ -237,6 +240,11 @@ class ClaudeRenderer:
             shutil.copyfile(src, dst)
             dst.chmod(dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             self._track(out, base, dst)
+
+            # Deploy shared_assets alongside the script so the self-locating
+            # SessionStart script resolves its lib/bank under the plugin dir
+            # (HARNESS_ROOT = dirname(hooks/) = plugin_dir).
+            copy_hook_shared_assets(item, plugin_dir, base, out)
 
             cmd = "${CLAUDE_PLUGIN_ROOT}/hooks/" + basename
             hook_entries.setdefault(event, []).append(
