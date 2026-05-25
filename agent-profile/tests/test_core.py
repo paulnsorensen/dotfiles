@@ -6,11 +6,9 @@ values, not just presence.
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from agent_profile import discover, manifest as m, parse
+from agent_profile import discover, manifest as m
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import ParseError, parse_manifest, parse_one
 from tests.conftest import write_profile

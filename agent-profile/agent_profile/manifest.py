@@ -285,3 +285,12 @@ def _rm_rf(path: Path) -> None:
         shutil.rmtree(path)
     else:
         path.unlink(missing_ok=True)
+
+
+def remove_path(path: Path) -> None:
+    """Public ``rm -rf`` for a tracked artefact path.
+
+    The CLI's uninstall sweep calls this instead of reaching into the
+    private :func:`_rm_rf` (mirrors the public :func:`select_files` seam
+    added for the same reason)."""
+    _rm_rf(path)

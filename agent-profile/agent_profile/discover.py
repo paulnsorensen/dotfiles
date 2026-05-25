@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agent_profile.parse import ParseError, _validate_name
+from agent_profile._validate import ParseError, _validate_name
 
 
 def search_roots() -> list[Path]:

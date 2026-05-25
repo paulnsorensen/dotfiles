@@ -22,62 +22,19 @@ Parity notes (must match parse.sh observably):
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+from agent_profile._validate import (
+    ParseError,
+    _validate_name,
+    _validate_relpath,
+)
 
 _ITEM_SECTIONS = ("mcps", "agents", "skills", "commands", "hooks")
-
-
-class ParseError(Exception):
-    """Raised on a malformed or unsafe profile.yaml. Carries the exact
-    stderr line parse.sh would emit so callers can byte-match it."""
-
-
-def _validate_name(what: str, value: str, where: str) -> None:
-    """Reject names parse.sh's ``_ap_validate_name`` would reject.
-
-    Empty values are tolerated (defaults fill in later); only non-empty
-    values are checked.
-    """
-    if not value:
-        return
-    if not _NAME_RE.match(value):
-        raise ParseError(
-            f"ap_parse: invalid {what} '{value}' in {where} "
-            "(must match [A-Za-z0-9._-]+)"
-        )
-    # The regex accepts bare '.' and '..' (non-empty allowed-char runs).
-    # Both resolve to directory components at install time, so reject the
-    # two literals explicitly.
-    if value in (".", ".."):
-        raise ParseError(
-            f"ap_parse: invalid {what} '{value}' in {where} "
-            "(must not be '.' or '..')"
-        )
-
-
-def _validate_relpath(what: str, value: str, where: str) -> None:
-    """Reject paths parse.sh's ``_ap_validate_relpath`` would reject."""
-    if not value:
-        return
-    if value.startswith("/"):
-        raise ParseError(
-            f"ap_parse: invalid {what} '{value}' in {where} "
-            "(must be relative, not absolute)"
-        )
-    # parse.sh checks for '/../' in "/$value/" — a '..' path *component*,
-    # not a '..' substring. 'foo..bar' must pass; 'a/../b' must fail.
-    if ".." in f"/{value}/".split("/"):
-        raise ParseError(
-            f"ap_parse: invalid {what} '{value}' in {where} "
-            "(must not contain '..' components)"
-        )
 
 
 @dataclass
@@ -167,6 +124,11 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
     def _decorate(items: list[Any]) -> list[dict[str, Any]]:
         out = []
         for item in items:
+            if not isinstance(item, dict):
+                raise ParseError(
+                    f"ap_parse_one: {manifest_path} has a non-mapping "
+                    f"entry in a section list: {item!r}"
+                )
             entry = dict(item)
             entry.pop("fallback", None)
             entry["_source_dir"] = sd

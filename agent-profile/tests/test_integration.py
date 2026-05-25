@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from agent_profile import cli
 from agent_profile.manifest import manifest_path
 from tests.conftest import write_profile

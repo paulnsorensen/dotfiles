@@ -12,7 +12,6 @@ without pulling in a production renderer module.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -20,6 +19,7 @@ import pytest
 from agent_profile import shared
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import mcps_for
+from agent_profile.cli import ALL_HARNESSES
 
 GOLDEN = Path(__file__).parent / "fixtures" / "golden"
 
@@ -107,7 +107,7 @@ class StubRenderer:
                 marker.write_text(body.read_text())
                 shared.track_file(out, marker_rel)
 
-        mine = mcps_for(manifest, self.name, ("claude", "codex", "opencode", "cursor", "copilot"))
+        mine = mcps_for(manifest, self.name, tuple(ALL_HARNESSES))
         if mine:
             path = self._merged_path(target)
             data = json.loads(path.read_text()) if path.is_file() else {}
@@ -124,7 +124,7 @@ class StubRenderer:
         names = {
             m["name"]
             for m in mcps_for(
-                manifest, self.name, ("claude", "codex", "opencode", "cursor", "copilot")
+                manifest, self.name, tuple(ALL_HARNESSES)
             )
         }
         data = json.loads(path.read_text())

@@ -1,4 +1,4 @@
-"""cli.py — argparse dispatch + subcommand bodies for the ``ap`` CLI.
+"""cli.py — CLI dispatch + subcommand bodies for the ``ap`` CLI.
 
 Behavioral port of agent-profile/ap (dispatch + option parsing) and
 agent-profile/lib/commands.sh (the cmd_* handlers). Stdout strings,
@@ -16,12 +16,11 @@ without the production renderers.
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import yaml
 
@@ -302,7 +301,7 @@ def cmd_uninstall(
             continue
         abs_path = base / f
         if abs_path.exists() or abs_path.is_symlink():
-            manifest_mod._rm_rf(abs_path)
+            manifest_mod.remove_path(abs_path)
 
     manifest_mod.clear(target, name)
     print(f"{colors.GREEN}✓ Uninstalled{colors.NC}", file=out)
@@ -314,7 +313,7 @@ def cmd_launch(
     target: Path,
     colors: _Colors,
     out: Any,
-) -> int:
+) -> NoReturn:
     harness = remaining[0] if remaining else ""
     if not harness:
         raise CliError(
@@ -341,6 +340,15 @@ def cmd_launch(
 # ─── option parsing + dispatch ───────────────────────────────────────
 
 
+def _require_value(args: list[str], i: int, flag: str) -> str:
+    """Return the token after a value-taking ``flag``, or raise ``CliError``
+    when ``flag`` is the final argument. Prevents an ``IndexError`` +
+    traceback when e.g. ``--harness`` is passed with no value."""
+    if i + 1 >= len(args):
+        raise CliError(f"ap: option '{flag}' requires a value")
+    return args[i + 1]
+
+
 def _parse_common_opts(args: list[str]) -> tuple[list[str], Path, list[str]]:
     """Split out --harness / --target / --profile-src; return
     (harnesses, target, remaining). Mirrors the bash parse_common_opts:
@@ -352,19 +360,19 @@ def _parse_common_opts(args: list[str]) -> tuple[list[str], Path, list[str]]:
     while i < len(args):
         a = args[i]
         if a == "--harness":
-            harnesses = args[i + 1].split(",")
+            harnesses = _require_value(args, i, "--harness").split(",")
             i += 2
         elif a.startswith("--harness="):
             harnesses = a.split("=", 1)[1].split(",")
             i += 1
         elif a == "--target":
-            target = Path(args[i + 1]).resolve()
+            target = Path(_require_value(args, i, "--target")).resolve()
             i += 2
         elif a.startswith("--target="):
             target = Path(a.split("=", 1)[1]).resolve()
             i += 1
         elif a == "--profile-src":
-            _append_search_path(args[i + 1])
+            _append_search_path(_require_value(args, i, "--profile-src"))
             i += 2
         elif a.startswith("--profile-src="):
             _append_search_path(a.split("=", 1)[1])
@@ -426,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_uninstall(name, target, colors, sys.stdout)
         if sub == "launch":
             _harnesses, target, remaining = _parse_common_opts(rest)
-            return cmd_launch(remaining, target, colors, sys.stdout)
+            cmd_launch(remaining, target, colors, sys.stdout)
         if sub in ("help", "-h", "--help"):
             sys.stdout.write(USAGE)
             return 0
