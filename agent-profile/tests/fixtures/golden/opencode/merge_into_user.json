@@ -1,0 +1,29 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-5",
+  "mcp": {
+    "user-mcp": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "my-tool"
+      ]
+    },
+    "serena": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "serena",
+        "start-mcp-server"
+      ]
+    }
+  },
+  "permission": {
+    "bash": {
+      "npm *": "allow",
+      "cargo *": "allow",
+      "Edit": "allow",
+      "Bash(git push origin main)": "allow"
+    }
+  }
+}
