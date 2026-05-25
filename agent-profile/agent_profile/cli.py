@@ -17,10 +17,13 @@ without the production renderers.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from agent_profile import discover, manifest as manifest_mod
 from agent_profile.manifest import ManifestCorrupt
@@ -133,8 +136,6 @@ def cmd_list(colors: _Colors, out: Any) -> int:
         desc = ""
         pyaml = root / name / "profile.yaml"
         if pyaml.is_file():
-            import yaml
-
             data = yaml.safe_load(pyaml.read_text()) or {}
             desc = (data.get("description") if isinstance(data, dict) else "") or ""
         print(f"  {colors.GREEN}{name:<20}{colors.NC} {desc}", file=out)
@@ -153,8 +154,6 @@ def cmd_describe(name: str, colors: _Colors, out: Any) -> int:
         file=out,
     )
     print(file=out)
-    import json
-
     print(json.dumps(_describe_view(merged), indent=2), file=out)
     return 0
 
@@ -200,7 +199,10 @@ def cmd_install(
         print(f"  {colors.CYAN}━━ {h} ━━{colors.NC}", file=out)
         renderer = RENDERERS.get(h)
         if renderer is None:
-            continue
+            raise CliError(
+                f"{colors.RED}ap: no renderer registered for harness "
+                f"'{h}'{colors.NC}"
+            )
         written = renderer.render(manifest, target)
         all_new_files.extend(written)
 
@@ -221,8 +223,6 @@ def cmd_install(
 
 def _set_files(target: Path, profile: str, new_files: list[str]) -> None:
     """Full-install: replace the profile's file list with ``new_files``."""
-    import json
-
     path = manifest_mod.manifest_path(target)
     data = json.loads(path.read_text())
     entry = data.setdefault(profile, {})
@@ -235,25 +235,11 @@ def _union_files(
 ) -> None:
     """Selective-install: union new files in, dropping only in-scope
     orphans (port of cmd_install's selective branch)."""
-    import json
-
     path = manifest_mod.manifest_path(target)
     data = json.loads(path.read_text())
     entry = data.setdefault(profile, {})
     old = entry.get("files") or []
-    new_set = set(new_files)
-
-    in_scope_orphans = []
-    for old_f in old:
-        if old_f in new_set:
-            continue
-        owners = manifest_mod._path_owners(old_f)
-        if manifest_mod._owner_overlap(harnesses, owners):
-            in_scope_orphans.append(old_f)
-
-    drop = set(in_scope_orphans)
-    kept = [f for f in old if f not in drop]
-    entry["files"] = sorted(set(kept) | new_set)
+    entry["files"] = manifest_mod.select_files(old, new_files, harnesses)
     path.write_text(json.dumps(data, indent=2) + "\n")
 
 

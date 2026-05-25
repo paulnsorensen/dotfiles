@@ -254,6 +254,29 @@ def diff_and_clean(
             _rm_rf(abs_path)
 
 
+def select_files(
+    old_files: list[str],
+    new_files: list[str],
+    selected_harnesses: list[str],
+) -> list[str]:
+    """Merge a selective install's ``new_files`` into ``old_files``,
+    dropping only orphans whose path prefix is owned by one of
+    ``selected_harnesses`` (files owned by other harnesses survive).
+
+    Owns the owner-overlap orphan filter so the CLI does not reach into
+    the private ``_path_owners`` / ``_owner_overlap`` helpers. Result is
+    sorted + deduped (manifest invariant)."""
+    new_set = set(new_files)
+    in_scope_orphans = {
+        old_f
+        for old_f in old_files
+        if old_f not in new_set
+        and _owner_overlap(selected_harnesses, _path_owners(old_f))
+    }
+    kept = [f for f in old_files if f not in in_scope_orphans]
+    return sorted(set(kept) | new_set)
+
+
 def _rm_rf(path: Path) -> None:
     """rm -rf semantics for a file or directory tree."""
     import shutil

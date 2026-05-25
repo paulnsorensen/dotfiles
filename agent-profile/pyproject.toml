@@ -8,9 +8,6 @@ dependencies = [
     "PyYAML>=6.0",
 ]
 
-[project.scripts]
-ap = "agent_profile.cli:main"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

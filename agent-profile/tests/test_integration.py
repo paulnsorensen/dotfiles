@@ -247,6 +247,20 @@ def test_unknown_harness_rejected_before_any_render(env, capsys, stub_renderers)
     assert not (env.target / ".claude/agents/reviewer.md").exists()
 
 
+def test_install_fails_loud_when_renderer_unregistered(env, capsys, stub_renderers):
+    # A valid harness whose renderer is missing from the registry must
+    # fail loud (stderr + exit 1), never a green "✓ Installed" no-op.
+    make_basic(env.profiles, "foo")
+    missing = dict(stub_renderers)
+    del missing["claude"]
+    cli.set_renderers(missing)
+
+    rc = run(["install", "foo", "--harness", "claude", "--target", str(env.target)])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "no renderer registered for harness 'claude'" in err
+
+
 def test_two_profiles_share_skill_refcounted(env, capsys, stub_renderers):
     # Shared skill path .agents/skills/widget across two profiles.
     for p, body in (("alpha", "alpha widget"), ("beta", "beta widget")):
