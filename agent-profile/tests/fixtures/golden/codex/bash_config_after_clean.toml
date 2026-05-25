@@ -1,0 +1,9 @@
+approval_policy = "untrusted"
+sandbox_mode = "workspace-write"
+
+[mcp_servers.user-tool]
+command = "user-cmd"
+args = ["--flag"]
+
+[other_table]
+key = "value"

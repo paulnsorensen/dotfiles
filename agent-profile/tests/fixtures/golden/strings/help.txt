@@ -1,0 +1,26 @@
+Usage: dots profile <command> [args]
+
+Commands:
+  list                          List available profiles
+  describe <name>               Show resolved manifest for a profile
+  path <name>                   Print profile source dir
+  install <name> [opts]         Render profile into current dir
+  uninstall <name> [opts]       Remove a previously-installed profile
+  launch <harness> [name] [..]  Install + exec the named harness CLI
+  help                          Show this message
+
+Install/launch options:
+  --harness <h>[,<h>...]        Limit to specific harnesses (default: all)
+  --target <dir>                Render into <dir> instead of $PWD
+  --profile-src <dir>           Extra search root for profile lookup
+
+Uninstall accepts --target and --profile-src. --harness is honored but
+limited: every cleaner still runs (shared/merged files like
+opencode.json, .mcp.json carry profile-authored entries across the
+harness boundary; a partial cleanup would leave dangling entries).
+
+Examples:
+  dots profile list
+  dots profile install rust --harness claude
+  dots profile launch claude rust -- --resume
+  dots profile uninstall rust

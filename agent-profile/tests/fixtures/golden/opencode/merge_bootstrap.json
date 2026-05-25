@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "serena": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "serena",
+        "start-mcp-server"
+      ]
+    }
+  },
+  "permission": {
+    "bash": {
+      "cargo *": "allow",
+      "Edit": "allow",
+      "Bash(git push origin main)": "allow"
+    }
+  }
+}

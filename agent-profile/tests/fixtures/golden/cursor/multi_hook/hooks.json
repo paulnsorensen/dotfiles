@@ -1,0 +1,12 @@
+[
+  {
+    "event": "beforeShellExecution",
+    "matcher": "",
+    "command": ".cursor/hooks/a.sh"
+  },
+  {
+    "event": "afterFileEdit",
+    "matcher": "*.rs",
+    "command": ".cursor/hooks/b.sh"
+  }
+]

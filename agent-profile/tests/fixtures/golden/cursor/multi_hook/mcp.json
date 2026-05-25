@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "foo": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "foo-mcp"
+      ]
+    },
+    "bar": {
+      "command": "uvx",
+      "args": [],
+      "env": {
+        "KEY": "v"
+      }
+    }
+  }
+}
