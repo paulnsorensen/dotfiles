@@ -27,7 +27,7 @@ import yaml
 from agent_profile import discover, manifest as manifest_mod
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import ParseError, parse_manifest
-from agent_profile.renderers.base import Renderer
+from agent_profile.renderers.base import MergedConfigError, Renderer
 
 ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot"]
 
@@ -310,6 +310,7 @@ def cmd_uninstall(
 
 def cmd_launch(
     remaining: list[str],
+    passthrough: list[str],
     target: Path,
     colors: _Colors,
     out: Any,
@@ -325,16 +326,28 @@ def cmd_launch(
             f"{colors.RED}ap launch: unknown harness '{harness}'{colors.NC}"
         )
     name = remaining[1] if len(remaining) > 1 else ""
-    passthrough = remaining[2:]
+    # Positionals after the name (when no `--` separator was used) are also
+    # exec passthrough, matching the bash `launch <harness> [name] [args..]`.
+    exec_args = remaining[2:] + passthrough
 
     if name:
-        cmd_install(name, [harness], target, colors, out)
+        install_rc = cmd_install(name, [harness], target, colors, out)
+        if install_rc != 0:
+            raise CliError(
+                f"{colors.RED}ap launch: install of '{name}' failed "
+                f"(exit {install_rc}); not exec'ing {harness}{colors.NC}"
+            )
 
     print(
-        f"{colors.BLUE}→ exec {harness} {' '.join(passthrough)}{colors.NC}",
+        f"{colors.BLUE}→ exec {harness} {' '.join(exec_args)}{colors.NC}",
         file=out,
     )
-    os.execvp(harness, [harness, *passthrough])
+    try:
+        os.execvp(harness, [harness, *exec_args])
+    except OSError as exc:
+        raise CliError(
+            f"{colors.RED}ap launch: cannot exec '{harness}': {exc}{colors.NC}"
+        )
 
 
 # ─── option parsing + dispatch ───────────────────────────────────────
@@ -349,13 +362,22 @@ def _require_value(args: list[str], i: int, flag: str) -> str:
     return args[i + 1]
 
 
-def _parse_common_opts(args: list[str]) -> tuple[list[str], Path, list[str]]:
+def _parse_common_opts(
+    args: list[str],
+) -> tuple[list[str], Path, list[str], list[str]]:
     """Split out --harness / --target / --profile-src; return
-    (harnesses, target, remaining). Mirrors the bash parse_common_opts:
-    --profile-src appends to AP_EXTRA_SEARCH_PATHS."""
+    (harnesses, target, remaining, passthrough). Mirrors the bash
+    parse_common_opts: --profile-src appends to AP_EXTRA_SEARCH_PATHS.
+
+    ``remaining`` holds the positionals *before* a ``--`` separator;
+    ``passthrough`` holds everything after it. Keeping the boundary lets
+    ``launch`` tell "no profile name, just exec args" (``launch claude --
+    --resume``) from "profile name is the first positional" — folding both
+    into one list mis-read the first passthrough token as a profile name."""
     harnesses = list(ALL_HARNESSES)
     target = Path.cwd()
     remaining: list[str] = []
+    passthrough: list[str] = []
     i = 0
     while i < len(args):
         a = args[i]
@@ -378,12 +400,12 @@ def _parse_common_opts(args: list[str]) -> tuple[list[str], Path, list[str]]:
             _append_search_path(a.split("=", 1)[1])
             i += 1
         elif a == "--":
-            remaining.extend(args[i + 1 :])
+            passthrough = args[i + 1 :]
             break
         else:
             remaining.append(a)
             i += 1
-    return harnesses, target, remaining
+    return harnesses, target, remaining, passthrough
 
 
 def _append_search_path(path: str) -> None:
@@ -423,18 +445,18 @@ def main(argv: list[str] | None = None) -> int:
                 raise CliError("profile name required")
             return cmd_path(rest[0], colors, sys.stdout)
         if sub == "install":
-            harnesses, target, remaining = _parse_common_opts(rest)
+            harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
             _validate_harnesses(harnesses, colors)
             name = remaining[0] if remaining else ""
             return cmd_install(name, harnesses, target, colors, sys.stdout)
         if sub in ("uninstall", "rm"):
-            harnesses, target, remaining = _parse_common_opts(rest)
+            harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
             _validate_harnesses(harnesses, colors)
             name = remaining[0] if remaining else ""
             return cmd_uninstall(name, target, colors, sys.stdout)
         if sub == "launch":
-            _harnesses, target, remaining = _parse_common_opts(rest)
-            cmd_launch(remaining, target, colors, sys.stdout)
+            _harnesses, target, remaining, passthrough = _parse_common_opts(rest)
+            cmd_launch(remaining, passthrough, target, colors, sys.stdout)
         if sub in ("help", "-h", "--help"):
             sys.stdout.write(USAGE)
             return 0
@@ -444,7 +466,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         sys.stderr.write(USAGE)
         return 1
-    except (CliError, ParseError, ManifestCorrupt) as exc:
+    except (CliError, ParseError, ManifestCorrupt, MergedConfigError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 

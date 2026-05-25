@@ -208,3 +208,38 @@ def test_launch_installs_profile_not_harness(env, capsys, stub_renderers, monkey
 def test_launch_no_harness_errors(env, capsys):
     assert run(["launch"]) == 1
     assert "harness required" in capsys.readouterr().err
+
+
+def test_launch_no_profile_passthrough(env, stub_renderers, monkeypatch):
+    """`launch <harness> -- <args>` with no profile name execs the harness
+    with the passthrough args and installs nothing. Regression: the `--`
+    boundary used to be folded into the positionals, so the first
+    passthrough token (`--resume`) was mis-read as a profile name and the
+    command died "profile '--resume' not found"."""
+    execed = {}
+
+    def fake_exec(file, args):
+        execed["file"] = file
+        execed["args"] = args
+        raise SystemExit(0)
+
+    monkeypatch.setattr(cli.os, "execvp", fake_exec)
+    with pytest.raises(SystemExit):
+        run(["launch", "claude", "--", "--resume"])
+    assert execed["file"] == "claude"
+    assert execed["args"] == ["claude", "--resume"]
+    # No profile name => nothing installed.
+    assert not (env.target / ".agent-profile" / "manifest.json").exists()
+
+
+def test_launch_exec_failure_is_clean_error(env, capsys, monkeypatch):
+    """A missing harness binary surfaces a clean stderr line + exit 1, not
+    an uncaught `FileNotFoundError` traceback out of `os.execvp`."""
+
+    def boom(file, args):
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(cli.os, "execvp", boom)
+    assert run(["launch", "claude"]) == 1
+    err = capsys.readouterr().err
+    assert "cannot exec 'claude'" in err

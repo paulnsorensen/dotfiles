@@ -98,7 +98,12 @@ def manifest_init(target: Path) -> None:
 
 
 def record_file(target: Path, profile: str, rel_path: str) -> None:
-    """Add ``rel_path`` to ``profile``'s file list (sorted, deduped)."""
+    """Add ``rel_path`` to ``profile``'s file list (sorted, deduped).
+
+    Test-only helper: the production CLI records file lists in bulk via
+    ``cli._set_files`` / ``cli._union_files`` and never calls this. Kept as
+    part of the manifest module's tested public surface (per-file recording
+    + ref-count assertions in ``tests/test_core.py``)."""
     manifest_init(target)
     path = manifest_path(target)
     data = _load(path)

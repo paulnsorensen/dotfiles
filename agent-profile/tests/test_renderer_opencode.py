@@ -262,3 +262,32 @@ def test_clean_removes_bootstrapped_empty_braces(tmp_path: Path):
         "clean must remove a bootstrapped opencode.json that reduces to {} — "
         "the bash leaves an empty {} behind; the Python port must not"
     )
+
+
+def test_corrupt_config_raises_clean_error(tmp_path: Path):
+    """A hand-corrupted opencode.json surfaces MergedConfigError (caught by
+    cli.main → clean stderr + exit 1) on both render and clean, not an
+    uncaught JSONDecodeError traceback. Exercises the shared
+    base.read_json_object guard used by all three merged-file renderers."""
+    import pytest
+
+    from agent_profile.renderers.base import MergedConfigError
+
+    cfg = tmp_path / "opencode.json"
+    cfg.write_text("{not valid json")
+    with pytest.raises(MergedConfigError):
+        OpencodeRenderer().render(_manifest(), tmp_path)
+    with pytest.raises(MergedConfigError):
+        OpencodeRenderer().clean(_manifest(), tmp_path)
+
+
+def test_non_object_config_raises_clean_error(tmp_path: Path):
+    """A JSON array (valid JSON, wrong shape) is also a clean MergedConfigError
+    rather than an AttributeError when the renderer calls .setdefault/.get."""
+    import pytest
+
+    from agent_profile.renderers.base import MergedConfigError
+
+    (tmp_path / "opencode.json").write_text("[1, 2, 3]")
+    with pytest.raises(MergedConfigError):
+        OpencodeRenderer().render(_manifest(), tmp_path)

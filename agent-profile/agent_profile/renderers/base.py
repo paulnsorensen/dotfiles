@@ -33,14 +33,15 @@ TOML (round-trip). No ``jq``/``yq`` anywhere.
 Harness-default semantics
 -------------------------
 The bash filters each section by ``(.harnesses // <default>)``. The
-default differs per surface, so :func:`mcps_for` and :func:`hooks_for`
-take the default list explicitly — the renderer curd passes the default
-its bash counterpart used. ``DEFAULT_MCP_HARNESSES`` and
-``DEFAULT_HOOK_HARNESSES`` capture the most common cases.
+default differs per surface, so :func:`mcps_for` takes the default list as
+a required argument — the renderer curd passes the default its bash
+counterpart used. ``DEFAULT_HOOK_HARNESSES`` captures the claude-only hook
+default that every renderer shares.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -48,13 +49,16 @@ import tomlkit
 
 from agent_profile.parse import Manifest
 
-# The bash MCP membership default varies by renderer; the widest common
-# default (claude/codex/opencode) is the most frequent. Each renderer curd
-# passes its own default to mcps_for() to match its bash select() exactly.
-DEFAULT_MCP_HARNESSES = ("claude", "codex", "opencode")
-
 # Hooks default to claude-only membership across every renderer.
 DEFAULT_HOOK_HARNESSES = ("claude",)
+
+
+class MergedConfigError(Exception):
+    """Raised when a user-editable merged config (``opencode.json``,
+    ``.cursor/mcp.json``, ``.copilot/mcp-config.json``) is present but not a
+    JSON object. Mirrors :class:`~agent_profile.manifest.ManifestCorrupt`:
+    surfaces a clean stderr line + exit 1 instead of an uncaught
+    ``JSONDecodeError`` traceback. Caught by ``cli.main``."""
 
 
 @runtime_checkable
@@ -93,7 +97,7 @@ def includes_harness(
 def mcps_for(
     manifest: Manifest,
     harness: str,
-    default: tuple[str, ...] = DEFAULT_MCP_HARNESSES,
+    default: tuple[str, ...],
 ) -> list[dict[str, Any]]:
     """Project the manifest's MCPs to those a ``harness`` should receive.
 
@@ -170,3 +174,25 @@ def dump_toml(path: Path, doc: tomlkit.TOMLDocument) -> None:
     """Write a tomlkit document back to ``path``."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(tomlkit.dumps(doc))
+
+
+def read_json_object(path: Path, label: str) -> dict[str, Any]:
+    """Load an existing user-editable merged-config JSON object.
+
+    The merged-file renderers (opencode/cursor/copilot) read configs the
+    user may hand-edit. A corrupt or non-object file raises
+    :class:`MergedConfigError` (caught by ``cli.main`` → clean stderr +
+    exit 1) instead of an uncaught ``JSONDecodeError`` / ``AttributeError``
+    traceback. The caller is responsible for the absent-file default
+    (these renderers bootstrap differently), so ``path`` must exist."""
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise MergedConfigError(
+            f"ap: {label} at {path} is corrupt: {exc}"
+        )
+    if not isinstance(data, dict):
+        raise MergedConfigError(
+            f"ap: {label} at {path} is corrupt: top-level must be an object"
+        )
+    return data

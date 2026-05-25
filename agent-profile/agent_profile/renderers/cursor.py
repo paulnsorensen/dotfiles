@@ -50,7 +50,11 @@ from typing import Any
 
 from agent_profile import shared
 from agent_profile.parse import Manifest
-from agent_profile.renderers.base import body_abs, includes_harness
+from agent_profile.renderers.base import (
+    body_abs,
+    includes_harness,
+    read_json_object,
+)
 
 # Cursor's MCP membership default — wider than the base claude/codex/opencode
 # triple because Cursor opts itself into the shared default set.
@@ -84,7 +88,7 @@ class CursorRenderer:
             return
 
         names = {mcp["name"] for mcp in _cursor_mcps(manifest)}
-        data = json.loads(cfg.read_text())
+        data = read_json_object(cfg, ".cursor/mcp.json")
         servers = data.get("mcpServers")
         if isinstance(servers, dict):
             for n in names:
@@ -240,7 +244,11 @@ class CursorRenderer:
         cursor_dir.mkdir(parents=True, exist_ok=True)
         out_path = cursor_dir / "mcp.json"
 
-        data = json.loads(out_path.read_text()) if out_path.is_file() else {}
+        data = (
+            read_json_object(out_path, ".cursor/mcp.json")
+            if out_path.is_file()
+            else {}
+        )
         servers = data.get("mcpServers")
         if not isinstance(servers, dict):
             servers = {}

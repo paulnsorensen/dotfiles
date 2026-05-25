@@ -40,11 +40,12 @@ from agent_profile.renderers.base import (
     body_abs,
     includes_harness,
     mcps_for,
+    read_json_object,
 )
 from agent_profile.shared import track_file
 
 # Copilot's MCP membership default in the bash select() is claude+codex
-# (narrower than the base.py DEFAULT_MCP_HARNESSES of claude/codex/opencode).
+# (narrower than the common claude/codex/opencode triple).
 _COPILOT_MCP_DEFAULT = ("claude", "codex")
 
 # Hooks default to claude-only membership (bash ``.harnesses // ["claude"]``).
@@ -52,7 +53,7 @@ _COPILOT_HOOK_DEFAULT = ("claude",)
 
 # Internal/non-frontmatter fields stripped before an agent's remaining keys
 # become its ``.agent.md`` YAML frontmatter (bash ``del(...)``).
-_AGENT_STRIP_KEYS = ("_source_dir", "body_path", "models", "fallback", "agents_md_path")
+_AGENT_STRIP_KEYS = ("_source_dir", "body_path", "models", "fallback")
 
 # Internal fields stripped before a hook item becomes its JSON payload.
 _HOOK_STRIP_KEYS = ("_source_dir", "harnesses", "fallback")
@@ -208,7 +209,7 @@ class CopilotRenderer:
 
         data: dict[str, Any]
         if out.is_file():
-            data = json.loads(out.read_text())
+            data = read_json_object(out, ".copilot/mcp-config.json")
         else:
             data = {"mcpServers": {}}
         servers = data.setdefault("mcpServers", {})
@@ -233,7 +234,7 @@ class CopilotRenderer:
             for mcp in mcps_for(manifest, "copilot", _COPILOT_MCP_DEFAULT)
         }
 
-        data = json.loads(cfg.read_text())
+        data = read_json_object(cfg, ".copilot/mcp-config.json")
         servers = data.get("mcpServers") or {}
         for name in names:
             servers.pop(name, None)

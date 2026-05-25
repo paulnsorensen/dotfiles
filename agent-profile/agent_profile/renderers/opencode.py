@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_profile.parse import Manifest
-from agent_profile.renderers.base import mcps_for
+from agent_profile.renderers.base import mcps_for, read_json_object
 
 # opencode's MCP membership default (matches the bash select default).
 _OPENCODE_MCP_DEFAULT = ("claude", "codex", "opencode")
@@ -93,7 +93,7 @@ class OpencodeRenderer:
 
         cfg = Path(str(target).rstrip("/")) / "opencode.json"
         data: dict[str, Any] = (
-            json.loads(cfg.read_text())
+            read_json_object(cfg, "opencode.json")
             if cfg.is_file()
             else dict(_SCHEMA_STUB)
         )
@@ -125,7 +125,7 @@ class OpencodeRenderer:
         if not cfg.is_file():
             return
 
-        data = json.loads(cfg.read_text())
+        data = read_json_object(cfg, "opencode.json")
 
         ours_mcp = {
             m["name"] for m in mcps_for(manifest, "opencode", _OPENCODE_MCP_DEFAULT)
