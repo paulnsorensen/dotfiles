@@ -94,8 +94,9 @@ class CliError(Exception):
 
 def _describe_view(merged: dict[str, Any]) -> dict[str, Any]:
     """Project the resolved manifest to the ``describe`` view (port of the
-    jq filter in cmd_describe)."""
-    return {
+    jq filter in cmd_describe). Isolated profiles additionally surface the
+    launch-overlay fields so the closed world is inspectable."""
+    view: dict[str, Any] = {
         "name": merged.get("name"),
         "description": merged.get("description"),
         "mcps": [m["name"] for m in merged.get("mcps", [])],
@@ -116,6 +117,18 @@ def _describe_view(merged: dict[str, Any]) -> dict[str, Any]:
         ],
         "permissions": merged.get("settings", {}).get("permissions_allow", []),
     }
+    if merged.get("isolated"):
+        view["isolated"] = True
+        view["system_prompt"] = merged.get("system_prompt")
+        view["tools"] = merged.get("tools", [])
+        view["permissions"] = {
+            "allow": merged.get("permissions_allow", []),
+            "deny": merged.get("permissions_deny", []),
+        }
+        view["enabled_plugins"] = merged.get("enabled_plugins", {})
+        view["env"] = merged.get("env", {})
+        view["extra_args"] = merged.get("extra_args", [])
+    return view
 
 
 # ─── subcommand handlers ─────────────────────────────────────────────
@@ -150,7 +163,19 @@ def cmd_describe(name: str, colors: _Colors, out: Any) -> int:
     profile_dir = discover.find_profile_dir(name)
     if profile_dir is None:
         raise CliError(f"{colors.RED}ap: profile '{name}' not found{colors.NC}")
-    merged = parse_manifest(profile_dir).to_dict()
+    m = parse_manifest(profile_dir)
+    merged = m.to_dict()
+    if m.isolated:
+        merged.update(
+            isolated=True,
+            system_prompt=m.system_prompt,
+            tools=list(m.tools),
+            permissions_allow=list(m.permissions_allow),
+            permissions_deny=list(m.permissions_deny),
+            enabled_plugins=dict(m.enabled_plugins),
+            env=dict(m.env),
+            extra_args=list(m.extra_args),
+        )
     print(
         f"{colors.CYAN}Profile: {name}{colors.NC}  "
         f"{colors.BLUE}({profile_dir}){colors.NC}",

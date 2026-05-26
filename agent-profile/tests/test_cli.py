@@ -266,3 +266,32 @@ def test_launch_exec_failure_is_clean_error(env, capsys, monkeypatch):
     assert run(["launch", "claude"]) == 1
     err = capsys.readouterr().err
     assert "cannot exec 'claude'" in err
+
+
+def test_describe_isolated_surfaces_overlay(env, capsys):
+    """describe must surface the launch-overlay fields for an isolated
+    profile so the closed world is inspectable (not hidden behind the YAML)."""
+    write_profile(
+        env.profiles,
+        "todo",
+        "name: todo\n"
+        "description: Todoist-only closed world\n"
+        "isolated: true\n"
+        "system_prompt: CLAUDE.md\n"
+        "tools: [Skill, Read]\n"
+        "permissions_deny: [Edit, Write]\n"
+        "enabled_plugins:\n"
+        '  "todoist-flow@todoist-flow": true\n'
+        "extra_args: [--dangerously-skip-permissions]\n"
+        "mcps:\n"
+        "  - name: todoist\n"
+        "    command: npx\n"
+        '    args: ["-y", "x"]\n',
+    )
+    assert run(["describe", "todo"]) == 0
+    parsed = json.loads("\n".join(capsys.readouterr().out.splitlines()[2:]))
+    assert parsed["isolated"] is True
+    assert parsed["tools"] == ["Skill", "Read"]
+    assert parsed["permissions"] == {"allow": [], "deny": ["Edit", "Write"]}
+    assert parsed["enabled_plugins"] == {"todoist-flow@todoist-flow": True}
+    assert parsed["extra_args"] == ["--dangerously-skip-permissions"]

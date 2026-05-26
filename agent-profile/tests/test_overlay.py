@@ -116,7 +116,7 @@ def test_isolated_launch_assembles_ccp_flags(env, monkeypatch, tmp_path):
     assert "--strict-mcp-config" in args
     mc_idx = args.index("--mcp-config")
     mcp_path = args[mc_idx + 1]
-    servers = json.loads(open(mcp_path).read())["mcpServers"]
+    servers = json.loads(Path(mcp_path).read_text())["mcpServers"]
     assert set(servers) == {"todoist"}
     assert servers["todoist"]["command"] == "npx"
     # closed settings world
@@ -128,10 +128,10 @@ def test_isolated_launch_assembles_ccp_flags(env, monkeypatch, tmp_path):
     # system prompt append points at the profile's CLAUDE.md
     sp_idx = args.index("--append-system-prompt-file")
     assert args[sp_idx + 1].endswith("/CLAUDE.md")
-    assert open(args[sp_idx + 1]).read() == "Todoist system prompt\n"
+    assert Path(args[sp_idx + 1]).read_text() == "Todoist system prompt\n"
     # generated settings carry permissions.deny
     set_idx = args.index("--settings")
-    settings = json.loads(open(args[set_idx + 1]).read())
+    settings = json.loads(Path(args[set_idx + 1]).read_text())
     assert settings["permissions"]["deny"] == ["Edit", "Write", "NotebookEdit"]
     # extra_args appended verbatim
     assert "--dangerously-skip-permissions" in args
@@ -139,7 +139,7 @@ def test_isolated_launch_assembles_ccp_flags(env, monkeypatch, tmp_path):
 
 def test_isolated_launch_injects_env(env, monkeypatch):
     write_isolated_todo(env.profiles)
-    rec = _capture_exec(monkeypatch)
+    _capture_exec(monkeypatch)
 
     with pytest.raises(SystemExit):
         cli.main(["launch", "claude", "todo", "--target", str(env.target)])
@@ -226,7 +226,7 @@ def test_isolated_permissions_allow_restored_in_settings(env, monkeypatch):
     with pytest.raises(SystemExit):
         cli.main(["launch", "claude", "allowy", "--target", str(env.target)])
     args = rec["args"]
-    settings = json.loads(open(args[args.index("--settings") + 1]).read())
+    settings = json.loads(Path(args[args.index("--settings") + 1]).read_text())
     assert settings["permissions"]["allow"] == ["mcp__notion__*"]
     assert settings["permissions"]["deny"] == ["Edit", "Write"]
 
@@ -246,7 +246,7 @@ def test_isolated_only_allow_emits_settings(env, monkeypatch):
         cli.main(["launch", "claude", "allowonly", "--target", str(env.target)])
     args = rec["args"]
     assert "--settings" in args
-    settings = json.loads(open(args[args.index("--settings") + 1]).read())
+    settings = json.loads(Path(args[args.index("--settings") + 1]).read_text())
     assert settings["permissions"]["allow"] == ["Bash(rtk:*)"]
     assert "deny" not in settings["permissions"]
 
@@ -269,7 +269,7 @@ def test_isolated_enabled_plugins_in_settings(env, monkeypatch):
         cli.main(["launch", "claude", "plugy", "--target", str(env.target)])
     args = rec["args"]
     assert "--settings" in args
-    settings = json.loads(open(args[args.index("--settings") + 1]).read())
+    settings = json.loads(Path(args[args.index("--settings") + 1]).read_text())
     assert settings["enabledPlugins"] == {
         "frontend-design@claude-plugins-official": True,
         "skill-creator@claude-plugins-official": False,
@@ -304,7 +304,7 @@ def test_isolated_mcp_env_resolved_from_dotenv(env, monkeypatch, tmp_path):
         cli.main(["launch", "claude", "td", "--target", str(env.target)])
     args = rec["args"]
     mcp_path = args[args.index("--mcp-config") + 1]
-    servers = json.loads(open(mcp_path).read())["mcpServers"]
+    servers = json.loads(Path(mcp_path).read_text())["mcpServers"]
     assert servers["todoist"]["env"]["TODOIST_API_KEY"] == "secret-token"
 
 
@@ -361,7 +361,7 @@ def test_isolated_http_mcp_shape(env, monkeypatch):
     with pytest.raises(SystemExit):
         cli.main(["launch", "claude", "nt", "--target", str(env.target)])
     args = rec["args"]
-    servers = json.loads(open(args[args.index("--mcp-config") + 1]).read())[
+    servers = json.loads(Path(args[args.index("--mcp-config") + 1]).read_text())[
         "mcpServers"
     ]
     assert servers["notion"] == {"type": "http", "url": "https://mcp.notion.com/mcp"}
@@ -532,7 +532,7 @@ def test_sse_mcp_shape(env, monkeypatch):
     with pytest.raises(SystemExit):
         cli.main(["launch", "claude", "ev", "--target", str(env.target)])
     servers = json.loads(
-        open(rec["args"][rec["args"].index("--mcp-config") + 1]).read()
+        Path(rec["args"][rec["args"].index("--mcp-config") + 1]).read_text()
     )["mcpServers"]
     assert servers["events"] == {"type": "sse", "url": "https://example.com/sse"}
 
@@ -554,7 +554,7 @@ def test_http_mcp_headers_passthrough(env, monkeypatch):
     with pytest.raises(SystemExit):
         cli.main(["launch", "claude", "au", "--target", str(env.target)])
     servers = json.loads(
-        open(rec["args"][rec["args"].index("--mcp-config") + 1]).read()
+        Path(rec["args"][rec["args"].index("--mcp-config") + 1]).read_text()
     )["mcpServers"]
     assert servers["authed"] == {
         "type": "http",
@@ -578,7 +578,7 @@ def test_url_without_explicit_type_defaults_to_http(env, monkeypatch):
     with pytest.raises(SystemExit):
         cli.main(["launch", "claude", "bu", "--target", str(env.target)])
     servers = json.loads(
-        open(rec["args"][rec["args"].index("--mcp-config") + 1]).read()
+        Path(rec["args"][rec["args"].index("--mcp-config") + 1]).read_text()
     )["mcpServers"]
     assert servers["bare"] == {"type": "http", "url": "https://example.com/mcp"}
 
@@ -719,3 +719,17 @@ def test_real_notion_profile_is_http_shape(monkeypatch, tmp_path):
     )["mcpServers"]
     assert servers["notion"]["type"] == "http"
     assert "command" not in servers["notion"]
+
+
+def test_isolated_missing_system_prompt_fails_loud(tmp_path):
+    """A declared system_prompt that doesn't exist must fail loud at flag
+    assembly, not silently append --append-system-prompt-file at a dead path."""
+    m = Manifest(
+        name="todo",
+        mcps=[{"name": "todoist", "command": "npx", "args": ["-y", "x"],
+               "_source_dir": str(tmp_path)}],
+        isolated=True,
+        system_prompt="MISSING.md",
+    )
+    with pytest.raises(overlay.IsolationError, match="system_prompt file not found"):
+        overlay.build_isolated_flags(m, tmp_path)

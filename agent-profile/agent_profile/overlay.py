@@ -27,11 +27,6 @@ from agent_profile.env import load_dotenv, resolve_env_value, resolve_item_env
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import mcp_server_entry
 
-# An isolated launch builds the .mcp.json from the profile's own MCPs only
-# (closed world). Membership defaults to all-harnesses so a profile MCP with
-# no `harnesses:` is included for the claude launch.
-_ISOLATED_MCP_DEFAULT = ("claude", "codex", "opencode", "cursor", "copilot")
-
 
 class IsolationError(Exception):
     """Raised when an isolated profile is launched against a non-claude
@@ -151,6 +146,10 @@ def build_isolated_flags(
 
     if manifest.system_prompt:
         sp = profile_dir / manifest.system_prompt
+        if not sp.is_file():
+            raise IsolationError(
+                f"system_prompt file not found for profile '{manifest.name}': {sp}"
+            )
         flags += ["--append-system-prompt-file", str(sp)]
 
     settings_path = _write_settings(manifest, scratch)
