@@ -193,14 +193,20 @@
         "static.crates.io",
         "api.githubcopilot.com",
         "api.tavily.com",
-        "mcp.tavily.com"
+        "mcp.tavily.com",
+        "json.schemastore.org",
+        "huggingface.co",
+        "cdn-lfs.huggingface.co"
       ],
       "allowLocalBinding": true
     },
     "filesystem": {
       "allowWrite": [
         "~/Dev/.prek",
-        "~/.cache"
+        "~/.cache",
+        "~/.local/share",
+        "~/.local/bin",
+        "~/.cheese"
       ]
     },
     "excludedCommands": [

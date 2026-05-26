@@ -1,0 +1,14 @@
+# rtkonly — experimental: route file I/O through rtk + tilth only.
+# Closed MCP world of just tilth.
+name: rtkonly
+description: Experimental — tilth + rtk only
+isolated: true
+system_prompt: CLAUDE.md
+# Auto-approve rtk + tilth (ccp settings-merge parity).
+permissions_allow:
+  - "Bash(rtk:*)"
+  - "mcp__tilth__*"
+mcps:
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]

@@ -42,12 +42,15 @@ default that every renderer shares.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import tomlkit
 
 from agent_profile.parse import Manifest
+from agent_profile.shared import track_file
 
 # Hooks default to claude-only membership across every renderer.
 DEFAULT_HOOK_HARNESSES = ("claude",)
@@ -94,6 +97,26 @@ def includes_harness(
     return harness in item_harnesses(item, default)
 
 
+def gate_blocks(item: dict[str, Any], harness: str) -> bool:
+    """True iff ``item``'s ``gate_unless`` gate suppresses it for ``harness``.
+
+    Ports the claude-only bash filter::
+
+        map(select((.value.gate_unless // "") as $g | $g == "" or (env[$g] // "false") != "true"))
+
+    The gate is claude-scoped: codex/opencode/cursor/copilot ignore it (a
+    plugin-provided MCP is a claude concern). An item is blocked when it
+    carries a ``gate_unless`` var that is exactly ``"true"`` in the process
+    environment (the cheese-flow plugin seeds ``CHEESE_FLOW``), matching the
+    bash ``env[$g]`` read — not the ``.env`` file."""
+    if harness != "claude":
+        return False
+    gate = item.get("gate_unless")
+    if not gate:
+        return False
+    return os.environ.get(gate, "false") == "true"
+
+
 def mcps_for(
     manifest: Manifest,
     harness: str,
@@ -105,11 +128,14 @@ def mcps_for(
 
         [.mcps[] | select((.harnesses // <default>) | index("<h>") != null)]
 
-    The renderer curd passes the ``default`` its bash counterpart used."""
+    The renderer curd passes the ``default`` its bash counterpart used.
+    Claude additionally drops ``gate_unless`` MCPs whose gate var is set
+    (see :func:`gate_blocks`) — parity with ``mcp_filter_for_harness``."""
     return [
         mcp
         for mcp in manifest.mcps
         if includes_harness(mcp, harness, default)
+        and not gate_blocks(mcp, harness)
     ]
 
 
@@ -147,6 +173,45 @@ def mcp_server_entry(
     if extra:
         entry.update(extra)
     return entry
+
+
+def shared_asset_relpath(asset: str) -> str:
+    """Map a repo-relative ``shared_assets`` entry to its harness-root-relative
+    deploy path.
+
+    The registry declares assets as ``agents/<subdir>/<file>``; chezmoi deploys
+    them to ``~/.<harness>/<subdir>/<file>`` so the self-locating hook script
+    finds them at ``$(dirname SCRIPT_DIR)/<subdir>/<file>``. We replicate that
+    by dropping the leading repo subdir (``agents/``) and keeping the
+    remainder. Entries with no leading subdir pass through unchanged."""
+    parts = Path(asset).parts
+    if len(parts) <= 1:
+        return asset
+    return str(Path(*parts[1:]))
+
+
+def copy_hook_shared_assets(
+    hook: dict[str, Any],
+    harness_root: Path,
+    base: Path,
+    out_files: list[str],
+) -> None:
+    """Copy a hook's ``shared_assets`` to ``<harness_root>/<subdir>/<file>``.
+
+    Each asset is read relative to the hook's ``_source_dir`` and written
+    under ``harness_root`` at the path :func:`shared_asset_relpath` derives,
+    so the self-locating SessionStart script resolves its lib/bank. Missing
+    assets fail loud (a hook that ships a ``shared_assets`` ref but no file is
+    a profile bug, not a silent skip). Tracked relative to ``base`` for the
+    install manifest sweep."""
+    for asset in hook.get("shared_assets") or []:
+        src = Path(hook["_source_dir"]) / asset
+        if not src.is_file():
+            raise FileNotFoundError(f"hook shared_asset not found: {src}")
+        dst = harness_root / shared_asset_relpath(asset)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dst)
+        track_file(out_files, str(dst.relative_to(base)))
 
 
 def body_abs(item: dict[str, Any], body_key: str = "body_path") -> Path | None:

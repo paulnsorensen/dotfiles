@@ -1,0 +1,26 @@
+# todo — closed-world Todoist productivity session (ccp parity).
+# base stripped: only the todoist MCP + todoist skill are in scope.
+# Tool surface is wide-open via --dangerously-skip-permissions (matching the
+# retired ccp todo, which owned its surface through settings.json + skip-perms,
+# not a --tools whitelist).
+name: todo
+description: Todoist-only — closed world, base stripped
+isolated: true
+system_prompt: CLAUDE.md
+env:
+  # Re-enable claude.ai connectors so Gmail is available for
+  # "email that task" / "turn this thread into a task" flows.
+  ENABLE_CLAUDEAI_MCP_SERVERS: "true"
+  ENABLE_TOOL_SEARCH: "true"
+extra_args:
+  - --plugin-dir
+  - ${DOTFILES_DIR}/claude/plugins/local/todoist-flow
+  - --dangerously-skip-permissions
+mcps:
+  - name: todoist
+    command: npx
+    args: ["-y", "@doist/todoist-ai"]
+    env:
+      TODOIST_API_KEY: "${TODOIST_API_KEY}"
+skills:
+  - { name: todoist, source: paulnsorensen/easy-cheese }

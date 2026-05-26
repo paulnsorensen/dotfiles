@@ -22,6 +22,7 @@ Parity notes (must match parse.sh observably):
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,8 @@ from agent_profile._validate import (
     _validate_name,
     _validate_relpath,
 )
+from agent_profile.env import load_dotenv
+from agent_profile.ingest import expand_registries
 
 _ITEM_SECTIONS = ("mcps", "agents", "skills", "commands", "hooks")
 
@@ -54,6 +57,17 @@ class Manifest:
     commands: list[dict[str, Any]] = field(default_factory=list)
     hooks: list[dict[str, Any]] = field(default_factory=list)
     settings: dict[str, Any] = field(default_factory=dict)
+    # Launch-overlay / isolation (spec curd 6). These come from the
+    # outermost profile only (like name/description) — isolation is a
+    # property of the profile you launch, not of its includes.
+    isolated: bool = False
+    system_prompt: str | None = None
+    tools: list[str] = field(default_factory=list)
+    permissions_deny: list[str] = field(default_factory=list)
+    permissions_allow: list[str] = field(default_factory=list)
+    enabled_plugins: dict[str, bool] = field(default_factory=dict)
+    env: dict[str, str] = field(default_factory=dict)
+    extra_args: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the same JSON shape parse.sh emits (used for the
@@ -135,17 +149,62 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
             out.append(entry)
         return out
 
+    reg = _expand_registries_directive(raw.get("registries"))
+
     return {
         "name": name,
         "description": raw.get("description") or "",
         "include": raw.get("include") or [],
-        "mcps": _decorate(raw.get("mcps") or []),
+        # Launch-overlay fields (curd 6) — carried verbatim from the outer
+        # profile; not merged from includes.
+        "isolated": bool(raw.get("isolated") or False),
+        "system_prompt": raw.get("system_prompt") or None,
+        "tools": list(raw.get("tools") or []),
+        "permissions_deny": list(raw.get("permissions_deny") or []),
+        "permissions_allow": list(raw.get("permissions_allow") or []),
+        "enabled_plugins": dict(raw.get("enabled_plugins") or {}),
+        "env": dict(raw.get("env") or {}),
+        "extra_args": list(raw.get("extra_args") or []),
+        # Registry-derived items come first; inline items append (matching
+        # the include "outer last" convention so an inline override on a
+        # name-collision wins on scalar/object merges downstream).
+        "mcps": reg["mcps"] + _decorate(raw.get("mcps") or []),
         "agents": _decorate(raw.get("agents") or []),
-        "skills": _decorate(raw.get("skills") or []),
+        "skills": reg["skills"] + _decorate(raw.get("skills") or []),
         "commands": _decorate(raw.get("commands") or []),
-        "hooks": _decorate(raw.get("hooks") or []),
+        "hooks": reg["hooks"] + _decorate(raw.get("hooks") or []),
         "settings": raw.get("settings") or {},
     }
+
+
+def _repo_root() -> Path:
+    """The dotfiles repo root that holds the three registries + ``.env``.
+
+    Mirrors :func:`agent_profile.discover.search_roots` — ``DOTFILES_DIR``
+    with the same ``$HOME/Dev/dotfiles`` default."""
+    return Path(os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles"))
+
+
+def _expand_registries_directive(
+    directive: Any,
+) -> dict[str, list[dict[str, Any]]]:
+    """Expand a profile's ``registries:`` directive into item lists.
+
+    Returns empty lists when the directive is absent. Reads the registries
+    relative to the dotfiles repo root and resolves ``${VAR}`` env refs from
+    ``$DOTFILES_DIR/.env`` (spec D4). The registry items carry the repo root
+    as their ``_source_dir`` (not the profile dir) since their payload files
+    live under the repo, not the profile."""
+    if not directive:
+        return {"mcps": [], "skills": [], "hooks": []}
+    if not isinstance(directive, dict):
+        raise ParseError(
+            "ap_parse_one: 'registries' must be a mapping of "
+            "section -> registry path(s)"
+        )
+    repo_root = _repo_root()
+    dotenv = load_dotenv(repo_root / ".env")
+    return expand_registries(directive, repo_root, dotenv)
 
 
 def _merge_two(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
@@ -219,6 +278,19 @@ def _parse_with_includes(
     merged = _merge_two(merged, self_)
     merged["name"] = self_["name"]
     merged["description"] = self_["description"]
+    # Launch-overlay fields belong to the outermost profile (not merged
+    # from includes), mirroring name/description.
+    for key in (
+        "isolated",
+        "system_prompt",
+        "tools",
+        "permissions_deny",
+        "permissions_allow",
+        "enabled_plugins",
+        "env",
+        "extra_args",
+    ):
+        merged[key] = self_[key]
     return merged
 
 
@@ -245,4 +317,12 @@ def parse_manifest(profile_dir: Path, find_profile_dir: Any = None) -> Manifest:
         commands=merged["commands"],
         hooks=merged["hooks"],
         settings=merged["settings"],
+        isolated=merged["isolated"],
+        system_prompt=merged["system_prompt"],
+        tools=merged["tools"],
+        permissions_deny=merged["permissions_deny"],
+        permissions_allow=merged["permissions_allow"],
+        enabled_plugins=merged["enabled_plugins"],
+        env=merged["env"],
+        extra_args=merged["extra_args"],
     )

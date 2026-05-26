@@ -99,8 +99,10 @@ class CodexRenderer:
         self, manifest: Manifest, target: Path, out_files: list[str]
     ) -> None:
         for item in manifest.skills:
-            name = item["name"]
             rel_path = item.get("path") or ""
+            if not rel_path:
+                continue  # source: (gh-fetched) skill — handled by cmd_install
+            name = item["name"]
             src = Path(item["_source_dir"]) / rel_path
             if src.is_dir():
                 shared.copy_shared_skill(target, name, src, out_files)
@@ -149,6 +151,13 @@ class CodexRenderer:
             shutil.copy(script_src, abs_script)
             abs_script.chmod(abs_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             shared.track_file(out_files, rel_script)
+
+            # Deploy shared_assets under .codex/ so the self-locating
+            # SessionStart script resolves its lib/bank (HARNESS_ROOT =
+            # dirname(.codex/hooks/) = .codex/).
+            base.copy_hook_shared_assets(
+                item, base_dir / ".codex", base_dir, out_files
+            )
 
             record: dict = {"event": event, "command": f"bash {rel_script}"}
             if matcher:

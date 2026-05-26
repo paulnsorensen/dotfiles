@@ -1,0 +1,48 @@
+#!/bin/bash
+# run_onchange — re-renders the registry-derived `base` profile into every
+# harness whenever the base profile or any of the three registries (mcp,
+# hooks, skills tree) change. The single deploy path that supersedes the
+# retired install-mcp / install-hooks / install-claude-skills scripts (curd 7).
+#
+# The hash below is computed by chezmoi at template render time over
+# profiles/base/** + the three registries + the local skills tree; chezmoi
+# reruns whenever it changes.
+#
+# base profile + registries hash: {{ output "sh" "-c" (printf "find %q/../profiles/base %q/../agents/mcp/registry.yaml %q/../agents/hooks/registry.yaml %q/../skills -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+INSTALLER="$SOURCE_DIR/lib/install-base-profile.sh"
+
+# The `ap` shim lives at agent-profile/ap and needs DOTFILES_DIR so it can
+# resolve the repo root (registries + .env) and the profiles/ library.
+export DOTFILES_DIR
+DOTFILES_DIR="$(cd "$DOTFILES_ROOT" && pwd)"
+
+# Skip on a fresh machine before uv/gh are installed — `ap` (uv-run) and the
+# `gh skill install` step need them. The env warms on a later apply.
+if ! command -v uv &>/dev/null; then
+    echo "  Skipping base-profile render (uv not found)"
+    exit 0
+fi
+
+# External skills install via `gh skill install` (driven by ap's fetch path).
+# gh is a hard dependency of the skills union — fail loud, don't silently
+# partial-install.
+if ! command -v gh &>/dev/null; then
+    echo "Error: gh CLI not found. Install with: brew install gh" >&2
+    exit 1
+fi
+if ! gh skill --help &>/dev/null; then
+    echo "Error: 'gh skill' subcommand unavailable. Upgrade gh to v2.90+." >&2
+    exit 1
+fi
+if ! gh auth status &>/dev/null; then
+    echo "Error: gh is not authenticated. Run: gh auth login" >&2
+    exit 1
+fi
+
+INSTALL_BASE_PROFILE_AP="$DOTFILES_DIR/agent-profile/ap" \
+    bash "$INSTALLER" "$HOME"

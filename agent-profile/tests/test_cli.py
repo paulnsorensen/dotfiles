@@ -118,6 +118,29 @@ def test_describe_rust_matches_bash_golden(env, capsys, golden, tmp_path, monkey
     assert parsed == golden("strings/describe_rust.json")
 
 
+def test_describe_nameless_external_skill_uses_source(env, capsys, tmp_path, monkeypatch):
+    """A repo-level external skill (auto-discovery, no explicit `name`) must
+    not KeyError in describe — it falls back to its `source` repo. Regression:
+    the `base` profile unions `_registry.yaml` sources that omit `skills:`,
+    yielding nameless items."""
+    repo = tmp_path / "repo"
+    (repo / "skills").mkdir(parents=True)
+    (repo / "skills" / "_registry.yaml").write_text(
+        "sources:\n  owner/repo-a:\n    description: a\n"
+    )
+    monkeypatch.setenv("DOTFILES_DIR", str(repo))
+    write_profile(
+        env.profiles,
+        "ext",
+        "name: ext\n"
+        "registries:\n"
+        "  skills: [skills/_registry.yaml]\n",
+    )
+    assert run(["describe", "ext"]) == 0
+    parsed = json.loads("\n".join(capsys.readouterr().out.splitlines()[2:]))
+    assert parsed["skills"] == ["owner/repo-a"]
+
+
 # ─── path ─────────────────────────────────────────────────────────────
 
 
@@ -243,3 +266,32 @@ def test_launch_exec_failure_is_clean_error(env, capsys, monkeypatch):
     assert run(["launch", "claude"]) == 1
     err = capsys.readouterr().err
     assert "cannot exec 'claude'" in err
+
+
+def test_describe_isolated_surfaces_overlay(env, capsys):
+    """describe must surface the launch-overlay fields for an isolated
+    profile so the closed world is inspectable (not hidden behind the YAML)."""
+    write_profile(
+        env.profiles,
+        "todo",
+        "name: todo\n"
+        "description: Todoist-only closed world\n"
+        "isolated: true\n"
+        "system_prompt: CLAUDE.md\n"
+        "tools: [Skill, Read]\n"
+        "permissions_deny: [Edit, Write]\n"
+        "enabled_plugins:\n"
+        '  "todoist-flow@todoist-flow": true\n'
+        "extra_args: [--dangerously-skip-permissions]\n"
+        "mcps:\n"
+        "  - name: todoist\n"
+        "    command: npx\n"
+        '    args: ["-y", "x"]\n',
+    )
+    assert run(["describe", "todo"]) == 0
+    parsed = json.loads("\n".join(capsys.readouterr().out.splitlines()[2:]))
+    assert parsed["isolated"] is True
+    assert parsed["tools"] == ["Skill", "Read"]
+    assert parsed["permissions"] == {"allow": [], "deny": ["Edit", "Write"]}
+    assert parsed["enabled_plugins"] == {"todoist-flow@todoist-flow": True}
+    assert parsed["extra_args"] == ["--dangerously-skip-permissions"]

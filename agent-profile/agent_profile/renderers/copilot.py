@@ -145,8 +145,10 @@ class CopilotRenderer:
         self, manifest: Manifest, base: Path, out_files: list[str]
     ) -> None:
         for skill in manifest.skills:
-            name = skill["name"]
             path = skill.get("path") or ""
+            if not path:
+                continue  # source: (gh-fetched) skill — handled by cmd_install
+            name = skill["name"]
             src = Path(skill["_source_dir"]) / path
             if not src.is_dir():
                 _warn(f"copilot: skill '{name}' source dir not found: {src}")

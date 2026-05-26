@@ -1,0 +1,41 @@
+# fe — frontend / design-to-code (ccp parity).
+# Closed MCP world: library docs, AST nav, structural impact, web research,
+# plus shadcn (profile-local). Re-enables claude.ai connectors for Figma.
+name: fe
+description: Frontend + shadcn/Figma/Playwright
+isolated: true
+system_prompt: CLAUDE.md
+# Auto-approve the Figma connector (ccp settings-merge parity).
+permissions_allow:
+  - "mcp__claude_ai_Figma__*"
+# Per-profile plugin set (ccp settings-merge parity).
+enabled_plugins:
+  "claude-md-management@claude-plugins-official": true
+  "playwright@claude-plugins-official": true
+  "frontend-design@claude-plugins-official": true
+  "claude-hud@claude-hud": true
+  "plugin-dev@claude-plugins-official": false
+  "skill-creator@claude-plugins-official": false
+  "todoist-flow@todoist-flow": false
+env:
+  ENABLE_CLAUDEAI_MCP_SERVERS: "true"
+mcps:
+  - name: context7
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]
+  - name: code-review-graph
+    command: uvx
+    args: ["--from", "code-review-graph[embeddings]", "code-review-graph", "serve"]
+  - name: tavily
+    command: npx
+    args: ["-y", "tavily-mcp@latest"]
+    env:
+      TAVILY_API_KEY: "${TAVILY_API_KEY}"
+  - name: shadcn
+    command: npx
+    args: ["shadcn@latest", "mcp"]
