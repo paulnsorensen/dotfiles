@@ -169,13 +169,13 @@ if command -v cargo-nextest &>/dev/null; then
 fi
 
 # =============================================================================
-# Agent Skills (`gh skill install` — harness-agnostic; targets each agent in
-# $SKILL_HARNESSES from .env: claude-code, cursor, codex, github-copilot, etc.)
-# External skills come from skills/_registry.yaml; the installer lives at
-# chezmoi/lib/install-external.sh (invoked by chezmoi's run_onchange script).
+# Agent Skills — `skills/_registry.yaml` (external sources) + the local
+# `skills/` tree are the EDIT surface (skill-edit). Deploy is unified through
+# `ap`: `dots profile install base` renders the registry-derived `base`
+# profile — which unions both skill sources — into every harness, fetching
+# external skills via `gh skill install` along the way (curd 7 / D1).
 # =============================================================================
 alias skill='gh skill'
 alias skill-ls='gh skill update --all --dry-run'
-alias skill-sync='bash $DOTFILES_DIR/chezmoi/lib/install-external.sh $DOTFILES_DIR/skills/_registry.yaml'
-alias skill-sync-dry='bash $DOTFILES_DIR/chezmoi/lib/install-external.sh $DOTFILES_DIR/skills/_registry.yaml --dry-run'
+alias skill-sync='dots profile install base'
 alias skill-edit='${EDITOR:-vim} $DOTFILES_DIR/skills/_registry.yaml'

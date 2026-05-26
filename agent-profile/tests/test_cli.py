@@ -118,6 +118,29 @@ def test_describe_rust_matches_bash_golden(env, capsys, golden, tmp_path, monkey
     assert parsed == golden("strings/describe_rust.json")
 
 
+def test_describe_nameless_external_skill_uses_source(env, capsys, tmp_path, monkeypatch):
+    """A repo-level external skill (auto-discovery, no explicit `name`) must
+    not KeyError in describe — it falls back to its `source` repo. Regression:
+    the `base` profile unions `_registry.yaml` sources that omit `skills:`,
+    yielding nameless items."""
+    repo = tmp_path / "repo"
+    (repo / "skills").mkdir(parents=True)
+    (repo / "skills" / "_registry.yaml").write_text(
+        "sources:\n  owner/repo-a:\n    description: a\n"
+    )
+    monkeypatch.setenv("DOTFILES_DIR", str(repo))
+    write_profile(
+        env.profiles,
+        "ext",
+        "name: ext\n"
+        "registries:\n"
+        "  skills: [skills/_registry.yaml]\n",
+    )
+    assert run(["describe", "ext"]) == 0
+    parsed = json.loads("\n".join(capsys.readouterr().out.splitlines()[2:]))
+    assert parsed["skills"] == ["owner/repo-a"]
+
+
 # ─── path ─────────────────────────────────────────────────────────────
 
 

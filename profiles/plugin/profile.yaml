@@ -1,0 +1,18 @@
+# plugin — plugin development (ccp parity).
+# Closed MCP world: AST nav, cross-plugin structural search, Claude/SDK docs.
+name: plugin
+description: Plugin dev — code nav + ecosystem docs
+isolated: true
+system_prompt: CLAUDE.md
+mcps:
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]
+  - name: code-review-graph
+    command: uvx
+    args: ["--from", "code-review-graph[embeddings]", "code-review-graph", "serve"]
+  - name: context7
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"

@@ -368,24 +368,13 @@ SH
     grep -qF "new content" "$target"
 }
 
-@test "chezmoi run_onchange installer template exists and drives a registry-iterated deploy" {
-    # Asserts the *structure* of the template: it must source the registry,
-    # iterate per (asset × harness), and hand each pair to the installer +
-    # sync.sh. Per-asset literals are NOT asserted here — adding a new hook
-    # must be a registry edit, not a template edit. The runtime payload is
-    # covered by "chezmoi installer flow deploys every registry asset…".
-    local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-hooks.sh.tmpl"
-    assert_file_exists "$tmpl"
-    grep -qF 'install-shared-assets.sh' "$tmpl"
-    grep -qF 'agents/hooks/sync.sh' "$tmpl"
-    grep -qF 'agents/hooks/registry.yaml' "$tmpl"
-    grep -qF 'yq -p=yaml -o=json' "$tmpl"
-    grep -qF 'shared_assets' "$tmpl"
-    grep -qF 'Hooks asset hash:' "$tmpl"
-    # No hardcoded asset literals — must be derived from the registry.
-    ! grep -qF 'session-start-cheese-flair.sh' "$tmpl"
-    ! grep -qF 'cheese-flair.md' "$tmpl"
-}
+# The standalone run_onchange_after_install-hooks chezmoi template was
+# retired in curd 7: hook deployment now flows through the base-profile
+# render (ap → claude/codex renderers, which copy the hook script + its
+# shared_assets). The hooks sync.sh lib still backs the `hook-sync` alias
+# and is exercised by the upsert/idempotence tests above; the rendered
+# deploy payload is covered by agent-profile's renderer tests and
+# tests/install-base-profile.bats.
 
 # ── hardening: filter honors per-entry harnesses list ──────────────────
 

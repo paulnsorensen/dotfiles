@@ -9,7 +9,11 @@ load test_helper
 setup() {
     setup_test_env
     export CHEZMOI_SYNC="$REAL_DOTFILES_DIR/chezmoi/.sync"
-    export INSTALLER_TMPL="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-claude-skills.sh.tmpl"
+    # The install-claude-skills deploy script was retired (curd 7); its
+    # deploy role — and the gh fail-loud + content-hash invariants below —
+    # moved to install-base-profile, which renders the registry-derived
+    # `base` profile (skills union included) into every harness via `ap`.
+    export INSTALLER_TMPL="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-base-profile.sh.tmpl"
 }
 
 teardown() { teardown_test_env; }
@@ -331,10 +335,10 @@ EOF
 # Regression guard for the first-install race between chezmoi/.sync (runs
 # first alphabetically) and claude/.sync (creates the ~/.claude/{hooks,
 # reference, settings.json} symlinks). Without the prelink, chezmoi's
-# run_onchange install-hooks template lands files inside a real
-# ~/.claude/hooks/ dir, and `claude mcp add`/`claude plugin install` land
-# a real ~/.claude/settings.json file — both of which claude/.sync later
-# backs up to .bak, orphaning everything chezmoi just wrote.
+# run_onchange base-profile render lands files inside a real ~/.claude/
+# dir, and any settings write lands a real ~/.claude/settings.json file —
+# both of which claude/.sync later backs up to .bak, orphaning everything
+# chezmoi just wrote.
 
 @test "chezmoi/.sync pre-links ~/.claude/{hooks,reference,settings.json} on a fresh install" {
     # No ~/.claude at all — fresh-box state.
@@ -453,34 +457,36 @@ EOF
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/.chezmoiroot"
 }
 
-@test "chezmoi/run_onchange template references both helpers under chezmoi/lib" {
+@test "chezmoi/run_onchange template drives the base-profile installer lib" {
     assert_file_exists "$INSTALLER_TMPL"
-    grep -qF 'lib/install-local.sh' "$INSTALLER_TMPL"
-    grep -qF 'lib/install-external.sh' "$INSTALLER_TMPL"
-    # shellcheck disable=SC2016 # literal text in the template, not a shell expansion
-    grep -qF '$DOTFILES_ROOT/skills' "$INSTALLER_TMPL"
-    grep -qF '.claude/skills' "$INSTALLER_TMPL"
-    grep -qF '_registry.yaml' "$INSTALLER_TMPL"
+    grep -qF 'lib/install-base-profile.sh' "$INSTALLER_TMPL"
+    # The unified deploy runs through the `ap` shim, not the retired
+    # install-local / install-external helpers.
+    grep -qF 'agent-profile/ap' "$INSTALLER_TMPL"
 }
 
-@test "chezmoi/run_onchange template no longer references skills-install/" {
-    if grep -qF 'skills-install/' "$INSTALLER_TMPL"; then
-        echo "template still references the deleted skills-install/ directory" >&2
-        return 1
-    fi
+@test "chezmoi/run_onchange template no longer references the retired deploy helpers" {
+    for stale in 'install-local.sh' 'lib/install-external.sh' 'skills-install/'; do
+        if grep -qF "$stale" "$INSTALLER_TMPL"; then
+            echo "template still references retired deploy path: $stale" >&2
+            return 1
+        fi
+    done
 }
 
 @test "chezmoi/run_onchange template embeds a content hash so chezmoi re-runs on changes" {
-    grep -qF 'Skills tree hash:' "$INSTALLER_TMPL"
+    grep -qF 'hash:' "$INSTALLER_TMPL"
     grep -qF 'output' "$INSTALLER_TMPL"
 }
 
-@test "chezmoi/run_onchange template hashes the same tree it installs from" {
-    # Locks PR #1's flatten: hash-line tree path and installer source arg
-    # must agree. Reverting one without the other would silently de-sync
-    # the run_onchange trigger from the install source.
+@test "chezmoi/run_onchange template hashes the registries + skills tree it renders from" {
+    # The base profile unions the three registries + the local skills tree;
+    # the hash must cover them so a registry/skill edit retriggers the render.
     grep -qF '/../skills -type f' "$INSTALLER_TMPL"
-    # And the old nested path must be gone from both the hash and the exec line.
+    grep -qF '/../profiles/base' "$INSTALLER_TMPL"
+    grep -qF '/../agents/mcp/registry.yaml' "$INSTALLER_TMPL"
+    grep -qF '/../agents/hooks/registry.yaml' "$INSTALLER_TMPL"
+    # The pre-flatten nested path must stay gone.
     if grep -qF '/../claude/skills' "$INSTALLER_TMPL"; then
         echo "template still references the pre-flatten claude/skills tree" >&2
         return 1
@@ -488,21 +494,86 @@ EOF
 }
 
 @test "chezmoi/run_onchange template fails loud when gh / gh skill / gh auth missing" {
-    # Spec invariant (PR #196): the external installer must FAIL LOUD when
-    # gh, the `gh skill` subcommand, or gh auth is missing — not skip
-    # silently, and not swallow per-invocation failure with `|| true`.
-    # Silent skip + `|| true` masked silent partial installs (the bug PR
-    # #196 fixes); guarding against regression of either swallow path is
-    # the whole point of this assertion.
+    # Spec invariant (PR #196, carried into curd 7): the deploy must FAIL
+    # LOUD when gh, the `gh skill` subcommand, or gh auth is missing —
+    # external skills install through ap's fetch path, which shells `gh
+    # skill install`. Silent skip masked partial installs; guard against it.
     grep -qF 'command -v gh' "$INSTALLER_TMPL"
     grep -qF 'gh skill --help' "$INSTALLER_TMPL"
     grep -qF 'gh auth status' "$INSTALLER_TMPL"
-    grep -qF 'install-external.sh' "$INSTALLER_TMPL"
-    # Must NOT tolerate per-invocation failure; the `|| true` swallow is gone.
-    if grep -qE 'install-external\.sh.*\|\| *true' "$INSTALLER_TMPL"; then
-        echo "install-external.sh invocation still has '|| true' — silent partial install regression risk" >&2
+    # The render invocation must NOT tolerate per-invocation failure.
+    if grep -qE 'install-base-profile\.sh.*\|\| *true' "$INSTALLER_TMPL"; then
+        echo "base-profile render still has '|| true' — silent partial install regression risk" >&2
         return 1
     fi
+}
+
+# Helper: render the run_onchange template to a runnable script + drop a
+# tripwire `ap` on PATH that fails loudly if the render is ever reached.
+# Used by the preflight-FAILURE tests below: the static grep above proves the
+# checks exist in the text; these prove they actually abort at runtime BEFORE
+# the `ap` render (a silent partial-install regression PR #196 guarded against).
+render_base_profile_onchange() {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local script="$TEST_HOME/base-profile-onchange.sh"
+    chezmoi execute-template --source "$REAL_DOTFILES_DIR/chezmoi" \
+        < "$INSTALLER_TMPL" > "$script"
+    chmod +x "$script"
+    # If preflight wrongly passes through, the installer would invoke `ap`;
+    # this tripwire turns that into a loud, assertable failure.
+    local fake_bin="$TEST_HOME/tripwire-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/ap" <<'SH'
+#!/usr/bin/env bash
+echo "TRIPWIRE: ap render reached despite a failing gh preflight" >&2
+exit 0
+SH
+    chmod +x "$fake_bin/ap"
+    echo "$script"
+}
+
+@test "base-profile run_onchange aborts non-zero at runtime when gh auth is missing" {
+    command -v uv >/dev/null 2>&1 || skip "uv not installed (run_onchange skips before preflight)"
+    local script
+    script=$(render_base_profile_onchange)
+    # gh present, `gh skill --help` ok, but `gh auth status` FAILS.
+    local fake_bin="$TEST_HOME/gh-unauthed-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/gh" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+    skill) exit 0 ;;
+    auth)  echo "not logged in" >&2; exit 1 ;;
+    *)     exit 0 ;;
+esac
+SH
+    chmod +x "$fake_bin/gh"
+    PATH="$TEST_HOME/tripwire-bin:$fake_bin:$PATH" run bash "$script"
+    assert_failure
+    assert_output_contains "not authenticated"
+    [[ "$output" != *"TRIPWIRE"* ]]
+}
+
+@test "base-profile run_onchange aborts non-zero at runtime when gh skill subcommand is absent" {
+    command -v uv >/dev/null 2>&1 || skip "uv not installed (run_onchange skips before preflight)"
+    local script
+    script=$(render_base_profile_onchange)
+    # gh present but the `gh skill` subcommand is unavailable (old gh).
+    local fake_bin="$TEST_HOME/gh-noskill-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/gh" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+    skill) echo "unknown command \"skill\"" >&2; exit 1 ;;
+    auth)  exit 0 ;;
+    *)     exit 0 ;;
+esac
+SH
+    chmod +x "$fake_bin/gh"
+    PATH="$TEST_HOME/tripwire-bin:$fake_bin:$PATH" run bash "$script"
+    assert_failure
+    assert_output_contains "v2.90"
+    [[ "$output" != *"TRIPWIRE"* ]]
 }
 
 @test "chezmoi/.chezmoiignore excludes lib/ so helpers aren't applied to \$HOME" {
@@ -639,13 +710,12 @@ YAML
 
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────
 
-@test "chezmoi apply triggers the skill installer (real files in ~/.claude/skills)" {
+@test "chezmoi apply triggers the base-profile render + renders templates" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # PR #196: Phase 2 of the run_onchange installer now fails loud when
-    # `gh auth status` returns non-zero. CI runners have gh installed but
-    # unauthenticated, so stub a fake gh that satisfies all three preflight
-    # checks. Phase 1 (install-local.sh) is what this test actually asserts.
+    # The base-profile run_onchange (curd 7) fails loud when gh / gh skill /
+    # gh auth is missing. CI runners have gh installed but unauthenticated, so
+    # stub a fake gh that satisfies all three preflight checks.
     local fake_gh_bin
     fake_gh_bin=$(make_fake_gh)
     PATH="$fake_gh_bin:$PATH"
@@ -667,23 +737,22 @@ TOML
     run bash "$CHEZMOI_SYNC"
     assert_success
 
-    # The installer reads from the real dotfiles skills/ tree.
-    # We just need to assert that chezmoi apply triggers the run_onchange
-    # script, which exec's install-local.sh. After apply, at least one
-    # known dotfiles-owned skill should land at ~/.claude/skills/ as a real
-    # directory and the manifest should list it.
     run chezmoi apply --force
     assert_success
 
-    assert_file_exists "$HOME/.claude/skills/.dotfiles-managed"
-    [[ -s "$HOME/.claude/skills/.dotfiles-managed" ]]
-
-    # Pick the first managed skill from the manifest and assert it exists
-    # as a real directory (not a symlink).
-    local first
-    first=$(head -1 "$HOME/.claude/skills/.dotfiles-managed")
-    [[ -n "$first" ]]
-    [[ -d "$HOME/.claude/skills/$first" && ! -L "$HOME/.claude/skills/$first" ]]
+    # Skills now deploy through the registry-derived `base` profile rendered
+    # by `ap` (claude renderer → ~/.claude/plugins/local/base/skills/<name>).
+    # The render needs uv (+ a real `ap` env); when uv is absent the
+    # run_onchange skips by design, so gate the skill assertion on uv.
+    if command -v uv >/dev/null 2>&1; then
+        local skills_dir="$HOME/.claude/plugins/local/base/skills"
+        [[ -d "$skills_dir" ]]
+        # At least one dotfiles-owned (local path:) skill landed as a real dir.
+        local first
+        first=$(find "$skills_dir" -mindepth 1 -maxdepth 1 -type d | head -1)
+        [[ -n "$first" ]]
+        [[ -d "$first" && ! -L "$first" ]]
+    fi
 
     # The gitconfig template should now exist at the rendered target with
     # the bootstrapped email.

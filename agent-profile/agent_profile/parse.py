@@ -57,6 +57,15 @@ class Manifest:
     commands: list[dict[str, Any]] = field(default_factory=list)
     hooks: list[dict[str, Any]] = field(default_factory=list)
     settings: dict[str, Any] = field(default_factory=dict)
+    # Launch-overlay / isolation (spec curd 6). These come from the
+    # outermost profile only (like name/description) — isolation is a
+    # property of the profile you launch, not of its includes.
+    isolated: bool = False
+    system_prompt: str | None = None
+    tools: list[str] = field(default_factory=list)
+    permissions_deny: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+    extra_args: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the same JSON shape parse.sh emits (used for the
@@ -144,6 +153,14 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         "name": name,
         "description": raw.get("description") or "",
         "include": raw.get("include") or [],
+        # Launch-overlay fields (curd 6) — carried verbatim from the outer
+        # profile; not merged from includes.
+        "isolated": bool(raw.get("isolated") or False),
+        "system_prompt": raw.get("system_prompt") or None,
+        "tools": list(raw.get("tools") or []),
+        "permissions_deny": list(raw.get("permissions_deny") or []),
+        "env": dict(raw.get("env") or {}),
+        "extra_args": list(raw.get("extra_args") or []),
         # Registry-derived items come first; inline items append (matching
         # the include "outer last" convention so an inline override on a
         # name-collision wins on scalar/object merges downstream).
@@ -257,6 +274,17 @@ def _parse_with_includes(
     merged = _merge_two(merged, self_)
     merged["name"] = self_["name"]
     merged["description"] = self_["description"]
+    # Launch-overlay fields belong to the outermost profile (not merged
+    # from includes), mirroring name/description.
+    for key in (
+        "isolated",
+        "system_prompt",
+        "tools",
+        "permissions_deny",
+        "env",
+        "extra_args",
+    ):
+        merged[key] = self_[key]
     return merged
 
 
@@ -283,4 +311,10 @@ def parse_manifest(profile_dir: Path, find_profile_dir: Any = None) -> Manifest:
         commands=merged["commands"],
         hooks=merged["hooks"],
         settings=merged["settings"],
+        isolated=merged["isolated"],
+        system_prompt=merged["system_prompt"],
+        tools=merged["tools"],
+        permissions_deny=merged["permissions_deny"],
+        env=merged["env"],
+        extra_args=merged["extra_args"],
     )

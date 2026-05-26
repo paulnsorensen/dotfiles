@@ -19,7 +19,7 @@ claude/
 ├── agents/           # Specialist agents (Fromage pipeline + standalone)
 ├── commands/         # Slash commands (/spec, /wreck, /test, etc.)
 ├── hooks/            # Pre-tool enforcement hooks + lifecycle hooks
-├── lib/              # Shared sync helpers (sync-common.sh, gen-profile-mcp.sh)
+├── lib/              # Shared sync helpers (sync-common.sh)
 ├── plugins/          # Plugin registry and sync script
 │   ├── registry.yaml # Source of truth for plugins
 │   └── sync.sh       # Declarative sync via native claude plugin commands

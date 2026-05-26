@@ -44,101 +44,17 @@ ccfresh() {
 }
 
 # ═══════════════════════════════════════════════════════════════════
-# ccp — launch claude with a scoped profile
+# Scoped profiles — `dots profile launch <harness> <name>`
 # ═══════════════════════════════════════════════════════════════════
-# Usage:
-#   ccp                 → list available profiles and exit
-#   ccp <name>          → launch the named profile from claude/profiles/<name>/
-#   ccp <name> <args>   → pass extra args through to claude
-#
+# The retired `ccp` launcher is superseded by the harness-agnostic `ap`
+# tool: profiles live at profiles/<name>/profile.yaml and launch via
+#   dots profile launch claude <name> [-- claude args...]
+# Isolated profiles (isolated: true) reproduce the old ccp closed-world
+# semantics (strict MCP scope, --setting-sources "", --tools whitelist,
+# --append-system-prompt-file, permissions deny, env, extra_args).
+#   dots profile list            → list available profiles
+#   dots profile describe <name> → show the resolved manifest
 # For default Claude Code (no profile), use `cc`.
-#
-# Each profile is a directory under claude/profiles/<name>/. Files are
-# auto-wired if present — drop a new directory in and it works:
-#   CLAUDE.md            → --append-system-prompt-file
-#   settings.json        → --setting-sources "" --settings (no inherited config)
-#   settings-merge.json  → --settings (additive — merges on top of the
-#                          preceding settings layer: user settings when
-#                          there's no settings.json in the profile, or the
-#                          profile's settings.json when both are present.
-#                          Use for per-profile enabledPlugins overrides.)
-#   mcp-scope.yaml       → preferred; list of MCP names validated against
-#                          agents/mcp/registry.yaml. Generates a strict mcp.json
-#                          at launch (combined with mcp-add.json if present).
-#   mcp.json             → legacy; hand-written strict mcp config.
-#   mcp-add.json         → additive. Merged into mcp-scope output if both exist;
-#                          otherwise --mcp-config on top of user MCPs.
-#   launch.zsh           → sourced; may set extra_args=(...) for --plugin-dir,
-#                          --tools, --dangerously-skip-permissions, etc.
-#                          may set env_vars=(KEY=value ...) for per-profile env.
-ccp() {
-    local profiles_dir="$DOTFILES_DIR/claude/profiles"
-    local name="$1"
-
-    if [[ -z "$name" ]]; then
-        echo "Available profiles:"
-        local dir
-        for dir in "$profiles_dir"/*(/N); do
-            echo "  ${${dir%/}:t}"
-        done
-        echo ""
-        echo "Usage: ccp <name> [claude args...]"
-        echo "For default Claude Code, use: cc"
-        return 0
-    fi
-    shift
-
-    local profile="$profiles_dir/$name"
-    if [[ ! -d "$profile" ]]; then
-        echo "ccp: no profile '$name' (looked in $profile)" >&2
-        return 1
-    fi
-
-    local args=()
-    [[ -f "$profile/CLAUDE.md" ]] && args+=(--append-system-prompt-file "$profile/CLAUDE.md")
-    [[ -f "$profile/settings.json" ]] && args+=(--setting-sources "" --settings "$profile/settings.json")
-    [[ -f "$profile/settings-merge.json" ]] && args+=(--settings "$profile/settings-merge.json")
-    # MCP scoping, tried in order:
-    #   mcp-scope.yaml  → validated subset of registry.yaml + optional mcp-add.json,
-    #                      generated into a tmp mcp.json (preferred, DRY).
-    #   mcp.json        → hand-written strict MCP config (legacy).
-    #   mcp-add.json    → additive only on top of user MCPs (legacy).
-    local generated_mcp=""
-    if [[ -f "$profile/mcp-scope.yaml" ]]; then
-        generated_mcp=$(mktemp "${TMPDIR:-/tmp}/ccp-$name-mcp.XXXXXX")
-        if ! "$DOTFILES_DIR/claude/lib/gen-profile-mcp.sh" "$name" > "$generated_mcp"; then
-            echo "ccp: failed to generate mcp.json for profile '$name'" >&2
-            rm -f "$generated_mcp"
-            return 1
-        fi
-        args+=(--strict-mcp-config --mcp-config "$generated_mcp")
-    elif [[ -f "$profile/mcp.json" ]]; then
-        args+=(--strict-mcp-config --mcp-config "$profile/mcp.json")
-    elif [[ -f "$profile/mcp-add.json" ]]; then
-        args+=(--mcp-config "$profile/mcp-add.json")
-    fi
-
-    local extra_args=()
-    local env_vars=()
-    [[ -f "$profile/launch.zsh" ]] && source "$profile/launch.zsh"
-
-    if (( ${#env_vars[@]} > 0 )); then
-        env "${env_vars[@]}" claude "${args[@]}" "${extra_args[@]}" "$@"
-    else
-        claude "${args[@]}" "${extra_args[@]}" "$@"
-    fi
-}
-
-# Tab completion: ccp <TAB> → profile directory names
-_ccp() {
-    local -a profiles
-    local dir
-    for dir in "$DOTFILES_DIR/claude/profiles"/*(/N); do
-        profiles+=("${${dir%/}:t}")
-    done
-    _describe 'profile' profiles
-}
-compdef _ccp ccp
 
 # ═══════════════════════════════════════════════════════════════════
 # MCP Management (thin wrappers around native commands)
@@ -148,15 +64,16 @@ AGENTS_DOTFILES="$DOTFILES_DIR/agents"
 
 alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'
-alias mcp-sync='$AGENTS_DOTFILES/mcp/sync.sh'
-alias mcp-sync-dry='$AGENTS_DOTFILES/mcp/sync.sh --dry-run'
+# Deploy is unified through `ap`: the registry stays the edit surface
+# (mcp-edit), and `dots profile install base` renders the registry-derived
+# union into every harness (curd 7 / D1 — replaces the retired mcp sync).
+alias mcp-sync='dots profile install base'
 alias mcp-edit='${EDITOR:-vim} $AGENTS_DOTFILES/mcp/registry.yaml'
 
 # ═══════════════════════════════════════════════════════════════════
-# Hook Management (harness-agnostic — Claude + Codex)
+# Hook Management (harness-agnostic — edit surface; deploy via `ap`)
 # ═══════════════════════════════════════════════════════════════════
-alias hook-sync='$AGENTS_DOTFILES/hooks/sync.sh'
-alias hook-sync-dry='$AGENTS_DOTFILES/hooks/sync.sh --dry-run'
+alias hook-sync='dots profile install base'
 alias hook-edit='${EDITOR:-vim} $AGENTS_DOTFILES/hooks/registry.yaml'
 alias hook-ls='yq -r ".hooks | keys | .[]" $AGENTS_DOTFILES/hooks/registry.yaml'
 

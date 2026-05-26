@@ -1,0 +1,11 @@
+# notion — Notion-connected session (ccp parity).
+# notion was additive-only under ccp (mcp-add.json, no scope). Under the
+# launch overlay it becomes a closed world whose single MCP is notion.
+name: notion
+description: Notion HTTP MCP
+isolated: true
+system_prompt: CLAUDE.md
+mcps:
+  - name: notion
+    type: http
+    url: https://mcp.notion.com/mcp

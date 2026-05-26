@@ -1,0 +1,42 @@
+# review — read-only PR review (ccp parity).
+# Reviewers read and file comments; they don't fix. Edit/Write/NotebookEdit
+# and the serena mutators are denied; the tool surface is a read-only
+# whitelist. MCP world is tilth + code-review-graph + context7.
+name: review
+description: Read-only PR review
+isolated: true
+system_prompt: CLAUDE.md
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+  - Skill
+  - Agent
+  - TaskCreate
+  - TaskUpdate
+  - TaskList
+  - AskUserQuestion
+permissions_deny:
+  - Edit
+  - Write
+  - NotebookEdit
+  - mcp__tilth__tilth_write
+  - mcp__serena__replace_symbol_body
+  - mcp__serena__replace_content
+  - mcp__serena__insert_before_symbol
+  - mcp__serena__insert_after_symbol
+  - mcp__serena__rename_symbol
+  - mcp__serena__safe_delete_symbol
+mcps:
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]
+  - name: code-review-graph
+    command: uvx
+    args: ["--from", "code-review-graph[embeddings]", "code-review-graph", "serve"]
+  - name: context7
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"

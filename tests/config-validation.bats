@@ -103,21 +103,19 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ -z "$bad" ]]
 }
 
-# ── skill-* aliases (post-flatten chezmoi wiring) ─────────────────────────────
-# Locks the skill-sync / skill-sync-dry / skill-edit alias bodies to the
-# chezmoi/lib/ installers and skills/_registry.yaml. Without these, a future
-# rename of the helpers or registry would silently de-sync the aliases and
-# every dev's `skill-sync` would fail at runtime, not at test time.
+# ── skill-* aliases (unified ap deploy — curd 7) ──────────────────────────────
+# The registry stays the EDIT surface (skill-edit); deploy is unified through
+# `ap` (skill-sync → `dots profile install base`). Locking the bodies guards a
+# silent de-sync where a rename would only surface at every dev's runtime.
 
-@test "skill-sync alias points at chezmoi/lib/install-external.sh + skills/_registry.yaml" {
+@test "skill-sync alias deploys via the unified ap base-profile render" {
     local aliases_file="$DOTFILES_DIR/zsh/aliases.zsh"
-    grep -qE "^alias skill-sync='bash \\\$DOTFILES_DIR/chezmoi/lib/install-external\\.sh \\\$DOTFILES_DIR/skills/_registry\\.yaml'" "$aliases_file"
-    grep -qE "^alias skill-sync-dry='bash \\\$DOTFILES_DIR/chezmoi/lib/install-external\\.sh \\\$DOTFILES_DIR/skills/_registry\\.yaml --dry-run'" "$aliases_file"
+    grep -qE "^alias skill-sync='dots profile install base'" "$aliases_file"
     grep -qE "^alias skill-edit='\\\$\\{EDITOR:-vim\\} \\\$DOTFILES_DIR/skills/_registry\\.yaml'" "$aliases_file"
 }
 
-@test "skill-* alias targets resolve to real executables and the registry exists" {
-    [[ -x "$DOTFILES_DIR/chezmoi/lib/install-external.sh" ]]
+@test "skill-* alias targets resolve to real artifacts (ap shim + registry)" {
+    [[ -x "$DOTFILES_DIR/agent-profile/ap" ]]
     [[ -f "$DOTFILES_DIR/skills/_registry.yaml" ]]
 }
 
