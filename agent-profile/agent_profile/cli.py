@@ -239,7 +239,11 @@ def _fetch_external_skills(
     """Fetch every ``source:`` skill into each in-scope harness via
     ``gh skill install`` (spec curd 4). ``path:`` skills are copied by the
     renderers, so they are excluded here."""
-    from agent_profile.fetch import external_skills, fetch_external_skill
+    from agent_profile.fetch import (
+        SkillFetchError,
+        external_skills,
+        fetch_external_skill,
+    )
 
     ext = external_skills(manifest.skills)
     if not ext:
@@ -253,9 +257,17 @@ def _fetch_external_skills(
                 f"{skill['source']} {name or ''} -> {h}".rstrip(),
                 file=out,
             )
-            fetch_external_skill(
-                skill["source"], name, pin, h, _skill_fetch_runner
-            )
+            try:
+                fetch_external_skill(
+                    skill["source"], name, pin, h, _skill_fetch_runner
+                )
+            except SkillFetchError as exc:
+                raise CliError(f"{colors.RED}{exc}{colors.NC}") from exc
+            except OSError as exc:
+                raise CliError(
+                    f"{colors.RED}ap: cannot run 'gh skill install' "
+                    f"({exc}); is the gh CLI installed?{colors.NC}"
+                ) from exc
 
 
 def _set_files(target: Path, profile: str, new_files: list[str]) -> None:

@@ -104,3 +104,39 @@ def test_install_skips_fetch_when_no_source_skills(env, stub_renderers, monkeypa
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0)
     assert cli.main(["install", "noext", "--harness", "claude"]) == 0
     assert calls == []
+
+
+# ─── fetch failures surface as clean CLI errors, not tracebacks ───────
+
+
+def test_install_fetch_failure_exits_clean(env, stub_renderers, monkeypatch, capsys):
+    # A non-zero gh exit raises SkillFetchError; main() must convert it to the
+    # CLI's "clean stderr line + exit 1" contract, not an uncaught traceback.
+    write_profile(
+        env.profiles,
+        "extprof",
+        "name: extprof\nskills:\n  - name: mold\n    source: o/r\n",
+    )
+    monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: 1)
+    assert cli.main(["install", "extprof", "--harness", "claude"]) == 1
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert "gh skill install failed" in err
+
+
+def test_install_fetch_missing_gh_exits_clean(env, stub_renderers, monkeypatch, capsys):
+    # gh absent → subprocess raises FileNotFoundError (an OSError); main() must
+    # report it cleanly and exit 1, not crash with a traceback.
+    def boom(argv):
+        raise FileNotFoundError(2, "No such file or directory", "gh")
+
+    write_profile(
+        env.profiles,
+        "extprof",
+        "name: extprof\nskills:\n  - name: mold\n    source: o/r\n",
+    )
+    monkeypatch.setattr(cli, "_skill_fetch_runner", boom)
+    assert cli.main(["install", "extprof", "--harness", "claude"]) == 1
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert "gh CLI" in err

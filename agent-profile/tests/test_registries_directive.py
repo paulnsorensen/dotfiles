@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import pytest
 
-from agent_profile.env import EnvResolutionError
 from agent_profile.parse import ParseError, parse_manifest, parse_one
 from tests.conftest import write_profile
 

@@ -108,7 +108,10 @@ def _expand_external_skills(
     sources = data.get("sources") or {}
     out: list[dict[str, Any]] = []
     for repo, body in sources.items():
-        body = body or {}
+        if body is None:
+            body = {}  # bare `owner/repo:` → repo-level auto-discovery
+        elif not isinstance(body, dict):
+            continue  # malformed non-mapping body (typo) — skip, as MCP/hook readers do
         pin = body.get("pin")
         names = _as_list(body.get("skills"))
         if names:

@@ -262,3 +262,19 @@ def test_expand_mcps_skip_non_mapping_entries(repo):
     out = expand_registries(directive, root, _dotenv())
     names = [m["name"] for m in out["mcps"]]
     assert names == ["good"]
+
+
+def test_expand_external_skills_skip_non_mapping_source(repo):
+    root, directive = repo
+    # A malformed `sources:` body that is not a mapping (registry typo) is
+    # skipped, not crashed on — parity with the MCP/hook non-mapping skip. A
+    # bare `owner/repo:` (None body) stays a valid repo-level auto-discovery.
+    (root / "skills" / "_registry.yaml").write_text(
+        "sources:\n"
+        "  good/repo:\n    skills: [mold]\n"
+        "  bare/repo:\n"
+        "  bogus/repo: just-a-string\n"
+    )
+    out = expand_registries(directive, root, _dotenv())
+    sources = sorted({s["source"] for s in out["skills"] if "source" in s})
+    assert sources == ["bare/repo", "good/repo"]
