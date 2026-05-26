@@ -86,7 +86,7 @@ mcp_claude_get_scope() {
     scope=$(claude mcp get "$1" 2>/dev/null | awk '
         /^[[:space:]]*Scope:[[:space:]]*/ {
             sub(/^[[:space:]]*Scope:[[:space:]]*/, "")
-            print tolower($0); exit
+            print tolower($1); exit
         }')
     case "$scope" in user|project|local) echo "$scope" ;; *) echo "local" ;; esac
 }
