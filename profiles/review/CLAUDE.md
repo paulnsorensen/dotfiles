@@ -3,8 +3,8 @@
 This session is a **PR review**, not an edit session. Tool surface is
 restricted to read/search/Bash — no Edit, Write, or NotebookEdit. If
 you find yourself wanting to fix something, file it as a review
-comment instead. The user opened `ccp review` because they want a
-reviewer, not a fixer.
+comment instead. The user opened the `review` profile (`dots profile launch
+claude review`) because they want a reviewer, not a fixer.
 
 ## Why this profile exists
 

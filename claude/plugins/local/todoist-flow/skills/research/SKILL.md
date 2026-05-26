@@ -2,7 +2,8 @@
 name: research
 description: >
   Multi-source research orchestrator scoped to the todoist-flow plugin so
-  profiles like `ccp todo` can do fact checks without enabling cheese-flow.
+  profiles like `dots profile launch claude todo` can do fact checks without
+  enabling cheese-flow.
   Spawns parallel fetch sub-agents for Context7 (library docs), Tavily
   (technical content), Serper (facts/SERP), and `gh` CLI (GitHub patterns).
   Fetchers write findings to scratch files; a single synthesis sub-agent

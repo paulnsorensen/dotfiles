@@ -32,7 +32,7 @@ mcps:
   # under Claude. Codex has no plugin system, so gate_unless is ignored there
   # and the entry installs normally.
   #
-  # shadcn lives in the FE profile only — see claude/profiles/fe/mcp-add.json.
+  # shadcn lives in the FE profile only — see profiles/fe/profile.yaml.
   # Installing user-scope loads its tool schemas in every session even though
   # shadcn is only useful for FE work.
 

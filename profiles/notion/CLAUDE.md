@@ -1,6 +1,6 @@
 # Notion Profile
 
-This session adds the Notion MCP to the default dev environment.
+This is a closed-world session: the only MCP loaded is Notion.
 
 ## Why this profile exists
 
@@ -11,7 +11,7 @@ design docs, RFDs, project trackers, meeting notes.
 
 ## MCPs in scope
 
-Defined in `mcp-add.json` (additive — user MCPs remain available):
+Defined in `profile.yaml` (closed world — `--strict-mcp-config`, so only the MCP below loads; the default dev MCPs are not present):
 
 - **notion** — `mcp__notion__*` — read, search, create, and update pages,
   databases, and blocks in the connected Notion workspace.
@@ -26,6 +26,6 @@ Defined in `mcp-add.json` (additive — user MCPs remain available):
 
 ## First-run authentication
 
-On the first tool call in a fresh `ccp notion` session, Claude Code will
+On the first tool call in a fresh `dots profile launch claude notion` session, Claude Code will
 prompt for OAuth. Approve once; the token is stored by the Notion MCP
 server and reused on subsequent launches.

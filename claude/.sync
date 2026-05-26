@@ -10,31 +10,30 @@ mkdir -p "$CLAUDE_DIR"
 
 # Config to symlink. NOT included here:
 #   - plugins/  — Claude uses that path as plugin cache
-#   - skills/   — copied (not symlinked) by chezmoi via
-#                 chezmoi/.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl
-#                 so gh-installed skills can drop real dirs alongside
-#                 without fighting a directory symlink.
+#   - profiles/ — retired; scoped profiles moved to profiles/<name>/profile.yaml
+#                 (repo root) and deploy/launch via the `ap` tool (dots profile).
+#   - skills/   — copied (not symlinked) by chezmoi; gh-installed skills drop
+#                 real dirs alongside without fighting a directory symlink.
 #   - CLAUDE.md, RTK.md — copied (not symlinked) by chezmoi via
 #                 chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl
 #                 from the shared agents/ source so Codex sees the same content.
-#   - mcp/      — the registry moved to agents/mcp/; chezmoi drives the sync
-#                 via run_onchange_after_install-mcp.sh.tmpl across all harnesses.
+#   - mcp/, hooks registry — the per-type registries live under agents/; the
+#                 registry-derived `base` profile is rendered into every harness
+#                 by chezmoi's run_onchange_after_install-base-profile.sh.tmpl.
 #
 # `hooks/`, `lib/`, and `reference/` STAY symlinked because they still hold
-# Claude-only assets (auto-format.js, gen-profile-mcp.sh, sliced-bread.md, …).
-# The cheese-flair trio (session-start-cheese-flair.sh, cheese-flair.sh,
-# cheese-flair.md) lives canonically under agents/ and is deployed into both
-# harnesses by chezmoi/.chezmoiscripts/run_onchange_after_install-hooks.sh.tmpl.
-# Because the Claude side writes through the directory symlinks above, the
-# regenerated copies reappear inside claude/{hooks,lib,reference}/ — those
-# three paths are gitignored.
+# Claude-only assets (auto-format.js, sliced-bread.md, …). The cheese-flair
+# trio (session-start-cheese-flair.sh, cheese-flair.sh, cheese-flair.md) lives
+# canonically under agents/ and is deployed by the base-profile render. Because
+# the Claude side writes through the directory symlinks above, the regenerated
+# copies reappear inside claude/{hooks,lib,reference}/ — those three paths are
+# gitignored.
 configs=(
   agents
   commands
   hooks
   settings.json
   reference
-  profiles
 )
 
 # Install hook dependencies (wink-nlp for violation classifier)

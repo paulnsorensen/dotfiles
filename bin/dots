@@ -8,8 +8,9 @@ set -euo pipefail
 DOTFILES_DIR="${DOTFILES_DIR:-${HOME}/Dev/dotfiles}"
 DOTFILES_STATE_DIR="${DOTFILES_STATE_DIR:-${HOME}/.local/state/dotfiles}"
 
-# Load .env so downstream sync steps (chezmoi apply, install-external.sh,
-# etc.) get API keys regardless of how `dots` was invoked. zsh/core.zsh only
+# Load .env so downstream sync steps (chezmoi apply, the base-profile
+# render via `ap`, etc.) get API keys regardless of how `dots` was invoked.
+# `ap` resolves ${VAR} MCP env refs at render time from .env. zsh/core.zsh only
 # fires for interactive zsh — running `dots sync` from bash, a script, or a
 # non-interactive shell would otherwise leave CONTEXT7_API_KEY / TAVILY_API_KEY
 # unset and abort `chezmoi apply` at the copilot template, skipping every

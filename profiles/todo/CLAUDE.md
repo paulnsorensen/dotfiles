@@ -38,8 +38,8 @@ and `git log/diff/show/status/branch` — but not mutating gh operations
 
 No LSP, NotebookEdit, WebFetch, WebSearch, or any code-review / code-graph
 MCPs (tilth, code-review-graph). This is not a coding session. If you find
-yourself wanting to modify source code, stop — the user opened `ccp todo`,
-not `claude` or `ccp fe`.
+yourself wanting to modify source code, stop — the user opened the `todo`
+profile (`dots profile launch claude todo`), not a general `claude` or `fe` session.
 
 Other claude.ai connectors (Figma, Drive, Calendar, n8n) are technically
 loaded because the connector channel is all-or-nothing, but they are NOT in

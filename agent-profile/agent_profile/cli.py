@@ -94,13 +94,18 @@ class CliError(Exception):
 
 def _describe_view(merged: dict[str, Any]) -> dict[str, Any]:
     """Project the resolved manifest to the ``describe`` view (port of the
-    jq filter in cmd_describe)."""
-    return {
+    jq filter in cmd_describe). Isolated profiles additionally surface the
+    launch-overlay fields so the closed world is inspectable."""
+    view: dict[str, Any] = {
         "name": merged.get("name"),
         "description": merged.get("description"),
         "mcps": [m["name"] for m in merged.get("mcps", [])],
         "agents": [a["name"] for a in merged.get("agents", [])],
-        "skills": [s["name"] for s in merged.get("skills", [])],
+        # A repo-level external skill (auto-discovery — no explicit name)
+        # carries only `source`; fall back to it so describe never KeyErrors.
+        "skills": [
+            s.get("name") or s.get("source") for s in merged.get("skills", [])
+        ],
         "commands": [c["name"] for c in merged.get("commands", [])],
         "hooks": [
             {
@@ -112,6 +117,18 @@ def _describe_view(merged: dict[str, Any]) -> dict[str, Any]:
         ],
         "permissions": merged.get("settings", {}).get("permissions_allow", []),
     }
+    if merged.get("isolated"):
+        view["isolated"] = True
+        view["system_prompt"] = merged.get("system_prompt")
+        view["tools"] = merged.get("tools", [])
+        view["permissions"] = {
+            "allow": merged.get("permissions_allow", []),
+            "deny": merged.get("permissions_deny", []),
+        }
+        view["enabled_plugins"] = merged.get("enabled_plugins", {})
+        view["env"] = merged.get("env", {})
+        view["extra_args"] = merged.get("extra_args", [])
+    return view
 
 
 # ─── subcommand handlers ─────────────────────────────────────────────
@@ -146,7 +163,19 @@ def cmd_describe(name: str, colors: _Colors, out: Any) -> int:
     profile_dir = discover.find_profile_dir(name)
     if profile_dir is None:
         raise CliError(f"{colors.RED}ap: profile '{name}' not found{colors.NC}")
-    merged = parse_manifest(profile_dir).to_dict()
+    m = parse_manifest(profile_dir)
+    merged = m.to_dict()
+    if m.isolated:
+        merged.update(
+            isolated=True,
+            system_prompt=m.system_prompt,
+            tools=list(m.tools),
+            permissions_allow=list(m.permissions_allow),
+            permissions_deny=list(m.permissions_deny),
+            enabled_plugins=dict(m.enabled_plugins),
+            env=dict(m.env),
+            extra_args=list(m.extra_args),
+        )
     print(
         f"{colors.CYAN}Profile: {name}{colors.NC}  "
         f"{colors.BLUE}({profile_dir}){colors.NC}",
@@ -381,6 +410,16 @@ def cmd_launch(
     exec_args = remaining[2:] + passthrough
 
     if name:
+        profile_dir = discover.find_profile_dir(name)
+        if profile_dir is None:
+            raise CliError(
+                f"{colors.RED}ap: profile '{name}' not found{colors.NC}"
+            )
+        manifest = parse_manifest(profile_dir)
+        if manifest.isolated:
+            _launch_isolated(
+                manifest, profile_dir, harness, exec_args, colors, out
+            )  # NoReturn
         install_rc = cmd_install(name, [harness], target, colors, out)
         if install_rc != 0:
             raise CliError(
@@ -392,6 +431,47 @@ def cmd_launch(
         f"{colors.BLUE}→ exec {harness} {' '.join(exec_args)}{colors.NC}",
         file=out,
     )
+    _exec(harness, exec_args, colors)
+
+
+def _launch_isolated(
+    manifest: Any,
+    profile_dir: Path,
+    harness: str,
+    exec_args: list[str],
+    colors: _Colors,
+    out: Any,
+) -> NoReturn:
+    """Closed-world launch (spec curd 6 / D6): build the ccp-parity flags,
+    inject the profile env, exec the harness. Isolated profiles are
+    claude-only (the flags are claude's); any other harness fails loud."""
+    from agent_profile.env import EnvResolutionError
+    from agent_profile.overlay import IsolationError, build_isolated_flags
+
+    if harness != "claude":
+        raise CliError(
+            f"{colors.RED}ap launch: profile '{manifest.name}' is isolated; "
+            f"isolation is claude-only (got '{harness}'){colors.NC}"
+        )
+    try:
+        flags, env = build_isolated_flags(manifest, profile_dir)
+    except (IsolationError, EnvResolutionError) as exc:
+        raise CliError(f"{colors.RED}{exc}{colors.NC}")
+
+    for key, value in env.items():
+        os.environ[key] = value
+
+    full_args = flags + exec_args
+    print(
+        f"{colors.BLUE}→ exec {harness} (isolated profile "
+        f"'{manifest.name}'){colors.NC}",
+        file=out,
+    )
+    _exec(harness, full_args, colors)
+
+
+def _exec(harness: str, exec_args: list[str], colors: _Colors) -> NoReturn:
+    """execvp the harness, converting an OSError into a clean CliError."""
     try:
         os.execvp(harness, [harness, *exec_args])
     except OSError as exc:
