@@ -13,7 +13,6 @@ enabled_plugins:
   "claude-md-management@claude-plugins-official": true
   "playwright@claude-plugins-official": true
   "frontend-design@claude-plugins-official": true
-  "cheese-flow@cheese-flow": true
   "claude-hud@claude-hud": true
   "plugin-dev@claude-plugins-official": false
   "skill-creator@claude-plugins-official": false
