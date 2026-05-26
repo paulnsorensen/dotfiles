@@ -1,0 +1,15 @@
+[[corpus]]
+name = "cheese-global"
+paths = ["~/.cheese"]
+globs = ["**/*.md"]
+exclude = ["**/.git/**"]
+
+# Top-level embeddings default for all repos (per-repo config can override).
+# snowflake-arctic-embed-s: 384-dim, English, retrieval-tuned. Full precision
+# (quantized=false) — corpora are small, so keep max quality.
+# NOTE: switching model later requires deleting the shared ground_dir and
+# re-running `hallouminate index`.
+[embeddings]
+enabled = true
+model = "snowflake/snowflake-arctic-embed-s"
+quantized = false

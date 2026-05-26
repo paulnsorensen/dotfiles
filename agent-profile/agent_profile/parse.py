@@ -22,6 +22,7 @@ Parity notes (must match parse.sh observably):
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,8 @@ from agent_profile._validate import (
     _validate_name,
     _validate_relpath,
 )
+from agent_profile.env import load_dotenv
+from agent_profile.ingest import expand_registries
 
 _ITEM_SECTIONS = ("mcps", "agents", "skills", "commands", "hooks")
 
@@ -135,17 +138,52 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
             out.append(entry)
         return out
 
+    reg = _expand_registries_directive(raw.get("registries"))
+
     return {
         "name": name,
         "description": raw.get("description") or "",
         "include": raw.get("include") or [],
-        "mcps": _decorate(raw.get("mcps") or []),
+        # Registry-derived items come first; inline items append (matching
+        # the include "outer last" convention so an inline override on a
+        # name-collision wins on scalar/object merges downstream).
+        "mcps": reg["mcps"] + _decorate(raw.get("mcps") or []),
         "agents": _decorate(raw.get("agents") or []),
-        "skills": _decorate(raw.get("skills") or []),
+        "skills": reg["skills"] + _decorate(raw.get("skills") or []),
         "commands": _decorate(raw.get("commands") or []),
-        "hooks": _decorate(raw.get("hooks") or []),
+        "hooks": reg["hooks"] + _decorate(raw.get("hooks") or []),
         "settings": raw.get("settings") or {},
     }
+
+
+def _repo_root() -> Path:
+    """The dotfiles repo root that holds the three registries + ``.env``.
+
+    Mirrors :func:`agent_profile.discover.search_roots` — ``DOTFILES_DIR``
+    with the same ``$HOME/Dev/dotfiles`` default."""
+    return Path(os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles"))
+
+
+def _expand_registries_directive(
+    directive: Any,
+) -> dict[str, list[dict[str, Any]]]:
+    """Expand a profile's ``registries:`` directive into item lists.
+
+    Returns empty lists when the directive is absent. Reads the registries
+    relative to the dotfiles repo root and resolves ``${VAR}`` env refs from
+    ``$DOTFILES_DIR/.env`` (spec D4). The registry items carry the repo root
+    as their ``_source_dir`` (not the profile dir) since their payload files
+    live under the repo, not the profile."""
+    if not directive:
+        return {"mcps": [], "skills": [], "hooks": []}
+    if not isinstance(directive, dict):
+        raise ParseError(
+            "ap_parse_one: 'registries' must be a mapping of "
+            "section -> registry path(s)"
+        )
+    repo_root = _repo_root()
+    dotenv = load_dotenv(repo_root / ".env")
+    return expand_registries(directive, repo_root, dotenv)
 
 
 def _merge_two(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
