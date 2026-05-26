@@ -28,6 +28,16 @@ permissions_deny:
   - mcp__serena__insert_after_symbol
   - mcp__serena__rename_symbol
   - mcp__serena__safe_delete_symbol
+# Per-profile plugin set (ccp settings-merge parity).
+enabled_plugins:
+  "claude-md-management@claude-plugins-official": true
+  "cheese-flow@cheese-flow": true
+  "claude-hud@claude-hud": true
+  "plugin-dev@claude-plugins-official": false
+  "skill-creator@claude-plugins-official": false
+  "frontend-design@claude-plugins-official": false
+  "playwright@claude-plugins-official": false
+  "todoist-flow@todoist-flow": false
 mcps:
   - name: tilth
     command: tilth

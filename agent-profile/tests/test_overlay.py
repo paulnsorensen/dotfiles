@@ -93,6 +93,8 @@ def test_non_isolated_defaults(env):
     assert m.system_prompt is None
     assert m.tools == []
     assert m.permissions_deny == []
+    assert m.permissions_allow == []
+    assert m.enabled_plugins == {}
     assert m.env == {}
     assert m.extra_args == []
 
@@ -207,6 +209,72 @@ def test_isolated_without_deny_omits_settings(env, monkeypatch):
     # but a closed MCP world still applies
     assert "--strict-mcp-config" in rec["args"]
     assert "--setting-sources" in rec["args"]
+
+
+def test_isolated_permissions_allow_restored_in_settings(env, monkeypatch):
+    """The migrated allow-list (ccp settings-merge parity) lands in the
+    generated settings.json so the profile's own MCP auto-approves."""
+    write_profile(
+        env.profiles,
+        "allowy",
+        "name: allowy\nisolated: true\n"
+        'permissions_allow:\n  - "mcp__notion__*"\n'
+        "permissions_deny: [Edit, Write]\n"
+        "mcps:\n  - name: tilth\n    command: tilth\n",
+    )
+    rec = _capture_exec(monkeypatch)
+    with pytest.raises(SystemExit):
+        cli.main(["launch", "claude", "allowy", "--target", str(env.target)])
+    args = rec["args"]
+    settings = json.loads(open(args[args.index("--settings") + 1]).read())
+    assert settings["permissions"]["allow"] == ["mcp__notion__*"]
+    assert settings["permissions"]["deny"] == ["Edit", "Write"]
+
+
+def test_isolated_only_allow_emits_settings(env, monkeypatch):
+    """A profile with an allow-list but no deny-list still emits --settings
+    (regression: the gate used to fire on permissions_deny only)."""
+    write_profile(
+        env.profiles,
+        "allowonly",
+        "name: allowonly\nisolated: true\n"
+        'permissions_allow:\n  - "Bash(rtk:*)"\n'
+        "mcps:\n  - name: tilth\n    command: tilth\n",
+    )
+    rec = _capture_exec(monkeypatch)
+    with pytest.raises(SystemExit):
+        cli.main(["launch", "claude", "allowonly", "--target", str(env.target)])
+    args = rec["args"]
+    assert "--settings" in args
+    settings = json.loads(open(args[args.index("--settings") + 1]).read())
+    assert settings["permissions"]["allow"] == ["Bash(rtk:*)"]
+    assert "deny" not in settings["permissions"]
+
+
+def test_isolated_enabled_plugins_in_settings(env, monkeypatch):
+    """A profile's enabled_plugins (ccp settings-merge parity) lands in the
+    generated settings.json under enabledPlugins so the curated plugin set
+    survives the closed-world launch."""
+    write_profile(
+        env.profiles,
+        "plugy",
+        "name: plugy\nisolated: true\n"
+        "enabled_plugins:\n"
+        '  "frontend-design@claude-plugins-official": true\n'
+        '  "skill-creator@claude-plugins-official": false\n'
+        "mcps:\n  - name: tilth\n    command: tilth\n",
+    )
+    rec = _capture_exec(monkeypatch)
+    with pytest.raises(SystemExit):
+        cli.main(["launch", "claude", "plugy", "--target", str(env.target)])
+    args = rec["args"]
+    assert "--settings" in args
+    settings = json.loads(open(args[args.index("--settings") + 1]).read())
+    assert settings["enabledPlugins"] == {
+        "frontend-design@claude-plugins-official": True,
+        "skill-creator@claude-plugins-official": False,
+    }
+    assert "permissions" not in settings
 
 
 # ─── overlay flag-builder unit (no exec) ─────────────────────────────

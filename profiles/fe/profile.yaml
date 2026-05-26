@@ -5,6 +5,19 @@ name: fe
 description: Frontend + shadcn/Figma/Playwright
 isolated: true
 system_prompt: CLAUDE.md
+# Auto-approve the Figma connector (ccp settings-merge parity).
+permissions_allow:
+  - "mcp__claude_ai_Figma__*"
+# Per-profile plugin set (ccp settings-merge parity).
+enabled_plugins:
+  "claude-md-management@claude-plugins-official": true
+  "playwright@claude-plugins-official": true
+  "frontend-design@claude-plugins-official": true
+  "cheese-flow@cheese-flow": true
+  "claude-hud@claude-hud": true
+  "plugin-dev@claude-plugins-official": false
+  "skill-creator@claude-plugins-official": false
+  "todoist-flow@todoist-flow": false
 env:
   ENABLE_CLAUDEAI_MCP_SERVERS: "true"
 mcps:

@@ -4,6 +4,16 @@ name: plugin
 description: Plugin dev — code nav + ecosystem docs
 isolated: true
 system_prompt: CLAUDE.md
+# Per-profile plugin set (ccp settings-merge parity).
+enabled_plugins:
+  "claude-md-management@claude-plugins-official": true
+  "plugin-dev@claude-plugins-official": true
+  "skill-creator@claude-plugins-official": true
+  "cheese-flow@cheese-flow": true
+  "playwright@claude-plugins-official": false
+  "frontend-design@claude-plugins-official": false
+  "claude-hud@claude-hud": false
+  "todoist-flow@todoist-flow": false
 mcps:
   - name: tilth
     command: tilth

@@ -1,6 +1,6 @@
 # Frontend Profile
 
-This session augments the default dev environment with frontend focus.
+This is a closed-world frontend session: a curated MCP set focused on FE work (the default dev surface is not loaded).
 
 ## Why this profile exists
 
@@ -12,7 +12,7 @@ helps and pulls in the claude.ai Figma connector for design-to-code flow.
 
 ## MCPs in scope
 
-Defined in `mcp-scope.yaml` (registry-validated) plus `mcp-add.json` (local):
+Defined in `profile.yaml` (closed world — `--strict-mcp-config`):
 
 - **shadcn** — `mcp__shadcn__*` — component registry; use over copy-pasting JSX.
 - **context7** — `mcp__context7__*` — React, Tailwind, Next.js, and other lib docs.

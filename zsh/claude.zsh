@@ -62,18 +62,30 @@ ccfresh() {
 CLAUDE_DOTFILES="$DOTFILES_DIR/claude"
 AGENTS_DOTFILES="$DOTFILES_DIR/agents"
 
+# Deploy the registry-derived `base` profile via `ap`. Mirrors
+# chezmoi/lib/install-base-profile.sh's two-target asymmetry: the dot-dir
+# harnesses (claude/codex/cursor/copilot) render under $HOME, while opencode
+# writes opencode.json at the target root, so it targets $HOME/.config/opencode.
+# A bare `dots profile install base` defaults --target to $PWD (the cwd trap),
+# so the deploy verb must pin $HOME.
+base-sync() {
+    dots profile install base --target "$HOME" \
+        --harness claude,codex,cursor,copilot \
+        && dots profile install base --target "$HOME/.config/opencode" \
+        --harness opencode
+}
 alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'
 # Deploy is unified through `ap`: the registry stays the edit surface
-# (mcp-edit), and `dots profile install base` renders the registry-derived
-# union into every harness (curd 7 / D1 — replaces the retired mcp sync).
-alias mcp-sync='dots profile install base'
+# (mcp-edit), and base-sync renders the registry-derived union into every
+# harness at $HOME (curd 7 / D1 — replaces the retired mcp sync).
+alias mcp-sync='base-sync'
 alias mcp-edit='${EDITOR:-vim} $AGENTS_DOTFILES/mcp/registry.yaml'
 
 # ═══════════════════════════════════════════════════════════════════
 # Hook Management (harness-agnostic — edit surface; deploy via `ap`)
 # ═══════════════════════════════════════════════════════════════════
-alias hook-sync='dots profile install base'
+alias hook-sync='base-sync'
 alias hook-edit='${EDITOR:-vim} $AGENTS_DOTFILES/hooks/registry.yaml'
 alias hook-ls='yq -r ".hooks | keys | .[]" $AGENTS_DOTFILES/hooks/registry.yaml'
 

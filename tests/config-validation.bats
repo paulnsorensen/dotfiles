@@ -105,18 +105,36 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
 # ── skill-* aliases (unified ap deploy — curd 7) ──────────────────────────────
 # The registry stays the EDIT surface (skill-edit); deploy is unified through
-# `ap` (skill-sync → `dots profile install base`). Locking the bodies guards a
+# `ap` (skill-sync → base-sync → `dots profile install base`). Locking the bodies guards a
 # silent de-sync where a rename would only surface at every dev's runtime.
 
 @test "skill-sync alias deploys via the unified ap base-profile render" {
     local aliases_file="$DOTFILES_DIR/zsh/aliases.zsh"
-    grep -qE "^alias skill-sync='dots profile install base'" "$aliases_file"
+    grep -qE "^alias skill-sync='base-sync'" "$aliases_file"
     grep -qE "^alias skill-edit='\\\$\\{EDITOR:-vim\\} \\\$DOTFILES_DIR/skills/_registry\\.yaml'" "$aliases_file"
 }
 
 @test "skill-* alias targets resolve to real artifacts (ap shim + registry)" {
     [[ -x "$DOTFILES_DIR/agent-profile/ap" ]]
     [[ -f "$DOTFILES_DIR/skills/_registry.yaml" ]]
+}
+
+@test "base-sync pins --target \$HOME and mirrors the two-target render (curd 7 alias --target fix)" {
+    local claude_file="$DOTFILES_DIR/zsh/claude.zsh"
+    # High age finding: a bare `dots profile install base` defaults --target to
+    # \$PWD, silently deploying to the cwd. The deploy verb must pin \$HOME and
+    # mirror install-base-profile.sh's two-target asymmetry.
+    # shellcheck disable=SC2016  # match the literal $HOME in the alias body, not expand it
+    grep -qE 'dots profile install base --target "\$HOME"' "$claude_file"
+    # shellcheck disable=SC2016
+    grep -qE 'dots profile install base --target "\$HOME/\.config/opencode"' "$claude_file"
+    grep -qE -- '--harness opencode' "$claude_file"
+}
+
+@test "mcp-sync / hook-sync / skill-sync route through base-sync (no bare cwd install)" {
+    grep -qE "^alias mcp-sync='base-sync'" "$DOTFILES_DIR/zsh/claude.zsh"
+    grep -qE "^alias hook-sync='base-sync'" "$DOTFILES_DIR/zsh/claude.zsh"
+    grep -qE "^alias skill-sync='base-sync'" "$DOTFILES_DIR/zsh/aliases.zsh"
 }
 
 @test "skill-* aliases do not reference the pre-flatten skills-install/ or claude/skills paths" {

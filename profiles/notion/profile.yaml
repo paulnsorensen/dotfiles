@@ -5,6 +5,9 @@ name: notion
 description: Notion HTTP MCP
 isolated: true
 system_prompt: CLAUDE.md
+# Auto-approve the profile's own MCP (ccp settings-merge parity).
+permissions_allow:
+  - "mcp__notion__*"
 mcps:
   - name: notion
     type: http

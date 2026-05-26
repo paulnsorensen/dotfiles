@@ -64,6 +64,8 @@ class Manifest:
     system_prompt: str | None = None
     tools: list[str] = field(default_factory=list)
     permissions_deny: list[str] = field(default_factory=list)
+    permissions_allow: list[str] = field(default_factory=list)
+    enabled_plugins: dict[str, bool] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     extra_args: list[str] = field(default_factory=list)
 
@@ -159,6 +161,8 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         "system_prompt": raw.get("system_prompt") or None,
         "tools": list(raw.get("tools") or []),
         "permissions_deny": list(raw.get("permissions_deny") or []),
+        "permissions_allow": list(raw.get("permissions_allow") or []),
+        "enabled_plugins": dict(raw.get("enabled_plugins") or {}),
         "env": dict(raw.get("env") or {}),
         "extra_args": list(raw.get("extra_args") or []),
         # Registry-derived items come first; inline items append (matching
@@ -281,6 +285,8 @@ def _parse_with_includes(
         "system_prompt",
         "tools",
         "permissions_deny",
+        "permissions_allow",
+        "enabled_plugins",
         "env",
         "extra_args",
     ):
@@ -315,6 +321,8 @@ def parse_manifest(profile_dir: Path, find_profile_dir: Any = None) -> Manifest:
         system_prompt=merged["system_prompt"],
         tools=merged["tools"],
         permissions_deny=merged["permissions_deny"],
+        permissions_allow=merged["permissions_allow"],
+        enabled_plugins=merged["enabled_plugins"],
         env=merged["env"],
         extra_args=merged["extra_args"],
     )

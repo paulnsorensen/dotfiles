@@ -82,14 +82,33 @@ def _write_mcp_config(manifest: Manifest, scratch: Path) -> Path:
 
 
 def _write_settings(manifest: Manifest, scratch: Path) -> Path | None:
-    """Write an ephemeral ``settings.json`` carrying ``permissions.deny``.
+    """Write an ephemeral ``settings.json`` carrying ``permissions.allow`` /
+    ``permissions.deny`` and ``enabledPlugins``.
 
-    Returns ``None`` when the profile declares no ``permissions_deny`` (no
-    ``--settings`` flag emitted in that case)."""
-    if not manifest.permissions_deny:
+    Returns ``None`` when the profile declares none of them (no ``--settings``
+    flag emitted in that case). ``permissions.allow`` restores the per-profile
+    auto-approve entries the migrated ``settings-merge.json`` profiles carried;
+    ``enabledPlugins`` restores their curated per-session plugin set (the old
+    ccp passed both through ``--settings``). Without these the closed-world
+    launch (``--setting-sources ""``) would prompt on every call and load no
+    profile plugins."""
+    if (
+        not manifest.permissions_allow
+        and not manifest.permissions_deny
+        and not manifest.enabled_plugins
+    ):
         return None
+    settings: dict = {}
+    permissions: dict[str, list[str]] = {}
+    if manifest.permissions_allow:
+        permissions["allow"] = list(manifest.permissions_allow)
+    if manifest.permissions_deny:
+        permissions["deny"] = list(manifest.permissions_deny)
+    if permissions:
+        settings["permissions"] = permissions
+    if manifest.enabled_plugins:
+        settings["enabledPlugins"] = dict(manifest.enabled_plugins)
     path = scratch / "settings.json"
-    settings = {"permissions": {"deny": list(manifest.permissions_deny)}}
     path.write_text(json.dumps(settings, indent=2) + "\n")
     return path
 
@@ -113,7 +132,7 @@ def build_isolated_flags(
         --setting-sources ""
         --tools <csv>                          (when tools declared)
         --append-system-prompt-file <profile>/<system_prompt>  (when declared)
-        --settings <gen>                       (when permissions_deny declared)
+        --settings <gen>                       (when permissions/enabledPlugins set)
         <extra_args...>
     """
     if scratch is None:
