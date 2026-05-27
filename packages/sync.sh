@@ -192,11 +192,16 @@ sync_cargo() {
                 FAILED+=("rustup-bootstrap")
                 return 0
             fi
-            # Brew-installed rustup keeps cargo proxies in opt/rustup/bin
-            local rustup_bin
-            rustup_bin="$(brew --prefix rustup 2>/dev/null)/bin"
-            if [[ -d "$rustup_bin" ]]; then
-                export PATH="$rustup_bin:$PATH"
+            # Brew-installed rustup (macOS) keeps cargo proxies under its prefix;
+            # rustup.rs (Linux) puts them in ~/.cargo/bin via ~/.cargo/env.
+            # Guard the brew lookup: calling brew when it's absent returns 127,
+            # which under `set -e` would abort the whole sync.
+            local rustup_prefix=""
+            if command -v brew &>/dev/null; then
+                rustup_prefix="$(brew --prefix rustup 2>/dev/null || true)"
+            fi
+            if [[ -n "$rustup_prefix" && -d "$rustup_prefix/bin" ]]; then
+                export PATH="$rustup_prefix/bin:$PATH"
             elif [[ -f "$HOME/.cargo/env" ]]; then
                 # shellcheck disable=SC1091
                 source "$HOME/.cargo/env"
@@ -464,6 +469,10 @@ apt_check_pkg() {
 }
 
 sync_apt() {
+    # The Linux bootstrap (packages/bootstrap-linux.sh) installs these via brew,
+    # then re-invokes this script for cargo/npm/uv/gh — SKIP_APT silences the
+    # otherwise-misleading apt "missing" report in that flow.
+    [[ "${SKIP_APT:-false}" == "true" ]] && return 0
     command -v apt-get &>/dev/null || return 0
 
     log_info "Checking apt packages"
@@ -490,17 +499,47 @@ sync_apt() {
     fi
 }
 
+########## Bootstrap
+
+# Ensure yq (mikefarah v4) is on PATH before any registry parsing.
+# macOS: brew. Linux: download the static binary to ~/.local/bin (no sudo;
+# yq is a snap on apt, which we can't assume is available non-interactively).
+bootstrap_yq() {
+    command -v yq &>/dev/null && return 0
+
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        if command -v brew &>/dev/null; then
+            log_info "Bootstrapping yq..."
+            brew install yq
+        else
+            log_warning "yq not found and brew not available"
+            return 1
+        fi
+    elif [[ "$PLATFORM" == "Linux" ]]; then
+        local arch yq_arch dest
+        arch="$(uname -m)"
+        case "$arch" in
+            x86_64) yq_arch="amd64" ;;
+            aarch64|arm64) yq_arch="arm64" ;;
+            *) log_warning "yq not found and no prebuilt binary for arch $arch"; return 1 ;;
+        esac
+        dest="${YQ_INSTALL_DIR:-$HOME/.local/bin}"
+        log_info "Bootstrapping yq (downloading yq_linux_${yq_arch})..."
+        mkdir -p "$dest"
+        if curl -fsSL -o "$dest/yq" "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}"; then
+            chmod +x "$dest/yq"
+            export PATH="$dest:$PATH"
+        else
+            log_warning "Failed to download yq"
+            return 1
+        fi
+    fi
+}
+
 ########## Main
 
-# Bootstrap yq if needed (macOS only)
-if [[ "$PLATFORM" == "Darwin" ]] && ! command -v yq &>/dev/null; then
-    if command -v brew &>/dev/null; then
-        log_info "Bootstrapping yq..."
-        brew install yq
-    else
-        log_warning "yq not found and brew not available"
-        exit 1
-    fi
+if ! bootstrap_yq; then
+    exit 1
 fi
 
 if [[ "$PLATFORM" == "Darwin" ]]; then

@@ -15,6 +15,13 @@ if [[ $OSTYPE == darwin* ]]; then
   [[ -d "${_brew_prefix}/opt/openssl/bin" ]] && export PATH="${_brew_prefix}/opt/openssl/bin:$PATH"
   [[ -d "${_brew_prefix}/opt/rustup/bin" ]] && export PATH="${_brew_prefix}/opt/rustup/bin:$PATH"
   unset _brew_prefix
+else
+  # claude/settings.json pins SSL_CERT_FILE to the macOS bundle (/etc/ssl/cert.pem)
+  # to fix gh/Go TLS inside the Seatbelt sandbox. That path doesn't exist on Linux,
+  # which breaks curl/Go TLS — point at the real Linux bundle instead.
+  [[ -f /etc/ssl/certs/ca-certificates.crt ]] && export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+  # Homebrew on Linux (installed by `dots bootstrap`) lives under /home/linuxbrew.
+  [[ -x /home/linuxbrew/.linuxbrew/bin/brew ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 fi
 
 # Add dotfiles bin to PATH

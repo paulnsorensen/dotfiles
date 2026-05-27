@@ -176,6 +176,52 @@ run_sync() {
     fi
 }
 
+# --- yq bootstrap (Linux: download static binary, no sudo) ---
+
+@test "bootstrap_yq downloads the arch-matched binary when yq is absent (Linux)" {
+    [[ "$(uname)" == "Linux" ]] || skip "Linux-only yq download path"
+
+    # Resolve the real yq before we scrub it from PATH, so the curl mock can
+    # stand in a working binary at the download destination.
+    local real_yq; real_yq="$(command -v yq)"
+    [[ -n "$real_yq" ]] || skip "no real yq to proxy"
+
+    local curl_log="$TEST_HOME/curl.log"
+    export YQ_INSTALL_DIR="$TEST_HOME/yqbin"
+
+    cat > "$MOCK_BIN/curl" << CURLMOCK
+#!/bin/bash
+echo "curl \$*" >> "$curl_log"
+dest=""; url=""
+while [[ \$# -gt 0 ]]; do
+  case "\$1" in
+    -o) dest="\$2"; shift 2;;
+    -*) shift;;
+    *) url="\$1"; shift;;
+  esac
+done
+[[ "\$url" == *yq_linux* ]] || exit 1
+cp "$real_yq" "\$dest"
+CURLMOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # A registry with only apt packages so cargo/npm/uv/gh passes early-return
+    # and the script exits 0 once yq is bootstrapped.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - jq
+  - fd: { apt: fd-find }
+YAML
+
+    # PATH without ~/.local/bin (where the real yq lives) → yq is "absent".
+    FORCE_PACKAGES=true PATH="$MOCK_BIN:/usr/bin:/bin" run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "Bootstrapping yq"
+    local want; case "$(uname -m)" in x86_64) want=amd64;; aarch64|arm64) want=arm64;; *) want="" ;; esac
+    [[ -n "$want" ]] && grep -q "yq_linux_$want" "$curl_log"
+    [[ -x "$YQ_INSTALL_DIR/yq" ]]
+}
+
 # --- Integration: sync installs the right packages ---
 
 @test "sync installs bare-string formulae via brew" {

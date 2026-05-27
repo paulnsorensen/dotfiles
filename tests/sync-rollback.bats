@@ -119,6 +119,23 @@ teardown() {
 }
 
 
+@test "package sync failure is non-fatal — symlinks still run, failure reported" {
+    # A failing package sync must NOT abort the whole run (set -e used to stop
+    # here, leaving symlinks + chezmoi un-applied). It should be recorded and
+    # reported, while the rest of the sync proceeds.
+    printf '#!/bin/bash\nexit 1\n' > "$FAKE_DOTFILES/packages/sync.sh"
+    echo "alias foo=bar" > "$FAKE_DOTFILES/myaliases"
+    cd "$FAKE_DOTFILES"
+    run bash "$SYNC_SCRIPT"
+    assert_failure
+    assert_output_contains "FAILURES in: packages"
+    assert_output_not_contains "Sync completed successfully"
+    # Proof the symlink step ran despite the package failure.
+    local resolved_home
+    resolved_home=$(cd "$TEST_HOME" && pwd -P)
+    [[ -L "$resolved_home/.myaliases" ]]
+}
+
 @test ".git directory is not symlinked" {
     cd "$FAKE_DOTFILES"
     mkdir -p "$FAKE_DOTFILES/.git"

@@ -71,14 +71,15 @@ run_sync() {
     init_state
     parse_sync_args "$@"
 
-    # Bootstrap yq (needed by packages/sync.sh to parse YAML)
-    if [[ "$(uname)" == "Darwin" ]] && ! command -v yq &>/dev/null; then
-      log_info "Bootstrapping yq..."
-      brew install yq
-    fi
-
+    # yq is bootstrapped by packages/sync.sh itself (macOS: brew, Linux: binary
+    # download to ~/.local/bin), so no platform-specific bootstrap is needed here.
+    # Record a package-sync failure instead of aborting (set -e would otherwise
+    # stop here, leaving symlinks + chezmoi un-applied on a box with missing
+    # toolchains). The SYNC_FAILURES summary below reports it and exits non-zero.
     log_info "Syncing packages"
-    bash "$dir/packages/sync.sh"
+    if ! bash "$dir/packages/sync.sh"; then
+        SYNC_FAILURES+=("packages")
+    fi
 
     upgrade_uv_tools
 

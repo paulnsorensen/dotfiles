@@ -82,6 +82,17 @@
     "defaultMode": "auto"
   },
   "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v moshi-hook >/dev/null 2>&1; then moshi-hook claude-hook; fi",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -135,6 +146,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "if command -v moshi-hook >/dev/null 2>&1; then moshi-hook claude-hook; fi",
+            "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "bash \"$HOME/.claude/hooks/session-start-cheese-flair.sh\"",
             "timeout": 5
           }
@@ -148,6 +168,26 @@
             "type": "command",
             "command": "if [ -n \"$TMUX\" ]; then tmux set-option -q @jmux-attention 1; fi",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v moshi-hook >/dev/null 2>&1; then moshi-hook claude-hook; fi",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v moshi-hook >/dev/null 2>&1; then moshi-hook claude-hook; fi",
+            "async": true
           }
         ]
       }
