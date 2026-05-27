@@ -75,11 +75,14 @@ description: >
 
 ## Activation Benchmarks
 
-| Approach | Trigger rate | Cost/prompt |
-|----------|-------------|-------------|
-| No optimization (baseline) | ~20% | $0.006 |
-| Optimized description only | ~50% | $0.006 |
-| Description + forced eval hook | ~84% | $0.007 |
+Directional findings from small community tests (not an Anthropic benchmark —
+specific rates vary widely by model, description quality, and environment):
+
+| Approach | Trigger rate (directional) |
+|----------|----------------------------|
+| No optimization (baseline) | low — often misses |
+| Optimized description only | better, but plateaus |
+| Description + forced eval hook | highest, most reliable |
 
 For critical skills, pair description optimization with a forced-evaluation
 hook. See `hooks-catalog.md` for the implementation.
