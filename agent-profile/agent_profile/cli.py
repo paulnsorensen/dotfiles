@@ -252,8 +252,8 @@ def cmd_install(
 
 
 def _skill_fetch_runner(argv: list[str]) -> int:
-    """Default ``gh skill install`` runner. Indirected through a module-level
-    name so tests can monkeypatch it without spawning ``gh``."""
+    """Default ``npx skills add`` runner. Indirected through a module-level
+    name so tests can monkeypatch it without spawning ``npx``."""
     from agent_profile.fetch import _default_runner
 
     return _default_runner(argv)
@@ -265,38 +265,60 @@ def _fetch_external_skills(
     colors: _Colors,
     out: Any,
 ) -> None:
-    """Fetch every ``source:`` skill into each in-scope harness via
-    ``gh skill install`` (spec curd 4). ``path:`` skills are copied by the
+    """Fetch every ``source:`` skill into the in-scope harnesses via
+    ``npx skills add`` (spec curd 4) — one shallow clone per source repo,
+    installed to all harnesses at once. ``path:`` skills are copied by the
     renderers, so they are excluded here."""
     from agent_profile.fetch import (
         SkillFetchError,
         external_skills,
-        fetch_external_skill,
+        fetch_external_source,
     )
 
     ext = external_skills(manifest.skills)
     if not ext:
         return
-    for h in harnesses:
-        for skill in ext:
-            name = skill.get("name")
-            pin = skill.get("pin")
+
+    # Group items by source repo. A bare `source:` (no name) means "all skills"
+    # for that repo (--skill '*') and wins over any explicit names from sibling
+    # items. `pin` is a per-source property. Insertion order is preserved so
+    # output (and test assertions) stay deterministic.
+    order: list[str] = []
+    groups: dict[str, dict[str, Any]] = {}
+    for skill in ext:
+        source = skill["source"]
+        if source not in groups:
+            groups[source] = {"names": set(), "all": False, "pin": None}
+            order.append(source)
+        g = groups[source]
+        name = skill.get("name")
+        if name:
+            g["names"].add(name)
+        else:
+            g["all"] = True
+        if skill.get("pin"):
+            g["pin"] = skill["pin"]
+
+    try:
+        for source in order:
+            g = groups[source]
+            names = None if g["all"] else sorted(g["names"])
+            label = "*" if names is None else ", ".join(names)
             print(
-                f"  {colors.BLUE}↳{colors.NC} fetching skill "
-                f"{skill['source']} {name or ''} -> {h}".rstrip(),
+                f"  {colors.BLUE}↳{colors.NC} fetching skills "
+                f"{source} ({label}) -> {', '.join(harnesses)}",
                 file=out,
             )
-            try:
-                fetch_external_skill(
-                    skill["source"], name, pin, h, _skill_fetch_runner
-                )
-            except SkillFetchError as exc:
-                raise CliError(f"{colors.RED}{exc}{colors.NC}") from exc
-            except OSError as exc:
-                raise CliError(
-                    f"{colors.RED}ap: cannot run 'gh skill install' "
-                    f"({exc}); is the gh CLI installed?{colors.NC}"
-                ) from exc
+            fetch_external_source(
+                source, names, g["pin"], harnesses, _skill_fetch_runner
+            )
+    except SkillFetchError as exc:
+        raise CliError(f"{colors.RED}{exc}{colors.NC}") from exc
+    except OSError as exc:
+        raise CliError(
+            f"{colors.RED}ap: cannot run npx "
+            f"({exc}); is Node/npx installed?{colors.NC}"
+        ) from exc
 
 
 def _set_files(target: Path, profile: str, new_files: list[str]) -> None:

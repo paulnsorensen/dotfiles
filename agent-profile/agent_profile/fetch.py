@@ -1,25 +1,39 @@
-"""fetch.py — external (GitHub-fetched) skill install via ``gh skill install``.
+"""fetch.py — external (GitHub-fetched) skill install via ``npx skills add``.
 
 Spec curd 4 / decision D3: ``source:`` skills are fetched by shelling out to
-``gh skill install`` — no npx, no manual ``git clone``. ``path:`` (local-tree)
-skills are unchanged: the renderers copy them into the harness skill dirs, so
-they never reach this module.
+the Vercel ``skills`` CLI (``npx skills add``), which shallow-clones the source
+repo once and copies the selected skills into each agent's skill dir. ``path:``
+(local-tree) skills are unchanged: the renderers copy them into the harness
+skill dirs, so they never reach this module.
 
-The invocation mirrors the existing ``chezmoi/lib/install-external.sh``::
+Why ``npx skills`` over ``gh skill install``: ``gh`` fetched every file of every
+skill via individual GitHub blob-API calls — files × skills × harnesses
+round-trips, any one of which could reset mid-stream and abort the whole sync.
+``npx skills add`` does a single ``git clone --depth 1`` per repo and installs
+to every requested agent in one invocation, collapsing the network surface to
+one connection per source.
 
-    gh skill install <repo> [<name>] --agent <gh-agent> --scope user --force [--pin <ref>]
+The invocation::
 
-``--scope user`` installs into the harness's own user-level skill dir (the
-``ap`` profile install targets the harness config dir; gh owns the skill
-placement under it). ``--force`` matches the registry's always-overwrite
-contract.
+    npx skills add <repo>[@<ref>] --skill <name|*> [--skill <name>...] \
+        --agent <id> [--agent <id>...] -g --copy -y
 
-The harness names ``ap`` uses (``claude``/``codex``/``cursor``/``copilot``/
-``opencode``) differ from gh's ``--agent`` IDs for two harnesses; :data:`GH_AGENT`
-maps them.
+``-g`` installs at user (global) scope; ``--copy`` copies the files (rather than
+symlinking into the agent dirs, preserving the previous copy-and-overwrite
+behaviour); ``-y`` runs non-interactively. ``--skill '*'`` installs every skill
+in the repo (native auto-discovery — no GitHub-API listing needed).
 
-A ``runner`` callable is injected so the fetch is unit-testable without
-spawning ``gh``; the default runs the real subprocess.
+Multiple agents and multiple explicit skills are each passed as *repeated*
+flags: the CLI rejects comma/space-joined values, and — dangerously — exits 0
+having installed nothing for a bad ``--agent`` value. Harness names are
+therefore mapped to known agent IDs (failing loud on an unknown one) before the
+call, so a bad agent never reaches ``npx``.
+
+``<repo>@<ref>`` pins to a git ref; the CLI maps it to ``git clone --branch
+<ref>``, which accepts branch and tag names but not bare commit SHAs.
+
+A ``runner`` callable is injected so the fetch is unit-testable without spawning
+``npx``; the default runs the real subprocess.
 """
 
 from __future__ import annotations
@@ -27,9 +41,9 @@ from __future__ import annotations
 import subprocess
 from typing import Any, Callable
 
-# ap harness name -> gh skill `--agent` ID. Most pass through; claude and
-# copilot differ (verified against `gh skill install --help`).
-GH_AGENT = {
+# ap harness name -> `skills` CLI `--agent` ID. (Identical to the IDs the
+# retired `gh skill` path used.) claude and copilot differ from their ap names.
+SKILL_AGENT = {
     "claude": "claude-code",
     "codex": "codex",
     "cursor": "cursor",
@@ -42,18 +56,20 @@ Runner = Callable[[list[str]], int]
 
 class SkillFetchError(Exception):
     """Raised when a skill cannot be fetched (unknown harness, or a non-zero
-    ``gh skill install`` exit)."""
+    ``npx skills add`` exit)."""
 
 
-def gh_agent_for(harness: str) -> str:
-    """Map an ``ap`` harness name to its ``gh skill --agent`` ID. Fails loud
-    on an unknown harness rather than passing a bogus agent to ``gh``."""
+def skill_agent_for(harness: str) -> str:
+    """Map an ``ap`` harness name to its ``skills`` CLI ``--agent`` ID. Fails
+    loud on an unknown harness rather than passing a bogus agent to
+    ``npx skills add`` — which would exit 0 having installed nothing (a silent
+    no-op)."""
     try:
-        return GH_AGENT[harness]
+        return SKILL_AGENT[harness]
     except KeyError:
         raise SkillFetchError(
             f"ap: unknown harness '{harness}' for skill fetch "
-            f"(valid: {', '.join(sorted(GH_AGENT))})"
+            f"(valid: {', '.join(sorted(SKILL_AGENT))})"
         )
 
 
@@ -61,32 +77,42 @@ def _default_runner(argv: list[str]) -> int:
     return subprocess.run(argv, check=False).returncode
 
 
-def fetch_external_skill(
+def fetch_external_source(
     source: str,
-    name: str | None,
+    names: list[str] | None,
     pin: str | None,
-    harness: str,
+    harnesses: list[str],
     runner: Runner | None = None,
 ) -> None:
-    """Install one external skill into ``harness`` via ``gh skill install``.
+    """Install skills from ``source`` into every harness in ``harnesses`` with a
+    single ``npx skills add`` (one shallow clone, all agents at once).
 
-    ``name`` is the optional explicit skill (omitted for a repo-level install
-    that auto-discovers every skill in the repo). ``pin`` appends
-    ``--pin <ref>`` for reproducible installs. A non-zero exit fails loud."""
+    ``names`` lists the explicit skills to install; ``None`` or empty installs
+    every skill in the repo (``--skill '*'``). ``pin`` appends ``@<ref>`` to the
+    repo spec (branch/tag — not a bare SHA). A non-zero exit fails loud."""
+    if not harnesses:
+        return
+    # Resolve agents first: an unknown harness raises before we build/run argv,
+    # so a bad agent never reaches npx (where it would silently no-op at exit 0).
+    agents = [skill_agent_for(h) for h in harnesses]
+
     run = runner or _default_runner
-    agent = gh_agent_for(harness)
-    argv = ["gh", "skill", "install", source]
-    if name:
-        argv.append(name)
-    argv += ["--agent", agent, "--scope", "user", "--force"]
-    if pin:
-        argv += ["--pin", pin]
+    spec = f"{source}@{pin}" if pin else source
+    argv = ["npx", "skills", "add", spec]
+    if names:
+        for n in sorted(names):
+            argv += ["--skill", n]
+    else:
+        argv += ["--skill", "*"]
+    for agent in agents:
+        argv += ["--agent", agent]
+    argv += ["-g", "--copy", "-y"]
+
     rc = run(argv)
     if rc != 0:
-        target = f"{source} {name}".strip()
         raise SkillFetchError(
-            f"ap: gh skill install failed for '{target}' -> {harness} "
-            f"(exit {rc})"
+            f"ap: npx skills add failed for '{spec}' "
+            f"-> {', '.join(harnesses)} (exit {rc})"
         )
 
 
