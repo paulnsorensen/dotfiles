@@ -261,7 +261,6 @@ Marketplaces must be added first:
 ```bash
 claude plugin marketplace add anthropics/claude-plugins-official
 claude plugin marketplace add upstash/context7
-claude plugin marketplace add jarrodwatts/claude-hud
 ```
 
 **Workflow:**

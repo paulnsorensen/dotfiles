@@ -29,7 +29,7 @@ target_default: $HOME
 # value is a directory path that ap wraps as
 # `{source: {source: "directory", path: <expanded>}}` in
 # ~/.claude/settings.json's extraKnownMarketplaces. github-source
-# marketplaces (claude-hud, etc.) stay user-managed in the chezmoi seed.
+# marketplaces stay user-managed in the chezmoi seed.
 # `${DOTFILES_DIR}` resolves from the process env at install time —
 # `dots sync` exports it; `ap install global` standalone needs it set
 # too (the agent-profile/ap shim sets it when invoked under dots, but
