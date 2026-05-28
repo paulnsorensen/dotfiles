@@ -294,6 +294,65 @@ def test_strips_two_legacy_blocks_with_different_command_forms(
     assert "hooks" not in doc_after
 
 
+def test_preserves_user_hook_with_same_basename_under_different_event(
+    renderer, src, target
+):
+    """A user could legitimately route the same script basename through
+    a different event slot (e.g. PreToolUse) than the one the registry
+    manages (SessionStart). The migration invariant is "only strip what
+    we're about to re-write into the same event slot" — so the user's
+    cross-event entry must survive even when its command path-ends in a
+    basename the registry manages."""
+    cfg = target / ".codex" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    doc = tomlkit.document()
+    hooks_table = tomlkit.table()
+
+    # Managed legacy SessionStart block (will be stripped)
+    ss_aot = tomlkit.aot()
+    ss_block = tomlkit.table()
+    ss_block["matcher"] = "startup|resume"
+    ss_inner = tomlkit.aot()
+    ss_t = tomlkit.table()
+    ss_t["type"] = "command"
+    ss_t["command"] = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+    ss_inner.append(ss_t)
+    ss_block["hooks"] = ss_inner
+    ss_aot.append(ss_block)
+    hooks_table["SessionStart"] = ss_aot
+
+    # User's PreToolUse block pointing at the SAME script basename — must
+    # survive because the registry hook is on SessionStart, not PreToolUse.
+    pre_aot = tomlkit.aot()
+    pre_block = tomlkit.table()
+    pre_inner = tomlkit.aot()
+    pre_t = tomlkit.table()
+    pre_t["type"] = "command"
+    pre_t["command"] = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+    pre_inner.append(pre_t)
+    pre_block["hooks"] = pre_inner
+    pre_aot.append(pre_block)
+    hooks_table["PreToolUse"] = pre_aot
+
+    doc["hooks"] = hooks_table
+    cfg.write_text(tomlkit.dumps(doc))
+
+    m = _manifest_with_hook(src, "session-start-cheese-flair.sh")
+    renderer.render(m, target)
+
+    doc_after = tomlkit.parse(cfg.read_text())
+    assert "SessionStart" not in doc_after["hooks"], (
+        "managed SessionStart entry should have been stripped"
+    )
+    assert "PreToolUse" in doc_after["hooks"], (
+        "user's PreToolUse entry must survive — only SessionStart was managed"
+    )
+    assert (
+        doc_after["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        == "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+    )
+
+
 def test_preserves_other_event_types(renderer, src, target):
     """A managed SessionStart block is stripped, but an unrelated
     ``[[hooks.PreToolUse]]`` block must survive."""

@@ -34,7 +34,7 @@ def _reset_module_cache() -> None:
     path lookup and a one-shot warning flag. Without a reset, swapping
     PATH mid-test would still hit the cached value."""
     templating._chezmoi_bin = None
-    templating._chezmoi_warned = False
+    templating._chezmoi_warned.clear()
 
 
 @pytest.fixture(autouse=True)

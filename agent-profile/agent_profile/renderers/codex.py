@@ -237,13 +237,8 @@ class CodexRenderer:
         cfg = Path(str(target).rstrip("/")) / ".codex" / "config.toml"
         if not cfg.is_file():
             return
-
-        managed: set[str] = {
-            Path(item["script"]).name
-            for item in codex_hooks
-            if item.get("script")
-        }
-        if not managed:
+        managed_per_event = _managed_basenames_per_event(codex_hooks)
+        if not managed_per_event:
             return
 
         doc = base.load_toml(cfg)
@@ -253,26 +248,20 @@ class CodexRenderer:
 
         changed = False
         for event_key in list(hooks_table.keys()):
+            event_managed = managed_per_event.get(event_key)
+            if not event_managed:
+                continue  # not an event we manage — leave user entries alone
             event_array = hooks_table.get(event_key)
             if not _is_array_of_tables(event_array):
                 continue
-            kept = [
-                block
-                for block in event_array
-                if not _is_managed_legacy_block(block, managed)
-            ]
-            if len(kept) == len(event_array):
-                continue
+            rebuilt = _prune_event_blocks(event_array, event_managed)
+            if rebuilt is None:
+                continue  # nothing stripped for this event
             changed = True
-            if not kept:
+            if len(rebuilt) == 0:
                 del hooks_table[event_key]
-                continue
-            # tomlkit AoT has no in-place item delete that survives the
-            # round-trip cleanly; rebuild the array from the kept blocks.
-            rebuilt = tomlkit.aot()
-            for block in kept:
-                rebuilt.append(block)
-            hooks_table[event_key] = rebuilt
+            else:
+                hooks_table[event_key] = rebuilt
 
         if len(hooks_table) == 0:
             del doc["hooks"]
@@ -309,6 +298,49 @@ class CodexRenderer:
             cfg.unlink()
             return
         base.dump_toml(cfg, doc)
+
+
+def _managed_basenames_per_event(
+    codex_hooks: list[dict],
+) -> dict[str, set[str]]:
+    """Map each codex event the registry manages to the set of script
+    basenames it owns under that event. Keying per-event is the migration
+    invariant: a user could legally route the same script basename through
+    a different event (e.g. PreToolUse) than the one the registry manages
+    (SessionStart), and that cross-event entry must survive the cleanup."""
+    out: dict[str, set[str]] = {}
+    for item in codex_hooks:
+        event = item.get("event")
+        script = item.get("script")
+        if event and script:
+            out.setdefault(event, set()).add(Path(script).name)
+    return out
+
+
+def _prune_event_blocks(
+    event_array: object, event_managed: set[str]
+) -> "tomlkit.items.AoT | None":
+    """Return a rebuilt AoT containing only the blocks the caller should
+    keep, or ``None`` when no block matched ``event_managed`` (the
+    caller short-circuits in that case to avoid a no-op rewrite).
+
+    Extracted from ``_clean_legacy_config_toml_hooks`` so the cleanup
+    stays under the 40-line function budget — the loop is one of two
+    natural seams (the other is managed-set building, lifted into the
+    caller above)."""
+    kept = [
+        block
+        for block in event_array
+        if not _is_managed_legacy_block(block, event_managed)
+    ]
+    if len(kept) == len(event_array):
+        return None
+    # tomlkit AoT has no in-place item delete that survives the
+    # round-trip cleanly; rebuild the array from the kept blocks.
+    rebuilt = tomlkit.aot()
+    for block in kept:
+        rebuilt.append(block)
+    return rebuilt
 
 
 def _is_array_of_tables(value: object) -> bool:

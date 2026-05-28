@@ -10,8 +10,10 @@ its arg or env values per harness via Go templates against ``$h``::
 
 The retired ``agents/mcp/sync.sh`` ran the whole registry through ``chezmoi
 execute-template`` once per harness (HARNESS=<harness>) before deploying.
-The ``ap`` install path is the single deploy path now (the legacy sync
-script is gone), so the same render has to live here.
+The ``ap`` install path is the single deploy path now (``sync.sh`` is no
+longer the deploy path — the script still lives in the repo for the legacy
+native-CLI sync flow but ``dots sync`` no longer runs it), so the same
+render has to live here.
 
 Only values containing ``{{`` are shelled out — the common case is bare
 strings, which incur zero subprocess overhead. A missing ``chezmoi``
@@ -31,7 +33,11 @@ from typing import Any
 # Cache the chezmoi lookup. shutil.which is cheap but called per value;
 # avoid re-walking $PATH for every MCP env entry on every install.
 _chezmoi_bin: str | None = None
-_chezmoi_warned: bool = False
+# List-as-flag (instead of a `global` bool) so the warn-once state is
+# mutated via list method rather than a rebinding under `global`. Quiets
+# CodeQL's unused-global-variable check, which doesn't connect inner
+# `global` assignments to the outer name.
+_chezmoi_warned: list[bool] = []
 
 
 def _resolve_chezmoi() -> str | None:
@@ -46,10 +52,9 @@ def _warn_missing_chezmoi(value: str) -> None:
     leaking into a deployed config is visible. Renderers shouldn't crash
     when chezmoi is absent (it isn't a hard ap dependency), but the user
     needs to see what's about to ship."""
-    global _chezmoi_warned
     if _chezmoi_warned:
         return
-    _chezmoi_warned = True
+    _chezmoi_warned.append(True)
     print(
         f"    ap: chezmoi not on PATH — leaving Go-template values unrendered "
         f"(first: {value!r})",
