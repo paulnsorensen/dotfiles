@@ -30,6 +30,20 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Strip leaked SSL_CERT_FILE / SSL_CERT_DIR pointing at non-existent paths.
+# Comes up when SSHing in from a Mac with env forwarding (or running under a
+# wrapper that hardcodes the BSD cert path /etc/ssl/cert.pem). Curl honors
+# the var and refuses TLS handshakes with "error adding trust anchors",
+# which breaks every bootstrap (yq, chezmoi, uv, …) until unset.
+for _ssl_var in SSL_CERT_FILE SSL_CERT_DIR; do
+    _val="${!_ssl_var:-}"
+    if [[ -n "$_val" && ! -e "$_val" ]]; then
+        echo -e "${YELLOW}⚠️  Unsetting $_ssl_var=$_val (path does not exist on this host)${NC}" >&2
+        unset "$_ssl_var"
+    fi
+done
+unset _ssl_var _val
+
 # Ensure we're in the dotfiles directory for git commands
 cd_dotfiles() {
     cd "$DOTFILES_DIR" || {

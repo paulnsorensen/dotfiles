@@ -203,8 +203,7 @@ sync_cargo() {
             fi
         fi
         if ! command -v cargo &>/dev/null; then
-            log_error "cargo not found (install rustup first)"
-            FAILED+=("cargo")
+            log_warning "cargo not found — skipping cargo packages (install rustup to enable)"
             return 0
         fi
     fi
@@ -298,8 +297,7 @@ sync_npm() {
     [[ -z "$npm_pkgs" ]] && return 0
 
     if ! command -v npm &>/dev/null; then
-        log_error "npm not found (install node first)"
-        FAILED+=("npm")
+        log_warning "npm not found — skipping npm packages (install node to enable)"
         return 0
     fi
 
@@ -370,8 +368,7 @@ sync_uv() {
     [[ -z "$uv_pkgs" ]] && return 0
 
     if ! command -v uv &>/dev/null; then
-        log_error "uv not found (install uv first)"
-        FAILED+=("uv")
+        log_warning "uv not found — skipping uv tools (install uv to enable)"
         return 0
     fi
 
@@ -410,8 +407,7 @@ sync_gh_extensions() {
     [[ -z "$ext_pkgs" ]] && return 0
 
     if ! command -v gh &>/dev/null; then
-        log_error "gh not found (install gh first)"
-        FAILED+=("gh")
+        log_warning "gh not found — skipping gh extensions (install gh to enable)"
         return 0
     fi
 
@@ -492,15 +488,67 @@ sync_apt() {
 
 ########## Main
 
-# Bootstrap yq if needed (macOS only)
-if [[ "$PLATFORM" == "Darwin" ]] && ! command -v yq &>/dev/null; then
-    if command -v brew &>/dev/null; then
-        log_info "Bootstrapping yq..."
-        brew install yq
-    else
-        log_warning "yq not found and brew not available"
-        exit 1
+# Bootstrap yq if needed. The whole sync.sh is YAML-driven, so this is
+# load-bearing — we can't parse packages.yaml without it.
+#
+# Linux note: Ubuntu's apt yq is kislyuk/yq (a jq wrapper using jq syntax),
+# NOT Mike Farah's Go yq that this codebase is written against. Skip apt
+# and download the Go binary release into ~/.local/bin instead.
+bootstrap_yq_linux() {
+    local dest="$HOME/.local/bin/yq"
+    local arch
+    case "$(uname -m)" in
+        x86_64)  arch=amd64 ;;
+        aarch64) arch=arm64 ;;
+        *)
+            log_error "Unsupported architecture for yq bootstrap: $(uname -m)"
+            return 1
+            ;;
+    esac
+    mkdir -p "$HOME/.local/bin"
+    local url="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}"
+    log_info "Downloading Mike Farah yq → $dest"
+    if ! curl -fsSL "$url" -o "$dest.tmp"; then
+        log_error "Failed to download yq from $url"
+        rm -f "$dest.tmp"
+        return 1
     fi
+    chmod +x "$dest.tmp"
+    mv "$dest.tmp" "$dest"
+    hash -r 2>/dev/null || true
+}
+
+if ! command -v yq &>/dev/null; then
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        if command -v brew &>/dev/null; then
+            log_info "Bootstrapping yq..."
+            brew install yq
+        else
+            log_warning "yq not found and brew not available"
+            exit 1
+        fi
+    elif [[ "$PLATFORM" == "Linux" ]]; then
+        bootstrap_yq_linux || exit 1
+    fi
+fi
+
+# Bootstrap uv on Linux. uv is the linchpin for the agent-profile / base-
+# profile pipeline (chezmoi's run_onchange_*-{agent,base}-profile.sh.tmpl
+# both bail without it), and it isn't in Ubuntu's apt. Use the official
+# astral installer to drop it into ~/.local/bin without sudo.
+bootstrap_uv_linux() {
+    local bin_dir="$HOME/.local/bin"
+    mkdir -p "$bin_dir"
+    log_info "Bootstrapping uv → $bin_dir"
+    if ! curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$bin_dir" INSTALLER_NO_MODIFY_PATH=1 sh; then
+        log_error "uv install script failed"
+        return 1
+    fi
+    hash -r 2>/dev/null || true
+}
+
+if [[ "$PLATFORM" == "Linux" ]] && ! command -v uv &>/dev/null; then
+    bootstrap_uv_linux || log_warning "Continuing without uv — base-profile render will be skipped"
 fi
 
 if [[ "$PLATFORM" == "Darwin" ]]; then

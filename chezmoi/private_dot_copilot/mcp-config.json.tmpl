@@ -6,12 +6,21 @@ dotfiles/.env on shell init). To swap to 1Password instead, replace the
 two `env "..."` calls below with `onepasswordRead "op://<vault>/<item>/credential"`
 and add `op` to packages/packages.yaml. See references/secrets.md.
 
-Fails fast if a required env var is missing.
+If either key is missing (fresh box, no .env populated yet), render an
+empty mcpServers object and emit a chezmoi warning instead of failing the
+whole `chezmoi apply`. The keyed MCPs simply won't work until the user
+copies .env.example → .env and fills in the keys, but the rest of the
+sync (base-profile install, run_onchange installers) proceeds.
 */ -}}
 {{- $context7 := env "CONTEXT7_API_KEY" -}}
 {{- $tavily   := env "TAVILY_API_KEY" -}}
-{{- if eq $context7 "" }}{{ fail "CONTEXT7_API_KEY is not set in environment" }}{{ end -}}
-{{- if eq $tavily   "" }}{{ fail "TAVILY_API_KEY is not set in environment" }}{{ end -}}
+{{- if or (eq $context7 "") (eq $tavily "") -}}
+{{   warnf "copilot mcp-config: CONTEXT7_API_KEY and/or TAVILY_API_KEY unset — emitting empty mcpServers. Fill keys in dotfiles/.env and re-run `dots sync` to enable." -}}
+{
+  "_comment": "Stub written by chezmoi: CONTEXT7_API_KEY and/or TAVILY_API_KEY were unset at apply time. Populate dotfiles/.env and re-run `dots sync`.",
+  "mcpServers": {}
+}
+{{- else -}}
 {
   "mcpServers": {
     "code-review-graph": {
@@ -66,3 +75,4 @@ Fails fast if a required env var is missing.
     }
   }
 }
+{{- end -}}

@@ -22,19 +22,21 @@ export DOTFILES_DIR
 DOTFILES_DIR="$(cd "$DOTFILES_ROOT" && pwd)"
 
 # Skip on a fresh machine before uv/npx are installed — `ap` (uv-run) and the
-# `npx skills add` step need them. The env warms on a later apply.
+# `npx skills add` step need them. The env warms on a later apply once the
+# missing tool is installed (apt packages on Linux, brew on mac).
 if ! command -v uv &>/dev/null; then
     echo "  Skipping base-profile render (uv not found)"
     exit 0
 fi
 
 # External skills install via `npx skills add` (driven by ap's fetch path),
-# which git-clones each public source repo — no GitHub auth required. npx (Node)
-# is a hard dependency of the skills union — fail loud, don't silently
-# partial-install.
+# which git-clones each public source repo — no GitHub auth required.
+# Skip with a clear pointer rather than hard-fail — on a fresh box npx (Node)
+# comes from the OS package manager after the first sync prints its missing
+# list.
 if ! command -v npx &>/dev/null; then
-    echo "Error: npx (Node) not found. Install Node to fetch external skills." >&2
-    exit 1
+    echo "  Skipping base-profile render (npx not found — install Node via apt/brew and re-run)"
+    exit 0
 fi
 
 INSTALL_BASE_PROFILE_AP="$DOTFILES_DIR/agent-profile/ap" \

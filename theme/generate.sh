@@ -348,6 +348,12 @@ generate_vimrc() {
 run_iterm2_patch() {
   local plist="$REPO_DIR/iterm2/com.googlecode.iterm2.plist"
 
+  # iTerm2 is macOS-only; the plist is only present on user-customized mac
+  # boxes. Skip on Linux / when the source plist isn't checked out.
+  if [[ "$(uname)" != "Darwin" ]] || [[ ! -f "$plist" ]]; then
+    return 0
+  fi
+
   # Build palette JSON from PAL_* vars
   local json="{"
   local first=true

@@ -34,6 +34,23 @@ dotfiles_dir=$(cd "$script_dir/.." && pwd)
 config_dir="$HOME/.config/chezmoi"
 config_file="$config_dir/chezmoi.toml"
 
+# Bootstrap chezmoi on Linux when missing. chezmoi isn't in Ubuntu's apt
+# and the snap channel needs root; fetch the official install script which
+# drops the binary into a local bin dir with no sudo.
+bootstrap_chezmoi_linux() {
+    [[ "$(uname -s)" == "Linux" ]] || return 0
+    command -v chezmoi &>/dev/null && return 0
+    local bin_dir="$HOME/.local/bin"
+    mkdir -p "$bin_dir"
+    echo "  Installing chezmoi → $bin_dir (no system package available)"
+    if ! curl -fsSL https://get.chezmoi.io | sh -s -- -b "$bin_dir"; then
+        echo "  ERROR: chezmoi install script failed" >&2
+        return 1
+    fi
+    hash -r 2>/dev/null || true
+}
+bootstrap_chezmoi_linux || exit 1
+
 # Remove a symlink at $1 if it is dangling or resolves into the dotfiles
 # checkout. Real files, dirs, and symlinks pointing elsewhere are preserved
 # untouched — we only reclaim paths the pre-chezmoi sync owned.
