@@ -55,6 +55,7 @@ from agent_profile.renderers.base import (
     includes_harness,
     read_json_object,
 )
+from agent_profile.templating import render_mcp_for_harness
 
 # Cursor's MCP membership default — wider than the base claude/codex/opencode
 # triple because Cursor opts itself into the shared default set.
@@ -303,9 +304,13 @@ def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
 
 def _cursor_mcps(manifest: Manifest) -> list[dict[str, Any]]:
     """The MCPs whose membership includes ``cursor`` (default
-    ``[claude, codex, opencode, cursor]``)."""
+    ``[claude, codex, opencode, cursor]``).
+
+    Entries are rendered through :func:`render_mcp_for_harness` so
+    per-harness Go templates in ``args``/``env`` resolve for cursor —
+    matches the render every other harness gets via :func:`mcps_for`."""
     return [
-        mcp
+        render_mcp_for_harness(mcp, "cursor")
         for mcp in manifest.mcps
         if includes_harness(mcp, "cursor", _CURSOR_MCP_DEFAULT)
     ]

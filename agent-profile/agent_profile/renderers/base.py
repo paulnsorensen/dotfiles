@@ -51,6 +51,7 @@ import tomlkit
 
 from agent_profile.parse import Manifest
 from agent_profile.shared import track_file
+from agent_profile.templating import render_mcp_for_harness
 
 # Hooks default to claude-only membership across every renderer.
 DEFAULT_HOOK_HARNESSES = ("claude",)
@@ -130,9 +131,14 @@ def mcps_for(
 
     The renderer curd passes the ``default`` its bash counterpart used.
     Claude additionally drops ``gate_unless`` MCPs whose gate var is set
-    (see :func:`gate_blocks`) — parity with ``mcp_filter_for_harness``."""
+    (see :func:`gate_blocks`) — parity with ``mcp_filter_for_harness``.
+
+    Returned entries are rendered through :func:`render_mcp_for_harness`
+    so per-harness Go templates (``{{ $h }}``, ``{{ if eq $h "claude" }}``)
+    in ``args``/``env`` resolve to the harness's value — the render the
+    retired ``agents/mcp/sync.sh`` used to do once per harness."""
     return [
-        mcp
+        render_mcp_for_harness(mcp, harness)
         for mcp in manifest.mcps
         if includes_harness(mcp, harness, default)
         and not gate_blocks(mcp, harness)
