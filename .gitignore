@@ -25,12 +25,14 @@ iterm2/com.googlecode.iterm2.plist
 claude/hooks/node_modules/
 claude/hooks/package-lock.json
 
-# Cheese-flair assets — canonical copy lives under agents/, but chezmoi
-# deploys them into $HOME/.{claude,codex}/{hooks,lib,reference}/. For
-# Claude the deploy path is symlinked from claude/.sync, so chezmoi
-# writes back through the symlink and the regenerated copy reappears
-# inside the repo. Ignore those copies to keep worktrees clean.
-claude/hooks/session-start-cheese-flair.sh
+# Cheese-flair assets — canonical copy lives under agents/. The base
+# plugin tree at ~/.claude/plugins/local/global/{hooks,lib,reference}/
+# is where ap deploys them (NOT through claude/.sync's directory
+# symlinks anymore — settings.json's legacy hook entry was retired in
+# favor of the plugin's own plugin.json wiring). The claude/lib/ +
+# claude/reference/ paths remain ignored here only to keep stragglers
+# from older deploys out of git on hosts that haven't fully migrated.
+# Safe to drop these lines once every host is past the migration.
 claude/lib/cheese-flair.sh
 claude/reference/cheese-flair.md
 

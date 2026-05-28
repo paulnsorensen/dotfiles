@@ -42,12 +42,16 @@ teardown() { teardown_test_env; }
 
 # ── two render targets (the core of curd 7) ──────────────────────────────────
 
-@test "install-base-profile.sh renders the four dot-dir harnesses at \$HOME" {
+@test "install-base-profile.sh renders the four dot-dir harnesses via global" {
+    # `global` wraps `base` with target_default=$HOME + the claude marketplace
+    # + plugin enablement. The installer forwards $HOME (so the profile's
+    # ${HOME} expands against the test sandbox) and intentionally omits
+    # --target — the profile resolves it.
     INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" \
         run bash "$LIB" "$TEST_HOME"
     assert_success
     run cat "$AP_LOG"
-    assert_output_contains "install base --target $TEST_HOME --harness claude,codex,cursor,copilot"
+    assert_output_contains "install global --harness claude,codex,cursor,copilot"
 }
 
 @test "install-base-profile.sh renders opencode under \$HOME/.config/opencode" {

@@ -130,17 +130,6 @@
         ]
       }
     ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/session-start-cheese-flair.sh\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
@@ -159,7 +148,8 @@
     "frontend-design@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "claude-hud@claude-hud": true
+    "claude-hud@claude-hud": true,
+    "todoist-flow@todoist-flow": true
   },
   "extraKnownMarketplaces": {
     "claude-hud": {
@@ -167,10 +157,16 @@
         "source": "github",
         "repo": "jarrodwatts/claude-hud"
       }
+    },
+    "todoist-flow": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/paul/Dev/dotfiles/claude/plugins/local/todoist-flow"
+      }
     }
   },
   "sandbox": {
-    "enabled": true,
+    "enabled": false,
     "autoAllowBashIfSandboxed": true,
     "network": {
       "allowedDomains": [

@@ -319,7 +319,7 @@ EOF
 # both of which claude/.sync later backs up to .bak, orphaning everything
 # chezmoi just wrote.
 
-@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference,settings.json} on a fresh install" {
+@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference} on a fresh install" {
     # No ~/.claude at all — fresh-box state.
     [[ ! -e "$HOME/.claude" ]]
 
@@ -343,15 +343,16 @@ EOF
     [[ "$(readlink "$HOME/.claude/hooks")"     == "$REAL_DOTFILES_DIR/claude/hooks"     ]]
     [[ -L "$HOME/.claude/reference" ]]
     [[ "$(readlink "$HOME/.claude/reference")" == "$REAL_DOTFILES_DIR/claude/reference" ]]
-    [[ -L "$HOME/.claude/settings.json" ]]
-    [[ "$(readlink "$HOME/.claude/settings.json")" == "$REAL_DOTFILES_DIR/claude/settings.json" ]]
+    # settings.json must NOT be pre-linked anymore — it's a chezmoi
+    # create_ seed now (chezmoi/dot_claude/create_settings.json), and a
+    # legacy symlink would block the seed step.
+    [[ ! -L "$HOME/.claude/settings.json" ]]
 }
 
 @test "chezmoi/.sync prelink is idempotent (existing correct symlink preserved)" {
     mkdir -p "$HOME/.claude"
     ln -s "$REAL_DOTFILES_DIR/claude/hooks"         "$HOME/.claude/hooks"
     ln -s "$REAL_DOTFILES_DIR/claude/reference"     "$HOME/.claude/reference"
-    ln -s "$REAL_DOTFILES_DIR/claude/settings.json" "$HOME/.claude/settings.json"
 
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
@@ -371,7 +372,6 @@ EOF
     # Symlinks unchanged.
     [[ "$(readlink "$HOME/.claude/hooks")"         == "$REAL_DOTFILES_DIR/claude/hooks"         ]]
     [[ "$(readlink "$HOME/.claude/reference")"     == "$REAL_DOTFILES_DIR/claude/reference"     ]]
-    [[ "$(readlink "$HOME/.claude/settings.json")" == "$REAL_DOTFILES_DIR/claude/settings.json" ]]
     # Prelink message only fires when it actually creates a link.
     [[ "$output" != *"Pre-linked"* ]]
 }
@@ -459,12 +459,22 @@ EOF
 }
 
 @test "chezmoi/run_onchange template hashes the registries + skills tree it renders from" {
-    # The base profile unions the three registries + the local skills tree;
-    # the hash must cover them so a registry/skill edit retriggers the render.
+    # The base profile unions the three registries + the local skills tree
+    # AND the global profile wraps base with operator-overlay fields;
+    # the hash must cover all of them so a registry/skill/profile/hook-script
+    # edit retriggers the render.
     grep -qF '/../skills -type f' "$INSTALLER_TMPL"
     grep -qF '/../profiles/base' "$INSTALLER_TMPL"
+    grep -qF '/../profiles/global' "$INSTALLER_TMPL"
     grep -qF '/../agents/mcp/registry.yaml' "$INSTALLER_TMPL"
-    grep -qF '/../agents/hooks/registry.yaml' "$INSTALLER_TMPL"
+    # `agents/hooks` covers the registry AND its referenced scripts —
+    # without script-content coverage, edits to a hook payload (e.g. the
+    # SessionStart cheese-flair script) would NOT trigger re-deploy on
+    # `dots sync`. Same for the cheese-flair lib + bank under agents/lib
+    # and agents/reference.
+    grep -qF '/../agents/hooks' "$INSTALLER_TMPL"
+    grep -qF '/../agents/lib' "$INSTALLER_TMPL"
+    grep -qF '/../agents/reference' "$INSTALLER_TMPL"
     # The pre-flatten nested path must stay gone.
     if grep -qF '/../claude/skills' "$INSTALLER_TMPL"; then
         echo "template still references the pre-flatten claude/skills tree" >&2
@@ -889,4 +899,77 @@ YAML
     # content. The bug would replace it with `web_dashboard: false\n...`.
     grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
     ! grep -qE '^web_dashboard:' "$HOME/.serena/serena_config.yml"
+}
+
+# ── claude settings.json migration to chezmoi seed ─────────────────────────
+
+@test "claude settings.json: chezmoi seed source exists at dot_claude/create_settings.json" {
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+}
+
+@test "claude settings.json: chezmoi seed is valid JSON" {
+    jq -e 'type == "object"' "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null
+}
+
+@test "claude settings.json: seed has NO legacy SessionStart hook entry" {
+    # The base plugin's plugin.json (rendered by ap into
+    # ~/.claude/plugins/local/global/.claude-plugin/plugin.json) now
+    # provides the SessionStart wiring. A duplicate entry in settings.json
+    # would double-fire the hook AND silently break when the legacy
+    # symlinked path is gone (the regression that drove the migration).
+    local has_session
+    has_session=$(jq -r '.hooks.SessionStart // empty' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json")
+    [[ -z "$has_session" ]]
+}
+
+@test "claude settings.json: seed does NOT pre-bake ap-managed marketplace/plugin" {
+    # `local` marketplace + `global@local` enablement are owned by the
+    # claude renderer (ap install global) — they get merged in after
+    # chezmoi seeds. Pre-baking would either cause the merge to look like
+    # a no-op (fine, but confusing) OR survive a global rename (broken).
+    ! jq -e '.enabledPlugins["global@local"]' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+    ! jq -e '.extraKnownMarketplaces["local"]' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+}
+
+@test "claude settings.json: source filename uses create_ prefix (seed-once)" {
+    # `create_` chezmoi semantic: never overwrite on subsequent applies.
+    # Using `dot_settings.json` (always-render) would clobber user edits;
+    # using `modify_settings.json` (script-driven mutation) would be
+    # heavier than needed since ap handles the per-profile mutations.
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+    [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/settings.json" ]]
+    [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/dot_settings.json" ]]
+}
+
+@test "claude settings.json: one-time migration script exists" {
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_once_before_migrate-claude-settings.sh" ]]
+}
+
+@test "claude settings.json: migration script removes legacy dotfiles symlink only" {
+    # The script must NOT delete a settings.json that links to anywhere
+    # other than $DOTFILES/claude/settings.json — the user may have
+    # set up their own symlink.
+    local script="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_once_before_migrate-claude-settings.sh"
+    grep -qF '*/dotfiles/claude/settings.json' "$script"
+    # shellcheck disable=SC2016
+    grep -qE 'if[[:space:]]+\[\[ -L "\$target" \]\]' "$script"
+}
+
+@test "claude/.sync no longer symlinks settings.json" {
+    # settings.json moved to chezmoi/dot_claude/create_settings.json;
+    # claude/.sync's configs list must not include it (else a fresh sync
+    # would re-create the legacy symlink, undoing the migration).
+    local sync_script="$REAL_DOTFILES_DIR/claude/.sync"
+    # The configs=( ... ) array shouldn't list `settings.json`.
+    ! awk '/^configs=\(/,/^\)/' "$sync_script" | grep -qE '^\s*settings\.json\s*$'
+}
+
+@test "claude/settings.json source is gone from the repo (migrated to chezmoi)" {
+    # Once committed, the legacy claude/settings.json must not exist —
+    # the chezmoi seed is the source of truth. A re-introduced file would
+    # quietly fight the chezmoi-seeded one via the legacy symlink path.
+    [[ ! -f "$REAL_DOTFILES_DIR/claude/settings.json" ]]
 }

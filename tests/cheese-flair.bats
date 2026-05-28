@@ -323,6 +323,34 @@ _deploy_harness_layout() {
     rm -rf "$root"
 }
 
+@test "hook script self-locates lib + bank when ~/.claude/hooks is a directory symlink" {
+    # Regression: dotfiles installs that symlink claude/hooks/ → $DOTFILES/claude/hooks/
+    # USED to break this hook because the script resolved its own path via
+    # `readlink -f` and landed in the source tree, where the deployed lib/bank
+    # do not live. The fix is to anchor lookups to BASH_SOURCE[0] verbatim so
+    # SCRIPT_DIR stays under the deployed harness home even when reached
+    # through a directory symlink.
+    local root="${TMPDIR:-/tmp}/cheese-flair-symlinked-$$"
+    local src="$root/source-tree/claude"
+    rm -rf "$root"
+    mkdir -p "$src/hooks" "$src/reference" "$root/.claude/lib"
+    cp "$REAL_DOTFILES_DIR/agents/hooks/session-start-cheese-flair.sh" "$src/hooks/"
+    cp "$REAL_DOTFILES_DIR/agents/reference/cheese-flair.md"           "$src/reference/"
+    cp "$REAL_DOTFILES_DIR/agents/lib/cheese-flair.sh"                 "$root/.claude/lib/"
+    chmod +x "$src/hooks/session-start-cheese-flair.sh"
+    ln -s "$src/hooks"     "$root/.claude/hooks"
+    ln -s "$src/reference" "$root/.claude/reference"
+
+    run bash -c "unset CHEESE_FLAIR_BANK; HOME='$root' bash '$root/.claude/hooks/session-start-cheese-flair.sh'"
+    assert_success
+    assert_output_contains "Cheese flair"
+    assert_output_contains "Addresses:"
+    assert_output_contains "Quotes:"
+    [[ "$output" == *"  - Cheese Lord"* ]]
+
+    rm -rf "$root"
+}
+
 @test "hook script output shape matches across both harnesses (3 addresses + 3 quotes)" {
     # Spec acceptance criterion #5: Codex hook output shape matches Claude.
     local root="${TMPDIR:-/tmp}/cheese-flair-shape-$$"

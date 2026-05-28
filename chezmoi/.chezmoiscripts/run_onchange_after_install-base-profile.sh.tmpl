@@ -1,14 +1,26 @@
 #!/bin/bash
-# run_onchange — re-renders the registry-derived `base` profile into every
-# harness whenever the base profile or any of the three registries (mcp,
-# hooks, skills tree) change. The single deploy path that supersedes the
+# run_onchange — re-renders the registry-derived `base` profile (via its
+# `global` wrapper for $HOME-targeted harnesses) into every harness
+# whenever the inputs change. The single deploy path that supersedes the
 # retired install-mcp / install-hooks / install-claude-skills scripts (curd 7).
 #
 # The hash below is computed by chezmoi at template render time over
-# profiles/base/** + the three registries + the local skills tree; chezmoi
-# reruns whenever it changes.
+# every input the installer reads:
 #
-# base profile + registries hash: {{ output "sh" "-c" (printf "find %q/../profiles/base %q/../agents/mcp/registry.yaml %q/../agents/hooks/registry.yaml %q/../skills -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
+#   profiles/base/**       — registry-union directive
+#   profiles/global/**     — operator overlay (target_default, marketplace, enable)
+#   agents/mcp/registry.yaml      — MCP source of truth
+#   agents/hooks/registry.yaml    — hook source of truth
+#   agents/hooks/**.sh            — hook script contents (so edits redeploy)
+#   agents/lib/**                 — shared assets (cheese-flair lib)
+#   agents/reference/**           — shared assets (cheese-flair bank)
+#   skills/**              — local skills tree + external `_registry.yaml`
+#
+# Edits to a hook script or its sibling library would otherwise leave the
+# rendered plugin tree stale on `dots sync` until something else (a
+# registry tweak, a profile-yaml save) bumped the hash.
+#
+# input hash: {{ output "sh" "-c" (printf "find %q/../profiles/base %q/../profiles/global %q/../agents/mcp/registry.yaml %q/../agents/hooks %q/../agents/lib %q/../agents/reference %q/../skills -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
 
 set -euo pipefail
 

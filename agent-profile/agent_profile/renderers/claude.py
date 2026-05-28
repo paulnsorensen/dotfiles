@@ -30,6 +30,7 @@ byte-identical to the bash ``jq`` output). No ``jq``/``yq``.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import stat
 from pathlib import Path
@@ -42,6 +43,7 @@ from agent_profile.renderers.base import (
     hooks_for,
     mcp_server_entry,
     mcps_for,
+    read_json_object,
 )
 
 # The bash .mcp.json select() defaults membership to all three of
@@ -80,6 +82,7 @@ class ClaudeRenderer:
         self._write_hooks(manifest, plugin_dir, base, profile, out)
         self._write_mcp_json(manifest, plugin_dir, base, out)
         self._write_settings(manifest, plugin_dir, base, out)
+        self._merge_root_settings(manifest, base)
 
         # Track the plugin dir root so uninstall removes the whole tree
         # (including empty sub-dirs we mkdir'd above). Matches the bash
@@ -88,10 +91,43 @@ class ClaudeRenderer:
         return out
 
     def clean(self, manifest: Manifest, target: Path) -> None:
-        """No merged-file surgery under this layout (each plugin owns its
-        whole-file artefacts; the CLI's manifest sweep removes them). Matches
-        the bash ``claude_clean``, which is a no-op."""
-        return None
+        """Surgically remove this profile's contributions to the live
+        ``.claude/settings.json`` (``enabledPlugins`` + ``extraKnownMarketplaces``).
+
+        The plugin tree itself is owned by the CLI's manifest sweep (each
+        plugin gets its own dir; whole-file removal is sufficient). This
+        method only touches the *shared* settings.json — the file holding
+        user-owned config alongside profile-managed marketplace + plugin
+        entries (mirroring how :class:`OpencodeRenderer.clean` un-merges
+        ``opencode.json``)."""
+        base = Path(str(target).rstrip("/"))
+        settings = base / ".claude" / "settings.json"
+        if not settings.is_file():
+            return
+
+        data = read_json_object(settings, ".claude/settings.json")
+
+        enabled = data.get("enabledPlugins")
+        if isinstance(enabled, dict):
+            for plugin_id in manifest.enabled_plugins:
+                enabled.pop(plugin_id, None)
+            if not enabled:
+                data.pop("enabledPlugins", None)
+
+        markets = data.get("extraKnownMarketplaces")
+        if isinstance(markets, dict):
+            for name in manifest.marketplaces:
+                markets.pop(name, None)
+            if not markets:
+                data.pop("extraKnownMarketplaces", None)
+
+        # Don't delete the file if other keys remain — they are user-owned.
+        # Only if we reduced it to {} do we unlink, matching opencode's
+        # "the profile owned it" rule.
+        if data == {}:
+            settings.unlink()
+            return
+        settings.write_text(json.dumps(data, indent=2) + "\n")
 
     # ─── helpers ─────────────────────────────────────────────────────
 
@@ -291,3 +327,51 @@ class ClaudeRenderer:
         out_path = plugin_dir / "settings.json"
         _dump_json(out_path, {"permissions": {"allow": allow}})
         self._track(out, base, out_path)
+
+    def _merge_root_settings(self, manifest: Manifest, base: Path) -> None:
+        """Merge this profile's ``enabled_plugins`` and ``marketplaces`` into
+        the live ``<base>/.claude/settings.json``, preserving siblings.
+
+        Mirrors :meth:`OpencodeRenderer.render` for ``opencode.json``: read,
+        own-our-keys, write. The file is shared (chezmoi-seeded user config
+        + per-profile additions) so it is intentionally NOT tracked in the
+        install manifest. :meth:`clean` un-merges by removing exactly the
+        keys this method added.
+
+        ``${VAR}`` / ``~`` in marketplace paths expand against the process
+        env (``DOTFILES_DIR`` is the intended consumer) — same surface as
+        ``cli._resolve_target``. The marketplace value is wrapped as a
+        ``{"source": {"source": "directory", "path": <expanded>}}`` record;
+        github-source marketplaces stay user-managed in the seed.
+
+        No-op when the profile declares neither field. When the file does
+        not exist, creates an empty ``{}`` seed first — operator running
+        ``ap install global`` standalone (no chezmoi pass) gets a minimal
+        file rather than a hard error; chezmoi's ``create_settings.json``
+        won't overwrite it later (``create_`` semantics), so the operator
+        is responsible for filling in the rest if they're skipping
+        ``dots sync``."""
+        if not manifest.enabled_plugins and not manifest.marketplaces:
+            return
+
+        settings = base / ".claude" / "settings.json"
+        if settings.is_file():
+            data = read_json_object(settings, ".claude/settings.json")
+        else:
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+
+        if manifest.enabled_plugins:
+            enabled = data.setdefault("enabledPlugins", {})
+            for plugin_id, on in manifest.enabled_plugins.items():
+                enabled[plugin_id] = bool(on)
+
+        if manifest.marketplaces:
+            markets = data.setdefault("extraKnownMarketplaces", {})
+            for name, raw_path in manifest.marketplaces.items():
+                expanded = os.path.expandvars(os.path.expanduser(str(raw_path)))
+                markets[name] = {
+                    "source": {"source": "directory", "path": expanded}
+                }
+
+        settings.write_text(json.dumps(data, indent=2) + "\n")
