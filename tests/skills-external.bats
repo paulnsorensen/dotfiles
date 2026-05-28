@@ -111,6 +111,23 @@ run_sync() {
     assert_output_contains "SKILL_HARNESSES is empty"
 }
 
+@test "skill sync: unknown SKILL_HARNESSES agent fails before invoking npx" {
+    # The `skills` CLI silently exits 0 having installed nothing for a bad
+    # --agent value. Without an allowlist, that masks the misconfig and the
+    # cache below still gets written as if the run worked. install-external.sh
+    # must validate the agent IDs up-front (mirroring agent_profile/fetch.py's
+    # SKILL_AGENT) and abort before npx is reached.
+    write_registry
+    write_env "claude-code bogus-agent"
+
+    run_sync
+    assert_failure
+    assert_output_contains "unknown SKILL_HARNESSES agent 'bogus-agent'"
+    # Nothing reached npx — no `skills add` invocation logged.
+    run grep -c 'skills add' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+}
+
 # ─── registry parsing ──────────────────────────────────────────────────
 
 @test "skill sync: missing registry.yaml fails fast" {

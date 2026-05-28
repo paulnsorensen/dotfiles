@@ -63,7 +63,7 @@ def test_fetch_named_skill_single_harness():
     )
     assert calls == [
         [
-            "npx", "skills", "add", "paulnsorensen/easy-cheese",
+            "npx", "--yes", "skills", "add", "paulnsorensen/easy-cheese",
             "--skill", "mold", "--agent", "claude-code",
             "-g", "--copy", "-y",
         ]
@@ -110,7 +110,8 @@ def test_fetch_pins_via_at_ref_in_repo_spec():
         "owner/repo", ["cook"], "v1.2.3", ["codex"], lambda a: calls.append(a) or 0
     )
     # The CLI pins via `<repo>@<ref>` (mapped to git clone --branch), not a flag.
-    assert calls[0][3] == "owner/repo@v1.2.3"
+    argv = calls[0]
+    assert argv[argv.index("add") + 1] == "owner/repo@v1.2.3"
 
 
 def test_fetch_no_harnesses_is_noop():

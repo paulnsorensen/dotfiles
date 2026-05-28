@@ -15,13 +15,15 @@ one connection per source.
 
 The invocation::
 
-    npx skills add <repo>[@<ref>] --skill <name|*> [--skill <name>...] \
+    npx --yes skills add <repo>[@<ref>] --skill <name|*> [--skill <name>...] \
         --agent <id> [--agent <id>...] -g --copy -y
 
-``-g`` installs at user (global) scope; ``--copy`` copies the files (rather than
-symlinking into the agent dirs, preserving the previous copy-and-overwrite
-behaviour); ``-y`` runs non-interactively. ``--skill '*'`` installs every skill
-in the repo (native auto-discovery — no GitHub-API listing needed).
+``npx --yes`` auto-installs the ``skills`` CLI without a prompt (required for
+non-interactive contexts like the chezmoi ``run_onchange``); ``-g`` installs at
+user (global) scope; ``--copy`` copies the files (rather than symlinking into
+the agent dirs, preserving the previous copy-and-overwrite behaviour); ``-y``
+runs the ``skills`` CLI itself non-interactively. ``--skill '*'`` installs every
+skill in the repo (native auto-discovery — no GitHub-API listing needed).
 
 Multiple agents and multiple explicit skills are each passed as *repeated*
 flags: the CLI rejects comma/space-joined values, and — dangerously — exits 0
@@ -98,7 +100,11 @@ def fetch_external_source(
 
     run = runner or _default_runner
     spec = f"{source}@{pin}" if pin else source
-    argv = ["npx", "skills", "add", spec]
+    # `npx --yes` auto-installs the `skills` CLI without prompting; required so
+    # the chezmoi run_onchange (non-interactive TTY) doesn't fall over on a
+    # fresh machine where the CLI isn't yet cached. Sibling paths
+    # (install-external.sh, zsh aliases) use --yes too — keep parity.
+    argv = ["npx", "--yes", "skills", "add", spec]
     if names:
         for n in sorted(names):
             argv += ["--skill", n]

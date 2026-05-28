@@ -74,11 +74,13 @@ def test_install_fetches_source_skill(env, stub_renderers, monkeypatch, capsys):
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0)
 
     assert cli.main(["install", "extprof", "--harness", "claude"]) == 0
-    # One `npx skills add` for the single source skill, targeting claude.
-    fetches = [c for c in calls if c[:3] == ["npx", "skills", "add"]]
+    # One `npx … skills add` for the single source skill, targeting claude.
+    # Anchor on the `add` keyword (not positional indices) so the assertion
+    # survives future argv-prefix changes like --yes.
+    fetches = [c for c in calls if "npx" in c and "skills" in c and "add" in c]
     assert len(fetches) == 1
     argv = fetches[0]
-    assert argv[3] == "paulnsorensen/easy-cheese@v1"  # pin via @ref in the spec
+    assert argv[argv.index("add") + 1] == "paulnsorensen/easy-cheese@v1"  # pin via @ref
     assert "mold" in argv
     assert argv[argv.index("--agent") + 1] == "claude-code"
 
@@ -125,7 +127,7 @@ def test_install_repo_level_source_uses_skill_star(env, stub_renderers, monkeypa
     assert cli.main(["install", "extprof", "--harness", "claude"]) == 0
     assert len(calls) == 1
     argv = calls[0]
-    assert argv[3] == "paulnsorensen/easy-cheese"
+    assert argv[argv.index("add") + 1] == "paulnsorensen/easy-cheese"
     assert argv[argv.index("--skill") + 1] == "*"
 
 

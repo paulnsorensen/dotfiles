@@ -575,11 +575,13 @@ sources:
 YAML
 
     # Force a non-empty harness list so the script doesn't early-exit at the
-    # SKILL_HARNESSES-empty branch. On dev machines the script will then
-    # re-source the real .env's SKILL_HARNESSES on top of this value — that's
-    # harmless here because every fake install fails regardless of which
-    # harnesses are in the loop.
-    export SKILL_HARNESSES="test-harness"
+    # SKILL_HARNESSES-empty branch. Use a valid agent ID so the allowlist
+    # guard (mirrors agent_profile/fetch.py's SKILL_AGENT) passes — the test
+    # is asserting *npx failure propagation*, not allowlist behavior. On dev
+    # machines the real .env's SKILL_HARNESSES overrides this; harmless,
+    # since every fake-npx invocation fails regardless of which IDs are in
+    # the loop.
+    export SKILL_HARNESSES="claude-code"
 
     run "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" "$registry"
     assert_failure

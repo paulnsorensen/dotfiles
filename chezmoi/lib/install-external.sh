@@ -42,7 +42,11 @@ sync_parse_args "$@"
 # (float-to-latest, no pin).
 for cmd in npx yq jq; do
     if ! command -v "$cmd" &> /dev/null; then
-        echo -e "${RED}Error: $cmd not found. Install Node (for npx) or: brew install $cmd${NC}" >&2
+        case "$cmd" in
+            npx) hint="Install Node (provides npm/npx)" ;;
+            *)   hint="brew install $cmd" ;;
+        esac
+        echo -e "${RED}Error: $cmd not found. $hint${NC}" >&2
         exit 1
     fi
 done
@@ -87,7 +91,7 @@ COMBINED_DIGEST=$(printf '%s\n%s\n' "$REGISTRY_DIGEST" "$HARNESSES" | shasum -a 
 
 if ! $FORCE && ! $DRY_RUN && [[ -f "$CACHE_FILE" ]] && [[ "$(cat "$CACHE_FILE" 2>/dev/null)" == "$COMBINED_DIGEST" ]]; then
     echo -e "${GREEN}Registry + harnesses unchanged since last sync — skipping.${NC}"
-    echo "  Pass --force, delete $CACHE_FILE, or run 'npx skills update --global -y' to refresh."
+    echo "  Pass --force, delete $CACHE_FILE, or run 'npx --yes skills update --global -y' to refresh."
     exit 0
 fi
 
@@ -98,9 +102,19 @@ trap 'rm -f "$FAIL_COUNTER"' EXIT
 
 # Repeated `--agent <id>` flags, one per harness. The CLI rejects a
 # comma/space-joined value (and silently no-ops at exit 0 for a bad agent), so
-# every agent is its own flag.
+# every agent is its own flag. Validate against the known set up-front:
+# `npx skills add --agent <bogus>` would otherwise succeed (exit 0) having
+# installed nothing, and the cache below would then be written as if the run
+# worked — silently masking the misconfiguration until --force. The ap path
+# (agent_profile/fetch.py SKILL_AGENT) already guards this; mirror it here.
+KNOWN_AGENTS="claude-code codex cursor github-copilot opencode"
 AGENT_FLAGS=()
 for harness in $HARNESSES; do
+    if [[ " $KNOWN_AGENTS " != *" $harness "* ]]; then
+        echo -e "${RED}Error: unknown SKILL_HARNESSES agent '$harness' (valid: $KNOWN_AGENTS)${NC}" >&2
+        echo "  The 'skills' CLI exits 0 having installed nothing for a bad --agent, so this is checked here." >&2
+        exit 1
+    fi
     AGENT_FLAGS+=(--agent "$harness")
 done
 
@@ -194,4 +208,4 @@ fi
 
 echo -e "${GREEN}Sync complete!${NC}"
 echo
-echo -e "${BLUE}Run 'npx skills update --global -y' to refresh installed skills.${NC}"
+echo -e "${BLUE}Run 'npx --yes skills update --global -y' to refresh installed skills.${NC}"
