@@ -921,6 +921,108 @@ YAML
     ! grep -qE '^web_dashboard:' "$HOME/.serena/serena_config.yml"
 }
 
+# Regression: when the live config is the placeholder AND serena IS on PATH,
+# the bootstrap branch must call `serena init` to heal the file. The bug it
+# guards against: `[ -f $live ] || serena init` short-circuits because the
+# placeholder file already exists, so init is skipped, the live read yields
+# the placeholder again, the filter resets `existing=`, and the script emits
+# the placeholder forever. Stable fixed point on a broken state.
+@test "serena: modify_ script bootstraps via serena init when the on-disk file is the placeholder" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    command -v yq      >/dev/null 2>&1 || skip "yq not installed"
+    setup_serena_chezmoi_env
+
+    mkdir -p "$HOME/.serena"
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+# serena not initialized; run `serena init`, then `chezmoi apply` again
+YAML
+
+    # Fake serena shim — only `init` is exercised. It writes a real config
+    # over the placeholder, mimicking the live `serena init` behaviour.
+    local shim_dir="$HOME/bin"
+    mkdir -p "$shim_dir"
+    cat > "$shim_dir/serena" <<'SH'
+#!/bin/sh
+case "$1" in
+  init)
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+language_backend: LSP
+web_dashboard: true
+web_dashboard_open_on_launch: true
+excluded_tools: []
+projects: []
+YAML
+    ;;
+esac
+SH
+    chmod +x "$shim_dir/serena"
+
+    local chezmoi_dir yq_dir minimal_path
+    chezmoi_dir=$(dirname "$(command -v chezmoi)")
+    yq_dir=$(dirname "$(command -v yq)")
+    minimal_path="$shim_dir:/usr/bin:/bin:$chezmoi_dir:$yq_dir"
+
+    PATH="$minimal_path" run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+
+    # Placeholder must be gone; the override pass must have run.
+    ! grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
+    [[ "$(yq '.web_dashboard'                "$HOME/.serena/serena_config.yml")" == "false" ]]
+    [[ "$(yq '.web_dashboard_open_on_launch' "$HOME/.serena/serena_config.yml")" == "false" ]]
+    [[ "$(yq '.language_backend'             "$HOME/.serena/serena_config.yml")" == "LSP" ]]
+
+    # Second apply is idempotent — byte-level. The weak form (re-check
+    # web_dashboard) would miss e.g. excluded_tools getting reshuffled or
+    # comment lines being eaten. Hash-equality nails the entire surface.
+    local hash_before hash_after
+    hash_before=$(shasum -a 256 "$HOME/.serena/serena_config.yml" | awk '{print $1}')
+    PATH="$minimal_path" run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+    hash_after=$(shasum -a 256 "$HOME/.serena/serena_config.yml" | awk '{print $1}')
+    [[ "$hash_before" == "$hash_after" ]]
+}
+
+# Regression: if `serena init` fails after the stub-on-disk gate fires,
+# the script must fall through gracefully — the bootstrap branch swallows
+# the failure with `|| true`, the live-file read still yields the stub,
+# the filter resets `existing=`, and the final emit-stub branch writes
+# the stub back. Documented residual-risk path; locking it in.
+@test "serena: modify_ script falls through to stub when serena init fails" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    command -v yq      >/dev/null 2>&1 || skip "yq not installed"
+    setup_serena_chezmoi_env
+
+    mkdir -p "$HOME/.serena"
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+# serena not initialized; run `serena init`, then `chezmoi apply` again
+YAML
+
+    # Failing shim — `init` exits 1 without writing anything. Mimics a
+    # serena binary present on PATH but unable to bootstrap (broken venv,
+    # missing language-server dep, etc.).
+    local shim_dir="$HOME/bin"
+    mkdir -p "$shim_dir"
+    cat > "$shim_dir/serena" <<'SH'
+#!/bin/sh
+exit 1
+SH
+    chmod +x "$shim_dir/serena"
+
+    local chezmoi_dir yq_dir minimal_path
+    chezmoi_dir=$(dirname "$(command -v chezmoi)")
+    yq_dir=$(dirname "$(command -v yq)")
+    minimal_path="$shim_dir:/usr/bin:/bin:$chezmoi_dir:$yq_dir"
+
+    PATH="$minimal_path" run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+
+    # Stub must survive verbatim; no yq-emitted 3-key file.
+    grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
+    ! grep -qE '^web_dashboard:' "$HOME/.serena/serena_config.yml"
+    # Exactly the stub literal — nothing more, nothing less.
+    [[ "$(wc -l < "$HOME/.serena/serena_config.yml")" -eq 1 ]]
+}
+
 # ── claude settings.json migration to chezmoi seed ─────────────────────────
 
 @test "claude settings.json: chezmoi seed source exists at dot_claude/create_settings.json" {
