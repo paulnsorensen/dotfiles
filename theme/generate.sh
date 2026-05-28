@@ -591,6 +591,10 @@ scrollback-limit = 10000
 
 # Clipboard (macOS)
 copy-on-select = clipboard
+
+# SSH integration: auto-install xterm-ghostty terminfo on remote hosts
+# and forward TERM/COLORTERM so ncurses apps render correctly over SSH
+shell-integration-features = ssh-terminfo,ssh-env
 GHOSTTY
 
   log_ok "Generated ghostty/config"
