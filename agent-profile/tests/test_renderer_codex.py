@@ -387,6 +387,87 @@ def test_mcp_merge_into_empty_target_has_no_comments_to_lose(renderer, src, targ
     assert doc["mcp_servers"]["foo"]["command"] == "npx"
 
 
+def test_mcp_env_keys_in_dotenv_are_scrubbed(renderer, src, target, monkeypatch, tmp_path):
+    """Env entries whose key is exported by $DOTFILES_DIR/.env are dropped
+    from the rendered TOML — zsh/core.zsh already exports them, so codex
+    MCP children inherit at runtime. Non-.env keys still bake."""
+    dotfiles = tmp_path / "df"
+    dotfiles.mkdir()
+    (dotfiles / ".env").write_text("CONTEXT7_API_KEY=ctx7sk-fake\n")
+    monkeypatch.setenv("DOTFILES_DIR", str(dotfiles))
+    monkeypatch.delenv("AP_CODEX_INHERIT_ENV", raising=False)
+
+    m = _manifest(
+        src,
+        mcps=[
+            {
+                "name": "context7",
+                "command": "npx",
+                "env": {
+                    "CONTEXT7_API_KEY": "ctx7sk-fake",
+                    "SERENA_MUX_HARNESS": "codex",
+                },
+                "harnesses": ["codex"],
+            }
+        ],
+    )
+    renderer.render(m, target)
+    doc = tomllib.loads((target / ".codex" / "config.toml").read_text())
+    env = doc["mcp_servers"]["context7"].get("env", {})
+    assert "CONTEXT7_API_KEY" not in env
+    assert env.get("SERENA_MUX_HARNESS") == "codex"
+
+
+def test_mcp_env_scrub_disabled_via_env(renderer, src, target, monkeypatch, tmp_path):
+    """AP_CODEX_INHERIT_ENV=0 forces the pre-scrub behaviour (every env
+    entry baked into the TOML, including .env-derived keys)."""
+    dotfiles = tmp_path / "df"
+    dotfiles.mkdir()
+    (dotfiles / ".env").write_text("CONTEXT7_API_KEY=ctx7sk-fake\n")
+    monkeypatch.setenv("DOTFILES_DIR", str(dotfiles))
+    monkeypatch.setenv("AP_CODEX_INHERIT_ENV", "0")
+
+    m = _manifest(
+        src,
+        mcps=[
+            {
+                "name": "context7",
+                "command": "npx",
+                "env": {"CONTEXT7_API_KEY": "ctx7sk-fake"},
+                "harnesses": ["codex"],
+            }
+        ],
+    )
+    renderer.render(m, target)
+    doc = tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert doc["mcp_servers"]["context7"]["env"]["CONTEXT7_API_KEY"] == "ctx7sk-fake"
+
+
+def test_mcp_env_block_omitted_when_fully_scrubbed(renderer, src, target, monkeypatch, tmp_path):
+    """If every env key is .env-derived, the env block is omitted entirely
+    (no empty `[mcp_servers.foo.env]` table left dangling)."""
+    dotfiles = tmp_path / "df"
+    dotfiles.mkdir()
+    (dotfiles / ".env").write_text("TODOIST_API_KEY=tok\n")
+    monkeypatch.setenv("DOTFILES_DIR", str(dotfiles))
+    monkeypatch.delenv("AP_CODEX_INHERIT_ENV", raising=False)
+
+    m = _manifest(
+        src,
+        mcps=[
+            {
+                "name": "todoist",
+                "command": "npx",
+                "env": {"TODOIST_API_KEY": "tok"},
+                "harnesses": ["codex"],
+            }
+        ],
+    )
+    renderer.render(m, target)
+    doc = tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert "env" not in doc["mcp_servers"]["todoist"]
+
+
 # ─── commands deprecated, AGENTS.md never touched ─────────────────────────
 
 

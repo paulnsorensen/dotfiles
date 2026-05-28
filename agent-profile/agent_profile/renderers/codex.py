@@ -26,6 +26,7 @@ No ``jq``/``yq`` and no hand-rolled escaping remain.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import stat
 import sys
@@ -34,12 +35,31 @@ from pathlib import Path
 import tomlkit
 
 from agent_profile import shared
+from agent_profile.env import load_dotenv
 from agent_profile.parse import Manifest
 from agent_profile.renderers import base
 
 # Codex's MCP membership default matches the bash select() fallback
 # `(.harnesses // ["claude","codex"])`.
 _CODEX_MCP_DEFAULT = ("claude", "codex")
+
+
+def _inherited_env_keys() -> frozenset[str]:
+    """Keys present in $DOTFILES_DIR/.env (resolved via the same fallback
+    as :func:`overlay._dotenv`). The codex renderer treats any env var
+    listed here as already-exported by the user's shell (zsh/core.zsh
+    sources .env on startup) and omits it from rendered MCP env blocks
+    so credentials aren't duplicated as plaintext in ~/.codex/config.toml.
+
+    Set ``AP_CODEX_INHERIT_ENV=0`` to disable the scrub (forces every
+    env entry to be baked, matching the pre-scrub behaviour).
+    """
+    if os.environ.get("AP_CODEX_INHERIT_ENV", "1") == "0":
+        return frozenset()
+    repo_root = Path(
+        os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles")
+    )
+    return frozenset(load_dotenv(repo_root / ".env").keys())
 
 
 class CodexRenderer:
@@ -185,11 +205,21 @@ class CodexRenderer:
     # [mcp_servers], preserving every user key, comment and ordering via a
     # tomlkit round-trip. config.toml is a merged file (never a whole-file
     # artefact); clean() removes our entries by name.
+    #
+    # Env-block scrubbing: keys present in $DOTFILES_DIR/.env are dropped
+    # from the rendered [mcp_servers.*.env] table. Reason: zsh/core.zsh
+    # exports every key=value from .env into the interactive shell, so
+    # codex (a terminal-launched CLI) and its MCP server children already
+    # inherit those values at runtime. Re-baking them as plaintext in
+    # ~/.codex/config.toml just duplicates the credential on disk for no
+    # behavioural gain. Non-.env env entries (e.g. SERENA_MUX_HARNESS,
+    # which is render-time per-harness, not a credential) stay baked.
     def _write_mcps(self, manifest: Manifest, target: Path) -> None:
         mcps = base.mcps_for(manifest, "codex", _CODEX_MCP_DEFAULT)
         if not mcps:
             return
 
+        inherited = _inherited_env_keys()
         cfg = Path(str(target).rstrip("/")) / ".codex" / "config.toml"
         doc = base.load_toml(cfg)
 
@@ -203,9 +233,14 @@ class CodexRenderer:
             entry["command"] = mcp["command"]
             if mcp.get("args") is not None:
                 entry["args"] = mcp["args"]
-            if mcp.get("env") is not None:
+            env = {
+                k: v
+                for k, v in (mcp.get("env") or {}).items()
+                if k not in inherited
+            }
+            if env:
                 env_tbl = tomlkit.table()
-                for k, v in mcp["env"].items():
+                for k, v in env.items():
                     env_tbl[k] = v
                 entry["env"] = env_tbl
             servers[mcp["name"]] = entry
