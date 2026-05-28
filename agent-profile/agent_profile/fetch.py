@@ -41,17 +41,32 @@ A ``runner`` callable is injected so the fetch is unit-testable without spawning
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from typing import Any, Callable
+
+
+def _load_skill_agents() -> dict[str, str]:
+    """Load the canonical ap-harness -> ``skills`` CLI ``--agent`` ID map from
+    ``skill_agents.txt``. ``chezmoi/lib/install-external.sh`` reads the same
+    file (extracting the VALUES as ``KNOWN_AGENTS``), so adding a harness
+    there makes it valid in both fetch paths and drift between them is
+    impossible."""
+    path = Path(__file__).with_name("skill_agents.txt")
+    mapping: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, val = line.partition("=")
+        if not sep:
+            continue  # malformed line — skip, fail-loud at use site if used
+        mapping[key.strip()] = val.strip()
+    return mapping
+
 
 # ap harness name -> `skills` CLI `--agent` ID. (Identical to the IDs the
 # retired `gh skill` path used.) claude and copilot differ from their ap names.
-SKILL_AGENT = {
-    "claude": "claude-code",
-    "codex": "codex",
-    "cursor": "cursor",
-    "copilot": "github-copilot",
-    "opencode": "opencode",
-}
+SKILL_AGENT = _load_skill_agents()
 
 Runner = Callable[[list[str]], int]
 

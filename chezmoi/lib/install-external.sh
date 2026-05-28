@@ -105,14 +105,26 @@ trap 'rm -f "$FAIL_COUNTER"' EXIT
 # every agent is its own flag. Validate against the known set up-front:
 # `npx skills add --agent <bogus>` would otherwise succeed (exit 0) having
 # installed nothing, and the cache below would then be written as if the run
-# worked — silently masking the misconfiguration until --force. The ap path
-# (agent_profile/fetch.py SKILL_AGENT) already guards this; mirror it here.
-KNOWN_AGENTS="claude-code codex cursor github-copilot opencode"
+# worked — silently masking the misconfiguration until --force.
+#
+# The canonical set lives in agent-profile/agent_profile/skill_agents.txt,
+# which fetch.py loads as SKILL_AGENT (keys) -> agent ID (values). Extracting
+# the values here means the ap path and this legacy path share one source of
+# truth — adding a harness in that file makes it valid in both, by design.
+SKILL_AGENTS_FILE="$DOTFILES_DIR/agent-profile/agent_profile/skill_agents.txt"
+if [[ ! -f "$SKILL_AGENTS_FILE" ]]; then
+    echo -e "${RED}Error: canonical skill-agents map not found at $SKILL_AGENTS_FILE${NC}" >&2
+    echo "  Expected the shared truth-source (fetch.py reads the same file)." >&2
+    exit 1
+fi
+KNOWN_AGENTS=$(awk -F= '/^[[:space:]]*#/ {next} NF==2 {gsub(/[[:space:]]/, "", $2); print $2}' "$SKILL_AGENTS_FILE" | tr '\n' ' ')
+
 AGENT_FLAGS=()
 for harness in $HARNESSES; do
-    if [[ " $KNOWN_AGENTS " != *" $harness "* ]]; then
+    if [[ " $KNOWN_AGENTS" != *" $harness "* ]]; then
         echo -e "${RED}Error: unknown SKILL_HARNESSES agent '$harness' (valid: $KNOWN_AGENTS)${NC}" >&2
         echo "  The 'skills' CLI exits 0 having installed nothing for a bad --agent, so this is checked here." >&2
+        echo "  Canonical set: $SKILL_AGENTS_FILE" >&2
         exit 1
     fi
     AGENT_FLAGS+=(--agent "$harness")

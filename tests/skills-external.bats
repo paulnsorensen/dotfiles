@@ -26,10 +26,17 @@ setup() {
     export MOCK_BIN="$TEST_HOME/bin"
     export NPX_LOG="$TEST_HOME/npx.log"
 
-    mkdir -p "$MOCK_SKILLS_DIR" "$MOCK_REGISTRY_DIR" "$MOCK_LIB_DIR" "$MOCK_BIN"
+    mkdir -p "$MOCK_SKILLS_DIR" "$MOCK_REGISTRY_DIR" "$MOCK_LIB_DIR" "$MOCK_BIN" \
+             "$MOCK_DOTFILES/agent-profile/agent_profile"
 
     cp "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" "$MOCK_SKILLS_DIR/install-external.sh"
     cp "$REAL_DOTFILES_DIR/claude/lib/sync-common.sh" "$MOCK_LIB_DIR/sync-common.sh"
+    # Canonical agent-IDs file — shared source of truth between fetch.py and
+    # install-external.sh. The shell installer reads $DOTFILES_DIR/agent-profile/
+    # agent_profile/skill_agents.txt and aborts loud if it's missing, so the
+    # mock tree needs it too.
+    cp "$REAL_DOTFILES_DIR/agent-profile/agent_profile/skill_agents.txt" \
+       "$MOCK_DOTFILES/agent-profile/agent_profile/skill_agents.txt"
     chmod +x "$MOCK_SKILLS_DIR/install-external.sh"
 
     # Mocked `npx` — every invocation is logged. Default: succeed.
