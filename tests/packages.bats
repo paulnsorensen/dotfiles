@@ -396,7 +396,10 @@ YAML
     assert_success
 
     assert_output_contains "+ tailscale"
-    ! grep -q "needs a custom apt source" <<< "$output"
+    # Match a stable fragment shared by both real strings — the per-package
+    # "needs custom apt source" line and the "needing a custom apt source"
+    # warning header (neither contains the literal "needs a custom apt source").
+    ! grep -q "custom apt source" <<< "$output"
     ! grep -q "install.sh" <<< "$output"
 }
 

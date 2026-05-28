@@ -439,11 +439,13 @@ sync_gh_extensions() {
 ########## APT
 
 # Custom apt_install command for a linux package name (apt override or entry
-# key). Empty when the package has no apt_install field. Plain yq lookup —
-# avoids bash-4 associative arrays so the apt path runs under bash 3.2 too.
+# key). Reads from the APT_CUSTOM_CMDS map (newline-separated "name<TAB>cmd"
+# pairs) populated once at the top of sync_apt — avoids re-shelling yq per
+# package, and avoids bash-4 associative arrays so the apt path runs under
+# bash 3.2 too. Empty when the package has no apt_install field.
 apt_custom_cmd() {
     local pkg="$1"
-    yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select((.value.apt // .key) == \"$pkg\" and .value.apt_install != null) | .value.apt_install" "$PACKAGES_FILE" 2>/dev/null | head -1
+    printf '%s\n' "$APT_CUSTOM_CMDS" | awk -F'\t' -v p="$pkg" '$1 == p { print $2; exit }'
 }
 
 # Classifies one package into the right global bucket. Uses plain global
@@ -478,9 +480,12 @@ sync_apt() {
     log_info "Checking apt packages"
     APT_MISSING=()
     APT_CUSTOM_MISSING=()
-    # Newline-separated linux package names that carry a custom apt_install
-    # command (outside the default apt repos, e.g. Tailscale's own source).
-    APT_CUSTOM_NAMES="$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.apt_install != null) | (.value.apt // .key)' "$PACKAGES_FILE" 2>/dev/null)"
+    # One yq pass: emit "name<TAB>command" for every entry that carries a
+    # custom apt_install. APT_CUSTOM_NAMES = names only (for the membership
+    # check in apt_check_pkg); APT_CUSTOM_CMDS = the full map (for the
+    # printout). Both are populated once here, not per package.
+    APT_CUSTOM_CMDS="$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.apt_install != null) | ((.value.apt // .key) + "\t" + .value.apt_install)' "$PACKAGES_FILE" 2>/dev/null)"
+    APT_CUSTOM_NAMES="$(printf '%s\n' "$APT_CUSTOM_CMDS" | awk -F'\t' 'NF { print $1 }')"
 
     echo -e "\n${GREEN}Packages:${NC}"
     while IFS= read -r pkg; do
