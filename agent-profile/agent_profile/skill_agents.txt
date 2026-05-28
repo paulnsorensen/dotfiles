@@ -1,0 +1,15 @@
+# Canonical mapping: ap harness name -> `skills` CLI --agent ID.
+#
+# Single source of truth shared by:
+#   - agent_profile/fetch.py            (loads as SKILL_AGENT dict)
+#   - chezmoi/lib/install-external.sh   (extracts VALUES as KNOWN_AGENTS)
+#
+# Adding a harness here makes it valid in both fetch paths simultaneously,
+# so drift between the ap path and the legacy installer is impossible.
+# Format: key=value, one per line. Comments (#) and blanks ignored.
+
+claude=claude-code
+codex=codex
+cursor=cursor
+copilot=github-copilot
+opencode=opencode

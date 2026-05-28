@@ -66,13 +66,13 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `cf-refresh` - Rebuild the cheese-flow plugin cache from `~/Dev/cheese-flow` (use after editing the plugin in-place)
 - `plugin-refresh <plugin> [marketplace]` - Generic version of cf-refresh for any local plugin (defaults to cheese-flow@local)
 
-### Agent Skill Management (`gh skill install`)
+### Agent Skill Management (`npx skills add`)
 
-Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`). Skills (local `skills/` tree + external `_registry.yaml` sources) deploy through the registry-derived `base` profile rendered by `ap`. `dots sync` drives the render via chezmoi's `run_onchange_after_install-base-profile.sh.tmpl`; external sources fetch via `gh skill install`. Requires `gh` (v2.90+ with `skill` subcommand) and `gh auth login` — `dots sync` exits 1 if either is missing.
+Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`). Skills (local `skills/` tree + external `_registry.yaml` sources) deploy through the registry-derived `base` profile rendered by `ap`. `dots sync` drives the render via chezmoi's `run_onchange_after_install-base-profile.sh.tmpl`; external sources fetch via `npx skills add` (the Vercel `skills` CLI), which `git clone`s each source repo once and installs to every requested agent in one call. Requires `npx` (Node) — `dots sync` exits 1 if it's missing. No GitHub auth: `npx skills` clones public repos.
 
 - `skill-edit` - Edit `skills/_registry.yaml` (the per-type edit surface)
 - `skill-sync` - Deploy via the unified `ap` path (`dots profile install base`)
-- `skill-ls` - Check installed skills for updates (`gh skill update --all --dry-run`)
+- `skill-ls` - List installed global skills (`npx skills list --global`)
 
 ### Common Development Tasks
 
@@ -112,7 +112,7 @@ dotfiles/
 │                           # opencode TUI/config lives under chezmoi/dot_config/opencode/ (theme + tui.json always-managed; opencode.json scaffolded once).
 ├── cursor/                 # Cursor-specific configuration
 │   └── plugins/local/      # In-repo Cursor plugins (cheese-grok) deployed by chezmoi to ~/.cursor/{skills,rules,commands,hooks}/ plus hooks.json/modes.json merges.
-├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Unioned into the `base` profile and rendered into every harness by `ap`.
+├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`npx skills add`) sources. Unioned into the `base` profile and rendered into every harness by `ap`.
 ├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-base-profile (renders the registry-derived `base` profile — MCPs + skills + hooks — into every harness via `ap`; supersedes the retired install-mcp/install-hooks/install-claude-skills deploy scripts), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-agent-profile (warms the `ap` uv env).
 ├── packages/
 │   ├── packages.yaml       # Flat package registry (brew, cargo, apt)
@@ -483,7 +483,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | Plugin (Cursor) | `cursor/plugins/local/<name>/` (per-plugin manifest at `.cursor-plugin/plugin.json`) | `cursor-plugin-sync` (or `dots sync`) | chezmoi's `run_onchange_after_install-cursor-plugins.sh.tmpl` drives `chezmoi/lib/install-cursor-plugin.sh` per plugin, deploying to `~/.cursor/{skills,rules,commands,hooks}/` and jq-merging `hooks.json` + `modes.json`. Per-collection manifests at `<target>/.dotfiles-managed-<plugin>` track ownership. Restart Cursor after. |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages/packages.yaml` | `dots sync` | Use `dots sync refresh` to force re-check |
-| Skill | `skills/` (local dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` = `dots profile install base`) | chezmoi's `run_onchange_after_install-base-profile.sh.tmpl` renders the `base` profile via `ap`: local (`path:`) skills are copied by the renderers, external (`source:`) skills fetch via `gh skill install` per harness. `ap`'s install manifest tracks ownership. |
+| Skill | `skills/` (local dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` = `dots profile install base`) | chezmoi's `run_onchange_after_install-base-profile.sh.tmpl` renders the `base` profile via `ap`: local (`path:`) skills are copied by the renderers, external (`source:`) skills fetch via `npx skills add` (one `git clone` per source, all harnesses in one call). `ap`'s install manifest tracks ownership. |
 | Profile | `profiles/<name>/profile.yaml` | `dots profile install <name>` / `dots profile launch claude <name>` | Registry-entry-superset items + (isolated) launch-overlay fields. `base` is registry-derived; specialized profiles `include: [base]`; isolated profiles are closed worlds (the `ccp` parity). |
 
 ## Important Gotchas

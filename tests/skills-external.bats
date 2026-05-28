@@ -3,8 +3,12 @@
 # Tests for chezmoi/lib/install-external.sh and skills/_registry.yaml.
 #
 # Strategy: copy install-external.sh + the shared sync-common.sh into a fake
-# dotfiles tree under $TEST_HOME, write a per-test registry and .env, then
-# run the script with a mocked `gh` on $PATH. yq and jq are real.
+# dotfiles tree under $TEST_HOME, write a per-test registry and .env, then run
+# the script with a mocked `npx` on $PATH. yq and jq are real.
+#
+# The skills CLI is invoked as `npx --yes skills add <repo>[@pin] --skill ...
+# --agent ... -g --copy -y` — one clone per source repo, installed to every
+# harness via repeated --agent. The mock logs every invocation.
 #
 # The helper takes the registry path as its first argument:
 #   install-external.sh <registry_path>
@@ -20,63 +24,45 @@ setup() {
     export MOCK_REGISTRY_FILE="$MOCK_REGISTRY_DIR/_registry.yaml"
     export MOCK_LIB_DIR="$MOCK_DOTFILES/claude/lib"
     export MOCK_BIN="$TEST_HOME/bin"
-    export GH_LOG="$TEST_HOME/gh.log"
+    export NPX_LOG="$TEST_HOME/npx.log"
 
-    mkdir -p "$MOCK_SKILLS_DIR" "$MOCK_REGISTRY_DIR" "$MOCK_LIB_DIR" "$MOCK_BIN"
+    mkdir -p "$MOCK_SKILLS_DIR" "$MOCK_REGISTRY_DIR" "$MOCK_LIB_DIR" "$MOCK_BIN" \
+             "$MOCK_DOTFILES/agent-profile/agent_profile"
 
     cp "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" "$MOCK_SKILLS_DIR/install-external.sh"
     cp "$REAL_DOTFILES_DIR/claude/lib/sync-common.sh" "$MOCK_LIB_DIR/sync-common.sh"
+    # Canonical agent-IDs file — shared source of truth between fetch.py and
+    # install-external.sh. The shell installer reads $DOTFILES_DIR/agent-profile/
+    # agent_profile/skill_agents.txt and aborts loud if it's missing, so the
+    # mock tree needs it too.
+    cp "$REAL_DOTFILES_DIR/agent-profile/agent_profile/skill_agents.txt" \
+       "$MOCK_DOTFILES/agent-profile/agent_profile/skill_agents.txt"
     chmod +x "$MOCK_SKILLS_DIR/install-external.sh"
 
-    # Mocked `gh` — every invocation is logged. Default: succeed.
-    # Behavior is configured per-test via $GH_BEHAVIOR:
+    # Mocked `npx` — every invocation is logged. Default: succeed.
+    # Behavior is configured per-test via $NPX_BEHAVIOR:
     #   ok        - exit 0 for everything (default)
-    #   fail-skill-install - skill install exits 1, api still ok
-    #   fail-api  - `gh api ...` exits 1 (auto-discovery fails)
-    cat > "$MOCK_BIN/gh" << 'MOCK'
+    #   fail-add  - `npx ... skills add ...` exits 1
+    cat > "$MOCK_BIN/npx" << 'MOCK'
 #!/bin/bash
-printf 'gh %s\n' "$*" >> "${GH_LOG:-/dev/null}"
+printf 'npx %s\n' "$*" >> "${NPX_LOG:-/dev/null}"
 
-case "$1" in
-    skill)
-        case "$2" in
-            --help) exit 0 ;;
-            install)
-                if [[ "${GH_BEHAVIOR:-ok}" == "fail-skill-install" ]]; then
-                    echo "mock gh: install failed for $*" >&2
-                    exit 1
-                fi
-                exit 0
-                ;;
-        esac
-        exit 0
-        ;;
-    api)
-        if [[ "${GH_BEHAVIOR:-ok}" == "fail-api" ]]; then
+# Args look like: --yes skills add <spec> --skill ... --agent ... -g --copy -y
+for a in "$@"; do
+    if [[ "$a" == "add" ]]; then
+        if [[ "${NPX_BEHAVIOR:-ok}" == "fail-add" ]]; then
+            echo "mock npx skills: add failed for $*" >&2
             exit 1
         fi
-        # Reply to `gh api repos/OWNER/REPO/contents/skills` with a fixed
-        # set of three skills so auto-discovery has something to chew on.
-        if [[ "$2" == repos/*/contents/skills ]]; then
-            cat <<'JSON'
-[
-  {"name": "alpha", "type": "dir"},
-  {"name": "bravo", "type": "dir"},
-  {"name": "charlie", "type": "dir"},
-  {"name": "README.md", "type": "file"}
-]
-JSON
-            exit 0
-        fi
         exit 0
-        ;;
-esac
+    fi
+done
 exit 0
 MOCK
-    chmod +x "$MOCK_BIN/gh"
+    chmod +x "$MOCK_BIN/npx"
 
     export PATH="$MOCK_BIN:$PATH"
-    : > "$GH_LOG"
+    : > "$NPX_LOG"
 }
 
 teardown() {
@@ -117,8 +103,8 @@ run_sync() {
     assert_output_contains "SKILL_HARNESSES is empty"
     assert_output_contains "SKILL_HARNESSES=\"claude-code cursor codex\""
 
-    # Crucially: no gh skill install calls were made.
-    run grep -c 'gh skill install' "$GH_LOG"
+    # Crucially: no skills add calls were made.
+    run grep -c 'skills add' "$NPX_LOG"
     [[ "$output" == "0" ]]
 }
 
@@ -130,6 +116,23 @@ run_sync() {
     run_sync
     assert_success
     assert_output_contains "SKILL_HARNESSES is empty"
+}
+
+@test "skill sync: unknown SKILL_HARNESSES agent fails before invoking npx" {
+    # The `skills` CLI silently exits 0 having installed nothing for a bad
+    # --agent value. Without an allowlist, that masks the misconfig and the
+    # cache below still gets written as if the run worked. install-external.sh
+    # must validate the agent IDs up-front (mirroring agent_profile/fetch.py's
+    # SKILL_AGENT) and abort before npx is reached.
+    write_registry
+    write_env "claude-code bogus-agent"
+
+    run_sync
+    assert_failure
+    assert_output_contains "unknown SKILL_HARNESSES agent 'bogus-agent'"
+    # Nothing reached npx — no `skills add` invocation logged.
+    run grep -c 'skills add' "$NPX_LOG"
+    [[ "$output" == "0" ]]
 }
 
 # ─── registry parsing ──────────────────────────────────────────────────
@@ -154,70 +157,51 @@ EOF
     assert_output_contains "No sources defined in registry"
 }
 
-# ─── auto-discovery vs explicit skill list ─────────────────────────────
+# ─── --skill '*' (auto-discovery) vs explicit skill list ───────────────
 
-@test "skill sync: auto-discovers skills via gh api when no explicit list" {
+@test "skill sync: no explicit list installs all skills via --skill '*'" {
     write_registry "acme/widgets"
     write_env "claude-code"
 
-    run_sync
+    run_sync --dry-run
     assert_success
-    assert_output_contains "Skills (3):"
-    assert_output_contains "alpha bravo charlie"
-
-    # gh api was called for the contents endpoint
-    run grep -F 'gh api repos/acme/widgets/contents/skills' "$GH_LOG"
-    assert_success
+    # Repo-level source → one `skills add` with `--skill *`.
+    assert_output_contains "npx --yes skills add acme/widgets --skill * --agent claude-code -g --copy -y"
 }
 
-@test "skill sync: explicit skills: list overrides auto-discovery" {
+@test "skill sync: explicit skills: list becomes repeated --skill flags" {
     write_registry "acme/widgets" "    skills:
       - just-this-one
       - and-this"
     write_env "claude-code"
 
-    run_sync
+    run_sync --dry-run
     assert_success
-    assert_output_contains "Skills (2):"
-    assert_output_contains "just-this-one and-this"
-
-    # gh api should NOT have been called when the list is explicit
-    run grep -c 'gh api repos/acme/widgets/contents/skills' "$GH_LOG"
-    [[ "$output" == "0" ]]
+    assert_output_contains "npx --yes skills add acme/widgets --skill just-this-one --skill and-this --agent claude-code -g --copy -y"
+    # No `--skill *` when an explicit list is present.
+    run grep -F 'skills add acme/widgets --skill *' "$NPX_LOG"
+    assert_failure
 }
 
-@test "skill sync: auto-discovery failing yields no skills, not a crash" {
-    write_registry "missing/repo"
-    write_env "claude-code"
-    export GH_BEHAVIOR="fail-api"
+# ─── install fan-out (one call per repo, repeated --agent) ─────────────
 
-    run_sync
-    assert_success
-    assert_output_contains "No skills discovered"
-}
-
-# ─── install fan-out ──────────────────────────────────────────────────
-
-@test "skill sync: dry-run prints planned install commands without invoking gh skill install" {
+@test "skill sync: dry-run prints the planned npx command without invoking npx skills add" {
     write_registry "acme/widgets" "    skills:
-      - alpha
-      - bravo"
+      - alpha"
     write_env "claude-code cursor"
 
     run_sync --dry-run
     assert_success
     assert_output_contains "[dry-run]"
-    assert_output_contains "gh skill install acme/widgets alpha --agent claude-code --scope user --force"
-    assert_output_contains "gh skill install acme/widgets alpha --agent cursor --scope user --force"
-    assert_output_contains "gh skill install acme/widgets bravo --agent claude-code --scope user --force"
-    assert_output_contains "gh skill install acme/widgets bravo --agent cursor --scope user --force"
+    # One call covers both harnesses via repeated --agent.
+    assert_output_contains "npx --yes skills add acme/widgets --skill alpha --agent claude-code --agent cursor -g --copy -y"
 
-    # No real install calls
-    run grep -c 'gh skill install' "$GH_LOG"
+    # No real add calls.
+    run grep -c 'skills add' "$NPX_LOG"
     [[ "$output" == "0" ]]
 }
 
-@test "skill sync: real run invokes gh skill install for every (skill x harness) tuple" {
+@test "skill sync: real run invokes one npx skills add per source, all harnesses at once" {
     write_registry "acme/widgets" "    skills:
       - alpha
       - bravo"
@@ -226,19 +210,16 @@ EOF
     run_sync
     assert_success
 
-    # 2 skills * 3 harnesses = 6 installs
-    run grep -c 'gh skill install acme/widgets' "$GH_LOG"
-    [[ "$output" == "6" ]]
+    # Exactly ONE `skills add` for the single source (not per skill, not per harness).
+    run grep -c 'skills add acme/widgets' "$NPX_LOG"
+    [[ "$output" == "1" ]]
 
-    for harness in claude-code cursor codex; do
-        for skill in alpha bravo; do
-            run grep -F "gh skill install acme/widgets $skill --agent $harness --scope user --force" "$GH_LOG"
-            assert_success
-        done
-    done
+    # That one call carries both explicit skills and all three agents.
+    run grep -F 'skills add acme/widgets --skill alpha --skill bravo --agent claude-code --agent cursor --agent codex -g --copy -y' "$NPX_LOG"
+    assert_success
 }
 
-@test "skill sync: pin field appends --pin <value> to install command" {
+@test "skill sync: pin field appends @<ref> to the repo spec" {
     write_registry "acme/widgets" "    pin: v1.2.3
     skills:
       - alpha"
@@ -246,29 +227,23 @@ EOF
 
     run_sync --dry-run
     assert_success
-    assert_output_contains "gh skill install acme/widgets alpha --agent claude-code --scope user --force --pin v1.2.3"
+    assert_output_contains "npx --yes skills add acme/widgets@v1.2.3 --skill alpha --agent claude-code -g --copy -y"
 }
 
-@test "skill sync: every install in the batch is attempted, then script exits non-zero on per-skill failure" {
-    # PR #196 finding 3: the script must run every install in the batch
-    # (so partial failures don't mask each other) and THEN propagate
-    # non-zero so the chezmoi run_onchange records the apply as failed
-    # and reruns next sync. Pre-#196 this exited 0, which silently
-    # marked the chezmoi apply successful → no retry → partial installs
-    # persisted until the skills-tree hash changed.
+@test "skill sync: a failed source propagates exit 1 (PR #196 invariant)" {
+    # install-external.sh must propagate non-zero on any failure so the chezmoi
+    # run_onchange records the apply as failed and reruns next sync. Pre-#196
+    # this exited 0, silently marking the apply successful → no retry.
     write_registry "acme/widgets" "    skills:
-      - alpha
-      - bravo"
+      - alpha"
     write_env "claude-code"
-    export GH_BEHAVIOR="fail-skill-install"
+    export NPX_BEHAVIOR="fail-add"
 
     run_sync
-    assert_failure  # PR #196: per-skill failure now propagates exit 1
-    # Both skills attempted before exit — script does NOT bail on first failure
+    assert_failure
     local stripped
     stripped=$(strip_colors "$output")
-    [[ "$stripped" == *"✗ alpha → claude-code"* ]]
-    [[ "$stripped" == *"✗ bravo → claude-code"* ]]
+    [[ "$stripped" == *"✗ acme/widgets → claude-code"* ]]
 }
 
 # ─── multi-source registry ─────────────────────────────────────────────
@@ -292,9 +267,9 @@ EOF
     assert_output_contains "Source: acme/widgets"
     assert_output_contains "Source: beta/gadgets"
 
-    run grep -F 'gh skill install acme/widgets alpha --agent claude-code' "$GH_LOG"
+    run grep -F 'skills add acme/widgets --skill alpha --agent claude-code' "$NPX_LOG"
     assert_success
-    run grep -F 'gh skill install beta/gadgets zulu --agent claude-code' "$GH_LOG"
+    run grep -F 'skills add beta/gadgets --skill zulu --agent claude-code' "$NPX_LOG"
     assert_success
 }
 
@@ -315,8 +290,7 @@ EOF
     run_sync --dry-run
     assert_success
     assert_output_contains "Harnesses: claude-code cursor"
-    assert_output_contains "gh skill install acme/widgets alpha --agent claude-code --scope user --force"
-    assert_output_contains "gh skill install acme/widgets alpha --agent cursor --scope user --force"
+    assert_output_contains "skills add acme/widgets --skill alpha --agent claude-code --agent cursor"
 }
 
 @test "skill sync: .env loader accepts unquoted value" {
@@ -330,7 +304,7 @@ EOF
     run_sync --dry-run
     assert_success
     assert_output_contains "Harnesses: claude-code"
-    assert_output_contains "gh skill install acme/widgets alpha --agent claude-code --scope user --force"
+    assert_output_contains "skills add acme/widgets --skill alpha --agent claude-code"
 }
 
 @test "skill sync: .env loader skips comment lines and blank lines" {
@@ -349,41 +323,11 @@ EOF
     assert_output_contains "Harnesses: claude-code"
 }
 
-# ─── tooling preflight ─────────────────────────────────────────────────
-
-@test "skill sync: missing 'gh skill' subcommand fails fast with upgrade hint" {
-    # Override the mock gh so `gh skill --help` fails. The script's preflight
-    # must catch this before doing any work.
-    cat > "$MOCK_BIN/gh" <<'MOCK'
-#!/bin/bash
-printf 'gh %s\n' "$*" >> "${GH_LOG:-/dev/null}"
-case "$1 $2" in
-    "skill --help") exit 1 ;;
-esac
-exit 0
-MOCK
-    chmod +x "$MOCK_BIN/gh"
-
-    write_registry
-    write_env "claude-code"
-
-    run_sync
-    assert_failure
-    assert_output_contains "'gh skill' subcommand not available"
-    assert_output_contains "v2.90"
-
-    # No install attempted.
-    run grep -c 'gh skill install' "$GH_LOG"
-    [[ "$output" == "0" ]]
-}
-
-# ─── registry.yaml shape (live registry) ───────────────────────────────
-
 # ─── cache: skip-if-unchanged ──────────────────────────────────────────
 # install-external.sh writes $XDG_STATE_HOME/dotfiles/skill-external-hash
 # (or ~/.local/state/...) after a successful run, then early-exits on
 # subsequent runs when the (registry content + harness list) digest matches.
-# This is the optimization that turns a multi-minute re-sync into a no-op.
+# This is the optimization that turns a multi-source re-sync into a no-op.
 
 @test "skill sync: second run with unchanged registry+harnesses early-exits and runs no installs" {
     write_registry "acme/widgets" "    skills:
@@ -394,21 +338,21 @@ MOCK
     run_sync
     assert_success
 
-    # First run did real installs (2 skills × 1 harness = 2 calls).
-    run grep -c 'gh skill install' "$GH_LOG"
-    [[ "$output" == "2" ]]
+    # First run did a real install (one source).
+    run grep -c 'skills add' "$NPX_LOG"
+    [[ "$output" == "1" ]]
 
     # Cache file was written
     assert_file_exists "$HOME/.local/state/dotfiles/skill-external-hash"
 
     # Reset log, then run again with no changes — should skip entirely.
-    : > "$GH_LOG"
+    : > "$NPX_LOG"
     run_sync
     assert_success
     assert_output_contains "unchanged since last sync"
 
     # Zero install calls on the second run.
-    run grep -c 'gh skill install' "$GH_LOG"
+    run grep -c 'skills add' "$NPX_LOG"
     [[ "$output" == "0" ]]
 }
 
@@ -422,10 +366,10 @@ MOCK
     assert_success
 
     # Second run with --force should re-install despite matching cache.
-    : > "$GH_LOG"
+    : > "$NPX_LOG"
     run_sync --force
     assert_success
-    run grep -c 'gh skill install acme/widgets alpha' "$GH_LOG"
+    run grep -c 'skills add acme/widgets' "$NPX_LOG"
     [[ "$output" == "1" ]]
 }
 
@@ -442,12 +386,12 @@ MOCK
       - alpha
       - bravo"
 
-    : > "$GH_LOG"
+    : > "$NPX_LOG"
     run_sync
     assert_success
-    # Cache invalidated, real installs happen again
-    run grep -c 'gh skill install' "$GH_LOG"
-    [[ "$output" == "2" ]]
+    # Cache invalidated, real install happens again.
+    run grep -c 'skills add' "$NPX_LOG"
+    [[ "$output" == "1" ]]
 }
 
 @test "skill sync: harness change busts the cache" {
@@ -461,11 +405,11 @@ MOCK
     # Same registry, different harness set
     write_env "claude-code cursor"
 
-    : > "$GH_LOG"
+    : > "$NPX_LOG"
     run_sync
     assert_success
-    run grep -c 'gh skill install' "$GH_LOG"
-    [[ "$output" == "2" ]]
+    run grep -c 'skills add' "$NPX_LOG"
+    [[ "$output" == "1" ]]
 }
 
 @test "skill sync: --dry-run does not write the cache file" {
@@ -486,19 +430,18 @@ MOCK
     # PR #196 finding 3: cache must stay un-written on any failure, AND
     # the script must exit non-zero so the run_onchange retries.
     write_registry "acme/widgets" "    skills:
-      - alpha
-      - bravo"
+      - alpha"
     write_env "claude-code"
-    export GH_BEHAVIOR="fail-skill-install"
+    export NPX_BEHAVIOR="fail-add"
 
     run_sync
-    assert_failure  # PR #196: per-skill failure propagates exit 1
+    assert_failure  # PR #196: failure propagates exit 1
 
     if [[ -f "$HOME/.local/state/dotfiles/skill-external-hash" ]]; then
         echo "cache written despite failures" >&2
         return 1
     fi
-    assert_output_contains "install(s) failed"
+    assert_output_contains "source(s) failed"
     assert_output_contains "cache not updated"
 }
 
@@ -530,121 +473,22 @@ MOCK
     }
 }
 
-@test "skill sync: cache is blind to upstream skill-set changes (known gap)" {
-    # Regression test for the bug that hid /cheese-factory: when a source
-    # repo gains a new skill upstream but the local registry + harness
-    # list are unchanged, the cache short-circuits and the new skill is
-    # never installed. This is the design boundary documented in
-    # install-external.sh ("run 'gh skill update --all' to pull upstream
-    # changes"). If we ever fix the gap by, e.g., folding the discovered
-    # skill list into the digest or adding a TTL, flip this test to
-    # assert the new behavior.
-    write_registry "acme/widgets"  # auto-discovery, no explicit skills:
-    write_env "claude-code"
-
-    # First run: mock returns 3 skills.
-    run_sync
-    assert_success
-    run grep -c 'gh skill install acme/widgets' "$GH_LOG"
-    [[ "$output" == "3" ]]
-
-    # Upstream "adds" a new skill — swap the mock to return 4.
-    cat > "$MOCK_BIN/gh" << 'MOCK'
-#!/bin/bash
-printf 'gh %s\n' "$*" >> "${GH_LOG:-/dev/null}"
-case "$1" in
-    skill)
-        case "$2" in
-            --help|install) exit 0 ;;
-        esac
-        exit 0
-        ;;
-    api)
-        if [[ "$2" == repos/*/contents/skills ]]; then
-            cat <<'JSON'
-[
-  {"name": "alpha", "type": "dir"},
-  {"name": "bravo", "type": "dir"},
-  {"name": "charlie", "type": "dir"},
-  {"name": "delta",  "type": "dir"}
-]
-JSON
-            exit 0
-        fi
-        exit 0
-        ;;
-esac
-exit 0
-MOCK
-    chmod +x "$MOCK_BIN/gh"
-
-    : > "$GH_LOG"
-    run_sync
-    assert_success
-
-    # The gap: cache hit, no installs, new skill never reaches the harness.
-    assert_output_contains "unchanged since last sync"
-    run grep -c 'gh skill install' "$GH_LOG"
-    [[ "$output" == "0" ]] || {
-        echo "Expected 0 installs on cache hit, got $output" >&2
-        return 1
-    }
-    run grep -c 'gh skill install acme/widgets delta' "$GH_LOG"
-    [[ "$output" == "0" ]] || {
-        echo "delta was installed — upstream gap may be fixed; update this test" >&2
-        return 1
-    }
-}
-
-@test "skill sync: --force pulls in upstream skill additions (the documented workaround)" {
-    # Companion to the upstream-blindness test: confirms the user-facing
-    # escape hatch (skill-sync --force) actually works to pick up new
-    # skills when the registry hasn't changed.
-    write_registry "acme/widgets"
+@test "skill sync: --force re-runs the add (the documented upstream-refresh workaround)" {
+    # The cache is keyed on registry+harnesses, so it is blind to upstream
+    # skill-set changes (a new skill added to a source repo). The documented
+    # escape hatch is --force, which re-runs `skills add --skill '*'` and lets
+    # the CLI pull whatever is now in the repo.
+    write_registry "acme/widgets"  # --skill '*'
     write_env "claude-code"
 
     run_sync
     assert_success
 
-    # Upstream gains a skill.
-    cat > "$MOCK_BIN/gh" << 'MOCK'
-#!/bin/bash
-printf 'gh %s\n' "$*" >> "${GH_LOG:-/dev/null}"
-case "$1" in
-    skill)
-        case "$2" in
-            --help|install) exit 0 ;;
-        esac
-        exit 0
-        ;;
-    api)
-        if [[ "$2" == repos/*/contents/skills ]]; then
-            cat <<'JSON'
-[
-  {"name": "alpha", "type": "dir"},
-  {"name": "bravo", "type": "dir"},
-  {"name": "charlie", "type": "dir"},
-  {"name": "delta",  "type": "dir"}
-]
-JSON
-            exit 0
-        fi
-        exit 0
-        ;;
-esac
-exit 0
-MOCK
-    chmod +x "$MOCK_BIN/gh"
-
-    : > "$GH_LOG"
+    : > "$NPX_LOG"
     run_sync --force
     assert_success
-
-    run grep -c 'gh skill install acme/widgets delta --agent claude-code' "$GH_LOG"
-    [[ "$output" == "1" ]] || {
-        echo "delta install missing under --force" >&2
-        return 1
-    }
+    run grep -F 'skills add acme/widgets --skill * --agent claude-code' "$NPX_LOG"
+    assert_success
 }
 
 @test "registry.yaml: real registry parses cleanly with yq" {

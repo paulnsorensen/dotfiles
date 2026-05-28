@@ -21,26 +21,19 @@ INSTALLER="$SOURCE_DIR/lib/install-base-profile.sh"
 export DOTFILES_DIR
 DOTFILES_DIR="$(cd "$DOTFILES_ROOT" && pwd)"
 
-# Skip on a fresh machine before uv/gh are installed — `ap` (uv-run) and the
-# `gh skill install` step need them. The env warms on a later apply.
+# Skip on a fresh machine before uv/npx are installed — `ap` (uv-run) and the
+# `npx skills add` step need them. The env warms on a later apply.
 if ! command -v uv &>/dev/null; then
     echo "  Skipping base-profile render (uv not found)"
     exit 0
 fi
 
-# External skills install via `gh skill install` (driven by ap's fetch path).
-# gh is a hard dependency of the skills union — fail loud, don't silently
+# External skills install via `npx skills add` (driven by ap's fetch path),
+# which git-clones each public source repo — no GitHub auth required. npx (Node)
+# is a hard dependency of the skills union — fail loud, don't silently
 # partial-install.
-if ! command -v gh &>/dev/null; then
-    echo "Error: gh CLI not found. Install with: brew install gh" >&2
-    exit 1
-fi
-if ! gh skill --help &>/dev/null; then
-    echo "Error: 'gh skill' subcommand unavailable. Upgrade gh to v2.90+." >&2
-    exit 1
-fi
-if ! gh auth status &>/dev/null; then
-    echo "Error: gh is not authenticated. Run: gh auth login" >&2
+if ! command -v npx &>/dev/null; then
+    echo "Error: npx (Node) not found. Install Node to fetch external skills." >&2
     exit 1
 fi
 

@@ -20,41 +20,20 @@ teardown() { teardown_test_env; }
 
 # ── chezmoi/.sync wiring ────────────────────────────────────────────────
 
-# Helper: drop a fake `gh` binary on PATH that satisfies the PR #196 Phase 2
-# preflight checks (`gh skill --help`, `gh auth status`) so `chezmoi apply`
-# doesn't abort in CI runners where gh exists but isn't authenticated.
-# Also no-ops `gh skill install` and `gh api .../contents/skills` so any
-# downstream install loop completes without network access.
-make_fake_gh() {
+# Helper: drop a fake `npx` binary on PATH so `chezmoi apply` runs hermetically.
+# It satisfies the run_onchange preflight (`command -v npx`) AND no-ops
+# `npx skills add ...` — ap's external-skill fetch path — so the test never
+# git-clones a real source repo over the network.
+make_fake_npx() {
     local fake_bin="${1:-$TEST_HOME/fake-bin}"
     mkdir -p "$fake_bin"
-    cat > "$fake_bin/gh" <<'SH'
+    cat > "$fake_bin/npx" <<'SH'
 #!/usr/bin/env bash
-case "${1:-}" in
-    skill)
-        # gh skill --help / gh skill install ... — both succeed, no-op.
-        exit 0
-        ;;
-    auth)
-        # gh auth status — succeed.
-        exit 0
-        ;;
-    api)
-        # gh api repos/<owner>/<repo>/contents/skills — return empty so
-        # install-external.sh's resolve_skills yields no candidates.
-        echo "[]"
-        exit 0
-        ;;
-    *)
-        # Fail loud on unexpected subcommands so a future code path that
-        # adds a new `gh <foo>` call surfaces a fixture gap instead of
-        # silently fake-succeeding.
-        echo "fake gh: unexpected invocation: gh $*" >&2
-        exit 99
-        ;;
-esac
+# Args look like: --yes skills add <repo> --skill ... --agent ... -g --copy -y
+# Succeed on everything (no network); the skills CLI is never really invoked.
+exit 0
 SH
-    chmod +x "$fake_bin/gh"
+    chmod +x "$fake_bin/npx"
     echo "$fake_bin"
 }
 
@@ -493,14 +472,13 @@ EOF
     fi
 }
 
-@test "chezmoi/run_onchange template fails loud when gh / gh skill / gh auth missing" {
+@test "chezmoi/run_onchange template fails loud when npx is missing" {
     # Spec invariant (PR #196, carried into curd 7): the deploy must FAIL
-    # LOUD when gh, the `gh skill` subcommand, or gh auth is missing —
-    # external skills install through ap's fetch path, which shells `gh
-    # skill install`. Silent skip masked partial installs; guard against it.
-    grep -qF 'command -v gh' "$INSTALLER_TMPL"
-    grep -qF 'gh skill --help' "$INSTALLER_TMPL"
-    grep -qF 'gh auth status' "$INSTALLER_TMPL"
+    # LOUD when npx is missing — external skills install through ap's fetch
+    # path, which shells `npx skills add` (a git clone per source repo). A
+    # silent skip masked partial installs; guard against it. (npx clones public
+    # repos, so no GitHub-auth preflight is needed.)
+    grep -qF 'command -v npx' "$INSTALLER_TMPL"
     # The render invocation must NOT tolerate per-invocation failure.
     if grep -qE 'install-base-profile\.sh.*\|\| *true' "$INSTALLER_TMPL"; then
         echo "base-profile render still has '|| true' — silent partial install regression risk" >&2
@@ -510,8 +488,8 @@ EOF
 
 # Helper: render the run_onchange template to a runnable script + drop a
 # tripwire `ap` on PATH that fails loudly if the render is ever reached.
-# Used by the preflight-FAILURE tests below: the static grep above proves the
-# checks exist in the text; these prove they actually abort at runtime BEFORE
+# Used by the preflight-FAILURE test below: the static grep above proves the
+# check exists in the text; this proves it actually aborts at runtime BEFORE
 # the `ap` render (a silent partial-install regression PR #196 guarded against).
 render_base_profile_onchange() {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
@@ -525,54 +503,28 @@ render_base_profile_onchange() {
     mkdir -p "$fake_bin"
     cat > "$fake_bin/ap" <<'SH'
 #!/usr/bin/env bash
-echo "TRIPWIRE: ap render reached despite a failing gh preflight" >&2
+echo "TRIPWIRE: ap render reached despite a failing npx preflight" >&2
 exit 0
 SH
     chmod +x "$fake_bin/ap"
     echo "$script"
 }
 
-@test "base-profile run_onchange aborts non-zero at runtime when gh auth is missing" {
+@test "base-profile run_onchange aborts non-zero at runtime when npx is missing" {
     command -v uv >/dev/null 2>&1 || skip "uv not installed (run_onchange skips before preflight)"
     local script
     script=$(render_base_profile_onchange)
-    # gh present, `gh skill --help` ok, but `gh auth status` FAILS.
-    local fake_bin="$TEST_HOME/gh-unauthed-bin"
-    mkdir -p "$fake_bin"
-    cat > "$fake_bin/gh" <<'SH'
-#!/usr/bin/env bash
-case "${1:-}" in
-    skill) exit 0 ;;
-    auth)  echo "not logged in" >&2; exit 1 ;;
-    *)     exit 0 ;;
-esac
-SH
-    chmod +x "$fake_bin/gh"
-    PATH="$TEST_HOME/tripwire-bin:$fake_bin:$PATH" run bash "$script"
+    # Minimal PATH: a `uv` stub (so the uv skip-guard passes), the tripwire
+    # `ap`, and /bin for `bash` itself — but no `npx` (it lives in
+    # /opt/homebrew/bin, deliberately excluded). The template's `command -v npx`
+    # must then abort before ever reaching the render.
+    local uv_bin="$TEST_HOME/uv-only-bin"
+    mkdir -p "$uv_bin"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$uv_bin/uv"
+    chmod +x "$uv_bin/uv"
+    PATH="$TEST_HOME/tripwire-bin:$uv_bin:/bin" run bash "$script"
     assert_failure
-    assert_output_contains "not authenticated"
-    [[ "$output" != *"TRIPWIRE"* ]]
-}
-
-@test "base-profile run_onchange aborts non-zero at runtime when gh skill subcommand is absent" {
-    command -v uv >/dev/null 2>&1 || skip "uv not installed (run_onchange skips before preflight)"
-    local script
-    script=$(render_base_profile_onchange)
-    # gh present but the `gh skill` subcommand is unavailable (old gh).
-    local fake_bin="$TEST_HOME/gh-noskill-bin"
-    mkdir -p "$fake_bin"
-    cat > "$fake_bin/gh" <<'SH'
-#!/usr/bin/env bash
-case "${1:-}" in
-    skill) echo "unknown command \"skill\"" >&2; exit 1 ;;
-    auth)  exit 0 ;;
-    *)     exit 0 ;;
-esac
-SH
-    chmod +x "$fake_bin/gh"
-    PATH="$TEST_HOME/tripwire-bin:$fake_bin:$PATH" run bash "$script"
-    assert_failure
-    assert_output_contains "v2.90"
+    assert_output_contains "npx (Node) not found"
     [[ "$output" != *"TRIPWIRE"* ]]
 }
 
@@ -594,7 +546,7 @@ SH
     [[ -x "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" ]]
 }
 
-@test "install-external.sh exits non-zero when a gh skill install fails (PR #196 regression)" {
+@test "install-external.sh exits non-zero when an npx skills add fails (PR #196 regression)" {
     # Spec invariant (PR #196 finding 3): install-external.sh MUST propagate
     # failure so the chezmoi run_onchange records the apply as failed and
     # reruns next `dots sync`, rather than marking success and skipping
@@ -602,28 +554,17 @@ SH
     # partial installs persist — the exact bug PR #196 was filed to fix.
     local fake_bin="$TEST_HOME/fake-bin-failing-install"
     mkdir -p "$fake_bin"
-    cat > "$fake_bin/gh" <<'SH'
+    cat > "$fake_bin/npx" <<'SH'
 #!/usr/bin/env bash
-case "${1:-}" in
-    skill)
-        # `gh skill --help` succeeds; `gh skill install ...` fails.
-        if [[ "${2:-}" == "install" ]]; then
-            echo "fake: simulated install failure" >&2
-            exit 1
-        fi
-        exit 0
-        ;;
-    *)
-        echo "fake gh: unexpected invocation: gh $*" >&2
-        exit 99
-        ;;
-esac
+# `npx skills add ...` fails (simulated clone/install error).
+echo "fake: simulated npx skills add failure" >&2
+exit 1
 SH
-    chmod +x "$fake_bin/gh"
+    chmod +x "$fake_bin/npx"
     PATH="$fake_bin:$PATH"
 
-    # Minimal registry with explicit `skills:` to avoid the `gh api` discovery
-    # path (we only need install_skill to fire).
+    # Minimal registry with explicit `skills:` so install_source emits
+    # `--skill fake-skill` (the discovery path is gone — npx does its own).
     local registry="$TEST_HOME/test-registry.yaml"
     cat > "$registry" <<YAML
 sources:
@@ -634,15 +575,17 @@ sources:
 YAML
 
     # Force a non-empty harness list so the script doesn't early-exit at the
-    # SKILL_HARNESSES-empty branch. On dev machines the script will then
-    # re-source the real .env's SKILL_HARNESSES on top of this value — that's
-    # harmless here because every fake install fails regardless of which
-    # harnesses are in the loop.
-    export SKILL_HARNESSES="test-harness"
+    # SKILL_HARNESSES-empty branch. Use a valid agent ID so the allowlist
+    # guard (mirrors agent_profile/fetch.py's SKILL_AGENT) passes — the test
+    # is asserting *npx failure propagation*, not allowlist behavior. On dev
+    # machines the real .env's SKILL_HARNESSES overrides this; harmless,
+    # since every fake-npx invocation fails regardless of which IDs are in
+    # the loop.
+    export SKILL_HARNESSES="claude-code"
 
     run "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" "$registry"
     assert_failure
-    assert_output_contains "install(s) failed"
+    assert_output_contains "source(s) failed"
 }
 
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────
@@ -713,12 +656,12 @@ YAML
 @test "chezmoi apply triggers the base-profile render + renders templates" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # The base-profile run_onchange (curd 7) fails loud when gh / gh skill /
-    # gh auth is missing. CI runners have gh installed but unauthenticated, so
-    # stub a fake gh that satisfies all three preflight checks.
-    local fake_gh_bin
-    fake_gh_bin=$(make_fake_gh)
-    PATH="$fake_gh_bin:$PATH"
+    # The base-profile run_onchange (curd 7) fails loud when npx (Node) is
+    # missing — external skills install via `npx skills add`. Stub a fake npx
+    # that satisfies the `command -v npx` preflight and no-ops the fetch.
+    local fake_npx_bin
+    fake_npx_bin=$(make_fake_npx)
+    PATH="$fake_npx_bin:$PATH"
 
     # Templated dotfiles need [data] for .email and env vars for the
     # copilot template's fail-fast guard. Bootstrap both before .sync runs
@@ -773,12 +716,12 @@ TOML
 @test "copilot template fails fast when CONTEXT7_API_KEY is unset" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # PR #196: stub fake gh so the run_onchange installer's `gh auth status`
-    # check doesn't fail first and mask the copilot template's fail-fast
-    # error (which is what this test actually asserts).
-    local fake_gh_bin
-    fake_gh_bin=$(make_fake_gh)
-    PATH="$fake_gh_bin:$PATH"
+    # Stub fake npx so the run_onchange installer's `command -v npx` preflight
+    # doesn't fail first and mask the copilot template's fail-fast error (which
+    # is what this test actually asserts).
+    local fake_npx_bin
+    fake_npx_bin=$(make_fake_npx)
+    PATH="$fake_npx_bin:$PATH"
 
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
@@ -799,11 +742,11 @@ TOML
 @test "gitconfig template renders Uber URL redirects when work=true" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # PR #196: stub fake gh so the run_onchange installer's `gh auth status`
-    # check doesn't abort chezmoi apply before the gitconfig template runs.
-    local fake_gh_bin
-    fake_gh_bin=$(make_fake_gh)
-    PATH="$fake_gh_bin:$PATH"
+    # Stub fake npx so the run_onchange installer's `command -v npx` preflight
+    # doesn't abort chezmoi apply before the gitconfig template runs.
+    local fake_npx_bin
+    fake_npx_bin=$(make_fake_npx)
+    PATH="$fake_npx_bin:$PATH"
 
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML

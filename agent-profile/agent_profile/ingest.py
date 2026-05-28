@@ -102,8 +102,8 @@ def _expand_external_skills(
 
     A source with an explicit ``skills:`` list yields one item per named
     skill (each carrying the shared ``pin``); a source without one yields a
-    single repo-level item whose names are resolved at fetch time by
-    ``gh skill install`` (auto-discovery)."""
+    single repo-level item that fetches every skill in the repo via
+    ``npx skills add --skill '*'`` (the CLI's native auto-discovery)."""
     data = _load_yaml_mapping(path)
     sources = data.get("sources") or {}
     out: list[dict[str, Any]] = []

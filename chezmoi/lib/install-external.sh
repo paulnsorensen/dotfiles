@@ -1,10 +1,17 @@
 #!/bin/bash
 #
-# install-external.sh — Install agent skills via `gh skill install` per harness
+# install-external.sh — Install agent skills via `npx skills add` per source repo
 #
-# Reads SKILL_HARNESSES from .env (space-separated agent IDs) and installs
-# every skill discovered in each source repo from the given registry into
-# each harness at user scope.
+# Reads SKILL_HARNESSES from .env (space-separated `skills`-CLI agent IDs, e.g.
+# "claude-code cursor github-copilot codex") and installs the skills from each
+# source repo in the given registry into every harness at user (global) scope.
+#
+# Why `npx skills` (the Vercel `skills` CLI) over `gh skill install`: gh fetched
+# every file of every skill via individual GitHub blob-API calls — files ×
+# skills × harnesses round-trips, any one of which could reset mid-stream and
+# abort the whole sync. `npx skills add` does a single `git clone --depth 1` per
+# source repo and installs to every requested agent in one invocation,
+# collapsing the network surface to one connection per source.
 #
 # Usage:
 #   install-external.sh <registry_path>           Install/update all skills
@@ -30,18 +37,19 @@ source "$DOTFILES_DIR/claude/lib/sync-common.sh"
 
 sync_parse_args "$@"
 
-# Skill sync needs gh + yq + jq (claude is not required here)
-for cmd in gh yq jq; do
+# Skill sync needs npx (Node) + yq + jq. `npx skills add` clones each source and
+# places skills into each agent's skill dir; npx fetches the `skills` CLI itself
+# (float-to-latest, no pin).
+for cmd in npx yq jq; do
     if ! command -v "$cmd" &> /dev/null; then
-        echo -e "${RED}Error: $cmd not found. Install with: brew install $cmd${NC}" >&2
+        case "$cmd" in
+            npx) hint="Install Node (provides npm/npx)" ;;
+            *)   hint="brew install $cmd" ;;
+        esac
+        echo -e "${RED}Error: $cmd not found. $hint${NC}" >&2
         exit 1
     fi
 done
-
-if ! gh skill --help &> /dev/null; then
-    echo -e "${RED}Error: 'gh skill' subcommand not available. Upgrade gh CLI to v2.90+.${NC}" >&2
-    exit 1
-fi
 
 # Source .env for SKILL_HARNESSES
 if [[ -f "$DOTFILES_DIR/.env" ]]; then
@@ -76,58 +84,100 @@ echo
 
 # Cache: skip when registry content + harness list match the last successful
 # run. Bust with --force, by deleting $CACHE_FILE, or by running
-# `gh skill update --all` to pull upstream changes.
+# `npx skills update --global -y` to pull upstream changes.
 CACHE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/skill-external-hash"
 REGISTRY_DIGEST=$(shasum -a 256 "$REGISTRY_FILE" | awk '{print $1}')
 COMBINED_DIGEST=$(printf '%s\n%s\n' "$REGISTRY_DIGEST" "$HARNESSES" | shasum -a 256 | awk '{print $1}')
 
 if ! $FORCE && ! $DRY_RUN && [[ -f "$CACHE_FILE" ]] && [[ "$(cat "$CACHE_FILE" 2>/dev/null)" == "$COMBINED_DIGEST" ]]; then
     echo -e "${GREEN}Registry + harnesses unchanged since last sync — skipping.${NC}"
-    echo "  Pass --force, delete $CACHE_FILE, or run 'gh skill update --all' to refresh."
+    echo "  Pass --force, delete $CACHE_FILE, or run 'npx --yes skills update --global -y' to refresh."
     exit 0
 fi
 
-# Failure counter shared across parallel subshells via tempfile (one line per fail).
+# Failure counter (one line per failed source).
 FAIL_COUNTER=$(mktemp "${TMPDIR:-/tmp}/skill-fail.XXXXXX")
 export FAIL_COUNTER
 trap 'rm -f "$FAIL_COUNTER"' EXIT
 
-# Resolve skills for a source repo: explicit list from registry, or auto-discover
-# via GitHub API. Echoes one skill name per line.
-resolve_skills() {
-    local repo="$1"
-    local explicit
+# Repeated `--agent <id>` flags, one per harness. The CLI rejects a
+# comma/space-joined value (and silently no-ops at exit 0 for a bad agent), so
+# every agent is its own flag. Validate against the known set up-front:
+# `npx skills add --agent <bogus>` would otherwise succeed (exit 0) having
+# installed nothing, and the cache below would then be written as if the run
+# worked — silently masking the misconfiguration until --force.
+#
+# The canonical set lives in agent-profile/agent_profile/skill_agents.txt,
+# which fetch.py loads as SKILL_AGENT (keys) -> agent ID (values). Extracting
+# the values here means the ap path and this legacy path share one source of
+# truth — adding a harness in that file makes it valid in both, by design.
+SKILL_AGENTS_FILE="$DOTFILES_DIR/agent-profile/agent_profile/skill_agents.txt"
+if [[ ! -f "$SKILL_AGENTS_FILE" ]]; then
+    echo -e "${RED}Error: canonical skill-agents map not found at $SKILL_AGENTS_FILE${NC}" >&2
+    echo "  Expected the shared truth-source (fetch.py reads the same file)." >&2
+    exit 1
+fi
+KNOWN_AGENTS=$(awk -F= '/^[[:space:]]*#/ {next} NF==2 {gsub(/[[:space:]]/, "", $2); print $2}' "$SKILL_AGENTS_FILE" | tr '\n' ' ')
+
+AGENT_FLAGS=()
+for harness in $HARNESSES; do
+    if [[ " $KNOWN_AGENTS" != *" $harness "* ]]; then
+        echo -e "${RED}Error: unknown SKILL_HARNESSES agent '$harness' (valid: $KNOWN_AGENTS)${NC}" >&2
+        echo "  The 'skills' CLI exits 0 having installed nothing for a bad --agent, so this is checked here." >&2
+        echo "  Canonical set: $SKILL_AGENTS_FILE" >&2
+        exit 1
+    fi
+    AGENT_FLAGS+=(--agent "$harness")
+done
+
+# Repeated `--skill` flags for a source: the explicit registry list (one flag
+# per name), or `--skill '*'` to install every skill in the repo (the CLI's
+# native auto-discovery — no GitHub-API listing needed). Echoes one token per
+# line so the caller can read them into an array safely.
+skill_flags() {
+    local repo="$1" explicit
     explicit=$(yq -o=json ".sources.\"$repo\".skills // []" "$REGISTRY_FILE" | jq -r '.[]?')
     if [[ -n "$explicit" ]]; then
-        echo "$explicit"
-        return 0
+        while IFS= read -r s; do
+            [[ -z "$s" ]] && continue
+            printf '%s\n%s\n' "--skill" "$s"
+        done <<< "$explicit"
+    else
+        printf '%s\n%s\n' "--skill" "*"
     fi
-    # Auto-discover via GitHub API. Failure (private repo, network, missing
-    # skills/ dir) is non-fatal — caller surfaces "No skills discovered".
-    local response
-    response=$(gh api "repos/$repo/contents/skills" 2>/dev/null) || return 0
-    echo "$response" | jq -r '.[] | select(.type == "dir") | .name' | sort
 }
 
-# Install one (repo, skill, harness) tuple
-install_skill() {
-    local repo="$1" skill="$2" harness="$3" pin="$4"
-    local args=(skill install "$repo" "$skill" --agent "$harness" --scope user --force)
-    [[ -n "$pin" && "$pin" != "null" ]] && args+=(--pin "$pin")
+# Install every skill from one source repo into all harnesses in a single
+# `npx skills add` (one shallow clone, repeated --agent for the harnesses).
+install_source() {
+    local repo="$1" pin="$2"
+    local spec="$repo"
+    [[ -n "$pin" && "$pin" != "null" ]] && spec="$repo@$pin"
+
+    local skill_args=()
+    while IFS= read -r tok; do
+        [[ -z "$tok" ]] && continue
+        skill_args+=("$tok")
+    done < <(skill_flags "$repo")
+
+    # `--yes` runs npx non-interactively (auto-installs the `skills` CLI); the
+    # CLI's own `-y` skips its scope/confirmation prompts. `-g` = user scope,
+    # `--copy` copies files (vs symlinking) to match the old overwrite contract.
+    local args=(--yes skills add "$spec" "${skill_args[@]}" "${AGENT_FLAGS[@]}" -g --copy -y)
 
     if $DRY_RUN; then
-        echo -e "    ${BLUE}[dry-run]${NC} gh ${args[*]}"
+        echo -e "    ${BLUE}[dry-run]${NC} npx ${args[*]}"
         return 0
     fi
 
     local output
-    if output=$(gh "${args[@]}" 2>&1); then
-        echo -e "    ${GREEN}✓${NC} $skill → $harness"
+    if output=$(npx "${args[@]}" 2>&1); then
+        echo -e "    ${GREEN}✓${NC} $repo → $HARNESSES"
     else
-        echo -e "    ${RED}✗${NC} $skill → $harness"
+        echo -e "    ${RED}✗${NC} $repo → $HARNESSES"
         echo x >> "$FAIL_COUNTER"
         if [[ -n "$output" ]]; then
-            echo "$output" | head -3 | sed -e "s/^/      /"
+            echo "$output" | tail -5 | sed -e "s/^/      /"
         fi
     fi
 }
@@ -145,33 +195,7 @@ for repo in $SOURCES; do
     echo -e "${BLUE}Source:${NC} $repo"
     [[ -n "$description" ]] && echo "  $description"
 
-    skills=$(resolve_skills "$repo")
-    if [[ -z "$skills" ]]; then
-        echo -e "  ${YELLOW}No skills discovered.${NC}"
-        echo
-        continue
-    fi
-
-    skill_count=$(echo "$skills" | grep -c .)
-    echo -e "  ${BLUE}Skills ($skill_count):${NC} $(echo "$skills" | tr '\n' ' ')"
-    echo
-
-    # Parallel fan-out: one subshell per harness. Each writes to stdout +
-    # the shared $FAIL_COUNTER tempfile. Output interleaves across harnesses,
-    # but every install line is self-identifying ("✓ <skill> → <harness>").
-    pids=()
-    for harness in $HARNESSES; do
-        {
-            while IFS= read -r skill; do
-                [[ -z "$skill" ]] && continue
-                install_skill "$repo" "$skill" "$harness" "$pin"
-            done <<< "$skills"
-        } &
-        pids+=("$!")
-    done
-    for pid in "${pids[@]}"; do
-        wait "$pid"
-    done
+    install_source "$repo" "$pin"
     echo
 done
 
@@ -185,7 +209,7 @@ if [[ "$fail_count" -gt 0 ]]; then
     # apply as failed and reruns next `dots sync` instead of marking success
     # and skipping until the skills tree hash changes (the silent partial
     # install regression mode).
-    echo -e "${RED}$fail_count install(s) failed — cache not updated. Re-run to retry.${NC}" >&2
+    echo -e "${RED}$fail_count source(s) failed — cache not updated. Re-run to retry.${NC}" >&2
     exit 1
 fi
 
@@ -196,4 +220,4 @@ fi
 
 echo -e "${GREEN}Sync complete!${NC}"
 echo
-echo -e "${BLUE}Run 'gh skill update --all --dry-run' to inspect installed versions.${NC}"
+echo -e "${BLUE}Run 'npx --yes skills update --global -y' to refresh installed skills.${NC}"
