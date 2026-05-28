@@ -510,41 +510,26 @@ TOML
     [[ "$changed" == "session-start-cheese-flair" ]]
 }
 
-# ── hardening: in-repo claude/settings.json content lock ───────────────
-
-@test "claude/settings.json carries the SessionStart entry with timeout 5" {
-    local settings="$REAL_DOTFILES_DIR/claude/settings.json"
-    # Locks acceptance criteria #1 (Claude side path/timeout) against the
-    # real file — not a mock — so a future refactor that drops the entry
-    # or changes the path is caught immediately.
-    [[ "$(jq -r '.hooks.SessionStart | length' "$settings")" -ge 1 ]]
-    local cmd timeout
-    cmd=$(jq -r '
-        .hooks.SessionStart
-        | map(select(((.hooks // [])[0].command // "") | test("session-start-cheese-flair.sh")))
-        | .[0].hooks[0].command
-    ' "$settings")
-    timeout=$(jq -r '
-        .hooks.SessionStart
-        | map(select(((.hooks // [])[0].command // "") | test("session-start-cheese-flair.sh")))
-        | .[0].hooks[0].timeout
-    ' "$settings")
-    [[ "$cmd" == *'.claude/hooks/session-start-cheese-flair.sh'* ]]
-    [[ "$timeout" == "5" ]]
-}
-
-@test "claude/settings.json sync against itself is a no-op" {
-    # Run sync against the real in-repo settings file (copied) and assert
-    # the produced state matches byte-for-byte after a re-run — locks the
-    # contract that the registry and the checked-in settings agree.
-    cp "$REAL_DOTFILES_DIR/claude/settings.json" "$CLAUDE_SETTINGS_FILE"
-    local before
-    before=$(jq -S . "$CLAUDE_SETTINGS_FILE")
-    hook_claude_apply session-start-cheese-flair
-    local after
-    after=$(jq -S . "$CLAUDE_SETTINGS_FILE")
-    [[ "$before" == "$after" ]]
-}
+# ── post-migration: SessionStart wiring lives in the plugin tree ───────
+#
+# The committed `claude/settings.json` was retired in favor of the
+# chezmoi-seeded `~/.claude/settings.json` + ap-rendered plugin tree.
+# The SessionStart hook is now declared by the plugin's `plugin.json`
+# (rendered by `ap install global` into
+# `~/.claude/plugins/local/global/.claude-plugin/plugin.json`), not by a
+# hand-written entry in the user settings file.
+#
+# The two old tests here ("carries the SessionStart entry with timeout 5"
+# and "sync against itself is a no-op") locked the OLD behavior against
+# the in-repo `claude/settings.json`. With that file gone, their
+# assertions are replaced by:
+#
+#   - `chezmoi-wiring.bats: claude settings.json: seed has NO legacy SessionStart hook entry`
+#   - `cheese-flair.bats: hook script self-locates lib + bank when ~/.claude/hooks is a directory symlink`
+#   - `cheese-flair.bats: hook script output shape matches across both harnesses`
+#
+# which together prove the new wiring fires correctly and the seed is
+# clean. Keep them mentioned here as breadcrumbs for git-blame archaeology.
 
 # ── hardening: installer argument errors ───────────────────────────────
 

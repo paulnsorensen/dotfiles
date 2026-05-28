@@ -10,7 +10,6 @@ permissions_deny:
 # Per-profile plugin set (ccp settings-merge parity).
 enabled_plugins:
   "claude-md-management@claude-plugins-official": true
-  "claude-hud@claude-hud": true
   "plugin-dev@claude-plugins-official": false
   "skill-creator@claude-plugins-official": false
   "frontend-design@claude-plugins-official": false

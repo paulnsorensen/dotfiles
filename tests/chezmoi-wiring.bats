@@ -319,7 +319,7 @@ EOF
 # both of which claude/.sync later backs up to .bak, orphaning everything
 # chezmoi just wrote.
 
-@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference,settings.json} on a fresh install" {
+@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference} on a fresh install" {
     # No ~/.claude at all — fresh-box state.
     [[ ! -e "$HOME/.claude" ]]
 
@@ -343,15 +343,16 @@ EOF
     [[ "$(readlink "$HOME/.claude/hooks")"     == "$REAL_DOTFILES_DIR/claude/hooks"     ]]
     [[ -L "$HOME/.claude/reference" ]]
     [[ "$(readlink "$HOME/.claude/reference")" == "$REAL_DOTFILES_DIR/claude/reference" ]]
-    [[ -L "$HOME/.claude/settings.json" ]]
-    [[ "$(readlink "$HOME/.claude/settings.json")" == "$REAL_DOTFILES_DIR/claude/settings.json" ]]
+    # settings.json must NOT be pre-linked anymore — it's a chezmoi
+    # create_ seed now (chezmoi/dot_claude/create_settings.json), and a
+    # legacy symlink would block the seed step.
+    [[ ! -L "$HOME/.claude/settings.json" ]]
 }
 
 @test "chezmoi/.sync prelink is idempotent (existing correct symlink preserved)" {
     mkdir -p "$HOME/.claude"
     ln -s "$REAL_DOTFILES_DIR/claude/hooks"         "$HOME/.claude/hooks"
     ln -s "$REAL_DOTFILES_DIR/claude/reference"     "$HOME/.claude/reference"
-    ln -s "$REAL_DOTFILES_DIR/claude/settings.json" "$HOME/.claude/settings.json"
 
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
@@ -371,7 +372,6 @@ EOF
     # Symlinks unchanged.
     [[ "$(readlink "$HOME/.claude/hooks")"         == "$REAL_DOTFILES_DIR/claude/hooks"         ]]
     [[ "$(readlink "$HOME/.claude/reference")"     == "$REAL_DOTFILES_DIR/claude/reference"     ]]
-    [[ "$(readlink "$HOME/.claude/settings.json")" == "$REAL_DOTFILES_DIR/claude/settings.json" ]]
     # Prelink message only fires when it actually creates a link.
     [[ "$output" != *"Pre-linked"* ]]
 }
@@ -459,12 +459,22 @@ EOF
 }
 
 @test "chezmoi/run_onchange template hashes the registries + skills tree it renders from" {
-    # The base profile unions the three registries + the local skills tree;
-    # the hash must cover them so a registry/skill edit retriggers the render.
+    # The base profile unions the three registries + the local skills tree
+    # AND the global profile wraps base with operator-overlay fields;
+    # the hash must cover all of them so a registry/skill/profile/hook-script
+    # edit retriggers the render.
     grep -qF '/../skills -type f' "$INSTALLER_TMPL"
     grep -qF '/../profiles/base' "$INSTALLER_TMPL"
+    grep -qF '/../profiles/global' "$INSTALLER_TMPL"
     grep -qF '/../agents/mcp/registry.yaml' "$INSTALLER_TMPL"
-    grep -qF '/../agents/hooks/registry.yaml' "$INSTALLER_TMPL"
+    # `agents/hooks` covers the registry AND its referenced scripts —
+    # without script-content coverage, edits to a hook payload (e.g. the
+    # SessionStart cheese-flair script) would NOT trigger re-deploy on
+    # `dots sync`. Same for the cheese-flair lib + bank under agents/lib
+    # and agents/reference.
+    grep -qF '/../agents/hooks' "$INSTALLER_TMPL"
+    grep -qF '/../agents/lib' "$INSTALLER_TMPL"
+    grep -qF '/../agents/reference' "$INSTALLER_TMPL"
     # The pre-flatten nested path must stay gone.
     if grep -qF '/../claude/skills' "$INSTALLER_TMPL"; then
         echo "template still references the pre-flatten claude/skills tree" >&2
@@ -510,21 +520,25 @@ SH
     echo "$script"
 }
 
-@test "base-profile run_onchange aborts non-zero at runtime when npx is missing" {
+@test "base-profile run_onchange skips cleanly when npx is missing" {
+    # Behavior change: the linux-bootstrap PR (commit 5369aa3) softened
+    # missing-npx from `exit 1` (fail-loud) to `exit 0` (clean skip with
+    # pointer) — symmetric with the missing-uv branch. Rationale: on a
+    # fresh Ubuntu box npx arrives from `apt install nodejs npm` after the
+    # first sync prints its missing-tools list; failing the whole apply
+    # there is hostile. The render still must NOT reach `ap` while npx
+    # is absent (no tripwire trigger), and the skip diagnostic must
+    # surface so the user knows why external skills weren't fetched.
     command -v uv >/dev/null 2>&1 || skip "uv not installed (run_onchange skips before preflight)"
     local script
     script=$(render_base_profile_onchange)
-    # Minimal PATH: a `uv` stub (so the uv skip-guard passes), the tripwire
-    # `ap`, and /bin for `bash` itself — but no `npx` (it lives in
-    # /opt/homebrew/bin, deliberately excluded). The template's `command -v npx`
-    # must then abort before ever reaching the render.
     local uv_bin="$TEST_HOME/uv-only-bin"
     mkdir -p "$uv_bin"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$uv_bin/uv"
     chmod +x "$uv_bin/uv"
     PATH="$TEST_HOME/tripwire-bin:$uv_bin:/bin" run bash "$script"
-    assert_failure
-    assert_output_contains "npx (Node) not found"
+    assert_success
+    assert_output_contains "Skipping base-profile render (npx not found"
     [[ "$output" != *"TRIPWIRE"* ]]
 }
 
@@ -613,10 +627,18 @@ YAML
     grep -q 'code.uber.internal' "$tmpl"
 }
 
-@test "copilot template fails fast on missing env vars and renders both keys" {
+@test "copilot template warns on missing env vars and renders both keys" {
+    # Behavior change: prior to the linux-bootstrap PR (commit 5369aa3) the
+    # template hard-failed `chezmoi apply` with `{{ fail "... is not set" }}`
+    # whenever either API key was unset. That was hostile to fresh-box
+    # bootstraps where the user has not yet copied .env.example → .env, so
+    # the template now `warnf`s and emits an empty `mcpServers: {}` stub
+    # instead. The MCPs simply won't work until the keys are populated, but
+    # the rest of `dots sync` proceeds.
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
-    grep -q 'CONTEXT7_API_KEY is not set' "$tmpl"
-    grep -q 'TAVILY_API_KEY is not set' "$tmpl"
+    grep -q 'warnf "copilot mcp-config:' "$tmpl"
+    grep -q 'CONTEXT7_API_KEY and/or TAVILY_API_KEY unset' "$tmpl"
+    grep -q '"mcpServers": {}' "$tmpl"
     grep -q 'env "CONTEXT7_API_KEY"' "$tmpl"
     grep -q 'env "TAVILY_API_KEY"' "$tmpl"
 }
@@ -713,12 +735,14 @@ TOML
     grep -qF '"TAVILY_API_KEY": "test-tavily-key"' "$HOME/.copilot/mcp-config.json"
 }
 
-@test "copilot template fails fast when CONTEXT7_API_KEY is unset" {
+@test "copilot template warns + emits empty mcpServers when CONTEXT7_API_KEY is unset" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # Stub fake npx so the run_onchange installer's `command -v npx` preflight
-    # doesn't fail first and mask the copilot template's fail-fast error (which
-    # is what this test actually asserts).
+    # Linux-bootstrap PR (5369aa3) softened the template from `{{ fail ... }}`
+    # to `{{ warnf ... }}` + empty-stub render. `chezmoi apply` therefore
+    # SUCCEEDS even when a key is unset, and the rendered file is a stub
+    # carrying `"mcpServers": {}`. The warning still surfaces the missing
+    # key on stderr so the user knows to populate .env.
     local fake_npx_bin
     fake_npx_bin=$(make_fake_npx)
     PATH="$fake_npx_bin:$PATH"
@@ -735,8 +759,14 @@ TOML
     export TAVILY_API_KEY="test-tavily-key"
 
     run chezmoi apply --force
-    assert_failure
-    assert_output_contains "CONTEXT7_API_KEY is not set"
+    assert_success
+    # The warnf message should appear in chezmoi's stderr (combined with
+    # stdout under bats' `run`).
+    assert_output_contains "CONTEXT7_API_KEY and/or TAVILY_API_KEY unset"
+    # The rendered file is the empty-mcpServers stub.
+    assert_file_exists "$HOME/.copilot/mcp-config.json"
+    grep -qF '"mcpServers": {}' "$HOME/.copilot/mcp-config.json"
+    grep -qF 'Stub written by chezmoi' "$HOME/.copilot/mcp-config.json"
 }
 
 @test "gitconfig template renders Uber URL redirects when work=true" {
@@ -889,4 +919,77 @@ YAML
     # content. The bug would replace it with `web_dashboard: false\n...`.
     grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
     ! grep -qE '^web_dashboard:' "$HOME/.serena/serena_config.yml"
+}
+
+# ── claude settings.json migration to chezmoi seed ─────────────────────────
+
+@test "claude settings.json: chezmoi seed source exists at dot_claude/create_settings.json" {
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+}
+
+@test "claude settings.json: chezmoi seed is valid JSON" {
+    jq -e 'type == "object"' "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null
+}
+
+@test "claude settings.json: seed has NO legacy SessionStart hook entry" {
+    # The base plugin's plugin.json (rendered by ap into
+    # ~/.claude/plugins/local/global/.claude-plugin/plugin.json) now
+    # provides the SessionStart wiring. A duplicate entry in settings.json
+    # would double-fire the hook AND silently break when the legacy
+    # symlinked path is gone (the regression that drove the migration).
+    local has_session
+    has_session=$(jq -r '.hooks.SessionStart // empty' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json")
+    [[ -z "$has_session" ]]
+}
+
+@test "claude settings.json: seed does NOT pre-bake ap-managed marketplace/plugin" {
+    # `local` marketplace + `global@local` enablement are owned by the
+    # claude renderer (ap install global) — they get merged in after
+    # chezmoi seeds. Pre-baking would either cause the merge to look like
+    # a no-op (fine, but confusing) OR survive a global rename (broken).
+    ! jq -e '.enabledPlugins["global@local"]' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+    ! jq -e '.extraKnownMarketplaces["local"]' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+}
+
+@test "claude settings.json: source filename uses create_ prefix (seed-once)" {
+    # `create_` chezmoi semantic: never overwrite on subsequent applies.
+    # Using `dot_settings.json` (always-render) would clobber user edits;
+    # using `modify_settings.json` (script-driven mutation) would be
+    # heavier than needed since ap handles the per-profile mutations.
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+    [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/settings.json" ]]
+    [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/dot_settings.json" ]]
+}
+
+@test "claude settings.json: one-time migration script exists" {
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_once_before_migrate-claude-settings.sh" ]]
+}
+
+@test "claude settings.json: migration script removes legacy dotfiles symlink only" {
+    # The script must NOT delete a settings.json that links to anywhere
+    # other than $DOTFILES/claude/settings.json — the user may have
+    # set up their own symlink.
+    local script="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_once_before_migrate-claude-settings.sh"
+    grep -qF '*/dotfiles/claude/settings.json' "$script"
+    # shellcheck disable=SC2016
+    grep -qE 'if[[:space:]]+\[\[ -L "\$target" \]\]' "$script"
+}
+
+@test "claude/.sync no longer symlinks settings.json" {
+    # settings.json moved to chezmoi/dot_claude/create_settings.json;
+    # claude/.sync's configs list must not include it (else a fresh sync
+    # would re-create the legacy symlink, undoing the migration).
+    local sync_script="$REAL_DOTFILES_DIR/claude/.sync"
+    # The configs=( ... ) array shouldn't list `settings.json`.
+    ! awk '/^configs=\(/,/^\)/' "$sync_script" | grep -qE '^\s*settings\.json\s*$'
+}
+
+@test "claude/settings.json source is gone from the repo (migrated to chezmoi)" {
+    # Once committed, the legacy claude/settings.json must not exist —
+    # the chezmoi seed is the source of truth. A re-introduced file would
+    # quietly fight the chezmoi-seeded one via the legacy symlink path.
+    [[ ! -f "$REAL_DOTFILES_DIR/claude/settings.json" ]]
 }

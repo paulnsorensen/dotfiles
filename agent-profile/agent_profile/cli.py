@@ -197,7 +197,7 @@ def cmd_path(name: str, colors: _Colors, out: Any) -> int:
 def cmd_install(
     name: str,
     harnesses: list[str],
-    target: Path,
+    target_opt: Path | None,
     colors: _Colors,
     out: Any,
 ) -> int:
@@ -209,6 +209,9 @@ def cmd_install(
     if profile_dir is None:
         raise CliError(f"{colors.RED}ap: profile '{name}' not found{colors.NC}")
 
+    manifest = parse_manifest(profile_dir)
+    target = _resolve_target(target_opt, manifest.target_default)
+
     print(
         f"{colors.BLUE}→ Installing profile '{name}' "
         f"from {profile_dir}{colors.NC}",
@@ -217,7 +220,6 @@ def cmd_install(
     print(f"  target:   {target}", file=out)
     print(f"  harness:  {' '.join(harnesses)}", file=out)
 
-    manifest = parse_manifest(profile_dir)
     merged_dict = manifest.to_dict()
 
     manifest_mod.manifest_init(target)
@@ -345,7 +347,7 @@ def _union_files(
 
 def cmd_uninstall(
     name: str,
-    target: Path,
+    target_opt: Path | None,
     colors: _Colors,
     out: Any,
 ) -> int:
@@ -353,6 +355,19 @@ def cmd_uninstall(
         raise CliError(
             f"{colors.RED}ap uninstall: profile name required{colors.NC}"
         )
+
+    # Mirror install's target resolution so `ap uninstall global` (without
+    # --target) honors the profile's declared default. When the profile dir
+    # is gone, falls through to Path.cwd(); the operator can still pass
+    # --target explicitly to point at the right install root.
+    target_default: str | None = None
+    profile_dir = discover.find_profile_dir(name)
+    if profile_dir is not None:
+        try:
+            target_default = parse_manifest(profile_dir).target_default
+        except ParseError:
+            target_default = None
+    target = _resolve_target(target_opt, target_default)
 
     print(
         f"{colors.BLUE}→ Uninstalling profile '{name}' "
@@ -412,7 +427,7 @@ def cmd_uninstall(
 def cmd_launch(
     remaining: list[str],
     passthrough: list[str],
-    target: Path,
+    target_opt: Path | None,
     colors: _Colors,
     out: Any,
 ) -> NoReturn:
@@ -442,7 +457,11 @@ def cmd_launch(
             _launch_isolated(
                 manifest, profile_dir, harness, exec_args, colors, out
             )  # NoReturn
-        install_rc = cmd_install(name, [harness], target, colors, out)
+        # Pass the unresolved target_opt down to cmd_install; it will apply
+        # the same explicit > profile.target_default > PWD precedence we use
+        # for standalone install. Launching the global profile thus targets
+        # $HOME without forcing the operator to pass --target.
+        install_rc = cmd_install(name, [harness], target_opt, colors, out)
         if install_rc != 0:
             raise CliError(
                 f"{colors.RED}ap launch: install of '{name}' failed "
@@ -516,10 +535,15 @@ def _require_value(args: list[str], i: int, flag: str) -> str:
 
 def _parse_common_opts(
     args: list[str],
-) -> tuple[list[str], Path, list[str], list[str]]:
+) -> tuple[list[str], Path | None, list[str], list[str]]:
     """Split out --harness / --target / --profile-src; return
-    (harnesses, target, remaining, passthrough). Mirrors the bash
+    (harnesses, target_opt, remaining, passthrough). Mirrors the bash
     parse_common_opts: --profile-src appends to AP_EXTRA_SEARCH_PATHS.
+
+    ``target_opt`` is ``None`` when ``--target`` was not passed, letting the
+    cmd_* handlers fall through to ``profile.target_default`` (if declared)
+    and then to ``Path.cwd()``. Resolving the precedence here would require
+    reading the manifest before option parsing, so the fallback is deferred.
 
     ``remaining`` holds the positionals *before* a ``--`` separator;
     ``passthrough`` holds everything after it. Keeping the boundary lets
@@ -527,7 +551,7 @@ def _parse_common_opts(
     --resume``) from "profile name is the first positional" — folding both
     into one list mis-read the first passthrough token as a profile name."""
     harnesses = list(ALL_HARNESSES)
-    target = Path.cwd()
+    target: Path | None = None
     remaining: list[str] = []
     passthrough: list[str] = []
     i = 0
@@ -558,6 +582,23 @@ def _parse_common_opts(
             remaining.append(a)
             i += 1
     return harnesses, target, remaining, passthrough
+
+
+def _resolve_target(target_opt: Path | None, target_default: str | None) -> Path:
+    """Resolve target precedence: explicit ``--target`` > profile
+    ``target_default`` (env-expanded) > ``Path.cwd()``.
+
+    ``${VAR}`` and ``$VAR`` refs in ``target_default`` expand against the
+    process env (``$HOME`` and ``$DOTFILES_DIR`` are the intended consumers).
+    ``~`` is also expanded. An unset ``${VAR}`` is left as a literal so the
+    surface failure mode is the resulting path not existing — easier to
+    debug than a generic KeyError."""
+    if target_opt is not None:
+        return target_opt
+    if target_default:
+        expanded = os.path.expandvars(os.path.expanduser(target_default))
+        return Path(expanded).resolve()
+    return Path.cwd()
 
 
 def _append_search_path(path: str) -> None:

@@ -175,7 +175,6 @@ Symbol-level code intelligence is provided by the Serena MCP (see
 
 | Plugin | Source | Purpose |
 |--------|--------|---------|
-| `claude-hud` | `jarrodwatts/claude-hud` | Statusline HUD |
 | `cheese-flow` | local (`~/Dev/cheese-flow`) | Cheddar Flow agent pipeline + tilth MCP + cheez-* skills |
 | `todoist-flow` | in-repo (`claude/plugins/local/todoist-flow`) | Todoist productivity suite |
 | `vaudeville` | local (`~/Dev/vaudeville`) | SLM-powered semantic hook enforcement |

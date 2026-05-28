@@ -1,0 +1,53 @@
+# global — the live install of `base` into the machine.
+#
+# `base` is the registry-derived union of MCPs, skills, hooks — a render
+# primitive useful for inspection or staged builds. `global` wraps that
+# union with the operator-intent fields needed to actually deploy onto
+# this machine: target $HOME by default, register the local marketplace,
+# and enable the rendered plugin so its `plugin.json` (which carries the
+# SessionStart hook wiring etc.) is honored by Claude.
+#
+# Why split it out: `ap install base` without --target writes the plugin
+# tree into $PWD, which is correct for staging but confusing as the
+# "make my machine live" verb. `ap install global` (no flags) targets
+# $HOME via `target_default`, so the operator-intent reads cleanly.
+#
+# Chezmoi drives this on `dots sync` through
+# `chezmoi/lib/install-base-profile.sh`, which calls `ap install global`.
+# Standalone use is also fine: `dots profile install global`.
+name: global
+description: Live install — renders base into $HOME and wires it into Claude
+include: [base]
+
+# `--target` precedence in ap is: explicit flag > profile target_default >
+# Path.cwd(). $HOME (and ~) expand at install time via os.path.expandvars
+# / expanduser; unset refs leave a literal, so the failure surfaces as
+# "path does not exist" rather than a generic KeyError.
+target_default: $HOME
+
+# Marketplaces (claude only — other renderers ignore the field). The
+# value is a directory path that ap wraps as
+# `{source: {source: "directory", path: <expanded>}}` in
+# ~/.claude/settings.json's extraKnownMarketplaces. github-source
+# marketplaces stay user-managed in the chezmoi seed.
+# `${DOTFILES_DIR}` resolves from the process env at install time —
+# `dots sync` exports it; `ap install global` standalone needs it set
+# too (the agent-profile/ap shim sets it when invoked under dots, but
+# direct uv-run invocations should `export DOTFILES_DIR=...` first).
+marketplaces:
+  local: ${DOTFILES_DIR}/.claude/plugins/local
+
+# enabled_plugins (claude only — same field the launch-overlay uses for
+# isolated profiles, repurposed here for non-isolated installs). ap's
+# claude renderer merges these into settings.json's `enabledPlugins`,
+# preserving siblings (user-managed plugin toggles survive). Without
+# this, Claude wouldn't load the rendered plugin tree and its bundled
+# SessionStart hook (cheese-flair) would stay inert.
+#
+# Plugin id is `<profile_name>@<marketplace_name>` because ap's claude
+# renderer writes the tree to `.claude/plugins/local/<profile_name>/`
+# (here: `.claude/plugins/local/global/`) and we registered the
+# `local` marketplace above. The on-disk plugin name and the enabled
+# entry must match — if you rename this profile, update both.
+enabled_plugins:
+  global@local: true
