@@ -520,21 +520,25 @@ SH
     echo "$script"
 }
 
-@test "base-profile run_onchange aborts non-zero at runtime when npx is missing" {
+@test "base-profile run_onchange skips cleanly when npx is missing" {
+    # Behavior change: the linux-bootstrap PR (commit 5369aa3) softened
+    # missing-npx from `exit 1` (fail-loud) to `exit 0` (clean skip with
+    # pointer) — symmetric with the missing-uv branch. Rationale: on a
+    # fresh Ubuntu box npx arrives from `apt install nodejs npm` after the
+    # first sync prints its missing-tools list; failing the whole apply
+    # there is hostile. The render still must NOT reach `ap` while npx
+    # is absent (no tripwire trigger), and the skip diagnostic must
+    # surface so the user knows why external skills weren't fetched.
     command -v uv >/dev/null 2>&1 || skip "uv not installed (run_onchange skips before preflight)"
     local script
     script=$(render_base_profile_onchange)
-    # Minimal PATH: a `uv` stub (so the uv skip-guard passes), the tripwire
-    # `ap`, and /bin for `bash` itself — but no `npx` (it lives in
-    # /opt/homebrew/bin, deliberately excluded). The template's `command -v npx`
-    # must then abort before ever reaching the render.
     local uv_bin="$TEST_HOME/uv-only-bin"
     mkdir -p "$uv_bin"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$uv_bin/uv"
     chmod +x "$uv_bin/uv"
     PATH="$TEST_HOME/tripwire-bin:$uv_bin:/bin" run bash "$script"
-    assert_failure
-    assert_output_contains "npx (Node) not found"
+    assert_success
+    assert_output_contains "Skipping base-profile render (npx not found"
     [[ "$output" != *"TRIPWIRE"* ]]
 }
 
@@ -623,10 +627,18 @@ YAML
     grep -q 'code.uber.internal' "$tmpl"
 }
 
-@test "copilot template fails fast on missing env vars and renders both keys" {
+@test "copilot template warns on missing env vars and renders both keys" {
+    # Behavior change: prior to the linux-bootstrap PR (commit 5369aa3) the
+    # template hard-failed `chezmoi apply` with `{{ fail "... is not set" }}`
+    # whenever either API key was unset. That was hostile to fresh-box
+    # bootstraps where the user has not yet copied .env.example → .env, so
+    # the template now `warnf`s and emits an empty `mcpServers: {}` stub
+    # instead. The MCPs simply won't work until the keys are populated, but
+    # the rest of `dots sync` proceeds.
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
-    grep -q 'CONTEXT7_API_KEY is not set' "$tmpl"
-    grep -q 'TAVILY_API_KEY is not set' "$tmpl"
+    grep -q 'warnf "copilot mcp-config:' "$tmpl"
+    grep -q 'CONTEXT7_API_KEY and/or TAVILY_API_KEY unset' "$tmpl"
+    grep -q '"mcpServers": {}' "$tmpl"
     grep -q 'env "CONTEXT7_API_KEY"' "$tmpl"
     grep -q 'env "TAVILY_API_KEY"' "$tmpl"
 }
@@ -723,12 +735,14 @@ TOML
     grep -qF '"TAVILY_API_KEY": "test-tavily-key"' "$HOME/.copilot/mcp-config.json"
 }
 
-@test "copilot template fails fast when CONTEXT7_API_KEY is unset" {
+@test "copilot template warns + emits empty mcpServers when CONTEXT7_API_KEY is unset" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # Stub fake npx so the run_onchange installer's `command -v npx` preflight
-    # doesn't fail first and mask the copilot template's fail-fast error (which
-    # is what this test actually asserts).
+    # Linux-bootstrap PR (5369aa3) softened the template from `{{ fail ... }}`
+    # to `{{ warnf ... }}` + empty-stub render. `chezmoi apply` therefore
+    # SUCCEEDS even when a key is unset, and the rendered file is a stub
+    # carrying `"mcpServers": {}`. The warning still surfaces the missing
+    # key on stderr so the user knows to populate .env.
     local fake_npx_bin
     fake_npx_bin=$(make_fake_npx)
     PATH="$fake_npx_bin:$PATH"
@@ -745,8 +759,14 @@ TOML
     export TAVILY_API_KEY="test-tavily-key"
 
     run chezmoi apply --force
-    assert_failure
-    assert_output_contains "CONTEXT7_API_KEY is not set"
+    assert_success
+    # The warnf message should appear in chezmoi's stderr (combined with
+    # stdout under bats' `run`).
+    assert_output_contains "CONTEXT7_API_KEY and/or TAVILY_API_KEY unset"
+    # The rendered file is the empty-mcpServers stub.
+    assert_file_exists "$HOME/.copilot/mcp-config.json"
+    grep -qF '"mcpServers": {}' "$HOME/.copilot/mcp-config.json"
+    grep -qF 'Stub written by chezmoi' "$HOME/.copilot/mcp-config.json"
 }
 
 @test "gitconfig template renders Uber URL redirects when work=true" {

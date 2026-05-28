@@ -409,8 +409,9 @@ run_sync() {
 
 # Build a curated PATH for "missing toolchain" tests. Keeps real yq/jq/shasum
 # (sync.sh needs them) but excludes any directory that holds an executable
-# cargo or rustup, so `command -v cargo` actually fails when MOCK_BIN/cargo
-# is removed.
+# cargo, rustup, OR cargo-install-update, so `command -v <tool>` actually
+# fails on developer machines where those binaries live alongside each
+# other under ~/.cargo/bin or /opt/homebrew/bin.
 scrub_toolchain_path() {
     local entry filtered=""
     local -a needed=(yq jq shasum sha256sum git awk sed grep cut sort tr head tail)
@@ -425,20 +426,29 @@ scrub_toolchain_path() {
         [[ -z "$entry" ]] && continue
         [[ -x "$entry/cargo" ]] && continue
         [[ -x "$entry/rustup" ]] && continue
+        [[ -x "$entry/cargo-install-update" ]] && continue
         filtered+="$entry:"
     done <<< "$(echo "$PATH" | tr ':' '\n')"
     echo "$stub:${filtered%:}"
 }
 
-@test "sync counts missing cargo AND rustup as failure (no cache saved)" {
+@test "sync warns + proceeds when cargo AND rustup are missing" {
+    # Behavior change: the linux-bootstrap PR (commit 5369aa3) softened
+    # missing-cargo from `log_error + FAILED+=("cargo")` to `log_warning +
+    # return 0`. Rationale: a fresh Ubuntu box without rust shouldn't
+    # FAIL the whole `dots sync` — the cargo packages just won't install
+    # until rustup is set up, while everything else (brew, npm, uv tools)
+    # proceeds normally. The cache IS saved on the successful sync.
     write_test_yaml
     rm -f "$MOCK_BIN/cargo" "$MOCK_BIN/rustup"
 
     PATH="$MOCK_BIN:$(scrub_toolchain_path)" run_sync
 
+    assert_success
     assert_output_contains "cargo not found"
-    assert_output_contains "cache NOT saved"
-    [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+    assert_output_contains "skipping cargo packages"
+    # Cache saved because the sync completed without failure.
+    [[ -f "$CACHE_FILE" ]]
 }
 
 @test "sync bootstraps rust toolchain when rustup exists but cargo missing" {
@@ -544,6 +554,11 @@ MOCKUPDATE
 @test "UPGRADE_MODE warns when cargo-install-update is not installed" {
     # Missing-binary fallback: dots up should keep going with a loud
     # warning instead of silently noop-ing or crashing.
+    #
+    # Use scrub_toolchain_path so the real cargo-install-update on the
+    # developer's PATH (alongside cargo under ~/.cargo/bin or
+    # /opt/homebrew/bin) doesn't satisfy the `command -v` check and mask
+    # the warning branch the test is locking in.
     write_test_yaml
     cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
 #!/bin/bash
@@ -561,7 +576,7 @@ MOCKCARGO
     chmod +x "$MOCK_BIN/cargo"
     # Deliberately do NOT install a cargo-install-update mock.
 
-    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    UPGRADE_MODE=true PATH="$MOCK_BIN:$(scrub_toolchain_path)" run bash "$SYNC_SCRIPT"
     assert_success
     assert_output_contains "cargo-update not installed"
     # And the install pass still skips the already-installed crate.
