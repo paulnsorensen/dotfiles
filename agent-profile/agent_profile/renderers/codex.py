@@ -124,6 +124,14 @@ class CodexRenderer:
         if not codex_hooks:
             return
 
+        # Strip legacy [[hooks.<event>]] blocks from .codex/config.toml that
+        # the retired agents/hooks/sync.sh wrote, before we land hooks.json.
+        # Codex merges hooks.json and config.toml hooks at load time
+        # (developers.openai.com/codex/hooks: "Codex loads all matching
+        # hooks"), so leaving orphan legacy blocks fires every managed hook
+        # twice per session — once from each source.
+        self._clean_legacy_config_toml_hooks(codex_hooks, target)
+
         base_dir = Path(str(target).rstrip("/"))
         records: list[dict] = []
         for item in codex_hooks:
@@ -213,6 +221,66 @@ class CodexRenderer:
                 file=sys.stderr,
             )
 
+    # ─── legacy config.toml hook cleanup ───────────────────────────────
+    # The retired agents/hooks/sync.sh wrote [[hooks.<event>]] blocks into
+    # ~/.codex/config.toml. The ap codex renderer writes ~/.codex/hooks.json
+    # instead, but Codex CLI loads both file formats and merges them — see
+    # developers.openai.com/codex/hooks. So machines that ran the legacy
+    # sync end up firing every managed hook from both sources. This is a
+    # one-time migration sweep: for each hook we're about to write to
+    # hooks.json, drop any config.toml block whose command points at
+    # .codex/hooks/<our basename>. User-authored entries (any other path
+    # or basename) are preserved.
+    def _clean_legacy_config_toml_hooks(
+        self, codex_hooks: list[dict], target: Path
+    ) -> None:
+        cfg = Path(str(target).rstrip("/")) / ".codex" / "config.toml"
+        if not cfg.is_file():
+            return
+
+        managed: set[str] = {
+            Path(item["script"]).name
+            for item in codex_hooks
+            if item.get("script")
+        }
+        if not managed:
+            return
+
+        doc = base.load_toml(cfg)
+        hooks_table = doc.get("hooks")
+        if hooks_table is None:
+            return
+
+        changed = False
+        for event_key in list(hooks_table.keys()):
+            event_array = hooks_table.get(event_key)
+            if not _is_array_of_tables(event_array):
+                continue
+            kept = [
+                block
+                for block in event_array
+                if not _is_managed_legacy_block(block, managed)
+            ]
+            if len(kept) == len(event_array):
+                continue
+            changed = True
+            if not kept:
+                del hooks_table[event_key]
+                continue
+            # tomlkit AoT has no in-place item delete that survives the
+            # round-trip cleanly; rebuild the array from the kept blocks.
+            rebuilt = tomlkit.aot()
+            for block in kept:
+                rebuilt.append(block)
+            hooks_table[event_key] = rebuilt
+
+        if len(hooks_table) == 0:
+            del doc["hooks"]
+            changed = True
+
+        if changed:
+            base.dump_toml(cfg, doc)
+
     # ─── clean ──────────────────────────────────────────────────────────
     # Remove our [mcp_servers] entries by name. Drop the empty table, and
     # delete the file entirely when nothing else remains.
@@ -241,3 +309,35 @@ class CodexRenderer:
             cfg.unlink()
             return
         base.dump_toml(cfg, doc)
+
+
+def _is_array_of_tables(value: object) -> bool:
+    """tomlkit exposes [[hooks.SessionStart]] as an Array-of-Tables. Other
+    `hooks.<key>` values (a scalar typo, a sub-table for some future
+    feature) are not arrays and must not be walked."""
+    return isinstance(value, list) or isinstance(value, tomlkit.items.AoT)
+
+
+def _is_managed_legacy_block(
+    block: object, managed_basenames: set[str]
+) -> bool:
+    """A [[hooks.<event>]] block was written by the retired
+    agents/hooks/sync.sh iff its first inner hook command points at
+    .codex/hooks/<basename> for one of the basenames currently in the
+    registry. Tolerates quoted vs unquoted `$HOME` (sync.sh wrote both
+    forms across its history) by stripping outer quotes from the script
+    token before path-matching."""
+    inner = block.get("hooks") if hasattr(block, "get") else None
+    if not isinstance(inner, (list, tomlkit.items.AoT)) or len(inner) == 0:
+        return False
+    first = inner[0]
+    cmd = first.get("command", "") if hasattr(first, "get") else ""
+    if not isinstance(cmd, str):
+        return False
+    tokens = cmd.strip().split()
+    if not tokens:
+        return False
+    script_token = tokens[-1].strip("'").strip('"')
+    if "/.codex/hooks/" not in script_token:
+        return False
+    return Path(script_token).name in managed_basenames
