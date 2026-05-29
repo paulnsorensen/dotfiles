@@ -33,7 +33,6 @@
 	prompt = 103    # blue (#768da1)
 
 [alias]
-	cwork = !git config user.email paul.sorensen@uber.com
 	cpersonal = !git config user.email paulnsorensen@gmail.com
 
 [difftool "kdiff3"]
@@ -55,16 +54,8 @@
     name = mergiraf
     driver = mergiraf merge --git "%O" "%A" "%B" -s "%S" -x "%X" -y "%Y" -p "%P"
 
-{{- if .work }}
-[url "ssh://code.uber.internal/"]
-	insteadOf = https://code.uber.internal/
-[url "ssh://config.uber.internal/"]
-	insteadOf = https://config.uber.internal/
-[http "https://gopkg.uberinternal.com"]
-	followRedirects = true
 [http "https://gopkg.in"]
 	followRedirects = true
-{{- end }}
 [rerere]
 	enabled = true
 [include]

@@ -624,18 +624,32 @@ YAML
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/.gitattributes"
 }
 
-@test ".chezmoi.toml.tmpl prompts for email and work, and persists sourceDir" {
+@test ".chezmoi.toml.tmpl prompts for email and persists sourceDir" {
     local toml="$REAL_DOTFILES_DIR/chezmoi/.chezmoi.toml.tmpl"
     grep -q 'promptStringOnce . "email"' "$toml"
-    grep -q 'promptBoolOnce' "$toml"
     grep -q '\.chezmoi\.sourceDir' "$toml"
+    # The work-machine prompt was removed with the employer git machinery;
+    # per-repo email is native git (`git config user.email`).
+    if grep -q 'promptBoolOnce' "$toml"; then
+        echo ".chezmoi.toml.tmpl still has the removed work prompt" >&2
+        return 1
+    fi
 }
 
-@test "gitconfig template references .email and gates Uber URLs on .work" {
+@test "gitconfig template references .email and carries no employer machinery" {
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_gitconfig.tmpl"
     grep -q 'email = {{ .email }}' "$tmpl"
-    grep -q '{{- if .work }}' "$tmpl"
-    grep -q 'code.uber.internal' "$tmpl"
+    # Public-repo guard: the template must carry no work gate and no
+    # internal/employer hostname or address. Per-repo email is native git
+    # (`git config user.email`), so no `.work`-gated block is needed.
+    if grep -q '\.work' "$tmpl"; then
+        echo "gitconfig template still references removed .work gate" >&2
+        return 1
+    fi
+    if grep -qi 'uber' "$tmpl"; then
+        echo "gitconfig template still references an employer hostname/address" >&2
+        return 1
+    fi
 }
 
 @test "copilot template warns on missing env vars and renders both keys" {
@@ -734,9 +748,9 @@ TOML
     # the bootstrapped email.
     assert_file_exists "$HOME/.gitconfig"
     grep -qF "email = test@example.com" "$HOME/.gitconfig"
-    # work=false → Uber [url] redirects must NOT appear.
-    if grep -qF 'code.uber.internal' "$HOME/.gitconfig"; then
-        echo "Uber [url] redirects rendered even though work=false" >&2
+    # Public-repo guard: no employer hostname/address in the rendered config.
+    if grep -qi 'uber' "$HOME/.gitconfig"; then
+        echo "employer hostname/address rendered into .gitconfig" >&2
         return 1
     fi
 
@@ -778,35 +792,6 @@ TOML
     assert_file_exists "$HOME/.copilot/mcp-config.json"
     grep -qF '"mcpServers": {}' "$HOME/.copilot/mcp-config.json"
     grep -qF 'Stub written by chezmoi' "$HOME/.copilot/mcp-config.json"
-}
-
-@test "gitconfig template renders Uber URL redirects when work=true" {
-    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
-
-    # Stub fake npx so the run_onchange installer's `command -v npx` preflight
-    # doesn't abort chezmoi apply before the gitconfig template runs.
-    local fake_npx_bin
-    fake_npx_bin=$(make_fake_npx)
-    PATH="$fake_npx_bin:$PATH"
-
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "paul.sorensen@uber.com"
-work = true
-TOML
-    export CONTEXT7_API_KEY="test-context7-key"
-    export TAVILY_API_KEY="test-tavily-key"
-
-    run chezmoi apply --force
-    assert_success
-
-    assert_file_exists "$HOME/.gitconfig"
-    grep -qF "email = paul.sorensen@uber.com" "$HOME/.gitconfig"
-    grep -qF 'ssh://code.uber.internal/' "$HOME/.gitconfig"
-    grep -qF 'gopkg.uberinternal.com' "$HOME/.gitconfig"
 }
 
 # ── serena config (modify_ pattern) ────────────────────────────────────────

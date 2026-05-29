@@ -113,7 +113,7 @@ dotfiles/
 ├── cursor/                 # Cursor-specific configuration
 │   └── plugins/local/      # In-repo Cursor plugins (cheese-grok) deployed by chezmoi to ~/.cursor/{skills,rules,commands,hooks}/ plus hooks.json/modes.json merges.
 ├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`npx skills add`) sources. Unioned into the `base` profile and rendered into every harness by `ap`.
-├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-base-profile (renders the registry-derived `base` profile — MCPs + skills + hooks — into every harness via `ap`; supersedes the retired install-mcp/install-hooks/install-claude-skills deploy scripts), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-agent-profile (warms the `ap` uv env).
+├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-base-profile (renders the registry-derived `base` profile — MCPs + skills + hooks — into every harness via `ap`; supersedes the retired install-mcp/install-hooks/install-claude-skills deploy scripts), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-agent-profile (warms the `ap` uv env).
 ├── packages/
 │   ├── packages.yaml       # Flat package registry (brew, cargo, apt)
 │   └── sync.sh             # Package sync with hash cache
@@ -388,7 +388,7 @@ A subset of dotfiles is rendered by [chezmoi](https://chezmoi.io/) instead of sy
 - `~/.config/opencode/opencode.json` — `chezmoi/dot_config/opencode/create_opencode.json` (analogous: seed once, then `ap install base --target $HOME/.config/opencode --harness opencode` mutates the `mcp` block)
 - `~/.claude/skills/`, `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/config.toml`, and MCP entries — handled by `run_onchange_*` scripts under `chezmoi/.chezmoiscripts/` that fork to helpers in `chezmoi/lib/`
 
-**First-init (interactive):** `dots sync` dispatches to `chezmoi/.sync`, which invokes `chezmoi init --source $DOTFILES/chezmoi` if `~/.config/chezmoi/chezmoi.toml` is missing. The `.chezmoi.toml.tmpl` prompts for: `email`, `work`. Answers persist to `~/.config/chezmoi/chezmoi.toml` (alongside the persisted `sourceDir`) and aren't re-prompted.
+**First-init (interactive):** `dots sync` dispatches to `chezmoi/.sync`, which invokes `chezmoi init --source $DOTFILES/chezmoi` if `~/.config/chezmoi/chezmoi.toml` is missing. The `.chezmoi.toml.tmpl` prompts for: `email`. The answer persists to `~/.config/chezmoi/chezmoi.toml` (alongside the persisted `sourceDir`) and isn't re-prompted.
 
 **Subsequent runs:** `dots sync` calls `chezmoi apply --force` via `chezmoi/.sync`. Non-interactive.
 
@@ -405,7 +405,7 @@ chezmoi doctor                                       # health check (also wired 
 
 **Re-prompt:** delete `~/.config/chezmoi/chezmoi.toml` and re-run `dots sync` (or `chezmoi init --source $DOTFILES/chezmoi` directly).
 
-**Adding a file:** drop a templated source under `chezmoi/` using the [chezmoi naming attributes](https://chezmoi.io/reference/source-state-attributes/) (`private_`, `dot_`, `executable_`, `encrypted_`, `.tmpl`). Reference data via `{{ .email }}`, `{{ .work }}`, etc. — see the existing templates for patterns. Add a corresponding test to `tests/chezmoi-wiring.bats`.
+**Adding a file:** drop a templated source under `chezmoi/` using the [chezmoi naming attributes](https://chezmoi.io/reference/source-state-attributes/) (`private_`, `dot_`, `executable_`, `encrypted_`, `.tmpl`). Reference data via `{{ .email }}`, etc. — see the existing templates for patterns. Add a corresponding test to `tests/chezmoi-wiring.bats`.
 
 **Secrets upgrade path:** `mcp-config.json.tmpl` uses `{{ env "..." }}` today. Swap to `{{ onepasswordRead "op://<vault>/<item>/credential" }}` once 1Password CLI is set up; remove the corresponding `.env` entries.
 
@@ -436,7 +436,7 @@ chezmoi doctor                                       # health check (also wired 
 
 ### Git Integration
 
-- Work email: <paul.sorensen@uber.com>
+- Default git email is templated via chezmoi (`{{ .email }}`); set a different address per repo with `git config user.email <addr>` (the `cpersonal` alias is a shortcut)
 - Aliases follow oh-my-zsh conventions for familiarity
 - Custom `grb` alias rebases from main (not master)
 - Kdiff3 configured as merge/diff tool
@@ -500,10 +500,9 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 ## Important Gotchas
 
 1. **Use `dots sync`**: Don't manually symlink - use the sync script for rollback support
-2. **Work-Specific Config**: Git configuration includes Uber-specific settings
-3. **macOS Specific**: Paths and some utilities assume macOS environment
-4. **Vi Mode**: Shell is in vi mode by default
-5. **MCP Scope**: Use `user` scope for dev tools, `project` for team-shared MCPs
-6. **Reference Folder**: Put reference docs in `reference/` (gitignored, not symlinked)
-7. **zsh Loading Order**: Files in `zsh/` are sourced in the order they appear in `zshrc`. If you add a new config file, edit `zshrc` to source it at the right point. For example, completions must load before `fzf.zsh` or keybindings might conflict.
-8. **Pre-Commit Hook Failures**: If prek blocks a commit (e.g., detected secrets), fix the issue before retrying. Only use `--no-verify` for temporary overrides. Check `prek.toml` to understand what's being checked.
+2. **macOS Specific**: Paths and some utilities assume macOS environment
+3. **Vi Mode**: Shell is in vi mode by default
+4. **MCP Scope**: Use `user` scope for dev tools, `project` for team-shared MCPs
+5. **Reference Folder**: Put reference docs in `reference/` (gitignored, not symlinked)
+6. **zsh Loading Order**: Files in `zsh/` are sourced in the order they appear in `zshrc`. If you add a new config file, edit `zshrc` to source it at the right point. For example, completions must load before `fzf.zsh` or keybindings might conflict.
+7. **Pre-Commit Hook Failures**: If prek blocks a commit (e.g., detected secrets), fix the issue before retrying. Only use `--no-verify` for temporary overrides. Check `prek.toml` to understand what's being checked.
