@@ -50,6 +50,14 @@ fi
 if [ -z "$existing" ] && command -v serena >/dev/null 2>&1; then
     live=$(cat "$HOME/.serena/serena_config.yml" 2>/dev/null || true)
     if [ -z "$live" ] || [ "$live" = "$STUB_MARKER" ]; then
+        # `serena init` loads-then-validates the existing config and aborts
+        # with "`projects` key not found" when the file is present but
+        # incomplete — which is exactly the stub we may have written on a
+        # prior apply. It has no --force, so clear the on-disk file first to
+        # give init a clean slate; from absence it writes a full default
+        # config (incl. `projects: []`). Without this rm the init always
+        # fails here and the script re-emits the stub: a stable broken state.
+        rm -f "$HOME/.serena/serena_config.yml"
         serena init >/dev/null 2>&1 || true
         live=$(cat "$HOME/.serena/serena_config.yml" 2>/dev/null || true)
     fi
