@@ -463,7 +463,7 @@ EOF
     # AND the global profile wraps base with operator-overlay fields;
     # the hash must cover all of them so a registry/skill/profile/hook-script
     # edit retriggers the render.
-    grep -qF '/../skills -type f' "$INSTALLER_TMPL"
+    grep -qF '/../skills ' "$INSTALLER_TMPL"
     grep -qF '/../profiles/base' "$INSTALLER_TMPL"
     grep -qF '/../profiles/global' "$INSTALLER_TMPL"
     grep -qF '/../agents/mcp/registry.yaml' "$INSTALLER_TMPL"
@@ -475,6 +475,17 @@ EOF
     grep -qF '/../agents/hooks' "$INSTALLER_TMPL"
     grep -qF '/../agents/lib' "$INSTALLER_TMPL"
     grep -qF '/../agents/reference' "$INSTALLER_TMPL"
+    # The `ap` renderer source shapes the output: a renderer-only fix (e.g.
+    # the codex env-scrub) changes no registry/profile/skill input, so
+    # without watching agent_profile/** the hash would stay stable and the
+    # fix would never redeploy on a plain `dots sync`. It is the last path
+    # before `-type f`.
+    grep -qF '/../agent-profile/agent_profile -type f' "$INSTALLER_TMPL"
+    # Bytecode is excluded so the hash tracks source edits, not interpreter
+    # artifacts (a *.pyc regen would otherwise churn the hash spuriously).
+    # Match dash-free substrings so the pattern isn't parsed as a grep flag.
+    grep -qF "'*.pyc'" "$INSTALLER_TMPL"
+    grep -qF "'*/__pycache__/*'" "$INSTALLER_TMPL"
     # The pre-flatten nested path must stay gone.
     if grep -qF '/../claude/skills' "$INSTALLER_TMPL"; then
         echo "template still references the pre-flatten claude/skills tree" >&2

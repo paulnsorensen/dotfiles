@@ -15,12 +15,17 @@
 #   agents/lib/**                 — shared assets (cheese-flair lib)
 #   agents/reference/**           — shared assets (cheese-flair bank)
 #   skills/**              — local skills tree + external `_registry.yaml`
+#   agent-profile/agent_profile/**  — the `ap` renderer source (parse,
+#                          overlay, manifest, the per-harness renderers)
 #
-# Edits to a hook script or its sibling library would otherwise leave the
-# rendered plugin tree stale on `dots sync` until something else (a
-# registry tweak, a profile-yaml save) bumped the hash.
+# Edits to a hook script, its sibling library, or the `ap` renderer source
+# would otherwise leave the rendered output stale on `dots sync` until
+# something else (a registry tweak, a profile-yaml save) bumped the hash —
+# e.g. a fix to the codex renderer's env-scrub would never redeploy on a
+# plain sync. Bytecode (*.pyc / __pycache__) is excluded so the hash tracks
+# source edits, not interpreter artifacts.
 #
-# input hash: {{ output "sh" "-c" (printf "find %q/../profiles/base %q/../profiles/global %q/../agents/mcp/registry.yaml %q/../agents/hooks %q/../agents/lib %q/../agents/reference %q/../skills -type f -not -name .DS_Store -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
+# input hash: {{ output "sh" "-c" (printf "find %q/../profiles/base %q/../profiles/global %q/../agents/mcp/registry.yaml %q/../agents/hooks %q/../agents/lib %q/../agents/reference %q/../skills %q/../agent-profile/agent_profile -type f -not -name .DS_Store -not -name '*.pyc' -not -path '*/__pycache__/*' -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
 
 set -euo pipefail
 

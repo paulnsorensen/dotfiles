@@ -30,12 +30,17 @@ target_default: $HOME
 # `{source: {source: "directory", path: <expanded>}}` in
 # ~/.claude/settings.json's extraKnownMarketplaces. github-source
 # marketplaces stay user-managed in the chezmoi seed.
-# `${DOTFILES_DIR}` resolves from the process env at install time —
-# `dots sync` exports it; `ap install global` standalone needs it set
-# too (the agent-profile/ap shim sets it when invoked under dots, but
-# direct uv-run invocations should `export DOTFILES_DIR=...` first).
+#
+# Must match where the renderer actually writes the plugin tree:
+# target_default above is $HOME, so the claude renderer drops the
+# global plugin at $HOME/.claude/plugins/local/global/. Pointing
+# `local` at $HOME/.claude/plugins/local lets Claude resolve
+# `global@local` to that on-disk tree. (Earlier this pointed at
+# ${DOTFILES_DIR}/.claude/plugins/local, which only contained a
+# staged `base/` tree and not the live `global/` — Claude found the
+# plugin via fallback but the wiring was asymmetric.)
 marketplaces:
-  local: ${DOTFILES_DIR}/.claude/plugins/local
+  local: $HOME/.claude/plugins/local
 
 # enabled_plugins (claude only — same field the launch-overlay uses for
 # isolated profiles, repurposed here for non-isolated installs). ap's

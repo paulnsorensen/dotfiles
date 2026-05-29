@@ -47,6 +47,18 @@ claude/reference/cheese-flair.md
 # Claude Code local state (settings.local.json, specs)
 .claude/
 
+# Hallouminate per-repo wiki corpus (runtime state written by the
+# hallouminate MCP, not source).
+.hallouminate/wiki/
+
+# Cursor IDE runtime / install-cursor-plugin output that lands here when
+# someone opens the repo's `cursor/` subdir as a workspace (Cursor treats
+# it as `~/.cursor/`) or sets CURSOR_HOME wrong. The only intentional tree
+# under cursor/ is plugins/ (the source for cheese-grok et al).
+/cursor/*
+!/cursor/plugins/
+!/cursor/plugins/**
+
 # Claude test sandbox (temporary test files from /test-sandbox skill)
 .claude/testing/
 
