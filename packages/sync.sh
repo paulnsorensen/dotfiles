@@ -142,7 +142,10 @@ upgrade_casks_greedy() {
     fi
 
     local outdated to_upgrade=()
-    outdated=$(brew outdated --cask --greedy-auto-updates --quiet 2>/dev/null || true)
+    if ! outdated=$(brew outdated --cask --greedy-auto-updates --quiet 2>/dev/null); then
+        log_warning "brew outdated --cask failed; skipping greedy cask upgrade"
+        return 0
+    fi
     while IFS= read -r cask; do
         [[ -z "$cask" ]] && continue
         if grep -qxF "$cask" <<< "$excluded"; then

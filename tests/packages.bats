@@ -531,6 +531,31 @@ MOCKRUSTUP
     ! grep -qE "brew upgrade --cask .*docker-desktop" "$BREW_LOG"
 }
 
+@test "UPGRADE_MODE warns + skips greedy cask upgrade when brew outdated fails" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
+    # brew outdated failing must NOT be silently swallowed as "nothing to
+    # upgrade" — emit a warning and skip the pass, like the other brew ops.
+    cat > "$MOCK_BIN/brew" << 'MOCKBREW'
+#!/bin/bash
+echo "brew $*" >> "$BREW_LOG"
+case "$1" in
+    list)   [[ "$2" == "--formulae" ]] && echo "" || echo "docker-desktop" ;;
+    outdated) exit 1 ;;
+    tap)    [[ $# -eq 1 ]] && echo "" ;;
+esac
+exit 0
+MOCKBREW
+    chmod +x "$MOCK_BIN/brew"
+
+    write_test_yaml
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "brew outdated --cask failed; skipping greedy cask upgrade"
+    # No filtered cask upgrade is attempted when the probe failed.
+    ! grep -qE "brew upgrade --cask [a-z]" "$BREW_LOG"
+}
+
 @test "UPGRADE_MODE runs cargo-install-update --all --git instead of per-package --force" {
     # New idempotent contract (PR #197): the install pass only handles
     # *missing* packages, and the upgrade pass delegates to
