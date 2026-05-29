@@ -22,10 +22,16 @@
 #   SERENA_MUX_PROXY_VERSION — pin for mcp-proxy (default: 0.12.0)
 #   SERENA_MUX_LOG_DIR  — dir for the persistent decision log
 #                         (default: ${XDG_STATE_HOME:-~/.local/state}/dotfiles/logs)
+#   SERENA_MUX_LOG_MAX_BYTES — rotate the log once it exceeds this size
+#                         (default: 1048576 = 1 MiB)
 #
 # Persistent log: one line per invocation (spawn|reuse|reap) is appended to
 #   <log dir>/serena-mux.log — always on, so you can confirm coalescing is
 #   working without enabling DEBUG or digging through the harness MCP logs.
+#   The reuse line carries rss_kb=<N> (or rss_kb=? when the ps probe fails)
+#   so daemon memory growth is visible at a glance. The log is rotated to a
+#   single <log>.1 backup when it crosses SERENA_MUX_LOG_MAX_BYTES, bounding
+#   on-disk size at 2× the cap.
 #
 # Exit codes:
 #   0   — bridged stdio cleanly

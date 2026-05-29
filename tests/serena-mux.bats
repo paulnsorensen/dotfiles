@@ -9,6 +9,10 @@
 
 load test_helper
 
+# `run !` (negated assertions below) requires Bats >= 1.5.0; declaring it
+# here silences the BW02 warning and fails loud on an older bats.
+bats_require_minimum_version 1.5.0
+
 setup() {
     setup_test_env
 
@@ -283,6 +287,30 @@ teardown() {
     grep -qE '\[serena-mux\] reuse .*rss_kb=12345' "$MUX_LOG"
 }
 
+@test "serena-mux: reuse line falls back to rss_kb=? when ps probe fails" {
+    # Override the setup() ps stub with one that emits nothing — the shape
+    # of a sandboxed / unavailable ps. rss_kb_of() must then emit the "?"
+    # sentinel rather than a bare empty rss_kb= field, so downstream parsing
+    # can tell "probe failed" apart from "RSS was 0".
+    cat >"$FAKE_BIN/ps" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$FAKE_BIN/ps"
+
+    run serena-mux
+    [ "$status" -eq 0 ]
+    run serena-mux
+    [ "$status" -eq 0 ]
+
+    grep -qE '\[serena-mux\] reuse .*rss_kb=\?' "$MUX_LOG"
+    # And never a bare empty value — that's the bug the sentinel prevents.
+    # `run !` so the negation actually fails the test (bare ! is a no-op
+    # in Bats — see SC2314).
+    run ! grep -qE '\[serena-mux\] reuse .*rss_kb= ' "$MUX_LOG"
+    run ! grep -qE '\[serena-mux\] reuse .*rss_kb=$' "$MUX_LOG"
+}
+
 @test "serena-mux: logs a 'reap' line when a stale daemon is cleaned up" {
     run serena-mux
     [ "$status" -eq 0 ]
@@ -315,7 +343,9 @@ teardown() {
     # The old contents are now in .1, and the live log only holds this run.
     [ -f "$MUX_LOG.1" ]
     grep -q 'old log line 1' "$MUX_LOG.1"
-    ! grep -q 'old log line 1' "$MUX_LOG"
+    # `run !` so the negation fails the test (bare ! is a no-op in Bats —
+    # see SC2314).
+    run ! grep -q 'old log line 1' "$MUX_LOG"
     # New invocation still logged its spawn line.
     grep -qE '\[serena-mux\] spawn ' "$MUX_LOG"
 }
