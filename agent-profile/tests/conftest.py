@@ -141,7 +141,7 @@ class StubRenderer:
 
 @pytest.fixture
 def stub_renderers(monkeypatch):
-    """Install StubRenderers for all five harnesses into the CLI registry
+    """Install StubRenderers for all harnesses into the CLI registry
     for the duration of the test."""
     from agent_profile import cli
 

@@ -17,6 +17,8 @@
 #                    field, so adding a new hook is purely a registry edit.
 #   harnesses      — list of harness names to install into;
 #                    default: [claude, codex]
+#                    crush is opt-in per hook and only meaningful for
+#                    PreToolUse entries (Crush has no SessionStart event)
 #   matcher        — codex-only regex against the event's `source` field
 #                    (SessionStart: startup|resume|clear). Claude ignores;
 #                    its SessionStart entries have no matcher.

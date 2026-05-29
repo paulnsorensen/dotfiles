@@ -5,7 +5,7 @@ agent-profile/lib/commands.sh (the cmd_* handlers). Stdout strings,
 stderr error strings, and exit codes match the bash so the steel-thread
 golden tests assert byte/string identity.
 
-The five harness renderers are owned by sibling curds; this module
+The harness renderers are owned by sibling curds; this module
 dispatches through a registry (:data:`RENDERERS`) keyed by harness name.
 The registry is populated by the wiring phase (the ``renderers`` barrel).
 :func:`set_renderers` lets tests inject stub renderers so the CLI's
@@ -29,7 +29,7 @@ from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import ParseError, parse_manifest
 from agent_profile.renderers.base import MergedConfigError, Renderer
 
-ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot"]
+ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot", "crush"]
 
 # Harness-name -> Renderer. Populated by the wiring barrel; tests inject
 # stubs via set_renderers(). Empty by default (seed phase ships no
@@ -297,10 +297,15 @@ def _fetch_external_skills(
     if not ext:
         return
 
+    skill_harnesses = [h for h in harnesses if h in ("claude", "codex", "cursor", "copilot", "opencode")]
+    if not skill_harnesses:
+        return
+
     # Group items by source repo. A bare `source:` (no name) means "all skills"
     # for that repo (--skill '*') and wins over any explicit names from sibling
     # items. `pin` is a per-source property. Insertion order is preserved so
-    # output (and test assertions) stay deterministic.
+    # output (and test assertions) stay deterministic. Harnesses with no
+    # `npx skills` backend (currently crush) are filtered out here.
     order: list[str] = []
     groups: dict[str, dict[str, Any]] = {}
     for skill in ext:
@@ -324,11 +329,11 @@ def _fetch_external_skills(
             label = "*" if names is None else ", ".join(names)
             print(
                 f"  {colors.BLUE}↳{colors.NC} fetching skills "
-                f"{source} ({label}) -> {', '.join(harnesses)}",
+                f"{source} ({label}) -> {', '.join(skill_harnesses)}",
                 file=out,
             )
             fetch_external_source(
-                source, names, g["pin"], harnesses, _skill_fetch_runner
+                source, names, g["pin"], skill_harnesses, _skill_fetch_runner
             )
     except SkillFetchError as exc:
         raise CliError(f"{colors.RED}{exc}{colors.NC}") from exc
@@ -451,7 +456,7 @@ def cmd_launch(
     if not harness:
         raise CliError(
             f"{colors.RED}ap launch: harness required "
-            f"(claude|codex|opencode|cursor|copilot){colors.NC}"
+            f"(claude|codex|opencode|cursor|copilot|crush){colors.NC}"
         )
     if harness not in ALL_HARNESSES:
         raise CliError(
@@ -638,7 +643,7 @@ def _validate_harnesses(harnesses: list[str], colors: _Colors) -> None:
         if h not in ALL_HARNESSES:
             raise CliError(
                 f"{colors.RED}ap: unknown harness '{h}' "
-                f"(valid: claude|codex|opencode|cursor|copilot){colors.NC}"
+                f"(valid: claude|codex|opencode|cursor|copilot|crush){colors.NC}"
             )
 
 
