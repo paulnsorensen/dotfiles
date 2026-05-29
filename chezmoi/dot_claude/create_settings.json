@@ -149,15 +149,6 @@
             "async": true
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/session-start-cheese-flair.sh\"",
-            "timeout": 5
-          }
-        ]
       }
     ],
     "Stop": [

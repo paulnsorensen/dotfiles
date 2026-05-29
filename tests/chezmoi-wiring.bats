@@ -1029,16 +1029,19 @@ SH
     jq -e 'type == "object"' "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null
 }
 
-@test "claude settings.json: seed has NO legacy SessionStart hook entry" {
+@test "claude settings.json: seed has NO legacy cheese-flair SessionStart hook entry" {
     # The base plugin's plugin.json (rendered by ap into
     # ~/.claude/plugins/local/global/.claude-plugin/plugin.json) now
-    # provides the SessionStart wiring. A duplicate entry in settings.json
-    # would double-fire the hook AND silently break when the legacy
-    # symlinked path is gone (the regression that drove the migration).
-    local has_session
-    has_session=$(jq -r '.hooks.SessionStart // empty' \
+    # provides the cheese-flair SessionStart wiring. A duplicate entry in
+    # settings.json would double-fire the hook AND silently break when the
+    # legacy symlinked path is gone (the regression that drove the
+    # migration). Other SessionStart hooks the plugin does NOT provide
+    # (e.g. the moshi-hook PATH command) may still live in the seed.
+    local has_cheese_flair
+    has_cheese_flair=$(jq -r \
+        '[.hooks.SessionStart[]?.hooks[]? | select(.command | test("session-start-cheese-flair"))] | length' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json")
-    [[ -z "$has_session" ]]
+    [[ "$has_cheese_flair" -eq 0 ]]
 }
 
 @test "claude settings.json: seed does NOT pre-bake ap-managed marketplace/plugin" {
