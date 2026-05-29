@@ -99,6 +99,13 @@ get_source_pkgs() {
 
 ########## Brew
 
+# Cask names flagged `greedy: false` — excluded from the greedy upgrade pass
+# because they self-update in-app and their cask reinstall triggers repeated
+# sudo/admin prompts (e.g. docker-desktop).
+get_no_greedy_casks() {
+    yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"cask\" and .value.greedy == false) | .key" "$PACKAGES_FILE" 2>/dev/null
+}
+
 # Install brew packages from a list, skipping already-installed ones
 # Usage: brew_install_pkgs <label> <pkg_list> <installed_list> [--cask]
 brew_install_pkgs() {
@@ -119,6 +126,38 @@ brew_install_pkgs() {
             fi
         fi
     done <<< "$pkg_list"
+}
+
+# Greedy-upgrade auto_updates casks, skipping any flagged `greedy: false`.
+# With no exclusions, defer to the cheap one-shot `brew upgrade --cask
+# --greedy-auto-updates`. Otherwise enumerate the greedy-outdated set and
+# upgrade only the casks not on the exclude list.
+upgrade_casks_greedy() {
+    local excluded
+    excluded=$(get_no_greedy_casks)
+
+    if [[ -z "$excluded" ]]; then
+        brew upgrade --cask --greedy-auto-updates </dev/null || log_warning "brew cask upgrade failed"
+        return 0
+    fi
+
+    local outdated to_upgrade=()
+    if ! outdated=$(brew outdated --cask --greedy-auto-updates --quiet 2>/dev/null); then
+        log_warning "brew outdated --cask failed; skipping greedy cask upgrade"
+        return 0
+    fi
+    while IFS= read -r cask; do
+        [[ -z "$cask" ]] && continue
+        if grep -qxF "$cask" <<< "$excluded"; then
+            echo "  + $cask (self-updates; excluded from greedy upgrade)"
+            continue
+        fi
+        to_upgrade+=("$cask")
+    done <<< "$outdated"
+
+    if ((${#to_upgrade[@]})); then
+        brew upgrade --cask "${to_upgrade[@]}" </dev/null || log_warning "brew cask upgrade failed"
+    fi
 }
 
 sync_brew() {
@@ -170,7 +209,12 @@ sync_brew() {
         # `brew upgrade`; --greedy-auto-updates version-checks them and reinstalls
         # only on a diff. Excludes `version :latest` casks (no version to compare,
         # would reinstall every run).
-        brew upgrade --cask --greedy-auto-updates </dev/null || log_warning "brew cask upgrade failed"
+        #
+        # Casks flagged `greedy: false` (e.g. docker-desktop) are excluded from
+        # the greedy pass: they self-update in-app and their cask reinstall
+        # prompts for sudo/admin multiple times. There's no `brew upgrade`
+        # exclude flag, so enumerate the greedy-outdated set and drop them.
+        upgrade_casks_greedy
     fi
 
     log_success "Brew sync complete"
