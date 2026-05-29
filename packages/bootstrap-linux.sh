@@ -38,10 +38,13 @@ LINUXBREW_BIN="/home/linuxbrew/.linuxbrew/bin/brew"
 ########## Registry queries (brew names — distinct from sync.sh's apt names)
 
 # Brew formulae for Linux: bare scalars (default source brew) + maps that are
-# brew-sourced, non-dev, and not mac-only. Uses .key (the brew formula name).
+# brew-sourced, non-dev, not mac-only, and NOT carrying an apt_install command
+# (those entries opt out of brew on Linux — e.g. tailscale, which uses its own
+# apt source so the install goes through systemd. See packages.yaml).
+# Uses .key (the brew formula name).
 get_bootstrap_brew_pkgs() {
     yq -r '.packages[] | select(kind == "scalar")' "$PACKAGES_FILE" 2>/dev/null
-    yq -r '.packages[] | select(kind == "map") | to_entries[0] | select((.value.source // "brew") == "brew" and (.value.dev // false) == false and (.value.platform // "") != "mac") | .key' "$PACKAGES_FILE" 2>/dev/null
+    yq -r '.packages[] | select(kind == "map") | to_entries[0] | select((.value.source // "brew") == "brew" and (.value.dev // false) == false and (.value.platform // "") != "mac" and (.value.apt_install // null) == null) | .key' "$PACKAGES_FILE" 2>/dev/null
 }
 
 # Homebrew taps (source: tap). Harmless to tap all on Linux even when a tap
@@ -126,8 +129,14 @@ install_brew_packages() {
     if [[ -n "$formulae" ]]; then
         log_info "Installing brew formulae (already-installed are skipped)..."
         # One invocation: brew installs what it can and skips satisfied formulae.
+        # Record the failure so the bootstrap exits non-zero and the final
+        # summary lists it — silently logging a warning let "Bootstrap complete"
+        # print after formulae had failed.
         # shellcheck disable=SC2086  # intentional word-splitting of the list
-        brew install $formulae </dev/null || log_warning "one or more brew formulae failed (see above)"
+        if ! brew install $formulae </dev/null; then
+            log_error "one or more brew formulae failed (see above)"
+            FAILED+=("brew-install")
+        fi
     fi
 }
 
@@ -138,10 +147,12 @@ main() {
         log_error "bootstrap-linux.sh is Linux-only (use 'dots sync' on macOS)."
         return 1
     fi
-    if ! command -v yq &>/dev/null; then
-        log_error "yq is required. Run 'dots sync' once (it bootstraps yq), then 'dots bootstrap'."
-        return 1
-    fi
+    # Bootstrap yq up front — bootstrap-linux is the fresh-box entry point and
+    # the registry queries below all need yq. Shared with packages/sync.sh's
+    # bootstrap_yq via lib-bootstrap-yq.sh so both paths agree on behaviour.
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/lib-bootstrap-yq.sh"
+    PLATFORM=Linux bootstrap_yq || return 1
     # Defend against a macOS SSL_CERT_FILE leaking into the env (e.g. from
     # Claude's settings.json), which makes every curl below fail with
     # "error setting certificate file". Only override a path that doesn't exist.

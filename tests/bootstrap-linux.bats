@@ -65,6 +65,23 @@ YAML
     assert_output_not_contains "pyenv"            # dev-gated
 }
 
+@test "get_bootstrap_brew_pkgs excludes entries with apt_install (opt-out marker)" {
+    # Entries carrying apt_install opt out of the brew bootstrap on Linux —
+    # they install via their own apt source (e.g. tailscale uses Tailscale's
+    # installer for systemd integration). Reconciles with PR 206's tailscale
+    # entry; without this filter, dots bootstrap would brew-install AND
+    # sync_apt would surface the custom-source installer for the same package.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - jq
+  - tailscale: { platform: linux, apt_install: "curl -fsSL https://tailscale.com/install.sh | sh" }
+YAML
+    run get_bootstrap_brew_pkgs
+    assert_success
+    assert_output_contains "jq"
+    assert_output_not_contains "tailscale"
+}
+
 @test "get_bootstrap_taps returns only tap sources" {
     write_test_yaml
     run get_bootstrap_taps

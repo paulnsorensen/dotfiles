@@ -186,6 +186,12 @@ run_sync() {
     local real_yq; real_yq="$(command -v yq)"
     [[ -n "$real_yq" ]] || skip "no real yq to proxy"
 
+    # If the system yq lives under /usr/bin or /bin (e.g. CI runner with
+    # apt-installed yq), the restricted PATH below can't hide it and
+    # bootstrap_yq early-returns — making the assertions false-negative.
+    # Skip honestly rather than silently always-pass.
+    PATH="/usr/bin:/bin" command -v yq &>/dev/null && skip "yq is on /usr/bin or /bin — restricted PATH cannot exercise bootstrap"
+
     local curl_log="$TEST_HOME/curl.log"
     export YQ_INSTALL_DIR="$TEST_HOME/yqbin"
 

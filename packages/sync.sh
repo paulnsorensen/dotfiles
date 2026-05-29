@@ -501,40 +501,10 @@ sync_apt() {
 
 ########## Bootstrap
 
-# Ensure yq (mikefarah v4) is on PATH before any registry parsing.
-# macOS: brew. Linux: download the static binary to ~/.local/bin (no sudo;
-# yq is a snap on apt, which we can't assume is available non-interactively).
-bootstrap_yq() {
-    command -v yq &>/dev/null && return 0
-
-    if [[ "$PLATFORM" == "Darwin" ]]; then
-        if command -v brew &>/dev/null; then
-            log_info "Bootstrapping yq..."
-            brew install yq
-        else
-            log_warning "yq not found and brew not available"
-            return 1
-        fi
-    elif [[ "$PLATFORM" == "Linux" ]]; then
-        local arch yq_arch dest
-        arch="$(uname -m)"
-        case "$arch" in
-            x86_64) yq_arch="amd64" ;;
-            aarch64|arm64) yq_arch="arm64" ;;
-            *) log_warning "yq not found and no prebuilt binary for arch $arch"; return 1 ;;
-        esac
-        dest="${YQ_INSTALL_DIR:-$HOME/.local/bin}"
-        log_info "Bootstrapping yq (downloading yq_linux_${yq_arch})..."
-        mkdir -p "$dest"
-        if curl -fsSL -o "$dest/yq" "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}"; then
-            chmod +x "$dest/yq"
-            export PATH="$dest:$PATH"
-        else
-            log_warning "Failed to download yq"
-            return 1
-        fi
-    fi
-}
+# bootstrap_yq lives in packages/lib-bootstrap-yq.sh so packages/bootstrap-linux.sh
+# can reuse the same logic on a fresh Linux box (where yq is not yet installed).
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-bootstrap-yq.sh"
 
 ########## Main
 
