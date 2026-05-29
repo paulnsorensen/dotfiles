@@ -2,11 +2,11 @@
 # Run `hook-sync` (or `dots sync`) to apply this to every installed harness.
 #
 # Per-entry fields:
-#   event          — must be SessionStart today; the registry shape will
-#                    extend to UserPromptSubmit | PreToolUse | PostToolUse
-#                    | Stop once the backends in lib.sh parameterise the
-#                    event slot. hook_filter_for_harness fails loud on any
-#                    other value.
+#   event          — one of SessionStart, UserPromptSubmit, PreToolUse,
+#                    PostToolUse, Stop. The active set lives in
+#                    HOOK_EVENTS_VALID inside lib.sh;
+#                    hook_filter_for_harness fails loud on anything else
+#                    (catches typos like "evnt: PostToolUse").
 #   script         — repo-relative path to the hook script (deployed per
 #                    harness into $HOME/.<harness>/hooks/<basename>)
 #   shared_assets  — optional list of repo-relative paths to data files the
@@ -17,9 +17,19 @@
 #                    field, so adding a new hook is purely a registry edit.
 #   harnesses      — list of harness names to install into;
 #                    default: [claude, codex]
-#   matcher        — codex-only regex against the event's `source` field
-#                    (SessionStart: startup|resume|clear). Claude ignores;
-#                    its SessionStart entries have no matcher.
+#   matcher        — event-dependent. The (event, harness) pairs that
+#                    actually write a matcher field into the outer block
+#                    are encoded in _hook_event_uses_matcher (lib.sh):
+#                      SessionStart   — codex only (source regex:
+#                                        startup|resume|clear). Claude
+#                                        ignores; matcher is dropped on
+#                                        write.
+#                      PreToolUse,    — both harnesses (tool-name regex).
+#                      PostToolUse
+#                      UserPromptSubmit, Stop — neither harness writes
+#                                        matcher; the field is dropped on
+#                                        write but kept in the registry
+#                                        for documentation if set.
 #   timeout        — seconds (verified against
 #                    developers.openai.com/codex/hooks → "timeout is in
 #                    seconds"; Claude uses the same unit)
@@ -35,3 +45,45 @@ hooks:
     matcher: "startup|resume"
     timeout: 5
     description: Rotating cheese flair sample injected at session start
+
+  # ─── Moshi (rjyo/moshi-hook) ────────────────────────────────────────
+  # Bridge between Claude Code and the Moshi iOS terminal app — sends
+  # session-start, prompt, turn-end, and approval events to the phone
+  # so the user can babysit the agent remotely.
+  #
+  # Wire format captured from `moshi-hook install` (v0.2.8 on linux). The
+  # single quotes around the absolute path are Moshi's own choice — they
+  # let the path tolerate whitespace in $HOME, preserved verbatim.
+  #
+  # Linux-only path: on macOS via brew, moshi-hook lives at
+  # /opt/homebrew/bin/moshi-hook — port this entry when adding the Mac.
+  # claude-only: codex bridge ships via ~/.codex/hooks.json (different
+  # surface), out of scope here.
+  moshi-session-start:
+    event: SessionStart
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    async: true
+    harnesses: [claude]
+    description: Moshi bridge — session-start notification to phone
+
+  moshi-user-prompt-submit:
+    event: UserPromptSubmit
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    async: true
+    harnesses: [claude]
+    description: Moshi bridge — prompt-submit notification to phone
+
+  moshi-stop:
+    event: Stop
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    async: true
+    harnesses: [claude]
+    description: Moshi bridge — turn-end notification to phone
+
+  moshi-permission-request:
+    event: PermissionRequest
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    async: false
+    timeout: 300
+    harnesses: [claude]
+    description: Moshi bridge — approval request (synchronous, 5-min phone reach)

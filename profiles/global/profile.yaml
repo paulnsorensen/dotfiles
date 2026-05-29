@@ -33,12 +33,13 @@ target_default: $HOME
 #
 # Must match where the renderer actually writes the plugin tree:
 # target_default above is $HOME, so the claude renderer drops the
-# global plugin at $HOME/.claude/plugins/local/global/. Pointing
-# `local` at $HOME/.claude/plugins/local lets Claude resolve
-# `global@local` to that on-disk tree. (Earlier this pointed at
-# ${DOTFILES_DIR}/.claude/plugins/local, which only contained a
-# staged `base/` tree and not the live `global/` — Claude found the
-# plugin via fallback but the wiring was asymmetric.)
+# global plugin at $HOME/.claude/plugins/local/global/ and emits the
+# directory `marketplace.json` alongside it. Pointing `local` at
+# $HOME/.claude/plugins/local lets Claude resolve `global@local` to
+# that on-disk tree via the marketplace.json (an explicit registration,
+# not just fallback). (Earlier this pointed at
+# ${DOTFILES_DIR}/.claude/plugins/local, which only contained a staged
+# `base/` tree and not the live `global/`.)
 marketplaces:
   local: $HOME/.claude/plugins/local
 

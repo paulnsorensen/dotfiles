@@ -53,6 +53,13 @@ _MCP_DEFAULT = ("claude", "codex", "opencode")
 # `(.harnesses // ["claude"])`).
 _HOOK_DEFAULT = ("claude",)
 
+# Name of the directory marketplace that backs the rendered plugin tree.
+# Matches the hardcoded ``local`` path segment in ``plugin_dir`` below and
+# the marketplace key profiles register (``global@local``). A Claude
+# ``directory`` marketplace resolves plugins through a ``marketplace.json``
+# whose ``name`` equals the registered key, so the three must agree.
+_LOCAL_MARKETPLACE = "local"
+
 
 def _dump_json(path: Path, data: object) -> None:
     """Write ``data`` as 2-space-indented JSON + trailing newline (the exact
@@ -82,6 +89,7 @@ class ClaudeRenderer:
         self._write_hooks(manifest, plugin_dir, base, profile, out)
         self._write_mcp_json(manifest, plugin_dir, base, out)
         self._write_settings(manifest, plugin_dir, base, out)
+        self._write_local_marketplace(manifest, base, profile, desc)
         self._merge_root_settings(manifest, base)
 
         # Track the plugin dir root so uninstall removes the whole tree
@@ -101,6 +109,7 @@ class ClaudeRenderer:
         entries (mirroring how :class:`OpencodeRenderer.clean` un-merges
         ``opencode.json``)."""
         base = Path(str(target).rstrip("/"))
+        self._clean_local_marketplace(base, manifest.name)
         settings = base / ".claude" / "settings.json"
         if not settings.is_file():
             return
@@ -259,33 +268,55 @@ class ClaudeRenderer:
             event = item.get("event")
             matcher = item.get("matcher") or ""
             script = item.get("script") or ""
+            command = item.get("command") or ""
             source_dir = item["_source_dir"]
-            if not script:
+
+            if script and command:
                 raise ValueError(
-                    f"claude_render: hook event '{event}' is missing 'script' "
+                    f"claude_render: hook event '{event}' sets both 'script' "
+                    f"and 'command' — they are mutually exclusive "
                     f"(profile {source_dir})"
                 )
-            src = Path(source_dir) / script
-            if not src.is_file():
-                raise FileNotFoundError(
-                    f"claude_render: hook script not found: {src}"
+            if script:
+                src = Path(source_dir) / script
+                if not src.is_file():
+                    raise FileNotFoundError(
+                        f"claude_render: hook script not found: {src}"
+                    )
+                basename = Path(script).name
+                dst = plugin_dir / "hooks" / basename
+                shutil.copyfile(src, dst)
+                dst.chmod(
+                    dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+                )
+                self._track(out, base, dst)
+                # Deploy shared_assets alongside the script so the
+                # self-locating SessionStart script resolves its lib/bank
+                # under the plugin dir (HARNESS_ROOT = dirname(hooks/)).
+                copy_hook_shared_assets(item, plugin_dir, base, out)
+                cmd = "${CLAUDE_PLUGIN_ROOT}/hooks/" + basename
+            elif command:
+                # Literal command, used verbatim — no file deploy. For
+                # external bridges (e.g. moshi-hook) that aren't deployed
+                # scripts.
+                cmd = command
+            else:
+                raise ValueError(
+                    f"claude_render: hook event '{event}' has neither 'script' "
+                    f"nor 'command' (profile {source_dir})"
                 )
 
-            basename = Path(script).name
-            dst = plugin_dir / "hooks" / basename
-            shutil.copyfile(src, dst)
-            dst.chmod(dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            self._track(out, base, dst)
-
-            # Deploy shared_assets alongside the script so the self-locating
-            # SessionStart script resolves its lib/bank under the plugin dir
-            # (HARNESS_ROOT = dirname(hooks/) = plugin_dir).
-            copy_hook_shared_assets(item, plugin_dir, base, out)
-
-            cmd = "${CLAUDE_PLUGIN_ROOT}/hooks/" + basename
-            hook_entries.setdefault(event, []).append(
-                {"matcher": matcher, "hooks": [{"type": "command", "command": cmd}]}
+            inner = {"type": "command", "command": cmd}
+            if item.get("timeout") is not None:
+                inner["timeout"] = item["timeout"]
+            if item.get("async") is not None:
+                inner["async"] = item["async"]
+            entry = (
+                {"matcher": matcher, "hooks": [inner]}
+                if matcher
+                else {"hooks": [inner]}
             )
+            hook_entries.setdefault(event, []).append(entry)
             wrote_any = True
 
         if not wrote_any:
@@ -375,3 +406,70 @@ class ClaudeRenderer:
                 }
 
         settings.write_text(json.dumps(data, indent=2) + "\n")
+
+    def _write_local_marketplace(
+        self, manifest: Manifest, base: Path, profile: str, desc: str
+    ) -> None:
+        """Ensure the directory-marketplace manifest at
+        ``<base>/.claude/plugins/local/.claude-plugin/marketplace.json``
+        lists this profile as a plugin.
+
+        Without this manifest a Claude ``directory`` marketplace has no
+        ``plugins[]`` to resolve, so an ``enabledPlugins`` entry like
+        ``global@local`` is silently dropped and the plugin's bundled
+        ``.mcp.json`` never loads. The manifest is shared across every
+        profile rendered into the same local marketplace (like the live
+        ``settings.json``), so the entry is upserted by name and siblings
+        are preserved; :meth:`clean` removes exactly this profile's entry.
+
+        A profile advertises itself here only when it enables itself in the
+        local marketplace (``<profile>@local`` in ``enabled_plugins``) — a
+        bare plugin render that no one enables stays out of the manifest.
+        """
+        if not manifest.enabled_plugins.get(f"{profile}@{_LOCAL_MARKETPLACE}"):
+            return
+        manifest_path = (
+            base / ".claude" / "plugins" / "local" / ".claude-plugin"
+            / "marketplace.json"
+        )
+        if manifest_path.is_file():
+            data = read_json_object(manifest_path, "marketplace.json")
+        else:
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+
+        data["name"] = _LOCAL_MARKETPLACE
+        # Claude's marketplace schema requires a non-empty `owner` object.
+        data["owner"] = {"name": "agent-profile"}
+        entry = {"name": profile, "source": f"./{profile}"}
+        if desc:
+            entry["description"] = desc
+        siblings = [
+            p
+            for p in data.get("plugins", [])
+            if isinstance(p, dict) and p.get("name") != profile
+        ]
+        data["plugins"] = siblings + [entry]
+        _dump_json(manifest_path, data)
+
+    def _clean_local_marketplace(self, base: Path, profile: str) -> None:
+        """Remove ``profile``'s entry from the shared local marketplace
+        manifest; delete the manifest when no plugins remain. Mirrors the
+        ``settings.json`` un-merge in :meth:`clean`."""
+        manifest_path = (
+            base / ".claude" / "plugins" / "local" / ".claude-plugin"
+            / "marketplace.json"
+        )
+        if not manifest_path.is_file():
+            return
+        data = read_json_object(manifest_path, "marketplace.json")
+        remaining = [
+            p
+            for p in data.get("plugins", [])
+            if isinstance(p, dict) and p.get("name") != profile
+        ]
+        if not remaining:
+            manifest_path.unlink()
+            return
+        data["plugins"] = remaining
+        _dump_json(manifest_path, data)

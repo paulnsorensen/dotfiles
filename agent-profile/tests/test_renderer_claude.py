@@ -513,10 +513,10 @@ def test_nobody_tracked_files_exclude_shared_agent(rendered_nobody):
 # ─── failure paths (fail fast and loud — parity with bash `return 1`) ─
 
 
-def test_hook_with_missing_script_field_raises(env):
+def test_hook_with_neither_script_nor_command_raises(env):
     yaml_text = """\
 name: badhook
-description: hook missing script
+description: hook with no execution target
 hooks:
   - event: PreToolUse
     matcher: "Bash"
@@ -524,8 +524,62 @@ hooks:
 """
     profile_dir = write_profile(env.profiles, "badhook", yaml_text)
     manifest = parse_manifest(profile_dir)
-    with pytest.raises(ValueError, match="missing 'script'"):
+    with pytest.raises(ValueError, match="neither 'script' nor 'command'"):
         ClaudeRenderer().render(manifest, env.target)
+
+
+def test_hook_with_both_script_and_command_raises(env):
+    yaml_text = """\
+name: bothhook
+description: hook setting both script and command
+hooks:
+  - event: SessionStart
+    script: hooks/h.sh
+    command: "/usr/bin/true"
+    harnesses: [claude]
+"""
+    profile_dir = write_profile(
+        env.profiles, "bothhook", yaml_text,
+        {"hooks/h.sh": "#!/usr/bin/env bash\nexit 0\n"},
+    )
+    manifest = parse_manifest(profile_dir)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        ClaudeRenderer().render(manifest, env.target)
+
+
+def test_hook_command_literal_is_used_verbatim(env):
+    """A `command:` hook renders the literal command with async/timeout and
+    no file deploy — the moshi-hook bridge pattern."""
+    yaml_text = """\
+name: cmdhook
+description: literal command hook
+hooks:
+  - event: Stop
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    async: true
+    harnesses: [claude]
+  - event: PermissionRequest
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    timeout: 300
+    async: false
+    harnesses: [claude]
+"""
+    profile_dir = write_profile(env.profiles, "cmdhook", yaml_text)
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().render(manifest, env.target)
+    data = json.loads(
+        (env.target / ".claude/plugins/local/cmdhook/plugin.json").read_text()
+    )
+    stop = data["hooks"]["Stop"][0]
+    assert "matcher" not in stop
+    assert stop["hooks"][0]["command"] == "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    assert stop["hooks"][0]["async"] is True
+    perm = data["hooks"]["PermissionRequest"][0]["hooks"][0]
+    assert perm["timeout"] == 300
+    assert perm["async"] is False
+    # No script file deployed for a command-literal hook.
+    hooks_dir = env.target / ".claude/plugins/local/cmdhook/hooks"
+    assert not hooks_dir.exists() or not any(hooks_dir.iterdir())
 
 
 def test_hook_with_nonexistent_script_raises(env):

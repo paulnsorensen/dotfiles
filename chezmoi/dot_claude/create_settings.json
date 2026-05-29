@@ -1,8 +1,7 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "ENABLE_TOOL_SEARCH": "true",
-    "SSL_CERT_FILE": "/etc/ssl/cert.pem"
+    "ENABLE_TOOL_SEARCH": "true"
   },
   "permissions": {
     "allow": [
@@ -137,6 +136,38 @@
             "type": "command",
             "command": "if [ -n \"$TMUX\" ]; then tmux set-option -q @jmux-attention 1; fi",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/home/paul/.local/bin/moshi-hook' claude-hook",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/home/paul/.local/bin/moshi-hook' claude-hook",
+            "timeout": 300,
+            "async": false
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/home/paul/.local/bin/moshi-hook' claude-hook",
+            "async": true
           }
         ]
       }
