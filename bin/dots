@@ -30,6 +30,20 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Strip leaked SSL_CERT_FILE / SSL_CERT_DIR pointing at non-existent paths.
+# Comes up when SSHing in from a Mac with env forwarding (or running under a
+# wrapper that hardcodes the BSD cert path /etc/ssl/cert.pem). Curl honors
+# the var and refuses TLS handshakes with "error adding trust anchors",
+# which breaks every bootstrap (yq, chezmoi, uv, …) until unset.
+for _ssl_var in SSL_CERT_FILE SSL_CERT_DIR; do
+    _val="${!_ssl_var:-}"
+    if [[ -n "$_val" && ! -e "$_val" ]]; then
+        echo -e "${YELLOW}⚠️  Unsetting $_ssl_var=$_val (path does not exist on this host)${NC}" >&2
+        unset "$_ssl_var"
+    fi
+done
+unset _ssl_var _val
+
 # Ensure we're in the dotfiles directory for git commands
 cd_dotfiles() {
     cd "$DOTFILES_DIR" || {
@@ -324,23 +338,12 @@ case "${1:-status}" in
 
         echo
         echo -e "${BLUE}⬆️  Refreshing remote skills...${NC}"
-        # Short-circuit when gh confirms every installed skill is at latest.
-        # Avoids re-running gh skill install --force across N harnesses ×
-        # ~24 skills when nothing's moved upstream.
-        NEED_SKILL_REFRESH=true
-        if command -v gh &>/dev/null \
-                && gh skill --help &>/dev/null \
-                && gh auth status &>/dev/null; then
-            if gh skill update --all --dry-run 2>&1 | grep -q "All skills are up to date"; then
-                NEED_SKILL_REFRESH=false
-                echo "  All gh-managed skills up to date — skipping refresh"
-            fi
-        fi
-        if [[ "$NEED_SKILL_REFRESH" == "true" ]]; then
-            if ! bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
-                    "$DOTFILES_DIR/skills/_registry.yaml" --force; then
-                echo -e "${YELLOW}⚠️  Remote skills refresh failed (continuing)${NC}" >&2
-            fi
+        # `npx skills add --force` re-clones each source at its latest default
+        # branch (float-to-latest), so always run it — the install does its own
+        # work; there's no cheap upstream-up-to-date probe to short-circuit on.
+        if ! bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
+                "$DOTFILES_DIR/skills/_registry.yaml" --force; then
+            echo -e "${YELLOW}⚠️  Remote skills refresh failed (continuing)${NC}" >&2
         fi
         ;;
     status|st)

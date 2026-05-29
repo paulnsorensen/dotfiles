@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# install-linux-server — server-flavored Linux bootstrap.
+#
+# Complements `bin/linux-install` (the developer toolchain). Run this on a box
+# you reach over the network instead of sitting in front of:
+#   - Tailscale (mesh VPN, NAT traversal)
+#   - mosh (resilient mobile shell over UDP)
+#   - ufw rules scoped to tailscale0 + SSH (installed but NOT auto-enabled)
+#
+# Idempotent: each step skips when the binary is already on PATH or the rule
+# is already in ufw. After it finishes, run `sudo tailscale up --ssh` and
+# (optionally) `sudo ufw enable`.
+
+set -uo pipefail
+
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log()  { echo -e "${BLUE}[install-linux-server]${NC} $*"; }
+ok()   { echo -e "${GREEN}[install-linux-server]${NC} $*"; }
+warn() { echo -e "${YELLOW}[install-linux-server]${NC} $*" >&2; }
+err()  { echo -e "${RED}[install-linux-server]${NC} $*" >&2; }
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+    err "This script is Linux-only."
+    exit 1
+fi
+
+# Refuse to run as root. Tailscale's installer + apt both call sudo internally;
+# running the whole script under sudo just makes $HOME resolve weirdly later if
+# this script ever grows user-scoped steps.
+if [[ "${EUID}" -eq 0 ]]; then
+    err "Run this script as your normal user, NOT with sudo."
+    err "It calls sudo itself for the package + firewall steps."
+    err "Re-run: ./bin/install-linux-server"
+    exit 1
+fi
+
+if ! command -v apt-get &>/dev/null; then
+    err "apt-get not found. This script targets Debian/Ubuntu."
+    exit 1
+fi
+
+# Same SSL_CERT_FILE defensive unset as bin/linux-install — a stale Mac env
+# var leaks into bash here and breaks every curl bootstrap below.
+for _ssl_var in SSL_CERT_FILE SSL_CERT_DIR; do
+    _val="${!_ssl_var:-}"
+    if [[ -n "$_val" && ! -e "$_val" ]]; then
+        warn "Unsetting $_ssl_var=$_val (path does not exist on this host)"
+        unset "$_ssl_var"
+    fi
+done
+unset _ssl_var _val
+
+FAILED=()
+SKIPPED=()
+
+#-----------------------------------------------------------------------------
+# 1. Tailscale
+#-----------------------------------------------------------------------------
+# Official installer adds the tailscale apt repo + key and installs the daemon.
+# Does NOT log in — that's `sudo tailscale up` and is intentionally interactive.
+if ! command -v tailscale &>/dev/null; then
+    log "Installing Tailscale via the official installer"
+    if ! curl -fsSL https://tailscale.com/install.sh | sh; then
+        err "Tailscale install failed"
+        FAILED+=("tailscale")
+    else
+        ok "Tailscale installed"
+    fi
+else
+    SKIPPED+=("tailscale")
+fi
+
+#-----------------------------------------------------------------------------
+# 2. mosh
+#-----------------------------------------------------------------------------
+# Apt package ships /usr/bin/mosh-server. No daemon to enable — the client
+# launches mosh-server on demand via the SSH bootstrap.
+if ! command -v mosh-server &>/dev/null; then
+    log "Installing mosh"
+    if sudo apt-get update -qq && sudo apt-get install -y mosh; then
+        ok "mosh installed"
+    else
+        err "mosh install failed"
+        FAILED+=("mosh")
+    fi
+else
+    SKIPPED+=("mosh")
+fi
+
+#-----------------------------------------------------------------------------
+# 3. ufw rules (installed, NOT auto-enabled)
+#-----------------------------------------------------------------------------
+# Adding rules while ufw is inactive is safe — they sit dormant until you
+# `sudo ufw enable`. Enabling ufw over SSH is the destructive step and we
+# leave it to the operator.
+if ! command -v ufw &>/dev/null; then
+    log "Installing ufw"
+    if ! sudo apt-get install -y ufw; then
+        err "ufw install failed"
+        FAILED+=("ufw")
+    fi
+fi
+
+if command -v ufw &>/dev/null; then
+    log "Adding ufw rules (ufw will remain disabled until you run \`sudo ufw enable\`)"
+    # `ufw allow` is idempotent on its rule text — re-running is a no-op.
+    sudo ufw allow 22/tcp comment 'ssh' >/dev/null || FAILED+=("ufw:ssh-rule")
+    sudo ufw allow in on tailscale0 comment 'tailnet trusted' >/dev/null || FAILED+=("ufw:tailscale-rule")
+    sudo ufw allow 60000:61000/udp comment 'mosh' >/dev/null || FAILED+=("ufw:mosh-rule")
+    ok "ufw rules added (status: $(sudo ufw status | head -1 | awk '{print $2}'))"
+fi
+
+#-----------------------------------------------------------------------------
+# Summary
+#-----------------------------------------------------------------------------
+echo
+echo -e "${CYAN}══════════════════════════════════════${NC}"
+echo -e "${CYAN}    Linux server install summary      ${NC}"
+echo -e "${CYAN}══════════════════════════════════════${NC}"
+
+if ((${#SKIPPED[@]})); then
+    echo -e "${BLUE}Skipped (already installed):${NC} ${SKIPPED[*]}"
+fi
+
+if ((${#FAILED[@]})); then
+    err "Failures: ${FAILED[*]}"
+fi
+
+echo
+echo -e "${GREEN}Next steps:${NC}"
+echo "  1. \`sudo tailscale up --ssh\`           # join tailnet + enable Tailscale SSH"
+echo "  2. \`tailscale status\`                  # verify the node is up"
+echo "  3. \`sudo ufw enable\`                   # turn on the firewall (rules are already staged)"
+echo "  4. From a client on your tailnet:"
+echo "       mosh <user>@<hostname>            # MagicDNS hostname works"
+
+if ((${#FAILED[@]})); then
+    exit 1
+fi

@@ -10,15 +10,16 @@
 
 set -u
 
-# BSD readlink (macOS default) lacks -f, but Claude / Codex always invoke
-# this script via its real ~/.{harness}/hooks/ path — no symlink hops to
-# resolve. Use $BASH_SOURCE[0] directly, fall through to `readlink -f` only
-# when it's available (GNU coreutils on Linux).
-_src="${BASH_SOURCE[0]}"
-if command -v readlink >/dev/null 2>&1; then
-    _resolved=$(readlink -f "$_src" 2>/dev/null) && _src="$_resolved"
-fi
-SCRIPT_DIR="$(cd "$(dirname "$_src")" && pwd)"
+# Anchor sibling lookups to the deployed hook location — NOT to the
+# canonical source. `ap` deploys this script alongside `lib/cheese-flair.sh`
+# and `reference/cheese-flair.md` under `~/.<harness>/`, and that is the
+# only layout where all three are guaranteed to coexist. Dotfiles installs
+# that directory-symlink `claude/hooks/` back into the repo would, if we
+# resolved the symlink, land in `$DOTFILES/claude/` where the lib + bank
+# are NOT present (they live canonically under `agents/` and are deployed,
+# not symlinked, into `~/.claude/lib/`). So: use BASH_SOURCE[0] verbatim,
+# and rely on bash's default logical `pwd` to preserve the symlinked path.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_ROOT="$(dirname "$SCRIPT_DIR")"  # e.g. ~/.claude or ~/.codex
 
 LIB="$HARNESS_ROOT/lib/cheese-flair.sh"

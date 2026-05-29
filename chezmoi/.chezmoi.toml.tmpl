@@ -14,4 +14,3 @@ sourceDir = "{{ .chezmoi.sourceDir }}"
 
 [data]
 email = {{ promptStringOnce . "email" "Git email" "paulnsorensen@gmail.com" | quote }}
-work  = {{ promptBoolOnce   . "work"  "Is this a work machine?" false }}

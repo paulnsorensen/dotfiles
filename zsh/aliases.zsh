@@ -173,9 +173,9 @@ fi
 # `skills/` tree are the EDIT surface (skill-edit). Deploy is unified through
 # `ap`: base-sync renders the registry-derived `base`
 # profile — which unions both skill sources — into every harness, fetching
-# external skills via `gh skill install` along the way (curd 7 / D1).
+# external skills via `npx skills add` along the way (curd 7 / D1).
 # =============================================================================
-alias skill='gh skill'
-alias skill-ls='gh skill update --all --dry-run'
+alias skill='npx --yes skills'
+alias skill-ls='npx --yes skills list --global'
 alias skill-sync='base-sync'
 alias skill-edit='${EDITOR:-vim} $DOTFILES_DIR/skills/_registry.yaml'

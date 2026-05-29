@@ -20,41 +20,20 @@ teardown() { teardown_test_env; }
 
 # ── chezmoi/.sync wiring ────────────────────────────────────────────────
 
-# Helper: drop a fake `gh` binary on PATH that satisfies the PR #196 Phase 2
-# preflight checks (`gh skill --help`, `gh auth status`) so `chezmoi apply`
-# doesn't abort in CI runners where gh exists but isn't authenticated.
-# Also no-ops `gh skill install` and `gh api .../contents/skills` so any
-# downstream install loop completes without network access.
-make_fake_gh() {
+# Helper: drop a fake `npx` binary on PATH so `chezmoi apply` runs hermetically.
+# It satisfies the run_onchange preflight (`command -v npx`) AND no-ops
+# `npx skills add ...` — ap's external-skill fetch path — so the test never
+# git-clones a real source repo over the network.
+make_fake_npx() {
     local fake_bin="${1:-$TEST_HOME/fake-bin}"
     mkdir -p "$fake_bin"
-    cat > "$fake_bin/gh" <<'SH'
+    cat > "$fake_bin/npx" <<'SH'
 #!/usr/bin/env bash
-case "${1:-}" in
-    skill)
-        # gh skill --help / gh skill install ... — both succeed, no-op.
-        exit 0
-        ;;
-    auth)
-        # gh auth status — succeed.
-        exit 0
-        ;;
-    api)
-        # gh api repos/<owner>/<repo>/contents/skills — return empty so
-        # install-external.sh's resolve_skills yields no candidates.
-        echo "[]"
-        exit 0
-        ;;
-    *)
-        # Fail loud on unexpected subcommands so a future code path that
-        # adds a new `gh <foo>` call surfaces a fixture gap instead of
-        # silently fake-succeeding.
-        echo "fake gh: unexpected invocation: gh $*" >&2
-        exit 99
-        ;;
-esac
+# Args look like: --yes skills add <repo> --skill ... --agent ... -g --copy -y
+# Succeed on everything (no network); the skills CLI is never really invoked.
+exit 0
 SH
-    chmod +x "$fake_bin/gh"
+    chmod +x "$fake_bin/npx"
     echo "$fake_bin"
 }
 
@@ -340,7 +319,7 @@ EOF
 # both of which claude/.sync later backs up to .bak, orphaning everything
 # chezmoi just wrote.
 
-@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference,settings.json} on a fresh install" {
+@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference} on a fresh install" {
     # No ~/.claude at all — fresh-box state.
     [[ ! -e "$HOME/.claude" ]]
 
@@ -364,15 +343,16 @@ EOF
     [[ "$(readlink "$HOME/.claude/hooks")"     == "$REAL_DOTFILES_DIR/claude/hooks"     ]]
     [[ -L "$HOME/.claude/reference" ]]
     [[ "$(readlink "$HOME/.claude/reference")" == "$REAL_DOTFILES_DIR/claude/reference" ]]
-    [[ -L "$HOME/.claude/settings.json" ]]
-    [[ "$(readlink "$HOME/.claude/settings.json")" == "$REAL_DOTFILES_DIR/claude/settings.json" ]]
+    # settings.json must NOT be pre-linked anymore — it's a chezmoi
+    # create_ seed now (chezmoi/dot_claude/create_settings.json), and a
+    # legacy symlink would block the seed step.
+    [[ ! -L "$HOME/.claude/settings.json" ]]
 }
 
 @test "chezmoi/.sync prelink is idempotent (existing correct symlink preserved)" {
     mkdir -p "$HOME/.claude"
     ln -s "$REAL_DOTFILES_DIR/claude/hooks"         "$HOME/.claude/hooks"
     ln -s "$REAL_DOTFILES_DIR/claude/reference"     "$HOME/.claude/reference"
-    ln -s "$REAL_DOTFILES_DIR/claude/settings.json" "$HOME/.claude/settings.json"
 
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
@@ -392,7 +372,6 @@ EOF
     # Symlinks unchanged.
     [[ "$(readlink "$HOME/.claude/hooks")"         == "$REAL_DOTFILES_DIR/claude/hooks"         ]]
     [[ "$(readlink "$HOME/.claude/reference")"     == "$REAL_DOTFILES_DIR/claude/reference"     ]]
-    [[ "$(readlink "$HOME/.claude/settings.json")" == "$REAL_DOTFILES_DIR/claude/settings.json" ]]
     # Prelink message only fires when it actually creates a link.
     [[ "$output" != *"Pre-linked"* ]]
 }
@@ -480,12 +459,33 @@ EOF
 }
 
 @test "chezmoi/run_onchange template hashes the registries + skills tree it renders from" {
-    # The base profile unions the three registries + the local skills tree;
-    # the hash must cover them so a registry/skill edit retriggers the render.
-    grep -qF '/../skills -type f' "$INSTALLER_TMPL"
+    # The base profile unions the three registries + the local skills tree
+    # AND the global profile wraps base with operator-overlay fields;
+    # the hash must cover all of them so a registry/skill/profile/hook-script
+    # edit retriggers the render.
+    grep -qF '/../skills ' "$INSTALLER_TMPL"
     grep -qF '/../profiles/base' "$INSTALLER_TMPL"
+    grep -qF '/../profiles/global' "$INSTALLER_TMPL"
     grep -qF '/../agents/mcp/registry.yaml' "$INSTALLER_TMPL"
-    grep -qF '/../agents/hooks/registry.yaml' "$INSTALLER_TMPL"
+    # `agents/hooks` covers the registry AND its referenced scripts —
+    # without script-content coverage, edits to a hook payload (e.g. the
+    # SessionStart cheese-flair script) would NOT trigger re-deploy on
+    # `dots sync`. Same for the cheese-flair lib + bank under agents/lib
+    # and agents/reference.
+    grep -qF '/../agents/hooks' "$INSTALLER_TMPL"
+    grep -qF '/../agents/lib' "$INSTALLER_TMPL"
+    grep -qF '/../agents/reference' "$INSTALLER_TMPL"
+    # The `ap` renderer source shapes the output: a renderer-only fix (e.g.
+    # the codex env-scrub) changes no registry/profile/skill input, so
+    # without watching agent_profile/** the hash would stay stable and the
+    # fix would never redeploy on a plain `dots sync`. It is the last path
+    # before `-type f`.
+    grep -qF '/../agent-profile/agent_profile -type f' "$INSTALLER_TMPL"
+    # Bytecode is excluded so the hash tracks source edits, not interpreter
+    # artifacts (a *.pyc regen would otherwise churn the hash spuriously).
+    # Match dash-free substrings so the pattern isn't parsed as a grep flag.
+    grep -qF "'*.pyc'" "$INSTALLER_TMPL"
+    grep -qF "'*/__pycache__/*'" "$INSTALLER_TMPL"
     # The pre-flatten nested path must stay gone.
     if grep -qF '/../claude/skills' "$INSTALLER_TMPL"; then
         echo "template still references the pre-flatten claude/skills tree" >&2
@@ -493,14 +493,13 @@ EOF
     fi
 }
 
-@test "chezmoi/run_onchange template fails loud when gh / gh skill / gh auth missing" {
+@test "chezmoi/run_onchange template fails loud when npx is missing" {
     # Spec invariant (PR #196, carried into curd 7): the deploy must FAIL
-    # LOUD when gh, the `gh skill` subcommand, or gh auth is missing —
-    # external skills install through ap's fetch path, which shells `gh
-    # skill install`. Silent skip masked partial installs; guard against it.
-    grep -qF 'command -v gh' "$INSTALLER_TMPL"
-    grep -qF 'gh skill --help' "$INSTALLER_TMPL"
-    grep -qF 'gh auth status' "$INSTALLER_TMPL"
+    # LOUD when npx is missing — external skills install through ap's fetch
+    # path, which shells `npx skills add` (a git clone per source repo). A
+    # silent skip masked partial installs; guard against it. (npx clones public
+    # repos, so no GitHub-auth preflight is needed.)
+    grep -qF 'command -v npx' "$INSTALLER_TMPL"
     # The render invocation must NOT tolerate per-invocation failure.
     if grep -qE 'install-base-profile\.sh.*\|\| *true' "$INSTALLER_TMPL"; then
         echo "base-profile render still has '|| true' — silent partial install regression risk" >&2
@@ -510,8 +509,8 @@ EOF
 
 # Helper: render the run_onchange template to a runnable script + drop a
 # tripwire `ap` on PATH that fails loudly if the render is ever reached.
-# Used by the preflight-FAILURE tests below: the static grep above proves the
-# checks exist in the text; these prove they actually abort at runtime BEFORE
+# Used by the preflight-FAILURE test below: the static grep above proves the
+# check exists in the text; this proves it actually aborts at runtime BEFORE
 # the `ap` render (a silent partial-install regression PR #196 guarded against).
 render_base_profile_onchange() {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
@@ -525,54 +524,32 @@ render_base_profile_onchange() {
     mkdir -p "$fake_bin"
     cat > "$fake_bin/ap" <<'SH'
 #!/usr/bin/env bash
-echo "TRIPWIRE: ap render reached despite a failing gh preflight" >&2
+echo "TRIPWIRE: ap render reached despite a failing npx preflight" >&2
 exit 0
 SH
     chmod +x "$fake_bin/ap"
     echo "$script"
 }
 
-@test "base-profile run_onchange aborts non-zero at runtime when gh auth is missing" {
+@test "base-profile run_onchange skips cleanly when npx is missing" {
+    # Behavior change: the linux-bootstrap PR (commit 5369aa3) softened
+    # missing-npx from `exit 1` (fail-loud) to `exit 0` (clean skip with
+    # pointer) — symmetric with the missing-uv branch. Rationale: on a
+    # fresh Ubuntu box npx arrives from `apt install nodejs npm` after the
+    # first sync prints its missing-tools list; failing the whole apply
+    # there is hostile. The render still must NOT reach `ap` while npx
+    # is absent (no tripwire trigger), and the skip diagnostic must
+    # surface so the user knows why external skills weren't fetched.
     command -v uv >/dev/null 2>&1 || skip "uv not installed (run_onchange skips before preflight)"
     local script
     script=$(render_base_profile_onchange)
-    # gh present, `gh skill --help` ok, but `gh auth status` FAILS.
-    local fake_bin="$TEST_HOME/gh-unauthed-bin"
-    mkdir -p "$fake_bin"
-    cat > "$fake_bin/gh" <<'SH'
-#!/usr/bin/env bash
-case "${1:-}" in
-    skill) exit 0 ;;
-    auth)  echo "not logged in" >&2; exit 1 ;;
-    *)     exit 0 ;;
-esac
-SH
-    chmod +x "$fake_bin/gh"
-    PATH="$TEST_HOME/tripwire-bin:$fake_bin:$PATH" run bash "$script"
-    assert_failure
-    assert_output_contains "not authenticated"
-    [[ "$output" != *"TRIPWIRE"* ]]
-}
-
-@test "base-profile run_onchange aborts non-zero at runtime when gh skill subcommand is absent" {
-    command -v uv >/dev/null 2>&1 || skip "uv not installed (run_onchange skips before preflight)"
-    local script
-    script=$(render_base_profile_onchange)
-    # gh present but the `gh skill` subcommand is unavailable (old gh).
-    local fake_bin="$TEST_HOME/gh-noskill-bin"
-    mkdir -p "$fake_bin"
-    cat > "$fake_bin/gh" <<'SH'
-#!/usr/bin/env bash
-case "${1:-}" in
-    skill) echo "unknown command \"skill\"" >&2; exit 1 ;;
-    auth)  exit 0 ;;
-    *)     exit 0 ;;
-esac
-SH
-    chmod +x "$fake_bin/gh"
-    PATH="$TEST_HOME/tripwire-bin:$fake_bin:$PATH" run bash "$script"
-    assert_failure
-    assert_output_contains "v2.90"
+    local uv_bin="$TEST_HOME/uv-only-bin"
+    mkdir -p "$uv_bin"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$uv_bin/uv"
+    chmod +x "$uv_bin/uv"
+    PATH="$TEST_HOME/tripwire-bin:$uv_bin:/bin" run bash "$script"
+    assert_success
+    assert_output_contains "Skipping base-profile render (npx not found"
     [[ "$output" != *"TRIPWIRE"* ]]
 }
 
@@ -594,7 +571,7 @@ SH
     [[ -x "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" ]]
 }
 
-@test "install-external.sh exits non-zero when a gh skill install fails (PR #196 regression)" {
+@test "install-external.sh exits non-zero when an npx skills add fails (PR #196 regression)" {
     # Spec invariant (PR #196 finding 3): install-external.sh MUST propagate
     # failure so the chezmoi run_onchange records the apply as failed and
     # reruns next `dots sync`, rather than marking success and skipping
@@ -602,28 +579,17 @@ SH
     # partial installs persist — the exact bug PR #196 was filed to fix.
     local fake_bin="$TEST_HOME/fake-bin-failing-install"
     mkdir -p "$fake_bin"
-    cat > "$fake_bin/gh" <<'SH'
+    cat > "$fake_bin/npx" <<'SH'
 #!/usr/bin/env bash
-case "${1:-}" in
-    skill)
-        # `gh skill --help` succeeds; `gh skill install ...` fails.
-        if [[ "${2:-}" == "install" ]]; then
-            echo "fake: simulated install failure" >&2
-            exit 1
-        fi
-        exit 0
-        ;;
-    *)
-        echo "fake gh: unexpected invocation: gh $*" >&2
-        exit 99
-        ;;
-esac
+# `npx skills add ...` fails (simulated clone/install error).
+echo "fake: simulated npx skills add failure" >&2
+exit 1
 SH
-    chmod +x "$fake_bin/gh"
+    chmod +x "$fake_bin/npx"
     PATH="$fake_bin:$PATH"
 
-    # Minimal registry with explicit `skills:` to avoid the `gh api` discovery
-    # path (we only need install_skill to fire).
+    # Minimal registry with explicit `skills:` so install_source emits
+    # `--skill fake-skill` (the discovery path is gone — npx does its own).
     local registry="$TEST_HOME/test-registry.yaml"
     cat > "$registry" <<YAML
 sources:
@@ -634,15 +600,17 @@ sources:
 YAML
 
     # Force a non-empty harness list so the script doesn't early-exit at the
-    # SKILL_HARNESSES-empty branch. On dev machines the script will then
-    # re-source the real .env's SKILL_HARNESSES on top of this value — that's
-    # harmless here because every fake install fails regardless of which
-    # harnesses are in the loop.
-    export SKILL_HARNESSES="test-harness"
+    # SKILL_HARNESSES-empty branch. Use a valid agent ID so the allowlist
+    # guard (mirrors agent_profile/fetch.py's SKILL_AGENT) passes — the test
+    # is asserting *npx failure propagation*, not allowlist behavior. On dev
+    # machines the real .env's SKILL_HARNESSES overrides this; harmless,
+    # since every fake-npx invocation fails regardless of which IDs are in
+    # the loop.
+    export SKILL_HARNESSES="claude-code"
 
     run "$REAL_DOTFILES_DIR/chezmoi/lib/install-external.sh" "$registry"
     assert_failure
-    assert_output_contains "install(s) failed"
+    assert_output_contains "source(s) failed"
 }
 
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────
@@ -656,24 +624,46 @@ YAML
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/.gitattributes"
 }
 
-@test ".chezmoi.toml.tmpl prompts for email and work, and persists sourceDir" {
+@test ".chezmoi.toml.tmpl prompts for email and persists sourceDir" {
     local toml="$REAL_DOTFILES_DIR/chezmoi/.chezmoi.toml.tmpl"
     grep -q 'promptStringOnce . "email"' "$toml"
-    grep -q 'promptBoolOnce' "$toml"
     grep -q '\.chezmoi\.sourceDir' "$toml"
+    # The work-machine prompt was removed with the employer git machinery;
+    # per-repo email is native git (`git config user.email`).
+    if grep -q 'promptBoolOnce' "$toml"; then
+        echo ".chezmoi.toml.tmpl still has the removed work prompt" >&2
+        return 1
+    fi
 }
 
-@test "gitconfig template references .email and gates Uber URLs on .work" {
+@test "gitconfig template references .email and carries no employer machinery" {
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_gitconfig.tmpl"
     grep -q 'email = {{ .email }}' "$tmpl"
-    grep -q '{{- if .work }}' "$tmpl"
-    grep -q 'code.uber.internal' "$tmpl"
+    # Public-repo guard: the template must carry no work gate and no
+    # internal/employer hostname or address. Per-repo email is native git
+    # (`git config user.email`), so no `.work`-gated block is needed.
+    if grep -q '\.work' "$tmpl"; then
+        echo "gitconfig template still references removed .work gate" >&2
+        return 1
+    fi
+    if grep -qi 'uber' "$tmpl"; then
+        echo "gitconfig template still references an employer hostname/address" >&2
+        return 1
+    fi
 }
 
-@test "copilot template fails fast on missing env vars and renders both keys" {
+@test "copilot template warns on missing env vars and renders both keys" {
+    # Behavior change: prior to the linux-bootstrap PR (commit 5369aa3) the
+    # template hard-failed `chezmoi apply` with `{{ fail "... is not set" }}`
+    # whenever either API key was unset. That was hostile to fresh-box
+    # bootstraps where the user has not yet copied .env.example → .env, so
+    # the template now `warnf`s and emits an empty `mcpServers: {}` stub
+    # instead. The MCPs simply won't work until the keys are populated, but
+    # the rest of `dots sync` proceeds.
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
-    grep -q 'CONTEXT7_API_KEY is not set' "$tmpl"
-    grep -q 'TAVILY_API_KEY is not set' "$tmpl"
+    grep -q 'warnf "copilot mcp-config:' "$tmpl"
+    grep -q 'CONTEXT7_API_KEY and/or TAVILY_API_KEY unset' "$tmpl"
+    grep -q '"mcpServers": {}' "$tmpl"
     grep -q 'env "CONTEXT7_API_KEY"' "$tmpl"
     grep -q 'env "TAVILY_API_KEY"' "$tmpl"
 }
@@ -713,12 +703,12 @@ YAML
 @test "chezmoi apply triggers the base-profile render + renders templates" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # The base-profile run_onchange (curd 7) fails loud when gh / gh skill /
-    # gh auth is missing. CI runners have gh installed but unauthenticated, so
-    # stub a fake gh that satisfies all three preflight checks.
-    local fake_gh_bin
-    fake_gh_bin=$(make_fake_gh)
-    PATH="$fake_gh_bin:$PATH"
+    # The base-profile run_onchange (curd 7) fails loud when npx (Node) is
+    # missing — external skills install via `npx skills add`. Stub a fake npx
+    # that satisfies the `command -v npx` preflight and no-ops the fetch.
+    local fake_npx_bin
+    fake_npx_bin=$(make_fake_npx)
+    PATH="$fake_npx_bin:$PATH"
 
     # Templated dotfiles need [data] for .email and env vars for the
     # copilot template's fail-fast guard. Bootstrap both before .sync runs
@@ -758,9 +748,9 @@ TOML
     # the bootstrapped email.
     assert_file_exists "$HOME/.gitconfig"
     grep -qF "email = test@example.com" "$HOME/.gitconfig"
-    # work=false → Uber [url] redirects must NOT appear.
-    if grep -qF 'code.uber.internal' "$HOME/.gitconfig"; then
-        echo "Uber [url] redirects rendered even though work=false" >&2
+    # Public-repo guard: no employer hostname/address in the rendered config.
+    if grep -qi 'uber' "$HOME/.gitconfig"; then
+        echo "employer hostname/address rendered into .gitconfig" >&2
         return 1
     fi
 
@@ -770,15 +760,17 @@ TOML
     grep -qF '"TAVILY_API_KEY": "test-tavily-key"' "$HOME/.copilot/mcp-config.json"
 }
 
-@test "copilot template fails fast when CONTEXT7_API_KEY is unset" {
+@test "copilot template warns + emits empty mcpServers when CONTEXT7_API_KEY is unset" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # PR #196: stub fake gh so the run_onchange installer's `gh auth status`
-    # check doesn't fail first and mask the copilot template's fail-fast
-    # error (which is what this test actually asserts).
-    local fake_gh_bin
-    fake_gh_bin=$(make_fake_gh)
-    PATH="$fake_gh_bin:$PATH"
+    # Linux-bootstrap PR (5369aa3) softened the template from `{{ fail ... }}`
+    # to `{{ warnf ... }}` + empty-stub render. `chezmoi apply` therefore
+    # SUCCEEDS even when a key is unset, and the rendered file is a stub
+    # carrying `"mcpServers": {}`. The warning still surfaces the missing
+    # key on stderr so the user knows to populate .env.
+    local fake_npx_bin
+    fake_npx_bin=$(make_fake_npx)
+    PATH="$fake_npx_bin:$PATH"
 
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
@@ -792,37 +784,14 @@ TOML
     export TAVILY_API_KEY="test-tavily-key"
 
     run chezmoi apply --force
-    assert_failure
-    assert_output_contains "CONTEXT7_API_KEY is not set"
-}
-
-@test "gitconfig template renders Uber URL redirects when work=true" {
-    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
-
-    # PR #196: stub fake gh so the run_onchange installer's `gh auth status`
-    # check doesn't abort chezmoi apply before the gitconfig template runs.
-    local fake_gh_bin
-    fake_gh_bin=$(make_fake_gh)
-    PATH="$fake_gh_bin:$PATH"
-
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "paul.sorensen@uber.com"
-work = true
-TOML
-    export CONTEXT7_API_KEY="test-context7-key"
-    export TAVILY_API_KEY="test-tavily-key"
-
-    run chezmoi apply --force
     assert_success
-
-    assert_file_exists "$HOME/.gitconfig"
-    grep -qF "email = paul.sorensen@uber.com" "$HOME/.gitconfig"
-    grep -qF 'ssh://code.uber.internal/' "$HOME/.gitconfig"
-    grep -qF 'gopkg.uberinternal.com' "$HOME/.gitconfig"
+    # The warnf message should appear in chezmoi's stderr (combined with
+    # stdout under bats' `run`).
+    assert_output_contains "CONTEXT7_API_KEY and/or TAVILY_API_KEY unset"
+    # The rendered file is the empty-mcpServers stub.
+    assert_file_exists "$HOME/.copilot/mcp-config.json"
+    grep -qF '"mcpServers": {}' "$HOME/.copilot/mcp-config.json"
+    grep -qF 'Stub written by chezmoi' "$HOME/.copilot/mcp-config.json"
 }
 
 # ── serena config (modify_ pattern) ────────────────────────────────────────
@@ -946,4 +915,179 @@ YAML
     # content. The bug would replace it with `web_dashboard: false\n...`.
     grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
     ! grep -qE '^web_dashboard:' "$HOME/.serena/serena_config.yml"
+}
+
+# Regression: when the live config is the placeholder AND serena IS on PATH,
+# the bootstrap branch must call `serena init` to heal the file. The bug it
+# guards against: `[ -f $live ] || serena init` short-circuits because the
+# placeholder file already exists, so init is skipped, the live read yields
+# the placeholder again, the filter resets `existing=`, and the script emits
+# the placeholder forever. Stable fixed point on a broken state.
+@test "serena: modify_ script bootstraps via serena init when the on-disk file is the placeholder" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    command -v yq      >/dev/null 2>&1 || skip "yq not installed"
+    setup_serena_chezmoi_env
+
+    mkdir -p "$HOME/.serena"
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+# serena not initialized; run `serena init`, then `chezmoi apply` again
+YAML
+
+    # Fake serena shim — only `init` is exercised. It writes a real config
+    # over the placeholder, mimicking the live `serena init` behaviour.
+    local shim_dir="$HOME/bin"
+    mkdir -p "$shim_dir"
+    cat > "$shim_dir/serena" <<'SH'
+#!/bin/sh
+case "$1" in
+  init)
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+language_backend: LSP
+web_dashboard: true
+web_dashboard_open_on_launch: true
+excluded_tools: []
+projects: []
+YAML
+    ;;
+esac
+SH
+    chmod +x "$shim_dir/serena"
+
+    local chezmoi_dir yq_dir minimal_path
+    chezmoi_dir=$(dirname "$(command -v chezmoi)")
+    yq_dir=$(dirname "$(command -v yq)")
+    minimal_path="$shim_dir:/usr/bin:/bin:$chezmoi_dir:$yq_dir"
+
+    PATH="$minimal_path" run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+
+    # Placeholder must be gone; the override pass must have run.
+    ! grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
+    [[ "$(yq '.web_dashboard'                "$HOME/.serena/serena_config.yml")" == "false" ]]
+    [[ "$(yq '.web_dashboard_open_on_launch' "$HOME/.serena/serena_config.yml")" == "false" ]]
+    [[ "$(yq '.language_backend'             "$HOME/.serena/serena_config.yml")" == "LSP" ]]
+
+    # Second apply is idempotent — byte-level. The weak form (re-check
+    # web_dashboard) would miss e.g. excluded_tools getting reshuffled or
+    # comment lines being eaten. Hash-equality nails the entire surface.
+    local hash_before hash_after
+    hash_before=$(shasum -a 256 "$HOME/.serena/serena_config.yml" | awk '{print $1}')
+    PATH="$minimal_path" run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+    hash_after=$(shasum -a 256 "$HOME/.serena/serena_config.yml" | awk '{print $1}')
+    [[ "$hash_before" == "$hash_after" ]]
+}
+
+# Regression: if `serena init` fails after the stub-on-disk gate fires,
+# the script must fall through gracefully — the bootstrap branch swallows
+# the failure with `|| true`, the live-file read still yields the stub,
+# the filter resets `existing=`, and the final emit-stub branch writes
+# the stub back. Documented residual-risk path; locking it in.
+@test "serena: modify_ script falls through to stub when serena init fails" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    command -v yq      >/dev/null 2>&1 || skip "yq not installed"
+    setup_serena_chezmoi_env
+
+    mkdir -p "$HOME/.serena"
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+# serena not initialized; run `serena init`, then `chezmoi apply` again
+YAML
+
+    # Failing shim — `init` exits 1 without writing anything. Mimics a
+    # serena binary present on PATH but unable to bootstrap (broken venv,
+    # missing language-server dep, etc.).
+    local shim_dir="$HOME/bin"
+    mkdir -p "$shim_dir"
+    cat > "$shim_dir/serena" <<'SH'
+#!/bin/sh
+exit 1
+SH
+    chmod +x "$shim_dir/serena"
+
+    local chezmoi_dir yq_dir minimal_path
+    chezmoi_dir=$(dirname "$(command -v chezmoi)")
+    yq_dir=$(dirname "$(command -v yq)")
+    minimal_path="$shim_dir:/usr/bin:/bin:$chezmoi_dir:$yq_dir"
+
+    PATH="$minimal_path" run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+
+    # Stub must survive verbatim; no yq-emitted 3-key file.
+    grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
+    ! grep -qE '^web_dashboard:' "$HOME/.serena/serena_config.yml"
+    # Exactly the stub literal — nothing more, nothing less.
+    [[ "$(wc -l < "$HOME/.serena/serena_config.yml")" -eq 1 ]]
+}
+
+# ── claude settings.json migration to chezmoi seed ─────────────────────────
+
+@test "claude settings.json: chezmoi seed source exists at dot_claude/create_settings.json" {
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+}
+
+@test "claude settings.json: chezmoi seed is valid JSON" {
+    jq -e 'type == "object"' "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null
+}
+
+@test "claude settings.json: seed has NO legacy SessionStart hook entry" {
+    # The base plugin's plugin.json (rendered by ap into
+    # ~/.claude/plugins/local/global/.claude-plugin/plugin.json) now
+    # provides the SessionStart wiring. A duplicate entry in settings.json
+    # would double-fire the hook AND silently break when the legacy
+    # symlinked path is gone (the regression that drove the migration).
+    local has_session
+    has_session=$(jq -r '.hooks.SessionStart // empty' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json")
+    [[ -z "$has_session" ]]
+}
+
+@test "claude settings.json: seed does NOT pre-bake ap-managed marketplace/plugin" {
+    # `local` marketplace + `global@local` enablement are owned by the
+    # claude renderer (ap install global) — they get merged in after
+    # chezmoi seeds. Pre-baking would either cause the merge to look like
+    # a no-op (fine, but confusing) OR survive a global rename (broken).
+    ! jq -e '.enabledPlugins["global@local"]' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+    ! jq -e '.extraKnownMarketplaces["local"]' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+}
+
+@test "claude settings.json: source filename uses create_ prefix (seed-once)" {
+    # `create_` chezmoi semantic: never overwrite on subsequent applies.
+    # Using `dot_settings.json` (always-render) would clobber user edits;
+    # using `modify_settings.json` (script-driven mutation) would be
+    # heavier than needed since ap handles the per-profile mutations.
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+    [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/settings.json" ]]
+    [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/dot_settings.json" ]]
+}
+
+@test "claude settings.json: one-time migration script exists" {
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_once_before_migrate-claude-settings.sh" ]]
+}
+
+@test "claude settings.json: migration script removes legacy dotfiles symlink only" {
+    # The script must NOT delete a settings.json that links to anywhere
+    # other than $DOTFILES/claude/settings.json — the user may have
+    # set up their own symlink.
+    local script="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_once_before_migrate-claude-settings.sh"
+    grep -qF '*/dotfiles/claude/settings.json' "$script"
+    # shellcheck disable=SC2016
+    grep -qE 'if[[:space:]]+\[\[ -L "\$target" \]\]' "$script"
+}
+
+@test "claude/.sync no longer symlinks settings.json" {
+    # settings.json moved to chezmoi/dot_claude/create_settings.json;
+    # claude/.sync's configs list must not include it (else a fresh sync
+    # would re-create the legacy symlink, undoing the migration).
+    local sync_script="$REAL_DOTFILES_DIR/claude/.sync"
+    # The configs=( ... ) array shouldn't list `settings.json`.
+    ! awk '/^configs=\(/,/^\)/' "$sync_script" | grep -qE '^\s*settings\.json\s*$'
+}
+
+@test "claude/settings.json source is gone from the repo (migrated to chezmoi)" {
+    # Once committed, the legacy claude/settings.json must not exist —
+    # the chezmoi seed is the source of truth. A re-introduced file would
+    # quietly fight the chezmoi-seeded one via the legacy symlink path.
+    [[ ! -f "$REAL_DOTFILES_DIR/claude/settings.json" ]]
 }

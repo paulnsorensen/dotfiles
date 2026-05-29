@@ -208,8 +208,7 @@ sync_cargo() {
             fi
         fi
         if ! command -v cargo &>/dev/null; then
-            log_error "cargo not found (install rustup first)"
-            FAILED+=("cargo")
+            log_warning "cargo not found — skipping cargo packages (install rustup to enable)"
             return 0
         fi
     fi
@@ -303,8 +302,7 @@ sync_npm() {
     [[ -z "$npm_pkgs" ]] && return 0
 
     if ! command -v npm &>/dev/null; then
-        log_error "npm not found (install node first)"
-        FAILED+=("npm")
+        log_warning "npm not found — skipping npm packages (install node to enable)"
         return 0
     fi
 
@@ -375,8 +373,7 @@ sync_uv() {
     [[ -z "$uv_pkgs" ]] && return 0
 
     if ! command -v uv &>/dev/null; then
-        log_error "uv not found (install uv first)"
-        FAILED+=("uv")
+        log_warning "uv not found — skipping uv tools (install uv to enable)"
         return 0
     fi
 
@@ -415,8 +412,7 @@ sync_gh_extensions() {
     [[ -z "$ext_pkgs" ]] && return 0
 
     if ! command -v gh &>/dev/null; then
-        log_error "gh not found (install gh first)"
-        FAILED+=("gh")
+        log_warning "gh not found — skipping gh extensions (install gh to enable)"
         return 0
     fi
 
@@ -510,6 +506,25 @@ source "$SCRIPT_DIR/lib-bootstrap-yq.sh"
 
 if ! bootstrap_yq; then
     exit 1
+fi
+
+# Bootstrap uv on Linux. uv is the linchpin for the agent-profile / base-
+# profile pipeline (chezmoi's run_onchange_*-{agent,base}-profile.sh.tmpl
+# both bail without it), and it isn't in Ubuntu's apt. Use the official
+# astral installer to drop it into ~/.local/bin without sudo.
+bootstrap_uv_linux() {
+    local bin_dir="$HOME/.local/bin"
+    mkdir -p "$bin_dir"
+    log_info "Bootstrapping uv → $bin_dir"
+    if ! curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$bin_dir" INSTALLER_NO_MODIFY_PATH=1 sh; then
+        log_error "uv install script failed"
+        return 1
+    fi
+    hash -r 2>/dev/null || true
+}
+
+if [[ "$PLATFORM" == "Linux" ]] && ! command -v uv &>/dev/null; then
+    bootstrap_uv_linux || log_warning "Continuing without uv — base-profile render will be skipped"
 fi
 
 if [[ "$PLATFORM" == "Darwin" ]]; then
