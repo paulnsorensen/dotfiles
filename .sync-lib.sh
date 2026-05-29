@@ -30,7 +30,7 @@ log_error() {
 
 # Directory names that are never symlinked or dispatched to.
 # Documented in AGENTS.md — keep these in sync.
-SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "brew" "apt" "agents" "codex")
+SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "brew" "apt" "agents" "agent-profile" "codex")
 
 # Failure ledger — every .sync script that exits non-zero appends its name
 # here. .sync-with-rollback inspects this at the end of run_sync, prints a
