@@ -210,6 +210,22 @@ def cmd_install(
         raise CliError(f"{colors.RED}ap: profile '{name}' not found{colors.NC}")
 
     manifest = parse_manifest(profile_dir)
+
+    if (
+        target_opt is None
+        and not manifest.target_default
+        and _within_git_repo(Path.cwd())
+    ):
+        raise CliError(
+            f"{colors.RED}ap install: refusing to install profile '{name}' "
+            f"into a git working tree (cwd: {Path.cwd()}).{colors.NC}\n"
+            f"  Without --target and with no target_default, the rendered "
+            f"runtime (.codex/, .cursor/, manifest.json, …) would be dumped "
+            f"into the repo.\n"
+            f"  Pass --target <dir> to stage the render, or install an "
+            f"install-overlay profile like 'global' (it targets $HOME)."
+        )
+
     target = _resolve_target(target_opt, manifest.target_default)
 
     print(
@@ -600,6 +616,15 @@ def _resolve_target(target_opt: Path | None, target_default: str | None) -> Path
         return Path(expanded).resolve()
     return Path.cwd()
 
+
+def _within_git_repo(start: Path) -> bool:
+    """True if ``start`` or any ancestor contains a ``.git`` (dir or file —
+    worktrees use a ``.git`` file). Walks the filesystem rather than shelling
+    out to ``git``, mirroring how this module avoids subprocess."""
+    for d in (start, *start.parents):
+        if (d / ".git").exists():
+            return True
+    return False
 
 def _append_search_path(path: str) -> None:
     existing = os.environ.get("AP_EXTRA_SEARCH_PATHS", "")

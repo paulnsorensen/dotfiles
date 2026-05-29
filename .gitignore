@@ -47,19 +47,9 @@ claude/reference/cheese-flair.md
 # Claude Code local state (settings.local.json, specs)
 .claude/
 
-# `ap install` artifacts when run with $PWD as target (e.g. someone runs
-# `dots profile install base` from inside the repo). The proper deploy
-# is `ap install global` to $HOME via chezmoi/lib/install-base-profile.sh;
-# anything that lands here is a leak. Note: `.codex/config.toml` rendered
-# this way contains plaintext API keys — gitignore protects against an
-# accidental `git add -A` exposing them.
-.agent-profile/
-agent-profile/manifest.json
-.codex/
-.cursor/
+# Hallouminate per-repo wiki corpus (runtime state written by the
+# hallouminate MCP, not source).
 .hallouminate/wiki/
-.github/skills/
-/opencode.json
 
 # Cursor IDE runtime / install-cursor-plugin output that lands here when
 # someone opens the repo's `cursor/` subdir as a workspace (Cursor treats
