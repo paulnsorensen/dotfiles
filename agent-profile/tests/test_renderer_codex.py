@@ -619,3 +619,67 @@ def test_no_hand_rolled_escaping_in_source():
         assert forbidden not in code, f"hand-rolled/shell escaping leaked: {forbidden!r}"
     # tomlkit must be the TOML substrate (an import name token).
     assert "tomlkit" in code
+
+
+def test_scrubbed_credential_value_never_appears_in_rendered_file(
+    renderer, src, target, monkeypatch, tmp_path
+):
+    """SECURITY: the scrub's whole purpose is keeping the credential VALUE off
+    disk. Asserting the key is absent from the parsed env table is not enough —
+    a regression that wrote the value to a comment, a differently-named key, or
+    the args list would still pass that check. Assert the secret substring is
+    absent from the entire raw config.toml text."""
+    secret = "ctx7sk-dummy-never-leak-this"
+    dotfiles = tmp_path / "df"
+    dotfiles.mkdir()
+    (dotfiles / ".env").write_text(f"CONTEXT7_API_KEY={secret}\n")
+    monkeypatch.setenv("DOTFILES_DIR", str(dotfiles))
+    monkeypatch.delenv("AP_CODEX_INHERIT_ENV", raising=False)
+
+    m = _manifest(
+        src,
+        mcps=[
+            {
+                "name": "context7",
+                "command": "npx",
+                "env": {"CONTEXT7_API_KEY": secret, "SERENA_MUX_HARNESS": "codex"},
+                "harnesses": ["codex"],
+            }
+        ],
+    )
+    renderer.render(m, target)
+    text = (target / ".codex" / "config.toml").read_text()
+    assert secret not in text
+    # The non-credential key still bakes — proves we scrubbed the secret, not
+    # the whole env block by accident.
+    assert "SERENA_MUX_HARNESS" in text
+
+
+def test_scrub_resolves_dotenv_via_home_fallback_when_dotfiles_dir_unset(
+    renderer, src, target, monkeypatch, tmp_path
+):
+    """WHY: `_inherited_env_keys` falls back to `$HOME/Dev/dotfiles/.env` when
+    DOTFILES_DIR is unset. The fallback must actually load that file — a broken
+    fallback would silently bake every credential (scrub becomes a no-op)."""
+    secret = "tok-dummy-fallback-value"
+    home = tmp_path / "home"
+    (home / "Dev" / "dotfiles").mkdir(parents=True)
+    (home / "Dev" / "dotfiles" / ".env").write_text(f"TODOIST_API_KEY={secret}\n")
+    monkeypatch.delenv("DOTFILES_DIR", raising=False)
+    monkeypatch.delenv("AP_CODEX_INHERIT_ENV", raising=False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    m = _manifest(
+        src,
+        mcps=[
+            {
+                "name": "todoist",
+                "command": "npx",
+                "env": {"TODOIST_API_KEY": secret},
+                "harnesses": ["codex"],
+            }
+        ],
+    )
+    renderer.render(m, target)
+    text = (target / ".codex" / "config.toml").read_text()
+    assert secret not in text

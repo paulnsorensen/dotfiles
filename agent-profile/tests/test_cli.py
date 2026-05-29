@@ -288,6 +288,39 @@ def test_install_guard_silent_when_cwd_not_in_git_repo(
     assert (staging / ".claude/agents/reviewer.md").is_file()
 
 
+def test_install_guard_fires_in_git_subdirectory(
+    env, capsys, stub_renderers, monkeypatch
+):
+    """WHY: _within_git_repo walks ancestors, not just cwd — the real footgun
+    is running `ap install foo` from a nested dir inside the repo, not the repo
+    root. A guard that only checked cwd would miss every subdirectory case."""
+    make_basic_profile(env.profiles, "foo")
+    repo = env.tmp / "somerepo"
+    (repo / ".git").mkdir(parents=True)
+    nested = repo / "pkg" / "sub"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+    assert run(["install", "foo"]) == 1
+    assert "git working tree" in capsys.readouterr().err
+    assert not (nested / ".agent-profile").exists()
+
+
+def test_install_guard_fires_when_git_is_a_file_worktree(
+    env, capsys, stub_renderers, monkeypatch
+):
+    """WHY: the docstring claims worktrees (where .git is a FILE, not a dir)
+    are also caught. A `.git`-dir-only check would silently dump render output
+    into a linked worktree — exactly the tree this guard protects."""
+    make_basic_profile(env.profiles, "foo")
+    worktree = env.tmp / "wt"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /some/repo/.git/worktrees/wt\n")
+    monkeypatch.chdir(worktree)
+    assert run(["install", "foo"]) == 1
+    assert "git working tree" in capsys.readouterr().err
+    assert not (worktree / ".agent-profile").exists()
+
+
 # ─── launch arg plumbing (regression: install name, not harness) ──────
 
 
