@@ -16,10 +16,13 @@ const FILE_EDITING_TOOLS = new Set([
   'Edit', 'Write', 'MultiEdit', 'mcp__tilth__tilth_write',
 ]);
 
-// Linters that exit non-zero when residual (non-auto-fixable) findings remain
-// after --fix. That exit is expected, not a failure — stay silent so we don't
-// nag on every markdown write (silent fix-only).
-const SILENT_NONZERO_EXIT = new Set(['markdownlint-cli2']);
+// Linters that exit with a specific non-zero code when residual
+// (non-auto-fixable) findings remain after --fix. That exact code is
+// expected, not a failure — stay silent so we don't nag on every markdown
+// write (silent fix-only). Any OTHER exit code (bad config, runtime crash,
+// missing binary) still reports, so real breakage isn't masked.
+// markdownlint-cli2 exits 1 on residual lint findings; 2 on usage/config errors.
+const EXPECTED_NONZERO_EXIT = { 'markdownlint-cli2': 1 };
 
 // Collect every file an edit touched, resolved to absolute paths.
 // Edit/Write/MultiEdit carry a single file_path; tilth_write is a batch and
@@ -69,7 +72,7 @@ function formatFile(filePath, cwd) {
   try {
     execFileSync(bin, args, { stdio: 'pipe', timeout: 8000, cwd });
   } catch (err) {
-    if (SILENT_NONZERO_EXIT.has(bin)) return;
+    if (EXPECTED_NONZERO_EXIT[bin] === err.status) return;
     const msg = err.stderr ? err.stderr.toString().trim() : err.message;
     process.stderr.write(`[auto-format] ${bin} failed on ${path.basename(filePath)}: ${msg}\n`);
   }

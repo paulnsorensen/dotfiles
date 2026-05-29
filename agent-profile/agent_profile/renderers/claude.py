@@ -53,6 +53,13 @@ _MCP_DEFAULT = ("claude", "codex", "opencode")
 # `(.harnesses // ["claude"])`).
 _HOOK_DEFAULT = ("claude",)
 
+# Events for which Claude writes a `matcher` field into the outer hook block
+# (a tool-name regex). Mirrors `_hook_event_uses_matcher` for claude in
+# agents/hooks/lib.sh — keep the two in sync. For any other event (e.g. a
+# SessionStart entry carrying a codex-only source matcher) Claude ignores the
+# matcher, so it is dropped on write rather than emitted as a dead field.
+_CLAUDE_MATCHER_EVENTS = frozenset({"PreToolUse", "PostToolUse"})
+
 # Name of the directory marketplace that backs the rendered plugin tree.
 # Matches the hardcoded ``local`` path segment in ``plugin_dir`` below and
 # the marketplace key profiles register (``global@local``). A Claude
@@ -313,7 +320,7 @@ class ClaudeRenderer:
                 inner["async"] = item["async"]
             entry = (
                 {"matcher": matcher, "hooks": [inner]}
-                if matcher
+                if matcher and event in _CLAUDE_MATCHER_EVENTS
                 else {"hooks": [inner]}
             )
             hook_entries.setdefault(event, []).append(entry)

@@ -7,11 +7,13 @@
 # hidden environment beyond that.
 #
 # Drift signature (per entry, per harness):
-#   <deployed-script-path>\t<event>\t<matcher>\t<timeout>
-# Comparable across harnesses; recomputed from desired state and from the
-# harness's persisted state, then equality-checked. `event` is part of the
-# signature so two entries pointing at the same script but at different
-# event slots don't collide on drift detection.
+#   <resolved-command>\t<event>\t<matcher>\t<timeout>\t<async>
+# `resolved-command` is the final command string — `bash "<deployed-path>"`
+# for a `script` entry, or the literal `command` verbatim. Comparable across
+# harnesses; recomputed from desired state and from the harness's persisted
+# state, then equality-checked. `event` is part of the signature so two
+# entries pointing at the same command but at different event slots don't
+# collide on drift detection. `async` is claude-only (empty for codex).
 #
 # Claude backend reconciles claude/settings.json (in-repo, jq in-place).
 # Codex backend reconciles ~/.codex/config.toml (yq -p=toml -o=toml).
@@ -34,15 +36,6 @@ set -euo pipefail
 # backend will still happily write the entry if a registry author opts
 # codex in, but at run time codex won't trigger it.
 HOOK_EVENTS_VALID=(SessionStart UserPromptSubmit PreToolUse PostToolUse Stop PermissionRequest)
-
-# Returns 0 iff event is in the supported set.
-_hook_event_valid() {
-    local e="$1" v
-    for v in "${HOOK_EVENTS_VALID[@]}"; do
-        [[ "$v" == "$e" ]] && return 0
-    done
-    return 1
-}
 
 # Returns 0 iff the harness writes a `matcher` field into the outer block
 # for that (event, harness) pair.

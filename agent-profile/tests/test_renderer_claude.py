@@ -582,6 +582,39 @@ hooks:
     assert not hooks_dir.exists() or not any(hooks_dir.iterdir())
 
 
+def test_hook_matcher_dropped_for_non_matcher_event(env):
+    """A SessionStart entry carrying a matcher (the codex-only source regex,
+    e.g. cheese-flair's "startup|resume") must render WITHOUT a matcher on the
+    Claude side — Claude only consumes matchers for PreToolUse/PostToolUse.
+    Locks parity with `_hook_event_uses_matcher` in agents/hooks/lib.sh so the
+    live `ap` render path doesn't leak a dead matcher field Claude ignores."""
+    yaml_text = """\
+name: matcherhook
+description: SessionStart hook that carries a (codex-only) matcher
+hooks:
+  - event: SessionStart
+    matcher: "startup|resume"
+    command: "echo hi"
+    harnesses: [claude]
+  - event: PreToolUse
+    matcher: "Bash"
+    command: "echo bash"
+    harnesses: [claude]
+"""
+    profile_dir = write_profile(env.profiles, "matcherhook", yaml_text)
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().render(manifest, env.target)
+    data = json.loads(
+        (env.target / ".claude/plugins/local/matcherhook/plugin.json").read_text()
+    )
+    session_block = data["hooks"]["SessionStart"][0]
+    assert "matcher" not in session_block, (
+        "SessionStart matcher should be dropped on the Claude render"
+    )
+    # PreToolUse is a matcher event — its matcher must survive.
+    assert data["hooks"]["PreToolUse"][0]["matcher"] == "Bash"
+
+
 def test_hook_with_nonexistent_script_raises(env):
     yaml_text = """\
 name: ghosthook

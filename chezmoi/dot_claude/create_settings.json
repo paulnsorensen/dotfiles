@@ -138,38 +138,6 @@
             "timeout": 5
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/home/paul/.local/bin/moshi-hook' claude-hook",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/home/paul/.local/bin/moshi-hook' claude-hook",
-            "timeout": 300,
-            "async": false
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/home/paul/.local/bin/moshi-hook' claude-hook",
-            "async": true
-          }
-        ]
       }
     ]
   },
