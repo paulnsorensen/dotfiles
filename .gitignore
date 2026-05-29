@@ -20,6 +20,12 @@ iterm2/com.googlecode.iterm2.plist
 /reference/
 !claude/reference/
 
+# Local-only authored artifacts (not yet promoted to tracked source).
+# .ignore = ripgrep/hallouminate ignore-crate file (re-includes .cheese/
+# scratch for local semantic indexing); ROADMAP.md = strategic direction doc.
+.ignore
+/ROADMAP.md
+
 
 # Hook dependencies (installed by claude/.sync)
 claude/hooks/node_modules/
@@ -47,9 +53,10 @@ claude/reference/cheese-flair.md
 # Claude Code local state (settings.local.json, specs)
 .claude/
 
-# Hallouminate per-repo wiki corpus (runtime state written by the
-# hallouminate MCP, not source).
-.hallouminate/wiki/
+# Hallouminate per-repo config + wiki corpus. The wiki/ subdir is runtime
+# state; config.toml is local indexing config not yet promoted to tracked.
+# Ignoring the whole dir for now (revisit if config.toml becomes shared).
+.hallouminate/
 
 # Cursor IDE runtime / install-cursor-plugin output that lands here when
 # someone opens the repo's `cursor/` subdir as a workspace (Cursor treats
