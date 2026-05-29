@@ -55,6 +55,7 @@ packages:
   - gettext
   - taf2/tap/mdvi
   - anomalyco/tap/opencode                    # open-source AI coding agent (fresher than homebrew-core)
+  - charmbracelet/tap/crush                   # Charm terminal AI coding agent (MCP via crush.json)
 
   # Rust build acceleration
   - sccache                                   # rustc wrapper for compile caching
