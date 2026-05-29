@@ -94,10 +94,15 @@ log_dir="${SERENA_MUX_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/lo
 # past 2× the cap. Override via SERENA_MUX_LOG_MAX_BYTES (e.g. tests).
 LOG_MAX_BYTES="${SERENA_MUX_LOG_MAX_BYTES:-1048576}"  # 1 MiB
 
-# rss_kb_of <pid> — prints RSS in KB or empty on failure (e.g. sandboxed ps).
+# rss_kb_of <pid> — prints RSS in KB, or "?" when the probe fails (e.g.
+# sandboxed ps). The "?" sentinel keeps the rss_kb= field present and
+# greppable while distinguishing a failed probe from a genuine 0, so
+# downstream parsing never mistakes "no reading" for "RSS was zero".
 # Useful for spotting #1367-shaped runaway growth on a coalesced daemon.
 rss_kb_of() {
-    ps -o rss= -p "$1" 2>/dev/null | awk 'NR==1{print $1}'
+    local kb
+    kb=$(ps -o rss= -p "$1" 2>/dev/null | awk 'NR==1{print $1}')
+    printf '%s' "${kb:-?}"
 }
 
 maybe_rotate_log() {

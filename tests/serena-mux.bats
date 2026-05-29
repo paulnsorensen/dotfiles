@@ -276,9 +276,11 @@ teardown() {
     grep -qE '\[serena-mux\] reuse .*pid=[0-9]+' "$MUX_LOG"
     # The reuse line points at the same port the spawn published.
     grep -q "reuse .*$spawn_port" "$MUX_LOG"
-    # And carries an RSS sample so #1367-shaped runaway growth is visible
-    # in the log without enabling DEBUG.
-    grep -qE '\[serena-mux\] reuse .*rss_kb=[0-9]+' "$MUX_LOG"
+    # And carries the RSS sample from the ps stub (pinned to the stub's
+    # literal so a regression that drops or mangles the real value fails
+    # here instead of passing on any stray digit). The "?" failure
+    # sentinel would also fail this, which is what we want.
+    grep -qE '\[serena-mux\] reuse .*rss_kb=12345' "$MUX_LOG"
 }
 
 @test "serena-mux: logs a 'reap' line when a stale daemon is cleaned up" {
