@@ -35,9 +35,9 @@ teardown() {
 
 # --- Mock helpers ---
 
-# Usage: write_mock_brew [installed_formulae] [installed_casks] [fail_pkg]
+# Usage: write_mock_brew [installed_formulae] [installed_casks] [fail_pkg] [outdated_greedy_casks]
 write_mock_brew() {
-    local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}"
+    local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}" outdated_casks="${4:-}"
     cat > "$MOCK_BIN/brew" << MOCKBREW
 #!/bin/bash
 echo "brew \$*" >> "$BREW_LOG"
@@ -48,6 +48,11 @@ case "\$1" in
         else
             echo "$casks"
         fi
+        ;;
+    outdated)
+        # Only the greedy-cask probe returns names here; bare \`brew outdated\`
+        # in other contexts is unused by sync.sh.
+        echo "$outdated_casks"
         ;;
     tap)
         if [[ \$# -eq 1 ]]; then echo ""; fi
@@ -117,7 +122,7 @@ packages:
   - node: { apt: nodejs }
   - mas: { platform: mac }
   - xclip: { platform: linux }
-  - docker: { source: cask, dev: true, platform: mac }
+  - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false }
   - npm: { platform: linux, dev: true }
   - pyenv: { dev: true }
   - cargo-llvm-cov: { source: cargo }
@@ -507,6 +512,23 @@ MOCKRUSTUP
     assert_success
     grep -q "brew update" "$BREW_LOG"
     grep -q "brew upgrade" "$BREW_LOG"
+}
+
+@test "UPGRADE_MODE excludes greedy:false casks (docker-desktop) from greedy upgrade" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
+    # Both docker-desktop (greedy:false) and cursor (greedy default) report as
+    # greedy-outdated. cursor must be upgraded; docker-desktop must not.
+    write_mock_brew "" "docker-desktop" "" $'docker-desktop\ncursor'
+    write_test_yaml
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    # No blanket greedy upgrade — the exclusion path enumerates instead.
+    ! grep -q "brew upgrade --cask --greedy-auto-updates" "$BREW_LOG"
+    # cursor gets upgraded explicitly; docker-desktop is never passed to upgrade.
+    grep -q "brew upgrade --cask cursor" "$BREW_LOG"
+    ! grep -qE "brew upgrade --cask .*docker-desktop" "$BREW_LOG"
 }
 
 @test "UPGRADE_MODE runs cargo-install-update --all --git instead of per-package --force" {

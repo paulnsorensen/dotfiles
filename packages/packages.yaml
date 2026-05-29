@@ -82,7 +82,7 @@ packages:
   - pyenv: { dev: true }
   - uv
   - rustup: { dev: true }
-  - docker: { source: cask, dev: true, platform: mac }
+  - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app; greedy upgrade triggers repeated sudo prompts
   - npm: { platform: linux, dev: true }       # On mac, npm comes with `brew install node`
 
   # LSP servers (for Claude Code LSP plugins)
