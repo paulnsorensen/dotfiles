@@ -16,6 +16,11 @@ const FILE_EDITING_TOOLS = new Set([
   'Edit', 'Write', 'MultiEdit', 'mcp__tilth__tilth_write',
 ]);
 
+// Linters that exit non-zero when residual (non-auto-fixable) findings remain
+// after --fix. That exit is expected, not a failure — stay silent so we don't
+// nag on every markdown write (silent fix-only).
+const SILENT_NONZERO_EXIT = new Set(['markdownlint-cli2']);
+
 // Collect every file an edit touched, resolved to absolute paths.
 // Edit/Write/MultiEdit carry a single file_path; tilth_write is a batch and
 // carries tool_input.files[].path.
@@ -45,6 +50,8 @@ function formatterFor(filePath) {
     '.sh': ['shfmt', ['-w', filePath]],
     '.zsh': ['shfmt', ['-w', filePath]],
     '.bash': ['shfmt', ['-w', filePath]],
+    '.md': ['markdownlint-cli2', ['--fix', filePath]],
+    '.markdown': ['markdownlint-cli2', ['--fix', filePath]],
   };
   return FORMATTERS[ext] || null;
 }
@@ -62,6 +69,7 @@ function formatFile(filePath, cwd) {
   try {
     execFileSync(bin, args, { stdio: 'pipe', timeout: 8000, cwd });
   } catch (err) {
+    if (SILENT_NONZERO_EXIT.has(bin)) return;
     const msg = err.stderr ? err.stderr.toString().trim() : err.message;
     process.stderr.write(`[auto-format] ${bin} failed on ${path.basename(filePath)}: ${msg}\n`);
   }
