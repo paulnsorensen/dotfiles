@@ -9,6 +9,10 @@
 
 load test_helper
 
+# `run !` (negated assertions below) requires Bats >= 1.5.0; declaring it
+# here silences the BW02 warning and fails loud on an older bats.
+bats_require_minimum_version 1.5.0
+
 setup() {
     setup_test_env
 
@@ -26,6 +30,26 @@ setup() {
     FAKE_BIN="$TEST_HOME/fake-bin"
     mkdir -p "$FAKE_BIN"
     export PATH="$FAKE_BIN:$PATH"
+
+    # Stub ps: serena-mux's rss_kb_of() helper calls `ps -o rss= -p <pid>`.
+    # In sandboxed CI / Claude's bash sandbox the real /bin/ps isn't reachable,
+    # and on the host `ps` may be aliased (e.g. to `procs`) with a different
+    # surface. Hard-pin the response so the rss_kb= field is deterministic.
+    cat >"$FAKE_BIN/ps" <<'EOF'
+#!/usr/bin/env bash
+# Only the `ps -o rss= -p <pid>` shape is exercised by serena-mux. Any other
+# form is unexpected — fall through to silent empty output rather than guess.
+mode=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o) [[ "$2" == "rss=" ]] && mode=rss; shift 2 ;;
+        -p) shift 2 ;;
+        *)  shift ;;
+    esac
+done
+[[ "$mode" == "rss" ]] && echo "12345"
+EOF
+    chmod +x "$FAKE_BIN/ps"
 
     # Stub uvx: record the args + exit 0. Don't actually bridge.
     export MOCK_UVX_LOG="$TEST_HOME/uvx-args.log"
@@ -256,6 +280,35 @@ teardown() {
     grep -qE '\[serena-mux\] reuse .*pid=[0-9]+' "$MUX_LOG"
     # The reuse line points at the same port the spawn published.
     grep -q "reuse .*$spawn_port" "$MUX_LOG"
+    # And carries the RSS sample from the ps stub (pinned to the stub's
+    # literal so a regression that drops or mangles the real value fails
+    # here instead of passing on any stray digit). The "?" failure
+    # sentinel would also fail this, which is what we want.
+    grep -qE '\[serena-mux\] reuse .*rss_kb=12345' "$MUX_LOG"
+}
+
+@test "serena-mux: reuse line falls back to rss_kb=? when ps probe fails" {
+    # Override the setup() ps stub with one that emits nothing — the shape
+    # of a sandboxed / unavailable ps. rss_kb_of() must then emit the "?"
+    # sentinel rather than a bare empty rss_kb= field, so downstream parsing
+    # can tell "probe failed" apart from "RSS was 0".
+    cat >"$FAKE_BIN/ps" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$FAKE_BIN/ps"
+
+    run serena-mux
+    [ "$status" -eq 0 ]
+    run serena-mux
+    [ "$status" -eq 0 ]
+
+    grep -qE '\[serena-mux\] reuse .*rss_kb=\?' "$MUX_LOG"
+    # And never a bare empty value — that's the bug the sentinel prevents.
+    # `run !` so the negation actually fails the test (bare ! is a no-op
+    # in Bats — see SC2314).
+    run ! grep -qE '\[serena-mux\] reuse .*rss_kb= ' "$MUX_LOG"
+    run ! grep -qE '\[serena-mux\] reuse .*rss_kb=$' "$MUX_LOG"
 }
 
 @test "serena-mux: logs a 'reap' line when a stale daemon is cleaned up" {
@@ -272,4 +325,27 @@ teardown() {
     run serena-mux
     [ "$status" -eq 0 ]
     grep -qE "\[serena-mux\] reap .*dead_pid=$old_pid" "$MUX_LOG"
+}
+
+@test "serena-mux: rotates the persistent log when it crosses the size cap" {
+    # Tight cap so one pre-existing log fills it; the next invocation rotates.
+    export SERENA_MUX_LOG_MAX_BYTES=200
+
+    mkdir -p "$SERENA_MUX_LOG_DIR"
+    # Seed the log with >200 bytes of junk so the next invocation crosses
+    # the cap on its pre-write rotation check.
+    printf 'old log line %s\n' {1..30} >"$MUX_LOG"
+    [ "$(wc -c <"$MUX_LOG" | tr -d ' ')" -gt 200 ]
+
+    run serena-mux
+    [ "$status" -eq 0 ]
+
+    # The old contents are now in .1, and the live log only holds this run.
+    [ -f "$MUX_LOG.1" ]
+    grep -q 'old log line 1' "$MUX_LOG.1"
+    # `run !` so the negation fails the test (bare ! is a no-op in Bats —
+    # see SC2314).
+    run ! grep -q 'old log line 1' "$MUX_LOG"
+    # New invocation still logged its spawn line.
+    grep -qE '\[serena-mux\] spawn ' "$MUX_LOG"
 }

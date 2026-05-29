@@ -22,10 +22,16 @@
 #   SERENA_MUX_PROXY_VERSION — pin for mcp-proxy (default: 0.12.0)
 #   SERENA_MUX_LOG_DIR  — dir for the persistent decision log
 #                         (default: ${XDG_STATE_HOME:-~/.local/state}/dotfiles/logs)
+#   SERENA_MUX_LOG_MAX_BYTES — rotate the log once it exceeds this size
+#                         (default: 1048576 = 1 MiB)
 #
 # Persistent log: one line per invocation (spawn|reuse|reap) is appended to
 #   <log dir>/serena-mux.log — always on, so you can confirm coalescing is
 #   working without enabling DEBUG or digging through the harness MCP logs.
+#   The reuse line carries rss_kb=<N> (or rss_kb=? when the ps probe fails)
+#   so daemon memory growth is visible at a glance. The log is rotated to a
+#   single <log>.1 backup when it crosses SERENA_MUX_LOG_MAX_BYTES, bounding
+#   on-disk size at 2× the cap.
 #
 # Exit codes:
 #   0   — bridged stdio cleanly
@@ -89,6 +95,31 @@ trace() {
 # can confirm the mux is coalescing daemons without enabling DEBUG or digging
 # through the harness's MCP stderr capture. Always on; never fatal.
 log_dir="${SERENA_MUX_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/logs}"
+# Cap the persistent log to bound disk growth across long-lived setups.
+# Single .1 backup keeps "grep back through last week" while never growing
+# past 2× the cap. Override via SERENA_MUX_LOG_MAX_BYTES (e.g. tests).
+LOG_MAX_BYTES="${SERENA_MUX_LOG_MAX_BYTES:-1048576}"  # 1 MiB
+
+# rss_kb_of <pid> — prints RSS in KB, or "?" when the probe fails (e.g.
+# sandboxed ps). The "?" sentinel keeps the rss_kb= field present and
+# greppable while distinguishing a failed probe from a genuine 0, so
+# downstream parsing never mistakes "no reading" for "RSS was zero".
+# Useful for spotting #1367-shaped runaway growth on a coalesced daemon.
+rss_kb_of() {
+    local kb
+    kb=$(ps -o rss= -p "$1" 2>/dev/null | awk 'NR==1{print $1}')
+    printf '%s' "${kb:-?}"
+}
+
+maybe_rotate_log() {
+    local f="$log_dir/serena-mux.log" size
+    [[ -f $f ]] || return 0
+    # BSD stat first (macOS host), GNU stat second (linux CI), zero on neither.
+    size=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f" 2>/dev/null || echo 0)
+    (( size > LOG_MAX_BYTES )) || return 0
+    mv -f "$f" "$f.1" 2>/dev/null || true
+}
+
 log() { # <event> <detail...>
     local event=$1
     shift
@@ -97,6 +128,9 @@ log() { # <event> <detail...>
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$event" "$root" "$harness" "$slug" "$*" \
         >>"$log_dir/serena-mux.log" 2>/dev/null || true
 }
+
+# Rotate once per invocation, before any log line writes — cheap stat check.
+maybe_rotate_log
 
 trace "root=$root harness=$harness slug=$slug"
 
@@ -108,7 +142,7 @@ if [[ -f $pidfile ]]; then
     if [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null; then
         daemon_alive=1
         trace "existing daemon alive at pid=$pid"
-        log reuse "pid=$pid port=$(cat "$portfile" 2>/dev/null || true)"
+        log reuse "pid=$pid port=$(cat "$portfile" 2>/dev/null || true) rss_kb=$(rss_kb_of "$pid")"
     else
         trace "stale pidfile (pid=$pid) — cleaning up"
         log reap "dead_pid=$pid"
