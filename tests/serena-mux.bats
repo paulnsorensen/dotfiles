@@ -27,6 +27,26 @@ setup() {
     mkdir -p "$FAKE_BIN"
     export PATH="$FAKE_BIN:$PATH"
 
+    # Stub ps: serena-mux's rss_kb_of() helper calls `ps -o rss= -p <pid>`.
+    # In sandboxed CI / Claude's bash sandbox the real /bin/ps isn't reachable,
+    # and on the host `ps` may be aliased (e.g. to `procs`) with a different
+    # surface. Hard-pin the response so the rss_kb= field is deterministic.
+    cat >"$FAKE_BIN/ps" <<'EOF'
+#!/usr/bin/env bash
+# Only the `ps -o rss= -p <pid>` shape is exercised by serena-mux. Any other
+# form is unexpected — fall through to silent empty output rather than guess.
+mode=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o) [[ "$2" == "rss=" ]] && mode=rss; shift 2 ;;
+        -p) shift 2 ;;
+        *)  shift ;;
+    esac
+done
+[[ "$mode" == "rss" ]] && echo "12345"
+EOF
+    chmod +x "$FAKE_BIN/ps"
+
     # Stub uvx: record the args + exit 0. Don't actually bridge.
     export MOCK_UVX_LOG="$TEST_HOME/uvx-args.log"
     cat >"$FAKE_BIN/uvx" <<EOF
@@ -256,6 +276,9 @@ teardown() {
     grep -qE '\[serena-mux\] reuse .*pid=[0-9]+' "$MUX_LOG"
     # The reuse line points at the same port the spawn published.
     grep -q "reuse .*$spawn_port" "$MUX_LOG"
+    # And carries an RSS sample so #1367-shaped runaway growth is visible
+    # in the log without enabling DEBUG.
+    grep -qE '\[serena-mux\] reuse .*rss_kb=[0-9]+' "$MUX_LOG"
 }
 
 @test "serena-mux: logs a 'reap' line when a stale daemon is cleaned up" {
@@ -272,4 +295,25 @@ teardown() {
     run serena-mux
     [ "$status" -eq 0 ]
     grep -qE "\[serena-mux\] reap .*dead_pid=$old_pid" "$MUX_LOG"
+}
+
+@test "serena-mux: rotates the persistent log when it crosses the size cap" {
+    # Tight cap so one pre-existing log fills it; the next invocation rotates.
+    export SERENA_MUX_LOG_MAX_BYTES=200
+
+    mkdir -p "$SERENA_MUX_LOG_DIR"
+    # Seed the log with >200 bytes of junk so the next invocation crosses
+    # the cap on its pre-write rotation check.
+    printf 'old log line %s\n' {1..30} >"$MUX_LOG"
+    [ "$(wc -c <"$MUX_LOG" | tr -d ' ')" -gt 200 ]
+
+    run serena-mux
+    [ "$status" -eq 0 ]
+
+    # The old contents are now in .1, and the live log only holds this run.
+    [ -f "$MUX_LOG.1" ]
+    grep -q 'old log line 1' "$MUX_LOG.1"
+    ! grep -q 'old log line 1' "$MUX_LOG"
+    # New invocation still logged its spawn line.
+    grep -qE '\[serena-mux\] spawn ' "$MUX_LOG"
 }
