@@ -3,7 +3,6 @@
 # Format: <plugin>@<marketplace>
 # Marketplaces (all registered in settings.json:extraKnownMarketplaces or built-in):
 #   - claude-plugins-official:    Official workflow plugins (anthropics/claude-code-plugins)
-#   - claude-hud:                 Statusline HUD (jarrodwatts/claude-hud)
 #   - todoist-flow:               In-repo Todoist productivity plugin (directory source)
 #   - local:                      Out-of-repo local plugins; `path:` resolves the source dir
 #
@@ -40,11 +39,6 @@ plugins:
 
   skill-creator@claude-plugins-official:
     description: Guided skill creation workflow with component design, implementation, and validation
-    scope: user
-    load: true
-
-  claude-hud@claude-hud:
-    description: Real-time statusline HUD — context usage, rate limits, active tools, agents, tasks
     scope: user
     load: true
 

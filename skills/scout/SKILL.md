@@ -3,12 +3,11 @@ name: scout
 model: haiku
 allowed-tools: Skill, Bash(ls:*)
 description: >
-  Filesystem exploration. Delegates content/code search to cheese-flow's
-  cheez-search (AST-aware via tilth MCP). Keeps eza directory listings for
-  human-friendly tree views with git status. Use when the user says "search
-  files", "find by metadata", "tree view", "list directory with git status",
-  or invokes /scout. For symbol/usage/structural search, the work is done by
-  cheez-search — this skill is a thin pointer.
+  Filesystem exploration with human-friendly eza tree views and git status;
+  delegates content/code search to cheez-search (AST-aware via tilth). Use when
+  the user says "search files", "find by metadata", "tree view", "list directory
+  with git status", or invokes /scout. Do NOT use for symbol, usage, or
+  structural code search — that's cheez-search.
 ---
 
 # scout

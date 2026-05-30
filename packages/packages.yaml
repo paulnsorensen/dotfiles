@@ -22,6 +22,7 @@ packages:
   - fzf
   - gh
   - shellcheck
+  - bats-core: { apt: bats }                  # bats test runner (tests/*.bats); brew formula is bats-core, apt pkg is bats
   - tree
   - htop
   - ripgrep
@@ -55,6 +56,7 @@ packages:
   - gettext
   - taf2/tap/mdvi
   - anomalyco/tap/opencode                    # open-source AI coding agent (fresher than homebrew-core)
+  - charmbracelet/tap/crush                   # Charm terminal AI coding agent (MCP via crush.json)
 
   # Rust build acceleration
   - sccache                                   # rustc wrapper for compile caching
@@ -81,7 +83,7 @@ packages:
   - pyenv: { dev: true }
   - uv
   - rustup: { dev: true }
-  - docker: { source: cask, dev: true, platform: mac }
+  - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app; greedy upgrade triggers repeated sudo prompts
   - npm: { platform: linux, dev: true }       # On mac, npm comes with `brew install node`
 
   # LSP servers (for Claude Code LSP plugins)

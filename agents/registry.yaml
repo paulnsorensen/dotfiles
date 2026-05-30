@@ -1,0 +1,170 @@
+# agents/registry.yaml — the cheese sub-agent definitions.
+#
+# Single source of truth for the cheese sub-agents. Edited via
+# `agent-edit`; expanded into the `base` profile (and any profile that
+# declares `registries: { agents: agents/registry.yaml }`) by ap's ingest
+# layer, then rendered into every harness by the five renderers.
+#
+# Bodies are instruction-only Markdown at body_path (frontmatter stripped);
+# all metadata lives here. tools/disallowedTools are LISTS (renderers join
+# to CSV for claude/cursor and derive sandbox/permission for codex/opencode).
+# models is per-harness; color/effort/skills are Claude-honored fields.
+agents:
+  fromage-age-arch:
+    description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
+    models:
+      claude: sonnet
+    disallowedTools:
+    - Edit
+    - NotebookEdit
+    color: red
+    effort: high
+    skills:
+    - scout
+    - cheese-flow:cheez-search
+    body_path: agents/agent_definitions/fromage-age-arch.md
+  fromage-age-history:
+    description: Git history analyst. Produces per-file risk scores that the orchestrator uses to adjust sibling findings. Does NOT find bugs or architecture issues — only outputs score modifiers.
+    models:
+      claude: haiku
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - WebSearch
+    - WebFetch
+    - Agent
+    color: red
+    effort: high
+    skills:
+    - scout
+    body_path: agents/agent_definitions/fromage-age-history.md
+  fromage-fort:
+    description: PR review comment responder. Triages both inline review threads AND PR-level review body comments with 0-100 confidence scoring — fixes high-confidence items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful. Spawnable as a parallel agent for move-my-cheese and cheese-convoy workflows.
+    models:
+      claude: sonnet
+    tools:
+    - Read
+    - Write
+    - Edit
+    - Grep
+    - Glob
+    - Bash
+    skills:
+    - gh
+    - scout
+    - cheese-flow:cheez-write
+    - commit
+    body_path: agents/agent_definitions/fromage-fort.md
+  fromage-pasteurize:
+    description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Read-only. Returns stake-grouped findings (high/medium) with file:line citations and one-line recommendations — ~2 KB digest, no severity rewriting, no auto-fixes. Used as an easy-cheese fork target when /age needs evidence on the security dimension.
+    models:
+      claude: sonnet
+    disallowedTools:
+    - Write
+    - Edit
+    - NotebookEdit
+    - AskUserQuestion
+    color: red
+    skills:
+    - scout
+    body_path: agents/agent_definitions/fromage-pasteurize.md
+  ghostbuster:
+    description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with 0-100 confidence scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
+    models:
+      claude: sonnet
+    disallowedTools:
+    - Edit
+    - NotebookEdit
+    - WebSearch
+    - WebFetch
+    - AskUserQuestion
+    - Write
+    body_path: agents/agent_definitions/ghostbuster.md
+  nih-scanner:
+    description: Structural NIH pattern scanner. Uses Serena MCP and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
+    models:
+      claude: sonnet
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - WebSearch
+    - WebFetch
+    - AskUserQuestion
+    skills:
+    - cheese-flow:cheez-search
+    body_path: agents/agent_definitions/nih-scanner.md
+  ricotta-reducer:
+    description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with 0-100 confidence scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
+    models:
+      claude: sonnet
+    tools:
+    - Read
+    - Grep
+    - Glob
+    - Bash
+    - Agent
+    - mcp__serena__*
+    skills:
+    - scout
+    - de-slop
+    body_path: agents/agent_definitions/ricotta-reducer.md
+  roquefort-wrecker:
+    description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with 0-100 confidence scoring per finding.
+    models:
+      claude: haiku
+    tools:
+    - Read
+    - Write
+    - Grep
+    - Glob
+    - Bash
+    - mcp__serena__*
+    skills:
+    - scout
+    body_path: agents/agent_definitions/roquefort-wrecker.md
+  duckdb-expert:
+    description: Read-only DuckDB analyst for the Claude Code session-analytics database. Runs the usage/tools/friction skill-audit query packs (from the session-analytics skill) or ad-hoc SQL and returns a structured ~2 KB summary. Built for context isolation — keeps raw query output out of the parent's window. Used by skill-improver Dimension 7.
+    models:
+      claude: haiku
+      codex: gpt-5-mini
+    tools:
+    - Bash
+    - Read
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - Agent
+    - WebSearch
+    - WebFetch
+    skills:
+    - session-analytics
+    body_path: agents/agent_definitions/duckdb-expert.md
+  whey-drainer:
+    description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — call from /cook taste-test, /press, or /cure post-fix to gate the next step on test pass. Does NOT write tests.
+    models:
+      claude: haiku
+    tools:
+    - Bash
+    - Read
+    - Glob
+    - Grep
+    skills:
+    - scout
+    body_path: agents/agent_definitions/whey-drainer.md
+  worktree-triage:
+    description: Analyzes WARN/DIRTY worktrees to recommend keep, archive, or remove. Checks commit content, diffs, PR status, and staleness to make informed triage decisions. Interviews the user on DIRTY worktrees with unique changes.
+    models:
+      claude: sonnet
+    tools:
+    - Bash
+    - Read
+    - Grep
+    - Glob
+    - AskUserQuestion
+    skills:
+    - scout
+    - gh
+    body_path: agents/agent_definitions/worktree-triage.md

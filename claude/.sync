@@ -12,6 +12,11 @@ mkdir -p "$CLAUDE_DIR"
 #   - plugins/  — Claude uses that path as plugin cache
 #   - profiles/ — retired; scoped profiles moved to profiles/<name>/profile.yaml
 #                 (repo root) and deploy/launch via the `ap` tool (dots profile).
+#   - agents/   — the cheese sub-agents now live in agents/registry.yaml and
+#                 render into every harness via the `base` profile (`ap`), the
+#                 same path mcp/hooks/skills take. The legacy ~/.claude/agents
+#                 symlink is removed below; ap writes the real files to
+#                 ~/.claude/agents/<name>.md (user-scoped) + the plugin tree.
 #   - skills/   — copied (not symlinked) by chezmoi; gh-installed skills drop
 #                 real dirs alongside without fighting a directory symlink.
 #   - CLAUDE.md, RTK.md — copied (not symlinked) by chezmoi via
@@ -20,19 +25,22 @@ mkdir -p "$CLAUDE_DIR"
 #   - mcp/, hooks registry — the per-type registries live under agents/; the
 #                 registry-derived `base` profile is rendered into every harness
 #                 by chezmoi's run_onchange_after_install-base-profile.sh.tmpl.
+#   - settings.json — chezmoi/dot_claude/create_settings.json seeds it once.
+#                 `ap install global` (driven by run_onchange_after_install-base-profile)
+#                 then jq-mutates the live ~/.claude/settings.json to add the
+#                 `base@local` marketplace + enabledPlugins entry, preserving
+#                 user-managed siblings. The legacy committed claude/settings.json
+#                 is gone; a one-time `run_once_before_migrate-claude-settings`
+#                 chezmoi script unlinks any stale symlink before the seed runs.
 #
 # `hooks/`, `lib/`, and `reference/` STAY symlinked because they still hold
-# Claude-only assets (auto-format.js, sliced-bread.md, …). The cheese-flair
-# trio (session-start-cheese-flair.sh, cheese-flair.sh, cheese-flair.md) lives
-# canonically under agents/ and is deployed by the base-profile render. Because
-# the Claude side writes through the directory symlinks above, the regenerated
-# copies reappear inside claude/{hooks,lib,reference}/ — those three paths are
-# gitignored.
+# Claude-only assets (auto-format.js, sliced-bread.md, …). The base plugin's
+# self-locating SessionStart hook is now owned by the plugin tree at
+# ~/.claude/plugins/local/global/hooks/ (deployed by `ap`); no legacy
+# write-through-symlinks happens.
 configs=(
-  agents
   commands
   hooks
-  settings.json
   reference
 )
 
@@ -127,6 +135,14 @@ fi
 if [[ -L "$CLAUDE_DIR/mcp" ]]; then
   rm "$CLAUDE_DIR/mcp"
   echo "  Removed legacy ~/.claude/mcp symlink"
+fi
+
+# Clean up the legacy ~/.claude/agents symlink — agents moved to
+# agents/registry.yaml and now render through `ap` (base profile) as real
+# files. Leaving the symlink would shadow the rendered ~/.claude/agents tree.
+if [[ -L "$CLAUDE_DIR/agents" ]]; then
+  rm "$CLAUDE_DIR/agents"
+  echo "  Removed legacy ~/.claude/agents symlink (agents now render via ap)"
 fi
 
 # Drop stale per-project entries from ~/.claude.json (worktrees that no

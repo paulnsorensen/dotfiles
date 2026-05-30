@@ -7,14 +7,19 @@
 # hidden environment beyond that.
 #
 # Drift signature (per entry, per harness):
-#   <deployed-script-path>\t<matcher>\t<timeout>
-# Comparable across harnesses; recomputed from desired state and from the
-# harness's persisted state, then equality-checked.
+#   <resolved-command>\t<event>\t<matcher>\t<timeout>\t<async>
+# `resolved-command` is the final command string — `bash "<deployed-path>"`
+# for a `script` entry, or the literal `command` verbatim. Comparable across
+# harnesses; recomputed from desired state and from the harness's persisted
+# state, then equality-checked. `event` is part of the signature so two
+# entries pointing at the same command but at different event slots don't
+# collide on drift detection. `async` is claude-only (empty for codex).
 #
 # Claude backend reconciles claude/settings.json (in-repo, jq in-place).
 # Codex backend reconciles ~/.codex/config.toml (yq -p=toml -o=toml).
-# Only the SessionStart slot for each registered hook is managed; all
-# other top-level keys and unmanaged hook entries are preserved.
+# Only the event slot named by each registered hook is managed; all other
+# top-level keys and unmanaged hook entries (other events, other commands)
+# are preserved.
 #
 # shellcheck disable=SC2034,SC2329
 #   SC2034: exports consumed by sync-common.sh
@@ -22,17 +27,42 @@
 
 set -euo pipefail
 
+# Supported hook event types. Adding a new event needs:
+#   1) Bats coverage for the new event in tests/agents-hooks-sync.bats.
+#   2) If the harness writes a matcher field into the outer block for the
+#      new event, extend _hook_event_uses_matcher accordingly.
+#
+# PermissionRequest is claude-only — codex doesn't fire it. The codex
+# backend will still happily write the entry if a registry author opts
+# codex in, but at run time codex won't trigger it.
+HOOK_EVENTS_VALID=(SessionStart UserPromptSubmit PreToolUse PostToolUse Stop PermissionRequest)
+
+# Returns 0 iff the harness writes a `matcher` field into the outer block
+# for that (event, harness) pair.
+#   claude — PreToolUse / PostToolUse (matcher = tool-name regex).
+#            SessionStart, UserPromptSubmit, Stop have no matcher.
+#   codex  — SessionStart (matcher = source regex: startup|resume|clear) and
+#            PreToolUse / PostToolUse (matcher = tool-name regex).
+# Anything not listed here writes the inner hook entry without a matcher
+# wrapper, and any registry-provided matcher is silently dropped for that
+# (event, harness) pair.
+_hook_event_uses_matcher() {
+    local event="$1" harness="$2"
+    case "$harness:$event" in
+        claude:PreToolUse|claude:PostToolUse) return 0 ;;
+        codex:SessionStart|codex:PreToolUse|codex:PostToolUse) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # ─── registry filtering ─────────────────────────────────────────────────
 #
-# Asserts `event == SessionStart` on every entry. The backends below only
-# wire the SessionStart slot; routing a `PostToolUse` entry through them
-# would silently land in the wrong slot. When a second event type ships,
-# parameterise the slot in the backends and drop this guard at the same
-# time.
+# Validates that every entry declares a known `event`, then filters to the
+# subset that opts into the requested harness.
 
 hook_filter_for_harness() {
     local harness="$1" json="$2"
-    local missing bad
+    local missing bad_name bad_event both_set neither_set
     # Require `event` explicitly — silently defaulting it would let a typo
     # ("evnt: PostToolUse") land in the SessionStart slot.
     missing=$(jq -r <<<"$json" '
@@ -43,13 +73,40 @@ hook_filter_for_harness() {
         echo -e "${RED}hook_filter_for_harness: entry '$missing' is missing the required 'event' field.${NC}" >&2
         return 1
     fi
-    bad=$(jq -r <<<"$json" '
+    # Validate event ∈ supported set. The jq passes the set in as JSON so
+    # the check stays in one place — no per-entry bash loop.
+    local valid_events_json
+    valid_events_json=$(printf '%s\n' "${HOOK_EVENTS_VALID[@]}" | jq -R . | jq -s .)
+    bad_name=$(jq -r --argjson valid "$valid_events_json" <<<"$json" '
         to_entries
-        | map(select(.value.event != "SessionStart"))
+        | map(select((.value.event as $e | $valid | index($e)) == null))
         | .[0].key // ""')
-    if [[ -n "$bad" ]]; then
-        echo -e "${RED}hook_filter_for_harness: entry '$bad' has event != SessionStart;${NC}" >&2
-        echo -e "${RED}  only SessionStart is wired in this sync. Add backend support before registering.${NC}" >&2
+    if [[ -n "$bad_name" ]]; then
+        bad_event=$(jq -r --arg n "$bad_name" '.[$n].event' <<<"$json")
+        echo -e "${RED}hook_filter_for_harness: entry '$bad_name' has unsupported event '$bad_event';${NC}" >&2
+        echo -e "${RED}  supported: ${HOOK_EVENTS_VALID[*]}. Add the event to HOOK_EVENTS_VALID and${NC}" >&2
+        echo -e "${RED}  extend _hook_event_uses_matcher if the harness uses a matcher there.${NC}" >&2
+        return 1
+    fi
+    # `script` and `command` are mutually exclusive (script → deployed path,
+    # command → literal external command). Exactly one must be set.
+    both_set=$(jq -r <<<"$json" '
+        to_entries
+        | map(select((.value.script // "") != "" and (.value.command // "") != ""))
+        | .[0].key // ""')
+    if [[ -n "$both_set" ]]; then
+        echo -e "${RED}hook_filter_for_harness: entry '$both_set' sets both 'script' and 'command';${NC}" >&2
+        echo -e "${RED}  these are mutually exclusive — pick one.${NC}" >&2
+        return 1
+    fi
+    neither_set=$(jq -r <<<"$json" '
+        to_entries
+        | map(select((.value.script // "") == "" and (.value.command // "") == ""))
+        | .[0].key // ""')
+    if [[ -n "$neither_set" ]]; then
+        echo -e "${RED}hook_filter_for_harness: entry '$neither_set' has neither 'script' nor 'command';${NC}" >&2
+        echo -e "${RED}  set 'script: <repo-relative-path>' for a deployed hook, or${NC}" >&2
+        echo -e "${RED}  'command: <literal>' for an external binary.${NC}" >&2
         return 1
     fi
     jq --arg h "$harness" <<<"$json" '
@@ -84,113 +141,205 @@ hook_codex_command() {
     printf 'bash "$HOME/.codex/hooks/%s"\n' "$base"
 }
 
+# Resolve the final command string for a registry entry. Mutually exclusive
+# fields:
+#   script:   repo-relative path. Deployed under $HOME/.<harness>/hooks/;
+#             command is `bash "<deployed-path>"`.
+#   command:  literal command. Used verbatim, no deploy. The string is
+#             written into the hook entry as-is (caller is responsible for
+#             any $HOME-style quoting).
+# If both are set the registry is malformed (caller validates before this
+# point). If neither is set, returns empty — *_apply functions guard.
+# shellcheck disable=SC2016
+#   The literal `$HOME` in the claude command is intentional — it is written
+#   verbatim into settings.json and expanded by Claude at runtime, not bash.
+_hook_resolve_command() {
+    local name="$1" harness="$2"
+    local script command_literal
+    script=$(         jq -r --arg n "$name" '.[$n].script  // ""' <<<"$HARNESS_DESIRED_JSON")
+    command_literal=$(jq -r --arg n "$name" '.[$n].command // ""' <<<"$HARNESS_DESIRED_JSON")
+
+    if [[ -n "$command_literal" ]]; then
+        printf '%s\n' "$command_literal"
+        return 0
+    fi
+    if [[ -n "$script" ]]; then
+        case "$harness" in
+            claude) printf 'bash "$HOME/.claude/hooks/%s"\n' "$(basename "$script")" ;;
+            codex)  hook_codex_command "$script" ;;
+            *)      return 1 ;;
+        esac
+        return 0
+    fi
+    return 1
+}
+
 # ─── drift signature ────────────────────────────────────────────────────
+# Five tab-separated fields: <resolved-command> <event> <matcher> <timeout> <async>.
+# `event` is included so two entries with the same command but different
+# event slots don't collide. `matcher` is preserved verbatim from the
+# registry even when the (event, harness) pair doesn't use one — current
+# signature normalizes the same way (see *_current_signature below) so
+# equality still holds in the irrelevant-matcher case.
+# `async` is claude-only; codex ignores. Empty when unset.
 
 hook_desired_signature() {
-    local name="$1" harness="$2" script matcher timeout deployed
-    script=$( jq -r --arg n "$name" '.[$n].script // ""'      <<<"$HARNESS_DESIRED_JSON")
-    matcher=$(jq -r --arg n "$name" '.[$n].matcher // ""'     <<<"$HARNESS_DESIRED_JSON")
-    timeout=$(jq -r --arg n "$name" '.[$n].timeout // empty' <<<"$HARNESS_DESIRED_JSON")
-    deployed=$(hook_deployed_path "$harness" "$script")
-    printf '%s\t%s\t%s\n' "$deployed" "$matcher" "$timeout"
+    local name="$1" harness="$2" event matcher timeout async_field cmd
+    event=$(    jq -r --arg n "$name" '.[$n].event   // ""'      <<<"$HARNESS_DESIRED_JSON")
+    matcher=$(  jq -r --arg n "$name" '.[$n].matcher // ""'      <<<"$HARNESS_DESIRED_JSON")
+    timeout=$(  jq -r --arg n "$name" '.[$n].timeout // empty'   <<<"$HARNESS_DESIRED_JSON")
+    # jq's `//` operator treats both `null` AND `false` as fallback triggers,
+    # so `.async // empty` silently drops `async: false`. has("async") gates
+    # on key presence so an explicit `false` survives.
+    async_field=$(jq -r --arg n "$name" \
+        '.[$n] as $h | if ($h | has("async")) then $h.async | tostring else "" end' \
+        <<<"$HARNESS_DESIRED_JSON")
+    cmd=$(_hook_resolve_command "$name" "$harness") || cmd=""
+    # async is claude-only — codex never writes it, so normalize to empty
+    # when computing the codex desired signature.
+    [[ "$harness" == "codex" ]] && async_field=""
+    printf '%s\t%s\t%s\t%s\t%s\n' "$cmd" "$event" "$matcher" "$timeout" "$async_field"
 }
 
 # ─── Claude: jq over claude/settings.json ───────────────────────────────
 # The settings file is checked into the repo; sync writes it in place.
 
 hook_claude_current_signature() {
-    local name="$1" script matcher timeout deployed cmd current_cmd current_timeout
-    [[ -f "$CLAUDE_SETTINGS_FILE" ]] || { printf '\t\t\n'; return; }
+    local name="$1" event matcher cmd
+    local current_cmd current_matcher current_timeout current_async
+    [[ -f "$CLAUDE_SETTINGS_FILE" ]] || { printf '\t\t\t\t\n'; return; }
 
-    script=$( jq -r --arg n "$name" '.[$n].script // ""'  <<<"$HARNESS_DESIRED_JSON")
+    event=$(  jq -r --arg n "$name" '.[$n].event   // ""' <<<"$HARNESS_DESIRED_JSON")
     matcher=$(jq -r --arg n "$name" '.[$n].matcher // ""' <<<"$HARNESS_DESIRED_JSON")
-    deployed=$(hook_deployed_path claude "$script")
-    cmd="bash \"$deployed\""
+    cmd=$(_hook_resolve_command "$name" claude) || cmd=""
 
-    # Find the first SessionStart entry whose first hook command matches.
-    current_cmd=$(jq -r --arg c "$cmd" '
-        .hooks.SessionStart // []
-        | map(select((.hooks // [])[0].command == $c))
-        | (.[0].hooks // [])[0].command // ""
+    # Find the outer block whose first hook command matches.
+    local block_json
+    block_json=$(jq --arg e "$event" --arg c "$cmd" '
+        .hooks[$e] // []
+        | map(select(((.hooks // [])[0].command // "") == $c))
+        | .[0] // {}
     ' "$CLAUDE_SETTINGS_FILE")
-    current_timeout=$(jq -r --arg c "$cmd" '
-        .hooks.SessionStart // []
-        | map(select((.hooks // [])[0].command == $c))
-        | (.[0].hooks // [])[0].timeout // empty
-    ' "$CLAUDE_SETTINGS_FILE")
+
+    current_cmd=$(jq -r     '(.hooks // [])[0].command // ""'        <<<"$block_json")
+    current_matcher=$(jq -r '.matcher // ""'                         <<<"$block_json")
+    current_timeout=$(jq -r '(.hooks // [])[0].timeout // empty'     <<<"$block_json")
+    # has("async") to preserve a literal `false` on disk; `//` would drop it.
+    current_async=$(jq -r '
+        (.hooks // [])[0] as $h
+        | if ($h != null) and ($h | has("async")) then $h.async | tostring else "" end
+    ' <<<"$block_json")
 
     if [[ -z "$current_cmd" ]]; then
-        printf '\t\t\n'
+        printf '\t\t\t\t\n'
         return
     fi
-    # Claude has no matcher for SessionStart; reuse the desired matcher
-    # for comparison so signatures stay equal once installed.
-    printf '%s\t%s\t%s\n' "$deployed" "$matcher" "$current_timeout"
+    # For (event, claude) pairs that don't use matcher, normalize current
+    # to the desired matcher so signatures stay equal once installed.
+    if ! _hook_event_uses_matcher "$event" claude; then
+        current_matcher="$matcher"
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$cmd" "$event" "$current_matcher" "$current_timeout" "$current_async"
 }
 
-# Upsert the SessionStart hook entry in claude/settings.json. Idempotent.
+# Build the inner hook entry — { type: "command", command, [timeout], [async] }.
+# `async` is claude-only — caller must pass empty for codex (the *_apply
+# functions enforce this by reading the registry async field only for claude).
+_hook_build_inner() {
+    local cmd="$1" timeout="$2" async_field="${3:-}"
+    local inner
+    inner=$(jq -n --arg c "$cmd" '{type: "command", command: $c}')
+    if [[ -n "$timeout" ]]; then
+        inner=$(jq --argjson t "$timeout" '. + {timeout: $t}' <<<"$inner")
+    fi
+    if [[ -n "$async_field" ]]; then
+        inner=$(jq --argjson a "$async_field" '. + {async: $a}' <<<"$inner")
+    fi
+    printf '%s\n' "$inner"
+}
+
+# Build the outer block. Includes `matcher` iff matcher is non-empty AND
+# the (event, harness) pair uses a matcher. The optional async_field is
+# threaded into the inner entry (claude-only; codex callers must pass "").
+_hook_build_outer() {
+    local event="$1" harness="$2" cmd="$3" matcher="$4" timeout="$5" async_field="${6:-}"
+    local inner
+    inner=$(_hook_build_inner "$cmd" "$timeout" "$async_field")
+    if [[ -n "$matcher" ]] && _hook_event_uses_matcher "$event" "$harness"; then
+        jq -n --arg m "$matcher" --argjson h "$inner" '{matcher: $m, hooks: [$h]}'
+    else
+        jq -n --argjson h "$inner" '{hooks: [$h]}'
+    fi
+}
+
+# Upsert the hook entry in claude/settings.json. Idempotent. Strips any
+# prior entry under the same event slot whose first command matches, then
+# appends a fresh one.
 hook_claude_apply() {
-    local name="$1" script timeout deployed cmd
-    script=$( jq -r --arg n "$name" '.[$n].script // ""'      <<<"$HARNESS_DESIRED_JSON")
-    timeout=$(jq -r --arg n "$name" '.[$n].timeout // empty' <<<"$HARNESS_DESIRED_JSON")
-    deployed=$(hook_deployed_path claude "$script")
-    cmd="bash \"$deployed\""
+    local name="$1" event matcher timeout async_field cmd
+    event=$(    jq -r --arg n "$name" '.[$n].event   // ""'     <<<"$HARNESS_DESIRED_JSON")
+    matcher=$(  jq -r --arg n "$name" '.[$n].matcher // ""'     <<<"$HARNESS_DESIRED_JSON")
+    timeout=$(  jq -r --arg n "$name" '.[$n].timeout // empty' <<<"$HARNESS_DESIRED_JSON")
+    # has("async") gates on key presence — `//` would drop async:false (jq
+    # treats false the same as null for the alternative operator).
+    async_field=$(jq -r --arg n "$name" \
+        '.[$n] as $h | if ($h | has("async")) then $h.async | tostring else "" end' \
+        <<<"$HARNESS_DESIRED_JSON")
+    cmd=$(_hook_resolve_command "$name" claude) \
+        || { echo -e "${RED}    hook entry '$name' has neither script nor command${NC}" >&2; return 1; }
 
     [[ -f "$CLAUDE_SETTINGS_FILE" ]] \
         || { echo -e "${RED}    claude settings file not found: $CLAUDE_SETTINGS_FILE${NC}" >&2; return 1; }
 
+    local outer
+    outer=$(_hook_build_outer "$event" claude "$cmd" "$matcher" "$timeout" "$async_field")
+
     local tmp
     tmp=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.json")
-    # Strip any prior entry for this command, then append a fresh one.
-    if [[ -n "$timeout" ]]; then
-        jq --arg c "$cmd" --argjson t "$timeout" '
-            .hooks //= {}
-            | .hooks.SessionStart //= []
-            | .hooks.SessionStart |= (map(select(((.hooks // [])[0].command // "") != $c)))
-            | .hooks.SessionStart += [{ "hooks": [{ "type": "command", "command": $c, "timeout": $t }] }]
-        ' "$CLAUDE_SETTINGS_FILE" > "$tmp"
-    else
-        jq --arg c "$cmd" '
-            .hooks //= {}
-            | .hooks.SessionStart //= []
-            | .hooks.SessionStart |= (map(select(((.hooks // [])[0].command // "") != $c)))
-            | .hooks.SessionStart += [{ "hooks": [{ "type": "command", "command": $c }] }]
-        ' "$CLAUDE_SETTINGS_FILE" > "$tmp"
-    fi
+    jq --arg e "$event" --arg c "$cmd" --argjson b "$outer" '
+        .hooks //= {}
+        | .hooks[$e] //= []
+        | .hooks[$e] |= (map(select(((.hooks // [])[0].command // "") != $c)))
+        | .hooks[$e] += [$b]
+    ' "$CLAUDE_SETTINGS_FILE" > "$tmp"
     mv "$tmp" "$CLAUDE_SETTINGS_FILE"
 }
 
 # ─── Codex: yq over ~/.codex/config.toml ────────────────────────────────
 # Preserves every other top-level key (approval_policy, sandbox_mode,
-# [mcp_servers], …). Only the entries under [[hooks.SessionStart]] with a
-# matching command get rewritten.
+# [mcp_servers], …) and every other event slot. Only the entry under the
+# named event with a matching command gets rewritten.
 
 hook_codex_current_signature() {
-    local name="$1" script matcher timeout deployed cmd current_cmd current_matcher current_timeout
-    [[ -f "$CODEX_CONFIG_FILE" ]] || { printf '\t\t\n'; return; }
+    local name="$1" event matcher cmd
+    local current_cmd current_matcher current_timeout
+    [[ -f "$CODEX_CONFIG_FILE" ]] || { printf '\t\t\t\t\n'; return; }
 
-    script=$( jq -r --arg n "$name" '.[$n].script // ""'  <<<"$HARNESS_DESIRED_JSON")
+    event=$(  jq -r --arg n "$name" '.[$n].event   // ""' <<<"$HARNESS_DESIRED_JSON")
     matcher=$(jq -r --arg n "$name" '.[$n].matcher // ""' <<<"$HARNESS_DESIRED_JSON")
-    cmd=$(hook_codex_command "$script")
-    deployed=$(hook_deployed_path codex "$script")
+    cmd=$(_hook_resolve_command "$name" codex) || cmd=""
 
-    # yq toml→json then jq finds the SessionStart block whose inner hook
-    # command matches.
+    # yq toml→json (scoped to the event slot) then jq finds the matching
+    # block. env() keeps the event name out of the yq path-injection space.
     local block_json
-    block_json=$(yq -p=toml -o=json '.hooks.SessionStart // []' "$CODEX_CONFIG_FILE" 2>/dev/null \
+    block_json=$(HOOK_EVENT="$event" yq -p=toml -o=json '.hooks[env(HOOK_EVENT)] // []' "$CODEX_CONFIG_FILE" 2>/dev/null \
                  | jq --arg c "$cmd" '
                      map(select(((.hooks // [])[0].command // "") == $c))
-                     | .[0] // {}' 2>/dev/null) || { printf '\t\t\n'; return; }
+                     | .[0] // {}' 2>/dev/null) || { printf '\t\t\t\t\n'; return; }
 
-    current_cmd=$(jq -r '(.hooks // [])[0].command // ""'  <<<"$block_json")
-    current_matcher=$(jq -r '.matcher // ""'              <<<"$block_json")
+    current_cmd=$(jq -r     '(.hooks // [])[0].command // ""'    <<<"$block_json")
+    current_matcher=$(jq -r '.matcher // ""'                     <<<"$block_json")
     current_timeout=$(jq -r '(.hooks // [])[0].timeout // empty' <<<"$block_json")
 
     if [[ -z "$current_cmd" ]]; then
-        printf '\t\t\n'
+        printf '\t\t\t\t\n'
         return
     fi
-    printf '%s\t%s\t%s\n' "$deployed" "$current_matcher" "$current_timeout"
+    if ! _hook_event_uses_matcher "$event" codex; then
+        current_matcher="$matcher"
+    fi
+    # async is claude-only — emit empty so codex desired/current signatures match.
+    printf '%s\t%s\t%s\t%s\t\n' "$cmd" "$event" "$current_matcher" "$current_timeout"
 }
 
 # Read the current Codex config and print JSON for the merge step on stdout.
@@ -258,45 +407,31 @@ _hook_codex_validate_writeback() {
     fi
 }
 
-# Build the desired [[hooks.SessionStart]] block as JSON. Branches on
-# matcher/timeout presence because Codex's TOML parser treats `matcher = ""`
-# differently from a missing matcher field.
-_hook_codex_build_session_start_block() {
-    local cmd="$1" matcher="$2" timeout="$3"
-    local inner
-    inner=$(jq -n --arg c "$cmd" '{type: "command", command: $c}')
-    if [[ -n "$timeout" ]]; then
-        inner=$(jq --argjson t "$timeout" '. + {timeout: $t}' <<<"$inner")
-    fi
-    if [[ -n "$matcher" ]]; then
-        jq -n --arg m "$matcher" --argjson h "$inner" '{matcher: $m, hooks: [$h]}'
-    else
-        jq -n --argjson h "$inner" '{hooks: [$h]}'
-    fi
-}
-
 hook_codex_apply() {
-    local name="$1" script matcher timeout cmd
-    script=$( jq -r --arg n "$name" '.[$n].script // ""'      <<<"$HARNESS_DESIRED_JSON")
+    local name="$1" event matcher timeout cmd
+    event=$(  jq -r --arg n "$name" '.[$n].event   // ""'     <<<"$HARNESS_DESIRED_JSON")
     matcher=$(jq -r --arg n "$name" '.[$n].matcher // ""'     <<<"$HARNESS_DESIRED_JSON")
     timeout=$(jq -r --arg n "$name" '.[$n].timeout // empty' <<<"$HARNESS_DESIRED_JSON")
-    cmd=$(hook_codex_command "$script")
+    cmd=$(_hook_resolve_command "$name" codex) \
+        || { echo -e "${RED}    hook entry '$name' has neither script nor command${NC}" >&2; return 1; }
 
     mkdir -p "$(dirname "$CODEX_CONFIG_FILE")"
     [[ -f "$CODEX_CONFIG_FILE" ]] || : > "$CODEX_CONFIG_FILE"
 
-    # Merge plan: TOML → JSON → drop prior entry for this command → append
-    # fresh entry → JSON → TOML. Helpers handle reading the pre-image,
-    # building the desired block, and validating the post-image.
+    # Merge plan: TOML → JSON → drop prior entry for this command (under
+    # the same event slot) → append fresh entry → JSON → TOML. Helpers
+    # handle reading the pre-image, building the desired block, and
+    # validating the post-image. async_field is intentionally "" — codex
+    # doesn't use it.
     local current_json desired_block merged tmp
     current_json=$(_hook_codex_read_current_json) || return 1
-    desired_block=$(_hook_codex_build_session_start_block "$cmd" "$matcher" "$timeout")
+    desired_block=$(_hook_build_outer "$event" codex "$cmd" "$matcher" "$timeout" "")
 
-    merged=$(jq --arg c "$cmd" --argjson b "$desired_block" '
+    merged=$(jq --arg e "$event" --arg c "$cmd" --argjson b "$desired_block" '
         .hooks //= {}
-        | .hooks.SessionStart //= []
-        | .hooks.SessionStart |= (map(select(((.hooks // [])[0].command // "") != $c)))
-        | .hooks.SessionStart += [$b]
+        | .hooks[$e] //= []
+        | .hooks[$e] |= (map(select(((.hooks // [])[0].command // "") != $c)))
+        | .hooks[$e] += [$b]
     ' <<<"$current_json")
 
     tmp=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.toml")

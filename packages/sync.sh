@@ -99,6 +99,13 @@ get_source_pkgs() {
 
 ########## Brew
 
+# Cask names flagged `greedy: false` — excluded from the greedy upgrade pass
+# because they self-update in-app and their cask reinstall triggers repeated
+# sudo/admin prompts (e.g. docker-desktop).
+get_no_greedy_casks() {
+    yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"cask\" and .value.greedy == false) | .key" "$PACKAGES_FILE" 2>/dev/null
+}
+
 # Install brew packages from a list, skipping already-installed ones
 # Usage: brew_install_pkgs <label> <pkg_list> <installed_list> [--cask]
 brew_install_pkgs() {
@@ -119,6 +126,38 @@ brew_install_pkgs() {
             fi
         fi
     done <<< "$pkg_list"
+}
+
+# Greedy-upgrade auto_updates casks, skipping any flagged `greedy: false`.
+# With no exclusions, defer to the cheap one-shot `brew upgrade --cask
+# --greedy-auto-updates`. Otherwise enumerate the greedy-outdated set and
+# upgrade only the casks not on the exclude list.
+upgrade_casks_greedy() {
+    local excluded
+    excluded=$(get_no_greedy_casks)
+
+    if [[ -z "$excluded" ]]; then
+        brew upgrade --cask --greedy-auto-updates </dev/null || log_warning "brew cask upgrade failed"
+        return 0
+    fi
+
+    local outdated to_upgrade=()
+    if ! outdated=$(brew outdated --cask --greedy-auto-updates --quiet 2>/dev/null); then
+        log_warning "brew outdated --cask failed; skipping greedy cask upgrade"
+        return 0
+    fi
+    while IFS= read -r cask; do
+        [[ -z "$cask" ]] && continue
+        if grep -qxF "$cask" <<< "$excluded"; then
+            echo "  + $cask (self-updates; excluded from greedy upgrade)"
+            continue
+        fi
+        to_upgrade+=("$cask")
+    done <<< "$outdated"
+
+    if ((${#to_upgrade[@]})); then
+        brew upgrade --cask "${to_upgrade[@]}" </dev/null || log_warning "brew cask upgrade failed"
+    fi
 }
 
 sync_brew() {
@@ -170,7 +209,12 @@ sync_brew() {
         # `brew upgrade`; --greedy-auto-updates version-checks them and reinstalls
         # only on a diff. Excludes `version :latest` casks (no version to compare,
         # would reinstall every run).
-        brew upgrade --cask --greedy-auto-updates </dev/null || log_warning "brew cask upgrade failed"
+        #
+        # Casks flagged `greedy: false` (e.g. docker-desktop) are excluded from
+        # the greedy pass: they self-update in-app and their cask reinstall
+        # prompts for sudo/admin multiple times. There's no `brew upgrade`
+        # exclude flag, so enumerate the greedy-outdated set and drop them.
+        upgrade_casks_greedy
     fi
 
     log_success "Brew sync complete"
@@ -203,8 +247,7 @@ sync_cargo() {
             fi
         fi
         if ! command -v cargo &>/dev/null; then
-            log_error "cargo not found (install rustup first)"
-            FAILED+=("cargo")
+            log_warning "cargo not found — skipping cargo packages (install rustup to enable)"
             return 0
         fi
     fi
@@ -298,8 +341,7 @@ sync_npm() {
     [[ -z "$npm_pkgs" ]] && return 0
 
     if ! command -v npm &>/dev/null; then
-        log_error "npm not found (install node first)"
-        FAILED+=("npm")
+        log_warning "npm not found — skipping npm packages (install node to enable)"
         return 0
     fi
 
@@ -370,8 +412,7 @@ sync_uv() {
     [[ -z "$uv_pkgs" ]] && return 0
 
     if ! command -v uv &>/dev/null; then
-        log_error "uv not found (install uv first)"
-        FAILED+=("uv")
+        log_warning "uv not found — skipping uv tools (install uv to enable)"
         return 0
     fi
 
@@ -410,8 +451,7 @@ sync_gh_extensions() {
     [[ -z "$ext_pkgs" ]] && return 0
 
     if ! command -v gh &>/dev/null; then
-        log_error "gh not found (install gh first)"
-        FAILED+=("gh")
+        log_warning "gh not found — skipping gh extensions (install gh to enable)"
         return 0
     fi
 
@@ -492,15 +532,67 @@ sync_apt() {
 
 ########## Main
 
-# Bootstrap yq if needed (macOS only)
-if [[ "$PLATFORM" == "Darwin" ]] && ! command -v yq &>/dev/null; then
-    if command -v brew &>/dev/null; then
-        log_info "Bootstrapping yq..."
-        brew install yq
-    else
-        log_warning "yq not found and brew not available"
-        exit 1
+# Bootstrap yq if needed. The whole sync.sh is YAML-driven, so this is
+# load-bearing — we can't parse packages.yaml without it.
+#
+# Linux note: Ubuntu's apt yq is kislyuk/yq (a jq wrapper using jq syntax),
+# NOT Mike Farah's Go yq that this codebase is written against. Skip apt
+# and download the Go binary release into ~/.local/bin instead.
+bootstrap_yq_linux() {
+    local dest="$HOME/.local/bin/yq"
+    local arch
+    case "$(uname -m)" in
+        x86_64)  arch=amd64 ;;
+        aarch64) arch=arm64 ;;
+        *)
+            log_error "Unsupported architecture for yq bootstrap: $(uname -m)"
+            return 1
+            ;;
+    esac
+    mkdir -p "$HOME/.local/bin"
+    local url="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}"
+    log_info "Downloading Mike Farah yq → $dest"
+    if ! curl -fsSL "$url" -o "$dest.tmp"; then
+        log_error "Failed to download yq from $url"
+        rm -f "$dest.tmp"
+        return 1
     fi
+    chmod +x "$dest.tmp"
+    mv "$dest.tmp" "$dest"
+    hash -r 2>/dev/null || true
+}
+
+if ! command -v yq &>/dev/null; then
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        if command -v brew &>/dev/null; then
+            log_info "Bootstrapping yq..."
+            brew install yq
+        else
+            log_warning "yq not found and brew not available"
+            exit 1
+        fi
+    elif [[ "$PLATFORM" == "Linux" ]]; then
+        bootstrap_yq_linux || exit 1
+    fi
+fi
+
+# Bootstrap uv on Linux. uv is the linchpin for the agent-profile / base-
+# profile pipeline (chezmoi's run_onchange_*-{agent,base}-profile.sh.tmpl
+# both bail without it), and it isn't in Ubuntu's apt. Use the official
+# astral installer to drop it into ~/.local/bin without sudo.
+bootstrap_uv_linux() {
+    local bin_dir="$HOME/.local/bin"
+    mkdir -p "$bin_dir"
+    log_info "Bootstrapping uv → $bin_dir"
+    if ! curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$bin_dir" INSTALLER_NO_MODIFY_PATH=1 sh; then
+        log_error "uv install script failed"
+        return 1
+    fi
+    hash -r 2>/dev/null || true
+}
+
+if [[ "$PLATFORM" == "Linux" ]] && ! command -v uv &>/dev/null; then
+    bootstrap_uv_linux || log_warning "Continuing without uv — base-profile render will be skipped"
 fi
 
 if [[ "$PLATFORM" == "Darwin" ]]; then

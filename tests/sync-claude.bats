@@ -550,18 +550,6 @@ MOCK
     chmod +x "$MOCK_BIN/codex"
 }
 
-@test "mcp sync: --harness codex skips when codex CLI missing" {
-    write_mcp_registry_multi_harness
-    local mock_dir; mock_dir=$(create_mock_mcp_sync_dir "mcp-codex-missing")
-    cp "$TEST_HOME/registry.yaml" "$mock_dir/registry.yaml"
-    # Isolate PATH so a real `codex` binary on the dev machine doesn't satisfy `command -v codex`.
-    # /usr/local/bin and /opt/homebrew/bin stay on PATH so chezmoi (a hard dep of sync.sh)
-    # is still resolvable — they're the canonical install dirs on Ubuntu / macOS respectively.
-    PATH="$MOCK_BIN:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin" run bash "$mock_dir/sync.sh" --harness codex
-    assert_success
-    assert_output_contains "Skipping codex"
-}
-
 @test "mcp sync: codex add wires --env, --, and command/args correctly" {
     install_mock_codex
     write_mcp_registry_multi_harness

@@ -17,7 +17,7 @@
 set -eu
 
 # shellcheck disable=SC2016  # literal backticks in the message, not expansion
-PLACEHOLDER='# serena not initialized; run `serena init`, then `chezmoi apply` again'
+STUB_MARKER='# serena not initialized; run `serena init`, then `chezmoi apply` again'
 
 if ! command -v yq >/dev/null 2>&1; then
     # yq is in packages.yaml so this branch is for unusual environments
@@ -29,30 +29,45 @@ fi
 
 existing=$(cat)
 
-# Treat a previously-written placeholder as still-empty so the next apply
+# Treat a previously-written stub as still-empty so the next apply
 # re-bootstraps once serena is on PATH. Without this, yq would later eat
-# the comment and emit a 3-key stub, permanently losing Serena's ~165
+# the comment and emit a 3-key file, permanently losing Serena's ~165
 # lines of inline-documented defaults.
-if [ "$existing" = "$PLACEHOLDER" ]; then
+if [ "$existing" = "$STUB_MARKER" ]; then
     existing=
 fi
 
-# First-time install (or re-bootstrap after placeholder): adopt the live
-# ~/.serena/serena_config.yml if it exists, else run `serena init` to
-# create one. Either way, the resulting config is what we patch. Apply the
-# same placeholder filter to the live-file read — chezmoi may have written
-# the placeholder to disk on a prior apply, so the live file is "ours" too
-# and round-tripping it into yq would emit the 3-key stub we're avoiding.
+# First-time install (or re-bootstrap from the stub): adopt the live
+# ~/.serena/serena_config.yml if it exists with real content, else run
+# `serena init` to create one. Either way, the resulting config is what
+# we patch. The init-gate also triggers when the on-disk file IS the
+# $STUB_MARKER — without that clause, `[ -f $file ]` succeeds on the
+# stub, init is skipped, and the live read just re-loads the same stub,
+# leaving the script in a stable fixed point on a broken state. The
+# trailing filter on the live-file read is still needed: a prior apply
+# may have written the stub, and round-tripping it into yq would emit a
+# 3-key file that destroys Serena's defaults.
 if [ -z "$existing" ] && command -v serena >/dev/null 2>&1; then
-    [ -f "$HOME/.serena/serena_config.yml" ] || serena init >/dev/null 2>&1 || true
-    if [ -f "$HOME/.serena/serena_config.yml" ]; then
-        existing=$(cat "$HOME/.serena/serena_config.yml")
-        [ "$existing" = "$PLACEHOLDER" ] && existing=
+    live=$(cat "$HOME/.serena/serena_config.yml" 2>/dev/null || true)
+    if [ -z "$live" ] || [ "$live" = "$STUB_MARKER" ]; then
+        # `serena init` loads-then-validates the existing config and aborts
+        # with "`projects` key not found" when the file is present but
+        # incomplete — which is exactly the stub we may have written on a
+        # prior apply. It has no --force, so clear the on-disk file first to
+        # give init a clean slate; from absence it writes a full default
+        # config (incl. `projects: []`). Without this rm the init always
+        # fails here and the script re-emits the stub: a stable broken state.
+        rm -f "$HOME/.serena/serena_config.yml"
+        serena init >/dev/null 2>&1 || true
+        live=$(cat "$HOME/.serena/serena_config.yml" 2>/dev/null || true)
+    fi
+    if [ -n "$live" ] && [ "$live" != "$STUB_MARKER" ]; then
+        existing=$live
     fi
 fi
 
 if [ -z "$existing" ]; then
-    printf '%s\n' "$PLACEHOLDER"
+    printf '%s\n' "$STUB_MARKER"
     exit 0
 fi
 

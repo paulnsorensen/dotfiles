@@ -16,7 +16,6 @@ This creates symlinks for `agents/`, `commands/`, `hooks/`, `skills/`, and `sett
 
 ```
 claude/
-├── agents/           # Specialist agents (Fromage pipeline + standalone)
 ├── commands/         # Slash commands (/spec, /wreck, /test, etc.)
 ├── hooks/            # Pre-tool enforcement hooks + lifecycle hooks
 ├── lib/              # Shared sync helpers (sync-common.sh)
@@ -73,9 +72,11 @@ Slash commands invoked with `/command-name`.
 
 ---
 
-## Agents (`agents/`)
+## Agents (`agents/registry.yaml` + `agents/agent_definitions/`)
 
-Specialized agents invoked via Task tool with `subagent_type`.
+Specialized agents invoked via Task tool with `subagent_type`. Defined in the
+repo-root `agents/registry.yaml` (metadata) with bodies under
+`agents/agent_definitions/`, rendered into every harness by `ap`.
 
 ### Review & Test Agents
 
@@ -90,6 +91,7 @@ Specialized agents invoked via Task tool with `subagent_type`.
 | `whey-drainer` | Runs existing tests, returns concise summary |
 | `nih-scanner` | Structural NIH pattern scanner |
 | `worktree-triage` | Stale-worktree triage recommendations |
+| `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by skill-improver) |
 
 All review/analysis agents use 0-100 confidence scoring (>= 50 to surface findings).
 
@@ -175,7 +177,6 @@ Symbol-level code intelligence is provided by the Serena MCP (see
 
 | Plugin | Source | Purpose |
 |--------|--------|---------|
-| `claude-hud` | `jarrodwatts/claude-hud` | Statusline HUD |
 | `cheese-flow` | local (`~/Dev/cheese-flow`) | Cheddar Flow agent pipeline + tilth MCP + cheez-* skills |
 | `todoist-flow` | in-repo (`claude/plugins/local/todoist-flow`) | Todoist productivity suite |
 | `vaudeville` | local (`~/Dev/vaudeville`) | SLM-powered semantic hook enforcement |

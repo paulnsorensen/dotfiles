@@ -95,6 +95,26 @@ def _expand_hooks(
     return out
 
 
+def _expand_agents(
+    path: Path, source_dir: str
+) -> list[dict[str, Any]]:
+    """Normalize the agent registry mapping into a profile item list.
+
+    Same name-keyed shape as the MCP/hook registries: each ``<name>: {...}``
+    entry becomes ``{name, ...fields, _source_dir}`` with ``_source_dir`` set
+    to the repo root so ``body_path`` (e.g. ``agents/agent_definitions/<name>.md``)
+    resolves against the repo, not the profile dir. No env resolution — agent
+    metadata carries no ``${VAR}`` refs."""
+    data = _load_yaml_mapping(path)
+    agents = data.get("agents") or {}
+    out: list[dict[str, Any]] = []
+    for name, body in agents.items():
+        if not isinstance(body, dict):
+            continue
+        out.append({"name": name, **body, "_source_dir": source_dir})
+    return out
+
+
 def _expand_external_skills(
     path: Path, source_dir: str
 ) -> list[dict[str, Any]]:
@@ -102,8 +122,8 @@ def _expand_external_skills(
 
     A source with an explicit ``skills:`` list yields one item per named
     skill (each carrying the shared ``pin``); a source without one yields a
-    single repo-level item whose names are resolved at fetch time by
-    ``gh skill install`` (auto-discovery)."""
+    single repo-level item that fetches every skill in the repo via
+    ``npx skills add --skill '*'`` (the CLI's native auto-discovery)."""
     data = _load_yaml_mapping(path)
     sources = data.get("sources") or {}
     out: list[dict[str, Any]] = []
@@ -179,8 +199,8 @@ def expand_registries(
     repo_root: Path,
     dotenv: dict[str, str],
 ) -> dict[str, list[dict[str, Any]]]:
-    """Expand a ``registries:`` directive into ``{mcps, skills, hooks}`` item
-    lists, each item carrying ``_source_dir = str(repo_root)``.
+    """Expand a ``registries:`` directive into ``{mcps, agents, skills,
+    hooks}`` item lists, each item carrying ``_source_dir = str(repo_root)``.
 
     ``directive`` maps each section to a registry path (or, for skills, a
     list of paths: the external registry plus the local tree). ``dotenv``
@@ -188,11 +208,20 @@ def expand_registries(
     the directive yield empty lists."""
     repo_root = Path(repo_root)
     source_dir = str(repo_root)
-    out: dict[str, list[dict[str, Any]]] = {"mcps": [], "skills": [], "hooks": []}
+    out: dict[str, list[dict[str, Any]]] = {
+        "mcps": [],
+        "agents": [],
+        "skills": [],
+        "hooks": [],
+    }
 
     mcps_path = directive.get("mcps")
     if mcps_path:
         out["mcps"] = _expand_mcps(repo_root / mcps_path, source_dir, dotenv)
+
+    agents_path = directive.get("agents")
+    if agents_path:
+        out["agents"] = _expand_agents(repo_root / agents_path, source_dir)
 
     hooks_path = directive.get("hooks")
     if hooks_path:

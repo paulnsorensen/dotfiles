@@ -9,7 +9,7 @@ This directory contains Claude Code configuration: agents, hooks, MCP servers, p
 ### File Types
 
 - `skills/*/SKILL.md` — Skill definitions with YAML frontmatter (name, allowed-tools, model, description)
-- `claude/agents/*.md` — Agent definitions with YAML frontmatter (skills list, model)
+- `agents/agent_definitions/*.md` — Agent bodies (instruction-only Markdown; metadata lives in `agents/registry.yaml`)
 - `claude/hooks/*.js` — Pre-tool hooks (JavaScript, `module.exports` pattern)
 - `claude/hooks/*.sh` — Lifecycle hooks (shell, runs at session events)
 - `agents/mcp/registry.yaml` — MCP server registry (source of truth, shared across harnesses)

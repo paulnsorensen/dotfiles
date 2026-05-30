@@ -4,6 +4,10 @@
 # whitelist. MCP world is tilth + code-review-graph + context7.
 name: review
 description: Read-only PR review
+# Cheese sub-agents are available in this closed world too
+# (agents are orthogonal to the MCP/skill scope below).
+registries:
+  agents: agents/registry.yaml
 isolated: true
 system_prompt: CLAUDE.md
 tools:
@@ -31,7 +35,6 @@ permissions_deny:
 # Per-profile plugin set (ccp settings-merge parity).
 enabled_plugins:
   "claude-md-management@claude-plugins-official": true
-  "claude-hud@claude-hud": true
   "plugin-dev@claude-plugins-official": false
   "skill-creator@claude-plugins-official": false
   "frontend-design@claude-plugins-official": false

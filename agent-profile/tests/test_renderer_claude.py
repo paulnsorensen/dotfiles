@@ -15,7 +15,8 @@ Two profiles cover the renderer's surface:
   "no ``.mcp.json`` when no claude MCPs" path.
 - ``mcptest``: ``.mcp.json`` projection (claude member kept, codex-only
   dropped) and ``models.claude`` frontmatter on agent + command, with the
-  shared agent staying model-neutral.
+  shared agent carrying the same claude model (it is the user-scoped file
+  Claude resolves ahead of the plugin-scoped copy).
 """
 
 from __future__ import annotations
@@ -448,14 +449,18 @@ def test_mcptest_command_model_frontmatter_byte_parity(rendered_mcptest):
     assert "model: haiku" in on_disk
 
 
-def test_mcptest_shared_agent_is_model_neutral(rendered_mcptest):
+def test_mcptest_shared_agent_carries_claude_model(rendered_mcptest):
     target, _ = rendered_mcptest
     on_disk = (target / ".claude/agents/modeled-agent.md").read_text()
     assert on_disk == _read_golden(
         "mcptest/shared/.claude/agents/modeled-agent.md"
     )
-    # Shared cross-harness file must NOT carry the claude model override.
-    assert "model:" not in on_disk
+    # The user-scoped shared file is the one Claude actually resolves — it
+    # wins over the plugin-scoped copy (priority 4 > 5), so it MUST carry the
+    # claude model (and color/effort/skills). A neutral shared file would
+    # silently drop the agent's pinned model. opencode reads its own
+    # .opencode/agent/ path (unaffected); Cursor overrides via .cursor/agents/.
+    assert "model: opus" in on_disk
 
 
 def test_mcptest_plugin_manifest_has_no_hooks_key(rendered_mcptest):
@@ -513,10 +518,10 @@ def test_nobody_tracked_files_exclude_shared_agent(rendered_nobody):
 # ─── failure paths (fail fast and loud — parity with bash `return 1`) ─
 
 
-def test_hook_with_missing_script_field_raises(env):
+def test_hook_with_neither_script_nor_command_raises(env):
     yaml_text = """\
 name: badhook
-description: hook missing script
+description: hook with no execution target
 hooks:
   - event: PreToolUse
     matcher: "Bash"
@@ -524,8 +529,95 @@ hooks:
 """
     profile_dir = write_profile(env.profiles, "badhook", yaml_text)
     manifest = parse_manifest(profile_dir)
-    with pytest.raises(ValueError, match="missing 'script'"):
+    with pytest.raises(ValueError, match="neither 'script' nor 'command'"):
         ClaudeRenderer().render(manifest, env.target)
+
+
+def test_hook_with_both_script_and_command_raises(env):
+    yaml_text = """\
+name: bothhook
+description: hook setting both script and command
+hooks:
+  - event: SessionStart
+    script: hooks/h.sh
+    command: "/usr/bin/true"
+    harnesses: [claude]
+"""
+    profile_dir = write_profile(
+        env.profiles, "bothhook", yaml_text,
+        {"hooks/h.sh": "#!/usr/bin/env bash\nexit 0\n"},
+    )
+    manifest = parse_manifest(profile_dir)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        ClaudeRenderer().render(manifest, env.target)
+
+
+def test_hook_command_literal_is_used_verbatim(env):
+    """A `command:` hook renders the literal command with async/timeout and
+    no file deploy — the moshi-hook bridge pattern."""
+    yaml_text = """\
+name: cmdhook
+description: literal command hook
+hooks:
+  - event: Stop
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    async: true
+    harnesses: [claude]
+  - event: PermissionRequest
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    timeout: 300
+    async: false
+    harnesses: [claude]
+"""
+    profile_dir = write_profile(env.profiles, "cmdhook", yaml_text)
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().render(manifest, env.target)
+    data = json.loads(
+        (env.target / ".claude/plugins/local/cmdhook/plugin.json").read_text()
+    )
+    stop = data["hooks"]["Stop"][0]
+    assert "matcher" not in stop
+    assert stop["hooks"][0]["command"] == "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    assert stop["hooks"][0]["async"] is True
+    perm = data["hooks"]["PermissionRequest"][0]["hooks"][0]
+    assert perm["timeout"] == 300
+    assert perm["async"] is False
+    # No script file deployed for a command-literal hook.
+    hooks_dir = env.target / ".claude/plugins/local/cmdhook/hooks"
+    assert not hooks_dir.exists() or not any(hooks_dir.iterdir())
+
+
+def test_hook_matcher_dropped_for_non_matcher_event(env):
+    """A SessionStart entry carrying a matcher (the codex-only source regex,
+    e.g. cheese-flair's "startup|resume") must render WITHOUT a matcher on the
+    Claude side — Claude only consumes matchers for PreToolUse/PostToolUse.
+    Locks parity with `_hook_event_uses_matcher` in agents/hooks/lib.sh so the
+    live `ap` render path doesn't leak a dead matcher field Claude ignores."""
+    yaml_text = """\
+name: matcherhook
+description: SessionStart hook that carries a (codex-only) matcher
+hooks:
+  - event: SessionStart
+    matcher: "startup|resume"
+    command: "echo hi"
+    harnesses: [claude]
+  - event: PreToolUse
+    matcher: "Bash"
+    command: "echo bash"
+    harnesses: [claude]
+"""
+    profile_dir = write_profile(env.profiles, "matcherhook", yaml_text)
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().render(manifest, env.target)
+    data = json.loads(
+        (env.target / ".claude/plugins/local/matcherhook/plugin.json").read_text()
+    )
+    session_block = data["hooks"]["SessionStart"][0]
+    assert "matcher" not in session_block, (
+        "SessionStart matcher should be dropped on the Claude render"
+    )
+    # PreToolUse is a matcher event — its matcher must survive.
+    assert data["hooks"]["PreToolUse"][0]["matcher"] == "Bash"
 
 
 def test_hook_with_nonexistent_script_raises(env):

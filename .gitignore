@@ -20,17 +20,25 @@ iterm2/com.googlecode.iterm2.plist
 /reference/
 !claude/reference/
 
+# Local-only authored artifacts (not yet promoted to tracked source).
+# .ignore = ripgrep/hallouminate ignore-crate file (re-includes .cheese/
+# scratch for local semantic indexing); ROADMAP.md = strategic direction doc.
+.ignore
+/ROADMAP.md
+
 
 # Hook dependencies (installed by claude/.sync)
 claude/hooks/node_modules/
 claude/hooks/package-lock.json
 
-# Cheese-flair assets — canonical copy lives under agents/, but chezmoi
-# deploys them into $HOME/.{claude,codex}/{hooks,lib,reference}/. For
-# Claude the deploy path is symlinked from claude/.sync, so chezmoi
-# writes back through the symlink and the regenerated copy reappears
-# inside the repo. Ignore those copies to keep worktrees clean.
-claude/hooks/session-start-cheese-flair.sh
+# Cheese-flair assets — canonical copy lives under agents/. The base
+# plugin tree at ~/.claude/plugins/local/global/{hooks,lib,reference}/
+# is where ap deploys them (NOT through claude/.sync's directory
+# symlinks anymore — settings.json's legacy hook entry was retired in
+# favor of the plugin's own plugin.json wiring). The claude/lib/ +
+# claude/reference/ paths remain ignored here only to keep stragglers
+# from older deploys out of git on hosts that haven't fully migrated.
+# Safe to drop these lines once every host is past the migration.
 claude/lib/cheese-flair.sh
 claude/reference/cheese-flair.md
 
@@ -44,6 +52,19 @@ claude/reference/cheese-flair.md
 
 # Claude Code local state (settings.local.json, specs)
 .claude/
+
+# Hallouminate per-repo config + wiki corpus. The wiki/ subdir is runtime
+# state; config.toml is local indexing config not yet promoted to tracked.
+# Ignoring the whole dir for now (revisit if config.toml becomes shared).
+.hallouminate/
+
+# Cursor IDE runtime / install-cursor-plugin output that lands here when
+# someone opens the repo's `cursor/` subdir as a workspace (Cursor treats
+# it as `~/.cursor/`) or sets CURSOR_HOME wrong. The only intentional tree
+# under cursor/ is plugins/ (the source for cheese-grok et al).
+/cursor/*
+!/cursor/plugins/
+!/cursor/plugins/**
 
 # Claude test sandbox (temporary test files from /test-sandbox skill)
 .claude/testing/

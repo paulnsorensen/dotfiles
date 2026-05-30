@@ -30,6 +30,7 @@ byte-identical to the bash ``jq`` output). No ``jq``/``yq``.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import stat
 from pathlib import Path
@@ -42,6 +43,7 @@ from agent_profile.renderers.base import (
     hooks_for,
     mcp_server_entry,
     mcps_for,
+    read_json_object,
 )
 
 # The bash .mcp.json select() defaults membership to all three of
@@ -50,6 +52,20 @@ _MCP_DEFAULT = ("claude", "codex", "opencode")
 # Hooks default to claude-only membership (matches the bash
 # `(.harnesses // ["claude"])`).
 _HOOK_DEFAULT = ("claude",)
+
+# Events for which Claude writes a `matcher` field into the outer hook block
+# (a tool-name regex). Mirrors `_hook_event_uses_matcher` for claude in
+# agents/hooks/lib.sh — keep the two in sync. For any other event (e.g. a
+# SessionStart entry carrying a codex-only source matcher) Claude ignores the
+# matcher, so it is dropped on write rather than emitted as a dead field.
+_CLAUDE_MATCHER_EVENTS = frozenset({"PreToolUse", "PostToolUse"})
+
+# Name of the directory marketplace that backs the rendered plugin tree.
+# Matches the hardcoded ``local`` path segment in ``plugin_dir`` below and
+# the marketplace key profiles register (``global@local``). A Claude
+# ``directory`` marketplace resolves plugins through a ``marketplace.json``
+# whose ``name`` equals the registered key, so the three must agree.
+_LOCAL_MARKETPLACE = "local"
 
 
 def _dump_json(path: Path, data: object) -> None:
@@ -80,6 +96,8 @@ class ClaudeRenderer:
         self._write_hooks(manifest, plugin_dir, base, profile, out)
         self._write_mcp_json(manifest, plugin_dir, base, out)
         self._write_settings(manifest, plugin_dir, base, out)
+        self._write_local_marketplace(manifest, base, profile, desc)
+        self._merge_root_settings(manifest, base)
 
         # Track the plugin dir root so uninstall removes the whole tree
         # (including empty sub-dirs we mkdir'd above). Matches the bash
@@ -88,10 +106,44 @@ class ClaudeRenderer:
         return out
 
     def clean(self, manifest: Manifest, target: Path) -> None:
-        """No merged-file surgery under this layout (each plugin owns its
-        whole-file artefacts; the CLI's manifest sweep removes them). Matches
-        the bash ``claude_clean``, which is a no-op."""
-        return None
+        """Surgically remove this profile's contributions to the live
+        ``.claude/settings.json`` (``enabledPlugins`` + ``extraKnownMarketplaces``).
+
+        The plugin tree itself is owned by the CLI's manifest sweep (each
+        plugin gets its own dir; whole-file removal is sufficient). This
+        method only touches the *shared* settings.json — the file holding
+        user-owned config alongside profile-managed marketplace + plugin
+        entries (mirroring how :class:`OpencodeRenderer.clean` un-merges
+        ``opencode.json``)."""
+        base = Path(str(target).rstrip("/"))
+        self._clean_local_marketplace(base, manifest.name)
+        settings = base / ".claude" / "settings.json"
+        if not settings.is_file():
+            return
+
+        data = read_json_object(settings, ".claude/settings.json")
+
+        enabled = data.get("enabledPlugins")
+        if isinstance(enabled, dict):
+            for plugin_id in manifest.enabled_plugins:
+                enabled.pop(plugin_id, None)
+            if not enabled:
+                data.pop("enabledPlugins", None)
+
+        markets = data.get("extraKnownMarketplaces")
+        if isinstance(markets, dict):
+            for name in manifest.marketplaces:
+                markets.pop(name, None)
+            if not markets:
+                data.pop("extraKnownMarketplaces", None)
+
+        # Don't delete the file if other keys remain — they are user-owned.
+        # Only if we reduced it to {} do we unlink, matching opencode's
+        # "the profile owned it" rule.
+        if data == {}:
+            settings.unlink()
+            return
+        settings.write_text(json.dumps(data, indent=2) + "\n")
 
     # ─── helpers ─────────────────────────────────────────────────────
 
@@ -128,34 +180,23 @@ class ClaudeRenderer:
     ) -> None:
         for item in manifest.agents:
             name = item["name"]
-            desc = item.get("description") or ""
-            tools = ", ".join(item.get("tools") or [])
-            model = (item.get("models") or {}).get("claude") or ""
             body = body_abs(item)
+            # Single Claude-complete frontmatter for both the plugin-scoped
+            # file and the user-scoped shared file. The user-scoped file wins
+            # (priority 4 > plugin priority 5), so it must carry the full
+            # metadata — model/color/effort/skills — not a neutral subset.
+            fm = shared.claude_agent_frontmatter(item)
 
-            # Plugin-scoped agent file (with optional model frontmatter).
-            lines = ["---", f"name: {name}"]
-            if desc:
-                lines.append(f"description: {desc}")
-            if tools:
-                lines.append(f"tools: {tools}")
-            if model:
-                lines.append(f"model: {model}")
-            lines.append("---")
+            lines = ["---", *(f"{k}: {v}" for k, v in fm.items()), "---"]
             content = "\n".join(lines) + "\n\n"
             if body is not None:
-                content += body.read_text()
+                content += shared.strip_frontmatter(body.read_text())
             out_path = plugin_dir / "agents" / f"{name}.md"
             out_path.write_text(content)
             self._track(out, base, out_path)
 
-            # Cross-harness shared write (neutral body, no model frontmatter).
+            # Cross-harness shared write (Claude + Cursor) — same frontmatter.
             if body is not None:
-                fm: dict[str, str] = {"name": name}
-                if desc:
-                    fm["description"] = desc
-                if tools:
-                    fm["tools"] = tools
                 shared.write_shared_claude_agent(target, name, body, fm, out)
 
     def _write_skills(
@@ -223,33 +264,55 @@ class ClaudeRenderer:
             event = item.get("event")
             matcher = item.get("matcher") or ""
             script = item.get("script") or ""
+            command = item.get("command") or ""
             source_dir = item["_source_dir"]
-            if not script:
+
+            if script and command:
                 raise ValueError(
-                    f"claude_render: hook event '{event}' is missing 'script' "
+                    f"claude_render: hook event '{event}' sets both 'script' "
+                    f"and 'command' — they are mutually exclusive "
                     f"(profile {source_dir})"
                 )
-            src = Path(source_dir) / script
-            if not src.is_file():
-                raise FileNotFoundError(
-                    f"claude_render: hook script not found: {src}"
+            if script:
+                src = Path(source_dir) / script
+                if not src.is_file():
+                    raise FileNotFoundError(
+                        f"claude_render: hook script not found: {src}"
+                    )
+                basename = Path(script).name
+                dst = plugin_dir / "hooks" / basename
+                shutil.copyfile(src, dst)
+                dst.chmod(
+                    dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+                )
+                self._track(out, base, dst)
+                # Deploy shared_assets alongside the script so the
+                # self-locating SessionStart script resolves its lib/bank
+                # under the plugin dir (HARNESS_ROOT = dirname(hooks/)).
+                copy_hook_shared_assets(item, plugin_dir, base, out)
+                cmd = "${CLAUDE_PLUGIN_ROOT}/hooks/" + basename
+            elif command:
+                # Literal command, used verbatim — no file deploy. For
+                # external bridges (e.g. moshi-hook) that aren't deployed
+                # scripts.
+                cmd = command
+            else:
+                raise ValueError(
+                    f"claude_render: hook event '{event}' has neither 'script' "
+                    f"nor 'command' (profile {source_dir})"
                 )
 
-            basename = Path(script).name
-            dst = plugin_dir / "hooks" / basename
-            shutil.copyfile(src, dst)
-            dst.chmod(dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            self._track(out, base, dst)
-
-            # Deploy shared_assets alongside the script so the self-locating
-            # SessionStart script resolves its lib/bank under the plugin dir
-            # (HARNESS_ROOT = dirname(hooks/) = plugin_dir).
-            copy_hook_shared_assets(item, plugin_dir, base, out)
-
-            cmd = "${CLAUDE_PLUGIN_ROOT}/hooks/" + basename
-            hook_entries.setdefault(event, []).append(
-                {"matcher": matcher, "hooks": [{"type": "command", "command": cmd}]}
+            inner = {"type": "command", "command": cmd}
+            if item.get("timeout") is not None:
+                inner["timeout"] = item["timeout"]
+            if item.get("async") is not None:
+                inner["async"] = item["async"]
+            entry = (
+                {"matcher": matcher, "hooks": [inner]}
+                if matcher and event in _CLAUDE_MATCHER_EVENTS
+                else {"hooks": [inner]}
             )
+            hook_entries.setdefault(event, []).append(entry)
             wrote_any = True
 
         if not wrote_any:
@@ -291,3 +354,118 @@ class ClaudeRenderer:
         out_path = plugin_dir / "settings.json"
         _dump_json(out_path, {"permissions": {"allow": allow}})
         self._track(out, base, out_path)
+
+    def _merge_root_settings(self, manifest: Manifest, base: Path) -> None:
+        """Merge this profile's ``enabled_plugins`` and ``marketplaces`` into
+        the live ``<base>/.claude/settings.json``, preserving siblings.
+
+        Mirrors :meth:`OpencodeRenderer.render` for ``opencode.json``: read,
+        own-our-keys, write. The file is shared (chezmoi-seeded user config
+        + per-profile additions) so it is intentionally NOT tracked in the
+        install manifest. :meth:`clean` un-merges by removing exactly the
+        keys this method added.
+
+        ``${VAR}`` / ``~`` in marketplace paths expand against the process
+        env (``DOTFILES_DIR`` is the intended consumer) — same surface as
+        ``cli._resolve_target``. The marketplace value is wrapped as a
+        ``{"source": {"source": "directory", "path": <expanded>}}`` record;
+        github-source marketplaces stay user-managed in the seed.
+
+        No-op when the profile declares neither field. When the file does
+        not exist, creates an empty ``{}`` seed first — operator running
+        ``ap install global`` standalone (no chezmoi pass) gets a minimal
+        file rather than a hard error; chezmoi's ``create_settings.json``
+        won't overwrite it later (``create_`` semantics), so the operator
+        is responsible for filling in the rest if they're skipping
+        ``dots sync``."""
+        if not manifest.enabled_plugins and not manifest.marketplaces:
+            return
+
+        settings = base / ".claude" / "settings.json"
+        if settings.is_file():
+            data = read_json_object(settings, ".claude/settings.json")
+        else:
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+
+        if manifest.enabled_plugins:
+            enabled = data.setdefault("enabledPlugins", {})
+            for plugin_id, on in manifest.enabled_plugins.items():
+                enabled[plugin_id] = bool(on)
+
+        if manifest.marketplaces:
+            markets = data.setdefault("extraKnownMarketplaces", {})
+            for name, raw_path in manifest.marketplaces.items():
+                expanded = os.path.expandvars(os.path.expanduser(str(raw_path)))
+                markets[name] = {
+                    "source": {"source": "directory", "path": expanded}
+                }
+
+        settings.write_text(json.dumps(data, indent=2) + "\n")
+
+    def _write_local_marketplace(
+        self, manifest: Manifest, base: Path, profile: str, desc: str
+    ) -> None:
+        """Ensure the directory-marketplace manifest at
+        ``<base>/.claude/plugins/local/.claude-plugin/marketplace.json``
+        lists this profile as a plugin.
+
+        Without this manifest a Claude ``directory`` marketplace has no
+        ``plugins[]`` to resolve, so an ``enabledPlugins`` entry like
+        ``global@local`` is silently dropped and the plugin's bundled
+        ``.mcp.json`` never loads. The manifest is shared across every
+        profile rendered into the same local marketplace (like the live
+        ``settings.json``), so the entry is upserted by name and siblings
+        are preserved; :meth:`clean` removes exactly this profile's entry.
+
+        A profile advertises itself here only when it enables itself in the
+        local marketplace (``<profile>@local`` in ``enabled_plugins``) — a
+        bare plugin render that no one enables stays out of the manifest.
+        """
+        if not manifest.enabled_plugins.get(f"{profile}@{_LOCAL_MARKETPLACE}"):
+            return
+        manifest_path = (
+            base / ".claude" / "plugins" / "local" / ".claude-plugin"
+            / "marketplace.json"
+        )
+        if manifest_path.is_file():
+            data = read_json_object(manifest_path, "marketplace.json")
+        else:
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+
+        data["name"] = _LOCAL_MARKETPLACE
+        # Claude's marketplace schema requires a non-empty `owner` object.
+        data["owner"] = {"name": "agent-profile"}
+        entry = {"name": profile, "source": f"./{profile}"}
+        if desc:
+            entry["description"] = desc
+        siblings = [
+            p
+            for p in data.get("plugins", [])
+            if isinstance(p, dict) and p.get("name") != profile
+        ]
+        data["plugins"] = siblings + [entry]
+        _dump_json(manifest_path, data)
+
+    def _clean_local_marketplace(self, base: Path, profile: str) -> None:
+        """Remove ``profile``'s entry from the shared local marketplace
+        manifest; delete the manifest when no plugins remain. Mirrors the
+        ``settings.json`` un-merge in :meth:`clean`."""
+        manifest_path = (
+            base / ".claude" / "plugins" / "local" / ".claude-plugin"
+            / "marketplace.json"
+        )
+        if not manifest_path.is_file():
+            return
+        data = read_json_object(manifest_path, "marketplace.json")
+        remaining = [
+            p
+            for p in data.get("plugins", [])
+            if isinstance(p, dict) and p.get("name") != profile
+        ]
+        if not remaining:
+            manifest_path.unlink()
+            return
+        data["plugins"] = remaining
+        _dump_json(manifest_path, data)

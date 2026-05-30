@@ -1,8 +1,7 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "ENABLE_TOOL_SEARCH": "true",
-    "SSL_CERT_FILE": "/etc/ssl/cert.pem"
+    "ENABLE_TOOL_SEARCH": "true"
   },
   "permissions": {
     "allow": [
@@ -130,17 +129,6 @@
         ]
       }
     ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/session-start-cheese-flair.sh\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
@@ -159,18 +147,18 @@
     "frontend-design@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "claude-hud@claude-hud": true
+    "todoist-flow@todoist-flow": true
   },
   "extraKnownMarketplaces": {
-    "claude-hud": {
+    "todoist-flow": {
       "source": {
-        "source": "github",
-        "repo": "jarrodwatts/claude-hud"
+        "source": "directory",
+        "path": "/Users/paul/Dev/dotfiles/claude/plugins/local/todoist-flow"
       }
     }
   },
   "sandbox": {
-    "enabled": true,
+    "enabled": false,
     "autoAllowBashIfSandboxed": true,
     "network": {
       "allowedDomains": [

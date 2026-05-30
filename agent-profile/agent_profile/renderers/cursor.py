@@ -55,6 +55,7 @@ from agent_profile.renderers.base import (
     includes_harness,
     read_json_object,
 )
+from agent_profile.templating import render_mcp_for_harness
 
 # Cursor's MCP membership default — wider than the base claude/codex/opencode
 # triple because Cursor opts itself into the shared default set.
@@ -270,19 +271,17 @@ def _cursor_model(item: dict[str, Any]) -> str:
 
 
 def _agent_frontmatter(item: dict[str, Any]) -> dict[str, Any]:
-    """Build the shared-agent frontmatter dict, dropping empty/null values.
+    """Build the shared ``.claude/agents/<n>.md`` frontmatter.
 
-    Port of the bash jq object: ``{name, description, tools}`` where
-    ``tools`` becomes a comma-joined string only when non-empty, and any
-    empty/null entry is filtered out (``with_entries(select(...))``)."""
-    fields: dict[str, Any] = {
-        "name": item["name"],
-        "description": item.get("description") or "",
-    }
-    tools = item.get("tools") or []
-    if len(tools) > 0:
-        fields["tools"] = ", ".join(tools)
-    return {k: v for k, v in fields.items() if v != "" and v is not None}
+    Delegates to :func:`shared.claude_agent_frontmatter` so the file Cursor
+    and Claude share is written identically by both renderers (the install
+    runs cursor after claude into the same path — divergent frontmatter would
+    let the later writer clobber the earlier one's metadata). Claude resolves
+    this user-scoped file ahead of any plugin copy, so it carries the full
+    metadata (model/color/effort/skills); Cursor ignores what it doesn't use
+    and overrides the model via ``.cursor/agents/<n>.md`` when ``models.cursor``
+    is set."""
+    return shared.claude_agent_frontmatter(item)
 
 
 def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
@@ -303,9 +302,13 @@ def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
 
 def _cursor_mcps(manifest: Manifest) -> list[dict[str, Any]]:
     """The MCPs whose membership includes ``cursor`` (default
-    ``[claude, codex, opencode, cursor]``)."""
+    ``[claude, codex, opencode, cursor]``).
+
+    Entries are rendered through :func:`render_mcp_for_harness` so
+    per-harness Go templates in ``args``/``env`` resolve for cursor —
+    matches the render every other harness gets via :func:`mcps_for`."""
     return [
-        mcp
+        render_mcp_for_harness(mcp, "cursor")
         for mcp in manifest.mcps
         if includes_harness(mcp, "cursor", _CURSOR_MCP_DEFAULT)
     ]

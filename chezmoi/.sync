@@ -34,6 +34,23 @@ dotfiles_dir=$(cd "$script_dir/.." && pwd)
 config_dir="$HOME/.config/chezmoi"
 config_file="$config_dir/chezmoi.toml"
 
+# Bootstrap chezmoi on Linux when missing. chezmoi isn't in Ubuntu's apt
+# and the snap channel needs root; fetch the official install script which
+# drops the binary into a local bin dir with no sudo.
+bootstrap_chezmoi_linux() {
+    [[ "$(uname -s)" == "Linux" ]] || return 0
+    command -v chezmoi &>/dev/null && return 0
+    local bin_dir="$HOME/.local/bin"
+    mkdir -p "$bin_dir"
+    echo "  Installing chezmoi → $bin_dir (no system package available)"
+    if ! curl -fsSL https://get.chezmoi.io | sh -s -- -b "$bin_dir"; then
+        echo "  ERROR: chezmoi install script failed" >&2
+        return 1
+    fi
+    hash -r 2>/dev/null || true
+}
+bootstrap_chezmoi_linux || exit 1
+
 # Remove a symlink at $1 if it is dangling or resolves into the dotfiles
 # checkout. Real files, dirs, and symlinks pointing elsewhere are preserved
 # untouched — we only reclaim paths the pre-chezmoi sync owned.
@@ -111,21 +128,24 @@ EOF
     fi
 fi
 
-# Pre-create the ~/.claude symlinks that chezmoi's run_onchange templates
-# write through. On a fresh install, claude/.sync runs *after* chezmoi/.sync
-# (alphabetical iteration in .sync-with-rollback), so without these links
-# chezmoi would create real ~/.claude/{hooks,reference}/ directories — or a
-# real ~/.claude/settings.json file the moment `claude mcp add` or
-# `claude plugin install` touches user-scope state — that claude/.sync would
-# then back up, orphaning anything chezmoi just wrote (e.g.
-# session-start-cheese-flair.sh, the freshly-installed MCP entries). The
-# claude/.sync pass later rebuilds these symlinks idempotently. Codex has no
-# symlink layer, so this is claude-only.
+# Pre-create the ~/.claude directory symlinks that the (now-shrinking) set
+# of write-through paths from chezmoi's run_onchange templates land in. On
+# a fresh install, claude/.sync runs *after* chezmoi/.sync (alphabetical
+# iteration in .sync-with-rollback), so without these links chezmoi would
+# create real ~/.claude/{hooks,reference}/ directories that claude/.sync
+# would then back up, orphaning anything chezmoi just wrote.
+#
+# settings.json is NO LONGER pre-linked here — it migrated to a chezmoi
+# `create_` seed at chezmoi/dot_claude/create_settings.json (managed
+# in-place by chezmoi + ap renderer mutations), so the legacy symlink
+# would actively block the seed (a one-time
+# run_once_before_migrate-claude-settings.sh script unlinks any stale
+# settings.json symlink before the seed runs).
 prelink_claude_writethrough() {
     local claude_dir="$HOME/.claude"
     local item link source
     mkdir -p "$claude_dir"
-    for item in hooks reference settings.json; do
+    for item in hooks reference; do
         link="$claude_dir/$item"
         source="$dotfiles_dir/claude/$item"
         [[ -e "$source" ]] || continue

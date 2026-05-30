@@ -49,8 +49,10 @@ from typing import Any, Protocol, runtime_checkable
 
 import tomlkit
 
+from agent_profile._validate import ParseError
 from agent_profile.parse import Manifest
 from agent_profile.shared import track_file
+from agent_profile.templating import render_mcp_for_harness
 
 # Hooks default to claude-only membership across every renderer.
 DEFAULT_HOOK_HARNESSES = ("claude",)
@@ -130,9 +132,14 @@ def mcps_for(
 
     The renderer curd passes the ``default`` its bash counterpart used.
     Claude additionally drops ``gate_unless`` MCPs whose gate var is set
-    (see :func:`gate_blocks`) — parity with ``mcp_filter_for_harness``."""
+    (see :func:`gate_blocks`) — parity with ``mcp_filter_for_harness``.
+
+    Returned entries are rendered through :func:`render_mcp_for_harness`
+    so per-harness Go templates (``{{ $h }}``, ``{{ if eq $h "claude" }}``)
+    in ``args``/``env`` resolve to the harness's value — the render the
+    retired ``agents/mcp/sync.sh`` used to do once per harness."""
     return [
-        mcp
+        render_mcp_for_harness(mcp, harness)
         for mcp in manifest.mcps
         if includes_harness(mcp, harness, default)
         and not gate_blocks(mcp, harness)
@@ -217,13 +224,27 @@ def copy_hook_shared_assets(
 def body_abs(item: dict[str, Any], body_key: str = "body_path") -> Path | None:
     """Resolve an item's body file against its ``_source_dir``.
 
-    Returns the absolute path iff the field is set and the file exists,
-    else ``None`` (the bash treats a missing body as "skip the body")."""
+    Returns the absolute path when a body is declared and the file exists.
+    Returns ``None`` when no body is declared — an optional body the renderer
+    legitimately skips (the bash treated a missing ``body_path`` as "skip the
+    body").
+
+    A *declared* ``body_path`` that does not resolve is a registry/profile bug,
+    not an optional body: raise :class:`ParseError` so ``ap install`` fails
+    loud (clean stderr + exit 1 via ``cli.main``) instead of silently shipping
+    a body-less item — e.g. a typo'd agent ``body_path`` would otherwise emit a
+    frontmatter-only file and skip the user-scoped shared write with no error."""
     body_rel = item.get(body_key) or ""
     if not body_rel:
         return None
     candidate = Path(item["_source_dir"]) / body_rel
-    return candidate if candidate.is_file() else None
+    if not candidate.is_file():
+        raise ParseError(
+            f"ap: {item.get('name', '?')!r} declares {body_key} "
+            f"{body_rel!r}, but it does not resolve to a file under "
+            f"{item['_source_dir']}"
+        )
+    return candidate
 
 
 def load_toml(path: Path) -> tomlkit.TOMLDocument:

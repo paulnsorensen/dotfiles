@@ -35,9 +35,9 @@ teardown() {
 
 # --- Mock helpers ---
 
-# Usage: write_mock_brew [installed_formulae] [installed_casks] [fail_pkg]
+# Usage: write_mock_brew [installed_formulae] [installed_casks] [fail_pkg] [outdated_greedy_casks]
 write_mock_brew() {
-    local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}"
+    local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}" outdated_casks="${4:-}"
     cat > "$MOCK_BIN/brew" << MOCKBREW
 #!/bin/bash
 echo "brew \$*" >> "$BREW_LOG"
@@ -48,6 +48,11 @@ case "\$1" in
         else
             echo "$casks"
         fi
+        ;;
+    outdated)
+        # Only the greedy-cask probe returns names here; bare \`brew outdated\`
+        # in other contexts is unused by sync.sh.
+        echo "$outdated_casks"
         ;;
     tap)
         if [[ \$# -eq 1 ]]; then echo ""; fi
@@ -117,7 +122,7 @@ packages:
   - node: { apt: nodejs }
   - mas: { platform: mac }
   - xclip: { platform: linux }
-  - docker: { source: cask, dev: true, platform: mac }
+  - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false }
   - npm: { platform: linux, dev: true }
   - pyenv: { dev: true }
   - cargo-llvm-cov: { source: cargo }
@@ -409,8 +414,9 @@ run_sync() {
 
 # Build a curated PATH for "missing toolchain" tests. Keeps real yq/jq/shasum
 # (sync.sh needs them) but excludes any directory that holds an executable
-# cargo or rustup, so `command -v cargo` actually fails when MOCK_BIN/cargo
-# is removed.
+# cargo, rustup, OR cargo-install-update, so `command -v <tool>` actually
+# fails on developer machines where those binaries live alongside each
+# other under ~/.cargo/bin or /opt/homebrew/bin.
 scrub_toolchain_path() {
     local entry filtered=""
     local -a needed=(yq jq shasum sha256sum git awk sed grep cut sort tr head tail)
@@ -425,20 +431,29 @@ scrub_toolchain_path() {
         [[ -z "$entry" ]] && continue
         [[ -x "$entry/cargo" ]] && continue
         [[ -x "$entry/rustup" ]] && continue
+        [[ -x "$entry/cargo-install-update" ]] && continue
         filtered+="$entry:"
     done <<< "$(echo "$PATH" | tr ':' '\n')"
     echo "$stub:${filtered%:}"
 }
 
-@test "sync counts missing cargo AND rustup as failure (no cache saved)" {
+@test "sync warns + proceeds when cargo AND rustup are missing" {
+    # Behavior change: the linux-bootstrap PR (commit 5369aa3) softened
+    # missing-cargo from `log_error + FAILED+=("cargo")` to `log_warning +
+    # return 0`. Rationale: a fresh Ubuntu box without rust shouldn't
+    # FAIL the whole `dots sync` — the cargo packages just won't install
+    # until rustup is set up, while everything else (brew, npm, uv tools)
+    # proceeds normally. The cache IS saved on the successful sync.
     write_test_yaml
     rm -f "$MOCK_BIN/cargo" "$MOCK_BIN/rustup"
 
     PATH="$MOCK_BIN:$(scrub_toolchain_path)" run_sync
 
+    assert_success
     assert_output_contains "cargo not found"
-    assert_output_contains "cache NOT saved"
-    [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+    assert_output_contains "skipping cargo packages"
+    # Cache saved because the sync completed without failure.
+    [[ -f "$CACHE_FILE" ]]
 }
 
 @test "sync bootstraps rust toolchain when rustup exists but cargo missing" {
@@ -499,6 +514,48 @@ MOCKRUSTUP
     grep -q "brew upgrade" "$BREW_LOG"
 }
 
+@test "UPGRADE_MODE excludes greedy:false casks (docker-desktop) from greedy upgrade" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
+    # Both docker-desktop (greedy:false) and cursor (greedy default) report as
+    # greedy-outdated. cursor must be upgraded; docker-desktop must not.
+    write_mock_brew "" "docker-desktop" "" $'docker-desktop\ncursor'
+    write_test_yaml
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    # No blanket greedy upgrade — the exclusion path enumerates instead.
+    ! grep -q "brew upgrade --cask --greedy-auto-updates" "$BREW_LOG"
+    # cursor gets upgraded explicitly; docker-desktop is never passed to upgrade.
+    grep -q "brew upgrade --cask cursor" "$BREW_LOG"
+    ! grep -qE "brew upgrade --cask .*docker-desktop" "$BREW_LOG"
+}
+
+@test "UPGRADE_MODE warns + skips greedy cask upgrade when brew outdated fails" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
+    # brew outdated failing must NOT be silently swallowed as "nothing to
+    # upgrade" — emit a warning and skip the pass, like the other brew ops.
+    cat > "$MOCK_BIN/brew" << 'MOCKBREW'
+#!/bin/bash
+echo "brew $*" >> "$BREW_LOG"
+case "$1" in
+    list)   [[ "$2" == "--formulae" ]] && echo "" || echo "docker-desktop" ;;
+    outdated) exit 1 ;;
+    tap)    [[ $# -eq 1 ]] && echo "" ;;
+esac
+exit 0
+MOCKBREW
+    chmod +x "$MOCK_BIN/brew"
+
+    write_test_yaml
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "brew outdated --cask failed; skipping greedy cask upgrade"
+    # No filtered cask upgrade is attempted when the probe failed.
+    ! grep -qE "brew upgrade --cask [a-z]" "$BREW_LOG"
+}
+
 @test "UPGRADE_MODE runs cargo-install-update --all --git instead of per-package --force" {
     # New idempotent contract (PR #197): the install pass only handles
     # *missing* packages, and the upgrade pass delegates to
@@ -544,6 +601,11 @@ MOCKUPDATE
 @test "UPGRADE_MODE warns when cargo-install-update is not installed" {
     # Missing-binary fallback: dots up should keep going with a loud
     # warning instead of silently noop-ing or crashing.
+    #
+    # Use scrub_toolchain_path so the real cargo-install-update on the
+    # developer's PATH (alongside cargo under ~/.cargo/bin or
+    # /opt/homebrew/bin) doesn't satisfy the `command -v` check and mask
+    # the warning branch the test is locking in.
     write_test_yaml
     cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
 #!/bin/bash
@@ -561,7 +623,7 @@ MOCKCARGO
     chmod +x "$MOCK_BIN/cargo"
     # Deliberately do NOT install a cargo-install-update mock.
 
-    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    UPGRADE_MODE=true PATH="$MOCK_BIN:$(scrub_toolchain_path)" run bash "$SYNC_SCRIPT"
     assert_success
     assert_output_contains "cargo-update not installed"
     # And the install pass still skips the already-installed crate.

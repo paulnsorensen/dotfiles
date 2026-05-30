@@ -3,8 +3,8 @@ name: skill-improver
 model: opus
 effort: high
 description: >
-  Audit and improve agent and skill definitions for better calibration, tool scoping,
-  context management, activation quality, and output format. Use when the user says
+  Audit and improve agent and skill definitions — calibration, tool scoping,
+  context budget, activation quality, and output format. Use when the user says
   "improve this skill", "audit this agent", "optimize this agent", "review agent
   definition", "fix trigger rate", "skill not activating", or invokes /skill-improver
   with a path. Also trigger when an agent is producing poor results and needs prompt
@@ -56,13 +56,14 @@ Before auditing, gather empirical data from session logs. This step is
    python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py
    ```
 
-2. Spawn **three parallel sub-agents** (all sonnet, read-only):
+2. Spawn **three parallel `duckdb-expert` sub-agents** (haiku, read-only) — one
+   per query pack from `skills/session-analytics/references/skill-audit-queries.md`:
 
-   | Agent | Type | Prompt |
-   |-------|------|--------|
-   | Usage | `skill-analytics-usage` | "Analyze usage patterns for skill: {name}" |
-   | Tools | `skill-analytics-tools` | "Analyze tool patterns for skill: {name}. Declared tools: {tools list from frontmatter}" |
-   | Friction | `skill-analytics-friction` | "Analyze friction patterns for skill: {name}" |
+   | Pack | Agent | Prompt |
+   |------|-------|--------|
+   | Usage | `duckdb-expert` | "Run the `usage` skill-audit pack for skill: {name}" |
+   | Tools | `duckdb-expert` | "Run the `tools` skill-audit pack for skill: {name}. Declared tools: {tools list from frontmatter}" |
+   | Friction | `duckdb-expert` | "Run the `friction` skill-audit pack for skill: {name}" |
 
 3. Collect their structured findings for use in Dimension 7.
 

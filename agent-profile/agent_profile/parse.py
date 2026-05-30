@@ -68,6 +68,15 @@ class Manifest:
     enabled_plugins: dict[str, bool] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     extra_args: list[str] = field(default_factory=list)
+    # Install-time fields (curd: global profile). Outer-profile only, like
+    # the launch-overlay fields above. ``target_default`` is consulted by
+    # the CLI when ``--target`` is not passed; ``marketplaces`` is read by
+    # the claude renderer to register entries in ``extraKnownMarketplaces``
+    # under the live settings.json (matching how ``enabled_plugins`` lands
+    # in ``enabledPlugins``). ``${VAR}`` refs (``$HOME``, ``${DOTFILES_DIR}``)
+    # expand at use-time, not parse-time.
+    target_default: str | None = None
+    marketplaces: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the same JSON shape parse.sh emits (used for the
@@ -165,11 +174,13 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         "enabled_plugins": dict(raw.get("enabled_plugins") or {}),
         "env": dict(raw.get("env") or {}),
         "extra_args": list(raw.get("extra_args") or []),
+        "target_default": raw.get("target_default") or None,
+        "marketplaces": dict(raw.get("marketplaces") or {}),
         # Registry-derived items come first; inline items append (matching
         # the include "outer last" convention so an inline override on a
         # name-collision wins on scalar/object merges downstream).
         "mcps": reg["mcps"] + _decorate(raw.get("mcps") or []),
-        "agents": _decorate(raw.get("agents") or []),
+        "agents": reg["agents"] + _decorate(raw.get("agents") or []),
         "skills": reg["skills"] + _decorate(raw.get("skills") or []),
         "commands": _decorate(raw.get("commands") or []),
         "hooks": reg["hooks"] + _decorate(raw.get("hooks") or []),
@@ -196,7 +207,7 @@ def _expand_registries_directive(
     as their ``_source_dir`` (not the profile dir) since their payload files
     live under the repo, not the profile."""
     if not directive:
-        return {"mcps": [], "skills": [], "hooks": []}
+        return {"mcps": [], "agents": [], "skills": [], "hooks": []}
     if not isinstance(directive, dict):
         raise ParseError(
             "ap_parse_one: 'registries' must be a mapping of "
@@ -289,6 +300,8 @@ def _parse_with_includes(
         "enabled_plugins",
         "env",
         "extra_args",
+        "target_default",
+        "marketplaces",
     ):
         merged[key] = self_[key]
     return merged
@@ -325,4 +338,6 @@ def parse_manifest(profile_dir: Path, find_profile_dir: Any = None) -> Manifest:
         enabled_plugins=merged["enabled_plugins"],
         env=merged["env"],
         extra_args=merged["extra_args"],
+        target_default=merged["target_default"],
+        marketplaces=merged["marketplaces"],
     )

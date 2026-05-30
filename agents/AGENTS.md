@@ -191,6 +191,9 @@ These have become tics. They either hedge, inflate, or substitute a cliché for 
 | ergonomic / ergonomics | readable, clean, easy to use |
 | guardrails *(abstract)* | constraints, checks, limits |
 | not my changes / pre-existing *(unverified)* | cite evidence: base-branch run ID, `git blame`, or commit hash — otherwise fix it |
+| honest *(as intensifier — "honestly", "to be honest")* | *(drop it — state the claim and tag it `<certain>` / `<speculative>`)* |
+| my take | *(drop it — just give the recommendation)* |
+| my honest take | *(drop it — just give the recommendation)* |
 
 ## Rules
 

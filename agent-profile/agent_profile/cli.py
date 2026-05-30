@@ -197,7 +197,7 @@ def cmd_path(name: str, colors: _Colors, out: Any) -> int:
 def cmd_install(
     name: str,
     harnesses: list[str],
-    target: Path,
+    target_opt: Path | None,
     colors: _Colors,
     out: Any,
 ) -> int:
@@ -209,6 +209,25 @@ def cmd_install(
     if profile_dir is None:
         raise CliError(f"{colors.RED}ap: profile '{name}' not found{colors.NC}")
 
+    manifest = parse_manifest(profile_dir)
+
+    if (
+        target_opt is None
+        and not manifest.target_default
+        and _within_git_repo(Path.cwd())
+    ):
+        raise CliError(
+            f"{colors.RED}ap install: refusing to install profile '{name}' "
+            f"into a git working tree (cwd: {Path.cwd()}).{colors.NC}\n"
+            f"  Without --target and with no target_default, the rendered "
+            f"runtime (.codex/, .cursor/, manifest.json, …) would be dumped "
+            f"into the repo.\n"
+            f"  Pass --target <dir> to stage the render, or install an "
+            f"install-overlay profile like 'global' (it targets $HOME)."
+        )
+
+    target = _resolve_target(target_opt, manifest.target_default)
+
     print(
         f"{colors.BLUE}→ Installing profile '{name}' "
         f"from {profile_dir}{colors.NC}",
@@ -217,7 +236,6 @@ def cmd_install(
     print(f"  target:   {target}", file=out)
     print(f"  harness:  {' '.join(harnesses)}", file=out)
 
-    manifest = parse_manifest(profile_dir)
     merged_dict = manifest.to_dict()
 
     manifest_mod.manifest_init(target)
@@ -252,8 +270,8 @@ def cmd_install(
 
 
 def _skill_fetch_runner(argv: list[str]) -> int:
-    """Default ``gh skill install`` runner. Indirected through a module-level
-    name so tests can monkeypatch it without spawning ``gh``."""
+    """Default ``npx skills add`` runner. Indirected through a module-level
+    name so tests can monkeypatch it without spawning ``npx``."""
     from agent_profile.fetch import _default_runner
 
     return _default_runner(argv)
@@ -265,38 +283,60 @@ def _fetch_external_skills(
     colors: _Colors,
     out: Any,
 ) -> None:
-    """Fetch every ``source:`` skill into each in-scope harness via
-    ``gh skill install`` (spec curd 4). ``path:`` skills are copied by the
+    """Fetch every ``source:`` skill into the in-scope harnesses via
+    ``npx skills add`` (spec curd 4) — one shallow clone per source repo,
+    installed to all harnesses at once. ``path:`` skills are copied by the
     renderers, so they are excluded here."""
     from agent_profile.fetch import (
         SkillFetchError,
         external_skills,
-        fetch_external_skill,
+        fetch_external_source,
     )
 
     ext = external_skills(manifest.skills)
     if not ext:
         return
-    for h in harnesses:
-        for skill in ext:
-            name = skill.get("name")
-            pin = skill.get("pin")
+
+    # Group items by source repo. A bare `source:` (no name) means "all skills"
+    # for that repo (--skill '*') and wins over any explicit names from sibling
+    # items. `pin` is a per-source property. Insertion order is preserved so
+    # output (and test assertions) stay deterministic.
+    order: list[str] = []
+    groups: dict[str, dict[str, Any]] = {}
+    for skill in ext:
+        source = skill["source"]
+        if source not in groups:
+            groups[source] = {"names": set(), "all": False, "pin": None}
+            order.append(source)
+        g = groups[source]
+        name = skill.get("name")
+        if name:
+            g["names"].add(name)
+        else:
+            g["all"] = True
+        if skill.get("pin"):
+            g["pin"] = skill["pin"]
+
+    try:
+        for source in order:
+            g = groups[source]
+            names = None if g["all"] else sorted(g["names"])
+            label = "*" if names is None else ", ".join(names)
             print(
-                f"  {colors.BLUE}↳{colors.NC} fetching skill "
-                f"{skill['source']} {name or ''} -> {h}".rstrip(),
+                f"  {colors.BLUE}↳{colors.NC} fetching skills "
+                f"{source} ({label}) -> {', '.join(harnesses)}",
                 file=out,
             )
-            try:
-                fetch_external_skill(
-                    skill["source"], name, pin, h, _skill_fetch_runner
-                )
-            except SkillFetchError as exc:
-                raise CliError(f"{colors.RED}{exc}{colors.NC}") from exc
-            except OSError as exc:
-                raise CliError(
-                    f"{colors.RED}ap: cannot run 'gh skill install' "
-                    f"({exc}); is the gh CLI installed?{colors.NC}"
-                ) from exc
+            fetch_external_source(
+                source, names, g["pin"], harnesses, _skill_fetch_runner
+            )
+    except SkillFetchError as exc:
+        raise CliError(f"{colors.RED}{exc}{colors.NC}") from exc
+    except OSError as exc:
+        raise CliError(
+            f"{colors.RED}ap: cannot run npx "
+            f"({exc}); is Node/npx installed?{colors.NC}"
+        ) from exc
 
 
 def _set_files(target: Path, profile: str, new_files: list[str]) -> None:
@@ -323,7 +363,7 @@ def _union_files(
 
 def cmd_uninstall(
     name: str,
-    target: Path,
+    target_opt: Path | None,
     colors: _Colors,
     out: Any,
 ) -> int:
@@ -331,6 +371,19 @@ def cmd_uninstall(
         raise CliError(
             f"{colors.RED}ap uninstall: profile name required{colors.NC}"
         )
+
+    # Mirror install's target resolution so `ap uninstall global` (without
+    # --target) honors the profile's declared default. When the profile dir
+    # is gone, falls through to Path.cwd(); the operator can still pass
+    # --target explicitly to point at the right install root.
+    target_default: str | None = None
+    profile_dir = discover.find_profile_dir(name)
+    if profile_dir is not None:
+        try:
+            target_default = parse_manifest(profile_dir).target_default
+        except ParseError:
+            target_default = None
+    target = _resolve_target(target_opt, target_default)
 
     print(
         f"{colors.BLUE}→ Uninstalling profile '{name}' "
@@ -390,7 +443,7 @@ def cmd_uninstall(
 def cmd_launch(
     remaining: list[str],
     passthrough: list[str],
-    target: Path,
+    target_opt: Path | None,
     colors: _Colors,
     out: Any,
 ) -> NoReturn:
@@ -420,7 +473,11 @@ def cmd_launch(
             _launch_isolated(
                 manifest, profile_dir, harness, exec_args, colors, out
             )  # NoReturn
-        install_rc = cmd_install(name, [harness], target, colors, out)
+        # Pass the unresolved target_opt down to cmd_install; it will apply
+        # the same explicit > profile.target_default > PWD precedence we use
+        # for standalone install. Launching the global profile thus targets
+        # $HOME without forcing the operator to pass --target.
+        install_rc = cmd_install(name, [harness], target_opt, colors, out)
         if install_rc != 0:
             raise CliError(
                 f"{colors.RED}ap launch: install of '{name}' failed "
@@ -494,10 +551,15 @@ def _require_value(args: list[str], i: int, flag: str) -> str:
 
 def _parse_common_opts(
     args: list[str],
-) -> tuple[list[str], Path, list[str], list[str]]:
+) -> tuple[list[str], Path | None, list[str], list[str]]:
     """Split out --harness / --target / --profile-src; return
-    (harnesses, target, remaining, passthrough). Mirrors the bash
+    (harnesses, target_opt, remaining, passthrough). Mirrors the bash
     parse_common_opts: --profile-src appends to AP_EXTRA_SEARCH_PATHS.
+
+    ``target_opt`` is ``None`` when ``--target`` was not passed, letting the
+    cmd_* handlers fall through to ``profile.target_default`` (if declared)
+    and then to ``Path.cwd()``. Resolving the precedence here would require
+    reading the manifest before option parsing, so the fallback is deferred.
 
     ``remaining`` holds the positionals *before* a ``--`` separator;
     ``passthrough`` holds everything after it. Keeping the boundary lets
@@ -505,7 +567,7 @@ def _parse_common_opts(
     --resume``) from "profile name is the first positional" — folding both
     into one list mis-read the first passthrough token as a profile name."""
     harnesses = list(ALL_HARNESSES)
-    target = Path.cwd()
+    target: Path | None = None
     remaining: list[str] = []
     passthrough: list[str] = []
     i = 0
@@ -537,6 +599,32 @@ def _parse_common_opts(
             i += 1
     return harnesses, target, remaining, passthrough
 
+
+def _resolve_target(target_opt: Path | None, target_default: str | None) -> Path:
+    """Resolve target precedence: explicit ``--target`` > profile
+    ``target_default`` (env-expanded) > ``Path.cwd()``.
+
+    ``${VAR}`` and ``$VAR`` refs in ``target_default`` expand against the
+    process env (``$HOME`` and ``$DOTFILES_DIR`` are the intended consumers).
+    ``~`` is also expanded. An unset ``${VAR}`` is left as a literal so the
+    surface failure mode is the resulting path not existing — easier to
+    debug than a generic KeyError."""
+    if target_opt is not None:
+        return target_opt
+    if target_default:
+        expanded = os.path.expandvars(os.path.expanduser(target_default))
+        return Path(expanded).resolve()
+    return Path.cwd()
+
+
+def _within_git_repo(start: Path) -> bool:
+    """True if ``start`` or any ancestor contains a ``.git`` (dir or file —
+    worktrees use a ``.git`` file). Walks the filesystem rather than shelling
+    out to ``git``, mirroring how this module avoids subprocess."""
+    for d in (start, *start.parents):
+        if (d / ".git").exists():
+            return True
+    return False
 
 def _append_search_path(path: str) -> None:
     existing = os.environ.get("AP_EXTRA_SEARCH_PATHS", "")

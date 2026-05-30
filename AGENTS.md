@@ -66,13 +66,13 @@ This is a personal dotfiles repository that configures a vim-centric, terminal-b
 - `cf-refresh` - Rebuild the cheese-flow plugin cache from `~/Dev/cheese-flow` (use after editing the plugin in-place)
 - `plugin-refresh <plugin> [marketplace]` - Generic version of cf-refresh for any local plugin (defaults to cheese-flow@local)
 
-### Agent Skill Management (`gh skill install`)
+### Agent Skill Management (`npx skills add`)
 
-Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`). Skills (local `skills/` tree + external `_registry.yaml` sources) deploy through the registry-derived `base` profile rendered by `ap`. `dots sync` drives the render via chezmoi's `run_onchange_after_install-base-profile.sh.tmpl`; external sources fetch via `gh skill install`. Requires `gh` (v2.90+ with `skill` subcommand) and `gh auth login` — `dots sync` exits 1 if either is missing.
+Harness-agnostic — installs into each agent listed in `SKILL_HARNESSES` (`.env`). Skills (local `skills/` tree + external `_registry.yaml` sources) deploy through the registry-derived `base` profile rendered by `ap`. `dots sync` drives the render via chezmoi's `run_onchange_after_install-base-profile.sh.tmpl`; external sources fetch via `npx skills add` (the Vercel `skills` CLI), which `git clone`s each source repo once and installs to every requested agent in one call. Requires `npx` (Node) — `dots sync` exits 1 if it's missing. No GitHub auth: `npx skills` clones public repos.
 
 - `skill-edit` - Edit `skills/_registry.yaml` (the per-type edit surface)
 - `skill-sync` - Deploy via the unified `ap` path (`dots profile install base`)
-- `skill-ls` - Check installed skills for updates (`gh skill update --all --dry-run`)
+- `skill-ls` - List installed global skills (`npx skills list --global`)
 
 ### Common Development Tasks
 
@@ -89,6 +89,8 @@ dotfiles/
 ├── agents/                 # Harness-agnostic agent config (shared by Claude + Codex + opencode)
 │   ├── AGENTS.md           # Global coding-agent preferences. Copied to ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md by chezmoi.
 │   ├── RTK.md              # RTK proxy reference (Claude only — copied to ~/.claude/RTK.md by chezmoi).
+│   ├── registry.yaml       # Cheese sub-agent source of truth (metadata + body_path); rendered into every harness by ap.
+│   ├── agent_definitions/  # Agent bodies (instruction-only Markdown referenced by registry.yaml's body_path).
 │   ├── mcp/
 │   │   ├── registry.yaml   # MCP source of truth (per-entry `harnesses: [claude, codex, opencode]`)
 │   │   └── sync.sh         # Declarative MCP sync — loops over harnesses; claude/codex use native CLIs, opencode jq-edits ~/.config/opencode/opencode.json.
@@ -101,9 +103,8 @@ dotfiles/
 │   │   └── cheese-flair.sh # Weighted name generator + quote picker (used by the SessionStart hook).
 │   └── reference/
 │       └── cheese-flair.md # The names + quote bank read by cheese-flair.sh.
-├── profiles/               # Scoped sessions (base + fe, notion, plugin, review, rtkonly, spec, todo) as `profiles/<name>/profile.yaml` — deployed/launched via the `ap` tool (`dots profile`)
+├── profiles/               # Scoped sessions (base + global + fe, notion, plugin, review, rtkonly, spec, todo) as `profiles/<name>/profile.yaml` — deployed/launched via the `ap` tool (`dots profile`). `base` = registry-derived render primitive; `global` = live install (target=$HOME, registers `local` marketplace, enables `global@local`)
 ├── claude/                 # Claude Code-specific configuration
-│   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/spec, /wreck, /test, etc.)
 │   ├── hooks/              # Pre-tool hooks
 │   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)
@@ -112,8 +113,8 @@ dotfiles/
 │                           # opencode TUI/config lives under chezmoi/dot_config/opencode/ (theme + tui.json always-managed; opencode.json scaffolded once).
 ├── cursor/                 # Cursor-specific configuration
 │   └── plugins/local/      # In-repo Cursor plugins (cheese-grok) deployed by chezmoi to ~/.cursor/{skills,rules,commands,hooks}/ plus hooks.json/modes.json merges.
-├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`gh skill install`) sources. Unioned into the `base` profile and rendered into every harness by `ap`.
-├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email + work on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-base-profile (renders the registry-derived `base` profile — MCPs + skills + hooks — into every harness via `ap`; supersedes the retired install-mcp/install-hooks/install-claude-skills deploy scripts), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-agent-profile (warms the `ap` uv env).
+├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`npx skills add`) sources. Unioned into the `base` profile and rendered into every harness by `ap`.
+├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-base-profile (renders the registry-derived `base` profile — MCPs + skills + hooks — into every harness via `ap`; supersedes the retired install-mcp/install-hooks/install-claude-skills deploy scripts), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-agent-profile (warms the `ap` uv env).
 ├── packages/
 │   ├── packages.yaml       # Flat package registry (brew, cargo, apt)
 │   └── sync.sh             # Package sync with hash cache
@@ -154,7 +155,7 @@ dotfiles/
 - **Performance Optimization**: Git prompt uses caching to avoid slowdowns
 - **Declarative MCP Management**: Single YAML registry at `agents/mcp/registry.yaml`, applied to every installed harness (Claude, Codex, opencode). Claude/Codex use their native `mcp add/remove` CLIs; opencode has no non-interactive CLI, so the sync jq-edits `~/.config/opencode/opencode.json` in place.
 - **Rollback Support**: Sync creates backups and manifests for easy rollback
-- **Scoped Profiles**: `profiles/<name>/profile.yaml` declares task-shaped sessions (base, fe, notion, plugin, review, rtkonly, spec, todo) owned by the `ap` tool. `dots profile launch claude <name>` launches; isolated profiles reproduce the old `ccp` closed-world (strict MCP scope, `--setting-sources ""`, tool whitelist, system-prompt append, permissions deny, env, extra_args).
+- **Scoped Profiles**: `profiles/<name>/profile.yaml` declares task-shaped sessions (base, global, fe, notion, plugin, review, rtkonly, spec, todo) owned by the `ap` tool. `base` is the registry-derived render primitive; `global` wraps it with the install-overlay (`target_default: $HOME`, claude marketplace + plugin enablement) and is what `dots sync` runs against the live config. `dots profile launch claude <name>` launches; isolated profiles reproduce the old `ccp` closed-world (strict MCP scope, `--setting-sources ""`, tool whitelist, system-prompt append, permissions deny, env, extra_args).
 
 ## MCP (Model Context Protocol) Management
 
@@ -261,7 +262,6 @@ Marketplaces must be added first:
 ```bash
 claude plugin marketplace add anthropics/claude-plugins-official
 claude plugin marketplace add upstash/context7
-claude plugin marketplace add jarrodwatts/claude-hud
 ```
 
 **Workflow:**
@@ -338,15 +338,25 @@ A `profile.yaml` declares `mcps` / `skills` / `commands` / `agents` / `hooks` (r
 - `env: {...}` — injected into the process before exec.
 - `extra_args: [...]` — appended verbatim (`${VAR}` expanded from process env / `.env`).
 
+Plus, for *installable* (non-isolated) profiles, the install-overlay fields:
+
+- `target_default: $HOME` — used by `ap install <name>` when `--target` is not passed. Explicit `--target` > profile default > `Path.cwd()`. `${VAR}` and `~` expand at use-time.
+- `marketplaces: {name: path}` — claude-only. Renderer registers each name under `~/.claude/settings.json`'s `extraKnownMarketplaces` as a `directory` source with the expanded path (other harnesses ignore it). `${DOTFILES_DIR}` resolves from process env.
+- `enabled_plugins: {<plugin>@<marketplace>: true}` — re-uses the same field as the launch overlay; for non-isolated installs, the claude renderer merges these entries into `~/.claude/settings.json`'s `enabledPlugins` (preserving user-managed siblings). For isolated launches it still writes the ephemeral closed-world settings.
+
 Inline MCP `${VAR}` env refs resolve at launch from `$DOTFILES_DIR/.env`, failing loud when unset (parity with the retired `gen-profile-mcp.sh`).
 
-**Profiles:** `base` (registry-derived union of all MCPs/skills/hooks — `include: [base]` to layer additively), `fe` (frontend + shadcn/Figma), `notion` (Notion HTTP MCP), `plugin` (plugin dev), `review` (read-only PR review), `rtkonly` (experimental — tilth + rtk), `spec` (discovery dialogue), `todo` (Todoist-only, closed world).
+**Profiles:** `base` (registry-derived union of all MCPs/skills/hooks — pure render primitive useful for staging/inspection; `include: [base]` to layer additively), `global` (live install — wraps base with `target_default: $HOME`, registers the `local` marketplace, enables `global@local`), `fe` (frontend + shadcn/Figma), `notion` (Notion HTTP MCP), `plugin` (plugin dev), `review` (read-only PR review), `rtkonly` (experimental — tilth + rtk), `spec` (discovery dialogue), `todo` (Todoist-only, closed world).
+
+**Install vs render:** `ap install base` renders to `--target/$PWD` — useful for staging or building tarballs but does NOT touch your live config. `ap install global` (no flags) targets `$HOME` and additionally wires the rendered plugin tree into `~/.claude/settings.json` (marketplace + enablement) so Claude actually loads it. `dots sync` runs `ap install global` via `chezmoi/lib/install-base-profile.sh`.
 
 **Launch:** `dots profile launch claude <name> [-- claude args...]` — isolated profiles assemble the closed-world flags; non-isolated render into the harness then exec the bare CLI.
 **Inspect:** `dots profile list` / `dots profile describe <name>`.
-**Add new:** create `profiles/<name>/profile.yaml` (+ optional `CLAUDE.md`), then `dots sync` (renders `base`) or `dots profile launch` for an isolated profile.
+**Add new:** create `profiles/<name>/profile.yaml` (+ optional `CLAUDE.md`), then `dots sync` (renders `global` which includes `base`) or `dots profile launch` for an isolated profile.
 
 **Gotcha:** an isolated profile's tool surface is the `tools` whitelist + `permissions_deny` it declares — there is no inherited user `settings.json` (`--setting-sources ""`). Add the MCP's own tools to `tools` (or rely on the closed `--mcp-config`) rather than expecting the user allowlist to carry over.
+
+**Gotcha 2:** `enabled_plugins` keys are `<plugin-name>@<marketplace>` where `plugin-name` matches the profile that rendered the tree (the claude renderer writes plugin trees to `.claude/plugins/local/<profile_name>/`). Renaming a profile means updating both the YAML's name AND the `enabled_plugins` reference, else the marketplace entry points at a non-existent plugin.
 
 ## Sync System
 
@@ -361,7 +371,7 @@ The `.sync-with-rollback` script provides:
 
 **Skip list** (not symlinked to ~, canonical source is `SYNC_SKIP_LIST` in `.sync-lib.sh`, which is sourced by `.sync-with-rollback`):
 
-- `.git`, `.local`, `.worktrees`, `reference`, `packages`, `brew`, `apt`, `agents`, `codex`
+- `.git`, `.local`, `.worktrees`, `reference`, `packages`, `brew`, `apt`, `agents`, `agent-profile`, `codex`
 
 **Hidden directory dispatch**: visible dirs are iterated by `for file in *` (glob), hidden dirs (starting with `.`) are iterated separately by `sync_hidden_dirs`. Both use the same rule: if `$dir/.sync` exists, run it. `chezmoi/` is a visible dir that owns its own `.sync` and is dispatched via the same mechanism (no SYNC_SKIP_LIST entry needed — the `.sync` short-circuit happens before symlinking).
 
@@ -375,9 +385,11 @@ A subset of dotfiles is rendered by [chezmoi](https://chezmoi.io/) instead of sy
 
 - `~/.gitconfig` — `chezmoi/private_dot_gitconfig.tmpl` (templated email, work-only `[url]` redirects)
 - `~/.copilot/mcp-config.json` — `chezmoi/private_dot_copilot/mcp-config.json.tmpl` (env-rendered API keys, fails fast if unset)
+- `~/.claude/settings.json` — `chezmoi/dot_claude/create_settings.json` (seeded once with the user-owned baseline; `ap install global` then jq-merges `enabledPlugins["global@local"]` + `extraKnownMarketplaces.local` on every run, preserving user-managed siblings). A one-time `run_once_before_migrate-claude-settings.sh` removes the legacy `$DOTFILES/claude/settings.json` symlink before chezmoi seeds.
+- `~/.config/opencode/opencode.json` — `chezmoi/dot_config/opencode/create_opencode.json` (analogous: seed once, then `ap install base --target $HOME/.config/opencode --harness opencode` mutates the `mcp` block)
 - `~/.claude/skills/`, `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/config.toml`, and MCP entries — handled by `run_onchange_*` scripts under `chezmoi/.chezmoiscripts/` that fork to helpers in `chezmoi/lib/`
 
-**First-init (interactive):** `dots sync` dispatches to `chezmoi/.sync`, which invokes `chezmoi init --source $DOTFILES/chezmoi` if `~/.config/chezmoi/chezmoi.toml` is missing. The `.chezmoi.toml.tmpl` prompts for: `email`, `work`. Answers persist to `~/.config/chezmoi/chezmoi.toml` (alongside the persisted `sourceDir`) and aren't re-prompted.
+**First-init (interactive):** `dots sync` dispatches to `chezmoi/.sync`, which invokes `chezmoi init --source $DOTFILES/chezmoi` if `~/.config/chezmoi/chezmoi.toml` is missing. The `.chezmoi.toml.tmpl` prompts for: `email`. The answer persists to `~/.config/chezmoi/chezmoi.toml` (alongside the persisted `sourceDir`) and isn't re-prompted.
 
 **Subsequent runs:** `dots sync` calls `chezmoi apply --force` via `chezmoi/.sync`. Non-interactive.
 
@@ -394,7 +406,7 @@ chezmoi doctor                                       # health check (also wired 
 
 **Re-prompt:** delete `~/.config/chezmoi/chezmoi.toml` and re-run `dots sync` (or `chezmoi init --source $DOTFILES/chezmoi` directly).
 
-**Adding a file:** drop a templated source under `chezmoi/` using the [chezmoi naming attributes](https://chezmoi.io/reference/source-state-attributes/) (`private_`, `dot_`, `executable_`, `encrypted_`, `.tmpl`). Reference data via `{{ .email }}`, `{{ .work }}`, etc. — see the existing templates for patterns. Add a corresponding test to `tests/chezmoi-wiring.bats`.
+**Adding a file:** drop a templated source under `chezmoi/` using the [chezmoi naming attributes](https://chezmoi.io/reference/source-state-attributes/) (`private_`, `dot_`, `executable_`, `encrypted_`, `.tmpl`). Reference data via `{{ .email }}`, etc. — see the existing templates for patterns. Add a corresponding test to `tests/chezmoi-wiring.bats`.
 
 **Secrets upgrade path:** `mcp-config.json.tmpl` uses `{{ env "..." }}` today. Swap to `{{ onepasswordRead "op://<vault>/<item>/credential" }}` once 1Password CLI is set up; remove the corresponding `.env` entries.
 
@@ -425,7 +437,7 @@ chezmoi doctor                                       # health check (also wired 
 
 ### Git Integration
 
-- Work email: <paul.sorensen@uber.com>
+- Default git email is templated via chezmoi (`{{ .email }}`); set a different address per repo with `git config user.email <addr>` (the `cpersonal` alias is a shortcut)
 - Aliases follow oh-my-zsh conventions for familiarity
 - Custom `grb` alias rebases from main (not master)
 - Kdiff3 configured as merge/diff tool
@@ -477,22 +489,21 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 
 | Type | Registry | Sync command | Notes |
 |------|----------|--------------|-------|
-| MCP | `agents/mcp/registry.yaml` | `mcp-sync` = `dots profile install base` (or `dots sync`) | Restart harnesses after. Unioned into the `base` profile; `ap`'s renderers materialize per harness (claude `.mcp.json` plugin-scoped, codex `config.toml`, opencode/cursor/copilot merged JSON). |
-| Hook | `agents/hooks/registry.yaml` | `hook-sync` = `dots profile install base` (or `dots sync`) | Harness-agnostic SessionStart/etc. hooks; `ap`'s renderers copy the self-locating script + its `shared_assets` (lib/bank) under each harness layout. |
+| MCP | `agents/mcp/registry.yaml` | `dots sync` (or `dots profile install global` on a deployed setup) | Restart harnesses after. Unioned into the `base` profile, deployed to `$HOME` via `global`; `ap`'s renderers materialize per harness (claude `.mcp.json` plugin-scoped, codex `config.toml`, opencode/cursor/copilot merged JSON). |
+| Hook | `agents/hooks/registry.yaml` | `dots sync` (or `dots profile install global`) | Harness-agnostic SessionStart/etc. hooks; `ap`'s renderers copy the self-locating script + its `shared_assets` (lib/bank) into the plugin tree at `~/.<harness>/plugins/local/global/{hooks,lib,reference}/`. Wiring lives in the plugin's `plugin.json`, NOT in `~/.claude/settings.json`. |
 | Plugin (Claude) | `claude/plugins/registry.yaml` | `plugin-sync` | Add `mcp__plugin_<name>__*` to `permissions.allow` if it provides MCP tools |
 | Plugin (Cursor) | `cursor/plugins/local/<name>/` (per-plugin manifest at `.cursor-plugin/plugin.json`) | `cursor-plugin-sync` (or `dots sync`) | chezmoi's `run_onchange_after_install-cursor-plugins.sh.tmpl` drives `chezmoi/lib/install-cursor-plugin.sh` per plugin, deploying to `~/.cursor/{skills,rules,commands,hooks}/` and jq-merging `hooks.json` + `modes.json`. Per-collection manifests at `<target>/.dotfiles-managed-<plugin>` track ownership. Restart Cursor after. |
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages/packages.yaml` | `dots sync` | Use `dots sync refresh` to force re-check |
-| Skill | `skills/` (local dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` = `dots profile install base`) | chezmoi's `run_onchange_after_install-base-profile.sh.tmpl` renders the `base` profile via `ap`: local (`path:`) skills are copied by the renderers, external (`source:`) skills fetch via `gh skill install` per harness. `ap`'s install manifest tracks ownership. |
-| Profile | `profiles/<name>/profile.yaml` | `dots profile install <name>` / `dots profile launch claude <name>` | Registry-entry-superset items + (isolated) launch-overlay fields. `base` is registry-derived; specialized profiles `include: [base]`; isolated profiles are closed worlds (the `ccp` parity). |
+| Skill | `skills/` (local dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` = `dots profile install base`) | chezmoi's `run_onchange_after_install-base-profile.sh.tmpl` renders the `base` profile via `ap`: local (`path:`) skills are copied by the renderers, external (`source:`) skills fetch via `npx skills add` (one `git clone` per source, all harnesses in one call). `ap`'s install manifest tracks ownership. |
+| Profile | `profiles/<name>/profile.yaml` | `dots profile install <name>` / `dots profile launch claude <name>` | Registry-entry-superset items + (isolated) launch-overlay fields + (installable) install-overlay fields (`target_default`, `marketplaces`, `enabled_plugins`). `base` is registry-derived; `global` wraps base for the live install path; specialized profiles `include: [base]`; isolated profiles are closed worlds (the `ccp` parity). |
 
 ## Important Gotchas
 
 1. **Use `dots sync`**: Don't manually symlink - use the sync script for rollback support
-2. **Work-Specific Config**: Git configuration includes Uber-specific settings
-3. **macOS Specific**: Paths and some utilities assume macOS environment
-4. **Vi Mode**: Shell is in vi mode by default
-5. **MCP Scope**: Use `user` scope for dev tools, `project` for team-shared MCPs
-6. **Reference Folder**: Put reference docs in `reference/` (gitignored, not symlinked)
-7. **zsh Loading Order**: Files in `zsh/` are sourced in the order they appear in `zshrc`. If you add a new config file, edit `zshrc` to source it at the right point. For example, completions must load before `fzf.zsh` or keybindings might conflict.
-8. **Pre-Commit Hook Failures**: If prek blocks a commit (e.g., detected secrets), fix the issue before retrying. Only use `--no-verify` for temporary overrides. Check `prek.toml` to understand what's being checked.
+2. **macOS Specific**: Paths and some utilities assume macOS environment
+3. **Vi Mode**: Shell is in vi mode by default
+4. **MCP Scope**: Use `user` scope for dev tools, `project` for team-shared MCPs
+5. **Reference Folder**: Put reference docs in `reference/` (gitignored, not symlinked)
+6. **zsh Loading Order**: Files in `zsh/` are sourced in the order they appear in `zshrc`. If you add a new config file, edit `zshrc` to source it at the right point. For example, completions must load before `fzf.zsh` or keybindings might conflict.
+7. **Pre-Commit Hook Failures**: If prek blocks a commit (e.g., detected secrets), fix the issue before retrying. Only use `--no-verify` for temporary overrides. Check `prek.toml` to understand what's being checked.

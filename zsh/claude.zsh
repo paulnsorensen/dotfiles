@@ -89,6 +89,13 @@ alias hook-sync='base-sync'
 alias hook-edit='${EDITOR:-vim} $AGENTS_DOTFILES/hooks/registry.yaml'
 alias hook-ls='yq -r ".hooks | keys | .[]" $AGENTS_DOTFILES/hooks/registry.yaml'
 
+# ═══════════════════════════════════════════════════════════════════
+# Agent Management (harness-agnostic — edit surface; deploy via `ap`)
+# ═══════════════════════════════════════════════════════════════════
+alias agent-sync='base-sync'
+alias agent-edit='${EDITOR:-vim} $AGENTS_DOTFILES/registry.yaml'
+alias agent-ls='yq -r ".agents | keys | .[]" $AGENTS_DOTFILES/registry.yaml'
+
 # Add user-scoped MCP (available in all projects)
 mcp-add() {
     if [[ -z "$1" || -z "$2" ]]; then
