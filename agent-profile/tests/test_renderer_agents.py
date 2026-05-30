@@ -95,6 +95,37 @@ def test_agent_writable_when_no_signal() -> None:
     assert not agent_is_read_only({})
 
 
+def test_agent_writable_when_whitelist_grants_tilth_write() -> None:
+    # tilth's writer is a write surface even though the built-in Write is absent.
+    assert not agent_is_read_only(
+        {"tools": ["Read", "Grep", "mcp__tilth__tilth_write"]}
+    )
+
+
+def test_agent_writable_when_whitelist_grants_serena_editor() -> None:
+    assert not agent_is_read_only(
+        {"tools": ["Read", "mcp__serena__replace_symbol_body"]}
+    )
+
+
+def test_agent_writable_when_whitelist_grants_serena_wildcard() -> None:
+    # mcp__serena__* subsumes serena's editors — not read-only.
+    assert not agent_is_read_only(
+        {"tools": ["Read", "Grep", "Glob", "Bash", "mcp__serena__*"]}
+    )
+
+
+def test_agent_read_only_when_whitelist_is_pure_serena_readers() -> None:
+    # A wildcard is required to grant writes; naming only read tools stays read-only.
+    assert agent_is_read_only(
+        {"tools": ["Read", "mcp__serena__find_symbol", "mcp__serena__get_symbols_overview"]}
+    )
+
+
+def test_agent_is_read_only_from_disallowed_mcp_write() -> None:
+    assert agent_is_read_only({"disallowedTools": ["mcp__tilth__tilth_write"]})
+
+
 # ── schema flow-through (parse keeps the field) ────────────────────────
 
 
