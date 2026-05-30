@@ -89,6 +89,8 @@ dotfiles/
 ├── agents/                 # Harness-agnostic agent config (shared by Claude + Codex + opencode)
 │   ├── AGENTS.md           # Global coding-agent preferences. Copied to ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md by chezmoi.
 │   ├── RTK.md              # RTK proxy reference (Claude only — copied to ~/.claude/RTK.md by chezmoi).
+│   ├── registry.yaml       # Cheese sub-agent source of truth (metadata + body_path); rendered into every harness by ap.
+│   ├── agent_definitions/  # Agent bodies (instruction-only Markdown referenced by registry.yaml's body_path).
 │   ├── mcp/
 │   │   ├── registry.yaml   # MCP source of truth (per-entry `harnesses: [claude, codex, opencode]`)
 │   │   └── sync.sh         # Declarative MCP sync — loops over harnesses; claude/codex use native CLIs, opencode jq-edits ~/.config/opencode/opencode.json.
@@ -103,7 +105,6 @@ dotfiles/
 │       └── cheese-flair.md # The names + quote bank read by cheese-flair.sh.
 ├── profiles/               # Scoped sessions (base + global + fe, notion, plugin, review, rtkonly, spec, todo) as `profiles/<name>/profile.yaml` — deployed/launched via the `ap` tool (`dots profile`). `base` = registry-derived render primitive; `global` = live install (target=$HOME, registers `local` marketplace, enables `global@local`)
 ├── claude/                 # Claude Code-specific configuration
-│   ├── agents/             # Cheese-themed specialist agents
 │   ├── commands/           # Slash commands (/spec, /wreck, /test, etc.)
 │   ├── hooks/              # Pre-tool hooks
 │   └── plugins/            # Plugin registry; `plugins/local/` holds in-repo plugins (cheese-flow, todoist-flow)

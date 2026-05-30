@@ -53,13 +53,14 @@ Before auditing, gather empirical data from session logs. This step is
    python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py
    ```
 
-2. Spawn **three parallel sub-agents** (all sonnet, read-only):
+2. Spawn **three parallel `duckdb-expert` sub-agents** (haiku, read-only) — one
+   per query pack from `skills/session-analytics/references/skill-audit-queries.md`:
 
-   | Agent | Type | Prompt |
-   |-------|------|--------|
-   | Usage | `skill-analytics-usage` | "Analyze usage patterns for skill: {name}" |
-   | Tools | `skill-analytics-tools` | "Analyze tool patterns for skill: {name}. Declared tools: {tools list from frontmatter}" |
-   | Friction | `skill-analytics-friction` | "Analyze friction patterns for skill: {name}" |
+   | Pack | Agent | Prompt |
+   |------|-------|--------|
+   | Usage | `duckdb-expert` | "Run the `usage` skill-audit pack for skill: {name}" |
+   | Tools | `duckdb-expert` | "Run the `tools` skill-audit pack for skill: {name}. Declared tools: {tools list from frontmatter}" |
+   | Friction | `duckdb-expert` | "Run the `friction` skill-audit pack for skill: {name}" |
 
 3. Collect their structured findings for use in Dimension 7.
 
@@ -99,8 +100,8 @@ evidence? Does it re-assess borderline items? Is there a surfacing threshold?
 
 Reference implementations:
 
-- `claude/agents/fromage-fort.md` — PR comment triage
-- `claude/agents/ricotta-reducer.md` — simplification audit
+- `agents/agent_definitions/fromage-fort.md` — PR comment triage
+- `agents/agent_definitions/ricotta-reducer.md` — simplification audit
 
 #### Dimension 2 — Tool Scoping
 
