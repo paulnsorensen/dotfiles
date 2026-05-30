@@ -32,6 +32,89 @@ def _frontmatter_lines(frontmatter: dict[str, Any]) -> list[str]:
     return [f"{k}: {v}" for k, v in frontmatter.items()]
 
 
+def strip_frontmatter(text: str) -> str:
+    """Return ``text`` with a leading ``---``/``---`` YAML frontmatter block
+    removed.
+
+    A block is recognised only when the very first line is exactly ``---``;
+    it ends at the next line that is exactly ``---``. Bodies that do not open
+    with a frontmatter block — or whose opener is never closed — are returned
+    unchanged, so a body that merely starts with a horizontal rule is never
+    truncated. Used to keep already-frontmattered agent bodies from emitting a
+    second frontmatter block (or leaking frontmatter into codex's
+    ``developer_instructions``) when a renderer prepends its own."""
+    if not text.startswith("---"):
+        return text
+    lines = text.splitlines(keepends=True)
+    if lines[0].rstrip("\r\n") != "---":
+        return text
+    for i in range(1, len(lines)):
+        if lines[i].rstrip("\r\n") == "---":
+            return "".join(lines[i + 1:])
+    return text
+
+
+# Tools whose presence means an agent can modify files. Used to derive
+# read-only intent for harnesses that sandbox by capability (codex
+# ``sandbox_mode``, opencode ``permission.edit``) rather than by an explicit
+# tool list.
+_WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+
+
+def agent_is_read_only(item: dict[str, Any]) -> bool:
+    """True when an agent's tool config forbids file writes.
+
+    Read-only when the agent either disallows a write tool
+    (``disallowedTools``) or declares a ``tools`` whitelist that contains no
+    write tool. An agent that declares neither signal is treated as writable
+    (no sandbox imposed)."""
+    if _WRITE_TOOLS & set(item.get("disallowedTools") or ()):
+        return True
+    tools = item.get("tools") or ()
+    return bool(tools) and not (_WRITE_TOOLS & set(tools))
+
+
+def claude_agent_frontmatter(item: dict[str, Any]) -> dict[str, str]:
+    """Build the frontmatter dict for the shared ``.claude/agents/<n>.md`` file.
+
+    This file is read by Claude *and* Cursor, and — critically — Claude
+    resolves it at user scope (``~/.claude/agents/``, priority 4), which wins
+    over the same agent in a plugin tree (priority 5). So the shared file is
+    the one Claude actually honors and must carry the full Claude metadata,
+    not a model-neutral subset: ``model`` (claude), ``color``, ``effort`` and
+    ``skills`` are all honored sub-agent frontmatter fields. Cursor reads the
+    same file and ignores the fields it does not recognise; a Cursor-specific
+    model still overrides via ``.cursor/agents/<n>.md`` when ``models.cursor``
+    is set.
+
+    Values are pre-stringified so :func:`_frontmatter_lines` emits clean YAML:
+    ``tools`` as a CSV string, ``disallowedTools`` / ``skills`` as ``[a, b]``
+    flow sequences, the rest as scalars. Empty fields are omitted."""
+    fm: dict[str, str] = {"name": item["name"]}
+    desc = item.get("description") or ""
+    if desc:
+        fm["description"] = desc
+    tools = item.get("tools") or []
+    if tools:
+        fm["tools"] = ", ".join(tools)
+    disallowed = item.get("disallowedTools") or []
+    if disallowed:
+        fm["disallowedTools"] = f"[{', '.join(disallowed)}]"
+    model = (item.get("models") or {}).get("claude") or ""
+    if model:
+        fm["model"] = model
+    color = item.get("color") or ""
+    if color:
+        fm["color"] = color
+    effort = item.get("effort") or ""
+    if effort:
+        fm["effort"] = effort
+    skills = item.get("skills") or []
+    if skills:
+        fm["skills"] = f"[{', '.join(skills)}]"
+    return fm
+
+
 def write_shared_claude_agent(
     target: Path,
     name: str,
@@ -59,7 +142,7 @@ def write_shared_claude_agent(
         parts.append("---\n")
         parts.append("\n".join(_frontmatter_lines(frontmatter)) + "\n")
         parts.append("---\n")
-    parts.append(body_path.read_text())
+    parts.append(strip_frontmatter(body_path.read_text()))
     abs_path.write_text("".join(parts))
 
     track_file(out_files, rel)
@@ -127,6 +210,8 @@ def render_model_override(
     abs_path = Path(str(target).rstrip("/")) / rel
 
     abs_path.parent.mkdir(parents=True, exist_ok=True)
-    abs_path.write_text(f"---\nmodel: {model}\n---\n" + body_path.read_text())
+    abs_path.write_text(
+        f"---\nmodel: {model}\n---\n" + strip_frontmatter(body_path.read_text())
+    )
 
     track_file(out_files, rel)

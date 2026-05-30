@@ -12,10 +12,15 @@ per-type edit surface.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
+from agent_profile._validate import ParseError
 from agent_profile.env import EnvResolutionError
 from agent_profile.ingest import expand_registries
+from agent_profile.renderers.base import body_abs
 
 
 # ─── fixtures: a miniature dotfiles-shaped repo ───────────────────────
@@ -62,6 +67,20 @@ def repo(tmp_path):
     )
     (tmp_path / "agents" / "lib" / "cheese-flair.sh").write_text("# lib\n")
 
+    (tmp_path / "agents" / "registry.yaml").write_text(
+        "agents:\n"
+        "  ghostbuster:\n"
+        "    description: dead code\n"
+        "    models:\n"
+        "      claude: sonnet\n"
+        "    disallowedTools: [Edit, Write]\n"
+        "    color: red\n"
+        "    effort: high\n"
+        "    skills: [scout]\n"
+        "    body_path: claude/agents/ghostbuster.md\n"
+        "  bad-entry: not-a-mapping\n"
+    )
+
     (tmp_path / "skills" / "_registry.yaml").write_text(
         "sources:\n"
         "  paulnsorensen/easy-cheese:\n"
@@ -78,6 +97,7 @@ def repo(tmp_path):
 
     directive = {
         "mcps": "agents/mcp/registry.yaml",
+        "agents": "agents/registry.yaml",
         "skills": ["skills/_registry.yaml", "skills/"],
         "hooks": "agents/hooks/registry.yaml",
     }
@@ -159,6 +179,82 @@ def test_expand_hooks_become_named_list(repo):
     assert hook["timeout"] == 5
     assert hook["harnesses"] == ["claude", "codex"]
     assert hook["_source_dir"] == str(root)
+
+
+# ─── agent ingestion ──────────────────────────────────────────────────
+
+
+def test_expand_agents_become_named_list(repo):
+    root, directive = repo
+    out = expand_registries(directive, root, _dotenv())
+    names = [a["name"] for a in out["agents"]]
+    # The malformed `bad-entry: not-a-mapping` is skipped (parity with the
+    # MCP/hook readers — trust nothing from the registry file).
+    assert names == ["ghostbuster"]
+
+
+def test_expand_agents_carry_all_metadata(repo):
+    root, directive = repo
+    out = expand_registries(directive, root, _dotenv())
+    gb = out["agents"][0]
+    assert gb["description"] == "dead code"
+    assert gb["models"] == {"claude": "sonnet"}
+    assert gb["disallowedTools"] == ["Edit", "Write"]
+    assert gb["color"] == "red"
+    assert gb["effort"] == "high"
+    assert gb["skills"] == ["scout"]
+    assert gb["body_path"] == "claude/agents/ghostbuster.md"
+
+
+def test_expand_agents_source_dir_is_repo_root(repo):
+    # body_path resolves against the repo root (where claude/agents/ lives),
+    # not the profile dir — the whole reason agents go through a registry.
+    root, directive = repo
+    out = expand_registries(directive, root, _dotenv())
+    assert out["agents"][0]["_source_dir"] == str(root)
+
+
+def test_real_agents_registry_body_paths_resolve():
+    # The shipped agents/registry.yaml is the Phase-2 deliverable. Every entry
+    # carries a body_path that MUST resolve to a real file. body_abs() now
+    # fails loud (raises ParseError) on a declared-but-unresolvable path, so a
+    # typo'd or stale path aborts `ap install` instead of silently shipping a
+    # body-less agent. This locks the deliverable: every body resolves today.
+    repo_root = Path(
+        os.environ.get("DOTFILES_DIR") or Path.home() / "Dev/dotfiles"
+    )
+    registry = repo_root / "agents" / "registry.yaml"
+    if not registry.is_file():
+        pytest.skip(f"agents registry not found at {registry}")
+
+    out = expand_registries(
+        {"agents": "agents/registry.yaml"}, repo_root, _dotenv()
+    )
+    agents = out["agents"]
+    assert agents, "shipped agents/registry.yaml expanded to zero agents"
+    # body_abs raises if any path is unresolvable; assert each is a real file.
+    for a in agents:
+        resolved = body_abs(a)
+        assert resolved is not None and resolved.is_file(), a["name"]
+
+
+def test_body_abs_raises_on_declared_missing_path(tmp_path):
+    # Finding 1: a declared body_path that does not resolve is a registry bug,
+    # not an optional body — fail loud (ParseError → clean exit 1) rather than
+    # silently skip the body. Catches a typo'd/stale agent body_path at install.
+    item = {
+        "name": "ghostbuster",
+        "_source_dir": str(tmp_path),
+        "body_path": "claude/agents/ghostbuster.md",  # never created
+    }
+    with pytest.raises(ParseError, match="ghostbuster"):
+        body_abs(item)
+
+
+def test_body_abs_none_when_no_body_declared(tmp_path):
+    # The optional-body case is preserved: no body_path => None (the renderer
+    # legitimately skips the body), NOT a raise.
+    assert body_abs({"name": "x", "_source_dir": str(tmp_path)}) is None
 
 
 # ─── skill ingestion (external + local tree) ──────────────────────────
@@ -244,10 +340,10 @@ def test_expand_repo_level_external_skill_has_no_name(repo):
 
 def test_expand_registries_absent_sections_yield_empty_lists(repo):
     root, _ = repo
-    # An empty directive returns the three keys, each an empty list — not a
+    # An empty directive returns every section key, each an empty list — not a
     # KeyError downstream, not a missing section.
     out = expand_registries({}, root, _dotenv())
-    assert out == {"mcps": [], "skills": [], "hooks": []}
+    assert out == {"mcps": [], "agents": [], "skills": [], "hooks": []}
 
 
 def test_expand_mcps_skip_non_mapping_entries(repo):

@@ -271,19 +271,17 @@ def _cursor_model(item: dict[str, Any]) -> str:
 
 
 def _agent_frontmatter(item: dict[str, Any]) -> dict[str, Any]:
-    """Build the shared-agent frontmatter dict, dropping empty/null values.
+    """Build the shared ``.claude/agents/<n>.md`` frontmatter.
 
-    Port of the bash jq object: ``{name, description, tools}`` where
-    ``tools`` becomes a comma-joined string only when non-empty, and any
-    empty/null entry is filtered out (``with_entries(select(...))``)."""
-    fields: dict[str, Any] = {
-        "name": item["name"],
-        "description": item.get("description") or "",
-    }
-    tools = item.get("tools") or []
-    if len(tools) > 0:
-        fields["tools"] = ", ".join(tools)
-    return {k: v for k, v in fields.items() if v != "" and v is not None}
+    Delegates to :func:`shared.claude_agent_frontmatter` so the file Cursor
+    and Claude share is written identically by both renderers (the install
+    runs cursor after claude into the same path — divergent frontmatter would
+    let the later writer clobber the earlier one's metadata). Claude resolves
+    this user-scoped file ahead of any plugin copy, so it carries the full
+    metadata (model/color/effort/skills); Cursor ignores what it doesn't use
+    and overrides the model via ``.cursor/agents/<n>.md`` when ``models.cursor``
+    is set."""
+    return shared.claude_agent_frontmatter(item)
 
 
 def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:

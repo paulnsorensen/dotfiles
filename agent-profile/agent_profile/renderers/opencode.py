@@ -2,9 +2,9 @@
 
 Behavioral port of agent-profile/renderers/opencode.sh, scoped to the
 ``opencode.json`` merge + surgical clean (the mcp + permission surfaces).
-The agent/skill/command writers route through the shared cross-harness
-paths and are owned elsewhere; this renderer owns the merged
-``opencode.json`` file.
+The skill/command writers route through the shared cross-harness paths and
+are owned elsewhere; this renderer owns the merged ``opencode.json`` file
+plus opencode's native subagent files at ``<target>/agents/<name>.md``.
 
 Substrate: stdlib :mod:`json` only (own your keys; ``del``/``pop`` for
 surgical removal). No ``jq``.
@@ -24,7 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from agent_profile.parse import Manifest
-from agent_profile.renderers.base import mcps_for, read_json_object
+from agent_profile.renderers.base import body_abs, mcps_for, read_json_object
+from agent_profile.shared import agent_is_read_only, strip_frontmatter, track_file
 
 # opencode's MCP membership default (matches the bash select default).
 _OPENCODE_MCP_DEFAULT = ("claude", "codex", "opencode")
@@ -80,16 +81,20 @@ class OpencodeRenderer:
     name = "opencode"
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
-        """Merge this profile's opencode MCPs and translated permissions
-        into ``<target>/opencode.json``, bootstrapping the schema stub
-        when the file is absent. Returns ``[]`` — the merged file is not
-        a tracked artefact."""
+        """Render opencode's native subagent files (``.opencode/agent/``) and
+        merge this profile's opencode MCPs + translated permissions into
+        ``<target>/opencode.json``, bootstrapping the schema stub when the
+        file is absent. Returns the tracked agent paths; the merged
+        ``opencode.json`` is never listed (it is undone in :meth:`clean`)."""
+        written = self._render_agents(manifest, target)
+
         mcps = mcps_for(manifest, "opencode", _OPENCODE_MCP_DEFAULT)
         allow = _allow_keys(manifest)
 
-        # Bash early-returns when neither surface has anything to add.
+        # Bash early-returns when neither mcp/permission surface has anything
+        # to add; agents are written above regardless.
         if not mcps and not allow:
-            return []
+            return written
 
         cfg = Path(str(target).rstrip("/")) / "opencode.json"
         data: dict[str, Any] = (
@@ -111,7 +116,48 @@ class OpencodeRenderer:
 
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_text(json.dumps(data, indent=2) + "\n")
-        return []
+        return written
+
+    def _render_agents(self, manifest: Manifest, target: Path) -> list[str]:
+        """Write each agent to ``<target>/agents/<name>.md`` — opencode's
+        native subagent path (Markdown with ``mode: subagent`` frontmatter),
+        not the shared ``.claude/agents/`` tree, which opencode does not read.
+
+        The path is root-relative to ``target`` (the opencode config dir),
+        mirroring how this renderer writes ``opencode.json`` at the target
+        root. The installer points ``target`` at ``~/.config/opencode``, whose
+        global agent dir is ``~/.config/opencode/agents/`` (plural, no extra
+        ``.opencode/`` prefix — that prefix is the *project*-local convention,
+        ``<project>/.opencode/agents/``, not the global config dir). Singular
+        ``agent/`` only works via opencode's legacy backwards-compat alias.
+
+        Read-only intent (see :func:`agent_is_read_only`) becomes a
+        ``permission.edit: deny`` block. Returns the tracked rel paths."""
+        base = Path(str(target).rstrip("/"))
+        written: list[str] = []
+        for item in manifest.agents:
+            body_path = body_abs(item)
+            if body_path is None:
+                continue
+            name = item["name"]
+            fm = [
+                f"description: {item.get('description') or ''}",
+                "mode: subagent",
+            ]
+            model = (item.get("models") or {}).get("opencode") or ""
+            if model and model != "inherit":
+                fm.append(f"model: {model}")
+            if agent_is_read_only(item):
+                fm.append("permission:")
+                fm.append("  edit: deny")
+            body = strip_frontmatter(body_path.read_text())
+            content = "---\n" + "\n".join(fm) + "\n---\n" + body
+            rel = f"agents/{name}.md"
+            abs_path = base / rel
+            abs_path.parent.mkdir(parents=True, exist_ok=True)
+            abs_path.write_text(content)
+            track_file(written, rel)
+        return written
 
     def clean(self, manifest: Manifest, target: Path) -> None:
         """Surgically remove this profile's mcp + permission entries from

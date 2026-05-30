@@ -3,6 +3,10 @@
 # NotebookEdit denied (spec work doesn't touch notebooks).
 name: spec
 description: Discovery dialogue — research-heavy
+# Cheese sub-agents are available in this closed world too
+# (agents are orthogonal to the MCP/skill scope below).
+registries:
+  agents: agents/registry.yaml
 isolated: true
 system_prompt: CLAUDE.md
 permissions_deny:

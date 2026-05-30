@@ -42,7 +42,7 @@ from agent_profile.renderers.base import (
     mcps_for,
     read_json_object,
 )
-from agent_profile.shared import track_file
+from agent_profile.shared import strip_frontmatter, track_file
 
 # Copilot's MCP membership default in the bash select() is claude+codex
 # (narrower than the common claude/codex/opencode triple).
@@ -136,7 +136,7 @@ class CopilotRenderer:
 
             body = body_abs(agent)
             if body is not None:
-                parts.append(body.read_text())
+                parts.append(strip_frontmatter(body.read_text()))
 
             abs_path.write_text("".join(parts))
             track_file(out_files, rel)
