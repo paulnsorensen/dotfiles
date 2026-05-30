@@ -3,14 +3,9 @@ name: wt-git
 model: haiku
 allowed-tools: Bash(git:*), Bash(gh:*), Bash(wt-git:*), Read, Grep, Glob
 description: >
-  Run git and GitHub operations inside a worktree without triggering Claude Code's
-  safety heuristics. Use this skill whenever you need to commit, push, create PRs,
-  or run any git command in a worktree you're not currently inside — especially from
-  orchestrator agents, /move-my-cheese, or /cheese-convoy. Also use when
-  you catch yourself about to write "cd <path> && git" or "gh pr create --body" with
-  a heredoc. This skill exists because Claude Code's Seatbelt sandbox blocks two
-  legitimate patterns: compound cd+git commands ("bare repository attack" heuristic)
-  and heredoc PR bodies with markdown headers ("# hides arguments" heuristic).
+  Run git and GitHub commands inside another worktree. Use for commits, pushes,
+  PRs, or worktree git operations that would otherwise require cd+git command
+  patterns or heredoc-heavy gh calls.
 ---
 
 # wt-git

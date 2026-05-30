@@ -5,13 +5,9 @@ context: fork
 effort: high
 allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Bash(cargo check:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(tsc:*), Bash(npm run:*), Bash(pnpm:*), Bash(yarn:*), Bash(go build:*), Bash(go vet:*), Bash(go test:*), Bash(uv run:*), Bash(python -m:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(prek:*), Bash(rtk:*), Agent, mcp__serena__*
 description: >
-  Verify that a spec's implementation matches its requirements using Serena MCP
-  structural analysis, build verification, and test coverage checking. Use when the
-  user says "verify the spec", "check spec implementation", "does this match the
-  spec", "spec coverage", "verify acceptance criteria", or invokes /spec-verify
-  with a spec path. Also trigger after `/cure` completes to validate the result
-  against the original spec. Do NOT use for writing code — this is verification
-  only. Do NOT use for general code review — use /age for that.
+  Verify an implementation against a spec using structural checks, build gates,
+  and tests. Use for spec coverage, acceptance criteria, and post-cure
+  validation; not for writing code or general review.
 ---
 
 # spec-verify

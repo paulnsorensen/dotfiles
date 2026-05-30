@@ -2,13 +2,8 @@
 name: tdd-assertions
 model: sonnet
 description: >
-  Detect and fix weak test assertions that AI generates across Rust, Python,
-  TypeScript, Go, and Shell. Use this skill whenever you write or review tests,
-  when the user says "strengthen assertions", "fix weak tests", or during
-  /wreck, /cook, /press, and /simplify flows. Also use as a mental checklist before
-  committing test code — AI assistants systematically produce assertions that
-  pass when the code is broken, which is the cardinal sin of TDD.
-  Trigger proactively on test generation and test review.
+  Find and fix weak test assertions across Rust, Python, TypeScript, Go, and
+  Shell. Use when writing, reviewing, strengthening, or repairing tests.
 allowed-tools: Read, Edit, Grep, Glob, Bash(rg:*)
 ---
 

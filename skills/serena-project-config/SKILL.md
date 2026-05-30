@@ -2,17 +2,9 @@
 name: serena-project-config
 model: haiku
 description: >
-  Per-repo Serena MCP configuration. Use when the user wants to "configure
-  serena for this repo", "set up serena per repo", "serena project config",
-  "tune serena for this codebase", "monorepo serena", "serena wrong language",
-  "serena vendor/node_modules indexing", "review-only serena", or otherwise
-  wants the .serena/project.yml in a specific repo tuned. The skill recognizes
-  the four cases where the auto-bootstrap (--project-from-cwd) is not enough —
-  monorepos, wrong language detection, heavy generated dirs, LSP-specific
-  tuning — and walks through the edit + verification. Do NOT trigger on
-  general "use serena" routing requests; that lives in agents/AGENTS.md's
-  Code-Intelligence Routing section. Do NOT enable memory tools or onboarding
-  — they are intentionally disabled in ~/.serena/serena_config.yml.
+  Tune per-repo Serena MCP config when auto-bootstrap is not enough. Use for
+  monorepos, wrong language detection, generated-dir exclusions, review-only
+  setups, or .serena/project.yml changes.
 ---
 
 # serena-project-config

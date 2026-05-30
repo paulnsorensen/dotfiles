@@ -4,12 +4,9 @@ model: haiku
 context: fork
 allowed-tools: Read, Write, Bash(python3:*), Bash(uv:*), Bash(pytest:*), Bash(ls:*), Bash(rm:*)
 description: >
-  Run Python test code in an isolated sandbox without polluting the main context.
-  Writes test files to .claude/testing/ (gitignored), runs via sub-agent, and
-  reports only pass/fail counts and assertion details. Use when you want to quickly
-  verify code without writing inline python3 -c scripts. Also supports --sweep to
-  clean stale test files. Use when the user says "run a quick test", "verify this
-  works", "sanity check", "test this snippet", or invokes /test-sandbox.
+  Run quick Python tests in an isolated .claude/testing sandbox and report only
+  pass/fail counts plus assertion details. Use for snippets, sanity checks, and
+  lightweight verification.
 ---
 
 # /test-sandbox — Isolated Test Sandboxing

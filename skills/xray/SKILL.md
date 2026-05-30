@@ -3,12 +3,8 @@ name: xray
 model: opus
 effort: high
 description: >
-  Interactive design verification via dependency graph traversal. Replaces /notebook.
-  Use when reviewing large modules, verifying agent output, auditing design decisions,
-  or when you need to understand whether code does what it should. Point it at a module,
-  spec, or PR. Triggers on: /xray, "review this module", "verify the design",
-  "is this the right architecture", "check this code against the spec",
-  "what does this module actually do", design review, code audit.
+  Verify design and behavior through dependency graph traversal. Use for large
+  module review, spec checks, architecture questions, code audits, and /xray.
 argument-hint: <module path, spec path, PR number, or concept>
 allowed-tools: Read, Write, Glob, Grep, Bash(sg:*), Bash(git diff:*), Bash(git log:*), Bash(gh:*), Agent
 ---
