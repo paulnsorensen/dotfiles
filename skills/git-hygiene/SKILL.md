@@ -3,12 +3,11 @@ name: git-hygiene
 model: haiku
 user-invocable: false
 description: >
-  Guardrail for proper git tool usage. Prevents reading file contents via
-  git show <ref>:<path> or git cat-file, which bypass the Read tool and file
-  access controls. Triggers when planning git commands that read file contents
-  from other branches or commits, or when colon syntax appears in git commands.
-  Use when about to construct "git show ref:path" or "git cat-file" commands.
-  Do NOT use for normal git operations like commit, push, log, or diff.
+  Guardrail against git commands that read file contents outside the Read tool —
+  especially `git show <ref>:<path>` and `git cat-file`, which bypass file-access
+  controls. Triggers when constructing git commands with colon ref:path syntax or
+  cat-file to read another branch or commit. Do NOT use for normal git operations
+  like status, log, diff, commit, or push.
 ---
 
 # git-hygiene

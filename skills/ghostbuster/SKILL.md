@@ -6,17 +6,12 @@ context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
 allowed-tools: Read, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, mcp__serena__*
 description: >
-  Dead code forensics and spec cross-reference. Finds unreachable functions,
-  orphaned implementations, specs pointing at deleted code, and transitive dead
-  code chains. Categorizes as DEAD (safe to delete), ZOMBIE (in spec but unwired),
-  GHOST (spec references nonexistent code), or DORMANT (entry point is dead,
-  taking dependents with it). Use when the user says "find dead code", "what's
-  unused", "clean up unused functions", "are there stale specs", "what code can
-  I delete", "check for orphaned implementations", "spec drift", "what's
-  incomplete", "find zombie code", or asks about code that was started but never
-  finished. Also use when reviewing a module and wanting to know what's wired up
-  vs what's just sitting there. Do NOT use for code quality review (/age) or
-  NIH/reinvented-wheel detection (/nih-audit).
+  Dead-code forensics and spec cross-reference. Finds unreachable, orphaned,
+  missing, or dormant code and classifies it DEAD, ZOMBIE, GHOST, or DORMANT.
+  Use when the user says "find dead code", "what's unused", "what can I delete",
+  "stale specs", "spec drift", "orphaned implementations", "find zombie code",
+  or asks what's wired up vs sitting unused. Do NOT use for code-quality review
+  (/age) or NIH/reinvented-wheel detection (/nih-audit).
 ---
 
 # /ghostbuster — Dead Code Forensics

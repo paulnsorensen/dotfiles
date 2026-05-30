@@ -2,13 +2,11 @@
 name: de-slop
 description: >
   Detect and fix AI-generated code anti-patterns ("slop") across Rust, Python,
-  TypeScript, Go, and Shell. Use this skill whenever you generate or edit code,
-  when the user says "de-slop", "clean up AI code", "remove AI slop", or during
-  /simplify and /cook flows. Also use as a mental checklist before committing
-  any code — AI assistants produce systematically predictable mistakes and this
-  skill is the antidote. Trigger proactively on code review, post-generation
-  cleanup, and pre-commit checks. If code was just written or modified by an AI
-  (including you), this skill applies.
+  TypeScript, Go, and Shell. Use whenever you generate or edit code, when the
+  user says "de-slop", "clean up AI code", "remove AI slop", or during /simplify
+  and /cook flows. Also trigger proactively as a pre-commit checklist on
+  AI-written changes. Do NOT use for correctness or bug review — use /age or
+  /code-review.
 model: sonnet
 allowed-tools: Read, Edit, Grep, Glob, Bash(rg:*), Bash(sg:*)
 ---

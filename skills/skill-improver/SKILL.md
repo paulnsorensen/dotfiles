@@ -3,15 +3,12 @@ name: skill-improver
 model: opus
 effort: high
 description: >
-  Audit and improve agent and skill definitions for better calibration, tool scoping,
-  context management, activation quality, and output format. Use when the user says
+  Audit and improve agent and skill definitions — calibration, tool scoping,
+  context budget, activation quality, and output format. Use when the user says
   "improve this skill", "audit this agent", "optimize this agent", "review agent
-  definition", "fix trigger rate", "skill not activating", or invokes /skill-improver
-  with a path. Also trigger when an agent is producing poor results and needs prompt
-  tuning, or when a skill isn't triggering reliably. Covers: calibrated confidence
-  scoring, tool scoping, sub-agent delegation, fork vs inline, context budgets,
-  and activation optimization. Do NOT use for creating new skills from scratch —
-  use /skill-creator for that.
+  definition", "fix trigger rate", "skill not activating", or invokes
+  /skill-improver. Do NOT use for creating new skills from scratch — use
+  /skill-creator.
 allowed-tools: Read, Glob, Grep, Agent, Bash
 ---
 

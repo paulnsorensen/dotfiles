@@ -4,13 +4,10 @@ model: sonnet
 context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(mkdir:*), mcp__context7__resolve-library-id, mcp__context7__query-docs
 description: >
-  Create distinctive, production-grade terminal user interfaces with high usability
-  and professional polish. Use this skill when the user asks to build TUI applications,
-  terminal dashboards, interactive CLI tools, or any full-screen terminal interface
-  (system monitors, git clients, database explorers, log viewers, file managers, REPL
-  wrappers). Supports Rust (ratatui/crossterm) and Python (Textual/Rich).
-  Use when the user says "build a dashboard", "terminal UI", "interactive CLI",
-  "TUI app", "system monitor", "log viewer", or invokes /tui-design.
+  Create distinctive, production-grade terminal UIs and full-screen interactive
+  CLI tools in Rust (ratatui/crossterm) or Python (Textual/Rich). Use when the
+  user says "build a dashboard", "terminal UI", "interactive CLI", "TUI app",
+  "system monitor", "log viewer", "file manager", or invokes /tui-design.
 ---
 
 # tui-design
