@@ -2,6 +2,10 @@
 # Closed MCP world of just tilth.
 name: rtkonly
 description: Experimental — tilth + rtk only
+# Cheese sub-agents are available in this closed world too
+# (agents are orthogonal to the MCP/skill scope below).
+registries:
+  agents: agents/registry.yaml
 isolated: true
 system_prompt: CLAUDE.md
 # Auto-approve rtk + tilth (ccp settings-merge parity).

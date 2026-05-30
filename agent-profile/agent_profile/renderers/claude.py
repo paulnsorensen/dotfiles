@@ -180,34 +180,23 @@ class ClaudeRenderer:
     ) -> None:
         for item in manifest.agents:
             name = item["name"]
-            desc = item.get("description") or ""
-            tools = ", ".join(item.get("tools") or [])
-            model = (item.get("models") or {}).get("claude") or ""
             body = body_abs(item)
+            # Single Claude-complete frontmatter for both the plugin-scoped
+            # file and the user-scoped shared file. The user-scoped file wins
+            # (priority 4 > plugin priority 5), so it must carry the full
+            # metadata — model/color/effort/skills — not a neutral subset.
+            fm = shared.claude_agent_frontmatter(item)
 
-            # Plugin-scoped agent file (with optional model frontmatter).
-            lines = ["---", f"name: {name}"]
-            if desc:
-                lines.append(f"description: {desc}")
-            if tools:
-                lines.append(f"tools: {tools}")
-            if model:
-                lines.append(f"model: {model}")
-            lines.append("---")
+            lines = ["---", *(f"{k}: {v}" for k, v in fm.items()), "---"]
             content = "\n".join(lines) + "\n\n"
             if body is not None:
-                content += body.read_text()
+                content += shared.strip_frontmatter(body.read_text())
             out_path = plugin_dir / "agents" / f"{name}.md"
             out_path.write_text(content)
             self._track(out, base, out_path)
 
-            # Cross-harness shared write (neutral body, no model frontmatter).
+            # Cross-harness shared write (Claude + Cursor) — same frontmatter.
             if body is not None:
-                fm: dict[str, str] = {"name": name}
-                if desc:
-                    fm["description"] = desc
-                if tools:
-                    fm["tools"] = tools
                 shared.write_shared_claude_agent(target, name, body, fm, out)
 
     def _write_skills(

@@ -180,7 +180,7 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         # the include "outer last" convention so an inline override on a
         # name-collision wins on scalar/object merges downstream).
         "mcps": reg["mcps"] + _decorate(raw.get("mcps") or []),
-        "agents": _decorate(raw.get("agents") or []),
+        "agents": reg["agents"] + _decorate(raw.get("agents") or []),
         "skills": reg["skills"] + _decorate(raw.get("skills") or []),
         "commands": _decorate(raw.get("commands") or []),
         "hooks": reg["hooks"] + _decorate(raw.get("hooks") or []),
@@ -207,7 +207,7 @@ def _expand_registries_directive(
     as their ``_source_dir`` (not the profile dir) since their payload files
     live under the repo, not the profile."""
     if not directive:
-        return {"mcps": [], "skills": [], "hooks": []}
+        return {"mcps": [], "agents": [], "skills": [], "hooks": []}
     if not isinstance(directive, dict):
         raise ParseError(
             "ap_parse_one: 'registries' must be a mapping of "

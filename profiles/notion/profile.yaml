@@ -3,6 +3,10 @@
 # launch overlay it becomes a closed world whose single MCP is notion.
 name: notion
 description: Notion HTTP MCP
+# Cheese sub-agents are available in this closed world too
+# (agents are orthogonal to the MCP/skill scope below).
+registries:
+  agents: agents/registry.yaml
 isolated: true
 system_prompt: CLAUDE.md
 # Auto-approve the profile's own MCP (ccp settings-merge parity).

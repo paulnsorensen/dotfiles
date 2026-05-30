@@ -99,12 +99,15 @@ class CodexRenderer:
             body_path = base.body_abs(item)
             if body_path is not None:
                 body = body_path.read_text()
+            body = shared.strip_frontmatter(body)
 
             doc = tomlkit.document()
             doc["name"] = name
             doc["description"] = desc
             if model:
                 doc["model"] = model
+            if shared.agent_is_read_only(item):
+                doc["sandbox_mode"] = "read-only"
             doc["developer_instructions"] = tomlkit.string(body, multiline=True)
 
             rel = f".codex/agents/{name}.toml"

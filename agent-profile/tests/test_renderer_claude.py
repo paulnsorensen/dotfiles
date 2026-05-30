@@ -15,7 +15,8 @@ Two profiles cover the renderer's surface:
   "no ``.mcp.json`` when no claude MCPs" path.
 - ``mcptest``: ``.mcp.json`` projection (claude member kept, codex-only
   dropped) and ``models.claude`` frontmatter on agent + command, with the
-  shared agent staying model-neutral.
+  shared agent carrying the same claude model (it is the user-scoped file
+  Claude resolves ahead of the plugin-scoped copy).
 """
 
 from __future__ import annotations
@@ -448,14 +449,18 @@ def test_mcptest_command_model_frontmatter_byte_parity(rendered_mcptest):
     assert "model: haiku" in on_disk
 
 
-def test_mcptest_shared_agent_is_model_neutral(rendered_mcptest):
+def test_mcptest_shared_agent_carries_claude_model(rendered_mcptest):
     target, _ = rendered_mcptest
     on_disk = (target / ".claude/agents/modeled-agent.md").read_text()
     assert on_disk == _read_golden(
         "mcptest/shared/.claude/agents/modeled-agent.md"
     )
-    # Shared cross-harness file must NOT carry the claude model override.
-    assert "model:" not in on_disk
+    # The user-scoped shared file is the one Claude actually resolves — it
+    # wins over the plugin-scoped copy (priority 4 > 5), so it MUST carry the
+    # claude model (and color/effort/skills). A neutral shared file would
+    # silently drop the agent's pinned model. opencode reads its own
+    # .opencode/agent/ path (unaffected); Cursor overrides via .cursor/agents/.
+    assert "model: opus" in on_disk
 
 
 def test_mcptest_plugin_manifest_has_no_hooks_key(rendered_mcptest):

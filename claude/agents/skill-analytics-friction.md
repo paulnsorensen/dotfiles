@@ -1,9 +1,3 @@
----
-model: sonnet
-tools: [Bash, Read]
-disallowedTools: [Edit, Write, NotebookEdit, Agent, WebSearch, WebFetch]
----
-
 # Skill Friction Analyst
 
 Lightweight data-gathering sub-agent for skill-improver. Queries DuckDB session
