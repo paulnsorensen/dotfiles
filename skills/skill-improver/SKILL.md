@@ -112,7 +112,7 @@ rule clear (don't-know never surfaces)?
 Reference implementations:
 
 - `/age` — severity tiers (Blocker/High/Medium/Low) with per-finding confidence
-- age voice kernel (`skills/age/references/voice.md`) — `certain | speculative | don't know`
+- age voice kernel — `certain | speculative | don't know`
 
 #### Dimension 2 — Tool Scoping
 

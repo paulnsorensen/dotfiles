@@ -91,7 +91,7 @@ information — it means you don't actually know.
 | Where | Pattern |
 |-------|---------|
 | `/age` | severity tiers (Blocker / High / Medium / Low), per-finding confidence |
-| age voice kernel (`skills/age/references/voice.md`) | `certain | speculative | don't know` vocabulary |
+| age voice kernel | `certain \| speculative \| don't know` vocabulary |
 
 Agents still emitting 0-100 scores (e.g. fromage-fort, ricotta-reducer) predate
 this model and would themselves raise a `SCORING` finding under it.
