@@ -41,7 +41,7 @@ substitute the target name for `{SKILL}`, and run the pack's queries in order.
 
 1. Ensure the database exists (ingest if needed).
 2. Run the requested pack's queries (or the ad-hoc SQL) in order.
-3. If a query returns empty (DuckDB CLI emits `[{]` for empty, not `[]`), note
+3. If a query returns empty (DuckDB CLI emits `[]` for empty), note
    it and continue — never block on one empty result.
 4. Return the pack's defined output format, or a tight markdown summary for
    ad-hoc questions. Keep it under ~2 KB.
