@@ -12,7 +12,6 @@ per-type edit surface.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -220,12 +219,12 @@ def test_real_agents_registry_body_paths_resolve():
     # fails loud (raises ParseError) on a declared-but-unresolvable path, so a
     # typo'd or stale path aborts `ap install` instead of silently shipping a
     # body-less agent. This locks the deliverable: every body resolves today.
-    repo_root = Path(
-        os.environ.get("DOTFILES_DIR") or Path.home() / "Dev/dotfiles"
-    )
+    # Derive the repo root from this test file's location (matching
+    # test_overlay.py) so the lock runs hermetically by default — in CI and in
+    # checkouts outside ~/Dev/dotfiles — instead of silently skipping.
+    repo_root = Path(__file__).resolve().parents[2]
     registry = repo_root / "agents" / "registry.yaml"
-    if not registry.is_file():
-        pytest.skip(f"agents registry not found at {registry}")
+    assert registry.is_file(), f"agents registry not found at {registry}"
 
     out = expand_registries(
         {"agents": "agents/registry.yaml"}, repo_root, _dotenv()

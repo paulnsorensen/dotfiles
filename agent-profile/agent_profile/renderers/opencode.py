@@ -81,7 +81,7 @@ class OpencodeRenderer:
     name = "opencode"
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
-        """Render opencode's native subagent files (``.opencode/agent/``) and
+        """Render opencode's native subagent files (``<target>/agents/``) and
         merge this profile's opencode MCPs + translated permissions into
         ``<target>/opencode.json``, bootstrapping the schema stub when the
         file is absent. Returns the tracked agent paths; the merged
@@ -140,10 +140,12 @@ class OpencodeRenderer:
             if body_path is None:
                 continue
             name = item["name"]
-            fm = [
-                f"description: {item.get('description') or ''}",
-                "mode: subagent",
-            ]
+            fm = ["mode: subagent"]
+            desc = item.get("description")
+            if desc:
+                # Omit an empty description, matching claude_agent_frontmatter
+                # — avoids emitting a null-valued ``description:`` key.
+                fm.insert(0, f"description: {desc}")
             model = (item.get("models") or {}).get("opencode") or ""
             if model and model != "inherit":
                 fm.append(f"model: {model}")
