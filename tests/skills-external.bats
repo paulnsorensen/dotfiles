@@ -118,19 +118,38 @@ run_sync() {
     assert_output_contains "SKILL_HARNESSES is empty"
 }
 
-@test "skill sync: unknown SKILL_HARNESSES agent fails before invoking npx" {
-    # The `skills` CLI silently exits 0 having installed nothing for a bad
-    # --agent value. Without an allowlist, that masks the misconfig and the
-    # cache below still gets written as if the run worked. install-external.sh
-    # must validate the agent IDs up-front (mirroring agent_profile/fetch.py's
-    # SKILL_AGENT) and abort before npx is reached.
+@test "skill sync: unsupported SKILL_HARNESSES agent is skipped, supported ones still install" {
+    # SKILL_HARNESSES is shared with agents the `skills` CLI doesn't support
+    # (e.g. crush, antigravity — valid install targets elsewhere). An
+    # unsupported entry must be skipped with a loud warning, NOT abort the
+    # whole refresh: the supported agents should still get their skills. The
+    # silent-no-op masking risk the old hard-fail guarded is covered by the
+    # explicit per-skip warning.
     write_registry
     write_env "claude-code bogus-agent"
 
     run_sync
-    assert_failure
-    assert_output_contains "unknown SKILL_HARNESSES agent 'bogus-agent'"
-    # Nothing reached npx — no `skills add` invocation logged.
+    assert_success
+    assert_output_contains "Skipping SKILL_HARNESSES agents"
+    assert_output_contains "bogus-agent"
+    # The supported agent still reached npx with its --agent flag.
+    run grep -c -- '--agent claude-code' "$NPX_LOG"
+    [[ "$output" != "0" ]]
+    # The unsupported agent was never passed to npx.
+    run grep -c 'bogus-agent' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+}
+
+@test "skill sync: all-unsupported SKILL_HARNESSES is a no-op (warn, exit 0, no npx)" {
+    # When every configured agent is unsupported, there is nothing to install
+    # into — warn and exit 0 (matching empty-SKILL_HARNESSES), don't fail the
+    # caller (the `dots upgrade` skills-refresh step).
+    write_registry
+    write_env "bogus-agent another-bogus"
+
+    run_sync
+    assert_success
+    assert_output_contains "No supported SKILL_HARNESSES agents"
     run grep -c 'skills add' "$NPX_LOG"
     [[ "$output" == "0" ]]
 }

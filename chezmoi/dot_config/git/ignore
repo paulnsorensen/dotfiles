@@ -1,0 +1,19 @@
+# Global git ignore (XDG: $XDG_CONFIG_HOME/git/ignore).
+# Git reads this for every repo automatically when core.excludesFile is unset.
+# Uncommitted by design — keeps personal coding-agent tooling out of every
+# repo's tracked tree and out of upstream PRs.
+
+# Cheese-flow ephemeral per-phase reports (NOT .cheese/specs/, which is a
+# durable artifact worth tracking per-repo).
+.cheese/affinage/
+.cheese/cure/
+.cheese/press/
+.cheese/pasteurize/
+.cheese/hard/
+.cheese/notes/
+
+# Serena LSP project state
+.serena/
+
+# Per-task git worktrees created by the /worktree skill
+.worktrees/
