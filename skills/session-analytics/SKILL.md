@@ -173,6 +173,10 @@ don't have what you need.
 
 Organized by investigation type. Use as starting points — modify for your question.
 
+For auditing a **single** skill's behavior (usage / tools / friction), see the
+parameterized packs in `references/skill-audit-queries.md` — run by the
+`duckdb-expert` agent on behalf of `skill-improver`.
+
 ### Tool usage frequency
 
 ```sql

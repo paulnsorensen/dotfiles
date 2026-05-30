@@ -40,7 +40,7 @@ dotfiles/
 
 - `zsh/` files are sourced in order defined by `zshrc` — ordering matters
 - `skills/` are self-contained — each has its own SKILL.md with allowed-tools
-- `claude/agents/` reference skills by name in their frontmatter
+- `agents/agent_definitions/` hold agent bodies; their metadata (including the skills list) lives in `agents/registry.yaml`
 - Claude config syncs to `~/.claude/` via `dots sync`
 
 ## Tech Stack

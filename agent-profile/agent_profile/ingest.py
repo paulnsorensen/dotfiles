@@ -102,7 +102,7 @@ def _expand_agents(
 
     Same name-keyed shape as the MCP/hook registries: each ``<name>: {...}``
     entry becomes ``{name, ...fields, _source_dir}`` with ``_source_dir`` set
-    to the repo root so ``body_path`` (e.g. ``claude/agents/<name>.md``)
+    to the repo root so ``body_path`` (e.g. ``agents/agent_definitions/<name>.md``)
     resolves against the repo, not the profile dir. No env resolution — agent
     metadata carries no ``${VAR}`` refs."""
     data = _load_yaml_mapping(path)
