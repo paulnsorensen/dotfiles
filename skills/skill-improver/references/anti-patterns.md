@@ -22,7 +22,8 @@ Scan every skill you improve against this list.
 
 ## Instructions
 
-1. **Negation-heavy rules** — "Do NOT use X" fails ~50%. Use "Use Y exclusively."
+1. **Negation-heavy rules** — "Do NOT use X" is violated far more often than a
+   positive rule. Use "Use Y exclusively."
 2. **Rules without reasons** — "Always use named exports" gives no basis for
     edge cases. Add why: enables tree-shaking, safer refactoring.
 3. **"Always/never" for judgment tasks** — Works for mechanical tasks (always
