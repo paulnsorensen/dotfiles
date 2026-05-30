@@ -3,8 +3,11 @@ name: scout
 model: haiku
 allowed-tools: Skill, Bash(ls:*)
 description: >
-  Explore the filesystem with concise tree views and git status. Use for
-  directory listings, file search, metadata search, and scout requests.
+  Filesystem exploration with human-friendly eza tree views and git status;
+  delegates content/code search to cheez-search (AST-aware via tilth). Use when
+  the user says "search files", "find by metadata", "tree view", "list directory
+  with git status", or invokes /scout. Do NOT use for symbol, usage, or
+  structural code search — that's cheez-search.
 ---
 
 # scout

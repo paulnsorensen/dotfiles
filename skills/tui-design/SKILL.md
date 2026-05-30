@@ -4,9 +4,10 @@ model: sonnet
 context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(mkdir:*), mcp__context7__resolve-library-id, mcp__context7__query-docs
 description: >
-  Build polished terminal UIs and full-screen interactive CLI tools. Use for
-  dashboards, log viewers, system monitors, file managers, REPL wrappers, and
-  TUI apps in Rust or Python.
+  Create distinctive, production-grade terminal UIs and full-screen interactive
+  CLI tools in Rust (ratatui/crossterm) or Python (Textual/Rich). Use when the
+  user says "build a dashboard", "terminal UI", "interactive CLI", "TUI app",
+  "system monitor", "log viewer", "file manager", or invokes /tui-design.
 ---
 
 # tui-design

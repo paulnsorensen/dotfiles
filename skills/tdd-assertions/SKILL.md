@@ -2,8 +2,11 @@
 name: tdd-assertions
 model: sonnet
 description: >
-  Find and fix weak test assertions across Rust, Python, TypeScript, Go, and
-  Shell. Use when writing, reviewing, strengthening, or repairing tests.
+  Detect and fix weak test assertions that pass even when code is broken, across
+  Rust, Python, TypeScript, Go, and Shell. Use whenever you write or review
+  tests, when the user says "strengthen assertions" or "fix weak tests", or
+  during /wreck, /cook, /press, and /simplify flows. Trigger proactively on test
+  generation and review.
 allowed-tools: Read, Edit, Grep, Glob, Bash(rg:*)
 ---
 

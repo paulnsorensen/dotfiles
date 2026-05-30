@@ -1,9 +1,12 @@
 ---
 name: version-doctor
 description: >
-  Diagnose and fix dependency versions, resolution failures, conflicts, and
-  workspace inheritance issues. Use before restructuring build files because of
-  a version-related failure.
+  Diagnose and fix library version mismatches, dependency conflicts, and build
+  file inheritance issues. Use when the user says "fix versions", "version
+  mismatch", "dependency conflict", "why won't this build", or "update
+  dependencies", and proactively when a build fails on version constraints —
+  the fix is almost always a version bump, not restructuring the build. Use this
+  before rewriting a build config or bypassing workspace inheritance.
 allowed-tools: Read, Grep, Glob, Bash, Agent
 ---
 

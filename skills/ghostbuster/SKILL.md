@@ -6,9 +6,12 @@ context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
 allowed-tools: Read, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, mcp__serena__*
 description: >
-  Find dead code and stale spec references. Classifies unreachable,
-  orphaned, missing, or dormant code paths as DEAD, ZOMBIE, GHOST, or
-  DORMANT. Use for dead-code cleanup and stale-spec checks.
+  Dead-code forensics and spec cross-reference. Finds unreachable, orphaned,
+  missing, or dormant code and classifies it DEAD, ZOMBIE, GHOST, or DORMANT.
+  Use when the user says "find dead code", "what's unused", "what can I delete",
+  "stale specs", "spec drift", "orphaned implementations", "find zombie code",
+  or asks what's wired up vs sitting unused. Do NOT use for code-quality review
+  (/age) or NIH/reinvented-wheel detection (/nih-audit).
 ---
 
 # /ghostbuster — Dead Code Forensics

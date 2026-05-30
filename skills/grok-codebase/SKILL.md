@@ -1,9 +1,13 @@
 ---
 name: grok-codebase
 description: >
-  Build lasting understanding of an unfamiliar repo using the four-pillar
-  model and an adaptive quiz. Use for grokking, onboarding, memorizing,
-  studying, or being quizzed on a codebase.
+  Build lasting understanding of an unfamiliar codebase via a four-pillar model
+  (Building Blocks, Entry Points, Infrastructure, Egress) plus an adaptive
+  Socratic quiz, orchestrating code-review-graph, Serena, tilth, and Context7.
+  Use when the user says "help me understand this codebase", "grok this repo",
+  "onboard me", "learn this project", "memorize this codebase", "study this
+  code", "walk me through this code", or "quiz me on this repo". Do NOT use for
+  single-file scripts, repos under 500 LOC, or editing tasks — understanding only.
 argument-hint: <optional focus area, e.g. "auth flow" or "payments">
 allowed-tools: Read, Write, TodoWrite, Skill, Bash(git:*), Bash(ls:*), Bash(cat:*), Bash(jq:*), Bash(yq:*), Bash(tokei:*), Bash(code-review-graph:*), mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__find_implementations, mcp__serena__find_declaration, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__tilth__*, mcp__code-review-graph__*, mcp__context7__*
 metadata:

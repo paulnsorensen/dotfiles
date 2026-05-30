@@ -6,9 +6,13 @@ context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
 allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Agent, mcp__serena__*
 description: >
-  Find custom code that duplicates well-supported libraries, then recommend
-  migrations with effort estimates. Use for NIH checks, hand-rolled utilities,
-  retry logic, validation, date handling, parsers, or dependency replacement.
+  Scan for custom code that duplicates well-supported libraries, then recommend
+  migrations with effort estimates. Detects hand-rolled utilities, retry logic,
+  validation, date handling, and DIY parsers. Use when the user mentions
+  reinventing the wheel, asks "is there a library/crate for this", wants a build
+  vs buy audit, says "what are we maintaining that we shouldn't be", or "should
+  we just use lodash for this". Do NOT use for code-quality review (/age) or
+  dead-code removal (/simplify or /ghostbuster).
 ---
 
 # /nih-audit — Not Invented Here Audit

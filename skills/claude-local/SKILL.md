@@ -3,9 +3,13 @@ name: claude-local
 model: sonnet
 allowed-tools: Read, Write, Edit, Bash(git:*), Bash(grep:*), Bash(test:*), Bash(touch:*), Bash(mkdir:*), Bash(printf:*), Glob
 description: >
-  Create a gitignored CLAUDE.local.md from the user's global Claude
-  preferences, keeping only repo-relevant instructions. Use for outside
-  repos that need local agent guidance without committing personal config.
+  Distill the user's global ~/.claude/CLAUDE.md into a gitignored
+  CLAUDE.local.md for repos they contribute to but don't own — keeping only
+  repo-relevant instructions and dropping personal flair. Use when the user
+  says "set up CLAUDE.local", "scaffold local claude config", "drop my
+  preferences in this repo", "I'm contributing and want my preferences
+  applied", "claude-local.md", or invokes /claude-local. Also use proactively
+  when they open an unfamiliar repo and want to start contributing.
 ---
 
 # claude-local

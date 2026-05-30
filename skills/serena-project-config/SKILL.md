@@ -2,9 +2,12 @@
 name: serena-project-config
 model: haiku
 description: >
-  Tune per-repo Serena MCP config when auto-bootstrap is not enough. Use for
-  monorepos, wrong language detection, generated-dir exclusions, review-only
-  setups, or .serena/project.yml changes.
+  Tune per-repo Serena MCP config (.serena/project.yml) when the auto-bootstrap
+  isn't enough — monorepos, wrong language detection, heavy generated dirs, or
+  review-only setups. Use when the user says "configure serena for this repo",
+  "serena project config", "monorepo serena", "serena wrong language", or
+  "review-only serena". Do NOT trigger on general "use serena" routing, and
+  never enable memory tools or onboarding (disabled by design).
 ---
 
 # serena-project-config

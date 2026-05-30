@@ -3,9 +3,12 @@ name: wt-git
 model: haiku
 allowed-tools: Bash(git:*), Bash(gh:*), Bash(wt-git:*), Read, Grep, Glob
 description: >
-  Run git and GitHub commands inside another worktree. Use for commits, pushes,
-  PRs, or worktree git operations that would otherwise require cd+git command
-  patterns or heredoc-heavy gh calls.
+  Run git and GitHub operations inside a worktree you're not currently in,
+  without tripping Claude Code's Seatbelt safety heuristics (compound cd+git,
+  heredoc PR bodies). Use whenever you need to commit, push, or create PRs in
+  another worktree — especially from orchestrators, /move-my-cheese, or
+  /cheese-convoy — or when about to write "cd <path> && git" or a heredoc gh PR
+  body.
 ---
 
 # wt-git

@@ -2,7 +2,7 @@
 name: settings-clean
 model: haiku
 context: fork
-description: Clean bloated .claude/settings.local.json permission entries and ensure hook-redirected skills are allowed. Use for settings cleanup or pruning.
+description: Clean a bloated .claude/settings.local.json by removing redundant, stale, and junk permission entries and ensuring hook-redirected skills are allowed. Use when the user says "clean settings", "prune settings", "settings cleanup", or invokes /settings-clean; also proactively when settings.local.json exceeds ~30 entries. Only touches settings.local.json (gitignored), never settings.json (committed).
 allowed-tools: Read, Write, Bash(jq:*), Bash(cp:*), Bash(mkdir:*), Bash(mv:*), Bash(date:*)
 ---
 

@@ -3,8 +3,9 @@ name: worktree
 model: haiku
 allowed-tools: Bash(ccw-init:*), Bash(cd:*)
 description: >
-  Create or resume an isolated git worktree for a task. Use for worktree setup
-  requests and /worktree invocations; requires a task slug.
+  Create or resume an isolated git worktree for a Claude Code task, keeping main
+  clean. Use when asked to "create a worktree", "resume a worktree", set up an
+  isolated branch for a task, or when /worktree is invoked. Requires a task slug.
 ---
 
 # worktree

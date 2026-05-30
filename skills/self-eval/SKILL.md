@@ -2,9 +2,12 @@
 name: self-eval
 model: haiku
 description: >
-  Run the response and change-quality checklist. Use before finishing code
-  edits, when asked to self-evaluate, or when the user questions completeness,
-  testing, confidence, or response quality.
+  Run the Self-Evaluation Checklist against your last response or recent code
+  changes. Use when the user says "self-eval", "self-evaluate", "check my
+  response", "quality check", "evaluate response", or expresses doubt ("did you
+  actually test that?", "are you sure?", "that seems incomplete"), or
+  proactively before finishing code edits. Cross-references /de-slop and
+  /tdd-assertions for items with dedicated tooling.
 allowed-tools: Read, Edit, Glob, Grep, Skill
 ---
 

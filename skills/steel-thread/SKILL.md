@@ -4,9 +4,13 @@ model: opus
 effort: high
 allowed-tools: Read, Bash(git log:*), Bash(git diff:*), Bash(git status:*), Bash(ls:*), Bash(rg:*), Agent, Skill
 description: >
-  Trace a concept end-to-end through a layered codebase with code-review-graph.
-  Use to map features, find entry points, follow behavior across layers, or
-  understand cross-cutting flows.
+  Map a concept end-to-end through a layered codebase using the code-review-graph
+  MCP — rebuilding the graph, preferring its Flow primitive, and cross-checking
+  impact radius. Use when the user says "trace this through", "map the X flow",
+  "blast radius for Y", "what touches Z", "find the entry point for", "what's
+  affected by this change", or invokes /steel-thread. Do NOT use for
+  single-symbol lookups (Serena), filesystem search (/scout), or dead-code
+  detection (/ghostbuster).
 license: MIT
 ---
 

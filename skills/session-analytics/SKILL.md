@@ -1,9 +1,12 @@
 ---
 name: session-analytics
 description: >
-  Analyze Claude Code JSONL session logs with DuckDB. Use for usage patterns,
-  tool counts, permission denials, agent or skill routing, MCP usage, timelines,
-  and session analytics questions.
+  Query Claude Code's own JSONL session logs via DuckDB for usage analytics,
+  tool patterns, error forensics, and routing decisions. Use when the user says
+  "session analytics", "query my logs", "tool usage", "how often do I use",
+  "check my sessions", "analyze my usage", or asks about tool/agent/skill
+  behavior across sessions. Do NOT use for debugging current code, reading a
+  single transcript, or questions about Claude's capabilities.
 model: sonnet
 allowed-tools: Bash(duckdb:*), Bash(python3:*), Read
 ---

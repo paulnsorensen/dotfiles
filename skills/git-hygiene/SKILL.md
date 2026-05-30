@@ -3,9 +3,11 @@ name: git-hygiene
 model: haiku
 user-invocable: false
 description: >
-  Prevent git commands that read file contents outside normal file-access
-  tools, especially git show <ref>:<path> and git cat-file. Use only for
-  those risky read patterns, not ordinary git status, log, diff, commit, or push.
+  Guardrail against git commands that read file contents outside the Read tool —
+  especially `git show <ref>:<path>` and `git cat-file`, which bypass file-access
+  controls. Triggers when constructing git commands with colon ref:path syntax or
+  cat-file to read another branch or commit. Do NOT use for normal git operations
+  like status, log, diff, commit, or push.
 ---
 
 # git-hygiene
