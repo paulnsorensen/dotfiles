@@ -978,6 +978,63 @@ SH
     [[ "$hash_before" == "$hash_after" ]]
 }
 
+# Regression: real `serena init` loads-then-validates the existing config and
+# aborts with "`projects` key not found" when the on-disk file is the stub.
+# The script must remove the stub before calling init so init bootstraps from
+# absence. Without the rm, init crashes on the stub, the live read yields the
+# stub, and the script emits the stub forever — the exact stable-broken state
+# the user hit on a fresh box. The shim here mimics serena's real behaviour
+# (init fails if a projects-less config already exists); this test fails if the
+# rm is removed.
+@test "serena: modify_ script clears the stub so serena init can bootstrap over it" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    command -v yq      >/dev/null 2>&1 || skip "yq not installed"
+    setup_serena_chezmoi_env
+
+    mkdir -p "$HOME/.serena"
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+# serena not initialized; run `serena init`, then `chezmoi apply` again
+YAML
+
+    # Shim mimics real serena: `init` aborts if a config already exists
+    # without a `projects` key, and only writes a fresh config from absence.
+    local shim_dir="$HOME/bin"
+    mkdir -p "$shim_dir"
+    cat > "$shim_dir/serena" <<'SH'
+#!/bin/sh
+case "$1" in
+  init)
+    cfg="$HOME/.serena/serena_config.yml"
+    if [ -f "$cfg" ] && ! grep -q '^projects:' "$cfg"; then
+      echo "projects key not found" >&2
+      exit 1
+    fi
+    cat > "$cfg" <<'YAML'
+language_backend: LSP
+web_dashboard: true
+web_dashboard_open_on_launch: true
+excluded_tools: []
+projects: []
+YAML
+    ;;
+esac
+SH
+    chmod +x "$shim_dir/serena"
+
+    local chezmoi_dir yq_dir minimal_path
+    chezmoi_dir=$(dirname "$(command -v chezmoi)")
+    yq_dir=$(dirname "$(command -v yq)")
+    minimal_path="$shim_dir:/usr/bin:/bin:$chezmoi_dir:$yq_dir"
+
+    PATH="$minimal_path" run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+
+    # Healed: stub gone, projects present, overrides applied.
+    ! grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
+    [[ "$(yq '.projects | length'  "$HOME/.serena/serena_config.yml")" == "0" ]]
+    [[ "$(yq '.web_dashboard'      "$HOME/.serena/serena_config.yml")" == "false" ]]
+}
+
 # Regression: if `serena init` fails after the stub-on-disk gate fires,
 # the script must fall through gracefully — the bootstrap branch swallows
 # the failure with `|| true`, the live-file read still yields the stub,

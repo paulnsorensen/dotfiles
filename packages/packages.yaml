@@ -22,6 +22,7 @@ packages:
   - fzf
   - gh
   - shellcheck
+  - bats-core: { apt: bats }                  # bats test runner (tests/*.bats); brew formula is bats-core, apt pkg is bats
   - tree
   - htop
   - ripgrep
