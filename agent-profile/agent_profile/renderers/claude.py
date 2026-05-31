@@ -33,6 +33,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 from agent_profile import shared
@@ -116,6 +117,8 @@ class ClaudeRenderer:
         entries (mirroring how :class:`OpencodeRenderer.clean` un-merges
         ``opencode.json``)."""
         base = Path(str(target).rstrip("/"))
+        if manifest.mcp_scope == "user":
+            self._unregister_user_mcps(manifest)
         self._clean_local_marketplace(base, manifest.name)
         settings = base / ".claude" / "settings.json"
         if not settings.is_file():
@@ -336,10 +339,72 @@ class ClaudeRenderer:
         mine = mcps_for(manifest, "claude", _MCP_DEFAULT)
         if not mine:
             return
+        if manifest.mcp_scope == "user":
+            # User-scope install (the `global` profile): register each server
+            # via `claude mcp add --scope user` so the tool names stay bare
+            # (`mcp__<server>__*`) and land in ~/.claude.json. No plugin
+            # .mcp.json is written, so its file is dropped from the install
+            # manifest and swept on the next render.
+            self._register_user_mcps(mine)
+            return
         servers = {mcp["name"]: mcp_server_entry(mcp) for mcp in mine}
         out_path = plugin_dir / ".mcp.json"
         _dump_json(out_path, {"mcpServers": servers})
         self._track(out, base, out_path)
+
+    @staticmethod
+    def _claude_cli() -> str:
+        """Resolve the ``claude`` CLI used for user-scope MCP registration.
+
+        Fail loud when absent: a user-scope render targets the live
+        ``~/.claude.json``, which only the CLI writes safely, so silently
+        skipping would leave the MCPs unregistered."""
+        cli = shutil.which("claude")
+        if cli is None:
+            raise FileNotFoundError(
+                "claude_render: mcp_scope='user' needs the `claude` CLI on "
+                "PATH to register MCP servers at user scope, but it was not "
+                "found."
+            )
+        return cli
+
+    def _register_user_mcps(self, mcps: list[dict]) -> None:
+        """Register each MCP at user scope via the ``claude`` CLI.
+
+        ``remove`` then ``add`` per server makes re-runs idempotent (``add``
+        errors on a duplicate name). ``${VAR}`` refs in env values are passed
+        through literally — the CLI stores them verbatim and Claude expands
+        them at runtime, so secrets stay in ``.env`` and never land in
+        ``~/.claude.json``."""
+        cli = self._claude_cli()
+        for mcp in mcps:
+            name = mcp["name"]
+            entry = mcp_server_entry(mcp)
+            subprocess.run(
+                [cli, "mcp", "remove", name, "--scope", "user"],
+                capture_output=True,
+                check=False,
+            )
+            cmd = [cli, "mcp", "add", name, "--scope", "user"]
+            for key, val in (entry.get("env") or {}).items():
+                cmd += ["-e", f"{key}={val}"]
+            cmd += ["--", entry["command"], *entry.get("args", [])]
+            subprocess.run(cmd, check=True)
+
+    def _unregister_user_mcps(self, manifest: Manifest) -> None:
+        """Remove this profile's user-scope MCP registrations (clean path)."""
+        mine = mcps_for(manifest, "claude", _MCP_DEFAULT)
+        if not mine:
+            return
+        cli = shutil.which("claude")
+        if cli is None:
+            return
+        for mcp in mine:
+            subprocess.run(
+                [cli, "mcp", "remove", mcp["name"], "--scope", "user"],
+                capture_output=True,
+                check=False,
+            )
 
     def _write_settings(
         self,
