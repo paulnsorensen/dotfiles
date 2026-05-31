@@ -2,7 +2,7 @@
 # Serena MCP smoke test — boots the real stdio server and asserts it:
 #   1. starts without a traceback,
 #   2. auto-detects a project from cwd,
-#   3. applies our chezmoi-managed excluded_tools (7 memory/onboarding tools),
+#   3. applies our chezmoi-managed excluded_tools (8 memory/onboarding tools),
 #   4. exposes the LSP edit/read toolset (find_symbol, replace_symbol_body).
 #
 # Run before pushing changes to the serena registry entry
@@ -80,9 +80,9 @@ assert() { # <extended-regex> <description>
 echo "serena smoke test:"
 assert "Starting Serena server"                  "boots without crashing"
 assert "Auto-detected project root:"             "auto-detects project from cwd"
-# Count 7 proves OUR excluded_tools is live — serena ships excluded_tools: [].
-assert "excluded 7 tools:.*write_memory"         "applies managed excluded_tools (memory)"
-assert "excluded 7 tools:.*onboarding"           "  ↳ onboarding excluded too"
+# Count 8 proves OUR excluded_tools is live — serena ships excluded_tools: [].
+assert "excluded 8 tools:.*write_memory"         "applies managed excluded_tools (memory)"
+assert "excluded 8 tools:.*onboarding"           "  ↳ onboarding excluded too"
 assert "Exposed tools:.*find_symbol"             "exposes find_symbol"
 assert "Exposed tools:.*replace_symbol_body"     "exposes replace_symbol_body"
 
