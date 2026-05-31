@@ -6,6 +6,16 @@ Project instructions for any coding agent working in this repository — Claude 
 
 This is a personal dotfiles repository that configures a vim-centric, terminal-based development environment for macOS. The configuration focuses on zsh shell, iTerm2, VS Code with vim bindings, comprehensive git setup, and Claude Code integration.
 
+## Repository Wiki (hallouminate)
+
+This repo has a curated hallouminate wiki at `.hallouminate/wiki/` — the `repo:dotfiles:wiki` corpus — holding the cross-session *why* behind the *what*: architecture rationale, harness wiring, and gotchas that aren't obvious from the code. It is git-tracked and travels with the repo (`.hallouminate/config.toml` declares the `[[repository]]`; both are carved out of the `.hallouminate/` gitignore).
+
+**Ground at session start.** Before non-trivial work that touches agent config, harness wiring, `ap`, the registries, or chezmoi, query the wiki first: `ground` (semantic search) or `read_markdown`/`list_tree` via the hallouminate MCP against `repo:dotfiles:wiki`. The wiki is the fast path to the design rationale; `AGENTS.md` is the command/structure reference.
+
+**Maintain at session end.** When a session establishes a non-obvious fact, design decision, or gotcha that a future agent would otherwise re-learn, write it back into the wiki before finishing — author/overwrite via `add_markdown` (it refreshes ancestor `index.md` link trees and the index). Follow the conventions in `.hallouminate/wiki/index.md`: one topic per file, capture the *why* not the *what*, link related pages with `[[name]]`. Edits made with plain file writes (not the MCP) need a `hallouminate index` to be picked up. Don't duplicate what `AGENTS.md` or the code already states.
+
+The `/wiki-curator` skill drives larger documentation updates (harness pages, architecture). Start points: `.hallouminate/wiki/architecture/` (the `agents/` + `ap` system) and `.hallouminate/wiki/harnesses/` (per-harness docs + official links).
+
 ## Key Commands
 
 ### Dotfiles Management
@@ -92,7 +102,7 @@ dotfiles/
 │   ├── registry.yaml       # Cheese sub-agent source of truth (metadata + body_path); rendered into every harness by ap.
 │   ├── agent_definitions/  # Agent bodies (instruction-only Markdown referenced by registry.yaml's body_path).
 │   ├── mcp/
-│   │   ├── registry.yaml   # MCP source of truth (per-entry `harnesses: [claude, codex, opencode]`)
+│   │   ├── registry.yaml   # MCP source of truth (per-entry `harnesses: [claude, codex, opencode, cursor]`)
 │   │   └── sync.sh         # Declarative MCP sync — loops over harnesses; claude/codex use native CLIs, opencode jq-edits ~/.config/opencode/opencode.json.
 │   ├── hooks/
 │   │   ├── registry.yaml   # Hook source of truth (per-entry `harnesses: [claude, codex]`, matcher, timeout)
@@ -167,25 +177,27 @@ mcps:
     command: npx
     args: ["-y", "@upstash/context7-mcp"]
     scope: user                                # claude-only — codex/opencode ignore
-    harnesses: [claude, codex, opencode]       # optional; default is all three
+    harnesses: [claude, codex, opencode, cursor]  # optional; this is the default (copilot needs explicit opt-in)
     gate_unless: CHEESE_FLOW                   # claude-only — skip install when plugin provides it
     description: Documentation context for libraries and frameworks
 ```
 
 **Per-entry fields:**
 
-- `harnesses` (optional) — list of harness names to install into. Default: `[claude, codex, opencode]`.
+- `harnesses` (optional) — list of harness names to install into. Default: `[claude, codex, opencode, cursor]` (each renderer's own `_MCP_DEFAULT`; **copilot** requires explicit opt-in since its default is `[claude, codex]`).
 - `scope` (claude-only) — `user`, `project`, or `local`. Codex/opencode have no scopes.
 - `gate_unless` (claude-only) — skip install when env var equals `"true"` (defer to a plugin's bundled MCP).
 - `optional` — when `true`, skip this MCP non-fatally if any `${VAR}` it references is unset, instead of failing the sync. For MCPs gated on a credential the user may not have configured (e.g. `todoist` without `TODOIST_API_KEY`).
 
-**Per-harness backends:**
+**Per-harness render targets.** `ap` ships five renderers; each writes MCP config into its harness's own file (the legacy `agents/mcp/sync.sh` native-CLI backends below no longer run on `dots sync`):
 
-- **claude** — native `claude mcp add/list/remove/get` (text; scope-aware).
-- **codex** — native `codex mcp add/list/remove --json` (no scopes).
-- **opencode** — no non-interactive CLI; the sync jq-edits `~/.config/opencode/opencode.json` directly. Set `OPENCODE_CONFIG` to override the target path (used by tests). On first run the sync seeds a minimal `{"$schema": ".../config.json"}` file if absent.
+- **claude** — plugin-scoped `.mcp.json` under `~/.claude/plugins/local/<profile>/` (scope-aware; `gate_unless` honored). Legacy path used native `claude mcp add/list/remove/get`.
+- **codex** — `[mcp_servers]` in `~/.codex/config.toml` (no scopes; `.env` keys scrubbed from the rendered `env`). Legacy path used native `codex mcp add --json`.
+- **opencode** — the `mcp` key in `~/.config/opencode/opencode.json` (no scopes). `OPENCODE_CONFIG` overrides the target path (tests).
+- **cursor** — `~/.cursor/mcp.json` (`mcpServers` schema). `CURSOR_CONFIG` overrides for tests.
+- **copilot** — `~/.copilot/mcp-config.json` (`mcpServers` schema). Default membership excludes copilot, so an entry must list `copilot` in `harnesses` to deploy here.
 
-**Per-harness `args` via Go templates.** `agents/mcp/sync.sh` runs the registry through `chezmoi execute-template` once per harness with `HARNESS=<claude|codex>` exported. The registry preamble aliases that into `$h` so entries can branch inline without restating the env lookup. Default to `{{ $h }}` so new harnesses inherit their bare name without another schema edit. Serena uses this:
+**Per-harness `args` via Go templates.** The registry is run through `chezmoi execute-template` with `HARNESS=<harness>` exported (legacy `agents/mcp/sync.sh` did this once per harness; `ap` does it per-value in `templating.py`). The registry preamble aliases that into `$h` so entries can branch inline without restating the env lookup. Default to `{{ $h }}` so new harnesses inherit their bare name without another schema edit. Serena uses this:
 
 ```yaml
 {{- $h := env "HARNESS" -}}
@@ -233,7 +245,7 @@ hooks:
 - `event` — Claude / Codex event name. Only `SessionStart` is currently wired; the backends in `agents/hooks/lib.sh` fail loud on any other value. Extend the backends before registering `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, or `Stop` entries.
 - `script` — repo-relative path; chezmoi deploys to `~/.<harness>/hooks/<basename>`.
 - `shared_assets` (optional) — list of repo-relative paths under `agents/<subdir>/<file>` that the hook script reads at runtime (libs, banks, …). Each is deployed to `~/.<harness>/<subdir>/<file>`. Adding a new hook is a pure registry edit — the chezmoi installer iterates `hooks` and copies every `(script ∪ shared_assets) × harnesses` pair.
-- `harnesses` (optional) — list; default `[claude, codex]`.
+- `harnesses` (optional) — list; default is **claude-only** (every renderer's hook default is `("claude",)`). Any other harness needs an explicit opt-in, e.g. the cheese-flair hook lists `[claude, codex]`. opencode has no hook renderer, so it never receives hooks.
 - `matcher` — codex-only regex against the event's `source` field (`startup|resume|clear` for SessionStart). Claude SessionStart entries do not use matchers and the field is ignored there.
 - `timeout` — seconds (verified against `developers.openai.com/codex/hooks` — "timeout is in seconds"; Claude uses the same unit).
 - `description` — human-readable purpose.
@@ -496,7 +508,7 @@ Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. 
 | LSP | `claude/plugins/registry.yaml` (with `load: true`) | `plugin-sync` | Servers start lazily |
 | Package | `packages/packages.yaml` | `dots sync` | Use `dots sync refresh` to force re-check |
 | Skill | `skills/` (local dirs + `_registry.yaml` for external sources) | `dots sync` (or `skill-sync` = `dots profile install base`) | chezmoi's `run_onchange_after_install-base-profile.sh.tmpl` renders the `base` profile via `ap`: local (`path:`) skills are copied by the renderers, external (`source:`) skills fetch via `npx skills add` (one `git clone` per source, all harnesses in one call). `ap`'s install manifest tracks ownership. |
-| Profile | `profiles/<name>/profile.yaml` | `dots profile install <name>` / `dots profile launch claude <name>` | Registry-entry-superset items + (isolated) launch-overlay fields + (installable) install-overlay fields (`target_default`, `marketplaces`, `enabled_plugins`). `base` is registry-derived; `global` wraps base for the live install path; specialized profiles `include: [base]`; isolated profiles are closed worlds (the `ccp` parity). |
+| Profile | `profiles/<name>/profile.yaml` | `dots profile install <name>` / `dots profile launch claude <name>` | Registry-entry-superset items + (isolated) launch-overlay fields + (installable) install-overlay fields (`target_default`, `marketplaces`, `enabled_plugins`). `base` is registry-derived; `global` is the one profile that `include: [base]` for the live install path; the shipped specialized profiles (`fe`, `review`, `spec`, …) are isolated closed worlds that pull the agents registry directly via `registries:` (the `ccp` parity), not `include: [base]`. |
 
 ## Important Gotchas
 

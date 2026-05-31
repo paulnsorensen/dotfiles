@@ -53,10 +53,12 @@ claude/reference/cheese-flair.md
 # Claude Code local state (settings.local.json, specs)
 .claude/
 
-# Hallouminate per-repo config + wiki corpus. The wiki/ subdir is runtime
-# state; config.toml is local indexing config not yet promoted to tracked.
-# Ignoring the whole dir for now (revisit if config.toml becomes shared).
-.hallouminate/
+# Hallouminate per-repo state. Track config.toml (portable, relative paths)
+# and the curated wiki/ corpus so the repo:dotfiles:wiki setup travels with a
+# clone; ignore everything else here (LanceDB caches, scratch indexes).
+.hallouminate/*
+!.hallouminate/config.toml
+!.hallouminate/wiki/
 
 # Cursor IDE runtime / install-cursor-plugin output that lands here when
 # someone opens the repo's `cursor/` subdir as a workspace (Cursor treats
