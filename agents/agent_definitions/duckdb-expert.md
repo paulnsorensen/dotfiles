@@ -21,10 +21,12 @@ each spawn (you) owns a single domain.
 
 ## Where things live
 
-- **Queries** come from the **caller's pack**: `<skill>/references/<domain>.md`
-  (e.g. `skills/tool-efficiency/references/error-forensics.md`). The pack defines
-  the ordered queries, the `target_param` placeholder, the harness expectations,
-  and the `output_format`.
+- **Queries** come from the **caller's pack**, named in your spawn as a
+  skill-relative path `<skill>/references/<domain>.md` (e.g.
+  `tool-efficiency/references/error-forensics.md`) — read it under the repo's
+  `skills/` dir, i.e. `skills/tool-efficiency/references/error-forensics.md`.
+  The pack defines the ordered queries, the `target_param` placeholder, the
+  harness expectations, and the `output_format`.
 - **Schema** comes from the **session-analytics data layer**:
   `skills/session-analytics/references/canonical-schema.md`. Read it when the
   pack references a table or column you don't already know. Conventions
@@ -53,8 +55,10 @@ spawn's `harness=` filter per the pack's instructions (`all` → no predicate).
 ## How you work
 
 1. Ensure the database exists (ingest if needed).
-2. Read the one pack named in your spawn. Substitute the target for the pack's
-   placeholder (`{SKILL}`, `{TOOL}`, `{AGENT}`, …).
+2. Read the one pack named in your spawn, resolving its skill-relative path
+   under `skills/` (spawn `tool-efficiency/references/error-forensics.md` →
+   `skills/tool-efficiency/references/error-forensics.md`). Substitute the
+   target for the pack's placeholder (`{SKILL}`, `{TOOL}`, `{AGENT}`, …).
 3. Run the pack's queries in order, applying the harness filter.
 4. If a query returns empty (DuckDB CLI emits `[]`), note it and continue — never
    block on one empty result. If the whole pack is empty, return "insufficient

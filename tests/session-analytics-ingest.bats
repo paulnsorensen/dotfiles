@@ -87,6 +87,10 @@ q() { duckdb "$DB" -json -c "$1"; }
     assert_success
     run q "SELECT count(*) AS n FROM tool_uses WHERE harness='opencode';"
     assert_output_contains '"n":1'
+    # A 'completed' tool part with no output key must still emit a paired
+    # tool_result, or the call's request/result correlation is silently lost.
+    run q "SELECT count(*) AS n FROM tool_results WHERE harness='opencode' AND tool_use_id='oc-1';"
+    assert_output_contains '"n":1'
 }
 
 @test "ingest: a harness-filtered query unifies multiple sources in one schema" {
@@ -129,6 +133,24 @@ q() { duckdb "$DB" -json -c "$1"; }
     # tool_use, or correlation (a tool's result) is silently lost.
     run q "SELECT content FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-1';"
     assert_output_contains '"content":"a.txt"'
+    # Output with no exit marker is not an error.
+    run q "SELECT is_error FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-1';"
+    assert_output_contains '"is_error":"false"'
+}
+
+@test "ingest: codex non-zero exit maps to is_error=true" {
+    cat > "$TEST_HOME/.codex/sessions/2026/05/30/rollout-codex-fail.jsonl" <<'JSONL'
+{"timestamp":"2026-05-30T12:00:00Z","type":"session_meta","payload":{"id":"x-2","timestamp":"2026-05-30T12:00:00Z","cwd":"/work/codex"}}
+{"timestamp":"2026-05-30T12:00:02Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"false\"]}","call_id":"call-x-2"}}
+{"timestamp":"2026-05-30T12:00:03Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-2","output":"Process exited with code 1\nboom"}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    # A non-zero codex exit must record is_error=true, or codex tool failures
+    # are systematically under-reported as successes (the canonical schema's
+    # fail-loud intent).
+    run q "SELECT is_error FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-2';"
+    assert_output_contains '"is_error":"true"'
 }
 
 @test "ingest: opencode tool output maps status->is_error (completed=false, error=true)" {

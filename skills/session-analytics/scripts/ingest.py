@@ -21,6 +21,7 @@ Usage: python3 ingest.py [--force]
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -112,6 +113,29 @@ def codex_discover():
     return out
 
 
+def _codex_output_is_error(out):
+    """Detect failure in a codex ``function_call_output`` payload.
+
+    Shell tool outputs embed a ``Process exited with code N`` line; a non-zero
+    code is a failure. Dict payloads may carry an explicit status / exit_code.
+    Returns the canonical "true"/"false" string, defaulting to "false" when no
+    error signal is present (non-shell tools that emit no exit marker).
+    """
+    if isinstance(out, dict):
+        status = out.get("status")
+        if isinstance(status, str) and status.lower() in ("error", "failed", "failure"):
+            return "true"
+        code = out.get("exit_code")
+        if isinstance(code, int) and code != 0:
+            return "true"
+        return "false"
+    if isinstance(out, str):
+        m = re.search(r"Process exited with code (\d+)", out)
+        if m and m.group(1) != "0":
+            return "true"
+    return "false"
+
+
 def codex_normalize(path):
     """Codex rollout JSONL -> canonical envelope.
 
@@ -163,6 +187,7 @@ def codex_normalize(path):
             }
         elif ptype == "function_call_output":
             out = payload.get("output")
+            is_error = _codex_output_is_error(out)
             if isinstance(out, dict):
                 out = json.dumps(out)
             yield {
@@ -176,7 +201,7 @@ def codex_normalize(path):
                         "type": "tool_result",
                         "tool_use_id": payload.get("call_id"),
                         "content": out,
-                        "is_error": "false",
+                        "is_error": is_error,
                     }]
                 },
             }
@@ -191,12 +216,13 @@ def opencode_normalize(path):
     """opencode SQLite (part table, type='tool') -> canonical envelope.
 
     A tool part carries {tool, callID, state:{status,input,output}}. We emit
-    an assistant tool_use and, when an output is present, a paired
-    user tool_result. session.directory supplies cwd.
+    an assistant tool_use and, for any terminal status (completed/error), a
+    paired user tool_result. session.directory supplies cwd.
     """
     try:
         con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        print(f"opencode: cannot open {path}: {exc}", file=sys.stderr)
         return
     try:
         rows = con.execute(
@@ -208,7 +234,8 @@ def opencode_normalize(path):
             ORDER BY p.time_created
             """
         ).fetchall()
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        print(f"opencode: query failed on {path}: {exc}", file=sys.stderr)
         con.close()
         return
     con.close()
@@ -235,7 +262,7 @@ def opencode_normalize(path):
                 }]
             },
         }
-        if "output" in state or state.get("status") == "error":
+        if "output" in state or state.get("status") in ("completed", "error"):
             yield {
                 "harness": "opencode",
                 "type": "user",
