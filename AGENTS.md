@@ -88,6 +88,7 @@ dotfiles/
 ├── bin/                    # CLI tools (dots command)
 ├── agents/                 # Harness-agnostic agent config (shared by Claude + Codex + opencode)
 │   ├── AGENTS.md           # Global coding-agent preferences. Copied to ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md by chezmoi.
+│   ├── preamble.md         # System prompt body. Wired into Codex (`model_instructions_file`) and opencode (`agents/build.md`) by install-prompts; Claude reads it via the cc/ccc/ccr/ccfresh wrappers in zsh/claude.zsh.
 │   ├── RTK.md              # RTK proxy reference (Claude only — copied to ~/.claude/RTK.md by chezmoi).
 │   ├── registry.yaml       # Cheese sub-agent source of truth (metadata + body_path); rendered into every harness by ap.
 │   ├── agent_definitions/  # Agent bodies (instruction-only Markdown referenced by registry.yaml's body_path).
@@ -114,7 +115,7 @@ dotfiles/
 ├── cursor/                 # Cursor-specific configuration
 │   └── plugins/local/      # In-repo Cursor plugins (cheese-grok) deployed by chezmoi to ~/.cursor/{skills,rules,commands,hooks}/ plus hooks.json/modes.json merges.
 ├── skills/                 # Single source of truth for skills — flat tree of skill dirs plus `_registry.yaml` for external (`npx skills add`) sources. Unioned into the `base` profile and rendered into every harness by `ap`.
-├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`), and runs run_onchange scripts: install-base-profile (renders the registry-derived `base` profile — MCPs + skills + hooks — into every harness via `ap`; supersedes the retired install-mcp/install-hooks/install-claude-skills deploy scripts), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-agent-profile (warms the `ap` uv env).
+├── chezmoi/                # chezmoi source dir. Wires `~/.config/chezmoi/chezmoi.toml` (via `.chezmoi.toml.tmpl`, prompts for email on first run), renders templated dotfiles (`private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`, `dot_serena/modify_serena_config.yml`), and runs run_onchange scripts: install-base-profile (renders the registry-derived `base` profile — MCPs + skills + hooks — into every harness via `ap`; supersedes the retired install-mcp/install-hooks/install-claude-skills deploy scripts), install-agents-doc (agents/AGENTS.md → both harnesses, agents/RTK.md → Claude), install-codex (codex/config.toml → ~/.codex/ first-time only), install-agent-profile (warms the `ap` uv env), install-prompts (wires agents/preamble.md as the system prompt for Codex and opencode), install-cursor-plugins (deploys cursor/plugins/local/<name>/ to ~/.cursor/{skills,rules,commands,hooks}/ plus hooks.json/modes.json merges).
 ├── packages/
 │   ├── packages.yaml       # Flat package registry (brew, cargo, apt)
 │   └── sync.sh             # Package sync with hash cache
@@ -365,7 +366,7 @@ The `.sync-with-rollback` script provides:
 - **Manifest tracking** of all symlinks
 - **Per-directory .sync scripts** for custom setup (fonts, iterm2, chezmoi)
 
-> **Migrating to chezmoi (in progress — see `.cheese/specs/chezmoi-consolidation.md`).** The custom symlink + rollback system is being retired in favour of chezmoi pure-copy deployment. **Stage 1 (done):** the backup/restore/rollback subsystem is deleted. `dots rollback` no longer snapshots — it prints the git-backed undo path (`git revert` + `dots sync`); `dots backups`/`dots clean` are removed. The symlink loop in `.sync-with-rollback` is untouched until later stages.
+> **Migrating to chezmoi (in progress).** The custom symlink + rollback system is being retired in favour of chezmoi pure-copy deployment. **Stage 1 (done):** the backup/restore/rollback subsystem is deleted. `dots rollback` no longer snapshots — it prints the git-backed undo path (`git revert` + `dots sync`); `dots backups`/`dots clean` are removed. The symlink loop in `.sync-with-rollback` is untouched until later stages.
 
 **`bin/` PATH decision (Risk 2 / criterion 7):** `bin/` is **never** copied or symlinked into `$HOME`. It runs live from the clone via `export PATH="$DOTFILES_DIR/bin:$PATH"` in `zsh/core.zsh`. The chezmoi migration keeps this — there is no `dot_bin` source entry — so edits to `dots`/`gh-*` helpers are live immediately with no `chezmoi apply` step. This is the chosen option (PATH-from-clone, not copy-and-apply); it preserves the in-repo dev loop for the repo's own tooling.
 
@@ -385,9 +386,11 @@ A subset of dotfiles is rendered by [chezmoi](https://chezmoi.io/) instead of sy
 
 - `~/.gitconfig` — `chezmoi/private_dot_gitconfig.tmpl` (templated email, work-only `[url]` redirects)
 - `~/.copilot/mcp-config.json` — `chezmoi/private_dot_copilot/mcp-config.json.tmpl` (env-rendered API keys, fails fast if unset)
+- `~/.serena/serena_config.yml` — `chezmoi/dot_serena/modify_serena_config.yml` (templated `modify_` — tunes Serena per machine without clobbering user edits)
 - `~/.claude/settings.json` — `chezmoi/dot_claude/create_settings.json` (seeded once with the user-owned baseline; `ap install global` then jq-merges `enabledPlugins["global@local"]` + `extraKnownMarketplaces.local` on every run, preserving user-managed siblings). A one-time `run_once_before_migrate-claude-settings.sh` removes the legacy `$DOTFILES/claude/settings.json` symlink before chezmoi seeds.
 - `~/.config/opencode/opencode.json` — `chezmoi/dot_config/opencode/create_opencode.json` (analogous: seed once, then `ap install base --target $HOME/.config/opencode --harness opencode` mutates the `mcp` block)
-- `~/.claude/skills/`, `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/config.toml`, and MCP entries — handled by `run_onchange_*` scripts under `chezmoi/.chezmoiscripts/` that fork to helpers in `chezmoi/lib/`
+- `~/.config/{atuin,git,hallouminate,jmux,opencode,yazi}/` — direct copies from `chezmoi/dot_config/<tool>/` (terminal, global gitignore, hallouminate wiki, jmux, opencode TUI/theme, yazi)
+- `~/.claude/skills/`, `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/config.toml`, `~/.codex/preamble.md` (with `model_instructions_file` rewritten in `config.toml`), `~/.config/opencode/agents/build.md`, MCP entries, and cursor plugin trees — handled by `run_onchange_*` scripts under `chezmoi/.chezmoiscripts/` that fork to helpers in `chezmoi/lib/` (install-base-profile, install-agents-doc, install-codex, install-prompts, install-cursor-plugins, install-agent-profile)
 
 **First-init (interactive):** `dots sync` dispatches to `chezmoi/.sync`, which invokes `chezmoi init --source $DOTFILES/chezmoi` if `~/.config/chezmoi/chezmoi.toml` is missing. The `.chezmoi.toml.tmpl` prompts for: `email`. The answer persists to `~/.config/chezmoi/chezmoi.toml` (alongside the persisted `sourceDir`) and isn't re-prompted.
 
