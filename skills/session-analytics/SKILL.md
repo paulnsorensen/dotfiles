@@ -1,10 +1,10 @@
 ---
 name: session-analytics
 description: >
-  Query Claude Code's own JSONL session logs via DuckDB for usage analytics,
-  tool patterns, error forensics, and routing decisions. Use when the user says
-  "session analytics", "query my logs", "tool usage", "how often do I use",
-  "check my sessions", "analyze my usage", or asks about tool/agent/skill
+  Query coding-agent session logs (Claude, Codex, opencode) via DuckDB for usage
+  analytics, tool patterns, error forensics, and routing decisions. Use when the
+  user says "session analytics", "query my logs", "tool usage", "how often do I
+  use", "check my sessions", "analyze my usage", or asks about tool/agent/skill
   behavior across sessions. Do NOT use for debugging current code, reading a
   single transcript, or questions about Claude's capabilities.
 model: sonnet
@@ -13,13 +13,35 @@ allowed-tools: Bash(duckdb:*), Bash(python3:*), Read
 
 # session-analytics
 
-Query Claude Code session logs. DuckDB is the database, SQL is the interface.
+Query coding-agent session logs. DuckDB is the database, SQL is the interface.
+
+This skill is **two things**:
+
+1. **An interactive query tool** (you, inline) — translate a user question into
+   SQL and answer it. The catalog below covers the common cases.
+2. **A data layer** for the analytics platform — a multi-harness ingest plus a
+   canonical schema that consumer skills (`skill-improver`, `prompts`,
+   `tool-efficiency`, `work-recovery`) query through their own domain *packs*,
+   fanned out via the `duckdb-expert` agent (one spawn per domain).
+
+The data layer's contracts live in `references/`:
+
+- `canonical-schema.md` — the table shapes every pack queries.
+- `harness-coverage.md` — which harnesses are ingested, where logs live, format notes.
+- `query-conventions.md` — pack-authoring + harness-filter conventions.
+- `calibration.md` — the shared confidence/severity model the judgment skills import.
+
+This skill does **not** own domain packs — those are co-located with each
+consumer skill. It stays inline for interactive use; `duckdb-expert` is the
+batch/fan-out executor.
 
 ## How it works
 
-Session logs live as JSONL files in `~/.claude/projects/`. Each conversation
-turn is one JSON line. This skill materializes them into a DuckDB database
-with pre-flattened tables so you can answer questions with single SQL queries.
+Session logs come from several harnesses (Claude JSONL, Codex rollout JSONL,
+opencode SQLite). `ingest.py` runs one normalizing **adapter** per harness into
+one canonical row shape with a `harness` column, then materializes pre-flattened
+tables so you can answer questions with single SQL queries. cursor/copilot have
+no accessible logs today (see `harness-coverage.md`).
 
 ## Step 1: Ensure the database exists
 
@@ -46,136 +68,21 @@ duckdb ~/.claude/analytics/sessions.duckdb -json -c "SELECT ..."
 
 ## Schema
 
-### `tool_uses`
-
-Flattened from assistant message `content[]` blocks where `type = 'tool_use'`.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| tool_name | VARCHAR | Tool invoked (Bash, Read, Edit, Agent, Skill, mcp__*) |
-| tool_use_id | VARCHAR | Unique ID for joining with tool_results |
-| input | JSON | Full input object |
-| bash_cmd | VARCHAR | Extracted command (Bash only) |
-| skill_name | VARCHAR | Extracted skill (Skill only) |
-| skill_args | VARCHAR | Extracted args (Skill only) |
-| agent_type | VARCHAR | Extracted subagent_type (Agent only) |
-| agent_desc | VARCHAR | Extracted description (Agent only) |
-| agent_mode | VARCHAR | Extracted mode (Agent only) |
-| grep_pattern | VARCHAR | Extracted pattern (Grep only) |
-| file_path | VARCHAR | Extracted file_path (Read/Edit/Write) |
-| query | VARCHAR | Extracted query (ToolSearch) |
-| timestamp | VARCHAR | ISO timestamp |
-| sessionId | VARCHAR | Session identifier |
-| cwd | VARCHAR | Working directory |
-| gitBranch | VARCHAR | Git branch at time of call |
-
-### `tool_results`
-
-Flattened from user message `content[]` blocks where `type = 'tool_result'`.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| tool_use_id | VARCHAR | Matches tool_uses.tool_use_id |
-| content | VARCHAR | Result text (truncated to 500 chars) |
-| is_error | VARCHAR | 'true' if the tool call failed |
-| timestamp | VARCHAR | ISO timestamp |
-| sessionId | VARCHAR | Session identifier |
-
-### `stop_events`
-
-Assistant messages where Claude stopped generating.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| stop_reason | VARCHAR | end_turn, stop_sequence, or max_tokens |
-| timestamp | VARCHAR | ISO timestamp |
-| sessionId | VARCHAR | Session identifier |
-| cwd | VARCHAR | Working directory |
-| gitBranch | VARCHAR | Git branch |
-
-### `agent_spawns`
-
-Subset of tool_uses for Agent calls.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| agent_type | VARCHAR | Subagent type (defaults to 'general-purpose') |
-| description | VARCHAR | Task description |
-| mode | VARCHAR | Permission mode |
-| timestamp | VARCHAR | ISO timestamp |
-| sessionId | VARCHAR | Session identifier |
-| cwd | VARCHAR | Working directory |
-
-### `skill_invocations`
-
-Subset of tool_uses for Skill calls.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| skill_name | VARCHAR | Which skill was invoked |
-| args | VARCHAR | Arguments passed |
-| timestamp | VARCHAR | ISO timestamp |
-| sessionId | VARCHAR | Session identifier |
-| cwd | VARCHAR | Working directory |
-
-### `mcp_calls`
-
-Subset of tool_uses for MCP server calls (tool_name starts with `mcp__`).
-
-Same columns as `tool_uses`. The tool_name encodes the server and method:
-`mcp__<server>__<method>` (e.g., `mcp__context7__query-docs`).
-
-### `sessions`
-
-One row per unique (sessionId, cwd, branch) combination.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| sessionId | VARCHAR | Session identifier |
-| first_seen | VARCHAR | Earliest timestamp |
-| last_seen | VARCHAR | Latest timestamp |
-| project | VARCHAR | Working directory |
-| branch | VARCHAR | Git branch |
-| entry_count | INTEGER | Total JSONL entries in session |
-
-### `stop_hooks`
-
-System entries with subtype `stop_hook_summary`.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| timestamp | VARCHAR | ISO timestamp |
-| sessionId | VARCHAR | Session identifier |
-| hookCount | INTEGER | Number of hooks that ran |
-| hookInfos | JSON | Array of {command, durationMs} |
-| hookErrors | JSON | Array of error strings |
-| preventedContinuation | BOOLEAN | Whether the hook blocked Claude |
-| stopReason | VARCHAR | Reason text |
-| hasOutput | BOOLEAN | Whether hook produced output |
-| level | VARCHAR | suggestion, warning, etc. |
-
-### `permission_denials`
-
-Pre-filtered tool_results for permission-related failures.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| content | VARCHAR | The denial message |
-| sessionId | VARCHAR | Session identifier |
-| timestamp | VARCHAR | ISO timestamp |
-
-### `raw_entries`
-
-The full unflattened JSONL data. Use only when the materialized tables
-don't have what you need.
+The full canonical schema (every table, every column, the `harness` tag, type
+gotchas) lives in `references/canonical-schema.md`. Read it when you need a
+column you don't already know. The common tables: `tool_uses`, `tool_results`,
+`skill_invocations`, `agent_spawns`, `mcp_calls`, `stop_events`, `stop_hooks`,
+`permission_denials`, `sessions`, `raw_entries` — each carrying a `harness`
+column so you can filter or compare Claude vs Codex vs opencode.
 
 ## Query Catalog
 
 Organized by investigation type. Use as starting points — modify for your question.
 
-For auditing a **single** skill's behavior (usage / tools / friction), see the
-parameterized packs in `references/skill-audit-queries.md` — run by the
-`duckdb-expert` agent on behalf of `skill-improver`.
+For domain-scoped analytics (skill auditing, tool efficiency, prompt patterns,
+work recovery), the packs live with each consumer skill at
+`skills/<skill>/references/<domain>.md` and are run by the `duckdb-expert` agent
+(one spawn per domain). This catalog is for ad-hoc interactive queries.
 
 ### Tool usage frequency
 

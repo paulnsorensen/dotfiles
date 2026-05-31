@@ -125,7 +125,7 @@ agents:
     - scout
     body_path: agents/agent_definitions/roquefort-wrecker.md
   duckdb-expert:
-    description: Read-only DuckDB analyst for the Claude Code session-analytics database. Runs the usage/tools/friction skill-audit query packs (from the session-analytics skill) or ad-hoc SQL and returns a structured ~2 KB summary. Built for context isolation — keeps raw query output out of the parent's window. Used by skill-improver Dimension 7.
+    description: Read-only DuckDB analyst for the coding-agent session-analytics database. Spawned with ONE analytics pack pointer (skills/<skill>/references/<domain>.md) plus a target and a harness filter; runs that single domain's queries and returns one structured ~2 KB digest. Reads queries from the caller's pack and the canonical schema from session-analytics. Built for context isolation — consumer skills fan out one parallel spawn per owned domain. Used by skill-improver, tool-efficiency, prompts, and work-recovery.
     models:
       claude: haiku
       codex: gpt-5-mini
