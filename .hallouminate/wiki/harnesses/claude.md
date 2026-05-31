@@ -9,11 +9,11 @@ Config lives under `~/.claude/`. The repo deploys it as a Claude *plugin tree* (
 | Capability | Official doc | This repo |
 |---|---|---|
 | Hooks | <https://code.claude.com/docs/en/hooks> | `agents/hooks/registry.yaml` → plugin `hooks/` (wiring in `plugin.json`, NOT `settings.json`). SessionStart cheese-flair hook + its `shared_assets`. |
-| Sub-agents | <https://code.claude.com/docs/en/sub-agents> | `agents/registry.yaml` + `agent_definitions/` → `.claude/agents/<n>.md` (user-scoped, priority 4) and plugin-scoped copy. Full frontmatter on the shared file. |
-| MCP | <https://code.claude.com/docs/en/mcp> | `agents/mcp/registry.yaml` → plugin-scoped `.mcp.json`. `gate_unless: CHEESE_FLOW` skips servers the cheese-flow plugin already ships. `scope` honored (claude-only). |
-| System prompt | <https://code.claude.com/docs/en/output-styles> | `agents/preamble.md` injected via `--system-prompt-file` in the `cc`/`ccc`/`ccr`/`ccfresh` wrappers (`zsh/claude.zsh`). `agents/AGENTS.md` → `~/.claude/CLAUDE.md` (user cascade, loads on top). |
-| Settings / config | <https://code.claude.com/docs/en/settings> | `~/.claude/settings.json` seeded once by chezmoi (`create_settings.json`); `ap install global` jq-merges `enabledPlugins`/`extraKnownMarketplaces`, preserving user keys. |
-| Skills | <https://code.claude.com/docs/en/skills> | `skills/` (local, copied) + `_registry.yaml` (external, `npx skills add`) → `~/.claude/skills/`. |
+| Sub-agents | [sub-agents](https://code.claude.com/docs/en/sub-agents) · [frontmatter fields](https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields) | `agents/registry.yaml` + `agent_definitions/` → `.claude/agents/<n>.md` (user-scoped, priority 4) and plugin-scoped copy. Full frontmatter on the shared file. |
+| MCP | [mcp](https://code.claude.com/docs/en/mcp) · per-tool globs: [settings](https://code.claude.com/docs/en/settings#available-settings) | `agents/mcp/registry.yaml` → plugin-scoped `.mcp.json`. `gate_unless: CHEESE_FLOW` skips servers the cheese-flow plugin already ships. `scope` honored (claude-only). **Per-tool `mcp__server__tool` permission globs are documented on the Settings page, not the MCP page.** |
+| System prompt | [CLI flags](https://code.claude.com/docs/en/cli-reference#system-prompt-flags) · [memory cascade](https://code.claude.com/docs/en/memory) | `agents/preamble.md` injected via `--system-prompt-file` in the `cc`/`ccc`/`ccr`/`ccfresh` wrappers (`zsh/claude.zsh`). `agents/AGENTS.md` → `~/.claude/CLAUDE.md` (user cascade: managed → user → project → local, loads on top). Two docs: the `--system-prompt[-file]` / `--append-system-prompt[-file]` flags live in the CLI reference; the CLAUDE.md/AGENTS.md load order lives in the memory page. |
+| Settings / config | [settings](https://code.claude.com/docs/en/settings#available-settings) | `~/.claude/settings.json` seeded once by chezmoi (`create_settings.json`); `ap install global` jq-merges `enabledPlugins`/`extraKnownMarketplaces`, preserving user keys. Schema covers permissions, hooks, env, model, statusLine + the per-tool MCP allow/deny globs. |
+| Skills | [skills](https://code.claude.com/docs/en/skills#frontmatter-reference) | `skills/` (local, copied) + `_registry.yaml` (external, `npx skills add`) → `~/.claude/skills/`. |
 
 ## Isolated settings (`ap` isolated launch)
 

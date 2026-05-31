@@ -11,7 +11,7 @@ Unlike the dot-dir harnesses, opencode writes config at the *target root* (`~/.c
 | Hooks | <https://opencode.ai/docs/plugins/> | No first-class hooks — lifecycle events are exposed only via the plugin API (JS/TS, 25+ events). opencode has **no hook renderer** in `ap`, so the repo's harness-agnostic hooks (`agents/hooks/`) are never rendered for opencode. |
 | Sub-agents | <https://opencode.ai/docs/agents/> | `agents/registry.yaml` → root-relative `agents/<n>.md`. Read-only agents get `permission.edit: deny` derived from their tool list. |
 | MCP | <https://opencode.ai/docs/mcp-servers/> | `agents/mcp/registry.yaml` → `opencode.json` `mcp` key (local + remote). |
-| System prompt | <https://opencode.ai/docs/rules/> | `agents/preamble.md` → `~/.config/opencode/agents/build.md` (the build-agent prompt, `install-prompts`). Also honors `AGENTS.md` rules + `instructions` field. |
+| System prompt | [rules](https://opencode.ai/docs/rules/) · [precedence](https://opencode.ai/docs/rules/#precedence) | `agents/preamble.md` → `~/.config/opencode/agents/build.md` (the build-agent prompt, `install-prompts`). Also honors `AGENTS.md` rules + the `instructions` config key (file paths/globs/remote URLs, 5s fetch timeout). |
 | Settings / config | <https://opencode.ai/docs/config/> | `~/.config/opencode/opencode.json`. `tui.json` (theme `chocolate-donut`, `editor_open` → `ctrl+o`) and `themes/chocolate-donut.json` are always-managed by chezmoi. |
 | Skills | <https://opencode.ai/docs/skills/> | `skills/` → loaded via the native `skill` tool; opencode also reads Claude/`.agents` skill dirs. |
 
