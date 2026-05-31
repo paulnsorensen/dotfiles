@@ -392,13 +392,16 @@ class ClaudeRenderer:
             subprocess.run(cmd, check=True)
 
     def _unregister_user_mcps(self, manifest: Manifest) -> None:
-        """Remove this profile's user-scope MCP registrations (clean path)."""
+        """Remove this profile's user-scope MCP registrations (clean path).
+
+        Fail loud when the ``claude`` CLI is absent — parity with the render
+        path. The registrations live in the live ``~/.claude.json`` that only
+        the CLI edits safely; returning silently would leave them behind while
+        clean reports success."""
         mine = mcps_for(manifest, "claude", _MCP_DEFAULT)
         if not mine:
             return
-        cli = shutil.which("claude")
-        if cli is None:
-            return
+        cli = self._claude_cli()
         for mcp in mine:
             subprocess.run(
                 [cli, "mcp", "remove", mcp["name"], "--scope", "user"],

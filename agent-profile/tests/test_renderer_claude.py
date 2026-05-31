@@ -791,3 +791,14 @@ def test_user_scope_missing_cli_fails_loud(env, monkeypatch):
     profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
     with pytest.raises(FileNotFoundError):
         ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+
+
+def test_user_scope_clean_missing_cli_fails_loud(env, monkeypatch):
+    # Clean must fail loud too — a silent return would report success while
+    # leaving the user-scope registrations behind in ~/.claude.json.
+    emptybin = env.tmp / "emptybin"
+    emptybin.mkdir()
+    monkeypatch.setenv("PATH", str(emptybin))
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    with pytest.raises(FileNotFoundError):
+        ClaudeRenderer().clean(parse_manifest(profile_dir), env.target)

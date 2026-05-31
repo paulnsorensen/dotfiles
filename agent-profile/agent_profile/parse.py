@@ -151,6 +151,13 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         if s:
             _validate_relpath("script", str(s), str(manifest_path))
 
+    scope = raw.get("mcp_scope")
+    if scope is not None and scope not in ("plugin", "user"):
+        raise ParseError(
+            f"ap_parse_one: {manifest_path} has invalid mcp_scope "
+            f"{scope!r} (expected 'plugin' or 'user')"
+        )
+
     sd = str(profile_dir)
 
     def _decorate(items: list[Any]) -> list[dict[str, Any]]:
