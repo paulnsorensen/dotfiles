@@ -73,8 +73,37 @@ block_sha() {
 
 # The descriptions promise read-only phase agents that cannot recurse, and a
 # coder that keeps the write surface. Lock those tool-surface contracts in the
-# registry so they can't silently drift (preamble: "a level-1 subagent cannot
-# spawn subagents").
+# registry so they can't silently drift. The same metadata renders to Claude,
+# Codex, opencode, and Copilot CLI; Copilot ignores model overrides.
+@test "phase agents declare model intent for model-aware harnesses" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    for agent in explorer researcher reviewer coder; do
+        for harness in claude codex opencode; do
+            run yq ".agents.${agent}.models.${harness}" "$registry"
+            assert_success
+            [[ "$output" != "null" ]] || { echo "$agent missing $harness model" >&2; return 1; }
+        done
+        run yq ".agents.${agent}.models.copilot" "$registry"
+        assert_success
+        [[ "$output" == "null" ]] || { echo "$agent must not set Copilot model (renderer ignores it)" >&2; return 1; }
+    done
+}
+
+@test "phase-agent skill references use easy-cheese and stay scoped" {
+    local registry="$AGENTS_DIR/registry.yaml"
+
+    run yq '.agents.explorer.skills | join(" ")' "$registry"
+    assert_success
+    [[ "$output" == "easy-cheese:cheez-search easy-cheese:cheez-read" ]] || { echo "explorer skills drifted: $output" >&2; return 1; }
+
+    for agent in researcher reviewer coder; do
+        run yq ".agents.${agent}.skills | join(\" \")" "$registry"
+        assert_success
+        [[ "$output" != *cheese-flow:* ]] || { echo "$agent still references cheese-flow" >&2; return 1; }
+        [[ "$output" != *scout* ]] || { echo "$agent should not carry scout" >&2; return 1; }
+    done
+}
+
 @test "read-only phase agents deny code edits and subagent fan-out in the registry" {
     local registry="$AGENTS_DIR/registry.yaml"
     # explorer + reviewer are fully read-only: deny Write and Agent.
