@@ -8,6 +8,12 @@
         "matcher": "rm -rf|sudo |chmod 777|git push --force|git reset --hard",
         "failClosed": true,
         "timeout": 2
+      },
+      {
+        "command": "./hooks/git-guard.sh",
+        "type": "command",
+        "matcher": "git\\s+(.*\\s)?(checkout|restore|reset|clean)\\b",
+        "timeout": 5
       }
     ],
     "stop": [
