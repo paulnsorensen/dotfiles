@@ -91,12 +91,14 @@ function isSensitive(rawPath) {
   return sensitiveBasename(base) || sensitiveDir(p);
 }
 
-// Pull candidate paths out of a Bash command line: every whitespace token,
-// stripped of quotes and shell redirection / option noise.
+// Pull candidate paths out of a Bash command line. Split on whitespace, `=`,
+// and the shell metacharacters that attach a path with no surrounding space
+// (`<.env`, `>./.env`, `-d@.env`, `a|cat .env`) so the path lands in its own
+// token, then strip residual quote / option noise.
 function bashTokens(command) {
   return String(command)
-    .split(/[\s=]+/)
-    .map((t) => t.replace(/^[<>|&]+/, '').replace(/^['"]|['"]$/g, '').replace(/^@/, ''))
+    .split(/[\s=<>|&@]+/)
+    .map((t) => t.replace(/^['"]|['"]$/g, ''))
     .filter(Boolean);
 }
 
