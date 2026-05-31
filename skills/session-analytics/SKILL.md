@@ -20,7 +20,7 @@ This skill is **two things**:
 1. **An interactive query tool** (you, inline) — translate a user question into
    SQL and answer it. The catalog below covers the common cases.
 2. **A data layer** for the analytics platform — a multi-harness ingest plus a
-   canonical schema that consumer skills (`skill-improver`, `prompts`,
+   canonical schema that consumer skills (`skill-improver`, `prompt-analytics`,
    `tool-efficiency`, `work-recovery`) query through their own domain *packs*,
    fanned out via the `duckdb-expert` agent (one spawn per domain).
 

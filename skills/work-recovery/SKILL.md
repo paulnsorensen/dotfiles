@@ -8,7 +8,7 @@ description: >
   session", "reconstruct where I left off", "resume my last session", "what did
   that session change", "rebuild context from logs", or invokes /work-recovery.
   Report-only — it never scores or judges. Do NOT use for usage scoring (that is
-  /skill-improver, /tool-efficiency, /prompts) or one-off interactive log queries
+  /skill-improver, /tool-efficiency, /prompt-analytics) or one-off interactive log queries
   (that is /session-analytics).
 allowed-tools: Read, Agent, Bash
 ---

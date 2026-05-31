@@ -4,7 +4,7 @@
 
 # harness: respects harness=<all|claude|codex|opencode>
 
-# owner: prompts
+# owner: prompt-analytics
 
 # signal: MEDIUM — a recurring topic is not proof of a missing capability
 

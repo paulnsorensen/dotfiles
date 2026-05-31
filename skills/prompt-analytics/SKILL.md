@@ -1,5 +1,5 @@
 ---
-name: prompts
+name: prompt-analytics
 model: opus
 effort: high
 description: >
@@ -7,7 +7,7 @@ description: >
   produce calibrated recommendations — prompt-pattern analysis, routing accuracy,
   and knowledge gaps. Use when the user says "analyze my prompts", "prompt
   patterns", "is routing working", "which skill should have fired", "knowledge
-  gaps", "what do I keep asking", or invokes /prompts. Do NOT use for auditing a
+  gaps", "what do I keep asking", or invokes /prompt-analytics. Do NOT use for auditing a
   single skill/agent definition (that is /skill-improver), tool/MCP efficiency
   (that is /tool-efficiency), or one-off interactive log queries (that is
   /session-analytics).
@@ -44,7 +44,7 @@ Three analytics packs under `references/`:
    (one-domain-per-spawn):
 
    ```
-   spawn duckdb-expert "Run analytics pack prompts/references/<domain>.md for target {TARGET}. harness={HARNESS}"
+   spawn duckdb-expert "Run analytics pack prompt-analytics/references/<domain>.md for target {TARGET}. harness={HARNESS}"
    ```
 
 3. **Collect** the digests.

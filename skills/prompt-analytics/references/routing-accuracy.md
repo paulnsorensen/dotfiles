@@ -4,7 +4,7 @@
 
 # harness: respects harness; skill_invocations is claude-dominant
 
-# owner: prompts
+# owner: prompt-analytics
 
 # signal: LOW — no intent ground-truth. Findings are correlational at most
 

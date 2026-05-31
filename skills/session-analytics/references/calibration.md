@@ -1,7 +1,7 @@
 # Calibration — Shared Reference
 
 **Shared by every judgment skill in the analytics platform.** `skill-improver`,
-`prompts`, and `tool-efficiency` import this one file rather than each redefining
+`prompt-analytics`, and `tool-efficiency` import this one file rather than each redefining
 confidence/severity; `work-recovery` is report-only and does not score. Origin:
 PR #212 (qualitative model over 0-100 scoring).
 
