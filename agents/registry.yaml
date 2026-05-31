@@ -14,6 +14,8 @@ agents:
     description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
     models:
       claude: sonnet
+      codex: gpt-5-codex
+      cursor: claude-sonnet
     disallowedTools:
     - Edit
     - NotebookEdit
@@ -27,6 +29,8 @@ agents:
     description: Git history analyst. Produces per-file risk scores that the orchestrator uses to adjust sibling findings. Does NOT find bugs or architecture issues — only outputs score modifiers.
     models:
       claude: haiku
+      codex: gpt-5-mini
+      cursor: claude-haiku
     disallowedTools:
     - Edit
     - Write
@@ -43,6 +47,8 @@ agents:
     description: PR review comment responder. Triages both inline review threads AND PR-level review body comments with 0-100 confidence scoring — fixes high-confidence items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful. Spawnable as a parallel agent for move-my-cheese and cheese-convoy workflows.
     models:
       claude: sonnet
+      codex: gpt-5-codex
+      cursor: claude-sonnet
     tools:
     - Read
     - Write
@@ -60,6 +66,8 @@ agents:
     description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Read-only. Returns stake-grouped findings (high/medium) with file:line citations and one-line recommendations — ~2 KB digest, no severity rewriting, no auto-fixes. Used as an easy-cheese fork target when /age needs evidence on the security dimension.
     models:
       claude: sonnet
+      codex: gpt-5-codex
+      cursor: claude-sonnet
     disallowedTools:
     - Write
     - Edit
@@ -73,6 +81,8 @@ agents:
     description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with 0-100 confidence scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
     models:
       claude: sonnet
+      codex: gpt-5-codex
+      cursor: claude-sonnet
     disallowedTools:
     - Edit
     - NotebookEdit
@@ -85,6 +95,8 @@ agents:
     description: Structural NIH pattern scanner. Uses Serena MCP and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
     models:
       claude: sonnet
+      codex: gpt-5-codex
+      cursor: claude-sonnet
     disallowedTools:
     - Edit
     - Write
@@ -99,6 +111,8 @@ agents:
     description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with 0-100 confidence scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
     models:
       claude: sonnet
+      codex: gpt-5-codex
+      cursor: claude-sonnet
     tools:
     - Read
     - Grep
@@ -114,6 +128,8 @@ agents:
     description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with 0-100 confidence scoring per finding.
     models:
       claude: haiku
+      codex: gpt-5-mini
+      cursor: claude-haiku
     tools:
     - Read
     - Write
@@ -129,6 +145,7 @@ agents:
     models:
       claude: haiku
       codex: gpt-5-mini
+      cursor: claude-haiku
     tools:
     - Bash
     - Read
@@ -146,6 +163,8 @@ agents:
     description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — call from /cook taste-test, /press, or /cure post-fix to gate the next step on test pass. Does NOT write tests.
     models:
       claude: haiku
+      codex: gpt-5-mini
+      cursor: claude-haiku
     tools:
     - Bash
     - Read
@@ -158,6 +177,8 @@ agents:
     description: Analyzes WARN/DIRTY worktrees to recommend keep, archive, or remove. Checks commit content, diffs, PR status, and staleness to make informed triage decisions. Interviews the user on DIRTY worktrees with unique changes.
     models:
       claude: sonnet
+      codex: gpt-5-codex
+      cursor: claude-sonnet
     tools:
     - Bash
     - Read
