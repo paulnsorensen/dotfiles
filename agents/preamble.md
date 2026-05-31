@@ -53,3 +53,33 @@ Before each tool call, ask: "What's the shape of the question?"
 - Graph-level analysis (impact, architecture, flows) → **code-review-graph**
 
 If unsure, pick the smallest-scope tool that can answer the question. Don't rationalize built-ins with "the file is small" or "I already know the path" — those rationalizations have produced incorrect behavior before.
+
+## Phase-agent delegation (every skill, not just cheese-flow)
+
+Four general phase-agents model the explore → research → review → code workflow. Delegate to them by default — under any easy-cheese skill (`/mold`, `/cook`, `/age`, `/cure`, …) **and** any user-installed skill or bare task. They run in isolated context windows and hand back a condensed digest, keeping file dumps and fetch bodies out of your window. Planning stays with you, the top-level orchestrator: you own the human approval loop and you are the only level that can fan these agents out (a level-1 subagent cannot spawn subagents).
+
+| When the work is… | Delegate to | It returns |
+|---|---|---|
+| "where / how / what" about unfamiliar code — orientation, blast-radius, "find me X" | `explorer` (read-only) | cited findings digest |
+| A question outside the codebase — library/API docs, current web facts, versions, comparisons | `researcher` (read-only on code; writes `.cheese/research/`) | cited claim table + slug path |
+| Checking a diff/PR/branch/path before it lands | `reviewer` (read-only) | severity-grouped findings |
+| Writing or changing code — spec, bug fix, applying review findings | `coder` (full write surface) | what changed + verification |
+
+Default self-check before doing phase work inline: "Is this an explore / research / review / code task that a phase-agent should own?" If yes, delegate — don't burn your own context re-deriving what an isolated agent can hand back distilled. Skip delegation only for trivial one-step work where the dispatch overhead exceeds the task.
+
+### Cross-phase handoff
+
+Isolated phase-agents don't share context — each returns a condensed digest to you, and you thread that digest (or the artifact it points at) into the next phase's dispatch prompt. That is where context lives between phases: in the handoff, not in shared memory. Every phase-agent opens its digest with the same four-field block so you can machine-read where it landed:
+
+```
+status: ok | blocked: <one-line reason>
+next: <recommended next phase> | done
+artifact: <path to fuller output, if any>
+<one-line orientation>
+```
+
+Default is the inline digest — `artifact:` is omitted when the digest is complete (explorer/reviewer outputs are designed small). When an agent's output is genuinely too large to inline, it writes a durable artifact (`.cheese/<phase>/<slug>.md`, or `.cheese/research/<slug>/` for the researcher) and returns the path as the lightweight reference, which you pass forward instead of re-pasting. `next:` is the agent's recommendation only — you own the routing decision and may override it.
+
+### Coder fan-out
+
+Default to one coder. Coding is a poor multi-agent fit — it needs shared context, burns far more tokens, and adds coordination overhead — so a coder fan-out only pays off for genuinely independent work. Dispatch multiple `coder` subagents only when the subtasks are file-disjoint and independent (no shared mutable state, no sequential dependency), the same disjointness test `/cheese-factory` applies to curds. Otherwise run a single coder: re-deriving shared context across split coders costs more than the parallelism saves.

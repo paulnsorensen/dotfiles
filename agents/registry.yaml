@@ -168,3 +168,74 @@ agents:
     - scout
     - gh
     body_path: agents/agent_definitions/worktree-triage.md
+  # ── easy-cheese general phase agents ──────────────────────────────────────
+  # Four general-purpose agents that model the easy-cheese (cheese-flow)
+  # workflow: explore → research → review → code. Planning stays a top-level
+  # orchestrator concern (it owns the human approval loop and can fan out these
+  # agents — a level-1 subagent cannot). Unlike the narrow specialist agents
+  # above, these are full-phase workers an orchestrator dispatches to. Their
+  # descriptions carry PROACTIVE triggers so they fire under every easy-cheese
+  # skill AND any user-installed skill, not just the cheese-flow pipeline. They
+  # route file I/O through the cheez-* skills (tilth MCP), not host tools.
+  explorer:
+    description: Read-only codebase investigator. Answers "where / how / what" questions by searching and reading — never writes. Returns a structured findings digest (file:line citations, call paths, conclusions), keeping the file dumps out of the parent's context. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
+    models:
+      claude: sonnet
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    color: cyan
+    skills:
+    - cheese-flow:cheez-search
+    - cheese-flow:cheez-read
+    - scout
+    - grok-codebase
+    - xray
+    body_path: agents/agent_definitions/explorer.md
+  researcher:
+    description: External-research agent. Answers questions outside the codebase — library/API docs, current web facts, version/changelog checks, best-practice comparisons, GitHub examples — via Context7, Tavily, web fetch, and gh, then writes a durable cited research slug under .cheese/research/. Read-only against code. Returns a condensed claim-level digest (the heavy fetch bodies stay on disk, out of the parent's context). Models the easy-cheese research phase. Use PROACTIVELY before implementing against an unfamiliar library or API, when a claim needs a current source instead of a guess, or whenever a skill (/mold, /cook, /briesearch, or any user-installed skill) would otherwise rely on stale training data.
+    models:
+      claude: sonnet
+    disallowedTools:
+    - Edit
+    - NotebookEdit
+    color: blue
+    skills:
+    - briesearch
+    - cheese-flow:cheez-search
+    - cheese-flow:cheez-read
+    - scout
+    body_path: agents/agent_definitions/researcher.md
+  reviewer:
+    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path across the ten /age dimensions (correctness, security, encapsulation, spec, complexity, deslop, assertions, NIH, efficiency, telemetry) and returns a severity-grouped findings report. Read-only — forks the specialist agents (fromage-*, ghostbuster, ricotta-reducer, nih-scanner) for evidence rather than writing fixes. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
+    models:
+      claude: opus
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    color: red
+    effort: high
+    skills:
+    - age
+    - cheese-flow:cheez-search
+    - cheese-flow:cheez-read
+    - scout
+    body_path: agents/agent_definitions/reviewer.md
+  coder:
+    description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop, editing through the cheez-write (tilth) skill. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Full write surface — the one phase agent that mutates the tree. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
+    models:
+      claude: sonnet
+    color: green
+    skills:
+    - cook
+    - press
+    - cure
+    - cheese-flow:cheez-write
+    - cheese-flow:cheez-read
+    - cheese-flow:cheez-search
+    - de-slop
+    - tdd-assertions
+    - commit
+    body_path: agents/agent_definitions/coder.md
