@@ -79,10 +79,12 @@ case "$event" in
         ;;
     beforeShellExecution)
         cmd="$(printf '%s' "$payload" | jq -r '.command // ""' 2>/dev/null)"
-        # Split on whitespace, `=`, and the shell metacharacters that attach a
-        # path with no surrounding space (`<.env`, `>./.env`, `-d@.env`,
-        # `a|cat .env`) so the path lands in its own token; then strip quotes.
-        cmd="${cmd//[=<>|&@]/ }"
+        # Split on whitespace, `=`, the metacharacters that attach a path with
+        # no surrounding space (`<.env`, `>./.env`, `-d@.env`, `a|cat .env`),
+        # and the command separators that chain or substitute a command
+        # (`cat .env;…`, `echo $(cat .env)`, `(cat .env)`, `` `cat .env` ``) so
+        # the path lands in its own token; then strip quotes.
+        cmd="${cmd//[=<>|&@;()\$\`]/ }"
         for tok in $cmd; do
             tok="${tok%\"}"; tok="${tok#\"}"; tok="${tok%\'}"; tok="${tok#\'}"
             is_sensitive "$tok" && deny "$tok"

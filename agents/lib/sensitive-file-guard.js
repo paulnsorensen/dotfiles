@@ -23,7 +23,10 @@ const READ_TOOLS = new Set(['Read', 'mcp__tilth__tilth_read']);
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'mcp__tilth__tilth_write']);
 
 // Non-secret .env companions — checked-in templates, never hold real values.
-const SAFE_ENV = /(example|sample|template|dist|defaults)/i;
+// Anchored to the trailing segment so a real secret file whose name merely
+// contains a safe keyword (`.env.notsample`, `.env.template-prod`) is still
+// guarded.
+const SAFE_ENV = /\.(example|sample|template|dist|defaults)$/i;
 
 // Credential stores keyed by exact basename.
 const SENSITIVE_BASENAMES = new Set([
@@ -92,12 +95,14 @@ function isSensitive(rawPath) {
 }
 
 // Pull candidate paths out of a Bash command line. Split on whitespace, `=`,
-// and the shell metacharacters that attach a path with no surrounding space
-// (`<.env`, `>./.env`, `-d@.env`, `a|cat .env`) so the path lands in its own
-// token, then strip residual quote / option noise.
+// the metacharacters that attach a path with no surrounding space
+// (`<.env`, `>./.env`, `-d@.env`, `a|cat .env`), and the command separators
+// that chain or substitute a second command (`cat .env;…`, `echo $(cat .env)`,
+// `(cat .env)`, `` cat `.env` ``) so the path always lands in its own token,
+// then strip residual quote / option noise.
 function bashTokens(command) {
   return String(command)
-    .split(/[\s=<>|&@]+/)
+    .split(/[\s=<>|&@;()$`]+/)
     .map((t) => t.replace(/^['"]|['"]$/g, ''))
     .filter(Boolean);
 }
