@@ -55,6 +55,28 @@ hooks:
     timeout: 5
     description: Rotating cheese flair sample injected at session start
 
+  # ─── Secret protection ──────────────────────────────────────────────
+  # Blocks reads, writes, and shell access to .env files, private keys, and
+  # credential stores. One entry; the script dispatches on tool_name, so the
+  # matcher unions every tool that can touch a file across both harnesses:
+  #   claude — Read / Edit / Write / MultiEdit / Bash / tilth MCP
+  #   codex  — Bash / apply_patch (file edits) / tilth MCP
+  # Both harnesses share the identical PreToolUse deny schema
+  # (hookSpecificOutput.permissionDecision: "deny"), so one script serves
+  # both — verified against developers.openai.com/codex/hooks.
+  # Cursor + opencode are covered separately (different mechanisms): a Cursor
+  # hook in cursor/plugins/local/cheese-grok, and opencode's declarative
+  # permission config in chezmoi/dot_config/opencode/create_opencode.json.
+  sensitive-file-guard:
+    event: PreToolUse
+    script: agents/hooks/sensitive-file-guard.sh
+    shared_assets:
+      - agents/lib/sensitive-file-guard.js
+    harnesses: [claude, codex]
+    matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write"
+    timeout: 5
+    description: Block reads/writes of .env, private keys, and credential stores
+
   # ─── Moshi (rjyo/moshi-hook) ────────────────────────────────────────
   # Bridge between Claude Code and the Moshi iOS terminal app — sends
   # session-start, prompt, turn-end, and approval events to the phone
