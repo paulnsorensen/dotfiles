@@ -1,4 +1,9 @@
-# Calibration — Reference Guide
+# Calibration — Shared Reference
+
+**Shared by every judgment skill in the analytics platform.** `skill-improver`,
+`prompts`, and `tool-efficiency` import this one file rather than each redefining
+confidence/severity; `work-recovery` is report-only and does not score. Origin:
+PR #212 (qualitative model over 0-100 scoring).
 
 Two qualitative axes for making agent findings honest and reproducible:
 **confidence** (is this real?) and **severity** (how much does it matter?).
