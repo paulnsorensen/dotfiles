@@ -185,6 +185,7 @@ agents:
     - Edit
     - Write
     - NotebookEdit
+    - Agent
     color: cyan
     skills:
     - cheese-flow:cheez-search
@@ -200,6 +201,7 @@ agents:
     disallowedTools:
     - Edit
     - NotebookEdit
+    - Agent
     color: blue
     skills:
     - briesearch
@@ -208,13 +210,14 @@ agents:
     - scout
     body_path: agents/agent_definitions/researcher.md
   reviewer:
-    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path across the ten /age dimensions (correctness, security, encapsulation, spec, complexity, deslop, assertions, NIH, efficiency, telemetry) and returns a severity-grouped findings report. Read-only — forks the specialist agents (fromage-*, ghostbuster, ricotta-reducer, nih-scanner) for evidence rather than writing fixes. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
+    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path across the ten /age dimensions (correctness, security, encapsulation, spec, complexity, deslop, assertions, NIH, efficiency, telemetry) and returns a severity-grouped findings report. Read-only — never writes fixes; at the top level it draws on the specialist agents (fromage-*, ghostbuster, ricotta-reducer, nih-scanner) for evidence. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
     models:
       claude: opus
     disallowedTools:
     - Edit
     - Write
     - NotebookEdit
+    - Agent
     color: red
     effort: high
     skills:
@@ -224,9 +227,13 @@ agents:
     - scout
     body_path: agents/agent_definitions/reviewer.md
   coder:
+    # Keeps the write surface (Edit/Write) — it mutates the tree — but denies
+    # Agent: a dispatched coder is a level-1 subagent and cannot fan out.
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop, editing through the cheez-write (tilth) skill. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Full write surface — the one phase agent that mutates the tree. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: sonnet
+    disallowedTools:
+    - Agent
     color: green
     skills:
     - cook

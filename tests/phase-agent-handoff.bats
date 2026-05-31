@@ -19,21 +19,30 @@ setup() {
 # Extract the four-line handoff block (status/next/artifact/orientation) and
 # hash it, so two files agree only when the block is byte-identical.
 block_sha() {
-    grep -A3 '^status: ok | blocked:' "$1" | head -4 | shasum | awk '{print $1}'
+    local block
+    block=$(grep -A3 '^status: ok | blocked:' "$1" | head -4)
+    # shasum of empty input is a non-empty SHA, which would let a block removed
+    # from every file slip past the -n guard below. Emit nothing when grep
+    # matched nothing so the guard (and the equality checks) catch a missing block.
+    [[ -n "$block" ]] || return 0
+    printf '%s\n' "$block" | shasum | awk '{print $1}'
 }
 
-@test "handoff block is byte-identical across preamble and the three full-block agent bodies" {
-    local pre exp res rev
+@test "handoff block is byte-identical across preamble and the four phase-agent bodies" {
+    local pre exp res rev cod
     pre=$(block_sha "$PREAMBLE")
     exp=$(block_sha "$AGENTS_DIR/agent_definitions/explorer.md")
     res=$(block_sha "$AGENTS_DIR/agent_definitions/researcher.md")
     rev=$(block_sha "$AGENTS_DIR/agent_definitions/reviewer.md")
+    cod=$(block_sha "$AGENTS_DIR/agent_definitions/coder.md")
 
-    # A non-empty hash proves the block was actually found in each file.
+    # A non-empty hash proves the block was actually found in each file
+    # (block_sha emits nothing when grep matches nothing).
     [[ -n "$pre" ]] || { echo "no handoff block in preamble.md" >&2; return 1; }
     [[ "$exp" == "$pre" ]] || { echo "explorer block drifted from preamble ($exp != $pre)" >&2; return 1; }
     [[ "$res" == "$pre" ]] || { echo "researcher block drifted from preamble ($res != $pre)" >&2; return 1; }
     [[ "$rev" == "$pre" ]] || { echo "reviewer block drifted from preamble ($rev != $pre)" >&2; return 1; }
+    [[ "$cod" == "$pre" ]] || { echo "coder block drifted from preamble ($cod != $pre)" >&2; return 1; }
 }
 
 @test "preamble documents the one-coder-default fan-out rule with the disjointness precondition" {
@@ -50,8 +59,8 @@ block_sha() {
     assert_success
 }
 
-@test "explorer, researcher, and reviewer bodies each carry a Handoff section" {
-    for agent in explorer researcher reviewer; do
+@test "all four phase-agent bodies carry a Handoff section" {
+    for agent in explorer researcher reviewer coder; do
         run grep -q '^## Handoff' "$AGENTS_DIR/agent_definitions/$agent.md"
         assert_success
     done
@@ -60,4 +69,33 @@ block_sha() {
 @test "coder body documents the scoped-slice contract" {
     run grep -qi 'scoped .slice.' "$AGENTS_DIR/agent_definitions/coder.md"
     assert_success
+}
+
+# The descriptions promise read-only phase agents that cannot recurse, and a
+# coder that keeps the write surface. Lock those tool-surface contracts in the
+# registry so they can't silently drift (preamble: "a level-1 subagent cannot
+# spawn subagents").
+@test "read-only phase agents deny code edits and subagent fan-out in the registry" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    # explorer + reviewer are fully read-only: deny Write and Agent.
+    for agent in explorer reviewer; do
+        run yq ".agents.${agent}.disallowedTools" "$registry"
+        assert_success
+        [[ "$output" == *Write* ]] || { echo "$agent must deny Write" >&2; return 1; }
+        [[ "$output" == *Agent* ]] || { echo "$agent must deny Agent (no subagent fan-out)" >&2; return 1; }
+    done
+    # researcher intentionally keeps Write (it writes .cheese/research/), but
+    # must still deny code edits and fan-out.
+    run yq '.agents.researcher.disallowedTools' "$registry"
+    assert_success
+    [[ "$output" == *Edit* ]] || { echo "researcher must deny Edit" >&2; return 1; }
+    [[ "$output" == *Agent* ]] || { echo "researcher must deny Agent (no subagent fan-out)" >&2; return 1; }
+}
+
+@test "coder keeps the write surface but cannot spawn subagents" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    run yq '.agents.coder.disallowedTools' "$registry"
+    assert_success
+    [[ "$output" != *Write* ]] || { echo "coder must keep Write (it mutates the tree)" >&2; return 1; }
+    [[ "$output" == *Agent* ]] || { echo "coder must deny Agent (no subagent fan-out)" >&2; return 1; }
 }
