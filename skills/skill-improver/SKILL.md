@@ -56,16 +56,21 @@ Before auditing, gather empirical data from session logs. This step is
    python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py
    ```
 
-2. Spawn **three parallel `duckdb-expert` sub-agents** (haiku, read-only) — one
-   per query pack from `skills/session-analytics/references/skill-audit-queries.md`:
+2. Fan out **one parallel `duckdb-expert` spawn per owned domain** (read-only) —
+   this skill owns three domain packs co-located under its own `references/`:
 
-   | Pack | Agent | Prompt |
-   |------|-------|--------|
-   | Usage | `duckdb-expert` | "Run the `usage` skill-audit pack for skill: {name}" |
-   | Tools | `duckdb-expert` | "Run the `tools` skill-audit pack for skill: {name}. Declared tools: {tools list from frontmatter}" |
-   | Friction | `duckdb-expert` | "Run the `friction` skill-audit pack for skill: {name}" |
+   | Domain pack | Spawn prompt |
+   |-------------|--------------|
+   | `skill-usage` | "Run analytics pack skill-improver/references/skill-usage.md for target {name}. harness=all" |
+   | `agent-orchestration` | "Run analytics pack skill-improver/references/agent-orchestration.md for target {name}. harness=all" |
+   | `drift-regression` | "Run analytics pack skill-improver/references/drift-regression.md for target {name}. harness=all" |
 
-3. Collect their structured findings for use in Dimension 7.
+   Each spawn reads its pack's queries plus the canonical schema from
+   `session-analytics/references/canonical-schema.md`, and returns one ~2 KB
+   digest. This is the platform's one-domain-per-spawn contract — do not collapse
+   to a single all-domains spawn.
+
+3. Collect the three digests for use in Dimension 7.
 
 If ingestion fails (duckdb not installed, no JSONL logs), skip to Phase 2 and
 omit Dimension 7 from the report. Never block the audit on analytics.
@@ -312,8 +317,9 @@ Would `/skill-creator` description optimization improve trigger rate?
 #### Dimension 7 — Usage Analytics (data-driven)
 
 Static analysis reveals what the definition *says*. Usage analytics reveals what
-*actually happens* when the skill runs. This dimension uses findings from the
-Phase 1.5 sub-agents. Skip entirely if analytics data was unavailable.
+*actually happens* when the skill runs. This dimension reads the three fanned-out
+digests from Phase 1.5 (`skill-usage`, `agent-orchestration`, `drift-regression`).
+Skip entirely if analytics data was unavailable.
 
 **What to look for:**
 
@@ -501,7 +507,10 @@ the dimension audit sections above.
 
 Read these before making changes to the relevant dimension:
 
-- `references/calibrated-scoring.md` — confidence × severity calibration method
+- `../session-analytics/references/calibration.md` — the shared confidence ×
+  severity model (imported, not redefined here)
+- `references/skill-usage.md`, `references/agent-orchestration.md`,
+  `references/drift-regression.md` — this skill's owned analytics packs (Phase 1.5)
 - `references/description-optimization.md` — Trigger optimization with before/after examples
 - `references/decision-frameworks.md` — Structured reasoning scaffold, degrees of freedom, example-driven spec
 - `references/hooks-catalog.md` — JS hook examples for activation, validation, enforcement
