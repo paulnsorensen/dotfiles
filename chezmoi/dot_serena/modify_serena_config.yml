@@ -6,13 +6,17 @@
 # Source-of-truth defaults are Serena's. We only override:
 #   web_dashboard                 → false  (no auto-browser tab)
 #   web_dashboard_open_on_launch  → false  (and no tray icon noise)
-#   excluded_tools                → memory + onboarding tools
+#   excluded_tools                → memory + onboarding + initial_instructions tools
 #       Rationale: Serena's parallel memory system (~/.serena/memories/)
 #       collides with our MEMORY.md auto-memory under
 #       ~/.claude/projects/-Users-paul-Dev-dotfiles/memory/. Scope serena
 #       to its LSP-grounded retrieval + symbol-edit surface only.
 #       `onboarding` exists solely to bootstrap memory files, so it goes
-#       with the rest.
+#       with the rest. `initial_instructions` is excluded too: the
+#       connection_prompt prods the model to call it, the claude-code
+#       context doesn't strip it, and it fails on an ungranted permission
+#       ~88% of the time (serena's own agent/oaicompat-agent contexts
+#       already exclude it).
 
 set -eu
 
@@ -81,6 +85,7 @@ printf '%s' "$existing" | yq '
         "delete_memory",
         "rename_memory",
         "edit_memory",
-        "onboarding"
+        "onboarding",
+        "initial_instructions"
     ]
 '
