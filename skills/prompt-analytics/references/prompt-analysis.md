@@ -4,7 +4,7 @@
 
 # harness: respects harness=<all|claude|codex|opencode>
 
-# owner: prompts
+# owner: prompt-analytics
 
 Recurring user-prompt shapes, repeated asks, and session openers. A "user
 prompt" is a user message whose content is plain text (not a tool_result

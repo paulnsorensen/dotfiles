@@ -5,12 +5,13 @@ effort: high
 description: >
   Audit how a tool, command, or MCP server is actually used across coding-agent
   sessions and produce calibrated recommendations — tool-vs-task fit, error
-  forensics, permission friction, MCP health, and token economics. Use when the
-  user says "tool efficiency", "am I using X efficiently", "audit tool usage",
-  "why does X keep failing", "permission friction", "is this MCP worth it",
-  "tool error rate", or invokes /tool-efficiency. Do NOT use for auditing a skill
-  or agent definition (that is /skill-improver) or for one-off interactive log
-  queries (that is /session-analytics).
+  forensics, fix recommendations, permission friction, MCP health, and token
+  economics. Use when the user says "tool efficiency", "am I using X
+  efficiently", "audit tool usage", "why does X keep failing", "how do I fix
+  this error", "what should I change", "permission friction", "is this MCP worth
+  it", "tool error rate", "fix recommendations", or invokes /tool-efficiency. Do
+  NOT use for auditing a skill or agent definition (that is /skill-improver) or
+  for one-off interactive log queries (that is /session-analytics).
 allowed-tools: Read, Agent, Bash
 ---
 
@@ -28,12 +29,13 @@ harness filter (`all` default, or `claude`/`codex`/`opencode`).
 
 ## Owned domains
 
-This skill owns five analytics packs under `references/`:
+This skill owns six analytics packs under `references/`:
 
 | Domain | Pack | What it surfaces |
 |--------|------|------------------|
 | tool-usage | `tool-usage.md` | Frequency, project spread, tool-vs-task fit |
 | error-forensics | `error-forensics.md` | Error rate vs baseline, recurring failures |
+| fix-recommendations | `fix-recommendations.md` | Turns errors/friction into concrete fixes (allowlist adds, tool swaps, MCP repair/retire) — advisory only |
 | permission-friction | `permission-friction.md` | Denials, allowlist gaps, compound-command friction |
 | mcp-health | `mcp-health.md` | Per-MCP call volume, error rate, idle servers |
 | token-economics | `token-economics.md` | Token/cost where logged — degrades to "insufficient signal" |
@@ -50,8 +52,9 @@ This skill owns five analytics packs under `references/`:
    ```
 
    Pick the domains that fit the target: MCP targets → `mcp-health` +
-   `error-forensics`; a Bash command → `tool-usage` + `permission-friction` +
-   `error-forensics`; broad audit → all five.
+   `error-forensics` + `fix-recommendations`; a Bash command → `tool-usage` +
+   `permission-friction` + `error-forensics`; "how do I fix X" / high error rate
+   → `error-forensics` + `fix-recommendations`; broad audit → all six.
 3. **Collect** the ~2 KB digests.
 4. **Calibrate** each finding with the shared model in
    `../session-analytics/references/calibration.md` — confidence
@@ -85,7 +88,10 @@ N findings were `<don't know>` or insufficient-signal (not shown).
 - Score with a 0-100 number — it uses the shared qualitative model.
 - Surface `<don't know>` findings or fabricate when a domain returns empty.
 - Run more than one domain per `duckdb-expert` spawn.
-- Modify tools, settings, or allowlists — it recommends; the human decides.
+- Modify tools, settings, or allowlists — it recommends; the human decides. The
+  `fix-recommendations` domain names the fix (allowlist entry, tool swap, MCP
+  retirement); it never applies it. Hand the surfaced fixes to `/cure` or
+  `/settings-clean` if the user wants them applied.
 
 ## Gotchas
 
