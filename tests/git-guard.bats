@@ -104,6 +104,28 @@ guard() {
     [[ "$(guard Bash 'git clean -fd')" == "deny" ]]
 }
 
+@test "clean --force (long flag) with an untracked file is denied" {
+    add_untracked
+    [[ "$(guard Bash 'git clean --force')" == "deny" ]]
+}
+
+@test "checkout <tree-ish> <path> (no --) on a dirty file is denied" {
+    # `git checkout HEAD tracked.txt` restores tracked.txt from HEAD, discarding
+    # the uncommitted edit — same effect as `checkout -- <path>`, no `--` needed.
+    dirty_tracked
+    [[ "$(guard Bash 'git checkout HEAD tracked.txt')" == "deny" ]]
+}
+
+@test "switch --discard-changes on a dirty tree is denied" {
+    dirty_tracked
+    [[ "$(guard Bash 'git switch --discard-changes main')" == "deny" ]]
+}
+
+@test "switch -f on a dirty tree is denied" {
+    dirty_tracked
+    [[ "$(guard Bash 'git switch -f main')" == "deny" ]]
+}
+
 # ── quoting / escaping: pathspecs must still map to `git status` ───────
 # Regression: a naive whitespace split turned `git checkout -- "a b.txt"`
 # into pathspecs '"a' 'b.txt"' that matched no file, so the dirty check
@@ -144,6 +166,29 @@ guard() {
 @test "branch switch (git checkout <branch>) is never destructive" {
     dirty_tracked
     [[ "$(guard Bash 'git checkout main')" == "allow" ]]
+}
+
+@test "checkout <tree-ish> scoped to a CLEAN path is allowed while another is dirty" {
+    dirty_tracked   # tracked.txt dirty, second.txt clean
+    [[ "$(guard Bash 'git checkout HEAD second.txt')" == "allow" ]]
+}
+
+@test "checkout -b <newbranch> (branch creation) is allowed even when dirty" {
+    # `-b` creates a branch; the trailing operand is a start-point, not a
+    # pathspec to overwrite — must not be mistaken for a destructive restore.
+    dirty_tracked
+    [[ "$(guard Bash 'git checkout -b feature main')" == "allow" ]]
+}
+
+@test "restore --staged <path> (unstage-only) is allowed even when dirty" {
+    # --staged without --worktree only unstages; the worktree copy survives.
+    dirty_tracked
+    [[ "$(guard Bash 'git restore --staged tracked.txt')" == "allow" ]]
+}
+
+@test "plain git switch <branch> (no force) is allowed even when dirty" {
+    dirty_tracked
+    [[ "$(guard Bash 'git switch main')" == "allow" ]]
 }
 
 @test "non-destructive git verb (status) is allowed even when dirty" {

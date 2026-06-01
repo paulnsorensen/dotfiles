@@ -5,10 +5,14 @@
 // ONLY when the targeted paths actually have uncommitted changes. A clean
 // tree has nothing to lose, so the op is allowed and the guard never nags.
 //
-// Caught: `git checkout -- <path>` / `git checkout .` / `git checkout -f`,
-//         `git restore <path>`, `git reset --hard`, `git clean -f`.
-// Allowed: `git checkout <branch>` (a real branch switch) and every
-//          destructive verb when the relevant paths are clean.
+// Caught: `git checkout -- <path>` / `git checkout .` / `git checkout -f` /
+//         `git checkout <tree-ish> <path>`, `git restore <path>`,
+//         `git switch -f` / `--discard-changes`, `git reset --hard`,
+//         `git clean -f` / `--force`.
+// Allowed: `git checkout <branch>` (a real branch switch), `checkout -b <new>`
+//          (branch creation), `git restore --staged <path>` (unstage-only —
+//          worktree untouched), and every destructive verb when the relevant
+//          paths are clean.
 //
 // Known limitation: git aliases are matched by their literal subcommand name,
 // not expanded — `git co -- <path>` (alias co=checkout) is NOT caught. Agents
@@ -135,6 +139,11 @@ function classify(tokens) {
   if (!sub) return null;
 
   if (sub === 'restore') {
+    // `git restore --staged <path>` (without `--worktree`) only unstages — the
+    // worktree copy survives — so it is non-destructive and must not nag.
+    const staged = rest.includes('--staged') || rest.includes('-S');
+    const worktree = rest.includes('--worktree') || rest.includes('-W');
+    if (staged && !worktree) return null;
     const dd = pathsAfterDashDash(rest);
     const paths = dd || rest.filter((a) => !a.startsWith('-'));
     return { reason: 'git restore discards uncommitted changes', paths };
@@ -142,8 +151,11 @@ function classify(tokens) {
   if (sub === 'reset' && rest.includes('--hard')) {
     return { reason: 'git reset --hard discards all uncommitted changes', paths: null };
   }
-  if (sub === 'clean' && rest.some((a) => /^-[a-zA-Z]*f/.test(a))) {
+  if (sub === 'clean' && rest.some((a) => /^-[a-zA-Z]*f/.test(a) || a === '--force')) {
     return { reason: 'git clean -f deletes untracked files', paths: null };
+  }
+  if (sub === 'switch' && rest.some((a) => a === '-f' || a === '--force' || a === '--discard-changes')) {
+    return { reason: 'git switch --discard-changes discards uncommitted changes', paths: null };
   }
   if (sub === 'checkout') {
     const dd = pathsAfterDashDash(rest);
@@ -151,6 +163,18 @@ function classify(tokens) {
     if (rest.includes('.')) return { reason: 'git checkout . discards uncommitted changes', paths: ['.'] };
     if (rest.some((a) => a === '-f' || a === '--force')) {
       return { reason: 'git checkout -f discards uncommitted changes', paths: null };
+    }
+    // `git checkout <tree-ish> <path>...` (no `--`): a tree-ish followed by one
+    // or more pathspecs restores those paths from the tree-ish, discarding
+    // their uncommitted changes — same effect as `checkout -- <path>`. A lone
+    // non-flag arg (`git checkout <branch>`) is a branch switch, and `-b`/`-B`/
+    // `--orphan` create a branch, so both are left alone. Telling a lone
+    // pathspec from a branch name needs a ref probe, so that ambiguous
+    // single-arg case stays allowed rather than nagging on every branch switch.
+    const branchCreating = rest.some((a) => a === '-b' || a === '-B' || a === '--orphan');
+    const operands = rest.filter((a) => !a.startsWith('-'));
+    if (!branchCreating && operands.length >= 2) {
+      return { reason: 'git checkout <tree-ish> <path> discards uncommitted changes', paths: operands.slice(1) };
     }
     // Otherwise a branch switch — not destructive to the working tree.
   }
