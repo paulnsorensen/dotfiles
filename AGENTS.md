@@ -231,7 +231,8 @@ hooks:
 **Per-entry fields:**
 
 - `event` — Claude / Codex event name. The supported set lives in `HOOK_EVENTS_VALID` (`agents/hooks/lib.sh`): `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `PermissionRequest` (claude-only). `hook_filter_for_harness` fails loud on anything else (catches typos like `evnt:`).
-- `script` — repo-relative path; chezmoi deploys to `~/.<harness>/hooks/<basename>`. Runs via the harness's shebang under `ap` (the live plugin-tree path) but is wrapped as `bash "<path>"` by the legacy `lib.sh` path — so a non-bash script (e.g. a Node hook) must ship as a `.sh` bridge that `exec`s its interpreter (see `git-guard.sh` → `lib/git-guard.js`), or it breaks under the legacy path.
+- `script` — repo-relative path; chezmoi deploys to `~/.<harness>/hooks/<basename>`. `script` runs via the harness's shebang under `ap` (the live plugin-tree path) but is wrapped as `bash "<path>"` by the legacy `lib.sh` path — so a non-bash script (e.g. a Node hook) must ship as a `.sh` bridge that `exec`s its interpreter (see `sensitive-file-guard.sh` → `lib/sensitive-file-guard.js`, or `git-guard.sh` → `lib/git-guard.js`), or it will fail under the legacy path. Mutually exclusive with `command`.
+- `command` — literal command string used verbatim, no file deploy (e.g. an external binary). Mutually exclusive with `script`.
 - `shared_assets` (optional) — list of repo-relative paths under `agents/<subdir>/<file>` that the hook script reads at runtime (libs, banks, …). Each is deployed to `~/.<harness>/<subdir>/<file>`. Adding a new hook is a pure registry edit — the chezmoi installer iterates `hooks` and copies every `(script ∪ shared_assets) × harnesses` pair.
 - `harnesses` (optional) — list; default `[claude, codex]`.
 - `matcher` — event- and harness-dependent (see `_hook_event_uses_matcher` in `lib.sh`). For `SessionStart` it is a codex-only regex against the event's `source` field (`startup|resume|clear`); claude ignores it. For `PreToolUse`/`PostToolUse` it is a tool-name regex written for **both** harnesses. Events that don't use a matcher drop the field on write.
@@ -325,13 +326,13 @@ Per-target manifests at `<target>/.dotfiles-managed-<plugin>` track ownership so
 3. Verify: `cursor-plugin-ls`.
 4. Restart Cursor for skills/rules/modes changes to take effect.
 
-The shipping plugin is `cheese-grok` — reader-first grokking + anti-slop design-doc authoring. See `cursor/plugins/local/cheese-grok/README.md` for trigger phrases and contents.
+The shipping plugin is `cheese-grok` — reader-first grokking + anti-slop design-doc authoring. See `cursor/plugins/local/cheese-grok/README.md` for trigger phrases and contents. It also carries two guard hooks: `block-destructive.sh` (`beforeShellExecution`) and `sensitive-file-guard.sh` (`beforeReadFile` + `beforeShellExecution`) — the Cursor adapter of the cross-harness secret guard (blocks `.env`/keys/credentials; `exit 2` = deny, fail-open; honors `CLAUDE_SENSITIVE_GUARD`/`CLAUDE_SENSITIVE_GUARD_ALLOW`).
 
 ## opencode Settings
 
 opencode's user-wide settings live under `chezmoi/dot_config/opencode/` and apply to `~/.config/opencode/`:
 
-- `opencode.json` (`create_opencode.json` source) — first-run scaffold with `formatter: true` (built-in formatters on save). Chezmoi's `create_` prefix means this is never overwritten on subsequent applies, so the MCP sync (and any manual edits) survive.
+- `opencode.json` (`create_opencode.json` source) — first-run scaffold with `formatter: true` (built-in formatters on save) and a `permission.read` deny-list (the opencode arm of the cross-harness secret guard: denies `.env`/`.env.*` (root and nested), private keys, and credential stores; the checked-in templates `.env.{example,sample,template,dist,defaults}` stay allowed at both root and nested paths, matching the shared policy's `SAFE_ENV` set). opencode enforces this natively — no hook needed — and already denies `.env` by default; our block makes the policy explicit and extends it to keys/creds. Chezmoi's `create_` prefix means this is never overwritten on subsequent applies, so the MCP sync (and any manual edits) survive — **so the deny-list only lands on fresh installs; an existing `~/.config/opencode/opencode.json` keeps opencode's built-in `.env` default but won't pick up the key/cred globs unless you merge them in by hand.**
 - `tui.json` — always-managed. Sets `theme: "chocolate-donut"` and rebinds `editor_open` to `ctrl+o` so the text box can pop out to `$EDITOR` (vim). opencode has no native modal vim editing in the input; this is the closest workflow.
 - `themes/chocolate-donut.json` — always-managed. Custom opencode theme derived from `theme/schemes/chocolate-donut.yaml` (the base24 palette).
 
@@ -399,6 +400,7 @@ A subset of dotfiles is rendered by [chezmoi](https://chezmoi.io/) instead of sy
 
 - `~/.gitconfig` — `chezmoi/private_dot_gitconfig.tmpl` (templated email, work-only `[url]` redirects)
 - `~/.copilot/mcp-config.json` — `chezmoi/private_dot_copilot/mcp-config.json.tmpl` (env-rendered API keys, fails fast if unset)
+- `~/.copilot/hooks/sensitive-file-guard.{json,sh}` + `~/.copilot/hooks/lib/sensitive-file-guard.js` — the Copilot CLI arm of the cross-harness secret guard. The `.json` config (`private_dot_copilot/hooks/sensitive-file-guard.json.tmpl`) registers a `preToolUse` hook with `matcher: "bash|powershell|view|edit|create"`; the `.sh` adapter (`private_dot_copilot/hooks/executable_sensitive-file-guard.sh`) translates Copilot's protocol (stdin `{toolName, toolArgs}` → stdout `{permissionDecision:"deny", …}`) to/from the shared Node logic, which `run_onchange_after_install-copilot-guard.sh.tmpl` copies from `agents/lib/sensitive-file-guard.js` (single source of truth — no duplicate). Fail-open; honors `CLAUDE_SENSITIVE_GUARD`/`CLAUDE_SENSITIVE_GUARD_ALLOW`.
 - `~/.claude/settings.json` — `chezmoi/dot_claude/create_settings.json` (seeded once with the user-owned baseline; `ap install global` then jq-merges `enabledPlugins["global@local"]` + `extraKnownMarketplaces.local` on every run, preserving user-managed siblings). A one-time `run_once_before_migrate-claude-settings.sh` removes the legacy `$DOTFILES/claude/settings.json` symlink before chezmoi seeds.
 - `~/.config/opencode/opencode.json` — `chezmoi/dot_config/opencode/create_opencode.json` (analogous: seed once, then `ap install base --target $HOME/.config/opencode --harness opencode` mutates the `mcp` block)
 - `~/.claude/skills/`, `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/config.toml`, and MCP entries — handled by `run_onchange_*` scripts under `chezmoi/.chezmoiscripts/` that fork to helpers in `chezmoi/lib/`
@@ -465,7 +467,7 @@ chezmoi doctor                                       # health check (also wired 
 
 Full agent/skill catalog is in `agents/AGENTS.md` (copied to `~/.claude/CLAUDE.md` by chezmoi). Key project-level details:
 
-- Pre-tool hooks: `phantom-file-check.js` (Read), `write-guard.js` + `worktree-guard.js` (Edit/Write/MultiEdit/tilth_write), `bash-guard.js` (Bash — blocks dangerous `rm -rf`), `review-reply-guard.js`. `worktree-guard.js` is opt-out: it enforces inside a git worktree by default; set `CLAUDE_WORKTREE_GUARD=0` to disable, or `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2` to extend its allowlist (worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, and any `.cheese/` dir are always allowed).
+- Pre-tool hooks: `phantom-file-check.js` (Read), `write-guard.js` + `worktree-guard.js` (Edit/Write/MultiEdit/tilth_write), `bash-guard.js` (Bash — blocks dangerous `rm -rf`), `review-reply-guard.js`. `worktree-guard.js` is opt-out: it enforces inside a git worktree by default; set `CLAUDE_WORKTREE_GUARD=0` to disable, or `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2` to extend its allowlist (worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, and any `.cheese/` dir are always allowed). The secret-protection guard `sensitive-file-guard` lives in the harness-agnostic `agents/hooks/` registry (not here) — see [Hook Management](#hook-management).
 - Compaction hooks: `pre-compact.sh` saves context, `post-compact.sh` restores with `/trace` suggestion
 - Session hooks: `post-fresh-start.sh` (suggests `/trace`), `on-session-end.sh` (detects partings)
 - `ccw` worktrees are OS-sandboxed (Seatbelt/macOS) with `autoAllowBashIfSandboxed: true`

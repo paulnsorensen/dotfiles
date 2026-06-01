@@ -81,23 +81,33 @@ teardown() {
 @test "install-cursor-plugin: merges hooks.json with deployed absolute paths" {
     "$INSTALL_SCRIPT" "$PLUGIN_SRC" "$CURSOR_HOME"
 
+    # beforeShellExecution carries block-destructive, the secret guard, and git-guard.
     run jq -r '.hooks.beforeShellExecution | length' "$CURSOR_HOME/hooks.json"
-    assert_output_contains "2"
+    assert_output_contains "3"
+    run jq -r '.hooks.beforeReadFile | length' "$CURSOR_HOME/hooks.json"
+    assert_output_contains "1"
     run jq -r '.hooks.stop | length' "$CURSOR_HOME/hooks.json"
     assert_output_contains "1"
 
     # Command paths rewritten from "./hooks/..." to the absolute deployed path.
     run jq -r '.hooks.beforeShellExecution[0].command' "$CURSOR_HOME/hooks.json"
     assert_output_contains "$CURSOR_HOME/hooks/block-destructive.sh"
+    run jq -r '.hooks.beforeReadFile[0].command' "$CURSOR_HOME/hooks.json"
+    assert_output_contains "$CURSOR_HOME/hooks/sensitive-file-guard.sh"
 
     # Every entry tagged with the plugin name for ownership tracking.
     run jq -r '.hooks.beforeShellExecution[0]._plugin' "$CURSOR_HOME/hooks.json"
     assert_output_contains "cheese-grok"
+    run jq -r '.hooks.beforeReadFile[0]._plugin' "$CURSOR_HOME/hooks.json"
+    assert_output_contains "cheese-grok"
 
-    # The git-guard hook is appended as the second beforeShellExecution entry.
-    run jq -r '.hooks.beforeShellExecution[1].command' "$CURSOR_HOME/hooks.json"
+    # The secret-guard script deployed alongside.
+    [[ -x "$CURSOR_HOME/hooks/sensitive-file-guard.sh" ]]
+
+    # The git-guard hook is appended as the third beforeShellExecution entry.
+    run jq -r '.hooks.beforeShellExecution[2].command' "$CURSOR_HOME/hooks.json"
     assert_output_contains "$CURSOR_HOME/hooks/git-guard.sh"
-    run jq -r '.hooks.beforeShellExecution[1]._plugin' "$CURSOR_HOME/hooks.json"
+    run jq -r '.hooks.beforeShellExecution[2]._plugin' "$CURSOR_HOME/hooks.json"
     assert_output_contains "cheese-grok"
 }
 

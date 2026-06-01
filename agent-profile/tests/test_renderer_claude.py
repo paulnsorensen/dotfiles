@@ -22,6 +22,7 @@ Two profiles cover the renderer's surface:
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 
@@ -712,3 +713,92 @@ def test_render_is_idempotent_on_rerun(env):
     }
     assert first == second
     assert snapshot == after
+
+
+# ─── user-scope MCP registration (mcp_scope: user) ───────────────────
+
+_MCPTEST_USER_YAML = """\
+name: mcpuser
+description: user-scope mcp registration
+mcp_scope: user
+mcps:
+  - name: context7
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      KEY: VAL
+    harnesses: [claude, codex]
+  - name: codexonly
+    command: foo
+    harnesses: [codex]
+"""
+
+
+def _install_fake_claude(tmp_path: Path, monkeypatch) -> Path:
+    """Put a fake ``claude`` binary first on PATH that logs each invocation's
+    args (one line per call) to a file, and returns that log path."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    log = tmp_path / "claude-calls.log"
+    shim = bindir / "claude"
+    shim.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$AP_TEST_CLAUDE_LOG"\nexit 0\n'
+    )
+    shim.chmod(shim.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    monkeypatch.setenv("AP_TEST_CLAUDE_LOG", str(log))
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    return log
+
+
+def test_user_scope_skips_plugin_mcp_json(env, monkeypatch):
+    _install_fake_claude(env.tmp, monkeypatch)
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    manifest = parse_manifest(profile_dir)
+    assert manifest.mcp_scope == "user"
+    written = ClaudeRenderer().render(manifest, env.target)
+    # No plugin .mcp.json, and it is not tracked in the install manifest.
+    assert not (
+        env.target / ".claude/plugins/local/mcpuser/.mcp.json"
+    ).exists()
+    assert not any(".mcp.json" in w for w in written)
+
+
+def test_user_scope_registers_bare_via_cli(env, monkeypatch):
+    log = _install_fake_claude(env.tmp, monkeypatch)
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+    lines = log.read_text().splitlines()
+    # remove-then-add per server, idempotent; context7 only (codexonly dropped).
+    assert lines == [
+        "mcp remove context7 --scope user",
+        "mcp add context7 --scope user -e KEY=VAL -- npx -y @upstash/context7-mcp",
+    ]
+
+
+def test_user_scope_clean_removes_via_cli(env, monkeypatch):
+    log = _install_fake_claude(env.tmp, monkeypatch)
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().clean(manifest, env.target)
+    assert "mcp remove context7 --scope user" in log.read_text().splitlines()
+
+
+def test_user_scope_missing_cli_fails_loud(env, monkeypatch):
+    # PATH with no `claude` -> user-scope render must raise, not silently skip.
+    emptybin = env.tmp / "emptybin"
+    emptybin.mkdir()
+    monkeypatch.setenv("PATH", str(emptybin))
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    with pytest.raises(FileNotFoundError):
+        ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+
+
+def test_user_scope_clean_missing_cli_fails_loud(env, monkeypatch):
+    # Clean must fail loud too — a silent return would report success while
+    # leaving the user-scope registrations behind in ~/.claude.json.
+    emptybin = env.tmp / "emptybin"
+    emptybin.mkdir()
+    monkeypatch.setenv("PATH", str(emptybin))
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    with pytest.raises(FileNotFoundError):
+        ClaudeRenderer().clean(parse_manifest(profile_dir), env.target)
