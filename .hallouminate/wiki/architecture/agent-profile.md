@@ -87,7 +87,7 @@ Substrate rule (all five): stdlib `json` for JSON, `tomlkit` for TOML (round-tri
 
 | Renderer | Module | Native output paths (under `target`) | Merged (un-merged in `clean`) |
 |---|---|---|---|
-| Claude | `renderers/claude.py` | `.claude/plugins/local/<profile>/` (plugin.json, `agents/`, `skills/`, `commands/`, `hooks/`, `.mcp.json`, `settings.json`) + shared `.claude/agents/<n>.md` | `.claude/settings.json` (`enabledPlugins`+`extraKnownMarketplaces`), local `marketplace.json` |
+| Claude | `renderers/claude.py` | `.claude/plugins/local/<profile>/` (plugin.json, `skills/`, `commands/`, `hooks/`, `.mcp.json`, `settings.json`) + shared `.claude/agents/<n>.md` (agents are shared-only — no plugin-scoped copy) | `.claude/settings.json` (`enabledPlugins`+`extraKnownMarketplaces`), local `marketplace.json` |
 | Codex | `renderers/codex.py` | `.codex/agents/<n>.toml`, `.codex/hooks.json`, shared `.agents/skills/<n>/` | `.codex/config.toml` `[mcp_servers]` |
 | opencode | `renderers/opencode.py` | `agents/<n>.md` (root-relative) | `opencode.json` (`mcp`+`permission.bash`) |
 | Cursor | `renderers/cursor.py` | `.cursor/commands/`, `.cursor/hooks.json`, `.cursor/agents/<n>.md` | `.cursor/mcp.json` |
@@ -95,7 +95,7 @@ Substrate rule (all five): stdlib `json` for JSON, `tomlkit` for TOML (round-tri
 
 ### Why Claude's frontmatter is "full" on the shared file
 
-The claude renderer writes each agent twice: plugin-scoped (`.claude/plugins/local/<profile>/agents/<n>.md`) and user-scoped shared (`.claude/agents/<n>.md`, also read by opencode/Cursor). Claude resolves the *user-scoped* file at priority 4, which wins over the plugin file at priority 5 — so the shared file is the one Claude honors and must carry full metadata (`model`/`color`/`effort`/`skills`), not a neutral subset (`shared.claude_agent_frontmatter`).
+The claude renderer writes each agent **once**, to the user-scoped shared file (`.claude/agents/<n>.md`, also read by Cursor). Claude resolves it at priority 4, so it must carry full metadata (`model`/`color`/`effort`/`skills`), not a neutral subset (`shared.claude_agent_frontmatter`). It does **not** also write a plugin-scoped copy (`.claude/plugins/local/<profile>/agents/<n>.md`, priority 5): that copy was pure redundancy — the user-scoped file already wins precedence — and surfaced every agent twice in Claude's roster as a duplicate `global:<agent>` (plugin-namespaced) entry, so the plugin-scoped agent write was dropped. The plugin tree still carries skills/commands/hooks/`.mcp.json` (only an empty `agents/` dir is left by the render mkdir loop, harmless). Consequence: a body-less agent now emits no Claude file at all (the shared writer is body-guarded); every real registry agent declares a `body_path`, so none are lost.
 
 ### Merged-file discipline + Codex env-scrub
 

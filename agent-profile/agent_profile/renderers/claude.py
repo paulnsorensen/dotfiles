@@ -8,7 +8,7 @@ Layout (under ``target``)::
     .claude/plugins/local/<profile>/
       plugin.json                   curd-spec marker manifest at root
       .claude-plugin/plugin.json    manifest Claude actually loads
-      agents/<name>.md              subagent files, plugin-scoped
+      agents/                       (empty — agents now written shared-only)
       skills/<name>/                skill trees, copied from profile
       commands/<name>.md            slash commands
       hooks/<script>                hook scripts (wiring lives in plugin.json)
@@ -19,9 +19,10 @@ Plus the cross-harness shared path::
 
     .claude/agents/<name>.md        also read by opencode + Cursor
 
-``models.claude`` on an agent/command emits a ``model: <value>`` YAML
-frontmatter line in the plugin-scoped file only; the shared
-``.claude/agents/<n>.md`` stays neutral so opencode/Cursor read it cleanly.
+Agents are written exclusively to the cross-harness shared path
+(``.claude/agents/<name>.md``); the plugin tree carries no agent files.
+The shared file wins precedence (priority 4 > plugin priority 5) and is
+the cross-harness surface for opencode + Cursor.
 
 JSON is emitted with stdlib :mod:`json` (``indent=2`` + trailing newline,
 byte-identical to the bash ``jq`` output). No ``jq``/``yq``.
@@ -184,23 +185,14 @@ class ClaudeRenderer:
         for item in manifest.agents:
             name = item["name"]
             body = body_abs(item)
-            # Single Claude-complete frontmatter for both the plugin-scoped
-            # file and the user-scoped shared file. The user-scoped file wins
-            # (priority 4 > plugin priority 5), so it must carry the full
-            # metadata — model/color/effort/skills — not a neutral subset.
             fm = shared.claude_agent_frontmatter(item)
 
-            lines = ["---", *(f"{k}: {v}" for k, v in fm.items()), "---"]
-            content = "\n".join(lines) + "\n\n"
-            if body is not None:
-                content += shared.strip_frontmatter(body.read_text())
-            out_path = plugin_dir / "agents" / f"{name}.md"
-            out_path.write_text(content)
-            self._track(out, base, out_path)
-
-            # Cross-harness shared write (Claude + Cursor) — same frontmatter.
+            # Cross-harness shared write (Claude + Cursor). The shared file
+            # wins precedence (priority 4 > plugin priority 5) and is the
+            # single authoritative agent file — no plugin-scoped copy.
             if body is not None:
                 shared.write_shared_claude_agent(target, name, body, fm, out)
+
 
     def _write_skills(
         self,

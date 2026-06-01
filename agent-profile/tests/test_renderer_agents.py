@@ -152,19 +152,6 @@ def test_claude_shared_agent_strips_frontmatter(tmp_path: Path) -> None:
     assert content.rstrip().endswith("You are the ghostbuster.")
 
 
-def test_claude_plugin_agent_strips_frontmatter(tmp_path: Path) -> None:
-    ClaudeRenderer().render(
-        _agent_manifest(tmp_path, body=_FRONTMATTERED_BODY, tools=["Read"]),
-        tmp_path,
-    )
-    content = (
-        tmp_path / ".claude" / "plugins" / "local" / "cheese" / "agents"
-        / "ghostbuster.md"
-    ).read_text()
-    assert _delims(content) == 2
-    assert "stale frontmatter metadata" not in content
-
-
 def test_claude_agent_disallowed_tools(tmp_path: Path) -> None:
     ClaudeRenderer().render(
         _agent_manifest(
@@ -175,13 +162,7 @@ def test_claude_agent_disallowed_tools(tmp_path: Path) -> None:
     shared_file = (
         tmp_path / ".claude" / "agents" / "ghostbuster.md"
     ).read_text()
-    plugin_file = (
-        tmp_path / ".claude" / "plugins" / "local" / "cheese" / "agents"
-        / "ghostbuster.md"
-    ).read_text()
     assert "disallowedTools: [Edit, Write]" in shared_file
-    assert "disallowedTools: [Edit, Write]" in plugin_file
-
 
 def test_claude_shared_agent_carries_model_color_effort_skills(
     tmp_path: Path,
