@@ -483,10 +483,21 @@ sync_gh_extensions() {
 
 ########## APT
 
+# Custom apt_install command for a linux package name (apt override or entry
+# key). Reads from the APT_CUSTOM_CMDS map (newline-separated "name<TAB>cmd"
+# pairs) populated once at the top of sync_apt — avoids re-shelling yq per
+# package, and avoids bash-4 associative arrays so the apt path runs under
+# bash 3.2 too. Empty when the package has no apt_install field.
+apt_custom_cmd() {
+    local pkg="$1"
+    printf '%s\n' "$APT_CUSTOM_CMDS" | awk -F'\t' -v p="$pkg" '$1 == p { print $2; exit }'
+}
+
+# Classifies one package into the right global bucket. Uses plain global
+# arrays (APT_MISSING / APT_CUSTOM_MISSING) rather than namerefs so it works
+# on bash 3.2 (macOS) as well as the bash 4.3+ on real apt hosts.
 apt_check_pkg() {
     local pkg="$1"
-    # shellcheck disable=SC2178  # nameref to caller's array
-    local -n _missing="$2"
     if [[ "$pkg" == "yq" ]]; then
         if command -v yq &>/dev/null; then
             echo "  + $pkg"
@@ -497,9 +508,14 @@ apt_check_pkg() {
     fi
     if dpkg -s "$pkg" &>/dev/null; then
         echo "  + $pkg"
+        return
+    fi
+    if printf '%s\n' "$APT_CUSTOM_NAMES" | grep -qx "$pkg"; then
+        echo "  - $pkg (missing — needs custom apt source)"
+        APT_CUSTOM_MISSING+=("$pkg")
     else
         echo "  - $pkg (missing)"
-        _missing+=("$pkg")
+        APT_MISSING+=("$pkg")
     fi
 }
 
@@ -507,26 +523,43 @@ sync_apt() {
     command -v apt-get &>/dev/null || return 0
 
     log_info "Checking apt packages"
-    local missing=()
+    APT_MISSING=()
+    APT_CUSTOM_MISSING=()
+    # One yq pass: emit "name<TAB>command" for every entry that carries a
+    # custom apt_install. APT_CUSTOM_NAMES = names only (for the membership
+    # check in apt_check_pkg); APT_CUSTOM_CMDS = the full map (for the
+    # printout). Both are populated once here, not per package.
+    APT_CUSTOM_CMDS="$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.apt_install != null) | ((.value.apt // .key) + "\t" + .value.apt_install)' "$PACKAGES_FILE" 2>/dev/null)"
+    APT_CUSTOM_NAMES="$(printf '%s\n' "$APT_CUSTOM_CMDS" | awk -F'\t' 'NF { print $1 }')"
 
     echo -e "\n${GREEN}Packages:${NC}"
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
-        apt_check_pkg "$pkg" missing
+        apt_check_pkg "$pkg"
     done <<< "$(get_platform_pkgs)"
 
     if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
         echo -e "\n${GREEN}Dev packages:${NC}"
         while IFS= read -r pkg; do
             [[ -z "$pkg" ]] && continue
-            apt_check_pkg "$pkg" missing
+            apt_check_pkg "$pkg"
         done <<< "$(get_platform_pkgs "--dev")"
     fi
 
-    if ((${#missing[@]})); then
+    if ((${#APT_MISSING[@]})); then
         echo ""
-        log_warning "Missing packages: ${missing[*]}"
-        echo "  sudo apt-get install -y ${missing[*]}"
+        log_warning "Missing packages: ${APT_MISSING[*]}"
+        echo "  sudo apt-get install -y ${APT_MISSING[*]}"
+    fi
+
+    if ((${#APT_CUSTOM_MISSING[@]})); then
+        echo ""
+        log_warning "Packages needing a custom apt source (run the listed command):"
+        local p
+        for p in "${APT_CUSTOM_MISSING[@]}"; do
+            echo "  $p:"
+            echo "    $(apt_custom_cmd "$p")"
+        done
     fi
 }
 

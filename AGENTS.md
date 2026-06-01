@@ -518,6 +518,26 @@ Hotkey daemon for macOS, installed from the `koekeishiya/formulae` brew tap and 
 - **First-time setup**: grant Accessibility to `skhd` in System Settings → Privacy & Security after `dots sync`.
 - **Syntax reference**: <https://github.com/koekeishiya/skhd>. Hotkeys can run any shell command via `$SHELL -c`, support modal/chord modes, application-specific bindings, and key synthesis (`-k`).
 
+### Remote Access (Tailscale + mosh + tmux)
+
+The resilient remote-shell stack: **Tailscale** (private mesh transport) → SSH bootstrap → **mosh** (UDP shell that survives roaming/sleep) → **tmux** (session persistence across disconnects). Canonical invocation, wrapped by the `mtmux` shell function (`zsh/aliases.zsh`):
+
+```bash
+mtmux <host> [session]   # = mosh <host> -- tmux new -A -s <session>
+```
+
+**What the repo wires automatically (`dots sync`):**
+
+- `mosh` (both platforms) and `tailscale` (linux only) in `packages/packages.yaml`. Tailscale isn't in the default apt repos, so the entry carries an `apt_install` command and `packages/sync.sh` surfaces Tailscale's official installer (`curl … | sh`, which adds their apt repo) instead of a misleading `apt-get install tailscale`.
+- `~/.zshenv` (root `zshenv` file) sets a UTF-8 `LANG` default — mosh refuses to start without a UTF-8 locale — and prepends `/opt/homebrew/bin` so a non-interactive inbound SSH/mosh session finds `mosh-server` on Apple Silicon (it isn't on macOS `path_helper`'s default PATH).
+- `tmux.conf` already supports `tmux new -A -s` (attach-or-create); no tmux change is needed.
+
+**Manual, one-time steps (cannot be dotfiles):**
+
+- **macOS, to mosh *into* this Mac**: enable OpenSSH — System Settings → General → Sharing → **Remote Login** (or `sudo systemsetup -setremotelogin on`). mosh bootstraps over OpenSSH, so this is required even though Tailscale is the transport; the website-installed GUI Tailscale stays as-is (never run two macOS variants side by side). Tailscale's *own* SSH server is a separate feature only the open-source CLI variant can run — not needed for the mosh path.
+- **Linux host**: `curl -fsSL https://tailscale.com/install.sh | sh`, then `sudo systemctl enable --now ssh` and `locale-gen en_US.UTF-8` (mosh's UTF-8 requirement on the server side).
+- **Both**: `tailscale up` (add `--ssh` only if you want Tailscale's built-in SSH). Connect by MagicDNS name (`mtmux <machine>`); the default ACL already permits your own devices.
+
 ## Pre-Commit Hooks (prek)
 
 Pre-commit hooks are managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run automatically on commit and include: trailing whitespace, secret detection, shellcheck, large file checks, and a claude config sync check. Run `prek install` after cloning to set up hooks.

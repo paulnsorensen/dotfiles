@@ -3,12 +3,16 @@
 # Bare string = brew (mac) / apt (linux)
 # Key-value = override defaults
 #
-#   source:   brew (default) | cask | tap | cargo | npm | uv | gh-extension
-#   dev:      only when DOTFILES_DEV=true
-#   apt:      override name for linux
-#   platform: mac | linux (default: both)
-#   flags:    extra args spliced into the installer (uv source only;
-#             e.g. ["--python", "3.13", "--prerelease=allow"])
+#   source:      brew (default) | cask | tap | cargo | npm | uv | gh-extension
+#   dev:         only when DOTFILES_DEV=true
+#   apt:         override name for linux
+#   apt_install: custom install command surfaced on linux when the package is
+#                missing (for packages not in the default apt repos, e.g.
+#                Tailscale's own apt source). sync_apt prints this verbatim
+#                instead of the plain `sudo apt-get install` batch line.
+#   platform:    mac | linux (default: both)
+#   flags:       extra args spliced into the installer (uv source only;
+#                e.g. ["--python", "3.13", "--prerelease=allow"])
 
 packages:
   - tinted-theming/tinted: { source: tap }
@@ -55,6 +59,13 @@ packages:
   - vhs
   - gettext
   - taf2/tap/mdvi
+
+  # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh → tmux)
+  - mosh                                        # resilient mobile shell (UDP 60000-61000); survives roaming/sleep
+  # Tailscale: macOS uses the website/App Store install (a single GUI variant —
+  # never run two variants side by side). Linux isn't in the default apt repos,
+  # so apt_install surfaces Tailscale's official installer (adds their apt repo).
+  - tailscale: { platform: linux, apt_install: "curl -fsSL https://tailscale.com/install.sh | sh" }
   - anomalyco/tap/opencode                    # open-source AI coding agent (fresher than homebrew-core)
   - charmbracelet/tap/crush                   # Charm terminal AI coding agent (MCP via crush.json)
 
