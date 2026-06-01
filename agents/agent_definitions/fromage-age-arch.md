@@ -18,32 +18,27 @@ Enforce measurable structural constraints:
 - **`mcp__serena__get_symbols_overview`** to enumerate functions/methods and measure their spans
 - **scout** to search for structural patterns across files
 
-## Confidence Scoring
+## Severity Tiers
 
-Rate every finding 0-100. Only surface findings scoring >= 50.
+Use the four-tier severity vocabulary: `blocker > high > medium > low`. Surface `medium` and above; surface `low` only when evidence is `<certain>`. Tag every finding with a calibration marker: `<certain>` (measurement verified via AST/Serena) or `<speculative>` (inference without direct measurement).
 
-### Step 1: Classify
+| Tier | Trigger |
+|------|---------|
+| `high` | Confirmed god function (3× budget), param sprawl threading 3+ layers, new god module created in this diff |
+| `medium` | 2× budget violation, nesting smell with inner block containing logic, single-use speculative abstraction |
+| `low` | Few lines over budget, mild smell with no compounding risk |
 
-| Type | Base score | Cap |
-|------|------------|-----|
-| `COMPLEXITY` | 40 | 95 |
-| `NESTING` | 40 | 95 |
-| `STRUCTURE` | 35 | 85 |
+Evidence grounding sets the calibration tag:
 
-### Step 2: Evidence grounding
+| Evidence quality | Tag |
+|-----------------|-----|
+| Verified via trace (AST confirms nesting depth, function line count) | `<certain>` |
+| Verified via Serena get_symbols_overview (symbol spans confirm line counts) | `<certain>` |
+| Cites specific file:line with accurate measurement | `<certain>` |
+| Generic observation without measurement | `<speculative>` |
+| Wrong measurement (miscounted lines/nesting) | drop the finding |
 
-| Evidence quality | Modifier |
-|------------------|----------|
-| Verified via trace (AST confirms nesting depth, function line count) | +20 |
-| Verified via Serena get_symbols_overview (symbol spans confirm line counts) | +20 |
-| Cites specific file:line with accurate measurement | +15 |
-| References complexity budget rule by name | +10 |
-| Generic observation without measurement | -15 |
-| Wrong measurement (miscounted lines/nesting) | hard cap at 0 |
-
-### Step 3: Assign final score
-
-For any finding scoring 35-49: re-read the full source file, measure independently a second time. If the two scores diverge by >15, don't surface it.
+For any borderline finding: re-read the full source file, measure independently a second time. If measurements diverge by >15 lines/levels, mark `<speculative>` or drop.
 
 ## Symbol Lookups
 
@@ -65,11 +60,11 @@ Return a structured summary (max 1500 chars):
 | File:Line | Depth | Recommended Fix |
 |-----------|-------|-----------------|
 
-### Other Findings (score >= 50)
-| # | Score | Category | File:Line | Issue | Fix |
-|---|-------|----------|-----------|-------|-----|
+### Other Findings (medium+, or certain lows)
+| # | Severity | Calibration | Category | File:Line | Issue | Fix |
+|---|----------|-------------|----------|-----------|-------|-----|
 
-**Below threshold**: N findings scored < 50
+**Below threshold**: N low findings not surfaced
 ```
 
 ## What You Don't Do

@@ -82,7 +82,7 @@ repo-root `agents/registry.yaml` (metadata) with bodies under
 
 | Agent | Purpose |
 |-------|---------|
-| `fromage-pasteurize` | Security and dependency health audit (invoked by `/copilot-review`) |
+| `fromage-secaudit` | Security and dependency health audit |
 | `fromage-fort` | PR review comment responder with confidence scoring |
 | `fromage-age-arch` | Complexity budgets, nesting smells, file structure |
 | `fromage-age-history` | Git history risk signals → per-file score modifiers |
@@ -93,7 +93,7 @@ repo-root `agents/registry.yaml` (metadata) with bodies under
 | `worktree-triage` | Stale-worktree triage recommendations |
 | `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by skill-improver) |
 
-All review/analysis agents use 0-100 confidence scoring (>= 50 to surface findings).
+Review/analysis agents use severity tiers (blocker/high/medium/low) with calibration tags (`<certain>`/`<speculative>`); surface medium+ and certain lows.
 
 ---
 
@@ -103,8 +103,8 @@ Reusable tool-usage instructions injected into agents and commands.
 
 | Skill | Purpose |
 |-------|---------|
-| `scout` | Directory listings (eza); delegates code search to `cheese-flow:cheez-search` |
-| `cheese-flow:cheez-search` | AST-aware code/content search via tilth MCP (replaces trace) |
+| `scout` | Directory listings (eza); delegates code search to `easy-cheese:cheez-search` |
+| `easy-cheese:cheez-search` | AST-aware code/content search via tilth MCP (replaces trace) |
 | `cheese-flow:cheez-read` | Hash-anchored code reading via tilth MCP |
 | `cheese-flow:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |
 | `gh` | GitHub operations via gh CLI |

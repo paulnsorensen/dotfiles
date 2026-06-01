@@ -6,7 +6,7 @@ correctness · security · encapsulation · spec-conformance · complexity · de
 
 Cover each dimension. When this review runs at the top level (the orchestrator running `/age`), it forks the matching specialist for evidence rather than eyeballing; a reviewer dispatched as a subagent can't fan out (level-1 agents don't spawn subagents), so it covers these dimensions inline:
 
-- **security** → `fromage-pasteurize`
+- **security** → `fromage-secaudit`
 - **complexity / structure** → `fromage-age-arch`
 - **deslop / dead code** → `ghostbuster`, `ricotta-reducer`
 - **NIH** → `nih-scanner`

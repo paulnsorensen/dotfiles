@@ -72,7 +72,7 @@ In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents 
 | Agent | Source | What to Find |
 |-------|--------|-------------|
 | `/briesearch` | Web + docs | Prior art, competitor approaches, relevant blog posts, library options |
-| `cheese-flow:cheez-search` | Codebase | Existing patterns, public API surface, architectural boundaries |
+| `easy-cheese:cheez-search` | Codebase | Existing patterns, public API surface, architectural boundaries |
 | Serena MCP (`mcp__serena__*`) | Cross-refs | Call chains, references, blast radius of the change |
 | `gh search code` | External code | How other projects solved similar problems, real-world examples |
 
@@ -88,7 +88,7 @@ In later rounds, use individual skills as needed:
 
 - **`/briesearch`** — Verify specific assumptions, check APIs
 - **Serena MCP** (`mcp__serena__find_symbol`, `find_referencing_symbols`) — Targeted symbol lookup and cross-reference tracing
-- **`cheese-flow:cheez-search`** — Structural code patterns: "what implements this interface?"
+- **`easy-cheese:cheez-search`** — Structural code patterns: "what implements this interface?"
 
 **Beat 3 — Summarize** (every 2 rounds)
 Periodically check alignment: "Here's where we are so far... Does this direction feel right?"
@@ -99,7 +99,7 @@ Periodically check alignment: "Here's where we are so far... Does this direction
 |-------|-------|--------|
 | 1 | Problem, users, success criteria, constraints | Light code reading to ground questions in reality |
 | 2 | Scope, non-goals, existing landscape | Serena MCP, `/briesearch` |
-| 3 | Design options, tradeoffs, quality gates | Serena MCP, `cheese-flow:cheez-search` |
+| 3 | Design options, tradeoffs, quality gates | Serena MCP, `easy-cheese:cheez-search` |
 | 4+ | Refinement, edge cases, acceptance criteria | `/briesearch` as needed |
 
 Round 1 doesn't need formal skill invocations, but **do read relevant code** before asking questions. Grounding questions in what actually exists ("I see you already have a `FooAdapter` — is the pain that it doesn't cover X, or that it's too coupled to Y?") produces better answers than abstract interrogation.
