@@ -50,6 +50,14 @@ teardown() {
 dirty_tracked() { printf 'uncommitted edit\n' >> "$REPO/tracked.txt"; }
 # Drop an untracked file (relevant for `git clean -f`).
 add_untracked() { printf 'junk\n' > "$REPO/untracked.txt"; }
+# Commit a path whose name contains a space, then dirty it — exercises the
+# quote/escape-aware tokenizer (a naive whitespace split mismapped it).
+dirty_spaced() {
+    printf 'orig\n' > "$REPO/has space.txt"
+    git -C "$REPO" add "has space.txt"
+    git -C "$REPO" commit -qm 'add spaced file'
+    printf 'uncommitted\n' >> "$REPO/has space.txt"
+}
 
 # Feed a PreToolUse event to the Claude/Codex bridge; echo deny|allow.
 guard() {
@@ -94,6 +102,27 @@ guard() {
 @test "clean -f with an untracked file is denied" {
     add_untracked
     [[ "$(guard Bash 'git clean -fd')" == "deny" ]]
+}
+
+# ── quoting / escaping: pathspecs must still map to `git status` ───────
+# Regression: a naive whitespace split turned `git checkout -- "a b.txt"`
+# into pathspecs '"a' 'b.txt"' that matched no file, so the dirty check
+# came back clean and the guard failed OPEN. The tokenizer now strips
+# quotes/escapes before building the pathspec.
+
+@test "checkout -- quoted path with spaces (dirty) is denied" {
+    dirty_spaced
+    [[ "$(guard Bash 'git checkout -- "has space.txt"')" == "deny" ]]
+}
+
+@test "checkout -- backslash-escaped path with spaces (dirty) is denied" {
+    dirty_spaced
+    [[ "$(guard Bash 'git checkout -- has\ space.txt')" == "deny" ]]
+}
+
+@test "quoted shell operator inside env does not hide a dirty reset --hard" {
+    dirty_tracked
+    [[ "$(guard Bash 'env GIT_PAGER="cat | less" git reset --hard')" == "deny" ]]
 }
 
 # ── the gate: clean tree / non-destructive → allow ─────────────────────

@@ -82,7 +82,7 @@ teardown() {
     "$INSTALL_SCRIPT" "$PLUGIN_SRC" "$CURSOR_HOME"
 
     run jq -r '.hooks.beforeShellExecution | length' "$CURSOR_HOME/hooks.json"
-    assert_output_contains "1"
+    assert_output_contains "2"
     run jq -r '.hooks.stop | length' "$CURSOR_HOME/hooks.json"
     assert_output_contains "1"
 
@@ -92,6 +92,12 @@ teardown() {
 
     # Every entry tagged with the plugin name for ownership tracking.
     run jq -r '.hooks.beforeShellExecution[0]._plugin' "$CURSOR_HOME/hooks.json"
+    assert_output_contains "cheese-grok"
+
+    # The git-guard hook is appended as the second beforeShellExecution entry.
+    run jq -r '.hooks.beforeShellExecution[1].command' "$CURSOR_HOME/hooks.json"
+    assert_output_contains "$CURSOR_HOME/hooks/git-guard.sh"
+    run jq -r '.hooks.beforeShellExecution[1]._plugin' "$CURSOR_HOME/hooks.json"
     assert_output_contains "cheese-grok"
 }
 

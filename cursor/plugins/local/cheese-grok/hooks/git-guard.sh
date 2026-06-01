@@ -44,12 +44,7 @@ cwd="$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null)"
 
 # Call the shared classifier. The lib prints the deny reason on a block and
 # nothing on allow; exit code drives Cursor's decision (2 = deny, 0 = allow).
-reason="$(GIT_GUARD_COMMAND="$command_line" GIT_GUARD_CWD="$cwd" node -e '
-  const g = require(process.argv[1]);
-  const hit = g.shouldBlock(process.env.GIT_GUARD_COMMAND, process.env.GIT_GUARD_CWD);
-  if (hit) { process.stdout.write(g.denyReason(process.env.GIT_GUARD_COMMAND, hit)); process.exit(7); }
-  process.exit(0);
-' "$LOGIC" 2>/dev/null)"
+reason="$(GIT_GUARD_COMMAND="$command_line" GIT_GUARD_CWD="$cwd" node -e 'require(process.argv[1]).cliCheck()' "$LOGIC" 2>/dev/null)"
 rc=$?
 
 if (( rc == 7 )); then

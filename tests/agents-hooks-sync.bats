@@ -263,7 +263,7 @@ TOML
 }
 
 @test "hook_detect_changes (codex): empty when in sync" {
-    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    HARNESS_DESIRED_JSON='{"session-start-cheese-flair":{"event":"SessionStart","script":"agents/hooks/session-start-cheese-flair.sh","matcher":"startup|resume","timeout":5}}'
     : > "$CODEX_CONFIG_FILE"
     hook_codex_apply session-start-cheese-flair
     local changed
@@ -272,7 +272,7 @@ TOML
 }
 
 @test "hook_detect_changes (codex): names entry on drift (command path moved)" {
-    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    HARNESS_DESIRED_JSON='{"session-start-cheese-flair":{"event":"SessionStart","script":"agents/hooks/session-start-cheese-flair.sh","matcher":"startup|resume","timeout":5}}'
     cat > "$CODEX_CONFIG_FILE" <<'TOML'
 [[hooks.SessionStart]]
 matcher = "startup|resume"
@@ -819,7 +819,7 @@ TOML
 }
 
 @test "hook_detect_changes (codex): names entry on matcher drift" {
-    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    HARNESS_DESIRED_JSON='{"session-start-cheese-flair":{"event":"SessionStart","script":"agents/hooks/session-start-cheese-flair.sh","matcher":"startup|resume","timeout":5}}'
     cat > "$CODEX_CONFIG_FILE" <<'TOML'
 [[hooks.SessionStart]]
 matcher = "wrong"

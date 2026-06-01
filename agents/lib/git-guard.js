@@ -10,6 +10,11 @@
 // Allowed: `git checkout <branch>` (a real branch switch) and every
 //          destructive verb when the relevant paths are clean.
 //
+// Known limitation: git aliases are matched by their literal subcommand name,
+// not expanded — `git co -- <path>` (alias co=checkout) is NOT caught. Agents
+// emit canonical subcommands in practice, and expanding aliases would cost a
+// `git config` probe per check; documented here rather than fixed.
+//
 // This exists because `git checkout -- file` resets the WHOLE file to its
 // committed state — used to "undo one edit", it wipes all uncommitted work
 // in that file with no recovery. The escape hatch is in the message:
@@ -34,18 +39,65 @@ function isDisabled() {
   return v === '0' || v === 'false' || v === 'off' || v === 'no';
 }
 
-// Segment a command line on shell operators so each git invocation in a
-// compound command is classified independently.
-function splitSegments(command) {
-  return command.split(/(?:&&|\|\||[;&|\n()])+/);
+// Tokenize a command line into segments split on UNQUOTED shell operators
+// (`;`, `|`, `||`, `&`, `&&`, newline, `(`, `)`), each segment a list of
+// tokens with surrounding quotes removed and backslash escapes resolved. This
+// is a deliberately small, conservative shell-ish lexer — enough to keep
+// quoted / space-containing pathspecs (`git checkout -- "my file.txt"`) and
+// quoted operators (`env X='a|b' git reset --hard`) from slipping past the
+// guard by being mis-split on whitespace or on operator chars inside quotes.
+// NOT a full POSIX parser: no `$(...)` / `${...}` expansion, no here-docs, no
+// globbing — those fall through and fail open like any other unrecognized
+// shape (a guard must never become a denial-of-service).
+function tokenizeSegments(command) {
+  const segments = [];
+  let tokens = [];
+  let cur = '';
+  let hasTok = false; // an in-progress token exists (so "" survives as a token)
+  const endTok = () => { if (hasTok) { tokens.push(cur); cur = ''; hasTok = false; } };
+  const endSeg = () => { endTok(); segments.push(tokens); tokens = []; };
+  let i = 0;
+  const n = command.length;
+  while (i < n) {
+    const c = command[i];
+    if (c === '\\') { // backslash escape outside quotes → next char is literal
+      if (i + 1 < n) { cur += command[i + 1]; hasTok = true; i += 2; } else i += 1;
+      continue;
+    }
+    if (c === "'") { // single quotes: everything literal up to the next '
+      hasTok = true; i += 1;
+      while (i < n && command[i] !== "'") { cur += command[i]; i += 1; }
+      i += 1;
+      continue;
+    }
+    if (c === '"') { // double quotes: backslash escapes " \ $ `
+      hasTok = true; i += 1;
+      while (i < n && command[i] !== '"') {
+        if (command[i] === '\\' && i + 1 < n && /["\\$`]/.test(command[i + 1])) {
+          cur += command[i + 1]; i += 2;
+        } else { cur += command[i]; i += 1; }
+      }
+      i += 1;
+      continue;
+    }
+    if (c === ' ' || c === '\t') { endTok(); i += 1; continue; }
+    if (c === '\n' || c === ';' || c === '(' || c === ')') { endSeg(); i += 1; continue; }
+    if (c === '|' || c === '&') { // a run of | / & is one operator boundary
+      endSeg(); i += 1;
+      while (i < n && (command[i] === '|' || command[i] === '&')) i += 1;
+      continue;
+    }
+    cur += c; hasTok = true; i += 1;
+  }
+  endSeg();
+  return segments;
 }
 
 // Leading `sudo`/`env`, then the git global options that take a value, so the
 // real subcommand is found whether or not `-C <dir>` / `-c k=v` precede it.
 // After an `env` prefix, also skip `VAR=value` assignment tokens
 // (`env GIT_PAGER=cat git …`) so the wrapped git invocation is still found.
-function gitArgs(seg) {
-  const tokens = seg.trim().split(/\s+/).filter(Boolean);
+function gitArgs(tokens) {
   let i = 0;
   while (i < tokens.length && (tokens[i] === 'sudo' || /(^|\/)env$/.test(tokens[i]))) {
     const wasEnv = /(^|\/)env$/.test(tokens[i]);
@@ -75,8 +127,9 @@ function pathsAfterDashDash(arr) {
 // Returns { reason, paths } when the segment is destructive-to-uncommitted,
 // else null. `paths === null` means "whole tree" (reset --hard / clean).
 // `paths` as a list means scope the dirty check to those pathspecs.
-function classify(seg) {
-  const args = gitArgs(seg);
+// `tokens` is one segment's already-tokenized, quote-stripped args.
+function classify(tokens) {
+  const args = gitArgs(tokens);
   if (!args) return null;
   const { sub, rest } = subcommand(args);
   if (!sub) return null;
@@ -105,8 +158,8 @@ function classify(seg) {
 }
 
 function classifyCommand(command) {
-  for (const seg of splitSegments(command)) {
-    const hit = classify(seg);
+  for (const tokens of tokenizeSegments(command)) {
+    const hit = classify(tokens);
     if (hit) return hit;
   }
   return null;
@@ -158,6 +211,20 @@ function shouldBlock(command, cwd) {
   return hit;
 }
 
+// Adapter entry point. The Cursor + Copilot shell hooks invoke this via
+//   node -e 'require("…/git-guard.js").cliCheck()'
+// so the block decision and deny-reason text live here once instead of being
+// copied into each adapter's inline `node -e` script. Reads the command + cwd
+// from the environment; on a block writes the reason to stdout and exits 7,
+// else exits 0. Any throw → the caller's `2>/dev/null` + rc check fails open.
+function cliCheck() {
+  const command = process.env.GIT_GUARD_COMMAND;
+  const cwd = process.env.GIT_GUARD_CWD;
+  const hit = shouldBlock(command, cwd);
+  if (hit) { process.stdout.write(denyReason(command, hit)); process.exit(7); }
+  process.exit(0);
+}
+
 function main() {
   let stdin = '';
   process.stdin.on('data', (chunk) => { stdin += chunk; });
@@ -187,4 +254,4 @@ function main() {
 if (require.main === module) main();
 
 // Exported for unit tests and the Cursor/Copilot adapters; harmless as a hook.
-module.exports = { classify, classifyCommand, pathsDirty, shouldBlock, denyReason, isDisabled };
+module.exports = { classify, classifyCommand, pathsDirty, shouldBlock, denyReason, isDisabled, cliCheck };
