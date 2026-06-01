@@ -28,3 +28,6 @@ source "$HOME/Dev/dotfiles/zsh/claude.zsh"
 source "$HOME/Dev/dotfiles/zsh/skhd.zsh"
 
 clear
+
+# opencode
+[ -d "$HOME/.opencode/bin" ] && export PATH="$HOME/.opencode/bin:$PATH"

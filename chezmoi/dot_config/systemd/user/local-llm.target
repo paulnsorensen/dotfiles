@@ -1,0 +1,8 @@
+[Unit]
+Description=Local LLM stack (always-on workers + LiteLLM proxy)
+Documentation=file://%h/local-llm/README.md
+Wants=worker-igpu.service worker-cpu.service litellm.service
+After=worker-igpu.service worker-cpu.service litellm.service
+
+[Install]
+WantedBy=default.target

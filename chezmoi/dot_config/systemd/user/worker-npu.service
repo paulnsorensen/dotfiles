@@ -1,0 +1,20 @@
+[Unit]
+Description=NPU classifier worker (Lemonade Server + FastFlowLM on XDNA 2)
+PartOf=local-llm.target
+# Requires: ~/local-llm/scripts/install-npu.sh has been run successfully
+ConditionPathExists=/usr/lib/x86_64-linux-gnu/libxrt_npu2.so
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p %h/local-llm/logs
+Environment="LEMONADE_HOST=127.0.0.1"
+Environment="LEMONADE_PORT=8000"
+ExecStart=%h/local-llm/bin/lemonade/lemond --port 8000 --host 127.0.0.1
+Restart=on-failure
+RestartSec=5
+Nice=5
+StandardOutput=append:%h/local-llm/logs/worker-npu.log
+StandardError=append:%h/local-llm/logs/worker-npu.log
+
+[Install]
+WantedBy=local-llm.target

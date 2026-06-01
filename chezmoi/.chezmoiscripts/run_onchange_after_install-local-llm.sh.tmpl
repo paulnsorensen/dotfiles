@@ -1,0 +1,41 @@
+#!/bin/bash
+# run_onchange — wires the local-llm opencode provider when the localLLM flag is
+# set, and reloads systemd user units. Gated entirely by `.localLLM`: when the
+# flag is false the body collapses to a no-op, so non-LLM machines do nothing.
+#
+# Hash strategy mirrors run_onchange_after_install-cursor-plugins: shasum the
+# inputs whose changes must re-trigger this script — the provider lib AND the
+# systemd unit files. Hashing the units is what makes `daemon-reload` actually
+# fire after a unit edit: the unit files deploy verbatim, so without them in the
+# hash a `.service`/`.target` change leaves this script's rendered body identical
+# and systemd keeps the stale definition. Toggling the flag also changes the
+# rendered body, which re-triggers on its own.
+#
+# sources hash (provider lib + systemd units): {{ output "sh" "-c" (printf "cat %q/lib/install-local-llm.sh %q/dot_config/systemd/user/*.service %q/dot_config/systemd/user/*.target 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
+
+set -euo pipefail
+{{/* `get` (not bare `.localLLM`): chezmoi renders with missingkey=error, so a
+     bare reference fails `chezmoi apply` on any machine whose chezmoi.toml
+     predates this flag. `get . "localLLM"` returns "" (falsy → no-op) when absent. */}}
+{{ if (get . "localLLM") }}
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+OPENCODE_CFG="${OPENCODE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json}"
+
+if ! command -v jq &>/dev/null; then
+    echo "Error: jq not found. Install with: brew install jq" >&2
+    exit 1
+fi
+
+# Idempotently merge the local-llm provider block into opencode.json.
+bash "$SOURCE_DIR/lib/install-local-llm.sh" "$OPENCODE_CFG"
+echo "✓ opencode local-llm provider wired ($OPENCODE_CFG)"
+
+# Pick up newly-deployed ~/.config/systemd/user units. daemon-reload ONLY —
+# enabling/starting workers stays explicit (llm-up), since a flag-on machine may
+# not yet have the 85G models or the built llama.cpp/lemonade binaries.
+if command -v systemctl &>/dev/null; then
+    if ! systemctl --user daemon-reload; then
+        echo "⚠ systemctl --user daemon-reload failed — newly-deployed units may be stale. Re-run 'systemctl --user daemon-reload' once a user session/bus is available." >&2
+    fi
+fi
+{{ end }}
