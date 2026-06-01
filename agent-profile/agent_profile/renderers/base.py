@@ -80,6 +80,17 @@ class Renderer(Protocol):
         """Surgically un-merge this harness's shared/merged-file entries."""
         ...
 
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict ``manifest``'s MCP servers from this harness's merged file.
+
+        Called by the install reconcile to remove servers a prior render
+        wrote into a persistent/user-owned file (codex ``config.toml``,
+        opencode/cursor/copilot merged JSON, claude user-scope
+        ``~/.claude.json``) that have since been dropped from the registry.
+        ``manifest`` carries ONLY the dropped MCPs — every other item list is
+        empty — so an implementation must touch nothing but MCP entries."""
+        ...
+
 
 def item_harnesses(item: dict[str, Any], default: tuple[str, ...]) -> list[str]:
     """Return ``item``'s harness membership list, applying ``default`` when

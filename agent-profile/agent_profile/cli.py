@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -239,6 +240,10 @@ def cmd_install(
     merged_dict = manifest.to_dict()
 
     manifest_mod.manifest_init(target)
+    # Snapshot the prior resolved manifest BEFORE the render loop overwrites
+    # it (record_merged_json runs at the end) so the reconcile can diff which
+    # MCPs dropped out of the registry since the last install.
+    prior_merged = manifest_mod.merged_json(target, name)
 
     all_new_files: list[str] = []
     for h in harnesses:
@@ -263,10 +268,49 @@ def cmd_install(
         manifest_mod.diff_and_clean(target, name, new_files, harnesses)
         _union_files(target, name, new_files, harnesses)
 
+    _reconcile_dropped_mcps(prior_merged, manifest, harnesses, target, out, colors)
+
     manifest_mod.record_merged_json(target, name, merged_dict)
 
     print(f"{colors.GREEN}✓ Installed{colors.NC}", file=out)
     return 0
+
+
+def _reconcile_dropped_mcps(
+    prior_merged: dict[str, Any] | None,
+    manifest: Any,
+    harnesses: list[str],
+    target: Path,
+    out: Any,
+    colors: Any,
+) -> None:
+    """Evict MCP servers that fell out of the registry since the last install.
+
+    Renderers MERGE MCPs into persistent/user-owned files (codex config.toml,
+    opencode/cursor/copilot JSON, claude user-scope ~/.claude.json), so a
+    server dropped from the registry lingers — render only writes the current
+    set. Diff the prior resolved manifest against the current one and have
+    each in-scope renderer prune the dropped servers. No prior install, or
+    nothing dropped → no-op (keeps fresh renders byte-identical)."""
+    if not prior_merged:
+        return
+    current_names = {m.get("name") for m in manifest.mcps}
+    dropped = [
+        m
+        for m in (prior_merged.get("mcps") or [])
+        if m.get("name") not in current_names
+    ]
+    if not dropped:
+        return
+
+    dropped_manifest = replace(manifest, mcps=dropped)
+    for h in harnesses:
+        renderer = RENDERERS.get(h)
+        if renderer is not None:
+            renderer.prune_mcps(dropped_manifest, target)
+
+    names = ", ".join(sorted(str(m.get("name", "?")) for m in dropped))
+    print(f"  {colors.BLUE}↺ pruned dropped MCP(s): {names}{colors.NC}", file=out)
 
 
 def _skill_fetch_runner(argv: list[str]) -> int:

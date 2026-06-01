@@ -81,6 +81,12 @@ class CodexRenderer:
     def clean(self, manifest: Manifest, target: Path) -> None:
         self._clean_mcps(manifest, Path(target))
 
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict dropped MCP servers from config.toml's [mcp_servers]
+        (install reconcile). Codex's clean is MCP-only, so this is the same
+        operation; ``manifest`` holds only the dropped servers."""
+        self._clean_mcps(manifest, Path(target))
+
     # ─── subagents ──────────────────────────────────────────────────────
     # Each agent lands at .codex/agents/<name>.toml with TOML fields:
     #   name, description, optional model, developer_instructions (multiline).
