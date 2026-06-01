@@ -199,6 +199,33 @@ def copy_shared_skill(
     track_file(out_files, rel)
 
 
+def write_shared_claude_skill(
+    target: Path, name: str, source_dir: Path, out_files: list[str]
+) -> None:
+    """Copy a skill tree into the shared ``~/.claude/skills/<name>/`` path.
+
+    Claude resolves user-scope skills (``~/.claude/skills/``, priority 4)
+    ahead of plugin-scoped skills (priority 5), so writing here means the
+    skill is available without a plugin and without duplicating it in the
+    plugin tree — the same rationale as ``write_shared_claude_agent``.
+    Port of ``ap_write_shared_claude_skill``.
+    """
+    rel = f".claude/skills/{name}"
+    abs_path = Path(str(target).rstrip("/")) / rel
+
+    if not source_dir.is_dir():
+        raise NotADirectoryError(
+            f"ap_write_shared_claude_skill: source not a dir: {source_dir}"
+        )
+
+    if abs_path.exists():
+        shutil.rmtree(abs_path)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source_dir, abs_path)
+
+    track_file(out_files, rel)
+
+
 _OVERRIDE_SUBDIRS = {
     "agent": "agents",
     "agents": "agents",
