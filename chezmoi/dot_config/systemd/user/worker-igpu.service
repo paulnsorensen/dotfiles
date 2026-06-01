@@ -1,10 +1,11 @@
 [Unit]
 Description=Sonnet-tier worker (Qwen3-30B-A3B on iGPU via Vulkan)
-After=network.target
 PartOf=local-llm.target
+ConditionPathExists=%h/local-llm/models/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
 
 [Service]
 Type=simple
+ExecStartPre=/bin/mkdir -p %h/local-llm/logs
 Environment="LD_LIBRARY_PATH=%h/local-llm/bin/llama.cpp"
 ExecStart=%h/local-llm/bin/llama.cpp/llama-server \
   --model %h/local-llm/models/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf \

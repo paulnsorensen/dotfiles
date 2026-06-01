@@ -1,12 +1,12 @@
 [Unit]
 Description=Coder-tier worker (Qwen3-Coder-30B-A3B-Instruct on iGPU — displaces Sonnet)
-After=network.target
 # Mutual exclusion with Sonnet (same iGPU slot, same arch)
 Conflicts=worker-igpu.service
 ConditionPathExists=%h/local-llm/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
 
 [Service]
 Type=simple
+ExecStartPre=/bin/mkdir -p %h/local-llm/logs
 Environment="LD_LIBRARY_PATH=%h/local-llm/bin/llama.cpp"
 ExecStart=%h/local-llm/bin/llama.cpp/llama-server \
   --model %h/local-llm/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf \

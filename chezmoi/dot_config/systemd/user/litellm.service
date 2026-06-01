@@ -1,10 +1,11 @@
 [Unit]
 Description=LiteLLM proxy (unified OpenAI-compatible front for all workers)
-After=network.target worker-igpu.service worker-cpu.service
+After=worker-igpu.service worker-cpu.service
 PartOf=local-llm.target
 
 [Service]
 Type=simple
+ExecStartPre=/bin/mkdir -p %h/local-llm/logs
 ExecStart=%h/.local/bin/litellm \
   --config %h/local-llm/configs/litellm.yaml \
   --port 4000 \

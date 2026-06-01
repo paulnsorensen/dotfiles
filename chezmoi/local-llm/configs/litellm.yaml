@@ -47,7 +47,11 @@ model_list:
       api_key: none
 
 router_settings:
-  num_retries: 0
+  # One retry lets a worker still cold-loading answer on the second attempt
+  # (e.g. local-opus's 70B). NOTE: local-opus's fallback to local-sonnet below
+  # can't fire while Sonnet is stopped by Conflicts=, so a cold local-opus may
+  # still 5xx during its load window — after `llm-opus-on`, wait for readiness.
+  num_retries: 1
   timeout: 120
   fallbacks:
     # If Opus isn't running, fall back to Sonnet

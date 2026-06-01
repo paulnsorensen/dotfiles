@@ -30,4 +30,4 @@ source "$HOME/Dev/dotfiles/zsh/skhd.zsh"
 clear
 
 # opencode
-export PATH=/home/paul/.opencode/bin:$PATH
+[ -d "$HOME/.opencode/bin" ] && export PATH="$HOME/.opencode/bin:$PATH"

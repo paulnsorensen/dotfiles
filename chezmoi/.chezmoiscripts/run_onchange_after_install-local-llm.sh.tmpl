@@ -4,10 +4,14 @@
 # flag is false the body collapses to a no-op, so non-LLM machines do nothing.
 #
 # Hash strategy mirrors run_onchange_after_install-cursor-plugins: shasum the
-# provider lib so chezmoi re-runs whenever its contents change. Toggling the
-# flag also changes the rendered body, which re-triggers on its own.
+# inputs whose changes must re-trigger this script — the provider lib AND the
+# systemd unit files. Hashing the units is what makes `daemon-reload` actually
+# fire after a unit edit: the unit files deploy verbatim, so without them in the
+# hash a `.service`/`.target` change leaves this script's rendered body identical
+# and systemd keeps the stale definition. Toggling the flag also changes the
+# rendered body, which re-triggers on its own.
 #
-# install-local-llm.sh hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/lib/install-local-llm.sh 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
+# sources hash (provider lib + systemd units): {{ output "sh" "-c" (printf "cat %q/lib/install-local-llm.sh %q/dot_config/systemd/user/*.service %q/dot_config/systemd/user/*.target 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
 
 set -euo pipefail
 {{/* `get` (not bare `.localLLM`): chezmoi renders with missingkey=error, so a
@@ -30,6 +34,8 @@ echo "✓ opencode local-llm provider wired ($OPENCODE_CFG)"
 # enabling/starting workers stays explicit (llm-up), since a flag-on machine may
 # not yet have the 85G models or the built llama.cpp/lemonade binaries.
 if command -v systemctl &>/dev/null; then
-    systemctl --user daemon-reload 2>/dev/null || true
+    if ! systemctl --user daemon-reload; then
+        echo "⚠ systemctl --user daemon-reload failed — newly-deployed units may be stale. Re-run 'systemctl --user daemon-reload' once a user session/bus is available." >&2
+    fi
 fi
 {{ end }}

@@ -3,7 +3,7 @@
 
 # Always-on stack toggles
 alias llm-up='systemctl --user start  local-llm.target'
-alias llm-down='systemctl --user stop  worker-igpu worker-cpu litellm worker-npu worker-opus worker-vision 2>/dev/null'
+alias llm-down='systemctl --user stop  worker-igpu worker-cpu litellm worker-npu worker-coder worker-opus worker-vision 2>/dev/null'
 alias llm-status='systemctl --user list-units "worker-*" "litellm*" "local-llm*" --all --no-pager'
 alias llm-logs='journalctl --user -u "worker-*" -u litellm -f'
 

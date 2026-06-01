@@ -42,3 +42,8 @@ local-llm/**
 .config/systemd/user/worker-vision.service
 .config/systemd/user/worker-npu.service
 {{ end }}
+{{ if (get . "localLLM") }}
+# Stack enabled: the global README*/*.md rules above would otherwise skip
+# local-llm/README.md, which local-llm.target's Documentation= points at.
+!local-llm/README.md
+{{ end }}

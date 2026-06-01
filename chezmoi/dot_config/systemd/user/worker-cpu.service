@@ -1,10 +1,11 @@
 [Unit]
 Description=Haiku-tier worker (Qwen3-8B on CPU, Zen 5c cores)
-After=network.target
 PartOf=local-llm.target
+ConditionPathExists=%h/local-llm/models/Qwen3-8B-Q4_K_M.gguf
 
 [Service]
 Type=simple
+ExecStartPre=/bin/mkdir -p %h/local-llm/logs
 Environment="LD_LIBRARY_PATH=%h/local-llm/bin/llama.cpp"
 # Pin to Zen 5c efficiency cores (4-11) + their SMT siblings (16-23) — leaves Zen 5 perf cores free for foreground
 ExecStart=/usr/bin/taskset -c 4-11,16-23 %h/local-llm/bin/llama.cpp/llama-server \

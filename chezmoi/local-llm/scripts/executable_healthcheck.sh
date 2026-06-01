@@ -47,6 +47,14 @@ llm_port_up() {
         "http://127.0.0.1:${1}/v1/models" >/dev/null 2>&1
 }
 
+# llm_proxy_up — 0 if the LiteLLM proxy answers /v1/models. Honors the
+# documented LLM_PROXY override (host:port), unlike the per-worker llm_port_up
+# probes, which are correctly pinned to 127.0.0.1 (workers aren't overridable).
+llm_proxy_up() {
+    curl -fsS --max-time "$LLM_CURL_TIMEOUT" \
+        "${LLM_PROXY}/v1/models" >/dev/null 2>&1
+}
+
 # _llm_complete <model> — echo the raw chat-completion JSON; curl status propagates.
 _llm_complete() {
     curl -fsS --max-time "$LLM_CURL_TIMEOUT" \
@@ -95,7 +103,7 @@ llm_quick_check() {
             echo -e "  ${RED}✗ $u inactive${NC}"; rc=1
         fi
     done
-    if llm_port_up 4000; then
+    if llm_proxy_up; then
         echo -e "  ${GREEN}✓ LiteLLM proxy :4000 responding${NC}"
     else
         echo -e "  ${RED}✗ LiteLLM proxy :4000 not responding${NC}"; rc=1
@@ -124,7 +132,7 @@ llm_health_report() {
     local with_opencode="${1:-false}" hard_fail=0
 
     echo -e "${BLUE}LiteLLM proxy${NC}"
-    if llm_port_up 4000; then
+    if llm_proxy_up; then
         echo -e "  ${GREEN}✓ :4000 responding${NC}"
     else
         echo -e "  ${RED}✗ :4000 not responding${NC}"; hard_fail=1

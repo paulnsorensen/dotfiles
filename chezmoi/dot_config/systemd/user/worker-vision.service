@@ -1,11 +1,11 @@
 [Unit]
 Description=Vision worker (Qwen2.5-VL-7B on CPU, separate Zen 5c pin)
-After=network.target
 ConditionPathExists=%h/local-llm/models/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
 ConditionPathExists=%h/local-llm/models/mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
 
 [Service]
 Type=simple
+ExecStartPre=/bin/mkdir -p %h/local-llm/logs
 Environment="LD_LIBRARY_PATH=%h/local-llm/bin/llama.cpp"
 # Pin to upper Zen 5c cores so it competes less with worker-cpu (which uses 4-11,16-23)
 ExecStart=/usr/bin/taskset -c 8-11,20-23 %h/local-llm/bin/llama.cpp/llama-server \

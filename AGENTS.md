@@ -334,7 +334,7 @@ A bespoke local-LLM stack (`~/local-llm/`) — llama.cpp workers behind a LiteLL
 **What's managed (in-repo):**
 
 - `chezmoi/local-llm/configs/litellm.yaml` → `~/local-llm/configs/litellm.yaml` (proxy routing + fallbacks).
-- `chezmoi/local-llm/scripts/{aliases,install-npu,healthcheck,download-models}.sh` → `~/local-llm/scripts/`.
+- `chezmoi/local-llm/scripts/executable_{aliases,install-npu,healthcheck,download-models}.sh` → `~/local-llm/scripts/{aliases,install-npu,healthcheck,download-models}.sh` (the `executable_` prefix is stripped on render).
 - `chezmoi/dot_config/systemd/user/{litellm,local-llm.target,worker-*}` → `~/.config/systemd/user/` (verbatim; `%h`-portable, no secrets). Unit *files* only — enablement stays a runtime action.
 - opencode `local-llm` provider — `chezmoi/lib/install-local-llm.sh` jq-merges the `.provider` block into `~/.config/opencode/opencode.json` (mirrors the MCP `.mcp` sync), driven by `run_onchange_after_install-local-llm.sh.tmpl`, which also runs `systemctl --user daemon-reload`. Edit models/endpoint there, not in the live file.
 
