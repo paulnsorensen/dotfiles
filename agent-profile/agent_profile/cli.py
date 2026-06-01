@@ -413,6 +413,7 @@ def cmd_uninstall(
         commands=merged.get("commands", []),
         hooks=merged.get("hooks", []),
         settings=merged.get("settings", {}),
+        mcp_scope=merged.get("mcp_scope", "plugin"),
     )
 
     for h in ALL_HARNESSES:

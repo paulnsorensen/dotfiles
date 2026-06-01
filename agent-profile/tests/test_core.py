@@ -119,6 +119,24 @@ def test_parse_one_skill_path_traversal_fails(env):
         parse_one(env.profiles / "skilltraverse")
 
 
+def test_parse_one_invalid_mcp_scope_fails(env):
+    # A typo like `mcp_scope: usr` must fail loud, not silently fall through
+    # to plugin behavior (the renderer only matches exactly "user").
+    write_profile(env.profiles, "badscope", "name: badscope\nmcp_scope: usr\n")
+    with pytest.raises(ParseError, match="invalid mcp_scope"):
+        parse_one(env.profiles / "badscope")
+
+
+def test_parse_one_valid_mcp_scopes_pass(env):
+    write_profile(env.profiles, "userscope", "name: userscope\nmcp_scope: user\n")
+    assert parse_one(env.profiles / "userscope")["mcp_scope"] == "user"
+    write_profile(env.profiles, "pluginscope", "name: pluginscope\nmcp_scope: plugin\n")
+    assert parse_one(env.profiles / "pluginscope")["mcp_scope"] == "plugin"
+    # Absent -> defaults to plugin.
+    write_profile(env.profiles, "noscope", "name: noscope\n")
+    assert parse_one(env.profiles / "noscope")["mcp_scope"] == "plugin"
+
+
 def test_parse_one_dots_substring_name_passes(env):
     # 'a..b' has a '..' substring but no '..' path *component* — must pass.
     write_profile(
