@@ -220,3 +220,10 @@ class OpencodeRenderer:
             return
 
         cfg.write_text(json.dumps(data, indent=2) + "\n")
+
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict dropped MCP servers from opencode.json's ``mcp`` block
+        (install reconcile). Delegates to :meth:`clean`: ``manifest`` holds
+        only the dropped servers and no permission allow-list, so clean's
+        permission pass is a no-op and only the dropped MCPs are removed."""
+        self.clean(manifest, target)

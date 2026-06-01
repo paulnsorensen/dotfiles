@@ -132,24 +132,31 @@ trust.
 
 ### 5. Heal stale remnants
 
-The legacy-hook drift class self-heals **inside the renderers**, not via a
-bolt-on script. Each renderer prunes its own harness's pre-ap hook leftovers on
-every `ap install`:
+Two stale-remnant classes self-heal **inside the renderers**, on every
+`ap install` — not via a bolt-on script:
 
-- **claude** — `agent_profile/renderers/claude.py:_clean_legacy_settings_hooks`
-  strips `settings.json` hooks that duplicate a plugin-managed hook (by script
-  basename or exact command), keyed off the hooks it just wired into
-  `plugin.json`.
-- **codex** — `agent_profile/renderers/codex.py:_clean_legacy_config_toml_hooks`
-  strips legacy `[[hooks.*]]` blocks from `config.toml` the same way.
+- **Legacy hooks.** Each renderer prunes its own harness's pre-ap hook
+  leftovers:
+  - **claude** — `claude.py:_clean_legacy_settings_hooks` strips
+    `settings.json` hooks that duplicate a plugin-managed hook (by script
+    basename or exact command), keyed off the hooks it just wired into
+    `plugin.json`.
+  - **codex** — `codex.py:_clean_legacy_config_toml_hooks` strips legacy
+    `[[hooks.*]]` blocks from `config.toml` the same way.
+- **Dropped MCPs.** `cli.py:_reconcile_dropped_mcps` diffs the prior resolved
+  manifest (cached in `manifest.json`) against the current one and calls each
+  renderer's `prune_mcps` to evict servers removed from the registry that a
+  prior render merged into a persistent file (codex `config.toml`,
+  opencode/cursor/copilot JSON, claude user-scope `~/.claude.json`). claude
+  plugin-scoped `.mcp.json` is whole-file so it never drifts.
 
-So the heal is just **`dots profile install global`** (or a full `dots sync`) —
-it re-runs the renderers, which self-clean. opencode/cursor/copilot don't
-receive registry hooks, so there's no hook drift to heal there.
+So the heal for both is just **`dots profile install global`** (or a full
+`dots sync`) — it re-runs the renderers + reconcile. opencode/cursor/copilot
+receive no registry hooks, so there's no hook drift there.
 
 The doctor's value is *explaining why* drift appeared and catching the classes
 the renderers don't auto-heal. For those, propose the precise edit and confirm
-before applying — never hand-roll a jq rewrite of a user-owned file when a
+before applying — never hand-roll a jq/toml rewrite of a user-owned file when a
 renderer (or a `dots sync`) does it deterministically.
 
 ### 6. File dotfiles bugs as gh issues (deduped)

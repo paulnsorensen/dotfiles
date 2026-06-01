@@ -149,6 +149,16 @@ class ClaudeRenderer:
             return
         settings.write_text(json.dumps(data, indent=2) + "\n")
 
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict dropped MCP servers (install reconcile). The plugin-scoped
+        ``.mcp.json`` is rewritten wholesale each render, so a dropped server
+        simply stops appearing — no drift there. Only user-scope
+        registrations in ``~/.claude.json`` persist across renders, so
+        unregister exactly the dropped servers by name. ``manifest`` holds
+        only the dropped MCPs (see the protocol contract)."""
+        if manifest.mcp_scope == "user":
+            self._unregister_user_mcps(manifest)
+
     # ─── helpers ─────────────────────────────────────────────────────
 
     @staticmethod

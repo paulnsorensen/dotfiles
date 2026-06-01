@@ -251,3 +251,9 @@ class CopilotRenderer:
             cfg.unlink()
         else:
             cfg.write_text(_dumps(data))
+
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict dropped MCP servers from .copilot/mcp-config.json's
+        ``mcpServers`` (install reconcile). Copilot's clean is MCP-only, so
+        this delegates to it; ``manifest`` holds only the dropped servers."""
+        self.clean(manifest, target)
