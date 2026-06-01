@@ -40,7 +40,7 @@ is_sensitive() {
 
     # .env / .env.* — except checked-in templates.
     if [[ "$base" == ".env" ]]; then return 0; fi
-    if [[ "$base" == .env.* && ! "$base" =~ (example|sample|template|dist|defaults) ]]; then return 0; fi
+    if [[ "$base" == .env.* && ! "$base" =~ \.(example|sample|template|dist|defaults)$ ]]; then return 0; fi
 
     # Credential stores by exact basename.
     case "$base" in

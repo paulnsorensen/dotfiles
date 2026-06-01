@@ -311,3 +311,24 @@ cursor_guard() {
     run bash -c "printf '%s' '{\"hook_event_name\":\"beforeReadFile\",\"file_path\":\"tests/fixtures/.env\"}' | CLAUDE_SENSITIVE_GUARD_ALLOW=tests/fixtures/ '$CURSOR_HOOK'"
     [ "$status" -eq 0 ]
 }
+
+# SAFE_ENV must be anchored to the trailing segment (parity with the JS guard,
+# sensitive-file-guard.js:29) — a safe keyword that is not the final suffix must
+# still deny. Regression for the Cursor-hook substring-match divergence.
+@test "cursor beforeReadFile .env.notsample is denied (safe keyword not at suffix, exit 2)" {
+    [[ "$(cursor_guard read '{"hook_event_name":"beforeReadFile","file_path":".env.notsample"}')" == "2" ]]
+}
+
+@test "cursor beforeReadFile .env.template-prod is denied (safe keyword not at suffix, exit 2)" {
+    [[ "$(cursor_guard read '{"hook_event_name":"beforeReadFile","file_path":".env.template-prod"}')" == "2" ]]
+}
+
+# Separator-form parity with the JS section (subshell + backtick).
+@test "cursor beforeShellExecution subshell cat .env is denied (exit 2)" {
+    [[ "$(cursor_guard shell '{"hook_event_name":"beforeShellExecution","command":"(cat .env)"}')" == "2" ]]
+}
+
+@test "cursor beforeShellExecution backtick cat .env is denied (exit 2)" {
+    # shellcheck disable=SC2016  # literal command text is the payload, not for expansion
+    [[ "$(cursor_guard shell '{"hook_event_name":"beforeShellExecution","command":"echo `cat .env`"}')" == "2" ]]
+}
