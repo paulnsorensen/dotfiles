@@ -17,12 +17,12 @@ Layout (under ``target``)::
 
 Plus the cross-harness shared path::
 
-    .claude/agents/<name>.md        also read by opencode + Cursor
+    .claude/agents/<name>.md        also read by Cursor
 
 Agents are written exclusively to the cross-harness shared path
 (``.claude/agents/<name>.md``); the plugin tree carries no agent files.
 The shared file wins precedence (priority 4 > plugin priority 5) and is
-the cross-harness surface for opencode + Cursor.
+the cross-harness surface for Cursor.
 
 JSON is emitted with stdlib :mod:`json` (``indent=2`` + trailing newline,
 byte-identical to the bash ``jq`` output). No ``jq``/``yq``.
@@ -192,7 +192,6 @@ class ClaudeRenderer:
             # single authoritative agent file — no plugin-scoped copy.
             if body is not None:
                 shared.write_shared_claude_agent(target, name, body, fm, out)
-
 
     def _write_skills(
         self,
