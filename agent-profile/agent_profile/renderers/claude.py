@@ -36,6 +36,7 @@ import shutil
 import stat
 import subprocess
 from pathlib import Path
+from typing import NamedTuple
 
 from agent_profile import shared
 from agent_profile.parse import Manifest
@@ -148,6 +149,16 @@ class ClaudeRenderer:
             settings.unlink()
             return
         settings.write_text(json.dumps(data, indent=2) + "\n")
+
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict dropped MCP servers (install reconcile). The plugin-scoped
+        ``.mcp.json`` is rewritten wholesale each render, so a dropped server
+        simply stops appearing — no drift there. Only user-scope
+        registrations in ``~/.claude.json`` persist across renders, so
+        unregister exactly the dropped servers by name. ``manifest`` holds
+        only the dropped MCPs (see the protocol contract)."""
+        if manifest.mcp_scope == "user":
+            self._unregister_user_mcps(manifest)
 
     # ─── helpers ─────────────────────────────────────────────────────
 
@@ -312,6 +323,16 @@ class ClaudeRenderer:
         if not wrote_any:
             return
 
+        # Strip legacy hook entries from the live .claude/settings.json that
+        # the retired agents/hooks/sync.sh jq-merged there before the ap
+        # migration (#217). Claude merges settings.json hooks with plugin
+        # hooks at load time, so an orphan copy either fires twice (a still-
+        # present command like moshi) or errors (a script path deleted when
+        # hooks moved into the plugin tree). Mirrors the codex renderer's
+        # _clean_legacy_config_toml_hooks; keyed off the hooks we just wired
+        # into the plugin, so it self-extends as the registry changes.
+        self._clean_legacy_settings_hooks(hook_entries, base)
+
         # Merge hook entries into both manifests so the on-disk JSON Claude
         # reads (.claude-plugin/plugin.json) gets the wiring; the root marker
         # stays in sync. Bash sets `.hooks = $h` — the key lands last.
@@ -319,6 +340,54 @@ class ClaudeRenderer:
             data = json.loads(mf.read_text())
             data["hooks"] = hook_entries
             _dump_json(mf, data)
+
+    # ─── legacy settings.json hook cleanup ─────────────────────────────
+    # Pre-#217, agents/hooks/sync.sh jq-merged the hook registry straight
+    # into ~/.claude/settings.json. The ap migration moved hook wiring into
+    # this plugin's plugin.json, but settings.json is a chezmoi create_ seed
+    # nothing prunes — so the old copies linger and Claude fires them
+    # alongside the plugin's (it merges both at load time). For each hook we
+    # just wired into the plugin, drop any settings.json hook whose command
+    # duplicates it. User hooks the plugin doesn't manage (the JS guards,
+    # rtk, a tmux Stop hook) carry no managed signature and survive.
+    def _clean_legacy_settings_hooks(
+        self, hook_entries: dict[str, list[dict]], base: Path
+    ) -> None:
+        settings = base / ".claude" / "settings.json"
+        if not settings.is_file():
+            return
+        managed_per_event = _managed_signatures_per_event(hook_entries)
+        if not managed_per_event:
+            return
+
+        data = read_json_object(settings, ".claude/settings.json")
+        hooks_table = data.get("hooks")
+        if not isinstance(hooks_table, dict):
+            return
+
+        changed = False
+        for event_key in list(hooks_table.keys()):
+            event_managed = managed_per_event.get(event_key)
+            if not event_managed:
+                continue  # not an event we manage — leave user entries alone
+            event_array = hooks_table.get(event_key)
+            if not isinstance(event_array, list):
+                continue
+            rebuilt = _prune_settings_blocks(event_array, event_managed)
+            if rebuilt is None:
+                continue  # nothing stripped for this event
+            changed = True
+            if rebuilt:
+                hooks_table[event_key] = rebuilt
+            else:
+                del hooks_table[event_key]
+
+        if not hooks_table:
+            data.pop("hooks", None)
+            changed = True
+
+        if changed:
+            settings.write_text(json.dumps(data, indent=2) + "\n")
 
     def _write_mcp_json(
         self,
@@ -528,3 +597,95 @@ class ClaudeRenderer:
             return
         data["plugins"] = remaining
         _dump_json(manifest_path, data)
+
+
+class _ManagedSigs(NamedTuple):
+    """Signatures of the plugin-managed hooks for one event, split by hook
+    type so the matcher can apply the right rule (see
+    :func:`_inner_hook_is_managed`): ``basenames`` are script-hook file
+    names matched by path token; ``commands`` are command-type hook strings
+    matched by exact equality."""
+
+    basenames: set[str]
+    commands: set[str]
+
+
+def _managed_signatures_per_event(
+    hook_entries: dict[str, list[dict]],
+) -> dict[str, _ManagedSigs]:
+    """Map each event to the signatures of the hooks just wired into the
+    plugin, split by type: the script basename (for a
+    ``${CLAUDE_PLUGIN_ROOT}/hooks/<base>`` command) goes in ``basenames``,
+    the full command string (for a command-type hook like moshi) in
+    ``commands``. Keying per-event mirrors the codex cleanup: a user routing
+    the same script through a different event than the registry manages must
+    survive the sweep. Splitting by type lets the matcher use exact equality
+    for command hooks (a user command that wraps or merely mentions a
+    managed one must not be pruned) rather than the old substring test."""
+    out: dict[str, _ManagedSigs] = {}
+    for event, entries in hook_entries.items():
+        for entry in entries:
+            for inner in entry.get("hooks", []):
+                cmd = inner.get("command", "")
+                if not isinstance(cmd, str) or not cmd:
+                    continue
+                sigs = out.setdefault(event, _ManagedSigs(set(), set()))
+                if "${CLAUDE_PLUGIN_ROOT}/hooks/" in cmd:
+                    sigs.basenames.add(cmd.split("/hooks/", 1)[1].split()[0])
+                else:
+                    sigs.commands.add(cmd)
+    return out
+
+
+def _prune_settings_blocks(
+    event_array: list, signatures: _ManagedSigs
+) -> "list | None":
+    """Rebuild a settings.json event array with managed hooks removed at the
+    inner-hook level. Returns ``None`` when nothing matched (the caller
+    short-circuits to avoid a no-op rewrite). A block whose inner hooks are
+    all managed is dropped entirely; a mixed block keeps its unmanaged
+    inner hooks so a user command sharing a block with a managed one
+    survives."""
+    rebuilt: list = []
+    changed = False
+    for block in event_array:
+        inner = block.get("hooks") if isinstance(block, dict) else None
+        if not isinstance(inner, list):
+            rebuilt.append(block)
+            continue
+        kept = [h for h in inner if not _inner_hook_is_managed(h, signatures)]
+        if len(kept) == len(inner):
+            rebuilt.append(block)
+            continue
+        changed = True
+        if kept:
+            new_block = dict(block)
+            new_block["hooks"] = kept
+            rebuilt.append(new_block)
+    return rebuilt if changed else None
+
+
+def _inner_hook_is_managed(inner: object, signatures: _ManagedSigs) -> bool:
+    """An inner hook is managed iff it matches a plugin-written signature by
+    its own type, never by substring:
+
+    - command-type hooks match by **exact command-string equality** — a user
+      hook that wraps a managed command (``bash -lc "<managed> ..."``) or
+      merely mentions it must survive;
+    - script-type hooks match when the command's final token is a path under
+      a ``/hooks/`` segment whose basename is managed (the
+      ``bash "<path>/hooks/<base>"`` form the retired sync.sh wrote),
+      mirroring ``codex.py:_is_managed_legacy_block``.
+    """
+    cmd = inner.get("command", "") if isinstance(inner, dict) else ""
+    if not isinstance(cmd, str) or not cmd:
+        return False
+    if cmd in signatures.commands:
+        return True
+    tokens = cmd.strip().split()
+    if not tokens:
+        return False
+    script_token = tokens[-1].strip("'").strip('"')
+    if "/hooks/" not in script_token:
+        return False
+    return Path(script_token).name in signatures.basenames
