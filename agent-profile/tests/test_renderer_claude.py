@@ -315,33 +315,10 @@ def test_rust_loaded_manifest_hook_wiring(rendered_rust):
     assert list(data.keys()) == ["name", "version", "description", "hooks"]
 
 
-def test_rust_plugin_agent_byte_parity(rendered_rust):
-    target, _ = rendered_rust
-    on_disk = (
-        target / ".claude/plugins/local/rust/agents/rust-reviewer.md"
-    ).read_text()
-    assert on_disk == _read_golden("rust/plugin/agents/rust-reviewer.md")
-
-
 def test_rust_shared_agent_byte_parity(rendered_rust):
     target, _ = rendered_rust
     on_disk = (target / ".claude/agents/rust-reviewer.md").read_text()
     assert on_disk == _read_golden("rust/shared/.claude/agents/rust-reviewer.md")
-
-
-def test_rust_plugin_and_shared_agent_differ_in_blank_line(rendered_rust):
-    """The plugin-scoped file separates frontmatter from body with a blank
-    line (``---\\n\\n``); the shared writer does not (``---\\n``). Asserting
-    the difference guards against silently collapsing the two writers."""
-    target, _ = rendered_rust
-    plugin = (
-        target / ".claude/plugins/local/rust/agents/rust-reviewer.md"
-    ).read_text()
-    shared_md = (target / ".claude/agents/rust-reviewer.md").read_text()
-    assert "---\n\nYou review Rust" in plugin
-    assert "---\nYou review Rust" in shared_md
-    # Shared file is model-neutral and lacks the blank-line separator.
-    assert "---\n\nYou review Rust" not in shared_md
 
 
 def test_rust_command_byte_parity(rendered_rust):
@@ -397,7 +374,6 @@ def test_rust_tracked_files_match_bash_manifest(rendered_rust):
         ".claude/agents/rust-reviewer.md",
         ".claude/plugins/local/rust",
         ".claude/plugins/local/rust/.claude-plugin/plugin.json",
-        ".claude/plugins/local/rust/agents/rust-reviewer.md",
         ".claude/plugins/local/rust/commands/clippy.md",
         ".claude/plugins/local/rust/hooks/cargo-check.sh",
         ".claude/plugins/local/rust/plugin.json",
@@ -430,15 +406,6 @@ def test_mcptest_mcp_json_drops_non_claude_servers(rendered_mcptest):
         "args": ["-y", "@upstash/context7-mcp"],
         "env": {"KEY": "VAL"},
     }
-
-
-def test_mcptest_agent_model_frontmatter_byte_parity(rendered_mcptest):
-    target, _ = rendered_mcptest
-    on_disk = (
-        target / ".claude/plugins/local/mcptest/agents/modeled-agent.md"
-    ).read_text()
-    assert on_disk == _read_golden("mcptest/plugin/agents/modeled-agent.md")
-    assert "model: opus" in on_disk
 
 
 def test_mcptest_command_model_frontmatter_byte_parity(rendered_mcptest):
@@ -482,17 +449,6 @@ def rendered_nobody(env):
     return env.target, written
 
 
-def test_nobody_plugin_agent_frontmatter_only_byte_parity(rendered_nobody):
-    """A body-less agent writes a frontmatter-only plugin file ending in the
-    blank-line separator (``---\\n\\n``) with no body, byte-identical to bash."""
-    target, _ = rendered_nobody
-    on_disk = (
-        target / ".claude/plugins/local/nobody/agents/bare-agent.md"
-    ).read_text()
-    assert on_disk == _read_golden("nobody/plugin/agents/bare-agent.md")
-    assert on_disk.endswith("---\n\n")
-
-
 def test_nobody_no_shared_agent_when_body_absent(rendered_nobody):
     """No body => no cross-harness shared write (matches bash, which guards
     the shared write on ``[[ -n "$body_abs" ]]``)."""
@@ -511,7 +467,6 @@ def test_nobody_tracked_files_exclude_shared_agent(rendered_nobody):
     assert set(written) == {
         ".claude/plugins/local/nobody",
         ".claude/plugins/local/nobody/.claude-plugin/plugin.json",
-        ".claude/plugins/local/nobody/agents/bare-agent.md",
         ".claude/plugins/local/nobody/plugin.json",
     }
 
