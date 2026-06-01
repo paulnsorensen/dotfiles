@@ -26,6 +26,7 @@ from pathlib import Path
 from agent_profile.parse import Manifest
 from agent_profile.renderers.claude import (
     ClaudeRenderer,
+    _ManagedSigs,
     _managed_signatures_per_event,
     _prune_settings_blocks,
 )
@@ -215,10 +216,8 @@ def test_signatures_split_script_basename_vs_command() -> None:
         ]
     }
     sigs = _managed_signatures_per_event(entries)
-    assert sigs["SessionStart"] == {
-        "session-start-cheese-flair.sh",
-        "'/x/moshi-hook' claude-hook",
-    }
+    assert sigs["SessionStart"].basenames == {"session-start-cheese-flair.sh"}
+    assert sigs["SessionStart"].commands == {"'/x/moshi-hook' claude-hook"}
 
 
 def test_cross_event_basename_survives() -> None:
@@ -232,7 +231,7 @@ def test_cross_event_basename_survives() -> None:
 
 def test_prune_returns_none_when_nothing_matches() -> None:
     arr = [{"hooks": [{"command": "rtk hook claude"}]}]
-    assert _prune_settings_blocks(arr, {"moshi"}) is None
+    assert _prune_settings_blocks(arr, _ManagedSigs(set(), {"moshi"})) is None
 
 
 def test_prune_keeps_unmanaged_inner_in_mixed_block() -> None:
@@ -244,5 +243,33 @@ def test_prune_keeps_unmanaged_inner_in_mixed_block() -> None:
             ]
         }
     ]
-    rebuilt = _prune_settings_blocks(arr, {"'/x/moshi-hook' claude-hook"})
+    rebuilt = _prune_settings_blocks(
+        arr, _ManagedSigs(set(), {"'/x/moshi-hook' claude-hook"})
+    )
     assert rebuilt == [{"hooks": [{"command": "rtk hook claude"}]}]
+
+
+def test_user_command_mentioning_managed_basename_survives() -> None:
+    # A user hook whose command merely CONTAINS a managed script basename as
+    # a non-script substring must NOT be pruned. The old substring matcher
+    # (`any(sig in cmd ...)`) wrongly evicted it.
+    arr = [{"hooks": [{"command": "echo session-start-cheese-flair.sh ran"}]}]
+    sigs = _ManagedSigs({"session-start-cheese-flair.sh"}, set())
+    assert _prune_settings_blocks(arr, sigs) is None
+
+
+def test_user_command_wrapping_managed_command_survives() -> None:
+    # A user hook that WRAPS the managed command (extra args / a shell
+    # wrapper) is not the managed command — exact equality, not substring,
+    # so it survives. The old substring matcher wrongly evicted it.
+    managed = "'/x/moshi-hook' claude-hook"
+    arr = [{"hooks": [{"command": f'bash -lc "{managed} --extra"'}]}]
+    sigs = _ManagedSigs(set(), {managed})
+    assert _prune_settings_blocks(arr, sigs) is None
+
+
+def test_managed_command_exact_match_still_pruned() -> None:
+    # The exact managed command IS pruned (the fix must not under-match).
+    managed = "'/x/moshi-hook' claude-hook"
+    arr = [{"hooks": [{"command": managed}]}]
+    assert _prune_settings_blocks(arr, _ManagedSigs(set(), {managed})) == []

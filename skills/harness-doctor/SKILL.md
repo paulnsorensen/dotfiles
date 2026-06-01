@@ -11,8 +11,10 @@ description: >
   `ap`/registry change to verify the live config converged. Grounds the wiki +
   git history for intended state, diffs live vs `ap` render, classifies each
   drift (stale remnant / dotfiles bug / expected local), self-heals safe
-  remnants via chezmoi/lib/heal-claude-settings.sh, opens deduped gh issues for
-  confirmed dotfiles bugs, and writes new drift patterns back to the wiki. Do
+  remnants via ap's renderers (ClaudeRenderer._clean_legacy_settings_hooks /
+  CodexRenderer._clean_legacy_config_toml_hooks) during ap install / dots sync,
+  opens deduped gh issues for confirmed dotfiles bugs, and writes new drift
+  patterns back to the wiki. Do
   NOT use for general code review (/age), single-file permission cleanup
   (/settings-clean), or app-level debugging.
 ---
@@ -233,5 +235,7 @@ of the report — cite `file:line`, don't paste.
   inline user hooks — those are not plugin-managed.
 - **Never** open an issue without deduping against open issues first.
 - **Never** fabricate git history or a wiki claim — cite the commit / page.
-- Healing edits a user-owned file: always leave the timestamped `.bak` the
-  helper writes, and report the path.
+- Healing edits a user-owned file in place: the renderers rewrite
+  `settings.json` / `config.toml` directly with no backup file. There is no
+  `.bak` to report — `git` / `chezmoi` is the undo path. Always report which
+  file changed and what was pruned.

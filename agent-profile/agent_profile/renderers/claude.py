@@ -36,6 +36,7 @@ import shutil
 import stat
 import subprocess
 from pathlib import Path
+from typing import NamedTuple
 
 from agent_profile import shared
 from agent_profile.parse import Manifest
@@ -598,32 +599,46 @@ class ClaudeRenderer:
         _dump_json(manifest_path, data)
 
 
+class _ManagedSigs(NamedTuple):
+    """Signatures of the plugin-managed hooks for one event, split by hook
+    type so the matcher can apply the right rule (see
+    :func:`_inner_hook_is_managed`): ``basenames`` are script-hook file
+    names matched by path token; ``commands`` are command-type hook strings
+    matched by exact equality."""
+
+    basenames: set[str]
+    commands: set[str]
+
+
 def _managed_signatures_per_event(
     hook_entries: dict[str, list[dict]],
-) -> dict[str, set[str]]:
+) -> dict[str, _ManagedSigs]:
     """Map each event to the signatures of the hooks just wired into the
-    plugin. A signature is the script basename (for a
-    ``${CLAUDE_PLUGIN_ROOT}/hooks/<base>`` command) or the full command
-    string (for a command-type hook like moshi). Keying per-event mirrors
-    the codex cleanup: a user routing the same script through a different
-    event than the registry manages must survive the sweep."""
-    out: dict[str, set[str]] = {}
+    plugin, split by type: the script basename (for a
+    ``${CLAUDE_PLUGIN_ROOT}/hooks/<base>`` command) goes in ``basenames``,
+    the full command string (for a command-type hook like moshi) in
+    ``commands``. Keying per-event mirrors the codex cleanup: a user routing
+    the same script through a different event than the registry manages must
+    survive the sweep. Splitting by type lets the matcher use exact equality
+    for command hooks (a user command that wraps or merely mentions a
+    managed one must not be pruned) rather than the old substring test."""
+    out: dict[str, _ManagedSigs] = {}
     for event, entries in hook_entries.items():
         for entry in entries:
             for inner in entry.get("hooks", []):
                 cmd = inner.get("command", "")
                 if not isinstance(cmd, str) or not cmd:
                     continue
+                sigs = out.setdefault(event, _ManagedSigs(set(), set()))
                 if "${CLAUDE_PLUGIN_ROOT}/hooks/" in cmd:
-                    sig = cmd.split("/hooks/", 1)[1].split()[0]
+                    sigs.basenames.add(cmd.split("/hooks/", 1)[1].split()[0])
                 else:
-                    sig = cmd
-                out.setdefault(event, set()).add(sig)
+                    sigs.commands.add(cmd)
     return out
 
 
 def _prune_settings_blocks(
-    event_array: list, signatures: set[str]
+    event_array: list, signatures: _ManagedSigs
 ) -> "list | None":
     """Rebuild a settings.json event array with managed hooks removed at the
     inner-hook level. Returns ``None`` when nothing matched (the caller
@@ -650,11 +665,27 @@ def _prune_settings_blocks(
     return rebuilt if changed else None
 
 
-def _inner_hook_is_managed(inner: object, signatures: set[str]) -> bool:
-    """An inner hook is managed iff its command contains a managed signature
-    — a script basename embedded in a ``bash "<path>/<base>"`` command, or an
-    exact command-string match (moshi). Substring covers both forms."""
+def _inner_hook_is_managed(inner: object, signatures: _ManagedSigs) -> bool:
+    """An inner hook is managed iff it matches a plugin-written signature by
+    its own type, never by substring:
+
+    - command-type hooks match by **exact command-string equality** — a user
+      hook that wraps a managed command (``bash -lc "<managed> ..."``) or
+      merely mentions it must survive;
+    - script-type hooks match when the command's final token is a path under
+      a ``/hooks/`` segment whose basename is managed (the
+      ``bash "<path>/hooks/<base>"`` form the retired sync.sh wrote),
+      mirroring ``codex.py:_is_managed_legacy_block``.
+    """
     cmd = inner.get("command", "") if isinstance(inner, dict) else ""
-    if not isinstance(cmd, str):
+    if not isinstance(cmd, str) or not cmd:
         return False
-    return any(sig in cmd for sig in signatures)
+    if cmd in signatures.commands:
+        return True
+    tokens = cmd.strip().split()
+    if not tokens:
+        return False
+    script_token = tokens[-1].strip("'").strip('"')
+    if "/hooks/" not in script_token:
+        return False
+    return Path(script_token).name in signatures.basenames

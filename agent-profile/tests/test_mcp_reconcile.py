@@ -21,9 +21,9 @@ import json
 import pytest
 import tomlkit
 
+import agent_profile.renderers.claude as cl
 from agent_profile import cli
 from agent_profile.parse import Manifest
-from agent_profile.renderers.claude import ClaudeRenderer
 from agent_profile.renderers.registry import build_registry
 from tests.conftest import write_profile
 
@@ -112,8 +112,6 @@ def test_reconcile_reports_pruned_names(env, capsys, prod_renderers):
 
 
 def test_claude_prune_unregisters_user_scope(monkeypatch, tmp_path):
-    import agent_profile.renderers.claude as cl
-
     calls: list[list[str]] = []
 
     def fake_run(cmd, *a, **k):
@@ -133,15 +131,75 @@ def test_claude_prune_unregisters_user_scope(monkeypatch, tmp_path):
         mcps=[{"name": "gone", "command": "/bin/true", "args": []}],
         mcp_scope="user",
     )
-    ClaudeRenderer().prune_mcps(dropped, tmp_path)
+    cl.ClaudeRenderer().prune_mcps(dropped, tmp_path)
 
     removes = [c for c in calls if "remove" in c and "gone" in c]
     assert removes, f"expected a `claude mcp remove gone`, got {calls}"
 
 
-def test_claude_prune_noop_for_plugin_scope(monkeypatch, tmp_path):
-    import agent_profile.renderers.claude as cl
+def _yaml_claude_user(name: str, mcp_names: list[str]) -> str:
+    lines = [
+        f"name: {name}",
+        "description: reconcile probe",
+        "mcp_scope: user",
+        "mcps:",
+    ]
+    for n in mcp_names:
+        lines += [
+            f"  - name: {n}",
+            "    command: /bin/true",
+            "    args: [--flag]",
+            "    harnesses: [claude]",
+        ]
+    return "\n".join(lines) + "\n"
 
+
+def test_dropped_mcp_unregistered_from_claude_user_scope(
+    env, capsys, monkeypatch, prod_renderers
+):
+    # The production `global` profile installs claude MCPs at USER scope into
+    # the live ~/.claude.json (mcp_scope: user) — the only reconcile path that
+    # shells out to the `claude` CLI, and the highest-stakes eviction. The
+    # `_yaml` integration fixture above excludes claude, so without this the
+    # reconcile loop's claude branch is never driven end-to-end through
+    # cli.main. Drive it and assert the dropped server is unregistered.
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *a, **k):
+        calls.append(cmd)
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(cl.shutil, "which", lambda _: "/usr/bin/claude")
+    monkeypatch.setattr(cl.subprocess, "run", fake_run)
+
+    write_profile(env.profiles, "g", _yaml_claude_user("g", ["srv1", "srv2"]))
+    assert _install(env, "g") == 0
+    capsys.readouterr()
+    calls.clear()  # discard first-install register churn
+
+    # Re-install with srv2 dropped from the registry.
+    write_profile(env.profiles, "g", _yaml_claude_user("g", ["srv1"]))
+    assert _install(env, "g") == 0
+    capsys.readouterr()
+
+    # Reconcile must `claude mcp remove srv2` and never re-add it.
+    assert [
+        c for c in calls if "remove" in c and "srv2" in c
+    ], f"expected `claude mcp remove srv2`, got {calls}"
+    assert not [
+        c for c in calls if "add" in c and "srv2" in c
+    ], f"dropped srv2 must not be re-registered, got {calls}"
+    # The survivor is still re-registered.
+    assert [
+        c for c in calls if "add" in c and "srv1" in c
+    ], f"survivor srv1 must stay registered, got {calls}"
+
+
+def test_claude_prune_noop_for_plugin_scope(monkeypatch, tmp_path):
     def boom(*a, **k):  # would raise if the CLI were touched
         raise AssertionError("plugin-scope prune must not call the claude CLI")
 
@@ -152,4 +210,4 @@ def test_claude_prune_noop_for_plugin_scope(monkeypatch, tmp_path):
         mcps=[{"name": "gone", "command": "/bin/true", "args": []}],
         # default mcp_scope (not "user") → plugin .mcp.json is whole-file
     )
-    ClaudeRenderer().prune_mcps(dropped, tmp_path)  # must be a no-op
+    cl.ClaudeRenderer().prune_mcps(dropped, tmp_path)  # must be a no-op
