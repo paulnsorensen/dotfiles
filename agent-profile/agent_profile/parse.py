@@ -77,6 +77,14 @@ class Manifest:
     # expand at use-time, not parse-time.
     target_default: str | None = None
     marketplaces: dict[str, str] = field(default_factory=dict)
+    # MCP registration scope (claude renderer only). ``"plugin"`` (default)
+    # writes the bundled plugin's ``.mcp.json`` (plugin-scoped tool names
+    # ``mcp__plugin_<profile>_<server>__*``). ``"user"`` registers each
+    # server at user scope via ``claude mcp add --scope user`` (bare tool
+    # names ``mcp__<server>__*``) and skips the plugin ``.mcp.json``. Other
+    # harnesses already write a single bare user-level config and ignore
+    # this field. Outer-profile only, like the install fields above.
+    mcp_scope: str = "plugin"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the same JSON shape parse.sh emits (used for the
@@ -90,6 +98,7 @@ class Manifest:
             "settings": self.settings,
             "name": self.name,
             "description": self.description,
+            "mcp_scope": self.mcp_scope,
         }
 
 
@@ -142,6 +151,13 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         if s:
             _validate_relpath("script", str(s), str(manifest_path))
 
+    scope = raw.get("mcp_scope")
+    if scope is not None and scope not in ("plugin", "user"):
+        raise ParseError(
+            f"ap_parse_one: {manifest_path} has invalid mcp_scope "
+            f"{scope!r} (expected 'plugin' or 'user')"
+        )
+
     sd = str(profile_dir)
 
     def _decorate(items: list[Any]) -> list[dict[str, Any]]:
@@ -176,6 +192,7 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         "extra_args": list(raw.get("extra_args") or []),
         "target_default": raw.get("target_default") or None,
         "marketplaces": dict(raw.get("marketplaces") or {}),
+        "mcp_scope": raw.get("mcp_scope") or "plugin",
         # Registry-derived items come first; inline items append (matching
         # the include "outer last" convention so an inline override on a
         # name-collision wins on scalar/object merges downstream).
@@ -302,6 +319,7 @@ def _parse_with_includes(
         "extra_args",
         "target_default",
         "marketplaces",
+        "mcp_scope",
     ):
         merged[key] = self_[key]
     return merged
@@ -340,4 +358,5 @@ def parse_manifest(profile_dir: Path, find_profile_dir: Any = None) -> Manifest:
         extra_args=merged["extra_args"],
         target_default=merged["target_default"],
         marketplaces=merged["marketplaces"],
+        mcp_scope=merged["mcp_scope"],
     )

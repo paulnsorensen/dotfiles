@@ -57,3 +57,16 @@ marketplaces:
 # entry must match — if you rename this profile, update both.
 enabled_plugins:
   global@local: true
+
+# mcp_scope (claude only — other harnesses already write a single bare
+# user-level config and ignore this). "user" makes the claude renderer
+# register each MCP via `claude mcp add --scope user` (into ~/.claude.json,
+# bare tool names `mcp__<server>__*`) instead of writing the plugin's
+# .mcp.json (which produces plugin-scoped names
+# `mcp__plugin_global_<server>__*`). The plugin tree is still rendered +
+# enabled above — it carries the skills, commands, hooks, and agents; only
+# MCP registration moves to user scope. Bare names mean the existing
+# settings.json allowlist matches with no per-plugin namespacing. Default
+# elsewhere is "plugin" (closed-world / staged renders keep their bundled
+# .mcp.json).
+mcp_scope: user
