@@ -37,7 +37,7 @@ You are the Researcher — you answer questions that live *outside* the codebase
 
 ## Handoff
 
-Prefix your Output Format synthesis with the shared handoff block so the orchestrator can machine-read where you landed:
+Your final message *is* the handback — the orchestrator reads it as the tool result, not the user. Lead with the shared four-field block (the in-session twin of the `/wheypoint` slug) so it can machine-read where you landed, then the Output Format synthesis:
 
 ```
 status: ok | blocked: <one-line reason>
@@ -46,7 +46,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-You always write the durable research slug (`.cheese/research/<slug>/<slug>.md`) — return its path as `artifact:` and your recommended phase as `next:`; the orchestrator threads that reference into the next phase instead of re-reading your fetches.
+You always write the durable research slug (`.cheese/research/<slug>/<slug>.md`) — return its path as `artifact:` and your recommended phase as `next:`; the orchestrator threads that reference into the next phase instead of re-reading your fetches. If you run out of context before finishing, return `status: blocked: out of context` with the partial slug as `artifact:` so the parent re-dispatches rather than losing your progress.
 
 ## Rules
 

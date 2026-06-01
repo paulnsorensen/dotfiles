@@ -61,6 +61,8 @@ The cheese sub-agents. Metadata lives in the registry; instruction bodies live a
 
 Two tiers live here: narrow specialists (`fromage-*`, `ghostbuster`, `nih-scanner`, `ricotta-reducer`, `roquefort-wrecker`, `duckdb-expert`, `whey-drainer`, `worktree-triage`) used as fork targets, and four general phase agents (`explorer`/`researcher`/`reviewer`/`coder`) modelling the explore→research→review→code loop. Planning is intentionally *not* an agent: it owns the human-approval loop and a level-1 sub-agent can't fan out, so it stays an orchestrator concern.
 
+The four phase agents hand results back through their **final message**, which the harness returns to the orchestrator as the tool result; each opens that message with the four-field handoff block (`status` / `next` / `artifact` / one-line orientation) defined in `agents/preamble.md`'s *Cross-phase handoff* section. That block is the deliberate in-session twin of the `/wheypoint` slug — same four fields, `blocked:` where wheypoint uses `halt:`. The agents do **not** call `/wheypoint` on clean completion: `/wheypoint` is the cross-session baton and explicitly disclaims per-phase handoffs. The one sanctioned exception is context exhaustion mid-task — an agent that can't finish in its own window returns `status: blocked: out of context` with `artifact:` pointing at a partial slug (`.cheese/notes/<slug>.md` for the coder, its own `.cheese/<phase>/` artifact for the read-only three) so the orchestrator re-dispatches a fresh agent instead of losing progress.
+
 ### Skills — `skills/` tree + `skills/_registry.yaml`
 
 Two sources unioned at ingest (`ingest._expand_skills`):

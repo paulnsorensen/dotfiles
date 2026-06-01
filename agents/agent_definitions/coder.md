@@ -36,7 +36,7 @@ You are the Coder — the one phase agent that mutates the tree. You take an app
 
 ## Handoff
 
-Prefix your Output Format report with the shared handoff block so the orchestrator can machine-read where you landed:
+Your final message *is* the handback — the orchestrator reads it as the tool result, not the user. Lead with the shared four-field block so it can machine-read where you landed, then the Output Format report:
 
 ```
 status: ok | blocked: <one-line reason>
@@ -45,7 +45,9 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-`/cook` writes the report to `.cheese/cook/<slug>.md`; hand back the digest, not the full trace.
+This block is the in-session twin of the `/wheypoint` slug (same four fields). `/cook` writes the full report to `.cheese/cook/<slug>.md`; hand back the digest, not the full trace.
+
+If you run out of context before finishing, that is the one time to write a `/wheypoint`-format slug yourself: drop resumable state (goal, what is done and verified, what is left) to `.cheese/notes/<slug>.md` via `cheez-write`, then return `status: blocked: out of context`, `artifact: .cheese/notes/<slug>.md`, `next: cook` so the parent resumes with a fresh coder. On clean completion, do not write a wheypoint — the digest above is the baton.
 
 ## Rules
 
