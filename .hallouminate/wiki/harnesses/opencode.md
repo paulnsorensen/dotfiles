@@ -2,7 +2,7 @@
 
 The sst/opencode CLI. Config lives under `~/.config/opencode/`, centred on `opencode.json`. Docs root: [opencode.ai/docs](https://opencode.ai/docs).
 
-Unlike the dot-dir harnesses, opencode writes config at the *target root* (`~/.config/opencode/`), not a `.opencode/` subdir. So chezmoi drives it with a separate `ap install base --target ~/.config/opencode --harness opencode` (not `global` — there's no marketplace/plugin surface to enable). `opencode.json` is seeded once (chezmoi `create_opencode.json`) then the renderer jq-merges only the `mcp` + `permission.bash` keys.
+Unlike the dot-dir harnesses, opencode writes config at the *target root* (`~/.config/opencode/`), not a `.opencode/` subdir. So chezmoi drives it with a separate `ap install base --target ~/.config/opencode --harness opencode` (not `global` — there's no marketplace/plugin surface to enable). `opencode.json` is seeded once (chezmoi `create_opencode.json`) then the renderer merges only the `mcp` + `permission.bash` keys via Python stdlib `json` (read-modify-write, no jq).
 
 ## Capabilities, docs, and repo wiring
 
@@ -21,6 +21,6 @@ Not available. opencode has no closed-world launch flags; `ap` isolated launches
 
 ## Quirks
 
-- **No non-interactive MCP CLI**: opencode has no `mcp add` command, so the renderer jq-edits `opencode.json` directly. `OPENCODE_CONFIG` overrides the target path (used by tests).
+- **No non-interactive MCP CLI**: opencode has no `mcp add` command, so the renderer edits `opencode.json` directly via Python stdlib `json` (read-modify-write, no jq). `OPENCODE_CONFIG` overrides the target path (used by tests).
 - **`.json` not `.jsonc`**: the scaffold writes `opencode.json`. If migrating from a hand-rolled `opencode.jsonc`, merge into `opencode.json` and delete the `.jsonc` (opencode reads either; having both is confusing).
 - No native modal vim editing in the input box — the `ctrl+o` rebind pops the textbox out to `$EDITOR` (vim) as the closest workflow.

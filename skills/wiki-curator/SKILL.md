@@ -67,7 +67,7 @@ Two hard rules that keep the wiki trustworthy:
 
 `harnesses/index.md` carries a capability support matrix (hooks / sub-agents / MCP / system prompt / settings / skills / isolated launch) and a "this repo → harness" mapping table. When a harness page changes, reconcile the matrix. When the upstream tool ships a new capability, add the row + the verified doc link on the harness page first, then the matrix.
 
-The four harness pages are self-contained reference: each has a `Capability | Official doc | This repo` table. The official doc column must be live URLs (rule in step 3); the "This repo" column points at the `ap` renderer / registry that wires it (see [[architecture/agent-profile]]).
+The five harness pages are self-contained reference: each has a `Capability | Official doc | This repo` table. The official doc column must be live URLs (rule in step 3); the "This repo" column points at the `ap` renderer / registry that wires it (see [[architecture/agent-profile]]).
 
 ## Gotchas
 

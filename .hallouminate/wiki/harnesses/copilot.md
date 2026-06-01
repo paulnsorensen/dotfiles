@@ -2,7 +2,7 @@
 
 GitHub's coding-agent CLI. Config lives under `~/.copilot/` and (project-scoped) `.github/`. Docs root: [docs.github.com/en/copilot](https://docs.github.com/en/copilot/how-tos/copilot-cli).
 
-`ap`'s copilot renderer (`renderers/copilot.py`) writes project-scoped agent/skill/hook artifacts under `.github/` and merges MCP servers into `~/.copilot/mcp-config.json`. The MCP config is also templated by chezmoi (`private_dot_copilot/mcp-config.json.tmpl`, env-rendered API keys).
+`ap`'s copilot renderer (`renderers/copilot.py`) writes agent/skill/hook artifacts into a `.github/` layout and merges MCP servers into `~/.copilot/mcp-config.json`. The MCP config is also templated by chezmoi (`private_dot_copilot/mcp-config.json.tmpl`, env-rendered API keys).
 
 ## Capabilities, docs, and repo wiring
 
@@ -21,5 +21,5 @@ Not available. Copilot CLI has no closed-world launch flags; `ap` isolated launc
 
 ## Quirks
 
-- Skill/agent/hook artifacts are **project-scoped** (`.github/`), unlike the other harnesses' user-scoped (`~/.<harness>/`) deploys — so they land per-repo.
+- Skill/agent/hook artifacts target Copilot's **project-scoped** `.github/` layout (its read convention), unlike the other harnesses' user-scoped `~/.<harness>/` deploys. But the live deploy runs `ap install global` with `target_default: $HOME` (`profiles/global`), so the renderer — which writes `.github/…` relative to its target — lands them under `$HOME` (`~/.github/`), *not* the current repo.
 - Copilot resolves skills from multiple roots including `.claude/skills` and `.agents/skills`, so some shared skill dirs are picked up without a Copilot-specific copy.

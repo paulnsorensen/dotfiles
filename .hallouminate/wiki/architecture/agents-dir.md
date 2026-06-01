@@ -19,7 +19,7 @@ The registries are also the stable **edit surface**: `mcp-edit`, `hook-edit`, `a
 | Sub-agents | `agents/registry.yaml` | `agent-edit` | name-keyed mapping |
 | Skills | `skills/_registry.yaml` (external) + `skills/` tree (local) | `skill-edit` | sources + dir tree |
 
-These four are unioned by the `base` profile, which is the *only* consumer that reads them directly (see `profiles/base/profile.yaml` and the companion page). Everything downstream — every harness layout — flows from this union.
+These four are unioned by the `base` profile — the only profile that reads *all four* registries (see `profiles/base/profile.yaml`). The isolated profiles (`fe`, `review`, `spec`, `notion`, `todo`, `plugin`, `rtkonly`) are closed worlds that do *not* `include: [base]`; each references the agents registry directly via `registries: {agents: agents/registry.yaml}`. Everything downstream — every harness layout — flows from the `base` union.
 
 ### MCP registry — `agents/mcp/registry.yaml`
 
@@ -42,7 +42,7 @@ Note: the bash-style `${VAR}` env refs (resolved from `$DOTFILES_DIR/.env`) are 
 
 A mapping of `name → {event, script|command, shared_assets, harnesses, matcher, timeout, async, description}`. Key design points:
 
-- **`script` vs `command` are mutually exclusive.** `script` is a repo-relative path that gets *deployed* (copied) into the harness layout; `command` is a literal string used verbatim with no file deploy. The renderers raise loudly if both or neither is set.
+- **`script` vs `command` are mutually exclusive.** `script` is a repo-relative path that gets *deployed* (copied) into the harness layout; `command` is a literal string used verbatim with no file deploy. The **Claude** renderer raises loudly if both or neither is set (`claude.py`); the Codex/Cursor/Copilot renderers assume `script` and silently ignore a stray `command`, so the both/neither invariant is enforced only under Claude.
 - **`shared_assets`** — repo-relative data files the hook script reads at runtime (its lib + bank). Each must live under `agents/<subdir>/<file>` and is deployed to `~/.<harness>/<subdir>/<file>`. Because the chezmoi installer derives its copy list from this field, *adding a new hook with new assets is a pure registry edit* — no installer change.
 - **`harnesses`** defaults to **claude-only** (every renderer's hook default is `("claude",)`); any other harness needs an explicit opt-in. opencode has no hook renderer at all, so it never receives hooks regardless. The shipped cheese-flair hook lists `[claude, codex]` explicitly.
 - **`matcher`** — event-and-harness-dependent. Only `(PreToolUse, PostToolUse)` write a matcher under Claude; `SessionStart` writes one only under Codex (a `startup|resume|clear` source regex). The valid-events set and the matcher rules live in `agents/hooks/lib.sh`; the claude renderer re-encodes the claude half as `_CLAUDE_MATCHER_EVENTS = {PreToolUse, PostToolUse}` and that pair must stay in sync with lib.sh.
