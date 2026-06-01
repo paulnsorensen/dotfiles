@@ -45,12 +45,14 @@ The hard part: the `${VAR}` runtime-expansion syntax is **not** uniform.
 | **copilot** | yes (fragile) | `${VAR}` (literal) | chezmoi template, NOT the `ap` renderer |
 
 ### claude — literal passthrough, no code change
+
 `_register_user_mcps` / `mcp_server_entry` already pass `entry["env"]` through;
 with the literal flowing in, the CLI stores `${VAR}` verbatim and Claude expands
 it at launch. Empirically verified: `claude mcp add probe -e PROBE_KEY='${FAKE}'`
 stores `"${FAKE}"` literally.
 
 ### codex — scrub-by-keyname, unchanged
+
 `codex.py` drops any env key present in `$DOTFILES_DIR/.env` from the rendered
 TOML (zsh already exports them; codex is terminal-launched so its MCP children
 inherit at runtime). The registry shape is `KEY: "${KEY}"` (key == varname), so
@@ -59,6 +61,7 @@ or a resolved secret. Neither the placeholder nor a secret lands in
 `config.toml`.
 
 ### opencode — rewrite `${VAR}` → `{env:VAR}`
+
 opencode does **not** understand `${VAR}` — it passes it through verbatim and
 breaks (unset → silent empty string). `opencode._to_opencode_env` rewrites every
 `${VAR}` occurrence to opencode's own `{env:VAR}` token; plain literals (e.g.
@@ -66,6 +69,7 @@ breaks (unset → silent empty string). `opencode._to_opencode_env` rewrites eve
 through untouched.
 
 ### cursor — drop `${VAR}`, add `envFile`
+
 Cursor's `${env:VAR}` resolves against Cursor's *process* env, but a Finder/Dock
 launch inherits **no** shell `.env`. So `_cursor_mcp_entry` splits env into
 `${VAR}`-referencing entries vs plain literals: literals stay in `env`; if any
@@ -77,6 +81,7 @@ path in user config is acceptable — same precedent as the marketplace path in
 `claude.py`'s `_merge_root_settings`.
 
 ### copilot — chezmoi template, not the renderer
+
 copilot is **excluded** from the `ap` MCP default membership
 (`_COPILOT_MCP_DEFAULT = (claude, codex)`), so the `ap` copilot renderer writes
 nothing for context7/tavily. The live `~/.copilot/mcp-config.json` is written by

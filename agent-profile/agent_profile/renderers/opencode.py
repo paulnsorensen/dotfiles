@@ -23,7 +23,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from agent_profile.env import _VAR_RE
+from agent_profile.env import VAR_RE
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import body_abs, mcps_for, read_json_object
 from agent_profile.shared import agent_is_read_only, strip_frontmatter, track_file
@@ -64,7 +64,7 @@ def _to_opencode_env(value: str) -> str:
     carries — it passes it through verbatim and breaks (MCP-secret-passthrough).
     Its runtime expansion token is ``{env:VAR}``. Plain literals (no ``${}``)
     pass through unchanged."""
-    return _VAR_RE.sub(lambda m: f"{{env:{m.group(1)}}}", value)
+    return VAR_RE.sub(lambda m: f"{{env:{m.group(1)}}}", value)
 
 
 def _mcp_server_record(mcp: dict[str, Any]) -> dict[str, Any]:

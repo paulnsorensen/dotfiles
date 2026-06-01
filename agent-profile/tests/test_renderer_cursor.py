@@ -388,6 +388,48 @@ def test_mcp_envfile_falls_back_to_home_dotfiles_when_dotfiles_dir_unset(
     assert entry["envFile"] == "/home/user/Dev/dotfiles/.env"
 
 
+def test_mcp_renamed_var_ref_fails_loud(tmp_path, monkeypatch):
+    """A ``${VAR}`` env value that is NOT an exact self-reference — a renamed
+    key (``API_KEY: "${TOKEN}"``) — cannot be represented by Cursor's
+    ``envFile`` (which loads vars by their own names), so the renderer fails
+    loud rather than silently dropping the key and emitting a broken server
+    entry."""
+    monkeypatch.setenv("DOTFILES_DIR", "/abs/dots")
+    m, target, _ = _manifest(
+        tmp_path,
+        mcps=[
+            {
+                "name": "renamed",
+                "command": "npx",
+                "env": {"API_KEY": "${TODOIST_API_KEY}"},
+                "harnesses": ["cursor"],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="not an exact self-reference"):
+        CursorRenderer().render(m, target)
+
+
+def test_mcp_embedded_var_ref_fails_loud(tmp_path, monkeypatch):
+    """An embedded ``${VAR}`` (surrounded by other text) is likewise
+    unrepresentable by ``envFile`` and fails loud rather than silently
+    dropping the key."""
+    monkeypatch.setenv("DOTFILES_DIR", "/abs/dots")
+    m, target, _ = _manifest(
+        tmp_path,
+        mcps=[
+            {
+                "name": "embedded",
+                "command": "npx",
+                "env": {"URL": "https://x/${TOKEN}/y"},
+                "harnesses": ["cursor"],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="not an exact self-reference"):
+        CursorRenderer().render(m, target)
+
+
 def test_mcp_merge_preserves_user_entries(tmp_path):
     m, target, _ = _manifest(
         tmp_path,

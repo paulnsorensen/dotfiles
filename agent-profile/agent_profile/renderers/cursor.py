@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_profile import shared
-from agent_profile.env import _VAR_RE
+from agent_profile.env import VAR_RE
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import (
     body_abs,
@@ -299,7 +299,18 @@ def _dotenv_abs_path() -> str:
 
 
 def _has_var_ref(value: str) -> bool:
-    return _VAR_RE.search(value) is not None
+    return VAR_RE.search(value) is not None
+
+
+def _is_self_reference(key: str, value: str) -> bool:
+    """True when ``value`` is exactly ``${key}``.
+
+    The only ``${VAR}`` shape Cursor's ``envFile`` can faithfully reproduce:
+    ``envFile`` loads vars by their own names, so a renamed key
+    (``API_KEY: "${TOKEN}"``) or an embedded reference
+    (``URL: "https://x/${TOKEN}/y"``) would be lost. All current registry MCPs
+    use the self-reference form ``KEY: "${KEY}"``."""
+    return value == f"${{{key}}}"
 
 
 def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
@@ -313,13 +324,28 @@ def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
     no shell env). Cursor's stdio servers support an ``envFile`` field that
     loads a ``.env`` at launch — so any ``${VAR}``-referencing entry is dropped
     from ``env`` and the abs ``.env`` path is added as ``envFile`` instead.
-    Plain literals (no ``${VAR}``) stay in ``env``."""
+    Plain literals (no ``${VAR}``) stay in ``env``.
+
+    ``envFile`` can only represent the exact self-reference shape
+    ``KEY: "${KEY}"`` (it loads vars by their own names). A renamed key or an
+    embedded reference would be silently lost, so we fail loud on those rather
+    than emit a broken server entry."""
     entry: dict[str, Any] = {
         "command": mcp["command"],
         "args": mcp.get("args") if mcp.get("args") is not None else [],
     }
     env = mcp.get("env")
     if env is not None:
+        for k, v in env.items():
+            sv = str(v)
+            if _has_var_ref(sv) and not _is_self_reference(k, sv):
+                raise ValueError(
+                    f"cursor renderer: env entry {k!r}={sv!r} references a "
+                    "${VAR} that is not an exact self-reference. Cursor's "
+                    "envFile loads vars by their own names and cannot "
+                    'represent a renamed key or an embedded reference. Use the '
+                    'KEY: "${KEY}" form, or handle this MCP explicitly.'
+                )
         literals = {k: v for k, v in env.items() if not _has_var_ref(str(v))}
         has_var_ref = len(literals) != len(env)
         if literals:
