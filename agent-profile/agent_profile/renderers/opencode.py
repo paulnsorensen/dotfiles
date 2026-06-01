@@ -23,6 +23,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from agent_profile.env import _VAR_RE
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import body_abs, mcps_for, read_json_object
 from agent_profile.shared import agent_is_read_only, strip_frontmatter, track_file
@@ -56,17 +57,33 @@ def _allow_keys(manifest: Manifest) -> list[str]:
     ]
 
 
+def _to_opencode_env(value: str) -> str:
+    """Rewrite every ``${VAR}`` in an env value to opencode's ``{env:VAR}``.
+
+    opencode does NOT understand the ``${VAR}`` shell syntax the registry
+    carries — it passes it through verbatim and breaks (MCP-secret-passthrough).
+    Its runtime expansion token is ``{env:VAR}``. Plain literals (no ``${}``)
+    pass through unchanged."""
+    return _VAR_RE.sub(lambda m: f"{{env:{m.group(1)}}}", value)
+
+
 def _mcp_server_record(mcp: dict[str, Any]) -> dict[str, Any]:
     """The opencode mcp-server shape:
     ``{type: "local", enabled: True, command: [cmd, *args], environment?}``.
-    Port of the bash ``{type, enabled, command} + {environment}`` reduce."""
+    Port of the bash ``{type, enabled, command} + {environment}`` reduce.
+
+    Env values carry the literal ``${VAR}`` from ingest; each is rewritten to
+    opencode's ``{env:VAR}`` placeholder so opencode expands it at launch and
+    no secret is baked into ``opencode.json``."""
     record: dict[str, Any] = {
         "type": "local",
         "enabled": True,
         "command": [mcp["command"], *(mcp.get("args") or [])],
     }
     if mcp.get("env") is not None:
-        record["environment"] = mcp["env"]
+        record["environment"] = {
+            k: _to_opencode_env(str(v)) for k, v in mcp["env"].items()
+        }
     return record
 
 

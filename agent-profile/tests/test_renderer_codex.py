@@ -468,6 +468,39 @@ def test_mcp_env_block_omitted_when_fully_scrubbed(renderer, src, target, monkey
     assert "env" not in doc["mcp_servers"]["todoist"]
 
 
+def test_mcp_literal_var_is_scrubbed_no_placeholder_or_secret(
+    renderer, src, target, monkeypatch, tmp_path
+):
+    """Criterion 6: with the MCP-secret-passthrough flow the manifest now
+    carries the literal ``${VAR}`` (not a resolved secret). Codex's
+    scrub-by-keyname must still drop the `.env`-keyed entry, so neither the
+    `${VAR}` placeholder NOR any secret lands in config.toml — codex inherits
+    the value from the shell env at runtime."""
+    dotfiles = tmp_path / "df"
+    dotfiles.mkdir()
+    (dotfiles / ".env").write_text("CONTEXT7_API_KEY=ctx7sk-real-secret\n")
+    monkeypatch.setenv("DOTFILES_DIR", str(dotfiles))
+    monkeypatch.delenv("AP_CODEX_INHERIT_ENV", raising=False)
+
+    m = _manifest(
+        src,
+        mcps=[
+            {
+                "name": "context7",
+                "command": "npx",
+                "env": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"},
+                "harnesses": ["codex"],
+            }
+        ],
+    )
+    renderer.render(m, target)
+    raw = (target / ".codex" / "config.toml").read_text()
+    assert "${CONTEXT7_API_KEY}" not in raw
+    assert "ctx7sk-real-secret" not in raw
+    doc = tomllib.loads(raw)
+    assert "env" not in doc["mcp_servers"]["context7"]
+
+
 # ─── commands deprecated, AGENTS.md never touched ─────────────────────────
 
 

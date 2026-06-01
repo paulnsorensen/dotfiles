@@ -276,6 +276,118 @@ def test_mcp_entry_args_default_empty_and_env_preserved(tmp_path):
     assert entry == {"command": "uvx", "args": [], "env": {"K": "v"}}
 
 
+def test_mcp_secret_var_dropped_and_envfile_added(tmp_path, monkeypatch):
+    """Criterion 8: Cursor is GUI-launched, so a ``${VAR}`` in ``env`` does not
+    resolve against the shell. A secret-bearing (``${VAR}``-referencing) server
+    drops the ``${VAR}`` env entry and gains ``envFile`` = abs ``.env``; plain
+    literals remain in ``env``. No secret on disk."""
+    monkeypatch.setenv("DOTFILES_DIR", "/abs/dots")
+    m, target, _ = _manifest(
+        tmp_path,
+        mcps=[
+            {
+                "name": "context7",
+                "command": "npx",
+                "args": ["-y", "@upstash/context7-mcp"],
+                "env": {
+                    "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}",
+                    "SERENA_MUX_HARNESS": "cursor",
+                },
+                "harnesses": ["cursor"],
+            }
+        ],
+    )
+    CursorRenderer().render(m, target)
+    import json
+
+    raw = (target / ".cursor" / "mcp.json").read_text()
+    entry = json.loads(raw)["mcpServers"]["context7"]
+    # The ${VAR} entry is gone; the plain literal stays.
+    assert entry["env"] == {"SERENA_MUX_HARNESS": "cursor"}
+    assert entry["envFile"] == "/abs/dots/.env"
+    assert "${CONTEXT7_API_KEY}" not in raw
+
+
+def test_mcp_no_var_ref_keeps_env_no_envfile(tmp_path, monkeypatch):
+    """A server whose env has NO ``${VAR}`` reference keeps its plain ``env``
+    and gains no ``envFile`` — envFile is added only when a ${VAR} entry was
+    dropped."""
+    monkeypatch.setenv("DOTFILES_DIR", "/abs/dots")
+    m, target, _ = _manifest(
+        tmp_path,
+        mcps=[
+            {
+                "name": "plain",
+                "command": "uvx",
+                "env": {"SERENA_MUX_HARNESS": "cursor"},
+                "harnesses": ["cursor"],
+            }
+        ],
+    )
+    CursorRenderer().render(m, target)
+    import json
+
+    entry = json.loads((target / ".cursor" / "mcp.json").read_text())[
+        "mcpServers"
+    ]["plain"]
+    assert entry["env"] == {"SERENA_MUX_HARNESS": "cursor"}
+    assert "envFile" not in entry
+
+
+def test_mcp_all_env_vars_dropped_omits_env_key(tmp_path, monkeypatch):
+    """When every env entry is a ${VAR} ref, ``env`` is omitted entirely (no
+    empty ``env: {}`` left dangling) and ``envFile`` carries the lookup."""
+    monkeypatch.setenv("DOTFILES_DIR", "/abs/dots")
+    m, target, _ = _manifest(
+        tmp_path,
+        mcps=[
+            {
+                "name": "tavily",
+                "command": "npx",
+                "env": {"TAVILY_API_KEY": "${TAVILY_API_KEY}"},
+                "harnesses": ["cursor"],
+            }
+        ],
+    )
+    CursorRenderer().render(m, target)
+    import json
+
+    entry = json.loads((target / ".cursor" / "mcp.json").read_text())[
+        "mcpServers"
+    ]["tavily"]
+    assert "env" not in entry
+    assert entry["envFile"] == "/abs/dots/.env"
+
+
+def test_mcp_envfile_falls_back_to_home_dotfiles_when_dotfiles_dir_unset(
+    tmp_path, monkeypatch
+):
+    """Boundary: with ``DOTFILES_DIR`` UNSET, ``envFile`` resolves to the
+    ``~/Dev/dotfiles/.env`` fallback (the discover.py pattern) — never an
+    empty or ``/.env`` path. A broken ``or`` fallback would silently point
+    Cursor at the wrong .env and the secret would never load."""
+    monkeypatch.delenv("DOTFILES_DIR", raising=False)
+    monkeypatch.setenv("HOME", "/home/user")
+    m, target, _ = _manifest(
+        tmp_path,
+        mcps=[
+            {
+                "name": "tavily",
+                "command": "npx",
+                "env": {"TAVILY_API_KEY": "${TAVILY_API_KEY}"},
+                "harnesses": ["cursor"],
+            }
+        ],
+    )
+    CursorRenderer().render(m, target)
+    import json
+
+    entry = json.loads((target / ".cursor" / "mcp.json").read_text())[
+        "mcpServers"
+    ]["tavily"]
+    assert entry["envFile"] == "/home/user/Dev/dotfiles/.env"
+
+
 def test_mcp_merge_preserves_user_entries(tmp_path):
     m, target, _ = _manifest(
         tmp_path,
