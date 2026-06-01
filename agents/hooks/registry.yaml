@@ -55,6 +55,31 @@ hooks:
     timeout: 5
     description: Rotating cheese flair sample injected at session start
 
+  # ─── Destructive-git protection ─────────────────────────────────────
+  # Blocks destructive git ops that silently discard uncommitted work —
+  # `git checkout -- <path>` / `git checkout .` / `git checkout -f`,
+  # `git restore <path>`, `git reset --hard`, `git clean -f` — but ONLY when
+  # the targeted paths actually have uncommitted changes (clean tree → never
+  # nags). The script dispatches on tool_name == Bash, so the matcher is just
+  # the shell tool, which is `Bash` for both Claude and Codex.
+  # Both harnesses share the identical PreToolUse deny schema
+  # (hookSpecificOutput.permissionDecision: "deny") and route shell through
+  # `tool_input.command` — one script serves both (verified against
+  # developers.openai.com/codex/hooks). Cursor + Copilot are covered
+  # separately (different mechanisms): a Cursor beforeShellExecution hook in
+  # cursor/plugins/local/cheese-grok, and a Copilot preToolUse hook under
+  # chezmoi/private_dot_copilot/hooks. opencode has no shell-command hook, so
+  # it is N/A (see AGENTS.md → Hook Management).
+  git-guard:
+    event: PreToolUse
+    script: agents/hooks/git-guard.sh
+    shared_assets:
+      - agents/lib/git-guard.js
+    harnesses: [claude, codex]
+    matcher: "Bash"
+    timeout: 5
+    description: Block destructive git ops against a dirty working tree
+
   # ─── Secret protection ──────────────────────────────────────────────
   # Blocks reads, writes, and shell access to .env files, private keys, and
   # credential stores. One entry; the script dispatches on tool_name, so the

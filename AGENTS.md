@@ -243,7 +243,7 @@ hooks:
 **Per-entry fields:**
 
 - `event` — Claude / Codex event name. The supported set lives in `HOOK_EVENTS_VALID` (`agents/hooks/lib.sh`): `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `PermissionRequest` (claude-only). `hook_filter_for_harness` fails loud on anything else (catches typos like `evnt:`).
-- `script` — repo-relative path; chezmoi deploys to `~/.<harness>/hooks/<basename>`. `script` runs via the harness's shebang under `ap` (the live plugin-tree path) but is wrapped as `bash "<path>"` by the legacy `lib.sh` path — so a non-bash script (e.g. a Node hook) must ship as a `.sh` bridge that `exec`s its interpreter (see `sensitive-file-guard.sh` → `lib/sensitive-file-guard.js`), or it will fail under the legacy path. Mutually exclusive with `command`.
+- `script` — repo-relative path; chezmoi deploys to `~/.<harness>/hooks/<basename>`. `script` runs via the harness's shebang under `ap` (the live plugin-tree path) but is wrapped as `bash "<path>"` by the legacy `lib.sh` path — so a non-bash script (e.g. a Node hook) must ship as a `.sh` bridge that `exec`s its interpreter (see `sensitive-file-guard.sh` → `lib/sensitive-file-guard.js`, or `git-guard.sh` → `lib/git-guard.js`), or it will fail under the legacy path. Mutually exclusive with `command`.
 - `command` — literal command string used verbatim, no file deploy (e.g. an external binary). Mutually exclusive with `script`.
 - `shared_assets` (optional) — list of repo-relative paths under `agents/<subdir>/<file>` that the hook script reads at runtime (libs, banks, …). Each is deployed to `~/.<harness>/<subdir>/<file>`. Adding a new hook is a pure registry edit — the chezmoi installer iterates `hooks` and copies every `(script ∪ shared_assets) × harnesses` pair.
 - `harnesses` (optional) — list; default is **claude-only** (every renderer's hook default is `("claude",)`). Any other harness needs an explicit opt-in, e.g. the cheese-flair hook lists `[claude, codex]`. opencode has no hook renderer, so it never receives hooks.
@@ -254,9 +254,23 @@ hooks:
 **Workflow:**
 
 1. Edit registry: `hook-edit`
-2. Apply changes: `hook-sync` (= `dots profile install base`) or let `dots sync` drive it via chezmoi's `run_onchange_after_install-base-profile.sh.tmpl`. The hook + its `shared_assets` (lib/bank) deploy through `ap`'s claude/codex renderers, which copy the self-locating SessionStart script alongside its assets under the harness layout.
+2. Apply changes: `hook-sync` (= `dots profile install base`) or let `dots sync` drive it via chezmoi's `run_onchange_after_install-base-profile.sh.tmpl`. The hook + its `shared_assets` (lib/bank) deploy through `ap`'s claude/codex renderers, which copy the self-locating script alongside its assets under the harness layout.
 
 The hook script is self-locating: it resolves its lib and bank from `$SCRIPT_DIR/../lib` and `$SCRIPT_DIR/../reference`, so the same file runs identically under each harness. (The standalone `agents/hooks/sync.sh` lib remains for the legacy upsert path but no longer runs on `dots sync`.)
+
+### Cross-harness guards (`git-guard`)
+
+`git-guard` blocks destructive git ops that silently discard uncommitted work — `git checkout -- <path>` / `git checkout .` / `git checkout -f`, `git restore <path>`, `git reset --hard`, `git clean -f` — but **only** when the targeted paths actually have uncommitted changes (a clean tree has nothing to lose, so the op is allowed and the guard never nags). The classifier handles `sudo`/`env` prefixes, `-C`/`-c` global options, `--` pathspec separation, and `&&`/`||`/`;`/`|`/newline command segmentation. It is **fail-open everywhere**: a missing lib, absent `node`, malformed input, or a non-repo `cwd` always allows. Opt out for a session with `CLAUDE_GIT_GUARD=0`.
+
+One classifier (`agents/lib/git-guard.js`, exporting `shouldBlock(command, cwd)` + `denyReason`), five harness adapters that each call it — no detection logic is duplicated:
+
+| Harness | Mechanism | File(s) | Notes |
+|---------|-----------|---------|-------|
+| Claude | `PreToolUse` (matcher `Bash`) | `agents/hooks/git-guard.sh` + `agents/lib/git-guard.js`, registered in `agents/hooks/registry.yaml` | Deny = `hookSpecificOutput.permissionDecision: "deny"` on stdout. |
+| Codex | `PreToolUse` (matcher `Bash`) | same registry entry (`harnesses: [claude, codex]`) | Identical deny schema and shell tool (`Bash`, `tool_input.command`) — one script serves both (verified: developers.openai.com/codex/hooks). |
+| Cursor | `beforeShellExecution` | `cursor/plugins/local/cheese-grok/hooks/git-guard.sh` + `hooks.json` | Payload carries `.command` + `.cwd`; deny = exit 2. Resolves the shared lib via `$DOTFILES_DIR`. |
+| Copilot CLI | `preToolUse` (matcher `bash\|shell`) | `chezmoi/private_dot_copilot/hooks/executable_git-guard.sh` + `git-guard.json.tmpl` → `~/.copilot/hooks/` | `toolArgs` is a JSON *string* (double-parsed for `.command`); deny = `{permissionDecision:"deny",permissionDecisionReason:…}` on stdout, exit 0. Resolves the shared lib via `$DOTFILES_DIR`. |
+| opencode | plugin `tool.execute.before` (on the `bash` tool) | `chezmoi/dot_config/opencode/plugins/git-guard.js` → `~/.config/opencode/plugins/` | opencode has no shell-command *hook* like the others, but its plugin system fires `tool.execute.before` for every tool call. The plugin intercepts the `bash` tool and `throw`s on a destructive-dirty op (opencode's deny path). A static `permission.bash` pattern can't be used here — it would nag on a clean tree, the exact thing the guard avoids; only the plugin can run the `git status` dirty check. ESM plugin that `require()`s the shared CJS lib via `$DOTFILES_DIR`. |
 
 ## Plugin Management
 

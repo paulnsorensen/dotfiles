@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "{{ .chezmoi.homeDir }}/.copilot/hooks/git-guard.sh",
+        "matcher": "bash|shell",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}
