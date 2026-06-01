@@ -559,6 +559,28 @@ SH
     grep -qE '^lib(/|$)' "$ignore"
 }
 
+@test ".chezmoiignore localLLM gate renders when the key is absent (missingkey-safe)" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    # chezmoi renders templates with missingkey=error. A bare `{{ .localLLM }}`
+    # in .chezmoiignore would fail `chezmoi apply` on every machine whose
+    # chezmoi.toml predates the localLLM flag (the key is simply absent). The
+    # gate must use `get . "localLLM"` so an absent key falls back to ""/ignore.
+    local cfg="$HOME/.config/chezmoi/chezmoi.toml"
+    mkdir -p "$(dirname "$cfg")"
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+TOML
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" \
+        execute-template < "$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+    assert_success
+    # With localLLM absent (→ falsy), the stack tree + units must be ignored.
+    assert_output_contains "local-llm/**"
+    assert_output_contains ".config/systemd/user/worker-igpu.service"
+}
+
 @test "skills-install/ directory is gone from the repo" {
     [[ ! -e "$REAL_DOTFILES_DIR/skills-install" ]]
 }
@@ -629,11 +651,17 @@ YAML
     grep -q 'promptStringOnce . "email"' "$toml"
     grep -q '\.chezmoi\.sourceDir' "$toml"
     # The work-machine prompt was removed with the employer git machinery;
-    # per-repo email is native git (`git config user.email`).
-    if grep -q 'promptBoolOnce' "$toml"; then
+    # per-repo email is native git (`git config user.email`). Guard the
+    # *work* prompt specifically — not all promptBoolOnce — so a legitimate
+    # boolean flag (e.g. localLLM) doesn't trip this invariant.
+    if grep -qE 'promptBoolOnce \. "work"' "$toml"; then
         echo ".chezmoi.toml.tmpl still has the removed work prompt" >&2
         return 1
     fi
+    # The localLLM flag must stay a persisted boolean prompt: the .chezmoiignore
+    # gate reads .localLLM, so dropping the prompt would leave the key undefined
+    # and break `chezmoi apply` (missingkey=error).
+    grep -qE 'localLLM = \{\{ promptBoolOnce \. "localLLM"' "$toml"
 }
 
 @test "gitconfig template references .email and carries no employer machinery" {

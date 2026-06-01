@@ -312,6 +312,16 @@ do_doctor() {
         issues=$((issues + 1))
     fi
 
+    # Check local LLM stack (only when the localLLM flag deployed the healthcheck)
+    if [[ -x "$HOME/local-llm/scripts/healthcheck.sh" ]]; then
+        echo -e "${BLUE}Checking local LLM stack...${NC}"
+        if "$HOME/local-llm/scripts/healthcheck.sh" --quiet; then
+            : # healthcheck prints its own per-line ✓/✗
+        else
+            issues=$((issues + 1))
+        fi
+    fi
+
     # Summary
     echo
     if [[ $issues -eq 0 ]]; then

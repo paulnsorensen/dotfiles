@@ -1,0 +1,25 @@
+[Unit]
+Description=Coder-tier worker (Qwen3-Coder-30B-A3B-Instruct on iGPU — displaces Sonnet)
+After=network.target
+# Mutual exclusion with Sonnet (same iGPU slot, same arch)
+Conflicts=worker-igpu.service
+ConditionPathExists=%h/local-llm/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+
+[Service]
+Type=simple
+Environment="LD_LIBRARY_PATH=%h/local-llm/bin/llama.cpp"
+ExecStart=%h/local-llm/bin/llama.cpp/llama-server \
+  --model %h/local-llm/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf \
+  --host 127.0.0.1 --port 8085 \
+  --ctx-size 65536 \
+  --parallel 4 --cont-batching \
+  --batch-size 2048 --ubatch-size 512 \
+  --cache-type-k q8_0 --cache-type-v q8_0 \
+  --n-gpu-layers 99 \
+  --alias local-coder \
+  --log-file %h/local-llm/logs/worker-coder.log
+Restart=on-failure
+RestartSec=5
+Nice=5
+
+# Not enabled by default — start manually: systemctl --user start worker-coder

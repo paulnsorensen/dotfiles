@@ -325,6 +325,32 @@ MCP entries are managed by `agents/mcp/registry.yaml` (see [MCP Management](#mcp
 
 **Migrating from a hand-rolled `opencode.jsonc`:** the scaffold writes to `opencode.json`, not `.jsonc`. If you already have a non-trivial `~/.config/opencode/opencode.jsonc`, merge its contents into `opencode.json` and delete the `.jsonc` (opencode reads either, having both is just confusing).
 
+## Local LLM Stack
+
+A bespoke local-LLM stack (`~/local-llm/`) — llama.cpp workers behind a LiteLLM proxy at `http://127.0.0.1:4000/v1` (dummy key `sk-local`) exposing OpenAI-compatible model names (`local-sonnet`, `local-haiku`, `local-coder`, `local-opus`, `local-vision`, `local-classifier`). It is **per-machine and opt-in**, gated by the chezmoi `localLLM` flag.
+
+**Enable on a machine:** `dots sync` prompts `Manage local LLM stack on this machine?` on first init (persisted to `~/.config/chezmoi/chezmoi.toml`; re-prompt by deleting that file). When **off**, `.chezmoiignore` skips the whole tree so nothing deploys.
+
+**What's managed (in-repo):**
+
+- `chezmoi/local-llm/configs/litellm.yaml` → `~/local-llm/configs/litellm.yaml` (proxy routing + fallbacks).
+- `chezmoi/local-llm/scripts/{aliases,install-npu,healthcheck,download-models}.sh` → `~/local-llm/scripts/`.
+- `chezmoi/dot_config/systemd/user/{litellm,local-llm.target,worker-*}` → `~/.config/systemd/user/` (verbatim; `%h`-portable, no secrets). Unit *files* only — enablement stays a runtime action.
+- opencode `local-llm` provider — `chezmoi/lib/install-local-llm.sh` jq-merges the `.provider` block into `~/.config/opencode/opencode.json` (mirrors the MCP `.mcp` sync), driven by `run_onchange_after_install-local-llm.sh.tmpl`, which also runs `systemctl --user daemon-reload`. Edit models/endpoint there, not in the live file.
+
+**What's NOT managed (runtime / prerequisites):** the 85G `~/local-llm/models/`, the built `~/local-llm/bin/` (llama.cpp + lemonade), `~/local-llm/logs/`, and the `~/.local/bin/litellm` install. The sync never auto-enables or starts workers — that stays explicit (`llm-up`).
+
+**Commands** (aliases from `scripts/aliases.sh`) — these require a manual one-time `echo 'source ~/local-llm/scripts/aliases.sh' >> ~/.zshrc` (per `local-llm/README.md`); the managed `zshrc` does not source them, mirroring how `bin/` and the litellm install are manual prerequisites:
+
+- `llm-up` / `llm-down` / `llm-status` — start/stop/inspect via systemd.
+- `llm-test` (`= healthcheck.sh`) — smoke test: hard tiers (litellm + worker-igpu + worker-cpu) must answer with non-empty completions; optional tiers are informational and flagged when served by a LiteLLM fallback. `llm-test --opencode` adds an end-to-end probe through the wired provider.
+- `llm-download` (`= download-models.sh`) — on-demand, idempotent GGUF fetch (skips present files). Never run by sync.
+- `dots doctor` runs `healthcheck.sh --quiet` automatically when the stack is deployed (presence-gated on `~/local-llm/scripts/healthcheck.sh`).
+
+**Add/tune a model:** add a worker unit under `chezmoi/dot_config/systemd/user/` → add the route to `litellm.yaml` → add the model name to the provider block in `chezmoi/lib/install-local-llm.sh` → `chezmoi apply` (runs `daemon-reload`) → `llm-test`.
+
+> The three Qwen3 repo IDs in `download-models.sh` (sonnet/haiku/coder) are `<unverified>` — they follow the unsloth `<Model>-GGUF` convention of the confirmed opus repo but weren't recorded on the source machine. Confirm on huggingface.co before a fresh-machine download (`hf download` fails loud on a wrong repo).
+
 ## Profile System
 
 Profiles are scoped sessions declared as `profiles/<name>/profile.yaml` (repo root) and owned end-to-end by the harness-agnostic `ap` tool (`dots profile`). The retired `ccp` zsh launcher is gone — `dots profile launch` is the single path.

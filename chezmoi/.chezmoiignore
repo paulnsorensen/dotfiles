@@ -20,3 +20,25 @@ README*
 # They live inside the source dir for colocation, but chezmoi must not apply
 # them as $HOME files.
 lib/
+{{- /*
+Local LLM stack is per-machine, opt-in. When the localLLM flag is false,
+ignore the whole stack tree + its systemd units so non-LLM machines stay
+clean. (.chezmoiignore is rendered as a template, so this conditional works
+even though the rest of the file is static.)
+
+`get` (not bare `.localLLM`) is deliberate: chezmoi renders templates with
+missingkey=error, so a bare reference would fail `chezmoi apply` on any
+machine whose chezmoi.toml predates this flag. `get . "localLLM"` returns
+"" for an absent key, so the stack stays ignored by default.
+*/ -}}
+{{ if not (get . "localLLM") }}
+local-llm/**
+.config/systemd/user/litellm.service
+.config/systemd/user/local-llm.target
+.config/systemd/user/worker-cpu.service
+.config/systemd/user/worker-igpu.service
+.config/systemd/user/worker-coder.service
+.config/systemd/user/worker-opus.service
+.config/systemd/user/worker-vision.service
+.config/systemd/user/worker-npu.service
+{{ end }}

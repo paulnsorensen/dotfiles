@@ -14,3 +14,4 @@ sourceDir = "{{ .chezmoi.sourceDir }}"
 
 [data]
 email = {{ promptStringOnce . "email" "Git email" "paulnsorensen@gmail.com" | quote }}
+localLLM = {{ promptBoolOnce . "localLLM" "Manage local LLM stack on this machine?" false }}

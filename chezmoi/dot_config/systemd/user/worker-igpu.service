@@ -1,0 +1,24 @@
+[Unit]
+Description=Sonnet-tier worker (Qwen3-30B-A3B on iGPU via Vulkan)
+After=network.target
+PartOf=local-llm.target
+
+[Service]
+Type=simple
+Environment="LD_LIBRARY_PATH=%h/local-llm/bin/llama.cpp"
+ExecStart=%h/local-llm/bin/llama.cpp/llama-server \
+  --model %h/local-llm/models/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf \
+  --host 127.0.0.1 --port 8080 \
+  --ctx-size 32768 \
+  --parallel 8 --cont-batching \
+  --batch-size 2048 --ubatch-size 512 \
+  --cache-type-k q8_0 --cache-type-v q8_0 \
+  --n-gpu-layers 99 \
+  --alias local-sonnet \
+  --log-file %h/local-llm/logs/worker-igpu.log
+Restart=on-failure
+RestartSec=5
+Nice=5
+
+[Install]
+WantedBy=local-llm.target
