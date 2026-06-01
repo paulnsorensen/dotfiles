@@ -668,6 +668,34 @@ YAML
     grep -q 'env "TAVILY_API_KEY"' "$tmpl"
 }
 
+@test "copilot sensitive-file-guard source files exist" {
+    assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/executable_sensitive-file-guard.sh"
+    assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/sensitive-file-guard.json.tmpl"
+    assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-copilot-guard.sh.tmpl"
+}
+
+@test "copilot hook config renders a preToolUse matcher and the deployed adapter path" {
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/sensitive-file-guard.json.tmpl"
+    local rendered
+    rendered="$(chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Valid JSON with the documented shape.
+    jq -e '.version == 1 and (.hooks.preToolUse | length) == 1' <<<"$rendered"
+    # Matcher covers Copilot's shell + file tools (anchored regex on toolName).
+    [[ "$(jq -r '.hooks.preToolUse[0].matcher' <<<"$rendered")" == "bash|powershell|view|edit|create" ]]
+    # bash key points at the deployed adapter under ~/.copilot/hooks/.
+    [[ "$(jq -r '.hooks.preToolUse[0].bash' <<<"$rendered")" == */.copilot/hooks/sensitive-file-guard.sh ]]
+}
+
+@test "copilot guard installer copies the single-sourced shared logic" {
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-copilot-guard.sh.tmpl"
+    local rendered
+    rendered="$(chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Reuses the shared detection module, not a duplicate.
+    grep -q 'agents/lib/sensitive-file-guard.js' <<<"$rendered"
+    grep -q '.copilot/hooks/lib/sensitive-file-guard.js' <<<"$rendered"
+    grep -q 'install-shared-assets.sh' <<<"$rendered"
+}
+
 @test ".gitattributes pins LF line endings inside chezmoi source" {
     grep -qE '\* +text +eol=lf' "$REAL_DOTFILES_DIR/chezmoi/.gitattributes"
 }

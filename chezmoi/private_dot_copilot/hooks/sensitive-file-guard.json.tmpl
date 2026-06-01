@@ -1,0 +1,23 @@
+{{- /*
+Copilot CLI user-level preToolUse hook: the secret-file guard.
+
+`matcher` is an anchored regex (^(?:matcher)$) against the tool name, so this
+fires for Copilot's shell (bash/powershell) and file (view/edit/create) tools
+and nothing else. The adapter inspects toolArgs and denies via stdout JSON.
+
+The `bash` value is the absolute path to the deployed adapter; the shared Node
+logic it calls is copied next to it (hooks/lib/) by the run_onchange installer.
+*/ -}}
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash|powershell|view|edit|create",
+        "bash": {{ printf "%s/.copilot/hooks/sensitive-file-guard.sh" .chezmoi.homeDir | quote }},
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

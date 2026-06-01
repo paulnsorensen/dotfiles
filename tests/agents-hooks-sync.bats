@@ -59,6 +59,42 @@ teardown() {
     [[ "$(jq -r '.harnesses[1]' <<<"$entry")" == "codex"  ]]
 }
 
+@test "sensitive-file-guard is a claude+codex PreToolUse hook with its lib asset" {
+    local entry
+    entry=$(yq -o=json '.hooks."sensitive-file-guard"' "$REGISTRY_FILE")
+    [[ "$(jq -r '.event'  <<<"$entry")" == "PreToolUse" ]]
+    [[ "$(jq -r '.script' <<<"$entry")" == "agents/hooks/sensitive-file-guard.sh" ]]
+    [[ "$(jq -r '.shared_assets[0]' <<<"$entry")" == "agents/lib/sensitive-file-guard.js" ]]
+    [[ "$(jq -r '.matcher' <<<"$entry")" == *"Bash"* ]]
+    [[ "$(jq -r '.matcher' <<<"$entry")" == *"apply_patch"* ]]   # codex file edits
+    [[ "$(jq -r '.matcher' <<<"$entry")" == *"mcp__tilth__tilth_write"* ]]
+    [[ "$(jq -r '.harnesses | length' <<<"$entry")" == "2" ]]
+    [[ "$(jq -r '.harnesses | index("claude")' <<<"$entry")" != "null" ]]
+    [[ "$(jq -r '.harnesses | index("codex")'  <<<"$entry")" != "null" ]]
+    assert_file_exists "$REAL_DOTFILES_DIR/agents/hooks/sensitive-file-guard.sh"
+    assert_file_exists "$REAL_DOTFILES_DIR/agents/lib/sensitive-file-guard.js"
+}
+
+@test "sensitive-file-guard is present for both claude and codex after filtering" {
+    local c x
+    c=$(hook_filter_for_harness claude "$REGISTRY_JSON")
+    x=$(hook_filter_for_harness codex  "$REGISTRY_JSON")
+    [[ "$(jq -r 'has("sensitive-file-guard")' <<<"$c")" == "true" ]]
+    [[ "$(jq -r 'has("sensitive-file-guard")' <<<"$x")" == "true" ]]
+}
+
+@test "sensitive-file-guard renders a runnable bash command under both harnesses" {
+    local sc sx
+    sc=$(hook_desired_signature sensitive-file-guard claude)
+    sx=$(hook_desired_signature sensitive-file-guard codex)
+    # Must invoke the .sh (bash-runnable under both deploy paths), NOT the
+    # .js directly — a `bash <file>.js` command would not execute.
+    [[ "$sc" == 'bash "$HOME/.claude/hooks/sensitive-file-guard.sh"'* ]]
+    [[ "$sx" == 'bash "$HOME/.codex/hooks/sensitive-file-guard.sh"'* ]]
+    [[ "$sc" == *$'\t'"PreToolUse"$'\t'* ]]
+    [[ "$sx" == *$'\t'"PreToolUse"$'\t'* ]]
+}
+
 @test "hook_filter_for_harness includes the entry for both claude and codex" {
     local c x
     c=$(hook_filter_for_harness claude "$REGISTRY_JSON")
@@ -265,7 +301,13 @@ TOML
 @test "hook_detect_changes (codex): empty when in sync" {
     HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
     : > "$CODEX_CONFIG_FILE"
-    hook_codex_apply session-start-cheese-flair
+    # Apply every desired codex hook so the whole set is in sync (codex now
+    # carries session-start AND sensitive-file-guard).
+    local name
+    while read -r name; do
+        [[ -z "$name" ]] && continue
+        hook_codex_apply "$name"
+    done < <(jq -r 'keys[]' <<<"$HARNESS_DESIRED_JSON")
     local changed
     changed=$(hook_detect_changes codex)
     [[ -z "$changed" ]]
@@ -282,6 +324,9 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 99
 TOML
+    # Bring the other codex hook (sensitive-file-guard) in sync so only the
+    # session-start timeout drift remains to be detected.
+    hook_codex_apply sensitive-file-guard
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]
@@ -829,6 +874,9 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 5
 TOML
+    # Bring the other codex hook (sensitive-file-guard) in sync so only the
+    # session-start matcher drift remains to be detected.
+    hook_codex_apply sensitive-file-guard
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]

@@ -1,0 +1,19 @@
+#!/bin/bash
+# run_onchange — re-runs whenever the shared sensitive-file-guard logic changes.
+#
+# chezmoi deploys the Copilot adapter (hooks/sensitive-file-guard.sh) and its
+# config (hooks/sensitive-file-guard.json) as managed files. The shared Node
+# logic is single-sourced in agents/lib/sensitive-file-guard.js — copy it next
+# to the adapter so Copilot reuses the same detection as Claude/Codex instead
+# of carrying a drifting duplicate.
+#
+# Guard logic hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/lib/sensitive-file-guard.js 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+INSTALLER="$SOURCE_DIR/lib/install-shared-assets.sh"
+
+"$INSTALLER" "$DOTFILES_ROOT/agents/lib/sensitive-file-guard.js" \
+    "$HOME/.copilot/hooks/lib/sensitive-file-guard.js"
