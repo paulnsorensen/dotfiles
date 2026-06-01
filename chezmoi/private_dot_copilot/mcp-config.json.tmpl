@@ -1,26 +1,24 @@
 {{- /*
-Renders ~/.copilot/mcp-config.json with API keys at apply time.
+Renders ~/.copilot/mcp-config.json.
 
-Today: keys come from $CONTEXT7_API_KEY / $TAVILY_API_KEY (sourced from
-dotfiles/.env on shell init). To swap to 1Password instead, replace the
-two `env "..."` calls below with `onepasswordRead "op://<vault>/<item>/credential"`
-and add `op` to packages/packages.yaml. See references/secrets.md.
+MCP-secret-passthrough: the API-key env values are emitted as the LITERAL
+runtime placeholders ${CONTEXT7_API_KEY} / ${TAVILY_API_KEY}, NOT the resolved
+secret. Copilot CLI expands ${VAR} from its process env at launch (the user's
+shell already exports every dotfiles/.env key via zsh/core.zsh), so the secret
+stays in .env and never lands in this file on disk.
 
-If either key is missing (fresh box, no .env populated yet), render an
-empty mcpServers object and emit a chezmoi warning instead of failing the
-whole `chezmoi apply`. The keyed MCPs simply won't work until the user
-copies .env.example → .env and fills in the keys, but the rest of the
-sync (base-profile install, run_onchange installers) proceeds.
+Because the value is now a runtime placeholder, there is no apply-time key to
+resolve — the servers are always emitted, even on a fresh box with no .env yet
+(they simply won't work until the user populates .env). This is why the old
+unset-var warnf/empty-stub branch is gone.
+
+To swap to 1Password instead, the renderer would inject the secret at launch
+via a wrapper; that path is tracked in references/secrets.md.
+
+Fragility note: Copilot CLI's ${VAR} expansion regressed in v0.0.407 (gh#1403)
+and is thinly documented. If env passthrough breaks on a CLI upgrade, this is
+the place to revisit.
 */ -}}
-{{- $context7 := env "CONTEXT7_API_KEY" -}}
-{{- $tavily   := env "TAVILY_API_KEY" -}}
-{{- if or (eq $context7 "") (eq $tavily "") -}}
-{{   warnf "copilot mcp-config: CONTEXT7_API_KEY and/or TAVILY_API_KEY unset — emitting empty mcpServers. Fill keys in dotfiles/.env and re-run `dots sync` to enable." -}}
-{
-  "_comment": "Stub written by chezmoi: CONTEXT7_API_KEY and/or TAVILY_API_KEY were unset at apply time. Populate dotfiles/.env and re-run `dots sync`.",
-  "mcpServers": {}
-}
-{{- else -}}
 {
   "mcpServers": {
     "code-review-graph": {
@@ -42,7 +40,7 @@ sync (base-profile install, run_onchange installers) proceeds.
         "@upstash/context7-mcp"
       ],
       "env": {
-        "CONTEXT7_API_KEY": {{ $context7 | quote }}
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
       },
       "tools": [
         "*"
@@ -56,7 +54,7 @@ sync (base-profile install, run_onchange installers) proceeds.
         "tavily-mcp@latest"
       ],
       "env": {
-        "TAVILY_API_KEY": {{ $tavily | quote }}
+        "TAVILY_API_KEY": "${TAVILY_API_KEY}"
       },
       "tools": [
         "*"
@@ -75,4 +73,3 @@ sync (base-profile install, run_onchange installers) proceeds.
     }
   }
 }
-{{- end -}}

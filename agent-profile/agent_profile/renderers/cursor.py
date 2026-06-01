@@ -43,12 +43,14 @@ the right source dir by construction.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
 from agent_profile import shared
+from agent_profile.env import VAR_RE
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import (
     body_abs,
@@ -284,19 +286,72 @@ def _agent_frontmatter(item: dict[str, Any]) -> dict[str, Any]:
     return shared.claude_agent_frontmatter(item)
 
 
+def _dotenv_abs_path() -> str:
+    """Absolute path to the dotfiles ``.env`` Cursor's ``envFile`` points at.
+
+    Resolves ``${DOTFILES_DIR}/.env`` via :func:`os.path.expandvars`, falling
+    back to ``~/Dev/dotfiles`` when ``DOTFILES_DIR`` is unset (the
+    :mod:`discover` pattern). A machine-specific absolute path in user config
+    is acceptable here — it matches the marketplace-path precedent in
+    ``claude.py``'s ``_merge_root_settings``."""
+    dotfiles = os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles")
+    return str(Path(os.path.expandvars(dotfiles)) / ".env")
+
+
+def _has_var_ref(value: str) -> bool:
+    return VAR_RE.search(value) is not None
+
+
+def _is_self_reference(key: str, value: str) -> bool:
+    """True when ``value`` is exactly ``${key}``.
+
+    The only ``${VAR}`` shape Cursor's ``envFile`` can faithfully reproduce:
+    ``envFile`` loads vars by their own names, so a renamed key
+    (``API_KEY: "${TOKEN}"``) or an embedded reference
+    (``URL: "https://x/${TOKEN}/y"``) would be lost. All current registry MCPs
+    use the self-reference form ``KEY: "${KEY}"``."""
+    return value == f"${{{key}}}"
+
+
 def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
     """Project one MCP to Cursor's server record.
 
     Unlike the base ``mcp_server_entry``, Cursor's bash always emits
-    ``args`` (defaulting to ``[]``) and appends ``env`` only when present:
-    ``{command, args: (.args // [])} + (if .env then {env:.env} else {} end)``.
-    """
+    ``args`` (defaulting to ``[]``) and appends ``env`` only when present.
+
+    MCP-secret-passthrough: Cursor is GUI-launched, so a ``${VAR}`` in ``env``
+    does NOT resolve against the shell ``.env`` (a Finder/Dock launch inherits
+    no shell env). Cursor's stdio servers support an ``envFile`` field that
+    loads a ``.env`` at launch — so any ``${VAR}``-referencing entry is dropped
+    from ``env`` and the abs ``.env`` path is added as ``envFile`` instead.
+    Plain literals (no ``${VAR}``) stay in ``env``.
+
+    ``envFile`` can only represent the exact self-reference shape
+    ``KEY: "${KEY}"`` (it loads vars by their own names). A renamed key or an
+    embedded reference would be silently lost, so we fail loud on those rather
+    than emit a broken server entry."""
     entry: dict[str, Any] = {
         "command": mcp["command"],
         "args": mcp.get("args") if mcp.get("args") is not None else [],
     }
-    if mcp.get("env") is not None:
-        entry["env"] = mcp["env"]
+    env = mcp.get("env")
+    if env is not None:
+        for k, v in env.items():
+            sv = str(v)
+            if _has_var_ref(sv) and not _is_self_reference(k, sv):
+                raise ValueError(
+                    f"cursor renderer: env entry {k!r}={sv!r} references a "
+                    "${VAR} that is not an exact self-reference. Cursor's "
+                    "envFile loads vars by their own names and cannot "
+                    'represent a renamed key or an embedded reference. Use the '
+                    'KEY: "${KEY}" form, or handle this MCP explicitly.'
+                )
+        literals = {k: v for k, v in env.items() if not _has_var_ref(str(v))}
+        has_var_ref = len(literals) != len(env)
+        if literals:
+            entry["env"] = literals
+        if has_var_ref:
+            entry["envFile"] = _dotenv_abs_path()
     return entry
 
 

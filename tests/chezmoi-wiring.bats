@@ -680,20 +680,33 @@ YAML
     fi
 }
 
-@test "copilot template warns on missing env vars and renders both keys" {
-    # Behavior change: prior to the linux-bootstrap PR (commit 5369aa3) the
-    # template hard-failed `chezmoi apply` with `{{ fail "... is not set" }}`
-    # whenever either API key was unset. That was hostile to fresh-box
-    # bootstraps where the user has not yet copied .env.example → .env, so
-    # the template now `warnf`s and emits an empty `mcpServers: {}` stub
-    # instead. The MCPs simply won't work until the keys are populated, but
-    # the rest of `dots sync` proceeds.
+@test "copilot template emits literal \${VAR} placeholders, never resolved secrets" {
+    # MCP-secret-passthrough: the template emits the LITERAL ${CONTEXT7_API_KEY}
+    # / ${TAVILY_API_KEY} so Copilot expands them at launch — the secret stays
+    # in .env and never lands in ~/.copilot/mcp-config.json. Render with real
+    # secrets in the env and assert they do NOT appear in the output.
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
-    grep -q 'warnf "copilot mcp-config:' "$tmpl"
-    grep -q 'CONTEXT7_API_KEY and/or TAVILY_API_KEY unset' "$tmpl"
-    grep -q '"mcpServers": {}' "$tmpl"
-    grep -q 'env "CONTEXT7_API_KEY"' "$tmpl"
-    grep -q 'env "TAVILY_API_KEY"' "$tmpl"
+    local rendered
+    rendered="$(CONTEXT7_API_KEY=ctx7-real-secret TAVILY_API_KEY=tav-real-secret \
+        chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Valid JSON.
+    jq -e . <<<"$rendered" >/dev/null
+    # Literal placeholders present, both servers emitted unconditionally.
+    # SC2016: intentional literal — the rendered value IS the string ${VAR}.
+    # shellcheck disable=SC2016
+    [[ "$(jq -r '.mcpServers.context7.env.CONTEXT7_API_KEY' <<<"$rendered")" == '${CONTEXT7_API_KEY}' ]]
+    # shellcheck disable=SC2016
+    [[ "$(jq -r '.mcpServers.tavily.env.TAVILY_API_KEY' <<<"$rendered")" == '${TAVILY_API_KEY}' ]]
+    # No resolved secret leaked onto disk.
+    if grep -qE 'ctx7-real-secret|tav-real-secret' <<<"$rendered"; then
+        echo "copilot template leaked a resolved secret into the rendered config" >&2
+        return 1
+    fi
+    # The removed unset-var guard branch must be gone.
+    if grep -q '"mcpServers": {}' "$tmpl"; then
+        echo "copilot template still carries the removed empty-stub guard" >&2
+        return 1
+    fi
 }
 
 @test "copilot sensitive-file-guard source files exist" {
@@ -810,44 +823,50 @@ TOML
         return 1
     fi
 
-    # The copilot template should render with the env-supplied API keys.
+    # MCP-secret-passthrough: the copilot template renders the LITERAL ${VAR}
+    # placeholders, NOT the resolved keys — Copilot expands them at launch, so
+    # the secret stays in .env and never lands in this file on disk.
     assert_file_exists "$HOME/.copilot/mcp-config.json"
-    grep -qF '"CONTEXT7_API_KEY": "test-context7-key"' "$HOME/.copilot/mcp-config.json"
-    grep -qF '"TAVILY_API_KEY": "test-tavily-key"' "$HOME/.copilot/mcp-config.json"
+    # SC2016: the single quotes are intentional — we assert the LITERAL ${VAR}
+    # placeholder text is present, not its expansion.
+    # shellcheck disable=SC2016
+    grep -qF '"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"' "$HOME/.copilot/mcp-config.json"
+    # shellcheck disable=SC2016
+    grep -qF '"TAVILY_API_KEY": "${TAVILY_API_KEY}"' "$HOME/.copilot/mcp-config.json"
+    # The supplied secret values must NOT be baked into the rendered file.
+    if grep -qE 'test-context7-key|test-tavily-key' "$HOME/.copilot/mcp-config.json"; then
+        echo "copilot mcp-config baked a resolved secret instead of a placeholder" >&2
+        return 1
+    fi
 }
 
-@test "copilot template warns + emits empty mcpServers when CONTEXT7_API_KEY is unset" {
+@test "copilot template emits servers with literal placeholders even when keys are unset" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # Linux-bootstrap PR (5369aa3) softened the template from `{{ fail ... }}`
-    # to `{{ warnf ... }}` + empty-stub render. `chezmoi apply` therefore
-    # SUCCEEDS even when a key is unset, and the rendered file is a stub
-    # carrying `"mcpServers": {}`. The warning still surfaces the missing
-    # key on stderr so the user knows to populate .env.
-    local fake_npx_bin
-    fake_npx_bin=$(make_fake_npx)
-    PATH="$fake_npx_bin:$PATH"
-
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "test@example.com"
-work = false
-TOML
-    unset CONTEXT7_API_KEY
-    export TAVILY_API_KEY="test-tavily-key"
-
-    run chezmoi apply --force
-    assert_success
-    # The warnf message should appear in chezmoi's stderr (combined with
-    # stdout under bats' `run`).
-    assert_output_contains "CONTEXT7_API_KEY and/or TAVILY_API_KEY unset"
-    # The rendered file is the empty-mcpServers stub.
-    assert_file_exists "$HOME/.copilot/mcp-config.json"
-    grep -qF '"mcpServers": {}' "$HOME/.copilot/mcp-config.json"
-    grep -qF 'Stub written by chezmoi' "$HOME/.copilot/mcp-config.json"
+    # MCP-secret-passthrough: because the env values are now runtime ${VAR}
+    # placeholders (Copilot expands them at launch), there is no apply-time key
+    # to resolve. The template therefore always emits the full server set —
+    # even on a fresh box with no .env yet — instead of the old warnf +
+    # empty-mcpServers stub. The MCPs simply won't work until .env is populated.
+    #
+    # Render the template in isolation (execute-template) rather than a full
+    # `chezmoi apply`: with the keys unset, apply would also drive the
+    # base-profile `ap install`, which legitimately fails loud on the
+    # non-optional context7/tavily ${VAR}s (criterion 2). That fail-loud is a
+    # separate, intended behavior — this test pins the copilot template alone.
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
+    local rendered
+    rendered="$(env -u CONTEXT7_API_KEY -u TAVILY_API_KEY \
+        chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Valid JSON; both keyed servers present with literal placeholders.
+    jq -e . <<<"$rendered" >/dev/null
+    # SC2016: intentional literal — the rendered value IS the string ${VAR}.
+    # shellcheck disable=SC2016
+    [[ "$(jq -r '.mcpServers.context7.env.CONTEXT7_API_KEY' <<<"$rendered")" == '${CONTEXT7_API_KEY}' ]]
+    # shellcheck disable=SC2016
+    [[ "$(jq -r '.mcpServers.tavily.env.TAVILY_API_KEY' <<<"$rendered")" == '${TAVILY_API_KEY}' ]]
+    # No empty-mcpServers stub fallback.
+    [[ "$(jq -r '.mcpServers | length' <<<"$rendered")" -ge 4 ]]
 }
 
 # ── serena config (modify_ pattern) ────────────────────────────────────────

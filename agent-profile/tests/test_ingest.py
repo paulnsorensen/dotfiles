@@ -133,11 +133,16 @@ def test_expand_mcps_source_dir_is_repo_root(repo):
     assert out["mcps"][0]["_source_dir"] == str(root)
 
 
-def test_expand_mcps_env_resolved_at_ingest(repo):
+def test_expand_mcps_env_stays_literal_at_ingest(repo):
+    # MCP-secret-passthrough (criterion 1): even with the var SET in .env, the
+    # env value is carried through as the literal ``${VAR}`` — NOT substituted
+    # to the secret — so renderers emit a runtime placeholder, not plaintext.
     root, directive = repo
     out = expand_registries(directive, root, _dotenv())
     todoist = next(m for m in out["mcps"] if m["name"] == "todoist")
-    assert todoist["env"]["TODOIST_API_KEY"] == "secret"
+    assert todoist["env"]["TODOIST_API_KEY"] == "${TODOIST_API_KEY}"
+    # The secret value must never appear in the rendered item.
+    assert "secret" not in str(todoist["env"])
 
 
 def test_expand_optional_mcp_skipped_when_var_unset(repo):

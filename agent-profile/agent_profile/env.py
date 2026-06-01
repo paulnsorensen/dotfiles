@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -80,7 +80,7 @@ def resolve_env_value(value: str, dotenv: dict[str, str]) -> str:
             )
         return dotenv[var]
 
-    return _VAR_RE.sub(_sub, value)
+    return VAR_RE.sub(_sub, value)
 
 
 def first_unset_var(item: dict[str, Any], dotenv: dict[str, str]) -> str | None:
@@ -94,7 +94,7 @@ def first_unset_var(item: dict[str, Any], dotenv: dict[str, str]) -> str | None:
     if not isinstance(env, dict):
         return None
     for val in env.values():
-        for match in _VAR_RE.finditer(str(val)):
+        for match in VAR_RE.finditer(str(val)):
             var = match.group(1)
             if var not in dotenv:
                 return var

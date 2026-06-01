@@ -757,3 +757,59 @@ def test_user_scope_clean_missing_cli_fails_loud(env, monkeypatch):
     profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
     with pytest.raises(FileNotFoundError):
         ClaudeRenderer().clean(parse_manifest(profile_dir), env.target)
+
+
+# ─── MCP-secret-passthrough: ${VAR} reaches claude as a literal ──────
+
+_SECRET_USER_YAML = """\
+name: secretuser
+description: literal ${VAR} passthrough at user scope
+mcp_scope: user
+mcps:
+  - name: context7
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+    harnesses: [claude]
+"""
+
+_SECRET_PLUGIN_YAML = """\
+name: secretplugin
+description: literal ${VAR} passthrough at plugin scope
+mcps:
+  - name: context7
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+    harnesses: [claude]
+"""
+
+
+def test_user_scope_passes_literal_var_not_secret(env, monkeypatch):
+    # Criterion 4: the `claude mcp add` argv carries `-e KEY=${VAR}` literally,
+    # never a resolved secret. A real value in the process env must NOT leak
+    # into the stored registration — Claude expands ${VAR} itself at launch.
+    monkeypatch.setenv("CONTEXT7_API_KEY", "sk-real-secret-123")
+    log = _install_fake_claude(env.tmp, monkeypatch)
+    profile_dir = write_profile(env.profiles, "secretuser", _SECRET_USER_YAML)
+    ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+    text = log.read_text()
+    assert "-e CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" in text
+    assert "sk-real-secret-123" not in text
+
+
+def test_plugin_scope_mcp_json_env_is_literal_var(env, monkeypatch):
+    # Criterion 5: the plugin-scope `.mcp.json` env value is the literal
+    # ${VAR}; Claude expands it at launch. No secret on disk.
+    monkeypatch.setenv("CONTEXT7_API_KEY", "sk-real-secret-123")
+    profile_dir = write_profile(env.profiles, "secretplugin", _SECRET_PLUGIN_YAML)
+    ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+    mcp_json = (
+        env.target / ".claude/plugins/local/secretplugin/.mcp.json"
+    ).read_text()
+    data = json.loads(mcp_json)
+    env_block = data["mcpServers"]["context7"]["env"]
+    assert env_block["CONTEXT7_API_KEY"] == "${CONTEXT7_API_KEY}"
+    assert "sk-real-secret-123" not in mcp_json

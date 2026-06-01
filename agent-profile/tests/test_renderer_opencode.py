@@ -179,6 +179,87 @@ def test_mcp_env_maps_to_environment(tmp_path: Path):
     }
 
 
+def test_mcp_env_rewrites_var_to_opencode_placeholder(tmp_path: Path):
+    """Criterion 7: opencode does not understand ``${VAR}`` (it passes it
+    through verbatim and breaks). Each ``${VAR}`` occurrence is rewritten to
+    opencode's ``{env:VAR}`` syntax; a plain literal (e.g. SERENA_MUX_HARNESS,
+    which is render-time, not a secret) passes through untouched. No resolved
+    secret on disk — opencode expands ``{env:VAR}`` from its process env."""
+    m = Manifest(
+        name="withvar",
+        mcps=[
+            {
+                "name": "withvar",
+                "command": "foo",
+                "env": {
+                    "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}",
+                    "SERENA_MUX_HARNESS": "opencode",
+                },
+                "harnesses": ["opencode"],
+            }
+        ],
+    )
+    OpencodeRenderer().render(m, tmp_path)
+    raw = (tmp_path / "opencode.json").read_text()
+    server = json.loads(raw)["mcp"]["withvar"]
+    assert server["environment"] == {
+        "CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}",
+        "SERENA_MUX_HARNESS": "opencode",
+    }
+    assert "${CONTEXT7_API_KEY}" not in raw
+
+
+def test_mcp_env_rewrites_embedded_var(tmp_path: Path):
+    """A ``${VAR}`` embedded in a larger value is rewritten in place; only the
+    ``${VAR}`` token is touched, surrounding text is preserved."""
+    m = Manifest(
+        name="embed",
+        mcps=[
+            {
+                "name": "embed",
+                "command": "foo",
+                "env": {"URL": "https://x/${TOKEN}/y"},
+                "harnesses": ["opencode"],
+            }
+        ],
+    )
+    OpencodeRenderer().render(m, tmp_path)
+    server = json.loads((tmp_path / "opencode.json").read_text())["mcp"]["embed"]
+    assert server["environment"]["URL"] == "https://x/{env:TOKEN}/y"
+
+
+def test_mcp_env_bare_dollar_and_multi_var_boundaries(tmp_path: Path):
+    """Boundary: only the ``${IDENT}`` form is rewritten. A bare ``$VAR``
+    (no braces), a literal ``$`` (e.g. a price), and a malformed ``${}`` must
+    pass through UNTOUCHED — the rewrite must not broaden into shell-style
+    expansion or it would corrupt non-secret literals. Multiple ``${VAR}``
+    tokens in one value are each rewritten (``re.sub`` is global)."""
+    m = Manifest(
+        name="bounds",
+        mcps=[
+            {
+                "name": "bounds",
+                "command": "foo",
+                "env": {
+                    "BARE": "$NOT_A_REF",
+                    "PRICE": "costs $5.00 USD",
+                    "MALFORMED": "${}",
+                    "MULTI": "${A}-${B}",
+                },
+                "harnesses": ["opencode"],
+            }
+        ],
+    )
+    OpencodeRenderer().render(m, tmp_path)
+    env = json.loads((tmp_path / "opencode.json").read_text())["mcp"]["bounds"][
+        "environment"
+    ]
+    assert env["BARE"] == "$NOT_A_REF"
+    assert env["PRICE"] == "costs $5.00 USD"
+    assert env["MALFORMED"] == "${}"
+    assert env["MULTI"] == "{env:A}-{env:B}"
+
+
 def test_mcp_without_env_omits_environment(tmp_path: Path):
     """No ``env`` -> no ``environment`` key (the bash ``else {}`` branch)."""
     m = Manifest(

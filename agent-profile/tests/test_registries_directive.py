@@ -98,7 +98,12 @@ def test_registries_agents_union_with_inline_agents(dotfiles):
     assert names == ["ghostbuster", "extra"]
 
 
-def test_registries_mcp_env_resolved_from_dotfiles_env(dotfiles):
+def test_registries_mcp_env_stays_literal_not_resolved(dotfiles):
+    # MCP-secret-passthrough: even with TODOIST_API_KEY=secret in DOTFILES_DIR/.env,
+    # the ingest validates-but-does-not-substitute — the env value rides through
+    # as the literal ${VAR} so renderers emit a runtime placeholder, not the
+    # secret. The presence check still keeps the (optional) entry because the
+    # var IS set.
     write_profile(
         dotfiles / "profiles",
         "base",
@@ -106,7 +111,8 @@ def test_registries_mcp_env_resolved_from_dotfiles_env(dotfiles):
     )
     out = parse_one(dotfiles / "profiles" / "base")
     todoist = next(m for m in out["mcps"] if m["name"] == "todoist")
-    assert todoist["env"]["TODOIST_API_KEY"] == "secret"
+    assert todoist["env"]["TODOIST_API_KEY"] == "${TODOIST_API_KEY}"
+    assert "secret" not in str(todoist["env"])
 
 
 def test_registries_source_dir_points_at_dotfiles(dotfiles):

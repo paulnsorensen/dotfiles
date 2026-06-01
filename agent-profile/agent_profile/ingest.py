@@ -15,9 +15,11 @@ unions them.
 :func:`expand_registries` reads each declared registry relative to the repo
 root, normalizes every entry into a profile *item* (the registry entry IS a
 profile item — no translation layer), stamps ``_source_dir`` so payload
-files resolve against the repo root, resolves ``${VAR}`` env refs at ingest
-time (spec D4), and drops ``optional`` MCPs whose referenced credential is
-unset (parity with the bash ``optional`` skip).
+files resolve against the repo root, **validates** ``${VAR}`` env refs
+without substituting them (MCP-secret-passthrough — the literal ``${VAR}``
+rides through to each renderer so the harness expands it at launch and no
+secret is baked to disk), and drops ``optional`` MCPs whose referenced
+credential is unset (parity with the bash ``optional`` skip).
 
 Registry shapes consumed:
 
@@ -42,7 +44,11 @@ from typing import Any
 
 import yaml
 
-from agent_profile.env import first_unset_var, resolve_item_env
+from agent_profile.env import (
+    EnvResolutionError,
+    first_unset_var,
+    resolve_item_env,
+)
 
 
 def _as_list(value: Any) -> list[str]:
@@ -64,9 +70,12 @@ def _expand_mcps(
     """Normalize the MCP registry mapping into a profile item list.
 
     Each named entry becomes ``{name, ...fields, _source_dir}``. ``env``
-    blocks resolve at ingest. An ``optional`` MCP whose referenced ``${VAR}``
-    is unset is dropped non-fatally; a required MCP with an unset ref fails
-    loud via :func:`resolve_item_env`."""
+    blocks are **validated but not substituted**: the literal ``${VAR}`` is
+    carried through to the renderers so each harness expands it at launch and
+    no secret is baked into a rendered config file (the MCP-secret-passthrough
+    spec). An ``optional`` MCP whose referenced ``${VAR}`` is unset is dropped
+    non-fatally; a non-``optional`` MCP with an unset ref still fails loud at
+    ingest (catches a typo'd var) — without substituting the value."""
     data = _load_yaml_mapping(path)
     mcps = data.get("mcps") or {}
     out: list[dict[str, Any]] = []
@@ -74,9 +83,15 @@ def _expand_mcps(
         if not isinstance(body, dict):
             continue
         item: dict[str, Any] = {"name": name, **body, "_source_dir": source_dir}
-        if item.get("optional") and first_unset_var(item, dotenv) is not None:
-            continue
-        out.append(resolve_item_env(item, dotenv))
+        unset = first_unset_var(item, dotenv)
+        if unset is not None:
+            if item.get("optional"):
+                continue
+            raise EnvResolutionError(
+                f"ap: env var ${{{unset}}} is unset (referenced by MCP "
+                f"'{name}'; set it in .env or mark the item optional)"
+            )
+        out.append(item)
     return out
 
 
