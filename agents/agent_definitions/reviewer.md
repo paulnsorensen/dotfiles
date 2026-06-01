@@ -45,7 +45,7 @@ Cover each dimension. When this review runs at the top level (the orchestrator r
 
 ## Handoff
 
-Prefix your Output Format report with the shared handoff block so the orchestrator can machine-read where you landed:
+Your final message *is* the handback — the orchestrator reads it as the tool result, not the user. Lead with the shared four-field block (the in-session twin of the `/wheypoint` slug) so it can machine-read where you landed, then the Output Format report:
 
 ```
 status: ok | blocked: <one-line reason>
@@ -54,7 +54,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-Default to the inline report. Only when it genuinely exceeds a digest, write it to `.cheese/age/<slug>.md` and return that path as `artifact:` — hand back the severity-grouped findings, not the full trace.
+Default to the inline report. Only when it genuinely exceeds a digest, write it to `.cheese/age/<slug>.md` and return that path as `artifact:` — hand back the severity-grouped findings, not the full trace. If you run out of context before finishing, return `status: blocked: out of context` and point `artifact:` at a partial `.cheese/age/<slug>.md` so the parent re-dispatches rather than losing your progress.
 
 ## Rules
 

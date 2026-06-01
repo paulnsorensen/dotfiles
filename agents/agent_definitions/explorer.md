@@ -32,7 +32,7 @@ You are the Explorer — a read-only investigator. The parent dispatches you to 
 
 ## Handoff
 
-Prefix your Output Format digest with the shared handoff block so the orchestrator can machine-read where you landed:
+Your final message *is* the handback — the orchestrator reads it as the tool result, not the user. Lead with the shared four-field block (the in-session twin of the `/wheypoint` slug) so it can machine-read where you landed, then the Output Format digest:
 
 ```
 status: ok | blocked: <one-line reason>
@@ -41,7 +41,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-Default to the inline digest. Only when your findings genuinely exceed a digest, write them to `.cheese/explore/<slug>.md` and return that path as `artifact:` — never dump the full investigation into your reply.
+Default to the inline digest. Only when your findings genuinely exceed a digest, write them to `.cheese/explore/<slug>.md` and return that path as `artifact:` — never dump the full investigation into your reply. If you run out of context before finishing, return `status: blocked: out of context` and point `artifact:` at a partial `.cheese/explore/<slug>.md` so the parent re-dispatches rather than losing your progress.
 
 ## Rules
 
