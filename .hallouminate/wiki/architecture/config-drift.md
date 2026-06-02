@@ -100,6 +100,33 @@ codex already put the hook cleanup, it runs in the single `ap install` path (no
 (`tests/test_claude_legacy_hook_cleanup.py`, `test_codex_legacy_hook_cleanup.py`,
 `test_mcp_reconcile.py`).
 
+## Known drift pattern: yq-appended keys absorbed by codex auto-sections
+
+**Symptom**: `model_instructions_file` duplicated inside `[tui.model_availability_nux]`
+in `~/.codex/config.toml`; preamble silently not loading.
+
+**Why it happens**: `chezmoi/lib/install-prompts.sh` uses `yq -i '.model_instructions_file = ...'`
+which appends the key at the end of the file. Codex periodically auto-adds
+`[tui.model_availability_nux]` (UI state) near the end, absorbing the appended
+key into that section. On the next `dots sync`, yq reads `.model_instructions_file`
+at root, gets "" (it's inside tui section), writes another copy at end → duplicate
+inside the section. Neither copy is read by codex as the root-level key it expects.
+
+**Fix**: Move `model_instructions_file` before the first `[section]` header in
+`config.toml` (line 1 works). The guard in `install-prompts.sh` will then find
+it correctly and skip re-writing. See [#262](https://github.com/paulnsorensen/dotfiles/issues/262)
+for the permanent fix (use tomlkit or sed-prepend instead of yq-append).
+
+## Known drift pattern: copilot MCPs not managed by `ap` renderer
+
+Copilot's `mcp-config.json` is managed by the **chezmoi template**
+(`chezmoi/private_dot_copilot/mcp-config.json.tmpl`), not by `ap install`.
+`_COPILOT_MCP_DEFAULT = ("claude", "codex")` in `renderers/copilot.py` means
+no registry MCP without an explicit `harnesses: [copilot]` entry is rendered
+into copilot. The template is the single source of truth for what MCPs copilot
+gets. When the registry adds a new MCP (e.g. `hallouminate`, `serena`), the
+chezmoi template must be manually updated to match.
+
 ## Gotcha: index drift is its own drift class
 
 The hallouminate wiki index (LanceDB) is derived from the markdown on disk. If

@@ -25,6 +25,8 @@ the place to revisit.
       "type": "local",
       "command": "uvx",
       "args": [
+        "--from",
+        "code-review-graph[embeddings]",
         "code-review-graph",
         "serve"
       ],
@@ -67,6 +69,27 @@ the place to revisit.
         "--mcp",
         "--edit"
       ],
+      "tools": [
+        "*"
+      ]
+    },
+    "hallouminate": {
+      "type": "local",
+      "command": "hallouminate",
+      "args": [
+        "serve"
+      ],
+      "tools": [
+        "*"
+      ]
+    },
+    "serena": {
+      "type": "local",
+      "command": "serena-mux",
+      "args": [],
+      "env": {
+        "SERENA_MUX_HARNESS": "copilot"
+      },
       "tools": [
         "*"
       ]
