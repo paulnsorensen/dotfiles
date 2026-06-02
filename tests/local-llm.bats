@@ -14,6 +14,8 @@ load test_helper
 
 LIB="$REAL_DOTFILES_DIR/chezmoi/lib/install-local-llm.sh"
 HEALTH="$REAL_DOTFILES_DIR/chezmoi/local-llm/scripts/executable_healthcheck.sh"
+ALIASES="$REAL_DOTFILES_DIR/chezmoi/local-llm/scripts/executable_aliases.sh"
+LEAN="$REAL_DOTFILES_DIR/chezmoi/local-llm/configs/lean.json"
 
 setup() {
     setup_test_env
@@ -169,4 +171,80 @@ teardown() {
     FAKE_ACTIVE="" run llm_quick_check
     assert_success
     assert_output_contains "not running"
+}
+
+# ─── lean opencode overlay (fits the 32k local-coder window) ──────────────────
+#
+# OPENCODE_CONFIG mergeDeeps onto the global config — it does NOT replace it — so
+# the overlay is just the `enabled: false` lines for the heavy non-coding MCP
+# servers. Disabling a server is the ONLY lever that stops schema injection;
+# per-agent `tools:{x:false}` gates execution but still ships the schema tokens.
+
+@test "lean.json is valid JSON and disables exactly the heavy MCP servers" {
+    run jq -e . "$LEAN"
+    assert_success
+
+    for server in code-review-graph hallouminate tavily; do
+        run jq -e --arg s "$server" '.mcp[$s].enabled == false' "$LEAN"
+        assert_success
+    done
+
+    # Exclusivity: exactly those three — no accidental extra disable slips in.
+    run jq -e '.mcp | keys | length == 3' "$LEAN"
+    assert_success
+}
+
+@test "lean.json leaves the coding MCP servers untouched (absent = stays enabled)" {
+    # mergeDeep semantics: only the keys the overlay names change. tilth, serena,
+    # and context7 must NOT appear, or the overlay would strip the coder's own
+    # tools out of the window it is meant to protect.
+    for server in tilth serena context7; do
+        run jq -r --arg s "$server" '.mcp | has($s)' "$LEAN"
+        assert_output_contains "false"
+    done
+}
+
+@test "every server lean.json disables is a real opencode-loaded MCP (catches registry rename drift)" {
+    # The overlay only saves tokens if its keys match opencode's actual MCP server
+    # names. A rename in agents/mcp/registry.yaml that isn't mirrored here makes the
+    # overlay a silent no-op: the 32k window blows out with no error. Tie the
+    # disabled keys to the registry source of truth so that drift fails loudly.
+    local registry="$REAL_DOTFILES_DIR/agents/mcp/registry.yaml"
+
+    # Servers the registry renders into opencode: harnesses absent (default = all
+    # harnesses) or explicitly listing opencode. `// ["opencode"]` substitutes the
+    # default only when the field is null/absent; an explicit `[]` (e.g. todoist)
+    # stays empty and is correctly excluded.
+    local opencode_servers
+    opencode_servers=$(yq -r \
+      '.mcps | to_entries | map(select((.value.harnesses // ["opencode"]) | contains(["opencode"]))) | .[].key' \
+      "$registry")
+
+    local disabled
+    disabled=$(jq -r '.mcp | keys | .[]' "$LEAN")
+    [ -n "$disabled" ]
+
+    local s
+    for s in $disabled; do
+        echo "$opencode_servers" | grep -qx "$s" || {
+            echo "lean.json disables '$s' — not an opencode-loaded MCP in registry.yaml"
+            return 1
+        }
+    done
+}
+
+@test "opencode-lean points OPENCODE_CONFIG at the deployed lean.json and forwards args" {
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "CONFIG=$OPENCODE_CONFIG"
+echo "ARGS=$*"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run opencode-lean --model local-coder
+    assert_success
+    assert_output_contains "CONFIG=$HOME/local-llm/configs/lean.json"
+    assert_output_contains "ARGS=--model local-coder"
 }

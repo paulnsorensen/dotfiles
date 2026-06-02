@@ -30,6 +30,14 @@ alias llm-health='~/local-llm/scripts/healthcheck.sh'
 # On-demand model download (never run by dots sync; idempotent).
 alias llm-download='~/local-llm/scripts/download-models.sh'
 
+# Launch opencode with the lean MCP overlay so the 32k local-coder window fits.
+# OPENCODE_CONFIG mergeDeeps onto the global config — the overlay only disables
+# the heavy non-coding servers (code-review-graph, hallouminate, tavily), leaving
+# tilth + serena + context7 for the coder. Usage: opencode-lean --model local-coder
+opencode-lean() {
+  OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"
+}
+
 # Quick chat helper — usage: llm-chat local-sonnet "your prompt"
 llm-chat() {
   local model="${1:-local-sonnet}"; shift
