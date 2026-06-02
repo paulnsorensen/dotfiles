@@ -199,6 +199,23 @@ def test_parse_manifest_permissions_dedup_sorted(env):
     assert out.settings["permissions_allow"] == ["a", "b", "c"]
 
 
+def test_parse_manifest_permissions_deny_union_sorted(env):
+    """``settings.permissions_deny`` unions+sorts across includes, mirroring
+    the allow channel. This is the installable deny channel (distinct from the
+    top-level isolated-launch ``permissions_deny``) that the opencode renderer
+    consumes."""
+    write_profile(
+        env.profiles, "base", "name: base\nsettings:\n  permissions_deny: [x, y]\n"
+    )
+    write_profile(
+        env.profiles,
+        "leaf",
+        "name: leaf\ninclude: [base]\nsettings:\n  permissions_deny: [y, z]\n",
+    )
+    out = parse_manifest(env.profiles / "leaf")
+    assert out.settings["permissions_deny"] == ["x", "y", "z"]
+
+
 def test_parse_manifest_cycle_errors(env):
     write_profile(env.profiles, "a", "name: a\ninclude: [b]\n")
     write_profile(env.profiles, "b", "name: b\ninclude: [a]\n")
