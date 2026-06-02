@@ -4,6 +4,16 @@ Reinforces `~/.claude/CLAUDE.md`'s Code-Intelligence Routing section. That secti
 
 The `cheez-search` / `cheez-read` / `cheez-write` skills route through tilth — use them instead of host `Read` / `Edit` / `Write` / `Grep` whenever they're available.
 
+## Ground in the repo wiki (hallouminate) first
+
+If the hallouminate MCP is connected, **ground before you act and maintain before you stop** — the per-repo wiki holds the cross-session *why* (architecture rationale, gotchas, design decisions) that code and `git` can't tell you.
+
+- **At session start / before non-trivial work** — especially anything touching architecture, config, or unfamiliar subsystems — query the wiki first: `ground` (semantic search) or `list_tree` / `read_markdown`. Run `list_corpora` if unsure which wiki applies. This is a read; it costs little and routinely saves a re-derivation. Skip only for trivial one-step edits or when no `repo:<name>:wiki` corpus exists.
+- **Before each tool call, the self-check extends:** "Is the *why* behind this already written down?" If it's a design/rationale question, `ground` it before reading code blind.
+- **At session end** — when the session established a non-obvious fact, decision, or gotcha a future agent would otherwise re-learn, write it back via `add_markdown` (one topic per file, capture the *why* not the *what*, link related pages). Don't duplicate what the code or `AGENTS.md` already states.
+
+The wiki is the fast path to design rationale; `AGENTS.md` / `CLAUDE.md` is the command/structure reference. Use both.
+
 ## Serena mapping (symbol-level)
 
 | Task | Tool |
