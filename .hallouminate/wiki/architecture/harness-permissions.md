@@ -79,11 +79,13 @@ This corrects the long-standing "Cursor permissions are UI-only" assumption. It 
 | **Claude** (install) | `_write_settings` (`claude.py:472-484`) writes plugin-scoped `settings.json` `permissions.allow` if non-empty; live root `settings.json` merge never touches permissions | ✅ | ✗ | `.claude/plugins/local/<profile>/settings.json` |
 | **Claude** (isolated) | `overlay.py` ephemeral `settings.json` with `permissions.allow` **and** `permissions.deny`, paired with `--setting-sources ""` + `--tools` whitelist | ✅ | ✅ | ephemeral `settings.json` |
 | **opencode** | `_translate_permission` (`opencode.py:38-47`) maps only `Bash(cmd:*)` → `cmd *`; everything else passes through verbatim into `permission.bash` | ✅ (bash only) | ✗ | `opencode.json` `permission.bash` |
-| **Codex** | **zero** permission handling — renderer writes agents/skills/hooks/mcps only | ✗ | ✗ | — |
+| **Codex** | renderer writes agents/skills/hooks/mcps only — **no per-command rule rendered**. But Codex is *not* surface-less: it has a static `config.toml` permission surface `ap` doesn't yet target (see Planned fixes #5) | ✗ † | ✗ † | — |
 | **Cursor** | declared perms **warned and dropped** (`cursor.py:117-124`, assumes "UI-only") | ✗ | ✗ | — |
 | **Copilot** | **silently skipped** (uses runtime `--deny-tool`, not config) | ✗ | ✗ | — |
 
-So a profile's `permissions_allow` only ever reaches **Claude** (full, both channels) and **opencode** (allow-only, bash-only). The other three drop it.
+† Codex's `✗` is for the **per-command rule-list** dimension only — there is no `allowed_commands`-style config key. It is *not* "no permission surface": `sandbox_mode` + `approval_policy` (posture) and MCP `enabled_tools`/`disabled_tools` are static `config.toml` keys `ap` could render and currently doesn't.
+
+So a profile's per-command `permissions_allow` rules only reach **Claude** (full, both channels) and **opencode** (allow-only, bash-only). Cursor and Copilot drop them; Codex drops the *rules* but exposes a separate static posture surface (below) that `ap` leaves on the table.
 
 ## Planned fixes & remaining gaps
 
@@ -91,7 +93,12 @@ So a profile's `permissions_allow` only ever reaches **Claude** (full, both chan
 2. **opencode loses deny + non-bash perms.** `_translate_permission` only emits `permission.bash` allow entries, yet opencode natively supports `deny` and per-tool (`edit`/`read`/`webfetch`/MCP) permissions with last-match-wins. Spec: **`.cheese/specs/ap-opencode-permission-fidelity.md`** — adds a `settings.permissions_deny` parse channel and translates the full Claude vocabulary into opencode's per-tool `permission` map.
 3. **Shared dependency:** both specs need the new `settings.permissions_deny` union-merge in `parse.py` (today deny is top-level / isolated-claude-only). Land it once.
 4. **Claude `settings.permissions_deny` not consumed (future).** Once the parse channel exists, the claude install renderer could also write `permissions.deny` (it only writes `allow` today) — explicitly out of scope of the two specs, noted here so it isn't forgotten.
-5. **Codex/Copilot have no static config permission surface by design** — Codex gates via sandbox+approval (+`.rules` DSL), Copilot via runtime `--deny-tool`. Their "skip" is intentional. (Codex MCP `enabled_tools`/`disabled_tools` *is* renderable but `ap` doesn't emit it — a possible future.)
+5. **Permissions are two orthogonal dimensions, not one — and Codex covers the second.** Earlier framing ("Codex/Copilot have no static config permission surface by design") was wrong: it conflated *per-command rule-lists* with *permission surface in general*. Split them:
+   - **Per-command rule-list** (`Bash(git:*)`, `Read(...)`, `mcp__s__t`). Renderable to Claude / opencode / Cursor-CLI. **Codex has no config key for this** (verified: no `allowed_commands`/`trusted_commands`/`permissions.allow` in `config.toml` — `developers.openai.com/codex/agent-approvals-security` and `config-reference`, `codex-config-reference.md:49`; per-command allow/deny is the TUI-written `.rules` execpolicy DSL at `~/.codex/rules/default.rules`, not declarative profile config). **Copilot has none either** (runtime `--allow-tool`/`--deny-tool` only; "No trustedTools in config.json yet" — feature request, `copilot-cli-permissions-raw.md:105`).
+   - **Posture / mode** (read-only vs write, how aggressively to gate). **Codex renders cleanly here:** `sandbox_mode` (`read-only`|`workspace-write`|`danger-full-access`) + `approval_policy` (`untrusted`|`on-request`|`never`|`{ granular = { sandbox_approval, rules, mcp_elicitations, request_permissions, skill_approval } }`) — both static `config.toml` keys (`codex-config-reference.md:10-29`). An isolated read-only profile (e.g. `review`) maps directly to `sandbox_mode = read-only` + `approval_policy = untrusted`. `ap` doesn't render this today; it should.
+   - **MCP tool scoping** is statically renderable for *both* Codex (`enabled_tools`/`disabled_tools`, `config-reference`) and Copilot (`mcp-config.json` `tools: [...]` exposure list, `copilot-cli-permissions-raw.md:57-72`). `ap` emits neither.
+
+   Net: a "generic permission setting scoped for all harnesses" is achievable only when split by dimension — per-command rules reach Claude/opencode/Cursor; posture reaches Codex (+Claude `defaultMode`/`permission-mode`, opencode default action); MCP scoping reaches all five. No single channel reaches all five with the full vocabulary.
 
 ## Provenance
 
