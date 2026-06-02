@@ -236,6 +236,49 @@ def test_clean_keeps_user_entries_matches_golden(tmp_path: Path):
     assert "user-mcp" in got["mcp"]
     assert "cargo *" not in got["permission"]["bash"]
     assert "npm *" in got["permission"]["bash"]
+    # Deny entries the profile contributed are also un-merged: the map-tool
+    # ``edit`` bucket and the MCP shorthand key both vanish, leaving no
+    # orphaned empty bucket behind.
+    assert "edit" not in got["permission"]
+    assert "serena_find_symbol" not in got["permission"]
+
+
+def test_clean_removes_deny_shorthand_preserving_user_shorthand(tmp_path: Path):
+    """A profile deny rendered as a shorthand key (``serena_find_symbol``)
+    is removed on clean, while an unrelated user-set shorthand key on the
+    same surface survives — clean keys by exact (key, pattern), not by tool."""
+    (tmp_path / "opencode.json").write_text(
+        json.dumps(
+            {"$schema": SCHEMA, "permission": {"user_tool": "deny"}}
+        )
+    )
+    r = OpencodeRenderer()
+    m = Manifest(
+        name="shdeny", settings={"permissions_deny": ["mcp__serena__find_symbol"]}
+    )
+    r.render(m, tmp_path)
+    rendered = json.loads((tmp_path / "opencode.json").read_text())["permission"]
+    assert rendered["serena_find_symbol"] == "deny"
+    assert rendered["user_tool"] == "deny"
+    r.clean(m, tmp_path)
+    after = json.loads((tmp_path / "opencode.json").read_text())["permission"]
+    assert "serena_find_symbol" not in after
+    assert after["user_tool"] == "deny"
+
+
+def test_apply_perms_leaves_user_string_value_under_map_tool(tmp_path: Path):
+    """If a user set a map-capable tool as a string shorthand
+    (``permission.edit = "ask"``) rather than a ``{pattern: action}`` map,
+    a profile map-rule for that tool is dropped rather than crashing or
+    clobbering the user's value. Locks the non-dict guard in ``_apply_perms``;
+    the silent-drop is a known limitation (see press report)."""
+    (tmp_path / "opencode.json").write_text(
+        json.dumps({"$schema": SCHEMA, "permission": {"edit": "ask"}})
+    )
+    m = Manifest(name="strguard", settings={"permissions_deny": ["Edit(./x)"]})
+    OpencodeRenderer().render(m, tmp_path)
+    perm = json.loads((tmp_path / "opencode.json").read_text())["permission"]
+    assert perm["edit"] == "ask"  # user value untouched, no crash
 
 
 def test_mcp_env_maps_to_environment(tmp_path: Path):
