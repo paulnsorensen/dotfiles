@@ -74,6 +74,14 @@ mcps:
       TODOIST_API_KEY: "${TODOIST_API_KEY}"
     scope: user
     optional: true   # skip non-fatally when TODOIST_API_KEY is unset
+    # Scoped out of every harness: todoist's ~45 tools ≈ 38k tokens (62% of the
+    # MCP tool footprint) are eager-loaded into every request by opencode, codex,
+    # cursor, and copilot (only claude defers via ToolSearch — see
+    # .cheese/research/mcp-schema-loading). It is irrelevant to coding; the `todo`
+    # profile defines todoist inline, so productivity sessions still get it.
+    # Empty list (not absent) renders into nothing — base.py:item_harnesses only
+    # falls back to the default set when `harnesses` is missing.
+    harnesses: []
     description: Official Todoist MCP (Doist-maintained) — invoke only when explicitly requested
 
   code-review-graph:
