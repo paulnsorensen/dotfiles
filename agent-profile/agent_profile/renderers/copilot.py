@@ -137,6 +137,7 @@ class CopilotRenderer:
     """Renderer for the Copilot CLI harness. See module docstring."""
 
     name = "copilot"
+    mcp_default = _COPILOT_MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         out_files: list[str] = []

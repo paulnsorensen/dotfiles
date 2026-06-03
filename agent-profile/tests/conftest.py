@@ -87,6 +87,7 @@ class StubRenderer:
 
     def __init__(self, name: str):
         self.name = name
+        self.mcp_default = tuple(ALL_HARNESSES)
 
     def _merged_path(self, target: Path) -> Path:
         return Path(str(target).rstrip("/")) / f"{self.name}.json"

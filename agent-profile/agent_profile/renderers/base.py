@@ -71,6 +71,7 @@ class Renderer(Protocol):
     """The contract every harness renderer satisfies. See module docstring."""
 
     name: str
+    mcp_default: tuple[str, ...]
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         """Write artefacts under ``target``; return relative paths written."""

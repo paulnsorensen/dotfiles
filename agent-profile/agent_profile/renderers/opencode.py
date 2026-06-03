@@ -96,6 +96,7 @@ class OpencodeRenderer:
     surgically un-merged in :meth:`clean`."""
 
     name = "opencode"
+    mcp_default = _OPENCODE_MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         """Render opencode's native subagent files (``<target>/agents/``) and

@@ -81,6 +81,7 @@ class ClaudeRenderer:
     """Renderer for the Claude Code native-plugin layout. See module docstring."""
 
     name = "claude"
+    mcp_default = _MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         out: list[str] = []

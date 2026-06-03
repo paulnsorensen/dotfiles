@@ -71,6 +71,7 @@ class CursorRenderer:
     """Render a resolved manifest into Cursor's ``.cursor/`` layout."""
 
     name = "cursor"
+    mcp_default = _CURSOR_MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         out: list[str] = []

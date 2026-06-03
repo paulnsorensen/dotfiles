@@ -211,3 +211,51 @@ def test_claude_prune_noop_for_plugin_scope(monkeypatch, tmp_path):
         # default mcp_scope (not "user") → plugin .mcp.json is whole-file
     )
     cl.ClaudeRenderer().prune_mcps(dropped, tmp_path)  # must be a no-op
+
+
+# ─── regression: an MCP scoped out of a harness must be pruned (#265) ─────────
+
+
+def _yaml_scoped(name: str, specs: dict[str, list[str]]) -> str:
+    """Profile YAML with an explicit per-MCP ``harnesses`` list."""
+    lines = [f"name: {name}", "description: reconcile probe", "mcps:"]
+    for n, harnesses in specs.items():
+        lines += [
+            f"  - name: {n}",
+            "    command: /bin/true",
+            "    args: [--flag]",
+            f"    harnesses: {json.dumps(harnesses)}",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def test_mcp_scoped_to_no_harnesses_is_pruned(env, capsys, prod_renderers):
+    # srv1 + srv2 both render into the merge-target harnesses.
+    write_profile(env.profiles, "p", _yaml("p", ["srv1", "srv2"]))
+    assert _install(env, "p") == 0
+    capsys.readouterr()
+    t = env.target
+    cur = json.loads((t / ".cursor/mcp.json").read_text())["mcpServers"]
+    assert "srv2" in cur  # precondition: srv2 was rendered into cursor
+
+    # Re-install with srv2 scoped OUT of every harness (harnesses: []). It stays
+    # in manifest.mcps but should no longer render anywhere — the reconcile must
+    # evict the stale entry a prior render merged into cursor/copilot. The bug:
+    # current_names was global, so srv2 (still in manifest.mcps) never dropped.
+    write_profile(
+        env.profiles,
+        "p",
+        _yaml_scoped(
+            "p",
+            {"srv1": ["codex", "opencode", "cursor", "copilot"], "srv2": []},
+        ),
+    )
+    assert _install(env, "p") == 0
+    capsys.readouterr()
+
+    cur = json.loads((t / ".cursor/mcp.json").read_text())["mcpServers"]
+    assert "srv2" not in cur, "srv2 scoped to harnesses:[] must be pruned from cursor"
+    assert "srv1" in cur, "survivor srv1 must stay"
+
+    cop = json.loads((t / ".copilot/mcp-config.json").read_text())["mcpServers"]
+    assert "srv2" not in cop, "srv2 scoped to harnesses:[] must be pruned from copilot"
