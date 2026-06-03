@@ -22,7 +22,6 @@ The wiki is the fast path to design rationale; `AGENTS.md` / `CLAUDE.md` is the 
 | Read a specific symbol's body | `find_symbol` (`include_body=true`) |
 | Find a symbol by name | `find_symbol` |
 | Find references / callers | `find_referencing_symbols` |
-| Find declarations / implementations | `find_declaration` / `find_implementations` |
 | Edit a symbol's body | `replace_symbol_body` |
 | Insert near a symbol | `insert_before_symbol` / `insert_after_symbol` |
 | Pattern replace inside a file | `replace_content` |
