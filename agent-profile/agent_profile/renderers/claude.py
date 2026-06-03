@@ -10,7 +10,7 @@ Layout (under ``target``)::
       .claude-plugin/plugin.json    manifest Claude actually loads
       commands/<name>.md            slash commands
       hooks/<script>                hook scripts (wiring lives in plugin.json)
-      .mcp.json                     mcpServers for harnesses ⊃ claude
+      .mcp.json                     mcpServers for harnesses ⊇ claude
       settings.json                 permissions.allow from manifest
 
 Plus the cross-harness shared paths::
@@ -92,7 +92,7 @@ class ClaudeRenderer:
             (plugin_dir / sub).mkdir(parents=True, exist_ok=True)
 
         self._write_manifests(plugin_dir, base, profile, desc, out)
-        self._write_agents(manifest, base, target, out)
+        self._write_agents(manifest, target, out)
         self._write_skills(manifest, target, out)
         self._write_commands(manifest, plugin_dir, base, out)
         self._write_hooks(manifest, plugin_dir, base, profile, out)
@@ -177,7 +177,6 @@ class ClaudeRenderer:
     def _write_agents(
         self,
         manifest: Manifest,
-        base: Path,
         target: Path,
         out: list[str],
     ) -> None:

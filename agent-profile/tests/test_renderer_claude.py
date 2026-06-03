@@ -381,6 +381,8 @@ def test_rust_tracked_files_match_bash_manifest(rendered_rust):
         ".claude/plugins/local/rust/settings.json",
     }
     assert set(written) == expected
+    # No path tracked twice (feeds the install manifest; must dedupe).
+    assert len(written) == len(set(written))
 
 
 # ─── mcptest profile parity (MCP projection + model overrides) ───────
@@ -440,15 +442,15 @@ def test_mcptest_plugin_manifest_has_no_hooks_key(rendered_mcptest):
 
 
 @pytest.fixture
-def rendered_nobody(env):
+def nobody_manifest(env):
     profile_dir = write_profile(env.profiles, "nobody", _NOBODY_YAML)
     manifest = parse_manifest(profile_dir)
     return env.target, manifest
 
 
-def test_nobody_raises_when_body_absent(rendered_nobody):
+def test_nobody_raises_when_body_absent(nobody_manifest):
     """An agent without body_path must raise ValueError (fail fast and loud)."""
-    target, manifest = rendered_nobody
+    target, manifest = nobody_manifest
     with pytest.raises(ValueError, match="has no body_path"):
         ClaudeRenderer().render(manifest, target)
 

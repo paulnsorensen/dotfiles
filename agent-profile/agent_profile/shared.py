@@ -208,7 +208,7 @@ def write_shared_claude_skill(
     ahead of plugin-scoped skills (priority 5), so writing here means the
     skill is available without a plugin and without duplicating it in the
     plugin tree — the same rationale as ``write_shared_claude_agent``.
-    Port of ``ap_write_shared_claude_skill``.
+    Sibling of ``write_shared_claude_agent`` / ``copy_shared_skill``.
     """
     rel = f".claude/skills/{name}"
     abs_path = Path(str(target).rstrip("/")) / rel
