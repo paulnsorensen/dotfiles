@@ -586,3 +586,20 @@ def test_mcp_config_defaults_to_star_with_no_canonical_rule(src, target):
 
     data = _json.loads((target / ".copilot" / "mcp-config.json").read_text())
     assert data["mcpServers"]["tilth"]["tools"] == ["*"]
+
+
+def test_mcp_config_whole_server_allow_wins_over_named(src, target):
+    """When the canonical allow carries BOTH `mcp__<s>__*` and a named-tool
+    rule for the same server, the whole-server allow wins -> tools == ["*"]
+    (no restriction). A regression that read only named_mcp_tools would
+    wrongly restrict the server to the single named tool (findings 4/5)."""
+    m = _perm_manifest(
+        src,
+        {"permissions_allow": ["mcp__tilth__*", "mcp__tilth__tilth_read"]},
+        mcps=[{"name": "tilth", "command": "tilth", "harnesses": ["copilot"]}],
+    )
+    CopilotRenderer().render(m, target)
+    import json as _json
+
+    data = _json.loads((target / ".copilot" / "mcp-config.json").read_text())
+    assert data["mcpServers"]["tilth"]["tools"] == ["*"]

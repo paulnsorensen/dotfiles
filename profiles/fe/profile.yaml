@@ -9,9 +9,11 @@ registries:
   agents: agents/registry.yaml
 isolated: true
 system_prompt: CLAUDE.md
-# Auto-approve the Figma connector (ccp settings-merge parity).
+# Auto-approve the Figma connector (ccp settings-merge parity) and shadcn
+# (profile-local MCP — see `mcps` below; the canonical list grants it nowhere).
 permissions_allow:
   - "mcp__claude_ai_Figma__*"
+  - "mcp__shadcn__*"
 # Per-profile plugin set (ccp settings-merge parity).
 enabled_plugins:
   "claude-md-management@claude-plugins-official": true

@@ -36,7 +36,12 @@ from pathlib import Path
 from typing import Any
 
 from agent_profile.parse import Manifest
-from agent_profile.permissions import bash_argv, named_mcp_tools, parse_mcp_rule
+from agent_profile.permissions import (
+    bash_argv,
+    named_mcp_tools,
+    parse_mcp_rule,
+    whole_server_mcp_allows,
+)
 from agent_profile.renderers.base import (
     body_abs,
     includes_harness,
@@ -262,14 +267,21 @@ class CopilotRenderer:
         # Lever 3: each server's `tools` array is derived from the canonical
         # allow list. `mcp__<server>__*` (or no canonical rule for the
         # server) -> ["*"] (all tools); named `mcp__<server>__<tool>` allows
-        # -> the explicit tool list.
-        named = named_mcp_tools(manifest.settings.get("permissions_allow") or [])
+        # -> the explicit tool list. A whole-server `mcp__<server>__*` wins
+        # over named-tool entries for the same server (no restriction), so
+        # check the whole-server set before the named-tool bucket.
+        allow = manifest.settings.get("permissions_allow") or []
+        named = named_mcp_tools(allow)
+        whole = whole_server_mcp_allows(allow)
         for mcp in mcps:
             entry = {"command": mcp["command"], "args": mcp.get("args") or []}
             if mcp.get("env") is not None:
                 entry["env"] = mcp["env"]
             tools = named.get(mcp["name"])
-            entry["tools"] = sorted(tools) if tools else ["*"]
+            if mcp["name"] in whole or not tools:
+                entry["tools"] = ["*"]
+            else:
+                entry["tools"] = sorted(tools)
             servers[mcp["name"]] = entry
 
         out.write_text(_dumps(data))

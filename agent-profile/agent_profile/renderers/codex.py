@@ -37,7 +37,12 @@ import tomlkit
 from agent_profile import shared
 from agent_profile.env import load_dotenv
 from agent_profile.parse import Manifest
-from agent_profile.permissions import bash_argv, named_mcp_tools
+from agent_profile.permissions import (
+    bash_argv,
+    named_mcp_tools,
+    parse_mcp_rule,
+    whole_server_mcp_allows,
+)
 from agent_profile.renderers import base
 
 # Codex's MCP membership default matches the bash select() fallback
@@ -294,6 +299,9 @@ class CodexRenderer:
     ) -> None:
         rules = _collect_prefix_rules(manifest)
         if not rules:
+            # SSOT: no Bash rule remains -> unlink any stale ap-canonical.rules
+            # so a prior render's execpolicy floor is not stranded.
+            self._clean_rules(target)
             return
         base_dir = Path(str(target).rstrip("/"))
         abs_path = base_dir / _RULES_REL
@@ -315,18 +323,33 @@ class CodexRenderer:
     # Merge-preserve every user key/comment via the tomlkit round-trip (same
     # surface _write_mcps uses for [mcp_servers]).
     def _write_mcp_tool_scopes(self, manifest: Manifest, target: Path) -> None:
-        scopes = _collect_mcp_tool_scopes(manifest)
-        if not scopes:
+        managed = _managed_mcp_servers(manifest)
+        if not managed:
             return
+        scopes = _collect_mcp_tool_scopes(manifest)
         cfg = Path(str(target).rstrip("/")) / ".codex" / "config.toml"
         doc = base.load_toml(cfg)
         servers = doc.get("mcp_servers")
-        if servers is None:
-            servers = tomlkit.table()
-            doc["mcp_servers"] = servers
 
-        for server, (enabled, disabled) in scopes.items():
-            entry = servers.get(server)
+        # SSOT: for every server this pass manages, clear ANY prior
+        # enabled/disabled key first, then re-add only the newly-computed
+        # non-empty sets. A tool dropped from the canonical lists (or a
+        # server downgraded to a whole-server allow) thus leaves no stale key.
+        for server in managed:
+            entry = servers.get(server) if servers is not None else None
+            enabled, disabled = scopes.get(server, (set(), set()))
+            if entry is not None:
+                for key in ("enabled_tools", "disabled_tools"):
+                    if key in entry:
+                        del entry[key]
+                if len(entry) == 0:
+                    del servers[server]
+                    entry = None
+            if not enabled and not disabled:
+                continue  # nothing to add for this server
+            if servers is None:
+                servers = tomlkit.table()
+                doc["mcp_servers"] = servers
             if entry is None:
                 entry = tomlkit.table()
                 servers[server] = entry
@@ -335,6 +358,12 @@ class CodexRenderer:
             if disabled:
                 entry["disabled_tools"] = sorted(disabled)
 
+        if servers is not None and len(servers) == 0:
+            del doc["mcp_servers"]
+        if len(doc) == 0:
+            if cfg.is_file():
+                cfg.unlink()
+            return
         base.dump_toml(cfg, doc)
 
     def _clean_mcp_tool_scopes(self, manifest: Manifest, target: Path) -> None:
@@ -473,10 +502,14 @@ def _render_rules_file(rules: list[tuple[list[str], str]]) -> str:
     canonical Bash rule; ``pattern`` is the argv prefix, ``decision`` the
     lowered action. A header marks the file as ap-managed."""
     lines = [
-        "# Managed by ap (agent-profile) — canonical cross-harness "
-        "permission rules.",
-        "# Do not edit; regenerated on every `dots sync`. The TUI-owned "
-        "default.rules is untouched.",
+        (
+            "# Managed by ap (agent-profile) — canonical cross-harness "
+            "permission rules."
+        ),
+        (
+            "# Do not edit; regenerated on every `dots sync`. The TUI-owned "
+            "default.rules is untouched."
+        ),
         "",
     ]
     for pattern, decision in rules:
@@ -499,15 +532,45 @@ def _collect_mcp_tool_scopes(
     enabled entry (the server stays enabled with no restriction); a
     ``mcp__s__*`` deny is a whole-server disable, which Codex expresses by
     omitting the server, not by a tool list, so it too names no tool and is
-    out of scope here. Only servers that gain at least one named tool reach
-    the result."""
+    out of scope here.
+
+    A whole-server ``mcp__s__*`` allow WINS over any named-tool allow for
+    the same server: the server must stay unrestricted (no ``enabled_tools``
+    key), so its named-allow tools are dropped here. The deny channel is
+    independent — ``disabled_tools`` for that server survives. Only servers
+    that gain at least one named tool (after the whole-server drop) reach the
+    result."""
     settings = manifest.settings
     enabled = named_mcp_tools(settings.get("permissions_allow") or [])
     disabled = named_mcp_tools(settings.get("permissions_deny") or [])
+    whole = whole_server_mcp_allows(settings.get("permissions_allow") or [])
+    for server in whole:
+        enabled.pop(server, None)
     servers = set(enabled) | set(disabled)
     return {
         s: (enabled.get(s, set()), disabled.get(s, set())) for s in servers
     }
+
+
+def _managed_mcp_servers(manifest: Manifest) -> set[str]:
+    """Every server this render pass manages — i.e. named by ANY ``mcp__*``
+    canonical rule (named-tool OR whole-server ``mcp__<server>__*``), across
+    both the allow and deny lists.
+
+    ``_write_mcp_tool_scopes`` clears each managed server's prior
+    enabled/disabled keys before re-adding the freshly-computed sets, so the
+    managed set must include whole-server allows (whose set is empty): a
+    server downgraded to a whole-server allow still needs its stale
+    ``enabled_tools`` cleared (SSOT). Servers carrying NO ``mcp__*`` rule are
+    not ours to touch and stay out of the set."""
+    settings = manifest.settings
+    out: set[str] = set()
+    for channel in ("permissions_allow", "permissions_deny"):
+        for rule in settings.get(channel) or []:
+            parsed = parse_mcp_rule(rule)
+            if parsed:
+                out.add(parsed[0])
+    return out
 
 
 def _managed_basenames_per_event(

@@ -788,6 +788,25 @@ def test_no_rules_file_when_no_canonical_perms(renderer, src, target):
     assert not (target / _RULES_REL).is_file()
 
 
+def test_write_rules_unlinks_stale_file_when_rules_go_empty(renderer, src, target):
+    """SSOT: a prior render wrote a .rules file; the canonical list is then
+    edited so NO Bash rule remains. The next render must unlink the stale
+    ap-canonical.rules — leaving it would keep a dead execpolicy floor in
+    force. A regression that returned early without unlinking would strand
+    the old allow/forbidden prefix rules."""
+    m1 = _manifest(src, settings={"permissions_allow": ["Bash(git:*)"]})
+    renderer.render(m1, target)
+    assert (target / _RULES_REL).is_file()
+
+    # Same renderer, now no Bash-prefix rules at all (only non-shell entries).
+    m2 = _manifest(
+        src,
+        settings={"permissions_allow": ["Edit", "mcp__tilth__*"]},
+    )
+    renderer.render(m2, target)
+    assert not (target / _RULES_REL).is_file()
+
+
 def test_clean_unlinks_rules_file(renderer, src, target):
     m = _manifest(src, settings={"permissions_allow": ["Bash(git:*)"]})
     renderer.render(m, target)
@@ -906,6 +925,103 @@ def test_mcp_named_allow_and_deny_same_server_merge(renderer, src, target):
     doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
     assert doc["mcp_servers"]["tilth"]["enabled_tools"] == ["tilth_read"]
     assert doc["mcp_servers"]["tilth"]["disabled_tools"] == ["tilth_write"]
+
+
+def test_mcp_whole_server_allow_wins_over_named_omits_enabled_tools(
+    renderer, src, target
+):
+    """When the canonical allow carries BOTH `mcp__<s>__*` and a named-tool
+    rule for the same server, the whole-server allow wins -> NO enabled_tools
+    key (the server stays unrestricted). With no other MCP/rule that means no
+    config.toml at all. A regression that read only named_mcp_tools would
+    wrongly write enabled_tools = [<named>] (findings 4/5)."""
+    m = _manifest(
+        src,
+        settings={
+            "permissions_allow": ["mcp__tilth__*", "mcp__tilth__tilth_read"],
+        },
+    )
+    renderer.render(m, target)
+    assert not (target / ".codex" / "config.toml").is_file()
+
+
+def test_mcp_whole_server_allow_keeps_disabled_tools(renderer, src, target):
+    """A whole-server allow nullifies the server's enabled_tools but must NOT
+    touch disabled_tools (deny channel is independent of the whole-server
+    allow). enabled is dropped, disabled survives."""
+    m = _manifest(
+        src,
+        settings={
+            "permissions_allow": ["mcp__tilth__*", "mcp__tilth__tilth_read"],
+            "permissions_deny": ["mcp__tilth__tilth_write"],
+        },
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert "enabled_tools" not in doc["mcp_servers"]["tilth"]
+    assert doc["mcp_servers"]["tilth"]["disabled_tools"] == ["tilth_write"]
+
+
+def test_mcp_scope_clears_stale_enabled_tools_on_removal(renderer, src, target):
+    """SSOT: a tool dropped from the canonical allow list must clear the
+    PRIOR enabled_tools key, not leave it behind. Here a prior render wrote
+    enabled_tools = ['tilth_read', 'tilth_list']; the canonical list now
+    names only one of them, so the render must rewrite the key to just the
+    surviving tool — never union the stale entry back in."""
+    (target / ".codex").mkdir(parents=True)
+    (target / ".codex" / "config.toml").write_text(
+        '[mcp_servers.tilth]\ncommand = "tilth"\n'
+        'enabled_tools = ["tilth_list", "tilth_read"]\n'
+    )
+    m = _manifest(
+        src,
+        settings={"permissions_allow": ["mcp__tilth__tilth_read"]},
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert doc["mcp_servers"]["tilth"]["enabled_tools"] == ["tilth_read"]
+
+
+def test_mcp_scope_whole_server_clears_prior_enabled_tools(renderer, src, target):
+    """SSOT + findings 4/5: when the last NAMED allow for a server is dropped
+    and only a whole-server `mcp__<s>__*` allow remains, the prior
+    enabled_tools key must be cleared (server back to unrestricted), not left
+    stale. The server is still 'managed' (named by the whole-server rule), so
+    the stale key is removed even though the new enabled set is empty. The
+    user command survives; the now-empty table is not orphaned with a stale
+    restriction."""
+    (target / ".codex").mkdir(parents=True)
+    (target / ".codex" / "config.toml").write_text(
+        '[mcp_servers.tilth]\ncommand = "tilth"\n'
+        'enabled_tools = ["tilth_read"]\n'
+    )
+    m = _manifest(
+        src,
+        settings={"permissions_allow": ["mcp__tilth__*"]},
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert "enabled_tools" not in doc["mcp_servers"]["tilth"]
+    assert doc["mcp_servers"]["tilth"]["command"] == "tilth"
+
+
+def test_mcp_scope_clears_stale_disabled_tools_on_removal(renderer, src, target):
+    """SSOT mirror for the deny channel: a named-tool deny dropped from the
+    canonical list clears the prior disabled_tools key. A whole-server deny
+    keeps the server 'managed', so the stale key is removed."""
+    (target / ".codex").mkdir(parents=True)
+    (target / ".codex" / "config.toml").write_text(
+        '[mcp_servers.tilth]\ncommand = "tilth"\n'
+        'disabled_tools = ["tilth_write"]\n'
+    )
+    m = _manifest(
+        src,
+        settings={"permissions_deny": ["mcp__tilth__*"]},
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert "disabled_tools" not in doc["mcp_servers"]["tilth"]
+    assert doc["mcp_servers"]["tilth"]["command"] == "tilth"
 
 
 def test_mcp_whole_server_deny_writes_nothing(renderer, src, target):
