@@ -187,6 +187,26 @@ def cmd_describe(name: str, colors: _Colors, out: Any) -> int:
     return 0
 
 
+def cmd_copilot_flags(name: str, out: Any) -> int:
+    """Print the Copilot launch flags (``--allow-tool``/``--deny-tool``) the
+    profile's canonical permission lists lower to (lever 1).
+
+    The Copilot CLI has no config-file surface for per-command rules, so the
+    `copilot` launch wrapper calls this to inject the flags at invocation.
+    One flag per line (the wrapper splits on newline into its argv array, so
+    flags whose value contains spaces — ``shell(gh pr view)`` — survive as a
+    single token). No output when the profile declares no canonical rules."""
+    profile_dir = discover.find_profile_dir(name)
+    if profile_dir is None:
+        raise CliError(f"ap: profile '{name}' not found")
+    from agent_profile.renderers.copilot import launch_flags
+
+    manifest = parse_manifest(profile_dir)
+    for flag in launch_flags(manifest):
+        print(flag, file=out)
+    return 0
+
+
 def cmd_path(name: str, colors: _Colors, out: Any) -> int:
     profile_dir = discover.find_profile_dir(name)
     if profile_dir is None:
@@ -707,6 +727,10 @@ def main(argv: list[str] | None = None) -> int:
             if not rest:
                 raise CliError("profile name required")
             return cmd_path(rest[0], colors, sys.stdout)
+        if sub == "copilot-flags":
+            if not rest:
+                raise CliError("profile name required")
+            return cmd_copilot_flags(rest[0], sys.stdout)
         if sub == "install":
             harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
             _validate_harnesses(harnesses, colors)

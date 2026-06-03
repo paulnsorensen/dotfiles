@@ -142,6 +142,20 @@ class ClaudeRenderer:
             if not markets:
                 data.pop("extraKnownMarketplaces", None)
 
+        # Un-merge the canonical permission render (SSOT). We own only the
+        # ``allow`` / ``deny`` subkeys; any other ``permissions.*`` key
+        # (``defaultMode`` etc.) is user-owned and survives. Drop the
+        # ``permissions`` container only when nothing else remains under it.
+        if manifest.settings.get("permissions_allow") or manifest.settings.get(
+            "permissions_deny"
+        ):
+            permissions = data.get("permissions")
+            if isinstance(permissions, dict):
+                permissions.pop("allow", None)
+                permissions.pop("deny", None)
+                if not permissions:
+                    data.pop("permissions", None)
+
         # Don't delete the file if other keys remain — they are user-owned.
         # Only if we reduced it to {} do we unlink, matching opencode's
         # "the profile owned it" rule.
@@ -484,8 +498,9 @@ class ClaudeRenderer:
         self._track(out, base, out_path)
 
     def _merge_root_settings(self, manifest: Manifest, base: Path) -> None:
-        """Merge this profile's ``enabled_plugins`` and ``marketplaces`` into
-        the live ``<base>/.claude/settings.json``, preserving siblings.
+        """Merge this profile's ``enabled_plugins``, ``marketplaces`` and the
+        canonical ``permissions.{allow,deny}`` into the live
+        ``<base>/.claude/settings.json``, preserving siblings.
 
         Mirrors :meth:`OpencodeRenderer.render` for ``opencode.json``: read,
         own-our-keys, write. The file is shared (chezmoi-seeded user config
@@ -493,20 +508,35 @@ class ClaudeRenderer:
         install manifest. :meth:`clean` un-merges by removing exactly the
         keys this method added.
 
+        The canonical allow/deny lists are the SSOT root render (mechanism A):
+        ``create_settings.json`` no longer carries a ``permissions`` block, so
+        this method re-asserts the canonical set into root settings.json on
+        every ``dots sync``. It owns only the ``allow`` and ``deny`` subkeys —
+        any other ``permissions.*`` key (``defaultMode`` etc.) is left intact,
+        and the lists are written verbatim from the resolved manifest (already
+        sorted+deduped by the parser).
+
         ``${VAR}`` / ``~`` in marketplace paths expand against the process
         env (``DOTFILES_DIR`` is the intended consumer) — same surface as
         ``cli._resolve_target``. The marketplace value is wrapped as a
         ``{"source": {"source": "directory", "path": <expanded>}}`` record;
         github-source marketplaces stay user-managed in the seed.
 
-        No-op when the profile declares neither field. When the file does
-        not exist, creates an empty ``{}`` seed first — operator running
-        ``ap install global`` standalone (no chezmoi pass) gets a minimal
-        file rather than a hard error; chezmoi's ``create_settings.json``
-        won't overwrite it later (``create_`` semantics), so the operator
-        is responsible for filling in the rest if they're skipping
-        ``dots sync``."""
-        if not manifest.enabled_plugins and not manifest.marketplaces:
+        No-op when the profile declares none of the three surfaces. When the
+        file does not exist, creates an empty ``{}`` seed first — operator
+        running ``ap install global`` standalone (no chezmoi pass) gets a
+        minimal file rather than a hard error; chezmoi's
+        ``create_settings.json`` won't overwrite it later (``create_``
+        semantics), so the operator is responsible for filling in the rest if
+        they're skipping ``dots sync``."""
+        allow = manifest.settings.get("permissions_allow") or []
+        deny = manifest.settings.get("permissions_deny") or []
+        if (
+            not manifest.enabled_plugins
+            and not manifest.marketplaces
+            and not allow
+            and not deny
+        ):
             return
 
         settings = base / ".claude" / "settings.json"
@@ -528,6 +558,11 @@ class ClaudeRenderer:
                 markets[name] = {
                     "source": {"source": "directory", "path": expanded}
                 }
+
+        if allow or deny:
+            permissions = data.setdefault("permissions", {})
+            permissions["allow"] = list(allow)
+            permissions["deny"] = list(deny)
 
         settings.write_text(json.dumps(data, indent=2) + "\n")
 

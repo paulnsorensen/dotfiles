@@ -265,16 +265,32 @@ def test_satisfies_renderer_protocol():
     assert r.name == "claude"
 
 
-def test_clean_is_noop(env):
+def test_clean_leaves_tracked_plugin_tree_intact(env):
+    """clean() un-merges only the shared/merged root settings.json (the
+    SSOT permission render); every tracked whole-file plugin artefact is
+    left for the CLI's manifest sweep to remove. The rust fixture carries a
+    ``permissions_allow``, so render now writes root settings.json — clean
+    must remove exactly that contribution and nothing in the plugin tree."""
     profile_dir = _materialize_rust(env.profiles)
     manifest = parse_manifest(profile_dir)
     r = ClaudeRenderer()
     r.render(manifest, env.target)
-    before = sorted(p.read_bytes() for p in env.target.rglob("*") if p.is_file())
-    # clean must not touch any whole-file artefact (no merged files here).
+
+    plugin_root = env.target / ".claude" / "plugins" / "local" / "rust"
+    before_plugin = sorted(
+        p.read_bytes() for p in plugin_root.rglob("*") if p.is_file()
+    )
+
     assert r.clean(manifest, env.target) is None
-    after = sorted(p.read_bytes() for p in env.target.rglob("*") if p.is_file())
-    assert before == after
+
+    after_plugin = sorted(
+        p.read_bytes() for p in plugin_root.rglob("*") if p.is_file()
+    )
+    # Tracked plugin tree untouched by clean.
+    assert before_plugin == after_plugin
+    # The merged root settings.json contribution is fully un-merged: the
+    # rust fixture owned the whole file, so clean removed it.
+    assert not (env.target / ".claude" / "settings.json").exists()
 
 
 # ─── rust profile byte parity ────────────────────────────────────────

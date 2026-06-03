@@ -441,3 +441,148 @@ def test_render_then_clean_round_trip(target, src):
     assert (target / ".copilot/mcp-config.json").is_file()
     renderer().clean(m, target)
     assert not (target / ".copilot/mcp-config.json").exists()
+
+
+# ─── canonical permissions (curd 4) ─────────────────────────────────────
+
+from agent_profile.renderers.copilot import launch_flags as _launch_flags  # noqa: E402
+
+
+def _perm_manifest(src: Path, settings: dict, **sections) -> Manifest:
+    m = manifest(src, **sections)
+    m.settings = settings
+    return m
+
+
+# Lever 1 — launch-flag emission.
+
+
+def test_launch_flags_allow_bash_to_shell(src):
+    m = _perm_manifest(src, {"permissions_allow": ["Bash(git:*)"]})
+    assert _launch_flags(m) == ["--allow-tool=shell(git)"]
+
+
+def test_launch_flags_multiword_bash_keeps_spaces(src):
+    m = _perm_manifest(src, {"permissions_allow": ["Bash(gh pr view:*)"]})
+    assert _launch_flags(m) == ["--allow-tool=shell(gh pr view)"]
+
+
+def test_launch_flags_deny_bash(src):
+    m = _perm_manifest(src, {"permissions_deny": ["Bash(rm -rf:*)"]})
+    assert _launch_flags(m) == ["--deny-tool=shell(rm -rf)"]
+
+
+def test_launch_flags_mcp_whole_server(src):
+    m = _perm_manifest(src, {"permissions_allow": ["mcp__tilth__*"]})
+    assert _launch_flags(m) == ["--allow-tool=tilth"]
+
+
+def test_launch_flags_mcp_named_tool(src):
+    m = _perm_manifest(src, {"permissions_allow": ["mcp__tilth__tilth_read"]})
+    assert _launch_flags(m) == ["--allow-tool=tilth(tilth_read)"]
+
+
+def test_launch_flags_skip_non_shell_non_mcp(src):
+    m = _perm_manifest(
+        src,
+        {"permissions_allow": ["Edit", "Write", "Skill"], "permissions_deny": ["Grep", "Glob"]},
+    )
+    assert _launch_flags(m) == []
+
+
+def test_launch_flags_mixed_allow_first_then_deny_sorted(src):
+    m = _perm_manifest(
+        src,
+        {
+            "permissions_allow": ["Bash(git:*)", "Bash(gh:*)", "mcp__tilth__*", "Edit"],
+            "permissions_deny": ["Bash(sudo:*)", "Bash(rm -rf:*)", "Grep"],
+        },
+    )
+    assert _launch_flags(m) == [
+        "--allow-tool=shell(gh)",
+        "--allow-tool=shell(git)",
+        "--allow-tool=tilth",
+        "--deny-tool=shell(rm -rf)",
+        "--deny-tool=shell(sudo)",
+    ]
+
+
+def test_launch_flags_empty_when_no_canonical_rules(src):
+    assert _launch_flags(manifest(src)) == []
+
+
+# Lever 3 — mcp-config tools[] derivation.
+
+
+def test_mcp_config_whole_server_gets_star(src, target):
+    m = _perm_manifest(
+        src,
+        {"permissions_allow": ["mcp__tilth__*"]},
+        mcps=[{"name": "tilth", "command": "tilth", "harnesses": ["copilot"]}],
+    )
+    CopilotRenderer().render(m, target)
+    import json as _json
+
+    data = _json.loads((target / ".copilot" / "mcp-config.json").read_text())
+    assert data["mcpServers"]["tilth"]["tools"] == ["*"]
+
+
+# Lever 1 — MCP DENY flags (documented in launch_flags but otherwise untested).
+
+
+def test_launch_flags_mcp_named_tool_deny(src):
+    """`mcp__<s>__<t>` deny lowers to `--deny-tool=<s>(<t>)`. The deny channel
+    runs through the SAME classifier as allow; a regression that only parsed
+    MCP rules on the allow side would silently drop this."""
+    m = _perm_manifest(src, {"permissions_deny": ["mcp__tilth__tilth_write"]})
+    assert _launch_flags(m) == ["--deny-tool=tilth(tilth_write)"]
+
+
+def test_launch_flags_mcp_whole_server_deny(src):
+    """`mcp__<s>__*` deny lowers to a whole-server `--deny-tool=<s>` flag."""
+    m = _perm_manifest(src, {"permissions_deny": ["mcp__tilth__*"]})
+    assert _launch_flags(m) == ["--deny-tool=tilth"]
+
+
+def test_launch_flags_sanctioned_tools_only_in_allow_never_deny(src):
+    """Negative (spec test plan): rg/fd/sg stay allowed after the deny seed.
+    They must emit `--allow-tool=shell(...)` and never `--deny-tool`, and the
+    deny channel only carries the genuinely-denied tools."""
+    m = _perm_manifest(
+        src,
+        {
+            "permissions_allow": ["Bash(rg:*)", "Bash(fd:*)", "Bash(sg:*)"],
+            "permissions_deny": ["Bash(grep:*)", "Bash(sudo:*)"],
+        },
+    )
+    flags = _launch_flags(m)
+    for tool in ("rg", "fd", "sg"):
+        assert f"--allow-tool=shell({tool})" in flags
+        assert f"--deny-tool=shell({tool})" not in flags
+    assert "--deny-tool=shell(grep)" in flags
+    assert "--deny-tool=shell(sudo)" in flags
+
+
+def test_mcp_config_named_tools_become_explicit_list(src, target):
+    m = _perm_manifest(
+        src,
+        {"permissions_allow": ["mcp__tilth__tilth_read", "mcp__tilth__tilth_list"]},
+        mcps=[{"name": "tilth", "command": "tilth", "harnesses": ["copilot"]}],
+    )
+    CopilotRenderer().render(m, target)
+    import json as _json
+
+    data = _json.loads((target / ".copilot" / "mcp-config.json").read_text())
+    assert data["mcpServers"]["tilth"]["tools"] == ["tilth_list", "tilth_read"]
+
+
+def test_mcp_config_defaults_to_star_with_no_canonical_rule(src, target):
+    """A server with no canonical MCP rule keeps the prior default (["*"])."""
+    m = manifest(
+        src, mcps=[{"name": "tilth", "command": "tilth", "harnesses": ["copilot"]}]
+    )
+    CopilotRenderer().render(m, target)
+    import json as _json
+
+    data = _json.loads((target / ".copilot" / "mcp-config.json").read_text())
+    assert data["mcpServers"]["tilth"]["tools"] == ["*"]

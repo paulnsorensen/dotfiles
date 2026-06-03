@@ -43,6 +43,35 @@ ccfresh() {
   claude "${flags[@]}" --continue -p '/go' && claude "${flags[@]}" --continue
 }
 
+# Copilot CLI launch wrapper — injects the canonical allow/deny lists as
+# --allow-tool / --deny-tool flags (lever 1). Copilot has no config-file
+# surface for per-command rules, so the rules only apply when Copilot is
+# launched through this wrapper; a bare `copilot` run gets nothing. MCP-tool
+# scoping (lever 3) lands in ~/.copilot/mcp-config.json at install time and
+# applies regardless of launch path.
+copilot() {
+    # Fail-closed: this wrapper's entire job is lowering the canonical
+    # allow/deny security floor. If `ap` is missing or errors (e.g. a profile
+    # that won't parse), launching Copilot unrestricted would silently drop
+    # that floor — so capture the flags and exit status separately, and on any
+    # failure (including a mid-stream crash after partial output) abort loudly
+    # rather than launch with a missing or truncated deny set.
+    local out status
+    out="$(ap copilot-flags global)"
+    status=$?
+    if (( status != 0 )); then
+        echo "copilot: permission flags unavailable (ap exited $status) — refusing to launch unrestricted." >&2
+        echo "copilot: fix \`ap copilot-flags global\`, or run \`command copilot\` to bypass the floor deliberately." >&2
+        return "$status"
+    fi
+    local -a flags=()
+    local line
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && flags+=("$line")
+    done <<< "$out"
+    command copilot "${flags[@]}" "$@"
+}
+
 # ═══════════════════════════════════════════════════════════════════
 # Scoped profiles — `dots profile launch <harness> <name>`
 # ═══════════════════════════════════════════════════════════════════

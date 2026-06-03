@@ -1,0 +1,112 @@
+# _permissions — canonical cross-harness allow/deny lists.
+#
+# Declared once here; each harness renderer lowers these onto its native
+# permission surface (Claude root settings.json, opencode per-tool map,
+# Codex .rules + config.toml, Copilot launch flags + mcp-config, Cursor
+# cli-config). The lever split is DERIVED, not declared: an entry matching
+# `mcp__*` is lever 3 (MCP-tool scoping); everything else is lever 1
+# (per-command/tool). So this is one flat list per allow/deny.
+#
+# Edit here, then `dots sync` (runs `ap install global`) re-asserts the set
+# onto every harness. This fragment is pulled in at the `global` layer only
+# (PoC); isolated profiles (review) do NOT include it and keep their own
+# closed-world deny lists.
+#
+# `global` sets `mcp_scope: user`, so MCPs register with bare names
+# (`mcp__<server>__*`). The lever-3 rules below therefore use bare names.
+name: _permissions
+description: Canonical cross-harness allow/deny lists; renderers lower per-harness
+settings:
+  # lever 1 — commands/tools (migrated verbatim from create_settings.json),
+  # plus lever 3 — MCP tools (bare names). Renderers classify by `mcp__` prefix.
+  permissions_allow:
+    - Bash(git:*)
+    - Bash(rtk:*)
+    - Bash(ls:*)
+    - Bash(head:*)
+    - Bash(tail:*)
+    - Bash(wc:*)
+    - Bash(which:*)
+    - Bash(test:*)
+    - Bash(mkdir:*)
+    - Bash(cp:*)
+    - Bash(mv:*)
+    - Bash(cat:*)
+    - Bash(echo:*)
+    - Bash(printf:*)
+    - Bash(touch:*)
+    - Bash(chmod:*)
+    - Bash(dirname:*)
+    - Bash(basename:*)
+    - Bash(realpath:*)
+    - Bash(bats:*)
+    - Bash(pytest:*)
+    - Bash(uv:*)
+    - Bash(npx:*)
+    - Bash(npm test:*)
+    - Bash(npm run:*)
+    - Bash(go test:*)
+    - Bash(cargo test:*)
+    - Bash(cargo check:*)
+    - Bash(cargo build:*)
+    - Bash(wt-git:*)
+    - Bash(ccw-sweep:*)
+    - Bash(dots:*)
+    - Bash(prek:*)
+    - Bash(fd:*)
+    - Bash(rg:*)
+    - Bash(sg:*)
+    - Bash(sd:*)
+    - Bash(gh:*)
+    - Bash(gh pr:*)
+    - Bash(gh issue:*)
+    - Bash(gh repo:*)
+    - Bash(gh run:*)
+    - Bash(gh api:*)
+    - Bash(yq:*)
+    - Bash(jq:*)
+    - Bash(procs:*)
+    - Bash(claude:*)
+    - Bash(cargo clippy:*)
+    - Bash(cargo fmt:*)
+    - Bash(cargo nextest:*)
+    - Bash(just:*)
+    - Bash(tokei:*)
+    - Bash(node:*)
+    - Bash(duckdb:*)
+    - Bash(python3:*)
+    - Edit
+    - Write
+    - mcp__plugin_playwright_playwright__*
+    - mcp__context7__*
+    - mcp__claude_ai_Context7__*
+    - mcp__claude_ai_Gmail__*
+    - mcp__claude_ai_Google_Calendar__*
+    - mcp__claude_ai_Excalidraw__*
+    - mcp__claude_ai_Mermaid_Chart__*
+    - mcp__plugin_github_github__*
+    - mcp__shadcn__*
+    - mcp__tavily__*
+    - mcp__code-review-graph__*
+    - mcp__tilth__*
+    - WebSearch
+    - WebFetch
+    - Skill
+  # PoC disallow-list (walk-back-able). Two groups:
+  #   1. Force the code-intelligence tools (routing preamble: tilth/serena
+  #      over built-ins). Deliberately NOT denied: Bash(rg:*), Bash(fd:*),
+  #      Bash(sg:*) (allowed above; sg is the sanctioned AST escape hatch)
+  #      and Read (routing keeps built-in Read for out-of-workspace /
+  #      unparseable / image / PDF). Deny-wins, so those stay out of here.
+  #   2. Cross-harness safety floor (porting bash-guard's spirit to the four
+  #      hookless harnesses). `Bash(rm -rf:*)` is COARSER than bash-guard (it
+  #      blocks even safe relative `rm -rf node_modules`); for Claude the hook
+  #      stays the precise layer, this coarse deny is the cross-harness floor.
+  permissions_deny:
+    - Grep
+    - Glob
+    - Bash(grep:*)
+    - Bash(ag:*)
+    - Bash(ack:*)
+    - Bash(sudo:*)
+    - Bash(rm -rf:*)
