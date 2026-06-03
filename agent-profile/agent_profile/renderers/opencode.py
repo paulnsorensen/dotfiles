@@ -46,6 +46,10 @@ _TOOL_KEY = {
     "Write": "edit",
     "WebFetch": "webfetch",
     "WebSearch": "websearch",
+    "Glob": "glob",
+    "Grep": "grep",
+    "Skill": "skill",
+    "Agent": "task",
 }
 
 # opencode's pattern-map-capable tools. Every other key (webfetch, websearch,

@@ -120,6 +120,11 @@ def test_translate_permission_table():
     assert _translate_permission("Read(./src)") == ("read", "./src")
     assert _translate_permission("Edit(./x)") == ("edit", "./x")
     assert _translate_permission("Write(./x)") == ("edit", "./x")
+    # Glob / Grep / Skill / Agent -> map tools.
+    assert _translate_permission("Glob(./src/**)") == ("glob", "./src/**")
+    assert _translate_permission("Grep(foo)") == ("grep", "foo")
+    assert _translate_permission("Skill(scout)") == ("skill", "scout")
+    assert _translate_permission("Agent(Explore)") == ("task", "Explore")
     # WebFetch -> shorthand-only (domain dropped, no pattern map).
     assert _translate_permission("WebFetch(domain:example.com)") == (
         "webfetch",
@@ -271,7 +276,7 @@ def test_apply_perms_leaves_user_string_value_under_map_tool(tmp_path: Path):
     (``permission.edit = "ask"``) rather than a ``{pattern: action}`` map,
     a profile map-rule for that tool is dropped rather than crashing or
     clobbering the user's value. Locks the non-dict guard in ``_apply_perms``;
-    the silent-drop is a known limitation (see press report)."""
+    the silent-drop is a known limitation."""
     (tmp_path / "opencode.json").write_text(
         json.dumps({"$schema": SCHEMA, "permission": {"edit": "ask"}})
     )
