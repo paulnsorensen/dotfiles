@@ -73,6 +73,7 @@ Commands:
   install <name> [opts]         Render profile into current dir
   uninstall <name> [opts]       Remove a previously-installed profile
   launch <harness> [name] [..]  Install + exec the named harness CLI
+  perms [opts]                  Write repo-level permission overlay (Claude + Codex)
   help                          Show this message
 
 Install/launch options:
@@ -85,11 +86,17 @@ limited: every cleaner still runs (shared/merged files like
 opencode.json, .mcp.json carry profile-authored entries across the
 harness boundary; a partial cleanup would leave dangling entries).
 
+Perms options:
+  --local                       Write settings.local.json (gitignored); skip Codex
+  --target <dir>                Repo root (default: $PWD)
+  --harness claude,codex        Limit to specific harnesses (default: claude,codex)
+
 Examples:
   dots profile list
   dots profile install rust --harness claude
   dots profile launch claude rust -- --resume
   dots profile uninstall rust
+  dots profile perms --target /path/to/repo
 """
 
 
@@ -297,6 +304,59 @@ def cmd_install(
     manifest_mod.record_merged_json(target, name, merged_dict)
 
     print(f"{colors.GREEN}✓ Installed{colors.NC}", file=out)
+    return 0
+
+
+def cmd_perms(
+    local: bool,
+    target_opt: Path | None,
+    harnesses: list[str],
+    colors: _Colors,
+    out: Any,
+) -> int:
+    """``ap perms [--local] [--target <repo>] [--harness claude,codex]``
+
+    Resolve ``<target>/.agent-profiles/_permissions/profile.yaml`` by fixed
+    path (no global fall-through), parse it as a standalone manifest, and
+    render project permissions per harness."""
+    target = _resolve_target(target_opt, None)
+    frag = target / ".agent-profiles" / "_permissions" / "profile.yaml"
+    if not frag.is_file():
+        raise CliError(
+            f"{colors.RED}ap perms: no repo permission overlay at "
+            f"{frag}; create .agent-profiles/_permissions/profile.yaml first"
+            f"{colors.NC}"
+        )
+    manifest = parse_manifest(frag.parent)
+    # A fragment must define its permissions under a nested ``settings:`` block.
+    # Top-level ``permissions_allow:``/``permissions_deny:`` are a different
+    # (launch-overlay) field the renderers never read, so they would silently
+    # produce an empty overlay — fail loud instead of writing nothing.
+    if (
+        "permissions_allow" not in manifest.settings
+        and "permissions_deny" not in manifest.settings
+    ):
+        raise CliError(
+            f"{colors.RED}ap perms: {frag} defines no permissions under "
+            f"`settings:` — add settings.permissions_allow and/or "
+            f"settings.permissions_deny (top-level keys are ignored){colors.NC}"
+        )
+    from agent_profile.renderers.claude import ClaudeRenderer
+    from agent_profile.renderers.codex import CodexRenderer
+    # Classes, not instances — construct only the renderer(s) actually used.
+    _perm_renderers = {"claude": ClaudeRenderer, "codex": CodexRenderer}
+    for h in harnesses:
+        if local and h == "codex":
+            print(
+                f"  {colors.CYAN}codex: skipping under --local (no gitignored "
+                f"personal-settings analog){colors.NC}",
+                file=out,
+            )
+            continue
+        renderer_cls = _perm_renderers.get(h)
+        if renderer_cls is None:
+            continue
+        renderer_cls().render_project_permissions(manifest, target, local=local)
     return 0
 
 
@@ -756,6 +816,31 @@ def main(argv: list[str] | None = None) -> int:
             if not rest:
                 raise CliError("profile name required")
             return cmd_copilot_flags(rest[0], sys.stdout)
+        if sub == "perms":
+            local = "--local" in rest
+            rest_no_local = [a for a in rest if a != "--local"]
+            harnesses, target, _remaining, _passthrough = _parse_common_opts(
+                rest_no_local
+            )
+            explicit_harness = any(
+                a == "--harness" or a.startswith("--harness=")
+                for a in rest_no_local
+            )
+            # An explicit --harness must fail loud on any out-of-scope value
+            # (e.g. claude,opencode) rather than silently dropping it. The
+            # all-harness DEFAULT still filters quietly down to claude/codex.
+            if explicit_harness:
+                unsupported = [
+                    h for h in harnesses if h not in ("claude", "codex")
+                ]
+                if unsupported:
+                    raise CliError(
+                        f"{colors.RED}ap perms: unsupported harness "
+                        f"'{','.join(unsupported)}' (perms supports: "
+                        f"claude, codex){colors.NC}"
+                    )
+            perms_harnesses = [h for h in harnesses if h in ("claude", "codex")]
+            return cmd_perms(local, target, perms_harnesses, colors, sys.stdout)
         if sub == "install":
             harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
             _validate_harnesses(harnesses, colors)
