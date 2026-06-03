@@ -11,14 +11,10 @@ import json
 import tomllib
 from pathlib import Path
 
-import pytest
-
 from agent_profile import cli
 from agent_profile.parse import parse_manifest, Manifest
 from agent_profile.renderers.claude import ClaudeRenderer
 from agent_profile.renderers.codex import CodexRenderer
-
-from .conftest import write_profile
 
 
 # ── helpers ────────────────────────────────────────────────────────────
@@ -275,5 +271,174 @@ def test_cmd_perms_codex_lever3_via_cli(tmp_path, env):
     _write_perm_fragment(tmp_path, allow=["mcp__tilth__tilth_read"])
     result = run(["perms", "--target", str(tmp_path)])
     assert result == 0
+    doc = tomllib.loads((tmp_path / ".codex" / "config.toml").read_text())
+    assert doc["mcp_servers"]["tilth"]["enabled_tools"] == ["tilth_read"]
+
+
+# ── Hardening: assertion strength ─────────────────────────────────────
+
+
+def test_codex_project_perms_rules_file_exact_prefix_rule_format(tmp_path):
+    """WHY: the rules file must contain a valid prefix_rule() starlark call
+    with the correct pattern and decision — not just any line containing 'git'.
+    This locks the _render_rules_file format against regressions."""
+    m = _minimal_manifest(allow=["Bash(git:*)"], deny=["Bash(sudo:*)"])
+    CodexRenderer().render_project_permissions(m, tmp_path)
+    text = (tmp_path / ".codex" / "rules" / "ap-canonical.rules").read_text()
+    assert 'prefix_rule(\n    pattern = ["git"],\n    decision = "allow",\n)' in text
+    assert 'prefix_rule(\n    pattern = ["sudo"],\n    decision = "forbidden",\n)' in text
+
+
+# ── Hardening: idempotency with siblings through second run ────────────
+
+
+def test_claude_project_perms_idempotent_siblings_survive_re_run(tmp_path):
+    """WHY: sibling keys (defaultMode, user mcpServers) must survive a second
+    re-render, not just the first. Idempotency and own-our-keys must hold
+    together: allow/deny overwritten verbatim, nothing else disturbed."""
+    settings_path = tmp_path / ".claude" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(json.dumps({
+        "permissions": {"allow": ["old"], "deny": [], "defaultMode": "allow"},
+        "mcpServers": {"user-mcp": {"command": "npx", "args": ["my-mcp"]}},
+    }) + "\n")
+
+    m = _minimal_manifest(allow=["Bash(git:*)"], deny=["Grep"])
+    renderer = ClaudeRenderer()
+    renderer.render_project_permissions(m, tmp_path)
+    renderer.render_project_permissions(m, tmp_path)  # second run
+
+    data = json.loads(settings_path.read_text())
+    # allow/deny overwritten verbatim — not accumulated from "old"
+    assert data["permissions"]["allow"] == ["Bash(git:*)"]
+    assert data["permissions"]["deny"] == ["Grep"]
+    # sibling inside permissions untouched
+    assert data["permissions"]["defaultMode"] == "allow"
+    # sibling of permissions untouched
+    assert data["mcpServers"] == {"user-mcp": {"command": "npx", "args": ["my-mcp"]}}
+
+
+# ── Hardening: standalone-fragment guarantee ───────────────────────────
+
+
+def test_standalone_fragment_does_not_include_global_floor(tmp_path, env):
+    """WHY: the fragment must be parsed standalone so the global floor's allow
+    list does NOT leak into the project overlay. Name-based discovery would
+    fall through to the floor and union its ~62 entries into the project file,
+    making it a replacement instead of a pure delta."""
+    frag_dir = _write_perm_fragment(
+        tmp_path, allow=["Bash(my-project-tool:*)"], deny=["Bash(badcmd:*)"]
+    )
+    # Parse standalone (exactly what cmd_perms does internally)
+    manifest = parse_manifest(frag_dir)
+    allow = manifest.settings.get("permissions_allow", [])
+    deny = manifest.settings.get("permissions_deny", [])
+
+    # Only the fragment's own entries — NOT any floor entry
+    assert allow == ["Bash(my-project-tool:*)"]
+    assert deny == ["Bash(badcmd:*)"]
+    # Spot-check: a known floor entry must not be present
+    assert "Bash(git:*)" not in allow, (
+        "global floor allow list leaked into the project fragment; "
+        "parse_manifest must be called on the fragment directory directly"
+    )
+
+
+def test_cmd_perms_fragment_allow_does_not_include_floor_in_written_file(tmp_path, env):
+    """WHY: end-to-end companion to the standalone-parse unit test. The written
+    settings.json must contain ONLY the fragment's allow list — floor entries
+    must not appear even after the full cmd_perms → ClaudeRenderer path."""
+    # Fragment has exactly one rule that is NOT in the global floor
+    _write_perm_fragment(tmp_path, allow=["Bash(my-project-tool:*)"])
+    run(["perms", "--target", str(tmp_path)])
+    data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    allow = data["permissions"]["allow"]
+    assert allow == ["Bash(my-project-tool:*)"]
+    # A rule known to be in the global floor must NOT appear
+    assert "Bash(git:*)" not in allow, (
+        "global floor allow list leaked into the project settings.json"
+    )
+
+
+# ── Hardening: boundary behaviour ─────────────────────────────────────
+
+
+def test_claude_project_perms_deny_only_fragment(tmp_path):
+    """WHY: a fragment with no allow key (only deny) is a valid boundary case.
+    The renderer must write an empty allow list, not error or leave the key absent."""
+    m = _minimal_manifest(deny=["Grep", "Glob"])
+    ClaudeRenderer().render_project_permissions(m, tmp_path)
+    data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    assert data["permissions"]["allow"] == []
+    assert data["permissions"]["deny"] == ["Grep", "Glob"]
+
+
+def test_codex_project_perms_no_extra_files_written(tmp_path):
+    """WHY: the Codex render is also perms-ONLY. render_project_permissions
+    must not write skills, agents, hooks, or MCP server connection definitions
+    into the repo's .codex directory — only rules and/or config.toml."""
+    m = _minimal_manifest(allow=["Bash(git:*)", "mcp__tilth__tilth_read"])
+    CodexRenderer().render_project_permissions(m, tmp_path)
+    codex_dir = tmp_path / ".codex"
+    written = sorted(p.relative_to(tmp_path) for p in codex_dir.rglob("*") if p.is_file())
+    allowed = {
+        Path(".codex/rules/ap-canonical.rules"),
+        Path(".codex/config.toml"),
+    }
+    unexpected = set(written) - allowed
+    assert not unexpected, f"unexpected files written into repo .codex/: {unexpected}"
+
+
+def test_claude_project_perms_creates_parent_dirs(tmp_path):
+    """WHY: the target may be a repo root that has no .claude/ directory yet.
+    render_project_permissions must create parent directories as needed."""
+    target = tmp_path / "new-repo"  # doesn't exist yet
+    m = _minimal_manifest(allow=["Edit"])
+    ClaudeRenderer().render_project_permissions(m, target)
+    assert (target / ".claude" / "settings.json").is_file()
+
+
+def test_codex_project_perms_creates_parent_dirs(tmp_path):
+    """WHY: same parent-creation guarantee for the Codex renderer."""
+    target = tmp_path / "new-repo"  # doesn't exist yet
+    m = _minimal_manifest(allow=["Bash(git:*)"])
+    CodexRenderer().render_project_permissions(m, target)
+    assert (target / ".codex" / "rules" / "ap-canonical.rules").is_file()
+
+
+# ── Hardening: CLI harness filtering ──────────────────────────────────
+
+
+def test_cmd_perms_harness_claude_only_skips_codex(tmp_path, env):
+    """WHY: --harness claude must restrict the render to Claude only.
+    Codex files must not be written, and the command must succeed."""
+    _write_perm_fragment(tmp_path, allow=["Bash(git:*)"])
+    result = run(["perms", "--harness", "claude", "--target", str(tmp_path)])
+    assert result == 0
+    assert (tmp_path / ".claude" / "settings.json").is_file()
+    assert not (tmp_path / ".codex").exists()
+
+
+def test_cmd_perms_harness_codex_only_skips_claude(tmp_path, env):
+    """WHY: --harness codex must restrict the render to Codex only.
+    Claude settings.json must not be written."""
+    _write_perm_fragment(tmp_path, allow=["Bash(git:*)"])
+    result = run(["perms", "--harness", "codex", "--target", str(tmp_path)])
+    assert result == 0
+    assert (tmp_path / ".codex" / "rules" / "ap-canonical.rules").is_file()
+    assert not (tmp_path / ".claude" / "settings.json").exists()
+
+
+# ── Hardening: mcp__* only (no Bash) via CLI ──────────────────────────
+
+
+def test_cmd_perms_mcp_only_fragment_no_rules_file(tmp_path, env):
+    """WHY: a fragment with only mcp__* rules (no Bash) must not produce
+    a Codex rules file — only config.toml tool scopes. Exercised via the
+    CLI so the full cmd_perms → CodexRenderer path is covered."""
+    _write_perm_fragment(tmp_path, allow=["mcp__tilth__tilth_read"])
+    result = run(["perms", "--target", str(tmp_path)])
+    assert result == 0
+    assert not (tmp_path / ".codex" / "rules" / "ap-canonical.rules").exists()
     doc = tomllib.loads((tmp_path / ".codex" / "config.toml").read_text())
     assert doc["mcp_servers"]["tilth"]["enabled_tools"] == ["tilth_read"]
