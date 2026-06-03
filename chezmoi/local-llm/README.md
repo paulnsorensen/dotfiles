@@ -56,7 +56,8 @@ llm-npu-on
 │   ├── llama.cpp/         # Vulkan-build llama-server (b9391)
 │   └── lemonade/          # Lemonade Server v10.6.0 (NPU)
 ├── configs/
-│   └── litellm.yaml
+│   ├── litellm.yaml
+│   └── lean.json             # opencode MCP overlay (see "Lean opencode runs" below)
 ├── logs/                  # all worker + LiteLLM logs
 ├── models/
 │   ├── Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
@@ -84,6 +85,23 @@ resp = client.chat.completions.create(
     messages=[{"role": "user", "content": "..."}],
 )
 ```
+
+## Lean opencode runs (fits the 32k `local-coder` window)
+
+opencode eager-loads every MCP tool schema into the prompt on every request, so
+the default MCP set crowds out the 32k window `local-coder` runs in. `configs/lean.json`
+is an `OPENCODE_CONFIG` overlay that disables the heavy non-coding servers
+(`code-review-graph`, `hallouminate`, `tavily`), keeping `tilth` + `serena` +
+`context7` for the coder.
+
+```bash
+opencode-lean --model local-coder      # OPENCODE_CONFIG=~/local-llm/configs/lean.json opencode
+```
+
+`OPENCODE_CONFIG` mergeDeeps onto the global `opencode.json` — the overlay is just the
+`enabled: false` lines, not a from-scratch config. Disabling a server is the only lever
+that stops schema injection; per-agent `tools:{x:false}` gates execution but still ships
+the schema tokens. (Todoist is already disabled globally, so the overlay omits it.)
 
 ## Fallbacks (in `litellm.yaml`)
 
