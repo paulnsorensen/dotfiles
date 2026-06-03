@@ -62,7 +62,7 @@ The IDE is UI-only (Run Mode + command/MCP allowlist live in Settings → Agents
 
 ### Codex — **no per-command rule-list in config** `<certain>`
 
-The key surprise: there is **no `allowed_commands` / `trusted_commands` / `permissions.allow` array** in `config.toml` (verified three ways — `codex-config-reference.md:49`, the exec-policy page, and agent-approvals-security). Per-command allow/deny lives in a *separate* file with a DSL: the **execpolicy `.rules`** at `~/.codex/rules/default.rules` (Starlark-like `prefix_rule()` / `exact_rule()` with `decision = allow | prompt | forbidden`). The TUI "always allow" writes here automatically; `--ignore-rules` skips it for a run. This is not declarative profile config, so `ap` cannot lower a per-command rule onto Codex. (Codex *does* expose the other two levers — see below.)
+The key surprise: there is **no `allowed_commands` / `trusted_commands` / `permissions.allow` array** in `config.toml` (verified three ways — `codex-config-reference.md:49`, the exec-policy page, and agent-approvals-security). Per-command allow/deny lives in a *separate* file with a DSL: the **execpolicy `.rules`** at `~/.codex/rules/default.rules` (Starlark-like `prefix_rule()` / `exact_rule()` with `decision = allow | prompt | forbidden`). The TUI "always allow" writes here automatically; `--ignore-rules` skips it for a run. **Update (#264 / #272):** this DSL file is no longer TUI-only — `ap` now *writes* Codex `.rules` (the user-level floor to `~/.codex/rules/` via #264's `_write_rules`, and the per-repo overlay to `<repo>/.codex/rules/ap-canonical.rules` via #272), so `ap` **can** lower per-command rules onto Codex through the execpolicy file — just not through `config.toml`. The earlier "`ap` cannot lower a per-command rule onto Codex" framing held only before #264. (Codex *does* expose the other two levers — see below.) See [Project-scoped permission overlay](#project-scoped-permission-overlay-ap-perms).
 
 ### Copilot CLI — runtime flags only, no config `<certain>`
 
@@ -118,6 +118,37 @@ Native capability (above) is not the same as what `ap` lowers. Current render st
 ‡ Pre-#259 the opencode renderer (`_translate_permission`, `opencode.py`) emitted bash-allow-only — it mapped `Bash(cmd:*)` → `cmd *` and passed everything else through into `permission.bash`. #259 adds the `settings.permissions_deny` parse channel and translates the full Claude vocabulary into opencode's per-tool `permission` map (last-match-wins, deny emitted last for deny-wins parity).
 
 Net: a profile's per-command rules reach **Claude** (full) and **opencode** (full, post-#259). Cursor drops them (renderer assumes UI-only, `cursor.py:117-124`); Codex has no per-command config surface to render to; Copilot is flags-only. Posture and MCP-scoping are largely unrendered everywhere.
+
+## Project-scoped permission overlay (`ap perms`)
+
+`ap perms` (#272, issue #267) is a **third render path** alongside install and launch: a per-repo permission overlay that lowers into a repository's *project* config, layering **additively** on top of the #264 user-level canonical floor. It is the first `ap` path that writes permission files into a target repo rather than `$HOME`.
+
+- **Surface:** `ap perms [--local] [--target <repo>] [--harness claude,codex]` (`cli.py` `cmd_perms`). Default writes committed `<repo>/.claude/settings.json` + `<repo>/.codex/{config.toml, rules/ap-canonical.rules}`; `--local` writes the gitignored personal Claude `settings.local.json` and **skips Codex** (no personal-settings analog) with a one-line note. `/setup-perms` is the driver.
+- **Declaration:** `<repo>/.agent-profiles/_permissions/profile.yaml` — the *same* `_permissions` schema as the floor, committed as the repo's source of truth.
+
+### Why fixed-path + standalone parse (the two non-obvious calls) `<certain>`
+
+1. **Fixed-path resolution, never name-discovery.** `cmd_perms` builds `<target>/.agent-profiles/_permissions/profile.yaml` directly and errors if absent. Using `find_profile_dir("_permissions")` would fall through the search roots to the **global floor** (`$DOTFILES_DIR/profiles/_permissions`) when a repo lacks its own fragment — silently rendering the machine floor into the repo. The error-if-absent guard is what makes "no overlay" safe.
+2. **Standalone parse, never `include: [_permissions]`.** The fragment is parsed on its own (`parse_manifest(frag.parent)`). Routing it through `include: [_permissions]` would make `parse._merge_two` **union the floor's allow list into** the overlay (and `_parse_with_includes` takes `permissions_*` from the outermost profile only), so the project file would carry floor+overlay — a leaky replacement, not an additive delta. Standalone parsing keeps the project file a pure delta. Two tests lock this: a known floor entry (`Bash(git:*)`) must not appear in a project render whose fragment never declared it.
+
+### Renderer reuse, not new logic `<certain>`
+
+Both renderers gained one thin public method, `render_project_permissions(manifest, target, *, local=False)`, reusing the #264 writers retargeted from `$HOME` to the repo:
+
+- **Claude** (`claude.py`) reuses `_merge_root_settings` semantics — owns `permissions.{allow,deny}`, preserves sibling keys (`defaultMode`, user `mcpServers`), idempotent. For a perms-only fragment it writes *only* the permissions block (no plugins / skills / agents / mcps).
+- **Codex** (`codex.py`) calls `_write_rules` (lever 1 → `.codex/rules/ap-canonical.rules`) + `_write_mcp_tool_scopes` (lever 3 → `[mcp_servers.<s>] enabled_tools` / `disabled_tools` in `.codex/config.toml`). Both derive their working set from the canonical `Bash(...)` / `mcp__*` rules themselves, so a perms-only fragment drives them fully. No-op under `--local`.
+
+A `--harness` value resolving to neither claude nor codex errors loudly — it is **not** silently dropped (perms supports only those two).
+
+### Scope and the Codex caveats
+
+- **Claude + Codex only.** Copilot has no repo-committable permission file (flags / interactive only) — deferred to #268. Same Lever-1 reach limit as above, now reflected in the project path.
+- **Codex trust gate** `<certain>` — untrusted projects skip *all* `<repo>/.codex/` layers, so the Codex half is inert until the user trusts the repo (an explicit user act; `ap` does **not** auto-write trust markers). Expected behaviour, not a bug.
+- **Codex partial-table merge** `<speculative>` — the overlay writes `<repo>/.codex/config.toml` carrying only `[mcp_servers.<s>] enabled_tools` (no `command` / `args`), relying on Codex merging it with the user-level server definition at runtime for trusted projects. Documented per research but unverified without a live Codex binary; if Codex does not merge partial server tables, the project config would need the server `command` re-declared.
+
+### Why committing rendered config is correct here
+
+The repo's general rule is "never commit rendered artifacts." The project overlay is the deliberate exception: the rendered `<repo>/.claude/settings.json` and `<repo>/.codex/` files are consumed by Claude / Codex *in that downstream repo*, and committing them is the point — zero-friction permissions for teammates who clone it. The *source* (`.agent-profiles/_permissions/profile.yaml`) is committed too; re-rendering is idempotent, so there is no drift class here to self-heal.
 
 ## Planned fixes & remaining gaps
 
