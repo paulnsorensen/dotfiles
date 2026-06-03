@@ -96,7 +96,7 @@ Test in this exact order:
 | 2 | medium | `<certain>` | fn_emptyArray_offByOne | [] | IndexError | EDGE_CASE |
 
 ### Below Threshold
-N low/speculative failures not surfaced
+N low findings not surfaced (speculative or out-of-scope)
 
 ### Edge Cases Covered
 - Invalid input handling: covered/gaps

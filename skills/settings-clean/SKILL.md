@@ -108,8 +108,8 @@ Recommended deny entries (reinforces hook blocks):
     "Bash(grep:*)"         → Grep tool or /scout
     "Bash(egrep:*)"        → Grep tool or /scout
     "Bash(fgrep:*)"        → Grep tool or /scout
-    "Bash(sed:*)"          → cheese-flow:cheez-write or Edit
-    "Bash(awk:*)"          → cheese-flow:cheez-write or Edit
+    "Bash(sed:*)"          → easy-cheese:cheez-write or Edit
+    "Bash(awk:*)"          → easy-cheese:cheez-write or Edit
     "Bash(find:*)"         → Glob tool or /scout (fd)
 
   Package installs (require per-use approval):

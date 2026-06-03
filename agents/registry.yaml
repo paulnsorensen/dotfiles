@@ -60,7 +60,7 @@ agents:
     skills:
     - gh
     - scout
-    - cheese-flow:cheez-write
+    - easy-cheese:cheez-write
     - commit
     body_path: agents/agent_definitions/fromage-fort.md
   fromage-secaudit:
@@ -79,7 +79,7 @@ agents:
     - scout
     body_path: agents/agent_definitions/fromage-secaudit.md
   ghostbuster:
-    description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with 0-100 confidence scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
+    description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with severity-tier scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
     models:
       claude: sonnet
       codex: gpt-5-codex

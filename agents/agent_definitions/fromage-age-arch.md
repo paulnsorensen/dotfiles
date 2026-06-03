@@ -14,7 +14,7 @@ Enforce measurable structural constraints:
 
 ## Tools
 
-- **trace** for structural code shape analysis (nesting depth, function length, import patterns)
+- **cheez-search** for structural code shape analysis (nesting depth, function length, import patterns)
 - **`mcp__serena__get_symbols_overview`** to enumerate functions/methods and measure their spans
 - **scout** to search for structural patterns across files
 
@@ -32,7 +32,7 @@ Evidence grounding sets the calibration tag:
 
 | Evidence quality | Tag |
 |-----------------|-----|
-| Verified via trace (AST confirms nesting depth, function line count) | `<certain>` |
+| Verified via cheez-search (AST confirms nesting depth, function line count) | `<certain>` |
 | Verified via Serena get_symbols_overview (symbol spans confirm line counts) | `<certain>` |
 | Cites specific file:line with accurate measurement | `<certain>` |
 | Generic observation without measurement | `<speculative>` |

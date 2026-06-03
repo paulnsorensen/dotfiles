@@ -83,7 +83,7 @@ repo-root `agents/registry.yaml` (metadata) with bodies under
 | Agent | Purpose |
 |-------|---------|
 | `fromage-secaudit` | Security and dependency health audit |
-| `fromage-fort` | PR review comment responder with confidence scoring |
+| `fromage-fort` | PR review comment responder with severity-tier scoring |
 | `fromage-age-arch` | Complexity budgets, nesting smells, file structure |
 | `fromage-age-history` | Git history risk signals → per-file score modifiers |
 | `ricotta-reducer` | Code distillation and simplification (analysis only) |
@@ -105,8 +105,8 @@ Reusable tool-usage instructions injected into agents and commands.
 |-------|---------|
 | `scout` | Directory listings (eza); delegates code search to `easy-cheese:cheez-search` |
 | `easy-cheese:cheez-search` | AST-aware code/content search via tilth MCP (replaces trace) |
-| `cheese-flow:cheez-read` | Hash-anchored code reading via tilth MCP |
-| `cheese-flow:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |
+| `easy-cheese:cheez-read` | Hash-anchored code reading via tilth MCP |
+| `easy-cheese:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |
 | `gh` | GitHub operations via gh CLI |
 | `commit` | Git staging and conventional commits |
 | `tui-design` | TUI design and implementation (ratatui, Textual) |
