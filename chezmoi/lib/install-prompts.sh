@@ -75,11 +75,23 @@ install_prompts_wire_codex() {
     local current
     current="$(yq -p=toml '.model_instructions_file // ""' "$codex_config" 2>/dev/null || true)"
     if [[ "$current" != "$codex_prompt" ]]; then
-        # Pass the path via env so a quote/backslash in $codex_prompt can't
-        # escape into the yq filter and corrupt the file.
-        CODEX_PROMPT_PATH="$codex_prompt" \
-            yq -p=toml -o=toml -i '.model_instructions_file = strenv(CODEX_PROMPT_PATH)' \
-            "$codex_config"
+        # yq -i appends a new root key at the END of the document, so it lands
+        # inside whatever [table] sits at the bottom of config.toml (codex
+        # auto-adds [tui.*] there). A root key after a table header belongs to
+        # that table, so Codex can't read it as model_instructions_file, the
+        # guard above re-reads "" every run, and duplicates accumulate (#262).
+        # Instead: drop any existing model_instructions_file line(s) — including
+        # a misplaced or duplicated one — and prepend the key at the very top,
+        # before any [section] header, where Codex reads it as a root key.
+        local escaped tmp
+        escaped="${codex_prompt//\\/\\\\}"   # backslash -> \\  for the TOML string
+        escaped="${escaped//\"/\\\"}"         # "        -> \"
+        tmp="$(mktemp)"
+        {
+            printf 'model_instructions_file = "%s"\n' "$escaped"
+            grep -v '^[[:space:]]*model_instructions_file[[:space:]]*=' "$codex_config" || true
+        } >"$tmp"
+        mv "$tmp" "$codex_config"
         echo "  Set model_instructions_file in $codex_config"
     fi
 }

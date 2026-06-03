@@ -82,6 +82,7 @@ class CodexRenderer:
     :class:`~agent_profile.renderers.base.Renderer` protocol."""
 
     name = "codex"
+    mcp_default = _CODEX_MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         out_files: list[str] = []

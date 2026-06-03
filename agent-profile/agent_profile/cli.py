@@ -28,7 +28,11 @@ import yaml
 from agent_profile import discover, manifest as manifest_mod
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import ParseError, parse_manifest
-from agent_profile.renderers.base import MergedConfigError, Renderer
+from agent_profile.renderers.base import (
+    MergedConfigError,
+    Renderer,
+    includes_harness,
+)
 
 ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot"]
 
@@ -304,32 +308,53 @@ def _reconcile_dropped_mcps(
     out: Any,
     colors: Any,
 ) -> None:
-    """Evict MCP servers that fell out of the registry since the last install.
+    """Evict MCP servers that fell out of a harness since the last install.
 
     Renderers MERGE MCPs into persistent/user-owned files (codex config.toml,
     opencode/cursor/copilot JSON, claude user-scope ~/.claude.json), so a
-    server dropped from the registry lingers — render only writes the current
-    set. Diff the prior resolved manifest against the current one and have
-    each in-scope renderer prune the dropped servers. No prior install, or
-    nothing dropped → no-op (keeps fresh renders byte-identical)."""
+    server that stops rendering into a harness lingers — render only writes
+    the current set. A server is "dropped" from a harness either by leaving
+    the registry entirely OR by losing that harness from its membership (e.g.
+    ``harnesses: []`` scopes it out of every harness while it stays in the
+    manifest). Both must be reconciled, so the diff is computed per-harness
+    using the same membership projection render uses (:func:`includes_harness`
+    with each renderer's MCP default) rather than against the global manifest —
+    otherwise a server still present in ``manifest.mcps`` but scoped out of a
+    harness would never be pruned from it. No prior install, or nothing dropped
+    → no-op (keeps fresh renders byte-identical)."""
     if not prior_merged:
         return
-    current_names = {m.get("name") for m in manifest.mcps}
-    dropped = [
-        m
-        for m in (prior_merged.get("mcps") or [])
-        if m.get("name") not in current_names
-    ]
-    if not dropped:
+    prior_mcps = prior_merged.get("mcps") or []
+    if not prior_mcps:
         return
 
-    dropped_manifest = replace(manifest, mcps=dropped)
+    current_by_name = {m.get("name"): m for m in manifest.mcps}
+    pruned: set[str] = set()
     for h in harnesses:
         renderer = RENDERERS.get(h)
-        if renderer is not None:
-            renderer.prune_mcps(dropped_manifest, target)
+        if renderer is None:
+            continue
+        default = renderer.mcp_default
+        current_for_h = {
+            name
+            for name, m in current_by_name.items()
+            if includes_harness(m, h, default)
+        }
+        dropped_h = [
+            m
+            for m in prior_mcps
+            if includes_harness(m, h, default)
+            and m.get("name") not in current_for_h
+        ]
+        if not dropped_h:
+            continue
+        renderer.prune_mcps(replace(manifest, mcps=dropped_h), target)
+        pruned.update(str(m.get("name", "?")) for m in dropped_h)
 
-    names = ", ".join(sorted(str(m.get("name", "?")) for m in dropped))
+    if not pruned:
+        return
+
+    names = ", ".join(sorted(pruned))
     print(f"  {colors.BLUE}↺ pruned dropped MCP(s): {names}{colors.NC}", file=out)
 
 
