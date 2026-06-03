@@ -476,6 +476,20 @@ class CodexRenderer:
             return
         base.dump_toml(cfg, doc)
 
+    def render_project_permissions(
+        self, manifest: Manifest, target: Path, *, local: bool = False
+    ) -> list[str]:
+        """Write ONLY canonical perms into <target>/.codex/ (rules + config.toml tool scopes).
+
+        Codex has no gitignored personal-settings analog: under ``local=True``
+        this is a no-op (the CLI emits a one-line note at the call site)."""
+        if local:
+            return []
+        out: list[str] = []
+        self._write_rules(manifest, Path(target), out)
+        self._write_mcp_tool_scopes(manifest, Path(target))
+        return out
+
 
 def _collect_prefix_rules(manifest: Manifest) -> list[tuple[list[str], str]]:
     """Lower the canonical Bash(...) subset to ``(pattern, decision)`` pairs.

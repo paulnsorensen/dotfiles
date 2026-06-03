@@ -564,6 +564,34 @@ class ClaudeRenderer:
 
         settings.write_text(json.dumps(data, indent=2) + "\n")
 
+    def render_project_permissions(
+        self, manifest: Manifest, target: Path, *, local: bool = False
+    ) -> list[str]:
+        """Write ONLY canonical permissions into the repo's project Claude settings.
+
+        No plugin tree / skills / agents / MCPs. ``local=True`` targets the
+        gitignored personal layer (``settings.local.json``) instead of the
+        committed ``settings.json``.
+
+        Owns ``permissions.{allow,deny}`` subkeys; preserves all sibling keys;
+        idempotent. Returns ``[]`` (shared file, not manifest-tracked)."""
+        allow = manifest.settings.get("permissions_allow") or []
+        deny = manifest.settings.get("permissions_deny") or []
+        if not allow and not deny:
+            return []
+        filename = "settings.local.json" if local else "settings.json"
+        settings = target / ".claude" / filename
+        if settings.is_file():
+            data = read_json_object(settings, filename)
+        else:
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+        permissions = data.setdefault("permissions", {})
+        permissions["allow"] = list(allow)
+        permissions["deny"] = list(deny)
+        settings.write_text(json.dumps(data, indent=2) + "\n")
+        return []
+
     def _write_local_marketplace(
         self, manifest: Manifest, base: Path, profile: str, desc: str
     ) -> None:

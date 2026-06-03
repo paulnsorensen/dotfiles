@@ -73,6 +73,7 @@ Commands:
   install <name> [opts]         Render profile into current dir
   uninstall <name> [opts]       Remove a previously-installed profile
   launch <harness> [name] [..]  Install + exec the named harness CLI
+  perms [opts]                  Write repo-level permission overlay (Claude + Codex)
   help                          Show this message
 
 Install/launch options:
@@ -85,11 +86,17 @@ limited: every cleaner still runs (shared/merged files like
 opencode.json, .mcp.json carry profile-authored entries across the
 harness boundary; a partial cleanup would leave dangling entries).
 
+Perms options:
+  --local                       Write settings.local.json (gitignored); skip Codex
+  --target <dir>                Repo root (default: $PWD)
+  --harness claude,codex        Limit to specific harnesses (default: claude,codex)
+
 Examples:
   dots profile list
   dots profile install rust --harness claude
   dots profile launch claude rust -- --resume
   dots profile uninstall rust
+  dots profile perms --target /path/to/repo
 """
 
 
@@ -297,6 +304,45 @@ def cmd_install(
     manifest_mod.record_merged_json(target, name, merged_dict)
 
     print(f"{colors.GREEN}✓ Installed{colors.NC}", file=out)
+    return 0
+
+
+def cmd_perms(
+    local: bool,
+    target_opt: Path | None,
+    harnesses: list[str],
+    colors: _Colors,
+    out: Any,
+) -> int:
+    """``ap perms [--local] [--target <repo>] [--harness claude,codex]``
+
+    Resolve ``<target>/.agent-profiles/_permissions/profile.yaml`` by fixed
+    path (no global fall-through), parse it as a standalone manifest, and
+    render project permissions per harness."""
+    target = _resolve_target(target_opt, None)
+    frag = target / ".agent-profiles" / "_permissions" / "profile.yaml"
+    if not frag.is_file():
+        raise CliError(
+            f"{colors.RED}ap perms: no repo permission overlay at "
+            f"{frag}; create .agent-profiles/_permissions/profile.yaml first"
+            f"{colors.NC}"
+        )
+    manifest = parse_manifest(frag.parent)
+    from agent_profile.renderers.claude import ClaudeRenderer
+    from agent_profile.renderers.codex import CodexRenderer
+    _perm_renderers = {"claude": ClaudeRenderer(), "codex": CodexRenderer()}
+    for h in harnesses:
+        if local and h == "codex":
+            print(
+                f"  {colors.CYAN}codex: skipping under --local (no gitignored "
+                f"personal-settings analog){colors.NC}",
+                file=out,
+            )
+            continue
+        renderer = _perm_renderers.get(h)
+        if renderer is None:
+            continue
+        renderer.render_project_permissions(manifest, target, local=local)
     return 0
 
 
@@ -756,6 +802,14 @@ def main(argv: list[str] | None = None) -> int:
             if not rest:
                 raise CliError("profile name required")
             return cmd_copilot_flags(rest[0], sys.stdout)
+        if sub == "perms":
+            local = "--local" in rest
+            rest_no_local = [a for a in rest if a != "--local"]
+            harnesses, target, _remaining, _passthrough = _parse_common_opts(
+                rest_no_local
+            )
+            perms_harnesses = [h for h in harnesses if h in ("claude", "codex")]
+            return cmd_perms(local, target, perms_harnesses, colors, sys.stdout)
         if sub == "install":
             harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
             _validate_harnesses(harnesses, colors)

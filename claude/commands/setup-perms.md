@@ -1,12 +1,17 @@
 ---
 name: setup-perms
-description: Scaffold a clean .claude/settings.local.json with sensible permissions for this project.
+description: Scaffold canonical repo-level permissions for this project (committed .claude/settings.json + .codex/ via ap perms). Pass --local for the gitignored personal layer.
 allowed-tools: Read, Write, Bash, Glob
 ---
 
 # Setup Project Permissions
 
-Scaffold a clean `.claude/settings.local.json` with sensible permissions for this project.
+Scaffold or update `.agent-profiles/_permissions/profile.yaml` with sensible
+permissions for this project, then render the committed project config via
+`ap perms`.
+
+Pass `--local` to write the personal gitignored layer
+(`.claude/settings.local.json`) instead of the committed files.
 
 ## Instructions
 
@@ -23,9 +28,14 @@ Scaffold a clean `.claude/settings.local.json` with sensible permissions for thi
 
 A project can match multiple types (polyglot). If none match, use base permissions only.
 
-1. **Determine the project root** using the current working directory (the absolute path where Claude Code is running). This path is used to scope destructive commands. Refer to it as `$PWD` below.
+1. **Determine the project root** using the current working directory. This path is
+   used to scope destructive commands. Refer to it as `$PWD` below.
 
-2. **Build the allow list** by combining layers. Start with the base layer, then add each detected type's layer.
+   **IMPORTANT:** Replace `$PWD` with the actual absolute path in the output
+   (e.g. `/Users/paulsorensen/Dev/myproject`). Do NOT leave `$PWD` as a literal string.
+
+2. **Build the allow/deny lists** by combining layers. Start with the base layer,
+   then add each detected type's layer.
 
 Commands are split into two categories:
 
@@ -67,8 +77,6 @@ Bash(xargs $PWD/*)
 # MCP & web
 WebSearch
 ```
-
-**IMPORTANT:** Replace `$PWD` with the actual absolute path (e.g. `/Users/paulsorensen/Dev/dotfiles`). Do NOT leave `$PWD` as a literal string in the output.
 
 **Dotfiles/shell layer:**
 
@@ -141,33 +149,75 @@ Bash(gem:*)
 Bash(rake:*)
 ```
 
-1. **Read existing `.claude/settings.local.json`** and extract the `enabledMcpjsonServers` array if present. Preserve it in the output.
+1. **Write `.agent-profiles/_permissions/profile.yaml`** with the computed
+   allow/deny set using the canonical grammar. Create the directory if it does not
+   exist. Overwrite the entire `permissions` block on re-run — do NOT merge with
+   old accumulated permissions. Example:
 
-2. **Write `.claude/settings.local.json`** with this structure:
-
-```json
-{
-  "permissions": {
-    "allow": [/* merged, deduplicated, sorted permissions */],
-    "deny": []
-  },
-  "enabledMcpjsonServers": [/* preserved from existing file */]
-}
+```yaml
+name: _permissions
+settings:
+  permissions_allow:
+    - Bash([:*)
+    - Bash(awk $PWD/*)
+    - Bash(cat:*)
+    - Bash(chmod $PWD/*)
+    - Bash(cp $PWD/*)
+    - Bash(diff:*)
+    - Bash(echo:*)
+    - Bash(false)
+    - Bash(find:*)
+    - Bash(gh:*)
+    - Bash(git:*)
+    - Bash(grep:*)
+    - Bash(head:*)
+    - Bash(ls:*)
+    - Bash(mkdir $PWD/*)
+    - Bash(mv $PWD/*)
+    - Bash(sed $PWD/*)
+    - Bash(sort:*)
+    - Bash(tail:*)
+    - Bash(test:*)
+    - Bash(tr:*)
+    - Bash(true)
+    - Bash(wc:*)
+    - Bash(which:*)
+    - Bash(xargs $PWD/*)
+    - WebSearch
+  permissions_deny: []
 ```
 
-1. **Print a summary** like:
+   Replace `$PWD` with the actual absolute path. Sort the allow list alphabetically.
+
+1. **Run `ap perms`** to render the canonical project config:
+
+   - Default (committed files): `ap perms --target $PWD`
+   - With `--local` passthrough (personal, gitignored): `ap perms --local --target $PWD`
+
+   This writes:
+   - **Claude** → `$PWD/.claude/settings.json` (or `settings.local.json` under `--local`)
+   - **Codex** → `$PWD/.codex/rules/ap-canonical.rules` + `$PWD/.codex/config.toml`
+     tool scopes (skipped under `--local`)
+
+2. **Print a summary** like:
 
 ```
 Detected: dotfiles, python
 Permissions: 45 rules (base: 27, dotfiles: 16, python: 6)
-Preserved: 4 MCP servers
-Wrote: .claude/settings.local.json
+Wrote: .agent-profiles/_permissions/profile.yaml
+Rendered: .claude/settings.json, .codex/rules/ap-canonical.rules
 ```
+
+## Codex trust note
+
+Codex project config loads only for **trusted** projects. If Codex does not
+pick up the project overlay, the user must trust the repo interactively via
+the Codex TUI or CLI. This is expected behavior — not a bug in the overlay.
 
 ## Important
 
-- Overwrite the entire `permissions` block — do NOT merge with old accumulated permissions
-- DO preserve `enabledMcpjsonServers` from the existing file
+- Overwrite the entire `permissions` block in `profile.yaml` on re-run — do NOT merge with old accumulated permissions
 - Sort the allow list alphabetically for readability
-- Use `settings.local.json` (gitignored), never `settings.json`
-- The `deny` array should always be empty — hooks handle blocking
+- The `deny` array should always be empty unless explicitly requested (hooks handle blocking)
+- Under `--local`, the committed `settings.json` is NOT written; only `settings.local.json`
+- The `profile.yaml` fragment is committed to the repo; `settings.local.json` is gitignored
