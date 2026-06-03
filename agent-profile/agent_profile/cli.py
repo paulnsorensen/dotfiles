@@ -328,9 +328,23 @@ def cmd_perms(
             f"{colors.NC}"
         )
     manifest = parse_manifest(frag.parent)
+    # A fragment must define its permissions under a nested ``settings:`` block.
+    # Top-level ``permissions_allow:``/``permissions_deny:`` are a different
+    # (launch-overlay) field the renderers never read, so they would silently
+    # produce an empty overlay — fail loud instead of writing nothing.
+    if (
+        "permissions_allow" not in manifest.settings
+        and "permissions_deny" not in manifest.settings
+    ):
+        raise CliError(
+            f"{colors.RED}ap perms: {frag} defines no permissions under "
+            f"`settings:` — add settings.permissions_allow and/or "
+            f"settings.permissions_deny (top-level keys are ignored){colors.NC}"
+        )
     from agent_profile.renderers.claude import ClaudeRenderer
     from agent_profile.renderers.codex import CodexRenderer
-    _perm_renderers = {"claude": ClaudeRenderer(), "codex": CodexRenderer()}
+    # Classes, not instances — construct only the renderer(s) actually used.
+    _perm_renderers = {"claude": ClaudeRenderer, "codex": CodexRenderer}
     for h in harnesses:
         if local and h == "codex":
             print(
@@ -339,10 +353,10 @@ def cmd_perms(
                 file=out,
             )
             continue
-        renderer = _perm_renderers.get(h)
-        if renderer is None:
+        renderer_cls = _perm_renderers.get(h)
+        if renderer_cls is None:
             continue
-        renderer.render_project_permissions(manifest, target, local=local)
+        renderer_cls().render_project_permissions(manifest, target, local=local)
     return 0
 
 
@@ -808,12 +822,24 @@ def main(argv: list[str] | None = None) -> int:
             harnesses, target, _remaining, _passthrough = _parse_common_opts(
                 rest_no_local
             )
+            explicit_harness = any(
+                a == "--harness" or a.startswith("--harness=")
+                for a in rest_no_local
+            )
+            # An explicit --harness must fail loud on any out-of-scope value
+            # (e.g. claude,opencode) rather than silently dropping it. The
+            # all-harness DEFAULT still filters quietly down to claude/codex.
+            if explicit_harness:
+                unsupported = [
+                    h for h in harnesses if h not in ("claude", "codex")
+                ]
+                if unsupported:
+                    raise CliError(
+                        f"{colors.RED}ap perms: unsupported harness "
+                        f"'{','.join(unsupported)}' (perms supports: "
+                        f"claude, codex){colors.NC}"
+                    )
             perms_harnesses = [h for h in harnesses if h in ("claude", "codex")]
-            if not perms_harnesses:
-                raise CliError(
-                    f"{colors.RED}ap perms: no supported harness selected "
-                    f"(perms supports: claude, codex){colors.NC}"
-                )
             return cmd_perms(local, target, perms_harnesses, colors, sys.stdout)
         if sub == "install":
             harnesses, target, remaining, _passthrough = _parse_common_opts(rest)

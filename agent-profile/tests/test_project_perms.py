@@ -456,3 +456,71 @@ def test_cmd_perms_unsupported_harness_errors(tmp_path, env, capsys):
     assert "claude, codex" in err
     assert not (tmp_path / ".claude").exists()
     assert not (tmp_path / ".codex").exists()
+
+
+def test_cmd_perms_mixed_supported_and_unsupported_harness_errors(
+    tmp_path, env, capsys
+):
+    """WHY: an explicit --harness mixing a supported and an unsupported value
+    (claude,opencode) must fail loud naming the bad value — NOT silently drop
+    opencode and render Claude only. The all-harness default still filters
+    quietly down to claude/codex; an explicit typo must not slip through."""
+    _write_perm_fragment(tmp_path, allow=["Bash(git:*)"])
+    result = run(
+        ["perms", "--harness", "claude,opencode", "--target", str(tmp_path)]
+    )
+    assert result != 0
+    err = capsys.readouterr().err
+    assert "opencode" in err
+    assert "claude, codex" in err
+    # The loud error must abort before any render.
+    assert not (tmp_path / ".claude").exists()
+    assert not (tmp_path / ".codex").exists()
+
+
+def test_cmd_perms_top_level_perms_key_errors_not_empty_overlay(
+    tmp_path, env, capsys
+):
+    """WHY: a fragment that declares permissions_allow at the TOP level (instead
+    of nested under settings:) hits a different launch-overlay field the
+    renderers never read — it would silently write an EMPTY overlay. cmd_perms
+    must fail loud, point at the settings: requirement, and write nothing."""
+    frag_dir = tmp_path / ".agent-profiles" / "_permissions"
+    frag_dir.mkdir(parents=True)
+    (frag_dir / "profile.yaml").write_text(
+        "name: _permissions\npermissions_allow:\n  - 'Bash(git:*)'\n"
+    )
+    result = run(["perms", "--target", str(tmp_path)])
+    assert result != 0
+    err = capsys.readouterr().err
+    assert "settings" in err
+    assert not (tmp_path / ".claude").exists()
+    assert not (tmp_path / ".codex").exists()
+
+
+def test_claude_project_perms_empty_lists_clear_stale_committed_perms(tmp_path):
+    """WHY: emptying a previously-written overlay (keys present but empty lists)
+    must rewrite settings.json to DROP the stale allow/deny — not early-return
+    and leave the old entries in place. Idempotent overwrite must hold at the
+    empty boundary, else a cleared overlay silently keeps old grants."""
+    settings_path = tmp_path / ".claude" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(
+        json.dumps({"permissions": {"allow": ["Bash(stale:*)"], "deny": ["Grep"]}})
+        + "\n"
+    )
+    # Keys present but empty — an explicit clear, distinct from "keys absent".
+    m = Manifest(
+        name="_permissions",
+        description="",
+        mcps=[],
+        agents=[],
+        skills=[],
+        commands=[],
+        hooks=[],
+        settings={"permissions_allow": [], "permissions_deny": []},
+    )
+    ClaudeRenderer().render_project_permissions(m, tmp_path)
+    data = json.loads(settings_path.read_text())
+    assert data["permissions"]["allow"] == []
+    assert data["permissions"]["deny"] == []

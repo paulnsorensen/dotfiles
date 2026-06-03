@@ -577,7 +577,14 @@ class ClaudeRenderer:
         idempotent. Returns ``[]`` (shared file, not manifest-tracked)."""
         allow = manifest.settings.get("permissions_allow") or []
         deny = manifest.settings.get("permissions_deny") or []
-        if not allow and not deny:
+        # Key out on PRESENCE, not emptiness: a fragment that explicitly sets
+        # empty lists (clearing a prior overlay) must still rewrite the file to
+        # drop stale committed entries. Only a fragment that declares neither
+        # key is a true no-op.
+        if (
+            "permissions_allow" not in manifest.settings
+            and "permissions_deny" not in manifest.settings
+        ):
             return []
         filename = "settings.local.json" if local else "settings.json"
         settings = target / ".claude" / filename
