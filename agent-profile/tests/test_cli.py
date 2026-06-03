@@ -156,6 +156,21 @@ def test_path_existing_prints_dir(env, capsys):
     assert capsys.readouterr().out.strip() == str((env.profiles / "foo").resolve())
 
 
+# ─── copilot-flags ────────────────────────────────────────────────────
+
+
+def test_copilot_flags_emits_one_flag_per_line(env, capsys):
+    make_basic_profile(env.profiles, "foo")  # allow Bash(foo:*)
+    assert run(["copilot-flags", "foo"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == ["--allow-tool=shell(foo)"]
+
+
+def test_copilot_flags_missing_profile_fails(env, capsys):
+    assert run(["copilot-flags", "nope"]) == 1
+    assert "not found" in capsys.readouterr().err
+
+
 # ─── help / unknown ───────────────────────────────────────────────────
 
 

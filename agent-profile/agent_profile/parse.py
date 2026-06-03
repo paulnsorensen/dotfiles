@@ -238,22 +238,23 @@ def _expand_registries_directive(
 def _merge_two(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     """Concatenate item arrays, deep-merge settings.
 
-    ``permissions_allow`` is unioned then sorted+deduped (jq ``unique``
-    sorts), and dropped when the result is empty. Port of ``_ap_merge_two``.
+    ``permissions_allow`` and ``permissions_deny`` are each unioned then
+    sorted+deduped (jq ``unique`` sorts), and dropped when empty. Port of
+    ``_ap_merge_two`` plus the settings-level deny channel.
     """
     a_settings = a.get("settings") or {}
     b_settings = b.get("settings") or {}
     # jq's `*` recursive merge: b wins on scalar/object collisions.
     settings = {**a_settings, **b_settings}
 
-    perms = sorted(
-        set(a_settings.get("permissions_allow") or [])
-        | set(b_settings.get("permissions_allow") or [])
-    )
-    if perms:
-        settings["permissions_allow"] = perms
-    else:
-        settings.pop("permissions_allow", None)
+    for key in ("permissions_allow", "permissions_deny"):
+        merged_perms = sorted(
+            set(a_settings.get(key) or []) | set(b_settings.get(key) or [])
+        )
+        if merged_perms:
+            settings[key] = merged_perms
+        else:
+            settings.pop(key, None)
 
     return {
         "mcps": a.get("mcps", []) + b.get("mcps", []),

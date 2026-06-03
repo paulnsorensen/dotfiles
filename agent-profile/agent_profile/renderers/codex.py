@@ -37,11 +37,26 @@ import tomlkit
 from agent_profile import shared
 from agent_profile.env import load_dotenv
 from agent_profile.parse import Manifest
+from agent_profile.permissions import (
+    bash_argv,
+    named_mcp_tools,
+    parse_mcp_rule,
+    whole_server_mcp_allows,
+)
 from agent_profile.renderers import base
 
 # Codex's MCP membership default matches the bash select() fallback
 # `(.harnesses // ["claude","codex"])`.
 _CODEX_MCP_DEFAULT = ("claude", "codex")
+
+# ap owns this rules file under ~/.codex/rules/; the TUI-owned
+# default.rules is never touched, so a clean uninstall = unlink this file.
+_RULES_REL = ".codex/rules/ap-canonical.rules"
+
+# Lever-1 Codex decision per canonical channel (most-restrictive-wins:
+# forbidden > prompt > allow).
+_ALLOW_DECISION = "allow"
+_DENY_DECISION = "forbidden"
 
 
 def _inherited_env_keys() -> frozenset[str]:
@@ -75,11 +90,15 @@ class CodexRenderer:
         self._write_skills(manifest, target, out_files)
         self._write_hooks(manifest, target, out_files)
         self._write_mcps(manifest, target)
+        self._write_rules(manifest, target, out_files)
+        self._write_mcp_tool_scopes(manifest, target)
         self._warn_commands(manifest)
         return out_files
 
     def clean(self, manifest: Manifest, target: Path) -> None:
         self._clean_mcps(manifest, Path(target))
+        self._clean_rules(Path(target))
+        self._clean_mcp_tool_scopes(manifest, Path(target))
 
     def prune_mcps(self, manifest: Manifest, target: Path) -> None:
         """Evict dropped MCP servers from config.toml's [mcp_servers]
@@ -265,6 +284,119 @@ class CodexRenderer:
                 file=sys.stderr,
             )
 
+    # ─── lever 1: canonical permission rules (Starlark) ─────────────────
+    # Codex's execpolicy consumes prefix_rule() entries from .rules files it
+    # scans under each config layer at startup (developers.openai.com/codex/
+    # exec-policy). ap writes its OWN file (ap-canonical.rules), never the
+    # TUI-owned default.rules, so a clean uninstall is a single unlink. Only
+    # the Bash(...) subset of the canonical lists maps to execpolicy: a
+    # Bash(<cmd>:*) allow becomes decision="allow", a deny becomes
+    # decision="forbidden" (most-restrictive-wins). Non-Bash canonical
+    # entries (Edit/Write/Read/Grep/Glob/Skill) are not shell commands —
+    # Codex governs those via sandbox/posture — and mcp__* goes to lever 3.
+    def _write_rules(
+        self, manifest: Manifest, target: Path, out_files: list[str]
+    ) -> None:
+        rules = _collect_prefix_rules(manifest)
+        if not rules:
+            # SSOT: no Bash rule remains -> unlink any stale ap-canonical.rules
+            # so a prior render's execpolicy floor is not stranded.
+            self._clean_rules(target)
+            return
+        base_dir = Path(str(target).rstrip("/"))
+        abs_path = base_dir / _RULES_REL
+        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_path.write_text(_render_rules_file(rules))
+        shared.track_file(out_files, _RULES_REL)
+
+    def _clean_rules(self, target: Path) -> None:
+        """Unlink ap's canonical rules file (the TUI's default.rules is never
+        touched, so nothing else under rules/ is ours to prune)."""
+        abs_path = Path(str(target).rstrip("/")) / _RULES_REL
+        if abs_path.is_file():
+            abs_path.unlink()
+
+    # ─── lever 3: MCP-tool scoping ──────────────────────────────────────
+    # mcp__server__tool allow -> [mcp_servers.<server>] enabled_tools += tool
+    # mcp__server__*    allow -> server stays enabled, no restriction
+    # mcp__server__tool deny  -> disabled_tools += tool
+    # Merge-preserve every user key/comment via the tomlkit round-trip (same
+    # surface _write_mcps uses for [mcp_servers]).
+    def _write_mcp_tool_scopes(self, manifest: Manifest, target: Path) -> None:
+        managed = _managed_mcp_servers(manifest)
+        if not managed:
+            return
+        scopes = _collect_mcp_tool_scopes(manifest)
+        cfg = Path(str(target).rstrip("/")) / ".codex" / "config.toml"
+        doc = base.load_toml(cfg)
+        servers = doc.get("mcp_servers")
+
+        # SSOT: for every server this pass manages, clear ANY prior
+        # enabled/disabled key first, then re-add only the newly-computed
+        # non-empty sets. A tool dropped from the canonical lists (or a
+        # server downgraded to a whole-server allow) thus leaves no stale key.
+        for server in managed:
+            entry = servers.get(server) if servers is not None else None
+            enabled, disabled = scopes.get(server, (set(), set()))
+            if entry is not None:
+                for key in ("enabled_tools", "disabled_tools"):
+                    if key in entry:
+                        del entry[key]
+                if len(entry) == 0:
+                    del servers[server]
+                    entry = None
+            if not enabled and not disabled:
+                continue  # nothing to add for this server
+            if servers is None:
+                servers = tomlkit.table()
+                doc["mcp_servers"] = servers
+            if entry is None:
+                entry = tomlkit.table()
+                servers[server] = entry
+            if enabled:
+                entry["enabled_tools"] = sorted(enabled)
+            if disabled:
+                entry["disabled_tools"] = sorted(disabled)
+
+        if servers is not None and len(servers) == 0:
+            del doc["mcp_servers"]
+        if len(doc) == 0:
+            if cfg.is_file():
+                cfg.unlink()
+            return
+        base.dump_toml(cfg, doc)
+
+    def _clean_mcp_tool_scopes(self, manifest: Manifest, target: Path) -> None:
+        """Remove the ap-written ``enabled_tools``/``disabled_tools`` keys
+        from each scoped server, pruning a server table only if it now has no
+        keys left (so a server still carrying its user ``command``/``args``
+        survives)."""
+        scopes = _collect_mcp_tool_scopes(manifest)
+        if not scopes:
+            return
+        cfg = Path(str(target).rstrip("/")) / ".codex" / "config.toml"
+        if not cfg.is_file():
+            return
+        doc = base.load_toml(cfg)
+        servers = doc.get("mcp_servers")
+        if servers is None:
+            return
+        for server in scopes:
+            entry = servers.get(server)
+            if entry is None:
+                continue
+            for key in ("enabled_tools", "disabled_tools"):
+                if key in entry:
+                    del entry[key]
+            if len(entry) == 0:
+                del servers[server]
+        if len(servers) == 0:
+            del doc["mcp_servers"]
+        if len(doc) == 0:
+            cfg.unlink()
+            return
+        base.dump_toml(cfg, doc)
+
     # ─── legacy config.toml hook cleanup ───────────────────────────────
     # The retired agents/hooks/sync.sh wrote [[hooks.<event>]] blocks into
     # ~/.codex/config.toml. The ap codex renderer writes ~/.codex/hooks.json
@@ -342,6 +474,103 @@ class CodexRenderer:
             cfg.unlink()
             return
         base.dump_toml(cfg, doc)
+
+
+def _collect_prefix_rules(manifest: Manifest) -> list[tuple[list[str], str]]:
+    """Lower the canonical Bash(...) subset to ``(pattern, decision)`` pairs.
+
+    Allow entries -> ``"allow"``; deny entries -> ``"forbidden"``. Non-Bash
+    canonical entries return ``None`` from :func:`bash_argv` and are dropped.
+    Order: allow rules first (sorted), then deny rules (sorted) — Codex's
+    most-restrictive-wins makes file order immaterial, but a stable order
+    keeps the golden byte-identical."""
+    settings = manifest.settings
+    out: list[tuple[list[str], str]] = []
+    for rule in sorted(settings.get("permissions_allow") or []):
+        argv = bash_argv(rule)
+        if argv:
+            out.append((argv, _ALLOW_DECISION))
+    for rule in sorted(settings.get("permissions_deny") or []):
+        argv = bash_argv(rule)
+        if argv:
+            out.append((argv, _DENY_DECISION))
+    return out
+
+
+def _render_rules_file(rules: list[tuple[list[str], str]]) -> str:
+    """Render the Starlark ``.rules`` file body. One ``prefix_rule()`` per
+    canonical Bash rule; ``pattern`` is the argv prefix, ``decision`` the
+    lowered action. A header marks the file as ap-managed."""
+    lines = [
+        (
+            "# Managed by ap (agent-profile) — canonical cross-harness "
+            "permission rules."
+        ),
+        (
+            "# Do not edit; regenerated on every `dots sync`. The TUI-owned "
+            "default.rules is untouched."
+        ),
+        "",
+    ]
+    for pattern, decision in rules:
+        pattern_lit = ", ".join(json.dumps(tok) for tok in pattern)
+        lines.append("prefix_rule(")
+        lines.append(f"    pattern = [{pattern_lit}],")
+        lines.append(f"    decision = {json.dumps(decision)},")
+        lines.append(")")
+    return "\n".join(lines) + "\n"
+
+
+def _collect_mcp_tool_scopes(
+    manifest: Manifest,
+) -> dict[str, tuple[set[str], set[str]]]:
+    """Lower the canonical ``mcp__*`` subset to per-server
+    ``(enabled_tools, disabled_tools)`` sets.
+
+    ``mcp__s__tool`` allow -> enabled_tools; ``mcp__s__tool`` deny ->
+    disabled_tools. A ``mcp__s__*`` allow names no tool, so it adds no
+    enabled entry (the server stays enabled with no restriction); a
+    ``mcp__s__*`` deny is a whole-server disable, which Codex expresses by
+    omitting the server, not by a tool list, so it too names no tool and is
+    out of scope here.
+
+    A whole-server ``mcp__s__*`` allow WINS over any named-tool allow for
+    the same server: the server must stay unrestricted (no ``enabled_tools``
+    key), so its named-allow tools are dropped here. The deny channel is
+    independent — ``disabled_tools`` for that server survives. Only servers
+    that gain at least one named tool (after the whole-server drop) reach the
+    result."""
+    settings = manifest.settings
+    enabled = named_mcp_tools(settings.get("permissions_allow") or [])
+    disabled = named_mcp_tools(settings.get("permissions_deny") or [])
+    whole = whole_server_mcp_allows(settings.get("permissions_allow") or [])
+    for server in whole:
+        enabled.pop(server, None)
+    servers = set(enabled) | set(disabled)
+    return {
+        s: (enabled.get(s, set()), disabled.get(s, set())) for s in servers
+    }
+
+
+def _managed_mcp_servers(manifest: Manifest) -> set[str]:
+    """Every server this render pass manages — i.e. named by ANY ``mcp__*``
+    canonical rule (named-tool OR whole-server ``mcp__<server>__*``), across
+    both the allow and deny lists.
+
+    ``_write_mcp_tool_scopes`` clears each managed server's prior
+    enabled/disabled keys before re-adding the freshly-computed sets, so the
+    managed set must include whole-server allows (whose set is empty): a
+    server downgraded to a whole-server allow still needs its stale
+    ``enabled_tools`` cleared (SSOT). Servers carrying NO ``mcp__*`` rule are
+    not ours to touch and stay out of the set."""
+    settings = manifest.settings
+    out: set[str] = set()
+    for channel in ("permissions_allow", "permissions_deny"):
+        for rule in settings.get(channel) or []:
+            parsed = parse_mcp_rule(rule)
+            if parsed:
+                out.add(parsed[0])
+    return out
 
 
 def _managed_basenames_per_event(
