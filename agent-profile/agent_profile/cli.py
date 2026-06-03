@@ -809,6 +809,11 @@ def main(argv: list[str] | None = None) -> int:
                 rest_no_local
             )
             perms_harnesses = [h for h in harnesses if h in ("claude", "codex")]
+            if not perms_harnesses:
+                raise CliError(
+                    f"{colors.RED}ap perms: no supported harness selected "
+                    f"(perms supports: claude, codex){colors.NC}"
+                )
             return cmd_perms(local, target, perms_harnesses, colors, sys.stdout)
         if sub == "install":
             harnesses, target, remaining, _passthrough = _parse_common_opts(rest)

@@ -28,13 +28,13 @@ Pass `--local` to write the personal gitignored layer
 
 A project can match multiple types (polyglot). If none match, use base permissions only.
 
-1. **Determine the project root** using the current working directory. This path is
+2. **Determine the project root** using the current working directory. This path is
    used to scope destructive commands. Refer to it as `$PWD` below.
 
    **IMPORTANT:** Replace `$PWD` with the actual absolute path in the output
    (e.g. `/Users/paulsorensen/Dev/myproject`). Do NOT leave `$PWD` as a literal string.
 
-2. **Build the allow/deny lists** by combining layers. Start with the base layer,
+3. **Build the allow/deny lists** by combining layers. Start with the base layer,
    then add each detected type's layer.
 
 Commands are split into two categories:
@@ -149,7 +149,7 @@ Bash(gem:*)
 Bash(rake:*)
 ```
 
-1. **Write `.agent-profiles/_permissions/profile.yaml`** with the computed
+4. **Write `.agent-profiles/_permissions/profile.yaml`** with the computed
    allow/deny set using the canonical grammar. Create the directory if it does not
    exist. Overwrite the entire `permissions` block on re-run — do NOT merge with
    old accumulated permissions. Example:
@@ -189,7 +189,7 @@ settings:
 
    Replace `$PWD` with the actual absolute path. Sort the allow list alphabetically.
 
-1. **Run `ap perms`** to render the canonical project config:
+5. **Run `ap perms`** to render the canonical project config:
 
    - Default (committed files): `ap perms --target $PWD`
    - With `--local` passthrough (personal, gitignored): `ap perms --local --target $PWD`
@@ -199,7 +199,7 @@ settings:
    - **Codex** → `$PWD/.codex/rules/ap-canonical.rules` + `$PWD/.codex/config.toml`
      tool scopes (skipped under `--local`)
 
-2. **Print a summary** like:
+6. **Print a summary** like:
 
 ```
 Detected: dotfiles, python

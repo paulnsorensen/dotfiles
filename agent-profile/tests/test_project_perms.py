@@ -442,3 +442,17 @@ def test_cmd_perms_mcp_only_fragment_no_rules_file(tmp_path, env):
     assert not (tmp_path / ".codex" / "rules" / "ap-canonical.rules").exists()
     doc = tomllib.loads((tmp_path / ".codex" / "config.toml").read_text())
     assert doc["mcp_servers"]["tilth"]["enabled_tools"] == ["tilth_read"]
+
+
+def test_cmd_perms_unsupported_harness_errors(tmp_path, env, capsys):
+    """WHY: --harness carrying only out-of-scope/typo'd values (no claude or
+    codex) must error loudly with a non-zero exit and write nothing — not
+    silently no-op with exit 0. Mirrors the loud failure every other
+    subcommand gives on an unknown harness."""
+    _write_perm_fragment(tmp_path, allow=["Bash(git:*)"])
+    result = run(["perms", "--harness", "opencode", "--target", str(tmp_path)])
+    assert result != 0
+    err = capsys.readouterr().err
+    assert "claude, codex" in err
+    assert not (tmp_path / ".claude").exists()
+    assert not (tmp_path / ".codex").exists()
