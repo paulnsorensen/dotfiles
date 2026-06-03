@@ -41,15 +41,22 @@ trim** (~55k tokens; the three trimmed servers carry their pre-trim count in par
 | code-review-graph | 14 (was 30) | ~3,900 | 7% |
 | tilth | 7 | ~3,500 | 6% |
 | tavily | 5 | ~2,100 | 4% |
-| hallouminate | 8 (was 9) | ~2,050 | 4% |
+| hallouminate | 8 (was 9)¹ | ~2,050 | 4% |
 | context7 | 2 | ~1,200 | 2% |
 
-The trim (CRG `CRG_TOOLS` 30→14, serena `excluded_tools` 12→9, hallouminate
-`globalize_markdown` drop 9→8) cut the **eager-harness coding set** (everything
-except the already-scoped-out todoist) from ~22.8k to ~16.8k tokens/request — a
-~6k/request saving on codex / opencode / cursor / copilot, stacking on the ~38k
-already shed by scoping todoist out. On Claude the trim is token-neutral (deferred
-via `ToolSearch`) but still removes broken/redundant tools from the candidate pool.
+This repo applies two of the three trims — CRG `CRG_TOOLS` 30→14 and serena
+`excluded_tools` 8→11 (exposed tools 12→9). Together they cut the **eager-harness
+coding set** (everything except the already-scoped-out todoist) from ~22.8k to
+~17.05k tokens/request — a ~5.75k/request saving on codex / opencode / cursor /
+copilot, stacking on the ~38k already shed by scoping todoist out.
+
+¹ The hallouminate `globalize_markdown` drop (9→8, ~250 tokens) ships separately
+upstream and is **not** applied by this repo's config; the table row above already
+reflects that post-upstream count, and once it lands it brings the eager set to
+~16.8k.
+
+On Claude the trim is token-neutral (deferred via `ToolSearch`) but still removes
+broken/redundant tools from the candidate pool.
 
 ## The Todoist decision (worked example)
 
