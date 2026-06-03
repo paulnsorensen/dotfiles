@@ -115,3 +115,53 @@ def test_copy_shared_skill_copies_tree(tmp_path):
     assert (dst / "SKILL.md").read_text() == "skill body\n"
     assert (dst / "extra.txt").read_text() == "more\n"
     assert out == [".agents/skills/widget"]
+
+
+def test_write_shared_claude_skill_copies_tree(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "SKILL.md").write_text("skill body\n")
+    (src / "sub" ).mkdir()
+    (src / "sub" / "helper.py").write_text("# helper\n")
+    out: list[str] = []
+    shared.write_shared_claude_skill(tmp_path, "my-skill", src, out)
+    dst = tmp_path / ".claude/skills/my-skill"
+    assert (dst / "SKILL.md").read_text() == "skill body\n"
+    assert (dst / "sub" / "helper.py").read_text() == "# helper\n"
+    assert out == [".claude/skills/my-skill"]
+
+
+def test_write_shared_claude_skill_is_idempotent(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "SKILL.md").write_text("v1\n")
+    out: list[str] = []
+    shared.write_shared_claude_skill(tmp_path, "my-skill", src, out)
+    # Overwrite source then re-render: rmtree-then-copytree replaces the old tree.
+    (src / "SKILL.md").write_text("v2\n")
+    out2: list[str] = []
+    shared.write_shared_claude_skill(tmp_path, "my-skill", src, out2)
+    dst = tmp_path / ".claude/skills/my-skill"
+    assert (dst / "SKILL.md").read_text() == "v2\n"
+    # Tracked path is the same; no duplicates.
+    assert out2 == [".claude/skills/my-skill"]
+
+
+def test_write_shared_claude_skill_tracks_rel(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "SKILL.md").write_text("body\n")
+    out: list[str] = []
+    shared.write_shared_claude_skill(tmp_path, "zzz", src, out)
+    assert out == [".claude/skills/zzz"]
+    # Calling again dedupes (track_file contract).
+    shared.write_shared_claude_skill(tmp_path, "zzz", src, out)
+    assert out == [".claude/skills/zzz"]
+
+
+def test_write_shared_claude_skill_raises_on_non_dir(tmp_path):
+    not_a_dir = tmp_path / "file.txt"
+    not_a_dir.write_text("not a directory\n")
+    out: list[str] = []
+    with pytest.raises(NotADirectoryError, match="source not a dir"):
+        shared.write_shared_claude_skill(tmp_path, "bad", not_a_dir, out)

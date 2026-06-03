@@ -37,10 +37,10 @@ def source_only_profile(env):
 def test_claude_skips_source_only_skill(env, source_only_profile):
     manifest = parse_manifest(source_only_profile)
     ClaudeRenderer().render(manifest, env.target)
-    plugin_skills = env.target / ".claude/plugins/local/extprof/skills"
-    # local path: skill is copied; source: skill is not (no 'mold' dir).
-    assert (plugin_skills / "local-skill").is_dir()
-    assert not (plugin_skills / "mold").exists()
+    shared_skills = env.target / ".claude/skills"
+    # local path: skill is written to the shared path; source: skill is not (no 'mold' dir).
+    assert (shared_skills / "local-skill").is_dir()
+    assert not (shared_skills / "mold").exists()
 
 
 def test_codex_skips_source_only_skill(env, source_only_profile):

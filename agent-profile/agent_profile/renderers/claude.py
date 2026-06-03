@@ -8,21 +8,21 @@ Layout (under ``target``)::
     .claude/plugins/local/<profile>/
       plugin.json                   curd-spec marker manifest at root
       .claude-plugin/plugin.json    manifest Claude actually loads
-      agents/                       (empty — agents now written shared-only)
-      skills/<name>/                skill trees, copied from profile
       commands/<name>.md            slash commands
       hooks/<script>                hook scripts (wiring lives in plugin.json)
       .mcp.json                     mcpServers for harnesses ⊇ claude
       settings.json                 permissions.allow from manifest
 
-Plus the cross-harness shared path::
+Plus the cross-harness shared paths::
 
     .claude/agents/<name>.md        also read by Cursor
+    .claude/skills/<name>/          also read directly by Claude (priority 4)
 
 Agents are written exclusively to the cross-harness shared path
 (``.claude/agents/<name>.md``); the plugin tree carries no agent files.
-The shared file wins precedence (priority 4 > plugin priority 5) and is
-the cross-harness surface for Cursor.
+Skills are written exclusively to the shared path
+(``.claude/skills/<name>/``); the plugin tree carries no skill dirs.
+Both shared writes win precedence (priority 4 > plugin priority 5).
 
 JSON is emitted with stdlib :mod:`json` (``indent=2`` + trailing newline,
 byte-identical to the bash ``jq`` output). No ``jq``/``yq``.
@@ -89,12 +89,12 @@ class ClaudeRenderer:
         desc = manifest.description or ""
         plugin_dir = base / ".claude" / "plugins" / "local" / profile
 
-        for sub in (".claude-plugin", "agents", "skills", "commands", "hooks"):
+        for sub in (".claude-plugin", "commands", "hooks"):
             (plugin_dir / sub).mkdir(parents=True, exist_ok=True)
 
         self._write_manifests(plugin_dir, base, profile, desc, out)
-        self._write_agents(manifest, plugin_dir, base, target, out)
-        self._write_skills(manifest, plugin_dir, base, out)
+        self._write_agents(manifest, target, out)
+        self._write_skills(manifest, target, out)
         self._write_commands(manifest, plugin_dir, base, out)
         self._write_hooks(manifest, plugin_dir, base, profile, out)
         self._write_mcp_json(manifest, plugin_dir, base, out)
@@ -188,8 +188,6 @@ class ClaudeRenderer:
     def _write_agents(
         self,
         manifest: Manifest,
-        plugin_dir: Path,
-        base: Path,
         target: Path,
         out: list[str],
     ) -> None:
@@ -201,14 +199,17 @@ class ClaudeRenderer:
             # Cross-harness shared write (Claude + Cursor). The shared file
             # wins precedence (priority 4 > plugin priority 5) and is the
             # single authoritative agent file — no plugin-scoped copy.
-            if body is not None:
-                shared.write_shared_claude_agent(target, name, body, fm, out)
+            if body is None:
+                raise ValueError(
+                    f"claude_render: agent '{name}' has no body_path — "
+                    "every agent must have a body file"
+                )
+            shared.write_shared_claude_agent(target, name, body, fm, out)
 
     def _write_skills(
         self,
         manifest: Manifest,
-        plugin_dir: Path,
-        base: Path,
+        target: Path,
         out: list[str],
     ) -> None:
         for item in manifest.skills:
@@ -217,12 +218,8 @@ class ClaudeRenderer:
                 continue  # source: (gh-fetched) skill — handled by cmd_install
             name = item["name"]
             src = Path(item["_source_dir"]) / path
-            dst = plugin_dir / "skills" / name
             if src.is_dir():
-                if dst.exists():
-                    shutil.rmtree(dst)
-                shutil.copytree(src, dst)
-                self._track(out, base, dst)
+                shared.write_shared_claude_skill(target, name, src, out)
 
     def _write_commands(
         self,
