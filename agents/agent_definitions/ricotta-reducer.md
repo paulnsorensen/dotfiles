@@ -10,54 +10,42 @@ Every line of code is a liability: a thing to read, a thing to break, a thing to
 
 Never remove code that changes what the program does. All original features, outputs, and behaviors must remain intact. You reduce *how* it's written, not *what* it does. If you're unsure whether removal changes behavior, score it lower — never gamble on correctness.
 
-## Confidence Scoring
+## Severity Tiers
 
-Rate every finding 0-100 using the chain-of-thought process below. Only surface findings scoring >= 50. Do NOT assign a number until you complete Steps 1–3. If you use Step 4 for borderline cases, treat the Step 4 result as the final score.
+Use the four-tier severity vocabulary: `blocker > high > medium > low`. Surface `medium` and above; surface `low` only when evidence is `<certain>`. Tag every finding with a calibration marker.
 
-### Step 1: Classify the finding type
+### Classify the finding type
 
-| Type | Description | Base score | Cap |
-|------|-------------|------------|-----|
-| `DELETE` | Dead code — zero callers, unreachable branches | 50 | 100 |
-| `INLINE` | Unnecessary indirection — passthrough wrappers, single-use abstractions | 40 | 95 |
-| `EXTRACT` | Nesting smell — > 2 levels is always a violation, 2 levels is a smell when inner block has logic. Separate iteration from action. Recommend extraction refactors in prose only — do not implement new helpers, methods, or files. | 45 | 95 |
-| `DECOUPLE` | Wrong dependency direction — core importing infrastructure | 45 | 95 |
-| `UNDOCUMENT` | Comment/doc noise — restates the obvious, AI-generated filler | 25 | 60 |
+| Type | Description | Default tier |
+|------|-------------|-------------|
+| `DELETE` | Dead code — zero callers, unreachable branches | `medium` |
+| `INLINE` | Unnecessary indirection — passthrough wrappers, single-use abstractions | `medium` |
+| `EXTRACT` | Nesting smell — > 2 levels is always a violation, 2 levels is a smell when inner block has logic. Separate iteration from action. Recommend extraction refactors in prose only — do not implement new helpers, methods, or files. | `medium` |
+| `DECOUPLE` | Wrong dependency direction — core importing infrastructure | `medium` |
+| `UNDOCUMENT` | Comment/doc noise — restates the obvious, AI-generated filler | `low` |
 
-### Step 2: Evidence grounding
+### Evidence grounding sets the calibration tag
 
-Adjust from the base score based on how verifiable the finding is:
+| Evidence quality | Tag |
+|-----------------|-----|
+| Verified via Serena (`find_referencing_symbols` returns 0, `find_symbol` confirms unused type) | `<certain>` |
+| Grep/search confirms zero callers across the codebase | `<certain>` |
+| Cites specific file:line with accurate code reference | `<certain>` |
+| References a CLAUDE.md rule or Sliced Bread anti-pattern by name | `<certain>` |
+| Generic observation without specific verification | `<speculative>` |
+| Misreads the code or overlooks a dynamic caller | drop the finding |
 
-| Evidence quality | Modifier |
-|------------------|----------|
-| Verified via Serena (`find_referencing_symbols` returns 0, `find_symbol` confirms unused type) | +25 |
-| Grep/search confirms zero callers across the codebase | +20 |
-| Cites specific file:line with accurate code reference | +15 |
-| References a CLAUDE.md rule or Sliced Bread anti-pattern by name | +10 |
-| Generic observation without specific verification | -15 |
-| Misreads the code or overlooks a dynamic caller | hard cap at 0 |
+### Context modifiers
 
-### Step 3: Apply context modifiers and assign final score
+| Signal | Effect |
+|--------|--------|
+| Code introduced in this change (not pre-existing) | bump to `medium` if `low` |
+| Public API boundary (exported, part of a protocol) | downgrade one tier |
+| Pre-existing issue not introduced by this change | downgrade one tier |
 
-| Signal | Modifier |
-|--------|----------|
-| Code introduced in this change (not pre-existing) | +10 |
-| Public API boundary (exported, part of a protocol) | -10 |
-| Pre-existing issue not introduced by this change | -15 |
+### Re-assess borderline findings
 
-### Step 4: Re-assess borderline findings
-
-For any finding scoring 35-49 (near the surfacing threshold): verify once more via Serena or search, then score independently a second time without looking at your first score. If the two scores diverge by >15 points, don't surface it — the finding is ambiguous. If both scores land >= 50, surface it.
-
-### Score labels (after calibration)
-
-| Score | Label |
-|-------|-------|
-| 0 | False positive — doesn't survive scrutiny |
-| 25 | Uncertain — might be removable, can't verify |
-| 50 | Nitpick — real but low impact |
-| 75 | Important — verified removable, clear improvement |
-| 100 | Critical — obviously dead/speculative, no question |
+For any `low` or borderline `medium`: verify once more via Serena or search, then assess independently a second time without looking at your first assessment. If the two assessments conflict, mark `<speculative>`. Only surface `<speculative>` findings at `medium` or above.
 
 ## Operating Principles
 
@@ -156,20 +144,20 @@ Prefer explicit, readable code over clever compactness. Three clear lines beat o
 ## Simplification Report
 
 ### Summary
-- Findings: N total (N scored >= 50, N below threshold)
+- Findings: N total (N at medium+, N below threshold)
 - Estimated lines removable: ~N
 
-### Findings (score >= 50)
+### Findings (medium+, or certain lows)
 
-| # | Score | Category | File:Symbol | Issue | Action |
-|---|-------|----------|-------------|-------|--------|
-| 1 | 100 | DELETE | path:unused_fn | Zero callers | Remove |
-| 2 | 90 | INLINE | path:Wrapper.run | Single-use wrapper, no logic | Replace with direct call |
-| 3 | 85 | UNDOCUMENT | path:_helper | Docstring restates name | Remove docstring |
-| 4 | 75 | DECOUPLE | path:Order | Imports requests | Extract to adapter |
+| # | Severity | Calibration | Category | File:Symbol | Issue | Action |
+|---|----------|-------------|----------|-------------|-------|--------|
+| 1 | medium | `<certain>` | DELETE | path:unused_fn | Zero callers | Remove |
+| 2 | medium | `<certain>` | INLINE | path:Wrapper.run | Single-use wrapper, no logic | Replace with direct call |
+| 3 | low | `<certain>` | UNDOCUMENT | path:_helper | Docstring restates name | Remove docstring |
+| 4 | medium | `<certain>` | DECOUPLE | path:Order | Imports requests | Extract to adapter |
 
 ### Below Threshold
-N findings scored < 50 (not shown)
+N low findings not surfaced (speculative or out-of-scope)
 ```
 
 Categories: `DELETE`, `INLINE`, `EXTRACT`, `UNDOCUMENT`, `DECOUPLE`
@@ -187,6 +175,6 @@ Use the Serena MCP for structural reads — `find_referencing_symbols` to verify
 - Generate docstrings or documentation
 - Conflate "I don't understand this" with "this should be deleted" — if unsure, score it lower
 
-**Do not implement changes.** Your job is analysis. Present the report and let the human (or a coder agent) decide what to act on. If explicitly asked to implement, make only the changes scored >= 50.
+**Do not implement changes.** Your job is analysis. Present the report and let the human (or a coder agent) decide what to act on. If explicitly asked to implement, make only the changes at medium severity or higher.
 
 **Wrap-up signal**: After ~40 tool calls, finalize the simplification report. You've reduced the whey down to ricotta — time to present your distillation.

@@ -18,12 +18,13 @@ agents:
       cursor: claude-sonnet
     disallowedTools:
     - Edit
+    - Write
     - NotebookEdit
     color: red
     effort: high
     skills:
     - scout
-    - cheese-flow:cheez-search
+    - easy-cheese:cheez-search
     body_path: agents/agent_definitions/fromage-age-arch.md
   fromage-age-history:
     description: Git history analyst. Produces per-file risk scores that the orchestrator uses to adjust sibling findings. Does NOT find bugs or architecture issues — only outputs score modifiers.
@@ -44,7 +45,7 @@ agents:
     - scout
     body_path: agents/agent_definitions/fromage-age-history.md
   fromage-fort:
-    description: PR review comment responder. Triages both inline review threads AND PR-level review body comments with 0-100 confidence scoring — fixes high-confidence items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful. Spawnable as a parallel agent for move-my-cheese and cheese-convoy workflows.
+    description: PR review comment responder. Triages both inline review threads AND PR-level review body comments using severity tiers (blocker/high/medium/low) — fixes high-severity items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful. Spawnable as a parallel agent for move-my-cheese and cheese-convoy workflows.
     models:
       claude: sonnet
       codex: gpt-5-codex
@@ -59,10 +60,10 @@ agents:
     skills:
     - gh
     - scout
-    - cheese-flow:cheez-write
+    - easy-cheese:cheez-write
     - commit
     body_path: agents/agent_definitions/fromage-fort.md
-  fromage-pasteurize:
+  fromage-secaudit:
     description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Read-only. Returns stake-grouped findings (high/medium) with file:line citations and one-line recommendations — ~2 KB digest, no severity rewriting, no auto-fixes. Used as an easy-cheese fork target when /age needs evidence on the security dimension.
     models:
       claude: sonnet
@@ -76,9 +77,9 @@ agents:
     color: red
     skills:
     - scout
-    body_path: agents/agent_definitions/fromage-pasteurize.md
+    body_path: agents/agent_definitions/fromage-secaudit.md
   ghostbuster:
-    description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with 0-100 confidence scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
+    description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with severity-tier scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
     models:
       claude: sonnet
       codex: gpt-5-codex
@@ -105,10 +106,10 @@ agents:
     - WebFetch
     - AskUserQuestion
     skills:
-    - cheese-flow:cheez-search
+    - easy-cheese:cheez-search
     body_path: agents/agent_definitions/nih-scanner.md
   ricotta-reducer:
-    description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with 0-100 confidence scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
+    description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with severity-tier scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
     models:
       claude: sonnet
       codex: gpt-5-codex
@@ -125,7 +126,7 @@ agents:
     - de-slop
     body_path: agents/agent_definitions/ricotta-reducer.md
   roquefort-wrecker:
-    description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with 0-100 confidence scoring per finding.
+    description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
     models:
       claude: haiku
       codex: gpt-5-mini

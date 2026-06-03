@@ -138,58 +138,48 @@ For each finding, get the last modification date:
 git log -1 --format="%ai" -- {file_path}
 ```
 
-Older last-touch dates increase confidence that code is truly dead (not just recently added and not yet wired up). Code touched in the last 2 weeks gets a confidence penalty — it may be work-in-progress.
+Older last-touch dates strengthen the case that code is truly dead (not just recently added and not yet wired up). Code touched in the last 2 weeks is marked `<speculative>` — it may be work-in-progress.
 
-## Confidence Scoring
+## Severity Tiers
 
-Rate every finding 0-100. Only surface findings >= 50.
+Use the four-tier severity vocabulary: `blocker > high > medium > low`. Surface `medium` and above; surface `low` only when evidence is `<certain>`. Tag every finding with a calibration marker: `<certain>` (zero references verified via Serena/grep) or `<speculative>` (inferred — dynamic dispatch, codegen, or recency leaves doubt).
 
-### Step 1: Base score by category
+### Step 1: Default tier by category
 
-| Category | Base | Reasoning |
-|----------|------|-----------|
-| DEAD | 60 | High base — zero references is strong signal |
-| ZOMBIE | 50 | Ambiguous — could be in-progress work |
-| GHOST | 55 | Spec referencing nonexistent code is notable |
-| DORMANT | 55 | Transitive dead code is real but harder to verify |
+| Category | Default tier | Reasoning |
+|----------|--------------|-----------|
+| DEAD | `medium` | Zero references is a strong signal |
+| ZOMBIE | `low` | Ambiguous — could be in-progress work |
+| GHOST | `medium` | Spec referencing nonexistent code is notable |
+| DORMANT | `medium` | Transitive dead code is real but harder to verify |
 
-### Step 2: Evidence modifiers
+### Step 2: Evidence sets the calibration tag
 
-| Evidence | Modifier |
-|----------|----------|
-| Verified via Serena `find_referencing_symbols` returns 0 | +20 |
-| Grep confirms zero matches across codebase | +15 |
-| Last git touch > 6 months ago | +10 |
-| Last git touch > 3 months ago | +5 |
-| Last git touch < 2 weeks ago | -15 |
-| Symbol is in a test helper file | -10 |
-| File is in a `utils/` or `helpers/` directory | +5 |
-| Multiple specs reference the symbol (ZOMBIE) | +10 |
-| Deleted file found in git history (GHOST) | +15 |
-| Close match exists in codebase (possible rename) | -10 |
-| Symbol is a type/interface (may be used via duck typing) | -10 |
-| Part of a dormant chain (3+ symbols) | +10 |
-| Public API boundary (exported from barrel/index) | -10 |
-| Symbol is a user-invoked CLI entry point (shell function, bin/ script, main()) | -15 |
+| Evidence | Tag |
+|----------|-----|
+| Verified via Serena `find_referencing_symbols` returns 0 | `<certain>` |
+| Grep confirms zero matches across codebase | `<certain>` |
+| Last git touch > 3 months ago | `<certain>` |
+| Deleted file found in git history (GHOST) | `<certain>` |
+| Last git touch < 2 weeks ago | `<speculative>` |
+| Symbol is a type/interface (may be used via duck typing) | `<speculative>` |
+| Close match exists in codebase (possible rename) | `<speculative>` |
 
-### Step 3: Cap and clamp
+### Step 3: Context modifiers
 
-- Cap at 95 (never 100 — dynamic dispatch, reflection, and codegen can hide callers)
-- Floor at 0
+| Signal | Effect |
+|--------|--------|
+| Part of a dormant chain (3+ symbols) | bump one tier |
+| Multiple specs reference the symbol (ZOMBIE) | bump one tier |
+| Symbol is in a test helper file | downgrade one tier |
+| Public API boundary (exported from barrel/index) | downgrade one tier |
+| Symbol is a user-invoked CLI entry point (shell function, bin/ script, main()) | drop the finding |
+
+Never assign `blocker` — dead code is never a release blocker. Cap at `high`, and only for a verified dormant chain of exported symbols; dynamic dispatch, reflection, and codegen can always hide callers.
 
 ### Step 4: Re-assess borderline findings
 
-For any finding scoring 40-54: clear your mental state, re-read the source file, and score independently a second time without looking at your first score. If the two scores diverge by >15 points, don't surface — the finding is ambiguous. If both scores land >= 50, surface it. Note the re-assessment in the evidence.
-
-### Score labels (after calibration)
-
-| Score | Label |
-|-------|-------|
-| 0 | False positive — doesn't survive scrutiny |
-| 25 | Uncertain — can't verify, edge case |
-| 50 | Plausible — real but low impact or ambiguous context |
-| 75 | Confirmed — verified dead/missing, clear action |
-| 95 | Certain — zero callers, zero spec refs, stale for months |
+For any `low` or borderline `medium`: clear your mental state, re-read the source file, and assess independently a second time. If the two assessments conflict, mark `<speculative>`. Only surface `<speculative>` findings at `medium` or above.
 
 ## Output
 
@@ -209,7 +199,8 @@ Write the full JSON report to `$TMPDIR/ghostbuster-{slug}.json`. The JSON schema
     {
       "id": 1,
       "category": "DEAD",
-      "confidence": 85,
+      "severity": "medium",
+      "calibration": "certain",
       "filePath": "src/utils/legacy-parser.ts",
       "symbol": "parseLegacyFormat",
       "evidence": {
@@ -229,12 +220,12 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 ```
 ## Ghostbuster Summary
 **Scope**: {scope} | **Files**: N | **Specs/Docs**: N | **Serena**: yes/no
-**Findings >= 50**:
-| # | Score | Category | File:Symbol | Action |
-|---|-------|----------|-------------|--------|
-| 1 | 85 | DEAD | utils/legacy-parser.ts:parseLegacyFormat | Safe to delete |
+**Findings (medium+, or certain lows)**:
+| # | Severity | Calibration | Category | File:Symbol | Action |
+|---|----------|-------------|----------|-------------|--------|
+| 1 | medium | `<certain>` | DEAD | utils/legacy-parser.ts:parseLegacyFormat | Safe to delete |
 **By category**: DEAD: N | ZOMBIE: N | GHOST: N | DORMANT: N
-**Below threshold**: N findings scored < 50
+**Below threshold**: N low findings not surfaced (speculative or out-of-scope)
 **Full report**: $TMPDIR/ghostbuster-{slug}.json
 ```
 
@@ -252,19 +243,19 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 - Budget ~40 tool calls. Prioritize: utility dirs → domain code → infrastructure
 - Include the file path and symbol name for every finding — vague findings are useless
 - Specs can live anywhere: `.claude/specs/`, `docs/specs/`, `specs/`, `SPEC.md` — glob broadly
-- Confidence < 50 = don't surface. The orchestrator trusts your threshold.
-- Recently touched code (< 2 weeks) gets a confidence penalty — it's likely WIP, not dead
+- Surface medium+ (and certain lows) — below that, don't surface. The orchestrator trusts your threshold.
+- Recently touched code (< 2 weeks) is marked `<speculative>` — it's likely WIP, not dead
 
 **Wrap-up signal**: After ~40 tool calls, stop scanning and synthesize from available data. Note incomplete coverage in the report. You've examined the remains — time to file the report.
 
 ## Gotchas
 
-- **Dynamic dispatch hides callers**: Trait impls (Rust), interface implementations (Go/TS), duck typing (Python) mean Serena's `find_referencing_symbols` (LSP-backed) can miss callers. Score types/interfaces lower.
-- **Codegen and macros**: Rust `derive` macros, Python decorators, and TS decorators can generate callers invisible to Serena. If a symbol has a decorator/derive attribute, reduce confidence by 10.
+- **Dynamic dispatch hides callers**: Trait impls (Rust), interface implementations (Go/TS), duck typing (Python) mean Serena's `find_referencing_symbols` (LSP-backed) can miss callers. Mark types/interfaces `<speculative>`.
+- **Codegen and macros**: Rust `derive` macros, Python decorators, and TS decorators can generate callers invisible to Serena. If a symbol has a decorator/derive attribute, mark it `<speculative>`.
 - **Re-exports**: A symbol exported from a barrel file may appear to have 0 direct callers but is the module's public API. Check barrel files before flagging.
-- **Test helpers**: Functions in test files with 0 callers outside tests aren't dead — they're test infrastructure. Apply the -10 modifier, don't auto-flag.
+- **Test helpers**: Functions in test files with 0 callers outside tests aren't dead — they're test infrastructure. Downgrade one tier, don't auto-flag.
 - **Shell functions**: Shell functions defined in sourced files (`. script.sh` or `source script.sh`) won't show up in Serena's symbol index — no LSP backend covers shell. Use Grep exclusively for shell.
 - **Spec format variance**: Some specs use backticks, some use prose references, some use code blocks. Cast a wide net when parsing — regex for `functionName`, not just `` `functionName` ``.
 - **User-invoked functions**: Shell functions, CLI commands, and `main()` entry points are called from the terminal, not from code. Zero grep references is expected. Check if the function is in a sourced file or bin/ directory before flagging.
-- **Documentation references are GHOST sources too**: CLAUDE.md, README.md, and docs/ files reference code symbols just like specs do. The test run's highest-confidence findings were GHOSTs from CLAUDE.md, not spec files.
+- **Documentation references are GHOST sources too**: CLAUDE.md, README.md, and docs/ files reference code symbols just like specs do. The test run's most certain findings were GHOSTs from CLAUDE.md, not spec files.
 - **WIP branches**: If the repo has feature branches with code that references a "dead" symbol, the symbol isn't dead — it's just not merged yet. This agent scans the current branch only and notes this limitation.
