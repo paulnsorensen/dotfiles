@@ -283,6 +283,27 @@ run_sync() {
     grep -q "brew install jq" "$BREW_LOG"
 }
 
+@test "sync skips already-installed tap-qualified packages by short name" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
+    # brew list --formulae prints short names; the installed-check must
+    # compare a tap-qualified key (rjyo/moshi/moshi-hook) by its tail or
+    # it reinstalls on every sync.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - rjyo/moshi/moshi-hook: { platform: mac }
+YAML
+    write_mock_brew "moshi-hook"
+
+    run_sync
+    assert_success
+
+    # Positive control: the entry was considered and skipped as installed,
+    # not silently dropped by platform/source filtering.
+    assert_output_contains "+ rjyo/moshi/moshi-hook"
+    ! grep -q "brew install rjyo/moshi/moshi-hook" "$BREW_LOG"
+}
+
 @test "sync installs cargo packages" {
     write_test_yaml
     run_sync

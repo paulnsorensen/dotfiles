@@ -75,6 +75,7 @@ packages:
   - cursor: { source: cask, platform: mac }    # Cursor — AI code editor
   - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)
   - obsidian: { source: cask, platform: mac }  # Obsidian — Markdown knowledge base
+  - rjyo/moshi/moshi-hook: { platform: mac }   # Moshi phone bridge (agents/hooks/registry.yaml); linux uses Moshi's own installer (~/.local/bin)
 
   # Linux-only
   - xclip: { platform: linux }
