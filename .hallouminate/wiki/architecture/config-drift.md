@@ -102,15 +102,18 @@ codex already put the hook cleanup, it runs in the single `ap install` path (no
 
 ## Known drift pattern: yq-appended keys absorbed by codex auto-sections
 
-**Symptom**: `model_instructions_file` duplicated inside `[tui.model_availability_nux]`
-in `~/.codex/config.toml`; preamble silently not loading.
+**Symptom**: `model_instructions_file` duplicated inside a codex-auto-added section
+(typically `[tui.model_availability_nux]` or `[plugins."github@openai-curated"]`) in
+`~/.codex/config.toml`; preamble silently not loading.
 
 **Why it happens**: `chezmoi/lib/install-prompts.sh` uses `yq -i '.model_instructions_file = ...'`
-which appends the key at the end of the file. Codex periodically auto-adds
-`[tui.model_availability_nux]` (UI state) near the end, absorbing the appended
-key into that section. On the next `dots sync`, yq reads `.model_instructions_file`
-at root, gets "" (it's inside tui section), writes another copy at end → duplicate
-inside the section. Neither copy is read by codex as the root-level key it expects.
+which appends the key at the end of the file. Codex periodically auto-appends sections
+(`[tui.model_availability_nux]` for UI state, `[plugins."github@openai-curated"]` for plugin
+config) near the end of the file, absorbing the trailing key into whichever section got
+appended last. On the next `dots sync`, yq reads `.model_instructions_file` at root, gets
+"" (it's inside a section), writes another copy at end → that copy gets absorbed into the
+same section too → two duplicates, neither at root level. Neither is read by codex as the
+root-level key it expects.
 
 **Fix**: Move `model_instructions_file` before the first `[section]` header in
 `config.toml` (line 1 works). The guard in `install-prompts.sh` will then find
@@ -126,6 +129,40 @@ no registry MCP without an explicit `harnesses: [copilot]` entry is rendered
 into copilot. The template is the single source of truth for what MCPs copilot
 gets. When the registry adds a new MCP (e.g. `hallouminate`, `serena`), the
 chezmoi template must be manually updated to match.
+
+## Known drift pattern: `harnesses: []` MCPs not pruned by reconcile
+
+**Symptom**: An MCP that had harnesses narrowed to `harnesses: []` (scoped out
+of all harnesses) remains in all merged-file targets — `~/.codex/config.toml`,
+`~/.config/opencode/opencode.json`, `~/.cursor/mcp.json` — and in claude's
+user-scope registrations (`~/.claude.json`) indefinitely. `dots sync` does not
+remove any of them.
+
+**Why it happens**: `cli.py:_reconcile_dropped_mcps` computes:
+
+```python
+current_names = {m.get("name") for m in manifest.mcps}
+```
+
+`manifest.mcps` is the full resolved profile list — an MCP with `harnesses: []`
+is still present there (it's in the registry / profile, just filtered to zero
+harnesses at render time). So the MCP name is in `current_names`, never appears
+in `dropped`, and `prune_mcps` is never called. The stale entry in the merged
+file is invisible to the reconcile.
+
+**Repro**: Add MCP to registry with `harnesses: [cursor]` → `dots sync` (cursor
+gets it) → change to `harnesses: []` → `dots sync` → cursor entry NOT removed.
+
+**Workaround**: Manually remove the stale entry per target — edit the file
+directly for `~/.codex/config.toml`, `~/.config/opencode/opencode.json`, and
+`~/.cursor/mcp.json`; run `claude mcp remove <name>` for `~/.claude.json`
+(user-scope registrations). All are safe — `dots sync` won't re-add them (the
+render produces zero harness targets for the MCP).
+
+**Proper fix**: `_reconcile_dropped_mcps` should compute `current_names`
+per-harness, using only the harness-filtered MCP projection (the same filtering
+`_cursor_mcps` / `_opencode_mcps` apply at render time) rather than the full
+`manifest.mcps` set. See [#265](https://github.com/paulnsorensen/dotfiles/issues/265).
 
 ## Gotcha: index drift is its own drift class
 

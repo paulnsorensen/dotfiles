@@ -31,3 +31,6 @@ clear
 
 # opencode
 [ -d "$HOME/.opencode/bin" ] && export PATH="$HOME/.opencode/bin:$PATH"
+
+# local-llm stack aliases (opt-in; absent on machines without the stack)
+[ -f "$HOME/local-llm/scripts/aliases.sh" ] && source "$HOME/local-llm/scripts/aliases.sh"
