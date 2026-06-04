@@ -4,7 +4,7 @@
 # Usage:
 #   ccw-sweep              Interactive sweep with safety checks
 #   ccw-sweep --dry-run    Preview what would be cleaned (no changes)
-#   ccw-sweep --auto       Auto-remove safe worktrees (merged + clean), prompt for others
+#   ccw-sweep --auto       Auto-remove safe worktrees (merged + clean), skip others
 #   ccw-sweep --path DIR   Scan a specific directory instead of ~/Dev
 
 set -euo pipefail
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --dry-run   Preview what would be cleaned (no changes)"
-            echo "  --auto      Auto-remove safe worktrees, prompt for others"
+            echo "  --auto      Auto-remove safe worktrees, skip WARN/DIRTY ones"
             echo "  --path DIR  Scan DIR instead of ~/Dev"
             exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -91,7 +91,11 @@ check_worktree() {
     local default_branch="$3"
     local slug
     slug="$(basename "$wt_path")"
-    local branch="claude/${slug}"
+    # The worktree's actual branch, read from its HEAD. Never derive it from
+    # the directory name — guessing "claude/<slug>" flagged real branches as
+    # "branch not found" whenever the dir name didn't match the branch name.
+    local branch
+    branch="$(git -C "$wt_path" symbolic-ref --short --quiet HEAD 2>/dev/null || true)"
     local default_remote="origin/${default_branch}"
 
     local status="SAFE"
@@ -127,11 +131,11 @@ check_worktree() {
         reasons+=("${count} untracked file(s)")
     fi
 
-    # Check if branch ref exists
+    # Empty branch = detached HEAD (symbolic-ref resolves nothing)
     local branch_exists=true
-    if ! git -C "$repo_root" rev-parse --verify "$branch" &>/dev/null; then
+    if [[ -z "$branch" ]]; then
         branch_exists=false
-        reasons+=("branch not found")
+        reasons+=("detached HEAD")
     fi
 
     # Determine merge status — always check the worktree's actual content
@@ -264,11 +268,15 @@ check_worktree() {
             [[ "$answer" =~ ^[Yy] ]] && should_remove=true
         fi
     elif [[ "$status" == "WARN" ]]; then
-        read -rp "         Remove anyway? [y/N] " answer </dev/tty
-        [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        if ! $AUTO_CLEAN; then
+            read -rp "         Remove anyway? [y/N] " answer </dev/tty
+            [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        fi
     else
-        read -rp "         Has uncommitted work. Remove? [y/N] " answer </dev/tty
-        [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        if ! $AUTO_CLEAN; then
+            read -rp "         Has uncommitted work. Remove? [y/N] " answer </dev/tty
+            [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        fi
     fi
 
     if $should_remove; then
