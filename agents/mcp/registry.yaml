@@ -87,6 +87,14 @@ mcps:
   code-review-graph:
     command: uvx
     args: ["--from", "code-review-graph[embeddings]", "code-review-graph", "serve"]
+    env:
+      # Trim 30→14: expose only the preamble-routed tools (the code-review-graph
+      # mapping table in agents/preamble.md). `--tools` falls back to CRG_TOOLS;
+      # unlisted tools are removed at server boot, cutting ~4.4k schema tokens per
+      # request on eager harnesses (codex/opencode/cursor). A tool absent from the
+      # routing table isn't routed, so it only adds decision-fatigue; re-adding one
+      # is a one-line edit. Names carry the `_tool` suffix per `serve --help`.
+      CRG_TOOLS: "build_or_update_graph_tool,get_review_context_tool,detect_changes_tool,get_impact_radius_tool,get_affected_flows_tool,get_architecture_overview_tool,get_hub_nodes_tool,get_bridge_nodes_tool,find_large_functions_tool,list_communities_tool,get_community_tool,semantic_search_nodes_tool,get_minimal_context_tool,get_knowledge_gaps_tool"
     scope: user
     description: Structural code knowledge graph via Tree-sitter — semantic search (sentence-transformers), call chains, impact radius, flows, communities
 

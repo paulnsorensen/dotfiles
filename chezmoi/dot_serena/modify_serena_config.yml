@@ -17,6 +17,11 @@
 #       context doesn't strip it, and it fails on an ungranted permission
 #       ~88% of the time (serena's own agent/oaicompat-agent contexts
 #       already exclude it).
+#       find_declaration / find_implementations / get_diagnostics_for_file
+#       are excluded too (MCP tool-surface audit, issue #269):
+#       find_declaration overlaps find_symbol; the other two are LSP-unique
+#       but had 0 runtime calls over 12 days — cut for decision-fatigue, not
+#       breakage. Re-add by deleting the line here if a use case appears.
 
 set -eu
 
@@ -86,6 +91,9 @@ printf '%s' "$existing" | yq '
         "rename_memory",
         "edit_memory",
         "onboarding",
-        "initial_instructions"
+        "initial_instructions",
+        "find_declaration",
+        "find_implementations",
+        "get_diagnostics_for_file"
     ]
 '

@@ -31,17 +31,32 @@ coding is dead weight measured in tens of thousands of tokens *per request* on
 those harnesses. So the `harnesses` list is a budget decision: keep an MCP out
 of harnesses that would pay for schemas they never use.
 
-Measured tool-schema footprint of the full MCP set (~61k tokens / 112 tools):
+Measured tool-schema footprint of the full MCP set, **after the 2026-06 tool-surface
+trim** (~55k tokens; the three trimmed servers carry their pre-trim count in parens):
 
-| MCP | tokens | share |
-|---|---|---|
-| todoist | ~38,000 | 62% |
-| code-review-graph | ~8,300 | 14% |
-| serena | ~5,400 | 9% |
-| tilth | ~3,500 | 6% |
-| hallouminate | ~2,300 | 4% |
-| tavily | ~2,100 | 3% |
-| context7 | ~1,200 | 2% |
+| MCP | tools | tokens | share |
+|---|---|---|---|
+| todoist | ~45 | ~38,000 | 69% |
+| serena | 9 (was 12) | ~4,050 | 7% |
+| code-review-graph | 14 (was 30) | ~3,900 | 7% |
+| tilth | 7 | ~3,500 | 6% |
+| tavily | 5 | ~2,100 | 4% |
+| hallouminate | 8 (was 9)¹ | ~2,050 | 4% |
+| context7 | 2 | ~1,200 | 2% |
+
+This repo applies two of the three trims — CRG `CRG_TOOLS` 30→14 and serena
+`excluded_tools` 8→11 (exposed tools 12→9). Together they cut the **eager-harness
+coding set** (everything except the already-scoped-out todoist) from ~22.8k to
+~17.05k tokens/request — a ~5.75k/request saving on codex / opencode / cursor /
+copilot, stacking on the ~38k already shed by scoping todoist out.
+
+¹ The hallouminate `globalize_markdown` drop (9→8, ~250 tokens) ships separately
+upstream and is **not** applied by this repo's config; the table row above already
+reflects that post-upstream count, and once it lands it brings the eager set to
+~16.8k.
+
+On Claude the trim is token-neutral (deferred via `ToolSearch`) but still removes
+broken/redundant tools from the candidate pool.
 
 ## The Todoist decision (worked example)
 
