@@ -115,7 +115,10 @@ brew_install_pkgs() {
     echo -e "\n${GREEN}${label}:${NC}"
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
-        if echo "$installed" | grep -qx "$pkg"; then
+        # Tap-qualified keys (user/tap/formula) install under their short
+        # name — `brew list` prints `moshi-hook`, not `rjyo/moshi/moshi-hook` —
+        # so compare by the path tail.
+        if echo "$installed" | grep -qx "${pkg##*/}"; then
             echo "  + $pkg"
         else
             echo "  Installing $pkg..."
