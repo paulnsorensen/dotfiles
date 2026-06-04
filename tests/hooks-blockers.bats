@@ -675,6 +675,112 @@ teardown() {
     [[ "$output" == "allowed" ]]
 }
 
+@test "worktree-guard: write to cheese durable corpus under HOME is allowed" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # Non-/tmp HOME: a /tmp-rooted home would be allowed via the scratch rule,
+    # masking the corpus logic. Path need not exist — the matcher classifies it.
+    local corpus_path="/wt-guard-home/.local/share/cheese/proj/specs/slug.md"
+    HOME="/wt-guard-home" XDG_DATA_HOME="" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$corpus_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: write to cheese durable corpus under XDG_DATA_HOME is allowed" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # XDG_DATA_HOME overrides ~/.local/share as the corpus root.
+    local corpus_path="/wt-guard-xdg/cheese/proj/rfds/slug.md"
+    HOME="/wt-guard-home" XDG_DATA_HOME="/wt-guard-xdg" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$corpus_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: non-cheese sibling under data home is still blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # The carve-out is cheese-only — a sibling app dir must stay blocked.
+    local sibling_path="/wt-guard-home/.local/share/other-app/file.txt"
+    HOME="/wt-guard-home" XDG_DATA_HOME="" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$sibling_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: cheese prefix-sneak sibling (cheesecake) is blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # startsWith must match the prefix as a path segment, not a string prefix.
+    local sneak_path="/wt-guard-home/.local/share/cheesecake/x.txt"
+    HOME="/wt-guard-home" XDG_DATA_HOME="" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$sneak_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: traversal out of cheese corpus (..) is blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # path.resolve must normalize .. before the prefix check.
+    local escape_path="/wt-guard-home/.local/share/cheese/../other-app/x.txt"
+    HOME="/wt-guard-home" XDG_DATA_HOME="" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$escape_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
 # ── auto-format.js ───────────────────────────────────────────────────
 
 @test "auto-format: exits 0 on non-file-editing tool (Bash)" {

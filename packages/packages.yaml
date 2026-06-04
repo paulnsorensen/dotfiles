@@ -108,6 +108,7 @@ packages:
   - check-jsonschema: { source: uv }
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
   - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API
+  - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main" }  # Mikado execution engine; exposes `milknado-mcp` for the MCP registry
   # Serena pins Python 3.13 and ships pre-release builds on PyPI; the `flags`
   # array is passed through to `uv tool install` verbatim. Exposes the `serena`
   # binary, which the MCP registry invokes per harness via --context.
