@@ -34,7 +34,6 @@ packages:
   - tmux
   - tinty
   - prek
-  - starship
   - zoxide
   - atuin
   - bottom

@@ -14,15 +14,10 @@ source "$HOME/Dev/dotfiles/zsh/completion.zsh"
 source "$HOME/Dev/dotfiles/zsh/fzf.zsh"
 source "$HOME/Dev/dotfiles/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
 
-# Source local customizations early (sets DOTFILES_PROMPT, etc.)
+# Source local customizations early
 [ -f $HOME/.zshrc.local ] && source $HOME/.zshrc.local
 
-# Prompt selection — set DOTFILES_PROMPT=starship in ~/.zshrc.local to use starship
-if [[ "$DOTFILES_PROMPT" == "starship" ]] && command -v starship &>/dev/null; then
-  eval "$(starship init zsh)"
-else
-  source "$HOME/Dev/dotfiles/zsh/prompt.zsh"
-fi
+source "$HOME/Dev/dotfiles/zsh/prompt.zsh"
 
 source "$HOME/Dev/dotfiles/zsh/claude.zsh"
 source "$HOME/Dev/dotfiles/zsh/skhd.zsh"
