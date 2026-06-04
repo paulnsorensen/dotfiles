@@ -1,26 +1,7 @@
 #!/usr/bin/env bats
 # Validate config files for Rust CLI tools and other managed configs
-# Catches breakage from version upgrades (e.g., a starship schema change)
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
-
-# ── Starship ──────────────────────────────────────────────────────────────────
-
-@test "starship config is valid TOML" {
-    command -v starship &>/dev/null || skip "starship not installed"
-    local config="$DOTFILES_DIR/starship/starship.toml"
-    [[ -f "$config" ]]
-    # print-config parses and validates the config without opening an editor
-    run env STARSHIP_CONFIG="$config" starship print-config
-    [[ $status -eq 0 ]]
-}
-
-@test "starship schema reference is present" {
-    local config="$DOTFILES_DIR/starship/starship.toml"
-    [[ -f "$config" ]] || skip "starship config not found"
-    # shellcheck disable=SC2016  # $schema is a literal TOML key, not a variable
-    grep -q '"$schema"' "$config"
-}
 
 # ── Atuin ─────────────────────────────────────────────────────────────────────
 

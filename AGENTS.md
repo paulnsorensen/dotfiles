@@ -49,7 +49,7 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 - `mcp-edit` / `hook-edit` / `agent-edit` / `skill-edit` / `plugin-edit` — open the source registry
 - `mcp-sync` / `hook-sync` / `skill-sync` — all = `dots profile install base`; `plugin-sync` (+ `plugin-sync-dry`) for Claude marketplace plugins
 - `mcp-ls` / `hook-ls` / `skill-ls` / `plugin-ls` · `mcp-add <name> <cmd> [args…]`
-- `cc` / `ccc` / `ccr` / `ccfresh` — launch claude (preamble system-prompt wired)
+- `cc` / `ccc` / `ccr` — launch claude (preamble system-prompt wired)
 - `ccw <slug>` / `ccw-ls` / `ccw-sweep` / `ccw-clean` · `wt-git <path> <cmd>` — worktrees
 - `claude-settings` · `claude-json-prune [--apply]` · `cf-refresh` (= `plugin-refresh cheese-flow local`)
 

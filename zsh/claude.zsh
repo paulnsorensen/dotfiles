@@ -18,30 +18,32 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # CLAUDE.md auto-discovery, hooks, plugins, auto-memory all stay active —
 # only Anthropic's system prompt is swapped out. Symbol-level reads/edits
 # now route through Serena (MCP) instead of dynamically gated LSP plugins.
-cc() {
+# _cc_base — common launcher: prepends preamble flag, then wraps in tmux
+# unless already inside tmux ($TMUX set) or tmux is not installed.
+# ccw sets _CC_IN_SESSION=1 to trigger the inside-tmux switch-client path.
+_cc_base() {
     local -a flags=()
     [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
-    claude "${flags[@]}" "$@"
+    local -a cmd=(claude "${flags[@]}" "$@")
+    # Outside tmux: create-or-attach session (-A attaches if it exists, command ignored on attach).
+    if [[ -z "$TMUX" ]] && command -v tmux &>/dev/null; then
+        local session="${${PWD:t}//[.:]/-}"
+        tmux new-session -A -s "$session" "${(j: :)${(@q)cmd}}"
+    # Inside tmux from ccw: dedicate a session and switch-client to it.
+    elif [[ -n "$_CC_IN_SESSION" ]] && command -v tmux &>/dev/null; then
+        local session="${${PWD:t}//[.:]/-}"
+        # Only create if the session doesn't already exist; then switch to it.
+        tmux has-session -t "$session" 2>/dev/null \
+            || tmux new-session -d -s "$session" "${(j: :)${(@q)cmd}}"
+        tmux switch-client -t "$session"
+    else
+        claude "${flags[@]}" "$@"
+    fi
 }
 
-ccc() {
-    local -a flags=()
-    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
-    claude "${flags[@]}" --continue "$@"
-}
-
-ccr() {
-    local -a flags=()
-    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
-    claude "${flags[@]}" --resume "$@"
-}
-
-# Fresh session: prime MCPs in last conversation, then open it interactively
-ccfresh() {
-  local -a flags=()
-  [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
-  claude "${flags[@]}" --continue -p '/go' && claude "${flags[@]}" --continue
-}
+cc()  { _cc_base "$@"; }
+ccc() { _cc_base --continue "$@"; }
+ccr() { _cc_base --resume "$@"; }
 
 # Copilot CLI launch wrapper — injects the canonical allow/deny lists as
 # --allow-tool / --deny-tool flags (lever 1). Copilot has no config-file
@@ -143,8 +145,9 @@ mcp-add() {
 # ═══════════════════════════════════════════════════════════════════
 
 # Launch Claude in an isolated worktree
-#   ccw my-feature        → creates .worktrees/my-feature, branch claude/my-feature, opens claude
-#   ccw my-feature --resume → same but resumes last conversation
+#   ccw my-feature          → creates .worktrees/my-feature, branch claude/my-feature
+#                              outside tmux: new-session; inside tmux: new-session + switch-client
+#   ccw my-feature --resume  → same but resumes last conversation
 ccw() {
     if [[ -z "$1" ]]; then
         echo "Usage: ccw <slug> [claude args...]"
@@ -177,7 +180,7 @@ ccw() {
     wt_path="$(echo "$result" | jq -er '.path')" || { echo "ccw: failed to parse worktree path" >&2; return 1; }
     [[ -d "$wt_path" ]] || { echo "ccw: worktree path not found: $wt_path" >&2; return 1; }
 
-    cd "${wt_path}" && cc "$@"
+    cd "${wt_path}" && _CC_IN_SESSION=1 cc "$@"
 }
 
 # Clean worktrees — single-repo (current dir) or full sweep (~/Dev)

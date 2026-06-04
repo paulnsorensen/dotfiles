@@ -2,7 +2,7 @@
 # install-prompts.sh — wire agents/preamble.md as the system prompt for
 # harnesses that support replacement (Codex CLI, opencode).
 #
-# Claude Code reads preamble.md directly via the cc/ccc/ccr/ccfresh wrappers
+# Claude Code reads preamble.md directly via the cc/ccc/ccr wrappers
 # in zsh/claude.zsh (--system-prompt-file), so it is not handled here.
 #
 # Per-harness mechanism:
