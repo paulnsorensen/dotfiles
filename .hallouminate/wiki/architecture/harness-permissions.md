@@ -150,6 +150,13 @@ A `--harness` value resolving to neither claude nor codex errors loudly — it i
 
 The repo's general rule is "never commit rendered artifacts." The project overlay is the deliberate exception: the rendered `<repo>/.claude/settings.json` and `<repo>/.codex/` files are consumed by Claude / Codex *in that downstream repo*, and committing them is the point — zero-friction permissions for teammates who clone it. The *source* (`.agent-profiles/_permissions/profile.yaml`) is committed too; re-rendering is idempotent, so there is no drift class here to self-heal.
 
+### Committed overlay is path-agnostic; destructive rules go local `<certain>`
+
+The committed surface (fragment + rendered `settings.json` + `.codex/`) carries only portable, path-free rules. Destructive commands scoped to the project root (`Bash(mkdir /abs/path/*)` …) embed the clone's absolute path — committing them would bake one machine's path (and username) into every clone, where the rule silently matches nothing. `/setup-perms` therefore merges the destructive set into the gitignored `.claude/settings.local.json` instead; Claude unions allow rules across scopes, so committed-portable + local-destructive compose at runtime. Two consequences to know:
+
+- **Codex never receives destructive path rules** — it has no personal-layer analog (`ap perms --local` skips it), so Codex prompts for destructive commands. Expected, not a renderer gap.
+- **`ap perms --local` owns `settings.local.json`'s `permissions.{allow,deny}` wholesale** — a bare re-render replaces them with just the fragment's portable set, dropping the merged destructive layer (and any hand-curated entries). Re-run `/setup-perms --local` to restore. This overwrite-ownership is the documented semantics, not a bug.
+
 ## Planned fixes & remaining gaps
 
 1. **Cursor warn-and-drop → CLI render.** The renderer assumes UI-only — true for the *IDE*, but `cursor-agent` consumes declarative `permissions.allow`/`deny` from `~/.cursor/cli-config.json`. Spec: **`.cheese/specs/ap-cursor-cli-permissions.md`** — adds `_write_cli_config`, translates Claude rules → Cursor tokens (`Bash(cmd:*)`→`Shell(cmd:)`, `Edit`→`Write`, `mcp__s__t`→`Mcp(s:t)`). Harmless if only the IDE is used (the file is read solely by the CLI). Unblocked by #259's parse channel; not yet cooked.
