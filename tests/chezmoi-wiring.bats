@@ -547,7 +547,13 @@ SH
     mkdir -p "$uv_bin"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$uv_bin/uv"
     chmod +x "$uv_bin/uv"
-    PATH="$TEST_HOME/tripwire-bin:$uv_bin:/bin" run bash "$script"
+    # Minimal bin with ONLY bash — /bin can't be used here: on merged-/usr
+    # systems with apt nodejs, /bin/npx exists and defeats the missing-npx
+    # simulation (the script then runs the real installer silently).
+    local minimal_bin="$TEST_HOME/minimal-bin"
+    mkdir -p "$minimal_bin"
+    ln -s "$(command -v bash)" "$minimal_bin/bash"
+    PATH="$TEST_HOME/tripwire-bin:$uv_bin:$minimal_bin" run bash "$script"
     assert_success
     assert_output_contains "Skipping base-profile render (npx not found"
     [[ "$output" != *"TRIPWIRE"* ]]
@@ -799,12 +805,12 @@ TOML
     run chezmoi apply --force
     assert_success
 
-    # Skills now deploy through the registry-derived `base` profile rendered
-    # by `ap` (claude renderer → ~/.claude/plugins/local/base/skills/<name>).
+    # Skills deploy shared-only via `ap` (claude renderer → ~/.claude/skills/
+    # <name>; PR #252 dropped the plugin-scoped ~/.claude/plugins copy).
     # The render needs uv (+ a real `ap` env); when uv is absent the
     # run_onchange skips by design, so gate the skill assertion on uv.
     if command -v uv >/dev/null 2>&1; then
-        local skills_dir="$HOME/.claude/plugins/local/base/skills"
+        local skills_dir="$HOME/.claude/skills"
         [[ -d "$skills_dir" ]]
         # At least one dotfiles-owned (local path:) skill landed as a real dir.
         local first
