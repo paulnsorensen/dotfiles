@@ -261,8 +261,11 @@ do_doctor() {
     # Check chezmoi health (deps, paths, encryption backends)
     echo -e "${BLUE}Checking chezmoi...${NC}"
     if command -v chezmoi &>/dev/null; then
-        chezmoi --source "$DOTFILES_DIR/chezmoi" doctor 2>&1 | sed 's/^/  /'
-        if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+        # Capture failure with `||` — under set -e + pipefail a failing
+        # chezmoi doctor would kill the script before the status check.
+        local chezmoi_rc=0
+        chezmoi --source "$DOTFILES_DIR/chezmoi" doctor 2>&1 | sed 's/^/  /' || chezmoi_rc=$?
+        if [[ $chezmoi_rc -ne 0 ]]; then
             issues=$((issues + 1))
         fi
     else
