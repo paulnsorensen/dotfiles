@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# cc-env-exec — load $DOTFILES_DIR/.env (safe key=value parse: skip blanks
+# and comments, split on the first '=', no command execution — same parse as
+# zsh/core.zsh), export the pairs, then exec the given command.
+#
+# Used by _cc_base (zsh/claude.zsh) as the launcher prefix so fresh API keys
+# reach claude at process start — without the keys ever entering tmux's argv
+# (`ps` shows argv to other local users; env stays owner-readable) and
+# regardless of the tmux server's stale environment. Also works standalone
+# for headless runs: cc-env-exec claude -p '...'.
+set -euo pipefail
+
+if (( $# == 0 )); then
+    echo "Usage: cc-env-exec <command> [args...]" >&2
+    exit 2
+fi
+
+env_file="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/.env"
+if [[ -f "$env_file" ]]; then
+    while IFS='=' read -r key val; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        export "$key=$val" 2>/dev/null \
+            || echo "cc-env-exec: skipping invalid .env line: $key" >&2
+    done < "$env_file"
+fi
+
+exec "$@"

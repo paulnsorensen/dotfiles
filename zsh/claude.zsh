@@ -18,13 +18,19 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # CLAUDE.md auto-discovery, hooks, plugins, auto-memory all stay active —
 # only Anthropic's system prompt is swapped out. Symbol-level reads/edits
 # now route through Serena (MCP) instead of dynamically gated LSP plugins.
-# _cc_base — common launcher: prepends preamble flag, then wraps in tmux
-# unless already inside tmux ($TMUX set) or tmux is not installed.
+# _cc_base — common launcher: prepends preamble flag, routes through
+# bin/cc-env-exec (when present) so the spawned claude loads fresh .env keys
+# at process start — keys never enter tmux's argv (`ps`-visible), and a
+# stale tmux server env can't strip them (a new session inherits the
+# SERVER's environment, not this client's). Then wraps in tmux unless
+# already inside tmux ($TMUX set) or tmux is not installed.
 # ccw sets _CC_IN_SESSION=1 to trigger the inside-tmux switch-client path.
 _cc_base() {
     local -a flags=()
     [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
     local -a cmd=(claude "${flags[@]}" "$@")
+    local launcher="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-env-exec"
+    [[ -x "$launcher" ]] && cmd=("$launcher" "${cmd[@]}")
     # Outside tmux: create-or-attach session (-A attaches if it exists, command ignored on attach).
     if [[ -z "$TMUX" ]] && command -v tmux &>/dev/null; then
         local session="${${PWD:t}//[.:]/-}"
@@ -37,7 +43,7 @@ _cc_base() {
             || tmux new-session -d -s "$session" "${(j: :)${(@q)cmd}}"
         tmux switch-client -t "$session"
     else
-        claude "${flags[@]}" "$@"
+        "${cmd[@]}"
     fi
 }
 
