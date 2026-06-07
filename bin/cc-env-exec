@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# cc-env-exec — load $DOTFILES_DIR/.env (safe key=value parse: skip blanks
-# and comments, split on the first '=', no command execution — same parse as
-# zsh/core.zsh), export the pairs, then exec the given command.
+# cc-env-exec — load $DOTFILES_DIR/.env (safe key=value parse: skip blank,
+# whitespace-only, and comment lines (indented ok), skip lines without '=',
+# split on the first '=', no command execution), export the pairs, then exec
+# the given command. A stricter superset of zsh/core.zsh's shell-init parse.
 #
 # Used by _cc_base (zsh/claude.zsh) as the launcher prefix so fresh API keys
 # reach claude at process start — without the keys ever entering tmux's argv
@@ -17,8 +18,14 @@ fi
 
 env_file="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/.env"
 if [[ -f "$env_file" ]]; then
-    while IFS='=' read -r key val; do
-        [[ -z "$key" || "$key" == \#* ]] && continue
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
+        if [[ "$line" != *=* ]]; then
+            echo "cc-env-exec: skipping .env line without '=': $line" >&2
+            continue
+        fi
+        key="${line%%=*}"
+        val="${line#*=}"
         export "$key=$val" 2>/dev/null \
             || echo "cc-env-exec: skipping invalid .env line: $key" >&2
     done < "$env_file"

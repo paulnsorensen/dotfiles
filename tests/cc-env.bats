@@ -192,3 +192,22 @@ EOF
     [ "$status" -eq 0 ]
     [ "$(tail -n 1 "$MOCK_ARGS_FILE")" = "$FIXTURE_DIR/bin/cc-env-exec claude --continue" ]
 }
+
+@test "cc-env-exec skips whitespace-only and indented-comment lines silently" {
+    printf '   \n  # indented comment\nKEY=val\n' > "$FIXTURE_DIR/.env"
+    export DOTFILES_DIR="$FIXTURE_DIR"
+    run "$CC_ENV_EXEC" sh -c 'printf %s "$KEY"'
+    [ "$status" -eq 0 ]
+    # Exact match: the value and nothing else — no spurious warnings.
+    [ "$output" = "val" ]
+}
+
+@test "cc-env-exec skips a line without = and does not clobber an inherited var" {
+    printf 'NOEQ_VAR\nKEY=val\n' > "$FIXTURE_DIR/.env"
+    export DOTFILES_DIR="$FIXTURE_DIR"
+    export NOEQ_VAR="inherited"
+    run "$CC_ENV_EXEC" sh -c 'printf %s:%s "$NOEQ_VAR" "$KEY"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"inherited:val"* ]]
+    [[ "$output" == *"skipping .env line without"* ]]
+}
