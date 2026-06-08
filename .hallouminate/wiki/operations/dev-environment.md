@@ -25,6 +25,7 @@ Distinct from the `agents/` registry system (see [[../architecture/agents-dir]])
 - An LSP server is just a plugin entry with `load: true` (servers start lazily).
 - Unlike MCP, the plugins directory is **not** symlinked to `~/.claude` — Claude Code uses that location for plugin cache storage.
 - If a plugin provides MCP tools, add `mcp__plugin_<name>__*` to `permissions.allow`.
+- **A local/unpublished plugin's bundled MCP must run from its source, not PyPI.** When a `path:` entry points at an out-of-repo clone (e.g. `milknado@milknado` → `~/Dev/milknado`), the plugin's own `.mcp.json` cannot use a bare `uvx <pkg>` — that resolves against PyPI and fails to connect for an unpublished package (`× <pkg> was not found in the package registry`). Point it at the clone: `uvx --from <abs-path> <script>` (or `uv run --project <abs-path> <script>`). Verify with `claude mcp list` (look for `✗ Failed to connect`). Tradeoff: the absolute path is machine-specific, so the marketplace isn't portable until the package is published — then revert to bare `uvx <pkg>`.
 
 ## skhd (macOS hotkey daemon)
 
