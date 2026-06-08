@@ -103,6 +103,7 @@ packages:
   - agent-skills: { source: npm, pkg: "@govcraft/agent-skills" }
   - jmux: { source: npm, pkg: "@jx0/jmux" }   # tmux workspace for running coding agents in parallel
   - hunkdiff: { source: npm }                 # diff viewer used by jmux's Ctrl-a g info panel
+  - graphite: { source: npm, pkg: "@withgraphite/graphite-cli" } # `gt` — stacked-diff PR workflow
 
   # uv tools (Python)
   - ralphify: { source: uv }
