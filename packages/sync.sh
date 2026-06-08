@@ -339,8 +339,9 @@ sync_rustup_proxies() {
 ########## NPM
 
 sync_npm() {
-    local npm_pkgs
-    npm_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "npm") | [.key, (.value.pkg // .key)] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    local npm_pkgs skip_platform
+    if [[ "$PLATFORM" == "Darwin" ]]; then skip_platform="linux"; else skip_platform="mac"; fi
+    npm_pkgs=$(yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"npm\" and (.value.platform == \"$skip_platform\" | not)) | [.key, (.value.pkg // .key)] | @tsv" "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$npm_pkgs" ]] && return 0
 
     if ! command -v npm &>/dev/null; then

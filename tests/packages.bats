@@ -22,10 +22,12 @@ setup() {
     export BREW_LOG="$TEST_HOME/brew.log"
     export CARGO_LOG="$TEST_HOME/cargo.log"
     export GH_LOG="$TEST_HOME/gh.log"
+    export NPM_LOG="$TEST_HOME/npm.log"
 
     write_mock_brew
     write_mock_cargo
     write_mock_gh
+    write_mock_npm
     export PATH="$MOCK_BIN:$PATH"
 }
 
@@ -82,6 +84,19 @@ MOCKCARGO
     chmod +x "$MOCK_BIN/cargo"
 }
 
+write_mock_npm() {
+    cat > "$MOCK_BIN/npm" << 'MOCKNPM'
+#!/bin/bash
+echo "npm $*" >> "$NPM_LOG"
+case "$1" in
+    ls) echo '{}' ;;
+    outdated) echo '{}' ;;
+esac
+exit 0
+MOCKNPM
+    chmod +x "$MOCK_BIN/npm"
+}
+
 # Usage: write_mock_gh [installed_repos] [fail_repo]
 #   installed_repos: newline-separated list of "owner/repo" already installed
 #   fail_repo:       exit non-zero when `gh extension install` is asked for this repo
@@ -127,6 +142,8 @@ packages:
   - pyenv: { dev: true }
   - cargo-llvm-cov: { source: cargo }
   - gh-stack: { source: gh-extension, pkg: github/gh-stack }
+  - markdownlint-cli2: { source: npm }
+  - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux }
 YAML
 }
 
@@ -359,6 +376,27 @@ YAML
     assert_success
 
     ! grep -q "gh extension upgrade" "$GH_LOG"
+}
+
+@test "sync installs npm packages" {
+    write_test_yaml
+    run_sync
+    assert_success
+
+    grep -q "npm install -g markdownlint-cli2" "$NPM_LOG"
+}
+
+@test "sync excludes linux-only npm packages on Darwin" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
+
+    write_test_yaml
+    run_sync
+    assert_success
+
+    # Positive control: the npm path ran and installed a both-platforms package,
+    # so the absence below is real exclusion, not an empty npm phase.
+    grep -q "npm install -g markdownlint-cli2" "$NPM_LOG"
+    ! grep -q "graphite-cli" "$NPM_LOG"
 }
 
 # --- Integration: cache behavior ---
