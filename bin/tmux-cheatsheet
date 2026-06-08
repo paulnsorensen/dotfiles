@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# tmux-cheatsheet - print this dotfiles' tmux keybindings + session-management reference
+# Usage: tmux-cheatsheet
+set -euo pipefail
+
+# Colors
+BOLD=$'\033[1m'
+CYAN=$'\033[0;36m'
+GREEN=$'\033[0;32m'
+DIM=$'\033[2m'
+RESET=$'\033[0m'
+
+# Helpers
+hdr() { printf "\n${BOLD}${CYAN}%s${RESET}\n" "$1"; }
+row() { printf "  ${GREEN}%-28s${RESET} ${DIM}%s${RESET}\n" "$1" "$2"; }
+
+print_cheatsheet() {
+    printf '\n%stmux cheatsheet%s  %s(prefix = Ctrl+a)%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
+
+    hdr "Panes - split, navigate, resize"
+    row "prefix |"               "split vertically (keeps cwd)"
+    row "prefix -"               "split horizontally (keeps cwd)"
+    row "prefix h/j/k/l"         "move between panes (vim)"
+    row "Ctrl+h/j/k/l"           "move between panes - no prefix (vim-aware)"
+    row "prefix H/J/K/L"         "resize pane (repeatable)"
+    row "prefix z"               "zoom / unzoom pane"
+    row "prefix x"               "close pane (asks confirm)"
+    row "prefix S"               "toggle broadcast typing to all panes"
+    row "prefix Ctrl+l"          "clear screen (C-l is taken by pane nav)"
+
+    hdr "Windows"
+    row "prefix c"               "new window (keeps cwd)"
+    row "prefix n / p"           "next / previous window (repeatable)"
+    row "prefix Tab"             "last window"
+    row "prefix 1-9"             "jump to window N"
+    row "prefix < / >"           "move window left / right"
+    row "prefix ,"               "rename window"
+    row "prefix &"               "kill window (asks confirm)"
+
+    hdr "Copy mode (vi)"
+    row "prefix ["               "enter copy mode"
+    row "v"                      "begin selection"
+    row "Ctrl+v"                 "toggle block (rectangle) selection"
+    row "y"                      "yank selection -> clipboard"
+    row "Escape"                 "cancel copy mode"
+    row "/ ?  n N"               "search down / up, next / prev match"
+
+    hdr "Sessions (in tmux)"
+    row "prefix d"               "detach from session"
+    row "prefix s"               "choose session/window tree"
+    row "prefix \$"               "rename session"
+    row "prefix ( / )"           "previous / next session"
+    row "prefix T"               "sesh: fuzzy session picker (popup)"
+    row "prefix Shift+Tab"       "sesh: switch to last session"
+
+    hdr "Sessions (CLI)"
+    row "tmux new -s NAME"       "create a named session"
+    row "tmux ls"               "list sessions"
+    row "tmux a"                "attach to most recent session"
+    row "tmux a -t NAME"        "attach to a named session"
+    row "tmux switch -t NAME"   "switch client to another session"
+    row "tmux rename-session NEW" "rename current session"
+    row "tmux kill-session -t NAME" "kill one session"
+    row "tmux kill-server"      "kill the server (all sessions)"
+
+    hdr "Popups & misc"
+    row "prefix G"               "popup: lazygit"
+    row "prefix o"               "popup: yazi (file manager)"
+    row "prefix t"               "popup: scratch terminal"
+    row "prefix ?"               "general dotfiles cheatsheet"
+    row "prefix r"               "reload tmux config"
+    row "tmux-cheatsheet"        "this reference"
+    printf "\n"
+}
+
+if [[ -t 1 ]]; then
+    print_cheatsheet | less -R -F -X
+else
+    print_cheatsheet
+fi
