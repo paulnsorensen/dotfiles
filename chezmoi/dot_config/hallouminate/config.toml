@@ -4,6 +4,17 @@ paths = ["~/.cheese"]
 globs = ["**/*.md"]
 exclude = ["**/.git/**"]
 
+# The cheez-wiki knowledge base, exposed from the XDG baseline so every project
+# can search it. Declared as a flat [[corpus]] (NOT a [[repository]]) on purpose:
+# a baseline `[[repository]] name = "cheez-wiki"` would collide with the repo-layer
+# config at ~/Dev/cheez-wiki/.hallouminate/ — both would derive `repo:cheez-wiki:wiki`
+# and trip the duplicate-name check. A distinct corpus name sidesteps that.
+[[corpus]]
+name = "cheez-wiki"
+paths = ["~/Dev/cheez-wiki/.hallouminate/wiki"]
+globs = ["**/*.md"]
+exclude = ["**/.git/**"]
+
 # Top-level embeddings default for all repos (per-repo config can override).
 # snowflake-arctic-embed-s: 384-dim, English, retrieval-tuned. Full precision
 # (quantized=false) — corpora are small, so keep max quality.
