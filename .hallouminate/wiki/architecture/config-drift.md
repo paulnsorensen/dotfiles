@@ -103,12 +103,12 @@ codex already put the hook cleanup, it runs in the single `ap install` path (no
 ## Known drift pattern: yq-appended keys absorbed by codex auto-sections
 
 **Symptom**: `model_instructions_file` duplicated inside a codex-auto-added section
-(typically `[tui.model_availability_nux]` or `[plugins."github@openai-curated"]`) in
+(typically `[tui.model_availability_nux]` or `[plugins.\"github@openai-curated\"]`) in
 `~/.codex/config.toml`; preamble silently not loading.
 
 **Why it happens**: `chezmoi/lib/install-prompts.sh` uses `yq -i '.model_instructions_file = ...'`
 which appends the key at the end of the file. Codex periodically auto-appends sections
-(`[tui.model_availability_nux]` for UI state, `[plugins."github@openai-curated"]` for plugin
+(`[tui.model_availability_nux]` for UI state, `[plugins.\"github@openai-curated\"]` for plugin
 config) near the end of the file, absorbing the trailing key into whichever section got
 appended last. On the next `dots sync`, yq reads `.model_instructions_file` at root, gets
 "" (it's inside a section), writes another copy at end → that copy gets absorbed into the
@@ -128,7 +128,8 @@ Copilot's `mcp-config.json` is managed by the **chezmoi template**
 no registry MCP without an explicit `harnesses: [copilot]` entry is rendered
 into copilot. The template is the single source of truth for what MCPs copilot
 gets. When the registry adds a new MCP (e.g. `hallouminate`, `serena`), the
-chezmoi template must be manually updated to match.
+chezmoi template must be manually updated to match. As of 2026-06-04, milknado
+(added in #274) is missing from the copilot template.
 
 ## Known drift pattern: `harnesses: []` MCPs not pruned by reconcile
 
@@ -163,6 +164,37 @@ render produces zero harness targets for the MCP).
 per-harness, using only the harness-filtered MCP projection (the same filtering
 `_cursor_mcps` / `_opencode_mcps` apply at render time) rather than the full
 `manifest.mcps` set. See [#265](https://github.com/paulnsorensen/dotfiles/issues/265).
+
+## Known drift pattern: settings.json hook-runner command references non-existent JS file
+
+**Symptom**: `hook-runner.js` emits stderr noise on every Bash tool call:
+`hook-runner: failed to load git-guard.js: Cannot find module ...`
+
+**Why it happens**: `~/.claude/settings.json` is a `create_` chezmoi seed —
+written once and then user-owned. If a guard script name is manually added to
+a hook-runner command (e.g. `bash-guard.js git-guard.js`) but the corresponding
+`~/.claude/hooks/<name>.js` file is never deployed, the runner fails-open (logs
+the error, continues with loaded hooks) every Bash call. The renderer's
+`_clean_legacy_settings_hooks` won't catch it — the command doesn't duplicate
+any plugin-managed hook's basename or exact command string.
+
+**Why git-guard.js in particular**: The git-guard PreToolUse hook was
+implemented as a **shell hook** in the plugin tree (`git-guard.sh`), not as a
+settings-managed JS hook. The `agents/lib/git-guard.js` is the shared classifier
+library the shell script loads — it is NOT a standalone hook. Someone added
+`git-guard.js` to the hook-runner command in `settings.json` at some point, but
+the file was never deployed to `~/.claude/hooks/` (no chezmoi template for it;
+the chezmoi seed `create_settings.json` has only `bash-guard.js`). The
+functional gap is zero — git-guard.sh covers the same protection — but every
+Bash call logs an error.
+
+**Fix**: Remove the non-existent script name from the hook-runner command in
+`~/.claude/settings.json`. The chezmoi seed is the source of truth for what
+JS hooks should be wired; diff it against the live file to catch future drift.
+
+**Detection**: `[[ -e ~/.claude/hooks/<name>.js ]]` per argument in the
+hook-runner commands. A missing file with a fail-open runner is invisible to
+normal operation but pollutes stderr in verbose mode.
 
 ## Gotcha: index drift is its own drift class
 

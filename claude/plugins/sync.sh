@@ -12,7 +12,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 REGISTRY_FILE="$SCRIPT_DIR/registry.yaml"
-SETTINGS_FILE="$SCRIPT_DIR/../settings.json"
+# Live settings file. The committed claude/settings.json is retired (see
+# claude/.sync) — the real file chezmoi seeds is ~/.claude/settings.json, and
+# that is where extraKnownMarketplaces / enabledPlugins must be written.
+# CLAUDE_SETTINGS_FILE is the test seam for this otherwise-hardcoded path.
+SETTINGS_FILE="${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}"
 
 # shellcheck source=../lib/sync-common.sh
 source "$SCRIPT_DIR/../lib/sync-common.sh"
@@ -79,6 +83,17 @@ sync_local_marketplaces() {
                 echo -e "  ${GREEN}Updated $mp_name marketplace → $abs_path${NC}"
             fi
             changed=true
+        fi
+
+        # Writing extraKnownMarketplaces alone does NOT make the marketplace
+        # installable — `claude plugin install` can only resolve a marketplace
+        # the CLI has actually registered + fetched. `marketplace add` is the
+        # idempotent op that does that: it fetches when missing, no-ops ("already
+        # on disk") when present. Without this, a freshly-added local plugin
+        # (e.g. milknado) fails to install on first sync.
+        if ! $DRY_RUN; then
+            claude plugin marketplace add "$abs_path" >/dev/null 2>&1 \
+                || echo -e "  ${RED}Warning: failed to register $mp_name marketplace with the CLI${NC}"
         fi
     done < <(echo "$local_entries" | jq -c '.')
 
