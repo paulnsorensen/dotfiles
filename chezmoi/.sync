@@ -23,7 +23,7 @@
 # resolving into the dotfiles checkout (whether dangling or live) so apply
 # can claim it.
 #
-# Owning .sync here bypasses .sync-with-rollback's default symlink path —
+# Owning .sync here bypasses .sync's default symlink path —
 # chezmoi reads this dir via the absolute path written into chezmoi.toml,
 # not via a ~/.chezmoi symlink.
 
@@ -131,7 +131,7 @@ fi
 # Pre-create the ~/.claude directory symlinks that the (now-shrinking) set
 # of write-through paths from chezmoi's run_onchange templates land in. On
 # a fresh install, claude/.sync runs *after* chezmoi/.sync (alphabetical
-# iteration in .sync-with-rollback), so without these links chezmoi would
+# iteration in .sync), so without these links chezmoi would
 # create real ~/.claude/{hooks,reference}/ directories that claude/.sync
 # would then back up, orphaning anything chezmoi just wrote.
 #
@@ -161,7 +161,7 @@ prelink_claude_writethrough
 # tree that launched dots sync, not a stale sourceDir preserved in
 # ~/.config/chezmoi/chezmoi.toml. Partial-OK — we don't abort the rest of
 # dots sync if chezmoi fails, but we DO propagate the failure as our exit
-# code so .sync-lib.sh records us in SYNC_FAILURES and .sync-with-rollback
+# code so .sync-lib.sh records us in SYNC_FAILURES and .sync
 # surfaces it in the final summary. Silent partial-install regressions are
 # what trapped a missing SessionStart hook for hours.
 #

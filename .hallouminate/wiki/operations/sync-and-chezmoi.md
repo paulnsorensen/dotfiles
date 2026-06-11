@@ -4,7 +4,7 @@ How `dots sync` deploys this repo to a machine. Two mechanisms coexist: a custom
 
 ## The symlink + `.sync` system
 
-`.sync-with-rollback` walks the repo and symlinks dotfiles into `$HOME`, dispatching per-directory `.sync` scripts for custom setup (fonts, iterm2, chezmoi).
+`.sync` walks the repo and symlinks dotfiles into `$HOME`, dispatching per-directory `.sync` scripts for custom setup (fonts, iterm2, chezmoi).
 
 - **Skip list** — dirs never symlinked to `$HOME`. Canonical source is `SYNC_SKIP_LIST` in `.sync-lib.sh`: `.git`, `.local`, `.worktrees`, `reference`, `packages`, `brew`, `apt`, `agents`, `agent-profile`, `codex`.
 - **Hidden-directory dispatch** — visible dirs are iterated by `for file in *`; hidden dirs (leading `.`) by `sync_hidden_dirs`. Both share one rule: if `$dir/.sync` exists, run it. `chezmoi/` is a visible dir that owns its `.sync` and short-circuits before symlinking.
@@ -12,7 +12,7 @@ How `dots sync` deploys this repo to a machine. Two mechanisms coexist: a custom
 
 ### Backup/rollback subsystem — retired
 
-The custom backup/restore/rollback subsystem has been **deleted** (chezmoi-consolidation, Stage 1). `dots rollback` no longer snapshots — it prints the git-backed undo path (`git revert` + `dots sync`). `dots backups` / `dots clean` are gone (`tests/dots.bats` asserts the retirement). The symlink loop in `.sync-with-rollback` is untouched until later migration stages.
+The custom backup/restore/rollback subsystem has been **deleted** (chezmoi-consolidation, Stage 1). `dots rollback` no longer snapshots — it prints the git-backed undo path (`git revert` + `dots sync`). `dots backups` / `dots clean` are gone (`tests/dots.bats` asserts the retirement). The manifest/backup scaffolding in `.sync` has been removed; only `last_sync` (timestamp) remains. The file has been renamed from `.sync-with-rollback` to `.sync`.
 
 ## Chezmoi-managed subset
 

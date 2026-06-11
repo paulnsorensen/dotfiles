@@ -121,13 +121,7 @@ do_update() {
         echo -e "${GREEN}✅ Updated successfully!${NC}"
         echo
         echo -e "${BLUE}Running sync...${NC}"
-        # Gate fallback on existence, not exit code — otherwise a real
-        # mid-sync failure silently falls through to a different script.
-        if [[ -f "$DOTFILES_DIR/.sync-with-rollback" ]]; then
-            "$DOTFILES_DIR/.sync-with-rollback"
-        else
-            "$DOTFILES_DIR/.sync"
-        fi
+        "$DOTFILES_DIR/.sync"
     else
         echo -e "${YELLOW}⚠️  Local changes detected${NC}" >&2
         echo "Please commit or stash your changes first" >&2
@@ -141,7 +135,7 @@ do_sync() {
     echo -e "${BLUE}🔄 Syncing dotfiles...${NC}"
     cd_dotfiles
 
-    "$DOTFILES_DIR/.sync-with-rollback" "$@"
+    "$DOTFILES_DIR/.sync" "$@"
 }
 
 # Show status
