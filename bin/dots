@@ -69,6 +69,7 @@ ${BLUE}Commands:${NC}
   ${GREEN}rollback${NC}        Show how to undo a sync (git revert + dots sync)
   ${GREEN}doctor${NC}          Run health checks and profile shell
   ${GREEN}profile${NC}         Manage harness-agnostic agent profiles (run 'dots profile help')
+  ${GREEN}bootstrap${NC}       One-shot Linux provision (brew + rustup + packages)
   ${GREEN}test${NC}            Run test suite
   ${GREEN}help${NC}            Show this help message
 
@@ -375,6 +376,11 @@ case "${1:-status}" in
     profile|p)
         shift
         "$DOTFILES_DIR/agent-profile/ap" "$@"
+        ;;
+    bootstrap|b)
+        echo -e "${BLUE}🧰 Bootstrapping this Linux box (brew + rustup + packages)...${NC}"
+        cd_dotfiles
+        bash "$DOTFILES_DIR/packages/bootstrap-linux.sh"
         ;;
     test|t)
         shift

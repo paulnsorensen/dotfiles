@@ -15,6 +15,18 @@ if [[ $OSTYPE == darwin* ]]; then
   [[ -d "${_brew_prefix}/opt/openssl/bin" ]] && export PATH="${_brew_prefix}/opt/openssl/bin:$PATH"
   [[ -d "${_brew_prefix}/opt/rustup/bin" ]] && export PATH="${_brew_prefix}/opt/rustup/bin:$PATH"
   unset _brew_prefix
+  # macOS cert bundle for gh / Go TLS inside the Claude Seatbelt sandbox.
+  # Was previously pinned in claude/settings.json's env block, but that broke
+  # Linux (that file doesn't exist there) — moved here so each platform branch
+  # exports the correct path and Claude subprocesses inherit it from the
+  # launching shell.
+  [[ -f /etc/ssl/cert.pem ]] && export SSL_CERT_FILE=/etc/ssl/cert.pem
+else
+  # Linux cert bundle — Claude subprocesses inherit this from the launching
+  # shell (claude/settings.json no longer hard-codes the macOS path).
+  [[ -f /etc/ssl/certs/ca-certificates.crt ]] && export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+  # Homebrew on Linux (installed by `dots bootstrap`) lives under /home/linuxbrew.
+  [[ -x /home/linuxbrew/.linuxbrew/bin/brew ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 fi
 
 # Add dotfiles bin to PATH

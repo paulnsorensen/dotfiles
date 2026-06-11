@@ -239,11 +239,16 @@ sync_cargo() {
                 FAILED+=("rustup-bootstrap")
                 return 0
             fi
-            # Brew-installed rustup keeps cargo proxies in opt/rustup/bin
-            local rustup_bin
-            rustup_bin="$(brew --prefix rustup 2>/dev/null)/bin"
-            if [[ -d "$rustup_bin" ]]; then
-                export PATH="$rustup_bin:$PATH"
+            # Brew-installed rustup (macOS) keeps cargo proxies under its prefix;
+            # rustup.rs (Linux) puts them in ~/.cargo/bin via ~/.cargo/env.
+            # Guard the brew lookup: calling brew when it's absent returns 127,
+            # which under `set -e` would abort the whole sync.
+            local rustup_prefix=""
+            if command -v brew &>/dev/null; then
+                rustup_prefix="$(brew --prefix rustup 2>/dev/null || true)"
+            fi
+            if [[ -n "$rustup_prefix" && -d "$rustup_prefix/bin" ]]; then
+                export PATH="$rustup_prefix/bin:$PATH"
             elif [[ -f "$HOME/.cargo/env" ]]; then
                 # shellcheck disable=SC1091
                 source "$HOME/.cargo/env"
@@ -508,6 +513,10 @@ apt_check_pkg() {
 }
 
 sync_apt() {
+    # The Linux bootstrap (packages/bootstrap-linux.sh) installs these via brew,
+    # then re-invokes this script for cargo/npm/uv/gh — SKIP_APT silences the
+    # otherwise-misleading apt "missing" report in that flow.
+    [[ "${SKIP_APT:-false}" == "true" ]] && return 0
     command -v apt-get &>/dev/null || return 0
 
     log_info "Checking apt packages"
@@ -534,50 +543,17 @@ sync_apt() {
     fi
 }
 
+########## Bootstrap
+
+# bootstrap_yq lives in packages/lib-bootstrap-yq.sh so packages/bootstrap-linux.sh
+# can reuse the same logic on a fresh Linux box (where yq is not yet installed).
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-bootstrap-yq.sh"
+
 ########## Main
 
-# Bootstrap yq if needed. The whole sync.sh is YAML-driven, so this is
-# load-bearing — we can't parse packages.yaml without it.
-#
-# Linux note: Ubuntu's apt yq is kislyuk/yq (a jq wrapper using jq syntax),
-# NOT Mike Farah's Go yq that this codebase is written against. Skip apt
-# and download the Go binary release into ~/.local/bin instead.
-bootstrap_yq_linux() {
-    local dest="$HOME/.local/bin/yq"
-    local arch
-    case "$(uname -m)" in
-        x86_64)  arch=amd64 ;;
-        aarch64) arch=arm64 ;;
-        *)
-            log_error "Unsupported architecture for yq bootstrap: $(uname -m)"
-            return 1
-            ;;
-    esac
-    mkdir -p "$HOME/.local/bin"
-    local url="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}"
-    log_info "Downloading Mike Farah yq → $dest"
-    if ! curl -fsSL "$url" -o "$dest.tmp"; then
-        log_error "Failed to download yq from $url"
-        rm -f "$dest.tmp"
-        return 1
-    fi
-    chmod +x "$dest.tmp"
-    mv "$dest.tmp" "$dest"
-    hash -r 2>/dev/null || true
-}
-
-if ! command -v yq &>/dev/null; then
-    if [[ "$PLATFORM" == "Darwin" ]]; then
-        if command -v brew &>/dev/null; then
-            log_info "Bootstrapping yq..."
-            brew install yq
-        else
-            log_warning "yq not found and brew not available"
-            exit 1
-        fi
-    elif [[ "$PLATFORM" == "Linux" ]]; then
-        bootstrap_yq_linux || exit 1
-    fi
+if ! bootstrap_yq; then
+    exit 1
 fi
 
 # Bootstrap uv on Linux. uv is the linchpin for the agent-profile / base-
