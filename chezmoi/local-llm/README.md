@@ -1,69 +1,80 @@
 # Local LLM stack — `~/local-llm/`
 
-Worker-pool architecture behind a frontier reasoning agent. All endpoints OpenAI-compatible.
+On-demand serving behind a frontier reasoning agent: llama-swap loads and
+unloads llama-server backends as requests arrive. All endpoints OpenAI-compatible.
 
 ## Topology
 
 ```
-  NPU  (XDNA 2)   :8000  local-classifier   Llama 3.2 3B INT4 (FastFlowLM, optional)
-  iGPU (890M)     :8080  local-sonnet       Qwen3-30B-A3B-Instruct-2507 Q4_K_M (Vulkan)
-  CPU  (Zen 5c)   :8081  local-haiku        Qwen3-8B Q4_K_M (--reasoning off)
-  iGPU (890M)     :8085  local-coder        Qwen3-Coder-30B-A3B-Instruct Q4 (optional, displaces Sonnet)
-  iGPU (890M)     :8090  local-opus         Llama 3.3 70B Q4 (optional, displaces Sonnet)
-  CPU  (Zen 5c)   :8082  local-vision      Qwen2.5-VL-7B Q4 (optional)
-                  :4000  LiteLLM proxy      unified front; fallbacks configured
+  llama-swap (:9000) — routes by model name, swaps backends on demand:
+    hot   local-haiku    Qwen3-8B Q4_K_M (CPU taskset, always resident)
+    pool  local-sonnet   Qwen3-30B-A3B-Instruct-2507 Q4_K_M (iGPU Vulkan) ┐
+    pool  local-coder    Qwen3-Coder-30B-A3B-Instruct Q4 (iGPU)           ├ one at a time
+    pool  local-vision   Qwen2.5-VL-7B Q4 (CPU)                           ┘
+  worker-npu  (XDNA 2)  :8000  local-classifier  Llama 3.2 3B INT4 (FastFlowLM, optional)
+  worker-opus (iGPU)    :8090  local-opus        Llama 3.3 70B Q4 (manual; retired in #289)
+                        :4000  LiteLLM proxy     unified front; fallbacks configured
 ```
+
+Swap-pool models unload after 10 min idle (`globalTTL: 600`; coder keeps a
+longer 15 min `ttl`). A cold load is held open by llama-swap — the request
+waits (up to `healthCheckTimeout: 360`) instead of getting a 503.
 
 ## Quick start
 
 ```bash
+# One-time: install the pinned llama-swap binary (llama.cpp is built per below):
+bash ~/local-llm/scripts/install-llama-swap.sh
+
 # Source aliases (once):
 echo 'source ~/local-llm/scripts/aliases.sh' >> ~/.zshrc
 
-# Always-on stack auto-starts on login (linger enabled, default.target):
+# Stack auto-starts on login (linger enabled, default.target):
 llm-status                       # check what's up
-llm-ping                         # quick port probe
+llm-ping                         # quick port probe (4000/9000/8000/8090)
 llm-models                       # list models LiteLLM serves
-llm-chat local-sonnet "hello"    # one-shot chat
+llm-loaded                       # which backends llama-swap has resident
+llm-unload                       # manually unload all swap-pool backends
+llm-chat local-sonnet "hello"    # one-shot chat (cold-loads sonnet if needed)
 
-# Optional tiers:
-llm-coder-on                     # Qwen3-Coder-30B-A3B, auto-stops Sonnet
-llm-coder-off                    # back to Sonnet
-llm-opus-on                      # 70B, auto-stops Sonnet
-llm-opus-off                     # back to Sonnet
-llm-vision-on                    # adds vision worker on CPU
-llm-vision-off
-
-# NPU (needs sudo block first):
-bash ~/local-llm/scripts/install-npu.sh
+# Optional tiers (separate units):
+llm-opus-on                      # manual 70B — llm-unload first if RAM is tight
+llm-opus-off
+bash ~/local-llm/scripts/install-npu.sh   # NPU needs sudo block first
 llm-npu-on
 ```
 
 ## Resource budget
 
-| State | Resident | Peak bandwidth (~120 GB/s avail) |
+| State | Resident | Notes |
 |---|---|---|
-| Always-on only (Sonnet + Haiku + LiteLLM) | ~23 GB | ~70 GB/s |
-| + NPU classifier | ~25 GB | ~73 GB/s |
-| + Vision (CPU) | ~28 GB | ~80 GB/s |
-| Opus mode (Sonnet stopped, 70B running) | ~45 GB | ~70 GB/s |
+| Idle (hot group + proxies) | ~8 GB | haiku + llama-swap + LiteLLM |
+| + one swapped 30B (sonnet/coder) | ~28 GB | unloads after TTL |
+| + NPU classifier | +2 GB | separate unit |
+| Opus mode (manual) | +45 GB | stop pool models first (`llm-unload`) |
+
+`llama-swap.service` carries `MemoryMax=30G` — hot group + one swapped model +
+headroom — with the same bounded-restart hardening as #287.
 
 ## Layout
 
 ```
 ~/local-llm/
 ├── bin/
-│   ├── llama.cpp/         # Vulkan-build llama-server (b9391)
+│   ├── llama.cpp/         # Vulkan-build llama-server (b9391, built manually)
+│   ├── llama-swap         # pinned release binary (install-llama-swap.sh)
 │   └── lemonade/          # Lemonade Server v10.6.0 (NPU)
 ├── configs/
+│   ├── llama-swap.yaml       # backend cmds + hot/pool groups + TTLs
 │   ├── litellm.yaml
 │   └── lean.json             # opencode MCP overlay (see "Lean opencode runs" below)
-├── logs/                  # all worker + LiteLLM logs
+├── logs/                  # llama-swap (incl. backend output) + LiteLLM logs
 ├── models/
-│   ├── Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
-│   └── Qwen3-8B-Q4_K_M.gguf
 ├── scripts/
 │   ├── aliases.sh
+│   ├── install-llama-swap.sh
+│   ├── download-models.sh
+│   ├── healthcheck.sh
 │   └── install-npu.sh
 └── systemd/               # (unit files actually live in ~/.config/systemd/user/)
 ```
@@ -75,13 +86,14 @@ llm-npu-on
 from openai import OpenAI
 client = OpenAI(base_url="http://127.0.0.1:4000/v1", api_key="sk-local")
 
-# Use model names by tier:
+# Use model names by tier — llama-swap cold-loads pool models on first use:
 resp = client.chat.completions.create(
-    model="local-sonnet",            # main worker
-    # model="local-haiku",           # cheap/fast
+    model="local-sonnet",            # main worker (swap pool)
+    # model="local-haiku",           # cheap/fast (always resident)
+    # model="local-coder",           # code (swap pool, displaces sonnet)
     # model="local-classifier",      # tiny/NPU (falls back to haiku if NPU off)
-    # model="local-opus",            # 70B (falls back to sonnet if not running)
-    # model="local-vision",          # VLM (no fallback)
+    # model="local-opus",            # manual 70B (falls back to sonnet)
+    # model="local-vision",          # VLM (swap pool)
     messages=[{"role": "user", "content": "..."}],
 )
 ```
@@ -107,7 +119,7 @@ the schema tokens. (Todoist is already disabled globally, so the overlay omits i
 
 - `local-opus` → `local-sonnet`
 - `local-classifier` → `local-haiku`
-- `local-vision` → no fallback (fails loudly so the agent can adapt)
+- Pool models need no fallback — llama-swap cold-loads them on demand.
 
 ## Adding the optional models
 
@@ -123,11 +135,16 @@ hf download ggml-org/Qwen2.5-VL-7B-Instruct-GGUF \
   mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf --local-dir ~/local-llm/models
 ```
 
-The systemd units gate on file presence (`ConditionPathExists=`), so once the file is there, the unit starts cleanly.
+llama-swap registers every configured model regardless of file presence; a
+missing GGUF only fails when that model is first requested. `worker-opus` /
+`worker-npu` still gate on `ConditionPathExists=`.
 
 ## Tuning notes
 
-- iGPU worker `--ctx-size 32768 --parallel 8` → 4096 tokens/slot. Increase for long-context tasks; decrease parallelism to give each slot more.
-- CPU worker pinned to Zen 5c efficiency cores (4-11, 16-23) to leave Zen 5 perf cores free for foreground work.
-- KV cache quantized to Q8_0 on Sonnet + Opus (`--cache-type-k q8_0 --cache-type-v q8_0`) — halves KV memory.
-- All workers run with `Nice` ≥ 5 so foreground work isn't crushed.
+- Swap-pool sizing: `llama-swap.yaml` group `pool` is strict one-at-a-time
+  (`swap: true, exclusive: true`). Loosen later if RAM allows vision + sonnet.
+- CPU models pinned to Zen 5c efficiency cores (haiku 4-11,16-23; vision
+  8-11,20-23) to leave Zen 5 perf cores free for foreground work.
+- KV cache quantized to Q8_0 on the 30B pool models — halves KV memory.
+- iGPU prefill decays with context (73→23 t/s by 10k tokens) — a full 32k
+  prompt can take 20+ min to prefill; keep contexts tight.

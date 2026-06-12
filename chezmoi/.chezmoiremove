@@ -1,0 +1,10 @@
+{{- /* Retired in #288: the always-on workers were replaced by llama-swap
+on-demand serving. Deleting a source file leaves the deployed copy orphaned,
+so the targets are removed here; run_onchange_after_install-local-llm also
+stops/disables/masks them so a still-running stale copy can't restart. */ -}}
+{{ if (get . "localLLM") }}
+.config/systemd/user/worker-igpu.service
+.config/systemd/user/worker-cpu.service
+.config/systemd/user/worker-coder.service
+.config/systemd/user/worker-vision.service
+{{ end }}

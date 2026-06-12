@@ -1,6 +1,6 @@
 [Unit]
 Description=LiteLLM proxy (unified OpenAI-compatible front for all workers)
-After=worker-igpu.service worker-cpu.service
+After=llama-swap.service
 PartOf=local-llm.target
 
 [Service]

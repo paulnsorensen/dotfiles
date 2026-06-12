@@ -1,7 +1,8 @@
 [Unit]
-Description=Opus-tier worker (Llama 3.3 70B on iGPU — displaces Sonnet)
-# Mutual exclusion with the other iGPU tiers (single iGPU slot — Sonnet + Coder)
-Conflicts=worker-igpu.service worker-coder.service
+Description=Opus-tier worker (Llama 3.3 70B on iGPU — displaces the llama-swap pool)
+# Mutual exclusion for the single iGPU slot: the swap pool (sonnet/coder) lives
+# inside llama-swap.service, so the manual 70B must stop the whole router.
+Conflicts=llama-swap.service
 ConditionPathExists=%h/local-llm/models/Llama-3.3-70B-Instruct-Q4_K_M.gguf
 # Bound the restart loop: at most 3 starts per 120s, then give up (must exceed RestartSec × StartLimitBurst = 90s)
 StartLimitBurst=3
