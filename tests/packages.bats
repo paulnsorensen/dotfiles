@@ -704,3 +704,108 @@ MOCKCARGO
     grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
     ! grep -q "cargo install --force cargo-llvm-cov" "$CARGO_LOG"
 }
+
+# --- Integration: sync_harness_selfupdate ---
+
+@test "UPGRADE_MODE runs claude update and codex update when both present" {
+    write_test_yaml
+
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+    export CODEX_LOG="$TEST_HOME/codex.log"
+
+    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
+#!/bin/bash
+echo "claude \$*" >> "$CLAUDE_LOG"
+exit 0
+MOCKCLAUDE
+    chmod +x "$MOCK_BIN/claude"
+
+    cat > "$MOCK_BIN/codex" << MOCKCODEX
+#!/bin/bash
+echo "codex \$*" >> "$CODEX_LOG"
+exit 0
+MOCKCODEX
+    chmod +x "$MOCK_BIN/codex"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q "claude update" "$CLAUDE_LOG"
+    grep -q "codex update" "$CODEX_LOG"
+}
+
+@test "UPGRADE_MODE skips codex update when codex absent but still runs claude update" {
+    write_test_yaml
+
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+
+    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
+#!/bin/bash
+echo "claude \$*" >> "$CLAUDE_LOG"
+exit 0
+MOCKCLAUDE
+    chmod +x "$MOCK_BIN/claude"
+    # No codex mock — intentionally absent
+
+    local clean_path
+    clean_path=$(scrub_toolchain_path | tr ':' '\n' | while IFS= read -r d; do [[ -x "$d/codex" ]] || printf '%s:' "$d"; done)
+    UPGRADE_MODE=true PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q "claude update" "$CLAUDE_LOG"
+    assert_output_contains "codex not found"
+}
+
+@test "non-UPGRADE_MODE does not invoke claude or codex update" {
+    write_test_yaml
+
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+    export CODEX_LOG="$TEST_HOME/codex.log"
+
+    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
+#!/bin/bash
+echo "claude \$*" >> "$CLAUDE_LOG"
+exit 0
+MOCKCLAUDE
+    chmod +x "$MOCK_BIN/claude"
+
+    cat > "$MOCK_BIN/codex" << MOCKCODEX
+#!/bin/bash
+echo "codex \$*" >> "$CODEX_LOG"
+exit 0
+MOCKCODEX
+    chmod +x "$MOCK_BIN/codex"
+
+    run_sync
+    assert_success
+
+    [[ ! -f "$CLAUDE_LOG" ]] || ! grep -q "claude update" "$CLAUDE_LOG"
+    [[ ! -f "$CODEX_LOG" ]] || ! grep -q "codex update" "$CODEX_LOG"
+}
+
+@test "UPGRADE_MODE continues and exits 0 when one harness updater fails" {
+    write_test_yaml
+
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+    export CODEX_LOG="$TEST_HOME/codex.log"
+
+    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
+#!/bin/bash
+echo "claude \$*" >> "$CLAUDE_LOG"
+exit 1
+MOCKCLAUDE
+    chmod +x "$MOCK_BIN/claude"
+
+    cat > "$MOCK_BIN/codex" << MOCKCODEX
+#!/bin/bash
+echo "codex \$*" >> "$CODEX_LOG"
+exit 0
+MOCKCODEX
+    chmod +x "$MOCK_BIN/codex"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    assert_output_contains "claude update failed"
+    grep -q "codex update" "$CODEX_LOG"
+}

@@ -485,6 +485,30 @@ sync_gh_extensions() {
     log_success "gh extensions sync complete"
 }
 
+########## Harness self-updaters
+# CLIs installed by their own native installers (not covered by packages.yaml).
+# Only runs in UPGRADE_MODE.
+
+sync_harness_selfupdate() {
+    [[ "${UPGRADE_MODE:-false}" == "true" ]] || return 0
+
+    log_info "Upgrading AI harness CLIs..."
+
+    local harness
+    for harness in claude codex; do
+        if ! command -v "$harness" &>/dev/null; then
+            log_info "  $harness not found — skipping"
+            continue
+        fi
+        echo "  Updating $harness..."
+        if ! "$harness" update </dev/null; then
+            log_warning "$harness update failed — continuing"
+        fi
+    done
+
+    log_success "Harness CLI update complete"
+}
+
 ########## APT
 
 apt_check_pkg() {
@@ -610,6 +634,7 @@ sync_rustup_proxies
 sync_npm
 sync_uv
 sync_gh_extensions
+sync_harness_selfupdate
 
 if ((${#FAILED[@]})); then
     echo ""
