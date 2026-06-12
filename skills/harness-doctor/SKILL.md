@@ -2,21 +2,13 @@
 name: harness-doctor
 model: sonnet
 description: >
-  Diagnose and self-heal harness-config drift between what's live on this
-  machine (~/.claude, ~/.codex, ~/.config/opencode, ~/.cursor, ~/.copilot) and
-  what `ap` renders from the registries — the post-migration target state. Use
-  when the user says "harness doctor", "check my harness config", "is my
-  settings drifted", "audit the dotfiles config", "why is this hook firing
-  twice", "diagnose my agent config", or invokes /harness-doctor; also after an
-  `ap`/registry change to verify the live config converged. Grounds the wiki +
-  git history for intended state, diffs live vs `ap` render, classifies each
-  drift (stale remnant / dotfiles bug / expected local), self-heals safe
-  remnants via ap's renderers (ClaudeRenderer._clean_legacy_settings_hooks /
-  CodexRenderer._clean_legacy_config_toml_hooks) during ap install / dots sync,
-  opens deduped gh issues for confirmed dotfiles bugs, and writes new drift
-  patterns back to the wiki. Do
-  NOT use for general code review (/age), single-file permission cleanup
-  (/settings-clean), or app-level debugging.
+  Diagnose and self-heal harness-config drift between live files
+  (~/.claude, ~/.codex, opencode, Cursor, Copilot) and what `ap` renders from
+  the dotfiles registries. Use when the user says "harness doctor", "check my
+  harness config", "settings drifted", "why is this hook firing twice", or asks
+  to audit agent config. In Codex, invoke via `$harness-doctor` or `/skills`,
+  not `/harness-doctor`. Do NOT use for general code review (/age), single-file
+  permission cleanup (/settings-clean), or app-level debugging.
 ---
 
 # harness-doctor

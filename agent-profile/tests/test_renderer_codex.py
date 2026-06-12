@@ -246,9 +246,18 @@ def test_codex_hook_writes_hooks_json_and_script(renderer, src, target):
     assert os.access(copied, os.X_OK)
 
     records = json.loads(hooks_json.read_text())
-    assert records == [
-        {"event": "PreToolUse", "command": "bash .codex/hooks/h.sh", "matcher": "Bash"}
-    ]
+    assert records == {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {"type": "command", "command": "bash .codex/hooks/h.sh"}
+                    ],
+                }
+            ]
+        }
+    }
 
 
 def test_claude_only_hook_does_not_write_hooks_json(renderer, src, target):
@@ -287,8 +296,10 @@ def test_hook_timeout_is_emitted_as_number(renderer, src, target):
     )
     renderer.render(m, target)
     records = json.loads((target / ".codex" / "hooks.json").read_text())
-    assert records[0]["timeout"] == 5
-    assert "matcher" not in records[0]
+    handler = records["hooks"]["SessionStart"][0]["hooks"][0]
+    group = records["hooks"]["SessionStart"][0]
+    assert handler["timeout"] == 5
+    assert "matcher" not in group
 
 
 def test_hook_missing_script_file_raises(renderer, src, target):

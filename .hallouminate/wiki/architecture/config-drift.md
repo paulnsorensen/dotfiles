@@ -120,16 +120,42 @@ root-level key it expects.
 it correctly and skip re-writing. See [#262](https://github.com/paulnsorensen/dotfiles/issues/262)
 for the permanent fix (use tomlkit or sed-prepend instead of yq-append).
 
-## Known drift pattern: copilot MCPs not managed by `ap` renderer
+## Known drift pattern: copilot MCP template lags behind registry
 
 Copilot's `mcp-config.json` is managed by the **chezmoi template**
 (`chezmoi/private_dot_copilot/mcp-config.json.tmpl`), not by `ap install`.
 `_COPILOT_MCP_DEFAULT = ("claude", "codex")` in `renderers/copilot.py` means
 no registry MCP without an explicit `harnesses: [copilot]` entry is rendered
 into copilot. The template is the single source of truth for what MCPs copilot
-gets. When the registry adds a new MCP (e.g. `hallouminate`, `serena`), the
-chezmoi template must be manually updated to match. As of 2026-06-04, milknado
-(added in #274) is missing from the copilot template.
+gets. When a registry MCP's command/args changes, the template must be manually
+updated to match — the `ap` renderer won't touch copilot's merged files.
+
+### serena-mux → stdio serena (current gap)
+
+**Symptom**: Copilot's serena entry uses `serena-mux` with `SERENA_MUX_HARNESS`,
+but serena-mux was retired and the registry now uses direct stdio `serena`.
+
+**Root cause**: serena-mux was retired in commit 611f9e1 (Retire serena-mux,
+switch to stdio serena) — 472 orphaned daemons, 35.5GB RSS OOM at 6% reuse.
+The registry entry was updated to direct `serena` stdio with per-harness
+`--context` args, but `chezmoi/private_dot_copilot/mcp-config.json.tmpl:72-76`
+was never updated.
+
+**Detection**: Compare the serena entry in `~/.copilot/mcp-config.json` against
+the registry: the template still emits `serena-mux` when the registry has used
+direct `serena` since 611f9e1.
+
+**Fix**: Update the template to match the registry pattern. See
+[#293](https://github.com/paulnsorensen/dotfiles/issues/293).
+
+### Historical: milknado standalone MCP → Claude plugin
+
+milknado was added to the registry as a standalone MCP in #274, then refactored
+into a Claude-only plugin in 8b829c0 (drop standalone MCP, give milknado its
+own Claude plugin). The copilot template never had a milknado entry, so this
+was never a real gap — the wiki note "milknado is missing from the copilot
+template" was only relevant during the brief window between #274 and 8b829c0
+when it was a registry MCP.
 
 ## Known drift pattern: `harnesses: []` MCPs not pruned by reconcile
 

@@ -23,3 +23,33 @@ Not available. Codex has no `--strict-mcp-config` / `--setting-sources` equivale
 
 - **Env-scrub**: `zsh/core.zsh` exports `.env` into the interactive shell, so codex children inherit those credentials at runtime. The renderer therefore strips `.env` keys from `[mcp_servers.*.env]` to avoid duplicating secrets as plaintext on disk. Render-time per-harness vars (e.g. `SERENA_MUX_HARNESS`) stay baked. Override with `AP_CODEX_INHERIT_ENV=0`.
 - **Legacy hook migration**: the renderer one-time-removes legacy `[[hooks.<event>]]` blocks (written by the retired `agents/hooks/sync.sh`) so a managed hook doesn't fire twice — Codex merges `hooks.json` + `config.toml` hooks at load.
+
+## Skill discovery hypotheses and failure modes
+
+When Codex appears not to have a repo skill, distinguish four different cases before blaming `ap`:
+
+1. **Using slash-command syntax for a skill.** Codex does not create one slash command per skill. Official Codex docs list `/skills` as the skill picker and `$<skill-name>` as explicit skill mention; `/harness-doctor` is not a valid Codex skill invocation. Custom prompts can be slash-invoked as `/prompts:<name>`, but those are deprecated and are a separate mechanism from skills.
+
+2. **Installed but omitted from the initial prompt.** Codex's official skills docs say the initial in-context skill list is capped (roughly 2% of context, or 8,000 chars when unknown), and large installs may have skills omitted from that list. That cap only affects discovery/implicit routing; Codex can still read the full `SKILL.md` when a skill is selected. This explains a session where `harness-doctor` existed under `~/.agents/skills/harness-doctor/SKILL.md` and was listed by `npx --yes skills list --global`, but the session's advertised skill list did not mention it. Long frontmatter descriptions make this worse: `harness-doctor` had a 1,042-character description during the 2026-06-12 audit.
+
+3. **External source name is not the installed skill name.** `skills/_registry.yaml:22` declares `paulnsorensen/easy-cheese`, and `agent-profile/agent_profile/fetch.py:122-130` fetches it with `npx --yes skills add <source> --skill '*' --agent ... -g --copy -y`. The `skills` CLI installs each skill by its own `SKILL.md` `name` (for example `cheez-search`, `age`, `cook`), not by a `easy-cheese:<name>` namespace. So `$easy-cheese:cheez-search` is not the same thing as `$cheez-search`.
+
+4. **Stale source-qualified references can leak into rendered agent metadata.** `agents/registry.yaml` still used `easy-cheese:cheez-search`, `easy-cheese:cheez-read`, and `easy-cheese:cheez-write` in several agent `skills:` lists during the 2026-06-12 audit (`agents/registry.yaml:27`, `:63`, `:109`, `:216-217`, `:232-233`, `:250-251`, `:268-270`). The live install showed the actual Easy Cheese skills present as un-namespaced directories, but rendered Claude agent frontmatter still referenced `easy-cheese:...`. Treat that as a dotfiles bug, not a missing install; fix the registry references or make renderers normalize source-qualified names.
+
+Fast diagnosis checklist:
+
+```bash
+npx --yes skills list --global
+# Look for the skill's actual installed name and path.
+
+ls ~/.agents/skills/<name>/SKILL.md
+ls ~/.codex/skills/<name>/SKILL.md  # optional compatibility mirror, not Codex's only source
+
+python3 - <<'PY'
+import tomllib, pathlib
+print(tomllib.loads(pathlib.Path('~/.codex/config.toml').expanduser().read_text()).get('skills'))
+PY
+# If this prints None, no [[skills.config]] disables are present.
+```
+
+If a skill is on disk and not disabled, first suspect wrong invocation syntax, initial-list budget, or a naming mismatch. If it is absent from disk, inspect `skills/_registry.yaml`, `agent-profile/agent_profile/fetch.py`, and the last `dots sync` / `dots profile install global` output.

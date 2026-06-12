@@ -5,7 +5,8 @@ reads:
 
   - ``.codex/agents/<n>.toml``       — subagents (TOML)
   - ``.agents/skills/<n>/SKILL.md``  — skills (cross-harness shared dir)
-  - ``.codex/hooks.json``            — hooks (JSON array, written only when
+  - ``.codex/hooks.json``            — hooks (JSON object with a top-level
+                                       ``hooks`` map, written only when
                                        a hook is codex-harnessed)
   - ``.codex/config.toml``           — ``[mcp_servers]`` entries (merged
                                        into a user-authored file)
@@ -162,10 +163,11 @@ class CodexRenderer:
                 )
 
     # ─── hooks ──────────────────────────────────────────────────────────
-    # Codex reads .codex/hooks.json as a JSON array of hook records. The
-    # file is written only when at least one hook is codex-harnessed; the
-    # hook script is copied to .codex/hooks/<basename> so its command
-    # ("bash .codex/hooks/<basename>") resolves relative to the target.
+    # Codex reads .codex/hooks.json as a JSON object with a top-level
+    # "hooks" map: event -> matcher groups -> command handlers. The file is
+    # written only when at least one hook is codex-harnessed; the hook script
+    # is copied to .codex/hooks/<basename> so its command resolves relative to
+    # the target.
     def _write_hooks(
         self, manifest: Manifest, target: Path, out_files: list[str]
     ) -> None:
@@ -182,7 +184,7 @@ class CodexRenderer:
         self._clean_legacy_config_toml_hooks(codex_hooks, target)
 
         base_dir = Path(str(target).rstrip("/"))
-        records: list[dict] = []
+        hook_groups: dict[str, list[dict]] = {}
         for item in codex_hooks:
             event = item.get("event")
             matcher = item.get("matcher") or ""
@@ -216,17 +218,15 @@ class CodexRenderer:
                 item, base_dir / ".codex", base_dir, out_files
             )
 
-            record: dict = {"event": event, "command": f"bash {rel_script}"}
-            if matcher:
-                record["matcher"] = matcher
-            if timeout not in (None, ""):
-                record["timeout"] = int(timeout)
-            records.append(record)
+            group = _codex_hook_group(
+                command=f"bash {rel_script}", matcher=matcher, timeout=timeout
+            )
+            hook_groups.setdefault(str(event), []).append(group)
 
         rel = ".codex/hooks.json"
         abs_path = base_dir / rel
         abs_path.parent.mkdir(parents=True, exist_ok=True)
-        abs_path.write_text(json.dumps(records, indent=2) + "\n")
+        abs_path.write_text(json.dumps({"hooks": hook_groups}, indent=2) + "\n")
         shared.track_file(out_files, rel)
 
     # ─── MCPs ───────────────────────────────────────────────────────────
@@ -587,6 +587,19 @@ def _managed_mcp_servers(manifest: Manifest) -> set[str]:
                 out.add(parsed[0])
     return out
 
+
+
+def _codex_hook_group(
+    *, command: str, matcher: object, timeout: object
+) -> dict[str, object]:
+    handler: dict[str, object] = {"type": "command", "command": command}
+    if timeout not in (None, ""):
+        handler["timeout"] = int(timeout)
+
+    group: dict[str, object] = {"hooks": [handler]}
+    if matcher:
+        group["matcher"] = str(matcher)
+    return group
 
 def _managed_basenames_per_event(
     codex_hooks: list[dict],
