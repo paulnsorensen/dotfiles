@@ -28,14 +28,15 @@ LLM_CURL_TIMEOUT="${LLM_CURL_TIMEOUT:-5}"
 # llama-swap-served models share :9000. Probing a swap-pool model with a real
 # completion would force a cold swap, so those rows only check that llama-swap
 # lists the model. The hot local-haiku is always resident — its completion is
-# cheap and is the one end-to-end "the stack answers" check.
+# cheap and is the one end-to-end "the stack answers" check. local-embed is hot
+# too but serves /v1/embeddings, so it gets the registered probe.
 LLM_TIERS=(
     "llama-swap  9000 local-haiku      hard completion"
+    "llama-swap  9000 local-embed      hard registered"
     "llama-swap  9000 local-sonnet     opt  registered"
     "llama-swap  9000 local-coder      opt  registered"
     "llama-swap  9000 local-vision     opt  registered"
     "worker-npu  8000 local-classifier opt  completion"
-    "worker-opus 8090 local-opus       opt  completion"
 )
 
 # ─── decision functions (unit-testable) ────────────────────────────────────────
@@ -85,7 +86,7 @@ llm_completion_ok() {
 }
 
 # llm_served_model <model> — echo the model LiteLLM actually answered with
-# (differs from the request when a fallback fired, e.g. opus→sonnet).
+# (differs from the request when a fallback fired, e.g. classifier→haiku).
 llm_served_model() {
     local resp; resp=$(_llm_complete "$1") || return 1
     jq -r '.model // empty' <<<"$resp" 2>/dev/null
@@ -193,7 +194,7 @@ llm_health_report() {
                 [[ "$class" == "hard" ]] && hard_fail=1
             fi
         fi
-        # Flag fallback masking (e.g. local-opus actually served by local-sonnet).
+        # Flag fallback masking (e.g. local-classifier actually served by local-haiku).
         note=""
         [[ "$comp" == "ok" && "$served" != "$model" && "$served" != "?" ]] && note="  ${YELLOW}(fallback)${NC}"
         printf '%-17s %-12s %-5s %-11s %-8s %s' "$model" "$unit" "$port" "$comp" "$lat" "$served"

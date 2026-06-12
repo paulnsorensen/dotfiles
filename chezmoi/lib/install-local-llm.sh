@@ -44,8 +44,8 @@ install_local_llm_opencode_provider() {
             "local-sonnet":     { name: "Local Sonnet — Qwen3-30B-A3B (iGPU)" },
             "local-haiku":      { name: "Local Haiku — Qwen3-8B (CPU)" },
             "local-coder":      { name: "Local Coder — Qwen3-Coder-30B-A3B (iGPU)" },
-            "local-opus":       { name: "Local Opus — Llama-3.3-70B (iGPU)" },
-            "local-vision":     { name: "Local Vision — Qwen2.5-VL-7B (CPU)" },
+            "local-embed":      { name: "Local Embed — Qwen3-Embedding-0.6B (CPU)" },
+            "local-vision":     { name: "Local Vision — Qwen3-VL-8B (CPU)" },
             "local-classifier": { name: "Local Classifier — Llama-3.2-3B (NPU)" }
         }
     }')

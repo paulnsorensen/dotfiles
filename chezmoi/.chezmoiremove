@@ -7,4 +7,7 @@ stops/disables/masks them so a still-running stale copy can't restart. */ -}}
 .config/systemd/user/worker-cpu.service
 .config/systemd/user/worker-coder.service
 .config/systemd/user/worker-vision.service
+# Retired in #289: the manual 70B opus tier cannot work on this box (bandwidth
+# + RAM); opus-grade work routes to cloud models.
+.config/systemd/user/worker-opus.service
 {{ end }}

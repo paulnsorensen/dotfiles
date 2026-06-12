@@ -3,7 +3,7 @@
 
 # Stack toggles (llama-swap loads/unloads the model backends on demand)
 alias llm-up='systemctl --user start  local-llm.target'
-alias llm-down='systemctl --user stop  llama-swap litellm worker-npu worker-opus 2>/dev/null'
+alias llm-down='systemctl --user stop  llama-swap litellm worker-npu 2>/dev/null'
 alias llm-status='systemctl --user list-units "llama-swap*" "litellm*" "worker-*" "local-llm*" --all --no-pager'
 alias llm-logs='journalctl --user -u llama-swap -u litellm -f'
 
@@ -14,15 +14,11 @@ alias llm-unload='curl -s -X POST http://127.0.0.1:9000/api/models/unload'
 # Optional tiers — separate units outside llama-swap
 alias llm-npu-on='systemctl --user start worker-npu'
 alias llm-npu-off='systemctl --user stop  worker-npu'
-# The manual 70B competes with the swap pool for iGPU RAM until #289 retires it —
-# run llm-unload first if memory is tight.
-alias llm-opus-on='systemctl --user start worker-opus'
-alias llm-opus-off='systemctl --user stop  worker-opus'
 
 # Endpoints
 alias llm-models='curl -s http://127.0.0.1:4000/v1/models | jq'
 # shellcheck disable=SC2154  # p is the for-loop variable inside the alias body
-alias llm-ping='for p in 4000 9000 8000 8090; do printf "port %s: " $p; curl -s --max-time 1 http://127.0.0.1:$p/v1/models >/dev/null && echo UP || echo down; done'
+alias llm-ping='for p in 4000 9000 8000; do printf "port %s: " $p; curl -s --max-time 1 http://127.0.0.1:$p/v1/models >/dev/null && echo UP || echo down; done'
 
 # Health / verify — smoke-test the stack (units + ports + real completions).
 # `llm-test --opencode` also probes the wired opencode provider end-to-end.

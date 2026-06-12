@@ -36,7 +36,6 @@ local-llm/**
 .config/systemd/user/litellm.service
 .config/systemd/user/local-llm.target
 .config/systemd/user/llama-swap.service
-.config/systemd/user/worker-opus.service
 .config/systemd/user/worker-npu.service
 {{ end }}
 {{ if (get . "localLLM") }}

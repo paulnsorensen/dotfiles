@@ -79,7 +79,7 @@ teardown() {
 
 # ─── provider lib ───────────────────────────────────────────────────────────
 
-@test "provider lib adds local-llm with 6 models and preserves existing .mcp" {
+@test "provider lib adds local-llm with 6 models (embed in, opus out) and preserves existing .mcp" {
     local cfg="$TEST_HOME/opencode.json"
     echo '{"$schema":"x","formatter":true,"mcp":{"tilth":{"type":"local"}}}' > "$cfg"
 
@@ -88,6 +88,12 @@ teardown() {
 
     run jq -r '.provider["local-llm"].models | keys | length' "$cfg"
     assert_output_contains "6"
+
+    # #289: opus dropped (cloud-routes), embed added.
+    run jq -e '.provider["local-llm"].models | has("local-embed")' "$cfg"
+    assert_success
+    run jq -e '.provider["local-llm"].models | has("local-opus") | not' "$cfg"
+    assert_success
 
     run jq -r '.provider["local-llm"].options.baseURL' "$cfg"
     assert_output_contains "http://127.0.0.1:4000/v1"
@@ -211,17 +217,18 @@ teardown() {
     assert_success
 }
 
-@test "llama-swap.yaml: hot group pins local-haiku resident (swap/exclusive false, persistent true)" {
+@test "llama-swap.yaml: hot group pins haiku + embed resident (swap/exclusive false, persistent true)" {
     run yq -e '.groups.hot.swap == false' "$SWAP_YAML"
     assert_success
     run yq -e '.groups.hot.exclusive == false' "$SWAP_YAML"
     assert_success
     run yq -e '.groups.hot.persistent == true' "$SWAP_YAML"
     assert_success
-    # #288 ships local-haiku only; local-embed joins in #289 with its model download.
+    # #289 added local-embed alongside local-haiku (deferred from #288).
     run yq -r '.groups.hot.members | join(" ")' "$SWAP_YAML"
     assert_output_contains "local-haiku"
-    run yq -e '.groups.hot.members | length == 1' "$SWAP_YAML"
+    assert_output_contains "local-embed"
+    run yq -e '.groups.hot.members | length == 2' "$SWAP_YAML"
     assert_success
 }
 
@@ -259,6 +266,24 @@ teardown() {
     assert_success
 }
 
+@test "llama-swap.yaml: embed serves --embeddings mode, hot, never unloads (#289)" {
+    run yq -r '.models["local-embed"].cmd' "$SWAP_YAML"
+    assert_success
+    assert_output_contains '--embeddings'
+    assert_output_contains 'Qwen3-Embedding-0.6B-Q8_0.gguf'
+    run yq -e '.models["local-embed"].ttl == 0' "$SWAP_YAML"
+    assert_success
+}
+
+@test "llama-swap.yaml: vision upgraded to Qwen3-VL-8B with its mmproj (#289)" {
+    run yq -r '.models["local-vision"].cmd' "$SWAP_YAML"
+    assert_output_contains 'Qwen3VL-8B-Instruct-Q4_K_M.gguf'
+    assert_output_contains 'mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf'
+    # no leftovers from the retired Qwen2.5-VL generation
+    run grep -F 'Qwen2.5-VL' "$SWAP_YAML"
+    assert_failure
+}
+
 @test "llama-swap.service: #287 hardening pattern + single listen port" {
     assert_file_exists "$SWAP_SVC"
     grep -q 'StartLimitBurst=3' "$SWAP_SVC"
@@ -274,17 +299,19 @@ teardown() {
 
 @test "litellm.yaml: llama-swap-served models point at the single :9000 port" {
     local m
-    for m in local-sonnet local-haiku local-coder local-vision; do
+    for m in local-sonnet local-haiku local-coder local-vision local-embed; do
         run yq -r ".model_list[] | select(.model_name == \"$m\") | .litellm_params.api_base" "$LITELLM"
         assert_output_contains "http://127.0.0.1:9000/v1"
     done
 }
 
-@test "litellm.yaml: non-llama-swap tiers keep their own ports (npu :8000, opus :8090)" {
+@test "litellm.yaml: NPU classifier keeps its own port; opus tier is gone (#289)" {
     run yq -r '.model_list[] | select(.model_name == "local-classifier") | .litellm_params.api_base' "$LITELLM"
     assert_output_contains "http://127.0.0.1:8000/v1"
-    run yq -r '.model_list[] | select(.model_name == "local-opus") | .litellm_params.api_base' "$LITELLM"
-    assert_output_contains "http://127.0.0.1:8090/v1"
+    run yq -e '.model_list[] | select(.model_name == "local-opus")' "$LITELLM"
+    assert_failure
+    run grep -F ':8090' "$LITELLM"
+    assert_failure
 }
 
 @test "litellm.yaml: no api_base still points at a retired per-worker port" {
@@ -300,9 +327,11 @@ teardown() {
     done
 }
 
-@test "litellm.yaml: stale coder fallback dropped, classifier fallback kept" {
-    # coder→sonnet assumed manual mutual exclusion; llama-swap loads coder on demand.
+@test "litellm.yaml: stale fallbacks dropped (coder, opus), classifier fallback kept" {
+    # coder→sonnet assumed manual mutual exclusion; opus tier is gone entirely (#289).
     run yq -e '.router_settings.fallbacks[] | select(has("local-coder"))' "$LITELLM"
+    assert_failure
+    run yq -e '.router_settings.fallbacks[] | select(has("local-opus"))' "$LITELLM"
     assert_failure
     run yq -r '.router_settings.fallbacks[] | select(has("local-classifier")) | .["local-classifier"][0]' "$LITELLM"
     assert_output_contains "local-haiku"
@@ -310,13 +339,12 @@ teardown() {
 
 # ─── worker-unit retirement (#288) ─────────────────────────────────────────────
 
-@test "retired worker unit sources are gone; npu + opus + llama-swap remain" {
+@test "retired worker unit sources are gone (incl. opus, #289); npu + llama-swap remain" {
     local u
-    for u in worker-igpu worker-cpu worker-coder worker-vision; do
+    for u in worker-igpu worker-cpu worker-coder worker-vision worker-opus; do
         [[ ! -e "$UNITS_DIR/$u.service" ]]
     done
     assert_file_exists "$UNITS_DIR/worker-npu.service"
-    assert_file_exists "$UNITS_DIR/worker-opus.service"
     assert_file_exists "$UNITS_DIR/llama-swap.service"
 }
 
@@ -324,7 +352,7 @@ teardown() {
     local remove="$REAL_DOTFILES_DIR/chezmoi/.chezmoiremove"
     assert_file_exists "$remove"
     local u
-    for u in worker-igpu worker-cpu worker-coder worker-vision; do
+    for u in worker-igpu worker-cpu worker-coder worker-vision worker-opus; do
         grep -q ".config/systemd/user/$u.service" "$remove"
     done
 }
@@ -332,7 +360,7 @@ teardown() {
 @test ".chezmoiignore gates llama-swap.service and drops retired unit entries" {
     local ignore="$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
     grep -q '.config/systemd/user/llama-swap.service' "$ignore"
-    run grep -E 'worker-(igpu|cpu|coder|vision)' "$ignore"
+    run grep -E 'worker-(igpu|cpu|coder|vision|opus)' "$ignore"
     assert_failure
 }
 
@@ -343,27 +371,40 @@ teardown() {
     assert_failure
 }
 
-@test "worker-opus mutual exclusion targets llama-swap, not the retired units" {
-    grep -q 'Conflicts=llama-swap.service' "$UNITS_DIR/worker-opus.service"
-    run grep -E 'worker-(igpu|coder)' "$UNITS_DIR/worker-opus.service"
+@test "healthcheck drops the opus tier and registers embed (#289)" {
+    run grep -F 'local-opus' "$HEALTH"
     assert_failure
+    grep -q 'local-embed' "$HEALTH"
 }
 @test "run_onchange disables and masks the retired units so a stale copy can't restart" {
     local t="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-local-llm.sh.tmpl"
     grep -q 'mask' "$t"
     local u
-    for u in worker-igpu worker-cpu worker-coder worker-vision; do
+    for u in worker-igpu worker-cpu worker-coder worker-vision worker-opus; do
         grep -q "$u" "$t"
     done
 }
 
 @test "aliases.sh references no retired worker units and pings the llama-swap port" {
-    run grep -E 'worker-(igpu|cpu|coder|vision)' "$ALIASES"
+    run grep -E 'worker-(igpu|cpu|coder|vision|opus)' "$ALIASES"
     assert_failure
     grep -q '9000' "$ALIASES"
     # retired per-worker ports must not linger in llm-ping
-    run grep -E '8080|8081|8085|8082' "$ALIASES"
+    run grep -E '8080|8081|8085|8082|8090' "$ALIASES"
     assert_failure
+}
+
+@test "download-models.sh carries the #289 portfolio (no 70B, embed + Qwen3-VL confirmed)" {
+    local dl="$REAL_DOTFILES_DIR/chezmoi/local-llm/scripts/executable_download-models.sh"
+    run grep -F 'Llama-3.3-70B' "$dl"
+    assert_failure
+    run grep -F 'Qwen2.5-VL' "$dl"
+    assert_failure
+    grep -q 'Qwen/Qwen3-Embedding-0.6B-GGUF' "$dl"
+    grep -q 'Qwen3-Embedding-0.6B-Q8_0.gguf' "$dl"
+    grep -q 'Qwen/Qwen3-VL-8B-Instruct-GGUF' "$dl"
+    grep -q 'Qwen3VL-8B-Instruct-Q4_K_M.gguf' "$dl"
+    grep -q 'mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf' "$dl"
 }
 
 # ─── install-llama-swap.sh (pinned binary install) ─────────────────────────────

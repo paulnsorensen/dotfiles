@@ -34,12 +34,12 @@ echo "✓ opencode local-llm provider wired ($OPENCODE_CFG)"
 # enabling/starting the stack stays explicit (llm-up), since a flag-on machine
 # may not yet have the 85G models or the built llama.cpp/llama-swap binaries.
 if command -v systemctl &>/dev/null; then
-    # Retired in #288 (always-on workers → llama-swap). .chezmoiremove deletes
-    # the deployed unit files; stop/disable/mask here so a still-running stale
-    # copy can't linger or restart. The mask symlinks land at the same target
-    # paths, so the next apply's .chezmoiremove sweeps them too — by then the
-    # real unit files are long gone.
-    for unit in worker-igpu worker-cpu worker-coder worker-vision; do
+    # Retired in #288/#289 (always-on workers → llama-swap; opus → cloud).
+    # .chezmoiremove deletes the deployed unit files; stop/disable/mask here so
+    # a still-running stale copy can't linger or restart. The mask symlinks land
+    # at the same target paths, so the next apply's .chezmoiremove sweeps them
+    # too — by then the real unit files are long gone.
+    for unit in worker-igpu worker-cpu worker-coder worker-vision worker-opus; do
         systemctl --user stop "$unit" 2>/dev/null || true
         systemctl --user disable "$unit" 2>/dev/null || true
         systemctl --user mask "$unit" 2>/dev/null || true

@@ -24,6 +24,15 @@ models:
       --alias local-haiku
     ttl: 0                     # never unload (group swap:false also pins it)
 
+  local-embed:                # HOT — Qwen3-Embedding-0.6B on CPU (#289)
+    cmd: |
+      /usr/bin/taskset -c 4-11,16-23 ${llama} --port ${PORT}
+      --model ${models}/Qwen3-Embedding-0.6B-Q8_0.gguf
+      --embeddings --ctx-size 8192
+      --threads 4 --device none
+      --alias local-embed
+    ttl: 0                     # never unload (hot group)
+
   local-sonnet:               # SWAP — Qwen3-30B-A3B on iGPU (Vulkan)
     cmd: |
       ${llama} --port ${PORT}
@@ -45,11 +54,11 @@ models:
       --alias local-coder
     ttl: 900                   # coder sessions are bursty — keep it warm longer
 
-  local-vision:               # SWAP — Qwen2.5-VL-7B on CPU (#289 upgrades to Qwen3-VL-8B)
+  local-vision:               # SWAP — Qwen3-VL-8B on CPU (upgraded in #289)
     cmd: |
       /usr/bin/taskset -c 8-11,20-23 ${llama} --port ${PORT}
-      --model ${models}/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
-      --mmproj ${models}/mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
+      --model ${models}/Qwen3VL-8B-Instruct-Q4_K_M.gguf
+      --mmproj ${models}/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf
       --ctx-size 8192 --parallel 2 --cont-batching
       --batch-size 1024 --ubatch-size 256
       --threads 8 --device none
@@ -64,7 +73,7 @@ groups:
     swap: false
     exclusive: false
     persistent: true
-    members: ["local-haiku"]                  # + "local-embed" in #289
+    members: ["local-haiku", "local-embed"]
   pool:                       # one resident at a time
     swap: true
     exclusive: true

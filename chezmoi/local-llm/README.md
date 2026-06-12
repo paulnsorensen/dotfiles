@@ -8,12 +8,15 @@ unloads llama-server backends as requests arrive. All endpoints OpenAI-compatibl
 ```
   llama-swap (:9000) — routes by model name, swaps backends on demand:
     hot   local-haiku    Qwen3-8B Q4_K_M (CPU taskset, always resident)
+    hot   local-embed    Qwen3-Embedding-0.6B Q8_0 (CPU, always resident)
     pool  local-sonnet   Qwen3-30B-A3B-Instruct-2507 Q4_K_M (iGPU Vulkan) ┐
     pool  local-coder    Qwen3-Coder-30B-A3B-Instruct Q4 (iGPU)           ├ one at a time
-    pool  local-vision   Qwen2.5-VL-7B Q4 (CPU)                           ┘
+    pool  local-vision   Qwen3-VL-8B Q4_K_M (CPU)                         ┘
   worker-npu  (XDNA 2)  :8000  local-classifier  Llama 3.2 3B INT4 (FastFlowLM, optional)
-  worker-opus (iGPU)    :8090  local-opus        Llama 3.3 70B Q4 (manual; retired in #289)
                         :4000  LiteLLM proxy     unified front; fallbacks configured
+
+  No opus tier: dense-70B is bandwidth-capped to ~2 t/s on this box (#289) —
+  opus-grade work routes to cloud models.
 ```
 
 Swap-pool models unload after 10 min idle (`globalTTL: 600`; coder keeps a
@@ -31,15 +34,13 @@ echo 'source ~/local-llm/scripts/aliases.sh' >> ~/.zshrc
 
 # Stack auto-starts on login (linger enabled, default.target):
 llm-status                       # check what's up
-llm-ping                         # quick port probe (4000/9000/8000/8090)
+llm-ping                         # quick port probe (4000/9000/8000)
 llm-models                       # list models LiteLLM serves
 llm-loaded                       # which backends llama-swap has resident
 llm-unload                       # manually unload all swap-pool backends
 llm-chat local-sonnet "hello"    # one-shot chat (cold-loads sonnet if needed)
 
 # Optional tiers (separate units):
-llm-opus-on                      # manual 70B — llm-unload first if RAM is tight
-llm-opus-off
 bash ~/local-llm/scripts/install-npu.sh   # NPU needs sudo block first
 llm-npu-on
 ```
@@ -51,7 +52,7 @@ llm-npu-on
 | Idle (hot group + proxies) | ~8 GB | haiku + llama-swap + LiteLLM |
 | + one swapped 30B (sonnet/coder) | ~28 GB | unloads after TTL |
 | + NPU classifier | +2 GB | separate unit |
-| Opus mode (manual) | +45 GB | stop pool models first (`llm-unload`) |
+| + vision (Qwen3-VL-8B, CPU) | ~6 GB | swap pool |
 
 `llama-swap.service` carries `MemoryMax=30G` — hot group + one swapped model +
 headroom — with the same bounded-restart hardening as #287.
@@ -92,7 +93,7 @@ resp = client.chat.completions.create(
     # model="local-haiku",           # cheap/fast (always resident)
     # model="local-coder",           # code (swap pool, displaces sonnet)
     # model="local-classifier",      # tiny/NPU (falls back to haiku if NPU off)
-    # model="local-opus",            # manual 70B (falls back to sonnet)
+    # model="local-embed",           # embeddings (always resident, /v1/embeddings)
     # model="local-vision",          # VLM (swap pool)
     messages=[{"role": "user", "content": "..."}],
 )
@@ -117,27 +118,16 @@ the schema tokens. (Todoist is already disabled globally, so the overlay omits i
 
 ## Fallbacks (in `litellm.yaml`)
 
-- `local-opus` → `local-sonnet`
 - `local-classifier` → `local-haiku`
 - Pool models need no fallback — llama-swap cold-loads them on demand.
 
-## Adding the optional models
+## Models
 
-```bash
-# Opus — Llama 3.3 70B Q4_K_M (42.52 GB):
-hf download unsloth/Llama-3.3-70B-Instruct-GGUF \
-  Llama-3.3-70B-Instruct-Q4_K_M.gguf --local-dir ~/local-llm/models
-
-# Vision — Qwen2.5-VL-7B + mmproj (5.53 GB total, ggml-org = llama.cpp team's official repo):
-hf download ggml-org/Qwen2.5-VL-7B-Instruct-GGUF \
-  Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf --local-dir ~/local-llm/models
-hf download ggml-org/Qwen2.5-VL-7B-Instruct-GGUF \
-  mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf --local-dir ~/local-llm/models
-```
-
-llama-swap registers every configured model regardless of file presence; a
-missing GGUF only fails when that model is first requested. `worker-opus` /
-`worker-npu` still gate on `ConditionPathExists=`.
+All portfolio weights come from `llm-download` (`scripts/download-models.sh`);
+the embed + vision repo IDs are confirmed against huggingface.co (official
+Qwen GGUF repos). llama-swap registers every configured model regardless of
+file presence; a missing GGUF only fails when that model is first requested.
+`worker-npu` still gates on `ConditionPathExists=`.
 
 ## Tuning notes
 

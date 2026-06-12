@@ -37,15 +37,14 @@ model_list:
       timeout: 300
       stream_timeout: 300
 
-  # Opus-tier — Llama 3.3 70B on iGPU (manual unit outside llama-swap; retired in #289)
-  - model_name: local-opus
+  # Embeddings — Qwen3-Embedding-0.6B on CPU (hot group: always resident)
+  - model_name: local-embed
     litellm_params:
-      model: openai/local-opus
-      api_base: http://127.0.0.1:8090/v1
+      model: openai/local-embed
+      api_base: http://127.0.0.1:9000/v1
       api_key: none
-      timeout: 600
 
-  # Vision — Qwen2.5-VL-7B on CPU (swap pool)
+  # Vision — Qwen3-VL-8B on CPU (swap pool)
   - model_name: local-vision
     litellm_params:
       model: openai/local-vision
@@ -60,8 +59,6 @@ router_settings:
   num_retries: 1
   timeout: 120
   fallbacks:
-    # If the manual 70B isn't running, fall back to Sonnet (llama-swap auto-loads it)
-    - local-opus: ["local-sonnet"]
     # If the NPU classifier isn't installed, fall back to Haiku
     - local-classifier: ["local-haiku"]
     # Coder + vision need no fallback — llama-swap cold-loads them on demand
