@@ -92,3 +92,18 @@ Default is the inline digest — `artifact:` is omitted when the digest is compl
 ### Coder fan-out
 
 Default to one coder. Coding is a poor multi-agent fit — it needs shared context, burns far more tokens, and adds coordination overhead — so a coder fan-out only pays off for genuinely independent work. Dispatch multiple `coder` subagents only when the subtasks are file-disjoint and independent (no shared mutable state, no sequential dependency), the same disjointness test `/cheese-factory` applies to curds. Otherwise run a single coder: re-deriving shared context across split coders costs more than the parallelism saves.
+
+### Fresh-context taste-test (after `coder` returns)
+
+The `coder` self-checks the taste-test lenses inline, but the writing context can't reliably see its own drift and a dispatched `coder` can't fan out (`disallowedTools: [Agent]`) to its own reviewer. So the **authoritative** taste-test is yours, run after the coder digest returns and before you accept the handoff.
+
+**Cost gate.** Run it only when the coder's diff **touches more than one file OR adds public surface** (a new exported function, type, or CLI seam); single-file no-public-surface fixes keep the coder's inline check. A coder-nested `/cook` that cleared the gate records `taste_test: deferred-to-orchestrator` in its slug — your signal to run the pass.
+
+**How.** Dispatch the read-only `reviewer` phase-agent over the coder's diff, **named with no call-site model** — its def pins `model: opus` (Codex `gpt-5`), so it runs at ≥ the writer's tier, never the coder's `sonnet`. Not `model: inherit` (tracks your tier, not the reviewer's pin); not a hardcoded call-site model. Scope the dispatch *prompt* to the lenses below — the same agent `/age` drives, but this is a fast pre-handoff gate, not a full ten-dimension review. Pass `{spec/contract, diff, cut-test list, locked decisions}`; it returns `pass | revise` per lens (`halt` for Locked-decision):
+
+- **Drift / readability / scope / simplify** — the standard cook lenses.
+- **Production path** — every spec acceptance criterion has a *production* path that exercises it, not only tests that manufacture the state.
+- **Wired callers** — each new public function has a non-test caller, or the diff carries an explicit "wired in phase X" note.
+- **Locked decision** — the diff implements any locked/user-approved decision the prompt carried, else the reviewer returns `halt`.
+
+Pipe each `revise` into a bounded corrective `coder` pass (spec + digest + taste evidence), two-round cap; a Locked-decision `halt` stops for a human decision, not a corrective pass. Accept the coder's handoff only on a clean pass.
