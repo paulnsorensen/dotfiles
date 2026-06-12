@@ -89,12 +89,12 @@ block_sha() {
     done
 }
 
-@test "phase-agent skill references use easy-cheese and stay scoped" {
+@test "phase-agent skill references use installed (un-namespaced) names and stay scoped" {
     local registry="$AGENTS_DIR/registry.yaml"
 
     run yq '.agents.explorer.skills | join(" ")' "$registry"
     assert_success
-    [[ "$output" == "easy-cheese:cheez-search easy-cheese:cheez-read" ]] || { echo "explorer skills drifted: $output" >&2; return 1; }
+    [[ "$output" == "cheez-search cheez-read" ]] || { echo "explorer skills drifted: $output" >&2; return 1; }
 
     for agent in researcher reviewer coder; do
         run yq ".agents.${agent}.skills | join(\" \")" "$registry"

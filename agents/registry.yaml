@@ -24,7 +24,7 @@ agents:
     effort: high
     skills:
     - scout
-    - easy-cheese:cheez-search
+    - cheez-search
     body_path: agents/agent_definitions/fromage-age-arch.md
   fromage-age-history:
     description: Git history analyst. Produces per-file risk scores that the orchestrator uses to adjust sibling findings. Does NOT find bugs or architecture issues — only outputs score modifiers.
@@ -60,7 +60,7 @@ agents:
     skills:
     - gh
     - scout
-    - easy-cheese:cheez-write
+    - cheez-write
     - commit
     body_path: agents/agent_definitions/fromage-fort.md
   fromage-secaudit:
@@ -106,7 +106,7 @@ agents:
     - WebFetch
     - AskUserQuestion
     skills:
-    - easy-cheese:cheez-search
+    - cheez-search
     body_path: agents/agent_definitions/nih-scanner.md
   ricotta-reducer:
     description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with severity-tier scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
@@ -213,8 +213,8 @@ agents:
     - Agent
     color: cyan
     skills:
-    - easy-cheese:cheez-search
-    - easy-cheese:cheez-read
+    - cheez-search
+    - cheez-read
     body_path: agents/agent_definitions/explorer.md
   researcher:
     description: External-research agent. Answers questions outside the codebase — library/API docs, current web facts, version/changelog checks, best-practice comparisons, GitHub examples — via Context7, Tavily, web fetch, and gh, then writes a durable cited research slug under .cheese/research/. Read-only against code. Returns a condensed claim-level digest (the heavy fetch bodies stay on disk, out of the parent's context). Models the easy-cheese research phase. Use PROACTIVELY before implementing against an unfamiliar library or API, when a claim needs a current source instead of a guess, or whenever a skill (/mold, /cook, /briesearch, or any user-installed skill) would otherwise rely on stale training data.
@@ -229,8 +229,8 @@ agents:
     color: blue
     skills:
     - briesearch
-    - easy-cheese:cheez-search
-    - easy-cheese:cheez-read
+    - cheez-search
+    - cheez-read
     body_path: agents/agent_definitions/researcher.md
   reviewer:
     description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path across the ten /age dimensions (correctness, security, encapsulation, spec, complexity, deslop, assertions, NIH, efficiency, telemetry) and returns a severity-grouped findings report. Read-only — never writes fixes; at the top level it draws on the specialist agents (fromage-*, ghostbuster, ricotta-reducer, nih-scanner) for evidence. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
@@ -247,8 +247,8 @@ agents:
     effort: high
     skills:
     - age
-    - easy-cheese:cheez-search
-    - easy-cheese:cheez-read
+    - cheez-search
+    - cheez-read
     body_path: agents/agent_definitions/reviewer.md
   coder:
     # Keeps the write surface (Edit/Write) — it mutates the tree — but denies
@@ -265,9 +265,9 @@ agents:
     - cook
     - press
     - cure
-    - easy-cheese:cheez-write
-    - easy-cheese:cheez-read
-    - easy-cheese:cheez-search
+    - cheez-write
+    - cheez-read
+    - cheez-search
     - de-slop
     - tdd-assertions
     - commit
