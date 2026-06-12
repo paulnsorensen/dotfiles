@@ -10,12 +10,11 @@
 #   - the built llama.cpp + lemonade binaries under ~/local-llm/bin/
 #   - the LiteLLM install at ~/.local/bin/litellm
 #
-# Repo IDs: opus + vision are confirmed from the stack README. The three Qwen3
-# repos below are NOT recorded anywhere on the source machine; they follow the
-# same unsloth naming convention as the confirmed opus repo
-# (unsloth/<Model>-GGUF + <Model>-Q4_K_M.gguf) but are UNVERIFIED — confirm on
-# huggingface.co before a fresh-machine download. `hf download` fails loud if a
-# repo/file is wrong, so a bad guess cannot silently produce a broken stack.
+# Repo IDs: entries marked `confirmed` were verified on huggingface.co
+# (API tree listing) on 2026-06-12. The remaining unsloth Qwen3 repos follow
+# unsloth's naming convention but are UNVERIFIED — confirm on huggingface.co
+# before a fresh-machine download. `hf download` fails loud if a repo/file is
+# wrong, so a bad guess cannot silently produce a broken stack.
 
 set -euo pipefail
 
@@ -26,9 +25,9 @@ MODELS=(
     "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF  Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf  unverified"  # sonnet
     "unsloth/Qwen3-8B-GGUF                      Qwen3-8B-Q4_K_M.gguf                     unverified"  # haiku
     "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF  Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf unverified"  # coder
-    "unsloth/Llama-3.3-70B-Instruct-GGUF        Llama-3.3-70B-Instruct-Q4_K_M.gguf       confirmed"   # opus
-    "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF       Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf       confirmed"   # vision
-    "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF       mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf  confirmed"   # vision mmproj
+    "Qwen/Qwen3-Embedding-0.6B-GGUF             Qwen3-Embedding-0.6B-Q8_0.gguf           confirmed"   # embed (hot)
+    "Qwen/Qwen3-VL-8B-Instruct-GGUF             Qwen3VL-8B-Instruct-Q4_K_M.gguf          confirmed"   # vision
+    "Qwen/Qwen3-VL-8B-Instruct-GGUF             mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf     confirmed"   # vision mmproj
 )
 
 main() {

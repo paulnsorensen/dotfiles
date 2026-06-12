@@ -584,7 +584,7 @@ TOML
     assert_success
     # With localLLM absent (→ falsy), the stack tree + units must be ignored.
     assert_output_contains "local-llm/**"
-    assert_output_contains ".config/systemd/user/worker-igpu.service"
+    assert_output_contains ".config/systemd/user/llama-swap.service"
 }
 
 @test "skills-install/ directory is gone from the repo" {
