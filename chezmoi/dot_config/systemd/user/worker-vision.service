@@ -2,6 +2,9 @@
 Description=Vision worker (Qwen2.5-VL-7B on CPU, separate Zen 5c pin)
 ConditionPathExists=%h/local-llm/models/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
 ConditionPathExists=%h/local-llm/models/mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
+# Bound the restart loop: at most 3 starts per 120s, then give up (must exceed RestartSec × StartLimitBurst = 90s)
+StartLimitBurst=3
+StartLimitIntervalSec=120
 
 [Service]
 Type=simple
@@ -20,7 +23,11 @@ ExecStart=/usr/bin/taskset -c 8-11,20-23 %h/local-llm/bin/llama.cpp/llama-server
   --alias local-vision \
   --log-file %h/local-llm/logs/worker-vision.log
 Restart=on-failure
-RestartSec=5
+RestartSec=30
+# Contain runaway memory in this cgroup instead of triggering a global OOM kill
+MemoryMax=8G
+# Make this worker the kernel OOM killer's first victim, sparing system services
+OOMScoreAdjust=1000
 Nice=15
 
 # Not enabled by default — start manually: systemctl --user start worker-vision

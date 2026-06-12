@@ -3,6 +3,9 @@ Description=Coder-tier worker (Qwen3-Coder-30B-A3B-Instruct on iGPU — displace
 # Mutual exclusion with the other iGPU tiers (single iGPU slot — Sonnet + Opus)
 Conflicts=worker-igpu.service worker-opus.service
 ConditionPathExists=%h/local-llm/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+# Bound the restart loop: at most 3 starts per 120s, then give up (must exceed RestartSec × StartLimitBurst = 90s)
+StartLimitBurst=3
+StartLimitIntervalSec=120
 
 [Service]
 Type=simple
@@ -21,7 +24,11 @@ ExecStart=%h/local-llm/bin/llama.cpp/llama-server \
   --alias local-coder \
   --log-file %h/local-llm/logs/worker-coder.log
 Restart=on-failure
-RestartSec=5
+RestartSec=30
+# Contain runaway memory in this cgroup instead of triggering a global OOM kill
+MemoryMax=22G
+# Make this worker the kernel OOM killer's first victim, sparing system services
+OOMScoreAdjust=1000
 Nice=5
 
 # Not enabled by default — start manually: systemctl --user start worker-coder
