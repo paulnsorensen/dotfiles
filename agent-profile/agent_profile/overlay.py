@@ -218,8 +218,16 @@ def _codex_toml_value(value: object) -> str:
     when it doesn't parse (config_override.rs). A JSON-encoded string and a
     JSON-encoded list of strings are valid TOML scalars/arrays, so
     :func:`json.dumps` produces the correct ``"npx"`` / ``["-y","x"]`` forms
-    in one call."""
-    return json.dumps(value)
+    in one call.
+
+    ``ensure_ascii=False`` is required, not cosmetic: with the default,
+    :func:`json.dumps` emits a non-BMP character (e.g. an emoji in a system
+    prompt) as a UTF-16 surrogate-pair backslash-u escape, which TOML
+    rejects -- a unicode escape must be a single Unicode scalar value, and a
+    surrogate code point is not. Emitting the literal UTF-8 character keeps a
+    TOML basic string parseable, so arbitrary system-prompt content
+    round-trips."""
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _codex_mcp_overrides(manifest: Manifest) -> list[str]:

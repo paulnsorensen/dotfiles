@@ -806,6 +806,35 @@ def test_codex_system_prompt_injected_as_instructions(tmp_path, monkeypatch):
     assert "be a good codex" in instr[0]
 
 
+def test_codex_instructions_roundtrip_through_toml_parser(tmp_path, monkeypatch):
+    """The -c instructions=<content> value must survive codex's TOML parse and
+    decode back to the byte-identical CLAUDE.md. The cooked claim ("arbitrary
+    markdown round-trips") is the contract: a real system prompt carries
+    TOML-special chars (`=`, `[ ]`, quotes, backslashes, `#`) AND non-ASCII —
+    the user's own CLAUDE.md is full of 🧀. tomllib stands in for codex's Rust
+    `toml` crate; both implement TOML 1.0, where a `\\u` escape must be a single
+    Unicode scalar value, so a surrogate-pair escape (json.dumps' default for
+    non-BMP chars) is rejected at parse time."""
+    import tomllib
+
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    content = (
+        "# Heading = not a comment\n"
+        'Use key = "value" and [section] headers.\n'
+        "Path C:\\Users\\x, regex \\d+, em dash — café ✓, cheese 🧀 lord.\n"
+        'A """triple""" quoted block and an it\'s apostrophe.\n'
+    )
+    m = _claude_manifest(tmp_path, system_prompt="CLAUDE.md")
+    (tmp_path / "CLAUDE.md").write_text(content)
+    flags, _ = overlay.build_isolated_launch(m, tmp_path, "codex")
+    overrides = [flags[i + 1] for i, f in enumerate(flags) if f == "-c"]
+    instr = [o for o in overrides if o.startswith("instructions=")]
+    assert len(instr) == 1
+    rhs = instr[0][len("instructions=") :]
+    parsed = tomllib.loads(f"instructions={rhs}")
+    assert parsed["instructions"] == content, "codex -c instructions did not round-trip"
+
+
 def test_codex_no_system_prompt_omits_instructions(tmp_path, monkeypatch):
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
     m = _claude_manifest(tmp_path)  # no system_prompt
@@ -1041,6 +1070,31 @@ def test_opencode_launch_injects_config_env(env, monkeypatch):
     assert cli.os.environ.get("OPENCODE_CONFIG_CONTENT")
     config = json.loads(cli.os.environ["OPENCODE_CONFIG_CONTENT"])
     assert "todoist" in config["mcp"]
+
+
+def test_opencode_launch_profile_wins_name_collision(env, monkeypatch):
+    """Full launch path: when a profile MCP name collides with an inherited
+    registry server, the profile's enabled record wins end-to-end (not just in
+    the _opencode_mcp_block unit). Drive `launch opencode todo` with a registry
+    that declares todoist (the profile's own server) AND hallouminate
+    (inherited-only); the injected OPENCODE_CONFIG_CONTENT must keep todoist
+    enabled with the profile command and pin hallouminate enabled:false."""
+    write_isolated_todo(env.profiles)
+    dots = env.tmp / "empty-dots"  # the env fixture's DOTFILES_DIR
+    (dots / "agents" / "mcp").mkdir(parents=True)
+    (dots / "agents" / "mcp" / "registry.yaml").write_text(
+        "mcps:\n"
+        "  todoist:\n    command: should-be-overridden\n"  # collides with profile
+        "  hallouminate:\n    command: hallouminate\n    args: [serve]\n"
+    )
+    rec = _capture_exec(monkeypatch)
+    with pytest.raises(SystemExit):
+        cli.main(["launch", "opencode", "todo", "--target", str(env.target)])
+    assert rec["file"] == "opencode"
+    mcp = json.loads(cli.os.environ["OPENCODE_CONFIG_CONTENT"])["mcp"]
+    assert mcp["todoist"]["enabled"] is True, "profile server lost to inherited disable"
+    assert mcp["todoist"]["command"] == ["npx", "-y", "@doist/todoist-ai"]
+    assert mcp["hallouminate"] == {"enabled": False}
 
 
 # ─── migrated-profile fidelity on non-claude harnesses ────────────────
