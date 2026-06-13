@@ -355,6 +355,15 @@ path_without_buildtools() {
     [[ "$tap_line" -lt "$install_line" ]]
 }
 
+@test "sync trusts declared taps to satisfy Homebrew tap-trust gate" {
+    write_test_yaml
+    run_sync
+    assert_success
+
+    # Each declared tap must be trusted so fresh formula installs aren't refused.
+    grep -q "brew trust test/tap-repo" "$BREW_LOG"
+}
+
 @test "sync skips dev packages when DOTFILES_DEV is not set" {
     write_test_yaml
     unset DOTFILES_DEV

@@ -268,8 +268,14 @@ sync_brew() {
                 if ! brew tap "$tap" </dev/null; then
                     log_error "Failed to tap $tap"
                     FAILED+=("tap:$tap")
+                    continue
                 fi
             fi
+            # Homebrew's recent tap-trust gate refuses to load formulae from
+            # untrusted third-party taps, so a fresh install from one fails. Trust
+            # each present tap idempotently. `trust` is a newer subcommand; `|| true`
+            # keeps older Homebrew (no `trust` command) from breaking sync.
+            brew trust "$tap" </dev/null >/dev/null 2>&1 || true
         done <<< "$taps"
     fi
 
