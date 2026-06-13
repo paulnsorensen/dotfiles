@@ -4,5 +4,6 @@
     "code-review-graph": { "enabled": false },
     "hallouminate": { "enabled": false },
     "tavily": { "enabled": false }
-  }
+  },
+  "model": "local-llm/local-coder"
 }
