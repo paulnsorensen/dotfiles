@@ -64,8 +64,8 @@ from agent_profile.env import load_dotenv, resolve_env_value, resolve_item_env
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import mcp_server_entry
 from agent_profile.renderers.opencode import (
-    _OPENCODE_MCP_DEFAULT,
-    _mcp_server_record,
+    OPENCODE_MCP_DEFAULT,
+    mcp_server_record,
 )
 
 
@@ -271,7 +271,10 @@ def _codex_mcp_tables(manifest: Manifest) -> str:
         name = _codex_toml_key(mcp["name"])
         lines.append(f"[mcp_servers.{name}]")
         if mcp.get("url") or mcp.get("type") in ("http", "sse"):
-            lines.append(f"url = {_codex_toml_value(mcp['url'])}")
+            url = mcp.get("url")
+            if not url:
+                raise IsolationError(f"http MCP '{name}' missing url")
+            lines.append(f"url = {_codex_toml_value(url)}")
             lines.append(
                 f"type = {_codex_toml_value(mcp.get('type') or 'http')}"
             )
@@ -433,10 +436,20 @@ def _inherited_opencode_mcps() -> list[str]:
     )
     registry = repo_root / "agents" / "mcp" / "registry.yaml"
     if not registry.is_file():
+        print(
+            f"ap: could not read opencode registry {registry} (file not found);"
+            " inherited global MCPs may not be sealed",
+            file=sys.stderr,
+        )
         return []
     try:
         data = yaml.safe_load(registry.read_text()) or {}
-    except yaml.YAMLError:
+    except yaml.YAMLError as exc:
+        print(
+            f"ap: could not read opencode registry {registry} ({exc});"
+            " inherited global MCPs may not be sealed",
+            file=sys.stderr,
+        )
         return []
     mcps = data.get("mcps")
     if not isinstance(mcps, dict):
@@ -444,7 +457,7 @@ def _inherited_opencode_mcps() -> list[str]:
     names: list[str] = []
     for name, entry in mcps.items():
         item = entry if isinstance(entry, dict) else {}
-        if includes_harness(item, "opencode", _OPENCODE_MCP_DEFAULT):
+        if includes_harness(item, "opencode", OPENCODE_MCP_DEFAULT):
             names.append(name)
     return names
 
@@ -463,7 +476,7 @@ def _opencode_mcp_block(manifest: Manifest) -> dict:
         if name not in own:
             block[name] = {"enabled": False}
     for mcp in manifest.mcps:
-        block[mcp["name"]] = _mcp_server_record(mcp)
+        block[mcp["name"]] = mcp_server_record(mcp)
     return block
 
 

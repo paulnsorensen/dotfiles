@@ -1036,6 +1036,19 @@ def test_codex_http_mcp_carries_headers(tmp_path, monkeypatch):
     }
 
 
+def test_codex_http_mcp_missing_url_raises_isolation_error(tmp_path, monkeypatch):
+    """A type:http MCP with no url raises IsolationError, not KeyError."""
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    m = Manifest(
+        name="p",
+        isolated=True,
+        mcps=[{"name": "broken", "type": "http",
+               "_source_dir": str(tmp_path)}],
+    )
+    with pytest.raises(overlay.IsolationError, match="http MCP 'broken' missing url"):
+        overlay.build_isolated_launch(m, tmp_path, "codex")
+
+
 def test_codex_launch_does_not_hard_fail(env, monkeypatch):
     """`dots profile launch codex <iso>` builds + execs bare interactive codex
     (no exec-only flags), with CODEX_HOME injected into the process env."""
@@ -1100,6 +1113,29 @@ def test_opencode_disables_inherited_registry_servers(tmp_path, monkeypatch):
     assert mcp["serena"] == {"enabled": False}
     assert "todoist" not in mcp  # harnesses: [] -> not an opencode-inherited server
     assert mcp["tilth"]["enabled"] is True  # profile's own record wins
+
+
+def test_opencode_missing_registry_warns_on_stderr(tmp_path, monkeypatch, capsys):
+    """When the opencode registry is absent, a warning fires on stderr."""
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))  # no registry.yaml here
+    m = _claude_manifest(tmp_path)
+    overlay.build_isolated_launch(m, tmp_path, "opencode")
+    err = capsys.readouterr().err
+    assert "could not read opencode registry" in err
+    assert "inherited global MCPs may not be sealed" in err
+
+
+def test_opencode_unparseable_registry_warns_on_stderr(tmp_path, monkeypatch, capsys):
+    """When the opencode registry contains invalid YAML, a warning fires on stderr."""
+    dots = tmp_path / "dots"
+    (dots / "agents" / "mcp").mkdir(parents=True)
+    (dots / "agents" / "mcp" / "registry.yaml").write_text(": {bad: [yaml\n")
+    monkeypatch.setenv("DOTFILES_DIR", str(dots))
+    m = _claude_manifest(tmp_path)
+    overlay.build_isolated_launch(m, tmp_path, "opencode")
+    err = capsys.readouterr().err
+    assert "could not read opencode registry" in err
+    assert "inherited global MCPs may not be sealed" in err
 
 
 def test_opencode_system_prompt_additive_instructions(tmp_path, monkeypatch):

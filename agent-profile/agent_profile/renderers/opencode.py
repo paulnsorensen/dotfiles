@@ -33,6 +33,7 @@ from agent_profile.shared import agent_is_read_only, strip_frontmatter, track_fi
 
 # opencode's MCP membership default (matches the bash select default).
 _OPENCODE_MCP_DEFAULT = ("claude", "codex", "opencode")
+OPENCODE_MCP_DEFAULT = _OPENCODE_MCP_DEFAULT
 
 _SCHEMA_STUB = {"$schema": "https://opencode.ai/config.json"}
 
@@ -87,6 +88,9 @@ def _mcp_server_record(mcp: dict[str, Any]) -> dict[str, Any]:
             k: _to_opencode_env(str(v)) for k, v in mcp["env"].items()
         }
     return record
+
+
+mcp_server_record = _mcp_server_record
 
 
 class OpencodeRenderer:
