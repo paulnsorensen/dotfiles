@@ -47,6 +47,25 @@ Aliases from `scripts/aliases.sh`. These require a one-time manual `echo 'source
 - `llm-install-swap` (= `install-llama-swap.sh`) — pinned llama-swap release install, version-stamp idempotent.
 - `dots doctor` runs `healthcheck.sh --quiet` automatically when the stack is deployed (presence-gated on `~/local-llm/scripts/healthcheck.sh`).
 
+## Using the stack from opencode
+
+opencode reaches the stack through the `local-llm` provider (`Local (LiteLLM)`, `http://127.0.0.1:4000/v1`, key `sk-local`), jq-merged into `~/.config/opencode/opencode.json` by `chezmoi/lib/install-local-llm.sh` (see [[harnesses/opencode]]). All registered model names appear in opencode's picker as `local-llm/<name>`.
+
+**Launch shortcut — `opencode-lean`** (from `scripts/aliases.sh`):
+
+```bash
+opencode-lean --model local-llm/local-coder
+```
+
+It's a one-line wrapper — `OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"`. The `lean.json` overlay `mergeDeep`s onto the global config and **only disables the heavy MCP servers** (`code-review-graph`, `hallouminate`, `tavily`), leaving `tilth` + `serena` + `context7` — so the local coder's small context window isn't blown by tool schemas before the first turn. There's no separate "lean" agent or model set; the overlay is purely the MCP trim.
+
+Operational notes (each is also an open improvement issue):
+
+- The overlay sets **no default model** — you must pass `--model local-llm/<name>` (opencode's flag is `provider/model`). Bare `opencode-lean` falls back to your global *cloud* default, silently. → #297
+- `opencode-lean` does **not** start the stack — run `llm-up` first (or `llm-ping`); otherwise opencode launches and hard-fails on the first request to a dead `:4000`. → #298
+- Pool models (`local-sonnet`/`local-coder`/`local-vision`) **cold-load on first request** (~15–20s while llama-swap swaps the backend in, held open, no 503). `local-haiku` + `local-embed` are hot and answer instantly. opencode's own request timeout vs. the cold-load window is unverified. → #299
+- `local-embed` shows in the picker but is **embeddings-only** — selecting it as a chat model errors. → #300
+
 ## Adding / tuning a model
 
 Add a `models:` entry (with `--port ${PORT}`) + group membership in `chezmoi/local-llm/configs/llama-swap.yaml` → add the route to `litellm.yaml` (api_base `:9000/v1`) → add the model name to the provider block in `chezmoi/lib/install-local-llm.sh` → add the GGUF to `download-models.sh` → `chezmoi apply` → `systemctl --user restart llama-swap litellm` → `llm-test`. Tests in `tests/local-llm.bats` pin the config shape (group semantics, ports, retirement guards) — update them with the change.
