@@ -184,3 +184,4 @@ def test_render_writes_nothing_for_hooks_without_pretooluse(tmp_path: Path):
 
     assert tracked == []
     assert not (target / ".config" / "crush" / "crush.json").exists()
+    assert not (target / ".config" / "crush" / "hooks").exists()

@@ -145,7 +145,6 @@ class CrushRenderer:
         )
 
         hooks_dir = base / _CRUSH_HOOKS_DIR_REL
-        hooks_dir.mkdir(parents=True, exist_ok=True)
 
         for hook in crush_hooks:
             if hook.get("event") != "PreToolUse":
@@ -166,6 +165,7 @@ class CrushRenderer:
 
             basename = Path(script).name
             dest = hooks_dir / basename
+            hooks_dir.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dest)
             dest.chmod(0o755)
             track_file(wrote, f"{_CRUSH_HOOKS_DIR_REL}/{basename}")
