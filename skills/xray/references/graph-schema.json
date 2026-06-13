@@ -130,6 +130,49 @@
             "minimum": 0,
             "default": 0,
             "description": "Number of modules this node depends on (outgoing import edges). Only computed for type:module nodes."
+          },
+          "threads": {
+            "type": ["object", "null"],
+            "default": null,
+            "description": "Steel-thread pipeline output captured for this node — written when the user runs `thread <symbol>` or when blast-radius evidence is needed for a yellow/red verdict",
+            "additionalProperties": false,
+            "properties": {
+              "directCallers": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "qualified_name or name<file:line> of each direct caller"
+              },
+              "flows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["name", "criticality", "chain"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string" },
+                    "criticality": { "type": "string" },
+                    "chain": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Ordered entry → ... → leaf symbol path"
+                    }
+                  }
+                }
+              },
+              "blastRadius": {
+                "type": "object",
+                "required": ["depth", "functions", "files"],
+                "additionalProperties": false,
+                "properties": {
+                  "depth": { "type": "integer", "minimum": 1 },
+                  "functions": { "type": "integer", "minimum": 0 },
+                  "files": { "type": "integer", "minimum": 0 }
+                }
+              },
+              "hub": { "type": "boolean" },
+              "bridge": { "type": "boolean" },
+              "capturedAt": { "type": "string", "format": "date-time" }
+            }
           }
         }
       }

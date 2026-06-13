@@ -10,7 +10,7 @@ description: >
   "check this code against the spec", "what does this module actually do", or
   invokes /xray.
 argument-hint: <module path, spec path, PR number, or concept>
-allowed-tools: Read, Write, Glob, Grep, Bash(sg:*), Bash(git diff:*), Bash(git log:*), Bash(gh:*), Agent
+allowed-tools: Read, Write, Glob, Grep, Bash(sg:*), Bash(git diff:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(gh:*), Agent, mcp__tilth__tilth_search, mcp__tilth__tilth_read, mcp__tilth__tilth_files, mcp__tilth__tilth_deps, mcp__code-review-graph__list_graph_stats_tool, mcp__code-review-graph__build_or_update_graph_tool, mcp__code-review-graph__embed_graph_tool, mcp__code-review-graph__semantic_search_nodes_tool, mcp__code-review-graph__query_graph_tool, mcp__code-review-graph__get_impact_radius_tool, mcp__code-review-graph__get_affected_flows_tool, mcp__code-review-graph__get_hub_nodes_tool, mcp__code-review-graph__get_bridge_nodes_tool, mcp__code-review-graph__traverse_graph_tool
 ---
 
 # /xray — Interactive Design Verification
@@ -19,6 +19,45 @@ Systematic outside-in verification of code modules via dependency graph traversa
 Leaves first, confidence bubbles up, evidence backs every verdict.
 
 **Target**: $ARGUMENTS
+
+## Preflight: Build the index and embeddings
+
+Before any analysis, make sure the two semantic backends are ready.
+
+### 1. code-review-graph (structural + semantic)
+
+Used for impact radius, affected flows, hub/bridge analysis, and semantic
+node search.
+
+1. `mcp__code-review-graph__list_graph_stats_tool` — check the graph exists
+   and compare `last_update` against `git rev-parse HEAD`.
+2. If missing, stale, or the user has uncommitted edits to the target:
+   `mcp__code-review-graph__build_or_update_graph_tool` (incremental by
+   default). Pass `base=HEAD` so the diff window matches what's on disk.
+3. If stats do not report embeddings as fresh:
+   `mcp__code-review-graph__embed_graph_tool` — build / refresh embeddings
+   so `semantic_search_nodes_tool` returns useful results.
+
+If the MCP is unreachable, surface the error and stop. Do NOT fall back to
+grep — the graph is the whole point of the session.
+
+### 2. tilth (AST-aware code search)
+
+The `mcp__tilth__*` tools are the default for name-shaped or text-shaped
+lookups inside this skill — they outline definitions, callers, and usages
+in one call. No separate index build is needed; tilth lazily parses on
+first use.
+
+Use tilth instead of `Grep` / `Glob` / `Read` whenever you need to:
+
+- Find where a symbol is defined or called → `tilth_search(query, kind="symbol"|"callers")`.
+- Pull a file (or a slice) with smart outlining → `tilth_read(paths=[...])`.
+- Glob files by pattern → `tilth_files(patterns=[...])`.
+
+For cross-repo or semantic-meaning queries ("the auth middleware", "the
+thing that validates orders"), prefer
+`mcp__code-review-graph__semantic_search_nodes_tool` — it searches the
+embeddings index, not literal text.
 
 ## Session Setup
 
@@ -29,7 +68,10 @@ Determine the target type from $ARGUMENTS:
 - **Module path** (e.g. `domains/orders/`, `bin/`): analyze this directory
 - **Spec path** (e.g. `.claude/specs/xray.md`): find the module it describes, analyze that
 - **PR number** (e.g. `#42`): get changed files via `gh pr diff`, analyze those modules
-- **Concept** (e.g. "auth flow"): use Grep/Glob to locate the relevant module(s)
+- **Symbol** (e.g. `validateOrder`, `auth.middleware.requireUser`): resolve via
+  `semantic_search_nodes_tool`, then trace its steel threads (see below)
+- **Concept** (e.g. "auth flow"): try `semantic_search_nodes_tool` first; fall
+  back to `tilth_search(kind="any")` only if the embeddings index returns nothing
 
 Derive a slug from the target: `domains/orders/` → `domains-orders`, `bin/` → `bin`.
 
@@ -286,6 +328,7 @@ Present the proposed traffic light and wait for user input:
   [drill <symbol>]         Expand to function-level detail
   [drill <symbol> depth=N] N levels of outgoing call hierarchy
   [drill <symbol> callers] Incoming call hierarchy
+  [thread <symbol>]        Trace steel threads for a symbol (see Steel Threads)
   [map]                    Show full Mermaid graph with current traffic lights
   [map <node>]             Ego-centric view: node ± 1 level
   [up]                     Bubble to parent node
@@ -335,8 +378,168 @@ These commands work at any point in the session:
 | `tree` | Redisplay layered role dashboard with current traffic lights |
 | `map` | Regenerate full Mermaid graph with current traffic lights |
 | `map <node>` | Ego-centric view: node ± 1 level of dependencies |
+| `thread <symbol>` | Trace steel threads for a symbol (see Steel Threads) |
 | `notes` | Show all accumulated notes across nodes |
 | `status` | Show progress: N verified, M remaining, K stale |
+
+## Steel Threads
+
+A **steel thread** is an end-to-end execution flow: entry point → call chain →
+leaf. When the user asks "what depends on this", "blast radius of changing X",
+"what flows pass through this", or runs `thread <symbol>` inside the DFS loop,
+run this pipeline. Borrowed from the `/thread` skill but adapted to write
+findings into the xray session graph.
+
+### When to invoke automatically
+
+- The user runs `thread <symbol>` at the verdict prompt.
+- A node is about to be marked **red** or **yellow** because of architectural
+  concerns — trace its threads first so the verdict carries blast-radius
+  evidence.
+- A hub node (`role: "hub"` with `fanIn > 5`) is up for analysis — its
+  threads are the reason it's a hub.
+
+### Pipeline
+
+Run in order. Stop early if the user only wants a quick answer; the full
+pipeline is for review-grade output.
+
+#### 1. Resolve the target
+
+`mcp__code-review-graph__semantic_search_nodes_tool(query=<symbol>, limit=5)`
+
+Pick the highest-ranked node whose `name` or `qualified_name` matches. If
+several plausible matches exist, list them and ask the user to disambiguate
+— guessing wastes the rest of the pipeline.
+
+If the target is a file path, skip the search and pass it as
+`changed_files=[path]` to the impact/flow tools below.
+
+#### 2. First-hop dependents (parallel)
+
+- `query_graph_tool(pattern="callers_of", target=<qualified_name>)`
+- `query_graph_tool(pattern="importers_of", target=<qualified_name>)`
+- `query_graph_tool(pattern="tests_for", target=<qualified_name>)`
+
+These three answer "who touches this directly" and "is it tested." Cheap
+and precise — run them in a single batched turn.
+
+#### 3. Blast radius
+
+`get_impact_radius_tool(changed_files=[file_of_target], max_depth=2)`
+
+Multi-hop closure of dependents. Bump `max_depth=3` only if depth 2 returns
+fewer than a handful of nodes — cost grows fast.
+
+#### 4. Steel threads (the answer)
+
+`get_affected_flows_tool(changed_files=[file_of_target])`
+
+Returns the execution flows (entry → call chain) that pass through the
+symbol's file. Each flow is one steel thread. Rank by `criticality` when
+presenting.
+
+#### 5. Architectural weight (optional)
+
+Only when the symbol looks load-bearing or the impact set is large:
+
+- `get_hub_nodes_tool` — is this a hub? Blast radius is larger than the
+  raw call graph suggests.
+- `get_bridge_nodes_tool` — is it a chokepoint between communities?
+  Breaking it splits the graph.
+
+Skip both for obviously leaf-shaped symbols.
+
+#### 6. Fallback for fuzzy targets
+
+If step 1 finds nothing and the user gave a description ("the thing that
+validates orders") rather than a name:
+
+`traverse_graph_tool(query=<input>, mode="bfs", depth=3, token_budget=2000)`
+
+BFS from the best-matching node within a token budget — returns whatever's
+nearby.
+
+### Output
+
+Drop sections that came back empty:
+
+```
+Target: <qualified_name>  (<file>:<line>, <kind>)
+
+Direct callers (N):
+  <name>  <file>:<line>
+  ...
+
+Importers (N):
+  <file>
+  ...
+
+Tests covering target (N):
+  <test_name>  <file>:<line>
+  ...
+
+Steel threads (M flows, ranked by criticality):
+  [<criticality>] <flow_name>  (<entry_kind>)
+    <entry> → ... → <target> → ... → <leaf>
+  ...
+
+Blast radius (depth 2): N functions, M files
+  Hottest impacted nodes:
+    <name>  <file>  (degree: D)
+    ...
+
+Architectural notes:
+  - <hub/bridge findings, only if surfaced>
+```
+
+Keep each section to ~5 rows; the user can ask for more.
+
+### Persist into the session
+
+After the steel-thread pipeline runs, append a `threads` block to the
+current node in the graph JSON:
+
+```json
+"threads": {
+  "directCallers": [...],
+  "flows": [{"name": ..., "criticality": ..., "chain": [...]}],
+  "blastRadius": {"depth": 2, "functions": N, "files": M},
+  "hub": true|false,
+  "bridge": true|false,
+  "capturedAt": "<timestamp>"
+}
+```
+
+This lets later nodes inherit blast-radius context without re-running the
+pipeline.
+
+### Decision rules
+
+- One target per `thread` invocation. If the user names two symbols, ask
+  which to trace first.
+- Always include the file path next to symbol names — bare names are
+  useless in repos with collisions.
+- If step 4 returns zero flows, say so explicitly — the symbol isn't on a
+  precomputed execution path (pure helper, dead code, or framework-magic
+  dispatch the graph couldn't follow). Suggest the user check dead-code
+  detection if appropriate.
+- If the impact set is huge (>50 functions at depth 2), flag it as a
+  warning before dumping — the user probably wants to narrow the change.
+
+### Steel-thread gotchas
+
+- If the user edits the target mid-pipeline, re-run
+  `build_or_update_graph_tool` + `embed_graph_tool` before continuing.
+- Flow detection skips dynamic dispatch (decorators, registries, plugin
+  loaders). Symbols invoked only via framework magic will have empty
+  `affected_flows` even when they're on a real execution path.
+- `query_graph_tool` patterns expect a `qualified_name`; a bare `name`
+  works but is ambiguous in repos with shadowed identifiers.
+- `get_affected_flows_tool` keys off `changed_files`, not symbol names —
+  changing a single function in a busy file surfaces every flow through
+  that file. Call this out in the output so the user doesn't over-trust
+  the list.
 
 ## Traffic Light System
 
@@ -472,7 +675,8 @@ When the user says `done` or all nodes are verified:
 ## Gotchas
 
 - Dependency graph building fails on repos without standard import patterns — fall back to manual node selection
-- LSP `callHierarchy` is not available for all languages — use grep-based fallback
+- LSP `callHierarchy` is not available for all languages — use `tilth_search(kind="callers")` as the fallback before reaching for grep
 - `.context/xrays/` directory requires write access — create it if missing
 - Mermaid graphs break above ~50 nodes — split into subgraphs for large modules
 - Sub-agent spawning (xray-scout, xray-analyst, xray-verifier) adds latency — budget 30s per node
+- If the user edits files mid-session, re-run `build_or_update_graph_tool` + `embed_graph_tool` before the next semantic query
