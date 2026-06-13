@@ -2,7 +2,7 @@
 # Serena MCP smoke test — boots the real stdio server and asserts it:
 #   1. starts without a traceback,
 #   2. auto-detects a project from cwd,
-#   3. applies our chezmoi-managed excluded_tools (7 memory/onboarding tools),
+#   3. applies our chezmoi-managed excluded_tools (8 memory/onboarding tools),
 #   4. exposes the LSP edit/read toolset (find_symbol, replace_symbol_body).
 #
 # Run before pushing changes to the serena registry entry
@@ -35,9 +35,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The registry launches serena via the serena-mux wrapper (command: serena-mux
-# in agents/mcp/registry.yaml); this boots the same daemon argv serena-mux
-# spawns under the hood, validating that bare serena + our config comes up.
+# The registry launches serena over stdio (command: serena in agents/mcp/registry.yaml);
+# this boots the same daemon argv, validating that bare serena + our config comes up.
 serena start-mcp-server \
     --context=claude-code \
     --project-from-cwd \
@@ -80,9 +79,9 @@ assert() { # <extended-regex> <description>
 echo "serena smoke test:"
 assert "Starting Serena server"                  "boots without crashing"
 assert "Auto-detected project root:"             "auto-detects project from cwd"
-# Count 7 proves OUR excluded_tools is live — serena ships excluded_tools: [].
-assert "excluded 7 tools:.*write_memory"         "applies managed excluded_tools (memory)"
-assert "excluded 7 tools:.*onboarding"           "  ↳ onboarding excluded too"
+# Count 8 proves OUR excluded_tools is live — serena ships excluded_tools: [].
+assert "excluded 8 tools:.*write_memory"         "applies managed excluded_tools (memory)"
+assert "excluded 8 tools:.*onboarding"           "  ↳ onboarding excluded too"
 assert "Exposed tools:.*find_symbol"             "exposes find_symbol"
 assert "Exposed tools:.*replace_symbol_body"     "exposes replace_symbol_body"
 

@@ -1,0 +1,25 @@
+# Hallouminate repo-layer config for this dotfiles repo.
+#
+# The daemon discovers this file by walking up from the working directory to the
+# repo root, so it applies whenever an agent runs inside this repo — no daemon
+# restart needed. Schema mirrors the XDG baseline at
+# ~/.config/hallouminate/config.toml.
+#
+# Tracked in git (see .gitignore — .hallouminate/ is ignored EXCEPT this file
+# and the wiki/ tree) so the wiki setup travels with the repo: a fresh clone
+# gets the repo:dotfiles:wiki corpus with no manual setup. The rest of
+# .hallouminate/ (LanceDB caches, etc.) stays local scratch.
+
+# Repository wiki — the canonical cross-session knowledge base for this repo.
+# Derives the `repo:dotfiles:wiki` corpus rooted at <repo>/.hallouminate/wiki/.
+[[repository]]
+name = "dotfiles"
+path = "."
+
+# Local .cheese/ artifacts (specs, research, pipeline reports). Only
+# .cheese/specs/ is git-tracked; the rest is local scratch but worth indexing.
+[[corpus]]
+name = "dotfiles-cheese"
+paths = [".cheese"]
+globs = ["**/*.md"]
+exclude = ["**/.git/**", "**/raw/**"]

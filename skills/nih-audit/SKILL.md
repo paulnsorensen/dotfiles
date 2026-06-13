@@ -6,20 +6,13 @@ context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
 allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Agent, mcp__serena__*
 description: >
-  Scan a codebase for custom code that duplicates what open-source libraries
-  already do, then recommend which libraries to adopt. Detects hand-rolled
-  utility functions, custom retry logic, manual validation, DIY date handling,
-  home-grown argument parsers, and other reinvented wheels. Cross-checks against
-  installed dependencies and open specs. Returns scored migration recommendations
-  with effort estimates. Use this skill when the user mentions reinventing the
-  wheel, asks if there's a library for something they built, wants a build vs buy
-  audit, says "what are we maintaining that we shouldn't be", asks about library
-  alternatives for custom code, wonders if their utils/ folder has redundant
-  implementations, or wants to find dependency opportunities. Also use when the
-  user asks to compare their custom implementation against existing packages, or
-  says things like "should we just use lodash for this" or "is there a crate
-  that does what our helper does". Do NOT use for code quality review (/age) or
-  dead code removal (/simplify).
+  Scan for custom code that duplicates well-supported libraries, then recommend
+  migrations with effort estimates. Detects hand-rolled utilities, retry logic,
+  validation, date handling, and DIY parsers. Use when the user mentions
+  reinventing the wheel, asks "is there a library/crate for this", wants a build
+  vs buy audit, says "what are we maintaining that we shouldn't be", or "should
+  we just use lodash for this". Do NOT use for code-quality review (/age) or
+  dead-code removal (/simplify or /ghostbuster).
 ---
 
 # /nih-audit — Not Invented Here Audit

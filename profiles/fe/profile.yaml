@@ -3,11 +3,17 @@
 # plus shadcn (profile-local). Re-enables claude.ai connectors for Figma.
 name: fe
 description: Frontend + shadcn/Figma/Playwright
+# Cheese sub-agents are available in this closed world too
+# (agents are orthogonal to the MCP/skill scope below).
+registries:
+  agents: agents/registry.yaml
 isolated: true
 system_prompt: CLAUDE.md
-# Auto-approve the Figma connector (ccp settings-merge parity).
+# Auto-approve the Figma connector (ccp settings-merge parity) and shadcn
+# (profile-local MCP — see `mcps` below; the canonical list grants it nowhere).
 permissions_allow:
   - "mcp__claude_ai_Figma__*"
+  - "mcp__shadcn__*"
 # Per-profile plugin set (ccp settings-merge parity).
 enabled_plugins:
   "claude-md-management@claude-plugins-official": true

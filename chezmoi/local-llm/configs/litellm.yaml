@@ -1,0 +1,69 @@
+# LiteLLM proxy config — unified OpenAI-compatible front for the local stack
+# Endpoint: http://127.0.0.1:4000/v1
+# llama-swap (:9000) serves the hot + swap-pool models, cold-loading the
+# requested backend on demand and holding the request open while it loads
+# (healthCheckTimeout 360 in llama-swap.yaml — no 503 mid-swap).
+
+model_list:
+  # Sonnet-tier — Qwen3-30B-A3B MoE on iGPU (swap pool)
+  - model_name: local-sonnet
+    litellm_params:
+      model: openai/local-sonnet
+      api_base: http://127.0.0.1:9000/v1
+      api_key: none
+      timeout: 300         # cold swap: NVMe model load before first token
+      stream_timeout: 300
+
+  # Haiku-tier — Qwen3-8B dense on CPU (hot group: always resident)
+  - model_name: local-haiku
+    litellm_params:
+      model: openai/local-haiku
+      api_base: http://127.0.0.1:9000/v1
+      api_key: none
+
+  # NPU classifier — Llama 3.2 3B via Lemonade/FastFlowLM (requires install-npu.sh first)
+  - model_name: local-classifier
+    litellm_params:
+      model: openai/local-classifier
+      api_base: http://127.0.0.1:8000/v1
+      api_key: none
+
+  # Coder-tier — Qwen3-Coder-30B-A3B-Instruct on iGPU (swap pool)
+  - model_name: local-coder
+    litellm_params:
+      model: openai/local-coder
+      api_base: http://127.0.0.1:9000/v1
+      api_key: none
+      timeout: 300
+      stream_timeout: 300
+
+  # Embeddings — Qwen3-Embedding-0.6B on CPU (hot group: always resident)
+  - model_name: local-embed
+    litellm_params:
+      model: openai/local-embed
+      api_base: http://127.0.0.1:9000/v1
+      api_key: none
+
+  # Vision — Qwen3-VL-8B on CPU (swap pool)
+  - model_name: local-vision
+    litellm_params:
+      model: openai/local-vision
+      api_base: http://127.0.0.1:9000/v1
+      api_key: none
+      timeout: 300
+      stream_timeout: 300
+
+router_settings:
+  # One retry lets a request that raced a swap transition succeed on the second
+  # attempt; llama-swap itself holds requests open while a backend loads.
+  num_retries: 1
+  timeout: 120
+  fallbacks:
+    # If the NPU classifier isn't installed, fall back to Haiku
+    - local-classifier: ["local-haiku"]
+    # Coder + vision need no fallback — llama-swap cold-loads them on demand
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  json_logs: false

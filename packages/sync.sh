@@ -63,26 +63,24 @@ fi
 # Entry format: bare string OR single-key map (key = name, value = overrides)
 # Map queries use: to_entries[0] | .key = name, .value.* = properties
 
-# Platform package names (brew on mac, apt on linux)
+# Brew formula names for this platform, skipping the other platform's entries.
 # Usage: get_platform_pkgs [--dev]
 get_platform_pkgs() {
     local want_dev="${1:-}"
-    local skip_platform name_expr
+    local skip_platform
     if [[ "$PLATFORM" == "Darwin" ]]; then
         skip_platform="linux"
-        name_expr=".key"
     else
         skip_platform="mac"
-        name_expr="(.value.apt // .key)"
     fi
 
     if [[ -z "$want_dev" ]]; then
         {
             yq -r ".packages[] | select(kind == \"scalar\")" "$PACKAGES_FILE" 2>/dev/null
-            yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select((.value.source // \"brew\") == \"brew\" and (.value.dev // false) == false and (.value.platform == \"$skip_platform\" | not)) | $name_expr" "$PACKAGES_FILE" 2>/dev/null
+            yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select((.value.source // \"brew\") == \"brew\" and (.value.dev // false) == false and (.value.platform == \"$skip_platform\" | not)) | .key" "$PACKAGES_FILE" 2>/dev/null
         }
     else
-        yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select((.value.source // \"brew\") == \"brew\" and .value.dev == true and (.value.platform == \"$skip_platform\" | not)) | $name_expr" "$PACKAGES_FILE" 2>/dev/null
+        yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select((.value.source // \"brew\") == \"brew\" and .value.dev == true and (.value.platform == \"$skip_platform\" | not)) | .key" "$PACKAGES_FILE" 2>/dev/null
     fi
 }
 
@@ -99,6 +97,13 @@ get_source_pkgs() {
 
 ########## Brew
 
+# Cask names flagged `greedy: false` — excluded from the greedy upgrade pass
+# because they self-update in-app and their cask reinstall triggers repeated
+# sudo/admin prompts (e.g. docker-desktop).
+get_no_greedy_casks() {
+    yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"cask\" and .value.greedy == false) | .key" "$PACKAGES_FILE" 2>/dev/null
+}
+
 # Install brew packages from a list, skipping already-installed ones
 # Usage: brew_install_pkgs <label> <pkg_list> <installed_list> [--cask]
 brew_install_pkgs() {
@@ -108,7 +113,10 @@ brew_install_pkgs() {
     echo -e "\n${GREEN}${label}:${NC}"
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
-        if echo "$installed" | grep -qx "$pkg"; then
+        # Tap-qualified keys (user/tap/formula) install under their short
+        # name — `brew list` prints `moshi-hook`, not `rjyo/moshi/moshi-hook` —
+        # so compare by the path tail.
+        if echo "$installed" | grep -qx "${pkg##*/}"; then
             echo "  + $pkg"
         else
             echo "  Installing $pkg..."
@@ -121,10 +129,125 @@ brew_install_pkgs() {
     done <<< "$pkg_list"
 }
 
+# Greedy-upgrade auto_updates casks, skipping any flagged `greedy: false`.
+# With no exclusions, defer to the cheap one-shot `brew upgrade --cask
+# --greedy-auto-updates`. Otherwise enumerate the greedy-outdated set and
+# upgrade only the casks not on the exclude list.
+upgrade_casks_greedy() {
+    local excluded
+    excluded=$(get_no_greedy_casks)
+
+    if [[ -z "$excluded" ]]; then
+        brew upgrade --cask --greedy-auto-updates </dev/null || log_warning "brew cask upgrade failed"
+        return 0
+    fi
+
+    local outdated to_upgrade=()
+    if ! outdated=$(brew outdated --cask --greedy-auto-updates --quiet 2>/dev/null); then
+        log_warning "brew outdated --cask failed; skipping greedy cask upgrade"
+        return 0
+    fi
+    while IFS= read -r cask; do
+        [[ -z "$cask" ]] && continue
+        if grep -qxF "$cask" <<< "$excluded"; then
+            echo "  + $cask (self-updates; excluded from greedy upgrade)"
+            continue
+        fi
+        to_upgrade+=("$cask")
+    done <<< "$outdated"
+
+    if ((${#to_upgrade[@]})); then
+        brew upgrade --cask "${to_upgrade[@]}" </dev/null || log_warning "brew cask upgrade failed"
+    fi
+}
+
+# Homebrew on Linux builds/bottles formulae with a system C toolchain plus a
+# few utilities; its installer assumes they're present and fails midway
+# without them. Install them up front so the sudo password prompt lands at the
+# very start of the sync instead of buried inside the brew bootstrap. No-op on
+# macOS and when the toolchain is already present (so no sudo prompt then).
+# shellcheck disable=SC2086  # $sudo_cmd is intentionally unquoted (empty = run as root)
+bootstrap_brew_deps_linux() {
+    [[ "$PLATFORM" == "Linux" ]] || return 0
+    if command -v gcc &>/dev/null && command -v make &>/dev/null \
+        && command -v git &>/dev/null && command -v curl &>/dev/null \
+        && command -v file &>/dev/null; then
+        return 0
+    fi
+
+    local sudo_cmd=""
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        if command -v sudo &>/dev/null; then
+            sudo_cmd="sudo"
+        else
+            log_warning "Homebrew build deps are missing, but not root and sudo is unavailable."
+            log_warning "Install them manually: https://docs.brew.sh/Homebrew-on-Linux#requirements"
+            return 0
+        fi
+    fi
+
+    log_info "Installing Homebrew build dependencies (you may be prompted for your password)..."
+    local ok=true
+    if command -v apt-get &>/dev/null; then
+        $sudo_cmd apt-get update && $sudo_cmd apt-get install -y build-essential procps curl file git || ok=false
+    elif command -v dnf &>/dev/null; then
+        $sudo_cmd dnf install -y @development-tools procps-ng curl file git || ok=false
+    elif command -v yum &>/dev/null; then
+        $sudo_cmd yum groupinstall -y 'Development Tools' && $sudo_cmd yum install -y procps-ng curl file git || ok=false
+    elif command -v pacman &>/dev/null; then
+        $sudo_cmd pacman -Sy --needed --noconfirm base-devel procps-ng curl file git || ok=false
+    elif command -v zypper &>/dev/null; then
+        $sudo_cmd zypper install -y -t pattern devel_basis && $sudo_cmd zypper install -y procps curl file git || ok=false
+    else
+        log_warning "No supported package manager (apt/dnf/yum/pacman/zypper) found."
+        log_warning "Install Homebrew's prerequisites manually: https://docs.brew.sh/Homebrew-on-Linux#requirements"
+        return 0
+    fi
+
+    if ! $ok; then
+        log_error "Failed to install Homebrew build dependencies"
+        FAILED+=("brew-deps")
+    fi
+}
+
+# Source an already-installed linuxbrew into PATH. Linux installs to
+# /home/linuxbrew/.linuxbrew (or ~/.linuxbrew) and isn't on PATH until
+# `brew shellenv` runs; macOS lands in /opt/homebrew, already on PATH via
+# zsh/core.zsh. Best-effort: a missing brew is not a failure here (the
+# installer path handles that), so this always returns 0.
+linuxbrew_shellenv() {
+    [[ "$PLATFORM" == "Linux" ]] || return 0
+    local brew_bin
+    for brew_bin in /home/linuxbrew/.linuxbrew/bin/brew "$HOME/.linuxbrew/bin/brew"; do
+        if [[ -x "$brew_bin" ]]; then
+            eval "$("$brew_bin" shellenv)"
+            return 0
+        fi
+    done
+    return 0
+}
+
 sync_brew() {
+    # Install the OS build toolchain first so any sudo prompt is up front.
+    bootstrap_brew_deps_linux
+
+    # Pick up an already-installed-but-unsourced linuxbrew *before* deciding to
+    # bootstrap, so a present brew doesn't trigger a redundant installer run.
+    if ! command -v brew &>/dev/null; then
+        linuxbrew_shellenv
+    fi
+
     if ! command -v brew &>/dev/null; then
         log_info "Installing Homebrew..."
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        # Freshly installed linuxbrew still isn't on PATH — source it now.
+        linuxbrew_shellenv
+    fi
+
+    if ! command -v brew &>/dev/null; then
+        log_error "Homebrew install failed — brew not on PATH"
+        FAILED+=("homebrew")
+        return 0
     fi
 
     log_info "Syncing brew packages"
@@ -145,8 +268,14 @@ sync_brew() {
                 if ! brew tap "$tap" </dev/null; then
                     log_error "Failed to tap $tap"
                     FAILED+=("tap:$tap")
+                    continue
                 fi
             fi
+            # Homebrew's recent tap-trust gate refuses to load formulae from
+            # untrusted third-party taps, so a fresh install from one fails. Trust
+            # each present tap idempotently. `trust` is a newer subcommand; `|| true`
+            # keeps older Homebrew (no `trust` command) from breaking sync.
+            brew trust "$tap" </dev/null >/dev/null 2>&1 || true
         done <<< "$taps"
     fi
 
@@ -154,12 +283,17 @@ sync_brew() {
     installed_formulae=$(brew list --formulae 2>/dev/null || true)
     installed_casks=$(brew list --cask 2>/dev/null || true)
 
+    # Casks are macOS-only — `brew install --cask` errors on Linux.
     brew_install_pkgs "Formulae" "$(get_platform_pkgs)" "$installed_formulae"
-    brew_install_pkgs "Casks" "$(get_source_pkgs "cask")" "$installed_casks" --cask
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        brew_install_pkgs "Casks" "$(get_source_pkgs "cask")" "$installed_casks" --cask
+    fi
 
     if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
         brew_install_pkgs "Dev formulae" "$(get_platform_pkgs "--dev")" "$installed_formulae"
-        brew_install_pkgs "Dev casks" "$(get_source_pkgs "cask" "--dev")" "$installed_casks" --cask
+        if [[ "$PLATFORM" == "Darwin" ]]; then
+            brew_install_pkgs "Dev casks" "$(get_source_pkgs "cask" "--dev")" "$installed_casks" --cask
+        fi
     fi
 
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
@@ -170,7 +304,12 @@ sync_brew() {
         # `brew upgrade`; --greedy-auto-updates version-checks them and reinstalls
         # only on a diff. Excludes `version :latest` casks (no version to compare,
         # would reinstall every run).
-        brew upgrade --cask --greedy-auto-updates </dev/null || log_warning "brew cask upgrade failed"
+        #
+        # Casks flagged `greedy: false` (e.g. docker-desktop) are excluded from
+        # the greedy pass: they self-update in-app and their cask reinstall
+        # prompts for sudo/admin multiple times. There's no `brew upgrade`
+        # exclude flag, so enumerate the greedy-outdated set and drop them.
+        [[ "$PLATFORM" == "Darwin" ]] && upgrade_casks_greedy
     fi
 
     log_success "Brew sync complete"
@@ -292,8 +431,9 @@ sync_rustup_proxies() {
 ########## NPM
 
 sync_npm() {
-    local npm_pkgs
-    npm_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "npm") | [.key, (.value.pkg // .key)] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    local npm_pkgs skip_platform
+    if [[ "$PLATFORM" == "Darwin" ]]; then skip_platform="linux"; else skip_platform="mac"; fi
+    npm_pkgs=$(yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"npm\" and (.value.platform == \"$skip_platform\" | not)) | [.key, (.value.pkg // .key)] | @tsv" "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$npm_pkgs" ]] && return 0
 
     if ! command -v npm &>/dev/null; then
@@ -437,55 +577,29 @@ sync_gh_extensions() {
     log_success "gh extensions sync complete"
 }
 
-########## APT
+########## Harness self-updaters
+# CLIs installed by their own native installers (not covered by packages.yaml).
+# Only runs in UPGRADE_MODE.
 
-apt_check_pkg() {
-    local pkg="$1"
-    # shellcheck disable=SC2178  # nameref to caller's array
-    local -n _missing="$2"
-    if [[ "$pkg" == "yq" ]]; then
-        if command -v yq &>/dev/null; then
-            echo "  + $pkg"
-        else
-            echo "  $pkg (snap — install with: sudo snap install yq)"
+sync_harness_selfupdate() {
+    [[ "${UPGRADE_MODE:-false}" == "true" ]] || return 0
+
+    log_info "Upgrading AI harness CLIs..."
+
+    local harness
+    for harness in claude codex; do
+        if ! command -v "$harness" &>/dev/null; then
+            log_info "  $harness not found — skipping"
+            continue
         fi
-        return
-    fi
-    if dpkg -s "$pkg" &>/dev/null; then
-        echo "  + $pkg"
-    else
-        echo "  - $pkg (missing)"
-        _missing+=("$pkg")
-    fi
+        echo "  Updating $harness..."
+        if ! "$harness" update </dev/null; then
+            log_warning "$harness update failed — continuing"
+        fi
+    done
+
+    log_success "Harness CLI update complete"
 }
-
-sync_apt() {
-    command -v apt-get &>/dev/null || return 0
-
-    log_info "Checking apt packages"
-    local missing=()
-
-    echo -e "\n${GREEN}Packages:${NC}"
-    while IFS= read -r pkg; do
-        [[ -z "$pkg" ]] && continue
-        apt_check_pkg "$pkg" missing
-    done <<< "$(get_platform_pkgs)"
-
-    if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
-        echo -e "\n${GREEN}Dev packages:${NC}"
-        while IFS= read -r pkg; do
-            [[ -z "$pkg" ]] && continue
-            apt_check_pkg "$pkg" missing
-        done <<< "$(get_platform_pkgs "--dev")"
-    fi
-
-    if ((${#missing[@]})); then
-        echo ""
-        log_warning "Missing packages: ${missing[*]}"
-        echo "  sudo apt-get install -y ${missing[*]}"
-    fi
-}
-
 ########## Main
 
 # Bootstrap yq if needed. The whole sync.sh is YAML-driven, so this is
@@ -551,10 +665,8 @@ if [[ "$PLATFORM" == "Linux" ]] && ! command -v uv &>/dev/null; then
     bootstrap_uv_linux || log_warning "Continuing without uv — base-profile render will be skipped"
 fi
 
-if [[ "$PLATFORM" == "Darwin" ]]; then
+if [[ "$PLATFORM" == "Darwin" || "$PLATFORM" == "Linux" ]]; then
     sync_brew
-elif [[ "$PLATFORM" == "Linux" ]]; then
-    sync_apt
 fi
 
 sync_cargo
@@ -562,6 +674,7 @@ sync_rustup_proxies
 sync_npm
 sync_uv
 sync_gh_extensions
+sync_harness_selfupdate
 
 if ((${#FAILED[@]})); then
     echo ""

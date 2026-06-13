@@ -1,11 +1,13 @@
-# base — the union of the three separate registries (mcp, skills, hooks).
+# base — the union of the four separate registries (mcp, agents, skills, hooks).
 # This is the ONLY profile that reads the registries; `mcp-edit` /
-# `hook-edit` / `skill-edit` keep editing them. `ap` expands `registries:`
-# at parse time into the item lists. Specialized profiles `include: [base]`
-# to layer additively (isolated profiles do NOT — they are closed worlds).
+# `agent-edit` / `hook-edit` / `skill-edit` keep editing them. `ap` expands
+# `registries:` at parse time into the item lists. Specialized profiles
+# `include: [base]` to layer additively (isolated profiles do NOT — they are
+# closed worlds, so they reference the agents registry directly instead).
 name: base
-description: Registry-derived union of all MCPs, skills, and hooks
+description: Registry-derived union of all MCPs, agents, skills, and hooks
 registries:
   mcps:   agents/mcp/registry.yaml
+  agents: agents/registry.yaml
   skills: [skills/_registry.yaml, skills/]
   hooks:  agents/hooks/registry.yaml

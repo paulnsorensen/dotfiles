@@ -2,7 +2,7 @@
 name: settings-clean
 model: haiku
 context: fork
-description: Clean up bloated .claude/settings.local.json by removing redundant, stale, and junk permission entries, and ensure hook-redirected skills are allowed. Use when the user says "clean settings", "prune settings", "settings cleanup", or invokes /settings-clean. Also trigger proactively when you notice a settings.local.json with more than 30 permission entries, or after extended sessions where many one-off Bash permissions have accumulated. This skill only touches settings.local.json (gitignored), never settings.json (committed).
+description: Clean a bloated .claude/settings.local.json by removing redundant, stale, and junk permission entries and ensuring hook-redirected skills are allowed. Use when the user says "clean settings", "prune settings", "settings cleanup", or invokes /settings-clean; also proactively when settings.local.json exceeds ~30 entries. Only touches settings.local.json (gitignored), never settings.json (committed).
 allowed-tools: Read, Write, Bash(jq:*), Bash(cp:*), Bash(mkdir:*), Bash(mv:*), Bash(date:*)
 ---
 
@@ -108,8 +108,8 @@ Recommended deny entries (reinforces hook blocks):
     "Bash(grep:*)"         → Grep tool or /scout
     "Bash(egrep:*)"        → Grep tool or /scout
     "Bash(fgrep:*)"        → Grep tool or /scout
-    "Bash(sed:*)"          → cheese-flow:cheez-write or Edit
-    "Bash(awk:*)"          → cheese-flow:cheez-write or Edit
+    "Bash(sed:*)"          → easy-cheese:cheez-write or Edit
+    "Bash(awk:*)"          → easy-cheese:cheez-write or Edit
     "Bash(find:*)"         → Glob tool or /scout (fd)
 
   Package installs (require per-use approval):

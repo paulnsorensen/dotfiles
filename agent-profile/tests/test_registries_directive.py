@@ -36,6 +36,13 @@ def dotfiles(tmp_path, monkeypatch):
         "    script: agents/hooks/flair.sh\n    harnesses: [claude, codex]\n"
     )
     (root / "agents" / "hooks" / "flair.sh").write_text("#!/bin/bash\n")
+    (root / "agents" / "registry.yaml").write_text(
+        "agents:\n"
+        "  ghostbuster:\n    description: dead code\n"
+        "    models:\n      claude: sonnet\n"
+        "    disallowedTools: [Edit, Write]\n"
+        "    body_path: claude/agents/ghostbuster.md\n"
+    )
     (root / "skills" / "de-slop" / "SKILL.md").write_text("# de-slop\n")
     (root / ".env").write_text("TODOIST_API_KEY=secret\n")
 
@@ -61,7 +68,42 @@ def test_parse_one_expands_registries_directive(dotfiles):
     assert [s["name"] for s in out["skills"]] == ["de-slop"]
 
 
-def test_registries_mcp_env_resolved_from_dotfiles_env(dotfiles):
+def test_parse_one_expands_agents_registry(dotfiles):
+    write_profile(
+        dotfiles / "profiles",
+        "base",
+        "name: base\nregistries:\n  agents: agents/registry.yaml\n",
+    )
+    out = parse_one(dotfiles / "profiles" / "base")
+    assert [a["name"] for a in out["agents"]] == ["ghostbuster"]
+    gb = out["agents"][0]
+    assert gb["models"] == {"claude": "sonnet"}
+    assert gb["disallowedTools"] == ["Edit", "Write"]
+    # body_path (claude/agents/...) resolves against DOTFILES_DIR, so the
+    # registry item carries the repo root as its _source_dir.
+    assert gb["_source_dir"] == str(dotfiles)
+
+
+def test_registries_agents_union_with_inline_agents(dotfiles):
+    # Registry agents come first; an inline agents: block appends.
+    write_profile(
+        dotfiles / "profiles",
+        "mixed",
+        "name: mixed\n"
+        "registries:\n  agents: agents/registry.yaml\n"
+        "agents:\n  - name: extra\n    description: inline\n",
+    )
+    out = parse_one(dotfiles / "profiles" / "mixed")
+    names = [a["name"] for a in out["agents"]]
+    assert names == ["ghostbuster", "extra"]
+
+
+def test_registries_mcp_env_stays_literal_not_resolved(dotfiles):
+    # MCP-secret-passthrough: even with TODOIST_API_KEY=secret in DOTFILES_DIR/.env,
+    # the ingest validates-but-does-not-substitute — the env value rides through
+    # as the literal ${VAR} so renderers emit a runtime placeholder, not the
+    # secret. The presence check still keeps the (optional) entry because the
+    # var IS set.
     write_profile(
         dotfiles / "profiles",
         "base",
@@ -69,7 +111,8 @@ def test_registries_mcp_env_resolved_from_dotfiles_env(dotfiles):
     )
     out = parse_one(dotfiles / "profiles" / "base")
     todoist = next(m for m in out["mcps"] if m["name"] == "todoist")
-    assert todoist["env"]["TODOIST_API_KEY"] == "secret"
+    assert todoist["env"]["TODOIST_API_KEY"] == "${TODOIST_API_KEY}"
+    assert "secret" not in str(todoist["env"])
 
 
 def test_registries_source_dir_points_at_dotfiles(dotfiles):
@@ -154,6 +197,7 @@ def test_no_registries_directive_yields_empty_registry_items(dotfiles):
     )
     out = parse_one(dotfiles / "profiles" / "plain")
     assert [m["name"] for m in out["mcps"]] == ["only"]
+    assert out["agents"] == []
     assert out["hooks"] == []
     assert out["skills"] == []
 

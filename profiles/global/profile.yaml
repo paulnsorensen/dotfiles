@@ -17,7 +17,11 @@
 # Standalone use is also fine: `dots profile install global`.
 name: global
 description: Live install — renders base into $HOME and wires it into Claude
-include: [base]
+# _permissions carries the canonical cross-harness allow/deny lists; the
+# renderers lower them onto each harness's native surface. PoC scope: wired
+# in at `global` only (the live-machine install). A base+global combo is a
+# deliberate later step.
+include: [base, _permissions]
 
 # `--target` precedence in ap is: explicit flag > profile target_default >
 # Path.cwd(). $HOME (and ~) expand at install time via os.path.expandvars
@@ -33,12 +37,13 @@ target_default: $HOME
 #
 # Must match where the renderer actually writes the plugin tree:
 # target_default above is $HOME, so the claude renderer drops the
-# global plugin at $HOME/.claude/plugins/local/global/. Pointing
-# `local` at $HOME/.claude/plugins/local lets Claude resolve
-# `global@local` to that on-disk tree. (Earlier this pointed at
-# ${DOTFILES_DIR}/.claude/plugins/local, which only contained a
-# staged `base/` tree and not the live `global/` — Claude found the
-# plugin via fallback but the wiring was asymmetric.)
+# global plugin at $HOME/.claude/plugins/local/global/ and emits the
+# directory `marketplace.json` alongside it. Pointing `local` at
+# $HOME/.claude/plugins/local lets Claude resolve `global@local` to
+# that on-disk tree via the marketplace.json (an explicit registration,
+# not just fallback). (Earlier this pointed at
+# ${DOTFILES_DIR}/.claude/plugins/local, which only contained a staged
+# `base/` tree and not the live `global/`.)
 marketplaces:
   local: $HOME/.claude/plugins/local
 
@@ -56,3 +61,16 @@ marketplaces:
 # entry must match — if you rename this profile, update both.
 enabled_plugins:
   global@local: true
+
+# mcp_scope (claude only — other harnesses already write a single bare
+# user-level config and ignore this). "user" makes the claude renderer
+# register each MCP via `claude mcp add --scope user` (into ~/.claude.json,
+# bare tool names `mcp__<server>__*`) instead of writing the plugin's
+# .mcp.json (which produces plugin-scoped names
+# `mcp__plugin_global_<server>__*`). The plugin tree is still rendered +
+# enabled above — it carries the skills, commands, hooks, and agents; only
+# MCP registration moves to user scope. Bare names mean the existing
+# settings.json allowlist matches with no per-plugin namespacing. Default
+# elsewhere is "plugin" (closed-world / staged renders keep their bundled
+# .mcp.json).
+mcp_scope: user

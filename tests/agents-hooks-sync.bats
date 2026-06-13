@@ -59,12 +59,93 @@ teardown() {
     [[ "$(jq -r '.harnesses[1]' <<<"$entry")" == "codex"  ]]
 }
 
+@test "sensitive-file-guard is a claude+codex PreToolUse hook with its lib asset" {
+    local entry
+    entry=$(yq -o=json '.hooks."sensitive-file-guard"' "$REGISTRY_FILE")
+    [[ "$(jq -r '.event'  <<<"$entry")" == "PreToolUse" ]]
+    [[ "$(jq -r '.script' <<<"$entry")" == "agents/hooks/sensitive-file-guard.sh" ]]
+    [[ "$(jq -r '.shared_assets[0]' <<<"$entry")" == "agents/lib/sensitive-file-guard.js" ]]
+    [[ "$(jq -r '.matcher' <<<"$entry")" == *"Bash"* ]]
+    [[ "$(jq -r '.matcher' <<<"$entry")" == *"apply_patch"* ]]   # codex file edits
+    [[ "$(jq -r '.matcher' <<<"$entry")" == *"mcp__tilth__tilth_write"* ]]
+    [[ "$(jq -r '.harnesses | length' <<<"$entry")" == "2" ]]
+    [[ "$(jq -r '.harnesses | index("claude")' <<<"$entry")" != "null" ]]
+    [[ "$(jq -r '.harnesses | index("codex")'  <<<"$entry")" != "null" ]]
+    assert_file_exists "$REAL_DOTFILES_DIR/agents/hooks/sensitive-file-guard.sh"
+    assert_file_exists "$REAL_DOTFILES_DIR/agents/lib/sensitive-file-guard.js"
+}
+
+@test "sensitive-file-guard is present for both claude and codex after filtering" {
+    local c x
+    c=$(hook_filter_for_harness claude "$REGISTRY_JSON")
+    x=$(hook_filter_for_harness codex  "$REGISTRY_JSON")
+    [[ "$(jq -r 'has("sensitive-file-guard")' <<<"$c")" == "true" ]]
+    [[ "$(jq -r 'has("sensitive-file-guard")' <<<"$x")" == "true" ]]
+}
+
+@test "registry command entries carry no machine-specific absolute paths" {
+    # Issue #263: the moshi hooks hardcoded '/home/paul/.local/bin/moshi-hook',
+    # so all four fired against a nonexistent path every session on macOS.
+    # command: entries must be PATH-resolved (bare) or platform-neutral —
+    # never /home/* or /Users/*.
+    local cmds
+    cmds=$(yq -r '.hooks[] | select(has("command")) | .command' "$REGISTRY_FILE")
+    run grep -E '(/home/|/Users/)' <<<"$cmds"
+    if [[ "$status" -eq 0 ]]; then
+        echo "machine-specific paths in registry commands:" >&2
+        echo "$output" >&2
+        return 1
+    fi
+}
+
+@test "moshi registry entries are portable, claude-only, and complete" {
+    local entry name
+    for name in moshi-session-start moshi-user-prompt-submit moshi-stop moshi-permission-request; do
+        entry=$(yq -o=json ".hooks.\"$name\"" "$REGISTRY_FILE")
+        [[ "$(jq -r '.command' <<<"$entry")" == "moshi-hook claude-hook" ]]
+        [[ "$(jq -r '.harnesses | length' <<<"$entry")" == "1" ]]
+        [[ "$(jq -r '.harnesses[0]' <<<"$entry")" == "claude" ]]
+    done
+    # Synchronous approval hook keeps its 5-minute phone-reach window.
+    entry=$(yq -o=json '.hooks."moshi-permission-request"' "$REGISTRY_FILE")
+    [[ "$(jq -r '.async' <<<"$entry")" == "false" ]]
+    [[ "$(jq -r '.timeout' <<<"$entry")" == "300" ]]
+}
+
+@test "macOS gets the moshi-hook binary via packages.yaml" {
+    # Issue #263, second half: a portable command still fails if the binary
+    # is never provisioned. The registry's moshi hooks rely on the brew
+    # package on the Mac (linux uses Moshi's own installer to ~/.local/bin).
+    local entry
+    entry=$(yq -o=json '.packages[] | select(kind == "map") | to_entries[0] | select(.key == "rjyo/moshi/moshi-hook")' \
+        "$REAL_DOTFILES_DIR/packages/packages.yaml")
+    [[ -n "$entry" ]]
+    [[ "$(jq -r '.value.platform' <<<"$entry")" == "mac" ]]
+}
+
+@test "sensitive-file-guard renders a runnable bash command under both harnesses" {
+    local sc sx
+    sc=$(hook_desired_signature sensitive-file-guard claude)
+    sx=$(hook_desired_signature sensitive-file-guard codex)
+    # Must invoke the .sh (bash-runnable under both deploy paths), NOT the
+    # .js directly — a `bash <file>.js` command would not execute.
+    [[ "$sc" == 'bash "$HOME/.claude/hooks/sensitive-file-guard.sh"'* ]]
+    [[ "$sx" == 'bash "$HOME/.codex/hooks/sensitive-file-guard.sh"'* ]]
+    [[ "$sc" == *$'\t'"PreToolUse"$'\t'* ]]
+    [[ "$sx" == *$'\t'"PreToolUse"$'\t'* ]]
+}
+
 @test "hook_filter_for_harness includes the entry for both claude and codex" {
     local c x
     c=$(hook_filter_for_harness claude "$REGISTRY_JSON")
     x=$(hook_filter_for_harness codex  "$REGISTRY_JSON")
-    [[ "$(jq -r 'keys[]' <<<"$c")" == "session-start-cheese-flair" ]]
-    [[ "$(jq -r 'keys[]' <<<"$x")" == "session-start-cheese-flair" ]]
+    # cheese-flair is registered for both harnesses.
+    [[ "$(jq -r '.["session-start-cheese-flair"].event' <<<"$c")" == "SessionStart" ]]
+    [[ "$(jq -r '.["session-start-cheese-flair"].event' <<<"$x")" == "SessionStart" ]]
+    # The claude-only moshi entries appear for claude but are filtered out for
+    # codex — proves the per-entry `harnesses` filter, not just inclusion.
+    [[ "$(jq -r 'has("moshi-session-start")' <<<"$c")" == "true"  ]]
+    [[ "$(jq -r 'has("moshi-session-start")' <<<"$x")" == "false" ]]
 }
 
 # ── deployed-path resolver ─────────────────────────────────────────────
@@ -86,9 +167,12 @@ teardown() {
     local c x
     c=$(hook_desired_signature session-start-cheese-flair claude)
     x=$(hook_desired_signature session-start-cheese-flair codex)
-    # Claude path differs from codex; matcher + timeout match.
-    [[ "$c" == *"/.claude/hooks/session-start-cheese-flair.sh"$'\t'"startup|resume"$'\t'"5" ]]
-    [[ "$x" == *"/.codex/hooks/session-start-cheese-flair.sh"$'\t'"startup|resume"$'\t'"5"  ]]
+    # Signature shape: <resolved-command> <event> <matcher> <timeout> <async>.
+    # event so two entries pointing at the same script/command but different
+    # event slots don't collide; async claude-only (empty for codex). The
+    # cheese-flair entry has no async, so the final field is empty for both.
+    [[ "$c" == 'bash "$HOME/.claude/hooks/session-start-cheese-flair.sh"'$'\t'"SessionStart"$'\t'"startup|resume"$'\t'"5"$'\t' ]]
+    [[ "$x" == 'bash "$HOME/.codex/hooks/session-start-cheese-flair.sh"'$'\t'"SessionStart"$'\t'"startup|resume"$'\t'"5"$'\t' ]]
 }
 
 # ── claude backend: idempotent upsert ──────────────────────────────────
@@ -149,14 +233,14 @@ JSON
     rm -f "$CLAUDE_SETTINGS_FILE"
     local sig
     sig=$(hook_claude_current_signature session-start-cheese-flair)
-    [[ "$sig" == $'\t\t' ]]
+    [[ "$sig" == $'\t\t\t\t' ]]
 }
 
 @test "hook_claude_current_signature reports empty when entry missing" {
     echo '{}' > "$CLAUDE_SETTINGS_FILE"
     local sig
     sig=$(hook_claude_current_signature session-start-cheese-flair)
-    [[ "$sig" == $'\t\t' ]]
+    [[ "$sig" == $'\t\t\t\t' ]]
 }
 
 @test "hook_claude_current_signature reports drift when timeout differs" {
@@ -173,10 +257,16 @@ JSON
     cur=$(hook_claude_current_signature session-start-cheese-flair)
     des=$(hook_desired_signature       session-start-cheese-flair claude)
     [[ "$cur" != "$des" ]]
-    [[ "$cur" == *$'\t'"99" ]]
+    # 5-field signature ends in <timeout> <async>; cheese-flair has no
+    # async on disk, so the trailing field is empty (final tab).
+    [[ "$cur" == *$'\t'"99"$'\t' ]]
 }
 
+# Scope detection to the single cheese-flair entry so the assertions stay
+# decoupled from the registry's entry count (it also carries claude-only
+# moshi-* command hooks, which would otherwise show as drift here).
 @test "hook_detect_changes (claude): empty when in sync" {
+    HARNESS_DESIRED_JSON=$(jq '{"session-start-cheese-flair": .["session-start-cheese-flair"]}' <<<"$HARNESS_DESIRED_JSON")
     echo '{}' > "$CLAUDE_SETTINGS_FILE"
     hook_claude_apply session-start-cheese-flair
     local changed
@@ -185,6 +275,7 @@ JSON
 }
 
 @test "hook_detect_changes (claude): names entry when missing" {
+    HARNESS_DESIRED_JSON=$(jq '{"session-start-cheese-flair": .["session-start-cheese-flair"]}' <<<"$HARNESS_DESIRED_JSON")
     rm -f "$CLAUDE_SETTINGS_FILE"
     echo '{}' > "$CLAUDE_SETTINGS_FILE"
     local changed
@@ -250,7 +341,13 @@ TOML
 @test "hook_detect_changes (codex): empty when in sync" {
     HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
     : > "$CODEX_CONFIG_FILE"
-    hook_codex_apply session-start-cheese-flair
+    # Apply every desired codex hook so the whole set is in sync (codex now
+    # carries session-start AND sensitive-file-guard).
+    local name
+    while read -r name; do
+        [[ -z "$name" ]] && continue
+        hook_codex_apply "$name"
+    done < <(jq -r 'keys[]' <<<"$HARNESS_DESIRED_JSON")
     local changed
     changed=$(hook_detect_changes codex)
     [[ -z "$changed" ]]
@@ -267,6 +364,10 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 99
 TOML
+    # Bring the other codex hooks (sensitive-file-guard, git-guard) in sync so
+    # only the session-start timeout drift remains to be detected.
+    hook_codex_apply sensitive-file-guard
+    hook_codex_apply git-guard
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]
@@ -300,8 +401,10 @@ TOML
     run bash "$REAL_DOTFILES_DIR/agents/hooks/sync.sh" --harness=claude
     assert_success
 
-    # Claude side upserted.
-    [[ "$(jq '.hooks.SessionStart | length' "$CLAUDE_SETTINGS_FILE")" == "1" ]]
+    # Claude side upserted — the cheese-flair SessionStart entry is present.
+    # (Asserted by content, not count: the registry also carries a claude-only
+    # moshi-session-start entry, so SessionStart now holds more than one block.)
+    [[ "$(jq '[.hooks.SessionStart[] | select((.hooks[0].command // "") | test("session-start-cheese-flair"))] | length' "$CLAUDE_SETTINGS_FILE")" == "1" ]]
     # Codex side untouched (file still empty).
     [[ ! -s "$CODEX_CONFIG_FILE" ]]
 }
@@ -322,6 +425,273 @@ JSON
     after=$(shasum -a 256 "$CLAUDE_SETTINGS_FILE" | awk '{print $1}')
     [[ "$before" == "$after" ]]
     grep -qF '[[hooks.SessionStart]]' "$CODEX_CONFIG_FILE"
+}
+
+# ── multi-event support (UserPromptSubmit / PreToolUse / PostToolUse / Stop)
+# These tests exercise the parameterized event slot in lib.sh by synthesizing
+# a HARNESS_DESIRED_JSON for each new event type. The cheese-flair registry
+# entry stays SessionStart-only; these synthetic registries are scoped to
+# the tests below so the real registry contract is unchanged.
+
+@test "claude upsert writes UserPromptSubmit slot (no matcher in outer block)" {
+    HARNESS_DESIRED_JSON='{"prompt-stamp":{"event":"UserPromptSubmit","script":"agents/hooks/prompt-stamp.sh","timeout":3}}'
+    echo '{}' > "$CLAUDE_SETTINGS_FILE"
+    hook_claude_apply prompt-stamp
+
+    local cmd timeout matcher
+    cmd=$(jq -r     '.hooks.UserPromptSubmit[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")
+    timeout=$(jq -r '.hooks.UserPromptSubmit[0].hooks[0].timeout' "$CLAUDE_SETTINGS_FILE")
+    matcher=$(jq -r '.hooks.UserPromptSubmit[0].matcher // "MISSING"' "$CLAUDE_SETTINGS_FILE")
+    [[ "$cmd"     == 'bash "$HOME/.claude/hooks/prompt-stamp.sh"' ]]
+    [[ "$timeout" == "3" ]]
+    # UserPromptSubmit on claude has no outer matcher — must be absent.
+    [[ "$matcher" == "MISSING" ]]
+    # SessionStart slot must NOT have grown.
+    [[ "$(jq '.hooks.SessionStart // [] | length' "$CLAUDE_SETTINGS_FILE")" == "0" ]]
+}
+
+@test "claude upsert writes PreToolUse slot WITH matcher in outer block" {
+    HARNESS_DESIRED_JSON='{"tool-audit":{"event":"PreToolUse","script":"agents/hooks/tool-audit.sh","matcher":"Bash|Edit","timeout":10}}'
+    echo '{}' > "$CLAUDE_SETTINGS_FILE"
+    hook_claude_apply tool-audit
+
+    local cmd matcher timeout
+    cmd=$(jq -r     '.hooks.PreToolUse[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")
+    matcher=$(jq -r '.hooks.PreToolUse[0].matcher'          "$CLAUDE_SETTINGS_FILE")
+    timeout=$(jq -r '.hooks.PreToolUse[0].hooks[0].timeout' "$CLAUDE_SETTINGS_FILE")
+    [[ "$cmd"     == 'bash "$HOME/.claude/hooks/tool-audit.sh"' ]]
+    [[ "$matcher" == "Bash|Edit" ]]
+    [[ "$timeout" == "10" ]]
+}
+
+@test "claude upsert writes Stop slot (no matcher)" {
+    HARNESS_DESIRED_JSON='{"turn-end":{"event":"Stop","script":"agents/hooks/turn-end.sh"}}'
+    echo '{}' > "$CLAUDE_SETTINGS_FILE"
+    hook_claude_apply turn-end
+
+    local cmd matcher
+    cmd=$(jq -r     '.hooks.Stop[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")
+    matcher=$(jq -r '.hooks.Stop[0].matcher // "MISSING"' "$CLAUDE_SETTINGS_FILE")
+    [[ "$cmd"     == 'bash "$HOME/.claude/hooks/turn-end.sh"' ]]
+    [[ "$matcher" == "MISSING" ]]
+}
+
+@test "claude upserts in different event slots coexist (one entry per slot)" {
+    HARNESS_DESIRED_JSON='{
+      "ss":     {"event":"SessionStart",     "script":"agents/hooks/ss.sh"},
+      "ups":    {"event":"UserPromptSubmit", "script":"agents/hooks/ups.sh"},
+      "pre":    {"event":"PreToolUse",       "script":"agents/hooks/pre.sh",  "matcher":".*"},
+      "post":   {"event":"PostToolUse",      "script":"agents/hooks/post.sh", "matcher":".*"},
+      "stop":   {"event":"Stop",             "script":"agents/hooks/stop.sh"}
+    }'
+    echo '{}' > "$CLAUDE_SETTINGS_FILE"
+    hook_claude_apply ss
+    hook_claude_apply ups
+    hook_claude_apply pre
+    hook_claude_apply post
+    hook_claude_apply stop
+
+    # Each event slot has exactly one entry.
+    for evt in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop; do
+        local n
+        n=$(jq --arg e "$evt" '.hooks[$e] | length' "$CLAUDE_SETTINGS_FILE")
+        [[ "$n" == "1" ]] || { echo "event $evt has $n entries, expected 1" >&2; return 1; }
+    done
+}
+
+@test "claude apply at one event slot does not disturb other event slots" {
+    HARNESS_DESIRED_JSON='{"ups":{"event":"UserPromptSubmit","script":"agents/hooks/ups.sh"}}'
+    cat > "$CLAUDE_SETTINGS_FILE" <<'JSON'
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "bash $HOME/.claude/hooks/keep-me.sh" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "bash $HOME/.claude/hooks/turn-end.sh" }] }
+    ]
+  }
+}
+JSON
+    hook_claude_apply ups
+
+    # Untouched slots still have their pre-existing entries.
+    [[ "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")" == 'bash $HOME/.claude/hooks/keep-me.sh' ]]
+    [[ "$(jq -r '.hooks.Stop[0].hooks[0].command'         "$CLAUDE_SETTINGS_FILE")" == 'bash $HOME/.claude/hooks/turn-end.sh' ]]
+    # New slot has the upserted entry.
+    [[ "$(jq -r '.hooks.UserPromptSubmit[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")" == 'bash "$HOME/.claude/hooks/ups.sh"' ]]
+}
+
+@test "codex upsert writes PreToolUse slot WITH matcher" {
+    HARNESS_DESIRED_JSON='{"tool-audit":{"event":"PreToolUse","script":"agents/hooks/tool-audit.sh","matcher":"Bash|Edit","timeout":10}}'
+    : > "$CODEX_CONFIG_FILE"
+    hook_codex_apply tool-audit
+
+    grep -qF '[[hooks.PreToolUse]]'                                                  "$CODEX_CONFIG_FILE"
+    grep -qF 'matcher = "Bash|Edit"'                                                 "$CODEX_CONFIG_FILE"
+    grep -qF 'command = "bash \"$HOME/.codex/hooks/tool-audit.sh\""'                 "$CODEX_CONFIG_FILE"
+    grep -qF 'timeout = 10'                                                          "$CODEX_CONFIG_FILE"
+    # SessionStart slot must NOT have been written.
+    ! grep -qF '[[hooks.SessionStart]]' "$CODEX_CONFIG_FILE"
+}
+
+@test "codex upsert writes Stop slot without matcher (matcher field dropped)" {
+    # Registry sets matcher but Stop on codex doesn't use one. The matcher
+    # field must NOT land in the TOML — that's the contract enforced by
+    # _hook_event_uses_matcher.
+    HARNESS_DESIRED_JSON='{"turn-end":{"event":"Stop","script":"agents/hooks/turn-end.sh","matcher":"ignored","timeout":2}}'
+    : > "$CODEX_CONFIG_FILE"
+    hook_codex_apply turn-end
+
+    grep -qF '[[hooks.Stop]]'                                                        "$CODEX_CONFIG_FILE"
+    grep -qF 'command = "bash \"$HOME/.codex/hooks/turn-end.sh\""'                   "$CODEX_CONFIG_FILE"
+    grep -qF 'timeout = 2'                                                           "$CODEX_CONFIG_FILE"
+    ! grep -qF 'matcher = "ignored"' "$CODEX_CONFIG_FILE"
+}
+
+@test "codex multi-event upserts coexist and survive a second sync pass" {
+    HARNESS_DESIRED_JSON='{
+      "ups":  {"event":"UserPromptSubmit", "script":"agents/hooks/ups.sh"},
+      "pre":  {"event":"PreToolUse",       "script":"agents/hooks/pre.sh",  "matcher":"Bash"},
+      "stop": {"event":"Stop",             "script":"agents/hooks/stop.sh"}
+    }'
+    : > "$CODEX_CONFIG_FILE"
+    hook_codex_apply ups
+    hook_codex_apply pre
+    hook_codex_apply stop
+    # Second pass — re-running any apply must be a no-op (idempotent).
+    hook_codex_apply ups
+    hook_codex_apply pre
+    hook_codex_apply stop
+
+    for evt in UserPromptSubmit PreToolUse Stop; do
+        local n
+        n=$(yq -p=toml -o=json ".hooks.${evt} | length" "$CODEX_CONFIG_FILE")
+        [[ "$n" == "1" ]] || { echo "event $evt has $n entries, expected 1 after idempotent re-apply" >&2; return 1; }
+    done
+}
+
+@test "drift detection (claude): catches event slot mismatch" {
+    # Registry says UserPromptSubmit, but the on-disk state has the entry
+    # under SessionStart with the same command. Drift must be reported so
+    # the next apply re-homes the entry. (The misplaced SessionStart entry
+    # stays put — clearing arbitrary other-slot entries is out of scope.)
+    HARNESS_DESIRED_JSON='{"prompt-stamp":{"event":"UserPromptSubmit","script":"agents/hooks/prompt-stamp.sh"}}'
+    cat > "$CLAUDE_SETTINGS_FILE" <<'JSON'
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "bash \"$HOME/.claude/hooks/prompt-stamp.sh\"" }] }
+    ]
+  }
+}
+JSON
+    local changed
+    changed=$(hook_detect_changes claude)
+    [[ "$changed" == "prompt-stamp" ]]
+}
+
+# ── command-style (external binary) hooks — Moshi pattern ─────────────
+# These entries bypass the deploy path: command is used verbatim and async
+# (claude-only) is threaded into the inner hook entry. jq's `//` operator
+# treats `false` as a fallback trigger, so async:false would silently drop
+# without the has("async") guard in lib.sh — these tests pin that.
+
+@test "claude command-style entry writes literal command (no deploy path)" {
+    # Build the desired JSON via jq so the literal command — including its
+    # embedded single quotes and absolute path (the Moshi registry shape) —
+    # round-trips without shell-quoting hazards. The lib must write it verbatim.
+    local cmd_literal="'/home/paul/.local/bin/moshi-hook' claude-hook"
+    HARNESS_DESIRED_JSON=$(jq -nc --arg c "$cmd_literal" \
+        '{"moshi-ss":{event:"SessionStart",command:$c,async:true,harnesses:["claude"]}}')
+    echo '{}' > "$CLAUDE_SETTINGS_FILE"
+    hook_claude_apply moshi-ss
+
+    local cmd async
+    cmd=$(jq -r   '.hooks.SessionStart[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")
+    async=$(jq -r '.hooks.SessionStart[0].hooks[0].async'   "$CLAUDE_SETTINGS_FILE")
+    [[ "$cmd"   == "$cmd_literal" ]]
+    [[ "$async" == "true" ]]
+    # No `bash` wrapper, no $HOME/.claude/hooks deployed path.
+    [[ "$cmd" != bash* ]]
+    [[ "$cmd" != *".claude/hooks"* ]]
+}
+
+@test "claude command-style entry preserves async:false (jq // bug regression)" {
+    # async: false is the canary for the has("async") guard. jq's `// empty`
+    # would drop it; has("async") preserves it. The PermissionRequest case
+    # synchronous approval, must be `false` on the wire.
+    HARNESS_DESIRED_JSON='{"moshi-pr":{"event":"PermissionRequest","command":"/bin/true","async":false,"timeout":300,"harnesses":["claude"]}}'
+    echo '{}' > "$CLAUDE_SETTINGS_FILE"
+    hook_claude_apply moshi-pr
+
+    [[ "$(jq -r '.hooks.PermissionRequest[0].hooks[0].async'   "$CLAUDE_SETTINGS_FILE")" == "false" ]]
+    [[ "$(jq -r '.hooks.PermissionRequest[0].hooks[0].timeout' "$CLAUDE_SETTINGS_FILE")" == "300" ]]
+    [[ "$(jq -r '.hooks.PermissionRequest[0].hooks[0].type'    "$CLAUDE_SETTINGS_FILE")" == "command" ]]
+}
+
+@test "claude command-style entry omits async when registry doesn't set it" {
+    HARNESS_DESIRED_JSON='{"bare":{"event":"SessionStart","command":"/bin/true","harnesses":["claude"]}}'
+    echo '{}' > "$CLAUDE_SETTINGS_FILE"
+    hook_claude_apply bare
+
+    [[ "$(jq -r '.hooks.SessionStart[0].hooks[0].async // "ABSENT"' "$CLAUDE_SETTINGS_FILE")" == "ABSENT" ]]
+}
+
+@test "codex command-style entry writes literal command (no $HOME wrapper)" {
+    # Codex doesn't carry async, but otherwise the command-vs-script
+    # branch must work the same way.
+    HARNESS_DESIRED_JSON='{"ext":{"event":"SessionStart","command":"/usr/local/bin/external-hook codex","matcher":"startup","timeout":5,"harnesses":["codex"]}}'
+    : > "$CODEX_CONFIG_FILE"
+    hook_codex_apply ext
+
+    grep -qF 'command = "/usr/local/bin/external-hook codex"' "$CODEX_CONFIG_FILE"
+    grep -qF 'matcher = "startup"' "$CODEX_CONFIG_FILE"
+    grep -qF 'timeout = 5' "$CODEX_CONFIG_FILE"
+    # No "bash \"$HOME..." prefix.
+    ! grep -qF 'bash' "$CODEX_CONFIG_FILE"
+}
+
+@test "command-style entry: signature stable across desired+current after apply" {
+    HARNESS_DESIRED_JSON='{"moshi-pr":{"event":"PermissionRequest","command":"/bin/true","async":false,"timeout":300,"harnesses":["claude"]}}'
+    echo '{}' > "$CLAUDE_SETTINGS_FILE"
+    hook_claude_apply moshi-pr
+    local des cur
+    des=$(hook_desired_signature       moshi-pr claude)
+    cur=$(hook_claude_current_signature moshi-pr)
+    [[ "$des" == "$cur" ]]
+    # Resolved command in field 1 is the literal command, not a bash wrapper.
+    [[ "$des" == /bin/true$'\t'"PermissionRequest"$'\t'$'\t'"300"$'\t'"false" ]]
+}
+
+@test "drift detection (claude): same script, different events => both reported" {
+    # The signature includes `event`, so a script duplicated across event
+    # slots is two distinct entries — drift must fire for both, not one.
+    HARNESS_DESIRED_JSON='{
+      "a": {"event":"SessionStart",     "script":"agents/hooks/dup.sh"},
+      "b": {"event":"UserPromptSubmit", "script":"agents/hooks/dup.sh"}
+    }'
+    echo '{}' > "$CLAUDE_SETTINGS_FILE"
+    local changed
+    changed=$(hook_detect_changes claude | sort)
+    [[ "$(echo "$changed" | wc -l | tr -d ' ')" == "2" ]]
+    [[ "$changed" == *"a"* ]]
+    [[ "$changed" == *"b"* ]]
+}
+
+@test "drift detection (codex): catches event slot mismatch" {
+    HARNESS_DESIRED_JSON='{"tool-audit":{"event":"PreToolUse","script":"agents/hooks/tool-audit.sh","matcher":"Bash"}}'
+    cat > "$CODEX_CONFIG_FILE" <<'TOML'
+[[hooks.SessionStart]]
+matcher = "startup"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "bash \"$HOME/.codex/hooks/tool-audit.sh\""
+TOML
+    local changed
+    changed=$(hook_detect_changes codex)
+    [[ "$changed" == "tool-audit" ]]
 }
 
 # ── chezmoi installer ──────────────────────────────────────────────────
@@ -396,15 +766,53 @@ SH
     [[ "$(jq -r 'keys | length' <<<"$for_codex")"  == "1" ]]
 }
 
-@test "hook_filter_for_harness fails loud when an entry has event != SessionStart" {
-    # Asserts the only-SessionStart-wired guard in lib.sh. Adding a hook
-    # with event: PostToolUse without first wiring backends for that slot
-    # would silently land it under SessionStart — this test catches that.
-    local reg='{"future":{"event":"PostToolUse","script":"x.sh"}}'
+@test "hook_filter_for_harness fails loud when an entry has an unsupported event" {
+    # The whitelist HOOK_EVENTS_VALID gates what events the backends know
+    # how to write. Anything outside that set must abort the sync, not
+    # silently fall through to SessionStart.
+    local reg='{"future":{"event":"NotAnEvent","script":"x.sh"}}'
     run hook_filter_for_harness claude "$reg"
     [[ "$status" -ne 0 ]]
-    [[ "$output" == *"event != SessionStart"* ]]
+    [[ "$output" == *"unsupported event"* ]]
+    [[ "$output" == *"NotAnEvent"* ]]
     [[ "$output" == *"future"* ]]
+}
+
+@test "hook_filter_for_harness accepts every event in the whitelist" {
+    # Locks the contract that all six whitelisted events round-trip
+    # through the filter without erroring. Adding a seventh event needs
+    # both HOOK_EVENTS_VALID and this test updated together.
+    for evt in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop PermissionRequest; do
+        local reg
+        reg=$(jq -n --arg e "$evt" '{(("entry-" + $e)): {event: $e, script: "x.sh"}}')
+        run hook_filter_for_harness claude "$reg"
+        assert_success
+        [[ "$(jq -r 'keys | length' <<<"$output")" == "1" ]]
+    done
+}
+
+@test "hook_filter_for_harness rejects entries with both script and command" {
+    # Mutually exclusive: script → deployed path; command → literal external.
+    local reg='{"bad":{"event":"SessionStart","script":"x.sh","command":"/bin/true"}}'
+    run hook_filter_for_harness claude "$reg"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"both 'script' and 'command'"* ]]
+    [[ "$output" == *"bad"* ]]
+}
+
+@test "hook_filter_for_harness rejects entries with neither script nor command" {
+    local reg='{"empty":{"event":"SessionStart"}}'
+    run hook_filter_for_harness claude "$reg"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"neither 'script' nor 'command'"* ]]
+    [[ "$output" == *"empty"* ]]
+}
+
+@test "hook_filter_for_harness accepts a command-only entry" {
+    local reg='{"moshi":{"event":"SessionStart","command":"/usr/local/bin/moshi-hook claude-hook"}}'
+    run hook_filter_for_harness claude "$reg"
+    assert_success
+    [[ "$(jq -r '.moshi.command' <<<"$output")" == "/usr/local/bin/moshi-hook claude-hook" ]]
 }
 
 @test "hook_filter_for_harness fails loud when the event field is missing" {
@@ -463,7 +871,7 @@ TOML
     rm -f "$CODEX_CONFIG_FILE"
     local sig
     sig=$(hook_codex_current_signature session-start-cheese-flair)
-    [[ "$sig" == $'\t\t' ]]
+    [[ "$sig" == $'\t\t\t\t' ]]
 }
 
 @test "hook_codex_current_signature reports empty when SessionStart entry missing" {
@@ -473,7 +881,7 @@ approval_policy = "on-request"
 TOML
     local sig
     sig=$(hook_codex_current_signature session-start-cheese-flair)
-    [[ "$sig" == $'\t\t' ]]
+    [[ "$sig" == $'\t\t\t\t' ]]
 }
 
 @test "hook_codex_current_signature reports drift when matcher differs" {
@@ -491,7 +899,9 @@ TOML
     cur=$(hook_codex_current_signature session-start-cheese-flair)
     des=$(hook_desired_signature       session-start-cheese-flair codex)
     [[ "$cur" != "$des" ]]
-    [[ "$cur" == *$'\t'"something-else"$'\t'"5" ]]
+    # Signature ends in: <event> <current-matcher> <timeout> <async>.
+    # async is empty for codex (claude-only); ends with a trailing tab.
+    [[ "$cur" == *$'\t'"SessionStart"$'\t'"something-else"$'\t'"5"$'\t' ]]
 }
 
 @test "hook_detect_changes (codex): names entry on matcher drift" {
@@ -505,6 +915,10 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 5
 TOML
+    # Bring the other codex hooks (sensitive-file-guard, git-guard) in sync so
+    # only the session-start matcher drift remains to be detected.
+    hook_codex_apply sensitive-file-guard
+    hook_codex_apply git-guard
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]
@@ -596,7 +1010,7 @@ YAML
         to_entries[]
         | .value as $h
         | ($h.harnesses // ["claude","codex"])[] as $harness
-        | ([$h.script] + ($h.shared_assets // []))[] as $asset
+        | (($h.script // empty), ($h.shared_assets // [])[]) as $asset
         | "\($asset)\t\($harness)"
     ' | LC_ALL=C sort -u)
 
@@ -757,7 +1171,7 @@ STUB
         to_entries[]
         | .value as $h
         | ($h.harnesses // ["claude","codex"])[] as $harness
-        | ([$h.script] + ($h.shared_assets // []))[] as $asset
+        | (($h.script // empty), ($h.shared_assets // [])[]) as $asset
         | "\($asset)\t\($harness)"
     ' | LC_ALL=C sort -u)
     deployed_count=0
@@ -804,7 +1218,12 @@ STUB
     [[ "$timeout" == "5" ]]
 
     # Claude side mirror — the sync wrote a SessionStart entry into the fake
-    # settings file pointing at the deployed hook.
-    [[ "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$fake_claude")" == 'bash "$HOME/.claude/hooks/session-start-cheese-flair.sh"' ]]
-    [[ "$(jq -r '.hooks.SessionStart[0].hooks[0].timeout' "$fake_claude")" == "5" ]]
+    # settings file pointing at the deployed hook. Select by content, not
+    # index: claude SessionStart also holds the claude-only moshi entry, so
+    # position [0] is not guaranteed to be cheese-flair.
+    local ss_cmd ss_timeout
+    ss_cmd=$(jq -r '.hooks.SessionStart[] | select((.hooks[0].command // "") | test("session-start-cheese-flair.sh")) | .hooks[0].command' "$fake_claude")
+    ss_timeout=$(jq -r '.hooks.SessionStart[] | select((.hooks[0].command // "") | test("session-start-cheese-flair.sh")) | .hooks[0].timeout' "$fake_claude")
+    [[ "$ss_cmd"     == 'bash "$HOME/.claude/hooks/session-start-cheese-flair.sh"' ]]
+    [[ "$ss_timeout" == "5" ]]
 }

@@ -547,7 +547,13 @@ SH
     mkdir -p "$uv_bin"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$uv_bin/uv"
     chmod +x "$uv_bin/uv"
-    PATH="$TEST_HOME/tripwire-bin:$uv_bin:/bin" run bash "$script"
+    # Minimal bin with ONLY bash — /bin can't be used here: on merged-/usr
+    # systems with apt nodejs, /bin/npx exists and defeats the missing-npx
+    # simulation (the script then runs the real installer silently).
+    local minimal_bin="$TEST_HOME/minimal-bin"
+    mkdir -p "$minimal_bin"
+    ln -s "$(command -v bash)" "$minimal_bin/bash"
+    PATH="$TEST_HOME/tripwire-bin:$uv_bin:$minimal_bin" run bash "$script"
     assert_success
     assert_output_contains "Skipping base-profile render (npx not found"
     [[ "$output" != *"TRIPWIRE"* ]]
@@ -557,6 +563,28 @@ SH
     local ignore="$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
     assert_file_exists "$ignore"
     grep -qE '^lib(/|$)' "$ignore"
+}
+
+@test ".chezmoiignore localLLM gate renders when the key is absent (missingkey-safe)" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    # chezmoi renders templates with missingkey=error. A bare `{{ .localLLM }}`
+    # in .chezmoiignore would fail `chezmoi apply` on every machine whose
+    # chezmoi.toml predates the localLLM flag (the key is simply absent). The
+    # gate must use `get . "localLLM"` so an absent key falls back to ""/ignore.
+    local cfg="$HOME/.config/chezmoi/chezmoi.toml"
+    mkdir -p "$(dirname "$cfg")"
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+TOML
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" \
+        execute-template < "$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+    assert_success
+    # With localLLM absent (→ falsy), the stack tree + units must be ignored.
+    assert_output_contains "local-llm/**"
+    assert_output_contains ".config/systemd/user/llama-swap.service"
 }
 
 @test "skills-install/ directory is gone from the repo" {
@@ -629,11 +657,17 @@ YAML
     grep -q 'promptStringOnce . "email"' "$toml"
     grep -q '\.chezmoi\.sourceDir' "$toml"
     # The work-machine prompt was removed with the employer git machinery;
-    # per-repo email is native git (`git config user.email`).
-    if grep -q 'promptBoolOnce' "$toml"; then
+    # per-repo email is native git (`git config user.email`). Guard the
+    # *work* prompt specifically — not all promptBoolOnce — so a legitimate
+    # boolean flag (e.g. localLLM) doesn't trip this invariant.
+    if grep -qE 'promptBoolOnce \. "work"' "$toml"; then
         echo ".chezmoi.toml.tmpl still has the removed work prompt" >&2
         return 1
     fi
+    # The localLLM flag must stay a persisted boolean prompt: the .chezmoiignore
+    # gate reads .localLLM, so dropping the prompt would leave the key undefined
+    # and break `chezmoi apply` (missingkey=error).
+    grep -qE 'localLLM = \{\{ promptBoolOnce \. "localLLM"' "$toml"
 }
 
 @test "gitconfig template references .email and carries no employer machinery" {
@@ -652,20 +686,77 @@ YAML
     fi
 }
 
-@test "copilot template warns on missing env vars and renders both keys" {
-    # Behavior change: prior to the linux-bootstrap PR (commit 5369aa3) the
-    # template hard-failed `chezmoi apply` with `{{ fail "... is not set" }}`
-    # whenever either API key was unset. That was hostile to fresh-box
-    # bootstraps where the user has not yet copied .env.example → .env, so
-    # the template now `warnf`s and emits an empty `mcpServers: {}` stub
-    # instead. The MCPs simply won't work until the keys are populated, but
-    # the rest of `dots sync` proceeds.
+@test "copilot template emits literal \${VAR} placeholders, never resolved secrets" {
+    # MCP-secret-passthrough: the template emits the LITERAL ${CONTEXT7_API_KEY}
+    # / ${TAVILY_API_KEY} so Copilot expands them at launch — the secret stays
+    # in .env and never lands in ~/.copilot/mcp-config.json. Render with real
+    # secrets in the env and assert they do NOT appear in the output.
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
-    grep -q 'warnf "copilot mcp-config:' "$tmpl"
-    grep -q 'CONTEXT7_API_KEY and/or TAVILY_API_KEY unset' "$tmpl"
-    grep -q '"mcpServers": {}' "$tmpl"
-    grep -q 'env "CONTEXT7_API_KEY"' "$tmpl"
-    grep -q 'env "TAVILY_API_KEY"' "$tmpl"
+    local rendered
+    rendered="$(CONTEXT7_API_KEY=ctx7-real-secret TAVILY_API_KEY=tav-real-secret \
+        chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Valid JSON.
+    jq -e . <<<"$rendered" >/dev/null
+    # Literal placeholders present, both servers emitted unconditionally.
+    # SC2016: intentional literal — the rendered value IS the string ${VAR}.
+    # shellcheck disable=SC2016
+    [[ "$(jq -r '.mcpServers.context7.env.CONTEXT7_API_KEY' <<<"$rendered")" == '${CONTEXT7_API_KEY}' ]]
+    # shellcheck disable=SC2016
+    [[ "$(jq -r '.mcpServers.tavily.env.TAVILY_API_KEY' <<<"$rendered")" == '${TAVILY_API_KEY}' ]]
+    # No resolved secret leaked onto disk.
+    if grep -qE 'ctx7-real-secret|tav-real-secret' <<<"$rendered"; then
+        echo "copilot template leaked a resolved secret into the rendered config" >&2
+        return 1
+    fi
+    # The removed unset-var guard branch must be gone.
+    if grep -q '"mcpServers": {}' "$tmpl"; then
+        echo "copilot template still carries the removed empty-stub guard" >&2
+        return 1
+    fi
+}
+
+@test "copilot template emits stdio serena, not serena-mux" {
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
+    local rendered
+    rendered="$(chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Valid JSON.
+    jq -e . <<<"$rendered" >/dev/null
+    # serena entry must use stdio command, not serena-mux.
+    [[ "$(jq -r '.mcpServers.serena.command' <<<"$rendered")" == "serena" ]]
+    # args must include start-mcp-server with copilot context.
+    jq -e '.mcpServers.serena.args | index("start-mcp-server") != null' <<<"$rendered" >/dev/null
+    jq -e '.mcpServers.serena.args | map(select(startswith("--context="))) | length == 1' <<<"$rendered" >/dev/null
+    [[ "$(jq -r '.mcpServers.serena.args[] | select(startswith("--context="))' <<<"$rendered")" == "--context=copilot" ]]
+    # No serena-mux env var.
+    [[ "$(jq -r '.mcpServers.serena.env // empty' <<<"$rendered")" == "" ]]
+}
+
+@test "copilot sensitive-file-guard source files exist" {
+    assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/executable_sensitive-file-guard.sh"
+    assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/sensitive-file-guard.json.tmpl"
+    assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-copilot-guard.sh.tmpl"
+}
+
+@test "copilot hook config renders a preToolUse matcher and the deployed adapter path" {
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/sensitive-file-guard.json.tmpl"
+    local rendered
+    rendered="$(chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Valid JSON with the documented shape.
+    jq -e '.version == 1 and (.hooks.preToolUse | length) == 1' <<<"$rendered"
+    # Matcher covers Copilot's shell + file tools (anchored regex on toolName).
+    [[ "$(jq -r '.hooks.preToolUse[0].matcher' <<<"$rendered")" == "bash|powershell|view|edit|create" ]]
+    # bash key points at the deployed adapter under ~/.copilot/hooks/.
+    [[ "$(jq -r '.hooks.preToolUse[0].bash' <<<"$rendered")" == */.copilot/hooks/sensitive-file-guard.sh ]]
+}
+
+@test "copilot guard installer copies the single-sourced shared logic" {
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-copilot-guard.sh.tmpl"
+    local rendered
+    rendered="$(chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Reuses the shared detection module, not a duplicate.
+    grep -q 'agents/lib/sensitive-file-guard.js' <<<"$rendered"
+    grep -q '.copilot/hooks/lib/sensitive-file-guard.js' <<<"$rendered"
+    grep -q 'install-shared-assets.sh' <<<"$rendered"
 }
 
 @test ".gitattributes pins LF line endings inside chezmoi source" {
@@ -730,12 +821,12 @@ TOML
     run chezmoi apply --force
     assert_success
 
-    # Skills now deploy through the registry-derived `base` profile rendered
-    # by `ap` (claude renderer → ~/.claude/plugins/local/base/skills/<name>).
+    # Skills deploy shared-only via `ap` (claude renderer → ~/.claude/skills/
+    # <name>; PR #252 dropped the plugin-scoped ~/.claude/plugins copy).
     # The render needs uv (+ a real `ap` env); when uv is absent the
     # run_onchange skips by design, so gate the skill assertion on uv.
     if command -v uv >/dev/null 2>&1; then
-        local skills_dir="$HOME/.claude/plugins/local/base/skills"
+        local skills_dir="$HOME/.claude/skills"
         [[ -d "$skills_dir" ]]
         # At least one dotfiles-owned (local path:) skill landed as a real dir.
         local first
@@ -754,44 +845,50 @@ TOML
         return 1
     fi
 
-    # The copilot template should render with the env-supplied API keys.
+    # MCP-secret-passthrough: the copilot template renders the LITERAL ${VAR}
+    # placeholders, NOT the resolved keys — Copilot expands them at launch, so
+    # the secret stays in .env and never lands in this file on disk.
     assert_file_exists "$HOME/.copilot/mcp-config.json"
-    grep -qF '"CONTEXT7_API_KEY": "test-context7-key"' "$HOME/.copilot/mcp-config.json"
-    grep -qF '"TAVILY_API_KEY": "test-tavily-key"' "$HOME/.copilot/mcp-config.json"
+    # SC2016: the single quotes are intentional — we assert the LITERAL ${VAR}
+    # placeholder text is present, not its expansion.
+    # shellcheck disable=SC2016
+    grep -qF '"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"' "$HOME/.copilot/mcp-config.json"
+    # shellcheck disable=SC2016
+    grep -qF '"TAVILY_API_KEY": "${TAVILY_API_KEY}"' "$HOME/.copilot/mcp-config.json"
+    # The supplied secret values must NOT be baked into the rendered file.
+    if grep -qE 'test-context7-key|test-tavily-key' "$HOME/.copilot/mcp-config.json"; then
+        echo "copilot mcp-config baked a resolved secret instead of a placeholder" >&2
+        return 1
+    fi
 }
 
-@test "copilot template warns + emits empty mcpServers when CONTEXT7_API_KEY is unset" {
+@test "copilot template emits servers with literal placeholders even when keys are unset" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # Linux-bootstrap PR (5369aa3) softened the template from `{{ fail ... }}`
-    # to `{{ warnf ... }}` + empty-stub render. `chezmoi apply` therefore
-    # SUCCEEDS even when a key is unset, and the rendered file is a stub
-    # carrying `"mcpServers": {}`. The warning still surfaces the missing
-    # key on stderr so the user knows to populate .env.
-    local fake_npx_bin
-    fake_npx_bin=$(make_fake_npx)
-    PATH="$fake_npx_bin:$PATH"
-
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "test@example.com"
-work = false
-TOML
-    unset CONTEXT7_API_KEY
-    export TAVILY_API_KEY="test-tavily-key"
-
-    run chezmoi apply --force
-    assert_success
-    # The warnf message should appear in chezmoi's stderr (combined with
-    # stdout under bats' `run`).
-    assert_output_contains "CONTEXT7_API_KEY and/or TAVILY_API_KEY unset"
-    # The rendered file is the empty-mcpServers stub.
-    assert_file_exists "$HOME/.copilot/mcp-config.json"
-    grep -qF '"mcpServers": {}' "$HOME/.copilot/mcp-config.json"
-    grep -qF 'Stub written by chezmoi' "$HOME/.copilot/mcp-config.json"
+    # MCP-secret-passthrough: because the env values are now runtime ${VAR}
+    # placeholders (Copilot expands them at launch), there is no apply-time key
+    # to resolve. The template therefore always emits the full server set —
+    # even on a fresh box with no .env yet — instead of the old warnf +
+    # empty-mcpServers stub. The MCPs simply won't work until .env is populated.
+    #
+    # Render the template in isolation (execute-template) rather than a full
+    # `chezmoi apply`: with the keys unset, apply would also drive the
+    # base-profile `ap install`, which legitimately fails loud on the
+    # non-optional context7/tavily ${VAR}s (criterion 2). That fail-loud is a
+    # separate, intended behavior — this test pins the copilot template alone.
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
+    local rendered
+    rendered="$(env -u CONTEXT7_API_KEY -u TAVILY_API_KEY \
+        chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Valid JSON; both keyed servers present with literal placeholders.
+    jq -e . <<<"$rendered" >/dev/null
+    # SC2016: intentional literal — the rendered value IS the string ${VAR}.
+    # shellcheck disable=SC2016
+    [[ "$(jq -r '.mcpServers.context7.env.CONTEXT7_API_KEY' <<<"$rendered")" == '${CONTEXT7_API_KEY}' ]]
+    # shellcheck disable=SC2016
+    [[ "$(jq -r '.mcpServers.tavily.env.TAVILY_API_KEY' <<<"$rendered")" == '${TAVILY_API_KEY}' ]]
+    # No empty-mcpServers stub fallback.
+    [[ "$(jq -r '.mcpServers | length' <<<"$rendered")" -ge 4 ]]
 }
 
 # ── serena config (modify_ pattern) ────────────────────────────────────────
@@ -845,9 +942,10 @@ YAML
 
     [[ "$(yq '.web_dashboard'                 "$HOME/.serena/serena_config.yml")" == "false" ]]
     [[ "$(yq '.web_dashboard_open_on_launch'  "$HOME/.serena/serena_config.yml")" == "false" ]]
-    # excluded_tools is overridden with the managed memory + onboarding list,
-    # replacing whatever was there (here: ["some_tool"]).
-    [[ "$(yq '.excluded_tools | length'       "$HOME/.serena/serena_config.yml")" == "7" ]]
+    # excluded_tools is overridden with the managed memory + onboarding +
+    # initial_instructions + LSP (find_declaration / find_implementations /
+    # get_diagnostics_for_file) list, replacing whatever was there (here: ["some_tool"]).
+    [[ "$(yq '.excluded_tools | length'       "$HOME/.serena/serena_config.yml")" == "11" ]]
     [[ "$(yq '.excluded_tools | .[0]'         "$HOME/.serena/serena_config.yml")" == "write_memory" ]]
     [[ "$(yq '.excluded_tools | contains(["onboarding"])' "$HOME/.serena/serena_config.yml")" == "true" ]]
     [[ "$(yq '.excluded_tools | contains(["some_tool"])'  "$HOME/.serena/serena_config.yml")" == "false" ]]
@@ -976,6 +1074,63 @@ SH
     assert_success
     hash_after=$(shasum -a 256 "$HOME/.serena/serena_config.yml" | awk '{print $1}')
     [[ "$hash_before" == "$hash_after" ]]
+}
+
+# Regression: real `serena init` loads-then-validates the existing config and
+# aborts with "`projects` key not found" when the on-disk file is the stub.
+# The script must remove the stub before calling init so init bootstraps from
+# absence. Without the rm, init crashes on the stub, the live read yields the
+# stub, and the script emits the stub forever — the exact stable-broken state
+# the user hit on a fresh box. The shim here mimics serena's real behaviour
+# (init fails if a projects-less config already exists); this test fails if the
+# rm is removed.
+@test "serena: modify_ script clears the stub so serena init can bootstrap over it" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    command -v yq      >/dev/null 2>&1 || skip "yq not installed"
+    setup_serena_chezmoi_env
+
+    mkdir -p "$HOME/.serena"
+    cat > "$HOME/.serena/serena_config.yml" <<'YAML'
+# serena not initialized; run `serena init`, then `chezmoi apply` again
+YAML
+
+    # Shim mimics real serena: `init` aborts if a config already exists
+    # without a `projects` key, and only writes a fresh config from absence.
+    local shim_dir="$HOME/bin"
+    mkdir -p "$shim_dir"
+    cat > "$shim_dir/serena" <<'SH'
+#!/bin/sh
+case "$1" in
+  init)
+    cfg="$HOME/.serena/serena_config.yml"
+    if [ -f "$cfg" ] && ! grep -q '^projects:' "$cfg"; then
+      echo "projects key not found" >&2
+      exit 1
+    fi
+    cat > "$cfg" <<'YAML'
+language_backend: LSP
+web_dashboard: true
+web_dashboard_open_on_launch: true
+excluded_tools: []
+projects: []
+YAML
+    ;;
+esac
+SH
+    chmod +x "$shim_dir/serena"
+
+    local chezmoi_dir yq_dir minimal_path
+    chezmoi_dir=$(dirname "$(command -v chezmoi)")
+    yq_dir=$(dirname "$(command -v yq)")
+    minimal_path="$shim_dir:/usr/bin:/bin:$chezmoi_dir:$yq_dir"
+
+    PATH="$minimal_path" run chezmoi apply --force "$HOME/.serena/serena_config.yml"
+    assert_success
+
+    # Healed: stub gone, projects present, overrides applied.
+    ! grep -qF '# serena not initialized' "$HOME/.serena/serena_config.yml"
+    [[ "$(yq '.projects | length'  "$HOME/.serena/serena_config.yml")" == "0" ]]
+    [[ "$(yq '.web_dashboard'      "$HOME/.serena/serena_config.yml")" == "false" ]]
 }
 
 # Regression: if `serena init` fails after the stub-on-disk gate fires,

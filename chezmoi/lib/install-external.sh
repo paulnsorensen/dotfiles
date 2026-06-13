@@ -120,15 +120,33 @@ fi
 KNOWN_AGENTS=$(awk -F= '/^[[:space:]]*#/ {next} NF==2 {gsub(/[[:space:]]/, "", $2); print $2}' "$SKILL_AGENTS_FILE" | tr '\n' ' ')
 
 AGENT_FLAGS=()
+SKIPPED_AGENTS=()
+SUPPORTED_HARNESSES=""
 for harness in $HARNESSES; do
     if [[ " $KNOWN_AGENTS" != *" $harness "* ]]; then
-        echo -e "${RED}Error: unknown SKILL_HARNESSES agent '$harness' (valid: $KNOWN_AGENTS)${NC}" >&2
-        echo "  The 'skills' CLI exits 0 having installed nothing for a bad --agent, so this is checked here." >&2
-        echo "  Canonical set: $SKILL_AGENTS_FILE" >&2
-        exit 1
+        SKIPPED_AGENTS+=("$harness")
+        continue
     fi
     AGENT_FLAGS+=(--agent "$harness")
+    SUPPORTED_HARNESSES+="${SUPPORTED_HARNESSES:+ }$harness"
 done
+
+# Filter, don't fail: SKILL_HARNESSES is shared with agents the `skills` CLI
+# doesn't support (e.g. crush, antigravity — valid install targets elsewhere,
+# but the CLI only knows the set in skill_agents.txt). Skipping them with a
+# loud warning lets the supported agents still get their skills, instead of a
+# single unsupported entry aborting the whole refresh. The original silent-
+# no-op masking risk is still covered — we warn explicitly per skipped agent.
+if (( ${#SKIPPED_AGENTS[@]} > 0 )); then
+    echo -e "${YELLOW}Skipping SKILL_HARNESSES agents the 'skills' CLI doesn't support: ${SKIPPED_AGENTS[*]}${NC}" >&2
+    echo "  Supported: $KNOWN_AGENTS" >&2
+    echo "  (canonical set: $SKILL_AGENTS_FILE — add an agent there to enable it)" >&2
+fi
+
+if (( ${#AGENT_FLAGS[@]} == 0 )); then
+    echo -e "${YELLOW}No supported SKILL_HARNESSES agents to install into — nothing to do.${NC}" >&2
+    exit 0
+fi
 
 # Repeated `--skill` flags for a source: the explicit registry list (one flag
 # per name), or `--skill '*'` to install every skill in the repo (the CLI's
@@ -172,9 +190,9 @@ install_source() {
 
     local output
     if output=$(npx "${args[@]}" 2>&1); then
-        echo -e "    ${GREEN}✓${NC} $repo → $HARNESSES"
+        echo -e "    ${GREEN}✓${NC} $repo → $SUPPORTED_HARNESSES"
     else
-        echo -e "    ${RED}✗${NC} $repo → $HARNESSES"
+        echo -e "    ${RED}✗${NC} $repo → $SUPPORTED_HARNESSES"
         echo x >> "$FAIL_COUNTER"
         if [[ -n "$output" ]]; then
             echo "$output" | tail -5 | sed -e "s/^/      /"

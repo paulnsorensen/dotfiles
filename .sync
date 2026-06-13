@@ -1,0 +1,99 @@
+#!/bin/bash
+############################
+# .sync
+# Dotfiles sync orchestrator
+############################
+
+set -euo pipefail  # Fail fast on errors
+
+########## Variables
+
+dir=$(pwd)
+olddir=~/.dotfiles.bak             # old dotfiles backup directory
+
+# State management
+DOTFILES_STATE_DIR="${HOME}/.local/state/dotfiles"
+
+# Source helpers from the script's own directory. Test harnesses that eval
+# this file may override the location via SYNC_SCRIPT.
+_sync_script_path="${SYNC_SCRIPT:-${BASH_SOURCE[0]:-}}"
+if [[ -n "$_sync_script_path" ]]; then
+    _sync_script_dir="$(cd "${_sync_script_path%/*}" && pwd)"
+    # shellcheck source=.sync-lib.sh
+    [[ -f "$_sync_script_dir/.sync-lib.sh" ]] && source "$_sync_script_dir/.sync-lib.sh"
+    unset _sync_script_dir
+fi
+unset _sync_script_path
+
+########## Functions
+
+# Record the current sync timestamp
+record_sync_time() {
+    mkdir -p "${DOTFILES_STATE_DIR}"
+    date +%s > "${DOTFILES_STATE_DIR}/last_sync"
+}
+
+# Main sync function
+run_sync() {
+    record_sync_time
+    parse_sync_args "$@"
+
+    # Bootstrap yq (needed by packages/sync.sh to parse YAML)
+    if [[ "$(uname)" == "Darwin" ]] && ! command -v yq &>/dev/null; then
+      log_info "Bootstrapping yq..."
+      brew install yq
+    fi
+
+    log_info "Syncing packages"
+    bash "$dir/packages/sync.sh"
+
+    upgrade_uv_tools
+
+    log_info "Creating $olddir for backup of any existing dotfiles in ~"
+    mkdir -p "$olddir"
+
+    for file in *; do
+        sync_entry "$file"
+    done
+    sync_hidden_dirs
+
+    install_tpm
+    install_prek_hooks
+
+    unset DOTFILES_DEV
+
+    if (( ${#SYNC_FAILURES[@]} > 0 )); then
+        echo
+        log_error "Sync completed with FAILURES in: ${SYNC_FAILURES[*]}"
+        log_error "Configuration is partially applied — those areas may be stale."
+        log_error "Re-run 'dots sync' after fixing the underlying cause."
+        echo
+        log_info "To undo, run: dots rollback"
+        exit 1
+    fi
+
+    log_success "Sync completed successfully!"
+}
+
+# Help message
+show_help() {
+    echo "Usage: $0 [OPTION]"
+    echo
+    echo "Options:"
+    echo "  (no args)      Run normal sync"
+    echo "  dev            Set dev mode"
+    echo "  q              Quick sync"
+    echo "  refresh        Force re-check all packages (bypass cache)"
+    echo "  help           Show this help message"
+}
+
+########## Main
+
+case "${1:-sync}" in
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        run_sync "$@"
+        ;;
+esac

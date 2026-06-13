@@ -15,12 +15,14 @@ Two profiles cover the renderer's surface:
   "no ``.mcp.json`` when no claude MCPs" path.
 - ``mcptest``: ``.mcp.json`` projection (claude member kept, codex-only
   dropped) and ``models.claude`` frontmatter on agent + command, with the
-  shared agent staying model-neutral.
+  shared agent carrying the same claude model (it is the user-scoped file
+  Claude resolves ahead of the plugin-scoped copy).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 
@@ -263,16 +265,32 @@ def test_satisfies_renderer_protocol():
     assert r.name == "claude"
 
 
-def test_clean_is_noop(env):
+def test_clean_leaves_tracked_plugin_tree_intact(env):
+    """clean() un-merges only the shared/merged root settings.json (the
+    SSOT permission render); every tracked whole-file plugin artefact is
+    left for the CLI's manifest sweep to remove. The rust fixture carries a
+    ``permissions_allow``, so render now writes root settings.json — clean
+    must remove exactly that contribution and nothing in the plugin tree."""
     profile_dir = _materialize_rust(env.profiles)
     manifest = parse_manifest(profile_dir)
     r = ClaudeRenderer()
     r.render(manifest, env.target)
-    before = sorted(p.read_bytes() for p in env.target.rglob("*") if p.is_file())
-    # clean must not touch any whole-file artefact (no merged files here).
+
+    plugin_root = env.target / ".claude" / "plugins" / "local" / "rust"
+    before_plugin = sorted(
+        p.read_bytes() for p in plugin_root.rglob("*") if p.is_file()
+    )
+
     assert r.clean(manifest, env.target) is None
-    after = sorted(p.read_bytes() for p in env.target.rglob("*") if p.is_file())
-    assert before == after
+
+    after_plugin = sorted(
+        p.read_bytes() for p in plugin_root.rglob("*") if p.is_file()
+    )
+    # Tracked plugin tree untouched by clean.
+    assert before_plugin == after_plugin
+    # The merged root settings.json contribution is fully un-merged: the
+    # rust fixture owned the whole file, so clean removed it.
+    assert not (env.target / ".claude" / "settings.json").exists()
 
 
 # ─── rust profile byte parity ────────────────────────────────────────
@@ -313,33 +331,10 @@ def test_rust_loaded_manifest_hook_wiring(rendered_rust):
     assert list(data.keys()) == ["name", "version", "description", "hooks"]
 
 
-def test_rust_plugin_agent_byte_parity(rendered_rust):
-    target, _ = rendered_rust
-    on_disk = (
-        target / ".claude/plugins/local/rust/agents/rust-reviewer.md"
-    ).read_text()
-    assert on_disk == _read_golden("rust/plugin/agents/rust-reviewer.md")
-
-
 def test_rust_shared_agent_byte_parity(rendered_rust):
     target, _ = rendered_rust
     on_disk = (target / ".claude/agents/rust-reviewer.md").read_text()
     assert on_disk == _read_golden("rust/shared/.claude/agents/rust-reviewer.md")
-
-
-def test_rust_plugin_and_shared_agent_differ_in_blank_line(rendered_rust):
-    """The plugin-scoped file separates frontmatter from body with a blank
-    line (``---\\n\\n``); the shared writer does not (``---\\n``). Asserting
-    the difference guards against silently collapsing the two writers."""
-    target, _ = rendered_rust
-    plugin = (
-        target / ".claude/plugins/local/rust/agents/rust-reviewer.md"
-    ).read_text()
-    shared_md = (target / ".claude/agents/rust-reviewer.md").read_text()
-    assert "---\n\nYou review Rust" in plugin
-    assert "---\nYou review Rust" in shared_md
-    # Shared file is model-neutral and lacks the blank-line separator.
-    assert "---\n\nYou review Rust" not in shared_md
 
 
 def test_rust_command_byte_parity(rendered_rust):
@@ -351,10 +346,10 @@ def test_rust_command_byte_parity(rendered_rust):
 def test_rust_skill_tree_byte_parity(rendered_rust):
     target, _ = rendered_rust
     on_disk = (
-        target / ".claude/plugins/local/rust/skills/cargo-workflow/SKILL.md"
+        target / ".claude/skills/cargo-workflow/SKILL.md"
     ).read_text()
     assert on_disk == _read_golden(
-        "rust/plugin/skills/cargo-workflow/SKILL.md"
+        "rust/shared/.claude/skills/cargo-workflow/SKILL.md"
     )
 
 
@@ -393,14 +388,13 @@ def test_rust_tracked_files_match_bash_manifest(rendered_rust):
     _, written = rendered_rust
     expected = {
         ".claude/agents/rust-reviewer.md",
+        ".claude/skills/cargo-workflow",
         ".claude/plugins/local/rust",
         ".claude/plugins/local/rust/.claude-plugin/plugin.json",
-        ".claude/plugins/local/rust/agents/rust-reviewer.md",
         ".claude/plugins/local/rust/commands/clippy.md",
         ".claude/plugins/local/rust/hooks/cargo-check.sh",
         ".claude/plugins/local/rust/plugin.json",
         ".claude/plugins/local/rust/settings.json",
-        ".claude/plugins/local/rust/skills/cargo-workflow",
     }
     assert set(written) == expected
     # No path tracked twice (feeds the install manifest; must dedupe).
@@ -430,15 +424,6 @@ def test_mcptest_mcp_json_drops_non_claude_servers(rendered_mcptest):
     }
 
 
-def test_mcptest_agent_model_frontmatter_byte_parity(rendered_mcptest):
-    target, _ = rendered_mcptest
-    on_disk = (
-        target / ".claude/plugins/local/mcptest/agents/modeled-agent.md"
-    ).read_text()
-    assert on_disk == _read_golden("mcptest/plugin/agents/modeled-agent.md")
-    assert "model: opus" in on_disk
-
-
 def test_mcptest_command_model_frontmatter_byte_parity(rendered_mcptest):
     target, _ = rendered_mcptest
     on_disk = (
@@ -448,14 +433,18 @@ def test_mcptest_command_model_frontmatter_byte_parity(rendered_mcptest):
     assert "model: haiku" in on_disk
 
 
-def test_mcptest_shared_agent_is_model_neutral(rendered_mcptest):
+def test_mcptest_shared_agent_carries_claude_model(rendered_mcptest):
     target, _ = rendered_mcptest
     on_disk = (target / ".claude/agents/modeled-agent.md").read_text()
     assert on_disk == _read_golden(
         "mcptest/shared/.claude/agents/modeled-agent.md"
     )
-    # Shared cross-harness file must NOT carry the claude model override.
-    assert "model:" not in on_disk
+    # The user-scoped shared file is the one Claude actually resolves — it
+    # wins over the plugin-scoped copy (priority 4 > 5), so it MUST carry the
+    # claude model (and color/effort/skills). A neutral shared file would
+    # silently drop the agent's pinned model. opencode reads its own
+    # .opencode/agent/ path (unaffected); Cursor overrides via .cursor/agents/.
+    assert "model: opus" in on_disk
 
 
 def test_mcptest_plugin_manifest_has_no_hooks_key(rendered_mcptest):
@@ -469,54 +458,42 @@ def test_mcptest_plugin_manifest_has_no_hooks_key(rendered_mcptest):
 
 
 @pytest.fixture
-def rendered_nobody(env):
+def nobody_manifest(env):
     profile_dir = write_profile(env.profiles, "nobody", _NOBODY_YAML)
     manifest = parse_manifest(profile_dir)
-    written = ClaudeRenderer().render(manifest, env.target)
-    return env.target, written
+    return env.target, manifest
 
 
-def test_nobody_plugin_agent_frontmatter_only_byte_parity(rendered_nobody):
-    """A body-less agent writes a frontmatter-only plugin file ending in the
-    blank-line separator (``---\\n\\n``) with no body, byte-identical to bash."""
-    target, _ = rendered_nobody
-    on_disk = (
-        target / ".claude/plugins/local/nobody/agents/bare-agent.md"
-    ).read_text()
-    assert on_disk == _read_golden("nobody/plugin/agents/bare-agent.md")
-    assert on_disk.endswith("---\n\n")
+def test_nobody_raises_when_body_absent(nobody_manifest):
+    """An agent without body_path must raise ValueError (fail fast and loud)."""
+    target, manifest = nobody_manifest
+    with pytest.raises(ValueError, match="has no body_path"):
+        ClaudeRenderer().render(manifest, target)
 
 
-def test_nobody_no_shared_agent_when_body_absent(rendered_nobody):
-    """No body => no cross-harness shared write (matches bash, which guards
-    the shared write on ``[[ -n "$body_abs" ]]``)."""
-    target, _ = rendered_nobody
-    assert not (target / ".claude/agents/bare-agent.md").exists()
-    assert not (target / ".claude/agents").exists()
-
-
-def test_nobody_no_settings_json_when_no_permissions(rendered_nobody):
-    target, _ = rendered_nobody
-    assert not (target / ".claude/plugins/local/nobody/settings.json").exists()
-
-
-def test_nobody_tracked_files_exclude_shared_agent(rendered_nobody):
-    _, written = rendered_nobody
-    assert set(written) == {
-        ".claude/plugins/local/nobody",
-        ".claude/plugins/local/nobody/.claude-plugin/plugin.json",
-        ".claude/plugins/local/nobody/agents/bare-agent.md",
-        ".claude/plugins/local/nobody/plugin.json",
-    }
+def test_no_settings_json_when_permissions_allow_empty(env):
+    """_write_settings must not create settings.json when permissions_allow is
+    absent — the `if not allow: return` guard in ClaudeRenderer._write_settings.
+    This test would fail if that guard were removed."""
+    profile_dir = write_profile(
+        env.profiles,
+        "noperms",
+        "name: noperms\ndescription: no permissions block\n"
+        "agents:\n  - name: reviewer\n    body_path: agents/reviewer.md\n",
+        {"agents/reviewer.md": "review body\n"},
+    )
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().render(manifest, env.target)
+    assert not (env.target / ".claude/plugins/local/noperms/settings.json").exists()
 
 
 # ─── failure paths (fail fast and loud — parity with bash `return 1`) ─
 
 
-def test_hook_with_missing_script_field_raises(env):
+def test_hook_with_neither_script_nor_command_raises(env):
     yaml_text = """\
 name: badhook
-description: hook missing script
+description: hook with no execution target
 hooks:
   - event: PreToolUse
     matcher: "Bash"
@@ -524,8 +501,95 @@ hooks:
 """
     profile_dir = write_profile(env.profiles, "badhook", yaml_text)
     manifest = parse_manifest(profile_dir)
-    with pytest.raises(ValueError, match="missing 'script'"):
+    with pytest.raises(ValueError, match="neither 'script' nor 'command'"):
         ClaudeRenderer().render(manifest, env.target)
+
+
+def test_hook_with_both_script_and_command_raises(env):
+    yaml_text = """\
+name: bothhook
+description: hook setting both script and command
+hooks:
+  - event: SessionStart
+    script: hooks/h.sh
+    command: "/usr/bin/true"
+    harnesses: [claude]
+"""
+    profile_dir = write_profile(
+        env.profiles, "bothhook", yaml_text,
+        {"hooks/h.sh": "#!/usr/bin/env bash\nexit 0\n"},
+    )
+    manifest = parse_manifest(profile_dir)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        ClaudeRenderer().render(manifest, env.target)
+
+
+def test_hook_command_literal_is_used_verbatim(env):
+    """A `command:` hook renders the literal command with async/timeout and
+    no file deploy — the moshi-hook bridge pattern."""
+    yaml_text = """\
+name: cmdhook
+description: literal command hook
+hooks:
+  - event: Stop
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    async: true
+    harnesses: [claude]
+  - event: PermissionRequest
+    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    timeout: 300
+    async: false
+    harnesses: [claude]
+"""
+    profile_dir = write_profile(env.profiles, "cmdhook", yaml_text)
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().render(manifest, env.target)
+    data = json.loads(
+        (env.target / ".claude/plugins/local/cmdhook/plugin.json").read_text()
+    )
+    stop = data["hooks"]["Stop"][0]
+    assert "matcher" not in stop
+    assert stop["hooks"][0]["command"] == "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    assert stop["hooks"][0]["async"] is True
+    perm = data["hooks"]["PermissionRequest"][0]["hooks"][0]
+    assert perm["timeout"] == 300
+    assert perm["async"] is False
+    # No script file deployed for a command-literal hook.
+    hooks_dir = env.target / ".claude/plugins/local/cmdhook/hooks"
+    assert not hooks_dir.exists() or not any(hooks_dir.iterdir())
+
+
+def test_hook_matcher_dropped_for_non_matcher_event(env):
+    """A SessionStart entry carrying a matcher (the codex-only source regex,
+    e.g. cheese-flair's "startup|resume") must render WITHOUT a matcher on the
+    Claude side — Claude only consumes matchers for PreToolUse/PostToolUse.
+    Locks parity with `_hook_event_uses_matcher` in agents/hooks/lib.sh so the
+    live `ap` render path doesn't leak a dead matcher field Claude ignores."""
+    yaml_text = """\
+name: matcherhook
+description: SessionStart hook that carries a (codex-only) matcher
+hooks:
+  - event: SessionStart
+    matcher: "startup|resume"
+    command: "echo hi"
+    harnesses: [claude]
+  - event: PreToolUse
+    matcher: "Bash"
+    command: "echo bash"
+    harnesses: [claude]
+"""
+    profile_dir = write_profile(env.profiles, "matcherhook", yaml_text)
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().render(manifest, env.target)
+    data = json.loads(
+        (env.target / ".claude/plugins/local/matcherhook/plugin.json").read_text()
+    )
+    session_block = data["hooks"]["SessionStart"][0]
+    assert "matcher" not in session_block, (
+        "SessionStart matcher should be dropped on the Claude render"
+    )
+    # PreToolUse is a matcher event — its matcher must survive.
+    assert data["hooks"]["PreToolUse"][0]["matcher"] == "Bash"
 
 
 def test_hook_with_nonexistent_script_raises(env):
@@ -620,3 +684,148 @@ def test_render_is_idempotent_on_rerun(env):
     }
     assert first == second
     assert snapshot == after
+
+
+# ─── user-scope MCP registration (mcp_scope: user) ───────────────────
+
+_MCPTEST_USER_YAML = """\
+name: mcpuser
+description: user-scope mcp registration
+mcp_scope: user
+mcps:
+  - name: context7
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      KEY: VAL
+    harnesses: [claude, codex]
+  - name: codexonly
+    command: foo
+    harnesses: [codex]
+"""
+
+
+def _install_fake_claude(tmp_path: Path, monkeypatch) -> Path:
+    """Put a fake ``claude`` binary first on PATH that logs each invocation's
+    args (one line per call) to a file, and returns that log path."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    log = tmp_path / "claude-calls.log"
+    shim = bindir / "claude"
+    shim.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$AP_TEST_CLAUDE_LOG"\nexit 0\n'
+    )
+    shim.chmod(shim.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    monkeypatch.setenv("AP_TEST_CLAUDE_LOG", str(log))
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    return log
+
+
+def test_user_scope_skips_plugin_mcp_json(env, monkeypatch):
+    _install_fake_claude(env.tmp, monkeypatch)
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    manifest = parse_manifest(profile_dir)
+    assert manifest.mcp_scope == "user"
+    written = ClaudeRenderer().render(manifest, env.target)
+    # No plugin .mcp.json, and it is not tracked in the install manifest.
+    assert not (
+        env.target / ".claude/plugins/local/mcpuser/.mcp.json"
+    ).exists()
+    assert not any(".mcp.json" in w for w in written)
+
+
+def test_user_scope_registers_bare_via_cli(env, monkeypatch):
+    log = _install_fake_claude(env.tmp, monkeypatch)
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+    lines = log.read_text().splitlines()
+    # remove-then-add per server, idempotent; context7 only (codexonly dropped).
+    assert lines == [
+        "mcp remove context7 --scope user",
+        "mcp add context7 --scope user -e KEY=VAL -- npx -y @upstash/context7-mcp",
+    ]
+
+
+def test_user_scope_clean_removes_via_cli(env, monkeypatch):
+    log = _install_fake_claude(env.tmp, monkeypatch)
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().clean(manifest, env.target)
+    assert "mcp remove context7 --scope user" in log.read_text().splitlines()
+
+
+def test_user_scope_missing_cli_fails_loud(env, monkeypatch):
+    # PATH with no `claude` -> user-scope render must raise, not silently skip.
+    emptybin = env.tmp / "emptybin"
+    emptybin.mkdir()
+    monkeypatch.setenv("PATH", str(emptybin))
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    with pytest.raises(FileNotFoundError):
+        ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+
+
+def test_user_scope_clean_missing_cli_fails_loud(env, monkeypatch):
+    # Clean must fail loud too — a silent return would report success while
+    # leaving the user-scope registrations behind in ~/.claude.json.
+    emptybin = env.tmp / "emptybin"
+    emptybin.mkdir()
+    monkeypatch.setenv("PATH", str(emptybin))
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    with pytest.raises(FileNotFoundError):
+        ClaudeRenderer().clean(parse_manifest(profile_dir), env.target)
+
+
+# ─── MCP-secret-passthrough: ${VAR} reaches claude as a literal ──────
+
+_SECRET_USER_YAML = """\
+name: secretuser
+description: literal ${VAR} passthrough at user scope
+mcp_scope: user
+mcps:
+  - name: context7
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+    harnesses: [claude]
+"""
+
+_SECRET_PLUGIN_YAML = """\
+name: secretplugin
+description: literal ${VAR} passthrough at plugin scope
+mcps:
+  - name: context7
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+    harnesses: [claude]
+"""
+
+
+def test_user_scope_passes_literal_var_not_secret(env, monkeypatch):
+    # Criterion 4: the `claude mcp add` argv carries `-e KEY=${VAR}` literally,
+    # never a resolved secret. A real value in the process env must NOT leak
+    # into the stored registration — Claude expands ${VAR} itself at launch.
+    monkeypatch.setenv("CONTEXT7_API_KEY", "sk-real-secret-123")
+    log = _install_fake_claude(env.tmp, monkeypatch)
+    profile_dir = write_profile(env.profiles, "secretuser", _SECRET_USER_YAML)
+    ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+    text = log.read_text()
+    assert "-e CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" in text
+    assert "sk-real-secret-123" not in text
+
+
+def test_plugin_scope_mcp_json_env_is_literal_var(env, monkeypatch):
+    # Criterion 5: the plugin-scope `.mcp.json` env value is the literal
+    # ${VAR}; Claude expands it at launch. No secret on disk.
+    monkeypatch.setenv("CONTEXT7_API_KEY", "sk-real-secret-123")
+    profile_dir = write_profile(env.profiles, "secretplugin", _SECRET_PLUGIN_YAML)
+    ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+    mcp_json = (
+        env.target / ".claude/plugins/local/secretplugin/.mcp.json"
+    ).read_text()
+    data = json.loads(mcp_json)
+    env_block = data["mcpServers"]["context7"]["env"]
+    assert env_block["CONTEXT7_API_KEY"] == "${CONTEXT7_API_KEY}"
+    assert "sk-real-secret-123" not in mcp_json

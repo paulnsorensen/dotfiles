@@ -21,7 +21,7 @@ When implementing changes:
 - Quote all variable expansions: `"$var"`, never bare `$var`
 - New zsh config files must be sourced from `zshrc` at the correct load order point
 - New Claude skills go in `skills/<name>/SKILL.md` with frontmatter
-- New Claude agents go in `claude/agents/<name>.md` with frontmatter
+- New agents are registered in `agents/registry.yaml` with their body at `agents/agent_definitions/<name>.md`
 - New MCP servers go in `agents/mcp/registry.yaml`, not hardcoded JSON. The registry is harness-agnostic — entries install into Claude AND Codex by default; set `harnesses: [claude]` or `harnesses: [codex]` to scope a single entry.
 - Run `dots sync` after any changes to files that get symlinked to `~/.claude/`
 

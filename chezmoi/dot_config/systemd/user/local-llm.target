@@ -1,0 +1,8 @@
+[Unit]
+Description=Local LLM stack (llama-swap router + LiteLLM proxy)
+Documentation=file://%h/local-llm/README.md
+Wants=llama-swap.service litellm.service
+After=llama-swap.service litellm.service
+
+[Install]
+WantedBy=default.target

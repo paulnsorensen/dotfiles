@@ -12,6 +12,11 @@ mkdir -p "$CLAUDE_DIR"
 #   - plugins/  — Claude uses that path as plugin cache
 #   - profiles/ — retired; scoped profiles moved to profiles/<name>/profile.yaml
 #                 (repo root) and deploy/launch via the `ap` tool (dots profile).
+#   - agents/   — the cheese sub-agents now live in agents/registry.yaml and
+#                 render into every harness via the `base` profile (`ap`), the
+#                 same path mcp/hooks/skills take. The legacy ~/.claude/agents
+#                 symlink is removed below; ap writes the real files to
+#                 ~/.claude/agents/<name>.md (user-scoped) + the plugin tree.
 #   - skills/   — copied (not symlinked) by chezmoi; gh-installed skills drop
 #                 real dirs alongside without fighting a directory symlink.
 #   - CLAUDE.md, RTK.md — copied (not symlinked) by chezmoi via
@@ -34,7 +39,6 @@ mkdir -p "$CLAUDE_DIR"
 # ~/.claude/plugins/local/global/hooks/ (deployed by `ap`); no legacy
 # write-through-symlinks happens.
 configs=(
-  agents
   commands
   hooks
   reference
@@ -131,6 +135,14 @@ fi
 if [[ -L "$CLAUDE_DIR/mcp" ]]; then
   rm "$CLAUDE_DIR/mcp"
   echo "  Removed legacy ~/.claude/mcp symlink"
+fi
+
+# Clean up the legacy ~/.claude/agents symlink — agents moved to
+# agents/registry.yaml and now render through `ap` (base profile) as real
+# files. Leaving the symlink would shadow the rendered ~/.claude/agents tree.
+if [[ -L "$CLAUDE_DIR/agents" ]]; then
+  rm "$CLAUDE_DIR/agents"
+  echo "  Removed legacy ~/.claude/agents symlink (agents now render via ap)"
 fi
 
 # Drop stale per-project entries from ~/.claude.json (worktrees that no

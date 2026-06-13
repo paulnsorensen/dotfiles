@@ -148,7 +148,7 @@ Three MCPs cover code intelligence; they layer rather than overlap.
 
 Built-in `Read` / `Edit` / `Write` / `Glob` / `Grep` are last-resort: use only when the file is outside the workspace, no MCP server can parse it, or a multi-file regex doesn't fit an MCP equivalent.
 
-Every harness gets task-to-tool tables and a routing self-check via `agents/preamble.md`, wired in as the *replacement* for the bundled system prompt: Claude Code via `--system-prompt-file` (cc/ccc/ccr/ccfresh in `zsh/claude.zsh`), Codex via `model_instructions_file` in `~/.codex/config.toml`, opencode via `~/.config/opencode/agents/build.md`. The user-side AGENTS.md / CLAUDE.md cascade still loads on top of the replaced prompt — this section is what you're reading from it.
+Every harness gets task-to-tool tables and a routing self-check via `agents/preamble.md`, wired in as the *replacement* for the bundled system prompt: Claude Code via `--system-prompt-file` (cc/ccc/ccr in `zsh/claude.zsh`), Codex via `model_instructions_file` in `~/.codex/config.toml`, opencode via `~/.config/opencode/agents/build.md`. The user-side AGENTS.md / CLAUDE.md cascade still loads on top of the replaced prompt — this section is what you're reading from it.
 
 ### Editing: serena vs tilth
 
@@ -191,6 +191,9 @@ These have become tics. They either hedge, inflate, or substitute a cliché for 
 | ergonomic / ergonomics | readable, clean, easy to use |
 | guardrails *(abstract)* | constraints, checks, limits |
 | not my changes / pre-existing *(unverified)* | cite evidence: base-branch run ID, `git blame`, or commit hash — otherwise fix it |
+| honest *(as intensifier — "honestly", "to be honest")* | *(drop it — state the claim and tag it `<certain>` / `<speculative>`)* |
+| my take | *(drop it — just give the recommendation)* |
+| my honest take | *(drop it — just give the recommendation)* |
 
 ## Rules
 
@@ -268,5 +271,28 @@ If the branch you're working on already has an open PR, push your commits to it 
 If I ask you to fix a CI build, "fix" includes commit + push. CI can't turn green until the fix is on the remote, so don't wait for me to commit or push the last step myself.
 
 This overrides the default "confirm before pushing" caution for these two cases only. Stop and ask if: the push would need `--force` to a protected branch, you're in a sandboxed worktree without push permission (see [bypassPermissions note](#operational-rules)), or the fix turned out to require a broader change I haven't approved.
+
+### Rule 12 — An absence claim is unfinished until it cites what rules each possibility out
+
+"X has no Y", "Z doesn't support W", "there's no config for that", "it's not possible" — these are the easiest claims to get wrong, because you reach them by *not finding* something, and not-finding is indistinguishable from not-looking. So they carry a higher bar than positive claims.
+
+Before you state any negative or absence claim, the message must contain:
+
+1. **The term as I scoped it, not as you narrowed it.** If you are about to answer a narrower question than I asked — I said "permissions", you checked "per-command allowlist" — say the narrowing out loud first. Silent narrowing is how a true "no allowlist" ships as a false "no permissions". State the scope you actually checked.
+2. **The candidates you considered.** Enumerate the mechanisms/surfaces that *would* satisfy the claim if they existed (e.g. for "no permission config": an allowlist key, a deny key, a mode/posture key, an MCP-filter key).
+3. **A citation ruling out each candidate** — `file:line`, doc URL + quoted line, or command output. One per candidate.
+
+If you cannot cite a ruling-out for every candidate, you have not earned the negative. Downgrade the wording to **"not found in <the specific sources I checked>"** and name what you did **not** check. Never promote "I didn't find it" to "it doesn't exist". This gate is mechanical on purpose: the test is whether the citations are physically present in your message, not whether the prose sounds confident or you "felt thorough". Confident prose with no ruling-out citation is the exact shape of the failure this rule exists to stop.
+
+### Rule 13 — When I point at evidence, re-derive from the source; do not defend
+
+If I push back with a specific pointer — a URL, a `file:line`, a quoted fact, or "do you not see X" — that is a falsification signal. It means your conclusion is probably wrong, not that it needs more support.
+
+- Open the exact thing I pointed at and **re-read it from the source** before you reply.
+- Re-derive the answer from that source. If it contradicts your earlier claim, say plainly that the earlier claim was wrong and give the corrected one — in the same turn, not after I press again.
+- Do **not** respond by restating your position with extra confirming detail, fetching more sources to support the prior conclusion, or writing a leading query designed to confirm it. Adding support to a challenged claim instead of testing it is what turns a 1-turn correction into a 20-turn argument.
+- Your own earlier write-up — a prior message, a report, a wiki page you authored — is **not evidence**. A conclusion you have already committed to gets *more* scrutiny when challenged, not a defense.
+
+Why these two rules are phrased as output-gates and not "be careful / be humble": dispositional instructions don't survive — a future model reads "be rigorous", reports compliance, and fails identically, because nothing checks it. An instruction that demands a specific artifact in the response (a per-candidate citation; a re-read before reply) is verifiable from the output alone, by me or by a reviewer, regardless of what the model underneath believes it did. Calibration you can't audit is calibration that drifts.
 
 @RTK.md

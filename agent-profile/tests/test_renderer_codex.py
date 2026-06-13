@@ -246,9 +246,18 @@ def test_codex_hook_writes_hooks_json_and_script(renderer, src, target):
     assert os.access(copied, os.X_OK)
 
     records = json.loads(hooks_json.read_text())
-    assert records == [
-        {"event": "PreToolUse", "command": "bash .codex/hooks/h.sh", "matcher": "Bash"}
-    ]
+    assert records == {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {"type": "command", "command": "bash .codex/hooks/h.sh"}
+                    ],
+                }
+            ]
+        }
+    }
 
 
 def test_claude_only_hook_does_not_write_hooks_json(renderer, src, target):
@@ -287,8 +296,10 @@ def test_hook_timeout_is_emitted_as_number(renderer, src, target):
     )
     renderer.render(m, target)
     records = json.loads((target / ".codex" / "hooks.json").read_text())
-    assert records[0]["timeout"] == 5
-    assert "matcher" not in records[0]
+    handler = records["hooks"]["SessionStart"][0]["hooks"][0]
+    group = records["hooks"]["SessionStart"][0]
+    assert handler["timeout"] == 5
+    assert "matcher" not in group
 
 
 def test_hook_missing_script_file_raises(renderer, src, target):
@@ -466,6 +477,39 @@ def test_mcp_env_block_omitted_when_fully_scrubbed(renderer, src, target, monkey
     renderer.render(m, target)
     doc = tomllib.loads((target / ".codex" / "config.toml").read_text())
     assert "env" not in doc["mcp_servers"]["todoist"]
+
+
+def test_mcp_literal_var_is_scrubbed_no_placeholder_or_secret(
+    renderer, src, target, monkeypatch, tmp_path
+):
+    """Criterion 6: with the MCP-secret-passthrough flow the manifest now
+    carries the literal ``${VAR}`` (not a resolved secret). Codex's
+    scrub-by-keyname must still drop the `.env`-keyed entry, so neither the
+    `${VAR}` placeholder NOR any secret lands in config.toml — codex inherits
+    the value from the shell env at runtime."""
+    dotfiles = tmp_path / "df"
+    dotfiles.mkdir()
+    (dotfiles / ".env").write_text("CONTEXT7_API_KEY=ctx7sk-real-secret\n")
+    monkeypatch.setenv("DOTFILES_DIR", str(dotfiles))
+    monkeypatch.delenv("AP_CODEX_INHERIT_ENV", raising=False)
+
+    m = _manifest(
+        src,
+        mcps=[
+            {
+                "name": "context7",
+                "command": "npx",
+                "env": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"},
+                "harnesses": ["codex"],
+            }
+        ],
+    )
+    renderer.render(m, target)
+    raw = (target / ".codex" / "config.toml").read_text()
+    assert "${CONTEXT7_API_KEY}" not in raw
+    assert "ctx7sk-real-secret" not in raw
+    doc = tomllib.loads(raw)
+    assert "env" not in doc["mcp_servers"]["context7"]
 
 
 # ─── commands deprecated, AGENTS.md never touched ─────────────────────────
@@ -683,3 +727,361 @@ def test_scrub_resolves_dotenv_via_home_fallback_when_dotfiles_dir_unset(
     renderer.render(m, target)
     text = (target / ".codex" / "config.toml").read_text()
     assert secret not in text
+
+
+# ─── canonical permissions (curd 3) ─────────────────────────────────────
+# Lever 1: the Bash(...) subset lowers to a .rules file of prefix_rule()s.
+# Lever 3: mcp__server__tool allow/deny lowers to enabled/disabled_tools.
+
+import tomllib as _tomllib  # noqa: E402
+
+_RULES_REL = ".codex/rules/ap-canonical.rules"
+
+
+def _parse_prefix_rules(text: str) -> list[tuple[list[str], str]]:
+    """Extract (pattern, decision) pairs from a rendered .rules body without a
+    Starlark interpreter — the file is deterministic line-structured output."""
+    import re
+
+    out = []
+    for block in re.split(r"\)\n", text):
+        pm = re.search(r"pattern = \[(.*?)\]", block, re.S)
+        dm = re.search(r'decision = "(\w+)"', block)
+        if pm and dm:
+            pattern = [s.strip().strip('"') for s in pm.group(1).split(",") if s.strip()]
+            out.append((pattern, dm.group(1)))
+    return out
+
+
+def test_allow_bash_rule_becomes_prefix_rule_allow(renderer, src, target):
+    m = _manifest(src, settings={"permissions_allow": ["Bash(git:*)"]})
+    renderer.render(m, target)
+    rules = _parse_prefix_rules((target / _RULES_REL).read_text())
+    assert (["git"], "allow") in rules
+
+
+def test_allow_multiword_bash_rule_splits_argv(renderer, src, target):
+    m = _manifest(src, settings={"permissions_allow": ["Bash(gh pr view:*)"]})
+    renderer.render(m, target)
+    rules = _parse_prefix_rules((target / _RULES_REL).read_text())
+    assert (["gh", "pr", "view"], "allow") in rules
+
+
+def test_deny_bash_rule_becomes_forbidden(renderer, src, target):
+    m = _manifest(
+        src,
+        settings={"permissions_deny": ["Bash(rm -rf:*)", "Bash(sudo:*)"]},
+    )
+    renderer.render(m, target)
+    rules = _parse_prefix_rules((target / _RULES_REL).read_text())
+    assert (["rm", "-rf"], "forbidden") in rules
+    assert (["sudo"], "forbidden") in rules
+
+
+def test_non_bash_canonical_entries_skipped_in_rules(renderer, src, target):
+    """Edit/Write/Read/Grep/Glob/Skill and mcp__* are not shell commands —
+    they must not appear in the .rules file."""
+    m = _manifest(
+        src,
+        settings={
+            "permissions_allow": ["Edit", "Write", "Skill", "mcp__tilth__*"],
+            "permissions_deny": ["Grep", "Glob"],
+        },
+    )
+    renderer.render(m, target)
+    # No Bash entries -> no rules file at all.
+    assert not (target / _RULES_REL).is_file()
+
+
+def test_no_rules_file_when_no_canonical_perms(renderer, src, target):
+    m = _manifest(src, agents=[])
+    renderer.render(m, target)
+    assert not (target / _RULES_REL).is_file()
+
+
+def test_write_rules_unlinks_stale_file_when_rules_go_empty(renderer, src, target):
+    """SSOT: a prior render wrote a .rules file; the canonical list is then
+    edited so NO Bash rule remains. The next render must unlink the stale
+    ap-canonical.rules — leaving it would keep a dead execpolicy floor in
+    force. A regression that returned early without unlinking would strand
+    the old allow/forbidden prefix rules."""
+    m1 = _manifest(src, settings={"permissions_allow": ["Bash(git:*)"]})
+    renderer.render(m1, target)
+    assert (target / _RULES_REL).is_file()
+
+    # Same renderer, now no Bash-prefix rules at all (only non-shell entries).
+    m2 = _manifest(
+        src,
+        settings={"permissions_allow": ["Edit", "mcp__tilth__*"]},
+    )
+    renderer.render(m2, target)
+    assert not (target / _RULES_REL).is_file()
+
+
+def test_clean_unlinks_rules_file(renderer, src, target):
+    m = _manifest(src, settings={"permissions_allow": ["Bash(git:*)"]})
+    renderer.render(m, target)
+    assert (target / _RULES_REL).is_file()
+    renderer.clean(m, target)
+    assert not (target / _RULES_REL).is_file()
+
+
+def test_mcp_named_tool_allow_writes_enabled_tools(renderer, src, target):
+    m = _manifest(
+        src, settings={"permissions_allow": ["mcp__tilth__tilth_read"]}
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert doc["mcp_servers"]["tilth"]["enabled_tools"] == ["tilth_read"]
+
+
+def test_mcp_named_tool_deny_writes_disabled_tools(renderer, src, target):
+    m = _manifest(
+        src, settings={"permissions_deny": ["mcp__tilth__tilth_write"]}
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert doc["mcp_servers"]["tilth"]["disabled_tools"] == ["tilth_write"]
+
+
+def test_mcp_whole_server_allow_adds_no_restriction(renderer, src, target):
+    """`mcp__s__*` allow leaves the server unrestricted — it contributes no
+    tool list, so with no other MCPs/rules the renderer writes no config.toml
+    at all (no empty server table left behind)."""
+    m = _manifest(src, settings={"permissions_allow": ["mcp__tilth__*"]})
+    renderer.render(m, target)
+    assert not (target / ".codex" / "config.toml").is_file()
+
+
+def test_mcp_scope_merges_with_existing_server_entry(renderer, src, target):
+    """A named-tool deny on a server that ALSO has a registered MCP command
+    merges the disabled_tools key without clobbering command/args."""
+    (target / ".codex").mkdir(parents=True)
+    (target / ".codex" / "config.toml").write_text(
+        '# user comment\n[mcp_servers.tilth]\ncommand = "tilth"\nargs = ["--mcp"]\n'
+    )
+    m = _manifest(
+        src,
+        mcps=[{"name": "tilth", "command": "tilth", "args": ["--mcp"], "harnesses": ["codex"]}],
+        settings={"permissions_deny": ["mcp__tilth__tilth_write"]},
+    )
+    renderer.render(m, target)
+    text = (target / ".codex" / "config.toml").read_text()
+    assert "# user comment" in text  # tomlkit round-trip preserves comments
+    doc = _tomllib.loads(text)
+    assert doc["mcp_servers"]["tilth"]["command"] == "tilth"
+    assert doc["mcp_servers"]["tilth"]["disabled_tools"] == ["tilth_write"]
+
+
+def test_clean_unmerges_tool_scopes_preserving_user_command(renderer, src, target):
+    """clean removes the ap-written disabled_tools but leaves a user-authored
+    server command intact when the profile did NOT register that MCP (so the
+    [mcp_servers] cleaner doesn't claim the whole server)."""
+    (target / ".codex").mkdir(parents=True)
+    (target / ".codex" / "config.toml").write_text(
+        '[mcp_servers.tilth]\ncommand = "tilth"\n'
+    )
+    m = _manifest(
+        src,
+        settings={"permissions_deny": ["mcp__tilth__tilth_write"]},
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert doc["mcp_servers"]["tilth"]["disabled_tools"] == ["tilth_write"]
+
+    renderer.clean(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    # disabled_tools gone, the user command survives.
+    assert "disabled_tools" not in doc["mcp_servers"]["tilth"]
+    assert doc["mcp_servers"]["tilth"]["command"] == "tilth"
+
+
+def test_mixed_manifest_golden_rules(renderer, src, target):
+    """A mixed manifest (allow+deny, Bash+mcp+non-bash) produces a stable,
+    deterministic .rules body — the lever-1 golden."""
+    m = _manifest(
+        src,
+        settings={
+            "permissions_allow": ["Bash(git:*)", "Bash(gh pr view:*)", "Edit", "mcp__tilth__*"],
+            "permissions_deny": ["Bash(rm -rf:*)", "Bash(sudo:*)", "Grep"],
+        },
+    )
+    renderer.render(m, target)
+    body = (target / _RULES_REL).read_text()
+    expected = (
+        "# Managed by ap (agent-profile) — canonical cross-harness permission rules.\n"
+        "# Do not edit; regenerated on every `dots sync`. The TUI-owned default.rules is untouched.\n"
+        "\n"
+        'prefix_rule(\n    pattern = ["gh", "pr", "view"],\n    decision = "allow",\n)\n'
+        'prefix_rule(\n    pattern = ["git"],\n    decision = "allow",\n)\n'
+        'prefix_rule(\n    pattern = ["rm", "-rf"],\n    decision = "forbidden",\n)\n'
+        'prefix_rule(\n    pattern = ["sudo"],\n    decision = "forbidden",\n)\n'
+    )
+    assert body == expected
+
+
+def test_mcp_named_allow_and_deny_same_server_merge(renderer, src, target):
+    """A server scoped by BOTH a named allow and a named deny gets both
+    keys — enabled_tools and disabled_tools co-exist on one [mcp_servers.<s>]
+    table (curd-3 lever-3). A regression that let one channel clobber the
+    other (e.g. last-write-wins on the server entry) would drop a rule."""
+    m = _manifest(
+        src,
+        settings={
+            "permissions_allow": ["mcp__tilth__tilth_read"],
+            "permissions_deny": ["mcp__tilth__tilth_write"],
+        },
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert doc["mcp_servers"]["tilth"]["enabled_tools"] == ["tilth_read"]
+    assert doc["mcp_servers"]["tilth"]["disabled_tools"] == ["tilth_write"]
+
+
+def test_mcp_whole_server_allow_wins_over_named_omits_enabled_tools(
+    renderer, src, target
+):
+    """When the canonical allow carries BOTH `mcp__<s>__*` and a named-tool
+    rule for the same server, the whole-server allow wins -> NO enabled_tools
+    key (the server stays unrestricted). With no other MCP/rule that means no
+    config.toml at all. A regression that read only named_mcp_tools would
+    wrongly write enabled_tools = [<named>] (findings 4/5)."""
+    m = _manifest(
+        src,
+        settings={
+            "permissions_allow": ["mcp__tilth__*", "mcp__tilth__tilth_read"],
+        },
+    )
+    renderer.render(m, target)
+    assert not (target / ".codex" / "config.toml").is_file()
+
+
+def test_mcp_whole_server_allow_keeps_disabled_tools(renderer, src, target):
+    """A whole-server allow nullifies the server's enabled_tools but must NOT
+    touch disabled_tools (deny channel is independent of the whole-server
+    allow). enabled is dropped, disabled survives."""
+    m = _manifest(
+        src,
+        settings={
+            "permissions_allow": ["mcp__tilth__*", "mcp__tilth__tilth_read"],
+            "permissions_deny": ["mcp__tilth__tilth_write"],
+        },
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert "enabled_tools" not in doc["mcp_servers"]["tilth"]
+    assert doc["mcp_servers"]["tilth"]["disabled_tools"] == ["tilth_write"]
+
+
+def test_mcp_scope_clears_stale_enabled_tools_on_removal(renderer, src, target):
+    """SSOT: a tool dropped from the canonical allow list must clear the
+    PRIOR enabled_tools key, not leave it behind. Here a prior render wrote
+    enabled_tools = ['tilth_read', 'tilth_list']; the canonical list now
+    names only one of them, so the render must rewrite the key to just the
+    surviving tool — never union the stale entry back in."""
+    (target / ".codex").mkdir(parents=True)
+    (target / ".codex" / "config.toml").write_text(
+        '[mcp_servers.tilth]\ncommand = "tilth"\n'
+        'enabled_tools = ["tilth_list", "tilth_read"]\n'
+    )
+    m = _manifest(
+        src,
+        settings={"permissions_allow": ["mcp__tilth__tilth_read"]},
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert doc["mcp_servers"]["tilth"]["enabled_tools"] == ["tilth_read"]
+
+
+def test_mcp_scope_whole_server_clears_prior_enabled_tools(renderer, src, target):
+    """SSOT + findings 4/5: when the last NAMED allow for a server is dropped
+    and only a whole-server `mcp__<s>__*` allow remains, the prior
+    enabled_tools key must be cleared (server back to unrestricted), not left
+    stale. The server is still 'managed' (named by the whole-server rule), so
+    the stale key is removed even though the new enabled set is empty. The
+    user command survives; the now-empty table is not orphaned with a stale
+    restriction."""
+    (target / ".codex").mkdir(parents=True)
+    (target / ".codex" / "config.toml").write_text(
+        '[mcp_servers.tilth]\ncommand = "tilth"\n'
+        'enabled_tools = ["tilth_read"]\n'
+    )
+    m = _manifest(
+        src,
+        settings={"permissions_allow": ["mcp__tilth__*"]},
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert "enabled_tools" not in doc["mcp_servers"]["tilth"]
+    assert doc["mcp_servers"]["tilth"]["command"] == "tilth"
+
+
+def test_mcp_scope_clears_stale_disabled_tools_on_removal(renderer, src, target):
+    """SSOT mirror for the deny channel: a named-tool deny dropped from the
+    canonical list clears the prior disabled_tools key. A whole-server deny
+    keeps the server 'managed', so the stale key is removed."""
+    (target / ".codex").mkdir(parents=True)
+    (target / ".codex" / "config.toml").write_text(
+        '[mcp_servers.tilth]\ncommand = "tilth"\n'
+        'disabled_tools = ["tilth_write"]\n'
+    )
+    m = _manifest(
+        src,
+        settings={"permissions_deny": ["mcp__tilth__*"]},
+    )
+    renderer.render(m, target)
+    doc = _tomllib.loads((target / ".codex" / "config.toml").read_text())
+    assert "disabled_tools" not in doc["mcp_servers"]["tilth"]
+    assert doc["mcp_servers"]["tilth"]["command"] == "tilth"
+
+
+def test_mcp_whole_server_deny_writes_nothing(renderer, src, target):
+    """`mcp__s__*` DENY is a whole-server disable, which Codex expresses by
+    omitting the server, not a tool list — so it must contribute no
+    disabled_tools entry (and with no other rule, no config.toml at all). A
+    regression that wrote `disabled_tools = ["*"]` or an empty table would
+    misconfigure Codex; lock the documented skip."""
+    m = _manifest(src, settings={"permissions_deny": ["mcp__tilth__*"]})
+    renderer.render(m, target)
+    assert not (target / ".codex" / "config.toml").is_file()
+
+
+def test_sanctioned_bash_tools_render_allow_never_forbidden(renderer, src, target):
+    """Negative (spec test plan): after the deny seed lands, rg/fd/sg stay
+    ALLOWED — they must lower to decision="allow" prefix_rules and never to
+    "forbidden". Read is not a shell command, so it must not appear at all.
+    Drives the full canonical shape (allow seed + deny seed together) through
+    the renderer, not just the parse layer."""
+    m = _manifest(
+        src,
+        settings={
+            "permissions_allow": ["Bash(rg:*)", "Bash(fd:*)", "Bash(sg:*)", "Read"],
+            "permissions_deny": ["Bash(grep:*)", "Bash(ag:*)", "Grep", "Glob"],
+        },
+    )
+    renderer.render(m, target)
+    rules = _parse_prefix_rules((target / _RULES_REL).read_text())
+    for tool in ("rg", "fd", "sg"):
+        assert ([tool], "allow") in rules
+        assert ([tool], "forbidden") not in rules
+    # grep/ag deny lands as forbidden; Read (not a shell cmd) never appears.
+    assert (["grep"], "forbidden") in rules
+    assert (["ag"], "forbidden") in rules
+    assert not any(pat == ["Read"] for pat, _ in rules)
+
+
+def test_clean_leaves_sibling_default_rules_untouched(renderer, src, target):
+    """clean unlinks ONLY ap-canonical.rules. A TUI-owned sibling
+    default.rules under the same rules/ dir must survive — the spec's clean
+    contract ("the TUI-owned default.rules is untouched")."""
+    m = _manifest(src, settings={"permissions_allow": ["Bash(git:*)"]})
+    renderer.render(m, target)
+    rules_dir = (target / _RULES_REL).parent
+    default_rules = rules_dir / "default.rules"
+    default_rules.write_text("# TUI-owned, ap must not touch\n")
+
+    renderer.clean(m, target)
+
+    assert not (target / _RULES_REL).is_file()
+    assert default_rules.is_file()
+    assert default_rules.read_text() == "# TUI-owned, ap must not touch\n"
