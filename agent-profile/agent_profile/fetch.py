@@ -91,7 +91,31 @@ def skill_agent_for(harness: str) -> str:
 
 
 def _default_runner(argv: list[str]) -> int:
-    return subprocess.run(argv, check=False).returncode
+    """Run ``argv`` and return its exit code.
+
+    Also scans combined stdout+stderr for per-skill failure lines. The
+    ``skills`` CLI exits 0 even when individual skill installs fail (e.g.
+    EPERM on a globally-scoped write). Any line containing "error" or "failed"
+    (case-insensitive) in the captured output is treated as a failure and
+    causes a non-zero return, so the caller's existing non-zero-exit guard
+    catches it.
+
+    Note: the exact output format of ``npx skills add`` is not publicly
+    documented. This is the smallest reliable check — if the heuristic
+    produces false positives for a future CLI version, the runner can be
+    replaced via the ``runner`` parameter of ``fetch_external_source``."""
+    result = subprocess.run(argv, check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        return result.returncode
+    combined = result.stdout + result.stderr
+    for line in combined.splitlines():
+        lower = line.lower()
+        if "error" in lower or "failed" in lower:
+            # Print the suspicious line so the caller can surface it.
+            import sys
+            print(line, file=sys.stderr)
+            return 1
+    return 0
 
 
 def fetch_external_source(

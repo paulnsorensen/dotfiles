@@ -288,7 +288,7 @@ def cmd_install(
         written = renderer.render(manifest, target)
         all_new_files.extend(written)
 
-    _fetch_external_skills(manifest, harnesses, colors, out)
+    _fetch_external_skills(manifest, harnesses, colors, out, live=target_opt is None)
 
     new_files = sorted(set(all_new_files))
 
@@ -431,11 +431,20 @@ def _fetch_external_skills(
     harnesses: list[str],
     colors: _Colors,
     out: Any,
+    *,
+    live: bool = True,
 ) -> None:
     """Fetch every ``source:`` skill into the in-scope harnesses via
     ``npx skills add`` (spec curd 4) — one shallow clone per source repo,
     installed to all harnesses at once. ``path:`` skills are copied by the
-    renderers, so they are excluded here."""
+    renderers, so they are excluded here.
+
+    ``live=False`` (staged installs: ``--target`` was given explicitly) skips
+    the fetch entirely. ``npx skills add`` always installs at global scope
+    (``-g``) regardless of the target directory, so running it during a staged
+    render would mutate the user's real skill dirs even though the caller
+    requested a throwaway target. Staged callers should run ``ap install``
+    without ``--target`` when they are ready to populate the live dirs."""
     from agent_profile.fetch import (
         SkillFetchError,
         external_skills,
@@ -444,6 +453,14 @@ def _fetch_external_skills(
 
     ext = external_skills(manifest.skills)
     if not ext:
+        return
+
+    if not live:
+        print(
+            f"  {colors.BLUE}↳{colors.NC} external skills skipped "
+            f"(staged install — run without --target to fetch into live dirs)",
+            file=out,
+        )
         return
 
     # Group items by source repo. A bare `source:` (no name) means "all skills"
