@@ -222,6 +222,54 @@ JS hooks should be wired; diff it against the live file to catch future drift.
 hook-runner commands. A missing file with a fail-open runner is invisible to
 normal operation but pollutes stderr in verbose mode.
 
+## Known drift pattern: straggler scripts in `claude/hooks/`
+
+**Symptom**: Unexpected non-JS files appear in `~/.claude/hooks/` (e.g.
+`session-start-cheese-flair.sh`) or as untracked files in `claude/hooks/` in
+the dotfiles repo.
+
+**Why it happens**: `~/.claude/hooks/` is a **symlink** → `$DOTFILES_DIR/claude/hooks/`.
+The JS guard hooks (`bash-guard.js`, `hook-runner.js`, etc.) live there and are
+intentional. Before the plugin-tree migration, shell hook scripts (like the
+cheese-flair SessionStart hook) were also deployed into `~/.claude/hooks/` and
+wired via `settings.json`. When the migration moved them into the plugin tree
+(`~/.claude/plugins/local/global/hooks/`, wired via `plugin.json`), the source
+files in `claude/hooks/` were deleted — but not always completely. Any straggler
+left in `claude/hooks/` is immediately live at `~/.claude/hooks/` via the symlink.
+
+The `.gitignore` explicitly handles known stragglers:
+
+- `claude/lib/cheese-flair.sh` — cheese-flair lib, now deployed by `ap` to the plugin tree
+- `claude/reference/cheese-flair.md` — cheese-flair bank, same
+
+**Detection**: Any `.sh` file in `claude/hooks/` is unexpected (only `.js`, `package.json`,
+`package-lock.json` are intentional). The broken OLD version is also functionally
+incorrect: it used `readlink -f` to resolve the script path, which follows the
+`~/.claude/hooks/ → claude/hooks/` symlink into the dotfiles clone where
+`lib/cheese-flair.sh` does NOT exist (it's deployed to the plugin tree, not
+symlinked). The canonical `agents/hooks/session-start-cheese-flair.sh` was
+updated to avoid `readlink -f` for exactly this reason.
+
+**Fix**: Delete the straggler. The plugin-tree copy at
+`~/.claude/plugins/local/global/hooks/session-start-cheese-flair.sh` (deployed
+by `ap`) is the live hook. Add the filename to `.gitignore` if it keeps
+reappearing on migration-in-progress hosts.
+
+## Known drift pattern: `~/.agent-profile/manifest.json` appears untracked in the repo
+
+**Symptom**: `git status` in the dotfiles repo shows `?? agent-profile/manifest.json`.
+
+**Why it happens**: `~/.agent-profile` is a **symlink** → `$DOTFILES_DIR/agent-profile/`.
+The `ap install` manifest correctly lives at `~/.agent-profile/manifest.json`
+(per `manifest.py:manifest_path`), but because of the symlink that path is
+physically `$DOTFILES_DIR/agent-profile/manifest.json`. The `agent-profile/.gitignore`
+originally did not exclude it, so it showed up as an untracked file after the
+first `ap install global` run.
+
+**Fix**: Add `manifest.json` to `agent-profile/.gitignore`. This was added in
+2026-06-11. If the file reappears as untracked, verify the `.gitignore` entry
+is present.
+
 ## Gotcha: index drift is its own drift class
 
 The hallouminate wiki index (LanceDB) is derived from the markdown on disk. If
