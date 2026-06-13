@@ -23,7 +23,14 @@
       "npm *": "allow",
       "cargo *": "allow",
       "Edit": "allow",
-      "Bash(git push origin main)": "allow"
-    }
+      "git push origin main": "allow"
+    },
+    "read": {
+      "./src": "allow"
+    },
+    "edit": {
+      "./secrets": "deny"
+    },
+    "serena_find_symbol": "deny"
   }
 }

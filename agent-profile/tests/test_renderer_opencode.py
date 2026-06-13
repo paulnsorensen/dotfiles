@@ -29,9 +29,11 @@ SCHEMA = "https://opencode.ai/config.json"
 
 def _manifest() -> Manifest:
     """A manifest whose opencode-scoped MCPs and permissions mirror the
-    inputs used to freeze the golden fixtures (one opencode MCP, one
-    claude-only MCP that must be skipped, a prefix-form Bash permission
-    that translates, and two that do not)."""
+    inputs used to freeze the golden fixtures: one opencode MCP, one
+    claude-only MCP that must be skipped, and a permission set spanning the
+    translation surface — a prefix-form Bash, a bare-token back-compat form,
+    a literal Bash command, a non-bash map tool (Read), and two deny rules
+    (an Edit map deny + an MCP shorthand deny)."""
     return Manifest(
         name="rust",
         mcps=[
@@ -48,7 +50,12 @@ def _manifest() -> Manifest:
                 "Bash(cargo:*)",
                 "Edit",
                 "Bash(git push origin main)",
-            ]
+                "Read(./src)",
+            ],
+            "permissions_deny": [
+                "Edit(./secrets)",
+                "mcp__serena__find_symbol",
+            ],
         },
     )
 
@@ -96,16 +103,101 @@ def test_merge_preserves_user_entries_matches_golden(tmp_path: Path):
     assert "claude-only" not in got["mcp"]
 
 
-def test_permission_translation_prefix_form(tmp_path: Path):
-    """``Bash(cargo:*)`` -> ``cargo *``; non-prefix forms pass through raw."""
+def test_translate_permission_table():
+    """Every row of the Claude-rule -> opencode (key, pattern) table.
+    ``pattern is None`` marks a shorthand-only key (string action, no map);
+    a concrete pattern marks one of the 8 map-capable opencode tools."""
+    from agent_profile.renderers.opencode import _translate_permission
+
+    # Bash prefix form -> bash glob.
+    assert _translate_permission("Bash(cargo:*)") == ("bash", "cargo *")
+    # Bash literal command -> bash map with the literal as the pattern.
+    assert _translate_permission("Bash(git push origin main)") == (
+        "bash",
+        "git push origin main",
+    )
+    # Read / Edit / Write -> map tools.
+    assert _translate_permission("Read(./src)") == ("read", "./src")
+    assert _translate_permission("Edit(./x)") == ("edit", "./x")
+    assert _translate_permission("Write(./x)") == ("edit", "./x")
+    # Glob / Grep / Skill / Agent -> map tools.
+    assert _translate_permission("Glob(./src/**)") == ("glob", "./src/**")
+    assert _translate_permission("Grep(foo)") == ("grep", "foo")
+    assert _translate_permission("Skill(scout)") == ("skill", "scout")
+    assert _translate_permission("Agent(Explore)") == ("task", "Explore")
+    # WebFetch -> shorthand-only (domain dropped, no pattern map).
+    assert _translate_permission("WebFetch(domain:example.com)") == (
+        "webfetch",
+        None,
+    )
+    # MCP forms -> shorthand <server>_<tool>; *-or-bare collapse to _*.
+    assert _translate_permission("mcp__serena__find_symbol") == (
+        "serena_find_symbol",
+        None,
+    )
+    assert _translate_permission("mcp__serena__*") == ("serena_*", None)
+    assert _translate_permission("mcp__serena") == ("serena_*", None)
+    # Server segment may carry hyphens/underscores; split only on `mcp__`+`__`.
+    assert _translate_permission("mcp__code-review-graph__build") == (
+        "code-review-graph_build",
+        None,
+    )
+    # Bare token (no parens) -> bash literal (back-compat with the old
+    # verbatim pass-through).
+    assert _translate_permission("Edit") == ("bash", "Edit")
+
+
+def test_permission_translation_render(tmp_path: Path):
+    """End-to-end: the fixture's allow+deny set renders to the expected
+    per-tool opencode keys with correct allow/deny actions."""
     OpencodeRenderer().render(_manifest(), tmp_path)
+    perm = json.loads((tmp_path / "opencode.json").read_text())["permission"]
+    assert perm["bash"]["cargo *"] == "allow"
+    assert perm["bash"]["Edit"] == "allow"
+    assert perm["bash"]["git push origin main"] == "allow"
+    assert perm["read"]["./src"] == "allow"
+    # deny rows
+    assert perm["edit"]["./secrets"] == "deny"
+    assert perm["serena_find_symbol"] == "deny"
+    # the untranslated Claude forms never leak through as raw keys
+    assert "Bash(cargo:*)" not in perm["bash"]
+    assert "Bash(git push origin main)" not in perm["bash"]
+
+
+def test_last_match_ordering_allow_before_deny(tmp_path: Path):
+    """opencode is last-match-wins. A profile allowing ``Bash(git:*)`` and
+    denying ``Bash(git push)`` must emit the allow entry BEFORE the deny in
+    the bash map's insertion order, so the more specific deny wins."""
+    m = Manifest(
+        name="order",
+        settings={
+            "permissions_allow": ["Bash(git:*)"],
+            "permissions_deny": ["Bash(git push)"],
+        },
+    )
+    OpencodeRenderer().render(m, tmp_path)
     bash = json.loads((tmp_path / "opencode.json").read_text())["permission"][
         "bash"
     ]
-    assert bash["cargo *"] == "allow"
-    assert bash["Edit"] == "allow"
-    assert bash["Bash(git push origin main)"] == "allow"
-    assert "Bash(cargo:*)" not in bash
+    assert list(bash.items()) == [("git *", "allow"), ("git push", "deny")]
+
+
+def test_merge_preserves_user_map_under_same_tool(tmp_path: Path):
+    """A user-set pattern map under a tool the profile also touches survives:
+    the profile's deny is appended to the user's existing ``edit`` map rather
+    than clobbering it."""
+    (tmp_path / "opencode.json").write_text(
+        json.dumps({"$schema": SCHEMA, "permission": {"edit": {"*": "ask"}}})
+    )
+    m = Manifest(
+        name="editdeny",
+        settings={"permissions_deny": ["Edit(./secrets)"]},
+    )
+    OpencodeRenderer().render(m, tmp_path)
+    edit = json.loads((tmp_path / "opencode.json").read_text())["permission"][
+        "edit"
+    ]
+    assert edit == {"*": "ask", "./secrets": "deny"}
 
 
 def test_render_does_not_track_merged_file(tmp_path: Path):
@@ -149,6 +241,49 @@ def test_clean_keeps_user_entries_matches_golden(tmp_path: Path):
     assert "user-mcp" in got["mcp"]
     assert "cargo *" not in got["permission"]["bash"]
     assert "npm *" in got["permission"]["bash"]
+    # Deny entries the profile contributed are also un-merged: the map-tool
+    # ``edit`` bucket and the MCP shorthand key both vanish, leaving no
+    # orphaned empty bucket behind.
+    assert "edit" not in got["permission"]
+    assert "serena_find_symbol" not in got["permission"]
+
+
+def test_clean_removes_deny_shorthand_preserving_user_shorthand(tmp_path: Path):
+    """A profile deny rendered as a shorthand key (``serena_find_symbol``)
+    is removed on clean, while an unrelated user-set shorthand key on the
+    same surface survives — clean keys by exact (key, pattern), not by tool."""
+    (tmp_path / "opencode.json").write_text(
+        json.dumps(
+            {"$schema": SCHEMA, "permission": {"user_tool": "deny"}}
+        )
+    )
+    r = OpencodeRenderer()
+    m = Manifest(
+        name="shdeny", settings={"permissions_deny": ["mcp__serena__find_symbol"]}
+    )
+    r.render(m, tmp_path)
+    rendered = json.loads((tmp_path / "opencode.json").read_text())["permission"]
+    assert rendered["serena_find_symbol"] == "deny"
+    assert rendered["user_tool"] == "deny"
+    r.clean(m, tmp_path)
+    after = json.loads((tmp_path / "opencode.json").read_text())["permission"]
+    assert "serena_find_symbol" not in after
+    assert after["user_tool"] == "deny"
+
+
+def test_apply_perms_leaves_user_string_value_under_map_tool(tmp_path: Path):
+    """If a user set a map-capable tool as a string shorthand
+    (``permission.edit = "ask"``) rather than a ``{pattern: action}`` map,
+    a profile map-rule for that tool is dropped rather than crashing or
+    clobbering the user's value. Locks the non-dict guard in ``_apply_perms``;
+    the silent-drop is a known limitation."""
+    (tmp_path / "opencode.json").write_text(
+        json.dumps({"$schema": SCHEMA, "permission": {"edit": "ask"}})
+    )
+    m = Manifest(name="strguard", settings={"permissions_deny": ["Edit(./x)"]})
+    OpencodeRenderer().render(m, tmp_path)
+    perm = json.loads((tmp_path / "opencode.json").read_text())["permission"]
+    assert perm["edit"] == "ask"  # user value untouched, no crash
 
 
 def test_mcp_env_maps_to_environment(tmp_path: Path):
