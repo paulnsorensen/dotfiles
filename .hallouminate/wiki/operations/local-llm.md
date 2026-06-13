@@ -57,13 +57,17 @@ opencode reaches the stack through the `local-llm` provider (`Local (LiteLLM)`, 
 opencode-lean --model local-llm/local-coder
 ```
 
-It's a one-line wrapper — `OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"`. The `lean.json` overlay `mergeDeep`s onto the global config and **only disables the heavy MCP servers** (`code-review-graph`, `hallouminate`, `tavily`), leaving `tilth` + `serena` + `context7` — so the local coder's small context window isn't blown by tool schemas before the first turn. There's no separate "lean" agent or model set; the overlay is purely the MCP trim.
+It runs `OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"` behind a preflight + pre-warm wrapper (`scripts/executable_aliases.sh`). The `lean.json` overlay `mergeDeep`s onto the global config and **only disables the heavy MCP servers** (`code-review-graph`, `hallouminate`, `tavily`), leaving `tilth` + `serena` + `context7` — so the local coder's small context window isn't blown by tool schemas before the first turn. There's no separate "lean" agent or model set; the overlay is purely the MCP trim. `lean.json` also sets `model: local-llm/local-coder` so bare `opencode-lean` defaults to the local coder, not a cloud model (#297).
 
-Operational notes (each is also an open improvement issue):
+The wrapper does two things before launch:
 
-- The overlay sets **no default model** — you must pass `--model local-llm/<name>` (opencode's flag is `provider/model`). Bare `opencode-lean` falls back to your global *cloud* default, silently. → #297
-- `opencode-lean` does **not** start the stack — run `llm-up` first (or `llm-ping`); otherwise opencode launches and hard-fails on the first request to a dead `:4000`. → #298
-- Pool models (`local-sonnet`/`local-coder`/`local-vision`) **cold-load on first request** (~15–20s while llama-swap swaps the backend in, held open, no 503). `local-haiku` + `local-embed` are hot and answer instantly. opencode's own request timeout vs. the cold-load window is unverified. → #299
+1. **Preflight** (#298) — probes `:4000`; if down, runs `llm-up` and waits up to `OPENCODE_LEAN_TIMEOUT` seconds (default 30), bailing with a hint instead of launching into a dead stack.
+2. **Pre-warm** (#299) — resolves the effective model (`--model`/`--model=` arg, else `lean.json`'s default; `local-llm/` prefix stripped) and, **only for swap-pool models** (`local-sonnet`/`local-coder`/`local-vision`), fires a backgrounded 1-token completion at `:4000` so the ~15–30s cold-load overlaps opencode's startup, not the first turn. Hot models (`local-haiku`/`local-embed`) and unrecognized models are no-ops. The warm-up is a detached subshell — launch never blocks on it (strictly never worse than no warm-up, since llama-swap holds the request open regardless). `OPENCODE_LEAN_WARM_TIMEOUT` (default 360) caps the curl.
+
+Why pre-warm is safe and no provider-timeout config was added: **opencode applies no default request timeout to custom `@ai-sdk/openai-compatible` providers** (`<certain>`, from sst/opencode `provider.ts` — `AbortSignal.timeout` fires only when `options.timeout` is explicitly set; the built-in `openai` provider gets a 10s `headerTimeout`, custom config providers get nothing). So the first request to a cold pool model waits indefinitely for the first token — nothing kills it, and the feared "first request fails on a too-short default timeout" does not occur. Adding `options.timeout`/`chunkTimeout` to the provider block would be speculative hardening against a hypothetical future opencode default (YAGNI) — out of scope; the pre-warm UX win is the whole fix. (Research slug `.cheese/research/opencode-timeout/`.)
+
+Remaining operational note (open improvement issue):
+
 - `local-embed` shows in the picker but is **embeddings-only** — selecting it as a chat model errors. → #300
 
 ## Adding / tuning a model
