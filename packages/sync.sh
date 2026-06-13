@@ -210,25 +210,38 @@ bootstrap_brew_deps_linux() {
     fi
 }
 
+# Source an already-installed linuxbrew into PATH. Linux installs to
+# /home/linuxbrew/.linuxbrew (or ~/.linuxbrew) and isn't on PATH until
+# `brew shellenv` runs; macOS lands in /opt/homebrew, already on PATH via
+# zsh/core.zsh. Best-effort: a missing brew is not a failure here (the
+# installer path handles that), so this always returns 0.
+linuxbrew_shellenv() {
+    [[ "$PLATFORM" == "Linux" ]] || return 0
+    local brew_bin
+    for brew_bin in /home/linuxbrew/.linuxbrew/bin/brew "$HOME/.linuxbrew/bin/brew"; do
+        if [[ -x "$brew_bin" ]]; then
+            eval "$("$brew_bin" shellenv)"
+            return 0
+        fi
+    done
+    return 0
+}
+
 sync_brew() {
     # Install the OS build toolchain first so any sudo prompt is up front.
     bootstrap_brew_deps_linux
 
+    # Pick up an already-installed-but-unsourced linuxbrew *before* deciding to
+    # bootstrap, so a present brew doesn't trigger a redundant installer run.
+    if ! command -v brew &>/dev/null; then
+        linuxbrew_shellenv
+    fi
+
     if ! command -v brew &>/dev/null; then
         log_info "Installing Homebrew..."
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        # Linux installs to /home/linuxbrew/.linuxbrew (or ~/.linuxbrew) and
-        # isn't on PATH until `brew shellenv` runs; macOS lands in
-        # /opt/homebrew, already on PATH via zsh/core.zsh.
-        if [[ "$PLATFORM" == "Linux" ]]; then
-            local brew_bin
-            for brew_bin in /home/linuxbrew/.linuxbrew/bin/brew "$HOME/.linuxbrew/bin/brew"; do
-                if [[ -x "$brew_bin" ]]; then
-                    eval "$("$brew_bin" shellenv)"
-                    break
-                fi
-            done
-        fi
+        # Freshly installed linuxbrew still isn't on PATH — source it now.
+        linuxbrew_shellenv
     fi
 
     if ! command -v brew &>/dev/null; then
