@@ -102,12 +102,55 @@ class ClaudeRenderer:
         self._write_settings(manifest, plugin_dir, base, out)
         self._write_local_marketplace(manifest, base, profile, desc)
         self._merge_root_settings(manifest, base)
+        self._render_native_plugins(manifest, base)
 
         # Track the plugin dir root so uninstall removes the whole tree
         # (including empty sub-dirs we mkdir'd above). Matches the bash
         # final `_claude_track "$target" "$plugin_dir"`.
         self._track(out, base, plugin_dir)
         return out
+
+    def _render_native_plugins(self, manifest: Manifest, base: Path) -> None:
+        """Register each claude_native plugin as a directory marketplace entry
+        and prime Claude's CLI resolution cache via `claude plugin marketplace add`.
+
+        For each native plugin:
+        - Registers the payload root in extraKnownMarketplaces (directory type).
+        - Enables the plugin via enabledPlugins using ``<name>@<name>`` key.
+        - Calls ``claude plugin marketplace add <payload_root>`` to prime the
+          CLI's resolution cache (writing extraKnownMarketplaces alone is not
+          enough: the CLI must also index the marketplace directory).
+
+        Native skills (marked _from_native_plugin) are skipped by _write_skills;
+        native MCPs (with claude removed from harnesses by DEDUP) are not written
+        to the user-scope MCP config by _write_mcp_json (harnesses filter).
+        """
+        if not manifest.native_plugins:
+            return
+        settings = base / ".claude" / "settings.json"
+        if settings.is_file():
+            data = read_json_object(settings, ".claude/settings.json")
+        else:
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+        markets = data.setdefault("extraKnownMarketplaces", {})
+        enabled = data.setdefault("enabledPlugins", {})
+        for entry in manifest.native_plugins:
+            name = entry["name"]
+            payload_root = entry["payload_root"]
+            expanded = os.path.expandvars(os.path.expanduser(str(payload_root)))
+            markets[name] = {"source": {"source": "directory", "path": expanded}}
+            enabled[f"{name}@{name}"] = True
+            # Prime CLI resolution cache.
+            try:
+                subprocess.run(
+                    ["claude", "plugin", "marketplace", "add", expanded],
+                    check=False,
+                    capture_output=True,
+                )
+            except FileNotFoundError:
+                pass  # claude CLI not present; settings.json write is sufficient
+        settings.write_text(json.dumps(data, indent=2) + "\n")
 
     def clean(self, manifest: Manifest, target: Path) -> None:
         """Surgically remove this profile's contributions to the live
@@ -133,6 +176,9 @@ class ClaudeRenderer:
         if isinstance(enabled, dict):
             for plugin_id in manifest.enabled_plugins:
                 enabled.pop(plugin_id, None)
+            # Un-merge native plugin enabledPlugins entries (<name>@<name>).
+            for entry in manifest.native_plugins:
+                enabled.pop(f"{entry['name']}@{entry['name']}", None)
             if not enabled:
                 data.pop("enabledPlugins", None)
 
@@ -140,6 +186,9 @@ class ClaudeRenderer:
         if isinstance(markets, dict):
             for name in manifest.marketplaces:
                 markets.pop(name, None)
+            # Un-merge native plugin marketplace entries.
+            for entry in manifest.native_plugins:
+                markets.pop(entry["name"], None)
             if not markets:
                 data.pop("extraKnownMarketplaces", None)
 
@@ -228,6 +277,8 @@ class ClaudeRenderer:
         out: list[str],
     ) -> None:
         for item in manifest.skills:
+            if item.get("_from_native_plugin"):
+                continue  # native plugin delivers skills at plugin scope, not user scope
             path = item.get("path") or ""
             if not path:
                 continue  # source: (gh-fetched) skill — handled by cmd_install

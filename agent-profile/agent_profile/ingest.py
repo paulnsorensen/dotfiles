@@ -291,8 +291,18 @@ def _expand_plugins(
                     item["args"] = server_body["args"]
                 if server_body.get("env") is not None:
                     item["env"] = server_body["env"]
-                if harnesses:
-                    item["harnesses"] = harnesses
+                # DEDUP: for claude_native plugins, remove claude from decomposed
+                # MCP harnesses — Claude gets the plugin via native marketplace
+                # install (mcp__plugin_<name>_<server>__*), not bare user MCP.
+                effective_harnesses = harnesses
+                if claude_native and harnesses:
+                    effective_harnesses = [h for h in harnesses if h != "claude"]
+                if effective_harnesses:
+                    item["harnesses"] = effective_harnesses
+                elif harnesses and not effective_harnesses:
+                    # All harnesses were claude-only; emit empty list so the
+                    # item exists but renderers' harnesses-filter skips it.
+                    item["harnesses"] = []
                 if gate_unless:
                     item["gate_unless"] = gate_unless
                 out_mcps.append(item)
@@ -303,6 +313,9 @@ def _expand_plugins(
         # tree.name as the rel_root prefix, so 'path' becomes 'skills/<name>'.
         skills_tree = payload_root / "skills"
         plugin_skills = _expand_local_skills(skills_tree, source_dir)
+        if claude_native:
+            for skill in plugin_skills:
+                skill["_from_native_plugin"] = True
         out_skills.extend(plugin_skills)
 
         # ── Native plugin descriptor (claude renderer pass) ──
