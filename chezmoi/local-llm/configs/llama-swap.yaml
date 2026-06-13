@@ -1,0 +1,81 @@
+# llama-swap routes by request model name to one of these llama-server backends,
+# loading/unloading them on demand (one swap-pool model resident at a time).
+# Started by llama-swap.service:  llama-swap --config <this> --listen 127.0.0.1:9000
+#
+# Schema grounded from llama-swap v224 source — see issue #288.
+
+healthCheckTimeout: 360       # covers ~18GB NVMe cold load; requests hold open, no 503
+globalTTL: 600                # swap-pool idle unload (seconds)
+startPort: 9100               # first ${PORT}; auto-increments per model
+logLevel: info
+
+macros:
+  llama: "${env.HOME}/local-llm/bin/llama.cpp/llama-server"   # systemd specifiers are not expanded here — only ${env.*}
+  models: "${env.HOME}/local-llm/models"
+
+models:
+  local-haiku:                # HOT — Qwen3-8B on CPU (Zen 5c taskset)
+    cmd: |
+      /usr/bin/taskset -c 4-11,16-23 ${llama} --port ${PORT}
+      --model ${models}/Qwen3-8B-Q4_K_M.gguf
+      --ctx-size 16384 --parallel 1 --cont-batching
+      --batch-size 2048 --ubatch-size 512
+      --threads 12 --device none --reasoning off
+      --alias local-haiku
+    ttl: 0                     # never unload (group swap:false also pins it)
+
+  local-embed:                # HOT — Qwen3-Embedding-0.6B on CPU (#289)
+    cmd: |
+      /usr/bin/taskset -c 4-11,16-23 ${llama} --port ${PORT}
+      --model ${models}/Qwen3-Embedding-0.6B-Q8_0.gguf
+      --embeddings --ctx-size 8192
+      --threads 4 --device none
+      --alias local-embed
+    ttl: 0                     # never unload (hot group)
+
+  local-sonnet:               # SWAP — Qwen3-30B-A3B on iGPU (Vulkan)
+    cmd: |
+      ${llama} --port ${PORT}
+      --model ${models}/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+      --ctx-size 32768 --parallel 1 --cont-batching
+      --batch-size 2048 --ubatch-size 512
+      --cache-type-k q8_0 --cache-type-v q8_0
+      --n-gpu-layers 99 --flash-attn on
+      --alias local-sonnet
+
+  local-coder:                # SWAP — Qwen3-Coder-30B-A3B on iGPU
+    cmd: |
+      ${llama} --port ${PORT}
+      --model ${models}/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+      --ctx-size 32768 --parallel 1 --cont-batching
+      --batch-size 2048 --ubatch-size 512
+      --cache-type-k q8_0 --cache-type-v q8_0
+      --n-gpu-layers 99 --flash-attn on
+      --alias local-coder
+    ttl: 900                   # coder sessions are bursty — keep it warm longer
+
+  local-vision:               # SWAP — Qwen3-VL-8B on CPU (upgraded in #289)
+    cmd: |
+      /usr/bin/taskset -c 8-11,20-23 ${llama} --port ${PORT}
+      --model ${models}/Qwen3VL-8B-Instruct-Q4_K_M.gguf
+      --mmproj ${models}/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf
+      --ctx-size 8192 --parallel 2 --cont-batching
+      --batch-size 1024 --ubatch-size 256
+      --threads 8 --device none
+      --alias local-vision
+
+# Top-level `groups:` is v224's engine config (the `routing.router.settings`
+# nesting only exists post-v224, and v224 silently ignores unknown keys —
+# verified on-box: the nested form left every model in one global swap slot).
+# Groups stay supported in newer releases ("legacy… no plans to deprecate").
+groups:
+  hot:                        # always resident, never evicted
+    swap: false
+    exclusive: false
+    persistent: true
+    members: ["local-haiku", "local-embed"]
+  pool:                       # one resident at a time
+    swap: true
+    exclusive: true
+    persistent: false
+    members: ["local-sonnet", "local-coder", "local-vision"]

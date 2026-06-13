@@ -353,3 +353,66 @@ teardown() {
   assert_not_contains "[SAFE]"
   assert_not_contains "[WARN]"
 }
+
+# ── Regression: --auto must never prompt ──────────────────────────────
+# --auto used to fall through to `read … </dev/tty` for WARN/DIRTY
+# worktrees, crashing in non-interactive sessions (no TTY → unbound
+# variable under set -u) before any later SAFE worktree was reached.
+# --auto now skips non-SAFE worktrees outright.
+
+@test "auto skips WARN worktrees without prompting" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "diverged"
+  add_safe_worktree "$SCAN/repo" "clean"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "Removed: 1"
+  assert_contains "Skipped: 1"
+  [[ -d "$SCAN/repo/.worktrees/diverged" ]] || {
+    echo "WARN worktree was removed under --auto"
+    return 1
+  }
+}
+
+@test "auto skips DIRTY worktrees without prompting" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "dirty"
+  echo "wip" >> "$SCAN/repo/.worktrees/dirty/README.md"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "Skipped: 1"
+  [[ -d "$SCAN/repo/.worktrees/dirty" ]] || {
+    echo "DIRTY worktree was removed under --auto"
+    return 1
+  }
+}
+
+# ── Regression: branch read from worktree HEAD, not dir name ──────────
+# The branch used to be guessed as claude/<dir-name>, so a worktree on a
+# differently-named branch was flagged "branch not found" and its
+# branch-based checks (merged-list, PR lookup) ran against a nonexistent ref.
+
+@test "reads worktree branch from HEAD when dir name differs" {
+  create_repo "$SCAN/repo"
+  mkdir -p "$SCAN/repo/.worktrees"
+  git -C "$SCAN/repo" worktree add "$SCAN/repo/.worktrees/short-name" \
+    -b "feat/completely-different" --quiet 2>/dev/null
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_not_contains "branch not found"
+  assert_contains "[SAFE]"
+}
+
+@test "flags detached-HEAD worktree as such" {
+  create_repo "$SCAN/repo"
+  mkdir -p "$SCAN/repo/.worktrees"
+  git -C "$SCAN/repo" worktree add --detach "$SCAN/repo/.worktrees/loose" --quiet 2>/dev/null
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "detached HEAD"
+  assert_not_contains "branch not found"
+}

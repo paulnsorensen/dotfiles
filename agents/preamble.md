@@ -4,6 +4,16 @@ Reinforces `~/.claude/CLAUDE.md`'s Code-Intelligence Routing section. That secti
 
 The `cheez-search` / `cheez-read` / `cheez-write` skills route through tilth — use them instead of host `Read` / `Edit` / `Write` / `Grep` whenever they're available.
 
+## Ground in the repo wiki (hallouminate) first
+
+If the hallouminate MCP is connected, **ground before you act and maintain before you stop** — the per-repo wiki holds the cross-session *why* (architecture rationale, gotchas, design decisions) that code and `git` can't tell you.
+
+- **At session start / before non-trivial work** — especially anything touching architecture, config, or unfamiliar subsystems — query the wiki first: `ground` (semantic search) or `list_tree` / `read_markdown`. Run `list_corpora` if unsure which wiki applies. This is a read; it costs little and routinely saves a re-derivation. Skip only for trivial one-step edits or when no `repo:<name>:wiki` corpus exists.
+- **Before each tool call, the self-check extends:** "Is the *why* behind this already written down?" If it's a design/rationale question, `ground` it before reading code blind.
+- **At session end** — when the session established a non-obvious fact, decision, or gotcha a future agent would otherwise re-learn, write it back via `add_markdown` (one topic per file, capture the *why* not the *what*, link related pages). Don't duplicate what the code or `AGENTS.md` already states.
+
+The wiki is the fast path to design rationale; `AGENTS.md` / `CLAUDE.md` is the command/structure reference. Use both.
+
 ## Serena mapping (symbol-level)
 
 | Task | Tool |
@@ -12,7 +22,6 @@ The `cheez-search` / `cheez-read` / `cheez-write` skills route through tilth —
 | Read a specific symbol's body | `find_symbol` (`include_body=true`) |
 | Find a symbol by name | `find_symbol` |
 | Find references / callers | `find_referencing_symbols` |
-| Find declarations / implementations | `find_declaration` / `find_implementations` |
 | Edit a symbol's body | `replace_symbol_body` |
 | Insert near a symbol | `insert_before_symbol` / `insert_after_symbol` |
 | Pattern replace inside a file | `replace_content` |
@@ -83,3 +92,18 @@ Default is the inline digest — `artifact:` is omitted when the digest is compl
 ### Coder fan-out
 
 Default to one coder. Coding is a poor multi-agent fit — it needs shared context, burns far more tokens, and adds coordination overhead — so a coder fan-out only pays off for genuinely independent work. Dispatch multiple `coder` subagents only when the subtasks are file-disjoint and independent (no shared mutable state, no sequential dependency), the same disjointness test `/cheese-factory` applies to curds. Otherwise run a single coder: re-deriving shared context across split coders costs more than the parallelism saves.
+
+### Fresh-context taste-test (after `coder` returns)
+
+The `coder` self-checks the taste-test lenses inline, but the writing context can't reliably see its own drift and a dispatched `coder` can't fan out (`disallowedTools: [Agent]`) to its own reviewer. So the **authoritative** taste-test is yours, run after the coder digest returns and before you accept the handoff.
+
+**Cost gate.** Run it only when the coder's diff **touches more than one file OR adds public surface** (a new exported function, type, or CLI seam); single-file no-public-surface fixes keep the coder's inline check. A coder-nested `/cook` that cleared the gate records `taste_test: deferred-to-orchestrator` in its slug — your signal to run the pass.
+
+**How.** Dispatch the read-only `reviewer` phase-agent over the coder's diff, **named with no call-site model** — its def pins `model: opus` (Codex `gpt-5`), so on those harnesses it runs at ≥ the writer's tier, never the coder's `sonnet`. (On opencode both defs pin `inherit`, so the pass runs at the orchestrator's tier — your level, not below it.) Not `model: inherit` at the call site (tracks your tier, not the reviewer's pin); not a hardcoded call-site model. Scope the dispatch *prompt* to the lenses below — the same agent `/age` drives, but this is a fast pre-handoff gate, not a full ten-dimension review. Pass `{spec/contract, diff, cut-test list, locked decisions}`; it returns `pass | revise` per lens (`halt` for Locked-decision):
+
+- **Drift / readability / scope / simplify** — the standard cook lenses.
+- **Production path** — every spec acceptance criterion has a *production* path that exercises it, not only tests that manufacture the state.
+- **Wired callers** — each new public function has a non-test caller, or the diff carries an explicit "wired in phase X" note.
+- **Locked decision** — the diff implements any locked/user-approved decision the prompt carried, else the reviewer returns `halt`.
+
+Pipe each `revise` into a bounded corrective `coder` pass (spec + digest + taste evidence), two-round cap; a Locked-decision `halt` stops for a human decision, not a corrective pass. Accept the coder's handoff only on a clean pass.

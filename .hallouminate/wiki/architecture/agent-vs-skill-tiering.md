@@ -9,11 +9,12 @@ See [[agents-dir]] for the registry mechanics and [[agent-profile]] for the rend
 A behaviour is *not* redundant across an agent and a skill when it differs on either axis:
 
 **Axis 1 — agent-tier vs skill-tier (isolation).** A sub-agent earns its own context window for exactly three reasons:
+
 1. **Parallel fork** — N specialists run at once (the `reviewer` forks `fromage-*` during `/age`; per-curd workers in `/cheese-factory`).
 2. **Bulky-evidence isolation** — it consumes a flood of tool output (ast-grep, Serena, full test logs, git history) and hands back a small (~2 KB) digest, keeping the noise out of the orchestrator. (`nih-scanner` ~30 calls, `whey-drainer` test output, `duckdb-expert` query dumps, `explorer`.)
 3. **Read-only / write-isolated fork target** — the orchestrator can't inline it safely (`ricotta-reducer`'s no-write boundary; `roquefort-wrecker` + `fromage-fort` write in isolation).
 
-If none of those hold — the behaviour is a linear procedure the orchestrator runs in its own context — it belongs in a **skill**. "Migrate an agent to a skill" = "this never actually needed isolation." The clearest case found: a thin-wrapper skill that makes a single agent call with no fan-out and no context isolation beyond a `$TMPDIR` file (the `/ghostbuster` skill → `ghostbuster` agent relationship).
+If none of those hold — the behaviour is a linear procedure the orchestrator runs in its own context — it belongs in a **skill**. "Migrate an agent to a skill" = "this never actually needed isolation." The clearest case found: a skill that does a single spawn, with no fan-out and no isolation beyond a `$TMPDIR` digest (the `/ghostbuster` skill → `ghostbuster` agent relationship — the skill does inline Discovery + Spec/Doc-collection in Phases 1–2 before that one spawn, so it is not a thin wrapper).
 
 **Axis 2 — detect-only vs detect-and-fix.** Review agents and `/age` dimensions *find*; skills like `/de-slop` *fix*. `ricotta-reducer` (detect, no-write) vs `/de-slop` (fix) is complementary, not redundant — the no-write boundary is architectural (`disallowedTools`), not incidental.
 
@@ -24,7 +25,7 @@ A pair is genuine duplication only when it collapses to a *single point on both 
 This is the constraint that governs what is even *doable* in dotfiles:
 
 - **dotfiles owns**: the agent *bodies* (`agents/agent_definitions/` + `agents/registry.yaml`), the **local** skills (`/ghostbuster`, `/nih-audit`, `/de-slop`, `/scout`, … the `skills/` tree), and `claude/commands/` (`/wreck`, `/test`, `move-my-cheese`, `cheese-convoy`).
-- **The external easy-cheese plugin owns** (installed via `npx skills add`, lives at `~/.claude/skills/`, source at `~/Dev/cheese-flow/`): the pipeline skills — `/age`, `/cook`, `/press`, `/cure`, `/affinage`, `/mold`, `/cheese`, etc.
+- **The external easy-cheese plugin owns** the pipeline skills — `/age`, `/cook`, `/press`, `/cure`, `/affinage`, `/mold`, `/cheese`, etc. These install to `~/.claude/skills/` via `npx skills add` (registry `paulnsorensen/easy-cheese`). (Note: `~/Dev/cheese-flow` is a *distinct* mechanism — the local **plugin** registry path `cheese-flow@local`, not easy-cheese's source.)
 
 Consequence: editing an **agent body** (scoring vocab, a bugfix, a rename) is dotfiles-local. But changing an agent's *output contract* can break a consumer **across the repo boundary** — so every "modernize" needs to confirm whether the easy-cheese consumer parses the field. And "merge agent into skill" is only doable here when the *skill* is dotfiles-local (e.g. `/ghostbuster`); merging into `/age` or `/affinage` is a cross-repo (easy-cheese) change.
 
@@ -47,7 +48,7 @@ Verdicts from the per-agent + per-pair mapping. KEEPs confirmed; the open items:
 - **de-slop catalogue as single source of truth** — `/de-slop` (184-line + 5 language refs, dotfiles) and `/age`'s deslop dimension (5-line inline table, easy-cheese) duplicate the anti-pattern catalogue with no shared source; they can drift. Unifying = `/age` citing `/de-slop` → cross-repo.
 - **`cheez-read` / `cheez-write` namespace sweep** — `cheese-flow:` → `easy-cheese:` was swept for `cheez-search` in PR #253; `cheez-read`/`cheez-write` remain (e.g. `fromage-fort.skills` at `registry.yaml`, `claude/README.md`). Dotfiles-local follow-up.
 
-KEEP (isolation genuinely load-bearing): `explorer`/`researcher`/`reviewer`/`coder` (phase backbone), `nih-scanner`, `roquefort-wrecker`, `ricotta-reducer`, `fromage-pasteurize`/`secaudit`, `fromage-age-arch`, `whey-drainer`, `worktree-triage`. `/wreck` (adversarial, standalone) and `/press` (corrective, diff-scoped, pipeline-gated) are distinct phases — not redundant.
+KEEP (isolation genuinely load-bearing): `explorer`/`researcher`/`reviewer`/`coder` (phase backbone), `nih-scanner`, `roquefort-wrecker`, `ricotta-reducer`, `fromage-secaudit`, `fromage-age-arch`, `whey-drainer`, `worktree-triage`. `/wreck` (adversarial, standalone) and `/press` (corrective, diff-scoped, pipeline-gated) are distinct phases — not redundant.
 
 ## Shipped from this review
 

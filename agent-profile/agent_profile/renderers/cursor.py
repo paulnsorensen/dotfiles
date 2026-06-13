@@ -71,6 +71,7 @@ class CursorRenderer:
     """Render a resolved manifest into Cursor's ``.cursor/`` layout."""
 
     name = "cursor"
+    mcp_default = _CURSOR_MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         out: list[str] = []
@@ -105,6 +106,12 @@ class CursorRenderer:
             cfg.unlink()
         else:
             cfg.write_text(json.dumps(data, indent=2) + "\n")
+
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict dropped MCP servers from .cursor/mcp.json's ``mcpServers``
+        (install reconcile). Cursor's clean is MCP-only, so this delegates to
+        it; ``manifest`` holds only the dropped servers."""
+        self.clean(manifest, target)
 
     # ── unsupported surfaces ──────────────────────────────────────────
 

@@ -26,7 +26,7 @@ if [[ -d "${wt_dir}" ]]; then
     echo "Resuming worktree: ${wt_dir}" >&2
 else
     echo "Creating worktree: ${wt_dir} (branch: ${branch})" >&2
-    git -C "${repo_root}" worktree add "${wt_dir}" -b "${branch}" || exit 1
+    git -C "${repo_root}" worktree add "${wt_dir}" -b "${branch}" 1>&2 || exit 1
     created=true
 fi
 

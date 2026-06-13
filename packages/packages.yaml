@@ -1,11 +1,10 @@
 # packages.yaml — flat package registry
 #
-# Bare string = brew (mac) / apt (linux)
+# Bare string = brew formula (mac + linux)
 # Key-value = override defaults
 #
 #   source:   brew (default) | cask | tap | cargo | npm | uv | gh-extension
 #   dev:      only when DOTFILES_DEV=true
-#   apt:      override name for linux
 #   platform: mac | linux (default: both)
 #   flags:    extra args spliced into the installer (uv source only;
 #             e.g. ["--python", "3.13", "--prerelease=allow"])
@@ -22,11 +21,11 @@ packages:
   - fzf
   - gh
   - shellcheck
-  - bats-core: { apt: bats }                  # bats test runner (tests/*.bats); brew formula is bats-core, apt pkg is bats
+  - bats-core                                 # bats test runner (tests/*.bats)
   - tree
   - htop
   - ripgrep
-  - fd: { apt: fd-find }
+  - fd
   - eza
   - bat
   - ast-grep
@@ -34,7 +33,6 @@ packages:
   - tmux
   - tinty
   - prek
-  - starship
   - zoxide
   - atuin
   - bottom
@@ -45,11 +43,14 @@ packages:
   - difftastic
   - mergiraf
   - lazygit
+  - git-town
+  - joshmedeski/sesh: { source: tap }            # sesh tap (joshmedeski/sesh/sesh)
+  - sesh: { platform: mac }                       # session switcher; tmux binds guarded with if-shell
   - just
   - chezmoi
   - duckdb
   - watch
-  - node: { apt: nodejs }
+  - node                                      # bundles npm on mac + linux
   - bun                                       # JS/TS runtime required by jmux
   - sd
   - vhs
@@ -75,6 +76,7 @@ packages:
   - cursor: { source: cask, platform: mac }    # Cursor — AI code editor
   - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)
   - obsidian: { source: cask, platform: mac }  # Obsidian — Markdown knowledge base
+  - rjyo/moshi/moshi-hook: { platform: mac }   # Moshi phone bridge (agents/hooks/registry.yaml); linux uses Moshi's own installer (~/.local/bin)
 
   # Linux-only
   - xclip: { platform: linux }
@@ -84,7 +86,6 @@ packages:
   - uv
   - rustup: { dev: true }
   - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app; greedy upgrade triggers repeated sudo prompts
-  - npm: { platform: linux, dev: true }       # On mac, npm comes with `brew install node`
 
   # LSP servers (for Claude Code LSP plugins)
   - bash-language-server
@@ -101,6 +102,7 @@ packages:
   - agent-skills: { source: npm, pkg: "@govcraft/agent-skills" }
   - jmux: { source: npm, pkg: "@jx0/jmux" }   # tmux workspace for running coding agents in parallel
   - hunkdiff: { source: npm }                 # diff viewer used by jmux's Ctrl-a g info panel
+  - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux } # `gt` — stacked-diff PR workflow (mac uses the withgraphite/tap brew formula)
 
   # uv tools (Python)
   - ralphify: { source: uv }
@@ -108,6 +110,7 @@ packages:
   - check-jsonschema: { source: uv }
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
   - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API
+  - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main" }  # Mikado execution engine; exposes `milknado-mcp` for the MCP registry
   # Serena pins Python 3.13 and ships pre-release builds on PyPI; the `flags`
   # array is passed through to `uv tool install` verbatim. Exposes the `serena`
   # binary, which the MCP registry invokes per harness via --context.

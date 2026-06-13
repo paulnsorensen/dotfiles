@@ -547,7 +547,13 @@ SH
     mkdir -p "$uv_bin"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$uv_bin/uv"
     chmod +x "$uv_bin/uv"
-    PATH="$TEST_HOME/tripwire-bin:$uv_bin:/bin" run bash "$script"
+    # Minimal bin with ONLY bash — /bin can't be used here: on merged-/usr
+    # systems with apt nodejs, /bin/npx exists and defeats the missing-npx
+    # simulation (the script then runs the real installer silently).
+    local minimal_bin="$TEST_HOME/minimal-bin"
+    mkdir -p "$minimal_bin"
+    ln -s "$(command -v bash)" "$minimal_bin/bash"
+    PATH="$TEST_HOME/tripwire-bin:$uv_bin:$minimal_bin" run bash "$script"
     assert_success
     assert_output_contains "Skipping base-profile render (npx not found"
     [[ "$output" != *"TRIPWIRE"* ]]
@@ -578,7 +584,7 @@ TOML
     assert_success
     # With localLLM absent (→ falsy), the stack tree + units must be ignored.
     assert_output_contains "local-llm/**"
-    assert_output_contains ".config/systemd/user/worker-igpu.service"
+    assert_output_contains ".config/systemd/user/llama-swap.service"
 }
 
 @test "skills-install/ directory is gone from the repo" {
@@ -709,6 +715,22 @@ YAML
     fi
 }
 
+@test "copilot template emits stdio serena, not serena-mux" {
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
+    local rendered
+    rendered="$(chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Valid JSON.
+    jq -e . <<<"$rendered" >/dev/null
+    # serena entry must use stdio command, not serena-mux.
+    [[ "$(jq -r '.mcpServers.serena.command' <<<"$rendered")" == "serena" ]]
+    # args must include start-mcp-server with copilot context.
+    jq -e '.mcpServers.serena.args | index("start-mcp-server") != null' <<<"$rendered" >/dev/null
+    jq -e '.mcpServers.serena.args | map(select(startswith("--context="))) | length == 1' <<<"$rendered" >/dev/null
+    [[ "$(jq -r '.mcpServers.serena.args[] | select(startswith("--context="))' <<<"$rendered")" == "--context=copilot" ]]
+    # No serena-mux env var.
+    [[ "$(jq -r '.mcpServers.serena.env // empty' <<<"$rendered")" == "" ]]
+}
+
 @test "copilot sensitive-file-guard source files exist" {
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/executable_sensitive-file-guard.sh"
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/sensitive-file-guard.json.tmpl"
@@ -799,12 +821,12 @@ TOML
     run chezmoi apply --force
     assert_success
 
-    # Skills now deploy through the registry-derived `base` profile rendered
-    # by `ap` (claude renderer → ~/.claude/plugins/local/base/skills/<name>).
+    # Skills deploy shared-only via `ap` (claude renderer → ~/.claude/skills/
+    # <name>; PR #252 dropped the plugin-scoped ~/.claude/plugins copy).
     # The render needs uv (+ a real `ap` env); when uv is absent the
     # run_onchange skips by design, so gate the skill assertion on uv.
     if command -v uv >/dev/null 2>&1; then
-        local skills_dir="$HOME/.claude/plugins/local/base/skills"
+        local skills_dir="$HOME/.claude/skills"
         [[ -d "$skills_dir" ]]
         # At least one dotfiles-owned (local path:) skill landed as a real dir.
         local first
@@ -921,8 +943,9 @@ YAML
     [[ "$(yq '.web_dashboard'                 "$HOME/.serena/serena_config.yml")" == "false" ]]
     [[ "$(yq '.web_dashboard_open_on_launch'  "$HOME/.serena/serena_config.yml")" == "false" ]]
     # excluded_tools is overridden with the managed memory + onboarding +
-    # initial_instructions list, replacing whatever was there (here: ["some_tool"]).
-    [[ "$(yq '.excluded_tools | length'       "$HOME/.serena/serena_config.yml")" == "8" ]]
+    # initial_instructions + LSP (find_declaration / find_implementations /
+    # get_diagnostics_for_file) list, replacing whatever was there (here: ["some_tool"]).
+    [[ "$(yq '.excluded_tools | length'       "$HOME/.serena/serena_config.yml")" == "11" ]]
     [[ "$(yq '.excluded_tools | .[0]'         "$HOME/.serena/serena_config.yml")" == "write_memory" ]]
     [[ "$(yq '.excluded_tools | contains(["onboarding"])' "$HOME/.serena/serena_config.yml")" == "true" ]]
     [[ "$(yq '.excluded_tools | contains(["some_tool"])'  "$HOME/.serena/serena_config.yml")" == "false" ]]

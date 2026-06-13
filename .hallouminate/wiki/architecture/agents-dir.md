@@ -83,7 +83,7 @@ The standalone `agents/mcp/sync.sh` and `agents/hooks/sync.sh` still exist for t
 Shared agent *content* that chezmoi copies directly (not through `ap`):
 
 - **`agents/AGENTS.md`** — global coding-agent preferences. chezmoi copies it to `~/.claude/CLAUDE.md` *and* `~/.codex/AGENTS.md` (via `install-agents-doc.sh`).
-- **`agents/preamble.md`** — the system-prompt body (MCP tool-routing tables + pre-call self-check). It *replaces* the bundled system prompt per harness: Codex via `model_instructions_file` in `config.toml`, opencode via `~/.config/opencode/agents/build.md` (both wired by `install-prompts.sh`), Claude via `--system-prompt-file` in the `cc`/`ccc`/`ccr`/`ccfresh` wrappers (`zsh/claude.zsh`). The user-side AGENTS.md/CLAUDE.md cascade loads *on top of* this replaced prompt.
+- **`agents/preamble.md`** — the system-prompt body (MCP tool-routing tables + pre-call self-check). It *replaces* the bundled system prompt per harness: Codex via `model_instructions_file` in `config.toml`, opencode via `~/.config/opencode/agents/build.md` (both wired by `install-prompts.sh`), Claude via `--system-prompt-file` in the `cc`/`ccc`/`ccr` wrappers (`zsh/claude.zsh`). The user-side AGENTS.md/CLAUDE.md cascade loads *on top of* this replaced prompt.
 - **`agents/RTK.md`** — RTK proxy reference, Claude-only (copied to `~/.claude/RTK.md`).
 
 See [[../harnesses/index]] for how each harness consumes these artifacts and the official docs for its native config surfaces.

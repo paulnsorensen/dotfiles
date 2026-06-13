@@ -6,6 +6,7 @@
 # Reference: https://developers.openai.com/codex/config-reference
 
 approval_policy = "on-request"
+approvals_reviewer = "auto_review"
 sandbox_mode = "workspace-write"
 
 # `model_instructions_file` is set into the live ~/.codex/config.toml at sync

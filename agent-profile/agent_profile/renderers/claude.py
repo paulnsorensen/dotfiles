@@ -8,21 +8,21 @@ Layout (under ``target``)::
     .claude/plugins/local/<profile>/
       plugin.json                   curd-spec marker manifest at root
       .claude-plugin/plugin.json    manifest Claude actually loads
-      agents/                       (empty — agents now written shared-only)
-      skills/<name>/                skill trees, copied from profile
       commands/<name>.md            slash commands
       hooks/<script>                hook scripts (wiring lives in plugin.json)
       .mcp.json                     mcpServers for harnesses ⊇ claude
       settings.json                 permissions.allow from manifest
 
-Plus the cross-harness shared path::
+Plus the cross-harness shared paths::
 
     .claude/agents/<name>.md        also read by Cursor
+    .claude/skills/<name>/          also read directly by Claude (priority 4)
 
 Agents are written exclusively to the cross-harness shared path
 (``.claude/agents/<name>.md``); the plugin tree carries no agent files.
-The shared file wins precedence (priority 4 > plugin priority 5) and is
-the cross-harness surface for Cursor.
+Skills are written exclusively to the shared path
+(``.claude/skills/<name>/``); the plugin tree carries no skill dirs.
+Both shared writes win precedence (priority 4 > plugin priority 5).
 
 JSON is emitted with stdlib :mod:`json` (``indent=2`` + trailing newline,
 byte-identical to the bash ``jq`` output). No ``jq``/``yq``.
@@ -36,6 +36,7 @@ import shutil
 import stat
 import subprocess
 from pathlib import Path
+from typing import NamedTuple
 
 from agent_profile import shared
 from agent_profile.parse import Manifest
@@ -80,6 +81,7 @@ class ClaudeRenderer:
     """Renderer for the Claude Code native-plugin layout. See module docstring."""
 
     name = "claude"
+    mcp_default = _MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         out: list[str] = []
@@ -88,12 +90,12 @@ class ClaudeRenderer:
         desc = manifest.description or ""
         plugin_dir = base / ".claude" / "plugins" / "local" / profile
 
-        for sub in (".claude-plugin", "agents", "skills", "commands", "hooks"):
+        for sub in (".claude-plugin", "commands", "hooks"):
             (plugin_dir / sub).mkdir(parents=True, exist_ok=True)
 
         self._write_manifests(plugin_dir, base, profile, desc, out)
-        self._write_agents(manifest, plugin_dir, base, target, out)
-        self._write_skills(manifest, plugin_dir, base, out)
+        self._write_agents(manifest, target, out)
+        self._write_skills(manifest, target, out)
         self._write_commands(manifest, plugin_dir, base, out)
         self._write_hooks(manifest, plugin_dir, base, profile, out)
         self._write_mcp_json(manifest, plugin_dir, base, out)
@@ -141,6 +143,20 @@ class ClaudeRenderer:
             if not markets:
                 data.pop("extraKnownMarketplaces", None)
 
+        # Un-merge the canonical permission render (SSOT). We own only the
+        # ``allow`` / ``deny`` subkeys; any other ``permissions.*`` key
+        # (``defaultMode`` etc.) is user-owned and survives. Drop the
+        # ``permissions`` container only when nothing else remains under it.
+        if manifest.settings.get("permissions_allow") or manifest.settings.get(
+            "permissions_deny"
+        ):
+            permissions = data.get("permissions")
+            if isinstance(permissions, dict):
+                permissions.pop("allow", None)
+                permissions.pop("deny", None)
+                if not permissions:
+                    data.pop("permissions", None)
+
         # Don't delete the file if other keys remain — they are user-owned.
         # Only if we reduced it to {} do we unlink, matching opencode's
         # "the profile owned it" rule.
@@ -148,6 +164,16 @@ class ClaudeRenderer:
             settings.unlink()
             return
         settings.write_text(json.dumps(data, indent=2) + "\n")
+
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict dropped MCP servers (install reconcile). The plugin-scoped
+        ``.mcp.json`` is rewritten wholesale each render, so a dropped server
+        simply stops appearing — no drift there. Only user-scope
+        registrations in ``~/.claude.json`` persist across renders, so
+        unregister exactly the dropped servers by name. ``manifest`` holds
+        only the dropped MCPs (see the protocol contract)."""
+        if manifest.mcp_scope == "user":
+            self._unregister_user_mcps(manifest)
 
     # ─── helpers ─────────────────────────────────────────────────────
 
@@ -177,8 +203,6 @@ class ClaudeRenderer:
     def _write_agents(
         self,
         manifest: Manifest,
-        plugin_dir: Path,
-        base: Path,
         target: Path,
         out: list[str],
     ) -> None:
@@ -190,14 +214,17 @@ class ClaudeRenderer:
             # Cross-harness shared write (Claude + Cursor). The shared file
             # wins precedence (priority 4 > plugin priority 5) and is the
             # single authoritative agent file — no plugin-scoped copy.
-            if body is not None:
-                shared.write_shared_claude_agent(target, name, body, fm, out)
+            if body is None:
+                raise ValueError(
+                    f"claude_render: agent '{name}' has no body_path — "
+                    "every agent must have a body file"
+                )
+            shared.write_shared_claude_agent(target, name, body, fm, out)
 
     def _write_skills(
         self,
         manifest: Manifest,
-        plugin_dir: Path,
-        base: Path,
+        target: Path,
         out: list[str],
     ) -> None:
         for item in manifest.skills:
@@ -206,12 +233,8 @@ class ClaudeRenderer:
                 continue  # source: (gh-fetched) skill — handled by cmd_install
             name = item["name"]
             src = Path(item["_source_dir"]) / path
-            dst = plugin_dir / "skills" / name
             if src.is_dir():
-                if dst.exists():
-                    shutil.rmtree(dst)
-                shutil.copytree(src, dst)
-                self._track(out, base, dst)
+                shared.write_shared_claude_skill(target, name, src, out)
 
     def _write_commands(
         self,
@@ -312,6 +335,16 @@ class ClaudeRenderer:
         if not wrote_any:
             return
 
+        # Strip legacy hook entries from the live .claude/settings.json that
+        # the retired agents/hooks/sync.sh jq-merged there before the ap
+        # migration (#217). Claude merges settings.json hooks with plugin
+        # hooks at load time, so an orphan copy either fires twice (a still-
+        # present command like moshi) or errors (a script path deleted when
+        # hooks moved into the plugin tree). Mirrors the codex renderer's
+        # _clean_legacy_config_toml_hooks; keyed off the hooks we just wired
+        # into the plugin, so it self-extends as the registry changes.
+        self._clean_legacy_settings_hooks(hook_entries, base)
+
         # Merge hook entries into both manifests so the on-disk JSON Claude
         # reads (.claude-plugin/plugin.json) gets the wiring; the root marker
         # stays in sync. Bash sets `.hooks = $h` — the key lands last.
@@ -319,6 +352,54 @@ class ClaudeRenderer:
             data = json.loads(mf.read_text())
             data["hooks"] = hook_entries
             _dump_json(mf, data)
+
+    # ─── legacy settings.json hook cleanup ─────────────────────────────
+    # Pre-#217, agents/hooks/sync.sh jq-merged the hook registry straight
+    # into ~/.claude/settings.json. The ap migration moved hook wiring into
+    # this plugin's plugin.json, but settings.json is a chezmoi create_ seed
+    # nothing prunes — so the old copies linger and Claude fires them
+    # alongside the plugin's (it merges both at load time). For each hook we
+    # just wired into the plugin, drop any settings.json hook whose command
+    # duplicates it. User hooks the plugin doesn't manage (the JS guards,
+    # rtk, a tmux Stop hook) carry no managed signature and survive.
+    def _clean_legacy_settings_hooks(
+        self, hook_entries: dict[str, list[dict]], base: Path
+    ) -> None:
+        settings = base / ".claude" / "settings.json"
+        if not settings.is_file():
+            return
+        managed_per_event = _managed_signatures_per_event(hook_entries)
+        if not managed_per_event:
+            return
+
+        data = read_json_object(settings, ".claude/settings.json")
+        hooks_table = data.get("hooks")
+        if not isinstance(hooks_table, dict):
+            return
+
+        changed = False
+        for event_key in list(hooks_table.keys()):
+            event_managed = managed_per_event.get(event_key)
+            if not event_managed:
+                continue  # not an event we manage — leave user entries alone
+            event_array = hooks_table.get(event_key)
+            if not isinstance(event_array, list):
+                continue
+            rebuilt = _prune_settings_blocks(event_array, event_managed)
+            if rebuilt is None:
+                continue  # nothing stripped for this event
+            changed = True
+            if rebuilt:
+                hooks_table[event_key] = rebuilt
+            else:
+                del hooks_table[event_key]
+
+        if not hooks_table:
+            data.pop("hooks", None)
+            changed = True
+
+        if changed:
+            settings.write_text(json.dumps(data, indent=2) + "\n")
 
     def _write_mcp_json(
         self,
@@ -415,8 +496,9 @@ class ClaudeRenderer:
         self._track(out, base, out_path)
 
     def _merge_root_settings(self, manifest: Manifest, base: Path) -> None:
-        """Merge this profile's ``enabled_plugins`` and ``marketplaces`` into
-        the live ``<base>/.claude/settings.json``, preserving siblings.
+        """Merge this profile's ``enabled_plugins``, ``marketplaces`` and the
+        canonical ``permissions.{allow,deny}`` into the live
+        ``<base>/.claude/settings.json``, preserving siblings.
 
         Mirrors :meth:`OpencodeRenderer.render` for ``opencode.json``: read,
         own-our-keys, write. The file is shared (chezmoi-seeded user config
@@ -424,20 +506,35 @@ class ClaudeRenderer:
         install manifest. :meth:`clean` un-merges by removing exactly the
         keys this method added.
 
+        The canonical allow/deny lists are the SSOT root render (mechanism A):
+        ``create_settings.json`` no longer carries a ``permissions`` block, so
+        this method re-asserts the canonical set into root settings.json on
+        every ``dots sync``. It owns only the ``allow`` and ``deny`` subkeys —
+        any other ``permissions.*`` key (``defaultMode`` etc.) is left intact,
+        and the lists are written verbatim from the resolved manifest (already
+        sorted+deduped by the parser).
+
         ``${VAR}`` / ``~`` in marketplace paths expand against the process
         env (``DOTFILES_DIR`` is the intended consumer) — same surface as
         ``cli._resolve_target``. The marketplace value is wrapped as a
         ``{"source": {"source": "directory", "path": <expanded>}}`` record;
         github-source marketplaces stay user-managed in the seed.
 
-        No-op when the profile declares neither field. When the file does
-        not exist, creates an empty ``{}`` seed first — operator running
-        ``ap install global`` standalone (no chezmoi pass) gets a minimal
-        file rather than a hard error; chezmoi's ``create_settings.json``
-        won't overwrite it later (``create_`` semantics), so the operator
-        is responsible for filling in the rest if they're skipping
-        ``dots sync``."""
-        if not manifest.enabled_plugins and not manifest.marketplaces:
+        No-op when the profile declares none of the three surfaces. When the
+        file does not exist, creates an empty ``{}`` seed first — operator
+        running ``ap install global`` standalone (no chezmoi pass) gets a
+        minimal file rather than a hard error; chezmoi's
+        ``create_settings.json`` won't overwrite it later (``create_``
+        semantics), so the operator is responsible for filling in the rest if
+        they're skipping ``dots sync``."""
+        allow = manifest.settings.get("permissions_allow") or []
+        deny = manifest.settings.get("permissions_deny") or []
+        if (
+            not manifest.enabled_plugins
+            and not manifest.marketplaces
+            and not allow
+            and not deny
+        ):
             return
 
         settings = base / ".claude" / "settings.json"
@@ -460,7 +557,47 @@ class ClaudeRenderer:
                     "source": {"source": "directory", "path": expanded}
                 }
 
+        if allow or deny:
+            permissions = data.setdefault("permissions", {})
+            permissions["allow"] = list(allow)
+            permissions["deny"] = list(deny)
+
         settings.write_text(json.dumps(data, indent=2) + "\n")
+
+    def render_project_permissions(
+        self, manifest: Manifest, target: Path, *, local: bool = False
+    ) -> list[str]:
+        """Write ONLY canonical permissions into the repo's project Claude settings.
+
+        No plugin tree / skills / agents / MCPs. ``local=True`` targets the
+        gitignored personal layer (``settings.local.json``) instead of the
+        committed ``settings.json``.
+
+        Owns ``permissions.{allow,deny}`` subkeys; preserves all sibling keys;
+        idempotent. Returns ``[]`` (shared file, not manifest-tracked)."""
+        allow = manifest.settings.get("permissions_allow") or []
+        deny = manifest.settings.get("permissions_deny") or []
+        # Key out on PRESENCE, not emptiness: a fragment that explicitly sets
+        # empty lists (clearing a prior overlay) must still rewrite the file to
+        # drop stale committed entries. Only a fragment that declares neither
+        # key is a true no-op.
+        if (
+            "permissions_allow" not in manifest.settings
+            and "permissions_deny" not in manifest.settings
+        ):
+            return []
+        filename = "settings.local.json" if local else "settings.json"
+        settings = target / ".claude" / filename
+        if settings.is_file():
+            data = read_json_object(settings, filename)
+        else:
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+        permissions = data.setdefault("permissions", {})
+        permissions["allow"] = list(allow)
+        permissions["deny"] = list(deny)
+        settings.write_text(json.dumps(data, indent=2) + "\n")
+        return []
 
     def _write_local_marketplace(
         self, manifest: Manifest, base: Path, profile: str, desc: str
@@ -528,3 +665,95 @@ class ClaudeRenderer:
             return
         data["plugins"] = remaining
         _dump_json(manifest_path, data)
+
+
+class _ManagedSigs(NamedTuple):
+    """Signatures of the plugin-managed hooks for one event, split by hook
+    type so the matcher can apply the right rule (see
+    :func:`_inner_hook_is_managed`): ``basenames`` are script-hook file
+    names matched by path token; ``commands`` are command-type hook strings
+    matched by exact equality."""
+
+    basenames: set[str]
+    commands: set[str]
+
+
+def _managed_signatures_per_event(
+    hook_entries: dict[str, list[dict]],
+) -> dict[str, _ManagedSigs]:
+    """Map each event to the signatures of the hooks just wired into the
+    plugin, split by type: the script basename (for a
+    ``${CLAUDE_PLUGIN_ROOT}/hooks/<base>`` command) goes in ``basenames``,
+    the full command string (for a command-type hook like moshi) in
+    ``commands``. Keying per-event mirrors the codex cleanup: a user routing
+    the same script through a different event than the registry manages must
+    survive the sweep. Splitting by type lets the matcher use exact equality
+    for command hooks (a user command that wraps or merely mentions a
+    managed one must not be pruned) rather than the old substring test."""
+    out: dict[str, _ManagedSigs] = {}
+    for event, entries in hook_entries.items():
+        for entry in entries:
+            for inner in entry.get("hooks", []):
+                cmd = inner.get("command", "")
+                if not isinstance(cmd, str) or not cmd:
+                    continue
+                sigs = out.setdefault(event, _ManagedSigs(set(), set()))
+                if "${CLAUDE_PLUGIN_ROOT}/hooks/" in cmd:
+                    sigs.basenames.add(cmd.split("/hooks/", 1)[1].split()[0])
+                else:
+                    sigs.commands.add(cmd)
+    return out
+
+
+def _prune_settings_blocks(
+    event_array: list, signatures: _ManagedSigs
+) -> "list | None":
+    """Rebuild a settings.json event array with managed hooks removed at the
+    inner-hook level. Returns ``None`` when nothing matched (the caller
+    short-circuits to avoid a no-op rewrite). A block whose inner hooks are
+    all managed is dropped entirely; a mixed block keeps its unmanaged
+    inner hooks so a user command sharing a block with a managed one
+    survives."""
+    rebuilt: list = []
+    changed = False
+    for block in event_array:
+        inner = block.get("hooks") if isinstance(block, dict) else None
+        if not isinstance(inner, list):
+            rebuilt.append(block)
+            continue
+        kept = [h for h in inner if not _inner_hook_is_managed(h, signatures)]
+        if len(kept) == len(inner):
+            rebuilt.append(block)
+            continue
+        changed = True
+        if kept:
+            new_block = dict(block)
+            new_block["hooks"] = kept
+            rebuilt.append(new_block)
+    return rebuilt if changed else None
+
+
+def _inner_hook_is_managed(inner: object, signatures: _ManagedSigs) -> bool:
+    """An inner hook is managed iff it matches a plugin-written signature by
+    its own type, never by substring:
+
+    - command-type hooks match by **exact command-string equality** — a user
+      hook that wraps a managed command (``bash -lc "<managed> ..."``) or
+      merely mentions it must survive;
+    - script-type hooks match when the command's final token is a path under
+      a ``/hooks/`` segment whose basename is managed (the
+      ``bash "<path>/hooks/<base>"`` form the retired sync.sh wrote),
+      mirroring ``codex.py:_is_managed_legacy_block``.
+    """
+    cmd = inner.get("command", "") if isinstance(inner, dict) else ""
+    if not isinstance(cmd, str) or not cmd:
+        return False
+    if cmd in signatures.commands:
+        return True
+    tokens = cmd.strip().split()
+    if not tokens:
+        return False
+    script_token = tokens[-1].strip("'").strip('"')
+    if "/hooks/" not in script_token:
+        return False
+    return Path(script_token).name in signatures.basenames

@@ -17,7 +17,11 @@
 # Standalone use is also fine: `dots profile install global`.
 name: global
 description: Live install — renders base into $HOME and wires it into Claude
-include: [base]
+# _permissions carries the canonical cross-harness allow/deny lists; the
+# renderers lower them onto each harness's native surface. PoC scope: wired
+# in at `global` only (the live-machine install). A base+global combo is a
+# deliberate later step.
+include: [base, _permissions]
 
 # `--target` precedence in ap is: explicit flag > profile target_default >
 # Path.cwd(). $HOME (and ~) expand at install time via os.path.expandvars

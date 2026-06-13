@@ -265,16 +265,32 @@ def test_satisfies_renderer_protocol():
     assert r.name == "claude"
 
 
-def test_clean_is_noop(env):
+def test_clean_leaves_tracked_plugin_tree_intact(env):
+    """clean() un-merges only the shared/merged root settings.json (the
+    SSOT permission render); every tracked whole-file plugin artefact is
+    left for the CLI's manifest sweep to remove. The rust fixture carries a
+    ``permissions_allow``, so render now writes root settings.json — clean
+    must remove exactly that contribution and nothing in the plugin tree."""
     profile_dir = _materialize_rust(env.profiles)
     manifest = parse_manifest(profile_dir)
     r = ClaudeRenderer()
     r.render(manifest, env.target)
-    before = sorted(p.read_bytes() for p in env.target.rglob("*") if p.is_file())
-    # clean must not touch any whole-file artefact (no merged files here).
+
+    plugin_root = env.target / ".claude" / "plugins" / "local" / "rust"
+    before_plugin = sorted(
+        p.read_bytes() for p in plugin_root.rglob("*") if p.is_file()
+    )
+
     assert r.clean(manifest, env.target) is None
-    after = sorted(p.read_bytes() for p in env.target.rglob("*") if p.is_file())
-    assert before == after
+
+    after_plugin = sorted(
+        p.read_bytes() for p in plugin_root.rglob("*") if p.is_file()
+    )
+    # Tracked plugin tree untouched by clean.
+    assert before_plugin == after_plugin
+    # The merged root settings.json contribution is fully un-merged: the
+    # rust fixture owned the whole file, so clean removed it.
+    assert not (env.target / ".claude" / "settings.json").exists()
 
 
 # ─── rust profile byte parity ────────────────────────────────────────
@@ -330,10 +346,10 @@ def test_rust_command_byte_parity(rendered_rust):
 def test_rust_skill_tree_byte_parity(rendered_rust):
     target, _ = rendered_rust
     on_disk = (
-        target / ".claude/plugins/local/rust/skills/cargo-workflow/SKILL.md"
+        target / ".claude/skills/cargo-workflow/SKILL.md"
     ).read_text()
     assert on_disk == _read_golden(
-        "rust/plugin/skills/cargo-workflow/SKILL.md"
+        "rust/shared/.claude/skills/cargo-workflow/SKILL.md"
     )
 
 
@@ -372,13 +388,13 @@ def test_rust_tracked_files_match_bash_manifest(rendered_rust):
     _, written = rendered_rust
     expected = {
         ".claude/agents/rust-reviewer.md",
+        ".claude/skills/cargo-workflow",
         ".claude/plugins/local/rust",
         ".claude/plugins/local/rust/.claude-plugin/plugin.json",
         ".claude/plugins/local/rust/commands/clippy.md",
         ".claude/plugins/local/rust/hooks/cargo-check.sh",
         ".claude/plugins/local/rust/plugin.json",
         ".claude/plugins/local/rust/settings.json",
-        ".claude/plugins/local/rust/skills/cargo-workflow",
     }
     assert set(written) == expected
     # No path tracked twice (feeds the install manifest; must dedupe).
@@ -442,33 +458,33 @@ def test_mcptest_plugin_manifest_has_no_hooks_key(rendered_mcptest):
 
 
 @pytest.fixture
-def rendered_nobody(env):
+def nobody_manifest(env):
     profile_dir = write_profile(env.profiles, "nobody", _NOBODY_YAML)
     manifest = parse_manifest(profile_dir)
-    written = ClaudeRenderer().render(manifest, env.target)
-    return env.target, written
+    return env.target, manifest
 
 
-def test_nobody_no_shared_agent_when_body_absent(rendered_nobody):
-    """No body => no cross-harness shared write (matches bash, which guards
-    the shared write on ``[[ -n "$body_abs" ]]``)."""
-    target, _ = rendered_nobody
-    assert not (target / ".claude/agents/bare-agent.md").exists()
-    assert not (target / ".claude/agents").exists()
+def test_nobody_raises_when_body_absent(nobody_manifest):
+    """An agent without body_path must raise ValueError (fail fast and loud)."""
+    target, manifest = nobody_manifest
+    with pytest.raises(ValueError, match="has no body_path"):
+        ClaudeRenderer().render(manifest, target)
 
 
-def test_nobody_no_settings_json_when_no_permissions(rendered_nobody):
-    target, _ = rendered_nobody
-    assert not (target / ".claude/plugins/local/nobody/settings.json").exists()
-
-
-def test_nobody_tracked_files_exclude_shared_agent(rendered_nobody):
-    _, written = rendered_nobody
-    assert set(written) == {
-        ".claude/plugins/local/nobody",
-        ".claude/plugins/local/nobody/.claude-plugin/plugin.json",
-        ".claude/plugins/local/nobody/plugin.json",
-    }
+def test_no_settings_json_when_permissions_allow_empty(env):
+    """_write_settings must not create settings.json when permissions_allow is
+    absent — the `if not allow: return` guard in ClaudeRenderer._write_settings.
+    This test would fail if that guard were removed."""
+    profile_dir = write_profile(
+        env.profiles,
+        "noperms",
+        "name: noperms\ndescription: no permissions block\n"
+        "agents:\n  - name: reviewer\n    body_path: agents/reviewer.md\n",
+        {"agents/reviewer.md": "review body\n"},
+    )
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().render(manifest, env.target)
+    assert not (env.target / ".claude/plugins/local/noperms/settings.json").exists()
 
 
 # ─── failure paths (fail fast and loud — parity with bash `return 1`) ─

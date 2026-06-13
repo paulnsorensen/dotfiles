@@ -179,3 +179,11 @@ alias skill='npx --yes skills'
 alias skill-ls='npx --yes skills list --global'
 alias skill-sync='base-sync'
 alias skill-edit='${EDITOR:-vim} $DOTFILES_DIR/skills/_registry.yaml'
+
+# =============================================================================
+# Cheatsheet
+# =============================================================================
+# Print categorized shortcut reference: git, claude, worktrees, tmux, bin/
+# ZLE binding: no clean vi-mode-safe key found (Ctrl+R owned by atuin/fzf,
+# Ctrl+T by fzf, Ctrl+\\  risks SIGQUIT on some terminals). Use the alias.
+alias cheat='$DOTFILES_DIR/bin/cheatsheet'
