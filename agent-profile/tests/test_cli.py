@@ -496,6 +496,39 @@ def test_install_mixed_harness_fetches_skill_bearing_only(
     assert "crush" not in argv
 
 
+def test_install_mixed_harness_log_omits_skill_less_harness(
+    env, capsys, stub_renderers, monkeypatch
+):
+    """WHY: the D2 filter rewrote the fetch log to print `skill_harnesses`, not
+    the caller's `harnesses`. With `--harness claude,crush` the `↳ fetching
+    skills … -> …` line must name only the skill-bearing harness (claude) — a
+    regression that reverted the log to `harnesses` would print `claude, crush`
+    and advertise a fetch into a harness that has no skill agent. The argv test
+    above can't catch that: the log is a separate print, asserted here."""
+    _profile_with_external_skill(env, "foo")
+    monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: 0)
+    assert (
+        run(
+            [
+                "install",
+                "foo",
+                "--target",
+                str(env.target),
+                "--harness",
+                "claude,crush",
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    fetch_lines = [ln for ln in out.splitlines() if "fetching skills" in ln]
+    assert len(fetch_lines) == 1, out
+    # The destination list after `->` names claude and NOT crush.
+    dest = fetch_lines[0].split("->", 1)[1]
+    assert "claude" in dest
+    assert "crush" not in dest
+
+
 def test_install_unknown_harness_still_fails_loud(env, capsys, stub_renderers):
     """WHY: the D2 filter intersects with SKILL_AGENT for the *fetch* step, but
     a genuine typo must still fail at validation. ``--harness crsuh`` (typo) is

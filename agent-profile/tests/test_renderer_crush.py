@@ -332,3 +332,113 @@ def test_corrupt_config_raises_clean_error(tmp_path: Path):
         CrushRenderer().render(_manifest(), tmp_path)
     with pytest.raises(MergedConfigError):
         CrushRenderer().clean(_manifest(), tmp_path)
+
+
+# ─── real-registry contract (spec acceptance, #223 D1) ──────────────────
+#
+# The tests above drive a synthetic two-MCP manifest. The spec's central
+# acceptance criterion is a property of the SHIPPED registry: rendering the
+# real `base` profile (the union that reads agents/mcp/registry.yaml) into
+# crush must yield EXACTLY the six coding MCPs and exclude todoist. Nothing
+# above locks that — a registry edit that scoped a coding MCP away from the
+# default-include set, or dropped `harnesses: []` from todoist, would leak
+# past every synthetic test. This loads the real registry the same way
+# test_overlay's `test_real_*_profile` tests do (DOTFILES_DIR -> repo root,
+# parse the base profile). The renderer rewrites `${VAR}` -> `$(echo $VAR)`
+# but does NOT resolve it, so no .env / credential stub is needed.
+
+# Repo root: agent-profile/tests/test_renderer_crush.py -> ../../ is the clone.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# The exact MCP set crush must receive: every registry MCP that omits
+# `harnesses` (default-include) flows to crush; todoist (`harnesses: []`) does
+# not. Mirrors the spec acceptance bullet verbatim.
+_CRUSH_REGISTRY_MCPS = {
+    "tilth",
+    "hallouminate",
+    "context7",
+    "tavily",
+    "code-review-graph",
+    "serena",
+}
+
+
+def _real_base_manifest(monkeypatch) -> Manifest:
+    """Parse the shipped `base` profile against the real repo registry."""
+    from agent_profile.discover import find_profile_dir
+    from agent_profile.parse import parse_manifest
+
+    monkeypatch.setenv("DOTFILES_DIR", str(REPO_ROOT))
+    monkeypatch.delenv("AP_EXTRA_SEARCH_PATHS", raising=False)
+    pdir = find_profile_dir("base")
+    assert pdir is not None, "real profiles/base not found"
+    return parse_manifest(pdir)
+
+
+def test_real_registry_renders_exactly_the_coding_mcp_set(tmp_path, monkeypatch):
+    """The shipped registry, rendered into crush, is EXACTLY the six coding
+    MCPs — no more (a future MCP added without `harnesses` flows in and would
+    trip this) and no fewer (a coding MCP scoped away would trip this)."""
+    m = _real_base_manifest(monkeypatch)
+    CrushRenderer().render(m, tmp_path)
+    data = json.loads((tmp_path / "crush.json").read_text())
+    assert set(data["mcp"]) == _CRUSH_REGISTRY_MCPS
+
+
+def test_real_registry_excludes_todoist(tmp_path, monkeypatch):
+    """todoist carries `harnesses: []` (scoped out of every harness); it must
+    not reach crush. A regression that dropped the empty list would fall back
+    to the default-include set and leak todoist's ~38k-token tool footprint
+    into every crush session."""
+    m = _real_base_manifest(monkeypatch)
+    CrushRenderer().render(m, tmp_path)
+    data = json.loads((tmp_path / "crush.json").read_text())
+    assert "todoist" not in data["mcp"]
+
+
+def test_real_registry_secrets_render_as_crush_shell_eval(tmp_path, monkeypatch):
+    """The credentialed MCPs (context7, tavily) carry a `${VAR}` env ref in the
+    real registry. Rendered into crush each must become `$(echo $VAR)` — the
+    documented crush expansion form — and NO resolved secret value may land on
+    disk. This is the env-rewrite contract exercised against the real registry
+    values, not a synthetic `${CONTEXT7_API_KEY}` literal. (Live-launch
+    resolution stays verify-in-deploy: the crush binary is not installed here.)"""
+    m = _real_base_manifest(monkeypatch)
+    CrushRenderer().render(m, tmp_path)
+    raw = (tmp_path / "crush.json").read_text()
+    data = json.loads(raw)
+    assert data["mcp"]["context7"]["env"] == {
+        "CONTEXT7_API_KEY": "$(echo $CONTEXT7_API_KEY)"
+    }
+    assert data["mcp"]["tavily"]["env"] == {
+        "TAVILY_API_KEY": "$(echo $TAVILY_API_KEY)"
+    }
+    # No bare `${VAR}` and no resolved key survives into the rendered file.
+    assert "${CONTEXT7_API_KEY}" not in raw
+    assert "${TAVILY_API_KEY}" not in raw
+
+
+def test_real_registry_serena_context_resolves_to_crush(tmp_path, monkeypatch):
+    """serena's `--context={{ $h }}` template must resolve to `--context=crush`
+    for this harness — proving crush flows through the per-harness templating
+    pass with ZERO per-MCP registry edits (the D1 default-include claim). A
+    regression that hardcoded a context, or failed to pass `crush` as `$h`,
+    would surface here."""
+    m = _real_base_manifest(monkeypatch)
+    CrushRenderer().render(m, tmp_path)
+    data = json.loads((tmp_path / "crush.json").read_text())
+    assert "--context=crush" in data["mcp"]["serena"]["args"]
+
+
+def test_real_registry_clean_round_trip_removes_bootstrapped_file(
+    tmp_path, monkeypatch
+):
+    """Render the real coding set onto a fresh target, then clean: every one of
+    ours is removed and the bootstrapped file (schema-stub only) is unlinked —
+    the install/uninstall parity with opencode, exercised on the real set."""
+    m = _real_base_manifest(monkeypatch)
+    r = CrushRenderer()
+    r.render(m, tmp_path)
+    assert (tmp_path / "crush.json").exists()
+    r.clean(m, tmp_path)
+    assert not (tmp_path / "crush.json").exists()
