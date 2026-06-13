@@ -715,6 +715,22 @@ YAML
     fi
 }
 
+@test "copilot template emits stdio serena, not serena-mux" {
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
+    local rendered
+    rendered="$(chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
+    # Valid JSON.
+    jq -e . <<<"$rendered" >/dev/null
+    # serena entry must use stdio command, not serena-mux.
+    [[ "$(jq -r '.mcpServers.serena.command' <<<"$rendered")" == "serena" ]]
+    # args must include start-mcp-server with copilot context.
+    jq -e '.mcpServers.serena.args | index("start-mcp-server") != null' <<<"$rendered" >/dev/null
+    jq -e '.mcpServers.serena.args | map(select(startswith("--context="))) | length == 1' <<<"$rendered" >/dev/null
+    [[ "$(jq -r '.mcpServers.serena.args[] | select(startswith("--context="))' <<<"$rendered")" == "--context=copilot" ]]
+    # No serena-mux env var.
+    [[ "$(jq -r '.mcpServers.serena.env // empty' <<<"$rendered")" == "" ]]
+}
+
 @test "copilot sensitive-file-guard source files exist" {
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/executable_sensitive-file-guard.sh"
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/sensitive-file-guard.json.tmpl"
