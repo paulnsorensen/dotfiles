@@ -68,21 +68,23 @@ For an **isolated** profile (`overlay.py:build_isolated_launch`): build the clos
 
 | Capability | claude (`_build_isolated_claude`) | codex (`_build_isolated_codex`) | opencode (`_build_isolated_opencode`) |
 |---|---|---|---|
-| Closed MCP world | `--strict-mcp-config --mcp-config <ephemeral .mcp.json>` | `-c mcp_servers.<n>.command/args/env` per server (no whole-file flag exists) | `OPENCODE_CONFIG_CONTENT.mcp` = profile servers + inherited servers `enabled:false` |
-| Ignore inherited config | `--setting-sources ""` | `--ignore-user-config` (drops the **user** `config.toml` layer only) | inline highest-layer override (suppresses the global-config seed write) + per-server disable |
-| Ephemeral session | (n/a) | `--ephemeral` | (no env equivalent — documented gap) |
-| System prompt | `--append-system-prompt-file <profile>/<sp>` | `-c instructions=<file content>` (codex's `instructions` key takes content, **not** a path; raw-literal fallback handles arbitrary markdown) | `OPENCODE_CONFIG_CONTENT.instructions:[<sp abs path>]` (additive) |
-| Tool/permission restriction | `--tools <csv>` + `--settings` (`permissions`+`enabledPlugins`) | **dropped** — codex has no per-launch built-in-tool whitelist (caveat + follow-up ticket) | `OPENCODE_PERMISSION` from `permissions_deny` (`Edit`/`Write`→`edit:deny`, `Read`/`Grep`/`Glob`/`Bash`→key, `mcp__*` verbatim) |
-| Per-profile env | injected | injected | injected alongside the two `OPENCODE_*` vars |
+| Closed MCP world | `--strict-mcp-config --mcp-config <ephemeral .mcp.json>` | `[mcp_servers.<n>]` tables in a generated `<CODEX_HOME>/config.toml` (no whole-file `--mcp-config` flag exists; HTTP MCPs carry `url`/`type`/`http_headers`) | `OPENCODE_CONFIG_CONTENT.mcp` = profile servers + inherited servers `enabled:false` |
+| Ignore inherited config | `--setting-sources ""` | redirected `CODEX_HOME` → a fresh dir whose `config.toml` is the only user-layer config (codex 0.135.0 has **no** top-level `--ignore-user-config`; it's a `codex exec`-only flag) | inline highest-layer override (suppresses the global-config seed write) + per-server disable |
+| Auth preservation | (n/a — uses real `~/.claude`) | symlink `<CODEX_HOME>/auth.json` → `~/.codex/auth.json` (`File` auth-storage mode only) | (n/a) |
+| Ephemeral session | (n/a) | (no interactive flag; the per-launch `CODEX_HOME` tmp dir is the ephemeral store — `--ephemeral` is `codex exec`-only) | (no env equivalent — documented gap) |
+| System prompt | `--append-system-prompt-file <profile>/<sp>` | `model_instructions_file = <sp abs path>` in the generated `config.toml` (codex's `instructions` key is reserved/noop — `model_instructions_file` is the documented lever) | `OPENCODE_CONFIG_CONTENT.instructions:[<sp abs path>]` (additive) |
+| Tool/permission restriction | `--tools <csv>` + `--settings` (`permissions`+`enabledPlugins`) | **dropped** — codex has no per-launch built-in-tool whitelist (caveat + follow-up ticket) | `OPENCODE_PERMISSION` from `permissions_deny` (`Edit`/`Write`→`edit:deny`, `Read`/`Grep`/`Glob`/`Bash`→key, `mcp__*` verbatim) + `OPENCODE_DISABLE_PROJECT_CONFIG=true` |
+| Per-profile env | injected | injected (alongside `CODEX_HOME`) | injected alongside the two `OPENCODE_*` vars |
 
-The `(flags, env)` contract is uniform: claude/codex carry isolation in `flags`, opencode carries it in `env` (`flags == []`); `_launch_isolated` injects `env` into `os.environ` then execs `harness + flags + exec_args` identically for all three. `${VAR}` MCP-env refs resolve from `.env` at launch on every path, failing loud on an unset reference (D4).
+The `(flags, env)` contract is uniform: claude carries isolation in `flags`, codex and opencode carry it in `env` (`flags == []` for both — codex's `CODEX_HOME`, opencode's `OPENCODE_*`); `_launch_isolated` injects `env` into `os.environ` then execs `harness + flags + exec_args` identically for all three. `${VAR}` MCP-env resolution differs by harness: **claude and codex bake-resolve** from `.env` at launch and **fail loud** on an unset reference (D4); **opencode does not** — it rewrites `${VAR}` to opencode's `{env:VAR}` placeholder and defers expansion to opencode's runtime (which reads the shell-exported `.env`), so a missing var surfaces only when opencode expands it, not as a launch-time error.
 
 **Field handling (D3):** `extra_args` (raw claude flags) and `enabled_plugins` (claude marketplace) are claude-only — on codex/opencode they print `field <x> ignored for harness <y>` and proceed (never fail, never silently drop). codex additionally ignores-with-warning `tools` / `permissions_deny`.
 
 **Caveats:**
 
-- **codex tool restriction dropped** — an isolated codex profile gets MCP-world + no-user-config + ephemeral but **not** built-in tool-set restriction. Tracked in `feat(ap): revisit codex tool restriction for isolated profiles`.
-- **codex `/etc/codex/config.toml`** still loads under `--ignore-user-config` (it drops only the user layer); a system config can inject servers/approvals. Out of scope.
+- **codex tool restriction dropped** — an isolated codex profile gets the closed MCP world + a redirected `CODEX_HOME` but **not** built-in tool-set restriction. Tracked in `feat(ap): revisit codex tool restriction for isolated profiles`.
+- **codex auth.json symlink is File-mode only** — login is preserved by symlinking `<CODEX_HOME>/auth.json` → `~/.codex/auth.json`, which works for `File` auth-storage mode (`codex doctor` → `auth storage mode: File`). Keyring users must set `CODEX_ACCESS_TOKEN` instead — known limitation.
+- **codex `/etc/codex/config.toml`** (system config) still loads regardless of `CODEX_HOME` (separate load path); a system config can inject servers/approvals. Out of scope. A project `.codex/config.toml` is loaded but inert — the fresh `config.toml` trusts no projects.
 - **opencode can't suppress project `AGENTS.md`/`CLAUDE.md` auto-load** — the system prompt is *appended* via `instructions`; not a fully-closed instruction world.
 - **opencode `mcp__*` deny keys** are syntactically accepted as `OPENCODE_PERMISSION` freeform keys but enforcement is unconfirmed — best-effort.
 

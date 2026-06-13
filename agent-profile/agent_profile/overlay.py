@@ -12,7 +12,9 @@ harnesses reach the closed world by *different mechanisms* but fit one
 ``(flags, env)`` contract:
 
 - **claude** carries isolation in CLI flags (the original ccp parity).
-- **codex** carries it in CLI ``-c`` overrides (no whole-file MCP flag exists).
+- **codex** carries it in a redirected ``CODEX_HOME`` (a fresh dir with a
+  generated ``config.toml`` + an ``auth.json`` symlink), since codex 0.135.0
+  has no top-level no-user-config flag.
 - **opencode** carries it in launch env vars (``OPENCODE_CONFIG_CONTENT`` +
   ``OPENCODE_PERMISSION``), since opencode has no "ignore inherited config"
   flag — isolation is an inline highest-layer override.
@@ -28,12 +30,18 @@ Per-harness caveats (also in AGENTS.md § Profile System):
 
 - **codex drops tool/permission restriction.** Codex has no per-launch
   built-in-tool whitelist; an isolated codex profile gets the closed MCP
-  world + no-user-config + ephemeral, but *not* a ``--tools`` analog. The
+  world + a redirected ``CODEX_HOME``, but *not* a ``--tools`` analog. The
   profile's ``tools`` / ``permissions_deny`` / ``enabled_plugins`` are
   ignored-with-warning. Tracked in a follow-up ticket.
-- **codex ``/etc/codex/config.toml``** still loads under
-  ``--ignore-user-config`` (it drops only the *user* layer). On a machine
-  with a system config that can inject servers/approvals. Out of scope.
+- **codex auth.json symlink is File-mode only.** Login is preserved by
+  symlinking ``<CODEX_HOME>/auth.json`` -> ``~/.codex/auth.json``, which
+  works for ``File`` auth-storage mode. Keyring users must set
+  ``CODEX_ACCESS_TOKEN`` instead — known limitation.
+- **codex ``/etc/codex/config.toml``** (system config) still loads
+  regardless of ``CODEX_HOME`` (it is a separate load path). On a machine
+  with one it can inject servers/approvals. Out of scope. Project
+  ``.codex/config.toml`` is loaded but inert (the fresh config trusts no
+  projects).
 - **opencode cannot suppress project ``AGENTS.md`` / ``CLAUDE.md``
   auto-load** — the profile's system prompt is *appended* via
   ``instructions``; an isolated opencode launch is not a fully-closed
@@ -208,84 +216,94 @@ def _build_isolated_claude(
     return flags, dict(manifest.env)
 
 
-# ─── codex (CLI -c overrides; no whole-file MCP flag) ────────────────
+# ─── codex (CODEX_HOME redirect + generated config.toml) ────────
 
 
 def _codex_toml_value(value: object) -> str:
-    """Render a Python value as the RHS of a codex ``-c key=<value>`` override.
+    """Render a Python value as the RHS of a ``key = <value>`` line in the
+    generated ``config.toml``.
 
-    Codex parses the value as TOML, falling back to the raw string literal
-    when it doesn't parse (config_override.rs). A JSON-encoded string and a
-    JSON-encoded list of strings are valid TOML scalars/arrays, so
-    :func:`json.dumps` produces the correct ``"npx"`` / ``["-y","x"]`` forms
-    in one call.
+    A JSON-encoded string and a JSON-encoded list of strings are valid TOML
+    scalars/arrays, so :func:`json.dumps` produces the correct ``"npx"`` /
+    ``["-y","x"]`` forms for an MCP ``command`` / ``args`` / ``env`` value in
+    one call.
 
     ``ensure_ascii=False`` is required, not cosmetic: with the default,
-    :func:`json.dumps` emits a non-BMP character (e.g. an emoji in a system
-    prompt) as a UTF-16 surrogate-pair backslash-u escape, which TOML
-    rejects -- a unicode escape must be a single Unicode scalar value, and a
-    surrogate code point is not. Emitting the literal UTF-8 character keeps a
-    TOML basic string parseable, so arbitrary system-prompt content
-    round-trips."""
+    :func:`json.dumps` emits a non-BMP character (e.g. an emoji in an MCP
+    arg or env value) as a UTF-16 surrogate-pair backslash-u escape, which
+    TOML rejects -- a unicode escape must be a single Unicode scalar value,
+    and a surrogate code point is not. Emitting the literal UTF-8 character
+    keeps a TOML basic string parseable, so arbitrary content round-trips."""
     return json.dumps(value, ensure_ascii=False)
 
 
-def _codex_mcp_overrides(manifest: Manifest) -> list[str]:
-    """Lower the profile's MCPs to ``-c mcp_servers.<n>.*`` override flags.
+def _codex_mcp_tables(manifest: Manifest) -> str:
+    """Render the profile's MCPs as ``[mcp_servers.<n>]`` TOML tables.
 
-    Codex has no ``--mcp-config <file>`` analog, so each server is injected
-    key-by-key. Inline ``${VAR}`` env refs resolve from ``.env`` (D4), failing
-    loud when unset — parity with the claude path. HTTP/SSE MCPs carry
-    ``url``/``type`` instead of ``command``/``args``; stdio MCPs carry
-    ``command`` and optional ``args``/``env``."""
+    Codex loads MCP servers from ``$CODEX_HOME/config.toml`` (it has no
+    ``--mcp-config <file>`` flag), so the closed MCP world is generated into
+    the isolated home's config rather than passed as ``-c`` overrides. Inline
+    ``${VAR}`` env refs resolve from ``.env`` (D4), failing loud when unset —
+    parity with the claude path. stdio MCPs carry ``command`` + optional
+    ``args``/``env`` (an ``[mcp_servers.<n>.env]`` sub-table); HTTP/SSE MCPs
+    carry ``url``/``type`` + optional ``headers`` (an
+    ``[mcp_servers.<n>.http_headers]`` sub-table — verified against codex
+    0.135.0 ``codex mcp get``)."""
     dotenv = _dotenv()
-    flags: list[str] = []
+    lines: list[str] = []
     for raw in manifest.mcps:
         mcp = resolve_item_env(raw, dotenv)
         name = mcp["name"]
-        prefix = f"mcp_servers.{name}"
+        lines.append(f"[mcp_servers.{name}]")
         if mcp.get("url") or mcp.get("type") in ("http", "sse"):
-            flags += ["-c", f"{prefix}.url={_codex_toml_value(mcp['url'])}"]
-            flags += [
-                "-c",
-                f"{prefix}.type={_codex_toml_value(mcp.get('type') or 'http')}",
-            ]
+            lines.append(f"url = {_codex_toml_value(mcp['url'])}")
+            lines.append(
+                f"type = {_codex_toml_value(mcp.get('type') or 'http')}"
+            )
+            headers = mcp.get("headers")
+            if isinstance(headers, dict) and headers:
+                lines.append(f"\n[mcp_servers.{name}.http_headers]")
+                for key, val in headers.items():
+                    lines.append(f"{key} = {_codex_toml_value(str(val))}")
         else:
-            flags += [
-                "-c",
-                f"{prefix}.command={_codex_toml_value(mcp['command'])}",
-            ]
+            lines.append(f"command = {_codex_toml_value(mcp['command'])}")
             if mcp.get("args") is not None:
-                flags += [
-                    "-c",
-                    f"{prefix}.args={_codex_toml_value(mcp['args'])}",
-                ]
-        env = mcp.get("env")
-        if isinstance(env, dict):
-            for key, val in env.items():
-                flags += [
-                    "-c",
-                    f"{prefix}.env.{key}={_codex_toml_value(str(val))}",
-                ]
-    return flags
+                lines.append(f"args = {_codex_toml_value(mcp['args'])}")
+            env = mcp.get("env")
+            if isinstance(env, dict) and env:
+                lines.append(f"\n[mcp_servers.{name}.env]")
+                for key, val in env.items():
+                    lines.append(f"{key} = {_codex_toml_value(str(val))}")
+        lines.append("")
+    return "\n".join(lines)
 
 
-def _codex_system_prompt(manifest: Manifest, profile_dir: Path) -> list[str]:
-    """Inject the profile's system prompt as codex's ``instructions`` config.
+def _write_codex_config(
+    manifest: Manifest, profile_dir: Path, codex_home: Path
+) -> None:
+    """Generate ``<codex_home>/config.toml`` for the isolated launch.
 
-    Codex's ``instructions`` key takes the system-instruction *content*
-    string, not a file path (config_toml.rs). There is no documented
-    ``instructions_file`` key, so the file is read and passed inline; codex's
-    ``-c`` parser falls back to a raw string literal when the markdown body
-    isn't valid TOML (config_override.rs), so arbitrary content round-trips."""
-    if not manifest.system_prompt:
-        return []
-    sp = profile_dir / manifest.system_prompt
-    if not sp.is_file():
-        raise IsolationError(
-            f"system_prompt file not found for profile '{manifest.name}': {sp}"
+    Sets ``model_instructions_file`` to the profile's system-prompt file
+    (an absolute path — codex's ``instructions`` key is reserved/noop, and
+    ``model_instructions_file`` is the documented way to inject a custom
+    system prompt; verified in the live ``~/.codex/config.toml``). Appends
+    the profile's MCP world as ``[mcp_servers.<n>]`` tables. The fresh config
+    trusts no projects, so any ``.codex/config.toml`` in the working tree is
+    loaded but inert."""
+    sections: list[str] = []
+    if manifest.system_prompt:
+        sp = profile_dir / manifest.system_prompt
+        if not sp.is_file():
+            raise IsolationError(
+                f"system_prompt file not found for profile '{manifest.name}': {sp}"
+            )
+        sections.append(
+            f"model_instructions_file = {_codex_toml_value(str(sp))}\n"
         )
-    return ["-c", f"instructions={_codex_toml_value(sp.read_text())}"]
+    tables = _codex_mcp_tables(manifest)
+    if tables:
+        sections.append(tables)
+    (codex_home / "config.toml").write_text("\n".join(sections))
 
 
 def _build_isolated_codex(
@@ -293,12 +311,33 @@ def _build_isolated_codex(
     profile_dir: Path,
     scratch: Path | None = None,
 ) -> tuple[list[str], dict[str, str]]:
-    """Assemble the codex closed-world ``-c`` overrides for an isolated profile.
+    """Assemble the codex closed world via a redirected ``CODEX_HOME``.
 
-    ``--ignore-user-config`` drops the user ``config.toml`` layer (the
-    ``--setting-sources ""`` analog); ``--ephemeral`` skips session-rollout
-    persistence; ``-c mcp_servers.<n>.*`` injects the profile's MCP world
-    inline; ``-c instructions=<content>`` injects the system prompt.
+    Codex 0.135.0 has no top-level ``--ignore-user-config`` / ``--ephemeral``
+    (those are ``codex exec`` subcommand flags — rejected by the bare
+    interactive ``codex`` the launcher execs). Isolation is instead achieved
+    by pointing ``CODEX_HOME`` at a fresh per-launch dir holding a generated
+    ``config.toml`` (the profile's MCP world + ``model_instructions_file``).
+    With ``CODEX_HOME`` redirected, the user's ``~/.codex/config.toml`` is not
+    loaded; ``flags`` is therefore empty and codex launches interactive.
+
+    Login is preserved by symlinking ``<home>/auth.json`` -> the real
+    ``~/.codex/auth.json`` (``FileAuthStorage`` reads ``<CODEX_HOME>/auth.json``
+    and follows symlinks). ``scratch`` (the isolated home) matches the claude
+    path's ephemeral-dir convention: a fresh ``tempfile.mkdtemp`` per launch
+    that outlives this call so the exec'd codex can read it. ``ap launch``
+    execs and cannot clean up post-exec, so these accumulate exactly like the
+    claude path's generated ``.mcp.json`` / ``settings.json`` dirs.
+
+    Caveats (also in the module docstring):
+
+    - The ``auth.json`` symlink only works for ``File`` auth-storage mode.
+      Keyring users (``cli_auth_credentials_store_mode = keyring``) must set
+      ``CODEX_ACCESS_TOKEN`` instead — known limitation.
+    - ``/etc/codex/config.toml`` (system config) still loads regardless of
+      ``CODEX_HOME``; on a machine with one it can inject servers/approvals.
+    - Project ``.codex/config.toml`` is loaded but inert (the fresh config
+      trusts no projects).
 
     Tool/permission restriction is dropped (codex has no per-launch built-in
     tool whitelist — see module docstring + follow-up ticket): ``tools``,
@@ -313,10 +352,18 @@ def _build_isolated_codex(
         if present:
             _warn_ignored(name, "codex")
 
-    flags = ["--ignore-user-config", "--ephemeral"]
-    flags += _codex_mcp_overrides(manifest)
-    flags += _codex_system_prompt(manifest, profile_dir)
-    return flags, dict(manifest.env)
+    if scratch is None:
+        scratch = Path(tempfile.mkdtemp(prefix=f"ap-{manifest.name}-codex-"))
+
+    auth = Path.home() / ".codex" / "auth.json"
+    link = scratch / "auth.json"
+    if auth.is_file() and not link.exists():
+        link.symlink_to(auth)
+
+    _write_codex_config(manifest, profile_dir, scratch)
+
+    env = {"CODEX_HOME": str(scratch), **dict(manifest.env)}
+    return [], env
 
 
 # ─── opencode (launch env vars; inline highest-layer override) ───────
@@ -422,7 +469,10 @@ def _build_isolated_opencode(
     (own servers + inherited servers ``enabled: false``) and the system
     prompt as an additive ``instructions`` file path; ``OPENCODE_PERMISSION``
     carries the ``permissions_deny`` translation (omitted when nothing maps).
-    The profile's ``env`` is injected alongside.
+    ``OPENCODE_DISABLE_PROJECT_CONFIG`` keeps a project-level ``opencode.json``
+    in the working tree from leaking its MCPs into the closed world (the
+    inherited-disable list only covers the global registry). The profile's
+    ``env`` is injected alongside.
 
     ``enabled_plugins`` (claude marketplace) and ``extra_args`` (raw claude
     flags) are claude-only — ignored-with-warning (D3)."""
@@ -442,7 +492,10 @@ def _build_isolated_opencode(
             )
         config["instructions"] = [str(sp)]
 
-    env: dict[str, str] = {"OPENCODE_CONFIG_CONTENT": json.dumps(config)}
+    env: dict[str, str] = {
+        "OPENCODE_CONFIG_CONTENT": json.dumps(config),
+        "OPENCODE_DISABLE_PROJECT_CONFIG": "true",
+    }
     permission = _opencode_permission(manifest)
     if permission:
         env["OPENCODE_PERMISSION"] = json.dumps(permission)

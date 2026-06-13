@@ -770,83 +770,127 @@ def test_dispatch_table_keys_are_the_three_isolating_harnesses(tmp_path):
 # ─── codex builder (#221) ────────────────────────────────────────
 
 
-def test_codex_emits_no_user_config_and_ephemeral(tmp_path, monkeypatch):
+def _codex_config(env: dict) -> dict:
+    """Parse the generated ``<CODEX_HOME>/config.toml`` via a real TOML parser.
+
+    Asserts the builder set CODEX_HOME and that the file parses (the B1
+    lesson: a config the codex Rust `toml` crate would reject is a broken
+    launch, not a passing test). tomllib stands in for codex's parser — both
+    implement TOML 1.0."""
+    import tomllib
+
+    home = env["CODEX_HOME"]
+    cfg = Path(home) / "config.toml"
+    assert cfg.is_file(), "isolated codex launch wrote no config.toml"
+    return tomllib.loads(cfg.read_text())
+
+
+def test_codex_redirects_home_with_empty_flags(tmp_path, monkeypatch):
+    """Isolation rides in a redirected CODEX_HOME, not flags. The launch argv
+    is bare interactive codex — NO exec-only --ephemeral/--ignore-user-config
+    (rejected by codex 0.135.0's top-level parser)."""
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))  # no .env
     m = _claude_manifest(tmp_path, system_prompt="CLAUDE.md")
     (tmp_path / "CLAUDE.md").write_text("codex sp\n")
     flags, env = overlay.build_isolated_launch(m, tmp_path, "codex")
-    assert flags[0] == "--ignore-user-config"
-    assert flags[1] == "--ephemeral"
-    assert env == {}
+    assert flags == []
+    assert "--ephemeral" not in flags
+    assert "--ignore-user-config" not in flags
+    assert env["CODEX_HOME"]
+    assert Path(env["CODEX_HOME"]).is_dir()
 
 
-def test_codex_mcp_overrides_are_c_pairs(tmp_path, monkeypatch):
-    """Each profile MCP lowers to -c mcp_servers.<n>.command/args overrides
-    (codex has no whole-file --mcp-config flag). Values are JSON/TOML-encoded
-    so command is a quoted string and args a list literal."""
+def test_codex_auth_json_symlinked_into_home(tmp_path, monkeypatch):
+    """Login is preserved by symlinking <CODEX_HOME>/auth.json -> the real
+    ~/.codex/auth.json (File auth-storage mode)."""
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    fake_home = tmp_path / "home"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_text('{"tokens": "x"}\n')
+    monkeypatch.setattr(overlay.Path, "home", classmethod(lambda cls: fake_home))
+    m = _claude_manifest(tmp_path)
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    link = Path(env["CODEX_HOME"]) / "auth.json"
+    assert link.is_symlink()
+    assert link.resolve() == (fake_home / ".codex" / "auth.json").resolve()
+
+
+def test_codex_auth_symlink_skipped_when_no_auth(tmp_path, monkeypatch):
+    """Keyring users have no ~/.codex/auth.json; the builder must not create a
+    dangling symlink (it would orphan auth either way — documented limitation)."""
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    fake_home = tmp_path / "home"
+    (fake_home / ".codex").mkdir(parents=True)  # no auth.json
+    monkeypatch.setattr(overlay.Path, "home", classmethod(lambda cls: fake_home))
+    m = _claude_manifest(tmp_path)
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    assert not (Path(env["CODEX_HOME"]) / "auth.json").exists()
+
+
+def test_codex_mcp_servers_are_toml_tables(tmp_path, monkeypatch):
+    """Each profile MCP lands as an [mcp_servers.<n>] table in the generated
+    config.toml with command + args (codex loads MCPs from config.toml, not a
+    --mcp-config flag). Asserted by parsing the file, not substring-matching."""
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
     m = _claude_manifest(tmp_path)
-    flags, _ = overlay.build_isolated_launch(m, tmp_path, "codex")
-    assert "-c" in flags
-    overrides = [flags[i + 1] for i, f in enumerate(flags) if f == "-c"]
-    assert 'mcp_servers.tilth.command="tilth"' in overrides
-    assert 'mcp_servers.tilth.args=["--mcp"]' in overrides
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    cfg = _codex_config(env)
+    assert cfg["mcp_servers"]["tilth"] == {
+        "command": "tilth",
+        "args": ["--mcp"],
+    }
 
 
-def test_codex_system_prompt_injected_as_instructions(tmp_path, monkeypatch):
-    """The profile's system_prompt content is injected via -c instructions=
-    (codex's instructions key takes content, not a file path)."""
+def test_codex_system_prompt_is_model_instructions_file(tmp_path, monkeypatch):
+    """The system prompt is injected via model_instructions_file (an absolute
+    path), NOT the reserved/noop `instructions` key."""
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
     m = _claude_manifest(tmp_path, system_prompt="CLAUDE.md")
     (tmp_path / "CLAUDE.md").write_text("be a good codex\n")
-    flags, _ = overlay.build_isolated_launch(m, tmp_path, "codex")
-    overrides = [flags[i + 1] for i, f in enumerate(flags) if f == "-c"]
-    instr = [o for o in overrides if o.startswith("instructions=")]
-    assert len(instr) == 1
-    assert "be a good codex" in instr[0]
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    cfg = _codex_config(env)
+    mif = cfg["model_instructions_file"]
+    assert Path(mif).is_absolute()
+    assert mif == str(tmp_path / "CLAUDE.md")
+    assert "instructions" not in cfg  # the noop key is never emitted
 
 
-def test_codex_instructions_roundtrip_through_toml_parser(tmp_path, monkeypatch):
-    """The -c instructions=<content> value must survive codex's TOML parse and
-    decode back to the byte-identical CLAUDE.md. The cooked claim ("arbitrary
-    markdown round-trips") is the contract: a real system prompt carries
-    TOML-special chars (`=`, `[ ]`, quotes, backslashes, `#`) AND non-ASCII —
-    the user's own CLAUDE.md is full of 🧀. tomllib stands in for codex's Rust
-    `toml` crate; both implement TOML 1.0, where a `\\u` escape must be a single
-    Unicode scalar value, so a surrogate-pair escape (json.dumps' default for
-    non-BMP chars) is rejected at parse time."""
-    import tomllib
-
+def test_codex_config_is_valid_toml_with_adversarial_mcp_values(tmp_path, monkeypatch):
+    """The generated config.toml must parse as TOML 1.0 AND round-trip its
+    mcp_servers string values when an MCP arg/env carries TOML-special chars
+    (`=`, `[ ]`, quotes, backslashes, `#`) and non-BMP unicode. This locks the
+    `_codex_toml_value` ensure_ascii=False fix: a surrogate-pair \\u escape
+    (json.dumps' default for non-BMP) is rejected by TOML 1.0 at parse time,
+    so the whole config would fail to load."""
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    content = (
-        "# Heading = not a comment\n"
-        'Use key = "value" and [section] headers.\n'
-        "Path C:\\Users\\x, regex \\d+, em dash — café ✓, cheese 🧀 lord.\n"
-        'A """triple""" quoted block and an it\'s apostrophe.\n'
+    nasty_arg = '= [section] "q" \\ # café 🧀'
+    m = Manifest(
+        name="p",
+        isolated=True,
+        mcps=[{"name": "weird", "command": "npx",
+               "args": ["-y", nasty_arg],
+               "env": {"NOTE": "em — dash 🧀 lord, regex \\d+, key = val"},
+               "_source_dir": str(tmp_path)}],
     )
-    m = _claude_manifest(tmp_path, system_prompt="CLAUDE.md")
-    (tmp_path / "CLAUDE.md").write_text(content)
-    flags, _ = overlay.build_isolated_launch(m, tmp_path, "codex")
-    overrides = [flags[i + 1] for i, f in enumerate(flags) if f == "-c"]
-    instr = [o for o in overrides if o.startswith("instructions=")]
-    assert len(instr) == 1
-    rhs = instr[0][len("instructions=") :]
-    parsed = tomllib.loads(f"instructions={rhs}")
-    assert parsed["instructions"] == content, "codex -c instructions did not round-trip"
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    cfg = _codex_config(env)  # raises if the TOML is invalid
+    server = cfg["mcp_servers"]["weird"]
+    assert server["args"] == ["-y", nasty_arg], "mcp arg did not round-trip"
+    assert server["env"]["NOTE"] == "em — dash 🧀 lord, regex \\d+, key = val"
 
 
-def test_codex_no_system_prompt_omits_instructions(tmp_path, monkeypatch):
+def test_codex_no_system_prompt_omits_model_instructions_file(tmp_path, monkeypatch):
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
     m = _claude_manifest(tmp_path)  # no system_prompt
-    flags, _ = overlay.build_isolated_launch(m, tmp_path, "codex")
-    overrides = [flags[i + 1] for i, f in enumerate(flags) if f == "-c"]
-    assert not any(o.startswith("instructions=") for o in overrides)
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    cfg = _codex_config(env)
+    assert "model_instructions_file" not in cfg
 
 
 def test_codex_drops_tools_perms_plugins_with_warning(tmp_path, monkeypatch, capsys):
     """D2/D3: codex can't restrict built-in tools — tools/permissions_deny/
     enabled_plugins/extra_args are ignored-with-warning, never silently
-    dropped, never fatal."""
+    dropped, never fatal, never leaked into flags."""
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
     m = _claude_manifest(
         tmp_path,
@@ -859,15 +903,12 @@ def test_codex_drops_tools_perms_plugins_with_warning(tmp_path, monkeypatch, cap
     err = capsys.readouterr().err
     for field in ("tools", "permissions_deny", "enabled_plugins", "extra_args"):
         assert f"field {field} ignored for harness codex" in err
-    # none of the dropped fields leak into the flags
-    assert "--tools" not in flags
-    assert "Edit" not in flags and "Write" not in flags
-    assert "--foo" not in flags
+    assert flags == []  # nothing leaks into the launch argv
 
 
 def test_codex_mcp_env_resolved_from_dotenv(tmp_path, monkeypatch):
     """${VAR} in a codex MCP env block resolves from .env at launch (D4),
-    matching the claude path."""
+    matching the claude path, and lands in the config.toml env sub-table."""
     dots = tmp_path / "dots"
     dots.mkdir()
     (dots / ".env").write_text("CTX=ctx-secret\n")
@@ -879,9 +920,9 @@ def test_codex_mcp_env_resolved_from_dotenv(tmp_path, monkeypatch):
                "env": {"CONTEXT7_API_KEY": "${CTX}"},
                "_source_dir": str(tmp_path)}],
     )
-    flags, _ = overlay.build_isolated_launch(m, tmp_path, "codex")
-    overrides = [flags[i + 1] for i, f in enumerate(flags) if f == "-c"]
-    assert 'mcp_servers.context7.env.CONTEXT7_API_KEY="ctx-secret"' in overrides
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    cfg = _codex_config(env)
+    assert cfg["mcp_servers"]["context7"]["env"]["CONTEXT7_API_KEY"] == "ctx-secret"
 
 
 def test_codex_mcp_env_unset_fails_loud(tmp_path, monkeypatch):
@@ -901,7 +942,8 @@ def test_codex_mcp_env_unset_fails_loud(tmp_path, monkeypatch):
         overlay.build_isolated_launch(m, tmp_path, "codex")
 
 
-def test_codex_http_mcp_uses_url_overrides(tmp_path, monkeypatch):
+def test_codex_http_mcp_uses_url_table(tmp_path, monkeypatch):
+    """HTTP MCPs land as a url/type table, no command key."""
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
     m = Manifest(
         name="p",
@@ -910,22 +952,46 @@ def test_codex_http_mcp_uses_url_overrides(tmp_path, monkeypatch):
                "url": "https://mcp.notion.com/mcp",
                "_source_dir": str(tmp_path)}],
     )
-    flags, _ = overlay.build_isolated_launch(m, tmp_path, "codex")
-    overrides = [flags[i + 1] for i, f in enumerate(flags) if f == "-c"]
-    assert 'mcp_servers.notion.url="https://mcp.notion.com/mcp"' in overrides
-    assert 'mcp_servers.notion.type="http"' in overrides
-    assert not any(o.startswith("mcp_servers.notion.command") for o in overrides)
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    server = _codex_config(env)["mcp_servers"]["notion"]
+    assert server["url"] == "https://mcp.notion.com/mcp"
+    assert server["type"] == "http"
+    assert "command" not in server
+
+
+def test_codex_http_mcp_carries_headers(tmp_path, monkeypatch):
+    """L2: an HTTP MCP's headers lower to an http_headers sub-table (verified
+    against codex 0.135.0). The claude path carried headers; codex now does too."""
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    m = Manifest(
+        name="p",
+        isolated=True,
+        mcps=[{"name": "authed", "type": "http",
+               "url": "https://example.com/mcp",
+               "headers": {"X-Api-Key": "secret", "Authorization": "Bearer t"},
+               "_source_dir": str(tmp_path)}],
+    )
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    server = _codex_config(env)["mcp_servers"]["authed"]
+    assert server["http_headers"] == {
+        "X-Api-Key": "secret",
+        "Authorization": "Bearer t",
+    }
 
 
 def test_codex_launch_does_not_hard_fail(env, monkeypatch):
-    """`dots profile launch codex <iso>` builds + execs, no longer erroring."""
+    """`dots profile launch codex <iso>` builds + execs bare interactive codex
+    (no exec-only flags), with CODEX_HOME injected into the process env."""
     write_isolated_todo(env.profiles)
     rec = _capture_exec(monkeypatch)
     with pytest.raises(SystemExit):
         cli.main(["launch", "codex", "todo", "--target", str(env.target)])
     assert rec["file"] == "codex"
-    assert "--ignore-user-config" in rec["args"]
-    assert "--ephemeral" in rec["args"]
+    assert rec["args"] == ["codex"]  # bare interactive, no flags before passthrough
+    assert "--ephemeral" not in rec["args"]
+    assert "--ignore-user-config" not in rec["args"]
+    assert cli.os.environ.get("CODEX_HOME")
+    assert (Path(cli.os.environ["CODEX_HOME"]) / "config.toml").is_file()
 
 
 # ─── opencode builder (#222) ─────────────────────────────────────
@@ -944,6 +1010,16 @@ def test_opencode_emits_config_content_env(tmp_path, monkeypatch):
         "enabled": True,
         "command": ["tilth", "--mcp"],
     }
+
+
+def test_opencode_disables_project_config(tmp_path, monkeypatch):
+    """L1: OPENCODE_DISABLE_PROJECT_CONFIG=true so a project-level opencode.json
+    in the working tree can't leak its MCPs into the closed world (the
+    inherited-disable list only covers the global registry)."""
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    m = _claude_manifest(tmp_path)
+    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
+    assert env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "true"
 
 
 def test_opencode_disables_inherited_registry_servers(tmp_path, monkeypatch):
@@ -1129,14 +1205,14 @@ def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
 def test_real_review_profile_on_codex_drops_perms_with_caveat(monkeypatch, tmp_path, capsys):
     """The shipped review profile on codex builds the MCP world but CANNOT
     enforce its read-only deny list (codex caveat) — it's ignored-with-warning,
-    and the closed MCP world is still injected via -c overrides."""
+    and the closed MCP world is still injected via the generated config.toml."""
     _hermetic_dotenv(monkeypatch, tmp_path)
     pdir = find_profile_dir("review")
     assert pdir is not None
     m = parse_manifest(pdir)
-    flags, _ = overlay.build_isolated_launch(m, pdir, "codex")
+    _, env = overlay.build_isolated_launch(m, pdir, "codex")
     err = capsys.readouterr().err
     assert "field permissions_deny ignored for harness codex" in err
-    overrides = [flags[i + 1] for i, f in enumerate(flags) if f == "-c"]
+    servers = _codex_config(env)["mcp_servers"]
     for server in ("tilth", "code-review-graph", "context7"):
-        assert any(o.startswith(f"mcp_servers.{server}.") for o in overrides), server
+        assert server in servers, server
