@@ -21,7 +21,8 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 
 | Topic | Wiki page |
 |---|---|
-| `agents/` registry system (MCP / hook / sub-agent / skill registries, system-prompt body) | [[architecture/agents-dir]] |
+| `agents/` registry system (MCP / hook / sub-agent / skill / plugin registries, system-prompt body) | [[architecture/agents-dir]] |
+| Cross-harness plugin decomposition (`_expand_plugins`, registry schema, per-harness reach) | [[architecture/cross-harness-plugins]] |
 | `ap` tool — profiles (base / global / isolated), the five renderers, install vs launch, chezmoi drive | [[architecture/agent-profile]] |
 | MCP `${VAR}` secret passthrough | [[architecture/mcp-secret-handling]] |
 | Config drift + the `settings.json` self-heal (`/harness-doctor`) | [[architecture/config-drift]] |
@@ -71,7 +72,8 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 | Hook | `agents/hooks/registry.yaml` | `dots sync` |
 | Sub-agent | `agents/registry.yaml` + `agents/agent_definitions/` | `dots sync` |
 | Skill | `skills/` (local) or `skills/_registry.yaml` (external) | `dots sync` |
-| Claude plugin | `claude/plugins/registry.yaml` | `plugin-sync` |
+| Plugin (cross-harness) | `agents/plugins/registry.yaml` | `dots sync` (or `plugin-sync`) |
+| Claude-native plugin | `claude/plugins/registry.yaml` | `dots sync` |
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
 | Package | `packages/packages.yaml` | `dots sync` |
 | Profile | `profiles/<name>/profile.yaml` | `dots profile install` / `launch` |

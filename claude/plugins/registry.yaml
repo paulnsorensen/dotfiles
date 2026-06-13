@@ -67,11 +67,6 @@ plugins:
     path: ~/Dev/cheese-flow
     gate: CHEESE_FLOW
 
-  # milknado ships its own .claude-plugin/marketplace.json (mp_name == plugin),
-  # so sync.sh auto-registers the `milknado` marketplace from `path`. Provides
-  # the milknado-config skill + bundled milknado MCP (mcp__plugin_milknado_*).
-  milknado@milknado:
-    description: Mikado execution engine — goal decomposition, batch planning, detached ralph-loop runs
-    scope: user
-    load: true
-    path: ~/Dev/milknado
+  # milknado is now managed via agents/plugins/registry.yaml (cross-harness).
+  # Claude gets the native install; other harnesses get decomposed primitives.
+  # See agents/plugins/registry.yaml for the entry.
