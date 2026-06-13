@@ -8,10 +8,6 @@ existing fetch behavior.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from agent_profile import cli
 from tests.conftest import write_profile
 
@@ -52,7 +48,7 @@ def test_staged_install_prints_skip_message(env, stub_renderers, monkeypatch, ca
     assert cli.main(["install", "extprof", "--harness", "claude", "--target", str(env.target)]) == 0
     out = capsys.readouterr().out
     # A message about skipping external skills for staged/non-live target
-    assert "external skills" in out.lower() or "staged" in out.lower() or "skipped" in out.lower()
+    assert "external skills skipped" in out
 
 
 # ─── live install still runs the global skill fetch ───────────────────────────
