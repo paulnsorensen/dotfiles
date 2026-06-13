@@ -49,6 +49,7 @@ class CrushRenderer:
     """Renderer for Crush's merged `crush.json` config."""
 
     name = "crush"
+    mcp_default = _CRUSH_MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         base = Path(str(target).rstrip("/"))
@@ -83,6 +84,13 @@ class CrushRenderer:
             config_path.unlink()
             return
         config_path.write_text(json.dumps(data, indent=2) + "\n")
+
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict dropped MCP servers from crush.json's ``mcp`` block (install
+        reconcile). Delegates to :meth:`clean`: ``manifest`` carries only the
+        dropped servers and no hooks, so clean's hook pass is a no-op and only
+        the dropped MCPs are removed."""
+        self.clean(manifest, target)
 
     def _merge_mcps(self, manifest: Manifest, data: dict[str, Any]) -> None:
         mine = mcps_for(manifest, "crush", _CRUSH_MCP_DEFAULT)
@@ -125,12 +133,11 @@ class CrushRenderer:
         if not crush_hooks:
             return
 
-        hooks_section = data.get("hooks")
-        if not isinstance(hooks_section, dict):
-            hooks_section = {}
-            data["hooks"] = hooks_section
-
-        existing = hooks_section.get("PreToolUse")
+        existing_section = data.get("hooks")
+        existing_section = (
+            existing_section if isinstance(existing_section, dict) else {}
+        )
+        existing = existing_section.get("PreToolUse")
         entries: list[dict[str, Any]] = (
             [entry for entry in existing if isinstance(entry, dict)]
             if isinstance(existing, list)
@@ -181,7 +188,8 @@ class CrushRenderer:
             entries.append(entry)
 
         if entries:
-            hooks_section["PreToolUse"] = entries
+            existing_section["PreToolUse"] = entries
+            data["hooks"] = existing_section
 
     def _clean_hooks(self, manifest: Manifest, data: dict[str, Any]) -> None:
         crush_hooks = hooks_for(manifest, "crush", _CRUSH_HOOK_DEFAULT)

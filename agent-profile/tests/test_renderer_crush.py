@@ -159,3 +159,28 @@ def test_non_object_config_raises(tmp_path: Path):
     cfg_path.write_text("[]")
     with pytest.raises(MergedConfigError):
         CrushRenderer().render(_manifest(tmp_path), target)
+
+
+def test_render_writes_nothing_for_hooks_without_pretooluse(tmp_path: Path):
+    src = tmp_path / "src"
+    (src / "hooks").mkdir(parents=True)
+    (src / "hooks" / "guard.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
+    manifest = Manifest(
+        name="crushy",
+        mcps=[],
+        hooks=[
+            {
+                "name": "ignored",
+                "event": "SessionStart",
+                "script": "hooks/guard.sh",
+                "harnesses": ["crush"],
+                "_source_dir": str(src),
+            }
+        ],
+    )
+    target = tmp_path / "target"
+
+    tracked = CrushRenderer().render(manifest, target)
+
+    assert tracked == []
+    assert not (target / ".config" / "crush" / "crush.json").exists()
