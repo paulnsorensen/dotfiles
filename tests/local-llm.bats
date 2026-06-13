@@ -789,3 +789,72 @@ MOCK
     # Must return well under the 10s warm-up sleep — proves it is backgrounded.
     (( end - start < 5 ))
 }
+
+@test "opencode-lean warms the lean.json default model on a bare (no --model) launch" {
+    # Spec acceptance: bare `opencode-lean` resolves the lean.json default
+    # (local-coder, a pool model) and must fire the warm-up — locks the
+    # default-resolution -> warm-up composition, not just the helper in isolation.
+    mkdir -p "$HOME/local-llm/configs"
+    cp "$LEAN" "$HOME/local-llm/configs/lean.json"
+
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "opencode-called"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    local warm_log="$TEST_HOME/warm.log"
+    cat > "$MOCK_BIN/curl" << MOCK
+#!/bin/bash
+if [[ "\$*" == *chat/completions* ]]; then
+    printf '%s\n' "\$*" > "$warm_log"
+fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run opencode-lean
+    assert_success
+    assert_output_contains "opencode-called"
+
+    local i=0
+    while [[ ! -f "$warm_log" ]] && (( i < 50 )); do sleep 0.1; (( i++ )); done
+    assert_file_exists "$warm_log"
+    run cat "$warm_log"
+    assert_output_contains "http://127.0.0.1:4000/v1/chat/completions"
+    assert_output_contains '"model":"local-coder"'
+    assert_output_contains '"max_tokens":1'
+}
+
+@test "opencode-lean does NOT warm an unrecognized model (non-pool, non-hot)" {
+    # D3: only the three swap-pool models warm. An unrecognized model id
+    # (here a non-local provider model) must hit the case fall-through = no-op,
+    # distinct from the known-hot-model branch.
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "opencode-called"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    local warm_log="$TEST_HOME/warm.log"
+    cat > "$MOCK_BIN/curl" << MOCK
+#!/bin/bash
+if [[ "\$*" == *chat/completions* ]]; then
+    echo "\$*" > "$warm_log"
+fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run opencode-lean --model anthropic/claude-sonnet-4
+    assert_success
+    assert_output_contains "opencode-called"
+
+    # Give any (erroneous) backgrounded warm-up a chance to fire, then confirm none did.
+    sleep 0.5
+    [[ ! -f "$warm_log" ]]
+}
