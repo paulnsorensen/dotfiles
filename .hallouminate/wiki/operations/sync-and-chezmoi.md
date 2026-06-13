@@ -14,6 +14,17 @@ How `dots sync` deploys this repo to a machine. Two mechanisms coexist: a custom
 
 The custom backup/restore/rollback subsystem has been **deleted** (chezmoi-consolidation, Stage 1). `dots rollback` no longer snapshots — it prints the git-backed undo path (`git revert` + `dots sync`). `dots backups` / `dots clean` are gone (`tests/dots.bats` asserts the retirement). The manifest/backup scaffolding in `.sync` has been removed; only `last_sync` (timestamp) remains. The file has been renamed from `.sync-with-rollback` to `.sync`.
 
+## Package installation (`packages/sync.sh`)
+
+`.sync` forks to `packages/sync.sh`, which installs everything declared in `packages/packages.yaml` (SHA-256-cached to skip when the file is unchanged).
+
+- **Homebrew is the installer on both macOS and Linux.** The old Linux path (`sync_apt`, advisory-only — it *reported* missing apt packages but never installed) is gone; Linux now runs `sync_brew` like macOS. On a fresh Linux box the install script bootstraps Homebrew to `/home/linuxbrew/.linuxbrew` and `sync_brew` evals `brew shellenv` to get it on PATH for the rest of the run; `zsh/core.zsh` does the same eval for new shells.
+- **Build deps are front-loaded on Linux.** `bootstrap_brew_deps_linux` (first thing in `sync_brew`) installs Homebrew's prerequisite toolchain (`build-essential procps curl file git`, or the dnf/yum/pacman/zypper equivalent) via the system package manager *before* the brew install, so the one sudo password prompt lands at the very start of the sync. It no-ops when `gcc`/`make`/`git`/`curl`/`file` are all present (no prompt on a warm box) and runs without `sudo` when already root (containers).
+- **Casks are macOS-only** — `brew install --cask` errors on Linux, so the cask passes (and the greedy-cask upgrade) are Darwin-guarded.
+- **Package names are always the brew formula key** (`.key`) on both platforms. There is no per-OS name override anymore (the dropped `apt:` field). `platform: mac` / `platform: linux` still gate which entries install where.
+- **Pre-brew bootstraps on Linux** (brew isn't on PATH yet when these run): yq is downloaded as the Mike Farah Go binary into `~/.local/bin` (Ubuntu's apt `yq` is the wrong kislyuk/yq), and `uv` via the astral installer.
+- Other sources (`cargo`, `npm`, `uv`, `gh-extension`) run cross-platform unconditionally. On Linux, npm comes from the brew `node` formula (which bundles it).
+
 ## Chezmoi-managed subset
 
 chezmoi renders the files that need per-machine templating (work vs. personal git email), per-OS branching, or secret injection — things plain symlinks can't do. Everything else stays on the symlink system.
