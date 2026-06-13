@@ -15,12 +15,16 @@ Unlike the dot-dir harnesses, opencode writes config at the *target root* (`~/.c
 | Settings / config | <https://opencode.ai/docs/config/> | `~/.config/opencode/opencode.json`. `tui.json` (theme `chocolate-donut`, `editor_open` → `ctrl+o`) and `themes/chocolate-donut.json` are always-managed by chezmoi. |
 | Skills | <https://opencode.ai/docs/skills/> | `skills/` → loaded via the native `skill` tool; opencode also reads Claude/`.agents` skill dirs. |
 
+## Local LLM provider + the `opencode-lean` launcher
+
+When the `localLLM` flag is on, `chezmoi/lib/install-local-llm.sh` jq-merges a `local-llm` provider into `opencode.json` (`Local (LiteLLM)`, `http://127.0.0.1:4000/v1`, key `sk-local`), exposing the stack's models as `local-llm/<name>`. The `opencode-lean` shell alias is the intended launch path — it sets `OPENCODE_CONFIG` to a lean overlay that disables the heavy MCP servers so a small local context window survives. Full detail (launch syntax, cold-load behavior, known rough edges #297–#300): [[operations/local-llm]] § *Using the stack from opencode*.
+
 ## Isolated settings
 
 Not available. opencode has no closed-world launch flags; `ap` isolated launches are Claude-only.
 
 ## Quirks
 
-- **No non-interactive MCP CLI**: opencode has no `mcp add` command, so the renderer edits `opencode.json` directly via Python stdlib `json` (read-modify-write, no jq). `OPENCODE_CONFIG` overrides the target path (used by tests).
+- **No non-interactive MCP CLI**: opencode has no `mcp add` command, so the renderer edits `opencode.json` directly via Python stdlib `json` (read-modify-write, no jq). `OPENCODE_CONFIG` overrides the target path (used by tests, and by `opencode-lean` for the lean overlay).
 - **`.json` not `.jsonc`**: the scaffold writes `opencode.json`. If migrating from a hand-rolled `opencode.jsonc`, merge into `opencode.json` and delete the `.jsonc` (opencode reads either; having both is confusing).
 - No native modal vim editing in the input box — the `ctrl+o` rebind pops the textbox out to `$EDITOR` (vim) as the closest workflow.

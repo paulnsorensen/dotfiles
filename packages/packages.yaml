@@ -1,11 +1,10 @@
 # packages.yaml — flat package registry
 #
-# Bare string = brew (mac) / apt (linux)
+# Bare string = brew formula (mac + linux)
 # Key-value = override defaults
 #
 #   source:   brew (default) | cask | tap | cargo | npm | uv | gh-extension
 #   dev:      only when DOTFILES_DEV=true
-#   apt:      override name for linux
 #   platform: mac | linux (default: both)
 #   flags:    extra args spliced into the installer (uv source only;
 #             e.g. ["--python", "3.13", "--prerelease=allow"])
@@ -22,11 +21,11 @@ packages:
   - fzf
   - gh
   - shellcheck
-  - bats-core: { apt: bats }                  # bats test runner (tests/*.bats); brew formula is bats-core, apt pkg is bats
+  - bats-core                                 # bats test runner (tests/*.bats)
   - tree
   - htop
   - ripgrep
-  - fd: { apt: fd-find }
+  - fd
   - eza
   - bat
   - ast-grep
@@ -50,7 +49,7 @@ packages:
   - chezmoi
   - duckdb
   - watch
-  - node: { apt: nodejs }
+  - node                                      # bundles npm on mac + linux
   - bun                                       # JS/TS runtime required by jmux
   - sd
   - vhs
@@ -86,7 +85,6 @@ packages:
   - uv
   - rustup: { dev: true }
   - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app; greedy upgrade triggers repeated sudo prompts
-  - npm: { platform: linux, dev: true }       # On mac, npm comes with `brew install node`
 
   # LSP servers (for Claude Code LSP plugins)
   - bash-language-server
