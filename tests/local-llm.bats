@@ -79,7 +79,7 @@ teardown() {
 
 # ─── provider lib ───────────────────────────────────────────────────────────
 
-@test "provider lib adds local-llm with 6 models (embed in, opus out) and preserves existing .mcp" {
+@test "provider lib adds local-llm with 5 models (embed out, opus out) and preserves existing .mcp" {
     local cfg="$TEST_HOME/opencode.json"
     echo '{"$schema":"x","formatter":true,"mcp":{"tilth":{"type":"local"}}}' > "$cfg"
 
@@ -87,10 +87,11 @@ teardown() {
     assert_success
 
     run jq -r '.provider["local-llm"].models | keys | length' "$cfg"
-    assert_output_contains "6"
+    assert_output_contains "5"
 
-    # #289: opus dropped (cloud-routes), embed added.
-    run jq -e '.provider["local-llm"].models | has("local-embed")' "$cfg"
+    # #300: local-embed removed from chat-model picker (embed-only, not chat-capable).
+    # #289: local-opus dropped (cloud-routes).
+    run jq -e '.provider["local-llm"].models | has("local-embed") | not' "$cfg"
     assert_success
     run jq -e '.provider["local-llm"].models | has("local-opus") | not' "$cfg"
     assert_success
@@ -558,4 +559,110 @@ MOCK
     assert_success
     assert_output_contains "CONFIG=$HOME/local-llm/configs/lean.json"
     assert_output_contains "ARGS=--model local-coder"
+}
+
+@test "lean.json sets model to local-llm/local-coder by default" {
+    run jq -r '.model' "$LEAN"
+    assert_success
+    assert_output_contains "local-llm/local-coder"
+}
+
+@test "lean.json top-level keys: mcp + model only" {
+    # mergeDeep overlay must stay minimal: only the two intentional keys.
+    run jq -e 'keys == ["$schema","mcp","model"]' "$LEAN"
+    assert_success
+}
+
+@test "opencode-lean pre-flights the stack: stack-up skips llm-up" {
+    # Stack already up: opencode-lean must NOT call llm-up.
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "ARGS=$*"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    local llm_up_log="$TEST_HOME/llm-up-called"
+    cat > "$MOCK_BIN/systemctl" << 'MOCK'
+#!/bin/bash
+echo "$*" >> "${LLM_UP_LOG:?}"
+MOCK
+    chmod +x "$MOCK_BIN/systemctl"
+
+    # shellcheck disable=SC1090
+    FAKE_PORT=up LLM_UP_LOG="$llm_up_log" source "$ALIASES"
+    run opencode-lean
+    assert_success
+    [[ ! -f "$llm_up_log" ]] || ! grep -q 'start local-llm.target' "$llm_up_log"
+}
+
+@test "opencode-lean pre-flights the stack: stack-down triggers llm-up then proceeds" {
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "opencode-called"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    local llm_up_log="$TEST_HOME/llm-up.log"
+    # systemctl mock: log calls, succeeds
+    cat > "$MOCK_BIN/systemctl" << 'MOCK'
+#!/bin/bash
+echo "$*" >> "${LLM_UP_LOG:?}"
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/systemctl"
+
+    # curl mock: port starts down, comes up after first probe
+    cat > "$MOCK_BIN/curl" << 'MOCK'
+#!/bin/bash
+count_file="${CURL_COUNT_FILE:?}"
+count=$(cat "$count_file" 2>/dev/null || echo 0)
+count=$((count + 1))
+echo "$count" > "$count_file"
+if [[ "$*" == */v1/models* ]]; then
+    # first probe: down; subsequent: up (simulates llm-up bringing it online)
+    [[ $count -le 1 ]] && exit 7
+    exit 0
+fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    export LLM_UP_LOG="$llm_up_log"
+    export CURL_COUNT_FILE="$TEST_HOME/curl-count"
+    run opencode-lean
+    assert_success
+    assert_output_contains "opencode-called"
+    # llm-up must have been called
+    grep -q 'start local-llm.target' "$llm_up_log"
+}
+
+@test "opencode-lean pre-flights the stack: wedged stack times out instead of hanging" {
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    cat > "$MOCK_BIN/systemctl" << 'MOCK'
+#!/bin/bash
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/systemctl"
+
+    # curl always returns down -- stack never comes up
+    cat > "$MOCK_BIN/curl" << 'MOCK'
+#!/bin/bash
+[[ "$*" == */v1/models* ]] && exit 7
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # shellcheck disable=SC1090
+    # Override timeout to 2s so the test completes quickly
+    run bash -c 'source "'"$ALIASES"'"; OPENCODE_LEAN_TIMEOUT=2 opencode-lean 2>&1'
+    # Must fail (timeout/bail) rather than block forever
+    assert_failure
+    assert_output_contains "timed out"
 }

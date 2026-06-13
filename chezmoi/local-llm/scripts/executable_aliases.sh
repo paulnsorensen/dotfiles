@@ -35,7 +35,25 @@ alias llm-install-swap='~/local-llm/scripts/install-llama-swap.sh'
 # OPENCODE_CONFIG mergeDeeps onto the global config — the overlay only disables
 # the heavy non-coding servers (code-review-graph, hallouminate, tavily), leaving
 # tilth + serena + context7 for the coder. Usage: opencode-lean --model local-coder
+#
+# Pre-flights the local-LLM stack: probes :4000, starts local-llm.target if down,
+# waits up to OPENCODE_LEAN_TIMEOUT seconds (default 30), then bails with a hint.
 opencode-lean() {
+  local timeout="${OPENCODE_LEAN_TIMEOUT:-30}"
+  if ! curl -s --max-time 1 http://127.0.0.1:4000/v1/models >/dev/null 2>&1; then
+    echo 'local-LLM stack is down — starting local-llm.target...' >&2
+    systemctl --user start local-llm.target
+    local elapsed=0
+    while ! curl -s --max-time 1 http://127.0.0.1:4000/v1/models >/dev/null 2>&1; do
+      if (( elapsed >= timeout )); then
+        echo "opencode-lean: timed out waiting for local-LLM stack (:4000) after ${timeout}s" >&2
+        echo "Hint: run 'llm-up' manually or check 'llm-status'." >&2
+        return 1
+      fi
+      sleep 1
+      (( elapsed++ ))
+    done
+  fi
   OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"
 }
 
