@@ -62,18 +62,33 @@ Renders a profile into a target directory and records a manifest for surgical un
 
 For a **non-isolated** profile: `install` for the single named harness, then `os.execvp` the bare harness CLI with passthrough args.
 
-For an **isolated** profile (`overlay.py:build_isolated_flags`): build the ccp-parity closed-world flags, inject the profile's `env`, and `execvp claude` — no install, no manifest. The flags reproduce the retired `ccp` zsh launcher:
+For an **isolated** profile (`overlay.py:build_isolated_launch`): build the closed-world `(flags, env)`, inject the profile's `env`, and `execvp <harness>` — no install, no manifest. Isolation is dispatched per harness via `_ISOLATION_BUILDERS` (`{claude, codex, opencode}`); each harness reaches the same closed world by a *different mechanism* behind the one `(flags, env)` contract. cursor/copilot/crush have no runtime-isolation lever, so an isolated launch against them fails loud (`IsolationError` → `CliError`).
 
-```
---strict-mcp-config --mcp-config <ephemeral .mcp.json>   # only the profile's MCPs
---setting-sources ""                                      # strip inherited settings
---tools <csv>                                             # hard tool whitelist (if declared)
---append-system-prompt-file <profile>/CLAUDE.md           # if system_prompt declared
---settings <ephemeral settings.json>                      # permissions + enabledPlugins
-<extra_args...>                                           # ${VAR}-expanded, verbatim
-```
+### Per-harness closed-world matrix
 
-Isolation is **claude-only** — launching an isolated profile against any other harness fails loud, since the flags are Claude's. The closed `--setting-sources ""` means there's no inherited user allowlist, so a profile's tool surface is exactly its `tools` whitelist + `permissions` — the MCP's own tools must be in `tools` (or rely on the closed `--mcp-config`). `_server_record` supports both stdio (`command`/`args`/`env`) and HTTP (`type: http` + `url`, e.g. `notion`) MCP shapes.
+| Capability | claude (`_build_isolated_claude`) | codex (`_build_isolated_codex`) | opencode (`_build_isolated_opencode`) |
+|---|---|---|---|
+| Closed MCP world | `--strict-mcp-config --mcp-config <ephemeral .mcp.json>` | `[mcp_servers.<n>]` tables in a generated `<CODEX_HOME>/config.toml` (no whole-file `--mcp-config` flag exists; HTTP MCPs carry `url`/`type`/`http_headers`) | `OPENCODE_CONFIG_CONTENT.mcp` = profile servers + inherited servers `enabled:false` |
+| Ignore inherited config | `--setting-sources ""` | redirected `CODEX_HOME` → a fresh dir whose `config.toml` is the only user-layer config (codex 0.135.0 has **no** top-level `--ignore-user-config`; it's a `codex exec`-only flag) | inline highest-layer override (suppresses the global-config seed write) + per-server disable |
+| Auth preservation | (n/a — uses real `~/.claude`) | symlink `<CODEX_HOME>/auth.json` → `~/.codex/auth.json` (`File` auth-storage mode only) | (n/a) |
+| Ephemeral session | (n/a) | (no interactive flag; the per-launch `CODEX_HOME` tmp dir is the ephemeral store — `--ephemeral` is `codex exec`-only) | (no env equivalent — documented gap) |
+| System prompt | `--append-system-prompt-file <profile>/<sp>` | `model_instructions_file = <sp abs path>` in the generated `config.toml` (codex's `instructions` key is reserved/noop — `model_instructions_file` is the documented lever) | `OPENCODE_CONFIG_CONTENT.instructions:[<sp abs path>]` (additive) |
+| Tool/permission restriction | `--tools <csv>` + `--settings` (`permissions`+`enabledPlugins`) | **dropped** — codex has no per-launch built-in-tool whitelist (caveat + follow-up ticket) | `OPENCODE_PERMISSION` from `permissions_deny` (`Edit`/`Write`→`edit:deny`, `Read`/`Grep`/`Glob`/`Bash`→key, `mcp__*` verbatim) + `OPENCODE_DISABLE_PROJECT_CONFIG=true` |
+| Per-profile env | injected | injected (alongside `CODEX_HOME`) | injected alongside the two `OPENCODE_*` vars |
+
+The `(flags, env)` contract is uniform: claude carries isolation in `flags`, codex and opencode carry it in `env` (`flags == []` for both — codex's `CODEX_HOME`, opencode's `OPENCODE_*`); `_launch_isolated` injects `env` into `os.environ` then execs `harness + flags + exec_args` identically for all three. `${VAR}` MCP-env resolution differs by harness: **claude and codex bake-resolve** from `.env` at launch and **fail loud** on an unset reference (D4); **opencode does not** — it rewrites `${VAR}` to opencode's `{env:VAR}` placeholder and defers expansion to opencode's runtime (which reads the shell-exported `.env`), so a missing var surfaces only when opencode expands it, not as a launch-time error.
+
+**Field handling (D3):** `extra_args` (raw claude flags) and `enabled_plugins` (claude marketplace) are claude-only — on codex/opencode they print `field <x> ignored for harness <y>` and proceed (never fail, never silently drop). codex additionally ignores-with-warning `tools` / `permissions_deny`.
+
+**Caveats:**
+
+- **codex tool restriction dropped** — an isolated codex profile gets the closed MCP world + a redirected `CODEX_HOME` but **not** built-in tool-set restriction. Tracked in `feat(ap): revisit codex tool restriction for isolated profiles`.
+- **codex auth.json symlink is File-mode only** — login is preserved by symlinking `<CODEX_HOME>/auth.json` → `~/.codex/auth.json`, which works for `File` auth-storage mode (`codex doctor` → `auth storage mode: File`). Keyring users must set `CODEX_ACCESS_TOKEN` instead — known limitation.
+- **codex `/etc/codex/config.toml`** (system config) still loads regardless of `CODEX_HOME` (separate load path); a system config can inject servers/approvals. Out of scope. A project `.codex/config.toml` is loaded but inert — the fresh `config.toml` trusts no projects.
+- **opencode can't suppress project `AGENTS.md`/`CLAUDE.md` auto-load** — the system prompt is *appended* via `instructions`; not a fully-closed instruction world.
+- **opencode `mcp__*` deny keys** are syntactically accepted as `OPENCODE_PERMISSION` freeform keys but enforcement is unconfirmed — best-effort.
+
+`_server_record` (claude) and `_mcp_server_record` (opencode, reused from the renderer) support both stdio (`command`/`args`/`env`) and HTTP (`type: http` + `url`, e.g. `notion`) MCP shapes.
 
 ### Target resolution (`cli._resolve_target`)
 
