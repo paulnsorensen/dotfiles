@@ -41,6 +41,7 @@ A ``runner`` callable is injected so the fetch is unit-testable without spawning
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -91,7 +92,42 @@ def skill_agent_for(harness: str) -> str:
 
 
 def _default_runner(argv: list[str]) -> int:
-    return subprocess.run(argv, check=False).returncode
+    """Run ``argv`` and return its exit code.
+
+    Also scans combined stdout+stderr for per-skill failure lines. The
+    ``skills`` CLI exits 0 even when individual skill installs fail (e.g.
+    EPERM on a globally-scoped write). A line is treated as a failure when it
+    starts with "error"/"failed" or contains "error:" / "failed to" / "✖"
+    (case-insensitive) — precise enough to skip benign substrings like
+    "0 errors" or a slug that happens to contain "failed".
+
+    Note: the exact output format of ``npx skills add`` is not publicly
+    documented. This is the smallest reliable check — if the heuristic
+    produces false positives for a future CLI version, the runner can be
+    replaced via the ``runner`` parameter of ``fetch_external_source``."""
+    result = subprocess.run(argv, check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        return result.returncode
+    combined = result.stdout + result.stderr
+    for line in combined.splitlines():
+        lower = line.lstrip().lower()
+        if (
+            lower.startswith("error")
+            or lower.startswith("failed")
+            or "error:" in lower
+            or "failed to" in lower
+            or "✖" in line
+        ):
+            # Print the suspicious line so the caller can surface it.
+            print(line, file=sys.stderr)
+            return 1
+    # Clean scan: replay captured output so a successful live install isn't
+    # silent (capture_output swallows what the CLI would otherwise print).
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    return 0
 
 
 def fetch_external_source(

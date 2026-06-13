@@ -11,11 +11,15 @@ The runner is injected so tests assert the exact argv without spawning npx.
 
 from __future__ import annotations
 
+import subprocess
+import types
+
 import pytest
 
 from agent_profile.fetch import (
     SKILL_AGENT,
     SkillFetchError,
+    _default_runner,
     external_skills,
     fetch_external_source,
     skill_agent_for,
@@ -148,3 +152,63 @@ def test_external_skills_filters_source_items_only():
         tuple(sorted({"name": "mold", "source": "o/r"}.items())),
         tuple(sorted({"source": "o/r2"}.items())),
     }
+
+
+# ─── _default_runner output scanning (exit-0 false-success detection) ─
+
+
+def _make_completed(returncode: int, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+    """Build a mock CompletedProcess without running anything."""
+    cp: subprocess.CompletedProcess = types.SimpleNamespace(  # type: ignore[assignment]
+        returncode=returncode, stdout=stdout, stderr=stderr
+    )
+    return cp  # type: ignore[return-value]
+
+
+def test_default_runner_returns_zero_on_clean_output(monkeypatch):
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **kw: _make_completed(0, stdout="✓ Installed mold\n✓ done\n"),
+    )
+    assert _default_runner(["npx", "skills", "add", "o/r"]) == 0
+
+
+def test_default_runner_propagates_nonzero_exit(monkeypatch):
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **kw: _make_completed(2, stdout="", stderr="fatal error\n"),
+    )
+    assert _default_runner(["npx", "skills", "add", "o/r"]) == 2
+
+
+def test_default_runner_returns_one_when_output_contains_error_at_exit_zero(monkeypatch):
+    # The skills CLI exits 0 even on per-skill EPERM failures; the output scan
+    # catches this and returns non-zero so the caller's error guard fires.
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **kw: _make_completed(
+            0, stdout="", stderr="Error: EPERM writing to ~/.claude/skills\n"
+        ),
+    )
+    assert _default_runner(["npx", "skills", "add", "o/r"]) == 1
+
+
+def test_default_runner_returns_one_when_output_contains_failed_at_exit_zero(monkeypatch):
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **kw: _make_completed(
+            0, stdout="Skill 'mold' failed to install\n", stderr=""
+        ),
+    )
+    assert _default_runner(["npx", "skills", "add", "o/r"]) == 1
+
+
+def test_default_runner_clean_output_with_no_failure_words(monkeypatch):
+    # "succeeded", "done", progress dots — none of these should trip the scan.
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **kw: _make_completed(
+            0, stdout="Cloning... done\nInstalling mold... ✓\n", stderr=""
+        ),
+    )
+    assert _default_runner(["npx", "skills", "add", "o/r"]) == 0
