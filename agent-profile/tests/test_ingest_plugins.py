@@ -8,6 +8,11 @@ Covers:
 - harnesses membership attached to the decomposed MCP
 - gate_unless / optional handling
 - Skill-name collision fails loud
+
+Path model (mirrors real milknado):
+  marketplace root: tmp_path/market/<name>  (has .claude-plugin/marketplace.json)
+  payload root:     tmp_path/market/<name>/plugins/<name>  (has .mcp.json + skills/)
+  registry path:    = marketplace root
 """
 
 from __future__ import annotations
@@ -69,6 +74,54 @@ def _make_plugin_payload(
     return payload
 
 
+def _wrap_in_marketplace(marketplace_root: Path, name: str, relative_source: str) -> Path:
+    """Create a marketplace root with .claude-plugin/marketplace.json.
+
+    The marketplace.json declares one plugin whose source is relative_source
+    (e.g. './plugins/myplugin').
+
+    Returns the marketplace_root.
+    """
+    cp = marketplace_root / ".claude-plugin"
+    cp.mkdir(parents=True, exist_ok=True)
+    (cp / "marketplace.json").write_text(
+        json.dumps({
+            "name": name,
+            "owner": {"name": "test"},
+            "plugins": [{"name": name, "source": relative_source}],
+        })
+    )
+    return marketplace_root
+
+
+def _make_plugin_with_marketplace(
+    tmp_path: Path,
+    name: str,
+    *,
+    mcp_args: list | None = None,
+    mcp_env: dict | None = None,
+    skill_names: list[str] | None = None,
+    skill_with_refs: str | None = None,
+) -> tuple[Path, Path]:
+    """Create a marketplace root + payload for a plugin.
+
+    Returns (marketplace_root, payload_root).
+    marketplace_root/plugins/<name>/ is the payload.
+    """
+    marketplace_root = tmp_path / "market" / name
+    marketplace_root.mkdir(parents=True, exist_ok=True)
+    _wrap_in_marketplace(marketplace_root, name, f"./plugins/{name}")
+    payload = _make_plugin_payload(
+        marketplace_root / "plugins",
+        name,
+        mcp_args=mcp_args,
+        mcp_env=mcp_env,
+        skill_names=skill_names,
+        skill_with_refs=skill_with_refs,
+    )
+    return marketplace_root, payload
+
+
 def _make_plugins_registry(repo: Path, entries: dict) -> Path:
     """Write agents/plugins/registry.yaml and return the path."""
     reg = repo / "agents" / "plugins" / "registry.yaml"
@@ -89,14 +142,14 @@ def test_source_dir_is_payload_root_not_repo_root(tmp_path):
     Path(item['_source_dir']) / path. If stamped at repo_root, they'd copy
     from the wrong tree (the dotfiles root, not the plugin).
     """
-    payload = _make_plugin_payload(
-        tmp_path / "plugins",
+    market_root, payload = _make_plugin_with_marketplace(
+        tmp_path,
         "myplugin",
         skill_names=["cook"],
     )
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(payload), "harnesses": ["codex"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
     )
 
     out = expand_registries(
@@ -113,6 +166,10 @@ def test_source_dir_is_payload_root_not_repo_root(tmp_path):
     assert skill["_source_dir"] != str(tmp_path), (
         "_source_dir must NOT be repo root — renderers would copy from the wrong tree"
     )
+    # Also confirm it's not the marketplace root
+    assert skill["_source_dir"] != str(market_root), (
+        "_source_dir must NOT be marketplace root — that dir has no .mcp.json"
+    )
 
 
 def test_source_dir_repo_root_stamping_copies_wrong_tree(tmp_path):
@@ -122,14 +179,14 @@ def test_source_dir_repo_root_stamping_copies_wrong_tree(tmp_path):
     nothing — there is no 'skills/cook' at the repo root in this test. Only
     at the payload root.
     """
-    payload = _make_plugin_payload(
-        tmp_path / "plugins",
+    market_root, payload = _make_plugin_with_marketplace(
+        tmp_path,
         "myplugin",
         skill_names=["cook"],
     )
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(payload), "harnesses": ["codex"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
     )
 
     out = expand_registries(
@@ -156,12 +213,10 @@ def test_source_dir_repo_root_stamping_copies_wrong_tree(tmp_path):
 
 def test_mcp_decomposed_from_plugin(tmp_path):
     """A plugin's .mcp.json produces a decomposed MCP item."""
-    payload = _make_plugin_payload(
-        tmp_path / "plugins", "myplugin",
-    )
+    market_root, payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(payload), "harnesses": ["codex", "opencode"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex", "opencode"]}},
     )
 
     out = expand_registries(
@@ -175,12 +230,10 @@ def test_mcp_decomposed_from_plugin(tmp_path):
 
 def test_mcp_harnesses_from_plugin_registry_entry(tmp_path):
     """The harnesses list from the registry entry attaches to the decomposed MCP."""
-    payload = _make_plugin_payload(
-        tmp_path / "plugins", "myplugin",
-    )
+    market_root, payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(payload), "harnesses": ["codex", "opencode", "cursor"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex", "opencode", "cursor"]}},
     )
 
     out = expand_registries(
@@ -196,27 +249,30 @@ def test_mcp_env_var_stays_literal_not_substituted(tmp_path):
     """${VAR} in plugin MCP env is carried through as a literal string.
 
     Same MCP-secret-passthrough rule as _expand_mcps: renderers receive the
-    literal '${VAR}' so each harness expands it at launch.
+    literal '${VAR}' so each harness expands it at launch (not pre-substituted).
+    The var is provided in dotenv so ingest doesn't reject it as unset.
+    The assertion proves the value in the MCP item is still the literal reference,
+    not the resolved value — env expansion is the renderer's job at launch time.
     """
-    payload = _make_plugin_payload(
-        tmp_path / "plugins",
+    market_root, payload = _make_plugin_with_marketplace(
+        tmp_path,
         "myplugin",
         mcp_env={"MY_SECRET": "${MY_SECRET}"},
     )
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(payload), "harnesses": ["codex"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
     )
 
-    import os
-    os.environ.pop("MY_SECRET", None)
+    # Provide MY_SECRET in dotenv so ingest doesn't reject it as unset.
+    # The item's env value must still be '${MY_SECRET}', not the resolved value.
     out = expand_registries(
         {"plugins": "agents/plugins/registry.yaml"},
         tmp_path,
-        {},
+        {"MY_SECRET": "runtime-secret"},
     )
     mcp = next(m for m in out["mcps"] if m["name"] == "myplugin")
-    # The literal ${MY_SECRET} must survive — not substituted, not errored
+    # The literal ${MY_SECRET} must survive — not substituted
     assert mcp["env"]["MY_SECRET"] == "${MY_SECRET}"
 
 
@@ -225,14 +281,14 @@ def test_mcp_env_var_stays_literal_not_substituted(tmp_path):
 
 def test_skills_discovered_from_plugin_payload(tmp_path):
     """Skills under plugin payload skills/<n>/SKILL.md are decomposed."""
-    payload = _make_plugin_payload(
-        tmp_path / "plugins",
+    market_root, payload = _make_plugin_with_marketplace(
+        tmp_path,
         "myplugin",
         skill_names=["harvest", "load-roadmap"],
     )
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(payload), "harnesses": ["codex"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
     )
 
     out = expand_registries(
@@ -251,14 +307,14 @@ def test_skills_references_subdir_not_treated_as_skill(tmp_path):
     milknado-config has skills/milknado-config/references/flavor-presets.md.
     The references/ dir lacks a SKILL.md so it must be skipped.
     """
-    payload = _make_plugin_payload(
-        tmp_path / "plugins",
+    market_root, payload = _make_plugin_with_marketplace(
+        tmp_path,
         "myplugin",
         skill_with_refs="milknado-config",
     )
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(payload), "harnesses": ["codex"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
     )
 
     out = expand_registries(
@@ -277,14 +333,14 @@ def test_skills_path_field_is_relative_to_payload(tmp_path):
     Renderers compute: Path(item['_source_dir']) / item['path']
     So 'path' must be 'skills/<name>' (relative to payload, not repo).
     """
-    payload = _make_plugin_payload(
-        tmp_path / "plugins",
+    market_root, payload = _make_plugin_with_marketplace(
+        tmp_path,
         "myplugin",
         skill_names=["cook"],
     )
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(payload), "harnesses": ["codex"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
     )
 
     out = expand_registries(
@@ -305,12 +361,12 @@ def test_skills_path_field_is_relative_to_payload(tmp_path):
 
 def test_gate_unless_propagates_to_mcp(tmp_path):
     """gate_unless from the plugin registry entry propagates to the MCP item."""
-    payload = _make_plugin_payload(tmp_path / "plugins", "myplugin")
+    market_root, payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
     _make_plugins_registry(
         tmp_path,
         {
             "myplugin": {
-                "path": str(payload),
+                "path": str(market_root),
                 "harnesses": ["codex"],
                 "gate_unless": "MY_GATE",
             }
@@ -341,14 +397,14 @@ def test_skill_name_collision_with_existing_registry_fails_loud(tmp_path):
     (cook_dir / "SKILL.md").write_text("# cook\n")
 
     # Plugin also exports 'cook'
-    payload = _make_plugin_payload(
-        tmp_path / "plugins",
+    market_root, payload = _make_plugin_with_marketplace(
+        tmp_path,
         "myplugin",
         skill_names=["cook"],
     )
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(payload), "harnesses": ["codex"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
     )
 
     with pytest.raises((ParseError, ValueError), match="[Cc]ollision|duplicate|already"):
@@ -367,14 +423,16 @@ def test_skill_name_collision_with_existing_registry_fails_loud(tmp_path):
 
 def test_plugin_with_no_skills_directory(tmp_path):
     """A plugin with no skills/ tree still decomposes the MCP."""
-    payload = tmp_path / "plugins" / "mcp-only"
+    market_root = tmp_path / "market" / "mcp-only"
+    _wrap_in_marketplace(market_root, "mcp-only", "./plugins/mcp-only")
+    payload = market_root / "plugins" / "mcp-only"
     payload.mkdir(parents=True)
     (payload / ".mcp.json").write_text(
         json.dumps({"mcpServers": {"mcp-only": {"command": "uvx", "args": ["mcp-only"]}}})
     )
     _make_plugins_registry(
         tmp_path,
-        {"mcp-only": {"path": str(payload), "harnesses": ["crush"]}},
+        {"mcp-only": {"path": str(market_root), "harnesses": ["crush"]}},
     )
 
     out = expand_registries(
@@ -391,14 +449,19 @@ def test_plugin_with_no_skills_directory(tmp_path):
 
 
 @pytest.fixture
-def milknado_payload(tmp_path):
-    """A fixture that mirrors the milknado plugin payload structure.
+def milknado_market(tmp_path):
+    """A fixture that mirrors the milknado marketplace + payload structure.
 
     Hermetic: does not read ~/Dev/milknado — uses a committed test fixture.
+    marketplace root: tmp_path/market/milknado  (has .claude-plugin/marketplace.json)
+    payload root: market_root/plugins/milknado  (has .mcp.json + skills/)
     Skills: harvest, load-roadmap, milknado-config (with references/ subdir).
     MCP: uvx milknado-mcp (the portable form, post-migration).
+    Returns (marketplace_root, payload_root).
     """
-    payload = tmp_path / "plugins" / "milknado"
+    market_root = tmp_path / "market" / "milknado"
+    _wrap_in_marketplace(market_root, "milknado", "./plugins/milknado")
+    payload = market_root / "plugins" / "milknado"
     payload.mkdir(parents=True)
 
     # .mcp.json — portable uvx form (post-migration, NOT --from path)
@@ -420,16 +483,17 @@ def milknado_payload(tmp_path):
     refs.mkdir()
     (refs / "flavor-presets.md").write_text("# flavor presets\n")
 
-    return payload
+    return market_root, payload
 
 
-def test_milknado_mcp_portable_uvx(milknado_payload, tmp_path):
+def test_milknado_mcp_portable_uvx(milknado_market, tmp_path):
     """milknado MCP decomposes with the portable uvx milknado-mcp args."""
+    market_root, payload = milknado_market
     _make_plugins_registry(
         tmp_path,
         {
             "milknado": {
-                "path": str(milknado_payload),
+                "path": str(market_root),
                 "harnesses": ["claude", "codex", "opencode", "cursor", "copilot", "crush"],
                 "claude_native": True,
             }
@@ -446,13 +510,14 @@ def test_milknado_mcp_portable_uvx(milknado_payload, tmp_path):
     assert mcp["args"] == ["milknado-mcp"]
 
 
-def test_milknado_three_skills_discovered(milknado_payload, tmp_path):
+def test_milknado_three_skills_discovered(milknado_market, tmp_path):
     """milknado decomposes into exactly 3 skills."""
+    market_root, payload = milknado_market
     _make_plugins_registry(
         tmp_path,
         {
             "milknado": {
-                "path": str(milknado_payload),
+                "path": str(market_root),
                 "harnesses": ["claude", "codex", "opencode", "cursor", "copilot", "crush"],
             }
         },
@@ -468,11 +533,12 @@ def test_milknado_three_skills_discovered(milknado_payload, tmp_path):
     assert "references" not in skill_names
 
 
-def test_milknado_source_dir_at_payload_not_repo(milknado_payload, tmp_path):
+def test_milknado_source_dir_at_payload_not_repo(milknado_market, tmp_path):
     """All milknado decomposed items have _source_dir at the payload, not repo root."""
+    market_root, payload = milknado_market
     _make_plugins_registry(
         tmp_path,
-        {"milknado": {"path": str(milknado_payload), "harnesses": ["codex"]}},
+        {"milknado": {"path": str(market_root), "harnesses": ["codex"]}},
     )
 
     out = expand_registries(
@@ -482,8 +548,8 @@ def test_milknado_source_dir_at_payload_not_repo(milknado_payload, tmp_path):
     )
     for mcp in out["mcps"]:
         if mcp["name"] == "milknado":
-            assert mcp["_source_dir"] == str(milknado_payload)
+            assert mcp["_source_dir"] == str(payload)
     for skill in out["skills"]:
-        assert skill["_source_dir"] == str(milknado_payload), (
+        assert skill["_source_dir"] == str(payload), (
             f"Skill {skill['name']!r} has wrong _source_dir: {skill['_source_dir']!r}"
         )

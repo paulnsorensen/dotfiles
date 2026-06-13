@@ -115,9 +115,10 @@ class ClaudeRenderer:
         and prime Claude's CLI resolution cache via `claude plugin marketplace add`.
 
         For each native plugin:
-        - Registers the payload root in extraKnownMarketplaces (directory type).
-        - Enables the plugin via enabledPlugins using ``<name>@<name>`` key.
-        - Calls ``claude plugin marketplace add <payload_root>`` to prime the
+        - Registers the marketplace root in extraKnownMarketplaces (directory type),
+          keyed by the canonical marketplace name from marketplace.json.
+        - Enables the plugin via enabledPlugins using ``<name>@<marketplace_name>``.
+        - Calls ``claude plugin marketplace add <marketplace_root>`` to prime the
           CLI's resolution cache (writing extraKnownMarketplaces alone is not
           enough: the CLI must also index the marketplace directory).
 
@@ -137,10 +138,11 @@ class ClaudeRenderer:
         enabled = data.setdefault("enabledPlugins", {})
         for entry in manifest.native_plugins:
             name = entry["name"]
-            payload_root = entry["payload_root"]
-            expanded = os.path.expandvars(os.path.expanduser(str(payload_root)))
-            markets[name] = {"source": {"source": "directory", "path": expanded}}
-            enabled[f"{name}@{name}"] = True
+            marketplace_name = entry["marketplace_name"]
+            marketplace_root = entry["marketplace_root"]
+            expanded = os.path.expandvars(os.path.expanduser(str(marketplace_root)))
+            markets[marketplace_name] = {"source": {"source": "directory", "path": expanded}}
+            enabled[f"{name}@{marketplace_name}"] = True
             # Prime CLI resolution cache.
             try:
                 subprocess.run(
@@ -176,9 +178,10 @@ class ClaudeRenderer:
         if isinstance(enabled, dict):
             for plugin_id in manifest.enabled_plugins:
                 enabled.pop(plugin_id, None)
-            # Un-merge native plugin enabledPlugins entries (<name>@<name>).
+            # Un-merge native plugin enabledPlugins entries (<name>@<marketplace_name>).
             for entry in manifest.native_plugins:
-                enabled.pop(f"{entry['name']}@{entry['name']}", None)
+                marketplace_name = entry.get("marketplace_name", entry["name"])
+                enabled.pop(f"{entry['name']}@{marketplace_name}", None)
             if not enabled:
                 data.pop("enabledPlugins", None)
 
@@ -186,9 +189,10 @@ class ClaudeRenderer:
         if isinstance(markets, dict):
             for name in manifest.marketplaces:
                 markets.pop(name, None)
-            # Un-merge native plugin marketplace entries.
+            # Un-merge native plugin marketplace entries (keyed by marketplace_name).
             for entry in manifest.native_plugins:
-                markets.pop(entry["name"], None)
+                marketplace_name = entry.get("marketplace_name", entry["name"])
+                markets.pop(marketplace_name, None)
             if not markets:
                 data.pop("extraKnownMarketplaces", None)
 
@@ -256,6 +260,8 @@ class ClaudeRenderer:
         out: list[str],
     ) -> None:
         for item in manifest.agents:
+            if item.get("_from_native_plugin"):
+                continue  # native plugin delivers agents at plugin scope, not user scope
             name = item["name"]
             body = body_abs(item)
             fm = shared.claude_agent_frontmatter(item)
@@ -295,6 +301,8 @@ class ClaudeRenderer:
         out: list[str],
     ) -> None:
         for item in manifest.commands:
+            if item.get("_from_native_plugin"):
+                continue  # native plugin delivers commands at plugin scope, not user scope
             name = item["name"]
             desc = item.get("description") or ""
             model = (item.get("models") or {}).get("claude") or ""

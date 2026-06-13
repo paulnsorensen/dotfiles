@@ -229,7 +229,7 @@ def _expand_registries_directive(
     as their ``_source_dir`` (not the profile dir) since their payload files
     live under the repo, not the profile."""
     if not directive:
-        return {"mcps": [], "agents": [], "skills": [], "hooks": []}
+        return {"mcps": [], "agents": [], "skills": [], "hooks": [], "native_plugins": []}
     if not isinstance(directive, dict):
         raise ParseError(
             "ap_parse_one: 'registries' must be a mapping of "

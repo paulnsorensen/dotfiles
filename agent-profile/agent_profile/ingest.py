@@ -239,20 +239,27 @@ def _expand_plugins(
     """Decompose every plugin in ``agents/plugins/registry.yaml`` into its
     constituent primitives.
 
+    Path model (mirrors real milknado layout):
+      - ``path:`` in the registry is the **marketplace root** — the directory
+        that contains ``.claude-plugin/marketplace.json``.
+      - Each ``plugins[].source`` entry in marketplace.json resolves a **payload
+        root** relative to the marketplace root; ``.mcp.json`` and ``skills/``
+        live at the payload root.
+      - ``_source_dir`` on every emitted item is stamped at the **payload root**
+        (not the marketplace root), since renderers resolve payload files via
+        ``Path(item['_source_dir']) / item['path']``.
+
     Returns a tuple ``(mcps, skills, native_plugins)``:
 
-    - ``mcps`` — one MCP item per server declared in the plugin's
-      ``.mcp.json``, carrying the registry entry's ``harnesses`` and
-      ``gate_unless``, and with ``_source_dir`` at the **payload root**.
+    - ``mcps`` — one MCP item per server in each payload's ``.mcp.json``.
     - ``skills`` — one ``path:`` skill item per ``<name>/SKILL.md`` found
-      under ``<payload>/skills/``, with ``_source_dir`` at the **payload
-      root** (not the repo root — this is the highest-risk correctness
-      rule: renderers resolve ``Path(item['_source_dir']) / item['path']``).
+      under ``<payload>/skills/``, with ``_source_dir`` at the payload root.
     - ``native_plugins`` — one descriptor dict per ``claude_native: true``
-      entry, carrying ``name``, ``claude_native``, ``payload_root``, and
-      ``description`` so the claude renderer can register the marketplace.
+      entry, carrying ``marketplace_root``, ``marketplace_name`` (from
+      marketplace.json), and ``description`` for the claude renderer.
     """
     import json as _json
+    from agent_profile._validate import ParseError
     data = _load_yaml_mapping(path)
     plugins = data.get("plugins") or {}
     out_mcps: list[dict[str, Any]] = []
@@ -265,66 +272,108 @@ def _expand_plugins(
         path_str = body.get("path")
         if not path_str:
             continue
-        payload_root = _resolve_plugin_path(str(path_str), repo_root)
-        source_dir = str(payload_root)
+
+        # ── Resolve marketplace root and read marketplace.json ──
+        marketplace_root = _resolve_plugin_path(str(path_str), repo_root)
+        marketplace_json = marketplace_root / ".claude-plugin" / "marketplace.json"
+        if not marketplace_json.is_file():
+            raise ParseError(
+                f"ap: plugin '{name}': expected marketplace.json at "
+                f"{marketplace_json} but it was not found. "
+                f"The registry 'path:' field must point at the marketplace root "
+                f"(the directory containing .claude-plugin/marketplace.json), "
+                f"not at a plugin payload subdirectory."
+            )
+        try:
+            market_data = _json.loads(marketplace_json.read_text())
+        except Exception as exc:
+            raise ParseError(
+                f"ap: plugin '{name}': failed to parse {marketplace_json}: {exc}"
+            ) from exc
+
+        marketplace_name: str = market_data.get("name") or name
         harnesses: list[str] = _as_list(body.get("harnesses"))
         gate_unless = body.get("gate_unless")
         claude_native = bool(body.get("claude_native", False))
         description = body.get("description") or ""
 
-        # ── MCP decomposition from .mcp.json ──
-        mcp_file = payload_root / ".mcp.json"
-        if mcp_file.is_file():
-            try:
-                raw_mcp = _json.loads(mcp_file.read_text())
-            except Exception:
-                raw_mcp = {}
-            for server_name, server_body in (raw_mcp.get("mcpServers") or {}).items():
-                if not isinstance(server_body, dict):
-                    continue
-                item: dict[str, Any] = {
-                    "name": server_name,
-                    "command": server_body.get("command", ""),
-                    "_source_dir": source_dir,
-                }
-                if server_body.get("args") is not None:
-                    item["args"] = server_body["args"]
-                if server_body.get("env") is not None:
-                    item["env"] = server_body["env"]
-                # DEDUP: for claude_native plugins, remove claude from decomposed
-                # MCP harnesses — Claude gets the plugin via native marketplace
-                # install (mcp__plugin_<name>_<server>__*), not bare user MCP.
-                effective_harnesses = harnesses
-                if claude_native and harnesses:
-                    effective_harnesses = [h for h in harnesses if h != "claude"]
-                if effective_harnesses:
-                    item["harnesses"] = effective_harnesses
-                elif harnesses and not effective_harnesses:
-                    # All harnesses were claude-only; emit empty list so the
-                    # item exists but renderers' harnesses-filter skips it.
-                    item["harnesses"] = []
-                if gate_unless:
-                    item["gate_unless"] = gate_unless
-                out_mcps.append(item)
+        # Iterate over each plugin payload declared in marketplace.json.
+        for plugin_entry in market_data.get("plugins") or []:
+            if not isinstance(plugin_entry, dict):
+                continue
+            rel_source = plugin_entry.get("source") or ""
+            # source is relative to marketplace root (e.g. "./plugins/milknado")
+            rel_clean = rel_source.lstrip("./")
+            payload_root = marketplace_root / rel_clean if rel_clean else marketplace_root
+            source_dir = str(payload_root)
 
-        # ── Skills decomposition from skills/ tree ──
-        # Reuse _expand_local_skills but with the payload root as the tree.
-        # _expand_local_skills stamps source_dir from its parameter; it uses
-        # tree.name as the rel_root prefix, so 'path' becomes 'skills/<name>'.
-        skills_tree = payload_root / "skills"
-        plugin_skills = _expand_local_skills(skills_tree, source_dir)
-        if claude_native:
-            for skill in plugin_skills:
-                skill["_from_native_plugin"] = True
-        out_skills.extend(plugin_skills)
+            # ── MCP decomposition from .mcp.json ──
+            mcp_file = payload_root / ".mcp.json"
+            if mcp_file.is_file():
+                try:
+                    raw_mcp = _json.loads(mcp_file.read_text())
+                except Exception:
+                    raw_mcp = {}
+                for server_name, server_body in (raw_mcp.get("mcpServers") or {}).items():
+                    if not isinstance(server_body, dict):
+                        continue
+                    item: dict[str, Any] = {
+                        "name": server_name,
+                        "command": server_body.get("command", ""),
+                        "_source_dir": source_dir,
+                    }
+                    if server_body.get("args") is not None:
+                        item["args"] = server_body["args"]
+                    if server_body.get("env") is not None:
+                        item["env"] = server_body["env"]
+                    # C-var: validate env vars (mirrors _expand_mcps behaviour).
+                    unset = first_unset_var(item, dotenv)
+                    if unset is not None:
+                        if server_body.get("optional"):
+                            continue
+                        raise EnvResolutionError(
+                            f"ap: plugin '{name}' server '{server_name}': "
+                            f"env var ${{{unset}}} is unset "
+                            f"(set it in .env or mark the server optional)"
+                        )
+                    if server_body.get("optional") is not None:
+                        item["optional"] = server_body["optional"]
+                    # DEDUP: for claude_native plugins, remove claude from decomposed
+                    # MCP harnesses — Claude gets the plugin via native marketplace
+                    # install (mcp__plugin_<name>_<server>__*), not bare user MCP.
+                    effective_harnesses = harnesses
+                    if claude_native and harnesses:
+                        effective_harnesses = [h for h in harnesses if h != "claude"]
+                    if effective_harnesses:
+                        item["harnesses"] = effective_harnesses
+                    elif harnesses and not effective_harnesses:
+                        # All harnesses were claude-only; emit empty list so the
+                        # item exists but renderers' harnesses-filter skips it.
+                        item["harnesses"] = []
+                    if gate_unless:
+                        item["gate_unless"] = gate_unless
+                    out_mcps.append(item)
+
+            # ── Skills decomposition from skills/ tree ──
+            # _expand_local_skills stamps source_dir from its parameter; it uses
+            # tree.name as the rel_root prefix, so 'path' becomes 'skills/<name>'.
+            skills_tree = payload_root / "skills"
+            plugin_skills = _expand_local_skills(skills_tree, source_dir)
+            if claude_native:
+                for skill in plugin_skills:
+                    skill["_from_native_plugin"] = True
+            out_skills.extend(plugin_skills)
 
         # ── Native plugin descriptor (claude renderer pass) ──
+        # Carried once per registry entry (not per payload): the marketplace
+        # root and canonical marketplace name are what the renderer needs.
         if claude_native:
             out_native.append(
                 {
                     "name": name,
                     "claude_native": True,
-                    "payload_root": source_dir,
+                    "marketplace_root": str(marketplace_root),
+                    "marketplace_name": marketplace_name,
                     "description": description,
                 }
             )
