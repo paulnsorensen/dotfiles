@@ -85,11 +85,14 @@ the place to revisit.
     },
     "serena": {
       "type": "local",
-      "command": "serena-mux",
-      "args": [],
-      "env": {
-        "SERENA_MUX_HARNESS": "copilot"
-      },
+      "command": "serena",
+      "args": [
+        "start-mcp-server",
+        "--context=copilot",
+        "--project-from-cwd",
+        "--enable-web-dashboard=false",
+        "--open-web-dashboard=false"
+      ],
       "tools": [
         "*"
       ]
