@@ -1,7 +1,7 @@
 #!/bin/bash
 ############################
-# .sync-with-rollback
-# Enhanced sync script with rollback capability and state management
+# .sync
+# Dotfiles sync orchestrator
 ############################
 
 set -euo pipefail  # Fail fast on errors
@@ -13,8 +13,6 @@ olddir=~/.dotfiles.bak             # old dotfiles backup directory
 
 # State management
 DOTFILES_STATE_DIR="${HOME}/.local/state/dotfiles"
-BACKUP_DIR="${DOTFILES_STATE_DIR}/backups/$(date +%Y%m%d_%H%M%S)"
-MANIFEST_FILE="${DOTFILES_STATE_DIR}/current.manifest"
 
 # Source helpers from the script's own directory. Test harnesses that eval
 # this file may override the location via SYNC_SCRIPT.
@@ -29,46 +27,15 @@ unset _sync_script_path
 
 ########## Functions
 
-# Initialize state directory
-init_state() {
-    log_info "Initializing state management..."
-    mkdir -p "${DOTFILES_STATE_DIR}/backups"
-    mkdir -p "${BACKUP_DIR}"
-
-    # Save current timestamp
+# Record the current sync timestamp
+record_sync_time() {
+    mkdir -p "${DOTFILES_STATE_DIR}"
     date +%s > "${DOTFILES_STATE_DIR}/last_sync"
-}
-
-# Create manifest of current symlinks
-create_manifest() {
-    log_info "Creating manifest of current state..."
-    true > "${MANIFEST_FILE}.tmp"
-
-    # Find all symlinks pointing to our dotfiles (exclude protected directories)
-    (find "${HOME}" -maxdepth 3 -type l \
-        -not -path "${HOME}/Library/Mobile Documents*" \
-        -not -path "${HOME}/Library/Application Support/MobileSync*" \
-        -not -path "${HOME}/Music*" \
-        -not -path "${HOME}/Pictures/Photos*" \
-        2>/dev/null || true) | while read -r link; do
-        target=$(readlink "${link}" 2>/dev/null || true)
-        if [[ "${target}" == "${dir}"* ]]; then
-            echo "${link}:${target}" >> "${MANIFEST_FILE}.tmp"
-        fi
-    done
-
-    # If manifest exists, back it up
-    if [[ -f "${MANIFEST_FILE}" ]]; then
-        cp "${MANIFEST_FILE}" "${BACKUP_DIR}/manifest.backup"
-    fi
-
-    mv "${MANIFEST_FILE}.tmp" "${MANIFEST_FILE}"
-    log_success "Manifest created with $(wc -l < "${MANIFEST_FILE}") symlinks"
 }
 
 # Main sync function
 run_sync() {
-    init_state
+    record_sync_time
     parse_sync_args "$@"
 
     # Bootstrap yq (needed by packages/sync.sh to parse YAML)
@@ -93,8 +60,6 @@ run_sync() {
     install_tpm
     install_prek_hooks
 
-    create_manifest
-
     unset DOTFILES_DEV
 
     if (( ${#SYNC_FAILURES[@]} > 0 )); then
@@ -103,8 +68,7 @@ run_sync() {
         log_error "Configuration is partially applied — those areas may be stale."
         log_error "Re-run 'dots sync' after fixing the underlying cause."
         echo
-        log_info "Backup saved at: ${BACKUP_DIR}"
-        log_info "To rollback, run: $0 rollback ${BACKUP_DIR##*/}"
+        log_info "To undo, run: dots rollback"
         exit 1
     fi
 

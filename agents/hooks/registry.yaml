@@ -107,38 +107,37 @@ hooks:
   # session-start, prompt, turn-end, and approval events to the phone
   # so the user can babysit the agent remotely.
   #
-  # Wire format captured from `moshi-hook install` (v0.2.8 on linux). The
-  # single quotes around the absolute path are Moshi's own choice — they
-  # let the path tolerate whitespace in $HOME, preserved verbatim.
-  #
-  # Linux-only path: on macOS via brew, moshi-hook lives at
-  # /opt/homebrew/bin/moshi-hook — port this entry when adding the Mac.
+  # Bare `moshi-hook`, resolved from PATH at hook time. The binary lives at
+  # ~/.local/bin (Moshi's own installer, linux) or /opt/homebrew/bin (brew
+  # via packages.yaml, macOS). Never hardcode a machine-specific absolute
+  # path here — the original wire format captured from `moshi-hook install`
+  # on linux broke every Claude session on macOS (issue #263).
   # claude-only: codex bridge ships via ~/.codex/hooks.json (different
   # surface), out of scope here.
   moshi-session-start:
     event: SessionStart
-    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    command: "moshi-hook claude-hook"
     async: true
     harnesses: [claude]
     description: Moshi bridge — session-start notification to phone
 
   moshi-user-prompt-submit:
     event: UserPromptSubmit
-    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    command: "moshi-hook claude-hook"
     async: true
     harnesses: [claude]
     description: Moshi bridge — prompt-submit notification to phone
 
   moshi-stop:
     event: Stop
-    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    command: "moshi-hook claude-hook"
     async: true
     harnesses: [claude]
     description: Moshi bridge — turn-end notification to phone
 
   moshi-permission-request:
     event: PermissionRequest
-    command: "'/home/paul/.local/bin/moshi-hook' claude-hook"
+    command: "moshi-hook claude-hook"
     async: false
     timeout: 300
     harnesses: [claude]

@@ -60,11 +60,13 @@ claude/reference/cheese-flair.md
 !.hallouminate/config.toml
 !.hallouminate/wiki/
 
-# Cursor IDE runtime / install-cursor-plugin output that lands here when
-# someone opens the repo's `cursor/` subdir as a workspace (Cursor treats
-# it as `~/.cursor/`) or sets CURSOR_HOME wrong. The only intentional tree
-# under cursor/ is plugins/ (the source for cheese-grok et al).
+# Cursor IDE runtime / install-cursor-plugin output that lands here because
+# ~/.cursor is symlinked to cursor/ in this repo. The only intentional tree
+# under cursor/ is plugins/ (the source for cheese-grok et al) plus
+# cursor/.gitignore (dotfiles-managed to prevent Cursor's git-sync block
+# from un-ignoring runtime dirs).
 /cursor/*
+!/cursor/.gitignore
 !/cursor/plugins/
 !/cursor/plugins/**
 

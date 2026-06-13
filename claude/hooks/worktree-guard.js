@@ -6,7 +6,8 @@
 // Enforced by default in a worktree (opt-out):
 //   CLAUDE_WORKTREE_GUARD=0|false|off|no   → disable entirely
 // Allowed-path escape hatch (writable even outside the worktree):
-//   built-in: worktree root, $TMPDIR, /tmp, ~/.claude/, any .cheese/ dir
+//   built-in: worktree root, $TMPDIR, /tmp, ~/.claude/, any .cheese/ dir,
+//             ${XDG_DATA_HOME:-~/.local/share}/cheese/ (durable corpus)
 //   extra:    CLAUDE_WORKTREE_GUARD_ALLOW=/abs/prefix,/another  (comma-separated)
 
 const { execSync } = require('child_process');
@@ -43,6 +44,10 @@ function allowedPrefixes(worktreeRoot) {
   const prefixes = [worktreeRoot];
   const home = process.env.HOME || '';
   if (home) prefixes.push(path.join(home, '.claude'));
+  // Cheese durable corpus (specs, rfds, reports, research) — the /mold and
+  // /cheese artifact resolvers write here (see issue #270).
+  const dataHome = process.env.XDG_DATA_HOME || (home && path.join(home, '.local', 'share'));
+  if (dataHome) prefixes.push(path.join(dataHome, 'cheese'));
   const tmp = process.env.TMPDIR;
   if (tmp) prefixes.push(tmp.replace(/\/$/, ''));
   const extra = (process.env.CLAUDE_WORKTREE_GUARD_ALLOW || '')
@@ -96,6 +101,7 @@ In a worktree, writes are scoped to:
 - $TMPDIR, /tmp (scratch)
 - ~/.claude/ (memories, specs)
 - any .cheese/ dir (specs, rfds, reports)
+- \${XDG_DATA_HOME:-~/.local/share}/cheese/ (durable corpus)
 - CLAUDE_WORKTREE_GUARD_ALLOW prefixes
 
 Disable this guard: export CLAUDE_WORKTREE_GUARD=0

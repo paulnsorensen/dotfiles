@@ -12,6 +12,9 @@ PLUGIN_SYNC="$REAL_DOTFILES_DIR/claude/plugins/sync.sh"
 
 setup() {
     setup_test_env
+    # sync.sh resolves the live settings via CLAUDE_SETTINGS_FILE — start each
+    # test clean so a fixture path can't leak across tests.
+    unset CLAUDE_SETTINGS_FILE
     export MOCK_BIN="$TEST_HOME/bin"
     mkdir -p "$MOCK_BIN"
     export CLAUDE_LOG="$TEST_HOME/claude.log"
@@ -294,6 +297,9 @@ YAML
   "extraKnownMarketplaces": {}
 }
 JSON
+    # sync.sh now targets the live ~/.claude/settings.json; point that at the
+    # fixture so the test stays hermetic.
+    export CLAUDE_SETTINGS_FILE="$dotfiles_root/claude/settings.json"
 }
 
 
@@ -381,6 +387,44 @@ JSON
     assert_output_not_contains "Updated my-plugin"
 }
 
+@test "plugin sync: local marketplace is registered with the CLI (marketplace add)" {
+    # Regression: jq-writing extraKnownMarketplaces alone does NOT make a
+    # marketplace installable — the sync must also run `claude plugin
+    # marketplace add <path>` so the CLI fetches/registers it. Without this a
+    # freshly-added local plugin (milknado) fails to install on first sync.
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
+    local claude_dir="$dotfiles_root/claude"
+    local mock_dir="$claude_dir/plugins"
+    mkdir -p "$mock_dir" "$claude_dir/lib"
+    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
+    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
+
+    write_local_plugin_fixtures "$dotfiles_root"
+
+    run bash "$mock_dir/sync.sh"
+    assert_success
+
+    local mp_path="$dotfiles_root/claude/plugins/local/my-plugin"
+    grep -qF "plugin marketplace add $mp_path" "$CLAUDE_LOG"
+}
+
+@test "plugin sync: local marketplace dry-run skips CLI registration" {
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
+    local claude_dir="$dotfiles_root/claude"
+    local mock_dir="$claude_dir/plugins"
+    mkdir -p "$mock_dir" "$claude_dir/lib"
+    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
+    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
+
+    write_local_plugin_fixtures "$dotfiles_root"
+
+    run bash "$mock_dir/sync.sh" --dry-run
+    assert_success
+    [ ! -f "$CLAUDE_LOG" ] || ! grep -q "plugin marketplace add" "$CLAUDE_LOG"
+}
+
 
 @test "plugin sync: missing registry file exits with error" {
     local mock_dir
@@ -399,6 +443,7 @@ JSON
     cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
     cp "$TEST_HOME/plugin-registry.yaml" "$mock_dir/registry.yaml"
     cp "$TEST_HOME/settings.json" "$claude_dir/settings.json"
+    export CLAUDE_SETTINGS_FILE="$claude_dir/settings.json"
     run bash "$mock_dir/sync.sh" --dry-run
     assert_success
     assert_output_contains "[dry-run]"
@@ -432,6 +477,7 @@ YAML
   "extraKnownMarketplaces": {}
 }
 JSON
+    export CLAUDE_SETTINGS_FILE="$dotfiles_root/claude/settings.json"
 }
 
 setup_gated_sync_dir() {

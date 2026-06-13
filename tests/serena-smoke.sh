@@ -35,9 +35,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The registry launches serena via the serena-mux wrapper (command: serena-mux
-# in agents/mcp/registry.yaml); this boots the same daemon argv serena-mux
-# spawns under the hood, validating that bare serena + our config comes up.
+# The registry launches serena over stdio (command: serena in agents/mcp/registry.yaml);
+# this boots the same daemon argv, validating that bare serena + our config comes up.
 serena start-mcp-server \
     --context=claude-code \
     --project-from-cwd \

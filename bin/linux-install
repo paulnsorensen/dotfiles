@@ -70,7 +70,7 @@ APT_PKGS=(
     # Core CLI (watch ships with procps which is preinstalled — don't list it)
     zsh tmux htop tree curl
     # Modern CLI replacements
-    ripgrep fd-find bat eza git-delta fzf zoxide atuin starship
+    ripgrep fd-find bat eza git-delta fzf zoxide atuin
     procs tokei lazygit just sd xclip gettext shellcheck
     # Build deps — cargo-update / cargo-nextest / yazi link against system
     # OpenSSL; bun's installer needs unzip; build-essential covers cc/make.

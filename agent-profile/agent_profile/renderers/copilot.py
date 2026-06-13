@@ -36,6 +36,12 @@ from pathlib import Path
 from typing import Any
 
 from agent_profile.parse import Manifest
+from agent_profile.permissions import (
+    bash_argv,
+    named_mcp_tools,
+    parse_mcp_rule,
+    whole_server_mcp_allows,
+)
 from agent_profile.renderers.base import (
     body_abs,
     includes_harness,
@@ -85,10 +91,53 @@ def _dumps(data: Any) -> str:
     return json.dumps(data, indent=2) + "\n"
 
 
+def launch_flags(manifest: Manifest) -> list[str]:
+    """Lower the canonical allow/deny lists to Copilot launch flags (lever 1).
+
+    The Copilot CLI has no config-file surface for per-command rules, so the
+    `copilot` launch wrapper injects these at invocation time. Mapping (from
+    docs.github.com/.../about-copilot-cli):
+
+      - ``Bash(<cmd>:*)`` allow -> ``--allow-tool=shell(<cmd>)``
+      - ``Bash(<cmd>:*)`` deny  -> ``--deny-tool=shell(<cmd>)``
+      - ``mcp__<s>__*``  allow  -> ``--allow-tool=<s>`` (whole server)
+      - ``mcp__<s>__<t>`` allow -> ``--allow-tool=<s>(<t>)``
+      - ``mcp__<s>__<t>`` deny  -> ``--deny-tool=<s>(<t>)``
+
+    Non-Bash/non-MCP canonical entries (``Edit``/``Write``/``Read``/
+    ``Grep``/``Glob``/``Skill``) have no Copilot shell/MCP surface and are
+    skipped. Flags are emitted allow-first, then deny, each group sorted, so
+    the wrapper output is deterministic and testable. ``<cmd>`` keeps its
+    internal spaces (``shell(gh pr view)``) — Copilot matches first-level
+    subcommands for git/gh."""
+    settings = manifest.settings
+    allow_flags = _flags_for(settings.get("permissions_allow") or [], "--allow-tool")
+    deny_flags = _flags_for(settings.get("permissions_deny") or [], "--deny-tool")
+    return allow_flags + deny_flags
+
+
+def _flags_for(rules: list[str], option: str) -> list[str]:
+    """Lower one canonical channel (allow or deny) to ``option`` flags,
+    sorted for determinism. Skips entries with no Copilot surface."""
+    out: list[str] = []
+    for rule in sorted(rules):
+        argv = bash_argv(rule)
+        if argv is not None:
+            out.append(f"{option}=shell({' '.join(argv)})")
+            continue
+        parsed = parse_mcp_rule(rule)
+        if parsed is not None:
+            server, tool = parsed
+            spec = server if tool == "*" else f"{server}({tool})"
+            out.append(f"{option}={spec}")
+    return out
+
+
 class CopilotRenderer:
     """Renderer for the Copilot CLI harness. See module docstring."""
 
     name = "copilot"
+    mcp_default = _COPILOT_MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path) -> list[str]:
         out_files: list[str] = []
@@ -216,11 +265,24 @@ class CopilotRenderer:
             data = {"mcpServers": {}}
         servers = data.setdefault("mcpServers", {})
 
+        # Lever 3: each server's `tools` array is derived from the canonical
+        # allow list. `mcp__<server>__*` (or no canonical rule for the
+        # server) -> ["*"] (all tools); named `mcp__<server>__<tool>` allows
+        # -> the explicit tool list. A whole-server `mcp__<server>__*` wins
+        # over named-tool entries for the same server (no restriction), so
+        # check the whole-server set before the named-tool bucket.
+        allow = manifest.settings.get("permissions_allow") or []
+        named = named_mcp_tools(allow)
+        whole = whole_server_mcp_allows(allow)
         for mcp in mcps:
             entry = {"command": mcp["command"], "args": mcp.get("args") or []}
             if mcp.get("env") is not None:
                 entry["env"] = mcp["env"]
-            entry["tools"] = ["*"]
+            tools = named.get(mcp["name"])
+            if mcp["name"] in whole or not tools:
+                entry["tools"] = ["*"]
+            else:
+                entry["tools"] = sorted(tools)
             servers[mcp["name"]] = entry
 
         out.write_text(_dumps(data))
@@ -251,3 +313,9 @@ class CopilotRenderer:
             cfg.unlink()
         else:
             cfg.write_text(_dumps(data))
+
+    def prune_mcps(self, manifest: Manifest, target: Path) -> None:
+        """Evict dropped MCP servers from .copilot/mcp-config.json's
+        ``mcpServers`` (install reconcile). Copilot's clean is MCP-only, so
+        this delegates to it; ``manifest`` holds only the dropped servers."""
+        self.clean(manifest, target)

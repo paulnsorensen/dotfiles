@@ -1,5 +1,5 @@
 #!/bin/bash
-# Shared sync helpers sourced by .sync-with-rollback.
+# Shared sync helpers sourced by .sync.
 # Logging, skip-list dispatch, per-entry sync, and bootstrap installers.
 #
 # Variables provided by the sourcing script: dir, olddir
@@ -33,7 +33,7 @@ log_error() {
 SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "brew" "apt" "agents" "agent-profile" "codex")
 
 # Failure ledger — every .sync script that exits non-zero appends its name
-# here. .sync-with-rollback inspects this at the end of run_sync, prints a
+# here. .sync inspects this at the end of run_sync, prints a
 # summary, and exits non-zero so a partial sync doesn't masquerade as green.
 SYNC_FAILURES=()
 

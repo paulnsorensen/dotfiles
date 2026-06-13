@@ -74,11 +74,27 @@ mcps:
       TODOIST_API_KEY: "${TODOIST_API_KEY}"
     scope: user
     optional: true   # skip non-fatally when TODOIST_API_KEY is unset
+    # Scoped out of every harness: todoist's ~45 tools ≈ 38k tokens (62% of the
+    # MCP tool footprint) are eager-loaded into every request by opencode, codex,
+    # cursor, and copilot (only claude defers via ToolSearch — see
+    # .cheese/research/mcp-schema-loading). It is irrelevant to coding; the `todo`
+    # profile defines todoist inline, so productivity sessions still get it.
+    # Empty list (not absent) renders into nothing — base.py:item_harnesses only
+    # falls back to the default set when `harnesses` is missing.
+    harnesses: []
     description: Official Todoist MCP (Doist-maintained) — invoke only when explicitly requested
 
   code-review-graph:
     command: uvx
     args: ["--from", "code-review-graph[embeddings]", "code-review-graph", "serve"]
+    env:
+      # Trim 30→14: expose only the preamble-routed tools (the code-review-graph
+      # mapping table in agents/preamble.md). `--tools` falls back to CRG_TOOLS;
+      # unlisted tools are removed at server boot, cutting ~4.4k schema tokens per
+      # request on eager harnesses (codex/opencode/cursor). A tool absent from the
+      # routing table isn't routed, so it only adds decision-fatigue; re-adding one
+      # is a one-line edit. Names carry the `_tool` suffix per `serve --help`.
+      CRG_TOOLS: "build_or_update_graph_tool,get_review_context_tool,detect_changes_tool,get_impact_radius_tool,get_affected_flows_tool,get_architecture_overview_tool,get_hub_nodes_tool,get_bridge_nodes_tool,find_large_functions_tool,list_communities_tool,get_community_tool,semantic_search_nodes_tool,get_minimal_context_tool,get_knowledge_gaps_tool"
     scope: user
     description: Structural code knowledge graph via Tree-sitter — semantic search (sentence-transformers), call chains, impact radius, flows, communities
 
@@ -87,14 +103,15 @@ mcps:
   # ~/.serena/serena_config.yml under `excluded_tools` / `included_optional_tools`
   # / `fixed_tools` — applies to every harness uniformly.
   serena:
-    # `serena-mux` is a wrapper at bin/serena-mux that coalesces multiple MCP
-    # clients into one serena daemon per (project root, harness). Stops the
-    # "two cairo dashboards" problem at its root: each stdio client used to
-    # spawn its own serena; now they all bridge through mcp-proxy into a
-    # shared streamable-http daemon. Dashboard flags + --context + --project
-    # are now owned by the wrapper (where the daemon actually gets spawned).
-    command: serena-mux
-    env:
-      SERENA_MUX_HARNESS: '{{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}'
+    # stdio transport: serena starts as a child of the MCP harness and exits
+    # with it. This avoids the leaked-daemon / OOM problem of the retired
+    # serena-mux wrapper (6% reuse, 472 orphaned daemons, 35.5GB RSS OOM).
+    command: serena
+    args:
+      - start-mcp-server
+      - --context={{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}
+      - --project-from-cwd
+      - --enable-web-dashboard=false
+      - --open-web-dashboard=false
     scope: user
     description: Semantic code intel via LSP (symbols, references, refactors). Tools tailored per harness via --context.

@@ -2,3 +2,6 @@
 .pytest_cache/
 __pycache__/
 *.pyc
+# ap install writes the manifest to ~/.agent-profile/manifest.json, which
+# resolves here via the ~/.agent-profile → $DOTFILES_DIR/agent-profile symlink.
+manifest.json

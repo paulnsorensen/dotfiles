@@ -1,13 +1,13 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2012
-# Tests for .sync-with-rollback — the main dotfiles sync orchestrator
+# Tests for .sync — the main dotfiles sync orchestrator
 #
 # Unit tests source functions via call-sync-fn helper.
 # Integration tests run the full script against a fake dotfiles directory.
 
 load test_helper
 
-SYNC_SCRIPT="$REAL_DOTFILES_DIR/.sync-with-rollback"
+SYNC_SCRIPT="$REAL_DOTFILES_DIR/.sync"
 
 setup() {
     setup_test_env
@@ -52,15 +52,12 @@ MOCK
 set -euo pipefail
 export HOME="$TEST_HOME"
 export DOTFILES_STATE_DIR="$TEST_HOME/.local/state/dotfiles"
-export BACKUP_DIR="\$DOTFILES_STATE_DIR/backups/\${BACKUP_TS:-\$(date +%Y%m%d_%H%M%S)}"
-export MANIFEST_FILE="\$DOTFILES_STATE_DIR/current.manifest"
 export SYNC_SCRIPT="$SYNC_SCRIPT"
 eval "\$(awk '/^########## Main\$/{exit} {print}' "$SYNC_SCRIPT")"
 if [[ -n "\${FAKE_DIR:-}" ]]; then
     dir="\$FAKE_DIR"
     cd "\$FAKE_DIR"
 fi
-mkdir -p "\$BACKUP_DIR"
 "\$@"
 HELPER
     chmod +x "$MOCK_BIN/call-sync-fn"
@@ -71,31 +68,15 @@ teardown() {
 }
 
 
-@test "init_state creates state directories and writes timestamp" {
-    run call-sync-fn init_state
+@test "record_sync_time writes timestamp" {
+    run call-sync-fn record_sync_time
     assert_success
-    assert_dir_exists "$TEST_HOME/.local/state/dotfiles/backups"
     assert_file_exists "$TEST_HOME/.local/state/dotfiles/last_sync"
     local ts
     ts=$(cat "$TEST_HOME/.local/state/dotfiles/last_sync")
     [[ "$ts" =~ ^[0-9]+$ ]]
 }
 
-@test "create_manifest finds dotfile symlinks and writes manifest file" {
-    export FAKE_DIR="$FAKE_DOTFILES"
-    run call-sync-fn init_state
-    assert_success
-
-    echo "test" > "$FAKE_DOTFILES/somefile"
-    ln -s "$FAKE_DOTFILES/somefile" "$TEST_HOME/.somefile"
-
-    run call-sync-fn create_manifest
-    assert_success
-    assert_file_exists "$TEST_HOME/.local/state/dotfiles/current.manifest"
-    run cat "$TEST_HOME/.local/state/dotfiles/current.manifest"
-    assert_output_contains "$TEST_HOME/.somefile:$FAKE_DOTFILES/somefile"
-    unset FAKE_DIR
-}
 
 @test "no args runs default sync" {
     cd "$FAKE_DOTFILES"

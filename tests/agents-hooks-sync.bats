@@ -83,6 +83,46 @@ teardown() {
     [[ "$(jq -r 'has("sensitive-file-guard")' <<<"$x")" == "true" ]]
 }
 
+@test "registry command entries carry no machine-specific absolute paths" {
+    # Issue #263: the moshi hooks hardcoded '/home/paul/.local/bin/moshi-hook',
+    # so all four fired against a nonexistent path every session on macOS.
+    # command: entries must be PATH-resolved (bare) or platform-neutral —
+    # never /home/* or /Users/*.
+    local cmds
+    cmds=$(yq -r '.hooks[] | select(has("command")) | .command' "$REGISTRY_FILE")
+    run grep -E '(/home/|/Users/)' <<<"$cmds"
+    if [[ "$status" -eq 0 ]]; then
+        echo "machine-specific paths in registry commands:" >&2
+        echo "$output" >&2
+        return 1
+    fi
+}
+
+@test "moshi registry entries are portable, claude-only, and complete" {
+    local entry name
+    for name in moshi-session-start moshi-user-prompt-submit moshi-stop moshi-permission-request; do
+        entry=$(yq -o=json ".hooks.\"$name\"" "$REGISTRY_FILE")
+        [[ "$(jq -r '.command' <<<"$entry")" == "moshi-hook claude-hook" ]]
+        [[ "$(jq -r '.harnesses | length' <<<"$entry")" == "1" ]]
+        [[ "$(jq -r '.harnesses[0]' <<<"$entry")" == "claude" ]]
+    done
+    # Synchronous approval hook keeps its 5-minute phone-reach window.
+    entry=$(yq -o=json '.hooks."moshi-permission-request"' "$REGISTRY_FILE")
+    [[ "$(jq -r '.async' <<<"$entry")" == "false" ]]
+    [[ "$(jq -r '.timeout' <<<"$entry")" == "300" ]]
+}
+
+@test "macOS gets the moshi-hook binary via packages.yaml" {
+    # Issue #263, second half: a portable command still fails if the binary
+    # is never provisioned. The registry's moshi hooks rely on the brew
+    # package on the Mac (linux uses Moshi's own installer to ~/.local/bin).
+    local entry
+    entry=$(yq -o=json '.packages[] | select(kind == "map") | to_entries[0] | select(.key == "rjyo/moshi/moshi-hook")' \
+        "$REAL_DOTFILES_DIR/packages/packages.yaml")
+    [[ -n "$entry" ]]
+    [[ "$(jq -r '.value.platform' <<<"$entry")" == "mac" ]]
+}
+
 @test "sensitive-file-guard renders a runnable bash command under both harnesses" {
     local sc sx
     sc=$(hook_desired_signature sensitive-file-guard claude)
