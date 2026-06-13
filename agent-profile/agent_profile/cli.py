@@ -649,19 +649,16 @@ def _launch_isolated(
     colors: _Colors,
     out: Any,
 ) -> NoReturn:
-    """Closed-world launch (spec curd 6 / D6): build the ccp-parity flags,
-    inject the profile env, exec the harness. Isolated profiles are
-    claude-only (the flags are claude's); any other harness fails loud."""
+    """Closed-world launch (spec D1): dispatch to the per-harness isolation
+    builder, inject the profile env, exec the harness. claude/codex/opencode
+    each build the closed world by a different mechanism behind one
+    ``(flags, env)`` contract; cursor/copilot/crush have no isolation lever
+    and fail loud (``IsolationError`` -> ``CliError``)."""
     from agent_profile.env import EnvResolutionError
-    from agent_profile.overlay import IsolationError, build_isolated_flags
+    from agent_profile.overlay import IsolationError, build_isolated_launch
 
-    if harness != "claude":
-        raise CliError(
-            f"{colors.RED}ap launch: profile '{manifest.name}' is isolated; "
-            f"isolation is claude-only (got '{harness}'){colors.NC}"
-        )
     try:
-        flags, env = build_isolated_flags(manifest, profile_dir)
+        flags, env = build_isolated_launch(manifest, profile_dir, harness)
     except (IsolationError, EnvResolutionError) as exc:
         raise CliError(f"{colors.RED}{exc}{colors.NC}")
 
