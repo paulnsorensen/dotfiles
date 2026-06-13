@@ -879,6 +879,63 @@ def test_codex_config_is_valid_toml_with_adversarial_mcp_values(tmp_path, monkey
     assert server["env"]["NOTE"] == "em — dash 🧀 lord, regex \\d+, key = val"
 
 
+def test_codex_home_is_not_under_tmp(tmp_path, monkeypatch):
+    """CODEX_HOME must be rooted under the user cache, not the system temp dir:
+    codex 0.135.0 refuses to install its PATH-helper binaries when CODEX_HOME
+    is under a temp dir (a "could not update PATH" warning every isolated
+    launch). The builder bases the per-launch home under $XDG_CACHE_HOME (or
+    ~/.cache), NOT tempfile.mkdtemp's gettempdir() default.
+
+    The cache base is asserted directly rather than via 'not under
+    gettempdir()' because pytest's own tmp_path lives under /tmp, so a cache
+    redirected into tmp_path would be a /tmp descendant by test scaffolding,
+    not by the builder. Two cases pin the real invariant: an explicit
+    XDG_CACHE_HOME is honoured, and the unset default is ~/.cache (a fake
+    home), proving the base is never gettempdir()."""
+    import tempfile
+
+    # Sanity: the builder's default base is the cache dir, never the temp dir.
+    assert Path(tempfile.gettempdir()).resolve() != (Path.home() / ".cache").resolve()
+
+    # Case 1: explicit XDG_CACHE_HOME is honoured.
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    m = _claude_manifest(tmp_path)
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    assert cache / "ap-codex" in Path(env["CODEX_HOME"]).parents
+
+    # Case 2: unset XDG_CACHE_HOME falls back to ~/.cache, not gettempdir().
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(overlay.Path, "home", classmethod(lambda cls: fake_home))
+    _, env2 = overlay.build_isolated_launch(m, tmp_path, "codex")
+    assert fake_home / ".cache" / "ap-codex" in Path(env2["CODEX_HOME"]).parents
+
+
+def test_codex_quotes_non_bare_safe_keys(tmp_path, monkeypatch):
+    """An MCP name or env key with a space or dot is not a valid TOML bare key
+    (a space fails to parse, a dot silently nests). The builder quotes such
+    keys so the generated config.toml still parses with the intended structure
+    instead of corrupting the table layout."""
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    m = Manifest(
+        name="p",
+        isolated=True,
+        mcps=[{"name": "my.dotted server", "command": "npx",
+               "env": {"has space": "v1", "a.b.c": "v2"},
+               "_source_dir": str(tmp_path)}],
+    )
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    cfg = _codex_config(env)  # raises if the TOML is invalid
+    # The dotted/space name is one server key, NOT a nested table.
+    assert set(cfg["mcp_servers"]) == {"my.dotted server"}
+    server = cfg["mcp_servers"]["my.dotted server"]
+    assert server["command"] == "npx"
+    assert server["env"] == {"has space": "v1", "a.b.c": "v2"}
+
+
 def test_codex_no_system_prompt_omits_model_instructions_file(tmp_path, monkeypatch):
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
     m = _claude_manifest(tmp_path)  # no system_prompt

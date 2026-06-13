@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -237,6 +238,20 @@ def _codex_toml_value(value: object) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+_BARE_TOML_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _codex_toml_key(key: str) -> str:
+    """Render a TOML key (MCP name, env/header key) safely.
+
+    A TOML bare key allows only ``[A-Za-z0-9_-]``; an unquoted key with a space
+    fails to parse and one with a dot silently nests into a sub-table. Bare-safe
+    keys pass through verbatim; anything else is quoted via the same
+    string-quoting path as values (``[mcp_servers."has space"]``,
+    ``"my.dotted" = ...``)."""
+    return key if _BARE_TOML_KEY.match(key) else _codex_toml_value(key)
+
+
 def _codex_mcp_tables(manifest: Manifest) -> str:
     """Render the profile's MCPs as ``[mcp_servers.<n>]`` TOML tables.
 
@@ -253,7 +268,7 @@ def _codex_mcp_tables(manifest: Manifest) -> str:
     lines: list[str] = []
     for raw in manifest.mcps:
         mcp = resolve_item_env(raw, dotenv)
-        name = mcp["name"]
+        name = _codex_toml_key(mcp["name"])
         lines.append(f"[mcp_servers.{name}]")
         if mcp.get("url") or mcp.get("type") in ("http", "sse"):
             lines.append(f"url = {_codex_toml_value(mcp['url'])}")
@@ -264,7 +279,7 @@ def _codex_mcp_tables(manifest: Manifest) -> str:
             if isinstance(headers, dict) and headers:
                 lines.append(f"\n[mcp_servers.{name}.http_headers]")
                 for key, val in headers.items():
-                    lines.append(f"{key} = {_codex_toml_value(str(val))}")
+                    lines.append(f"{_codex_toml_key(key)} = {_codex_toml_value(str(val))}")
         else:
             lines.append(f"command = {_codex_toml_value(mcp['command'])}")
             if mcp.get("args") is not None:
@@ -273,7 +288,7 @@ def _codex_mcp_tables(manifest: Manifest) -> str:
             if isinstance(env, dict) and env:
                 lines.append(f"\n[mcp_servers.{name}.env]")
                 for key, val in env.items():
-                    lines.append(f"{key} = {_codex_toml_value(str(val))}")
+                    lines.append(f"{_codex_toml_key(key)} = {_codex_toml_value(str(val))}")
         lines.append("")
     return "\n".join(lines)
 
@@ -306,6 +321,21 @@ def _write_codex_config(
     (codex_home / "config.toml").write_text("\n".join(sections))
 
 
+def _codex_cache_base() -> Path:
+    """Parent dir for the per-launch ``CODEX_HOME``, under the user cache (not
+    ``/tmp``).
+
+    codex 0.135.0 refuses to install its PATH-helper binaries when
+    ``CODEX_HOME`` is under a temp dir, printing a "could not update PATH"
+    warning every isolated launch (``tempfile.mkdtemp``'s ``/tmp`` default
+    tripped this). Rooting under ``$XDG_CACHE_HOME`` / ``~/.cache`` clears the
+    warning and restores the PATH-helper install while keeping per-launch
+    ephemeral accumulation (``ap launch`` execs and can't clean up post-exec)."""
+    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "ap-codex"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
 def _build_isolated_codex(
     manifest: Manifest,
     profile_dir: Path,
@@ -325,9 +355,11 @@ def _build_isolated_codex(
     ``~/.codex/auth.json`` (``FileAuthStorage`` reads ``<CODEX_HOME>/auth.json``
     and follows symlinks). ``scratch`` (the isolated home) matches the claude
     path's ephemeral-dir convention: a fresh ``tempfile.mkdtemp`` per launch
-    that outlives this call so the exec'd codex can read it. ``ap launch``
-    execs and cannot clean up post-exec, so these accumulate exactly like the
-    claude path's generated ``.mcp.json`` / ``settings.json`` dirs.
+    that outlives this call so the exec'd codex can read it — rooted under the
+    user cache (:func:`_codex_cache_base`), not ``/tmp`` (codex refuses its
+    PATH-helper install under a temp dir). ``ap launch`` execs and cannot clean
+    up post-exec, so these accumulate exactly like the claude path's generated
+    ``.mcp.json`` / ``settings.json`` dirs.
 
     Caveats (also in the module docstring):
 
@@ -353,7 +385,7 @@ def _build_isolated_codex(
             _warn_ignored(name, "codex")
 
     if scratch is None:
-        scratch = Path(tempfile.mkdtemp(prefix=f"ap-{manifest.name}-codex-"))
+        scratch = Path(tempfile.mkdtemp(dir=_codex_cache_base(), prefix=f"ap-{manifest.name}-codex-"))
 
     auth = Path.home() / ".codex" / "auth.json"
     link = scratch / "auth.json"
