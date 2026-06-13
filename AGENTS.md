@@ -15,14 +15,14 @@ Before non-trivial work touching agent config, harness wiring, `ap`, the registr
 
 ## Repository Overview
 
-A personal dotfiles repo configuring a vim-centric, terminal-based dev environment (macOS-oriented): zsh shell, git, and a harness-agnostic AI-agent config system. One source of truth (`agents/` registries) renders into Claude Code, Codex, opencode, Cursor, and Copilot via the `ap` tool. chezmoi handles templated / per-machine / secret files; the rest deploys via `dots sync`.
+A personal dotfiles repo configuring a vim-centric, terminal-based dev environment (macOS-oriented): zsh shell, git, and a harness-agnostic AI-agent config system. One source of truth (`agents/` registries) renders into Claude Code, Codex, opencode, Cursor, Copilot, and crush via the `ap` tool. crush (charmbracelet/crush) is the 6th harness: **MCP-only** (the registry union's skills/hooks/agents/permissions surfaces do not map to it) and **non-isolated** (no config-suppression lever exists, so isolated profiles fail loud for crush). chezmoi handles templated / per-machine / secret files; the rest deploys via `dots sync`.
 
 ## Topic Map
 
 | Topic | Wiki page |
 |---|---|
 | `agents/` registry system (MCP / hook / sub-agent / skill registries, system-prompt body) | [[architecture/agents-dir]] |
-| `ap` tool — profiles (base / global / isolated), the five renderers, install vs launch, chezmoi drive | [[architecture/agent-profile]] |
+| `ap` tool — profiles (base / global / isolated), the six renderers, install vs launch, chezmoi drive | [[architecture/agent-profile]] |
 | MCP `${VAR}` secret passthrough | [[architecture/mcp-secret-handling]] |
 | Config drift + the `settings.json` self-heal (`/harness-doctor`) | [[architecture/config-drift]] |
 | Cross-harness guards (git-guard + Claude pre-tool guards) | [[architecture/cross-harness-guards]] |

@@ -20,8 +20,8 @@
 # SessionStart hook (cheese-flair) and bundled MCPs/skills become live.
 # `--target` is intentionally omitted; the profile resolves $HOME itself.
 #
-# opencode has no plugin-enablement surface — `base` is sufficient there,
-# and its target stays explicit ($HOME/.config/opencode is not $HOME).
+# opencode and crush have no plugin-enablement surface — `base` is sufficient,
+# and their XDG targets are not $HOME, so target_default doesn't apply.
 #
 # Usage:
 #   install-base-profile.sh <target_home>
@@ -56,3 +56,9 @@ HOME="$target" "$ap_bin" install global \
 # enable, and its target is not $HOME so target_default doesn't apply.
 "$ap_bin" install base --target "$target/.config/opencode" \
     --harness opencode
+
+# crush also writes crush.json at its target root (XDG global), so it targets
+# $HOME/.config/crush. crush is MCP-only and non-isolated — `base` carries the
+# registry's coding MCPs, which is crush's entire config surface.
+"$ap_bin" install base --target "$target/.config/crush" \
+    --harness crush

@@ -34,7 +34,7 @@ from agent_profile.renderers.base import (
     includes_harness,
 )
 
-ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot"]
+ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot", "crush"]
 
 # Harness-name -> Renderer. Populated by the wiring barrel; tests inject
 # stubs via set_renderers(). Empty by default (seed phase ships no
@@ -437,6 +437,7 @@ def _fetch_external_skills(
     installed to all harnesses at once. ``path:`` skills are copied by the
     renderers, so they are excluded here."""
     from agent_profile.fetch import (
+        SKILL_AGENT,
         SkillFetchError,
         external_skills,
         fetch_external_source,
@@ -444,6 +445,17 @@ def _fetch_external_skills(
 
     ext = external_skills(manifest.skills)
     if not ext:
+        return
+
+    # Skills-fetch is only valid for harnesses that map to a `skills` CLI
+    # --agent ID (the skill_agents.txt / SKILL_AGENT map). Skill-less harnesses
+    # (crush, by design) carry no agent ID, so they are filtered out here
+    # before `skill_agent_for` is consulted (D2) — otherwise the fetch would
+    # raise SkillFetchError on an `ap install --harness crush`. A genuine typo
+    # is still caught upstream by `_validate_harnesses` (render-step fail-loud);
+    # this filter only drops harnesses that are valid but skill-less.
+    skill_harnesses = [h for h in harnesses if h in SKILL_AGENT]
+    if not skill_harnesses:
         return
 
     # Group items by source repo. A bare `source:` (no name) means "all skills"
@@ -473,11 +485,11 @@ def _fetch_external_skills(
             label = "*" if names is None else ", ".join(names)
             print(
                 f"  {colors.BLUE}↳{colors.NC} fetching skills "
-                f"{source} ({label}) -> {', '.join(harnesses)}",
+                f"{source} ({label}) -> {', '.join(skill_harnesses)}",
                 file=out,
             )
             fetch_external_source(
-                source, names, g["pin"], harnesses, _skill_fetch_runner
+                source, names, g["pin"], skill_harnesses, _skill_fetch_runner
             )
     except SkillFetchError as exc:
         raise CliError(f"{colors.RED}{exc}{colors.NC}") from exc
@@ -785,7 +797,7 @@ def _validate_harnesses(harnesses: list[str], colors: _Colors) -> None:
         if h not in ALL_HARNESSES:
             raise CliError(
                 f"{colors.RED}ap: unknown harness '{h}' "
-                f"(valid: claude|codex|opencode|cursor|copilot){colors.NC}"
+                f"(valid: claude|codex|opencode|cursor|copilot|crush){colors.NC}"
             )
 
 
