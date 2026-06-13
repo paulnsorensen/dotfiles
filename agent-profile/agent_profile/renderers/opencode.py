@@ -53,6 +53,7 @@ _TOOL_KEY = {
     "Grep": "grep",
     "Skill": "skill",
     "Agent": "task",
+    "ExternalDirectory": "external_directory",
 }
 
 # opencode's pattern-map-capable tools. Every other key (webfetch, websearch,
