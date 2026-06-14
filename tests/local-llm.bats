@@ -666,3 +666,195 @@ MOCK
     assert_failure
     assert_output_contains "timed out"
 }
+
+# ─── pre-warm (#299) ──────────────────────────────────────────────────────────
+
+@test "_opencode_lean_model: --model strips the local-llm/ prefix" {
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run _opencode_lean_model --model local-llm/local-sonnet
+    assert_success
+    [[ "$output" == "local-sonnet" ]]
+}
+
+@test "_opencode_lean_model: --model=X form is honoured" {
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run _opencode_lean_model --model=local-llm/local-vision
+    assert_success
+    [[ "$output" == "local-vision" ]]
+}
+
+@test "_opencode_lean_model: defaults to lean.json model when no --model arg" {
+    # Deploy the real lean.json into the sandbox HOME so the default path reads it.
+    mkdir -p "$HOME/local-llm/configs"
+    cp "$LEAN" "$HOME/local-llm/configs/lean.json"
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run _opencode_lean_model -c .
+    assert_success
+    [[ "$output" == "local-coder" ]]
+}
+
+@test "opencode-lean pre-warms a pool model with a backgrounded 1-token completion" {
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "opencode-called"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    # curl mock: stack probe is up; chat/completions records the full arg vector
+    # (incl. the -d JSON body) so we can assert the warm-up call shape after it
+    # lands (it is backgrounded).
+    local warm_log="$TEST_HOME/warm.log"
+    cat > "$MOCK_BIN/curl" << MOCK
+#!/bin/bash
+if [[ "\$*" == *chat/completions* ]]; then
+    printf '%s\n' "\$*" > "$warm_log"
+fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run opencode-lean --model local-llm/local-coder
+    assert_success
+    assert_output_contains "opencode-called"
+
+    # The warm-up is backgrounded — poll briefly for the marker to appear.
+    local i=0
+    while [[ ! -f "$warm_log" ]] && (( i < 50 )); do sleep 0.1; (( i++ )); done
+    assert_file_exists "$warm_log"
+    run cat "$warm_log"
+    assert_output_contains "http://127.0.0.1:4000/v1/chat/completions"
+    # The bare model_name (local-llm/ prefix stripped) is what hits LiteLLM,
+    # as a 1-token completion.
+    assert_output_contains '"model":"local-coder"'
+    assert_output_contains '"max_tokens":1'
+}
+
+@test "opencode-lean does NOT warm a hot model" {
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "opencode-called"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    local warm_log="$TEST_HOME/warm.log"
+    cat > "$MOCK_BIN/curl" << MOCK
+#!/bin/bash
+if [[ "\$*" == *chat/completions* ]]; then
+    echo "\$*" > "$warm_log"
+fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run opencode-lean --model local-llm/local-haiku
+    assert_success
+    assert_output_contains "opencode-called"
+
+    # Give any (erroneous) backgrounded warm-up a chance to fire, then confirm none did.
+    sleep 0.5
+    [[ ! -f "$warm_log" ]]
+}
+
+@test "opencode-lean does not block on the warm-up (launch returns while warm-up sleeps)" {
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "opencode-called"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    # chat/completions sleeps 10s; if the function blocked on it, opencode-lean
+    # would take >10s. The probe stays fast so only the warm-up could stall.
+    cat > "$MOCK_BIN/curl" << 'MOCK'
+#!/bin/bash
+[[ "$*" == *chat/completions* ]] && sleep 10
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    local start end
+    start=$(date +%s)
+    run opencode-lean --model local-llm/local-sonnet
+    end=$(date +%s)
+    assert_success
+    assert_output_contains "opencode-called"
+    # Must return well under the 10s warm-up sleep — proves it is backgrounded.
+    (( end - start < 5 ))
+}
+
+@test "opencode-lean warms the lean.json default model on a bare (no --model) launch" {
+    # Spec acceptance: bare `opencode-lean` resolves the lean.json default
+    # (local-coder, a pool model) and must fire the warm-up — locks the
+    # default-resolution -> warm-up composition, not just the helper in isolation.
+    mkdir -p "$HOME/local-llm/configs"
+    cp "$LEAN" "$HOME/local-llm/configs/lean.json"
+
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "opencode-called"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    local warm_log="$TEST_HOME/warm.log"
+    cat > "$MOCK_BIN/curl" << MOCK
+#!/bin/bash
+if [[ "\$*" == *chat/completions* ]]; then
+    printf '%s\n' "\$*" > "$warm_log"
+fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run opencode-lean
+    assert_success
+    assert_output_contains "opencode-called"
+
+    local i=0
+    while [[ ! -f "$warm_log" ]] && (( i < 50 )); do sleep 0.1; (( i++ )); done
+    assert_file_exists "$warm_log"
+    run cat "$warm_log"
+    assert_output_contains "http://127.0.0.1:4000/v1/chat/completions"
+    assert_output_contains '"model":"local-coder"'
+    assert_output_contains '"max_tokens":1'
+}
+
+@test "opencode-lean does NOT warm an unrecognized model (non-pool, non-hot)" {
+    # D3: only the three swap-pool models warm. An unrecognized model id
+    # (here a non-local provider model) must hit the case fall-through = no-op,
+    # distinct from the known-hot-model branch.
+    cat > "$MOCK_BIN/opencode" << 'MOCK'
+#!/bin/bash
+echo "opencode-called"
+MOCK
+    chmod +x "$MOCK_BIN/opencode"
+
+    local warm_log="$TEST_HOME/warm.log"
+    cat > "$MOCK_BIN/curl" << MOCK
+#!/bin/bash
+if [[ "\$*" == *chat/completions* ]]; then
+    echo "\$*" > "$warm_log"
+fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/curl"
+
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run opencode-lean --model anthropic/claude-sonnet-4
+    assert_success
+    assert_output_contains "opencode-called"
+
+    # Give any (erroneous) backgrounded warm-up a chance to fire, then confirm none did.
+    sleep 0.5
+    [[ ! -f "$warm_log" ]]
+}

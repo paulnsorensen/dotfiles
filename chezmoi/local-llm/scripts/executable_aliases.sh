@@ -38,6 +38,28 @@ alias llm-install-swap='~/local-llm/scripts/install-llama-swap.sh'
 #
 # Pre-flights the local-LLM stack: probes :4000, starts local-llm.target if down,
 # waits up to OPENCODE_LEAN_TIMEOUT seconds (default 30), then bails with a hint.
+# For a swap-pool model (local-sonnet/local-coder/local-vision) it then fires a
+# backgrounded 1-token completion so the ~15-30s cold-load overlaps opencode's
+# own startup and the first real turn is instant. Hot models (local-haiku/
+# local-embed, resident) and unrecognized models get no warm-up.
+
+# Resolve the effective model: --model <m> / --model=<m> wins, else lean.json's
+# default; strip the local-llm/ provider prefix to the bare LiteLLM model_name.
+_opencode_lean_model() {
+  local model=""
+  while (( $# )); do
+    case "$1" in
+      --model=*) model="${1#--model=}" ;;
+      --model)   model="$2"; shift ;;
+    esac
+    shift
+  done
+  if [[ -z "$model" ]]; then
+    model=$(jq -r '.model // empty' "$HOME/local-llm/configs/lean.json" 2>/dev/null)
+  fi
+  printf '%s' "${model#local-llm/}"
+}
+
 opencode-lean() {
   local timeout="${OPENCODE_LEAN_TIMEOUT:-30}"
   if ! curl -s --max-time 1 http://127.0.0.1:4000/v1/models >/dev/null 2>&1; then
@@ -54,6 +76,23 @@ opencode-lean() {
       (( elapsed++ ))
     done
   fi
+
+  # Pre-warm swap-pool models so the cold-load overlaps opencode startup, not
+  # the first turn. Backgrounded + detached — launch never blocks on it.
+  local model
+  model=$(_opencode_lean_model "$@")
+  case "$model" in
+    local-sonnet|local-coder|local-vision)
+      ( curl -s --max-time "${OPENCODE_LEAN_WARM_TIMEOUT:-360}" \
+          http://127.0.0.1:4000/v1/chat/completions \
+          -H 'Authorization: Bearer sk-local' \
+          -H 'Content-Type: application/json' \
+          -d "$(jq -nc --arg m "$model" \
+                '{model:$m, messages:[{role:"user",content:"."}], max_tokens:1}')" \
+          >/dev/null 2>&1 & )
+      ;;
+  esac
+
   OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"
 }
 
