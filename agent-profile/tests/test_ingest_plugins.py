@@ -689,3 +689,49 @@ def test_multi_plugin_marketplace_decomposes_only_matching_name(tmp_path):
     skill_names = {s["name"] for s in out["skills"]}
     assert mcp_names == {"alpha"}, f"beta must not decompose: {mcp_names}"
     assert skill_names == {"alpha-skill"}, f"beta-skill must not decompose: {skill_names}"
+
+
+# ─── tests: registry key must match a marketplace plugin name (review fix AM1) ─
+
+
+def test_registry_key_not_matching_marketplace_plugin_name_fails_loud(tmp_path):
+    """When the registry key names no plugins[] entry in the marketplace.json,
+    ingest raises ParseError instead of silently decomposing to nothing — which,
+    for a claude_native entry, would still register a marketplace with no
+    primitives behind it.
+    """
+    market_root = tmp_path / "market" / "milknado"
+    cp = market_root / ".claude-plugin"
+    cp.mkdir(parents=True)
+    (cp / "marketplace.json").write_text(
+        json.dumps({
+            "name": "milknado",
+            "plugins": [{"name": "milknado", "source": "./plugins/milknado"}],
+        })
+    )
+    # Payload exists, but the registry key (below) is 'milknado-engine' ≠ 'milknado'.
+    p = market_root / "plugins" / "milknado"
+    p.mkdir(parents=True)
+    (p / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"milknado": {"command": "uvx", "args": ["milknado-mcp"]}}})
+    )
+    _make_plugins_registry(
+        tmp_path,
+        {
+            "milknado-engine": {
+                "path": str(market_root),
+                "claude_native": True,
+                "harnesses": ["codex"],
+            }
+        },
+    )
+
+    with pytest.raises(ParseError, match=r"no plugins\[\] entry named"):
+        out = expand_registries(
+            {"plugins": "agents/plugins/registry.yaml"},
+            tmp_path,
+            {},
+        )
+        # Guard against a silent-drop regression: if no raise, the native
+        # descriptor would still have been emitted with empty primitives.
+        assert out["native_plugins"] == [], "claude_native descriptor emitted with no payload"

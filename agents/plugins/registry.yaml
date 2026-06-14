@@ -13,6 +13,9 @@
 #   Path(item["_source_dir"]) / item["path"]
 #
 # Schema per entry:
+#   KEY:           the entry name (e.g. `milknado`) MUST equal a plugins[].name
+#                  in the marketplace.json — that named plugin is the one
+#                  decomposed. A key/name mismatch fails loud at ingest.
 #   path:          marketplace root (the dir containing .claude-plugin/marketplace.json);
 #                  ~-relative, /absolute, or repo-relative. Payload root(s) are
 #                  resolved from marketplace.json plugins[].source relative to here.

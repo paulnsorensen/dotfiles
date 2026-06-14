@@ -300,11 +300,13 @@ def _expand_plugins(
         # Decompose only the payload whose marketplace.json name matches this
         # registry entry. The registry schema says each entry names one plugin,
         # so a multi-plugin marketplace must not double-expand every payload.
+        matched = False
         for plugin_entry in market_data.get("plugins") or []:
             if not isinstance(plugin_entry, dict):
                 continue
             if plugin_entry.get("name") != name:
                 continue
+            matched = True
             rel_source = plugin_entry.get("source") or ""
             # `source` is relative to the marketplace root (e.g. "./plugins/milknado").
             # Normalize via PurePosixPath — `lstrip("./")` is a char-set strip, not a
@@ -384,6 +386,22 @@ def _expand_plugins(
                 for skill in plugin_skills:
                     skill["_from_native_plugin"] = True
             out_skills.extend(plugin_skills)
+
+        # Fail loud when the registry key matched no marketplace plugin. Without
+        # this, the plugin silently decomposes to nothing — and a claude_native
+        # entry would still register a marketplace below with no primitives behind
+        # it (the same silent-breakage class the loud guards above prevent).
+        if not matched:
+            available = [
+                p.get("name")
+                for p in market_data.get("plugins") or []
+                if isinstance(p, dict)
+            ]
+            raise ParseError(
+                f"ap: plugin '{name}': no plugins[] entry named '{name}' in "
+                f"{marketplace_json} (found: {available}). The registry key must "
+                f"match a plugins[].name in marketplace.json."
+            )
 
         # ── Native plugin descriptor (claude renderer pass) ──
         # Carried once per registry entry (not per payload): the marketplace
