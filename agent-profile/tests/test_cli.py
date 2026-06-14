@@ -423,3 +423,120 @@ def test_describe_isolated_surfaces_overlay(env, capsys):
     assert parsed["permissions"] == {"allow": [], "deny": ["Edit", "Write"]}
     assert parsed["enabled_plugins"] == {"todoist-flow@todoist-flow": True}
     assert parsed["extra_args"] == ["--dangerously-skip-permissions"]
+
+
+# ─── skills-fetch exclusion for skill-less harnesses (crush, #223 D2) ───
+
+
+def _profile_with_external_skill(env, name):
+    """A profile carrying one external (``source:``) skill, scoped to a
+    skill-bearing harness (claude) and a skill-less one (crush)."""
+    write_profile(
+        env.profiles,
+        name,
+        f"name: {name}\n"
+        "description: profile with an external skill\n"
+        "skills:\n"
+        "  - name: mold\n"
+        "    source: paulnsorensen/easy-cheese\n",
+    )
+
+
+def test_install_crush_with_external_skill_does_not_raise(
+    env, capsys, stub_renderers, monkeypatch
+):
+    """WHY: crush is skill-less by design (absent from skill_agents.txt), so
+    ``skill_agent_for('crush')`` raises SkillFetchError. Installing
+    ``--harness crush`` on a profile that carries an external skill must NOT
+    raise — crush is filtered out of the skills-fetch harness list (D2) before
+    the agent map is consulted. Without the filter this install exits 1."""
+    _profile_with_external_skill(env, "foo")
+    calls = []
+    monkeypatch.setattr(
+        cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0
+    )
+    assert (
+        run(["install", "foo", "--target", str(env.target), "--harness", "crush"])
+        == 0
+    )
+    # crush has no skill agent, so the fetch is a no-op for a crush-only install.
+    assert calls == []
+
+
+def test_install_mixed_harness_fetches_skill_bearing_only(
+    env, capsys, stub_renderers, monkeypatch
+):
+    """WHY: the D2 filter must drop ONLY the skill-less harness, not the whole
+    fetch. With ``--harness claude,crush`` the external skill still installs to
+    claude (its ``--agent claude-code`` reaches npx) while crush is excluded —
+    no crush agent ever appears in the argv (it would silently no-op at exit
+    0)."""
+    _profile_with_external_skill(env, "foo")
+    calls = []
+    monkeypatch.setattr(
+        cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0
+    )
+    assert (
+        run(
+            [
+                "install",
+                "foo",
+                "--target",
+                str(env.target),
+                "--harness",
+                "claude,crush",
+            ]
+        )
+        == 0
+    )
+    assert len(calls) == 1
+    argv = calls[0]
+    agents = [argv[i + 1] for i, t in enumerate(argv) if t == "--agent"]
+    assert agents == ["claude-code"], "only the skill-bearing harness fetches"
+    assert "crush" not in argv
+
+
+def test_install_mixed_harness_log_omits_skill_less_harness(
+    env, capsys, stub_renderers, monkeypatch
+):
+    """WHY: the D2 filter rewrote the fetch log to print `skill_harnesses`, not
+    the caller's `harnesses`. With `--harness claude,crush` the `↳ fetching
+    skills … -> …` line must name only the skill-bearing harness (claude) — a
+    regression that reverted the log to `harnesses` would print `claude, crush`
+    and advertise a fetch into a harness that has no skill agent. The argv test
+    above can't catch that: the log is a separate print, asserted here."""
+    _profile_with_external_skill(env, "foo")
+    monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: 0)
+    assert (
+        run(
+            [
+                "install",
+                "foo",
+                "--target",
+                str(env.target),
+                "--harness",
+                "claude,crush",
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    fetch_lines = [ln for ln in out.splitlines() if "fetching skills" in ln]
+    assert len(fetch_lines) == 1, out
+    # The destination list after `->` names claude and NOT crush.
+    dest = fetch_lines[0].split("->", 1)[1]
+    assert "claude" in dest
+    assert "crush" not in dest
+
+
+def test_install_unknown_harness_still_fails_loud(env, capsys, stub_renderers):
+    """WHY: the D2 filter intersects with SKILL_AGENT for the *fetch* step, but
+    a genuine typo must still fail at validation. ``--harness crsuh`` (typo) is
+    rejected by _validate_harnesses before any render — the filter never
+    swallows an unknown harness."""
+    make_basic_profile(env.profiles, "foo")
+    assert (
+        run(["install", "foo", "--target", str(env.target), "--harness", "crsuh"])
+        == 1
+    )
+    assert "unknown harness 'crsuh'" in capsys.readouterr().err

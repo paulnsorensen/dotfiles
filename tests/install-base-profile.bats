@@ -62,10 +62,20 @@ teardown() { teardown_test_env; }
     assert_output_contains "install base --target $TEST_HOME/.config/opencode --harness opencode"
 }
 
-@test "install-base-profile.sh makes exactly two ap calls" {
+@test "install-base-profile.sh renders crush under \$HOME/.config/crush" {
+    # crush is the 6th harness: MCP-only + non-isolated, XDG global like
+    # opencode, so `base` (not `global`) into $HOME/.config/crush.
+    INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" \
+        run bash "$LIB" "$TEST_HOME"
+    assert_success
+    run cat "$AP_LOG"
+    assert_output_contains "install base --target $TEST_HOME/.config/crush --harness crush"
+}
+
+@test "install-base-profile.sh makes exactly three ap calls" {
     INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" bash "$LIB" "$TEST_HOME"
     run wc -l < "$AP_LOG"
-    [[ "$(echo "$output" | tr -d ' ')" == "2" ]]
+    [[ "$(echo "$output" | tr -d ' ')" == "3" ]]
 }
 
 @test "install-base-profile.sh fails loud when an ap render fails" {
