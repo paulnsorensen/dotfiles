@@ -67,6 +67,7 @@ def _load_skill_agents() -> dict[str, str]:
 
 # ap harness name -> `skills` CLI `--agent` ID. (Identical to the IDs the
 # retired `gh skill` path used.) claude and copilot differ from their ap names.
+# Crush has no `npx skills` agent target, so it intentionally stays out of this map.
 SKILL_AGENT = _load_skill_agents()
 
 Runner = Callable[[list[str]], int]

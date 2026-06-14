@@ -1,8 +1,8 @@
-"""registry.py — barrel that wires the five harness renderers into the CLI.
+"""registry.py — barrel that wires the harness renderers into the CLI.
 
 The CLI ships an empty :data:`agent_profile.cli.RENDERERS` so tests can inject
 stubs via ``set_renderers``. This barrel builds the production registry from the
-five renderer classes and installs it; ``__main__`` calls :func:`install`
+renderer classes and installs it; ``__main__`` calls :func:`install`
 before dispatching ``cli.main``.
 """
 
@@ -14,17 +14,19 @@ from agent_profile.renderers.claude import ClaudeRenderer
 from agent_profile.renderers.codex import CodexRenderer
 from agent_profile.renderers.copilot import CopilotRenderer
 from agent_profile.renderers.cursor import CursorRenderer
+from agent_profile.renderers.crush import CrushRenderer
 from agent_profile.renderers.opencode import OpencodeRenderer
 
 
 def build_registry() -> dict[str, Renderer]:
-    """Return the harness-name -> renderer map for the five production renderers."""
+    """Return the harness-name -> renderer map for the production renderers."""
     renderers: list[Renderer] = [
         ClaudeRenderer(),
         CodexRenderer(),
         OpencodeRenderer(),
         CursorRenderer(),
         CopilotRenderer(),
+        CrushRenderer(),
     ]
     return {renderer.name: renderer for renderer in renderers}
 

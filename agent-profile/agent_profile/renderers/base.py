@@ -1,6 +1,6 @@
-"""base.py — the Renderer seam + shared helpers for all five harness renderers.
+"""base.py — the Renderer seam + shared helpers for all harness renderers.
 
-This module is the public contract the five harness-renderer curds
+This module is the public contract the harness-renderer curds
 (claude, codex, opencode, cursor, copilot) build on. It defines the
 :class:`Renderer` protocol and the helpers that replace the repeated bash
 ``jq``-extraction loop so each renderer inherits them instead of

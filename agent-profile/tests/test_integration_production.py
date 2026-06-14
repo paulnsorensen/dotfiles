@@ -7,7 +7,7 @@ through ``StubRenderer`` (conftest). That leaves the real
 profile that touches 3+ production renderers in one install, nor proved the
 production install→uninstall round-trip is byte-clean.
 
-These tests close that gap. They wire the five production renderers (the
+These tests close that gap. They wire the production renderers (the
 exact path ``__main__`` takes) and assert the cross-renderer interactions
 the per-curd goldens cannot see:
 
@@ -38,7 +38,7 @@ from tests.conftest import write_profile
 
 @pytest.fixture
 def prod_renderers():
-    """Wire the five production renderers into the CLI for one test,
+    """Wire the production renderers into the CLI for one test,
     exactly as ``agent_profile.__main__.install()`` does in production."""
     saved = cli.RENDERERS
     cli.set_renderers(build_registry())
@@ -64,7 +64,7 @@ def _multi_surface_yaml(name: str) -> str:
         "  - name: srv\n"
         "    command: /bin/true\n"
         "    args: [--flag]\n"
-        "    harnesses: [codex, opencode, cursor]\n"
+        "    harnesses: [codex, opencode, cursor, crush]\n"
         "hooks:\n"
         "  - name: h\n"
         "    event: PreToolUse\n"
@@ -117,12 +117,16 @@ def test_production_install_touches_all_surfaces(env, capsys, prod_renderers):
     assert len(hooks) == 1 and hooks[0]["event"] == "PreToolUse"
     assert (t / ".cursor/hooks/h.sh").is_file()
 
+    # crush: merged crush.json with the MCP under "mcp".
+    crush = json.loads((t / ".config/crush/crush.json").read_text())
+    assert "srv" in crush["mcp"]
+
     # The whole-file artefacts (not the merged files) are tracked exactly once.
     manifest = json.loads(manifest_path(t).read_text())
     files = manifest["multi"]["files"]
     assert files == sorted(set(files)), "tracked files must be sorted + deduped"
     # Merged files are surgically un-merged in clean(), never tracked.
-    for merged in ("opencode.json", ".codex/config.toml", ".cursor/mcp.json"):
+    for merged in ("opencode.json", ".codex/config.toml", ".cursor/mcp.json", ".config/crush/crush.json"):
         assert merged not in files, f"{merged} is a merged file, must not be tracked"
     # Whole-file artefacts that ARE tracked.
     assert ".claude/agents/rev.md" in files
@@ -149,7 +153,7 @@ def test_production_install_uninstall_roundtrip_clean(env, capsys, prod_renderer
         assert not (t / rel).exists(), f"{rel} survived uninstall"
 
     # Every merged file is surgically removed (the renderers owned them).
-    for merged in ("opencode.json", ".codex/config.toml", ".cursor/mcp.json"):
+    for merged in ("opencode.json", ".codex/config.toml", ".cursor/mcp.json", ".config/crush/crush.json"):
         assert not (t / merged).exists(), f"merged {merged} survived clean"
 
     # Manifest empty.

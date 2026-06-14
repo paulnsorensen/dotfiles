@@ -22,6 +22,8 @@
 #                    field, so adding a new hook is purely a registry edit.
 #   harnesses      — list of harness names to install into;
 #                    default: [claude, codex]
+#                    crush is opt-in per hook and only meaningful for
+#                    PreToolUse entries (Crush has no SessionStart event)
 #   matcher        — event-dependent. The (event, harness) pairs that
 #                    actually write a matcher field into the outer block
 #                    are encoded in _hook_event_uses_matcher (lib.sh):
