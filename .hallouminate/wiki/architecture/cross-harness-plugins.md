@@ -22,8 +22,12 @@ decomposer:
    `~/`, absolute, or repo-relative) — the dir holding
    `.claude-plugin/marketplace.json`.
 2. Reads `marketplace.json`, picks the `plugins[]` entry whose `name` matches
-   the registry key, and resolves its `source` (relative to the marketplace
-   root) → the **payload root**.
+   the registry key, and resolves its `source` to the **payload root** —
+   relative to the marketplace root, or to
+   `marketplace-root/<metadata.pluginRoot>` when that optional field is set
+   (milknado inlines the full path in `source`; hallouminate uses
+   `pluginRoot: "./plugins"` + `source: "./hallouminate"`). Both `source` and
+   `pluginRoot` are rejected if absolute or containing `..`.
 3. Reads `<payload>/.mcp.json` → MCP item(s), carrying the entry's `harnesses`
    and `gate_unless`.
 4. Walks `<payload>/skills/<n>/SKILL.md` → `path:` skill items (one per named

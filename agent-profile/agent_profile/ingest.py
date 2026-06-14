@@ -67,6 +67,31 @@ def _as_list(value: Any) -> list[str]:
     return list(value)
 
 
+def _resolve_market_relative(base: Path, rel: object, *, kind: str, plugin: str) -> Path:
+    """Join a marketplace-relative POSIX path (``source`` or ``metadata.pluginRoot``)
+    onto ``base``.
+
+    Normalizes via ``PurePosixPath`` — ``lstrip("./")`` is a char-set strip, not a
+    prefix strip, so it mangles dot-prefixed names. Absolute paths and ``..``
+    traversal are rejected loud rather than silently collapsed. An empty ``rel``
+    resolves to ``base`` unchanged.
+    """
+    from agent_profile._validate import ParseError
+
+    if not isinstance(rel, str):
+        raise ParseError(
+            f"ap: plugin '{plugin}': marketplace.json {kind} must be a string, "
+            f"got {type(rel).__name__}."
+        )
+    rel_path = PurePosixPath(rel)
+    if rel_path.is_absolute() or ".." in rel_path.parts:
+        raise ParseError(
+            f"ap: plugin '{plugin}': marketplace.json {kind} {rel!r} "
+            f"must be a relative path without '..' components."
+        )
+    return base.joinpath(*rel_path.parts) if rel_path.parts else base
+
+
 def _load_yaml_mapping(path: Path) -> dict[str, Any]:
     raw = yaml.safe_load(path.read_text()) or {}
     return raw if isinstance(raw, dict) else {}
@@ -297,6 +322,20 @@ def _expand_plugins(
         claude_native = bool(body.get("claude_native", False))
         description = body.get("description") or ""
 
+        # `metadata.pluginRoot` (optional) is a base dir prefixed onto every
+        # plugins[].source — Claude's own marketplace loader honors it, so the
+        # decomposer must too. e.g. hallouminate: pluginRoot "./plugins" + source
+        # "./hallouminate" → payload at <market>/plugins/hallouminate.
+        meta = market_data.get("metadata")
+        plugin_root = (meta.get("pluginRoot") if isinstance(meta, dict) else "") or ""
+        payload_base = (
+            _resolve_market_relative(
+                marketplace_root, plugin_root, kind="metadata.pluginRoot", plugin=name
+            )
+            if plugin_root
+            else marketplace_root
+        )
+
         # Decompose only the payload whose marketplace.json name matches this
         # registry entry. The registry schema says each entry names one plugin,
         # so a multi-plugin marketplace must not double-expand every payload.
@@ -307,21 +346,15 @@ def _expand_plugins(
             if plugin_entry.get("name") != name:
                 continue
             matched = True
-            rel_source = plugin_entry.get("source") or ""
-            # `source` is relative to the marketplace root (e.g. "./plugins/milknado").
-            # Normalize via PurePosixPath — `lstrip("./")` is a char-set strip, not a
-            # prefix strip, so it mangles dot-prefixed names. Reject absolute paths and
-            # `..` traversal explicitly instead of silently collapsing them.
-            src_path = PurePosixPath(rel_source)
-            if src_path.is_absolute() or ".." in src_path.parts:
-                raise ParseError(
-                    f"ap: plugin '{name}': marketplace.json source {rel_source!r} "
-                    f"must be a relative path without '..' components."
-                )
-            payload_root = (
-                marketplace_root.joinpath(*src_path.parts)
-                if src_path.parts
-                else marketplace_root
+            # `source` resolves relative to the marketplace root — or to
+            # marketplace_root/<metadata.pluginRoot> when that optional field is
+            # set (payload_base). Absolute paths and `..` traversal are rejected
+            # loud by _resolve_market_relative.
+            payload_root = _resolve_market_relative(
+                payload_base,
+                plugin_entry.get("source") or "",
+                kind="source",
+                plugin=name,
             )
             source_dir = str(payload_root)
 

@@ -735,3 +735,155 @@ def test_registry_key_not_matching_marketplace_plugin_name_fails_loud(tmp_path):
         # Guard against a silent-drop regression: if no raise, the native
         # descriptor would still have been emitted with empty primitives.
         assert out["native_plugins"] == [], "claude_native descriptor emitted with no payload"
+
+
+# ─── tests: metadata.pluginRoot prefixes source (hallouminate shape) ─────────
+
+
+def _wrap_in_marketplace_plugin_root(
+    marketplace_root: Path, name: str, plugin_root: str, source: str
+) -> Path:
+    """marketplace.json with metadata.pluginRoot — the hallouminate manifest shape.
+
+    pluginRoot is a base dir prefixed onto plugins[].source, so the payload lives
+    at marketplace_root/<plugin_root>/<source>. (milknado, by contrast, inlines
+    the whole path in source and sets no pluginRoot.)
+    """
+    cp = marketplace_root / ".claude-plugin"
+    cp.mkdir(parents=True, exist_ok=True)
+    (cp / "marketplace.json").write_text(
+        json.dumps({
+            "name": name,
+            "owner": {"name": "test"},
+            "metadata": {"pluginRoot": plugin_root},
+            "plugins": [{"name": name, "source": source}],
+        })
+    )
+    return marketplace_root
+
+
+def test_plugin_root_metadata_resolves_payload(tmp_path):
+    """metadata.pluginRoot prefixes plugins[].source — hallouminate's manifest shape.
+
+    hallouminate uses pluginRoot "./plugins" + source "./hallouminate", so the
+    payload is at <market>/plugins/hallouminate. Without pluginRoot support the
+    decomposer resolved <market>/hallouminate and silently decomposed nothing
+    (name matched, so the no-match guard never fired).
+    """
+    market_root = tmp_path / "market" / "hallou"
+    market_root.mkdir(parents=True)
+    _wrap_in_marketplace_plugin_root(market_root, "hallou", "./plugins", "./hallou")
+    payload = _make_plugin_payload(
+        market_root / "plugins", "hallou", skill_names=["wiki-query", "wiki-init"]
+    )
+    _make_plugins_registry(
+        tmp_path, {"hallou": {"path": str(market_root), "harnesses": ["codex"]}}
+    )
+
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+    assert "hallou" in {m["name"] for m in out["mcps"]}, "MCP not decomposed under pluginRoot"
+    assert {s["name"] for s in out["skills"]} == {"wiki-query", "wiki-init"}
+    # _source_dir stamped at the pluginRoot-resolved payload, NOT <market>/hallou
+    mcp = next(m for m in out["mcps"] if m["name"] == "hallou")
+    assert mcp["_source_dir"] == str(payload)
+    assert Path(mcp["_source_dir"]) == market_root / "plugins" / "hallou"
+
+
+def test_plugin_root_absent_resolves_relative_to_marketplace_root(tmp_path):
+    """No metadata.pluginRoot → source resolves relative to the marketplace root
+    (milknado shape). pluginRoot support must not regress this path.
+    """
+    market_root, payload = _make_plugin_with_marketplace(
+        tmp_path, "myplugin", skill_names=["cook"]
+    )
+    _make_plugins_registry(
+        tmp_path, {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}}
+    )
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    skill = next(s for s in out["skills"] if s["name"] == "cook")
+    assert skill["_source_dir"] == str(payload)
+
+
+@pytest.mark.parametrize("bad_root", ["../escape", "/abs/root", "foo/../bar"])
+def test_plugin_root_rejects_traversal_and_absolute(tmp_path, bad_root):
+    """metadata.pluginRoot gets the same traversal/absolute rejection as source —
+    both feed _resolve_market_relative."""
+    market_root = tmp_path / "market" / "p"
+    market_root.mkdir(parents=True)
+    _wrap_in_marketplace_plugin_root(market_root, "p", bad_root, "./p")
+    _make_plugins_registry(
+        tmp_path, {"p": {"path": str(market_root), "harnesses": ["codex"]}}
+    )
+    with pytest.raises(ParseError, match="must be a relative path"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_plugin_root_empty_string_falls_back_to_marketplace_root(tmp_path):
+    """An explicit metadata.pluginRoot: "" resolves source against the marketplace
+    root (the empty-`rel` → `base` branch in _resolve_market_relative), identical
+    to omitting pluginRoot entirely.
+    """
+    market_root = tmp_path / "market" / "e"
+    market_root.mkdir(parents=True)
+    _wrap_in_marketplace_plugin_root(market_root, "e", "", "./plugins/e")
+    payload = _make_plugin_payload(market_root / "plugins", "e", skill_names=["s1"])
+    _make_plugins_registry(
+        tmp_path, {"e": {"path": str(market_root), "harnesses": ["codex"]}}
+    )
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    skill = next(s for s in out["skills"] if s["name"] == "s1")
+    assert skill["_source_dir"] == str(payload)
+
+
+def test_plugin_root_non_string_fails_loud_with_parse_error(tmp_path):
+    """A non-string metadata.pluginRoot raises ParseError (with the plugin name),
+    not a raw TypeError from PurePosixPath — parity with every other marketplace
+    parse failure in the loop.
+    """
+    market_root = tmp_path / "market" / "p"
+    cp = market_root / ".claude-plugin"
+    cp.mkdir(parents=True)
+    (cp / "marketplace.json").write_text(
+        json.dumps({
+            "name": "p",
+            "metadata": {"pluginRoot": ["not", "a", "string"]},
+            "plugins": [{"name": "p", "source": "./p"}],
+        })
+    )
+    _make_plugins_registry(
+        tmp_path, {"p": {"path": str(market_root), "harnesses": ["codex"]}}
+    )
+    with pytest.raises(ParseError, match="must be a string"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+# ─── tests: claude_native gates the decomposed-MCP claude namespace ───────────
+
+
+@pytest.mark.parametrize("native,claude_kept", [(False, True), (True, False)])
+def test_claude_native_controls_claude_in_decomposed_mcp_harnesses(
+    tmp_path, native, claude_kept
+):
+    """claude_native gates whether `claude` survives in the decomposed MCP's
+    harnesses — the invariant behind hallouminate's claude_native: false.
+
+    false → claude retained → bare mcp__<server>__* tool namespace (preserves
+            mcp__hallouminate__* that the global CLAUDE.md routing relies on).
+    true  → claude deduped → Claude gets the server via the native marketplace
+            install (plugin-scoped mcp__plugin_<name>_<server>__*).
+    """
+    market_root, _ = _make_plugin_with_marketplace(tmp_path, "myplugin")
+    _make_plugins_registry(
+        tmp_path,
+        {
+            "myplugin": {
+                "path": str(market_root),
+                "harnesses": ["claude", "codex"],
+                "claude_native": native,
+            }
+        },
+    )
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    mcp = next(m for m in out["mcps"] if m["name"] == "myplugin")
+    assert ("claude" in mcp["harnesses"]) is claude_kept
