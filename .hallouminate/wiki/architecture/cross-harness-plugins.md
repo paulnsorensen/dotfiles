@@ -18,13 +18,17 @@ profile dir IS a Claude plugin dir). Cross-harness plugins add a 5th registry
 `_expand_plugins()` after the other four readers. Per plugin entry, the
 decomposer:
 
-1. Resolves the plugin **payload root** (`path:` in the registry; supports
-   `~/`, absolute, or repo-relative).
-2. Reads `.mcp.json` → MCP item(s), carrying the entry's `harnesses` and
-   `gate_unless`.
-3. Walks `skills/<n>/SKILL.md` → `path:` skill items (one per named skill
-   dir, skipping any subdir that lacks `SKILL.md` — e.g. `references/`).
-4. Stamps every emitted item's `_source_dir` **at the plugin payload root**.
+1. Resolves the **marketplace root** (`path:` in the registry; supports
+   `~/`, absolute, or repo-relative) — the dir holding
+   `.claude-plugin/marketplace.json`.
+2. Reads `marketplace.json`, picks the `plugins[]` entry whose `name` matches
+   the registry key, and resolves its `source` (relative to the marketplace
+   root) → the **payload root**.
+3. Reads `<payload>/.mcp.json` → MCP item(s), carrying the entry's `harnesses`
+   and `gate_unless`.
+4. Walks `<payload>/skills/<n>/SKILL.md` → `path:` skill items (one per named
+   skill dir, skipping any subdir that lacks `SKILL.md` — e.g. `references/`).
+5. Stamps every emitted item's `_source_dir` **at the payload root**.
 
 ### The critical `_source_dir` rule
 
@@ -47,7 +51,7 @@ it fails under repo-root stamping.
 ```yaml
 plugins:
   <name>:
-    path: ~/Dev/myplugin/plugins/myplugin   # payload root
+    path: ~/Dev/myplugin   # marketplace root (holds .claude-plugin/marketplace.json)
     harnesses: [claude, codex, opencode, cursor, copilot, crush]
     claude_native: true   # Claude gets native marketplace install
     gate_unless: MY_ENV_VAR   # optional gate
@@ -65,7 +69,8 @@ marketplace. When `false` (or omitted), Claude receives decomposed primitives
 like all other harnesses.
 
 **`gate_unless`** — propagates to the decomposed MCP's `gate_unless` field,
-using the same semantics as the MCP registry gate (see [[agents-dir]]).
+using the same semantics as the MCP registry gate (see [[agents-dir]]). It
+gates only the decomposed MCP items, not the Claude-native install path.
 
 ---
 
@@ -99,18 +104,23 @@ absent or the plugin is not ready for the marketplace.
 
 ---
 
-## Relationship to retired `sync.sh`
+## Relationship to `sync.sh` (narrowed, not retired)
 
-`claude/plugins/sync.sh` is **retired**. Its marketplace-registration and
-`enabledPlugins` logic for `claude_native` entries moves into the `ap` ingest
-layer (`native_plugins` list). The `plugin-sync` alias now points to
-`dots profile install base`; `plugin-edit` points to
-`agents/plugins/registry.yaml`.
+`claude/plugins/sync.sh` is **narrowed, not removed**. `claude/.sync` still
+invokes it (`bash "$SOURCE_DIR/plugins/sync.sh" --force`) on every claude sync to
+register the Claude-only official-marketplace plugins (playwright,
+claude-md-management, etc.) listed in `claude/plugins/registry.yaml` — plugins
+with no cross-harness payload. Do not delete that invocation: nothing else
+registers those marketplaces.
 
-The `claude/plugins/registry.yaml` file remains for Claude-only official
-marketplace plugins (playwright, claude-md-management, etc.) that have no
-cross-harness payload. The cross-harness registry (`agents/plugins/`) is the
-SSOT for any plugin that should reach non-Claude harnesses.
+What changed: any plugin that should *also* reach non-Claude harnesses now lives
+in the cross-harness registry (`agents/plugins/registry.yaml`), where `ap` ingest
+registers its marketplace + `enabledPlugins` via the `native_plugins` list
+(`_render_native_plugins`). milknado moved out of `claude/plugins/registry.yaml`
+into the cross-harness registry for exactly this reason. The two registries are
+**disjoint** — no plugin appears in both, so nothing is registered twice. The
+`plugin-sync` alias points to `dots profile install base`; `plugin-edit` points
+to `agents/plugins/registry.yaml`.
 
 ---
 
@@ -153,30 +163,38 @@ loading interacts with secret passthrough.
 
 ## Worked example: milknado
 
-**Payload root:** `~/Dev/milknado/plugins/milknado`
+**Marketplace root** (the registry `path:`): `~/Dev/milknado`
 
-**Payload structure:**
+**Payload root** (from `marketplace.json` `source: ./plugins/milknado`):
+`~/Dev/milknado/plugins/milknado`
+
+**Layout:**
+
 ```
-.mcp.json                         ← {command: uvx, args: [milknado-mcp]}
-.claude-plugin/marketplace.json   ← Claude native manifest
-skills/
-  harvest/SKILL.md
-  load-roadmap/SKILL.md
-  milknado-config/
-    SKILL.md
-    references/flavor-presets.md  ← subfile; NOT a skill itself
+~/Dev/milknado/                       ← marketplace root = registry path:
+  .claude-plugin/marketplace.json     ← {plugins: [{name: milknado, source: ./plugins/milknado}]}
+  plugins/milknado/                   ← payload root (the _source_dir stamp)
+    .mcp.json                         ← {command: uvx, args: [milknado-mcp]}
+    skills/
+      harvest/SKILL.md
+      load-roadmap/SKILL.md
+      milknado-config/
+        SKILL.md
+        references/flavor-presets.md  ← subfile; NOT a skill itself
 ```
 
 **Registry entry:**
+
 ```yaml
 milknado:
-  path: ~/Dev/milknado/plugins/milknado
+  path: ~/Dev/milknado
   harnesses: [claude, codex, opencode, cursor, copilot, crush]
   claude_native: true
   description: Mikado execution engine — goal decomposition, batch planning, detached ralph-loop runs
 ```
 
 **What `_expand_plugins` emits:**
+
 - 1 MCP item: `{name: milknado, command: uvx, args: [milknado-mcp], harnesses: [...], _source_dir: <payload>}`
 - 3 skill items: `harvest`, `load-roadmap`, `milknado-config` each with `_source_dir: <payload>` and `path: skills/<name>`
 - 1 native_plugins descriptor for the claude renderer
@@ -192,4 +210,4 @@ will not launch. Publishing is a separate milknado release step.
 - [[architecture/agents-dir]] — `agents/plugins/` as the 5th registry
 - [[architecture/agent-profile]] — decomposer in the ingest layer
 - [[architecture/mcp-secret-handling]] — MCP membership token cost
-- [[operations/dev-environment]] — Claude marketplace section (sync.sh retired)
+- [[operations/dev-environment]] — Claude marketplace section (sync.sh narrowed)

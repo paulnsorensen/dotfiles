@@ -87,7 +87,8 @@ class Manifest:
     mcp_scope: str = "plugin"
     # Cross-harness native plugins (claude renderer pass). Produced by
     # expand_registries for claude_native: true entries; carries name,
-    # payload_root, and description so the renderer can register the marketplace.
+    # marketplace_root, marketplace_name, and description so the renderer can
+    # register the marketplace.
     native_plugins: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

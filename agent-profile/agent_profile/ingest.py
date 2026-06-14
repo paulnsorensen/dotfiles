@@ -47,7 +47,7 @@ Registry shapes consumed:
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -297,14 +297,30 @@ def _expand_plugins(
         claude_native = bool(body.get("claude_native", False))
         description = body.get("description") or ""
 
-        # Iterate over each plugin payload declared in marketplace.json.
+        # Decompose only the payload whose marketplace.json name matches this
+        # registry entry. The registry schema says each entry names one plugin,
+        # so a multi-plugin marketplace must not double-expand every payload.
         for plugin_entry in market_data.get("plugins") or []:
             if not isinstance(plugin_entry, dict):
                 continue
+            if plugin_entry.get("name") != name:
+                continue
             rel_source = plugin_entry.get("source") or ""
-            # source is relative to marketplace root (e.g. "./plugins/milknado")
-            rel_clean = rel_source.lstrip("./")
-            payload_root = marketplace_root / rel_clean if rel_clean else marketplace_root
+            # `source` is relative to the marketplace root (e.g. "./plugins/milknado").
+            # Normalize via PurePosixPath — `lstrip("./")` is a char-set strip, not a
+            # prefix strip, so it mangles dot-prefixed names. Reject absolute paths and
+            # `..` traversal explicitly instead of silently collapsing them.
+            src_path = PurePosixPath(rel_source)
+            if src_path.is_absolute() or ".." in src_path.parts:
+                raise ParseError(
+                    f"ap: plugin '{name}': marketplace.json source {rel_source!r} "
+                    f"must be a relative path without '..' components."
+                )
+            payload_root = (
+                marketplace_root.joinpath(*src_path.parts)
+                if src_path.parts
+                else marketplace_root
+            )
             source_dir = str(payload_root)
 
             # ── MCP decomposition from .mcp.json ──
@@ -312,8 +328,13 @@ def _expand_plugins(
             if mcp_file.is_file():
                 try:
                     raw_mcp = _json.loads(mcp_file.read_text())
-                except Exception:
-                    raw_mcp = {}
+                except Exception as exc:
+                    # Fail loud (parity with the marketplace.json handler above):
+                    # a malformed .mcp.json silently dropping every MCP server is a
+                    # silent-breakage trap.
+                    raise ParseError(
+                        f"ap: plugin '{name}': failed to parse {mcp_file}: {exc}"
+                    ) from exc
                 for server_name, server_body in (raw_mcp.get("mcpServers") or {}).items():
                     if not isinstance(server_body, dict):
                         continue
@@ -442,6 +463,20 @@ def expand_registries(
                 )
             if sn:
                 existing_names.add(sn)
+        # MCP-name collision check: same guard as skills above. An unguarded
+        # plugin MCP name matching a registry (or other plugin) server would
+        # silently shadow it — last writer wins in each renderer's servers dict.
+        existing_mcp_names = {m["name"] for m in out["mcps"] if m.get("name")}
+        for mcp in plugin_mcps:
+            mn = mcp.get("name")
+            if mn and mn in existing_mcp_names:
+                raise ParseError(
+                    f"ap: plugin MCP name collision: '{mn}' is already"
+                    " present in the MCP registry. Rename the plugin"
+                    " MCP server or the colliding registry entry."
+                )
+            if mn:
+                existing_mcp_names.add(mn)
         out["mcps"].extend(plugin_mcps)
         out["skills"].extend(plugin_skills)
         out["native_plugins"].extend(native)

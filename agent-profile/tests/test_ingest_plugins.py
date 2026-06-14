@@ -553,3 +553,139 @@ def test_milknado_source_dir_at_payload_not_repo(milknado_market, tmp_path):
         assert skill["_source_dir"] == str(payload), (
             f"Skill {skill['name']!r} has wrong _source_dir: {skill['_source_dir']!r}"
         )
+
+
+# ─── tests: malformed payload .mcp.json fails loud (review fix M1) ────────────
+
+
+def test_malformed_mcp_json_fails_loud(tmp_path):
+    """A payload .mcp.json that is not valid JSON raises ParseError instead of
+    being silently swallowed into an empty mapping (which would drop every MCP
+    server with no diagnostic). Parity with the marketplace.json parse handler.
+    """
+    market_root = tmp_path / "market" / "myplugin"
+    _wrap_in_marketplace(market_root, "myplugin", "./plugins/myplugin")
+    payload = market_root / "plugins" / "myplugin"
+    payload.mkdir(parents=True)
+    (payload / ".mcp.json").write_text("{ this is not valid json ")
+    _make_plugins_registry(
+        tmp_path,
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
+    )
+
+    with pytest.raises(ParseError, match=r"\.mcp\.json"):
+        expand_registries(
+            {"plugins": "agents/plugins/registry.yaml"},
+            tmp_path,
+            {},
+        )
+
+
+# ─── tests: marketplace.json source path safety (review fix L1) ──────────────
+
+
+@pytest.mark.parametrize("bad_source", ["../escape", "/abs/payload", "foo/../bar"])
+def test_marketplace_source_rejects_traversal_and_absolute(tmp_path, bad_source):
+    """A marketplace.json plugin `source` containing '..' or an absolute path is
+    rejected loud. `lstrip('./')` silently collapsed these; PurePosixPath
+    normalization plus an explicit guard rejects them instead.
+    """
+    market_root = tmp_path / "market" / "myplugin"
+    cp = market_root / ".claude-plugin"
+    cp.mkdir(parents=True)
+    (cp / "marketplace.json").write_text(
+        json.dumps({
+            "name": "myplugin",
+            "plugins": [{"name": "myplugin", "source": bad_source}],
+        })
+    )
+    _make_plugins_registry(
+        tmp_path,
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
+    )
+
+    with pytest.raises(ParseError, match="must be a relative path"):
+        expand_registries(
+            {"plugins": "agents/plugins/registry.yaml"},
+            tmp_path,
+            {},
+        )
+
+
+# ─── tests: MCP-name collision fails loud (review fix L4) ────────────────────
+
+
+def test_plugin_mcp_name_collision_with_registry_fails_loud(tmp_path):
+    """A plugin MCP server name colliding with an existing registry MCP errors
+    loud — the same guarantee the skill path already enforces. Silent shadowing
+    (last writer wins in the renderer servers dict) is what this prevents.
+    """
+    import yaml
+
+    mcp_reg = tmp_path / "agents" / "mcp" / "registry.yaml"
+    mcp_reg.parent.mkdir(parents=True, exist_ok=True)
+    mcp_reg.write_text(yaml.dump({"mcps": {"myplugin": {"command": "x", "args": []}}}))
+
+    # Plugin exports an MCP server named 'myplugin' (helper default) → collision.
+    market_root, _ = _make_plugin_with_marketplace(tmp_path, "myplugin")
+    _make_plugins_registry(
+        tmp_path,
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex"]}},
+    )
+
+    with pytest.raises(ParseError, match="[Cc]ollision"):
+        expand_registries(
+            {
+                "mcps": "agents/mcp/registry.yaml",
+                "plugins": "agents/plugins/registry.yaml",
+            },
+            tmp_path,
+            {},
+        )
+
+
+# ─── tests: multi-plugin marketplace decomposes only the named plugin (L2) ───
+
+
+def test_multi_plugin_marketplace_decomposes_only_matching_name(tmp_path):
+    """When a marketplace.json lists multiple plugins, only the payload whose
+    name matches the registry key is decomposed — not every plugin (which would
+    double-expand and pull in unrequested primitives).
+    """
+    market_root = tmp_path / "market" / "multi"
+    cp = market_root / ".claude-plugin"
+    cp.mkdir(parents=True)
+    (cp / "marketplace.json").write_text(
+        json.dumps({
+            "name": "multi",
+            "plugins": [
+                {"name": "alpha", "source": "./plugins/alpha"},
+                {"name": "beta", "source": "./plugins/beta"},
+            ],
+        })
+    )
+    for pname in ("alpha", "beta"):
+        p = market_root / "plugins" / pname
+        p.mkdir(parents=True)
+        (p / ".mcp.json").write_text(
+            json.dumps({"mcpServers": {pname: {"command": "uvx", "args": [pname]}}})
+        )
+        sd = p / "skills" / f"{pname}-skill"
+        sd.mkdir(parents=True)
+        (sd / "SKILL.md").write_text(f"# {pname}-skill\n")
+
+    # Registry names only 'alpha'.
+    _make_plugins_registry(
+        tmp_path,
+        {"alpha": {"path": str(market_root), "harnesses": ["codex"]}},
+    )
+
+    out = expand_registries(
+        {"plugins": "agents/plugins/registry.yaml"},
+        tmp_path,
+        {},
+    )
+    mcp_names = {m["name"] for m in out["mcps"]}
+    skill_names = {s["name"] for s in out["skills"]}
+    assert mcp_names == {"alpha"}, f"beta must not decompose: {mcp_names}"
+    assert skill_names == {"alpha-skill"}, f"beta-skill must not decompose: {skill_names}"

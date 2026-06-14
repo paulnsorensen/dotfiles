@@ -35,6 +35,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import NamedTuple
 
@@ -145,13 +146,25 @@ class ClaudeRenderer:
             enabled[f"{name}@{marketplace_name}"] = True
             # Prime CLI resolution cache.
             try:
-                subprocess.run(
+                result = subprocess.run(
                     ["claude", "plugin", "marketplace", "add", expanded],
                     check=False,
                     capture_output=True,
+                    text=True,
                 )
             except FileNotFoundError:
                 pass  # claude CLI not present; settings.json write is sufficient
+            else:
+                # A present-but-failing CLI leaves enabledPlugins pointing at a
+                # marketplace the CLI never indexed — warn loud rather than swallow.
+                if result.returncode != 0:
+                    detail = (result.stderr or result.stdout or "").strip()
+                    print(
+                        f"    ap: 'claude plugin marketplace add {expanded}' exited "
+                        f"{result.returncode}; enabledPlugins[{name}@{marketplace_name}] "
+                        f"may point at an unindexed marketplace. {detail}",
+                        file=sys.stderr,
+                    )
         settings.write_text(json.dumps(data, indent=2) + "\n")
 
     def clean(self, manifest: Manifest, target: Path) -> None:

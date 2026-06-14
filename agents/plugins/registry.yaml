@@ -21,7 +21,9 @@
 #   claude_native: true → Claude gets the native marketplace install
 #                  (atomic plugin install + plugin-scoped mcp__ names).
 #                  Other harnesses always get decomposed primitives.
-#   gate_unless:   optional env var gate (same semantics as MCP gate_unless)
+#   gate_unless:   optional env var gate on the decomposed MCP items (same
+#                  semantics as the MCP registry gate). Does NOT gate the
+#                  Claude-native install path — that descriptor carries no gate.
 #   description:   human-readable description
 #
 # Per-harness reach:
