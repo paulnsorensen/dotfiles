@@ -1,0 +1,68 @@
+# agents/plugins/registry.yaml — cross-harness plugin registry
+#
+# Each entry names a plugin and points at its marketplace root. At ingest time,
+# `ap` auto-discovers the plugin's primitives from the payload dir and
+# decomposes them into the existing per-harness renderers:
+#
+#   .mcp.json         → MCP server(s), with the entry's harnesses list
+#   skills/<n>/SKILL.md → path: skill items
+#   agents/ / hooks/  → respective items (if present)
+#
+# _source_dir on every emitted item is stamped at the plugin payload root
+# (NOT the repo root). Renderers resolve payload files via:
+#   Path(item["_source_dir"]) / item["path"]
+#
+# Schema per entry:
+#   KEY:           the entry name (e.g. `milknado`) MUST equal a plugins[].name
+#                  in the marketplace.json — that named plugin is the one
+#                  decomposed. A key/name mismatch fails loud at ingest.
+#   path:          marketplace root (the dir containing .claude-plugin/marketplace.json);
+#                  ~-relative, /absolute, or repo-relative. Payload root(s) are
+#                  resolved from marketplace.json plugins[].source — prefixed by an
+#                  optional metadata.pluginRoot — relative to here.
+#   harnesses:     MCP membership list (deliberate; avoids blanket-wide
+#                  per-request token tax). Default = all harnesses.
+#   claude_native: true → Claude gets the native marketplace install
+#                  (atomic plugin install + plugin-scoped mcp__ names).
+#                  Other harnesses always get decomposed primitives.
+#   gate_unless:   optional env var gate on the decomposed MCP items (same
+#                  semantics as the MCP registry gate). Does NOT gate the
+#                  Claude-native install path — that descriptor carries no gate.
+#   description:   human-readable description
+#
+# Per-harness reach:
+#   claude   → native marketplace install (full plugin, nothing lost)
+#   codex    → MCP + skills + hooks (loses custom /commands)
+#   opencode → MCP + skills + agents
+#   cursor   → MCP + skills + agents + commands + hooks
+#   copilot  → skills + hooks + agents; MCP only if harnesses includes copilot
+#   crush    → MCP only
+#
+# Edit this file, then run `dots sync` (or `mcp-sync`) to deploy.
+
+plugins:
+  # milknado: Mikado execution engine
+  # Payload: 1 MCP + 3 skills (harvest, load-roadmap, milknado-config)
+  # NOTE: uvx milknado-mcp requires milknado to be published to PyPI.
+  # Until then, rendered configs will reference the portable form but
+  # the MCP will not launch without a local uvx-resolvable install.
+  milknado:
+    path: ~/Dev/milknado
+    harnesses: [claude, codex, opencode, cursor, copilot, crush]
+    claude_native: true
+    description: Mikado execution engine — goal decomposition, batch planning, detached ralph-loop runs
+
+  # hallouminate: per-repo markdown wiki (LLM-authored notes + semantic search).
+  # Payload: 1 MCP (`hallouminate serve`) + 6 skills (install, wiki-ingest,
+  # wiki-init, wiki-query, wiki-reindex, wiki-roadmap).
+  # marketplace.json uses metadata.pluginRoot "./plugins" + source "./hallouminate".
+  # claude_native: false — Claude gets the DECOMPOSED MCP so the well-known
+  # mcp__hallouminate__* tool namespace (relied on by the global CLAUDE.md
+  # routing) is preserved; a native install would rescope it to
+  # mcp__plugin_hallouminate_hallouminate__*. Migrated out of agents/mcp/registry.yaml
+  # — the decomposition now provides the MCP; a duplicate there would fail loud.
+  hallouminate:
+    path: ~/Dev/hallouminate
+    harnesses: [claude, codex, opencode, cursor, copilot, crush]
+    claude_native: false
+    description: Per-repo markdown wiki — semantic search + LLM-authored notes; bundles 6 wiki skills

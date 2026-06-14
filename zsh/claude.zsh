@@ -217,13 +217,18 @@ alias ccw-check='$DOTFILES_DIR/bin/ccw-check'
 alias claude-settings='${EDITOR:-vim} ~/.claude/settings.json'
 
 # ═══════════════════════════════════════════════════════════════════
-# Plugin Management (thin wrappers around native commands)
+# Plugin Management
+# plugins: agents/plugins/registry.yaml (cross-harness; edit -> dots sync)
+# claude-only plugins: claude/plugins/registry.yaml (edit -> dots sync)
+# claude/plugins/sync.sh is retired; ap now handles marketplace registration.
 # ═══════════════════════════════════════════════════════════════════
 alias plugin='claude plugin'
 alias plugin-ls='claude plugin list'
-alias plugin-sync='$CLAUDE_DOTFILES/plugins/sync.sh'
-alias plugin-sync-dry='$CLAUDE_DOTFILES/plugins/sync.sh --dry-run'
-alias plugin-edit='${EDITOR:-vim} $CLAUDE_DOTFILES/plugins/registry.yaml'
+# plugin-sync: deploy plugins via ap (cross-harness registry -> dots sync)
+alias plugin-sync='dots profile install base'
+alias plugin-sync-dry='dots profile install base --dry-run 2>/dev/null || echo "note: dry-run not yet implemented for ap; use dots status"'
+# plugin-edit: the cross-harness plugin registry (SSOT for all harnesses)
+alias plugin-edit='${EDITOR:-vim} $DOTFILES_DIR/agents/plugins/registry.yaml'
 
 # Refresh a local plugin's cache so edits in the source dir take effect.
 # Claude Code copies plugins into ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/

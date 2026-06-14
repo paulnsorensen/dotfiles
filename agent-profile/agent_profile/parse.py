@@ -85,6 +85,11 @@ class Manifest:
     # harnesses already write a single bare user-level config and ignore
     # this field. Outer-profile only, like the install fields above.
     mcp_scope: str = "plugin"
+    # Cross-harness native plugins (claude renderer pass). Produced by
+    # expand_registries for claude_native: true entries; carries name,
+    # marketplace_root, marketplace_name, and description so the renderer can
+    # register the marketplace.
+    native_plugins: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the same JSON shape parse.sh emits (used for the
@@ -201,6 +206,7 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         "skills": reg["skills"] + _decorate(raw.get("skills") or []),
         "commands": _decorate(raw.get("commands") or []),
         "hooks": reg["hooks"] + _decorate(raw.get("hooks") or []),
+        "native_plugins": reg.get("native_plugins", []),
         "settings": raw.get("settings") or {},
     }
 
@@ -224,7 +230,7 @@ def _expand_registries_directive(
     as their ``_source_dir`` (not the profile dir) since their payload files
     live under the repo, not the profile."""
     if not directive:
-        return {"mcps": [], "agents": [], "skills": [], "hooks": []}
+        return {"mcps": [], "agents": [], "skills": [], "hooks": [], "native_plugins": []}
     if not isinstance(directive, dict):
         raise ParseError(
             "ap_parse_one: 'registries' must be a mapping of "
@@ -321,6 +327,7 @@ def _parse_with_includes(
         "target_default",
         "marketplaces",
         "mcp_scope",
+        "native_plugins",
     ):
         merged[key] = self_[key]
     return merged
@@ -360,4 +367,5 @@ def parse_manifest(profile_dir: Path, find_profile_dir: Any = None) -> Manifest:
         target_default=merged["target_default"],
         marketplaces=merged["marketplaces"],
         mcp_scope=merged["mcp_scope"],
+        native_plugins=merged.get("native_plugins", []),
     )

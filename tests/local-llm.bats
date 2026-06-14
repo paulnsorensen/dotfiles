@@ -522,6 +522,7 @@ MOCK
     # overlay a silent no-op: the 32k window blows out with no error. Tie the
     # disabled keys to the registry source of truth so that drift fails loudly.
     local registry="$REAL_DOTFILES_DIR/agents/mcp/registry.yaml"
+    local plugin_registry="$REAL_DOTFILES_DIR/agents/plugins/registry.yaml"
 
     # Servers the registry renders into opencode: harnesses absent (default = all
     # harnesses) or explicitly listing opencode. `// ["opencode"]` substitutes the
@@ -532,6 +533,19 @@ MOCK
       '.mcps | to_entries | map(select((.value.harnesses // ["opencode"]) | contains(["opencode"]))) | .[].key' \
       "$registry")
 
+    # Cross-harness plugins also decompose an MCP into opencode when their
+    # harnesses list opencode (e.g. hallouminate, migrated out of the MCP
+    # registry). CI cannot read the plugin's marketplace .mcp.json (the plugin
+    # repos live under ~/Dev, absent here), so use the registry key as the
+    # server-name proxy — true for the seeded plugins, where the registry key
+    # equals the .mcp.json server name. Without this, a plugin-sourced MCP that
+    # lean.json disables would falsely trip the drift guard.
+    local plugin_servers
+    plugin_servers=$(yq -r \
+      '.plugins | to_entries | map(select((.value.harnesses // ["opencode"]) | contains(["opencode"]))) | .[].key' \
+      "$plugin_registry")
+    opencode_servers=$(printf '%s\n%s\n' "$opencode_servers" "$plugin_servers")
+
     local disabled
     disabled=$(jq -r '.mcp | keys | .[]' "$LEAN")
     [ -n "$disabled" ]
@@ -539,7 +553,7 @@ MOCK
     local s
     for s in $disabled; do
         echo "$opencode_servers" | grep -qx "$s" || {
-            echo "lean.json disables '$s' — not an opencode-loaded MCP in registry.yaml"
+            echo "lean.json disables '$s' — not an opencode-loaded MCP in agents/{mcp,plugins}/registry.yaml"
             return 1
         }
     done
