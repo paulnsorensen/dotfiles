@@ -12,6 +12,40 @@ profile dir IS a Claude plugin dir). Cross-harness plugins add a 5th registry
 
 ---
 
+## Path model: marketplace root vs payload root
+
+**Critical distinction** — the `path:` in `registry.yaml` is the **marketplace
+root**, not the plugin payload root.
+
+```
+marketplace root:  ~/Dev/milknado/
+  .claude-plugin/
+    marketplace.json          ← {name: "milknado", plugins: [{source: "./plugins/milknado"}]}
+
+payload root:      ~/Dev/milknado/plugins/milknado/
+  .mcp.json                   ← {command: uvx, args: [milknado-mcp]}
+  skills/
+    harvest/SKILL.md
+    load-roadmap/SKILL.md
+    milknado-config/
+      SKILL.md
+      references/flavor-presets.md  ← NOT a skill
+```
+
+**What each path is used for:**
+
+- `marketplace root` → registry `path:` field; `extraKnownMarketplaces` path;
+  `claude plugin marketplace add` argument
+- `payload root` → resolved from `marketplace.json plugins[].source` relative
+  to marketplace root; `_source_dir` on all emitted items; `.mcp.json` and
+  `skills/` are read here
+
+**Why this matters:** `claude plugin marketplace add` and `extraKnownMarketplaces`
+both require the directory containing `.claude-plugin/marketplace.json`. Pointing
+them at the payload root fails silently with "Marketplace file not found".
+
+---
+
 ## The decomposer seam: `ingest._expand_plugins`
 
 `expand_registries()` in `agent-profile/agent_profile/ingest.py` wires in
@@ -33,6 +67,21 @@ decomposer:
 4. Walks `<payload>/skills/<n>/SKILL.md` → `path:` skill items (one per named
    skill dir, skipping any subdir that lacks `SKILL.md` — e.g. `references/`).
 5. Stamps every emitted item's `_source_dir` **at the payload root**.
+
+### C-var: env var validation for plugin MCPs
+
+Mirrors `_expand_mcps`: a non-optional plugin MCP with an unset `${VAR}` raises
+`EnvResolutionError`; an optional server with an unset var is silently dropped.
+Env values are carried through as literals (not substituted at ingest).
+
+### The canonical marketplace name rule
+
+`marketplace_name` comes from `marketplace.json["name"]`, not the registry YAML
+key. When they differ (which they can), the marketplace.json name is authoritative:
+
+- `extraKnownMarketplaces` key = `marketplace_name`
+- `enabledPlugins` key = `<name>@<marketplace_name>`
+- `clean()` un-merges using `marketplace_name`
 
 ### The critical `_source_dir` rule
 
@@ -68,9 +117,15 @@ membership taxes every per-request MCP-schema token budget. See
 [[architecture/agent-profile]] for how harnesses membership flows.
 
 **`claude_native`** — when `true`, the decomposer also produces a
-`native_plugins` record so the claude renderer can register the plugin's own
-marketplace. When `false` (or omitted), Claude receives decomposed primitives
-like all other harnesses.
+`native_plugins` record so the claude renderer can register the plugin's
+marketplace. DEDUP removes `claude` from decomposed MCP harnesses (Claude gets
+the plugin via native install, not bare user MCP). Skills carry
+`_from_native_plugin=True` so renderers skip them for Claude scope.
+
+When `false` (or omitted), Claude receives decomposed primitives like all other
+harnesses. This is the right choice when a plugin's marketplace.json is absent
+or the plugin is not ready for the marketplace (e.g. hallouminate, where the
+well-known `mcp__hallouminate__*` namespace must be preserved).
 
 **`gate_unless`** — propagates to the decomposed MCP's `gate_unless` field,
 using the same semantics as the MCP registry gate (see [[agents-dir]]). It
@@ -103,8 +158,36 @@ entries; every other harness gets decomposed primitives via the existing
 renderers. No renderer changes are needed for the decomposed path.
 
 For entries with `claude_native: false`, Claude also receives decomposed
-primitives. This is the right choice when a plugin's marketplace.json is
-absent or the plugin is not ready for the marketplace.
+primitives, same as other harnesses.
+
+---
+
+## DEDUP: preventing double-registration for claude_native
+
+When `claude_native: true`, Claude gets the plugin's MCP tools via the native
+marketplace install (at plugin scope, prefixed `mcp__plugin_<name>_<server>__*`).
+Adding the same server to Claude's user-scope MCP config too would cause
+tool-name collision and double token cost.
+
+DEDUP removes `claude` from the decomposed MCP's `harnesses` list. Skills carry
+`_from_native_plugin=True` so `_write_skills` skips them (Claude gets skills
+at plugin scope). `_write_agents` and `_write_commands` also skip
+`_from_native_plugin` items.
+
+---
+
+## Claude renderer: native plugin pass
+
+`_render_native_plugins()` in `claude.py`:
+
+1. Reads `entry["marketplace_root"]` and `entry["marketplace_name"]` from the
+   native descriptor.
+2. Writes `extraKnownMarketplaces[marketplace_name] = {source: {source: "directory", path: <marketplace_root>}}`.
+3. Writes `enabledPlugins[f"{name}@{marketplace_name}"] = True`.
+4. Calls `claude plugin marketplace add <marketplace_root>` to prime the CLI's
+   resolution cache (writing settings.json alone is not sufficient).
+
+`clean()` un-merges by `marketplace_name` (not registry YAML key).
 
 ---
 
@@ -141,17 +224,25 @@ loading interacts with secret passthrough.
 
 ## Gotchas
 
-- **`_source_dir` mis-stamping** — must be the payload root. The unit test
-  explicitly proves the failure mode. If you see a renderer failing to find
-  a skill file, check `_source_dir` on the item first.
+- **`path:` must be marketplace root, not payload** — `registry.yaml path:` must
+  point at the directory containing `.claude-plugin/marketplace.json`. Pointing
+  at the payload subdirectory (which has `.mcp.json` but no `marketplace.json`)
+  raises `ParseError` at ingest.
+- **`_source_dir` mis-stamping** — must be the payload root (where `.mcp.json`
+  and `skills/` live). The unit test explicitly proves the failure mode. If you
+  see a renderer failing to find a skill file, check `_source_dir` on the item first.
+- **Canonical marketplace name from marketplace.json** — the `name` field in
+  `marketplace.json` is authoritative for `extraKnownMarketplaces` key and
+  `<plugin>@<marketplace_name>` enabledPlugins entry. The registry YAML key
+  can differ.
 - **Dev-path `.mcp.json`** — plugin payloads under development often use
   `--from /path/to/dev/repo` in their `.mcp.json`. This must be replaced
   with the portable `uvx <package>` form before the plugin can be used on
   other machines. The milknado migration (`fix/mcp-portable-uvx`) is the
   reference example.
 - **Skill-name collisions** — `expand_registries` raises `ParseError` if a
-  plugin skill name collides with an existing registry skill. The error is
-  intentional: silent overwrite of the shared skill tree is Rule 9.
+  plugin skill name collides with an existing registry skill or another plugin's
+  skill. Silent overwrite of the shared skill tree is Rule 9.
 - **`clean`/uninstall ref-counting** — decomposed items land in shared/merged
   files (opencode.json, .cursor/mcp.json) and shared skill trees. `clean()`
   must attribute items to the plugin so uninstalling one plugin doesn't strip
@@ -159,9 +250,9 @@ loading interacts with secret passthrough.
   surgical-removal logic.
 - **marketplace-add CLI prime** — for `claude_native` entries, writing
   `extraKnownMarketplaces` alone is not enough. The `claude plugin marketplace
-  add <abs>` CLI call primes the resolution cache. Without it, a freshly-added
-  local plugin fails to install on first sync. The `_write_local_marketplace`
-  method handles this.
+  add <marketplace_root>` CLI call primes the resolution cache (handled by
+  `_render_native_plugins`). Without it, a freshly-added local plugin fails
+  to install on first sync.
 
 ---
 
