@@ -33,15 +33,19 @@ mkdir -p "$CLAUDE_DIR"
 #                 is gone; a one-time `run_once_before_migrate-claude-settings`
 #                 chezmoi script unlinks any stale symlink before the seed runs.
 #
-# `hooks/`, `lib/`, and `reference/` STAY symlinked because they still hold
-# Claude-only assets (auto-format.js, sliced-bread.md, …). The base plugin's
-# self-locating SessionStart hook is now owned by the plugin tree at
+# `hooks/`, `lib/`, `reference/`, and `workflows/` STAY symlinked because they
+# still hold Claude-only assets (auto-format.js, sliced-bread.md, dynamic-
+# workflow scripts, …). `workflows/` deploys `claude/workflows/*.js` to
+# ~/.claude/workflows/, where Claude Code reads dynamic-workflow commands
+# (/<name>); it is not a registry type, so `ap` does not render it. The base
+# plugin's self-locating SessionStart hook is now owned by the plugin tree at
 # ~/.claude/plugins/local/global/hooks/ (deployed by `ap`); no legacy
 # write-through-symlinks happens.
 configs=(
   commands
   hooks
   reference
+  workflows
 )
 
 # Install hook dependencies (wink-nlp for violation classifier)
