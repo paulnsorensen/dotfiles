@@ -139,6 +139,12 @@ teardown() {
     [[ $status -eq 0 ]]
 }
 
+@test "tmux.zsh parses cleanly" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -n "$REAL_DOTFILES_DIR/zsh/tmux.zsh"
+    [[ $status -eq 0 ]]
+}
+
 @test "configuration files have no syntax errors" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     local failed=0

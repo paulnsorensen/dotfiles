@@ -62,6 +62,7 @@ print_cheatsheet() {
     row "tmux rename-session NEW" "rename current session"
     row "tmux kill-session -t NAME" "kill one session"
     row "tmux kill-server"      "kill the server (all sessions)"
+    row "Alt+s (shell)"          "sesh: fuzzy session picker from the shell prompt"
 
     hdr "Popups & misc"
     row "prefix G"               "popup: lazygit"

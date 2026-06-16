@@ -70,3 +70,8 @@ assert_section() {
     run tmux-cheatsheet
     [[ ${#output} -gt 100 ]]
 }
+
+@test "documents the shell-prompt sesh picker" {
+    run tmux-cheatsheet
+    assert_section "Alt+s (shell)"
+}
