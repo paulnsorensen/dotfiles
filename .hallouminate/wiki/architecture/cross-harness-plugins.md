@@ -14,7 +14,7 @@ profile dir IS a Claude plugin dir). Cross-harness plugins add a 5th registry
 
 ## Path model: marketplace root vs payload root
 
-**Critical distinction** — the `path:` in `registry.yaml` is the **marketplace
+**Critical distinction** — the `path:` or git-cloned cache in `registry.yaml` resolves to the **marketplace
 root**, not the plugin payload root.
 
 ```
@@ -101,15 +101,32 @@ it fails under repo-root stamping.
 
 ## Registry schema (`agents/plugins/registry.yaml`)
 
+Each entry requires exactly one source field — `git:` or `path:` (both or neither is a `ParseError`):
+
 ```yaml
 plugins:
   <name>:
-    path: ~/Dev/myplugin   # marketplace root (holds .claude-plugin/marketplace.json)
+    # Source: exactly one required
+    git: https://github.com/org/repo   # clone URL; cached in ~/.cache/ap/plugins/<name>
+    branch: main                        # optional; default: main. Only with git:
+    subdir: nested/subdir               # optional; only if marketplace root is nested in repo
+    # -or-
+    path: ~/Dev/myplugin               # local checkout marketplace root
+
     harnesses: [claude, codex, opencode, cursor, copilot, crush]
     claude_native: true   # Claude gets native marketplace install
     gate_unless: MY_ENV_VAR   # optional gate
     description: Human-readable description
 ```
+
+**`git:` vs `path:` mutual exclusivity** — exactly one is required per entry. `git:` is the
+portable form: the repo is shallow-cloned into `~/.cache/ap/plugins/<KEY>` on first use and
+refreshed on subsequent runs. If the network fetch fails but a populated cache exists,
+`ap install base` warns and uses the cache (does not abort). `path:` is the dev-machine
+form for local checkouts. The two are mutually exclusive so the resolution is never ambiguous.
+
+**`subdir:`** — optional; only needed when `marketplace.json` lives inside a subdirectory of
+the cloned repo rather than the repo root. Relative paths only; `..` is rejected loud.
 
 **`harnesses`** — explicit MCP membership list. Deliberate: blanket-wide
 membership taxes every per-request MCP-schema token budget. See
@@ -224,10 +241,11 @@ loading interacts with secret passthrough.
 
 ## Gotchas
 
-- **`path:` must be marketplace root, not payload** — `registry.yaml path:` must
-  point at the directory containing `.claude-plugin/marketplace.json`. Pointing
-  at the payload subdirectory (which has `.mcp.json` but no `marketplace.json`)
-  raises `ParseError` at ingest.
+- **Source must resolve to marketplace root, not payload** — the `path:` value
+  (or the git-cloned cache dir + `subdir:` if set) must point at the directory
+  containing `.claude-plugin/marketplace.json`. Pointing at the payload
+  subdirectory (which has `.mcp.json` but no `marketplace.json`) raises
+  `ParseError` at ingest.
 - **`_source_dir` mis-stamping** — must be the payload root (where `.mcp.json`
   and `skills/` live). The unit test explicitly proves the failure mode. If you
   see a renderer failing to find a skill file, check `_source_dir` on the item first.
@@ -258,31 +276,33 @@ loading interacts with secret passthrough.
 
 ## Worked example: milknado
 
-**Marketplace root** (the registry `path:`): `~/Dev/milknado`
+**Marketplace root** (git-cloned cache): `~/.cache/ap/plugins/milknado/`
+(cloned from `https://github.com/paulnsorensen/milknado`, branch `main`)
 
 **Payload root** (from `marketplace.json` `source: ./plugins/milknado`):
-`~/Dev/milknado/plugins/milknado`
+`~/.cache/ap/plugins/milknado/plugins/milknado`
 
 **Layout:**
 
 ```
-~/Dev/milknado/                       ← marketplace root = registry path:
-  .claude-plugin/marketplace.json     ← {plugins: [{name: milknado, source: ./plugins/milknado}]}
-  plugins/milknado/                   ← payload root (the _source_dir stamp)
-    .mcp.json                         ← {command: uvx, args: [milknado-mcp]}
+~/.cache/ap/plugins/milknado/          ← marketplace root (git clone cache)
+  .claude-plugin/marketplace.json      ← {plugins: [{name: milknado, source: ./plugins/milknado}]}
+  plugins/milknado/                    ← payload root (the _source_dir stamp)
+    .mcp.json                          ← {command: uvx, args: [milknado-mcp]}
     skills/
       harvest/SKILL.md
       load-roadmap/SKILL.md
       milknado-config/
         SKILL.md
-        references/flavor-presets.md  ← subfile; NOT a skill itself
+        references/flavor-presets.md   ← subfile; NOT a skill itself
 ```
 
 **Registry entry:**
 
 ```yaml
 milknado:
-  path: ~/Dev/milknado
+  git: https://github.com/paulnsorensen/milknado
+  branch: main
   harnesses: [claude, codex, opencode, cursor, copilot, crush]
   claude_native: true
   description: Mikado execution engine — goal decomposition, batch planning, detached ralph-loop runs

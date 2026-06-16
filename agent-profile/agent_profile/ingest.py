@@ -47,6 +47,8 @@ Registry shapes consumed:
 
 from __future__ import annotations
 
+import logging
+import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -241,7 +243,6 @@ def _expand_skills(
             out.extend(_expand_local_skills(target, source_dir))
     return out
 
-
 def _resolve_plugin_path(path_str: str, repo_root: Path) -> Path:
     """Resolve a plugin ``path`` value to an absolute Path.
 
@@ -256,10 +257,67 @@ def _resolve_plugin_path(path_str: str, repo_root: Path) -> Path:
     return repo_root / expanded
 
 
+def _resolve_git_plugin(url: str, branch: str, cache_dir: Path) -> Path:
+    """Clone or refresh a git plugin repo into ``cache_dir``.
+
+    Shallow clone on first visit; fetch+reset on subsequent visits. If the
+    network fails but a populated cache exists, warns and returns the cache
+    (so ``ap install base`` does not abort on non-primary machines with no
+    network access to the repo). If neither clone nor cache yields content,
+    the caller's marketplace.json check will raise ``ParseError``.
+
+    Returns ``cache_dir`` (the marketplace root for this plugin).
+    """
+    log = logging.getLogger(__name__)
+    if cache_dir.is_dir() and any(cache_dir.iterdir()):
+        # Refresh existing cache.
+        try:
+            subprocess.run(
+                ["git", "fetch", "--depth", "1", "origin", branch],
+                cwd=cache_dir,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "reset", "--hard", f"origin/{branch}"],
+                cwd=cache_dir,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            log.warning(
+                "ap: git plugin refresh failed for %s branch %s — using cached copy. "
+                "Error: %s",
+                url,
+                branch,
+                exc.stderr.decode(errors="replace").strip() if exc.stderr else str(exc),
+            )
+    else:
+        # Fresh clone.
+        cache_dir.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            subprocess.run(
+                ["git", "clone", "--depth", "1", "--branch", branch, url, str(cache_dir)],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            # No cache — let marketplace.json check below raise ParseError.
+            log.warning(
+                "ap: git plugin clone failed for %s branch %s — no cache available. "
+                "Error: %s",
+                url,
+                branch,
+                exc.stderr.decode(errors="replace").strip() if exc.stderr else str(exc),
+            )
+    return cache_dir
+
+
 def _expand_plugins(
     path: Path,
     repo_root: Path,
     dotenv: dict[str, str],
+    cache_root: Path | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Decompose every plugin in ``agents/plugins/registry.yaml`` into its
     constituent primitives.
@@ -290,24 +348,46 @@ def _expand_plugins(
     out_mcps: list[dict[str, Any]] = []
     out_skills: list[dict[str, Any]] = []
     out_native: list[dict[str, Any]] = []
+    _cache_root = cache_root or (Path.home() / ".cache" / "ap" / "plugins")
 
     for name, body in plugins.items():
         if not isinstance(body, dict):
             continue
+
+        # ── Validate source: exactly one of git: or path: ──
         path_str = body.get("path")
-        if not path_str:
-            continue
+        git_url = body.get("git")
+        if bool(path_str) == bool(git_url):  # both set, or neither set
+            raise ParseError(
+                f"ap: plugin '{name}': exactly one of 'git:' or 'path:' is required "
+                f"(got {'both' if path_str and git_url else 'neither'})."
+            )
+
+        if git_url:
+            branch = str(body.get("branch") or "main")
+            subdir_raw = body.get("subdir") or ""
+            if isinstance(subdir_raw, str) and (PurePosixPath(subdir_raw).is_absolute() or
+                    ".." in PurePosixPath(subdir_raw).parts):
+                raise ParseError(
+                    f"ap: plugin '{name}': subdir {subdir_raw!r} must be relative "
+                    f"without '..' components."
+                )
+            cache_dir = _cache_root / name
+            _resolve_git_plugin(str(git_url), branch, cache_dir)
+            subdir_parts = PurePosixPath(subdir_raw).parts if subdir_raw else ()
+            marketplace_root = cache_dir.joinpath(*subdir_parts) if subdir_parts else cache_dir
+        else:
+            if not path_str:
+                continue
+            marketplace_root = _resolve_plugin_path(str(path_str), repo_root)
 
         # ── Resolve marketplace root and read marketplace.json ──
-        marketplace_root = _resolve_plugin_path(str(path_str), repo_root)
         marketplace_json = marketplace_root / ".claude-plugin" / "marketplace.json"
         if not marketplace_json.is_file():
             raise ParseError(
                 f"ap: plugin '{name}': expected marketplace.json at "
                 f"{marketplace_json} but it was not found. "
-                f"The registry 'path:' field must point at the marketplace root "
-                f"(the directory containing .claude-plugin/marketplace.json), "
-                f"not at a plugin payload subdirectory."
+                f"The marketplace root must contain .claude-plugin/marketplace.json."
             )
         try:
             market_data = _json.loads(marketplace_json.read_text())
