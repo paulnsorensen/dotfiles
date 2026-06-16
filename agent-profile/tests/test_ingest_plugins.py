@@ -887,3 +887,222 @@ def test_claude_native_controls_claude_in_decomposed_mcp_harnesses(
     out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
     mcp = next(m for m in out["mcps"] if m["name"] == "myplugin")
     assert ("claude" in mcp["harnesses"]) is claude_kept
+
+
+# ─── tests: git source (portability — no ~/Dev checkout assumption) ────────────────
+
+
+def _make_local_git_repo(repo_dir: Path, name: str) -> Path:
+    """Create a local bare-ish git repo usable as a file:// remote.
+
+    Initialises a real git repo at repo_dir, commits a minimal
+    milknado-style plugin layout (marketplace.json + payload .mcp.json +
+    one skill), and returns the repo_dir path.  Tests point 'git:' at this
+    path so no network access is needed.
+    """
+    import subprocess
+
+    repo_dir.mkdir(parents=True, exist_ok=True)
+
+    # Minimal plugin layout
+    cp = repo_dir / ".claude-plugin"
+    cp.mkdir()
+    (cp / "marketplace.json").write_text(
+        json.dumps({
+            "name": name,
+            "plugins": [{"name": name, "source": f"./plugins/{name}"}],
+        })
+    )
+    payload = repo_dir / "plugins" / name
+    payload.mkdir(parents=True)
+    (payload / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {name: {"command": "uvx", "args": [f"{name}-mcp"]}}})
+    )
+    skill_dir = payload / "skills" / f"{name}-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(f"# {name}-skill\n")
+
+    env = {"GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@test",
+           "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@test"}
+    import os
+    env.update(os.environ)
+    subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "main"], cwd=repo_dir,
+                   check=True, capture_output=True, env=env)
+    subprocess.run(["git", "add", "-A"], cwd=repo_dir, check=True,
+                   capture_output=True, env=env)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo_dir,
+                   check=True, capture_output=True, env=env)
+    return repo_dir
+
+
+def test_git_source_resolves_mcp_and_skill(tmp_path):
+    """A git: entry fetches the plugin and decomposes it correctly.
+
+    Motivation: ap install base must not abort on a machine without the
+    ~/Dev checkout. The git source clones into ~/.cache/ap/plugins/<name>
+    and the existing decomposition runs unchanged from that cache dir.
+    """
+    repo = _make_local_git_repo(tmp_path / "repo", "myplugin")
+    cache_root = tmp_path / "cache"
+    _make_plugins_registry(
+        tmp_path,
+        {"myplugin": {
+            "git": str(repo),
+            "branch": "main",
+            "harnesses": ["codex"],
+        }},
+    )
+
+    from agent_profile.ingest import _expand_plugins
+    import yaml
+    reg_path = tmp_path / "agents" / "plugins" / "registry.yaml"
+    out_mcps, out_skills, out_native = _expand_plugins(
+        reg_path, tmp_path, {}, cache_root=cache_root
+    )
+
+    mcp_names = [m["name"] for m in out_mcps]
+    assert "myplugin" in mcp_names, "MCP must decompose from git-cloned repo"
+    skill_names = [s["name"] for s in out_skills]
+    assert "myplugin-skill" in skill_names, "Skill must decompose from git-cloned repo"
+    # Cache dir must exist and contain the plugin
+    assert (cache_root / "myplugin" / ".claude-plugin" / "marketplace.json").is_file()
+
+
+def test_git_source_subdir(tmp_path):
+    """subdir: shifts the marketplace root inside the cloned repo.
+
+    A plugin whose marketplace.json is nested under e.g. 'plugin-root/'
+    in the repo uses subdir: 'plugin-root' to point the decomposer at the
+    right directory instead of the repo root.
+    """
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    # marketplace lives under a 'plugin-root' subdir
+    subdir = repo_dir / "plugin-root"
+    subdir.mkdir()
+    cp = subdir / ".claude-plugin"
+    cp.mkdir()
+    (cp / "marketplace.json").write_text(
+        json.dumps({
+            "name": "nested",
+            "plugins": [{"name": "nested", "source": "./plugins/nested"}],
+        })
+    )
+    payload = subdir / "plugins" / "nested"
+    payload.mkdir(parents=True)
+    (payload / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"nested": {"command": "uvx", "args": ["nested-mcp"]}}})
+    )
+
+    import subprocess, os
+    env = {"GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@test",
+           "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@test"}
+    env.update(os.environ)
+    subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "main"], cwd=repo_dir,
+                   check=True, capture_output=True, env=env)
+    subprocess.run(["git", "add", "-A"], cwd=repo_dir, check=True,
+                   capture_output=True, env=env)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo_dir,
+                   check=True, capture_output=True, env=env)
+
+    cache_root = tmp_path / "cache"
+    _make_plugins_registry(
+        tmp_path,
+        {"nested": {
+            "git": str(repo_dir),
+            "branch": "main",
+            "subdir": "plugin-root",
+            "harnesses": ["codex"],
+        }},
+    )
+    from agent_profile.ingest import _expand_plugins
+    reg_path = tmp_path / "agents" / "plugins" / "registry.yaml"
+    out_mcps, _, _ = _expand_plugins(reg_path, tmp_path, {}, cache_root=cache_root)
+    assert "nested" in [m["name"] for m in out_mcps], (
+        "MCP from nested subdir must decompose correctly"
+    )
+    # _source_dir must be inside the subdir, not at the cache root
+    mcp = next(m for m in out_mcps if m["name"] == "nested")
+    assert "plugin-root" in mcp["_source_dir"], (
+        "_source_dir must resolve through subdir into the cloned repo"
+    )
+
+
+def test_git_and_path_both_set_raises(tmp_path):
+    """Both git: and path: in one entry raises ParseError immediately.
+
+    The mutual-exclusivity rule prevents ambiguous resolution and
+    makes misconfigurations fail loud rather than silently picking one.
+    """
+    market_root, _ = _make_plugin_with_marketplace(tmp_path, "myplugin")
+    _make_plugins_registry(
+        tmp_path,
+        {"myplugin": {
+            "git": "https://example.com/repo",
+            "path": str(market_root),
+            "harnesses": ["codex"],
+        }},
+    )
+    with pytest.raises(ParseError, match="exactly one of"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_neither_git_nor_path_raises(tmp_path):
+    """An entry with neither git: nor path: raises ParseError immediately.
+
+    A bare entry name with only 'harnesses' is almost always a typo;
+    fail loud rather than silently decomposing nothing.
+    """
+    _make_plugins_registry(
+        tmp_path,
+        {"myplugin": {"harnesses": ["codex"]}},
+    )
+    with pytest.raises(ParseError, match="exactly one of"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_git_branch_defaults_to_main(tmp_path):
+    """When branch: is omitted, 'main' is used.
+
+    A plugin entry with only git: (no branch:) must still clone from
+    the 'main' branch and decompose correctly.
+    """
+    repo = _make_local_git_repo(tmp_path / "repo", "myplugin")
+    cache_root = tmp_path / "cache"
+    _make_plugins_registry(
+        tmp_path,
+        {"myplugin": {
+            "git": str(repo),
+            # no branch: — default must be 'main'
+            "harnesses": ["codex"],
+        }},
+    )
+    from agent_profile.ingest import _expand_plugins
+    reg_path = tmp_path / "agents" / "plugins" / "registry.yaml"
+    out_mcps, _, _ = _expand_plugins(reg_path, tmp_path, {}, cache_root=cache_root)
+    assert "myplugin" in [m["name"] for m in out_mcps], (
+        "branch defaults to 'main'; clone must succeed without explicit branch:"
+    )
+
+
+def test_git_cache_reuse_when_network_fails(tmp_path):
+    """If the network fetch fails but a populated cache exists, use the cache.
+
+    Machines without network access (or with the repo gone) must not abort
+    ap install base as long as the cache is populated.
+    """
+    from agent_profile.ingest import _resolve_git_plugin
+
+    # Seed a populated cache dir (simulates a prior successful clone).
+    cache_dir = tmp_path / "cache" / "myplugin"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "sentinel.txt").write_text("cached")
+
+    # Pointing at a non-existent URL; fetch will fail.
+    result = _resolve_git_plugin("https://invalid.example/nope", "main", cache_dir)
+    # Must return the cache_dir, not raise.
+    assert result == cache_dir
+    # Cached content must still be intact.
+    assert (cache_dir / "sentinel.txt").is_file()

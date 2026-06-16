@@ -16,10 +16,17 @@
 #   KEY:           the entry name (e.g. `milknado`) MUST equal a plugins[].name
 #                  in the marketplace.json — that named plugin is the one
 #                  decomposed. A key/name mismatch fails loud at ingest.
-#   path:          marketplace root (the dir containing .claude-plugin/marketplace.json);
-#                  ~-relative, /absolute, or repo-relative. Payload root(s) are
-#                  resolved from marketplace.json plugins[].source — prefixed by an
-#                  optional metadata.pluginRoot — relative to here.
+#
+#   Source (exactly one required; both or neither raises ParseError):
+#   path:          marketplace root (local checkout); ~-relative, /absolute, or
+#                  repo-relative. Use on machines that have a local dev tree.
+#   git:           clone URL (e.g. https://github.com/org/repo). The repo is
+#                  cloned / refreshed into ~/.cache/ap/plugins/<KEY>.
+#   branch:        branch to clone (optional; default: main). Only with git:.
+#   subdir:        sub-directory inside the repo whose root is the marketplace
+#                  root (i.e. contains .claude-plugin/marketplace.json).
+#                  Optional; default: repo root. Relative paths only; no '..'.
+#
 #   harnesses:     MCP membership list (deliberate; avoids blanket-wide
 #                  per-request token tax). Default = all harnesses.
 #   claude_native: true → Claude gets the native marketplace install
@@ -47,22 +54,22 @@ plugins:
   # Until then, rendered configs will reference the portable form but
   # the MCP will not launch without a local uvx-resolvable install.
   milknado:
-    path: ~/Dev/milknado
+    git: https://github.com/paulnsorensen/milknado
+    branch: main
     harnesses: [claude, codex, opencode, cursor, copilot, crush]
     claude_native: true
     description: Mikado execution engine — goal decomposition, batch planning, detached ralph-loop runs
 
   # hallouminate: per-repo markdown wiki (LLM-authored notes + semantic search).
-  # Payload: 1 MCP (`hallouminate serve`) + 6 skills (install, wiki-ingest,
-  # wiki-init, wiki-query, wiki-reindex, wiki-roadmap).
-  # marketplace.json uses metadata.pluginRoot "./plugins" + source "./hallouminate".
+  # Payload: 1 MCP (`hallouminate serve`) + skills (wiki-ingest, wiki-init, etc).
   # claude_native: false — Claude gets the DECOMPOSED MCP so the well-known
   # mcp__hallouminate__* tool namespace (relied on by the global CLAUDE.md
   # routing) is preserved; a native install would rescope it to
   # mcp__plugin_hallouminate_hallouminate__*. Migrated out of agents/mcp/registry.yaml
   # — the decomposition now provides the MCP; a duplicate there would fail loud.
   hallouminate:
-    path: ~/Dev/hallouminate
+    git: https://github.com/paulnsorensen/hallouminate
+    branch: main
     harnesses: [claude, codex, opencode, cursor, copilot, crush]
     claude_native: false
     description: Per-repo markdown wiki — semantic search + LLM-authored notes; bundles 6 wiki skills
