@@ -45,7 +45,7 @@ packages:
   - lazygit
   - git-town
   - joshmedeski/sesh: { source: tap }            # sesh tap (joshmedeski/sesh/sesh)
-  - sesh: { platform: mac }                       # session switcher; tmux binds guarded with if-shell
+  - sesh                                          # session switcher (joshmedeski/sesh tap); tmux binds guarded with if-shell
   - just
   - chezmoi
   - duckdb
