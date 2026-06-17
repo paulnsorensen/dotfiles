@@ -364,10 +364,11 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 99
 TOML
-    # Bring the other codex hooks (sensitive-file-guard, git-guard) in sync so
+    # Bring the other codex hooks (sensitive-file-guard, git-guard, jmux-attention) in sync so
     # only the session-start timeout drift remains to be detected.
     hook_codex_apply sensitive-file-guard
     hook_codex_apply git-guard
+    hook_codex_apply jmux-attention
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]
@@ -915,10 +916,11 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 5
 TOML
-    # Bring the other codex hooks (sensitive-file-guard, git-guard) in sync so
+    # Bring the other codex hooks (sensitive-file-guard, git-guard, jmux-attention) in sync so
     # only the session-start matcher drift remains to be detected.
     hook_codex_apply sensitive-file-guard
     hook_codex_apply git-guard
+    hook_codex_apply jmux-attention
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]
