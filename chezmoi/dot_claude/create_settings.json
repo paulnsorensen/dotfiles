@@ -131,5 +131,34 @@
   "theme": "dark-daltonized",
   "editorMode": "vim",
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "spinnerVerbs": {
+    "mode": "replace",
+    "verbs": [
+      "Curdling",
+      "Culturing",
+      "Renneting",
+      "Coagulating",
+      "Cheddaring",
+      "Draining",
+      "Pressing",
+      "Brining",
+      "Salting",
+      "Waxing",
+      "Aging",
+      "Affining",
+      "Ripening",
+      "Maturing",
+      "Turning",
+      "Melting",
+      "Grating",
+      "Crumbling",
+      "Marbling",
+      "Fermenting",
+      "Wheying",
+      "Rinding",
+      "Mongering",
+      "Fonduing"
+    ]
+  }
 }
