@@ -6,3 +6,4 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 - [[sync-and-chezmoi]] — how `dots sync` deploys (the symlink + `.sync` system, `SYNC_SKIP_LIST`, `bin/` PATH-from-clone), the chezmoi-managed subset, and the "shell functions need tests" convention.
 - [[dev-environment]] — git tooling (difftastic, mergiraf, the conflict-resolution chain), prek pre-commit hooks, Claude marketplace plugins, and skhd.
 - [[tmux-plugin-gotchas]] — tmux plugin wiring: why continuum silently disarms when `status-right` is rewritten after TPM runs, the required plugin declaration order, catppuccin palette injection via `theme/generate.sh`, and the live vs. repo plugin tree.
+- [[remote-access]] — the remote-shell stack: Tailscale mesh transport → mosh (UDP, survives roaming/sleep) → tmux session persistence, the `mtmux` wrapper, and why Tailscale stays a manual install under the Homebrew-on-Linux package model.

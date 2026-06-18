@@ -33,6 +33,7 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 | Local LLM stack (llama.cpp + LiteLLM, opt-in) | [[operations/local-llm]] |
 | Sync system + chezmoi-managed files | [[operations/sync-and-chezmoi]] |
 | Git tooling (difftastic / mergiraf), prek, Claude plugins, skhd | [[operations/dev-environment]] |
+| Remote access (Tailscale + mosh + tmux), the `mtmux` wrapper | [[operations/remote-access]] |
 
 **Repo layout:** `bin/` (live-from-clone CLI incl. `dots`), `agents/` (harness-agnostic config + registries + `agent_definitions/`), `agent-profile/` (the `ap` package), `profiles/`, `claude/` `codex/` `cursor/` (harness-specific), `skills/`, `chezmoi/` (templated deploys), `packages/`, `zsh/`, `tests/` (bats), `.hallouminate/wiki/`.
 
@@ -60,7 +61,7 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 
 ### Misc
 
-- `zrl` (reload zsh) · `uuidg` · `cdd` (→ `~/Dev`) · `skr` (skhd reload)
+- `zrl` (reload zsh) · `uuidg` · `cdd` (→ `~/Dev`) · `skr` (skhd reload) · `mtmux <host> [sess]` (Tailscale+mosh+tmux remote shell)
 
 ## Repo Conventions
 
