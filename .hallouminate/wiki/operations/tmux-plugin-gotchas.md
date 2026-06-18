@@ -46,6 +46,15 @@ set -g @plugin 'tmux-plugins/tmux-continuum'
 run '~/.tmux/plugins/tpm/tpm'
 ```
 
+**Sanctioned exception — post-TPM `set` lines that don't touch `status-right`.**
+"Always last" is specifically about `status-right` (and anything continuum
+appends to it). Re-asserting an *unrelated* option after the TPM run is safe.
+`tmux.conf` deliberately runs `set -g status-keys vi` after the TPM line to undo
+`tmux-sensible`'s unconditional `status-keys emacs` (tmux-sensible flips it on
+load). That touches `status-keys`, not `status-right`, so continuum's save hook
+is untouched. The rule to remember: never rewrite `status-right` after TPM; any
+other post-TPM `set` is fine.
+
 ## catppuccin/tmux palette injection via theme/generate.sh
 
 `theme/generate.sh` emits `set -g @thm_*` overrides into `tmux/theme.conf`
