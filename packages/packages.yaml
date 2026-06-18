@@ -5,7 +5,6 @@
 #
 #   source:      brew (default) | cask | tap | cargo | npm | uv | gh-extension
 #   dev:         only when DOTFILES_DEV=true
-#   apt:         override name for linux
 #   platform:    mac | linux (default: both)
 #   flags:       extra args spliced into the installer (uv source only;
 #                e.g. ["--python", "3.13", "--prerelease=allow"])

@@ -70,6 +70,7 @@ print_cheatsheet() {
     row "prefix o"               "popup: yazi (file manager)"
     row "prefix t"               "popup: scratch terminal"
     row "prefix ?"               "general dotfiles cheatsheet"
+    row "prefix /"               "this tmux cheatsheet (popup)"
     row "prefix r"               "reload tmux config"
     row "tmux-cheatsheet"        "this reference"
     printf "\n"

@@ -113,7 +113,7 @@ def _seed_legacy_settings(target: Path) -> Path:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'if [ -n "$TMUX" ]; then tmux set-option -q @jmux-attention 1; fi',
+                                    "command": 'if [ -n "$TMUX" ]; then tmux set-option -q @claude-stopped 1; fi',
                                     "timeout": 5,
                                 }
                             ]
@@ -155,10 +155,14 @@ def test_moshi_duplicate_stripped_across_events(tmp_path: Path) -> None:
 
 
 def test_tmux_stop_hook_preserved(tmp_path: Path) -> None:
+    # A user-authored Stop hook the registry does NOT manage (@claude-stopped)
+    # must survive self-heal. NB: the @jmux-attention Stop hook IS registry-
+    # managed now (agents/hooks/registry.yaml), so it is deliberately not used
+    # as the example here — using it would model a managed hook as user-owned.
     settings = _render(tmp_path)
     data = json.loads(settings.read_text())
     assert len(data["hooks"]["Stop"]) == 1
-    assert "jmux-attention" in data["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert "@claude-stopped" in data["hooks"]["Stop"][0]["hooks"][0]["command"]
 
 
 def test_js_guard_and_rtk_preserved(tmp_path: Path) -> None:
