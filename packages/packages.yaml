@@ -3,11 +3,11 @@
 # Bare string = brew formula (mac + linux)
 # Key-value = override defaults
 #
-#   source:   brew (default) | cask | tap | cargo | npm | uv | gh-extension
-#   dev:      only when DOTFILES_DEV=true
-#   platform: mac | linux (default: both)
-#   flags:    extra args spliced into the installer (uv source only;
-#             e.g. ["--python", "3.13", "--prerelease=allow"])
+#   source:      brew (default) | cask | tap | cargo | npm | uv | gh-extension
+#   dev:         only when DOTFILES_DEV=true
+#   platform:    mac | linux (default: both)
+#   flags:       extra args spliced into the installer (uv source only;
+#                e.g. ["--python", "3.13", "--prerelease=allow"])
 
 packages:
   - tinted-theming/tinted: { source: tap }
@@ -45,7 +45,7 @@ packages:
   - lazygit
   - git-town
   - joshmedeski/sesh: { source: tap }            # sesh tap (joshmedeski/sesh/sesh)
-  - sesh: { platform: mac }                       # session switcher; tmux binds guarded with if-shell
+  - sesh                                          # session switcher (joshmedeski/sesh tap); tmux binds guarded with if-shell
   - just
   - chezmoi
   - duckdb
@@ -56,6 +56,13 @@ packages:
   - vhs
   - gettext
   - taf2/tap/mdvi
+
+  # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh → tmux)
+  - mosh                                        # resilient mobile shell (UDP 60000-61000); survives roaming/sleep
+  # Tailscale: install manually, not via brew/dots sync. macOS uses the website/
+  # App Store install (one GUI variant — never run two side by side); Linux uses
+  # the official installer `curl -fsSL https://tailscale.com/install.sh | sh`,
+  # which wires the systemd daemon. Then `tailscale up`. See operations/remote-access wiki.
   - anomalyco/tap/opencode                    # open-source AI coding agent (fresher than homebrew-core)
   - charmbracelet/tap/crush                   # Charm terminal AI coding agent (MCP via crush.json)
 

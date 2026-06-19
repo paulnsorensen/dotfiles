@@ -13,6 +13,7 @@ source "$HOME/Dev/dotfiles/zsh/aliases.zsh"
 source "$HOME/Dev/dotfiles/zsh/completion.zsh"
 source "$HOME/Dev/dotfiles/zsh/fzf.zsh"
 source "$HOME/Dev/dotfiles/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
+source "$HOME/Dev/dotfiles/zsh/tmux.zsh"      # sesh shell-prompt session picker (Alt-s)
 
 # Source local customizations early
 [ -f $HOME/.zshrc.local ] && source $HOME/.zshrc.local

@@ -364,10 +364,11 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 99
 TOML
-    # Bring the other codex hooks (sensitive-file-guard, git-guard) in sync so
+    # Bring the other codex hooks (sensitive-file-guard, git-guard, jmux-attention) in sync so
     # only the session-start timeout drift remains to be detected.
     hook_codex_apply sensitive-file-guard
     hook_codex_apply git-guard
+    hook_codex_apply jmux-attention
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]
@@ -915,10 +916,11 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 5
 TOML
-    # Bring the other codex hooks (sensitive-file-guard, git-guard) in sync so
+    # Bring the other codex hooks (sensitive-file-guard, git-guard, jmux-attention) in sync so
     # only the session-start matcher drift remains to be detected.
     hook_codex_apply sensitive-file-guard
     hook_codex_apply git-guard
+    hook_codex_apply jmux-attention
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]
@@ -1226,4 +1228,49 @@ STUB
     ss_timeout=$(jq -r '.hooks.SessionStart[] | select((.hooks[0].command // "") | test("session-start-cheese-flair.sh")) | .hooks[0].timeout' "$fake_claude")
     [[ "$ss_cmd"     == 'bash "$HOME/.claude/hooks/session-start-cheese-flair.sh"' ]]
     [[ "$ss_timeout" == "5" ]]
+}
+
+# ─── jmux-attention Stop hook (enveloped from PR #185) ───────────────────
+@test "jmux attention registry entry declares Stop event for both harnesses" {
+    local entry
+    entry=$(yq -o=json '.hooks."jmux-attention"' "$REGISTRY_FILE")
+    [[ "$(jq -r '.event'     <<<"$entry")" == "Stop" ]]
+    [[ "$(jq -r '.script'    <<<"$entry")" == "agents/hooks/jmux-attention.sh" ]]
+    [[ "$(jq -r '.timeout'   <<<"$entry")" == "5" ]]
+    [[ "$(jq -r '.harnesses[0]' <<<"$entry")" == "claude" ]]
+    [[ "$(jq -r '.harnesses[1]' <<<"$entry")" == "codex"  ]]
+}
+
+@test "jmux attention hook no-ops outside tmux" {
+    local marker="$TEST_HOME/tmux-called"
+    local fake_bin="$TEST_HOME/fake-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/tmux" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" > "$marker"
+SH
+    chmod +x "$fake_bin/tmux"
+
+    TMUX='' PATH="$fake_bin:$PATH" run bash "$REAL_DOTFILES_DIR/agents/hooks/jmux-attention.sh"
+
+    assert_success
+    [[ "$output" == "" ]]
+    [[ ! -e "$marker" ]]
+}
+
+@test "jmux attention hook marks tmux session when TMUX is set" {
+    local marker="$TEST_HOME/tmux-called"
+    local fake_bin="$TEST_HOME/fake-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/tmux" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" > "$marker"
+SH
+    chmod +x "$fake_bin/tmux"
+
+    TMUX=/tmp/fake-tmux PATH="$fake_bin:$PATH" run bash "$REAL_DOTFILES_DIR/agents/hooks/jmux-attention.sh"
+
+    assert_success
+    [[ "$output" == "" ]]
+    [[ "$(< "$marker")" == "set-option -q @jmux-attention 1" ]]
 }

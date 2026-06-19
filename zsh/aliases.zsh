@@ -67,6 +67,25 @@ alias zrl="source ~/.zshrc"
 alias trl='tmux source-file ~/.tmux.conf && echo "tmux config reloaded"'
 
 # =============================================================================
+# Remote access (Tailscale + mosh + tmux)
+# =============================================================================
+# Canonical resilient remote shell: mosh keeps the connection alive across
+# network changes / sleep; tmux keeps the session alive across disconnects.
+# Usage: mtmux <host> [session]   (host = MagicDNS name or Tailscale IP)
+mtmux() {
+    local host="$1" session="${2:-main}"
+    if [[ -z "$host" ]]; then
+        echo "usage: mtmux <host> [session]" >&2
+        return 2
+    fi
+    mosh "$host" -- tmux new -A -s "$session"
+}
+
+# Tailscale shortcuts
+alias tss='tailscale status'
+alias tsip='tailscale ip -4'
+
+# =============================================================================
 # Search and Find (using ripgrep)
 # =============================================================================
 # Basic ripgrep shortcuts

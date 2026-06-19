@@ -68,7 +68,12 @@ assert_section() {
 
 @test "tmux prefix binding is documented" {
     run cheatsheet
-    assert_section "Ctrl+a"
+    assert_section "Ctrl+Space"
+}
+
+@test "tmux sesh session switcher is documented" {
+    run cheatsheet
+    assert_section "sesh"
 }
 
 @test "output is not empty" {
