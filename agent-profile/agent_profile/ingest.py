@@ -400,6 +400,7 @@ def _expand_plugins(
         harnesses: list[str] = _as_list(body.get("harnesses"))
         gate_unless = body.get("gate_unless")
         claude_native = bool(body.get("claude_native", False))
+        codex_native = bool(body.get("codex_native", False))
         description = body.get("description") or ""
 
         # `metadata.pluginRoot` (optional) is a base dir prefixed onto every
@@ -474,16 +475,25 @@ def _expand_plugins(
                         )
                     if server_body.get("optional") is not None:
                         item["optional"] = server_body["optional"]
-                    # DEDUP: for claude_native plugins, remove claude from decomposed
-                    # MCP harnesses — Claude gets the plugin via native marketplace
-                    # install (mcp__plugin_<name>_<server>__*), not bare user MCP.
+                    # DEDUP: for a harness whose native install delivers the
+                    # plugin (claude_native / codex_native), remove that harness
+                    # from the decomposed MCP harnesses — the harness gets the
+                    # plugin via its native marketplace install, not bare user MCP.
                     effective_harnesses = harnesses
-                    if claude_native and harnesses:
-                        effective_harnesses = [h for h in harnesses if h != "claude"]
+                    if harnesses:
+                        skip = set()
+                        if claude_native:
+                            skip.add("claude")
+                        if codex_native:
+                            skip.add("codex")
+                        if skip:
+                            effective_harnesses = [
+                                h for h in harnesses if h not in skip
+                            ]
                     if effective_harnesses:
                         item["harnesses"] = effective_harnesses
                     elif harnesses and not effective_harnesses:
-                        # All harnesses were claude-only; emit empty list so the
+                        # All harnesses were native-only; emit empty list so the
                         # item exists but renderers' harnesses-filter skips it.
                         item["harnesses"] = []
                     if gate_unless:
@@ -498,6 +508,12 @@ def _expand_plugins(
             if claude_native:
                 for skill in plugin_skills:
                     skill["_from_native_plugin"] = True
+            if codex_native:
+                # Separate flag from claude's: reusing _from_native_plugin would
+                # make the claude renderer wrongly skip a codex-only-native
+                # plugin's skills. Two independent flags, one per native path.
+                for skill in plugin_skills:
+                    skill["_from_codex_native_plugin"] = True
             out_skills.extend(plugin_skills)
 
         # Fail loud when the registry key matched no marketplace plugin. Without
@@ -516,14 +532,16 @@ def _expand_plugins(
                 f"match a plugins[].name in marketplace.json."
             )
 
-        # ── Native plugin descriptor (claude renderer pass) ──
+        # ── Native plugin descriptor (claude / codex renderer passes) ──
         # Carried once per registry entry (not per payload): the marketplace
-        # root and canonical marketplace name are what the renderer needs.
-        if claude_native:
+        # root and canonical marketplace name are what the renderers need.
+        # Carries both native booleans; each renderer consumes only its own.
+        if claude_native or codex_native:
             out_native.append(
                 {
                     "name": name,
-                    "claude_native": True,
+                    "claude_native": claude_native,
+                    "codex_native": codex_native,
                     "marketplace_root": str(marketplace_root),
                     "marketplace_name": marketplace_name,
                     "description": description,
