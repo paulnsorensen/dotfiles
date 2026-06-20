@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# ccw-rm — tear down one worktree in a single step: remove the worktree, delete
+# its claude/<slug> branch, kill its tmux session, and drop the linked Claude
+# projects dir. Run from inside the repo (the worktree's parent).
+#
+# Usage: ccw-rm <slug> [--force]
+#   --force  discard uncommitted changes in the worktree (otherwise refuses)
+set -euo pipefail
+
+slug=""
+force=false
+for arg in "$@"; do
+    case "$arg" in
+        --force | -f) force=true ;;
+        *) [[ -z "$slug" ]] && slug="$arg" ;;
+    esac
+done
+
+if [[ -z "$slug" ]]; then
+    echo "Usage: ccw-rm <slug> [--force]" >&2
+    exit 1
+fi
+
+if ! repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+    echo "ccw-rm: not inside a git repository" >&2
+    exit 1
+fi
+
+wt_dir="${repo_root}/.worktrees/${slug}"
+branch="claude/${slug}"
+
+if [[ ! -d "$wt_dir" ]]; then
+    echo "ccw-rm: no worktree at ${wt_dir}" >&2
+    exit 1
+fi
+
+# Kill the worktree's tmux session, if one is running.
+if command -v tmux &>/dev/null; then
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    session="$("${script_dir}/cc-session-name" "$wt_dir")"
+    if tmux has-session -t "$session" 2>/dev/null; then
+        tmux kill-session -t "$session" && echo "Killed tmux session: ${session}"
+    fi
+fi
+
+# Remove the worktree (git refuses on a dirty tree unless --force).
+remove_args=(worktree remove "$wt_dir")
+$force && remove_args+=(--force)
+if ! git -C "$repo_root" "${remove_args[@]}"; then
+    echo "ccw-rm: could not remove worktree (uncommitted changes, or locked) — re-run with --force to discard" >&2
+    exit 1
+fi
+echo "Removed worktree: ${wt_dir}"
+
+# Delete the branch (best-effort — warns rather than fails).
+if git -C "$repo_root" show-ref --verify --quiet "refs/heads/${branch}"; then
+    if git -C "$repo_root" branch -D "$branch" &>/dev/null; then
+        echo "Deleted branch: ${branch}"
+    else
+        echo "ccw-rm: could not delete branch ${branch} (checked out elsewhere?)" >&2
+    fi
+fi
+
+# Drop the symlinked Claude projects dir created by ccw-init, if present.
+wt_key="${wt_dir//[\/.]/-}"
+projects="${HOME}/.claude/projects/${wt_key}"
+if [[ -L "$projects" ]]; then
+    rm -f "$projects"
+    echo "Removed Claude projects symlink: ${wt_key}"
+fi

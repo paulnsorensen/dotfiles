@@ -31,18 +31,27 @@ _cc_base() {
     local -a cmd=(claude "${flags[@]}" "$@")
     local launcher="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-env-exec"
     [[ -x "$launcher" ]] && cmd=("$launcher" "${cmd[@]}")
-    # Outside tmux: create-or-attach session (-A attaches if it exists, command ignored on attach).
-    if [[ -z "$TMUX" ]] && command -v tmux &>/dev/null; then
-        local session="${${PWD:t}//[.:]/-}"
+    # No tmux installed: run claude in place.
+    if ! command -v tmux &>/dev/null; then
+        "${cmd[@]}"
+        return
+    fi
+    # Collision-safe session name (bin/cc-session-name): <repo>-<slug> for a
+    # worktree, <repo> otherwise. Re-running cc/ccw for the same worktree
+    # reuses its session instead of spawning another (de-sprawl), and
+    # same-named worktrees across different repos no longer collide.
+    local session
+    session="$("${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-session-name" "$PWD")"
+    if [[ -z "$TMUX" ]]; then
+        # Outside tmux: create-or-attach (-A attaches if it exists; cmd ignored on attach).
         tmux new-session -A -s "$session" "${(j: :)${(@q)cmd}}"
-    # Inside tmux from ccw: dedicate a session and switch-client to it.
-    elif [[ -n "$_CC_IN_SESSION" ]] && command -v tmux &>/dev/null; then
-        local session="${${PWD:t}//[.:]/-}"
-        # Only create if the session doesn't already exist; then switch to it.
+    elif [[ -n "$_CC_IN_SESSION" ]]; then
+        # Inside tmux from ccw: dedicate a session and switch-client (never nests).
         tmux has-session -t "$session" 2>/dev/null \
             || tmux new-session -d -s "$session" "${(j: :)${(@q)cmd}}"
         tmux switch-client -t "$session"
     else
+        # Bare cc inside an existing tmux session: run in place, no nesting.
         "${cmd[@]}"
     fi
 }
@@ -50,6 +59,38 @@ _cc_base() {
 cc()  { _cc_base "$@"; }
 ccc() { _cc_base --continue "$@"; }
 ccr() { _cc_base --resume "$@"; }
+
+# ccs — jump to a running Claude/worktree tmux session via an fzf picker.
+# Inside tmux: switch-client; outside: attach.
+ccs() {
+    command -v tmux &>/dev/null || { echo "ccs: tmux not installed" >&2; return 1; }
+    command -v fzf  &>/dev/null || { echo "ccs: fzf not installed" >&2; return 1; }
+    local session
+    session="$(tmux list-sessions -F '#{session_name}' 2>/dev/null \
+        | fzf --height 40% --reverse --border-label ' claude sessions ' --prompt '🧀  ')"
+    [[ -z "$session" ]] && return 0
+    if [[ -n "$TMUX" ]]; then
+        tmux switch-client -t "$session"
+    else
+        tmux attach -t "$session"
+    fi
+}
+
+# ccp <name> — launch a scoped Claude profile (profiles/<name>/profile.yaml).
+#   ccp research            → dots profile launch claude research
+#   ccp list                → dots profile list
+ccp() {
+    if [[ -z "$1" ]]; then
+        echo "Usage: ccp <profile> [-- claude args...]" >&2
+        echo "  ccp list   list available profiles" >&2
+        return 1
+    fi
+    if [[ "$1" == "list" || "$1" == "ls" ]]; then
+        dots profile list
+        return
+    fi
+    dots profile launch claude "$@"
+}
 
 # Copilot CLI launch wrapper — injects the canonical allow/deny lists as
 # --allow-tool / --deny-tool flags (lever 1). Copilot has no config-file
@@ -115,21 +156,19 @@ alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'
 # Deploy is unified through `ap`: the registry stays the edit surface
 # (mcp-edit), and base-sync renders the registry-derived union into every
-# harness at $HOME (curd 7 / D1 — replaces the retired mcp sync).
-alias mcp-sync='base-sync'
+# harness at $HOME (curd 7 / D1 — replaces the retired mcp sync). The unified
+# entry point is `base-sync`; the per-registry *-sync mnemonics were retired.
 alias mcp-edit='${EDITOR:-vim} $AGENTS_DOTFILES/mcp/registry.yaml'
 
 # ═══════════════════════════════════════════════════════════════════
 # Hook Management (harness-agnostic — edit surface; deploy via `ap`)
 # ═══════════════════════════════════════════════════════════════════
-alias hook-sync='base-sync'
 alias hook-edit='${EDITOR:-vim} $AGENTS_DOTFILES/hooks/registry.yaml'
 alias hook-ls='yq -r ".hooks | keys | .[]" $AGENTS_DOTFILES/hooks/registry.yaml'
 
 # ═══════════════════════════════════════════════════════════════════
 # Agent Management (harness-agnostic — edit surface; deploy via `ap`)
 # ═══════════════════════════════════════════════════════════════════
-alias agent-sync='base-sync'
 alias agent-edit='${EDITOR:-vim} $AGENTS_DOTFILES/registry.yaml'
 alias agent-ls='yq -r ".agents | keys | .[]" $AGENTS_DOTFILES/registry.yaml'
 
@@ -154,33 +193,50 @@ mcp-add() {
 #   ccw my-feature          → creates .worktrees/my-feature, branch claude/my-feature
 #                              outside tmux: new-session; inside tmux: new-session + switch-client
 #   ccw my-feature --resume  → same but resumes last conversation
+#   ccw                     → fzf-pick an existing worktree under ~/Dev to resume
+#   ccw <slug>              → worktree in the current repo
+#   ccw <repo>/<slug>       → worktree in ~/Dev/<repo> (no need to cd in first)
 ccw() {
+    # No slug: fuzzy-pick an existing worktree across ~/Dev and jump back in.
     if [[ -z "$1" ]]; then
-        echo "Usage: ccw <slug> [claude args...]"
-        echo "  ccw add-auth          Launch claude in .worktrees/add-auth"
-        echo "  ccw add-auth --resume Resume last session in that worktree"
-        return 1
+        command -v fzf &>/dev/null || {
+            echo "Usage: ccw <slug> | ccw <repo>/<slug>   (fzf needed for the no-arg picker)" >&2
+            return 1
+        }
+        local dev="${DEV_DIR:-$HOME/Dev}"
+        local picked
+        # Cover repo worktrees and one level of nesting (a worktree created
+        # from inside another worktree).
+        picked="$(print -l "$dev"/*/.worktrees/*(N/) "$dev"/*/.worktrees/*/.worktrees/*(N/) 2>/dev/null \
+            | fzf --height 40% --reverse --border-label ' worktrees ' --prompt '🧀  ')"
+        [[ -z "$picked" ]] && return 0
+        cd "$picked" && _CC_IN_SESSION=1 cc
+        return
     fi
 
-    local slug="$1"
+    # Resolve repo + slug. A "repo/slug" arg targets ~/Dev/<repo>; a bare slug
+    # uses the current repo.
+    local arg="$1"
     shift
+    local repo_dir slug
+    if [[ "$arg" == */* ]]; then
+        local repo="${arg%%/*}"
+        slug="${arg#*/}"
+        repo_dir="${DEV_DIR:-$HOME/Dev}/${repo}"
+        [[ -d "$repo_dir" ]] || { echo "ccw: repo not found: $repo_dir" >&2; return 1; }
+    else
+        slug="$arg"
+        repo_dir="$(git rev-parse --show-toplevel 2>/dev/null)" \
+            || { echo "ccw: not in a git repo — use ccw <repo>/<slug>" >&2; return 1; }
+    fi
 
-    # Find ccw-init relative to repo or DOTFILES_DIR
+    # Find ccw-init in DOTFILES_DIR or the target repo.
     local ccw_init="${DOTFILES_DIR}/bin/ccw-init"
-    if [[ ! -f "${ccw_init}" ]]; then
-        # Fallback: check if it's in the current repo
-        local repo_root
-        repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 1
-        ccw_init="${repo_root}/bin/ccw-init"
-    fi
-
-    if [[ ! -f "${ccw_init}" ]]; then
-        echo "ccw-init not found" >&2
-        return 1
-    fi
+    [[ -f "${ccw_init}" ]] || ccw_init="${repo_dir}/bin/ccw-init"
+    [[ -f "${ccw_init}" ]] || { echo "ccw-init not found" >&2; return 1; }
 
     local result
-    result="$("${ccw_init}" "${slug}")" || return 1
+    result="$(cd "${repo_dir}" && "${ccw_init}" "${slug}")" || return 1
 
     local wt_path
     wt_path="$(echo "$result" | jq -er '.path')" || { echo "ccw: failed to parse worktree path" >&2; return 1; }
@@ -209,6 +265,9 @@ alias ccw-ls='git worktree list'
 # Verify worktree permissions and sandbox config (lives in bin/)
 alias ccw-check='$DOTFILES_DIR/bin/ccw-check'
 
+# Tear down one worktree — remove it + delete branch + kill tmux session (lives in bin/)
+alias ccw-rm='$DOTFILES_DIR/bin/ccw-rm'
+
 # GitHub helpers (gh-pr-review, gh-pr-prep, gh-issue-context) live in bin/
 
 # ═══════════════════════════════════════════════════════════════════
@@ -226,7 +285,6 @@ alias plugin='claude plugin'
 alias plugin-ls='claude plugin list'
 # plugin-sync: deploy plugins via ap (cross-harness registry -> dots sync)
 alias plugin-sync='dots profile install base'
-alias plugin-sync-dry='dots profile install base --dry-run 2>/dev/null || echo "note: dry-run not yet implemented for ap; use dots status"'
 # plugin-edit: the cross-harness plugin registry (SSOT for all harnesses)
 alias plugin-edit='${EDITOR:-vim} $DOTFILES_DIR/agents/plugins/registry.yaml'
 
@@ -290,7 +348,6 @@ alias vdv='vaudeville'
 # plus a manual Claude refresh. All three are idempotent.
 alias rtk-init-claude='rtk init -g'                       # global
 alias rtk-init-cursor='rtk init -g --agent cursor'        # global
-alias rtk-init-antigravity='rtk init --agent antigravity' # project-scoped, run in project root
 
 # ═══════════════════════════════════════════════════════════════════
 # Ralphify (autonomous coding loops — github.com/computerlovetech/ralphify)

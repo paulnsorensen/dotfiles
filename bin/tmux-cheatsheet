@@ -65,6 +65,17 @@ print_cheatsheet() {
     row "tmux kill-server"      "kill the server (all sessions)"
     row "Alt+s (shell)"          "sesh: fuzzy session picker from the shell prompt"
 
+    hdr "zsh tmux & remote shortcuts"
+    row "tls"                    "tmux ls"
+    row "ta [name]"              "tmux attach (most recent or named)"
+    row "tn <name>"              "tmux new -s <name>"
+    row "tk <name>"              "tmux kill-session -t <name>"
+    row "tsw"                    "fzf-pick a session and switch / attach"
+    row "trl"                    "reload tmux config from the shell"
+    row "mtmux <host> [sess]"    "mosh + tmux resilient remote shell"
+    row "tss"                    "tailscale status"
+    row "tsip"                   "tailscale ip -4"
+
     hdr "Popups & misc"
     row "prefix G"               "popup: lazygit"
     row "prefix o"               "popup: yazi (file manager)"
