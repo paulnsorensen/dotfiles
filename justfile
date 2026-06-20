@@ -13,6 +13,7 @@ lint-shell:
     shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/install-base-profile.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-codex.sh chezmoi/lib/install-shared-assets.sh
     shellcheck -x -e SC1091 -s bash agents/hooks/session-start-cheese-flair.sh
     shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh tests/serena-smoke.sh
+    shellcheck -x -e SC1091 -s bash tests/workflows-parse.sh
     @echo "shellcheck: ok"
 
 # ruff on python files
@@ -55,6 +56,7 @@ test *ARGS:
 # (skips cleanly when serena isn't installed)
 smoke:
     ./tests/serena-smoke.sh
+    ./tests/workflows-parse.sh
 
 # pre-push gate: lint + unit tests + serena smoke test
 check: lint test smoke

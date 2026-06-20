@@ -1,0 +1,33 @@
+# milknado.toml — ultracook-fleet partition worker config
+#
+# This file is copied into each partition worktree by the Partition phase.
+# It configures the claude -p execution agent and empty quality_gates
+# (review quality comes from the /age and /cure phase nodes themselves).
+#
+# Architecture note: the 7-phase chain is:
+#   cook -> press -> age -> cure -> age -> cure -> age
+# Each node's RALPH.md description carries the phase skill invocation
+# (e.g. "Run /cook <slug>"). The milknado run loop reads the description
+# and passes it to the worker as the task brief. The worker (claude -p)
+# sees "Run /cook <slug>" and invokes /cook <slug>.
+#
+# Timeout set generously: a full easy-cheese phase can take many minutes.
+# Increase per-node timeout via milknado_ralph_run_start timeout_seconds
+# if a phase regularly exceeds 3600 seconds.
+
+[milknado]
+agent_family = "claude"
+execution_agent = "claude --dangerously-skip-permissions -p"
+quality_gates = []
+worktree_pattern = "uf-worker-{node_id}-{slug}"
+concurrency_limit = 1
+db_path = ".milknado/milknado.db"
+plugins = []
+
+# [milknado.worker.tools] is intentionally absent.
+# execution_agent is set explicitly above, which causes resolve_execution_agent_command
+# (agent_argv.py:161-163) to return the string verbatim — the tools block is
+# never consulted for subprocess dispatch. --dangerously-skip-permissions
+# additionally bypasses all tool restrictions at the Claude level, so the
+# worker can invoke the Skill tool (for /cook, /press, /age, /cure) and any
+# other tool freely. Adding a tools block here would be misleading dead config.
