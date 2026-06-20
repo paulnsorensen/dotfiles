@@ -18,6 +18,7 @@ hand-rolled escaping — tomlkit owns the escaping now.
 from __future__ import annotations
 
 import json
+import shutil
 import tomllib
 from pathlib import Path
 
@@ -633,8 +634,12 @@ def test_clean_keeps_file_when_user_table_remains(renderer, src, target):
 
 def test_no_hand_rolled_escaping_in_source():
     """The bash hand-rolled ``_codex_toml_string`` /
-    ``_codex_escape_toml_triple`` and shelled out to jq/yq. None of that
-    machinery may survive the tomlkit port.
+    ``_codex_escape_toml_triple`` and shelled out to jq/yq for config writes.
+    None of that TOML-escaping machinery may survive the tomlkit port.
+
+    (``subprocess`` is intentionally NOT forbidden: the codex_native plugin
+    pass shells out to the ``codex`` CLI, mirroring the claude renderer's
+    native install — that is config delegation, not hand-rolled escaping.)
 
     We inspect *code only* — comments and string literals (incl. the module
     docstring, which legitimately names the removed bash helpers to explain
@@ -655,7 +660,6 @@ def test_no_hand_rolled_escaping_in_source():
     for forbidden in (
         "_codex_toml_string",
         "_codex_escape_toml_triple",
-        "subprocess",
         "jq",
         "yq",
         "replace",  # no str.replace-based manual escaping
@@ -1085,3 +1089,460 @@ def test_clean_leaves_sibling_default_rules_untouched(renderer, src, target):
     assert not (target / _RULES_REL).is_file()
     assert default_rules.is_file()
     assert default_rules.read_text() == "# TUI-owned, ap must not touch\n"
+
+
+# ─── codex_native plugin pass ───────────────────────────────────────────────
+# Mirrors test_claude_native_plugins.py's renderer section: a codex_native plugin
+# installs via the codex CLI (mocked), its decomposed MCP/skills are not written
+# into config.toml / .agents/skills, and clean() un-registers via the CLI.
+
+from unittest.mock import MagicMock, patch  # noqa: E402
+
+
+def _make_codex_native_marketplace(tmp_path, market_name="milknado"):
+    """Build a marketplace root carrying both manifests — .claude-plugin/
+    marketplace.json (read by claude et al.) and .agents/plugins/marketplace.json
+    (the manifest codex's `plugin marketplace add` actually parses) — and a
+    Manifest whose native_plugins entry flags codex_native. Returns
+    (manifest, market_root)."""
+    market_root = tmp_path / "mktplace" / market_name
+    market_root.mkdir(parents=True, exist_ok=True)
+    (market_root / ".claude-plugin").mkdir()
+    (market_root / ".claude-plugin" / "marketplace.json").write_text(
+        json.dumps({
+            "name": market_name,
+            "owner": {"name": "test"},
+            "plugins": [{"name": market_name, "source": f"./plugins/{market_name}"}],
+        })
+    )
+    (market_root / ".agents" / "plugins").mkdir(parents=True)
+    (market_root / ".agents" / "plugins" / "marketplace.json").write_text(
+        json.dumps({
+            "name": market_name,
+            "interface": {"displayName": market_name},
+            "plugins": [{
+                "source": {"source": "local", "path": f"./plugins/{market_name}"},
+            }],
+        })
+    )
+    manifest = Manifest(
+        name="base",
+        native_plugins=[{
+            "name": market_name,
+            "claude_native": False,
+            "codex_native": True,
+            "marketplace_root": str(market_root),
+            "marketplace_name": market_name,
+            "description": "Test plugin",
+        }],
+    )
+    return manifest, market_root
+
+
+def test_codex_native_install_shells_marketplace_and_plugin_add(tmp_path):
+    """render() runs `codex plugin marketplace add <root>` + `codex plugin add
+    <name>@<marketplace>` for a codex_native plugin."""
+    manifest, market_root = _make_codex_native_marketplace(tmp_path)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().render(manifest, target)
+
+    calls = [c.args[0] for c in mock_run.call_args_list if c.args]
+    assert ["codex", "plugin", "marketplace", "add", str(market_root)] in calls, (
+        f"expected marketplace add with marketplace root, got: {calls}"
+    )
+    assert ["codex", "plugin", "add", "milknado@milknado"] in calls, (
+        f"expected plugin add <name>@<marketplace>, got: {calls}"
+    )
+
+
+def test_codex_native_marketplace_add_uses_root_with_manifest(tmp_path):
+    """The path passed to marketplace add holds the manifest codex actually
+    parses: .agents/plugins/marketplace.json (not .claude-plugin/...)."""
+    manifest, market_root = _make_codex_native_marketplace(tmp_path)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().render(manifest, target)
+
+    market_calls = [
+        c.args[0] for c in mock_run.call_args_list
+        if c.args and c.args[0][:4] == ["codex", "plugin", "marketplace", "add"]
+    ]
+    assert market_calls
+    passed = market_calls[0][-1]
+    assert (Path(passed) / ".agents" / "plugins" / "marketplace.json").is_file(), (
+        f"marketplace add path {passed} has no .agents/plugins/marketplace.json"
+    )
+
+
+def test_codex_native_skills_skipped(tmp_path):
+    """_write_skills skips items carrying _from_codex_native_plugin."""
+    payload = tmp_path / "payload"
+    skill_src = payload / "skills" / "my-skill"
+    skill_src.mkdir(parents=True)
+    (skill_src / "SKILL.md").write_text("skill content")
+
+    manifest = Manifest(
+        name="base",
+        skills=[{
+            "name": "my-skill",
+            "path": "skills/my-skill",
+            "_source_dir": str(payload),
+            "_from_codex_native_plugin": True,
+        }],
+    )
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().render(manifest, target)
+
+    # codex copies skills into the shared .agents/skills/<name>/ tree.
+    skill_out = target / ".agents" / "skills" / "my-skill"
+    assert not skill_out.exists(), (
+        f"codex_native skill must not be copied (delivered via codex plugin): {skill_out}"
+    )
+
+
+def test_codex_native_plugin_mcp_absent_from_config(tmp_path):
+    """After DEDUP, an MCP with harnesses=[opencode] (codex removed) is not
+    written into config.toml's [mcp_servers] for codex.
+
+    Not vacuous: the item originally carried codex in harnesses; DEDUP removed
+    it. If DEDUP were dropped, mcps_for(..., 'codex') would include it and the
+    server would land in config.toml.
+    """
+    manifest, market_root = _make_codex_native_marketplace(tmp_path)
+    manifest.mcps = [{
+        "name": "milknado",
+        "command": "uvx",
+        "args": ["milknado-mcp"],
+        "harnesses": ["opencode"],  # codex removed by DEDUP
+        "_source_dir": str(market_root),
+    }]
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().render(manifest, target)
+
+    cfg = target / ".codex" / "config.toml"
+    if cfg.is_file():
+        doc = tomllib.loads(cfg.read_text())
+        servers = doc.get("mcp_servers", {})
+        assert "milknado" not in servers, (
+            f"codex_native plugin MCP must not be in config.toml: {servers}"
+        )
+
+
+def test_codex_native_clean_unregisters(tmp_path):
+    """clean() runs `codex plugin remove` + `codex plugin marketplace remove`."""
+    manifest, market_root = _make_codex_native_marketplace(tmp_path)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().clean(manifest, target)
+
+    calls = [c.args[0] for c in mock_run.call_args_list if c.args]
+    assert ["codex", "plugin", "remove", "milknado@milknado"] in calls, (
+        f"expected plugin remove, got: {calls}"
+    )
+    assert ["codex", "plugin", "marketplace", "remove", "milknado"] in calls, (
+        f"expected marketplace remove, got: {calls}"
+    )
+
+
+def test_codex_native_install_tolerates_missing_cli(tmp_path):
+    """A missing codex binary (FileNotFoundError) is a no-op, not a hard fail."""
+    manifest, _ = _make_codex_native_marketplace(tmp_path)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        CodexRenderer().render(manifest, target)  # must not raise
+
+
+@pytest.mark.skipif(
+    shutil.which("codex") is None, reason="codex CLI not installed"
+)
+def test_real_codex_rejects_manifest_missing_name(tmp_path):
+    """Non-mocked: the real `codex plugin marketplace add` must reject a
+    .agents/plugins/marketplace.json with no top-level `name`. This is the exact
+    shape that silently stripped milknado from codex; the strict marketplace-add
+    path must turn that into a loud render failure (RuntimeError), not a no-op.
+    """
+    market_root = tmp_path / "mkt"
+    (market_root / ".agents" / "plugins").mkdir(parents=True)
+    (market_root / ".agents" / "plugins" / "marketplace.json").write_text(
+        json.dumps({
+            "interface": {"displayName": "badmkt"},  # no top-level "name"
+            "plugins": [{
+                "source": {"source": "local", "path": "./plugins/badmkt"},
+            }],
+        })
+    )
+    entry = {
+        "name": "badmkt",
+        "marketplace_name": "badmkt-unregistered-xyz",
+        "marketplace_root": str(market_root),
+        "codex_native": True,
+    }
+    with pytest.raises(RuntimeError, match="marketplace add"):
+        CodexRenderer()._install_codex_native_plugin(entry)
+
+
+def test_codex_native_marketplace_add_failure_raises(tmp_path):
+    """A nonzero `marketplace add` is fatal: it raises instead of silently
+    stripping the plugin from codex (DEDUP already dropped its decomposed MCP).
+    """
+    manifest, _ = _make_codex_native_marketplace(tmp_path)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    def fake_run(argv, **kwargs):
+        if argv[:4] == ["codex", "plugin", "marketplace", "add"]:
+            return MagicMock(returncode=1, stderr="invalid marketplace file", stdout="")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with pytest.raises(RuntimeError, match="marketplace add"):
+            CodexRenderer().render(manifest, target)
+
+
+def test_codex_native_plugin_add_warns_on_nonzero(tmp_path, capsys):
+    """A nonzero `plugin add` warns loud (does not raise) — "already installed"
+    on re-sync is benign, unlike a failed marketplace add.
+    """
+    manifest, _ = _make_codex_native_marketplace(tmp_path)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    def fake_run(argv, **kwargs):
+        if argv[:3] == ["codex", "plugin", "add"]:
+            return MagicMock(returncode=1, stderr="boom", stdout="")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        CodexRenderer().render(manifest, target)  # must not raise
+
+    err = capsys.readouterr().err
+    assert "boom" in err and "codex" in err
+
+
+def test_non_codex_native_descriptor_is_ignored(tmp_path):
+    """A native descriptor with codex_native=False triggers no codex CLI calls."""
+    manifest, _ = _make_codex_native_marketplace(tmp_path)
+    manifest.native_plugins[0]["codex_native"] = False
+    manifest.native_plugins[0]["claude_native"] = True
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().render(manifest, target)
+
+    assert mock_run.call_count == 0, (
+        "claude_native-only descriptor must not drive codex CLI installs"
+    )
+
+
+# ─── codex_native hardening: name/marketplace divergence, expansion, order ──
+# marketplace_name comes from marketplace.json's `name`, which can diverge from
+# the registry key (`name`) — exactly as test_claude_native_plugins covers for
+# the claude path. The codex CLI args mix the two (`{name}@{marketplace_name}`,
+# `marketplace remove {marketplace_name}`); these tests pin which value lands in
+# which argument so a name<->marketplace_name swap can't pass silently.
+
+
+def _codex_native_manifest(name, marketplace_name, market_root):
+    return Manifest(
+        name="base",
+        native_plugins=[{
+            "name": name,
+            "claude_native": False,
+            "codex_native": True,
+            "marketplace_root": str(market_root),
+            "marketplace_name": marketplace_name,
+            "description": "Test plugin",
+        }],
+    )
+
+
+def test_codex_native_install_distinguishes_name_from_marketplace(tmp_path):
+    """plugin add uses `<name>@<marketplace_name>` with the two values kept
+    distinct — guards against swapping registry key and marketplace name."""
+    market_root = tmp_path / "mkt"
+    market_root.mkdir()
+    manifest = _codex_native_manifest("milknado", "acme-market", market_root)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().render(manifest, target)
+
+    calls = [c.args[0] for c in mock_run.call_args_list if c.args]
+    assert ["codex", "plugin", "add", "milknado@acme-market"] in calls, (
+        f"plugin add must be <name>@<marketplace_name>, got: {calls}"
+    )
+    # The wrong-way-round form must NOT appear.
+    assert ["codex", "plugin", "add", "acme-market@milknado"] not in calls
+
+
+def test_codex_native_clean_removes_by_marketplace_name(tmp_path):
+    """clean() removes the plugin by `<name>@<marketplace_name>` and the
+    marketplace by `<marketplace_name>` (not the registry key)."""
+    market_root = tmp_path / "mkt"
+    market_root.mkdir()
+    manifest = _codex_native_manifest("milknado", "acme-market", market_root)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().clean(manifest, target)
+
+    calls = [c.args[0] for c in mock_run.call_args_list if c.args]
+    assert ["codex", "plugin", "remove", "milknado@acme-market"] in calls, (
+        f"plugin remove must be <name>@<marketplace_name>, got: {calls}"
+    )
+    assert ["codex", "plugin", "marketplace", "remove", "acme-market"] in calls, (
+        f"marketplace remove must use marketplace_name, got: {calls}"
+    )
+    assert ["codex", "plugin", "marketplace", "remove", "milknado"] not in calls
+
+
+def test_codex_native_marketplace_root_is_expanded(tmp_path, monkeypatch):
+    """`~` / `$VAR` in marketplace_root are expanded before reaching the CLI.
+
+    Every other test uses an already-absolute tmp_path, so the
+    expandvars/expanduser call is a silent no-op there. This drives a real
+    unexpanded root and asserts the literal `~`/`$VAR` never reaches codex.
+    """
+    real_root = tmp_path / "caveroot" / "mkt"
+    real_root.mkdir(parents=True)
+    monkeypatch.setenv("AP_TEST_CAVE", str(tmp_path / "caveroot"))
+    manifest = _codex_native_manifest(
+        "milknado", "milknado", "$AP_TEST_CAVE/mkt"
+    )
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().render(manifest, target)
+
+    market_calls = [
+        c.args[0] for c in mock_run.call_args_list
+        if c.args and c.args[0][:4] == ["codex", "plugin", "marketplace", "add"]
+    ]
+    assert market_calls, "no marketplace add call"
+    passed = market_calls[0][-1]
+    assert "$AP_TEST_CAVE" not in passed, f"$VAR not expanded: {passed}"
+    assert passed == str(real_root), f"expected expanded root, got: {passed}"
+
+
+def test_codex_native_marketplace_add_precedes_plugin_add(tmp_path):
+    """marketplace add must run before plugin add — codex can't install a
+    plugin from a marketplace it hasn't registered yet."""
+    manifest, _ = _make_codex_native_marketplace(tmp_path)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().render(manifest, target)
+
+    calls = [c.args[0] for c in mock_run.call_args_list if c.args]
+    market_idx = next(
+        i for i, a in enumerate(calls)
+        if a[:4] == ["codex", "plugin", "marketplace", "add"]
+    )
+    add_idx = next(
+        i for i, a in enumerate(calls)
+        if a[:3] == ["codex", "plugin", "add"]
+    )
+    assert market_idx < add_idx, (
+        f"marketplace add must precede plugin add, got order: {calls}"
+    )
+
+
+def test_codex_native_clean_remove_order(tmp_path):
+    """clean() removes the plugin before removing its marketplace."""
+    manifest, _ = _make_codex_native_marketplace(tmp_path)
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().clean(manifest, target)
+
+    calls = [c.args[0] for c in mock_run.call_args_list if c.args]
+    remove_idx = next(
+        i for i, a in enumerate(calls)
+        if a[:3] == ["codex", "plugin", "remove"]
+    )
+    mkt_remove_idx = next(
+        i for i, a in enumerate(calls)
+        if a[:4] == ["codex", "plugin", "marketplace", "remove"]
+    )
+    assert remove_idx < mkt_remove_idx, (
+        f"plugin remove must precede marketplace remove, got order: {calls}"
+    )
+
+
+def test_codex_native_installs_only_codex_native_in_mixed_manifest(tmp_path):
+    """With a codex_native entry next to a claude_native-only entry, only the
+    codex_native plugin drives codex CLI installs."""
+    market_root = tmp_path / "mkt"
+    market_root.mkdir()
+    manifest = Manifest(
+        name="base",
+        native_plugins=[
+            {
+                "name": "claude-only",
+                "claude_native": True,
+                "codex_native": False,
+                "marketplace_root": str(market_root),
+                "marketplace_name": "claude-only",
+                "description": "",
+            },
+            {
+                "name": "milknado",
+                "claude_native": False,
+                "codex_native": True,
+                "marketplace_root": str(market_root),
+                "marketplace_name": "milknado",
+                "description": "",
+            },
+        ],
+    )
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        CodexRenderer().render(manifest, target)
+
+    added = [
+        c.args[0][-1] for c in mock_run.call_args_list
+        if c.args and c.args[0][:3] == ["codex", "plugin", "add"]
+    ]
+    assert added == ["milknado@milknado"], (
+        f"only the codex_native plugin must be installed, got: {added}"
+    )
+    assert not any(
+        "claude-only" in arg
+        for c in mock_run.call_args_list if c.args
+        for arg in c.args[0]
+    ), "claude_native-only plugin must not touch the codex CLI"

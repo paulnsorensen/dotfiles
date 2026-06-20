@@ -30,6 +30,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -92,6 +93,7 @@ class CodexRenderer:
         self._write_skills(manifest, target, out_files)
         self._write_hooks(manifest, target, out_files)
         self._write_mcps(manifest, target)
+        self._render_native_plugins(manifest)
         self._write_rules(manifest, target, out_files)
         self._write_mcp_tool_scopes(manifest, target)
         self._warn_commands(manifest)
@@ -101,6 +103,7 @@ class CodexRenderer:
         self._clean_mcps(manifest, Path(target))
         self._clean_rules(Path(target))
         self._clean_mcp_tool_scopes(manifest, Path(target))
+        self._clean_native_plugins(manifest)
 
     def prune_mcps(self, manifest: Manifest, target: Path) -> None:
         """Evict dropped MCP servers from config.toml's [mcp_servers]
@@ -149,6 +152,8 @@ class CodexRenderer:
         self, manifest: Manifest, target: Path, out_files: list[str]
     ) -> None:
         for item in manifest.skills:
+            if item.get("_from_codex_native_plugin"):
+                continue  # native plugin delivers skills via codex plugin install
             rel_path = item.get("path") or ""
             if not rel_path:
                 continue  # source: (gh-fetched) skill — handled by cmd_install
@@ -161,6 +166,122 @@ class CodexRenderer:
                     f"    codex: skill '{name}' source dir missing: {src}",
                     file=sys.stderr,
                 )
+
+    # ─── native plugins (codex_native marketplace install) ──────────────
+    # Mirrors the claude renderer's native pass: a codex_native plugin is
+    # installed via codex's own CLI (`codex plugin marketplace add <root>` +
+    # `codex plugin add <name>@<marketplace>`) instead of being decomposed
+    # into config.toml MCP + .agents/skills. Codex owns the install; ap only
+    # drives the CLI. Idempotent on re-sync: re-runs use check=False and
+    # tolerate "already added/installed".
+    def _render_native_plugins(self, manifest: Manifest) -> None:
+        for entry in manifest.native_plugins:
+            if not entry.get("codex_native"):
+                continue
+            self._install_codex_native_plugin(entry)
+
+    def _install_codex_native_plugin(self, entry: dict) -> None:
+        name = entry["name"]
+        marketplace_name = entry.get("marketplace_name", name)
+        marketplace_root = entry["marketplace_root"]
+        expanded = os.path.expandvars(os.path.expanduser(str(marketplace_root)))
+        # marketplace add is fatal on failure: if it fails, the plugin gets
+        # NEITHER the native install NOR the decomposed MCP (DEDUP already
+        # stripped codex), so the plugin silently vanishes from codex. Raising
+        # turns that silent strip into a loud render failure. Idempotency is
+        # preserved by skipping the add when the marketplace is already
+        # registered, so a re-sync never re-adds (and never sees the benign
+        # "already exists" nonzero).
+        if not self._marketplace_registered(marketplace_name):
+            self._codex_cli_strict(
+                ["codex", "plugin", "marketplace", "add", expanded],
+                f"marketplace add {expanded}",
+            )
+        # plugin add stays tolerant: "already installed" on re-sync is benign.
+        self._codex_cli(
+            ["codex", "plugin", "add", f"{name}@{marketplace_name}"],
+            f"plugin add {name}@{marketplace_name}",
+        )
+
+    def _clean_native_plugins(self, manifest: Manifest) -> None:
+        for entry in manifest.native_plugins:
+            if not entry.get("codex_native"):
+                continue
+            name = entry["name"]
+            marketplace_name = entry.get("marketplace_name", name)
+            self._codex_cli(
+                ["codex", "plugin", "remove", f"{name}@{marketplace_name}"],
+                f"plugin remove {name}@{marketplace_name}",
+            )
+            self._codex_cli(
+                ["codex", "plugin", "marketplace", "remove", marketplace_name],
+                f"marketplace remove {marketplace_name}",
+            )
+
+    @staticmethod
+    def _marketplace_registered(marketplace_name: str) -> bool:
+        """True if ``marketplace_name`` already appears in
+        ``codex plugin marketplace list``. A missing codex binary or a failed
+        list returns False (let the add attempt run and surface the real error).
+        """
+        try:
+            result = subprocess.run(
+                ["codex", "plugin", "marketplace", "list"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            return False
+        if result.returncode != 0:
+            return False
+        return any(
+            line.split()[:1] == [marketplace_name]
+            for line in result.stdout.splitlines()
+        )
+
+    @staticmethod
+    def _codex_cli_strict(argv: list[str], label: str) -> None:
+        """Run a codex plugin CLI command, failing loud on a nonzero exit.
+
+        Used for the marketplace-add step, whose failure would otherwise strip
+        the plugin from codex silently. A missing codex binary is still a no-op
+        (nothing decomposed, nothing to leave inconsistent); a nonzero exit
+        (e.g. an unparseable marketplace manifest) raises ``RuntimeError`` so
+        the render fails instead of dropping the plugin.
+        """
+        try:
+            result = subprocess.run(
+                argv, check=False, capture_output=True, text=True
+            )
+        except FileNotFoundError:
+            return  # codex CLI not present; nothing to install
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(
+                f"'codex {label}' exited {result.returncode}. {detail}"
+            )
+
+    @staticmethod
+    def _codex_cli(argv: list[str], label: str) -> None:
+        """Run a codex plugin CLI command, tolerant of re-runs.
+
+        check=False so a repeated add/remove (already present / already gone)
+        does not hard-fail the render. A missing codex binary is a no-op:
+        nothing decomposed into config for the plugin, so there is nothing to
+        leave inconsistent."""
+        try:
+            result = subprocess.run(
+                argv, check=False, capture_output=True, text=True
+            )
+        except FileNotFoundError:
+            return  # codex CLI not present; nothing to install/clean
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            print(
+                f"    ap: 'codex {label}' exited {result.returncode}. {detail}",
+                file=sys.stderr,
+            )
 
     # ─── hooks ──────────────────────────────────────────────────────────
     # Codex reads .codex/hooks.json as a JSON object with a top-level

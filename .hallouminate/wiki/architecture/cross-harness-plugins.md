@@ -115,6 +115,7 @@ plugins:
 
     harnesses: [claude, codex, opencode, cursor, copilot, crush]
     claude_native: true   # Claude gets native marketplace install
+    codex_native: true    # Codex gets native marketplace install (codex CLI)
     gate_unless: MY_ENV_VAR   # optional gate
     description: Human-readable description
 ```
@@ -133,20 +134,31 @@ membership taxes every per-request MCP-schema token budget. See
 [[architecture/mcp-secret-handling]] for the token-cost tradeoff and
 [[architecture/agent-profile]] for how harnesses membership flows.
 
-**`claude_native`** — when `true`, the decomposer also produces a
-`native_plugins` record so the claude renderer can register the plugin's
-marketplace. DEDUP removes `claude` from decomposed MCP harnesses (Claude gets
-the plugin via native install, not bare user MCP). Skills carry
-`_from_native_plugin=True` so renderers skip them for Claude scope.
+**`claude_native` / `codex_native`** — two **independent** native-install flags.
+When either is `true`, the decomposer emits a single `native_plugins` record
+carrying *both* booleans (`claude_native`, `codex_native`) plus the marketplace
+root/name; each renderer consumes only its own flag.
 
-When `false` (or omitted), Claude receives decomposed primitives like all other
-harnesses. This is the right choice when a plugin's marketplace.json is absent
-or the plugin is not ready for the marketplace (e.g. hallouminate, where the
-well-known `mcp__hallouminate__*` namespace must be preserved).
+- `claude_native: true` → the claude renderer registers the plugin's
+  marketplace and enables it. DEDUP removes `claude` from decomposed MCP
+  harnesses; skills carry `_from_native_plugin=True` so claude renderers skip
+  them at user scope.
+- `codex_native: true` → the codex renderer installs the plugin via the codex
+  CLI (`codex plugin marketplace add` + `codex plugin add`). DEDUP removes
+  `codex` from decomposed MCP harnesses; skills carry a **separate**
+  `_from_codex_native_plugin=True` so the codex renderer skips them. The flag is
+  deliberately separate from `_from_native_plugin` — reusing claude's flag would
+  make the claude renderer wrongly skip a codex-only-native plugin's skills.
+
+When both are `false` (or omitted), every harness receives decomposed primitives.
+That is the right choice when a plugin's marketplace.json is absent or the plugin
+is not ready for native install (e.g. hallouminate, where the well-known
+`mcp__hallouminate__*` namespace must be preserved — a native install would
+rescope it to `mcp__plugin_hallouminate_hallouminate__*`).
 
 **`gate_unless`** — propagates to the decomposed MCP's `gate_unless` field,
 using the same semantics as the MCP registry gate (see [[agents-dir]]). It
-gates only the decomposed MCP items, not the Claude-native install path.
+gates only the decomposed MCP items, not the native install paths.
 
 ---
 
@@ -154,8 +166,8 @@ gates only the decomposed MCP items, not the Claude-native install path.
 
 | Harness | Receives | Loses |
 |---|---|---|
-| claude | native marketplace install — full plugin | nothing |
-| codex | MCP + skills + hooks | custom `/commands` (WARN+skip) |
+| claude | native marketplace install when `claude_native` — full plugin | nothing |
+| codex | native marketplace install when `codex_native`; else MCP + skills + hooks | custom `/commands` (decomposed path only) |
 | opencode | MCP + skills + agents | hooks, atomic install |
 | cursor | MCP + skills + agents + commands + hooks | — |
 | copilot | skills + hooks + agents; MCP only if `harnesses` includes copilot | custom `/commands` (WARN+skip) |
@@ -163,48 +175,82 @@ gates only the decomposed MCP items, not the Claude-native install path.
 
 ---
 
-## The hybrid decision: Claude native + decompose rest
+## The hybrid decision: native where available, decompose the rest
 
 Claude Code has a native plugin system (marketplace install, plugin-scoped
 `mcp__plugin_<name>_<server>__*` tool names, plugin-owned commands/hooks). The
 other harnesses have no equivalent atomic install — they only accept
 primitives via their config renderers.
 
-The chosen model: Claude gets the native install for `claude_native: true`
-entries; every other harness gets decomposed primitives via the existing
-renderers. No renderer changes are needed for the decomposed path.
+The chosen model: each harness with a native plugin system gets the native
+install when its flag is set (`claude_native` → claude, `codex_native` → codex);
+every other harness gets decomposed primitives via the existing renderers. No
+renderer changes are needed for the decomposed path. The two native paths are
+independent — a plugin can be claude-native, codex-native, both, or neither.
 
-For entries with `claude_native: false`, Claude also receives decomposed
-primitives, same as other harnesses.
-
----
-
-## DEDUP: preventing double-registration for claude_native
-
-When `claude_native: true`, Claude gets the plugin's MCP tools via the native
-marketplace install (at plugin scope, prefixed `mcp__plugin_<name>_<server>__*`).
-Adding the same server to Claude's user-scope MCP config too would cause
-tool-name collision and double token cost.
-
-DEDUP removes `claude` from the decomposed MCP's `harnesses` list. Skills carry
-`_from_native_plugin=True` so `_write_skills` skips them (Claude gets skills
-at plugin scope). `_write_agents` and `_write_commands` also skip
-`_from_native_plugin` items.
+For entries where a harness's native flag is `false`/omitted, that harness
+receives decomposed primitives, same as the non-native harnesses. Copilot,
+opencode, cursor, and crush have no usable native-install CLI, so they always
+decompose.
 
 ---
 
-## Claude renderer: native plugin pass
+## DEDUP: preventing double-registration for native installs
 
-`_render_native_plugins()` in `claude.py`:
+When a harness gets the plugin via its native install, adding the same MCP
+server to that harness's decomposed config too would cause tool-name collision
+and double token cost. DEDUP removes the natively-served harness from the
+decomposed MCP's `harnesses` list:
 
-1. Reads `entry["marketplace_root"]` and `entry["marketplace_name"]` from the
-   native descriptor.
+- `claude_native` removes `claude` (native tools are `mcp__plugin_<name>_<server>__*`).
+- `codex_native` removes `codex` (codex's MCP filter `mcps_for(..., "codex")`
+  then naturally excludes the server from `config.toml`).
+- Both flags strip both harnesses; if the result is empty, an empty `harnesses`
+  list is emitted so the renderers' membership filter skips the item.
+
+Skills carry a per-path skip flag so the natively-served harness's renderer does
+not also copy them:
+
+- `_from_native_plugin=True` → claude's `_write_skills` / `_write_agents` /
+  `_write_commands` skip the item.
+- `_from_codex_native_plugin=True` → codex's `_write_skills` skips the item.
+
+The two skill flags are **independent on purpose**. A codex-only-native plugin
+stamps only `_from_codex_native_plugin`, so claude (decomposed) still gets its
+skills; reusing `_from_native_plugin` would wrongly hide them from claude.
+
+---
+
+## Native renderer passes
+
+**Claude** — `_render_native_plugins()` in `claude.py` consumes descriptors with
+`claude_native: True`:
+
+1. Reads `entry["marketplace_root"]` and `entry["marketplace_name"]`.
 2. Writes `extraKnownMarketplaces[marketplace_name] = {source: {source: "directory", path: <marketplace_root>}}`.
 3. Writes `enabledPlugins[f"{name}@{marketplace_name}"] = True`.
 4. Calls `claude plugin marketplace add <marketplace_root>` to prime the CLI's
    resolution cache (writing settings.json alone is not sufficient).
 
 `clean()` un-merges by `marketplace_name` (not registry YAML key).
+
+**Codex** — `_render_native_plugins()` in `codex.py` consumes descriptors with
+`codex_native: True`, hooked into `render()` right after `_write_mcps`:
+
+1. `codex plugin marketplace add <marketplace_root>` — the codex CLI accepts a
+   local path (the git cache dir or local checkout) as a marketplace source.
+2. `codex plugin add <name>@<marketplace_name>` — installs from that marketplace.
+
+Both calls go through `_codex_cli()`, which runs `subprocess.run(check=False)`:
+idempotent on re-sync (a repeated add/remove does not hard-fail), a missing
+`codex` binary is a silent no-op (nothing was decomposed, so nothing is left
+inconsistent), and a nonzero exit warns loud rather than swallowing. `clean()`
+un-registers via `codex plugin remove <name>@<marketplace_name>` +
+`codex plugin marketplace remove <marketplace_name>`.
+
+Unlike claude, codex stores no native-plugin state in a renderer-owned settings
+file — the codex CLI owns `~/.codex/config.toml`'s plugin tables. Codex clone-
+cache pruning is not handled in `clean()` (tracked as a possible follow-up).
 
 ---
 
@@ -271,6 +317,24 @@ loading interacts with secret passthrough.
   add <marketplace_root>` CLI call primes the resolution cache (handled by
   `_render_native_plugins`). Without it, a freshly-added local plugin fails
   to install on first sync.
+- **codex native install is CLI-only** — `codex_native` entries write no
+  renderer-owned config; install is entirely via `codex plugin marketplace add`
+  - `codex plugin add` (the codex CLI owns `~/.codex/config.toml`'s plugin
+  tables). On a machine without the `codex` binary the pass is a silent no-op,
+  so a render never hard-fails merely because codex is absent.
+- **marketplace-add IS fatal on failure (codex)** — unlike `plugin add` (which
+  warns on nonzero, tolerating "already installed" on re-sync), the codex
+  `marketplace add` step (`_codex_cli_strict`) raises `RuntimeError` on a
+  nonzero exit. Rationale: DEDUP has already stripped `codex` from the decomposed
+  MCP, so a failed marketplace add would leave the plugin in NEITHER the native
+  install NOR the decomposed render — it silently vanishes from codex. Failing
+  loud turns that silent strip into a visible render failure. Idempotency is
+  preserved by probing `codex plugin marketplace list` first and skipping the
+  add when the marketplace is already registered.
+- **two independent native skill flags** — `_from_native_plugin` (claude) and
+  `_from_codex_native_plugin` (codex) must not be conflated. A codex-only-native
+  plugin must NOT stamp the claude flag, or claude (which decomposes it) would
+  lose its skills.
 
 ---
 
@@ -305,6 +369,13 @@ milknado:
   branch: main
   harnesses: [claude, codex, opencode, cursor, copilot, crush]
   claude_native: true
+  # codex_native: DISABLED on main. milknado's upstream
+  # .agents/plugins/marketplace.json (the manifest codex's `plugin marketplace
+  # add` parses) has only interface.displayName, no top-level `name`, so
+  # `codex plugin marketplace add` exits 1. With the flag set, DEDUP would strip
+  # codex from the decomposed MCP AND the native add would fail -> milknado
+  # absent from codex entirely. Re-enable once upstream adds `"name": "milknado"`
+  # to that manifest. The renderer machinery is landed + tested regardless.
   description: Mikado execution engine — goal decomposition, batch planning, detached ralph-loop runs
 ```
 
@@ -312,7 +383,13 @@ milknado:
 
 - 1 MCP item: `{name: milknado, command: uvx, args: [milknado-mcp], harnesses: [...], _source_dir: <payload>}`
 - 3 skill items: `harvest`, `load-roadmap`, `milknado-config` each with `_source_dir: <payload>` and `path: skills/<name>`
-- 1 native_plugins descriptor for the claude renderer
+- 1 native_plugins descriptor carrying `claude_native: true` + `codex_native: false`
+  (the claude renderer registers the marketplace; the codex renderer ignores the
+  descriptor since its flag is off). With only `claude_native`, DEDUP strips
+  `claude` from the MCP item's harnesses; `codex` stays, so the decomposed MCP
+  still reaches codex/opencode/cursor/crush (+ copilot if listed). When
+  `codex_native` is re-enabled upstream, DEDUP would additionally strip `codex`
+  and the codex renderer would install via the codex CLI instead.
 
 **PyPI dependency:** `uvx milknado-mcp` requires milknado to be published to
 PyPI. Until then, the rendered config references the portable form but the MCP

@@ -31,7 +31,11 @@
 #                  per-request token tax). Default = all harnesses.
 #   claude_native: true → Claude gets the native marketplace install
 #                  (atomic plugin install + plugin-scoped mcp__ names).
-#                  Other harnesses always get decomposed primitives.
+#                  Other non-native harnesses always get decomposed primitives.
+#   codex_native:  true → Codex gets the native marketplace install via its own
+#                  CLI (`codex plugin marketplace add` + `codex plugin add`),
+#                  not decomposed MCP/skills. Independent of claude_native:
+#                  each harness's native path is flagged and consumed separately.
 #   gate_unless:   optional env var gate on the decomposed MCP items (same
 #                  semantics as the MCP registry gate). Does NOT gate the
 #                  Claude-native install path — that descriptor carries no gate.
@@ -39,7 +43,8 @@
 #
 # Per-harness reach:
 #   claude   → native marketplace install (full plugin, nothing lost)
-#   codex    → MCP + skills + hooks (loses custom /commands)
+#   codex    → native marketplace install when codex_native; else MCP + skills +
+#              hooks (loses custom /commands)
 #   opencode → MCP + skills + agents
 #   cursor   → MCP + skills + agents + commands + hooks
 #   copilot  → skills + hooks + agents; MCP only if harnesses includes copilot
@@ -58,6 +63,14 @@ plugins:
     branch: main
     harnesses: [claude, codex, opencode, cursor, copilot, crush]
     claude_native: true
+    # codex_native: DISABLED — milknado's upstream .agents/plugins/marketplace.json
+    # (the manifest codex reads) lacks a top-level `name`, so
+    # `codex plugin marketplace add` exits 1 and codex would get NEITHER the
+    # native install NOR the decomposed MCP (DEDUP strips codex when the flag is
+    # set). The renderer machinery (_render_native_plugins) is landed and tested
+    # but stays off until upstream adds `"name": "milknado"` to that manifest;
+    # then set `codex_native: true` and confirm `codex plugin marketplace add`
+    # succeeds against ~/.cache/ap/plugins/milknado.
     description: Mikado execution engine — goal decomposition, batch planning, detached ralph-loop runs
 
   # hallouminate: per-repo markdown wiki (LLM-authored notes + semantic search).
