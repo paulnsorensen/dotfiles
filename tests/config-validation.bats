@@ -86,12 +86,13 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
 # ── skill-* aliases (unified ap deploy — curd 7) ──────────────────────────────
 # The registry stays the EDIT surface (skill-edit); deploy is unified through
-# `ap` (skill-sync → base-sync → `dots profile install base`). Locking the bodies guards a
-# silent de-sync where a rename would only surface at every dev's runtime.
+# `base-sync` (→ `dots profile install base`). The redundant per-registry
+# *-sync mnemonics were retired in favour of the single base-sync entry point.
+# Locking the bodies guards a silent de-sync where a rename would only surface
+# at every dev's runtime.
 
-@test "skill-sync alias deploys via the unified ap base-profile render" {
+@test "skill-edit opens the external skills registry (the edit surface)" {
     local aliases_file="$DOTFILES_DIR/zsh/aliases.zsh"
-    grep -qE "^alias skill-sync='base-sync'" "$aliases_file"
     grep -qE "^alias skill-edit='\\\$\\{EDITOR:-vim\\} \\\$DOTFILES_DIR/skills/_registry\\.yaml'" "$aliases_file"
 }
 
@@ -112,10 +113,11 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     grep -qE -- '--harness opencode' "$claude_file"
 }
 
-@test "mcp-sync / hook-sync / skill-sync route through base-sync (no bare cwd install)" {
-    grep -qE "^alias mcp-sync='base-sync'" "$DOTFILES_DIR/zsh/claude.zsh"
-    grep -qE "^alias hook-sync='base-sync'" "$DOTFILES_DIR/zsh/claude.zsh"
-    grep -qE "^alias skill-sync='base-sync'" "$DOTFILES_DIR/zsh/aliases.zsh"
+@test "the redundant *-sync mnemonics are retired (base-sync is the sole entry point)" {
+    # mcp-sync / hook-sync / agent-sync / skill-sync collapsed into base-sync.
+    # Guard against them silently returning as bare-cwd-install footholds.
+    ! grep -qE "^alias (mcp|hook|agent)-sync=" "$DOTFILES_DIR/zsh/claude.zsh"
+    ! grep -qE "^alias skill-sync=" "$DOTFILES_DIR/zsh/aliases.zsh"
 }
 
 @test "skill-* aliases do not reference the pre-flatten skills-install/ or claude/skills paths" {

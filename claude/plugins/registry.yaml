@@ -12,7 +12,6 @@
 #
 # Usage:
 #   plugin-sync           Sync plugins (install missing)
-#   plugin-sync-dry       Preview changes
 #   plugin-ls             List installed plugins
 
 plugins:

@@ -21,7 +21,7 @@ Managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run on commit: 
 Distinct from the `agents/` registry system (see [[../architecture/agents-dir]]) and from the `global@local` plugin that `ap` wires (see [[../architecture/agent-profile]]): these are third-party plugins from external marketplaces, managed declaratively via `claude/plugins/registry.yaml`.
 
 - Marketplaces must be added first: `claude plugin marketplace add <owner/repo>`.
-- Workflow: `plugin-edit` → `plugin-sync-dry` (preview) → `plugin-sync` (apply) → restart Claude Code.
+- Workflow: `plugin-edit` → `plugin-sync` (apply) → restart Claude Code.
 - An LSP server is just a plugin entry with `load: true` (servers start lazily).
 - Unlike MCP, the plugins directory is **not** symlinked to `~/.claude` — Claude Code uses that location for plugin cache storage.
 - If a plugin provides MCP tools, add `mcp__plugin_<name>__*` to `permissions.allow`.

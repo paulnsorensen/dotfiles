@@ -17,9 +17,15 @@ if command -v difft &>/dev/null; then
 fi
 alias gdn='git diff --name-only'
 alias gf='git fetch'
-alias gl='git pull'
 alias gp='git push'
+alias gpl='git pull'
 alias gst='git status'
+
+# Pretty commit graph (recent 20)
+alias gl='git log --oneline --graph --decorate -20'
+
+# Undo last commit, keep the changes staged
+alias gundo='git reset --soft HEAD~1'
 
 # Remove files that match .gitignore
 alias gri='git rm --cached "$(git ls-files -i -X .gitignore)"'
@@ -27,8 +33,10 @@ alias gri='git rm --cached "$(git ls-files -i -X .gitignore)"'
 # Log only your commits
 alias glc='git config user.email | xargs git log --author'
 
-# Rebase from main
+# Rebase from main; continue / abort an in-progress rebase
 alias grb='git pull -r origin main'
+alias grbc='git rebase --continue'
+alias grba='git rebase --abort'
 
 # Checkout main and pull
 alias gcom='git checkout main && git pull'
@@ -62,6 +70,9 @@ alias c="code -r ."
 
 # Shell reload
 alias zrl="source ~/.zshrc"
+
+# Deploy dotfiles (symlinks, packages, chezmoi, base-profile render)
+alias ds='dots sync'
 
 # Tmux reload
 alias trl='tmux source-file ~/.tmux.conf && echo "tmux config reloaded"'
@@ -196,7 +207,6 @@ fi
 # =============================================================================
 alias skill='npx --yes skills'
 alias skill-ls='npx --yes skills list --global'
-alias skill-sync='base-sync'
 alias skill-edit='${EDITOR:-vim} $DOTFILES_DIR/skills/_registry.yaml'
 
 # =============================================================================

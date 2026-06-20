@@ -49,10 +49,10 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 ### Agent config — edit a registry, then sync
 
 - `mcp-edit` / `hook-edit` / `agent-edit` / `skill-edit` / `plugin-edit` — open the source registry
-- `mcp-sync` / `hook-sync` / `skill-sync` — all = `dots profile install base`; `plugin-sync` (+ `plugin-sync-dry`) for Claude marketplace plugins
+- `base-sync` — deploy the registry-derived `base` profile to all harnesses (the unified entry point; per-registry `*-sync` mnemonics retired). `plugin-sync` for Claude marketplace plugins
 - `mcp-ls` / `hook-ls` / `skill-ls` / `plugin-ls` · `mcp-add <name> <cmd> [args…]`
-- `cc` / `ccc` / `ccr` — launch claude (preamble system-prompt wired)
-- `ccw <slug>` / `ccw-ls` / `ccw-sweep` / `ccw-clean` · `wt-git <path> <cmd>` — worktrees
+- `cc` / `ccc` / `ccr` — launch claude (preamble system-prompt wired) · `ccs` (fzf-jump to a running session) · `ccp <name>` (scoped profile)
+- `ccw <slug>` / `ccw <repo>/<slug>` (cross-repo) / `ccw` (fzf resume picker) · `ccw-ls` / `ccw-rm <slug>` / `ccw-sweep` / `ccw-clean` · `wt-git <path> <cmd>` — worktrees
 - `claude-settings` · `claude-json-prune [--apply]` · `cf-refresh` (= `plugin-refresh cheese-flow local`)
 
 ### GitHub
@@ -69,7 +69,7 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 
 | Add a… | Edit | Deploy |
 |---|---|---|
-| MCP | `agents/mcp/registry.yaml` | `dots sync` (or `mcp-sync`) |
+| MCP | `agents/mcp/registry.yaml` | `dots sync` (or `base-sync`) |
 | Hook | `agents/hooks/registry.yaml` | `dots sync` |
 | Sub-agent | `agents/registry.yaml` + `agents/agent_definitions/` | `dots sync` |
 | Skill | `skills/` (local) or `skills/_registry.yaml` (external) | `dots sync` |

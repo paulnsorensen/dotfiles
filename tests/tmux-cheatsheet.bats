@@ -75,3 +75,25 @@ assert_section() {
     run tmux-cheatsheet
     assert_section "Alt+s (shell)"
 }
+
+@test "prints the zsh tmux & remote shortcuts section" {
+    run tmux-cheatsheet
+    assert_section "zsh tmux & remote shortcuts"
+}
+
+@test "lists the zsh tmux session shortcuts" {
+    run tmux-cheatsheet
+    assert_section "tls"
+    assert_section "ta [name]"
+    assert_section "tn <name>"
+    assert_section "tk <name>"
+    assert_section "tsw"
+}
+
+@test "lists the mosh/tailscale remote shortcuts" {
+    run tmux-cheatsheet
+    assert_section "mtmux <host>"
+    assert_section "trl"
+    assert_section "tss"
+    assert_section "tsip"
+}
