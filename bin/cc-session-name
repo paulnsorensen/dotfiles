@@ -10,7 +10,17 @@
 # to the same session as its root (de-sprawl). A worktree's own toplevel IS the
 # worktree dir, whose path carries /.worktrees/<slug> — that's how repo+slug are
 # recovered without colliding across repos.
+#
+# --unique (must precede the path): if a live tmux session already owns the
+# computed name, append the lowest free "-N" suffix (-2, -3, …). This backs
+# `cc --new`, which wants a fresh session past the default -A reattach.
 set -euo pipefail
+
+unique=0
+if [[ "${1:-}" == "--unique" ]]; then
+    unique=1
+    shift
+fi
 
 path="${1:-$PWD}"
 path="${path%/}"
@@ -32,7 +42,19 @@ fi
 if [[ "$base" == */.worktrees/* ]]; then
     slug="${base##*/}"
     repo_path="${base%/.worktrees/*}"
-    sanitize "${repo_path##*/}-${slug}"
+    name="$(sanitize "${repo_path##*/}-${slug}")"
 else
-    sanitize "${base##*/}"
+    name="$(sanitize "${base##*/}")"
 fi
+
+# --unique: bump past any live session that already holds the base name.
+# Exact-match target (=name) so "dotfiles" doesn't prefix-match "dotfiles-2".
+if (( unique )) && command -v tmux >/dev/null 2>&1 && tmux has-session -t "=$name" 2>/dev/null; then
+    i=2
+    while tmux has-session -t "=${name}-${i}" 2>/dev/null; do
+        i=$((i + 1))
+    done
+    name="${name}-${i}"
+fi
+
+printf '%s' "$name"

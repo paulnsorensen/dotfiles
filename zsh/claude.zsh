@@ -26,6 +26,21 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # already inside tmux ($TMUX set) or tmux is not installed.
 # ccw sets _CC_IN_SESSION=1 to trigger the inside-tmux switch-client path.
 _cc_base() {
+    # --new (our flag, not claude's): force a brand-new session instead of the
+    # default -A reattach. Strip it from the args wherever it lands so it works
+    # through cc/ccc/ccr (which prepend --continue/--resume ahead of "$@").
+    local force_new=
+    local -a passthru=()
+    local a
+    for a in "$@"; do
+        if [[ "$a" == --new ]]; then
+            force_new=1
+        else
+            passthru+=("$a")
+        fi
+    done
+    set -- "${passthru[@]}"
+
     local -a flags=()
     [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
     local -a cmd=(claude "${flags[@]}" "$@")
@@ -40,13 +55,18 @@ _cc_base() {
     # worktree, <repo> otherwise. Re-running cc/ccw for the same worktree
     # reuses its session instead of spawning another (de-sprawl), and
     # same-named worktrees across different repos no longer collide.
+    # --new asks for the lowest free -N suffix so the session is guaranteed fresh.
+    local -a name_args=()
+    [[ -n "$force_new" ]] && name_args=(--unique)
     local session
-    session="$("${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-session-name" "$PWD")"
+    session="$("${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-session-name" "${name_args[@]}" "$PWD")"
     if [[ -z "$TMUX" ]]; then
-        # Outside tmux: create-or-attach (-A attaches if it exists; cmd ignored on attach).
+        # Outside tmux: create-or-attach (-A attaches if it exists; cmd ignored
+        # on attach). With --new the name is unique, so -A always creates.
         tmux new-session -A -s "$session" "${(j: :)${(@q)cmd}}"
-    elif [[ -n "$_CC_IN_SESSION" ]]; then
-        # Inside tmux from ccw: dedicate a session and switch-client (never nests).
+    elif [[ -n "$_CC_IN_SESSION" || -n "$force_new" ]]; then
+        # Inside tmux from ccw, or an explicit --new from a plain session:
+        # dedicate a session and switch-client (never nests).
         tmux has-session -t "$session" 2>/dev/null \
             || tmux new-session -d -s "$session" "${(j: :)${(@q)cmd}}"
         tmux switch-client -t "$session"
