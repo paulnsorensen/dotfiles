@@ -72,3 +72,41 @@ export PATH="$DOTFILES_DIR/bin:$PATH"
     [ "$output" = "plain-dir" ]
     rm -rf "$parent"
 }
+
+@test "--unique returns the base name when no session owns it" {
+    local bindir parent repo
+    bindir="$(mktemp -d)"
+    cat > "$bindir/tmux" <<'EOF'
+#!/usr/bin/env bash
+# has-session always fails -> nothing is taken
+exit 1
+EOF
+    chmod +x "$bindir/tmux"
+    parent="$(mktemp -d)"; repo="$parent/cleanrepo"
+    mkdir -p "$repo"; git -C "$repo" init -q
+    PATH="$bindir:$PATH" run cc-session-name --unique "$repo"
+    [ "$status" -eq 0 ]
+    [ "$output" = "cleanrepo" ]
+    rm -rf "$parent" "$bindir"
+}
+
+@test "--unique appends the lowest free -N suffix when sessions are taken" {
+    local bindir parent repo
+    bindir="$(mktemp -d)"
+    cat > "$bindir/tmux" <<'EOF'
+#!/usr/bin/env bash
+# "cleanrepo" and "cleanrepo-2" are taken; "cleanrepo-3" is free.
+[[ "$1" == has-session ]] || exit 0
+case "$3" in
+  "=cleanrepo"|"=cleanrepo-2") exit 0 ;;
+  *) exit 1 ;;
+esac
+EOF
+    chmod +x "$bindir/tmux"
+    parent="$(mktemp -d)"; repo="$parent/cleanrepo"
+    mkdir -p "$repo"; git -C "$repo" init -q
+    PATH="$bindir:$PATH" run cc-session-name --unique "$repo"
+    [ "$status" -eq 0 ]
+    [ "$output" = "cleanrepo-3" ]
+    rm -rf "$parent" "$bindir"
+}
