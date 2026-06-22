@@ -1,11 +1,45 @@
-# Dotfiles-managed — replaces Cursor's generated git-sync block.
-# ~/.cursor is symlinked to this directory; Cursor writes a broad
-# git-sync .gitignore here to track its own runtime state, but we only
-# want to track the plugin source (cursor/plugins/local/cheese-grok/).
-# Everything else (commands/, rules/, skills/, skills-cursor/, projects/,
-# etc.) is either a deploy artifact (source already in plugins/) or
-# Cursor IDE runtime cache — none of it belongs in version control.
+# >>> CURSOR MANAGED BLOCK >>>
+# Ignore everything in .cursor
 *
-!.gitignore
+# Un-ignore projects so we can descend to allowlisted subdirs
+!projects/
+projects/*
+!projects/*/
+projects/*/*
+# MCP tool descriptors, resources, prompts
+!projects/*/mcps/
+!projects/*/mcps/**
+# Agent transcripts for citation
+!projects/*/agent-transcripts/
+!projects/*/agent-transcripts/**
+# Terminal output files
+!projects/*/terminals/
+!projects/*/terminals/**
+# Conversation notes (shared scratchpad)
+!projects/*/agent-notes/
+!projects/*/agent-notes/**
+# Large tool output files
+!projects/*/agent-tools/
+!projects/*/agent-tools/**
+# Plugin cache (rules, skills, agents)
 !plugins/
 !plugins/**
+# Built-in Cursor skills
+!skills-cursor/
+!skills-cursor/**
+# User's personal skills
+!skills/
+!skills/**
+# User's personal slash commands
+!commands/
+!commands/**
+# User's plan files
+!plans/
+!plans/**
+# Subagent state/transcripts
+!subagents/
+!subagents/**
+# User-level cursor rules
+!rules/
+!rules/**
+# <<< CURSOR MANAGED BLOCK <<<
