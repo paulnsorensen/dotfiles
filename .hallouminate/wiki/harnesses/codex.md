@@ -17,7 +17,9 @@ The repo seeds `~/.codex/config.toml` once (chezmoi `install-codex`, first-time 
 
 ## Isolated settings
 
-Not available. Codex has no `--strict-mcp-config` / `--setting-sources` equivalent; `ap` only builds isolated-launch flags for Claude. Per-server enable/disable is the only MCP filtering Codex exposes (no per-tool filtering via `codex mcp`).
+`ap launch codex <profile>` isolates by redirecting `CODEX_HOME` to a fresh generated home, not by passing a `--strict-mcp-config` / `--setting-sources` equivalent. The generated `config.toml` carries the profile MCP world, optional `model_instructions_file`, and the repo's Auto permission defaults: `approval_policy = "on-request"`, `approvals_reviewer = "auto_review"`, and `sandbox_mode = "workspace-write"`.[^isolated-auto-perms] Codex still has no per-launch built-in tool whitelist; per-server enable/disable is the only MCP filtering Codex exposes (no per-tool filtering via `codex mcp`).
+
+[^isolated-auto-perms]: `agent-profile/agent_profile/overlay.py:_write_codex_config`; regression test `agent-profile/tests/test_overlay.py:test_codex_isolated_config_defaults_to_auto_permissions`.
 
 ## Quirks
 

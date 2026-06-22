@@ -841,6 +841,18 @@ def test_codex_mcp_servers_are_toml_tables(tmp_path, monkeypatch):
     }
 
 
+def test_codex_isolated_config_defaults_to_auto_permissions(tmp_path, monkeypatch):
+    """Isolated Codex launches bypass ~/.codex/config.toml, so the generated
+    config must carry the same Auto permissions defaults as the live seed."""
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    m = _claude_manifest(tmp_path)
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    cfg = _codex_config(env)
+    assert cfg["approval_policy"] == "on-request"
+    assert cfg["approvals_reviewer"] == "auto_review"
+    assert cfg["sandbox_mode"] == "workspace-write"
+
+
 def test_codex_system_prompt_is_model_instructions_file(tmp_path, monkeypatch):
     """The system prompt is injected via model_instructions_file (an absolute
     path), NOT the reserved/noop `instructions` key."""
