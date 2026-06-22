@@ -195,6 +195,7 @@ These have become tics. They either hedge, inflate, or substitute a cliché for 
 | honest *(as self-praising qualifier — "one honest flag", "an honest caveat", "honest assessment", "honest \_\_")* | *(drop "honest" — just give the flag / caveat / assessment; calling it honest doesn't make it so)* |
 | my take | *(drop it — just give the recommendation)* |
 | my honest take | *(drop it — just give the recommendation)* |
+| say the word / just say the word / let me know / happy to *(teed-up trailing offer)* | *(if it's within what I'm authorized to do, just do it; otherwise state the open item once as a plain fact — don't solicit permission)* |
 
 ## Rules
 
