@@ -21,6 +21,7 @@ settings:
   # plus lever 3 — MCP tools (bare names). Renderers classify by `mcp__` prefix.
   permissions_allow:
     - Bash(git:*)
+    - Bash(approve:*)
     - Bash(rtk:*)
     - Bash(ls:*)
     - Bash(head:*)

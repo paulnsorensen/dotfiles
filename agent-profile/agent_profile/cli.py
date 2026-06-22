@@ -33,6 +33,7 @@ from agent_profile.renderers.base import (
     Renderer,
     includes_harness,
 )
+from agent_profile.permissions import parse_mcp_rule
 
 ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot", "crush"]
 
@@ -300,6 +301,7 @@ def cmd_install(
         _union_files(target, name, new_files, harnesses)
 
     _reconcile_dropped_mcps(prior_merged, manifest, harnesses, target, out, colors)
+    _reconcile_dropped_mcp_tool_scopes(prior_merged, manifest, harnesses, target)
 
     manifest_mod.record_merged_json(target, name, merged_dict)
 
@@ -358,6 +360,59 @@ def cmd_perms(
             continue
         renderer_cls().render_project_permissions(manifest, target, local=local)
     return 0
+
+
+def _mcp_rule_servers(settings: dict[str, Any]) -> set[str]:
+    out: set[str] = set()
+    for channel in ("permissions_allow", "permissions_deny"):
+        for rule in settings.get(channel) or []:
+            parsed = parse_mcp_rule(rule)
+            if parsed:
+                out.add(parsed[0])
+    return out
+
+
+def _filter_mcp_rules_for_servers(
+    settings: dict[str, Any], servers: set[str]
+) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for channel in ("permissions_allow", "permissions_deny"):
+        rules = []
+        for rule in settings.get(channel) or []:
+            parsed = parse_mcp_rule(rule)
+            if parsed and parsed[0] in servers:
+                rules.append(rule)
+        if rules:
+            out[channel] = rules
+    return out
+
+
+def _reconcile_dropped_mcp_tool_scopes(
+    prior_merged: dict[str, Any] | None,
+    manifest: Any,
+    harnesses: list[str],
+    target: Path,
+) -> None:
+    """Clear Codex MCP tool-scope keys for servers no longer named by rules.
+
+    Codex stores mcp__server__tool allow/deny rules as merged
+    enabled_tools/disabled_tools keys in ~/.codex/config.toml. Rendering the
+    current manifest can clear stale tools only while a server still has an
+    mcp__* rule. If the profile removes every such rule for a server, the prior
+    manifest snapshot is the only safe signal that those keys were ap-managed.
+    """
+    if "codex" not in harnesses or not prior_merged:
+        return
+    prior_settings = prior_merged.get("settings") or {}
+    dropped = _mcp_rule_servers(prior_settings) - _mcp_rule_servers(manifest.settings)
+    if not dropped:
+        return
+    renderer = RENDERERS.get("codex")
+    cleaner = getattr(renderer, "_clean_mcp_tool_scopes", None)
+    if cleaner is None:
+        return
+    dropped_settings = _filter_mcp_rules_for_servers(prior_settings, dropped)
+    cleaner(replace(manifest, settings=dropped_settings), target)
 
 
 def _reconcile_dropped_mcps(

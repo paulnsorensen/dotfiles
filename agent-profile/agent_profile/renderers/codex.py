@@ -287,8 +287,9 @@ class CodexRenderer:
     # Codex reads .codex/hooks.json as a JSON object with a top-level
     # "hooks" map: event -> matcher groups -> command handlers. The file is
     # written only when at least one hook is codex-harnessed; the hook script
-    # is copied to .codex/hooks/<basename> so its command resolves relative to
-    # the target.
+    # is copied to .codex/hooks/<basename>; user-level hooks.json stores the
+    # absolute copied path because Codex runs hook commands from the session cwd,
+    # not from ~/.codex.
     def _write_hooks(
         self, manifest: Manifest, target: Path, out_files: list[str]
     ) -> None:
@@ -340,7 +341,7 @@ class CodexRenderer:
             )
 
             group = _codex_hook_group(
-                command=f"bash {rel_script}", matcher=matcher, timeout=timeout
+                command=f"bash {abs_script}", matcher=matcher, timeout=timeout
             )
             hook_groups.setdefault(str(event), []).append(group)
 
@@ -493,8 +494,8 @@ class CodexRenderer:
         from each scoped server, pruning a server table only if it now has no
         keys left (so a server still carrying its user ``command``/``args``
         survives)."""
-        scopes = _collect_mcp_tool_scopes(manifest)
-        if not scopes:
+        managed = _managed_mcp_servers(manifest)
+        if not managed:
             return
         cfg = Path(str(target).rstrip("/")) / ".codex" / "config.toml"
         if not cfg.is_file():
@@ -503,7 +504,7 @@ class CodexRenderer:
         servers = doc.get("mcp_servers")
         if servers is None:
             return
-        for server in scopes:
+        for server in managed:
             entry = servers.get(server)
             if entry is None:
                 continue

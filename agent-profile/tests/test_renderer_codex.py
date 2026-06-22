@@ -253,12 +253,39 @@ def test_codex_hook_writes_hooks_json_and_script(renderer, src, target):
                 {
                     "matcher": "Bash",
                     "hooks": [
-                        {"type": "command", "command": "bash .codex/hooks/h.sh"}
+                        {"type": "command", "command": f"bash {copied}"}
                     ],
                 }
             ]
         }
     }
+
+
+def test_codex_hook_command_resolves_from_unrelated_cwd(renderer, src, target, tmp_path):
+    (src / "hooks").mkdir()
+    (src / "hooks" / "h.sh").write_text("#!/bin/bash\necho hi\n")
+    m = _manifest(
+        src,
+        hooks=[
+            {
+                "event": "PreToolUse",
+                "matcher": "Bash",
+                "script": "hooks/h.sh",
+                "harnesses": ["codex"],
+            }
+        ],
+    )
+    renderer.render(m, target)
+
+    unrelated_cwd = tmp_path / "session"
+    unrelated_cwd.mkdir()
+    command = json.loads((target / ".codex" / "hooks.json").read_text())["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    argv = command.split()
+    assert argv[0] == "bash"
+    script = Path(argv[1])
+    assert script.is_absolute()
+    assert script.is_file()
+    assert not (unrelated_cwd / ".codex" / "hooks" / "h.sh").exists()
 
 
 def test_claude_only_hook_does_not_write_hooks_json(renderer, src, target):

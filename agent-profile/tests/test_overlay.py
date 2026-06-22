@@ -956,21 +956,20 @@ def test_codex_no_system_prompt_omits_model_instructions_file(tmp_path, monkeypa
     assert "model_instructions_file" not in cfg
 
 
-def test_codex_drops_tools_perms_plugins_with_warning(tmp_path, monkeypatch, capsys):
-    """D2/D3: codex can't restrict built-in tools — tools/permissions_deny/
-    enabled_plugins/extra_args are ignored-with-warning, never silently
-    dropped, never fatal, never leaked into flags."""
+def test_codex_drops_tools_plugins_extra_args_with_warning(tmp_path, monkeypatch, capsys):
+    """D2/D3: codex can't restrict built-in tools — tools/enabled_plugins/
+    extra_args are ignored-with-warning, never silently dropped, never fatal,
+    never leaked into flags."""
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
     m = _claude_manifest(
         tmp_path,
         tools=["Read", "Bash"],
-        permissions_deny=["Edit", "Write"],
         enabled_plugins={"x@y": True},
         extra_args=["--foo"],
     )
     flags, _ = overlay.build_isolated_launch(m, tmp_path, "codex")
     err = capsys.readouterr().err
-    for field in ("tools", "permissions_deny", "enabled_plugins", "extra_args"):
+    for field in ("tools", "enabled_plugins", "extra_args"):
         assert f"field {field} ignored for harness codex" in err
     assert flags == []  # nothing leaks into the launch argv
 
@@ -1307,17 +1306,64 @@ def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
     assert own == {"tilth", "code-review-graph", "context7"}
 
 
-def test_real_review_profile_on_codex_drops_perms_with_caveat(monkeypatch, tmp_path, capsys):
-    """The shipped review profile on codex builds the MCP world but CANNOT
-    enforce its read-only deny list (codex caveat) — it's ignored-with-warning,
-    and the closed MCP world is still injected via the generated config.toml."""
+def test_real_review_profile_on_codex_projects_permission_rules(monkeypatch, tmp_path, capsys):
+    """The shipped review profile on codex builds the MCP world and projects
+    Codex-native permission surfaces into the redirected home."""
     _hermetic_dotenv(monkeypatch, tmp_path)
     pdir = find_profile_dir("review")
     assert pdir is not None
     m = parse_manifest(pdir)
     _, env = overlay.build_isolated_launch(m, pdir, "codex")
     err = capsys.readouterr().err
-    assert "field permissions_deny ignored for harness codex" in err
+    assert "field permissions_deny ignored for harness codex" not in err
     servers = _codex_config(env)["mcp_servers"]
     for server in ("tilth", "code-review-graph", "context7"):
         assert server in servers, server
+    assert "tilth_write" in servers["tilth"]["disabled_tools"]
+
+
+def test_codex_isolated_home_projects_hooks_agents_rules_and_skills(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    (tmp_path / "hooks").mkdir()
+    (tmp_path / "hooks" / "h.sh").write_text("#!/bin/bash\nexit 0\n")
+    assets = tmp_path / "agents"
+    (assets / "lib").mkdir(parents=True)
+    (assets / "lib" / "cheese-flair.sh").write_text("# assets\n")
+    (assets / "reference").mkdir()
+    (assets / "reference" / "cheese-flair.md").write_text("# bank\n")
+    (tmp_path / "agents" / "reviewer.md").write_text("Review code.\n")
+    skill = tmp_path / "skills" / "probe"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# Probe\n")
+    m = _claude_manifest(
+        tmp_path,
+        agents=[{"name": "reviewer", "description": "Reviews", "body_path": "agents/reviewer.md", "_source_dir": str(tmp_path)}],
+        hooks=[
+            {
+                "event": "PreToolUse",
+                "matcher": "Bash",
+                "script": "hooks/h.sh",
+                "harnesses": ["codex"],
+                "shared_assets": ["agents/lib/cheese-flair.sh", "agents/reference/cheese-flair.md"],
+                "_source_dir": str(tmp_path),
+            }
+        ],
+        skills=[{"name": "probe", "path": "skills/probe", "_source_dir": str(tmp_path)}],
+        settings={
+            "permissions_allow": ["Bash(git status:*)", "mcp__tilth__read"],
+        },
+    )
+
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    home = Path(env["CODEX_HOME"])
+
+    assert (home / "agents/reviewer.toml").is_file()
+    assert (home / ".agents/skills/probe/SKILL.md").is_file()
+    assert (home / "rules/ap-canonical.rules").is_file()
+    hooks = json.loads((home / "hooks.json").read_text())
+    command = hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert command == f"bash {home / 'hooks/h.sh'}"
+    assert (home / "lib/cheese-flair.sh").read_text() == "# assets\n"
+    assert (home / "reference/cheese-flair.md").read_text() == "# bank\n"
+    cfg = _codex_config(env)
+    assert cfg["mcp_servers"]["tilth"]["enabled_tools"] == ["read"]
