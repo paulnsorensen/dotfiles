@@ -301,14 +301,15 @@ def _write_codex_config(
 ) -> None:
     """Generate ``<codex_home>/config.toml`` for the isolated launch.
 
-    Sets ``model_instructions_file`` to the profile's system-prompt file
-    (an absolute path — codex's ``instructions`` key is reserved/noop, and
-    ``model_instructions_file`` is the documented way to inject a custom
-    system prompt; verified in the live ``~/.codex/config.toml``). Appends
-    the profile's MCP world as ``[mcp_servers.<n>]`` tables. The fresh config
-    trusts no projects, so any ``.codex/config.toml`` in the working tree is
-    loaded but inert."""
-    sections: list[str] = []
+    Pins Codex's Auto permissions defaults (workspace-write sandbox with
+    on-request approvals) before adding the profile's optional system prompt
+    and MCP world. The fresh config trusts no projects, so any
+    ``.codex/config.toml`` in the working tree is loaded but inert."""
+    sections: list[str] = [
+        'approval_policy = "on-request"\n'
+        'approvals_reviewer = "auto_review"\n'
+        'sandbox_mode = "workspace-write"\n'
+    ]
     if manifest.system_prompt:
         sp = profile_dir / manifest.system_prompt
         if not sp.is_file():
