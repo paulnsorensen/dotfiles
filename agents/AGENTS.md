@@ -192,6 +192,7 @@ These have become tics. They either hedge, inflate, or substitute a cliché for 
 | guardrails *(abstract)* | constraints, checks, limits |
 | not my changes / pre-existing *(unverified)* | cite evidence: base-branch run ID, `git blame`, or commit hash — otherwise fix it |
 | honest *(as intensifier — "honestly", "to be honest")* | *(drop it — state the claim and tag it `<certain>` / `<speculative>`)* |
+| honest *(as self-praising qualifier — "one honest flag", "an honest caveat", "honest assessment", "honest \_\_")* | *(drop "honest" — just give the flag / caveat / assessment; calling it honest doesn't make it so)* |
 | my take | *(drop it — just give the recommendation)* |
 | my honest take | *(drop it — just give the recommendation)* |
 
