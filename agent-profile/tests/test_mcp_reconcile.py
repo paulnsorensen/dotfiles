@@ -259,3 +259,41 @@ def test_mcp_scoped_to_no_harnesses_is_pruned(env, capsys, prod_renderers):
 
     cop = json.loads((t / ".copilot/mcp-config.json").read_text())["mcpServers"]
     assert "srv2" not in cop, "srv2 scoped to harnesses:[] must be pruned from copilot"
+
+
+def _yaml_mcp_tool_scopes(name: str, allow_rules: list[str]) -> str:
+    lines = [
+        f"name: {name}",
+        "description: mcp tool scope reconcile probe",
+        "mcps:",
+        "  - name: srv1",
+        "    command: /bin/true",
+        "    harnesses: [codex]",
+    ]
+    if allow_rules:
+        lines += ["settings:", "  permissions_allow:"]
+        lines += [f"    - {json.dumps(rule)}" for rule in allow_rules]
+    return "\n".join(lines) + "\n"
+
+
+def test_dropped_codex_mcp_tool_scope_is_pruned(env, capsys, prod_renderers):
+    write_profile(
+        env.profiles,
+        "p",
+        _yaml_mcp_tool_scopes("p", ["mcp__srv1__read", "mcp__srv1__write"]),
+    )
+    assert _install(env, "p") == 0
+    capsys.readouterr()
+
+    cfg = env.target / ".codex/config.toml"
+    first = tomlkit.parse(cfg.read_text())
+    assert first["mcp_servers"]["srv1"]["enabled_tools"] == ["read", "write"]
+
+    write_profile(env.profiles, "p", _yaml_mcp_tool_scopes("p", []))
+    assert _install(env, "p") == 0
+    capsys.readouterr()
+
+    after = tomlkit.parse(cfg.read_text())
+    assert "enabled_tools" not in after["mcp_servers"]["srv1"]
+    assert "disabled_tools" not in after["mcp_servers"]["srv1"]
+    assert after["mcp_servers"]["srv1"]["command"] == "/bin/true"

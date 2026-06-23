@@ -79,7 +79,7 @@ Read the live files per harness (use `cheez-read`/`jq`, not blind cat):
 | Harness | Live files |
 |---|---|
 | claude | `~/.claude/settings.json`, `~/.claude/plugins/local/global/.claude-plugin/plugin.json`, `~/.claude/plugins/local/global/.mcp.json` |
-| codex | `~/.codex/config.toml` (`[mcp_servers]`, `[[hooks.*]]`) |
+| codex | `~/.codex/config.toml` (`[mcp_servers]`, `[[hooks.*]]`), `~/.codex/hooks.json` |
 | opencode | `~/.config/opencode/opencode.json` (`mcp`, `provider`) |
 | cursor | `~/.cursor/mcp.json`, `~/.cursor/hooks.json` |
 | copilot | `~/.copilot/mcp-config.json`, `~/.copilot/hooks/` |
@@ -113,6 +113,8 @@ Walk every difference and bucket it (first match wins):
 2. **Dotfiles bug** — the repo source is itself wrong. Checks:
    - A `script:` in `agents/hooks/registry.yaml` whose file is missing.
    - A hook `event:` not in `HOOK_EVENTS_VALID` (`agents/hooks/lib.sh`).
+   - A Codex user-level `~/.codex/hooks.json` command that starts with `bash .codex/hooks/` or otherwise names a relative hook script path. User-level Codex hooks run from the session cwd, so repo-relative commands are unsafe drift.
+   - Duplicate Codex hook wiring: the same managed hook basename appears in both `~/.codex/hooks.json` and legacy `[[hooks.<event>]]` blocks in `~/.codex/config.toml`.
    - An MCP referencing an unset `${VAR}` but not marked `optional: true`.
    - A skill dir without a `SKILL.md`, or a registry `body_path` that 404s.
    - The wiki index failing to rebuild (`hallouminate index` errors).

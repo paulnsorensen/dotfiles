@@ -28,11 +28,11 @@ raises :class:`IsolationError` on the dispatch miss (fail loud).
 
 Per-harness caveats (also in AGENTS.md § Profile System):
 
-- **codex drops tool/permission restriction.** Codex has no per-launch
-  built-in-tool whitelist; an isolated codex profile gets the closed MCP
-  world + a redirected ``CODEX_HOME``, but *not* a ``--tools`` analog. The
-  profile's ``tools`` / ``permissions_deny`` / ``enabled_plugins`` are
-  ignored-with-warning. Tracked in a follow-up ticket.
+- **codex drops built-in-tool restriction.** Codex has no per-launch
+  built-in-tool whitelist, so an isolated codex profile gets a redirected
+  ``CODEX_HOME`` with generated config, hooks, agents, rules, skills, and MCP
+  tool scopes — but not a ``--tools`` analog. ``tools`` / ``enabled_plugins`` /
+  ``extra_args`` are ignored-with-warning.
 - **codex auth.json symlink is File-mode only.** Login is preserved by
   symlinking ``<CODEX_HOME>/auth.json`` -> ``~/.codex/auth.json``, which
   works for ``File`` auth-storage mode. Keyring users must set
@@ -56,13 +56,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
-
 from agent_profile.env import load_dotenv, resolve_env_value, resolve_item_env
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import mcp_server_entry
+from agent_profile.renderers.codex import CodexRenderer, _collect_mcp_tool_scopes
 from agent_profile.renderers.opencode import (
     OPENCODE_MCP_DEFAULT,
     mcp_server_record,
@@ -265,6 +267,7 @@ def _codex_mcp_tables(manifest: Manifest) -> str:
     ``[mcp_servers.<n>.http_headers]`` sub-table — verified against codex
     0.135.0 ``codex mcp get``)."""
     dotenv = _dotenv()
+    scopes = _collect_mcp_tool_scopes(manifest)
     lines: list[str] = []
     for raw in manifest.mcps:
         mcp = resolve_item_env(raw, dotenv)
@@ -278,6 +281,11 @@ def _codex_mcp_tables(manifest: Manifest) -> str:
             lines.append(
                 f"type = {_codex_toml_value(mcp.get('type') or 'http')}"
             )
+            enabled, disabled = scopes.get(mcp["name"], (set(), set()))
+            if enabled:
+                lines.append(f"enabled_tools = {_codex_toml_value(sorted(enabled))}")
+            if disabled:
+                lines.append(f"disabled_tools = {_codex_toml_value(sorted(disabled))}")
             headers = mcp.get("headers")
             if isinstance(headers, dict) and headers:
                 lines.append(f"\n[mcp_servers.{name}.http_headers]")
@@ -287,6 +295,11 @@ def _codex_mcp_tables(manifest: Manifest) -> str:
             lines.append(f"command = {_codex_toml_value(mcp['command'])}")
             if mcp.get("args") is not None:
                 lines.append(f"args = {_codex_toml_value(mcp['args'])}")
+            enabled, disabled = scopes.get(mcp["name"], (set(), set()))
+            if enabled:
+                lines.append(f"enabled_tools = {_codex_toml_value(sorted(enabled))}")
+            if disabled:
+                lines.append(f"disabled_tools = {_codex_toml_value(sorted(disabled))}")
             env = mcp.get("env")
             if isinstance(env, dict) and env:
                 lines.append(f"\n[mcp_servers.{name}.env]")
@@ -325,6 +338,55 @@ def _write_codex_config(
     (codex_home / "config.toml").write_text("\n".join(sections))
 
 
+def _codex_with_isolated_settings(manifest: Manifest) -> Manifest:
+    settings = dict(manifest.settings)
+    if manifest.permissions_allow:
+        settings["permissions_allow"] = sorted(
+            set(settings.get("permissions_allow") or []) | set(manifest.permissions_allow)
+        )
+    if manifest.permissions_deny:
+        settings["permissions_deny"] = sorted(
+            set(settings.get("permissions_deny") or []) | set(manifest.permissions_deny)
+        )
+    return replace(manifest, settings=settings)
+
+
+def _move_codex_dir_child(codex_home: Path, rel: str) -> None:
+    src = codex_home / ".codex" / rel
+    if not src.exists():
+        return
+    dst = codex_home / rel
+    if dst.exists():
+        if dst.is_dir():
+            shutil.rmtree(dst)
+        else:
+            dst.unlink()
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dst))
+
+
+def _rewrite_root_hook_commands(codex_home: Path) -> None:
+    hooks_json = codex_home / "hooks.json"
+    if not hooks_json.is_file():
+        return
+    old = str(codex_home / ".codex" / "hooks")
+    new = str(codex_home / "hooks")
+    hooks_json.write_text(hooks_json.read_text().replace(old, new))
+
+
+def _write_isolated_codex_profile(manifest: Manifest, codex_home: Path) -> None:
+    """Project Codex-native profile files into the redirected CODEX_HOME root."""
+    renderer = CodexRenderer()
+    out: list[str] = []
+    renderer._write_agents(manifest, codex_home, out)
+    renderer._write_skills(manifest, codex_home, out)
+    renderer._write_hooks(manifest, codex_home, out)
+    renderer._write_rules(manifest, codex_home, out)
+    for rel in ("agents", "hooks", "hooks.json", "lib", "reference", "rules"):
+        _move_codex_dir_child(codex_home, rel)
+    _rewrite_root_hook_commands(codex_home)
+
+
 def _codex_cache_base() -> Path:
     """Parent dir for the per-launch ``CODEX_HOME``, under the user cache (not
     ``/tmp``).
@@ -351,7 +413,8 @@ def _build_isolated_codex(
     (those are ``codex exec`` subcommand flags — rejected by the bare
     interactive ``codex`` the launcher execs). Isolation is instead achieved
     by pointing ``CODEX_HOME`` at a fresh per-launch dir holding a generated
-    ``config.toml`` (the profile's MCP world + ``model_instructions_file``).
+    ``config.toml`` plus Codex-native projections for hooks, agents, rules, and
+    shared skills.
     With ``CODEX_HOME`` redirected, the user's ``~/.codex/config.toml`` is not
     loaded; ``flags`` is therefore empty and codex launches interactive.
 
@@ -375,13 +438,13 @@ def _build_isolated_codex(
     - Project ``.codex/config.toml`` is loaded but inert (the fresh config
       trusts no projects).
 
-    Tool/permission restriction is dropped (codex has no per-launch built-in
-    tool whitelist — see module docstring + follow-up ticket): ``tools``,
-    ``permissions_deny`` and ``enabled_plugins`` are ignored-with-warning, as
-    are the claude-only ``extra_args`` (D3)."""
+    Built-in tool restriction is dropped (codex has no per-launch built-in
+    tool whitelist — see module docstring + follow-up ticket): ``tools`` and
+    ``enabled_plugins`` are ignored-with-warning, as are the claude-only
+    ``extra_args`` (D3). Codex-native hooks, agents, rules, skills, and MCP
+    tool scopes are written into the redirected home."""
     for name, present in (
         ("tools", bool(manifest.tools)),
-        ("permissions_deny", bool(manifest.permissions_deny)),
         ("enabled_plugins", bool(manifest.enabled_plugins)),
         ("extra_args", bool(manifest.extra_args)),
     ):
@@ -396,7 +459,9 @@ def _build_isolated_codex(
     if auth.is_file() and not link.exists():
         link.symlink_to(auth)
 
-    _write_codex_config(manifest, profile_dir, scratch)
+    codex_manifest = _codex_with_isolated_settings(manifest)
+    _write_codex_config(codex_manifest, profile_dir, scratch)
+    _write_isolated_codex_profile(codex_manifest, scratch)
 
     env = {"CODEX_HOME": str(scratch), **dict(manifest.env)}
     return [], env
