@@ -28,7 +28,13 @@ from typing import Any
 
 from agent_profile.env import VAR_RE
 from agent_profile.parse import Manifest
-from agent_profile.renderers.base import body_abs, mcps_for, read_json_object
+from agent_profile.renderers.base import (
+    agents_for,
+    body_abs,
+    mcps_for,
+    read_json_object,
+    skills_for,
+)
 from agent_profile.shared import agent_is_read_only, strip_frontmatter, track_file
 
 # opencode's MCP membership default (matches the bash select default).
@@ -232,7 +238,7 @@ class OpencodeRenderer:
         ``permission.edit: deny`` block. Returns the tracked rel paths."""
         base = Path(str(target).rstrip("/"))
         written: list[str] = []
-        for item in manifest.agents:
+        for item in agents_for(manifest, "opencode"):
             body_path = body_abs(item)
             if body_path is None:
                 continue
@@ -270,7 +276,7 @@ class OpencodeRenderer:
         (``.agents/skills/``, ``.claude/skills/``) also serve opencode as
         fallback, but this copy puts them in opencode's own primary skill dir."""
         base = Path(str(target).rstrip("/"))
-        for item in manifest.skills:
+        for item in skills_for(manifest, "opencode"):
             path_rel = item.get("path") or ""
             if not path_rel:
                 continue  # source: (gh-fetched) skill — handled by cmd_install

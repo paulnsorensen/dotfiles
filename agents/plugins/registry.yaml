@@ -4,10 +4,13 @@
 # `ap` auto-discovers the plugin's primitives from the payload dir and
 # decomposes them into the existing per-harness renderers:
 #
-#   .mcp.json         → MCP server(s), with the entry's harnesses list
-#   skills/<n>/SKILL.md → path: skill items
-#   agents/ / hooks/  → respective items (if present)
+#   .mcp.json                         → MCP server(s), with the entry's harnesses list
+#   skills/<n>/SKILL.md               → path: skill items
+#   agents/*.md                       → agent items from leading YAML frontmatter
+#   .claude-plugin/plugin.json hooks  → hook items (script hooks cross-harness)
 #
+# `commands/` is intentionally NOT decomposed. Native plugin installs may still
+# expose commands inside their native harness; the decomposed path does not.
 # _source_dir on every emitted item is stamped at the plugin payload root
 # (NOT the repo root). Renderers resolve payload files via:
 #   Path(item["_source_dir"]) / item["path"]
@@ -27,8 +30,9 @@
 #                  root (i.e. contains .claude-plugin/marketplace.json).
 #                  Optional; default: repo root. Relative paths only; no '..'.
 #
-#   harnesses:     MCP membership list (deliberate; avoids blanket-wide
-#                  per-request token tax). Default = all harnesses.
+#   harnesses:     primitive membership list. MCP membership is explicit to
+#                  avoid blanket-wide per-request token tax; non-MCP plugin
+#                  primitives default to every harness that supports them.
 #   claude_native: true → Claude gets the native marketplace install
 #                  (atomic plugin install + plugin-scoped mcp__ names).
 #                  Other non-native harnesses always get decomposed primitives.
@@ -42,15 +46,15 @@
 #   description:   human-readable description
 #
 # Per-harness reach:
-#   claude   → native marketplace install (full plugin, nothing lost)
-#   codex    → native marketplace install when codex_native; else MCP + skills +
-#              hooks (loses custom /commands)
+#   claude   → native marketplace install when claude_native; else MCP + skills + agents + hooks
+#   codex    → native marketplace install when codex_native; else MCP + skills + agents + hooks
 #   opencode → MCP + skills + agents
-#   cursor   → MCP + skills + agents + commands + hooks
+#   cursor   → MCP + skills + agents + hooks
 #   copilot  → skills + hooks + agents; MCP only if harnesses includes copilot
 #   crush    → MCP only
+#   commands → unsupported on the decomposed path for every harness
 #
-# Edit this file, then run `dots sync` (or `mcp-sync`) to deploy.
+# Edit this file, then run `dots sync` (or `base-sync`) to deploy.
 
 plugins:
   # milknado: Mikado execution engine

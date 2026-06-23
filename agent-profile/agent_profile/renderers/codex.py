@@ -120,7 +120,9 @@ class CodexRenderer:
         self, manifest: Manifest, target: Path, out_files: list[str]
     ) -> None:
         base_dir = Path(str(target).rstrip("/"))
-        for item in manifest.agents:
+        for item in base.agents_for(manifest, "codex"):
+            if item.get("_from_codex_native_plugin"):
+                continue  # native plugin delivers agents via codex plugin install
             name = item["name"]
             desc = item.get("description") or ""
             model = (item.get("models") or {}).get("codex") or ""
@@ -151,7 +153,7 @@ class CodexRenderer:
     def _write_skills(
         self, manifest: Manifest, target: Path, out_files: list[str]
     ) -> None:
-        for item in manifest.skills:
+        for item in base.skills_for(manifest, "codex"):
             if item.get("_from_codex_native_plugin"):
                 continue  # native plugin delivers skills via codex plugin install
             rel_path = item.get("path") or ""

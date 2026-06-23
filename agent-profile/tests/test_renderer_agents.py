@@ -374,3 +374,83 @@ def test_strip_frontmatter_empty_frontmatter_block() -> None:
 
 def test_strip_frontmatter_crlf_block() -> None:
     assert strip_frontmatter("---\r\na: 1\r\n---\r\nbody\r\n") == "body\r\n"
+
+
+def test_agent_harness_filtering_applies_to_all_agent_renderers(tmp_path: Path) -> None:
+    agent = _agent_manifest(tmp_path, harnesses=["codex"])
+
+    ClaudeRenderer().render(agent, tmp_path / "claude")
+    CursorRenderer().render(agent, tmp_path / "cursor")
+    OpencodeRenderer().render(agent, tmp_path / "opencode")
+    CopilotRenderer().render(agent, tmp_path / "copilot")
+    CodexRenderer().render(agent, tmp_path / "codex")
+
+    assert not (tmp_path / "claude" / ".claude" / "agents" / "ghostbuster.md").exists()
+    assert not (tmp_path / "cursor" / ".claude" / "agents" / "ghostbuster.md").exists()
+    assert not (tmp_path / "opencode" / "agents" / "ghostbuster.md").exists()
+    assert not (tmp_path / "copilot" / ".github" / "agents" / "ghostbuster.agent.md").exists()
+    content = (tmp_path / "codex" / ".codex" / "agents" / "ghostbuster.toml").read_text()
+    assert 'name = "ghostbuster"' in content
+    assert 'description = "Finds dead code"' in content
+
+
+def test_codex_renderer_skips_codex_native_plugin_agents(tmp_path: Path) -> None:
+    CodexRenderer().render(
+        _agent_manifest(tmp_path, _from_codex_native_plugin=True),
+        tmp_path,
+    )
+
+    assert not (tmp_path / ".codex" / "agents" / "ghostbuster.toml").exists()
+
+
+def test_copilot_agent_frontmatter_strips_plugin_internal_fields(tmp_path: Path) -> None:
+    CopilotRenderer().render(
+        _agent_manifest(
+            tmp_path,
+            harnesses=["copilot"],
+            _from_native_plugin=True,
+            _from_codex_native_plugin=True,
+        ),
+        tmp_path,
+    )
+
+    content = (tmp_path / ".github" / "agents" / "ghostbuster.agent.md").read_text()
+    assert "name: ghostbuster" in content
+    assert "description: Finds dead code" in content
+    assert "harnesses:" not in content
+    assert "_from_native_plugin:" not in content
+    assert "_from_codex_native_plugin:" not in content
+
+
+def _skill_manifest(tmp_path: Path, **skill_over: Any) -> Manifest:
+    """A one-skill manifest whose tree lives under ``tmp_path/skillsrc/deslop``."""
+    src = tmp_path / "skillsrc" / "deslop"
+    src.mkdir(parents=True, exist_ok=True)
+    (src / "SKILL.md").write_text("# deslop\n")
+    skill: dict[str, Any] = {
+        "name": "deslop",
+        "path": "deslop",
+        "_source_dir": str(tmp_path / "skillsrc"),
+    }
+    skill.update(skill_over)
+    return Manifest(name="cheese", skills=[skill])
+
+
+def test_skill_harness_filtering_applies_to_all_skill_renderers(tmp_path: Path) -> None:
+    # Sibling of the agent test above: every skill renderer now projects through
+    # skills_for(). A codex-only skill must reach codex and no other harness; a
+    # renderer that reverted to manifest.skills would emit it everywhere.
+    skill = _skill_manifest(tmp_path, harnesses=["codex"])
+
+    ClaudeRenderer().render(skill, tmp_path / "claude")
+    CursorRenderer().render(skill, tmp_path / "cursor")
+    OpencodeRenderer().render(skill, tmp_path / "opencode")
+    CopilotRenderer().render(skill, tmp_path / "copilot")
+    CodexRenderer().render(skill, tmp_path / "codex")
+
+    assert not (tmp_path / "claude" / ".claude" / "skills" / "deslop").exists()
+    assert not (tmp_path / "cursor" / ".agents" / "skills" / "deslop").exists()
+    assert not (tmp_path / "opencode" / "skills" / "deslop").exists()
+    assert not (tmp_path / "copilot" / ".github" / "skills" / "deslop").exists()
+    codex_skill = tmp_path / "codex" / ".agents" / "skills" / "deslop" / "SKILL.md"
+    assert codex_skill.read_text() == "# deslop\n"

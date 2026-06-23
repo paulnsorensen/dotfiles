@@ -20,13 +20,14 @@ Profile resolution (`discover.py:find_profile_dir`) searches, first-match-wins:
 
 ```yaml
 registries:
-  mcps:   agents/mcp/registry.yaml
-  agents: agents/registry.yaml
-  skills: [skills/_registry.yaml, skills/]
-  hooks:  agents/hooks/registry.yaml
+  mcps:    agents/mcp/registry.yaml
+  agents:  agents/registry.yaml
+  skills:  [skills/_registry.yaml, skills/]
+  hooks:   agents/hooks/registry.yaml
+  plugins: agents/plugins/registry.yaml
 ```
 
-`ingest.py:expand_registries` reads each registry relative to the repo root, normalizes every entry into a profile *item* (a registry entry **is** a profile item — no translation layer), and stamps `_source_dir = <repo_root>` so payload files (`body_path`, hook `script`, skill `path`) resolve against the repo. Ingest also resolves inline `${VAR}` env refs from `$DOTFILES_DIR/.env` (`env.py`) and drops `optional` MCPs with unset credentials.
+`ingest.py:expand_registries` reads each registry relative to the repo root, normalizes every entry into a profile *item* (a registry entry **is** a profile item — no translation layer), and stamps `_source_dir = <repo_root>` so payload files (`body_path`, hook `script`, skill `path`) resolve against the repo. The plugin registry is the exception: it resolves a marketplace root to a payload root and emits MCP, skill, agent, hook, and native-plugin items with `_source_dir` stamped at the payload root. Ingest also resolves inline `${VAR}` env refs from `$DOTFILES_DIR/.env` (`env.py`) and drops `optional` MCPs with unset credentials. Plugin `commands/` are intentionally not decomposed.
 
 ### `parse.py`: profile.yaml → `Manifest`
 

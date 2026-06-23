@@ -36,13 +36,14 @@ Registry shapes consumed:
     items (one per explicitly-named skill, or one per repo when names are
     auto-discovered downstream), and the local ``skills/`` tree yields
     ``path:`` items for every ``<name>/SKILL.md`` present.
-  - **Plugins** (``plugins: {name: {path, harnesses, claude_native, gate_unless,
-    description}}``) — a 5th registry that auto-decomposes each plugin's payload
-    (``path``) into MCP + skills items. ``_source_dir`` on every emitted item
-    is stamped at the **plugin payload root**, not the repo root, so renderers
-    resolve payload files correctly. Claude-native entries additionally produce
-    a ``native_plugins`` record so the claude renderer can register the
-    marketplace.
+  - **Plugins** (``plugins: {name: {path, harnesses, claude_native,
+    codex_native, gate_unless, description}}``) — a 5th registry that
+    auto-decomposes each plugin's payload into MCP, skills, agents, and hooks
+    items. Commands are intentionally unsupported on the decomposed path.
+    ``_source_dir`` on every emitted item is stamped at the **plugin payload
+    root**, not the repo root, so renderers resolve payload files correctly.
+    Native entries additionally produce a ``native_plugins`` record so native
+    renderers can register the marketplace.
 """
 
 from __future__ import annotations
@@ -68,6 +69,230 @@ def _as_list(value: Any) -> list[str]:
         return [value]
     return list(value)
 
+
+def _as_csv_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return list(value)
+
+
+_AGENT_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
+_SKILL_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
+_HOOK_HARNESSES = ("claude", "codex", "cursor", "copilot")
+
+
+def _effective_plugin_harnesses(
+    requested: list[str],
+    supported: tuple[str, ...],
+    *,
+    claude_native: bool,
+    codex_native: bool,
+) -> list[str]:
+    out = [h for h in (requested or list(supported)) if h in supported]
+    if claude_native:
+        out = [h for h in out if h != "claude"]
+    if codex_native:
+        out = [h for h in out if h != "codex"]
+    return out
+
+
+def _parse_plugin_agent_frontmatter(path: Path, plugin: str) -> dict[str, Any]:
+    from agent_profile._validate import ParseError
+
+    text = path.read_text()
+    if not text.startswith("---"):
+        return {}
+    lines = text.splitlines()
+    if not lines or lines[0] != "---":
+        return {}
+    end = next((i for i, line in enumerate(lines[1:], start=1) if line == "---"), None)
+    if end is None:
+        raise ParseError(f"ap: plugin '{plugin}': unterminated YAML frontmatter in {path}")
+    try:
+        data = yaml.safe_load("\n".join(lines[1:end])) or {}
+    except Exception as exc:
+        raise ParseError(f"ap: plugin '{plugin}': failed to parse {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ParseError(f"ap: plugin '{plugin}': YAML frontmatter in {path} must be a mapping")
+    return data
+
+
+def _plugin_agents(
+    plugin: str,
+    payload_root: Path,
+    source_dir: str,
+    harnesses: list[str],
+    *,
+    claude_native: bool,
+    codex_native: bool,
+) -> list[dict[str, Any]]:
+    agents_dir = payload_root / "agents"
+    if not agents_dir.is_dir():
+        return []
+
+    out: list[dict[str, Any]] = []
+    effective_harnesses = _effective_plugin_harnesses(
+        harnesses,
+        _AGENT_HARNESSES,
+        claude_native=claude_native,
+        codex_native=codex_native,
+    )
+    for agent_file in sorted(agents_dir.glob("*.md")):
+        frontmatter = _parse_plugin_agent_frontmatter(agent_file, plugin)
+        item: dict[str, Any] = {
+            "name": str(frontmatter.get("name") or agent_file.stem),
+            "body_path": f"agents/{agent_file.name}",
+            "_source_dir": source_dir,
+            "harnesses": effective_harnesses,
+        }
+        for key in ("description", "color", "effort"):
+            if frontmatter.get(key) is not None:
+                item[key] = frontmatter[key]
+        for key in ("tools", "disallowedTools", "skills"):
+            if frontmatter.get(key) is not None:
+                item[key] = _as_csv_list(frontmatter[key])
+
+        models: dict[str, Any] = {}
+        if frontmatter.get("model") is not None:
+            models["claude"] = frontmatter["model"]
+        if frontmatter.get("models") is not None:
+            if not isinstance(frontmatter["models"], dict):
+                from agent_profile._validate import ParseError
+                raise ParseError(
+                    f"ap: plugin '{plugin}': frontmatter models in {agent_file} must be a mapping"
+                )
+            models.update(frontmatter["models"])
+        if models:
+            item["models"] = models
+
+        if claude_native:
+            item["_from_native_plugin"] = True
+        if codex_native:
+            item["_from_codex_native_plugin"] = True
+        out.append(item)
+    return out
+
+
+def _safe_name_part(value: object) -> str:
+    text = str(value)
+    cleaned = "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in text)
+    return cleaned.strip("-") or "hook"
+
+
+def _plugin_hook_script(command: str, payload_root: Path, plugin: str, manifest: Path) -> str | None:
+    from agent_profile._validate import ParseError
+
+    plugin_prefix = "${CLAUDE_PLUGIN_ROOT}/"
+    candidates: list[PurePosixPath] = []
+    strict = False
+    if command.startswith(plugin_prefix):
+        candidates.append(PurePosixPath(command[len(plugin_prefix):]))
+        strict = True
+    else:
+        cmd_path = Path(command)
+        hooks_root = (payload_root / "hooks").resolve()
+        if cmd_path.is_absolute():
+            try:
+                rel = cmd_path.resolve().relative_to(hooks_root)
+            except ValueError:
+                return None
+            script = PurePosixPath("hooks", *rel.parts).as_posix()
+            if not (payload_root / script).is_file():
+                raise ParseError(f"ap: plugin '{plugin}': hook script {cmd_path} from {manifest} was not found")
+            return script
+        candidates.append(PurePosixPath(command))
+
+    for rel in candidates:
+        if rel.is_absolute() or ".." in rel.parts or not rel.parts or rel.parts[0] != "hooks":
+            return None
+        script_path = payload_root.joinpath(*rel.parts)
+        if script_path.is_file():
+            return rel.as_posix()
+        if strict or str(rel).startswith("hooks/"):
+            raise ParseError(f"ap: plugin '{plugin}': hook script {script_path} from {manifest} was not found")
+    return None
+
+
+def _plugin_hooks(
+    plugin: str,
+    payload_root: Path,
+    source_dir: str,
+    harnesses: list[str],
+    *,
+    claude_native: bool,
+    codex_native: bool,
+) -> list[dict[str, Any]]:
+    import json as _json
+    from agent_profile._validate import ParseError
+
+    manifest = payload_root / ".claude-plugin" / "plugin.json"
+    if not manifest.is_file():
+        return []
+    try:
+        data = _json.loads(manifest.read_text())
+    except Exception as exc:
+        raise ParseError(f"ap: plugin '{plugin}': failed to parse {manifest}: {exc}") from exc
+    hooks = data.get("hooks") or {}
+    if not isinstance(hooks, dict):
+        raise ParseError(f"ap: plugin '{plugin}': hooks in {manifest} must be a mapping")
+
+    script_harnesses = _effective_plugin_harnesses(
+        harnesses,
+        _HOOK_HARNESSES,
+        claude_native=claude_native,
+        codex_native=codex_native,
+    )
+    out: list[dict[str, Any]] = []
+    for event, entries in hooks.items():
+        if not isinstance(entries, list):
+            raise ParseError(f"ap: plugin '{plugin}': hooks[{event!r}] in {manifest} must be a list")
+        for outer_index, outer in enumerate(entries):
+            if not isinstance(outer, dict):
+                raise ParseError(f"ap: plugin '{plugin}': hook entry {outer_index} in {manifest} must be a mapping")
+            inner_hooks = outer.get("hooks") or []
+            if not isinstance(inner_hooks, list):
+                raise ParseError(f"ap: plugin '{plugin}': hook entry {outer_index} hooks in {manifest} must be a list")
+            for inner_index, inner in enumerate(inner_hooks):
+                if not isinstance(inner, dict) or inner.get("type") != "command":
+                    continue
+                command = inner.get("command")
+                if not isinstance(command, str) or not command:
+                    raise ParseError(f"ap: plugin '{plugin}': command hook in {manifest} is missing command")
+                script = _plugin_hook_script(command, payload_root, plugin, manifest)
+                if script:
+                    item_harnesses = script_harnesses
+                    if not item_harnesses:
+                        continue
+                    suffix = Path(script).stem
+                    # name carries the (event, outer, inner) coordinate so it stays
+                    # unique even when two hooks on one event share a script stem;
+                    # the suffix is only a readability tag.
+                    item: dict[str, Any] = {
+                        "name": f"{plugin}-{_safe_name_part(event)}-{outer_index}-{inner_index}-{_safe_name_part(suffix)}",
+                        "event": event,
+                        "script": script,
+                        "_source_dir": source_dir,
+                        "harnesses": item_harnesses,
+                    }
+                else:
+                    if claude_native or (harnesses and "claude" not in harnesses):
+                        continue
+                    item = {
+                        "name": f"{plugin}-{_safe_name_part(event)}-{outer_index}-{inner_index}",
+                        "event": event,
+                        "command": command,
+                        "_source_dir": source_dir,
+                        "harnesses": ["claude"],
+                    }
+                if outer.get("matcher") is not None:
+                    item["matcher"] = outer["matcher"]
+                for key in ("timeout", "async"):
+                    if inner.get(key) is not None:
+                        item[key] = inner[key]
+                out.append(item)
+    return out
 
 def _resolve_market_relative(base: Path, rel: object, *, kind: str, plugin: str) -> Path:
     """Join a marketplace-relative POSIX path (``source`` or ``metadata.pluginRoot``)
@@ -318,35 +543,27 @@ def _expand_plugins(
     repo_root: Path,
     dotenv: dict[str, str],
     cache_root: Path | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Decompose every plugin in ``agents/plugins/registry.yaml`` into its
-    constituent primitives.
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Decompose plugin registry entries into MCPs, skills, agents, hooks, and native descriptors.
 
-    Path model (mirrors real milknado layout):
-      - ``path:`` in the registry is the **marketplace root** — the directory
-        that contains ``.claude-plugin/marketplace.json``.
-      - Each ``plugins[].source`` entry in marketplace.json resolves a **payload
-        root** relative to the marketplace root; ``.mcp.json`` and ``skills/``
-        live at the payload root.
-      - ``_source_dir`` on every emitted item is stamped at the **payload root**
-        (not the marketplace root), since renderers resolve payload files via
-        ``Path(item['_source_dir']) / item['path']``.
-
-    Returns a tuple ``(mcps, skills, native_plugins)``:
-
-    - ``mcps`` — one MCP item per server in each payload's ``.mcp.json``.
-    - ``skills`` — one ``path:`` skill item per ``<name>/SKILL.md`` found
-      under ``<payload>/skills/``, with ``_source_dir`` at the payload root.
-    - ``native_plugins`` — one descriptor dict per ``claude_native: true``
-      entry, carrying ``marketplace_root``, ``marketplace_name`` (from
-      marketplace.json), and ``description`` for the claude renderer.
+    The decomposed path intentionally omits commands; native plugin installs may
+    still provide command behavior inside the native harness.
     """
     import json as _json
     from agent_profile._validate import ParseError
+
     data = _load_yaml_mapping(path)
     plugins = data.get("plugins") or {}
     out_mcps: list[dict[str, Any]] = []
     out_skills: list[dict[str, Any]] = []
+    out_agents: list[dict[str, Any]] = []
+    out_hooks: list[dict[str, Any]] = []
     out_native: list[dict[str, Any]] = []
     _cache_root = cache_root or (Path.home() / ".cache" / "ap" / "plugins")
 
@@ -354,10 +571,9 @@ def _expand_plugins(
         if not isinstance(body, dict):
             continue
 
-        # ── Validate source: exactly one of git: or path: ──
         path_str = body.get("path")
         git_url = body.get("git")
-        if bool(path_str) == bool(git_url):  # both set, or neither set
+        if bool(path_str) == bool(git_url):
             raise ParseError(
                 f"ap: plugin '{name}': exactly one of 'git:' or 'path:' is required "
                 f"(got {'both' if path_str and git_url else 'neither'})."
@@ -366,11 +582,13 @@ def _expand_plugins(
         if git_url:
             branch = str(body.get("branch") or "main")
             subdir_raw = body.get("subdir") or ""
-            if isinstance(subdir_raw, str) and (PurePosixPath(subdir_raw).is_absolute() or
-                    ".." in PurePosixPath(subdir_raw).parts):
+            if isinstance(subdir_raw, str) and (
+                PurePosixPath(subdir_raw).is_absolute()
+                or ".." in PurePosixPath(subdir_raw).parts
+            ):
                 raise ParseError(
                     f"ap: plugin '{name}': subdir {subdir_raw!r} must be relative "
-                    f"without '..' components."
+                    "without '..' components."
                 )
             cache_dir = _cache_root / name
             _resolve_git_plugin(str(git_url), branch, cache_dir)
@@ -381,13 +599,12 @@ def _expand_plugins(
                 continue
             marketplace_root = _resolve_plugin_path(str(path_str), repo_root)
 
-        # ── Resolve marketplace root and read marketplace.json ──
         marketplace_json = marketplace_root / ".claude-plugin" / "marketplace.json"
         if not marketplace_json.is_file():
             raise ParseError(
                 f"ap: plugin '{name}': expected marketplace.json at "
                 f"{marketplace_json} but it was not found. "
-                f"The marketplace root must contain .claude-plugin/marketplace.json."
+                "The marketplace root must contain .claude-plugin/marketplace.json."
             )
         try:
             market_data = _json.loads(marketplace_json.read_text())
@@ -403,10 +620,6 @@ def _expand_plugins(
         codex_native = bool(body.get("codex_native", False))
         description = body.get("description") or ""
 
-        # `metadata.pluginRoot` (optional) is a base dir prefixed onto every
-        # plugins[].source — Claude's own marketplace loader honors it, so the
-        # decomposer must too. e.g. hallouminate: pluginRoot "./plugins" + source
-        # "./hallouminate" → payload at <market>/plugins/hallouminate.
         meta = market_data.get("metadata")
         plugin_root = (meta.get("pluginRoot") if isinstance(meta, dict) else "") or ""
         payload_base = (
@@ -417,9 +630,6 @@ def _expand_plugins(
             else marketplace_root
         )
 
-        # Decompose only the payload whose marketplace.json name matches this
-        # registry entry. The registry schema says each entry names one plugin,
-        # so a multi-plugin marketplace must not double-expand every payload.
         matched = False
         for plugin_entry in market_data.get("plugins") or []:
             if not isinstance(plugin_entry, dict):
@@ -427,10 +637,6 @@ def _expand_plugins(
             if plugin_entry.get("name") != name:
                 continue
             matched = True
-            # `source` resolves relative to the marketplace root — or to
-            # marketplace_root/<metadata.pluginRoot> when that optional field is
-            # set (payload_base). Absolute paths and `..` traversal are rejected
-            # loud by _resolve_market_relative.
             payload_root = _resolve_market_relative(
                 payload_base,
                 plugin_entry.get("source") or "",
@@ -439,15 +645,11 @@ def _expand_plugins(
             )
             source_dir = str(payload_root)
 
-            # ── MCP decomposition from .mcp.json ──
             mcp_file = payload_root / ".mcp.json"
             if mcp_file.is_file():
                 try:
                     raw_mcp = _json.loads(mcp_file.read_text())
                 except Exception as exc:
-                    # Fail loud (parity with the marketplace.json handler above):
-                    # a malformed .mcp.json silently dropping every MCP server is a
-                    # silent-breakage trap.
                     raise ParseError(
                         f"ap: plugin '{name}': failed to parse {mcp_file}: {exc}"
                     ) from exc
@@ -463,7 +665,6 @@ def _expand_plugins(
                         item["args"] = server_body["args"]
                     if server_body.get("env") is not None:
                         item["env"] = server_body["env"]
-                    # C-var: validate env vars (mirrors _expand_mcps behaviour).
                     unset = first_unset_var(item, dotenv)
                     if unset is not None:
                         if server_body.get("optional"):
@@ -471,14 +672,10 @@ def _expand_plugins(
                         raise EnvResolutionError(
                             f"ap: plugin '{name}' server '{server_name}': "
                             f"env var ${{{unset}}} is unset "
-                            f"(set it in .env or mark the server optional)"
+                            "(set it in .env or mark the server optional)"
                         )
                     if server_body.get("optional") is not None:
                         item["optional"] = server_body["optional"]
-                    # DEDUP: for a harness whose native install delivers the
-                    # plugin (claude_native / codex_native), remove that harness
-                    # from the decomposed MCP harnesses — the harness gets the
-                    # plugin via its native marketplace install, not bare user MCP.
                     effective_harnesses = harnesses
                     if harnesses:
                         skip = set()
@@ -487,39 +684,52 @@ def _expand_plugins(
                         if codex_native:
                             skip.add("codex")
                         if skip:
-                            effective_harnesses = [
-                                h for h in harnesses if h not in skip
-                            ]
+                            effective_harnesses = [h for h in harnesses if h not in skip]
                     if effective_harnesses:
                         item["harnesses"] = effective_harnesses
                     elif harnesses and not effective_harnesses:
-                        # All harnesses were native-only; emit empty list so the
-                        # item exists but renderers' harnesses-filter skips it.
                         item["harnesses"] = []
                     if gate_unless:
                         item["gate_unless"] = gate_unless
                     out_mcps.append(item)
 
-            # ── Skills decomposition from skills/ tree ──
-            # _expand_local_skills stamps source_dir from its parameter; it uses
-            # tree.name as the rel_root prefix, so 'path' becomes 'skills/<name>'.
             skills_tree = payload_root / "skills"
             plugin_skills = _expand_local_skills(skills_tree, source_dir)
-            if claude_native:
-                for skill in plugin_skills:
+            skill_harnesses = _effective_plugin_harnesses(
+                harnesses,
+                _SKILL_HARNESSES,
+                claude_native=claude_native,
+                codex_native=codex_native,
+            )
+            for skill in plugin_skills:
+                skill["harnesses"] = skill_harnesses
+                if claude_native:
                     skill["_from_native_plugin"] = True
-            if codex_native:
-                # Separate flag from claude's: reusing _from_native_plugin would
-                # make the claude renderer wrongly skip a codex-only-native
-                # plugin's skills. Two independent flags, one per native path.
-                for skill in plugin_skills:
+                if codex_native:
                     skill["_from_codex_native_plugin"] = True
             out_skills.extend(plugin_skills)
 
-        # Fail loud when the registry key matched no marketplace plugin. Without
-        # this, the plugin silently decomposes to nothing — and a claude_native
-        # entry would still register a marketplace below with no primitives behind
-        # it (the same silent-breakage class the loud guards above prevent).
+            out_agents.extend(
+                _plugin_agents(
+                    name,
+                    payload_root,
+                    source_dir,
+                    harnesses,
+                    claude_native=claude_native,
+                    codex_native=codex_native,
+                )
+            )
+            out_hooks.extend(
+                _plugin_hooks(
+                    name,
+                    payload_root,
+                    source_dir,
+                    harnesses,
+                    claude_native=claude_native,
+                    codex_native=codex_native,
+                )
+            )
+
         if not matched:
             available = [
                 p.get("name")
@@ -529,13 +739,9 @@ def _expand_plugins(
             raise ParseError(
                 f"ap: plugin '{name}': no plugins[] entry named '{name}' in "
                 f"{marketplace_json} (found: {available}). The registry key must "
-                f"match a plugins[].name in marketplace.json."
+                "match a plugins[].name in marketplace.json."
             )
 
-        # ── Native plugin descriptor (claude / codex renderer passes) ──
-        # Carried once per registry entry (not per payload): the marketplace
-        # root and canonical marketplace name are what the renderers need.
-        # Carries both native booleans; each renderer consumes only its own.
         if claude_native or codex_native:
             out_native.append(
                 {
@@ -548,7 +754,7 @@ def _expand_plugins(
                 }
             )
 
-    return out_mcps, out_skills, out_native
+    return out_mcps, out_skills, out_agents, out_hooks, out_native
 
 
 def expand_registries(
@@ -595,12 +801,11 @@ def expand_registries(
 
     plugins_path = directive.get("plugins")
     if plugins_path:
-        plugin_mcps, plugin_skills, native = _expand_plugins(
+        plugin_mcps, plugin_skills, plugin_agents, plugin_hooks, native = _expand_plugins(
             repo_root / plugins_path, repo_root, dotenv
         )
-        # Skill-name collision check: fail loud if any plugin skill name
-        # collides with an already-collected skill name.
         from agent_profile._validate import ParseError
+
         existing_names = {s["name"] for s in out["skills"] if s.get("name")}
         for skill in plugin_skills:
             sn = skill.get("name")
@@ -612,9 +817,31 @@ def expand_registries(
                 )
             if sn:
                 existing_names.add(sn)
-        # MCP-name collision check: same guard as skills above. An unguarded
-        # plugin MCP name matching a registry (or other plugin) server would
-        # silently shadow it — last writer wins in each renderer's servers dict.
+
+        existing_agent_names = {a["name"] for a in out["agents"] if a.get("name")}
+        for agent in plugin_agents:
+            an = agent.get("name")
+            if an and an in existing_agent_names:
+                raise ParseError(
+                    f"ap: plugin agent name collision: '{an}' is already"
+                    " present in the agents registry. Rename the plugin"
+                    " agent or the registry entry."
+                )
+            if an:
+                existing_agent_names.add(an)
+
+        existing_hook_names = {h["name"] for h in out["hooks"] if h.get("name")}
+        for hook in plugin_hooks:
+            hn = hook.get("name")
+            if hn and hn in existing_hook_names:
+                raise ParseError(
+                    f"ap: plugin hook name collision: '{hn}' is already"
+                    " present in the hooks registry. Rename the plugin"
+                    " hook or the registry entry."
+                )
+            if hn:
+                existing_hook_names.add(hn)
+
         existing_mcp_names = {m["name"] for m in out["mcps"] if m.get("name")}
         for mcp in plugin_mcps:
             mn = mcp.get("name")
@@ -626,8 +853,11 @@ def expand_registries(
                 )
             if mn:
                 existing_mcp_names.add(mn)
+
         out["mcps"].extend(plugin_mcps)
         out["skills"].extend(plugin_skills)
+        out["agents"].extend(plugin_agents)
+        out["hooks"].extend(plugin_hooks)
         out["native_plugins"].extend(native)
 
     return out

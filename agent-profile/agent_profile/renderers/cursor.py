@@ -53,9 +53,11 @@ from agent_profile import shared
 from agent_profile.env import VAR_RE
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import (
+    agents_for,
     body_abs,
     includes_harness,
     read_json_object,
+    skills_for,
 )
 from agent_profile.templating import render_mcp_for_harness
 
@@ -133,7 +135,7 @@ class CursorRenderer:
         ``models.cursor`` is a real override, also write the cursor-specific
         ``.cursor/agents/<name>.md`` so cursor sessions pick it up while
         other harnesses keep reading the shared file."""
-        for item in manifest.agents:
+        for item in agents_for(manifest, "cursor"):
             body = body_abs(item)
             if body is None:
                 continue
@@ -153,7 +155,7 @@ class CursorRenderer:
     def _write_skills(
         self, manifest: Manifest, target: Path, out: list[str]
     ) -> None:
-        for item in manifest.skills:
+        for item in skills_for(manifest, "cursor"):
             path_rel = item.get("path") or ""
             if not path_rel:
                 continue

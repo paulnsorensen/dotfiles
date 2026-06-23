@@ -43,10 +43,12 @@ from agent_profile.permissions import (
     whole_server_mcp_allows,
 )
 from agent_profile.renderers.base import (
+    agents_for,
     body_abs,
     includes_harness,
     mcps_for,
     read_json_object,
+    skills_for,
 )
 from agent_profile.shared import strip_frontmatter, track_file
 
@@ -59,7 +61,15 @@ _COPILOT_HOOK_DEFAULT = ("claude",)
 
 # Internal/non-frontmatter fields stripped before an agent's remaining keys
 # become its ``.agent.md`` YAML frontmatter (bash ``del(...)``).
-_AGENT_STRIP_KEYS = ("_source_dir", "body_path", "models", "fallback")
+_AGENT_STRIP_KEYS = (
+    "_source_dir",
+    "body_path",
+    "models",
+    "fallback",
+    "harnesses",
+    "_from_native_plugin",
+    "_from_codex_native_plugin",
+)
 
 # Internal fields stripped before a hook item becomes its JSON payload.
 _HOOK_STRIP_KEYS = ("_source_dir", "harnesses", "fallback")
@@ -160,7 +170,7 @@ class CopilotRenderer:
     def _write_agents(
         self, manifest: Manifest, base: Path, out_files: list[str]
     ) -> None:
-        for agent in manifest.agents:
+        for agent in agents_for(manifest, "copilot"):
             name = agent["name"]
 
             models = agent.get("models") or {}
@@ -193,7 +203,7 @@ class CopilotRenderer:
     def _write_skills(
         self, manifest: Manifest, base: Path, out_files: list[str]
     ) -> None:
-        for skill in manifest.skills:
+        for skill in skills_for(manifest, "copilot"):
             path = skill.get("path") or ""
             if not path:
                 continue  # source: (gh-fetched) skill — handled by cmd_install

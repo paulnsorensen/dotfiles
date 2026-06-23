@@ -54,7 +54,10 @@ from agent_profile.parse import Manifest
 from agent_profile.shared import track_file
 from agent_profile.templating import render_mcp_for_harness
 
-# Hooks default to claude-only membership across every renderer.
+# Agent and skill items without explicit membership render everywhere that has
+# that primitive. Hooks retain the legacy claude-only default.
+DEFAULT_AGENT_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
+DEFAULT_SKILL_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
 DEFAULT_HOOK_HARNESSES = ("claude",)
 
 
@@ -170,6 +173,32 @@ def hooks_for(
         hook
         for hook in manifest.hooks
         if includes_harness(hook, harness, default)
+    ]
+
+
+def agents_for(
+    manifest: Manifest,
+    harness: str,
+    default: tuple[str, ...] = DEFAULT_AGENT_HARNESSES,
+) -> list[dict[str, Any]]:
+    """Project the manifest's agents to those a ``harness`` should receive."""
+    return [
+        agent
+        for agent in manifest.agents
+        if includes_harness(agent, harness, default)
+    ]
+
+
+def skills_for(
+    manifest: Manifest,
+    harness: str,
+    default: tuple[str, ...] = DEFAULT_SKILL_HARNESSES,
+) -> list[dict[str, Any]]:
+    """Project the manifest's skills to those a ``harness`` should receive."""
+    return [
+        skill
+        for skill in manifest.skills
+        if includes_harness(skill, harness, default)
     ]
 
 
