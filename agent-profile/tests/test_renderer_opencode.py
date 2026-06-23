@@ -16,7 +16,10 @@ Python port removes the file in *both* cases, and
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import Renderer
@@ -162,6 +165,50 @@ def test_permission_translation_render(tmp_path: Path):
     # the untranslated Claude forms never leak through as raw keys
     assert "Bash(cargo:*)" not in perm["bash"]
     assert "Bash(git push origin main)" not in perm["bash"]
+
+
+def test_secret_deny_rules_lower_to_opencode_read(tmp_path: Path):
+    """Secret-protection deny rules (keys, credentials, cert files) lower
+    onto opencode's ``permission.read`` map as deny entries. opencode
+    denies ``.env`` by default, so the canonical deny list carries only
+    the extra surfaces (private keys, credential stores) that opencode's
+    defaults don't cover."""
+    m = Manifest(
+        name="secrets",
+        settings={
+            "permissions_deny": [
+                "Read(**/*.pem)",
+                "Read(**/*.key)",
+                "Read(**/.aws/credentials)",
+                "Read(**/id_rsa)",
+            ],
+        },
+    )
+    OpencodeRenderer().render(m, tmp_path)
+    perm = json.loads((tmp_path / "opencode.json").read_text())["permission"]
+    assert perm["read"]["**/*.pem"] == "deny"
+    assert perm["read"]["**/*.key"] == "deny"
+    assert perm["read"]["**/.aws/credentials"] == "deny"
+    assert perm["read"]["**/id_rsa"] == "deny"
+
+
+def test_opencode_seed_has_no_permission_block():
+    """The chezmoi ``create_opencode.json`` seed must not carry a
+    ``permission`` block — the ap renderer owns permissions, and a seed-side
+    block never propagates (``create_`` writes only when the target is
+    absent). Regression guard for the drift root cause: the live
+    ``opencode.json`` predated the block, so secret-deny rules declared in
+    the seed were silently lost on every ``dots sync``."""
+    repo = Path(os.environ.get("DOTFILES_DIR") or Path.home() / "Dev/dotfiles")
+    seed = repo / "chezmoi" / "dot_config" / "opencode" / "create_opencode.json"
+    if not seed.is_file():
+        pytest.skip(f"opencode seed not found at {seed}")
+    data = json.loads(seed.read_text())
+    assert "permission" not in data, (
+        "create_opencode.json carries a permission block — the renderer owns "
+        "permissions now; a seed-side block never propagates (create_ writes "
+        "only when the target is absent) and silently drifts."
+    )
 
 
 def test_last_match_ordering_allow_before_deny(tmp_path: Path):

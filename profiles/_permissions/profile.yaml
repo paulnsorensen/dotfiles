@@ -100,3 +100,29 @@ settings:
     - Bash(ack:*)
     - Bash(sudo:*)
     - Bash(rm -rf:*)
+    # Secret-protection floor (cross-harness). opencode denies .env by
+    # default (https://opencode.ai/docs/permissions), so .env itself is
+    # included for the other harnesses but .env.* is NOT — adding it would
+    # clobber .env.example allows under the renderer's allow-then-deny
+    # batching (opencode is last-match-wins; the renderer emits all allow
+    # entries before all deny, so a .env.* deny would override an
+    # .env.example allow). Claude+Codex also have the PreToolUse hook
+    # (agents/lib/sensitive-file-guard.js) as a redundant guard.
+    - Read(.env)
+    - Read(**/.env)
+    - Read(**/*.pem)
+    - Read(**/*.key)
+    - Read(**/*.p12)
+    - Read(**/*.pfx)
+    - Read(**/id_rsa)
+    - Read(**/id_dsa)
+    - Read(**/id_ecdsa)
+    - Read(**/id_ed25519)
+    - Read(**/.ssh/id_*)
+    - Read(**/.aws/credentials)
+    - Read(**/.netrc)
+    - Read(**/.npmrc)
+    - Read(**/.pgpass)
+    - Read(**/.git-credentials)
+    - Read(**/secrets.*)
+    - Read(**/*.secret)

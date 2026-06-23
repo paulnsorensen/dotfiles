@@ -106,11 +106,13 @@ def global_manifest():
 
 def test_global_resolves_canonical_allow_and_deny(global_manifest):
     """``global`` resolves both canonical lists via the ``_permissions``
-    include, with the full deny seed (7 entries) present and sorted."""
+    include. The deny list carries the cross-harness safety floor plus
+    secret-protection rules (keys, credentials) that opencode's defaults
+    don't cover."""
     allow = global_manifest.settings.get("permissions_allow", [])
     deny = global_manifest.settings.get("permissions_deny", [])
-    # The deny seed is small + fixed, so assert it exactly.
-    assert deny == [
+    # Safety floor + code-intel-tool forcing (the original 7 entries).
+    for rule in (
         "Bash(ack:*)",
         "Bash(ag:*)",
         "Bash(grep:*)",
@@ -118,7 +120,17 @@ def test_global_resolves_canonical_allow_and_deny(global_manifest):
         "Bash(sudo:*)",
         "Glob",
         "Grep",
-    ]
+    ):
+        assert rule in deny
+    # Secret-protection deny rules (keys, credentials, cert files).
+    for rule in (
+        "Read(**/*.pem)",
+        "Read(**/id_rsa)",
+        "Read(**/.aws/credentials)",
+        "Read(.env)",
+    ):
+        assert rule in deny
+    assert len(deny) >= 20
     # The allow seed is the ~50-entry migration plus 15 MCP/tool rules; assert
     # the count is in the migrated range rather than mere non-emptiness.
     assert len(allow) >= 50
@@ -157,6 +169,53 @@ def test_global_deny_seed_safety_floor(global_manifest):
     deny = set(global_manifest.settings.get("permissions_deny", []))
     assert "Bash(sudo:*)" in deny
     assert "Bash(rm -rf:*)" in deny
+
+
+def test_global_deny_seed_protects_secrets(global_manifest):
+    """Secret-protection deny rules (private keys, credential stores, cert
+    files) are declared in the canonical _permissions fragment so every
+    harness renderer lowers them onto its native permission surface.
+    opencode denies .env by default, so .env itself is included for
+    cross-harness coverage but .env.* is NOT — adding it would clobber
+    .env.example allows under the renderer's allow-then-deny batching
+    (opencode is last-match-wins; the renderer emits all allow entries
+    before all deny, so a .env.* deny would override an .env.example
+    allow). Claude+Codex also have the PreToolUse hook
+    (agents/lib/sensitive-file-guard.js) as a redundant guard."""
+    deny = set(global_manifest.settings.get("permissions_deny", []))
+    # Private keys + cert files.
+    for rule in (
+        "Read(**/*.pem)",
+        "Read(**/*.key)",
+        "Read(**/*.p12)",
+        "Read(**/*.pfx)",
+        "Read(**/id_rsa)",
+        "Read(**/id_dsa)",
+        "Read(**/id_ecdsa)",
+        "Read(**/id_ed25519)",
+        "Read(**/.ssh/id_*)",
+    ):
+        assert rule in deny, f"{rule} missing from canonical deny list"
+    # Credential stores.
+    for rule in (
+        "Read(**/.aws/credentials)",
+        "Read(**/.netrc)",
+        "Read(**/.npmrc)",
+        "Read(**/.pgpass)",
+        "Read(**/.git-credentials)",
+    ):
+        assert rule in deny, f"{rule} missing from canonical deny list"
+    # Secret files + .env (cross-harness; opencode defaults cover .env too).
+    for rule in (
+        "Read(**/secrets.*)",
+        "Read(**/*.secret)",
+        "Read(.env)",
+        "Read(**/.env)",
+    ):
+        assert rule in deny, f"{rule} missing from canonical deny list"
+    # .env.* is deliberately NOT denied here (see docstring).
+    assert "Read(.env.*)" not in deny
+    assert "Read(**/.env.*)" not in deny
 
 
 def test_sanctioned_tools_not_denied(global_manifest):

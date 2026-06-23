@@ -1,39 +1,4 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "formatter": true,
-  "permission": {
-    "read": {
-      "*": "allow",
-      ".env": "deny",
-      ".env.*": "deny",
-      "**/.env": "deny",
-      "**/.env.*": "deny",
-      ".env.example": "allow",
-      ".env.sample": "allow",
-      ".env.template": "allow",
-      ".env.dist": "allow",
-      ".env.defaults": "allow",
-      "**/.env.example": "allow",
-      "**/.env.sample": "allow",
-      "**/.env.template": "allow",
-      "**/.env.dist": "allow",
-      "**/.env.defaults": "allow",
-      "**/*.pem": "deny",
-      "**/*.key": "deny",
-      "**/*.p12": "deny",
-      "**/*.pfx": "deny",
-      "**/id_rsa": "deny",
-      "**/id_dsa": "deny",
-      "**/id_ecdsa": "deny",
-      "**/id_ed25519": "deny",
-      "**/.ssh/id_*": "deny",
-      "**/.aws/credentials": "deny",
-      "**/.netrc": "deny",
-      "**/.npmrc": "deny",
-      "**/.pgpass": "deny",
-      "**/.git-credentials": "deny",
-      "**/secrets.*": "deny",
-      "**/*.secret": "deny"
-    }
-  }
+  "formatter": true
 }
