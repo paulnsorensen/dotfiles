@@ -70,8 +70,9 @@ decomposer:
 5. Walks `<payload>/agents/*.md` → agent items, parsing leading YAML
    frontmatter for metadata while preserving the original body file.
 6. Reads `<payload>/.claude-plugin/plugin.json` hooks → registry-style hook
-   items; script hooks can reach Claude/Codex/Cursor/Copilot, literal command
-   hooks are Claude-only on the decomposed path.
+   items; script hooks can reach Claude/Codex/Cursor/Copilot, while literal
+   command hooks can reach Claude/Codex (the two harnesses whose renderers run
+   command hooks verbatim).
 7. Ignores `commands/`; there is no decomposed command primitive.
 8. Stamps every emitted item's `_source_dir` **at the payload root**.
 

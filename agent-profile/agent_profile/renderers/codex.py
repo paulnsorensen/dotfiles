@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import shlex
 import stat
 import subprocess
 import sys
@@ -313,37 +314,45 @@ class CodexRenderer:
             event = item.get("event")
             matcher = item.get("matcher") or ""
             script = item.get("script") or ""
+            command = item.get("command") or ""
             source_dir = item["_source_dir"]
             timeout = item.get("timeout")
 
-            if not script:
+            if script and command:
                 raise ValueError(
-                    f"codex_render: hook event '{event}' is missing 'script' "
-                    f"(profile {source_dir})"
+                    f"codex_render: hook event '{event}' sets both 'script' "
+                    f"and 'command' (profile {source_dir})"
                 )
-            script_src = Path(source_dir) / script
-            if not script_src.is_file():
-                raise FileNotFoundError(
-                    f"codex_render: hook script not found: {script_src}"
+            if script:
+                script_src = Path(source_dir) / script
+                if not script_src.is_file():
+                    raise FileNotFoundError(
+                        f"codex_render: hook script not found: {script_src}"
+                    )
+
+                base_name = Path(script).name
+                rel_script = f".codex/hooks/{base_name}"
+                abs_script = base_dir / rel_script
+                abs_script.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(script_src, abs_script)
+                abs_script.chmod(abs_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                shared.track_file(out_files, rel_script)
+
+                # Deploy shared_assets under .codex/ so the self-locating
+                # SessionStart script resolves its lib/bank (HARNESS_ROOT =
+                # dirname(.codex/hooks/) = .codex/).
+                base.copy_hook_shared_assets(
+                    item, base_dir / ".codex", base_dir, out_files
                 )
-
-            base_name = Path(script).name
-            rel_script = f".codex/hooks/{base_name}"
-            abs_script = base_dir / rel_script
-            abs_script.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(script_src, abs_script)
-            abs_script.chmod(abs_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            shared.track_file(out_files, rel_script)
-
-            # Deploy shared_assets under .codex/ so the self-locating
-            # SessionStart script resolves its lib/bank (HARNESS_ROOT =
-            # dirname(.codex/hooks/) = .codex/).
-            base.copy_hook_shared_assets(
-                item, base_dir / ".codex", base_dir, out_files
-            )
+                command = f"bash {shlex.quote(str(abs_script))}"
+            elif not command:
+                raise ValueError(
+                    f"codex_render: hook event '{event}' has neither 'script' "
+                    f"nor 'command' (profile {source_dir})"
+                )
 
             group = _codex_hook_group(
-                command=f"bash {abs_script}", matcher=matcher, timeout=timeout
+                command=command, matcher=matcher, timeout=timeout
             )
             hook_groups.setdefault(str(event), []).append(group)
 

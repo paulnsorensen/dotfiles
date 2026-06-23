@@ -1343,7 +1343,7 @@ def test_hook_script_decomposed_from_plugin_manifest(tmp_path):
     assert hook["_source_dir"] == str(payload)
 
 
-def test_hook_literal_command_is_claude_only(tmp_path):
+def test_hook_literal_command_includes_codex_when_not_native(tmp_path):
     _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
     _write_plugin_hook_manifest(payload, command="echo literal")
     _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
@@ -1351,17 +1351,18 @@ def test_hook_literal_command_is_claude_only(tmp_path):
     hook = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["hooks"][0]
 
     assert hook["command"] == "echo literal"
-    assert hook["harnesses"] == ["claude"]
+    assert hook["harnesses"] == ["claude", "codex"]
 
 
-def test_hook_literal_command_is_dropped_when_claude_native(tmp_path):
+def test_hook_literal_command_keeps_codex_when_claude_native(tmp_path):
     _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
     _write_plugin_hook_manifest(payload, command="echo literal")
     _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug"), "claude_native": True}})
 
-    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    hook = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["hooks"][0]
 
-    assert out["hooks"] == []
+    assert hook["command"] == "echo literal"
+    assert hook["harnesses"] == ["codex"]
 
 
 def test_hook_name_collision_fails_loud(tmp_path):

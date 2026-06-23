@@ -81,6 +81,7 @@ def _as_csv_list(value: Any) -> list[str]:
 _AGENT_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
 _SKILL_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
 _HOOK_HARNESSES = ("claude", "codex", "cursor", "copilot")
+_COMMAND_HOOK_HARNESSES = ("claude", "codex")
 
 
 def _effective_plugin_harnesses(
@@ -277,14 +278,20 @@ def _plugin_hooks(
                         "harnesses": item_harnesses,
                     }
                 else:
-                    if claude_native or (harnesses and "claude" not in harnesses):
+                    item_harnesses = _effective_plugin_harnesses(
+                        harnesses,
+                        _COMMAND_HOOK_HARNESSES,
+                        claude_native=claude_native,
+                        codex_native=codex_native,
+                    )
+                    if not item_harnesses:
                         continue
                     item = {
                         "name": f"{plugin}-{_safe_name_part(event)}-{outer_index}-{inner_index}",
                         "event": event,
                         "command": command,
                         "_source_dir": source_dir,
-                        "harnesses": ["claude"],
+                        "harnesses": item_harnesses,
                     }
                 if outer.get("matcher") is not None:
                     item["matcher"] = outer["matcher"]
