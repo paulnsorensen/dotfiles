@@ -459,13 +459,16 @@ EOF
 }
 
 @test "chezmoi/run_onchange template hashes the registries + skills tree it renders from" {
-    # The base profile unions the three registries + the local skills tree
-    # AND the global profile wraps base with operator-overlay fields;
-    # the hash must cover all of them so a registry/skill/profile/hook-script
-    # edit retriggers the render.
+    # The base profile unions the registries + local skills tree; the live
+    # wrappers (`global`, `opencode-global`) plus `_permissions` add the
+    # machine-targeted overlay and canonical permission floor. The hash must
+    # cover all of them so a registry/skill/profile/hook-script edit retriggers
+    # the render.
     grep -qF '/../skills ' "$INSTALLER_TMPL"
     grep -qF '/../profiles/base' "$INSTALLER_TMPL"
     grep -qF '/../profiles/global' "$INSTALLER_TMPL"
+    grep -qF '/../profiles/_permissions' "$INSTALLER_TMPL"
+    grep -qF '/../profiles/opencode-global' "$INSTALLER_TMPL"
     grep -qF '/../agents/mcp/registry.yaml' "$INSTALLER_TMPL"
     # `agents/hooks` covers the registry AND its referenced scripts —
     # without script-content coverage, edits to a hook payload (e.g. the

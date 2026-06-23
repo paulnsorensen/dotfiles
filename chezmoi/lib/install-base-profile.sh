@@ -1,18 +1,17 @@
 #!/bin/bash
-# install-base-profile.sh — render `base` (or its `global` wrapper) into
-# every harness via the `ap` (agent-profile) tool.
+# install-base-profile.sh — render the live install profiles into every
+# harness via the `ap` (agent-profile) tool.
 #
 # This is the single deploy path that replaces the retired chezmoi scripts
 # install-mcp / install-hooks / install-claude-skills (spec curd 7, D1). The
 # three separate registries stay the per-type EDIT surface (mcp-edit /
-# hook-edit / skill-edit); `base` unions them, `global` wraps base with the
-# operator-intent fields (target_default=$HOME, claude marketplace + plugin
-# enablement), and `ap` materializes the union for each harness.
+# hook-edit / skill-edit); `base` is still the registry union, while `global`
+# and `opencode-global` are the live wrappers that materialize it for their
+# harness sets.
 #
-# Two render targets handle a path asymmetry: the four dot-dir harnesses
+# Two live wrapper profiles handle a path asymmetry: the four dot-dir harnesses
 # (claude/codex/cursor/copilot) write under dot-dirs at $HOME, while opencode's
-# renderer writes opencode.json at the target ROOT, so it targets
-# $HOME/.config/opencode.
+# renderer writes opencode.json at the target ROOT (`$HOME/.config/opencode`).
 #
 # For the dot-dir harnesses we install the `global` profile so its
 # target_default + claude.marketplace + claude.enabled_plugins land — that
@@ -20,8 +19,10 @@
 # SessionStart hook (cheese-flair) and bundled MCPs/skills become live.
 # `--target` is intentionally omitted; the profile resolves $HOME itself.
 #
-# opencode has no plugin-enablement surface — `base` is sufficient there,
-# and its target stays explicit ($HOME/.config/opencode is not $HOME).
+# For opencode we install `opencode-global`: no plugin/marketplace surface, but
+# the wrapper still carries `_permissions` plus `target_default:
+# $HOME/.config/opencode`. Omitting `--target` keeps opencode on the live
+# install path, so external `source:` skills still fetch via `npx skills add`.
 #
 # Usage:
 #   install-base-profile.sh <target_home>
@@ -51,8 +52,9 @@ fi
 HOME="$target" "$ap_bin" install global \
     --harness claude,codex,cursor,copilot
 
-# opencode writes opencode.json at the target root → its own target dir.
-# Uses `base` directly: opencode has no plugin/marketplace surface to
-# enable, and its target is not $HOME so target_default doesn't apply.
-"$ap_bin" install base --target "$target/.config/opencode" \
+# opencode writes opencode.json at the target root, so its live wrapper targets
+# $HOME/.config/opencode instead of $HOME. HOME is forwarded for the same
+# reason as the dot-dir harnesses: target_default must resolve against the
+# caller's target argument when it differs from the process HOME.
+HOME="$target" "$ap_bin" install opencode-global \
     --harness opencode

@@ -104,6 +104,30 @@ def global_manifest():
     return parse_manifest(gdir)
 
 
+@pytest.fixture
+def opencode_global_manifest():
+    """Resolve the real shipped ``opencode-global`` live wrapper."""
+    repo = Path(os.environ.get("DOTFILES_DIR") or Path.home() / "Dev/dotfiles")
+    odir = repo / "profiles" / "opencode-global"
+    if not odir.is_file() and not (odir / "profile.yaml").is_file():
+        pytest.skip(f"opencode-global profile not found at {odir}")
+    return parse_manifest(odir)
+
+
+def test_opencode_global_resolves_canonical_permissions_at_opencode_target(
+    opencode_global_manifest,
+):
+    """``opencode-global`` stays on the live opencode path: target_default
+    resolves to ``$HOME/.config/opencode`` and ``_permissions`` contributes
+    the canonical allow + deny floor."""
+    assert opencode_global_manifest.target_default == "$HOME/.config/opencode"
+    allow = set(opencode_global_manifest.settings.get("permissions_allow", []))
+    deny = set(opencode_global_manifest.settings.get("permissions_deny", []))
+    for rule in ("Bash(git:*)", "Edit"):
+        assert rule in allow
+    for rule in ("Grep", "Read(.env)", "Read(**/.aws/credentials)"):
+        assert rule in deny
+
 def test_global_resolves_canonical_allow_and_deny(global_manifest):
     """``global`` resolves both canonical lists via the ``_permissions``
     include. The deny list carries the cross-harness safety floor plus

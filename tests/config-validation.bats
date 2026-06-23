@@ -101,16 +101,21 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ -f "$DOTFILES_DIR/skills/_registry.yaml" ]]
 }
 
-@test "base-sync pins --target \$HOME and mirrors the two-target render (curd 7 alias --target fix)" {
+@test "base-sync dispatches the live wrapper profiles (curd 7 manual deploy parity)" {
     local claude_file="$DOTFILES_DIR/zsh/claude.zsh"
-    # High age finding: a bare `dots profile install base` defaults --target to
-    # \$PWD, silently deploying to the cwd. The deploy verb must pin \$HOME and
-    # mirror install-base-profile.sh's two-target asymmetry.
-    # shellcheck disable=SC2016  # match the literal $HOME in the alias body, not expand it
-    grep -qE 'dots profile install base --target "\$HOME"' "$claude_file"
-    # shellcheck disable=SC2016
-    grep -qE 'dots profile install base --target "\$HOME/\.config/opencode"' "$claude_file"
-    grep -qE -- '--harness opencode' "$claude_file"
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local harness="$BATS_TEST_TMPDIR/base-sync.zsh"
+    cat > "$harness" <<EOF
+#!/usr/bin/env zsh
+dots() { print -r -- "\$@"; }
+$(sed -n '/^base-sync()/,/^}/p' "$claude_file")
+base-sync
+EOF
+    run zsh "$harness"
+    [[ $status -eq 0 ]]
+    [[ "$output" == *"profile install global --harness claude,codex,cursor,copilot"* ]]
+    [[ "$output" == *"profile install opencode-global --harness opencode"* ]]
+    [[ "$output" != *"--target"* ]]
 }
 
 @test "the redundant *-sync mnemonics are retired (base-sync is the sole entry point)" {
