@@ -47,6 +47,8 @@ The wiki is the fast path to design rationale; `AGENTS.md` / `CLAUDE.md` is the 
 
 Reach for code-review-graph first when reviewing a change, planning a multi-file edit, or answering "what does this actually affect."
 
+**Embeddings provider.** On a machine wired to a local embeddings endpoint (`CRG_OPENAI_BASE_URL` set — true on the local-llm rig), call `build_or_update_graph_tool` and `semantic_search_nodes_tool` with `provider="openai"` and `model="local-embed"`. The default `provider="local"` needs the `[embeddings]` extra (deliberately omitted there) and will error. Switching provider re-embeds the graph on the next build.
+
 ## Workflow before editing code
 
 1. **Scope it** — for changes that touch multiple files or for review work, start with `get_review_context_tool` or `get_impact_radius_tool`.

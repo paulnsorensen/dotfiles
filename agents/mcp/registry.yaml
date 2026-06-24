@@ -85,8 +85,32 @@ mcps:
 
   code-review-graph:
     command: uvx
-    args: ["--from", "code-review-graph[embeddings]", "code-review-graph", "serve"]
+    # Embeddings backend gated on the chezmoi `localLLM` flag (per-value render via
+    # templating.py, so `get . "localLLM"` reads the machine's persisted [data]):
+    #   localLLM=true → reuse the resident Qwen3-Embedding-0.6B at llama-swap :9000
+    #     (provider=openai) and DROP [embeddings] — no torch, no CUDA wheel, no HF
+    #     download. Agents MUST pass provider="openai" to the build/semantic-search
+    #     tools (agents/preamble.md); the default "local" has no sentence-transformers
+    #     on this machine and would error.
+    #   else → keep [embeddings] + default local provider (prior behavior).
+    args:
+      - "--from"
+      - '{{ if get . "localLLM" }}code-review-graph{{ else }}code-review-graph[embeddings]{{ end }}'
+      - "code-review-graph"
+      - "serve"
     env:
+      # Leak fix (all machines): CRG's ProcessPoolExecutor parse workers
+      # (CRG_PARSE_WORKERS=min(cpu,8)) orphan to init on a Linux MCP/stdio host when
+      # the server is killed — CRG only auto-switches to threads on Windows
+      # (incremental.py _select_executor_kind; issues #46/#136). Force threads:
+      # tree-sitter releases the GIL, so the parse-speed cost is small.
+      CRG_PARSE_EXECUTOR: "thread"
+      # local-llm machines only: embeddings via llama-swap :9000 DIRECT — not LiteLLM
+      # :4000, which 400s on CRG's auto-sent `dimensions` param even with drop_params.
+      # Renders to "" elsewhere (unread; default local provider is used there).
+      CRG_OPENAI_BASE_URL: '{{ if get . "localLLM" }}http://127.0.0.1:9000/v1{{ end }}'
+      CRG_OPENAI_API_KEY: '{{ if get . "localLLM" }}sk-local{{ end }}'
+      CRG_OPENAI_MODEL: '{{ if get . "localLLM" }}local-embed{{ end }}'
       # Trim 30→14: expose only the preamble-routed tools (the code-review-graph
       # mapping table in agents/preamble.md). `--tools` falls back to CRG_TOOLS;
       # unlisted tools are removed at server boot, cutting ~4.4k schema tokens per
@@ -95,7 +119,7 @@ mcps:
       # is a one-line edit. Names carry the `_tool` suffix per `serve --help`.
       CRG_TOOLS: "build_or_update_graph_tool,get_review_context_tool,detect_changes_tool,get_impact_radius_tool,get_affected_flows_tool,get_architecture_overview_tool,get_hub_nodes_tool,get_bridge_nodes_tool,find_large_functions_tool,list_communities_tool,get_community_tool,semantic_search_nodes_tool,get_minimal_context_tool,get_knowledge_gaps_tool"
     scope: user
-    description: Structural code knowledge graph via Tree-sitter — semantic search (sentence-transformers), call chains, impact radius, flows, communities
+    description: Structural code knowledge graph via Tree-sitter — semantic search (local-embed via llama-swap when localLLM, else sentence-transformers), call chains, impact radius, flows, communities
 
   # Serena's per-harness contexts already strip tools that duplicate built-ins
   # (Read/Write/Bash etc.). Server-wide further filtering lives in
