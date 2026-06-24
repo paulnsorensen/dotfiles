@@ -262,18 +262,32 @@ class CopilotRenderer:
 
     def _write_mcp(self, manifest: Manifest, base: Path) -> None:
         mcps = mcps_for(manifest, "copilot", _COPILOT_MCP_DEFAULT)
-        if not mcps:
-            return
-
         out = base / ".copilot" / "mcp-config.json"
-        out.parent.mkdir(parents=True, exist_ok=True)
-
-        data: dict[str, Any]
         if out.is_file():
             data = read_json_object(out, ".copilot/mcp-config.json")
+        elif not mcps:
+            return
         else:
             data = {"mcpServers": {}}
         servers = data.setdefault("mcpServers", {})
+
+        current_names = {mcp["name"] for mcp in mcps}
+        registry_names = {mcp.get("name") for mcp in manifest.mcps}
+        for name in registry_names - current_names:
+            servers.pop(name, None)
+
+        if not mcps:
+            if servers:
+                data["mcpServers"] = servers
+            else:
+                data.pop("mcpServers", None)
+            if data == {}:
+                out.unlink()
+            else:
+                out.write_text(_dumps(data))
+            return
+
+        out.parent.mkdir(parents=True, exist_ok=True)
 
         # Lever 3: each server's `tools` array is derived from the canonical
         # allow list. `mcp__<server>__*` (or no canonical rule for the

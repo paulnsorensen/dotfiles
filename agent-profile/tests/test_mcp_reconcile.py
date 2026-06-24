@@ -137,10 +137,16 @@ def test_claude_prune_unregisters_user_scope(monkeypatch, tmp_path):
     assert removes, f"expected a `claude mcp remove gone`, got {calls}"
 
 
-def _yaml_claude_user(name: str, mcp_names: list[str]) -> str:
+def _yaml_claude_user(
+    name: str, mcp_names: list[str], target_default: str | None = None
+) -> str:
     lines = [
         f"name: {name}",
         "description: reconcile probe",
+    ]
+    if target_default is not None:
+        lines.append(f"target_default: {target_default}")
+    lines += [
         "mcp_scope: user",
         "mcps:",
     ]
@@ -176,14 +182,22 @@ def test_dropped_mcp_unregistered_from_claude_user_scope(
     monkeypatch.setattr(cl.shutil, "which", lambda _: "/usr/bin/claude")
     monkeypatch.setattr(cl.subprocess, "run", fake_run)
 
-    write_profile(env.profiles, "g", _yaml_claude_user("g", ["srv1", "srv2"]))
-    assert _install(env, "g") == 0
+    write_profile(
+        env.profiles,
+        "g",
+        _yaml_claude_user("g", ["srv1", "srv2"], str(env.target)),
+    )
+    assert cli.main(["install", "g"]) == 0
     capsys.readouterr()
     calls.clear()  # discard first-install register churn
 
     # Re-install with srv2 dropped from the registry.
-    write_profile(env.profiles, "g", _yaml_claude_user("g", ["srv1"]))
-    assert _install(env, "g") == 0
+    write_profile(
+        env.profiles,
+        "g",
+        _yaml_claude_user("g", ["srv1"], str(env.target)),
+    )
+    assert cli.main(["install", "g"]) == 0
     capsys.readouterr()
 
     # Reconcile must `claude mcp remove srv2` and never re-add it.
@@ -198,6 +212,22 @@ def test_dropped_mcp_unregistered_from_claude_user_scope(
         c for c in calls if "add" in c and "srv1" in c
     ], f"survivor srv1 must stay registered, got {calls}"
 
+
+def test_explicit_target_user_scope_stages_plugin_mcp_without_claude_cli(
+    env, capsys, monkeypatch, prod_renderers
+):
+    def boom(*a, **k):
+        raise AssertionError("explicit-target render must not call claude CLI")
+
+    monkeypatch.setattr(cl.shutil, "which", boom)
+    monkeypatch.setattr(cl.subprocess, "run", boom)
+
+    write_profile(env.profiles, "g", _yaml_claude_user("g", ["srv1"]))
+    assert _install(env, "g") == 0
+    capsys.readouterr()
+
+    staged = env.target / ".claude/plugins/local/g/.mcp.json"
+    assert json.loads(staged.read_text())["mcpServers"]["srv1"]["command"] == "/bin/true"
 
 def test_claude_prune_noop_for_plugin_scope(monkeypatch, tmp_path):
     def boom(*a, **k):  # would raise if the CLI were touched

@@ -238,6 +238,36 @@ def test_mcp_merges_into_existing_user_file(target, src):
     assert set(parsed["mcpServers"]) == {"user-mcp", "foo"}
 
 
+
+def test_mcp_prunes_registry_servers_no_longer_projected_to_copilot(target, src):
+    cfg = target / ".copilot" / "mcp-config.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "tilth": {"command": "old"},
+                    "user-mcp": {"command": "custom"},
+                }
+            }
+        )
+        + "\n"
+    )
+    m = manifest(
+        src,
+        mcps=[
+            {"name": "tilth", "command": "tilth"},
+            {"name": "hallouminate", "command": "hallouminate", "harnesses": ["copilot"]},
+        ],
+    )
+
+    renderer().render(m, target)
+
+    servers = json.loads(cfg.read_text())["mcpServers"]
+    assert "tilth" not in servers
+    assert servers["user-mcp"] == {"command": "custom"}
+    assert servers["hallouminate"]["command"] == "hallouminate"
+
 # ─── hooks ─────────────────────────────────────────────────────────────
 
 
