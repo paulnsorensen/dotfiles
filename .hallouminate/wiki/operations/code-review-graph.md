@@ -35,7 +35,7 @@ CRG parses with a `ProcessPoolExecutor` of `CRG_PARSE_WORKERS=min(cpu_count, 8)`
 
 ## Reaping stale servers
 
-Until every session has restarted onto the thread-executor config, legacy `process`-pool servers may linger. Inspect first — this machine aliases `ps`→`procs` (the Rust tool), so use `pgrep`/`pkill` (or `/usr/bin/ps`):
+Until every session has restarted onto the thread-executor config, legacy `process`-pool servers may linger. **The reaping commands below are Linux/procps-ng ≥ 4.x only** — macOS `pkill` has no `--older`, and CRG uses the process pool on macOS too (only `win32` gets threads), so a Darwin box can leak the same way; there, filter by age yourself: `pgrep -f 'code-review-graph serve' | while read p; do [ "$(ps -o etimes= -p "$p")" -gt 3600 ] && kill "$p"; done`. On Linux, this machine aliases `ps`→`procs` (the Rust tool), so use `pgrep`/`pkill` (or `/usr/bin/ps`):
 
     pgrep -a --older 3600 -f 'code-review-graph serve'
 
