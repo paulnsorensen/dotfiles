@@ -269,7 +269,10 @@ def cmd_install(
     print(f"  target:   {target}", file=out)
     print(f"  harness:  {' '.join(harnesses)}", file=out)
 
-    merged_dict = manifest.to_dict()
+    render_manifest = manifest
+    if target_opt is not None and manifest.mcp_scope == "user":
+        render_manifest = replace(manifest, mcp_scope="plugin")
+    merged_dict = render_manifest.to_dict()
 
     manifest_mod.manifest_init(target)
     # Snapshot the prior resolved manifest BEFORE the render loop overwrites
@@ -286,7 +289,7 @@ def cmd_install(
                 f"{colors.RED}ap: no renderer registered for harness "
                 f"'{h}'{colors.NC}"
             )
-        written = renderer.render(manifest, target)
+        written = renderer.render(render_manifest, target)
         all_new_files.extend(written)
 
     _fetch_external_skills(manifest, harnesses, colors, out, live=target_opt is None)
@@ -300,8 +303,8 @@ def cmd_install(
         manifest_mod.diff_and_clean(target, name, new_files, harnesses)
         _union_files(target, name, new_files, harnesses)
 
-    _reconcile_dropped_mcps(prior_merged, manifest, harnesses, target, out, colors)
-    _reconcile_dropped_mcp_tool_scopes(prior_merged, manifest, harnesses, target)
+    _reconcile_dropped_mcps(prior_merged, render_manifest, harnesses, target, out, colors)
+    _reconcile_dropped_mcp_tool_scopes(prior_merged, render_manifest, harnesses, target)
 
     manifest_mod.record_merged_json(target, name, merged_dict)
 

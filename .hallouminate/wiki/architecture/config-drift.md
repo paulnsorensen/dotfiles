@@ -157,39 +157,19 @@ was never a real gap — the wiki note "milknado is missing from the copilot
 template" was only relevant during the brief window between #274 and 8b829c0
 when it was a registry MCP.
 
-## Known drift pattern: `harnesses: []` MCPs not pruned by reconcile
+## Known drift pattern: MCPs no longer projected to a harness
 
-**Symptom**: An MCP that had harnesses narrowed to `harnesses: []` (scoped out
-of all harnesses) remains in all merged-file targets — `~/.codex/config.toml`,
-`~/.config/opencode/opencode.json`, `~/.cursor/mcp.json` — and in claude's
-user-scope registrations (`~/.claude.json`) indefinitely. `dots sync` does not
-remove any of them.
+**Symptom**: An MCP remains in a merged-file target even after the current render no longer projects it to that harness — for example a Copilot `mcp-config.json` entry for `tilth`, `context7`, `tavily`, `code-review-graph`, or `serena` after Copilot narrowed to explicit `harnesses: [copilot]` entries.[^copilot-stale-mcp]
 
-**Why it happens**: `cli.py:_reconcile_dropped_mcps` computes:
+**Why it happens**: merged files are read-modify-write surfaces. A current render writes/updates entries that still project to the harness, but a stale entry can persist when the old source was historical template drift or when prior manifest ownership did not prove that the harness once received the MCP.
 
-```python
-current_names = {m.get("name") for m in manifest.mcps}
-```
+**Fix**: `_reconcile_dropped_mcps` handles normal registry drops and `harnesses: []` changes by diffing per-harness projections, not the global `manifest.mcps` set.[^reconcile-projection] Copilot additionally prunes same-name registry MCPs that are present in `.copilot/mcp-config.json` but no longer project to Copilot during `_write_mcp`, preserving unrelated user MCPs.[^copilot-prune-nonprojected]
 
-`manifest.mcps` is the full resolved profile list — an MCP with `harnesses: []`
-is still present there (it's in the registry / profile, just filtered to zero
-harnesses at render time). So the MCP name is in `current_names`, never appears
-in `dropped`, and `prune_mcps` is never called. The stale entry in the merged
-file is invisible to the reconcile.
+**Detection**: Compare the live merged file's server names against the current renderer projection. Same-name registry entries that are live-only are stale; unrelated names are expected-local.
 
-**Repro**: Add MCP to registry with `harnesses: [cursor]` → `dots sync` (cursor
-gets it) → change to `harnesses: []` → `dots sync` → cursor entry NOT removed.
-
-**Workaround**: Manually remove the stale entry per target — edit the file
-directly for `~/.codex/config.toml`, `~/.config/opencode/opencode.json`, and
-`~/.cursor/mcp.json`; run `claude mcp remove <name>` for `~/.claude.json`
-(user-scope registrations). All are safe — `dots sync` won't re-add them (the
-render produces zero harness targets for the MCP).
-
-**Proper fix**: `_reconcile_dropped_mcps` should compute `current_names`
-per-harness, using only the harness-filtered MCP projection (the same filtering
-`_cursor_mcps` / `_opencode_mcps` apply at render time) rather than the full
-`manifest.mcps` set. See [#265](https://github.com/paulnsorensen/dotfiles/issues/265).
+[^copilot-stale-mcp]: harness-doctor run on 2026-06-24 found Copilot live-only `code-review-graph`, `context7`, `serena`, `tavily`, and `tilth` while the current render produced only `hallouminate` and `milknado`.
+[^reconcile-projection]: agent-profile/agent_profile/cli.py:418-473; agent-profile/tests/test_mcp_reconcile.py:test_mcp_scoped_to_no_harnesses_is_pruned
+[^copilot-prune-nonprojected]: agent-profile/agent_profile/renderers/copilot.py:263-312; agent-profile/tests/test_renderer_copilot.py:test_mcp_prunes_registry_servers_no_longer_projected_to_copilot
 
 ## Known drift pattern: settings.json hook-runner command references non-existent JS file
 
@@ -269,6 +249,21 @@ first `ap install global` run.
 **Fix**: Add `manifest.json` to `agent-profile/.gitignore`. This was added in
 2026-06-11. If the file reappears as untracked, verify the `.gitignore` entry
 is present.
+
+## Known drift pattern: staged `global` installs can mutate live Claude user MCP config
+
+**Symptom**: `ap install global --target /tmp/...` used to look like a safe throwaway render, but still invoked `claude mcp remove/add --scope user` and rewrote `~/.claude.json` when `global` carried `mcp_scope: user`.[^staged-global-mcp]
+
+**Why it happens**: `global` deliberately sets `mcp_scope: user` so live Claude MCP tools keep bare `mcp__<server>__*` names instead of plugin-namespaced names.[^global-mcp-scope] The Claude renderer implements that by registering user-scope MCPs via the Claude CLI and returning without writing plugin `.mcp.json`.[^claude-user-scope-render]
+
+**Fix**: Explicit-target installs are now treated as staging for `mcp_scope: user`: `cmd_install` renders with `mcp_scope: plugin`, records that staged manifest shape, and never calls the Claude CLI. Live installs without `--target` keep user-scope registration.[^staged-global-fix]
+
+**Detection**: During harness-doctor, rendering `global` into `/tmp` is safe after the fix; before that fix, render `base` for comparison.
+
+[^staged-global-mcp]: harness-doctor run on 2026-06-24; `ap install global --target /tmp/harness-doctor-global.nH8lCY` modified `/home/paul/.claude.json` for tilth, context7, tavily, code-review-graph, serena, and hallouminate.
+[^global-mcp-scope]: profiles/global/profile.yaml:65-76
+[^claude-user-scope-render]: agent-profile/agent_profile/renderers/claude.py:488-495,517-538
+[^staged-global-fix]: agent-profile/agent_profile/cli.py:272-307; agent-profile/tests/test_mcp_reconcile.py:test_explicit_target_user_scope_stages_plugin_mcp_without_claude_cli
 
 ## Gotcha: index drift is its own drift class
 
