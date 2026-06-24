@@ -42,12 +42,14 @@ from typing import NamedTuple
 from agent_profile import shared
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import (
+    agents_for,
     body_abs,
     copy_hook_shared_assets,
     hooks_for,
     mcp_server_entry,
     mcps_for,
     read_json_object,
+    skills_for,
 )
 
 # The bash .mcp.json select() defaults membership to all three of
@@ -272,7 +274,7 @@ class ClaudeRenderer:
         target: Path,
         out: list[str],
     ) -> None:
-        for item in manifest.agents:
+        for item in agents_for(manifest, "claude"):
             if item.get("_from_native_plugin"):
                 continue  # native plugin delivers agents at plugin scope, not user scope
             name = item["name"]
@@ -295,7 +297,7 @@ class ClaudeRenderer:
         target: Path,
         out: list[str],
     ) -> None:
-        for item in manifest.skills:
+        for item in skills_for(manifest, "claude"):
             if item.get("_from_native_plugin"):
                 continue  # native plugin delivers skills at plugin scope, not user scope
             path = item.get("path") or ""

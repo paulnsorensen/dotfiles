@@ -957,7 +957,7 @@ def test_git_source_resolves_mcp_and_skill(tmp_path):
     from agent_profile.ingest import _expand_plugins
     import yaml
     reg_path = tmp_path / "agents" / "plugins" / "registry.yaml"
-    out_mcps, out_skills, out_native = _expand_plugins(
+    out_mcps, out_skills, _out_agents, _out_hooks, out_native = _expand_plugins(
         reg_path, tmp_path, {}, cache_root=cache_root
     )
 
@@ -1019,7 +1019,7 @@ def test_git_source_subdir(tmp_path):
     )
     from agent_profile.ingest import _expand_plugins
     reg_path = tmp_path / "agents" / "plugins" / "registry.yaml"
-    out_mcps, _, _ = _expand_plugins(reg_path, tmp_path, {}, cache_root=cache_root)
+    out_mcps, _, _, _, _ = _expand_plugins(reg_path, tmp_path, {}, cache_root=cache_root)
     assert "nested" in [m["name"] for m in out_mcps], (
         "MCP from nested subdir must decompose correctly"
     )
@@ -1081,7 +1081,7 @@ def test_git_branch_defaults_to_main(tmp_path):
     )
     from agent_profile.ingest import _expand_plugins
     reg_path = tmp_path / "agents" / "plugins" / "registry.yaml"
-    out_mcps, _, _ = _expand_plugins(reg_path, tmp_path, {}, cache_root=cache_root)
+    out_mcps, _, _, _, _ = _expand_plugins(reg_path, tmp_path, {}, cache_root=cache_root)
     assert "myplugin" in [m["name"] for m in out_mcps], (
         "branch defaults to 'main'; clone must succeed without explicit branch:"
     )
@@ -1219,3 +1219,254 @@ def test_codex_native_false_produces_no_native_record(tmp_path):
 
     out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
     assert out.get("native_plugins", []) == []
+
+
+# ─── plugin agents and hooks ─────────────────────────────────────────────────
+
+
+def _write_plugin_agent(payload: Path, filename: str, frontmatter: dict | None = None, body: str = "Agent body\n") -> None:
+    agents_dir = payload / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    if frontmatter is None:
+        (agents_dir / filename).write_text(body)
+        return
+    import yaml
+    (agents_dir / filename).write_text("---\n" + yaml.safe_dump(frontmatter, sort_keys=False) + "---\n" + body)
+
+
+def _write_plugin_hook_manifest(
+    payload: Path,
+    *,
+    command: str = "${CLAUDE_PLUGIN_ROOT}/hooks/foo.sh",
+    event: str = "PostToolUse",
+    matcher: str = "Write",
+    hook_name: str = "foo.sh",
+) -> None:
+    plugin_dir = payload / ".claude-plugin"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    hooks_dir = payload / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    (hooks_dir / hook_name).write_text("#!/bin/sh\necho hook\n")
+    (plugin_dir / "plugin.json").write_text(json.dumps({
+        "name": payload.name,
+        "hooks": {
+            event: [{
+                "matcher": matcher,
+                "hooks": [{"type": "command", "command": command, "timeout": 7, "async": True}],
+            }]
+        },
+    }))
+
+
+def test_agents_discovered_from_plugin_payload(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_agent(payload, "b.md", {"description": "B"})
+    _write_plugin_agent(payload, "a.md", {"name": "alpha", "description": "A"})
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+    assert [agent["name"] for agent in out["agents"]] == ["alpha", "b"]
+    assert out["agents"][0]["body_path"] == "agents/a.md"
+    assert out["agents"][0]["_source_dir"] == str(payload)
+    assert out["agents"][0]["harnesses"] == ["claude", "codex", "opencode", "cursor", "copilot"]
+
+
+def test_agent_frontmatter_metadata_is_normalized(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_agent(payload, "worker.md", {
+        "name": "worker",
+        "description": "Does work",
+        "tools": "Read, Grep, Bash",
+        "disallowedTools": ["Edit", "Write"],
+        "model": "sonnet",
+        "models": {"opencode": "gpt-5.4"},
+        "color": "blue",
+        "effort": "high",
+        "skills": "scout, gh",
+    })
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    agent = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["agents"][0]
+
+    assert agent["tools"] == ["Read", "Grep", "Bash"]
+    assert agent["disallowedTools"] == ["Edit", "Write"]
+    assert agent["skills"] == ["scout", "gh"]
+    assert agent["models"] == {"claude": "sonnet", "opencode": "gpt-5.4"}
+    assert agent["color"] == "blue"
+    assert agent["effort"] == "high"
+
+
+def test_plugin_agent_name_collision_with_registry_fails_loud(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_agent(payload, "dupe.md", {"name": "dupe"})
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+    agents_reg = tmp_path / "agents" / "registry.yaml"
+    agents_reg.parent.mkdir(parents=True, exist_ok=True)
+    agents_reg.write_text("agents:\n  dupe:\n    body_path: agents/dupe.md\n")
+
+    with pytest.raises(ParseError, match="plugin agent name collision: 'dupe'"):
+        expand_registries({"agents": "agents/registry.yaml", "plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_claude_native_and_codex_native_agents_are_excluded(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_agent(payload, "worker.md", {"name": "worker"})
+    _make_plugins_registry(tmp_path, {"plug": {
+        "path": str(tmp_path / "market" / "plug"),
+        "harnesses": ["claude", "codex", "opencode"],
+        "claude_native": True,
+        "codex_native": True,
+    }})
+
+    agent = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["agents"][0]
+
+    assert agent["harnesses"] == ["opencode"]
+    assert agent["_from_native_plugin"] is True
+    assert agent["_from_codex_native_plugin"] is True
+
+
+def test_hook_script_decomposed_from_plugin_manifest(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_hook_manifest(payload)
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    hook = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["hooks"][0]
+
+    assert hook["name"] == "plug-PostToolUse-0-0-foo"
+    assert hook["event"] == "PostToolUse"
+    assert hook["matcher"] == "Write"
+    assert hook["script"] == "hooks/foo.sh"
+    assert hook["timeout"] == 7
+    assert hook["async"] is True
+    assert hook["harnesses"] == ["claude", "codex", "cursor", "copilot"]
+    assert hook["_source_dir"] == str(payload)
+
+
+def test_hook_literal_command_includes_codex_when_not_native(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_hook_manifest(payload, command="echo literal")
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    hook = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["hooks"][0]
+
+    assert hook["command"] == "echo literal"
+    assert hook["harnesses"] == ["claude", "codex"]
+
+
+def test_hook_literal_command_keeps_codex_when_claude_native(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_hook_manifest(payload, command="echo literal")
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug"), "claude_native": True}})
+
+    hook = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["hooks"][0]
+
+    assert hook["command"] == "echo literal"
+    assert hook["harnesses"] == ["codex"]
+
+
+def test_hook_name_collision_fails_loud(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_hook_manifest(payload)
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+    hooks_reg = tmp_path / "agents" / "hooks" / "registry.yaml"
+    hooks_reg.parent.mkdir(parents=True, exist_ok=True)
+    hooks_reg.write_text("hooks:\n  plug-PostToolUse-0-0-foo:\n    event: PostToolUse\n    script: hooks/foo.sh\n")
+
+    with pytest.raises(ParseError, match="plugin hook name collision: 'plug-PostToolUse-0-0-foo'"):
+        expand_registries({"hooks": "agents/hooks/registry.yaml", "plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_commands_directory_is_ignored(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    commands = payload / "commands"
+    commands.mkdir()
+    (commands / "do.md").write_text("command body\n")
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+    assert "commands" not in out
+
+
+# ─── plugin agent / hook fail-loud + boundary hardening ──────────────────────
+
+
+def test_agent_without_frontmatter_uses_stem_name(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_agent(payload, "plain.md", frontmatter=None)
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    agent = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["agents"][0]
+
+    assert agent["name"] == "plain"
+    assert agent["body_path"] == "agents/plain.md"
+    assert agent["harnesses"] == ["claude", "codex", "opencode", "cursor", "copilot"]
+    assert "description" not in agent
+    assert "models" not in agent
+    assert "tools" not in agent
+
+
+def test_agent_models_frontmatter_must_be_mapping(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_agent(payload, "worker.md", {"name": "worker", "models": "gpt-5"})
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    with pytest.raises(ParseError, match="frontmatter models in .* must be a mapping"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_hook_script_missing_file_fails_loud(tmp_path):
+    # A ${CLAUDE_PLUGIN_ROOT} script that resolves but is absent must fail loud,
+    # not silently drop the hook (the silent-breakage trap the resolver guards).
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    _write_plugin_hook_manifest(
+        payload,
+        command="${CLAUDE_PLUGIN_ROOT}/hooks/missing.sh",
+        hook_name="present.sh",
+    )
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    with pytest.raises(ParseError, match="hook script .* was not found"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_malformed_plugin_json_fails_loud(tmp_path):
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    plugin_dir = payload / ".claude-plugin"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "plugin.json").write_text("{not valid json")
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    with pytest.raises(ParseError, match=r"failed to parse .*plugin\.json"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_hook_names_unique_across_outer_entries_same_event(tmp_path):
+    # Two PostToolUse hooks running the same script under different matchers must
+    # decompose to distinct names. They share plugin+event+stem, so uniqueness has
+    # to come from the (outer, inner) coordinate — otherwise both collapse to one
+    # name and trip the collision guard on an otherwise-valid manifest.
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "plug")
+    hooks_dir = payload / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    (hooks_dir / "fmt.sh").write_text("#!/bin/sh\necho fmt\n")
+    plugin_dir = payload / ".claude-plugin"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "plugin.json").write_text(json.dumps({
+        "name": "plug",
+        "hooks": {
+            "PostToolUse": [
+                {"matcher": "Write", "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/fmt.sh"}]},
+                {"matcher": "Edit", "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/fmt.sh"}]},
+            ]
+        },
+    }))
+    _make_plugins_registry(tmp_path, {"plug": {"path": str(tmp_path / "market" / "plug")}})
+
+    hooks = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["hooks"]
+
+    names = [h["name"] for h in hooks]
+    assert names == ["plug-PostToolUse-0-0-fmt", "plug-PostToolUse-1-0-fmt"]
+    assert len(set(names)) == 2
+    assert [h["matcher"] for h in hooks] == ["Write", "Edit"]

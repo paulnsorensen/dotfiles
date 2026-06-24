@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import shlex
 import tomllib
 from pathlib import Path
 
@@ -280,12 +281,42 @@ def test_codex_hook_command_resolves_from_unrelated_cwd(renderer, src, target, t
     unrelated_cwd = tmp_path / "session"
     unrelated_cwd.mkdir()
     command = json.loads((target / ".codex" / "hooks.json").read_text())["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    argv = command.split()
+    argv = shlex.split(command)
     assert argv[0] == "bash"
     script = Path(argv[1])
     assert script.is_absolute()
     assert script.is_file()
     assert not (unrelated_cwd / ".codex" / "hooks" / "h.sh").exists()
+
+
+def test_codex_literal_command_hook_writes_hooks_json_without_script_deploy(renderer, src, target):
+    m = _manifest(
+        src,
+        hooks=[
+            {
+                "event": "PostToolUse",
+                "matcher": "Bash",
+                "command": "echo literal",
+                "harnesses": ["codex"],
+            }
+        ],
+    )
+    renderer.render(m, target)
+
+    records = json.loads((target / ".codex" / "hooks.json").read_text())
+    assert records == {
+        "hooks": {
+            "PostToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {"type": "command", "command": "echo literal"}
+                    ],
+                }
+            ]
+        }
+    }
+    assert not (target / ".codex" / "hooks").exists()
 
 
 def test_claude_only_hook_does_not_write_hooks_json(renderer, src, target):

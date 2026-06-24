@@ -1,6 +1,6 @@
 # base — the union of the four separate registries (mcp, agents, skills, hooks)
 # plus the plugin registry (a 5th registry that decomposes cross-harness plugins
-# into their constituent MCP / skills / agents / hooks items at ingest time).
+# into MCP / skills / agents / hooks items at ingest time; commands unsupported).
 # This is the ONLY profile that reads the registries; `mcp-edit` /
 # `agent-edit` / `hook-edit` / `skill-edit` / `plugin-edit` keep editing them.
 # `ap` expands `registries:` at parse time into the item lists. Specialized
