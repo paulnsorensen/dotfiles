@@ -72,6 +72,12 @@ sync_collection() {
     if [[ -n "$old_managed" ]]; then
         while IFS= read -r entry; do
             [[ -z "$entry" ]] && continue
+            # Manifest entries are basenames only. Reject any path separator or
+            # parent ref so a corrupted/hand-edited manifest can't steer the
+            # `rm -rf` below outside the target dir (e.g. `../../foo`).
+            case "$entry" in
+                */*|..) echo "  Skipped suspicious manifest entry: $entry" >&2; continue ;;
+            esac
             if ! printf '%s\n' "$new_names" | grep -Fxq "$entry"; then
                 rm -rf -- "${target:?}/$entry"
                 echo "  Removed (dropped from repo): $target/$entry"

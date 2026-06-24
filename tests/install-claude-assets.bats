@@ -32,7 +32,7 @@ teardown() {
 
 @test "install-claude-assets: missing source dir exits non-zero" {
     run "$INSTALL_SCRIPT" "$TEST_HOME/nope" "$CLAUDE_HOME"
-    [[ "$status" -eq 1 ]]
+    assert_failure
 }
 
 @test "install-claude-assets: copies all four collections" {
@@ -48,7 +48,9 @@ teardown() {
 @test "install-claude-assets: targets are real dirs, not symlinks" {
     "$INSTALL_SCRIPT" "$SRC" "$CLAUDE_HOME"
     for d in commands hooks reference workflows; do
-        [[ -d "$CLAUDE_HOME/$d" && ! -L "$CLAUDE_HOME/$d" ]]
+        # `|| return 1` is required: a bare `[[ ]]` in a loop reports only the
+        # last iteration's status, masking a real symlink on an earlier dir.
+        [[ -d "$CLAUDE_HOME/$d" && ! -L "$CLAUDE_HOME/$d" ]] || return 1
     done
 }
 
@@ -65,17 +67,25 @@ teardown() {
     [[ ! -e "$SRC/commands/runtime-junk.md" ]]
 }
 
-@test "install-claude-assets: self-migrates a legacy symlink target" {
-    # Simulate the old sync: ~/.claude/commands is a symlink into the repo.
+@test "install-claude-assets: self-migrates a legacy symlink target (all collections)" {
+    # Simulate the old sync: EVERY managed dir is a symlink into the repo.
+    # Migration runs per-collection, so all four must be exercised — testing
+    # only `commands` would let a typo in the loop body pass unnoticed.
     mkdir -p "$CLAUDE_HOME"
-    ln -s "$SRC/commands" "$CLAUDE_HOME/commands"
-    [[ -L "$CLAUDE_HOME/commands" ]]
+    for d in commands hooks reference workflows; do
+        ln -s "$SRC/$d" "$CLAUDE_HOME/$d"
+        [[ -L "$CLAUDE_HOME/$d" ]] || return 1
+    done
 
     run "$INSTALL_SCRIPT" "$SRC" "$CLAUDE_HOME"
     assert_success
     assert_output_contains "Removed legacy"
-    [[ -d "$CLAUDE_HOME/commands" && ! -L "$CLAUDE_HOME/commands" ]]
+    for d in commands hooks reference workflows; do
+        [[ -d "$CLAUDE_HOME/$d" && ! -L "$CLAUDE_HOME/$d" ]] || return 1
+    done
     [[ -f "$CLAUDE_HOME/commands/a.md" ]]
+    [[ -f "$CLAUDE_HOME/hooks/guard.js" ]]
+    [[ -f "$CLAUDE_HOME/workflows/flow.js" ]]
 }
 
 @test "install-claude-assets: drops items removed from the repo" {
