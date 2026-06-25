@@ -92,6 +92,89 @@ def named_mcp_tools(rules: list[str]) -> dict[str, set[str]]:
     return out
 
 
+def native_mcp_server_plugins(native_plugins: list[dict], harness: str) -> dict[str, str]:
+    """Map ``server_name -> plugin_name`` for plugins native on ``harness``.
+
+    A plugin installed natively on a harness has its MCP tools re-namespaced by
+    that harness to ``mcp__plugin_<plugin>_<server>__*`` (Claude-compat layout,
+    e.g. ``mcp__plugin_hallouminate_hallouminate__*``). Renderers use this map
+    to rewrite the canonical ``mcp__<server>__*`` permission rules for harnesses
+    where the plugin is native, leaving decomposed harnesses on the bare form.
+    """
+    flag = f"{harness}_native"
+    out: dict[str, str] = {}
+    for entry in native_plugins:
+        if not entry.get(flag):
+            continue
+        plugin = entry.get("name")
+        for server in entry.get("servers") or []:
+            out[server] = plugin
+    return out
+
+
+def rewrite_native_mcp_rule(rule: str, server_plugins: dict[str, str]) -> str:
+    """Rewrite one ``mcp__<server>__<tool>`` rule to the plugin-namespaced form
+    ``mcp__plugin_<plugin>_<server>__<tool>`` when ``<server>`` belongs to a
+    native plugin in ``server_plugins``. Non-MCP rules and servers absent from
+    the map pass through unchanged."""
+    parsed = parse_mcp_rule(rule)
+    if parsed is None:
+        return rule
+    server, tool = parsed
+    plugin = server_plugins.get(server)
+    if plugin is None:
+        return rule
+    return f"{_MCP_PREFIX}plugin_{plugin}_{server}__{tool}"
+
+
+def rewrite_native_mcp_rules(rules: list[str], server_plugins: dict[str, str]) -> list[str]:
+    """Apply :func:`rewrite_native_mcp_rule` across a rule list. A no-op (copy)
+    when ``server_plugins`` is empty — i.e. no plugin is native on the harness."""
+    if not server_plugins:
+        return list(rules)
+    return [rewrite_native_mcp_rule(rule, server_plugins) for rule in rules]
+
+
+def rewrite_skill_allowed_tools(text: str, server_plugins: dict[str, str]) -> str:
+    """Rewrite ``mcp__<server>__*`` entries in a skill's inline ``allowed-tools:``
+    frontmatter line to the plugin-namespaced form for native plugins.
+
+    Claude Code is the only harness that enforces a skill's ``allowed-tools``,
+    and it reads its own ``.claude/skills/`` copy, so the claude renderer applies
+    this to that copy alone. Operates only on the comma-separated inline form
+    inside the leading ``---`` frontmatter block; returns ``text`` unchanged when
+    there is no such line, no frontmatter, or no native plugin to rewrite for."""
+    if not server_plugins or not text.startswith("---"):
+        return text
+    lines = text.splitlines(keepends=True)
+    end = next(
+        (i for i in range(1, len(lines)) if lines[i].rstrip("\n") == "---"), None
+    )
+    if end is None:
+        return text
+    for i in range(1, end):
+        bare = lines[i].rstrip("\n")
+        inline = re.match(r"^allowed-tools:\s*(\S.*?)\s*$", bare)
+        if inline:
+            items = [tok.strip() for tok in inline.group(1).split(",")]
+            rewritten = [rewrite_native_mcp_rule(tok, server_plugins) for tok in items]
+            trailing = "\n" if lines[i].endswith("\n") else ""
+            lines[i] = "allowed-tools: " + ", ".join(rewritten) + trailing
+            return "".join(lines)
+        if re.match(r"^allowed-tools:\s*$", bare):
+            # YAML block-list form: rewrite each following "  - <entry>" line.
+            for j in range(i + 1, end):
+                item = re.match(r"^(\s*-\s*)(\S.*?)\s*$", lines[j].rstrip("\n"))
+                if not item:
+                    break
+                trailing = "\n" if lines[j].endswith("\n") else ""
+                lines[j] = item.group(1) + rewrite_native_mcp_rule(
+                    item.group(2), server_plugins
+                ) + trailing
+            return "".join(lines)
+    return text
+
+
 def whole_server_mcp_allows(rules: list[str]) -> set[str]:
     """Collect the servers ``rules`` allows whole via ``mcp__<server>__*``.
 
