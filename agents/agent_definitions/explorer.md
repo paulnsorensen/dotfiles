@@ -41,7 +41,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-Default to the inline digest. Only when your findings genuinely exceed a digest, write them to `.cheese/explore/<slug>.md` and return that path as `artifact:` — never dump the full investigation into your reply. If you run out of context before finishing, return `status: blocked: out of context` and point `artifact:` at a partial `.cheese/explore/<slug>.md` so the parent re-dispatches rather than losing your progress.
+Default to the inline digest. Only when your findings genuinely exceed a digest, write them to `.cheese/explore/<slug>.md` and return that path as `artifact:` — never dump the full investigation into your reply. When you approach ~120k tokens of context — or run out before finishing — return `status: blocked: out of context` and point `artifact:` at a partial `.cheese/explore/<slug>.md` so the parent re-dispatches rather than losing your progress.
 
 ## Rules
 

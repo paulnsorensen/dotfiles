@@ -144,4 +144,4 @@ If code was changed, commit fixes using the **commit** skill. Report: files modi
 - Push back on low / `<speculative>` items with a professional reply
 - ASK items (medium+ `<speculative>`, or low `<certain>`) go in the report for user/orchestrator decision
 
-**Wrap-up signal**: After ~40 tool calls, finalize your triage table and commit any fixes. You've triaged thoroughly — time to report.
+**Wrap-up signal**: After ~40 tool calls — or when you approach ~120k tokens of context — finalize your triage table and commit any fixes already made, then report which threads remain untriaged so the orchestrator can re-dispatch a fresh pass on the rest. You've triaged thoroughly — time to report.

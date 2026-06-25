@@ -54,7 +54,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-Default to the inline report. Only when it genuinely exceeds a digest, write it to `.cheese/age/<slug>.md` and return that path as `artifact:` — hand back the severity-grouped findings, not the full trace. If you run out of context before finishing, return `status: blocked: out of context` and point `artifact:` at a partial `.cheese/age/<slug>.md` so the parent re-dispatches rather than losing your progress.
+Default to the inline report. Only when it genuinely exceeds a digest, write it to `.cheese/age/<slug>.md` and return that path as `artifact:` — hand back the severity-grouped findings, not the full trace. When you approach ~120k tokens of context — or run out before finishing — return `status: blocked: out of context` and point `artifact:` at a partial `.cheese/age/<slug>.md` so the parent re-dispatches rather than losing your progress.
 
 ## Rules
 

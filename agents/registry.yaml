@@ -256,7 +256,7 @@ agents:
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop, editing through the cheez-write (tilth) skill. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Full write surface — the one phase agent that mutates the tree. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: sonnet
-      codex: gpt-5
+      codex: gpt-5-codex
       opencode: inherit
     disallowedTools:
     - Agent
