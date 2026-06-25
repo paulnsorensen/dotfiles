@@ -122,8 +122,8 @@ plugins:
     path: ~/Dev/myplugin               # local checkout marketplace root
 
     harnesses: [claude, codex, opencode, cursor, copilot, crush]
-    claude_native: true   # Claude gets native marketplace install
-    codex_native: true    # Codex gets native marketplace install (codex CLI)
+    native: true              # native install on every drivable harness here
+                              # ({claude, codex, copilot}); or false / [list]
     gate_unless: MY_ENV_VAR   # optional gate
     description: Human-readable description
 ```
@@ -144,28 +144,62 @@ harnesses that support that primitive. See [[architecture/mcp-secret-handling]]
 for the token-cost tradeoff and [[architecture/agent-profile]] for how harnesses
 membership flows.
 
-**`claude_native` / `codex_native`** — two **independent** native-install flags.
-When either is `true`, the decomposer emits a single `native_plugins` record
-carrying *both* booleans (`claude_native`, `codex_native`) plus the marketplace
-root/name; each renderer consumes only its own flag.
+**`native:`** — the unified native-install field. Resolves (via
+`resolved_native_harnesses` in `ingest.py`) to the set of harnesses that get the
+native marketplace install instead of decomposed primitives:
 
-- `claude_native: true` → the claude renderer registers the plugin's
-  marketplace and enables it. DEDUP removes `claude` from decomposed MCP,
-  skill, agent, and hook harnesses; skills/agents also carry
-  `_from_native_plugin=True` so claude renderers skip any native-served item.
-- `codex_native: true` → the codex renderer installs the plugin via the codex
-  CLI (`codex plugin marketplace add` + `codex plugin add`). DEDUP removes
-  `codex` from decomposed MCP, skill, agent, and hook harnesses; skills/agents
-  carry a **separate** `_from_codex_native_plugin=True` so the codex renderer
-  skips them. The flag is deliberately separate from `_from_native_plugin` —
-  reusing claude's flag would make the claude renderer wrongly skip a
-  codex-only-native plugin's skills or agents.
+- `true` → every **drivable** harness in this entry's `harnesses`. `DRIVABLE = {claude, codex, copilot}` — the three harnesses with a CLI-drivable local install. opencode/cursor/crush are never native (no drivable install; ruled out by cited mechanism in [[harnesses/index]]).
+- `false` / absent → decomposed everywhere (default).
+- `[claude, ...]` → only the listed harnesses. Validated **fail-loud**: a member that is not in `DRIVABLE`, or not in this entry's `harnesses`, raises `ParseError` (a silent no-op is the failure this guards).
 
-When both are `false` (or omitted), every harness receives decomposed primitives.
-That is the right choice when a plugin's marketplace.json is absent or the plugin
-is not ready for native install (e.g. hallouminate, where the well-known
-`mcp__hallouminate__*` namespace must be preserved — a native install would
-rescope it to `mcp__plugin_hallouminate_hallouminate__*`).
+Legacy `claude_native` / `codex_native` booleans still parse — each `true` OR's
+its harness into the resolved set.
+
+The decomposer emits one `native_plugins` record per entry with a non-empty set,
+carrying `claude_native` / `codex_native` / `copilot_native` (derived from the
+set), the MCP `servers` list, and the marketplace root/name. **Each renderer
+consumes only its own flag** — a `native: [copilot]` plugin is installed by the
+copilot renderer alone; the claude/codex native passes filter it out.
+
+For every harness `h` in the set: DEDUP removes `h` from the decomposed MCP /
+skill / agent / hook harness lists, and skills/agents are stamped with a
+**per-harness** marker — `_from_native_plugin` (claude), `_from_codex_native_plugin`
+(codex), `_from_copilot_native_plugin` (copilot) — so each harness's renderer skips
+exactly its own native-served items. The markers are independent on purpose:
+reusing claude's flag would make the claude renderer wrongly skip a
+copilot-only-native plugin's skills/agents.
+
+Native install (per drivable harness):
+
+- **claude** → registers the marketplace + enables the plugin in `settings.json`, primes via `claude plugin marketplace add`.
+- **codex** → `codex plugin marketplace add` + `codex plugin add` (CLI-driven).
+- **copilot** → `copilot plugin marketplace add` + `copilot plugin install` (CLI-driven, tolerant of re-runs). NOT a settings-write: declarative `enabledPlugins` doesn't auto-install (upstream `copilot-cli#2249`) and the `directory` marketplace-source shape is unconfirmed.
+
+### Native re-namespacing + the renderer-side rewrite (Phase 4)
+
+A native install re-namespaces the plugin's MCP tools to
+`mcp__plugin_<plugin>_<server>__*` **on the native harness only**. Decomposed
+harnesses keep the bare `mcp__<server>__*` (claude/cursor grammar) or the lowered
+`<server>_<tool>` / `mcp_<server>_<tool>` (opencode/crush). So the canonical
+permission/skill references cannot be a single literal.
+
+Resolution (**design A — renderer-side rewrite, canonical source untouched**):
+`permissions.native_mcp_server_plugins(native_plugins, harness)` builds a
+`server → plugin` map for plugins native on that harness, and
+`rewrite_native_mcp_rules` rewrites `mcp__<server>__*` → `mcp__plugin_<plugin>_<server>__*`
+before each renderer lowers it (claude `_merge_root_settings`, copilot
+`launch_flags`). It is a **no-op on decomposed harnesses** (empty map).
+`rewrite_skill_allowed_tools` does the same for a skill's `allowed-tools`
+frontmatter, but **only in the claude renderer's own `.claude/skills/` copy** —
+`allowed-tools` is a Claude-enforced field and codex's skills live in a shared
+`.agents/skills/` dir that cannot be safely per-harness rewritten. Codex tool
+scopes are **not** rewritten: they apply to config.toml-managed (decomposed)
+servers keyed by bare name; a native plugin's server is never in `[mcp_servers]`.
+
+`hallouminate` is `native: true` (claude+codex+copilot): its `mcp__hallouminate__*`
+becomes `mcp__plugin_hallouminate_hallouminate__*` on those three, stays bare on
+cursor, and lowers on opencode/crush — all via the rewrite, with no edit to
+`profiles/_permissions/profile.yaml` or `skills/rennet/SKILL.md`.
 
 **`gate_unless`** — propagates to the decomposed MCP's `gate_unless` field,
 using the same semantics as the MCP registry gate (see [[agents-dir]]). It
