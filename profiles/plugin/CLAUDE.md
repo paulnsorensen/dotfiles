@@ -19,6 +19,7 @@ Defined in `mcp-scope.yaml` (registry-validated):
 - **tilth** — `mcp__tilth__*` — AST-aware navigation inside `claude/plugins/` and cross-plugin symbol lookup.
 - **code-review-graph** — `mcp__code-review-graph__*` — symbol and flow exploration when wiring a new plugin into existing skills.
 - **context7** — `mcp__context7__*` — Claude Code plugin SDK, MCP spec, and related framework docs.
+- **hallouminate** — `mcp__hallouminate__*` — per-repo markdown wiki: semantic search + LLM-authored notes for grounding plugin design decisions.
 
 Web search / task / design MCPs are out of scope. If you need GitHub code
 search for reference plugin implementations, use `gh search code` directly

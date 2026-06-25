@@ -28,3 +28,6 @@ mcps:
     args: ["-y", "@upstash/context7-mcp"]
     env:
       CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+  - name: hallouminate
+    command: hallouminate
+    args: ["serve"]
