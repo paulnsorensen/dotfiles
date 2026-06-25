@@ -55,12 +55,14 @@ Reach for code-review-graph first when reviewing a change, planning a multi-file
 2. **Read the symbol** — `get_symbols_overview` on the target file (skip if done this session), then `find_symbol` with `include_body=true` for the specific symbol.
 3. **Edit** — Serena `replace_symbol_body` / `insert_before_symbol` / `insert_after_symbol` / `replace_content` for symbol-anchored edits; `tilth_write` for whole-file rewrites or non-code files.
 
+**tilth verbs:** `tilth_read` (read), `tilth_list` (list dirs), `tilth_search` (symbol/content/callers), `tilth_write` (edit), `tilth_diff`, `tilth_grok`, `tilth_deps` — not `tilth_files`/`tilth_edit` (renamed; these do not exist).
+
 ## Routing self-check
 
 Before each tool call, ask: "What's the shape of the question?"
 
 - Symbol-level read or edit → **Serena**
-- File-level read, search, or edit → **tilth**
+- File-level read, search, or edit → **tilth** (for "where is X" / "what calls Y": `tilth_search kind:"symbol"` or `kind:"callers"` — not `content`/`regex`)
 - Graph-level analysis (impact, architecture, flows) → **code-review-graph**
 
 If unsure, pick the smallest-scope tool that can answer the question. Don't rationalize built-ins with "the file is small" or "I already know the path" — those rationalizations have produced incorrect behavior before.

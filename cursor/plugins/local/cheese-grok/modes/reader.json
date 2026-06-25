@@ -17,7 +17,7 @@
       "mcp__tilth__tilth_read",
       "mcp__tilth__tilth_search",
       "mcp__tilth__tilth_grok",
-      "mcp__tilth__tilth_files",
+      "mcp__tilth__tilth_list",
       "mcp__tilth__tilth_diff",
       "mcp__code-review-graph__*",
       "mcp__context7__*"
@@ -25,7 +25,7 @@
     "deny": [
       "edit_file",
       "write_file",
-      "mcp__tilth__tilth_edit"
+      "mcp__tilth__tilth_write"
     ],
     "run_terminal_cmd": {
       "allow_regex": "^(git (log|status|diff|show|blame)|ls|wc|cat|head|tail|tokei|jq|yq|fd|rg|tree|file|stat) "
