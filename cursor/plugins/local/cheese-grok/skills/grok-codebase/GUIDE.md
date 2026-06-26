@@ -167,7 +167,7 @@ flag it.
 - Single-file scripts or repos <500 LOC: just `Read` the files.
 - Repos with no language-server support (exotic languages): the graph and
   Serena will be weak; lean harder on `tilth_read --section` and
-  `tilth_files`.
+  `tilth_list`.
 - Generated code (e.g. an ORM client output dir): include it in the egress
   pillar by reference but don't grok internals.
 

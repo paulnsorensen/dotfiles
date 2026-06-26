@@ -114,6 +114,6 @@ Tool order:
    we fix this?", reply: "Switch out of read-mode-probe. Want me to
    propose a fix?" — and wait.
 4. **Reader-first verbs only.** `read_file`, `codebase_search`,
-   `find_symbol`, `mcp__serena__*`, `mcp__tilth__*` (no `tilth_edit`),
+   `find_symbol`, `mcp__serena__*`, `mcp__tilth__*` (no `tilth_write`),
    `mcp__code-review-graph__*`. No `edit_file`, no
    `run_terminal_cmd` except `git log|status|diff|show`, `ls`, `wc`.

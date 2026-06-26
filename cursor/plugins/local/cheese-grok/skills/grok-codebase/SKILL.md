@@ -39,7 +39,7 @@ answer "what breaks if I change X" without re-checking. You will work the
    discard the raw output, and keep moving.
 6. **Reader-first stance.** Read-only verbs only (`read_file`,
    `codebase_search`, `find_symbol`, `mcp__serena__*`, `mcp__tilth__*`
-   except `tilth_edit`, `@codebase`, `@docs`, `@web`). Edits are forbidden
+   except `tilth_write`, `@codebase`, `@docs`, `@web`). Edits are forbidden
    until the user explicitly invites them.
 7. **Adaptive quiz comes last.** Only start Phase 6 after all four pillars
    are mapped AND the user confirms "yes, quiz me" (or equivalent). Drive
@@ -100,7 +100,7 @@ Workflow (TS/JS-first; other stacks in `GUIDE.md §6`):
 1. `package.json` → `main`, `module`, `bin`, `scripts.start`,
    `scripts.dev`. Each is an entry point.
 2. HTTP routes — match the framework, then probe:
-   - **Next.js:** `mcp__tilth__tilth_files(patterns=["**/app/**/route.ts", "**/app/**/page.tsx", "**/pages/api/**"])`.
+   - **Next.js:** `mcp__tilth__tilth_list(patterns=["**/app/**/route.ts", "**/app/**/page.tsx", "**/pages/api/**"])`.
    - **Express:** `mcp__tilth__tilth_search(query="app.get,app.post,router.get,router.post", kind="content")`.
    - **NestJS:** `mcp__tilth__tilth_search(query="@Controller,@Get,@Post,@Put,@Delete,@Patch", kind="content")`.
    - **Fastify:** `mcp__tilth__tilth_search(query="fastify.get,fastify.post,fastify.register", kind="content")`.
@@ -138,7 +138,7 @@ Workflow:
 6. **Deploy:** `Dockerfile`, `docker-compose.yml`, `k8s/`, `helm/`,
    `terraform/`, `vercel.json`, `netlify.toml`, `serverless.yml`,
    `sst.config.*`.
-7. **Config & env:** `mcp__tilth__tilth_files(patterns=["**/.env*"])`
+7. **Config & env:** `mcp__tilth__tilth_list(patterns=["**/.env*"])`
    and `mcp__tilth__tilth_search(query="process.env", kind="content")`.
    List every env var referenced.
 8. **Dependency hygiene:** top 10 dependencies by inbound import count

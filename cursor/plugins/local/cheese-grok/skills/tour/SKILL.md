@@ -1,7 +1,7 @@
 ---
 name: tour
 description: Use when the user wants a quick, single-session read-only tour of an unfamiliar codebase or a specific feature — orientation, not memorization. Triggers on "tour this repo", "give me a tour", "give me a read-only tour", "what does this project do", "map the architecture", "trace how X works", "where is Y implemented", "show me how this works", "explain this codebase quickly". Output is a layered summary (project purpose → module map → call graph for the pointed-at thing) with file:line citations. Stops after answering — never volunteers refactors. For deeper multi-session internalization with an adaptive quiz, use `/grok-codebase` instead.
-allowed-tools: read_file, codebase_search, find_symbol, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__tilth__tilth_read, mcp__tilth__tilth_search, mcp__tilth__tilth_grok, mcp__tilth__tilth_files, mcp__code-review-graph__*, mcp__context7__query-docs
+allowed-tools: read_file, codebase_search, find_symbol, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__tilth__tilth_read, mcp__tilth__tilth_search, mcp__tilth__tilth_grok, mcp__tilth__tilth_list, mcp__code-review-graph__*, mcp__context7__query-docs
 metadata:
   version: 0.1.0
   author: paulnsorensen
@@ -120,9 +120,9 @@ In rough order of efficiency:
 
 - **Read-only verbs only**: `read_file`, `codebase_search`,
   `find_symbol`, `mcp__serena__*`, `mcp__tilth__*` (except
-  `tilth_edit`), `@codebase`, `@docs`, `@web`.
+  `tilth_write`), `@codebase`, `@docs`, `@web`.
 - **Forbidden until explicitly invited**: `edit_file`, `write_file`,
-  `mcp__tilth__tilth_edit`, `run_terminal_cmd` (except read-only
+  `mcp__tilth__tilth_write`, `run_terminal_cmd` (except read-only
   commands like `git log`, `git status`, `git diff`, `ls`, `wc`).
 - **No persistence**. Unlike `/grok-codebase`, `tour` does NOT write
   artifacts to disk. If the user wants the tour saved, suggest

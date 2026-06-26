@@ -53,7 +53,7 @@ deployed by `mcp-sync` (or `dots sync`) into `~/.cursor/mcp.json`.
 
 Cycle Shift+Tab in the Cursor agent input until "reader" appears in
 the mode list, or pick it from the modes dropdown. It locks
-`edit_file` / `write_file` / `mcp__tilth__tilth_edit` and only allows
+`edit_file` / `write_file` / `mcp__tilth__tilth_write` and only allows
 read-only shell commands (`git log|status|diff|show|blame`, `ls`,
 `wc`, `cat`, `head`, `tail`, `tokei`, `jq`, `yq`, `fd`, `rg`, `tree`,
 `file`, `stat`).
