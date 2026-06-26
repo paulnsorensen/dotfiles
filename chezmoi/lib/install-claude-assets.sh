@@ -76,7 +76,7 @@ sync_collection() {
             # parent ref so a corrupted/hand-edited manifest can't steer the
             # `rm -rf` below outside the target dir (e.g. `../../foo`).
             case "$entry" in
-                */*|..) echo "  Skipped suspicious manifest entry: $entry" >&2; continue ;;
+                */*|.|..) echo "  Skipped suspicious manifest entry: $entry" >&2; continue ;;
             esac
             if ! printf '%s\n' "$new_names" | grep -Fxq "$entry"; then
                 rm -rf -- "${target:?}/$entry"

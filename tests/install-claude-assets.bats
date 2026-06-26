@@ -114,3 +114,44 @@ teardown() {
     [[ -f "$CLAUDE_HOME/commands/a.md" ]]
     [[ -f "$CLAUDE_HOME/workflows/flow.js" ]]
 }
+
+@test "install-claude-assets: re-run propagates edited source content" {
+    "$INSTALL_SCRIPT" "$SRC" "$CLAUDE_HOME"
+    [[ "$(cat "$CLAUDE_HOME/commands/a.md")" == "cmd-a" ]]
+    # The PR's central trade-off: edits to the repo source go live on the next
+    # run (a `dots sync`). A regression that stopped re-copying changed files
+    # would still leave the file present, so assert on CONTENT, not existence.
+    echo "cmd-a-edited" > "$SRC/commands/a.md"
+    "$INSTALL_SCRIPT" "$SRC" "$CLAUDE_HOME"
+    [[ "$(cat "$CLAUDE_HOME/commands/a.md")" == "cmd-a-edited" ]]
+}
+
+@test "install-claude-assets: rejects traversal and bare-dot manifest entries safely" {
+    "$INSTALL_SCRIPT" "$SRC" "$CLAUDE_HOME"
+    # A sibling of the managed dir that a `../` entry would target if unguarded.
+    echo "keepme" > "$CLAUDE_HOME/evil"
+    # Corrupt the manifest with entries the guard must reject: a path-traversal
+    # escape, and a bare `.` (which `rm -rf -- "$target/."` would otherwise abort
+    # on under `set -e`, taking the whole run down).
+    printf '%s\n' "../evil" "." >> "$CLAUDE_HOME/commands/$MANIFEST"
+    run "$INSTALL_SCRIPT" "$SRC" "$CLAUDE_HOME"
+    assert_success
+    assert_output_contains "Skipped suspicious manifest entry: ../evil"
+    assert_output_contains "Skipped suspicious manifest entry: ."
+    [[ -f "$CLAUDE_HOME/evil" ]]
+    [[ -f "$CLAUDE_HOME/commands/a.md" ]]
+}
+
+@test "install-claude-assets: drops a removed nested directory, not just files" {
+    mkdir -p "$SRC/commands/sub"
+    echo "nested" > "$SRC/commands/sub/c.md"
+    "$INSTALL_SCRIPT" "$SRC" "$CLAUDE_HOME"
+    [[ -f "$CLAUDE_HOME/commands/sub/c.md" ]]
+    grep -Fxq "sub" "$CLAUDE_HOME/commands/$MANIFEST"
+    # Remove the whole subdir from the source and re-run: rm -rf must drop the
+    # directory entry, not only top-level files.
+    rm -r "$SRC/commands/sub"
+    "$INSTALL_SCRIPT" "$SRC" "$CLAUDE_HOME"
+    [[ ! -e "$CLAUDE_HOME/commands/sub" ]]
+    [[ -f "$CLAUDE_HOME/commands/a.md" ]]
+}
