@@ -107,9 +107,13 @@ def global_manifest():
 @pytest.fixture
 def opencode_global_manifest():
     """Resolve the real shipped ``opencode-global`` live wrapper."""
-    repo = Path(os.environ.get("DOTFILES_DIR") or Path.home() / "Dev/dotfiles")
+    # Anchor file-relative (parents[2] = repo root) so this guard can't silently
+    # skip on a checkout without DOTFILES_DIR. odir is always a directory, so the
+    # dropped `not odir.is_file()` conjunct was dead; a missing profile.yaml is
+    # the only real miss.
+    repo = Path(__file__).resolve().parents[2]
     odir = repo / "profiles" / "opencode-global"
-    if not odir.is_file() and not (odir / "profile.yaml").is_file():
+    if not (odir / "profile.yaml").is_file():
         pytest.skip(f"opencode-global profile not found at {odir}")
     return parse_manifest(odir)
 

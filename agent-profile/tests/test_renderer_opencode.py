@@ -16,7 +16,6 @@ Python port removes the file in *both* cases, and
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -199,10 +198,12 @@ def test_opencode_seed_has_no_permission_block():
     absent). Regression guard for the drift root cause: the live
     ``opencode.json`` predated the block, so secret-deny rules declared in
     the seed were silently lost on every ``dots sync``."""
-    repo = Path(os.environ.get("DOTFILES_DIR") or Path.home() / "Dev/dotfiles")
+    # Anchor the repo from THIS file, not DOTFILES_DIR / ~/Dev/dotfiles + skip:
+    # a hard regression guard must never silently no-op on a fresh clone or an
+    # alternate checkout. parents[2] = repo root from agent-profile/tests/.
+    repo = Path(__file__).resolve().parents[2]
     seed = repo / "chezmoi" / "dot_config" / "opencode" / "create_opencode.json"
-    if not seed.is_file():
-        pytest.skip(f"opencode seed not found at {seed}")
+    assert seed.is_file(), f"opencode seed not found at {seed}"
     data = json.loads(seed.read_text())
     assert "permission" not in data, (
         "create_opencode.json carries a permission block — the renderer owns "
