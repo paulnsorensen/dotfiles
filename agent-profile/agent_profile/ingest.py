@@ -83,20 +83,91 @@ _SKILL_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
 _HOOK_HARNESSES = ("claude", "codex", "cursor", "copilot")
 _COMMAND_HOOK_HARNESSES = ("claude", "codex")
 
+# Harnesses whose native marketplace install is drivable from `ap`. A plugin's
+# `native:` field may only name these; the rest always get decomposed primitives.
+DRIVABLE_NATIVE = ("claude", "codex", "copilot")
+
+# Per-harness marker stamped on a native-served skill/agent so that harness's
+# renderer skips the decomposed copy (the plugin delivers it at plugin scope).
+# The claude/codex names are historical and kept for back-compat.
+_NATIVE_MARKERS = {
+    "claude": "_from_native_plugin",
+    "codex": "_from_codex_native_plugin",
+    "copilot": "_from_copilot_native_plugin",
+}
+
+
+def resolved_native_harnesses(body: dict[str, Any], *, plugin: str) -> set[str]:
+    """Resolve a plugin entry's ``native:`` field (plus the legacy
+    ``claude_native`` / ``codex_native`` aliases) to the set of harnesses that
+    get the NATIVE marketplace install instead of decomposed primitives.
+
+    ``native: true`` → every drivable harness in this entry's ``harnesses``;
+    ``native: [list]`` → exactly the listed harnesses (must be ⊆ drivable and
+    ⊆ ``harnesses``, else ParseError); ``false`` / absent → none. The legacy
+    ``claude_native`` / ``codex_native`` bools fold in BEFORE that validation,
+    so they share the same ⊆ drivable / ⊆ ``harnesses`` gate. See
+    ``agents/plugins/registry.yaml`` for the schema.
+    """
+    from agent_profile._validate import ParseError
+
+    drivable = set(DRIVABLE_NATIVE)
+    requested = set(_as_list(body.get("harnesses")))
+    native = body.get("native", False)
+
+    # Legacy aliases fold into the resolved set up front so a contradictory
+    # claude_native: true on an entry whose harnesses exclude claude fails loud
+    # like the native: list form, rather than silently forcing a native install
+    # on an excluded harness.
+    legacy: set[str] = set()
+    if body.get("claude_native"):
+        legacy.add("claude")
+    if body.get("codex_native"):
+        legacy.add("codex")
+
+    if native is True:
+        resolved = ((drivable & requested) if requested else set(drivable)) | legacy
+    elif isinstance(native, list):
+        resolved = {str(h) for h in native} | legacy
+    elif native in (False, None):
+        resolved = set(legacy)
+    else:
+        raise ParseError(
+            f"ap: plugin '{plugin}': native must be true, false, or a list of "
+            f"harnesses, got {type(native).__name__}."
+        )
+
+    bad = resolved - drivable
+    if bad:
+        raise ParseError(
+            f"ap: plugin '{plugin}': native: {sorted(bad)} not drivable "
+            f"(drivable = {sorted(drivable)}); those harnesses stay decomposed."
+        )
+    if requested:
+        outside = resolved - requested
+        if outside:
+            raise ParseError(
+                f"ap: plugin '{plugin}': native: {sorted(outside)} not in this "
+                f"entry's harnesses {sorted(requested)} — would be a silent no-op."
+            )
+    return resolved
+
+
+def _stamp_native_markers(item: dict[str, Any], native_harnesses: set[str]) -> None:
+    for harness in native_harnesses:
+        marker = _NATIVE_MARKERS.get(harness)
+        if marker:
+            item[marker] = True
+
 
 def _effective_plugin_harnesses(
     requested: list[str],
     supported: tuple[str, ...],
     *,
-    claude_native: bool,
-    codex_native: bool,
+    native_harnesses: set[str],
 ) -> list[str]:
     out = [h for h in (requested or list(supported)) if h in supported]
-    if claude_native:
-        out = [h for h in out if h != "claude"]
-    if codex_native:
-        out = [h for h in out if h != "codex"]
-    return out
+    return [h for h in out if h not in native_harnesses]
 
 
 def _parse_plugin_agent_frontmatter(path: Path, plugin: str) -> dict[str, Any]:
@@ -126,8 +197,7 @@ def _plugin_agents(
     source_dir: str,
     harnesses: list[str],
     *,
-    claude_native: bool,
-    codex_native: bool,
+    native_harnesses: set[str],
 ) -> list[dict[str, Any]]:
     agents_dir = payload_root / "agents"
     if not agents_dir.is_dir():
@@ -137,8 +207,7 @@ def _plugin_agents(
     effective_harnesses = _effective_plugin_harnesses(
         harnesses,
         _AGENT_HARNESSES,
-        claude_native=claude_native,
-        codex_native=codex_native,
+        native_harnesses=native_harnesses,
     )
     for agent_file in sorted(agents_dir.glob("*.md")):
         frontmatter = _parse_plugin_agent_frontmatter(agent_file, plugin)
@@ -168,10 +237,7 @@ def _plugin_agents(
         if models:
             item["models"] = models
 
-        if claude_native:
-            item["_from_native_plugin"] = True
-        if codex_native:
-            item["_from_codex_native_plugin"] = True
+        _stamp_native_markers(item, native_harnesses)
         out.append(item)
     return out
 
@@ -222,8 +288,7 @@ def _plugin_hooks(
     source_dir: str,
     harnesses: list[str],
     *,
-    claude_native: bool,
-    codex_native: bool,
+    native_harnesses: set[str],
 ) -> list[dict[str, Any]]:
     import json as _json
     from agent_profile._validate import ParseError
@@ -242,8 +307,7 @@ def _plugin_hooks(
     script_harnesses = _effective_plugin_harnesses(
         harnesses,
         _HOOK_HARNESSES,
-        claude_native=claude_native,
-        codex_native=codex_native,
+        native_harnesses=native_harnesses,
     )
     out: list[dict[str, Any]] = []
     for event, entries in hooks.items():
@@ -281,8 +345,7 @@ def _plugin_hooks(
                     item_harnesses = _effective_plugin_harnesses(
                         harnesses,
                         _COMMAND_HOOK_HARNESSES,
-                        claude_native=claude_native,
-                        codex_native=codex_native,
+                        native_harnesses=native_harnesses,
                     )
                     if not item_harnesses:
                         continue
@@ -623,8 +686,7 @@ def _expand_plugins(
         marketplace_name: str = market_data.get("name") or name
         harnesses: list[str] = _as_list(body.get("harnesses"))
         gate_unless = body.get("gate_unless")
-        claude_native = bool(body.get("claude_native", False))
-        codex_native = bool(body.get("codex_native", False))
+        native_harnesses = resolved_native_harnesses(body, plugin=name)
         description = body.get("description") or ""
 
         meta = market_data.get("metadata")
@@ -638,6 +700,7 @@ def _expand_plugins(
         )
 
         matched = False
+        plugin_servers: list[str] = []
         for plugin_entry in market_data.get("plugins") or []:
             if not isinstance(plugin_entry, dict):
                 continue
@@ -663,6 +726,7 @@ def _expand_plugins(
                 for server_name, server_body in (raw_mcp.get("mcpServers") or {}).items():
                     if not isinstance(server_body, dict):
                         continue
+                    plugin_servers.append(server_name)
                     item: dict[str, Any] = {
                         "name": server_name,
                         "command": server_body.get("command", ""),
@@ -684,14 +748,10 @@ def _expand_plugins(
                     if server_body.get("optional") is not None:
                         item["optional"] = server_body["optional"]
                     effective_harnesses = harnesses
-                    if harnesses:
-                        skip = set()
-                        if claude_native:
-                            skip.add("claude")
-                        if codex_native:
-                            skip.add("codex")
-                        if skip:
-                            effective_harnesses = [h for h in harnesses if h not in skip]
+                    if harnesses and native_harnesses:
+                        effective_harnesses = [
+                            h for h in harnesses if h not in native_harnesses
+                        ]
                     if effective_harnesses:
                         item["harnesses"] = effective_harnesses
                     elif harnesses and not effective_harnesses:
@@ -705,15 +765,11 @@ def _expand_plugins(
             skill_harnesses = _effective_plugin_harnesses(
                 harnesses,
                 _SKILL_HARNESSES,
-                claude_native=claude_native,
-                codex_native=codex_native,
+                native_harnesses=native_harnesses,
             )
             for skill in plugin_skills:
                 skill["harnesses"] = skill_harnesses
-                if claude_native:
-                    skill["_from_native_plugin"] = True
-                if codex_native:
-                    skill["_from_codex_native_plugin"] = True
+                _stamp_native_markers(skill, native_harnesses)
             out_skills.extend(plugin_skills)
 
             out_agents.extend(
@@ -722,8 +778,7 @@ def _expand_plugins(
                     payload_root,
                     source_dir,
                     harnesses,
-                    claude_native=claude_native,
-                    codex_native=codex_native,
+                    native_harnesses=native_harnesses,
                 )
             )
             out_hooks.extend(
@@ -732,8 +787,7 @@ def _expand_plugins(
                     payload_root,
                     source_dir,
                     harnesses,
-                    claude_native=claude_native,
-                    codex_native=codex_native,
+                    native_harnesses=native_harnesses,
                 )
             )
 
@@ -749,12 +803,14 @@ def _expand_plugins(
                 "match a plugins[].name in marketplace.json."
             )
 
-        if claude_native or codex_native:
+        if native_harnesses:
             out_native.append(
                 {
                     "name": name,
-                    "claude_native": claude_native,
-                    "codex_native": codex_native,
+                    "claude_native": "claude" in native_harnesses,
+                    "codex_native": "codex" in native_harnesses,
+                    "copilot_native": "copilot" in native_harnesses,
+                    "servers": plugin_servers,
                     "marketplace_root": str(marketplace_root),
                     "marketplace_name": marketplace_name,
                     "description": description,

@@ -895,3 +895,95 @@ def test_clean_removes_native_plugin_enabled_plugins_entry(tmp_path):
     milknado_keys = [k for k in enabled if "milknado" in k]
     assert milknado_keys == [], f"milknado entries should be removed: {enabled}"
     assert "other-plugin@local" in enabled
+
+
+# ── Phase 4: permission-rule rewrite for hallouminate-native ───────────────────
+
+def test_claude_renderer_rewrites_native_mcp_permission_rule(tmp_path):
+    """When hallouminate is claude-native, the canonical mcp__hallouminate__*
+    allow rule is rewritten to the plugin-namespaced form in settings.json;
+    a non-native server's rule (tilth) is left bare."""
+    from agent_profile.parse import Manifest
+    from agent_profile.renderers.claude import ClaudeRenderer
+
+    manifest = Manifest(
+        name="base",
+        settings={
+            "permissions_allow": ["mcp__hallouminate__*", "mcp__tilth__*"],
+            "permissions_deny": [],
+        },
+        native_plugins=[{
+            "name": "hallouminate",
+            "claude_native": True,
+            "codex_native": True,
+            "copilot_native": True,
+            "servers": ["hallouminate"],
+            "marketplace_root": str(tmp_path / "mkt"),
+            "marketplace_name": "hallouminate",
+            "description": "wiki",
+        }],
+    )
+    (tmp_path / "mkt" / ".claude-plugin").mkdir(parents=True)
+    (tmp_path / "mkt" / ".claude-plugin" / "marketplace.json").write_text(
+        json.dumps({"name": "hallouminate", "owner": {"name": "t"},
+                    "plugins": [{"name": "hallouminate", "source": "."}]})
+    )
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        ClaudeRenderer().render(manifest, target)
+
+    data = json.loads((target / ".claude" / "settings.json").read_text())
+    allow = data["permissions"]["allow"]
+    assert "mcp__plugin_hallouminate_hallouminate__*" in allow, allow
+    assert "mcp__hallouminate__*" not in allow, allow
+    assert "mcp__tilth__*" in allow, "non-native server rule must stay bare"
+
+
+def test_claude_renderer_rewrites_skill_allowed_tools(tmp_path):
+    """A skill's inline allowed-tools mcp__hallouminate__* is re-namespaced in the
+    claude skill copy when hallouminate is native; tilth + non-MCP entries stay."""
+    from agent_profile.parse import Manifest
+    from agent_profile.renderers.claude import ClaudeRenderer
+
+    payload = tmp_path / "payload"
+    skill_src = payload / "skills" / "rennet"
+    skill_src.mkdir(parents=True)
+    (skill_src / "SKILL.md").write_text(
+        "---\nname: rennet\n"
+        "allowed-tools: Task, Skill, Bash(gh:*), mcp__hallouminate__*, mcp__tilth__*\n"
+        "---\nbody\n"
+    )
+    manifest = Manifest(
+        name="base",
+        skills=[{
+            "name": "rennet",
+            "path": "skills/rennet",
+            "_source_dir": str(payload),
+            "harnesses": ["claude"],
+        }],
+        native_plugins=[{
+            "name": "hallouminate",
+            "claude_native": True,
+            "codex_native": False,
+            "copilot_native": False,
+            "servers": ["hallouminate"],
+            "marketplace_root": str(tmp_path / "mkt"),
+            "marketplace_name": "hallouminate",
+            "description": "wiki",
+        }],
+    )
+    target = tmp_path / "home"
+    target.mkdir()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        ClaudeRenderer().render(manifest, target)
+
+    text = (target / ".claude" / "skills" / "rennet" / "SKILL.md").read_text()
+    assert "mcp__plugin_hallouminate_hallouminate__*" in text, text
+    assert "mcp__hallouminate__*" not in text, text
+    assert "mcp__tilth__*" in text
+    assert "Task, Skill, Bash(gh:*)" in text  # non-MCP entries preserved in order

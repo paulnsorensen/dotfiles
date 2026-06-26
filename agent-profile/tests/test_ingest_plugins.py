@@ -721,7 +721,7 @@ def test_registry_key_not_matching_marketplace_plugin_name_fails_loud(tmp_path):
             "milknado-engine": {
                 "path": str(market_root),
                 "claude_native": True,
-                "harnesses": ["codex"],
+                "harnesses": ["claude", "codex"],
             }
         },
     )
@@ -1157,6 +1157,24 @@ def test_codex_native_and_claude_native_strip_both(tmp_path):
     assert harnesses == ["opencode"], f"both native harnesses must be stripped: {harnesses}"
 
 
+def test_legacy_native_flag_outside_harnesses_fails_loud(tmp_path):
+    """A legacy ``claude_native: true`` on an entry whose ``harnesses`` exclude
+    claude must fail loud, not silently force a native install on an excluded
+    harness — the bug fixed by folding the legacy aliases into the validated set.
+    """
+    _make_plugin_with_marketplace(tmp_path, "milknado")
+    _make_plugins_registry(
+        tmp_path,
+        {"milknado": {
+            "path": str(tmp_path / "market" / "milknado"),
+            "harnesses": ["opencode"],
+            "claude_native": True,
+        }},
+    )
+    with pytest.raises(ParseError, match=r"not in this entry's harnesses"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
 def test_codex_native_skills_carry_codex_flag_only(tmp_path):
     """codex_native skills carry _from_codex_native_plugin, NOT _from_native_plugin.
 
@@ -1219,6 +1237,191 @@ def test_codex_native_false_produces_no_native_record(tmp_path):
 
     out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
     assert out.get("native_plugins", []) == []
+
+
+# ─── unified native: field ──────────────────────────────────────────────────
+# `native:` (true | false | [list]) replaces the per-harness booleans.
+#   true  → native on every DRIVABLE harness in this entry's `harnesses`
+#           (drivable = claude, codex, copilot).
+#   [list]→ native only on the listed harnesses (⊆ drivable AND ⊆ harnesses).
+# Legacy claude_native / codex_native still OR into the resolved set.
+
+
+def test_native_true_resolves_to_drivable_intersect_harnesses(tmp_path):
+    """native: true → native on claude+codex+copilot; the rest stay decomposed."""
+    _make_plugin_with_marketplace(tmp_path, "halloum", skill_names=["wiki-init"])
+    _make_plugins_registry(
+        tmp_path,
+        {"halloum": {
+            "path": str(tmp_path / "market" / "halloum"),
+            "harnesses": ["claude", "codex", "opencode", "cursor", "copilot", "crush"],
+            "native": True,
+        }},
+    )
+
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    # MCP: the three drivable harnesses stripped, decompose-only ones remain.
+    harnesses = out["mcps"][0].get("harnesses", [])
+    assert "claude" not in harnesses and "codex" not in harnesses and "copilot" not in harnesses
+    assert set(harnesses) == {"opencode", "cursor", "crush"}, harnesses
+    # native descriptor carries all three drivable bools.
+    native = out["native_plugins"][0]
+    assert native["claude_native"] is True
+    assert native["codex_native"] is True
+    assert native["copilot_native"] is True
+    # skill carries each native harness's marker flag.
+    skill = out["skills"][0]
+    assert skill.get("_from_native_plugin") is True
+    assert skill.get("_from_codex_native_plugin") is True
+    assert skill.get("_from_copilot_native_plugin") is True
+
+
+def test_native_list_selects_only_listed_harnesses(tmp_path):
+    """native: [claude, copilot] → codex stays decomposed; only listed go native."""
+    _make_plugin_with_marketplace(tmp_path, "milknado", skill_names=["harvest"])
+    _make_plugins_registry(
+        tmp_path,
+        {"milknado": {
+            "path": str(tmp_path / "market" / "milknado"),
+            "harnesses": ["claude", "codex", "opencode", "cursor", "copilot"],
+            "native": ["claude", "copilot"],
+        }},
+    )
+
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    harnesses = out["mcps"][0].get("harnesses", [])
+    assert "claude" not in harnesses and "copilot" not in harnesses
+    assert "codex" in harnesses, "codex must stay decomposed when not listed"
+    native = out["native_plugins"][0]
+    assert native["claude_native"] is True
+    assert native["copilot_native"] is True
+    assert native["codex_native"] is False
+    skill = out["skills"][0]
+    assert skill.get("_from_native_plugin") is True
+    assert skill.get("_from_copilot_native_plugin") is True
+    assert "_from_codex_native_plugin" not in skill
+
+
+def test_native_list_non_drivable_fails_loud(tmp_path):
+    """native: [cursor] is a ParseError — cursor has no drivable native install."""
+    _make_plugin_with_marketplace(tmp_path, "milknado")
+    _make_plugins_registry(
+        tmp_path,
+        {"milknado": {
+            "path": str(tmp_path / "market" / "milknado"),
+            "harnesses": ["claude", "cursor"],
+            "native": ["cursor"],
+        }},
+    )
+
+    with pytest.raises(ParseError, match="cursor"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_native_list_outside_harnesses_fails_loud(tmp_path):
+    """native: [copilot] but harnesses lacks copilot → ParseError (silent no-op guard)."""
+    _make_plugin_with_marketplace(tmp_path, "milknado")
+    _make_plugins_registry(
+        tmp_path,
+        {"milknado": {
+            "path": str(tmp_path / "market" / "milknado"),
+            "harnesses": ["claude", "codex"],
+            "native": ["copilot"],
+        }},
+    )
+
+    with pytest.raises(ParseError, match="copilot"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+
+
+def test_copilot_native_skills_carry_copilot_flag_only(tmp_path):
+    """copilot-only native stamps _from_copilot_native_plugin, not the other two.
+
+    Mirrors the codex marker-independence contract: reusing claude's flag would
+    make the claude renderer wrongly skip a copilot-only-native plugin's skills.
+    """
+    _make_plugin_with_marketplace(tmp_path, "milknado", skill_names=["harvest"])
+    _make_plugins_registry(
+        tmp_path,
+        {"milknado": {
+            "path": str(tmp_path / "market" / "milknado"),
+            "harnesses": ["claude", "copilot"],
+            "native": ["copilot"],
+        }},
+    )
+
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    skill = out["skills"][0]
+    assert skill.get("_from_copilot_native_plugin") is True
+    assert "_from_native_plugin" not in skill
+    assert "_from_codex_native_plugin" not in skill
+    # claude stays decomposed (only copilot native), so claude keeps the MCP.
+    assert "claude" in out["mcps"][0].get("harnesses", [])
+
+
+def test_legacy_flags_or_into_resolved_native_set(tmp_path):
+    """Legacy claude_native/codex_native add to whatever native: resolves."""
+    _make_plugin_with_marketplace(tmp_path, "milknado")
+    _make_plugins_registry(
+        tmp_path,
+        {"milknado": {
+            "path": str(tmp_path / "market" / "milknado"),
+            "harnesses": ["claude", "codex", "copilot"],
+            "native": ["copilot"],
+            "claude_native": True,
+        }},
+    )
+
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    native = out["native_plugins"][0]
+    assert native["copilot_native"] is True
+    assert native["claude_native"] is True
+    assert native["codex_native"] is False
+    harnesses = out["mcps"][0].get("harnesses", [])
+    assert harnesses == ["codex"], f"only codex stays decomposed: {harnesses}"
+
+
+def test_native_descriptor_carries_server_names(tmp_path):
+    """The native descriptor lists the MCP server names the plugin provides.
+
+    Renderers need this to rewrite `mcp__<server>__*` permission rules to the
+    plugin-namespaced form on harnesses where the plugin is native.
+    """
+    _make_plugin_with_marketplace(tmp_path, "halloum")
+    _make_plugins_registry(
+        tmp_path,
+        {"halloum": {
+            "path": str(tmp_path / "market" / "halloum"),
+            "harnesses": ["claude", "codex", "copilot"],
+            "native": True,
+        }},
+    )
+
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    native = out["native_plugins"][0]
+    assert native["servers"] == ["halloum"], native
+
+
+def test_native_agents_carry_copilot_flag(tmp_path):
+    """native: [copilot] stamps _from_copilot_native_plugin on agents too."""
+    _market, payload = _make_plugin_with_marketplace(tmp_path, "milknado")
+    _write_plugin_agent(payload, "worker.md", {"name": "worker", "description": "W"})
+    _make_plugins_registry(
+        tmp_path,
+        {"milknado": {
+            "path": str(tmp_path / "market" / "milknado"),
+            "harnesses": ["claude", "copilot"],
+            "native": ["copilot"],
+        }},
+    )
+
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
+    agent = out["agents"][0]
+    assert agent.get("_from_copilot_native_plugin") is True
+    assert "_from_native_plugin" not in agent
+    # copilot stripped from agent harnesses; claude remains.
+    assert "copilot" not in agent["harnesses"]
+    assert "claude" in agent["harnesses"]
 
 
 # ─── plugin agents and hooks ─────────────────────────────────────────────────

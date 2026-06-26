@@ -688,6 +688,11 @@ def _collect_mcp_tool_scopes(
     independent — ``disabled_tools`` for that server survives. Only servers
     that gain at least one named tool (after the whole-server drop) reach the
     result."""
+    # Tool scopes apply to config.toml-managed (decomposed) servers, keyed by
+    # their bare name. A codex-native plugin's MCP is installed via `codex
+    # plugin add` (never in [mcp_servers]) and its tool access is governed by
+    # codex's plugin model, not these scopes — so the canonical mcp__<server>__*
+    # rules are NOT rewritten to the plugin-namespaced form here.
     settings = manifest.settings
     enabled = named_mcp_tools(settings.get("permissions_allow") or [])
     disabled = named_mcp_tools(settings.get("permissions_deny") or [])

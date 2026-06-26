@@ -41,6 +41,11 @@ from typing import NamedTuple
 
 from agent_profile import shared
 from agent_profile.parse import Manifest
+from agent_profile.permissions import (
+    native_mcp_server_plugins,
+    rewrite_native_mcp_rules,
+    rewrite_skill_allowed_tools,
+)
 from agent_profile.renderers.base import (
     agents_for,
     body_abs,
@@ -140,6 +145,8 @@ class ClaudeRenderer:
         markets = data.setdefault("extraKnownMarketplaces", {})
         enabled = data.setdefault("enabledPlugins", {})
         for entry in manifest.native_plugins:
+            if not entry.get("claude_native"):
+                continue  # native on other harnesses only — not a claude install
             name = entry["name"]
             marketplace_name = entry["marketplace_name"]
             marketplace_root = entry["marketplace_root"]
@@ -195,6 +202,8 @@ class ClaudeRenderer:
                 enabled.pop(plugin_id, None)
             # Un-merge native plugin enabledPlugins entries (<name>@<marketplace_name>).
             for entry in manifest.native_plugins:
+                if not entry.get("claude_native"):
+                    continue
                 marketplace_name = entry.get("marketplace_name", entry["name"])
                 enabled.pop(f"{entry['name']}@{marketplace_name}", None)
             if not enabled:
@@ -206,6 +215,8 @@ class ClaudeRenderer:
                 markets.pop(name, None)
             # Un-merge native plugin marketplace entries (keyed by marketplace_name).
             for entry in manifest.native_plugins:
+                if not entry.get("claude_native"):
+                    continue
                 marketplace_name = entry.get("marketplace_name", entry["name"])
                 markets.pop(marketplace_name, None)
             if not markets:
@@ -297,6 +308,7 @@ class ClaudeRenderer:
         target: Path,
         out: list[str],
     ) -> None:
+        server_plugins = native_mcp_server_plugins(manifest.native_plugins, "claude")
         for item in skills_for(manifest, "claude"):
             if item.get("_from_native_plugin"):
                 continue  # native plugin delivers skills at plugin scope, not user scope
@@ -307,6 +319,22 @@ class ClaudeRenderer:
             src = Path(item["_source_dir"]) / path
             if src.is_dir():
                 shared.write_shared_claude_skill(target, name, src, out)
+                if server_plugins:
+                    self._rewrite_skill_allowed_tools(target, name, server_plugins)
+
+    @staticmethod
+    def _rewrite_skill_allowed_tools(
+        target: Path, name: str, server_plugins: dict[str, str]
+    ) -> None:
+        """Re-namespace mcp__<server>__* in the copied skill's allowed-tools line
+        for plugins native on claude (the only harness that enforces it)."""
+        skill_md = Path(str(target).rstrip("/")) / ".claude" / "skills" / name / "SKILL.md"
+        if not skill_md.is_file():
+            return
+        original = skill_md.read_text()
+        rewritten = rewrite_skill_allowed_tools(original, server_plugins)
+        if rewritten != original:
+            skill_md.write_text(rewritten)
 
     def _write_commands(
         self,
@@ -601,8 +629,15 @@ class ClaudeRenderer:
         ``create_settings.json`` won't overwrite it later (``create_``
         semantics), so the operator is responsible for filling in the rest if
         they're skipping ``dots sync``."""
-        allow = manifest.settings.get("permissions_allow") or []
-        deny = manifest.settings.get("permissions_deny") or []
+        # Rewrite mcp__<server>__* → mcp__plugin_<plugin>_<server>__* for plugins
+        # native on claude (their tools are re-namespaced by the native install).
+        server_plugins = native_mcp_server_plugins(manifest.native_plugins, "claude")
+        allow = rewrite_native_mcp_rules(
+            manifest.settings.get("permissions_allow") or [], server_plugins
+        )
+        deny = rewrite_native_mcp_rules(
+            manifest.settings.get("permissions_deny") or [], server_plugins
+        )
         if (
             not manifest.enabled_plugins
             and not manifest.marketplaces

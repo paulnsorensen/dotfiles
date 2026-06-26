@@ -30,7 +30,9 @@ trailing newline).
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -39,7 +41,9 @@ from agent_profile.parse import Manifest
 from agent_profile.permissions import (
     bash_argv,
     named_mcp_tools,
+    native_mcp_server_plugins,
     parse_mcp_rule,
+    rewrite_native_mcp_rules,
     whole_server_mcp_allows,
 )
 from agent_profile.renderers.base import (
@@ -69,6 +73,7 @@ _AGENT_STRIP_KEYS = (
     "harnesses",
     "_from_native_plugin",
     "_from_codex_native_plugin",
+    "_from_copilot_native_plugin",
 )
 
 # Internal fields stripped before a hook item becomes its JSON payload.
@@ -121,8 +126,13 @@ def launch_flags(manifest: Manifest) -> list[str]:
     internal spaces (``shell(gh pr view)``) — Copilot matches first-level
     subcommands for git/gh."""
     settings = manifest.settings
-    allow_flags = _flags_for(settings.get("permissions_allow") or [], "--allow-tool")
-    deny_flags = _flags_for(settings.get("permissions_deny") or [], "--deny-tool")
+    # Rewrite mcp__<server>__* → mcp__plugin_<plugin>_<server>__* for plugins
+    # native on copilot (the native install re-namespaces their tools).
+    server_plugins = native_mcp_server_plugins(manifest.native_plugins, "copilot")
+    allow = rewrite_native_mcp_rules(settings.get("permissions_allow") or [], server_plugins)
+    deny = rewrite_native_mcp_rules(settings.get("permissions_deny") or [], server_plugins)
+    allow_flags = _flags_for(allow, "--allow-tool")
+    deny_flags = _flags_for(deny, "--deny-tool")
     return allow_flags + deny_flags
 
 
@@ -158,6 +168,7 @@ class CopilotRenderer:
         self._write_skills(manifest, base, out_files)
         self._write_hooks(manifest, base, out_files)
         self._write_mcp(manifest, base)
+        self._render_native_plugins(manifest)
         return out_files
 
     def _warn_unsupported(self, manifest: Manifest) -> None:
@@ -171,6 +182,8 @@ class CopilotRenderer:
         self, manifest: Manifest, base: Path, out_files: list[str]
     ) -> None:
         for agent in agents_for(manifest, "copilot"):
+            if agent.get("_from_copilot_native_plugin"):
+                continue  # native plugin delivers agents via copilot plugin install
             name = agent["name"]
 
             models = agent.get("models") or {}
@@ -204,6 +217,8 @@ class CopilotRenderer:
         self, manifest: Manifest, base: Path, out_files: list[str]
     ) -> None:
         for skill in skills_for(manifest, "copilot"):
+            if skill.get("_from_copilot_native_plugin"):
+                continue  # native plugin delivers skills via copilot plugin install
             path = skill.get("path") or ""
             if not path:
                 continue  # source: (gh-fetched) skill — handled by cmd_install
@@ -311,7 +326,70 @@ class CopilotRenderer:
 
         out.write_text(_dumps(data))
 
+    # ─── native plugins (copilot_native marketplace install) ────────────
+    # Mirrors the codex renderer's native pass rather than claude's: Copilot
+    # CLI installs a plugin via `copilot plugin marketplace add <root>` +
+    # `copilot plugin install <name>@<marketplace>`. The declarative
+    # `enabledPlugins` settings key does NOT auto-install on startup (upstream
+    # bug github/copilot-cli#2249), and the `directory` marketplace-source
+    # object shape is unconfirmed — so ap drives the CLI (which owns
+    # ~/.copilot/settings.json) instead of hand-writing it. Idempotent on
+    # re-sync: marketplace add is skipped when already registered; install is
+    # tolerant of "already installed".
+    def _render_native_plugins(self, manifest: Manifest) -> None:
+        for entry in manifest.native_plugins:
+            if not entry.get("copilot_native"):
+                continue
+            self._install_copilot_native_plugin(entry)
+
+    def _install_copilot_native_plugin(self, entry: dict) -> None:
+        name = entry["name"]
+        marketplace_name = entry.get("marketplace_name", name)
+        expanded = os.path.expandvars(os.path.expanduser(str(entry["marketplace_root"])))
+        # Both steps are tolerant of re-runs. marketplace add is NOT gated on a
+        # `marketplace list` pre-check: the CLI's list output format is
+        # undocumented, so a brittle parse risks a false "not registered" that
+        # would re-add and (on some CLI versions) hard-fail with "already
+        # exists". A benign re-add warning is preferable to a fatal render.
+        self._copilot_cli(
+            ["copilot", "plugin", "marketplace", "add", expanded],
+            f"plugin marketplace add {expanded}",
+        )
+        self._copilot_cli(
+            ["copilot", "plugin", "install", f"{name}@{marketplace_name}"],
+            f"plugin install {name}@{marketplace_name}",
+        )
+
+    def _clean_native_plugins(self, manifest: Manifest) -> None:
+        for entry in manifest.native_plugins:
+            if not entry.get("copilot_native"):
+                continue
+            name = entry["name"]
+            marketplace_name = entry.get("marketplace_name", name)
+            self._copilot_cli(
+                ["copilot", "plugin", "uninstall", f"{name}@{marketplace_name}"],
+                f"plugin uninstall {name}@{marketplace_name}",
+            )
+            self._copilot_cli(
+                ["copilot", "plugin", "marketplace", "remove", marketplace_name, "--force"],
+                f"plugin marketplace remove {marketplace_name}",
+            )
+
+    @staticmethod
+    def _copilot_cli(argv: list[str], label: str) -> None:
+        """Run a copilot plugin CLI command, tolerant of re-runs. check=False
+        so a repeated install/remove (already present / already gone) does not
+        hard-fail the render. A missing copilot binary is a no-op."""
+        try:
+            result = subprocess.run(argv, check=False, capture_output=True, text=True)
+        except FileNotFoundError:
+            return  # copilot CLI not present; nothing to install/clean
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            _warn(f"    ap: 'copilot {label}' exited {result.returncode}. {detail}")
+
     def clean(self, manifest: Manifest, target: Path) -> None:
+        self._clean_native_plugins(manifest)
         base = Path(str(target).rstrip("/"))
         cfg = base / ".copilot" / "mcp-config.json"
         if not cfg.is_file():
