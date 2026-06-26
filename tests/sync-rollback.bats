@@ -123,6 +123,17 @@ teardown() {
     [[ ! -L "$TEST_HOME/.packages" ]]
 }
 
+# cursor is skipped so ~/.cursor stays a real dir owned by chezmoi's
+# install-cursor-plugin.sh — a whole-dir symlink leaked Cursor's runtime
+# state back into the dotfiles repo.
+@test "cursor directory is not symlinked into ~/.cursor" {
+    cd "$FAKE_DOTFILES"
+    mkdir -p "$FAKE_DOTFILES/cursor"
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ ! -L "$TEST_HOME/.cursor" ]]
+}
+
 @test "regular dotfiles ARE processed as symlinks" {
     cd "$FAKE_DOTFILES"
     echo "alias foo=bar" > "$FAKE_DOTFILES/myaliases"

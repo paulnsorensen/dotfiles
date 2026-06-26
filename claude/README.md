@@ -4,13 +4,17 @@ This directory contains the complete Claude Code configuration for the Cheddar F
 
 ## Setup
 
-Symlinked to `~/.claude/` via the dotfiles sync system:
+Deployed to `~/.claude/` via the dotfiles sync system:
 
 ```bash
 dots sync
 ```
 
-This creates symlinks for `agents/`, `commands/`, `hooks/`, `skills/`, and `settings.json`. The shared MCP registry now lives at the repo-root `agents/mcp/` (copied to both Claude and Codex by chezmoi).
+Nothing here is symlinked into `~/.claude/` anymore — a directory symlink let Claude's runtime writes leak back into the repo. Deployment now:
+
+- `commands/`, `hooks/`, `reference/`, `workflows/` → **one-way copies** via `chezmoi/lib/install-claude-assets.sh` (manifest-tracked; edits need a `dots sync` to go live).
+- `agents/`, MCP servers, `skills/` → rendered/copied from the repo-root `agents/` registries by the `ap` tool + chezmoi (shared with Codex et al.).
+- `settings.json` → seeded once by chezmoi, then jq-merged by `ap install global`.
 
 ## Directory Structure
 

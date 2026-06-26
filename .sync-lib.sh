@@ -29,8 +29,11 @@ log_error() {
 }
 
 # Directory names that are never symlinked or dispatched to.
-# Documented in AGENTS.md — keep these in sync.
-SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "brew" "apt" "agents" "agent-profile" "codex")
+# Documented in the wiki (operations/sync-and-chezmoi.md) — keep in sync.
+# `cursor` is skipped like `codex`: ~/.cursor is a real dir owned by chezmoi's
+# install-cursor-plugin.sh + the ap cursor renderer, NOT a symlink to this repo
+# (a whole-dir symlink leaked all of Cursor's runtime state back into dotfiles).
+SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "brew" "apt" "agents" "agent-profile" "codex" "cursor")
 
 # Failure ledger — every .sync script that exits non-zero appends its name
 # here. .sync inspects this at the end of run_sync, prints a

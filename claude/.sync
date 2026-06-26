@@ -8,82 +8,24 @@ SOURCE_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 # Create ~/.claude if it doesn't exist
 mkdir -p "$CLAUDE_DIR"
 
-# Config to symlink. NOT included here:
-#   - plugins/  — Claude uses that path as plugin cache
-#   - profiles/ — retired; scoped profiles moved to profiles/<name>/profile.yaml
-#                 (repo root) and deploy/launch via the `ap` tool (dots profile).
-#   - agents/   — the cheese sub-agents now live in agents/registry.yaml and
-#                 render into every harness via the `base` profile (`ap`), the
-#                 same path mcp/hooks/skills take. The legacy ~/.claude/agents
-#                 symlink is removed below; ap writes the real files to
-#                 ~/.claude/agents/<name>.md (user-scoped) + the plugin tree.
-#   - skills/   — copied (not symlinked) by chezmoi; gh-installed skills drop
-#                 real dirs alongside without fighting a directory symlink.
-#   - CLAUDE.md, RTK.md — copied (not symlinked) by chezmoi via
-#                 chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl
-#                 from the shared agents/ source so Codex sees the same content.
-#   - mcp/, hooks registry — the per-type registries live under agents/; the
-#                 registry-derived `base` profile is rendered into every harness
-#                 by chezmoi's run_onchange_after_install-base-profile.sh.tmpl.
-#   - settings.json — chezmoi/dot_claude/create_settings.json seeds it once.
-#                 `ap install global` (driven by run_onchange_after_install-base-profile)
-#                 then jq-mutates the live ~/.claude/settings.json to add the
-#                 `base@local` marketplace + enabledPlugins entry, preserving
-#                 user-managed siblings. The legacy committed claude/settings.json
-#                 is gone; a one-time `run_once_before_migrate-claude-settings`
-#                 chezmoi script unlinks any stale symlink before the seed runs.
+# Claude-only asset dirs — commands/, hooks/, reference/, workflows/ — are
+# deployed into ~/.claude as ONE-WAY COPIES by chezmoi
+# (chezmoi/lib/install-claude-assets.sh, run via
+# run_onchange_after_install-claude-assets.sh.tmpl), NOT symlinks. A whole-dir
+# symlink let anything written into ~/.claude/<dir> leak back into this repo
+# (the same failure that made ~/.cursor a symlink — see SYNC_SKIP_LIST in
+# .sync-lib.sh). Copy keeps the repo as the source; runtime writes stay in
+# $HOME. Trade-off: edits now need a `dots sync` / `chezmoi apply` to go live.
+# The installer self-migrates any leftover legacy symlink target to a real dir.
 #
-# `hooks/`, `lib/`, `reference/`, and `workflows/` STAY symlinked because they
-# still hold Claude-only assets (auto-format.js, sliced-bread.md, dynamic-
-# workflow scripts, …). `workflows/` deploys `claude/workflows/*.js` to
-# ~/.claude/workflows/, where Claude Code reads dynamic-workflow commands
-# (/<name>); it is not a registry type, so `ap` does not render it. The base
-# plugin's self-locating SessionStart hook is now owned by the plugin tree at
-# ~/.claude/plugins/local/global/hooks/ (deployed by `ap`); no legacy
-# write-through-symlinks happens.
-configs=(
-  commands
-  hooks
-  reference
-  workflows
-)
-
-# Install hook dependencies (wink-nlp for violation classifier)
-if [[ -f "$SOURCE_DIR/hooks/package.json" ]]; then
-  echo "  Installing hook dependencies..."
-  if command -v npm &>/dev/null; then
-    if ! (cd "$SOURCE_DIR/hooks" && npm install --silent); then
-      echo "  ERROR: npm install for hook dependencies failed." >&2
-      echo "  To debug, run: cd \"$SOURCE_DIR/hooks\" && npm install" >&2
-      exit 1
-    fi
-  else
-    echo "  Skipping hook dependency install (npm not found)."
-    echo "  To install later, run: cd \"$SOURCE_DIR/hooks\" && npm install"
-  fi
-fi
-
-for item in "${configs[@]}"; do
-  target="$CLAUDE_DIR/$item"
-  source="$SOURCE_DIR/$item"
-
-  if [[ -e "$source" ]]; then
-    if [[ -L "$target" ]]; then
-      rm "$target"
-    elif [[ -e "$target" ]]; then
-      echo "  Backing up existing $item"
-      mv "$target" "$target.bak"
-    fi
-
-    echo "  Linking $item"
-    ln -s "$source" "$target"
-  fi
-done
+# Also NOT handled here (owned by agents/ registries + chezmoi — see the
+# deploy table in AGENTS.md): plugins/ (Claude's plugin cache), agents/, mcp/,
+# the hooks registry, skills/, CLAUDE.md/RTK.md, settings.json.
 
 # RTK agent setup is done manually via the `rtk-init-*` aliases in
 # zsh/claude.zsh — running `rtk init` during sync would rewrite
-# ~/.claude/settings.json on every invocation, clobbering our symlink.
-# Claude Code hook is tracked in settings.json above and needs no init.
+# ~/.claude/settings.json on every invocation. The Claude Code hook is
+# wired through the agents/ registries + `ap` render, so it needs no init here.
 
 # Set up local-marketplace + cache symlinks for ~/Dev/vaudeville so plugin sync
 # can resolve it. Gate name is read from the registry to keep the gate field

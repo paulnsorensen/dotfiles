@@ -27,10 +27,6 @@ iterm2/com.googlecode.iterm2.plist
 /ROADMAP.md
 
 
-# Hook dependencies (installed by claude/.sync)
-claude/hooks/node_modules/
-claude/hooks/package-lock.json
-
 # Cheese-flair assets — canonical copy lives under agents/. The base
 # plugin tree at ~/.claude/plugins/local/global/{hooks,lib,reference}/
 # is where ap deploys them (NOT through claude/.sync's directory
