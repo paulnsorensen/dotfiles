@@ -1,14 +1,17 @@
 #!/bin/bash
-# run_onchange — re-renders the registry-derived `base` profile (via its
-# `global` wrapper for $HOME-targeted harnesses) into every harness
-# whenever the inputs change. The single deploy path that supersedes the
-# retired install-mcp / install-hooks / install-claude-skills scripts (curd 7).
+# run_onchange — re-renders the registry-derived live install profiles
+# (`global` for the $HOME-targeted dot-dir harnesses, `opencode-global` for
+# opencode) into every harness whenever the inputs change. The single deploy
+# path that supersedes the retired install-mcp / install-hooks /
+# install-claude-skills scripts (curd 7).
 #
 # The hash below is computed by chezmoi at template render time over
 # every input the installer reads:
 #
-#   profiles/base/**       — registry-union directive
-#   profiles/global/**     — operator overlay (target_default, marketplace, enable)
+#   profiles/base/**             — registry-union directive
+#   profiles/global/**           — dot-dir live overlay
+#   profiles/_permissions/**     — canonical live permission floor
+#   profiles/opencode-global/**  — opencode live overlay
 #   agents/mcp/registry.yaml      — MCP source of truth
 #   agents/hooks/registry.yaml    — hook source of truth
 #   agents/hooks/**.sh            — hook script contents (so edits redeploy)
@@ -26,7 +29,7 @@
 # plain sync. Bytecode (*.pyc / __pycache__) is excluded so the hash tracks
 # source edits, not interpreter artifacts.
 #
-# input hash: {{ output "sh" "-c" (printf "find %q/../profiles/base %q/../profiles/global %q/../agents/mcp/registry.yaml %q/../agents/registry.yaml %q/../agents/hooks %q/../agents/plugins %q/../agents/lib %q/../agents/reference %q/../skills %q/../agent-profile/agent_profile -type f -not -name .DS_Store -not -name '*.pyc' -not -path '*/__pycache__/*' -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
+# input hash: {{ output "sh" "-c" (printf "find %q/../profiles/base %q/../profiles/global %q/../profiles/_permissions %q/../profiles/opencode-global %q/../agents/mcp/registry.yaml %q/../agents/registry.yaml %q/../agents/hooks %q/../agents/plugins %q/../agents/lib %q/../agents/reference %q/../skills %q/../agent-profile/agent_profile -type f -not -name .DS_Store -not -name '*.pyc' -not -path '*/__pycache__/*' -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
 
 set -euo pipefail
 

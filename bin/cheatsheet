@@ -65,7 +65,7 @@ print_cheatsheet() {
     row "wt-git <path>"       "git in a worktree (no cd)"
 
     hdr "MCP / Hooks / Agents"
-    row "base-sync"           "deploy base profile to all harnesses"
+    row "base-sync"           "deploy live install profiles to all harnesses"
     row "mcp"                 "claude mcp"
     row "mcp-ls"              "list MCPs"
     row "mcp-edit"            "edit mcp/registry.yaml"

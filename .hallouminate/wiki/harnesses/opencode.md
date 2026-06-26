@@ -2,7 +2,7 @@
 
 The sst/opencode CLI. Config lives under `~/.config/opencode/`, centred on `opencode.json`. Docs root: [opencode.ai/docs](https://opencode.ai/docs).
 
-Unlike the dot-dir harnesses, opencode writes config at the *target root* (`~/.config/opencode/`), not a `.opencode/` subdir. So chezmoi drives it with a separate `ap install base --target ~/.config/opencode --harness opencode` (not `global` — there's no marketplace/plugin surface to enable). `opencode.json` is seeded once (chezmoi `create_opencode.json`) then the renderer merges only the `mcp` + `permission.bash` keys via Python stdlib `json` (read-modify-write, no jq).
+Unlike the dot-dir harnesses, opencode writes config at the *target root* (`~/.config/opencode/`), not a `.opencode/` subdir. So chezmoi drives it with a dedicated live wrapper profile: `ap install opencode-global --harness opencode`. The installer forwards `HOME`, and the wrapper carries `_permissions` plus `target_default: $HOME/.config/opencode`, so the shipped path lands at `~/.config/opencode/` without passing `--target`. That keeps external `source:` skills on the normal live `npx skills add` path. `opencode.json` is seeded once (chezmoi `create_opencode.json`) then the renderer merges the `mcp` plus full `permission` object via Python stdlib `json` (read-modify-write, no jq).
 
 ## Capabilities, docs, and repo wiring
 
@@ -21,7 +21,7 @@ When the `localLLM` flag is on, `chezmoi/lib/install-local-llm.sh` jq-merges a `
 
 ## Isolated settings
 
-Not available. opencode has no closed-world launch flags; `ap` isolated launches are Claude-only.
+Available through `ap`'s env-based isolated opencode launch. The closed-world config is injected via `OPENCODE_CONFIG_CONTENT`, `OPENCODE_PERMISSION`, and `OPENCODE_DISABLE_PROJECT_CONFIG=true` rather than CLI flags. Caveats: opencode still auto-loads project `AGENTS.md` / `CLAUDE.md`, and there is no ephemeral-session equivalent.
 
 ## Quirks
 

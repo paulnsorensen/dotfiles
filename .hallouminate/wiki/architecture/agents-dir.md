@@ -73,8 +73,8 @@ Two sources unioned at ingest (`ingest._expand_skills`):
 ## The edit → render → deploy workflow
 
 1. **Edit a registry** (`mcp-edit` / `hook-edit` / `agent-edit` / `skill-edit`).
-2. **`ap` renders.** The `base` profile expands the four registries into one item list; `ap`'s five renderers materialize that list per harness. The `mcp-sync` / `hook-sync` / `skill-sync` aliases are all `dots profile install base` (or `global`) under the hood.
-3. **chezmoi drives it on `dots sync`** via `run_onchange_after_install-base-profile.sh.tmpl`, which forks to `chezmoi/lib/install-base-profile.sh` and runs `ap install global` (dot-dir harnesses) + `ap install base --target ~/.config/opencode` (opencode). The run_onchange hash covers all registry inputs, the hook scripts, the shared-asset libs, *and* the `ap` renderer source — so editing a renderer or hook script re-deploys on the next plain `dots sync`.
+2. **`ap` renders.** The `base` profile expands the four registries into one item list; `ap`'s five renderers materialize that list per harness. The unified manual deploy entry point is `base-sync`, which dispatches the live wrapper profiles (`global` for the dot-dir harnesses, `opencode-global` for opencode).
+3. **chezmoi drives it on `dots sync`** via `run_onchange_after_install-base-profile.sh.tmpl`, which forks to `chezmoi/lib/install-base-profile.sh` and runs `ap install global` (dot-dir harnesses) + `ap install opencode-global` (opencode). The run_onchange hash covers `base`, `global`, `_permissions`, `opencode-global`, all registry inputs, the hook scripts, the shared-asset libs, *and* the `ap` renderer source — so editing a renderer, live wrapper, permission floor, or hook script re-deploys on the next plain `dots sync`.
 
 The standalone `agents/mcp/sync.sh` and `agents/hooks/sync.sh` still exist for the legacy native-CLI path but are **no longer the deploy path** — `dots sync` does not run them.
 

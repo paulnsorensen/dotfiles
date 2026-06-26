@@ -160,16 +160,15 @@ copilot() {
 CLAUDE_DOTFILES="$DOTFILES_DIR/claude"
 AGENTS_DOTFILES="$DOTFILES_DIR/agents"
 
-# Deploy the registry-derived `base` profile via `ap`. Mirrors
-# chezmoi/lib/install-base-profile.sh's two-target asymmetry: the dot-dir
-# harnesses (claude/codex/cursor/copilot) render under $HOME, while opencode
-# writes opencode.json at the target root, so it targets $HOME/.config/opencode.
-# A bare `dots profile install base` defaults --target to $PWD (the cwd trap),
-# so the deploy verb must pin $HOME.
+# Deploy the live install profiles via `ap`. Mirrors
+# chezmoi/lib/install-base-profile.sh's two-wrapper asymmetry: the dot-dir
+# harnesses (claude/codex/cursor/copilot) use `global`, while opencode uses
+# `opencode-global`. Both wrappers own their target_default, so the deploy verb
+# intentionally omits `--target` and stays on the live install path.
 base-sync() {
-    dots profile install base --target "$HOME" \
+    dots profile install global \
         --harness claude,codex,cursor,copilot \
-        && dots profile install base --target "$HOME/.config/opencode" \
+        && dots profile install opencode-global \
         --harness opencode
 }
 alias mcp='claude mcp'

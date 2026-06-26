@@ -56,12 +56,18 @@ documented_tokens() {
     assert_section "MCP / Hooks / Agents"
 }
 
+@test "documents base-sync as the live-wrapper deploy entry point" {
+    run cheatsheet
+    local clean
+    clean=$(strip_ansi "$output")
+    grep -Eq 'base-sync[[:space:]]+deploy live install profiles to all harnesses' <<<"$clean"
+}
+
 @test "points at tmux-cheatsheet for tmux keys" {
     run cheatsheet
     assert_section "tmux-cheatsheet"
     assert_section "Ctrl+Space"
 }
-
 @test "drift: every zsh alias/function is documented (minus internals + tmux sheet)" {
     # Match against the row token set (not free text) so a future alias whose
     # name happens to appear in a description can't pass vacuously.

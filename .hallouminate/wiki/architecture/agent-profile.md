@@ -105,7 +105,7 @@ Substrate rule (all five): stdlib `json` for JSON, `tomlkit` for TOML (round-tri
 |---|---|---|---|
 | Claude | `renderers/claude.py` | `.claude/plugins/local/<profile>/` (plugin.json, `skills/`, `commands/`, `hooks/`, `.mcp.json`, `settings.json`) + shared `.claude/agents/<n>.md` (agents are shared-only — no plugin-scoped copy) | `.claude/settings.json` (`enabledPlugins`+`extraKnownMarketplaces`), local `marketplace.json` |
 | Codex | `renderers/codex.py` | `.codex/agents/<n>.toml`, `.codex/hooks.json`, shared `.agents/skills/<n>/` | `.codex/config.toml` `[mcp_servers]` |
-| opencode | `renderers/opencode.py` | `agents/<n>.md` (root-relative) | `opencode.json` (`mcp`+`permission.bash`) |
+| opencode | `renderers/opencode.py` | `agents/<n>.md` (root-relative) | `opencode.json` (`mcp` + `permission`) |
 | Cursor | `renderers/cursor.py` | `.cursor/commands/`, `.cursor/hooks.json`, `.cursor/agents/<n>.md` | `.cursor/mcp.json` |
 | Copilot | `renderers/copilot.py` | `.github/agents/<n>.agent.md`, `.github/skills/<n>/`, `.github/hooks/<n>.json` | `.copilot/mcp-config.json` |
 
@@ -138,6 +138,6 @@ Three names must agree (`claude.py:_LOCAL_MARKETPLACE`): the marketplace key (`l
 On `dots sync`, `run_onchange_after_install-base-profile.sh.tmpl` exports `DOTFILES_DIR`, skips on a fresh box if `uv`/`npx` is missing, and forks to `chezmoi/lib/install-base-profile.sh`, which runs two installs handling a path asymmetry:
 
 - `HOME=$target ap install global --harness claude,codex,cursor,copilot` — the four dot-dir harnesses write under `$HOME`; `global` carries the marketplace + plugin enablement.
-- `ap install base --target $HOME/.config/opencode --harness opencode` — opencode writes `opencode.json` at the *target root*, with no marketplace/plugin surface, so plain `base` suffices.
+- `HOME=$target ap install opencode-global --harness opencode` — opencode writes `opencode.json` at the *target root*; the wrapper carries `_permissions` plus `target_default: $HOME/.config/opencode` without pulling in Claude's marketplace/plugin fields, and omitting `--target` keeps external `source:` skill fetch on the live path.
 
-The run_onchange hash spans `profiles/base`, `profiles/global`, all four registries, the hook scripts + shared-asset libs, `skills/`, *and* `agent-profile/agent_profile/**`. Sibling scripts: `install-agent-profile` (warms the uv env), `install-prompts` + `install-agents-doc` (the non-`ap` agent content — preamble + AGENTS.md, see [[agents-dir]]).
+The run_onchange hash spans `profiles/base`, `profiles/global`, `profiles/_permissions`, `profiles/opencode-global`, all four registries, the hook scripts + shared-asset libs, `skills/`, *and* `agent-profile/agent_profile/**`. Sibling scripts: `install-agent-profile` (warms the uv env), `install-prompts` + `install-agents-doc` (the non-`ap` agent content — preamble + AGENTS.md, see [[agents-dir]]).

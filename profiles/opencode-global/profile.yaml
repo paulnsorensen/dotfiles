@@ -1,0 +1,15 @@
+# opencode-global — the live install wrapper for opencode.
+#
+# opencode shares `base`'s registry-derived union, but unlike the dot-dir
+# harnesses it writes config at the target root (`~/.config/opencode`). This
+# wrapper keeps the install on the live path without passing `--target`, so
+# `_permissions` still lowers onto opencode and external `source:` skills still
+# fetch via `npx skills add`.
+name: opencode-global
+description: Live install — renders base into $HOME/.config/opencode with _permissions
+include: [base, _permissions]
+
+# `--target` precedence in ap is: explicit flag > profile target_default >
+# Path.cwd(). The installer forwards HOME explicitly, so this resolves against
+# the caller's target home during `dots sync`.
+target_default: $HOME/.config/opencode

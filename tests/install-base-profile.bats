@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC1090,SC2034,SC2317
-# Tests for chezmoi/lib/install-base-profile.sh — renders the registry-derived
-# `base` profile into every harness via the `ap` tool. Replaces the deploy
-# roles of the retired install-mcp / install-hooks / install-claude-skills
-# chezmoi scripts (spec curd 7).
+# Tests for chezmoi/lib/install-base-profile.sh — renders the live install
+# profiles into every harness via the `ap` tool. Replaces the deploy roles of
+# the retired install-mcp / install-hooks / install-claude-skills chezmoi
+# scripts (spec curd 7).
 
 load test_helper
 
@@ -16,7 +16,7 @@ setup() {
     AP_LOG="$TEST_HOME/ap-calls.log"
     cat > "$FAKE_BIN/ap" <<SH
 #!/usr/bin/env bash
-echo "\$*" >> "$AP_LOG"
+echo "HOME=$HOME \$*" >> "$AP_LOG"
 exit 0
 SH
     chmod +x "$FAKE_BIN/ap"
@@ -54,12 +54,13 @@ teardown() { teardown_test_env; }
     assert_output_contains "install global --harness claude,codex,cursor,copilot"
 }
 
-@test "install-base-profile.sh renders opencode under \$HOME/.config/opencode" {
+@test "install-base-profile.sh renders opencode under \$HOME/.config/opencode via opencode-global" {
     INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" \
         run bash "$LIB" "$TEST_HOME"
     assert_success
     run cat "$AP_LOG"
-    assert_output_contains "install base --target $TEST_HOME/.config/opencode --harness opencode"
+    assert_output_contains "HOME=$TEST_HOME install opencode-global --harness opencode"
+    ! grep -qF -- '--target' "$AP_LOG"
 }
 
 @test "install-base-profile.sh makes exactly two ap calls" {
