@@ -13,8 +13,8 @@ For renderer mechanics see [[agent-profile]]; for each harness's wider config su
 ## TL;DR
 
 - **`ap` ships no default permissions.** No hardcoded default set anywhere in the package (verified: zero `DEFAULT_ALLOW`/`DEFAULT_DENY` constants). Permissions are *purely profile-declared*; if a `profile.yaml` declares nothing, nothing is written and the harness falls back to the user's own live config. `ap` only layers additively. The one exception is an **isolated** Claude launch, which cuts inheritance (`--setting-sources ""`) so its surface is exactly its declared `tools` + deny.
-- **Three levers, not one.** Per-command rules reach Claude / opencode / Cursor-CLI (Codex and Copilot have no *config* surface for them). Posture reaches Codex, Claude, opencode, and Cursor. MCP-tool scoping is statically renderable to **all five**. No single channel reaches all five with the full vocabulary — a canonical permission set has to be lowered per-lever, per-harness.
-- **Where `ap` is lossy today:** opencode full allow+deny render landed in #259 (in review); Cursor-CLI rendering, Codex posture + MCP scoping, and Copilot MCP exposure are still on the table (see [Planned fixes](#planned-fixes--remaining-gaps)).
+- **Three levers, not one.** Per-command rules reach Claude / opencode / Cursor-CLI via config and Codex via its `.rules` DSL (#264/#272); only Copilot has no config surface for them. Posture reaches Codex, Claude, opencode, and Cursor. MCP-tool scoping is statically renderable to **all five**. No single channel reaches all five with the full vocabulary — a canonical permission set has to be lowered per-lever, per-harness.
+- **Where `ap` is lossy today:** opencode full allow+deny render landed in #259; Codex per-command (`.rules`, #264/#272), MCP scoping (#272), and launch posture (#324) all landed. Still on the table: Cursor-CLI rendering, Codex *profile-driven* posture, and Copilot MCP exposure (see [Planned fixes](#planned-fixes--remaining-gaps)).
 
 ## How `ap` declares permissions
 
@@ -97,7 +97,7 @@ Which tools a server *exposes* to the model — upstream of allow/deny. This is 
 - **Codex** `<certain>` — `[mcp_servers.<name>]` → `enabled_tools` (allowlist) / `disabled_tools` (denylist), plus `tools.<tool>.approval_mode` (`auto`|`prompt`|`approve`) and `default_tools_approval_mode` (`config-reference`).
 - **Copilot** `<certain>` — per-MCP-server `tools` field in `~/.copilot/mcp-config.json` controls exposure (`["*"]` = all; a named list restricts) (`copilot-cli-permissions-raw.md:57-72`). Plus `~/.copilot/settings.json` `disabledMcpServers`/`enabledMcpServers`.
 
-**Lever-3 reach:** all five — but `ap` renders MCP scoping for **none of them** as a dedicated channel today (Claude/opencode/Cursor would get it for free once their Lever-1 renderers carry MCP rules; Codex `enabled/disabled_tools` and Copilot `tools:[]` are net-new renderer work).
+**Lever-3 reach:** all five natively — `ap` renders it today for **Claude** and **opencode** (via their Lever-1 MCP rules) and for **Codex** (`enabled_tools`/`disabled_tools` via `_write_mcp_tool_scopes`, #272). **Cursor** (drops Lever 1) and **Copilot** (`tools:[]`) are still net-new renderer work.
 
 ---
 
@@ -111,13 +111,14 @@ Native capability (above) is not the same as what `ap` lowers. Current render st
 | **Claude** (isolated) | ✅ allow **+** deny | ✅ `--setting-sources ""` + `--tools` | via Lever 1 | ephemeral `settings.json` |
 | **opencode** | ✅ allow **+** deny (#259) ‡ | partial (default action) | via Lever 1 | `opencode.json` `permission` |
 | **Cursor** | ✗ warned + dropped | ✗ | ✗ | — |
-| **Codex** | ✗ (no config surface) | ✗ not rendered | ✗ not rendered | — |
+| **Codex** | ✅ via `.rules` DSL (#264/#272) | launch: Auto pinned (#324) ◊ | ✅ `enabled_tools`/`disabled_tools` (#272) | `.codex/rules/ap-canonical.rules` + `config.toml` |
 | **Copilot** | ✗ (flags-only) | ✗ | ✗ not rendered | — |
 
 † Claude install writes plugin-scoped `permissions.allow` if non-empty (`claude.py:472-484`); the live root `settings.json` merge never touches permissions. Deny is written only on the isolated launch path (`overlay.py`).
 ‡ Pre-#259 the opencode renderer (`_translate_permission`, `opencode.py`) emitted bash-allow-only — it mapped `Bash(cmd:*)` → `cmd *` and passed everything else through into `permission.bash`. #259 adds the `settings.permissions_deny` parse channel and translates the full Claude vocabulary into opencode's per-tool `permission` map (last-match-wins, deny emitted last for deny-wins parity).
+◊ The isolated **launch** overlay (`overlay.py:_write_codex_config`, #324) pins Codex's Auto perms — `approval_policy = "on-request"`, `approvals_reviewer = "auto_review"`, `sandbox_mode = "workspace-write"`; regression `test_overlay.py:test_codex_isolated_config_defaults_to_auto_permissions`. This is *launch* posture only; the install/perms render still emits no `sandbox_mode`/`approval_policy`. Codex Lever 1 (`.rules`) and Lever 3 (`enabled_tools`/`disabled_tools`) render via `render()` and `render_project_permissions` (`codex.py:97-98,600-612`, #264/#272); see [Project-scoped permission overlay](#project-scoped-permission-overlay-ap-perms).
 
-Net: a profile's per-command rules reach **Claude** (full) and **opencode** (full, post-#259). Cursor drops them (renderer assumes UI-only, `cursor.py:117-124`); Codex has no per-command config surface to render to; Copilot is flags-only. Posture and MCP-scoping are largely unrendered everywhere.
+Net: a profile's per-command rules reach **Claude** (full), **opencode** (full, post-#259), and **Codex** (via the `.rules` DSL, #264/#272). Cursor drops them (renderer assumes UI-only, `cursor.py:117-124`); Copilot is flags-only. Posture is rendered for Claude (isolated) and Codex (launch, #324); MCP-scoping for Claude/opencode (Lever 1) and Codex (#272). The remaining gaps are Cursor-CLI, Codex *profile-driven* posture, and Copilot.
 
 ## Project-scoped permission overlay (`ap perms`)
 
@@ -162,8 +163,8 @@ The committed surface (fragment + rendered `settings.json` + `.codex/`) carries 
 1. **Cursor warn-and-drop → CLI render.** The renderer assumes UI-only — true for the *IDE*, but `cursor-agent` consumes declarative `permissions.allow`/`deny` from `~/.cursor/cli-config.json`. Spec: **`.cheese/specs/ap-cursor-cli-permissions.md`** — adds `_write_cli_config`, translates Claude rules → Cursor tokens (`Bash(cmd:*)`→`Shell(cmd:)`, `Edit`→`Write`, `mcp__s__t`→`Mcp(s:t)`). Harmless if only the IDE is used (the file is read solely by the CLI). Unblocked by #259's parse channel; not yet cooked.
 2. **opencode full-fidelity render — shipped in #259** (in review). Adds the `settings.permissions_deny` union-merge in `parse.py` and the full per-tool translation. This is the shared dependency the other render specs lean on.
 3. **Claude `settings.permissions_deny` not consumed (future).** With the parse channel live, the claude *install* renderer could also write `permissions.deny` (it only writes `allow` today). Out of scope of the two render specs; noted so it isn't forgotten.
-4. **Codex posture renderer (net-new, Lever 2).** `sandbox_mode` + `approval_policy` (incl. the `granular` form) are static `config.toml` keys `ap` doesn't target. An isolated read-only profile should lower to `sandbox_mode = read-only` + `approval_policy = untrusted`.
-5. **MCP-scoping renderers for Codex + Copilot (net-new, Lever 3).** Codex `enabled_tools`/`disabled_tools` and Copilot `mcp-config.json` `tools:[]` are the only way those two harnesses accept any static tool restriction. `ap` emits neither.
+4. **Codex profile-driven posture renderer (partial, Lever 2).** The isolated **launch** overlay now pins Codex's Auto perms — `approval_policy = "on-request"` + `approvals_reviewer = "auto_review"` + `sandbox_mode = "workspace-write"` (`overlay.py:_write_codex_config`, #324) — so `ap` *does* target these `config.toml` keys on the launch path, but **hardcoded, not profile-driven**. Still unbuilt: lowering a *profile's declared* posture (e.g. an isolated read-only `review` profile → `sandbox_mode = read-only` + `approval_policy = untrusted`), the install/perms render path, and the `granular` `approval_policy` form.
+5. **MCP-scoping renderer for Copilot (net-new, Lever 3).** Copilot `mcp-config.json` `tools:[]` is the only way it accepts a static tool restriction, and `ap` doesn't emit it. (Codex `enabled_tools`/`disabled_tools` shipped in #272 — see `_write_mcp_tool_scopes`.)
 
 The through-line for a canonical permission model: **no single channel reaches all five harnesses with full vocabulary.** It has to be declared once and *lowered per-lever*: per-command rules → Claude / opencode / Cursor-CLI; posture → Codex / Claude / opencode / Cursor; MCP scoping → all five. That per-lever lowering, plus reconciliation with the `create_settings.json` Claude seed, is the work the canonical allow/disallow-list spec has to design.
 
