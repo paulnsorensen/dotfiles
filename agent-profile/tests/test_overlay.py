@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from agent_profile import cli, overlay
+from agent_profile import fetch as overlay_fetch
 from agent_profile.discover import find_profile_dir
 from agent_profile.parse import Manifest, parse_manifest
 from tests.conftest import write_profile
@@ -426,6 +427,78 @@ def test_flag_groups_emitted_in_spec_order(tmp_path):
     assert flags[1] == "--mcp-config"
     # extra_args land after the generated --settings, never before it.
     assert flags.index("--dangerously-skip-permissions") > flags.index("--settings")
+
+
+def test_isolated_claude_delivers_local_skills_via_plugin_dir(tmp_path):
+    """``--setting-sources ""`` strips the ~/.claude/skills tree, so an isolated
+    claude profile's local ``path:`` skills must ride in through a generated
+    ``--plugin-dir``. Without it the closed world loads MCPs + system prompt but
+    no profile skills (the original skills-doctor bug)."""
+    skill_src = tmp_path / "skills" / "harness-doctor"
+    skill_src.mkdir(parents=True)
+    (skill_src / "SKILL.md").write_text("---\nname: harness-doctor\n---\nbody\n")
+    m = Manifest(
+        name="skills-doctor",
+        mcps=[{"name": "tilth", "command": "tilth", "_source_dir": str(tmp_path)}],
+        skills=[{
+            "name": "harness-doctor",
+            "path": "skills/harness-doctor",
+            "_source_dir": str(tmp_path),
+        }],
+        isolated=True,
+    )
+    flags, _ = overlay.build_isolated_launch(m, tmp_path, "claude")
+
+    assert "--plugin-dir" in flags, f"no skill delivery in flags: {flags}"
+    plugin_dir = Path(flags[flags.index("--plugin-dir") + 1])
+    assert (plugin_dir / ".claude-plugin" / "plugin.json").is_file()
+    copied = plugin_dir / "skills" / "harness-doctor" / "SKILL.md"
+    assert copied.is_file(), "local skill not projected into the plugin tree"
+    # plugin-dir trails the generated groups but precedes extra_args.
+    assert flags.index("--plugin-dir") > flags.index("--setting-sources")
+
+
+def test_isolated_claude_no_plugin_dir_without_any_skills(tmp_path, monkeypatch):
+    """No resolvable skills → no generated ``--plugin-dir`` (no empty flag).
+    A ``source:`` item whose skills aren't in the global store (offline / lock
+    drift) resolves to nothing and must not emit a plugin dir."""
+    monkeypatch.setattr(overlay_fetch, "SKILL_STORE", tmp_path / "empty-store")
+    m = Manifest(
+        name="bare",
+        mcps=[{"name": "tilth", "command": "tilth", "_source_dir": str(tmp_path)}],
+        skills=[{"source": "owner/repo", "_source_dir": str(tmp_path)}],
+        isolated=True,
+    )
+    flags, _ = overlay.build_isolated_launch(m, tmp_path, "claude")
+    assert "--plugin-dir" not in flags
+
+
+def test_isolated_claude_delivers_source_skills_from_lock(tmp_path, monkeypatch):
+    """``source:`` skills fetched to the global store by the install half of
+    ``ap launch`` must ride into the closed world too: resolved via the lockfile
+    and copied from ``~/.agents/skills/<name>`` into the plugin tree."""
+    store = tmp_path / "store"
+    (store / "skills" / "mold").mkdir(parents=True)
+    (store / "skills" / "mold" / "SKILL.md").write_text("---\nname: mold\n---\n")
+    (store / "skills" / "other").mkdir(parents=True)  # different source — excluded
+    (store / "skills" / "other" / "SKILL.md").write_text("---\nname: other\n---\n")
+    (store / ".skill-lock.json").write_text(json.dumps({"skills": {
+        "mold": {"source": "o/cheese"},
+        "other": {"source": "x/unrelated"},
+    }}))
+    monkeypatch.setattr(overlay_fetch, "SKILL_STORE", store)
+
+    m = Manifest(
+        name="cheesy",
+        mcps=[{"name": "tilth", "command": "tilth", "_source_dir": str(tmp_path)}],
+        skills=[{"source": "o/cheese", "_source_dir": str(tmp_path)}],
+        isolated=True,
+    )
+    flags, _ = overlay.build_isolated_launch(m, tmp_path, "claude")
+
+    plugin_dir = Path(flags[flags.index("--plugin-dir") + 1])
+    assert (plugin_dir / "skills" / "mold" / "SKILL.md").is_file()
+    assert not (plugin_dir / "skills" / "other").exists(), "unrelated source leaked in"
 
 
 def test_extra_args_trail_all_generated_flags(tmp_path):

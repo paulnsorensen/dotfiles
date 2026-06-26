@@ -507,6 +507,7 @@ def _fetch_external_skills(
         SkillFetchError,
         external_skills,
         fetch_external_source,
+        group_external_sources,
     )
 
     ext = external_skills(manifest.skills)
@@ -525,31 +526,13 @@ def _fetch_external_skills(
     if not skill_harnesses:
         return
 
-    # Group items by source repo. A bare `source:` (no name) means "all skills"
-    # for that repo (--skill '*') and wins over any explicit names from sibling
-    # items. `pin` is a per-source property. Insertion order is preserved so
-    # output (and test assertions) stay deterministic. Harnesses with no
-    # `npx skills` backend (currently crush) are filtered out here.
-    order: list[str] = []
-    groups: dict[str, dict[str, Any]] = {}
-    for skill in ext:
-        source = skill["source"]
-        if source not in groups:
-            groups[source] = {"names": set(), "all": False, "pin": None}
-            order.append(source)
-        g = groups[source]
-        name = skill.get("name")
-        if name:
-            g["names"].add(name)
-        else:
-            g["all"] = True
-        if skill.get("pin"):
-            g["pin"] = skill["pin"]
-
+    # Group items by source repo (shared rule: a bare `source:` = all skills
+    # for that repo, winning over explicit sibling names; `pin` is per-source;
+    # first-seen order preserved so output/test assertions stay deterministic).
+    # Harnesses with no `npx skills` backend (currently crush) were filtered out
+    # above.
     try:
-        for source in order:
-            g = groups[source]
-            names = None if g["all"] else sorted(g["names"])
+        for source, names, pin in group_external_sources(manifest.skills):
             label = "*" if names is None else ", ".join(names)
             print(
                 f"  {colors.BLUE}↳{colors.NC} fetching skills "
@@ -557,7 +540,7 @@ def _fetch_external_skills(
                 file=out,
             )
             fetch_external_source(
-                source, names, g["pin"], skill_harnesses, _skill_fetch_runner
+                source, names, pin, skill_harnesses, _skill_fetch_runner
             )
     except SkillFetchError as exc:
         raise CliError(f"{colors.RED}{exc}{colors.NC}") from exc

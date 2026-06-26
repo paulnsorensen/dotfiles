@@ -11,11 +11,13 @@ The runner is injected so tests assert the exact argv without spawning npx.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import types
 
 import pytest
 
+from agent_profile import fetch
 from agent_profile.fetch import (
     SKILL_AGENT,
     SkillFetchError,
@@ -152,6 +154,62 @@ def test_external_skills_filters_source_items_only():
         tuple(sorted({"name": "mold", "source": "o/r"}.items())),
         tuple(sorted({"source": "o/r2"}.items())),
     }
+
+
+# ─── group_external_sources (shared install/launch grouping rule) ─────
+
+
+def test_group_external_sources_bare_source_means_all():
+    groups = fetch.group_external_sources([
+        {"name": "mold", "source": "o/r"},
+        {"source": "o/r"},  # bare → all, wins over the explicit name
+    ])
+    assert groups == [("o/r", None, None)]
+
+
+def test_group_external_sources_explicit_names_sorted_and_pin():
+    groups = fetch.group_external_sources([
+        {"name": "cook", "source": "o/r", "pin": "v2"},
+        {"name": "age", "source": "o/r"},
+        {"name": "x", "path": "skills/x"},  # local — ignored
+    ])
+    assert groups == [("o/r", ["age", "cook"], "v2")]
+
+
+def test_group_external_sources_preserves_first_seen_order():
+    groups = fetch.group_external_sources([
+        {"source": "b/2"},
+        {"source": "a/1"},
+    ])
+    assert [g[0] for g in groups] == ["b/2", "a/1"]
+
+
+# ─── source_skill_names (lockfile provenance, zero-network) ────────────
+
+
+def _write_lock(store, mapping):
+    (store / "skills").mkdir(parents=True, exist_ok=True)
+    skills = {n: {"source": src} for n, src in mapping.items()}
+    (store / ".skill-lock.json").write_text(json.dumps({"skills": skills}))
+
+
+def test_source_skill_names_all_for_a_source(tmp_path):
+    _write_lock(tmp_path, {"mold": "o/cheese", "cook": "o/cheese", "search": "x/tav"})
+    assert fetch.source_skill_names("o/cheese", None, store=tmp_path) == ["cook", "mold"]
+
+
+def test_source_skill_names_restricts_to_explicit_subset(tmp_path):
+    _write_lock(tmp_path, {"mold": "o/cheese", "cook": "o/cheese"})
+    assert fetch.source_skill_names("o/cheese", ["mold"], store=tmp_path) == ["mold"]
+
+
+def test_source_skill_names_missing_lock_degrades_to_empty(tmp_path):
+    assert fetch.source_skill_names("o/cheese", None, store=tmp_path) == []
+
+
+def test_source_skill_names_unknown_source_is_empty(tmp_path):
+    _write_lock(tmp_path, {"mold": "o/cheese"})
+    assert fetch.source_skill_names("x/none", None, store=tmp_path) == []
 
 
 # ─── _default_runner output scanning (exit-0 false-success detection) ─
