@@ -104,42 +104,52 @@ def resolved_native_harnesses(body: dict[str, Any], *, plugin: str) -> set[str]:
 
     ``native: true`` → every drivable harness in this entry's ``harnesses``;
     ``native: [list]`` → exactly the listed harnesses (must be ⊆ drivable and
-    ⊆ ``harnesses``, else ParseError); ``false`` / absent → none. Legacy bools
-    OR into the result. See ``agents/plugins/registry.yaml`` for the schema.
+    ⊆ ``harnesses``, else ParseError); ``false`` / absent → none. The legacy
+    ``claude_native`` / ``codex_native`` bools fold in BEFORE that validation,
+    so they share the same ⊆ drivable / ⊆ ``harnesses`` gate. See
+    ``agents/plugins/registry.yaml`` for the schema.
     """
     from agent_profile._validate import ParseError
 
     drivable = set(DRIVABLE_NATIVE)
     requested = set(_as_list(body.get("harnesses")))
     native = body.get("native", False)
+
+    # Legacy aliases fold into the resolved set up front so a contradictory
+    # claude_native: true on an entry whose harnesses exclude claude fails loud
+    # like the native: list form, rather than silently forcing a native install
+    # on an excluded harness.
+    legacy: set[str] = set()
+    if body.get("claude_native"):
+        legacy.add("claude")
+    if body.get("codex_native"):
+        legacy.add("codex")
+
     if native is True:
-        resolved = (drivable & requested) if requested else set(drivable)
+        resolved = ((drivable & requested) if requested else set(drivable)) | legacy
     elif isinstance(native, list):
-        resolved = {str(h) for h in native}
-        bad = resolved - drivable
-        if bad:
-            raise ParseError(
-                f"ap: plugin '{plugin}': native: {sorted(bad)} not drivable "
-                f"(drivable = {sorted(drivable)}); those harnesses stay decomposed."
-            )
-        if requested:
-            outside = resolved - requested
-            if outside:
-                raise ParseError(
-                    f"ap: plugin '{plugin}': native: {sorted(outside)} not in this "
-                    f"entry's harnesses {sorted(requested)} — would be a silent no-op."
-                )
+        resolved = {str(h) for h in native} | legacy
     elif native in (False, None):
-        resolved = set()
+        resolved = set(legacy)
     else:
         raise ParseError(
             f"ap: plugin '{plugin}': native must be true, false, or a list of "
             f"harnesses, got {type(native).__name__}."
         )
-    if body.get("claude_native"):
-        resolved.add("claude")
-    if body.get("codex_native"):
-        resolved.add("codex")
+
+    bad = resolved - drivable
+    if bad:
+        raise ParseError(
+            f"ap: plugin '{plugin}': native: {sorted(bad)} not drivable "
+            f"(drivable = {sorted(drivable)}); those harnesses stay decomposed."
+        )
+    if requested:
+        outside = resolved - requested
+        if outside:
+            raise ParseError(
+                f"ap: plugin '{plugin}': native: {sorted(outside)} not in this "
+                f"entry's harnesses {sorted(requested)} — would be a silent no-op."
+            )
     return resolved
 
 

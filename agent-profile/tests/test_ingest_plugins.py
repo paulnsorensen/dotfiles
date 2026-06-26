@@ -721,7 +721,7 @@ def test_registry_key_not_matching_marketplace_plugin_name_fails_loud(tmp_path):
             "milknado-engine": {
                 "path": str(market_root),
                 "claude_native": True,
-                "harnesses": ["codex"],
+                "harnesses": ["claude", "codex"],
             }
         },
     )
@@ -1155,6 +1155,24 @@ def test_codex_native_and_claude_native_strip_both(tmp_path):
     out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
     harnesses = out["mcps"][0].get("harnesses", [])
     assert harnesses == ["opencode"], f"both native harnesses must be stripped: {harnesses}"
+
+
+def test_legacy_native_flag_outside_harnesses_fails_loud(tmp_path):
+    """A legacy ``claude_native: true`` on an entry whose ``harnesses`` exclude
+    claude must fail loud, not silently force a native install on an excluded
+    harness — the bug fixed by folding the legacy aliases into the validated set.
+    """
+    _make_plugin_with_marketplace(tmp_path, "milknado")
+    _make_plugins_registry(
+        tmp_path,
+        {"milknado": {
+            "path": str(tmp_path / "market" / "milknado"),
+            "harnesses": ["opencode"],
+            "claude_native": True,
+        }},
+    )
+    with pytest.raises(ParseError, match=r"not in this entry's harnesses"):
+        expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
 
 
 def test_codex_native_skills_carry_codex_flag_only(tmp_path):
