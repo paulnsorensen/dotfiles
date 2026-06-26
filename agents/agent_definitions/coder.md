@@ -47,7 +47,7 @@ artifact: <path to fuller output, if any>
 
 This block is the in-session twin of the `/wheypoint` slug (same four fields). `/cook` writes the full report to `.cheese/cook/<slug>.md`; hand back the digest, not the full trace.
 
-If you run out of context before finishing, that is the one time to write a `/wheypoint`-format slug yourself: drop resumable state (goal, what is done and verified, what is left) to `.cheese/notes/<slug>.md` via `cheez-write`, then return `status: blocked: out of context`, `artifact: .cheese/notes/<slug>.md`, `next: cook` so the parent resumes with a fresh coder. On clean completion, do not write a wheypoint — the digest above is the baton.
+When you approach ~120k tokens of context — or run out before finishing — that is the one time to write a `/wheypoint`-format slug yourself: stop at the next safe checkpoint (a passing test or a completed edit, never mid-edit), drop resumable state (goal, what is done and verified, what is left) to `.cheese/notes/<slug>.md` via `cheez-write`, then return `status: blocked: out of context`, `artifact: .cheese/notes/<slug>.md`, `next: cook` so the parent resumes with a fresh coder. On clean completion, do not write a wheypoint — the digest above is the baton.
 
 ## Rules
 

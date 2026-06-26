@@ -46,7 +46,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-You always write the durable research slug (`.cheese/research/<slug>/<slug>.md`) — return its path as `artifact:` and your recommended phase as `next:`; the orchestrator threads that reference into the next phase instead of re-reading your fetches. If you run out of context before finishing, return `status: blocked: out of context` with the partial slug as `artifact:` so the parent re-dispatches rather than losing your progress.
+You always write the durable research slug (`.cheese/research/<slug>/<slug>.md`) — return its path as `artifact:` and your recommended phase as `next:`; the orchestrator threads that reference into the next phase instead of re-reading your fetches. When you approach ~120k tokens of context — or run out before finishing — return `status: blocked: out of context` with the partial slug as `artifact:` so the parent re-dispatches rather than losing your progress.
 
 ## Rules
 

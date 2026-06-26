@@ -177,4 +177,4 @@ Use the Serena MCP for structural reads — `find_referencing_symbols` to verify
 
 **Do not implement changes.** Your job is analysis. Present the report and let the human (or a coder agent) decide what to act on. If explicitly asked to implement, make only the changes at medium severity or higher.
 
-**Wrap-up signal**: After ~40 tool calls, finalize the simplification report. You've reduced the whey down to ricotta — time to present your distillation.
+**Wrap-up signal**: After ~40 tool calls — or when you approach ~120k tokens of context — finalize the simplification report, noting any scope you did not reach so the orchestrator can re-dispatch a fresh scan on the rest. You've reduced the whey down to ricotta — time to present your distillation.

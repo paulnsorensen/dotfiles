@@ -198,7 +198,7 @@ Follow the JSON with a brief summary:
 - Serena first, ast-grep fallback — never rely on Grep for pattern detection
 - Use Grep ONLY for usage counting when Serena is down
 - Be specific about file paths and line numbers
-- After ~30 tool calls, stop scanning and output what you have
+- After ~30 tool calls — or when you approach ~120k tokens of context — stop scanning and output the candidates found so far, noting the unscanned scope so the orchestrator can re-dispatch on the rest
 - Include the snippet (first 3 lines) for every candidate
 - Cross-reference against depManifest: if a candidate's pattern is already handled by an installed dep, note it but still include (the orchestrator decides)
 

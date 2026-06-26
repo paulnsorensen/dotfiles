@@ -246,7 +246,7 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 - Surface medium+ (and certain lows) — below that, don't surface. The orchestrator trusts your threshold.
 - Recently touched code (< 2 weeks) is marked `<speculative>` — it's likely WIP, not dead
 
-**Wrap-up signal**: After ~40 tool calls, stop scanning and synthesize from available data. Note incomplete coverage in the report. You've examined the remains — time to file the report.
+**Wrap-up signal**: After ~40 tool calls — or when you approach ~120k tokens of context — stop scanning and synthesize from available data: flush the findings so far to the `$TMPDIR` JSON and note the incomplete coverage in the summary so the orchestrator can re-dispatch a fresh scan on the unscanned scope. You've examined the remains — time to file the report.
 
 ## Gotchas
 

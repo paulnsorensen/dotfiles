@@ -91,7 +91,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-Default is the inline digest — `artifact:` is omitted when the digest is complete (explorer/reviewer outputs are designed small). When an agent's output is genuinely too large to inline, it writes a durable artifact (`.cheese/<phase>/<slug>.md`, or `.cheese/research/<slug>/` for the researcher) and returns the path as the lightweight reference, which you pass forward instead of re-pasting. `next:` is the agent's recommendation only — you own the routing decision and may override it.
+Default is the inline digest — `artifact:` is omitted when the digest is complete (explorer/reviewer outputs are designed small). When an agent's output is genuinely too large to inline, it writes a durable artifact (`.cheese/<phase>/<slug>.md`, or `.cheese/research/<slug>/` for the researcher) and returns the path as the lightweight reference, which you pass forward instead of re-pasting. `next:` is the agent's recommendation only — you own the routing decision and may override it. A `status: blocked: out of context` handback means the agent hit its context budget (~120k tokens) mid-task — don't try to continue the exhausted agent; dispatch a fresh one from the `artifact:` slug so it picks up where the last left off.
 
 ### Coder fan-out
 
