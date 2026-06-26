@@ -1,9 +1,45 @@
 # skhd hotkey daemon configuration
 #
 # Yabai bindings were removed when the tiling window manager was pulled out.
-# Add new shortcuts below — each line binds a chord to a shell command.
+# This file now hosts direct app-focus bindings (rcmd-style).
 #
 # Reference: https://github.com/koekeishiya/skhd
 #
-# Example:
-#   cmd + alt - return : open -a iTerm
+# Division of labor across tools:
+#   - Rectangle Pro  → window snapping (Ctrl+Opt+Cmd+* family, SizeUp keymap)
+#   - skhd (this)    → one keystroke per app via right-cmd (rcmd) + letter
+#   - Alfred         → Cmd+Space typed launch / fuzzy search
+#   - AltTab         → Opt+Tab window-level switcher with thumbnails
+#
+# Why right-cmd: macOS apps almost never bind right-cmd as distinct from cmd,
+# so it gives us a fresh modifier namespace with zero collisions. `open -a`
+# focuses the app if running, launches it otherwise.
+
+# ── Browsers ──────────────────────────────────────────────────────────────
+rcmd - b : open -a "Brave Browser"
+rcmd - s : open -a "Safari"
+
+# ── Terminals / editors ───────────────────────────────────────────────────
+rcmd - t : open -a "iTerm"
+rcmd - v : open -a "Visual Studio Code"
+rcmd - x : open -a "Xcode"
+
+# ── AI / writing ──────────────────────────────────────────────────────────
+rcmd - c : open -a "Claude"
+rcmd - n : open -a "Notes"
+rcmd - o : open -a "Obsidian"
+
+# ── Comms ─────────────────────────────────────────────────────────────────
+rcmd - m : open -a "Messages"
+rcmd - l : open -a "Slack"
+rcmd - z : open -a "zoom.us"
+
+# ── Productivity ──────────────────────────────────────────────────────────
+rcmd - d : open -a "Todoist"
+rcmd - f : open -a "Finder"
+rcmd - p : open -a "1Password 7"
+rcmd - i : open -a "Linear"
+
+# ── Music / system ────────────────────────────────────────────────────────
+rcmd - 9 : open -a "Music"
+rcmd - 0 : open -a "System Settings"
