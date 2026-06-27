@@ -14,6 +14,7 @@ contents, monkeypatching ``os.execvp`` so nothing actually launches.
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -691,6 +692,43 @@ def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
     servers = json.loads(Path(mcp_path).read_text())["mcpServers"]
     assert set(servers) == {"tilth", "code-review-graph", "context7"}
 
+
+def _assert_real_tight_codex_profile(name: str, prompt_phrase: str, monkeypatch, tmp_path):
+    _hermetic_dotenv(monkeypatch, tmp_path)
+    pdir = find_profile_dir(name)
+    assert pdir is not None, f"real profiles/{name} not found"
+    m = parse_manifest(pdir)
+
+    profile_text = (pdir / "profile.yaml").read_text()
+    assert "registries:" not in profile_text
+    assert "skills:" not in profile_text
+    assert m.isolated is True
+    assert m.system_prompt == "AGENTS.md"
+    assert [mcp["name"] for mcp in m.mcps] == ["tilth"]
+    assert m.skills == []
+    assert m.agents == []
+
+    _, env = overlay.build_isolated_launch(m, pdir, "codex")
+    cfg = tomllib.loads((Path(env["CODEX_HOME"]) / "config.toml").read_text())
+    assert cfg["model_instructions_file"] == str(pdir / "AGENTS.md")
+    assert set(cfg["mcp_servers"]) == {"tilth"}
+    assert cfg["mcp_servers"]["tilth"] == {
+        "command": "tilth",
+        "args": ["--mcp", "--edit"],
+    }
+    assert prompt_phrase in (pdir / "AGENTS.md").read_text()
+
+
+def test_real_codex_plan_profile_is_tilth_only(monkeypatch, tmp_path):
+    _assert_real_tight_codex_profile(
+        "codex-plan", "planning and spec work", monkeypatch, tmp_path
+    )
+
+
+def test_real_codex_code_profile_is_tilth_only(monkeypatch, tmp_path):
+    _assert_real_tight_codex_profile(
+        "codex-code", "focused implementation", monkeypatch, tmp_path
+    )
 
 def test_real_todo_profile_is_closed_todoist_world(monkeypatch, tmp_path):
     """The shipped todo profile must be a closed world: the ONLY MCP is

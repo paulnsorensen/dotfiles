@@ -1,0 +1,9 @@
+# codex-plan — tight Codex planning/spec profile.
+name: codex-plan
+description: Tight Codex planning and spec work
+isolated: true
+system_prompt: AGENTS.md
+mcps:
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]

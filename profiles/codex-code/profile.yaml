@@ -1,0 +1,9 @@
+# codex-code — tight Codex implementation profile.
+name: codex-code
+description: Tight Codex focused implementation
+isolated: true
+system_prompt: AGENTS.md
+mcps:
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]
