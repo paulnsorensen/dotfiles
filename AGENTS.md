@@ -98,3 +98,5 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 - `zsh/` files source in `zshrc` order — a new file needs a `zshrc` source line at the right point (completions must load before `fzf.zsh`).
 - Reference docs go in `reference/` (gitignored, not synced).
 - `git commit --no-verify` only for rare temporary prek overrides (see `prek.toml`).
+
+@RTK.md

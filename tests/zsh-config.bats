@@ -70,6 +70,20 @@ teardown() {
     grep -q "alias zrl=" "$aliases_file"
 }
 
+@test "codex profile shortcuts launch tight profiles" {
+    local claude_file="$REAL_DOTFILES_DIR/zsh/claude.zsh"
+
+    grep -Fxq 'cxp() { dots profile launch codex codex-plan "$@"; }' "$claude_file"
+    grep -Fxq 'cxc() { dots profile launch codex codex-code "$@"; }' "$claude_file"
+}
+
+@test "codex profile shortcuts pass through arguments" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "dots() { print -r -- \"\$*\"; }; source '$REAL_DOTFILES_DIR/zsh/claude.zsh'; cxp --sandbox workspace; cxc --model gpt-5"
+
+    assert_success
+    [[ "$output" == $'profile launch codex codex-plan --sandbox workspace\nprofile launch codex codex-code --model gpt-5' ]]
+}
 @test "completion.zsh has cdd completion" {
     local completion_file="$REAL_DOTFILES_DIR/zsh/completion.zsh"
 

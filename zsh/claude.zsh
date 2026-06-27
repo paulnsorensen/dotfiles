@@ -112,6 +112,10 @@ ccp() {
     dots profile launch claude "$@"
 }
 
+# Tight Codex profile shortcuts.
+cxp() { dots profile launch codex codex-plan "$@"; }
+cxc() { dots profile launch codex codex-code "$@"; }
+
 # Copilot CLI launch wrapper — injects the canonical allow/deny lists as
 # --allow-tool / --deny-tool flags (lever 1). Copilot has no config-file
 # surface for per-command rules, so the rules only apply when Copilot is
