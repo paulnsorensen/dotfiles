@@ -162,6 +162,88 @@ def _write_settings(manifest: Manifest, scratch: Path) -> Path | None:
     return path
 
 
+def _collect_plugin_skills(manifest: Manifest) -> list[tuple[str, Path]]:
+    """Resolve ``(name, source_dir)`` for every skill that should ride into the
+    closed world via the generated ``--plugin-dir``.
+
+    Two origins, one destination:
+
+    - **``path:`` skills** are copied from the profile's own tree
+      (``<_source_dir>/<path>``) — always available, no network.
+    - **``source:`` skills** were fetched to the global ``skills`` CLI store by
+      the install half of ``ap launch``; their folders are resolved from the
+      lockfile (:func:`fetch.source_skill_names`) and copied from
+      ``~/.agents/skills/<name>``. Absent from the store (offline / staged
+      install / lockfile drift) → silently skipped, so the launch degrades to
+      the local skills rather than failing.
+
+    Native-plugin skills are excluded (the plugin delivers them itself)."""
+    from agent_profile.fetch import (
+        group_external_sources,
+        installed_skill_dir,
+        source_skill_names,
+    )
+
+    out: list[tuple[str, Path]] = []
+    for s in manifest.skills:
+        if not isinstance(s, dict) or s.get("_from_native_plugin"):
+            continue
+        path = s.get("path")
+        if path:
+            out.append((s["name"], Path(s["_source_dir"]) / path))
+
+    for source, names, _pin in group_external_sources(manifest.skills):
+        for name in source_skill_names(source, names):
+            out.append((name, installed_skill_dir(name)))
+
+    return out
+
+
+def _write_skills_plugin(manifest: Manifest, scratch: Path) -> Path | None:
+    """Project the profile's skills into a scratch plugin tree so a closed-world
+    claude launch can load them.
+
+    ``--setting-sources ""`` strips the user/project setting sources, which is
+    exactly where skills live (``~/.claude/skills/<name>`` for the renderer's
+    ``path:`` copies and ``~/.agents/skills/<name>`` for the ``skills`` CLI's
+    ``source:`` fetches). Without a delivery channel those skills are invisible
+    to the isolated session — MCPs, the system prompt and permissions each have
+    a closed-world channel, but skills did not. A ``--plugin-dir`` tree loads
+    its skills regardless of setting sources (it is how the ``todo`` profile
+    ships ``todoist-flow``), so every resolved skill is copied under
+    ``<scratch>/skills-plugin/skills/<name>/`` and surfaced via ``--plugin-dir``.
+
+    Returns the plugin dir, or ``None`` when no skill resolves to a real source
+    directory (so no empty ``--plugin-dir`` is emitted)."""
+    skills = [(name, src) for name, src in _collect_plugin_skills(manifest) if src.is_dir()]
+    if not skills:
+        return None
+
+    plugin_dir = scratch / "skills-plugin"
+    meta_dir = plugin_dir / ".claude-plugin"
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    (meta_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": f"{manifest.name}-skills",
+                "description": f"Closed-world skills for the '{manifest.name}' profile",
+                "version": "0.0.0",
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+    for name, src in skills:
+        dest = plugin_dir / "skills" / name
+        if dest.exists():
+            continue  # first writer wins (path: before source:); no clobber
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dest)
+
+    return plugin_dir
+
+
 def _build_isolated_claude(
     manifest: Manifest,
     profile_dir: Path,
@@ -182,6 +264,7 @@ def _build_isolated_claude(
         --tools <csv>                          (when tools declared)
         --append-system-prompt-file <profile>/<system_prompt>  (when declared)
         --settings <gen>                       (when permissions/enabledPlugins set)
+        --plugin-dir <gen>                     (when local path: skills declared)
         <extra_args...>
     """
     if scratch is None:
@@ -209,6 +292,13 @@ def _build_isolated_claude(
     settings_path = _write_settings(manifest, scratch)
     if settings_path is not None:
         flags += ["--settings", str(settings_path)]
+
+    # Closed-world skill delivery: --setting-sources "" hides the rendered
+    # skill trees, so the profile's path: and source: skills ride in via a
+    # generated --plugin-dir (which loads regardless of setting sources).
+    skills_plugin = _write_skills_plugin(manifest, scratch)
+    if skills_plugin is not None:
+        flags += ["--plugin-dir", str(skills_plugin)]
 
     # extra_args expand ${VAR} from the process env (DOTFILES_DIR et al.)
     # then .env, matching the retired launch.zsh which used $DOTFILES_DIR

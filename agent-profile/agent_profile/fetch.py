@@ -40,6 +40,7 @@ A ``runner`` callable is injected so the fetch is unit-testable without spawning
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -179,3 +180,79 @@ def external_skills(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
     skill list. ``path:`` (local-tree) items are excluded — they are copied by
     the renderers, not fetched."""
     return [s for s in skills if s.get("source")]
+
+
+def group_external_sources(
+    skills: list[dict[str, Any]],
+) -> list[tuple[str, list[str] | None, str | None]]:
+    """Group ``source:`` skill items by repo, preserving first-seen order.
+
+    Returns ``[(source, names, pin)]`` where ``names`` is ``None`` for a bare
+    ``source:`` (install every skill = ``--skill '*'``, which wins over any
+    explicit names from sibling items) and a sorted list otherwise; ``pin`` is
+    the per-source git ref. This is the single definition of the grouping rule
+    shared by the install fetch (:func:`cli._fetch_external_skills`) and the
+    closed-world delivery (:func:`overlay._write_skills_plugin`) so the two can
+    never drift on what a source contributes."""
+    order: list[str] = []
+    groups: dict[str, dict[str, Any]] = {}
+    for skill in external_skills(skills):
+        source = skill["source"]
+        if source not in groups:
+            groups[source] = {"names": set(), "all": False, "pin": None}
+            order.append(source)
+        g = groups[source]
+        name = skill.get("name")
+        if name:
+            g["names"].add(name)
+        else:
+            g["all"] = True
+        if skill.get("pin"):
+            g["pin"] = skill["pin"]
+    return [
+        (s, None if groups[s]["all"] else sorted(groups[s]["names"]), groups[s]["pin"])
+        for s in order
+    ]
+
+
+# Global skill store written by ``npx skills add -g``: each skill folder lives
+# at ``<store>/skills/<name>/`` with provenance recorded in
+# ``<store>/.skill-lock.json`` (``skills.<name>.source`` = the ``owner/repo``).
+SKILL_STORE = Path.home() / ".agents"
+
+
+def installed_skill_dir(name: str, store: Path | None = None) -> Path:
+    """Absolute path of a globally-installed skill folder in the ``skills`` CLI
+    store. ``store`` resolves at call time (so the module-level ``SKILL_STORE``
+    stays patchable in tests). Existence is the caller's to check."""
+    return (store or SKILL_STORE) / "skills" / name
+
+
+def source_skill_names(
+    source: str, names: list[str] | None, store: Path | None = None
+) -> list[str]:
+    """Resolve the installed skill folder names that ``source`` contributed,
+    from the ``skills`` CLI lockfile (``<store>/.skill-lock.json``).
+
+    ``names`` restricts to an explicit subset (a ``source:`` item that named
+    specific skills); ``None`` returns every skill the lockfile attributes to
+    ``source`` (a bare ``source:`` = ``--skill '*'``). Returns ``[]`` when the
+    lockfile is absent/unreadable or attributes nothing to ``source`` — the
+    caller degrades (no closed-world delivery for that source) rather than
+    crashing the launch."""
+    lock = (store or SKILL_STORE) / ".skill-lock.json"
+    try:
+        entries = json.loads(lock.read_text())["skills"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    if not isinstance(entries, dict):
+        return []
+    resolved = [
+        n
+        for n, meta in entries.items()
+        if isinstance(meta, dict) and meta.get("source") == source
+    ]
+    if names is not None:
+        wanted = set(names)
+        resolved = [n for n in resolved if n in wanted]
+    return sorted(resolved)
