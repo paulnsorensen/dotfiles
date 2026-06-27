@@ -21,10 +21,6 @@
 sources:
   paulnsorensen/easy-cheese:
     description: Portable agent skills toolkit — mold, cook, press, age, cure, melt, plus cheez-* tilth-backed code intelligence
-  tavily-ai/skills:
-    description: Official Tavily skills — search, extract, crawl, map, research, dynamic-search, plus tavily-cli and best-practices
-  # NOTE: paulnsorensen/skillz-that-grillz was restructured into a Claude plugin
-  # marketplace (.claude-plugin/marketplace.json; skills nested under
-  # plugins/*/skills/). It no longer fits the flat skills/<name>/ convention this
-  # registry installs via `npx skills add`. Consume it through the plugin
-  # registry instead, not here.
+  paulnsorensen/skillz-that-grillz:
+    description: Other useful skills
+    harnesses: [claude]

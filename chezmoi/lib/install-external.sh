@@ -5,6 +5,8 @@
 # Reads SKILL_HARNESSES from .env (space-separated `skills`-CLI agent IDs, e.g.
 # "claude-code cursor github-copilot codex") and installs the skills from each
 # source repo in the given registry into every harness at user (global) scope.
+# A per-source `harnesses:` list (ap harness names, e.g. [claude]) restricts
+# installation to only those harnesses, overriding SKILL_HARNESSES for that entry.
 #
 # Why `npx skills` (the Vercel `skills` CLI) over `gh skill install`: gh fetched
 # every file of every skill via individual GitHub blob-API calls — files ×
@@ -167,6 +169,8 @@ skill_flags() {
 
 # Install every skill from one source repo into all harnesses in a single
 # `npx skills add` (one shallow clone, repeated --agent for the harnesses).
+# If the registry entry has a `harnesses:` list (ap harness names, e.g. [claude]),
+# only those harnesses are targeted; otherwise falls back to all SKILL_HARNESSES.
 install_source() {
     local repo="$1" pin="$2"
     local spec="$repo"
@@ -178,10 +182,43 @@ install_source() {
         skill_args+=("$tok")
     done < <(skill_flags "$repo")
 
+    # Per-repo harness restriction: if `harnesses:` is set, build a filtered
+    # agent-flags array from the ap harness names (mapped via skill_agents.txt).
+    # Falls back to the global AGENT_FLAGS when unset.
+    local repo_agent_flags=("${AGENT_FLAGS[@]}")
+    local repo_supported="$SUPPORTED_HARNESSES"
+    local raw_harnesses
+    raw_harnesses=$(yq -o=json ".sources.\"$repo\".harnesses // []" "$REGISTRY_FILE" | jq -r '.[]?')
+    if [[ -n "$raw_harnesses" ]]; then
+        repo_agent_flags=()
+        repo_supported=""
+        while IFS= read -r ap_name; do
+            [[ -z "$ap_name" ]] && continue
+            local cli_id
+            cli_id=$(awk -F= -v key="$ap_name" \
+                '!/^[[:space:]]*#/ && NF==2 { gsub(/[[:space:]]/, "", $1); gsub(/[[:space:]]/, "", $2); if ($1 == key) print $2 }' \
+                "$SKILL_AGENTS_FILE")
+            if [[ -z "$cli_id" ]]; then
+                echo -e "    ${YELLOW}Skipping unknown harness '$ap_name' for $repo (not in skill_agents.txt)${NC}" >&2
+                continue
+            fi
+            if [[ " $KNOWN_AGENTS" != *" $cli_id "* ]]; then
+                echo -e "    ${YELLOW}Skipping '$ap_name' ($cli_id) for $repo (not a supported skills CLI agent)${NC}" >&2
+                continue
+            fi
+            repo_agent_flags+=(--agent "$cli_id")
+            repo_supported="${repo_supported:+$repo_supported }$cli_id"
+        done <<< "$raw_harnesses"
+        if (( ${#repo_agent_flags[@]} == 0 )); then
+            echo -e "    ${YELLOW}No valid harnesses for $repo — skipping.${NC}"
+            return 0
+        fi
+    fi
+
     # `--yes` runs npx non-interactively (auto-installs the `skills` CLI); the
     # CLI's own `-y` skips its scope/confirmation prompts. `-g` = user scope,
     # `--copy` copies files (vs symlinking) to match the old overwrite contract.
-    local args=(--yes skills add "$spec" "${skill_args[@]}" "${AGENT_FLAGS[@]}" -g --copy -y)
+    local args=(--yes skills add "$spec" "${skill_args[@]}" "${repo_agent_flags[@]}" -g --copy -y)
 
     if $DRY_RUN; then
         echo -e "    ${BLUE}[dry-run]${NC} npx ${args[*]}"
@@ -190,9 +227,9 @@ install_source() {
 
     local output
     if output=$(npx "${args[@]}" 2>&1); then
-        echo -e "    ${GREEN}✓${NC} $repo → $SUPPORTED_HARNESSES"
+        echo -e "    ${GREEN}✓${NC} $repo → $repo_supported"
     else
-        echo -e "    ${RED}✗${NC} $repo → $SUPPORTED_HARNESSES"
+        echo -e "    ${RED}✗${NC} $repo → $repo_supported"
         echo x >> "$FAIL_COUNTER"
         if [[ -n "$output" ]]; then
             echo "$output" | tail -5 | sed -e "s/^/      /"

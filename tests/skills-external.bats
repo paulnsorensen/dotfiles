@@ -510,6 +510,74 @@ EOF
     assert_success
 }
 
+# ─── per-repo harnesses: filtering ────────────────────────────────────
+
+@test "skill sync: per-repo harnesses: restricts install to that subset" {
+    # Source declares harnesses: [claude] (ap name) → only claude-code gets
+    # the --agent flag, even though SKILL_HARNESSES includes cursor too.
+    write_registry "acme/widgets" "    harnesses:
+      - claude"
+    write_env "claude-code cursor"
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "--agent claude-code"
+    run grep -F 'agent cursor' <<< "$output"
+    assert_failure
+}
+
+@test "skill sync: source without harnesses: still installs into all SKILL_HARNESSES" {
+    write_registry "acme/widgets"
+    write_env "claude-code cursor"
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "--agent claude-code"
+    assert_output_contains "--agent cursor"
+}
+
+@test "skill sync: unknown ap harness name in harnesses: warns and skips that harness" {
+    write_registry "acme/widgets" "    harnesses:
+      - claude
+      - bogus-ap-name"
+    write_env "claude-code"
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "Skipping unknown harness 'bogus-ap-name'"
+    assert_output_contains "--agent claude-code"
+}
+
+@test "skill sync: all-invalid harnesses: entries skips that source entirely (exit 0)" {
+    write_registry "acme/widgets" "    harnesses:
+      - not-a-real-harness"
+    write_env "claude-code"
+
+    run_sync
+    assert_success
+    assert_output_contains "No valid harnesses for acme/widgets"
+    # Source was skipped — no skills add call for it.
+    run grep -c 'skills add acme/widgets' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+}
+
+@test "skill sync: harnesses: uses ap name → cli-id mapping (claude → claude-code)" {
+    write_registry "acme/widgets" "    harnesses:
+      - claude"
+    write_env "claude-code codex cursor"
+
+    run_sync
+    assert_success
+    # npx was called with claude-code, not the raw ap name 'claude'.
+    run grep -F -- '--agent claude-code' "$NPX_LOG"
+    assert_success
+    # The other harnesses were not passed.
+    run grep -F -- '--agent codex' "$NPX_LOG"
+    assert_failure
+    run grep -F -- '--agent cursor' "$NPX_LOG"
+    assert_failure
+}
+
 @test "registry.yaml: real registry parses cleanly with yq" {
     run yq '.sources | keys' "$REAL_DOTFILES_DIR/skills/_registry.yaml"
     assert_success
