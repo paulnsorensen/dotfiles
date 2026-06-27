@@ -1,16 +1,10 @@
 # Plugin Dev Profile
 
-This session is for building and iterating on Claude Code plugins.
-Plugins live in `claude/plugins/local/<name>/` (local dev) or are
-installed via the registry at `claude/plugins/registry.yaml`.
+This session is for building and iterating on Claude Code plugins. Plugins live in `claude/plugins/local/<name>/` (local dev) or are installed via the registry at `claude/plugins/registry.yaml`.
 
 ## Why this profile exists
 
-Plugin dev needs heavy reference material (plugin SDK, hook events,
-MCP protocol, skill triggering rules) and cross-referencing against other
-plugins. The default session pulls in Todoist and web-search MCPs that
-distract from plugin authoring. This profile trims to navigation +
-external docs.
+Plugin dev needs heavy reference material (plugin SDK, hook events, MCP protocol, skill triggering rules) and cross-referencing against other plugins. This profile trims to navigation + external docs for plugin authoring.
 
 ## MCPs in scope
 
@@ -21,9 +15,16 @@ Defined in `mcp-scope.yaml` (registry-validated):
 - **context7** — `mcp__context7__*` — Claude Code plugin SDK, MCP spec, and related framework docs.
 - **hallouminate** — `mcp__hallouminate__*` — per-repo markdown wiki: semantic search + LLM-authored notes for grounding plugin design decisions.
 
-Web search / task / design MCPs are out of scope. If you need GitHub code
-search for reference plugin implementations, use `gh search code` directly
-or via the `/gh` skill.
+For reference plugin implementations, use `gh search code` directly or via the `/gh` skill.
+
+## Working standards
+
+- **Read before you write.** Read the plugin's manifest, existing skills, and hooks before changing wiring.
+- **Smallest change that satisfies the ask.** No speculative scaffolding; every changed line traces to the request.
+- **Calibrate claims.** Tag opinions `<certain>` / `<speculative>` / `<don't know>`.
+- **Don't fake completion.** Test skills by actually invoking them before declaring done.
+- **Be succinct.** Answer → minimal support → stop.
+- **Use tilth (`mcp__tilth__*`)** for reading and searching inside `claude/plugins/`.
 
 ## Preferred skills
 
@@ -54,10 +55,10 @@ or via the `/gh` skill.
 - **Skills over agents** unless the task needs sub-agent nesting (Claude Code only supports 1 level of sub-agent nesting, so orchestrators must be skills).
 - **Descriptions matter.** Skill/agent triggering is description-driven — weak descriptions mean the skill never fires. Run `skill-reviewer` on fresh skills.
 - **MCP tools in permissions.** If a plugin provides MCP tools, add `mcp__plugin_<name>__*` to `permissions.allow` in the user settings.
-- **Scope your hooks.** PreToolUse hooks that match `*` are a footgun — scope by tool name.
+- **Scope your hooks.** PreToolUse hooks that match `*` are easy to misuse — scope by tool name.
 
 ## Hard constraints
 
 - Don't hand-edit `~/.claude/plugins/` — that's Claude's cache. Work in the dotfiles repo and `dots sync`.
-- Plugins directory is **not** symlinked via `.sync` (Claude uses it as cache); the registry is the source of truth.
+- The plugins directory is **not** symlinked via `.sync` (Claude uses it as cache); the registry is the source of truth.
 - Test skills by actually invoking them (`Skill` tool) before declaring done — a "looks right" skill that never triggers is worthless.

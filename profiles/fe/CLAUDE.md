@@ -1,14 +1,10 @@
 # Frontend Profile
 
-This is a closed-world frontend session: a curated MCP set focused on FE work (the default dev surface is not loaded).
+A closed-world frontend session: a curated MCP set focused on FE work, plus the claude.ai Figma connector for design-to-code flow.
 
 ## Why this profile exists
 
-Frontend work lives at the intersection of design systems, browser
-behavior, and library docs that change fast. The default session has too
-much surface (Todoist, serper, etc.) and too little FE-specific tooling
-(no shadcn, no Figma). This profile narrows the MCP set to what actually
-helps and pulls in the claude.ai Figma connector for design-to-code flow.
+Frontend work lives at the intersection of design systems, browser behavior, and library docs that change fast. This profile narrows the MCP set to what actually helps that work — shadcn, Figma, browser verification, and FE-relevant docs.
 
 ## MCPs in scope
 
@@ -20,9 +16,16 @@ Defined in `profile.yaml` (closed world — `--strict-mcp-config`):
 - **code-review-graph** — `mcp__code-review-graph__*` — blast radius when refactoring shared components.
 - **tavily** — `mcp__tavily__*` — pattern research ("how do people build X in Next.js 15?").
 - **Playwright (plugin)** — `mcp__plugin_playwright_playwright__*` — browser verification.
-- **claude.ai Figma** — `mcp__claude_ai_Figma__*` — design context when user shares a figma.com URL.
+- **claude.ai Figma** — `mcp__claude_ai_Figma__*` — design context when the user shares a figma.com URL.
 
-Anything not in this list (Todoist, serper, etc.) is intentionally out of scope.
+## Working standards
+
+- **Read before you write.** Reach for existing components and shared utilities before adding new ones.
+- **Smallest change that satisfies the ask.** No speculative abstraction or "while I'm here" cleanup; every changed line traces to the request.
+- **Calibrate claims.** Tag opinions `<certain>` / `<speculative>` / `<don't know>`.
+- **Don't fake completion.** Type-check alone isn't feature-correctness — verify in a browser before claiming done.
+- **Be succinct.** Answer → minimal support → stop.
+- **Use tilth (`mcp__tilth__*`)** for AST-aware read/search when navigating components.
 
 ## Preferred tools for FE work
 
@@ -38,7 +41,7 @@ Anything not in this list (Todoist, serper, etc.) is intentionally out of scope.
 
 - After UI/FE edits, always start the dev server and verify in a browser via Playwright before claiming done. Type-check alone is not feature-correctness.
 - Prefer `shadcn` components over raw HTML/JSX. Check `mcp__shadcn__list_items_in_registries` first.
-- When user shares a Figma URL, extract `fileKey` and `nodeId` and call `get_design_context` immediately.
+- When the user shares a Figma URL, extract `fileKey` and `nodeId` and call `get_design_context` immediately.
 - For design tokens: map Figma CSS variables to the project's existing token system; don't create new ones unless missing.
 - Mobile-first CSS by default.
 - Accessibility is non-negotiable: semantic HTML, ARIA labels, keyboard nav, focus states.
