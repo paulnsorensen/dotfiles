@@ -52,6 +52,8 @@ print_cheatsheet() {
     row "ccr [args]"          "cc --resume"
     row "ccs"                 "fzf-jump to a running claude session"
     row "ccp <name>"          "launch a scoped profile (ccp list)"
+    row "cxp [args]"          "codex tight planning profile"
+    row "cxc [args]"          "codex tight coding profile"
 
     hdr "Worktrees"
     row "ccw"                 "fzf-pick an existing worktree to resume"

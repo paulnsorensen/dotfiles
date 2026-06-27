@@ -78,6 +78,7 @@ teardown() {
 }
 
 @test "codex profile shortcuts pass through arguments" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     run zsh -c "dots() { print -r -- \"\$*\"; }; source '$REAL_DOTFILES_DIR/zsh/claude.zsh'; cxp --sandbox workspace; cxc --model gpt-5"
 
     assert_success
