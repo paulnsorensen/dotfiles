@@ -111,11 +111,11 @@ def claude_agent_frontmatter(item: dict[str, Any]) -> dict[str, str]:
     resolves it at user scope (``~/.claude/agents/``, priority 4), which wins
     over the same agent in a plugin tree (priority 5). So the shared file is
     the one Claude actually honors and must carry the full Claude metadata,
-    not a model-neutral subset: ``model`` (claude), ``color``, ``effort`` and
-    ``skills`` are all honored sub-agent frontmatter fields. Cursor reads the
-    same file and ignores the fields it does not recognise; a Cursor-specific
-    model still overrides via ``.cursor/agents/<n>.md`` when ``models.cursor``
-    is set.
+    not a model-neutral subset: ``model`` (claude), ``color``, ``effort``,
+    ``maxTurns`` and ``skills`` are all honored sub-agent frontmatter fields.
+    Cursor reads the same file and ignores the fields it does not recognise;
+    a Cursor-specific model still overrides via ``.cursor/agents/<n>.md`` when
+    ``models.cursor`` is set.
 
     Values are pre-stringified so :func:`_frontmatter_lines` emits clean YAML:
     ``tools`` as a CSV string, ``disallowedTools`` / ``skills`` as ``[a, b]``
@@ -139,6 +139,9 @@ def claude_agent_frontmatter(item: dict[str, Any]) -> dict[str, str]:
     effort = item.get("effort") or ""
     if effort:
         fm["effort"] = effort
+    max_turns = item.get("maxTurns")
+    if max_turns:
+        fm["maxTurns"] = str(max_turns)
     skills = item.get("skills") or []
     if skills:
         fm["skills"] = f"[{', '.join(skills)}]"

@@ -8,7 +8,7 @@
 # Bodies are instruction-only Markdown at body_path (frontmatter stripped);
 # all metadata lives here. tools/disallowedTools are LISTS (renderers join
 # to CSV for claude/cursor and derive sandbox/permission for codex/opencode).
-# models is per-harness; color/effort/skills are Claude-honored fields.
+# models is per-harness; color/effort/maxTurns/skills are Claude-honored fields.
 agents:
   fromage-age-arch:
     description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
@@ -16,6 +16,7 @@ agents:
       claude: sonnet
       codex: gpt-5-codex
       cursor: claude-sonnet
+    maxTurns: 20
     disallowedTools:
     - Edit
     - Write
@@ -32,6 +33,7 @@ agents:
       claude: haiku
       codex: gpt-5-mini
       cursor: claude-haiku
+    maxTurns: 20
     disallowedTools:
     - Edit
     - Write
@@ -50,6 +52,7 @@ agents:
       claude: sonnet
       codex: gpt-5-codex
       cursor: claude-sonnet
+    maxTurns: 20
     tools:
     - Read
     - Write
@@ -69,6 +72,7 @@ agents:
       claude: sonnet
       codex: gpt-5-codex
       cursor: claude-sonnet
+    maxTurns: 20
     disallowedTools:
     - Write
     - Edit
@@ -84,6 +88,7 @@ agents:
       claude: sonnet
       codex: gpt-5-codex
       cursor: claude-sonnet
+    maxTurns: 20
     disallowedTools:
     - Edit
     - NotebookEdit
@@ -98,6 +103,7 @@ agents:
       claude: sonnet
       codex: gpt-5-codex
       cursor: claude-sonnet
+    maxTurns: 20
     disallowedTools:
     - Edit
     - Write
@@ -114,6 +120,7 @@ agents:
       claude: sonnet
       codex: gpt-5-codex
       cursor: claude-sonnet
+    maxTurns: 20
     tools:
     - Read
     - Grep
@@ -131,6 +138,7 @@ agents:
       claude: haiku
       codex: gpt-5-mini
       cursor: claude-haiku
+    maxTurns: 20
     tools:
     - Read
     - Write
@@ -147,6 +155,7 @@ agents:
       claude: haiku
       codex: gpt-5-mini
       cursor: claude-haiku
+    maxTurns: 20
     tools:
     - Bash
     - Read
@@ -166,6 +175,7 @@ agents:
       claude: haiku
       codex: gpt-5-mini
       cursor: claude-haiku
+    maxTurns: 20
     tools:
     - Bash
     - Read
@@ -180,6 +190,7 @@ agents:
       claude: sonnet
       codex: gpt-5-codex
       cursor: claude-sonnet
+    maxTurns: 20
     tools:
     - Bash
     - Read
@@ -206,6 +217,7 @@ agents:
       claude: sonnet
       codex: gpt-5-mini
       opencode: inherit
+    maxTurns: 15
     disallowedTools:
     - Edit
     - Write
@@ -222,6 +234,7 @@ agents:
       claude: sonnet
       codex: gpt-5-mini
       opencode: inherit
+    maxTurns: 10
     disallowedTools:
     - Edit
     - NotebookEdit
@@ -238,6 +251,7 @@ agents:
       claude: opus
       codex: gpt-5
       opencode: inherit
+    maxTurns: 10
     disallowedTools:
     - Edit
     - Write
@@ -258,6 +272,7 @@ agents:
       claude: sonnet
       codex: gpt-5-codex
       opencode: inherit
+    maxTurns: 15
     disallowedTools:
     - Agent
     color: green

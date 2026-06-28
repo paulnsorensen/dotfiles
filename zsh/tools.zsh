@@ -45,3 +45,38 @@ fi
 
 # ─── vaudeville (SLM hook enforcement for Claude Code) ───────────────────
 export VAUDEVILLE_DEBUG="${VAUDEVILLE_DEBUG:-0}"
+
+# ─── opencode profiles (isolated config trees via XDG_CONFIG_HOME) ──────────
+# Each profile is a directory under OPENCODE_PROFILES_DIR with its own
+# opencode/ tree (opencode.json, agents/, skills/, plugins/, themes/).
+# The profile is activated by setting XDG_CONFIG_HOME so opencode reads a
+# completely separate config — different MCPs, permissions, agents, everything.
+#
+# Usage:
+#   octight [args...]     Launch opencode with the 'tight' profile
+#   ocp <name> [args...]  Launch opencode with a named profile
+#   oclist                List available profiles
+#
+# Creating a new profile:
+#   mkdir -p ~/.config/opencode-profiles/<name>/opencode/{agents,skills,plugins,themes}
+#   # then write opencode.json, agents/*.md, etc.
+
+OPENCODE_PROFILES_DIR="${OPENCODE_PROFILES_DIR:-$HOME/.config/opencode-profiles}"
+
+ocp() {
+    local profile="$1"
+    [[ -z "$profile" ]] && { echo "usage: ocp <profile> [args...]" >&2; return 1; }
+    shift
+    local profile_dir="$OPENCODE_PROFILES_DIR/$profile/opencode"
+    if [[ ! -d "$profile_dir" ]]; then
+        echo "opencode profile '$profile' not found at $profile_dir" >&2
+        local available=($(ls "$OPENCODE_PROFILES_DIR" 2>/dev/null))
+        [[ ${#available[@]} -gt 0 ]] && echo "available: ${available[*]}" >&2
+        return 1
+    fi
+    XDG_CONFIG_HOME="$OPENCODE_PROFILES_DIR/$profile" opencode "$@"
+}
+
+# Shortcuts for specific profiles
+alias octight='ocp tight'
+alias oclist='ls "$OPENCODE_PROFILES_DIR" 2>/dev/null || echo "no opencode profiles found"'
