@@ -29,7 +29,9 @@ class CompileError(Exception):
 class _Renderer(Protocol):
     name: str
 
-    def render(self, manifest: Any, target: Path) -> list[str]:
+    def render(
+        self, manifest: Any, target: Path, logical_root: Path | None = None
+    ) -> list[str]:
         raise NotImplementedError
 
 
@@ -181,7 +183,11 @@ def compile_profile(
                     )
                 work = tmp_root / "work" / target.name / harness
                 _copy_tree(target_baseline, work)
-                renderer.render(manifest, work)
+                # Files render into the scratch `work` dir, but absolute deploy
+                # paths a renderer bakes into content (codex hooks.json) must
+                # point at where the fragment will be applied — the target's
+                # resolved root — not this ephemeral tempdir.
+                renderer.render(manifest, work, logical_root=target.resolved_root)
                 fragment_dir = fragments / target.name / harness
                 for rel in _changed_files(before, work):
                     src = work / rel

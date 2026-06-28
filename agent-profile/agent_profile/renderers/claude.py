@@ -91,7 +91,7 @@ class ClaudeRenderer:
     name = "claude"
     mcp_default = _MCP_DEFAULT
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
+    def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
         out: list[str] = []
         base = Path(str(target).rstrip("/"))
         profile = manifest.name

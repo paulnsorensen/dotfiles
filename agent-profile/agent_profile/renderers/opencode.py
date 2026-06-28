@@ -179,7 +179,7 @@ class OpencodeRenderer:
     name = "opencode"
     mcp_default = _OPENCODE_MCP_DEFAULT
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
+    def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
         """Render opencode's native subagent files (``<target>/agents/``),
         copy local skills into ``<target>/skills/``, then merge this
         profile's opencode MCPs + translated permissions into

@@ -113,7 +113,7 @@ class StubRenderer:
     def _merged_path(self, target: Path) -> Path:
         return Path(str(target).rstrip("/")) / f"{self.name}.json"
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
+    def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
         out: list[str] = []
         base = Path(str(target).rstrip("/"))
         for agent in manifest.agents:
