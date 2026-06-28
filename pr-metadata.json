@@ -1,4 +1,4 @@
 {
-  "title": "Reject compile profiles missing compile_targets",
-  "body": "## Summary\n- add compile target presence validation for `ap compile`\n- cover missing `compile_targets` with a CLI-level regression test\n\n## Test\n- `uv run --project agent-profile pytest agent-profile/tests/test_compile_target_presence.py`\n\nexpanded scope: agent-profile/agent_profile/cli.py \u2014 required to route `ap compile <profile>` through the validation before compilation"
+  "title": "Compile live profiles into harness fragments",
+  "body": "## Summary\n- add `ap compile <profile> --baseline <dir> --out <dir>` fragment compilation\n- write harness-scoped fragment directories and a compiled manifest with symbolic and resolved target roots\n- cover live profile compilation with the requested command-level test\n\n## Test\n- `uv run --project agent-profile pytest agent-profile/tests/test_compile_command.py`\n\nexpanded scope: agent-profile/agent_profile/cli.py \u2014 required to route `ap compile live --baseline <scratch> --out <cache>` to the compiler"
 }
