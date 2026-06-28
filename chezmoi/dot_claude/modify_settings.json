@@ -1,0 +1,101 @@
+#!/bin/sh
+# Make ~/.claude/settings.json repo-authoritative on every `chezmoi apply`.
+#
+#   stdin  = current live file contents (empty on a fresh machine)
+#   stdout = the new file contents chezmoi writes back
+#
+# Behaviour:
+#   * Repo-owned keys (model, effortLevel, env, hooks, sandbox, theme,
+#     editorMode, permissions.defaultMode, spinnerVerbs, ...) are overwritten
+#     from the committed authoritative source — repo wins, in-app drift such
+#     as a `/model` change is discarded.
+#   * ap-managed keys (permissions.allow, permissions.deny, enabledPlugins,
+#     extraKnownMarketplaces) are preserved from the live file and never
+#     clobbered. The authoritative source only SEEDS them on a fresh machine;
+#     `ap install global` re-asserts global@local + the local marketplace
+#     after this script runs, and the live values win on every later sync.
+#   * Any live key-path outside (authoritative ∪ ap-managed) is a key the app
+#     introduced. The script prints it and EXITS NON-ZERO, which halts
+#     `chezmoi apply` and leaves the live file untouched — so a new Claude Code
+#     key/format is surfaced (fold it into the source) instead of being
+#     silently clobbered.
+#
+# The authoritative source lives in the chezmoi source tree, not as a target:
+#   $CHEZMOI_SOURCE_DIR/lib/claude-settings-authoritative.json
+# `lib/` is .chezmoiignore'd, so chezmoi never deploys it to $HOME.
+
+set -eu
+
+AUTH="${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/lib/claude-settings-authoritative.json"
+
+live=$(cat)
+
+# Missing jq: don't corrupt the file. Keep the live copy if present, else emit
+# the authoritative source. jq is in packages.yaml, so this only guards an
+# unusual partial-bootstrap environment (mirrors the serena modify_ stance).
+if ! command -v jq >/dev/null 2>&1; then
+    if [ -n "$live" ]; then printf '%s' "$live"; else cat "$AUTH"; fi
+    exit 0
+fi
+
+if [ ! -f "$AUTH" ]; then
+    echo "modify_settings.json: authoritative source missing: $AUTH" >&2
+    exit 1
+fi
+
+# Fresh machine (empty stdin): emit the authoritative source verbatim.
+if [ -z "$live" ]; then
+    jq . "$AUTH"
+    exit 0
+fi
+
+# ── unknown-key gate ────────────────────────────────────────────────────────
+# A live key-path is "known" when its object-key signature (array indices
+# dropped, so a `/model` value change or an extra allowlist entry never counts
+# as a new key) is a path present in the authoritative source, OR it sits under
+# an ap-managed prefix. Anything else is an app-introduced key. We enumerate
+# every live node-path (not just scalar leaves) so a new key whose value is an
+# empty object/array or null — e.g. a future `{"newFeature":{}}` — is caught
+# too; the known side is built the same way, so the comparison is symmetric.
+unknown=$(
+    printf '%s' "$live" | jq -r --slurpfile auth "$AUTH" '
+        def sig: [ .[] | strings ];
+        ($auth[0]) as $a
+        | [ ["permissions","allow"], ["permissions","deny"],
+            ["enabledPlugins"], ["extraKnownMarketplaces"] ] as $ap
+        | ([ $a | paths | sig ] | unique) as $known
+        | [ paths | sig ]
+        | map(select(
+              . as $p
+              | (($known | any(. == $p)) | not)
+              and ([ $ap[] | . as $pre | ($p[0:($pre | length)] == $pre) ] | any | not)
+          ))
+        | unique
+        | map(join("."))
+        | .[]
+    '
+)
+
+if [ -n "$unknown" ]; then
+    {
+        echo "Claude settings.json has key-path(s) the repo does not know about:"
+        printf '%s\n' "$unknown" | sed 's/^/  + /'
+        echo
+        echo "Claude Code likely introduced these. Fold each into the authoritative"
+        echo "source (or the ap-managed allowlist), then re-run dots sync:"
+        echo "  $AUTH"
+    } >&2
+    exit 1
+fi
+
+# ── merge ───────────────────────────────────────────────────────────────────
+# Authoritative wins for class-a keys; the live file overlays the ap-managed
+# keys (live values win, source seeds them on a fresh machine).
+printf '%s' "$live" | jq --slurpfile auth "$AUTH" '
+    ($auth[0]) as $a
+    | $a
+    + { enabledPlugins:         (($a.enabledPlugins         // {}) + (.enabledPlugins         // {})) }
+    + { extraKnownMarketplaces: (($a.extraKnownMarketplaces // {}) + (.extraKnownMarketplaces // {})) }
+    + { permissions: ( $a.permissions
+                       + ( (.permissions // {}) | {allow, deny} | with_entries(select(.value != null)) ) ) }
+'
