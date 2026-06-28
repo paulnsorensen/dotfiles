@@ -26,7 +26,7 @@ def require_compile_targets(profile_dir: Path) -> dict[str, Any]:
 
     profile_path = profile_dir / "profile.yaml"
     data = yaml.safe_load(profile_path.read_text()) or {}
-    if "compile_targets" not in data:
+    if "compile_targets" not in data or not data["compile_targets"]:
         name = data.get("name") or profile_dir.name
         raise CompileTargetPresenceError(
             f"ap compile: profile '{name}' must define compile_targets"

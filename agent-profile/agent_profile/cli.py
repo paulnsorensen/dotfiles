@@ -74,7 +74,7 @@ Commands:
   path <name>                   Print profile source dir
   compile <name> --baseline <dir> --out <dir>
                                 Compile live profile fragments
-  install <name> [opts]         Render profile into current dir
+  install <name> [opts]         Deprecated; use dots sync or ap compile
   uninstall <name> [opts]       Remove a previously-installed profile
   launch <harness> [name] [..]  Install + exec the named harness CLI
   perms [opts]                  Write repo-level permission overlay (Claude + Codex)

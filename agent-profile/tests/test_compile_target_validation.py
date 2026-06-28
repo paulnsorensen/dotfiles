@@ -5,7 +5,7 @@ import pytest
 from agent_profile import cli
 from agent_profile.parse import parse_manifest
 
-from .compile_fixtures import live_profile_yaml, write_live_profile, write_minimal_includes
+from .compile_fixtures import write_live_profile, write_minimal_includes
 
 
 def _write_targets(env, compile_targets: dict) -> None:

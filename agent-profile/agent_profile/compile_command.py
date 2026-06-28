@@ -30,7 +30,7 @@ class _Renderer(Protocol):
     name: str
 
     def render(self, manifest: Any, target: Path) -> list[str]:
-        ...
+        raise NotImplementedError
 
 
 def _usage() -> str:

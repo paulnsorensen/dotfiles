@@ -3,7 +3,7 @@
 INSTALL_MIGRATION_GUIDANCE = (
     "ap install is deprecated and no longer performs deployment.\n"
     "Use `dots sync` for live deployment.\n"
-    "Use `ap compile <profile> --out <dir>` for staging."
+    "Use `ap compile <profile> --baseline <dir> --out <dir>` for staging."
 )
 
 
