@@ -14,6 +14,18 @@ VALID_COMPILE_HARNESSES = (
     "copilot",
 )
 
+# User-editable "merged" config files: each renderer reads, merges its managed
+# keys into, and rewrites these in place, so they carry hand-written user
+# content alongside generated config. They must be drift-checked against the
+# live file and never overwritten or deleted by ``ap apply-compiled``.
+MERGED_SETTINGS_BY_HARNESS: dict[str, tuple[str, ...]] = {
+    "claude": (".claude/settings.json",),
+    "codex": (".codex/config.toml",),
+    "opencode": ("opencode.json",),
+    "cursor": (".cursor/mcp.json",),
+    "copilot": (".copilot/mcp-config.json",),
+}
+
 
 @dataclass(frozen=True)
 class CompileTarget:

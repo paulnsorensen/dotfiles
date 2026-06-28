@@ -818,6 +818,13 @@ TOML
     export CONTEXT7_API_KEY="test-context7-key"
     export TAVILY_API_KEY="test-tavily-key"
 
+    # The base-profile render's drift gate is now wired: compiling `live` adds
+    # ap-managed permissions/marketplace/plugin keys absent from the chezmoi
+    # seed, which is reported as drift (ADR-003). A noninteractive apply blocks
+    # on that unless the override is set (spec acceptance 88/89), so accept it
+    # here the same way a noninteractive `dots sync --accept-agent-drift` would.
+    export DOTS_ACCEPT_AGENT_DRIFT=1
+
     run bash "$CHEZMOI_SYNC"
     assert_success
 

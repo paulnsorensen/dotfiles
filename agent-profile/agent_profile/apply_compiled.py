@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_profile.compiled_types import ApplyState
+from agent_profile.merged_settings_preservation import is_user_owned_merged
 
 DEFAULT_STATE_FILENAME = "apply-state.json"
 
@@ -129,6 +130,24 @@ def _managed_pairs(
     return pairs
 
 
+def _preserved_dests(data: dict[str, Any], roots: dict[str, Path]) -> set[str]:
+    """Resolved destination paths of user-owned merged settings to never delete.
+
+    A merged settings file previously applied as generated (clobber-copy) but
+    now marked ``generated=False`` would otherwise be reconciled out of the
+    prior apply state and deleted — destroying user content (ADR-001/spec 92).
+    """
+    preserved: set[str] = set()
+    for entry in data.get("files", []):
+        if not isinstance(entry, dict) or not is_user_owned_merged(entry):
+            continue
+        target = entry.get("target")
+        relative = entry.get("relative_path")
+        if target in roots and isinstance(relative, str):
+            preserved.add(str(roots[target] / relative))
+    return preserved
+
+
 def apply_compiled(
     manifest_path: Path, *, state_path: Path | None = None
 ) -> ApplyResult:
@@ -147,6 +166,7 @@ def apply_compiled(
     data = _read_manifest(manifest_path)
     roots = _target_roots(data)
     pairs = _managed_pairs(data, roots)
+    preserved = _preserved_dests(data, roots)
     prior = read_apply_state(state_path)
 
     copied: list[str] = []
@@ -161,7 +181,7 @@ def apply_compiled(
 
     deleted: list[str] = []
     for prior_path in prior.managed_files:
-        if prior_path in managed:
+        if prior_path in managed or prior_path in preserved:
             continue
         path = Path(prior_path)
         if path.is_file():

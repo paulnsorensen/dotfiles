@@ -17,8 +17,10 @@ from agent_profile.compiled_types import (
     CompiledFile,
     CompiledManifest,
     CompileTarget,
+    MERGED_SETTINGS_BY_HARNESS,
     VALID_COMPILE_HARNESSES,
 )
+from agent_profile.drift import FileComparison, compute_drift
 from agent_profile.parse import parse_manifest
 
 
@@ -142,6 +144,35 @@ def _copy_tree(src: Path, dst: Path) -> None:
         dst.mkdir(parents=True, exist_ok=True)
 
 
+def _is_merged_settings(harness: str, rel: str) -> bool:
+    """True when ``rel`` is a user-owned merged settings file for ``harness``."""
+    return rel in MERGED_SETTINGS_BY_HARNESS.get(harness, ())
+
+
+def _existing(path: Path) -> Path | None:
+    return path if path.is_file() else None
+
+
+def _merged_comparisons(
+    target: CompileTarget, harness: str, target_baseline: Path, work: Path
+) -> list[FileComparison]:
+    """Drift inputs for ``harness``'s merged settings under ``target``.
+
+    Compares the scratch chezmoi baseline, the live target file, and the
+    compiled (rendered) result for every merged settings file the harness owns.
+    """
+    return [
+        FileComparison(
+            target=target.name,
+            relative_path=rel,
+            baseline=_existing(target_baseline / rel),
+            live=_existing(target.resolved_root / rel),
+            compiled=_existing(work / rel),
+        )
+        for rel in MERGED_SETTINGS_BY_HARNESS.get(harness, ())
+    ]
+
+
 def _changed_files(before: Path, after: Path) -> list[Path]:
     changed: list[Path] = []
     for path in sorted(p for p in after.rglob("*") if p.is_file()):
@@ -169,6 +200,7 @@ def compile_profile(
     fragments.mkdir(parents=True, exist_ok=True)
 
     files: list[CompiledFile] = []
+    comparisons: list[FileComparison] = []
     with tempfile.TemporaryDirectory(prefix="ap-compile-") as tmp:
         tmp_root = Path(tmp)
         for target in targets:
@@ -194,14 +226,25 @@ def compile_profile(
                     dst = fragment_dir / rel
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, dst)
+                    posix = rel.as_posix()
                     files.append(
                         CompiledFile(
                             target=target.name,
                             harness=harness,
                             fragment_path=dst,
-                            relative_path=rel.as_posix(),
+                            relative_path=posix,
+                            # Merged settings carry user content: mark them
+                            # not-generated so apply preserves the live file
+                            # instead of overwriting it (ADR-001).
+                            generated=not _is_merged_settings(harness, posix),
                         )
                     )
+                comparisons.extend(
+                    _merged_comparisons(target, harness, target_baseline, work)
+                )
+        # Drift reads the scratch work/baseline files, so compute it before the
+        # tempdir is torn down (ADR-003): baseline vs live vs compiled.
+        drift = compute_drift(comparisons)
 
     manifest_path = out / "manifest.json"
     compiled = CompiledManifest(
@@ -210,6 +253,7 @@ def compile_profile(
         manifest_path=manifest_path,
         targets=targets,
         files=tuple(files),
+        drift=tuple(drift),
     )
     manifest_path.write_text(json.dumps(compiled.to_dict(), indent=2) + "\n")
     return compiled
