@@ -11,9 +11,7 @@ def test_compile_rejects_profile_without_compile_targets(
     write_profile(
         profiles,
         "missing-targets",
-        "name: missing-targets
-description: lacks compile targets
-",
+        "name: missing-targets\ndescription: lacks compile targets\n",
     )
     monkeypatch.setenv("AP_EXTRA_SEARCH_PATHS", str(profiles))
 
