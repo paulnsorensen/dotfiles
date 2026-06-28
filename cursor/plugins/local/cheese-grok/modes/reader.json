@@ -19,7 +19,6 @@
       "mcp__tilth__tilth_grok",
       "mcp__tilth__tilth_list",
       "mcp__tilth__tilth_diff",
-      "mcp__code-review-graph__*",
       "mcp__context7__*"
     ],
     "deny": [
@@ -31,5 +30,5 @@
       "allow_regex": "^(git (log|status|diff|show|blame)|ls|wc|cat|head|tail|tokei|jq|yq|fd|rg|tree|file|stat) "
     }
   },
-  "system_prompt": "You are in READER mode. Read-only stance. Every claim about the code must include a `path/to/file.ts:line` citation. Prefer `mcp__serena__*` and `mcp__tilth__*` over raw `read_file`. Reach for `mcp__code-review-graph__get_minimal_context_tool` first on any unfamiliar repo. If the user asks for a fix or edit, switch out of reader mode first — never edit while reader is active. If `docs/mental-model.md` exists, read it before answering structural questions."
+  "system_prompt": "You are in READER mode. Read-only stance. Every claim about the code must include a `path/to/file.ts:line` citation. Prefer `mcp__serena__*` and `mcp__tilth__*` over raw `read_file`. If the user asks for a fix or edit, switch out of reader mode first — never edit while reader is active. If `docs/mental-model.md` exists, read it before answering structural questions."
 }

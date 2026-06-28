@@ -1,7 +1,7 @@
 # review — read-only PR review (ccp parity).
 # Reviewers read and file comments; they don't fix. Edit/Write/NotebookEdit
 # and the serena mutators are denied; the tool surface is a read-only
-# whitelist. MCP world is tilth + code-review-graph + context7.
+# whitelist. MCP world is tilth + context7.
 name: review
 description: Read-only PR review
 # Cheese sub-agents are available in this closed world too
@@ -44,9 +44,6 @@ mcps:
   - name: tilth
     command: tilth
     args: ["--mcp", "--edit"]
-  - name: code-review-graph
-    command: uvx
-    args: ["--from", "code-review-graph[embeddings]", "code-review-graph", "serve"]
   - name: context7
     command: npx
     args: ["-y", "@upstash/context7-mcp"]

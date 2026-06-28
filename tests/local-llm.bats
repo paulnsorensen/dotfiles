@@ -496,13 +496,13 @@ MOCK
     run jq -e . "$LEAN"
     assert_success
 
-    for server in code-review-graph hallouminate tavily; do
+    for server in hallouminate tavily; do
         run jq -e --arg s "$server" '.mcp[$s].enabled == false' "$LEAN"
         assert_success
     done
 
-    # Exclusivity: exactly those three — no accidental extra disable slips in.
-    run jq -e '.mcp | keys | length == 3' "$LEAN"
+    # Exclusivity: exactly those two — no accidental extra disable slips in.
+    run jq -e '.mcp | keys | length == 2' "$LEAN"
     assert_success
 }
 
