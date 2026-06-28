@@ -25,7 +25,7 @@ from typing import Any, NoReturn
 
 import yaml
 
-from agent_profile import discover, manifest as manifest_mod
+from agent_profile import compile_command, discover, manifest as manifest_mod
 from agent_profile.install_command import install_deprecation_message
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import ParseError, parse_manifest
@@ -72,6 +72,8 @@ Commands:
   list                          List available profiles
   describe <name>               Show resolved manifest for a profile
   path <name>                   Print profile source dir
+  compile <name> --baseline <dir> --out <dir>
+                                Compile live profile fragments
   install <name> [opts]         Render profile into current dir
   uninstall <name> [opts]       Remove a previously-installed profile
   launch <harness> [name] [..]  Install + exec the named harness CLI
@@ -927,7 +929,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_compile_targets(profile_dir)
             except CompileTargetPresenceError as exc:
                 raise CliError(str(exc)) from exc
-            return 0
+            return compile_command.cmd_compile(rest, RENDERERS, sys.stdout)
         if sub in ("help", "-h", "--help"):
             sys.stdout.write(USAGE)
             return 0
@@ -937,7 +939,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         sys.stderr.write(USAGE)
         return 1
-    except (CliError, ParseError, ManifestCorrupt, MergedConfigError) as exc:
+    except (
+        CliError,
+        compile_command.CompileError,
+        ParseError,
+        ManifestCorrupt,
+        MergedConfigError,
+    ) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
