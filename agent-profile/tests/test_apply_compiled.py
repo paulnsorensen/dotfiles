@@ -369,3 +369,118 @@ def test_cmd_apply_compiled_applies_and_returns_zero(tmp_path, capsys):
 def test_cmd_apply_compiled_requires_manifest_arg():
     with pytest.raises(apply_compiled.ApplyError):
         apply_compiled.cmd_apply_compiled([], sys.stdout)
+
+
+# --- user-scope MCP registration (deferred from compile) -------------------
+
+
+def _fake_claude(tmp_path, monkeypatch):
+    """A fake ``claude`` first on PATH logging each call's args; returns the log."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    log = tmp_path / "claude-calls.log"
+    shim = bindir / "claude"
+    shim.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$AP_TEST_CLAUDE_LOG"\nexit 0\n')
+    shim.chmod(0o755)
+    monkeypatch.setenv("AP_TEST_CLAUDE_LOG", str(log))
+    monkeypatch.setenv("PATH", f"{bindir}:/usr/bin")
+    return log
+
+
+_USER_MCP = {
+    "name": "context7",
+    "command": "npx",
+    "args": ["-y", "@upstash/context7-mcp"],
+    "env": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"},
+}
+
+
+def _manifest_user_mcps(targets, user_mcps):
+    m = _manifest(targets, [])
+    m["user_mcps"] = user_mcps
+    return m
+
+
+def test_apply_registers_user_mcps_via_cli(tmp_path, monkeypatch):
+    """apply performs the live ``claude mcp add`` the compile deferred —
+    remove-then-add per server, idempotent."""
+    log = _fake_claude(tmp_path, monkeypatch)
+    cache = tmp_path / "compiled"
+    mpath = _write_manifest(
+        cache,
+        _manifest_user_mcps([_target("home", tmp_path / "live")], [_USER_MCP]),
+    )
+
+    result = apply_compiled.apply_compiled(mpath)
+
+    assert result.registered_mcps == ("context7",)
+    assert log.read_text().splitlines() == [
+        "mcp remove context7 --scope user",
+        "mcp add context7 --scope user -e CONTEXT7_API_KEY=${CONTEXT7_API_KEY} "
+        "-- npx -y @upstash/context7-mcp",
+    ]
+
+
+def test_apply_user_mcp_passes_literal_var_not_secret(tmp_path, monkeypatch):
+    """The ``claude mcp add`` argv carries the literal ``${VAR}``; a real
+    process-env value never leaks into the stored registration."""
+    monkeypatch.setenv("CONTEXT7_API_KEY", "sk-real-secret-123")
+    log = _fake_claude(tmp_path, monkeypatch)
+    cache = tmp_path / "compiled"
+    mpath = _write_manifest(
+        cache,
+        _manifest_user_mcps([_target("home", tmp_path / "live")], [_USER_MCP]),
+    )
+
+    apply_compiled.apply_compiled(mpath)
+
+    text = log.read_text()
+    assert "-e CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" in text
+    assert "sk-real-secret-123" not in text
+
+
+def test_apply_user_mcp_missing_cli_fails_loud(tmp_path, monkeypatch):
+    """No ``claude`` on PATH but user_mcps present → handled ApplyError."""
+    emptybin = tmp_path / "emptybin"
+    emptybin.mkdir()
+    monkeypatch.setenv("PATH", str(emptybin))
+    cache = tmp_path / "compiled"
+    mpath = _write_manifest(
+        cache,
+        _manifest_user_mcps([_target("home", tmp_path / "live")], [_USER_MCP]),
+    )
+    with pytest.raises(apply_compiled.ApplyError, match="claude` CLI"):
+        apply_compiled.apply_compiled(mpath)
+
+
+def test_apply_user_mcp_add_failure_is_handled(tmp_path, monkeypatch):
+    """A non-zero ``claude mcp add`` raises a handled ApplyError, not an
+    uncaught CalledProcessError."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    shim = bindir / "claude"
+    # `remove` succeeds (exit 0); `add` fails (exit 1).
+    shim.write_text('#!/bin/sh\ncase "$1 $2" in "mcp add") exit 1;; esac\nexit 0\n')
+    shim.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}:/usr/bin")
+    cache = tmp_path / "compiled"
+    mpath = _write_manifest(
+        cache,
+        _manifest_user_mcps([_target("home", tmp_path / "live")], [_USER_MCP]),
+    )
+    with pytest.raises(apply_compiled.ApplyError, match="claude mcp add context7"):
+        apply_compiled.apply_compiled(mpath)
+
+
+def test_apply_no_user_mcps_makes_no_claude_call(tmp_path, monkeypatch):
+    """A manifest without user_mcps never touches the claude CLI."""
+    log = _fake_claude(tmp_path, monkeypatch)
+    root = tmp_path / "live"
+    cache = tmp_path / "compiled"
+    frag = _fragment(cache, "home", "claude", ".claude/agents/r.md", "r\n")
+    mpath = _write_manifest(cache, _manifest([_target("home", root)], [frag]))
+
+    result = apply_compiled.apply_compiled(mpath)
+
+    assert result.registered_mcps == ()
+    assert not log.exists()

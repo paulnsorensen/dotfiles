@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ class ApplyResult:
     deleted: tuple[str, ...]
     state_path: Path
     state: ApplyState
+    registered_mcps: tuple[str, ...] = ()
 
 
 def read_apply_state(state_path: Path) -> ApplyState:
@@ -148,6 +150,53 @@ def _preserved_dests(data: dict[str, Any], roots: dict[str, Path]) -> set[str]:
     return preserved
 
 
+def _user_mcps(data: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = data.get("user_mcps", [])
+    if not isinstance(raw, list) or not all(isinstance(m, dict) for m in raw):
+        raise ApplyError("ap apply-compiled: manifest user_mcps must be a list of objects")
+    return raw
+
+
+def _register_user_mcps(mcps: list[dict[str, Any]]) -> list[str]:
+    """Register each user-scope MCP via ``claude mcp add --scope user``.
+
+    The live ``~/.claude.json`` write ``ap compile`` deferred (compile stays
+    side-effect-free; the registration runs here, post-gate). ``remove`` then
+    ``add`` per server keeps re-runs idempotent. ``${VAR}`` env refs are passed
+    literally — Claude expands them at launch, so secrets never land on disk.
+    A non-zero ``add`` raises a handled :class:`ApplyError` (not an uncaught
+    ``CalledProcessError``)."""
+    if not mcps:
+        return []
+    cli = shutil.which("claude")
+    if cli is None:
+        raise ApplyError(
+            "ap apply-compiled: registering user-scope MCP servers needs the "
+            "`claude` CLI on PATH, but it was not found."
+        )
+    registered: list[str] = []
+    for mcp in mcps:
+        name = mcp["name"]
+        subprocess.run(
+            [cli, "mcp", "remove", name, "--scope", "user"],
+            capture_output=True,
+            check=False,
+        )
+        cmd = [cli, "mcp", "add", name, "--scope", "user"]
+        for key, val in (mcp.get("env") or {}).items():
+            cmd += ["-e", f"{key}={val}"]
+        cmd += ["--", mcp["command"], *mcp.get("args", [])]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise ApplyError(
+                f"ap apply-compiled: `claude mcp add {name}` exited "
+                f"{result.returncode}: {detail}"
+            )
+        registered.append(name)
+    return registered
+
+
 def apply_compiled(
     manifest_path: Path, *, state_path: Path | None = None
 ) -> ApplyResult:
@@ -188,6 +237,8 @@ def apply_compiled(
             path.unlink()
             deleted.append(prior_path)
 
+    registered = _register_user_mcps(_user_mcps(data))
+
     new_state = ApplyState(managed_files=tuple(sorted(managed)))
     write_apply_state(state_path, new_state)
 
@@ -196,6 +247,7 @@ def apply_compiled(
         deleted=tuple(deleted),
         state_path=state_path,
         state=new_state,
+        registered_mcps=tuple(registered),
     )
 
 
@@ -205,8 +257,8 @@ def cmd_apply_compiled(args: list[str], out_stream: Any) -> int:
     if len(args) > 1:
         raise ApplyError(f"ap apply-compiled: unexpected argument '{args[1]}'")
     result = apply_compiled(Path(args[0]))
-    print(
-        f"applied {len(result.copied)} file(s), removed {len(result.deleted)}",
-        file=out_stream,
-    )
+    line = f"applied {len(result.copied)} file(s), removed {len(result.deleted)}"
+    if result.registered_mcps:
+        line += f", registered {len(result.registered_mcps)} user MCP(s)"
+    print(line, file=out_stream)
     return 0

@@ -10,15 +10,12 @@ import tempfile
 from pathlib import Path
 from typing import Any, Protocol
 
-import yaml
-
 from agent_profile import discover
 from agent_profile.compiled_types import (
     CompiledFile,
     CompiledManifest,
     CompileTarget,
     MERGED_SETTINGS_BY_HARNESS,
-    VALID_COMPILE_HARNESSES,
 )
 from agent_profile.drift import FileComparison, compute_drift
 from agent_profile.parse import parse_manifest
@@ -78,51 +75,6 @@ def _parse_args(args: list[str]) -> tuple[str, Path, Path]:
     if out is None:
         raise CompileError("ap compile: --out is required")
     return profile, baseline, out
-
-
-def _load_compile_targets(profile_dir: Path) -> tuple[CompileTarget, ...]:
-    profile_yaml = profile_dir / "profile.yaml"
-    raw = yaml.safe_load(profile_yaml.read_text()) or {}
-    targets = raw.get("compile_targets")
-    if not isinstance(targets, dict) or not targets:
-        raise CompileError(
-            f"ap compile: {profile_yaml} must define compile_targets"
-        )
-
-    parsed: list[CompileTarget] = []
-    for name, target in targets.items():
-        if not isinstance(name, str) or not name:
-            raise CompileError("ap compile: compile target names must be strings")
-        if not isinstance(target, dict):
-            raise CompileError(f"ap compile: compile target '{name}' must be a map")
-        symbolic_root = target.get("target_root")
-        harnesses = target.get("harnesses")
-        if not isinstance(symbolic_root, str) or not symbolic_root:
-            raise CompileError(
-                f"ap compile: compile target '{name}' needs target_root"
-            )
-        if not isinstance(harnesses, list) or not harnesses:
-            raise CompileError(
-                f"ap compile: compile target '{name}' needs harnesses"
-            )
-        invalid = [h for h in harnesses if h not in VALID_COMPILE_HARNESSES]
-        if invalid:
-            raise CompileError(
-                f"ap compile: compile target '{name}' has invalid harness "
-                f"'{invalid[0]}'"
-            )
-        resolved_root = Path(
-            os.path.expandvars(os.path.expanduser(symbolic_root))
-        ).resolve()
-        parsed.append(
-            CompileTarget(
-                name=name,
-                symbolic_root=symbolic_root,
-                resolved_root=resolved_root,
-                harnesses=tuple(harnesses),
-            )
-        )
-    return tuple(parsed)
 
 
 def _baseline_root(baseline: Path, target: CompileTarget) -> Path:
@@ -193,14 +145,24 @@ def compile_profile(
     if profile_dir is None:
         raise CompileError(f"ap compile: profile '{profile}' not found")
 
+    # parse_manifest already attaches strictly-validated compile_targets
+    # (absolute-root, env-resolution, cross-target duplicate-harness, and
+    # harness-field coverage all enforced in validate_compile_targets). Consume
+    # that single validated path rather than re-parsing the raw YAML weakly.
     manifest = parse_manifest(profile_dir)
-    targets = _load_compile_targets(profile_dir)
+    targets = manifest.compile_targets
+    if not targets:
+        raise CompileError(
+            f"ap compile: profile '{profile}' must define compile_targets"
+        )
     fragments = out / "fragments"
     shutil.rmtree(fragments, ignore_errors=True)
     fragments.mkdir(parents=True, exist_ok=True)
 
     files: list[CompiledFile] = []
     comparisons: list[FileComparison] = []
+    user_mcps: list[dict[str, Any]] = []
+    seen_user_mcps: set[str] = set()
     with tempfile.TemporaryDirectory(prefix="ap-compile-") as tmp:
         tmp_root = Path(tmp)
         for target in targets:
@@ -220,6 +182,15 @@ def compile_profile(
                 # point at where the fragment will be applied — the target's
                 # resolved root — not this ephemeral tempdir.
                 renderer.render(manifest, work, logical_root=target.resolved_root)
+                # User-scope MCP registrations are a live ~/.claude.json write
+                # the renderer defers during compile (logical_root is set).
+                # Collect the spec here so apply performs it post-gate.
+                collect = getattr(renderer, "user_mcp_registrations", None)
+                if collect is not None:
+                    for reg in collect(manifest):
+                        if reg["name"] not in seen_user_mcps:
+                            seen_user_mcps.add(reg["name"])
+                            user_mcps.append(reg)
                 fragment_dir = fragments / target.name / harness
                 for rel in _changed_files(before, work):
                     src = work / rel
@@ -254,6 +225,7 @@ def compile_profile(
         targets=targets,
         files=tuple(files),
         drift=tuple(drift),
+        user_mcps=tuple(user_mcps),
     )
     manifest_path.write_text(json.dumps(compiled.to_dict(), indent=2) + "\n")
     return compiled

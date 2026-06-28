@@ -97,6 +97,11 @@ class CompiledManifest:
     targets: tuple[CompileTarget, ...]
     files: tuple[CompiledFile, ...] = ()
     drift: tuple[DriftRecord, ...] = ()
+    # User-scope MCP servers (``mcp_scope: user``) to register live via the
+    # ``claude`` CLI at apply time. Recorded by ``ap compile`` instead of
+    # registered during render, so compile stays side-effect-free and the live
+    # ``~/.claude.json`` write happens post-gate in ``ap apply-compiled``.
+    user_mcps: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -106,6 +111,7 @@ class CompiledManifest:
             "compile_targets": [target.to_dict() for target in self.targets],
             "files": [file.to_dict() for file in self.files],
             "drift": [record.to_dict() for record in self.drift],
+            "user_mcps": [dict(mcp) for mcp in self.user_mcps],
         }
 
 
