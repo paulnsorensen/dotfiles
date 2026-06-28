@@ -904,6 +904,11 @@ def main(argv: list[str] | None = None) -> int:
                     )
             perms_harnesses = [h for h in harnesses if h in ("claude", "codex")]
             return cmd_perms(local, target, perms_harnesses, colors, sys.stdout)
+        if sub == "_install-internal":
+            harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
+            _validate_harnesses(harnesses, colors)
+            name = remaining[0] if remaining else ""
+            return cmd_install(name, harnesses, target, colors, sys.stdout)
         if sub == "install":
             raise CliError(install_deprecation_message())
         if sub in ("uninstall", "rm"):

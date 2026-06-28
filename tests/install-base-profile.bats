@@ -51,7 +51,7 @@ teardown() { teardown_test_env; }
         run bash "$LIB" "$TEST_HOME"
     assert_success
     run cat "$AP_LOG"
-    assert_output_contains "install global --harness claude,codex,cursor,copilot"
+    assert_output_contains "_install-internal global --harness claude,codex,cursor,copilot"
 }
 
 @test "install-base-profile.sh renders opencode under \$HOME/.config/opencode via opencode-global" {
@@ -59,7 +59,7 @@ teardown() { teardown_test_env; }
         run bash "$LIB" "$TEST_HOME"
     assert_success
     run cat "$AP_LOG"
-    assert_output_contains "HOME=$TEST_HOME install opencode-global --harness opencode"
+    assert_output_contains "HOME=$TEST_HOME _install-internal opencode-global --harness opencode"
     ! grep -qF -- '--target' "$AP_LOG"
 }
 

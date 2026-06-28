@@ -4,6 +4,8 @@ Commands:
   list                          List available profiles
   describe <name>               Show resolved manifest for a profile
   path <name>                   Print profile source dir
+  compile <name> --baseline <dir> --out <dir>
+                                Compile live profile fragments
   install <name> [opts]         Render profile into current dir
   uninstall <name> [opts]       Remove a previously-installed profile
   launch <harness> [name] [..]  Install + exec the named harness CLI

@@ -49,12 +49,12 @@ fi
 # expansion respects the caller's target argument when it differs from
 # the process HOME (the chezmoi installer passes $HOME so they match;
 # direct callers can pass anything).
-HOME="$target" "$ap_bin" install global \
+HOME="$target" "$ap_bin" _install-internal global \
     --harness claude,codex,cursor,copilot
 
 # opencode writes opencode.json at the target root, so its live wrapper targets
 # $HOME/.config/opencode instead of $HOME. HOME is forwarded for the same
 # reason as the dot-dir harnesses: target_default must resolve against the
 # caller's target argument when it differs from the process HOME.
-HOME="$target" "$ap_bin" install opencode-global \
+HOME="$target" "$ap_bin" _install-internal opencode-global \
     --harness opencode

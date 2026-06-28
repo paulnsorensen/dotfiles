@@ -121,7 +121,12 @@ STUB
 }
 
 @test "dots update shorthand works" {
-    run dots u 2>&1
+    local stub_dir="$TEST_HOME/update-dotfiles"
+    create_mock_repo "$stub_dir"
+    mkdir -p "$stub_dir/bin"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" u 2>&1
     assert_success
     assert_output_contains "Updating"
 }

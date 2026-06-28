@@ -15,7 +15,7 @@ from agent_profile.parse import parse_manifest
 from agent_profile.renderers.claude import ClaudeRenderer
 from agent_profile.renderers.codex import CodexRenderer
 from agent_profile.renderers.copilot import CopilotRenderer
-from tests.conftest import write_profile
+from tests.conftest import install_profile, write_profile
 
 
 # ─── renderers skip source-only skills ────────────────────────────────
@@ -73,7 +73,7 @@ def test_install_fetches_source_skill(env, stub_renderers, monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0)
 
-    assert cli.main(["install", "extprof", "--harness", "claude"]) == 0
+    assert install_profile(["install", "extprof", "--harness", "claude"]) == 0
     # One `npx … skills add` for the single source skill, targeting claude.
     # Anchor on the `add` keyword (not positional indices) so the assertion
     # survives future argv-prefix changes like --yes.
@@ -94,7 +94,7 @@ def test_install_fetches_all_in_scope_harnesses_in_one_call(env, stub_renderers,
     calls = []
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0)
 
-    assert cli.main(["install", "extprof", "--harness", "claude,codex"]) == 0
+    assert install_profile(["install", "extprof", "--harness", "claude,codex"]) == 0
     # One invocation (one clone) covering both harnesses via repeated --agent.
     assert len(calls) == 1
     argv = calls[0]
@@ -106,7 +106,7 @@ def test_install_skips_fetch_when_no_source_skills(env, stub_renderers, monkeypa
     write_profile(env.profiles, "noext", "name: noext\n")
     calls = []
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0)
-    assert cli.main(["install", "noext", "--harness", "claude"]) == 0
+    assert install_profile(["install", "noext", "--harness", "claude"]) == 0
     assert calls == []
 
 
@@ -124,7 +124,7 @@ def test_install_repo_level_source_uses_skill_star(env, stub_renderers, monkeypa
     calls = []
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0)
 
-    assert cli.main(["install", "extprof", "--harness", "claude"]) == 0
+    assert install_profile(["install", "extprof", "--harness", "claude"]) == 0
     assert len(calls) == 1
     argv = calls[0]
     assert argv[argv.index("add") + 1] == "paulnsorensen/easy-cheese"
@@ -143,7 +143,7 @@ def test_install_fetch_failure_exits_clean(env, stub_renderers, monkeypatch, cap
         "name: extprof\nskills:\n  - name: mold\n    source: o/r\n",
     )
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: 1)
-    assert cli.main(["install", "extprof", "--harness", "claude"]) == 1
+    assert install_profile(["install", "extprof", "--harness", "claude"]) == 1
     err = capsys.readouterr().err
     assert "Traceback" not in err
     assert "npx skills add failed" in err
@@ -161,7 +161,7 @@ def test_install_fetch_missing_npx_exits_clean(env, stub_renderers, monkeypatch,
         "name: extprof\nskills:\n  - name: mold\n    source: o/r\n",
     )
     monkeypatch.setattr(cli, "_skill_fetch_runner", boom)
-    assert cli.main(["install", "extprof", "--harness", "claude"]) == 1
+    assert install_profile(["install", "extprof", "--harness", "claude"]) == 1
     err = capsys.readouterr().err
     assert "Traceback" not in err
     assert "Node/npx" in err

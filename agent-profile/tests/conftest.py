@@ -12,17 +12,38 @@ without pulling in a production renderer module.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
-from agent_profile import shared
-from agent_profile.parse import Manifest
-from agent_profile.renderers.base import mcps_for
-from agent_profile.cli import ALL_HARNESSES
+from agent_profile import cli, compile_command, shared
+from agent_profile.manifest import ManifestCorrupt
+from agent_profile.parse import Manifest, ParseError
+from agent_profile.renderers.base import MergedConfigError, mcps_for
+from agent_profile.cli import ALL_HARNESSES, CliError
 
 GOLDEN = Path(__file__).parent / "fixtures" / "golden"
 
+
+def install_profile(argv: list[str]) -> int:
+    """Drive the internal render/install seam after public `ap install` deprecation."""
+    args = argv[1:] if argv and argv[0] == "install" else argv
+    colors = cli._Colors(False)
+    try:
+        harnesses, target, remaining, _passthrough = cli._parse_common_opts(args)
+        cli._validate_harnesses(harnesses, colors)
+        name = remaining[0] if remaining else ""
+        return cli.cmd_install(name, harnesses, target, colors, sys.stdout)
+    except (
+        CliError,
+        compile_command.CompileError,
+        ParseError,
+        ManifestCorrupt,
+        MergedConfigError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 @pytest.fixture
 def golden():
