@@ -774,16 +774,18 @@ def _assert_real_tight_codex_profile(name: str, prompt_phrase: str, monkeypatch,
 
     profile_text = (pdir / "profile.yaml").read_text()
     assert "registries:" not in profile_text
-    assert "skills:" not in profile_text
+    assert "skills:" in profile_text
+    assert "compile_targets:" in profile_text
     assert m.isolated is True
     assert m.system_prompt == "AGENTS.md"
     assert [mcp["name"] for mcp in m.mcps] == ["tilth"]
-    assert m.skills == []
+    assert [skill.get("source") for skill in m.skills] == ["paulnsorensen/easy-cheese"]
     assert m.agents == []
 
     _, env = overlay.build_isolated_launch(m, pdir, "codex")
     cfg = tomllib.loads((Path(env["CODEX_HOME"]) / "config.toml").read_text())
     assert cfg["model_instructions_file"] == str(pdir / "AGENTS.md")
+    assert cfg["tui"]["input_mode"] == "vim"
     assert set(cfg["mcp_servers"]) == {"tilth"}
     assert cfg["mcp_servers"]["tilth"] == {
         "command": "tilth",
@@ -792,13 +794,13 @@ def _assert_real_tight_codex_profile(name: str, prompt_phrase: str, monkeypatch,
     assert prompt_phrase in (pdir / "AGENTS.md").read_text()
 
 
-def test_real_codex_plan_profile_is_tilth_only(monkeypatch, tmp_path):
+def test_real_codex_plan_profile_is_tight_codex_world(monkeypatch, tmp_path):
     _assert_real_tight_codex_profile(
         "codex-plan", "planning and spec work", monkeypatch, tmp_path
     )
 
 
-def test_real_codex_code_profile_is_tilth_only(monkeypatch, tmp_path):
+def test_real_codex_code_profile_is_tight_codex_world(monkeypatch, tmp_path):
     _assert_real_tight_codex_profile(
         "codex-code", "focused implementation", monkeypatch, tmp_path
     )
@@ -962,6 +964,7 @@ def test_codex_isolated_config_defaults_to_auto_permissions(tmp_path, monkeypatc
     assert cfg["approval_policy"] == "on-request"
     assert cfg["approvals_reviewer"] == "auto_review"
     assert cfg["sandbox_mode"] == "workspace-write"
+    assert cfg["tui"]["input_mode"] == "vim"
 
 
 def test_codex_system_prompt_is_model_instructions_file(tmp_path, monkeypatch):
