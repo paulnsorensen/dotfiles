@@ -1,0 +1,4 @@
+{
+  "title": "Deprecate ap install with migration guidance",
+  "body": "## Summary\n- make `ap install` fail with migration guidance\n- point live deployment to `dots sync` and staging to `ap compile <profile> --out <dir>`\n\n## Test\n- `uv run --project agent-profile pytest agent-profile/tests/test_install_deprecation.py`\n\nexpanded scope: agent-profile/agent_profile/cli.py — required to route `ap install` to the new command policy"
+}

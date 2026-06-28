@@ -26,6 +26,7 @@ from typing import Any, NoReturn
 import yaml
 
 from agent_profile import discover, manifest as manifest_mod
+from agent_profile.install_command import install_deprecation_message
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import ParseError, parse_manifest
 from agent_profile.renderers.base import (
@@ -902,10 +903,7 @@ def main(argv: list[str] | None = None) -> int:
             perms_harnesses = [h for h in harnesses if h in ("claude", "codex")]
             return cmd_perms(local, target, perms_harnesses, colors, sys.stdout)
         if sub == "install":
-            harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
-            _validate_harnesses(harnesses, colors)
-            name = remaining[0] if remaining else ""
-            return cmd_install(name, harnesses, target, colors, sys.stdout)
+            raise CliError(install_deprecation_message())
         if sub in ("uninstall", "rm"):
             harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
             _validate_harnesses(harnesses, colors)
@@ -914,6 +912,22 @@ def main(argv: list[str] | None = None) -> int:
         if sub == "launch":
             _harnesses, target, remaining, passthrough = _parse_common_opts(rest)
             cmd_launch(remaining, passthrough, target, colors, sys.stdout)
+        if sub == "compile":
+            if not rest:
+                raise CliError("profile name required")
+            profile_dir = discover.find_profile_dir(rest[0])
+            if profile_dir is None:
+                raise CliError(f"ap compile: profile '{rest[0]}' not found")
+            from agent_profile.compile_target_presence import (
+                CompileTargetPresenceError,
+                require_compile_targets,
+            )
+
+            try:
+                require_compile_targets(profile_dir)
+            except CompileTargetPresenceError as exc:
+                raise CliError(str(exc)) from exc
+            return 0
         if sub in ("help", "-h", "--help"):
             sys.stdout.write(USAGE)
             return 0
