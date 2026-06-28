@@ -36,6 +36,12 @@ alias llm-install-swap='~/local-llm/scripts/install-llama-swap.sh'
 # the heavy non-coding servers (code-review-graph, hallouminate, tavily), leaving
 # tilth + serena + context7 for the coder. Usage: opencode-lean --model local-coder
 #
+# Also sets OPENCODE_CONFIG_DIR to ~/local-llm/configs/lean-agents/ so separate
+# agent definitions (.md files), commands, and plugins can be injected for the
+# lean profile without touching the global ~/.config/opencode/agents/.
+# Scaffold new agents there:
+#   mkdir -p ~/local-llm/configs/lean-agents/{agents,commands,plugins}
+#
 # Pre-flights the local-LLM stack: probes :4000, starts local-llm.target if down,
 # waits up to OPENCODE_LEAN_TIMEOUT seconds (default 30), then bails with a hint.
 # For a swap-pool model (local-sonnet/local-coder/local-vision) it then fires a
@@ -93,7 +99,7 @@ opencode-lean() {
       ;;
   esac
 
-  OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"
+  OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" OPENCODE_CONFIG_DIR="$HOME/local-llm/configs/lean-agents" opencode "$@"
 }
 
 # Quick chat helper — usage: llm-chat local-sonnet "your prompt"
