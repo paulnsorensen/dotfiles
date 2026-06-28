@@ -1,4 +1,4 @@
 {
-  "title": "Deprecate ap install with migration guidance",
-  "body": "## Summary\n- make `ap install` fail with migration guidance\n- point live deployment to `dots sync` and staging to `ap compile <profile> --out <dir>`\n\n## Test\n- `uv run --project agent-profile pytest agent-profile/tests/test_install_deprecation.py`\n\nexpanded scope: agent-profile/agent_profile/cli.py — required to route `ap install` to the new command policy"
+  "title": "Reject compile profiles missing compile_targets",
+  "body": "## Summary\n- add compile target presence validation for `ap compile`\n- cover missing `compile_targets` with a CLI-level regression test\n\n## Test\n- `uv run --project agent-profile pytest agent-profile/tests/test_compile_target_presence.py`\n\nexpanded scope: agent-profile/agent_profile/cli.py \u2014 required to route `ap compile <profile>` through the validation before compilation"
 }
