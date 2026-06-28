@@ -1,9 +1,7 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC1090,SC2034,SC2317
-# Tests for chezmoi/lib/install-base-profile.sh — renders the live install
-# profiles into every harness via the `ap` tool. Replaces the deploy roles of
-# the retired install-mcp / install-hooks / install-claude-skills chezmoi
-# scripts (spec curd 7).
+# Tests for chezmoi/lib/install-base-profile.sh — compiles and applies the live
+# profile via the agent-profile sync library.
 
 load test_helper
 
@@ -12,15 +10,41 @@ setup() {
     LIB="$REAL_DOTFILES_DIR/chezmoi/lib/install-base-profile.sh"
     FAKE_BIN="$TEST_HOME/fake-bin"
     mkdir -p "$FAKE_BIN"
-    # Record every `ap` invocation (one line per call) for assertions.
     AP_LOG="$TEST_HOME/ap-calls.log"
+
     cat > "$FAKE_BIN/ap" <<SH
 #!/usr/bin/env bash
 echo "HOME=$HOME \$*" >> "$AP_LOG"
+if [[ "\$1" == "compile" ]]; then
+    out=""
+    while ((\$#)); do
+        case "\$1" in
+            --out) out="\$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+    mkdir -p "\$out"
+    printf '{"drift": []}\n' > "\$out/manifest.json"
+fi
 exit 0
 SH
     chmod +x "$FAKE_BIN/ap"
+
+    cat > "$FAKE_BIN/chezmoi" <<'SH'
+#!/usr/bin/env bash
+while (($#)); do
+    case "$1" in
+        --destination) dest="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+mkdir -p "${dest:?}"
+SH
+    chmod +x "$FAKE_BIN/chezmoi"
+
     export PATH="$FAKE_BIN:$PATH"
+    export AGENT_PROFILE_CACHE_DIR="$TEST_HOME/cache"
+    export AGENT_PROFILE_CHEZMOI="$FAKE_BIN/chezmoi"
 }
 
 teardown() { teardown_test_env; }
@@ -40,33 +64,37 @@ teardown() { teardown_test_env; }
     assert_output_contains "Usage:"
 }
 
-# ── two render targets (the core of curd 7) ──────────────────────────────────
+# ── live compile/apply path ─────────────────────────────────────────────────
 
-@test "install-base-profile.sh renders the four dot-dir harnesses via global" {
-    # `global` wraps `base` with target_default=$HOME + the claude marketplace
-    # + plugin enablement. The installer forwards $HOME (so the profile's
-    # ${HOME} expands against the test sandbox) and intentionally omits
-    # --target — the profile resolves it.
+@test "install-base-profile.sh fetches sources for live profile" {
     INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" \
         run bash "$LIB" "$TEST_HOME"
     assert_success
     run cat "$AP_LOG"
-    assert_output_contains "_install-internal global --harness claude,codex,cursor,copilot"
+    assert_output_contains "HOME=$TEST_HOME fetch-sources live"
 }
 
-@test "install-base-profile.sh renders opencode under \$HOME/.config/opencode via opencode-global" {
+@test "install-base-profile.sh compiles live with a scratch baseline and cache" {
     INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" \
         run bash "$LIB" "$TEST_HOME"
     assert_success
     run cat "$AP_LOG"
-    assert_output_contains "HOME=$TEST_HOME _install-internal opencode-global --harness opencode"
-    ! grep -qF -- '--target' "$AP_LOG"
+    assert_output_contains "HOME=$TEST_HOME compile live --baseline"
+    assert_output_contains "--out $TEST_HOME/cache"
 }
 
-@test "install-base-profile.sh makes exactly two ap calls" {
+@test "install-base-profile.sh applies the compiled manifest" {
+    INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" \
+        run bash "$LIB" "$TEST_HOME"
+    assert_success
+    run cat "$AP_LOG"
+    assert_output_contains "HOME=$TEST_HOME apply-compiled $TEST_HOME/cache/manifest.json"
+}
+
+@test "install-base-profile.sh makes exactly three ap calls" {
     INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" bash "$LIB" "$TEST_HOME"
     run wc -l < "$AP_LOG"
-    [[ "$(echo "$output" | tr -d ' ')" == "2" ]]
+    [[ "$(echo "$output" | tr -d ' ')" == "3" ]]
 }
 
 @test "install-base-profile.sh fails loud when an ap render fails" {
@@ -78,6 +106,14 @@ SH
     INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" \
         run bash "$LIB" "$TEST_HOME"
     [[ "$status" -ne 0 ]]
+}
+
+@test "install-base-profile.sh forwards drift acceptance" {
+    INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" \
+        run bash "$LIB" "$TEST_HOME" --accept-agent-drift
+    assert_success
+    run cat "$AP_LOG"
+    assert_output_contains "compile live --baseline"
 }
 
 # ── retired deploy scripts are gone ──────────────────────────────────────────

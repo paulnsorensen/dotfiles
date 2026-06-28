@@ -25,7 +25,13 @@ from typing import Any, NoReturn
 
 import yaml
 
-from agent_profile import compile_command, discover, manifest as manifest_mod
+from agent_profile import (
+    apply_compiled,
+    compile_command,
+    discover,
+    fetch_sources_command,
+    manifest as manifest_mod,
+)
 from agent_profile.install_command import install_deprecation_message
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import ParseError, parse_manifest
@@ -935,6 +941,10 @@ def main(argv: list[str] | None = None) -> int:
             except CompileTargetPresenceError as exc:
                 raise CliError(str(exc)) from exc
             return compile_command.cmd_compile(rest, RENDERERS, sys.stdout)
+        if sub == "fetch-sources":
+            return fetch_sources_command.cmd_fetch_sources(rest, sys.stdout)
+        if sub == "apply-compiled":
+            return apply_compiled.cmd_apply_compiled(rest, sys.stdout)
         if sub in ("help", "-h", "--help"):
             sys.stdout.write(USAGE)
             return 0
@@ -947,6 +957,8 @@ def main(argv: list[str] | None = None) -> int:
     except (
         CliError,
         compile_command.CompileError,
+        fetch_sources_command.FetchSourcesError,
+        apply_compiled.ApplyError,
         ParseError,
         ManifestCorrupt,
         MergedConfigError,

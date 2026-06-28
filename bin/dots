@@ -135,7 +135,27 @@ do_sync() {
     echo -e "${BLUE}🔄 Syncing dotfiles...${NC}"
     cd_dotfiles
 
-    "$DOTFILES_DIR/.sync" "$@"
+    local sync_args=()
+    local accept_agent_drift=false
+    while (($#)); do
+        case "$1" in
+            --accept-agent-drift)
+                accept_agent_drift=true
+                shift
+                ;;
+            *)
+                sync_args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    if [[ "$accept_agent_drift" == true ]]; then
+        DOTS_ACCEPT_AGENT_DRIFT=1 "$DOTFILES_DIR/.sync" "${sync_args[@]}"
+        return
+    fi
+
+    "$DOTFILES_DIR/.sync" "${sync_args[@]}"
 }
 
 # Show status
@@ -368,6 +388,11 @@ case "${1:-status}" in
         ;;
     profile|p)
         shift
+        if [[ "${1:-}" == "install" && ( "${2:-}" == "global" || "${2:-}" == "opencode-global" ) ]]; then
+            echo -e "${YELLOW}⚠️  profile '$2' is a migration stub; running dots sync instead.${NC}" >&2
+            do_sync
+            exit $?
+        fi
         "$DOTFILES_DIR/agent-profile/ap" "$@"
         ;;
     test|t)

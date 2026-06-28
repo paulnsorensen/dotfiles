@@ -73,9 +73,10 @@ class Manifest:
     enabled_plugins: dict[str, bool] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     extra_args: list[str] = field(default_factory=list)
-    # Install-time fields (curd: global profile). Outer-profile only, like
-    # the launch-overlay fields above. ``target_default`` is consulted by
-    # the CLI when ``--target`` is not passed; ``marketplaces`` is read by
+    # Legacy install fields. Outer-profile only, like the launch-overlay
+    # fields above. ``target_default`` is still consulted by the internal
+    # install path used by old profile stubs; live deployment now uses
+    # ``compile_targets`` on the live profile. ``marketplaces`` is read by
     # the claude renderer to register entries in ``extraKnownMarketplaces``
     # under the live settings.json (matching how ``enabled_plugins`` lands
     # in ``enabledPlugins``). ``${VAR}`` refs (``$HOME``, ``${DOTFILES_DIR}``)
