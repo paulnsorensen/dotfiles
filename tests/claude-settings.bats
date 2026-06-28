@@ -143,3 +143,53 @@ STDIN"
     [ "$(jq -r '.model' "$OUT")" = "sonnet" ]
     [ "$(jq -r '.appOnly' "$OUT")" = "keepme" ]
 }
+
+# ── real-chezmoi integration: the safety guarantee ──────────────────────────
+# The unit tests above prove the script exits non-zero on an unknown key. These
+# prove chezmoi HONOURS that exit — it halts apply and leaves the live target
+# untouched (does not write the script's empty stdout over the file). That
+# coupling is the whole point of the unknown-key gate, and chezmoi's contract
+# for modify_ scripts, so it gets locked end-to-end.
+
+# Build a minimal chezmoi source (modify_ script + authoritative file) and dest,
+# echo the apply command via $output through a config file. Sets CZ_APPLY.
+setup_chezmoi_apply_env() {
+    CZ_INT_SRC="$TEST_HOME/int-src"
+    CZ_INT_DEST="$TEST_HOME/int-dest"
+    mkdir -p "$CZ_INT_SRC/dot_claude" "$CZ_INT_SRC/lib" "$CZ_INT_DEST/.claude" "$TEST_HOME/int-cfg"
+    cp "$SCRIPT" "$CZ_INT_SRC/dot_claude/modify_settings.json"
+    cp "$AUTH"   "$CZ_INT_SRC/lib/claude-settings-authoritative.json"
+    printf 'lib/\n' > "$CZ_INT_SRC/.chezmoiignore"
+    cat > "$TEST_HOME/int-cfg/chezmoi.toml" <<TOML
+sourceDir = "$CZ_INT_SRC"
+destDir = "$CZ_INT_DEST"
+TOML
+    SETTINGS="$CZ_INT_DEST/.claude/settings.json"
+}
+
+cz_apply() {
+    run chezmoi apply --config "$TEST_HOME/int-cfg/chezmoi.toml" \
+        --destination "$CZ_INT_DEST" --no-tty
+}
+
+@test "modify_settings (chezmoi apply): fresh machine writes the authoritative source" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    setup_chezmoi_apply_env
+    cz_apply
+    [ "$status" -eq 0 ]
+    [ "$(jq -r .model "$SETTINGS")" = "opus" ]
+    # lib/ is .chezmoiignore'd — the authoritative source is never deployed.
+    [ ! -e "$CZ_INT_DEST/lib" ]
+}
+
+@test "modify_settings (chezmoi apply): unknown key HALTS apply and leaves the live file untouched" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    setup_chezmoi_apply_env
+    # seed a valid live file, then inject an app key the repo does not know
+    printf '%s\n' '{"model":"opus","appAddedUnknown":"x"}' > "$SETTINGS"
+    local before; before=$(cat "$SETTINGS")
+    cz_apply
+    [ "$status" -ne 0 ]                                   # chezmoi apply failed
+    [ "$(cat "$SETTINGS")" = "$before" ]                  # live file NOT clobbered
+    [[ "$output" == *"appAddedUnknown"* ]]                # offending key surfaced
+}
