@@ -104,7 +104,7 @@ resp = client.chat.completions.create(
 opencode eager-loads every MCP tool schema into the prompt on every request, so
 the default MCP set crowds out the 32k window `local-coder` runs in. `configs/lean.json`
 is an `OPENCODE_CONFIG` overlay that disables the heavy non-coding servers
-(`code-review-graph`, `hallouminate`, `tavily`), keeping `tilth` + `serena` +
+(`hallouminate`, `tavily`), keeping `tilth` + `serena` +
 `context7` for the coder.
 
 ```bash

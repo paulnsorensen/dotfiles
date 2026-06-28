@@ -1,7 +1,7 @@
 ---
 name: read-mode-probe
 description: Use when the user wants to interrogate an unfamiliar codebase with structured probes rather than a summary — invariants, data flow, error paths, hot paths, security surface. Triggers on "probe this", "what are the invariants here", "where does X flow", "find the risk in this code", "trace error paths", "what's on the hot path", "security audit this file/module", "what could go wrong here". Returns numbered findings with confidence + citations, never edits.
-allowed-tools: read_file, codebase_search, find_symbol, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__tilth__tilth_search, mcp__tilth__tilth_read, mcp__tilth__tilth_grok, mcp__code-review-graph__*
+allowed-tools: read_file, codebase_search, find_symbol, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__tilth__tilth_search, mcp__tilth__tilth_read, mcp__tilth__tilth_grok, mcp__tilth__tilth_deps
 metadata:
   version: 0.1.0
   author: paulnsorensen
@@ -39,8 +39,8 @@ Tool order:
 
 1. `mcp__tilth__tilth_search` (kind=content) for the literal name.
 2. `mcp__serena__find_referencing_symbols` on each definition site.
-3. `mcp__code-review-graph__get_affected_flows_tool` for the
-   downstream graph.
+3. `mcp__tilth__tilth_deps` / `mcp__tilth__tilth_grok` (callees) for the
+   downstream reach.
 
 ### 3. Error-path probe
 
@@ -63,9 +63,8 @@ first.
 
 Tool order:
 
-1. `mcp__code-review-graph__get_hub_nodes_tool` for high-fan-in
-   functions.
-2. `mcp__code-review-graph__find_large_functions_tool` for >150-LOC
+1. `mcp__serena__find_referencing_symbols` for high-fan-in functions.
+2. `mcp__tilth__tilth_grok` / `mcp__tilth__tilth_read` to spot >150-LOC
    bodies.
 3. `mcp__tilth__tilth_search(query="forEach,for.*await,await.*for,for.*\\.length")`
    for common loop antipatterns.
@@ -114,6 +113,6 @@ Tool order:
    we fix this?", reply: "Switch out of read-mode-probe. Want me to
    propose a fix?" — and wait.
 4. **Reader-first verbs only.** `read_file`, `codebase_search`,
-   `find_symbol`, `mcp__serena__*`, `mcp__tilth__*` (no `tilth_write`),
-   `mcp__code-review-graph__*`. No `edit_file`, no
-   `run_terminal_cmd` except `git log|status|diff|show`, `ls`, `wc`.
+   `find_symbol`, `mcp__serena__*`, `mcp__tilth__*` (no `tilth_write`).
+   No `edit_file`, no `run_terminal_cmd` except `git log|status|diff|show`,
+   `ls`, `wc`.

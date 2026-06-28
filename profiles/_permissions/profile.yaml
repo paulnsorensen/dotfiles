@@ -76,7 +76,6 @@ settings:
     - mcp__plugin_playwright_playwright__*
     - mcp__context7__*
     - mcp__tavily__*
-    - mcp__code-review-graph__*
     - mcp__tilth__*
     - mcp__serena__*
     - mcp__hallouminate__*

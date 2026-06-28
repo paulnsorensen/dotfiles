@@ -113,7 +113,6 @@ packages:
 
   # uv tools (Python)
   - ralphify: { source: uv }
-  - code-review-graph: { source: uv }
   - check-jsonschema: { source: uv }
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
   - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API

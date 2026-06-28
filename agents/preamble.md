@@ -28,30 +28,9 @@ The wiki is the fast path to design rationale; `AGENTS.md` / `CLAUDE.md` is the 
 | Rename a symbol | `rename_symbol` |
 | Safe-delete a symbol | `safe_delete_symbol` |
 
-## code-review-graph mapping (graph-level)
-
-| Task | Tool |
-|---|---|
-| Build / refresh the graph for a repo | `build_or_update_graph_tool` |
-| One-call review context for a change | `get_review_context_tool` |
-| Detect what changed since last build | `detect_changes_tool` |
-| Trace blast radius of a symbol or file | `get_impact_radius_tool` |
-| Which user-facing flows a change touches | `get_affected_flows_tool` |
-| High-level architecture summary | `get_architecture_overview_tool` |
-| Hub / bridge nodes (critical nodes) | `get_hub_nodes_tool` / `get_bridge_nodes_tool` |
-| Suspicious size or shape | `find_large_functions_tool` |
-| Modular subgraphs | `list_communities_tool` / `get_community_tool` |
-| Semantic (embedding) search across nodes | `semantic_search_nodes_tool` |
-| Minimal context for a question | `get_minimal_context_tool` |
-| Knowledge gaps for review | `get_knowledge_gaps_tool` |
-
-Reach for code-review-graph first when reviewing a change, planning a multi-file edit, or answering "what does this actually affect."
-
-**Embeddings provider.** On a machine wired to a local embeddings endpoint (`CRG_OPENAI_BASE_URL` set — true on the local-llm rig), call `build_or_update_graph_tool` and `semantic_search_nodes_tool` with `provider="openai"` and `model="local-embed"`. The default `provider="local"` needs the `[embeddings]` extra (deliberately omitted there) and will error. Switching provider re-embeds the graph on the next build.
-
 ## Workflow before editing code
 
-1. **Scope it** — for changes that touch multiple files or for review work, start with `get_review_context_tool` or `get_impact_radius_tool`.
+1. **Scope it** — use `tilth_search` to find affected files and callers before touching multi-file changes.
 2. **Read the symbol** — `get_symbols_overview` on the target file (skip if done this session), then `find_symbol` with `include_body=true` for the specific symbol.
 3. **Edit** — Serena `replace_symbol_body` / `insert_before_symbol` / `insert_after_symbol` / `replace_content` for symbol-anchored edits; `tilth_write` for whole-file rewrites or non-code files.
 
@@ -63,7 +42,6 @@ Before each tool call, ask: "What's the shape of the question?"
 
 - Symbol-level read or edit → **Serena**
 - File-level read, search, or edit → **tilth** (for "where is X" / "what calls Y": `tilth_search kind:"symbol"` or `kind:"callers"` — not `content`/`regex`)
-- Graph-level analysis (impact, architecture, flows) → **code-review-graph**
 
 If unsure, pick the smallest-scope tool that can answer the question. Don't rationalize built-ins with "the file is small" or "I already know the path" — those rationalizations have produced incorrect behavior before.
 

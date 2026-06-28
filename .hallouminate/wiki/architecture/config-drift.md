@@ -159,7 +159,7 @@ when it was a registry MCP.
 
 ## Known drift pattern: MCPs no longer projected to a harness
 
-**Symptom**: An MCP remains in a merged-file target even after the current render no longer projects it to that harness — for example a Copilot `mcp-config.json` entry for `tilth`, `context7`, `tavily`, `code-review-graph`, or `serena` after Copilot narrowed to explicit `harnesses: [copilot]` entries.[^copilot-stale-mcp]
+**Symptom**: An MCP remains in a merged-file target even after the current render no longer projects it to that harness — for example a Copilot `mcp-config.json` entry for `tilth`, `context7`, `tavily`, or `serena` after Copilot narrowed to explicit `harnesses: [copilot]` entries.[^copilot-stale-mcp]
 
 **Why it happens**: merged files are read-modify-write surfaces. A current render writes/updates entries that still project to the harness, but a stale entry can persist when the old source was historical template drift or when prior manifest ownership did not prove that the harness once received the MCP.
 
@@ -167,7 +167,7 @@ when it was a registry MCP.
 
 **Detection**: Compare the live merged file's server names against the current renderer projection. Same-name registry entries that are live-only are stale; unrelated names are expected-local.
 
-[^copilot-stale-mcp]: harness-doctor run on 2026-06-24 found Copilot live-only `code-review-graph`, `context7`, `serena`, `tavily`, and `tilth` while the current render produced only `hallouminate` and `milknado`.
+[^copilot-stale-mcp]: harness-doctor run on 2026-06-24 found Copilot live-only `context7`, `serena`, `tavily`, and `tilth` while the current render produced only `hallouminate` and `milknado`.
 [^reconcile-projection]: agent-profile/agent_profile/cli.py:418-473; agent-profile/tests/test_mcp_reconcile.py:test_mcp_scoped_to_no_harnesses_is_pruned
 [^copilot-prune-nonprojected]: agent-profile/agent_profile/renderers/copilot.py:263-312; agent-profile/tests/test_renderer_copilot.py:test_mcp_prunes_registry_servers_no_longer_projected_to_copilot
 
@@ -260,7 +260,7 @@ is present.
 
 **Detection**: During harness-doctor, rendering `global` into `/tmp` is safe after the fix; before that fix, render `base` for comparison.
 
-[^staged-global-mcp]: harness-doctor run on 2026-06-24; `ap install global --target /tmp/harness-doctor-global.nH8lCY` modified `/home/paul/.claude.json` for tilth, context7, tavily, code-review-graph, serena, and hallouminate.
+[^staged-global-mcp]: harness-doctor run on 2026-06-24; `ap install global --target /tmp/harness-doctor-global.nH8lCY` modified `/home/paul/.claude.json` for tilth, context7, tavily, serena, and hallouminate.
 [^global-mcp-scope]: profiles/global/profile.yaml:65-76
 [^claude-user-scope-render]: agent-profile/agent_profile/renderers/claude.py:488-495,517-538
 [^staged-global-fix]: agent-profile/agent_profile/cli.py:272-307; agent-profile/tests/test_mcp_reconcile.py:test_explicit_target_user_scope_stages_plugin_mcp_without_claude_cli

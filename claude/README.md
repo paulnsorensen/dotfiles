@@ -195,7 +195,6 @@ User-scope MCPs (registered here):
 
 | MCP | Purpose |
 |-----|---------|
-| `code-review-graph` | Persistent code knowledge graph; impact radius, call chains, architectural framing |
 | `todoist` | Todoist task/project management |
 | `tilth` | AST-aware code search/read/edit (Tree-sitter); backs `cheez-*` skills. Gated by `gate_unless: CHEESE_FLOW` — installed only when the cheese-flow plugin is dark, since the plugin bundles its own tilth MCP |
 
