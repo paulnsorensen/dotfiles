@@ -98,6 +98,12 @@ settings:
     - Bash(grep:*)
     - Bash(ag:*)
     - Bash(ack:*)
+    # rtk proxy runs a raw command unfiltered, tunneling denied search tools
+    # (grep/git grep) past the deny above. Close that hole — route to tilth.
+    - Bash(rtk proxy grep:*)
+    - Bash(rtk proxy git grep:*)
+    - Bash(rtk proxy ag:*)
+    - Bash(rtk proxy ack:*)
     - Bash(sudo:*)
     - Bash(rm -rf:*)
     # Secret-protection floor (cross-harness). opencode denies .env by

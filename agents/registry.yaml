@@ -13,15 +13,15 @@ agents:
   fromage-age-arch:
     description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
     models:
-      claude: sonnet
+      claude: opus
       codex: gpt-5-codex
-      cursor: claude-sonnet
+      cursor: auto
     disallowedTools:
     - Edit
     - Write
     - NotebookEdit
     color: red
-    effort: high
+    effort: medium
     skills:
     - scout
     - cheez-search
@@ -47,9 +47,10 @@ agents:
   fromage-fort:
     description: PR review comment responder. Triages both inline review threads AND PR-level review body comments using severity tiers (blocker/high/medium/low) — fixes high-severity items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful. Spawnable as a parallel agent for move-my-cheese and cheese-convoy workflows.
     models:
-      claude: sonnet
+      claude: opus
       codex: gpt-5-codex
-      cursor: claude-sonnet
+      cursor: auto
+    effort: low
     tools:
     - Read
     - Write
@@ -66,24 +67,26 @@ agents:
   fromage-secaudit:
     description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Read-only. Returns stake-grouped findings (high/medium) with file:line citations and one-line recommendations — ~2 KB digest, no severity rewriting, no auto-fixes. Used as an easy-cheese fork target when /age needs evidence on the security dimension.
     models:
-      claude: sonnet
+      claude: opus
       codex: gpt-5-codex
-      cursor: claude-sonnet
+      cursor: auto
     disallowedTools:
     - Write
     - Edit
     - NotebookEdit
     - AskUserQuestion
     color: red
+    effort: medium
     skills:
     - scout
     body_path: agents/agent_definitions/fromage-secaudit.md
   ghostbuster:
     description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with severity-tier scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
     models:
-      claude: sonnet
+      claude: opus
       codex: gpt-5-codex
-      cursor: claude-sonnet
+      cursor: auto
+    effort: low
     disallowedTools:
     - Edit
     - NotebookEdit
@@ -95,9 +98,10 @@ agents:
   nih-scanner:
     description: Structural NIH pattern scanner. Uses Serena MCP and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
     models:
-      claude: sonnet
+      claude: opus
       codex: gpt-5-codex
-      cursor: claude-sonnet
+      cursor: auto
+    effort: low
     disallowedTools:
     - Edit
     - Write
@@ -251,16 +255,18 @@ agents:
     - cheez-read
     body_path: agents/agent_definitions/reviewer.md
   coder:
-    # Keeps the write surface (Edit/Write) — it mutates the tree — but denies
-    # Agent: a dispatched coder is a level-1 subagent and cannot fan out.
+    # Runs on opus at low effort: the write surface needs judgment but the loop
+    # is bounded. Keeps Edit/Write (it mutates the tree) but denies Agent — a
+    # dispatched coder is a level-1 subagent and cannot fan out.
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop, editing through the cheez-write (tilth) skill. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Full write surface — the one phase agent that mutates the tree. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
-      claude: sonnet
+      claude: opus
       codex: gpt-5-codex
       opencode: inherit
     disallowedTools:
     - Agent
     color: green
+    effort: low
     skills:
     - cook
     - press

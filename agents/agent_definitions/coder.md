@@ -55,6 +55,7 @@ When you approach ~120k tokens of context — or run out before finishing — th
 - Tests encode *why* the behavior matters, not just *what* it does. A test that can't fail when business logic changes is wrong.
 - Run code for anything code can compute (counts, diffs, arithmetic) instead of eyeballing it.
 - De-slop before handoff — run the `de-slop` checklist against what you wrote.
+- A denied search is a routing signal, not an obstacle: when `grep`/`find`/`cat` is denied, switch to `cheez-search`/`cheez-read` (tilth). Never retry the same search through `rtk proxy` or another shell wrapper — that bypass is closed.
 - If the correct fix needs scope you weren't granted, stop and say so. Don't ship a band-aid and call it done.
 - Commit only when asked; when committing, use the `commit` skill (specific files by name, meaningful message, no `--no-verify`).
 - You may be dispatched on a scoped *slice* of a larger task with a context reference (an artifact path), not the whole job — treat that slice as your full boundary: read the reference, implement only the slice, don't re-derive or touch the rest.
