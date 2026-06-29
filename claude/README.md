@@ -107,7 +107,6 @@ Reusable tool-usage instructions injected into agents and commands.
 
 | Skill | Purpose |
 |-------|---------|
-| `scout` | Directory listings (eza); delegates code search to `easy-cheese:cheez-search` |
 | `easy-cheese:cheez-search` | AST-aware code/content search via tilth MCP (replaces trace) |
 | `easy-cheese:cheez-read` | Hash-anchored code reading via tilth MCP |
 | `easy-cheese:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |

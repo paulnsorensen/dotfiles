@@ -16,7 +16,7 @@ For each non-SAFE worktree, gather these in parallel where possible:
 2. **Diff size** — `git -C <repo_root> diff --stat main...<branch>` (how much unique code?)
 3. **PR status** — use the `gh` skill: MCP `search_pull_requests` or `list_pull_requests` with head branch filter
 4. **Staleness** — days since last commit via `git -C <wt_path> log -1 --format='%cr'`
-5. **Content overlap** — use `rg` (via scout) to check if key identifiers from the branch's changed files exist in main
+5. **Content overlap** — use `cheez-search` to check if key identifiers from the branch's changed files exist in main
 6. **Uncommitted work** (DIRTY only) — `git -C <wt_path> status --short` and `git -C <wt_path> diff --stat`
 
 ## DIRTY Worktree Interview
@@ -94,7 +94,7 @@ git -C <repo> branch -D claude/<slug-4>
 ## Rules
 
 - NEVER remove or modify any worktrees yourself — you only recommend and output commands
-- Use `rg` (via scout skill) instead of grep for content searches
+- Use `cheez-search` instead of grep for content searches
 - Use GitHub MCP tools (via gh skill) instead of raw GitHub API or `gh` CLI for PR checks
 - Run analysis commands in parallel where possible (independent repos/worktrees)
 - If a repo has no WARN/DIRTY worktrees, skip it entirely
