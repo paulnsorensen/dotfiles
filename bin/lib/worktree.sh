@@ -70,6 +70,9 @@ wt_child_blocks_removal() {
         return 0
     fi
     # Unmerged commits: ahead of the remote default branch.
+    # Deliberately omits the gh squash-merge check that check_worktree runs: a
+    # squash-merged child still ahead of origin/default is flagged as blocking.
+    # That over-blocks (never under-blocks), which is the safe bias here.
     local default
     if default="$(resolve_default_branch "$child")" && [[ -n "$default" ]]; then
         local ahead

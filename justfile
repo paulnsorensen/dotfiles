@@ -9,7 +9,7 @@ lint: lint-shell lint-python lint-js lint-markdown
 
 # shellcheck on shell scripts
 lint-shell:
-    shellcheck -x -e SC1091 bin/* .sync
+    shellcheck -x -e SC1091 $(find bin -type f) .sync
     shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/install-base-profile.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-codex.sh chezmoi/lib/install-shared-assets.sh
     shellcheck -x -e SC1091 -s bash agents/hooks/session-start-cheese-flair.sh
     shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh tests/serena-smoke.sh
@@ -57,6 +57,14 @@ test *ARGS:
 smoke:
     ./tests/serena-smoke.sh
     ./tests/workflows-parse.sh
+
+# validate the opt-in local-llm stack — shellcheck scripts + parse configs
+check-llm:
+    shellcheck -x -e SC1091 -s bash chezmoi/local-llm/scripts/executable_*.sh
+    jq empty chezmoi/local-llm/configs/lean.json
+    yq -e '.' chezmoi/local-llm/configs/litellm.yaml > /dev/null
+    yq -e '.' chezmoi/local-llm/configs/llama-swap.yaml > /dev/null
+    @echo "check-llm: ok"
 
 # pre-push gate: lint + unit tests + serena smoke test
 check: lint test smoke

@@ -6,7 +6,7 @@ description: >
   Use when asked "where's the worktree for X", "find the worktree touching <path>",
   "which worktree has the open PR for Y", "find stale worktrees", or when
   /worktree-find is invoked. Read-only — it locates, it does not remove.
-allowed-tools: Bash, Read, Glob, Grep
+allowed-tools: Bash
 ---
 
 # worktree-find

@@ -7,7 +7,7 @@ description: >
   files), not just metadata. Use when asked to "triage worktrees", "what's in
   these stale worktrees", or when /worktree-sweep --triage runs. Recommends only —
   never removes, commits, or stashes anything itself.
-allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, Agent
+allowed-tools: Bash, AskUserQuestion, Agent
 ---
 
 # worktree-triage
