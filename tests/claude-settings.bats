@@ -23,13 +23,13 @@ teardown() { teardown_test_env; }
 
 # Run modify_settings.json with $1 as stdin; stdout → $OUT, stderr → $output.
 run_modify() {
-    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' bash '$SCRIPT' <<'STDIN' >'$OUT'
+    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' <<'STDIN' >'$OUT'
 $1
 STDIN"
 }
 
 @test "modify_settings: empty stdin emits the authoritative source (fresh machine)" {
-    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' bash '$SCRIPT' </dev/null >'$OUT'"
+    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
     [ "$status" -eq 0 ]
     # Repo defaults present, incl. opus and the seeded official plugins.
     [ "$(jq -r '.model' "$OUT")" = "opus" ]
@@ -118,7 +118,7 @@ STDIN"
     local tmpsrc="$TEST_HOME/cz"
     mkdir -p "$tmpsrc/lib"
     jq '. + {someNewClaudeKey:"default"}' "$AUTH" > "$tmpsrc/lib/claude-settings-authoritative.json"
-    run bash -c "CHEZMOI_SOURCE_DIR='$tmpsrc' bash '$SCRIPT' <<'STDIN' >'$OUT'
+    run bash -c "CHEZMOI_SOURCE_DIR='$tmpsrc' sh '$SCRIPT' <<'STDIN' >'$OUT'
 {\"someNewClaudeKey\":\"x\"}
 STDIN"
     [ "$status" -eq 0 ]
@@ -195,4 +195,53 @@ cz_apply() {
     [ "$status" -ne 0 ]                                   # chezmoi apply failed
     [ "$(cat "$SETTINGS")" = "$before" ]                  # live file NOT clobbered
     [[ "$output" == *"appAddedUnknown"* ]]                # offending key surfaced
+}
+
+# ── post-apply schema validator ─────────────────────────────────────────────
+# Prove the run_after validator actually REJECTS a bad live file (not just that
+# the script exists + mentions check-jsonschema). Locks that a regression which
+# neuters the check — wrong flag, swallowed exit — turns the suite red.
+
+@test "validate-claude-settings: rejects a type-invalid live settings.json, accepts a valid one" {
+    command -v check-jsonschema >/dev/null 2>&1 || skip "check-jsonschema not installed"
+    local validator="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_validate-claude-settings.sh"
+    mkdir -p "$TEST_HOME/.claude"
+
+    # Gross type error: the schema root is an object, not an array — must reject.
+    printf '%s\n' '[]' > "$TEST_HOME/.claude/settings.json"
+    run env HOME="$TEST_HOME" bash "$validator"
+    [ "$status" -ne 0 ]
+
+    # Control: the committed authoritative source is valid and must pass. A
+    # schema-fetch/network failure trips this branch loudly, so the negative
+    # case above can't pass for the wrong reason.
+    cp "$AUTH" "$TEST_HOME/.claude/settings.json"
+    run env HOME="$TEST_HOME" bash "$validator"
+    [ "$status" -eq 0 ]
+}
+
+@test "modify_settings: permissions.ask/additionalDirectories are preserved, not flagged unknown" {
+    # ask is the third permission bucket alongside allow/deny; additionalDirectories
+    # is also app/ap-written. Neither is in the authoritative source, so without the
+    # ap-prefix entries the gate would falsely halt on a legitimate live key.
+    run_modify '{"permissions":{"ask":["Bash(rm:*)"],"additionalDirectories":["/tmp"]}}'
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.permissions.ask[0]' "$OUT")" = "Bash(rm:*)" ]
+    [ "$(jq -r '.permissions.additionalDirectories[0]' "$OUT")" = "/tmp" ]
+    # class-a still authoritative
+    [ "$(jq -r '.permissions.defaultMode' "$OUT")" = "auto" ]
+}
+
+@test "modify_settings: malformed (non-JSON) live file halts with guidance, not an opaque jq error" {
+    run_modify '[ this is not json'
+    [ "$status" -ne 0 ]
+    [ ! -s "$OUT" ]
+    [[ "$output" == *"not a JSON object"* ]]
+}
+
+@test "modify_settings: a non-object JSON live file (top-level array) halts with guidance" {
+    run_modify '[]'
+    [ "$status" -ne 0 ]
+    [ ! -s "$OUT" ]
+    [[ "$output" == *"not a JSON object"* ]]
 }

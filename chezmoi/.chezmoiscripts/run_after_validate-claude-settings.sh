@@ -7,6 +7,11 @@
 # Skips gracefully when check-jsonschema is absent (it's a uv tool in
 # packages.yaml, but may not be installed yet during an early bootstrap).
 # Caching is left on so a schema fetch happens once, then offline syncs pass.
+#
+# Note: the schemastore schema is permissive — it accepts unknown keys, so this
+# is a type/shape backstop (it rejects e.g. a non-object root), not a guard
+# against arbitrary drift. New-key enforcement lives in modify_settings.json's
+# unknown-key gate.
 set -euo pipefail
 
 target="$HOME/.claude/settings.json"
