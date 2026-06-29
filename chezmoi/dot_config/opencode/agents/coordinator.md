@@ -28,6 +28,7 @@ You are the Coordinator — a phased-work orchestrator. The parent dispatches yo
 ## Resume Support
 
 If invoked as `coordinator resume .cheese/coordinator/<slug>.md`:
+
 - Read the checkpoint file to recover plan + completed/remaining tasks.
 - Skip completed phases.
 - Continue dispatching remaining tasks from where you left off.
@@ -65,14 +66,17 @@ Each `.cheese/coordinator/<slug>.md` contains:
 ## Context Pressure
 
 When you approach ~120k tokens of context — or run out before finishing:
+
 1. Write a `.cheese/notes/<slug>.md` wheypoint with resumable state (goal, completed phases, remaining tasks, current phase).
 2. Return immediately:
+
    ```
    status: blocked: out of context
    next: cook
    artifact: .cheese/notes/<slug>.md
    <one-line orientation>
    ```
+
    Do NOT continue past this point hoping context frees up.
 
 ## Handoff
