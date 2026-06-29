@@ -25,6 +25,7 @@ agents:
     skills:
     - scout
     - cheez-search
+    maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-arch.md
   fromage-age-history:
     description: Git history analyst. Produces per-file risk scores that the orchestrator uses to adjust sibling findings. Does NOT find bugs or architecture issues — only outputs score modifiers.
@@ -43,6 +44,7 @@ agents:
     effort: high
     skills:
     - scout
+    maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-history.md
   fromage-fort:
     description: PR review comment responder. Triages both inline review threads AND PR-level review body comments using severity tiers (blocker/high/medium/low) — fixes high-severity items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful. Spawnable as a parallel agent for move-my-cheese and cheese-convoy workflows.
@@ -62,6 +64,7 @@ agents:
     - scout
     - cheez-write
     - commit
+    maxTurns: 50
     body_path: agents/agent_definitions/fromage-fort.md
   fromage-secaudit:
     description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Read-only. Returns stake-grouped findings (high/medium) with file:line citations and one-line recommendations — ~2 KB digest, no severity rewriting, no auto-fixes. Used as an easy-cheese fork target when /age needs evidence on the security dimension.
@@ -77,6 +80,7 @@ agents:
     color: red
     skills:
     - scout
+    maxTurns: 50
     body_path: agents/agent_definitions/fromage-secaudit.md
   ghostbuster:
     description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with severity-tier scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
@@ -91,6 +95,7 @@ agents:
     - WebFetch
     - AskUserQuestion
     - Write
+    maxTurns: 50
     body_path: agents/agent_definitions/ghostbuster.md
   nih-scanner:
     description: Structural NIH pattern scanner. Uses Serena MCP and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
@@ -107,6 +112,7 @@ agents:
     - AskUserQuestion
     skills:
     - cheez-search
+    maxTurns: 50
     body_path: agents/agent_definitions/nih-scanner.md
   ricotta-reducer:
     description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with severity-tier scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
@@ -124,6 +130,7 @@ agents:
     skills:
     - scout
     - de-slop
+    maxTurns: 50
     body_path: agents/agent_definitions/ricotta-reducer.md
   roquefort-wrecker:
     description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
@@ -140,6 +147,7 @@ agents:
     - mcp__serena__*
     skills:
     - scout
+    maxTurns: 50
     body_path: agents/agent_definitions/roquefort-wrecker.md
   duckdb-expert:
     description: Read-only DuckDB analyst for the coding-agent session-analytics database. Spawned with ONE analytics pack pointer (skills/<skill>/references/<domain>.md) plus a target and a harness filter; runs that single domain's queries and returns one structured ~2 KB digest. Reads queries from the caller's pack and the canonical schema from session-analytics. Built for context isolation — consumer skills fan out one parallel spawn per owned domain. Used by skill-improver, tool-efficiency, prompt-analytics, and work-recovery.
@@ -159,6 +167,7 @@ agents:
     - WebFetch
     skills:
     - session-analytics
+    maxTurns: 50
     body_path: agents/agent_definitions/duckdb-expert.md
   whey-drainer:
     description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — call from /cook taste-test, /press, or /cure post-fix to gate the next step on test pass. Does NOT write tests.
@@ -173,6 +182,7 @@ agents:
     - Grep
     skills:
     - scout
+    maxTurns: 50
     body_path: agents/agent_definitions/whey-drainer.md
   worktree-triage:
     description: Analyzes WARN/DIRTY worktrees to recommend keep, archive, or remove. Checks commit content, diffs, PR status, and staleness to make informed triage decisions. Interviews the user on DIRTY worktrees with unique changes.
@@ -189,6 +199,7 @@ agents:
     skills:
     - scout
     - gh
+    maxTurns: 50
     body_path: agents/agent_definitions/worktree-triage.md
   # ── easy-cheese general phase agents ──────────────────────────────────────
   # Four general-purpose agents that model the easy-cheese workflow: explore
@@ -215,6 +226,7 @@ agents:
     skills:
     - cheez-search
     - cheez-read
+    maxTurns: 50
     body_path: agents/agent_definitions/explorer.md
   researcher:
     description: External-research agent. Answers questions outside the codebase — library/API docs, current web facts, version/changelog checks, best-practice comparisons, GitHub examples — via Context7, Tavily, web fetch, and gh, then writes a durable cited research slug under .cheese/research/. Read-only against code. Returns a condensed claim-level digest (the heavy fetch bodies stay on disk, out of the parent's context). Models the easy-cheese research phase. Use PROACTIVELY before implementing against an unfamiliar library or API, when a claim needs a current source instead of a guess, or whenever a skill (/mold, /cook, /briesearch, or any user-installed skill) would otherwise rely on stale training data.
@@ -231,6 +243,7 @@ agents:
     - briesearch
     - cheez-search
     - cheez-read
+    maxTurns: 50
     body_path: agents/agent_definitions/researcher.md
   reviewer:
     description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path across the ten /age dimensions (correctness, security, encapsulation, spec, complexity, deslop, assertions, NIH, efficiency, telemetry) and returns a severity-grouped findings report. Read-only — never writes fixes; at the top level it draws on the specialist agents (fromage-*, ghostbuster, ricotta-reducer, nih-scanner) for evidence. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
@@ -249,6 +262,7 @@ agents:
     - age
     - cheez-search
     - cheez-read
+    maxTurns: 50
     body_path: agents/agent_definitions/reviewer.md
   coder:
     # Keeps the write surface (Edit/Write) — it mutates the tree — but denies
@@ -271,4 +285,5 @@ agents:
     - de-slop
     - tdd-assertions
     - commit
+    maxTurns: 100
     body_path: agents/agent_definitions/coder.md
