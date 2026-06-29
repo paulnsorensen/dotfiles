@@ -111,6 +111,32 @@ hooks:
     timeout: 5
     description: Block reads/writes of .env, private keys, and credential stores
 
+  # ─── Tool reroute ───────────────────────────────────────────────────
+  # Transparently REWRITES wrong-tool Bash/Grep/Glob calls to their tilth /
+  # wt-git shell equivalent via updatedInput (grep/rg/ag/ack → tilth, cd+git →
+  # wt-git, bare cat → tilth, find -name → tilth <glob>), DENIES the two cases
+  # with no shell rewrite target (the Grep/Glob tools, shell write-redirects)
+  # naming cheez-search / cheez-write, and DELEGATES every other Bash command to
+  # `rtk hook <harness>` for token compaction. One dispatcher (tool-reroute.js)
+  # runs three independently-removable modules (lib/tool-reroute/{search,cd-git,
+  # io}.js); the shared lexer is lib/tool-reroute/shell.js. Both harnesses share
+  # the allow/deny + updatedInput schema, so one script serves claude + codex.
+  # Fail-open: a missing logic file, absent node, or absent rtk degrades to the
+  # unrewritten command.
+  tool-reroute:
+    event: PreToolUse
+    script: agents/hooks/tool-reroute.sh
+    shared_assets:
+      - agents/lib/tool-reroute.js
+      - agents/lib/tool-reroute/shell.js
+      - agents/lib/tool-reroute/search.js
+      - agents/lib/tool-reroute/cd-git.js
+      - agents/lib/tool-reroute/io.js
+    harnesses: [claude, codex]
+    matcher: "Bash|Grep|Glob"
+    timeout: 5
+    description: Rewrite wrong-tool Bash/Grep/Glob calls to tilth/wt-git; delegate the rest to rtk
+
   # ─── Moshi (rjyo/moshi-hook) ────────────────────────────────────────
   # Bridge between Claude Code and the Moshi iOS terminal app — sends
   # session-start, prompt, turn-end, and approval events to the phone
