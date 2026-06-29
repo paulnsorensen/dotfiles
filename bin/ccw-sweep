@@ -246,7 +246,17 @@ check_worktree() {
         echo -e "         ${YELLOW}nests unmerged/dirty worktree(s) — relocate before removing parent:${RESET}"
         for nested_child in "${nested_blockers[@]}"; do
             echo -e "           ${DIM}${nested_child}${RESET}"
-            echo -e "           ${DIM}git worktree move '${nested_child}' '${repo_root}/.worktrees/$(basename "$nested_child")'${RESET}"
+            # Relocate into the child's OWN repo, not the parent's: a cross-repo
+            # nested child belongs to a different repo, so repo_root (the parent's)
+            # would point at the wrong tree. Resolve the child's repo top-level
+            # from its shared git dir and scope the move with -C.
+            local child_top
+            if child_top="$(git -C "$nested_child" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" && [[ -n "$child_top" ]]; then
+                child_top="$(dirname "$child_top")"
+                echo -e "           ${DIM}git -C '${child_top}' worktree move '${nested_child}' '${child_top}/.worktrees/$(basename "$nested_child")'${RESET}"
+            else
+                echo -e "           ${DIM}relocate '${nested_child}' out of the parent before removing (could not resolve its repo)${RESET}"
+            fi
         done
     fi
 

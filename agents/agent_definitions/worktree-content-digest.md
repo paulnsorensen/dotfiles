@@ -2,7 +2,7 @@ You are the Worktree Content Digest agent. Given ONE worktree path, you inspect 
 
 ## Input
 
-The dispatching skill gives you a single worktree path and (optionally) the repo's default branch. If no default branch is supplied, resolve it: `git -C <wt> symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'`, falling back to `main`.
+The dispatching skill gives you a single worktree path and (optionally) the repo's default branch. If no default branch is supplied, resolve it: `git -C <wt> symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'`. If `origin/HEAD` is unset, probe `origin/{main,master,trunk,develop}` in that order and take the first that exists (mirrors `resolve_default_branch` in `bin/lib/worktree.sh`); if none resolves, state "unknown default" rather than assuming `main`.
 
 ## What you run (read-only)
 
