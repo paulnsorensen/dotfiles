@@ -188,12 +188,25 @@ reason()   { jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$1"; }
 # ── tool-reroute/delegate: non-reroute Bash → rtk hook ───────────────────
 
 @test "tool-reroute/delegate: plain git is handed to rtk (rtk git …)" {
-    # No module owns `git status`; the dispatcher delegates to `rtk hook claude`,
-    # which rewrites it to the compacted `rtk git status`.
-    local out; out=$(out_for 'git status')
-    # rtk's exact decision field is config-dependent; the stable signal that
-    # delegation happened is rtk's rewritten command on updatedInput.
-    [[ "$(newcmd "$out")" == "rtk git status" ]]
+    # No module owns `git status`; the dispatcher delegates to `rtk hook claude`
+    # and echoes rtk's stdout verbatim. Stub rtk on PATH (mock externals — the
+    # repo never assumes a real rtk install) so the delegation wiring is tested
+    # deterministically; the rtk-absent fail-open path is covered separately.
+    local stub="$TEST_HOME/rtk-stub-bin"
+    mkdir -p "$stub"
+    cat >"$stub/rtk" <<'RTK'
+#!/usr/bin/env bash
+cat >/dev/null   # consume the piped PreToolUse event
+printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{"command":"rtk git status"}}}'
+RTK
+    chmod +x "$stub/rtk"
+    local nodedir; nodedir="$(dirname "$(command -v node)")"
+    local json; json=$(jq -nc --arg w "$W" \
+        '{tool_name:"Bash", tool_input:{command:"git status"}, cwd:$w}')
+    run env PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$json' | '$DEPLOY/hooks/tool-reroute.sh'"
+    [ "$status" -eq 0 ]
+    # the stable signal that delegation happened is rtk's rewritten command.
+    [[ "$(newcmd "$output")" == "rtk git status" ]]
 }
 
 @test "tool-reroute/delegate: rtk absent fails open (allow, empty)" {
