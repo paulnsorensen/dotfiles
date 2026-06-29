@@ -67,6 +67,8 @@ mkdir -p ~/local-llm/configs/lean-agents/{agents,commands,plugins}
 
 Agent `.md` files placed in `lean-agents/agents/` are loaded after the global ones, so they can override or extend the agent set with lean-appropriate models and prompts.
 
+The `opencode-lean` wrapper preflights this overlay and refuses to launch (with a hint) when `lean-agents/{agents,commands,plugins}/` is missing or **empty** — opencode crashes at startup on a non-existent `OPENCODE_CONFIG_DIR`, so the overlay must hold at least one file. The `mkdir` above only creates the empty dirs; drop in an agent `.md` before `opencode-lean` will start.
+
 The wrapper does two things before launch:
 
 1. **Preflight** (#298) — probes `:4000`; if down, runs `llm-up` and waits up to `OPENCODE_LEAN_TIMEOUT` seconds (default 30), bailing with a hint instead of launching into a dead stack.

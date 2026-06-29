@@ -25,6 +25,15 @@ INSTALL_SWAP="$REAL_DOTFILES_DIR/chezmoi/local-llm/scripts/executable_install-ll
 LITELLM="$REAL_DOTFILES_DIR/chezmoi/local-llm/configs/litellm.yaml"
 UNITS_DIR="$REAL_DOTFILES_DIR/chezmoi/dot_config/systemd/user"
 
+# opencode-lean preflights its lean-agents overlay and bails when it's missing or
+# empty, so any test that drives the launch path needs a populated overlay. setup()
+# seeds one; negative tests tear it down.
+_scaffold_lean_agents() {
+    mkdir -p "$HOME/local-llm/configs/lean-agents"/{agents,commands,plugins}
+    printf -- '---\nmodel: local-llm/local-coder\n---\n' \
+        > "$HOME/local-llm/configs/lean-agents/agents/lean-coder.md"
+}
+
 setup() {
     setup_test_env
     export MOCK_BIN="$TEST_HOME/bin"
@@ -70,6 +79,7 @@ unit="${!#}"   # last positional arg
 MOCK
     chmod +x "$MOCK_BIN/systemctl"
 
+    _scaffold_lean_agents
     export PATH="$MOCK_BIN:$PATH"
 }
 
@@ -563,6 +573,7 @@ MOCK
     cat > "$MOCK_BIN/opencode" << 'MOCK'
 #!/bin/bash
 echo "CONFIG=$OPENCODE_CONFIG"
+echo "CONFIGDIR=$OPENCODE_CONFIG_DIR"
 echo "ARGS=$*"
 MOCK
     chmod +x "$MOCK_BIN/opencode"
@@ -573,6 +584,25 @@ MOCK
     assert_success
     assert_output_contains "CONFIG=$HOME/local-llm/configs/lean.json"
     assert_output_contains "ARGS=--model local-coder"
+    assert_output_contains "CONFIGDIR=$HOME/local-llm/configs/lean-agents"
+}
+
+@test "opencode-lean bails when the lean-agents overlay is missing" {
+    rm -rf "$HOME/local-llm/configs/lean-agents"
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run opencode-lean
+    assert_failure
+    assert_output_contains "missing or empty"
+}
+
+@test "opencode-lean bails when the lean-agents overlay is empty (dirs but no files)" {
+    rm -f "$HOME/local-llm/configs/lean-agents/agents/lean-coder.md"
+    # shellcheck disable=SC1090
+    source "$ALIASES"
+    run opencode-lean
+    assert_failure
+    assert_output_contains "missing or empty"
 }
 
 @test "lean.json sets model to local-llm/local-coder by default" {
