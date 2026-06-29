@@ -1,13 +1,13 @@
 #!/bin/bash
 # run_once_before — one-time migration: drop the legacy
-# ~/.claude/settings.json symlink so chezmoi can seed the file from
-# dot_claude/create_settings.json.
+# ~/.claude/settings.json symlink so chezmoi can manage the file via
+# dot_claude/modify_settings.json.
 #
 # Before this change, claude/.sync symlinked $DOTFILES/claude/settings.json
-# into ~/.claude/settings.json. The committed source has been retired and
-# moved to chezmoi/dot_claude/create_settings.json (a `create_` seed —
-# chezmoi creates it once and never updates after). The retired symlink
-# would otherwise block chezmoi's create_ step (the target "exists" but
+# into ~/.claude/settings.json. The committed source has been retired; the
+# live file is now produced by chezmoi/dot_claude/modify_settings.json, which
+# re-asserts the authoritative source on every apply. The retired symlink
+# would otherwise block chezmoi's write step (the target "exists" but
 # points at a now-gone source).
 #
 # Idempotent: a no-op once the symlink is gone. run_once_ ensures this

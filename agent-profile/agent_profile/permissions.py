@@ -56,8 +56,8 @@ def parse_mcp_rule(rule: str) -> tuple[str, str] | None:
     """Return ``(server, tool)`` for an ``mcp__<server>__<tool>`` rule, or
     ``None`` when ``rule`` is not an MCP rule.
 
-    ``mcp__tilth__*`` -> ``("tilth", "*")``; ``mcp__code-review-graph__*``
-    -> ``("code-review-graph", "*")``; ``mcp__s__read_file`` ->
+    ``mcp__tilth__*`` -> ``("tilth", "*")``;  ``mcp__my-server__*``
+    -> ``("my-server", "*")``;  ``mcp__s__read_file`` ->
     ``("s", "read_file")``. Splits on the ``__`` delimiter: the server is
     the segment after the ``mcp__`` prefix, the tool is the remainder (so a
     tool name containing ``__`` is preserved)."""

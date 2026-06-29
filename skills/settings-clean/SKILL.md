@@ -105,9 +105,9 @@ Suggest `permissions.deny` entries that reinforce hook blocks. These act as belt
 Recommended deny entries (reinforces hook blocks):
 
   Legacy tools (use dedicated tools instead):
-    "Bash(grep:*)"         → Grep tool or /scout
-    "Bash(egrep:*)"        → Grep tool or /scout
-    "Bash(fgrep:*)"        → Grep tool or /scout
+    "Bash(grep:*)"         → Grep tool or /cheez-search
+    "Bash(egrep:*)"        → Grep tool or /cheez-search
+    "Bash(fgrep:*)"        → Grep tool or /cheez-search
     "Bash(sed:*)"          → easy-cheese:cheez-write or Edit
     "Bash(awk:*)"          → easy-cheese:cheez-write or Edit
     "Bash(find:*)"         → Glob tool or /scout (fd)

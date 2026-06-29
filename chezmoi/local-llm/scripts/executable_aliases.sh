@@ -33,7 +33,7 @@ alias llm-install-swap='~/local-llm/scripts/install-llama-swap.sh'
 
 # Launch opencode with the lean MCP overlay so the 32k local-coder window fits.
 # OPENCODE_CONFIG mergeDeeps onto the global config — the overlay only disables
-# the heavy non-coding servers (code-review-graph, hallouminate, tavily), leaving
+# the heavy non-coding servers (hallouminate, tavily), leaving
 # tilth + serena + context7 for the coder. Usage: opencode-lean --model local-coder
 #
 # Pre-flights the local-LLM stack: probes :4000, starts local-llm.target if down,

@@ -81,6 +81,8 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 
 **`dots sync` before committing.** The prek pre-commit hook blocks commits when `~/.claude/` is out of sync with the repo. See [[operations/dev-environment]].
 
+**`just check` is the single exit gate.** Before declaring any code change done — and always before commit/push — run `just check` (lint + test + smoke) and confirm it exits 0. It is the exact gate CI runs, so green locally means the `lint` and `test` jobs pass; never accept a pending CI run as a substitute for running it. If a gate tool is missing locally (e.g. `ruff`), say so and name the unrun leg rather than claiming green. Run `dots sync` first when registry / skill / agent / doc source changed.
+
 **Shell functions need tests.** New shell logic goes into a named function in a sourced lib (`.sync-lib.sh`, `chezmoi/lib/*.sh`, …), exercised by a `tests/<area>.bats` file (mock externals via `$PATH`). `.sync` scripts stay thin: parse args, source lib, dispatch. Add new test files to `tests/run-tests.sh`. Rationale: [[operations/sync-and-chezmoi]].
 
 **chezmoi hard rules** (detail: [[operations/sync-and-chezmoi]]):

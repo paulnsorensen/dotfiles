@@ -343,9 +343,9 @@ EOF
     [[ "$(readlink "$HOME/.claude/hooks")"     == "$REAL_DOTFILES_DIR/claude/hooks"     ]]
     [[ -L "$HOME/.claude/reference" ]]
     [[ "$(readlink "$HOME/.claude/reference")" == "$REAL_DOTFILES_DIR/claude/reference" ]]
-    # settings.json must NOT be pre-linked anymore — it's a chezmoi
-    # create_ seed now (chezmoi/dot_claude/create_settings.json), and a
-    # legacy symlink would block the seed step.
+    # settings.json must NOT be pre-linked anymore — it's now produced by a
+    # chezmoi modify_ script (chezmoi/dot_claude/modify_settings.json), and a
+    # legacy symlink would block the write step.
     [[ ! -L "$HOME/.claude/settings.json" ]]
 }
 
@@ -1184,17 +1184,17 @@ SH
     [[ "$(wc -l < "$HOME/.serena/serena_config.yml")" -eq 1 ]]
 }
 
-# ── claude settings.json migration to chezmoi seed ─────────────────────────
+# ── claude settings.json repo-authoritative via modify_ ────────────────────
 
-@test "claude settings.json: chezmoi seed source exists at dot_claude/create_settings.json" {
-    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+@test "claude settings.json: authoritative source exists at lib/claude-settings-authoritative.json" {
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" ]]
 }
 
-@test "claude settings.json: chezmoi seed is valid JSON" {
-    jq -e 'type == "object"' "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null
+@test "claude settings.json: authoritative source is valid JSON" {
+    jq -e 'type == "object"' "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" >/dev/null
 }
 
-@test "claude settings.json: seed has NO legacy SessionStart hook entry" {
+@test "claude settings.json: authoritative source has NO legacy SessionStart hook entry" {
     # The base plugin's plugin.json (rendered by ap into
     # ~/.claude/plugins/local/global/.claude-plugin/plugin.json) now
     # provides the SessionStart wiring. A duplicate entry in settings.json
@@ -1202,29 +1202,41 @@ SH
     # symlinked path is gone (the regression that drove the migration).
     local has_session
     has_session=$(jq -r '.hooks.SessionStart // empty' \
-        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json")
+        "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json")
     [[ -z "$has_session" ]]
 }
 
-@test "claude settings.json: seed does NOT pre-bake ap-managed marketplace/plugin" {
+@test "claude settings.json: authoritative source does NOT pre-bake ap-managed marketplace/plugin" {
     # `local` marketplace + `global@local` enablement are owned by the
-    # claude renderer (ap install global) — they get merged in after
-    # chezmoi seeds. Pre-baking would either cause the merge to look like
-    # a no-op (fine, but confusing) OR survive a global rename (broken).
+    # claude renderer (ap install global) — they get merged into the live
+    # file after modify_ writes. Pre-baking would either look like a no-op
+    # (fine, but confusing) OR survive a global rename (broken).
     ! jq -e '.enabledPlugins["global@local"]' \
-        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+        "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" >/dev/null 2>&1
     ! jq -e '.extraKnownMarketplaces["local"]' \
-        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+        "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" >/dev/null 2>&1
 }
 
-@test "claude settings.json: source filename uses create_ prefix (seed-once)" {
-    # `create_` chezmoi semantic: never overwrite on subsequent applies.
-    # Using `dot_settings.json` (always-render) would clobber user edits;
-    # using `modify_settings.json` (script-driven mutation) would be
-    # heavier than needed since ap handles the per-profile mutations.
-    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+@test "claude settings.json: source uses modify_ prefix, not create_/dot_settings" {
+    # Repo-authoritative: modify_settings.json re-asserts the source on every
+    # apply (overwriting in-app drift) while preserving ap-managed keys. The
+    # retired `create_` seed (write-once) is gone; a bare dot_settings.json
+    # (always-render, no key preservation) would clobber ap's merged keys.
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" ]]
+    [[ -x "$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" ]]
+    [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/settings.json" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/dot_settings.json" ]]
+}
+
+@test "claude settings.json: authoritative source is .chezmoiignore'd (lib/) — never a target" {
+    grep -qE '^lib/' "$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+}
+
+@test "claude settings.json: post-apply schema validator exists" {
+    local s="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_validate-claude-settings.sh"
+    [[ -f "$s" && -x "$s" ]]
+    grep -qF 'check-jsonschema' "$s"
 }
 
 @test "claude settings.json: one-time migration script exists" {

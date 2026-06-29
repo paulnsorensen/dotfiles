@@ -11,7 +11,6 @@ Plugin dev needs heavy reference material (plugin SDK, hook events, MCP protocol
 Defined in `mcp-scope.yaml` (registry-validated):
 
 - **tilth** — `mcp__tilth__*` — AST-aware navigation inside `claude/plugins/` and cross-plugin symbol lookup.
-- **code-review-graph** — `mcp__code-review-graph__*` — symbol and flow exploration when wiring a new plugin into existing skills.
 - **context7** — `mcp__context7__*` — Claude Code plugin SDK, MCP spec, and related framework docs.
 - **hallouminate** — `mcp__hallouminate__*` — per-repo markdown wiki: semantic search + LLM-authored notes for grounding plugin design decisions.
 

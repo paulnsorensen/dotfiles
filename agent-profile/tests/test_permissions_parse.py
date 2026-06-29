@@ -43,7 +43,6 @@ def test_bash_argv_rejects_non_bash_prefix(rule):
     "rule,expected",
     [
         ("mcp__tilth__*", ("tilth", "*")),
-        ("mcp__code-review-graph__*", ("code-review-graph", "*")),
         ("mcp__server__read_file", ("server", "read_file")),
         ("mcp__plugin_global_tilth__*", ("plugin_global_tilth", "*")),
     ],
@@ -60,8 +59,8 @@ def test_parse_mcp_rule_rejects_non_mcp(rule):
 
 
 def test_whole_server_mcp_allows_collects_star_servers():
-    rules = ["mcp__tilth__*", "mcp__code-review-graph__*", "Bash(git:*)", "Edit"]
-    assert whole_server_mcp_allows(rules) == {"tilth", "code-review-graph"}
+    rules = ["mcp__tilth__*", "Bash(git:*)", "Edit"]
+    assert whole_server_mcp_allows(rules) == {"tilth"}
 
 
 def test_whole_server_mcp_allows_excludes_named_only_servers():

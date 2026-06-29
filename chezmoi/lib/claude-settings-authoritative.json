@@ -1,6 +1,7 @@
 {
+  "model": "opus",
+  "effortLevel": "medium",
   "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "ENABLE_TOOL_SEARCH": "true"
   },
   "permissions": {
@@ -15,10 +16,6 @@
             "type": "command",
             "command": "node \"$HOME/.claude/hooks/hook-runner.js\" bash-guard.js",
             "statusMessage": "Checking command safety..."
-          },
-          {
-            "type": "command",
-            "command": "rtk hook claude"
           }
         ]
       },
@@ -61,16 +58,7 @@
     "playwright@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true,
-    "todoist-flow@todoist-flow": true
-  },
-  "extraKnownMarketplaces": {
-    "todoist-flow": {
-      "source": {
-        "source": "directory",
-        "path": "/Users/paul/Dev/dotfiles/claude/plugins/local/todoist-flow"
-      }
-    }
+    "skill-creator@claude-plugins-official": true
   },
   "sandbox": {
     "enabled": false,

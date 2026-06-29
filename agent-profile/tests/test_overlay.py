@@ -733,7 +733,7 @@ def _hermetic_dotenv(monkeypatch, tmp_path):
 def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
     """The shipped review profile must keep: Edit/Write/NotebookEdit + every
     serena mutator + tilth_write denied; a read-only tool whitelist; a closed
-    MCP world of exactly tilth + code-review-graph + context7."""
+    MCP world of exactly tilth + context7."""
     _hermetic_dotenv(monkeypatch, tmp_path)
     pdir = find_profile_dir("review")
     assert pdir is not None, "real profiles/review not found"
@@ -763,7 +763,7 @@ def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
 
     mcp_path = flags[flags.index("--mcp-config") + 1]
     servers = json.loads(Path(mcp_path).read_text())["mcpServers"]
-    assert set(servers) == {"tilth", "code-review-graph", "context7"}
+    assert set(servers) == {"tilth", "context7"}
 
 
 def _assert_real_tight_codex_profile(name: str, prompt_phrase: str, monkeypatch, tmp_path):
@@ -1398,7 +1398,7 @@ def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
     """The shipped review profile launched on opencode must stay read-only:
     OPENCODE_PERMISSION denies edit (from Edit/Write) and every serena
     mutator + tilth_write appears as an mcp__* deny key. Closed MCP world is
-    exactly tilth + code-review-graph + context7 (own, enabled)."""
+    exactly tilth + context7 (own, enabled)."""
     _hermetic_dotenv(monkeypatch, tmp_path)
     pdir = find_profile_dir("review")
     assert pdir is not None, "real profiles/review not found"
@@ -1417,7 +1417,7 @@ def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
 
     config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
     own = {n for n, rec in config["mcp"].items() if rec.get("enabled") is not False}
-    assert own == {"tilth", "code-review-graph", "context7"}
+    assert own == {"tilth", "context7"}
 
 
 def test_real_review_profile_on_codex_projects_permission_rules(monkeypatch, tmp_path, capsys):
@@ -1431,7 +1431,7 @@ def test_real_review_profile_on_codex_projects_permission_rules(monkeypatch, tmp
     err = capsys.readouterr().err
     assert "field permissions_deny ignored for harness codex" not in err
     servers = _codex_config(env)["mcp_servers"]
-    for server in ("tilth", "code-review-graph", "context7"):
+    for server in ("tilth", "context7"):
         assert server in servers, server
     assert "tilth_write" in servers["tilth"]["disabled_tools"]
 

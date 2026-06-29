@@ -3,13 +3,13 @@ name: grok-codebase
 description: >
   Build lasting understanding of an unfamiliar codebase via a four-pillar model
   (Building Blocks, Entry Points, Infrastructure, Egress) plus an adaptive
-  Socratic quiz, orchestrating code-review-graph, Serena, tilth, and Context7.
+  Socratic quiz, orchestrating Serena, tilth, and Context7.
   Use when the user says "help me understand this codebase", "grok this repo",
   "onboard me", "learn this project", "memorize this codebase", "study this
   code", "walk me through this code", or "quiz me on this repo". Do NOT use for
   single-file scripts, repos under 500 LOC, or editing tasks — understanding only.
 argument-hint: <optional focus area, e.g. "auth flow" or "payments">
-allowed-tools: Read, Write, TodoWrite, Skill, Bash(git:*), Bash(ls:*), Bash(cat:*), Bash(jq:*), Bash(yq:*), Bash(tokei:*), Bash(code-review-graph:*), mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__find_implementations, mcp__serena__find_declaration, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__tilth__*, mcp__code-review-graph__*, mcp__context7__*
+allowed-tools: Read, Write, TodoWrite, Skill, Bash(git:*), Bash(ls:*), Bash(cat:*), Bash(jq:*), Bash(yq:*), Bash(tokei:*), mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__find_implementations, mcp__serena__find_declaration, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__tilth__*, mcp__context7__*
 metadata:
   version: 1.0.0
   author: paulnsorensen
@@ -28,11 +28,11 @@ and finish with an adaptive Socratic quiz.
 
 ## Hard rules (read first, no skipping)
 
-1. **Structural tools before raw reads.** Call
-   `mcp__code-review-graph__get_minimal_context_tool` FIRST on any new repo
-   (~100 tokens). Then prefer `mcp__serena__get_symbols_overview`,
-   `mcp__tilth__tilth_read` (outline mode), and `mcp__tilth__tilth_grok` over
-   reading whole files. Whole-file `Read` is a last resort for non-code files
+1. **Structural tools before raw reads.** Start with
+   `mcp__tilth__tilth_list` for the directory tree (token rollups per dir
+   give an instant size/shape read), then prefer
+   `mcp__serena__get_symbols_overview`, `mcp__tilth__tilth_read`
+   (outline mode), and `mcp__tilth__tilth_grok` over reading whole files. Whole-file `Read` is a last resort for non-code files
    (README, manifests, CI YAML, env templates) — the user's CLAUDE.md
    explicitly routes code search through tilth.
 2. **One pillar at a time.** Don't skip ahead. Complete pillar 1 before
@@ -63,10 +63,9 @@ Goal: enough context to confirm scope with the user.
 Run in parallel where possible:
 
 1. `git log --oneline -10 && git status` — recent activity, branch state.
-2. `mcp__code-review-graph__get_minimal_context_tool(task="initial onboarding")`
-   if the graph exists. If not, ask the user to run `code-review-graph build`
-   then re-invoke. Don't proceed without the graph for repos >500 files —
-   you'll burn tokens.
+2. `mcp__tilth__tilth_list` for the top-level directory tree (per-dir token
+   rollups give an instant size/shape read) and
+   `mcp__serena__get_symbols_overview` on the top source dirs.
 3. `Read` of `README.md`, the primary manifest (`package.json` /
    `pyproject.toml` / `go.mod` / `Cargo.toml` / `pom.xml`), and any
    `CLAUDE.md` / `AGENTS.md` at the repo root.
@@ -84,9 +83,10 @@ Output a **5-bullet "first impressions"** summary and ask the user:
 
 Workflow:
 
-1. `mcp__code-review-graph__get_architecture_overview_tool` and
-   `mcp__code-review-graph__list_communities_tool` — Leiden-clustered modules
-   are the closest thing to an automated C4 Component diagram.
+1. `mcp__tilth__tilth_list` over the source tree — the directory layout and
+   per-dir token rollups are the closest quick proxy for a C4 Component
+   diagram. Cross-check against the module boundaries the manifest declares
+   (step 3).
 2. For each top-level source directory:
    `mcp__serena__get_symbols_overview(relative_path=<dir>)`.
 3. **TS/JS specifically:** read `package.json` `workspaces`, `exports`, and
@@ -96,9 +96,10 @@ Workflow:
 4. Identify 5–10 core domain symbols (`User`, `Order`, `Tenant`, …) and call
    `mcp__tilth__tilth_grok(target=<symbol>)` on each — that returns
    def + body + sig + callees + callers + siblings + tests in one shot.
-5. Spot god-nodes: `mcp__code-review-graph__find_large_functions_tool` and
-   `mcp__code-review-graph__get_hub_nodes_tool`. Flag any function >150 LOC
-   or any module with >25 inbound edges.
+5. Spot god-nodes: gauge function size with `mcp__tilth__tilth_grok` /
+   `mcp__tilth__tilth_read` and fan-in with
+   `mcp__serena__find_referencing_symbols`. Flag any function >150 LOC or any
+   module with >25 inbound references.
 
 `Write` `.cheese/grok/<repo>/01-building-blocks.md` with a table:
 `Block | Path | Public API | Key types | God-nodes?`. See `GUIDE.md §2` for
@@ -124,9 +125,9 @@ Workflow (TS/JS-first; other stacks in `GUIDE.md §6`):
    (`exports.handler`), Inngest functions, Cloudflare Workers
    `addEventListener('fetch'`.
 5. **Real-time:** `socket.io`, tRPC routers, gRPC services.
-6. For the top 3 entry points by importance, call
-   `mcp__code-review-graph__get_affected_flows_tool(target=<entry>)` to trace
-   the downstream flow.
+6. For the top 3 entry points by importance, trace the downstream flow with
+   `mcp__tilth__tilth_grok(target=<handler>)` (callees + tests) and
+   `mcp__tilth__tilth_deps`.
 
 `Write` `.cheese/grok/<repo>/02-entry-points.md` with one line per entry
 point: `<method> <path> → <handler file:line>`. For each, also note **SLA?**
@@ -157,9 +158,9 @@ Workflow:
    `mcp__tilth__tilth_search(query="process.env", kind="content")`. List
    every env var referenced — missing-on-boot validation is a common bug.
 8. **Dependency hygiene:** top 10 dependencies by inbound import count via
-   `mcp__code-review-graph__query_graph_tool(action="importers_of",
-   target=<pkg>)`. For the top 3, use `mcp__context7__query-docs` for
-   current docs (don't trust your training data for framework specifics).
+   `mcp__tilth__tilth_deps` (or `mcp__tilth__tilth_search` for import sites).
+   For the top 3, use `mcp__context7__query-docs` for current docs (don't
+   trust your training data for framework specifics).
 
 `Write` `.cheese/grok/<repo>/03-infrastructure.md`. Also explicitly scan for
 arc42 §8 crosscutting concerns: logging, error handling, auth, i18n, feature
@@ -245,8 +246,8 @@ adaptive state from the user.
 The skill is designed to re-run weekly. On re-invocation:
 
 1. Check for existing `.cheese/grok/<repo>/` artifacts; read them first.
-2. Use `mcp__code-review-graph__detect_changes_tool` and
-   `mcp__tilth__tilth_diff` to find what's changed since the last grok.
+2. Use `git diff` and `mcp__tilth__tilth_diff` to find what's changed since
+   the last grok.
 3. Focus the new run on diffs and partial-replay the quiz for any pillar
    that changed materially.
 

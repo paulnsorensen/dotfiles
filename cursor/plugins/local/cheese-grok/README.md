@@ -33,7 +33,7 @@ jq '.modes | keys' ~/.cursor/modes.json    # includes "reader"
 jq '.hooks | keys' ~/.cursor/hooks.json    # includes beforeShellExecution, stop
 ```
 
-Required MCPs (Serena, tilth, code-review-graph, Context7) are
+Required MCPs (Serena, tilth, Context7) are
 deployed by `mcp-sync` (or `dots sync`) into `~/.cursor/mcp.json`.
 
 ## Trigger phrases

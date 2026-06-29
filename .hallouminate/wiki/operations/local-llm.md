@@ -57,7 +57,7 @@ opencode reaches the stack through the `local-llm` provider (`Local (LiteLLM)`, 
 opencode-lean --model local-llm/local-coder
 ```
 
-It runs `OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"` behind a preflight + pre-warm wrapper (`scripts/executable_aliases.sh`). The `lean.json` overlay `mergeDeep`s onto the global config and **only disables the heavy MCP servers** (`code-review-graph`, `hallouminate`, `tavily`), leaving `tilth` + `serena` + `context7` — so the local coder's small context window isn't blown by tool schemas before the first turn. There's no separate "lean" agent or model set; the overlay is purely the MCP trim. `lean.json` also sets `model: local-llm/local-coder` so bare `opencode-lean` defaults to the local coder, not a cloud model (#297).
+It runs `OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"` behind a preflight + pre-warm wrapper (`scripts/executable_aliases.sh`). The `lean.json` overlay `mergeDeep`s onto the global config and **only disables the heavy MCP servers** (`hallouminate`, `tavily`), leaving `tilth` + `serena` + `context7` — so the local coder's small context window isn't blown by tool schemas before the first turn. There's no separate "lean" agent or model set; the overlay is purely the MCP trim. `lean.json` also sets `model: local-llm/local-coder` so bare `opencode-lean` defaults to the local coder, not a cloud model (#297).
 
 The wrapper does two things before launch:
 

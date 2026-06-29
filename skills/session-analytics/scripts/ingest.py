@@ -389,7 +389,10 @@ def main():
         sys.exit(1)
 
     if os.path.exists(DB_TMP_PATH):
-        os.remove(DB_TMP_PATH)
+        if os.path.isdir(DB_TMP_PATH):
+            shutil.rmtree(DB_TMP_PATH)
+        else:
+            os.remove(DB_TMP_PATH)
 
     print("Loading canonical rows into DuckDB...")
     t0 = time.time()

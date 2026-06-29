@@ -60,6 +60,7 @@ print_cheatsheet() {
     row "ccw <slug>"          "claude in a new worktree (current repo)"
     row "ccw <repo>/<slug>"   "worktree in ~/Dev/<repo> (from anywhere)"
     row "ccw-ls"              "git worktree list"
+    row "ccw-find <q>"        "find a worktree by branch/path/PR/slug"
     row "ccw-clean"           "sweep stale worktrees (current repo)"
     row "ccw-rm <slug>"       "remove worktree + branch + tmux session"
     row "ccw-sweep"           "sweep all repos under ~/Dev"
