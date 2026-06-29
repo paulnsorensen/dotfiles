@@ -10,21 +10,28 @@
 // cannot change the tool name — ADR-004) so they DENY with a cheez-search
 // message.
 //
-// "Exotic" shapes — semantic flags tilth cannot reproduce faithfully (-l, -c,
-// -o, -v, -w, -x, -E/-P, context -A/-B/-C, any long flag, multiple path
-// operands, a piped/redirected search) or a non-name find — return null and
-// fall through to rtk delegation (ADR-002): never ship a rewrite that silently
-// changes search semantics, never hard-block a search.
+// "Exotic" shapes — a case flag (-i, tilth is case-sensitive), other semantic
+// flags tilth cannot reproduce faithfully (-l, -c, -o, -v, -w, -x, -E/-P,
+// context -A/-B/-C, any long flag, multiple path operands, a piped/redirected
+// search), a pattern carrying regex metacharacters (tilth matches literally), or
+// a non-name find — return null and fall through to rtk delegation (ADR-002):
+// never ship a rewrite that silently changes search semantics, never hard-block.
 
 const { parse, commandWord, shQuote } = require('./shell');
 
 const GREP_BINS = new Set(['grep', 'rg', 'ag', 'ack']);
 const GLOB_FLAGS = new Set(['-name', '-iname', '-path', '-ipath']);
 // Short option letters whose semantics tilth cannot reproduce; their presence
-// (alone or fused, e.g. `-rl`) forces delegation. Letters that take a value
-// (-A/-B/-C context, -e pattern, -f file, -m max-count) are exotic too, so we
-// never have to consume a following value to find the operands.
-const EXOTIC_SHORT = new Set('lLcovwxEPABCefm'.split(''));
+// (alone or fused, e.g. `-rl`) forces delegation. -i/-I (case-insensitive) are
+// exotic too — tilth's positional query is case-sensitive. Letters that take a
+// value (-A/-B/-C context, -e pattern, -f file, -m max-count) are exotic too, so
+// we never have to consume a following value to find the operands.
+const EXOTIC_SHORT = new Set('lLcovwxEPABCefmiI'.split(''));
+
+// A pattern carrying any BRE/ERE metacharacter cannot be reproduced by tilth's
+// literal, case-sensitive positional query, so delegate rather than silently
+// narrow the match set.
+const REGEX_META = /[\\.^$*+?()[\]{}|]/;
 
 function reason(label, pattern, cwd) {
   const q = pattern || '<pattern>';
@@ -45,12 +52,13 @@ function grepRewrite(args) {
     if (a.startsWith('--')) return null; // any long flag: conservatively exotic
     if (a.startsWith('-') && a.length > 1) {
       for (const ch of a.slice(1)) if (EXOTIC_SHORT.has(ch)) return null;
-      continue; // clean short flags (-r/-n/-i/-H/…): ignore
+      continue; // clean short flags (-r/-n/-H/…): ignore
     }
     operands.push(a);
   }
   if (operands.length === 0 || operands.length > 2) return null;
   const [pattern, path] = operands;
+  if (REGEX_META.test(pattern)) return null; // regex pattern → tilth matches literally → delegate
   return `tilth ${shQuote(pattern)}${path !== undefined ? ` --scope ${shQuote(path)}` : ''}`;
 }
 

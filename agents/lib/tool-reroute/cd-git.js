@@ -11,7 +11,7 @@
 
 const { parse, commandWord, shQuote } = require('./shell');
 
-const CHAIN = new Set(['&&', ';', '&']);
+const CHAIN = new Set(['&&', ';']);
 
 function detect(toolName, input) {
   if (toolName !== 'Bash') return null;

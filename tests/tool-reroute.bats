@@ -171,7 +171,7 @@ reason()   { jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$1"; }
 }
 
 @test "tool-reroute/io: echo write-redirect denies and names tilth_write" {
-    local out; out=$(out_for 'echo hello > /tmp/f.txt')
+    local out; out=$(out_for 'echo hello > out.txt')
     [[ "$(decision "$out")" == "deny" ]]
     [[ "$out" == *tilth_write* ]]
 }
@@ -330,14 +330,35 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
     [[ "$out" != *'"command":"tilth'* ]]
 }
 
-# ── press hardening: cd-git chain separators (CHAIN = && ; &) ─────────────
+@test "tool-reroute/search: grep -i (case-insensitive) is NOT rewritten (tilth is case-sensitive)" {
+    # tilth's positional query is case-sensitive, so -i Foo would silently match
+    # a narrower set; the call must delegate, never become a literal tilth rewrite.
+    local out; out=$(out_for 'grep -i Foo .')
+    [[ "$out" != *'"command":"tilth'* ]]
+    ! denied "$out"
+}
+
+@test "tool-reroute/search: a regex-metachar pattern is NOT rewritten (tilth matches literally)" {
+    # `a.*b` is a regex in grep but a literal substring in tilth; rewriting it
+    # would silently change the match set, so a metachar pattern delegates.
+    local out; out=$(out_for 'grep "a.*b" src/')
+    [[ "$out" != *'"command":"tilth'* ]]
+    ! denied "$out"
+}
+
+# ── press hardening: cd-git chain separators (CHAIN = && ;) ───────────────
 
 @test "tool-reroute/cd-git: a ';' chain also rewrites to wt-git" {
     [[ "$(newcmd "$(out_for 'cd /r ; git status')")" == "wt-git /r status" ]]
 }
 
-@test "tool-reroute/cd-git: a '&' chain also rewrites to wt-git" {
-    [[ "$(newcmd "$(out_for 'cd /r & git status')")" == "wt-git /r status" ]]
+@test "tool-reroute/cd-git: a bare '&' backgrounds cd, so it is NOT rewritten" {
+    # `cd /r & git status` backgrounds the cd subshell (cwd never changes) and
+    # runs git in the ORIGINAL dir; rewriting to `wt-git /r status` would change
+    # which repo git inspects. `&` is not a chain separator — delegate.
+    local out; out=$(out_for 'cd /r & git status')
+    [[ "$out" != *wt-git* ]]
+    ! denied "$out"
 }
 
 # ── press hardening: io boundaries ───────────────────────────────────────
@@ -349,9 +370,22 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 }
 
 @test "tool-reroute/io: the write-redirect deny names the offending target file" {
-    local out; out=$(out_for 'echo hi > /tmp/zzz.txt')
+    # An in-tree (cwd-relative) target is a real repo write → deny names it.
+    local out; out=$(out_for 'echo hi > scratch.txt')
     [[ "$(decision "$out")" == "deny" ]]
-    [[ "$(reason "$out")" == *"/tmp/zzz.txt"* ]]
+    [[ "$(reason "$out")" == *"scratch.txt"* ]]
+}
+
+@test "tool-reroute/io: a redirect to /dev/null is NOT denied (no tilth_write target)" {
+    local out; out=$(out_for 'echo x > /dev/null')
+    ! denied "$out"
+}
+
+@test "tool-reroute/io: an out-of-tree /tmp redirect is NOT denied (delegates)" {
+    # /tmp scratch has no tilth_write equivalent; hard-denying it broke valid
+    # non-repo writes — it must delegate, not block.
+    local out; out=$(out_for 'echo hi > /tmp/zzz.txt')
+    ! denied "$out"
 }
 
 # ── press hardening: fd/stderr redirects are reads, not content writes ─────

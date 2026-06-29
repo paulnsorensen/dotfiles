@@ -5,12 +5,15 @@
 //   write-redirect (`echo`/`printf`/`cat`/`tee` … `>` / `>>`)   → DENY → cheez-write
 //
 // The bare-cat read has a faithful tilth equivalent, so it rewrites. A
-// write-redirect has no tilth write CLI (ADR-004), so it denies with a
-// cheez-write message. It must NOT fire on `echo foo` (no redirect) or claim a
+// write-redirect to a working-tree file has no tilth write CLI (ADR-004), so it
+// denies with a cheez-write message; /dev/null and out-of-tree targets (e.g.
+// /tmp scratch) have no tilth_write equivalent and delegate instead (ADR-002
+// never-hard-block). It must NOT fire on `echo foo` (no redirect) or claim a
 // read on `cat file | grep …` (a pipe — that is search's territory, and the
 // bare-read path requires a single segment). A `>` inside a quoted string is
 // not a redirect (the lexer resolves quotes), so `echo "a > b"` passes through.
 
+const path = require('path');
 const { parse, commandWord, shQuote } = require('./shell');
 
 const WRITE_BINS = new Set(['echo', 'printf', 'cat', 'tee']);
@@ -25,8 +28,18 @@ Run instead (whole-file create/overwrite):
 For a surgical change, tilth_read first for hash anchors, then a hash-mode edit.`;
 }
 
-function detect(toolName, input) {
+// A write-redirect only needs cheez-write when it targets a file in the working
+// tree. /dev/null and absolute paths outside cwd resolve elsewhere, so they
+// delegate rather than hard-deny a legitimate non-repo write.
+function isRepoWrite(target, cwd) {
+  if (!target || target === '/dev/null') return false;
+  const resolved = path.resolve(cwd, target);
+  return resolved === cwd || resolved.startsWith(cwd + path.sep);
+}
+
+function detect(toolName, input, cwd) {
   if (toolName !== 'Bash') return null;
+  cwd = cwd || process.cwd();
   const segs = parse((input && input.command) || '');
 
   // write-redirect: a stdout content write (`>`/`>>`, bare or `1>`) by a write
@@ -38,7 +51,9 @@ function detect(toolName, input) {
     const { word } = commandWord(seg.argv);
     if (!word || !WRITE_BINS.has(word)) continue;
     const i = seg.redirectFds.findIndex((fd) => fd === null || fd === '1');
-    if (i !== -1) return { reason: writeReason(seg.redirectTargets[i]) };
+    if (i !== -1 && isRepoWrite(seg.redirectTargets[i], cwd)) {
+      return { reason: writeReason(seg.redirectTargets[i]) };
+    }
   }
 
   // bare `cat <file>`: exactly one segment (no pipe), no redirect, one operand.
