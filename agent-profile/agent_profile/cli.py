@@ -928,14 +928,20 @@ def main(argv: list[str] | None = None) -> int:
         if sub == "compile":
             if not rest:
                 raise CliError("profile name required")
-            profile_dir = discover.find_profile_dir(rest[0])
+            profile_name = compile_command.profile_arg(rest)
+            if not profile_name:
+                raise CliError("profile name required")
+            profile_dir = discover.find_profile_dir(profile_name)
             if profile_dir is None:
-                raise CliError(f"ap compile: profile '{rest[0]}' not found")
+                raise CliError(f"ap compile: profile '{profile_name}' not found")
             from agent_profile.compile_target_presence import (
                 CompileTargetPresenceError,
                 require_compile_targets,
             )
 
+            # Early-exit gate: fail loud on missing/invalid compile_targets before
+            # compile_profile's tempdir setup. parse_manifest re-validates for its
+            # other callers; the re-check on the compile path is intentional.
             try:
                 require_compile_targets(profile_dir)
             except CompileTargetPresenceError as exc:

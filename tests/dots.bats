@@ -160,3 +160,18 @@ STUB
     assert_output_contains "git revert"
     assert_output_contains "dots sync"
 }
+
+@test "dots sync with no args dispatches to .sync with no extra args" {
+    local stub_dir="$TEST_HOME/sync-dotfiles"
+    mkdir -p "$stub_dir/bin"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    cat > "$stub_dir/.sync" <<'STUB'
+#!/bin/bash
+echo "stub-dotsync argc=$# args=[$*]"
+STUB
+    chmod +x "$stub_dir/.sync"
+
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "stub-dotsync argc=0 args=[]"
+}

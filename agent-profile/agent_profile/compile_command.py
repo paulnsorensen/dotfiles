@@ -44,6 +44,24 @@ def _require_value(args: list[str], i: int, flag: str) -> str:
     return args[i + 1]
 
 
+def profile_arg(args: list[str]) -> str:
+    """Return the profile positional from ``args``, ignoring flags in any order.
+
+    Mirrors the positional handling in ``_parse_args`` so a caller can pre-check
+    the profile before full argument parsing, regardless of flag/positional order.
+    Returns "" when no positional is present.
+    """
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("--baseline", "--out"):
+            i += 2
+        elif arg.startswith(("--baseline=", "--out=")):
+            i += 1
+        else:
+            return arg
+    return ""
+
 def _parse_args(args: list[str]) -> tuple[str, Path, Path]:
     profile = ""
     baseline: Path | None = None

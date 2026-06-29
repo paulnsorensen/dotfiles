@@ -157,3 +157,28 @@ def test_compile_uses_strict_target_validation(env, monkeypatch):
         compile_command.compile_profile(
             "live", env.tmp / "b", env.tmp / "o", build_registry()
         )
+
+
+def test_profile_arg_extracts_positional_regardless_of_flag_order():
+    """``profile_arg`` mirrors ``_parse_args`` positional handling: the profile
+    is found whether it leads or trails the flags, and flag values are skipped."""
+    assert compile_command.profile_arg(["live", "--baseline", "b", "--out", "o"]) == "live"
+    assert compile_command.profile_arg(["--baseline", "b", "--out", "o", "live"]) == "live"
+    assert compile_command.profile_arg(["--baseline=b", "--out=o", "live"]) == "live"
+    assert compile_command.profile_arg(["--baseline", "b", "--out", "o"]) == ""
+
+
+def test_compile_accepts_flags_before_profile(env, monkeypatch, stub_renderers):
+    """The CLI compile pre-check must extract the profile positionally, not
+    assume it is the first arg. ``--baseline X --out Y live`` previously errored
+    with a misleading ``profile '--baseline' not found``."""
+    write_minimal_includes(env.profiles)
+    write_live_profile(env.profiles)
+    home = env.tmp / "home"
+    baseline = env.tmp / "baseline"
+    out = env.tmp / "compiled"
+    home.mkdir()
+    baseline.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    assert run(["compile", "--baseline", str(baseline), "--out", str(out), "live"]) == 0

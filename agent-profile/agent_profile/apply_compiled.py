@@ -154,6 +154,11 @@ def _user_mcps(data: dict[str, Any]) -> list[dict[str, Any]]:
     raw = data.get("user_mcps", [])
     if not isinstance(raw, list) or not all(isinstance(m, dict) for m in raw):
         raise ApplyError("ap apply-compiled: manifest user_mcps must be a list of objects")
+    for mcp in raw:
+        if "name" not in mcp or "command" not in mcp:
+            raise ApplyError(
+                "ap apply-compiled: each user_mcps entry must have 'name' and 'command'"
+            )
     return raw
 
 
@@ -237,10 +242,12 @@ def apply_compiled(
             path.unlink()
             deleted.append(prior_path)
 
-    registered = _register_user_mcps(_user_mcps(data))
-
+    # Persist state after the copy/delete reconcile and before MCP registration
+    # so moved files are always tracked even if `claude mcp add` later raises.
     new_state = ApplyState(managed_files=tuple(sorted(managed)))
     write_apply_state(state_path, new_state)
+
+    registered = _register_user_mcps(_user_mcps(data))
 
     return ApplyResult(
         copied=tuple(copied),

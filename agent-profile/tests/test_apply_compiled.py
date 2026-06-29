@@ -484,3 +484,45 @@ def test_apply_no_user_mcps_makes_no_claude_call(tmp_path, monkeypatch):
 
     assert result.registered_mcps == ()
     assert not log.exists()
+
+
+def test_apply_persists_state_when_mcp_registration_fails(tmp_path, monkeypatch):
+    """Finding regression: disk copy/delete is committed before MCP registration,
+    so when ``claude mcp add`` raises, the apply state must still record the
+    already-moved files — otherwise the next reconcile uses stale managed_files
+    and orphans them."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    shim = bindir / "claude"
+    shim.write_text('#!/bin/sh\ncase "$1 $2" in "mcp add") exit 1;; esac\nexit 0\n')
+    shim.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}:/usr/bin")
+    root = tmp_path / "live"
+    cache = tmp_path / "compiled"
+    frag = _fragment(cache, "home", "claude", ".claude/agents/r.md", "r\n")
+    manifest = _manifest_user_mcps([_target("home", root)], [_USER_MCP])
+    manifest["files"] = [frag]
+    mpath = _write_manifest(cache, manifest)
+
+    with pytest.raises(apply_compiled.ApplyError, match="claude mcp add context7"):
+        apply_compiled.apply_compiled(mpath)
+
+    dest = root / ".claude/agents/r.md"
+    assert dest.read_text() == "r\n"  # file was moved before the failure
+    state = apply_compiled.read_apply_state(
+        cache / apply_compiled.DEFAULT_STATE_FILENAME
+    )
+    assert state.managed_files == (str(dest),)
+
+
+def test_apply_user_mcp_missing_required_key_is_handled(tmp_path):
+    """Finding regression: a user_mcps entry missing ``name``/``command`` raises a
+    handled ApplyError, not an uncaught KeyError."""
+    cache = tmp_path / "compiled"
+    bad = {"command": "npx", "args": ["-y", "x"]}  # no 'name'
+    mpath = _write_manifest(
+        cache,
+        _manifest_user_mcps([_target("home", tmp_path / "live")], [bad]),
+    )
+    with pytest.raises(apply_compiled.ApplyError, match="'name' and 'command'"):
+        apply_compiled.apply_compiled(mpath)

@@ -151,11 +151,11 @@ do_sync() {
     done
 
     if [[ "$accept_agent_drift" == true ]]; then
-        DOTS_ACCEPT_AGENT_DRIFT=1 "$DOTFILES_DIR/.sync" "${sync_args[@]}"
+        DOTS_ACCEPT_AGENT_DRIFT=1 "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
         return
     fi
 
-    "$DOTFILES_DIR/.sync" "${sync_args[@]}"
+    "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
 }
 
 # Show status
