@@ -23,7 +23,6 @@ agents:
     color: red
     effort: medium
     skills:
-    - scout
     - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-arch.md
@@ -43,7 +42,7 @@ agents:
     color: red
     effort: high
     skills:
-    - scout
+    - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-history.md
   fromage-fort:
@@ -62,7 +61,7 @@ agents:
     - Bash
     skills:
     - gh
-    - scout
+    - cheez-search
     - cheez-write
     - commit
     maxTurns: 50
@@ -81,7 +80,7 @@ agents:
     color: red
     effort: medium
     skills:
-    - scout
+    - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-secaudit.md
   ghostbuster:
@@ -132,7 +131,7 @@ agents:
     - Agent
     - mcp__serena__*
     skills:
-    - scout
+    - cheez-search
     - de-slop
     maxTurns: 50
     body_path: agents/agent_definitions/ricotta-reducer.md
@@ -150,7 +149,7 @@ agents:
     - Bash
     - mcp__serena__*
     skills:
-    - scout
+    - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/roquefort-wrecker.md
   duckdb-expert:
@@ -185,7 +184,7 @@ agents:
     - Glob
     - Grep
     skills:
-    - scout
+    - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/whey-drainer.md
   worktree-triage:
@@ -201,7 +200,7 @@ agents:
     - Glob
     - AskUserQuestion
     skills:
-    - scout
+    - cheez-search
     - gh
     maxTurns: 50
     body_path: agents/agent_definitions/worktree-triage.md
