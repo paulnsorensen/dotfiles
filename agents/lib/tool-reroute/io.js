@@ -2,7 +2,7 @@
 // io.js — reroute module: file I/O via the shell.
 //
 //   bare `cat <file>` (no redirect, no pipe, one file operand)  → REWRITE `tilth <file>`
-//   write-redirect (`echo`/`printf`/`cat`/`tee` … `>` / `>>`)   → DENY → cheez-write
+//   write-redirect (`echo`/`printf`/`cat` … `>` / `>>`)         → DENY → cheez-write
 //
 // The bare-cat read has a faithful tilth equivalent, so it rewrites. A
 // write-redirect to a working-tree file has no shell write CLI to rewrite to (a
@@ -18,11 +18,11 @@
 const path = require('path');
 const { parse, commandWord, shQuote } = require('./shell');
 
-const WRITE_BINS = new Set(['echo', 'printf', 'cat', 'tee']);
+const WRITE_BINS = new Set(['echo', 'printf', 'cat']);
 
 function writeReason(target) {
   const path = target || '<file>';
-  return `Blocked: shell write-redirect to ${path} — use the cheez-write skill (tilth_write), not echo/printf/cat/tee with > / >>.
+  return `Blocked: shell write-redirect to ${path} — use the cheez-write skill (tilth_write), not echo/printf/cat with > / >>.
 
 Run instead (whole-file create/overwrite):
   mcp__tilth__tilth_write(files:[{path:${JSON.stringify(path)}, mode:"overwrite", overwrite:true, content:"…"}])

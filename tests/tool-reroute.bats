@@ -102,6 +102,15 @@ reason()   { jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$1"; }
     [[ "$out" != *"tilth foo"* ]]
 }
 
+@test "tool-reroute/search: find -iname (case-insensitive) is NOT rewritten (tilth glob is case-sensitive)" {
+    # tilth's positional glob is case-sensitive, so -iname '*.JS' would silently
+    # narrow the match set (matches UPPER.JS but not lower.js); the call must
+    # delegate, never become a literal tilth glob rewrite.
+    local out; out=$(out_for 'find . -iname "*.JS"')
+    [[ "$out" != *'"command":"tilth'* ]]
+    ! denied "$out"
+}
+
 @test "tool-reroute/search: non-name find is NOT rewritten (delegated)" {
     # A -size predicate is a real filesystem op tilth can't express, so it must
     # never become a tilth rewrite — it falls through to rtk delegation.

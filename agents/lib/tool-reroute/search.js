@@ -13,14 +13,16 @@
 // "Exotic" shapes — a case flag (-i, tilth is case-sensitive), other semantic
 // flags tilth cannot reproduce faithfully (-l, -c, -o, -v, -w, -x, -E/-P,
 // context -A/-B/-C, any long flag, multiple path operands, a piped/redirected
-// search), a pattern carrying regex metacharacters (tilth matches literally), or
-// a non-name find — return null and fall through to rtk delegation:
-// never ship a rewrite that silently changes search semantics, never hard-block.
+// search), a pattern carrying regex metacharacters (tilth matches literally), a
+// case-insensitive find (-iname/-ipath — tilth's glob is case-sensitive, so a
+// rewrite would silently narrow the match set), or any other non-name find —
+// return null and fall through to rtk delegation: never ship a rewrite that
+// silently changes search semantics, never hard-block.
 
 const { parse, commandWord, shQuote } = require('./shell');
 
 const GREP_BINS = new Set(['grep', 'rg', 'ag', 'ack']);
-const GLOB_FLAGS = new Set(['-name', '-iname', '-path', '-ipath']);
+const GLOB_FLAGS = new Set(['-name', '-path']);
 // Short option letters whose semantics tilth cannot reproduce; their presence
 // (alone or fused, e.g. `-rl`) forces delegation. -i/-I (case-insensitive) are
 // exotic too — tilth's positional query is case-sensitive. Letters that take a
