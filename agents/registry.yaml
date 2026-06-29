@@ -293,3 +293,27 @@ agents:
     - commit
     maxTurns: 100
     body_path: agents/agent_definitions/coder.md
+  generalist:
+    # Capped catch-all. The built-in `general-purpose` is the default for untyped
+    # spawns and cannot carry a maxTurns cap (it lives outside the registry, see
+    # .hallouminate/wiki/architecture/subagent-turn-budgets.md). This is our own
+    # named stand-in: when the orchestrator routes a general, mixed task by
+    # subagent_type, picking `generalist` keeps it under a turn budget. It does
+    # NOT intercept genuinely untyped spawns — the harness hardcodes those to the
+    # built-in. Cap 100 matches measured general-purpose work (p90 101) so it
+    # clips only the runaway tail, not legitimate p90 runs. Denies Agent (a
+    # level-1 subagent cannot fan out).
+    description: General-purpose catch-all for an open-ended, multi-step task that does not fit a specialist phase agent — mixed research, code reading, and synthesis in one dispatch. The capped stand-in for the built-in general-purpose agent. Prefer a specialist when the task is cleanly one shape — explorer for "where/how/what" code questions, researcher for external/library/web facts, reviewer for checking a diff before it lands, coder for writing or changing code. Use this only as the fallback when no single specialist owns the task. Routes file I/O through the cheez-* (tilth) skills.
+    models:
+      claude: inherit
+      codex: gpt-5
+      opencode: inherit
+    disallowedTools:
+    - Agent
+    color: yellow
+    skills:
+    - cheez-search
+    - cheez-read
+    - cheez-write
+    maxTurns: 100
+    body_path: agents/agent_definitions/generalist.md
