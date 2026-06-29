@@ -5,10 +5,12 @@
 //   write-redirect (`echo`/`printf`/`cat`/`tee` … `>` / `>>`)   → DENY → cheez-write
 //
 // The bare-cat read has a faithful tilth equivalent, so it rewrites. A
-// write-redirect to a working-tree file has no tilth write CLI (ADR-004), so it
-// denies with a cheez-write message; /dev/null and out-of-tree targets (e.g.
-// /tmp scratch) have no tilth_write equivalent and delegate instead (ADR-002
-// never-hard-block). It must NOT fire on `echo foo` (no redirect) or claim a
+// write-redirect to a working-tree file has no shell write CLI to rewrite to (a
+// hook's updatedInput can't turn a Bash command into the tilth_write MCP tool),
+// so it denies with a cheez-write message; /dev/null and out-of-tree targets
+// (e.g. /tmp scratch) have no tilth_write equivalent, so they delegate rather
+// than hard-deny a legitimate non-repo write. It must NOT fire on `echo foo`
+// (no redirect) or claim a
 // read on `cat file | grep …` (a pipe — that is search's territory, and the
 // bare-read path requires a single segment). A `>` inside a quoted string is
 // not a redirect (the lexer resolves quotes), so `echo "a > b"` passes through.
@@ -45,7 +47,7 @@ function detect(toolName, input, cwd) {
   // write-redirect: a stdout content write (`>`/`>>`, bare or `1>`) by a write
   // bin. An fd redirect (`2>`, `N>`, `2>&1`) writes no file content, so it must
   // NOT hard-deny a legitimate read like `cat f 2>/dev/null` — let it delegate
-  // (ADR-002 never-hard-block). `&>` splits on `&` and delegates too.
+  // rather than block. `&>` splits on `&` and delegates too.
   for (const seg of segs) {
     if (seg.redirects.length === 0) continue;
     const { word } = commandWord(seg.argv);

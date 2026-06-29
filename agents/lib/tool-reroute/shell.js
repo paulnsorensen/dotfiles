@@ -102,7 +102,7 @@ function parse(command) {
 
 // The invoked command word of a segment, skipping `sudo`, `env VAR=val`, and
 // bare leading `VAR=val` assignment prefixes so the REAL binary is found
-// (`FOO=1 grep x` → grep). ADR-003: also strip a leading `rtk` / `rtk proxy`
+// (`FOO=1 grep x` → grep). Also strip a leading `rtk` / `rtk proxy`
 // wrapper, so a model-issued `rtk grep foo` / `rtk proxy grep foo` still resolves
 // to the wrapped command word (grep) and reroutes. Returns the basename
 // (`/usr/bin/grep` → `grep`) plus the args that follow it. `{ word: null }` when

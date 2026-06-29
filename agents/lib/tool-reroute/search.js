@@ -6,15 +6,15 @@
 // non-semantic flags — REWRITE to `tilth <pattern> [--scope <path>]`. Bash find
 // filtering solely by -name/-path REWRITES to `tilth <glob> [--scope <path>]`
 // (QUERY is positional — tilth has no --glob flag). The native Grep/Glob TOOLS
-// have no Bash rewrite target (updatedInput
-// cannot change the tool name — ADR-004) so they DENY with a cheez-search
+// have no Bash rewrite target (a hook's updatedInput cannot change the tool
+// name, only its args) so they DENY with a cheez-search
 // message.
 //
 // "Exotic" shapes — a case flag (-i, tilth is case-sensitive), other semantic
 // flags tilth cannot reproduce faithfully (-l, -c, -o, -v, -w, -x, -E/-P,
 // context -A/-B/-C, any long flag, multiple path operands, a piped/redirected
 // search), a pattern carrying regex metacharacters (tilth matches literally), or
-// a non-name find — return null and fall through to rtk delegation (ADR-002):
+// a non-name find — return null and fall through to rtk delegation:
 // never ship a rewrite that silently changes search semantics, never hard-block.
 
 const { parse, commandWord, shQuote } = require('./shell');

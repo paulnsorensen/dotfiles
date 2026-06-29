@@ -219,7 +219,7 @@ RTK
     [[ -z "$output" ]]
 }
 
-# ── tool-reroute: rtk-prefix stripping (ADR-003) ─────────────────────────
+# ── tool-reroute: rtk-prefix stripping ───────────────────────────────────
 
 @test "tool-reroute/search: a leading rtk wrapper is stripped before detection" {
     [[ "$(newcmd "$(out_for 'rtk grep foo src')")" == "tilth foo --scope src" ]]
@@ -296,7 +296,7 @@ RTK
     [ "$status" -eq 0 ]
 }
 
-# ── press hardening: the ADR-002 never-hard-block contract ────────────────
+# ── press hardening: the never-hard-block contract ───────────────────────
 # The rewrite-not-deny design hinges on this: any wrong-tool call tilth cannot
 # faithfully express must degrade to rtk delegation (a prompt at worst), never
 # a hook DENY. A regression that turned any fall-through into a deny would
@@ -306,7 +306,7 @@ RTK
 
 denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 
-@test "tool-reroute: ADR-002 — exotic/fall-through shapes delegate, never hard-block" {
+@test "tool-reroute: exotic/fall-through shapes delegate, never hard-block" {
     local cmd out
     for cmd in \
         'grep -l foo .' \
@@ -406,7 +406,7 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 # An fd redirect (`2>/dev/null`, `2>&1`) writes no file content, so hard-denying
 # it would block the pervasive `cat f 2>/dev/null` idiom and tell the model to
 # "use tilth_write" for a command that writes nothing — the one shape that broke
-# ADR-002's never-hard-block contract.
+# the never-hard-block contract.
 
 @test "tool-reroute/io: a 2>/dev/null stderr redirect is a read, not a write (no deny)" {
     local out; out=$(out_for 'cat README.md 2>/dev/null')
