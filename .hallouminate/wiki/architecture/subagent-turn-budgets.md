@@ -66,7 +66,7 @@ Across all 732 invocations: mean 34 turns, p50 23, p95 108, p99 181, max 339.
 The reframe that follows: a sub-agent `maxTurns` cap is a **credit-burn / runaway
 backstop**, not a context-quality lever — 93% of sub-agents never approach the
 dumb zone. Quality-at-large-context is the orchestrator's problem (taste-test gate
-- re-dispatch), not something a sub-agent turn cap fixes.
+→ re-dispatch), not something a sub-agent turn cap fixes.
 
 ## Shipped caps (PR #344) and the gap to the data
 
