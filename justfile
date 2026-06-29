@@ -58,5 +58,13 @@ smoke:
     ./tests/serena-smoke.sh
     ./tests/workflows-parse.sh
 
+# validate the opt-in local-llm stack — shellcheck scripts + parse configs
+check-llm:
+    shellcheck -x -e SC1091 -s bash chezmoi/local-llm/scripts/executable_*.sh
+    jq empty chezmoi/local-llm/configs/lean.json
+    yq -e '.' chezmoi/local-llm/configs/litellm.yaml > /dev/null
+    yq -e '.' chezmoi/local-llm/configs/llama-swap.yaml > /dev/null
+    @echo "check-llm: ok"
+
 # pre-push gate: lint + unit tests + serena smoke test
 check: lint test smoke
