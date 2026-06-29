@@ -291,6 +291,9 @@ alias ccw-check='$DOTFILES_DIR/bin/ccw-check'
 # Tear down one worktree — remove it + delete branch + kill tmux session (lives in bin/)
 alias ccw-rm='$DOTFILES_DIR/bin/ccw-rm'
 
+# Locate worktrees by branch / slug / repo / staleness (lives in bin/)
+alias ccw-find='$DOTFILES_DIR/bin/ccw-find'
+
 # GitHub helpers (gh-pr-review, gh-pr-prep, gh-issue-context) live in bin/
 
 # ═══════════════════════════════════════════════════════════════════

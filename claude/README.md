@@ -94,7 +94,7 @@ repo-root `agents/registry.yaml` (metadata) with bodies under
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
 | `nih-scanner` | Structural NIH pattern scanner |
-| `worktree-triage` | Stale-worktree triage recommendations |
+| `worktree-content-digest` | Read-only per-worktree content digest (fanned out by the worktree-triage skill) |
 | `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by skill-improver) |
 
 Review/analysis agents use severity tiers (blocker/high/medium/low) with calibration tags (`<certain>`/`<speculative>`); surface medium+ and certain lows.
