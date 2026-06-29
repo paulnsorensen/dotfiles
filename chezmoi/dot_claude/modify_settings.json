@@ -34,6 +34,7 @@ live=$(cat)
 # the authoritative source. jq is in packages.yaml, so this only guards an
 # unusual partial-bootstrap environment (mirrors the serena modify_ stance).
 if ! command -v jq >/dev/null 2>&1; then
+    echo "modify_settings.json: jq missing — Claude settings not enforced this sync" >&2
     if [ -n "$live" ]; then printf '%s' "$live"; else cat "$AUTH"; fi
     exit 0
 fi

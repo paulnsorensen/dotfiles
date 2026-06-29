@@ -142,6 +142,9 @@ STDIN"
     # Unchanged: still sonnet, still carries the app-only key (no enforcement).
     [ "$(jq -r '.model' "$OUT")" = "sonnet" ]
     [ "$(jq -r '.appOnly' "$OUT")" = "keepme" ]
+    # Skipped enforcement is signalled on stderr, not silent — a no-op sync must
+    # not look identical to an enforced one.
+    [[ "$output" == *"jq missing"* ]]
 }
 
 # ── real-chezmoi integration: the safety guarantee ──────────────────────────
