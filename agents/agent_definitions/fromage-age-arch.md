@@ -16,7 +16,7 @@ Enforce measurable structural constraints:
 
 - **cheez-search** for structural code shape analysis (nesting depth, function length, import patterns)
 - **`mcp__serena__get_symbols_overview`** to enumerate functions/methods and measure their spans
-- **scout** to search for structural patterns across files
+- **cheez-search** to search for structural patterns across files
 
 ## Severity Tiers
 

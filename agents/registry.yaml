@@ -23,7 +23,6 @@ agents:
     color: red
     effort: medium
     skills:
-    - scout
     - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-arch.md
@@ -43,7 +42,7 @@ agents:
     color: red
     effort: high
     skills:
-    - scout
+    - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-history.md
   fromage-fort:
@@ -62,7 +61,7 @@ agents:
     - Bash
     skills:
     - gh
-    - scout
+    - cheez-search
     - cheez-write
     - commit
     maxTurns: 50
@@ -81,7 +80,7 @@ agents:
     color: red
     effort: medium
     skills:
-    - scout
+    - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-secaudit.md
   ghostbuster:
@@ -132,7 +131,7 @@ agents:
     - Agent
     - mcp__serena__*
     skills:
-    - scout
+    - cheez-search
     - de-slop
     maxTurns: 50
     body_path: agents/agent_definitions/ricotta-reducer.md
@@ -150,7 +149,7 @@ agents:
     - Bash
     - mcp__serena__*
     skills:
-    - scout
+    - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/roquefort-wrecker.md
   duckdb-expert:
@@ -185,7 +184,7 @@ agents:
     - Glob
     - Grep
     skills:
-    - scout
+    - cheez-search
     maxTurns: 50
     body_path: agents/agent_definitions/whey-drainer.md
   worktree-content-digest:
@@ -199,16 +198,16 @@ agents:
     - Read
     maxTurns: 30
     body_path: agents/agent_definitions/worktree-content-digest.md
-  # ── easy-cheese general phase agents ──────────────────────────────────────
-  # Four general-purpose agents that model the easy-cheese workflow: explore
-  # -> research -> review -> code. Planning stays a top-level orchestrator
-  # concern (it owns the human approval loop and can fan out these agents; a
-  # level-1 subagent cannot). Unlike the narrow specialist agents above, these
-  # are full-phase workers an orchestrator dispatches to. Their descriptions
-  # carry PROACTIVE triggers so they fire under every easy-cheese skill and any
-  # user-installed skill that needs grounding before it acts. They route file
-  # I/O through the cheez-* skills (tilth MCP), not host tools.
-  # Copilot CLI renders these agents too, but ignores per-agent model overrides.
+      # ── easy-cheese general phase agents ──────────────────────────────────────
+      # Four general-purpose agents that model the easy-cheese workflow: explore
+      # -> research -> review -> code. Planning stays a top-level orchestrator
+      # concern (it owns the human approval loop and can fan out these agents; a
+      # level-1 subagent cannot). Unlike the narrow specialist agents above, these
+      # are full-phase workers an orchestrator dispatches to. Their descriptions
+      # carry PROACTIVE triggers so they fire under every easy-cheese skill and any
+      # user-installed skill that needs grounding before it acts. They route file
+      # I/O through the cheez-* skills (tilth MCP), not host tools.
+      # Copilot CLI renders these agents too, but ignores per-agent model overrides.
   explorer:
     description: Read-only codebase investigator. Answers "where / how / what" questions by searching and reading — never writes. Returns a structured findings digest (file:line citations, call paths, conclusions), keeping the file dumps out of the parent's context. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
     models:
