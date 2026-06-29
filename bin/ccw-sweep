@@ -9,6 +9,11 @@
 
 set -euo pipefail
 
+# ── Shared helpers ──────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/worktree.sh
+source "${SCRIPT_DIR}/lib/worktree.sh"
+
 # ── Colors ──────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -55,35 +60,8 @@ REMOVED=0
 SKIPPED=0
 
 # ── Helpers ─────────────────────────────────────────────────────────
-
-# Resolve the repo's default branch (main / master / trunk / …) from
-# refs/remotes/origin/HEAD. If that's not set, probe the conventional
-# alternatives explicitly before defaulting — falling back to a literal
-# "main" against a repo whose actual default is "master" or "trunk" would
-# silently make every worktree look NOT-merged.
-# Echoes the branch name without the "origin/" prefix and returns 0 on
-# success; echoes nothing and returns 1 when no remote default resolves,
-# so the caller can skip the repo rather than guess.
-resolve_default_branch() {
-    local repo_root="$1"
-    local head_ref candidate
-    head_ref="$(git -C "$repo_root" symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null || true)"
-    if [[ -n "$head_ref" ]]; then
-        echo "${head_ref#refs/remotes/origin/}"
-        return 0
-    fi
-    for candidate in main master trunk develop; do
-        if git -C "$repo_root" rev-parse --verify --quiet "refs/remotes/origin/$candidate" >/dev/null 2>&1; then
-            echo "$candidate"
-            return 0
-        fi
-    done
-    # No remote default branch resolvable. Emit a name anyway so the
-    # caller can fail loudly downstream with a meaningful "unknown
-    # default" message in its merge-status reasons.
-    echo ""
-    return 1
-}
+# resolve_default_branch, wt_list_nested, and wt_child_blocks_removal live
+# in bin/lib/worktree.sh (sourced above).
 
 check_worktree() {
     local wt_path="$1"
@@ -249,6 +227,29 @@ check_worktree() {
 
     TOTAL=$((TOTAL + 1))
 
+    # ── Nested worktrees ─────────────────────────────────────────────
+    # A parent that nests an unmerged-or-dirty child must not be removed —
+    # doing so would orphan or destroy the child's unpushed work. Collect any
+    # blocking children so the action step can refuse (auto) or flag (interactive).
+    local nested_blockers=()
+    local nested_child
+    while IFS= read -r nested_child; do
+        [[ -z "$nested_child" ]] && continue
+        if wt_child_blocks_removal "$nested_child"; then
+            nested_blockers+=("$nested_child")
+        fi
+    done < <(wt_list_nested "$wt_path")
+
+    local has_blocking_nested=false
+    if (( ${#nested_blockers[@]} > 0 )); then
+        has_blocking_nested=true
+        echo -e "         ${YELLOW}nests unmerged/dirty worktree(s) — relocate before removing parent:${RESET}"
+        for nested_child in "${nested_blockers[@]}"; do
+            echo -e "           ${DIM}${nested_child}${RESET}"
+            echo -e "           ${DIM}git worktree move '${nested_child}' '${repo_root}/.worktrees/$(basename "$nested_child")'${RESET}"
+        done
+    fi
+
     # ── Action ──────────────────────────────────────────────────────
     if $DRY_RUN; then
         if [[ "$status" == "SAFE" ]]; then
@@ -276,6 +277,18 @@ check_worktree() {
         if ! $AUTO_CLEAN; then
             read -rp "         Has uncommitted work. Remove? [y/N] " answer </dev/tty
             [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        fi
+    fi
+
+    # Nested-worktree safety gate: refuse (auto) or require explicit confirm
+    # (interactive) before removing a parent that nests unmerged/dirty work.
+    if $should_remove && $has_blocking_nested; then
+        if $AUTO_CLEAN; then
+            echo -e "         ${YELLOW}Skipping removal — relocate the nested worktree(s) above first${RESET}"
+            should_remove=false
+        else
+            read -rp "         Parent nests unmerged/dirty worktree(s) — remove anyway? [y/N] " answer </dev/tty
+            [[ "$answer" =~ ^[Yy] ]] || should_remove=false
         fi
     fi
 

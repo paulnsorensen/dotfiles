@@ -10,7 +10,7 @@ Pass through any arguments: $ARGUMENTS
 
 Default (no args) runs interactive mode. Use `--dry-run` to preview, `--auto` to auto-remove safe ones.
 
-If $ARGUMENTS contains `--triage`, spawn the `worktree-triage` agent to deeply analyze WARN/DIRTY worktrees and recommend keep/archive/remove for each. Run `ccw-sweep --dry-run` first, then pass the results to the triage agent.
+If $ARGUMENTS contains `--triage`, invoke the `worktree-triage` skill to analyze WARN/DIRTY worktrees and recommend keep/archive/remove for each. The skill runs `ccw-sweep --dry-run` itself, then fans out one read-only `worktree-content-digest` haiku sub-agent per WARN/DIRTY worktree (in parallel) to ground each verdict in the worktree's real contents. It recommends only — it never removes anything.
 
 Otherwise, run the sweep script directly:
 

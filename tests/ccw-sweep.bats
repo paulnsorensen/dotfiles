@@ -416,3 +416,68 @@ teardown() {
   assert_contains "detached HEAD"
   assert_not_contains "branch not found"
 }
+
+# ── Nested-worktree safety (item B) ───────────────────────────────────
+# A parent worktree that nests an unmerged/dirty child must NOT be removed
+# under --auto — that would orphan the child's unpushed work. The gate must
+# fire only when the nested child actually blocks (dirty or unmerged), so a
+# clean merged child leaves the parent removable.
+
+# Exclude .worktrees/.claude in the parent so hosting a nested worktree dir
+# doesn't flip the parent to WARN (untracked) — mirrors the real repos, which
+# gitignore .worktrees. Keeps the parent SAFE so the nested gate is what stops
+# removal, not the parent's own status.
+add_nested_child() {
+  local parent="$1" slug="$2"
+  printf '.worktrees/\n.claude/\n' > "$(git -C "$parent" rev-parse --git-path info/exclude)"
+  git -C "$parent" worktree add "$parent/.worktrees/$slug" -b "claude/$slug" --quiet 2>/dev/null
+}
+
+@test "auto refuses to remove a parent nesting a DIRTY child" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"
+  echo "wip" >> "$parent/.worktrees/child/README.md"   # make the child dirty
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty"
+  assert_contains "git worktree move"
+  assert_contains "Skipping removal"
+  [[ -d "$parent" ]] || {
+    echo "parent removed despite nested dirty child — work would be orphaned"
+    return 1
+  }
+}
+
+@test "auto refuses to remove a parent nesting an UNMERGED child" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"
+  # Commit in the child so it is ahead of origin/main but otherwise clean.
+  echo "feature" > "$parent/.worktrees/child/feature.txt"
+  git -C "$parent/.worktrees/child" add feature.txt
+  git -C "$parent/.worktrees/child" commit -m "feature" --quiet
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty"
+  [[ -d "$parent" ]] || {
+    echo "parent removed despite nested unmerged child"
+    return 1
+  }
+}
+
+@test "auto still removes a parent nesting a CLEAN merged child" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"   # clean, 0 commits ahead
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_not_contains "nests unmerged/dirty"
+  assert_contains "Removed: 1"
+}

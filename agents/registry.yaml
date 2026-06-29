@@ -188,23 +188,17 @@ agents:
     - scout
     maxTurns: 50
     body_path: agents/agent_definitions/whey-drainer.md
-  worktree-triage:
-    description: Analyzes WARN/DIRTY worktrees to recommend keep, archive, or remove. Checks commit content, diffs, PR status, and staleness to make informed triage decisions. Interviews the user on DIRTY worktrees with unique changes.
+  worktree-content-digest:
+    description: Read-only worktree inspector. Given one worktree path, runs git log/diff/ls-files and returns a 2-3 line digest — unique commits, uncommitted diff summary, and whether untracked files look throwaway vs. worth keeping. Fanned out one-per-worktree (in parallel) by the worktree-triage skill so diff bodies stay in the sub-agent's window.
     models:
-      claude: sonnet
-      codex: gpt-5-codex
-      cursor: claude-sonnet
+      claude: haiku
+      codex: gpt-5-mini
+      cursor: claude-haiku
     tools:
     - Bash
     - Read
-    - Grep
-    - Glob
-    - AskUserQuestion
-    skills:
-    - scout
-    - gh
-    maxTurns: 50
-    body_path: agents/agent_definitions/worktree-triage.md
+    maxTurns: 30
+    body_path: agents/agent_definitions/worktree-content-digest.md
   # ── easy-cheese general phase agents ──────────────────────────────────────
   # Four general-purpose agents that model the easy-cheese workflow: explore
   # -> research -> review -> code. Planning stays a top-level orchestrator
