@@ -16,10 +16,6 @@
             "type": "command",
             "command": "node \"$HOME/.claude/hooks/hook-runner.js\" bash-guard.js",
             "statusMessage": "Checking command safety..."
-          },
-          {
-            "type": "command",
-            "command": "rtk hook claude"
           }
         ]
       },
