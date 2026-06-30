@@ -25,7 +25,7 @@ import agent_profile.renderers.claude as cl
 from agent_profile import cli
 from agent_profile.parse import Manifest
 from agent_profile.renderers.registry import build_registry
-from tests.conftest import write_profile
+from tests.conftest import install_profile, write_profile
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def _yaml(name: str, mcp_names: list[str]) -> str:
 
 
 def _install(env, name: str) -> int:
-    return cli.main(["install", name, "--target", str(env.target)])
+    return install_profile(["install", name, "--target", str(env.target)])
 
 
 # ─── integration: drop one MCP, re-install ───────────────────────────────────
@@ -187,7 +187,7 @@ def test_dropped_mcp_unregistered_from_claude_user_scope(
         "g",
         _yaml_claude_user("g", ["srv1", "srv2"], str(env.target)),
     )
-    assert cli.main(["install", "g"]) == 0
+    assert install_profile(["install", "g"]) == 0
     capsys.readouterr()
     calls.clear()  # discard first-install register churn
 
@@ -197,7 +197,7 @@ def test_dropped_mcp_unregistered_from_claude_user_scope(
         "g",
         _yaml_claude_user("g", ["srv1"], str(env.target)),
     )
-    assert cli.main(["install", "g"]) == 0
+    assert install_profile(["install", "g"]) == 0
     capsys.readouterr()
 
     # Reconcile must `claude mcp remove srv2` and never re-add it.

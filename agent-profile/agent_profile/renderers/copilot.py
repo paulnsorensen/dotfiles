@@ -159,7 +159,7 @@ class CopilotRenderer:
     name = "copilot"
     mcp_default = _COPILOT_MCP_DEFAULT
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
+    def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
         out_files: list[str] = []
         base = Path(str(target).rstrip("/"))
 

@@ -755,13 +755,36 @@ def test_user_scope_clean_removes_via_cli(env, monkeypatch):
 
 
 def test_user_scope_missing_cli_fails_loud(env, monkeypatch):
-    # PATH with no `claude` -> user-scope render must raise, not silently skip.
+    # PATH with no `claude` -> user-scope render (install/launch path,
+    # logical_root None) must raise, not silently skip.
     emptybin = env.tmp / "emptybin"
     emptybin.mkdir()
     monkeypatch.setenv("PATH", str(emptybin))
     profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
     with pytest.raises(FileNotFoundError):
         ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+
+
+def test_user_scope_compile_mode_defers_registration(env, monkeypatch):
+    # Compile renders into a scratch dir (logical_root set). The live
+    # `claude mcp add` must NOT fire — even with no `claude` on PATH the render
+    # succeeds, and the registration spec is exposed for apply to perform.
+    emptybin = env.tmp / "emptybin"
+    emptybin.mkdir()
+    monkeypatch.setenv("PATH", str(emptybin))
+    profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
+    manifest = parse_manifest(profile_dir)
+    renderer = ClaudeRenderer()
+    # No raise despite missing CLI — compile is side-effect-free.
+    renderer.render(manifest, env.target, logical_root=env.tmp / "real-home")
+    assert renderer.user_mcp_registrations(manifest) == [
+        {
+            "name": "context7",
+            "command": "npx",
+            "args": ["-y", "@upstash/context7-mcp"],
+            "env": {"KEY": "VAL"},
+        }
+    ]
 
 
 def test_user_scope_clean_missing_cli_fails_loud(env, monkeypatch):
