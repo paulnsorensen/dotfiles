@@ -8,7 +8,7 @@
 # Bodies are instruction-only Markdown at body_path (frontmatter stripped);
 # all metadata lives here. tools/disallowedTools are LISTS (renderers join
 # to CSV for claude/cursor and derive sandbox/permission for codex/opencode).
-# models is per-harness; color/effort/skills are Claude-honored fields.
+# models is per-harness; color/effort/maxTurns/skills are Claude-honored fields.
 agents:
   fromage-age-arch:
     description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
