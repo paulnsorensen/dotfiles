@@ -1,17 +1,16 @@
 #!/bin/bash
-# run_onchange — re-renders the registry-derived live install profiles
-# (`global` for the $HOME-targeted dot-dir harnesses, `opencode-global` for
-# opencode) into every harness whenever the inputs change. The single deploy
-# path that supersedes the retired install-mcp / install-hooks /
-# install-claude-skills scripts (curd 7).
+# run_onchange — compiles and applies profiles/live/profile.yaml whenever the
+# agent-config inputs change. This is the single deploy path that supersedes
+# live `ap install`.
 #
 # The hash below is computed by chezmoi at template render time over
 # every input the installer reads:
 #
 #   profiles/base/**             — registry-union directive
-#   profiles/global/**           — dot-dir live overlay
+#   profiles/live/**             — live compile targets + Claude overlay
+#   profiles/global/**           — migration stub
 #   profiles/_permissions/**     — canonical live permission floor
-#   profiles/opencode-global/**  — opencode live overlay
+#   profiles/opencode-global/**  — migration stub
 #   agents/mcp/registry.yaml      — MCP source of truth
 #   agents/hooks/registry.yaml    — hook source of truth
 #   agents/hooks/**.sh            — hook script contents (so edits redeploy)
@@ -29,7 +28,7 @@
 # plain sync. Bytecode (*.pyc / __pycache__) is excluded so the hash tracks
 # source edits, not interpreter artifacts.
 #
-# input hash: {{ output "sh" "-c" (printf "find %q/../profiles/base %q/../profiles/global %q/../profiles/_permissions %q/../profiles/opencode-global %q/../agents/mcp/registry.yaml %q/../agents/registry.yaml %q/../agents/hooks %q/../agents/plugins %q/../agents/lib %q/../agents/reference %q/../skills %q/../agent-profile/agent_profile -type f -not -name .DS_Store -not -name '*.pyc' -not -path '*/__pycache__/*' -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
+# input hash: {{ output "sh" "-c" (printf "find %q/../profiles/base %q/../profiles/live %q/../profiles/global %q/../profiles/_permissions %q/../profiles/opencode-global %q/../agents/mcp/registry.yaml %q/../agents/registry.yaml %q/../agents/hooks %q/../agents/plugins %q/../agents/lib %q/../agents/reference %q/../skills %q/../agent-profile/agent_profile -type f -not -name .DS_Store -not -name '*.pyc' -not -path '*/__pycache__/*' -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir .chezmoi.sourceDir) }}
 
 set -euo pipefail
 
@@ -60,5 +59,10 @@ if ! command -v npx &>/dev/null; then
     exit 0
 fi
 
+args=()
+if [[ "${DOTS_ACCEPT_AGENT_DRIFT:-}" == "1" ]]; then
+    args+=(--accept-agent-drift)
+fi
+
 INSTALL_BASE_PROFILE_AP="$DOTFILES_DIR/agent-profile/ap" \
-    bash "$INSTALLER" "$HOME"
+    bash "$INSTALLER" "$HOME" "${args[@]}"
