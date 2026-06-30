@@ -284,6 +284,7 @@ def _merge_two(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
         "skills": a.get("skills", []) + b.get("skills", []),
         "commands": a.get("commands", []) + b.get("commands", []),
         "hooks": a.get("hooks", []) + b.get("hooks", []),
+        "native_plugins": a.get("native_plugins", []) + b.get("native_plugins", []),
         "settings": settings,
     }
 
@@ -343,7 +344,6 @@ def _parse_with_includes(
         "target_default",
         "marketplaces",
         "mcp_scope",
-        "native_plugins",
         "compile_targets",
     ):
         merged[key] = self_[key]

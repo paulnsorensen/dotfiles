@@ -110,7 +110,7 @@ class ClaudeRenderer:
         self._write_settings(manifest, plugin_dir, base, out)
         self._write_local_marketplace(manifest, base, profile, desc)
         self._merge_root_settings(manifest, base)
-        self._render_native_plugins(manifest, base)
+        self._render_native_plugins(manifest, base, logical_root)
 
         # Track the plugin dir root so uninstall removes the whole tree
         # (including empty sub-dirs we mkdir'd above). Matches the bash
@@ -118,7 +118,9 @@ class ClaudeRenderer:
         self._track(out, base, plugin_dir)
         return out
 
-    def _render_native_plugins(self, manifest: Manifest, base: Path) -> None:
+    def _render_native_plugins(
+        self, manifest: Manifest, base: Path, logical_root: Path | None = None
+    ) -> None:
         """Register each claude_native plugin as a directory marketplace entry
         and prime Claude's CLI resolution cache via `claude plugin marketplace add`.
 
@@ -129,6 +131,14 @@ class ClaudeRenderer:
         - Calls ``claude plugin marketplace add <marketplace_root>`` to prime the
           CLI's resolution cache (writing extraKnownMarketplaces alone is not
           enough: the CLI must also index the marketplace directory).
+
+        The ``claude plugin marketplace add`` call is a live ``~/.claude`` write,
+        so it is deferred during compile (``logical_root`` set) to keep compile
+        side-effect-free — mirroring how user-scope MCP registrations defer. The
+        settings.json fragment (extraKnownMarketplaces + enabledPlugins) is still
+        written to the scratch ``base`` either way; apply / ``dots sync`` primes
+        the CLI cache post-gate. The legacy direct render (logical_root None)
+        still primes inline.
 
         Native skills (marked _from_native_plugin) are skipped by _write_skills;
         native MCPs (with claude removed from harnesses by DEDUP) are not written
@@ -153,7 +163,10 @@ class ClaudeRenderer:
             expanded = os.path.expandvars(os.path.expanduser(str(marketplace_root)))
             markets[marketplace_name] = {"source": {"source": "directory", "path": expanded}}
             enabled[f"{name}@{marketplace_name}"] = True
-            # Prime CLI resolution cache.
+            # Prime CLI resolution cache — a live ~/.claude write, deferred
+            # during compile (logical_root set) so compile stays side-effect-free.
+            if logical_root is not None:
+                continue
             try:
                 result = subprocess.run(
                     ["claude", "plugin", "marketplace", "add", expanded],
