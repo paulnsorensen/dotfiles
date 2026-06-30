@@ -34,6 +34,11 @@ from agent_profile._validate import (
     _validate_name,
     _validate_relpath,
 )
+from agent_profile.compile_target_validation import (
+    CompileTargetValidationError,
+    validate_compile_targets,
+)
+from agent_profile.compiled_types import CompileTarget
 from agent_profile.env import load_dotenv
 from agent_profile.ingest import expand_registries
 
@@ -68,9 +73,10 @@ class Manifest:
     enabled_plugins: dict[str, bool] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     extra_args: list[str] = field(default_factory=list)
-    # Install-time fields (curd: global profile). Outer-profile only, like
-    # the launch-overlay fields above. ``target_default`` is consulted by
-    # the CLI when ``--target`` is not passed; ``marketplaces`` is read by
+    # Legacy install fields. Outer-profile only, like the launch-overlay
+    # fields above. ``target_default`` is still consulted by the internal
+    # install path used by old profile stubs; live deployment now uses
+    # ``compile_targets`` on the live profile. ``marketplaces`` is read by
     # the claude renderer to register entries in ``extraKnownMarketplaces``
     # under the live settings.json (matching how ``enabled_plugins`` lands
     # in ``enabledPlugins``). ``${VAR}`` refs (``$HOME``, ``${DOTFILES_DIR}``)
@@ -90,6 +96,7 @@ class Manifest:
     # marketplace_root, marketplace_name, and description so the renderer can
     # register the marketplace.
     native_plugins: list[dict[str, Any]] = field(default_factory=list)
+    compile_targets: tuple[CompileTarget, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the same JSON shape parse.sh emits (used for the
@@ -104,6 +111,7 @@ class Manifest:
             "name": self.name,
             "description": self.description,
             "mcp_scope": self.mcp_scope,
+            "compile_targets": [target.to_dict() for target in self.compile_targets],
         }
 
 
@@ -181,6 +189,13 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
 
     reg = _expand_registries_directive(raw.get("registries"))
 
+    try:
+        compile_targets = validate_compile_targets(
+            raw.get("compile_targets"), manifest_path=manifest_path
+        )
+    except CompileTargetValidationError as exc:
+        raise ParseError(str(exc)) from exc
+
     return {
         "name": name,
         "description": raw.get("description") or "",
@@ -198,6 +213,7 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         "target_default": raw.get("target_default") or None,
         "marketplaces": dict(raw.get("marketplaces") or {}),
         "mcp_scope": raw.get("mcp_scope") or "plugin",
+        "compile_targets": compile_targets,
         # Registry-derived items come first; inline items append (matching
         # the include "outer last" convention so an inline override on a
         # name-collision wins on scalar/object merges downstream).
@@ -328,6 +344,7 @@ def _parse_with_includes(
         "marketplaces",
         "mcp_scope",
         "native_plugins",
+        "compile_targets",
     ):
         merged[key] = self_[key]
     return merged
@@ -368,4 +385,5 @@ def parse_manifest(profile_dir: Path, find_profile_dir: Any = None) -> Manifest:
         marketplaces=merged["marketplaces"],
         mcp_scope=merged["mcp_scope"],
         native_plugins=merged.get("native_plugins", []),
+        compile_targets=merged["compile_targets"],
     )

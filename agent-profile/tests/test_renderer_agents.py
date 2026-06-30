@@ -164,12 +164,12 @@ def test_claude_agent_disallowed_tools(tmp_path: Path) -> None:
     ).read_text()
     assert "disallowedTools: [Edit, Write]" in shared_file
 
-def test_claude_shared_agent_carries_model_color_effort_skills(
+def test_claude_shared_agent_carries_model_color_effort_skills_max_turns(
     tmp_path: Path,
 ) -> None:
     # The user-scoped shared file wins over the plugin copy (priority 4 > 5),
     # so it must carry the full claude metadata — a model-neutral shared file
-    # would silently drop the agent's pinned model and its color/effort/skills.
+    # would silently drop the agent's pinned model and its color/effort/maxTurns/skills.
     ClaudeRenderer().render(
         _agent_manifest(
             tmp_path,
@@ -178,6 +178,7 @@ def test_claude_shared_agent_carries_model_color_effort_skills(
             color="red",
             effort="high",
             skills=["scout", "gh"],
+            maxTurns=20,
         ),
         tmp_path,
     )
@@ -188,6 +189,7 @@ def test_claude_shared_agent_carries_model_color_effort_skills(
     assert "color: red" in shared_file
     assert "effort: high" in shared_file
     assert "skills: [scout, gh]" in shared_file
+    assert "maxTurns: 20" in shared_file
 
 
 # ── cursor ────────────────────────────────────────────────────────────

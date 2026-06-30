@@ -1,0 +1,29 @@
+# live — the only profile dots sync deploys to this machine.
+#
+# The profile carries the base registry union plus the live permission floor and
+# compiles into two target roots: $HOME for the dot-dir harnesses, and
+# $HOME/.config/opencode for opencode's root-relative renderer.
+name: live
+description: Live compiled agent config for dots sync
+include: [base, _permissions]
+
+compile_targets:
+  home:
+    target_root: $HOME
+    harnesses: [claude, codex, cursor, copilot]
+  opencode:
+    target_root: $HOME/.config/opencode
+    harnesses: [opencode]
+
+# Claude plugin wiring mirrors the former global live overlay. The compiled
+# apply path writes the plugin tree under ~/.claude/plugins/local/live and
+# registers that local marketplace so Claude can resolve live@local.
+marketplaces:
+  local: $HOME/.claude/plugins/local
+
+enabled_plugins:
+  live@local: true
+
+# Keep MCP registration at user scope so existing bare mcp__<server>__*
+# permission rules keep matching after the compile/apply migration.
+mcp_scope: user

@@ -91,7 +91,7 @@ class ClaudeRenderer:
     name = "claude"
     mcp_default = _MCP_DEFAULT
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
+    def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
         out: list[str] = []
         base = Path(str(target).rstrip("/"))
         profile = manifest.name
@@ -106,7 +106,7 @@ class ClaudeRenderer:
         self._write_skills(manifest, target, out)
         self._write_commands(manifest, plugin_dir, base, out)
         self._write_hooks(manifest, plugin_dir, base, profile, out)
-        self._write_mcp_json(manifest, plugin_dir, base, out)
+        self._write_mcp_json(manifest, plugin_dir, base, out, logical_root)
         self._write_settings(manifest, plugin_dir, base, out)
         self._write_local_marketplace(manifest, base, profile, desc)
         self._merge_root_settings(manifest, base)
@@ -509,6 +509,7 @@ class ClaudeRenderer:
         plugin_dir: Path,
         base: Path,
         out: list[str],
+        logical_root: Path | None = None,
     ) -> None:
         mine = mcps_for(manifest, "claude", _MCP_DEFAULT)
         if not mine:
@@ -519,12 +520,36 @@ class ClaudeRenderer:
             # (`mcp__<server>__*`) and land in ~/.claude.json. No plugin
             # .mcp.json is written, so its file is dropped from the install
             # manifest and swept on the next render.
-            self._register_user_mcps(mine)
+            #
+            # `claude mcp add` writes the LIVE ~/.claude.json regardless of the
+            # scratch render dir, so it is a live side-effect. During compile
+            # (rendering into a scratch dir for deferred apply — signalled by a
+            # non-None `logical_root`) we must NOT touch live state before the
+            # drift gate: `ap compile` records the registrations via
+            # `user_mcp_registrations()` and `ap apply-compiled` performs the
+            # live write post-gate. The install/launch path (logical_root None)
+            # writes directly to the live target, so it registers immediately.
+            if logical_root is None:
+                self._register_user_mcps(mine)
             return
         servers = {mcp["name"]: mcp_server_entry(mcp) for mcp in mine}
         out_path = plugin_dir / ".mcp.json"
         _dump_json(out_path, {"mcpServers": servers})
         self._track(out, base, out_path)
+
+    def user_mcp_registrations(self, manifest: Manifest) -> list[dict]:
+        """User-scope MCP registrations for ``ap compile`` to defer to apply.
+
+        Pure read of the resolved manifest — no CLI, no live write. Returns
+        ``{name, command, args?, env?}`` per server (``${VAR}`` env refs stay
+        literal, matching the plugin-scope ``.mcp.json``), or ``[]`` when the
+        profile is not user-scope or projects no MCP to claude."""
+        if manifest.mcp_scope != "user":
+            return []
+        return [
+            {"name": mcp["name"], **mcp_server_entry(mcp)}
+            for mcp in mcps_for(manifest, "claude", _MCP_DEFAULT)
+        ]
 
     @staticmethod
     def _claude_cli() -> str:

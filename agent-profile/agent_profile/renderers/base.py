@@ -11,7 +11,7 @@ Renderer protocol contract
 A renderer is an object exposing:
 
   - ``name: str`` — the harness name (``"claude"``, ``"codex"``, …).
-  - ``render(manifest, target) -> list[str]`` — write this harness's
+  - ``render(manifest, target, logical_root=None) -> list[str]`` — write this harness's
     artefacts under ``target`` and return the list of relative paths
     written (whole-file artefacts only; merged files such as
     ``opencode.json`` are *not* listed — they are surgically undone in
@@ -76,8 +76,18 @@ class Renderer(Protocol):
     name: str
     mcp_default: tuple[str, ...]
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
-        """Write artefacts under ``target``; return relative paths written."""
+    def render(
+        self, manifest: Manifest, target: Path, logical_root: Path | None = None
+    ) -> list[str]:
+        """Write artefacts under ``target``; return relative paths written.
+
+        ``logical_root`` is the directory the artefacts will ultimately be
+        DEPLOYED to, when that differs from the physical ``target`` they are
+        written to. ``ap compile`` renders into a scratch dir but the files
+        will live under the target's resolved root, so a renderer that bakes an
+        absolute deploy path into file content (only codex's ``hooks.json``
+        today) must root it at ``logical_root`` when set. ``None`` (the
+        live-install default) means deploy root == ``target``."""
         ...
 
     def clean(self, manifest: Manifest, target: Path) -> None:

@@ -11,7 +11,7 @@ import json
 import pytest
 
 from agent_profile import cli
-from tests.conftest import write_profile
+from tests.conftest import install_profile, write_profile
 
 REVIEWER_BODY = "Reviewer body for foo\n"
 HOOK_BODY = "#!/bin/bash\nexit 0\n"
@@ -43,6 +43,8 @@ def make_basic_profile(root, name):
 
 
 def run(argv) -> int:
+    if argv and argv[0] == "install":
+        return install_profile(argv)
     return cli.main(argv)
 
 
