@@ -57,6 +57,7 @@ A mapping of `name → {event, script|command, shared_assets, harnesses, matcher
 The cheese sub-agents. Metadata lives in the registry; instruction bodies live as frontmatter-free Markdown at `body_path` under `agents/agent_definitions/`. This split keeps all per-harness metadata in one YAML file while bodies stay editable prose.
 
 - **`models` is per-harness**: `{claude: sonnet, codex: gpt-5-codex, cursor: claude-sonnet, opencode: inherit}`. Each renderer reads its own key; `inherit`/absent means "no override". Copilot ignores model overrides.
+- **`maxTurns` is Claude frontmatter**: set it in `agents/registry.yaml` when a forked Claude sub-agent needs a hard turn cap. The shared Claude/Cursor agent file carries the field, Claude honors it, and Cursor ignores it. Specialist agents and the `explorer`/`researcher`/`reviewer` phase agents are capped at `maxTurns: 50`; `coder` and `generalist` get `100` for longer implementation/synthesis runs; `worktree-content-digest` gets `30`.[^max-turns]
 - **`tools` / `disallowedTools` are lists.** Renderers join to CSV for Claude/Cursor frontmatter, and *derive* sandbox/read-only intent for Codex (`sandbox_mode = "read-only"`) and opencode (`permission.edit: deny`). The read-only derivation (`shared.agent_is_read_only`) counts the MCP write surfaces — `mcp__tilth__tilth_write`, serena's symbol editors — not just `Edit`/`Write`, and treats a trailing-`*` grant like `mcp__serena__*` as conferring write.
 
 Two tiers live here: narrow specialists (`fromage-*`, `ghostbuster`, `nih-scanner`, `ricotta-reducer`, `roquefort-wrecker`, `duckdb-expert`, `whey-drainer`, `worktree-triage`) used as fork targets, and four general phase agents (`explorer`/`researcher`/`reviewer`/`coder`) modelling the explore→research→review→code loop. Planning is intentionally *not* an agent: it owns the human-approval loop and a level-1 sub-agent can't fan out, so it stays an orchestrator concern.
@@ -87,3 +88,5 @@ Shared agent *content* that chezmoi copies directly (not through `ap`):
 - **`agents/RTK.md`** — RTK proxy reference, Claude-only (copied to `~/.claude/RTK.md`).
 
 See [[../harnesses/index]] for how each harness consumes these artifacts and the official docs for its native config surfaces.
+
+[^max-turns]: Verified against Claude Code 2.1.195 local binary strings (`xLl` parser reads frontmatter `maxTurns` and stores `maxTurns`; invalid values warn "Must be a positive integer") and implemented in `agent-profile/agent_profile/shared.py:144` plus `agents/registry.yaml:27` (the first `maxTurns:` entry).
