@@ -422,6 +422,7 @@ def _write_codex_config(
         sections.append(
             f"model_instructions_file = {_codex_toml_value(str(sp))}\n"
         )
+    sections.append('\n[tui]\ninput_mode = "vim"\n')
     tables = _codex_mcp_tables(manifest)
     if tables:
         sections.append(tables)

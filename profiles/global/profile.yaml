@@ -1,76 +1,14 @@
-# global — the live install of `base` into the machine.
+# global — migration stub for the old live install profile.
 #
-# `base` is the registry-derived union of MCPs, skills, hooks — a render
-# primitive useful for inspection or staged builds. `global` wraps that
-# union with the operator-intent fields needed to actually deploy onto
-# this machine: target $HOME by default, register the local marketplace,
-# and enable the rendered plugin so its `plugin.json` (which carries the
-# SessionStart hook wiring etc.) is honored by Claude.
-#
-# Why split it out: `ap install base` without --target writes the plugin
-# tree into $PWD, which is correct for staging but confusing as the
-# "make my machine live" verb. `ap install global` (no flags) targets
-# $HOME via `target_default`, so the operator-intent reads cleanly.
-#
-# Chezmoi drives this on `dots sync` through
-# `chezmoi/lib/install-base-profile.sh`, which calls `ap install global`.
-# Standalone use is also fine: `dots profile install global`.
+# Live deployment moved to `profiles/live/profile.yaml` and `dots sync`. This
+# profile keeps the old name parseable for migration docs/tests, but `ap install`
+# is deprecated and no longer deploys it.
 name: global
-description: Live install — renders base into $HOME and wires it into Claude
-# _permissions carries the canonical cross-harness allow/deny lists; the
-# renderers lower them onto each harness's native surface. The live wrappers
-# (`global` here, `opencode-global` for opencode) both include it; this profile
-# is still the Claude-specific live overlay.
+description: Deprecated live install alias; use `dots sync` / profile `live`
 include: [base, _permissions]
-
-# `--target` precedence in ap is: explicit flag > profile target_default >
-# Path.cwd(). $HOME (and ~) expand at install time via os.path.expandvars
-# / expanduser; unset refs leave a literal, so the failure surfaces as
-# "path does not exist" rather than a generic KeyError.
 target_default: $HOME
-
-# Marketplaces (claude only — other renderers ignore the field). The
-# value is a directory path that ap wraps as
-# `{source: {source: "directory", path: <expanded>}}` in
-# ~/.claude/settings.json's extraKnownMarketplaces. github-source
-# marketplaces stay user-managed in the chezmoi seed.
-#
-# Must match where the renderer actually writes the plugin tree:
-# target_default above is $HOME, so the claude renderer drops the
-# global plugin at $HOME/.claude/plugins/local/global/ and emits the
-# directory `marketplace.json` alongside it. Pointing `local` at
-# $HOME/.claude/plugins/local lets Claude resolve `global@local` to
-# that on-disk tree via the marketplace.json (an explicit registration,
-# not just fallback). (Earlier this pointed at
-# ${DOTFILES_DIR}/.claude/plugins/local, which only contained a staged
-# `base/` tree and not the live `global/`.)
 marketplaces:
   local: $HOME/.claude/plugins/local
-
-# enabled_plugins (claude only — same field the launch-overlay uses for
-# isolated profiles, repurposed here for non-isolated installs). ap's
-# claude renderer merges these into settings.json's `enabledPlugins`,
-# preserving siblings (user-managed plugin toggles survive). Without
-# this, Claude wouldn't load the rendered plugin tree and its bundled
-# SessionStart hook (cheese-flair) would stay inert.
-#
-# Plugin id is `<profile_name>@<marketplace_name>` because ap's claude
-# renderer writes the tree to `.claude/plugins/local/<profile_name>/`
-# (here: `.claude/plugins/local/global/`) and we registered the
-# `local` marketplace above. The on-disk plugin name and the enabled
-# entry must match — if you rename this profile, update both.
 enabled_plugins:
   global@local: true
-
-# mcp_scope (claude only — other harnesses already write a single bare
-# user-level config and ignore this). "user" makes the claude renderer
-# register each MCP via `claude mcp add --scope user` (into ~/.claude.json,
-# bare tool names `mcp__<server>__*`) instead of writing the plugin's
-# .mcp.json (which produces plugin-scoped names
-# `mcp__plugin_global_<server>__*`). The plugin tree is still rendered +
-# enabled above — it carries the skills, commands, hooks, and agents; only
-# MCP registration moves to user scope. Bare names mean the existing
-# settings.json allowlist matches with no per-plugin namespacing. Default
-# elsewhere is "plugin" (closed-world / staged renders keep their bundled
-# .mcp.json).
 mcp_scope: user

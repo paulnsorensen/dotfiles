@@ -14,3 +14,7 @@ registries:
   skills:  [skills/_registry.yaml, skills/]
   hooks:   agents/hooks/registry.yaml
   plugins: agents/plugins/registry.yaml
+compile_targets:
+  home:
+    target_root: "$HOME"
+    harnesses: ["codex"]
