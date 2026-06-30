@@ -148,6 +148,10 @@ def _leaves(value: Any) -> dict[str, Any]:
 
 
 def _walk(value: Any, prefix: str, out: dict[str, Any]) -> None:
+    # The empty path "" is reserved for a whole-file leaf (non-dict / text
+    # root). A literal "" key at the top level of a dict would alias that
+    # slot; in-scope settings files are non-empty dicts with non-empty keys,
+    # so the collision stays latent.
     if isinstance(value, dict) and value:
         for key, child in value.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)

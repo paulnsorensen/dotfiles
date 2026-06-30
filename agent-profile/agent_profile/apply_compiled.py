@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -100,6 +101,21 @@ def _target_roots(data: dict[str, Any]) -> dict[str, Path]:
     return roots
 
 
+def _safe_dest(root: Path, relative: str) -> Path:
+    """Join ``relative`` under ``root``, rejecting absolute or ``..``-escaping paths."""
+    rel = Path(relative)
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ApplyError(
+            f"ap apply-compiled: relative_path '{relative}' must be relative and stay under its target root"
+        )
+    dest = (root / rel).resolve()
+    if dest != root.resolve() and root.resolve() not in dest.parents:
+        raise ApplyError(
+            f"ap apply-compiled: relative_path '{relative}' escapes its target root"
+        )
+    return dest
+
+
 def _managed_pairs(
     data: dict[str, Any], roots: dict[str, Path]
 ) -> list[tuple[Path, Path]]:
@@ -128,7 +144,7 @@ def _managed_pairs(
             raise ApplyError("ap apply-compiled: manifest file missing fragment_path")
         if not isinstance(relative, str) or not relative:
             raise ApplyError("ap apply-compiled: manifest file missing relative_path")
-        pairs.append((Path(fragment), roots[target] / relative))
+        pairs.append((Path(fragment), _safe_dest(roots[target], relative)))
     return pairs
 
 
@@ -159,6 +175,14 @@ def _user_mcps(data: dict[str, Any]) -> list[dict[str, Any]]:
             raise ApplyError(
                 "ap apply-compiled: each user_mcps entry must have 'name' and 'command'"
             )
+        if not isinstance(mcp["name"], str) or not mcp["name"]:
+            raise ApplyError(
+                "ap apply-compiled: user_mcps entry 'name' must be a non-empty string"
+            )
+        if not isinstance(mcp["command"], str) or not mcp["command"]:
+            raise ApplyError(
+                "ap apply-compiled: user_mcps entry 'command' must be a non-empty string"
+            )
     return raw
 
 
@@ -182,11 +206,22 @@ def _register_user_mcps(mcps: list[dict[str, Any]]) -> list[str]:
     registered: list[str] = []
     for mcp in mcps:
         name = mcp["name"]
-        subprocess.run(
+        removed = subprocess.run(
             [cli, "mcp", "remove", name, "--scope", "user"],
             capture_output=True,
+            text=True,
             check=False,
         )
+        if removed.returncode != 0:
+            detail = (removed.stderr or removed.stdout or "").strip()
+            # A "not found"/absent server is the expected idempotent case; any
+            # other non-zero exit is unexpected and is surfaced (non-fatal).
+            if "not found" not in detail.lower() and "no mcp server" not in detail.lower():
+                print(
+                    f"ap apply-compiled: warning: `claude mcp remove {name}` exited "
+                    f"{removed.returncode}: {detail}",
+                    file=sys.stderr,
+                )
         cmd = [cli, "mcp", "add", name, "--scope", "user"]
         for key, val in (mcp.get("env") or {}).items():
             cmd += ["-e", f"{key}={val}"]
