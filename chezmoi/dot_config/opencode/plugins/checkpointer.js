@@ -10,7 +10,7 @@
 // Fail-open everywhere: if the checkpoints directory can't be created or a write
 // fails, the plugin returns {} and does not block compaction.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -47,6 +47,17 @@ export const Checkpointer = async (ctx) => {
         ].join("\n");
 
         await writeFile(filePath, state, "utf-8");
+
+        // Prune to the most recent checkpoints so the dir doesn't grow
+        // unbounded across sessions. Timestamp names sort chronologically.
+        const MAX_CHECKPOINTS = 10;
+        const stale = (await readdir(checkpointDir))
+          .filter((f) => f.endsWith(".md"))
+          .sort()
+          .slice(0, -MAX_CHECKPOINTS);
+        for (const name of stale) {
+          await unlink(join(checkpointDir, name));
+        }
       } catch {
         // Fail-open: if we can't write a checkpoint, don't block compaction
         return {};

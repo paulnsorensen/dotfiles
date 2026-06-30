@@ -58,6 +58,8 @@ def profile_arg(args: list[str]) -> str:
             i += 2
         elif arg.startswith(("--baseline=", "--out=")):
             i += 1
+        elif arg.startswith("-"):
+            raise CompileError(f"ap compile: unknown option '{arg}'")
         else:
             return arg
     return ""
@@ -81,6 +83,8 @@ def _parse_args(args: list[str]) -> tuple[str, Path, Path]:
         elif arg.startswith("--out="):
             out = Path(arg.split("=", 1)[1]).resolve()
             i += 1
+        elif arg.startswith("-"):
+            raise CompileError(f"ap compile: unknown option '{arg}'")
         elif not profile:
             profile = arg
             i += 1
