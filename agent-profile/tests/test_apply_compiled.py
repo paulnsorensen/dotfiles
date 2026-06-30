@@ -350,6 +350,19 @@ def test_apply_file_referencing_unknown_target_raises(tmp_path):
         apply_compiled.apply_compiled(mpath)
 
 
+@pytest.mark.parametrize("escaping", ["../escape.md", "a/../../escape.md", "/abs/escape.md"])
+def test_apply_rejects_relative_path_escaping_target_root(tmp_path, escaping):
+    """Finding regression: a ``relative_path`` that is absolute or climbs out of
+    its target root via ``..`` is rejected with a handled ApplyError, so a
+    malicious manifest cannot write or unlink outside the resolved root."""
+    root = tmp_path / "live"
+    cache = tmp_path / "compiled"
+    frag = _fragment(cache, "home", "claude", "placeholder.md", "x\n")
+    frag["relative_path"] = escaping
+    mpath = _write_manifest(cache, _manifest([_target("home", root)], [frag]))
+    with pytest.raises(apply_compiled.ApplyError, match="relative_path"):
+        apply_compiled.apply_compiled(mpath)
+
 # --- CLI seam --------------------------------------------------------------
 
 
@@ -525,4 +538,27 @@ def test_apply_user_mcp_missing_required_key_is_handled(tmp_path):
         _manifest_user_mcps([_target("home", tmp_path / "live")], [bad]),
     )
     with pytest.raises(apply_compiled.ApplyError, match="'name' and 'command'"):
+        apply_compiled.apply_compiled(mpath)
+
+
+@pytest.mark.parametrize(
+    ("bad", "match"),
+    [
+        ({"name": 123, "command": "npx"}, "'name' must be a non-empty string"),
+        ({"name": "", "command": "npx"}, "'name' must be a non-empty string"),
+        ({"name": "ctx", "command": 123}, "'command' must be a non-empty string"),
+        ({"name": "ctx", "command": ""}, "'command' must be a non-empty string"),
+    ],
+)
+def test_apply_user_mcp_non_string_key_is_handled(tmp_path, bad, match):
+    """Finding regression: a user_mcps entry whose ``name``/``command`` is present
+    but not a non-empty string raises a handled ApplyError before the argv ever
+    reaches ``subprocess.run`` (which would otherwise raise an uncaught TypeError).
+    """
+    cache = tmp_path / "compiled"
+    mpath = _write_manifest(
+        cache,
+        _manifest_user_mcps([_target("home", tmp_path / "live")], [bad]),
+    )
+    with pytest.raises(apply_compiled.ApplyError, match=match):
         apply_compiled.apply_compiled(mpath)

@@ -168,6 +168,27 @@ def test_profile_arg_extracts_positional_regardless_of_flag_order():
     assert compile_command.profile_arg(["--baseline", "b", "--out", "o"]) == ""
 
 
+def test_profile_arg_rejects_unknown_flag():
+    """An unknown ``--flag`` is reported as an unknown option, not silently
+    returned as the profile positional (which misreported ``profile '--bogus'
+    not found``)."""
+    with pytest.raises(compile_command.CompileError, match="unknown option '--bogus'"):
+        compile_command.profile_arg(["--bogus"])
+
+
+def test_parse_args_rejects_unknown_flag():
+    with pytest.raises(compile_command.CompileError, match="unknown option '--bogus'"):
+        compile_command._parse_args(["live", "--bogus", "--baseline", "b", "--out", "o"])
+
+
+def test_cli_compile_unknown_flag_reports_unknown_option(capsys):
+    """``ap compile --bogus`` surfaces an unknown-option error (exit 1), not a
+    misleading ``profile '--bogus' not found``."""
+    rc = run(["compile", "--bogus"])
+    assert rc == 1
+    assert "unknown option '--bogus'" in capsys.readouterr().err
+
+
 def test_compile_accepts_flags_before_profile(env, monkeypatch, stub_renderers):
     """The CLI compile pre-check must extract the profile positionally, not
     assume it is the first arg. ``--baseline X --out Y live`` previously errored

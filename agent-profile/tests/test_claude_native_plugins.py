@@ -987,3 +987,57 @@ def test_claude_renderer_rewrites_skill_allowed_tools(tmp_path):
     assert "mcp__hallouminate__*" not in text, text
     assert "mcp__tilth__*" in text
     assert "Task, Skill, Bash(gh:*)" in text  # non-MCP entries preserved in order
+
+
+# ── Regression: native_plugins must inherit through includes ───────────────
+
+def test_native_plugins_inherit_through_includes(tmp_path, monkeypatch):
+    """An outer profile that ``include``s a base carrying native plugins must
+    inherit them.
+
+    Regression for the silent-disable bug (issue #356): ``native_plugins`` was
+    in the outermost-profile-only override list, so ``parse_manifest(global)``
+    — ``global`` includes ``base`` but declares no own ``native_plugins`` —
+    clobbered base's inherited [milknado, hallouminate] back to ``[]``. The
+    live installer runs ``ap install global``, so every native plugin silently
+    vanished from the rendered settings. native_plugins must merge across
+    includes like mcps/agents/skills/hooks, not get overridden like name.
+    """
+    from agent_profile.parse import parse_manifest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    market_root = _make_marketplace(
+        tmp_path, "milknado",
+        [{"name": "milknado", "source": "./plugins/milknado"}],
+    )
+    _make_payload(market_root, "./plugins/milknado", "milknado")
+    _make_plugins_registry(repo, {"milknado": {
+        "path": str(market_root),
+        "harnesses": ["claude"],
+        "claude_native": True,
+    }})
+    monkeypatch.setenv("DOTFILES_DIR", str(repo))
+
+    profiles = repo / "profiles"
+    base = profiles / "base"
+    base.mkdir(parents=True)
+    (base / "profile.yaml").write_text(
+        "name: base\nregistries:\n  plugins: agents/plugins/registry.yaml\n"
+    )
+    outer = profiles / "outer"
+    outer.mkdir()
+    (outer / "profile.yaml").write_text("name: outer\ninclude: [base]\n")
+
+    def resolver(name):
+        d = profiles / name
+        return d if d.is_dir() else None
+
+    base_names = [p["name"] for p in parse_manifest(base, resolver).native_plugins]
+    outer_names = [p["name"] for p in parse_manifest(outer, resolver).native_plugins]
+
+    assert base_names == ["milknado"]
+    assert outer_names == ["milknado"], (
+        "outer profile including base must inherit base's native_plugins; "
+        f"got {outer_names} (outermost-override clobbered the inherited value)"
+    )
