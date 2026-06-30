@@ -65,6 +65,7 @@ packages:
   # which wires the systemd daemon. Then `tailscale up`. See operations/remote-access wiki.
   - anomalyco/tap/opencode                    # open-source AI coding agent (fresher than homebrew-core)
   - charmbracelet/tap/crush                   # Charm terminal AI coding agent (MCP via crush.json)
+  - can1357/tap/omp
 
   # Rust build acceleration
   - sccache                                   # rustc wrapper for compile caching
