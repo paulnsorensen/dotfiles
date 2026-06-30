@@ -170,9 +170,11 @@ from pathlib import Path
 manifest = Path(sys.argv[1])
 try:
     records = json.loads(manifest.read_text()).get("drift", [])
-except Exception:
+except Exception as exc:
+    print(f"agent-profile-sync: cannot read drift records from {manifest}: {exc}", file=sys.stderr)
     sys.exit(0)
 if not isinstance(records, list):
+    print(f"agent-profile-sync: manifest {manifest} has invalid drift records", file=sys.stderr)
     sys.exit(0)
 
 
