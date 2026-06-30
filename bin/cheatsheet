@@ -136,6 +136,7 @@ print_cheatsheet() {
     hdr "AI agents"
     row "copilot"             "GitHub Copilot (allow/deny floor)"
     row "oc"                  "opencode"
+    row "ompt"                "Oh My Pi tight profile"
     row "vdv"                 "vaudeville (SLM enforcement)"
     row "ralph"               "ralphify wrapper"
     row "rw <path>"           "run a ralph with sane defaults"
