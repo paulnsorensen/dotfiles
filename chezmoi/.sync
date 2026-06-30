@@ -175,7 +175,9 @@ if command -v chezmoi &>/dev/null; then
     else
         chezmoi_status=$?
         echo "  ERROR: chezmoi apply failed (exit $chezmoi_status) — alphabetically-later run_onchange installers were skipped" >&2
-        echo "         Common cause: 'gh auth status' failing → run 'gh auth login' and re-run 'dots sync'." >&2
+        echo "         See the specific error above for the cause. Common ones:" >&2
+        echo "           • agent-config drift halted the base-profile render → re-run: dots sync --accept-agent-drift" >&2
+        echo "           • 'gh auth status' failing → run 'gh auth login', then re-run 'dots sync'." >&2
     fi
 else
     echo "  Skipping chezmoi apply (chezmoi not installed); chezmoi-managed files will not sync"
