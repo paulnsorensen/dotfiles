@@ -152,6 +152,74 @@ sys.exit(0 if drift else 1)
 PY
 }
 
+# Print a human-readable summary of the drift between the live install and the
+# compiled output, reading the `drift` records from the manifest. Records whose
+# `live` and `compiled` values are present and equal are no-ops (the file just
+# isn't in the chezmoi scratch baseline) and are omitted; everything else is a
+# pending change shown as `live → compiled`. Long/multiline values are
+# truncated so the codex/copilot whole-file merge records stay readable.
+agent_profile_print_drift_delta() {
+    local cache_dir manifest
+    cache_dir=$1
+    manifest="$cache_dir/manifest.json"
+    python3 - "$manifest" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest = Path(sys.argv[1])
+try:
+    records = json.loads(manifest.read_text()).get("drift", [])
+except Exception as exc:
+    print(f"agent-profile-sync: cannot read drift records from {manifest}: {exc}", file=sys.stderr)
+    sys.exit(0)
+if not isinstance(records, list):
+    print(f"agent-profile-sync: manifest {manifest} has invalid drift records", file=sys.stderr)
+    sys.exit(0)
+
+
+def fmt(value, absent):
+    if value is None:
+        return absent
+    text = value if isinstance(value, str) else json.dumps(value, sort_keys=True)
+    text = " ".join(text.split())
+    return text if len(text) <= 60 else text[:57] + "..."
+
+
+def is_noop(rec):
+    return "live" in rec and "compiled" in rec and rec["live"] == rec["compiled"]
+
+
+changes = [r for r in records if isinstance(r, dict) and not is_noop(r)]
+print("agent-profile-sync: compiled agent config differs from your live install", file=sys.stderr)
+if not changes:
+    print("    (re-tracking only — no value changes)", file=sys.stderr)
+    sys.exit(0)
+
+cap = 50
+shown = 0
+last_file = None
+for rec in changes:
+    if shown >= cap:
+        break
+    rel = rec.get("relative_path") or "(unknown)"
+    if rel != last_file:
+        print(f"  {rel}", file=sys.stderr)
+        last_file = rel
+    path = rec.get("path") or "(whole file)"
+    if "live" in rec or "compiled" in rec:
+        delta = f"{fmt(rec.get('live'), '(none)')} → {fmt(rec.get('compiled'), '(removed)')}"
+        print(f"    {path}: {delta}", file=sys.stderr)
+    else:
+        print(f"    {path}", file=sys.stderr)
+    shown += 1
+
+remaining = len(changes) - shown
+if remaining > 0:
+    print(f"    … and {remaining} more change(s)", file=sys.stderr)
+PY
+}
+
 agent_profile_drift_gate() {
     local cache_dir accept_drift drift_status
     cache_dir=$1
@@ -165,18 +233,20 @@ agent_profile_drift_gate() {
         *) return 1 ;;
     esac
 
+    agent_profile_print_drift_delta "$cache_dir"
+
     if [[ "$accept_drift" == true ]]; then
-        echo "agent-profile-sync: continuing because --accept-agent-drift was passed"
+        echo "agent-profile-sync: continuing because --accept-agent-drift was passed" >&2
         return 0
     fi
 
     if ! _apsync_interactive; then
-        echo "agent-profile-sync: drift detected during noninteractive dots sync" >&2
-        echo "agent-profile-sync: rerun with --accept-agent-drift to accept it for this run" >&2
+        echo "agent-profile-sync: drift NOT applied during noninteractive dots sync." >&2
+        echo "agent-profile-sync: to apply the changes above, re-run: dots sync --accept-agent-drift" >&2
         return 1
     fi
 
-    if _apsync_confirm "Continue and apply generated agent config? [y/N] "; then
+    if _apsync_confirm "Continue and apply the changes above? [y/N] "; then
         return 0
     fi
 

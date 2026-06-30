@@ -117,9 +117,53 @@ _force_interactive_yes() {
     run agent_profile_sync live
 
     assert_failure
-    assert_output_contains "--accept-agent-drift"
+    assert_output_contains "dots sync --accept-agent-drift"
     grep -qF "compile live" "$AP_LOG"
     ! grep -qF "apply-compiled" "$AP_LOG"
+}
+
+@test "noninteractive drift prints the delta, not a gh-auth hint" {
+    MOCK_AP_DRIFT=1
+    source "$LIB"
+    _force_noninteractive
+
+    run agent_profile_sync live
+
+    assert_failure
+    assert_output_contains "differs from your live install"
+    assert_output_contains ".claude/settings.json"
+    assert_output_not_contains "gh auth"
+}
+
+@test "drift delta shows live→compiled changes and hides no-op records" {
+    source "$LIB"
+    mkdir -p "$AGENT_PROFILE_CACHE_DIR"
+    cat >"$AGENT_PROFILE_CACHE_DIR/manifest.json" <<'JSON'
+{"drift":[
+  {"relative_path":".claude/settings.json","path":"enabledPlugins.todoist-flow","live":true,"compiled":null},
+  {"relative_path":".claude/settings.json","path":"enabledPlugins.milknado","live":null,"compiled":true},
+  {"relative_path":"opencode.json","path":"permission.bash.rg *","live":"allow","compiled":"allow"}
+]}
+JSON
+
+    run agent_profile_print_drift_delta "$AGENT_PROFILE_CACHE_DIR"
+
+    assert_success
+    assert_output_contains "enabledPlugins.todoist-flow: true → (removed)"
+    assert_output_contains "enabledPlugins.milknado: (none) → true"
+    assert_output_not_contains "permission.bash.rg"
+}
+
+@test "drift delta reports re-tracking only when all records are no-ops" {
+    source "$LIB"
+    mkdir -p "$AGENT_PROFILE_CACHE_DIR"
+    printf '%s\n' '{"drift":[{"relative_path":"opencode.json","path":"permission.bash.rg *","live":"allow","compiled":"allow"}]}' \
+        >"$AGENT_PROFILE_CACHE_DIR/manifest.json"
+
+    run agent_profile_print_drift_delta "$AGENT_PROFILE_CACHE_DIR"
+
+    assert_success
+    assert_output_contains "re-tracking only"
 }
 
 @test "noninteractive drift with override shows drift and applies" {
