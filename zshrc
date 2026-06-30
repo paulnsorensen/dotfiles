@@ -7,21 +7,22 @@ case "$OSTYPE" in
 esac
 
 # Source zsh configuration files in order
-source "$HOME/Dev/dotfiles/zsh/core.zsh"
-source "$HOME/Dev/dotfiles/zsh/colors.zsh"    # Chocolate Donut palette (must come before fzf/prompt)
-source "$HOME/Dev/dotfiles/zsh/aliases.zsh"
-source "$HOME/Dev/dotfiles/zsh/completion.zsh"
-source "$HOME/Dev/dotfiles/zsh/fzf.zsh"
-source "$HOME/Dev/dotfiles/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
-source "$HOME/Dev/dotfiles/zsh/tmux.zsh"      # sesh shell-prompt session picker (Alt-s)
+export DOTFILES_DIR="${${(%):-%N}:A:h}"
+source "$DOTFILES_DIR/zsh/core.zsh"
+source "$DOTFILES_DIR/zsh/colors.zsh"    # Chocolate Donut palette (must come before fzf/prompt)
+source "$DOTFILES_DIR/zsh/aliases.zsh"
+source "$DOTFILES_DIR/zsh/completion.zsh"
+source "$DOTFILES_DIR/zsh/fzf.zsh"
+source "$DOTFILES_DIR/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
+source "$DOTFILES_DIR/zsh/tmux.zsh"      # sesh shell-prompt session picker (Alt-s)
 
 # Source local customizations early
 [ -f $HOME/.zshrc.local ] && source $HOME/.zshrc.local
 
-source "$HOME/Dev/dotfiles/zsh/prompt.zsh"
+source "$DOTFILES_DIR/zsh/prompt.zsh"
 
-source "$HOME/Dev/dotfiles/zsh/claude.zsh"
-source "$HOME/Dev/dotfiles/zsh/skhd.zsh"
+source "$DOTFILES_DIR/zsh/claude.zsh"
+source "$DOTFILES_DIR/zsh/skhd.zsh"
 
 clear
 
