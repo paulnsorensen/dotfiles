@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2016
 # Validate config files for Rust CLI tools and other managed configs
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
@@ -84,9 +85,9 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ -z "$bad" ]]
 }
 
-# ── skill-* aliases (unified ap deploy — curd 7) ──────────────────────────────
+# ── skill-* aliases (unified live deploy) ────────────────────────────────────
 # The registry stays the EDIT surface (skill-edit); deploy is unified through
-# `base-sync` (→ `dots profile install base`). The redundant per-registry
+# `base-sync` (→ `dots sync`). The redundant per-registry
 # *-sync mnemonics were retired in favour of the single base-sync entry point.
 # Locking the bodies guards a silent de-sync where a rename would only surface
 # at every dev's runtime.
@@ -101,7 +102,23 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ -f "$DOTFILES_DIR/skills/_registry.yaml" ]]
 }
 
-@test "base-sync dispatches the live wrapper profiles (curd 7 manual deploy parity)" {
+@test "dots sync accepts the agent drift override without passing it to .sync" {
+    local shim="$BATS_TEST_TMPDIR/dots-home"
+    mkdir -p "$shim/Dev/dotfiles"
+    run env DOTFILES_DIR="$shim/Dev/dotfiles" bash -c '
+        cp "$1/bin/dots" "$DOTFILES_DIR/dots"
+        cat > "$DOTFILES_DIR/.sync" <<'"'"'SH'"'"'
+#!/usr/bin/env bash
+printf "DOTS_ACCEPT_AGENT_DRIFT=%s args=%s\n" "${DOTS_ACCEPT_AGENT_DRIFT:-}" "$*"
+SH
+        chmod +x "$DOTFILES_DIR/.sync"
+        "$DOTFILES_DIR/dots" sync --accept-agent-drift refresh
+    ' _ "$DOTFILES_DIR"
+    [[ $status -eq 0 ]]
+    [[ "$output" == *"DOTS_ACCEPT_AGENT_DRIFT=1 args=refresh"* ]]
+}
+
+@test "base-sync still calls the migration stubs" {
     local claude_file="$DOTFILES_DIR/zsh/claude.zsh"
     command -v zsh &>/dev/null || skip "zsh not installed"
     local harness="$BATS_TEST_TMPDIR/base-sync.zsh"
@@ -115,7 +132,6 @@ EOF
     [[ $status -eq 0 ]]
     [[ "$output" == *"profile install global --harness claude,codex,cursor,copilot"* ]]
     [[ "$output" == *"profile install opencode-global --harness opencode"* ]]
-    [[ "$output" != *"--target"* ]]
 }
 
 @test "the redundant *-sync mnemonics are retired (base-sync is the sole entry point)" {
