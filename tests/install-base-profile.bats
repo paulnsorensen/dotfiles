@@ -109,11 +109,34 @@ SH
 }
 
 @test "install-base-profile.sh forwards drift acceptance" {
+    # Emit a drift-present manifest so the gate actually engages — only then
+    # does --accept-agent-drift have anything to act on. Proves the flag threads
+    # through install-base-profile.sh → agent_profile_sync → drift gate, not just
+    # that `compile` ran (the empty-drift setup leaves the gate dormant).
+    cat > "$FAKE_BIN/ap" <<SH
+#!/usr/bin/env bash
+echo "HOME=$HOME \$*" >> "$AP_LOG"
+if [[ "\$1" == "compile" ]]; then
+    out=""
+    while ((\$#)); do
+        case "\$1" in
+            --out) out="\$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+    mkdir -p "\$out"
+    printf '{"drift": [{"target": "home", "path": "model"}]}\n' > "\$out/manifest.json"
+fi
+exit 0
+SH
+    chmod +x "$FAKE_BIN/ap"
+
     INSTALL_BASE_PROFILE_AP="$FAKE_BIN/ap" \
         run bash "$LIB" "$TEST_HOME" --accept-agent-drift
     assert_success
+    assert_output_contains "continuing because --accept-agent-drift was passed"
     run cat "$AP_LOG"
-    assert_output_contains "compile live --baseline"
+    assert_output_contains "apply-compiled"
 }
 
 # ── retired deploy scripts are gone ──────────────────────────────────────────
