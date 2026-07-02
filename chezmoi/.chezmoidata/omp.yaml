@@ -1,0 +1,27 @@
+# oh-my-pi registry — single source of truth for global ~/.omp/agent/config.yml.
+#
+# Auto-loaded by chezmoi into template data as `.omp.*` (.chezmoidata).
+# Edit here, then `dots sync`. The managed keys under `config` are authored
+# WHOLESALE into ~/.omp/agent/config.yml by dot_omp/private_agent/modify_config.yml
+# on every apply — live drift on a managed key (an in-app symbolPreset toggle,
+# a hand-edited disabledProviders list) is WIPED. Promote anything worth keeping
+# into this file, then `dots sync`.
+#
+# `setupVersion` is machine state, not config: the modify_ script preserves it
+# from the live file and never authors it here.
+#
+# `disabledProviders: [claude]` is why omp no longer reads ~/.claude. omp's
+# `claude` discovery provider (discovery/claude.ts, provider id "claude") pulls
+# CLAUDE.md, settings.json, skills/, hooks, MCP config, commands, tools, and
+# SYSTEM.md from ~/.claude; disabling the whole provider drops all of it.
+#
+# Gotcha — array settings REPLACE, they don't merge across omp config layers.
+# A project-level .omp/config.yml that sets its own `disabledProviders` list
+# replaces this global one wholesale and can silently re-enable `claude`.
+# Check every active layer if claude discovery reappears.
+
+omp:
+  config:
+    symbolPreset: nerd
+    disabledProviders:
+      - claude
