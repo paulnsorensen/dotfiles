@@ -303,24 +303,10 @@ JSON
 }
 
 
-@test "plugin sync: local marketplace path is resolved from dotfiles root" {
-    local dotfiles_root
-    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
-    local claude_dir="$dotfiles_root/claude"
-    local mock_dir="$claude_dir/plugins"
-    mkdir -p "$mock_dir" "$claude_dir/lib"
-    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
-    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
-
-    write_local_plugin_fixtures "$dotfiles_root"
-
-    run bash "$mock_dir/sync.sh"
-    assert_success
-
-    local actual_path
-    actual_path=$(jq -r '.extraKnownMarketplaces["my-plugin"].source.path' "$claude_dir/settings.json")
-    [[ "$actual_path" == "$dotfiles_root/claude/plugins/local/my-plugin" ]]
-}
+# NOTE: marketplace path resolution WRITING to settings.json moved to
+# modify_settings.json (covered by claude-settings.bats). sync.sh now only
+# registers the marketplace with the CLI — see the "registered with the CLI"
+# test below and tests/plugin-sync.bats.
 
 @test "plugin sync: local marketplace dry-run does not modify settings" {
     local dotfiles_root
@@ -343,49 +329,10 @@ JSON
     [[ "$actual_path" == "missing" ]]
 }
 
-@test "plugin sync: local marketplace corrects wrong path" {
-    local dotfiles_root
-    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
-    local claude_dir="$dotfiles_root/claude"
-    local mock_dir="$claude_dir/plugins"
-    mkdir -p "$mock_dir" "$claude_dir/lib"
-    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
-    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
-
-    write_local_plugin_fixtures "$dotfiles_root"
-    # Set a wrong path
-    jq '.extraKnownMarketplaces["my-plugin"] = {"source": {"source": "directory", "path": "/Users/wrong/path"}}' \
-        "$claude_dir/settings.json" > "$claude_dir/settings.json.tmp" && mv "$claude_dir/settings.json.tmp" "$claude_dir/settings.json"
-
-    run bash "$mock_dir/sync.sh"
-    assert_success
-    assert_output_contains "Updated my-plugin marketplace"
-
-    local actual_path
-    actual_path=$(jq -r '.extraKnownMarketplaces["my-plugin"].source.path' "$claude_dir/settings.json")
-    [[ "$actual_path" == "$dotfiles_root/claude/plugins/local/my-plugin" ]]
-}
-
-@test "plugin sync: local marketplace skips when path already correct" {
-    local dotfiles_root
-    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
-    local claude_dir="$dotfiles_root/claude"
-    local mock_dir="$claude_dir/plugins"
-    mkdir -p "$mock_dir" "$claude_dir/lib"
-    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
-    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
-
-    write_local_plugin_fixtures "$dotfiles_root"
-    # Set the correct path
-    jq --arg p "$dotfiles_root/claude/plugins/local/my-plugin" \
-        '.extraKnownMarketplaces["my-plugin"] = {"source": {"source": "directory", "path": $p}}' \
-        "$claude_dir/settings.json" > "$claude_dir/settings.json.tmp" && mv "$claude_dir/settings.json.tmp" "$claude_dir/settings.json"
-
-    run bash "$mock_dir/sync.sh"
-    assert_success
-    assert_output_contains "Local marketplaces up to date"
-    assert_output_not_contains "Updated my-plugin"
-}
+# NOTE: "corrects wrong path" / "skips when path already correct" tested the
+# settings.json marketplace-write path, which moved to modify_settings.json.
+# sync.sh no longer reconciles settings.json — it registers idempotently with
+# the CLI on every run (next test).
 
 @test "plugin sync: local marketplace is registered with the CLI (marketplace add)" {
     # Regression: jq-writing extraKnownMarketplaces alone does NOT make a
@@ -453,94 +400,11 @@ JSON
 }
 
 
-write_gated_plugin_fixtures() {
-    local dotfiles_root="$1"
-    local plugin_dir="$dotfiles_root/claude/plugins/local/gated-plugin"
-    mkdir -p "$plugin_dir/.claude-plugin"
-    echo '{"name": "gated-plugin"}' > "$plugin_dir/.claude-plugin/plugin.json"
-    cat > "$dotfiles_root/claude/plugins/registry.yaml" << 'YAML'
-plugins:
-  formatter@official:
-    description: Code formatter
-    scope: user
-    load: true
-  gated-plugin@gated-plugin:
-    description: Gated test plugin
-    scope: user
-    load: true
-    path: claude/plugins/local/gated-plugin
-    gate: TEST_GATE
-YAML
-    cat > "$dotfiles_root/claude/settings.json" << 'JSON'
-{
-  "enabledPlugins": {},
-  "extraKnownMarketplaces": {}
-}
-JSON
-    export CLAUDE_SETTINGS_FILE="$dotfiles_root/claude/settings.json"
-}
-
-setup_gated_sync_dir() {
-    local dotfiles_root="$1"
-    local claude_dir="$dotfiles_root/claude"
-    local mock_dir="$claude_dir/plugins"
-    mkdir -p "$mock_dir" "$claude_dir/lib"
-    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
-    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
-    write_gated_plugin_fixtures "$dotfiles_root"
-}
-
-@test "plugin sync: gated plugin excluded from enabledPlugins when gate env var unset" {
-    local dotfiles_root
-    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles-gate-off" && cd "$TEST_HOME/dotfiles-gate-off" && pwd -P)"
-    setup_gated_sync_dir "$dotfiles_root"
-
-    unset TEST_GATE
-    run bash "$dotfiles_root/claude/plugins/sync.sh" --force
-    assert_success
-    assert_output_not_contains "gated-plugin@gated-plugin"
-
-    local has_gated has_ungated
-    has_gated=$(jq '.enabledPlugins | has("gated-plugin@gated-plugin")' "$dotfiles_root/claude/settings.json")
-    has_ungated=$(jq '.enabledPlugins | has("formatter@official")' "$dotfiles_root/claude/settings.json")
-    [[ "$has_gated" == "false" ]]
-    [[ "$has_ungated" == "true" ]]
-}
-
-@test "plugin sync: gated plugin included in enabledPlugins when gate env var is true" {
-    local dotfiles_root
-    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles-gate-on" && cd "$TEST_HOME/dotfiles-gate-on" && pwd -P)"
-    setup_gated_sync_dir "$dotfiles_root"
-
-    run env TEST_GATE=true bash "$dotfiles_root/claude/plugins/sync.sh" --force
-    assert_success
-    assert_output_contains "gated-plugin@gated-plugin"
-
-    local has_gated
-    has_gated=$(jq '.enabledPlugins | has("gated-plugin@gated-plugin")' "$dotfiles_root/claude/settings.json")
-    [[ "$has_gated" == "true" ]]
-}
-
-@test "plugin sync: gated-off marketplace entry is removed from extraKnownMarketplaces" {
-    local dotfiles_root
-    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles-gate-cleanup" && cd "$TEST_HOME/dotfiles-gate-cleanup" && pwd -P)"
-    setup_gated_sync_dir "$dotfiles_root"
-
-    # First sync with gate on, so the marketplace gets registered.
-    run env TEST_GATE=true bash "$dotfiles_root/claude/plugins/sync.sh" --force
-    assert_success
-    local has_mp
-    has_mp=$(jq '.extraKnownMarketplaces | has("gated-plugin")' "$dotfiles_root/claude/settings.json")
-    [[ "$has_mp" == "true" ]]
-
-    # Second sync with gate off should remove the stale marketplace entry.
-    unset TEST_GATE
-    run bash "$dotfiles_root/claude/plugins/sync.sh" --force
-    assert_success
-    assert_output_contains "Removed gated-plugin marketplace"
-    has_mp=$(jq '.extraKnownMarketplaces | has("gated-plugin")' "$dotfiles_root/claude/settings.json")
-    [[ "$has_mp" == "false" ]]
-}
+# NOTE: gated-plugin enabledPlugins composition and gated-off marketplace
+# cleanup moved to modify_settings.json (the single writer of settings.json
+# plugin keys). Gate-filtered enabledPlugins/extraKnownMarketplaces composition
+# is covered by tests/claude-settings.bats; sync.sh's gate-filtered CLI
+# registration + installed_plugins.json removal diff by tests/plugin-sync.bats.
 
 
 # ─── codex MCP path + new bug-fix coverage ──────────────────────────────

@@ -129,6 +129,11 @@ claude:
             async: false
 
   # ── settings.json plugin keys ───────────────────────────────────────────────
+  # Base layer for enabledPlugins / extraKnownMarketplaces. modify_settings.json
+  # is the single writer of these keys: it composes this base PLUS a
+  # gate-filtered overlay derived from claude/plugins/registry.yaml at apply time
+  # (gate-open local plugins add their enabledPlugins entry + marketplace here).
+  # sync.sh no longer writes settings.json.
   enabledPlugins:
     claude-md-management@claude-plugins-official: true
     playwright@claude-plugins-official: true

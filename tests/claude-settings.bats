@@ -260,6 +260,102 @@ cz_apply() {
     [ "$(jq -r '.permissions.defaultMode' "$OUT")" = "auto" ]
 }
 
+# ── plugin-registry overlay composition ─────────────────────────────────────
+# modify_settings.json is the single writer of enabledPlugins /
+# extraKnownMarketplaces: claude.yaml base + a gate-filtered overlay derived
+# from claude/plugins/registry.yaml. These lock the overlay behaviour.
+
+# Run modify_ with a controlled gate environment (all three local gates cleared
+# first, then $1 applied verbatim as `env` assignments). Uses the REAL repo
+# registry via $CZ_SRC/../claude/plugins/registry.yaml.
+run_modify_gated() {
+    run bash -c "env -u TODOIST -u CHEESE_FLOW -u VAUDEVILLE $1 \
+        CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+}
+
+@test "modify_settings: gate-open overlays todoist-flow into enabledPlugins + its marketplace" {
+    run_modify_gated 'TODOIST=true'
+    [ "$status" -eq 0 ]
+    # enabledPlugins gains the gated plugin with its registry `load` value.
+    [ "$(jq -r '.enabledPlugins["todoist-flow@todoist-flow"]' "$OUT")" = "true" ]
+    # extraKnownMarketplaces gains its directory source, path resolved to the
+    # repo-relative source dir (registry path: claude/plugins/local/todoist-flow).
+    [ "$(jq -r '.extraKnownMarketplaces["todoist-flow"].source.source' "$OUT")" = "directory" ]
+    run jq -r '.extraKnownMarketplaces["todoist-flow"].source.path' "$OUT"
+    [[ "$output" == */claude/plugins/local/todoist-flow ]]
+    # claude.yaml base entries survive alongside the overlay.
+    [ "$(jq -r '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT")" = "true" ]
+    [ "$(jq -r '.extraKnownMarketplaces["milknado"].source.source' "$OUT")" = "directory" ]
+}
+
+@test "modify_settings: gate-closed excludes the gated plugin from both keys" {
+    run_modify_gated ''
+    [ "$status" -eq 0 ]
+    run jq -e '.enabledPlugins["todoist-flow@todoist-flow"]' "$OUT"
+    [ "$status" -ne 0 ]
+    run jq -e '.extraKnownMarketplaces["todoist-flow"]' "$OUT"
+    [ "$status" -ne 0 ]
+    # Base official plugins remain.
+    [ "$(jq -r '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT")" = "true" ]
+}
+
+# Build a custom CHEZMOI_SOURCE_DIR at $TEST_HOME/root/chezmoi with a sibling
+# claude/plugins/registry.yaml holding $1 as its plugins: body. Sets CUSTOM_SRC.
+setup_custom_registry() {
+    local root="$TEST_HOME/root"
+    CUSTOM_SRC="$root/chezmoi"
+    mkdir -p "$CUSTOM_SRC/lib" "$CUSTOM_SRC/.chezmoidata" "$root/claude/plugins"
+    cp "$AUTH" "$CUSTOM_SRC/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/.chezmoidata/claude.yaml" "$CUSTOM_SRC/.chezmoidata/claude.yaml"
+    printf 'plugins:\n%s\n' "$1" > "$root/claude/plugins/registry.yaml"
+}
+
+@test "modify_settings: '~/' marketplace path resolves against HOME" {
+    mkdir -p "$TEST_HOME/mymkt"
+    setup_custom_registry '  mymkt@mymkt:
+    load: true
+    path: ~/mymkt
+    gate: MYGATE'
+    run bash -c "env -u TODOIST MYGATE=true \
+        CHEZMOI_SOURCE_DIR='$CUSTOM_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.extraKnownMarketplaces["mymkt"].source.path' "$OUT")" = "$TEST_HOME/mymkt" ]
+}
+
+@test "modify_settings: marketplace with a nonexistent path is skipped with a warning" {
+    setup_custom_registry '  ghost@ghost:
+    load: true
+    path: ~/does-not-exist
+    gate: MYGATE'
+    run bash -c "env -u TODOIST MYGATE=true \
+        CHEZMOI_SOURCE_DIR='$CUSTOM_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    # The skip is announced on stderr (checked before any `run jq`, which would
+    # overwrite $output).
+    [[ "$output" == *"path not found"* ]]
+    # enabledPlugins still gains the entry (no path check there) …
+    [ "$(jq -r '.enabledPlugins["ghost@ghost"]' "$OUT")" = "true" ]
+    # … but the marketplace is skipped.
+    run jq -e '.extraKnownMarketplaces["ghost"]' "$OUT"
+    [ "$status" -ne 0 ]
+}
+
+@test "modify_settings: missing plugin registry falls back to claude.yaml-only with a warning" {
+    local root="$TEST_HOME/noreg"
+    local src="$root/chezmoi"
+    mkdir -p "$src/lib" "$src/.chezmoidata"
+    cp "$AUTH" "$src/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/.chezmoidata/claude.yaml" "$src/.chezmoidata/claude.yaml"
+    # No $root/claude/plugins/registry.yaml.
+    run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$src' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"plugin registry not found"* ]]
+    # Base claude.yaml plugins present; no gated overlay entries.
+    [ "$(jq -r '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT")" = "true" ]
+    run jq -e '.enabledPlugins["todoist-flow@todoist-flow"]' "$OUT"
+    [ "$status" -ne 0 ]
+}
+
 @test "modify_settings: malformed (non-JSON) live file halts with guidance, not an opaque jq error" {
     run_modify '[ this is not json'
     [ "$status" -ne 0 ]
