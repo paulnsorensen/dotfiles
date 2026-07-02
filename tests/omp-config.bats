@@ -117,3 +117,35 @@ STDIN"
     [[ "$output" == *".omp.config"* ]]                # the missing key named
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
+
+# --- models.yml template↔registry seam -------------------------------------
+# dot_omp/private_agent/models.yml.tmpl authors ~/.omp/agent/models.yml WHOLESALE
+# from the `omp.models` subtree via `{{ .omp.models | toYaml }}`. These lock the
+# render: it must parse as YAML and pin the local-llm provider's contextWindow
+# per model to the llama-swap --ctx-size values (inflating them overflows the
+# real llama.cpp n_ctx and breaks requests).
+
+@test "omp-models: template renders parseable YAML with the pinned local-llm provider" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/models.yml.tmpl"
+    run chezmoi execute-template --source "$REAL_DOTFILES_DIR/chezmoi" < "$tmpl"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" > "$OUT"
+    # No unexpanded template syntax leaked into the rendered file.
+    ! grep -qF '{{' "$OUT"
+    # Parses as a YAML map with exactly the local-llm provider.
+    [ "$(yq '.providers | keys | .[]' "$OUT")" = "local-llm" ]
+    [ "$(yq '.providers.local-llm.baseUrl' "$OUT")" = "http://127.0.0.1:4000/v1" ]
+    [ "$(yq '.providers.local-llm.api' "$OUT")" = "openai-completions" ]
+    [ "$(yq '.providers.local-llm.auth' "$OUT")" = "none" ]
+    # Exactly 4 models — omp shows this as the `local-llm (4)` group.
+    [ "$(yq '.providers.local-llm.models | length' "$OUT")" = "4" ]
+    # contextWindow pinned per model id to the llama-swap --ctx-size (id-keyed,
+    # so a reordering of the models array cannot mask a wrong value).
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-haiku").contextWindow' "$OUT")" = "16384" ]
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-sonnet").contextWindow' "$OUT")" = "32768" ]
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-coder").contextWindow' "$OUT")" = "32768" ]
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-vision").contextWindow' "$OUT")" = "8192" ]
+    # local-vision is the only image-capable model (input carries `image`).
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-vision").input | contains(["image"])' "$OUT")" = "true" ]
+}
