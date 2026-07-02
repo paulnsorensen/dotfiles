@@ -35,6 +35,9 @@ STDIN"
     run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
     [ "$status" -eq 0 ]
     [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]
+    [ "$(yq '.colorBlindMode' "$OUT")" = "true" ]
+    [ "$(yq '.defaultThinkingLevel' "$OUT")" = "auto" ]
+    [ "$(yq '.modelRoles.vision' "$OUT")" = "openai-codex/gpt-5.4" ]
     [ "$(yq '.disabledProviders | length' "$OUT")" = "1" ]
     [ "$(yq '.disabledProviders | .[0]' "$OUT")" = "claude" ]
     # setupVersion is machine state — never authored on a fresh machine.
