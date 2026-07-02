@@ -450,6 +450,11 @@ echo fake-binary > "$dir/llama-swap"
 MOCK
     chmod +x "$MOCK_BIN/tar"
 
+    # Fake uname: the script only maps Linux arch names (x86_64/aarch64),
+    # so pin the arch to keep the test hermetic on macOS (arm64).
+    printf '#!/bin/bash\necho aarch64\n' > "$MOCK_BIN/uname"
+    chmod +x "$MOCK_BIN/uname"
+
     export CURL_URL_LOG="$TEST_HOME/url.log"
     export LLAMA_SWAP_BIN_DIR="$TEST_HOME/local-llm/bin"
     run bash "$INSTALL_SWAP"

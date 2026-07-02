@@ -14,6 +14,13 @@
 
 load test_helper
 
+setup_file() {
+    # hook_codex_apply (agents/hooks/lib.sh) mktemps hook-sync.XXXXXX.toml in
+    # the shared $TMPDIR; the non-trailing Xs don't randomize, so concurrent
+    # tests collide on the same literal path. Keep this file serial.
+    export BATS_NO_PARALLELIZE_WITHIN_FILE=true
+}
+
 setup() {
     setup_test_env
 

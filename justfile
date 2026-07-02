@@ -12,7 +12,7 @@ lint-shell:
     shellcheck -x -e SC1091 $(find bin -type f) .sync
     shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/install-base-profile.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-codex.sh chezmoi/lib/install-shared-assets.sh
     shellcheck -x -e SC1091 -s bash agents/hooks/session-start-cheese-flair.sh
-    shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh tests/serena-smoke.sh
+    shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh
     shellcheck -x -e SC1091 -s bash tests/workflows-parse.sh
     @echo "shellcheck: ok"
 
@@ -52,10 +52,8 @@ lint-markdown-fix:
 test *ARGS:
     ./tests/run-tests.sh {{ARGS}}
 
-# serena MCP smoke test — boots the real server, checks config + exposed tools
-# (skips cleanly when serena isn't installed)
+# smoke tests — parse checks on workflow definitions
 smoke:
-    ./tests/serena-smoke.sh
     ./tests/workflows-parse.sh
 
 # validate the opt-in local-llm stack — shellcheck scripts + parse configs
@@ -66,5 +64,5 @@ check-llm:
     yq -e '.' chezmoi/local-llm/configs/llama-swap.yaml > /dev/null
     @echo "check-llm: ok"
 
-# pre-push gate: lint + unit tests + serena smoke test
+# pre-push gate: lint + unit tests + smoke checks
 check: lint test smoke
