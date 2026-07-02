@@ -43,6 +43,7 @@ local-llm/**
 .config/systemd/user/local-llm.target
 .config/systemd/user/llama-swap.service
 .config/systemd/user/worker-npu.service
+.omp/agent/models.yml
 {{ end }}
 {{ if (get . "localLLM") }}
 # Stack enabled: the global README*/*.md rules above would otherwise skip

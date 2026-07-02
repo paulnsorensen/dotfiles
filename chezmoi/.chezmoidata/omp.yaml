@@ -34,15 +34,34 @@ omp:
     defaultThinkingLevel: auto
     disabledProviders:
       - claude
+    display:
+      showTokenUsage: true
+      cacheMissMarker: true
+    includeWorkspaceTree: true
+    advisor:
+      enabled: false
+    compaction:
+      thresholdTokens: 150000
+    lsp:
+      formatOnWrite: true
+    github:
+      enabled: true
+    task:
+      eager: default
+    # Reasoning goes to the interactive session (default) and the reasoning
+    # roles (plan/slow). Delegation/dispatch roles that "just do work" —
+    # smol/tiny/task/commit — stay on cheap/no-reasoning models so subagent
+    # fan-out and commit-message generation never ride the reasoning cost.
+    # `task` in particular inherits the active session model unless pinned.
     modelRoles:
-      default: openai-codex/gpt-5.4:medium
+      default: openai-codex/gpt-5.5:medium
       smol: gpt-5.4-mini
       plan: openai-codex/gpt-5.5:xhigh
       advisor: openai-codex/gpt-5.5
       tiny: openai-codex/gpt-5.4-nano
       slow: openai-codex/gpt-5.5:xhigh
-      task: openai-codex/gpt-5.4
-      commit: openai-codex/gpt-5.4-mini:medium
+      task: gpt-5.4-mini
+      commit: gpt-5.4-mini
       vision: openai-codex/gpt-5.4
   # Local LLM stack — LiteLLM proxy front (~/local-llm), OpenAI-compatible.
   # Keyless: the proxy sets no master_key, so no Authorization header is sent.
