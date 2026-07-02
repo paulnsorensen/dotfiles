@@ -6,6 +6,14 @@
 
 load test_helper
 
+setup_file() {
+    # Several tests here run chezmoi/.sync, whose assembly step rewrites the
+    # REAL repo's chezmoi/dot_claude/exact_* trees (rm -rf + repopulate).
+    # Under `bats --jobs N` two such tests race on that shared tree and fail
+    # nondeterministically. Keep this file serial.
+    export BATS_NO_PARALLELIZE_WITHIN_FILE=true
+}
+
 setup() {
     setup_test_env
     export CHEZMOI_SYNC="$REAL_DOTFILES_DIR/chezmoi/.sync"
@@ -753,6 +761,16 @@ YAML
     git_bin=$(seed_skill_cache_offline)
     PATH="$git_bin:$PATH"
 
+    # The MCP-reconcile run_onchange fails loud without the `claude` CLI
+    # (CI has no claude). Stub it — all reconcile writes go through the CLI
+    # and only the exit code is checked, so a 0-exit stub keeps the e2e
+    # hermetic on any machine.
+    local claude_bin="$TEST_HOME/fake-claude-bin"
+    mkdir -p "$claude_bin"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$claude_bin/claude"
+    chmod +x "$claude_bin/claude"
+    PATH="$claude_bin:$PATH"
+
     # Templated dotfiles need [data] for .email and env vars for the
     # copilot template's fail-fast guard. Bootstrap both before .sync runs
     # so chezmoi apply renders cleanly.
@@ -769,6 +787,8 @@ TOML
 
     run bash "$CHEZMOI_SYNC"
     assert_success
+    # The reconcile ran (via the stub) and wrote its ownership manifest.
+    assert_file_exists "$HOME/.claude/.chezmoi-mcp-manifest"
 
     run chezmoi apply --force
     assert_success
