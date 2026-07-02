@@ -131,12 +131,6 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 |------|-----------|---------|
 | `worktree-guard.js` | Edit, Write, MultiEdit, tilth_write | In a git worktree, blocks writes outside the worktree root. **Opt-out**: enforces by default; `CLAUDE_WORKTREE_GUARD=0` disables it. Extend the allowlist with `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2`. Always allowed: worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, any `.cheese/` dir |
 
-### Post-Tool Hooks
-
-| Hook | Tool match | Purpose |
-|------|-----------|---------|
-| `auto-format.js` | Edit, Write, MultiEdit, tilth_write | Runs the project formatter on edited files (formats every file in a `tilth_write` batch) |
-
 ### Other
 
 | Hook | Event | Purpose |

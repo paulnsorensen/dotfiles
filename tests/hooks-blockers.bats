@@ -1,8 +1,7 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2016
-# Tests for JavaScript Claude Code hooks (PreToolUse, PostToolUse).
-# Coverage: worktree-guard.js (PreToolUse), auto-format.js (PostToolUse),
-# hook-runner.js protocol bridge.
+# Tests for JavaScript Claude Code hooks (PreToolUse).
+# Coverage: worktree-guard.js (PreToolUse), hook-runner.js protocol bridge.
 
 load test_helper
 
@@ -35,17 +34,6 @@ run_via_runner() {
     fi
     json="${json}}"
     run bash -c "echo '$json' | node '$HOOKS_DIR/hook-runner.js' '$hook_file'"
-}
-
-# Run auto-format hook (PostToolUse, via stdin)
-run_auto_format() {
-    local tool_name="$1" tool_input="$2" cwd="${3:-}"
-    local event_json="{\"tool_name\":\"$tool_name\",\"tool_input\":$tool_input"
-    if [[ -n "$cwd" ]]; then
-        event_json="${event_json},\"cwd\":\"$cwd\""
-    fi
-    event_json="${event_json}}"
-    run bash -c "echo '$event_json' | node '$HOOKS_DIR/auto-format.js'"
 }
 
 setup() {
@@ -389,47 +377,4 @@ setup_worktree() {
         skip "git xcrun permissions (sandbox issue)"
     fi
     [[ "$output" == blocked:* ]]
-}
-
-# ── auto-format.js ───────────────────────────────────────────────────
-
-@test "auto-format: exits 0 on non-file-editing tool (Bash)" {
-    run_auto_format Bash '{"command":"ls"}'
-    [ "$status" -eq 0 ]
-}
-
-@test "auto-format: exits 0 for missing tool_name" {
-    run_auto_format "" '{"command":"echo"}'
-    [ "$status" -eq 0 ]
-}
-
-@test "auto-format: prettier formats .js file if prettier installed" {
-    if ! which prettier >/dev/null 2>&1; then
-        skip "prettier not installed"
-    fi
-    local file="$TEST_HOME/bad.js"
-    echo "function    foo( ) { }" > "$file"
-    run_auto_format Edit "{\"file_path\":\"$file\",\"new_string\":\"function foo() {}\"}" "$TEST_HOME"
-    [ "$status" -eq 0 ]
-    # Check file was formatted
-    grep -q "function foo()" "$file" || skip "prettier didn't format"
-}
-
-@test "auto-format: skips non-existent file" {
-    run_auto_format Write '{"file_path":"/nonexistent/file.js","content":"function foo(){}"}' "$TEST_HOME"
-    [ "$status" -eq 0 ]
-}
-
-@test "auto-format: handles tilth_write batch paths" {
-    if ! which prettier >/dev/null 2>&1; then
-        skip "prettier not installed"
-    fi
-    local file1="$TEST_HOME/a.js"
-    local file2="$TEST_HOME/b.js"
-    echo "function   foo( ) { }" > "$file1"
-    echo "function   bar( ) { }" > "$file2"
-    run_auto_format mcp__tilth__tilth_write \
-        "{\"files\":[{\"path\":\"$file1\",\"content\":\"clean\"},{\"path\":\"$file2\",\"content\":\"clean\"}]}" \
-        "$TEST_HOME"
-    [ "$status" -eq 0 ]
 }

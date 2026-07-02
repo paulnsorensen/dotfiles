@@ -82,12 +82,6 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/tool-reroute.sh"'
             timeout: 5
-    PostToolUse:
-      - matcher: "Edit|Write|MultiEdit|mcp__tilth__tilth_write"
-        hooks:
-          - type: command
-            command: node "$HOME/.claude/hooks/auto-format.js"
-            timeout: 10
     SessionStart:
       - hooks:
           - type: command
@@ -107,12 +101,6 @@ claude:
           - type: command
             command: moshi-hook claude-hook
             async: true
-    PermissionRequest:
-      - hooks:
-          - type: command
-            command: moshi-hook claude-hook
-            timeout: 300
-            async: false
 
   # ── settings.json plugin keys ───────────────────────────────────────────────
   # Base layer for enabledPlugins / extraKnownMarketplaces. modify_settings.json

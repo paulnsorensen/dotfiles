@@ -162,11 +162,3 @@ hooks:
     async: true
     harnesses: [claude]
     description: Moshi bridge — turn-end notification to phone
-
-  moshi-permission-request:
-    event: PermissionRequest
-    command: "moshi-hook claude-hook"
-    async: false
-    timeout: 300
-    harnesses: [claude]
-    description: Moshi bridge — approval request (synchronous, 5-min phone reach)

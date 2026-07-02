@@ -107,16 +107,12 @@ teardown() {
 
 @test "moshi registry entries are portable, claude-only, and complete" {
     local entry name
-    for name in moshi-session-start moshi-user-prompt-submit moshi-stop moshi-permission-request; do
+    for name in moshi-session-start moshi-user-prompt-submit moshi-stop; do
         entry=$(yq -o=json ".hooks.\"$name\"" "$REGISTRY_FILE")
         [[ "$(jq -r '.command' <<<"$entry")" == "moshi-hook claude-hook" ]]
         [[ "$(jq -r '.harnesses | length' <<<"$entry")" == "1" ]]
         [[ "$(jq -r '.harnesses[0]' <<<"$entry")" == "claude" ]]
     done
-    # Synchronous approval hook keeps its 5-minute phone-reach window.
-    entry=$(yq -o=json '.hooks."moshi-permission-request"' "$REGISTRY_FILE")
-    [[ "$(jq -r '.async' <<<"$entry")" == "false" ]]
-    [[ "$(jq -r '.timeout' <<<"$entry")" == "300" ]]
 }
 
 @test "macOS gets the moshi-hook binary via packages.yaml" {

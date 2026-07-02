@@ -19,7 +19,6 @@ documented_hook_files() {
     run documented_hook_files
     [[ $status -eq 0 ]]
     echo "$output" | grep -qx 'worktree-guard.js'
-    echo "$output" | grep -qx 'auto-format.js'
 }
 
 @test "every hook documented in claude/README.md exists in claude/hooks/" {
