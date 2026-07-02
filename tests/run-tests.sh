@@ -107,14 +107,15 @@ run_tests() {
     local jobs
     jobs=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-    # Run test files in parallel; tests within a file stay serial (shared state).
+    # Parallel across files AND within files. A file whose tests share state
+    # opts out via BATS_NO_PARALLELIZE_WITHIN_FILE=true in its setup_file().
     local rc=0
     # shellcheck disable=SC2086 # intentional word splitting for multiple file args
     if [[ "$VERBOSE" == true ]]; then
-        bats --jobs "$jobs" --no-parallelize-within-files $test_files || rc=$?
+        bats --jobs "$jobs" $test_files || rc=$?
     else
         # TAP output filtered to failures only (plan line + not-ok + diagnostics)
-        bats --formatter tap --jobs "$jobs" --no-parallelize-within-files $test_files |
+        bats --formatter tap --jobs "$jobs" $test_files |
             grep -v '^ok ' || rc=$?
     fi
 
