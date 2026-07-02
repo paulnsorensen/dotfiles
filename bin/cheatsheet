@@ -135,6 +135,7 @@ print_cheatsheet() {
     hdr "AI agents"
     row "copilot"             "GitHub Copilot (allow/deny floor)"
     row "oc"                  "opencode"
+    row "ompt"                "Oh My Pi tight profile"
     row "ocp <name>"          "opencode with a named profile"
     row "octight [args]"      "opencode tight profile"
     row "oclist"              "list opencode profiles"

@@ -53,6 +53,7 @@
     ]
   },
   "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
   "theme": "dark-daltonized",
   "editorMode": "vim",
   "agentPushNotifEnabled": true,

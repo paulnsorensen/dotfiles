@@ -169,6 +169,13 @@ if command -v opencode &> /dev/null; then
   alias oc='opencode'
 fi
 
+# Oh My Pi tight profile - isolated agent dir at ~/.omp-tight/agent
+if command -v omp &> /dev/null; then
+  ompt() {
+    PI_CONFIG_DIR=.omp-tight omp "$@"
+  }
+fi
+
 # =============================================================================
 # Rust Replacements (modern coreutils)
 # =============================================================================
