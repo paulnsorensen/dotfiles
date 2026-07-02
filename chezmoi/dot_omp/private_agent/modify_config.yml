@@ -53,6 +53,16 @@ emit() { printf '%s' "$1" | yq -p=json -o=yaml '.'; }
 # Desired document (JSON): the registry's omp.config subtree.
 desired=$(yq -o=json '.omp.config' "$REG" | jq '.')
 
+# Registry schema check: .omp.config must be a map. A missing/null subtree
+# yields "null" — writing that would corrupt the live file (fresh machine) or
+# misattribute the null merge to the user's keys at the unknown-key gate.
+if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_config.yml: registry .omp.config is missing or not a map" >&2
+    echo "  fix the omp.config subtree, then re-run dots sync:" >&2
+    echo "  $REG" >&2
+    exit 1
+fi
+
 # Fresh machine (empty stdin): emit the desired document.
 if [ -z "$live" ]; then
     emit "$desired"

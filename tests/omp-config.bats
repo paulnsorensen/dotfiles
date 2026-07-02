@@ -102,3 +102,18 @@ STDIN"
     [ "$status" -ne 0 ]
     [[ "$output" == *"registry missing"* ]]
 }
+
+@test "omp-config: registry lacking .omp.config halts (schema error names registry)" {
+    # Registry file present but the omp.config subtree is absent → yq yields
+    # `null`. Without validation the script would write the literal `null`
+    # document (fresh machine) or misattribute the null merge to the user's
+    # keys (existing machine). It must halt with a registry/schema error.
+    local tmpsrc="$TEST_HOME/no-config"
+    mkdir -p "$tmpsrc/.chezmoidata"
+    printf 'omp:\n  other: value\n' >"$tmpsrc/.chezmoidata/omp.yaml"
+    run bash -c "CHEZMOI_SOURCE_DIR='$tmpsrc' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -ne 0 ]
+    [ ! -s "$OUT" ]                                   # nothing written
+    [[ "$output" == *".omp.config"* ]]                # the missing key named
+    [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
+}
