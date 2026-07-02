@@ -64,5 +64,5 @@ check-llm:
     yq -e '.' chezmoi/local-llm/configs/llama-swap.yaml > /dev/null
     @echo "check-llm: ok"
 
-# pre-push gate: lint + unit tests + smoke checks
-check: lint test smoke
+# pre-push gate: autofix what we can, then lint + unit tests + smoke checks
+check: lint-fix lint test smoke
