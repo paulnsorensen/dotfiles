@@ -1,0 +1,109 @@
+#!/bin/sh
+# Make ~/.omp/agent/config.yml repo-authoritative on every `chezmoi apply`.
+#
+#   stdin  = current live file contents (empty on a fresh machine)
+#   stdout = the new file contents chezmoi writes back
+#
+# The desired document is the `omp.config` subtree of the registry:
+#   * $CHEZMOI_SOURCE_DIR/.chezmoidata/omp.yaml
+#
+# EVERY managed key is overwritten from source — live drift (an in-app
+# symbolPreset change, a hand-edited disabledProviders list) is discarded.
+# Promote anything you want to keep into the registry, then `dots sync`.
+#
+# setupVersion exemption: `setupVersion` is machine state omp writes when it
+# initialises. It is NOT in the registry; the script preserves it from the
+# live file so apply never resets omp's setup marker.
+#
+# Unknown-key halt gate: any live key-path outside the desired document's
+# schema is a key omp introduced. The script prints it and EXITS NON-ZERO,
+# which halts `chezmoi apply` and leaves the live file untouched — a new omp
+# config key is surfaced (fold it into the registry) instead of being silently
+# clobbered. No dynamic-key subtrees exist here (setupVersion is handled by
+# inclusion in the desired document).
+#
+# NOTE: ~/.omp/agent/ also holds live sqlite DBs (agent.db, history.db,
+# models.db) — the source dir is NOT exact_, so those survive apply untouched.
+
+set -eu
+
+REG="${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/.chezmoidata/omp.yaml"
+
+live=$(cat)
+
+# Missing yq/jq: don't corrupt the file. Pass the live copy through unchanged
+# (empty live → emit nothing). Both are in packages.yaml, so this only guards
+# an unusual partial-bootstrap environment.
+for tool in yq jq; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "modify_config.yml: $tool missing — omp config not enforced this sync" >&2
+        printf '%s' "$live"
+        exit 0
+    fi
+done
+
+if [ ! -f "$REG" ]; then
+    echo "modify_config.yml: registry missing: $REG" >&2
+    exit 1
+fi
+
+# Emit a JSON document as YAML on stdout.
+emit() { printf '%s' "$1" | yq -p=json -o=yaml '.'; }
+
+# Desired document (JSON): the registry's omp.config subtree.
+desired=$(yq -o=json '.omp.config' "$REG" | jq '.')
+
+# Fresh machine (empty stdin): emit the desired document.
+if [ -z "$live" ]; then
+    emit "$desired"
+    exit 0
+fi
+
+# Corrupt or non-map live file: halt with guidance instead of an opaque
+# yq/jq error under set -eu. Unparseable YAML → empty live_json → halt;
+# a valid non-object (top-level array/scalar) → halt on the type check.
+live_json=$(printf '%s' "$live" | yq -p=yaml -o=json '.' 2>/dev/null) || live_json=
+if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_config.yml: live ~/.omp/agent/config.yml is not a YAML map" >&2
+    echo "  (corrupt or truncated). Fix or remove it, then re-run dots sync." >&2
+    exit 1
+fi
+
+# Preserve setupVersion (machine state) from live into the desired document.
+desired=$(printf '%s' "$live_json" | jq --argjson desired "$desired" '
+    if has("setupVersion") then $desired + {setupVersion: .setupVersion} else $desired end')
+
+# ── unknown-key gate ──────────────────────────────────
+# A live key-path is "known" when its object-key signature (array indices
+# dropped, so a value change or an extra list entry never counts as a new
+# key) is a path present in the desired document. We enumerate every live
+# node-path (not just scalar leaves) so a new key whose value is an empty
+# object/array or null is caught too. setupVersion is in the desired document
+# (preserved above), so it never trips this gate.
+unknown=$(
+    printf '%s' "$live_json" | jq -r --argjson desired "$desired" '
+        def sig: [ .[] | strings ];
+        ([ $desired | paths | sig ] | unique) as $known
+        | [ paths | sig ]
+        | map(select(. as $p | (($known | any(. == $p)) | not)))
+        | unique
+        | map(join("."))
+        | .[]
+    '
+)
+
+if [ -n "$unknown" ]; then
+    {
+        echo "omp config.yml has key-path(s) the repo does not know about:"
+        printf '%s\n' "$unknown" | sed 's/^/  + /'
+        echo
+        echo "omp likely introduced these. Fold each into the registry, then re-run dots sync:"
+        echo "  $REG"
+    } >&2
+    exit 1
+fi
+
+# ── write ────────────────────────────────────────────
+# No merge: the desired document IS the file. Live drift on managed keys is
+# wiped by design (promote keepers to the registry).
+emit "$desired"

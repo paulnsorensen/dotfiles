@@ -82,6 +82,7 @@ Global **claude** config is chezmoi-authoritative: the claude registry `chezmoi/
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
 | Package | `packages/packages.yaml` | `dots sync` |
 | Profile | `profiles/<name>/profile.yaml` | `dots profile install` / `launch` |
+| omp (oh-my-pi) config | `chezmoi/.chezmoidata/omp.yaml` | `dots sync` |
 
 **`dots sync` before committing.** The prek pre-commit hook blocks commits when `~/.claude/` is out of sync with the repo. See [[operations/dev-environment]].
 
