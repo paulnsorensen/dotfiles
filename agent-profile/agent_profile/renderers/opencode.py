@@ -180,14 +180,16 @@ class OpencodeRenderer:
     mcp_default = _OPENCODE_MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
-        """Render opencode's native subagent files (``<target>/agents/``),
-        copy local skills into ``<target>/skills/``, then merge this
-        profile's opencode MCPs + translated permissions into
-        ``<target>/opencode.json``, bootstrapping the schema stub when the
-        file is absent. Returns the tracked paths; the merged
-        ``opencode.json`` is never listed (it is undone in :meth:`clean`)."""
+        """Render opencode native agents/skills.
+
+        Non-isolated installs leave live ``opencode.json`` to chezmoi/user
+        ownership. Isolated profiles also merge this profile's MCPs and
+        translated permissions into the generated ``<target>/opencode.json``.
+        """
         written = self._render_agents(manifest, target)
         self._write_skills(manifest, target, written)
+        if not manifest.isolated:
+            return written
 
         mcps = mcps_for(manifest, "opencode", _OPENCODE_MCP_DEFAULT)
         allow = _perms(manifest, "permissions_allow")
@@ -293,13 +295,9 @@ class OpencodeRenderer:
             track_file(out, rel)
 
     def clean(self, manifest: Manifest, target: Path) -> None:
-        """Surgically remove this profile's mcp + permission entries from
-        ``<target>/opencode.json``, then prune empty containers.
-
-        If the file reduces to ``{}`` (bootstrapped without a schema key)
-        or to ``{"$schema": ...}`` (the bootstrap stub), it is removed —
-        the profile owned it. This is the /age fix: the bash only handled
-        the ``{"$schema": ...}`` case and left a bare ``{}`` behind."""
+        """Surgically remove this profile's isolated opencode settings."""
+        if not manifest.isolated:
+            return
         cfg = Path(str(target).rstrip("/")) / "opencode.json"
         if not cfg.is_file():
             return

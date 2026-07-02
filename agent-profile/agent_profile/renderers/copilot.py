@@ -167,7 +167,8 @@ class CopilotRenderer:
         self._write_agents(manifest, base, out_files)
         self._write_skills(manifest, base, out_files)
         self._write_hooks(manifest, base, out_files)
-        self._write_mcp(manifest, base)
+        if manifest.isolated:
+            self._write_mcp(manifest, base)
         self._render_native_plugins(manifest)
         return out_files
 
@@ -390,6 +391,8 @@ class CopilotRenderer:
 
     def clean(self, manifest: Manifest, target: Path) -> None:
         self._clean_native_plugins(manifest)
+        if not manifest.isolated:
+            return
         base = Path(str(target).rstrip("/"))
         cfg = base / ".copilot" / "mcp-config.json"
         if not cfg.is_file():

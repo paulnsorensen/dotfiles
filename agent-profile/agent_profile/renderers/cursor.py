@@ -82,17 +82,17 @@ class CursorRenderer:
         self._write_skills(manifest, target, out)
         self._write_commands(manifest, target, out)
         self._write_hooks(manifest, target, out)
-        self._write_mcp_json(manifest, target)
+        if manifest.isolated:
+            self._write_mcp_json(manifest, target)
         return out
 
     def clean(self, manifest: Manifest, target: Path) -> None:
-        """Surgically drop this profile's entries from the merged
-        ``.cursor/mcp.json``, leaving user entries and unrelated top-level
-        keys intact. Whole-file artefacts are swept by the CLI manifest."""
+        """Surgically drop this profile's entries from isolated ``.cursor/mcp.json``."""
+        if not manifest.isolated:
+            return
         cfg = Path(str(target).rstrip("/")) / ".cursor" / "mcp.json"
         if not cfg.is_file():
             return
-
         names = {mcp["name"] for mcp in _cursor_mcps(manifest)}
         data = read_json_object(cfg, ".cursor/mcp.json")
         servers = data.get("mcpServers")

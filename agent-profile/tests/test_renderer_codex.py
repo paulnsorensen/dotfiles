@@ -45,6 +45,7 @@ def _manifest(src: Path, **sections) -> Manifest:
         commands=[],
         hooks=[],
         settings={},
+        isolated=True,
     )
     base.update(sections)
     for key in ("mcps", "agents", "skills", "commands", "hooks"):
@@ -406,6 +407,21 @@ def test_claude_only_mcp_not_written_to_config_toml(renderer, src, target):
     m = _manifest(src, mcps=[{"name": "foo", "command": "x", "harnesses": ["claude"]}])
     renderer.render(m, target)
     assert not (target / ".codex" / "config.toml").exists()
+
+def test_nonisolated_manifest_skips_config_toml_writes(renderer, src, target):
+    cfg = target / ".codex" / "config.toml"
+    cfg.parent.mkdir(parents=True)
+    seeded = _user_config()
+    cfg.write_text(seeded)
+    manifest = Manifest(
+        name="live",
+        mcps=[{"name": "foo", "command": "npx", "harnesses": ["codex"], "_source_dir": str(src)}],
+        settings={"permissions_deny": ["mcp__tilth__tilth_write"]},
+    )
+    renderer.render(manifest, target)
+    assert cfg.read_text() == seeded
+    renderer.clean(manifest, target)
+    assert cfg.read_text() == seeded
 
 
 def test_mcp_merge_preserves_user_keys_and_comments(renderer, src, target):

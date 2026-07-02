@@ -28,6 +28,19 @@ from agent_profile.compiled_types import CompiledFile, CompiledManifest
 FileRecord = CompiledFile | Mapping[str, Any]
 ManifestLike = CompiledManifest | Mapping[str, Any]
 
+# Migration safety: older apply-state snapshots may still list harness-global
+# config files that agent-profile no longer owns. Never reconcile-delete them.
+DISCONNECTED_GLOBAL_SETTINGS = frozenset(
+    {
+        ".claude/settings.json",
+        ".codex/config.toml",
+        "opencode.json",
+        ".cursor/mcp.json",
+        ".copilot/mcp-config.json",
+        ".config/crush/crush.json",
+    }
+)
+
 
 def _generated(record: FileRecord) -> bool:
     if isinstance(record, CompiledFile):
@@ -74,11 +87,12 @@ def preserved_paths(manifest: ManifestLike) -> frozenset[str]:
 
 
 def filter_preserved(candidates: Iterable[str], manifest: ManifestLike) -> list[str]:
-    """Drop user-owned merged settings from deletion ``candidates``.
+    """Drop preserved settings from deletion ``candidates``.
 
-    Returns the candidate paths that are safe to delete -- the input with the
-    manifest's user-owned merged settings removed. Input order is preserved.
+    This excludes both user-owned merged settings still present in the compiled
+    manifest and the legacy global settings paths that the compiler stopped
+    managing during the chezmoi ownership handoff. Input order is preserved.
     """
 
-    preserved = preserved_paths(manifest)
+    preserved = preserved_paths(manifest) | DISCONNECTED_GLOBAL_SETTINGS
     return [path for path in candidates if path not in preserved]

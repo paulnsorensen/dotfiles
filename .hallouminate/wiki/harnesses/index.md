@@ -20,19 +20,19 @@ What each harness exposes natively. ✅ = first-class, ⚠️ = exists but indir
 | System prompt / instructions | ✅ | ✅ (`AGENTS.md`) | ✅ | ✅ | ✅ (rules + `AGENTS.md`) |
 | Settings / config file | ✅ `settings.json` | ✅ `config.toml` | ✅ `opencode.json` | ✅ `settings.json` | ✅ `plugin.json` / `.cursor/` |
 | Skills (`SKILL.md`) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Isolated closed-world launch (`ap` `isolated`) | ✅ | ✗ | ✗ | ✗ | ✗ |
+| Isolated closed-world launch (`ap` `isolated`) | ✅ | ✅ (redirected `CODEX_HOME`) | ✅ (env config override) | ✗ | ✗ |
 
 Notes:
 
 - **opencode hooks** aren't a standalone feature — lifecycle events are exposed only through the plugin API (JS/TS).
 - **Cursor** is an IDE, not a launchable CLI — first-class hooks/agents/MCP/rules/skills, but no closed-world launch. Its non-MCP capabilities ship as a Cursor 2.x plugin tree; MCP flows through the shared registry. See [[cursor]].
-- **Isolated launch** (`--strict-mcp-config` / `--setting-sources ""` / `--tools`) is Claude-CLI-specific; `ap` only builds those flags for Claude (see [[../architecture/agent-profile]] § launch).
+- **Isolated launch** is implemented per harness: Claude uses CLI flags (`--strict-mcp-config`, `--setting-sources ""`, `--tools`), Codex redirects `CODEX_HOME`, and opencode uses `OPENCODE_*` env overrides; Cursor/Copilot have no launch wrapper. See [[../architecture/agent-profile]] § launch.
 
 ## How the repo maps to each harness
 
 | This repo's surface | Source of truth | Rendered into (per harness) |
 |---|---|---|
-| MCP servers | `agents/mcp/registry.yaml` | claude `.mcp.json` (plugin-scoped) · codex `config.toml [mcp_servers]` · opencode `opencode.json mcp` · copilot `~/.copilot/mcp-config.json` · cursor `~/.cursor/mcp.json` |
+| MCP servers | `agents/mcp/registry.yaml` | claude plugin `.mcp.json` · isolated codex `CODEX_HOME/config.toml [mcp_servers]` · isolated opencode config content `mcp` · non-isolated global settings (`~/.codex/config.toml`, `opencode.json`, `~/.copilot/mcp-config.json`, `~/.cursor/mcp.json`) are now chezmoi/user-owned rather than `ap`-mutated |
 | Hooks | `agents/hooks/registry.yaml` | claude plugin `hooks/` · codex `hooks.json` · copilot `.github/hooks/` |
 | Cursor non-MCP capabilities | `cursor/plugins/local/<name>/` (e.g. `cheese-grok`) | `~/.cursor/{skills,rules,commands,hooks}/` + jq-merged `hooks.json` / `modes.json` (chezmoi `install-cursor-plugin.sh`, not the `ap` base render) |
 | Sub-agents | `agents/registry.yaml` + `agent_definitions/` | claude `.md` · codex `.toml` · opencode `.md` · copilot `.agent.md` |

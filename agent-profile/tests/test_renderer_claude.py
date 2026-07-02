@@ -266,11 +266,8 @@ def test_satisfies_renderer_protocol():
 
 
 def test_clean_leaves_tracked_plugin_tree_intact(env):
-    """clean() un-merges only the shared/merged root settings.json (the
-    SSOT permission render); every tracked whole-file plugin artefact is
-    left for the CLI's manifest sweep to remove. The rust fixture carries a
-    ``permissions_allow``, so render now writes root settings.json — clean
-    must remove exactly that contribution and nothing in the plugin tree."""
+    """Non-isolated clean leaves the plugin tree alone and never touches
+    harness-global root settings."""
     profile_dir = _materialize_rust(env.profiles)
     manifest = parse_manifest(profile_dir)
     r = ClaudeRenderer()
@@ -280,16 +277,14 @@ def test_clean_leaves_tracked_plugin_tree_intact(env):
     before_plugin = sorted(
         p.read_bytes() for p in plugin_root.rglob("*") if p.is_file()
     )
+    assert not (env.target / ".claude" / "settings.json").exists()
 
     assert r.clean(manifest, env.target) is None
 
     after_plugin = sorted(
         p.read_bytes() for p in plugin_root.rglob("*") if p.is_file()
     )
-    # Tracked plugin tree untouched by clean.
     assert before_plugin == after_plugin
-    # The merged root settings.json contribution is fully un-merged: the
-    # rust fixture owned the whole file, so clean removed it.
     assert not (env.target / ".claude" / "settings.json").exists()
 
 
@@ -722,80 +717,63 @@ def _install_fake_claude(tmp_path: Path, monkeypatch) -> Path:
 
 
 def test_user_scope_skips_plugin_mcp_json(env, monkeypatch):
-    _install_fake_claude(env.tmp, monkeypatch)
+    log = _install_fake_claude(env.tmp, monkeypatch)
     profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
     manifest = parse_manifest(profile_dir)
     assert manifest.mcp_scope == "user"
     written = ClaudeRenderer().render(manifest, env.target)
-    # No plugin .mcp.json, and it is not tracked in the install manifest.
     assert not (
         env.target / ".claude/plugins/local/mcpuser/.mcp.json"
     ).exists()
     assert not any(".mcp.json" in w for w in written)
+    assert not log.exists()
 
 
-def test_user_scope_registers_bare_via_cli(env, monkeypatch):
+def test_user_scope_render_does_not_register_via_cli(env, monkeypatch):
     log = _install_fake_claude(env.tmp, monkeypatch)
     profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
     ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
-    lines = log.read_text().splitlines()
-    # remove-then-add per server, idempotent; context7 only (codexonly dropped).
-    assert lines == [
-        "mcp remove context7 --scope user",
-        "mcp add context7 --scope user -e KEY=VAL -- npx -y @upstash/context7-mcp",
-    ]
+    assert not log.exists()
 
 
-def test_user_scope_clean_removes_via_cli(env, monkeypatch):
+def test_user_scope_clean_does_not_call_cli(env, monkeypatch):
     log = _install_fake_claude(env.tmp, monkeypatch)
     profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
     manifest = parse_manifest(profile_dir)
     ClaudeRenderer().clean(manifest, env.target)
-    assert "mcp remove context7 --scope user" in log.read_text().splitlines()
+    assert not log.exists()
 
 
-def test_user_scope_missing_cli_fails_loud(env, monkeypatch):
-    # PATH with no `claude` -> user-scope render (install/launch path,
-    # logical_root None) must raise, not silently skip.
+def test_user_scope_missing_cli_is_noop(env, monkeypatch):
     emptybin = env.tmp / "emptybin"
     emptybin.mkdir()
     monkeypatch.setenv("PATH", str(emptybin))
     profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
-    with pytest.raises(FileNotFoundError):
-        ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+    written = ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+    assert not any(".mcp.json" in path for path in written)
+    assert not (
+        env.target / ".claude/plugins/local/mcpuser/.mcp.json"
+    ).exists()
 
 
-def test_user_scope_compile_mode_defers_registration(env, monkeypatch):
-    # Compile renders into a scratch dir (logical_root set). The live
-    # `claude mcp add` must NOT fire — even with no `claude` on PATH the render
-    # succeeds, and the registration spec is exposed for apply to perform.
+def test_user_scope_compile_mode_emits_no_deferred_registration(env, monkeypatch):
     emptybin = env.tmp / "emptybin"
     emptybin.mkdir()
     monkeypatch.setenv("PATH", str(emptybin))
     profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
     manifest = parse_manifest(profile_dir)
     renderer = ClaudeRenderer()
-    # No raise despite missing CLI — compile is side-effect-free.
     renderer.render(manifest, env.target, logical_root=env.tmp / "real-home")
-    assert renderer.user_mcp_registrations(manifest) == [
-        {
-            "name": "context7",
-            "command": "npx",
-            "args": ["-y", "@upstash/context7-mcp"],
-            "env": {"KEY": "VAL"},
-        }
-    ]
+    assert renderer.user_mcp_registrations(manifest) == []
 
 
-def test_user_scope_clean_missing_cli_fails_loud(env, monkeypatch):
-    # Clean must fail loud too — a silent return would report success while
-    # leaving the user-scope registrations behind in ~/.claude.json.
+def test_user_scope_clean_missing_cli_is_noop(env, monkeypatch):
     emptybin = env.tmp / "emptybin"
     emptybin.mkdir()
     monkeypatch.setenv("PATH", str(emptybin))
     profile_dir = write_profile(env.profiles, "mcpuser", _MCPTEST_USER_YAML)
-    with pytest.raises(FileNotFoundError):
-        ClaudeRenderer().clean(parse_manifest(profile_dir), env.target)
+    ClaudeRenderer().clean(parse_manifest(profile_dir), env.target)
+    assert not (env.target / ".claude" / "settings.json").exists()
 
 
 # ─── MCP-secret-passthrough: ${VAR} reaches claude as a literal ──────
@@ -826,17 +804,15 @@ mcps:
 """
 
 
-def test_user_scope_passes_literal_var_not_secret(env, monkeypatch):
-    # Criterion 4: the `claude mcp add` argv carries `-e KEY=${VAR}` literally,
-    # never a resolved secret. A real value in the process env must NOT leak
-    # into the stored registration — Claude expands ${VAR} itself at launch.
+def test_user_scope_never_emits_literal_var_registration(env, monkeypatch):
     monkeypatch.setenv("CONTEXT7_API_KEY", "sk-real-secret-123")
     log = _install_fake_claude(env.tmp, monkeypatch)
     profile_dir = write_profile(env.profiles, "secretuser", _SECRET_USER_YAML)
-    ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
-    text = log.read_text()
-    assert "-e CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" in text
-    assert "sk-real-secret-123" not in text
+    manifest = parse_manifest(profile_dir)
+    ClaudeRenderer().render(manifest, env.target)
+    renderer = ClaudeRenderer()
+    assert renderer.user_mcp_registrations(manifest) == []
+    assert not log.exists()
 
 
 def test_plugin_scope_mcp_json_env_is_literal_var(env, monkeypatch):

@@ -23,10 +23,9 @@ from agent_profile.renderers.registry import build_registry
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_compile_records_drift_for_divergent_live_settings(tmp_path, monkeypatch):
+def test_compile_skips_drift_for_disconnected_live_settings(tmp_path, monkeypatch):
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
-    # A user-owned key the migration must surface as drift, not silently clobber.
     (home / ".claude" / "settings.json").write_text(
         json.dumps({"userOwnedKey": "keep-me"}) + "\n"
     )
@@ -41,4 +40,4 @@ def test_compile_records_drift_for_divergent_live_settings(tmp_path, monkeypatch
 
     data = json.loads((out / "manifest.json").read_text())
     drift_targets = {(r["target"], r["relative_path"]) for r in data["drift"]}
-    assert ("home", ".claude/settings.json") in drift_targets
+    assert ("home", ".claude/settings.json") not in drift_targets

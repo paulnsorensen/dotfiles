@@ -84,9 +84,10 @@ def test_no_renderer_bakes_the_secret(tmp_path, monkeypatch):
     assert SECRET not in rendered
 
 
-def test_claude_user_scope_does_not_bake_secret(tmp_path, monkeypatch):
-    # The user-scope path shells out to `claude mcp add`; capture its argv via
-    # a fake CLI and assert the secret never reaches it.
+def test_claude_user_scope_skips_cli_and_secret_leak(tmp_path, monkeypatch):
+    # Global user-scope Claude MCP ownership moved out of agent-profile. A direct
+    # render must neither shell out to `claude mcp add` nor stage a plugin MCP
+    # file, and the secret must stay off disk either way.
     monkeypatch.setenv(VARNAME, SECRET)
     bindir = tmp_path / "fakebin"
     bindir.mkdir()
@@ -101,7 +102,8 @@ def test_claude_user_scope_does_not_bake_secret(tmp_path, monkeypatch):
 
     m = _manifest()
     m.mcp_scope = "user"
-    ClaudeRenderer().render(m, tmp_path / "t")
-    text = log.read_text()
-    assert f"-e {VARNAME}=${{{VARNAME}}}" in text
-    assert SECRET not in text
+    target = tmp_path / "t"
+    ClaudeRenderer().render(m, target)
+    assert not log.exists()
+    assert not (target / ".claude" / "plugins" / "local" / "secrets" / ".mcp.json").exists()
+    assert SECRET not in _tree_text(target)

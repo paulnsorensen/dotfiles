@@ -46,24 +46,24 @@ def _compile_live(tmp_path, monkeypatch, *, with_live_settings: bool) -> dict:
     return json.loads((out / "manifest.json").read_text())
 
 
-def test_normal_fragments_generated_merged_settings_not(tmp_path, monkeypatch):
+def test_live_compile_emits_only_generated_fragments(tmp_path, monkeypatch):
     data = _compile_live(tmp_path, monkeypatch, with_live_settings=True)
     files = data["files"]
 
     generated = {f["relative_path"] for f in files if f["generated"] is True}
     preserved = {f["relative_path"] for f in files if f["generated"] is False}
 
-    # Reconcilable generated config must still exist (spec 91): a regression to
-    # all-False would empty this set and silently disable apply's delete pass.
+    # Compile must still emit reconcilable generated artefacts; otherwise apply's
+    # delete pass silently dies.
     assert generated, "expected at least one generated=True fragment"
 
-    # Every emitted merged settings file is user-owned (spec 92): a regression to
-    # all-True would put these in `generated` and apply would clobber them.
-    emitted_merged = {f["relative_path"] for f in files} & _MERGED_PATHS
-    assert emitted_merged, "expected the live profile to emit merged settings files"
-    assert emitted_merged <= preserved
-    # And no generated=True fragment is a merged settings file.
-    assert not (generated & _MERGED_PATHS)
+    # Live/global merged settings ownership moved to chezmoi, so compile no longer
+    # emits any user-owned generated=False fragments at all.
+    assert preserved == set(), (
+        "compile should emit only generated fragments now that merged live "
+        f"settings are chezmoi-owned, but preserved={preserved}"
+    )
+    assert all(f["generated"] is True for f in files)
 
 
 def test_absent_live_settings_is_clean_create_not_drift(tmp_path, monkeypatch):

@@ -18,7 +18,9 @@ from agent_profile.renderers.registry import build_registry
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_live_user_key_survives_compile_then_apply(tmp_path, monkeypatch):
+def test_live_global_settings_stay_unmanaged_across_compile_then_apply(
+    tmp_path, monkeypatch
+):
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
     settings = home / ".claude" / "settings.json"
@@ -37,19 +39,16 @@ def test_live_user_key_survives_compile_then_apply(tmp_path, monkeypatch):
     settings_entries = [
         f for f in data["files"] if f["relative_path"] == ".claude/settings.json"
     ]
-    assert settings_entries, "compile should emit a .claude/settings.json fragment"
-    # The merged settings fragment is marked user-owned so apply preserves it.
-    assert all(f["generated"] is False for f in settings_entries)
+    assert settings_entries == []
 
     apply_compiled.apply_compiled(manifest)
 
     assert json.loads(settings.read_text()) == {"userOwnedKey": "keep-me"}
 
 
-def test_apply_does_not_delete_merged_settings_tracked_by_prior_state(tmp_path):
-    """Migration safety: a settings.json left in the prior apply state (from an
-    old generated=True run) must not be deleted when the new manifest marks it
-    generated=False — that reconcile-delete would destroy user content."""
+def test_apply_does_not_delete_disconnected_global_settings_from_prior_state(
+    tmp_path,
+):
     root = tmp_path / "home"
     settings = root / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
@@ -65,8 +64,6 @@ def test_apply_does_not_delete_merged_settings_tracked_by_prior_state(tmp_path):
     frag = cache / "fragments/home/claude/.claude/agents/r.md"
     frag.parent.mkdir(parents=True)
     frag.write_text("body\n")
-    settings_frag = cache / "fragments/home/claude/.claude/settings.json"
-    settings_frag.write_text('{"permissions": {"allow": []}}\n')
 
     manifest = {
         "profile": "live",
@@ -87,16 +84,10 @@ def test_apply_does_not_delete_merged_settings_tracked_by_prior_state(tmp_path):
                 "fragment_path": str(frag),
                 "relative_path": ".claude/agents/r.md",
                 "generated": True,
-            },
-            {
-                "target": "home",
-                "harness": "claude",
-                "fragment_path": str(settings_frag),
-                "relative_path": ".claude/settings.json",
-                "generated": False,
-            },
+            }
         ],
         "drift": [],
+        "user_mcps": [],
     }
     mpath = cache / "manifest.json"
     mpath.write_text(json.dumps(manifest, indent=2) + "\n")

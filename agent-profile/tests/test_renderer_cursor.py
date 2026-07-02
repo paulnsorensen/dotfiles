@@ -62,6 +62,7 @@ def multi_hook(tmp_path):
 
     manifest = Manifest(
         name="p1",
+        isolated=True,
         description="multi-hook cursor fixture",
         mcps=_stamp(
             [
@@ -178,6 +179,7 @@ def _manifest(tmp_path, **sections) -> tuple[Manifest, Path, Path]:
     ]
     m = Manifest(
         name="p1",
+        isolated=True,
         description="test",
         settings=sections.get("settings", {}),
         **stamped,
@@ -257,6 +259,22 @@ def test_mcp_default_membership_includes_cursor(tmp_path):
     CursorRenderer().render(m, target)
     assert (target / ".cursor" / "mcp.json").is_file()
     assert '"foo"' in (target / ".cursor" / "mcp.json").read_text()
+
+def test_nonisolated_manifest_skips_cursor_mcp_json(tmp_path):
+    target = _src(tmp_path, "target-nonisolated")
+    cursor_dir = target / ".cursor"
+    cursor_dir.mkdir(parents=True)
+    seeded = '{"mcpServers": {"user-mcp": {"command": "uvx"}}}'
+    (cursor_dir / "mcp.json").write_text(seeded)
+    manifest = Manifest(
+        name="live",
+        mcps=[{"name": "foo", "command": "npx", "harnesses": ["cursor"]}],
+    )
+    renderer = CursorRenderer()
+    renderer.render(manifest, target)
+    assert (cursor_dir / "mcp.json").read_text() == seeded
+    renderer.clean(manifest, target)
+    assert (cursor_dir / "mcp.json").read_text() == seeded
 
 
 def test_mcp_entry_args_default_empty_and_env_preserved(tmp_path):

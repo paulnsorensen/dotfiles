@@ -14,17 +14,10 @@ VALID_COMPILE_HARNESSES = (
     "copilot",
 )
 
-# User-editable "merged" config files: each renderer reads, merges its managed
-# keys into, and rewrites these in place, so they carry hand-written user
-# content alongside generated config. They must be drift-checked against the
-# live file and never overwritten or deleted by ``ap apply-compiled``.
-MERGED_SETTINGS_BY_HARNESS: dict[str, tuple[str, ...]] = {
-    "claude": (".claude/settings.json",),
-    "codex": (".codex/config.toml",),
-    "opencode": ("opencode.json",),
-    "cursor": (".cursor/mcp.json",),
-    "copilot": (".copilot/mcp-config.json",),
-}
+# Live compiled deployment no longer owns any harness-global merged settings.
+# Those files move to chezmoi management, so compile emits only generated
+# fragments and records no user-owned merged config paths for apply/drift.
+MERGED_SETTINGS_BY_HARNESS: dict[str, tuple[str, ...]] = {}
 
 
 @dataclass(frozen=True)
@@ -97,10 +90,9 @@ class CompiledManifest:
     targets: tuple[CompileTarget, ...]
     files: tuple[CompiledFile, ...] = ()
     drift: tuple[DriftRecord, ...] = ()
-    # User-scope MCP servers (``mcp_scope: user``) to register live via the
-    # ``claude`` CLI at apply time. Recorded by ``ap compile`` instead of
-    # registered during render, so compile stays side-effect-free and the live
-    # ``~/.claude.json`` write happens post-gate in ``ap apply-compiled``.
+    # Legacy field retained for manifest compatibility. Fresh compile now leaves
+    # live/global Claude user-scope MCP registration to chezmoi/user ownership,
+    # so renderers emit an empty tuple here.
     user_mcps: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
