@@ -50,6 +50,7 @@ packages:
   - chezmoi
   - duckdb
   - watch
+  - parallel                                  # GNU parallel — run shell jobs concurrently
   - node                                      # bundles npm on mac + linux
   - bun                                       # JS/TS runtime required by jmux
   - sd
