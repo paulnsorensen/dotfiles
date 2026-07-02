@@ -361,6 +361,24 @@ do_claude_diff() {
         echo -e "${RED}chezmoi not installed${NC} — run ${GREEN}dots sync${NC}" >&2
         exit 1
     fi
+    # The unknown-key halt gate lives in the modify_ script and only fires on
+    # `chezmoi apply`. `chezmoi diff` silently skips a target whose modify_
+    # script exits non-zero, so a would-be halt shows here as an empty (falsely
+    # "in sync") diff. Run the gate directly against the live file first so the
+    # preview surfaces what the next sync would actually reject.
+    local modify="$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json"
+    local settings="$HOME/.claude/settings.json"
+    if [[ -f "$modify" && -f "$settings" ]]; then
+        local gate_err gate_rc=0
+        gate_err=$(CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" sh "$modify" \
+            <"$settings" 2>&1 >/dev/null) || gate_rc=$?
+        if [[ $gate_rc -ne 0 ]]; then
+            echo -e "${RED}settings.json would HALT the next sync:${NC}" >&2
+            printf '%s\n' "$gate_err" >&2
+            exit "$gate_rc"
+        fi
+    fi
+
     local diff_output rc=0
     diff_output=$(chezmoi --source "$DOTFILES_DIR/chezmoi" diff "$HOME/.claude") || rc=$?
     if [[ $rc -ne 0 ]]; then

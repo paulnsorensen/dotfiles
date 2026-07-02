@@ -115,6 +115,7 @@ packages:
 
   # uv tools (Python)
   - ralphify: { source: uv }
+  - ruff: { source: uv }                      # Python linter (just lint-python)
   - check-jsonschema: { source: uv }
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
   - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API

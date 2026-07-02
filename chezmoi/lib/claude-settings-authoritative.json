@@ -2,7 +2,8 @@
   "model": "opus",
   "effortLevel": "medium",
   "env": {
-    "ENABLE_TOOL_SEARCH": "true"
+    "ENABLE_TOOL_SEARCH": "true",
+    "SSL_CERT_FILE": "/etc/ssl/cert.pem"
   },
   "permissions": {
     "defaultMode": "auto"

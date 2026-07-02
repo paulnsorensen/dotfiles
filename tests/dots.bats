@@ -211,6 +211,35 @@ stub_claude_diff() {
     assert_output_contains "chezmoi diff failed (exit 3)"
 }
 
+# Plant a modify_settings.json gate + a live settings.json so `dots claude diff`
+# runs the halt gate. $2 is the gate script body (controls its exit code).
+stub_claude_gate() {
+    local stub_dir="$1" gate_body="$2"
+    mkdir -p "$stub_dir/chezmoi/dot_claude" "$HOME/.claude"
+    printf '#!/bin/sh\n%s\n' "$gate_body" \
+        > "$stub_dir/chezmoi/dot_claude/modify_settings.json"
+    echo '{}' > "$HOME/.claude/settings.json"
+}
+
+@test "dots claude diff surfaces a would-be halt the diff itself cannot see" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'exit 0'  # chezmoi diff reports "in sync"
+    stub_claude_gate "$stub_dir" 'echo "unknown key: env.SSL_CERT_FILE" >&2; exit 1'
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    assert_failure
+    assert_output_contains "would HALT the next sync"
+    assert_output_contains "unknown key: env.SSL_CERT_FILE"
+}
+
+@test "dots claude diff passes the gate then reports in-sync" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'exit 0'
+    stub_claude_gate "$stub_dir" 'cat >/dev/null; exit 0'  # gate OK
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    assert_success
+    assert_output_contains "in sync with the chezmoi source"
+}
+
 @test "dots claude with an unknown action fails with usage" {
     run dots claude bogus
     assert_failure
