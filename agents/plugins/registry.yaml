@@ -61,7 +61,8 @@
 #   crush    → MCP only (never native — no plugin concept)
 #   commands → unsupported on the decomposed path for every harness
 #
-# Edit this file, then run `dots sync` (or `base-sync`) to deploy.
+# Edit this file, then run `dots sync` to deploy (base-sync retired;
+# claude-global config is chezmoi-authoritative — see chezmoi/.chezmoidata/claude.yaml).
 
 plugins:
   # milknado: Mikado execution engine

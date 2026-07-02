@@ -31,9 +31,9 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
-  # settings.json is now repo-authoritative: chezmoi/dot_claude/modify_settings.json
-  # re-asserts the committed authoritative source (chezmoi/lib/claude-settings-authoritative.json)
-  # onto the live ~/.claude/settings.json on every apply, preserving ap-managed keys.
+  # settings.json is fully repo-authoritative: chezmoi/dot_claude/modify_settings.json
+  # authors the live ~/.claude/settings.json wholesale on every apply from
+  # chezmoi/lib/claude-settings-authoritative.json + chezmoi/.chezmoidata/claude.yaml.
   # The sync check accepts a real file (post-migration) or the legacy symlink
   # (in case someone's still on the old setup mid-bisect).
   { id = "check-claude-sync", name = "Check Claude config synced", entry = "bash -c '[[ -f ~/.claude/settings.json ]] || { echo \"Claude settings not synced. Run: dots sync\"; exit 1; }'", language = "system", always_run = true, pass_filenames = false },

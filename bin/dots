@@ -135,12 +135,14 @@ do_sync() {
     echo -e "${BLUE}🔄 Syncing dotfiles...${NC}"
     cd_dotfiles
 
+    # --accept-agent-drift retired with the ap live-install path (spec:
+    # chezmoi-authoritative-claude) — accepted silently for muscle-memory
+    # compatibility, it no longer does anything.
     local sync_args=()
-    local accept_agent_drift=false
     while (($#)); do
         case "$1" in
             --accept-agent-drift)
-                accept_agent_drift=true
+                echo -e "${YELLOW}⚠️  --accept-agent-drift is retired (ap live installs removed); ignoring.${NC}" >&2
                 shift
                 ;;
             *)
@@ -149,11 +151,6 @@ do_sync() {
                 ;;
         esac
     done
-
-    if [[ "$accept_agent_drift" == true ]]; then
-        DOTS_ACCEPT_AGENT_DRIFT=1 "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
-        return
-    fi
 
     "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
 }
@@ -367,7 +364,7 @@ case "${1:-status}" in
         # `npx skills add --force` re-clones each source at its latest default
         # branch (float-to-latest), so always run it — the install does its own
         # work; there's no cheap upstream-up-to-date probe to short-circuit on.
-        if ! bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
+        if ! SKILL_EXCLUDE_AGENTS="claude-code" bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
                 "$DOTFILES_DIR/skills/_registry.yaml" --force; then
             echo -e "${YELLOW}⚠️  Remote skills refresh failed (continuing)${NC}" >&2
         fi

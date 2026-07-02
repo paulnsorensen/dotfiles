@@ -10,7 +10,7 @@ lint: lint-shell lint-python lint-js lint-markdown
 # shellcheck on shell scripts
 lint-shell:
     shellcheck -x -e SC1091 $(find bin -type f) .sync
-    shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/install-base-profile.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-codex.sh chezmoi/lib/install-shared-assets.sh
+    shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/claude-mcp-reconcile.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-codex.sh chezmoi/lib/install-shared-assets.sh
     shellcheck -x -e SC1091 -s bash agents/hooks/session-start-cheese-flair.sh
     shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh
     shellcheck -x -e SC1091 -s bash tests/workflows-parse.sh

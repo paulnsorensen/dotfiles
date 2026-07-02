@@ -1,8 +1,9 @@
 #!/bin/bash
 # run_after — validate the live ~/.claude/settings.json against the Claude Code
-# settings schema after every apply. modify_settings.json (and ap's later
-# merge) produce the live file, so the only place to schema-check the final
-# result is here, post-apply. Fail loud on a violation; stay quiet otherwise.
+# settings schema after every apply. modify_settings.json authors the live file
+# wholesale (seed + claude-registry-rendered keys), so the only place to
+# schema-check the final result is here, post-apply. Fail loud on a violation;
+# stay quiet otherwise.
 #
 # Skips gracefully when check-jsonschema is absent (it's a uv tool in
 # packages.yaml, but may not be installed yet during an early bootstrap).

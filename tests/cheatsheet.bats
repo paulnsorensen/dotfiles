@@ -56,11 +56,11 @@ documented_tokens() {
     assert_section "MCP / Hooks / Agents"
 }
 
-@test "documents base-sync as the live-wrapper deploy entry point" {
+@test "does not document the retired base-sync entry point" {
     run cheatsheet
     local clean
     clean=$(strip_ansi "$output")
-    grep -Eq 'base-sync[[:space:]]+deploy live install profiles to all harnesses' <<<"$clean"
+    [[ "$clean" != *"base-sync"* ]]
 }
 
 @test "points at tmux-cheatsheet for tmux keys" {

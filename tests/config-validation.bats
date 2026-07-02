@@ -87,8 +87,8 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
 # ── skill-* aliases (unified live deploy) ────────────────────────────────────
 # The registry stays the EDIT surface (skill-edit); deploy is unified through
-# `base-sync` (→ `dots sync`). The redundant per-registry
-# *-sync mnemonics were retired in favour of the single base-sync entry point.
+# `dots sync` (chezmoi-authoritative source assembly). The redundant
+# per-registry *-sync mnemonics — and later base-sync itself — were retired.
 # Locking the bodies guards a silent de-sync where a rename would only surface
 # at every dev's runtime.
 
@@ -102,7 +102,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ -f "$DOTFILES_DIR/skills/_registry.yaml" ]]
 }
 
-@test "dots sync accepts the agent drift override without passing it to .sync" {
+@test "dots sync ignores the retired --accept-agent-drift flag (compat shim)" {
     local shim="$BATS_TEST_TMPDIR/dots-home"
     mkdir -p "$shim/Dev/dotfiles"
     run env DOTFILES_DIR="$shim/Dev/dotfiles" bash -c '
@@ -115,23 +115,20 @@ SH
         "$DOTFILES_DIR/dots" sync --accept-agent-drift refresh
     ' _ "$DOTFILES_DIR"
     [[ $status -eq 0 ]]
-    [[ "$output" == *"DOTS_ACCEPT_AGENT_DRIFT=1 args=refresh"* ]]
+    # Flag swallowed with a retirement warning; env var no longer set.
+    [[ "$output" == *"DOTS_ACCEPT_AGENT_DRIFT= args=refresh"* ]]
+    [[ "$output" == *"retired"* ]]
 }
 
-@test "base-sync still calls the migration stubs" {
+@test "base-sync is retired from zsh/claude.zsh (chezmoi owns claude deploys)" {
     local claude_file="$DOTFILES_DIR/zsh/claude.zsh"
-    command -v zsh &>/dev/null || skip "zsh not installed"
-    local harness="$BATS_TEST_TMPDIR/base-sync.zsh"
-    cat > "$harness" <<EOF
-#!/usr/bin/env zsh
-dots() { print -r -- "\$@"; }
-$(sed -n '/^base-sync()/,/^}/p' "$claude_file")
-base-sync
-EOF
-    run zsh "$harness"
-    [[ $status -eq 0 ]]
-    [[ "$output" == *"profile install global --harness claude,codex,cursor,copilot"* ]]
-    [[ "$output" == *"profile install opencode-global --harness opencode"* ]]
+    # No function or alias may resurrect the ap live-install entry point.
+    if grep -qE '^base-sync\(\)|alias base-sync=' "$claude_file"; then
+        echo "base-sync still defined in zsh/claude.zsh" >&2
+        return 1
+    fi
+    # mcp-edit now points at the claude registry.
+    grep -qF 'chezmoi/.chezmoidata/claude.yaml' "$claude_file"
 }
 
 @test "the redundant *-sync mnemonics are retired (base-sync is the sole entry point)" {

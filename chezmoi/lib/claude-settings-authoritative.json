@@ -7,59 +7,6 @@
   "permissions": {
     "defaultMode": "auto"
   },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" bash-guard.js",
-            "statusMessage": "Checking command safety..."
-          }
-        ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" phantom-file-check.js",
-            "statusMessage": "Checking file..."
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit|mcp__tilth__tilth_write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/hook-runner.js\" write-guard.js worktree-guard.js",
-            "statusMessage": "Checking write..."
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit|mcp__tilth__tilth_write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/auto-format.js\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  },
-  "enabledPlugins": {
-    "claude-md-management@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true,
-    "plugin-dev@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true
-  },
   "sandbox": {
     "enabled": false,
     "autoAllowBashIfSandboxed": true,
@@ -137,5 +84,6 @@
       "Mongering",
       "Fonduing"
     ]
-  }
+  },
+  "skipWorkflowUsageWarning": true
 }
