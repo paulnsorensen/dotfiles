@@ -8,19 +8,16 @@ SOURCE_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 # Create ~/.claude if it doesn't exist
 mkdir -p "$CLAUDE_DIR"
 
-# Claude-only asset dirs — commands/, hooks/, reference/, workflows/ — are
-# deployed into ~/.claude as ONE-WAY COPIES by chezmoi
-# (chezmoi/lib/install-claude-assets.sh, run via
-# run_onchange_after_install-claude-assets.sh.tmpl), NOT symlinks. A whole-dir
-# symlink let anything written into ~/.claude/<dir> leak back into this repo
-# (the same failure that made ~/.cursor a symlink — see SYNC_SKIP_LIST in
-# .sync-lib.sh). Copy keeps the repo as the source; runtime writes stay in
-# $HOME. Trade-off: edits now need a `dots sync` / `chezmoi apply` to go live.
-# The installer self-migrates any leftover legacy symlink target to a real dir.
+# Claude-only asset dirs — commands/, hooks/, reference/, workflows/ — deploy
+# via chezmoi exact_ dirs assembled by sync_claude_chezmoi_sources (see
+# .sync-lib.sh), NOT symlinks and NOT this script. Removals propagate on
+# apply. Edits need a `dots sync` / `chezmoi apply` to go live.
 #
-# Also NOT handled here (owned by agents/ registries + chezmoi — see the
-# deploy table in AGENTS.md): plugins/ (Claude's plugin cache), agents/, mcp/,
-# the hooks registry, skills/, CLAUDE.md/RTK.md, settings.json.
+# Also NOT handled here (owned by the claude registry
+# chezmoi/.chezmoidata/claude.yaml + chezmoi — see the deploy table in
+# AGENTS.md): skills/, agents/, commands/, hooks/, lib/, reference/,
+# workflows/, settings.json, and user-scope MCPs in ~/.claude.json.
+# plugins/ stays Claude's own lifecycle (marketplace bootstrap below).
 
 # RTK agent setup is done manually via the `rtk-init-*` aliases in
 # zsh/claude.zsh — running `rtk init` during sync would rewrite
@@ -75,20 +72,6 @@ if command -v claude &>/dev/null; then
   fi
 else
   echo "  Skipping plugin sync (claude CLI not found)"
-fi
-
-# Clean up the legacy ~/.claude/mcp symlink — registry moved to agents/mcp/.
-if [[ -L "$CLAUDE_DIR/mcp" ]]; then
-  rm "$CLAUDE_DIR/mcp"
-  echo "  Removed legacy ~/.claude/mcp symlink"
-fi
-
-# Clean up the legacy ~/.claude/agents symlink — agents moved to
-# agents/registry.yaml and now render through `ap` (base profile) as real
-# files. Leaving the symlink would shadow the rendered ~/.claude/agents tree.
-if [[ -L "$CLAUDE_DIR/agents" ]]; then
-  rm "$CLAUDE_DIR/agents"
-  echo "  Removed legacy ~/.claude/agents symlink (agents now render via ap)"
 fi
 
 # Drop stale per-project entries from ~/.claude.json (worktrees that no

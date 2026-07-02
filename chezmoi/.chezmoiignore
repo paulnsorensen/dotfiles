@@ -20,6 +20,12 @@ README*
 # They live inside the source dir for colocation, but chezmoi must not apply
 # them as $HOME files.
 lib/
+# The assembled ~/.claude payload (dot_claude/exact_*) carries .md/.txt skill,
+# agent, and command files; exempt the whole target subtree from the scratch
+# ignores above so every assembled file deploys (and stays under exact_
+# removal semantics). Patterns are target-relative, hence .claude not
+# dot_claude.
+!.claude/**
 {{- /*
 Local LLM stack is per-machine, opt-in. When the localLLM flag is false,
 ignore the whole stack tree + its systemd units so non-LLM machines stay

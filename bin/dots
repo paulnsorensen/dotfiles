@@ -69,6 +69,9 @@ ${BLUE}Commands:${NC}
   ${GREEN}rollback${NC}        Show how to undo a sync (git revert + dots sync)
   ${GREEN}doctor${NC}          Run health checks and profile shell
   ${GREEN}profile${NC}         Manage harness-agnostic agent profiles (run 'dots profile help')
+  ${GREEN}claude diff${NC}     Preview what a sync would change under ~/.claude
+                  (settings.json + exact_ trees; NOT ~/.claude.json MCP drift,
+                   which reconciles via the claude CLI, not chezmoi)
   ${GREEN}test${NC}            Run test suite
   ${GREEN}help${NC}            Show this help message
 
@@ -135,12 +138,14 @@ do_sync() {
     echo -e "${BLUE}🔄 Syncing dotfiles...${NC}"
     cd_dotfiles
 
+    # --accept-agent-drift retired with the ap live-install path (spec:
+    # chezmoi-authoritative-claude) — accepted silently for muscle-memory
+    # compatibility, it no longer does anything.
     local sync_args=()
-    local accept_agent_drift=false
     while (($#)); do
         case "$1" in
             --accept-agent-drift)
-                accept_agent_drift=true
+                echo -e "${YELLOW}⚠️  --accept-agent-drift is retired (ap live installs removed); ignoring.${NC}" >&2
                 shift
                 ;;
             *)
@@ -149,11 +154,6 @@ do_sync() {
                 ;;
         esac
     done
-
-    if [[ "$accept_agent_drift" == true ]]; then
-        DOTS_ACCEPT_AGENT_DRIFT=1 "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
-        return
-    fi
 
     "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
 }
@@ -348,6 +348,32 @@ do_doctor() {
     fi
 }
 
+# Preview pending chezmoi changes under ~/.claude before a sync overwrites
+# them wholesale (ADR-004 authors settings.json + exact_ trees whole).
+# Renders modify_settings.json output vs live settings.json plus exact_ tree
+# drift. Caveat: the exact_ trees in the chezmoi source are assembled by
+# `dots sync`, so their side of the diff reflects the LAST assembly; the
+# settings side (chezmoidata registry) is always current. MCP server drift
+# (~/.claude.json) is NOT covered — MCPs reconcile via the claude CLI.
+do_claude_diff() {
+    cd_dotfiles
+    if ! command -v chezmoi &>/dev/null; then
+        echo -e "${RED}chezmoi not installed${NC} — run ${GREEN}dots sync${NC}" >&2
+        exit 1
+    fi
+    local diff_output rc=0
+    diff_output=$(chezmoi --source "$DOTFILES_DIR/chezmoi" diff "$HOME/.claude") || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        echo -e "${RED}chezmoi diff failed (exit $rc)${NC}" >&2
+        exit $rc
+    fi
+    if [[ -z "$diff_output" ]]; then
+        echo -e "${GREEN}✅ ~/.claude is in sync with the chezmoi source${NC}"
+    else
+        printf '%s\n' "$diff_output"
+    fi
+}
+
 # Main command handler
 case "${1:-status}" in
     update|u)
@@ -356,6 +382,19 @@ case "${1:-status}" in
     sync|s)
         shift
         do_sync "$@"
+        ;;
+    claude)
+        shift
+        case "${1:-}" in
+            diff)
+                do_claude_diff
+                ;;
+            *)
+                echo -e "${RED}Unknown claude action: ${1:-}${NC}" >&2
+                echo "Usage: dots claude diff" >&2
+                exit 1
+                ;;
+        esac
         ;;
     upgrade|up)
         echo -e "${BLUE}⬆️  Upgrading packages...${NC}"
@@ -367,7 +406,7 @@ case "${1:-status}" in
         # `npx skills add --force` re-clones each source at its latest default
         # branch (float-to-latest), so always run it — the install does its own
         # work; there's no cheap upstream-up-to-date probe to short-circuit on.
-        if ! bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
+        if ! SKILL_EXCLUDE_AGENTS="claude-code" bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
                 "$DOTFILES_DIR/skills/_registry.yaml" --force; then
             echo -e "${YELLOW}⚠️  Remote skills refresh failed (continuing)${NC}" >&2
         fi

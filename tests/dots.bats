@@ -175,3 +175,51 @@ STUB
     assert_success
     assert_output_contains "stub-dotsync argc=0 args=[]"
 }
+
+# Stub a dotfiles tree + a fake chezmoi on PATH for `dots claude diff`.
+# The chezmoi stub echoes its args (or the given body) so tests can assert the
+# targets/flags and drive the empty/nonzero code paths.
+stub_claude_diff() {
+    local stub_dir="$1" chezmoi_body="$2"
+    mkdir -p "$stub_dir/bin" "$stub_dir/chezmoi" "$TEST_HOME/fake-bin"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    printf '#!/bin/bash\n%s\n' "$chezmoi_body" > "$TEST_HOME/fake-bin/chezmoi"
+    chmod +x "$TEST_HOME/fake-bin/chezmoi"
+}
+
+@test "dots claude diff invokes chezmoi diff on ~/.claude with the repo source" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'echo "chezmoi-args=[$*]"'
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    assert_success
+    assert_output_contains "--source $stub_dir/chezmoi diff $HOME/.claude"
+}
+
+@test "dots claude diff prints in-sync message when chezmoi diff is empty" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'exit 0'  # no output, exit 0 == in sync
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    assert_success
+    assert_output_contains "in sync with the chezmoi source"
+}
+
+@test "dots claude diff propagates a nonzero chezmoi exit" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'exit 3'
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    [[ "$status" -eq 3 ]]
+    assert_output_contains "chezmoi diff failed (exit 3)"
+}
+
+@test "dots claude with an unknown action fails with usage" {
+    run dots claude bogus
+    assert_failure
+    assert_output_contains "Usage: dots claude diff"
+}
+
+@test "dots claude help mentions ~/.claude.json MCP drift is not covered" {
+    run dots help
+    assert_success
+    assert_output_contains "claude diff"
+    assert_output_contains ".claude.json"
+}

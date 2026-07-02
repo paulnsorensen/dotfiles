@@ -1,17 +1,22 @@
 #!/usr/bin/env bats
 # Behavioural tests for chezmoi/dot_claude/modify_settings.json — the modify_
-# script that makes ~/.claude/settings.json repo-authoritative on every apply.
+# script that makes ~/.claude/settings.json FULLY repo-authoritative on every
+# apply (spec: chezmoi-authoritative-claude, decision H1).
 #
-# The script reads the live file on stdin, reads the committed authoritative
-# source from $CHEZMOI_SOURCE_DIR/lib/claude-settings-authoritative.json, and
-# writes the merged result to stdout. These tests drive it directly (no real
-# chezmoi) by setting CHEZMOI_SOURCE_DIR to the repo's chezmoi dir.
+# The script reads the live file on stdin and composes the desired document
+# from $CHEZMOI_SOURCE_DIR/lib/claude-settings-authoritative.json (static
+# keys) + $CHEZMOI_SOURCE_DIR/.chezmoidata/claude.yaml (registry-authored
+# hooks / enabledPlugins / extraKnownMarketplaces / permissions lists). Live
+# drift on managed keys is WIPED; unknown live keys halt. These tests drive it
+# directly (no real chezmoi) by setting CHEZMOI_SOURCE_DIR to the repo's
+# chezmoi dir.
 
 load test_helper
 
 setup() {
     setup_test_env
     command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    command -v yq >/dev/null 2>&1 || skip "yq not installed"
     export SCRIPT="$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json"
     export CZ_SRC="$REAL_DOTFILES_DIR/chezmoi"
     export AUTH="$CZ_SRC/lib/claude-settings-authoritative.json"
@@ -28,15 +33,29 @@ $1
 STDIN"
 }
 
-@test "modify_settings: empty stdin emits the authoritative source (fresh machine)" {
+@test "modify_settings: empty stdin emits the composed desired document (fresh machine)" {
     run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
     [ "$status" -eq 0 ]
-    # Repo defaults present, incl. opus and the seeded official plugins.
+    # Static authoritative keys present.
     [ "$(jq -r '.model' "$OUT")" = "opus" ]
     [ "$(jq -r '.effortLevel' "$OUT")" = "medium" ]
+    # Registry-authored keys composed in.
     jq -e '.enabledPlugins["claude-md-management@claude-plugins-official"]' "$OUT" >/dev/null
-    # Equivalent (modulo formatting) to the committed authoritative source.
-    diff <(jq -S . "$AUTH") <(jq -S . "$OUT")
+    jq -e '.hooks.PreToolUse | length > 0' "$OUT" >/dev/null
+    jq -e '.permissions.allow | length > 0' "$OUT" >/dev/null
+    jq -e '.permissions.deny | index("Bash(sudo:*)")' "$OUT" >/dev/null
+    # ${HOME} expanded in registry string values (marketplace paths).
+    run jq -r '.extraKnownMarketplaces[].source.path' "$OUT"
+    # shellcheck disable=SC2016  # asserting the literal ${HOME} token was expanded away
+    [[ "$output" != *'${HOME}'* ]]
+    [[ "$output" == "$HOME"* ]]
+}
+
+@test "modify_settings: idempotent — feeding its own output back reproduces it" {
+    bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' <'$OUT' >'$OUT.2'"
+    [ "$status" -eq 0 ]
+    diff <(jq -S . "$OUT") <(jq -S . "$OUT.2")
 }
 
 @test "modify_settings: class-a drift is overwritten from source" {
@@ -48,26 +67,31 @@ STDIN"
     [ "$(jq -r '.effortLevel' "$OUT")" = "medium" ]
 }
 
-@test "modify_settings: ap-managed keys are preserved from live, not reset to source" {
-    # global@local + local marketplace + permissions.allow/deny are written by
-    # `ap install global` into the live file; they must survive the apply.
+@test "modify_settings: formerly-ap keys are registry-authored — live drift is WIPED" {
+    # Session-granted permissions, in-app plugin enables, and stray
+    # marketplaces are discarded on apply unless promoted to the registry
+    # (H1). The gate does NOT halt on them (dynamic-key subtrees + array
+    # entries), it wipes them.
     local live='{
       "model":"sonnet",
-      "permissions":{"defaultMode":"plan","allow":["Bash(ls:*)"],"deny":["Bash(rm:*)"]},
+      "permissions":{"defaultMode":"plan","allow":["Bash(evil:*)"],"deny":[]},
       "enabledPlugins":{"global@local":true},
       "extraKnownMarketplaces":{"local":{"source":{"source":"directory","path":"/x"}}}
     }'
     run_modify "$live"
     [ "$status" -eq 0 ]
-    # ap values retained
-    [ "$(jq -r '.permissions.allow[0]' "$OUT")" = "Bash(ls:*)" ]
-    [ "$(jq -r '.permissions.deny[0]' "$OUT")" = "Bash(rm:*)" ]
-    jq -e '.enabledPlugins["global@local"]' "$OUT" >/dev/null
-    jq -e '.extraKnownMarketplaces["local"]' "$OUT" >/dev/null
-    # class-a still authoritative: defaultMode + model overwritten, seed plugins kept
+    # live drift gone
+    run jq -e '.permissions.allow | index("Bash(evil:*)")' "$OUT"
+    [ "$status" -ne 0 ]
+    run jq -e '.enabledPlugins["global@local"]' "$OUT"
+    [ "$status" -ne 0 ]
+    run jq -e '.extraKnownMarketplaces["local"]' "$OUT"
+    [ "$status" -ne 0 ]
+    # registry values authored in
     [ "$(jq -r '.permissions.defaultMode' "$OUT")" = "auto" ]
     [ "$(jq -r '.model' "$OUT")" = "opus" ]
     jq -e '.enabledPlugins["claude-md-management@claude-plugins-official"]' "$OUT" >/dev/null
+    jq -e '.permissions.deny | length > 0' "$OUT" >/dev/null
 }
 
 @test "modify_settings: a value change to a known key is NOT treated as unknown" {
@@ -75,10 +99,13 @@ STDIN"
     [ "$status" -eq 0 ]
 }
 
-@test "modify_settings: extra permissions.allow entries are NOT treated as unknown" {
+@test "modify_settings: extra permissions.allow entries do not halt (but are wiped)" {
     run_modify '{"permissions":{"allow":["A","B","C"]}}'
     [ "$status" -eq 0 ]
-    [ "$(jq -r '.permissions.allow | length' "$OUT")" = "3" ]
+    # Output is the registry list, not the live one.
+    run jq -e '.permissions.allow | index("A")' "$OUT"
+    [ "$status" -ne 0 ]
+    jq -e '.permissions.allow | length > 3' "$OUT" >/dev/null
 }
 
 @test "modify_settings: unknown top-level key halts (non-zero, no write, named on stderr)" {
@@ -116,7 +143,8 @@ STDIN"
     # Simulate the fix: a source dir whose authoritative file already carries
     # the once-unknown key. The same live input now validates and writes.
     local tmpsrc="$TEST_HOME/cz"
-    mkdir -p "$tmpsrc/lib"
+    mkdir -p "$tmpsrc/lib" "$tmpsrc/.chezmoidata"
+    cp "$CZ_SRC/.chezmoidata/claude.yaml" "$tmpsrc/.chezmoidata/claude.yaml"
     jq '. + {someNewClaudeKey:"default"}' "$AUTH" > "$tmpsrc/lib/claude-settings-authoritative.json"
     run bash -c "CHEZMOI_SOURCE_DIR='$tmpsrc' sh '$SCRIPT' <<'STDIN' >'$OUT'
 {\"someNewClaudeKey\":\"x\"}
@@ -159,9 +187,10 @@ STDIN"
 setup_chezmoi_apply_env() {
     CZ_INT_SRC="$TEST_HOME/int-src"
     CZ_INT_DEST="$TEST_HOME/int-dest"
-    mkdir -p "$CZ_INT_SRC/dot_claude" "$CZ_INT_SRC/lib" "$CZ_INT_DEST/.claude" "$TEST_HOME/int-cfg"
+    mkdir -p "$CZ_INT_SRC/dot_claude" "$CZ_INT_SRC/lib" "$CZ_INT_SRC/.chezmoidata" "$CZ_INT_DEST/.claude" "$TEST_HOME/int-cfg"
     cp "$SCRIPT" "$CZ_INT_SRC/dot_claude/modify_settings.json"
     cp "$AUTH"   "$CZ_INT_SRC/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/.chezmoidata/claude.yaml" "$CZ_INT_SRC/.chezmoidata/claude.yaml"
     printf 'lib/\n' > "$CZ_INT_SRC/.chezmoiignore"
     cat > "$TEST_HOME/int-cfg/chezmoi.toml" <<TOML
 sourceDir = "$CZ_INT_SRC"
@@ -220,14 +249,13 @@ cz_apply() {
     [ "$status" -eq 0 ]
 }
 
-@test "modify_settings: permissions.ask/additionalDirectories are preserved, not flagged unknown" {
-    # ask is the third permission bucket alongside allow/deny; additionalDirectories
-    # is also app/ap-written. Neither is in the authoritative source, so without the
-    # ap-prefix entries the gate would falsely halt on a legitimate live key.
+@test "modify_settings: permissions.ask/additionalDirectories do not halt but are registry-authored" {
+    # Both buckets exist in the registry (possibly empty), so live entries are
+    # legitimate key-paths (no halt) — and are wiped like allow/deny drift.
     run_modify '{"permissions":{"ask":["Bash(rm:*)"],"additionalDirectories":["/tmp"]}}'
     [ "$status" -eq 0 ]
-    [ "$(jq -r '.permissions.ask[0]' "$OUT")" = "Bash(rm:*)" ]
-    [ "$(jq -r '.permissions.additionalDirectories[0]' "$OUT")" = "/tmp" ]
+    [ "$(jq -r '.permissions.ask | length' "$OUT")" = "0" ]
+    [ "$(jq -r '.permissions.additionalDirectories | length' "$OUT")" = "0" ]
     # class-a still authoritative
     [ "$(jq -r '.permissions.defaultMode' "$OUT")" = "auto" ]
 }
