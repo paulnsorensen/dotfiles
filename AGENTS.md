@@ -44,6 +44,7 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 - `dots sync` — deploy (symlinks, packages, claude source assembly + chezmoi apply). `dots sync refresh` forces package re-check.
 - `dots upgrade` (`up`) · `dots update` (pull + sync) · `dots status` · `dots doctor` (health + chezmoi + local-llm) · `dots test` (bats suite)
 - `dots rollback` — prints the git-backed undo path (`git revert` + `dots sync`); no stateful snapshots.
+- `dots claude diff` — preview pending chezmoi changes under `~/.claude` (settings.json + exact_ trees) before a sync overwrites them wholesale; does not cover `~/.claude.json` MCP drift (reconciles via the claude CLI).
 - `dots profile launch claude <name>` · `dots profile list` · `dots profile describe <name>`
 
 ### Agent config — edit a registry, then sync

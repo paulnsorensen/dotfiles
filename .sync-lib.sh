@@ -364,18 +364,24 @@ sync_claude_chezmoi_sources() {
     _cz_copy_encoded "$root/claude/hooks"     "$staging/exact_hooks" || return 1
     # Registry hooks (agents/hooks/registry.yaml): copy the script of every
     # claude-harness entry (default harness set includes claude).
-    local hook_script
-    while IFS= read -r hook_script; do
-        [[ -z "$hook_script" || "$hook_script" == "null" ]] && continue
-        if [[ ! -f "$root/$hook_script" ]]; then
-            log_error "hook registry references missing script: $hook_script"
-            return 1
-        fi
-        if ! cp -L "$root/$hook_script" "$staging/exact_hooks/$(_cz_encode_name "$(basename "$hook_script")" false true)"; then
-            log_error "claude source assembly: hook copy failed: $hook_script"
-            return 1
-        fi
-    done < <(yq -r '.hooks[] | select(.script != null) | select([(.harnesses // ["claude", "codex"])[] == "claude"] | any) | .script' "$root/agents/hooks/registry.yaml")
+    local hook_scripts hook_script
+    if ! hook_scripts=$(yq -r '.hooks[] | select(.script != null) | select([(.harnesses // ["claude", "codex"])[] == "claude"] | any) | .script' "$root/agents/hooks/registry.yaml"); then
+        log_error "claude source assembly: reading hook registry ($root/agents/hooks/registry.yaml) failed — hook assembly aborted"
+        return 1
+    fi
+    if [[ -n "$hook_scripts" ]]; then
+        while IFS= read -r hook_script; do
+            [[ -z "$hook_script" || "$hook_script" == "null" ]] && continue
+            if [[ ! -f "$root/$hook_script" ]]; then
+                log_error "hook registry references missing script: $hook_script"
+                return 1
+            fi
+            if ! cp -L "$root/$hook_script" "$staging/exact_hooks/$(_cz_encode_name "$(basename "$hook_script")" false true)"; then
+                log_error "claude source assembly: hook copy failed: $hook_script"
+                return 1
+            fi
+        done <<<"$hook_scripts"
+    fi
     _cz_copy_encoded "$root/agents/lib"       "$staging/exact_lib" || return 1
     _cz_copy_encoded "$root/claude/reference" "$staging/exact_reference" || return 1
     _cz_copy_encoded "$root/agents/reference" "$staging/exact_reference" || return 1

@@ -155,6 +155,16 @@ EXPECTED
     [ -f "$SRC/dot_claude/exact_hooks/runner.js" ]
 }
 
+@test "assembly: a yq failure on the hooks registry aborts loud (no silent zero-copy)" {
+    # Malformed YAML in the hooks registry makes the hooks-registry yq query
+    # exit nonzero. Assembly must abort and name the hook registry, not copy
+    # zero hooks and return success (the silent-swallow regression).
+    printf 'hooks:\n  broken: [unterminated\n' > "$ROOT/agents/hooks/registry.yaml"
+    run_assembly
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"hook registry"* ]]
+    [[ "$output" == *"agents/hooks/registry.yaml"* ]]
+}
 @test "assembly: reference merges claude/reference and agents/reference" {
     run_assembly
     [ "$status" -eq 0 ]
