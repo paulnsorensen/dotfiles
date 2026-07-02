@@ -5,22 +5,13 @@ the registries, how to tell the kinds of drift apart, and what heals each.
 This is the *why* behind the `/harness-doctor` skill and the renderer-level
 self-heal (legacy hooks + dropped MCPs).
 
-## The root cause: seed-once / merged files nothing prunes
+## Current state: global settings disconnected
 
-Most live config is fully owned by `ap` — it rewrites the plugin tree,
-claude's plugin `.mcp.json`, etc. wholesale on every `dots sync`. Drift lives
-in the files `ap` **merges into** rather than overwrites: chezmoi `create_`
-seeds and user-owned configs it reads-modifies-writes. The ones that bite:
+Non-isolated `ap install global` no longer read-modify-writes harness-global settings files. The live global config surfaces — `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.config/opencode/opencode.json`, `~/.cursor/mcp.json`, `~/.copilot/mcp-config.json`, and `~/.config/crush/crush.json` — are now chezmoi/user-owned surfaces. `ap` renders generated artifacts (plugin trees, agents, hooks, skills) and isolated-profile settings only; `agent-profile/agent_profile/compiled_types.py:17-20` keeps merged settings out of compiled manifests.
 
-- `~/.claude/settings.json` — `ap install global` only jq-*merges*
-  `enabledPlugins` + `extraKnownMarketplaces` (`claude.py:_merge_root_settings`),
-  preserving every other key.
-- `~/.codex/config.toml`, `~/.config/opencode/opencode.json`,
-  `~/.cursor/mcp.json`, `~/.copilot/mcp-config.json` — each seeded/user-owned;
-  `ap` merges MCP entries into them per render.
-- `~/.claude.json` — claude user-scope MCP registrations (`claude mcp add`).
+Historical drift still matters because older apply-state and older live files may contain entries that `ap` used to merge. `ap apply-compiled` now preserves those disconnected legacy paths if a prior state file still lists them, so migration removes ownership without deleting a live user settings file (`agent-profile/agent_profile/merged_settings_preservation.py:31-42`, `agent-profile/agent_profile/apply_compiled.py:151-171`).
 
-That merge-not-overwrite asymmetry is the drift engine. Two leftover kinds:
+The old merge-not-overwrite asymmetry caused two leftover kinds:
 
 **Legacy hooks.** Before the `ap` migration (commit **#217**, `feat(ap): add
 global profile + migrate settings.json to chezmoi seed`), the retired
@@ -49,56 +40,14 @@ The Claude-specific JS guards (`bash-guard.js`, `write-guard.js`, …), `rtk`,
 and any tmux hook are **settings-only and legit** — not managed by any render
 target, so they are *not* drift even though they live in `settings.json`.
 
-## The heal lives in the renderers — all harnesses alike
+## Historical self-heal vs current ownership
 
-Self-heal is a renderer responsibility, run on every `ap install` — not a
-bolt-on chezmoi script. Two reconcile passes:
+Renderer-level self-heal still describes how stale registry-managed entries should be removed **when a renderer owns that merged surface** (mostly isolated profiles and historical installs). It is no longer a blanket guarantee that `dots sync` prunes every live global settings file, because non-isolated global installs do not mutate those files anymore.
 
-### Legacy hooks (per-renderer, keyed off what it just wired)
+- **Legacy hooks** — Claude/Codex historical settings/config hooks should be removed from the live settings source that now owns the file. The old renderer cleanup logic was keyed off hooks it just wired, so it failed safe; after the global settings disconnect, treat remaining global hook drift as a chezmoi/live-settings migration item.
+- **Dropped MCPs** — `_reconcile_dropped_mcps` still expresses the right provenance rule: remove only servers a prior render wrote, never unrelated user MCPs. For disconnected global surfaces, the cleanup belongs to the new owner of that file (chezmoi template/modify script or manual CLI), not a blind renderer pass.
 
-- **claude** — `claude.py:_clean_legacy_settings_hooks` builds a per-event
-  signature set from the hooks it wired into `plugin.json` — a script basename
-  (for `${CLAUDE_PLUGIN_ROOT}/hooks/<base>`) or the full command string (moshi)
-  — and drops any `settings.json` hook whose command duplicates one, pruning at
-  the inner-hook level so a user command sharing a block survives, then pruning
-  emptied events.
-- **codex** — `codex.py:_clean_legacy_config_toml_hooks` does the equivalent
-  for `[[hooks.*]]` blocks in `config.toml`, matching managed basenames per
-  event.
-
-Keyed off the hooks the renderer *just produced*, so it self-extends (add a
-registry hook → it renders → stale copies auto-strip next sync) and fails safe
-(no managed hooks → no signatures → never strips blind). opencode/cursor/
-copilot receive no cross-harness registry hooks, so there's no hook drift there.
-
-### Dropped MCPs (install-level diff → per-renderer `prune_mcps`)
-
-`cli.py:_reconcile_dropped_mcps` snapshots the prior resolved manifest (cached
-as `merged_json` in `manifest.json`) before the render loop overwrites it,
-diffs it against the current manifest, and for each in-scope harness calls
-`renderer.prune_mcps(dropped_manifest, target)` — where `dropped_manifest`
-carries *only* the servers that fell out of the registry. Each renderer
-implements `prune_mcps` (the `Renderer` protocol) by reusing its own MCP-only
-removal:
-
-- **codex/opencode/cursor/copilot** — delegate to their existing MCP-only
-  `clean` path (the `dropped_manifest` has empty non-MCP fields, so clean's
-  other passes no-op); the dropped server is popped from the merged file.
-- **claude** — plugin `.mcp.json` is whole-file (no drift); only user-scope
-  registrations persist, so `prune_mcps` calls `_unregister_user_mcps` to
-  `claude mcp remove` exactly the dropped servers. No-op for plugin scope.
-
-Fires only when a prior install exists AND something dropped, so fresh renders
-stay byte-identical (golden-test safe). User-authored MCP entries survive —
-only servers a prior render wrote (still named in the prior manifest) are
-evicted.
-
-So the heal for **both** classes is just **`dots sync`** (which runs
-`ap install global`). Why renderer-level and not a chezmoi script: it's where
-codex already put the hook cleanup, it runs in the single `ap install` path (no
-`run_onchange` ordering hacks), and it's unit-tested in-process
-(`tests/test_claude_legacy_hook_cleanup.py`, `test_codex_legacy_hook_cleanup.py`,
-`test_mcp_reconcile.py`).
+The migration invariant is stricter than the old self-heal rule: removing `ap` ownership must not delete live global settings. `tests/test_compile_apply_preservation.py::test_apply_does_not_delete_disconnected_global_settings_from_prior_state` pins that.
 
 ## Known drift pattern: yq-appended keys absorbed by codex auto-sections
 
@@ -250,20 +199,16 @@ first `ap install global` run.
 2026-06-11. If the file reappears as untracked, verify the `.gitignore` entry
 is present.
 
-## Known drift pattern: staged `global` installs can mutate live Claude user MCP config
+## Historical drift pattern: staged `global` installs mutated live Claude user MCP config
 
-**Symptom**: `ap install global --target /tmp/...` used to look like a safe throwaway render, but still invoked `claude mcp remove/add --scope user` and rewrote `~/.claude.json` when `global` carried `mcp_scope: user`.[^staged-global-mcp]
+**Symptom**: `ap install global --target /tmp/...` once looked like a safe throwaway render, but still invoked `claude mcp remove/add --scope user` and rewrote `~/.claude.json` when `global` carried `mcp_scope: user`.[^staged-global-mcp]
 
-**Why it happens**: `global` deliberately sets `mcp_scope: user` so live Claude MCP tools keep bare `mcp__<server>__*` names instead of plugin-namespaced names.[^global-mcp-scope] The Claude renderer implements that by registering user-scope MCPs via the Claude CLI and returning without writing plugin `.mcp.json`.[^claude-user-scope-render]
+**Old fix**: explicit-target installs were staged as plugin-scope so harness-doctor could render safely. **Current fix**: Claude user-scope MCP registration is disconnected entirely; `_write_mcp_json` returns for `mcp_scope: user` and `user_mcp_registrations()` returns `[]`, so `ap` compiled manifests no longer request `claude mcp add` for global installs.[^claude-user-scope-disconnected]
 
-**Fix**: Explicit-target installs are now treated as staging for `mcp_scope: user`: `cmd_install` renders with `mcp_scope: plugin`, records that staged manifest shape, and never calls the Claude CLI. Live installs without `--target` keep user-scope registration.[^staged-global-fix]
-
-**Detection**: During harness-doctor, rendering `global` into `/tmp` is safe after the fix; before that fix, render `base` for comparison.
+**Detection**: Any live `~/.claude.json` MCP registration now belongs to Claude/manual/chezmoi ownership, not a fresh `ap install global` side effect.
 
 [^staged-global-mcp]: harness-doctor run on 2026-06-24; `ap install global --target /tmp/harness-doctor-global.nH8lCY` modified `/home/paul/.claude.json` for tilth, context7, tavily, serena, and hallouminate.
-[^global-mcp-scope]: profiles/global/profile.yaml:65-76
-[^claude-user-scope-render]: agent-profile/agent_profile/renderers/claude.py:488-495,517-538
-[^staged-global-fix]: agent-profile/agent_profile/cli.py:272-307; agent-profile/tests/test_mcp_reconcile.py:test_explicit_target_user_scope_stages_plugin_mcp_without_claude_cli
+[^claude-user-scope-disconnected]: agent-profile/agent_profile/renderers/claude.py:516-540; agent-profile/tests/test_renderer_claude.py:test_user_scope_render_does_not_register_via_cli; agent-profile/tests/test_compile_command.py:test_compile_user_scope_stays_disconnected_from_live_config
 
 ## Gotcha: index drift is its own drift class
 

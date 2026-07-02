@@ -2,7 +2,7 @@
 
 GitHub's coding-agent CLI. Config lives under `~/.copilot/` and (project-scoped) `.github/`. Docs root: [docs.github.com/en/copilot](https://docs.github.com/en/copilot/how-tos/copilot-cli).
 
-`ap`'s copilot renderer (`renderers/copilot.py`) writes agent/skill/hook artifacts into a `.github/` layout and merges MCP servers into `~/.copilot/mcp-config.json`. The MCP config is also templated by chezmoi (`private_dot_copilot/mcp-config.json.tmpl`, env-rendered API keys).
+`ap`'s copilot renderer (`renderers/copilot.py`) writes project-scoped agent/skill/hook artifacts into a `.github/` layout. It no longer mutates live `~/.copilot/mcp-config.json`; durable MCP defaults belong to the chezmoi template (`private_dot_copilot/mcp-config.json.tmpl`, env-rendered API keys) or Copilot's own runtime state.
 
 ## Capabilities, docs, and repo wiring
 
@@ -10,7 +10,7 @@ GitHub's coding-agent CLI. Config lives under `~/.copilot/` and (project-scoped)
 |---|---|---|
 | Hooks | <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks> | `agents/hooks/registry.yaml` → `.github/hooks/<n>.json` (when copilot is in the hook's `harnesses`). |
 | Sub-agents | <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/create-custom-agents-for-cli> | `agents/registry.yaml` → `.github/agents/<n>.agent.md`. Model overrides ignored. |
-| MCP | <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers> | `agents/mcp/registry.yaml` → `~/.copilot/mcp-config.json` (`mcpServers` schema; stdio/HTTP/SSE). |
+| MCP | <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers> | Chezmoi template / user-owned `~/.copilot/mcp-config.json` (`mcpServers` schema; stdio/HTTP/SSE). `agents/mcp/registry.yaml` still feeds isolated/profile renders where a renderer owns the target, but non-isolated `ap install global` does not mutate this live file. |
 | System prompt / instructions | [precedence](https://docs.github.com/en/copilot/concepts/prompting/response-customization) · [how-to](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions) | Repo-wide `.github/copilot-instructions.md`, plus path-specific `*.instructions.md` (`applyTo` frontmatter) / agent / `AGENTS.md`. **Precedence: Personal > Repository (path-specific → repo-wide → agent) > Organization** — the `response-customization` concept page is the canonical precedence doc; the how-to page lists the instruction types but has no precedence section. (The repo's `agents/preamble.md` wiring targets Claude/Codex/opencode; Copilot reads `AGENTS.md`.) |
 | Settings / config | <https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference> | `~/.copilot/` layout + `settings.json`. (`config.json` holds auto-managed trusted-folders/permissions — see [configure-copilot-cli](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/configure-copilot-cli).) |
 | Skills | <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills> | `skills/` → `.github/skills/<n>/`. Copilot reads `.github/skills`, `.claude/skills`, `.agents/skills`, or `~/.copilot/skills`. |

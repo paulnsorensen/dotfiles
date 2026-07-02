@@ -116,6 +116,19 @@ ccp() {
 cxp() { dots profile launch codex codex-plan "$@"; }
 cxc() { dots profile launch codex codex-code "$@"; }
 
+# Dotfiles OMP launch shortcut — pass the repo-local overlay explicitly so it works
+# from subdirectories; OMP project prompt/settings discovery is cwd-scoped.
+pi() {
+    local omp_dir="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/.omp"
+    local config="$omp_dir/config.yml"
+    local append="$omp_dir/APPEND_SYSTEM.md"
+    if [[ ! -r "$config" || ! -r "$append" ]]; then
+        echo "pi: missing OMP overlay files under $omp_dir" >&2
+        return 1
+    fi
+    command omp --config "$config" --append-system-prompt "$append" "$@"
+}
+
 # Copilot CLI launch wrapper — injects the canonical allow/deny lists as
 # --allow-tool / --deny-tool flags (lever 1). Copilot has no config-file
 # surface for per-command rules, so the rules only apply when Copilot is
