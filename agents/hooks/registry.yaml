@@ -46,13 +46,6 @@
 #                    same as an absent field). Codex ignores it.
 #   description    — human-readable purpose
 hooks:
-  jmux-attention:
-    event: Stop
-    script: agents/hooks/jmux-attention.sh
-    harnesses: [claude, codex]
-    timeout: 5
-    description: Mark the current jmux tmux session as needing attention when an agent stops
-
   session-start-cheese-flair:
     event: SessionStart
     script: agents/hooks/session-start-cheese-flair.sh
@@ -132,7 +125,7 @@ hooks:
       - agents/lib/tool-reroute/search.js
       - agents/lib/tool-reroute/cd-git.js
       - agents/lib/tool-reroute/io.js
-    harnesses: [claude, codex]
+    harnesses: [claude]
     matcher: "Bash|Grep|Glob"
     timeout: 5
     description: Rewrite wrong-tool Bash/Grep/Glob calls to tilth/wt-git; delegate the rest to rtk

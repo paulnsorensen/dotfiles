@@ -274,12 +274,12 @@ RTK
 
 # ── deploy wiring ────────────────────────────────────────────────────────
 
-@test "tool-reroute: registry registers tool-reroute for claude+codex matching Bash|Grep|Glob" {
+@test "tool-reroute: registry registers tool-reroute for claude matching Bash|Grep|Glob" {
     local reg="$REAL_DOTFILES_DIR/agents/hooks/registry.yaml"
     [[ "$(yq -r '.hooks.tool-reroute.event' "$reg")" == "PreToolUse" ]]
     [[ "$(yq -r '.hooks.tool-reroute.script' "$reg")" == "agents/hooks/tool-reroute.sh" ]]
     [[ "$(yq -r '.hooks.tool-reroute.matcher' "$reg")" == "Bash|Grep|Glob" ]]
-    [[ "$(yq -r '.hooks.tool-reroute.harnesses | join(",")' "$reg")" == "claude,codex" ]]
+    [[ "$(yq -r '.hooks.tool-reroute.harnesses | join(",")' "$reg")" == "claude" ]]
     [[ "$(yq -r '.hooks.tool-reroute.shared_assets[0]' "$reg")" == "agents/lib/tool-reroute.js" ]]
     [[ "$(yq -r '.hooks.tool-reroute.shared_assets | length' "$reg")" -ge 5 ]]
 }

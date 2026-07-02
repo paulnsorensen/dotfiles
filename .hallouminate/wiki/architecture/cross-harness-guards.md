@@ -22,11 +22,8 @@ The non-Claude adapters resolve the shared CJS lib via `$DOTFILES_DIR`. opencode
 
 ## Claude-only pre-tool guards
 
-Beyond the cross-harness git-guard, Claude wires several `PreToolUse` guards (in `claude/hooks/`):
+Beyond the cross-harness git-guard, Claude wires a `PreToolUse` guard (in `claude/hooks/`):
 
-- **`phantom-file-check.js`** (Read) — catches reads of non-existent / hallucinated paths.
-- **`write-guard.js`** + **`worktree-guard.js`** (Edit/Write/MultiEdit/`tilth_write`) — `worktree-guard` is opt-out: it enforces inside a git worktree by default. `CLAUDE_WORKTREE_GUARD=0` disables; `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2` extends the allowlist (worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, and any `.cheese/` dir are always allowed).
-- **`bash-guard.js`** (Bash) — blocks dangerous `rm -rf`.
-- **`review-reply-guard.js`** — guards PR review-reply calls.
+- **`worktree-guard.js`** (Edit/Write/MultiEdit/`tilth_write`) — opt-out: it enforces inside a git worktree by default. `CLAUDE_WORKTREE_GUARD=0` disables; `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2` extends the allowlist (worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, and any `.cheese/` dir are always allowed).
 
 The **secret-protection guard** (`sensitive-file-guard`) is the other cross-harness guard, declared in the `agents/hooks/` registry rather than here — it blocks `.env`/keys/credentials, is fail-open, and honors `CLAUDE_SENSITIVE_GUARD` / `CLAUDE_SENSITIVE_GUARD_ALLOW`. See [[agents-dir]] for the hook-registry mechanics.

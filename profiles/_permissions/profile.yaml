@@ -83,7 +83,7 @@ settings:
     - WebFetch
     - Skill
   # PoC disallow-list (walk-back-able). Two groups:
-  #   1. Search/IO routing. The tool-reroute hook (claude+codex) now OWNS this:
+  #   1. Search/IO routing. The tool-reroute hook (claude-only) now OWNS this:
   #      it REWRITES grep/rg/ag/ack/cat/find to tilth and DELEGATES the rest to
   #      rtk, so grep/ag/ack and the Grep/Glob tools are no longer denied here.
   #      Un-denying them on the four hookless harnesses (cursor/copilot/opencode)
@@ -91,10 +91,10 @@ settings:
   #      allow stays removed (a stray rg prompts rather than running unfiltered).
   #      Only the `rtk proxy git grep` tunnel stays denied below: the lexer's
   #      rtk-strip turns it into `git grep`, which has no tilth rewrite target.
-  #   2. Cross-harness safety floor (porting bash-guard's spirit to the four
-  #      hookless harnesses). `Bash(rm -rf:*)` is COARSER than bash-guard (it
-  #      blocks even safe relative `rm -rf node_modules`); for Claude the hook
-  #      stays the precise layer, this coarse deny is the cross-harness floor.
+  #   2. Cross-harness safety floor (porting the retired bash-guard hook's
+  #      spirit to every harness). `Bash(rm -rf:*)` is COARSER than bash-guard
+  #      was (it blocks even safe relative `rm -rf node_modules`); with the
+  #      hook removed, this coarse deny is the floor for Claude too.
   permissions_deny:
     - Bash(rtk proxy git grep:*)
     - Bash(sudo:*)
