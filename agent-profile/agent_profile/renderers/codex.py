@@ -95,17 +95,21 @@ class CodexRenderer:
         self._write_agents(manifest, target, out_files)
         self._write_skills(manifest, target, out_files)
         self._write_hooks(manifest, target, out_files, logical_root)
-        self._write_mcps(manifest, target)
+        if manifest.isolated:
+            self._write_mcps(manifest, target)
         self._render_native_plugins(manifest)
         self._write_rules(manifest, target, out_files)
-        self._write_mcp_tool_scopes(manifest, target)
+        if manifest.isolated:
+            self._write_mcp_tool_scopes(manifest, target)
         self._warn_commands(manifest)
         return out_files
 
     def clean(self, manifest: Manifest, target: Path) -> None:
-        self._clean_mcps(manifest, Path(target))
+        if manifest.isolated:
+            self._clean_mcps(manifest, Path(target))
         self._clean_rules(Path(target))
-        self._clean_mcp_tool_scopes(manifest, Path(target))
+        if manifest.isolated:
+            self._clean_mcp_tool_scopes(manifest, Path(target))
         self._clean_native_plugins(manifest)
 
     def prune_mcps(self, manifest: Manifest, target: Path) -> None:
@@ -522,6 +526,8 @@ class CodexRenderer:
         from each scoped server, pruning a server table only if it now has no
         keys left (so a server still carrying its user ``command``/``args``
         survives)."""
+        if not manifest.isolated:
+            return
         managed = _managed_mcp_servers(manifest)
         if not managed:
             return
@@ -601,6 +607,8 @@ class CodexRenderer:
     # Remove our [mcp_servers] entries by name. Drop the empty table, and
     # delete the file entirely when nothing else remains.
     def _clean_mcps(self, manifest: Manifest, target: Path) -> None:
+        if not manifest.isolated:
+            return
         cfg = Path(str(target).rstrip("/")) / ".codex" / "config.toml"
         if not cfg.is_file():
             return

@@ -55,47 +55,55 @@ def _install(env, name: str) -> int:
 # ─── integration: drop one MCP, re-install ───────────────────────────────────
 
 
-def test_dropped_mcp_evicted_from_every_harness(env, capsys, prod_renderers):
-    # Install srv1 + srv2 across the four merge-target harnesses.
+def test_nonisolated_install_leaves_live_mcp_configs_unmanaged(
+    env, capsys, prod_renderers
+):
+    # Seed user-owned live MCP config files: non-isolated installs must leave
+    # them alone even when the profile's registry set changes across re-installs.
+    t = env.target
+    cfg = t / ".codex" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[mcp_servers.user-srv]\ncommand = "/usr/bin/env"\n')
+    oc = t / "opencode.json"
+    oc.write_text(json.dumps({"mcp": {"user-srv": {"command": ["/usr/bin/env"]}}}) + "\n")
+    cur = t / ".cursor" / "mcp.json"
+    cur.parent.mkdir(parents=True, exist_ok=True)
+    cur.write_text(json.dumps({"mcpServers": {"user-srv": {"command": "/usr/bin/env"}}}) + "\n")
+    cop = t / ".copilot" / "mcp-config.json"
+    cop.parent.mkdir(parents=True, exist_ok=True)
+    cop.write_text(json.dumps({"mcpServers": {"user-srv": {"command": "/usr/bin/env"}}}) + "\n")
+    expected = {
+        cfg: cfg.read_text(),
+        oc: oc.read_text(),
+        cur: cur.read_text(),
+        cop: cop.read_text(),
+    }
+
     write_profile(env.profiles, "p", _yaml("p", ["srv1", "srv2"]))
     assert _install(env, "p") == 0
     capsys.readouterr()
-    t = env.target
 
-    # A user-authored MCP lands in codex config.toml out of band — it must
-    # survive the reconcile (we only evict servers WE previously wrote).
-    cfg = t / ".codex" / "config.toml"
-    doc = tomlkit.parse(cfg.read_text())
-    doc["mcp_servers"]["user-srv"] = {"command": "/usr/bin/env"}
-    cfg.write_text(tomlkit.dumps(doc))
-
-    # Re-install with srv2 removed from the registry.
     write_profile(env.profiles, "p", _yaml("p", ["srv1"]))
     assert _install(env, "p") == 0
     capsys.readouterr()
 
-    codex = tomlkit.parse((t / ".codex/config.toml").read_text())["mcp_servers"]
-    assert "srv2" not in codex
-    assert "srv1" in codex
-    assert "user-srv" in codex  # user entry preserved
-
-    oc = json.loads((t / "opencode.json").read_text())["mcp"]
-    assert "srv2" not in oc and "srv1" in oc
-
-    cur = json.loads((t / ".cursor/mcp.json").read_text())["mcpServers"]
-    assert "srv2" not in cur and "srv1" in cur
-
-    cop = json.loads((t / ".copilot/mcp-config.json").read_text())["mcpServers"]
-    assert "srv2" not in cop and "srv1" in cop
+    for path, original in expected.items():
+        assert path.read_text() == original, f"{path} should stay user-owned"
 
 
 def test_fresh_install_prunes_nothing(env, capsys, prod_renderers):
     write_profile(env.profiles, "p", _yaml("p", ["srv1", "srv2"]))
     assert _install(env, "p") == 0
-    capsys.readouterr()
+    out = capsys.readouterr().out
+    assert "pruned dropped MCP" not in out
     t = env.target
-    codex = tomlkit.parse((t / ".codex/config.toml").read_text())["mcp_servers"]
-    assert {"srv1", "srv2"} <= set(codex.keys())
+    for merged in (
+        ".codex/config.toml",
+        "opencode.json",
+        ".cursor/mcp.json",
+        ".copilot/mcp-config.json",
+    ):
+        assert not (t / merged).exists(), f"{merged} should stay unmanaged"
 
 
 def test_reconcile_reports_pruned_names(env, capsys, prod_renderers):
@@ -200,17 +208,17 @@ def test_dropped_mcp_unregistered_from_claude_user_scope(
     assert install_profile(["install", "g"]) == 0
     capsys.readouterr()
 
-    # Reconcile must `claude mcp remove srv2` and never re-add it.
+    # Reconcile must `claude mcp remove srv2` and never register anything: live
+    # user-scope ownership moved to chezmoi, so ap only removes stale entries.
     assert [
         c for c in calls if "remove" in c and "srv2" in c
     ], f"expected `claude mcp remove srv2`, got {calls}"
     assert not [
         c for c in calls if "add" in c and "srv2" in c
     ], f"dropped srv2 must not be re-registered, got {calls}"
-    # The survivor is still re-registered.
-    assert [
+    assert not [
         c for c in calls if "add" in c and "srv1" in c
-    ], f"survivor srv1 must stay registered, got {calls}"
+    ], f"user-scope survivors are chezmoi-owned now, got {calls}"
 
 
 def test_explicit_target_user_scope_stages_plugin_mcp_without_claude_cli(
@@ -259,19 +267,16 @@ def _yaml_scoped(name: str, specs: dict[str, list[str]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def test_mcp_scoped_to_no_harnesses_is_pruned(env, capsys, prod_renderers):
-    # srv1 + srv2 both render into the merge-target harnesses.
+def test_nonisolated_scoped_mcp_changes_leave_live_configs_unmanaged(
+    env, capsys, prod_renderers
+):
     write_profile(env.profiles, "p", _yaml("p", ["srv1", "srv2"]))
     assert _install(env, "p") == 0
     capsys.readouterr()
     t = env.target
-    cur = json.loads((t / ".cursor/mcp.json").read_text())["mcpServers"]
-    assert "srv2" in cur  # precondition: srv2 was rendered into cursor
+    assert not (t / ".cursor/mcp.json").exists()
+    assert not (t / ".copilot/mcp-config.json").exists()
 
-    # Re-install with srv2 scoped OUT of every harness (harnesses: []). It stays
-    # in manifest.mcps but should no longer render anywhere — the reconcile must
-    # evict the stale entry a prior render merged into cursor/copilot. The bug:
-    # current_names was global, so srv2 (still in manifest.mcps) never dropped.
     write_profile(
         env.profiles,
         "p",
@@ -283,12 +288,8 @@ def test_mcp_scoped_to_no_harnesses_is_pruned(env, capsys, prod_renderers):
     assert _install(env, "p") == 0
     capsys.readouterr()
 
-    cur = json.loads((t / ".cursor/mcp.json").read_text())["mcpServers"]
-    assert "srv2" not in cur, "srv2 scoped to harnesses:[] must be pruned from cursor"
-    assert "srv1" in cur, "survivor srv1 must stay"
-
-    cop = json.loads((t / ".copilot/mcp-config.json").read_text())["mcpServers"]
-    assert "srv2" not in cop, "srv2 scoped to harnesses:[] must be pruned from copilot"
+    assert not (t / ".cursor/mcp.json").exists()
+    assert not (t / ".copilot/mcp-config.json").exists()
 
 
 def _yaml_mcp_tool_scopes(name: str, allow_rules: list[str]) -> str:
@@ -306,7 +307,9 @@ def _yaml_mcp_tool_scopes(name: str, allow_rules: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def test_dropped_codex_mcp_tool_scope_is_pruned(env, capsys, prod_renderers):
+def test_nonisolated_codex_mcp_tool_scope_install_writes_no_config(
+    env, capsys, prod_renderers
+):
     write_profile(
         env.profiles,
         "p",
@@ -316,14 +319,10 @@ def test_dropped_codex_mcp_tool_scope_is_pruned(env, capsys, prod_renderers):
     capsys.readouterr()
 
     cfg = env.target / ".codex/config.toml"
-    first = tomlkit.parse(cfg.read_text())
-    assert first["mcp_servers"]["srv1"]["enabled_tools"] == ["read", "write"]
+    assert not cfg.exists()
 
     write_profile(env.profiles, "p", _yaml_mcp_tool_scopes("p", []))
     assert _install(env, "p") == 0
     capsys.readouterr()
 
-    after = tomlkit.parse(cfg.read_text())
-    assert "enabled_tools" not in after["mcp_servers"]["srv1"]
-    assert "disabled_tools" not in after["mcp_servers"]["srv1"]
-    assert after["mcp_servers"]["srv1"]["command"] == "/bin/true"
+    assert not cfg.exists()

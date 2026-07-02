@@ -254,14 +254,18 @@ def test_cmd_perms_missing_fragment_writes_nothing(tmp_path, env):
     assert not (tmp_path / ".codex").exists()
 
 
-def test_claude_project_perms_no_regression_render_unchanged(tmp_path):
-    """WHY: adding render_project_permissions must not alter ClaudeRenderer.render()
-    — the user-level floor render path is additive-only; this verifies the
-    existing _merge_root_settings path still writes permissions.allow."""
+def test_claude_render_keeps_nonisolated_permissions_out_of_root_settings(tmp_path):
+    """WHY: ``render_project_permissions`` is now the only root-settings writer.
+
+    A normal non-isolated ``ClaudeRenderer.render()`` still writes the plugin
+    tree permission surface, but it must leave ``.claude/settings.json`` alone.
+    """
     m = _minimal_manifest(allow=["Edit"])
-    # render() calls _merge_root_settings which writes settings.json at target.
     ClaudeRenderer().render(m, tmp_path)
-    data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    assert not (tmp_path / ".claude" / "settings.json").exists()
+    data = json.loads(
+        (tmp_path / ".claude" / "plugins" / "local" / "_permissions" / "settings.json").read_text()
+    )
     assert data["permissions"]["allow"] == ["Edit"]
 
 

@@ -19,6 +19,7 @@ def _manifest(tmp_path: Path) -> Manifest:
     (src / "hooks" / "guard.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
     return Manifest(
         name="crushy",
+        isolated=True,
         mcps=[
             {
                 "name": "stdio-one",
@@ -71,6 +72,22 @@ def test_implements_renderer_protocol():
     assert isinstance(renderer, Renderer)
     assert renderer.name == "crush"
 
+
+def test_nonisolated_manifest_leaves_crush_config_unmanaged(tmp_path: Path):
+    target = tmp_path / "target"
+    cfg_path = target / ".config" / "crush" / "crush.json"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    seeded = {"mcp": {"user": {"type": "stdio", "command": "keep"}}}
+    cfg_path.write_text(json.dumps(seeded) + "\n")
+    manifest = Manifest(
+        name="live",
+        mcps=[{"name": "stdio-one", "command": "npx", "harnesses": ["crush"]}],
+    )
+    renderer = CrushRenderer()
+    assert renderer.render(manifest, target) == []
+    assert json.loads(cfg_path.read_text()) == seeded
+    renderer.clean(manifest, target)
+    assert json.loads(cfg_path.read_text()) == seeded
 
 def test_render_merges_mcp_and_hooks(tmp_path: Path):
     manifest = _manifest(tmp_path)
@@ -167,6 +184,7 @@ def test_render_writes_nothing_for_hooks_without_pretooluse(tmp_path: Path):
     (src / "hooks" / "guard.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
     manifest = Manifest(
         name="crushy",
+        isolated=True,
         mcps=[],
         hooks=[
             {

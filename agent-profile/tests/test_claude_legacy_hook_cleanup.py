@@ -45,6 +45,7 @@ def _manifest_with_hooks(src: Path) -> Manifest:
     return Manifest(
         name="global",
         description="t",
+        isolated=True,
         hooks=[
             {
                 "name": "session-start-cheese-flair",

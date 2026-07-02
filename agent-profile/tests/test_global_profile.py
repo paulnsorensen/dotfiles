@@ -99,7 +99,6 @@ def test_parse_marketplaces_outermost_wins(env):
 
 
 def _seed_settings(target: Path, content: dict) -> Path:
-    """Write a chezmoi-equivalent seed at ``<target>/.claude/settings.json``."""
     path = target / ".claude" / "settings.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(content, indent=2) + "\n")
@@ -107,8 +106,40 @@ def _seed_settings(target: Path, content: dict) -> Path:
 
 
 def _bare_manifest(**kwargs) -> Manifest:
-    """Build a Manifest with just enough fields to drive the renderer."""
+    kwargs.setdefault("isolated", True)
     return Manifest(name=kwargs.pop("name", "global"), **kwargs)
+
+def test_claude_renderer_nonisolated_render_skips_root_settings(tmp_path):
+    manifest = _bare_manifest(
+        isolated=False,
+        enabled_plugins={"global@local": True},
+        marketplaces={"local": "/opt/local"},
+        settings={"permissions_allow": ["Edit"], "permissions_deny": ["Grep"]},
+    )
+    ClaudeRenderer().render(manifest, tmp_path)
+    assert not (tmp_path / ".claude" / "settings.json").exists()
+
+
+def test_claude_renderer_nonisolated_clean_leaves_root_settings_untouched(tmp_path):
+    settings = _seed_settings(
+        tmp_path,
+        {
+            "enabledPlugins": {"user-plugin@user-mkt": True},
+            "extraKnownMarketplaces": {
+                "user-mkt": {"source": {"source": "github", "repo": "u/u"}}
+            },
+            "permissions": {"allow": ["Read"], "deny": ["Bash(sudo:*)"]},
+        },
+    )
+    manifest = _bare_manifest(
+        isolated=False,
+        enabled_plugins={"global@local": True},
+        marketplaces={"local": "/opt/local"},
+        settings={"permissions_allow": ["Edit"], "permissions_deny": ["Grep"]},
+    )
+    before = settings.read_text()
+    ClaudeRenderer().clean(manifest, tmp_path)
+    assert settings.read_text() == before
 
 
 def test_claude_renderer_adds_enabledplugins(tmp_path):
@@ -182,10 +213,7 @@ def test_local_marketplace_resolves_enabled_plugin_end_to_end(tmp_path, monkeypa
         tmp_path,
     )
 
-    settings = json.loads((tmp_path / ".claude/settings.json").read_text())
-    market_path = Path(
-        settings["extraKnownMarketplaces"]["local"]["source"]["path"]
-    )
+    market_path = tmp_path / ".claude" / "plugins" / "local"
     # The registered marketplace path holds the manifest.
     assert (market_path / ".claude-plugin" / "marketplace.json").is_file()
     mdata = json.loads(

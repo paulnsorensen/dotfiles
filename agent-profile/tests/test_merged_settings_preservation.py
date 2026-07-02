@@ -43,7 +43,7 @@ def _manifest(*files: CompiledFile) -> CompiledManifest:
 
 
 def test_merged_settings_record_is_user_owned():
-    merged = _file(".claude/settings.json", generated=False)
+    merged = _file("merged/config.json", generated=False)
 
     assert is_user_owned_merged(merged) is True
 
@@ -67,37 +67,36 @@ def test_generated_defaults_true_so_records_are_reconcilable_by_default():
     assert is_user_owned_merged(default) is False
 
 
-def test_preserved_paths_lists_only_merged_settings():
+def test_preserved_paths_lists_only_user_owned_merged_records():
     manifest = _manifest(
-        _file(".claude/settings.json", generated=False),
+        _file("merged/config.json", generated=False),
         _file(".claude/agents/reviewer.md", generated=True),
-        _file(".codex/config.toml", generated=False),
+        _file("merged/other.toml", generated=False),
     )
 
     assert preserved_paths(manifest) == frozenset(
-        {".claude/settings.json", ".codex/config.toml"}
+        {"merged/config.json", "merged/other.toml"}
     )
 
 
 def test_apply_reconcile_never_deletes_user_owned_merged_settings():
-    # Acceptance: a merged settings file present in deletion candidates must be
-    # dropped from the safe-to-delete set so apply-compiled cannot remove it,
-    # while a dropped generated fragment stays eligible for deletion.
-    manifest = _manifest(_file(".claude/settings.json", generated=False))
+    # Acceptance: any generated=False record in the manifest is preserved from
+    # reconcile deletion, while dropped generated files stay eligible.
+    manifest = _manifest(_file("merged/config.json", generated=False))
     candidates = [
-        ".claude/settings.json",  # user-owned merged -> preserve
+        "merged/config.json",  # user-owned merged -> preserve
         ".claude/agents/stale.md",  # generated, dropped from manifest -> delete
     ]
 
     safe_to_delete = filter_preserved(candidates, manifest)
 
-    assert ".claude/settings.json" not in safe_to_delete
+    assert "merged/config.json" not in safe_to_delete
     assert safe_to_delete == [".claude/agents/stale.md"]
 
 
 def test_filter_preserved_preserves_input_order():
-    manifest = _manifest(_file(".claude/settings.json", generated=False))
-    candidates = ["b.md", ".claude/settings.json", "a.md"]
+    manifest = _manifest(_file("merged/config.json", generated=False))
+    candidates = ["b.md", "merged/config.json", "a.md"]
 
     assert filter_preserved(candidates, manifest) == ["b.md", "a.md"]
 
@@ -105,7 +104,7 @@ def test_filter_preserved_preserves_input_order():
 def test_works_on_json_manifest_mappings():
     # ap apply-compiled reads the manifest as JSON; the dataclass form is not
     # guaranteed at the call site, so mapping records must behave identically.
-    merged = {"relative_path": ".claude/settings.json", "generated": False}
+    merged = {"relative_path": "merged/config.json", "generated": False}
     generated = {"relative_path": ".claude/hooks.json", "generated": True}
     unmarked = {"relative_path": ".claude/x"}
 
@@ -114,9 +113,9 @@ def test_works_on_json_manifest_mappings():
     assert is_user_owned_merged(unmarked) is False
 
     manifest = {"files": [merged, generated, unmarked]}
-    assert preserved_paths(manifest) == frozenset({".claude/settings.json"})
+    assert preserved_paths(manifest) == frozenset({"merged/config.json"})
     assert filter_preserved(
-        [".claude/settings.json", ".claude/hooks.json"], manifest
+        ["merged/config.json", ".claude/hooks.json"], manifest
     ) == [".claude/hooks.json"]
 
 

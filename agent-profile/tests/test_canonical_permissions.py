@@ -121,36 +121,36 @@ def opencode_global_manifest():
 def test_opencode_global_resolves_canonical_permissions_at_opencode_target(
     opencode_global_manifest,
 ):
-    """``opencode-global`` stays on the live opencode path: target_default
-    resolves to ``$HOME/.config/opencode`` and ``_permissions`` contributes
-    the canonical allow + deny floor."""
+    """``opencode-global`` still targets ``$HOME/.config/opencode`` and carries
+    the canonical live safety + secret-protection floor.
+
+    Search-tool rerouting moved out of the deny list and into hooks/prompting, so
+    only the coarse cross-harness safety rules plus secret guards remain here.
+    """
     assert opencode_global_manifest.target_default == "$HOME/.config/opencode"
     allow = set(opencode_global_manifest.settings.get("permissions_allow", []))
     deny = set(opencode_global_manifest.settings.get("permissions_deny", []))
     for rule in ("Bash(git:*)", "Edit"):
         assert rule in allow
-    for rule in ("Grep", "Read(.env)", "Read(**/.aws/credentials)"):
+    for rule in ("Bash(rm -rf:*)", "Read(.env)", "Read(**/.aws/credentials)"):
         assert rule in deny
+    assert "Grep" not in deny
 
 def test_global_resolves_canonical_allow_and_deny(global_manifest):
-    """``global`` resolves both canonical lists via the ``_permissions``
-    include. The deny list carries the cross-harness safety floor plus
-    secret-protection rules (keys, credentials) that opencode's defaults
-    don't cover."""
+    """``global`` resolves both canonical lists via ``_permissions``.
+
+    The deny channel now carries only the cross-harness safety floor plus the
+    secret-protection rules; search-tool rerouting moved out of the hard deny
+    list and into the tool-routing layer.
+    """
     allow = global_manifest.settings.get("permissions_allow", [])
     deny = global_manifest.settings.get("permissions_deny", [])
-    # Safety floor + code-intel-tool forcing (the original 7 entries).
     for rule in (
-        "Bash(ack:*)",
-        "Bash(ag:*)",
-        "Bash(grep:*)",
+        "Bash(rtk proxy git grep:*)",
         "Bash(rm -rf:*)",
         "Bash(sudo:*)",
-        "Glob",
-        "Grep",
     ):
         assert rule in deny
-    # Secret-protection deny rules (keys, credentials, cert files).
     for rule in (
         "Read(**/*.pem)",
         "Read(**/id_rsa)",
@@ -159,8 +159,6 @@ def test_global_resolves_canonical_allow_and_deny(global_manifest):
     ):
         assert rule in deny
     assert len(deny) >= 20
-    # The allow seed is the ~50-entry migration plus 15 MCP/tool rules; assert
-    # the count is in the migrated range rather than mere non-emptiness.
     assert len(allow) >= 50
 
 
@@ -183,12 +181,17 @@ def test_global_allow_uses_bare_mcp_names(global_manifest):
     )
 
 
-def test_global_deny_seed_forces_code_intel_tools(global_manifest):
-    """The deny seed blocks the built-in search tools + their bash
-    equivalents, forcing the code-intelligence tools."""
+def test_global_deny_seed_leaves_search_routing_to_hooks(global_manifest):
+    """Search-tool routing is no longer a hard deny here.
+
+    grep/ag/ack plus the Grep/Glob tools are rerouted by hooks or prompting, so
+    they must stay out of the deny list. The only unroutable tunnel we still hard
+    deny is ``rtk proxy git grep`` because it would bypass structural search.
+    """
     deny = set(global_manifest.settings.get("permissions_deny", []))
     for rule in ("Grep", "Glob", "Bash(grep:*)", "Bash(ag:*)", "Bash(ack:*)"):
-        assert rule in deny
+        assert rule not in deny
+    assert "Bash(rtk proxy git grep:*)" in deny
 
 
 def test_global_deny_seed_safety_floor(global_manifest):
@@ -246,20 +249,25 @@ def test_global_deny_seed_protects_secrets(global_manifest):
 
 
 def test_sanctioned_tools_not_denied(global_manifest):
-    """Negative: rg/fd/sg stay allowed and Read is never denied (deny-wins,
-    so they MUST stay out of the deny list)."""
+    """Negative: fd/sg stay allowed, rg is prompt-gated rather than denied, and
+    ``Read`` itself is never denied."""
     allow = set(global_manifest.settings.get("permissions_allow", []))
     deny = set(global_manifest.settings.get("permissions_deny", []))
-    for sanctioned in ("Bash(rg:*)", "Bash(fd:*)", "Bash(sg:*)"):
+    for sanctioned in ("Bash(fd:*)", "Bash(sg:*)"):
         assert sanctioned in allow
         assert sanctioned not in deny
+    assert "Bash(rg:*)" not in allow
+    assert "Bash(rg:*)" not in deny
     assert "Read" not in deny
 
 
-def test_emits_canonical_block_for_opencode(env, tmp_path, monkeypatch):
-    """An ``ap install global --harness opencode`` analogue: the canonical
-    allow set lowers onto opencode's permission surface. Uses a minimal
-    standalone fragment so the test does not depend on base/registries."""
+def test_nonisolated_opencode_render_leaves_live_config_unmanaged(env):
+    """A non-isolated live-style render no longer writes ``opencode.json``.
+
+    The merged live config moved to chezmoi ownership, so the renderer may still
+    write whole-file artefacts (agents/skills) but must not create the root
+    ``opencode.json`` surface for a plain profile install.
+    """
     from agent_profile.renderers.opencode import OpencodeRenderer
 
     write_profile(
@@ -277,8 +285,6 @@ def test_emits_canonical_block_for_opencode(env, tmp_path, monkeypatch):
         "name: glob_t\ninclude: [_perms_t]\n",
     )
     m = parse_manifest(env.profiles / "glob_t")
-    OpencodeRenderer().render(m, env.target)
-    import json
-
-    data = json.loads((env.target / "opencode.json").read_text())
-    assert data["permission"]["bash"]["git *"] == "allow"
+    written = OpencodeRenderer().render(m, env.target)
+    assert written == []
+    assert not (env.target / "opencode.json").exists()

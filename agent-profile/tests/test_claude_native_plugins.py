@@ -499,6 +499,7 @@ def _make_manifest_with_native(tmp_path: Path, market_name: str = "milknado"):
     )
     manifest = Manifest(
         name="base",
+        isolated=True,
         native_plugins=[
             {
                 "name": market_name,
@@ -567,6 +568,7 @@ def test_claude_renderer_marketplace_key_from_marketplace_name(tmp_path):
     )
     manifest = Manifest(
         name="base",
+        isolated=True,
         native_plugins=[{
             "name": "registry-key",
             "claude_native": True,
@@ -666,6 +668,7 @@ def test_claude_renderer_skips_native_plugin_skills(tmp_path):
 
     manifest, market_root = _make_manifest_with_native(tmp_path)
     manifest = Manifest(
+        isolated=True,
         name="base",
         skills=[{
             "name": "my-skill",
@@ -721,6 +724,7 @@ def test_claude_renderer_dedup_mcp_not_in_user_scope(tmp_path):
         "_source_dir": str(payload),
     }
     manifest = Manifest(
+        isolated=True,
         name="base",
         mcps=[mcp_item],
         native_plugins=[{
@@ -768,6 +772,7 @@ def test_claude_renderer_skips_native_agents(tmp_path):
 
     manifest, market_root = _make_manifest_with_native(tmp_path)
     manifest = Manifest(
+        isolated=True,
         name="base",
         agents=[{
             "name": "my-agent",
@@ -801,6 +806,7 @@ def test_claude_renderer_skips_native_commands(tmp_path):
 
     manifest, market_root = _make_manifest_with_native(tmp_path)
     manifest = Manifest(
+        isolated=True,
         name="base",
         commands=[{
             "name": "my-cmd",
@@ -845,6 +851,7 @@ def test_clean_removes_native_plugin_marketplace_entry(tmp_path):
 
     manifest = Manifest(
         name="base",
+        isolated=True,
         native_plugins=[{
             "name": "milknado",
             "claude_native": True,
@@ -879,6 +886,7 @@ def test_clean_removes_native_plugin_enabled_plugins_entry(tmp_path):
 
     manifest = Manifest(
         name="base",
+        isolated=True,
         native_plugins=[{
             "name": "milknado",
             "claude_native": True,
@@ -908,6 +916,7 @@ def test_claude_renderer_rewrites_native_mcp_permission_rule(tmp_path):
 
     manifest = Manifest(
         name="base",
+        isolated=True,
         settings={
             "permissions_allow": ["mcp__hallouminate__*", "mcp__tilth__*"],
             "permissions_deny": [],
@@ -958,6 +967,7 @@ def test_claude_renderer_rewrites_skill_allowed_tools(tmp_path):
     )
     manifest = Manifest(
         name="base",
+        isolated=True,
         skills=[{
             "name": "rennet",
             "path": "skills/rennet",

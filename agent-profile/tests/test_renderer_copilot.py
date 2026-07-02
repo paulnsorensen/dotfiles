@@ -33,6 +33,7 @@ def manifest(source_dir: Path, **sections) -> Manifest:
 
     return Manifest(
         name="p1",
+        isolated=True,
         description="test",
         mcps=decorate(sections.get("mcps", [])),
         agents=decorate(sections.get("agents", [])),
@@ -201,6 +202,20 @@ def test_mcp_default_membership_excludes_copilot(target, src):
     m = manifest(src, mcps=[{"name": "bar", "command": "x"}])
     renderer().render(m, target)
     assert not (target / ".copilot/mcp-config.json").exists()
+
+def test_nonisolated_manifest_skips_copilot_mcp_config(target, src):
+    cfg = target / ".copilot" / "mcp-config.json"
+    cfg.parent.mkdir(parents=True)
+    seeded = json.dumps({"mcpServers": {"user-mcp": {"command": "y"}}}) + "\n"
+    cfg.write_text(seeded)
+    manifest_nonisolated = Manifest(
+        name="live",
+        mcps=[{"name": "foo", "command": "x", "harnesses": ["copilot"], "_source_dir": str(src)}],
+    )
+    renderer().render(manifest_nonisolated, target)
+    assert cfg.read_text() == seeded
+    renderer().clean(manifest_nonisolated, target)
+    assert cfg.read_text() == seeded
 
 
 def test_mcp_env_included_when_present(target, src):

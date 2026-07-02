@@ -95,42 +95,38 @@ def test_production_install_touches_all_surfaces(env, capsys, prod_renderers):
     capsys.readouterr()
     t = env.target
 
-    # Shared cross-harness writes (claude/cursor/opencode all read these).
+    # Shared whole-file writes still land.
     assert (t / ".claude/agents/rev.md").is_file()
     assert (t / ".agents/skills/widget/SKILL.md").is_file()
-
-    # Codex: agent TOML + config.toml [mcp_servers] merge.
     assert (t / ".codex/agents/rev.toml").is_file()
-    codex_cfg = tomlkit.parse((t / ".codex/config.toml").read_text())
-    assert "srv" in codex_cfg["mcp_servers"]
-    assert codex_cfg["mcp_servers"]["srv"]["command"] == "/bin/true"
 
-    # opencode: merged opencode.json with the MCP under "mcp".
-    oc = json.loads((t / "opencode.json").read_text())
-    assert "srv" in oc["mcp"]
-    assert oc["mcp"]["srv"]["command"] == ["/bin/true", "--flag"]
-
-    # cursor: mcp.json merge + hooks.json + copied hook script.
-    cur = json.loads((t / ".cursor/mcp.json").read_text())
-    assert "srv" in cur["mcpServers"]
+    # Cursor hook surfaces are still renderer-owned whole files.
     hooks = json.loads((t / ".cursor/hooks.json").read_text())
     assert len(hooks) == 1 and hooks[0]["event"] == "PreToolUse"
     assert (t / ".cursor/hooks/h.sh").is_file()
 
-    # crush: merged crush.json with the MCP under "mcp".
-    crush = json.loads((t / ".config/crush/crush.json").read_text())
-    assert "srv" in crush["mcp"]
+    # Non-isolated installs no longer own any merged live config/MCP surfaces.
+    for merged in (
+        ".codex/config.toml",
+        "opencode.json",
+        ".cursor/mcp.json",
+        ".config/crush/crush.json",
+    ):
+        assert not (t / merged).exists(), f"{merged} should stay unmanaged"
 
-    # The whole-file artefacts (not the merged files) are tracked exactly once.
     manifest = json.loads(manifest_path(t).read_text())
     files = manifest["multi"]["files"]
     assert files == sorted(set(files)), "tracked files must be sorted + deduped"
-    # Merged files are surgically un-merged in clean(), never tracked.
-    for merged in ("opencode.json", ".codex/config.toml", ".cursor/mcp.json", ".config/crush/crush.json"):
+    for merged in (
+        "opencode.json",
+        ".codex/config.toml",
+        ".cursor/mcp.json",
+        ".config/crush/crush.json",
+    ):
         assert merged not in files, f"{merged} is a merged file, must not be tracked"
-    # Whole-file artefacts that ARE tracked.
     assert ".claude/agents/rev.md" in files
     assert ".codex/agents/rev.toml" in files
+    assert ".cursor/hooks.json" in files
 
 
 # ─── Seam 2: production round-trip is byte-clean ──────────────────────
@@ -148,15 +144,17 @@ def test_production_install_uninstall_roundtrip_clean(env, capsys, prod_renderer
     assert cli.main(["uninstall", "multi", "--target", str(t)]) == 0
     capsys.readouterr()
 
-    # Every tracked whole-file artefact is gone.
     for rel in tracked:
         assert not (t / rel).exists(), f"{rel} survived uninstall"
 
-    # Every merged file is surgically removed (the renderers owned them).
-    for merged in ("opencode.json", ".codex/config.toml", ".cursor/mcp.json", ".config/crush/crush.json"):
-        assert not (t / merged).exists(), f"merged {merged} survived clean"
+    for merged in (
+        "opencode.json",
+        ".codex/config.toml",
+        ".cursor/mcp.json",
+        ".config/crush/crush.json",
+    ):
+        assert not (t / merged).exists(), f"merged {merged} should remain unmanaged"
 
-    # Manifest empty.
     assert json.loads(manifest_path(t).read_text()) == {}
 
 
@@ -166,10 +164,12 @@ def test_production_install_uninstall_roundtrip_clean(env, capsys, prod_renderer
 def test_production_codex_user_config_preserved_through_cli(
     env, capsys, prod_renderers
 ):
-    """The codex unit test proves the renderer preserves user keys; this
-    proves the *CLI* round-trip (install banner + merged_json cache +
-    uninstall sweep + codex clean) does not shred a user-authored
-    config.toml comment/key the profile never owned."""
+    """Non-isolated installs must leave user-owned codex MCP config untouched.
+
+    The merged live ``config.toml`` surface moved to chezmoi ownership, so the
+    CLI round-trip must preserve a pre-existing user file byte-for-byte instead of
+    merging our MCPs into it.
+    """
     _make_multi(env.profiles, "multi")
     t = env.target
     cfg = t / ".codex/config.toml"
@@ -190,12 +190,11 @@ def test_production_codex_user_config_preserved_through_cli(
     parsed = tomlkit.parse(after_install)
     assert parsed["approval_policy"] == "on-request"
     assert parsed["mcp_servers"]["user_owned"]["command"] == "keep-me"
-    assert "srv" in parsed["mcp_servers"]  # ours merged in
+    assert "srv" not in parsed["mcp_servers"]
 
     cli.main(["uninstall", "multi", "--target", str(t)])
     capsys.readouterr()
 
-    # File survives (user still owns it); our entry gone, user entry + comment stay.
     assert cfg.is_file(), "config.toml with user content must not be deleted"
     final = cfg.read_text()
     assert "# user comment — must survive" in final
