@@ -84,17 +84,26 @@ def test_compile_live_writes_harness_fragments_and_target_manifest(
         ("home", "codex", ".codex/agents/reviewer.md"),
         ("opencode", "opencode", ".opencode/agents/reviewer.md"),
     }
+    disconnected = {
+        ("home", "claude", ".claude/settings.json"),
+        ("home", "codex", ".codex/config.toml"),
+        ("home", "cursor", ".cursor/mcp.json"),
+        ("home", "copilot", ".copilot/mcp-config.json"),
+        ("opencode", "opencode", "opencode.json"),
+    }
+    assert {
+        (entry["target"], entry["harness"], entry["relative_path"])
+        for entry in data["files"]
+    }.isdisjoint(disconnected)
 
 
-def test_compile_user_scope_does_not_mutate_live_or_require_claude(
+def test_compile_user_scope_stays_disconnected_from_live_config(
     env, monkeypatch, prod_renderers
 ):
-    """Finding 1 regression: ``ap compile`` of a ``mcp_scope: user`` profile is
-    side-effect-free — it neither shells out to ``claude`` nor touches the live
-    ``~/.claude.json``. The user-scope registration is recorded in the manifest
-    (literal ``${VAR}``, not the resolved secret) for ``apply`` to perform
-    post-gate. Before the fix the claude renderer shelled ``claude mcp add``
-    during compile, so a host without the CLI aborted the whole sync."""
+    """Non-isolated compile is side-effect-free and emits no deferred user MCP
+    registrations. The live/user config surface is disconnected, so compile
+    neither shells out to ``claude`` nor carries a post-gate registration
+    request in the manifest."""
     write_minimal_includes(env.profiles)
     write_live_profile(env.profiles, mcp_scope="user", mcps=[_USER_MCP])
     home = env.tmp / "home"
@@ -113,16 +122,9 @@ def test_compile_user_scope_does_not_mutate_live_or_require_claude(
 
     # Compile touched no live state.
     assert not (home / ".claude.json").exists()
-
     data = json.loads((out / "manifest.json").read_text())
-    assert data["user_mcps"] == [
-        {
-            "name": "context7",
-            "command": "npx",
-            "args": ["-y", "@upstash/context7-mcp"],
-            "env": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"},
-        }
-    ]
+
+    assert data["user_mcps"] == []
     assert "sk-real-secret-do-not-leak" not in (out / "manifest.json").read_text()
 
 

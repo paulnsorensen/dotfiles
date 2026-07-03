@@ -109,7 +109,8 @@ class ClaudeRenderer:
         self._write_mcp_json(manifest, plugin_dir, base, out, logical_root)
         self._write_settings(manifest, plugin_dir, base, out)
         self._write_local_marketplace(manifest, base, profile, desc)
-        self._merge_root_settings(manifest, base)
+        if manifest.isolated:
+            self._merge_root_settings(manifest, base)
         self._render_native_plugins(manifest, base, logical_root)
 
         # Track the plugin dir root so uninstall removes the whole tree
@@ -144,7 +145,7 @@ class ClaudeRenderer:
         native MCPs (with claude removed from harnesses by DEDUP) are not written
         to the user-scope MCP config by _write_mcp_json (harnesses filter).
         """
-        if not manifest.native_plugins:
+        if not manifest.native_plugins or not manifest.isolated:
             return
         settings = base / ".claude" / "settings.json"
         if settings.is_file():
@@ -161,7 +162,9 @@ class ClaudeRenderer:
             marketplace_name = entry["marketplace_name"]
             marketplace_root = entry["marketplace_root"]
             expanded = os.path.expandvars(os.path.expanduser(str(marketplace_root)))
-            markets[marketplace_name] = {"source": {"source": "directory", "path": expanded}}
+            markets[marketplace_name] = {
+                "source": {"source": "directory", "path": expanded}
+            }
             enabled[f"{name}@{marketplace_name}"] = True
             # Prime CLI resolution cache — a live ~/.claude write, deferred
             # during compile (logical_root set) so compile stays side-effect-free.
@@ -190,19 +193,12 @@ class ClaudeRenderer:
         settings.write_text(json.dumps(data, indent=2) + "\n")
 
     def clean(self, manifest: Manifest, target: Path) -> None:
-        """Surgically remove this profile's contributions to the live
-        ``.claude/settings.json`` (``enabledPlugins`` + ``extraKnownMarketplaces``).
-
-        The plugin tree itself is owned by the CLI's manifest sweep (each
-        plugin gets its own dir; whole-file removal is sufficient). This
-        method only touches the *shared* settings.json — the file holding
-        user-owned config alongside profile-managed marketplace + plugin
-        entries (mirroring how :class:`OpencodeRenderer.clean` un-merges
-        ``opencode.json``)."""
+        """Remove shared marketplace metadata and, for isolated profiles only,
+        un-merge launch-scoped root settings."""
         base = Path(str(target).rstrip("/"))
-        if manifest.mcp_scope == "user":
-            self._unregister_user_mcps(manifest)
         self._clean_local_marketplace(base, manifest.name)
+        if not manifest.isolated:
+            return
         settings = base / ".claude" / "settings.json"
         if not settings.is_file():
             return
@@ -450,7 +446,7 @@ class ClaudeRenderer:
         if not wrote_any:
             return
 
-        # Strip legacy hook entries from the live .claude/settings.json that
+        # Strip legacy hook entries from the launch-scoped .claude/settings.json that
         # the retired agents/hooks/sync.sh jq-merged there before the ap
         # migration (#217). Claude merges settings.json hooks with plugin
         # hooks at load time, so an orphan copy either fires twice (a still-
@@ -458,7 +454,8 @@ class ClaudeRenderer:
         # hooks moved into the plugin tree). Mirrors the codex renderer's
         # _clean_legacy_config_toml_hooks; keyed off the hooks we just wired
         # into the plugin, so it self-extends as the registry changes.
-        self._clean_legacy_settings_hooks(hook_entries, base)
+        if manifest.isolated:
+            self._clean_legacy_settings_hooks(hook_entries, base)
 
         # Merge hook entries into both manifests so the on-disk JSON Claude
         # reads (.claude-plugin/plugin.json) gets the wiring; the root marker
@@ -528,22 +525,7 @@ class ClaudeRenderer:
         if not mine:
             return
         if manifest.mcp_scope == "user":
-            # User-scope install (the `global` profile): register each server
-            # via `claude mcp add --scope user` so the tool names stay bare
-            # (`mcp__<server>__*`) and land in ~/.claude.json. No plugin
-            # .mcp.json is written, so its file is dropped from the install
-            # manifest and swept on the next render.
-            #
-            # `claude mcp add` writes the LIVE ~/.claude.json regardless of the
-            # scratch render dir, so it is a live side-effect. During compile
-            # (rendering into a scratch dir for deferred apply — signalled by a
-            # non-None `logical_root`) we must NOT touch live state before the
-            # drift gate: `ap compile` records the registrations via
-            # `user_mcp_registrations()` and `ap apply-compiled` performs the
-            # live write post-gate. The install/launch path (logical_root None)
-            # writes directly to the live target, so it registers immediately.
-            if logical_root is None:
-                self._register_user_mcps(mine)
+            # Global user-scope registrations are chezmoi-owned now.
             return
         servers = {mcp["name"]: mcp_server_entry(mcp) for mcp in mine}
         out_path = plugin_dir / ".mcp.json"
@@ -551,18 +533,11 @@ class ClaudeRenderer:
         self._track(out, base, out_path)
 
     def user_mcp_registrations(self, manifest: Manifest) -> list[dict]:
-        """User-scope MCP registrations for ``ap compile`` to defer to apply.
+        """Global user-scope Claude MCP registrations are no longer owned here.
 
-        Pure read of the resolved manifest — no CLI, no live write. Returns
-        ``{name, command, args?, env?}`` per server (``${VAR}`` env refs stay
-        literal, matching the plugin-scope ``.mcp.json``), or ``[]`` when the
-        profile is not user-scope or projects no MCP to claude."""
-        if manifest.mcp_scope != "user":
-            return []
-        return [
-            {"name": mcp["name"], **mcp_server_entry(mcp)}
-            for mcp in mcps_for(manifest, "claude", _MCP_DEFAULT)
-        ]
+        Live/global registration moves to chezmoi-managed settings, so compiled
+        manifests never request a post-gate ``claude mcp add`` step."""
+        return []
 
     @staticmethod
     def _claude_cli() -> str:

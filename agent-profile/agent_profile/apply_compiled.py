@@ -22,7 +22,10 @@ from pathlib import Path
 from typing import Any
 
 from agent_profile.compiled_types import ApplyState
-from agent_profile.merged_settings_preservation import is_user_owned_merged
+from agent_profile.merged_settings_preservation import (
+    DISCONNECTED_GLOBAL_SETTINGS,
+    is_user_owned_merged,
+)
 
 DEFAULT_STATE_FILENAME = "apply-state.json"
 
@@ -149,11 +152,11 @@ def _managed_pairs(
 
 
 def _preserved_dests(data: dict[str, Any], roots: dict[str, Path]) -> set[str]:
-    """Resolved destination paths of user-owned merged settings to never delete.
+    """Resolved destination paths to never reconcile-delete.
 
-    A merged settings file previously applied as generated (clobber-copy) but
-    now marked ``generated=False`` would otherwise be reconciled out of the
-    prior apply state and deleted — destroying user content (ADR-001/spec 92).
+    This includes both manifest-marked user-owned merged settings and the
+    legacy harness-global config files that agent-profile stopped managing when
+    global settings ownership moved to chezmoi.
     """
     preserved: set[str] = set()
     for entry in data.get("files", []):
@@ -163,6 +166,8 @@ def _preserved_dests(data: dict[str, Any], roots: dict[str, Path]) -> set[str]:
         relative = entry.get("relative_path")
         if target in roots and isinstance(relative, str):
             preserved.add(str(roots[target] / relative))
+    for root in roots.values():
+        preserved.update(str(root / path) for path in DISCONNECTED_GLOBAL_SETTINGS)
     return preserved
 
 

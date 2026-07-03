@@ -52,6 +52,8 @@ class CrushRenderer:
     mcp_default = _CRUSH_MCP_DEFAULT
 
     def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
+        if not manifest.isolated:
+            return []
         base = Path(str(target).rstrip("/"))
         config_path = base / _CRUSH_CONFIG_REL
         data = (
@@ -72,6 +74,8 @@ class CrushRenderer:
         return wrote
 
     def clean(self, manifest: Manifest, target: Path) -> None:
+        if not manifest.isolated:
+            return
         config_path = Path(str(target).rstrip("/")) / _CRUSH_CONFIG_REL
         if not config_path.is_file():
             return

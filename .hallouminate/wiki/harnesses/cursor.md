@@ -4,7 +4,7 @@ The Cursor AI code editor (cursor.com). Unlike the other four, Cursor is an **ID
 
 Two deploy paths feed Cursor:
 
-- **MCP** flows through the harness-agnostic `agents/mcp/registry.yaml` like every other harness — the `ap` cursor renderer (`renderers/cursor.py`) writes `~/.cursor/mcp.json` via Python stdlib `json` (no jq), using the `mcpServers` schema (identical to Claude Desktop's). `CURSOR_CONFIG` overrides the target for tests.
+- **MCP** registry entries still describe Cursor-capable servers, but non-isolated `ap install global` no longer mutates live `~/.cursor/mcp.json`. Keep durable global MCP defaults in chezmoi/user config; use renderer-owned targets only for generated/isolated surfaces. `CURSOR_CONFIG` still overrides the path in tests.
 - **Everything else** ships as a **Cursor 2.x plugin** under `cursor/plugins/local/<name>/` (the shipping one is `cheese-grok`). chezmoi's `install-cursor-plugin.sh` deploys its `skills/`, `rules/`, `commands/`, `hooks/` into `~/.cursor/{skills,rules,commands,hooks}/` and jq-merges `hooks.json` + `modes.json`. Per-collection `.dotfiles-managed-<plugin>` manifests track ownership so dropped items are pruned without touching user files.
 
 ## Capabilities, docs, and repo wiring
@@ -13,14 +13,14 @@ Two deploy paths feed Cursor:
 |---|---|---|
 | Hooks | [hooks](https://cursor.com/docs/agent/hooks) | `cursor/plugins/local/<plugin>/hooks/*.sh` + `hooks.json` → `~/.cursor/hooks/*.sh` (executable) and merged into `~/.cursor/hooks.json`. Entries tagged `_plugin: "<name>"` so re-deploys strip stale ones. Lifecycle events (`beforeShellExecution`, `afterFileEdit`, `beforeMCPExecution`, `stop`, …) with a 4-level location precedence incl. `~/.cursor/hooks.json`. |
 | Sub-agents | [subagents](https://cursor.com/docs/context/subagents) | Cursor 2.x agents live in `.cursor/agents/` + `~/.cursor/agents/` (markdown + YAML: `name`, `description`, `model: inherit`, `readonly`, `is_background`). This repo currently deploys the legacy **custom-modes** surface (`modes/<name>.json` → merged into `~/.cursor/modes.json` under `.modes.<name>`). |
-| MCP | [mcp](https://cursor.com/docs/context/mcp) | `agents/mcp/registry.yaml` → `ap` cursor renderer writes `~/.cursor/mcp.json` via stdlib `json` (`mcpServers`). stdio / SSE / Streamable-HTTP transport; project `.cursor/mcp.json` vs global `~/.cursor/mcp.json` scope; `env` / `envFile` / `${env:NAME}` interpolation. |
+| MCP | [mcp](https://cursor.com/docs/context/mcp) | Live `~/.cursor/mcp.json` / project `.cursor/mcp.json` are user/chezmoi-owned. `agents/mcp/registry.yaml` remains the cross-harness source for renderer-owned targets, but non-isolated `ap install global` does not mutate Cursor's live MCP file. Cursor supports stdio / SSE / Streamable-HTTP transport and `env` / `envFile` / `${env:NAME}` interpolation. |
 | Rules (system prompt) | [rules](https://cursor.com/docs/context/rules) | `cursor/plugins/local/<plugin>/rules/*.mdc` → `~/.cursor/rules/*.mdc`. Four rule types (Always / Apply Intelligently / Apply to Specific Files via glob / Apply Manually), `alwaysApply` / `description` / `globs` frontmatter, `AGENTS.md` support (incl. nested), precedence Team → Project → User. |
 | Settings / config | [cli permissions](https://cursor.com/docs/cli/reference/permissions) · [cli configuration](https://cursor.com/docs/cli/reference/configuration) | **Permissions are split** — see [[../architecture/harness-permissions]]. The **IDE** allowlist (Run Mode + command/MCP approval) is UI-only (Settings → Agents). The **`cursor-agent` CLI** is declarative: `~/.cursor/cli-config.json` (global: `version`, `editor.vimMode`, `permissions.allow`/`deny`) and project `<project>/.cursor/cli.json` (only `permissions`, precedence over global). Tokens: `Shell()`/`Read()`/`Write()`/`WebFetch()`/`Mcp()`; **deny wins**. `~/.cursor/sandbox.json` is a separate sandbox network/fs policy. `ap` does **not** render any of these today (warn-and-drop) — planned via `.cheese/specs/ap-cursor-cli-permissions.md`. |
 | Skills / commands | [skills](https://cursor.com/docs/skills) · [slash commands](https://cursor.com/docs/cli/reference/slash-commands) | `cursor/plugins/local/<plugin>/skills/<name>/SKILL.md` → `~/.cursor/skills/<name>/` (frontmatter `name` + `description`, optional `paths`). `commands/*.md` → `~/.cursor/commands/*.md` — **Cursor commands carry NO frontmatter**, unlike Claude. |
 
 ## Isolated settings
 
-Not available. Cursor's IDE is not a launchable closed-world CLI — `ap` isolated launches are Claude-only. (The separate `cursor-agent` CLI has headless flags — `-p`/`--print`, `--force`, `--approve-mcps` — but `ap` doesn't drive it.)
+Not available for Cursor. Cursor's IDE is not a launchable closed-world CLI. (The separate `cursor-agent` CLI has headless flags — `-p`/`--print`, `--force`, `--approve-mcps` — but `ap` doesn't drive it.)
 
 ## Quirks
 

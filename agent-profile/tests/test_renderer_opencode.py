@@ -38,6 +38,7 @@ def _manifest() -> Manifest:
     (an Edit map deny + an MCP shorthand deny)."""
     return Manifest(
         name="rust",
+        isolated=True,
         mcps=[
             {
                 "name": "serena",
@@ -174,6 +175,7 @@ def test_secret_deny_rules_lower_to_opencode_read(tmp_path: Path):
     defaults don't cover."""
     m = Manifest(
         name="secrets",
+        isolated=True,
         settings={
             "permissions_deny": [
                 "Read(**/*.pem)",
@@ -218,6 +220,7 @@ def test_last_match_ordering_allow_before_deny(tmp_path: Path):
     the bash map's insertion order, so the more specific deny wins."""
     m = Manifest(
         name="order",
+        isolated=True,
         settings={
             "permissions_allow": ["Bash(git:*)"],
             "permissions_deny": ["Bash(git push)"],
@@ -239,6 +242,7 @@ def test_merge_preserves_user_map_under_same_tool(tmp_path: Path):
     )
     m = Manifest(
         name="editdeny",
+        isolated=True,
         settings={"permissions_deny": ["Edit(./secrets)"]},
     )
     OpencodeRenderer().render(m, tmp_path)
@@ -257,9 +261,24 @@ def test_render_does_not_track_merged_file(tmp_path: Path):
 
 def test_no_mcps_no_perms_writes_nothing(tmp_path: Path):
     """Empty opencode scope: no file bootstrapped (bash early-returns)."""
-    OpencodeRenderer().render(Manifest(name="empty"), tmp_path)
+    OpencodeRenderer().render(Manifest(name="empty", isolated=True), tmp_path)
     assert not (tmp_path / "opencode.json").exists()
 
+
+def test_nonisolated_manifest_leaves_opencode_json_unmanaged(tmp_path: Path):
+    cfg = tmp_path / "opencode.json"
+    seeded = {"$schema": SCHEMA, "mcp": {"user": {"type": "local"}}}
+    cfg.write_text(json.dumps(seeded))
+    manifest = Manifest(
+        name="live",
+        mcps=[{"name": "serena", "command": "serena", "harnesses": ["opencode"]}],
+        settings={"permissions_deny": ["Edit(./secrets)"]},
+    )
+    renderer = OpencodeRenderer()
+    assert renderer.render(manifest, tmp_path) == []
+    assert json.loads(cfg.read_text()) == seeded
+    renderer.clean(manifest, tmp_path)
+    assert json.loads(cfg.read_text()) == seeded
 
 def test_clean_keeps_user_entries_matches_golden(tmp_path: Path):
     """Install over user content, then clean: only ours are removed."""
@@ -307,7 +326,9 @@ def test_clean_removes_deny_shorthand_preserving_user_shorthand(tmp_path: Path):
     )
     r = OpencodeRenderer()
     m = Manifest(
-        name="shdeny", settings={"permissions_deny": ["mcp__serena__find_symbol"]}
+        name="shdeny",
+        isolated=True,
+        settings={"permissions_deny": ["mcp__serena__find_symbol"]},
     )
     r.render(m, tmp_path)
     rendered = json.loads((tmp_path / "opencode.json").read_text())["permission"]
@@ -328,7 +349,7 @@ def test_apply_perms_leaves_user_string_value_under_map_tool(tmp_path: Path):
     (tmp_path / "opencode.json").write_text(
         json.dumps({"$schema": SCHEMA, "permission": {"edit": "ask"}})
     )
-    m = Manifest(name="strguard", settings={"permissions_deny": ["Edit(./x)"]})
+    m = Manifest(name="strguard", isolated=True, settings={"permissions_deny": ["Edit(./x)"]})
     OpencodeRenderer().render(m, tmp_path)
     perm = json.loads((tmp_path / "opencode.json").read_text())["permission"]
     assert perm["edit"] == "ask"  # user value untouched, no crash
@@ -340,6 +361,7 @@ def test_mcp_env_maps_to_environment(tmp_path: Path):
     the env-mapping branch in ``_mcp_server_record`` is unexercised."""
     m = Manifest(
         name="withenv",
+        isolated=True,
         mcps=[
             {
                 "name": "withenv",
@@ -370,6 +392,7 @@ def test_mcp_env_rewrites_var_to_opencode_placeholder(tmp_path: Path):
     secret on disk — opencode expands ``{env:VAR}`` from its process env."""
     m = Manifest(
         name="withvar",
+        isolated=True,
         mcps=[
             {
                 "name": "withvar",
@@ -397,6 +420,7 @@ def test_mcp_env_rewrites_embedded_var(tmp_path: Path):
     ``${VAR}`` token is touched, surrounding text is preserved."""
     m = Manifest(
         name="embed",
+        isolated=True,
         mcps=[
             {
                 "name": "embed",
@@ -419,6 +443,7 @@ def test_mcp_env_bare_dollar_and_multi_var_boundaries(tmp_path: Path):
     tokens in one value are each rewritten (``re.sub`` is global)."""
     m = Manifest(
         name="bounds",
+        isolated=True,
         mcps=[
             {
                 "name": "bounds",
@@ -447,6 +472,7 @@ def test_mcp_without_env_omits_environment(tmp_path: Path):
     """No ``env`` -> no ``environment`` key (the bash ``else {}`` branch)."""
     m = Manifest(
         name="noenv",
+        isolated=True,
         mcps=[{"name": "noenv", "command": "foo", "harnesses": ["opencode"]}],
     )
     OpencodeRenderer().render(m, tmp_path)

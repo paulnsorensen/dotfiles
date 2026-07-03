@@ -44,7 +44,7 @@ Crucial asymmetry: **item lists merge from includes; overlay fields don't.** `na
 | **specialized** | `fe`, `spec`, `plugin`, `review`, … | `registries:` / `include` + overlay | Task-shaped sessions, often closed worlds |
 | **isolated** (closed world) | `review`, `todo`, `fe`, `spec`, `notion`, `rtkonly`, `plugin` | `isolated: true` + launch-overlay | ccp-parity closed-world launches |
 
-The base/global split exists for one reason: `ap install base` without `--target` writes the plugin tree into `$PWD`, which reads as confusing for "make my machine live". `global` makes operator intent legible — `ap install global` (no flags) targets `$HOME` *and* wires the rendered Claude plugin tree into `~/.claude/settings.json` so it actually loads.
+The base/global split exists for one reason: `ap install base` without `--target` writes the plugin tree into `$PWD`, which reads as confusing for "make my machine live". `global` makes operator intent legible — `ap install global` (no flags) targets `$HOME` and renders the shared/plugin artifacts there, but it no longer mutates harness-global settings files; those live settings move to chezmoi/user ownership.
 
 ## `ap install` vs `ap launch`
 
@@ -101,33 +101,34 @@ Each renderer satisfies the `Renderer` protocol in `renderers/base.py`: `render(
 
 Substrate rule (all five): stdlib `json` for JSON, `tomlkit` for TOML (round-trip, preserving user keys/comments/ordering). No `jq`/`yq`.
 
-| Renderer | Module | Native output paths (under `target`) | Merged (un-merged in `clean`) |
+| Renderer | Module | Native output paths (under `target`) | Harness-global settings ownership |
 |---|---|---|---|
-| Claude | `renderers/claude.py` | `.claude/plugins/local/<profile>/` (plugin.json, `skills/`, `commands/`, `hooks/`, `.mcp.json`, `settings.json`) + shared `.claude/agents/<n>.md` (agents are shared-only — no plugin-scoped copy) | `.claude/settings.json` (`enabledPlugins`+`extraKnownMarketplaces`), local `marketplace.json` |
-| Codex | `renderers/codex.py` | `.codex/agents/<n>.toml`, `.codex/hooks.json`, shared `.agents/skills/<n>/` | `.codex/config.toml` `[mcp_servers]` |
-| opencode | `renderers/opencode.py` | `agents/<n>.md` (root-relative) | `opencode.json` (`mcp` + `permission`) |
-| Cursor | `renderers/cursor.py` | `.cursor/commands/`, `.cursor/hooks.json`, `.cursor/agents/<n>.md` | `.cursor/mcp.json` |
-| Copilot | `renderers/copilot.py` | `.github/agents/<n>.agent.md`, `.github/skills/<n>/`, `.github/hooks/<n>.json` | `.copilot/mcp-config.json` |
+| Claude | `renderers/claude.py` | `.claude/plugins/local/<profile>/` (plugin.json, `skills/`, `commands/`, `hooks/`, `.mcp.json`, profile `settings.json`) + shared `.claude/agents/<n>.md` (agents are shared-only — no plugin-scoped copy) | Non-isolated installs do not mutate root `.claude/settings.json`; isolated renders still merge launch-scoped root settings (`renderers/claude.py:94-114`, `renderers/claude.py:195-204`, `renderers/claude.py:516-540`). |
+| Codex | `renderers/codex.py` | `.codex/agents/<n>.toml`, `.codex/hooks.json`, shared `.agents/skills/<n>/` | Non-isolated installs do not write `.codex/config.toml`; isolated renders still write MCP/tool-scope config (`renderers/codex.py:90-113`). |
+| opencode | `renderers/opencode.py` | `agents/<n>.md` (root-relative), `skills/<n>/` | Non-isolated installs do not write `opencode.json`; isolated renders merge `mcp` + `permission` and clean those keys (`renderers/opencode.py:182-224`, `renderers/opencode.py:297-305`). |
+| Cursor | `renderers/cursor.py` | `.cursor/commands/`, `.cursor/hooks.json`, `.cursor/agents/<n>.md` | Non-isolated installs do not write `.cursor/mcp.json`; isolated renders/cleans MCP entries (`renderers/cursor.py:78-93`). |
+| Copilot | `renderers/copilot.py` | `.github/agents/<n>.agent.md`, `.github/skills/<n>/`, `.github/hooks/<n>.json` | Non-isolated installs do not write `.copilot/mcp-config.json`; isolated renders MCP config only (`renderers/copilot.py:162-172`). |
+| Crush | `renderers/crush.py` | none for non-isolated global install | Non-isolated installs do not write `.config/crush/crush.json`; isolated renders/cleans `crush.json` (`renderers/crush.py:54-78`). |
 
 ### Why Claude's frontmatter is "full" on the shared file
 
 The claude renderer writes each agent **once**, to the user-scoped shared file (`.claude/agents/<n>.md`, also read by Cursor). Claude resolves it at priority 4, so it must carry full metadata (`model`/`color`/`effort`/`skills`), not a neutral subset (`shared.claude_agent_frontmatter`). It does **not** also write a plugin-scoped copy (`.claude/plugins/local/<profile>/agents/<n>.md`, priority 5): that copy was pure redundancy — the user-scoped file already wins precedence — and surfaced every agent twice in Claude's roster as a duplicate `global:<agent>` (plugin-namespaced) entry, so the plugin-scoped agent write was dropped. The plugin tree still carries skills/commands/hooks/`.mcp.json` (only an empty `agents/` dir is left by the render mkdir loop, harmless). Consequence: a body-less agent now emits no Claude file at all (the shared writer is body-guarded); every real registry agent declares a `body_path`, so none are lost.
 
-### Merged-file discipline + Codex env-scrub
+### Global settings disconnect + merged-file discipline
 
-Merged files (`opencode.json`, `config.toml`, `.cursor/mcp.json`, `.copilot/mcp-config.json`, live `.claude/settings.json`) hold user-owned config alongside profile-managed entries. They are deliberately **not** in the install manifest — they're surgically un-merged in `clean` (own-your-keys, `pop`/`del`), unlinked only when reduced to empty / a bare schema stub. A corrupt merged file raises `MergedConfigError` → clean stderr + exit 1, not a traceback.
+Non-isolated installs no longer read-modify-write harness-global settings files. The disconnected live paths are `.claude/settings.json`, `.codex/config.toml`, `opencode.json`, `.cursor/mcp.json`, `.copilot/mcp-config.json`, and `.config/crush/crush.json`; `compiled_types.py` keeps `MERGED_SETTINGS_BY_HARNESS` empty so compiled manifests record no user-owned merged config paths (`agent-profile/agent_profile/compiled_types.py:17-20`).
 
-Codex scrubs env keys present in `$DOTFILES_DIR/.env` from the rendered `[mcp_servers.*.env]` table: `zsh/core.zsh` exports `.env` into the interactive shell, so codex children already inherit those credentials — re-baking them as plaintext in `~/.codex/config.toml` just duplicates secrets on disk. Render-time per-harness vars (e.g. `SERENA_MUX_HARNESS`) stay baked. Disable with `AP_CODEX_INHERIT_ENV=0`. The codex renderer also one-time-migrates away legacy `[[hooks.<event>]]` blocks the retired `agents/hooks/sync.sh` wrote, to avoid double-firing.
+Isolated profiles still use renderer-level merges for their target roots because the profile is explicitly asking for a closed/temporary config world. Those merged files stay out of the install manifest and are surgically un-merged in `clean` (own-your-keys, `pop`/`del`), unlinked only when reduced to empty / a bare schema stub. A corrupt merged file raises `MergedConfigError` → clean stderr + exit 1, not a traceback.
 
-## The `global` install: marketplace + plugin wiring
+Migration safety: `ap apply-compiled` preserves disconnected legacy global-settings paths from prior apply-state snapshots, so removing them from the new manifest does not delete a user's live settings file (`agent-profile/agent_profile/merged_settings_preservation.py:31-42`, `agent-profile/agent_profile/apply_compiled.py:151-171`). Codex env-scrub now matters only for isolated generated `config.toml`: `.env` keys inherited from the shell are not duplicated into `[mcp_servers.*.env]`; render-time per-harness vars stay baked.
 
-`global`'s install-overlay fields (`profiles/global/profile.yaml`) make the rendered Claude plugin *live*. The claude renderer's `_merge_root_settings` and `_write_local_marketplace`:
+## The `global` install: plugin rendering only
 
-- Register `marketplaces: {local: $HOME/.claude/plugins/local}` as a `directory` source in `~/.claude/settings.json`'s `extraKnownMarketplaces`.
-- Merge `enabled_plugins: {global@local: true}` into `enabledPlugins`, preserving user siblings.
-- Write a `marketplace.json` at `.claude/plugins/local/.claude-plugin/` listing the profile as a plugin — without it, a `directory` marketplace has no `plugins[]` to resolve and the `global@local` enablement silently drops, so the bundled `.mcp.json` and SessionStart hook never load.
+`global`'s install-overlay fields (`profiles/global/profile.yaml`) still name the live profile and its local marketplace, but the renderer no longer enables that plugin by mutating root `.claude/settings.json`. Non-isolated `render()` writes the plugin tree and shared artifacts; root settings enablement belongs to the chezmoi-managed settings source (`renderers/claude.py:94-114`, `renderers/claude.py:195-204`).
 
-Three names must agree (`claude.py:_LOCAL_MARKETPLACE`): the marketplace key (`local`), the `marketplace.json` `name`, and the on-disk plugin dir. The plugin id is `<profile_name>@<marketplace>` — renaming the profile means updating both the YAML name and the `enabled_plugins` key.
+`_write_local_marketplace` still writes `marketplace.json` at `.claude/plugins/local/.claude-plugin/`, listing the profile as a directory-marketplace plugin. Chezmoi must keep `extraKnownMarketplaces.local = $HOME/.claude/plugins/local` and `enabledPlugins["global@local"] = true`; without both, the rendered plugin tree exists on disk but Claude will not load the bundled `.mcp.json` or SessionStart hook.
+
+Three names must agree (`claude.py:_LOCAL_MARKETPLACE`): the marketplace key (`local`), the `marketplace.json` `name`, and the on-disk plugin dir. The plugin id is `<profile_name>@<marketplace>` — renaming the profile means updating both the YAML name and the chezmoi-owned `enabledPlugins` key.
 
 ## Manifest + ref-counted uninstall
 
@@ -137,8 +138,9 @@ Three names must agree (`claude.py:_LOCAL_MARKETPLACE`): the marketplace key (`l
 
 **`ap` no longer touches any live install** (spec `chezmoi-authoritative-claude`, decisions A2/E1 — see [[adr-chezmoi-authoritative-claude]]). The former drive path — `run_onchange_after_install-base-profile.sh.tmpl` → `chezmoi/lib/install-base-profile.sh` → `ap install global` / `ap install opencode-global` — was deleted, along with `base-sync` and the drift gate (`--accept-agent-drift` is now a no-op compat shim in `bin/dots`).
 
-- **claude** global config deploys via chezmoi from the claude registry `chezmoi/.chezmoidata/claude.yaml` (settings authored by `dot_claude/modify_settings.json`, files via `dot_claude/exact_*` assembly, MCPs via the manifest-tracked `claude mcp` reconcile — see [[../operations/sync-and-chezmoi]]).
+- **claude** global config deploys via chezmoi from the claude registry `chezmoi/.chezmoidata/claude.yaml` (settings authored by `dot_claude/modify_settings.json`, files via `dot_claude/exact_*` assembly, MCPs via the manifest-tracked `claude mcp` reconcile — see [[../operations/sync-and-chezmoi]]). The `dots sync` path no longer invokes `ap install global`.
 - **codex / opencode / cursor / copilot** live config is FROZEN at its last ap render pending a follow-up migration spec; the `agents/` registries remain their future source of truth.
+- A manual `ap install global` / `ap install opencode-global` still writes generated/shared artifacts under `$HOME` (the plugin tree, generated `agents/` + `skills/`), but **no longer mutates live global settings** (`.claude/settings.json`, `opencode.json`) — so running `ap` by hand can no longer clobber a user's global config.
 - `ap` remains fully alive for **scoped/ephemeral profiles**: `ccp <name>` → `dots profile launch`, isolated profiles, `ap copilot-flags` (the copilot launch wrapper still calls it).
 
 Sibling scripts that survive: `install-agent-profile` (warms the uv env for `ccp`), `install-prompts` + `install-agents-doc` (the non-`ap` agent content — preamble + AGENTS.md, see [[agents-dir]]).
