@@ -172,7 +172,14 @@ fi
 # Oh My Pi - isolated native config with managed prompt addendum
 if command -v omp &> /dev/null; then
   omp() {
-    command omp --append-system-prompt "$HOME/.omp/agent/APPEND_SYSTEM.md" "$@"
+    # Derive the addendum from the active config dir so `ompt` (PI_CONFIG_DIR
+    # =.omp-tight) gets its own tight-profile prompt, not the default one.
+    local addendum="$HOME/${PI_CONFIG_DIR:-.omp}/agent/APPEND_SYSTEM.md"
+    if [[ -f "$addendum" ]]; then
+      command omp --append-system-prompt "$addendum" "$@"
+    else
+      command omp "$@"
+    fi
   }
 
   ompt() {

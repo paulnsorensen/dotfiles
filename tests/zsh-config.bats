@@ -85,7 +85,7 @@ teardown() {
     [[ "$output" == $'profile launch codex codex-plan --sandbox workspace\nprofile launch codex codex-code --model gpt-5' ]]
 }
 
-@test "omp wrapper appends managed system prompt" {
+@test "omp wrapper appends the default-profile system prompt" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     local fakebin="$TEST_HOME/bin"
     mkdir -p "$fakebin"
@@ -94,6 +94,9 @@ teardown() {
 printf '%s\n' "$@"
 SH
     chmod +x "$fakebin/omp"
+    # The wrapper only passes --append-system-prompt when the addendum exists.
+    mkdir -p "$TEST_HOME/.omp/agent"
+    printf 'addendum\n' > "$TEST_HOME/.omp/agent/APPEND_SYSTEM.md"
 
     run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; omp --model gpt-5"
 
@@ -102,6 +105,50 @@ SH
     [ "${lines[1]}" = "$TEST_HOME/.omp/agent/APPEND_SYSTEM.md" ]
     [ "${lines[2]}" = "--model" ]
     [ "${lines[3]}" = "gpt-5" ]
+}
+
+@test "ompt wrapper appends the tight-profile system prompt, not the default" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fakebin="$TEST_HOME/bin"
+    mkdir -p "$fakebin"
+    cat > "$fakebin/omp" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@"
+SH
+    chmod +x "$fakebin/omp"
+    # Both addenda exist; the derivation must pick the PI_CONFIG_DIR one.
+    mkdir -p "$TEST_HOME/.omp/agent" "$TEST_HOME/.omp-tight/agent"
+    printf 'default\n' > "$TEST_HOME/.omp/agent/APPEND_SYSTEM.md"
+    printf 'tight\n'   > "$TEST_HOME/.omp-tight/agent/APPEND_SYSTEM.md"
+
+    run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; ompt --model gpt-5"
+
+    assert_success
+    [ "${lines[0]}" = "--append-system-prompt" ]
+    # Derives from PI_CONFIG_DIR=.omp-tight — NOT the default .omp path.
+    [ "${lines[1]}" = "$TEST_HOME/.omp-tight/agent/APPEND_SYSTEM.md" ]
+    [ "${lines[1]}" != "$TEST_HOME/.omp/agent/APPEND_SYSTEM.md" ]
+    [ "${lines[2]}" = "--model" ]
+    [ "${lines[3]}" = "gpt-5" ]
+}
+
+@test "omp wrapper omits --append-system-prompt when the addendum is absent" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fakebin="$TEST_HOME/bin"
+    mkdir -p "$fakebin"
+    cat > "$fakebin/omp" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@"
+SH
+    chmod +x "$fakebin/omp"
+    # No addendum on disk (e.g. tight profile with no APPEND_SYSTEM.md): the
+    # wrapper must not pass a nonexistent path to omp.
+    run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; ompt --model gpt-5"
+
+    assert_success
+    [ "${lines[0]}" = "--model" ]
+    [ "${lines[1]}" = "gpt-5" ]
+    [ "${#lines[@]}" -eq 2 ]
 }
 
 @test "completion.zsh has cdd completion" {
