@@ -54,7 +54,6 @@ print_cheatsheet() {
     row "ccp <name>"          "launch a scoped profile (ccp list)"
     row "cxp [args]"          "codex tight planning profile"
     row "cxc [args]"          "codex tight coding profile"
-    row "pi [args]"           "omp with dotfiles overlay"
 
     hdr "Worktrees"
     row "ccw"                 "fzf-pick an existing worktree to resume"
