@@ -1,59 +1,153 @@
 #!/bin/sh
-# Make ~/.claude/settings.json repo-authoritative on every `chezmoi apply`.
+# Make ~/.claude/settings.json fully repo-authoritative on every `chezmoi apply`.
 #
 #   stdin  = current live file contents (empty on a fresh machine)
 #   stdout = the new file contents chezmoi writes back
 #
-# Behaviour:
-#   * Repo-owned keys (model, effortLevel, env, hooks, sandbox, theme,
-#     editorMode, permissions.defaultMode, spinnerVerbs, ...) are overwritten
-#     from the committed authoritative source — repo wins, in-app drift such
-#     as a `/model` change is discarded.
-#   * ap-managed keys (permissions.allow/deny/ask/additionalDirectories,
-#     enabledPlugins, extraKnownMarketplaces) are preserved from the live file
-#     and never clobbered. The authoritative source only SEEDS them on a fresh
-#     machine;
-#     `ap install global` re-asserts global@local + the local marketplace
-#     after this script runs, and the live values win on every later sync.
-#   * Any live key-path outside (authoritative ∪ ap-managed) is a key the app
-#     introduced. The script prints it and EXITS NON-ZERO, which halts
-#     `chezmoi apply` and leaves the live file untouched — so a new Claude Code
-#     key/format is surfaced (fold it into the source) instead of being
-#     silently clobbered.
+# The desired file is composed from three committed sources:
+#   * $CHEZMOI_SOURCE_DIR/lib/claude-settings-authoritative.json — static
+#     repo-owned keys (model, effortLevel, env, sandbox, theme, ...).
+#   * $CHEZMOI_SOURCE_DIR/.chezmoidata/claude.yaml — the claude registry;
+#     authors `hooks`, `enabledPlugins`, `extraKnownMarketplaces`, and
+#     `permissions.allow/deny/ask/additionalDirectories`.
+#   * $CHEZMOI_SOURCE_DIR/../claude/plugins/registry.yaml — the plugin
+#     registry; gate-filtered at apply time and overlaid onto the claude.yaml
+#     `enabledPlugins` / `extraKnownMarketplaces` keys. This script is the
+#     SINGLE writer of those settings.json keys — claude/plugins/sync.sh no
+#     longer touches settings.json (it only installs/removes plugin payloads
+#     and registers local marketplaces with the CLI). A gate passes when its
+#     env var is "true" (gate vars are exported by `dots` from .env before
+#     `chezmoi apply`); unset gates are treated as closed. If the registry is
+#     missing, composition falls back to claude.yaml only (with a warning).
 #
-# The authoritative source lives in the chezmoi source tree, not as a target:
-#   $CHEZMOI_SOURCE_DIR/lib/claude-settings-authoritative.json
-# `lib/` is .chezmoiignore'd, so chezmoi never deploys it to $HOME.
+# EVERY managed key is overwritten from source — live drift (in-app /model
+# changes, session-granted permissions, in-app plugin toggles) is discarded.
+# Promote anything you want to keep into the registry, then `dots sync`.
+#
+# Unknown-key halt gate: any live key-path outside the desired document's
+# schema is a key the app introduced. The script prints it and EXITS NON-ZERO,
+# which halts `chezmoi apply` and leaves the live file untouched — a new
+# Claude Code key/format is surfaced (fold it into the authoritative source or
+# the registry) instead of being silently clobbered. `enabledPlugins` and
+# `extraKnownMarketplaces` subtrees are exempt (their keys are dynamic plugin
+# names, not schema) — live entries there are wiped, not halted on.
+#
+# ${HOME} in registry string values is expanded here — needed for keys Claude
+# reads as literal JSON (e.g. marketplace directory paths).
 
 set -eu
 
 AUTH="${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/lib/claude-settings-authoritative.json"
+REG="$CHEZMOI_SOURCE_DIR/.chezmoidata/claude.yaml"
 
 live=$(cat)
 
-# Missing jq: don't corrupt the file. Keep the live copy if present, else emit
-# the authoritative source. jq is in packages.yaml, so this only guards an
-# unusual partial-bootstrap environment (mirrors the serena modify_ stance).
-if ! command -v jq >/dev/null 2>&1; then
-    echo "modify_settings.json: jq missing — Claude settings not enforced this sync" >&2
-    if [ -n "$live" ]; then printf '%s' "$live"; else cat "$AUTH"; fi
-    exit 0
+# Missing jq/yq: don't corrupt the file. Keep the live copy if present, else
+# emit the static authoritative source. Both are in packages.yaml, so this
+# only guards an unusual partial-bootstrap environment.
+for tool in jq yq; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "modify_settings.json: $tool missing — Claude settings not enforced this sync" >&2
+        if [ -n "$live" ]; then printf '%s' "$live"; else cat "$AUTH"; fi
+        exit 0
+    fi
+done
+
+for src in "$AUTH" "$REG"; do
+    if [ ! -f "$src" ]; then
+        echo "modify_settings.json: source missing: $src" >&2
+        exit 1
+    fi
+done
+
+# ── plugin-registry overlay ────────────────────────────────────────────────
+# Compose the gate-filtered plugin overlay for enabledPlugins /
+# extraKnownMarketplaces. A gate passes when its env var is "true"; unset is
+# closed. Marketplaces are only overlaid for one-plugin-per-marketplace entries
+# (mp name == plugin name) that carry a path — the same constraint sync.sh
+# applies. If the registry is missing, the overlay stays empty and composition
+# falls back to claude.yaml alone.
+PLUGIN_REG="$CHEZMOI_SOURCE_DIR/../claude/plugins/registry.yaml"
+# `$g` is a jq variable, not a shell var — single quotes are intentional.
+# shellcheck disable=SC2016
+gate_filter='select((.value.gate // "") as $g | $g == "" or (env[$g] // "false") == "true")'
+
+# Gate-filtered {plugin: load} map from the plugin registry.
+plugin_reg_enabled() {
+    yq -o=json '.plugins' "$PLUGIN_REG" \
+        | jq "[ to_entries[] | $gate_filter | {(.key): (.value.load // false)} ] | add // {}"
+}
+
+# Gate-filtered marketplace overlay: one-plugin-per-marketplace entries with a
+# path, resolved to absolute and skipped when the dir is absent. Kept in a
+# function so the case statement is NOT parsed inside a $() (bash miscounts the
+# case-pattern parens there).
+plugin_reg_marketplaces() {
+    # Every /bin/sh this repo targets (macOS bash, dash) implements `local`.
+    # shellcheck disable=SC3043
+    local repo_root mp_name mp_path abs_path
+    repo_root=$(cd "$CHEZMOI_SOURCE_DIR/.." && pwd)
+    yq -o=json '.plugins' "$PLUGIN_REG" \
+        | jq -r "to_entries[] | $gate_filter | select(.value.path)
+                 | (.key | split(\"@\")) as \$p | select(\$p[0] == \$p[1])
+                 | \$p[1] + \"\t\" + .value.path" \
+        | while IFS="$(printf '\t')" read -r mp_name mp_path; do
+            [ -z "$mp_name" ] && continue
+            # shellcheck disable=SC2088  # literal "~/" pattern, expanded explicitly below
+            case "$mp_path" in
+                "~/"*) abs_path="$HOME/${mp_path#"~/"}" ;;
+                /*)    abs_path="$mp_path" ;;
+                *)     abs_path="$repo_root/$mp_path" ;;
+            esac
+            if [ ! -d "$abs_path" ]; then
+                echo "modify_settings.json: skipping $mp_name marketplace, path not found: $abs_path" >&2
+                continue
+            fi
+            jq -n --arg n "$mp_name" --arg p "$abs_path" \
+                '{($n): {source: {source: "directory", path: $p}}}'
+        done | jq -s 'add // {}'
+}
+
+reg_enabled='{}'
+reg_marketplaces='{}'
+if [ -f "$PLUGIN_REG" ]; then
+    reg_enabled=$(plugin_reg_enabled)
+    reg_marketplaces=$(plugin_reg_marketplaces)
+else
+    echo "modify_settings.json: plugin registry not found: $PLUGIN_REG — composing enabledPlugins/extraKnownMarketplaces from claude.yaml only" >&2
 fi
 
-if [ ! -f "$AUTH" ]; then
-    echo "modify_settings.json: authoritative source missing: $AUTH" >&2
-    exit 1
-fi
+# Compose the desired document: static authoritative keys + registry-authored
+# keys. permissions merges defaultMode (static) with the registry lists.
+# enabledPlugins / extraKnownMarketplaces are claude.yaml base + the
+# gate-filtered plugin-registry overlay (registry wins on key collision).
+desired=$(
+    yq -o=json '.claude' "$REG" | jq \
+        --slurpfile auth "$AUTH" --arg home "$HOME" \
+        --argjson reg_enabled "$reg_enabled" \
+        --argjson reg_marketplaces "$reg_marketplaces" '
+        def expand: walk(if type == "string" then gsub("\\$\\{HOME\\}"; $home) else . end);
+        . as $reg | ($auth[0]) as $a
+        | $a
+        + { hooks:                  (($reg.hooks // {}) | expand),
+            enabledPlugins:         (($reg.enabledPlugins // {}) + $reg_enabled),
+            extraKnownMarketplaces: ((($reg.extraKnownMarketplaces // {}) | expand) + $reg_marketplaces),
+            permissions: ( ($a.permissions // {}) + {
+                allow:                 ($reg.permissions.allow // []),
+                deny:                  ($reg.permissions.deny // []),
+                ask:                   ($reg.permissions.ask // []),
+                additionalDirectories: ($reg.permissions.additionalDirectories // []) } ) }
+    '
+)
 
-# Fresh machine (empty stdin): emit the authoritative source (jq-normalized).
+# Fresh machine (empty stdin): emit the desired document.
 if [ -z "$live" ]; then
-    jq . "$AUTH"
+    printf '%s\n' "$desired"
     exit 0
 fi
 
 # Corrupt or non-object live file: halt with guidance instead of an opaque jq
-# parse error under set -eu (truncated mid-write, or a top-level array/string/
-# number rather than an object).
+# parse error under set -eu.
 if ! printf '%s' "$live" | jq -e 'type == "object"' >/dev/null 2>&1; then
     echo "modify_settings.json: live ~/.claude/settings.json is not a JSON object" >&2
     echo "  (corrupt or truncated). Fix or remove it, then re-run dots sync." >&2
@@ -62,25 +156,21 @@ fi
 
 # ── unknown-key gate ─────────────────────────────────────────────────
 # A live key-path is "known" when its object-key signature (array indices
-# dropped, so a `/model` value change or an extra allowlist entry never counts
-# as a new key) is a path present in the authoritative source, OR it sits under
-# an ap-managed prefix. Anything else is an app-introduced key. We enumerate
+# dropped, so a value change or an extra list entry never counts as a new
+# key) is a path present in the desired document, OR it sits under a
+# dynamic-key subtree (enabledPlugins / extraKnownMarketplaces). We enumerate
 # every live node-path (not just scalar leaves) so a new key whose value is an
-# empty object/array or null — e.g. a future `{"newFeature":{}}` — is caught
-# too; the known side is built the same way, so the comparison is symmetric.
+# empty object/array or null is caught too.
 unknown=$(
-    printf '%s' "$live" | jq -r --slurpfile auth "$AUTH" '
+    printf '%s' "$live" | jq -r --argjson desired "$desired" '
         def sig: [ .[] | strings ];
-        ($auth[0]) as $a
-        | [ ["permissions","allow"], ["permissions","deny"],
-            ["permissions","ask"], ["permissions","additionalDirectories"],
-            ["enabledPlugins"], ["extraKnownMarketplaces"] ] as $ap
-        | ([ $a | paths | sig ] | unique) as $known
+        [ ["enabledPlugins"], ["extraKnownMarketplaces"] ] as $dyn
+        | ([ $desired | paths | sig ] | unique) as $known
         | [ paths | sig ]
         | map(select(
               . as $p
               | (($known | any(. == $p)) | not)
-              and ([ $ap[] | . as $pre | ($p[0:($pre | length)] == $pre) ] | any | not)
+              and ([ $dyn[] | . as $pre | ($p[0:($pre | length)] == $pre) ] | any | not)
           ))
         | unique
         | map(join("."))
@@ -94,20 +184,14 @@ if [ -n "$unknown" ]; then
         printf '%s\n' "$unknown" | sed 's/^/  + /'
         echo
         echo "Claude Code likely introduced these. Fold each into the authoritative"
-        echo "source (or the ap-managed allowlist), then re-run dots sync:"
+        echo "source or the claude registry, then re-run dots sync:"
         echo "  $AUTH"
+        echo "  $REG"
     } >&2
     exit 1
 fi
 
-# ── merge ───────────────────────────────────────────────────────────────────
-# Authoritative wins for class-a keys; the live file overlays the ap-managed
-# keys (live values win, source seeds them on a fresh machine).
-printf '%s' "$live" | jq --slurpfile auth "$AUTH" '
-    ($auth[0]) as $a
-    | $a
-    + { enabledPlugins:         (($a.enabledPlugins         // {}) + (.enabledPlugins         // {})) }
-    + { extraKnownMarketplaces: (($a.extraKnownMarketplaces // {}) + (.extraKnownMarketplaces // {})) }
-    + { permissions: ( $a.permissions
-                       + ( (.permissions // {}) | {allow, deny, ask, additionalDirectories} | with_entries(select(.value != null)) ) ) }
-'
+# ── write ────────────────────────────────────────────────────────────────────
+# No merge: the desired document IS the file. Live drift on managed keys is
+# wiped by design (promote keepers to the registry).
+printf '%s\n' "$desired"

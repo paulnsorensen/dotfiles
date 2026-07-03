@@ -134,11 +134,13 @@ Three names must agree (`claude.py:_LOCAL_MARKETPLACE`): the marketplace key (`l
 
 `manifest.py` tracks `<target>/.agent-profile/manifest.json`: per profile, a sorted+deduped `files` list and a `merged_json` snapshot. Uninstall (`cli.cmd_uninstall`) runs *every* harness's `clean` (shared/merged files cross harness boundaries) and removes tracked files — but only when **no other installed profile claims the same path** (`other_profiles_claim_file`). A selective re-install (`--harness <subset>`) only orphans files whose path prefix maps to an in-scope harness (`_path_owners`).
 
-## The chezmoi drive path
+## RETIRED: the chezmoi drive path (live installs)
 
-On `dots sync`, `run_onchange_after_install-base-profile.sh.tmpl` exports `DOTFILES_DIR`, skips on a fresh box if `uv`/`npx` is missing, and forks to `chezmoi/lib/install-base-profile.sh`, which runs two installs handling a path asymmetry:
+**`ap` no longer touches any live install** (spec `chezmoi-authoritative-claude`, decisions A2/E1 — see [[adr-chezmoi-authoritative-claude]]). The former drive path — `run_onchange_after_install-base-profile.sh.tmpl` → `chezmoi/lib/install-base-profile.sh` → `ap install global` / `ap install opencode-global` — was deleted, along with `base-sync` and the drift gate (`--accept-agent-drift` is now a no-op compat shim in `bin/dots`).
 
-- `HOME=$target ap install global --harness claude,codex,cursor,copilot` — the four dot-dir harnesses write under `$HOME`; `global` carries the marketplace + plugin enablement.
-- `HOME=$target ap install opencode-global --harness opencode` — opencode writes `opencode.json` at the *target root*; the wrapper carries `_permissions` plus `target_default: $HOME/.config/opencode` without pulling in Claude's marketplace/plugin fields, and omitting `--target` keeps external `source:` skill fetch on the live path.
-- `HOME=$target ap install global --harness claude,codex,cursor,copilot` — the four dot-dir harnesses write generated/shared artifacts under `$HOME`; global settings files are not mutated by `ap`.
-- `HOME=$target ap install opencode-global --harness opencode` — opencode writes generated `agents/` + `skills/` under `$HOME/.config/opencode`; `opencode.json` is not mutated by non-isolated `ap`.
+- **claude** global config deploys via chezmoi from the claude registry `chezmoi/.chezmoidata/claude.yaml` (settings authored by `dot_claude/modify_settings.json`, files via `dot_claude/exact_*` assembly, MCPs via the manifest-tracked `claude mcp` reconcile — see [[../operations/sync-and-chezmoi]]). The `dots sync` path no longer invokes `ap install global`.
+- **codex / opencode / cursor / copilot** live config is FROZEN at its last ap render pending a follow-up migration spec; the `agents/` registries remain their future source of truth.
+- A manual `ap install global` / `ap install opencode-global` still writes generated/shared artifacts under `$HOME` (the plugin tree, generated `agents/` + `skills/`), but **no longer mutates live global settings** (`.claude/settings.json`, `opencode.json`) — so running `ap` by hand can no longer clobber a user's global config.
+- `ap` remains fully alive for **scoped/ephemeral profiles**: `ccp <name>` → `dots profile launch`, isolated profiles, `ap copilot-flags` (the copilot launch wrapper still calls it).
+
+Sibling scripts that survive: `install-agent-profile` (warms the uv env for `ccp`), `install-prompts` + `install-agents-doc` (the non-`ap` agent content — preamble + AGENTS.md, see [[agents-dir]]).

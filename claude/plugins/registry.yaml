@@ -1,4 +1,10 @@
-# Plugin Registry - Source of truth for Claude Code plugins
+# Plugin Registry - Source of truth for Claude Code plugin install/removal.
+#
+# settings.json composition: this registry's gate-filtered entries are overlaid
+# onto chezmoi/.chezmoidata/claude.yaml's `enabledPlugins` /
+# `extraKnownMarketplaces` base by chezmoi/dot_claude/modify_settings.json at
+# `chezmoi apply` time — the single writer of those settings.json keys. sync.sh
+# only installs/removes plugin payloads and registers local marketplaces.
 #
 # Format: <plugin>@<marketplace>
 # Marketplaces (all registered in settings.json:extraKnownMarketplaces or built-in):

@@ -177,24 +177,16 @@ copilot() {
 CLAUDE_DOTFILES="$DOTFILES_DIR/claude"
 AGENTS_DOTFILES="$DOTFILES_DIR/agents"
 
-# Deploy the live install profiles via `ap`. Mirrors
-# chezmoi/lib/install-base-profile.sh's two-wrapper asymmetry: the dot-dir
-# harnesses (claude/codex/cursor/copilot) use `global`, while opencode uses
-# `opencode-global`. Both wrappers own their target_default, so the deploy verb
-# intentionally omits `--target` and stays on the live install path.
-base-sync() {
-    dots profile install global \
-        --harness claude,codex,cursor,copilot \
-        && dots profile install opencode-global \
-        --harness opencode
-}
+# base-sync is RETIRED (spec: chezmoi-authoritative-claude, decision E1/A2).
+# Global claude config now deploys via chezmoi from
+# chezmoi/.chezmoidata/claude.yaml on `dots sync` (additions AND removals);
+# other harnesses (codex/opencode/cursor/copilot) are frozen pending their own
+# migration spec. `ap` remains only for scoped/ephemeral profiles (`ccp <name>`).
 alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'
-# Deploy is unified through `ap`: the registry stays the edit surface
-# (mcp-edit), and base-sync renders the registry-derived union into every
-# harness at $HOME (curd 7 / D1 — replaces the retired mcp sync). The unified
-# entry point is `base-sync`; the per-registry *-sync mnemonics were retired.
-alias mcp-edit='${EDITOR:-vim} $AGENTS_DOTFILES/mcp/registry.yaml'
+# Claude's MCP edit surface is the claude registry; `dots sync` reconciles
+# ~/.claude.json user scope against it via the manifest-tracked reconcile.
+alias mcp-edit='${EDITOR:-vim} $DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml'
 
 # ═══════════════════════════════════════════════════════════════════
 # Hook Management (harness-agnostic — edit surface; deploy via `ap`)
@@ -322,8 +314,8 @@ alias claude-settings='${EDITOR:-vim} ~/.claude/settings.json'
 # ═══════════════════════════════════════════════════════════════════
 alias plugin='claude plugin'
 alias plugin-ls='claude plugin list'
-# plugin-sync: deploy plugins via ap (cross-harness registry -> dots sync)
-alias plugin-sync='dots profile install base'
+# plugin-sync: sync claude-native marketplace plugins (claude/plugins/sync.sh)
+alias plugin-sync='bash $DOTFILES_DIR/claude/.sync'
 # plugin-edit: the cross-harness plugin registry (SSOT for all harnesses)
 alias plugin-edit='${EDITOR:-vim} $DOTFILES_DIR/agents/plugins/registry.yaml'
 

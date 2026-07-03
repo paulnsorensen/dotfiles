@@ -6,7 +6,7 @@
 #
 # Not a bats test: it requires node, which is not guaranteed in CI bats runs.
 # Run via: bash tests/workflows-parse.sh
-# Or add to a Justfile smoke target alongside serena-smoke.sh.
+# Runs from the Justfile smoke target.
 #
 # Exit codes:
 #   0  all workflows parse + logic checks pass, or node is absent (skip)

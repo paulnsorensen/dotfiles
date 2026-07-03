@@ -1,0 +1,101 @@
+# oh-my-pi registry — single source of truth for global ~/.omp/agent/
+# config.yml AND models.yml.
+#
+# Auto-loaded by chezmoi into template data as `.omp.*` (.chezmoidata).
+# Edit here, then `dots sync`. The managed keys under `config` are authored
+# WHOLESALE into ~/.omp/agent/config.yml by dot_omp/private_agent/modify_config.yml
+# on every apply — live drift on a managed key (an in-app symbolPreset toggle,
+# a hand-edited disabledProviders list) is WIPED. Promote anything worth keeping
+# into this file, then `dots sync`.
+#
+# The `models` subtree is authored WHOLESALE into ~/.omp/agent/models.yml by
+# dot_omp/private_agent/models.yml.tmpl (a plain template — models.yml has no
+# machine-state key to preserve). Same drift rule: hand-edits to the live
+# models.yml are WIPED on apply. See the `models:` block below for the local-llm
+# provider notes.
+#
+# `setupVersion` is machine state, not config: the modify_ script preserves it
+# from the live file and never authors it here.
+#
+# `disabledProviders: [claude]` is why omp no longer reads ~/.claude. omp's
+# `claude` discovery provider (discovery/claude.ts, provider id "claude") pulls
+# CLAUDE.md, settings.json, skills/, hooks, MCP config, commands, tools, and
+# SYSTEM.md from ~/.claude; disabling the whole provider drops all of it.
+#
+# Gotcha — array settings REPLACE, they don't merge across omp config layers.
+# A project-level .omp/config.yml that sets its own `disabledProviders` list
+# replaces this global one wholesale and can silently re-enable `claude`.
+# Check every active layer if claude discovery reappears.
+
+omp:
+  config:
+    symbolPreset: nerd
+    colorBlindMode: true
+    defaultThinkingLevel: auto
+    disabledProviders:
+      - claude
+    display:
+      showTokenUsage: true
+      cacheMissMarker: true
+    includeWorkspaceTree: true
+    advisor:
+      enabled: false
+    compaction:
+      thresholdTokens: 150000
+    lsp:
+      formatOnWrite: true
+    github:
+      enabled: true
+    task:
+      eager: default
+    # Reasoning goes to the interactive session (default) and the reasoning
+    # roles (plan/slow). Delegation/dispatch roles that "just do work" —
+    # smol/tiny/task/commit — stay on cheap/no-reasoning models so subagent
+    # fan-out and commit-message generation never ride the reasoning cost.
+    # `task` in particular inherits the active session model unless pinned.
+    modelRoles:
+      default: openai-codex/gpt-5.5:medium
+      smol: gpt-5.4-mini
+      plan: openai-codex/gpt-5.5:xhigh
+      advisor: openai-codex/gpt-5.5
+      tiny: openai-codex/gpt-5.4-nano
+      slow: openai-codex/gpt-5.5:xhigh
+      task: gpt-5.4-mini
+      commit: gpt-5.4-mini
+      vision: openai-codex/gpt-5.4
+  # Local LLM stack — LiteLLM proxy front (~/local-llm), OpenAI-compatible.
+  # Keyless: the proxy sets no master_key, so no Authorization header is sent.
+  # contextWindow per model matches the backend's launched --ctx-size in
+  # ~/local-llm/configs/llama-swap.yaml — do not inflate, or requests overflow
+  # the real llama.cpp n_ctx and fail.
+  models:
+    providers:
+      local-llm:
+        baseUrl: http://127.0.0.1:4000/v1
+        api: openai-completions
+        auth: none
+        models:
+          - id: local-haiku
+            name: Local Haiku (Qwen3-8B, CPU, hot)
+            reasoning: false
+            input: [text]
+            contextWindow: 16384
+            maxTokens: 4096
+          - id: local-sonnet
+            name: Local Sonnet (Qwen3-30B-A3B, iGPU, swap)
+            reasoning: false
+            input: [text]
+            contextWindow: 32768
+            maxTokens: 8192
+          - id: local-coder
+            name: Local Coder (Qwen3-Coder-30B-A3B, iGPU, swap)
+            reasoning: false
+            input: [text]
+            contextWindow: 32768
+            maxTokens: 8192
+          - id: local-vision
+            name: Local Vision (Qwen3-VL-8B, CPU, swap)
+            reasoning: false
+            input: [text, image]
+            contextWindow: 8192
+            maxTokens: 2048

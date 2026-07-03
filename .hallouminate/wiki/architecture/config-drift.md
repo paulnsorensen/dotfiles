@@ -36,7 +36,7 @@ files above is never removed, so it lingers indefinitely.
 | **Dotfiles bug** | The repo's own source is wrong (registry → missing script, invalid hook `event`, required MCP `${VAR}` not marked `optional`, wiki index won't rebuild). | Open a gh issue. |
 | **Expected local** | Live-only, no repo provenance — a personal hook, an extra permission, the tmux Stop hook, the JS guards under `~/.claude/hooks/`, a hand-added MCP. | Leave alone. |
 
-The Claude-specific JS guards (`bash-guard.js`, `write-guard.js`, …), `rtk`,
+The Claude-specific JS guards (`worktree-guard.js`, `hook-runner.js`, …), `rtk`,
 and any tmux hook are **settings-only and legit** — not managed by any render
 target, so they are *not* drift even though they live in `settings.json`.
 
@@ -127,7 +127,7 @@ when it was a registry MCP.
 
 **Why it happens**: `~/.claude/settings.json` is a `create_` chezmoi seed —
 written once and then user-owned. If a guard script name is manually added to
-a hook-runner command (e.g. `bash-guard.js git-guard.js`) but the corresponding
+a hook-runner command (e.g. `worktree-guard.js git-guard.js`) but the corresponding
 `~/.claude/hooks/<name>.js` file is never deployed, the runner fails-open (logs
 the error, continues with loaded hooks) every Bash call. The renderer's
 `_clean_legacy_settings_hooks` won't catch it — the command doesn't duplicate
@@ -139,7 +139,7 @@ settings-managed JS hook. The `agents/lib/git-guard.js` is the shared classifier
 library the shell script loads — it is NOT a standalone hook. Someone added
 `git-guard.js` to the hook-runner command in `settings.json` at some point, but
 the file was never deployed to `~/.claude/hooks/` (no chezmoi template for it;
-the chezmoi seed `create_settings.json` has only `bash-guard.js`). The
+the chezmoi seed `create_settings.json` has only `worktree-guard.js`). The
 functional gap is zero — git-guard.sh covers the same protection — but every
 Bash call logs an error.
 
@@ -158,7 +158,7 @@ normal operation but pollutes stderr in verbose mode.
 the dotfiles repo.
 
 **Why it happens**: `~/.claude/hooks/` is a **symlink** → `$DOTFILES_DIR/claude/hooks/`.
-The JS guard hooks (`bash-guard.js`, `hook-runner.js`, etc.) live there and are
+The JS guard hooks (`worktree-guard.js`, `hook-runner.js`, etc.) live there and are
 intentional. Before the plugin-tree migration, shell hook scripts (like the
 cheese-flair SessionStart hook) were also deployed into `~/.claude/hooks/` and
 wired via `settings.json`. When the migration moved them into the plugin tree
@@ -209,6 +209,31 @@ is present.
 
 [^staged-global-mcp]: harness-doctor run on 2026-06-24; `ap install global --target /tmp/harness-doctor-global.nH8lCY` modified `/home/paul/.claude.json` for tilth, context7, tavily, serena, and hallouminate.
 [^claude-user-scope-disconnected]: agent-profile/agent_profile/renderers/claude.py:516-540; agent-profile/tests/test_renderer_claude.py:test_user_scope_render_does_not_register_via_cli; agent-profile/tests/test_compile_command.py:test_compile_user_scope_stays_disconnected_from_live_config
+
+## Known drift pattern: registry hook-event removal halts the chezmoi settings gate
+
+**Symptom**: `dots sync` fails in the chezmoi leg with `Claude settings.json has
+key-path(s) the repo does not know about` naming hook event keys (e.g.
+`hooks.PermissionRequest`, `hooks.PostToolUse`) right after a commit *removed*
+those hooks from `chezmoi/.chezmoidata/claude.yaml`.
+
+**Why it happens**: `chezmoi/dot_claude/modify_settings.json` composes the
+desired settings.json wholesale and halts on any live key-path absent from the
+desired document. The gate cannot distinguish "Claude Code introduced a new
+key" (fold it in) from "the repo deliberately removed a key" (live is stale) —
+both look like live-only key-paths. Removing a hook *entry* under a surviving
+event key is fine (array indices are dropped from signatures); removing the
+last hook under an event key — or the last hook carrying a field like
+`timeout` — strands that key-path live and bricks every subsequent sync until
+the live file is pruned by hand.
+
+**Fix**: one-time prune of the removed key-paths from `~/.claude/settings.json`
+(e.g. `jq 'del(.hooks.<Event>)'` to a temp file, then move into place), then
+`dots sync` — the wholesale write owns `hooks` from then on. First hit
+2026-07-02 after 1bf2f88/5f78a0f removed the moshi PermissionRequest,
+auto-format PostToolUse, and jmux-attention Stop hooks. The ignore-file
+proposal in [#355](https://github.com/paulnsorensen/dotfiles/issues/355)
+addresses the adjacent app-churned-key case, not this removal case.
 
 ## Gotcha: index drift is its own drift class
 
