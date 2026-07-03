@@ -37,6 +37,9 @@ def _manifest_with_hook(src: Path, script_basename: str) -> Manifest:
     return Manifest(
         name="p1",
         description="t",
+        # isolated: the legacy config.toml sweep only runs for isolated
+        # launches now (live installs leave the shared config.toml alone).
+        isolated=True,
         hooks=[
             {
                 "name": "session-start-cheese-flair",

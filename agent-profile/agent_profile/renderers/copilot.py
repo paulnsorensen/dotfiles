@@ -169,6 +169,9 @@ class CopilotRenderer:
         self._write_hooks(manifest, base, out_files)
         if manifest.isolated:
             self._write_mcp(manifest, base)
+        # Ungated by design: writes Copilot's own CLI plugin store, not a
+        # merged config file. Copilot is not chezmoi-migrated yet, so ap still
+        # owns this surface for live installs — revisit when it migrates.
         self._render_native_plugins(manifest)
         return out_files
 
