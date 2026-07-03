@@ -215,6 +215,15 @@ desired=$(
     '
 )
 
+# env.SSL_CERT_FILE is a macOS-only pin (dc42ae5): the Seatbelt sandbox blocks
+# Keychain access, so OpenSSL-linked tools need /etc/ssl/cert.pem spelled out.
+# That path does not exist on Linux and poisons TLS for anything honoring the
+# var (npx, curl, Go) — drop the key on non-Darwin. The unknown-key gate below
+# still treats a live copy as known so the transition sync wipes it, not halts.
+if [ "$(uname -s)" != "Darwin" ]; then
+    desired=$(printf '%s' "$desired" | jq 'del(.env.SSL_CERT_FILE)')
+fi
+
 # Fresh machine (empty stdin): emit the desired document.
 if [ -z "$live" ]; then
     printf '%s\n' "$desired"
@@ -240,7 +249,7 @@ unknown=$(
     printf '%s' "$live" | jq -r --argjson desired "$desired" '
         def sig: [ .[] | strings ];
         [ ["enabledPlugins"], ["extraKnownMarketplaces"] ] as $dyn
-        | ([ $desired | paths | sig ] | unique) as $known
+        | (([ $desired | paths | sig ] + [["env","SSL_CERT_FILE"]]) | unique) as $known
         | [ paths | sig ]
         | map(select(
               . as $p

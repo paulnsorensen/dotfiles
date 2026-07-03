@@ -478,3 +478,18 @@ run_native() {
     # The literal \${HOME} token is expanded to the real HOME by the expand walk.
     [ "$(jq -r '.extraKnownMarketplaces["tok"].source.path' "$OUT")" = "$HOME/tok" ]
 }
+
+@test "modify_settings: SSL_CERT_FILE dropped from desired on Linux; live copy wiped without halting" {
+    [ "$(uname -s)" = "Darwin" ] && skip "macOS keeps the pin"
+    # Live file carrying the old pin must not trip the unknown-key gate.
+    run_modify '{"env":{"ENABLE_TOOL_SEARCH":"true","SSL_CERT_FILE":"/etc/ssl/cert.pem"}}'
+    [ "$status" -eq 0 ]
+    jq -e '.env | has("SSL_CERT_FILE") | not' "$OUT" >/dev/null
+}
+
+@test "modify_settings: SSL_CERT_FILE kept on macOS" {
+    [ "$(uname -s)" != "Darwin" ] && skip "Linux drops the pin"
+    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.env.SSL_CERT_FILE' "$OUT")" = "/etc/ssl/cert.pem" ]
+}
