@@ -1,0 +1,82 @@
+#!/bin/bash
+# run_onchange — primes native-claude plugin marketplaces in the claude CLI
+# runtime state (~/.claude/plugins/known_marketplaces.json) against the
+# cross-harness plugin registry, and prunes the ones this reconcile owns.
+#
+# modify_settings.json writes the enabledPlugins / extraKnownMarketplaces keys
+# into settings.json; this script builds the CLI's marketplace index so the
+# named plugins actually resolve (a settings.json entry alone does not index a
+# marketplace — see wiki architecture/cross-harness-plugins "Native renderer
+# passes").
+#
+# Rerun trigger: the hash of agents/plugins/registry.yaml, embedded at template
+# render time, so a native-plugin add/remove/edit re-runs the prime on the next
+# apply.
+#
+# registry plugins hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/plugins/registry.yaml 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+REG_FILE="$SOURCE_DIR/../agents/plugins/registry.yaml"
+
+# Fail loud, not skip: exit 0 would record this run_onchange as done for the
+# current registry hash — the prime would then silently never run until the
+# registry next changes. Nonzero re-runs it on the next apply.
+for cmd in jq yq; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "  ERROR: $cmd not found — claude plugin reconcile cannot run; install $cmd and rerun 'dots sync'" >&2
+        exit 1
+    fi
+done
+
+if [[ ! -f "$REG_FILE" ]]; then
+    echo "  ERROR: plugin registry not found: $REG_FILE" >&2
+    exit 1
+fi
+
+# shellcheck source=../lib/claude-plugin-reconcile.sh
+source "$SOURCE_DIR/lib/claude-plugin-reconcile.sh"
+
+# Resolve the desired native-claude entries to a JSON array of
+# {key, marketplace_root} (duplicates the modify_settings.json native-set
+# resolution — the modify script's copy is jq-internal and not reusable here).
+repo_root=$(cd "$SOURCE_DIR/.." && pwd)
+desired_json=$(
+    yq -o=json '.plugins' "$REG_FILE" \
+        | jq -r '
+            ["claude","codex","copilot"] as $drivable
+            | to_entries[] | .key as $key | .value as $v
+            | ( if ($v.native == true)
+                    then (($v.harnesses // []) - (($v.harnesses // []) - $drivable))
+                elif (($v.native | type) == "array") then $v.native
+                else [] end
+              ) as $nat0
+            | ($nat0 + (if $v.claude_native == true then ["claude"] else [] end)) as $nat
+            | select($nat | index("claude"))
+            | if $v.git then [$key, "git", ""]
+              elif $v.path then [$key, "path", $v.path]
+              else empty end
+            | @tsv' \
+        | while IFS="$(printf '\t')" read -r key kind rawpath; do
+            [[ -z "$key" ]] && continue
+            case "$kind" in
+                git) root="$HOME/.cache/ap/plugins/$key" ;;
+                path)
+                    # shellcheck disable=SC2088  # literal "~/" expanded below
+                    case "$rawpath" in
+                        "~/"*) root="$HOME/${rawpath#"~/"}" ;;
+                        /*)    root="$rawpath" ;;
+                        *)     root="$repo_root/$rawpath" ;;
+                    esac
+                    ;;
+            esac
+            jq -n --arg k "$key" --arg r "$root" '{key: $k, marketplace_root: $r}'
+        done | jq -s '.'
+)
+
+claude_plugin_reconcile \
+    "$desired_json" \
+    "$HOME/.claude/plugins/known_marketplaces.json" \
+    "$HOME/.claude/.chezmoi-plugin-manifest" \
+    "$HOME/.claude/plugins/installed_plugins.json"
