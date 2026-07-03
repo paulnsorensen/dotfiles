@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# dotsclaude — script form of the zsh `cc` function so Conductor (or any other
+# launcher that exec's a path) can use the same preamble wrapping.
+#
+# Mirrors zsh/claude.zsh:_cc_base() — intentionally without the tmux wrap.
+set -euo pipefail
+
+AGENTS_DOTFILES="${AGENTS_DOTFILES:-$HOME/Dev/dotfiles/agents}"
+CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
+
+flags=()
+
+# Preamble system-prompt replacement (replaces Anthropic's baked prompt).
+[[ -f "$AGENTS_DOTFILES/preamble.md" ]] && \
+    flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+
+exec "$CLAUDE_BIN" "${flags[@]}" "$@"

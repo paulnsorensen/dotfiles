@@ -8,60 +8,21 @@ SOURCE_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 # Create ~/.claude if it doesn't exist
 mkdir -p "$CLAUDE_DIR"
 
-# Config to symlink. NOT included here:
-#   - plugins/  — Claude uses that path as plugin cache
-#   - skills/   — copied (not symlinked) by chezmoi via
-#                 chezmoi/.chezmoiscripts/run_onchange_install-claude-skills.sh.tmpl
-#                 so gh-installed skills can drop real dirs alongside
-#                 without fighting a directory symlink.
-configs=(
-  agents
-  commands
-  hooks
-  settings.json
-  mcp
-  reference
-  profiles
-  CLAUDE.md
-  RTK.md
-)
-
-# Install hook dependencies (wink-nlp for violation classifier)
-if [[ -f "$SOURCE_DIR/hooks/package.json" ]]; then
-  echo "  Installing hook dependencies..."
-  if command -v npm &>/dev/null; then
-    if ! (cd "$SOURCE_DIR/hooks" && npm install --silent); then
-      echo "  ERROR: npm install for hook dependencies failed." >&2
-      echo "  To debug, run: cd \"$SOURCE_DIR/hooks\" && npm install" >&2
-      exit 1
-    fi
-  else
-    echo "  Skipping hook dependency install (npm not found)."
-    echo "  To install later, run: cd \"$SOURCE_DIR/hooks\" && npm install"
-  fi
-fi
-
-for item in "${configs[@]}"; do
-  target="$CLAUDE_DIR/$item"
-  source="$SOURCE_DIR/$item"
-
-  if [[ -e "$source" ]]; then
-    if [[ -L "$target" ]]; then
-      rm "$target"
-    elif [[ -e "$target" ]]; then
-      echo "  Backing up existing $item"
-      mv "$target" "$target.bak"
-    fi
-
-    echo "  Linking $item"
-    ln -s "$source" "$target"
-  fi
-done
+# Claude-only asset dirs — commands/, hooks/, reference/, workflows/ — deploy
+# via chezmoi exact_ dirs assembled by sync_claude_chezmoi_sources (see
+# .sync-lib.sh), NOT symlinks and NOT this script. Removals propagate on
+# apply. Edits need a `dots sync` / `chezmoi apply` to go live.
+#
+# Also NOT handled here (owned by the claude registry
+# chezmoi/.chezmoidata/claude.yaml + chezmoi — see the deploy table in
+# AGENTS.md): skills/, agents/, commands/, hooks/, lib/, reference/,
+# workflows/, settings.json, and user-scope MCPs in ~/.claude.json.
+# plugins/ stays Claude's own lifecycle (marketplace bootstrap below).
 
 # RTK agent setup is done manually via the `rtk-init-*` aliases in
 # zsh/claude.zsh — running `rtk init` during sync would rewrite
-# ~/.claude/settings.json on every invocation, clobbering our symlink.
-# Claude Code hook is tracked in settings.json above and needs no init.
+# ~/.claude/settings.json on every invocation. The Claude Code hook is
+# wired through the agents/ registries + `ap` render, so it needs no init here.
 
 # Set up local-marketplace + cache symlinks for ~/Dev/vaudeville so plugin sync
 # can resolve it. Gate name is read from the registry to keep the gate field
@@ -101,19 +62,16 @@ sync_vaudeville_cache() {
   done
 }
 
-# Sync MCPs and plugins (requires claude CLI)
+# MCP sync moved to chezmoi (see run_onchange_install-mcp.sh.tmpl).
+# Plugin sync stays here — it's claude-only and tied to local marketplace setup.
 if command -v claude &>/dev/null; then
-  if [[ -x "$SOURCE_DIR/mcp/sync.sh" ]]; then
-    echo "  Running MCP sync..."
-    bash "$SOURCE_DIR/mcp/sync.sh" --force
-  fi
   sync_vaudeville_cache
   if [[ -x "$SOURCE_DIR/plugins/sync.sh" ]]; then
     echo "  Running plugin sync..."
     bash "$SOURCE_DIR/plugins/sync.sh" --force
   fi
 else
-  echo "  Skipping MCP/plugin sync (claude CLI not found)"
+  echo "  Skipping plugin sync (claude CLI not found)"
 fi
 
 # Drop stale per-project entries from ~/.claude.json (worktrees that no

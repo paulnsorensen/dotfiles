@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeReadFile": [
+      {
+        "command": "./hooks/sensitive-file-guard.sh",
+        "type": "command",
+        "timeout": 2
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "./hooks/block-destructive.sh",
+        "type": "command",
+        "matcher": "rm -rf|sudo |chmod 777|git push --force|git reset --hard",
+        "failClosed": true,
+        "timeout": 2
+      },
+      {
+        "command": "./hooks/sensitive-file-guard.sh",
+        "type": "command",
+        "timeout": 2
+      },
+      {
+        "command": "./hooks/git-guard.sh",
+        "type": "command",
+        "matcher": "git\\s+(.*\\s)?(checkout|restore|reset|clean)\\b",
+        "timeout": 5
+      }
+    ],
+    "stop": [
+      {
+        "command": "./hooks/session-summary.sh",
+        "type": "command",
+        "timeout": 2
+      }
+    ]
+  }
+}

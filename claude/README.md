@@ -4,24 +4,25 @@ This directory contains the complete Claude Code configuration for the Cheddar F
 
 ## Setup
 
-Symlinked to `~/.claude/` via the dotfiles sync system:
+Deployed to `~/.claude/` via the dotfiles sync system:
 
 ```bash
 dots sync
 ```
 
-This creates symlinks for `agents/`, `commands/`, `hooks/`, `skills/`, `settings.json`, and `mcp/`.
+Nothing here is symlinked into `~/.claude/` anymore — a directory symlink let Claude's runtime writes leak back into the repo. Deployment now:
+
+- `commands/`, `hooks/`, `reference/`, `workflows/` → **one-way copies** via `chezmoi/lib/install-claude-assets.sh` (manifest-tracked; edits need a `dots sync` to go live).
+- `agents/`, MCP servers, `skills/` → rendered/copied from the repo-root `agents/` registries by the `ap` tool + chezmoi (shared with Codex et al.).
+- `settings.json` → seeded once by chezmoi, then jq-merged by `ap install global`.
 
 ## Directory Structure
 
 ```
 claude/
-├── agents/           # Specialist agents (Fromage pipeline + standalone)
-├── commands/         # Slash commands (/fromage, /spec, /age, etc.)
+├── commands/         # Slash commands (/spec, /wreck, /test, etc.)
 ├── hooks/            # Pre-tool enforcement hooks + lifecycle hooks
-├── mcp/              # MCP registry and sync script
-│   ├── registry.yaml # Source of truth for MCP servers
-│   └── sync.sh       # Declarative sync via native claude mcp commands
+├── lib/              # Shared sync helpers (sync-common.sh)
 ├── plugins/          # Plugin registry and sync script
 │   ├── registry.yaml # Source of truth for plugins
 │   └── sync.sh       # Declarative sync via native claude plugin commands
@@ -29,9 +30,10 @@ claude/
 ├── settings.json     # Claude Code settings (env, permissions, hooks, plugins)
 ├── .sync             # Sync script for dotfiles integration
 ├── .gitignore        # Excludes local state
-├── CLAUDE.md         # Project instructions (this is separate from this README)
 └── README.md         # This file
 ```
+
+> The shared global agent instructions live at `agents/AGENTS.md` (repo root) and are copied to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` by chezmoi. The MCP registry lives at `agents/mcp/registry.yaml` and is applied to both harnesses by `agents/mcp/sync.sh`.
 
 ---
 
@@ -43,23 +45,16 @@ Slash commands invoked with `/command-name`.
 
 | Command | Description |
 |---------|-------------|
-| `/fromage` | Intelligent cheese-making pipeline (Preparing -> Pasteurize -> Culture -> Curdle -> Cut -> Cook -> Press -> Age -> Package) |
 | `/spec` | Discovery dialogue to architect a feature and produce a specification |
 | `/scaffold` | Scaffold a new domain slice following Sliced Bread architecture |
-| `/worktree` | Create an isolated git worktree for a task |
 
 ### Review & Quality Commands
 
 | Command | Use When |
 |---------|----------|
-| `/diff` | Pre-commit smoke test -- catch secrets, debug statements, silent failures |
-| `/age` | Staff Engineer code review of recent changes (fromage-age, focused mode) |
-| `/code-review` | Deep dive -- full architectural walkthrough with persistent history |
-| `/simplifier` | Reduction -- strip genAI bloat, enforce YAGNI (invokes ricotta-reducer) |
 | `/copilot-review` | PR review -- analyze, present findings, route fixes to Copilot |
 | `/copilot-delegate` | Delegate PR fixes to GitHub Copilot via inline comments |
 | `/copilot-setup` | Generate GitHub Copilot agent and review instructions for a repo |
-| `/audit` | Security and dependency health audit (fromage-pasteurize) |
 | `/wreck` | Adversarial test writer (roquefort-wrecker) |
 | `/test` | Run existing tests via whey-drainer, returns concise summary |
 
@@ -67,10 +62,7 @@ Slash commands invoked with `/command-name`.
 
 | Command | Description |
 |---------|-------------|
-| `/agents` | Control panel listing all agents, skills, and commands |
 | `/setup-perms` | Scaffold `.claude/settings.local.json` with project permissions |
-| `/onboard` | Quick codebase orientation for an unfamiliar repo |
-| `/pull` | Pull latest from main |
 | `/briesearch` | Multi-source research: library docs, codebase analysis, prior art (cheese-flow plugin) |
 
 ### Learning Commands
@@ -84,38 +76,28 @@ Slash commands invoked with `/command-name`.
 
 ---
 
-## Agents (`agents/`)
+## Agents (`agents/registry.yaml` + `agents/agent_definitions/`)
 
-Specialized agents invoked via Task tool with `subagent_type`.
+Specialized agents invoked via Task tool with `subagent_type`. Defined in the
+repo-root `agents/registry.yaml` (metadata) with bodies under
+`agents/agent_definitions/`, rendered into every harness by `ap`.
 
-### Fromage Pipeline Agents
-
-| Agent | Phase | Purpose |
-|-------|-------|---------|
-| `fromage-pasteurize` | Pasteurize | Security and dependency health audit |
-| `fromage-culture` | Culture | Read-only codebase exploration |
-| `fromage-curdle` | Curdle | Execution plan creation (plan mode) |
-| `fromage-cook` | Cook | Implementation |
-| `fromage-press` | Press | Adversarial testing |
-| `fromage-age-safety` | Age | Correctness & safety (bugs, security, silent failures) |
-| `fromage-age-arch` | Age | Complexity budgets, nesting smells, file structure |
-| `fromage-age-encap` | Age | Encapsulation, leaky abstractions, boundary violations |
-| `fromage-age-yagni` | Age | Dead code (must be justified), speculative abstractions, AI noise |
-| `fromage-age-history` | Age | Git history risk signals → per-file score modifiers |
-| `fromage-age-spec` | Age | Spec drift, monkey patches, missing implementations |
-
-> **Note**: The `age` orchestration is a **skill** (`skills/age/SKILL.md`), not an agent. It runs inline in the caller's context and spawns the 6 sub-agents as first-level agents — no nested agent depth issues.
-
-### Standalone Agents
+### Review & Test Agents
 
 | Agent | Purpose |
 |-------|---------|
-| `cheese-factory` | Codebase orientation and mapping |
+| `fromage-secaudit` | Security and dependency health audit |
+| `fromage-fort` | PR review comment responder with severity-tier scoring |
+| `fromage-age-arch` | Complexity budgets, nesting smells, file structure |
+| `fromage-age-history` | Git history risk signals → per-file score modifiers |
 | `ricotta-reducer` | Code distillation and simplification (analysis only) |
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
+| `nih-scanner` | Structural NIH pattern scanner |
+| `worktree-content-digest` | Read-only per-worktree content digest (fanned out by the worktree-triage skill) |
+| `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by skill-improver) |
 
-All review/analysis agents use 0-100 confidence scoring (>= 50 to surface findings).
+Review/analysis agents use severity tiers (blocker/high/medium/low) with calibration tags (`<certain>`/`<speculative>`); surface medium+ and certain lows.
 
 ---
 
@@ -125,12 +107,9 @@ Reusable tool-usage instructions injected into agents and commands.
 
 | Skill | Purpose |
 |-------|---------|
-| `scout` | Directory listings (eza); delegates code search to `cheese-flow:cheez-search` |
-| `cheese-flow:cheez-search` | AST-aware code/content search via tilth MCP (replaces trace) |
-| `cheese-flow:cheez-read` | Hash-anchored code reading via tilth MCP |
-| `cheese-flow:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |
-| `diff` | Pre-commit change review |
-| `fetch` | External docs via Context7, WebSearch, Tavily |
+| `easy-cheese:cheez-search` | AST-aware code/content search via tilth MCP (replaces trace) |
+| `easy-cheese:cheez-read` | Hash-anchored code reading via tilth MCP |
+| `easy-cheese:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |
 | `gh` | GitHub operations via gh CLI |
 | `commit` | Git staging and conventional commits |
 | `tui-design` | TUI design and implementation (ratatui, Textual) |
@@ -150,15 +129,7 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 | Hook | Tool match | Purpose |
 |------|-----------|---------|
-| `write-guard.js` | Edit, Write | Blocks placeholder/lazy code and inline test snippets |
-| `worktree-guard.js` | _(disabled)_ | File kept in tree for reference; not registered in settings |
-| `phantom-file-check.js` | Read | Prevents reading non-existent files (anti-hallucination) |
-
-### Post-Tool Hooks
-
-| Hook | Tool match | Purpose |
-|------|-----------|---------|
-| `auto-format.js` | Edit, Write | Runs project formatter on edited files |
+| `worktree-guard.js` | Edit, Write, MultiEdit, tilth_write | In a git worktree, blocks writes outside the worktree root. **Opt-out**: enforces by default; `CLAUDE_WORKTREE_GUARD=0` disables it. Extend the allowlist with `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2`. Always allowed: worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, any `.cheese/` dir |
 
 ### Other
 
@@ -181,16 +152,9 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 
-**LSP Plugins** (from `boostvolt/claude-code-lsps`, lazy-start per file type):
-
-| Plugin | Language |
-|--------|----------|
-| `bash-language-server` | Bash/shell |
-| `vtsls` | TypeScript/JavaScript |
-| `yaml-language-server` | YAML |
-| `rust-analyzer` | Rust |
-| `pyright` | Python |
-| `gopls` | Go |
+Symbol-level code intelligence is provided by the Serena MCP (see
+`agents/mcp/registry.yaml`); the per-language LSP plugins from
+`boostvolt/claude-code-lsps` were removed once Serena went cross-harness.
 
 **Workflow Plugins** (from `anthropics/claude-code-plugins`):
 
@@ -206,7 +170,6 @@ Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 
 | Plugin | Source | Purpose |
 |--------|--------|---------|
-| `claude-hud` | `jarrodwatts/claude-hud` | Statusline HUD |
 | `cheese-flow` | local (`~/Dev/cheese-flow`) | Cheddar Flow agent pipeline + tilth MCP + cheez-* skills |
 | `todoist-flow` | in-repo (`claude/plugins/local/todoist-flow`) | Todoist productivity suite |
 | `vaudeville` | local (`~/Dev/vaudeville`) | SLM-powered semantic hook enforcement |
@@ -215,14 +178,12 @@ Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 
 ## MCP Servers
 
-Managed declaratively via `mcp/registry.yaml`. Sync with `mcp-sync` (run `mcp-ls` to verify).
+Managed declaratively via the shared registry at `agents/mcp/registry.yaml` (driven by `agents/mcp/sync.sh`). Sync with `mcp-sync` (run `mcp-ls` to verify). Entries default to both harnesses; set `harnesses: [claude]` or `[codex]` to target one.
 
 User-scope MCPs (registered here):
 
 | MCP | Purpose |
 |-----|---------|
-| `code-review-graph` | Persistent code knowledge graph; impact radius, call chains, architectural framing |
-| `serper` | Google SERP for factual lookups |
 | `todoist` | Todoist task/project management |
 | `tilth` | AST-aware code search/read/edit (Tree-sitter); backs `cheez-*` skills. Gated by `gate_unless: CHEESE_FLOW` — installed only when the cheese-flow plugin is dark, since the plugin bundles its own tilth MCP |
 

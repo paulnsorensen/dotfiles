@@ -1,0 +1,26 @@
+# skills-doctor — closed-world profile for debugging agent skills/profile behavior.
+name: skills-doctor
+description: Skills/profile diagnostics — closed world with tilth, hallouminate, and easy-cheese
+registries:
+  agents: agents/registry.yaml
+isolated: true
+system_prompt: CLAUDE.md
+env:
+  ENABLE_TOOL_SEARCH: "true"
+mcps:
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]
+    scope: user
+  - name: hallouminate
+    command: hallouminate
+    args: ["serve"]
+    scope: user
+skills:
+  - { name: skill-improver, path: skills/skill-improver }
+  - { name: harness-doctor, path: skills/harness-doctor }
+  - { name: settings-clean, path: skills/settings-clean }
+  - { name: tool-efficiency, path: skills/tool-efficiency }
+  - { name: prompt-analytics, path: skills/prompt-analytics }
+  - { name: session-analytics, path: skills/session-analytics }
+  - { source: paulnsorensen/easy-cheese }

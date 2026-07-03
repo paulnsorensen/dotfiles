@@ -4,7 +4,7 @@ description: >
   Discovery dialogue to architect a feature and produce a spec with user stories,
   quality gates, and implementation paths. Use when scope is unclear, features touch
   multiple systems, or architectural tradeoffs need exploration. Produces a spec
-  artifact that feeds directly into /fromage for implementation. Also trigger when
+  artifact that feeds directly into /cook for implementation. Also trigger when
   the user says "spec this out", "plan this feature", "write requirements for",
   "PRD for", or "what would it take to build".
 argument-hint: <what you want to build>
@@ -12,7 +12,7 @@ argument-hint: <what you want to build>
 
 Facilitate a discovery dialogue to architect: $ARGUMENTS
 
-This is upstream of implementation — collaborative design thinking that produces a spec artifact ready for `/fromage` execution.
+This is upstream of implementation — collaborative design thinking that produces a spec artifact ready for `/cook` (or `/ultracook` for autonomous flows).
 
 ## Dialogue Style
 
@@ -72,9 +72,9 @@ In Round 2, launch a **parallel evidence-gathering sweep** — spawn 3-4 agents 
 | Agent | Source | What to Find |
 |-------|--------|-------------|
 | `/briesearch` | Web + docs | Prior art, competitor approaches, relevant blog posts, library options |
-| `/lookup` → `cheese-flow:cheez-search` | Codebase | Existing patterns, public API surface, architectural boundaries |
-| LSP | Cross-refs | Call chains, dependency direction, blast radius of the change |
-| `/fetch` | External code | How other projects solved similar problems, real-world examples |
+| `easy-cheese:cheez-search` | Codebase | Existing patterns, public API surface, architectural boundaries |
+| Serena MCP (`mcp__serena__*`) | Cross-refs | Call chains, references, blast radius of the change |
+| `gh search code` | External code | How other projects solved similar problems, real-world examples |
 
 After agents return, **synthesize key patterns** before continuing the conversation:
 
@@ -87,9 +87,8 @@ Present synthesis conversationally: "I ran research in parallel — here's what 
 In later rounds, use individual skills as needed:
 
 - **`/briesearch`** — Verify specific assumptions, check APIs
-- **`/lookup`** — Targeted code exploration
-- **`cheese-flow:cheez-search`** — Structural code patterns: "what implements this interface?"
-- **LSP** — Cross-reference tracing and symbol navigation
+- **Serena MCP** (`mcp__serena__find_symbol`, `find_referencing_symbols`) — Targeted symbol lookup and cross-reference tracing
+- **`easy-cheese:cheez-search`** — Structural code patterns: "what implements this interface?"
 
 **Beat 3 — Summarize** (every 2 rounds)
 Periodically check alignment: "Here's where we are so far... Does this direction feel right?"
@@ -99,8 +98,8 @@ Periodically check alignment: "Here's where we are so far... Does this direction
 | Round | Focus | Skills |
 |-------|-------|--------|
 | 1 | Problem, users, success criteria, constraints | Light code reading to ground questions in reality |
-| 2 | Scope, non-goals, existing landscape | `/lookup`, `/briesearch` |
-| 3 | Design options, tradeoffs, quality gates | `/lookup`, `cheese-flow:cheez-search` |
+| 2 | Scope, non-goals, existing landscape | Serena MCP, `/briesearch` |
+| 3 | Design options, tradeoffs, quality gates | Serena MCP, `easy-cheese:cheez-search` |
 | 4+ | Refinement, edge cases, acceptance criteria | `/briesearch` as needed |
 
 Round 1 doesn't need formal skill invocations, but **do read relevant code** before asking questions. Grounding questions in what actually exists ("I see you already have a `FooAdapter` — is the pain that it doesn't cover X, or that it's too coupled to Y?") produces better answers than abstract interrogation.
@@ -162,7 +161,7 @@ Save and optionally publish:
 - Write to `.claude/specs/<slug>.md`
 - Offer: "Want me to create a GitHub Issue from this?"
 - If yes: `gh issue create --title "<title>" --body-file .claude/specs/<slug>.md`
-- Offer: "Ready to start implementation with `/fromage`?"
+- Offer: "Ready to start implementation with `/cook` (or `/ultracook` for autonomous)?"
 
 ## Spec Artifact Format
 
@@ -212,7 +211,7 @@ What we're explicitly NOT doing.
 ## Context
 
 ### Existing Landscape
-What already exists? (from /lookup and /research findings)
+What already exists? (from Serena MCP and `/briesearch` findings)
 
 ### Constraints
 Technical, business, or timeline constraints.
@@ -265,7 +264,7 @@ What could go wrong and how we'd handle it:
 - **Risk**: <what could fail> → **Mitigation**: <how we prevent or recover>
 
 ## Implementation Notes
-- Key files/modules to touch (from /lookup findings)
+- Key files/modules to touch (from Serena MCP findings)
 - Patterns to follow
 - Pitfalls to avoid
 
@@ -276,7 +275,7 @@ Synthesized findings from the parallel research burst:
 - **Tension**: Where sources disagreed and the decision we made
 
 ## Areas for Further Exploration
-Items that need deeper investigation during /fromage execution:
+Items that need deeper investigation during implementation:
 - [ ] Area 1 — what needs drill-down and why
 - [ ] Area 2
 
@@ -310,19 +309,19 @@ End-to-end verification scenarios:
 
 ## Writing User Stories for AI Execution
 
-The spec feeds into `/fromage`. User stories should be:
+The spec feeds into `/cook`. User stories should be:
 
 - **Small** — completable in one focused agent session
 - **Independent** — no story should block another if possible
 - **Verifiable** — acceptance criteria a machine can check, not "works correctly"
-- **Explicit** — include file paths, module names, patterns from `/lookup` findings
+- **Explicit** — include file paths, module names, patterns from Serena MCP lookups
 
 ## When NOT to Use /spec
 
-- Simple changes → `/fromage` directly
+- Simple changes → `/cook` directly
 - Bug fixes → just fix it
 - User already has clear spec → skip to implementation
-- Pure research → `/research` or `/onboard`
+- Pure research → `/briesearch`
 
 ## When to Use /spec
 

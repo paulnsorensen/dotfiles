@@ -23,6 +23,19 @@ defaults write NSGlobalDomain com.apple.trackpad.enableSecondaryClick -bool true
 defaults write com.apple.driver.AppleBluetoothMultitouch.mouse MouseButtonMode -string TwoButton
 defaults write com.apple.AppleMultitouchMouse mouseButtonMode -string TwoButton
 
+# cmux: open terminal link clicks in the system default browser instead of
+# cmux's in-app browser. cmux's own help: "When off, links clicked in terminal
+# output open in your default browser."
+defaults write com.cmuxterm.app browserOpenTerminalLinksInCmuxBrowser -bool false
+
+# Disable the input-source switching shortcuts so they free up Control+Space
+# for the tmux prefix. ID 60 = "Select the previous input source" (⌃Space),
+# ID 61 = "Select next source in Input menu" (⌃⇧Space, the reverse).
+defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 60 "{enabled = 0;}"
+defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 61 "{enabled = 0;}"
+# Reload the symbolic-hotkey settings so the change takes effect without re-login.
+/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u || true
+
 for plist in "$SCRIPT_DIR"/*.plist; do
     [[ -f "$plist" ]] || continue
     name="${plist##*/}"

@@ -17,9 +17,15 @@ if command -v difft &>/dev/null; then
 fi
 alias gdn='git diff --name-only'
 alias gf='git fetch'
-alias gl='git pull'
 alias gp='git push'
+alias gpl='git pull'
 alias gst='git status'
+
+# Pretty commit graph (recent 20)
+alias gl='git log --oneline --graph --decorate -20'
+
+# Undo last commit, keep the changes staged
+alias gundo='git reset --soft HEAD~1'
 
 # Remove files that match .gitignore
 alias gri='git rm --cached "$(git ls-files -i -X .gitignore)"'
@@ -27,8 +33,10 @@ alias gri='git rm --cached "$(git ls-files -i -X .gitignore)"'
 # Log only your commits
 alias glc='git config user.email | xargs git log --author'
 
-# Rebase from main
+# Rebase from main; continue / abort an in-progress rebase
 alias grb='git pull -r origin main'
+alias grbc='git rebase --continue'
+alias grba='git rebase --abort'
 
 # Checkout main and pull
 alias gcom='git checkout main && git pull'
@@ -63,8 +71,30 @@ alias c="code -r ."
 # Shell reload
 alias zrl="source ~/.zshrc"
 
+# Deploy dotfiles (symlinks, packages, chezmoi, base-profile render)
+alias ds='dots sync'
+
 # Tmux reload
 alias trl='tmux source-file ~/.tmux.conf && echo "tmux config reloaded"'
+
+# =============================================================================
+# Remote access (Tailscale + mosh + tmux)
+# =============================================================================
+# Canonical resilient remote shell: mosh keeps the connection alive across
+# network changes / sleep; tmux keeps the session alive across disconnects.
+# Usage: mtmux <host> [session]   (host = MagicDNS name or Tailscale IP)
+mtmux() {
+    local host="$1" session="${2:-main}"
+    if [[ -z "$host" ]]; then
+        echo "usage: mtmux <host> [session]" >&2
+        return 2
+    fi
+    mosh "$host" -- tmux new -A -s "$session"
+}
+
+# Tailscale shortcuts
+alias tss='tailscale status'
+alias tsip='tailscale ip -4'
 
 # =============================================================================
 # Search and Find (using ripgrep)
@@ -134,6 +164,18 @@ if command -v ast-grep &> /dev/null; then
   alias sg='ast-grep'
 fi
 
+# opencode - terminal AI coding agent
+if command -v opencode &> /dev/null; then
+  alias oc='opencode'
+fi
+
+# Oh My Pi tight profile - isolated agent dir at ~/.omp-tight/agent
+if command -v omp &> /dev/null; then
+  ompt() {
+    PI_CONFIG_DIR=.omp-tight omp "$@"
+  }
+fi
+
 # =============================================================================
 # Rust Replacements (modern coreutils)
 # =============================================================================
@@ -157,12 +199,27 @@ if command -v tokei &>/dev/null; then
     alias loc='tokei'
 fi
 
+# cargo-nextest - faster parallel test runner
+if command -v cargo-nextest &>/dev/null; then
+    alias cn='cargo nextest run'
+    alias cnf='cargo nextest run --failure-output immediate-final'
+fi
+
 # =============================================================================
-# Agent Skills (`gh skill install` — harness-agnostic; targets each agent in
-# $SKILL_HARNESSES from .env: claude-code, cursor, codex, github-copilot, etc.)
+# Agent Skills — `skills/_registry.yaml` (external sources) + the local
+# `skills/` tree are the EDIT surface (skill-edit). For claude, `dots sync`
+# selects local skills via chezmoi/.chezmoidata/claude.yaml, vendors external
+# sources, and deploys them as chezmoi exact_ dirs (removals propagate).
+# Other harnesses are frozen pending their migration spec.
 # =============================================================================
-alias skill='gh skill'
-alias skill-ls='gh skill update --all --dry-run'
-alias skill-sync='$DOTFILES_DIR/skills-install/sync.sh'
-alias skill-sync-dry='$DOTFILES_DIR/skills-install/sync.sh --dry-run'
+alias skill='npx --yes skills'
+alias skill-ls='npx --yes skills list --global'
 alias skill-edit='${EDITOR:-vim} $DOTFILES_DIR/skills/_registry.yaml'
+
+# =============================================================================
+# Cheatsheet
+# =============================================================================
+# Print categorized shortcut reference: git, claude, worktrees, tmux, bin/
+# ZLE binding: no clean vi-mode-safe key found (Ctrl+R owned by atuin/fzf,
+# Ctrl+T by fzf, Ctrl+\\  risks SIGQUIT on some terminals). Use the alias.
+alias cheat='$DOTFILES_DIR/bin/cheatsheet'

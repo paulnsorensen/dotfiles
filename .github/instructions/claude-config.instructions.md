@@ -1,18 +1,18 @@
 ---
-applyTo: "claude/**"
+applyTo: "{claude,skills}/**"
 ---
 
 ## Claude Code Configuration
 
-This directory contains all Claude Code configuration: skills, agents, hooks, MCP servers, and plugins.
+This directory contains Claude Code configuration: agents, hooks, MCP servers, plugins, and settings. Skill sources live in `skills/` at the repo root.
 
 ### File Types
 
-- `claude/skills/*/SKILL.md` — Skill definitions with YAML frontmatter (name, allowed-tools, model, description)
-- `claude/agents/*.md` — Agent definitions with YAML frontmatter (skills list, model)
+- `skills/*/SKILL.md` — Skill definitions with YAML frontmatter (name, allowed-tools, model, description)
+- `agents/agent_definitions/*.md` — Agent bodies (instruction-only Markdown; metadata lives in `agents/registry.yaml`)
 - `claude/hooks/*.js` — Pre-tool hooks (JavaScript, `module.exports` pattern)
 - `claude/hooks/*.sh` — Lifecycle hooks (shell, runs at session events)
-- `claude/mcp/registry.yaml` — MCP server registry (source of truth)
+- `agents/mcp/registry.yaml` — MCP server registry (source of truth, shared across harnesses)
 - `claude/plugins/registry.yaml` — Plugin registry
 - `claude/settings.json` — Permissions, environment, hooks, enabled plugins
 

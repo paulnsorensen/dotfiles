@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# serena-sweep — kill orphaned serena MCP daemons (ppid=1, no live client).
+#
+# Runs safely when zero serenas exist. Designed to run unattended from cron.
+#
+# Skip logic:
+#   - ppid != 1 (still attached to a live parent) → skip
+#   - pid appears in `ss -tnp state established` output → skip (live client)
+#
+# Also prunes legacy /tmp/serena-mux-<uid> state left by the retired mux.
+
+set -euo pipefail
+
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/logs"
+LOG_FILE="$LOG_DIR/serena-sweep.log"
+UID_VAL="$(id -u)"
+
+mkdir -p "$LOG_DIR"
+
+log() {
+    printf '%s [serena-sweep] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" \
+        >>"$LOG_FILE" 2>/dev/null || true
+}
+
+# Snapshot established connections once; cheaper than one ss call per pid.
+established="$(ss -tnp state established 2>/dev/null || true)"
+
+# Find all serena start-mcp-server processes owned by this user.
+while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    [[ ! -d "/proc/$pid" ]] && continue
+
+    # Must be ppid=1 (detached orphan).
+    ppid="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    [[ "$ppid" != "1" ]] && continue
+
+    # Skip if pid has an established TCP connection (live client bridging in).
+    if printf '%s' "$established" | grep -qF "pid=$pid,"; then
+        continue
+    fi
+
+    # Extract the project arg from cmdline for the log line.
+    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
+    project="$(printf '%s' "$cmdline" | grep -oE '(--project[= ][^ ]+)' | head -1 || true)"
+
+    log "SIGTERM pid=$pid ppid=$ppid $project"
+    kill -TERM "$pid" 2>/dev/null || true
+
+done < <(pgrep -u "$UID_VAL" -a 2>/dev/null \
+    | awk '/serena.*start-mcp-server/{print $1}')
+
+# Prune legacy mux state directory (retired; may linger from old installs).
+legacy_dir="${TMPDIR:-/tmp}/serena-mux-${UID_VAL}"
+if [[ -d "$legacy_dir" ]]; then
+    log "pruning legacy mux state $legacy_dir"
+    rm -rf "$legacy_dir"
+fi
+
+exit 0

@@ -3,12 +3,12 @@ name: xray
 model: opus
 effort: high
 description: >
-  Interactive design verification via dependency graph traversal. Replaces /notebook.
-  Use when reviewing large modules, verifying agent output, auditing design decisions,
-  or when you need to understand whether code does what it should. Point it at a module,
-  spec, or PR. Triggers on: /xray, "review this module", "verify the design",
-  "is this the right architecture", "check this code against the spec",
-  "what does this module actually do", design review, code audit.
+  Interactive design verification via dependency-graph traversal (replaces
+  /notebook) — point it at a module, spec, or PR. Use when reviewing large
+  modules, verifying agent output, or auditing design, or when the user says
+  "review this module", "verify the design", "is this the right architecture",
+  "check this code against the spec", "what does this module actually do", or
+  invokes /xray.
 argument-hint: <module path, spec path, PR number, or concept>
 allowed-tools: Read, Write, Glob, Grep, Bash(sg:*), Bash(git diff:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(gh:*), Agent, mcp__tilth__tilth_search, mcp__tilth__tilth_read, mcp__tilth__tilth_files, mcp__tilth__tilth_deps, mcp__code-review-graph__list_graph_stats_tool, mcp__code-review-graph__build_or_update_graph_tool, mcp__code-review-graph__embed_graph_tool, mcp__code-review-graph__semantic_search_nodes_tool, mcp__code-review-graph__query_graph_tool, mcp__code-review-graph__get_impact_radius_tool, mcp__code-review-graph__get_affected_flows_tool, mcp__code-review-graph__get_hub_nodes_tool, mcp__code-review-graph__get_bridge_nodes_tool, mcp__code-review-graph__traverse_graph_tool
 ---
@@ -669,7 +669,7 @@ When the user says `done` or all nodes are verified:
 
 - Auto-fix findings — suggest /de-slop or /wreck instead, let the user decide
 - Run without user confirmation at each node — this is interactive by design
-- Replace /age or /code-review — xray verifies design decisions, not code quality
+- Replace /age — xray verifies design decisions, not code quality
 - Write tests — delegate to /wreck for adversarial testing
 
 ## Gotchas

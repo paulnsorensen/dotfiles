@@ -1,0 +1,88 @@
+{{- /*
+Renders ~/.copilot/mcp-config.json.
+
+MCP-secret-passthrough: the API-key env values are emitted as the LITERAL
+runtime placeholders ${CONTEXT7_API_KEY} / ${TAVILY_API_KEY}, NOT the resolved
+secret. Copilot CLI expands ${VAR} from its process env at launch (the user's
+shell already exports every dotfiles/.env key via zsh/core.zsh), so the secret
+stays in .env and never lands in this file on disk.
+
+Because the value is now a runtime placeholder, there is no apply-time key to
+resolve — the servers are always emitted, even on a fresh box with no .env yet
+(they simply won't work until the user populates .env). This is why the old
+unset-var warnf/empty-stub branch is gone.
+
+To swap to 1Password instead, the renderer would inject the secret at launch
+via a wrapper; that path is tracked in references/secrets.md.
+
+Fragility note: Copilot CLI's ${VAR} expansion regressed in v0.0.407 (gh#1403)
+and is thinly documented. If env passthrough breaks on a CLI upgrade, this is
+the place to revisit.
+*/ -}}
+{
+  "mcpServers": {
+    "context7": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      },
+      "tools": [
+        "*"
+      ]
+    },
+    "tavily": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "tavily-mcp@latest"
+      ],
+      "env": {
+        "TAVILY_API_KEY": "${TAVILY_API_KEY}"
+      },
+      "tools": [
+        "*"
+      ]
+    },
+    "tilth": {
+      "type": "local",
+      "command": "tilth",
+      "args": [
+        "--mcp",
+        "--edit"
+      ],
+      "tools": [
+        "*"
+      ]
+    },
+    "hallouminate": {
+      "type": "local",
+      "command": "hallouminate",
+      "args": [
+        "serve"
+      ],
+      "tools": [
+        "*"
+      ]
+    },
+    "serena": {
+      "type": "local",
+      "command": "serena",
+      "args": [
+        "start-mcp-server",
+        "--context=copilot",
+        "--project-from-cwd",
+        "--enable-web-dashboard=false",
+        "--open-web-dashboard=false"
+      ],
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}

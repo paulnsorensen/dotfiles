@@ -1,5 +1,6 @@
-# chezmoi reads this directory as its source dir. The only managed entry
-# right now is run_onchange_install-claude-skills.sh.tmpl. Stray scratch
+# chezmoi reads this directory as its source dir. Managed entries include
+# `private_dot_gitconfig.tmpl`, `private_dot_copilot/mcp-config.json.tmpl`,
+# and the run_onchange installers under .chezmoiscripts/. Stray scratch
 # files commonly dropped into a working dir (docs, notes, editor state) are
 # explicitly ignored so they cannot become managed by accident.
 #
@@ -12,3 +13,40 @@ README*
 .DS_Store
 *.swp
 *.bak
+# Git-only metadata: lives in the source dir to enforce LF endings on
+# templates, but chezmoi must never try to render or apply it.
+.gitattributes
+# Helper scripts the run_onchange template invokes via {{ .chezmoi.sourceDir }}/lib/.
+# They live inside the source dir for colocation, but chezmoi must not apply
+# them as $HOME files.
+lib/
+# The assembled ~/.claude payload (dot_claude/exact_*) carries .md/.txt skill,
+# agent, and command files; exempt the whole target subtree from the scratch
+# ignores above so every assembled file deploys (and stays under exact_
+# removal semantics). Patterns are target-relative, hence .claude not
+# dot_claude.
+!.claude/**
+{{- /*
+Local LLM stack is per-machine, opt-in. When the localLLM flag is false,
+ignore the whole stack tree + its systemd units so non-LLM machines stay
+clean. (.chezmoiignore is rendered as a template, so this conditional works
+even though the rest of the file is static.)
+
+`get` (not bare `.localLLM`) is deliberate: chezmoi renders templates with
+missingkey=error, so a bare reference would fail `chezmoi apply` on any
+machine whose chezmoi.toml predates this flag. `get . "localLLM"` returns
+"" for an absent key, so the stack stays ignored by default.
+*/ -}}
+{{ if not (get . "localLLM") }}
+local-llm/**
+.config/systemd/user/litellm.service
+.config/systemd/user/local-llm.target
+.config/systemd/user/llama-swap.service
+.config/systemd/user/worker-npu.service
+.omp/agent/models.yml
+{{ end }}
+{{ if (get . "localLLM") }}
+# Stack enabled: the global README*/*.md rules above would otherwise skip
+# local-llm/README.md, which local-llm.target's Documentation= points at.
+!local-llm/README.md
+{{ end }}

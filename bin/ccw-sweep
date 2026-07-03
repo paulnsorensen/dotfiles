@@ -4,10 +4,15 @@
 # Usage:
 #   ccw-sweep              Interactive sweep with safety checks
 #   ccw-sweep --dry-run    Preview what would be cleaned (no changes)
-#   ccw-sweep --auto       Auto-remove safe worktrees (merged + clean), prompt for others
+#   ccw-sweep --auto       Auto-remove safe worktrees (merged + clean), skip others
 #   ccw-sweep --path DIR   Scan a specific directory instead of ~/Dev
 
 set -euo pipefail
+
+# ── Shared helpers ──────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/worktree.sh
+source "${SCRIPT_DIR}/lib/worktree.sh"
 
 # ── Colors ──────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -36,7 +41,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --dry-run   Preview what would be cleaned (no changes)"
-            echo "  --auto      Auto-remove safe worktrees, prompt for others"
+            echo "  --auto      Auto-remove safe worktrees, skip WARN/DIRTY ones"
             echo "  --path DIR  Scan DIR instead of ~/Dev"
             exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -55,13 +60,21 @@ REMOVED=0
 SKIPPED=0
 
 # ── Helpers ─────────────────────────────────────────────────────────
+# resolve_default_branch, wt_list_nested, and wt_child_blocks_removal live
+# in bin/lib/worktree.sh (sourced above).
 
 check_worktree() {
     local wt_path="$1"
     local repo_root="$2"
+    local default_branch="$3"
     local slug
     slug="$(basename "$wt_path")"
-    local branch="claude/${slug}"
+    # The worktree's actual branch, read from its HEAD. Never derive it from
+    # the directory name — guessing "claude/<slug>" flagged real branches as
+    # "branch not found" whenever the dir name didn't match the branch name.
+    local branch
+    branch="$(git -C "$wt_path" symbolic-ref --short --quiet HEAD 2>/dev/null || true)"
+    local default_remote="origin/${default_branch}"
 
     local status="SAFE"
     local reasons=()
@@ -96,47 +109,66 @@ check_worktree() {
         reasons+=("${count} untracked file(s)")
     fi
 
-    # Check if branch ref exists
+    # Empty branch = detached HEAD (symbolic-ref resolves nothing)
     local branch_exists=true
-    if ! git -C "$repo_root" rev-parse --verify "$branch" &>/dev/null; then
+    if [[ -z "$branch" ]]; then
         branch_exists=false
-        reasons+=("branch not found")
+        reasons+=("detached HEAD")
     fi
 
     # Determine merge status — always check the worktree's actual content
     local is_merged=false
 
-    # Step 1: git branch --merged (only if branch ref exists)
+    # Step 1: git branch --merged against the remote default branch
+    # (the local ref is often stale; origin/<default> matches what's on GitHub)
     if $branch_exists; then
         local merged
-        merged="$(git -C "$repo_root" branch --merged main 2>/dev/null | sed 's/^[ *]*//')"
+        merged="$(git -C "$repo_root" branch --merged "$default_remote" 2>/dev/null | sed 's/^[ *]*//')"
         if echo "$merged" | grep -qx "$branch"; then
             is_merged=true
-            reasons+=("merged into main")
+            reasons+=("merged into ${default_branch}")
         fi
     fi
 
     # Step 2: squash-merged PR check (only if branch ref exists)
     if ! $is_merged && $branch_exists && command -v gh &>/dev/null; then
-        local pr_state
-        pr_state="$(gh pr list --repo "$(git -C "$repo_root" remote get-url origin 2>/dev/null)" \
-            --head "$branch" --state all --json state --jq '.[0].state' 2>/dev/null || true)"
-        if [[ "$pr_state" == "MERGED" ]]; then
-            is_merged=true
-            reasons+=("PR squash-merged")
-        elif [[ "$pr_state" == "CLOSED" ]]; then
-            reasons+=("PR closed without merge")
+        local origin_url repo_slug
+        origin_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
+        # Normalise to OWNER/REPO for gh --repo (handles both git@github.com:o/r.git
+        # and https://github.com/o/r forms; strips trailing .git).
+        repo_slug="$(echo "$origin_url" \
+            | sed -E 's#^(git@github\.com:|https?://[^/]+/)##; s#\.git$##')"
+        if [[ -n "$repo_slug" ]]; then
+            local pr_state
+            pr_state="$(gh pr list --repo "$repo_slug" \
+                --head "$branch" --state all --json state --jq '.[0].state' 2>/dev/null || true)"
+            if [[ "$pr_state" == "MERGED" ]]; then
+                is_merged=true
+                reasons+=("PR squash-merged")
+            elif [[ "$pr_state" == "CLOSED" ]]; then
+                reasons+=("PR closed without merge")
+            fi
         fi
     fi
 
-    # Step 3: diff worktree HEAD against main (works even if branch ref is gone)
-    # This is the ground truth — empty diff means all content is in main
+    # Step 3: count commits the worktree has that aren't in origin/<default>.
+    # Zero = fully merged. Using rev-list --count avoids the --stat false-positive
+    # (empty stat output for whitespace-only or noop-merge commits would have
+    # been read as "merged" before).
+    #
+    # If rev-list itself errors (missing default ref, unrelated histories), we
+    # cannot conclude *anything* about merge status — do NOT silently fall
+    # through to "NOT merged" because that would force the worktree into WARN
+    # on a real tooling failure. Record the ambiguity explicitly and let the
+    # downstream NOT-merged check fire under the same banner.
     if ! $is_merged; then
-        local diff_stat
-        diff_stat="$(git -C "$wt_path" diff --stat main...HEAD -- 2>/dev/null)"
-        if [[ -z "$diff_stat" ]]; then
+        local ahead_default rc=0
+        ahead_default="$(git -C "$wt_path" rev-list --count "${default_remote}..HEAD" 2>/dev/null)" || rc=$?
+        if (( rc != 0 )); then
+            reasons+=("rev-list against ${default_remote} failed (rc=${rc})")
+        elif [[ "$ahead_default" == "0" ]]; then
             is_merged=true
-            reasons+=("diff vs main is empty")
+            reasons+=("0 commits ahead of ${default_remote}")
         fi
     fi
 
@@ -144,7 +176,7 @@ check_worktree() {
         if [[ "$status" == "SAFE" ]]; then
             status="WARN"
         fi
-        reasons+=("NOT merged into main")
+        reasons+=("NOT merged into ${default_branch}")
     fi
 
     # Check for unpushed commits (only if branch ref exists)
@@ -161,15 +193,15 @@ check_worktree() {
                 reasons+=("${ahead} unpushed commit(s)")
             fi
         else
-            # No upstream — check if there are commits beyond main
+            # No upstream — check if there are commits beyond the default branch
             if ! $is_merged; then
                 local ahead_main
-                ahead_main="$(git -C "$wt_path" rev-list --count 'main..HEAD' 2>/dev/null || echo 0)"
+                ahead_main="$(git -C "$wt_path" rev-list --count "${default_remote}..HEAD" 2>/dev/null || echo 0)"
                 if (( ahead_main > 0 )); then
                     if [[ "$status" == "SAFE" ]]; then
                         status="WARN"
                     fi
-                    reasons+=("${ahead_main} commit(s) ahead of main, no upstream")
+                    reasons+=("${ahead_main} commit(s) ahead of ${default_branch}, no upstream")
                 fi
             fi
         fi
@@ -195,6 +227,39 @@ check_worktree() {
 
     TOTAL=$((TOTAL + 1))
 
+    # ── Nested worktrees ─────────────────────────────────────────────
+    # A parent that nests an unmerged-or-dirty child must not be removed —
+    # doing so would orphan or destroy the child's unpushed work. Collect any
+    # blocking children so the action step can refuse (auto) or flag (interactive).
+    local nested_blockers=()
+    local nested_child
+    while IFS= read -r nested_child; do
+        [[ -z "$nested_child" ]] && continue
+        if wt_child_blocks_removal "$nested_child"; then
+            nested_blockers+=("$nested_child")
+        fi
+    done < <(wt_list_nested "$wt_path")
+
+    local has_blocking_nested=false
+    if (( ${#nested_blockers[@]} > 0 )); then
+        has_blocking_nested=true
+        echo -e "         ${YELLOW}nests unmerged/dirty worktree(s) — relocate before removing parent:${RESET}"
+        for nested_child in "${nested_blockers[@]}"; do
+            echo -e "           ${DIM}${nested_child}${RESET}"
+            # Relocate into the child's OWN repo, not the parent's: a cross-repo
+            # nested child belongs to a different repo, so repo_root (the parent's)
+            # would point at the wrong tree. Resolve the child's repo top-level
+            # from its shared git dir and scope the move with -C.
+            local child_top
+            if child_top="$(git -C "$nested_child" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" && [[ -n "$child_top" ]]; then
+                child_top="$(dirname "$child_top")"
+                echo -e "           ${DIM}git -C '${child_top}' worktree move '${nested_child}' '${child_top}/.worktrees/$(basename "$nested_child")'${RESET}"
+            else
+                echo -e "           ${DIM}relocate '${nested_child}' out of the parent before removing (could not resolve its repo)${RESET}"
+            fi
+        done
+    fi
+
     # ── Action ──────────────────────────────────────────────────────
     if $DRY_RUN; then
         if [[ "$status" == "SAFE" ]]; then
@@ -214,11 +279,27 @@ check_worktree() {
             [[ "$answer" =~ ^[Yy] ]] && should_remove=true
         fi
     elif [[ "$status" == "WARN" ]]; then
-        read -rp "         Remove anyway? [y/N] " answer </dev/tty
-        [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        if ! $AUTO_CLEAN; then
+            read -rp "         Remove anyway? [y/N] " answer </dev/tty
+            [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        fi
     else
-        read -rp "         Has uncommitted work. Remove? [y/N] " answer </dev/tty
-        [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        if ! $AUTO_CLEAN; then
+            read -rp "         Has uncommitted work. Remove? [y/N] " answer </dev/tty
+            [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        fi
+    fi
+
+    # Nested-worktree safety gate: refuse (auto) or require explicit confirm
+    # (interactive) before removing a parent that nests unmerged/dirty work.
+    if $should_remove && $has_blocking_nested; then
+        if $AUTO_CLEAN; then
+            echo -e "         ${YELLOW}Skipping removal — relocate the nested worktree(s) above first${RESET}"
+            should_remove=false
+        else
+            read -rp "         Parent nests unmerged/dirty worktree(s) — remove anyway? [y/N] " answer </dev/tty
+            [[ "$answer" =~ ^[Yy] ]] || should_remove=false
+        fi
     fi
 
     if $should_remove; then
@@ -277,8 +358,17 @@ while IFS= read -r -u3 wt_root; do
         continue
     fi
 
-    # Fetch latest to ensure merge status is accurate
-    git -C "$repo_root" fetch --quiet 2>/dev/null || true
+    # Fetch latest so merge status reflects the remote, not stale local refs.
+    # If fetch fails (offline, auth, rate limit) we MUST NOT proceed silently —
+    # the merge-status logic would then run against stale refs and risk
+    # deleting unmerged work. Capture stderr so the user sees *why* it failed.
+    fetch_err="$(git -C "$repo_root" fetch --quiet 2>&1 >/dev/null)" && fetch_rc=0 || fetch_rc=$?
+    if (( fetch_rc != 0 )); then
+        echo -e "${CYAN}${repo_name}${RESET} ${YELLOW}— fetch failed, refs may be stale; skipping${RESET}"
+        [[ -n "$fetch_err" ]] && echo -e "  ${DIM}${fetch_err}${RESET}"
+        echo ""
+        continue
+    fi
 
     # Collect worktrees in this repo
     local_wts=()
@@ -289,11 +379,22 @@ while IFS= read -r -u3 wt_root; do
         continue
     fi
 
+    # Resolve the repo's default branch. If we can't determine it (no
+    # origin/HEAD AND none of main/master/trunk/develop exists on origin),
+    # skip the repo — running merge checks against a nonexistent ref would
+    # mark every worktree as NOT-merged and risk false-positive removals.
+    if ! default_branch="$(resolve_default_branch "$repo_root")" || [[ -z "$default_branch" ]]; then
+        echo -e "${CYAN}${repo_name}${RESET} ${YELLOW}— could not resolve a remote default branch; skipping${RESET}"
+        echo -e "  ${DIM}origin/HEAD is unset and origin/{main,master,trunk,develop} all missing${RESET}"
+        echo ""
+        continue
+    fi
+
     FOUND_REPOS=$((FOUND_REPOS + 1))
-    echo -e "${CYAN}${repo_name}${RESET} ${DIM}(${#local_wts[@]} worktree(s))${RESET}"
+    echo -e "${CYAN}${repo_name}${RESET} ${DIM}(${#local_wts[@]} worktree(s), default: ${default_branch})${RESET}"
 
     for wt_path in "${local_wts[@]}"; do
-        check_worktree "$wt_path" "$repo_root" || true
+        check_worktree "$wt_path" "$repo_root" "$default_branch" || true
     done
     echo ""
 

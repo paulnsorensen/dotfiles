@@ -1,93 +1,13 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2016
 # Validate config files for Rust CLI tools and other managed configs
-# Catches breakage from version upgrades (e.g., zellij 0.43 removing NewFloatingPane)
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
-
-# ── Zellij ────────────────────────────────────────────────────────────────────
-
-@test "zellij config.kdl parses without errors" {
-    command -v zellij &>/dev/null || skip "zellij not installed"
-    run zellij setup --check
-    [[ $status -eq 0 ]]
-}
-
-@test "zellij config.kdl exists" {
-    [[ -f "$DOTFILES_DIR/zellij/config.kdl" ]]
-}
-
-@test "zellij layouts parse correctly" {
-    command -v zellij &>/dev/null || skip "zellij not installed"
-
-    # Use a temp zellij config dir to avoid corrupting real config (hard links!)
-    local tmp_config="$BATS_TMPDIR/zellij-test-$$"
-    mkdir -p "$tmp_config/layouts"
-    cp "$HOME/.config/zellij/config.kdl" "$tmp_config/config.kdl"
-
-    local failed=0
-    for layout in "$DOTFILES_DIR"/zellij/layouts/*.kdl; do
-        [[ -f "$layout" ]] || continue
-        cp "$layout" "$tmp_config/layouts/default.kdl"
-        if ! XDG_CONFIG_HOME="$tmp_config/.." zellij setup --check &>/dev/null; then
-            echo "Layout failed validation: $(basename "$layout")" >&2
-            failed=1
-        fi
-    done
-    rm -rf "$tmp_config"
-    [[ $failed -eq 0 ]]
-}
-
-@test "zjclaude generated layout is valid KDL" {
-    command -v zellij &>/dev/null || skip "zellij not installed"
-
-    # Use a temp zellij config dir (never touch real config)
-    local tmp_config="$BATS_TMPDIR/zellij-zjclaude-$$"
-    mkdir -p "$tmp_config/layouts"
-    cp "$HOME/.config/zellij/config.kdl" "$tmp_config/config.kdl"
-
-    # Generate the layout exactly as zjclaude would
-    cat > "$tmp_config/layouts/default.kdl" <<LAYOUT
-layout {
-    pane size=1 borderless=true {
-        plugin location="zellij:compact-bar"
-    }
-    pane focus=true cwd="$PWD" {
-        command "claude"
-    }
-    pane size=2 borderless=true name="monitor" cwd="$PWD" {
-        command "claude-monitor"
-        args "--cwd" "$PWD"
-    }
-}
-LAYOUT
-
-    run bash -c "XDG_CONFIG_HOME='$tmp_config/..' zellij setup --check"
-    rm -rf "$tmp_config"
-    [[ $status -eq 0 ]]
-}
-
-# ── Starship ──────────────────────────────────────────────────────────────────
-
-@test "starship config is valid TOML" {
-    command -v starship &>/dev/null || skip "starship not installed"
-    local config="$DOTFILES_DIR/starship/starship.toml"
-    [[ -f "$config" ]]
-    # print-config parses and validates the config without opening an editor
-    run env STARSHIP_CONFIG="$config" starship print-config
-    [[ $status -eq 0 ]]
-}
-
-@test "starship schema reference is present" {
-    local config="$DOTFILES_DIR/starship/starship.toml"
-    [[ -f "$config" ]] || skip "starship config not found"
-    # shellcheck disable=SC2016  # $schema is a literal TOML key, not a variable
-    grep -q '"$schema"' "$config"
-}
 
 # ── Atuin ─────────────────────────────────────────────────────────────────────
 
 @test "atuin config is valid TOML" {
-    local config="$DOTFILES_DIR/atuin/config.toml"
+    local config="$DOTFILES_DIR/chezmoi/dot_config/atuin/config.toml"
     [[ -f "$config" ]] || skip "atuin config not found"
     # yq can validate TOML
     run yq '.' "$config" -p toml -o json
@@ -97,7 +17,7 @@ LAYOUT
 # ── Yazi ──────────────────────────────────────────────────────────────────────
 
 @test "yazi config is valid TOML" {
-    local config="$DOTFILES_DIR/yazi/yazi.toml"
+    local config="$DOTFILES_DIR/chezmoi/dot_config/yazi/yazi.toml"
     [[ -f "$config" ]] || skip "yazi config not found"
     run yq '.' "$config" -p toml -o json
     [[ $status -eq 0 ]]
@@ -141,7 +61,7 @@ LAYOUT
 # ── MCP & Plugin sync scripts ────────────────────────────────────────────────
 
 @test "MCP registry is valid YAML" {
-    local registry="$DOTFILES_DIR/claude/mcp/registry.yaml"
+    local registry="$DOTFILES_DIR/agents/mcp/registry.yaml"
     [[ -f "$registry" ]] || skip "MCP registry not found"
     run yq '.' "$registry"
     [[ $status -eq 0 ]]
@@ -155,12 +75,78 @@ LAYOUT
 }
 
 @test "packages.yaml is valid YAML" {
-    run yq '.' "$DOTFILES_DIR/packages.yaml"
+    run yq '.' "$DOTFILES_DIR/packages/packages.yaml"
     [[ $status -eq 0 ]]
 }
 
 @test "packages.yaml map entries have exactly one key (the name)" {
     local bad
-    bad=$(yq -r '.packages[] | select(kind == "map") | select((keys | length) == 1 | not)' "$DOTFILES_DIR/packages.yaml" 2>/dev/null)
+    bad=$(yq -r '.packages[] | select(kind == "map") | select((keys | length) == 1 | not)' "$DOTFILES_DIR/packages/packages.yaml" 2>/dev/null)
     [[ -z "$bad" ]]
+}
+
+# ── skill-* aliases (unified live deploy) ────────────────────────────────────
+# The registry stays the EDIT surface (skill-edit); deploy is unified through
+# `dots sync` (chezmoi-authoritative source assembly). The redundant
+# per-registry *-sync mnemonics — and later base-sync itself — were retired.
+# Locking the bodies guards a silent de-sync where a rename would only surface
+# at every dev's runtime.
+
+@test "skill-edit opens the external skills registry (the edit surface)" {
+    local aliases_file="$DOTFILES_DIR/zsh/aliases.zsh"
+    grep -qE "^alias skill-edit='\\\$\\{EDITOR:-vim\\} \\\$DOTFILES_DIR/skills/_registry\\.yaml'" "$aliases_file"
+}
+
+@test "skill-* alias targets resolve to real artifacts (ap shim + registry)" {
+    [[ -x "$DOTFILES_DIR/agent-profile/ap" ]]
+    [[ -f "$DOTFILES_DIR/skills/_registry.yaml" ]]
+}
+
+@test "dots sync ignores the retired --accept-agent-drift flag (compat shim)" {
+    local shim="$BATS_TEST_TMPDIR/dots-home"
+    mkdir -p "$shim/Dev/dotfiles"
+    run env DOTFILES_DIR="$shim/Dev/dotfiles" bash -c '
+        cp "$1/bin/dots" "$DOTFILES_DIR/dots"
+        cat > "$DOTFILES_DIR/.sync" <<'"'"'SH'"'"'
+#!/usr/bin/env bash
+printf "DOTS_ACCEPT_AGENT_DRIFT=%s args=%s\n" "${DOTS_ACCEPT_AGENT_DRIFT:-}" "$*"
+SH
+        chmod +x "$DOTFILES_DIR/.sync"
+        "$DOTFILES_DIR/dots" sync --accept-agent-drift refresh
+    ' _ "$DOTFILES_DIR"
+    [[ $status -eq 0 ]]
+    # Flag swallowed with a retirement warning; env var no longer set.
+    [[ "$output" == *"DOTS_ACCEPT_AGENT_DRIFT= args=refresh"* ]]
+    [[ "$output" == *"retired"* ]]
+}
+
+@test "base-sync is retired from zsh/claude.zsh (chezmoi owns claude deploys)" {
+    local claude_file="$DOTFILES_DIR/zsh/claude.zsh"
+    # No function or alias may resurrect the ap live-install entry point.
+    if grep -qE '^base-sync\(\)|alias base-sync=' "$claude_file"; then
+        echo "base-sync still defined in zsh/claude.zsh" >&2
+        return 1
+    fi
+    # mcp-edit now points at the claude registry.
+    grep -qF 'chezmoi/.chezmoidata/claude.yaml' "$claude_file"
+}
+
+@test "the redundant *-sync mnemonics are retired (base-sync is the sole entry point)" {
+    # mcp-sync / hook-sync / agent-sync / skill-sync collapsed into base-sync.
+    # Guard against them silently returning as bare-cwd-install footholds.
+    ! grep -qE "^alias (mcp|hook|agent)-sync=" "$DOTFILES_DIR/zsh/claude.zsh"
+    ! grep -qE "^alias skill-sync=" "$DOTFILES_DIR/zsh/aliases.zsh"
+}
+
+@test "skill-* aliases do not reference the pre-flatten skills-install/ or claude/skills paths" {
+    local aliases_file="$DOTFILES_DIR/zsh/aliases.zsh"
+    # Inspect only the alias bodies. The surrounding comment block legitimately
+    # describes the new layout; we only want to fail if a *definition* drifts.
+    run grep -E "^alias skill-" "$aliases_file"
+    [[ $status -eq 0 ]]
+    if echo "$output" | grep -qE 'skills-install/|claude/skills'; then
+        echo "skill-* alias body still references pre-flatten paths:" >&2
+        echo "$output" >&2
+        return 1
+    fi
 }

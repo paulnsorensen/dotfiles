@@ -9,7 +9,7 @@ setup() {
     TMPDIR_TEST="$(mktemp -d "${TMPDIR:-/tmp}/wt-settings.XXXXXX")"
     mkdir -p "${TMPDIR_TEST}/skills/foo" \
              "${TMPDIR_TEST}/skills/bar-baz" \
-             "${TMPDIR_TEST}/claude/mcp" \
+             "${TMPDIR_TEST}/agents/mcp" \
              "${TMPDIR_TEST}/claude/plugins"
 }
 
@@ -63,7 +63,7 @@ assert_no_entry() {
 }
 
 @test "worktree-settings: discovers MCPs from registry" {
-    cat > "${TMPDIR_TEST}/claude/mcp/registry.yaml" <<'YAML'
+    cat > "${TMPDIR_TEST}/agents/mcp/registry.yaml" <<'YAML'
 mcps:
   context7:
     command: npx
@@ -79,13 +79,36 @@ YAML
     assert_has_entry "$result" "mcp__tavily__*"
 }
 
+@test "worktree-settings: filters MCP registry by harnesses field" {
+    cat > "${TMPDIR_TEST}/agents/mcp/registry.yaml" <<'YAML'
+mcps:
+  both-default:
+    command: a
+  claude-only:
+    command: b
+    harnesses: [claude]
+  codex-only:
+    command: c
+    harnesses: [codex]
+  both-explicit:
+    command: d
+    harnesses: [claude, codex]
+YAML
+    result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
+    assert_has_entry "$result" "mcp__both-default__*"
+    assert_has_entry "$result" "mcp__claude-only__*"
+    assert_has_entry "$result" "mcp__both-explicit__*"
+    # codex-only entries must not leak into Claude worktree permissions
+    assert_no_entry "$result" "mcp__codex-only__*"
+}
+
 @test "worktree-settings: no MCP entries when registry missing" {
     result="$(bash "$GENERATOR" "$TMPDIR_TEST")"
     count="$(jq '[.permissions.allow[] | select(startswith("mcp__")) | select(startswith("mcp__plugin_") | not) | select(startswith("mcp__claude_ai_") | not)] | length' <<< "$result")"
     [[ "$count" -eq 0 ]]
 }
 
-@test "worktree-settings: discovers non-LSP plugins via .mcp.json" {
+@test "worktree-settings: discovers plugins with an .mcp.json (skips skill-only)" {
     # Local plugin with mcpServers wrapper exposing two distinct servers.
     mkdir -p "${TMPDIR_TEST}/plugins/multi-srv"
     cat > "${TMPDIR_TEST}/plugins/multi-srv/.mcp.json" <<'JSON'
@@ -105,9 +128,6 @@ JSON
 JSON
     cat > "${TMPDIR_TEST}/claude/plugins/registry.yaml" <<YAML
 plugins:
-  vtsls@claude-code-lsps:
-    description: TypeScript LSP
-    scope: user
   multi-srv@local:
     description: Multi-server plugin
     scope: user
@@ -124,8 +144,6 @@ YAML
     assert_has_entry "$result" "mcp__plugin_multi-srv_alpha__*"
     assert_has_entry "$result" "mcp__plugin_multi-srv_beta__*"
     assert_has_entry "$result" "mcp__plugin_single-flat_single-flat__*"
-    # LSP plugins never produce MCP entries.
-    assert_no_entry "$result" "mcp__plugin_vtsls_vtsls__*"
     # Skill-only plugins (no .mcp.json) produce no entries.
     assert_no_entry "$result" "mcp__plugin_no-mcp_no-mcp__*"
 }
@@ -178,7 +196,7 @@ JSON
 }
 
 @test "worktree-settings: permissions are sorted" {
-    cat > "${TMPDIR_TEST}/claude/mcp/registry.yaml" <<'YAML'
+    cat > "${TMPDIR_TEST}/agents/mcp/registry.yaml" <<'YAML'
 mcps:
   zebra:
     command: zebra-mcp
@@ -203,15 +221,20 @@ YAML
 
 @test "worktree-settings: real output includes known skills" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"
-    assert_has_entry "$result" "Skill(scout)"
-    assert_has_entry "$result" "Skill(commit)"
-    assert_has_entry "$result" "Skill(gh)"
+    assert_has_entry "$result" "Skill(xray)"
+    assert_has_entry "$result" "Skill(self-eval)"
+    assert_has_entry "$result" "Skill(de-slop)"
 }
 
-@test "worktree-settings: real output includes known MCPs" {
+@test "worktree-settings: real output includes registry MCPs" {
     result="$(bash "$GENERATOR" "$DOTFILES_DIR")"
-    # serper is a deterministic user-scope entry in claude/mcp/registry.yaml.
-    # Plugin-sourced MCPs (e.g. cheese-flow's tilth) require an .mcp.json that
-    # may not exist in CI, so assert against the in-repo registry instead.
-    assert_has_entry "$result" "mcp__serper__*"
+    # Assert structurally, not by a specific server name. Excluding
+    # plugin-sourced (mcp__plugin_*, need an .mcp.json absent in CI) and
+    # Claude.ai (mcp__claude_ai_*, pulled from settings.json) entries leaves
+    # only agents/mcp/registry.yaml user-scope servers — the generator must
+    # emit at least one. Pinning a single name (the old mcp__serper__* /
+    # mcp__serena__* form) silently went stale when that server was renamed.
+    local registry_mcps
+    registry_mcps="$(jq '[.permissions.allow[] | select(startswith("mcp__")) | select(startswith("mcp__plugin_") | not) | select(startswith("mcp__claude_ai_") | not)] | length' <<< "$result")"
+    (( registry_mcps >= 1 ))
 }

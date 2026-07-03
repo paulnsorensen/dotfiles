@@ -2,7 +2,8 @@
 name: research
 description: >
   Multi-source research orchestrator scoped to the todoist-flow plugin so
-  profiles like `ccp todo` can do fact checks without enabling cheese-flow.
+  profiles like `dots profile launch claude todo` can do fact checks without
+  enabling cheese-flow.
   Spawns parallel fetch sub-agents for Context7 (library docs), Tavily
   (technical content), Serper (facts/SERP), and `gh` CLI (GitHub patterns).
   Fetchers write findings to scratch files; a single synthesis sub-agent
@@ -10,8 +11,8 @@ description: >
   clean. Use when the user is mid-task-triage and needs external facts
   before deciding whether to keep, reword, or extract a Todoist task,
   or invokes /todoist-flow:research directly. Do NOT use for single-source
-  lookups (use /fetch for library docs alone). For coding sessions outside
-  the todo profile, prefer cheese-flow's /briesearch instead.
+  lookups (use Context7 directly for library docs alone). For coding sessions
+  outside the todo profile, prefer cheese-flow's /briesearch instead.
 model: sonnet
 allowed-tools: Agent, Bash, Write
 ---

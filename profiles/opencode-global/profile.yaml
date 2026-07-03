@@ -1,0 +1,8 @@
+# opencode-global — migration stub for the old opencode live install profile.
+#
+# Live deployment moved to `profiles/live/profile.yaml`; its `opencode` compile
+# target writes to $HOME/.config/opencode during `dots sync`.
+name: opencode-global
+description: Deprecated opencode live install alias; use `dots sync` / profile `live`
+include: [base, _permissions]
+target_default: $HOME/.config/opencode

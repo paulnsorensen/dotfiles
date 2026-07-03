@@ -29,12 +29,26 @@ setup_test_env() {
     # Backup original HOME
     export ORIGINAL_HOME="$HOME"
     export HOME="$TEST_HOME"
+
+    # Pin XDG_* under the sandbox. CI runners (notably ubuntu-latest) preset
+    # XDG_CONFIG_HOME etc. to paths outside $HOME, which makes chezmoi look
+    # for its config in the wrong place when tests write ~/.config/chezmoi/
+    # under $TEST_HOME. Save the originals so teardown can restore them.
+    export ORIGINAL_XDG_CONFIG_HOME="${XDG_CONFIG_HOME-__unset__}"
+    export ORIGINAL_XDG_DATA_HOME="${XDG_DATA_HOME-__unset__}"
+    export ORIGINAL_XDG_CACHE_HOME="${XDG_CACHE_HOME-__unset__}"
+    unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME
 }
 
 # Teardown test environment
 teardown_test_env() {
     # Restore original HOME
     export HOME="$ORIGINAL_HOME"
+
+    # Restore XDG_* (sentinel means it was unset on entry)
+    [[ "$ORIGINAL_XDG_CONFIG_HOME" != "__unset__" ]] && export XDG_CONFIG_HOME="$ORIGINAL_XDG_CONFIG_HOME"
+    [[ "$ORIGINAL_XDG_DATA_HOME"   != "__unset__" ]] && export XDG_DATA_HOME="$ORIGINAL_XDG_DATA_HOME"
+    [[ "$ORIGINAL_XDG_CACHE_HOME"  != "__unset__" ]] && export XDG_CACHE_HOME="$ORIGINAL_XDG_CACHE_HOME"
 
     # Clean up test directory
     if [[ -d "$TEST_HOME" ]]; then

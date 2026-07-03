@@ -1,0 +1,16 @@
+approval_policy = "untrusted"
+sandbox_mode = "workspace-write"
+
+[mcp_servers.user-tool]
+command = "user-cmd"
+args = ["--flag"]
+
+[mcp_servers.foo]
+command = "npx"
+args = ["-y", "foo-mcp"]
+
+[mcp_servers.foo.env]
+K = "V"
+
+[other_table]
+key = "value"

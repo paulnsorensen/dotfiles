@@ -1,0 +1,25 @@
+#!/bin/bash
+# run_onchange — re-runs whenever the agent-profile uv project's deps change.
+#
+# Warms the locked uv env (`uv sync`) so the `ap` shim's `uv run --no-sync`
+# path stays fast. The hash below is computed by chezmoi at template render
+# time over pyproject.toml + uv.lock; chezmoi reruns whenever it changes,
+# i.e. whenever the dependency set or lock is updated.
+#
+# agent-profile deps hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agent-profile/pyproject.toml %q/../agent-profile/uv.lock 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+PROJECT_DIR="$DOTFILES_ROOT/agent-profile"
+
+# Skip if uv isn't installed yet — on a fresh machine `dots sync` installs
+# brew packages (uv among them) after the first chezmoi apply. Don't hard-fail
+# the whole sync; the env warms on the next apply once uv is present.
+if ! command -v uv &>/dev/null; then
+    echo "  Skipping agent-profile env warm (uv not found)"
+    exit 0
+fi
+
+uv sync --project "$PROJECT_DIR"

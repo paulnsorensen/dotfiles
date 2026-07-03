@@ -47,19 +47,47 @@ assert_not_contains() {
   }
 }
 
-# Create a git repo with main branch and initial commit
+# Create a git repo with the given default branch (default: main), an
+# initial commit, and a bare origin. ccw-sweep resolves the default branch
+# from refs/remotes/origin/HEAD and checks merge state against
+# origin/<default>; a remote-less repo is (correctly) skipped, so the
+# fixtures MUST be origin-backed to exercise the worktree-checking path.
+# The bare origin is a sibling dir with no .worktrees, so ccw-sweep's
+# discovery never treats it as a scannable repo.
 create_repo() {
-  local dir="$1"
+  local dir="$1" default="${2:-main}"
   mkdir -p "$dir"
-  git -C "$dir" init -b main --quiet 2>/dev/null || {
+  git -C "$dir" init -b "$default" --quiet 2>/dev/null || {
     git -C "$dir" init --quiet
-    git -C "$dir" checkout -b main --quiet 2>/dev/null || true
+    git -C "$dir" checkout -b "$default" --quiet 2>/dev/null || true
   }
   git -C "$dir" config user.email "test@test.com"
   git -C "$dir" config user.name "Test"
   echo "init" > "$dir/README.md"
   git -C "$dir" add README.md
   git -C "$dir" commit -m "initial" --quiet
+
+  local origin="${dir}.origin.git"
+  git init --bare -b "$default" --quiet "$origin"
+  git -C "$dir" remote add origin "$origin"
+  git -C "$dir" push --quiet origin "$default"   # updates refs/remotes/origin/<default>
+  git -C "$dir" remote set-head origin "$default" # writes refs/remotes/origin/HEAD
+}
+
+# Create a git repo + worktree with NO origin remote, to prove ccw-sweep
+# skips repos whose default branch cannot be resolved rather than running
+# merge checks against a nonexistent ref (the false-positive-deletion guard).
+create_repo_no_origin() {
+  local dir="$1" slug="$2"
+  mkdir -p "$dir"
+  git -C "$dir" init -b main --quiet
+  git -C "$dir" config user.email "test@test.com"
+  git -C "$dir" config user.name "Test"
+  echo "init" > "$dir/README.md"
+  git -C "$dir" add README.md
+  git -C "$dir" commit -m "initial" --quiet
+  mkdir -p "$dir/.worktrees"
+  git -C "$dir" worktree add "$dir/.worktrees/$slug" -b "claude/$slug" --quiet 2>/dev/null
 }
 
 # Add a SAFE worktree (identical to main)
@@ -80,14 +108,26 @@ add_diverged_worktree() {
 }
 
 setup() {
-  SCAN=$(mktemp -d "${TMPDIR:-.}/ccw-scan.XXXXXX")
+  # Fixtures are now origin-backed (create_repo provisions a bare origin and
+  # sets origin/HEAD), so the default-branch resolution that ccw-sweep relies
+  # on works without network or repo-specific config — the tests run in CI.
+  #
+  # SCAN/HOME must be ABSOLUTE: every helper uses `git -C "$repo" …` with a
+  # path derived from SCAN, and a relative remote/worktree URL resolves
+  # against $repo (not the CWD), which silently breaks. CI has no TMPDIR, so
+  # mktemp's "." fallback would yield relative paths — pwd-resolve to absolute.
+  SCAN=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/ccw-scan.XXXXXX")" && pwd)
   # Isolate HOME so remove_worktree doesn't touch real ~/.claude
   ORIGINAL_HOME="$HOME"
-  HOME=$(mktemp -d "${TMPDIR:-.}/ccw-home.XXXXXX")
+  HOME=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/ccw-home.XXXXXX")" && pwd)
   export HOME
 }
 
 teardown() {
+  # bats runs teardown even if setup() errored before creating the fixtures.
+  # Guard against that: without SCAN/ORIGINAL_HOME set, the rm below would
+  # target the real $HOME (SCAN="") and wipe it.
+  [[ -n "${SCAN:-}" && -n "${ORIGINAL_HOME:-}" ]] || return 0
   rm -rf "$SCAN" "$HOME"
   export HOME="$ORIGINAL_HOME"
 }
@@ -261,4 +301,208 @@ teardown() {
   run ccw-sweep --auto --path "$SCAN"
   assert_success
   assert_contains "worktree prune"
+}
+
+# ── Default-branch resolution (false-positive-deletion guard) ─────────
+# These exercise resolve_default_branch via the "default: <branch>" log
+# line and the skip banner. The merge logic now keys off origin/<default>,
+# so getting the default wrong (or running against a missing ref) is the
+# exact failure mode that previously caused false-positive deletions.
+
+@test "resolves default branch from origin/HEAD" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "wt"
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "default: main"
+  assert_contains "[SAFE]"
+}
+
+@test "resolves a non-main default branch" {
+  create_repo "$SCAN/repo" "master"
+  add_safe_worktree "$SCAN/repo" "wt"
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "default: master"
+  # Merged against origin/master — must read SAFE, not a false NOT-merged.
+  assert_contains "[SAFE]"
+  assert_not_contains "NOT merged"
+}
+
+@test "falls back to probing origin/<branch> when origin/HEAD is unset" {
+  create_repo "$SCAN/repo" "master"
+  add_safe_worktree "$SCAN/repo" "wt"
+  # Drop origin/HEAD so resolution must fall through to the main/master/… probe.
+  git -C "$SCAN/repo" symbolic-ref -d refs/remotes/origin/HEAD
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "default: master"
+  assert_contains "[SAFE]"
+}
+
+@test "skips a repo whose default branch cannot be resolved" {
+  create_repo_no_origin "$SCAN/repo" "orphan"
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "could not resolve a remote default branch"
+  # The worktree must NOT be evaluated — skipping protects unmerged work.
+  assert_not_contains "[SAFE]"
+  assert_not_contains "[WARN]"
+}
+
+# ── Regression: --auto must never prompt ──────────────────────────────
+# --auto used to fall through to `read … </dev/tty` for WARN/DIRTY
+# worktrees, crashing in non-interactive sessions (no TTY → unbound
+# variable under set -u) before any later SAFE worktree was reached.
+# --auto now skips non-SAFE worktrees outright.
+
+@test "auto skips WARN worktrees without prompting" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "diverged"
+  add_safe_worktree "$SCAN/repo" "clean"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "Removed: 1"
+  assert_contains "Skipped: 1"
+  [[ -d "$SCAN/repo/.worktrees/diverged" ]] || {
+    echo "WARN worktree was removed under --auto"
+    return 1
+  }
+}
+
+@test "auto skips DIRTY worktrees without prompting" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "dirty"
+  echo "wip" >> "$SCAN/repo/.worktrees/dirty/README.md"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "Skipped: 1"
+  [[ -d "$SCAN/repo/.worktrees/dirty" ]] || {
+    echo "DIRTY worktree was removed under --auto"
+    return 1
+  }
+}
+
+# ── Regression: branch read from worktree HEAD, not dir name ──────────
+# The branch used to be guessed as claude/<dir-name>, so a worktree on a
+# differently-named branch was flagged "branch not found" and its
+# branch-based checks (merged-list, PR lookup) ran against a nonexistent ref.
+
+@test "reads worktree branch from HEAD when dir name differs" {
+  create_repo "$SCAN/repo"
+  mkdir -p "$SCAN/repo/.worktrees"
+  git -C "$SCAN/repo" worktree add "$SCAN/repo/.worktrees/short-name" \
+    -b "feat/completely-different" --quiet 2>/dev/null
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_not_contains "branch not found"
+  assert_contains "[SAFE]"
+}
+
+@test "flags detached-HEAD worktree as such" {
+  create_repo "$SCAN/repo"
+  mkdir -p "$SCAN/repo/.worktrees"
+  git -C "$SCAN/repo" worktree add --detach "$SCAN/repo/.worktrees/loose" --quiet 2>/dev/null
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "detached HEAD"
+  assert_not_contains "branch not found"
+}
+
+# ── Nested-worktree safety (item B) ───────────────────────────────────
+# A parent worktree that nests an unmerged/dirty child must NOT be removed
+# under --auto — that would orphan the child's unpushed work. The gate must
+# fire only when the nested child actually blocks (dirty or unmerged), so a
+# clean merged child leaves the parent removable.
+
+# Exclude .worktrees/.claude in the parent so hosting a nested worktree dir
+# doesn't flip the parent to WARN (untracked) — mirrors the real repos, which
+# gitignore .worktrees. Keeps the parent SAFE so the nested gate is what stops
+# removal, not the parent's own status.
+add_nested_child() {
+  local parent="$1" slug="$2"
+  printf '.worktrees/\n.claude/\n' > "$(git -C "$parent" rev-parse --git-path info/exclude)"
+  git -C "$parent" worktree add "$parent/.worktrees/$slug" -b "claude/$slug" --quiet 2>/dev/null
+}
+
+@test "auto refuses to remove a parent nesting a DIRTY child" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"
+  echo "wip" >> "$parent/.worktrees/child/README.md"   # make the child dirty
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty"
+  assert_contains "worktree move"
+  assert_contains "Skipping removal"
+  [[ -d "$parent" ]] || {
+    echo "parent removed despite nested dirty child — work would be orphaned"
+    return 1
+  }
+}
+
+@test "auto refuses to remove a parent nesting an UNMERGED child" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"
+  # Commit in the child so it is ahead of origin/main but otherwise clean.
+  echo "feature" > "$parent/.worktrees/child/feature.txt"
+  git -C "$parent/.worktrees/child" add feature.txt
+  git -C "$parent/.worktrees/child" commit -m "feature" --quiet
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty"
+  [[ -d "$parent" ]] || {
+    echo "parent removed despite nested unmerged child"
+    return 1
+  }
+}
+
+@test "auto still removes a parent nesting a CLEAN merged child" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"   # clean, 0 commits ahead
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_not_contains "nests unmerged/dirty"
+  assert_contains "Removed: 1"
+}
+
+# A nested child that belongs to a DIFFERENT repo than its parent. The
+# relocation hint must point at the child's OWN repo, not the parent's
+# repo_root (M1 fix) — otherwise the printed `git worktree move` targets the
+# wrong tree (and omits -C scoping it to the child's repo).
+@test "auto hint relocates a cross-repo nested child into its own repo" {
+  create_repo "$SCAN/parentrepo"
+  create_repo "$SCAN/childrepo"
+  add_safe_worktree "$SCAN/parentrepo" "parent"
+  local parent="$SCAN/parentrepo/.worktrees/parent"
+  # Keep the parent SAFE despite hosting a nested .worktrees dir.
+  printf '.worktrees/\n.claude/\n' > "$(git -C "$parent" rev-parse --git-path info/exclude)"
+  # Nest a worktree of childrepo (a different repo) under the parent, made
+  # dirty so it blocks the parent's removal.
+  git -C "$SCAN/childrepo" worktree add "$parent/.worktrees/child" -b "claude/child" --quiet 2>/dev/null
+  echo "wip" >> "$parent/.worktrees/child/README.md"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty"
+  assert_contains "worktree move"
+  # Hint targets the child's own repo, not the parent's repo_root.
+  assert_contains "childrepo/.worktrees/child"
+  assert_not_contains "parentrepo/.worktrees/child"
 }

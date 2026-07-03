@@ -1,0 +1,977 @@
+"""cli.py — CLI dispatch + subcommand bodies for the ``ap`` CLI.
+
+Behavioral port of agent-profile/ap (dispatch + option parsing) and
+agent-profile/lib/commands.sh (the cmd_* handlers). Stdout strings,
+stderr error strings, and exit codes match the bash so the steel-thread
+golden tests assert byte/string identity.
+
+The harness renderers are owned by sibling curds; this module
+dispatches through a registry (:data:`RENDERERS`) keyed by harness name.
+The registry is populated by the wiring phase (the ``renderers`` barrel).
+:func:`set_renderers` lets tests inject stub renderers so the CLI's
+orchestration — banners, manifest recording, orphan diff/clean,
+ref-counted uninstall, merged_json cache — is exercised end-to-end
+without the production renderers.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from dataclasses import replace
+from pathlib import Path
+from typing import Any, NoReturn
+
+import yaml
+
+from agent_profile import (
+    apply_compiled,
+    compile_command,
+    discover,
+    fetch_sources_command,
+    manifest as manifest_mod,
+)
+from agent_profile.install_command import install_deprecation_message
+from agent_profile.manifest import ManifestCorrupt
+from agent_profile.parse import ParseError, parse_manifest
+from agent_profile.renderers.base import (
+    MergedConfigError,
+    Renderer,
+    includes_harness,
+)
+from agent_profile.permissions import parse_mcp_rule
+
+ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot", "crush"]
+
+# Harness-name -> Renderer. Populated by the wiring barrel; tests inject
+# stubs via set_renderers(). Empty by default (seed phase ships no
+# production renderers).
+RENDERERS: dict[str, Renderer] = {}
+
+
+def set_renderers(renderers: dict[str, Renderer]) -> None:
+    """Replace the active renderer registry (used by wiring and tests)."""
+    global RENDERERS
+    RENDERERS = dict(renderers)
+
+
+def _is_tty() -> bool:
+    return sys.stdout.isatty()
+
+
+class _Colors:
+    """Color codes, blanked when stdout is not a TTY (matches the bash
+    ``[[ -t 1 ]] || { GREEN=''; ... }`` guard)."""
+
+    def __init__(self, enabled: bool) -> None:
+        self.GREEN = "\033[0;32m" if enabled else ""
+        self.BLUE = "\033[0;34m" if enabled else ""
+        self.RED = "\033[0;31m" if enabled else ""
+        self.CYAN = "\033[0;36m" if enabled else ""
+        self.NC = "\033[0m" if enabled else ""
+
+
+USAGE = """Usage: dots profile <command> [args]
+
+Commands:
+  list                          List available profiles
+  describe <name>               Show resolved manifest for a profile
+  path <name>                   Print profile source dir
+  compile <name> --baseline <dir> --out <dir>
+                                Compile live profile fragments
+  install <name> [opts]         Deprecated; use dots sync or ap compile
+  uninstall <name> [opts]       Remove a previously-installed profile
+  launch <harness> [name] [..]  Install + exec the named harness CLI
+  perms [opts]                  Write repo-level permission overlay (Claude + Codex)
+  help                          Show this message
+
+Install/launch options:
+  --harness <h>[,<h>...]        Limit to specific harnesses (default: all)
+  --target <dir>                Render into <dir> instead of $PWD
+  --profile-src <dir>           Extra search root for profile lookup
+
+Uninstall accepts --target and --profile-src. --harness is honored but
+limited: every cleaner still runs (shared/merged files like
+opencode.json, .mcp.json carry profile-authored entries across the
+harness boundary; a partial cleanup would leave dangling entries).
+
+Perms options:
+  --local                       Write settings.local.json (gitignored); skip Codex
+  --target <dir>                Repo root (default: $PWD)
+  --harness claude,codex        Limit to specific harnesses (default: claude,codex)
+
+Examples:
+  dots profile list
+  dots profile install rust --harness claude
+  dots profile launch claude rust -- --resume
+  dots profile uninstall rust
+  dots profile perms --target /path/to/repo
+"""
+
+
+class CliError(Exception):
+    """A handled CLI failure. ``message`` goes to stderr; exit code 1."""
+
+
+def _describe_view(merged: dict[str, Any]) -> dict[str, Any]:
+    """Project the resolved manifest to the ``describe`` view (port of the
+    jq filter in cmd_describe). Isolated profiles additionally surface the
+    launch-overlay fields so the closed world is inspectable."""
+    view: dict[str, Any] = {
+        "name": merged.get("name"),
+        "description": merged.get("description"),
+        "mcps": [m["name"] for m in merged.get("mcps", [])],
+        "agents": [a["name"] for a in merged.get("agents", [])],
+        # A repo-level external skill (auto-discovery — no explicit name)
+        # carries only `source`; fall back to it so describe never KeyErrors.
+        "skills": [
+            s.get("name") or s.get("source") for s in merged.get("skills", [])
+        ],
+        "commands": [c["name"] for c in merged.get("commands", [])],
+        "hooks": [
+            {
+                "event": h.get("event"),
+                "matcher": h.get("matcher"),
+                "harnesses": h.get("harnesses") or ["claude"],
+            }
+            for h in merged.get("hooks", [])
+        ],
+        "permissions": merged.get("settings", {}).get("permissions_allow", []),
+    }
+    if merged.get("isolated"):
+        view["isolated"] = True
+        view["system_prompt"] = merged.get("system_prompt")
+        view["tools"] = merged.get("tools", [])
+        view["permissions"] = {
+            "allow": merged.get("permissions_allow", []),
+            "deny": merged.get("permissions_deny", []),
+        }
+        view["enabled_plugins"] = merged.get("enabled_plugins", {})
+        view["env"] = merged.get("env", {})
+        view["extra_args"] = merged.get("extra_args", [])
+    return view
+
+
+# ─── subcommand handlers ─────────────────────────────────────────────
+
+
+def cmd_list(colors: _Colors, out: Any) -> int:
+    rows = discover.list_profiles()
+    if not rows:
+        pwd = Path.cwd()
+        dotfiles = os.environ.get("DOTFILES_DIR") or str(
+            Path.home() / "Dev/dotfiles"
+        )
+        print(
+            f"(no profiles found in {pwd}/.agent-profiles or "
+            f"{dotfiles}/profiles)",
+            file=out,
+        )
+        return 0
+    print(f"{colors.CYAN}Available profiles:{colors.NC}", file=out)
+    for name, root in rows:
+        desc = ""
+        pyaml = root / name / "profile.yaml"
+        if pyaml.is_file():
+            data = yaml.safe_load(pyaml.read_text()) or {}
+            desc = (data.get("description") if isinstance(data, dict) else "") or ""
+        print(f"  {colors.GREEN}{name:<20}{colors.NC} {desc}", file=out)
+        print(f"    {colors.BLUE}↳{colors.NC} {root / name}", file=out)
+    return 0
+
+
+def cmd_describe(name: str, colors: _Colors, out: Any) -> int:
+    profile_dir = discover.find_profile_dir(name)
+    if profile_dir is None:
+        raise CliError(f"{colors.RED}ap: profile '{name}' not found{colors.NC}")
+    m = parse_manifest(profile_dir)
+    merged = m.to_dict()
+    if m.isolated:
+        merged.update(
+            isolated=True,
+            system_prompt=m.system_prompt,
+            tools=list(m.tools),
+            permissions_allow=list(m.permissions_allow),
+            permissions_deny=list(m.permissions_deny),
+            enabled_plugins=dict(m.enabled_plugins),
+            env=dict(m.env),
+            extra_args=list(m.extra_args),
+        )
+    print(
+        f"{colors.CYAN}Profile: {name}{colors.NC}  "
+        f"{colors.BLUE}({profile_dir}){colors.NC}",
+        file=out,
+    )
+    print(file=out)
+    print(json.dumps(_describe_view(merged), indent=2), file=out)
+    return 0
+
+
+def cmd_copilot_flags(name: str, out: Any) -> int:
+    """Print the Copilot launch flags (``--allow-tool``/``--deny-tool``) the
+    profile's canonical permission lists lower to (lever 1).
+
+    The Copilot CLI has no config-file surface for per-command rules, so the
+    `copilot` launch wrapper calls this to inject the flags at invocation.
+    One flag per line (the wrapper splits on newline into its argv array, so
+    flags whose value contains spaces — ``shell(gh pr view)`` — survive as a
+    single token). No output when the profile declares no canonical rules."""
+    profile_dir = discover.find_profile_dir(name)
+    if profile_dir is None:
+        raise CliError(f"ap: profile '{name}' not found")
+    from agent_profile.renderers.copilot import launch_flags
+
+    manifest = parse_manifest(profile_dir)
+    for flag in launch_flags(manifest):
+        print(flag, file=out)
+    return 0
+
+
+def cmd_path(name: str, colors: _Colors, out: Any) -> int:
+    profile_dir = discover.find_profile_dir(name)
+    if profile_dir is None:
+        raise CliError(f"{colors.RED}ap: profile '{name}' not found{colors.NC}")
+    print(profile_dir, file=out)
+    return 0
+
+
+def cmd_install(
+    name: str,
+    harnesses: list[str],
+    target_opt: Path | None,
+    colors: _Colors,
+    out: Any,
+) -> int:
+    if not name:
+        raise CliError(
+            f"{colors.RED}ap install: profile name required{colors.NC}"
+        )
+    profile_dir = discover.find_profile_dir(name)
+    if profile_dir is None:
+        raise CliError(f"{colors.RED}ap: profile '{name}' not found{colors.NC}")
+
+    manifest = parse_manifest(profile_dir)
+
+    if (
+        target_opt is None
+        and not manifest.target_default
+        and _within_git_repo(Path.cwd())
+    ):
+        raise CliError(
+            f"{colors.RED}ap install: refusing to install profile '{name}' "
+            f"into a git working tree (cwd: {Path.cwd()}).{colors.NC}\n"
+            f"  Without --target and with no target_default, the rendered "
+            f"runtime (.codex/, .cursor/, manifest.json, …) would be dumped "
+            f"into the repo.\n"
+            f"  Pass --target <dir> to stage the render, or install an "
+            f"install-overlay profile like 'global' (it targets $HOME)."
+        )
+
+    target = _resolve_target(target_opt, manifest.target_default)
+
+    print(
+        f"{colors.BLUE}→ Installing profile '{name}' "
+        f"from {profile_dir}{colors.NC}",
+        file=out,
+    )
+    print(f"  target:   {target}", file=out)
+    print(f"  harness:  {' '.join(harnesses)}", file=out)
+
+    render_manifest = manifest
+    if target_opt is not None and manifest.mcp_scope == "user":
+        render_manifest = replace(manifest, mcp_scope="plugin")
+    merged_dict = render_manifest.to_dict()
+
+    manifest_mod.manifest_init(target)
+    # Snapshot the prior resolved manifest BEFORE the render loop overwrites
+    # it (record_merged_json runs at the end) so the reconcile can diff which
+    # MCPs dropped out of the registry since the last install.
+    prior_merged = manifest_mod.merged_json(target, name)
+
+    all_new_files: list[str] = []
+    for h in harnesses:
+        print(f"  {colors.CYAN}━━ {h} ━━{colors.NC}", file=out)
+        renderer = RENDERERS.get(h)
+        if renderer is None:
+            raise CliError(
+                f"{colors.RED}ap: no renderer registered for harness "
+                f"'{h}'{colors.NC}"
+            )
+        written = renderer.render(render_manifest, target)
+        all_new_files.extend(written)
+
+    _fetch_external_skills(manifest, harnesses, colors, out, live=target_opt is None)
+
+    new_files = sorted(set(all_new_files))
+
+    if len(harnesses) == len(ALL_HARNESSES):
+        manifest_mod.diff_and_clean(target, name, new_files)
+        _set_files(target, name, new_files)
+    else:
+        manifest_mod.diff_and_clean(target, name, new_files, harnesses)
+        _union_files(target, name, new_files, harnesses)
+
+    _reconcile_dropped_mcps(prior_merged, render_manifest, harnesses, target, out, colors)
+    _reconcile_dropped_mcp_tool_scopes(prior_merged, render_manifest, harnesses, target)
+
+    manifest_mod.record_merged_json(target, name, merged_dict)
+
+    print(f"{colors.GREEN}✓ Installed{colors.NC}", file=out)
+    return 0
+
+
+def cmd_perms(
+    local: bool,
+    target_opt: Path | None,
+    harnesses: list[str],
+    colors: _Colors,
+    out: Any,
+) -> int:
+    """``ap perms [--local] [--target <repo>] [--harness claude,codex]``
+
+    Resolve ``<target>/.agent-profiles/_permissions/profile.yaml`` by fixed
+    path (no global fall-through), parse it as a standalone manifest, and
+    render project permissions per harness."""
+    target = _resolve_target(target_opt, None)
+    frag = target / ".agent-profiles" / "_permissions" / "profile.yaml"
+    if not frag.is_file():
+        raise CliError(
+            f"{colors.RED}ap perms: no repo permission overlay at "
+            f"{frag}; create .agent-profiles/_permissions/profile.yaml first"
+            f"{colors.NC}"
+        )
+    manifest = parse_manifest(frag.parent)
+    # A fragment must define its permissions under a nested ``settings:`` block.
+    # Top-level ``permissions_allow:``/``permissions_deny:`` are a different
+    # (launch-overlay) field the renderers never read, so they would silently
+    # produce an empty overlay — fail loud instead of writing nothing.
+    if (
+        "permissions_allow" not in manifest.settings
+        and "permissions_deny" not in manifest.settings
+    ):
+        raise CliError(
+            f"{colors.RED}ap perms: {frag} defines no permissions under "
+            f"`settings:` — add settings.permissions_allow and/or "
+            f"settings.permissions_deny (top-level keys are ignored){colors.NC}"
+        )
+    from agent_profile.renderers.claude import ClaudeRenderer
+    from agent_profile.renderers.codex import CodexRenderer
+    # Classes, not instances — construct only the renderer(s) actually used.
+    _perm_renderers = {"claude": ClaudeRenderer, "codex": CodexRenderer}
+    for h in harnesses:
+        if local and h == "codex":
+            print(
+                f"  {colors.CYAN}codex: skipping under --local (no gitignored "
+                f"personal-settings analog){colors.NC}",
+                file=out,
+            )
+            continue
+        renderer_cls = _perm_renderers.get(h)
+        if renderer_cls is None:
+            continue
+        renderer_cls().render_project_permissions(manifest, target, local=local)
+    return 0
+
+
+def _mcp_rule_servers(settings: dict[str, Any]) -> set[str]:
+    out: set[str] = set()
+    for channel in ("permissions_allow", "permissions_deny"):
+        for rule in settings.get(channel) or []:
+            parsed = parse_mcp_rule(rule)
+            if parsed:
+                out.add(parsed[0])
+    return out
+
+
+def _filter_mcp_rules_for_servers(
+    settings: dict[str, Any], servers: set[str]
+) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for channel in ("permissions_allow", "permissions_deny"):
+        rules = []
+        for rule in settings.get(channel) or []:
+            parsed = parse_mcp_rule(rule)
+            if parsed and parsed[0] in servers:
+                rules.append(rule)
+        if rules:
+            out[channel] = rules
+    return out
+
+
+def _reconcile_dropped_mcp_tool_scopes(
+    prior_merged: dict[str, Any] | None,
+    manifest: Any,
+    harnesses: list[str],
+    target: Path,
+) -> None:
+    """Clear Codex MCP tool-scope keys for servers no longer named by rules.
+
+    Codex stores mcp__server__tool allow/deny rules as merged
+    enabled_tools/disabled_tools keys in ~/.codex/config.toml. Rendering the
+    current manifest can clear stale tools only while a server still has an
+    mcp__* rule. If the profile removes every such rule for a server, the prior
+    manifest snapshot is the only safe signal that those keys were ap-managed.
+    """
+    if "codex" not in harnesses or not prior_merged:
+        return
+    prior_settings = prior_merged.get("settings") or {}
+    dropped = _mcp_rule_servers(prior_settings) - _mcp_rule_servers(manifest.settings)
+    if not dropped:
+        return
+    renderer = RENDERERS.get("codex")
+    cleaner = getattr(renderer, "_clean_mcp_tool_scopes", None)
+    if cleaner is None:
+        return
+    dropped_settings = _filter_mcp_rules_for_servers(prior_settings, dropped)
+    cleaner(replace(manifest, settings=dropped_settings), target)
+
+
+def _reconcile_dropped_mcps(
+    prior_merged: dict[str, Any] | None,
+    manifest: Any,
+    harnesses: list[str],
+    target: Path,
+    out: Any,
+    colors: Any,
+) -> None:
+    """Evict MCP servers that fell out of a harness since the last install.
+
+    Renderers MERGE MCPs into persistent/user-owned files (codex config.toml,
+    opencode/cursor/copilot JSON, claude user-scope ~/.claude.json), so a
+    server that stops rendering into a harness lingers — render only writes
+    the current set. A server is "dropped" from a harness either by leaving
+    the registry entirely OR by losing that harness from its membership (e.g.
+    ``harnesses: []`` scopes it out of every harness while it stays in the
+    manifest). Both must be reconciled, so the diff is computed per-harness
+    using the same membership projection render uses (:func:`includes_harness`
+    with each renderer's MCP default) rather than against the global manifest —
+    otherwise a server still present in ``manifest.mcps`` but scoped out of a
+    harness would never be pruned from it. No prior install, or nothing dropped
+    → no-op (keeps fresh renders byte-identical)."""
+    if not prior_merged:
+        return
+    prior_mcps = prior_merged.get("mcps") or []
+    if not prior_mcps:
+        return
+
+    current_by_name = {m.get("name"): m for m in manifest.mcps}
+    pruned: set[str] = set()
+    for h in harnesses:
+        renderer = RENDERERS.get(h)
+        if renderer is None:
+            continue
+        default = renderer.mcp_default
+        current_for_h = {
+            name
+            for name, m in current_by_name.items()
+            if includes_harness(m, h, default)
+        }
+        dropped_h = [
+            m
+            for m in prior_mcps
+            if includes_harness(m, h, default)
+            and m.get("name") not in current_for_h
+        ]
+        if not dropped_h:
+            continue
+        renderer.prune_mcps(replace(manifest, mcps=dropped_h), target)
+        pruned.update(str(m.get("name", "?")) for m in dropped_h)
+
+    if not pruned:
+        return
+
+    names = ", ".join(sorted(pruned))
+    print(f"  {colors.BLUE}↺ pruned dropped MCP(s): {names}{colors.NC}", file=out)
+
+
+def _skill_fetch_runner(argv: list[str]) -> int:
+    """Default ``npx skills add`` runner. Indirected through a module-level
+    name so tests can monkeypatch it without spawning ``npx``."""
+    from agent_profile.fetch import _default_runner
+
+    return _default_runner(argv)
+
+
+def _fetch_external_skills(
+    manifest: Any,
+    harnesses: list[str],
+    colors: _Colors,
+    out: Any,
+    *,
+    live: bool = True,
+) -> None:
+    """Fetch every ``source:`` skill into the in-scope harnesses via
+    ``npx skills add`` (spec curd 4) — one shallow clone per source repo,
+    installed to all harnesses at once. ``path:`` skills are copied by the
+    renderers, so they are excluded here.
+
+    ``live=False`` (staged installs: ``--target`` was given explicitly) skips
+    the fetch entirely. ``npx skills add`` always installs at global scope
+    (``-g``) regardless of the target directory, so running it during a staged
+    render would mutate the user's real skill dirs even though the caller
+    requested a throwaway target. Staged callers should run ``ap install``
+    without ``--target`` when they are ready to populate the live dirs."""
+    from agent_profile.fetch import (
+        SkillFetchError,
+        external_skills,
+        fetch_external_source,
+        group_external_sources,
+    )
+
+    ext = external_skills(manifest.skills)
+    if not ext:
+        return
+
+    if not live:
+        print(
+            f"  {colors.BLUE}↳{colors.NC} external skills skipped "
+            f"(staged install — run without --target to fetch into live dirs)",
+            file=out,
+        )
+        return
+
+    skill_harnesses = [h for h in harnesses if h in ("claude", "codex", "cursor", "copilot", "opencode")]
+    if not skill_harnesses:
+        return
+
+    # Group items by source repo (shared rule: a bare `source:` = all skills
+    # for that repo, winning over explicit sibling names; `pin` is per-source;
+    # first-seen order preserved so output/test assertions stay deterministic).
+    # Harnesses with no `npx skills` backend (currently crush) were filtered out
+    # above.
+    try:
+        for source, names, pin in group_external_sources(manifest.skills):
+            label = "*" if names is None else ", ".join(names)
+            print(
+                f"  {colors.BLUE}↳{colors.NC} fetching skills "
+                f"{source} ({label}) -> {', '.join(skill_harnesses)}",
+                file=out,
+            )
+            fetch_external_source(
+                source, names, pin, skill_harnesses, _skill_fetch_runner
+            )
+    except SkillFetchError as exc:
+        raise CliError(f"{colors.RED}{exc}{colors.NC}") from exc
+    except OSError as exc:
+        raise CliError(
+            f"{colors.RED}ap: cannot run npx "
+            f"({exc}); is Node/npx installed?{colors.NC}"
+        ) from exc
+
+
+def _set_files(target: Path, profile: str, new_files: list[str]) -> None:
+    """Full-install: replace the profile's file list with ``new_files``."""
+    path = manifest_mod.manifest_path(target)
+    data = json.loads(path.read_text())
+    entry = data.setdefault(profile, {})
+    entry["files"] = new_files
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def _union_files(
+    target: Path, profile: str, new_files: list[str], harnesses: list[str]
+) -> None:
+    """Selective-install: union new files in, dropping only in-scope
+    orphans (port of cmd_install's selective branch)."""
+    path = manifest_mod.manifest_path(target)
+    data = json.loads(path.read_text())
+    entry = data.setdefault(profile, {})
+    old = entry.get("files") or []
+    entry["files"] = manifest_mod.select_files(old, new_files, harnesses)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def cmd_uninstall(
+    name: str,
+    target_opt: Path | None,
+    colors: _Colors,
+    out: Any,
+) -> int:
+    if not name:
+        raise CliError(
+            f"{colors.RED}ap uninstall: profile name required{colors.NC}"
+        )
+
+    # Mirror install's target resolution so `ap uninstall global` (without
+    # --target) honors the profile's declared default. When the profile dir
+    # is gone, falls through to Path.cwd(); the operator can still pass
+    # --target explicitly to point at the right install root.
+    target_default: str | None = None
+    profile_dir = discover.find_profile_dir(name)
+    if profile_dir is not None:
+        try:
+            target_default = parse_manifest(profile_dir).target_default
+        except ParseError:
+            target_default = None
+    target = _resolve_target(target_opt, target_default)
+
+    print(
+        f"{colors.BLUE}→ Uninstalling profile '{name}' "
+        f"from {target}{colors.NC}",
+        file=out,
+    )
+
+    # Uninstall always runs every cleaner regardless of --harness so
+    # shared/merged files stay consistent with the (globally-recorded)
+    # manifest.
+    merged = manifest_mod.merged_json(target, name)
+    if merged is None:
+        profile_dir = discover.find_profile_dir(name)
+        if profile_dir is not None:
+            merged = parse_manifest(profile_dir).to_dict()
+        else:
+            merged = {"name": name, "mcps": [], "settings": {}}
+
+    from agent_profile.parse import Manifest
+
+    merged_manifest = Manifest(
+        name=merged.get("name", name),
+        description=merged.get("description", ""),
+        mcps=merged.get("mcps", []),
+        agents=merged.get("agents", []),
+        skills=merged.get("skills", []),
+        commands=merged.get("commands", []),
+        hooks=merged.get("hooks", []),
+        settings=merged.get("settings", {}),
+        mcp_scope=merged.get("mcp_scope", "plugin"),
+    )
+
+    for h in ALL_HARNESSES:
+        renderer = RENDERERS.get(h)
+        if renderer is not None:
+            renderer.clean(merged_manifest, target)
+
+    base = Path(str(target).rstrip("/"))
+    for f in manifest_mod.files(target, name):
+        if not f:
+            continue
+        if manifest_mod.other_profiles_claim_file(target, name, f):
+            print(
+                f"  {colors.BLUE}↳{colors.NC} keeping {f} "
+                "(claimed by another profile)",
+                file=out,
+            )
+            continue
+        abs_path = base / f
+        if abs_path.exists() or abs_path.is_symlink():
+            manifest_mod.remove_path(abs_path)
+
+    manifest_mod.clear(target, name)
+    print(f"{colors.GREEN}✓ Uninstalled{colors.NC}", file=out)
+    return 0
+
+
+def cmd_launch(
+    remaining: list[str],
+    passthrough: list[str],
+    target_opt: Path | None,
+    colors: _Colors,
+    out: Any,
+) -> NoReturn:
+    harness = remaining[0] if remaining else ""
+    if not harness:
+        raise CliError(
+            f"{colors.RED}ap launch: harness required "
+            f"(claude|codex|opencode|cursor|copilot|crush){colors.NC}"
+        )
+    if harness not in ALL_HARNESSES:
+        raise CliError(
+            f"{colors.RED}ap launch: unknown harness '{harness}'{colors.NC}"
+        )
+    name = remaining[1] if len(remaining) > 1 else ""
+    # Positionals after the name (when no `--` separator was used) are also
+    # exec passthrough, matching the bash `launch <harness> [name] [args..]`.
+    exec_args = remaining[2:] + passthrough
+
+    if name:
+        profile_dir = discover.find_profile_dir(name)
+        if profile_dir is None:
+            raise CliError(
+                f"{colors.RED}ap: profile '{name}' not found{colors.NC}"
+            )
+        manifest = parse_manifest(profile_dir)
+        if manifest.isolated:
+            _launch_isolated(
+                manifest, profile_dir, harness, exec_args, colors, out
+            )  # NoReturn
+        # Pass the unresolved target_opt down to cmd_install; it will apply
+        # the same explicit > profile.target_default > PWD precedence we use
+        # for standalone install. Launching the global profile thus targets
+        # $HOME without forcing the operator to pass --target.
+        install_rc = cmd_install(name, [harness], target_opt, colors, out)
+        if install_rc != 0:
+            raise CliError(
+                f"{colors.RED}ap launch: install of '{name}' failed "
+                f"(exit {install_rc}); not exec'ing {harness}{colors.NC}"
+            )
+
+    print(
+        f"{colors.BLUE}→ exec {harness} {' '.join(exec_args)}{colors.NC}",
+        file=out,
+    )
+    _exec(harness, exec_args, colors)
+
+
+def _launch_isolated(
+    manifest: Any,
+    profile_dir: Path,
+    harness: str,
+    exec_args: list[str],
+    colors: _Colors,
+    out: Any,
+) -> NoReturn:
+    """Closed-world launch (spec D1): dispatch to the per-harness isolation
+    builder, inject the profile env, exec the harness. claude/codex/opencode
+    each build the closed world by a different mechanism behind one
+    ``(flags, env)`` contract; cursor/copilot/crush have no isolation lever
+    and fail loud (``IsolationError`` -> ``CliError``)."""
+    from agent_profile.env import EnvResolutionError
+    from agent_profile.overlay import IsolationError, build_isolated_launch
+
+    try:
+        flags, env = build_isolated_launch(manifest, profile_dir, harness)
+    except (IsolationError, EnvResolutionError) as exc:
+        raise CliError(f"{colors.RED}{exc}{colors.NC}")
+
+    for key, value in env.items():
+        os.environ[key] = value
+
+    full_args = flags + exec_args
+    print(
+        f"{colors.BLUE}→ exec {harness} (isolated profile "
+        f"'{manifest.name}'){colors.NC}",
+        file=out,
+    )
+    _exec(harness, full_args, colors)
+
+
+def _exec(harness: str, exec_args: list[str], colors: _Colors) -> NoReturn:
+    """execvp the harness, converting an OSError into a clean CliError."""
+    try:
+        os.execvp(harness, [harness, *exec_args])
+    except OSError as exc:
+        raise CliError(
+            f"{colors.RED}ap launch: cannot exec '{harness}': {exc}{colors.NC}"
+        )
+
+
+# ─── option parsing + dispatch ───────────────────────────────────────
+
+
+def _require_value(args: list[str], i: int, flag: str) -> str:
+    """Return the token after a value-taking ``flag``, or raise ``CliError``
+    when ``flag`` is the final argument. Prevents an ``IndexError`` +
+    traceback when e.g. ``--harness`` is passed with no value."""
+    if i + 1 >= len(args):
+        raise CliError(f"ap: option '{flag}' requires a value")
+    return args[i + 1]
+
+
+def _parse_common_opts(
+    args: list[str],
+) -> tuple[list[str], Path | None, list[str], list[str]]:
+    """Split out --harness / --target / --profile-src; return
+    (harnesses, target_opt, remaining, passthrough). Mirrors the bash
+    parse_common_opts: --profile-src appends to AP_EXTRA_SEARCH_PATHS.
+
+    ``target_opt`` is ``None`` when ``--target`` was not passed, letting the
+    cmd_* handlers fall through to ``profile.target_default`` (if declared)
+    and then to ``Path.cwd()``. Resolving the precedence here would require
+    reading the manifest before option parsing, so the fallback is deferred.
+
+    ``remaining`` holds the positionals *before* a ``--`` separator;
+    ``passthrough`` holds everything after it. Keeping the boundary lets
+    ``launch`` tell "no profile name, just exec args" (``launch claude --
+    --resume``) from "profile name is the first positional" — folding both
+    into one list mis-read the first passthrough token as a profile name."""
+    harnesses = list(ALL_HARNESSES)
+    target: Path | None = None
+    remaining: list[str] = []
+    passthrough: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--harness":
+            harnesses = _require_value(args, i, "--harness").split(",")
+            i += 2
+        elif a.startswith("--harness="):
+            harnesses = a.split("=", 1)[1].split(",")
+            i += 1
+        elif a == "--target":
+            target = Path(_require_value(args, i, "--target")).resolve()
+            i += 2
+        elif a.startswith("--target="):
+            target = Path(a.split("=", 1)[1]).resolve()
+            i += 1
+        elif a == "--profile-src":
+            _append_search_path(_require_value(args, i, "--profile-src"))
+            i += 2
+        elif a.startswith("--profile-src="):
+            _append_search_path(a.split("=", 1)[1])
+            i += 1
+        elif a == "--":
+            passthrough = args[i + 1 :]
+            break
+        else:
+            remaining.append(a)
+            i += 1
+    return harnesses, target, remaining, passthrough
+
+
+def _resolve_target(target_opt: Path | None, target_default: str | None) -> Path:
+    """Resolve target precedence: explicit ``--target`` > profile
+    ``target_default`` (env-expanded) > ``Path.cwd()``.
+
+    ``${VAR}`` and ``$VAR`` refs in ``target_default`` expand against the
+    process env (``$HOME`` and ``$DOTFILES_DIR`` are the intended consumers).
+    ``~`` is also expanded. An unset ``${VAR}`` is left as a literal so the
+    surface failure mode is the resulting path not existing — easier to
+    debug than a generic KeyError."""
+    if target_opt is not None:
+        return target_opt
+    if target_default:
+        expanded = os.path.expandvars(os.path.expanduser(target_default))
+        return Path(expanded).resolve()
+    return Path.cwd()
+
+
+def _within_git_repo(start: Path) -> bool:
+    """True if ``start`` or any ancestor contains a ``.git`` (dir or file —
+    worktrees use a ``.git`` file). Walks the filesystem rather than shelling
+    out to ``git``, mirroring how this module avoids subprocess."""
+    for d in (start, *start.parents):
+        if (d / ".git").exists():
+            return True
+    return False
+
+def _append_search_path(path: str) -> None:
+    existing = os.environ.get("AP_EXTRA_SEARCH_PATHS", "")
+    os.environ["AP_EXTRA_SEARCH_PATHS"] = (
+        f"{existing}:{path}" if existing else path
+    )
+
+
+def _validate_harnesses(harnesses: list[str], colors: _Colors) -> None:
+    for h in harnesses:
+        if h not in ALL_HARNESSES:
+            raise CliError(
+                f"{colors.RED}ap: unknown harness '{h}' "
+                f"(valid: claude|codex|opencode|cursor|copilot|crush){colors.NC}"
+            )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point. Returns the process exit code."""
+    if argv is None:
+        argv = sys.argv[1:]
+    colors = _Colors(_is_tty())
+
+    sub = argv[0] if argv else "help"
+    rest = argv[1:]
+
+    try:
+        if sub in ("list", "ls"):
+            return cmd_list(colors, sys.stdout)
+        if sub in ("describe", "desc"):
+            if not rest:
+                raise CliError("profile name required")
+            return cmd_describe(rest[0], colors, sys.stdout)
+        if sub == "path":
+            if not rest:
+                raise CliError("profile name required")
+            return cmd_path(rest[0], colors, sys.stdout)
+        if sub == "copilot-flags":
+            if not rest:
+                raise CliError("profile name required")
+            return cmd_copilot_flags(rest[0], sys.stdout)
+        if sub == "perms":
+            local = "--local" in rest
+            rest_no_local = [a for a in rest if a != "--local"]
+            harnesses, target, _remaining, _passthrough = _parse_common_opts(
+                rest_no_local
+            )
+            explicit_harness = any(
+                a == "--harness" or a.startswith("--harness=")
+                for a in rest_no_local
+            )
+            # An explicit --harness must fail loud on any out-of-scope value
+            # (e.g. claude,opencode) rather than silently dropping it. The
+            # all-harness DEFAULT still filters quietly down to claude/codex.
+            if explicit_harness:
+                unsupported = [
+                    h for h in harnesses if h not in ("claude", "codex")
+                ]
+                if unsupported:
+                    raise CliError(
+                        f"{colors.RED}ap perms: unsupported harness "
+                        f"'{','.join(unsupported)}' (perms supports: "
+                        f"claude, codex){colors.NC}"
+                    )
+            perms_harnesses = [h for h in harnesses if h in ("claude", "codex")]
+            return cmd_perms(local, target, perms_harnesses, colors, sys.stdout)
+        if sub == "_install-internal":
+            harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
+            _validate_harnesses(harnesses, colors)
+            name = remaining[0] if remaining else ""
+            return cmd_install(name, harnesses, target, colors, sys.stdout)
+        if sub == "install":
+            raise CliError(install_deprecation_message())
+        if sub in ("uninstall", "rm"):
+            harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
+            _validate_harnesses(harnesses, colors)
+            name = remaining[0] if remaining else ""
+            return cmd_uninstall(name, target, colors, sys.stdout)
+        if sub == "launch":
+            _harnesses, target, remaining, passthrough = _parse_common_opts(rest)
+            cmd_launch(remaining, passthrough, target, colors, sys.stdout)
+        if sub == "compile":
+            if not rest:
+                raise CliError("profile name required")
+            profile_name = compile_command.profile_arg(rest)
+            if not profile_name:
+                raise CliError("profile name required")
+            profile_dir = discover.find_profile_dir(profile_name)
+            if profile_dir is None:
+                raise CliError(f"ap compile: profile '{profile_name}' not found")
+            from agent_profile.compile_target_presence import (
+                CompileTargetPresenceError,
+                require_compile_targets,
+            )
+
+            # Early-exit gate: fail loud on missing/invalid compile_targets before
+            # compile_profile's tempdir setup. parse_manifest re-validates for its
+            # other callers; the re-check on the compile path is intentional.
+            try:
+                require_compile_targets(profile_dir)
+            except CompileTargetPresenceError as exc:
+                raise CliError(str(exc)) from exc
+            return compile_command.cmd_compile(rest, RENDERERS, sys.stdout)
+        if sub == "fetch-sources":
+            return fetch_sources_command.cmd_fetch_sources(rest, sys.stdout)
+        if sub == "apply-compiled":
+            return apply_compiled.cmd_apply_compiled(rest, sys.stdout)
+        if sub in ("help", "-h", "--help"):
+            sys.stdout.write(USAGE)
+            return 0
+        print(
+            f"{colors.RED}ap: unknown subcommand '{sub}'{colors.NC}",
+            file=sys.stderr,
+        )
+        sys.stderr.write(USAGE)
+        return 1
+    except (
+        CliError,
+        compile_command.CompileError,
+        fetch_sources_command.FetchSourcesError,
+        apply_compiled.ApplyError,
+        ParseError,
+        ManifestCorrupt,
+        MergedConfigError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

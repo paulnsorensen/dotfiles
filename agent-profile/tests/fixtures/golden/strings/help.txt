@@ -1,0 +1,35 @@
+Usage: dots profile <command> [args]
+
+Commands:
+  list                          List available profiles
+  describe <name>               Show resolved manifest for a profile
+  path <name>                   Print profile source dir
+  compile <name> --baseline <dir> --out <dir>
+                                Compile live profile fragments
+  install <name> [opts]         Deprecated; use dots sync or ap compile
+  uninstall <name> [opts]       Remove a previously-installed profile
+  launch <harness> [name] [..]  Install + exec the named harness CLI
+  perms [opts]                  Write repo-level permission overlay (Claude + Codex)
+  help                          Show this message
+
+Install/launch options:
+  --harness <h>[,<h>...]        Limit to specific harnesses (default: all)
+  --target <dir>                Render into <dir> instead of $PWD
+  --profile-src <dir>           Extra search root for profile lookup
+
+Uninstall accepts --target and --profile-src. --harness is honored but
+limited: every cleaner still runs (shared/merged files like
+opencode.json, .mcp.json carry profile-authored entries across the
+harness boundary; a partial cleanup would leave dangling entries).
+
+Perms options:
+  --local                       Write settings.local.json (gitignored); skip Codex
+  --target <dir>                Repo root (default: $PWD)
+  --harness claude,codex        Limit to specific harnesses (default: claude,codex)
+
+Examples:
+  dots profile list
+  dots profile install rust --harness claude
+  dots profile launch claude rust -- --resume
+  dots profile uninstall rust
+  dots profile perms --target /path/to/repo

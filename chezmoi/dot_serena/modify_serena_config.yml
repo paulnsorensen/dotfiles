@@ -1,0 +1,99 @@
+#!/bin/sh
+# Patch a tiny subset of ~/.serena/serena_config.yml while preserving every
+# other key + Serena's inline documentation. Stdin is the current file
+# contents (empty on first install); stdout becomes the new file contents.
+#
+# Source-of-truth defaults are Serena's. We only override:
+#   web_dashboard                 → false  (no auto-browser tab)
+#   web_dashboard_open_on_launch  → false  (and no tray icon noise)
+#   excluded_tools                → memory + onboarding + initial_instructions tools
+#       Rationale: Serena's parallel memory system (~/.serena/memories/)
+#       collides with our MEMORY.md auto-memory under
+#       ~/.claude/projects/-Users-paul-Dev-dotfiles/memory/. Scope serena
+#       to its LSP-grounded retrieval + symbol-edit surface only.
+#       `onboarding` exists solely to bootstrap memory files, so it goes
+#       with the rest. `initial_instructions` is excluded too: the
+#       connection_prompt prods the model to call it, the claude-code
+#       context doesn't strip it, and it fails on an ungranted permission
+#       ~88% of the time (serena's own agent/oaicompat-agent contexts
+#       already exclude it).
+#       find_declaration / find_implementations / get_diagnostics_for_file
+#       are excluded too (MCP tool-surface audit, issue #269):
+#       find_declaration overlaps find_symbol; the other two are LSP-unique
+#       but had 0 runtime calls over 12 days — cut for decision-fatigue, not
+#       breakage. Re-add by deleting the line here if a use case appears.
+
+set -eu
+
+# shellcheck disable=SC2016  # literal backticks in the message, not expansion
+STUB_MARKER='# serena not initialized; run `serena init`, then `chezmoi apply` again'
+
+if ! command -v yq >/dev/null 2>&1; then
+    # yq is in packages.yaml so this branch is for unusual environments
+    # (e.g. partial bootstrap). Pass the file through unchanged rather than
+    # corrupt it.
+    cat
+    exit 0
+fi
+
+existing=$(cat)
+
+# Treat a previously-written stub as still-empty so the next apply
+# re-bootstraps once serena is on PATH. Without this, yq would later eat
+# the comment and emit a 3-key file, permanently losing Serena's ~165
+# lines of inline-documented defaults.
+if [ "$existing" = "$STUB_MARKER" ]; then
+    existing=
+fi
+
+# First-time install (or re-bootstrap from the stub): adopt the live
+# ~/.serena/serena_config.yml if it exists with real content, else run
+# `serena init` to create one. Either way, the resulting config is what
+# we patch. The init-gate also triggers when the on-disk file IS the
+# $STUB_MARKER — without that clause, `[ -f $file ]` succeeds on the
+# stub, init is skipped, and the live read just re-loads the same stub,
+# leaving the script in a stable fixed point on a broken state. The
+# trailing filter on the live-file read is still needed: a prior apply
+# may have written the stub, and round-tripping it into yq would emit a
+# 3-key file that destroys Serena's defaults.
+if [ -z "$existing" ] && command -v serena >/dev/null 2>&1; then
+    live=$(cat "$HOME/.serena/serena_config.yml" 2>/dev/null || true)
+    if [ -z "$live" ] || [ "$live" = "$STUB_MARKER" ]; then
+        # `serena init` loads-then-validates the existing config and aborts
+        # with "`projects` key not found" when the file is present but
+        # incomplete — which is exactly the stub we may have written on a
+        # prior apply. It has no --force, so clear the on-disk file first to
+        # give init a clean slate; from absence it writes a full default
+        # config (incl. `projects: []`). Without this rm the init always
+        # fails here and the script re-emits the stub: a stable broken state.
+        rm -f "$HOME/.serena/serena_config.yml"
+        serena init >/dev/null 2>&1 || true
+        live=$(cat "$HOME/.serena/serena_config.yml" 2>/dev/null || true)
+    fi
+    if [ -n "$live" ] && [ "$live" != "$STUB_MARKER" ]; then
+        existing=$live
+    fi
+fi
+
+if [ -z "$existing" ]; then
+    printf '%s\n' "$STUB_MARKER"
+    exit 0
+fi
+
+printf '%s' "$existing" | yq '
+    .web_dashboard = false |
+    .web_dashboard_open_on_launch = false |
+    .excluded_tools = [
+        "write_memory",
+        "read_memory",
+        "list_memories",
+        "delete_memory",
+        "rename_memory",
+        "edit_memory",
+        "onboarding",
+        "initial_instructions",
+        "find_declaration",
+        "find_implementations",
+        "get_diagnostics_for_file"
+    ]
+'

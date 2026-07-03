@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# cheatsheet - print a categorized reference of every zsh shortcut in this setup.
+# tmux keys + zsh tmux/remote shortcuts live in `tmux-cheatsheet`.
+# Usage: cheatsheet
+set -euo pipefail
+
+# Colors
+BOLD=$'\033[1m'
+CYAN=$'\033[0;36m'
+GREEN=$'\033[0;32m'
+DIM=$'\033[2m'
+RESET=$'\033[0m'
+
+# Helpers
+hdr() { printf "\n${BOLD}${CYAN}%s${RESET}\n" "$1"; }
+row() { printf "  ${GREEN}%-24s${RESET} ${DIM}%s${RESET}\n" "$1" "$2"; }
+note() { printf "  ${DIM}%s${RESET}\n" "$1"; }
+
+print_cheatsheet() {
+    hdr "Git"
+    row "ga"                  "git add"
+    row "gb"                  "git branch"
+    row "gco"                 "git checkout"
+    row "gcb <branch>"        "git checkout -b"
+    row "gc"                  "git commit -v"
+    row "gcm <msg>"           "git commit -m"
+    row "gd"                  "git diff"
+    row "gds"                 "git diff (difftastic)"
+    row "gdn"                 "git diff --name-only"
+    row "gf"                  "git fetch"
+    row "gp"                  "git push"
+    row "gpl"                 "git pull"
+    row "gst"                 "git status"
+    row "gl"                  "git log --oneline --graph --decorate -20"
+    row "gundo"               "undo last commit, keep changes staged"
+    row "gri"                 "rm files matching .gitignore"
+    row "glc"                 "log your commits only"
+    row "grb"                 "git pull -r origin main"
+    row "grbc"                "git rebase --continue"
+    row "grba"                "git rebase --abort"
+    row "gcom"                "checkout main + pull"
+
+    hdr "Navigation"
+    row "cdd [dir]"           "cd ~/Dev[/dir]"
+    row "cddot"               "cd \$DOTFILES_DIR"
+    row "z <dir>"             "zoxide jump (frecency)"
+    row "y [path]"            "yazi file manager (cd on exit)"
+
+    hdr "Claude launchers"
+    row "cc [args]"           "claude + preamble system prompt"
+    row "ccc [args]"          "cc --continue"
+    row "ccr [args]"          "cc --resume"
+    row "ccs"                 "fzf-jump to a running claude session"
+    row "ccp <name>"          "launch a scoped profile (ccp list)"
+    row "cxp [args]"          "codex tight planning profile"
+    row "cxc [args]"          "codex tight coding profile"
+
+    hdr "Worktrees"
+    row "ccw"                 "fzf-pick an existing worktree to resume"
+    row "ccw <slug>"          "claude in a new worktree (current repo)"
+    row "ccw <repo>/<slug>"   "worktree in ~/Dev/<repo> (from anywhere)"
+    row "ccw-ls"              "git worktree list"
+    row "ccw-find <q>"        "find a worktree by branch/path/PR/slug"
+    row "ccw-clean"           "sweep stale worktrees (current repo)"
+    row "ccw-rm <slug>"       "remove worktree + branch + tmux session"
+    row "ccw-sweep"           "sweep all repos under ~/Dev"
+    row "ccw-check"           "verify worktree permissions"
+    row "wt-git <path>"       "git in a worktree (no cd)"
+
+    hdr "MCP / Hooks / Agents"
+    row "mcp"                 "claude mcp"
+    row "mcp-ls"              "list MCPs"
+    row "mcp-edit"            "edit chezmoi/.chezmoidata/claude.yaml"
+    row "mcp-add <n> <cmd>"   "hand-add MCP (outside registry; prefer mcp-edit)"
+    row "hook-edit"           "edit hooks/registry.yaml"
+    row "hook-ls"             "list hooks"
+    row "agent-edit"          "edit agents/registry.yaml"
+    row "agent-ls"            "list sub-agents"
+
+    hdr "Skills / Plugins"
+    row "skill"               "skills CLI"
+    row "skill-ls"            "list installed skills"
+    row "skill-edit"          "edit skills/_registry.yaml"
+    row "plugin"              "claude plugin"
+    row "plugin-ls"           "claude plugin list"
+    row "plugin-edit"         "edit plugins/registry.yaml"
+    row "plugin-sync"         "sync claude marketplace plugins"
+    row "plugin-refresh"      "rebuild plugin cache"
+    row "cf-refresh"          "refresh cheese-flow@local"
+    row "cursor-plugin-edit"  "edit cursor/plugins/local"
+    row "cursor-plugin-sync"  "deploy cursor plugins (chezmoi)"
+    row "cursor-plugin-ls"    "list deployed cursor plugins"
+
+    hdr "Deploy / Config"
+    row "ds"                  "dots sync (deploy dotfiles)"
+    row "dots <cmd>"          "sync / upgrade / status / doctor / test"
+    row "claude-settings"     "edit ~/.claude/settings.json"
+    row "claude-json-prune"   "prune stale ~/.claude.json entries"
+    row "zrl"                 "source ~/.zshrc"
+    row "theme-edit"          "edit theme/config.yaml"
+    row "theme-ls"            "list theme schemes"
+    row "cheat"               "this cheatsheet"
+
+    hdr "Search / Files"
+    row "rg"                  "ripgrep --smart-case"
+    row "rga"                 "rg all files (hidden/ignored)"
+    row "rgf"                 "rg --files-with-matches"
+    row "rgc"                 "rg --count"
+    row "rgl"                 "rg --files-without-match"
+    row "todos"               "find outstanding code-note markers"
+    row "ls"                  "eza (modern ls)"
+    row "ll"                  "eza -lh (long)"
+    row "la"                  "eza -lah (long, hidden)"
+    row "l"                   "eza -F (type indicators)"
+    row "tree"                "eza --tree"
+    row "cat"                 "bat (syntax highlight)"
+    row "catn"                "bat --number"
+    row "diff"                "delta (syntax diff)"
+    row "sg"                  "ast-grep"
+    note "fzf keys: Ctrl+T file - Ctrl+R history - Alt+C cd"
+
+    hdr "System tools"
+    row "top"                 "btm (bottom)"
+    row "du"                  "dust"
+    row "ps"                  "procs"
+    row "loc"                 "tokei (code stats)"
+    row "uuidg"               "UUID -> clipboard"
+    row "c"                   "code -r . (VS Code)"
+    row "skr"                 "restart skhd hotkeys"
+
+    hdr "Cargo / Rust"
+    row "cn"                  "cargo nextest run"
+    row "cnf"                 "nextest --failure-output immediate"
+
+    hdr "AI agents"
+    row "copilot"             "GitHub Copilot (allow/deny floor)"
+    row "oc"                  "opencode"
+    row "ompt"                "Oh My Pi tight profile"
+    row "ocp <name>"          "opencode with a named profile"
+    row "octight [args]"      "opencode tight profile"
+    row "oclist"              "list opencode profiles"
+    row "vdv"                 "vaudeville (SLM enforcement)"
+    row "ralph"               "ralphify wrapper"
+    row "rw <path>"           "run a ralph with sane defaults"
+    row "rtk-init-claude"     "RTK init for Claude"
+    row "rtk-init-cursor"     "RTK init for Cursor"
+
+    hdr "GitHub helpers (bin/)"
+    row "gh-pr-review <n>"    "PR metadata + diff + checks"
+    row "gh-pr-prep"          "prep branch for review"
+    row "gh-issue-context <n>" "fetch issue context"
+    row "gh-pr-batch <n..>"   "batch PR context"
+    row "gh-pr-checks-batch"  "batch CI status"
+
+    hdr "tmux"
+    note "tmux keys & zsh tmux/remote shortcuts -> run: tmux-cheatsheet  (prefix = Ctrl+Space)"
+    printf "\n"
+}
+
+if [[ -t 1 ]]; then
+    print_cheatsheet | less -R -F -X
+else
+    print_cheatsheet
+fi

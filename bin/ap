@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+dotfiles_dir="${DOTFILES_DIR:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export DOTFILES_DIR="$dotfiles_dir"
+
+exec "$dotfiles_dir/agent-profile/ap" "$@"

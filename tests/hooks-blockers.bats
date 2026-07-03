@@ -1,67 +1,38 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2016
-# Tests for JavaScript blocking hooks (preToolUse)
-#
-# ── Coverage manifest ───────────────────────────────────────────────
-# Every regex pattern in write-guard.js must have at least one positive
-# test (fires) and one negative test (passes). When adding a new pattern,
-# add its line here and write the test.
-#
-# write-guard.js — RULES[0] ellipsis (4 alternations)
-#   /\/\/\s*\.\.\./                 → // ...
-#   /#\s*\.\.\./                    → # ...
-#   /\/\*\s*\.\.\.\s*\*\//         → /* ... */
-#   /\.{3}\s*(rest|remaining|similar|same)/ → ...remaining, ...similar, ...same
-#   {...a, ...b} (neg):            → spread syntax allowed
-#
-# write-guard.js — RULES[1] placeholder (7 alternations)
-#   /\bTODO\b/                      → TODO
-#   /\bFIXME\b/                     → FIXME
-#   /\bHACK\b/                      → HACK
-#   /\bXXX\b/                       → XXX
-#   /\bPLACEHOLDER\b/               → PLACEHOLDER
-#   /unimplemented!\(\)/            → unimplemented!()
-#   /todo!\(\)/                     → todo!()
-#   lowercase "todo" (neg):         → allowed
-#   TODOLIST (neg):                 → word boundary prevents match
-#
-# write-guard.js — RULES[2] inline test (2 patterns + skipFiles)
-#   /python3?\s+-c\s+['"]...(?:import|assert|print\s*\()/  → python3 -c import, assert alone, print( alone
-#   /cat\s+<</                      → cat heredoc
-#   python (not python3):           → python -c import
-#   skipFiles .md:                  → allowed
-#   skipFiles .sh:                  → allowed
-#   skipFiles .bash:                → allowed
-#   skipFiles .yml:                 → allowed
-#   skipFiles .yaml:                → allowed
-#   skipFiles .toml:                → allowed
-#   Write tool content field:       → blocked (tests content vs new_string)
-# ────────────────────────────────────────────────────────────────────
+# Tests for JavaScript Claude Code hooks (PreToolUse).
+# Coverage: worktree-guard.js (PreToolUse), hook-runner.js protocol bridge.
 
 load test_helper
 
 HOOKS_DIR="$REAL_DOTFILES_DIR/claude/hooks"
 
-run_hook() {
-    local hook="$1" tool="$2" input="$3"
+# Run a hook with an event object (for hooks that use event.cwd)
+run_hook_event() {
+    local hook="$1" tool="$2" input="$3" cwd="$4"
     run node -e "
         const h = require('$hook');
         const hook = h.hooks[0];
-        const input = JSON.parse(process.argv[1]);
-        const matched = hook.matcher('$tool', input);
+        const toolInput = JSON.parse(process.argv[1]);
+        const event = JSON.parse(process.argv[2]);
+        const matched = hook.matcher('$tool', toolInput, event);
         if (!matched) { console.log('allowed'); process.exit(0); }
         (async () => {
-            let r = await hook.handler('$tool', input);
+            let r = await hook.handler('$tool', toolInput, event);
             if (r == null) { console.log('allowed'); return; }
             console.log('blocked: ' + (r.result || 'no reason'));
         })();
-    " "$input"
+    " "$input" "{\"cwd\":\"$cwd\"}"
 }
 
 # Run a hook through hook-runner.js (tests the full stdin/stdout protocol)
 run_via_runner() {
-    local hook_file="$1" tool="$2" input="$3"
-    local json="{\"tool_name\":\"$tool\",\"tool_input\":$input}"
+    local hook_file="$1" tool="$2" input="$3" cwd="${4:-}"
+    local json="{\"tool_name\":\"$tool\",\"tool_input\":$input"
+    if [[ -n "$cwd" ]]; then
+        json="${json},\"cwd\":\"$cwd\""
+    fi
+    json="${json}}"
     run bash -c "echo '$json' | node '$HOOKS_DIR/hook-runner.js' '$hook_file'"
 }
 
@@ -73,268 +44,45 @@ teardown() {
     teardown_test_env
 }
 
-# ── write-guard: module loading ─────────────────────────────────────
-
-@test "write-guard: loads as valid node module" {
-    run node -e "const h = require('$HOOKS_DIR/write-guard.js'); console.log(h.hooks.length)"
-    [ "$status" -eq 0 ]
-    [[ "$output" == "1" ]]
-}
-
-@test "write-guard: non-Edit/Write tool is ignored" {
-    run_hook "$HOOKS_DIR/write-guard.js" Bash '{"new_string":"// TODO: implement"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-# ── write-guard: ellipsis detection ─────────────────────────────────
-
-@test "write-guard: JS comment ellipsis is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"// ... rest of implementation","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-    [[ "$output" == *"Ellipsis"* ]]
-}
-
-@test "write-guard: hash comment ellipsis is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"# ... rest of the code","file_path":"foo.py"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: block comment ellipsis is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"/* ... */","file_path":"foo.js"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: spread operator (...remaining) is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"... remaining items here","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: ... similar pattern is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"... similar to above","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: ... same pattern is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"... same as above","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: actual spread syntax is allowed" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"const merged = {...a, ...b};","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-# ── write-guard: placeholder detection ──────────────────────────────
-
-@test "write-guard: TODO is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Write '{"content":"function foo() { // TODO: implement }","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-    [[ "$output" == *"Placeholder"* ]]
-}
-
-@test "write-guard: FIXME is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"// FIXME: this is broken","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: HACK is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"// HACK: workaround","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: XXX is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"// XXX: needs review","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: unimplemented!() is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"fn process() { unimplemented!() }","file_path":"foo.rs"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: todo!() is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"fn process() { todo!() }","file_path":"foo.rs"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: PLACEHOLDER is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"const value = PLACEHOLDER;","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: lowercase todo in prose is allowed" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"// need to do this next","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "write-guard: TODOLIST is allowed (word boundary)" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"const TODOLIST = [];","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-# ── write-guard: inline test detection ──────────────────────────────
-
-@test "write-guard: python -c in .ts file is blocked with /test-sandbox reference" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-    [[ "$output" == *"/test-sandbox"* || "$output" == *"/wreck"* ]]
-}
-
-@test "write-guard: cat heredoc in .ts file is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"cat <<EOF > test.py","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: python -c in .md file is allowed (skipFiles)" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"README.md"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "write-guard: python -c in .sh file is allowed (skipFiles)" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"setup.sh"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "write-guard: python -c in .yml file is allowed (skipFiles)" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"ci.yml"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "write-guard: python -c in .bash file is allowed (skipFiles)" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"setup.bash"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "write-guard: python -c in .yaml file is allowed (skipFiles)" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"config.yaml"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "write-guard: python -c in .toml file is allowed (skipFiles)" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"import json; assert True\"","file_path":"pyproject.toml"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "write-guard: python (not python3) -c is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python -c \"import os; print(os.getcwd())\"","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: python -c with assert (no import) is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"assert 1 == 1\"","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: python -c with print( (no import) is blocked" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"python3 -c \"print(42)\"","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: Write tool content field works" {
-    run_hook "$HOOKS_DIR/write-guard.js" Write '{"content":"// ... rest of handlers","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "write-guard: clean code is allowed" {
-    run_hook "$HOOKS_DIR/write-guard.js" Edit '{"new_string":"const x = 42;","file_path":"foo.ts"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-# ── phantom-file-check ──────────────────────────────────────────────
-
-@test "phantom: non-existent file is blocked" {
-    run_hook "$HOOKS_DIR/phantom-file-check.js" Read '{"file_path":"/nonexistent/path/foo.txt"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
-@test "phantom: existing file is allowed" {
-    local real_file="$TEST_HOME/real-file.txt"
-    echo "content" > "$real_file"
-    run_hook "$HOOKS_DIR/phantom-file-check.js" Read "{\"file_path\":\"$real_file\"}"
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "phantom: missing file_path returns allowed (null guard)" {
-    run_hook "$HOOKS_DIR/phantom-file-check.js" Read '{}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "phantom: non-Read tool is ignored (matcher returns false)" {
-    run_hook "$HOOKS_DIR/phantom-file-check.js" Bash '{"file_path":"/nonexistent/foo.txt"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "phantom: directory path that exists is allowed" {
-    run_hook "$HOOKS_DIR/phantom-file-check.js" Read "{\"file_path\":\"$TEST_HOME\"}"
-    [ "$status" -eq 0 ]
-    [[ "$output" == "allowed" ]]
-}
-
-@test "phantom: path field also works (alternate key)" {
-    run_hook "$HOOKS_DIR/phantom-file-check.js" Read '{"path":"/nonexistent/alternate.txt"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == blocked:* ]]
-}
-
 # ── hook-runner.js protocol bridge ─────────────────────────────────
+# Exercised through worktree-guard.js — the guard hook-runner wraps in
+# production (settings.json PreToolUse Edit|Write|MultiEdit|tilth_write).
 
-@test "hook-runner: blocks phantom file via protocol" {
-    run_via_runner phantom-file-check.js Read '{"file_path":"/nonexistent/file.txt"}'
+setup_worktree() {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main" || return 1
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main" || return 1
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+}
+
+@test "hook-runner: blocks out-of-worktree write via protocol" {
+    setup_worktree
+    run_via_runner worktree-guard.js Write '{"file_path":"/wt-guard-outside/x.txt","new_string":"x"}' "$TEST_HOME/wt"
     [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
     [[ "$output" == *'"permissionDecision":"deny"'* ]]
 }
 
-@test "hook-runner: allows existing file via protocol" {
-    local real_file="$TEST_HOME/runner-test.txt"
-    echo "content" > "$real_file"
-    local json="{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$real_file\"}}"
-    run bash -c "echo '$json' | node '$HOOKS_DIR/hook-runner.js' 'phantom-file-check.js'"
+@test "hook-runner: allows in-worktree write via protocol" {
+    setup_worktree
+    run_via_runner worktree-guard.js Write '{"file_path":"inside.txt","new_string":"ok"}' "$TEST_HOME/wt"
     [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
     [[ -z "$output" ]]
 }
 
-@test "hook-runner: blocks write-guard TODO via protocol" {
-    run_via_runner write-guard.js Write '{"content":"// TODO: fix later","file_path":"test.js"}'
-    [ "$status" -eq 0 ]
-    [[ "$output" == *'"permissionDecision":"deny"'* ]]
-}
-
 @test "hook-runner: invalid JSON on stdin fails open" {
-    run bash -c "echo 'not json' | node '$HOOKS_DIR/hook-runner.js' 'write-guard.js' 2>&1"
+    run bash -c "echo 'not json' | node '$HOOKS_DIR/hook-runner.js' 'worktree-guard.js' 2>&1"
     [ "$status" -eq 0 ]
     [[ "$output" == *"invalid JSON"* ]]
 }
@@ -352,15 +100,19 @@ teardown() {
 }
 
 @test "hook-runner: non-matching tool passes through" {
-    run_via_runner write-guard.js Bash '{"command":"git status"}'
+    # worktree-guard matches Edit|Write|MultiEdit|tilth_write; Bash is a no-op.
+    run_via_runner worktree-guard.js Bash '{"command":"git status"}'
     [ "$status" -eq 0 ]
     [[ -z "$output" ]]
 }
 
 @test "hook-runner: output is valid JSON when blocking" {
-    run_via_runner write-guard.js Write '{"content":"// TODO: fix later","file_path":"test.js"}'
+    setup_worktree
+    run_via_runner worktree-guard.js Write '{"file_path":"/wt-guard-outside/shape.txt","new_string":"x"}' "$TEST_HOME/wt"
     [ "$status" -eq 0 ]
-    # Verify it parses as JSON with hookSpecificOutput structure
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
     echo "$output" | node -e "
         let d = '';
         process.stdin.on('data', c => d += c);
@@ -371,4 +123,258 @@ teardown() {
             if (!['deny','allow','ask','defer'].includes(o.hookSpecificOutput.permissionDecision)) process.exit(1);
         });
     "
+}
+
+# ── worktree-guard.js ────────────────────────────────────────────────
+# Note: worktree tests may skip or pass in environments where git worktree
+# is unavailable or has restrictions (e.g. sandboxed systems).
+
+@test "worktree-guard: normal repo (not worktree) is allowed" {
+    mkdir -p "$TEST_HOME/repo"
+    (
+        cd "$TEST_HOME/repo"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+    ) 2>/dev/null
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" Write '{"file_path":"test.txt","new_string":"ok"}' "$TEST_HOME/repo"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: CLAUDE_WORKTREE_GUARD=0 disables guard" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # Non-/tmp path: the guard always allows /tmp scratch, so a /tmp target
+    # would be allowed regardless of the env var and prove nothing.
+    local outside_path="/wt-guard-outside/x.txt"
+    CLAUDE_WORKTREE_GUARD=0 run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$outside_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: write inside worktree is allowed" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" Write '{"file_path":"inside.txt","new_string":"ok"}' "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: write to sibling/main path outside worktree is blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # Non-/tmp path: /tmp is always-allowed scratch, so a /tmp target would mask
+    # the block. The file need not exist — the matcher only classifies the path.
+    local main_path="/wt-guard-outside/sneaky.txt"
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$main_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: write to .cheese path outside worktree is allowed" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # Non-/tmp .cheese path: proves the .cheese allow-rule specifically (a /tmp
+    # path would be allowed via the scratch rule, masking the .cheese logic).
+    local cheese_path="/wt-guard-outside/.cheese/spec.md"
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$cheese_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: tilth_write batch with one outside file is blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    local outside_path="/wt-guard-outside/bad.txt"  # non-/tmp so the block is real
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" mcp__tilth__tilth_write \
+        "{\"files\":[{\"path\":\"inside.txt\",\"content\":\"ok\"},{\"path\":\"$outside_path\",\"content\":\"bad\"}]}" \
+        "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: CLAUDE_WORKTREE_GUARD_ALLOW makes outside path allowed" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # Non-/tmp path that is only writable because the prefix is allow-listed.
+    local outside_path="/wt-guard-allow/x.txt"
+    CLAUDE_WORKTREE_GUARD_ALLOW="/wt-guard-allow" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$outside_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: write to cheese durable corpus under HOME is allowed" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # Non-/tmp HOME: a /tmp-rooted home would be allowed via the scratch rule,
+    # masking the corpus logic. Path need not exist — the matcher classifies it.
+    local corpus_path="/wt-guard-home/.local/share/cheese/proj/specs/slug.md"
+    HOME="/wt-guard-home" XDG_DATA_HOME="" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$corpus_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: write to cheese durable corpus under XDG_DATA_HOME is allowed" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # XDG_DATA_HOME overrides ~/.local/share as the corpus root.
+    local corpus_path="/wt-guard-xdg/cheese/proj/rfds/slug.md"
+    HOME="/wt-guard-home" XDG_DATA_HOME="/wt-guard-xdg" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$corpus_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: non-cheese sibling under data home is still blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # The carve-out is cheese-only — a sibling app dir must stay blocked.
+    local sibling_path="/wt-guard-home/.local/share/other-app/file.txt"
+    HOME="/wt-guard-home" XDG_DATA_HOME="" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$sibling_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: cheese prefix-sneak sibling (cheesecake) is blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # startsWith must match the prefix as a path segment, not a string prefix.
+    local sneak_path="/wt-guard-home/.local/share/cheesecake/x.txt"
+    HOME="/wt-guard-home" XDG_DATA_HOME="" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$sneak_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: traversal out of cheese corpus (..) is blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    # path.resolve must normalize .. before the prefix check.
+    local escape_path="/wt-guard-home/.local/share/cheese/../other-app/x.txt"
+    HOME="/wt-guard-home" XDG_DATA_HOME="" run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$escape_path\",\"new_string\":\"x\"}" "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
 }

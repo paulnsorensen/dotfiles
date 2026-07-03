@@ -2,7 +2,7 @@
 name: settings-clean
 model: haiku
 context: fork
-description: Clean up bloated .claude/settings.local.json by removing redundant, stale, and junk permission entries, and ensure hook-redirected skills are allowed. Use when the user says "clean settings", "prune settings", "settings cleanup", or invokes /settings-clean. Also trigger proactively when you notice a settings.local.json with more than 30 permission entries, or after extended sessions where many one-off Bash permissions have accumulated. This skill only touches settings.local.json (gitignored), never settings.json (committed).
+description: Clean a bloated .claude/settings.local.json by removing redundant, stale, and junk permission entries and ensuring hook-redirected skills are allowed. Use when the user says "clean settings", "prune settings", "settings cleanup", or invokes /settings-clean; also proactively when settings.local.json exceeds ~30 entries. Only touches settings.local.json (gitignored), never settings.json (committed).
 allowed-tools: Read, Write, Bash(jq:*), Bash(cp:*), Bash(mkdir:*), Bash(mv:*), Bash(date:*)
 ---
 
@@ -18,7 +18,7 @@ Claude Code's permission system only appends to `permissions.allow` — it never
 LOCAL:   .claude/settings.local.json     (in the current project root)
 GLOBAL:  ~/.claude/settings.json          (user-wide settings)
 HOOKS:   claude/hooks/*.js                (PreToolUse hooks — for hook-blocked detection)
-SKILLS:  claude/skills/*/SKILL.md         (available skills — for missing skill detection)
+SKILLS:  skills/*/SKILL.md                (available skills — for missing skill detection)
 ```
 
 If the local file doesn't exist or has no `permissions.allow`, skip to Step 6 (skill additions may still apply).
@@ -68,7 +68,7 @@ These are commands the user ran once during a session. They accumulate fast and 
 
 | Pattern | Example |
 |---|---|
-| Hardcoded absolute home path (`/Users/`, `/home/`, or `~/`) | `Bash(bash /Users/paul/Dev/dotfiles/claude/mcp/sync.sh ...)` |
+| Hardcoded absolute home path (`/Users/`, `/home/`, or `~/`) | `Bash(bash /Users/paul/Dev/dotfiles/agents/mcp/sync.sh ...)` |
 | Pipe chains (`\|`) | `Bash(... 2>&1 \| grep -i ...)` |
 | Command joiners (`;`, `&&`, `\|\|`) | `Bash(command -v cargo && cargo --version)` |
 | Stderr redirects (`2>&1`, `2>/dev/null`) | Debug output capture |
@@ -84,7 +84,7 @@ These are commands the user ran once during a session. They accumulate fast and 
 Everything else stays:
 
 - `Skill(*)` entries — user enabled these deliberately
-- `LSP` — intentional
+- `mcp__serena__*` — intentional (symbol-intelligence MCP)
 - `Bash(toolname:*)` wildcards not covered by global or same-file — project-specific
 - Clean `Bash(toolname arg:*)` patterns that don't match one-off patterns
 - `mcp__*` entries not in global
@@ -105,11 +105,11 @@ Suggest `permissions.deny` entries that reinforce hook blocks. These act as belt
 Recommended deny entries (reinforces hook blocks):
 
   Legacy tools (use dedicated tools instead):
-    "Bash(grep:*)"         → Grep tool or /scout
-    "Bash(egrep:*)"        → Grep tool or /scout
-    "Bash(fgrep:*)"        → Grep tool or /scout
-    "Bash(sed:*)"          → cheese-flow:cheez-write or Edit
-    "Bash(awk:*)"          → cheese-flow:cheez-write or Edit
+    "Bash(grep:*)"         → Grep tool or /cheez-search
+    "Bash(egrep:*)"        → Grep tool or /cheez-search
+    "Bash(fgrep:*)"        → Grep tool or /cheez-search
+    "Bash(sed:*)"          → easy-cheese:cheez-write or Edit
+    "Bash(awk:*)"          → easy-cheese:cheez-write or Edit
     "Bash(find:*)"         → Glob tool or /scout (fd)
 
   Package installs (require per-use approval):
@@ -129,7 +129,7 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 
 ### How to detect
 
-1. **Scan available skills**: Read `claude/skills/*/SKILL.md` to find all skill names. If the skills directory doesn't exist in the current project, check `~/Dev/dotfiles/claude/skills/` (the canonical source).
+1. **Scan available skills**: Read `skills/*/SKILL.md` to find all skill names. If the skills directory doesn't exist in the current project, check `~/Dev/dotfiles/skills/` (the canonical source).
 
 2. **Map hook redirects to required skills**: Each hook block implies a skill that should be allowed:
 

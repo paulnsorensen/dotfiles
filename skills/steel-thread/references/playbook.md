@@ -181,8 +181,8 @@ the user knows what *not* to trust about the map.
 
 ## When to skip CRG entirely
 
-- Single-symbol "who calls Z" with a known exact symbol → use `/lookup` (LSP).
-- "Where is the file named X.ts" → use `/scout` (filesystem).
+- Single-symbol "who calls Z" with a known exact symbol → use the Serena MCP (`mcp__serena__find_referencing_symbols`).
+- "Where is the file named X.ts" → use `/cheez-search` (with a `glob:` filter).
 - Dead code or unwired spec → use `/ghostbuster`.
 - The graph DB is missing or stale and the question is genuinely tiny → just
   read the file.

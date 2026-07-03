@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# ccw-find — locate worktrees under ~/Dev by branch / slug / repo / staleness.
+#
+# Usage:
+#   ccw-find --slug <s>        Worktrees whose dir name contains <s>
+#   ccw-find --branch <b>      Worktrees whose branch contains <b>
+#   ccw-find --repo <name>     Worktrees in repo <name>
+#   ccw-find --stale <days>    Worktrees whose last commit is older than <days>
+#   ccw-find --root <dir>      Search <dir> instead of ~/Dev
+#
+# Criteria combine (AND). Prints one `path<TAB>branch (age)` row per match.
+# The mechanical search lives in wt_find (bin/lib/worktree.sh); the
+# worktree-find skill layers the fuzzy criteria (touched-path, open-PR) on top.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/worktree.sh
+source "${SCRIPT_DIR}/lib/worktree.sh"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit 0
+fi
+
+if [[ $# -eq 0 ]]; then
+    echo "ccw-find: no criteria given (try --help)" >&2
+    exit 1
+fi
+
+wt_find "$@"

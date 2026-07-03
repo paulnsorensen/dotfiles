@@ -5,20 +5,12 @@ effort: high
 allowed-tools: Read, Bash(git log:*), Bash(git diff:*), Bash(git status:*), Bash(ls:*), Bash(rg:*), Agent, Skill
 description: >
   Map a concept end-to-end through a layered codebase using the code-review-graph
-  (CRG) MCP. Always rebuilds and re-embeds the graph before answering so
-  semantic search reflects current code. Prefers CRG's native `Flow` primitive
-  (which IS a steel thread) over hand-rolled traversal. Queries along both
-  behaviour and surface vocabularies when no flow matches, traverses from the
-  densest hub, cross-checks with impact radius, and routes via
-  `get_minimal_context_tool`'s `suggested_tools` array. Use when the user asks
-  to trace a concept, find an entry point, map a feature across layers,
-  estimate blast radius of a planned change, find which contract/route/handler
-  reaches a given service, or asks "did you check whether I just added X".
-  Triggers on: /steel-thread, "trace this through", "map the X flow", "blast
-  radius for Y", "what touches Z", "find the entry point for", "where does X
-  get called from", "is there a new endpoint I added", "what's affected by
-  this change". Do NOT use for single-symbol lookups (use /lookup), filesystem
-  search (use /scout), or dead code detection (use /ghostbuster).
+  MCP — rebuilding the graph, preferring its Flow primitive, and cross-checking
+  impact radius. Use when the user says "trace this through", "map the X flow",
+  "blast radius for Y", "what touches Z", "find the entry point for", "what's
+  affected by this change", or invokes /steel-thread. Do NOT use for
+  single-symbol lookups (Serena), filesystem search (/scout), or dead-code
+  detection (/ghostbuster).
 license: MIT
 ---
 
@@ -330,8 +322,9 @@ update this skill.
   CRG. Complementary: `/xray` for *did this implementation satisfy the spec*;
   `/steel-thread` for *where does this concept actually live and what touches
   it*.
-- `/lookup` — single-symbol code intelligence. Faster for "what's the
-  signature of Y" or "who calls Z" when you already have the exact symbol.
+- Serena MCP (`mcp__serena__find_symbol`, `find_referencing_symbols`) —
+  single-symbol code intelligence. Faster for "what's the signature of Y"
+  or "who calls Z" when you already have the exact symbol.
 - `/ghostbuster` — dead code / stale spec detection. Disjoint concern.
 - `/briesearch` — for researching the external CRG API surface or new
   releases when this skill's `references/api.md` falls behind.

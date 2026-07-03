@@ -1,0 +1,101 @@
+# MCP Registry - Source of truth for coding-agent MCP servers
+# (template var $h, set on the next line, is the active harness for this
+# render pass — sync.sh sets HARNESS=<name>. Entries may reference $h to
+# branch per-harness without restating the env lookup.)
+# {{ $h := env "HARNESS" }}
+#
+# Run `mcp-sync` (or `dots sync`) to apply this to every installed harness.
+#
+# Per-entry fields:
+#   command      — stdio launcher (required)
+#   args         — array of arg strings. Rendered through `chezmoi execute-template`
+#                  per harness; the active harness name is exposed as the
+#                  Go-template var $h. Branch inline only when an entry actually
+#                  diverges — see the `serena` entry below for a worked example.
+#                  Default to $h so future harnesses inherit their bare name
+#                  without another schema edit. Existing ${VAR} bash-style env
+#                  refs (resolved later in mcp_build_env_flags) are untouched
+#                  by the templating pass.
+#   env          — env vars; values can reference shell vars via "${VAR}"
+#   scope        — claude-only: user | project | local (default user)
+#   harnesses    — list of harness names to install into; default: [claude, codex, opencode, cursor, crush]
+#   gate_unless  — claude-only: skip install when env var == "true" (defer to a plugin's bundled MCP)
+#   optional     — when true, skip this MCP non-fatally if any ${VAR} it
+#                  references is unset (instead of failing the sync). Use for
+#                  MCPs gated on a credential the user may not have configured.
+#   description  — human-readable purpose
+
+mcps:
+  # context7, tavily — provided by the cheese-flow plugin's .mcp.json when
+  # CHEESE_FLOW=true. Plugin MCPs are session-wide and accessible to all
+  # skills/agents. Registering them here too would spawn duplicate processes
+  # under Claude. Codex has no plugin system, so gate_unless is ignored there
+  # and the entry installs normally.
+  #
+  # shadcn lives in the FE profile only — see profiles/fe/profile.yaml.
+  # Installing user-scope loads its tool schemas in every session even though
+  # shadcn is only useful for FE work.
+
+  tilth:
+    command: tilth
+    args: ["--mcp", "--edit"]
+    scope: user
+    description: AST-aware code search/read/edit (Tree-sitter); backs cheez-* skills when cheese-flow is unavailable
+    gate_unless: CHEESE_FLOW
+
+  # hallouminate (per-repo markdown wiki) migrated to agents/plugins/registry.yaml
+  # as a cross-harness plugin — it bundles the MCP + 6 wiki skills. The plugin
+  # decomposition now provides the `hallouminate` MCP; keeping a duplicate here
+  # would trip the plugin-MCP-name collision guard in _expand_plugins.
+
+  context7:
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+    scope: user
+    description: Library/framework docs (React, Tailwind, Next.js, …); backs /briesearch when cheese-flow is unavailable
+    gate_unless: CHEESE_FLOW
+
+  tavily:
+    command: npx
+    args: ["-y", "tavily-mcp@latest"]
+    env:
+      TAVILY_API_KEY: "${TAVILY_API_KEY}"
+    scope: user
+    description: AI-powered technical web research; backs /briesearch when cheese-flow is unavailable
+    gate_unless: CHEESE_FLOW
+
+  todoist:
+    command: npx
+    args: ["-y", "@doist/todoist-ai"]
+    env:
+      TODOIST_API_KEY: "${TODOIST_API_KEY}"
+    scope: user
+    optional: true   # skip non-fatally when TODOIST_API_KEY is unset
+    # Scoped out of every harness: todoist's ~45 tools ≈ 38k tokens (62% of the
+    # MCP tool footprint) are eager-loaded into every request by opencode, codex,
+    # cursor, and copilot (only claude defers via ToolSearch — see
+    # .cheese/research/mcp-schema-loading). It is irrelevant to coding; the `todo`
+    # profile defines todoist inline, so productivity sessions still get it.
+    # Empty list (not absent) renders into nothing — base.py:item_harnesses only
+    # falls back to the default set when `harnesses` is missing.
+    harnesses: []
+    description: Official Todoist MCP (Doist-maintained) — invoke only when explicitly requested
+  # Serena's per-harness contexts already strip tools that duplicate built-ins
+  # (Read/Write/Bash etc.). Server-wide further filtering lives in
+  # ~/.serena/serena_config.yml under `excluded_tools` / `included_optional_tools`
+  # / `fixed_tools` — applies to every harness uniformly.
+  serena:
+    # stdio transport: serena starts as a child of the MCP harness and exits
+    # with it. This avoids the leaked-daemon / OOM problem of the retired
+    # serena-mux wrapper (6% reuse, 472 orphaned daemons, 35.5GB RSS OOM).
+    command: serena
+    args:
+      - start-mcp-server
+      - --context={{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}
+      - --project-from-cwd
+      - --enable-web-dashboard=false
+      - --open-web-dashboard=false
+    scope: user
+    description: Semantic code intel via LSP (symbols, references, refactors). Tools tailored per harness via --context.

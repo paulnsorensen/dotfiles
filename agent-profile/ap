@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# uv-run shim: dispatch `ap` to `python -m agent_profile` in the locked env.
+# Project dir is this file's own directory (the agent-profile/ uv project),
+# or $DOTFILES_DIR/agent-profile when DOTFILES_DIR is set.
+project="${DOTFILES_DIR:+$DOTFILES_DIR/agent-profile}"
+project="${project:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+exec uv run --project "$project" --no-sync -m agent_profile "$@"
