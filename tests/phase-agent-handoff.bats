@@ -117,20 +117,22 @@ block_sha() {
     # must still deny code edits and fan-out.
     run yq '.agents.researcher.disallowedTools' "$registry"
     assert_success
-    [[ "$output" == *Edit* ]] || { echo "researcher must deny Edit" >&2; return 1; }
     [[ "$output" == *Agent* ]] || { echo "researcher must deny Agent (no subagent fan-out)" >&2; return 1; }
+    # Exact membership: a substring check for Edit would match NotebookEdit.
+    run yq -e '.agents.researcher.disallowedTools[] | select(. == "Edit")' "$registry"
+    [[ "$status" -eq 0 ]] || { echo "researcher must deny Edit" >&2; return 1; }
 }
 
 @test "coder denies native edit tools and subagent fan-out in the registry" {
     local registry="$AGENTS_DIR/registry.yaml"
-    run yq '.agents.coder.disallowedTools' "$registry"
-    assert_success
     # Aggressive lockdown (session-analytics evidence): coder mutates the tree
     # exclusively through cheez-write (tilth), so native edit/search tools are denied.
-    for tool in Edit Write NotebookEdit Grep Glob; do
-        [[ "$output" == *"$tool"* ]] || { echo "coder must deny $tool (edits go through cheez-write)" >&2; return 1; }
+    # Exact membership per tool: a substring check for Edit would match NotebookEdit.
+    for tool in Edit Write NotebookEdit Grep Glob Agent; do
+        run yq -e ".agents.coder.disallowedTools[] | select(. == \"$tool\")" "$registry"
+        [[ "$status" -eq 0 ]] || { echo "coder must deny $tool (edits go through cheez-write)" >&2; return 1; }
     done
-    # Read is kept (see decision 5), and Agent denied (level-1 subagent, no fan-out).
-    [[ "$output" != *Read* ]] || { echo "coder must keep native Read" >&2; return 1; }
-    [[ "$output" == *Agent* ]] || { echo "coder must deny Agent (no subagent fan-out)" >&2; return 1; }
+    # Read is kept (see decision 5).
+    run yq -e '.agents.coder.disallowedTools[] | select(. == "Read")' "$registry"
+    [[ "$status" -ne 0 ]] || { echo "coder must keep native Read" >&2; return 1; }
 }
