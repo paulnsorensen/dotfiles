@@ -10,7 +10,7 @@
 // use `before_agent_start` — the only lifecycle event that returns a persisted
 // message — guarded to fire once, mirroring Claude's session-start injection.
 
-import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
 const FLAIR_SCRIPT = `${process.env.HOME}/.claude/hooks/session-start-cheese-flair.sh`
 const FLAIR_TIMEOUT_MS = 3_000

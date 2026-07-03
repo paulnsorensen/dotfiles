@@ -173,7 +173,7 @@ fi
 if command -v omp &> /dev/null; then
   omp() {
     # Derive the addendum from the active config dir so `ompt` (PI_CONFIG_DIR
-    # =.omp-tight) gets its own tight-profile prompt, not the default one.
+    # =.omp-tight) does not inherit the default prompt (it picks up a tight-profile prompt if one is ever added).
     local addendum="$HOME/${PI_CONFIG_DIR:-.omp}/agent/APPEND_SYSTEM.md"
     if [[ -f "$addendum" ]]; then
       command omp --append-system-prompt "$addendum" "$@"

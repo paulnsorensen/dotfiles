@@ -127,6 +127,7 @@ STDIN"
     jq -e '.mcpServers.milknado.args == ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]' "$cfg"
     jq -e '.mcpServers.context7.command == "npx"' "$cfg"
     jq -e '.mcpServers.context7.args == ["-y", "@upstash/context7-mcp"]' "$cfg"
+    jq -e '.mcpServers.context7.env.CONTEXT7_API_KEY == "${CONTEXT7_API_KEY}"' "$cfg"
 }
 # --- models.yml template↔registry seam -------------------------------------
 # dot_omp/private_agent/models.yml.tmpl authors ~/.omp/agent/models.yml WHOLESALE
@@ -235,4 +236,5 @@ TOML
     [ "$status" -eq 0 ]
     [[ "$output" == *".omp/agent/extensions/rtk.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
+    [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
 }
