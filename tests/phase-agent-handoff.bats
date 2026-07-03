@@ -121,10 +121,16 @@ block_sha() {
     [[ "$output" == *Agent* ]] || { echo "researcher must deny Agent (no subagent fan-out)" >&2; return 1; }
 }
 
-@test "coder keeps the write surface but cannot spawn subagents" {
+@test "coder denies native edit tools and subagent fan-out in the registry" {
     local registry="$AGENTS_DIR/registry.yaml"
     run yq '.agents.coder.disallowedTools' "$registry"
     assert_success
-    [[ "$output" != *Write* ]] || { echo "coder must keep Write (it mutates the tree)" >&2; return 1; }
+    # Aggressive lockdown (session-analytics evidence): coder mutates the tree
+    # exclusively through cheez-write (tilth), so native edit/search tools are denied.
+    for tool in Edit Write NotebookEdit Grep Glob; do
+        [[ "$output" == *"$tool"* ]] || { echo "coder must deny $tool (edits go through cheez-write)" >&2; return 1; }
+    done
+    # Read is kept (see decision 5), and Agent denied (level-1 subagent, no fan-out).
+    [[ "$output" != *Read* ]] || { echo "coder must keep native Read" >&2; return 1; }
     [[ "$output" == *Agent* ]] || { echo "coder must deny Agent (no subagent fan-out)" >&2; return 1; }
 }
