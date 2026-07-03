@@ -72,7 +72,7 @@ block_sha() {
 }
 
 # The descriptions promise read-only phase agents that cannot recurse, and a
-# coder that keeps the write surface. Lock those tool-surface contracts in the
+# coder that edits only through tilth (cheez-write). Lock those tool-surface contracts in the
 # registry so they can't silently drift. The same metadata renders to Claude,
 # Codex, opencode, and Copilot CLI; Copilot ignores model overrides.
 @test "phase agents declare model intent for model-aware harnesses" {
