@@ -20,6 +20,8 @@ agents:
     - Edit
     - Write
     - NotebookEdit
+    - Grep
+    - Glob
     color: red
     effort: medium
     skills:
@@ -39,6 +41,8 @@ agents:
     - WebSearch
     - WebFetch
     - Agent
+    - Grep
+    - Glob
     color: red
     effort: high
     skills:
@@ -56,8 +60,6 @@ agents:
     - Read
     - Write
     - Edit
-    - Grep
-    - Glob
     - Bash
     skills:
     - gh
@@ -77,6 +79,8 @@ agents:
     - Edit
     - NotebookEdit
     - AskUserQuestion
+    - Grep
+    - Glob
     color: red
     effort: medium
     skills:
@@ -97,6 +101,8 @@ agents:
     - WebFetch
     - AskUserQuestion
     - Write
+    - Grep
+    - Glob
     maxTurns: 50
     body_path: agents/agent_definitions/ghostbuster.md
   nih-scanner:
@@ -113,6 +119,8 @@ agents:
     - WebSearch
     - WebFetch
     - AskUserQuestion
+    - Grep
+    - Glob
     skills:
     - cheez-search
     maxTurns: 50
@@ -125,8 +133,6 @@ agents:
       cursor: claude-sonnet
     tools:
     - Read
-    - Grep
-    - Glob
     - Bash
     - Agent
     - mcp__serena__*
@@ -144,8 +150,6 @@ agents:
     tools:
     - Read
     - Write
-    - Grep
-    - Glob
     - Bash
     - mcp__serena__*
     skills:
@@ -168,6 +172,8 @@ agents:
     - Agent
     - WebSearch
     - WebFetch
+    - Grep
+    - Glob
     skills:
     - session-analytics
     maxTurns: 50
@@ -181,8 +187,6 @@ agents:
     tools:
     - Bash
     - Read
-    - Glob
-    - Grep
     skills:
     - cheez-search
     maxTurns: 50
@@ -219,6 +223,8 @@ agents:
     - Write
     - NotebookEdit
     - Agent
+    - Grep
+    - Glob
     color: cyan
     skills:
     - cheez-search
@@ -235,6 +241,8 @@ agents:
     - Edit
     - NotebookEdit
     - Agent
+    - Grep
+    - Glob
     color: blue
     skills:
     - briesearch
@@ -253,6 +261,8 @@ agents:
     - Write
     - NotebookEdit
     - Agent
+    - Grep
+    - Glob
     color: red
     effort: high
     skills:
@@ -263,15 +273,21 @@ agents:
     body_path: agents/agent_definitions/reviewer.md
   coder:
     # Runs on opus at low effort: the write surface needs judgment but the loop
-    # is bounded. Keeps Edit/Write (it mutates the tree) but denies Agent — a
-    # dispatched coder is a level-1 subagent and cannot fan out.
-    description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop, editing through the cheez-write (tilth) skill. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Full write surface — the one phase agent that mutates the tree. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
+    # is bounded. Denies native Edit/Write/Grep/Glob/NotebookEdit — all edits go
+    # through cheez-write (tilth); keeps Read. Denies Agent — a dispatched coder
+    # is a level-1 subagent and cannot fan out.
+    description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop, editing through the cheez-write (tilth) skill. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through cheez-write (tilth) — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: opus
       codex: gpt-5-codex
       opencode: inherit
     disallowedTools:
     - Agent
+    - Grep
+    - Glob
+    - Edit
+    - Write
+    - NotebookEdit
     color: green
     effort: low
     skills:
@@ -303,6 +319,9 @@ agents:
       opencode: inherit
     disallowedTools:
     - Agent
+    - Grep
+    - Glob
+    - NotebookEdit
     color: yellow
     skills:
     - cheez-search

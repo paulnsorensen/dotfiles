@@ -72,7 +72,7 @@ block_sha() {
 }
 
 # The descriptions promise read-only phase agents that cannot recurse, and a
-# coder that keeps the write surface. Lock those tool-surface contracts in the
+# coder that edits only through tilth (cheez-write). Lock those tool-surface contracts in the
 # registry so they can't silently drift. The same metadata renders to Claude,
 # Codex, opencode, and Copilot CLI; Copilot ignores model overrides.
 @test "phase agents declare model intent for model-aware harnesses" {
@@ -117,14 +117,22 @@ block_sha() {
     # must still deny code edits and fan-out.
     run yq '.agents.researcher.disallowedTools' "$registry"
     assert_success
-    [[ "$output" == *Edit* ]] || { echo "researcher must deny Edit" >&2; return 1; }
     [[ "$output" == *Agent* ]] || { echo "researcher must deny Agent (no subagent fan-out)" >&2; return 1; }
+    # Exact membership: a substring check for Edit would match NotebookEdit.
+    run yq -e '.agents.researcher.disallowedTools[] | select(. == "Edit")' "$registry"
+    [[ "$status" -eq 0 ]] || { echo "researcher must deny Edit" >&2; return 1; }
 }
 
-@test "coder keeps the write surface but cannot spawn subagents" {
+@test "coder denies native edit tools and subagent fan-out in the registry" {
     local registry="$AGENTS_DIR/registry.yaml"
-    run yq '.agents.coder.disallowedTools' "$registry"
-    assert_success
-    [[ "$output" != *Write* ]] || { echo "coder must keep Write (it mutates the tree)" >&2; return 1; }
-    [[ "$output" == *Agent* ]] || { echo "coder must deny Agent (no subagent fan-out)" >&2; return 1; }
+    # Aggressive lockdown (session-analytics evidence): coder mutates the tree
+    # exclusively through cheez-write (tilth), so native edit/search tools are denied.
+    # Exact membership per tool: a substring check for Edit would match NotebookEdit.
+    for tool in Edit Write NotebookEdit Grep Glob Agent; do
+        run yq -e ".agents.coder.disallowedTools[] | select(. == \"$tool\")" "$registry"
+        [[ "$status" -eq 0 ]] || { echo "coder must deny $tool (edits go through cheez-write)" >&2; return 1; }
+    done
+    # Read is kept (see decision 5).
+    run yq -e '.agents.coder.disallowedTools[] | select(. == "Read")' "$registry"
+    [[ "$status" -ne 0 ]] || { echo "coder must keep native Read" >&2; return 1; }
 }
