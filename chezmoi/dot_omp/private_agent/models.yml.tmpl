@@ -1,10 +1,5 @@
-# Local LLM stack — LiteLLM proxy front (~/local-llm), OpenAI-compatible.
-# Keyless: the proxy sets no master_key, so no Authorization header is sent.
-# contextWindow per model matches the backend's launched --ctx-size in
-# ~/local-llm/configs/llama-swap.yaml — do not inflate, or requests overflow
-# the real llama.cpp n_ctx and fail.
-#
+# Local LLM provider config for omp (LiteLLM proxy front, keyless loopback).
 # Authored WHOLESALE from the `omp.models` subtree of .chezmoidata/omp.yaml on
-# every `chezmoi apply` — hand-edits here are WIPED. Edit the registry, then
-# `dots sync`.
+# every `chezmoi apply` — hand-edits here are WIPED. Edit the registry (which
+# carries the contextWindow/--ctx-size warning), then `dots sync`.
 {{ .omp.models | toYaml -}}
