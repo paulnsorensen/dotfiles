@@ -288,8 +288,7 @@ and agents; reusing `_from_native_plugin` would wrongly hide them from claude.
 > overlays `enabledPlugins` / `extraKnownMarketplaces` from
 > `agents/plugins/registry.yaml` (steps 2–3, keyed by each marketplace.json
 > `.name`), and `chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-plugins.sh.tmpl`
->
-> - `chezmoi/lib/claude-plugin-reconcile.sh` do the CLI prime (step 4:
+> plus `chezmoi/lib/claude-plugin-reconcile.sh` do the CLI prime (step 4:
 > `claude plugin marketplace add`, `claude plugin install`) and a
 > manifest-owned-only prune. See [[operations/claude-dotfiles-ownership]] §
 > Settings merge policy.
