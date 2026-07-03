@@ -57,7 +57,17 @@ opencode reaches the stack through the `local-llm` provider (`Local (LiteLLM)`, 
 opencode-lean --model local-llm/local-coder
 ```
 
-It runs `OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"` behind a preflight + pre-warm wrapper (`scripts/executable_aliases.sh`). The `lean.json` overlay `mergeDeep`s onto the global config and **only disables the heavy MCP servers** (`hallouminate`, `tavily`), leaving `tilth` + `serena` + `context7` — so the local coder's small context window isn't blown by tool schemas before the first turn. There's no separate "lean" agent or model set; the overlay is purely the MCP trim. `lean.json` also sets `model: local-llm/local-coder` so bare `opencode-lean` defaults to the local coder, not a cloud model (#297).
+It runs `OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" OPENCODE_CONFIG_DIR="$HOME/local-llm/configs/lean-agents" opencode "$@"` behind a preflight + pre-warm wrapper (`scripts/executable_aliases.sh`). The `lean.json` overlay `mergeDeep`s onto the global config and **only disables the heavy MCP servers** (`hallouminate`, `tavily`), leaving `tilth` + `serena` + `context7` — so the local coder's small context window isn't blown by tool schemas before the first turn. `lean.json` also sets `model: local-llm/local-coder` so bare `opencode-lean` defaults to the local coder, not a cloud model (#297).
+
+`OPENCODE_CONFIG_DIR` layers `lean-agents/{agents,commands,plugins}/` on top of the global config directory — so you can inject separate agent `.md` files, commands, and plugins for the lean profile without touching `~/.config/opencode/agents/`. Scaffold with:
+
+```bash
+mkdir -p ~/local-llm/configs/lean-agents/{agents,commands,plugins}
+```
+
+Agent `.md` files placed in `lean-agents/agents/` are loaded after the global ones, so they can override or extend the agent set with lean-appropriate models and prompts.
+
+The `opencode-lean` wrapper preflights this overlay and refuses to launch (with a hint) when `lean-agents/{agents,commands,plugins}/` is missing or **empty** — opencode crashes at startup on a non-existent `OPENCODE_CONFIG_DIR`, so the overlay must hold at least one file. The `mkdir` above only creates the empty dirs; drop in an agent `.md` before `opencode-lean` will start.
 
 The wrapper does two things before launch:
 

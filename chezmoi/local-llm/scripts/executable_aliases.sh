@@ -36,6 +36,14 @@ alias llm-install-swap='~/local-llm/scripts/install-llama-swap.sh'
 # the heavy non-coding servers (hallouminate, tavily), leaving
 # tilth + serena + context7 for the coder. Usage: opencode-lean --model local-coder
 #
+# Also sets OPENCODE_CONFIG_DIR to ~/local-llm/configs/lean-agents/ so separate
+# agent definitions (.md files), commands, and plugins can be injected for the
+# lean profile without touching the global ~/.config/opencode/agents/.
+# The wrapper preflights this overlay and refuses to launch if it's missing or
+# empty — opencode crashes on a non-existent OPENCODE_CONFIG_DIR. Scaffold + seed:
+#   mkdir -p ~/local-llm/configs/lean-agents/{agents,commands,plugins}
+#   # then drop in at least one agent .md, e.g. lean-agents/agents/lean-coder.md
+#
 # Pre-flights the local-LLM stack: probes :4000, starts local-llm.target if down,
 # waits up to OPENCODE_LEAN_TIMEOUT seconds (default 30), then bails with a hint.
 # For a swap-pool model (local-sonnet/local-coder/local-vision) it then fires a
@@ -62,6 +70,17 @@ _opencode_lean_model() {
 
 opencode-lean() {
   local timeout="${OPENCODE_LEAN_TIMEOUT:-30}"
+
+  # Lean-agents overlay must exist AND be non-empty before we touch the stack:
+  # opencode crashes at startup on a non-existent OPENCODE_CONFIG_DIR (it writes a
+  # .gitignore into the dir before launch, which ENOENTs and aborts). Fail loud
+  # here rather than crash opaquely or silently launch without the overlay.
+  local cfgdir="$HOME/local-llm/configs/lean-agents"
+  if [[ ! -d $cfgdir ]] || [[ -z "$(find "$cfgdir"/{agents,commands,plugins} -type f -print -quit 2>/dev/null)" ]]; then
+    echo "opencode-lean: lean-agents overlay missing or empty ($cfgdir)" >&2
+    echo "Hint: mkdir -p $cfgdir/{agents,commands,plugins} and add at least one agent .md" >&2
+    return 1
+  fi
   if ! curl -s --max-time 1 http://127.0.0.1:4000/v1/models >/dev/null 2>&1; then
     echo 'local-LLM stack is down — starting local-llm.target...' >&2
     systemctl --user start local-llm.target
@@ -93,7 +112,7 @@ opencode-lean() {
       ;;
   esac
 
-  OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" opencode "$@"
+  OPENCODE_CONFIG="$HOME/local-llm/configs/lean.json" OPENCODE_CONFIG_DIR="$cfgdir" opencode "$@"
 }
 
 # Quick chat helper — usage: llm-chat local-sonnet "your prompt"
