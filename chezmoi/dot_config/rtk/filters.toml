@@ -9,7 +9,7 @@
 # this user-global file. Filter lookup order (first match wins per filter):
 #   .rtk/filters.toml (project) → ~/.config/rtk/filters.toml (this file) → built-ins
 #
-# Docs: https://github.com/rtk-ai/rtk#custom-filters
+# Docs: https://github.com/rtk-ai/rtk/blob/master/src/filters/README.md
 schema_version = 1
 
 # Example — suppress build noise from a custom tool:
