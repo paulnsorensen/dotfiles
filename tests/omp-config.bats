@@ -35,6 +35,9 @@ STDIN"
     run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
     [ "$status" -eq 0 ]
     [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]
+    [ "$(yq '.colorBlindMode' "$OUT")" = "true" ]
+    [ "$(yq '.defaultThinkingLevel' "$OUT")" = "auto" ]
+    [ "$(yq '.modelRoles.vision' "$OUT")" = "openai-codex/gpt-5.4" ]
     [ "$(yq '.disabledProviders | length' "$OUT")" = "1" ]
     [ "$(yq '.disabledProviders | .[0]' "$OUT")" = "claude" ]
     # setupVersion is machine state — never authored on a fresh machine.
@@ -116,4 +119,78 @@ STDIN"
     [ ! -s "$OUT" ]                                   # nothing written
     [[ "$output" == *".omp.config"* ]]                # the missing key named
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
+}
+
+# --- models.yml template↔registry seam -------------------------------------
+# dot_omp/private_agent/models.yml.tmpl authors ~/.omp/agent/models.yml WHOLESALE
+# from the `omp.models` subtree via `{{ .omp.models | toYaml }}`. These lock the
+# render: it must parse as YAML and pin the local-llm provider's contextWindow
+# per model to the llama-swap --ctx-size values (inflating them overflows the
+# real llama.cpp n_ctx and breaks requests).
+
+@test "omp-models: template renders parseable YAML with the pinned local-llm provider" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/models.yml.tmpl"
+    run chezmoi execute-template --source "$REAL_DOTFILES_DIR/chezmoi" < "$tmpl"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" > "$OUT"
+    # No unexpanded template syntax leaked into the rendered file.
+    ! grep -qF '{{' "$OUT"
+    # Parses as a YAML map with exactly the local-llm provider.
+    [ "$(yq '.providers | keys | .[]' "$OUT")" = "local-llm" ]
+    [ "$(yq '.providers.local-llm.baseUrl' "$OUT")" = "http://127.0.0.1:4000/v1" ]
+    [ "$(yq '.providers.local-llm.api' "$OUT")" = "openai-completions" ]
+    [ "$(yq '.providers.local-llm.auth' "$OUT")" = "none" ]
+    # Exactly 4 models — omp shows this as the `local-llm (4)` group.
+    [ "$(yq '.providers.local-llm.models | length' "$OUT")" = "4" ]
+    # contextWindow pinned per model id to the llama-swap --ctx-size (id-keyed,
+    # so a reordering of the models array cannot mask a wrong value).
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-haiku").contextWindow' "$OUT")" = "16384" ]
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-sonnet").contextWindow' "$OUT")" = "32768" ]
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-coder").contextWindow' "$OUT")" = "32768" ]
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-vision").contextWindow' "$OUT")" = "8192" ]
+    # local-vision is the only image-capable model (input carries `image`).
+    [ "$(yq '.providers.local-llm.models[] | select(.id == "local-vision").input | contains(["image"])' "$OUT")" = "true" ]
+}
+
+# --- models.yml localLLM opt-in gate ---------------------------------------
+# models.yml advertises a LiteLLM provider that only exists on machines that
+# opted into the local-llm stack. It MUST ride the same `.chezmoiignore`
+# localLLM gate as the rest of the stack, or a non-LLM box gets a models.yml
+# pointing at a proxy that isn't installed. Render .chezmoiignore as a template
+# (the gate uses `get . "localLLM"`) and assert the target path is ignored when
+# the flag is off and applied when it is on.
+
+@test "omp-models: .omp/agent/models.yml is ignored when localLLM is off" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local cfg="$TEST_HOME/cz-off.toml"
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+TOML
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" \
+        execute-template < "$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+    [ "$status" -eq 0 ]
+    # localLLM absent (→ falsy): the models.yml target is ignored, never applied.
+    [[ "$output" == *".omp/agent/models.yml"* ]]
+}
+
+@test "omp-models: .omp/agent/models.yml is applied when localLLM is on" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local cfg="$TEST_HOME/cz-on.toml"
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+localLLM = true
+TOML
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" \
+        execute-template < "$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+    [ "$status" -eq 0 ]
+    # localLLM on: the not-localLLM ignore block collapses, so the models.yml
+    # target is NOT in the ignore list (chezmoi applies it).
+    [[ "$output" != *".omp/agent/models.yml"* ]]
 }

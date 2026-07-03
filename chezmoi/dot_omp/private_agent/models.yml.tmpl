@@ -1,0 +1,5 @@
+# Local LLM provider config for omp (LiteLLM proxy front, keyless loopback).
+# Authored WHOLESALE from the `omp.models` subtree of .chezmoidata/omp.yaml on
+# every `chezmoi apply` — hand-edits here are WIPED. Edit the registry (which
+# carries the contextWindow/--ctx-size warning), then `dots sync`.
+{{ .omp.models | toYaml -}}
