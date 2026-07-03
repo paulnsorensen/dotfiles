@@ -45,8 +45,14 @@ claude_plugin_reconcile() {
     fi
 
     # No mapfile — must run under macOS /bin/bash 3.2 (chezmoi scripts).
-    local -a desired_names=() desired_ids=() manifest_names=()
-    local key root name mp_json _n rc=0
+    local -a desired_keys=() owned_names=() owned_ids=() prior_names=()
+    local key root name mp_json _n rc=0 any_missing=false
+
+    # Desired keys come from the registry-derived desired_json, INDEPENDENT of
+    # cache presence: a transiently missing cache is still a desired plugin and
+    # must never be treated as retired.
+    while IFS= read -r _n; do [[ -n "$_n" ]] && desired_keys+=("$_n"); done \
+        < <(jq -r '.[].key' <<<"$desired_json")
 
     _in() { local n="$1"; shift; local x; for x in "$@"; do [[ "$x" == "$n" ]] && return 0; done; return 1; }
 
@@ -57,16 +63,18 @@ claude_plugin_reconcile() {
         [[ -z "$key" ]] && continue
         mp_json="$root/.claude-plugin/marketplace.json"
         if [[ ! -f "$mp_json" ]]; then
-            echo "  WARN: native plugin '$key' cache missing marketplace.json ($mp_json) — not primed; converges on the next sync once the cache clones." >&2
+            echo "  WARN: native plugin '$key' cache missing marketplace.json ($mp_json) — still desired; retaining its manifest entry and deferring prune until the cache clones." >&2
+            any_missing=true
             continue
         fi
         name=$(jq -r '.name // empty' "$mp_json")
         if [[ -z "$name" ]]; then
-            echo "  WARN: native plugin '$key' marketplace.json has no .name ($mp_json) — not primed." >&2
+            echo "  WARN: native plugin '$key' marketplace.json has no .name ($mp_json) — cannot resolve its marketplace; deferring prune." >&2
+            any_missing=true
             continue
         fi
-        desired_names+=("$name")
-        desired_ids+=("$key@$name")
+        owned_names+=("$name")
+        owned_ids+=("$key@$name")
         echo "  Priming marketplace: $name ($root)"
         if ! claude plugin marketplace add "$root" >/dev/null 2>&1; then
             echo "  WARN: 'claude plugin marketplace add $root' failed — '$name' not indexed; settings.json enables it but the CLI cannot resolve it until primed." >&2
@@ -74,19 +82,26 @@ claude_plugin_reconcile() {
         fi
     done < <(jq -r '.[] | [.key, .marketplace_root] | @tsv' <<<"$desired_json")
 
-    # ── prune (manifest-owned only) ────────────────────────────────────────
+    # ── prune (manifest-owned marketplaces only) ───────────────────────────
     if [[ -f "$manifest" ]]; then
-        while IFS= read -r _n; do [[ -n "$_n" ]] && manifest_names+=("$_n"); done < "$manifest"
+        while IFS= read -r _n; do [[ -n "$_n" ]] && prior_names+=("$_n"); done < "$manifest"
     fi
 
+    # A missing cache means we cannot resolve that desired plugin's marketplace
+    # name this run (it lives in the absent marketplace.json), so we cannot prove
+    # which prior-manifest entry it owns. Defer all destructive prune / uninstall
+    # until a run where every desired cache is present; the manifest is retained
+    # (below) so nothing still-desired is dropped.
     local m
-    for m in "${manifest_names[@]:-}"; do
-        [[ -z "$m" ]] && continue
-        if ! _in "$m" "${desired_names[@]:-}"; then
-            echo "  Removing retired marketplace: $m"
-            claude plugin marketplace remove "$m" >/dev/null 2>&1 || rc=1
-        fi
-    done
+    if ! $any_missing; then
+        for m in "${prior_names[@]:-}"; do
+            [[ -z "$m" ]] && continue
+            if ! _in "$m" "${owned_names[@]:-}"; then
+                echo "  Removing retired marketplace: $m"
+                claude plugin marketplace remove "$m" >/dev/null 2>&1 || rc=1
+            fi
+        done
+    fi
 
     # ── install desired plugins at user scope ────────────────────────────────
     # Enabling via settings.json does not populate installed_plugins.json; the
@@ -94,7 +109,7 @@ claude_plugin_reconcile() {
     # "already installed" nonzero exit without failing the reconcile.
     if [[ -n "$installed_file" ]]; then
         local id
-        for id in "${desired_ids[@]:-}"; do
+        for id in "${owned_ids[@]:-}"; do
             [[ -z "$id" ]] && continue
             if [[ -f "$installed_file" ]] \
                 && jq -e --arg id "$id" '(.plugins[$id] // []) | any(.scope == "user")' "$installed_file" >/dev/null 2>&1; then
@@ -110,18 +125,23 @@ claude_plugin_reconcile() {
     # Never touch project-scope installs. Only uninstall when the plugin's
     # marketplace is manifest-proven ours AND the plugin is no longer desired.
     if [[ -n "$installed_file" && -f "$installed_file" ]]; then
-        local iid mkt
-        while IFS= read -r iid; do
-            [[ -z "$iid" ]] && continue
-            mkt="${iid##*@}"
-            _in "$mkt" "${manifest_names[@]:-}" || continue
-            _in "$iid" "${desired_ids[@]:-}" && continue
-            echo "  Uninstalling retired plugin (user scope): $iid"
-            claude plugin uninstall "$iid" --scope user >/dev/null 2>&1 || rc=1
-        done < <(jq -r '.plugins | to_entries[] | select(.value | any(.scope == "user")) | .key' "$installed_file")
+        # Uninstall retired user-scope plugins — only on a fully-cached run, for
+        # the same reason prune is deferred above (a missing cache hides the
+        # ownership mapping).
+        if ! $any_missing; then
+            local iid mkt plug
+            while IFS= read -r iid; do
+                [[ -z "$iid" ]] && continue
+                mkt="${iid##*@}"; plug="${iid%@*}"
+                _in "$mkt" "${prior_names[@]:-}" || continue    # marketplace we own
+                _in "$plug" "${desired_keys[@]:-}" && continue  # plugin still desired
+                echo "  Uninstalling retired plugin (user scope): $iid"
+                claude plugin uninstall "$iid" --scope user >/dev/null 2>&1 || rc=1
+            done < <(jq -r '.plugins | to_entries[] | select(.value | any(.scope == "user")) | .key' "$installed_file")
+        fi
 
-        # Project-scope installs are never touched; a dead projectPath is only
-        # surfaced as a NOTE with the exact hand-cleanup command.
+        # Project-scope installs are never touched; the read-only NOTE always
+        # runs. A dead projectPath is surfaced with the exact hand-cleanup command.
         local pid ppath
         while IFS="$(printf '\t')" read -r pid ppath; do
             [[ -z "$pid" ]] && continue
@@ -137,8 +157,8 @@ claude_plugin_reconcile() {
         local kn kp
         while IFS="$(printf '\t')" read -r kn kp; do
             [[ -z "$kn" ]] && continue
-            _in "$kn" "${desired_names[@]:-}" && continue
-            _in "$kn" "${manifest_names[@]:-}" && continue
+            _in "$kn" "${owned_names[@]:-}" && continue
+            _in "$kn" "${prior_names[@]:-}" && continue
             [[ -d "$kp" ]] && continue
             echo "  NOTE: marketplace '$kn' is a directory source whose path no longer exists ($kp) and is not repo-owned — remove by hand with:"
             echo "        claude plugin marketplace remove '$kn'"
@@ -148,8 +168,15 @@ claude_plugin_reconcile() {
     # ── manifest rewrite ───────────────────────────────────────────────────
     if [[ $rc -eq 0 ]]; then
         mkdir -p "$(dirname "$manifest")"
-        if [[ ${#desired_names[@]} -gt 0 ]]; then
-            printf '%s\n' "${desired_names[@]}" | sort -u > "$manifest"
+        # Owned = primed this run; on a missing-cache run also retain the prior
+        # manifest names so a still-desired-but-uncloned plugin keeps its record.
+        local -a keep=(); local _k
+        for _k in "${owned_names[@]:-}"; do [[ -n "$_k" ]] && keep+=("$_k"); done
+        if $any_missing; then
+            for _k in "${prior_names[@]:-}"; do [[ -n "$_k" ]] && keep+=("$_k"); done
+        fi
+        if [[ ${#keep[@]} -gt 0 ]]; then
+            printf '%s\n' "${keep[@]}" | sort -u > "$manifest"
         else
             : > "$manifest"
         fi

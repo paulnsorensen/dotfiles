@@ -228,3 +228,32 @@ run_reconcile_installed() {
     # Never uninstalled by this reconcile.
     run grep -q "plugin uninstall hallouminate" "$CALLS"; [ "$status" -ne 0 ]
 }
+
+@test "reconcile: still-desired plugin with a missing cache is retained, not pruned or uninstalled" {
+    # milknado cache present; widget still desired but its cache is transiently
+    # gone (failed/pruned clone). Both were primed before (in the manifest);
+    # widget is still user-installed. widget's marketplace name (widgetmkt)
+    # differs from its key, so it can only be resolved from the absent cache.
+    mk_cache milknado milknado >/dev/null
+    mkdir -p "${MANIFEST%/*}"
+    printf 'milknado\nwidgetmkt\n' > "$MANIFEST"
+    jq -n '{version:2, plugins:{
+        "widget@widgetmkt":  [{scope:"user"}],
+        "milknado@milknado":[{scope:"user"}]
+    }}' > "$INSTALLED"
+    local desired
+    desired=$(jq -nc --argjson a "$(desired_entry milknado)" --argjson w "$(desired_entry widget)" '[$a, $w]')
+    run_reconcile_installed "$desired"
+    [ "$status" -eq 0 ]
+    # Warned about the missing cache for the still-desired plugin.
+    [[ "$output" == *"widget"* ]]
+    [[ "$output" == *"marketplace.json"* ]]
+    # milknado still primed as usual.
+    grep -q "plugin marketplace add $CACHE/milknado" "$CALLS"
+    # widget's marketplace is NOT removed and its plugin NOT uninstalled.
+    run grep -q "marketplace remove widgetmkt" "$CALLS"; [ "$status" -ne 0 ]
+    run grep -q "uninstall widget@widgetmkt" "$CALLS"; [ "$status" -ne 0 ]
+    # Manifest retains widgetmkt (via the prior manifest) alongside milknado.
+    grep -qx "widgetmkt" "$MANIFEST"
+    grep -qx "milknado" "$MANIFEST"
+}
