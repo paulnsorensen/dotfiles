@@ -195,8 +195,11 @@ Many egresses + no seams = refactoring liability; flag it.
 
 ## Phase 5 — Trace one full request
 
-Pick the entry point with the largest `get_affected_flows_tool` output (or
-whatever the user's focus area points at). Walk it end-to-end:
+Pick the busiest entry point — the one with the widest blast radius (use the
+available code-intelligence tools: an LSP call hierarchy, `tilth_deps`, or a
+semantic/impact MCP query if one is present) or whatever the user's focus area
+points at. Trace it end-to-end as a steel thread, following callers/callees
+layer by layer:
 
 **entry → middleware → handler → service → repository → DB → response**
 
