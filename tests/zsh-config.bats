@@ -84,6 +84,26 @@ teardown() {
     assert_success
     [[ "$output" == $'profile launch codex codex-plan --sandbox workspace\nprofile launch codex codex-code --model gpt-5' ]]
 }
+
+@test "omp wrapper appends managed system prompt" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fakebin="$TEST_HOME/bin"
+    mkdir -p "$fakebin"
+    cat > "$fakebin/omp" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@"
+SH
+    chmod +x "$fakebin/omp"
+
+    run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; omp --model gpt-5"
+
+    assert_success
+    [ "${lines[0]}" = "--append-system-prompt" ]
+    [ "${lines[1]}" = "$TEST_HOME/.omp/agent/APPEND_SYSTEM.md" ]
+    [ "${lines[2]}" = "--model" ]
+    [ "${lines[3]}" = "gpt-5" ]
+}
+
 @test "completion.zsh has cdd completion" {
     local completion_file="$REAL_DOTFILES_DIR/zsh/completion.zsh"
 

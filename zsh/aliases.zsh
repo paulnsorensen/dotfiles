@@ -169,8 +169,12 @@ if command -v opencode &> /dev/null; then
   alias oc='opencode'
 fi
 
-# Oh My Pi tight profile - isolated agent dir at ~/.omp-tight/agent
+# Oh My Pi - isolated native config with managed prompt addendum
 if command -v omp &> /dev/null; then
+  omp() {
+    command omp --append-system-prompt "$HOME/.omp/agent/APPEND_SYSTEM.md" "$@"
+  }
+
   ompt() {
     PI_CONFIG_DIR=.omp-tight omp "$@"
   }

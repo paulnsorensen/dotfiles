@@ -17,15 +17,16 @@
 # `setupVersion` is machine state, not config: the modify_ script preserves it
 # from the live file and never authors it here.
 #
-# `disabledProviders: [claude]` is why omp no longer reads ~/.claude. omp's
-# `claude` discovery provider (discovery/claude.ts, provider id "claude") pulls
-# CLAUDE.md, settings.json, skills/, hooks, MCP config, commands, tools, and
-# SYSTEM.md from ~/.claude; disabling the whole provider drops all of it.
+# Keep OMP discovery native-only. Each id below is a non-OMP discovery
+# provider that can otherwise import external agent config, MCP servers,
+# commands, skills, hooks, prompts, tools, or settings from another harness.
+# `github` here is the GitHub/Copilot discovery source; it is separate from
+# the OMP `github.enabled` integration flag below.
 #
 # Gotcha — array settings REPLACE, they don't merge across omp config layers.
 # A project-level .omp/config.yml that sets its own `disabledProviders` list
-# replaces this global one wholesale and can silently re-enable `claude`.
-# Check every active layer if claude discovery reappears.
+# replaces this global one wholesale and can silently re-enable external
+# discovery. Check every active layer if non-native discovery reappears.
 
 omp:
   config:
@@ -34,6 +35,12 @@ omp:
     defaultThinkingLevel: auto
     disabledProviders:
       - claude
+      - codex
+      - cursor
+      - gemini
+      - github
+      - opencode
+      - agents-md
     display:
       showTokenUsage: true
       cacheMissMarker: true

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    },
+    "hallouminate": {
+      "command": "hallouminate",
+      "args": [
+        "serve"
+      ]
+    },
+    "milknado": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/paulnsorensen/milknado@main",
+        "milknado-mcp"
+      ]
+    }
+  }
+}

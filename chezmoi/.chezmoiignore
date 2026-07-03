@@ -26,6 +26,8 @@ lib/
 # removal semantics). Patterns are target-relative, hence .claude not
 # dot_claude.
 !.claude/**
+# Global *.md ignore would otherwise skip the managed OMP prompt addendum.
+!.omp/agent/APPEND_SYSTEM.md
 {{- /*
 Local LLM stack is per-machine, opt-in. When the localLLM flag is false,
 ignore the whole stack tree + its systemd units so non-LLM machines stay

@@ -38,22 +38,20 @@ STDIN"
     [ "$(yq '.colorBlindMode' "$OUT")" = "true" ]
     [ "$(yq '.defaultThinkingLevel' "$OUT")" = "auto" ]
     [ "$(yq '.modelRoles.vision' "$OUT")" = "openai-codex/gpt-5.4" ]
-    [ "$(yq '.disabledProviders | length' "$OUT")" = "1" ]
-    [ "$(yq '.disabledProviders | .[0]' "$OUT")" = "claude" ]
+    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md" ]
     # setupVersion is machine state — never authored on a fresh machine.
     [ "$(yq 'has("setupVersion")' "$OUT")" = "false" ]
 }
 
 @test "omp-config: managed-key drift is wiped, setupVersion preserved" {
     # In-app symbolPreset change + a hand-edited (emptied) disabledProviders
-    # list must be driven back to the registry values; setupVersion survives.
+    # list must be driven back to the native-only registry values; setupVersion survives.
     run_modify 'symbolPreset: ascii
 disabledProviders: []
 setupVersion: 1'
     [ "$status" -eq 0 ]
     [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]
-    [ "$(yq '.disabledProviders | length' "$OUT")" = "1" ]
-    [ "$(yq '.disabledProviders | .[0]' "$OUT")" = "claude" ]
+    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }
 
@@ -121,6 +119,15 @@ STDIN"
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
 
+@test "omp-mcp: native user config defines requested MCP servers" {
+    local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
+    jq -e '.mcpServers.hallouminate.command == "hallouminate"' "$cfg"
+    jq -e '.mcpServers.hallouminate.args == ["serve"]' "$cfg"
+    jq -e '.mcpServers.milknado.command == "uvx"' "$cfg"
+    jq -e '.mcpServers.milknado.args == ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]' "$cfg"
+    jq -e '.mcpServers.context7.command == "npx"' "$cfg"
+    jq -e '.mcpServers.context7.args == ["-y", "@upstash/context7-mcp"]' "$cfg"
+}
 # --- models.yml template↔registry seam -------------------------------------
 # dot_omp/private_agent/models.yml.tmpl authors ~/.omp/agent/models.yml WHOLESALE
 # from the `omp.models` subtree via `{{ .omp.models | toYaml }}`. These lock the
