@@ -97,6 +97,9 @@ class CodexRenderer:
         self._write_hooks(manifest, target, out_files, logical_root)
         if manifest.isolated:
             self._write_mcps(manifest, target)
+        # Ungated by design: writes the Codex CLI's own plugin store, not the
+        # merged config.toml. Codex is not chezmoi-migrated yet, so ap still
+        # owns this surface for live installs — revisit when it migrates.
         self._render_native_plugins(manifest)
         self._write_rules(manifest, target, out_files)
         if manifest.isolated:
@@ -316,7 +319,14 @@ class CodexRenderer:
         # (developers.openai.com/codex/hooks: "Codex loads all matching
         # hooks"), so leaving orphan legacy blocks fires every managed hook
         # twice per session — once from each source.
-        self._clean_legacy_config_toml_hooks(codex_hooks, target)
+        #
+        # Gated on isolation to match _write_mcps/_write_mcp_tool_scopes and
+        # the claude renderer's _clean_legacy_settings_hooks: a live (non-
+        # isolated) render must not touch the shared config.toml, which is
+        # user/chezmoi territory. hooks.json below is a managed output file
+        # and is still written either way.
+        if manifest.isolated:
+            self._clean_legacy_config_toml_hooks(codex_hooks, target)
 
         # Hook scripts are written under base_dir (the physical render dir), but
         # the command Codex executes must reference where the script will be

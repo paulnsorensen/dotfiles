@@ -424,6 +424,53 @@ def test_nonisolated_manifest_skips_config_toml_writes(renderer, src, target):
     assert cfg.read_text() == seeded
 
 
+def test_nonisolated_render_preserves_legacy_config_toml_hooks(renderer, src, target):
+    """A non-isolated (live) render with a codex hook still writes hooks.json,
+    but must NOT sweep legacy [[hooks.*]] blocks from the shared config.toml —
+    that file is user/chezmoi territory now. The seeded legacy block points at
+    a managed basename (exactly what the migration sweep strips in an isolated
+    launch), so its byte-identical survival proves the sweep is gated off for
+    live installs. Mirrors the _write_mcps/_write_mcp_tool_scopes gating."""
+    hooks_dir = src / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    (hooks_dir / "session-start-cheese-flair.sh").write_text("#!/bin/bash\n: flair\n")
+
+    cfg = target / ".codex" / "config.toml"
+    cfg.parent.mkdir(parents=True)
+    seeded = (
+        "[[hooks.SessionStart]]\n"
+        'matcher = "startup|resume"\n'
+        "\n"
+        "[[hooks.SessionStart.hooks]]\n"
+        'type = "command"\n'
+        'command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"\n'
+        "timeout = 5\n"
+    )
+    cfg.write_text(seeded)
+
+    manifest = Manifest(
+        name="live",
+        hooks=[
+            {
+                "name": "session-start-cheese-flair",
+                "event": "SessionStart",
+                "script": "hooks/session-start-cheese-flair.sh",
+                "matcher": "startup|resume",
+                "timeout": 5,
+                "harnesses": ["claude", "codex"],
+                "_source_dir": str(src),
+            }
+        ],
+    )
+    renderer.render(manifest, target)
+
+    assert cfg.read_text() == seeded, (
+        "non-isolated render swept a legacy config.toml hook block; the live "
+        "config.toml must stay untouched"
+    )
+    # hooks.json is a managed output file, written regardless of isolation.
+    assert (target / ".codex" / "hooks.json").is_file()
+
 def test_mcp_merge_preserves_user_keys_and_comments(renderer, src, target):
     """The bash golden proves yq dropped the user's comments; tomlkit keeps
     them. Assert both data parity (keys/values match the bash golden) AND

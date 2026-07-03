@@ -11,7 +11,7 @@ Claude Code's official settings scopes are user (`~/.claude/settings.json`), pro
 ## This repo's ownership split
 
 - **Repo-owned sources**: `chezmoi/lib/claude-settings-authoritative.json`, `chezmoi/dot_claude/modify_settings.json`, `claude/{commands,hooks,reference,workflows}`, agent/skill/MCP registries, profile YAML, and plugin payloads.
-- **Rendered/copied targets**: `~/.claude/{commands,hooks,reference,workflows}` are one-way copied; `agents/`, MCP servers, and skills are rendered through `ap`; the live `~/.claude/settings.json` is produced by chezmoi and then profile-aware renderer merges.
+- **Rendered/copied targets**: `~/.claude/{commands,hooks,reference,workflows}` are one-way copied; `agents/`, MCP servers, and skills are rendered through `ap`; the live `~/.claude/settings.json` is produced by chezmoi's `modify_settings.json`. The profile-aware renderer merge (`_merge_root_settings`) runs only for an isolated `ap launch`, not on the live `dots sync` path.
 - **Live/runtime state**: `~/.claude.json`, `~/.claude/projects/*/memory`, `~/.claude/settings.local.json`, repo-local `.claude/`, sessions, worktrees, plugin cache/data, marketplace cache, approvals/trust state, OAuth/session state, and app-created sticky state.
 
 `claude/README.md:13-17` records why this matters: the repo stopped symlinking into `~/.claude/` because Claude runtime writes leaked back into the checkout. `.gitignore:49-50` ignores repo-local `.claude/` for the same reason.
@@ -21,7 +21,7 @@ Claude Code's official settings scopes are user (`~/.claude/settings.json`), pro
 `chezmoi/dot_claude/modify_settings.json` owns the live settings boundary:
 
 - Repo-owned keys (`model`, `effortLevel`, `env`, hooks, sandbox, theme, `editorMode`, `permissions.defaultMode`, spinner verbs, etc.) are overwritten from `chezmoi/lib/claude-settings-authoritative.json` on each apply (`chezmoi/dot_claude/modify_settings.json:7-11`).
-- `ap`-managed keys (`permissions.allow`, `permissions.deny`, `permissions.ask`, `permissions.additionalDirectories`, `enabledPlugins`, `extraKnownMarketplaces`) are preserved from the live file and reasserted by `ap` (`chezmoi/dot_claude/modify_settings.json:12-17`, `agent-profile/agent_profile/renderers/claude.py:640-655`).
+- `permissions.allow`, `permissions.deny`, `permissions.ask`, `permissions.additionalDirectories`, `enabledPlugins`, and `extraKnownMarketplaces` are preserved from the live file and reasserted by chezmoi's `modify_settings.json` on each apply (`chezmoi/dot_claude/modify_settings.json:12-17`) — chezmoi is the single writer for the live install. `ap`'s `_merge_root_settings` also reasserts these, but only for an *isolated* `ap launch` (gated on `manifest.isolated`, `agent-profile/agent_profile/renderers/claude.py:613-687`); it does not run on the live `dots sync` path.
 - Unknown live key paths fail the apply instead of being silently clobbered, forcing a classification decision when Claude Code introduces a sticky setting (`chezmoi/dot_claude/modify_settings.json:18-22`, `chezmoi/dot_claude/modify_settings.json:91-100`).
 
 This is intentionally stricter than `create_` seed-once behavior: new settings either become repo-owned, become renderer-owned, or are explicitly left live-only.
@@ -57,7 +57,7 @@ Destructive changes must be provenance-aware, not wholesale deletes:
 - Use `claude /status` or `claude doctor` to inspect active setting sources and validation errors.[^claude-settings]
 - Use `/hooks`, `/mcp`, and `/plugin list` / plugin UI after destructive changes to confirm runtime state, because deleting declarative settings alone is not documented as equivalent to uninstalling plugins or removing manual MCPs.[^claude-plugins][^claude-mcp]
 
-_Source: Claude dotfiles / OMP isolation research plus Claude+chezmoi destructive-management briesearch · Updated: 2026-07-01 · Supersedes: seeded-once-only descriptions in older wiki rows._
+*Source: Claude dotfiles / OMP isolation research plus Claude+chezmoi destructive-management briesearch · Updated: 2026-07-01 · Supersedes: seeded-once-only descriptions in older wiki rows.*
 
 [^claude-settings]: Claude Code settings docs, retrieved 2026-07-01: <https://docs.anthropic.com/en/docs/claude-code/settings>
 [^claude-memory]: Claude Code memory docs, retrieved 2026-07-01: <https://docs.anthropic.com/en/docs/claude-code/memory>
