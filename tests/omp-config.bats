@@ -201,3 +201,38 @@ TOML
     # target is NOT in the ignore list (chezmoi applies it).
     [[ "$output" != *".omp/agent/models.yml"* ]]
 }
+
+# --- .chezmoiignore negation ordering -------------------------------------
+# .chezmoiignore is last-match-wins: the !.omp/agent/APPEND_SYSTEM.md re-include
+# only survives the global *.md ignore because it is positioned AFTER it. A
+# reorder that moves the negation above *.md would silently stop deploying the
+# managed prompt addendum. Pin the ordering.
+@test "omp-ignore: APPEND_SYSTEM.md re-include stays after the *.md ignore" {
+    local ignore="$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+    local md_line neg_line
+    md_line=$(grep -n '^\*\.md$' "$ignore" | head -1 | cut -d: -f1)
+    neg_line=$(grep -n '^!\.omp/agent/APPEND_SYSTEM\.md$' "$ignore" | head -1 | cut -d: -f1)
+    [ -n "$md_line" ]
+    [ -n "$neg_line" ]
+    # Negation must come strictly after the glob ignore (last match wins).
+    [ "$neg_line" -gt "$md_line" ]
+}
+
+# --- omp extension modules are chezmoi-managed -----------------------------
+# rtk.ts and cheese-flair.ts under dot_omp/private_agent/extensions/ deploy to
+# ~/.omp/agent/extensions/ (auto-discovered by omp's extension loader). Nothing
+# in .chezmoiignore may exclude them, or the extensions silently never deploy.
+@test "omp-ext: rtk.ts and cheese-flair.ts are chezmoi-managed" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local cfg="$TEST_HOME/cz-ext.toml"
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+TOML
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" managed
+    [ "$status" -eq 0 ]
+    [[ "$output" == *".omp/agent/extensions/rtk.ts"* ]]
+    [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
+}
