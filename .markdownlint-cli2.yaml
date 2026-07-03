@@ -22,3 +22,4 @@ ignores:
   # Cursor IDE runtime output (gitignored via /cursor/*); the only intentional
   # markdown under cursor/ is plugins/. Not ours to lint.
   - cursor/skills-cursor/**
+  - cursor/extensions/**
