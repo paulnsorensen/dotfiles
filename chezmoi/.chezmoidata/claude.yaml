@@ -104,10 +104,11 @@ claude:
 
   # ── settings.json plugin keys ───────────────────────────────────────────────
   # Base layer for enabledPlugins / extraKnownMarketplaces. modify_settings.json
-  # is the single writer of these keys: it composes this base PLUS a
-  # gate-filtered overlay derived from claude/plugins/registry.yaml at apply time
-  # (gate-open local plugins add their enabledPlugins entry + marketplace here).
-  # sync.sh no longer writes settings.json.
+  # is the single writer of these keys: it composes this base PLUS a gate-filtered
+  # overlay from claude/plugins/registry.yaml AND a native-claude overlay from
+  # agents/plugins/registry.yaml (native: ∋ claude entries — milknado, hallouminate
+  # — keyed by each marketplace.json .name) at apply time. sync.sh does not write
+  # settings.json. Native marketplaces are NOT listed here: the overlay owns them.
   enabledPlugins:
     claude-md-management@claude-plugins-official: true
     playwright@claude-plugins-official: true
@@ -115,11 +116,10 @@ claude:
     plugin-dev@claude-plugins-official: true
     skill-creator@claude-plugins-official: true
 
-  extraKnownMarketplaces:
-    milknado:
-      source:
-        source: directory
-        path: "${HOME}/.cache/ap/plugins/milknado"
+  # Base layer for extraKnownMarketplaces (empty): the gate-filtered
+  # claude/plugins/registry.yaml overlay and the native-claude
+  # agents/plugins/registry.yaml overlay add their entries at apply time.
+  extraKnownMarketplaces: {}
 
   # ── settings.json permissions (allow/deny/ask/additionalDirectories) ───────
   # Session-granted permissions are wiped on the next apply unless promoted

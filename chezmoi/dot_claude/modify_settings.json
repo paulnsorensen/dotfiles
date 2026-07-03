@@ -4,7 +4,7 @@
 #   stdin  = current live file contents (empty on a fresh machine)
 #   stdout = the new file contents chezmoi writes back
 #
-# The desired file is composed from three committed sources:
+# The desired file is composed from four committed sources:
 #   * $CHEZMOI_SOURCE_DIR/lib/claude-settings-authoritative.json — static
 #     repo-owned keys (model, effortLevel, env, sandbox, theme, ...).
 #   * $CHEZMOI_SOURCE_DIR/.chezmoidata/claude.yaml — the claude registry;
@@ -19,6 +19,13 @@
 #     env var is "true" (gate vars are exported by `dots` from .env before
 #     `chezmoi apply`); unset gates are treated as closed. If the registry is
 #     missing, composition falls back to claude.yaml only (with a warning).
+#   * $CHEZMOI_SOURCE_DIR/../agents/plugins/registry.yaml — the cross-harness
+#     plugin registry. Native-claude entries (resolved `native:` set includes
+#     claude) overlay their marketplace + enabledPlugins entry, keyed by the
+#     marketplace.json `.name` (may differ from the YAML key). git: entries
+#     root at ~/.cache/ap/plugins/<key>; path: entries at the expanded path. A
+#     missing plugin cache warns and skips (the sync clones it later; the next
+#     apply converges). This native path is never gated.
 #
 # EVERY managed key is overwritten from source — live drift (in-app /model
 # changes, session-granted permissions, in-app plugin toggles) is discarded.
@@ -108,6 +115,62 @@ plugin_reg_marketplaces() {
         done | jq -s 'add // {}'
 }
 
+# ── native-plugin overlay (cross-harness registry) ─────────────────────────
+NATIVE_REG="$CHEZMOI_SOURCE_DIR/../agents/plugins/registry.yaml"
+
+# Native-claude overlay: entries whose resolved `native:` set includes claude
+# get their marketplace + enabledPlugins entry, keyed by the marketplace.json
+# `.name` (authoritative; may differ from the YAML key). git: entries root at
+# ~/.cache/ap/plugins/<key>; path: entries at the expanded path (~/, absolute,
+# or repo-relative). A missing cache / marketplace.json warns and skips (never
+# fails the apply). Emits one JSON object {enabled:{...}, marketplaces:{...}}.
+native_plugin_overlays() {
+    # shellcheck disable=SC3043
+    local repo_root key kind rawpath root mp_json name
+    repo_root=$(cd "$CHEZMOI_SOURCE_DIR/.." && pwd)
+    yq -o=json '.plugins' "$NATIVE_REG" \
+        | jq -r '
+            ["claude","codex","copilot"] as $drivable
+            | to_entries[] | .key as $key | .value as $v
+            | ( if ($v.native == true)
+                    then (($v.harnesses // []) - (($v.harnesses // []) - $drivable))
+                elif (($v.native | type) == "array") then $v.native
+                else [] end
+              ) as $nat0
+            | ($nat0 + (if $v.claude_native == true then ["claude"] else [] end)) as $nat
+            | select($nat | index("claude"))
+            | if $v.git then [$key, "git", ""]
+              elif $v.path then [$key, "path", $v.path]
+              else empty end
+            | @tsv' \
+        | while IFS="$(printf '\t')" read -r key kind rawpath; do
+            [ -z "$key" ] && continue
+            case "$kind" in
+                git) root="$HOME/.cache/ap/plugins/$key" ;;
+                path)
+                    # shellcheck disable=SC2088  # literal "~/" expanded below
+                    case "$rawpath" in
+                        "~/"*) root="$HOME/${rawpath#"~/"}" ;;
+                        /*)    root="$rawpath" ;;
+                        *)     root="$repo_root/$rawpath" ;;
+                    esac
+                    ;;
+            esac
+            mp_json="$root/.claude-plugin/marketplace.json"
+            if [ ! -f "$mp_json" ]; then
+                echo "modify_settings.json: skipping native plugin $key, marketplace.json not found: $mp_json" >&2
+                continue
+            fi
+            name=$(jq -r '.name // empty' "$mp_json")
+            if [ -z "$name" ]; then
+                echo "modify_settings.json: skipping native plugin $key, marketplace.json has no .name: $mp_json" >&2
+                continue
+            fi
+            jq -n --arg k "$key" --arg n "$name" --arg p "$root" \
+                '{enabled: {("\($k)@\($n)"): true}, marketplaces: {($n): {source: {source: "directory", path: $p}}}}'
+        done | jq -s '{enabled: (map(.enabled) | add // {}), marketplaces: (map(.marketplaces) | add // {})}'
+}
+
 reg_enabled='{}'
 reg_marketplaces='{}'
 if [ -f "$PLUGIN_REG" ]; then
@@ -115,6 +178,16 @@ if [ -f "$PLUGIN_REG" ]; then
     reg_marketplaces=$(plugin_reg_marketplaces)
 else
     echo "modify_settings.json: plugin registry not found: $PLUGIN_REG — composing enabledPlugins/extraKnownMarketplaces from claude.yaml only" >&2
+fi
+
+native_enabled='{}'
+native_marketplaces='{}'
+if [ -f "$NATIVE_REG" ]; then
+    native_overlays=$(native_plugin_overlays)
+    native_enabled=$(printf '%s' "$native_overlays" | jq '.enabled')
+    native_marketplaces=$(printf '%s' "$native_overlays" | jq '.marketplaces')
+else
+    echo "modify_settings.json: native plugin registry not found: $NATIVE_REG — no native-claude overlay" >&2
 fi
 
 # Compose the desired document: static authoritative keys + registry-authored
@@ -125,13 +198,15 @@ desired=$(
     yq -o=json '.claude' "$REG" | jq \
         --slurpfile auth "$AUTH" --arg home "$HOME" \
         --argjson reg_enabled "$reg_enabled" \
-        --argjson reg_marketplaces "$reg_marketplaces" '
+        --argjson reg_marketplaces "$reg_marketplaces" \
+        --argjson native_enabled "$native_enabled" \
+        --argjson native_marketplaces "$native_marketplaces" '
         def expand: walk(if type == "string" then gsub("\\$\\{HOME\\}"; $home) else . end);
         . as $reg | ($auth[0]) as $a
         | $a
         + { hooks:                  (($reg.hooks // {}) | expand),
-            enabledPlugins:         (($reg.enabledPlugins // {}) + $reg_enabled),
-            extraKnownMarketplaces: ((($reg.extraKnownMarketplaces // {}) | expand) + $reg_marketplaces),
+            enabledPlugins:         (($reg.enabledPlugins // {}) + $reg_enabled + $native_enabled),
+            extraKnownMarketplaces: ((($reg.extraKnownMarketplaces // {}) | expand) + $reg_marketplaces + $native_marketplaces),
             permissions: ( ($a.permissions // {}) + {
                 allow:                 ($reg.permissions.allow // []),
                 deny:                  ($reg.permissions.deny // []),

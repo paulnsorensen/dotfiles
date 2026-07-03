@@ -44,11 +44,8 @@ STDIN"
     jq -e '.hooks.PreToolUse | length > 0' "$OUT" >/dev/null
     jq -e '.permissions.allow | length > 0' "$OUT" >/dev/null
     jq -e '.permissions.deny | index("Bash(sudo:*)")' "$OUT" >/dev/null
-    # ${HOME} expanded in registry string values (marketplace paths).
-    run jq -r '.extraKnownMarketplaces[].source.path' "$OUT"
-    # shellcheck disable=SC2016  # asserting the literal ${HOME} token was expanded away
-    [[ "$output" != *'${HOME}'* ]]
-    [[ "$output" == "$HOME"* ]]
+    # (${HOME} expansion in registry marketplace paths is covered by the
+    # dedicated test below, now that the committed base ships no marketplace.)
 }
 
 @test "modify_settings: idempotent — feeding its own output back reproduces it" {
@@ -285,7 +282,8 @@ run_modify_gated() {
     [[ "$output" == */claude/plugins/local/todoist-flow ]]
     # claude.yaml base entries survive alongside the overlay.
     [ "$(jq -r '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT")" = "true" ]
-    [ "$(jq -r '.extraKnownMarketplaces["milknado"].source.source' "$OUT")" = "directory" ]
+    # (native marketplaces — milknado, hallouminate — are covered by the native
+    # overlay tests below; they warn+skip here since no cache exists in the sandbox.)
 }
 
 @test "modify_settings: gate-closed excludes the gated plugin from both keys" {
@@ -368,4 +366,115 @@ setup_custom_registry() {
     [ "$status" -ne 0 ]
     [ ! -s "$OUT" ]
     [[ "$output" == *"not a JSON object"* ]]
+}
+
+# ── native-plugin overlay (agents/plugins/registry.yaml) ────────────────────
+# modify_settings.json overlays native-claude entries onto enabledPlugins /
+# extraKnownMarketplaces, keyed by each marketplace.json .name. These lock the
+# native-set resolution, the marketplace-name keying, and the warn+skip path.
+
+# Build a CHEZMOI_SOURCE_DIR at $TEST_HOME/nroot/chezmoi with a sibling
+# agents/plugins/registry.yaml holding $1 as its plugins: body. Sets NSRC.
+setup_native_registry() {
+    local root="$TEST_HOME/nroot"
+    NSRC="$root/chezmoi"
+    mkdir -p "$NSRC/lib" "$NSRC/.chezmoidata" "$root/agents/plugins"
+    cp "$AUTH" "$NSRC/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/.chezmoidata/claude.yaml" "$NSRC/.chezmoidata/claude.yaml"
+    printf 'plugins:\n%s\n' "$1" > "$root/agents/plugins/registry.yaml"
+}
+
+# mk_git_cache <key> <marketplace-name>: a git-style cache under
+# ~/.cache/ap/plugins/<key> (HOME is the sandbox) with a marketplace.json.
+mk_git_cache() {
+    local dir="$HOME/.cache/ap/plugins/$1/.claude-plugin"
+    mkdir -p "$dir"
+    printf '{"name": "%s"}\n' "$2" > "$dir/marketplace.json"
+}
+
+run_native() {
+    run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$NSRC' sh '$SCRIPT' </dev/null >'$OUT'"
+}
+
+@test "modify_settings: native git plugin overlays both keys, keyed by marketplace.json name (key≠name)" {
+    mk_git_cache widget acme
+    setup_native_registry '  widget:
+    git: https://example.com/widget
+    harnesses: [claude, codex]
+    native: true'
+    run_native
+    [ "$status" -eq 0 ]
+    # enabledPlugins keyed <key>@<name>; marketplace keyed by <name>.
+    [ "$(jq -r '.enabledPlugins["widget@acme"]' "$OUT")" = "true" ]
+    [ "$(jq -r '.extraKnownMarketplaces["acme"].source.source' "$OUT")" = "directory" ]
+    [ "$(jq -r '.extraKnownMarketplaces["acme"].source.path' "$OUT")" = "$HOME/.cache/ap/plugins/widget" ]
+    # The YAML key is NOT used as the marketplace name.
+    run jq -e '.extraKnownMarketplaces["widget"]' "$OUT"
+    [ "$status" -ne 0 ]
+}
+
+@test "modify_settings: native-set resolution — true∩harnesses, list-without-claude, deprecated alias" {
+    mk_git_cache alpha alpha
+    mk_git_cache delta delta
+    mk_git_cache beta beta
+    setup_native_registry '  alpha:
+    git: https://example.com/alpha
+    harnesses: [claude, codex]
+    native: true
+  beta:
+    git: https://example.com/beta
+    harnesses: [claude, copilot]
+    native: [copilot]
+  delta:
+    git: https://example.com/delta
+    harnesses: [codex]
+    claude_native: true'
+    run_native
+    [ "$status" -eq 0 ]
+    # native: true → claude ∈ (harnesses ∩ drivable) → overlaid.
+    [ "$(jq -r '.enabledPlugins["alpha@alpha"]' "$OUT")" = "true" ]
+    # deprecated claude_native: true → claude OR'd in → overlaid.
+    [ "$(jq -r '.enabledPlugins["delta@delta"]' "$OUT")" = "true" ]
+    # native: [copilot] (claude absent) → NOT overlaid, on either key.
+    run jq -e '.enabledPlugins["beta@beta"]' "$OUT"
+    [ "$status" -ne 0 ]
+    run jq -e '.extraKnownMarketplaces["beta"]' "$OUT"
+    [ "$status" -ne 0 ]
+}
+
+@test "modify_settings: native plugin with a missing cache warns, skips, leaves valid JSON, other entries intact" {
+    mk_git_cache present present
+    setup_native_registry '  present:
+    git: https://example.com/present
+    harnesses: [claude]
+    native: true
+  absent:
+    git: https://example.com/absent
+    harnesses: [claude]
+    native: true'
+    run_native
+    [ "$status" -eq 0 ]
+    # The missing entry warns on stderr and is skipped.
+    [[ "$output" == *"skipping native plugin absent"* ]]
+    [[ "$output" == *"marketplace.json not found"* ]]
+    # Output is still valid JSON; the present entry is overlaid, the absent one not.
+    jq -e . "$OUT" >/dev/null
+    [ "$(jq -r '.enabledPlugins["present@present"]' "$OUT")" = "true" ]
+    run jq -e '.enabledPlugins["absent@absent"]' "$OUT"
+    [ "$status" -ne 0 ]
+}
+
+@test "modify_settings: \${HOME} token in a claude.yaml marketplace path is expanded" {
+    command -v yq >/dev/null 2>&1 || skip "yq not installed"
+    local src="$TEST_HOME/hz/chezmoi"
+    mkdir -p "$src/lib" "$src/.chezmoidata"
+    cp "$AUTH" "$src/lib/claude-settings-authoritative.json"
+    # shellcheck disable=SC2016  # literal ${HOME} token, expanded by modify_settings, not the shell
+    yq '.claude.extraKnownMarketplaces.tok.source.source = "directory"
+        | .claude.extraKnownMarketplaces.tok.source.path = "${HOME}/tok"' \
+        "$CZ_SRC/.chezmoidata/claude.yaml" > "$src/.chezmoidata/claude.yaml"
+    run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$src' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    # The literal \${HOME} token is expanded to the real HOME by the expand walk.
+    [ "$(jq -r '.extraKnownMarketplaces["tok"].source.path' "$OUT")" = "$HOME/tok" ]
 }

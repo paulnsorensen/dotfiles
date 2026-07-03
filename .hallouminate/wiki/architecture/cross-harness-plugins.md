@@ -280,6 +280,20 @@ and agents; reusing `_from_native_plugin` would wrongly hide them from claude.
 
 `clean()` un-merges by `marketplace_name` (not registry YAML key).
 
+> **Global vs isolated (post-#366).** `_render_native_plugins()` in `claude.py`
+> now returns early unless `manifest.isolated` — `ap` no longer writes the
+> global `~/.claude/settings.json`, so the renderer pass above only fires for
+> **isolated** profiles. The **global** native-claude path is the
+> chezmoi-authoritative pipeline instead: `chezmoi/dot_claude/modify_settings.json`
+> overlays `enabledPlugins` / `extraKnownMarketplaces` from
+> `agents/plugins/registry.yaml` (steps 2–3, keyed by each marketplace.json
+> `.name`), and `chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-plugins.sh.tmpl`
+>
+> - `chezmoi/lib/claude-plugin-reconcile.sh` do the CLI prime (step 4:
+> `claude plugin marketplace add`, `claude plugin install`) and a
+> manifest-owned-only prune. See [[operations/claude-dotfiles-ownership]] §
+> Settings merge policy.
+
 **Codex** — `_render_native_plugins()` in `codex.py` consumes descriptors with
 `codex_native: True`, hooked into `render()` right after `_write_mcps`:
 
