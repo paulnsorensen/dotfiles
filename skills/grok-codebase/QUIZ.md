@@ -14,8 +14,9 @@ rules, and the question banks per pillar × Bloom level.
    at the current `bloom` level. Ask it. Wait for the answer.
 3. **Confidence update** (apply in order, take first match):
    - **Wrong / "I don't know"** → `confidence -= 2` (clamp to `weak`).
-     Re-teach by calling the relevant MCP tool (typically `tilth_grok` or
-     `query_graph_tool`), then ask a `remember`-level question next turn.
+     Re-teach by calling the relevant code-intelligence MCP tool (typically
+     `tilth_grok` or an available symbol/reference lookup), then ask a
+     `remember`-level question next turn.
    - **Hedging language detected** (regex:
      `\b(I think|maybe|probably|kind of|sort of|I'm not sure|I guess|might be|possibly)\b`)
      → `confidence -= 1`.
