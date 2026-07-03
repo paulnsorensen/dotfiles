@@ -74,6 +74,21 @@ echo -e "${BLUE}Skill Sync - Declarative Skill Management${NC}"
 echo
 
 HARNESSES="${SKILL_HARNESSES:-}"
+# SKILL_EXCLUDE_AGENTS (space-separated agent IDs) subtracts from the harness
+# list. `dots upgrade` passes claude-code: ~/.claude/skills is chezmoi-managed
+# (exact_) and external skills are vendored into source state by
+# sync_claude_chezmoi_sources — installing them live would just be deleted on
+# the next apply (spec: chezmoi-authoritative-claude).
+if [[ -n "${SKILL_EXCLUDE_AGENTS:-}" ]]; then
+    _filtered=""
+    for _h in $HARNESSES; do
+        case " ${SKILL_EXCLUDE_AGENTS} " in
+            *" ${_h} "*) echo "  Excluding harness: ${_h} (SKILL_EXCLUDE_AGENTS)" ;;
+            *) _filtered="${_filtered:+$_filtered }$_h" ;;
+        esac
+    done
+    HARNESSES="$_filtered"
+fi
 if [[ -z "$HARNESSES" ]]; then
     echo -e "${YELLOW}SKILL_HARNESSES is empty in .env — nothing to do.${NC}"
     echo "Set SKILL_HARNESSES in .env to a space-separated list of agent IDs."

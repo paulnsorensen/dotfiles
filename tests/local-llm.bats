@@ -460,6 +460,11 @@ echo fake-binary > "$dir/llama-swap"
 MOCK
     chmod +x "$MOCK_BIN/tar"
 
+    # Fake uname: the script only maps Linux arch names (x86_64/aarch64),
+    # so pin the arch to keep the test hermetic on macOS (arm64).
+    printf '#!/bin/bash\necho aarch64\n' > "$MOCK_BIN/uname"
+    chmod +x "$MOCK_BIN/uname"
+
     export CURL_URL_LOG="$TEST_HOME/url.log"
     export LLAMA_SWAP_BIN_DIR="$TEST_HOME/local-llm/bin"
     run bash "$INSTALL_SWAP"
@@ -506,13 +511,13 @@ MOCK
     run jq -e . "$LEAN"
     assert_success
 
-    for server in code-review-graph hallouminate tavily; do
+    for server in hallouminate tavily; do
         run jq -e --arg s "$server" '.mcp[$s].enabled == false' "$LEAN"
         assert_success
     done
 
-    # Exclusivity: exactly those three — no accidental extra disable slips in.
-    run jq -e '.mcp | keys | length == 3' "$LEAN"
+    # Exclusivity: exactly those two — no accidental extra disable slips in.
+    run jq -e '.mcp | keys | length == 2' "$LEAN"
     assert_success
 }
 

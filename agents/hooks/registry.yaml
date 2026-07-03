@@ -46,13 +46,6 @@
 #                    same as an absent field). Codex ignores it.
 #   description    — human-readable purpose
 hooks:
-  jmux-attention:
-    event: Stop
-    script: agents/hooks/jmux-attention.sh
-    harnesses: [claude, codex]
-    timeout: 5
-    description: Mark the current jmux tmux session as needing attention when an agent stops
-
   session-start-cheese-flair:
     event: SessionStart
     script: agents/hooks/session-start-cheese-flair.sh
@@ -111,6 +104,32 @@ hooks:
     timeout: 5
     description: Block reads/writes of .env, private keys, and credential stores
 
+  # ─── Tool reroute ───────────────────────────────────────────────────
+  # Transparently REWRITES wrong-tool Bash/Grep/Glob calls to their tilth /
+  # wt-git shell equivalent via updatedInput (grep/rg/ag/ack → tilth, cd+git →
+  # wt-git, bare cat → tilth, find -name → tilth <glob>), DENIES the two cases
+  # with no shell rewrite target (the Grep/Glob tools, shell write-redirects)
+  # naming cheez-search / cheez-write, and DELEGATES every other Bash command to
+  # `rtk hook <harness>` for token compaction. One dispatcher (tool-reroute.js)
+  # runs three independently-removable modules (lib/tool-reroute/{search,cd-git,
+  # io}.js); the shared lexer is lib/tool-reroute/shell.js. Both harnesses share
+  # the allow/deny + updatedInput schema, so one script serves claude + codex.
+  # Fail-open: a missing logic file, absent node, or absent rtk degrades to the
+  # unrewritten command.
+  tool-reroute:
+    event: PreToolUse
+    script: agents/hooks/tool-reroute.sh
+    shared_assets:
+      - agents/lib/tool-reroute.js
+      - agents/lib/tool-reroute/shell.js
+      - agents/lib/tool-reroute/search.js
+      - agents/lib/tool-reroute/cd-git.js
+      - agents/lib/tool-reroute/io.js
+    harnesses: [claude]
+    matcher: "Bash|Grep|Glob"
+    timeout: 5
+    description: Rewrite wrong-tool Bash/Grep/Glob calls to tilth/wt-git; delegate the rest to rtk
+
   # ─── Moshi (rjyo/moshi-hook) ────────────────────────────────────────
   # Bridge between Claude Code and the Moshi iOS terminal app — sends
   # session-start, prompt, turn-end, and approval events to the phone
@@ -143,11 +162,3 @@ hooks:
     async: true
     harnesses: [claude]
     description: Moshi bridge — turn-end notification to phone
-
-  moshi-permission-request:
-    event: PermissionRequest
-    command: "moshi-hook claude-hook"
-    async: false
-    timeout: 300
-    harnesses: [claude]
-    description: Moshi bridge — approval request (synchronous, 5-min phone reach)

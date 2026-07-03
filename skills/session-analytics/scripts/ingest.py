@@ -165,7 +165,9 @@ def codex_normalize(path):
         if ptype in ("function_call", "custom_tool_call"):
             raw_input = payload.get("arguments") or payload.get("input")
             try:
-                parsed = json.loads(raw_input) if isinstance(raw_input, str) else raw_input
+                parsed = (
+                    json.loads(raw_input) if isinstance(raw_input, str) else raw_input
+                )
             except (json.JSONDecodeError, TypeError):
                 parsed = {"raw": raw_input}
             if not isinstance(parsed, dict):
@@ -177,12 +179,14 @@ def codex_normalize(path):
                 "sessionId": session_id,
                 "cwd": cwd,
                 "message": {
-                    "content": [{
-                        "type": "tool_use",
-                        "id": payload.get("call_id"),
-                        "name": payload.get("name"),
-                        "input": parsed,
-                    }]
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": payload.get("call_id"),
+                            "name": payload.get("name"),
+                            "input": parsed,
+                        }
+                    ]
                 },
             }
         elif ptype == "function_call_output":
@@ -197,12 +201,14 @@ def codex_normalize(path):
                 "sessionId": session_id,
                 "cwd": cwd,
                 "message": {
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": payload.get("call_id"),
-                        "content": out,
-                        "is_error": is_error,
-                    }]
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": payload.get("call_id"),
+                            "content": out,
+                            "is_error": is_error,
+                        }
+                    ]
                 },
             }
 
@@ -254,12 +260,14 @@ def opencode_normalize(path):
             "sessionId": session_id,
             "cwd": directory,
             "message": {
-                "content": [{
-                    "type": "tool_use",
-                    "id": call_id,
-                    "name": part.get("tool"),
-                    "input": state.get("input") or {},
-                }]
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": call_id,
+                        "name": part.get("tool"),
+                        "input": state.get("input") or {},
+                    }
+                ]
             },
         }
         if "output" in state or state.get("status") in ("completed", "error"):
@@ -270,12 +278,16 @@ def opencode_normalize(path):
                 "sessionId": session_id,
                 "cwd": directory,
                 "message": {
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": call_id,
-                        "content": str(state.get("output", ""))[:500],
-                        "is_error": "true" if state.get("status") == "error" else "false",
-                    }]
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": call_id,
+                            "content": str(state.get("output", ""))[:500],
+                            "is_error": "true"
+                            if state.get("status") == "error"
+                            else "false",
+                        }
+                    ]
                 },
             }
 
@@ -326,7 +338,9 @@ def db_is_fresh():
 def run_sql(sql, db_path=None):
     result = subprocess.run(
         ["duckdb", db_path or DB_TMP_PATH, "-c", sql],
-        capture_output=True, text=True, timeout=600,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     if result.returncode != 0:
         print(f"ERROR: {result.stderr[:500]}", file=sys.stderr)
@@ -385,11 +399,17 @@ def main():
     print("Discovering + normalizing harness sessions...")
     loaded = stage_harnesses()
     if not loaded:
-        print("No accessible sessions from any harness. Nothing to ingest.", file=sys.stderr)
+        print(
+            "No accessible sessions from any harness. Nothing to ingest.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     if os.path.exists(DB_TMP_PATH):
-        os.remove(DB_TMP_PATH)
+        if os.path.isdir(DB_TMP_PATH):
+            shutil.rmtree(DB_TMP_PATH)
+        else:
+            os.remove(DB_TMP_PATH)
 
     print("Loading canonical rows into DuckDB...")
     t0 = time.time()
@@ -407,7 +427,9 @@ def main():
             columns={columns_struct()}
         );
     """)
-    run_sql("SELECT harness, count(*) AS rows FROM raw_entries GROUP BY harness ORDER BY harness;")
+    run_sql(
+        "SELECT harness, count(*) AS rows FROM raw_entries GROUP BY harness ORDER BY harness;"
+    )
 
     # Step 2: tool_uses (flattened from assistant content blocks).
     print("  Creating tool_uses...")
@@ -564,7 +586,8 @@ def main():
     elapsed = time.time() - t0
     print(f"\nIngestion complete in {elapsed:.1f}s")
 
-    run_sql("""
+    run_sql(
+        """
         SELECT
             (SELECT count(*) FROM tool_uses) AS tool_uses,
             (SELECT count(*) FROM tool_results) AS tool_results,
@@ -574,7 +597,9 @@ def main():
             (SELECT count(*) FROM mcp_calls) AS mcp_calls,
             (SELECT count(*) FROM sessions) AS sessions,
             (SELECT count(*) FROM permission_denials) AS permission_denials;
-    """, db_path=DB_PATH)
+    """,
+        db_path=DB_PATH,
+    )
 
 
 if __name__ == "__main__":

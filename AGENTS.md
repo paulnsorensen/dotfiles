@@ -41,16 +41,17 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 
 ### dots
 
-- `dots sync` — deploy (symlinks, packages, chezmoi, base-profile render). `dots sync refresh` forces package re-check.
+- `dots sync` — deploy (symlinks, packages, claude source assembly + chezmoi apply). `dots sync refresh` forces package re-check.
 - `dots upgrade` (`up`) · `dots update` (pull + sync) · `dots status` · `dots doctor` (health + chezmoi + local-llm) · `dots test` (bats suite)
 - `dots rollback` — prints the git-backed undo path (`git revert` + `dots sync`); no stateful snapshots.
+- `dots claude diff` — preview pending chezmoi changes under `~/.claude` (settings.json + exact_ trees) before a sync overwrites them wholesale; does not cover `~/.claude.json` MCP drift (reconciles via the claude CLI).
 - `dots profile launch claude <name>` · `dots profile list` · `dots profile describe <name>`
 
 ### Agent config — edit a registry, then sync
 
-- `mcp-edit` / `hook-edit` / `agent-edit` / `skill-edit` / `plugin-edit` — open the source registry
-- `base-sync` — deploy the live install profiles to all harnesses (the unified entry point; per-registry `*-sync` mnemonics retired). `plugin-sync` for Claude marketplace plugins
-- `mcp-ls` / `hook-ls` / `skill-ls` / `plugin-ls` · `mcp-add <name> <cmd> [args…]`
+- `mcp-edit` (opens the claude registry `chezmoi/.chezmoidata/claude.yaml`) / `hook-edit` / `agent-edit` / `skill-edit` / `plugin-edit` — open the source registry
+- Deploy is `dots sync` for everything claude-global (`base-sync` retired; other harnesses frozen pending their migration spec). `plugin-sync` for Claude marketplace plugins
+- `mcp-ls` / `hook-ls` / `skill-ls` / `plugin-ls` · `mcp-add <name> <cmd> [args…]` (hand-add outside the registry — prefer `mcp-edit` + `dots sync`)
 - `cc` / `ccc` / `ccr` — launch claude (preamble system-prompt wired) · `ccs` (fzf-jump to a running session) · `ccp <name>` (scoped profile)
 - `ccw <slug>` / `ccw <repo>/<slug>` (cross-repo) / `ccw` (fzf resume picker) · `ccw-ls` / `ccw-rm <slug>` / `ccw-sweep` / `ccw-clean` · `wt-git <path> <cmd>` — worktrees
 - `claude-settings` · `claude-json-prune [--apply]` · `cf-refresh` (= `plugin-refresh cheese-flow local`)
@@ -67,19 +68,25 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 
 **Edit → sync.** Never hand-edit a rendered artifact — edit the source registry, then deploy. Mechanics: [[architecture/agents-dir]] + [[architecture/agent-profile]].
 
+Global **claude** config is chezmoi-authoritative: the claude registry `chezmoi/.chezmoidata/claude.yaml` selects MCPs, settings hooks wiring, enabledPlugins/marketplaces, permissions, skills, and agents; `dots sync` assembles + applies, and **removals propagate** (exact_ dirs, settings authored wholesale, MCP reconcile via manifest). Other harnesses read the `agents/` registries but are frozen pending their own migration spec.
+
 | Add a… | Edit | Deploy |
 |---|---|---|
-| MCP | `agents/mcp/registry.yaml` | `dots sync` (or `base-sync`) |
-| Hook | `agents/hooks/registry.yaml` | `dots sync` |
-| Sub-agent | `agents/registry.yaml` + `agents/agent_definitions/` | `dots sync` |
-| Skill | `skills/` (local) or `skills/_registry.yaml` (external) | `dots sync` |
+| MCP (claude, user scope) | `chezmoi/.chezmoidata/claude.yaml` `mcps:` | `dots sync` |
+| Hook (claude settings wiring) | `chezmoi/.chezmoidata/claude.yaml` `hooks:` (+ script in `agents/hooks/`) | `dots sync` |
+| Sub-agent | `agents/registry.yaml` + `agents/agent_definitions/` + list in `claude.yaml` `agents:` | `dots sync` |
+| Skill | `skills/` (local, listed in `claude.yaml` `skills:`) or `skills/_registry.yaml` (external, vendored) | `dots sync` |
+| Claude permissions / enabledPlugins / marketplaces | `chezmoi/.chezmoidata/claude.yaml` | `dots sync` |
 | Plugin (cross-harness) | `agents/plugins/registry.yaml` | `dots sync` (or `plugin-sync`) |
 | Claude-native plugin | `claude/plugins/registry.yaml` | `dots sync` |
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
 | Package | `packages/packages.yaml` | `dots sync` |
 | Profile | `profiles/<name>/profile.yaml` | `dots profile install` / `launch` |
+| omp (oh-my-pi) config | `chezmoi/.chezmoidata/omp.yaml` | `dots sync` |
 
 **`dots sync` before committing.** The prek pre-commit hook blocks commits when `~/.claude/` is out of sync with the repo. See [[operations/dev-environment]].
+
+**`just check` is the single exit gate.** Before declaring any code change done — and always before commit/push — run `just check` (lint + test + smoke) and confirm it exits 0. It is the exact gate CI runs, so green locally means the `lint` and `test` jobs pass; never accept a pending CI run as a substitute for running it. If a gate tool is missing locally (e.g. `ruff`), say so and name the unrun leg rather than claiming green. Run `dots sync` first when registry / skill / agent / doc source changed.
 
 **Shell functions need tests.** New shell logic goes into a named function in a sourced lib (`.sync-lib.sh`, `chezmoi/lib/*.sh`, …), exercised by a `tests/<area>.bats` file (mock externals via `$PATH`). `.sync` scripts stay thin: parse args, source lib, dispatch. Add new test files to `tests/run-tests.sh`. Rationale: [[operations/sync-and-chezmoi]].
 

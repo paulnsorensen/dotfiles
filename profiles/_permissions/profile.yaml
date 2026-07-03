@@ -23,6 +23,7 @@ settings:
     - Bash(git:*)
     - Bash(approve:*)
     - Bash(rtk:*)
+    - Bash(tilth:*)
     - Bash(ls:*)
     - Bash(head:*)
     - Bash(tail:*)
@@ -55,7 +56,6 @@ settings:
     - Bash(dots:*)
     - Bash(prek:*)
     - Bash(fd:*)
-    - Bash(rg:*)
     - Bash(sg:*)
     - Bash(sd:*)
     - Bash(gh:*)
@@ -76,7 +76,6 @@ settings:
     - mcp__plugin_playwright_playwright__*
     - mcp__context7__*
     - mcp__tavily__*
-    - mcp__code-review-graph__*
     - mcp__tilth__*
     - mcp__serena__*
     - mcp__hallouminate__*
@@ -84,21 +83,20 @@ settings:
     - WebFetch
     - Skill
   # PoC disallow-list (walk-back-able). Two groups:
-  #   1. Force the code-intelligence tools (routing preamble: tilth/serena
-  #      over built-ins). Deliberately NOT denied: Bash(rg:*), Bash(fd:*),
-  #      Bash(sg:*) (allowed above; sg is the sanctioned AST escape hatch)
-  #      and Read (routing keeps built-in Read for out-of-workspace /
-  #      unparseable / image / PDF). Deny-wins, so those stay out of here.
-  #   2. Cross-harness safety floor (porting bash-guard's spirit to the four
-  #      hookless harnesses). `Bash(rm -rf:*)` is COARSER than bash-guard (it
-  #      blocks even safe relative `rm -rf node_modules`); for Claude the hook
-  #      stays the precise layer, this coarse deny is the cross-harness floor.
+  #   1. Search/IO routing. The tool-reroute hook (claude-only) now OWNS this:
+  #      it REWRITES grep/rg/ag/ack/cat/find to tilth and DELEGATES the rest to
+  #      rtk, so grep/ag/ack and the Grep/Glob tools are no longer denied here.
+  #      Un-denying them on the four hookless harnesses (cursor/copilot/opencode)
+  #      is accepted — those keep the routing system-prompt nudge. Bash(rg:*)'s
+  #      allow stays removed (a stray rg prompts rather than running unfiltered).
+  #      Only the `rtk proxy git grep` tunnel stays denied below: the lexer's
+  #      rtk-strip turns it into `git grep`, which has no tilth rewrite target.
+  #   2. Cross-harness safety floor (porting the retired bash-guard hook's
+  #      spirit to every harness). `Bash(rm -rf:*)` is COARSER than bash-guard
+  #      was (it blocks even safe relative `rm -rf node_modules`); with the
+  #      hook removed, this coarse deny is the floor for Claude too.
   permissions_deny:
-    - Grep
-    - Glob
-    - Bash(grep:*)
-    - Bash(ag:*)
-    - Bash(ack:*)
+    - Bash(rtk proxy git grep:*)
     - Bash(sudo:*)
     - Bash(rm -rf:*)
     # Secret-protection floor (cross-harness). opencode denies .env by

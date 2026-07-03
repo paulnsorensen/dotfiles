@@ -13,7 +13,7 @@ import json
 
 from agent_profile import cli
 from agent_profile.manifest import manifest_path
-from tests.conftest import write_profile
+from tests.conftest import install_profile, write_profile
 
 
 def _agent_profile(name, agent="reviewer"):
@@ -37,6 +37,8 @@ def make_basic(root, name, agent="reviewer", body=None):
 
 
 def run(argv):
+    if argv and argv[0] == "install":
+        return install_profile(argv)
     return cli.main(argv)
 
 

@@ -88,7 +88,7 @@ def _translate_permission(p: str) -> tuple[str, str | None]:
     # opencode keys MCP tools as ``<server>_<tool>``; ``*`` or a missing tool
     # collapses to the whole-server ``<server>_*``. Split only on the ``mcp__``
     # prefix then the ``__`` separator so a hyphen/underscore in the server
-    # name (e.g. code-review-graph) survives.
+    # name (e.g. my-server) survives.
     if p.startswith("mcp__"):
         server, sep, tool = p[len("mcp__") :].partition("__")
         if not sep or tool in ("", "*"):
@@ -179,7 +179,7 @@ class OpencodeRenderer:
     name = "opencode"
     mcp_default = _OPENCODE_MCP_DEFAULT
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
+    def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
         """Render opencode's native subagent files (``<target>/agents/``),
         copy local skills into ``<target>/skills/``, then merge this
         profile's opencode MCPs + translated permissions into

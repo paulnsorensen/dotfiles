@@ -75,7 +75,7 @@ class CursorRenderer:
     name = "cursor"
     mcp_default = _CURSOR_MCP_DEFAULT
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
+    def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
         out: list[str] = []
         self._warn_unsupported(manifest)
         self._write_agents(manifest, target, out)

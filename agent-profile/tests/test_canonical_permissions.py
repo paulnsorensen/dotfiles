@@ -177,7 +177,6 @@ def test_global_allow_uses_bare_mcp_names(global_manifest):
     global's ``mcp_scope: user`` registration — not plugin-namespaced."""
     allow = set(global_manifest.settings.get("permissions_allow", []))
     assert "mcp__tilth__*" in allow
-    assert "mcp__code-review-graph__*" in allow
     # No plugin-namespaced canonical MCP rule for the user-scope servers.
     assert not any(
         a.startswith("mcp__plugin_global_") for a in allow

@@ -9,7 +9,7 @@ existing fetch behavior.
 from __future__ import annotations
 
 from agent_profile import cli
-from tests.conftest import write_profile
+from tests.conftest import install_profile, write_profile
 
 
 # ─── staged install skips the global skill fetch ──────────────────────────────
@@ -29,7 +29,7 @@ def test_staged_install_does_not_invoke_skill_fetch(
     calls = []
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0)
 
-    assert cli.main(["install", "extprof", "--harness", "claude", "--target", str(env.target)]) == 0
+    assert install_profile(["install", "extprof", "--harness", "claude", "--target", str(env.target)]) == 0
     # No npx skills add should have been invoked
     assert calls == []
 
@@ -45,7 +45,7 @@ def test_staged_install_prints_skip_message(env, stub_renderers, monkeypatch, ca
     )
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: 0)
 
-    assert cli.main(["install", "extprof", "--harness", "claude", "--target", str(env.target)]) == 0
+    assert install_profile(["install", "extprof", "--harness", "claude", "--target", str(env.target)]) == 0
     out = capsys.readouterr().out
     # A message about skipping external skills for staged/non-live target
     assert "external skills skipped" in out
@@ -68,7 +68,7 @@ def test_live_install_invokes_skill_fetch(env, stub_renderers, monkeypatch):
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0)
 
     # No --target flag: target comes from profile's target_default
-    assert cli.main(["install", "extprof", "--harness", "claude"]) == 0
+    assert install_profile(["install", "extprof", "--harness", "claude"]) == 0
     fetches = [c for c in calls if "npx" in c and "add" in c]
     assert len(fetches) == 1
 
@@ -78,5 +78,5 @@ def test_staged_no_source_skills_still_exits_zero(env, stub_renderers, monkeypat
     write_profile(env.profiles, "noext", "name: noext\n")
     calls = []
     monkeypatch.setattr(cli, "_skill_fetch_runner", lambda argv: calls.append(argv) or 0)
-    assert cli.main(["install", "noext", "--harness", "claude", "--target", str(env.target)]) == 0
+    assert install_profile(["install", "noext", "--harness", "claude", "--target", str(env.target)]) == 0
     assert calls == []

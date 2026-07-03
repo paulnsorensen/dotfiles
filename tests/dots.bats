@@ -121,7 +121,12 @@ STUB
 }
 
 @test "dots update shorthand works" {
-    run dots u 2>&1
+    local stub_dir="$TEST_HOME/update-dotfiles"
+    create_mock_repo "$stub_dir"
+    mkdir -p "$stub_dir/bin"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" u 2>&1
     assert_success
     assert_output_contains "Updating"
 }
@@ -154,4 +159,96 @@ STUB
     assert_success
     assert_output_contains "git revert"
     assert_output_contains "dots sync"
+}
+
+@test "dots sync with no args dispatches to .sync with no extra args" {
+    local stub_dir="$TEST_HOME/sync-dotfiles"
+    mkdir -p "$stub_dir/bin"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    cat > "$stub_dir/.sync" <<'STUB'
+#!/bin/bash
+echo "stub-dotsync argc=$# args=[$*]"
+STUB
+    chmod +x "$stub_dir/.sync"
+
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "stub-dotsync argc=0 args=[]"
+}
+
+# Stub a dotfiles tree + a fake chezmoi on PATH for `dots claude diff`.
+# The chezmoi stub echoes its args (or the given body) so tests can assert the
+# targets/flags and drive the empty/nonzero code paths.
+stub_claude_diff() {
+    local stub_dir="$1" chezmoi_body="$2"
+    mkdir -p "$stub_dir/bin" "$stub_dir/chezmoi" "$TEST_HOME/fake-bin"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    printf '#!/bin/bash\n%s\n' "$chezmoi_body" > "$TEST_HOME/fake-bin/chezmoi"
+    chmod +x "$TEST_HOME/fake-bin/chezmoi"
+}
+
+@test "dots claude diff invokes chezmoi diff on ~/.claude with the repo source" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'echo "chezmoi-args=[$*]"'
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    assert_success
+    assert_output_contains "--source $stub_dir/chezmoi diff $HOME/.claude"
+}
+
+@test "dots claude diff prints in-sync message when chezmoi diff is empty" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'exit 0'  # no output, exit 0 == in sync
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    assert_success
+    assert_output_contains "in sync with the chezmoi source"
+}
+
+@test "dots claude diff propagates a nonzero chezmoi exit" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'exit 3'
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    [[ "$status" -eq 3 ]]
+    assert_output_contains "chezmoi diff failed (exit 3)"
+}
+
+# Plant a modify_settings.json gate + a live settings.json so `dots claude diff`
+# runs the halt gate. $2 is the gate script body (controls its exit code).
+stub_claude_gate() {
+    local stub_dir="$1" gate_body="$2"
+    mkdir -p "$stub_dir/chezmoi/dot_claude" "$HOME/.claude"
+    printf '#!/bin/sh\n%s\n' "$gate_body" \
+        > "$stub_dir/chezmoi/dot_claude/modify_settings.json"
+    echo '{}' > "$HOME/.claude/settings.json"
+}
+
+@test "dots claude diff surfaces a would-be halt the diff itself cannot see" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'exit 0'  # chezmoi diff reports "in sync"
+    stub_claude_gate "$stub_dir" 'echo "unknown key: env.SSL_CERT_FILE" >&2; exit 1'
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    assert_failure
+    assert_output_contains "would HALT the next sync"
+    assert_output_contains "unknown key: env.SSL_CERT_FILE"
+}
+
+@test "dots claude diff passes the gate then reports in-sync" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'exit 0'
+    stub_claude_gate "$stub_dir" 'cat >/dev/null; exit 0'  # gate OK
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    assert_success
+    assert_output_contains "in sync with the chezmoi source"
+}
+
+@test "dots claude with an unknown action fails with usage" {
+    run dots claude bogus
+    assert_failure
+    assert_output_contains "Usage: dots claude diff"
+}
+
+@test "dots claude help mentions ~/.claude.json MCP drift is not covered" {
+    run dots help
+    assert_success
+    assert_output_contains "claude diff"
+    assert_output_contains ".claude.json"
 }

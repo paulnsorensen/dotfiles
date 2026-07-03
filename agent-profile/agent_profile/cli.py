@@ -25,7 +25,14 @@ from typing import Any, NoReturn
 
 import yaml
 
-from agent_profile import discover, manifest as manifest_mod
+from agent_profile import (
+    apply_compiled,
+    compile_command,
+    discover,
+    fetch_sources_command,
+    manifest as manifest_mod,
+)
+from agent_profile.install_command import install_deprecation_message
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import ParseError, parse_manifest
 from agent_profile.renderers.base import (
@@ -71,7 +78,9 @@ Commands:
   list                          List available profiles
   describe <name>               Show resolved manifest for a profile
   path <name>                   Print profile source dir
-  install <name> [opts]         Render profile into current dir
+  compile <name> --baseline <dir> --out <dir>
+                                Compile live profile fragments
+  install <name> [opts]         Deprecated; use dots sync or ap compile
   uninstall <name> [opts]       Remove a previously-installed profile
   launch <harness> [name] [..]  Install + exec the named harness CLI
   perms [opts]                  Write repo-level permission overlay (Claude + Codex)
@@ -901,11 +910,13 @@ def main(argv: list[str] | None = None) -> int:
                     )
             perms_harnesses = [h for h in harnesses if h in ("claude", "codex")]
             return cmd_perms(local, target, perms_harnesses, colors, sys.stdout)
-        if sub == "install":
+        if sub == "_install-internal":
             harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
             _validate_harnesses(harnesses, colors)
             name = remaining[0] if remaining else ""
             return cmd_install(name, harnesses, target, colors, sys.stdout)
+        if sub == "install":
+            raise CliError(install_deprecation_message())
         if sub in ("uninstall", "rm"):
             harnesses, target, remaining, _passthrough = _parse_common_opts(rest)
             _validate_harnesses(harnesses, colors)
@@ -914,6 +925,32 @@ def main(argv: list[str] | None = None) -> int:
         if sub == "launch":
             _harnesses, target, remaining, passthrough = _parse_common_opts(rest)
             cmd_launch(remaining, passthrough, target, colors, sys.stdout)
+        if sub == "compile":
+            if not rest:
+                raise CliError("profile name required")
+            profile_name = compile_command.profile_arg(rest)
+            if not profile_name:
+                raise CliError("profile name required")
+            profile_dir = discover.find_profile_dir(profile_name)
+            if profile_dir is None:
+                raise CliError(f"ap compile: profile '{profile_name}' not found")
+            from agent_profile.compile_target_presence import (
+                CompileTargetPresenceError,
+                require_compile_targets,
+            )
+
+            # Early-exit gate: fail loud on missing/invalid compile_targets before
+            # compile_profile's tempdir setup. parse_manifest re-validates for its
+            # other callers; the re-check on the compile path is intentional.
+            try:
+                require_compile_targets(profile_dir)
+            except CompileTargetPresenceError as exc:
+                raise CliError(str(exc)) from exc
+            return compile_command.cmd_compile(rest, RENDERERS, sys.stdout)
+        if sub == "fetch-sources":
+            return fetch_sources_command.cmd_fetch_sources(rest, sys.stdout)
+        if sub == "apply-compiled":
+            return apply_compiled.cmd_apply_compiled(rest, sys.stdout)
         if sub in ("help", "-h", "--help"):
             sys.stdout.write(USAGE)
             return 0
@@ -923,7 +960,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         sys.stderr.write(USAGE)
         return 1
-    except (CliError, ParseError, ManifestCorrupt, MergedConfigError) as exc:
+    except (
+        CliError,
+        compile_command.CompileError,
+        fetch_sources_command.FetchSourcesError,
+        apply_compiled.ApplyError,
+        ParseError,
+        ManifestCorrupt,
+        MergedConfigError,
+    ) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 

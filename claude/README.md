@@ -94,7 +94,7 @@ repo-root `agents/registry.yaml` (metadata) with bodies under
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
 | `nih-scanner` | Structural NIH pattern scanner |
-| `worktree-triage` | Stale-worktree triage recommendations |
+| `worktree-content-digest` | Read-only per-worktree content digest (fanned out by the worktree-triage skill) |
 | `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by skill-improver) |
 
 Review/analysis agents use severity tiers (blocker/high/medium/low) with calibration tags (`<certain>`/`<speculative>`); surface medium+ and certain lows.
@@ -107,7 +107,6 @@ Reusable tool-usage instructions injected into agents and commands.
 
 | Skill | Purpose |
 |-------|---------|
-| `scout` | Directory listings (eza); delegates code search to `easy-cheese:cheez-search` |
 | `easy-cheese:cheez-search` | AST-aware code/content search via tilth MCP (replaces trace) |
 | `easy-cheese:cheez-read` | Hash-anchored code reading via tilth MCP |
 | `easy-cheese:cheez-write` | Hash-anchored code editing via tilth MCP (replaces chisel) |
@@ -130,17 +129,7 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 | Hook | Tool match | Purpose |
 |------|-----------|---------|
-| `phantom-file-check.js` | Read | Prevents reading non-existent files (anti-hallucination) |
-| `write-guard.js` | Edit, Write, MultiEdit, tilth_write | Blocks placeholder/lazy code — ellipsis, `TODO`/`FIXME`/`HACK`, and inline test snippets |
 | `worktree-guard.js` | Edit, Write, MultiEdit, tilth_write | In a git worktree, blocks writes outside the worktree root. **Opt-out**: enforces by default; `CLAUDE_WORKTREE_GUARD=0` disables it. Extend the allowlist with `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2`. Always allowed: worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, any `.cheese/` dir |
-| `bash-guard.js` | Bash | Blocks dangerous `rm -rf` — filesystem root, `~`/`$HOME`, `..` traversal, absolute system dirs, bare globs. Relative subdir deletes (`node_modules`, `dist`) are allowed |
-| `review-reply-guard.js` | Bash (`gh api … /pulls/.../comments`) | Blocks PR review-comment replies that omit the `in_reply_to` field |
-
-### Post-Tool Hooks
-
-| Hook | Tool match | Purpose |
-|------|-----------|---------|
-| `auto-format.js` | Edit, Write, MultiEdit, tilth_write | Runs the project formatter on edited files (formats every file in a `tilth_write` batch) |
 
 ### Other
 
@@ -195,7 +184,6 @@ User-scope MCPs (registered here):
 
 | MCP | Purpose |
 |-----|---------|
-| `code-review-graph` | Persistent code knowledge graph; impact radius, call chains, architectural framing |
 | `todoist` | Todoist task/project management |
 | `tilth` | AST-aware code search/read/edit (Tree-sitter); backs `cheez-*` skills. Gated by `gate_unless: CHEESE_FLOW` — installed only when the cheese-flow plugin is dark, since the plugin bundles its own tilth MCP |
 

@@ -24,7 +24,7 @@ A pair is genuine duplication only when it collapses to a *single point on both 
 
 This is the constraint that governs what is even *doable* in dotfiles:
 
-- **dotfiles owns**: the agent *bodies* (`agents/agent_definitions/` + `agents/registry.yaml`), the **local** skills (`/ghostbuster`, `/nih-audit`, `/de-slop`, `/scout`, … the `skills/` tree), and `claude/commands/` (`/wreck`, `/test`, `move-my-cheese`, `cheese-convoy`).
+- **dotfiles owns**: the agent *bodies* (`agents/agent_definitions/` + `agents/registry.yaml`), the **local** skills (`/ghostbuster`, `/nih-audit`, `/de-slop`, … the `skills/` tree), and `claude/commands/` (`/wreck`, `/test`, `move-my-cheese`, `cheese-convoy`).
 - **The external easy-cheese plugin owns** the pipeline skills — `/age`, `/cook`, `/press`, `/cure`, `/affinage`, `/mold`, `/cheese`, etc. These install to `~/.claude/skills/` via `npx skills add` (registry `paulnsorensen/easy-cheese`). (Note: `~/Dev/cheese-flow` is a *distinct* mechanism — the local **plugin** registry path `cheese-flow@local`, not easy-cheese's source.)
 
 Consequence: editing an **agent body** (scoring vocab, a bugfix, a rename) is dotfiles-local. But changing an agent's *output contract* can break a consumer **across the repo boundary** — so every "modernize" needs to confirm whether the easy-cheese consumer parses the field. And "merge agent into skill" is only doable here when the *skill* is dotfiles-local (e.g. `/ghostbuster`); merging into `/age` or `/affinage` is a cross-repo (easy-cheese) change.

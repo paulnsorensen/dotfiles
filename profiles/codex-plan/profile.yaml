@@ -7,3 +7,9 @@ mcps:
   - name: tilth
     command: tilth
     args: ["--mcp", "--edit"]
+skills:
+  - { source: paulnsorensen/easy-cheese }
+compile_targets:
+  home:
+    target_root: "$HOME"
+    harnesses: ["codex"]

@@ -128,34 +128,21 @@ EOF
     fi
 fi
 
-# Pre-create the ~/.claude directory symlinks that the (now-shrinking) set
-# of write-through paths from chezmoi's run_onchange templates land in. On
-# a fresh install, claude/.sync runs *after* chezmoi/.sync (alphabetical
-# iteration in .sync), so without these links chezmoi would
-# create real ~/.claude/{hooks,reference}/ directories that claude/.sync
-# would then back up, orphaning anything chezmoi just wrote.
-#
-# settings.json is NO LONGER pre-linked here — it migrated to a chezmoi
-# `create_` seed at chezmoi/dot_claude/create_settings.json (managed
-# in-place by chezmoi + ap renderer mutations), so the legacy symlink
-# would actively block the seed (a one-time
-# run_once_before_migrate-claude-settings.sh script unlinks any stale
-# settings.json symlink before the seed runs).
-prelink_claude_writethrough() {
-    local claude_dir="$HOME/.claude"
-    local item link source
-    mkdir -p "$claude_dir"
-    for item in hooks reference; do
-        link="$claude_dir/$item"
-        source="$dotfiles_dir/claude/$item"
-        [[ -e "$source" ]] || continue
-        # Already a symlink, or a real path claude/.sync will own — leave alone.
-        [[ -e "$link" || -L "$link" ]] && continue
-        ln -s "$source" "$link"
-        echo "  Pre-linked $link -> $source (for chezmoi write-through)"
-    done
-}
-prelink_claude_writethrough
+# (prelink_claude_writethrough retired: ~/.claude/{hooks,reference} are now
+# chezmoi-managed exact_ dirs assembled below — no write-through symlinks.
+# run_once_before_migrate-ap-claude.sh unlinks any legacy symlink.)
+
+# Assemble the registry-selected ~/.claude payload (skills/agents/commands/
+# hooks/lib/reference/workflows) into dot_claude/exact_* source state so the
+# apply below deploys it with deletion propagation. Fail loud — an incomplete
+# assembly must not silently apply a partial exact_ tree (which would DELETE
+# live entries).
+# shellcheck source=../.sync-lib.sh
+source "$dotfiles_dir/.sync-lib.sh"
+if ! sync_claude_chezmoi_sources "$dotfiles_dir" "$script_dir"; then
+    echo "  ERROR: claude chezmoi source assembly failed — aborting chezmoi apply" >&2
+    exit 1
+fi
 
 # Trigger chezmoi apply from this checkout so workspace syncs use the source
 # tree that launched dots sync, not a stale sourceDir preserved in
@@ -175,7 +162,9 @@ if command -v chezmoi &>/dev/null; then
     else
         chezmoi_status=$?
         echo "  ERROR: chezmoi apply failed (exit $chezmoi_status) — alphabetically-later run_onchange installers were skipped" >&2
-        echo "         Common cause: 'gh auth status' failing → run 'gh auth login' and re-run 'dots sync'." >&2
+        echo "         See the specific error above for the cause. Common ones:" >&2
+        echo "           • settings.json unknown-key halt → fold the key into chezmoi/lib/claude-settings-authoritative.json or chezmoi/.chezmoidata/claude.yaml" >&2
+        echo "           • 'gh auth status' failing → run 'gh auth login', then re-run 'dots sync'." >&2
     fi
 else
     echo "  Skipping chezmoi apply (chezmoi not installed); chezmoi-managed files will not sync"

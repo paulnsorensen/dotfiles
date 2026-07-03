@@ -6,36 +6,27 @@
 
 load test_helper
 
+setup_file() {
+    # Several tests here run chezmoi/.sync, whose assembly step rewrites the
+    # REAL repo's chezmoi/dot_claude/exact_* trees (rm -rf + repopulate).
+    # Under `bats --jobs N` two such tests race on that shared tree and fail
+    # nondeterministically. Keep this file serial.
+    export BATS_NO_PARALLELIZE_WITHIN_FILE=true
+}
+
 setup() {
     setup_test_env
     export CHEZMOI_SYNC="$REAL_DOTFILES_DIR/chezmoi/.sync"
-    # The install-claude-skills deploy script was retired (curd 7); its
-    # deploy role — and the gh fail-loud + content-hash invariants below —
-    # moved to install-base-profile, which renders the registry-derived
-    # `base` profile (skills union included) into every harness via `ap`.
-    export INSTALLER_TMPL="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-base-profile.sh.tmpl"
+    # The ap live-install path (install-base-profile) and the claude asset
+    # installer were retired (spec: chezmoi-authoritative-claude): ~/.claude
+    # deploys via dot_claude/exact_* + modify_settings.json, and user-scope
+    # MCPs reconcile via this run_onchange template.
+    export MCP_TMPL="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-mcps.sh.tmpl"
 }
 
 teardown() { teardown_test_env; }
 
 # ── chezmoi/.sync wiring ────────────────────────────────────────────────
-
-# Helper: drop a fake `npx` binary on PATH so `chezmoi apply` runs hermetically.
-# It satisfies the run_onchange preflight (`command -v npx`) AND no-ops
-# `npx skills add ...` — ap's external-skill fetch path — so the test never
-# git-clones a real source repo over the network.
-make_fake_npx() {
-    local fake_bin="${1:-$TEST_HOME/fake-bin}"
-    mkdir -p "$fake_bin"
-    cat > "$fake_bin/npx" <<'SH'
-#!/usr/bin/env bash
-# Args look like: --yes skills add <repo> --skill ... --agent ... -g --copy -y
-# Succeed on everything (no network); the skills CLI is never really invoked.
-exit 0
-SH
-    chmod +x "$fake_bin/npx"
-    echo "$fake_bin"
-}
 
 # Helper: drop a fake chezmoi binary on PATH that records its args and
 # (optionally) writes a config file when invoked as `chezmoi init`. Returns
@@ -314,15 +305,64 @@ EOF
 # Regression guard for the first-install race between chezmoi/.sync (runs
 # first alphabetically) and claude/.sync (creates the ~/.claude/{hooks,
 # reference, settings.json} symlinks). Without the prelink, chezmoi's
-# run_onchange base-profile render lands files inside a real ~/.claude/
-# dir, and any settings write lands a real ~/.claude/settings.json file —
-# both of which claude/.sync later backs up to .bak, orphaning everything
-# chezmoi just wrote.
+# ── claude source assembly (pre-apply) ────────────────────────────────
+# chezmoi/.sync assembles the registry-selected ~/.claude payload into
+# dot_claude/exact_* BEFORE chezmoi apply, so exact_ deletion semantics see a
+# complete tree. The external-skill vendoring is fed from a seeded cache so
+# these tests stay offline (a fake git that fails `pull` exercises the
+# use-cached-checkout fallback).
 
-@test "chezmoi/.sync pre-links ~/.claude/{hooks,reference} on a fresh install" {
-    # No ~/.claude at all — fresh-box state.
+# Seed the external-skill cache + a git shim so no network is touched.
+seed_skill_cache_offline() {
+    local cache="$TEST_HOME/.cache/dotfiles/claude-skill-sources"
+    local src
+    for src in paulnsorensen__easy-cheese paulnsorensen__skillz-that-grillz; do
+        mkdir -p "$cache/$src/.git" "$cache/$src/skills/dummy-$src"
+        echo "# dummy" > "$cache/$src/skills/dummy-$src/SKILL.md"
+    done
+    local fake_bin="$TEST_HOME/fake-git-bin"
+    mkdir -p "$fake_bin"
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$fake_bin/git"
+    chmod +x "$fake_bin/git"
+    echo "$fake_bin"
+}
+
+@test "chezmoi/.sync assembles dot_claude/exact_* before chezmoi apply" {
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+    local git_bin fake_bin
+    git_bin=$(seed_skill_cache_offline)
+    fake_bin=$(make_fake_chezmoi)
+    PATH="$git_bin:$fake_bin:$PATH"
+
+    run bash "$CHEZMOI_SYNC"
+    assert_success
+    [[ "$output" == *"Assembled claude chezmoi source state"* ]]
+
+    local src="$REAL_DOTFILES_DIR/chezmoi/dot_claude"
+    local tree
+    for tree in exact_skills exact_agents exact_commands exact_hooks exact_lib exact_reference exact_workflows; do
+        [[ -d "$src/$tree" ]] || { echo "missing $src/$tree" >&2; return 1; }
+    done
+    # Registry-selected local skill assembled with exact_ prefix.
+    [[ -d "$src/exact_skills/exact_de-slop" ]]
+    # Vendored external skill (from the seeded offline cache).
+    [[ -f "$src/exact_skills/exact_dummy-paulnsorensen__easy-cheese/SKILL.md" ]]
+    # Rendered agent carries registry frontmatter.
+    grep -q '^model: haiku$' "$src/exact_agents/whey-drainer.md"
+    grep -q '^name: whey-drainer$' "$src/exact_agents/whey-drainer.md"
+    # Hook scripts keep their executable_ attribute.
+    [[ -f "$src/exact_hooks/executable_git-guard.sh" ]]
+}
+
+@test "chezmoi/.sync no longer pre-links ~/.claude/{hooks,reference} (exact_ dirs own them)" {
     [[ ! -e "$HOME/.claude" ]]
-
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
 sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
@@ -331,58 +371,21 @@ sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
 email = "user@example.com"
 work = false
 EOF
-
-    local fake_bin
+    local git_bin fake_bin
+    git_bin=$(seed_skill_cache_offline)
     fake_bin=$(make_fake_chezmoi)
-    PATH="$fake_bin:$PATH"
+    PATH="$git_bin:$fake_bin:$PATH"
 
     run bash "$CHEZMOI_SYNC"
     assert_success
-
-    [[ -L "$HOME/.claude/hooks" ]]
-    [[ "$(readlink "$HOME/.claude/hooks")"     == "$REAL_DOTFILES_DIR/claude/hooks"     ]]
-    [[ -L "$HOME/.claude/reference" ]]
-    [[ "$(readlink "$HOME/.claude/reference")" == "$REAL_DOTFILES_DIR/claude/reference" ]]
-    # settings.json must NOT be pre-linked anymore — it's a chezmoi
-    # create_ seed now (chezmoi/dot_claude/create_settings.json), and a
-    # legacy symlink would block the seed step.
-    [[ ! -L "$HOME/.claude/settings.json" ]]
-}
-
-@test "chezmoi/.sync prelink is idempotent (existing correct symlink preserved)" {
-    mkdir -p "$HOME/.claude"
-    ln -s "$REAL_DOTFILES_DIR/claude/hooks"         "$HOME/.claude/hooks"
-    ln -s "$REAL_DOTFILES_DIR/claude/reference"     "$HOME/.claude/reference"
-
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "user@example.com"
-work = false
-EOF
-
-    local fake_bin
-    fake_bin=$(make_fake_chezmoi)
-    PATH="$fake_bin:$PATH"
-
-    run bash "$CHEZMOI_SYNC"
-    assert_success
-    # Symlinks unchanged.
-    [[ "$(readlink "$HOME/.claude/hooks")"         == "$REAL_DOTFILES_DIR/claude/hooks"         ]]
-    [[ "$(readlink "$HOME/.claude/reference")"     == "$REAL_DOTFILES_DIR/claude/reference"     ]]
-    # Prelink message only fires when it actually creates a link.
     [[ "$output" != *"Pre-linked"* ]]
+    # No write-through symlinks left behind — chezmoi (faked here) owns the
+    # real dirs on apply.
+    [[ ! -L "$HOME/.claude/hooks" ]]
+    [[ ! -L "$HOME/.claude/reference" ]]
 }
 
-@test "chezmoi/.sync prelink does not clobber a pre-existing real directory" {
-    # If the user already has a real ~/.claude/hooks/ (e.g. a half-migrated
-    # state), prelink must leave it alone — claude/.sync's backup pass is
-    # the only thing that should touch real dirs at those paths.
-    mkdir -p "$HOME/.claude/hooks"
-    echo "user file" > "$HOME/.claude/hooks/sentinel"
-
+@test "chezmoi/.sync fails loud when the claude source assembly fails" {
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
 sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
@@ -391,43 +394,21 @@ sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
 email = "user@example.com"
 work = false
 EOF
-
-    local fake_bin
-    fake_bin=$(make_fake_chezmoi)
-    PATH="$fake_bin:$PATH"
-
-    run bash "$CHEZMOI_SYNC"
-    assert_success
-    # Real dir + its contents preserved untouched.
-    [[ -d "$HOME/.claude/hooks" && ! -L "$HOME/.claude/hooks" ]]
-    [[ "$(cat "$HOME/.claude/hooks/sentinel")" == "user file" ]]
-}
-
-@test "chezmoi/.sync prelink does not clobber a pre-existing real settings.json" {
-    # If the user has a hand-rolled ~/.claude/settings.json before adopting
-    # dotfiles, prelink must leave it alone — claude/.sync's backup pass owns
-    # real files at that path.
-    mkdir -p "$HOME/.claude"
-    echo '{"user":"keep"}' > "$HOME/.claude/settings.json"
-
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "user@example.com"
-work = false
-EOF
-
-    local fake_bin
-    fake_bin=$(make_fake_chezmoi)
-    PATH="$fake_bin:$PATH"
+    # Empty cache + failing git → external vendoring cannot clone → assembly
+    # must abort the sync (a partial exact_ tree would DELETE live entries).
+    local fake_bin="$TEST_HOME/fake-git-bin"
+    mkdir -p "$fake_bin"
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$fake_bin/git"
+    chmod +x "$fake_bin/git"
+    local cz_bin
+    cz_bin=$(make_fake_chezmoi)
+    PATH="$fake_bin:$cz_bin:$PATH"
 
     run bash "$CHEZMOI_SYNC"
-    assert_success
-    # Real file preserved untouched.
-    [[ -f "$HOME/.claude/settings.json" && ! -L "$HOME/.claude/settings.json" ]]
-    [[ "$(cat "$HOME/.claude/settings.json")" == '{"user":"keep"}' ]]
+    [[ $status -ne 0 ]]
+    [[ "$output" == *"claude chezmoi source assembly failed"* ]]
+    # chezmoi apply never ran (fake chezmoi logs its args).
+    [[ ! -f "$HOME/chezmoi-args.log" ]] || ! grep -q '^apply$' "$HOME/chezmoi-args.log"
 }
 
 # ── source-tree scaffold ────────────────────────────────────────────────
@@ -436,130 +417,107 @@ EOF
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/.chezmoiroot"
 }
 
-@test "chezmoi/run_onchange template drives the base-profile installer lib" {
-    assert_file_exists "$INSTALLER_TMPL"
-    grep -qF 'lib/install-base-profile.sh' "$INSTALLER_TMPL"
-    # The unified deploy runs through the `ap` shim, not the retired
-    # install-local / install-external helpers.
-    grep -qF 'agent-profile/ap' "$INSTALLER_TMPL"
-}
-
-@test "chezmoi/run_onchange template no longer references the retired deploy helpers" {
-    for stale in 'install-local.sh' 'lib/install-external.sh' 'skills-install/'; do
-        if grep -qF "$stale" "$INSTALLER_TMPL"; then
-            echo "template still references retired deploy path: $stale" >&2
+@test "retired ap-era installers are gone from the source tree" {
+    local stale
+    for stale in \
+        "chezmoi/.chezmoiscripts/run_onchange_after_install-base-profile.sh.tmpl" \
+        "chezmoi/.chezmoiscripts/run_onchange_after_install-claude-assets.sh.tmpl" \
+        "chezmoi/lib/install-base-profile.sh" \
+        "chezmoi/lib/install-claude-assets.sh" \
+        "chezmoi/lib/agent-profile-sync.sh"; do
+        if [[ -e "$REAL_DOTFILES_DIR/$stale" ]]; then
+            echo "retired file still present: $stale" >&2
             return 1
         fi
     done
 }
 
-@test "chezmoi/run_onchange template embeds a content hash so chezmoi re-runs on changes" {
-    grep -qF 'hash:' "$INSTALLER_TMPL"
-    grep -qF 'output' "$INSTALLER_TMPL"
+@test "claude registry exists and carries every managed section" {
+    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+    assert_file_exists "$reg"
+    command -v yq >/dev/null 2>&1 || skip "yq not installed"
+    local key
+    for key in mcps hooks enabledPlugins extraKnownMarketplaces permissions skills agents; do
+        [[ "$(yq -r ".claude | has(\"$key\")" "$reg")" == "true" ]] \
+            || { echo "claude.yaml missing section: $key" >&2; return 1; }
+    done
+    # No plaintext secrets: every mcp env value must be a ${VAR} passthrough.
+    run yq -r '.claude.mcps[].env // {} | .[]' "$reg"
+    local line
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        # shellcheck disable=SC2016  # literal ${ } passthrough form, not expansion
+        [[ "$line" == '${'*'}' ]] || { echo "non-passthrough mcp env value: $line" >&2; return 1; }
+    done <<<"$output"
 }
 
-@test "chezmoi/run_onchange template hashes the registries + skills tree it renders from" {
-    # The base profile unions the registries + local skills tree; the live
-    # wrappers (`global`, `opencode-global`) plus `_permissions` add the
-    # machine-targeted overlay and canonical permission floor. The hash must
-    # cover all of them so a registry/skill/profile/hook-script edit retriggers
-    # the render.
-    grep -qF '/../skills ' "$INSTALLER_TMPL"
-    grep -qF '/../profiles/base' "$INSTALLER_TMPL"
-    grep -qF '/../profiles/global' "$INSTALLER_TMPL"
-    grep -qF '/../profiles/_permissions' "$INSTALLER_TMPL"
-    grep -qF '/../profiles/opencode-global' "$INSTALLER_TMPL"
-    grep -qF '/../agents/mcp/registry.yaml' "$INSTALLER_TMPL"
-    # `agents/hooks` covers the registry AND its referenced scripts —
-    # without script-content coverage, edits to a hook payload (e.g. the
-    # SessionStart cheese-flair script) would NOT trigger re-deploy on
-    # `dots sync`. Same for the cheese-flair lib + bank under agents/lib
-    # and agents/reference.
-    grep -qF '/../agents/hooks' "$INSTALLER_TMPL"
-    grep -qF '/../agents/lib' "$INSTALLER_TMPL"
-    grep -qF '/../agents/reference' "$INSTALLER_TMPL"
-    # The `ap` renderer source shapes the output: a renderer-only fix (e.g.
-    # the codex env-scrub) changes no registry/profile/skill input, so
-    # without watching agent_profile/** the hash would stay stable and the
-    # fix would never redeploy on a plain `dots sync`. It is the last path
-    # before `-type f`.
-    grep -qF '/../agent-profile/agent_profile -type f' "$INSTALLER_TMPL"
-    # Bytecode is excluded so the hash tracks source edits, not interpreter
-    # artifacts (a *.pyc regen would otherwise churn the hash spuriously).
-    # Match dash-free substrings so the pattern isn't parsed as a grep flag.
-    grep -qF "'*.pyc'" "$INSTALLER_TMPL"
-    grep -qF "'*/__pycache__/*'" "$INSTALLER_TMPL"
-    # The pre-flatten nested path must stay gone.
-    if grep -qF '/../claude/skills' "$INSTALLER_TMPL"; then
-        echo "template still references the pre-flatten claude/skills tree" >&2
-        return 1
-    fi
+@test "claude registry: selected skills and agents resolve to real repo sources" {
+    # A registry entry naming a skill/agent that no longer exists in the repo
+    # would fail every `dots sync` at assembly time. Catch it in CI first.
+    command -v yq >/dev/null 2>&1 || skip "yq not installed"
+    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+    local name
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        [[ -f "$REAL_DOTFILES_DIR/skills/$name/SKILL.md" ]] \
+            || { echo "claude.yaml selects skill '$name' but skills/$name/SKILL.md is missing" >&2; return 1; }
+    done < <(yq -r '.claude.skills // [] | .[]' "$reg")
+    local body
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        body=$(yq -r ".agents.\"$name\".body_path // \"\"" "$REAL_DOTFILES_DIR/agents/registry.yaml")
+        [[ -n "$body" && -f "$REAL_DOTFILES_DIR/$body" ]] \
+            || { echo "claude.yaml selects agent '$name' but agents/registry.yaml body_path is missing ('$body')" >&2; return 1; }
+    done < <(yq -r '.claude.agents // [] | .[]' "$reg")
 }
 
-@test "chezmoi/run_onchange template fails loud when npx is missing" {
-    # Spec invariant (PR #196, carried into curd 7): the deploy must FAIL
-    # LOUD when npx is missing — external skills install through ap's fetch
-    # path, which shells `npx skills add` (a git clone per source repo). A
-    # silent skip masked partial installs; guard against it. (npx clones public
-    # repos, so no GitHub-auth preflight is needed.)
-    grep -qF 'command -v npx' "$INSTALLER_TMPL"
-    # The render invocation must NOT tolerate per-invocation failure.
-    if grep -qE 'install-base-profile\.sh.*\|\| *true' "$INSTALLER_TMPL"; then
-        echo "base-profile render still has '|| true' — silent partial install regression risk" >&2
-        return 1
-    fi
+@test "claude registry: every wired ~/.claude/hooks script has a deployable source" {
+    # The hooks block wires commands like `node .../hook-runner.js bash-guard.js`
+    # and `"$HOME/.claude/hooks/git-guard.sh"`. exact_hooks deploys from
+    # claude/hooks + agents/hooks — a wired script missing from both would
+    # break every session after apply. Check both the $HOME-pathed script and
+    # relative *.js runner args.
+    command -v yq >/dev/null 2>&1 || skip "yq not installed"
+    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+    local tok script found
+    while IFS= read -r tok; do
+        [[ -z "$tok" ]] && continue
+        # shellcheck disable=SC2013,SC2016  # word-split is intended; regex is a literal
+        for script in $(grep -oE '(\$HOME/\.claude/hooks/)?[A-Za-z0-9_-]+\.(js|sh)' <<<"$tok"); do
+            script="${script##*/}"
+            found=false
+            [[ -f "$REAL_DOTFILES_DIR/claude/hooks/$script" ]] && found=true
+            [[ -f "$REAL_DOTFILES_DIR/agents/hooks/$script" ]] && found=true
+            $found || { echo "claude.yaml hooks wire '$script' but no source in claude/hooks or agents/hooks" >&2; return 1; }
+        done
+    done < <(yq -r '.claude.hooks[][].hooks[].command' "$reg")
 }
 
-# Helper: render the run_onchange template to a runnable script + drop a
-# tripwire `ap` on PATH that fails loudly if the render is ever reached.
-# Used by the preflight-FAILURE test below: the static grep above proves the
-# check exists in the text; this proves it actually aborts at runtime BEFORE
-# the `ap` render (a silent partial-install regression PR #196 guarded against).
-render_base_profile_onchange() {
+@test "MCP reconcile run_onchange embeds the registry mcps hash" {
+    assert_file_exists "$MCP_TMPL"
+    grep -qF '.claude.mcps | toJson | sha256sum' "$MCP_TMPL"
+    grep -qF 'lib/claude-mcp-reconcile.sh' "$MCP_TMPL"
+    grep -qF '.chezmoi-mcp-manifest' "$MCP_TMPL"
+}
+
+@test "MCP reconcile run_onchange renders and fails loud without jq/yq" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
-    local script="$TEST_HOME/base-profile-onchange.sh"
+    local script="$TEST_HOME/mcp-onchange.sh"
     chezmoi execute-template --source "$REAL_DOTFILES_DIR/chezmoi" \
-        < "$INSTALLER_TMPL" > "$script"
+        < "$MCP_TMPL" > "$script"
     chmod +x "$script"
-    # If preflight wrongly passes through, the installer would invoke `ap`;
-    # this tripwire turns that into a loud, assertable failure.
-    local fake_bin="$TEST_HOME/tripwire-bin"
-    mkdir -p "$fake_bin"
-    cat > "$fake_bin/ap" <<'SH'
-#!/usr/bin/env bash
-echo "TRIPWIRE: ap render reached despite a failing npx preflight" >&2
-exit 0
-SH
-    chmod +x "$fake_bin/ap"
-    echo "$script"
-}
-
-@test "base-profile run_onchange skips cleanly when npx is missing" {
-    # Behavior change: the linux-bootstrap PR (commit 5369aa3) softened
-    # missing-npx from `exit 1` (fail-loud) to `exit 0` (clean skip with
-    # pointer) — symmetric with the missing-uv branch. Rationale: on a
-    # fresh Ubuntu box npx arrives from `apt install nodejs npm` after the
-    # first sync prints its missing-tools list; failing the whole apply
-    # there is hostile. The render still must NOT reach `ap` while npx
-    # is absent (no tripwire trigger), and the skip diagnostic must
-    # surface so the user knows why external skills weren't fetched.
-    command -v uv >/dev/null 2>&1 || skip "uv not installed (run_onchange skips before preflight)"
-    local script
-    script=$(render_base_profile_onchange)
-    local uv_bin="$TEST_HOME/uv-only-bin"
-    mkdir -p "$uv_bin"
-    printf '#!/usr/bin/env bash\nexit 0\n' > "$uv_bin/uv"
-    chmod +x "$uv_bin/uv"
-    # Minimal bin with ONLY bash — /bin can't be used here: on merged-/usr
-    # systems with apt nodejs, /bin/npx exists and defeats the missing-npx
-    # simulation (the script then runs the real installer silently).
+    # Rendered hash line must not carry unexpanded template syntax.
+    ! grep -qF '{{' "$script"
+    # Minimal PATH (bash only): the jq/yq preflight must exit NONZERO. Exit 0
+    # would let chezmoi record the run_onchange as done for the current mcps
+    # hash — reconcile would then silently never run until the registry
+    # mcps block next changes.
     local minimal_bin="$TEST_HOME/minimal-bin"
     mkdir -p "$minimal_bin"
     ln -s "$(command -v bash)" "$minimal_bin/bash"
-    PATH="$TEST_HOME/tripwire-bin:$uv_bin:$minimal_bin" run bash "$script"
-    assert_success
-    assert_output_contains "Skipping base-profile render (npx not found"
-    [[ "$output" != *"TRIPWIRE"* ]]
+    PATH="$minimal_bin" run bash "$script"
+    assert_failure
+    assert_output_contains "claude MCP reconcile cannot run"
 }
 
 @test "chezmoi/.chezmoiignore excludes lib/ so helpers aren't applied to \$HOME" {
@@ -794,15 +752,24 @@ YAML
 
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────
 
-@test "chezmoi apply triggers the base-profile render + renders templates" {
+@test "chezmoi apply deploys the assembled ~/.claude payload + renders templates" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # The base-profile run_onchange (curd 7) fails loud when npx (Node) is
-    # missing — external skills install via `npx skills add`. Stub a fake npx
-    # that satisfies the `command -v npx` preflight and no-ops the fetch.
-    local fake_npx_bin
-    fake_npx_bin=$(make_fake_npx)
-    PATH="$fake_npx_bin:$PATH"
+    # Feed the external-skill vendoring from the seeded offline cache so the
+    # assembly step never touches the network.
+    local git_bin
+    git_bin=$(seed_skill_cache_offline)
+    PATH="$git_bin:$PATH"
+
+    # The MCP-reconcile run_onchange fails loud without the `claude` CLI
+    # (CI has no claude). Stub it — all reconcile writes go through the CLI
+    # and only the exit code is checked, so a 0-exit stub keeps the e2e
+    # hermetic on any machine.
+    local claude_bin="$TEST_HOME/fake-claude-bin"
+    mkdir -p "$claude_bin"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$claude_bin/claude"
+    chmod +x "$claude_bin/claude"
+    PATH="$claude_bin:$PATH"
 
     # Templated dotfiles need [data] for .email and env vars for the
     # copilot template's fail-fast guard. Bootstrap both before .sync runs
@@ -820,23 +787,26 @@ TOML
 
     run bash "$CHEZMOI_SYNC"
     assert_success
+    # The reconcile ran (via the stub) and wrote its ownership manifest.
+    assert_file_exists "$HOME/.claude/.chezmoi-mcp-manifest"
 
     run chezmoi apply --force
     assert_success
 
-    # Skills deploy shared-only via `ap` (claude renderer → ~/.claude/skills/
-    # <name>; PR #252 dropped the plugin-scoped ~/.claude/plugins copy).
-    # The render needs uv (+ a real `ap` env); when uv is absent the
-    # run_onchange skips by design, so gate the skill assertion on uv.
-    if command -v uv >/dev/null 2>&1; then
-        local skills_dir="$HOME/.claude/skills"
-        [[ -d "$skills_dir" ]]
-        # At least one dotfiles-owned (local path:) skill landed as a real dir.
-        local first
-        first=$(find "$skills_dir" -mindepth 1 -maxdepth 1 -type d | head -1)
-        [[ -n "$first" ]]
-        [[ -d "$first" && ! -L "$first" ]]
-    fi
+    # Skills deploy via the assembled dot_claude/exact_skills tree — real
+    # directories at ~/.claude/skills/<name>, deletion-propagating.
+    local skills_dir="$HOME/.claude/skills"
+    [[ -d "$skills_dir" ]]
+    [[ -d "$skills_dir/de-slop" && ! -L "$skills_dir/de-slop" ]]
+    # Agents rendered with registry frontmatter.
+    grep -q '^name: whey-drainer$' "$HOME/.claude/agents/whey-drainer.md"
+    # Hooks land executable (settings.json hooks invoke them directly).
+    [[ -x "$HOME/.claude/hooks/git-guard.sh" ]]
+    # settings.json authored: registry-derived keys present.
+    command -v jq >/dev/null 2>&1 && {
+        jq -e '.hooks.PreToolUse | length > 0' "$HOME/.claude/settings.json" >/dev/null
+        jq -e '.permissions.allow | length > 0' "$HOME/.claude/settings.json" >/dev/null
+    }
 
     # The gitconfig template should now exist at the rendered target with
     # the bootstrapped email.
@@ -875,10 +845,9 @@ TOML
     # empty-mcpServers stub. The MCPs simply won't work until .env is populated.
     #
     # Render the template in isolation (execute-template) rather than a full
-    # `chezmoi apply`: with the keys unset, apply would also drive the
-    # base-profile `ap install`, which legitimately fails loud on the
-    # non-optional context7/tavily ${VAR}s (criterion 2). That fail-loud is a
-    # separate, intended behavior — this test pins the copilot template alone.
+    # `chezmoi apply`: apply would run the whole chezmoi script suite (the
+    # ap-migration run_once, wholesale settings authorship, MCP reconcile)
+    # against the test HOME — this test pins the copilot template alone.
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
     local rendered
     rendered="$(env -u CONTEXT7_API_KEY -u TAVILY_API_KEY \
@@ -1177,47 +1146,61 @@ SH
     [[ "$(wc -l < "$HOME/.serena/serena_config.yml")" -eq 1 ]]
 }
 
-# ── claude settings.json migration to chezmoi seed ─────────────────────────
+# ── claude settings.json repo-authoritative via modify_ ────────────────────
 
-@test "claude settings.json: chezmoi seed source exists at dot_claude/create_settings.json" {
-    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+@test "claude settings.json: authoritative source exists at lib/claude-settings-authoritative.json" {
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" ]]
 }
 
-@test "claude settings.json: chezmoi seed is valid JSON" {
-    jq -e 'type == "object"' "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null
+@test "claude settings.json: authoritative source is valid JSON" {
+    jq -e 'type == "object"' "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" >/dev/null
 }
 
-@test "claude settings.json: seed has NO legacy SessionStart hook entry" {
-    # The base plugin's plugin.json (rendered by ap into
-    # ~/.claude/plugins/local/global/.claude-plugin/plugin.json) now
-    # provides the SessionStart wiring. A duplicate entry in settings.json
-    # would double-fire the hook AND silently break when the legacy
-    # symlinked path is gone (the regression that drove the migration).
+@test "claude settings.json: authoritative source has NO legacy SessionStart hook entry" {
+    # SessionStart wiring now renders into settings.json from the claude
+    # registry `hooks` block (chezmoi/.chezmoidata/claude.yaml). A hand-written
+    # duplicate in the authoritative seed would double-fire the hook AND
+    # silently break when its hardcoded path drifts (the regression that
+    # drove the migration to registry-rendered hooks).
     local has_session
     has_session=$(jq -r '.hooks.SessionStart // empty' \
-        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json")
+        "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json")
     [[ -z "$has_session" ]]
 }
 
-@test "claude settings.json: seed does NOT pre-bake ap-managed marketplace/plugin" {
-    # `local` marketplace + `global@local` enablement are owned by the
-    # claude renderer (ap install global) — they get merged in after
-    # chezmoi seeds. Pre-baking would either cause the merge to look like
-    # a no-op (fine, but confusing) OR survive a global rename (broken).
+@test "claude settings.json: authoritative source does NOT pre-bake ap-managed marketplace/plugin" {
+    # `local` marketplace + plugin enablement are owned by the claude registry
+    # (claude.yaml enabledPlugins / extraKnownMarketplaces), rendered into the
+    # live file by modify_settings.json. Pre-baking them in the seed would
+    # either look like a no-op (fine, but confusing) OR survive a registry
+    # rename (broken).
     ! jq -e '.enabledPlugins["global@local"]' \
-        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+        "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" >/dev/null 2>&1
     ! jq -e '.extraKnownMarketplaces["local"]' \
-        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" >/dev/null 2>&1
+        "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" >/dev/null 2>&1
 }
 
-@test "claude settings.json: source filename uses create_ prefix (seed-once)" {
-    # `create_` chezmoi semantic: never overwrite on subsequent applies.
-    # Using `dot_settings.json` (always-render) would clobber user edits;
-    # using `modify_settings.json` (script-driven mutation) would be
-    # heavier than needed since ap handles the per-profile mutations.
-    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
+@test "claude settings.json: source uses modify_ prefix, not create_/dot_settings" {
+    # Repo-authoritative: modify_settings.json authors the live file wholesale
+    # on every apply (seed + registry-rendered hooks/plugins/permissions),
+    # overwriting in-app drift, with an unknown-key halt gate. The retired
+    # `create_` seed (write-once) is gone; a bare dot_settings.json would
+    # render without that gate and silently clobber unexpected live keys.
+    [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" ]]
+    [[ -x "$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" ]]
+    [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/settings.json" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/dot_settings.json" ]]
+}
+
+@test "claude settings.json: authoritative source is .chezmoiignore'd (lib/) — never a target" {
+    grep -qE '^lib/' "$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+}
+
+@test "claude settings.json: post-apply schema validator exists" {
+    local s="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_validate-claude-settings.sh"
+    [[ -f "$s" && -x "$s" ]]
+    grep -qF 'check-jsonschema' "$s"
 }
 
 @test "claude settings.json: one-time migration script exists" {

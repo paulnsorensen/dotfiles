@@ -38,6 +38,14 @@ def test_shared_claude_agent_frontmatter_matches_golden(tmp_path, golden):
     assert out == [".claude/agents/shared-agent.md"]
 
 
+def test_claude_agent_frontmatter_emits_max_turns():
+    # maxTurns flows from the registry field into the Claude frontmatter as a
+    # bare int, and is omitted when unset (caps a runaway sub-agent's turns).
+    fm = shared.claude_agent_frontmatter({"name": "a", "maxTurns": 50})
+    assert fm["maxTurns"] == "50"
+    assert "maxTurns" not in shared.claude_agent_frontmatter({"name": "a"})
+
+
 def test_shared_claude_agent_no_frontmatter_when_empty(tmp_path):
     body = tmp_path / "b.md"
     body.write_text("Reviewer body for foo\n")

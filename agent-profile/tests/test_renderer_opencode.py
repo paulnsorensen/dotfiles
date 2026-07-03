@@ -140,8 +140,8 @@ def test_translate_permission_table():
     assert _translate_permission("mcp__serena__*") == ("serena_*", None)
     assert _translate_permission("mcp__serena") == ("serena_*", None)
     # Server segment may carry hyphens/underscores; split only on `mcp__`+`__`.
-    assert _translate_permission("mcp__code-review-graph__build") == (
-        "code-review-graph_build",
+    assert _translate_permission("mcp__my-server__build") == (
+        "my-server_build",
         None,
     )
     # Bare token (no parens) -> bash literal (back-compat with the old

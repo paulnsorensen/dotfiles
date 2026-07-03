@@ -1,0 +1,33 @@
+#!/bin/bash
+# run_onchange — reconciles user-scope MCP servers in ~/.claude.json against
+# the claude registry via the `claude mcp` CLI + a manifest.
+#
+# Rerun trigger: the hash of the registry `mcps` block, embedded at template
+# render time, so an MCP add/remove/edit in chezmoi/.chezmoidata/claude.yaml
+# re-runs the reconcile on the next apply.
+#
+# registry mcps hash: {{ .claude.mcps | toJson | sha256sum }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+
+# Fail loud, not skip: exit 0 would record this run_onchange as done for the
+# current mcps hash — reconcile would then silently never run until the
+# registry mcps block next changes. Nonzero re-runs it on the next apply.
+for cmd in jq yq; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "  ERROR: $cmd not found — claude MCP reconcile cannot run; install $cmd and rerun 'dots sync'" >&2
+        exit 1
+    fi
+done
+
+# shellcheck source=../lib/claude-mcp-reconcile.sh
+source "$SOURCE_DIR/lib/claude-mcp-reconcile.sh"
+
+mcps_json=$(yq -o=json '.claude.mcps' "$SOURCE_DIR/.chezmoidata/claude.yaml")
+
+claude_mcp_reconcile \
+    "$mcps_json" \
+    "$HOME/.claude.json" \
+    "$HOME/.claude/.chezmoi-mcp-manifest"

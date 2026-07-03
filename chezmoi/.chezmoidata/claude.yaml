@@ -1,0 +1,265 @@
+# Claude registry — single source of truth for global ~/.claude config.
+#
+# Auto-loaded by chezmoi into template data as `.claude.*` (.chezmoidata).
+# Edit here, then `dots sync`. Additions AND removals propagate:
+#
+#   mcps                   → reconciled into ~/.claude.json user scope by
+#                            .chezmoiscripts/run_onchange_after_sync-claude-mcps.sh.tmpl
+#                            (via the `claude mcp` CLI + a manifest at
+#                            ~/.claude/.chezmoi-mcp-manifest). Hand-added live
+#                            MCPs outside this registry are flagged, never touched.
+#   hooks / enabledPlugins / extraKnownMarketplaces / permissions
+#                          → authored into ~/.claude/settings.json by
+#                            dot_claude/modify_settings.json on every apply.
+#                            Live drift (session-granted permissions, in-app
+#                            plugin toggles) is WIPED unless promoted here.
+#   skills / agents        → selected from repo skills/ and
+#                            agents/agent_definitions/; copied into
+#                            dot_claude/exact_* source state by
+#                            sync_claude_chezmoi_sources (.sync-lib.sh), then
+#                            deployed by chezmoi. exact_ semantics: anything
+#                            live that is not in source gets DELETED on apply.
+#
+# External skills (GitHub-fetched) are still declared in skills/_registry.yaml;
+# the assembly step vendors them into the same exact_skills tree so chezmoi
+# stays authoritative over the whole ~/.claude/skills dir.
+#
+# Never put plaintext secrets here — this file is committed. MCP env values
+# use ${VAR} passthrough (resolved by Claude at server spawn from the parent
+# environment), exactly like agents/mcp/registry.yaml did.
+#
+# String values may reference ${HOME}; modify_settings.json expands it before
+# writing (needed for keys Claude reads as literal JSON, e.g. marketplace paths).
+
+claude:
+  # ── user-scope MCP servers (→ ~/.claude.json mcpServers) ──────────────────
+  mcps:
+    tilth:
+      command: tilth
+      args: ["--mcp", "--edit"]
+    context7:
+      command: npx
+      args: ["-y", "@upstash/context7-mcp"]
+      env:
+        CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+    tavily:
+      command: npx
+      args: ["-y", "tavily-mcp@latest"]
+      env:
+        TAVILY_API_KEY: "${TAVILY_API_KEY}"
+    serena:
+      command: serena
+      args:
+        - start-mcp-server
+        - --context=claude-code
+        - --project-from-cwd
+        - --enable-web-dashboard=false
+        - --open-web-dashboard=false
+
+  # ── settings.json `hooks` key (authored wholesale) ─────────────────────────
+  # Scripts live in ~/.claude/hooks (deployed via exact_hooks from
+  # claude/hooks + agents/hooks); their Node libs in ~/.claude/lib
+  # (from agents/lib). "$HOME" is expanded by the shell at hook exec time.
+  hooks:
+    PreToolUse:
+      - matcher: "Edit|Write|MultiEdit|mcp__tilth__tilth_write"
+        hooks:
+          - type: command
+            command: node "$HOME/.claude/hooks/hook-runner.js" worktree-guard.js
+            statusMessage: Checking write...
+      - matcher: "Bash"
+        hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/git-guard.sh"'
+            timeout: 5
+      - matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write"
+        hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/sensitive-file-guard.sh"'
+            timeout: 5
+      - matcher: "Bash|Grep|Glob"
+        hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/tool-reroute.sh"'
+            timeout: 5
+    SessionStart:
+      - hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/session-start-cheese-flair.sh"'
+            timeout: 5
+      - hooks:
+          - type: command
+            command: moshi-hook claude-hook
+            async: true
+    UserPromptSubmit:
+      - hooks:
+          - type: command
+            command: moshi-hook claude-hook
+            async: true
+    Stop:
+      - hooks:
+          - type: command
+            command: moshi-hook claude-hook
+            async: true
+
+  # ── settings.json plugin keys ───────────────────────────────────────────────
+  # Base layer for enabledPlugins / extraKnownMarketplaces. modify_settings.json
+  # is the single writer of these keys: it composes this base PLUS a
+  # gate-filtered overlay derived from claude/plugins/registry.yaml at apply time
+  # (gate-open local plugins add their enabledPlugins entry + marketplace here).
+  # sync.sh no longer writes settings.json.
+  enabledPlugins:
+    claude-md-management@claude-plugins-official: true
+    playwright@claude-plugins-official: true
+    frontend-design@claude-plugins-official: true
+    plugin-dev@claude-plugins-official: true
+    skill-creator@claude-plugins-official: true
+
+  extraKnownMarketplaces:
+    milknado:
+      source:
+        source: directory
+        path: "${HOME}/.cache/ap/plugins/milknado"
+
+  # ── settings.json permissions (allow/deny/ask/additionalDirectories) ───────
+  # Session-granted permissions are wiped on the next apply unless promoted
+  # here. defaultMode stays in chezmoi/lib/claude-settings-authoritative.json.
+  permissions:
+    allow:
+      - "Bash(approve:*)"
+      - "Bash(basename:*)"
+      - "Bash(bats:*)"
+      - "Bash(cargo build:*)"
+      - "Bash(cargo check:*)"
+      - "Bash(cargo clippy:*)"
+      - "Bash(cargo fmt:*)"
+      - "Bash(cargo nextest:*)"
+      - "Bash(cargo test:*)"
+      - "Bash(cat:*)"
+      - "Bash(ccw-sweep:*)"
+      - "Bash(chmod:*)"
+      - "Bash(claude:*)"
+      - "Bash(cp:*)"
+      - "Bash(dirname:*)"
+      - "Bash(dots:*)"
+      - "Bash(duckdb:*)"
+      - "Bash(echo:*)"
+      - "Bash(fd:*)"
+      - "Bash(gh:*)"
+      - "Bash(git:*)"
+      - "Bash(go test:*)"
+      - "Bash(head:*)"
+      - "Bash(jq:*)"
+      - "Bash(just:*)"
+      - "Bash(ls:*)"
+      - "Bash(mkdir:*)"
+      - "Bash(mv:*)"
+      - "Bash(node:*)"
+      - "Bash(npm run:*)"
+      - "Bash(npm test:*)"
+      - "Bash(npx:*)"
+      - "Bash(prek:*)"
+      - "Bash(printf:*)"
+      - "Bash(procs:*)"
+      - "Bash(pytest:*)"
+      - "Bash(python3:*)"
+      - "Bash(realpath:*)"
+      - "Bash(rtk:*)"
+      - "Bash(sd:*)"
+      - "Bash(sg:*)"
+      - "Bash(tail:*)"
+      - "Bash(test:*)"
+      - "Bash(tilth:*)"
+      - "Bash(tokei:*)"
+      - "Bash(touch:*)"
+      - "Bash(uv:*)"
+      - "Bash(wc:*)"
+      - "Bash(which:*)"
+      - "Bash(wt-git:*)"
+      - "Bash(yq:*)"
+      - "Edit"
+      - "Skill"
+      - "WebFetch"
+      - "WebSearch"
+      - "Write"
+      - "mcp__context7__*"
+      - "mcp__hallouminate__*"
+      - "mcp__plugin_playwright_playwright__*"
+      - "mcp__serena__*"
+      - "mcp__tavily__*"
+      - "mcp__tilth__*"
+    deny:
+      - "Bash(rm -rf:*)"
+      - "Bash(rtk proxy git grep:*)"
+      - "Bash(sudo:*)"
+      - "Read(**/*.key)"
+      - "Read(**/*.p12)"
+      - "Read(**/*.pem)"
+      - "Read(**/*.pfx)"
+      - "Read(**/*.secret)"
+      - "Read(**/.aws/credentials)"
+      - "Read(**/.env)"
+      - "Read(**/.git-credentials)"
+      - "Read(**/.netrc)"
+      - "Read(**/.npmrc)"
+      - "Read(**/.pgpass)"
+      - "Read(**/.ssh/id_*)"
+      - "Read(**/id_dsa)"
+      - "Read(**/id_ecdsa)"
+      - "Read(**/id_ed25519)"
+      - "Read(**/id_rsa)"
+      - "Read(**/secrets.*)"
+      - "Read(.env)"
+    ask: []
+    additionalDirectories: []
+
+  # ── ~/.claude/skills selection (repo skills/) ───────────────────────────────
+  skills:
+    - claude-local
+    - de-slop
+    - ghostbuster
+    - git-hygiene
+    - grok-codebase
+    - harness-doctor
+    - nih-audit
+    - prompt-analytics
+    - rennet
+    - self-eval
+    - serena-project-config
+    - session-analytics
+    - settings-clean
+    - skill-improver
+    - spec-verify
+    - steel-thread
+    - tdd-assertions
+    - test-sandbox
+    - tool-efficiency
+    - tui-design
+    - version-doctor
+    - wiki-curator
+    - work-recovery
+    - worktree
+    - worktree-find
+    - worktree-triage
+    - wt-git
+    - xray
+
+  # ── ~/.claude/agents selection (agents/agent_definitions/) ─────────────────
+  # Frontmatter is rendered from agents/registry.yaml metadata at assembly time.
+  agents:
+    - coder
+    - duckdb-expert
+    - explorer
+    - fromage-age-arch
+    - fromage-age-history
+    - fromage-fort
+    - fromage-secaudit
+    - generalist
+    - ghostbuster
+    - nih-scanner
+    - researcher
+    - reviewer
+    - ricotta-reducer
+    - roquefort-wrecker
+    - whey-drainer
+    - worktree-content-digest

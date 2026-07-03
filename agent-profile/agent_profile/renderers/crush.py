@@ -51,7 +51,7 @@ class CrushRenderer:
     name = "crush"
     mcp_default = _CRUSH_MCP_DEFAULT
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
+    def render(self, manifest: Manifest, target: Path, logical_root: Path | None = None) -> list[str]:
         base = Path(str(target).rstrip("/"))
         config_path = base / _CRUSH_CONFIG_REL
         data = (

@@ -45,7 +45,7 @@ while (($#)); do
             echo "Usage: $0 [OPTIONS] [test-file ...]"
             echo
             echo "Options:"
-            echo "  -v, --verbose    Show verbose output"
+            echo "  -v, --verbose    Show full test output (default: failures only)"
             echo "  -w, --watch      Watch for changes and re-run tests"
             echo "  -h, --help       Show this help message"
             echo
@@ -101,14 +101,25 @@ run_tests() {
     echo -e "${BLUE}Running $total_tests tests...${NC}"
     echo
 
-    # Run tests
-    local bats_args=""
+    # Suppress GNU parallel's citation notice (bats --jobs dispatches via parallel)
+    mkdir -p "$HOME/.parallel" && touch "$HOME/.parallel/will-cite"
+
+    local jobs
+    jobs=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+    # Parallel across files AND within files. A file whose tests share state
+    # opts out via BATS_NO_PARALLELIZE_WITHIN_FILE=true in its setup_file().
+    local rc=0
+    # shellcheck disable=SC2086 # intentional word splitting for multiple file args
     if [[ "$VERBOSE" == true ]]; then
-        bats_args="-v"
+        bats --jobs "$jobs" $test_files || rc=$?
+    else
+        # TAP output filtered to failures only (plan line + not-ok + diagnostics)
+        bats --formatter tap --jobs "$jobs" $test_files |
+            grep -v '^ok ' || rc=$?
     fi
 
-    # shellcheck disable=SC2086 # intentional word splitting for multiple file args
-    if bats $bats_args $test_files; then
+    if (( rc == 0 )); then
         echo
         echo -e "${GREEN}═══ All tests passed! ═══${NC}"
         return 0

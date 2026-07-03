@@ -154,6 +154,34 @@ run_sync() {
     [[ "$output" == "0" ]]
 }
 
+@test "skill sync: SKILL_EXCLUDE_AGENTS subtracts a harness from the install fan-out" {
+    # `dots upgrade` passes SKILL_EXCLUDE_AGENTS="claude-code": ~/.claude/skills
+    # is chezmoi-managed (exact_), so a live install there would be deleted on
+    # the next apply (spec: chezmoi-authoritative-claude). If this filter
+    # regressed, upgrade would silently reintroduce the live-install path.
+    write_registry
+    write_env "claude-code cursor"
+
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync
+    assert_success
+    assert_output_contains "Excluding harness: claude-code"
+    # cursor still installs; claude-code never reaches npx.
+    run grep -c -- '--agent cursor' "$NPX_LOG"
+    [[ "$output" != "0" ]]
+    run grep -c -- '--agent claude-code' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+}
+
+@test "skill sync: SKILL_EXCLUDE_AGENTS covering every harness is a clean no-op" {
+    write_registry
+    write_env "claude-code"
+
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync
+    assert_success
+    run grep -c 'skills add' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+}
+
 # ─── registry parsing ──────────────────────────────────────────────────
 
 @test "skill sync: missing registry.yaml fails fast" {

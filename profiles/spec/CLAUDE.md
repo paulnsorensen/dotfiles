@@ -14,7 +14,7 @@ Defined in `mcp-scope.yaml` (registry-validated):
 - **context7** — `mcp__context7__*` — library feasibility checks ("does library X support Y?") cheap enough to use during dialogue.
 - **tavily** — `mcp__tavily__*` — research for approach comparisons and prior art.
 
-When you reach for implementation tooling (code-review-graph, shadcn, Playwright), the spec is done — hand off to `/cook`.
+When you reach for implementation tooling (shadcn, Playwright), the spec is done — hand off to `/cook`.
 
 ## Working standards
 

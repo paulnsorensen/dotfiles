@@ -39,9 +39,9 @@ For TS/JS:
   `main` / `module` and the de facto top-level `index.ts`.
 - `tsconfig.json` `paths` / `baseUrl` show alias-based module boundaries
   (e.g. `@/lib/*`).
-- Run code-review-graph's `list_communities_tool` — the Leiden-clustered
-  modules are the **de facto** building blocks (vs. the **intended** ones
-  from `exports`). When they diverge, that's a smell.
+- Run `tilth_list` over the source tree — the directory layout is the
+  **de facto** building block set (vs. the **intended** one from `exports`).
+  When they diverge, that's a smell.
 - For each block: `get_symbols_overview` + `tilth_grok` on the 3 most
   central symbols.
 

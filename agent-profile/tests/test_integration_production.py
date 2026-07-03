@@ -33,7 +33,7 @@ import tomlkit
 from agent_profile import cli
 from agent_profile.manifest import manifest_path
 from agent_profile.renderers.registry import build_registry
-from tests.conftest import write_profile
+from tests.conftest import install_profile, write_profile
 
 
 @pytest.fixture
@@ -91,7 +91,7 @@ def _make_multi(root, name):
 
 def test_production_install_touches_all_surfaces(env, capsys, prod_renderers):
     _make_multi(env.profiles, "multi")
-    assert cli.main(["install", "multi", "--target", str(env.target)]) == 0
+    assert install_profile(["install", "multi", "--target", str(env.target)]) == 0
     capsys.readouterr()
     t = env.target
 
@@ -140,7 +140,7 @@ def test_production_install_uninstall_roundtrip_clean(env, capsys, prod_renderer
     _make_multi(env.profiles, "multi")
     t = env.target
 
-    cli.main(["install", "multi", "--target", str(t)])
+    install_profile(["install", "multi", "--target", str(t)])
     capsys.readouterr()
     tracked = list(json.loads(manifest_path(t).read_text())["multi"]["files"])
     assert tracked
@@ -182,7 +182,7 @@ def test_production_codex_user_config_preserved_through_cli(
         "command = \"keep-me\"\n"
     )
 
-    cli.main(["install", "multi", "--target", str(t)])
+    install_profile(["install", "multi", "--target", str(t)])
     capsys.readouterr()
 
     after_install = cfg.read_text()
@@ -227,8 +227,8 @@ def test_production_refcount_shared_agent_full_install(env, capsys, prod_rendere
     t = env.target
     shared = t / ".claude/agents/shared.md"
 
-    cli.main(["install", "alpha", "--target", str(t)])
-    cli.main(["install", "beta", "--target", str(t)])
+    install_profile(["install", "alpha", "--target", str(t)])
+    install_profile(["install", "beta", "--target", str(t)])
     capsys.readouterr()
     assert shared.is_file()
     assert "beta body" in shared.read_text()  # beta wrote last

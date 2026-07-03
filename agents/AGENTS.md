@@ -146,11 +146,10 @@ For project architecture (when a project opts in), see the **Sliced Bread** patt
 
 ## Code-Intelligence Routing
 
-Three MCPs cover code intelligence; they layer rather than overlap.
+Two MCPs cover code intelligence; they layer rather than overlap.
 
 - **tilth** — file I/O floor. Default for read/grep/edit; replaces host Grep/Read/Edit/Glob.
 - **serena** — LSP-grounded symbol layer. Use when ground-truth semantics matter (overloads, generics, dispatch, type info). Memory tools and `onboarding` are excluded in `~/.serena/serena_config.yml` — do not try to call them.
-- **code-review-graph** — project-scale graph. Use for blast-radius, "what does this codebase do", and review-scope queries — not for routine search.
 
 Built-in `Read` / `Edit` / `Write` / `Glob` / `Grep` are last-resort: use only when the file is outside the workspace, no MCP server can parse it, or a multi-file regex doesn't fit an MCP equivalent.
 

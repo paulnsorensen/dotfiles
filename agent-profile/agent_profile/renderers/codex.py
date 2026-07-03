@@ -87,12 +87,14 @@ class CodexRenderer:
     name = "codex"
     mcp_default = _CODEX_MCP_DEFAULT
 
-    def render(self, manifest: Manifest, target: Path) -> list[str]:
+    def render(
+        self, manifest: Manifest, target: Path, logical_root: Path | None = None
+    ) -> list[str]:
         out_files: list[str] = []
         target = Path(target)
         self._write_agents(manifest, target, out_files)
         self._write_skills(manifest, target, out_files)
-        self._write_hooks(manifest, target, out_files)
+        self._write_hooks(manifest, target, out_files, logical_root)
         self._write_mcps(manifest, target)
         self._render_native_plugins(manifest)
         self._write_rules(manifest, target, out_files)
@@ -294,7 +296,11 @@ class CodexRenderer:
     # absolute copied path because Codex runs hook commands from the session cwd,
     # not from ~/.codex.
     def _write_hooks(
-        self, manifest: Manifest, target: Path, out_files: list[str]
+        self,
+        manifest: Manifest,
+        target: Path,
+        out_files: list[str],
+        logical_root: Path | None = None,
     ) -> None:
         codex_hooks = base.hooks_for(manifest, "codex")
         if not codex_hooks:
@@ -308,7 +314,18 @@ class CodexRenderer:
         # twice per session — once from each source.
         self._clean_legacy_config_toml_hooks(codex_hooks, target)
 
+        # Hook scripts are written under base_dir (the physical render dir), but
+        # the command Codex executes must reference where the script will be
+        # DEPLOYED. For a live install the two are the same ($HOME). For `ap
+        # compile`, base_dir is an ephemeral tempdir while the deploy root is
+        # the target's resolved root, supplied as logical_root — baking the
+        # tempdir would emit a dangling, non-deterministic command path.
         base_dir = Path(str(target).rstrip("/"))
+        deploy_dir = (
+            Path(str(logical_root).rstrip("/"))
+            if logical_root is not None
+            else base_dir
+        )
         hook_groups: dict[str, list[dict]] = {}
         for item in codex_hooks:
             event = item.get("event")
@@ -344,7 +361,7 @@ class CodexRenderer:
                 base.copy_hook_shared_assets(
                     item, base_dir / ".codex", base_dir, out_files
                 )
-                command = f"bash {shlex.quote(str(abs_script))}"
+                command = f"bash {shlex.quote(str(deploy_dir / rel_script))}"
             elif not command:
                 raise ValueError(
                     f"codex_render: hook event '{event}' has neither 'script' "

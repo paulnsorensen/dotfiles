@@ -169,6 +169,13 @@ if command -v opencode &> /dev/null; then
   alias oc='opencode'
 fi
 
+# Oh My Pi tight profile - isolated agent dir at ~/.omp-tight/agent
+if command -v omp &> /dev/null; then
+  ompt() {
+    PI_CONFIG_DIR=.omp-tight omp "$@"
+  }
+fi
+
 # =============================================================================
 # Rust Replacements (modern coreutils)
 # =============================================================================
@@ -200,10 +207,10 @@ fi
 
 # =============================================================================
 # Agent Skills — `skills/_registry.yaml` (external sources) + the local
-# `skills/` tree are the EDIT surface (skill-edit). Deploy is unified through
-# `ap`: base-sync renders the registry-derived `base`
-# profile — which unions both skill sources — into every harness, fetching
-# external skills via `npx skills add` along the way (curd 7 / D1).
+# `skills/` tree are the EDIT surface (skill-edit). For claude, `dots sync`
+# selects local skills via chezmoi/.chezmoidata/claude.yaml, vendors external
+# sources, and deploys them as chezmoi exact_ dirs (removals propagate).
+# Other harnesses are frozen pending their migration spec.
 # =============================================================================
 alias skill='npx --yes skills'
 alias skill-ls='npx --yes skills list --global'
