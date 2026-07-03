@@ -621,12 +621,15 @@ class ClaudeRenderer:
         install manifest. :meth:`clean` un-merges by removing exactly the
         keys this method added.
 
-        The canonical allow/deny lists are the SSOT root render (mechanism A):
-        ``create_settings.json`` no longer carries a ``permissions`` block, so
-        this method re-asserts the canonical set into root settings.json on
-        every ``dots sync``. It owns only the ``allow`` and ``deny`` subkeys —
-        any other ``permissions.*`` key (``defaultMode`` etc.) is left intact,
-        and the lists are written verbatim from the resolved manifest (already
+        This runs only for isolated launches (gated ``if manifest.isolated``
+        in :meth:`render`). The canonical allow/deny lists are the SSOT root
+        render (mechanism A): ``create_settings.json`` no longer carries a
+        ``permissions`` block. For the live global install, chezmoi's
+        ``modify_settings.json`` owns reasserting the canonical set; this
+        method only reasserts into an isolated profile's settings.json. It
+        owns only the ``allow`` and ``deny`` subkeys — any other
+        ``permissions.*`` key (``defaultMode`` etc.) is left intact, and the
+        lists are written verbatim from the resolved manifest (already
         sorted+deduped by the parser).
 
         ``${VAR}`` / ``~`` in marketplace paths expand against the process
@@ -635,13 +638,8 @@ class ClaudeRenderer:
         ``{"source": {"source": "directory", "path": <expanded>}}`` record;
         github-source marketplaces stay user-managed in the seed.
 
-        No-op when the profile declares none of the three surfaces. When the
-        file does not exist, creates an empty ``{}`` seed first — operator
-        running ``ap install global`` standalone (no chezmoi pass) gets a
-        minimal file rather than a hard error; chezmoi's
-        ``create_settings.json`` won't overwrite it later (``create_``
-        semantics), so the operator is responsible for filling in the rest if
-        they're skipping ``dots sync``."""
+        No-op when the profile declares none of the three surfaces. Creates an
+        empty ``{}`` seed first when the file does not exist."""
         # Rewrite mcp__<server>__* → mcp__plugin_<plugin>_<server>__* for plugins
         # native on claude (their tools are re-namespaced by the native install).
         server_plugins = native_mcp_server_plugins(manifest.native_plugins, "claude")

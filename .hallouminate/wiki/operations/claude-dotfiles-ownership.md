@@ -57,7 +57,7 @@ Destructive changes must be provenance-aware, not wholesale deletes:
 - Use `claude /status` or `claude doctor` to inspect active setting sources and validation errors.[^claude-settings]
 - Use `/hooks`, `/mcp`, and `/plugin list` / plugin UI after destructive changes to confirm runtime state, because deleting declarative settings alone is not documented as equivalent to uninstalling plugins or removing manual MCPs.[^claude-plugins][^claude-mcp]
 
-_Source: Claude dotfiles / OMP isolation research plus Claude+chezmoi destructive-management briesearch · Updated: 2026-07-01 · Supersedes: seeded-once-only descriptions in older wiki rows._
+*Source: Claude dotfiles / OMP isolation research plus Claude+chezmoi destructive-management briesearch · Updated: 2026-07-01 · Supersedes: seeded-once-only descriptions in older wiki rows.*
 
 [^claude-settings]: Claude Code settings docs, retrieved 2026-07-01: <https://docs.anthropic.com/en/docs/claude-code/settings>
 [^claude-memory]: Claude Code memory docs, retrieved 2026-07-01: <https://docs.anthropic.com/en/docs/claude-code/memory>
