@@ -48,19 +48,16 @@ source "$SCRIPT_DIR/lib-linux-bootstrap.sh"
 ########## Registry queries (brew names — distinct from sync.sh's apt names)
 
 # Brew formulae for Linux: bare scalars (default source brew) + maps that are
-# brew-sourced, non-dev, not mac-only, and NOT carrying an apt_install command
-# (those entries opt out of brew on Linux — e.g. tailscale, which uses its own
-# apt source so the install goes through systemd. See packages.yaml).
-# Uses .key (the brew formula name).
+# brew-sourced, non-dev, and not mac-only. Uses .key (the brew formula name).
 get_bootstrap_brew_pkgs() {
-    yq -r '.packages[] | select(kind == "scalar")' "$PACKAGES_FILE" 2>/dev/null
-    yq -r '.packages[] | select(kind == "map") | to_entries[0] | select((.value.source // "brew") == "brew" and (.value.dev // false) == false and (.value.platform // "") != "mac" and (.value.apt_install // null) == null) | .key' "$PACKAGES_FILE" 2>/dev/null
+    yq -r '.packages[] | select(kind == "scalar")' "$PACKAGES_FILE"
+    yq -r '.packages[] | select(kind == "map") | to_entries[0] | select((.value.source // "brew") == "brew" and (.value.dev // false) == false and (.value.platform // "") != "mac") | .key' "$PACKAGES_FILE"
 }
 
 # Homebrew taps (source: tap). Harmless to tap all on Linux even when a tap
 # only provides mac-only formulae (e.g. koekeishiya/formulae → skhd).
 get_bootstrap_taps() {
-    yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "tap") | .key' "$PACKAGES_FILE" 2>/dev/null
+    yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "tap") | .key' "$PACKAGES_FILE"
 }
 
 ########## Bootstrap steps
@@ -159,6 +156,13 @@ main() {
     # yq up front — the registry queries below all need Mike Farah's Go yq,
     # which isn't in Ubuntu's apt. Reuses sync.sh's bootstrap_yq_linux.
     command -v yq &>/dev/null || bootstrap_yq_linux || return 1
+    # bootstrap_yq_linux drops yq in ~/.local/bin, which isn't on a fresh box's
+    # PATH; extend it before any registry query (mirrors bin/linux-install).
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! command -v yq &>/dev/null; then
+        log_error "yq unavailable after bootstrap — registry queries would return empty; aborting."
+        return 1
+    fi
 
     # Homebrew's build toolchain first (sudo prompt lands up front), then brew,
     # rustup, and the derived formula set.

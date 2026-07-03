@@ -67,23 +67,6 @@ YAML
     assert_output_not_contains "pyenv"            # dev-gated
 }
 
-@test "get_bootstrap_brew_pkgs excludes entries with apt_install (opt-out marker)" {
-    # Entries carrying apt_install opt out of the brew bootstrap on Linux —
-    # they install via their own apt source (e.g. tailscale uses Tailscale's
-    # installer for systemd integration). Without this filter, dots bootstrap
-    # would brew-install AND sync surface the custom-source installer for the
-    # same package.
-    cat > "$PACKAGES_FILE" << 'YAML'
-packages:
-  - jq
-  - tailscale: { platform: linux, apt_install: "curl -fsSL https://tailscale.com/install.sh | sh" }
-YAML
-    run get_bootstrap_brew_pkgs
-    assert_success
-    assert_output_contains "jq"
-    assert_output_not_contains "tailscale"
-}
-
 @test "get_bootstrap_taps returns only tap sources" {
     write_test_yaml
     run get_bootstrap_taps
@@ -119,4 +102,52 @@ YAML
     assert_output_not_contains "skhd"        # mac-only (koekeishiya tap)
     assert_output_not_contains "claude-code" # cask, mac-only
     assert_output_not_contains "rtk"         # cargo (git-sourced)
+}
+
+# Stub the toolchain externals and yq so main reaches install_brew_packages and
+# the sync handoff. yq is mocked to emit one formula so `brew install` runs.
+stub_main_env() {
+    export PLATFORM="Linux"
+    printf '#!/bin/bash\necho jq\n' > "$MOCK_BIN/yq"
+    printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/cargo"
+    chmod +x "$MOCK_BIN/yq" "$MOCK_BIN/cargo"
+    # Capture the sync.sh handoff: main runs `bash "$SCRIPT_DIR/sync.sh"`, so a
+    # PATH-shadowing bash records FORCE_PACKAGES and the script it was handed.
+    cat > "$MOCK_BIN/bash" << EOF
+#!/bin/bash
+echo "handoff force=\${FORCE_PACKAGES:-unset} script=\$1" > "$TEST_HOME/handoff.log"
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/bash"
+    # apt/sudo toolchain step is out of scope for these unit tests.
+    bootstrap_brew_deps_linux() { :; }
+    export PATH="$MOCK_BIN:$PATH"
+}
+
+@test "main hands off to sync.sh with FORCE_PACKAGES=true" {
+    write_test_yaml
+    printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/brew"
+    chmod +x "$MOCK_BIN/brew"
+    stub_main_env
+    run main
+    assert_success
+    run cat "$TEST_HOME/handoff.log"
+    assert_output_contains "force=true"
+    assert_output_contains "sync.sh"
+}
+
+@test "main exits non-zero when a brew formula install fails" {
+    write_test_yaml
+    # brew is present (no-ops the install step) but `brew install` fails, so the
+    # FAILED array gains an entry and main must propagate a non-zero exit.
+    cat > "$MOCK_BIN/brew" << 'EOF'
+#!/bin/bash
+case "$1" in install) exit 1;; *) exit 0;; esac
+EOF
+    chmod +x "$MOCK_BIN/brew"
+    stub_main_env
+    run main
+    assert_failure
+    assert_output_contains "finished with failures"
+    assert_output_contains "brew-install"
 }
