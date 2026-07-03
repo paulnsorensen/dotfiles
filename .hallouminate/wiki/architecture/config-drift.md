@@ -265,6 +265,31 @@ is present.
 [^claude-user-scope-render]: agent-profile/agent_profile/renderers/claude.py:488-495,517-538
 [^staged-global-fix]: agent-profile/agent_profile/cli.py:272-307; agent-profile/tests/test_mcp_reconcile.py:test_explicit_target_user_scope_stages_plugin_mcp_without_claude_cli
 
+## Known drift pattern: registry hook-event removal halts the chezmoi settings gate
+
+**Symptom**: `dots sync` fails in the chezmoi leg with `Claude settings.json has
+key-path(s) the repo does not know about` naming hook event keys (e.g.
+`hooks.PermissionRequest`, `hooks.PostToolUse`) right after a commit *removed*
+those hooks from `chezmoi/.chezmoidata/claude.yaml`.
+
+**Why it happens**: `chezmoi/dot_claude/modify_settings.json` composes the
+desired settings.json wholesale and halts on any live key-path absent from the
+desired document. The gate cannot distinguish "Claude Code introduced a new
+key" (fold it in) from "the repo deliberately removed a key" (live is stale) —
+both look like live-only key-paths. Removing a hook *entry* under a surviving
+event key is fine (array indices are dropped from signatures); removing the
+last hook under an event key — or the last hook carrying a field like
+`timeout` — strands that key-path live and bricks every subsequent sync until
+the live file is pruned by hand.
+
+**Fix**: one-time prune of the removed key-paths from `~/.claude/settings.json`
+(e.g. `jq 'del(.hooks.<Event>)'` to a temp file, then move into place), then
+`dots sync` — the wholesale write owns `hooks` from then on. First hit
+2026-07-02 after 1bf2f88/5f78a0f removed the moshi PermissionRequest,
+auto-format PostToolUse, and jmux-attention Stop hooks. The ignore-file
+proposal in [#355](https://github.com/paulnsorensen/dotfiles/issues/355)
+addresses the adjacent app-churned-key case, not this removal case.
+
 ## Gotcha: index drift is its own drift class
 
 The hallouminate wiki index (LanceDB) is derived from the markdown on disk. If
