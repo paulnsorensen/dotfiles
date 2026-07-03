@@ -169,8 +169,19 @@ if command -v opencode &> /dev/null; then
   alias oc='opencode'
 fi
 
-# Oh My Pi tight profile - isolated agent dir at ~/.omp-tight/agent
+# Oh My Pi - isolated native config with managed prompt addendum
 if command -v omp &> /dev/null; then
+  omp() {
+    # Derive the addendum from the active config dir so `ompt` (PI_CONFIG_DIR
+    # =.omp-tight) does not inherit the default prompt (it picks up a tight-profile prompt if one is ever added).
+    local addendum="$HOME/${PI_CONFIG_DIR:-.omp}/agent/APPEND_SYSTEM.md"
+    if [[ -f "$addendum" ]]; then
+      command omp --append-system-prompt "$addendum" "$@"
+    else
+      command omp "$@"
+    fi
+  }
+
   ompt() {
     PI_CONFIG_DIR=.omp-tight omp "$@"
   }

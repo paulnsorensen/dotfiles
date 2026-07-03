@@ -38,22 +38,20 @@ STDIN"
     [ "$(yq '.colorBlindMode' "$OUT")" = "true" ]
     [ "$(yq '.defaultThinkingLevel' "$OUT")" = "auto" ]
     [ "$(yq '.modelRoles.vision' "$OUT")" = "openai-codex/gpt-5.4" ]
-    [ "$(yq '.disabledProviders | length' "$OUT")" = "1" ]
-    [ "$(yq '.disabledProviders | .[0]' "$OUT")" = "claude" ]
+    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md" ]
     # setupVersion is machine state — never authored on a fresh machine.
     [ "$(yq 'has("setupVersion")' "$OUT")" = "false" ]
 }
 
 @test "omp-config: managed-key drift is wiped, setupVersion preserved" {
     # In-app symbolPreset change + a hand-edited (emptied) disabledProviders
-    # list must be driven back to the registry values; setupVersion survives.
+    # list must be driven back to the native-only registry values; setupVersion survives.
     run_modify 'symbolPreset: ascii
 disabledProviders: []
 setupVersion: 1'
     [ "$status" -eq 0 ]
     [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]
-    [ "$(yq '.disabledProviders | length' "$OUT")" = "1" ]
-    [ "$(yq '.disabledProviders | .[0]' "$OUT")" = "claude" ]
+    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }
 
@@ -121,6 +119,16 @@ STDIN"
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
 
+@test "omp-mcp: native user config defines requested MCP servers" {
+    local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
+    jq -e '.mcpServers.hallouminate.command == "hallouminate"' "$cfg"
+    jq -e '.mcpServers.hallouminate.args == ["serve"]' "$cfg"
+    jq -e '.mcpServers.milknado.command == "uvx"' "$cfg"
+    jq -e '.mcpServers.milknado.args == ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]' "$cfg"
+    jq -e '.mcpServers.context7.command == "npx"' "$cfg"
+    jq -e '.mcpServers.context7.args == ["-y", "@upstash/context7-mcp"]' "$cfg"
+    jq -e '.mcpServers.context7.env.CONTEXT7_API_KEY == "${CONTEXT7_API_KEY}"' "$cfg"
+}
 # --- models.yml template↔registry seam -------------------------------------
 # dot_omp/private_agent/models.yml.tmpl authors ~/.omp/agent/models.yml WHOLESALE
 # from the `omp.models` subtree via `{{ .omp.models | toYaml }}`. These lock the
@@ -193,4 +201,40 @@ TOML
     # localLLM on: the not-localLLM ignore block collapses, so the models.yml
     # target is NOT in the ignore list (chezmoi applies it).
     [[ "$output" != *".omp/agent/models.yml"* ]]
+}
+
+# --- .chezmoiignore negation ordering -------------------------------------
+# .chezmoiignore is last-match-wins: the !.omp/agent/APPEND_SYSTEM.md re-include
+# only survives the global *.md ignore because it is positioned AFTER it. A
+# reorder that moves the negation above *.md would silently stop deploying the
+# managed prompt addendum. Pin the ordering.
+@test "omp-ignore: APPEND_SYSTEM.md re-include stays after the *.md ignore" {
+    local ignore="$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+    local md_line neg_line
+    md_line=$(grep -n '^\*\.md$' "$ignore" | head -1 | cut -d: -f1)
+    neg_line=$(grep -n '^!\.omp/agent/APPEND_SYSTEM\.md$' "$ignore" | head -1 | cut -d: -f1)
+    [ -n "$md_line" ]
+    [ -n "$neg_line" ]
+    # Negation must come strictly after the glob ignore (last match wins).
+    [ "$neg_line" -gt "$md_line" ]
+}
+
+# --- omp extension modules are chezmoi-managed -----------------------------
+# rtk.ts and cheese-flair.ts under dot_omp/private_agent/extensions/ deploy to
+# ~/.omp/agent/extensions/ (auto-discovered by omp's extension loader). Nothing
+# in .chezmoiignore may exclude them, or the extensions silently never deploy.
+@test "omp-ext: rtk.ts and cheese-flair.ts are chezmoi-managed" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local cfg="$TEST_HOME/cz-ext.toml"
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+TOML
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" managed
+    [ "$status" -eq 0 ]
+    [[ "$output" == *".omp/agent/extensions/rtk.ts"* ]]
+    [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
+    [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
 }
