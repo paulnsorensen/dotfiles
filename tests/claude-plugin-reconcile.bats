@@ -257,3 +257,40 @@ run_reconcile_installed() {
     grep -qx "widgetmkt" "$MANIFEST"
     grep -qx "milknado" "$MANIFEST"
 }
+
+@test "reconcile: failed marketplace add defers prune/uninstall, returns nonzero, leaves manifest unchanged" {
+    # A transiently failed 'claude plugin marketplace add' (rc=1) must NOT let the
+    # same run remove a retired marketplace or uninstall a retired user-scope
+    # plugin, because the manifest rewrite is skipped on rc!=0 — pruning without
+    # rewriting leaves the CLI and manifest out of sync (PR#378 review).
+    mk_cache milknado milknado >/dev/null
+
+    # Override the mock: 'marketplace add' fails; remove/uninstall still recorded.
+    cat > "$TEST_HOME/fake-bin/claude" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CALLS"
+case "$1 $2 $3" in
+    "plugin marketplace add") exit 1 ;;
+esac
+exit 0
+SH
+    chmod +x "$TEST_HOME/fake-bin/claude"
+
+    mkdir -p "${MANIFEST%/*}"
+    # 'gone' is manifest-owned and no longer desired — the tempting prune target.
+    printf 'gone\nmilknado\n' > "$MANIFEST"
+    jq -n '{version:2, plugins:{
+        "oldplug@gone":     [{scope:"user"}],
+        "milknado@milknado":[{scope:"user"}]
+    }}' > "$INSTALLED"
+
+    run_reconcile_installed "$(jq -nc --argjson a "$(desired_entry milknado)" '[$a]')"
+    # Prime failure propagates as a nonzero return.
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"manifest left unchanged"* ]]
+    # No destructive op ran despite 'gone' being retired + manifest-owned.
+    run grep -q "marketplace remove" "$CALLS"; [ "$status" -ne 0 ]
+    run grep -q "plugin uninstall" "$CALLS"; [ "$status" -ne 0 ]
+    # Manifest byte-for-byte unchanged.
+    diff <(printf 'gone\nmilknado\n') "$MANIFEST"
+}

@@ -46,7 +46,7 @@ claude_plugin_reconcile() {
 
     # No mapfile — must run under macOS /bin/bash 3.2 (chezmoi scripts).
     local -a desired_keys=() owned_names=() owned_ids=() prior_names=()
-    local key root name mp_json _n rc=0 any_missing=false
+    local key root name mp_json _n rc=0 any_missing=0
 
     # Desired keys come from the registry-derived desired_json, INDEPENDENT of
     # cache presence: a transiently missing cache is still a desired plugin and
@@ -64,13 +64,13 @@ claude_plugin_reconcile() {
         mp_json="$root/.claude-plugin/marketplace.json"
         if [[ ! -f "$mp_json" ]]; then
             echo "  WARN: native plugin '$key' cache missing marketplace.json ($mp_json) — still desired; retaining its manifest entry and deferring prune until the cache clones." >&2
-            any_missing=true
+            any_missing=1
             continue
         fi
         name=$(jq -r '.name // empty' "$mp_json")
         if [[ -z "$name" ]]; then
             echo "  WARN: native plugin '$key' marketplace.json has no .name ($mp_json) — cannot resolve its marketplace; deferring prune." >&2
-            any_missing=true
+            any_missing=1
             continue
         fi
         owned_names+=("$name")
@@ -90,10 +90,12 @@ claude_plugin_reconcile() {
     # A missing cache means we cannot resolve that desired plugin's marketplace
     # name this run (it lives in the absent marketplace.json), so we cannot prove
     # which prior-manifest entry it owns. Defer all destructive prune / uninstall
-    # until a run where every desired cache is present; the manifest is retained
-    # (below) so nothing still-desired is dropped.
+    # until a run where every desired cache is present AND the prime is clean
+    # (rc == 0); the manifest is retained (below) so nothing still-desired is
+    # dropped. Gating on rc guards against a transiently failed `marketplace add`
+    # removing a retired marketplace while the manifest rewrite is skipped.
     local m
-    if ! $any_missing; then
+    if (( any_missing == 0 && rc == 0 )); then
         for m in "${prior_names[@]:-}"; do
             [[ -z "$m" ]] && continue
             if ! _in "$m" "${owned_names[@]:-}"; then
@@ -128,7 +130,7 @@ claude_plugin_reconcile() {
         # Uninstall retired user-scope plugins — only on a fully-cached run, for
         # the same reason prune is deferred above (a missing cache hides the
         # ownership mapping).
-        if ! $any_missing; then
+        if (( any_missing == 0 && rc == 0 )); then
             local iid mkt plug
             while IFS= read -r iid; do
                 [[ -z "$iid" ]] && continue
@@ -172,7 +174,7 @@ claude_plugin_reconcile() {
         # manifest names so a still-desired-but-uncloned plugin keeps its record.
         local -a keep=(); local _k
         for _k in "${owned_names[@]:-}"; do [[ -n "$_k" ]] && keep+=("$_k"); done
-        if $any_missing; then
+        if (( any_missing == 1 )); then
             for _k in "${prior_names[@]:-}"; do [[ -n "$_k" ]] && keep+=("$_k"); done
         fi
         if [[ ${#keep[@]} -gt 0 ]]; then
