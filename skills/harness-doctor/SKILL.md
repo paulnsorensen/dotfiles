@@ -155,6 +155,26 @@ the renderers don't auto-heal. For those, propose the precise edit and confirm
 before applying — never hand-roll a jq/toml rewrite of a user-owned file when a
 renderer (or a `dots sync`) does it deterministically.
 
+**Known exception — chezmoi settings gate halts on removed hook keys.** Since
+claude went chezmoi-authoritative, `chezmoi/dot_claude/modify_settings.json`
+halts `dots sync` on any live `settings.json` key-path absent from the desired
+document. When a commit *removes* a hook event key (or the last hook carrying a
+field like `timeout`) from `chezmoi/.chezmoidata/claude.yaml`, the stranded live
+key-path trips that gate and no renderer or sync can clear it — this is the one
+case where a manual live prune IS the heal:
+
+```bash
+jq 'del(.hooks.<RemovedEvent>)' ~/.claude/settings.json > /tmp/s.json \
+  && jq -e 'type=="object"' /tmp/s.json >/dev/null \
+  && mv /tmp/s.json ~/.claude/settings.json
+dots sync   # wholesale write owns hooks from here
+```
+
+Confirm each pruned key-path against the removing commit first (`git log -p --
+chezmoi/.chezmoidata/claude.yaml`) — a live-only key with *no* removal commit is
+app-introduced and must be folded in, not pruned. Details:
+`.hallouminate/wiki/architecture/config-drift.md` § registry hook-event removal.
+
 ### 6. File dotfiles bugs as gh issues (deduped)
 
 For each confirmed **dotfiles bug**, open a GitHub issue — but dedup first:
