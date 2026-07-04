@@ -1,85 +1,11 @@
 #!/bin/bash
 # Configure Rectangle Pro shortcuts to mirror the SizeUp keymap.
-#
-# Reference: https://github.com/rxhanson/Rectangle/blob/main/TerminalCommands.md
-#   Same defaults schema works for Rectangle (com.knollsoft.Rectangle)
-#   and Rectangle Pro (com.knollsoft.Hookshot). This file targets Pro.
-#
-# Modifier integer values (sum to combine):
-#   cmd     = 1048576
-#   option  =  524288
-#   ctrl    =  262144
-#   shift   =  131072
-#
-#   ctrl+opt+cmd   = 1835008
-#   ctrl+opt+shift =  917504
-#   ctrl+opt       =  786432
-#
-# Key codes are macOS virtual key codes (NSEvent keyCode).
-#
-# This script is idempotent — every `defaults write` overwrites cleanly.
+# Logic lives in rectangle/lib.sh; this script stays thin (source + dispatch).
 
 set -euo pipefail
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "rectangle/.sync: skipping (not macOS)" >&2
-    exit 0
-fi
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+# shellcheck source=rectangle/lib.sh
+source "$SCRIPT_DIR/lib.sh"
 
-readonly BUNDLE="com.knollsoft.Hookshot"
-
-if ! [[ -d "/Applications/Rectangle Pro.app" ]]; then
-    echo "rectangle/.sync: Rectangle Pro not installed at /Applications — skipping" >&2
-    echo "                install via: brew install --cask rectangle-pro" >&2
-    exit 0
-fi
-
-CTRL_OPT_CMD=1835008
-CTRL_OPT_SHIFT=917504
-CTRL_OPT=786432
-
-# (command_name, keyCode, modifierFlags)
-shortcuts=(
-    # Halves — SizeUp default (Ctrl+Opt+Cmd + arrows)
-    "leftHalf|123|$CTRL_OPT_CMD"
-    "rightHalf|124|$CTRL_OPT_CMD"
-    "topHalf|126|$CTRL_OPT_CMD"
-    "bottomHalf|125|$CTRL_OPT_CMD"
-
-    # Quarters — SizeUp default (Ctrl+Opt+Shift + arrows)
-    "topLeft|123|$CTRL_OPT_SHIFT"
-    "topRight|126|$CTRL_OPT_SHIFT"
-    "bottomLeft|125|$CTRL_OPT_SHIFT"
-    "bottomRight|124|$CTRL_OPT_SHIFT"
-
-    # Misc — SizeUp default
-    "maximize|46|$CTRL_OPT_CMD"          # M
-    "center|8|$CTRL_OPT_CMD"             # C
-    "restore|44|$CTRL_OPT_CMD"           # /  (SizeUp's SnapBack)
-    "almostMaximize|36|$CTRL_OPT_CMD"    # Return — 90% of screen
-
-    # Thirds — Rectangle convention (Ctrl+Opt + D/F/G)
-    "firstThird|2|$CTRL_OPT"             # D
-    "centerThird|3|$CTRL_OPT"            # F
-    "lastThird|5|$CTRL_OPT"              # G
-
-    # Two-thirds — coding layouts (Ctrl+Opt + E/T)
-    "firstTwoThirds|14|$CTRL_OPT"        # E
-    "lastTwoThirds|17|$CTRL_OPT"         # T
-
-    # Displays — bracket keys avoid colliding with quarter arrows
-    "nextDisplay|30|$CTRL_OPT_CMD"       # ]
-    "previousDisplay|33|$CTRL_OPT_CMD"   # [
-)
-
-for entry in "${shortcuts[@]}"; do
-    IFS='|' read -r cmd keycode mods <<< "$entry"
-    defaults write "$BUNDLE" "$cmd" "{ keyCode = $keycode; modifierFlags = $mods; }"
-done
-
-# Quality-of-life Rectangle Pro defaults
-defaults write "$BUNDLE" subsequentExecutionMode -int 0    # cycle 1/2 → 2/3 → 1/3 on repeat
-defaults write "$BUNDLE" launchOnLogin -bool true
-defaults write "$BUNDLE" hideMenubarIcon -bool false
-
-echo "rectangle/.sync: wrote SizeUp keymap to $BUNDLE — restart Rectangle Pro to load"
+rectangle_sync

@@ -1,26 +1,12 @@
 #!/bin/bash
 # Capture current AltTab preferences into the dotfiles repo for commit.
-#
-# Run this after configuring AltTab the way you want it via the UI.
-# Then `git add alttab/com.lwouis.alt-tab-macos.plist` and commit.
+# Run after configuring AltTab via the UI, then commit the plist.
+# Logic lives in alttab/lib.sh; this script stays thin (source + dispatch).
 
 set -euo pipefail
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "alttab/.export: skipping (not macOS)" >&2
-    exit 0
-fi
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+# shellcheck source=alttab/lib.sh
+source "$SCRIPT_DIR/lib.sh"
 
-readonly SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
-readonly BUNDLE="com.lwouis.alt-tab-macos"
-readonly OUT="$SCRIPT_DIR/${BUNDLE}.plist"
-
-if ! defaults read "$BUNDLE" >/dev/null 2>&1; then
-    echo "alttab/.export: no preferences found for $BUNDLE — is AltTab installed and configured?" >&2
-    exit 1
-fi
-
-defaults export "$BUNDLE" "$OUT"
-echo "alttab/.export: wrote $OUT"
-echo "                review with: plutil -p '$OUT'"
-echo "                commit with: git add '$OUT' && git commit"
+alttab_export

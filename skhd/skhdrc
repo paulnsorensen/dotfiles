@@ -37,7 +37,7 @@ rcmd - z : open -a "zoom.us"
 # ── Productivity ──────────────────────────────────────────────────────────
 rcmd - d : open -a "Todoist"
 rcmd - f : open -a "Finder"
-rcmd - p : open -a "1Password 7"
+rcmd - p : open -a "1Password"
 rcmd - i : open -a "Linear"
 
 # ── Music / system ────────────────────────────────────────────────────────
