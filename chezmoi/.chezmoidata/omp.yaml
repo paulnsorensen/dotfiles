@@ -55,6 +55,11 @@ omp:
       enabled: true
     task:
       eager: default
+    # Consent answer omp recorded live (autoqa prompt) — promoted to survive
+    # the wholesale re-author.
+    dev:
+      autoqa:
+        consent: granted
     # Reasoning goes to the interactive session (default) and the reasoning
     # roles (plan/slow). Delegation/dispatch roles that "just do work" —
     # smol/tiny/task/commit — stay on cheap/no-reasoning models so subagent

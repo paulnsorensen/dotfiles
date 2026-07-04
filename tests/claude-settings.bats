@@ -40,7 +40,7 @@ STDIN"
     [ "$(jq -r '.model' "$OUT")" = "opus" ]
     [ "$(jq -r '.effortLevel' "$OUT")" = "medium" ]
     # Registry-authored keys composed in.
-    jq -e '.enabledPlugins["claude-md-management@claude-plugins-official"]' "$OUT" >/dev/null
+    jq -e '.enabledPlugins | has("plugin-dev@claude-plugins-official")' "$OUT" >/dev/null
     jq -e '.hooks.PreToolUse | length > 0' "$OUT" >/dev/null
     jq -e '.permissions.allow | length > 0' "$OUT" >/dev/null
     jq -e '.permissions.deny | index("Bash(sudo:*)")' "$OUT" >/dev/null
@@ -87,7 +87,7 @@ STDIN"
     # registry values authored in
     [ "$(jq -r '.permissions.defaultMode' "$OUT")" = "auto" ]
     [ "$(jq -r '.model' "$OUT")" = "opus" ]
-    jq -e '.enabledPlugins["claude-md-management@claude-plugins-official"]' "$OUT" >/dev/null
+    jq -e '.enabledPlugins | has("plugin-dev@claude-plugins-official")' "$OUT" >/dev/null
     jq -e '.permissions.deny | length > 0' "$OUT" >/dev/null
 }
 
@@ -280,8 +280,8 @@ run_modify_gated() {
     [ "$(jq -r '.extraKnownMarketplaces["todoist-flow"].source.source' "$OUT")" = "directory" ]
     run jq -r '.extraKnownMarketplaces["todoist-flow"].source.path' "$OUT"
     [[ "$output" == */claude/plugins/local/todoist-flow ]]
-    # claude.yaml base entries survive alongside the overlay.
-    [ "$(jq -r '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT")" = "true" ]
+    # Official plugins are registry-overlaid with load: false (profile-scoped).
+    [ "$(jq -r '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT")" = "false" ]
     # (native marketplaces — milknado, hallouminate — are covered by the native
     # overlay tests below; they warn+skip here since no cache exists in the sandbox.)
 }
@@ -293,8 +293,8 @@ run_modify_gated() {
     [ "$status" -ne 0 ]
     run jq -e '.extraKnownMarketplaces["todoist-flow"]' "$OUT"
     [ "$status" -ne 0 ]
-    # Base official plugins remain.
-    [ "$(jq -r '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT")" = "true" ]
+    # Official plugins remain, disabled (load: false — profile-scoped).
+    [ "$(jq -r '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT")" = "false" ]
 }
 
 # Build a custom CHEZMOI_SOURCE_DIR at $TEST_HOME/root/chezmoi with a sibling
@@ -348,8 +348,9 @@ setup_custom_registry() {
     run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$src' sh '$SCRIPT' </dev/null >'$OUT'"
     [ "$status" -eq 0 ]
     [[ "$output" == *"plugin registry not found"* ]]
-    # Base claude.yaml plugins present; no gated overlay entries.
-    [ "$(jq -r '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT")" = "true" ]
+    # claude.yaml base is empty — no official plugins without the registry.
+    run jq -e '.enabledPlugins["skill-creator@claude-plugins-official"]' "$OUT"
+    [ "$status" -ne 0 ]
     run jq -e '.enabledPlugins["todoist-flow@todoist-flow"]' "$OUT"
     [ "$status" -ne 0 ]
 }

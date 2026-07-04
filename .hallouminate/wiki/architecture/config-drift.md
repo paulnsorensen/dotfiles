@@ -235,6 +235,53 @@ auto-format PostToolUse, and jmux-attention Stop hooks. The ignore-file
 proposal in [#355](https://github.com/paulnsorensen/dotfiles/issues/355)
 addresses the adjacent app-churned-key case, not this removal case.
 
+## Known drift pattern: third-party plugin daemons re-write settings.json after "removal"
+
+**Symptom**: The unknown-key halt names a key you already pruned from live
+`~/.claude/settings.json` (it "comes back"), possibly with a *different value*
+than before — e.g. `agent: "woz:code"` reappearing after `agent: "woz:code-free"`
+was deleted. The plugin behind it shows as disabled or uninstalled.
+
+**Why it happens**: Some marketplace plugins (first hit: `woz@wozcode-marketplace`,
+2026-07-04) run persistent node daemons out of the plugin cache
+(`~/.claude/plugins/cache/<mp>/<plugin>/<ver>/servers/*.js`). Uninstalling the
+plugin or removing its marketplace does NOT kill an already-running daemon, and
+the daemon keeps rewriting its settings keys (`agent`, `attribution.*`,
+`statusLine`) — and can rewrite `enabledPlugins` — between your prune and the
+next `chezmoi apply`. The woz case also hijacked commit/PR `attribution` to
+advertise itself.
+
+**Fix**: `pgrep -af <plugin-cache-path>` → kill the daemons → move the cache
+payload out of `~/.claude/plugins/cache/` → THEN prune the keys and `dots sync`.
+Order matters: prune-first loses the race.
+
+**Detection**: A pruned key that resurrects, or any process whose command line
+points into `~/.claude/plugins/cache/`.
+
+## Gotcha: official plugins are enabled by `claude/plugins/registry.yaml`, not the claude.yaml base
+
+`enabledPlugins` in `chezmoi/.chezmoidata/claude.yaml` is only the BASE layer;
+`claude/plugins/registry.yaml`'s `load:` values overlay it (registry wins).
+Removing a plugin from the base while its registry entry still says `load: true`
+changes nothing — the classic "I cleaned it out but it's still in my sessions"
+trap. As of 2026-07-04 the official plugins (playwright, frontend-design,
+plugin-dev, skill-creator) are `load: false` (installed but globally disabled;
+the `fe` and `plugin` ap profiles enable them per-session), and
+claude-md-management is removed entirely. `load: false` ≠ absent: absent means
+sync.sh uninstalls the payload, which would break the profiles that enable it.
+
+## Gotcha: hallouminate daemon caches corpus config — restart after config.toml changes
+
+The hallouminate **daemon** is the single owner of the LanceDB ground dir and
+the corpus registry; CLI and MCP clients talk to it over a Unix socket. It
+reads `~/.config/hallouminate/config.toml` at startup only. After chezmoi
+deploys a config change (new `[[corpus]]` entries, path edits), a still-running
+daemon silently serves the OLD corpus set — `hallouminate index` reports only
+the stale corpora, with no error. Fix: `hallouminate daemon restart`, then
+re-index. First hit 2026-07-04: four new sibling-wiki `[[corpus]]` entries
+(milknado/easy-cheese/tilth/hallouminate) rendered correctly but were invisible
+until the daemon restarted.
+
 ## Gotcha: index drift is its own drift class
 
 The hallouminate wiki index (LanceDB) is derived from the markdown on disk. If

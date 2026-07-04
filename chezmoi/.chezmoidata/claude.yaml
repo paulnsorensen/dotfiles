@@ -109,12 +109,9 @@ claude:
   # agents/plugins/registry.yaml (native: ∋ claude entries — milknado, hallouminate
   # — keyed by each marketplace.json .name) at apply time. sync.sh does not write
   # settings.json. Native marketplaces are NOT listed here: the overlay owns them.
-  enabledPlugins:
-    claude-md-management@claude-plugins-official: true
-    playwright@claude-plugins-official: true
-    frontend-design@claude-plugins-official: true
-    plugin-dev@claude-plugins-official: true
-    skill-creator@claude-plugins-official: true
+  # Official-marketplace plugins are profile-scoped, not global: fe enables
+  # playwright + frontend-design; plugin enables plugin-dev + skill-creator.
+  enabledPlugins: {}
 
   # Base layer for extraKnownMarketplaces (empty): the gate-filtered
   # claude/plugins/registry.yaml overlay and the native-claude
