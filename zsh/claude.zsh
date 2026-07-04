@@ -24,7 +24,7 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # stale tmux server env can't strip them (a new session inherits the
 # SERVER's environment, not this client's). Then wraps in tmux unless
 # already inside tmux ($TMUX set) or tmux is not installed.
-# ccw sets _CC_IN_SESSION=1 to trigger the inside-tmux switch-client path.
+# Inside tmux, only --new dedicates a session; everything else runs in place.
 _cc_base() {
     # --new (our flag, not claude's): force a brand-new session instead of the
     # default -A reattach. Strip it from the args wherever it lands so it works
@@ -64,8 +64,8 @@ _cc_base() {
         # Outside tmux: create-or-attach (-A attaches if it exists; cmd ignored
         # on attach). With --new the name is unique, so -A always creates.
         tmux new-session -A -s "$session" "${(j: :)${(@q)cmd}}"
-    elif [[ -n "$_CC_IN_SESSION" || -n "$force_new" ]]; then
-        # Inside tmux from ccw, or an explicit --new from a plain session:
+    elif [[ -n "$force_new" ]]; then
+        # Explicit --new from inside tmux:
         # dedicate a session and switch-client (never nests).
         tmux has-session -t "$session" 2>/dev/null \
             || tmux new-session -d -s "$session" "${(j: :)${(@q)cmd}}"
@@ -206,7 +206,8 @@ mcp-add() {
 
 # Launch Claude in an isolated worktree
 #   ccw my-feature          → creates .worktrees/my-feature, branch claude/my-feature
-#                              outside tmux: new-session; inside tmux: new-session + switch-client
+#                              outside tmux: new-session; inside tmux: runs in the
+#                              current pane (pass --new for a dedicated session)
 #   ccw my-feature --resume  → same but resumes last conversation
 #   ccw                     → fzf-pick an existing worktree under ~/Dev to resume
 #   ccw <slug>              → worktree in the current repo
@@ -225,7 +226,7 @@ ccw() {
         picked="$(print -l "$dev"/*/.worktrees/*(N/) "$dev"/*/.worktrees/*/.worktrees/*(N/) 2>/dev/null \
             | fzf --height 40% --reverse --border-label ' worktrees ' --prompt '🧀  ')"
         [[ -z "$picked" ]] && return 0
-        cd "$picked" && _CC_IN_SESSION=1 cc
+        cd "$picked" && cc
         return
     fi
 
@@ -257,7 +258,7 @@ ccw() {
     wt_path="$(echo "$result" | jq -er '.path')" || { echo "ccw: failed to parse worktree path" >&2; return 1; }
     [[ -d "$wt_path" ]] || { echo "ccw: worktree path not found: $wt_path" >&2; return 1; }
 
-    cd "${wt_path}" && _CC_IN_SESSION=1 cc "$@"
+    cd "${wt_path}" && cc "$@"
 }
 
 # Clean worktrees — single-repo (current dir) or full sweep (~/Dev)

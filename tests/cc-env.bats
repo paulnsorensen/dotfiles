@@ -128,7 +128,7 @@ EOF
     command -v zsh &>/dev/null || skip "zsh not installed"
     printf 'FRESH_KEY=hot\n' > "$FIXTURE_DIR/.env"
     _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX _CC_IN_SESSION; source '$CLAUDE_ZSH'; cc"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
     [ "$status" -eq 0 ]
     [ -f "$MOCK_ARGS_FILE" ]
     # The spawned command is the wrapper + claude…
@@ -138,11 +138,11 @@ EOF
     ! grep -qx -- '-e' "$MOCK_ARGS_FILE"
 }
 
-@test "ccw-style launch routes through cc-env-exec with no secret in argv (inside-tmux path)" {
+@test "cc --new routes through cc-env-exec with no secret in argv (inside-tmux dedicated-session path)" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     printf 'FRESH_KEY=hot\n' > "$FIXTURE_DIR/.env"
     _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' TMUX=fake _CC_IN_SESSION=1; source '$CLAUDE_ZSH'; cc"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' TMUX=fake; source '$CLAUDE_ZSH'; cc --new"
     [ "$status" -eq 0 ]
     [ -f "$MOCK_ARGS_FILE" ]
     [[ "$(tail -n 1 "$MOCK_ARGS_FILE")" == "$FIXTURE_DIR/bin/cc-env-exec claude"* ]]
@@ -158,8 +158,8 @@ EOF
 printf '%s\n' "${FRESH_KEY:-unset}" > "$MOCK_ARGS_FILE"
 EOF
     chmod +x "$MOCK_BIN/claude"
-    # TMUX set without _CC_IN_SESSION → the direct-exec else branch.
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' TMUX=fake; unset _CC_IN_SESSION; source '$CLAUDE_ZSH'; cc"
+    # TMUX set without --new → the direct-exec else branch.
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' TMUX=fake; source '$CLAUDE_ZSH'; cc"
     [ "$status" -eq 0 ]
     [ "$(cat "$MOCK_ARGS_FILE")" = "hot" ]
 }
@@ -168,7 +168,7 @@ EOF
     command -v zsh &>/dev/null || skip "zsh not installed"
     # No .env in the fixture dir at all.
     _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX _CC_IN_SESSION; source '$CLAUDE_ZSH'; cc"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
     [ "$status" -eq 0 ]
     [ -f "$MOCK_ARGS_FILE" ]
     grep -qx 'new-session' "$MOCK_ARGS_FILE"
@@ -179,7 +179,7 @@ EOF
     command -v zsh &>/dev/null || skip "zsh not installed"
     rm "$FIXTURE_DIR/bin/cc-env-exec"
     _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX _CC_IN_SESSION; source '$CLAUDE_ZSH'; cc"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
     [ "$status" -eq 0 ]
     [ "$(tail -n 1 "$MOCK_ARGS_FILE")" = "claude" ]
 }
@@ -188,7 +188,7 @@ EOF
     command -v zsh &>/dev/null || skip "zsh not installed"
     printf 'K_ONE=v1\n' > "$FIXTURE_DIR/.env"
     _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX _CC_IN_SESSION; source '$CLAUDE_ZSH'; ccc"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; ccc"
     [ "$status" -eq 0 ]
     [ "$(tail -n 1 "$MOCK_ARGS_FILE")" = "$FIXTURE_DIR/bin/cc-env-exec claude --continue" ]
 }
