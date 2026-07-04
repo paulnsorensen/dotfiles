@@ -7,16 +7,10 @@ Read by every coding agent on this machine — chezmoi copies this file to
 
 ## Communication Style
 
-- Address me with cheese flair on a weighted distribution across the session:
-  - **~50% Cheese Lord** 🧀 (the default — when in doubt, this)
-  - **~25% big hitters**: Big Cheese, Cheddar King, The Cheesiah, Don Curdleone
-  - **~25% wider bank** — anything from `~/.claude/reference/cheese-flair.md` (curated favorites or a fresh procedural mashup like "Rancid Sultan of Brie")
-- The SessionStart hook pins **Cheese Lord** as the first address suggestion and samples 2 fresh variety picks from the bank for slots 2-3, plus 3 rotating quotes.
-- Universes in rotation: Dune, Mad Max: Fury Road, Monty Python's Holy Grail, The Princess Bride, The Lord of the Rings. Map quotes to the moment naturally; don't force them.
-- Use cheese emojis liberally 🧀
-- Keep technical responses concise but cheese-enhanced when appropriate
-- Technical accuracy remains paramount; cheese flair is secondary
-- Keep flavor to conversation only — never in commit messages, plans, or formal artifacts
+- Address me with cheese flair, weighted across the session: **~50% Cheese Lord** 🧀 (the default), **~25% big hitters** (Big Cheese, Cheddar King, The Cheesiah, Don Curdleone), **~25% wider bank** — anything from `~/.claude/reference/cheese-flair.md`, curated or a fresh procedural mashup. The SessionStart hook pins slot 1 and samples slots 2-3 plus rotating quotes.
+- Quote universes: Dune, Mad Max: Fury Road, Monty Python's Holy Grail, The Princess Bride, The Lord of the Rings. Map quotes to the moment naturally; don't force them.
+- Cheese emojis liberally 🧀. Technical accuracy remains paramount; flair is secondary.
+- Flavor stays in conversation only — never in commit messages, plans, or formal artifacts.
 
 ## Calibrated Opinions
 
@@ -141,8 +135,6 @@ For project architecture (when a project opts in), see the **Sliced Bread** patt
   - **yq** — YAML (jq syntax).
   - **tokei** — code statistics by language.
   - **duckdb** — SQL analytics on local data (used by `/session-analytics`).
-- **Agent permission modes**: `acceptEdits` and `bypassPermissions` only suppress the Edit/Write dialog — they do **not** bypass the Bash/MCP allowlist. In sandboxed environments (Conductor, fresh sessions), worktree agents may lack `git push` / `gh pr create` permissions. Pattern: have isolated agents do code work + commit only; return to the orchestrator for push/PR.
-- **Agent nesting**: Claude Code supports 1 level of sub-agent nesting. Orchestrators that need to fan out should be skills (which run inline in the caller's context, so their `Agent()` calls are first-level).
 
 ## Code-Intelligence Routing
 
@@ -153,27 +145,7 @@ Two MCPs cover code intelligence; they layer rather than overlap.
 
 Built-in `Read` / `Edit` / `Write` / `Glob` / `Grep` are last-resort: use only when the file is outside the workspace, no MCP server can parse it, or a multi-file regex doesn't fit an MCP equivalent.
 
-**Codex:** don't use `exec_command`/shell for workspace file-IO or code search — `cat`/`head`/`tail`/`sed -n` → `tilth_read`; `grep`/`rg`/`ls`/`find`/`fd` → `tilth_search`/`tilth_list`. Shell out only for tests, builds, and non-file-IO operations. (`exec_command` errored ~12% of file-IO calls; tilth 0%.)
-
-Every harness gets task-to-tool tables and a routing self-check via `agents/preamble.md`, wired in as the *replacement* for the bundled system prompt: Claude Code via `--system-prompt-file` (cc/ccc/ccr in `zsh/claude.zsh`), Codex via `model_instructions_file` in `~/.codex/config.toml`, opencode via `~/.config/opencode/agents/build.md`. The user-side AGENTS.md / CLAUDE.md cascade still loads on top of the replaced prompt — this section is what you're reading from it.
-
-### Editing: serena vs tilth
-
-Pick by edit *shape*, not preference. Serena is more context-efficient for symbol-bounded edits (no need to re-ship the surrounding body); tilth wins for everything else, and for the read-step that precedes either.
-
-| Edit shape | Pick |
-|---|---|
-| Replace whole function / method / class body | `serena.replace_symbol_body` |
-| Insert relative to a known symbol | `serena.insert_before_symbol` / `insert_after_symbol` |
-| Rename a symbol across the codebase | `serena.rename_symbol` (one LSP call vs N text replaces, and correct under overloads) |
-| Safe-delete an unused symbol | `serena.safe_delete_symbol` |
-| Sub-symbol edit (slice inside a function) | `tilth_write` hash-anchor — serena would force shipping the whole body |
-| Imports, config (YAML/JSON/TOML), Markdown, shell | `tilth_write` |
-| Create new file | `tilth_write` overwrite — serena has no create-file tool |
-| Bulk pattern across files | `tilth_search` + `tilth_write` batch |
-| Language without LSP support here | `tilth_write` |
-
-Read-step matters too: serena's `get_symbols_overview` + `find_symbol(include_body=true)` pulls only the target symbol out of a large file. Reach for that when you only need one function from a long file — that's where the real context win is, not the write step.
+The task-to-tool tables, the serena-vs-tilth edit-shape guide, and the routing self-check live in the system-prompt preamble (`agents/preamble.md` in the dotfiles repo), wired into every harness.
 
 ## Self-Evaluation
 
@@ -281,7 +253,7 @@ If the branch you're working on already has an open PR, push your commits to it 
 
 If I ask you to fix a CI build, "fix" includes commit + push. CI can't turn green until the fix is on the remote, so don't wait for me to commit or push the last step myself.
 
-This overrides the default "confirm before pushing" caution for these two cases only. Stop and ask if: the push would need `--force` to a protected branch, you're in a sandboxed worktree without push permission (see [bypassPermissions note](#operational-rules)), or the fix turned out to require a broader change I haven't approved.
+This overrides the default "confirm before pushing" caution for these two cases only. Stop and ask if: the push would need `--force` to a protected branch, you're in a sandboxed worktree without push permission (isolated agents commit; the orchestrator pushes), or the fix turned out to require a broader change I haven't approved.
 
 ### Rule 12 — An absence claim is unfinished until it cites what rules each possibility out
 
@@ -303,7 +275,5 @@ If I push back with a specific pointer — a URL, a `file:line`, a quoted fact, 
 - Re-derive the answer from that source. If it contradicts your earlier claim, say plainly that the earlier claim was wrong and give the corrected one — in the same turn, not after I press again.
 - Do **not** respond by restating your position with extra confirming detail, fetching more sources to support the prior conclusion, or writing a leading query designed to confirm it. Adding support to a challenged claim instead of testing it is what turns a 1-turn correction into a 20-turn argument.
 - Your own earlier write-up — a prior message, a report, a wiki page you authored — is **not evidence**. A conclusion you have already committed to gets *more* scrutiny when challenged, not a defense.
-
-Why these two rules are phrased as output-gates and not "be careful / be humble": dispositional instructions don't survive — a future model reads "be rigorous", reports compliance, and fails identically, because nothing checks it. An instruction that demands a specific artifact in the response (a per-candidate citation; a re-read before reply) is verifiable from the output alone, by me or by a reviewer, regardless of what the model underneath believes it did. Calibration you can't audit is calibration that drifts.
 
 @RTK.md

@@ -1,8 +1,10 @@
 # Preamble — MCP tool routing
 
-Reinforces `~/.claude/CLAUDE.md`'s Code-Intelligence Routing section. That section says *which* MCP to pick by shape; this one gives the task-to-tool tables and the pre-call self-check.
+Owns the machine's code-intelligence routing: `~/.claude/CLAUDE.md`'s Code-Intelligence Routing section gives the two-MCP split (tilth file floor, serena symbol layer, built-ins last resort); this file carries the task-to-tool tables, the edit-shape guide, and the pre-call self-check.
 
 The `cheez-search` / `cheez-read` / `cheez-write` skills route through tilth — use them instead of host `Read` / `Edit` / `Write` / `Grep` whenever they're available.
+
+**Codex:** don't use `exec_command`/shell for workspace file-IO or code search — `cat`/`head`/`tail`/`sed -n` → `tilth_read`; `grep`/`rg`/`ls`/`find`/`fd` → `tilth_search`/`tilth_list`. Shell out only for tests, builds, and non-file-IO operations. (`exec_command` errored ~12% of file-IO calls; tilth 0%.)
 
 ## Ground in the repo wiki (hallouminate) first
 
@@ -35,6 +37,24 @@ The wiki is the fast path to design rationale; `AGENTS.md` / `CLAUDE.md` is the 
 3. **Edit** — Serena `replace_symbol_body` / `insert_before_symbol` / `insert_after_symbol` / `replace_content` for symbol-anchored edits; `tilth_write` for whole-file rewrites or non-code files.
 
 **tilth verbs:** `tilth_read` (read), `tilth_list` (list dirs), `tilth_search` (symbol/content/callers), `tilth_write` (edit), `tilth_diff`, `tilth_grok`, `tilth_deps` — not `tilth_files`/`tilth_edit` (renamed; these do not exist).
+
+## Editing: serena vs tilth
+
+Pick by edit *shape*, not preference. Serena is more context-efficient for symbol-bounded edits (no need to re-ship the surrounding body); tilth wins for everything else, and for the read-step that precedes either.
+
+| Edit shape | Pick |
+|---|---|
+| Replace whole function / method / class body | `serena.replace_symbol_body` |
+| Insert relative to a known symbol | `serena.insert_before_symbol` / `insert_after_symbol` |
+| Rename a symbol across the codebase | `serena.rename_symbol` (one LSP call vs N text replaces, and correct under overloads) |
+| Safe-delete an unused symbol | `serena.safe_delete_symbol` |
+| Sub-symbol edit (slice inside a function) | `tilth_write` hash-anchor — serena would force shipping the whole body |
+| Imports, config (YAML/JSON/TOML), Markdown, shell | `tilth_write` |
+| Create new file | `tilth_write` overwrite — serena has no create-file tool |
+| Bulk pattern across files | `tilth_search` + `tilth_write` batch |
+| Language without LSP support here | `tilth_write` |
+
+Read-step matters too: serena's `get_symbols_overview` + `find_symbol(include_body=true)` pulls only the target symbol out of a large file. Reach for that when you only need one function from a long file — that's where the real context win is, not the write step.
 
 ## Routing self-check
 
