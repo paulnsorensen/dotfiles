@@ -10,7 +10,6 @@ isolated: true
 system_prompt: CLAUDE.md
 # Per-profile plugin set (ccp settings-merge parity).
 enabled_plugins:
-  "claude-md-management@claude-plugins-official": true
   "plugin-dev@claude-plugins-official": true
   "skill-creator@claude-plugins-official": true
   "playwright@claude-plugins-official": false

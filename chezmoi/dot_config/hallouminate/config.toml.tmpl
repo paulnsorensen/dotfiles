@@ -22,6 +22,21 @@ globs = ["**/*.md"]
 exclude = ["**/.git/**"]
 
 {{ end -}}
+# Sibling-repo wikis, exposed to the cheez-wiki command center (and every other
+# workspace) so cross-repo grounding — roadmaps/, architecture pages — works
+# from one session. Same rules as the cheez-wiki block above: stat-guarded per
+# machine, and flat [[corpus]] (NOT [[repository]]) so these never collide with
+# each repo's own repo-layer config deriving `repo:<name>:wiki`.
+{{ range $repo := list "milknado" "easy-cheese" "tilth" "hallouminate" -}}
+{{ if stat (joinPath $.chezmoi.homeDir "Dev" $repo ".hallouminate" "wiki") -}}
+[[corpus]]
+name = "{{ $repo }}-wiki"
+paths = ["~/Dev/{{ $repo }}/.hallouminate/wiki"]
+globs = ["**/*.md"]
+exclude = ["**/.git/**"]
+
+{{ end -}}
+{{ end -}}
 # Top-level embeddings default for all repos (per-repo config can override).
 # snowflake-arctic-embed-s: 384-dim, English, retrieval-tuned. Full precision
 # (quantized=false) — corpora are small, so keep max quality.
