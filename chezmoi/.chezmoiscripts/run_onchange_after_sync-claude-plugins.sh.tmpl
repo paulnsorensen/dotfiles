@@ -60,14 +60,18 @@ desired_json=$(
             | @tsv' \
         | while IFS="$(printf '\t')" read -r key kind rawpath; do
             [[ -z "$key" ]] && continue
+            # Patterns are parenthesized ("(git)" not "git)") — macOS's stock
+            # /bin/bash (3.2.57) mis-parses an unparenthesized case pattern
+            # inside a $(...) command substitution (its naive paren-counting
+            # sees the pattern's closing ")" as closing the substitution).
             case "$kind" in
-                git) root="$HOME/.cache/ap/plugins/$key" ;;
-                path)
+                (git) root="$HOME/.cache/ap/plugins/$key" ;;
+                (path)
                     # shellcheck disable=SC2088  # literal "~/" expanded below
                     case "$rawpath" in
-                        "~/"*) root="$HOME/${rawpath#"~/"}" ;;
-                        /*)    root="$rawpath" ;;
-                        *)     root="$repo_root/$rawpath" ;;
+                        ("~/"*) root="$HOME/${rawpath#"~/"}" ;;
+                        (/*)    root="$rawpath" ;;
+                        (*)     root="$repo_root/$rawpath" ;;
                     esac
                     ;;
             esac

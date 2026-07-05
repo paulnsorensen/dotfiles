@@ -56,6 +56,12 @@ Drop a templated source under `chezmoi/` using the [source-state attributes](htt
 
 **Inspect/debug:** `chezmoi --source $DOTFILES/chezmoi diff` (what would change) · `data` (rendered namespace) · `execute-template < FILE.tmpl` · `chezmoi doctor`.
 
+### Gotcha: `case` inside `$(…)` breaks macOS `/bin/bash` (3.2.57)
+
+A `run_onchange`/`.chezmoiscripts` shell script (or any repo `.sh`) that nests a `case … esac` **inside a `$(…)` command substitution** must parenthesize every pattern — `(git) … ;;`, not `git) … ;;`. macOS ships GNU bash 3.2.57 (the GPLv2 freeze), whose parser naively counts parens while scanning for the end of `$(…)` and treats the pattern's closing `)` as closing the substitution → `syntax error near unexpected token ';;'` **at parse time** (so it fails even on machines where the code path never executes). Linux/Homebrew bash 5.x parses both forms fine, which is why it survives CI/review and only bites on a real macOS `dots sync`.
+
+Two safe forms: parenthesize the patterns (`(git)`), or define the `case` in a named function and call it via `$(fn)` — the `case` is then not textually inside the substitution. `chezmoi/dot_claude/modify_settings.json` uses the function form deliberately; `run_onchange_after_sync-claude-plugins.sh.tmpl` (added #378) hit the bug and was fixed to the parenthesized form.
+
 ## Shell functions need tests
 
 Every shell function that does real work needs a bats test. `.sync` (and any orchestrator) forks to tested functions instead of nesting untestable logic inline — `.sync` runs on every `dots sync`, so a regression there breaks the whole environment, and inline logic can't be exercised without running the full destructive sync against a real `$HOME`.
