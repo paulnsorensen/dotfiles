@@ -119,15 +119,29 @@ STDIN"
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
 
-@test "omp-mcp: native user config defines requested MCP servers" {
+@test "omp-mcp: native user config keeps only direct MCP servers" {
     local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
-    jq -e '.mcpServers.hallouminate.command == "hallouminate"' "$cfg"
-    jq -e '.mcpServers.hallouminate.args == ["serve"]' "$cfg"
-    jq -e '.mcpServers.milknado.command == "uvx"' "$cfg"
-    jq -e '.mcpServers.milknado.args == ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]' "$cfg"
+    local plugin_registry="$REAL_DOTFILES_DIR/agents/plugins/registry.yaml"
     jq -e '.mcpServers.context7.command == "npx"' "$cfg"
     jq -e '.mcpServers.context7.args == ["-y", "@upstash/context7-mcp"]' "$cfg"
     jq -e '.mcpServers.context7.env.CONTEXT7_API_KEY == "${CONTEXT7_API_KEY}"' "$cfg"
+    jq -e '.mcpServers | has("hallouminate") | not' "$cfg"
+    jq -e '.mcpServers | has("milknado") | not' "$cfg"
+
+    # Plugin-owned MCPs arrive through OMP's native plugin discovery as
+    # plugin:server namespaces. Listing the same server here creates duplicate
+    # bare + plugin-prefixed MCP instances.
+    local duplicates
+    duplicates=$(
+        comm -12 \
+            <(jq -r '.mcpServers | keys[]' "$cfg" | sort) \
+            <(yq -r '.plugins | keys | .[]' "$plugin_registry" | sort)
+    )
+    if [ -n "$duplicates" ]; then
+        echo "dot_omp/private_agent/mcp.json duplicates plugin-owned MCP server(s):"
+        printf '%s\n' "$duplicates"
+        return 1
+    fi
 }
 # --- models.yml template↔registry seam -------------------------------------
 # dot_omp/private_agent/models.yml.tmpl authors ~/.omp/agent/models.yml WHOLESALE

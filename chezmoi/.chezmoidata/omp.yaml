@@ -17,11 +17,14 @@
 # `setupVersion` is machine state, not config: the modify_ script preserves it
 # from the live file and never authors it here.
 #
-# Keep OMP discovery native-only. Each id below is a non-OMP discovery
-# provider that can otherwise import external agent config, MCP servers,
-# commands, skills, hooks, prompts, tools, or settings from another harness.
-# `github` here is the GitHub/Copilot discovery source; it is separate from
-# the OMP `github.enabled` integration flag below.
+# Keep external discovery shut off while leaving OMP-native sources on. Each
+# id below is a non-OMP discovery provider that can import another harness'
+# agent config, MCP servers, commands, skills, hooks, prompts, tools, or
+# settings. Native OMP plugin discovery stays enabled; plugin-owned MCPs
+# therefore must NOT also be listed in dot_omp/private_agent/mcp.json, or OMP
+# exposes both `server` and `plugin:server` namespaces. `github` here is the
+# GitHub/Copilot discovery source; it is separate from the OMP `github.enabled`
+# integration flag below.
 #
 # Gotcha — array settings REPLACE, they don't merge across omp config layers.
 # A project-level .omp/config.yml that sets its own `disabledProviders` list

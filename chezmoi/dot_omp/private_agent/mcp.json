@@ -10,20 +10,6 @@
       "env": {
         "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
       }
-    },
-    "hallouminate": {
-      "command": "hallouminate",
-      "args": [
-        "serve"
-      ]
-    },
-    "milknado": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/paulnsorensen/milknado@main",
-        "milknado-mcp"
-      ]
     }
   }
 }
