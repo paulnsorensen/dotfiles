@@ -85,6 +85,9 @@ packages:
   - cursor: { source: cask, platform: mac }    # Cursor — AI code editor
   - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)
   - obsidian: { source: cask, platform: mac }  # Obsidian — Markdown knowledge base
+  - alt-tab: { source: cask, platform: mac }   # AltTab — window switcher (prefs restored by alttab/.sync)
+  - alfred: { source: cask, platform: mac }    # Alfred — launcher (sync folder wired by alfred/.sync)
+  - rectangle-pro: { source: cask, platform: mac } # Rectangle Pro — window snapping (shortcuts set by rectangle/.sync)
   - rjyo/moshi/moshi-hook: { platform: mac }   # Moshi phone bridge (agents/hooks/registry.yaml); linux uses Moshi's own installer (~/.local/bin)
 
   # Linux-only

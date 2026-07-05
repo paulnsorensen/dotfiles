@@ -1,0 +1,11 @@
+#!/bin/bash
+# Configure Rectangle Pro shortcuts to mirror the SizeUp keymap.
+# Logic lives in rectangle/lib.sh; this script stays thin (source + dispatch).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+# shellcheck source=rectangle/lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+rectangle_sync

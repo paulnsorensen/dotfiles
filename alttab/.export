@@ -1,0 +1,12 @@
+#!/bin/bash
+# Capture current AltTab preferences into the dotfiles repo for commit.
+# Run after configuring AltTab via the UI, then commit the plist.
+# Logic lives in alttab/lib.sh; this script stays thin (source + dispatch).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+# shellcheck source=alttab/lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+alttab_export

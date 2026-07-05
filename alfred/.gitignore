@@ -1,0 +1,8 @@
+# Alfred sync-folder contents are committed so preferences travel with dotfiles.
+#
+# WARNING: workflow folders under Alfred.alfredpreferences/workflows/ can embed
+# API keys, tokens, and other credentials in their info.plist / config files.
+# Scrub any secrets before committing, or keep sensitive workflows out of sync.
+
+# Machine-local preferences (per-machine state, not meant to be shared).
+Alfred.alfredpreferences/preferences/local/

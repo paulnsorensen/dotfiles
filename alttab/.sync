@@ -1,0 +1,11 @@
+#!/bin/bash
+# Restore AltTab preferences from a committed plist (if one is present).
+# Logic lives in alttab/lib.sh; this script stays thin (source + dispatch).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
+# shellcheck source=alttab/lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+alttab_sync
