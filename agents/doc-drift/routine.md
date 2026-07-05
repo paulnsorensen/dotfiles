@@ -8,6 +8,14 @@ config needs updating.
 
 You do **not** edit config, open PRs, bump versions, or merge anything.
 
+## Environment
+
+This routine expects `hallouminate` on PATH, pre-installed by the environment's
+setup script (`agents/doc-drift/setup.sh` — paste it into the routine
+environment's setup-script field). `gh` auth is the environment's native GitHub
+OAuth. If the setup script didn't run, the routine still works — it falls back
+to the manifest's `governs` paths instead of grounding.
+
 ## Steps
 
 1. Ensure the tracking label exists (idempotent):
@@ -32,14 +40,13 @@ You do **not** edit config, open PRs, bump versions, or merge anything.
       If a title contains both the source `id` and the `current` version,
       do not file a duplicate.
 
-   b. **Enrich (best-effort).** The manifest
-      (`agents/doc-drift/sources.yaml`) lists coarse `governs` paths and a
-      `docs` URL per source. If the hallouminate MCP is available, `ground`
-      the committed wiki (`.hallouminate/wiki/`) for that source's config
-      surface to pin the exact page + section a human should check — install
-      the binary and run `hallouminate index` first if it isn't present. If
-      hallouminate is unavailable, fall back to the manifest's `governs` list
-      verbatim.
+   b. **Enrich by grounding the wiki.** The setup script pre-installs
+      `hallouminate`. Index the committed wiki once — `hallouminate index`
+      from the repo root (a fresh clone carries the wiki markdown but no
+      derived index) — then `ground` `.hallouminate/wiki/` for the source's
+      config surface to pin the exact page + section a human should check,
+      sharpening the coarse `governs` paths from the manifest. If hallouminate
+      is unavailable (setup skipped), fall back to `governs` verbatim.
 
    c. **File the issue:**
 
