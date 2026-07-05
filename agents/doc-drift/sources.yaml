@@ -13,8 +13,8 @@
 #   gh_release  → latest release tag of the <owner/repo>
 # governs: coarse pointers only; the routine grounds the wiki to sharpen them.
 #
-# Not watched: cursor (no clean versioned release feed for its docs); tilth,
-# serena, hallouminate, milknado (our own / vendored — we control their bumps).
+# Not watched: cursor (no clean versioned release feed); tilth, hallouminate,
+# milknado (our own projects — we control their version bumps).
 
 sources:
   - id: claude-code
@@ -58,3 +58,19 @@ sources:
     docs: https://www.chezmoi.io/reference/
     governs: [chezmoi/]
     reconciled: "v2.70.5"
+
+
+  - id: serena
+    signal: { type: gh_release, ref: oraios/serena }
+    docs: https://oraios.github.io/serena
+    # gh_release tracks stable; we install the PyPI prerelease (serena-agent,
+    # --prerelease=allow), so a schema change can land a release ahead — fine
+    # for triage, we reconcile on stable.
+    governs: [chezmoi/dot_serena/modify_serena_config.yml, packages/packages.yaml]
+    reconciled: "v1.5.3"
+
+  - id: oh-my-pi
+    signal: { type: gh_release, ref: can1357/oh-my-pi }
+    docs: https://github.com/can1357/oh-my-pi
+    governs: [chezmoi/.chezmoidata/omp.yaml, chezmoi/dot_omp/private_agent/modify_config.yml]
+    reconciled: "v16.3.8"
