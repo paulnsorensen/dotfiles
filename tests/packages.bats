@@ -668,6 +668,18 @@ MOCKRUSTUP
     grep -q "brew upgrade" "$BREW_LOG"
 }
 
+@test "UPGRADE_MODE plain upgrade is formula-scoped (never touches casks/docker)" {
+    # A bare \`brew upgrade\` also upgrades outdated casks, reinstalling a
+    # greedy:false cask like docker-desktop and prompting for sudo. The plain
+    # pass must be --formula only; all cask upgrades route through the
+    # exclusion-aware greedy pass.
+    write_test_yaml
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    grep -q "brew upgrade --formula" "$BREW_LOG"
+    ! grep -qE "^brew upgrade\$" "$BREW_LOG"
+}
+
 @test "UPGRADE_MODE excludes greedy:false casks (docker-desktop) from greedy upgrade" {
     [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
 

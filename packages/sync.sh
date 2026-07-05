@@ -237,7 +237,14 @@ sync_brew() {
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
         log_info "Upgrading brew packages..."
         brew update </dev/null || log_warning "brew update failed"
-        brew upgrade </dev/null || log_warning "brew upgrade failed"
+        # Formulae only. A bare `brew upgrade` also upgrades any genuinely
+        # outdated cask (no exclude flag), so a `greedy: false` cask like
+        # docker-desktop would be reinstalled here — prompting for sudo/admin —
+        # whenever its installed version lags the cask. Route *all* cask
+        # upgrades through upgrade_casks_greedy instead, which honors the
+        # exclusion list. `brew outdated --cask --greedy-auto-updates` is a
+        # superset of the plain outdated set, so nothing is missed.
+        brew upgrade --formula </dev/null || log_warning "brew upgrade failed"
         # Casks flagged `auto_updates true` (e.g. Cursor) are skipped by a plain
         # `brew upgrade`; --greedy-auto-updates version-checks them and reinstalls
         # only on a diff. Excludes `version :latest` casks (no version to compare,
