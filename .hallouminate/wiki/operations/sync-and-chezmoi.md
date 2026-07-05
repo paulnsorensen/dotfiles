@@ -56,8 +56,6 @@ Drop a templated source under `chezmoi/` using the [source-state attributes](htt
 
 **Inspect/debug:** `chezmoi --source $DOTFILES/chezmoi diff` (what would change) · `data` (rendered namespace) · `execute-template < FILE.tmpl` · `chezmoi doctor`.
 
-
-
 ### Gotcha: `case` inside `$(…)` breaks macOS `/bin/bash` (3.2.57)
 
 A `run_onchange`/`.chezmoiscripts` shell script (or any repo `.sh`) that nests a `case … esac` **inside a `$(…)` command substitution** must parenthesize every pattern — `(git) … ;;`, not `git) … ;;`. macOS ships GNU bash 3.2.57 (the GPLv2 freeze), whose parser naively counts parens while scanning for the end of `$(…)` and treats the pattern's closing `)` as closing the substitution → `syntax error near unexpected token ';;'` **at parse time** (so it fails even on machines where the code path never executes). Linux/Homebrew bash 5.x parses both forms fine, which is why it survives CI/review and only bites on a real macOS `dots sync`.
