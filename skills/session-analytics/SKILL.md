@@ -8,6 +8,7 @@ description: >
   behavior across sessions. Do NOT use for debugging current code, reading a
   single transcript, or questions about Claude's capabilities.
 model: sonnet
+effort: medium
 allowed-tools: Bash(duckdb:*), Bash(python3:*), Read
 ---
 

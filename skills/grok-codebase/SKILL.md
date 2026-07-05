@@ -9,6 +9,8 @@ description: >
   code", "walk me through this code", or "quiz me on this repo". Do NOT use for
   single-file scripts, repos under 500 LOC, or editing tasks — understanding only.
 argument-hint: <optional focus area, e.g. "auth flow" or "payments">
+model: sonnet
+effort: medium
 allowed-tools: Read, Write, TodoWrite, Skill, Bash(git:*), Bash(ls:*), Bash(cat:*), Bash(jq:*), Bash(yq:*), Bash(tokei:*), mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__find_implementations, mcp__serena__find_declaration, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__tilth__*, mcp__context7__*
 metadata:
   version: 1.0.0

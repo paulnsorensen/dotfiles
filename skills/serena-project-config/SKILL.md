@@ -1,6 +1,7 @@
 ---
 name: serena-project-config
 model: haiku
+effort: low
 description: >
   Tune per-repo Serena MCP config (.serena/project.yml) when the auto-bootstrap
   isn't enough — monorepos, wrong language detection, heavy generated dirs, or

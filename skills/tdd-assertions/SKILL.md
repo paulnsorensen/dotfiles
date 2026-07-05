@@ -1,6 +1,7 @@
 ---
 name: tdd-assertions
 model: sonnet
+effort: medium
 description: >
   Detect and fix weak test assertions that pass even when code is broken, across
   Rust, Python, TypeScript, Go, and Shell. Use whenever you write or review

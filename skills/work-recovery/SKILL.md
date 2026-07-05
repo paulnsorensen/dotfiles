@@ -1,6 +1,7 @@
 ---
 name: work-recovery
 model: sonnet
+effort: medium
 description: >
   Reconstruct what a past coding-agent session was doing so you can resume it —
   goal, files touched, last verified state, and the next step — by querying the

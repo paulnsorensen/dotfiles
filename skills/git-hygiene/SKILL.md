@@ -1,6 +1,7 @@
 ---
 name: git-hygiene
 model: haiku
+effort: low
 user-invocable: false
 description: >
   Guardrail against git commands that read file contents outside the Read tool —

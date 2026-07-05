@@ -1,6 +1,7 @@
 ---
 name: worktree
 model: haiku
+effort: low
 allowed-tools: Bash(ccw-init:*), Bash(cd:*)
 description: >
   Create or resume an isolated git worktree for a Claude Code task, keeping main

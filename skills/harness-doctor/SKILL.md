@@ -1,6 +1,7 @@
 ---
 name: harness-doctor
 model: sonnet
+effort: medium
 description: >
   Diagnose and self-heal harness-config drift between live files
   (~/.claude, ~/.codex, opencode, Cursor, Copilot) and what `ap` renders from

@@ -23,7 +23,7 @@ agents:
     - Grep
     - Glob
     color: red
-    effort: medium
+    effort: high
     skills:
     - cheez-search
     maxTurns: 50
@@ -44,7 +44,7 @@ agents:
     - Grep
     - Glob
     color: red
-    effort: high
+    effort: low
     skills:
     - cheez-search
     maxTurns: 50
@@ -52,10 +52,10 @@ agents:
   fromage-fort:
     description: PR review comment responder. Triages both inline review threads AND PR-level review body comments using severity tiers (blocker/high/medium/low) — fixes high-severity items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful. Spawnable as a parallel agent for move-my-cheese and cheese-convoy workflows.
     models:
-      claude: opus
+      claude: sonnet
       codex: gpt-5-codex
       cursor: auto
-    effort: low
+    effort: medium
     tools:
     - Read
     - Write
@@ -82,7 +82,7 @@ agents:
     - Grep
     - Glob
     color: red
-    effort: medium
+    effort: high
     skills:
     - cheez-search
     maxTurns: 50
@@ -90,10 +90,10 @@ agents:
   ghostbuster:
     description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with severity-tier scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
     models:
-      claude: opus
+      claude: sonnet
       codex: gpt-5-codex
       cursor: auto
-    effort: low
+    effort: medium
     disallowedTools:
     - Edit
     - NotebookEdit
@@ -108,10 +108,10 @@ agents:
   nih-scanner:
     description: Structural NIH pattern scanner. Uses Serena MCP and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
     models:
-      claude: opus
+      claude: sonnet
       codex: gpt-5-codex
       cursor: auto
-    effort: low
+    effort: medium
     disallowedTools:
     - Edit
     - Write
@@ -131,6 +131,7 @@ agents:
       claude: sonnet
       codex: gpt-5-codex
       cursor: claude-sonnet
+    effort: medium
     tools:
     - Read
     - Bash
@@ -144,9 +145,10 @@ agents:
   roquefort-wrecker:
     description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
     models:
-      claude: haiku
+      claude: sonnet
       codex: gpt-5-mini
       cursor: claude-haiku
+    effort: medium
     tools:
     - Read
     - Write
@@ -162,6 +164,7 @@ agents:
       claude: haiku
       codex: gpt-5-mini
       cursor: claude-haiku
+    effort: low
     tools:
     - Bash
     - Read
@@ -184,6 +187,7 @@ agents:
       claude: haiku
       codex: gpt-5-mini
       cursor: claude-haiku
+    effort: low
     tools:
     - Bash
     - Read
@@ -197,6 +201,7 @@ agents:
       claude: haiku
       codex: gpt-5-mini
       cursor: claude-haiku
+    effort: low
     tools:
     - Bash
     - Read
@@ -226,6 +231,7 @@ agents:
     - Grep
     - Glob
     color: cyan
+    effort: medium
     skills:
     - cheez-search
     - cheez-read
@@ -244,6 +250,7 @@ agents:
     - Grep
     - Glob
     color: blue
+    effort: medium
     skills:
     - briesearch
     - cheez-search
@@ -272,13 +279,14 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/reviewer.md
   coder:
-    # Runs on opus at low effort: the write surface needs judgment but the loop
-    # is bounded. Denies native Edit/Write/Grep/Glob/NotebookEdit — all edits go
-    # through cheez-write (tilth); keeps Read. Denies Agent — a dispatched coder
-    # is a level-1 subagent and cannot fan out.
+    # Runs on sonnet at medium effort: Sonnet 5 matches Opus at low/medium effort
+    # at a fraction of the token cost, and the write surface's loop is bounded.
+    # Denies native Edit/Write/Grep/Glob/NotebookEdit — all edits go through
+    # cheez-write (tilth); keeps Read. Denies Agent — a dispatched coder is a
+    # level-1 subagent and cannot fan out.
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop, editing through the cheez-write (tilth) skill. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through cheez-write (tilth) — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
-      claude: opus
+      claude: sonnet
       codex: gpt-5-codex
       opencode: inherit
     disallowedTools:
@@ -289,7 +297,7 @@ agents:
     - Write
     - NotebookEdit
     color: green
-    effort: low
+    effort: medium
     skills:
     - cook
     - press
@@ -314,7 +322,7 @@ agents:
     # level-1 subagent cannot fan out).
     description: General-purpose catch-all for an open-ended, multi-step task that does not fit a specialist phase agent — mixed research, code reading, and synthesis in one dispatch. The capped stand-in for the built-in general-purpose agent. Prefer a specialist when the task is cleanly one shape — explorer for "where/how/what" code questions, researcher for external/library/web facts, reviewer for checking a diff before it lands, coder for writing or changing code. Use this only as the fallback when no single specialist owns the task. Routes file I/O through the cheez-* (tilth) skills.
     models:
-      claude: inherit
+      claude: sonnet
       codex: gpt-5
       opencode: inherit
     disallowedTools:
@@ -323,6 +331,7 @@ agents:
     - Glob
     - NotebookEdit
     color: yellow
+    effort: medium
     skills:
     - cheez-search
     - cheez-read

@@ -82,6 +82,11 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/tool-reroute.sh"'
             timeout: 5
+      - matcher: "Skill"
+        hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/deep-think-nudge.sh"'
+            timeout: 5
     SessionStart:
       - hooks:
           - type: command
@@ -221,7 +226,6 @@ claude:
     - nih-audit
     - prompt-analytics
     - rennet
-    - self-eval
     - serena-project-config
     - session-analytics
     - settings-clean

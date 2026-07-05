@@ -1,6 +1,7 @@
 ---
 name: rennet
 model: sonnet
+effort: medium
 allowed-tools: Task, Skill, Bash(gh:*), Bash(gh-issue-context:*), mcp__hallouminate__*, mcp__tilth__*
 description: >
   Fan sub-agents over open GitHub issues and triage each into a verdict, grounding

@@ -8,6 +8,7 @@ description: >
   AI-written changes. Do NOT use for correctness or bug review — use /age or
   /code-review.
 model: sonnet
+effort: medium
 allowed-tools: Read, Edit, Grep, Glob, Bash(rg:*), Bash(sg:*)
 ---
 

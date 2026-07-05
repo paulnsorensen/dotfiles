@@ -130,6 +130,24 @@ hooks:
     timeout: 5
     description: Rewrite wrong-tool Bash/Grep/Glob calls to tilth/wt-git; delegate the rest to rtk
 
+  # ─── Deep-think nudge ───────────────────────────────────────────────
+  # When a reasoning-heavy skill (briesearch/culture/spec/mold) is invoked at an
+  # effort BELOW `high`, inject an additionalContext nudge to checkpoint
+  # (/wheypoint) and relaunch on opus/xhigh for deeper synthesis. Hooks cannot
+  # change model/effort mid-session (model is read once at session start; effort
+  # only via /effort), so a nudge is the ceiling of what is buildable. Self-
+  # contained bash + jq — no shared_assets. claude-only: effort.level and
+  # hookSpecificOutput.additionalContext are Claude hook surfaces; the matcher
+  # is the Skill tool, whose tool_input the script inspects for the skill name.
+  # Fail-silent: any missing input or unknowable effort exits 0 with no output.
+  deep-think-nudge:
+    event: PreToolUse
+    script: agents/hooks/deep-think-nudge.sh
+    harnesses: [claude]
+    matcher: "Skill"
+    timeout: 5
+    description: Nudge a checkpoint-and-relaunch on opus/xhigh for deep-synthesis skills at effort below high
+
   # ─── Moshi (rjyo/moshi-hook) ────────────────────────────────────────
   # Bridge between Claude Code and the Moshi iOS terminal app — sends
   # session-start, prompt, turn-end, and approval events to the phone
