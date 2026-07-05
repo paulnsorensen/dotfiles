@@ -105,5 +105,4 @@ Global **claude** config is chezmoi-authoritative: the claude registry `chezmoi/
 - `zsh/` files source in `zshrc` order — a new file needs a `zshrc` source line at the right point (completions must load before `fzf.zsh`).
 - Reference docs go in `reference/` (gitignored, not synced).
 - `git commit --no-verify` only for rare temporary prek overrides (see `prek.toml`).
-
-@RTK.md
+- Prefix shell commands with `rtk` (token-filtering proxy; a hook auto-rewrites them anyway). Full reference: `~/.claude/RTK.md` or `rtk --help`.
