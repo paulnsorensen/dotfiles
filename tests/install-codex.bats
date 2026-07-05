@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1090,SC2034,SC2317
-# Tests for chezmoi/lib/install-codex.sh — first-time-only scaffold of
-# ~/.codex/config.toml. Once the user's config exists, the installer leaves
-# it alone so `codex mcp add` (and any user edits) survive subsequent syncs.
+# shellcheck disable=SC1090,SC2030,SC2031,SC2034,SC2317
+# Tests for chezmoi/lib/install-codex.sh — first-time scaffold plus
+# non-destructive default backfill for older user-owned ~/.codex/config.toml
+# files.
 
 load test_helper
 
@@ -37,11 +37,14 @@ teardown() { teardown_test_env; }
     run bash "$INSTALLER" "$SRC_DIR"
     assert_success
     assert_output_contains "Scaffolded"
-    assert_file_exists "$CODEX_HOME/config.toml"
-    grep -q 'model = "gpt-5"' "$CODEX_HOME/config.toml"
+    [[ "$(yq -p=toml '.model' "$CODEX_HOME/config.toml")" == "gpt-5" ]]
+    [[ "$(yq -p=toml '.approval_policy' "$CODEX_HOME/config.toml")" == "on-request" ]]
+    [[ "$(yq -p=toml '.sandbox_mode' "$CODEX_HOME/config.toml")" == "workspace-write" ]]
+    [[ "$(yq -p=toml '.sandbox_workspace_write.network_access' "$CODEX_HOME/config.toml")" == "true" ]]
+    [[ "$(yq -p=toml '.tui.input_mode' "$CODEX_HOME/config.toml")" == "vim" ]]
 }
 
-@test "install-codex.sh preserves an existing user-owned config.toml" {
+@test "install-codex.sh backfills defaults without clobbering existing user config" {
     export CODEX_HOME="$TEST_HOME/.codex"
     mkdir -p "$CODEX_HOME"
     cat > "$CODEX_HOME/config.toml" <<'USER'
@@ -50,14 +53,15 @@ model = "gpt-codex-user"
 [mcp_servers.custom]
 command = "my-tool"
 USER
-    local before; before=$(shasum -a 256 "$CODEX_HOME/config.toml" | awk '{print $1}')
     run bash "$INSTALLER" "$SRC_DIR"
     assert_success
-    assert_output_contains "Skipped"
-    local after; after=$(shasum -a 256 "$CODEX_HOME/config.toml" | awk '{print $1}')
-    [[ "$before" == "$after" ]]
-    grep -q 'gpt-codex-user' "$CODEX_HOME/config.toml"
-    grep -q 'my-tool'        "$CODEX_HOME/config.toml"
+    assert_output_contains "backfilled missing defaults"
+    [[ "$(yq -p=toml '.model' "$CODEX_HOME/config.toml")" == "gpt-codex-user" ]]
+    [[ "$(yq -p=toml '.mcp_servers.custom.command' "$CODEX_HOME/config.toml")" == "my-tool" ]]
+    [[ "$(yq -p=toml '.approval_policy' "$CODEX_HOME/config.toml")" == "on-request" ]]
+    [[ "$(yq -p=toml '.sandbox_mode' "$CODEX_HOME/config.toml")" == "workspace-write" ]]
+    [[ "$(yq -p=toml '.sandbox_workspace_write.network_access' "$CODEX_HOME/config.toml")" == "true" ]]
+    [[ "$(yq -p=toml '.tui.input_mode' "$CODEX_HOME/config.toml")" == "vim" ]]
 }
 
 @test "install-codex.sh honors CODEX_HOME override" {
