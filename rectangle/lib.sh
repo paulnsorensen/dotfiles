@@ -58,6 +58,10 @@ rectangle_write_shortcuts() {
     defaults write "$bundle" subsequentExecutionMode -int 0  # cycle 1/2 -> 2/3 -> 1/3 on repeat
     defaults write "$bundle" launchOnLogin -bool true
     defaults write "$bundle" hideMenubarIcon -bool false
+
+    # Flush the prefs cache so a running Rectangle Pro doesn't overwrite these
+    # external writes with its in-memory copy when it next quits.
+    killall cfprefsd 2>/dev/null || true
 }
 
 rectangle_sync() {

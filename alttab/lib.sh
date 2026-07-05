@@ -33,9 +33,12 @@ alttab_sync() {
         return 0
     fi
 
-    defaults import "$ALTTAB_BUNDLE" "$ALTTAB_PLIST"
-    echo "alttab/.sync: imported preferences from $(basename "$ALTTAB_PLIST") - restart AltTab to load"
     echo "                note: sync overwrites UI changes - run alttab/.export first to keep them"
+    defaults import "$ALTTAB_BUNDLE" "$ALTTAB_PLIST"
+    # Flush the prefs cache so a running AltTab doesn't overwrite this import
+    # with its in-memory copy when it next quits.
+    killall cfprefsd 2>/dev/null || true
+    echo "alttab/.sync: imported preferences from $(basename "$ALTTAB_PLIST") - restart AltTab to load"
 }
 
 alttab_export() {

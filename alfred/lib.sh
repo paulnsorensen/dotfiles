@@ -15,10 +15,18 @@
 # The key name is unverified off-macOS: some notes reference `.current`, but
 # Alfred may store it under `.syncfolder`. Read both and prefer whichever is
 # non-null so the caller's equality check works regardless of which key Alfred
-# actually uses. Returns empty when jq is missing or neither key is present.
+# actually uses. Returns empty when neither key is present. When jq is missing,
+# emits a one-time stderr warning and returns 2 so the caller skips the check
+# explicitly rather than mistaking it for "points elsewhere".
 alfred_current_sync_folder() {
     local prefs="$1"
-    command -v jq >/dev/null 2>&1 || return 0
+    if ! command -v jq >/dev/null 2>&1; then
+        if [[ -z "${_ALFRED_JQ_WARNED:-}" ]]; then
+            echo "alfred/.sync: jq not found - required to read Alfred's sync-folder setting; skipping check" >&2
+            _ALFRED_JQ_WARNED=1
+        fi
+        return 2
+    fi
     jq -r '.current // .syncfolder // empty' "$prefs" 2>/dev/null || true
 }
 
@@ -36,8 +44,12 @@ alfred_sync() {
         return 0
     fi
 
-    local current_folder
-    current_folder="$(alfred_current_sync_folder "$ALFRED_PREFS_JSON")"
+    local current_folder rc=0
+    current_folder="$(alfred_current_sync_folder "$ALFRED_PREFS_JSON")" || rc=$?
+    if [[ $rc -eq 2 ]]; then
+        echo "alfred/.sync: skipping sync-folder check - jq required but not installed" >&2
+        return 0
+    fi
 
     if [[ "$current_folder" == "$ALFRED_DIR" ]]; then
         echo "alfred/.sync: sync folder already points at $ALFRED_DIR"

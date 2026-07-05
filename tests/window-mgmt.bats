@@ -2,6 +2,9 @@
 # Tests for the window-management sync libs: rectangle/lib.sh, alfred/lib.sh,
 # alttab/lib.sh. Externals (defaults, uname) are mocked via $PATH stubs.
 
+# Libs are sourced by variable path, so shellcheck can't follow them (SC1090);
+# ALTTAB_DIR is set inside the sourced lib, not this file (SC2153).
+# shellcheck disable=SC1090,SC2153
 load test_helper
 
 RECT_LIB="$REAL_DOTFILES_DIR/rectangle/lib.sh"
@@ -16,6 +19,7 @@ setup() {
     : > "$DEFAULTS_LOG"
     write_mock_uname "Darwin"
     write_mock_defaults
+    write_mock_killall
     export PATH="$MOCK_BIN:$PATH"
 }
 
@@ -36,6 +40,15 @@ case "$1" in
 esac
 MOCK
     chmod +x "$MOCK_BIN/defaults"
+}
+
+write_mock_killall() {
+    cat > "$MOCK_BIN/killall" << 'MOCK'
+#!/bin/bash
+echo "killall $*" >> "$DEFAULTS_LOG"
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/killall"
 }
 
 # ── rectangle/lib.sh ────────────────────────────────────────────────────────
@@ -122,6 +135,16 @@ MOCK
     [ -z "$output" ]
 }
 
+@test "alfred_current_sync_folder: warns and skips (rc 2) when jq is absent" {
+    source "$ALFRED_LIB"
+    prefs="$TEST_HOME/prefs.json"
+    printf '{"current":"/path/to/dots/alfred"}\n' > "$prefs"
+    # PATH holds only the mock bin (uname/defaults/killall), so jq is not found.
+    PATH="$MOCK_BIN" run alfred_current_sync_folder "$prefs"
+    [ "$status" -eq 2 ]
+    assert_output_contains "jq not found"
+}
+
 @test "alfred_sync: reports success when sync folder already points at the dotfiles dir" {
     source "$ALFRED_LIB"
     export ALFRED_APP="$TEST_HOME/Alfred.app"; mkdir -p "$ALFRED_APP"
@@ -131,6 +154,18 @@ MOCK
     run alfred_sync
     assert_success
     assert_output_contains "sync folder already points at $ALFRED_DIR"
+}
+
+@test "alfred_sync: notes missing Alfred.alfredpreferences package when folder points here" {
+    source "$ALFRED_LIB"
+    export ALFRED_APP="$TEST_HOME/Alfred.app"; mkdir -p "$ALFRED_APP"
+    export ALFRED_DIR="$TEST_HOME/dots/alfred"; mkdir -p "$ALFRED_DIR"
+    export ALFRED_PREFS_JSON="$TEST_HOME/prefs.json"
+    printf '{"current":"%s"}\n' "$ALFRED_DIR" > "$ALFRED_PREFS_JSON"
+    run alfred_sync
+    assert_success
+    assert_output_contains "sync folder already points at $ALFRED_DIR"
+    assert_output_contains "no Alfred.alfredpreferences package in this dir yet"
 }
 
 @test "alfred_sync: emits one-time setup guidance when sync folder points elsewhere" {

@@ -1,6 +1,8 @@
 #!/bin/bash
 # Confirm Alfred's sync folder points at this dotfiles directory.
 # Logic lives in alfred/lib.sh; this script stays thin (source + dispatch).
+# SECRETS: Alfred workflows can embed API keys/tokens in their config -
+# scrub secrets before committing the sync folder (see alfred/.gitignore).
 
 set -euo pipefail
 
