@@ -7,6 +7,8 @@
 
 : "${ALFRED_DIR:=$(cd "${BASH_SOURCE[0]%/*}" && pwd)}"
 : "${ALFRED_PREFS_JSON:=$HOME/Library/Application Support/Alfred/prefs.json}"
+: "${ALFRED_APP:=/Applications/Alfred.app}"
+: "${ALFRED_APP_5:=/Applications/Alfred 5.app}"
 
 # Echo the configured sync-folder path from Alfred's prefs.json.
 #
@@ -25,7 +27,7 @@ alfred_sync() {
         echo "alfred/.sync: skipping (not macOS)" >&2
         return 0
     fi
-    if ! [[ -d "/Applications/Alfred.app" || -d "/Applications/Alfred 5.app" ]]; then
+    if ! [[ -d "$ALFRED_APP" || -d "$ALFRED_APP_5" ]]; then
         echo "alfred/.sync: Alfred not installed - install via: brew install --cask alfred" >&2
         return 0
     fi

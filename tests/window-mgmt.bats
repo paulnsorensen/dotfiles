@@ -122,6 +122,30 @@ MOCK
     [ -z "$output" ]
 }
 
+@test "alfred_sync: reports success when sync folder already points at the dotfiles dir" {
+    source "$ALFRED_LIB"
+    export ALFRED_APP="$TEST_HOME/Alfred.app"; mkdir -p "$ALFRED_APP"
+    export ALFRED_DIR="$TEST_HOME/dots/alfred"; mkdir -p "$ALFRED_DIR/Alfred.alfredpreferences"
+    export ALFRED_PREFS_JSON="$TEST_HOME/prefs.json"
+    printf '{"current":"%s"}\n' "$ALFRED_DIR" > "$ALFRED_PREFS_JSON"
+    run alfred_sync
+    assert_success
+    assert_output_contains "sync folder already points at $ALFRED_DIR"
+}
+
+@test "alfred_sync: emits one-time setup guidance when sync folder points elsewhere" {
+    source "$ALFRED_LIB"
+    export ALFRED_APP="$TEST_HOME/Alfred.app"; mkdir -p "$ALFRED_APP"
+    export ALFRED_DIR="$TEST_HOME/dots/alfred"; mkdir -p "$ALFRED_DIR"
+    export ALFRED_PREFS_JSON="$TEST_HOME/prefs.json"
+    printf '{"current":"/somewhere/else"}\n' > "$ALFRED_PREFS_JSON"
+    run alfred_sync
+    assert_success
+    assert_output_contains "is not pointing at this dotfiles dir"
+    assert_output_contains "current: /somewhere/else"
+    assert_output_contains "pick: $ALFRED_DIR"
+}
+
 # ── alttab/lib.sh ────────────────────────────────────────────────────────────
 
 @test "alttab/lib.sh: derives bundle and plist path once for both entry points" {
@@ -155,4 +179,16 @@ MOCK
     run alttab_sync
     assert_success
     assert_output_contains "skipping (not macOS)"
+}
+
+@test "alttab_sync: imports the plist and prints the overwrite reminder when configured" {
+    source "$ALTTAB_LIB"
+    export ALTTAB_APP="$TEST_HOME/AltTab.app"; mkdir -p "$ALTTAB_APP"
+    export ALTTAB_PLIST="$TEST_HOME/at.plist"; printf 'plist\n' > "$ALTTAB_PLIST"
+    run alttab_sync
+    assert_success
+    assert_output_contains "imported preferences from at.plist"
+    assert_output_contains "sync overwrites UI changes - run alttab/.export first to keep them"
+    run cat "$DEFAULTS_LOG"
+    assert_output_contains "import com.lwouis.alt-tab-macos $TEST_HOME/at.plist"
 }

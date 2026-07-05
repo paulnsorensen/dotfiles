@@ -10,13 +10,14 @@
 : "${ALTTAB_DIR:=$(cd "${BASH_SOURCE[0]%/*}" && pwd)}"
 : "${ALTTAB_BUNDLE:=com.lwouis.alt-tab-macos}"
 : "${ALTTAB_PLIST:=$ALTTAB_DIR/${ALTTAB_BUNDLE}.plist}"
+: "${ALTTAB_APP:=/Applications/AltTab.app}"
 
 alttab_sync() {
     if [[ "$(uname -s)" != "Darwin" ]]; then
         echo "alttab/.sync: skipping (not macOS)" >&2
         return 0
     fi
-    if ! [[ -d "/Applications/AltTab.app" ]]; then
+    if ! [[ -d "$ALTTAB_APP" ]]; then
         echo "alttab/.sync: AltTab not installed - install via: brew install --cask alt-tab" >&2
         return 0
     fi
@@ -34,6 +35,7 @@ alttab_sync() {
 
     defaults import "$ALTTAB_BUNDLE" "$ALTTAB_PLIST"
     echo "alttab/.sync: imported preferences from $(basename "$ALTTAB_PLIST") - restart AltTab to load"
+    echo "                note: sync overwrites UI changes - run alttab/.export first to keep them"
 }
 
 alttab_export() {
