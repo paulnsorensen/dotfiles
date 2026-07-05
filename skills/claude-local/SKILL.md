@@ -3,20 +3,13 @@ name: claude-local
 model: sonnet
 allowed-tools: Read, Write, Edit, Bash(git:*), Bash(grep:*), Bash(test:*), Bash(touch:*), Bash(mkdir:*), Bash(printf:*), Glob
 description: >
-  Distill the user's global ~/.claude/CLAUDE.md into a project-scoped
-  CLAUDE.local.md (gitignored) for repos they're contributing to but
-  don't own. Detects the project's languages and build system, keeps
-  only the relevant subset of global preferences (coding principles,
-  complexity budget, skill delegation table, self-eval checklist,
-  language-gated style notes), drops the personal-flair sections and
-  architectural opinions that shouldn't bleed into a contributed repo.
-  Ensures CLAUDE.local.md is covered by the user's GLOBAL gitignore —
-  never the project's .gitignore — so the contribution stays clean. Use
-  when the user says "set up CLAUDE.local", "scaffold local claude
-  config", "drop my preferences in this repo", "I'm contributing to
-  this repo and want my preferences applied", "claude-local.md", or
-  invokes /claude-local. Also use proactively when the user opens a
-  shell in an unfamiliar repo and says they want to start contributing.
+  Distill the user's global ~/.claude/CLAUDE.md into a gitignored
+  CLAUDE.local.md for repos they contribute to but don't own — keeping only
+  repo-relevant instructions and dropping personal flair. Use when the user
+  says "set up CLAUDE.local", "scaffold local claude config", "drop my
+  preferences in this repo", "I'm contributing and want my preferences
+  applied", "claude-local.md", or invokes /claude-local. Also use proactively
+  when they open an unfamiliar repo and want to start contributing.
 ---
 
 # claude-local
@@ -141,12 +134,10 @@ judgment to bring.
   almost certainly has users.
 - **Workflow / Cheddar Flow** beyond a brief reference. The full skill
   catalog is in the global file; the local overlay just needs to remind
-  Claude that `/age`, `/cure`, `/respond`, `/diff`, `/de-slop`, and
-  `/tdd-assertions` exist and are preferred. Skip `/fromage` and
-  `/fromagerie` unless the project is large enough to warrant them
-  (>10k LOC, multi-domain) — for typical contributions a single PR
-  cycle is the right granularity.
-- **Troubleshooting one-liners** (`/go`, `/agents`, `/lsp`) — meta-tool
+  Claude that `/age`, `/cure`, `/respond`, `/de-slop`, and
+  `/tdd-assertions` exist and are preferred. For autonomous flows on
+  large changes, `/ultracook` chains cook → press → age → cure.
+- **Troubleshooting one-liners** (`/go`, `/lsp`) — meta-tool
   state, irrelevant to any project.
 - **RTK** — the rtk proxy is a personal tooling layer; it's auto-applied
   by hooks regardless and doesn't need to be repeated in a project file.
@@ -193,7 +184,7 @@ language-specific tooling only when applicable>
 
 ## Workflow shortcuts
 
-<brief reference: /age, /cure, /respond, /diff, /de-slop, /tdd-assertions —
+<brief reference: /age, /cure, /respond, /de-slop, /tdd-assertions —
 no full descriptions; these are reminders for Claude>
 
 ## Build system

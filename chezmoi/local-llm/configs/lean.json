@@ -1,0 +1,8 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "hallouminate": { "enabled": false },
+    "tavily": { "enabled": false }
+  },
+  "model": "local-llm/local-coder"
+}

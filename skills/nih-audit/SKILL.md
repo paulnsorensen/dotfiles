@@ -4,22 +4,15 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Agent, LSP
+allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Agent, mcp__serena__*
 description: >
-  Scan a codebase for custom code that duplicates what open-source libraries
-  already do, then recommend which libraries to adopt. Detects hand-rolled
-  utility functions, custom retry logic, manual validation, DIY date handling,
-  home-grown argument parsers, and other reinvented wheels. Cross-checks against
-  installed dependencies and open specs. Returns scored migration recommendations
-  with effort estimates. Use this skill when the user mentions reinventing the
-  wheel, asks if there's a library for something they built, wants a build vs buy
-  audit, says "what are we maintaining that we shouldn't be", asks about library
-  alternatives for custom code, wonders if their utils/ folder has redundant
-  implementations, or wants to find dependency opportunities. Also use when the
-  user asks to compare their custom implementation against existing packages, or
-  says things like "should we just use lodash for this" or "is there a crate
-  that does what our helper does". Do NOT use for security vulnerability scanning
-  (/audit), code quality review (/age), or dead code removal (/simplifier).
+  Scan for custom code that duplicates well-supported libraries, then recommend
+  migrations with effort estimates. Detects hand-rolled utilities, retry logic,
+  validation, date handling, and DIY parsers. Use when the user mentions
+  reinventing the wheel, asks "is there a library/crate for this", wants a build
+  vs buy audit, says "what are we maintaining that we shouldn't be", or "should
+  we just use lodash for this". Do NOT use for code-quality review (/age) or
+  dead-code removal (/simplify or /ghostbuster).
 ---
 
 # /nih-audit — Not Invented Here Audit
@@ -251,7 +244,7 @@ For each candidate with a library recommendation, apply the full 4-step chain:
 
 | Evidence | Modifier |
 |----------|----------|
-| LSP-verified usage count (exact caller list) | +15 |
+| Serena-verified usage count (exact caller list) | +15 |
 | Library has >10K weekly downloads + MIT/Apache | +20 |
 | ast-grep pattern match + code read confirms NIH | +15 |
 | NIH code has recent bug fixes (git blame) | +10 |
@@ -384,7 +377,7 @@ recommendation above threshold):
 ## Gotchas
 
 - **ast-grep patterns are approximate**: A `clearTimeout` + `setTimeout` combo isn't always a debounce. The orchestrator's scoring step (Phase 4) catches generic matches via the -15 modifier.
-- **LSP cold start**: First scan in a session may miss results due to LSP warmup. The nih-scanner has a warmup protocol, but note failures.
+- **Serena cold start**: First scan in a session may miss results if the Serena MCP hasn't indexed the project yet. The nih-scanner has an availability check, but note failures.
 - **Stdlib alternatives are the highest value**: `crypto.randomUUID()` replacing a hand-rolled UUID is a no-brainer (no new dep). Always score these highest.
 - **"Already installed" is the most common false positive**: A codebase that has lodash installed but hand-rolls `deepClone` might have done so intentionally (bundle size). The spec/comment check catches this.
 - **Monorepo dep scoping**: A function in `packages/api/` might be NIH in that workspace but the library is installed in `packages/web/`. Each workspace's depManifest is independent.

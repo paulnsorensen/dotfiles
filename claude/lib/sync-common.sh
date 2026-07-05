@@ -17,11 +17,13 @@ sync_parse_args() {
     for arg in "$@"; do
         case $arg in
             --dry-run) DRY_RUN=true ;;
-            --force) FORCE=true ;;
+            --force)   FORCE=true ;;
             --help|-h)
-                echo "Usage: $0 [--dry-run] [--force]"
-                echo "  --dry-run  Show what would change without making changes"
-                echo "  --force    Remove extras without prompting"
+                cat <<'USAGE'
+Usage: $0 [--dry-run] [--force]
+  --dry-run  Show what would change without making changes
+  --force    Remove extras without prompting
+USAGE
                 exit 0
                 ;;
         esac
@@ -37,25 +39,27 @@ sync_check_deps() {
     done
 }
 
+# Count non-empty lines in a string (idempotent on empty input).
+_count_nonempty() {
+    [[ -z "$1" ]] && { echo 0; return; }
+    grep -c . <<<"$1" 2>/dev/null || echo 0
+}
+
 sync_compute_diff() {
-    local desired_file current_file
-    desired_file=$(mktemp "${TMPDIR:-.}/sync-desired.XXXXXX")
-    current_file=$(mktemp "${TMPDIR:-.}/sync-current.XXXXXX")
+    # Callers must pre-sort DESIRED_NAMES and CURRENT_NAMES so `comm` is
+    # happy. Process substitution avoids the mktemp + rm dance.
+    local desired current
+    desired=$(grep -v '^$' <<<"$DESIRED_NAMES" || true)
+    current=$(grep -v '^$' <<<"$CURRENT_NAMES" || true)
 
-    echo "$DESIRED_NAMES" | grep -v '^$' > "$desired_file" 2>/dev/null || true
-    echo "$CURRENT_NAMES" | grep -v '^$' > "$current_file" 2>/dev/null || true
+    TO_ADD=$(   comm -23 <(echo "$desired") <(echo "$current") 2>/dev/null || true)
+    TO_REMOVE=$(comm -13 <(echo "$desired") <(echo "$current") 2>/dev/null || true)
+    EXISTING=$( comm -12 <(echo "$desired") <(echo "$current") 2>/dev/null || true)
 
-    TO_ADD=$(comm -23 "$desired_file" "$current_file" 2>/dev/null || cat "$desired_file")
-    TO_REMOVE=$(comm -13 "$desired_file" "$current_file" 2>/dev/null || true)
-    EXISTING=$(comm -12 "$desired_file" "$current_file" 2>/dev/null || true)
-
-    rm -f "$desired_file" "$current_file"
-
-    desired_count=0; current_count=0; add_count=0; remove_count=0
-    if [[ -n "$DESIRED_NAMES" ]]; then desired_count=$(echo "$DESIRED_NAMES" | grep -c . 2>/dev/null || echo 0); fi
-    if [[ -n "$CURRENT_NAMES" ]]; then current_count=$(echo "$CURRENT_NAMES" | grep -c . 2>/dev/null || echo 0); fi
-    if [[ -n "$TO_ADD" ]]; then add_count=$(echo "$TO_ADD" | grep -c . 2>/dev/null || echo 0); fi
-    if [[ -n "$TO_REMOVE" ]]; then remove_count=$(echo "$TO_REMOVE" | grep -c . 2>/dev/null || echo 0); fi
+    desired_count=$(_count_nonempty "$DESIRED_NAMES")
+    current_count=$(_count_nonempty "$CURRENT_NAMES")
+    add_count=$(   _count_nonempty "$TO_ADD")
+    remove_count=$(_count_nonempty "$TO_REMOVE")
 }
 
 # Caller must define get_description(name)
@@ -73,32 +77,30 @@ sync_show_plan() {
 
     if [[ -n "$TO_ADD" ]]; then
         echo -e "${GREEN}To add ($add_count):${NC}"
-        echo "$TO_ADD" | while read -r name; do
+        while read -r name; do
             [[ -z "$name" ]] && continue
-            local desc
-            desc=$(get_description "$name")
+            local desc; desc=$(get_description "$name")
             echo "  + $name: $desc"
-        done
+        done <<<"$TO_ADD"
         echo
     fi
 
     if [[ -n "$TO_REMOVE" ]]; then
         echo -e "${YELLOW}Not in registry ($remove_count):${NC}"
-        echo "$TO_REMOVE" | while read -r name; do
+        while read -r name; do
             [[ -z "$name" ]] && continue
             echo "  - $name"
-        done
+        done <<<"$TO_REMOVE"
         echo
     fi
 
     if [[ -n "$EXISTING" ]]; then
-        local existing_count
-        existing_count=$(echo "$EXISTING" | grep -c . 2>/dev/null || echo 0)
+        local existing_count; existing_count=$(_count_nonempty "$EXISTING")
         echo -e "${BLUE}Already configured ($existing_count):${NC}"
-        echo "$EXISTING" | while read -r name; do
+        while read -r name; do
             [[ -z "$name" ]] && continue
             echo "  = $name"
-        done
+        done <<<"$EXISTING"
         echo
     fi
 
@@ -111,42 +113,47 @@ sync_handle_removals() {
     [[ -z "$TO_REMOVE" ]] && return 0
 
     echo -e "${YELLOW}${label} not in registry:${NC}"
-    echo "$TO_REMOVE" | while read -r name; do
+    while read -r name; do
         [[ -z "$name" ]] && continue
-        local scope
-        scope=$(get_item_scope "$name")
+        local scope; scope=$(get_item_scope "$name")
 
         if $FORCE; then
-            if $DRY_RUN; then
-                echo -e "  ${BLUE}[dry-run]${NC} Would remove: $name ($scope)"
-            else
-                echo -n "  Removing $name... "
-                if remove_item "$name" "$scope"; then
-                    echo -e "${GREEN}done${NC}"
-                else
-                    echo -e "${RED}failed${NC}"
-                fi
-            fi
+            _sync_remove_or_dryrun "$name" "$scope"
         elif $DRY_RUN; then
             echo -e "  ${BLUE}[dry-run]${NC} Would prompt to remove: $name ($scope)"
         else
-            if [[ ! -t 0 ]] && [[ ! -e /dev/tty || ! -w /dev/tty ]]; then
-                echo "  Keeping $name (non-interactive)"
-                continue
-            fi
-            echo -n "  Remove '$name' ($scope)? [y/N] "
-            read -r response </dev/tty || response=""
-            if [[ "$response" =~ ^[Yy]$ ]]; then
-                echo -n "  Removing $name... "
-                if remove_item "$name" "$scope"; then
-                    echo -e "${GREEN}done${NC}"
-                else
-                    echo -e "${RED}failed${NC}"
-                fi
-            else
-                echo "  Keeping $name"
-            fi
+            _sync_prompt_and_remove "$name" "$scope"
         fi
-    done
+    done <<<"$TO_REMOVE"
     echo
+}
+
+# Internal: shared remove-or-dry-run print + exec.
+_sync_remove_or_dryrun() {
+    local name="$1" scope="$2"
+    if $DRY_RUN; then
+        echo -e "  ${BLUE}[dry-run]${NC} Would remove: $name ($scope)"
+        return 0
+    fi
+    echo -n "  Removing $name... "
+    if remove_item "$name" "$scope"; then
+        echo -e "${GREEN}done${NC}"
+    else
+        echo -e "${RED}failed${NC}"
+    fi
+}
+
+_sync_prompt_and_remove() {
+    local name="$1" scope="$2" response
+    if [[ ! -t 0 && ( ! -e /dev/tty || ! -w /dev/tty ) ]]; then
+        echo "  Keeping $name (non-interactive)"
+        return 0
+    fi
+    echo -n "  Remove '$name' ($scope)? [y/N] "
+    read -r response </dev/tty || response=""
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        _sync_remove_or_dryrun "$name" "$scope"
+    else
+        echo "  Keeping $name"
+    fi
 }

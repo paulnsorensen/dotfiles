@@ -21,10 +21,36 @@ setup() {
 
     export BREW_LOG="$TEST_HOME/brew.log"
     export CARGO_LOG="$TEST_HOME/cargo.log"
+    export GH_LOG="$TEST_HOME/gh.log"
+    export NPM_LOG="$TEST_HOME/npm.log"
+    export SUDO_LOG="$TEST_HOME/sudo.log"
 
     write_mock_brew
     write_mock_cargo
+    write_mock_gh
+    write_mock_npm
+    # Mock sudo records its args and no-ops — guarantees the Linux brew-deps
+    # bootstrap can never run a real `sudo apt-get` against the test machine.
+    write_mock_sudo
     export PATH="$MOCK_BIN:$PATH"
+}
+
+write_mock_sudo() {
+    cat > "$MOCK_BIN/sudo" << 'MOCKSUDO'
+#!/bin/bash
+echo "sudo $*" >> "$SUDO_LOG"
+exit 0
+MOCKSUDO
+    chmod +x "$MOCK_BIN/sudo"
+}
+
+write_mock_uv() {
+    cat > "$MOCK_BIN/uv" << 'MOCKUV'
+#!/bin/bash
+[[ "$1 $2" == "tool list" ]] && echo ""
+exit 0
+MOCKUV
+    chmod +x "$MOCK_BIN/uv"
 }
 
 teardown() {
@@ -33,9 +59,9 @@ teardown() {
 
 # --- Mock helpers ---
 
-# Usage: write_mock_brew [installed_formulae] [installed_casks] [fail_pkg]
+# Usage: write_mock_brew [installed_formulae] [installed_casks] [fail_pkg] [outdated_greedy_casks]
 write_mock_brew() {
-    local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}"
+    local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}" outdated_casks="${4:-}"
     cat > "$MOCK_BIN/brew" << MOCKBREW
 #!/bin/bash
 echo "brew \$*" >> "$BREW_LOG"
@@ -46,6 +72,11 @@ case "\$1" in
         else
             echo "$casks"
         fi
+        ;;
+    outdated)
+        # Only the greedy-cask probe returns names here; bare \`brew outdated\`
+        # in other contexts is unused by sync.sh.
+        echo "$outdated_casks"
         ;;
     tap)
         if [[ \$# -eq 1 ]]; then echo ""; fi
@@ -75,20 +106,65 @@ MOCKCARGO
     chmod +x "$MOCK_BIN/cargo"
 }
 
+write_mock_npm() {
+    cat > "$MOCK_BIN/npm" << 'MOCKNPM'
+#!/bin/bash
+echo "npm $*" >> "$NPM_LOG"
+case "$1" in
+    ls) echo '{}' ;;
+    outdated) echo '{}' ;;
+esac
+exit 0
+MOCKNPM
+    chmod +x "$MOCK_BIN/npm"
+}
+
+# Usage: write_mock_gh [installed_repos] [fail_repo]
+#   installed_repos: newline-separated list of "owner/repo" already installed
+#   fail_repo:       exit non-zero when `gh extension install` is asked for this repo
+write_mock_gh() {
+    local installed="${1:-}" fail_repo="${2:-}"
+    cat > "$MOCK_BIN/gh" << MOCKGH
+#!/bin/bash
+echo "gh \$*" >> "$GH_LOG"
+case "\$1" in
+    extension)
+        case "\$2" in
+            list)
+                while IFS= read -r repo; do
+                    [[ -z "\$repo" ]] && continue
+                    printf 'gh %s\t%s\tv0.0.0\n' "\${repo##*/gh-}" "\$repo"
+                done <<< "$installed"
+                ;;
+            install)
+                if [[ -n "$fail_repo" && "\$3" == "$fail_repo" ]]; then
+                    exit 1
+                fi
+                ;;
+        esac
+        ;;
+esac
+exit 0
+MOCKGH
+    chmod +x "$MOCK_BIN/gh"
+}
+
 write_test_yaml() {
     cat > "$PACKAGES_FILE" << 'YAML'
 packages:
   - test/tap-repo: { source: tap }
   - curl
   - jq
-  - fd: { apt: fd-find }
-  - node: { apt: nodejs }
+  - fd
+  - node
   - mas: { platform: mac }
   - xclip: { platform: linux }
-  - docker: { source: cask, dev: true, platform: mac }
-  - npm: { platform: linux, dev: true }
+  - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false }
   - pyenv: { dev: true }
   - cargo-llvm-cov: { source: cargo }
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack }
+  - markdownlint-cli2: { source: npm }
+  - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux }
 YAML
 }
 
@@ -99,13 +175,13 @@ run_sync() {
 # --- Schema validation (against real packages.yaml) ---
 
 @test "packages.yaml is valid YAML" {
-    run yq '.' "$REAL_DOTFILES_DIR/packages.yaml"
+    run yq '.' "$REAL_DOTFILES_DIR/packages/packages.yaml"
     assert_success
 }
 
 @test "all platform values are mac or linux" {
     run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.platform != null) | .value.platform' \
-        "$REAL_DOTFILES_DIR/packages.yaml"
+        "$REAL_DOTFILES_DIR/packages/packages.yaml"
     assert_success
     while IFS= read -r platform; do
         [[ -z "$platform" ]] && continue
@@ -113,24 +189,27 @@ run_sync() {
     done <<< "$output"
 }
 
-@test "all source values are brew, cask, tap, cargo, npm, or uv" {
+@test "all source values are brew, cask, tap, cargo, npm, uv, or gh-extension" {
     run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source != null) | .value.source' \
-        "$REAL_DOTFILES_DIR/packages.yaml"
+        "$REAL_DOTFILES_DIR/packages/packages.yaml"
     assert_success
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
-        if [[ "$source" != "brew" && "$source" != "cask" && "$source" != "tap" && "$source" != "cargo" && "$source" != "npm" && "$source" != "uv" ]]; then
-            echo "Invalid source value: $source" >&2
-            return 1
-        fi
+        case "$source" in
+            brew|cask|tap|cargo|npm|uv|gh-extension) ;;
+            *)
+                echo "Invalid source value: $source" >&2
+                return 1
+                ;;
+        esac
     done <<< "$output"
 }
 
 @test "no duplicate package names" {
     local names
     names=$(
-        yq -r '.packages[] | select(kind == "scalar")' "$REAL_DOTFILES_DIR/packages.yaml"
-        yq -r '.packages[] | select(kind == "map") | to_entries[0] | .key' "$REAL_DOTFILES_DIR/packages.yaml"
+        yq -r '.packages[] | select(kind == "scalar")' "$REAL_DOTFILES_DIR/packages/packages.yaml"
+        yq -r '.packages[] | select(kind == "map") | to_entries[0] | .key' "$REAL_DOTFILES_DIR/packages/packages.yaml"
     )
     local dupes
     dupes=$(echo "$names" | sort | uniq -d)
@@ -143,8 +222,6 @@ run_sync() {
 # --- Integration: sync installs the right packages ---
 
 @test "sync installs bare-string formulae via brew" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
-
     write_test_yaml
     run_sync
     assert_success
@@ -154,8 +231,6 @@ run_sync() {
 }
 
 @test "sync installs map formulae (fd, node) via brew" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
-
     write_test_yaml
     run_sync
     assert_success
@@ -184,9 +259,92 @@ run_sync() {
     ! grep -q "brew install xclip" "$BREW_LOG"
 }
 
-@test "sync processes taps before formulae" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+@test "sync installs linux-only packages via brew on Linux" {
+    [[ "$(uname)" == "Linux" ]] || skip "Linux only"
 
+    write_test_yaml
+    run_sync
+    assert_success
+
+    grep -q "brew install xclip" "$BREW_LOG"
+}
+
+@test "sync excludes mac-only packages on Linux" {
+    [[ "$(uname)" == "Linux" ]] || skip "Linux only"
+
+    write_test_yaml
+    run_sync
+    assert_success
+
+    # Positive control: the brew path ran and installed a both-platforms formula,
+    # so the absence below is real exclusion, not an empty brew phase.
+    grep -q "brew install jq" "$BREW_LOG"
+    ! grep -q "brew install mas" "$BREW_LOG"
+}
+
+@test "sync skips casks entirely on Linux (cask is macOS-only)" {
+    [[ "$(uname)" == "Linux" ]] || skip "Linux only"
+
+    # docker-desktop is a dev cask; even with DOTFILES_DEV=true, no
+    # `brew install --cask` should run on Linux.
+    write_test_yaml
+    DOTFILES_DEV=true run_sync
+    assert_success
+
+    ! grep -q "brew install --cask" "$BREW_LOG"
+}
+
+# A PATH with the C build toolchain (gcc/make/file) absent but every tool
+# sync.sh actually needs kept via a stub of symlinks — exercises the brew-deps
+# bootstrap's "toolchain missing" branch without touching the test machine.
+path_without_buildtools() {
+    local stub="$TEST_HOME/nobuild-stub"
+    mkdir -p "$stub"
+    local -a needed=(bash sh env uname id yq jq shasum sha256sum curl git \
+        awk sed grep cut sort tr head tail cat chmod mkdir rm ln mktemp \
+        dirname basename tee wc printf find xargs sleep)
+    local tool src
+    for tool in "${needed[@]}"; do
+        src=$(command -v "$tool" 2>/dev/null || true)
+        [[ -n "$src" && ! -e "$stub/$tool" ]] && ln -sf "$src" "$stub/$tool"
+    done
+    echo "$stub"
+}
+
+@test "installs Homebrew build deps via apt up front on Linux when toolchain missing" {
+    [[ "$(uname)" == "Linux" ]] || skip "Linux only"
+
+    # apt-get + uv mocked so the apt branch is taken deterministically and the
+    # uv bootstrap doesn't shell out to curl on the scrubbed PATH.
+    printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/apt-get"; chmod +x "$MOCK_BIN/apt-get"
+    write_mock_uv
+    write_test_yaml
+
+    PATH="$MOCK_BIN:$(path_without_buildtools)" run_sync
+    assert_success
+
+    assert_output_contains "Installing Homebrew build dependencies"
+    grep -q "sudo apt-get install -y build-essential procps curl file git" "$SUDO_LOG"
+}
+
+@test "skips Homebrew build-dep install when toolchain already present" {
+    [[ "$(uname)" == "Linux" ]] || skip "Linux only"
+
+    # Stub the full toolchain so the check passes regardless of host state.
+    local t
+    for t in gcc make file git curl; do
+        printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/$t"; chmod +x "$MOCK_BIN/$t"
+    done
+    write_test_yaml
+
+    run_sync
+    assert_success
+
+    ! grep -q "Installing Homebrew build dependencies" <<< "$output"
+    [[ ! -f "$SUDO_LOG" ]]
+}
+
+@test "sync processes taps before formulae" {
     write_test_yaml
     run_sync
     assert_success
@@ -197,9 +355,16 @@ run_sync() {
     [[ "$tap_line" -lt "$install_line" ]]
 }
 
-@test "sync skips dev packages when DOTFILES_DEV is not set" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
+@test "sync trusts declared taps to satisfy Homebrew tap-trust gate" {
+    write_test_yaml
+    run_sync
+    assert_success
 
+    # Each declared tap must be trusted so fresh formula installs aren't refused.
+    grep -q "brew trust test/tap-repo" "$BREW_LOG"
+}
+
+@test "sync skips dev packages when DOTFILES_DEV is not set" {
     write_test_yaml
     unset DOTFILES_DEV
     run_sync
@@ -210,8 +375,6 @@ run_sync() {
 }
 
 @test "sync installs dev packages when DOTFILES_DEV=true" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
-
     write_test_yaml
     DOTFILES_DEV=true run_sync
     assert_success
@@ -230,8 +393,6 @@ run_sync() {
 }
 
 @test "sync skips already-installed packages" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
-
     write_test_yaml
     write_mock_brew "curl"
 
@@ -242,12 +403,103 @@ run_sync() {
     grep -q "brew install jq" "$BREW_LOG"
 }
 
+@test "sync skips already-installed tap-qualified packages by short name" {
+    [[ "$(uname)" == "Darwin" ]] || skip "fixture package is platform: mac (excluded on Linux)"
+
+    # brew list --formulae prints short names; the installed-check must
+    # compare a tap-qualified key (rjyo/moshi/moshi-hook) by its tail or
+    # it reinstalls on every sync.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - rjyo/moshi/moshi-hook: { platform: mac }
+YAML
+    write_mock_brew "moshi-hook"
+
+    run_sync
+    assert_success
+
+    # Positive control: the entry was considered and skipped as installed,
+    # not silently dropped by platform/source filtering.
+    assert_output_contains "+ rjyo/moshi/moshi-hook"
+    ! grep -q "brew install rjyo/moshi/moshi-hook" "$BREW_LOG"
+}
+
 @test "sync installs cargo packages" {
     write_test_yaml
     run_sync
     assert_success
 
     grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
+}
+
+@test "sync installs gh extensions" {
+    write_test_yaml
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack" "$GH_LOG"
+}
+
+@test "sync skips gh extension that is already installed" {
+    write_test_yaml
+    write_mock_gh "github/gh-stack"
+
+    run_sync
+    assert_success
+
+    ! grep -q "gh extension install" "$GH_LOG"
+}
+
+@test "sync records failure when gh extension install fails" {
+    write_test_yaml
+    write_mock_gh "" "github/gh-stack"
+
+    run_sync
+
+    assert_output_contains "Failed to install github/gh-stack"
+    assert_output_contains "cache NOT saved"
+    [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+}
+
+@test "UPGRADE_MODE runs gh extension upgrade --all" {
+    write_test_yaml
+    write_mock_gh "github/gh-stack"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q "gh extension upgrade --all" "$GH_LOG"
+}
+
+@test "non-upgrade mode does NOT call gh extension upgrade" {
+    write_test_yaml
+    write_mock_gh "github/gh-stack"
+
+    run_sync
+    assert_success
+
+    ! grep -q "gh extension upgrade" "$GH_LOG"
+}
+
+@test "sync installs npm packages" {
+    write_test_yaml
+    run_sync
+    assert_success
+
+    grep -q "npm install -g markdownlint-cli2" "$NPM_LOG"
+}
+
+@test "sync excludes linux-only npm packages on Darwin" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
+
+    write_test_yaml
+    run_sync
+    assert_success
+
+    # Positive control: the npm path ran and installed a both-platforms package,
+    # so the absence below is real exclusion, not an empty npm phase.
+    grep -q "npm install -g markdownlint-cli2" "$NPM_LOG"
+    ! grep -q "graphite-cli" "$NPM_LOG"
 }
 
 # --- Integration: cache behavior ---
@@ -275,8 +527,6 @@ run_sync() {
 }
 
 @test "FORCE_PACKAGES bypasses valid cache" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
-
     write_test_yaml
     shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
 
@@ -288,8 +538,6 @@ run_sync() {
 }
 
 @test "sync does NOT save cache when brew install fails" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
-
     write_test_yaml
     write_mock_brew "" "" "jq"
 
@@ -301,8 +549,6 @@ run_sync() {
 }
 
 @test "sync retries after previous failure (no cache)" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
-
     write_test_yaml
     write_mock_brew "" "" "jq"
 
@@ -324,8 +570,9 @@ run_sync() {
 
 # Build a curated PATH for "missing toolchain" tests. Keeps real yq/jq/shasum
 # (sync.sh needs them) but excludes any directory that holds an executable
-# cargo or rustup, so `command -v cargo` actually fails when MOCK_BIN/cargo
-# is removed.
+# cargo, rustup, OR cargo-install-update, so `command -v <tool>` actually
+# fails on developer machines where those binaries live alongside each
+# other under ~/.cargo/bin or /opt/homebrew/bin.
 scrub_toolchain_path() {
     local entry filtered=""
     local -a needed=(yq jq shasum sha256sum git awk sed grep cut sort tr head tail)
@@ -340,20 +587,29 @@ scrub_toolchain_path() {
         [[ -z "$entry" ]] && continue
         [[ -x "$entry/cargo" ]] && continue
         [[ -x "$entry/rustup" ]] && continue
+        [[ -x "$entry/cargo-install-update" ]] && continue
         filtered+="$entry:"
     done <<< "$(echo "$PATH" | tr ':' '\n')"
     echo "$stub:${filtered%:}"
 }
 
-@test "sync counts missing cargo AND rustup as failure (no cache saved)" {
+@test "sync warns + proceeds when cargo AND rustup are missing" {
+    # Behavior change: the linux-bootstrap PR (commit 5369aa3) softened
+    # missing-cargo from `log_error + FAILED+=("cargo")` to `log_warning +
+    # return 0`. Rationale: a fresh Ubuntu box without rust shouldn't
+    # FAIL the whole `dots sync` — the cargo packages just won't install
+    # until rustup is set up, while everything else (brew, npm, uv tools)
+    # proceeds normally. The cache IS saved on the successful sync.
     write_test_yaml
     rm -f "$MOCK_BIN/cargo" "$MOCK_BIN/rustup"
 
     PATH="$MOCK_BIN:$(scrub_toolchain_path)" run_sync
 
+    assert_success
     assert_output_contains "cargo not found"
-    assert_output_contains "cache NOT saved"
-    [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+    assert_output_contains "skipping cargo packages"
+    # Cache saved because the sync completed without failure.
+    [[ -f "$CACHE_FILE" ]]
 }
 
 @test "sync bootstraps rust toolchain when rustup exists but cargo missing" {
@@ -405,8 +661,6 @@ MOCKRUSTUP
 }
 
 @test "UPGRADE_MODE runs brew upgrade after install loop" {
-    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
-
     write_test_yaml
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
@@ -414,7 +668,53 @@ MOCKRUSTUP
     grep -q "brew upgrade" "$BREW_LOG"
 }
 
-@test "UPGRADE_MODE re-installs cargo packages with --force when already installed" {
+@test "UPGRADE_MODE excludes greedy:false casks (docker-desktop) from greedy upgrade" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
+    # Both docker-desktop (greedy:false) and cursor (greedy default) report as
+    # greedy-outdated. cursor must be upgraded; docker-desktop must not.
+    write_mock_brew "" "docker-desktop" "" $'docker-desktop\ncursor'
+    write_test_yaml
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    # No blanket greedy upgrade — the exclusion path enumerates instead.
+    ! grep -q "brew upgrade --cask --greedy-auto-updates" "$BREW_LOG"
+    # cursor gets upgraded explicitly; docker-desktop is never passed to upgrade.
+    grep -q "brew upgrade --cask cursor" "$BREW_LOG"
+    ! grep -qE "brew upgrade --cask .*docker-desktop" "$BREW_LOG"
+}
+
+@test "UPGRADE_MODE warns + skips greedy cask upgrade when brew outdated fails" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only (sync_brew not invoked on Linux)"
+
+    # brew outdated failing must NOT be silently swallowed as "nothing to
+    # upgrade" — emit a warning and skip the pass, like the other brew ops.
+    cat > "$MOCK_BIN/brew" << 'MOCKBREW'
+#!/bin/bash
+echo "brew $*" >> "$BREW_LOG"
+case "$1" in
+    list)   [[ "$2" == "--formulae" ]] && echo "" || echo "docker-desktop" ;;
+    outdated) exit 1 ;;
+    tap)    [[ $# -eq 1 ]] && echo "" ;;
+esac
+exit 0
+MOCKBREW
+    chmod +x "$MOCK_BIN/brew"
+
+    write_test_yaml
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "brew outdated --cask failed; skipping greedy cask upgrade"
+    # No filtered cask upgrade is attempted when the probe failed.
+    ! grep -qE "brew upgrade --cask [a-z]" "$BREW_LOG"
+}
+
+@test "UPGRADE_MODE runs cargo-install-update --all --git instead of per-package --force" {
+    # New idempotent contract (PR #197): the install pass only handles
+    # *missing* packages, and the upgrade pass delegates to
+    # cargo-install-update so already-current crates are skipped
+    # instead of force-reinstalled every `dots up`.
     write_test_yaml
     cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
 #!/bin/bash
@@ -431,10 +731,57 @@ exit 0
 MOCKCARGO
     chmod +x "$MOCK_BIN/cargo"
 
+    # Just needs to exist on PATH so `command -v cargo-install-update`
+    # succeeds in sync.sh; the actual `cargo install-update …` call
+    # dispatches through the cargo mock above (cargo subcommand
+    # resolution happens inside real cargo, not in the test shell).
+    cat > "$MOCK_BIN/cargo-install-update" << 'MOCKUPDATE'
+#!/bin/bash
+exit 0
+MOCKUPDATE
+    chmod +x "$MOCK_BIN/cargo-install-update"
+
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
-    grep -q "cargo install --force cargo-llvm-cov" "$CARGO_LOG"
-    assert_output_contains "Upgrading cargo-llvm-cov"
+    # Install pass skips already-installed crate — no per-package
+    # `cargo install cargo-llvm-cov` call at all.
+    ! grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
+    ! grep -q -- "--force" "$CARGO_LOG"
+    # Upgrade pass delegates to `cargo install-update --all --git`.
+    grep -q "cargo install-update --all --git" "$CARGO_LOG"
+    assert_output_contains "Upgrading cargo packages"
+}
+
+@test "UPGRADE_MODE warns when cargo-install-update is not installed" {
+    # Missing-binary fallback: dots up should keep going with a loud
+    # warning instead of silently noop-ing or crashing.
+    #
+    # Use scrub_toolchain_path so the real cargo-install-update on the
+    # developer's PATH (alongside cargo under ~/.cargo/bin or
+    # /opt/homebrew/bin) doesn't satisfy the `command -v` check and mask
+    # the warning branch the test is locking in.
+    write_test_yaml
+    cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
+#!/bin/bash
+echo "cargo $*" >> "$CARGO_LOG"
+case "$1" in
+    install)
+        if [[ "$2" == "--list" ]]; then
+            echo "cargo-llvm-cov v0.1.0:"
+            echo "    cargo-llvm-cov"
+        fi
+        ;;
+esac
+exit 0
+MOCKCARGO
+    chmod +x "$MOCK_BIN/cargo"
+    # Deliberately do NOT install a cargo-install-update mock.
+
+    UPGRADE_MODE=true PATH="$MOCK_BIN:$(scrub_toolchain_path)" run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "cargo-update not installed"
+    # And the install pass still skips the already-installed crate.
+    ! grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
 }
 
 @test "non-upgrade mode does NOT pass --force to cargo install" {
@@ -451,4 +798,109 @@ MOCKCARGO
     # cargo-llvm-cov is not in the (empty) installed list, so install path runs without --force
     grep -q "cargo install cargo-llvm-cov" "$CARGO_LOG"
     ! grep -q "cargo install --force cargo-llvm-cov" "$CARGO_LOG"
+}
+
+# --- Integration: sync_harness_selfupdate ---
+
+@test "UPGRADE_MODE runs claude update and codex update when both present" {
+    write_test_yaml
+
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+    export CODEX_LOG="$TEST_HOME/codex.log"
+
+    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
+#!/bin/bash
+echo "claude \$*" >> "$CLAUDE_LOG"
+exit 0
+MOCKCLAUDE
+    chmod +x "$MOCK_BIN/claude"
+
+    cat > "$MOCK_BIN/codex" << MOCKCODEX
+#!/bin/bash
+echo "codex \$*" >> "$CODEX_LOG"
+exit 0
+MOCKCODEX
+    chmod +x "$MOCK_BIN/codex"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q "claude update" "$CLAUDE_LOG"
+    grep -q "codex update" "$CODEX_LOG"
+}
+
+@test "UPGRADE_MODE skips codex update when codex absent but still runs claude update" {
+    write_test_yaml
+
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+
+    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
+#!/bin/bash
+echo "claude \$*" >> "$CLAUDE_LOG"
+exit 0
+MOCKCLAUDE
+    chmod +x "$MOCK_BIN/claude"
+    # No codex mock — intentionally absent
+
+    local clean_path
+    clean_path=$(scrub_toolchain_path | tr ':' '\n' | while IFS= read -r d; do [[ -x "$d/codex" ]] || printf '%s:' "$d"; done)
+    UPGRADE_MODE=true PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q "claude update" "$CLAUDE_LOG"
+    assert_output_contains "codex not found"
+}
+
+@test "non-UPGRADE_MODE does not invoke claude or codex update" {
+    write_test_yaml
+
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+    export CODEX_LOG="$TEST_HOME/codex.log"
+
+    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
+#!/bin/bash
+echo "claude \$*" >> "$CLAUDE_LOG"
+exit 0
+MOCKCLAUDE
+    chmod +x "$MOCK_BIN/claude"
+
+    cat > "$MOCK_BIN/codex" << MOCKCODEX
+#!/bin/bash
+echo "codex \$*" >> "$CODEX_LOG"
+exit 0
+MOCKCODEX
+    chmod +x "$MOCK_BIN/codex"
+
+    run_sync
+    assert_success
+
+    [[ ! -f "$CLAUDE_LOG" ]] || ! grep -q "claude update" "$CLAUDE_LOG"
+    [[ ! -f "$CODEX_LOG" ]] || ! grep -q "codex update" "$CODEX_LOG"
+}
+
+@test "UPGRADE_MODE continues and exits 0 when one harness updater fails" {
+    write_test_yaml
+
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+    export CODEX_LOG="$TEST_HOME/codex.log"
+
+    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
+#!/bin/bash
+echo "claude \$*" >> "$CLAUDE_LOG"
+exit 1
+MOCKCLAUDE
+    chmod +x "$MOCK_BIN/claude"
+
+    cat > "$MOCK_BIN/codex" << MOCKCODEX
+#!/bin/bash
+echo "codex \$*" >> "$CODEX_LOG"
+exit 0
+MOCKCODEX
+    chmod +x "$MOCK_BIN/codex"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    assert_output_contains "claude update failed"
+    grep -q "codex update" "$CODEX_LOG"
 }

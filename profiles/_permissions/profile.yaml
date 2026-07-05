@@ -1,0 +1,127 @@
+# _permissions — canonical cross-harness allow/deny lists.
+#
+# Declared once here; each harness renderer lowers these onto its native
+# permission surface (Claude root settings.json, opencode per-tool map,
+# Codex .rules + config.toml, Copilot launch flags + mcp-config, Cursor
+# cli-config). The lever split is DERIVED, not declared: an entry matching
+# `mcp__*` is lever 3 (MCP-tool scoping); everything else is lever 1
+# (per-command/tool). So this is one flat list per allow/deny.
+#
+# Edit here, then `dots sync` (runs `ap install global` +
+# `ap install opencode-global`) re-asserts the set onto every live harness.
+# The live wrappers include this fragment; isolated profiles (review) do NOT
+# and keep their own closed-world deny lists.
+#
+# `global` sets `mcp_scope: user`, so MCPs register with bare names
+# (`mcp__<server>__*`). The lever-3 rules below therefore use bare names.
+name: _permissions
+description: Canonical cross-harness allow/deny lists; renderers lower per-harness
+settings:
+  # lever 1 — commands/tools (migrated verbatim from create_settings.json),
+  # plus lever 3 — MCP tools (bare names). Renderers classify by `mcp__` prefix.
+  permissions_allow:
+    - Bash(git:*)
+    - Bash(approve:*)
+    - Bash(rtk:*)
+    - Bash(tilth:*)
+    - Bash(ls:*)
+    - Bash(head:*)
+    - Bash(tail:*)
+    - Bash(wc:*)
+    - Bash(which:*)
+    - Bash(test:*)
+    - Bash(mkdir:*)
+    - Bash(cp:*)
+    - Bash(mv:*)
+    - Bash(cat:*)
+    - Bash(echo:*)
+    - Bash(printf:*)
+    - Bash(touch:*)
+    - Bash(chmod:*)
+    - Bash(dirname:*)
+    - Bash(basename:*)
+    - Bash(realpath:*)
+    - Bash(bats:*)
+    - Bash(pytest:*)
+    - Bash(uv:*)
+    - Bash(npx:*)
+    - Bash(npm test:*)
+    - Bash(npm run:*)
+    - Bash(go test:*)
+    - Bash(cargo test:*)
+    - Bash(cargo check:*)
+    - Bash(cargo build:*)
+    - Bash(wt-git:*)
+    - Bash(ccw-sweep:*)
+    - Bash(dots:*)
+    - Bash(prek:*)
+    - Bash(fd:*)
+    - Bash(sg:*)
+    - Bash(sd:*)
+    - Bash(gh:*)
+    - Bash(yq:*)
+    - Bash(jq:*)
+    - Bash(procs:*)
+    - Bash(claude:*)
+    - Bash(cargo clippy:*)
+    - Bash(cargo fmt:*)
+    - Bash(cargo nextest:*)
+    - Bash(just:*)
+    - Bash(tokei:*)
+    - Bash(node:*)
+    - Bash(duckdb:*)
+    - Bash(python3:*)
+    - Edit
+    - Write
+    - mcp__plugin_playwright_playwright__*
+    - mcp__context7__*
+    - mcp__tavily__*
+    - mcp__tilth__*
+    - mcp__serena__*
+    - mcp__hallouminate__*
+    - WebSearch
+    - WebFetch
+    - Skill
+  # PoC disallow-list (walk-back-able). Two groups:
+  #   1. Search/IO routing. The tool-reroute hook (claude-only) now OWNS this:
+  #      it REWRITES grep/rg/ag/ack/cat/find to tilth and DELEGATES the rest to
+  #      rtk, so grep/ag/ack and the Grep/Glob tools are no longer denied here.
+  #      Un-denying them on the four hookless harnesses (cursor/copilot/opencode)
+  #      is accepted — those keep the routing system-prompt nudge. Bash(rg:*)'s
+  #      allow stays removed (a stray rg prompts rather than running unfiltered).
+  #      Only the `rtk proxy git grep` tunnel stays denied below: the lexer's
+  #      rtk-strip turns it into `git grep`, which has no tilth rewrite target.
+  #   2. Cross-harness safety floor (porting the retired bash-guard hook's
+  #      spirit to every harness). `Bash(rm -rf:*)` is COARSER than bash-guard
+  #      was (it blocks even safe relative `rm -rf node_modules`); with the
+  #      hook removed, this coarse deny is the floor for Claude too.
+  permissions_deny:
+    - Bash(rtk proxy git grep:*)
+    - Bash(sudo:*)
+    - Bash(rm -rf:*)
+    # Secret-protection floor (cross-harness). opencode denies .env by
+    # default (https://opencode.ai/docs/permissions), so .env itself is
+    # included for the other harnesses but .env.* is NOT — adding it would
+    # clobber .env.example allows under the renderer's allow-then-deny
+    # batching (opencode is last-match-wins; the renderer emits all allow
+    # entries before all deny, so a .env.* deny would override an
+    # .env.example allow). Claude+Codex also have the PreToolUse hook
+    # (agents/lib/sensitive-file-guard.js) as a redundant guard.
+    - Read(.env)
+    - Read(**/.env)
+    - Read(**/*.pem)
+    - Read(**/*.key)
+    - Read(**/*.p12)
+    - Read(**/*.pfx)
+    - Read(**/id_rsa)
+    - Read(**/id_dsa)
+    - Read(**/id_ecdsa)
+    - Read(**/id_ed25519)
+    - Read(**/.ssh/id_*)
+    - Read(**/.aws/credentials)
+    - Read(**/.netrc)
+    - Read(**/.npmrc)
+    - Read(**/.pgpass)
+    - Read(**/.git-credentials)
+    - Read(**/secrets.*)
+    - Read(**/*.secret)

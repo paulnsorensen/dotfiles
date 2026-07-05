@@ -1,0 +1,22 @@
+# Codex CLI base configuration. chezmoi installs this to ~/.codex/config.toml
+# only on first run — subsequent edits in $HOME survive, and `codex mcp add`
+# (driven by agents/mcp/sync.sh) writes server entries directly into this
+# file without going through chezmoi.
+#
+# Reference: https://developers.openai.com/codex/config-reference
+
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
+sandbox_mode = "workspace-write"
+
+# `model_instructions_file` is set into the live ~/.codex/config.toml at sync
+# time by chezmoi/.chezmoiscripts/run_onchange_install-prompts.sh.tmpl using
+# an absolute path — TOML does not expand `~`, so we cannot bake it into this
+# seed file. The same script keeps ~/.codex/preamble.md in sync with
+# agents/preamble.md.
+
+[sandbox_workspace_write]
+network_access = true
+
+[tui]
+input_mode = "vim"

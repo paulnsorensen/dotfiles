@@ -1,0 +1,3 @@
+-- Cap duckdb memory so a runaway analytics query can't OOM-storm the host
+-- (2026-07-03: 28 GB RSS duckdb took down the microk8s control plane).
+SET memory_limit='8GB';

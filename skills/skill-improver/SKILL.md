@@ -3,13 +3,13 @@ name: skill-improver
 model: opus
 effort: high
 description: >
-  Audit and improve agent and skill definitions for better calibration, tool scoping,
-  context management, activation quality, and output format. Use when the user says
+  Audit and improve agent and skill definitions — calibration, tool scoping,
+  context budget, activation quality, and output format. Use when the user says
   "improve this skill", "audit this agent", "optimize this agent", "review agent
   definition", "fix trigger rate", "skill not activating", or invokes /skill-improver
   with a path. Also trigger when an agent is producing poor results and needs prompt
-  tuning, or when a skill isn't triggering reliably. Covers: calibrated confidence
-  scoring, tool scoping, sub-agent delegation, fork vs inline, context budgets,
+  tuning, or when a skill isn't triggering reliably. Covers: confidence and severity
+  calibration, tool scoping, sub-agent delegation, fork vs inline, context budgets,
   and activation optimization. Do NOT use for creating new skills from scratch —
   use /skill-creator for that.
 allowed-tools: Read, Glob, Grep, Agent, Bash
@@ -17,9 +17,9 @@ allowed-tools: Read, Glob, Grep, Agent, Bash
 
 # skill-improver
 
-Audit agent and skill definitions against best practices, then produce scored
-improvement recommendations. This skill eats its own cooking — it uses the same
-4-step calibrated confidence scoring it recommends for others.
+Audit agent and skill definitions against best practices, then produce
+calibrated improvement recommendations. This skill eats its own cooking — it
+uses the same confidence/severity calibration it recommends for others.
 
 ## Why This Exists
 
@@ -56,15 +56,21 @@ Before auditing, gather empirical data from session logs. This step is
    python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py
    ```
 
-2. Spawn **three parallel sub-agents** (all sonnet, read-only):
+2. Fan out **one parallel `duckdb-expert` spawn per owned domain** (read-only) —
+   this skill owns three domain packs co-located under its own `references/`:
 
-   | Agent | Type | Prompt |
-   |-------|------|--------|
-   | Usage | `skill-analytics-usage` | "Analyze usage patterns for skill: {name}" |
-   | Tools | `skill-analytics-tools` | "Analyze tool patterns for skill: {name}. Declared tools: {tools list from frontmatter}" |
-   | Friction | `skill-analytics-friction` | "Analyze friction patterns for skill: {name}" |
+   | Domain pack | Spawn prompt |
+   |-------------|--------------|
+   | `skill-usage` | "Run analytics pack skill-improver/references/skill-usage.md for target {name}. harness=all" |
+   | `agent-orchestration` | "Run analytics pack skill-improver/references/agent-orchestration.md for target {name}. harness=all" |
+   | `drift-regression` | "Run analytics pack skill-improver/references/drift-regression.md for target {name}. harness=all" |
 
-3. Collect their structured findings for use in Dimension 7.
+   Each spawn reads its pack's queries plus the canonical schema from
+   `session-analytics/references/canonical-schema.md`, and returns one ~2 KB
+   digest. This is the platform's one-domain-per-spawn contract — do not collapse
+   to a single all-domains spawn.
+
+3. Collect the three digests for use in Dimension 7.
 
 If ingestion fails (duckdb not installed, no JSONL logs), skip to Phase 2 and
 omit Dimension 7 from the report. Never block the audit on analytics.
@@ -72,39 +78,46 @@ omit Dimension 7 from the report. Never block the audit on analytics.
 ### Phase 2: Audit Against Dimensions
 
 Evaluate the definition against each dimension below. For each finding, use the
-4-step scoring process (Phase 3) before including it in the report.
+calibration process (Phase 3) before including it in the report.
 
-#### Dimension 1 — Confidence Scoring
+#### Dimension 1 — Confidence & Severity Calibration
 
-Agents that make judgments (review, triage, audit) need calibrated scoring.
-The pattern that works:
+Agents that make judgments (review, triage, audit) need calibrated findings —
+but on two qualitative axes, not one number. LLM absolute numeric self-scores
+are poorly calibrated (models anchor to round numbers and conflate "important"
+with "certain"); relative/qualitative judgments track human assessment far
+better, so rank and tag rather than score.
 
-**Step 1: Classify claim type** — Each category gets a base score and hard cap.
-Category priors predict accuracy better than the model's self-assessed number.
-Style nits cap at 60; bugs start at 50 and can reach 100.
+**Confidence** — how sure you are the finding is real. Tag each one:
+`<certain>` (verified by reading the code, running it, or citing a source),
+`<speculative>` (pattern-match or inference — surface it, but say so),
+`<don't know>` (can't tell — do NOT surface; drop or raise as an open question).
+Evidence drives the tag: tool-verified / specific file:line + concrete failure →
+`<certain>`; generic observation → `<speculative>`; misread or unverifiable →
+`<don't know>`.
 
-**Step 2: Evidence grounding** — Modifiers based on verification quality.
-LSP-verified (+20-25), grep-confirmed (+20), specific file:line (+15),
-generic observation (-15), misread code (hard cap 0).
+**Severity** — how much it matters if real: `blocker` (broken as written) /
+`high` / `medium` / `low` (style, polish). Orthogonal to confidence: a
+`<certain>` style nit is low; a `<speculative>` correctness risk can be high.
 
-**Step 3: Context modifiers** — Signals that adjust severity. Git hotspot (+10),
-pre-existing issue (-15), public API boundary (-10), review state (+10).
+**Re-assess borderline** — for any `<speculative>` finding you're about to
+surface, re-derive the reasoning once more without looking at the first pass.
+If it doesn't reproduce, drop to `<don't know>`. Never average two divergent
+reads into a vague "maybe" — divergence means you don't actually know.
 
-**Step 4: Re-assess borderline items** — Items near the surfacing threshold get
-scored independently a second time. If scores diverge >15 points, the finding is
-ambiguous — don't surface it. This catches false confidence from pattern matching.
+Key insight: tiers and tags are more reliable than absolute magnitude.
+"A is more severe than B" and "certain vs speculative" are trustworthy.
+"A is exactly 82" is invented precision.
 
-Key insight: ordering between findings is more reliable than absolute magnitude.
-"A is more important than B" is trustworthy. "A is exactly 82" is not.
-
-Check: Does the agent have scoring? Does it use category priors? Does it ground
-evidence? Does it re-assess borderline items? Is there a surfacing threshold?
+Check: Does the agent separate confidence from severity? Does it use the
+`<certain>`/`<speculative>`/`<don't know>` tags instead of an invented number?
+Does it ground evidence? Does it re-assess borderline items? Is the surfacing
+rule clear (don't-know never surfaces)?
 
 Reference implementations:
 
-- `claude/agents/fromage-age.md` — review findings
-- `claude/agents/fromage-fort.md` — PR comment triage
-- `claude/agents/ricotta-reducer.md` — simplification audit
+- `/age` — severity tiers (Blocker/High/Medium/Low) with per-finding confidence
+- age voice kernel — `certain | speculative | don't know`
 
 #### Dimension 2 — Tool Scoping
 
@@ -113,7 +126,7 @@ Reference implementations:
 | Tier | Tools | Use case | Frontmatter |
 |------|-------|----------|-------------|
 | Read-only | Grep, Glob, Read, Bash | Reviewers, auditors, explorers | `disallowedTools: [Edit, Write, NotebookEdit]` |
-| Write-scoped | + Edit, Write | Implementers, fixers | Exclude tools not needed (WebSearch, LSP, etc.) |
+| Write-scoped | + Edit, Write | Implementers, fixers | Exclude tools not needed (WebSearch, mcp__serena__*, etc.) |
 | Focused sub-agent | 2-4 tools max | Pipeline sub-tasks | Disallow 5-8 unused tools explicitly |
 
 Over-broad tool access degrades behavior in two ways: models waste tokens
@@ -152,14 +165,17 @@ Run inline when the result is concise, immediately needed, and action-relevant.
 parallel sub-agents rather than sequentially trying each approach. The research
 agent pattern: spawn N focused sub-agents, synthesize results.
 
-**Context degradation thresholds** (from LLM research):
+**Context degradation** — performance drops as context grows, and information
+buried mid-context suffers most (primacy/recency bias). This is well-established
+directionally (Lost in the Middle, RULER, NoLiMa); the token buckets below are
+illustrative rules of thumb, not measured thresholds:
 
-| Context size | Observed behavior |
+| Context size | Rule-of-thumb behavior |
 |---|---|
 | < 20K tokens | Strong instruction following, full recall |
 | 20K–60K tokens | Moderate degradation, especially mid-context instructions |
 | 60K–100K tokens | Noticeable instruction drift, increased repetition |
-| > 100K tokens | Models increasingly ignore early system prompt instructions |
+| > 100K tokens | Early system-prompt instructions increasingly ignored |
 
 **Output budgets**:
 
@@ -201,9 +217,10 @@ edge cases. "Never use `find`" is brittle. "Use `fd` instead of `find` because
 fd respects .gitignore and is faster on large repos" transfers to novel situations.
 
 **Positive over negative framing**: "Use named exports" beats "Don't use default
-exports." LLMs struggle with negation — positive framing reduces rule violations
-by ~50% in testing. Flag rules that rely heavily on "don't", "never", "avoid"
-without providing the positive alternative.
+exports." LLMs struggle with negation, so positive framing materially reduces
+rule violations (magnitude varies by model and rule; Anthropic's prompting
+guidance recommends stating the desired behavior). Flag rules that rely heavily
+on "don't", "never", "avoid" without providing the positive alternative.
 
 **Examples**: One good example is worth ten rules. Two examples establish a
 pattern. Three confirm it. More than three for the same concept is diminishing
@@ -215,9 +232,9 @@ complex character") is more effective than a paragraph of role description.
 
 **Negative constraints** ("What You Don't Do"): Explicit sections listing what
 the agent must NOT do significantly reduce scope creep and overlap with adjacent
-pipeline phases. Every pipeline agent should have one. Example from fromage-cook:
-"Make design decisions... Add tests... Review code quality" — all belong to
-other phases.
+pipeline phases. Every pipeline agent should have one. Example: an implementation
+agent's "What You Don't Do" might list "Make design decisions... Add tests...
+Review code quality" — all belong to other phases.
 
 **Decision scaffolds for judgment tasks**: Skills that use "always/never" for
 judgment tasks should use a structured reasoning scaffold (Classify → Ground → Context → Reassess) or
@@ -252,9 +269,11 @@ from detail? Is there a clear "clean" vs "issues found" signal?
 
 #### Dimension 6 — Activation & Triggering (skills only)
 
-Skills have an undertriggering problem — community testing shows a 20% baseline
-trigger rate. The `description` field is not a summary for humans; it's a trigger
-specification for the model's routing decision.
+Skills have an undertriggering problem — they often fail to activate when they
+should. Community testing reports baseline auto-activation rates that vary widely
+(roughly 20–55% depending on description quality and environment; not an official
+Anthropic figure). The `description` field is not a summary for humans; it's a
+trigger specification for the model's routing decision.
 
 **Description structure** — effective descriptions follow a three-part pattern:
 `[Core capability]. [Secondary capabilities]. Use when [trigger1], [trigger2],
@@ -286,8 +305,8 @@ Check for:
 - `disable-model-invocation: true` — requires explicit `/skill-name` to trigger.
   Appropriate for destructive or infrequently-needed skills.
 - `effort` — overrides model effort level (low/medium/high). Use `effort: high`
-  for research-heavy skills, `effort: low` for simple formatting tasks. New in
-  March 2026.
+  for research-heavy skills, `effort: low` for simple formatting tasks. Supported
+  for both skills and subagents (per code.claude.com/docs).
 - `user-invocable: false` — hides from `/` menu. Use for background knowledge
   Claude should know but users shouldn't invoke directly.
 
@@ -298,8 +317,9 @@ Would `/skill-creator` description optimization improve trigger rate?
 #### Dimension 7 — Usage Analytics (data-driven)
 
 Static analysis reveals what the definition *says*. Usage analytics reveals what
-*actually happens* when the skill runs. This dimension uses findings from the
-Phase 1.5 sub-agents. Skip entirely if analytics data was unavailable.
+*actually happens* when the skill runs. This dimension reads the three fanned-out
+digests from Phase 1.5 (`skill-usage`, `agent-orchestration`, `drift-regression`).
+Skip entirely if analytics data was unavailable.
 
 **What to look for:**
 
@@ -338,50 +358,52 @@ Phase 1.5 sub-agents. Skip entirely if analytics data was unavailable.
 Check: Does actual tool usage match declarations? Is the error rate elevated?
 Are there permission or hook conflicts? Is usage healthy or declining?
 
-### Phase 3: Score Each Finding (4-Step Calibration)
+### Phase 3: Calibrate Each Finding (confidence × severity)
 
-For each improvement recommendation, apply the same 4-step scoring this skill
-recommends for others. Walk the walk.
+For each recommendation, assign a confidence tag and a severity tier — the same
+calibration this skill recommends for others. Walk the walk.
 
-#### Step 1: Classify the recommendation type
+#### Step 1: Default severity by type
 
-| Type | Description | Base score | Cap |
-|------|-------------|------------|-----|
-| `SCORING` | Missing or miscalibrated confidence scoring | 45 | 100 |
-| `TOOLS` | Tool access too broad or too narrow | 40 | 90 |
-| `CONTEXT` | Context pollution, missing fork/delegation, wrong model | 40 | 95 |
-| `PROMPT` | Ambiguous instructions, missing examples, wall of text | 35 | 85 |
-| `OUTPUT` | Missing or unclear output format | 30 | 80 |
-| `ACTIVATION` | Poor description, missing triggers, wrong frontmatter fields | 35 | 90 |
-| `ENFORCEMENT` | Critical rule as instruction-only, missing companion hooks | 40 | 90 |
-| `ANALYTICS` | Usage data contradicts definition (tool mismatch, friction, decay) | 35 | 85 |
+Each category has a default severity tier; adjust for the specific case.
 
-#### Step 2: Evidence grounding
+| Type | Description | Default severity |
+|------|-------------|------------------|
+| `SCORING` | Missing or miscalibrated confidence/severity calibration | high |
+| `TOOLS` | Tool access too broad or too narrow | high |
+| `CONTEXT` | Context pollution, missing fork/delegation, wrong model | high |
+| `PROMPT` | Ambiguous instructions, missing examples, wall of text | medium |
+| `OUTPUT` | Missing or unclear output format | medium |
+| `ACTIVATION` | Poor description, missing triggers, wrong frontmatter fields | high |
+| `ENFORCEMENT` | Critical rule as instruction-only, missing companion hooks | high |
+| `ANALYTICS` | Usage data contradicts definition (tool mismatch, friction, decay) | medium |
 
-| Evidence quality | Modifier |
-|------------------|----------|
-| Cites specific line in the definition + concrete failure scenario | +20 |
-| Backed by session analytics data (query results, counts, rates) | +15 |
-| Names a reference implementation that does it right | +15 |
-| References a CLAUDE.md rule or established pattern | +10 |
-| Generic observation without specific reference | -10 |
-| Misreads the definition or overlooks existing handling | hard cap at 0 |
+#### Step 2: Confidence by evidence
 
-#### Step 3: Context modifiers
+| Evidence quality | Confidence |
+|------------------|------------|
+| Cites a specific line + concrete failure, or backed by analytics data, or names a reference impl that does it right | `<certain>` |
+| References a CLAUDE.md rule / pattern, or a checkable but unverified observation | `<speculative>` (raise once verified) |
+| Generic observation with no specific reference | `<speculative>` at most |
+| Misreads the definition or overlooks existing handling | `<don't know>` — drop it |
 
-| Signal | Modifier |
-|--------|----------|
-| Agent is judgment-heavy (review, triage, audit) and lacks scoring | +15 |
-| Agent produces unbounded output with no size constraint | +10 |
-| Agent is a focused sub-agent (context management less critical) | -10 |
-| Issue is stylistic preference rather than functional impact | -15 |
+#### Step 3: Adjust severity for context
 
-#### Step 4: Re-assess borderline recommendations
+| Signal | Effect |
+|--------|--------|
+| Agent is judgment-heavy (review, triage, audit) and lacks calibration | raise |
+| Agent produces unbounded output with no size constraint | raise |
+| Agent is a focused sub-agent (context management less critical) | lower |
+| Issue is stylistic preference rather than functional impact | lower (often to low) |
 
-For any recommendation scoring 35-49: re-read the full definition file, then
-score independently a second time without looking at your first score. If the
-two scores diverge by >15 points, don't surface — the recommendation is
-ambiguous. If both scores land >= 50, surface it.
+#### Step 4: Surfacing rule
+
+Surface a finding only if it is `<certain>` or `<speculative>`. For each
+`<speculative>` finding, re-read the full definition file and re-derive the
+reasoning once without looking at your first pass; if it doesn't reproduce, drop
+it to `<don't know>`. `<don't know>` findings never surface — count them in the
+below-bar tally. Order the report by severity (blocker → low); within a tier,
+`<certain>` before `<speculative>`.
 
 ### Phase 4: Report
 
@@ -393,19 +415,19 @@ ambiguous. If both scores land >= 50, surface it.
 - Model: <model>
 - Tools: <N allowed, N disallowed>
 - Prompt size: <N lines>
-- Findings: N total (N scored >= 50, N below threshold)
+- Findings: N total (N surfaced, N below the bar / don't-know)
 
-### Recommendations (score >= 50)
+### Recommendations (surfaced)
 
-| # | Score | Category | Issue | Recommendation |
-|---|-------|----------|-------|----------------|
-| 1 | 95 | SCORING | No confidence scoring on judgment agent | Add 4-step calibration (see fromage-age pattern) |
-| 2 | 85 | TOOLS | Edit/Write allowed on read-only reviewer | Add to disallowedTools |
-| 3 | 80 | CONTEXT | Unbounded output, no summary/detail split | Write details to $TMPDIR, return summary |
+| # | Severity | Confidence | Category | Issue | Recommendation |
+|---|----------|------------|----------|-------|----------------|
+| 1 | blocker | `<certain>` | SCORING | No confidence calibration on judgment agent | Add confidence/severity tags (see /age pattern) |
+| 2 | high | `<certain>` | TOOLS | Edit/Write allowed on read-only reviewer | Add to disallowedTools |
+| 3 | high | `<speculative>` | CONTEXT | Unbounded output, no summary/detail split | Write details to $TMPDIR, return summary |
 
 ### Detailed Recommendations
 
-For each finding >= 50, expand with:
+For each surfaced finding, expand with:
 - **What**: the specific issue
 - **Why**: why it matters (with reference to a pattern or principle)
 - **How**: concrete fix, ideally with the exact frontmatter or section to add/change
@@ -422,8 +444,8 @@ hook from `references/hooks-catalog.md`:
 
 If no findings warrant hooks, omit this section.
 
-### Below Threshold
-N findings scored < 50 (not shown)
+### Below the Bar
+N findings were `<don't know>` or speculative-trivial (not shown)
 ```
 
 ### After the Report
@@ -438,9 +460,9 @@ validates fixes.
 These are the most common issues across agent/skill definitions, ordered by
 how often they appear and how much impact they have:
 
-1. **Judgment without scoring** — Agent makes pass/fail decisions but has no
-   confidence framework. Every reviewer, auditor, and triage agent needs the
-   4-step calibration.
+1. **Judgment without calibration** — Agent makes pass/fail decisions but has no
+   confidence/severity framework. Every reviewer, auditor, and triage agent needs
+   confidence tags (`<certain>`/`<speculative>`/`<don't know>`) plus severity tiers.
 
 2. **Prose-only tool constraints** — Agent says "read-only" in its body but
    doesn't set `disallowedTools: [Edit, Write, NotebookEdit]` in frontmatter.
@@ -485,7 +507,10 @@ the dimension audit sections above.
 
 Read these before making changes to the relevant dimension:
 
-- `references/calibrated-scoring.md` — 4-step calibration method and templates
+- `../session-analytics/references/calibration.md` — the shared confidence ×
+  severity model (imported, not redefined here)
+- `references/skill-usage.md`, `references/agent-orchestration.md`,
+  `references/drift-regression.md` — this skill's owned analytics packs (Phase 1.5)
 - `references/description-optimization.md` — Trigger optimization with before/after examples
 - `references/decision-frameworks.md` — Structured reasoning scaffold, degrees of freedom, example-driven spec
 - `references/hooks-catalog.md` — JS hook examples for activation, validation, enforcement
@@ -494,8 +519,8 @@ Read these before making changes to the relevant dimension:
 
 - Rewrite the agent/skill — it produces a report, the human decides
 - Add features or expand scope — it only recommends tightening
-- Score below 50 — unsure recommendations stay below the threshold
-- Ignore its own scoring rules — it uses the same 4-step process it audits for
+- Surface unknowns — `<don't know>` recommendations stay in the below-bar count
+- Ignore its own calibration — it uses the same confidence/severity model it audits for
 
 ## Gotchas
 
@@ -507,5 +532,7 @@ Read these before making changes to the relevant dimension:
   time pressure — it's also the step that catches the most false positives
 - Not every finding needs a companion hook — only recommend hooks for rules that
   must hold 100% of the time
-- Description optimization alone plateaus at ~50% trigger rate. For critical
-  skills, always recommend a companion hook (84% with forced eval)
+- Description tuning helps trigger rate but plateaus well short of reliable; for
+  critical skills, pair it with a companion hook. (Reported figures — e.g. ~50%
+  from tuning vs higher with a forced-eval hook — come from small community tests,
+  not an Anthropic benchmark; treat them as directional.)

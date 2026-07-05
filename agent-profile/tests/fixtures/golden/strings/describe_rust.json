@@ -1,0 +1,31 @@
+{
+  "name": "rust",
+  "description": "Rust toolchain conventions, clippy command, idiomatic reviewer",
+  "mcps": [],
+  "agents": [
+    "rust-reviewer"
+  ],
+  "skills": [
+    "cargo-workflow"
+  ],
+  "commands": [
+    "clippy"
+  ],
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "harnesses": [
+        "claude"
+      ]
+    }
+  ],
+  "permissions": [
+    "Bash(cargo:*)",
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git status:*)",
+    "Bash(rustc:*)",
+    "Bash(rustup:*)"
+  ]
+}

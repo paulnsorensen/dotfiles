@@ -2,14 +2,11 @@
 name: version-doctor
 description: >
   Diagnose and fix library version mismatches, dependency conflicts, and build
-  file inheritance issues. Use this skill when encountering version resolution
-  failures, workspace inheritance problems, or when the user says "fix versions",
-  "version mismatch", "dependency conflict", "why won't this build", or "update
-  dependencies". Also trigger proactively when a build fails due to version
-  constraints — the right fix is almost always updating a version number, not
-  restructuring the build. If you catch yourself about to rewrite a build config
-  or bypass workspace inheritance because of a version error, stop and use this
-  skill instead.
+  file inheritance issues. Use when the user says "fix versions", "version
+  mismatch", "dependency conflict", "why won't this build", or "update
+  dependencies", and proactively when a build fails on version constraints —
+  the fix is almost always a version bump, not restructuring the build. Use this
+  before rewriting a build config or bypassing workspace inheritance.
 allowed-tools: Read, Grep, Glob, Bash, Agent
 ---
 
@@ -67,7 +64,7 @@ If the correct version isn't obvious:
 1. **Context7 first** — spawn a research agent to fetch current docs for the library:
 
    ```
-   Use /fetch or Context7 to check: what is the latest version of <library>?
+   Use Context7 to check: what is the latest version of <library>?
    What changed between version X and Y?
    ```
 

@@ -10,12 +10,3 @@ updates:
     groups:
       actions-minor-and-patch:
         update-types: [minor, patch]
-
-  - package-ecosystem: npm
-    directory: /claude/hooks
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      npm-minor-and-patch:
-        update-types: [minor, patch]

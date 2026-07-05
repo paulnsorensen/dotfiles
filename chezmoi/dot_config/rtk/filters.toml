@@ -1,0 +1,22 @@
+# User-global RTK filters — deployed by chezmoi to ~/.config/rtk/filters.toml.
+#
+# Edit the source in this repo (chezmoi/dot_config/rtk/filters.toml), then run
+# `dots sync` — never edit the deployed ~/.config/rtk/filters.toml directly, as
+# chezmoi overwrites it on the next apply.
+#
+# Global filters apply across every project and need NO `rtk trust`: the 0.32.0
+# trust gate (CVE-2026-45792) covers project-local `.rtk/filters.toml` only, not
+# this user-global file. Filter lookup order (first match wins per filter):
+#   .rtk/filters.toml (project) → ~/.config/rtk/filters.toml (this file) → built-ins
+#
+# Docs: https://github.com/rtk-ai/rtk/blob/master/src/filters/README.md
+schema_version = 1
+
+# Example — suppress build noise from a custom tool:
+# [filters.my-tool]
+# description = "Compact my-tool output"
+# match_command = "^my-tool\\s+build"
+# strip_ansi = true
+# strip_lines_matching = ["^\\s*$", "^Downloading", "^Installing"]
+# max_lines = 30
+# on_empty = "my-tool: ok"

@@ -40,7 +40,7 @@ dotfiles/
 
 - `zsh/` files are sourced in order defined by `zshrc` — ordering matters
 - `skills/` are self-contained — each has its own SKILL.md with allowed-tools
-- `claude/agents/` reference skills by name in their frontmatter
+- `agents/agent_definitions/` hold agent bodies; their metadata (including the skills list) lives in `agents/registry.yaml`
 - Claude config syncs to `~/.claude/` via `dots sync`
 
 ## Tech Stack
@@ -49,13 +49,13 @@ dotfiles/
 - **Package Manager**: Homebrew (packages in `.brew`)
 - **Claude Code**: Skills, agents, hooks, MCP servers
 - **Testing**: bats (shell tests via `dots test`)
-- **Sync**: `.sync-with-rollback` with backup/manifest tracking
+- **Sync**: `.sync` orchestrator (symlinks + per-directory `.sync` scripts)
 
 ## Build and Test
 
-- `dots sync` — Sync dotfiles (symlinks, Homebrew, fonts) with rollback
+- `dots sync` — Sync dotfiles (symlinks, Homebrew, fonts)
 - `dots test` — Run test suite (validates shell loading, git hooks, symlinks, Claude config sync)
-- `shellcheck bin/* .sync .sync-with-rollback` — Lint shell scripts
+- `shellcheck bin/* .sync` — Lint shell scripts
 - `mcp-sync` — Sync MCP servers from registry.yaml
 - `plugin-sync` — Sync plugins from registry.yaml
 

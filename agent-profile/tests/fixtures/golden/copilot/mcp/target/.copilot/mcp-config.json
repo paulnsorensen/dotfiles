@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "foo": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "foo-mcp"
+      ],
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+# Dotfiles-managed allowlist. Only the Cursor plugin source
+# (cursor/plugins/local/cheese-grok/) belongs in version control; it is
+# deployed into a real ~/.cursor by chezmoi's install-cursor-plugin.sh.
+# Everything else under this dir would be a deploy artifact or Cursor IDE
+# runtime cache — none of it belongs in the repo. (~/.cursor is NOT symlinked
+# here anymore; `cursor` is in SYNC_SKIP_LIST, so nothing leaks back.)
+*
+!.gitignore
+!plugins/
+!plugins/**

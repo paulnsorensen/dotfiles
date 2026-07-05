@@ -1,0 +1,48 @@
+[[corpus]]
+name = "cheese-global"
+paths = ["~/.cheese"]
+globs = ["**/*.md"]
+exclude = ["**/.git/**"]
+
+{{ if stat (joinPath .chezmoi.homeDir "Dev" "cheez-wiki" ".hallouminate" "wiki") -}}
+# The cheez-wiki knowledge base, exposed from the XDG baseline so every project
+# can search it. Guarded by the `stat` above: hallouminate's indexer aborts the
+# entire run on a missing corpus path (see hallouminate#101), so this block is
+# emitted only on machines where the wiki tree exists — keeping the synced
+# baseline portable across computers.
+#
+# Declared as a flat [[corpus]] (NOT a [[repository]]) on purpose: a baseline
+# `[[repository]] name = "cheez-wiki"` would collide with the repo-layer config
+# at ~/Dev/cheez-wiki/.hallouminate/ — both would derive `repo:cheez-wiki:wiki`
+# and trip the duplicate-name check. A distinct corpus name sidesteps that.
+[[corpus]]
+name = "cheez-wiki"
+paths = ["~/Dev/cheez-wiki/.hallouminate/wiki"]
+globs = ["**/*.md"]
+exclude = ["**/.git/**"]
+
+{{ end -}}
+# Sibling-repo wikis, exposed to the cheez-wiki command center (and every other
+# workspace) so cross-repo grounding — roadmaps/, architecture pages — works
+# from one session. Same rules as the cheez-wiki block above: stat-guarded per
+# machine, and flat [[corpus]] (NOT [[repository]]) so these never collide with
+# each repo's own repo-layer config deriving `repo:<name>:wiki`.
+{{ range $repo := list "milknado" "easy-cheese" "tilth" "hallouminate" -}}
+{{ if stat (joinPath $.chezmoi.homeDir "Dev" $repo ".hallouminate" "wiki") -}}
+[[corpus]]
+name = "{{ $repo }}-wiki"
+paths = ["~/Dev/{{ $repo }}/.hallouminate/wiki"]
+globs = ["**/*.md"]
+exclude = ["**/.git/**"]
+
+{{ end -}}
+{{ end -}}
+# Top-level embeddings default for all repos (per-repo config can override).
+# snowflake-arctic-embed-s: 384-dim, English, retrieval-tuned. Full precision
+# (quantized=false) — corpora are small, so keep max quality.
+# NOTE: switching model later requires deleting the shared ground_dir and
+# re-running `hallouminate index`.
+[embeddings]
+enabled = true
+model = "snowflake/snowflake-arctic-embed-s"
+quantized = false

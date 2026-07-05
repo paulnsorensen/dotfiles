@@ -2,7 +2,7 @@
 # This file sets up the foundation for the shell environment
 
 # Essential directories
-export DOTFILES_DIR="$HOME/Dev/dotfiles"
+export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
 export DEV_DIR="$HOME/Dev"
 
 # PATH configuration (matching zshrc)
@@ -15,6 +15,13 @@ if [[ $OSTYPE == darwin* ]]; then
   [[ -d "${_brew_prefix}/opt/openssl/bin" ]] && export PATH="${_brew_prefix}/opt/openssl/bin:$PATH"
   [[ -d "${_brew_prefix}/opt/rustup/bin" ]] && export PATH="${_brew_prefix}/opt/rustup/bin:$PATH"
   unset _brew_prefix
+elif [[ $OSTYPE == linux* ]]; then
+  # Homebrew on Linux installs to /home/linuxbrew/.linuxbrew (or ~/.linuxbrew);
+  # brew shellenv puts its bin/sbin on PATH and sets HOMEBREW_* vars.
+  for _brew_bin in /home/linuxbrew/.linuxbrew/bin/brew "$HOME/.linuxbrew/bin/brew"; do
+    [[ -x "$_brew_bin" ]] && eval "$("$_brew_bin" shellenv)" && break
+  done
+  unset _brew_bin
 fi
 
 # Add dotfiles bin to PATH

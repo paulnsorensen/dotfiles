@@ -15,11 +15,12 @@ The most robust skill architecture uses all three:
 
 ### 1. Forced Skill Evaluation (Activation)
 
-**Problem:** Skills trigger at ~20% baseline. Claude skips evaluation for tasks
-it thinks it can handle directly.
+**Problem:** Skills frequently under-trigger — Claude skips skill evaluation for
+tasks it thinks it can handle directly.
 
 **Fix:** `UserPromptSubmit` hook forces Claude to evaluate available skills.
-Community testing: ~20% → ~84% activation.
+Community testing reports large activation gains from this (specific rates vary
+by setup and are not an official benchmark).
 
 ```javascript
 // .claude/hooks/force-skill-eval.js

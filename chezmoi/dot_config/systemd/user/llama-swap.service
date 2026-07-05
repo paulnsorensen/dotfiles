@@ -1,0 +1,27 @@
+[Unit]
+Description=llama-swap router (on-demand llama-server backends, single :9000 front)
+PartOf=local-llm.target
+ConditionPathExists=%h/local-llm/bin/llama-swap
+ConditionPathExists=%h/local-llm/configs/llama-swap.yaml
+# Bound the restart loop: at most 3 starts per 120s, then give up (must exceed RestartSec × StartLimitBurst = 90s)
+StartLimitBurst=3
+StartLimitIntervalSec=120
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p %h/local-llm/logs %h/local-llm/cache/slots
+Environment="LD_LIBRARY_PATH=%h/local-llm/bin/llama.cpp"
+ExecStart=%h/local-llm/bin/llama-swap --config %h/local-llm/configs/llama-swap.yaml --listen 127.0.0.1:9000
+Restart=on-failure
+RestartSec=30
+# Contain runaway memory in this cgroup instead of triggering a global OOM kill:
+# hot group (~6.5G) + one swapped 30B (~21G) + headroom
+MemoryMax=30G
+# Make this service the kernel OOM killer's first victim, sparing system services
+OOMScoreAdjust=1000
+Nice=5
+StandardOutput=append:%h/local-llm/logs/llama-swap.log
+StandardError=append:%h/local-llm/logs/llama-swap.log
+
+[Install]
+WantedBy=local-llm.target

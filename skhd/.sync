@@ -17,12 +17,21 @@ fi
 
 ln -sfn "$SCRIPT_DIR/skhdrc" "$HOME/.skhdrc"
 
-if ! brew services list 2>/dev/null | awk '$1=="skhd" && $2=="started" {f=1} END {exit !f}'; then
-    if brew services start skhd >/dev/null 2>&1; then
+# skhd manages its own launchd service — it ships NO brew service definition
+# (`brew services start skhd` aborts with "has not implemented #service"), so
+# use its native `--start-service`, which installs the LaunchAgent on first run.
+if pgrep -x skhd >/dev/null 2>&1; then
+    echo "skhd/.sync: config linked, service already running"
+else
+    skhd --start-service >/dev/null 2>&1 || true
+    sleep 1
+    if pgrep -x skhd >/dev/null 2>&1; then
         echo "skhd/.sync: config linked, service started"
     else
-        echo "skhd/.sync: config linked, but service failed to start (see stderr)" >&2
+        # Almost always missing Accessibility access — a manual, un-scriptable
+        # System Settings grant. skhd aborts on launch until it is granted.
+        echo "skhd/.sync: config linked, but skhd is not running." >&2
+        echo "  Grant Accessibility access to skhd: System Settings →" >&2
+        echo "  Privacy & Security → Accessibility, then: skhd --restart-service" >&2
     fi
-else
-    echo "skhd/.sync: config linked, service already running"
 fi

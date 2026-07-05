@@ -28,7 +28,6 @@ teardown() {
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/git.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/navigation.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/misc.zsh" ]]
-    [[ ! -f "$REAL_DOTFILES_DIR/zsh/claude.zsh" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/zsh/updates.zsh" ]]
     [[ ! -d "$REAL_DOTFILES_DIR/zsh/cache" ]]
 }
@@ -69,6 +68,87 @@ teardown() {
     # Should have utility aliases
     grep -q "alias uuidg=" "$aliases_file"
     grep -q "alias zrl=" "$aliases_file"
+}
+
+@test "codex profile shortcuts launch tight profiles" {
+    local claude_file="$REAL_DOTFILES_DIR/zsh/claude.zsh"
+
+    grep -Fxq 'cxp() { dots profile launch codex codex-plan "$@"; }' "$claude_file"
+    grep -Fxq 'cxc() { dots profile launch codex codex-code "$@"; }' "$claude_file"
+}
+
+@test "codex profile shortcuts pass through arguments" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "dots() { print -r -- \"\$*\"; }; source '$REAL_DOTFILES_DIR/zsh/claude.zsh'; cxp --sandbox workspace; cxc --model gpt-5"
+
+    assert_success
+    [[ "$output" == $'profile launch codex codex-plan --sandbox workspace\nprofile launch codex codex-code --model gpt-5' ]]
+}
+
+@test "omp wrapper appends the default-profile system prompt" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fakebin="$TEST_HOME/bin"
+    mkdir -p "$fakebin"
+    cat > "$fakebin/omp" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@"
+SH
+    chmod +x "$fakebin/omp"
+    # The wrapper only passes --append-system-prompt when the addendum exists.
+    mkdir -p "$TEST_HOME/.omp/agent"
+    printf 'addendum\n' > "$TEST_HOME/.omp/agent/APPEND_SYSTEM.md"
+
+    run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; omp --model gpt-5"
+
+    assert_success
+    [ "${lines[0]}" = "--append-system-prompt" ]
+    [ "${lines[1]}" = "$TEST_HOME/.omp/agent/APPEND_SYSTEM.md" ]
+    [ "${lines[2]}" = "--model" ]
+    [ "${lines[3]}" = "gpt-5" ]
+}
+
+@test "ompt wrapper appends the tight-profile system prompt, not the default" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fakebin="$TEST_HOME/bin"
+    mkdir -p "$fakebin"
+    cat > "$fakebin/omp" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@"
+SH
+    chmod +x "$fakebin/omp"
+    # Both addenda exist; the derivation must pick the PI_CONFIG_DIR one.
+    mkdir -p "$TEST_HOME/.omp/agent" "$TEST_HOME/.omp-tight/agent"
+    printf 'default\n' > "$TEST_HOME/.omp/agent/APPEND_SYSTEM.md"
+    printf 'tight\n'   > "$TEST_HOME/.omp-tight/agent/APPEND_SYSTEM.md"
+
+    run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; ompt --model gpt-5"
+
+    assert_success
+    [ "${lines[0]}" = "--append-system-prompt" ]
+    # Derives from PI_CONFIG_DIR=.omp-tight — NOT the default .omp path.
+    [ "${lines[1]}" = "$TEST_HOME/.omp-tight/agent/APPEND_SYSTEM.md" ]
+    [ "${lines[1]}" != "$TEST_HOME/.omp/agent/APPEND_SYSTEM.md" ]
+    [ "${lines[2]}" = "--model" ]
+    [ "${lines[3]}" = "gpt-5" ]
+}
+
+@test "omp wrapper omits --append-system-prompt when the addendum is absent" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fakebin="$TEST_HOME/bin"
+    mkdir -p "$fakebin"
+    cat > "$fakebin/omp" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@"
+SH
+    chmod +x "$fakebin/omp"
+    # No addendum on disk (e.g. tight profile with no APPEND_SYSTEM.md): the
+    # wrapper must not pass a nonexistent path to omp.
+    run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; ompt --model gpt-5"
+
+    assert_success
+    [ "${lines[0]}" = "--model" ]
+    [ "${lines[1]}" = "gpt-5" ]
+    [ "${#lines[@]}" -eq 2 ]
 }
 
 @test "completion.zsh has cdd completion" {
@@ -134,12 +214,20 @@ teardown() {
 }
 
 @test "fzf configuration has no syntax errors" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     # Test fzf config has valid zsh syntax
     run zsh -n "$REAL_DOTFILES_DIR/zsh/fzf.zsh"
     [[ $status -eq 0 ]]
 }
 
+@test "tmux.zsh parses cleanly" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -n "$REAL_DOTFILES_DIR/zsh/tmux.zsh"
+    [[ $status -eq 0 ]]
+}
+
 @test "configuration files have no syntax errors" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
     local failed=0
     for f in core.zsh aliases.zsh completion.zsh fzf.zsh; do
         if ! zsh -n "$REAL_DOTFILES_DIR/zsh/$f" 2>/dev/null; then

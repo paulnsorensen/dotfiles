@@ -1,0 +1,8 @@
+name = "tricky"
+description = "A \"tricky\" desc"
+model = "gpt-5"
+developer_instructions = """
+Line with "double" quotes
+Backslash \\ here and a path C:\\temp
+A triple \"\"\" inside
+Last line"""

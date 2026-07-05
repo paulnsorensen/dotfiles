@@ -1,0 +1,14 @@
+# global — migration stub for the old live install profile.
+#
+# Live deployment moved to `profiles/live/profile.yaml` and `dots sync`. This
+# profile keeps the old name parseable for migration docs/tests, but `ap install`
+# is deprecated and no longer deploys it.
+name: global
+description: Deprecated live install alias; use `dots sync` / profile `live`
+include: [base, _permissions]
+target_default: $HOME
+marketplaces:
+  local: $HOME/.claude/plugins/local
+enabled_plugins:
+  global@local: true
+mcp_scope: user

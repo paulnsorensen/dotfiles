@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# cc-session-name — print a collision-safe tmux session name for a path.
+#
+#   <repo>/.worktrees/<slug>  -> "<repo>-<slug>"   (worktree, or any subdir of it)
+#   inside a git repo         -> "<repo>"          (toplevel basename, any subdir)
+#   anywhere else             -> basename of path
+#
+# Dots and colons become hyphens (tmux session names can't contain them).
+# The path is first resolved to its git worktree/repo root, so a subdir collapses
+# to the same session as its root (de-sprawl). A worktree's own toplevel IS the
+# worktree dir, whose path carries /.worktrees/<slug> — that's how repo+slug are
+# recovered without colliding across repos.
+#
+# --unique (must precede the path): if a live tmux session already owns the
+# computed name, append the lowest free "-N" suffix (-2, -3, …). This backs
+# `cc --new`, which wants a fresh session past the default -A reattach.
+set -euo pipefail
+
+unique=0
+if [[ "${1:-}" == "--unique" ]]; then
+    unique=1
+    shift
+fi
+
+path="${1:-$PWD}"
+path="${path%/}"
+
+sanitize() {
+    local s="$1"
+    s="${s//./-}"
+    s="${s//:/-}"
+    printf '%s' "$s"
+}
+
+# Collapse to the git root when inside a repo; otherwise take the path as given.
+if root="$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)"; then
+    base="$root"
+else
+    base="$path"
+fi
+
+if [[ "$base" == */.worktrees/* ]]; then
+    slug="${base##*/}"
+    repo_path="${base%/.worktrees/*}"
+    name="$(sanitize "${repo_path##*/}-${slug}")"
+else
+    name="$(sanitize "${base##*/}")"
+fi
+
+# --unique: bump past any live session that already holds the base name.
+# Exact-match target (=name) so "dotfiles" doesn't prefix-match "dotfiles-2".
+if (( unique )) && command -v tmux >/dev/null 2>&1 && tmux has-session -t "=$name" 2>/dev/null; then
+    i=2
+    while tmux has-session -t "=${name}-${i}" 2>/dev/null; do
+        i=$((i + 1))
+    done
+    name="${name}-${i}"
+fi
+
+printf '%s' "$name"

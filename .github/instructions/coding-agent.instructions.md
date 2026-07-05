@@ -21,13 +21,13 @@ When implementing changes:
 - Quote all variable expansions: `"$var"`, never bare `$var`
 - New zsh config files must be sourced from `zshrc` at the correct load order point
 - New Claude skills go in `skills/<name>/SKILL.md` with frontmatter
-- New Claude agents go in `claude/agents/<name>.md` with frontmatter
-- New MCP servers go in `claude/mcp/registry.yaml`, not hardcoded JSON
+- New agents are registered in `agents/registry.yaml` with their body at `agents/agent_definitions/<name>.md`
+- New MCP servers go in `agents/mcp/registry.yaml`, not hardcoded JSON. The registry is harness-agnostic — entries install into Claude AND Codex by default; set `harnesses: [claude]` or `harnesses: [codex]` to scope a single entry.
 - Run `dots sync` after any changes to files that get symlinked to `~/.claude/`
 
 ## Architecture Rules
 
 - Claude skills are self-contained — each defines its own `allowed-tools`
-- Skills reference tools by their correct domain (trace for ast-grep, scout for rg/fd, LSP for symbols)
+- Skills reference tools by their correct domain (trace for ast-grep, cheez-search for rg/fd, LSP for symbols)
 - Hooks are JavaScript (pre-tool) or shell (lifecycle) — do not mix
 - `common/` is a leaf — it imports nothing from siblings

@@ -28,7 +28,7 @@ fi
 
 # Parse arguments
 VERBOSE=false
-SPECIFIC_TEST=""
+SPECIFIC_TESTS=()
 WATCH=false
 
 while (($#)); do
@@ -42,22 +42,23 @@ while (($#)); do
             shift
             ;;
         -h|--help)
-            echo "Usage: $0 [OPTIONS] [test-file]"
+            echo "Usage: $0 [OPTIONS] [test-file ...]"
             echo
             echo "Options:"
-            echo "  -v, --verbose    Show verbose output"
+            echo "  -v, --verbose    Show full test output (default: failures only)"
             echo "  -w, --watch      Watch for changes and re-run tests"
             echo "  -h, --help       Show this help message"
             echo
             echo "Examples:"
-            echo "  $0                    # Run all tests"
-            echo "  $0 dots.bats          # Run specific test file"
-            echo "  $0 -v                 # Run with verbose output"
-            echo "  $0 -w                 # Watch mode"
+            echo "  $0                            # Run all tests"
+            echo "  $0 dots.bats                  # Run a single test file"
+            echo "  $0 a.bats b.bats              # Run multiple test files"
+            echo "  $0 -v                         # Run with verbose output"
+            echo "  $0 -w                         # Watch mode"
             exit 0
             ;;
         *)
-            SPECIFIC_TEST="$1"
+            SPECIFIC_TESTS+=("$1")
             shift
             ;;
     esac
@@ -71,10 +72,20 @@ run_tests() {
     echo
 
     local test_files
-    if [[ -n "$SPECIFIC_TEST" ]]; then
-        test_files="$SPECIFIC_TEST"
+    if (( ${#SPECIFIC_TESTS[@]} > 0 )); then
+        test_files="${SPECIFIC_TESTS[*]}"
     else
-        test_files="dots-simple.bats dots.bats git-hooks.bats sync.bats config-validation.bats prompt.bats sync-claude.bats sync-rollback.bats hooks-blockers.bats hooks-session.bats iterm2-fonts.bats worktree-settings.bats copilot-sync.bats skills-external.bats skills-local.bats chezmoi-wiring.bats packages.bats cheese-flair.bats window-mgmt.bats"
+        # Glob every .bats file in this dir so new tests pick up automatically.
+        local _f _found=()
+        for _f in *.bats; do
+            [[ -f "$_f" ]] && _found+=("$_f")
+        done
+        if (( ${#_found[@]} == 0 )); then
+            echo -e "${RED}✘ No *.bats files found in $TESTS_DIR${NC}" >&2
+            echo "  (Did the working directory get clobbered, or is this a vendored copy?)" >&2
+            return 1
+        fi
+        test_files="${_found[*]}"
     fi
 
     # Count total tests
@@ -90,14 +101,25 @@ run_tests() {
     echo -e "${BLUE}Running $total_tests tests...${NC}"
     echo
 
-    # Run tests
-    local bats_args=""
+    # Suppress GNU parallel's citation notice (bats --jobs dispatches via parallel)
+    mkdir -p "$HOME/.parallel" && touch "$HOME/.parallel/will-cite"
+
+    local jobs
+    jobs=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+    # Parallel across files AND within files. A file whose tests share state
+    # opts out via BATS_NO_PARALLELIZE_WITHIN_FILE=true in its setup_file().
+    local rc=0
+    # shellcheck disable=SC2086 # intentional word splitting for multiple file args
     if [[ "$VERBOSE" == true ]]; then
-        bats_args="-v"
+        bats --jobs "$jobs" $test_files || rc=$?
+    else
+        # TAP output filtered to failures only (plan line + not-ok + diagnostics)
+        bats --formatter tap --jobs "$jobs" $test_files |
+            grep -v '^ok ' || rc=$?
     fi
 
-    # shellcheck disable=SC2086 # intentional word splitting for multiple file args
-    if bats $bats_args $test_files; then
+    if (( rc == 0 )); then
         echo
         echo -e "${GREEN}═══ All tests passed! ═══${NC}"
         return 0

@@ -14,4 +14,12 @@ ignores:
   - reference/**
   - tmux/plugins/**
   - vim/undo/**
-  - claude/hooks/node_modules/**
+  - .cheese/**
+  - .context/**
+  # Derived, gitignored: assembled by sync_claude_chezmoi_sources (also by the
+  # test suite) from skills/ etc., which are linted at source.
+  - chezmoi/dot_claude/exact_*/**
+  # Cursor IDE runtime output (gitignored via /cursor/*); the only intentional
+  # markdown under cursor/ is plugins/. Not ours to lint.
+  - cursor/skills-cursor/**
+  - cursor/extensions/**

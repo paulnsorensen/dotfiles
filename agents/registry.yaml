@@ -1,0 +1,331 @@
+# agents/registry.yaml — the cheese sub-agent definitions.
+#
+# Single source of truth for the cheese sub-agents. Edited via
+# `agent-edit`; expanded into the `base` profile (and any profile that
+# declares `registries: { agents: agents/registry.yaml }`) by ap's ingest
+# layer, then rendered into every harness by the five renderers.
+#
+# Bodies are instruction-only Markdown at body_path (frontmatter stripped);
+# all metadata lives here. tools/disallowedTools are LISTS (renderers join
+# to CSV for claude/cursor and derive sandbox/permission for codex/opencode).
+# models is per-harness; color/effort/maxTurns/skills are Claude-honored fields.
+agents:
+  fromage-age-arch:
+    description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
+    models:
+      claude: opus
+      codex: gpt-5-codex
+      cursor: auto
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - Grep
+    - Glob
+    color: red
+    effort: medium
+    skills:
+    - cheez-search
+    maxTurns: 50
+    body_path: agents/agent_definitions/fromage-age-arch.md
+  fromage-age-history:
+    description: Git history analyst. Produces per-file risk scores that the orchestrator uses to adjust sibling findings. Does NOT find bugs or architecture issues — only outputs score modifiers.
+    models:
+      claude: haiku
+      codex: gpt-5-mini
+      cursor: claude-haiku
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - WebSearch
+    - WebFetch
+    - Agent
+    - Grep
+    - Glob
+    color: red
+    effort: high
+    skills:
+    - cheez-search
+    maxTurns: 50
+    body_path: agents/agent_definitions/fromage-age-history.md
+  fromage-fort:
+    description: PR review comment responder. Triages both inline review threads AND PR-level review body comments using severity tiers (blocker/high/medium/low) — fixes high-severity items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful. Spawnable as a parallel agent for move-my-cheese and cheese-convoy workflows.
+    models:
+      claude: opus
+      codex: gpt-5-codex
+      cursor: auto
+    effort: low
+    tools:
+    - Read
+    - Write
+    - Edit
+    - Bash
+    skills:
+    - gh
+    - cheez-search
+    - cheez-write
+    - commit
+    maxTurns: 50
+    body_path: agents/agent_definitions/fromage-fort.md
+  fromage-secaudit:
+    description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Read-only. Returns stake-grouped findings (high/medium) with file:line citations and one-line recommendations — ~2 KB digest, no severity rewriting, no auto-fixes. Used as an easy-cheese fork target when /age needs evidence on the security dimension.
+    models:
+      claude: opus
+      codex: gpt-5-codex
+      cursor: auto
+    disallowedTools:
+    - Write
+    - Edit
+    - NotebookEdit
+    - AskUserQuestion
+    - Grep
+    - Glob
+    color: red
+    effort: medium
+    skills:
+    - cheez-search
+    maxTurns: 50
+    body_path: agents/agent_definitions/fromage-secaudit.md
+  ghostbuster:
+    description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with severity-tier scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
+    models:
+      claude: opus
+      codex: gpt-5-codex
+      cursor: auto
+    effort: low
+    disallowedTools:
+    - Edit
+    - NotebookEdit
+    - WebSearch
+    - WebFetch
+    - AskUserQuestion
+    - Write
+    - Grep
+    - Glob
+    maxTurns: 50
+    body_path: agents/agent_definitions/ghostbuster.md
+  nih-scanner:
+    description: Structural NIH pattern scanner. Uses Serena MCP and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
+    models:
+      claude: opus
+      codex: gpt-5-codex
+      cursor: auto
+    effort: low
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - WebSearch
+    - WebFetch
+    - AskUserQuestion
+    - Grep
+    - Glob
+    skills:
+    - cheez-search
+    maxTurns: 50
+    body_path: agents/agent_definitions/nih-scanner.md
+  ricotta-reducer:
+    description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with severity-tier scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
+    models:
+      claude: sonnet
+      codex: gpt-5-codex
+      cursor: claude-sonnet
+    tools:
+    - Read
+    - Bash
+    - Agent
+    - mcp__serena__*
+    skills:
+    - cheez-search
+    - de-slop
+    maxTurns: 50
+    body_path: agents/agent_definitions/ricotta-reducer.md
+  roquefort-wrecker:
+    description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
+    models:
+      claude: haiku
+      codex: gpt-5-mini
+      cursor: claude-haiku
+    tools:
+    - Read
+    - Write
+    - Bash
+    - mcp__serena__*
+    skills:
+    - cheez-search
+    maxTurns: 50
+    body_path: agents/agent_definitions/roquefort-wrecker.md
+  duckdb-expert:
+    description: Read-only DuckDB analyst for the coding-agent session-analytics database. Spawned with ONE analytics pack pointer (skills/<skill>/references/<domain>.md) plus a target and a harness filter; runs that single domain's queries and returns one structured ~2 KB digest. Reads queries from the caller's pack and the canonical schema from session-analytics. Built for context isolation — consumer skills fan out one parallel spawn per owned domain. Used by skill-improver, tool-efficiency, prompt-analytics, and work-recovery.
+    models:
+      claude: haiku
+      codex: gpt-5-mini
+      cursor: claude-haiku
+    tools:
+    - Bash
+    - Read
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - Agent
+    - WebSearch
+    - WebFetch
+    - Grep
+    - Glob
+    skills:
+    - session-analytics
+    maxTurns: 50
+    body_path: agents/agent_definitions/duckdb-expert.md
+  whey-drainer:
+    description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — call from /cook taste-test, /press, or /cure post-fix to gate the next step on test pass. Does NOT write tests.
+    models:
+      claude: haiku
+      codex: gpt-5-mini
+      cursor: claude-haiku
+    tools:
+    - Bash
+    - Read
+    skills:
+    - cheez-search
+    maxTurns: 50
+    body_path: agents/agent_definitions/whey-drainer.md
+  worktree-content-digest:
+    description: Read-only worktree inspector. Given one worktree path, runs git log/diff/ls-files and returns a 2-3 line digest — unique commits, uncommitted diff summary, and whether untracked files look throwaway vs. worth keeping. Fanned out one-per-worktree (in parallel) by the worktree-triage skill so diff bodies stay in the sub-agent's window.
+    models:
+      claude: haiku
+      codex: gpt-5-mini
+      cursor: claude-haiku
+    tools:
+    - Bash
+    - Read
+    maxTurns: 30
+    body_path: agents/agent_definitions/worktree-content-digest.md
+  # ── easy-cheese general phase agents ──────────────────────────────────────
+  # Four general-purpose agents that model the easy-cheese workflow: explore
+  # -> research -> review -> code. Planning stays a top-level orchestrator
+  # concern (it owns the human approval loop and can fan out these agents; a
+  # level-1 subagent cannot). Unlike the narrow specialist agents above, these
+  # are full-phase workers an orchestrator dispatches to. Their descriptions
+  # carry PROACTIVE triggers so they fire under every easy-cheese skill and any
+  # user-installed skill that needs grounding before it acts. They route file
+  # I/O through the cheez-* skills (tilth MCP), not host tools.
+  # Copilot CLI renders these agents too, but ignores per-agent model overrides.
+  explorer:
+    description: Read-only codebase investigator. Answers "where / how / what" questions by searching and reading — never writes. Returns a structured findings digest (file:line citations, call paths, conclusions), keeping the file dumps out of the parent's context. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
+    models:
+      claude: sonnet
+      codex: gpt-5-mini
+      opencode: inherit
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - Agent
+    - Grep
+    - Glob
+    color: cyan
+    skills:
+    - cheez-search
+    - cheez-read
+    maxTurns: 50
+    body_path: agents/agent_definitions/explorer.md
+  researcher:
+    description: External-research agent. Answers questions outside the codebase — library/API docs, current web facts, version/changelog checks, best-practice comparisons, GitHub examples — via Context7, Tavily, web fetch, and gh, then writes a durable cited research slug under .cheese/research/. Read-only against code. Returns a condensed claim-level digest (the heavy fetch bodies stay on disk, out of the parent's context). Models the easy-cheese research phase. Use PROACTIVELY before implementing against an unfamiliar library or API, when a claim needs a current source instead of a guess, or whenever a skill (/mold, /cook, /briesearch, or any user-installed skill) would otherwise rely on stale training data.
+    models:
+      claude: sonnet
+      codex: gpt-5-mini
+      opencode: inherit
+    disallowedTools:
+    - Edit
+    - NotebookEdit
+    - Agent
+    - Grep
+    - Glob
+    color: blue
+    skills:
+    - briesearch
+    - cheez-search
+    - cheez-read
+    maxTurns: 50
+    body_path: agents/agent_definitions/researcher.md
+  reviewer:
+    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path across the ten /age dimensions (correctness, security, encapsulation, spec, complexity, deslop, assertions, NIH, efficiency, telemetry) and returns a severity-grouped findings report. Read-only — never writes fixes; at the top level it draws on the specialist agents (fromage-*, ghostbuster, ricotta-reducer, nih-scanner) for evidence. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
+    models:
+      claude: opus
+      codex: gpt-5
+      opencode: inherit
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - Agent
+    - Grep
+    - Glob
+    color: red
+    effort: high
+    skills:
+    - age
+    - cheez-search
+    - cheez-read
+    maxTurns: 50
+    body_path: agents/agent_definitions/reviewer.md
+  coder:
+    # Runs on opus at low effort: the write surface needs judgment but the loop
+    # is bounded. Denies native Edit/Write/Grep/Glob/NotebookEdit — all edits go
+    # through cheez-write (tilth); keeps Read. Denies Agent — a dispatched coder
+    # is a level-1 subagent and cannot fan out.
+    description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop, editing through the cheez-write (tilth) skill. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through cheez-write (tilth) — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
+    models:
+      claude: opus
+      codex: gpt-5-codex
+      opencode: inherit
+    disallowedTools:
+    - Agent
+    - Grep
+    - Glob
+    - Edit
+    - Write
+    - NotebookEdit
+    color: green
+    effort: low
+    skills:
+    - cook
+    - press
+    - cure
+    - cheez-write
+    - cheez-read
+    - cheez-search
+    - de-slop
+    - tdd-assertions
+    - commit
+    maxTurns: 100
+    body_path: agents/agent_definitions/coder.md
+  generalist:
+    # Capped catch-all. The built-in `general-purpose` is the default for untyped
+    # spawns and cannot carry a maxTurns cap (it lives outside the registry, see
+    # .hallouminate/wiki/architecture/subagent-turn-budgets.md). This is our own
+    # named stand-in: when the orchestrator routes a general, mixed task by
+    # subagent_type, picking `generalist` keeps it under a turn budget. It does
+    # NOT intercept genuinely untyped spawns — the harness hardcodes those to the
+    # built-in. Cap 100 matches measured general-purpose work (p90 101) so it
+    # clips only the runaway tail, not legitimate p90 runs. Denies Agent (a
+    # level-1 subagent cannot fan out).
+    description: General-purpose catch-all for an open-ended, multi-step task that does not fit a specialist phase agent — mixed research, code reading, and synthesis in one dispatch. The capped stand-in for the built-in general-purpose agent. Prefer a specialist when the task is cleanly one shape — explorer for "where/how/what" code questions, researcher for external/library/web facts, reviewer for checking a diff before it lands, coder for writing or changing code. Use this only as the fallback when no single specialist owns the task. Routes file I/O through the cheez-* (tilth) skills.
+    models:
+      claude: inherit
+      codex: gpt-5
+      opencode: inherit
+    disallowedTools:
+    - Agent
+    - Grep
+    - Glob
+    - NotebookEdit
+    color: yellow
+    skills:
+    - cheez-search
+    - cheez-read
+    - cheez-write
+    maxTurns: 100
+    body_path: agents/agent_definitions/generalist.md

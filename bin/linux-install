@@ -1,0 +1,323 @@
+#!/usr/bin/env bash
+# linux-install — one-shot Linux bootstrap for the dotfiles toolchain.
+#
+# Installs everything that isn't reachable through `apt` in one place:
+#   - apt packages (the ones actually in Ubuntu's repos)
+#   - rustup + cargo-managed CLIs (bottom, dust, yazi, difftastic, mergiraf, …)
+#   - prek via uv (assumes `dots sync` already bootstrapped uv into ~/.local/bin)
+#   - bun, duckdb via their official installers
+#   - npm globals (after apt's nodejs lands)
+#
+# Idempotent: each step skips when the binary is already on PATH.
+# After it finishes, run `dots sync` to materialize symlinks + chezmoi state.
+
+set -uo pipefail
+
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log()  { echo -e "${BLUE}[linux-install]${NC} $*"; }
+ok()   { echo -e "${GREEN}[linux-install]${NC} $*"; }
+warn() { echo -e "${YELLOW}[linux-install]${NC} $*" >&2; }
+err()  { echo -e "${RED}[linux-install]${NC} $*" >&2; }
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+    err "This script is Linux-only. On macOS, use \`dots sync\` directly."
+    exit 1
+fi
+
+# Refuse to run as root. The script calls \`sudo\` itself for apt; running the
+# whole thing under sudo makes \$HOME resolve to /root, so rustup, uv tools,
+# cargo packages, and npm globals all land in the wrong place and aren't on
+# your PATH after.
+if [[ "${EUID}" -eq 0 ]]; then
+    err "Run this script as your normal user, NOT with sudo."
+    err "It calls sudo itself for the apt portion and prompts for your password."
+    err "Re-run: ./bin/linux-install"
+    exit 1
+fi
+
+if ! command -v apt-get &>/dev/null; then
+    err "apt-get not found. This script targets Debian/Ubuntu."
+    exit 1
+fi
+
+# Same defensive unset that bin/dots does — leaked SSL_CERT_FILE from a Mac
+# env breaks every curl bootstrap below.
+for _ssl_var in SSL_CERT_FILE SSL_CERT_DIR; do
+    _val="${!_ssl_var:-}"
+    if [[ -n "$_val" && ! -e "$_val" ]]; then
+        warn "Unsetting $_ssl_var=$_val (path does not exist on this host)"
+        unset "$_ssl_var"
+    fi
+done
+unset _ssl_var _val
+
+mkdir -p "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+FAILED=()
+SKIPPED=()
+
+#-----------------------------------------------------------------------------
+# 1. apt packages
+#-----------------------------------------------------------------------------
+APT_PKGS=(
+    # Core CLI (watch ships with procps which is preinstalled — don't list it)
+    zsh tmux htop tree curl
+    # Modern CLI replacements
+    ripgrep fd-find bat eza git-delta fzf zoxide atuin
+    procs tokei lazygit just sd xclip gettext shellcheck
+    # Build deps — cargo-update / cargo-nextest / yazi link against system
+    # OpenSSL; bun's installer needs unzip; build-essential covers cc/make.
+    build-essential pkg-config libssl-dev unzip
+    # Languages / runtimes
+    nodejs npm
+    # GitHub
+    gh
+    # Linters available via apt
+    eslint
+    # Rust acceleration (rust-analyzer comes via `rustup component add` below —
+    # the apt package is referenced but has no installation candidate)
+    sccache
+    # Protobuf compiler (named `protobuf-compiler` in apt, not `protobuf`)
+    protobuf-compiler
+    # Python tooling needed for uv tool / prek
+    python3-pip pipx
+)
+
+log "Installing apt packages (${#APT_PKGS[@]} total)"
+if sudo apt-get update -qq && sudo apt-get install -y "${APT_PKGS[@]}"; then
+    ok "apt packages installed"
+else
+    err "apt install failed"
+    FAILED+=("apt")
+fi
+
+#-----------------------------------------------------------------------------
+# Login shell → zsh
+#-----------------------------------------------------------------------------
+# apt installed /usr/bin/zsh above, but on a fresh Ubuntu box the user's login
+# shell is still /bin/bash. Flip it via `chsh -s` so subsequent SSH / mosh
+# sessions land in the zsh setup the rest of this repo configures. Idempotent —
+# the inner check skips if the login shell already points at zsh.
+ZSH_PATH="$(command -v zsh || true)"
+if [[ -n "$ZSH_PATH" ]]; then
+    CURRENT_SHELL="$(getent passwd "$USER" | cut -d: -f7)"
+    if [[ "$CURRENT_SHELL" != "$ZSH_PATH" ]]; then
+        # chsh refuses shells that aren't in /etc/shells. Ubuntu ships it
+        # populated with bash/dash/sh; zsh's apt postinst usually adds itself,
+        # but defensively re-add (grep -qx makes it a no-op when present).
+        if ! grep -qx "$ZSH_PATH" /etc/shells; then
+            log "Adding $ZSH_PATH to /etc/shells"
+            if ! echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null; then
+                warn "Failed to update /etc/shells"
+            fi
+        fi
+        log "Setting login shell to zsh (was: $CURRENT_SHELL)"
+        if sudo chsh -s "$ZSH_PATH" "$USER"; then
+            ok "Login shell set to zsh — takes effect on next login"
+            LOGIN_SHELL_CHANGED=1
+        else
+            err "chsh failed"
+            FAILED+=("chsh")
+        fi
+    else
+        SKIPPED+=("login shell (already zsh)")
+    fi
+else
+    warn "zsh not on PATH — skipping login-shell change"
+fi
+
+#-----------------------------------------------------------------------------
+# 2. rustup + cargo CLIs
+#-----------------------------------------------------------------------------
+# Anything Rust-native that isn't in apt (or where the apt version lags badly).
+CARGO_PKGS=(
+    bottom         # btm — top replacement
+    du-dust        # dust — du replacement
+    yazi-fm        # yazi — terminal file manager
+    difftastic     # AST diff
+    mergiraf       # AST merge driver
+    tinty          # tinted-theming applier
+    cargo-nextest  # parallel test runner
+    cargo-update   # `cargo install-update` for idempotent upgrades
+    ast-grep       # structural search/rewrite
+)
+
+if ! command -v rustup &>/dev/null; then
+    log "Installing rustup (default toolchain: stable)"
+    if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path; then
+        ok "rustup installed → ~/.cargo/bin"
+        # shellcheck disable=SC1091
+        [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
+    else
+        err "rustup install failed"
+        FAILED+=("rustup")
+    fi
+else
+    SKIPPED+=("rustup")
+fi
+
+# rust-analyzer ships as a rustup component (not in apt and not on crates.io
+# in a usable form). Idempotent — `rustup component add` is a no-op if added.
+if command -v rustup &>/dev/null; then
+    log "Adding rust-analyzer rustup component"
+    if ! rustup component add rust-analyzer; then
+        err "rustup component add rust-analyzer failed"
+        FAILED+=("rust-analyzer")
+    fi
+fi
+
+if command -v cargo &>/dev/null; then
+    log "Installing ${#CARGO_PKGS[@]} cargo CLIs (this is slow — go grab a coffee)"
+    for pkg in "${CARGO_PKGS[@]}"; do
+        # Crate name vs binary name diverges for some packages; check the
+        # binary chezmoi-style cargo would expose.
+        case "$pkg" in
+            bottom)        bin=btm ;;
+            du-dust)       bin=dust ;;
+            yazi-fm)       bin=yazi ;;
+            *)             bin="$pkg" ;;
+        esac
+        if command -v "$bin" &>/dev/null; then
+            ok "  + $pkg (already installed)"
+            continue
+        fi
+        log "  Installing $pkg ..."
+        # --locked pins to the committed Cargo.lock, avoiding resolver drift on
+        # fresh boxes (cargo-nextest is the usual offender without this).
+        if ! cargo install --locked "$pkg"; then
+            err "  Failed to install $pkg"
+            FAILED+=("cargo:$pkg")
+        fi
+    done
+else
+    warn "cargo not on PATH — skipping cargo CLIs"
+    SKIPPED+=("cargo packages")
+fi
+
+#-----------------------------------------------------------------------------
+# 3. uv tools (prek and friends)
+#-----------------------------------------------------------------------------
+# uv itself is bootstrapped by packages/sync.sh — if it's not present yet,
+# run `dots sync` first.
+if command -v uv &>/dev/null; then
+    if ! command -v prek &>/dev/null; then
+        log "Installing prek via uv"
+        if ! uv tool install prek; then
+            err "uv tool install prek failed"
+            FAILED+=("prek")
+        fi
+    else
+        SKIPPED+=("prek")
+    fi
+else
+    warn "uv not found — run \`dots sync\` first to bootstrap it, then re-run this script"
+    SKIPPED+=("prek (needs uv)")
+fi
+
+#-----------------------------------------------------------------------------
+# 4. bun
+#-----------------------------------------------------------------------------
+if ! command -v bun &>/dev/null; then
+    log "Installing bun"
+    if ! curl -fsSL https://bun.sh/install | bash; then
+        err "bun install failed"
+        FAILED+=("bun")
+    fi
+else
+    SKIPPED+=("bun")
+fi
+
+#-----------------------------------------------------------------------------
+# 5. duckdb
+#-----------------------------------------------------------------------------
+if ! command -v duckdb &>/dev/null; then
+    log "Installing duckdb"
+    if ! curl -fsSL https://install.duckdb.org | sh; then
+        err "duckdb install failed"
+        FAILED+=("duckdb")
+    fi
+else
+    SKIPPED+=("duckdb")
+fi
+
+#-----------------------------------------------------------------------------
+# 6. npm globals
+#-----------------------------------------------------------------------------
+# Point npm's global prefix at ~/.local so we don't need sudo for globals.
+NPM_GLOBALS=(
+    bash-language-server
+    yaml-language-server
+    pyright
+    markdownlint-cli2
+    ccusage
+    "@vtsls/language-server"
+    "@govcraft/agent-skills"
+    "@jx0/jmux"
+    hunkdiff
+)
+
+if command -v npm &>/dev/null; then
+    # Set prefix once; harmless if already set.
+    npm config set prefix "$HOME/.local" >/dev/null
+
+    log "Installing ${#NPM_GLOBALS[@]} npm globals"
+    INSTALLED_GLOBALS=$(npm ls -g --depth=0 --parseable 2>/dev/null | awk -F/ '{print $NF}' || true)
+    for pkg in "${NPM_GLOBALS[@]}"; do
+        bin_name="${pkg##*/}"   # strips scope (@scope/pkg → pkg)
+        if echo "$INSTALLED_GLOBALS" | grep -qx "$bin_name"; then
+            ok "  + $pkg (already installed)"
+            continue
+        fi
+        log "  Installing $pkg ..."
+        if ! npm install -g "$pkg"; then
+            err "  Failed to install $pkg"
+            FAILED+=("npm:$pkg")
+        fi
+    done
+else
+    warn "npm not on PATH — skipping npm globals (apt install of nodejs/npm probably failed)"
+    SKIPPED+=("npm globals")
+fi
+
+#-----------------------------------------------------------------------------
+# Summary
+#-----------------------------------------------------------------------------
+echo
+echo -e "${CYAN}══════════════════════════════════════${NC}"
+echo -e "${CYAN}        Linux install summary         ${NC}"
+echo -e "${CYAN}══════════════════════════════════════${NC}"
+
+if ((${#SKIPPED[@]})); then
+    echo -e "${BLUE}Skipped (already installed):${NC} ${SKIPPED[*]}"
+fi
+
+if ((${#FAILED[@]})); then
+    err "Failures: ${FAILED[*]}"
+    echo
+    echo -e "${YELLOW}Re-run the script after fixing the underlying issue,${NC}"
+    echo -e "${YELLOW}or install the failed items manually.${NC}"
+fi
+
+echo
+if [[ "${LOGIN_SHELL_CHANGED:-0}" == "1" ]]; then
+    echo -e "${YELLOW}⚠ Login shell changed to zsh — log out and back in (or \`exec zsh -l\`) to use it.${NC}"
+    echo
+fi
+echo -e "${GREEN}Next steps:${NC}"
+echo "  1. Restart your shell (or \`source ~/.cargo/env\`) so cargo, rustup, and"
+echo "     ~/.local/bin globals are on PATH."
+echo "  2. \`gh auth login\`            # so dots sync can do \`gh skill install\`"
+echo "  3. \`cp .env.example .env\` and fill CONTEXT7_API_KEY + TAVILY_API_KEY"
+echo "     (skip if you don't need the keyed MCPs — sync still completes)"
+echo "  4. \`dots sync\`                # materializes symlinks + base profile"
+
+if ((${#FAILED[@]})); then
+    exit 1
+fi

@@ -1,76 +1,99 @@
 #!/bin/bash
 ############################
 # .sync
-# This script creates symlinks from the home directory to any desired dotfiles
-# in ~/dotfiles
-# or runs the relevant .sync script
-# Stolen from https://github.com/natebosch/dotfiles
+# Dotfiles sync orchestrator
 ############################
+
+set -euo pipefail  # Fail fast on errors
 
 ########## Variables
 
-dir="$(cd "${BASH_SOURCE%/*}" && pwd)"
-readonly dir
-source "${dir}/.vars"
+dir=$(pwd)
+olddir=~/.dotfiles.bak             # old dotfiles backup directory
 
-##########
+# State management
+DOTFILES_STATE_DIR="${HOME}/.local/state/dotfiles"
 
-# TODO: evaluate whether we need this in sync, also maybe have .setup and .sync
-# separately
-# sudo chmod -R 755 /usr/local/share/zsh
-
-
-# export and parse arg variables
-export DOTFILES_DEV=false
-
-for ARG in "$@"
-do
-  case "$ARG" in
-     dev)
-          echo "Setting dev=true"
-          export DOTFILES_DEV=true
-          ;;
-     *)
-          echo "Unrecognized arg: $ARG" >&2
-          exit 1
-          ;;
-esac
-done
-
-
-# run homebrew
-if [[ "$(uname)" == "Darwin" ]]; then
-  echo "Running homebrew script"
-  bash "$dir/.brew"
+# Source helpers from the script's own directory. Test harnesses that eval
+# this file may override the location via SYNC_SCRIPT.
+_sync_script_path="${SYNC_SCRIPT:-${BASH_SOURCE[0]:-}}"
+if [[ -n "$_sync_script_path" ]]; then
+    _sync_script_dir="$(cd "${_sync_script_path%/*}" && pwd)"
+    # shellcheck source=.sync-lib.sh
+    [[ -f "$_sync_script_dir/.sync-lib.sh" ]] && source "$_sync_script_dir/.sync-lib.sh"
+    unset _sync_script_dir
 fi
+unset _sync_script_path
 
-# create dotfiles_old in homedir
-# shellcheck disable=SC2154
-echo "Creating $olddir for backup of any existing dotfiles in ~"
-mkdir -p "$olddir"
-echo "...done"
+########## Functions
 
-# move any existing dotfiles in homedir to dotfiles_old directory, then create
-# symlinks
-for path in "$dir"/*; do
-  file=${path##*/}
-  if [[ -h "${HOME}/.$file" ]]; then
-    echo "Removing old link to $file"
-    rm "${HOME}/.$file"
-  fi
-  if [[ -f "${HOME}/.$file" || -d "${HOME}/.$file" ]]; then
-    echo "Moving existing $file from ~ to $olddir"
-    mv "${HOME}/.$file" "$olddir"
-  fi
+# Record the current sync timestamp
+record_sync_time() {
+    mkdir -p "${DOTFILES_STATE_DIR}"
+    date +%s > "${DOTFILES_STATE_DIR}/last_sync"
+}
 
-  if [[ -d "$dir/$file" && -f "$dir/$file/.sync" ]]; then
-    echo "Running .sync for $file."
-    bash "$dir/$file/.sync"
-  else
-    echo "Creating symlink to $file in home directory."
-    ln -s "$dir/$file" "${HOME}/.$file"
-  fi
-done
+# Main sync function
+run_sync() {
+    record_sync_time
+    parse_sync_args "$@"
 
-# cleanup exported vars
-unset DOTFILES_DEV
+    # Bootstrap yq (needed by packages/sync.sh to parse YAML)
+    if [[ "$(uname)" == "Darwin" ]] && ! command -v yq &>/dev/null; then
+      log_info "Bootstrapping yq..."
+      brew install yq
+    fi
+
+    log_info "Syncing packages"
+    bash "$dir/packages/sync.sh"
+
+    upgrade_uv_tools
+
+    log_info "Creating $olddir for backup of any existing dotfiles in ~"
+    mkdir -p "$olddir"
+
+    for file in *; do
+        sync_entry "$file"
+    done
+    sync_hidden_dirs
+
+    install_tpm
+    install_prek_hooks
+
+    unset DOTFILES_DEV
+
+    if (( ${#SYNC_FAILURES[@]} > 0 )); then
+        echo
+        log_error "Sync completed with FAILURES in: ${SYNC_FAILURES[*]}"
+        log_error "Configuration is partially applied — those areas may be stale."
+        log_error "Re-run 'dots sync' after fixing the underlying cause."
+        echo
+        log_info "To undo, run: dots rollback"
+        exit 1
+    fi
+
+    log_success "Sync completed successfully!"
+}
+
+# Help message
+show_help() {
+    echo "Usage: $0 [OPTION]"
+    echo
+    echo "Options:"
+    echo "  (no args)      Run normal sync"
+    echo "  dev            Set dev mode"
+    echo "  q              Quick sync"
+    echo "  refresh        Force re-check all packages (bypass cache)"
+    echo "  help           Show this help message"
+}
+
+########## Main
+
+case "${1:-sync}" in
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        run_sync "$@"
+        ;;
+esac

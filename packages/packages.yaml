@@ -1,0 +1,140 @@
+# packages.yaml — flat package registry
+#
+# Bare string = brew formula (mac + linux)
+# Key-value = override defaults
+#
+#   source:      brew (default) | cask | tap | cargo | npm | uv | gh-extension
+#   dev:         only when DOTFILES_DEV=true
+#   platform:    mac | linux (default: both)
+#   flags:       extra args spliced into the installer (uv source only;
+#                e.g. ["--python", "3.13", "--prerelease=allow"])
+
+packages:
+  - tinted-theming/tinted: { source: tap }
+  - koekeishiya/formulae: { source: tap }     # skhd
+  - oven-sh/bun: { source: tap }              # bun
+  - anomalyco/tap: { source: tap }            # opencode
+
+  # Core CLI
+  - jq
+  - yq
+  - fzf
+  - gh
+  - shellcheck
+  - bats-core                                 # bats test runner (tests/*.bats)
+  - tree
+  - htop
+  - ripgrep
+  - fd
+  - eza
+  - bat
+  - ast-grep
+  - git-delta
+  - tmux
+  - tinty
+  - prek
+  - zoxide
+  - atuin
+  - bottom
+  - dust
+  - procs
+  - tokei
+  - yazi
+  - difftastic
+  - mergiraf
+  - lazygit
+  - git-town
+  - joshmedeski/sesh: { source: tap }            # sesh tap (joshmedeski/sesh/sesh)
+  - sesh                                          # session switcher (joshmedeski/sesh tap); tmux binds guarded with if-shell
+  - just
+  - chezmoi
+  - duckdb
+  - watch
+  - parallel                                  # GNU parallel — run shell jobs concurrently
+  - node                                      # bundles npm on mac + linux
+  - bun                                       # JS/TS runtime required by jmux
+  - sd
+  - vhs
+  - gettext
+  - taf2/tap/mdvi
+
+  # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh → tmux)
+  - mosh                                        # resilient mobile shell (UDP 60000-61000); survives roaming/sleep
+  # Tailscale: install manually, not via brew/dots sync. macOS uses the website/
+  # App Store install (one GUI variant — never run two side by side); Linux uses
+  # the official installer `curl -fsSL https://tailscale.com/install.sh | sh`,
+  # which wires the systemd daemon. Then `tailscale up`. See operations/remote-access wiki.
+  - anomalyco/tap/opencode                    # open-source AI coding agent (fresher than homebrew-core)
+  - charmbracelet/tap/crush                   # Charm terminal AI coding agent (MCP via crush.json)
+  - can1357/tap/omp
+
+  # Rust build acceleration
+  - sccache                                   # rustc wrapper for compile caching
+  - cargo-nextest                             # faster, parallel test runner
+
+  # Rust build deps (transitive native toolchain requirements)
+  - protobuf                                  # protoc — required by lance-encoding build script (hallouminate)
+
+  # macOS-only
+  - mas: { platform: mac }                    # Mac App Store CLI
+  - trash: { platform: mac }                  # Move to Trash (safer rm)
+  - terminal-notifier: { platform: mac }      # macOS notifications from terminal
+  - skhd: { platform: mac }                   # Hotkey daemon (from koekeishiya/formulae tap)
+  - emdash: { source: cask, platform: mac }   # Desktop UI for running coding agents in parallel
+  - claude-code: { source: cask, platform: mac } # Claude Code — terminal AI coding assistant
+  - cursor: { source: cask, platform: mac }    # Cursor — AI code editor
+  - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)
+  - obsidian: { source: cask, platform: mac }  # Obsidian — Markdown knowledge base
+  - rjyo/moshi/moshi-hook: { platform: mac }   # Moshi phone bridge (agents/hooks/registry.yaml); linux uses Moshi's own installer (~/.local/bin)
+
+  # Linux-only
+  - xclip: { platform: linux }
+
+  # Dev (DOTFILES_DEV=true)
+  - pyenv: { dev: true }
+  - uv
+  - rustup: { dev: true }
+  - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app; greedy upgrade triggers repeated sudo prompts
+
+  # LSP servers (for Claude Code LSP plugins)
+  - bash-language-server
+  - yaml-language-server
+  - pyright
+  - gopls: { dev: true }
+  - rust-analyzer
+  - vtsls: { source: npm, pkg: "@vtsls/language-server" }
+
+  # Linters
+  - eslint: { source: npm, pkg: "eslint@8" }
+  - markdownlint-cli2: { source: npm }
+  - ccusage: { source: npm }
+  - agent-skills: { source: npm, pkg: "@govcraft/agent-skills" }
+  - jmux: { source: npm, pkg: "@jx0/jmux" }   # tmux workspace for running coding agents in parallel
+  - hunkdiff: { source: npm }                 # diff viewer used by jmux's Ctrl-a g info panel
+  - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux } # `gt` — stacked-diff PR workflow (mac uses the withgraphite/tap brew formula)
+
+  # uv tools (Python)
+  - ralphify: { source: uv }
+  - ruff: { source: uv }                      # Python linter (just lint-python)
+  - check-jsonschema: { source: uv }
+  - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
+  - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API
+  - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main" }  # Mikado execution engine; exposes `milknado-mcp` for the MCP registry
+  # Serena pins Python 3.13 and ships pre-release builds on PyPI; the `flags`
+  # array is passed through to `uv tool install` verbatim. Exposes the `serena`
+  # binary, which the MCP registry invokes per harness via --context.
+  - serena-agent: { source: uv, flags: ["--python", "3.13", "--prerelease=allow"] }
+
+  # gh CLI extensions
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack }   # native PR-stack management (used by /pr-stack)
+
+  # Cargo
+  - cargo-llvm-cov: { source: cargo }
+  - cargo-update: { source: cargo }            # provides `cargo install-update` for idempotent `dots up`
+  - tilth: { source: cargo, git: "https://github.com/paulnsorensen/tilth", branch: main }
+  - hallouminate: { source: cargo, git: "https://github.com/paulnsorensen/hallouminate", branch: main }
+  # Install from Git because the crates.io `rtk` collides with the desired package.
+  # If an unrelated `rtk` is already present from `cargo install rtk`, remove it first
+  # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.
+  # Pin to `master` (stable releases); the default branch `develop` lags behind.
+  - rtk: { source: cargo, git: "https://github.com/rtk-ai/rtk", branch: master }

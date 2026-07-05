@@ -1,0 +1,26 @@
+#!/bin/bash
+# run_onchange — re-runs whenever the shared agents-doc files change.
+#
+# Reruns when the contents of agents/AGENTS.md or agents/RTK.md change. The
+# hash below is computed by chezmoi at template render time over the rendered
+# script; chezmoi reruns whenever the embedded hash changes.
+#
+# Agents-doc hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/AGENTS.md %q/../agents/RTK.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+INSTALLER="$SOURCE_DIR/lib/install-agents-doc.sh"
+
+# Shared global preferences → every harness's instructions file
+"$INSTALLER" "$DOTFILES_ROOT/agents/AGENTS.md" \
+    "$HOME/.claude/CLAUDE.md" \
+    "$HOME/.codex/AGENTS.md"
+
+# RTK is Claude-specific (the hook lives in the Claude harness). Don't push
+# the Claude-flavored RTK.md into ~/.codex/ — leave Codex users to write their
+# own RTK.md (or none). The @RTK.md import at the bottom of AGENTS.md resolves
+# for Claude and is benign literal text for Codex.
+"$INSTALLER" "$DOTFILES_ROOT/agents/RTK.md" \
+    "$HOME/.claude/RTK.md"

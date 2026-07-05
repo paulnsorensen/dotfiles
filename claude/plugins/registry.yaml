@@ -1,80 +1,48 @@
-# Plugin Registry - Source of truth for Claude Code plugins
+# Plugin Registry - Source of truth for Claude Code plugin install/removal.
+#
+# settings.json composition: this registry's gate-filtered entries are overlaid
+# onto chezmoi/.chezmoidata/claude.yaml's `enabledPlugins` /
+# `extraKnownMarketplaces` base by chezmoi/dot_claude/modify_settings.json at
+# `chezmoi apply` time — the single writer of those settings.json keys. sync.sh
+# only installs/removes plugin payloads and registers local marketplaces.
 #
 # Format: <plugin>@<marketplace>
 # Marketplaces (all registered in settings.json:extraKnownMarketplaces or built-in):
-#   - claude-code-lsps:           Language server plugins (boostvolt/claude-code-lsps)
 #   - claude-plugins-official:    Official workflow plugins (anthropics/claude-code-plugins)
-#   - claude-hud:                 Statusline HUD (jarrodwatts/claude-hud)
 #   - todoist-flow:               In-repo Todoist productivity plugin (directory source)
 #   - local:                      Out-of-repo local plugins; `path:` resolves the source dir
 #
+# Symbol-level code intelligence is provided by the Serena MCP (see agents/mcp/
+# registry.yaml). Per-language LSP plugins were removed once Serena went
+# cross-harness — keep symbol routing in one place.
+#
 # Usage:
 #   plugin-sync           Sync plugins (install missing)
-#   plugin-sync-dry       Preview changes
 #   plugin-ls             List installed plugins
 
 plugins:
-  # --- LSP plugins (globally enabled, servers start lazily per file type) ---
-  bash-language-server@claude-code-lsps:
-    description: Bash/shell script language server (.sh, .bash, .zsh)
-    scope: user
-    load: true
-
-  vtsls@claude-code-lsps:
-    description: TypeScript/JavaScript language server (.ts, .tsx, .js, .jsx)
-    scope: user
-    load: true
-
-  yaml-language-server@claude-code-lsps:
-    description: YAML language server (.yaml, .yml)
-    scope: user
-    load: true
-
-  rust-analyzer@claude-code-lsps:
-    description: Rust language server (.rs)
-    scope: user
-    load: true
-
-  pyright@claude-code-lsps:
-    description: Python type checking and language server (.py, .pyi)
-    scope: user
-    load: true
-
-  gopls@claude-code-lsps:
-    description: Go language server (.go)
-    scope: user
-    load: true
-
   # --- Workflow plugins ---
-  claude-md-management@claude-plugins-official:
-    description: Audit, maintain, and improve CLAUDE.md files with session learnings
-    scope: user
-    load: true
-
+  # load: false → payload stays installed but globally disabled; the fe and
+  # plugin ap profiles flip these on per-session via enabled_plugins.
   playwright@claude-plugins-official:
     description: Browser testing and automation with Playwright
     scope: user
-    load: true
+    load: false
 
   frontend-design@claude-plugins-official:
     description: Frontend design skill for UI/UX implementation
     scope: user
-    load: true
+    load: false
 
   plugin-dev@claude-plugins-official:
     description: Plugin development toolkit for building and testing Claude Code plugins
     scope: user
-    load: true
+    load: false
 
   skill-creator@claude-plugins-official:
     description: Guided skill creation workflow with component design, implementation, and validation
     scope: user
-    load: true
-
-  claude-hud@claude-hud:
-    description: Real-time statusline HUD — context usage, rate limits, active tools, agents, tasks
-    scope: user
-    load: true
+    load: false
 
   # --- Local plugins (dotfiles) ---
   # Gated entries are skipped unless the named env var is "true" (see .env.example).
@@ -100,3 +68,7 @@ plugins:
     load: true
     path: ~/Dev/cheese-flow
     gate: CHEESE_FLOW
+
+  # milknado is now managed via agents/plugins/registry.yaml (cross-harness).
+  # Claude gets the native install; other harnesses get decomposed primitives.
+  # See agents/plugins/registry.yaml for the entry.

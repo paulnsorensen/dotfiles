@@ -2,12 +2,12 @@
 name: self-eval
 model: haiku
 description: >
-  Run the Self-Evaluation Checklist against your last response or recent changes.
-  Use this skill when the user says "self-eval", "self-evaluate", "check my response",
-  "quality check", "evaluate response", or when you want to proactively verify response
-  quality before finishing. Also trigger when the user expresses doubt about your output
-  ("did you actually test that?", "are you sure?", "that seems incomplete"). This skill
-  cross-references with /de-slop and /tdd-assertions for items that have dedicated tooling.
+  Run the Self-Evaluation Checklist against your last response or recent code
+  changes. Use when the user says "self-eval", "self-evaluate", "check my
+  response", "quality check", "evaluate response", or expresses doubt ("did you
+  actually test that?", "are you sure?", "that seems incomplete"), or
+  proactively before finishing code edits. Cross-references /de-slop and
+  /tdd-assertions for items with dedicated tooling.
 allowed-tools: Read, Edit, Glob, Grep, Skill
 ---
 
@@ -60,7 +60,6 @@ Use **PASS**, **FAIL**, **WARN** (acknowledged deviation), or **DEFER** (delegat
 
 - **Item 7 (AI slop)**: If code was written or modified, invoke `/de-slop` on the changed files. Mark DEFER until results return, then update to PASS/FAIL.
 - **Item 8 (Weak assertions)**: If test code was written or modified, invoke `/tdd-assertions` on test files. Mark DEFER until results return, then update to PASS/FAIL.
-- **Pre-commit check**: If changes are staged, suggest `/diff` for smoke testing.
 
 Only invoke these if the item is relevant — no code changes means items 7-8 are automatic PASS.
 
