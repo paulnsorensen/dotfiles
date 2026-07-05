@@ -1,12 +1,14 @@
 # doc-drift watcher — external upstreams whose docs/releases govern our config.
 #
 # A weekly Claude cloud routine (agents/doc-drift/routine.md) resolves each
-# source's current version, compares it to `reconciled`, and files a GitHub
-# issue when they differ. It never edits config or opens PRs.
+# source's current version, compares it to `reconciled`, and triages each
+# drift: a no-op bump or a small fix becomes a PR, a large/idea change becomes
+# a GH issue. PRs are never auto-merged — a human reviews and merges.
 #
-# `reconciled` = the last version a human folded into our config. Advance it
-# ONLY when closing out a doc-drift issue — it is the last-reconciled marker,
-# not last-seen, so the routine won't re-file until a human catches up.
+# `reconciled` = the last version a human folded into our config. It advances
+# ONLY inside a merged PR (the no-op/small PRs bump it; large/idea issues don't)
+# — it is the last-reconciled marker, not last-seen, so drift keeps surfacing
+# until a human merges the reconciling PR.
 #
 # signal.type:
 #   npm         → `npm view <ref> version`

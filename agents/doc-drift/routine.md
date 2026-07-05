@@ -1,12 +1,11 @@
 # Doc-Drift Watcher — scheduled routine prompt
 
-You are a scheduled maintenance agent for the **dotfiles** repo, running on a
-weekly cron in a Claude cloud environment. Your ONLY job: detect when a watched
-upstream (a harness CLI or MCP whose docs govern our config) has released a new
-version, and file a GitHub issue per drift so a human can decide whether our
-config needs updating.
-
-You do **not** edit config, open PRs, bump versions, or merge anything.
+You are the **orchestrator** for the dotfiles repo's weekly doc-drift routine,
+running in a Claude cloud environment. You detect drift between watched
+upstreams and our config, then **triage each drift and act on it** — from a
+trivial version-bump PR up to a design issue. You fan the per-item work out to
+subagents so each item's release-note reading and reasoning stays in its own
+context window.
 
 ## Environment
 
@@ -16,7 +15,7 @@ environment's setup-script field). `gh` auth is the environment's native GitHub
 OAuth. If the setup script didn't run, the routine still works — it falls back
 to the manifest's `governs` paths instead of grounding.
 
-## Steps
+## Orchestrator steps
 
 1. Ensure the tracking label exists (idempotent):
 
@@ -27,50 +26,65 @@ to the manifest's `governs` paths instead of grounding.
 
        bin/doc-drift-scan
 
-   It prints one object per watched source. Work only the elements where
-   `.drifted == true`. If none drifted, exit quietly — no issue, no output.
+   Take the elements where `.drifted == true`. If none, exit quietly — no
+   output, no artifacts.
 
-3. For each drifted source:
+3. Dispatch **one subagent per drifted item, in parallel**, each with the
+   per-item brief below and its scanner object (`id`, `reconciled`, `current`,
+   `type`, `ref`) plus the manifest's `docs` + `governs` for that `id`. If
+   subagent dispatch isn't available in this environment, process the items
+   **sequentially in this same context** instead — the per-item logic is
+   identical.
 
-   a. **Dedup.** Skip if an open issue already covers this exact drift:
+4. Collect each subagent's one-line result and print a short summary table
+   (`<id>: <class> → PR #<n> | issue #<n> | dup`). You never edit config or
+   open artifacts yourself — the subagents do.
 
-          gh issue list --label doc-drift --state open \
-            --search "<id> <current> in:title"
+## Per-item subagent brief
 
-      If a title contains both the source `id` and the `current` version,
-      do not file a duplicate.
+You own exactly ONE drifted source. Inputs: `<id>`, `<reconciled>` →
+`<current>`, signal `<type>:<ref>`, `docs`, `governs`.
 
-   b. **Enrich by grounding the wiki.** The setup script pre-installs
-      `hallouminate`. Index the committed wiki once — `hallouminate index`
-      from the repo root (a fresh clone carries the wiki markdown but no
-      derived index) — then `ground` `.hallouminate/wiki/` for the source's
-      config surface to pin the exact page + section a human should check,
-      sharpening the coarse `governs` paths from the manifest. If hallouminate
-      is unavailable (setup skipped), fall back to `governs` verbatim.
+1. **Dedup.** If an open PR or issue already covers `<id> <current>` (search
+   titles, and the branch `doc-drift/<id>-<current>`), stop and report `dup`.
 
-   c. **File the issue:**
+2. **Read the change.** Fetch the release notes / changelog for
+   `reconciled → current`. Then ground the wiki: `hallouminate index` once
+   (fresh clone has the wiki markdown but no derived index), then `ground`
+   `.hallouminate/wiki/` for the config surface named in `governs`. If
+   hallouminate is unavailable, read the `governs` files directly.
 
-          gh issue create --label doc-drift \
-            --title "doc-drift: <id> <reconciled> → <current>" \
-            --body "<body>"
+3. **Classify** the drift:
+   - **no-op** — nothing we mirror changed (no flag / key / schema / behavior
+     in our `governs` surface is touched).
+   - **small** — a bounded, well-understood change to a specific config key,
+     flag, schema, or doc that maps cleanly to edits in the `governs` files.
+   - **large / idea** — a breaking change, a new subsystem, several
+     interacting changes, or something that needs a design decision or an idea
+     worth proposing. Brainstorm briefly before writing it up.
 
-      The body must contain:
-      - **Version delta:** `<reconciled>` → `<current>`, and the signal
-        (`<type>:<ref>`).
-      - **Docs / release notes:** the manifest `docs` link (and the changelog
-        or releases page if you can resolve it).
-      - **Review targets:** the enriched (or fallback `governs`) list of files
-        / wiki pages to check.
-      - **Checklist:**
-        - [ ] Review the changelog / release notes for config-relevant changes
-        - [ ] Update the affected registry / renderer / wiki page — or confirm no change needed
-        - [ ] Bump `reconciled` for `<id>` in `agents/doc-drift/sources.yaml`
-      - A one-line note: a version bump often ships nothing we mirror — task 1
-        is triage, not a guaranteed change.
+4. **Act by class** — exactly one artifact, on branch `doc-drift/<id>-<current>`:
+   - **no-op** → open a PR that ONLY bumps `reconciled: "<current>"` for `<id>`
+     in `agents/doc-drift/sources.yaml`.
+     Title: `chore(doc-drift): bump <id> to <current> (no-op)`.
+   - **small** → open a PR with the config / renderer / wiki edits AND the
+     `reconciled` bump. Run `just check`; if the env can't, say so in the body
+     and rely on CI.
+     Title: `fix(doc-drift): <id> <current> — <one-line what changed>`.
+     Body: the changelog delta, the edits, and why.
+   - **large / idea** → open a GH issue (label `doc-drift`) with the change,
+     the options you weighed, and a recommendation. Do NOT bump `reconciled`
+     or open a PR.
+     Title: `doc-drift: <id> <reconciled> → <current> — <topic>`.
 
-## Hard constraints
+5. Report one line: `<id>: <class> → PR #<n> | issue #<n> | dup`.
 
-- **Issues only.** Never edit files, open PRs, push, or merge.
-- **Never bump `reconciled` yourself** — that marker advances only when a human
-  reconciles the change and closes the issue.
-- **One issue per drifted source per version.** Honor the dedup check.
+## Invariants
+
+- **Never auto-merge.** Every PR is human-reviewed and CI-gated (`just check`);
+  merging + the follow-on `dots sync` stay with the human.
+- **`reconciled` advances only inside a PR** — never a direct push to `main`.
+- **One artifact per drifted item.** Honor the dedup.
+- **Subagents are file-disjoint** — each touches only its own `governs` files
+  and its own `reconciled` line in `sources.yaml` (git merges the per-line
+  bumps); never another item's files or branch.
