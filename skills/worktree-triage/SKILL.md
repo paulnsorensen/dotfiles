@@ -7,6 +7,8 @@ description: >
   files), not just metadata. Use when asked to "triage worktrees", "what's in
   these stale worktrees", or when /worktree-sweep --triage runs. Recommends only —
   never removes, commits, or stashes anything itself.
+model: sonnet
+effort: medium
 allowed-tools: Bash, AskUserQuestion, Agent
 ---
 

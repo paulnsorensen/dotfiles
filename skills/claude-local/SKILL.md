@@ -1,6 +1,7 @@
 ---
 name: claude-local
 model: sonnet
+effort: medium
 allowed-tools: Read, Write, Edit, Bash(git:*), Bash(grep:*), Bash(test:*), Bash(touch:*), Bash(mkdir:*), Bash(printf:*), Glob
 description: >
   Distill the user's global ~/.claude/CLAUDE.md into a gitignored
@@ -24,7 +25,7 @@ The global `~/.claude/CLAUDE.md` is tuned for the user's own work —
 personal communication style, owned-architecture rules, early-development
 stances. When the user contributes to someone else's
 repo they want their *engineering* preferences applied (coding principles,
-skill delegation, self-eval) without dragging in the personal flair or
+skill delegation) without dragging in the personal flair or
 architectural opinions that don't apply to a codebase they don't own.
 
 Two non-negotiables:
@@ -104,10 +105,6 @@ judgment to bring.
   over inline `python3 -c`, `gh` over raw GitHub API), CLI tools
   (jq/yq/tokei/duckdb), agent permission model (bypassPermissions ≠ Bash
   bypass), agent nesting limits. These apply in any repo.
-- **Self-evaluation guidance.** The brief `/self-eval` reference and its
-  8-item anti-pattern summary (sycophancy, premature completion, dismissing
-  failures, hedging, scope reduction, false confidence, AI slop, weak
-  assertions). Universal.
 - **Build system rules.** "Fix the version, don't restructure the build"
   — this is hard-won and applies to any project's deps.
 
@@ -177,10 +174,6 @@ for the user's personal Claude Code session. Source: `~/.claude/CLAUDE.md`
 
 <the table, trimmed to tools relevant here — keep cheez-* always, keep
 language-specific tooling only when applicable>
-
-## Self-evaluation checklist
-
-<the 8-item scan, one line each>
 
 ## Workflow shortcuts
 

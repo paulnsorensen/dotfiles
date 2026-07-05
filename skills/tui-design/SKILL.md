@@ -1,6 +1,7 @@
 ---
 name: tui-design
 model: sonnet
+effort: medium
 context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(mkdir:*), mcp__context7__resolve-library-id, mcp__context7__query-docs
 description: >

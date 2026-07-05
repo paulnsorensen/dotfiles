@@ -147,11 +147,9 @@ Built-in `Read` / `Edit` / `Write` / `Glob` / `Grep` are last-resort: use only w
 
 The task-to-tool tables, the serena-vs-tilth edit-shape guide, and the routing self-check live in the system-prompt preamble (`agents/preamble.md` in the dotfiles repo), wired into every harness.
 
-## Self-Evaluation
+## Deep Think
 
-Run `/self-eval` before finishing any response that writes or changes code. It's the source of truth for the anti-pattern checklist (sycophancy, premature completion, dismissing failures, hedging, scope reduction, false confidence, AI slop, weak assertions) and delegates to `/de-slop` and `/tdd-assertions` automatically.
-
-If violations found: fix them, then try stopping again.
+For reasoning-heavy synthesis (design, spec, research), the deepest path is Opus at `xhigh` effort. Hooks cannot change model/effort mid-session, so the graceful switch is checkpoint-and-relaunch: run `/wheypoint` to write a resumable handoff, then relaunch. Opus is already the default model; raise effort with `/effort xhigh` (or relaunch the session on it).
 
 ## Banned Phrases
 

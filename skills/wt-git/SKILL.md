@@ -1,6 +1,7 @@
 ---
 name: wt-git
 model: haiku
+effort: low
 allowed-tools: Bash(git:*), Bash(gh:*), Bash(wt-git:*), Read, Grep, Glob
 description: >
   Run git and GitHub operations inside a worktree you're not currently in,

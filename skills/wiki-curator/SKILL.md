@@ -1,6 +1,7 @@
 ---
 name: wiki-curator
 model: sonnet
+effort: medium
 description: >
   Curate this repo's hallouminate wiki (.hallouminate/wiki/, the
   repo:dotfiles:wiki corpus) — add or update architecture pages, per-harness

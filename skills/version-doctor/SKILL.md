@@ -7,6 +7,8 @@ description: >
   dependencies", and proactively when a build fails on version constraints —
   the fix is almost always a version bump, not restructuring the build. Use this
   before rewriting a build config or bypassing workspace inheritance.
+model: sonnet
+effort: medium
 allowed-tools: Read, Grep, Glob, Bash, Agent
 ---
 
