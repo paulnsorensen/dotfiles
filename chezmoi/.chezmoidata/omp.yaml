@@ -35,6 +35,9 @@ omp:
   config:
     symbolPreset: nerd
     colorBlindMode: true
+    theme:
+      dark: chocolate-donut
+      light: light
     defaultThinkingLevel: auto
     disabledProviders:
       - claude

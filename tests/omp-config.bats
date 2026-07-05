@@ -36,6 +36,8 @@ STDIN"
     [ "$status" -eq 0 ]
     [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]
     [ "$(yq '.colorBlindMode' "$OUT")" = "true" ]
+    [ "$(yq '.theme.dark' "$OUT")" = "chocolate-donut" ]
+    [ "$(yq '.theme.light' "$OUT")" = "light" ]
     [ "$(yq '.defaultThinkingLevel' "$OUT")" = "auto" ]
     [ "$(yq '.modelRoles.vision' "$OUT")" = "openai-codex/gpt-5.4" ]
     [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md" ]
@@ -44,23 +46,28 @@ STDIN"
 }
 
 @test "omp-config: managed-key drift is wiped, setupVersion preserved" {
-    # In-app symbolPreset change + a hand-edited (emptied) disabledProviders
+    # In-app symbolPreset/theme change + a hand-edited (emptied) disabledProviders
     # list must be driven back to the native-only registry values; setupVersion survives.
     run_modify 'symbolPreset: ascii
+theme:
+  dark: titanium
+  light: dark
 disabledProviders: []
 setupVersion: 1'
     [ "$status" -eq 0 ]
     [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]
+    [ "$(yq '.theme.dark' "$OUT")" = "chocolate-donut" ]
+    [ "$(yq '.theme.light' "$OUT")" = "light" ]
     [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }
 
 @test "omp-config: unknown key halts (non-zero, no write, key + registry named on stderr)" {
     run_modify 'symbolPreset: nerd
-theme: dark'
+unexpectedThemeKnob: dark'
     [ "$status" -ne 0 ]
     [ ! -s "$OUT" ]                                   # live left unmodified (nothing written)
-    [[ "$output" == *"theme"* ]]                      # offending key surfaced
+    [[ "$output" == *"unexpectedThemeKnob"* ]]        # offending key surfaced
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
 
