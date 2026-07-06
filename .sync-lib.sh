@@ -417,3 +417,16 @@ install_prek_hooks() {
       log_info "  $line"
     done
 }
+
+# Wire tilth's cwd-injection PreToolUse hook (drops the current inject-cwd.js
+# script; the hook wiring itself is registry-authored in claude.yaml)
+install_tilth_claude_code() {
+    if ! command -v tilth &>/dev/null; then
+        log_warning "tilth not installed, skipping claude-code hook wiring"
+        return 0
+    fi
+    log_info "Wiring tilth cwd-injection hook (tilth install claude-code)..."
+    tilth install claude-code 2>&1 | while read -r line; do
+        log_info "  $line"
+    done
+}

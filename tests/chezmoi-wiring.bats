@@ -441,13 +441,18 @@ EOF
         [[ "$(yq -r ".claude | has(\"$key\")" "$reg")" == "true" ]] \
             || { echo "claude.yaml missing section: $key" >&2; return 1; }
     done
-    # No plaintext secrets: every mcp env value must be a ${VAR} passthrough.
-    run yq -r '.claude.mcps[].env // {} | .[]' "$reg"
+    # No plaintext secrets: every mcp env value must be a ${VAR} passthrough,
+    # except the named marker key TILTH_MCP_CWD_HOOK_INJECTED (tilth's "1"
+    # flag, which can never carry a secret) -- mirrors the named-allowlist
+    # exemption used for inject-cwd.js below.
+    run yq -r '.claude.mcps[].env // {} | to_entries[] | .["key"] + "=" + (.["value"]|tostring)' "$reg"
     local line
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
+        [[ "$line" == "TILTH_MCP_CWD_HOOK_INJECTED=1" ]] && continue
+        local val="${line#*=}"
         # shellcheck disable=SC2016  # literal ${ } passthrough form, not expansion
-        [[ "$line" == '${'*'}' ]] || { echo "non-passthrough mcp env value: $line" >&2; return 1; }
+        [[ "$val" == '${'*'}' ]] || { echo "non-passthrough mcp env value: $line" >&2; return 1; }
     done <<<"$output"
 }
 
@@ -477,14 +482,22 @@ EOF
     # claude/hooks + agents/hooks — a wired script missing from both would
     # break every session after apply. Check both the $HOME-pathed script and
     # relative *.js runner args.
+    #
+    # inject-cwd.js is exempt: it's dropped into ~/.claude/tilth/ by
+    # `tilth install claude-code` (a post-chezmoi sync step, not exact_hooks),
+    # so it never lives in claude/hooks or agents/hooks.
     command -v yq >/dev/null 2>&1 || skip "yq not installed"
     local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    local tok script found
+    local -a exempt_scripts=("inject-cwd.js")
+    local tok script found ex
     while IFS= read -r tok; do
         [[ -z "$tok" ]] && continue
         # shellcheck disable=SC2013,SC2016  # word-split is intended; regex is a literal
         for script in $(grep -oE '(\$HOME/\.claude/hooks/)?[A-Za-z0-9_-]+\.(js|sh)' <<<"$tok"); do
             script="${script##*/}"
+            for ex in "${exempt_scripts[@]}"; do
+                [[ "$script" == "$ex" ]] && continue 2
+            done
             found=false
             [[ -f "$REAL_DOTFILES_DIR/claude/hooks/$script" ]] && found=true
             [[ -f "$REAL_DOTFILES_DIR/agents/hooks/$script" ]] && found=true
