@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# doc-drift-scan — resolve current upstream versions for the watched doc
+# sources and report which have drifted from the manifest's `reconciled`
+# version. The version math lives here (not in the routine's head) so drift
+# detection is deterministic and testable.
+#
+# Usage:  doc-drift-scan [sources.yaml]
+# Output: JSON array, one object per source:
+#         {id, type, ref, reconciled, current, drifted, status}
+#         status ∈ {current, drifted, unresolved}
+#         drift = current is resolvable AND differs from reconciled (any
+#         change, up or down — semver ordering is a human's call, not ours).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "${0%/*}" && pwd)"
+SOURCES="${1:-$SCRIPT_DIR/../agents/doc-drift/sources.yaml}"
+
+if [[ ! -f "$SOURCES" ]]; then
+    echo "doc-drift-scan: sources file not found: $SOURCES" >&2
+    exit 1
+fi
+
+resolve_version() {
+    local type="$1" ref="$2"
+    case "$type" in
+        npm)        npm view "$ref" version 2>/dev/null || true ;;
+        gh_release) gh api "repos/$ref/releases/latest" --jq .tag_name 2>/dev/null || true ;;
+        *)          return 2 ;;
+    esac
+}
+
+count=$(yq '.sources | length' "$SOURCES")
+
+echo "["
+for ((i = 0; i < count; i++)); do
+    id=$(yq ".sources[$i].id" "$SOURCES")
+    type=$(yq ".sources[$i].signal.type" "$SOURCES")
+    ref=$(yq ".sources[$i].signal.ref" "$SOURCES")
+    reconciled=$(yq ".sources[$i].reconciled" "$SOURCES")
+
+    if ! current=$(resolve_version "$type" "$ref"); then
+        echo "doc-drift-scan: unknown signal type '$type' for '$id'" >&2
+        exit 1
+    fi
+
+    if [[ -z "$current" ]]; then
+        drifted=false; current_json=null; status=unresolved
+    elif [[ "$current" != "$reconciled" ]]; then
+        drifted=true;  current_json="\"$current\""; status=drifted
+    else
+        drifted=false; current_json="\"$current\""; status=current
+    fi
+
+    [[ $i -gt 0 ]] && echo ","
+    printf '{"id":"%s","type":"%s","ref":"%s","reconciled":"%s","current":%s,"drifted":%s,"status":"%s"}' \
+        "$id" "$type" "$ref" "$reconciled" "$current_json" "$drifted" "$status"
+done
+echo
+echo "]"

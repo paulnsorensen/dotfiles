@@ -1,0 +1,78 @@
+# doc-drift watcher — external upstreams whose docs/releases govern our config.
+#
+# A weekly Claude cloud routine (agents/doc-drift/routine.md) resolves each
+# source's current version, compares it to `reconciled`, and triages each
+# drift: a no-op bump or a small fix becomes a PR, a large/idea change becomes
+# a GH issue. PRs are never auto-merged — a human reviews and merges.
+#
+# `reconciled` = the last version a human folded into our config. It advances
+# ONLY inside a merged PR (the no-op/small PRs bump it; large/idea issues don't)
+# — it is the last-reconciled marker, not last-seen, so drift keeps surfacing
+# until a human merges the reconciling PR.
+#
+# signal.type:
+#   npm         → `npm view <ref> version`
+#   gh_release  → latest release tag of the <owner/repo>
+# governs: coarse pointers only; the routine grounds the wiki to sharpen them.
+#
+# Not watched: cursor (no clean versioned release feed); tilth, hallouminate,
+# milknado (our own projects — we control their version bumps).
+
+sources:
+  - id: claude-code
+    signal: { type: npm, ref: "@anthropic-ai/claude-code" }
+    docs: https://code.claude.com/docs
+    governs: [harnesses/claude.md, chezmoi/.chezmoidata/claude.yaml]
+    reconciled: "2.1.201"
+
+  - id: codex-cli
+    signal: { type: npm, ref: "@openai/codex" }
+    docs: https://developers.openai.com/codex
+    governs: [harnesses/codex.md, agents/hooks/registry.yaml, agents/registry.yaml]
+    reconciled: "0.142.5"
+
+  - id: opencode
+    signal: { type: npm, ref: opencode-ai }
+    docs: https://opencode.ai/docs
+    governs: [harnesses/opencode.md]
+    reconciled: "1.17.13"
+
+  - id: copilot-cli
+    signal: { type: npm, ref: "@github/copilot" }
+    docs: https://docs.github.com/en/copilot/how-tos/copilot-cli
+    governs: [harnesses/copilot.md]
+    reconciled: "1.0.68"
+
+  - id: context7-mcp
+    signal: { type: npm, ref: "@upstash/context7-mcp" }
+    docs: https://github.com/upstash/context7
+    governs: [chezmoi/.chezmoidata/claude.yaml, agents/mcp/registry.yaml]
+    reconciled: "3.2.2"
+
+  - id: tavily-mcp
+    signal: { type: npm, ref: tavily-mcp }
+    docs: https://github.com/tavily-ai/tavily-mcp
+    governs: [chezmoi/.chezmoidata/claude.yaml, agents/mcp/registry.yaml]
+    reconciled: "0.2.20"
+
+  - id: chezmoi
+    signal: { type: gh_release, ref: twpayne/chezmoi }
+    docs: https://www.chezmoi.io/reference/
+    governs: [chezmoi/]
+    reconciled: "v2.70.5"
+
+
+  - id: serena
+    signal: { type: gh_release, ref: oraios/serena }
+    docs: https://oraios.github.io/serena
+    # gh_release tracks stable; we install the PyPI prerelease (serena-agent,
+    # --prerelease=allow), so a schema change can land a release ahead — fine
+    # for triage, we reconcile on stable.
+    governs: [chezmoi/dot_serena/modify_serena_config.yml, packages/packages.yaml]
+    reconciled: "v1.5.3"
+
+  - id: oh-my-pi
+    signal: { type: gh_release, ref: can1357/oh-my-pi }
+    docs: https://github.com/can1357/oh-my-pi
+    governs: [chezmoi/.chezmoidata/omp.yaml, chezmoi/dot_omp/private_agent/modify_config.yml]
+    reconciled: "v16.3.8"
