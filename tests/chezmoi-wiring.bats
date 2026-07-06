@@ -508,10 +508,12 @@ EOF
     #
     # inject-cwd.js is exempt: it's dropped into ~/.claude/tilth/ by
     # `tilth install claude-code` (a post-chezmoi sync step, not exact_hooks),
-    # so it never lives in claude/hooks or agents/hooks.
+    # so it never lives in claude/hooks or agents/hooks. state.sh is exempt
+    # for the same reason: it ships inside the tmux-claude-session-manager
+    # TPM plugin (~/.tmux/plugins/...), installed by `prefix+I`, not by dots sync.
     command -v yq >/dev/null 2>&1 || skip "yq not installed"
     local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    local -a exempt_scripts=("inject-cwd.js")
+    local -a exempt_scripts=("inject-cwd.js" "state.sh")
     local tok script found ex
     while IFS= read -r tok; do
         [[ -z "$tok" ]] && continue

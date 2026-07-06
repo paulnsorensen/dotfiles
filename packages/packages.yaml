@@ -52,7 +52,7 @@ packages:
   - watch
   - parallel                                  # GNU parallel — run shell jobs concurrently
   - node                                      # bundles npm on mac + linux
-  - bun                                       # JS/TS runtime required by jmux
+  - bun                                       # JS/TS runtime
   - sd
   - vhs
   - gettext
@@ -112,8 +112,6 @@ packages:
   - markdownlint-cli2: { source: npm }
   - ccusage: { source: npm }
   - agent-skills: { source: npm, pkg: "@govcraft/agent-skills" }
-  - jmux: { source: npm, pkg: "@jx0/jmux" }   # tmux workspace for running coding agents in parallel
-  - hunkdiff: { source: npm }                 # diff viewer used by jmux's Ctrl-a g info panel
   - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux } # `gt` — stacked-diff PR workflow (mac uses the withgraphite/tap brew formula)
 
   # uv tools (Python)
