@@ -1,7 +1,8 @@
 # Codex CLI base configuration. chezmoi installs this to ~/.codex/config.toml
-# only on first run — subsequent edits in $HOME survive, and `codex mcp add`
-# (driven by agents/mcp/sync.sh) writes server entries directly into this
-# file without going through chezmoi.
+# on first run only; subsequent edits in $HOME survive. MCP servers are seeded
+# directly from this file — the old agents/mcp/sync.sh path is retired and no
+# longer runs under `dots sync`, so install-codex.sh copies this seed once and
+# preserves existing MCP entries thereafter.
 #
 # Reference: https://developers.openai.com/codex/config-reference
 
@@ -14,6 +15,13 @@ sandbox_mode = "workspace-write"
 # an absolute path — TOML does not expand `~`, so we cannot bake it into this
 # seed file. The same script keeps ~/.codex/preamble.md in sync with
 # agents/preamble.md.
+
+# tilth code-intelligence MCP. `--edit` enables the tilth_write tool (edit
+# mode); without it tilth is read-only and cheez-write breaks. Seeded here
+# directly since the agents/mcp registry sync that once populated it is retired.
+[mcp_servers.tilth]
+command = "tilth"
+args = ["--mcp", "--edit"]
 
 [sandbox_workspace_write]
 network_access = true
