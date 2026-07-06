@@ -68,12 +68,13 @@ function resolvedType(agentType) {
 }
 
 // State base dir. An explicit CLAUDE_TURN_BUDGET_DIR is trusted as-is (the test
-// sandbox). The default path is namespaced by uid so it is not a single
-// world-known location shared across every user of the host.
+// sandbox). The default path lives under the user's state directory, not the
+// system temp dir, so CodeQL and local attackers do not see a predictable
+// shared-temp write target.
 function baseDir() {
   if (process.env.CLAUDE_TURN_BUDGET_DIR) return process.env.CLAUDE_TURN_BUDGET_DIR;
-  const uid = (process.getuid && process.getuid()) ?? 'nouid';
-  return path.join(os.tmpdir(), `claude-turn-budget-${uid}`);
+  const stateHome = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
+  return path.join(stateHome, 'claude-turn-budget');
 }
 
 function logPath() {
@@ -120,9 +121,8 @@ function thresholdFields(budget) {
 
 // Reject a pre-seeded / hijacked default base dir before writing into it: a
 // symlink, a dir we don't own, or one group/other-accessible could let a local
-// attacker on a shared host redirect our writes via the predictable temp path.
-// Skipped for an explicit CLAUDE_TURN_BUDGET_DIR (trusted). Throwing here
-// fail-opens (the caller's outer try/catch → allow).
+// attacker redirect our writes. Skipped for an explicit CLAUDE_TURN_BUDGET_DIR
+// (trusted). Throwing here fail-opens (the caller's outer try/catch → allow).
 function assertSafeBase() {
   if (process.env.CLAUDE_TURN_BUDGET_DIR) return;
   let st;
