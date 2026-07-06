@@ -127,17 +127,24 @@ sync_hidden_dirs() {
     done
 }
 
-# Install TPM (tmux plugin manager) + its plugins if not present
+# Install TPM (tmux plugin manager) if not present, then run install_plugins
+# on every sync — it's idempotent (skips already-installed plugins), so this
+# also repairs machines where the plugin dir predates newly added plugins.
 install_tpm() {
     command -v tmux &>/dev/null || return 0
-    [[ -d "$HOME/.tmux/plugins/tpm" ]] && return 0
 
-    log_info "Installing TPM (tmux plugin manager)..."
-    git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm" 2>&1 | while read -r line; do
-      log_info "  $line"
-    done
+    if [[ ! -d "$HOME/.tmux/plugins/tpm" ]]; then
+        log_info "Installing TPM (tmux plugin manager)..."
+        git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm" 2>&1 | while read -r line; do
+          log_info "  $line"
+        done
+    fi
+
+    local install_plugins="$HOME/.tmux/plugins/tpm/bin/install_plugins"
+    [[ -x "$install_plugins" ]] || return 0
+
     log_info "Installing tmux plugins..."
-    "$HOME/.tmux/plugins/tpm/bin/install_plugins" 2>&1 | while read -r line; do
+    "$install_plugins" 2>&1 | while read -r line; do
       log_info "  $line"
     done
 }
