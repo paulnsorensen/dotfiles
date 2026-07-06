@@ -18,7 +18,7 @@ run_install_tilth() {
     PATH="$MOCK_BIN:/usr/bin:/bin" run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && install_tilth_claude_code"
 }
 
-@test "install_tilth_claude_code invokes tilth install claude-code when tilth is present" {
+@test "install_tilth_claude_code invokes tilth install claude-code --edit when tilth is present" {
     export TILTH_CALLS="$TEST_HOME/tilth-calls.log"
     cat > "$MOCK_BIN/tilth" <<SH
 #!/bin/bash
@@ -30,7 +30,7 @@ SH
     run_install_tilth
     assert_success
     assert_file_exists "$TILTH_CALLS"
-    grep -qx "install claude-code" "$TILTH_CALLS"
+    grep -qx "install claude-code --edit" "$TILTH_CALLS"
 }
 
 @test "install_tilth_claude_code skips and warns when tilth is absent" {

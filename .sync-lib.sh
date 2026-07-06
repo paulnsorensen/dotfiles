@@ -425,8 +425,40 @@ install_tilth_claude_code() {
         log_warning "tilth not installed, skipping claude-code hook wiring"
         return 0
     fi
-    log_info "Wiring tilth cwd-injection hook (tilth install claude-code)..."
-    tilth install claude-code 2>&1 | while read -r line; do
+    log_info "Wiring tilth cwd-injection hook (tilth install claude-code --edit)..."
+    tilth install claude-code --edit 2>&1 | while read -r line; do
+        log_info "  $line"
+    done
+}
+
+# Re-reconcile user-scope claude MCPs as the FINAL write of every sync.
+#
+# WHY unconditional (unlike the hash-gated run_onchange reconcile):
+# install_tilth_claude_code runs `tilth install claude-code`, which rewrites the
+# tilth entry in ~/.claude.json with tilth's OWN defaults (no --edit, no env,
+# absolute command path) — clobbering the registry-authoritative shape. The
+# chezmoi run_onchange reconcile only fires when the registry `mcps` hash
+# changes, so it can't heal this. Running the reconcile here restores the
+# registry shape after every tilth install. It's idempotent, so already-correct
+# entries are no-ops.
+reconcile_claude_mcps() {
+    local lib="$dir/chezmoi/lib/claude-mcp-reconcile.sh"
+    if ! command -v claude &>/dev/null || ! command -v yq &>/dev/null || [[ ! -f "$lib" ]]; then
+        log_warning "Skipping claude MCP reconcile (claude, yq, or reconcile lib missing)"
+        return 0
+    fi
+
+    log_info "Reconciling claude MCPs (restore registry shape after tilth install)..."
+    # shellcheck source=chezmoi/lib/claude-mcp-reconcile.sh
+    source "$lib"
+
+    local mcps_json
+    mcps_json=$(yq -o=json '.claude.mcps' "$dir/chezmoi/.chezmoidata/claude.yaml")
+
+    claude_mcp_reconcile \
+        "$mcps_json" \
+        "$HOME/.claude.json" \
+        "$HOME/.claude/.chezmoi-mcp-manifest" 2>&1 | while read -r line; do
         log_info "  $line"
     done
 }
