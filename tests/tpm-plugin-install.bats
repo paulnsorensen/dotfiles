@@ -60,13 +60,17 @@ GITEOF
 }
 
 run_install_tpm() {
-    PATH="$MOCK_BIN:/usr/bin:/bin" run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && install_tpm"
+    local path="${1:-$MOCK_BIN:/usr/bin:/bin}"
+    PATH="$path" run /bin/bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && install_tpm"
 }
 
 @test "install_tpm no-ops when tmux is not on PATH" {
     mock_git
 
-    run_install_tpm
+    # Hermetic PATH (mock bin only) so `command -v tmux` can't resolve a system
+    # tmux such as /usr/bin/tmux on CI runners; install_tpm returns at the guard
+    # before needing any external tool.
+    run_install_tpm "$MOCK_BIN"
     assert_success
     [[ ! -f "$CLONE_CALLS" ]]
     [[ ! -d "$TPM_DIR" ]]
