@@ -367,10 +367,13 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 99
 TOML
-    # Bring the other codex hooks (sensitive-file-guard, git-guard) in sync so
-    # only the session-start timeout drift remains to be detected.
-    hook_codex_apply sensitive-file-guard
-    hook_codex_apply git-guard
+    # Bring every other codex hook in sync so only the session-start timeout
+    # drift remains to be detected as the registry grows.
+    local name
+    while read -r name; do
+        [[ -z "$name" || "$name" == "session-start-cheese-flair" ]] && continue
+        hook_codex_apply "$name"
+    done < <(jq -r 'keys[]' <<<"$HARNESS_DESIRED_JSON")
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]
@@ -810,14 +813,62 @@ SH
     [[ "$has_matcher" == "false" ]]
 }
 
-@test "the real registry's turn-budget-guard entries carry the expected events" {
+@test "the real registry's turn-budget-guard entries carry expected events for claude and codex" {
     # Guards the wiring: the three sub-agent budget hooks must sit on
     # PreToolUse / PostToolUse / SubagentStop and share the one logic asset.
-    local reg; reg=$(hook_filter_for_harness claude "$REGISTRY_JSON")
-    [[ "$(jq -r '.["turn-budget-guard-pre"].event'  <<<"$reg")" == "PreToolUse"   ]]
-    [[ "$(jq -r '.["turn-budget-guard-post"].event' <<<"$reg")" == "PostToolUse"  ]]
-    [[ "$(jq -r '.["turn-budget-guard-stop"].event' <<<"$reg")" == "SubagentStop" ]]
-    [[ "$(jq -r '.["turn-budget-guard-pre"].shared_assets[0]' <<<"$reg")" == "agents/lib/turn-budget-guard.js" ]]
+    local reg harness
+    for harness in claude codex; do
+        reg=$(hook_filter_for_harness "$harness" "$REGISTRY_JSON")
+        [[ "$(jq -r '.["turn-budget-guard-pre"].event'  <<<"$reg")" == "PreToolUse"   ]]
+        [[ "$(jq -r '.["turn-budget-guard-post"].event' <<<"$reg")" == "PostToolUse"  ]]
+        [[ "$(jq -r '.["turn-budget-guard-stop"].event' <<<"$reg")" == "SubagentStop" ]]
+        [[ "$(jq -r '.["turn-budget-guard-pre"].shared_assets[0]' <<<"$reg")" == "agents/lib/turn-budget-guard.js" ]]
+    done
+}
+
+@test "turn-budget-guard renders runnable Codex hook commands" {
+    HARNESS_DESIRED_JSON=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    local pre post stop
+    pre=$(hook_desired_signature turn-budget-guard-pre codex)
+    post=$(hook_desired_signature turn-budget-guard-post codex)
+    stop=$(hook_desired_signature turn-budget-guard-stop codex)
+    [[ "$pre"  == 'bash "$HOME/.codex/hooks/turn-budget-guard.sh"'$'\t'"PreToolUse"$'\t'".*"$'\t'"5"$'\t' ]]
+    [[ "$post" == 'bash "$HOME/.codex/hooks/turn-budget-guard.sh"'$'\t'"PostToolUse"$'\t'".*"$'\t'"5"$'\t' ]]
+    [[ "$stop" == 'bash "$HOME/.codex/hooks/turn-budget-guard.sh"'$'\t'"SubagentStop"$'\t'$'\t'"5"$'\t' ]]
+}
+
+@test "codex filters in turn-budget-guard entries and renders the codex hook path" {
+    local reg pre_sig post_sig stop_sig
+    reg=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+
+    [[ "$(jq -r 'has("turn-budget-guard-pre")'  <<<"$reg")" == "true" ]]
+    [[ "$(jq -r 'has("turn-budget-guard-post")' <<<"$reg")" == "true" ]]
+    [[ "$(jq -r 'has("turn-budget-guard-stop")' <<<"$reg")" == "true" ]]
+
+    HARNESS_DESIRED_JSON="$reg"
+    pre_sig=$(hook_desired_signature turn-budget-guard-pre codex)
+    post_sig=$(hook_desired_signature turn-budget-guard-post codex)
+    stop_sig=$(hook_desired_signature turn-budget-guard-stop codex)
+
+    grep -qF $'bash "$HOME/.codex/hooks/turn-budget-guard.sh"\tPreToolUse\t.*\t5\t' <<<"$pre_sig"
+    grep -qF $'bash "$HOME/.codex/hooks/turn-budget-guard.sh"\tPostToolUse\t.*\t5\t' <<<"$post_sig"
+    grep -qF $'bash "$HOME/.codex/hooks/turn-budget-guard.sh"\tSubagentStop\t\t5\t' <<<"$stop_sig"
+}
+
+@test "codex upsert preserves turn-budget-guard matcher behavior" {
+    local reg
+    reg=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+
+    HARNESS_DESIRED_JSON="$reg"
+    : > "$CODEX_CONFIG_FILE"
+    hook_codex_apply turn-budget-guard-pre
+    hook_codex_apply turn-budget-guard-post
+    hook_codex_apply turn-budget-guard-stop
+
+    [[ "$(yq -p=toml -o=json '.hooks.PreToolUse[0].matcher'  "$CODEX_CONFIG_FILE")" == '".*"' ]]
+    [[ "$(yq -p=toml -o=json '.hooks.PostToolUse[0].matcher' "$CODEX_CONFIG_FILE")" == '".*"' ]]
+    [[ "$(yq -p=toml -o=json '.hooks.SubagentStop[0] | has("matcher")' "$CODEX_CONFIG_FILE")" == "false" ]]
+    [[ "$(yq -p=toml -o=json '.hooks.PreToolUse[0].hooks[0].command' "$CODEX_CONFIG_FILE")" == '"bash \"$HOME/.codex/hooks/turn-budget-guard.sh\""' ]]
 }
 
 @test "hook_filter_for_harness rejects entries with both script and command" {
@@ -944,10 +995,13 @@ type = "command"
 command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
 timeout = 5
 TOML
-    # Bring the other codex hooks (sensitive-file-guard, git-guard) in sync so
-    # only the session-start matcher drift remains to be detected.
-    hook_codex_apply sensitive-file-guard
-    hook_codex_apply git-guard
+    # Bring every other codex hook in sync so only the session-start matcher
+    # drift remains to be detected as the registry grows.
+    local name
+    while read -r name; do
+        [[ -z "$name" || "$name" == "session-start-cheese-flair" ]] && continue
+        hook_codex_apply "$name"
+    done < <(jq -r 'keys[]' <<<"$HARNESS_DESIRED_JSON")
     local changed
     changed=$(hook_detect_changes codex)
     [[ "$changed" == "session-start-cheese-flair" ]]

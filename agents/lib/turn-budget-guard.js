@@ -76,6 +76,48 @@ function baseDir() {
   return path.join(os.tmpdir(), `claude-turn-budget-${uid}`);
 }
 
+function logPath() {
+  if (process.env.CLAUDE_TURN_BUDGET_LOG) return process.env.CLAUDE_TURN_BUDGET_LOG;
+  return path.join(baseDir(), 'decisions.jsonl');
+}
+
+function harnessName(event) {
+  if (event.harness) return event.harness;
+  if (process.env.CLAUDE_TURN_BUDGET_HARNESS) return process.env.CLAUDE_TURN_BUDGET_HARNESS;
+  const script = process.argv[1] || '';
+  if (script.includes(`${path.sep}.codex${path.sep}`)) return 'codex';
+  if (script.includes(`${path.sep}.claude${path.sep}`)) return 'claude';
+  return 'unknown';
+}
+
+function writeDecision(event, fields) {
+  try {
+    const file = logPath();
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    const record = {
+      ts: new Date().toISOString(),
+      harness: harnessName(event),
+      event: event.hook_event_name || 'unknown',
+      session_id: event.session_id || null,
+      agent_id: event.agent_id || null,
+      agent_type: event.agent_type || null,
+      ...fields,
+    };
+    fs.appendFileSync(file, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+  } catch {
+    /* fail-open: observability must not affect enforcement */
+  }
+}
+
+function thresholdFields(budget) {
+  return {
+    turnSoft: budget.turnSoft,
+    turnHard: budget.turnHard,
+    byteSoft: budget.byteSoft,
+    byteHard: budget.byteHard,
+  };
+}
+
 // Reject a pre-seeded / hijacked default base dir before writing into it: a
 // symlink, a dir we don't own, or one group/other-accessible could let a local
 // attacker on a shared host redirect our writes via the predictable temp path.
@@ -165,6 +207,15 @@ function contextBytes(transcriptPath, sessionId, agentId) {
   } catch {
     return 0;
   }
+}
+
+function contextBytesFromEvent(event) {
+  try {
+    if (event.agent_transcript_path) return fs.statSync(event.agent_transcript_path).size;
+  } catch {
+    return 0;
+  }
+  return contextBytes(event.transcript_path, event.session_id, event.agent_id);
 }
 
 // Depth-capped recursive search for a file by exact name. No external glob
@@ -267,14 +318,18 @@ function emitNudge(context) {
   }));
 }
 
-function handle(event) {
+function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
   const agentId = event.agent_id;
-  if (!agentId) return; // orchestrator (no agent_id) is never capped → allow
+  if (!agentId) {
+    writeDecision(event, { action: 'allow', reason: 'no-agent-id' });
+    return { action: 'allow', reason: 'no-agent-id' };
+  }
 
   const sessionId = event.session_id;
   const agentType = event.agent_type;
   const dir = counterPath(sessionId, agentId);
   const budget = budgetFor(agentType);
+  const type = resolvedType(agentType);
   const evt = event.hook_event_name;
 
   if (evt === 'SubagentStop') {
@@ -284,30 +339,63 @@ function handle(event) {
     // sub-agent and the sweep walks all sessions, so leaked dirs are still
     // reclaimed by the next agent that stops cleanly.
     try { sweepStale(baseDir(), STALE_HOURS); } catch { /* fail-open */ }
-    return;
+    writeDecision(event, {
+      action: 'cleanup',
+      reason: 'subagent-stop',
+      budget_type: type,
+      ...thresholdFields(budget),
+    });
+    return { action: 'cleanup', reason: 'subagent-stop' };
   }
 
   if (evt === 'PreToolUse') {
     const state = incrementTurn(dir);
-    const bytes = contextBytes(event.transcript_path, sessionId, agentId);
-    debug(`pre type=${resolvedType(agentType)} turns=${state.turns}/${budget.turnHard} ` +
+    const bytes = contextBytesFromEvent(event);
+    debug(`pre type=${type} turns=${state.turns}/${budget.turnHard} ` +
       `bytes=${bytes}/${budget.byteHard}`);
+    const fields = {
+      budget_type: type,
+      turns: state.turns,
+      bytes,
+      ...thresholdFields(budget),
+    };
     if (state.turns > budget.turnHard || bytes > budget.byteHard) {
-      emitDeny(denyReason(resolvedType(agentType), state.turns, bytes, budget));
+      const reason = denyReason(type, state.turns, bytes, budget);
+      writeDecision(event, { ...fields, action: 'deny', reason: 'hard-ceiling' });
+      emit.deny(reason);
+      return { action: 'deny', reason };
     }
-    return;
+    writeDecision(event, { ...fields, action: 'allow', reason: 'within-budget' });
+    return { action: 'allow', reason: 'within-budget' };
   }
 
   if (evt === 'PostToolUse') {
     const state = readState(dir);
-    if (state.nudged) return;
-    const bytes = contextBytes(event.transcript_path, sessionId, agentId);
+    const bytes = contextBytesFromEvent(event);
+    const fields = {
+      budget_type: type,
+      turns: state.turns,
+      bytes,
+      ...thresholdFields(budget),
+    };
+    if (state.nudged) {
+      writeDecision(event, { ...fields, action: 'allow', reason: 'already-nudged' });
+      return { action: 'allow', reason: 'already-nudged' };
+    }
     if (state.turns >= budget.turnSoft || bytes >= budget.byteSoft) {
       markNudged(dir);
-      debug(`nudge type=${resolvedType(agentType)} turns=${state.turns} bytes=${bytes}`);
-      emitNudge(nudgeContext(resolvedType(agentType), budget));
+      debug(`nudge type=${type} turns=${state.turns} bytes=${bytes}`);
+      const context = nudgeContext(type, budget);
+      writeDecision(event, { ...fields, action: 'nudge', reason: 'soft-threshold' });
+      emit.nudge(context);
+      return { action: 'nudge', reason: context };
     }
+    writeDecision(event, { ...fields, action: 'allow', reason: 'below-soft-threshold' });
+    return { action: 'allow', reason: 'below-soft-threshold' };
   }
+
+  writeDecision(event, { action: 'allow', reason: 'unsupported-event' });
+  return { action: 'allow', reason: 'unsupported-event' };
 }
 
 if (require.main === module) {
@@ -333,6 +421,10 @@ module.exports = {
   markNudged,
   cleanup,
   contextBytes,
+  logPath,
+  writeDecision,
+  contextBytesFromEvent,
+  handle,
   denyReason,
   nudgeContext,
   sweepStale,

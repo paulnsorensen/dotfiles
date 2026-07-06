@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
-# Tests for the turn-budget-guard sub-agent ceiling hook (claude-only).
+# Tests for the turn-budget-guard sub-agent ceiling hook.
 #   agents/hooks/turn-budget-guard.sh  — bash bridge (self-locating)
 #   agents/lib/turn-budget-guard.js    — turn/byte counter + decision logic
+#   chezmoi/dot_config/opencode/plugins/turn-budget-guard.js — opencode adapter
 #
 # Behavior is exercised through the stdin/stdout hook protocol against a
 # deployed-layout fixture (hooks/ + lib/ siblings), so the test covers both
@@ -12,6 +13,7 @@ load test_helper
 
 HOOK_SH="$REAL_DOTFILES_DIR/agents/hooks/turn-budget-guard.sh"
 HOOK_JS="$REAL_DOTFILES_DIR/agents/lib/turn-budget-guard.js"
+OPENCODE_PLUGIN="$REAL_DOTFILES_DIR/chezmoi/dot_config/opencode/plugins/turn-budget-guard.js"
 
 setup() {
     setup_test_env
@@ -23,6 +25,7 @@ setup() {
     chmod +x "$DEPLOY/hooks/turn-budget-guard.sh"
 
     export CLAUDE_TURN_BUDGET_DIR="$TEST_HOME/budget"
+    export CLAUDE_TURN_BUDGET_LOG="$TEST_HOME/turn-budget-decisions.jsonl"
     export PROJ="$TEST_HOME/projects/proj"
     mkdir -p "$PROJ"
 }
@@ -49,6 +52,19 @@ seed_transcript() {
     mkdir -p "$dir"
     node -e 'require("fs").writeFileSync(process.argv[1], "x".repeat(Number(process.argv[2])))' \
         "$dir/agent-$agent.jsonl" "$bytes"
+}
+
+log_record() {
+    local index="${1:--1}"
+    jq -s ".[$index]" "$CLAUDE_TURN_BUDGET_LOG"
+}
+
+log_count() {
+    if [[ -f "$CLAUDE_TURN_BUDGET_LOG" ]]; then
+        wc -l < "$CLAUDE_TURN_BUDGET_LOG" | tr -d ' '
+    else
+        echo 0
+    fi
 }
 
 # Fire one hook event; capture status + stdout into $output.
@@ -122,6 +138,21 @@ post_event() {
     [[ "$(verdict)" == "allow" ]]
 }
 
+@test "A2: PreToolUse allow writes a JSONL decision without stdout noise" {
+    seed_state s2 log1 5
+    seed_transcript s2 log1 $((100 * 1024))
+    fire "$(pre_event s2 log1 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_count)" == "1" ]]
+    [[ "$(log_record | jq -r '.event')" == "PreToolUse" ]]
+    [[ "$(log_record | jq -r '.action')" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "within-budget" ]]
+    [[ "$(log_record | jq -r '.agent_id')" == "log1" ]]
+    [[ "$(log_record | jq -r '.budget_type')" == "coder" ]]
+    [[ "$(log_record | jq -r '.turns')" == "6" ]]
+    [[ "$(log_record | jq -r '.bytes')" == "$((100 * 1024))" ]]
+}
+
 @test "A2: bytes exactly AT the byte-hard ceiling -> allow (strict '>')" {
     # coder byteHard = 891*1024 = 912384. The wall is `bytes > byteHard`, so
     # a transcript sitting exactly on the ceiling must still pass. Mirrors the
@@ -139,6 +170,43 @@ post_event() {
     [[ "$(verdict)" == "deny" ]]
 }
 
+@test "A2: PreToolUse deny writes a deny record while stdout stays hook JSON" {
+    seed_state s2 log2 100
+    fire "$(pre_event s2 log2 coder)"
+    [[ "$(verdict)" == "deny" ]]
+    jq -e '.hookSpecificOutput.permissionDecision == "deny"' <<<"$output" >/dev/null
+    [[ "$(log_count)" == "1" ]]
+    [[ "$(log_record | jq -r '.action')" == "deny" ]]
+    [[ "$(log_record | jq -r '.reason')" == "hard-ceiling" ]]
+    [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
+}
+
+@test "A2: Codex direct agent_transcript_path drives byte ceiling" {
+    seed_state s2 codex1 1
+    local agent_tx="$TEST_HOME/codex-agent.jsonl"
+    node -e 'require("fs").writeFileSync(process.argv[1], "x".repeat(Number(process.argv[2])))' \
+        "$agent_tx" $((920 * 1024))
+    local json
+    json=$(jq -nc --arg p "$agent_tx" \
+        '{harness:"codex",hook_event_name:"PreToolUse",agent_id:"codex1",agent_type:"coder",session_id:"s2",agent_transcript_path:$p,tool_name:"Bash",tool_input:{}}')
+    fire "$json"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$(log_record | jq -r '.harness')" == "codex" ]]
+    [[ "$(log_record | jq -r '.bytes')" == "$((920 * 1024))" ]]
+}
+
+@test "A2: Codex standard agent_id and agent_type still enforce the turn wall" {
+    seed_state s2 codex2 100
+    seed_transcript s2 codex2 $((100 * 1024))
+    local json
+    json=$(jq -nc --arg p "$PROJ/s2.jsonl" \
+        '{harness:"codex",hook_event_name:"PreToolUse",agent_id:"codex2",agent_type:"coder",session_id:"s2",transcript_path:$p,tool_name:"Bash",tool_input:{}}')
+    fire "$json"
+    [[ "$(verdict)" == "deny" ]]
+    jq -s -e 'length == 1 and .[0].harness == "codex" and .[0].action == "deny" and .[0].budget_type == "coder"' "$CLAUDE_TURN_BUDGET_LOG" >/dev/null
+}
+
+
 # ── A3 — soft nudge fires once ───────────────────────────────────────
 
 @test "A3: PostToolUse crossing the soft turn threshold nudges once, then never repeats" {
@@ -150,6 +218,19 @@ post_event() {
     # Marker set — a second PostToolUse must not nudge again.
     fire "$(post_event s3 c1 coder)"
     [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A3: nudge is logged once and later PostToolUse records already-nudged" {
+    seed_state s3 log3 75
+    fire "$(post_event s3 log3 coder)"
+    [[ "$(verdict)" == "nudge" ]]
+    fire "$(post_event s3 log3 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_count)" == "2" ]]
+    [[ "$(log_record 0 | jq -r '.action')" == "nudge" ]]
+    [[ "$(log_record 0 | jq -r '.reason')" == "soft-threshold" ]]
+    [[ "$(log_record 1 | jq -r '.action')" == "allow" ]]
+    [[ "$(log_record 1 | jq -r '.reason')" == "already-nudged" ]]
 }
 
 @test "A3: PostToolUse does not increment the turn counter" {
@@ -177,6 +258,26 @@ post_event() {
         '{hook_event_name:"PreToolUse", agent_type:"coder", session_id:"s", transcript_path:$p, tool_name:"Bash", tool_input:{}}')
     fire "$json"
     [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A4: missing agent_id fail-opens and logs no-agent" {
+    local json
+    json=$(jq -nc --arg p "$PROJ/s.jsonl" \
+        '{hook_event_name:"PreToolUse", agent_type:"coder", session_id:"s", transcript_path:$p, tool_name:"Bash", tool_input:{}}')
+    fire "$json"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.action')" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "no-agent-id" ]]
+}
+
+@test "A4: Codex payload without agent_id fail-opens and logs no-agent" {
+    local json
+    json=$(jq -nc --arg p "$PROJ/s.jsonl" \
+        '{harness:"codex",hook_event_name:"PreToolUse",agent_type:"coder",session_id:"s",transcript_path:$p,tool_name:"Bash",tool_input:{}}')
+    fire "$json"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.harness')" == "codex" ]]
+    [[ "$(log_record | jq -r '.reason')" == "no-agent-id" ]]
 }
 
 # ── A5 — unknown agent_type -> default budget ────────────────────────
@@ -264,6 +365,14 @@ post_event() {
     [[ "$(verdict)" == "allow" ]]
 }
 
+@test "A7: logger write failure does not change enforcement" {
+    export CLAUDE_TURN_BUDGET_LOG="$TEST_HOME"
+    seed_state s7 logfail 100
+    fire "$(pre_event s7 logfail coder)"
+    [[ "$(verdict)" == "deny" ]]
+    jq -e '.hookSpecificOutput.permissionDecision == "deny"' <<<"$output" >/dev/null
+}
+
 # ── A8 — stale sweep ─────────────────────────────────────────────────
 
 @test "A8: any invocation prunes agent dirs whose state.json is stale, keeps fresh ones" {
@@ -291,4 +400,44 @@ post_event() {
     json=$(jq -nc '{hook_event_name:"SubagentStop", agent_id:"zzz", session_id:"sZ"}')
     fire "$json"
     [[ -d "$CLAUDE_TURN_BUDGET_DIR/sHalf/h1" ]]
+}
+
+# ── A9 — opencode plugin adapter ─────────────────────────────────────
+
+@test "A9: opencode plugin fail-opens and logs when no stable sub-agent id exists" {
+    run env \
+        DOTFILES_DIR="$REAL_DOTFILES_DIR" \
+        CLAUDE_TURN_BUDGET_DIR="$CLAUDE_TURN_BUDGET_DIR" \
+        CLAUDE_TURN_BUDGET_LOG="$CLAUDE_TURN_BUDGET_LOG" \
+        OPENCODE_PLUGIN="$OPENCODE_PLUGIN" \
+        node --input-type=module -e '
+            const plugin = await import(process.env.OPENCODE_PLUGIN);
+            const hooks = await plugin.TurnBudgetGuard({ directory: process.cwd(), session: { id: "op-s" } });
+            await hooks["tool.execute.before"]({ tool: "bash" }, { args: { command: "echo ok" } });
+        '
+    assert_success
+    [[ "$(log_count)" == "1" ]]
+    [[ "$(log_record | jq -r '.harness')" == "opencode" ]]
+    [[ "$(log_record | jq -r '.action')" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "no-agent-id" ]]
+}
+
+@test "A9: opencode plugin denies when shared guard denies stable sub-agent" {
+    seed_state op-s op-a 100
+    run env \
+        DOTFILES_DIR="$REAL_DOTFILES_DIR" \
+        CLAUDE_TURN_BUDGET_DIR="$CLAUDE_TURN_BUDGET_DIR" \
+        CLAUDE_TURN_BUDGET_LOG="$CLAUDE_TURN_BUDGET_LOG" \
+        OPENCODE_PLUGIN="$OPENCODE_PLUGIN" \
+        node --input-type=module -e '
+            const plugin = await import(process.env.OPENCODE_PLUGIN);
+            const hooks = await plugin.TurnBudgetGuard({ directory: process.cwd(), session: { id: "op-s" } });
+            await hooks["tool.execute.before"](
+                { tool: "bash", agent_id: "op-a", agent_type: "coder", session_id: "op-s" },
+                { args: { command: "echo ok" } },
+            );
+        '
+    [[ "$status" -ne 0 ]]
+    [[ "$(log_record | jq -r '.harness')" == "opencode" ]]
+    [[ "$(log_record | jq -r '.action')" == "deny" ]]
 }
