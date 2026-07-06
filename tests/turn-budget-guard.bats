@@ -126,7 +126,7 @@ post_event() {
 
 @test "A2: byte size over the byte-hard ceiling denies even under the turn wall" {
     seed_state s2 b1 5
-    seed_transcript s2 b1 $((920 * 1024))  # coder byteHard = 891 KB
+    seed_transcript s2 b1 $((521 * 1024))  # hard cap = ~130K tokens = 520 KiB proxy
     fire "$(pre_event s2 b1 coder)"
     [[ "$(verdict)" == "deny" ]]
 }
@@ -154,18 +154,18 @@ post_event() {
 }
 
 @test "A2: bytes exactly AT the byte-hard ceiling -> allow (strict '>')" {
-    # coder byteHard = 891*1024 = 912384. The wall is `bytes > byteHard`, so
-    # a transcript sitting exactly on the ceiling must still pass. Mirrors the
-    # A1 turn boundary; a `>=` regression would deny here.
+    # byteHard = 130*1024*4 = 532480. The wall is `bytes > byteHard`,
+    # so a transcript sitting exactly on the ceiling must still pass. Mirrors
+    # the A1 turn boundary; a `>=` regression would deny here.
     seed_state s2 b2 5
-    seed_transcript s2 b2 $((891 * 1024))
+    seed_transcript s2 b2 $((130 * 1024 * 4))
     fire "$(pre_event s2 b2 coder)"
     [[ "$(verdict)" == "allow" ]]
 }
 
 @test "A2: bytes one over the byte-hard ceiling -> deny" {
     seed_state s2 b3 5
-    seed_transcript s2 b3 $((891 * 1024 + 1))
+    seed_transcript s2 b3 $((130 * 1024 * 4 + 1))
     fire "$(pre_event s2 b3 coder)"
     [[ "$(verdict)" == "deny" ]]
 }
@@ -185,14 +185,14 @@ post_event() {
     seed_state s2 codex1 1
     local agent_tx="$TEST_HOME/codex-agent.jsonl"
     node -e 'require("fs").writeFileSync(process.argv[1], "x".repeat(Number(process.argv[2])))' \
-        "$agent_tx" $((920 * 1024))
+        "$agent_tx" $((521 * 1024))
     local json
     json=$(jq -nc --arg p "$agent_tx" \
         '{harness:"codex",hook_event_name:"PreToolUse",agent_id:"codex1",agent_type:"coder",session_id:"s2",agent_transcript_path:$p,tool_name:"Bash",tool_input:{}}')
     fire "$json"
     [[ "$(verdict)" == "deny" ]]
     [[ "$(log_record | jq -r '.harness')" == "codex" ]]
-    [[ "$(log_record | jq -r '.bytes')" == "$((920 * 1024))" ]]
+    [[ "$(log_record | jq -r '.bytes')" == "$((521 * 1024))" ]]
 }
 
 @test "A2: Codex standard agent_id and agent_type still enforce the turn wall" {
@@ -243,7 +243,7 @@ post_event() {
 
 @test "A3: soft byte threshold nudges even when turns are low" {
     seed_state s3 c2 1
-    seed_transcript s3 c2 $((400 * 1024))  # coder byteSoft = 368 KB
+    seed_transcript s3 c2 $((440 * 1024))  # soft cap = ~110K tokens = 440 KiB proxy
     fire "$(post_event s3 c2 coder)"
     [[ "$(verdict)" == "nudge" ]]
 }

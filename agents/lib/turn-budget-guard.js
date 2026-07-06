@@ -42,15 +42,18 @@ function debug(msg) {
 // missed SubagentStop.
 const STALE_HOURS = 6;
 
-// Per-agent_type budgets. Turn ceilings are hand-set; byte ceilings are
-// calibrated from the p50 (soft) / p90 (hard) of real agent-*.jsonl
-// transcripts segmented by agent_type. Unknown types fall to `default`.
+// Per-agent_type budgets. Turn ceilings are hand-set; byte ceilings use a
+// uniform byte proxy for ~110K-token soft and ~130K-token hard context caps
+// (4 bytes/token estimate against JSONL transcript size). Unknown types fall
+// to `default`.
+const CONTEXT_SOFT_BYTES = 110 * 1024 * 4;
+const CONTEXT_HARD_BYTES = 130 * 1024 * 4;
 const BUDGETS = {
-  coder: { turnSoft: 75, turnHard: 100, byteSoft: 368 * 1024, byteHard: 891 * 1024 },
-  reviewer: { turnSoft: 40, turnHard: 50, byteSoft: 263 * 1024, byteHard: 408 * 1024 },
-  explorer: { turnSoft: 40, turnHard: 50, byteSoft: 205 * 1024, byteHard: 396 * 1024 },
-  researcher: { turnSoft: 40, turnHard: 50, byteSoft: 286 * 1024, byteHard: 512 * 1024 },
-  default: { turnSoft: 40, turnHard: 50, byteSoft: 239 * 1024, byteHard: 517 * 1024 },
+  coder: { turnSoft: 75, turnHard: 100, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
+  reviewer: { turnSoft: 40, turnHard: 50, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
+  explorer: { turnSoft: 40, turnHard: 50, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
+  researcher: { turnSoft: 40, turnHard: 50, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
+  default: { turnSoft: 40, turnHard: 50, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
 };
 
 function budgetFor(agentType) {
