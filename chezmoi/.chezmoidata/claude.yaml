@@ -98,6 +98,11 @@ claude:
           - type: command
             command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" waiting; fi'
             timeout: 5
+      - matcher: ".*"
+        hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/turn-budget-guard.sh"'
+            timeout: 5
     Notification:
       - matcher: "permission_prompt"
         hooks:
@@ -130,6 +135,17 @@ claude:
       - hooks:
           - type: command
             command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" idle; fi'
+            timeout: 5
+    PostToolUse:
+      - matcher: ".*"
+        hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/turn-budget-guard.sh"'
+            timeout: 5
+    SubagentStop:
+      - hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/turn-budget-guard.sh"'
             timeout: 5
 
   # ── settings.json plugin keys ───────────────────────────────────────────────
