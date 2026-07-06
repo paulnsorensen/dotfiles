@@ -820,23 +820,21 @@ MOCK
 
     # chat/completions sleeps 10s; if the function blocked on it, opencode-lean
     # would take >10s. The probe stays fast so only the warm-up could stall.
-    cat > "$MOCK_BIN/curl" << 'MOCK'
+    local warm_done="$TEST_HOME/warm-done"
+    cat > "$MOCK_BIN/curl" << MOCK
 #!/bin/bash
-[[ "$*" == *chat/completions* ]] && sleep 10
+[[ "\$*" == *chat/completions* ]] && { sleep 10; echo done > "$warm_done"; }
 exit 0
 MOCK
     chmod +x "$MOCK_BIN/curl"
 
     # shellcheck disable=SC1090
     source "$ALIASES"
-    local start end
-    start=$(date +%s)
     run opencode-lean --model local-llm/local-sonnet
-    end=$(date +%s)
     assert_success
     assert_output_contains "opencode-called"
-    # Must return well under the 10s warm-up sleep — proves it is backgrounded.
-    (( end - start < 5 ))
+    # Warm-up is still mid-sleep -> it was backgrounded, not run inline.
+    [[ ! -f "$warm_done" ]]
 }
 
 @test "opencode-lean warms the lean.json default model on a bare (no --model) launch" {
