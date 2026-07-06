@@ -23,6 +23,25 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ $status -eq 0 ]]
 }
 
+# ── Codex ───────────────────────────────────────────────────────────────────
+
+@test "codex config seed is valid TOML" {
+    local config="$DOTFILES_DIR/codex/config.toml"
+    [[ -f "$config" ]] || skip "codex config seed not found"
+    run yq '.' "$config" -p toml -o json
+    [[ $status -eq 0 ]]
+}
+
+@test "codex config seed registers tilth in edit mode (--edit)" {
+    # Reproducibility guard: the agents/mcp sync that once populated
+    # ~/.codex/config.toml is retired, so this seed is the only source of tilth
+    # on a fresh setup. Without --edit tilth is read-only and cheez-write breaks.
+    local config="$DOTFILES_DIR/codex/config.toml"
+    [[ -f "$config" ]] || skip "codex config seed not found"
+    [[ "$(yq -p=toml '.mcp_servers.tilth.command' "$config")" == "tilth" ]]
+    yq -p=toml '.mcp_servers.tilth.args[]' "$config" | grep -qx -- '--edit'
+}
+
 # ── Shell scripts ─────────────────────────────────────────────────────────────
 
 @test "all zsh config files have valid syntax" {
