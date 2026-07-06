@@ -96,13 +96,13 @@ claude:
       - matcher: "AskUserQuestion"
         hooks:
           - type: command
-            command: '[ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ] && "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" waiting || true'
+            command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" waiting; fi'
             timeout: 5
     Notification:
       - matcher: "permission_prompt"
         hooks:
           - type: command
-            command: '[ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ] && "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" waiting || true'
+            command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" waiting; fi'
             timeout: 5
     SessionStart:
       - hooks:
@@ -120,7 +120,7 @@ claude:
             async: true
       - hooks:
           - type: command
-            command: '[ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ] && "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" working || true'
+            command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" working; fi'
             timeout: 5
     Stop:
       - hooks:
@@ -129,7 +129,7 @@ claude:
             async: true
       - hooks:
           - type: command
-            command: '[ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ] && "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" idle || true'
+            command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" idle; fi'
             timeout: 5
 
   # ── settings.json plugin keys ───────────────────────────────────────────────
