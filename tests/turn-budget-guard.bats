@@ -193,6 +193,17 @@ post_event() {
     [[ "$(verdict)" == "allow" ]]
 }
 
+@test "A5: unknown agent_type deny message names the default budget, not the raw type" {
+    # The message must report the budget actually in force ('default'), not the
+    # phantom incoming type — a triager reading 'wizard' would hunt for a
+    # wizard-specific budget that was never applied.
+    seed_state s5 e1 50
+    fire "$(pre_event s5 e1 wizard)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$output" == *"type 'default'"* ]]
+    [[ "$output" != *wizard* ]]
+}
+
 # ── A6 — independent counters + scoped cleanup ───────────────────────
 
 @test "A6: distinct agent_ids under one session count independently" {

@@ -12,8 +12,8 @@
 //                 bytes; deny the call if EITHER exceeds its hard ceiling.
 //   PostToolUse — once per agent, inject a wrap-up nudge when either signal
 //                 crosses its soft threshold (the graceful handoff window).
-//   SubagentStop — delete the agent's counter dir. Every invocation also
-//                 sweeps stale dirs so a missed Stop can't leak forever.
+//   SubagentStop — delete the agent's counter dir, and sweep stale dirs so a
+//                 missed Stop can't leak forever.
 //
 // Budgets are keyed by `agent_type` (table + default fallback). The byte
 // ceiling is the sharper proxy for context rot: the sub-agent's own
@@ -29,6 +29,14 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+
+// Opt-in observability: with CLAUDE_TURN_BUDGET_DEBUG set, emit one stderr line
+// per budget decision so enforcement is distinguishable from a silent fail-open
+// (e.g. a byte probe that resolved to 0). Off by default; stderr never reaches
+// the model, only the hook log.
+function debug(msg) {
+  if (process.env.CLAUDE_TURN_BUDGET_DEBUG) process.stderr.write(`[turn-budget-guard] ${msg}\n`);
+}
 
 // Prune counter dirs whose state file is older than this — backstop for a
 // missed SubagentStop.
@@ -50,9 +58,42 @@ function budgetFor(agentType) {
   return BUDGETS[key] || BUDGETS.default;
 }
 
-// State base dir. The env override lets tests sandbox away from the real dir.
+// The budget key actually applied for `agentType` — the matched table key, or
+// 'default' when the type is unknown/empty. Kept separate from the raw
+// `agent_type` so operator-facing messages name the budget in force, not a
+// phantom type-specific budget that was never selected.
+function resolvedType(agentType) {
+  const key = String(agentType || '').trim().toLowerCase();
+  return BUDGETS[key] ? key : 'default';
+}
+
+// State base dir. An explicit CLAUDE_TURN_BUDGET_DIR is trusted as-is (the test
+// sandbox). The default path is namespaced by uid so it is not a single
+// world-known location shared across every user of the host.
 function baseDir() {
-  return process.env.CLAUDE_TURN_BUDGET_DIR || path.join(os.tmpdir(), 'claude-turn-budget');
+  if (process.env.CLAUDE_TURN_BUDGET_DIR) return process.env.CLAUDE_TURN_BUDGET_DIR;
+  const uid = (process.getuid && process.getuid()) ?? 'nouid';
+  return path.join(os.tmpdir(), `claude-turn-budget-${uid}`);
+}
+
+// Reject a pre-seeded / hijacked default base dir before writing into it: a
+// symlink, a dir we don't own, or one group/other-accessible could let a local
+// attacker on a shared host redirect our writes via the predictable temp path.
+// Skipped for an explicit CLAUDE_TURN_BUDGET_DIR (trusted). Throwing here
+// fail-opens (the caller's outer try/catch → allow).
+function assertSafeBase() {
+  if (process.env.CLAUDE_TURN_BUDGET_DIR) return;
+  let st;
+  try {
+    st = fs.lstatSync(baseDir());
+  } catch {
+    return; // absent — writeState's mkdir with mode 0o700 creates it safely
+  }
+  const uid = process.getuid && process.getuid();
+  if (st.isSymbolicLink() || !st.isDirectory() ||
+      (uid !== undefined && st.uid !== uid) || (st.mode & 0o077) !== 0) {
+    throw new Error('unsafe turn-budget base dir');
+  }
 }
 
 // Keep externally-supplied ids from escaping the base dir.
@@ -81,7 +122,8 @@ function readState(dir) {
 }
 
 function writeState(dir, state) {
-  fs.mkdirSync(dir, { recursive: true });
+  assertSafeBase();
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   fs.writeFileSync(stateFile(dir), JSON.stringify(state));
 }
 
@@ -229,12 +271,6 @@ function handle(event) {
   const agentId = event.agent_id;
   if (!agentId) return; // orchestrator (no agent_id) is never capped → allow
 
-  // Backstop cleanup: prune stale counter dirs. Runs below the orchestrator
-  // no-op guard so main-session tool calls (the majority, and now also the
-  // PostToolUse `.*` surface) don't pay a filesystem walk. Sub-agents run
-  // constantly, so any orchestrator-only session's dirs still get swept later.
-  try { sweepStale(baseDir(), STALE_HOURS); } catch { /* fail-open */ }
-
   const sessionId = event.session_id;
   const agentType = event.agent_type;
   const dir = counterPath(sessionId, agentId);
@@ -243,14 +279,21 @@ function handle(event) {
 
   if (evt === 'SubagentStop') {
     cleanup(dir);
+    // Backstop: sweep stale counter dirs left by a missed SubagentStop. Runs
+    // only here (not on every Pre/PostToolUse) — SubagentStop fires once per
+    // sub-agent and the sweep walks all sessions, so leaked dirs are still
+    // reclaimed by the next agent that stops cleanly.
+    try { sweepStale(baseDir(), STALE_HOURS); } catch { /* fail-open */ }
     return;
   }
 
   if (evt === 'PreToolUse') {
     const state = incrementTurn(dir);
     const bytes = contextBytes(event.transcript_path, sessionId, agentId);
+    debug(`pre type=${resolvedType(agentType)} turns=${state.turns}/${budget.turnHard} ` +
+      `bytes=${bytes}/${budget.byteHard}`);
     if (state.turns > budget.turnHard || bytes > budget.byteHard) {
-      emitDeny(denyReason(agentType, state.turns, bytes, budget));
+      emitDeny(denyReason(resolvedType(agentType), state.turns, bytes, budget));
     }
     return;
   }
@@ -261,7 +304,8 @@ function handle(event) {
     const bytes = contextBytes(event.transcript_path, sessionId, agentId);
     if (state.turns >= budget.turnSoft || bytes >= budget.byteSoft) {
       markNudged(dir);
-      emitNudge(nudgeContext(agentType, budget));
+      debug(`nudge type=${resolvedType(agentType)} turns=${state.turns} bytes=${bytes}`);
+      emitNudge(nudgeContext(resolvedType(agentType), budget));
     }
   }
 }
@@ -281,6 +325,7 @@ if (require.main === module) {
 
 module.exports = {
   budgetFor,
+  resolvedType,
   baseDir,
   counterPath,
   readState,
