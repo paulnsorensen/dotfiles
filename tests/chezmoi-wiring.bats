@@ -456,6 +456,29 @@ EOF
     done <<<"$output"
 }
 
+@test "claude registry: tilth cwd-inject hook uses \${HOME} braces, not \$HOME" {
+    # The authored command must byte-match what `tilth install claude-code`
+    # writes (an absolute expanded path), which modify_settings.json produces
+    # only from ${HOME} (braces, author-time expansion). A regression to
+    # $HOME (matching sibling hooks) would silently reintroduce oscillation.
+    command -v yq >/dev/null 2>&1 || skip "yq not installed"
+    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+    local cmd
+    cmd=$(yq -r '.claude.hooks.PreToolUse[] | select(.matcher == "mcp__tilth__.*") | .hooks[0].command' "$reg")
+    [[ -n "$cmd" && "$cmd" != "null" ]] \
+        || { echo "no PreToolUse entry with matcher mcp__tilth__.*" >&2; return 1; }
+    # shellcheck disable=SC2016  # literal ${HOME} form, byte-matched not expanded
+    [[ "$cmd" == 'node "${HOME}/.claude/tilth/inject-cwd.js"' ]] \
+        || { echo "tilth cwd hook command drifted: $cmd" >&2; return 1; }
+}
+
+@test "claude registry: tilth MCP env carries the cwd-hook-injected marker" {
+    command -v yq >/dev/null 2>&1 || skip "yq not installed"
+    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+    [[ "$(yq -r '.claude.mcps.tilth.env.TILTH_MCP_CWD_HOOK_INJECTED' "$reg")" == "1" ]] \
+        || { echo "claude.yaml mcps.tilth.env.TILTH_MCP_CWD_HOOK_INJECTED missing or not \"1\"" >&2; return 1; }
+}
+
 @test "claude registry: selected skills and agents resolve to real repo sources" {
     # A registry entry naming a skill/agent that no longer exists in the repo
     # would fail every `dots sync` at assembly time. Catch it in CI first.
