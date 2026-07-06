@@ -12,6 +12,7 @@
 # Key codes are macOS virtual key codes (NSEvent keyCode).
 
 : "${RECTANGLE_BUNDLE:=com.knollsoft.Hookshot}"
+: "${RECTANGLE_APP:=/Applications/Rectangle Pro.app}"
 
 # Emit the shortcut table, one "command|keyCode|modifierFlags" per line.
 rectangle_shortcuts() {
@@ -64,20 +65,33 @@ rectangle_write_shortcuts() {
     killall cfprefsd 2>/dev/null || true
 }
 
+# Hard-restart Rectangle Pro so it loads the freshly-written keymap. A graceful
+# `osascript quit` lets the running app flush its in-memory prefs over our
+# external writes on exit, so kill it outright (pkill -9) instead, then relaunch.
+# No-op when the app is not running (nothing to reload) or not installed.
+rectangle_restart() {
+    pkill -9 -f "Rectangle Pro" 2>/dev/null || return 0
+    open -a "Rectangle Pro" 2>/dev/null || true
+}
+
 rectangle_sync() {
     if [[ "$(uname -s)" != "Darwin" ]]; then
         echo "rectangle/.sync: skipping (not macOS)" >&2
         return 0
     fi
-    if ! [[ -d "/Applications/Rectangle Pro.app" ]]; then
+    if ! [[ -d "$RECTANGLE_APP" ]]; then
         echo "rectangle/.sync: Rectangle Pro not installed at /Applications - skipping" >&2
         echo "                install via: brew install --cask rectangle-pro" >&2
         return 0
     fi
 
     rectangle_write_shortcuts "$RECTANGLE_BUNDLE"
+    rectangle_restart
 
-    echo "rectangle/.sync: wrote SizeUp keymap to $RECTANGLE_BUNDLE - restart Rectangle Pro to load"
-    echo "rectangle/.sync: VERIFY manually - 'defaults read $RECTANGLE_BUNDLE leftHalf', then confirm" >&2
-    echo "                 Rectangle Pro honors it (plist-dict string schema is unverified off-macOS)" >&2
+    echo "rectangle/.sync: wrote SizeUp keymap to $RECTANGLE_BUNDLE and reloaded Rectangle Pro"
+    # Accessibility is macOS-gated and cannot be granted from a script. If snapping
+    # does nothing, the grant is missing (fresh install, app/OS update, or a
+    # tccutil reset can drop the app from the list) - make that loud, not silent.
+    echo "rectangle/.sync: shortcuts need Accessibility permission - if snapping does nothing, grant it:" >&2
+    echo "                 System Settings > Privacy & Security > Accessibility > enable Rectangle Pro" >&2
 }
