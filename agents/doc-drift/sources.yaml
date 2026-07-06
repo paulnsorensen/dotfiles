@@ -13,7 +13,9 @@
 # signal.type:
 #   npm         → `npm view <ref> version`
 #   gh_release  → latest release tag of the <owner/repo>
-# governs: coarse pointers only; the routine grounds the wiki to sharpen them.
+# governs: the files (and wiki pages) each source's config surface lives in;
+# the routine reads them directly and researches the upstream via Tavily +
+# Context7.
 #
 # Not watched: cursor (no clean versioned release feed); tilth, hallouminate,
 # milknado (our own projects — we control their version bumps).
