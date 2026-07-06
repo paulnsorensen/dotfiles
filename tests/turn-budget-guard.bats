@@ -380,8 +380,10 @@ post_event() {
     seed_state sOld new 1
     # Backdate the stale one's STATE FILE mtime past the 6h cutoff.
     local ts
-    ts=$(node -e 'const d=new Date(Date.now()-10*3600*1000); process.stdout.write(String(Math.floor(d.getTime()/1000)))')
-    touch -d "@$ts" "$CLAUDE_TURN_BUDGET_DIR/sOld/old/state.json"
+    # Portable stamp for `touch -t` ([[CC]YY]MMDDhhmm.SS) — BSD touch (macOS)
+    # rejects GNU's `-d "@<epoch>"`; `-t` is accepted by both.
+    ts=$(node -e 'const d=new Date(Date.now()-10*3600*1000),p=n=>String(n).padStart(2,"0");process.stdout.write(d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+p(d.getHours())+p(d.getMinutes())+"."+p(d.getSeconds()))')
+    touch -t "$ts" "$CLAUDE_TURN_BUDGET_DIR/sOld/old/state.json"
 
     # Fire an unrelated event to trigger the backstop sweep.
     local json
