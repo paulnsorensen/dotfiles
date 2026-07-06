@@ -506,16 +506,16 @@ generate_tmux_theme() {
 set -g @thm_bg          "#$(pal base00)"
 set -g @thm_mantle      "#$(pal base11)"
 set -g @thm_crust       "#$(pal base10)"
-set -g @thm_surface0    "#$(pal base01)"
-set -g @thm_surface1    "#$(pal base02)"
-set -g @thm_surface2    "#$(pal base03)"
+set -g @thm_surface_0   "#$(pal base01)"
+set -g @thm_surface_1   "#$(pal base02)"
+set -g @thm_surface_2   "#$(pal base03)"
 # Foregrounds / overlays
-set -g @thm_text        "#$(pal base05)"
-set -g @thm_subtext1    "#$(pal base04)"
-set -g @thm_subtext0    "#$(pal base03)"
-set -g @thm_overlay2    "#$(pal base03)"
-set -g @thm_overlay1    "#$(pal base04)"
-set -g @thm_overlay0    "#$(pal base03)"
+set -g @thm_fg          "#$(pal base05)"
+set -g @thm_subtext_1   "#$(pal base04)"
+set -g @thm_subtext_0   "#$(pal base03)"
+set -g @thm_overlay_2   "#$(pal base03)"
+set -g @thm_overlay_1   "#$(pal base04)"
+set -g @thm_overlay_0   "#$(pal base03)"
 # Accent colours
 set -g @thm_red         "#$(pal base08)"
 set -g @thm_maroon      "#$(pal base12)"
@@ -545,7 +545,7 @@ set -g @catppuccin_window_default_fill "number"
 set -g @catppuccin_window_default_text " #W"
 set -g @catppuccin_window_current_fill "number"
 set -g @catppuccin_window_current_text " #W"
-set -g @catppuccin_window_current_background "#{@thm_surface1}"
+set -g @catppuccin_window_current_background "#{@thm_surface_1}"
 
 # Status-left: session name
 set -g @catppuccin_status_left_separator  " "
@@ -559,15 +559,15 @@ set -g @catppuccin_date_time_text "%H:%M"
 set -g status-right "#{E:@catppuccin_status_date_time}"
 
 # Pane borders (keep in sync with @thm_* palette)
-set -g pane-border-style "fg=#{@thm_surface1}"
+set -g pane-border-style "fg=#{@thm_surface_1}"
 set -g pane-active-border-style "fg=#{@thm_blue}"
 
 # Messages and command line
-set -g message-style "bg=#{@thm_surface1},fg=#{@thm_text}"
-set -g message-command-style "bg=#{@thm_surface1},fg=#{@thm_text}"
+set -g message-style "bg=#{@thm_surface_1},fg=#{@thm_fg}"
+set -g message-command-style "bg=#{@thm_surface_1},fg=#{@thm_fg}"
 
 # Copy mode highlight
-setw -g mode-style "bg=#{@thm_surface1},fg=#{@thm_yellow}"
+setw -g mode-style "bg=#{@thm_surface_1},fg=#{@thm_yellow}"
 TMUX_THEME
 
   log_ok "Generated tmux/theme.conf"

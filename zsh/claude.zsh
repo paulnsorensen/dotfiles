@@ -61,9 +61,17 @@ _cc_base() {
     local session
     session="$("${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-session-name" "${name_args[@]}" "$PWD")"
     if [[ -z "$TMUX" ]]; then
-        # Outside tmux: create-or-attach (-A attaches if it exists; cmd ignored
-        # on attach). With --new the name is unique, so -A always creates.
-        tmux new-session -A -s "$session" "${(j: :)${(@q)cmd}}"
+        # Outside tmux: reattach (-A) only when the target session is absent
+        # or detached (orphan de-sprawl). If it already has a client attached,
+        # -A would mirror this terminal onto that session instead of giving
+        # it its own — spin up a fresh uniquely-named session instead.
+        if tmux list-sessions -F '#{session_name}:#{session_attached}' 2>/dev/null \
+            | grep -Fxq "$session:1"; then
+            session="$("${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-session-name" --unique "$PWD")"
+            tmux new-session -s "$session" "${(j: :)${(@q)cmd}}"
+        else
+            tmux new-session -A -s "$session" "${(j: :)${(@q)cmd}}"
+        fi
     elif [[ -n "$force_new" ]]; then
         # Explicit --new from inside tmux:
         # dedicate a session and switch-client (never nests).
