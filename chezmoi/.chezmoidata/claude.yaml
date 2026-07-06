@@ -93,6 +93,17 @@ claude:
         hooks:
           - type: command
             command: node "${HOME}/.claude/tilth/inject-cwd.js"
+      - matcher: "AskUserQuestion"
+        hooks:
+          - type: command
+            command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" waiting; fi'
+            timeout: 5
+    Notification:
+      - matcher: "permission_prompt"
+        hooks:
+          - type: command
+            command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" waiting; fi'
+            timeout: 5
     SessionStart:
       - hooks:
           - type: command
@@ -107,11 +118,19 @@ claude:
           - type: command
             command: moshi-hook claude-hook
             async: true
+      - hooks:
+          - type: command
+            command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" working; fi'
+            timeout: 5
     Stop:
       - hooks:
           - type: command
             command: moshi-hook claude-hook
             async: true
+      - hooks:
+          - type: command
+            command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" idle; fi'
+            timeout: 5
 
   # ── settings.json plugin keys ───────────────────────────────────────────────
   # Base layer for enabledPlugins / extraKnownMarketplaces. modify_settings.json

@@ -157,9 +157,9 @@ def test_moshi_duplicate_stripped_across_events(tmp_path: Path) -> None:
 
 def test_tmux_stop_hook_preserved(tmp_path: Path) -> None:
     # A user-authored Stop hook the registry does NOT manage (@claude-stopped)
-    # must survive self-heal. NB: the @jmux-attention Stop hook IS registry-
-    # managed now (agents/hooks/registry.yaml), so it is deliberately not used
-    # as the example here — using it would model a managed hook as user-owned.
+    # must survive self-heal. NB: `moshi-stop` IS the registry-managed Stop hook
+    # (agents/hooks/registry.yaml), so it is deliberately not used as the
+    # example here — using it would model a managed hook as user-owned.
     settings = _render(tmp_path)
     data = json.loads(settings.read_text())
     assert len(data["hooks"]["Stop"]) == 1

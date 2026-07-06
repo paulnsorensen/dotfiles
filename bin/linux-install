@@ -259,8 +259,6 @@ NPM_GLOBALS=(
     ccusage
     "@vtsls/language-server"
     "@govcraft/agent-skills"
-    "@jx0/jmux"
-    hunkdiff
 )
 
 if command -v npm &>/dev/null; then

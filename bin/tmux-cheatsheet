@@ -77,7 +77,9 @@ print_cheatsheet() {
     row "tsip"                   "tailscale ip -4"
 
     hdr "Popups & misc"
-    row "prefix G"               "popup: lazygit"
+    row "prefix g"               "popup: lazygit"
+    row "prefix y"               "launch/attach Claude session here"
+    row "prefix u"               "Claude session picker (working/waiting/idle)"
     row "prefix o"               "popup: yazi (file manager)"
     row "prefix t"               "popup: scratch terminal"
     row "prefix ?"               "general dotfiles cheatsheet"
