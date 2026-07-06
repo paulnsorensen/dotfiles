@@ -37,6 +37,8 @@ claude:
     tilth:
       command: tilth
       args: ["--mcp", "--edit"]
+      env:
+        TILTH_MCP_CWD_HOOK_INJECTED: "1"
     context7:
       command: npx
       args: ["-y", "@upstash/context7-mcp"]
@@ -87,6 +89,10 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/deep-think-nudge.sh"'
             timeout: 5
+      - matcher: "mcp__tilth__.*"
+        hooks:
+          - type: command
+            command: node "${HOME}/.claude/tilth/inject-cwd.js"
     SessionStart:
       - hooks:
           - type: command
