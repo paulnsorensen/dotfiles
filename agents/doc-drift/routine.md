@@ -9,11 +9,10 @@ context window.
 
 ## Environment
 
-This routine expects `hallouminate` on PATH, pre-installed by the environment's
-setup script (`agents/doc-drift/setup.sh` — paste it into the routine
-environment's setup-script field). `gh` auth is the environment's native GitHub
-OAuth. If the setup script didn't run, the routine still works — it falls back
-to the manifest's `governs` paths instead of grounding.
+`gh` auth is the environment's native GitHub OAuth. The environment provides
+two MCP connectors the routine uses to research each drift: **Tavily** (web
+search / page extract, for release notes and changelogs) and **Context7**
+(library / API / config docs). No other setup is required.
 
 ## Orchestrator steps
 
@@ -48,11 +47,13 @@ You own exactly ONE drifted source. Inputs: `<id>`, `<reconciled>` →
 1. **Dedup.** If an open PR or issue already covers `<id> <current>` (search
    titles, and the branch `doc-drift/<id>-<current>`), stop and report `dup`.
 
-2. **Read the change.** Fetch the release notes / changelog for
-   `reconciled → current`. Then ground the wiki: `hallouminate index` once
-   (fresh clone has the wiki markdown but no derived index), then `ground`
-   `.hallouminate/wiki/` for the config surface named in `governs`. If
-   hallouminate is unavailable, read the `governs` files directly.
+2. **Read the change.** Use **Tavily** to fetch the upstream's release notes /
+   changelog for `reconciled → current`, and **Context7** to pull the
+   upstream's current config / API docs when you need them to judge impact.
+   Then read the `governs` files directly (several are wiki pages under
+   `.hallouminate/wiki/` that carry our design rationale) to see the config
+   surface. Decide: does anything the release changed touch what those
+   `governs` files depend on?
 
 3. **Classify** the drift:
    - **no-op** — nothing we mirror changed (no flag / key / schema / behavior
