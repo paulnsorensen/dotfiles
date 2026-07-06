@@ -71,7 +71,8 @@ rectangle_write_shortcuts() {
 # No-op when the app is not running (nothing to reload) or not installed.
 rectangle_restart() {
     pkill -9 -f "Rectangle Pro" 2>/dev/null || return 0
-    open -a "Rectangle Pro" 2>/dev/null || true
+    open "$RECTANGLE_APP" 2>/dev/null || \
+        echo "rectangle/.sync: killed Rectangle Pro but relaunch failed - launch it manually to load the keymap" >&2
 }
 
 rectangle_sync() {
@@ -80,7 +81,7 @@ rectangle_sync() {
         return 0
     fi
     if ! [[ -d "$RECTANGLE_APP" ]]; then
-        echo "rectangle/.sync: Rectangle Pro not installed at /Applications - skipping" >&2
+        echo "rectangle/.sync: Rectangle Pro not installed at $RECTANGLE_APP - skipping" >&2
         echo "                install via: brew install --cask rectangle-pro" >&2
         return 0
     fi

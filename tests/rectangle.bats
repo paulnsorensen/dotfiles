@@ -64,7 +64,8 @@ EOF
     run rectangle_restart
     [ "$status" -eq 0 ]
     grep -q 'pkill -9 -f Rectangle Pro' "$MOCK_LOG"
-    grep -q 'open -a Rectangle Pro' "$MOCK_LOG"
+    # relaunch honors $RECTANGLE_APP (not a hardcoded app name)
+    grep -qF "open $RECTANGLE_APP" "$MOCK_LOG"
 }
 
 @test "rectangle_restart is a no-op (no relaunch) when app is not running" {
@@ -74,6 +75,19 @@ EOF
     [ "$status" -eq 0 ]
     # pkill found nothing -> we must NOT open (would spawn an unwanted instance)
     ! grep -q '^open ' "$MOCK_LOG"
+}
+
+@test "rectangle_restart warns loudly when relaunch fails after a kill" {
+    # open exits non-zero (e.g. bundle missing at $RECTANGLE_APP) -> must be loud, not swallowed
+    cat > "$MOCK_BIN/open" <<EOF
+#!/usr/bin/env bash
+printf 'open %s\n' "\$*" >> "$MOCK_LOG"
+exit 1
+EOF
+    chmod +x "$MOCK_BIN/open"
+    source "$LIB"
+    run rectangle_restart
+    [[ "$output" == *"relaunch failed"* ]]
 }
 
 # ── rectangle_sync guards ──
@@ -106,7 +120,7 @@ EOF
     grep -q 'defaults write com.knollsoft.Hookshot leftHalf' "$MOCK_LOG"
     # reloaded so the keymap actually takes effect
     grep -q 'pkill -9 -f Rectangle Pro' "$MOCK_LOG"
-    grep -q 'open -a Rectangle Pro' "$MOCK_LOG"
+    grep -qF "open $RECTANGLE_APP" "$MOCK_LOG"
     # the silent-failure guidance the whole fix exists for
     [[ "$output" == *"Accessibility"* ]]
     [[ "$output" == *"enable Rectangle Pro"* ]]
