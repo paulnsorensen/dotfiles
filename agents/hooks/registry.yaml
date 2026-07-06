@@ -3,7 +3,7 @@
 #
 # Per-entry fields:
 #   event          — one of SessionStart, UserPromptSubmit, PreToolUse,
-#                    PostToolUse, Stop, PermissionRequest. The active set
+#                    PostToolUse, Stop, SubagentStop, PermissionRequest. The active set
 #                    lives in HOOK_EVENTS_VALID inside lib.sh;
 #                    hook_filter_for_harness fails loud on anything else
 #                    (catches typos like "evnt: PostToolUse").
@@ -147,6 +147,55 @@ hooks:
     matcher: "Skill"
     timeout: 5
     description: Nudge a checkpoint-and-relaunch on opus/xhigh for deep-synthesis skills at effort below high
+
+  # ─── Sub-agent turn/context budget ──────────────────────────────────
+  # Enforces a per-sub-agent turn + context-byte ceiling that Claude Code's
+  # `maxTurns` frontmatter fails to (upstream #41143: the hardcoded default
+  # always wins; background spawns drop the config entirely). Three events,
+  # all firing INSIDE the sub-agent with a consistent `agent_id`; the main
+  # orchestrator's tool calls carry none, so the shared logic no-ops on them
+  # (only sub-agents are capped). Budgets are keyed by `agent_type`.
+  #   turn-budget-guard-pre  — PreToolUse: increment the per-agent turn
+  #                            counter, read live context bytes, DENY the call
+  #                            at the hard ceiling (turns OR bytes).
+  #   turn-budget-guard-post — PostToolUse: inject a one-time wrap-up nudge
+  #                            (additionalContext) when either signal crosses
+  #                            its soft threshold — the graceful handoff window.
+  #   turn-budget-guard-stop — SubagentStop: delete the agent's counter dir.
+  # All three share the one Node logic module and dispatch on hook_event_name.
+  # claude-only: agent_id / additionalContext / SubagentStop are Claude hook
+  # surfaces. matcher ".*" on pre/post covers every tool (the no-agent_id
+  # guard excludes the orchestrator); SubagentStop takes no matcher.
+  # Fail-open: missing logic file, absent node, malformed input, or an
+  # unlocatable transcript degrades to allow.
+  turn-budget-guard-pre:
+    event: PreToolUse
+    script: agents/hooks/turn-budget-guard.sh
+    shared_assets:
+      - agents/lib/turn-budget-guard.js
+    harnesses: [claude]
+    matcher: ".*"
+    timeout: 5
+    description: Deny sub-agent tool calls past the per-agent_type turn/context hard ceiling
+
+  turn-budget-guard-post:
+    event: PostToolUse
+    script: agents/hooks/turn-budget-guard.sh
+    shared_assets:
+      - agents/lib/turn-budget-guard.js
+    harnesses: [claude]
+    matcher: ".*"
+    timeout: 5
+    description: Nudge a sub-agent to wrap up once past the soft turn/context threshold
+
+  turn-budget-guard-stop:
+    event: SubagentStop
+    script: agents/hooks/turn-budget-guard.sh
+    shared_assets:
+      - agents/lib/turn-budget-guard.js
+    harnesses: [claude]
+    timeout: 5
+    description: Delete the sub-agent's turn-budget counter dir on SubagentStop
 
   # ─── Moshi (rjyo/moshi-hook) ────────────────────────────────────────
   # Bridge between Claude Code and the Moshi iOS terminal app — sends

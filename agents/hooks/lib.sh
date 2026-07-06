@@ -35,7 +35,7 @@ set -euo pipefail
 # PermissionRequest is claude-only — codex doesn't fire it. The codex
 # backend will still happily write the entry if a registry author opts
 # codex in, but at run time codex won't trigger it.
-HOOK_EVENTS_VALID=(SessionStart UserPromptSubmit PreToolUse PostToolUse Stop PermissionRequest)
+HOOK_EVENTS_VALID=(SessionStart UserPromptSubmit PreToolUse PostToolUse Stop SubagentStop PermissionRequest)
 
 # Returns 0 iff the harness writes a `matcher` field into the outer block
 # for that (event, harness) pair.

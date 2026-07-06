@@ -782,16 +782,42 @@ SH
 }
 
 @test "hook_filter_for_harness accepts every event in the whitelist" {
-    # Locks the contract that all six whitelisted events round-trip
-    # through the filter without erroring. Adding a seventh event needs
-    # both HOOK_EVENTS_VALID and this test updated together.
-    for evt in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop PermissionRequest; do
+    # Locks the contract that all whitelisted events round-trip through
+    # the filter without erroring. Adding a new event needs both
+    # HOOK_EVENTS_VALID and this test updated together.
+    for evt in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop SubagentStop PermissionRequest; do
         local reg
         reg=$(jq -n --arg e "$evt" '{(("entry-" + $e)): {event: $e, script: "x.sh"}}')
         run hook_filter_for_harness claude "$reg"
         assert_success
         [[ "$(jq -r 'keys | length' <<<"$output")" == "1" ]]
     done
+}
+
+@test "claude upsert writes a SubagentStop entry without a matcher" {
+    # SubagentStop is not in _hook_event_uses_matcher, so the matcher field
+    # must be dropped from the outer block even if the registry sets one.
+    HARNESS_DESIRED_JSON='{"turn-budget-guard-stop":{"event":"SubagentStop","script":"agents/hooks/turn-budget-guard.sh","timeout":5}}'
+    echo '{ "hooks": {} }' > "$CLAUDE_SETTINGS_FILE"
+    hook_claude_apply turn-budget-guard-stop
+
+    local cmd timeout has_matcher
+    cmd=$(jq -r '.hooks.SubagentStop[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")
+    timeout=$(jq -r '.hooks.SubagentStop[0].hooks[0].timeout' "$CLAUDE_SETTINGS_FILE")
+    has_matcher=$(jq -r '.hooks.SubagentStop[0] | has("matcher")' "$CLAUDE_SETTINGS_FILE")
+    [[ "$cmd" == 'bash "$HOME/.claude/hooks/turn-budget-guard.sh"' ]]
+    [[ "$timeout" == "5" ]]
+    [[ "$has_matcher" == "false" ]]
+}
+
+@test "the real registry's turn-budget-guard entries carry the expected events" {
+    # Guards the wiring: the three sub-agent budget hooks must sit on
+    # PreToolUse / PostToolUse / SubagentStop and share the one logic asset.
+    local reg; reg=$(hook_filter_for_harness claude "$REGISTRY_JSON")
+    [[ "$(jq -r '.["turn-budget-guard-pre"].event'  <<<"$reg")" == "PreToolUse"   ]]
+    [[ "$(jq -r '.["turn-budget-guard-post"].event' <<<"$reg")" == "PostToolUse"  ]]
+    [[ "$(jq -r '.["turn-budget-guard-stop"].event' <<<"$reg")" == "SubagentStop" ]]
+    [[ "$(jq -r '.["turn-budget-guard-pre"].shared_assets[0]' <<<"$reg")" == "agents/lib/turn-budget-guard.js" ]]
 }
 
 @test "hook_filter_for_harness rejects entries with both script and command" {
