@@ -1,6 +1,8 @@
-# Anti-Patterns: The 20 Most Common Skill Mistakes
+# Anti-Patterns: Common Skill Mistakes
 
-Scan every skill you improve against this list.
+Scan every skill you improve against this list. The **Craft** section carries the
+skill-authoring-consensus failure modes (Anthropic progressive disclosure, Pocock
+`writing-great-skills`, Vincent `writing-skills`); the others are operational.
 
 ## Activation
 
@@ -52,9 +54,39 @@ Scan every skill you improve against this list.
 2. **Opus 4.6 subagent overuse** — Simple tasks spawn unnecessary subagents.
     Add explicit anti-fork guidance: "Do NOT fork for single-file operations."
 
+## Craft (authoring predictability)
+
+1. **Description-as-workflow-summary** — the description summarizes what the skill
+   *does* internally ("Covers: X, Y, Z"). Agents take it as a shortcut and skip
+   reading the body, dropping steps the body enforces (Vincent, A/B-tested: a
+   two-stage review collapsed to one). Cut to trigger conditions only.
+2. **Sprawl** — the body is simply too long, even if every line is live. Hurts
+   readability and wastes tokens. Cure with the ladder: disclose reference behind
+   pointers, split by branch. Not by relocating every-run content — see #4.
+3. **Sediment** — stale layers that accrete because adding feels safe and removing
+   feels risky. The default fate of any skill without a pruning pass. Delete back
+   to what's load-bearing.
+4. **Relocation ≠ tightening** — pushing an every-run block into a reference file
+   saves no context (the run reads it anyway) and adds navigation cost. Progressive
+   disclosure is a *branch* test: only push what some runs skip. Prune non-branchy
+   bloat in place.
+5. **No-op line** — a line the model already obeys by default, so you pay tokens to
+   say nothing. Test: does it change behavior vs the default? A weak leading word
+   (`be thorough` when the agent already is) is a no-op — fix with a stronger word,
+   not a new technique.
+6. **Duplication** — the same meaning in more than one place. Costs maintenance and
+   tokens, and inflates the meaning's apparent rank. Keep one source of truth.
+7. **Restatement that a leading word retires** — a triad spelled at three sites, or
+   "fast, deterministic, low-overhead", collapses into one pretrained word (a
+   *tight* loop). Fewer tokens *and* a sharper hook for the agent.
+8. **`@file` force-load** — `@`-linking a reference inside a skill body loads it
+   immediately regardless of relevance, defeating progressive disclosure. Cross-
+   reference other skills by name instead.
+
 ## Diagnostic Checklist
 
 - [ ] Description is a trigger spec, not a summary
+- [ ] Description states no internal workflow (triggers only)
 - [ ] Description in third person with explicit "Use when" + keywords
 - [ ] Description has "Do NOT use for" anti-triggers
 - [ ] SKILL.md under 500 lines
@@ -69,3 +101,8 @@ Scan every skill you improve against this list.
 - [ ] Constraint level matches risk level
 - [ ] Critical rules enforced by hooks
 - [ ] `context: fork` only on task-oriented skills
+- [ ] No no-op lines the model already obeys by default
+- [ ] No meaning duplicated across body and references (single source of truth)
+- [ ] Restatements collapsed into leading words where possible
+- [ ] References cross-linked by name, not `@file` force-loads
+- [ ] Relocations to references are branchy (some runs skip them), not every-run content
