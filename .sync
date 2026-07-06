@@ -60,6 +60,7 @@ run_sync() {
     install_tpm
     install_prek_hooks
     install_tilth_claude_code
+    reconcile_claude_mcps
 
     unset DOTFILES_DEV
 
