@@ -24,10 +24,10 @@ function writeReason(target) {
   const path = target || '<file>';
   return `Blocked: shell write-redirect to ${path} — use the cheez-write skill (tilth_write), not echo/printf/cat with > / >>.
 
-Run instead (whole-file create/overwrite):
-  mcp__tilth__tilth_write(files:[{path:${JSON.stringify(path)}, mode:"overwrite", overwrite:true, content:"…"}])
+New file (seed — omit tag):
+  mcp__tilth__tilth_write(edits:[{path:${JSON.stringify(path)}, ops:[{op:"prepend", content:"…"}]}], cwd:"…")
 
-For a surgical change, tilth_read first for hash anchors, then a hash-mode edit.`;
+Existing file: tilth_read first to get the [path#TAG], then tag-anchored ops (replace/insert_before/insert_after) on the numbered lines.`;
 }
 
 // A write-redirect only needs cheez-write when it targets a file in the working
