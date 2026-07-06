@@ -39,8 +39,8 @@ Read the target and any files it points at. Classify: **agent** (has
 
 ### Phase 2 — Analytics (optional branch)
 
-Empirical usage data, best-effort — skip silently if the DB or logs are absent.
-Never block the audit on it.
+Empirical usage data, best-effort — skip if the DB or logs are absent and note the
+dropped Usage lens in the report. Never block the audit on it.
 
 1. `python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py`
 2. Fan out **one `duckdb-expert` spawn per owned domain** (read-only) — this skill
