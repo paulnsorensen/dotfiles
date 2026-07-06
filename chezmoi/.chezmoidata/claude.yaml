@@ -226,6 +226,7 @@ claude:
     - nih-audit
     - prompt-analytics
     - rennet
+    - routine-scaffold
     - serena-project-config
     - session-analytics
     - settings-clean
