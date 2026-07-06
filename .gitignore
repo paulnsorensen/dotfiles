@@ -110,3 +110,9 @@ chezmoi/dot_claude/exact_*/
 
 # Node install artifacts (hook runner deps; package-lock.json is tracked)
 node_modules/
+
+# Throwaway test scratch (ap-* temp dirs, pytest cache, uv locks)
+.tmp-tests/
+
+# Generated skills lockfile (produced by skills sync)
+skills-lock.json

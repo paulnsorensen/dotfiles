@@ -31,3 +31,6 @@ clear
 
 # local-llm stack aliases (opt-in; absent on machines without the stack)
 [ -f "$HOME/local-llm/scripts/aliases.sh" ] && source "$HOME/local-llm/scripts/aliases.sh"
+
+# Antigravity CLI (opt-in; absent on machines without it)
+[ -d "$HOME/.antigravity/antigravity/bin" ] && export PATH="$HOME/.antigravity/antigravity/bin:$PATH"
