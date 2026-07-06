@@ -1,8 +1,9 @@
 # Schedule mechanics — the RemoteTrigger / environment model
 
 How a cloud routine is registered and what the hosted environment gives it. This
-is the knowledge the Register phase hands to `/schedule`; the source of truth for
-registration logic is the `/schedule` skill itself.
+is the knowledge the Register phase hands to the cloud-routine registrar — the
+`RemoteTrigger` tool (equivalently the cloud `schedule` skill that wraps it), not
+a bare `/schedule`; see the disambiguation below.
 
 Reference: <https://code.claude.com/docs/en/routines>,
 <https://code.claude.com/docs/en/settings> (allowlist prefix).

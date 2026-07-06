@@ -33,8 +33,8 @@ structurally cannot express.
 
 - Use for: review-every-PR nags, label-on-open, react-to-release.
 - Example event: `pull_request` (opened / synchronized).
-- `<speculative>` on our end-to-end wiring — validate against `/schedule` and the
-  first live event before asserting it works.
+- `<speculative>` on our end-to-end wiring — validate against the `RemoteTrigger`
+  registrar and the first live event before asserting it works.
 
 ## Choosing
 
@@ -45,6 +45,6 @@ structurally cannot express.
 | "every time a PR opens", "on release" | `github-event` |
 
 Combine when a routine needs both a cadence and a reaction (e.g. a nightly sweep
-plus an on-PR check). Confirm `/schedule` exposes creation for the api and
-github-event kinds before wiring them — it may support only cron creation today
-(spec open question).
+plus an on-PR check). Confirm the `RemoteTrigger` registrar exposes creation for
+the api and github-event kinds before wiring them — it may support only cron
+creation today (spec open question).

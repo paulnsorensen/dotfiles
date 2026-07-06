@@ -30,7 +30,8 @@ exactly one artifact per drifted item.
 You are the orchestrator for <repo>'s drift routine. Detect drift between
 watched upstreams and our config, then triage and act on each drift.
 
-1. Ensure the tracking label exists (idempotent): gh label create <name> ... || true
+1. Ensure the tracking label exists (idempotent, but surface real failures):
+   gh label list --search <name> | grep -q <name> || gh label create <name> ...
 2. Run bin/<name>-scan; parse its JSON. Take items where .drifted == true.
    If none, exit quietly — no output, no artifacts.
 3. Dispatch one subagent per drifted item (parallel; file-disjoint). Each:

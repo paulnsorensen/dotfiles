@@ -2,7 +2,7 @@
 name: routine-scaffold
 model: sonnet
 effort: medium
-allowed-tools: Task, Skill, Bash(gh:*), Bash(git:*), mcp__tilth__*
+allowed-tools: Task, Skill, RemoteTrigger, Bash(gh:*), Bash(git:*), mcp__tilth__*
 description: >
   Author, review, land, and register a Claude Code cloud routine end-to-end —
   a scheduled or event-triggered cloud agent that opens PRs/issues a human

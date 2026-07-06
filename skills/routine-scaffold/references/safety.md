@@ -61,6 +61,9 @@ allowlist did not admit that tool:
 
 ## Label / track
 
-Give each routine a tracking label (e.g. `gh label create <name>`) so its
-artifacts are filterable and dedup can find prior work. Create it idempotently
-(`|| true`) at the top of the routine.
+Give each routine a tracking label so its artifacts are filterable and dedup can
+find prior work. Create it idempotently at the top of the routine, but ignore
+*only* the already-exists case so real auth/permission failures still surface —
+e.g. `gh label list --search <name> | grep -q <name> || gh label create <name>`.
+A blanket `|| true` would swallow those failures silently, violating the
+fail-fast posture this document exists to enforce.
