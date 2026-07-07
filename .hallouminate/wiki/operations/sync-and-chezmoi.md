@@ -32,6 +32,7 @@ chezmoi renders the files that need per-machine templating (work vs. personal gi
 **Source:** the `chezmoi/` subdir. Currently manages, among others:
 
 - `~/.gitconfig` — `chezmoi/private_dot_gitconfig.tmpl` (templated `{{ .email }}`; includes an `[http "https://gopkg.in"] followRedirects = true` block — an HTTP-redirect setting, **not** a `[url] insteadOf` rewrite).
+- `~/.zprofile` — `chezmoi/dot_zprofile` (plain, not templated). A **static** equivalent of `eval "$(brew shellenv zsh)"` (the eval costs ~40ms per login shell) guarded by `[[ -d /opt/homebrew ]]`, plus the multiplier-dots overlay block (markers must stay byte-identical — multiplier-dots greps for them). **nvm is deliberately NOT initialized here**: the overlay's `profile.sh` owns nvm entirely (it has a `MULTIPLIER_PROFILE_SOURCED` re-source guard; `nvm.sh` itself has none, so a standalone nvm block double-sources it, ~50ms wasted — that was the pre-chezmoi state). Regenerate the static block with `brew shellenv zsh` if Homebrew relocates.
 - `~/.copilot/mcp-config.json` — env-rendered API keys (fails fast if unset).
 - `~/.claude/settings.json` — `dot_claude/modify_settings.json` authors the file WHOLESALE on every apply from `chezmoi/lib/claude-settings-authoritative.json` (static keys) + `chezmoi/.chezmoidata/claude.yaml` (registry-authored `hooks`, `enabledPlugins`, `extraKnownMarketplaces`, `permissions.*`). Live drift on managed keys is wiped; an unknown live key-path HALTS apply (fold it into a source, then re-sync). (An earlier revision of this page wrongly named the file `create_settings.json` — it has been `modify_settings.json` since the modify_ rewrite.)
 - Harness-global settings files (`~/.codex/config.toml`, `~/.config/opencode/opencode.json`, `~/.cursor/mcp.json`, `~/.copilot/mcp-config.json`, `~/.config/crush/crush.json`) are no longer mutated by non-isolated `ap install global`; their durable defaults belong in chezmoi or the harness's own runtime state. `ap` still writes generated agents/hooks/skills/plugin artifacts.
@@ -61,6 +62,13 @@ Drop a templated source under `chezmoi/` using the [source-state attributes](htt
 A `run_onchange`/`.chezmoiscripts` shell script (or any repo `.sh`) that nests a `case … esac` **inside a `$(…)` command substitution** must parenthesize every pattern — `(git) … ;;`, not `git) … ;;`. macOS ships GNU bash 3.2.57 (the GPLv2 freeze), whose parser naively counts parens while scanning for the end of `$(…)` and treats the pattern's closing `)` as closing the substitution → `syntax error near unexpected token ';;'` **at parse time** (so it fails even on machines where the code path never executes). Linux/Homebrew bash 5.x parses both forms fine, which is why it survives CI/review and only bites on a real macOS `dots sync`.
 
 Two safe forms: parenthesize the patterns (`(git)`), or define the `case` in a named function and call it via `$(fn)` — the `case` is then not textually inside the substitution. `chezmoi/dot_claude/modify_settings.json` uses the function form deliberately; `run_onchange_after_sync-claude-plugins.sh.tmpl` (added #378) hit the bug and was fixed to the parenthesized form.
+
+### Gotcha: startup caches that never refresh
+
+Two zsh-startup caching patterns in this repo looked correct but silently degraded; both are fixed, remember the *why*:
+
+- **`compinit` never touches an unchanged `.zcompdump`** — a "-C when the dump is <24h old" gate therefore stops firing ~24h after the dump is first written (mtime goes stale forever, every shell pays the full compaudit sweep again). `zsh/completion.zsh` explicitly `touch`es the dump in the full-`compinit` branch to reset the window. Verified empirically: backdating the dump and running full `compinit` leaves the mtime unchanged.
+- **Caching `eval "$(<tool> init zsh)"` output makes transient failures permanent** — the uncached eval self-heals next shell; a cache written with a bare `> $cache` persists partial output from a failed init and sources it forever. `_init_cache` in `zsh/tools.zsh` writes to a temp file, checks the exit code, and atomically swaps — a failed init leaves the old cache intact (or none), never a poisoned one. Caches live in `~/.cache/zsh-init/`, keyed on binary mtime via zsh's fork-free `$commands[tool]`.
 
 ## Shell functions need tests
 

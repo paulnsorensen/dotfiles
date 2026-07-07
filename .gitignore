@@ -75,7 +75,7 @@ vim/undo/
 
 # Git worktrees (Claude Code task isolation)
 .worktrees/
-.conductor/
+.conductor/settings.local.toml
 
 # Workspace-local notebooks and context
 .context/

@@ -24,7 +24,7 @@ source "$DOTFILES_DIR/zsh/prompt.zsh"
 source "$DOTFILES_DIR/zsh/claude.zsh"
 source "$DOTFILES_DIR/zsh/skhd.zsh"
 
-clear
+[[ -t 1 ]] && clear
 
 # opencode
 [ -d "$HOME/.opencode/bin" ] && export PATH="$HOME/.opencode/bin:$PATH"

@@ -9,8 +9,19 @@ setopt ALWAYS_TO_END        # Push cursor on completions.
 
 # Use modern completion system
 autoload -Uz compinit
-
-compinit
+# compinit's compaudit sweep costs ~50ms; trust the dump (-C) when it's <24h old.
+() {
+  setopt local_options extended_glob
+  local dump=${ZDOTDIR:-$HOME}/.zcompdump
+  if [[ -n $dump(#qN.mh-24) ]]; then
+    compinit -C
+  else
+    compinit
+    # compinit doesn't touch an unchanged dump — refresh mtime or the fast
+    # path never fires again after the first 24h.
+    [[ -s $dump ]] && touch $dump
+  fi
+}
 
 # cache completions
 zstyle ':completion:*' use-cache on
