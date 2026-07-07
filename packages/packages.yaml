@@ -96,7 +96,7 @@ packages:
   # Dev (DOTFILES_DEV=true)
   - pyenv: { dev: true }
   - uv
-  - rustup: { dev: true }
+  - rustup
   - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app; greedy upgrade triggers repeated sudo prompts
 
   # LSP servers (for Claude Code LSP plugins)

@@ -436,6 +436,9 @@ install_tilth_claude_code() {
     tilth install claude-code --edit 2>&1 | while read -r line; do
         log_info "  $line"
     done
+    if [[ ! -f "${HOME}/.claude/tilth/inject-cwd.js" ]]; then
+        log_warning "tilth install claude-code --edit ran but ~/.claude/tilth/inject-cwd.js is missing — hook wiring may be stale"
+    fi
 }
 
 # Re-reconcile user-scope claude MCPs as the FINAL write of every sync.
