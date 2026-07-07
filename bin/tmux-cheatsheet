@@ -14,6 +14,22 @@ RESET=$'\033[0m'
 hdr() { printf "\n${BOLD}${CYAN}%s${RESET}\n" "$1"; }
 row() { printf "  ${GREEN}%-28s${RESET} ${DIM}%s${RESET}\n" "$1" "$2"; }
 
+# Appends a "Live bindings" section rendering `tmux list-keys -N` when run
+# inside tmux; silently absent otherwise. Guarded so a tmux failure can't
+# trip `set -e`.
+tmux_live_bindings() {
+    [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1 || return 0
+
+    local live
+    live=$(tmux list-keys -N 2>/dev/null) || return 0
+    [[ -n "$live" ]] || return 0
+
+    hdr "Live bindings (tmux list-keys -N)"
+    while IFS= read -r line; do
+        printf "  ${DIM}%s${RESET}\n" "$line"
+    done <<< "$live"
+}
+
 print_cheatsheet() {
     printf '\n%stmux cheatsheet%s  %s(prefix = Ctrl+Space)%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
 
@@ -50,7 +66,8 @@ print_cheatsheet() {
     row "prefix d"               "detach from session"
     row "prefix s"               "choose session/window tree"
     row "prefix \$"               "rename session"
-    row "prefix ( / )"           "previous / next session"
+    row "prefix Ctrl+s"          "resurrect: save session layout"
+    row "prefix Ctrl+r"          "resurrect: restore saved session"
     row "prefix T"               "sesh: fuzzy session picker (popup)"
     row "prefix \` (backtick)"   "sesh: switch to last session"
 
@@ -82,10 +99,13 @@ print_cheatsheet() {
     row "prefix u"               "Claude session picker (working/waiting/idle)"
     row "prefix o"               "popup: yazi (file manager)"
     row "prefix t"               "popup: scratch terminal"
+    row "prefix Tab"             "extrakto: fuzzy text picker (copy words/lines)"
     row "prefix ?"               "general dotfiles cheatsheet"
     row "prefix /"               "this tmux cheatsheet (popup)"
     row "prefix r"               "reload tmux config"
     row "tmux-cheatsheet"        "this reference"
+
+    tmux_live_bindings
     printf "\n"
 }
 

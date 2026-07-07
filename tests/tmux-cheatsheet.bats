@@ -97,3 +97,64 @@ assert_section() {
     assert_section "tss"
     assert_section "tsip"
 }
+
+
+@test "documents the extrakto fuzzy text picker" {
+    run tmux-cheatsheet
+    assert_section "prefix Tab"
+    assert_section "extrakto"
+}
+
+@test "documents resurrect save/restore bindings" {
+    run tmux-cheatsheet
+    assert_section "prefix Ctrl+s"
+    assert_section "prefix Ctrl+r"
+    assert_section "resurrect"
+}
+
+@test "shows live bindings section when inside tmux" {
+    MOCK_BIN="$(mktemp -d)"
+    cat > "$MOCK_BIN/tmux" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "list-keys" && "$2" == "-N" ]]; then
+    printf 'C-Space |       split vertically (keeps cwd)\nC-Space M-1     jump to window N\n'
+    exit 0
+fi
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/tmux"
+    PATH="$MOCK_BIN:$PATH" TMUX=fake run tmux-cheatsheet
+    rm -rf "$MOCK_BIN"
+    [[ "$status" -eq 0 ]]
+    assert_section "Live bindings"
+    assert_section "split vertically (keeps cwd)"
+    assert_section "jump to window N"
+}
+
+@test "omits live bindings section when TMUX is unset" {
+    MOCK_BIN="$(mktemp -d)"
+    cat > "$MOCK_BIN/tmux" <<'EOF'
+#!/usr/bin/env bash
+printf 'C-Space |       split vertically (keeps cwd)\n'
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/tmux"
+    unset TMUX
+    PATH="$MOCK_BIN:$PATH" run tmux-cheatsheet
+    rm -rf "$MOCK_BIN"
+    [[ "$status" -eq 0 ]]
+    clean=$(strip_ansi "$output")
+    [[ "$clean" != *"Live bindings"* ]]
+}
+
+@test "still exits 0 when the tmux list-keys call fails inside tmux" {
+    MOCK_BIN="$(mktemp -d)"
+    cat > "$MOCK_BIN/tmux" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+    chmod +x "$MOCK_BIN/tmux"
+    PATH="$MOCK_BIN:$PATH" TMUX=fake run tmux-cheatsheet
+    rm -rf "$MOCK_BIN"
+    [[ "$status" -eq 0 ]]
+}
