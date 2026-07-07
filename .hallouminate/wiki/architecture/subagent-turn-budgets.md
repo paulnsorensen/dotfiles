@@ -8,6 +8,12 @@ frugal" instructions, which drift. This page records the measured turn and
 context distributions the caps were grounded in, so the values can be revisited
 when legitimate work gets clipped rather than re-derived from scratch.
 
+**Update (PRs #392/#401/#407):** `maxTurns` frontmatter turned out to be
+unenforced upstream (claude-code#41143 — the hardcoded default always wins), so
+enforcement moved to the `turn-budget-guard` hook. The data below still grounds
+the budget values; the hook's non-obvious mechanics are at the bottom of this
+page.
+
 See [[agents-dir]] for the registry mechanics, [[agent-profile]] for the renderer
 that emits the field, and [[agent-vs-skill-tiering]] for why each agent earns its
 own context window in the first place.
@@ -100,3 +106,50 @@ Claude's internal prompt fleet-wide. The only documented lever on a built-in is
 *removes* it, not caps it — or `CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=1`
 (headless/SDK only, removes all). Source: code.claude.com/docs/en/sub-agents
 §Built-in subagents and §Choose the subagent scope.
+
+
+## Enforcement layer: the turn-budget-guard hook (PRs #392, #401, #407)
+
+`agents/hooks/turn-budget-guard.sh` → `agents/lib/turn-budget-guard.js` caps each
+sub-agent on a dual ceiling — tool-call turns AND transcript bytes, whichever
+trips first — via PreToolUse hard-deny, a one-time PostToolUse wrap-up nudge, and
+SubagentStop cleanup. Keyed on `agent_id` (hook events inside a sub-agent carry
+it; orchestrator calls don't, so the guard no-ops on them). Fail-open on every
+error path — the guard caps runaways, it must never become a denial-of-service.
+
+Non-obvious facts a future agent would re-derive (learned in PR #407):
+
+- **Continued agents vs the byte wall.** SubagentStop wipes the turn counter but
+  the transcript persists, so a SendMessage-continued agent already over the
+  byte hard ceiling was denied on its *first* tool call with no handoff window
+  (observed live in the decision log). Hence the 3-call grace window past the
+  byte ceiling plus a hard nudge instructing the agent to persist a handoff and
+  return `status: blocked: out of context` — the orchestrator's re-dispatch
+  contract. The turn ceiling gets no grace: it ramps slowly and the soft nudge
+  precedes it by design.
+- **State is append-only on purpose.** Parallel tool calls in one batch fire
+  concurrent PreToolUse hooks; the original state.json read-modify-write lost
+  increments (duplicate turn counts observed live). Counters are the byte size
+  of an append-only file (O_APPEND writes are atomic); nudge flags are `wx`
+  marker files (EEXIST = already set, never re-emit).
+- **The byte signal is a proxy, not a conversion.** Transcript JSONL size ≈
+  context: the JSON envelope inflates bytes/token while the untranscripted
+  system prompt deflates it. Thresholds are calibrated against live denies —
+  don't treat the 4-bytes/token arithmetic as exact.
+- **The decision log is debug-gated for the orchestrator.** Orchestrator
+  no-agent-id records were 64% of `decisions.jsonl` volume on the hot path of
+  every tool call; they only log under `CLAUDE_TURN_BUDGET_DEBUG`. The log
+  rotates at 5MB (single `.1` generation) beside the SubagentStop sweep.
+- **opencode tool hooks carry no identity.** `tool.execute.before/after` input
+  is only `{tool, sessionID, callID}` — the adapter resolves
+  `client.session.get()` and treats parentID-set AND agent-non-empty as
+  sub-agent, with sessionID as the identity key and `session.idle`/`deleted` as
+  the SubagentStop equivalent. Deny-by-throw is safe there: opencode v1.17.14
+  triggers plugins inside the AI SDK tool `execute()`, and `ai@6.0.168`
+  `execute-tool-call.ts` catches every execute throw into a model-visible
+  `tool-error`, not a turn crash. The byte signal is inert on opencode (no
+  transcript path) — turn-ceiling-only enforcement.
+- **New heavy agent types must be added to `BUDGETS`.** Unknown types fall to
+  `default` (40 soft / 50 hard turns). `general-purpose` — the ultracook /
+  cheese-factory full-peer worker — sits at coder tier (75/100) for this reason;
+  a new pipeline-scale agent type left off the table gets half a coder's budget.
