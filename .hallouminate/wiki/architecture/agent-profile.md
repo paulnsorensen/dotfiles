@@ -42,7 +42,7 @@ Crucial asymmetry: **item lists merge from includes; overlay fields don't.** `na
 | **base** (render primitive) | `base` | `registries:` only, no overlay | The registry union. `ap install base` renders it to `$PWD` — useful for staging/inspection; does **not** touch live config |
 | **global** (install overlay) | `global` | `include: [base]` + install-overlay | The live install. Wraps base with `target_default: $HOME`, the `local` marketplace, and `enabled_plugins: {global@local: true}` |
 | **specialized** | `fe`, `spec`, `plugin`, `review`, … | `registries:` / `include` + overlay | Task-shaped sessions, often closed worlds |
-| **isolated** (closed world) | `review`, `todo`, `fe`, `spec`, `notion`, `rtkonly`, `plugin` | `isolated: true` + launch-overlay | ccp-parity closed-world launches |
+| **isolated** (closed world) | `review`, `todo`, `fe`, `spec`, `mgmt`, `rtkonly`, `plugin` | `isolated: true` + launch-overlay | ccp-parity closed-world launches |
 
 The base/global split exists for one reason: `ap install base` without `--target` writes the plugin tree into `$PWD`, which reads as confusing for "make my machine live". `global` makes operator intent legible — `ap install global` (no flags) targets `$HOME` and renders the shared/plugin artifacts there, but it no longer mutates harness-global settings files; those live settings move to chezmoi/user ownership.
 
