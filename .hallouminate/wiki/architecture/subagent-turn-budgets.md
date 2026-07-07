@@ -107,7 +107,6 @@ Claude's internal prompt fleet-wide. The only documented lever on a built-in is
 (headless/SDK only, removes all). Source: code.claude.com/docs/en/sub-agents
 §Built-in subagents and §Choose the subagent scope.
 
-
 ## Enforcement layer: the turn-budget-guard hook (PRs #392, #401, #407)
 
 `agents/hooks/turn-budget-guard.sh` → `agents/lib/turn-budget-guard.js` caps each
