@@ -289,5 +289,59 @@ The hallouminate wiki index (LanceDB) is derived from the markdown on disk. If
 vs the schema — run `hallouminate index` to rebuild. A doctor run should treat
 a non-rebuildable index as a dotfiles bug, not just retry.
 
+## Known drift pattern: cargo-source packages silently stale when the Rust toolchain is dev-gated
+
+**Symptom**: A `source: cargo` package drifts commits behind its pinned git
+branch with no error — e.g. `tilth` stuck at an old `main` commit, still
+emitting a read format its current `main` had removed (per-line `<hash>|`
+anchors, deleted in tilth PR #99) and missing a feature its `install` step now
+depends on (the auto-created `~/.claude/tilth/inject-cwd.js` cwd-injection hook,
+tilth PR #118). The stale hook then leaves the `claude.yaml` `mcp__tilth__.*`
+PreToolUse wiring pointing at a missing file.
+
+**Why it happens**: `packages/packages.yaml` gates the toolchain provider
+`rustup: { dev: true }` (dev machines only, `packages/sync.sh:87`), while the
+cargo-source packages that *need* a toolchain to build are ungated —
+`tilth`, `hallouminate`, `rtk`, `cargo-llvm-cov`, `cargo-update` all install on
+every machine (`sync.sh:96` selects `source==cargo AND dev==false`). A machine
+with no toolchain installs the package *entries* but has no `cargo` to build
+them, so `dots sync`/`dots up` can never rebuild or update them. The staleness
+is invisible: the old binary keeps working, just at an old revision.
+
+**Blast radius beyond the binary**: a stale tilth breaks the read/edit contract
+the whole repo documents. When the format changes upstream (PR #99), the
+preamble edit-shape guide, `agents/agent_definitions/coder.md`, and
+`agents/lib/tool-reroute/io.js` still describe the *old* `<line>:<hash>|` anchor
+model — doc drift that only surfaces once the binary is finally rebuilt to the
+format its docs no longer match.
+
+**Fix**: rebuild the toolchain + package (`brew install rustup` →
+`rustup default stable` → `cargo install --git <repo> --branch main <pkg>
+--force --locked` — note multi-binary repos need the explicit `<pkg>` arg), then
+`dots sync` re-runs `install_tilth_claude_code` (`.sync-lib.sh:432`) which
+recreates the hook. Permanent fix tracked in
+[#403](https://github.com/paulnsorensen/dotfiles/issues/403): un-gate `rustup`
+(the cargo packages it builds are wanted everywhere) and make the cargo-install
+leg hard-fail loudly when `cargo` is absent instead of silently skipping.
+
+**Detection**: `tilth --version` / git-hash of the installed binary vs
+`git ls-remote <repo> <branch>`; and `command -v cargo` — absent on a machine
+that lists ungated `source: cargo` packages is the tell.
+
+## Gotcha: `just check` fails locally on macOS while green in CI (GNU-only test idioms)
+
+**Symptom**: `just check` red on a single bats test locally on macOS, but CI
+passes. First hit 2026-07-06: `tests/turn-budget-guard.bats:384` used
+`touch -d "@<epoch>"` — GNU coreutils syntax that BSD `touch` (macOS) rejects
+("illegal time specification"). CI runs `ubuntu-latest`
+(`.github/workflows/test.yml:14,37`), so GNU `touch` accepts it and the failure
+is masked. Because AGENTS.md makes `just check` the single local exit gate on a
+macOS-oriented repo, a GNU-only idiom means the gate *cannot* pass on the
+primary dev OS while CI stays green — an OS-divergence coverage gap, not a
+logic bug. Tracked in
+[#404](https://github.com/paulnsorensen/dotfiles/issues/404). Detection: any
+test using GNU-only flags (`touch -d @epoch`, `date -d`, `sed -i` without a
+backup arg, `readlink -f`) is a portability suspect.
+
 See [[agent-profile]] for the `ap` render/install model and [[../harnesses/claude]]
 for where each Claude config surface lives.

@@ -48,9 +48,9 @@ Pick by edit *shape*, not preference. Serena is more context-efficient for symbo
 | Insert relative to a known symbol | `serena.insert_before_symbol` / `insert_after_symbol` |
 | Rename a symbol across the codebase | `serena.rename_symbol` (one LSP call vs N text replaces, and correct under overloads) |
 | Safe-delete an unused symbol | `serena.safe_delete_symbol` |
-| Sub-symbol edit (slice inside a function) | `tilth_write` hash-anchor — serena would force shipping the whole body |
+| Sub-symbol edit (slice inside a function) | `tilth_write` tag-anchored ops — serena would force shipping the whole body |
 | Imports, config (YAML/JSON/TOML), Markdown, shell | `tilth_write` |
-| Create new file | `tilth_write` overwrite — serena has no create-file tool |
+| Create new file | `tilth_write` seed (omit `tag`) — serena has no create-file tool |
 | Bulk pattern across files | `tilth_search` + `tilth_write` batch |
 | Language without LSP support here | `tilth_write` |
 
