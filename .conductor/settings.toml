@@ -1,0 +1,3 @@
+[scripts.run.check]
+command = "just check"
+default = true

@@ -7,6 +7,8 @@
 # forwards LANG/LC_* to mosh-server over SSH. Respect an already-set locale.
 export LANG="${LANG:-en_US.UTF-8}"
 
+typeset -gU path fpath  # dedupe PATH/FPATH (first occurrence wins)
+
 # Homebrew bin on PATH for non-interactive SSH/mosh sessions. On Apple Silicon
 # /opt/homebrew/bin is NOT in macOS path_helper's default PATH, so an inbound
 # `mosh thismac` can't find mosh-server without this. Interactive shells get it

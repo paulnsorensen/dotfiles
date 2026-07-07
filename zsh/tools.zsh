@@ -1,14 +1,30 @@
 # tools.zsh — zoxide, atuin, yazi integration
 # Source order: AFTER fzf.zsh (atuin takes Ctrl+R from fzf)
 
+# Cache `<tool> init` output; regenerate when the tool binary is newer than the cache.
+_init_cache() {
+  local bin=$commands[$1] cache=$HOME/.cache/zsh-init/$1.zsh
+  shift
+  if [[ ! -s $cache || $bin -nt $cache ]]; then
+    mkdir -p $HOME/.cache/zsh-init
+    # Write-temp + atomic swap: a failed init must not poison (or truncate) a good cache.
+    if "$@" > $cache.tmp; then
+      mv $cache.tmp $cache
+    else
+      rm -f $cache.tmp
+    fi
+  fi
+  [[ -s $cache ]] && source $cache
+}
+
 # ─── zoxide (smarter cd with frecency) ──────────────────────────────────────
 if command -v zoxide &>/dev/null; then
-    eval "$(zoxide init zsh)"
+    _init_cache zoxide zoxide init zsh
 fi
 
 # ─── atuin (shell history search) ───────────────────────────────────────────
 if command -v atuin &>/dev/null; then
-    eval "$(atuin init zsh --disable-up-arrow)"
+    _init_cache atuin atuin init zsh --disable-up-arrow
 fi
 
 # ─── yazi (terminal file manager, cd-on-exit) ──────────────────────────────

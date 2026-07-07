@@ -649,6 +649,26 @@ YAML
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_gitconfig.tmpl"
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/.gitattributes"
+    assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/dot_zprofile"
+}
+
+@test "dot_zprofile is static homebrew shellenv, no duplicate nvm, overlay markers intact" {
+    local zprofile="$REAL_DOTFILES_DIR/chezmoi/dot_zprofile"
+    # Static shellenv equivalent, not a `brew shellenv` fork on every login shell.
+    grep -q 'export HOMEBREW_PREFIX="/opt/homebrew"' "$zprofile"
+    # shellcheck disable=SC2016  # literal string to match in the file, not for expansion
+    if grep -v '^#' "$zprofile" | grep -qF '$(brew shellenv'; then
+        echo "dot_zprofile still forks brew shellenv instead of the static block" >&2
+        return 1
+    fi
+    # nvm.sh must not be sourced directly here — the multiplier overlay owns it.
+    if grep -q 'nvm.sh' "$zprofile"; then
+        echo "dot_zprofile still double-sources nvm.sh outside the overlay" >&2
+        return 1
+    fi
+    # multiplier-dots greps for these exact markers; they must stay byte-identical.
+    grep -q '^# >>> multiplier overlay >>>$' "$zprofile"
+    grep -q '^# <<< multiplier overlay <<<$' "$zprofile"
 }
 
 @test ".chezmoi.toml.tmpl prompts for email and persists sourceDir" {

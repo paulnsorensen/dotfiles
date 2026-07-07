@@ -11,7 +11,7 @@ if [[ $OSTYPE == darwin* ]]; then
     /opt/homebrew/bin
     $path
   )
-  _brew_prefix="$(brew --prefix 2>/dev/null)"
+  _brew_prefix="${HOMEBREW_PREFIX:-/opt/homebrew}"
   [[ -d "${_brew_prefix}/opt/openssl/bin" ]] && export PATH="${_brew_prefix}/opt/openssl/bin:$PATH"
   [[ -d "${_brew_prefix}/opt/rustup/bin" ]] && export PATH="${_brew_prefix}/opt/rustup/bin:$PATH"
   unset _brew_prefix
