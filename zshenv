@@ -17,3 +17,15 @@ typeset -gU path fpath  # dedupe PATH/FPATH (first occurrence wins)
 if [[ "$OSTYPE" == darwin* && -d /opt/homebrew/bin && ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
   export PATH="/opt/homebrew/bin:$PATH"
 fi
+
+# rustup proxy dir + cargo bin on PATH for non-interactive shells (e.g. agent
+# Bash tools). cargo/config.toml sets rustc-wrapper=sccache unconditionally;
+# without rustc on PATH here, sccache fails with "cannot find binary path".
+# Interactive shells get these via zsh/core.zsh; mirrored here for the
+# non-interactive bootstrap.
+if [[ "$OSTYPE" == darwin* && -d /opt/homebrew/opt/rustup/bin && ":$PATH:" != *":/opt/homebrew/opt/rustup/bin:"* ]]; then
+  export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
+fi
+if [[ -d "$HOME/.cargo/bin" && ":$PATH:" != *":$HOME/.cargo/bin:"* ]]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi

@@ -69,6 +69,11 @@ wt_child_blocks_removal() {
     if [[ -n "$(git -C "$child" ls-files --others --exclude-standard 2>/dev/null)" ]]; then
         return 0
     fi
+    # .cheese/ notes — gitignored, so ls-files --exclude-standard above never
+    # sees them, but a handoff note there is still work to lose.
+    if [[ -n "$(git -C "$child" ls-files --others -- .cheese 2>/dev/null)" ]]; then
+        return 0
+    fi
     # Unmerged commits: ahead of the remote default branch.
     # Deliberately omits the gh squash-merge check that check_worktree runs: a
     # squash-merged child still ahead of origin/default is flagged as blocking.

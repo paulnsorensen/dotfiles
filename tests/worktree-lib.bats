@@ -133,6 +133,19 @@ add_worktree() {
   [[ $status -eq 0 ]]
 }
 
+@test "wt_child_blocks_removal: gitignored .cheese/ notes block" {
+  create_repo "$SCAN/repo"
+  echo ".cheese/" > "$SCAN/repo/.gitignore"
+  git -C "$SCAN/repo" add .gitignore
+  git -C "$SCAN/repo" commit -m "gitignore" --quiet
+  git -C "$SCAN/repo" push --quiet origin main
+  add_worktree "$SCAN/repo" "noted"
+  mkdir -p "$SCAN/repo/.worktrees/noted/.cheese/notes"
+  echo "handoff" > "$SCAN/repo/.worktrees/noted/.cheese/notes/slug.md"
+  run wt_child_blocks_removal "$SCAN/repo/.worktrees/noted"
+  [[ $status -eq 0 ]]
+}
+
 @test "wt_child_blocks_removal: unmerged commits block" {
   create_repo "$SCAN/repo"
   add_worktree "$SCAN/repo" "ahead"

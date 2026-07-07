@@ -109,6 +109,15 @@ check_worktree() {
         reasons+=("${count} untracked file(s)")
     fi
 
+    # Check for .cheese/ notes — gitignored, so ls-files --exclude-standard
+    # above never sees them, but a handoff note there is still work to lose.
+    local cheese_files
+    cheese_files="$(git -C "$wt_path" ls-files --others -- .cheese 2>/dev/null)"
+    if [[ -n "$cheese_files" ]]; then
+        status="DIRTY"
+        reasons+=("uncommitted .cheese/ notes")
+    fi
+
     # Empty branch = detached HEAD (symbolic-ref resolves nothing)
     local branch_exists=true
     if [[ -z "$branch" ]]; then
