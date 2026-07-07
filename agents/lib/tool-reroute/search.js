@@ -35,9 +35,9 @@ const EXOTIC_SHORT = new Set('lLcovwxEPABCefmiI'.split(''));
 // narrow the match set.
 const REGEX_META = /[\\.^$*+?()[\]{}|]/;
 
-function reason(label, pattern, cwd) {
+function reason(label, pattern) {
   const q = pattern || '<pattern>';
-  const example = `mcp__tilth__tilth_search(queries:[{query:${JSON.stringify(q)}}], root:${JSON.stringify(cwd)})`;
+  const example = `mcp__tilth__tilth_search(queries:[{query:${JSON.stringify(q)}}])`;
   return `Blocked: ${label} — use the cheez-search skill (tilth_search), not the raw search tool.
 
 tilth_search is AST-aware and far cheaper in context than grep/find. Run instead:
@@ -84,10 +84,9 @@ function findRewrite(args) {
   return `tilth ${shQuote(glob)}${paths.length ? ` --scope ${shQuote(paths[0])}` : ''}`;
 }
 
-function detect(toolName, input, cwd) {
-  cwd = cwd || process.cwd();
+function detect(toolName, input) {
   if (toolName === 'Grep' || toolName === 'Glob') {
-    return { reason: reason(`the ${toolName} tool`, (input && input.pattern) || null, cwd) };
+    return { reason: reason(`the ${toolName} tool`, (input && input.pattern) || null) };
   }
   if (toolName !== 'Bash') return null;
   const segs = parse((input && input.command) || '');
