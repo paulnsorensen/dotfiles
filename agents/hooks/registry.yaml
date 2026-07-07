@@ -151,17 +151,22 @@ hooks:
   # ─── Sub-agent turn/context budget ──────────────────────────────────
   # Enforces a per-sub-agent turn + context-byte ceiling that Claude Code's
   # `maxTurns` frontmatter fails to (upstream #41143: the hardcoded default
-  # always wins; background spawns drop the config entirely) and applies the
-  # same shared logic to Codex where Codex exposes sub-agent hook fields.
+  # always wins; background spawns drop the config entirely). Claude-only —
+  # Codex has no hook deployment for this guard today.
   # Three events fire inside the sub-agent with a consistent `agent_id`; the
   # main orchestrator's tool calls carry none, so the shared logic fail-opens
   # on them. Budgets are keyed by `agent_type`.
   #   turn-budget-guard-pre  — PreToolUse: increment the per-agent turn
   #                            counter, read live context bytes, DENY the call
-  #                            at the hard ceiling (turns OR bytes).
+  #                            at the turn hard ceiling immediately; the byte
+  #                            hard ceiling gets a short grace window before
+  #                            it denies (a resumed sub-agent's transcript can
+  #                            already sit above it on the very first call).
   #   turn-budget-guard-post — PostToolUse: inject a one-time wrap-up nudge
   #                            (additionalContext) when either signal crosses
-  #                            its soft threshold — the graceful handoff window.
+  #                            its soft threshold — the graceful handoff
+  #                            window — plus a sterner one-time nudge when
+  #                            bytes cross the hard ceiling.
   #   turn-budget-guard-stop — SubagentStop: delete the agent's counter dir.
   # All three share the one Node logic module and dispatch on hook_event_name.
   # matcher ".*" on pre/post covers every supported tool (the no-agent_id
@@ -173,7 +178,7 @@ hooks:
     script: agents/hooks/turn-budget-guard.sh
     shared_assets:
       - agents/lib/turn-budget-guard.js
-    harnesses: [claude, codex]
+    harnesses: [claude]
     matcher: ".*"
     timeout: 5
     description: Deny sub-agent tool calls past the per-agent_type turn/context hard ceiling
@@ -183,7 +188,7 @@ hooks:
     script: agents/hooks/turn-budget-guard.sh
     shared_assets:
       - agents/lib/turn-budget-guard.js
-    harnesses: [claude, codex]
+    harnesses: [claude]
     matcher: ".*"
     timeout: 5
     description: Nudge a sub-agent to wrap up once past the soft turn/context threshold
@@ -193,7 +198,7 @@ hooks:
     script: agents/hooks/turn-budget-guard.sh
     shared_assets:
       - agents/lib/turn-budget-guard.js
-    harnesses: [claude, codex]
+    harnesses: [claude]
     timeout: 5
     description: Delete the sub-agent's turn-budget counter dir on SubagentStop
 
