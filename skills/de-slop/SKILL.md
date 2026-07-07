@@ -141,6 +141,52 @@ silently ignored.
 **Fix:** Always use `set -euo pipefail` in bash scripts. All three flags
 together. `set -e` alone is a half-measure.
 
+### 11. Convention blindness
+
+AI reimplements what the repo already has (HTTP wrappers, utils, config
+mechanisms) and applies textbook idioms instead of the codebase's own —
+generic from-scratch solutions in a codebase that already solved the problem.
+
+**Fix:** Search the repo for an existing utility/convention before writing a
+new one. Match the surrounding style, not a generically "correct" one.
+
+### 12. Copy-paste instead of reuse
+
+The same logic reimplemented slightly differently across files — the model
+can't see the original past its context window. The biggest measured shift in
+AI-assisted code: duplicated lines overtook refactored/moved lines in commits
+for the first time in 2024 (GitClear, 211M-line dataset).
+
+**Fix:** Before adding similar logic, find the existing implementation and
+extract or reuse it. Rising duplication is the primary quantitative slop signal.
+
+### 13. Fake modularity
+
+A new `utils.py`/`helpers.ts` created for a single function, or a God class
+spread across several files — structure that looks decomposed but doesn't
+separate concerns (the "modular mirage").
+
+**Fix:** A new file needs 3+ functions AND a distinct responsibility.
+Otherwise the function goes in the file that uses it.
+
+### 14. Placeholder and apology comments
+
+Prompt residue left in committed code: `// ... rest of the code`,
+`// quick hack, good enough for now`, `// Replace this with your actual
+implementation`, `// In a real implementation ...`.
+
+**Fix:** Delete them — implement the real thing or remove the stub. These are
+directly greppable, the highest-precision AI tell.
+
+### 15. Phantom edge-case handling
+
+Code handling inputs that cannot occur, inflating complexity for near-zero
+risk reduction. Distinct from #2 — that's swallowing real errors; this is
+handling imaginary ones.
+
+**Fix:** Require a concrete failure scenario before keeping an edge-case
+branch. If nobody can name the input that reaches it, delete it.
+
 ## Language References
 
 Read these only for languages present in the code being reviewed:
@@ -182,3 +228,12 @@ Don't over-explain. The fix speaks for itself.
 - `unwrap()` in Rust test code is idiomatic, not slop — only flag in production code
 - Lint suppressions in FFI, generated code, and `#[cfg(test)]` are often legitimate — check context before removing
 - `#[allow(clippy::pedantic)]` at crate level is a style choice, not slop
+
+- Hallucinated dependency names ("slopsquatting") are security territory — flag a new dep that doesn't resolve in the registry, but route vetting to /age or a security review
+
+## Sources
+
+- GitClear "AI Copilot Code Quality" 2025 — the only primary empirical dataset (211M lines): duplication vs refactor trends
+- OX Security "Army of Juniors" (2025) — 10-pattern taxonomy from a 300+-repo review (vendor research)
+- sloplint + slop-guard (GitHub) — encodable ast-grep rules for comment and file-proliferation slop
+- Per-language lint taxonomies backing the reference files: clippy, ruff, typescript-eslint, ShellCheck
