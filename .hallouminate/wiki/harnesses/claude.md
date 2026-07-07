@@ -21,11 +21,11 @@ Claude is the **only** harness where `ap launch` builds a closed world with Clau
 
 - `--strict-mcp-config --mcp-config <tmp .mcp.json>` — only the profile's MCPs.
 - `--setting-sources ""` — strips the inherited user `settings.json`.
-- `--tools <csv>` — hard tool whitelist.
+- `--tools <csv>` — hard tool whitelist, **only emitted when the profile declares `tools`** (`overlay.py:281` — `if manifest.tools:`).
 - `--append-system-prompt-file <profile>/CLAUDE.md` — if `system_prompt` declared.
 - `--settings <tmp settings.json>` — `permissions` + `enabledPlugins`.
 
-Gotcha: with `--setting-sources ""` there's no inherited allowlist, so the tool surface is exactly the `tools` whitelist + `permissions_deny`. Add the MCP's own tools to `tools` or rely on the closed `--mcp-config`. Shipped isolated profiles: `review`, `todo`, `fe`, `spec`, `notion`, `rtkonly`, `plugin`.
+Gotcha: `--setting-sources ""` closes the **MCP world and inherited settings** (no inherited allowlist), but **not** the built-in tool surface. A profile with **no `tools` key omits `--tools` entirely**, so claude keeps its full default built-in tools (Bash, Read, …) — the closed world is the MCPs + settings, not the tools. Declaring `tools` narrows to exactly that whitelist + `permissions_deny`; leaving it out keeps everything (`todo` does this deliberately, adding `--dangerously-skip-permissions`; `mgmt` leaves it out with default prompting). This is why CLI-based access works inside a closed world: `mgmt` reaches GitHub planning through the `gh` CLI + `/gh` skill over Bash rather than a GitHub MCP — Bash is available, non-allowlisted calls just prompt. Shipped isolated profiles: `review`, `todo`, `fe`, `spec`, `mgmt`, `rtkonly`, `plugin`.
 
 ## Quirks
 
