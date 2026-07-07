@@ -1,0 +1,72 @@
+#!/bin/bash
+# run_onchange — installs / updates the hallouminate MCP server binary into
+# ~/.cargo/bin so `hallouminate serve` (the wiki MCP) always matches a real
+# release. The dotfiles deploy hallouminate's config + MCP registration but
+# assumed the binary already existed on PATH; this closes that gap (it drifted
+# to a hand-built 0.2.2 while releases moved to 0.2.3).
+#
+# Default: download the latest PREBUILT release via the cargo-dist installer
+# (no Rust toolchain, no compile — one curl into ~/.cargo/bin). Opt in to a
+# source build by setting, in the dotfiles .env:
+#     HALLOUMINATE_FROM_SOURCE=1
+# which compiles origin/main via `cargo install --git` — it builds REMOTE main,
+# not the local ~/Dev/hallouminate working tree, so a dirty/stale checkout never
+# leaks into the installed binary.
+#
+# Re-trigger markers: run_onchange fires only when the rendered body changes.
+# Both markers are computed fail-safe — the inner `sh -c` always exits 0 (a
+# trailing `echo`), so an OFFLINE `dots sync` renders a stable empty marker
+# instead of aborting the whole apply:
+#   latest release tag: {{ output "sh" "-c" "gh api repos/paulnsorensen/hallouminate/releases/latest --jq .tag_name 2>/dev/null | tr -d '[:space:]'; echo" }}
+#   origin/main commit: {{ output "sh" "-c" "git ls-remote https://github.com/paulnsorensen/hallouminate.git main 2>/dev/null | cut -f1 | tr -d '[:space:]'; echo" }}
+
+set -euo pipefail
+
+REPO="paulnsorensen/hallouminate"
+# .env lives at the dotfiles root — parent of chezmoi's sourceDir.
+ENV_FILE="$(cd "{{ .chezmoi.sourceDir }}/.." && pwd)/.env"
+
+# Read HALLOUMINATE_FROM_SOURCE from .env (naive loader, mirrors
+# lib/install-external.sh). Absent/0 → prebuilt path.
+FROM_SOURCE=0
+if [[ -f "$ENV_FILE" ]]; then
+    val="$(sed -n 's/^[[:space:]]*\(export[[:space:]]\+\)\?HALLOUMINATE_FROM_SOURCE=//p' "$ENV_FILE" | tail -1)"
+    val="${val%\"}"; val="${val#\"}"
+    [[ "$val" == "1" || "$val" == "true" ]] && FROM_SOURCE=1
+fi
+
+installed_version() { hallouminate --version 2>/dev/null | awk '{print $2}'; }
+
+if [[ "$FROM_SOURCE" == "1" ]]; then
+    if ! command -v cargo &>/dev/null; then
+        echo "Error: HALLOUMINATE_FROM_SOURCE=1 but cargo not found. Install Rust or unset the flag." >&2
+        exit 1
+    fi
+    echo "Building hallouminate from origin/main (HALLOUMINATE_FROM_SOURCE=1)..."
+    cargo install --git "https://github.com/$REPO" --branch main --force
+    echo "✓ hallouminate $(installed_version) installed from source (origin/main)"
+    exit 0
+fi
+
+# Prebuilt path. Skip when already on the latest tag — this script can re-fire
+# because origin/main moved (a new commit with no release), and a prebuilt-mode
+# machine should not re-download an unchanged release for that.
+latest="$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+current="$(installed_version)"
+if [[ -n "$latest" && "v$current" == "$latest" ]]; then
+    echo "✓ hallouminate $current already latest ($latest) — nothing to do"
+    exit 0
+fi
+if [[ -z "$latest" && -n "$current" ]]; then
+    echo "⚠ Could not resolve latest release (offline?) — keeping installed $current" >&2
+    exit 0
+fi
+
+echo "Installing latest prebuilt hallouminate${latest:+ ($latest)}..."
+# ~/.cargo/bin is already on PATH; HALLOUMINATE_NO_MODIFY_PATH=1 stops the
+# cargo-dist installer from touching shell rc files (replaces the deprecated
+# --no-modify-path flag).
+curl --proto '=https' --tlsv1.2 -LsSf \
+    "https://github.com/$REPO/releases/latest/download/hallouminate-installer.sh" \
+    | HALLOUMINATE_NO_MODIFY_PATH=1 sh
+echo "✓ hallouminate $(installed_version) installed (prebuilt)"
