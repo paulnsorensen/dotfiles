@@ -492,3 +492,123 @@ AI generates functions that don't exist or uses outdated API patterns
 - Pin specific crate versions
 - Use Clippy: `cargo clippy -- -W clippy::all`
 - When in doubt, check docs with Context7
+
+## 13. Deref polymorphism (fake inheritance)
+
+Implementing `Deref` on a wrapper so it "inherits" the inner type's methods —
+simulating the OO inheritance Rust deliberately doesn't have.
+
+```rust
+// SLOP
+struct AppConfig { base: Config }
+impl Deref for AppConfig {
+    type Target = Config;
+    fn deref(&self) -> &Config { &self.base }
+}
+
+// CLEAN — delegate explicitly, or implement the shared trait
+impl AppConfig {
+    fn timeout(&self) -> Duration { self.base.timeout() }
+}
+```
+
+`Deref` is for smart pointers. No clippy lint catches this — review by hand.
+(rust-unofficial/patterns, anti-patterns chapter.)
+
+## 14. Boxing reflex
+
+`Box`/`Arc` where plain ownership or a borrow works — indirection reached for
+to make the borrow checker go away.
+
+```rust
+// SLOP
+fn process(data: &Box<MyStruct>) { ... }        // borrowed_box
+struct Registry { items: Vec<Box<String>> }      // vec_box
+let cfg: Box<Config> = Box::new(Default::default()); // box_default
+
+// CLEAN
+fn process(data: &MyStruct) { ... }
+struct Registry { items: Vec<String> }
+let cfg = Config::default();
+```
+
+clippy: `borrowed_box`, `vec_box`, `box_collection`, `box_default`.
+Inverse case: a very large enum variant SHOULD be boxed
+(`large_enum_variant`) — boxing isn't wrong, unmotivated boxing is.
+
+## 15. `async fn` with no `.await`
+
+Functions marked async by habit. An async fn that never awaits forces every
+caller into the async machinery for nothing.
+
+```rust
+// SLOP
+async fn config_path() -> PathBuf {
+    dirs::config_dir().expect("config dir").join("app")
+}
+
+// CLEAN
+fn config_path() -> PathBuf { ... }
+```
+
+clippy: `unused_async` (has false-negative gaps — also check by hand).
+
+## 16. `#![deny(warnings)]`
+
+Turns every future compiler warning into a build break — the crate stops
+compiling on a new toolchain that added a lint.
+
+```rust
+// SLOP
+#![deny(warnings)]
+
+// CLEAN — enforce in CI instead:
+// RUSTFLAGS="-D warnings" cargo build
+```
+
+(rust-unofficial/patterns, anti-patterns chapter.)
+
+## 17. `anyhow::Error` in a library's public API
+
+`anyhow` is for applications. A library returning `anyhow::Error` gives
+callers nothing to match on.
+
+```rust
+// SLOP (in a lib crate)
+pub fn parse(s: &str) -> anyhow::Result<Config> { ... }
+
+// CLEAN — concrete error type; thiserror for the boilerplate
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+    #[error("invalid syntax at line {0}")]
+    Syntax(usize),
+}
+pub fn parse(s: &str) -> Result<Config, ParseError> { ... }
+```
+
+Convention, not a lint — check whether the crate is a lib or a bin before
+flagging. `anyhow` in binaries and tests is fine.
+
+## 18. `unsafe` to make it compile
+
+Agent-speed pressure produces `unsafe` as a borrow-checker escape hatch.
+Bun's audit of its AI-assisted Zig→Rust port found 13,365 unsafe call sites
+needing review. For every `unsafe` block ask: is there a safe alternative, is
+the invariant documented, is it tested?
+
+```rust
+// SLOP — no SAFETY comment, no bounds reasoning
+let val = unsafe { *ptr.add(i) };
+
+// CLEAN — safe alternative existed all along
+let val = slice.get(i).copied().ok_or(Error::OutOfBounds)?;
+
+// If unsafe is genuinely required:
+// SAFETY: i < self.len is checked by the caller contract above.
+```
+
+## Sources
+
+- rust-unofficial/patterns (Rust Design Patterns book) — the official anti-pattern chapter
+- clippy lint list (rust-lang.github.io/rust-clippy/master) — ground truth for every lint named above
+- Bun unsafe audit (bun.com/bun-unsafe-audit) — quantified case study of AI-agent Rust output
