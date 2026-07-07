@@ -11,7 +11,16 @@ if [[ $OSTYPE == darwin* ]]; then
     /opt/homebrew/bin
     $path
   )
-  _brew_prefix="${HOMEBREW_PREFIX:-/opt/homebrew}"
+  # Fork-free prefix: honor HOMEBREW_PREFIX (set statically in ~/.zprofile on
+  # Apple Silicon), else pick the arch's install dir by existence — /opt/homebrew
+  # (Apple Silicon) or /usr/local (Intel). Avoids a `brew --prefix` fork.
+  if [[ -n $HOMEBREW_PREFIX ]]; then
+    _brew_prefix=$HOMEBREW_PREFIX
+  elif [[ -d /opt/homebrew ]]; then
+    _brew_prefix=/opt/homebrew
+  else
+    _brew_prefix=/usr/local
+  fi
   [[ -d "${_brew_prefix}/opt/openssl/bin" ]] && export PATH="${_brew_prefix}/opt/openssl/bin:$PATH"
   [[ -d "${_brew_prefix}/opt/rustup/bin" ]] && export PATH="${_brew_prefix}/opt/rustup/bin:$PATH"
   unset _brew_prefix

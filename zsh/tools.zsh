@@ -2,13 +2,16 @@
 # Source order: AFTER fzf.zsh (atuin takes Ctrl+R from fzf)
 
 # Cache `<tool> init` output; regenerate when the tool binary is newer than the cache.
+# Keyed on the binary mtime only — changing the init *flags* here won't invalidate a
+# cache built with the old flags, so `rm ~/.cache/zsh-init/<tool>.zsh` after editing them.
 _init_cache() {
   local bin=$commands[$1] cache=$HOME/.cache/zsh-init/$1.zsh
   shift
   if [[ ! -s $cache || $bin -nt $cache ]]; then
     mkdir -p $HOME/.cache/zsh-init
     # Write-temp + atomic swap: a failed init must not poison (or truncate) a good cache.
-    if "$@" > $cache.tmp; then
+    # `>|` overrides noclobber (not set here, but states the overwrite intent explicitly).
+    if "$@" >| $cache.tmp; then
       mv $cache.tmp $cache
     else
       rm -f $cache.tmp
