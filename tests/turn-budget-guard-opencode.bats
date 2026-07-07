@@ -141,3 +141,36 @@ teardown() {
     '
     assert_success
 }
+
+@test "opencode turn-budget-guard plugin fails open when counter state is unwritable" {
+    printf '' > "$TEST_HOME/not-a-dir"
+    CLAUDE_TURN_BUDGET_DIR="$TEST_HOME/not-a-dir" DOTFILES_DIR="$REAL_DOTFILES_DIR" OG_PLUGIN="$OPENCODE_PLUGIN" run node --input-type=module -e '
+      const mod = await import(process.env.OG_PLUGIN);
+      const client = { session: { get: async () => ({ data: { parentID: "p1", agent: "explorer" } }) } };
+      const hooks = await mod.TurnBudgetGuard({ directory: process.env.DOTFILES_DIR, worktree: process.env.DOTFILES_DIR, client });
+      // Counter writes throw ENOTDIR under a file base dir; the hook must
+      // swallow that (fail-open), not fail the tool call.
+      await hooks["tool.execute.before"]({ tool: "bash", sessionID: "child-fs", callID: "c1" }, { args: {} });
+      await hooks["tool.execute.after"]({ tool: "bash", sessionID: "child-fs", callID: "c1" }, { args: {} });
+    '
+    assert_success
+}
+
+@test "opencode turn-budget-guard plugin still denies at the turn hard ceiling" {
+    mkdir -p "$CLAUDE_TURN_BUDGET_DIR/p1/child-deny"
+    printf '%050d' 0 > "$CLAUDE_TURN_BUDGET_DIR/p1/child-deny/turns"  # explorer turnHard = 50
+    DOTFILES_DIR="$REAL_DOTFILES_DIR" OG_PLUGIN="$OPENCODE_PLUGIN" run node --input-type=module -e '
+      const mod = await import(process.env.OG_PLUGIN);
+      const client = { session: { get: async () => ({ data: { parentID: "p1", agent: "explorer" } }) } };
+      const hooks = await mod.TurnBudgetGuard({ directory: process.env.DOTFILES_DIR, worktree: process.env.DOTFILES_DIR, client });
+      let threw = null;
+      try {
+        await hooks["tool.execute.before"]({ tool: "bash", sessionID: "child-deny", callID: "c1" }, { args: {} });
+      } catch (err) {
+        threw = err;
+      }
+      if (!threw) throw new Error("expected the deny to propagate");
+      if (!threw.turnBudgetDeny) throw new Error(`deny escaped untagged: ${threw.message}`);
+    '
+    assert_success
+}

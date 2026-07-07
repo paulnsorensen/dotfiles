@@ -103,16 +103,33 @@ export const TurnBudgetGuard = async (ctx) => {
 
   const cache = new Map();
   const emit = {
-    deny: (reason) => { throw new Error(reason); },
+    deny: (reason) => {
+      const err = new Error(reason);
+      err.turnBudgetDeny = true;
+      throw err;
+    },
     nudge: () => {},
+  };
+
+  // Fail-open shim. On Claude the CLI entry point's outer try/catch turns any
+  // internal guard fault into an allow; here there is no outer catch, so a
+  // stray throw (e.g. an fs error writing counter state) would reach the AI
+  // SDK exactly like a deny and fail the tool call closed. Only the
+  // intentional deny may escape.
+  const guarded = (event) => {
+    try {
+      guard.handle(event, emit);
+    } catch (err) {
+      if (err && err.turnBudgetDeny) throw err;
+    }
   };
 
   return {
     "tool.execute.before": async (input, output) => {
-      guard.handle(await eventFor(ctx, cache, input, output, "PreToolUse"), emit);
+      guarded(await eventFor(ctx, cache, input, output, "PreToolUse"));
     },
     "tool.execute.after": async (input, output) => {
-      guard.handle(await eventFor(ctx, cache, input, output, "PostToolUse"), emit);
+      guarded(await eventFor(ctx, cache, input, output, "PostToolUse"));
     },
     event: async ({ event }) => {
       const type = event?.type;
@@ -122,13 +139,13 @@ export const TurnBudgetGuard = async (ctx) => {
       const identity = cache.get(sessionID);
       cache.delete(sessionID);
       if (!identity) return;
-      guard.handle({
+      guarded({
         harness: "opencode",
         hook_event_name: "SubagentStop",
         session_id: identity.parentID,
         agent_id: sessionID,
         agent_type: identity.agent,
-      }, emit);
+      });
     },
   };
 };
