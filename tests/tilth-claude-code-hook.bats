@@ -41,3 +41,31 @@ SH
     assert_output_contains "tilth not installed, skipping claude-code hook wiring"
     [[ ! -f "$TILTH_CALLS" ]]
 }
+
+@test "install_tilth_claude_code warns loudly when inject-cwd.js is missing after install" {
+    # tilth mock "succeeds" but never drops the hook script — simulates a
+    # stale/broken \`tilth install claude-code --edit\` (issue #403).
+    cat > "$MOCK_BIN/tilth" <<'SH'
+#!/bin/bash
+exit 0
+SH
+    chmod +x "$MOCK_BIN/tilth"
+
+    run_install_tilth
+    assert_success
+    assert_output_contains "inject-cwd.js is missing"
+}
+
+@test "install_tilth_claude_code is silent about inject-cwd.js when the file exists" {
+    mkdir -p "$TEST_HOME/.claude/tilth"
+    touch "$TEST_HOME/.claude/tilth/inject-cwd.js"
+    cat > "$MOCK_BIN/tilth" <<'SH'
+#!/bin/bash
+exit 0
+SH
+    chmod +x "$MOCK_BIN/tilth"
+
+    run_install_tilth
+    assert_success
+    assert_output_not_contains "inject-cwd.js is missing"
+}

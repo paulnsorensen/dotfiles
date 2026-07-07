@@ -593,23 +593,21 @@ scrub_toolchain_path() {
     echo "$stub:${filtered%:}"
 }
 
-@test "sync warns + proceeds when cargo AND rustup are missing" {
-    # Behavior change: the linux-bootstrap PR (commit 5369aa3) softened
-    # missing-cargo from `log_error + FAILED+=("cargo")` to `log_warning +
-    # return 0`. Rationale: a fresh Ubuntu box without rust shouldn't
-    # FAIL the whole `dots sync` — the cargo packages just won't install
-    # until rustup is set up, while everything else (brew, npm, uv tools)
-    # proceeds normally. The cache IS saved on the successful sync.
+@test "sync errors + fails when cargo AND rustup are missing" {
+    # Issue #403: rustup is no longer dev-gated (packages.yaml), so a
+    # toolchain-less machine is a real misconfiguration, not an expected
+    # steady state — missing cargo is now loud (log_error + FAILED, causing
+    # the whole sync to exit non-zero) instead of a silent warn-and-skip.
     write_test_yaml
     rm -f "$MOCK_BIN/cargo" "$MOCK_BIN/rustup"
 
     PATH="$MOCK_BIN:$(scrub_toolchain_path)" run_sync
 
-    assert_success
+    assert_failure
     assert_output_contains "cargo not found"
-    assert_output_contains "skipping cargo packages"
-    # Cache saved because the sync completed without failure.
-    [[ -f "$CACHE_FILE" ]]
+    assert_output_contains "cannot install cargo-source packages"
+    # Cache NOT saved because the sync failed.
+    [[ ! -f "$CACHE_FILE" ]]
 }
 
 @test "sync bootstraps rust toolchain when rustup exists but cargo missing" {

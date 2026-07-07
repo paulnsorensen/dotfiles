@@ -288,7 +288,8 @@ sync_cargo() {
             fi
         fi
         if ! command -v cargo &>/dev/null; then
-            log_warning "cargo not found — skipping cargo packages (install rustup to enable)"
+            log_error "cargo not found — cannot install cargo-source packages (rustup is no longer dev-gated; install failed?)"
+            FAILED+=("cargo-toolchain")
             return 0
         fi
     fi
