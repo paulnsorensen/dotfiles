@@ -1,21 +1,28 @@
-# mgmt — management / planning session (ccp parity).
-# Closed-world planning surface: Notion docs, the repo wiki (hallouminate),
-# and Linear tickets. GitHub planning (issues / projects / PRs) is handled by
-# the `gh` CLI + /gh skill via Bash, which works even inside this isolated
-# world — no GitHub MCP needed.
+# mgmt — management / planning session.
+# Planning surface: Notion docs, the repo wiki (hallouminate), and Linear
+# tickets. GitHub planning (issues / projects / PRs) is handled by the `gh`
+# CLI + /gh skill via Bash — no GitHub MCP needed.
+#
+# NOT isolated: a launch renders these MCPs + permissions into the target
+# ($PWD by default) and then execs a normal `claude`, so the repo's local
+# skills (e.g. kip-routines) and user skills load alongside the planning
+# MCPs. Trade-off vs the old closed world: the CLAUDE.md system prompt is no
+# longer injected (the render path does not consume `system_prompt`), and the
+# base profile's MCPs/skills/permissions are also present.
 name: mgmt
 description: Management/planning — Notion + wiki + Linear (github via gh CLI)
-# Cheese sub-agents are available in this closed world too
-# (agents are orthogonal to the MCP/skill scope below).
+# Cheese sub-agents plus the target repo's local skills are available.
 registries:
   agents: agents/registry.yaml
-isolated: true
-system_prompt: CLAUDE.md
-# Auto-approve the profile's own remote MCPs (ccp settings-merge parity).
-permissions_allow:
-  - "mcp__notion__*"
-  - "mcp__hallouminate__*"
-  - "mcp__linear__*"
+# Keep MCPs at user scope so the bare mcp__<server>__* permission rules below
+# keep matching (parity with the `global`/`live` install profiles).
+mcp_scope: user
+settings:
+  # Auto-approve the profile's own remote MCPs.
+  permissions_allow:
+    - "mcp__notion__*"
+    - "mcp__hallouminate__*"
+    - "mcp__linear__*"
 mcps:
   - name: notion
     type: http
