@@ -11,7 +11,7 @@ description: >
   Report-only — it never scores or judges. Do NOT use for usage scoring (that is
   /skill-improver, /tool-efficiency, /prompt-analytics) or one-off interactive log queries
   (that is /session-analytics).
-allowed-tools: Read, Agent, Bash
+allowed-tools: Read, Agent, Bash, Write(.cheese/notes/**)
 ---
 
 # work-recovery
@@ -25,6 +25,11 @@ reconstructs and presents; it does NOT score, rank, or recommend.
 A target session: a `sessionId`, a project/branch, or "my last session". If
 ambiguous, list recent candidate sessions (via the `session-shape` pack) and ask
 which one. Optional harness filter (`all` default).
+
+Optional flag `--wheypoint`: opt into write mode. Without it, `/work-recovery`
+is byte-identical to today — it prints briefs and writes nothing. With it, each
+assembled brief is also persisted as a resumable wheypoint note (see
+[`## Write mode`](#write-mode)).
 
 ## Owned domains
 
@@ -50,6 +55,9 @@ Two analytics packs under `references/`:
 3. **Collect** the digests.
 4. **Reconstruct** — assemble the recovery brief below. No scoring, no
    calibration tags, no recommendations — just the reconstructed state.
+5. **Persist (only with `--wheypoint`)** — write each brief to
+   `.cheese/notes/<slug>.md` per [`## Write mode`](#write-mode). Without the flag,
+   skip this step entirely and write nothing.
 
 ## Output (recovery brief)
 
@@ -73,12 +81,56 @@ Two analytics packs under `references/`:
 <the last incomplete action or the explicit "next" the session was heading toward>
 ```
 
+## Write mode
+
+`--wheypoint` is the **only** path on which this skill touches disk. Default
+(no flag) writes nothing — the printed brief is the whole output.
+
+With `--wheypoint`, after each recovery brief is assembled (step 4), persist it
+as a resumable handoff note at `.cheese/notes/<slug>.md` so a fresh agent (or
+`/cheese --continue`) can pick it up. One note per brief.
+
+- **Slug:** derive from the recovered session — `recover-<project>-<short-sessionId>`
+  (project = last path segment of the recovered session's project/branch; short id
+  = first 8 chars of the sessionId). Keeps one-note-per-brief collision-resistant.
+- **Schema:** the canonical wheypoint handoff header (identical to easy-cheese
+  `/wheypoint`), then the brief itself as the document. Provenance is auto-filled
+  **from the recovered session, never the live one**:
+
+  ```markdown
+  status: ok
+  next: hold
+  artifact: none
+  session: <harness>:<recovered-sessionId>   # optional; the reconstruction target
+  git: <recovered-branch>                     # optional; branch from the session's log (historical short-sha is not in the logs — omit the @<sha>)
+  created: <recovered-session last_seen, UTC ISO-8601>   # optional; the session's last-active time
+  <one-line orientation: what the recovered session was doing and where it stopped>
+
+  ## Document
+
+  <the recovery brief verbatim: Session Recovery / Goal / Files touched / Last verified state / Next step>
+  ```
+
+  All four provenance fields are optional and additive (session / git / created /
+  parents, in that order, between `artifact:` and the orientation line); omit any
+  the session cannot supply. Sweep-written notes carry no `parents:` — they are
+  reconstructed from logs, not forked or joined.
+- **`next: hold` is mandatory** for swept notes: reconstruction infers a *possible*
+  next step but a human picks the resume direction, so `/cheese --continue` must
+  restore orientation and dispatch nothing. Never emit a bare actionable `next:`
+  on a swept note.
+
+After writing, print the note's path so the user can resume with
+`/cheese --continue <slug>`.
+
 ## What this skill never does
 
 - Score, rank, or calibrate — it is report-only.
 - Recommend improvements — that is the judgment skills' job.
 - Run more than one domain per `duckdb-expert` spawn.
-- Modify any files.
+- Modify any files **except** under `--wheypoint`, whose sole write is the
+  `.cheese/notes/<slug>.md` handoff note described in [`## Write mode`](#write-mode).
+  The default (no-flag) run writes nothing.
 
 ## Gotchas
 
