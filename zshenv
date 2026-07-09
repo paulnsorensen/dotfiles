@@ -7,6 +7,13 @@
 # forwards LANG/LC_* to mosh-server over SSH. Respect an already-set locale.
 export LANG="${LANG:-en_US.UTF-8}"
 
+# mosh-server idle-network self-exit. 2026-07-08 livelock: the iPhone moshi
+# app reconnect-looped ~723 logins in 2h, each spawning a mosh-server that
+# outlives its client for hours once abandoned. tmux holds the real session
+# state, so an orphaned mosh-server is pure waste — safe to self-exit after
+# 4h with no client contact (man mosh-server, MOSH_SERVER_NETWORK_TMOUT).
+export MOSH_SERVER_NETWORK_TMOUT=14400
+
 typeset -gU path fpath  # dedupe PATH/FPATH (first occurrence wins)
 
 # Homebrew bin on PATH for non-interactive SSH/mosh sessions. On Apple Silicon

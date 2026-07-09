@@ -19,6 +19,11 @@ RestartSec=30
 MemoryMax=30G
 # Make this service the kernel OOM killer's first victim, sparing system services
 OOMScoreAdjust=1000
+# LLM stack dies first under PSI pressure — 2026-07-08 livelock; systemd-oomd
+# installed by crabbot cluster/thrash-protection.sh
+ManagedOOMMemoryPressure=kill
+ManagedOOMMemoryPressureLimit=60%
+ManagedOOMSwap=kill
 Nice=5
 StandardOutput=append:%h/local-llm/logs/llama-swap.log
 StandardError=append:%h/local-llm/logs/llama-swap.log
