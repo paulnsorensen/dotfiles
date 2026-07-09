@@ -11,7 +11,11 @@ StartLimitIntervalSec=120
 Type=simple
 ExecStartPre=/bin/mkdir -p %h/local-llm/logs %h/local-llm/cache/slots
 Environment="LD_LIBRARY_PATH=%h/local-llm/bin/llama.cpp"
-ExecStart=%h/local-llm/bin/llama-swap --config %h/local-llm/configs/llama-swap.yaml --listen 127.0.0.1:9000
+# Listen on all interfaces so the crabbot microk8s n8n pods can reach the OpenAI-
+# compatible endpoint via a Service/EndpointSlice pointing at the node IP. Reachable
+# on the home LAN (192.168.50.0/24) and tailnet; never the internet (no port-forward
+# or Funnel fronts :9000). See crabbot cluster/manifests/llama-swap-endpoint.yaml.
+ExecStart=%h/local-llm/bin/llama-swap --config %h/local-llm/configs/llama-swap.yaml --listen 0.0.0.0:9000
 Restart=on-failure
 RestartSec=30
 # Contain runaway memory in this cgroup instead of triggering a global OOM kill:
