@@ -39,6 +39,10 @@ omp:
       dark: chocolate-donut
       light: light
     defaultThinkingLevel: auto
+    # OpenAI Responses/Codex-only knob: the model's own prose verbosity
+    # (low/medium/high). Default `high` is chatty; `medium` tightens Codex
+    # output without going terse.
+    textVerbosity: medium
     disabledProviders:
       - claude
       - codex
@@ -51,10 +55,22 @@ omp:
       showTokenUsage: true
       cacheMissMarker: true
     includeWorkspaceTree: true
+    # Output tightening (2026-07-09 research: .cheese/research/oh-my-pi-config).
+    # artifactSpillThreshold (KB): tool output larger than this spills to a
+    # head/tail artifact preview instead of printing in full. Default 50 renders
+    # whole SKILL.md bodies verbatim on screen; 2 spills them. NOTE: this does
+    # NOT shrink skills invoked via `/skill:<name>` — that path injects the body
+    # as a message with no documented spill knob (docs/skills.md).
+    tools:
+      artifactSpillThreshold: 2
+    tui:
+      tight: true
+    startup:
+      quiet: true
     advisor:
       enabled: false
     compaction:
-      thresholdTokens: 150000
+      thresholdTokens: 120000
     lsp:
       formatOnWrite: true
     github:
@@ -73,13 +89,13 @@ omp:
     # `task` in particular inherits the active session model unless pinned.
     modelRoles:
       default: openai-codex/gpt-5.5:medium
-      smol: gpt-5.4-mini
+      smol: openai-codex/gpt-5.4-mini
       plan: openai-codex/gpt-5.5:xhigh
       advisor: openai-codex/gpt-5.5
       tiny: openai-codex/gpt-5.4-nano
       slow: openai-codex/gpt-5.5:xhigh
-      task: gpt-5.4-mini
-      commit: gpt-5.4-mini
+      task: openai-codex/gpt-5.4-mini
+      commit: openai-codex/gpt-5.4-mini
       vision: openai-codex/gpt-5.4
   # Local LLM stack — LiteLLM proxy front (~/local-llm), OpenAI-compatible.
   # Keyless: the proxy sets no master_key, so no Authorization header is sent.
