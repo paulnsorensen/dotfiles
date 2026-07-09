@@ -56,13 +56,15 @@ omp:
       cacheMissMarker: true
     includeWorkspaceTree: true
     # Output tightening (2026-07-09 research: .cheese/research/oh-my-pi-config).
-    # artifactSpillThreshold (KB): tool output larger than this spills to a
-    # head/tail artifact preview instead of printing in full. Default 50 renders
-    # whole SKILL.md bodies verbatim on screen; 2 spills them. NOTE: this does
-    # NOT shrink skills invoked via `/skill:<name>` — that path injects the body
-    # as a message with no documented spill knob (docs/skills.md).
+    # artifactSpillThreshold (KB) controls when non-read tool output spills to
+    # an artifact. Keep the preview budget small too: post-execution tools use
+    # head+tail budgets, and streaming tools retain artifactHeadBytes plus a
+    # rolling tail. This does NOT shrink `/skill:<name>` bodies or `read
+    # skill://...` output; those paths bypass this spill wrapper.
     tools:
       artifactSpillThreshold: 2
+      artifactHeadBytes: 1
+      artifactTailBytes: 1
     tui:
       tight: true
     startup:
