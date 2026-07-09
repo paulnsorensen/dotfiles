@@ -219,15 +219,28 @@ def mcp_server_entry(
     record shared by the claude/.mcp.json, cursor/mcp.json and
     copilot/mcp-config.json shapes.
 
+    Handles both transports: a stdio MCP (``command``/``args``/``env``) and an
+    HTTP/SSE MCP (``type: http|sse`` + ``url``, plus optional ``headers``, e.g.
+    notion/linear), which carries ``type``/``url`` instead of a command.
+
     ``args`` and ``env`` are included only when present (matching the bash
     ``if .args then {args:.args} else {} end``). ``extra`` lets a renderer
     fold in harness-specific keys (e.g. copilot's mandatory
     ``{"tools": ["*"]}``)."""
-    entry: dict[str, Any] = {"command": mcp["command"]}
-    if mcp.get("args") is not None:
-        entry["args"] = mcp["args"]
-    if mcp.get("env") is not None:
-        entry["env"] = mcp["env"]
+    entry: dict[str, Any]
+    if mcp.get("url") or mcp.get("type") in ("http", "sse"):
+        url = mcp.get("url")
+        if not url:
+            raise ValueError(f"MCP '{mcp.get('name', '?')}' transport is missing 'url'")
+        entry = {"type": mcp.get("type") or "http", "url": url}
+        if mcp.get("headers") is not None:
+            entry["headers"] = mcp["headers"]
+    else:
+        entry = {"command": mcp["command"]}
+        if mcp.get("args") is not None:
+            entry["args"] = mcp["args"]
+        if mcp.get("env") is not None:
+            entry["env"] = mcp["env"]
     if extra:
         entry.update(extra)
     return entry

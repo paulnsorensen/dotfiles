@@ -72,9 +72,17 @@ omp:
     advisor:
       enabled: false
     compaction:
+      strategy: snapcompact
       thresholdTokens: 120000
+      keepRecentTokens: 20000
+      midTurnEnabled: true
+      autoContinue: true
     lsp:
-      formatOnWrite: true
+      enabled: true
+      lazy: true
+      diagnosticsOnWrite: true
+      diagnosticsOnEdit: false
+      formatOnWrite: false
     github:
       enabled: true
     task:

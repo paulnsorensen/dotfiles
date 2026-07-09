@@ -823,18 +823,19 @@ def test_real_todo_profile_is_closed_todoist_world(monkeypatch, tmp_path):
     assert env.get("ENABLE_CLAUDEAI_MCP_SERVERS") == "true"
 
 
-def test_real_notion_profile_is_http_shape(monkeypatch, tmp_path):
-    """The shipped notion profile renders its single MCP as an http record."""
+def test_real_mgmt_profile_is_http_shape(monkeypatch, tmp_path):
+    """The shipped mgmt profile renders its remote MCPs as http records."""
     _hermetic_dotenv(monkeypatch, tmp_path)
-    pdir = find_profile_dir("notion")
-    assert pdir is not None, "real profiles/notion not found"
+    pdir = find_profile_dir("mgmt")
+    assert pdir is not None, "real profiles/mgmt not found"
     m = parse_manifest(pdir)
     flags, _ = overlay.build_isolated_launch(m, pdir, "claude")
     servers = json.loads(
         Path(flags[flags.index("--mcp-config") + 1]).read_text()
     )["mcpServers"]
-    assert servers["notion"]["type"] == "http"
-    assert "command" not in servers["notion"]
+    for name in ("notion", "linear"):
+        assert servers[name]["type"] == "http"
+        assert "command" not in servers[name]
 
 
 def test_isolated_missing_system_prompt_fails_loud(tmp_path):
