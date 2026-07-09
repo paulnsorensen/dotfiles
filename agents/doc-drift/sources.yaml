@@ -37,7 +37,7 @@ sources:
     signal: { type: npm, ref: opencode-ai }
     docs: https://opencode.ai/docs
     governs: [harnesses/opencode.md]
-    reconciled: "1.17.13"
+    reconciled: "1.17.16"
 
   - id: copilot-cli
     signal: { type: npm, ref: "@github/copilot" }
