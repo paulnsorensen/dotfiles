@@ -163,6 +163,16 @@ SH
     ! grep -q "HISTSIZE" "$completion_file"
 }
 
+@test "zshenv sets a mosh-server idle-network timeout (moshi reconnect-storm hardening)" {
+    local zshenv_file="$REAL_DOTFILES_DIR/zshenv"
+
+    # 2026-07-08 livelock: iPhone moshi reconnect-looped ~723 logins in 2h, each
+    # spawning a mosh-server that outlives its client for hours. tmux holds the
+    # real session state, so an orphaned mosh-server is pure waste — safe to
+    # self-exit after 4h with no client contact (man mosh-server, MOSH_SERVER_NETWORK_TMOUT).
+    grep -q 'export MOSH_SERVER_NETWORK_TMOUT=14400' "$zshenv_file"
+}
+
 @test "zshrc sources files in correct order" {
     local zshrc_file="$REAL_DOTFILES_DIR/zshrc"
 

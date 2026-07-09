@@ -306,6 +306,12 @@ teardown() {
     grep -q -- '--config %h/local-llm/configs/llama-swap.yaml' "$SWAP_SVC"
 }
 
+@test "llama-swap.service: dies first under PSI memory pressure (ManagedOOM policy)" {
+    grep -q 'ManagedOOMMemoryPressure=kill' "$SWAP_SVC"
+    grep -q 'ManagedOOMMemoryPressureLimit=60%' "$SWAP_SVC"
+    grep -q 'ManagedOOMSwap=kill' "$SWAP_SVC"
+}
+
 # ─── LiteLLM rewire (#288) ─────────────────────────────────────────────────────
 
 @test "litellm.yaml: llama-swap-served models point at the single :9000 port" {
