@@ -1,0 +1,10 @@
+# ADR session-convergence-002: Convergence sweep lives in /work-recovery, manual-only  [status: accepted]
+
+- **Context:** Converging interrupted/parallel sessions into resumable artifacts needs a fan-out surface. `/work-recovery` already reconstructs interrupted sessions via duckdb-expert fan-out but is report-only — it never writes a wheypoint (skills/work-recovery/SKILL.md). Candidates: extend it, write a new `/converge` skill, or grow `/session-analytics` a recovery mode. Trigger candidates: manual command, automatic post-`dots resume` hook, periodic auto-checkpoint timer.
+- **Decision:** Add an opt-in `--wheypoint` write mode to `/work-recovery` (each recovery brief becomes a provenance-bearing `.cheese/notes/<slug>.md`, `next: hold`), invoked manually only. Default remains byte-identical report-only.
+- **Alternatives:** New skill (rejected — duplicates the reconstruction path for no gain); `/session-analytics` expansion (rejected — conflates analytics with recovery); auto/periodic triggers (rejected by user — no new standing processes after the 2026-07-08 livelock; recorded in `.cheese/.out-of-scope/session-convergence-001.md`).
+- **Consequences:** Smallest delta and one skill to maintain, but `/work-recovery`'s "never modifies files" contract gains an explicit flag-gated exception — its contract text must name it. `dots resume` stays untouched (locked decision from the incident session).
+
+- **Implemented (2026-07-09):** shipped in `skills/work-recovery/SKILL.md` — opt-in `--wheypoint` flag, default report-only byte-identical, frontmatter gained `Write(.cheese/notes/**)`, and the "never modifies files" contract text now names the flag as its sole write exception. Provenance is auto-filled from the *recovered* session; `git:` is **branch-only** — the recovered session's historical short-sha is not in the logs, a schema-valid degradation of the wheypoint provenance schema (see [[decisions/session-convergence-003-provenance-header-fields]]).
+
+_Source: session-convergence implementation session · Updated: 2026-07-09_
