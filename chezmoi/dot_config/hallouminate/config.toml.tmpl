@@ -37,6 +37,23 @@ exclude = ["**/.git/**"]
 
 {{ end -}}
 {{ end -}}
+{{ if stat (joinPath .chezmoi.homeDir "Dropbox (Maestral)" "0-Workspace" "_meta") -}}
+# Todoist/workspace "constitution" — the _meta folder under the Maestral-synced
+# PARA vault. Machine-readable SOT (project_config.yaml) + agent prompts that the
+# planned n8n inbox-triage classifier reads (see crabbot wiki todoist-taxonomy-
+# sources.md). Stat-guarded: Maestral isn't always mounted, and a missing corpus
+# path aborts the whole index run (hallouminate#101). md-only: hallouminate's
+# format registry has no YAML handler (format.rs format_from_extension), so
+# project_config.yaml is skipped — its vocabulary is already documented in prose
+# in system_base.md, which IS groundable. To ground the raw config later, symlink
+# it to a .txt (PlainText handler) rather than widening the glob to inert *.yaml.
+[[corpus]]
+name = "todoist-meta"
+paths = ["~/Dropbox (Maestral)/0-Workspace/_meta"]
+globs = ["**/*.md"]
+exclude = ["**/.git/**"]
+
+{{ end -}}
 # Top-level embeddings default for all repos (per-repo config can override).
 # snowflake-arctic-embed-s: 384-dim, English, retrieval-tuned. Full precision
 # (quantized=false) — corpora are small, so keep max quality.
