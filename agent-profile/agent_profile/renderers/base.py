@@ -229,7 +229,10 @@ def mcp_server_entry(
     ``{"tools": ["*"]}``)."""
     entry: dict[str, Any]
     if mcp.get("url") or mcp.get("type") in ("http", "sse"):
-        entry = {"type": mcp.get("type") or "http", "url": mcp["url"]}
+        url = mcp.get("url")
+        if not url:
+            raise ValueError(f"MCP '{mcp.get('name', '?')}' transport is missing 'url'")
+        entry = {"type": mcp.get("type") or "http", "url": url}
         if mcp.get("headers") is not None:
             entry["headers"] = mcp["headers"]
     else:

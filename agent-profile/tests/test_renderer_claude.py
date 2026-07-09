@@ -419,6 +419,21 @@ def test_mcptest_mcp_json_drops_non_claude_servers(rendered_mcptest):
     }
 
 
+def test_mcp_json_rejects_http_server_without_url(env):
+    profile_dir = write_profile(
+        env.profiles,
+        "bad-http",
+        "name: bad-http\n"
+        "description: missing URL\n"
+        "mcps:\n"
+        "  - name: notion\n"
+        "    type: http\n"
+        "    harnesses: [claude]\n",
+    )
+    with pytest.raises(ValueError, match="MCP 'notion' .*missing 'url'"):
+        ClaudeRenderer().render(parse_manifest(profile_dir), env.target)
+
+
 def test_mcptest_command_model_frontmatter_byte_parity(rendered_mcptest):
     target, _ = rendered_mcptest
     on_disk = (
