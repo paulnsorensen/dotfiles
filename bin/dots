@@ -415,6 +415,12 @@ case "${1:-status}" in
                 ;;
         esac
         ;;
+    resume)
+        shift
+        # shellcheck source=bin/lib/resume.sh
+        source "$DOTFILES_DIR/bin/lib/resume.sh"
+        resume_main "$@"
+        ;;
     upgrade|up)
         echo -e "${BLUE}⬆️  Upgrading packages...${NC}"
         cd_dotfiles
