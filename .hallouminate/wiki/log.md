@@ -11,7 +11,6 @@
 
 2026-07-03 · claudeplugings · merged · operations/claude-dotfiles-ownership.md, architecture/cross-harness-plugins.md · Bridged native-claude plugins (milknado, hallouminate) into the chezmoi-authoritative pipeline: modify_settings.json overlays enabledPlugins/extraKnownMarketplaces from agents/plugins/registry.yaml; run_onchange + claude-plugin-reconcile.sh prime/prune the CLI marketplace index and installed_plugins.json (manifest-owned only). Corrected the stale "preserved from the live file / reasserted by ap" settings-merge bullet; noted the isolated-only gate on_render_native_plugins.
 
-
 2026-07-09 · a03e06a48829321c · conflict-flagged · decisions/session-convergence-001-fixture-cli-plus-indexes.md · Reconciled disproven index sub-decision: EXPLAIN on live DB shows DuckDB does not use secondary ART indexes for base-table filter scans (SEQ_SCAN); reverted the CREATE INDEX work, superseded the "profile-derived indexes" half, kept CLI/no-MCP/no-timer.
 
 2026-07-09 · a03e06a48829321c · merged · decisions/session-convergence-002-sweep-in-work-recovery.md · Added implementation note for work-recovery --wheypoint write mode (shipped 2026-07-09; git: provenance branch-only, schema-valid degradation).

@@ -7,4 +7,4 @@
 
 - **Implemented (2026-07-09):** shipped in `skills/work-recovery/SKILL.md` — opt-in `--wheypoint` flag, default report-only byte-identical, frontmatter gained `Write(.cheese/notes/**)`, and the "never modifies files" contract text now names the flag as its sole write exception. Provenance is auto-filled from the *recovered* session; `git:` is **branch-only** — the recovered session's historical short-sha is not in the logs, a schema-valid degradation of the wheypoint provenance schema (see [[decisions/session-convergence-003-provenance-header-fields]]).
 
-_Source: session-convergence implementation session · Updated: 2026-07-09_
+*Source: session-convergence implementation session · Updated: 2026-07-09*

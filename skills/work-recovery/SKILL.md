@@ -91,8 +91,8 @@ as a resumable handoff note at `.cheese/notes/<slug>.md` so a fresh agent (or
 `/cheese --continue`) can pick it up. One note per brief.
 
 - **Slug:** derive from the recovered session — `recover-<project>-<short-sessionId>`
-  (project = last path segment of the cwd; short id = first 8 chars of the
-  sessionId). Keeps one-note-per-brief collision-free.
+  (project = last path segment of the recovered session's project/branch; short id
+  = first 8 chars of the sessionId). Keeps one-note-per-brief collision-resistant.
 - **Schema:** the canonical wheypoint handoff header (identical to easy-cheese
   `/wheypoint`), then the brief itself as the document. Provenance is auto-filled
   **from the recovered session, never the live one**:
