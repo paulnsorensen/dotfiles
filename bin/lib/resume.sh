@@ -14,6 +14,13 @@ resume_encode_claude_dir() {
     echo "${cwd//[.\/]/-}"
 }
 
+# resume_file_mtime <path> — portable epoch mtime. GNU stat uses `-c %Y`;
+# BSD/macOS stat uses `-f %m`.
+resume_file_mtime() {
+    local file="$1"
+    stat -c %Y "$file" 2>/dev/null || stat -f %m "$file" 2>/dev/null
+}
+
 # resume_claude_session <cwd> — newest *.jsonl under the matching claude
 # project dir. Prints "<session-id>\t<mtime-epoch>"; returns 1 on no match.
 resume_claude_session() {
@@ -22,7 +29,7 @@ resume_claude_session() {
     [[ -d "$dir" ]] || return 1
     for file in "$dir"/*.jsonl; do
         [[ -f "$file" ]] || continue
-        mtime=$(stat -c %Y "$file" 2>/dev/null) || continue
+        mtime=$(resume_file_mtime "$file") || continue
         if (( mtime > newest_mtime )); then
             newest_mtime=$mtime
             newest="$file"
@@ -39,16 +46,20 @@ resume_claude_session() {
 resume_codex_session() {
     local cwd="$1" root="${RESUME_CODEX_SESSIONS_DIR:-$HOME/.codex/sessions}"
     [[ -d "$root" ]] || return 1
-    local mtime file file_cwd file_id
-    while IFS=' ' read -r mtime file; do
+    local mtime file file_cwd file_id best_id="" best_mtime=-1
+    while IFS= read -r -d '' file; do
+        mtime=$(resume_file_mtime "$file") || continue
         file_cwd=$(head -1 "$file" | jq -r '.payload.cwd // empty' 2>/dev/null) || continue
         [[ "$file_cwd" == "$cwd" ]] || continue
         file_id=$(head -1 "$file" | jq -r '.payload.id // empty' 2>/dev/null) || true
         [[ -n "$file_id" ]] || continue
-        printf '%s\t%s\n' "$file_id" "${mtime%.*}"
-        return 0
-    done < <(find "$root" -name 'rollout-*.jsonl' -mtime -7 -printf '%T@ %p\n' 2>/dev/null | sort -rn)
-    return 1
+        if (( mtime > best_mtime )); then
+            best_mtime=$mtime
+            best_id=$file_id
+        fi
+    done < <(find "$root" -name 'rollout-*.jsonl' -mtime -7 -print0 2>/dev/null)
+    [[ -n "$best_id" ]] || return 1
+    printf '%s\t%s\n' "$best_id" "$best_mtime"
 }
 
 # resume_opencode_session <cwd> — newest session row whose directory matches.
@@ -163,39 +174,27 @@ resume_command_for() {
     esac
 }
 
-# resume_main [--dry-run] [--session <name>] — orchestrates the full flow:
-# restore the snapshot if needed, enumerate panes, print the summary table,
-# and (unless --dry-run) type the resume command into each matched pane.
-resume_main() {
+# resume_parse_args [--dry-run] [--session <name>] — prints
+# "<dry-run>\t<session>".
+resume_parse_args() {
     local dry_run=false session=""
     while (($#)); do
         case "$1" in
-            --dry-run)
-                dry_run=true
-                shift
-                ;;
-            --session)
-                session="${2:?--session requires a value}"
-                shift 2
-                ;;
+            --dry-run) dry_run=true; shift ;;
+            --session) session="${2:?--session requires a value}"; shift 2 ;;
             *)
                 echo "resume: unknown argument: $1" >&2
                 return 1
                 ;;
         esac
     done
+    printf '%s\t%s\n' "$dry_run" "$session"
+}
 
-    local dotfiles_dir="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
-
-    if resume_needs_restore "$session"; then
-        resume_restore_snapshot "$dotfiles_dir" || true
-    fi
-
-    local now
-    now=$(date +%s)
-
-    printf 'PANE\tCWD\tHARNESS\tSESSION\tAGE\n'
+resume_resume_panes() {
+    local dry_run="$1" now="$2"
     local _ pane_id cwd match harness rest id epoch age
+    printf 'PANE\tCWD\tHARNESS\tSESSION\tAGE\n'
     while IFS=$'\t' read -r _ _ _ pane_id cwd; do
         [[ -n "$pane_id" ]] || continue
         match=$(resume_best_match "$cwd") || continue
@@ -205,8 +204,24 @@ resume_main() {
         epoch="${rest##*$'\t'}"
         age="$(resume_format_age "$now" "$epoch")"
         printf '%s\t%s\t%s\t%s\t%s\n' "$pane_id" "$cwd" "$harness" "$id" "$age"
-        if [[ "$dry_run" != true ]]; then
-            tmux send-keys -t "$pane_id" "$(resume_command_for "$harness" "$id")"
-        fi
+        [[ "$dry_run" == true ]] || tmux send-keys -t "$pane_id" "$(resume_command_for "$harness" "$id")"
     done < <(resume_list_panes)
+}
+
+
+# resume_main [--dry-run] [--session <name>] — orchestrates the full flow:
+# restore the snapshot if needed, enumerate panes, print the summary table,
+# and (unless --dry-run) type the resume command into each matched pane.
+resume_main() {
+    local parsed dry_run session dotfiles_dir
+    parsed=$(resume_parse_args "$@") || return
+    dry_run="${parsed%%$'\t'*}"
+    session="${parsed#*$'\t'}"
+    dotfiles_dir="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
+
+    if resume_needs_restore "$session"; then
+        resume_restore_snapshot "$dotfiles_dir" || true
+    fi
+
+    resume_resume_panes "$dry_run" "$(date +%s)"
 }

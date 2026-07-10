@@ -29,13 +29,27 @@ teardown() {
     local proj="$HOME/.claude/projects/-home-paul-Dev-dotfiles"
     mkdir -p "$proj"
     : > "$proj/old-session.jsonl"
-    touch -d '2 days ago' "$proj/old-session.jsonl"
+    touch -t 202001010000 "$proj/old-session.jsonl"
     : > "$proj/new-session.jsonl"
-    touch -d '1 hour ago' "$proj/new-session.jsonl"
+    touch -t 202601010000 "$proj/new-session.jsonl"
 
     run resume_claude_session "/home/paul/Dev/dotfiles"
     assert_success
     [[ "$output" == "new-session	"* ]]
+}
+
+@test "resume_claude_session falls back to BSD stat mtimes" {
+    local proj="$HOME/.claude/projects/-home-paul-Dev-dotfiles" bin_dir="$TEST_HOME/bsd-bin"
+    mkdir -p "$proj" "$bin_dir"
+    : > "$proj/old-session.jsonl"
+    : > "$proj/new-session.jsonl"
+    # shellcheck disable=SC2016
+    printf '#!/usr/bin/env bash\n[[ "$1" == "-c" ]] && exit 1\ncase "$3" in\n  *new-session*) echo 200 ;;\n  *) echo 100 ;;\nesac\n' > "$bin_dir/stat"
+    chmod +x "$bin_dir/stat"
+
+    PATH="$bin_dir:$PATH" run resume_claude_session "/home/paul/Dev/dotfiles"
+    assert_success
+    [[ "$output" == "new-session	200" ]]
 }
 
 @test "resume_claude_session returns 1 when no project dir exists" {
