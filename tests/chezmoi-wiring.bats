@@ -845,6 +845,17 @@ YAML
     chmod +x "$hallouminate_bin/gh"
     PATH="$hallouminate_bin:$PATH"
 
+    # The tilth run_onchange installer must also stay hermetic during the
+    # end-to-end apply. Simulate offline npm and an absent global package:
+    # the script should warn and continue, not abort under `set -euo pipefail`
+    # from the failed `npm ls` probe or attempt a real install.
+    local npm_bin="$TEST_HOME/fake-npm-bin"
+    mkdir -p "$npm_bin"
+    # shellcheck disable=SC2016
+    printf '#!/usr/bin/env bash\ncase "$1 $2 $3" in\n  "view @paulnsorensen/tilth-nightly version") exit 1 ;;\n  "ls -g @paulnsorensen/tilth-nightly") exit 1 ;;\n  "ls -g tilth") exit 1 ;;\n  "install -g @paulnsorensen/tilth-nightly@latest") echo "unexpected npm install" >&2; exit 99 ;;\n  *) echo "unexpected npm $*" >&2; exit 99 ;;\nesac\n' > "$npm_bin/npm"
+    chmod +x "$npm_bin/npm"
+    PATH="$npm_bin:$PATH"
+
     # Templated dotfiles need [data] for .email and env vars for the
     # copilot template's fail-fast guard. Bootstrap both before .sync runs
     # so chezmoi apply renders cleanly.

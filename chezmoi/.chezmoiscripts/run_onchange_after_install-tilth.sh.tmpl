@@ -23,7 +23,7 @@ set -euo pipefail
 PKG="@paulnsorensen/tilth-nightly"
 
 installed_version() {
-    npm ls -g "$PKG" --depth=0 2>/dev/null | sed -n 's/.*tilth-nightly@//p' | tr -d '[:space:]'
+    npm ls -g "$PKG" --depth=0 2>/dev/null | sed -n 's/.*tilth-nightly@//p' | tr -d '[:space:]' || true
 }
 
 latest="$(npm view "$PKG" version 2>/dev/null || true)"
