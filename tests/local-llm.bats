@@ -302,7 +302,7 @@ teardown() {
     grep -q 'RestartSec=30' "$SWAP_SVC"
     grep -q 'MemoryMax=30G' "$SWAP_SVC"
     grep -q 'OOMScoreAdjust=1000' "$SWAP_SVC"
-    grep -q -- '--listen 127.0.0.1:9000' "$SWAP_SVC"
+    grep -q -- '--listen 0.0.0.0:9000' "$SWAP_SVC"
     grep -q -- '--config %h/local-llm/configs/llama-swap.yaml' "$SWAP_SVC"
 }
 

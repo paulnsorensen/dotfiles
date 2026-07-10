@@ -44,6 +44,8 @@ STDIN"
     [ "$(yq '.tools.artifactSpillThreshold' "$OUT")" = "2" ]
     [ "$(yq '.tools.artifactHeadBytes' "$OUT")" = "1" ]
     [ "$(yq '.tools.artifactTailBytes' "$OUT")" = "1" ]
+    [ "$(yq '.read.toolResultPreview' "$OUT")" = "false" ]
+    [ "$(yq '.skills.enableSkillCommands' "$OUT")" = "true" ]
     [ "$(yq '.tui.tight' "$OUT")" = "true" ]
     [ "$(yq '.startup.quiet' "$OUT")" = "true" ]
     [ "$(yq '.compaction.thresholdTokens' "$OUT")" = "120000" ]

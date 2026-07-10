@@ -56,15 +56,19 @@ omp:
       cacheMissMarker: true
     includeWorkspaceTree: true
     # Output tightening (2026-07-09 research: .cheese/research/oh-my-pi-config).
-    # artifactSpillThreshold (KB) controls when non-read tool output spills to
-    # an artifact. Keep the preview budget small too: post-execution tools use
-    # head+tail budgets, and streaming tools retain artifactHeadBytes plus a
-    # rolling tail. This does NOT shrink `/skill:<name>` bodies or `read
-    # skill://...` output; those paths bypass this spill wrapper.
+    # `read.toolResultPreview: false` keeps read results (including `skill://...`)
+    # as summary rows instead of inline transcript dumps. Tool spill settings
+    # handle non-read tools. Slash `/skill:<name>` commands remain enabled for
+    # explicit skill invocation; suppressing their full-body terminal echo needs
+    # an upstream OMP display fix, not a dotfiles-only toggle.
     tools:
       artifactSpillThreshold: 2
       artifactHeadBytes: 1
       artifactTailBytes: 1
+    read:
+      toolResultPreview: false
+    skills:
+      enableSkillCommands: true
     tui:
       tight: true
     startup:
