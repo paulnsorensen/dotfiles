@@ -1,0 +1,50 @@
+#!/bin/bash
+# run_onchange — keeps the tilth binary on the fork's nightly channel current
+# on every `dots sync`, mirroring install-hallouminate.sh.tmpl.
+#
+# tilth is Paul's fork (github.com/paulnsorensen/tilth). Its nightly.yml
+# publishes a rolling npm package `@paulnsorensen/tilth-nightly` (scoped, bin
+# `tilth`, versioned 0.0.0-experimental.<run>) off every push to main — that
+# is the channel the tilth MCP (`command: tilth`) should run. `npm i -g` needs
+# --allow-scripts because the postinstall (install.js) downloads the platform
+# binary, which npm blocks by default. This retires the separate nightly npx
+# job — sync now grabs latest, self-gated when already current.
+#
+# Version note: the Rust binary's `--version` stays 0.8.4 (Cargo "fork law"),
+# so the freshness check compares the *npm package* version, not the binary.
+#
+# Re-trigger marker: run_onchange fires only when the rendered body changes.
+# Computed fail-safe — the inner `sh -c` ends in `echo`, so an OFFLINE
+# `dots sync` renders a stable empty marker instead of aborting the apply:
+#   latest nightly version: {{ output "sh" "-c" "npm view @paulnsorensen/tilth-nightly version 2>/dev/null | tr -d '[:space:]'; echo" }}
+
+set -euo pipefail
+
+PKG="@paulnsorensen/tilth-nightly"
+
+installed_version() {
+    npm ls -g "$PKG" --depth=0 2>/dev/null | sed -n 's/.*tilth-nightly@//p' | tr -d '[:space:]' || true
+}
+
+latest="$(npm view "$PKG" version 2>/dev/null || true)"
+current="$(installed_version)"
+
+if [[ -n "$latest" && "$current" == "$latest" ]]; then
+    echo "✓ tilth (nightly) $current already latest ($latest) — nothing to do"
+elif [[ -z "$latest" ]]; then
+    echo "⚠ Could not resolve latest $PKG from npm (offline?) — keeping installed ${current:-none}" >&2
+else
+    echo "Installing $PKG@latest (was ${current:-none}, latest $latest)..."
+    npm install -g "$PKG@latest" --allow-scripts="$PKG"
+    echo "✓ tilth (nightly) $(installed_version) installed"
+fi
+
+# Keep the fork's nightly the single source of truth for the `tilth` bin.
+# Both the upstream public `tilth` npm package and a `cargo install` build
+# expose a `tilth` binary and would compete for / shadow it on PATH.
+if npm ls -g tilth --depth=0 >/dev/null 2>&1; then
+    echo "⚠ upstream public 'tilth' is also installed globally and competes for the 'tilth' bin — 'npm rm -g tilth' to keep the nightly fork canonical." >&2
+fi
+if [[ -f "$HOME/.cargo/bin/tilth" ]]; then
+    echo "⚠ ~/.cargo/bin/tilth shadows the npm binary on PATH — remove it so 'tilth' resolves to the nightly fork." >&2
+fi
