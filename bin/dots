@@ -64,7 +64,7 @@ ${GREEN}Usage:${NC} dots [command] [args]
 ${BLUE}Commands:${NC}
   ${GREEN}update${NC}          Pull latest changes and run sync
   ${GREEN}sync${NC}            Run the sync script
-  ${GREEN}upgrade${NC}         Upgrade installed packages and refresh remote skills
+  ${GREEN}upgrade${NC}         Upgrade packages, force-refresh skills + vendor cache, apply
   ${GREEN}status${NC}          Show git status of dotfiles
   ${GREEN}rollback${NC}        Show how to undo a sync (git revert + dots sync)
   ${GREEN}doctor${NC}          Run health checks and profile shell
@@ -422,9 +422,14 @@ case "${1:-status}" in
         resume_main "$@"
         ;;
     upgrade|up)
-        echo -e "${BLUE}⬆️  Upgrading packages...${NC}"
+        echo -e "${BLUE}⬆️  Upgrading packages and refreshing config...${NC}"
         cd_dotfiles
-        UPGRADE_MODE=true bash "$DOTFILES_DIR/packages/sync.sh"
+        # Full refresh sync: UPGRADE_MODE upgrades package versions, `refresh`
+        # force-pulls the external-skill vendor cache (plain `dots sync` reuses
+        # a stale cache, so upstream skill removals never reach ~/.claude), then
+        # chezmoi apply prunes anything the fresh assembly dropped. Runs before
+        # the npx skill refresh so package tools (node) are present for it.
+        UPGRADE_MODE=true do_sync refresh
 
         echo
         echo -e "${BLUE}⬆️  Refreshing remote skills...${NC}"
