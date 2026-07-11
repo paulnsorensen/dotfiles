@@ -234,6 +234,11 @@ case "\$1" in
     has-session)
         exit 0
         ;;
+    run-shell)
+        # Real tmux run-shell executes the command inside the server; mirror
+        # that so the vendored restore.sh stub actually runs.
+        exec bash -c "\$2"
+        ;;
     list-panes)
         printf '%s\n' '$panes'
         ;;
@@ -248,7 +253,7 @@ STUB
     chmod +x "$bin_dir/tmux"
 }
 
-@test "dots resume --dry-run prints the table and sends no keys" {
+@test "dots resume --dry-run reports the plan and sends no keys" {
     local proj="$HOME/.claude/projects/-home-paul-Dev-dotfiles"
     mkdir -p "$proj"
     : > "$proj/dry-run-session.jsonl"
@@ -258,14 +263,13 @@ STUB
     PATH="$bin_dir:$PATH" run dots resume --dry-run
 
     assert_success
-    assert_output_contains "PANE"
+    assert_output_contains "dry-run"
     assert_output_contains "%1"
-    assert_output_contains "claude"
-    assert_output_contains "dry-run-session"
+    assert_output_contains "claude --resume dry-run-session"
     [[ ! -f "$TEST_HOME/send-keys.log" ]]
 }
 
-@test "dots resume (no --dry-run) types the resume command into the matched pane" {
+@test "dots resume (no --dry-run) types AND runs the resume command in the matched pane" {
     local proj="$HOME/.claude/projects/-home-paul-Dev-dotfiles"
     mkdir -p "$proj"
     : > "$proj/type-session.jsonl"
@@ -276,8 +280,8 @@ STUB
 
     assert_success
     [[ -f "$TEST_HOME/send-keys.log" ]]
-    grep -qx -- "SEND-KEYS: send-keys -t %2 claude --resume type-session" "$TEST_HOME/send-keys.log"
-    ! grep -qE -- "Enter|C-m" "$TEST_HOME/send-keys.log"
+    # Command typed with a trailing Enter so it actually runs.
+    grep -qx -- "SEND-KEYS: send-keys -t %2 claude --resume type-session Enter" "$TEST_HOME/send-keys.log"
 }
 
 @test "resume_main --restore repoints last and runs restore even with a live server" {
@@ -316,6 +320,18 @@ STUB
     PATH="$bin_dir:$PATH" run dots resume --dry-run
 
     assert_success
-    assert_output_contains "PANE"
+    assert_output_contains "no resumable agent sessions"
     [[ "$output" != *"%3"* ]]
+}
+
+@test "resume_list_snapshots caps the picker at RESUME_MAX_SNAPSHOTS" {
+    local i
+    for i in $(seq -w 1 25); do
+        seed_resurrect "202606100000${i}" "s$i" 1
+        touch -t "2026061000${i}" "$HOME/.tmux/resurrect/tmux_resurrect_202606100000${i}.txt"
+    done
+
+    RESUME_MAX_SNAPSHOTS=20 run resume_list_snapshots
+    assert_success
+    [[ "${#lines[@]}" -eq 20 ]]
 }

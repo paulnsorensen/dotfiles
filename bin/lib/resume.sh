@@ -104,7 +104,13 @@ resume_needs_restore() {
 
 # resume_restore_snapshot <dotfiles_dir> — start a detached server if none is
 # running (tmux-resurrect's restore.sh needs a live server to query options
-# and create sessions against), then run the vendored restore script.
+# and create sessions against), then run the vendored restore script through
+# `tmux run-shell` — the same path resurrect's own keybinding uses
+# (resurrect.tmux: `bind-key … run-shell restore.sh`). run-shell executes the
+# script inside the server with $TMUX set, which restore.sh's new_session()
+# relies on via tmux_socket(); a bare `bash restore.sh` leaves $TMUX empty, so
+# restored sessions land on an empty `-S ""` socket and handle_session_0 then
+# kills the real placeholder session, collapsing the server.
 # No-ops (returns 1) when there's no saved snapshot to restore.
 resume_restore_snapshot() {
     local dotfiles_dir="$1" resurrect_dir restore_script
@@ -113,7 +119,7 @@ resume_restore_snapshot() {
     restore_script="$dotfiles_dir/tmux/plugins/tmux-resurrect/scripts/restore.sh"
     [[ -f "$restore_script" ]] || return 1
     tmux list-sessions >/dev/null 2>&1 || tmux new-session -d
-    bash "$restore_script"
+    tmux run-shell "$restore_script"
 }
 
 # resume_snapshot_line <file> — one summary row for a resurrect snapshot:
@@ -130,7 +136,9 @@ resume_snapshot_line() {
 }
 
 # resume_list_snapshots — summary rows for every snapshot in the resurrect
-# dir, newest first by mtime. Empty output when none exist.
+# dir, newest first by mtime, capped at RESUME_MAX_SNAPSHOTS (default 20) so the
+# picker stays fast and readable instead of scrolling hundreds of auto-saves.
+# Empty output when none exist.
 resume_list_snapshots() {
     local dir file
     dir="$(resume_resurrect_dir)"
@@ -138,7 +146,7 @@ resume_list_snapshots() {
     for file in "$dir"/tmux_resurrect_*.txt; do
         [[ -f "$file" ]] || continue
         resume_snapshot_line "$file"
-    done | sort -t"$(printf '\t')" -k4,4nr
+    done | sort -t"$(printf '\t')" -k4,4nr | head -n "${RESUME_MAX_SNAPSHOTS:-20}"
 }
 
 # resume_format_menu <now> — human-readable picker rows, newest first:
@@ -235,6 +243,33 @@ resume_command_for() {
     esac
 }
 
+# resume_primary_session — the session to land in after a restore: the first
+# `state` line of the current `last` snapshot, falling back to the first pane's
+# session. Returns 1 when nothing is resolvable.
+resume_primary_session() {
+    local file s
+    file="$(resume_resurrect_dir)/last"
+    [[ -e "$file" ]] || return 1
+    s=$(awk '$1=="state"{print $2; exit}' "$file" 2>/dev/null)
+    [[ -n "$s" ]] || s=$(awk -F'\t' '$1=="pane"{print $2; exit}' "$file" 2>/dev/null)
+    [[ -n "$s" ]] || return 1
+    printf '%s\n' "$s"
+}
+
+# resume_attach <session> — drop the user into <session>: switch-client when
+# already inside tmux, attach otherwise. No-ops when the session is absent so a
+# failed/partial restore never blocks the shell.
+resume_attach() {
+    local session="$1"
+    [[ -n "$session" ]] || return 0
+    tmux has-session -t "$session" 2>/dev/null || return 0
+    if [[ -n "${TMUX:-}" ]]; then
+        tmux switch-client -t "$session"
+    else
+        tmux attach-session -t "$session"
+    fi
+}
+
 # resume_parse_args [--dry-run] [--session <name>] [--restore [<snapshot>]] —
 # prints "<dry-run>\t<session>\t<restore>\t<snapshot>". --restore takes an
 # optional snapshot (basename or bare timestamp); omit it to pick via fzf.
@@ -261,10 +296,13 @@ resume_parse_args() {
     printf '%s\t%s\t%s\t%s\n' "$dry_run" "$session" "$restore" "$snapshot"
 }
 
+# resume_resume_panes <dry-run> <now> — for every restored pane with a matching
+# agent session, type its resume command into the pane AND press Enter so it
+# runs (dry-run types nothing). Prints a plain-English receipt of what ran where
+# rather than a raw TSV table.
 resume_resume_panes() {
     local dry_run="$1" now="$2"
-    local _ pane_id cwd match harness rest id epoch age
-    printf 'PANE\tCWD\tHARNESS\tSESSION\tAGE\n'
+    local _ pane_id cwd match harness rest id epoch age cmd rows=""
     while IFS=$'\t' read -r _ _ _ pane_id cwd; do
         [[ -n "$pane_id" ]] || continue
         match=$(resume_best_match "$cwd") || continue
@@ -273,9 +311,21 @@ resume_resume_panes() {
         id="${rest%%$'\t'*}"
         epoch="${rest##*$'\t'}"
         age="$(resume_format_age "$now" "$epoch")"
-        printf '%s\t%s\t%s\t%s\t%s\n' "$pane_id" "$cwd" "$harness" "$id" "$age"
-        [[ "$dry_run" == true ]] || tmux send-keys -t "$pane_id" "$(resume_command_for "$harness" "$id")"
+        cmd="$(resume_command_for "$harness" "$id")"
+        rows+="  ${pane_id}  ${cwd}  →  ${cmd}  (${age})"$'\n'
+        [[ "$dry_run" == true ]] || tmux send-keys -t "$pane_id" "$cmd" Enter
     done < <(resume_list_panes)
+
+    if [[ -z "$rows" ]]; then
+        echo "resume: no resumable agent sessions in the restored panes"
+        return
+    fi
+    if [[ "$dry_run" == true ]]; then
+        echo "resume: would resume these panes (dry-run — nothing typed):"
+    else
+        echo "resume: typed + ran the resume command in each pane below:"
+    fi
+    printf '%s' "$rows"
 }
 
 
@@ -283,8 +333,9 @@ resume_resume_panes() {
 # orchestrates the full flow. With --restore, pick (or take) a specific
 # snapshot, repoint `last`, and restore it even when a server is already
 # running. Otherwise restore only when needed (post-reboot: no server, or the
-# named session is missing). Then enumerate panes, print the summary table,
-# and (unless --dry-run) type the resume command into each matched pane.
+# named session is missing). Then enumerate panes, print a plain-English
+# receipt, and (unless --dry-run) type + run the resume command in each matched
+# pane and attach the user into the restored session.
 resume_main() {
     local parsed dry_run session restore snapshot rest dotfiles_dir now
     parsed=$(resume_parse_args "$@") || return
@@ -313,4 +364,8 @@ resume_main() {
     fi
 
     resume_resume_panes "$dry_run" "$now"
+
+    # Land the user in the restored session so the just-run resume commands are
+    # right in front of them. Skipped on --dry-run (nothing was restored/typed).
+    [[ "$dry_run" == true ]] || resume_attach "$(resume_primary_session)"
 }
