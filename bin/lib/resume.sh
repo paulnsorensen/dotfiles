@@ -116,6 +116,67 @@ resume_restore_snapshot() {
     bash "$restore_script"
 }
 
+# resume_snapshot_line <file> — one summary row for a resurrect snapshot:
+# "<basename>\t<sessions-csv>\t<window-count>\t<mtime-epoch>". Sessions come
+# from the `state` lines (one per saved session); window count from `window`
+# lines.
+resume_snapshot_line() {
+    local file="$1" base sessions windows mtime
+    base=$(basename "$file")
+    sessions=$(awk '$1=="state"{print $2}' "$file" 2>/dev/null | paste -sd, -)
+    windows=$(grep -c '^window' "$file" 2>/dev/null)
+    mtime=$(resume_file_mtime "$file") || mtime=0
+    printf '%s\t%s\t%s\t%s\n' "$base" "${sessions:-?}" "${windows:-0}" "$mtime"
+}
+
+# resume_list_snapshots — summary rows for every snapshot in the resurrect
+# dir, newest first by mtime. Empty output when none exist.
+resume_list_snapshots() {
+    local dir file
+    dir="$(resume_resurrect_dir)"
+    [[ -d "$dir" ]] || return 0
+    for file in "$dir"/tmux_resurrect_*.txt; do
+        [[ -f "$file" ]] || continue
+        resume_snapshot_line "$file"
+    done | sort -t"$(printf '\t')" -k4,4nr
+}
+
+# resume_format_menu <now> — human-readable picker rows, newest first:
+# "<basename>\t[sessions]\tNwin\tage". The first column stays the raw basename
+# so resume_pick_snapshot can recover it from the chosen line.
+resume_format_menu() {
+    local now="$1" base sessions windows mtime age
+    while IFS=$'\t' read -r base sessions windows mtime; do
+        [[ -n "$base" ]] || continue
+        age="$(resume_format_age "$now" "$mtime")"
+        printf '%s\t[%s]\t%swin\t%s\n' "$base" "$sessions" "$windows" "$age"
+    done < <(resume_list_snapshots)
+}
+
+# resume_pick_snapshot <now> — present the snapshot menu through fzf (override
+# the picker binary with RESUME_FZF for tests) and echo the chosen snapshot
+# basename. Returns 1 when nothing is picked or no snapshots exist.
+resume_pick_snapshot() {
+    local now="$1" menu picked fzf="${RESUME_FZF:-fzf}"
+    menu="$(resume_format_menu "$now")"
+    [[ -n "$menu" ]] || return 1
+    picked=$(printf '%s\n' "$menu" | "$fzf" --prompt='snapshot> ') || return 1
+    [[ -n "$picked" ]] || return 1
+    printf '%s\n' "${picked%%$'\t'*}"
+}
+
+# resume_point_last <name> — repoint the resurrect `last` symlink at <name>,
+# given either a full basename or a bare timestamp (tmux_resurrect_<ts>.txt).
+# Returns 1 when the target file is absent.
+resume_point_last() {
+    local name="$1" dir target
+    dir="$(resume_resurrect_dir)"
+    target="$name"
+    [[ -f "$dir/$target" ]] || target="tmux_resurrect_${name}.txt"
+    [[ -f "$dir/$target" ]] || { echo "resume: no snapshot '$name' in $dir" >&2; return 1; }
+    ln -sf "$target" "$dir/last"
+}
+
 # resume_list_panes — tab-separated session/window/pane/pane_id/cwd, one
 # pane per line.
 resume_list_panes() {
@@ -174,21 +235,30 @@ resume_command_for() {
     esac
 }
 
-# resume_parse_args [--dry-run] [--session <name>] — prints
-# "<dry-run>\t<session>".
+# resume_parse_args [--dry-run] [--session <name>] [--restore [<snapshot>]] —
+# prints "<dry-run>\t<session>\t<restore>\t<snapshot>". --restore takes an
+# optional snapshot (basename or bare timestamp); omit it to pick via fzf.
 resume_parse_args() {
-    local dry_run=false session=""
+    local dry_run=false session="" restore=false snapshot=""
     while (($#)); do
         case "$1" in
             --dry-run) dry_run=true; shift ;;
             --session) session="${2:?--session requires a value}"; shift 2 ;;
+            --restore)
+                restore=true
+                if [[ -n "${2:-}" && "$2" != --* ]]; then
+                    snapshot="$2"; shift 2
+                else
+                    shift
+                fi
+                ;;
             *)
                 echo "resume: unknown argument: $1" >&2
                 return 1
                 ;;
         esac
     done
-    printf '%s\t%s\n' "$dry_run" "$session"
+    printf '%s\t%s\t%s\t%s\n' "$dry_run" "$session" "$restore" "$snapshot"
 }
 
 resume_resume_panes() {
@@ -209,19 +279,38 @@ resume_resume_panes() {
 }
 
 
-# resume_main [--dry-run] [--session <name>] — orchestrates the full flow:
-# restore the snapshot if needed, enumerate panes, print the summary table,
+# resume_main [--dry-run] [--session <name>] [--restore [<snapshot>]] —
+# orchestrates the full flow. With --restore, pick (or take) a specific
+# snapshot, repoint `last`, and restore it even when a server is already
+# running. Otherwise restore only when needed (post-reboot: no server, or the
+# named session is missing). Then enumerate panes, print the summary table,
 # and (unless --dry-run) type the resume command into each matched pane.
 resume_main() {
-    local parsed dry_run session dotfiles_dir
+    local parsed dry_run session restore snapshot rest dotfiles_dir now
     parsed=$(resume_parse_args "$@") || return
-    dry_run="${parsed%%$'\t'*}"
-    session="${parsed#*$'\t'}"
+    # Split the four tab fields by expansion, not `read` — a tab IFS collapses
+    # empty fields, which would misalign restore/snapshot when --session is unset.
+    dry_run="${parsed%%$'\t'*}"; rest="${parsed#*$'\t'}"
+    session="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+    restore="${rest%%$'\t'*}"
+    snapshot="${rest#*$'\t'}"
     dotfiles_dir="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
+    now="$(date +%s)"
 
-    if resume_needs_restore "$session"; then
+    if [[ "$restore" == true ]]; then
+        [[ -n "$snapshot" ]] || snapshot="$(resume_pick_snapshot "$now")" || {
+            echo "resume: no snapshot selected" >&2
+            return 1
+        }
+        if [[ "$dry_run" == true ]]; then
+            echo "resume: would restore snapshot '$snapshot'"
+        else
+            resume_point_last "$snapshot" || return 1
+            resume_restore_snapshot "$dotfiles_dir" || true
+        fi
+    elif resume_needs_restore "$session"; then
         resume_restore_snapshot "$dotfiles_dir" || true
     fi
 
-    resume_resume_panes "$dry_run" "$(date +%s)"
+    resume_resume_panes "$dry_run" "$now"
 }

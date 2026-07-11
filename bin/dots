@@ -73,6 +73,9 @@ ${BLUE}Commands:${NC}
   ${GREEN}claude diff${NC}     Preview what a sync would change under ~/.claude
                   (settings.json + exact_ trees; NOT ~/.claude.json MCP drift,
                    which reconciles via the claude CLI, not chezmoi)
+  ${GREEN}resume${NC}          Restore a tmux-resurrect snapshot + resume agent panes
+                  (--restore [snapshot] picks/loads any snapshot, not just last;
+                   --dry-run previews; --session <name> targets one session)
   ${GREEN}test${NC}            Run test suite
   ${GREEN}help${NC}            Show this help message
 
