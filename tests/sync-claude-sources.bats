@@ -172,22 +172,13 @@ EXPECTED
     [ -f "$SRC/dot_claude/exact_reference/bank.md" ]
 }
 
-@test "assembly: vendors external skills from the cache when offline (refresh mode)" {
-    # FORCE_PACKAGES (dots sync refresh) opts into the float-to-latest pull;
-    # the failing git shim simulates offline — cache fallback with a warning.
-    export FORCE_PACKAGES=true
+@test "assembly: plain sync floats an unpinned source to latest (git pull --ff-only)" {
+    # Every sync pulls the default branch; the failing git shim simulates
+    # offline, so the pull falls back to the cached checkout with a warning.
     run_assembly
     [ "$status" -eq 0 ]
+    grep -q "pull --ff-only" "$GIT_CALLS"
     [[ "$output" == *"using cached checkout"* ]]
-    [ -f "$SRC/dot_claude/exact_skills/exact_ext-skill/SKILL.md" ]
-}
-
-@test "assembly: plain sync never hits the network for a cached unpinned source" {
-    # Float-to-latest is opt-in (dots sync refresh); the plain-sync hot path
-    # must vendor straight from the cache with zero git invocations.
-    run_assembly
-    [ "$status" -eq 0 ]
-    [ ! -f "$GIT_CALLS" ]
     [ -f "$SRC/dot_claude/exact_skills/exact_ext-skill/SKILL.md" ]
 }
 

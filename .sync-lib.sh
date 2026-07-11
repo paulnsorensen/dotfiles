@@ -253,9 +253,9 @@ _cz_render_claude_agent() {
 # Vendor external skills (skills/_registry.yaml sources that include claude)
 # into <dst>. Clones each source into a cache dir; offline falls back to the
 # cached checkout with a warning. A source that has never been cloned and
-# cannot be cloned fails the assembly (loud, per fail-fast). Float-to-latest
-# pulls run only under `dots sync refresh` (FORCE_PACKAGES) to keep network
-# off the plain-sync hot path; a pin change is always honored.
+# cannot be cloned fails the assembly (loud, per fail-fast). Unpinned sources
+# float to latest of their default branch on every sync (offline → cached
+# checkout); a pin change is always honored, an unchanged pin costs no network.
 #   _cz_vendor_external_skills <skills_registry_yaml> <dst_dir>
 _cz_vendor_external_skills() {
     local registry="$1" dst="$2"
@@ -296,7 +296,9 @@ _cz_vendor_external_skills() {
                     return 1
                 fi
             fi
-        elif [[ "${FORCE_PACKAGES:-false}" == true ]]; then
+        else
+            # Unpinned: float to latest of the default branch on every sync.
+            # Offline (pull fails) falls back to the existing cached checkout.
             git -C "$cache" pull --ff-only >/dev/null 2>&1 \
                 || log_warning "external skill source $source: pull failed, using cached checkout"
         fi
