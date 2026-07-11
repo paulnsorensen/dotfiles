@@ -25,13 +25,20 @@ teardown() {
     assert_output_contains "rollback"
 }
 
-# Stub a dotfiles tree wired for `dots upgrade`: packages/sync.sh prints its
-# UPGRADE_MODE, install-external.sh prints its args. Both must be invoked.
+# Stub a dotfiles tree wired for `dots upgrade`: `.sync` prints its args and
+# runs packages/sync.sh (mirroring the real do_sync path), packages/sync.sh
+# prints its UPGRADE_MODE, install-external.sh prints its args. All must be
+# invoked — `dots upgrade` now runs a refresh sync, then the skill refresh.
 stub_upgrade_dotfiles() {
     local stub_dir="$1"
     mkdir -p "$stub_dir/packages" "$stub_dir/bin" \
              "$stub_dir/chezmoi/lib" "$stub_dir/skills"
     cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    cat > "$stub_dir/.sync" <<'STUB'
+#!/bin/bash
+echo "stub-dotsync args=$*"
+bash "$(dirname "$0")/packages/sync.sh"
+STUB
     cat > "$stub_dir/packages/sync.sh" <<'STUB'
 #!/bin/bash
 echo "stub-sync UPGRADE_MODE=${UPGRADE_MODE:-unset}"
@@ -41,26 +48,30 @@ STUB
 echo "stub-skill-sync args=$*"
 STUB
     : > "$stub_dir/skills/_registry.yaml"
-    chmod +x "$stub_dir/packages/sync.sh" \
+    chmod +x "$stub_dir/.sync" "$stub_dir/packages/sync.sh" \
              "$stub_dir/chezmoi/lib/install-external.sh"
 }
 
-@test "dots upgrade runs packages/sync.sh with UPGRADE_MODE=true, then skill-sync --force" {
+@test "dots upgrade runs a refresh sync (UPGRADE_MODE=true), then skill-sync --force" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
     DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
     assert_success
     assert_output_contains "Upgrading packages"
+    # do_sync refresh: forwards the `refresh` arg (force-pulls the vendor cache)
+    # and runs packages/sync.sh with UPGRADE_MODE=true.
+    assert_output_contains "stub-dotsync args=refresh"
     assert_output_contains "stub-sync UPGRADE_MODE=true"
     assert_output_contains "Refreshing remote skills"
     assert_output_contains "stub-skill-sync args=$stub_dir/skills/_registry.yaml --force"
 
-    # Lock down ordering: package sync must run before skill refresh.
-    local pkg_line skill_line
-    pkg_line=$(printf '%s\n' "$output" | grep -n 'stub-sync UPGRADE_MODE=true' | head -1 | cut -d: -f1)
+    # Lock down ordering: the refresh sync (which installs package tools) must
+    # run before the npx skill refresh that depends on them.
+    local sync_line skill_line
+    sync_line=$(printf '%s\n' "$output" | grep -n 'stub-dotsync args=refresh' | head -1 | cut -d: -f1)
     skill_line=$(printf '%s\n' "$output" | grep -n 'stub-skill-sync args=' | head -1 | cut -d: -f1)
-    [[ "$pkg_line" -lt "$skill_line" ]] || {
-        echo "Expected package sync before skill refresh; got pkg=$pkg_line skill=$skill_line" >&2
+    [[ "$sync_line" -lt "$skill_line" ]] || {
+        echo "Expected refresh sync before skill refresh; got sync=$sync_line skill=$skill_line" >&2
         return 1
     }
 }
