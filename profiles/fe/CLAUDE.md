@@ -14,6 +14,8 @@ Defined in `profile.yaml` (closed world — `--strict-mcp-config`):
 - **context7** — `mcp__context7__*` — React, Tailwind, Next.js, and other lib docs.
 - **tilth** — `mcp__tilth__*` — AST-aware search/read when navigating components.
 - **tavily** — `mcp__tavily__*` — pattern research ("how do people build X in Next.js 15?").
+- **hallouminate** — `mcp__hallouminate__*` — repo-wiki grounding (`ground` / `read_markdown`); check for design-system / component conventions before writing.
+- **milknado** — `mcp__milknado__*` — Mikado execution (goal decomposition, batch planning) for larger FE work.
 - **Playwright (plugin)** — `mcp__plugin_playwright_playwright__*` — browser verification.
 - **claude.ai Figma** — `mcp__claude_ai_Figma__*` — design context when the user shares a figma.com URL.
 

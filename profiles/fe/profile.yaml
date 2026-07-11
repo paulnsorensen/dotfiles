@@ -1,6 +1,12 @@
 # fe — frontend / design-to-code (ccp parity).
 # Closed MCP world: library docs, AST nav, structural impact, web research,
-# plus shadcn (profile-local). Re-enables claude.ai connectors for Figma.
+# repo-wiki grounding (hallouminate), Mikado execution (milknado), plus shadcn
+# (profile-local). Re-enables claude.ai connectors for Figma.
+# NOTE: hallouminate + milknado are declared as plain MCP servers here (not via
+# enabled_plugins) so they load under --strict-mcp-config — the isolated launch
+# only loads MCPs from the generated --mcp-config, and does not restore custom
+# plugin marketplaces. Tool names are the bare mcp__hallouminate__* /
+# mcp__milknado__* forms (not the plugin-scoped mcp__plugin_*__ names).
 name: fe
 description: Frontend + shadcn/Figma/Playwright
 # Cheese sub-agents are available in this closed world too
@@ -40,3 +46,9 @@ mcps:
   - name: shadcn
     command: npx
     args: ["shadcn@latest", "mcp"]
+  - name: hallouminate
+    command: hallouminate
+    args: ["serve"]
+  - name: milknado
+    command: uvx
+    args: ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]
