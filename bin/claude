@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Guarded launcher for Claude Code — shadows ~/.local/bin/claude via PATH order.
+# Purpose: stop session storms from toppling crabbot (see ~/crabbot-stability-report.md).
+# Bypass all checks: CLAUDE_GUARD=0 claude ...
+
+set -euo pipefail
+REAL=/home/paul/.local/bin/claude
+
+if [[ "${CLAUDE_GUARD:-1}" != "0" ]]; then
+  sessions=$(pgrep -cx claude || true)
+  avail_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+  total_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+  avail_pct=$(( avail_kb * 100 / total_kb ))
+
+  if (( avail_pct < 15 )); then
+    echo "claude-guard: BLOCKED — only ${avail_pct}% RAM available (<15%). Close a session or CLAUDE_GUARD=0 to override." >&2
+    exit 1
+  fi
+  if (( sessions >= 4 )); then
+    echo "claude-guard: BLOCKED — ${sessions} claude sessions already running (ceiling 4). CLAUDE_GUARD=0 to override." >&2
+    exit 1
+  fi
+  if (( sessions >= 3 )); then
+    echo "claude-guard: warning — ${sessions} sessions running, ${avail_pct}% RAM available. Treat sessions like browser tabs." >&2
+  fi
+fi
+
+# Cap Claude Code's own V8 heap (documented unbounded-growth leaks).
+# Per-server NODE_OPTIONS in MCP configs override this for MCP children.
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
+
+exec "$REAL" "$@"
