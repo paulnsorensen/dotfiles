@@ -22,6 +22,8 @@ codex_prepend_root_defaults() {
     local file="$1"
     local defaults=()
 
+    codex_config_has '.model' "$file" || defaults+=('model = "gpt-5.6-terra"')
+    codex_config_has '.model_reasoning_effort' "$file" || defaults+=('model_reasoning_effort = "medium"')
     codex_config_has '.approval_policy' "$file" || defaults+=('approval_policy = "on-request"')
     codex_config_has '.sandbox_mode' "$file" || defaults+=('sandbox_mode = "workspace-write"')
     ((${#defaults[@]})) || return 0
