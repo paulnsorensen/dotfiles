@@ -72,13 +72,15 @@ MOCK
     [ -z "$dupes" ]
 }
 
-@test "rectangle_write_shortcuts: writes the exact plist-dict string per shortcut" {
+@test "rectangle_write_shortcuts: writes numeric-typed dict leaves per shortcut" {
     source "$RECT_LIB"
     rectangle_write_shortcuts com.test
     run cat "$DEFAULTS_LOG"
-    assert_output_contains "write com.test leftHalf { keyCode = 123; modifierFlags = 1835008; }"
-    assert_output_contains "write com.test firstThird { keyCode = 2; modifierFlags = 786432; }"
-    assert_output_contains "write com.test topLeft { keyCode = 123; modifierFlags = 917504; }"
+    # -dict-add ... -float lands NSNumber leaves per Rectangle's documented
+    # schema; the old ASCII plist-dict string form lands NSString (parser ignores).
+    assert_output_contains "write com.test leftHalf -dict-add keyCode -float 123 modifierFlags -float 1835008"
+    assert_output_contains "write com.test firstThird -dict-add keyCode -float 2 modifierFlags -float 786432"
+    assert_output_contains "write com.test topLeft -dict-add keyCode -float 123 modifierFlags -float 917504"
 }
 
 @test "rectangle_write_shortcuts: writes all 19 shortcuts plus 3 quality-of-life defaults" {

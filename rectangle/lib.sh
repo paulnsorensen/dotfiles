@@ -41,19 +41,17 @@ EOF
 }
 
 # Write every shortcut plus quality-of-life defaults to $bundle. Idempotent --
-# each `defaults write` overwrites cleanly.
+# every keyCode/modifierFlags leaf is rewritten each run.
 #
-# SCHEMA CAVEAT: each shortcut is written as the old-style ASCII plist-dict
-# STRING "{ keyCode = N; modifierFlags = M; }". Whether Rectangle Pro parses
-# this shape cannot be verified off-macOS. After a real sync, round-trip one
-# shortcut manually to confirm:
-#   defaults read com.knollsoft.Hookshot leftHalf
-# then check Rectangle Pro actually honors the binding in its UI.
+# Each shortcut is a dict of NUMERIC keyCode/modifierFlags, written via
+# `-dict-add ... -float N` per Rectangle's documented schema
+# (TerminalCommands.md). An ASCII plist-dict string "{ keyCode = N; ... }"
+# lands the leaves as NSString, which Rectangle's shortcut parser ignores.
 rectangle_write_shortcuts() {
     local bundle="$1" cmd keycode mods
     while IFS='|' read -r cmd keycode mods; do
         [[ -z "$cmd" ]] && continue
-        defaults write "$bundle" "$cmd" "{ keyCode = $keycode; modifierFlags = $mods; }"
+        defaults write "$bundle" "$cmd" -dict-add keyCode -float "$keycode" modifierFlags -float "$mods"
     done < <(rectangle_shortcuts)
 
     defaults write "$bundle" subsequentExecutionMode -int 0  # cycle 1/2 -> 2/3 -> 1/3 on repeat

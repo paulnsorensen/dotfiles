@@ -21,6 +21,9 @@ autoload -Uz compinit
     # path never fires again after the first 24h.
     [[ -s $dump ]] && touch $dump
   fi
+  # Compile the dump so compinit -C sources bytecode, not plain text. zrecompile
+  # is lock-safe and only rewrites when the .zwc is missing or stale.
+  autoload -Uz zrecompile && zrecompile -pq $dump
 }
 
 # cache completions
@@ -36,7 +39,11 @@ zstyle ':completion:*:descriptions' format '%B%d%b'
 zstyle ':completion:*:messages' format '%d'
 zstyle ':completion:*:warnings' format 'No matches for: %d'
 zstyle ':completion:*' group-name ''
-zstyle ':completion:*' completer _oldlist _expand _complete _correct _approximate
+# _correct/_approximate are fallback-only (run only when _complete finds nothing),
+# but unbounded they run an O(candidates) edit-distance search on every failed
+# completion. _match enables pattern completion; max-errors caps the fuzzy search.
+zstyle ':completion:*' completer _oldlist _expand _complete _match _approximate
+zstyle ':completion:*:approximate:*' max-errors 1 numeric
 # Have the newer files last so I see them first
 zstyle ':completion:*' file-sort modification reverse
 

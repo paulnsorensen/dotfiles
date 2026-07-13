@@ -90,6 +90,19 @@ EOF
     [[ "$output" == *"relaunch failed"* ]]
 }
 
+# ── rectangle_write_shortcuts typing ──
+
+@test "rectangle_write_shortcuts writes numeric-typed dict leaves, not an ASCII plist string" {
+    source "$LIB"
+    run rectangle_write_shortcuts com.knollsoft.Hookshot
+    [ "$status" -eq 0 ]
+    # Rectangle's documented schema: -dict-add with -float leaves (NSNumber),
+    # so keyCode/modifierFlags land as numbers the shortcut parser honors.
+    grep -qF 'defaults write com.knollsoft.Hookshot leftHalf -dict-add keyCode -float 123 modifierFlags -float 1835008' "$MOCK_LOG"
+    # the old ASCII plist-dict string form (lands leaves as NSString) must be gone
+    ! grep -qF '{ keyCode =' "$MOCK_LOG"
+}
+
 # ── rectangle_sync guards ──
 
 @test "rectangle_sync skips on non-macOS and writes nothing" {
