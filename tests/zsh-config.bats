@@ -163,6 +163,38 @@ SH
     ! grep -q "HISTSIZE" "$completion_file"
 }
 
+@test "completion.zsh bounds approximate-completion cost and compiles the dump" {
+    local f="$REAL_DOTFILES_DIR/zsh/completion.zsh"
+
+    # _approximate must be capped so a failed completion over a large candidate
+    # set (e.g. 300+ git branches) can't run an unbounded edit-distance search.
+    grep -Eq "zstyle ':completion:\*:approximate:\*' max-errors" "$f"
+
+    # the per-keypress-cost trap _correct is dropped in favor of _match
+    grep -Eq "completer .*_complete _match _approximate" "$f"
+    ! grep -Eq "completer .*_correct" "$f"
+
+    # compile the dump so compinit -C sources bytecode, not plain text
+    grep -q "zrecompile" "$f"
+}
+
+@test "completion.zsh: completer + max-errors zstyles resolve (not just present in text)" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    # Behavioural, not a grep: source the file and read back what zsh's own
+    # zstyle engine resolved — a bad context pattern would pass a grep but fail
+    # here. Isolated HOME so compinit/zrecompile can't touch the real ~/.zcompdump.
+    local zhome; zhome="$(mktemp -d)"
+    run zsh -c "HOME='$zhome'; ZDOTDIR='$zhome'; source '$REAL_DOTFILES_DIR/zsh/completion.zsh' 2>/dev/null
+        zstyle -L ':completion:*' completer
+        zstyle -L ':completion:*:approximate:*' max-errors"
+    rm -rf "$zhome"
+    assert_success
+    # capped fuzzy fallback: _match in, _correct out, max-errors bounded
+    [[ "$output" == *"completer _oldlist _expand _complete _match _approximate"* ]]
+    [[ "$output" != *"_correct"* ]]
+    [[ "$output" == *"approximate:*' max-errors 1 numeric"* ]]
+}
+
 @test "zshenv sets a mosh-server idle-network timeout (moshi reconnect-storm hardening)" {
     local zshenv_file="$REAL_DOTFILES_DIR/zshenv"
 
