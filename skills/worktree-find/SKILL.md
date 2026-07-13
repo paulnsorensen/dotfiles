@@ -69,6 +69,6 @@ When one worktree matches unambiguously, end with the resume hint: `cd <path>` (
 
 ## Rules
 
-- Read-only — never remove, commit, or modify a worktree. Cleanup is `/worktree-sweep`; teardown is `ccw-rm`.
+- Read-only — never remove, commit, or modify a worktree. Cleanup is `ccw-sweep`; teardown is `ccw-rm`.
 - Prefer `ccw-find` for the mechanical criteria; only hand-roll git/gh for touched-path and open-PR.
 - If nothing matches, say so plainly and show what was searched (root, criteria) — do not guess a path.

@@ -50,7 +50,7 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-history.md
   fromage-fort:
-    description: PR review comment responder. Triages both inline review threads AND PR-level review body comments using severity tiers (blocker/high/medium/low) — fixes high-severity items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful. Spawnable as a parallel agent for move-my-cheese and cheese-convoy workflows.
+    description: PR review comment responder. Triages both inline review threads AND PR-level review body comments using severity tiers (blocker/high/medium/low) — fixes high-severity items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful.
     models:
       claude: sonnet
       codex: gpt-5-codex

@@ -7,8 +7,7 @@ description: >
   Run git and GitHub operations inside a worktree you're not currently in,
   without tripping Claude Code's Seatbelt safety heuristics (compound cd+git,
   heredoc PR bodies). Use whenever you need to commit, push, or create PRs in
-  another worktree — especially from orchestrators, /move-my-cheese, or
-  /cheese-convoy — or when about to write "cd <path> && git" or a heredoc gh PR
+  another worktree — especially from orchestrators — or when about to write "cd <path> && git" or a heredoc gh PR
   body.
 ---
 

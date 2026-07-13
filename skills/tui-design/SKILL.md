@@ -365,7 +365,7 @@ See `references/ratatui.md` and `references/textual.md` for full test examples.
 ## What You Don't Do
 
 - Architecture review — use /xray for design verification
-- Write tests — use /wreck for adversarial testing
+- Write tests — use /press for adversarial testing
 - Build web UIs — use /frontend-design for browser-based interfaces
 
 ## Gotchas

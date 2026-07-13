@@ -20,7 +20,7 @@ Nothing here is symlinked into `~/.claude/` anymore — a directory symlink let 
 
 ```
 claude/
-├── commands/         # Slash commands (/spec, /wreck, /test, etc.)
+├── commands/         # Slash commands (/scaffold, /setup-perms, etc.)
 ├── hooks/            # Pre-tool enforcement hooks + lifecycle hooks
 ├── lib/              # Shared sync helpers (sync-common.sh)
 ├── plugins/          # Plugin registry and sync script
@@ -45,18 +45,10 @@ Slash commands invoked with `/command-name`.
 
 | Command | Description |
 |---------|-------------|
-| `/spec` | Discovery dialogue to architect a feature and produce a specification |
 | `/scaffold` | Scaffold a new domain slice following Sliced Bread architecture |
 
-### Review & Quality Commands
-
-| Command | Use When |
-|---------|----------|
-| `/copilot-review` | PR review -- analyze, present findings, route fixes to Copilot |
-| `/copilot-delegate` | Delegate PR fixes to GitHub Copilot via inline comments |
-| `/copilot-setup` | Generate GitHub Copilot agent and review instructions for a repo |
-| `/wreck` | Adversarial test writer (roquefort-wrecker) |
-| `/test` | Run existing tests via whey-drainer, returns concise summary |
+Retired commands superseded by the easy-cheese kit live in `archive/`
+(see `archive/README.md` for the what-replaced-what table).
 
 ### Utility Commands
 
@@ -70,7 +62,6 @@ Slash commands invoked with `/command-name`.
 | Command | Description |
 |---------|-------------|
 | `/pingpong` | TDD pairing -- AI writes tests, you implement |
-| `/duck` | Rubber duck problem-solving |
 | `/hint` | Progressive hints (3 levels) |
 | `/explain` | Concept explanation with quizzes |
 
