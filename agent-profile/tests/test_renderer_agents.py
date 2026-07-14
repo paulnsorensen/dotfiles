@@ -228,6 +228,14 @@ def test_codex_body_excludes_frontmatter(tmp_path: Path) -> None:
     assert "You are the ghostbuster." in content
 
 
+def test_codex_agent_renders_gpt_5_6_model_override(tmp_path: Path) -> None:
+    CodexRenderer().render(
+        _agent_manifest(tmp_path, models={"codex": "gpt-5.6-sol"}), tmp_path
+    )
+    content = (tmp_path / ".codex" / "agents" / "ghostbuster.toml").read_text()
+    assert 'model = "gpt-5.6-sol"' in content
+
+
 def test_codex_sandbox_read_only_from_whitelist(tmp_path: Path) -> None:
     CodexRenderer().render(
         _agent_manifest(tmp_path, tools=["Read", "Grep"]), tmp_path

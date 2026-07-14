@@ -12,7 +12,8 @@ setup() {
     SRC_DIR="$TEST_HOME/codex-src"
     mkdir -p "$SRC_DIR"
     cat > "$SRC_DIR/config.toml" <<'TOML'
-model = "gpt-5"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
 approval_policy = "on-request"
 TOML
 }
@@ -37,7 +38,8 @@ teardown() { teardown_test_env; }
     run bash "$INSTALLER" "$SRC_DIR"
     assert_success
     assert_output_contains "Scaffolded"
-    [[ "$(yq -p=toml '.model' "$CODEX_HOME/config.toml")" == "gpt-5" ]]
+    [[ "$(yq -p=toml '.model' "$CODEX_HOME/config.toml")" == "gpt-5.6-terra" ]]
+    [[ "$(yq -p=toml '.model_reasoning_effort' "$CODEX_HOME/config.toml")" == "medium" ]]
     [[ "$(yq -p=toml '.approval_policy' "$CODEX_HOME/config.toml")" == "on-request" ]]
     [[ "$(yq -p=toml '.sandbox_mode' "$CODEX_HOME/config.toml")" == "workspace-write" ]]
     [[ "$(yq -p=toml '.sandbox_workspace_write.network_access' "$CODEX_HOME/config.toml")" == "true" ]]
@@ -57,11 +59,26 @@ USER
     assert_success
     assert_output_contains "backfilled missing defaults"
     [[ "$(yq -p=toml '.model' "$CODEX_HOME/config.toml")" == "gpt-codex-user" ]]
+    [[ "$(yq -p=toml '.model_reasoning_effort' "$CODEX_HOME/config.toml")" == "medium" ]]
     [[ "$(yq -p=toml '.mcp_servers.custom.command' "$CODEX_HOME/config.toml")" == "my-tool" ]]
     [[ "$(yq -p=toml '.approval_policy' "$CODEX_HOME/config.toml")" == "on-request" ]]
     [[ "$(yq -p=toml '.sandbox_mode' "$CODEX_HOME/config.toml")" == "workspace-write" ]]
     [[ "$(yq -p=toml '.sandbox_workspace_write.network_access' "$CODEX_HOME/config.toml")" == "true" ]]
     [[ "$(yq -p=toml '.tui.input_mode' "$CODEX_HOME/config.toml")" == "vim" ]]
+}
+
+@test "install-codex.sh preserves explicit reasoning while backfilling a missing model" {
+    export CODEX_HOME="$TEST_HOME/.codex"
+    mkdir -p "$CODEX_HOME"
+    cat > "$CODEX_HOME/config.toml" <<'USER'
+model_reasoning_effort = "high"
+approval_policy = "never"
+USER
+    run bash "$INSTALLER" "$SRC_DIR"
+    assert_success
+    [[ "$(yq -p=toml '.model' "$CODEX_HOME/config.toml")" == "gpt-5.6-terra" ]]
+    [[ "$(yq -p=toml '.model_reasoning_effort' "$CODEX_HOME/config.toml")" == "high" ]]
+    [[ "$(yq -p=toml '.approval_policy' "$CODEX_HOME/config.toml")" == "never" ]]
 }
 
 @test "install-codex.sh honors CODEX_HOME override" {

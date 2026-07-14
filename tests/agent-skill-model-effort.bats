@@ -8,10 +8,10 @@
 # skill model-less and every other test would still pass. These assertions are
 # the regression guard for the retune: they fail the moment the mapping drifts.
 #
-# Scope: the Claude tier only (models.claude / skill `model:`) and the shared
-# `effort:` field — the axes the spec retuned. Per-harness codex/cursor models
-# are deliberately out of scope (spec Locked Decision 4). xhigh/max are reserved
-# for the manual deep-think path and must not appear on any agent/skill.
+# Scope: Claude models/efforts plus the Codex model tier paired to each agent.
+# The Codex mapping is high/opus→Sol, medium/sonnet→Terra, low/haiku→Luna.
+# xhigh/max remain reserved for the manual deep-think path and must not appear
+# on any agent/skill.
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 REGISTRY="$DOTFILES_DIR/agents/registry.yaml"
@@ -25,6 +25,15 @@ expected_effort() {
         haiku) echo low ;;
         sonnet) echo medium ;;
         opus) echo high ;;
+        *) echo "UNMAPPED" ;;
+    esac
+}
+
+expected_codex_model() {
+    case "$1" in
+        haiku) echo gpt-5.6-luna ;;
+        sonnet) echo gpt-5.6-terra ;;
+        opus) echo gpt-5.6-sol ;;
         *) echo "UNMAPPED" ;;
     esac
 }
@@ -58,6 +67,19 @@ expected_effort() {
         effort="$(yq -r ".agents.\"$a\".effort // \"\"" "$REGISTRY")"
         [[ "$effort" != "xhigh" && "$effort" != "max" ]] \
             || { echo "agent '$a' has reserved effort '$effort' (xhigh/max are manual-only)" >&2; return 1; }
+    done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
+}
+
+@test "every agent uses the GPT-5.6 Codex model matching its tier" {
+    local a claude_model codex_model want
+    while IFS= read -r a; do
+        claude_model="$(yq -r ".agents.\"$a\".models.claude // \"\"" "$REGISTRY")"
+        codex_model="$(yq -r ".agents.\"$a\".models.codex // \"\"" "$REGISTRY")"
+        want="$(expected_codex_model "$claude_model")"
+        [[ "$want" != "UNMAPPED" ]] \
+            || { echo "agent '$a' claude model '$claude_model' has no Codex tier mapping" >&2; return 1; }
+        [[ "$codex_model" == "$want" ]] \
+            || { echo "agent '$a' codex model '$codex_model' — mapping wants '$want'" >&2; return 1; }
     done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
 }
 

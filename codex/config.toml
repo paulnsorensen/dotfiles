@@ -6,6 +6,8 @@
 #
 # Reference: https://developers.openai.com/codex/config-reference
 
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
 approval_policy = "on-request"
 approvals_reviewer = "auto_review"
 sandbox_mode = "workspace-write"

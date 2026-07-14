@@ -97,20 +97,19 @@ omp:
       autoqa:
         consent: granted
     # Reasoning goes to the interactive session (default) and the reasoning
-    # roles (plan/slow). Delegation/dispatch roles that "just do work" —
-    # smol/tiny/task/commit — stay on cheap/no-reasoning models so subagent
-    # fan-out and commit-message generation never ride the reasoning cost.
+    # roles (plan/slow). GPT-5.6 Sol is the high-cost/deep tier; Terra is the
+    # everyday Codex model; Luna covers cheap delegation and commit text.
     # `task` in particular inherits the active session model unless pinned.
     modelRoles:
-      default: openai-codex/gpt-5.5:medium
-      smol: openai-codex/gpt-5.4-mini
-      plan: openai-codex/gpt-5.5:xhigh
-      advisor: openai-codex/gpt-5.5
-      tiny: openai-codex/gpt-5.4-nano
-      slow: openai-codex/gpt-5.5:xhigh
-      task: openai-codex/gpt-5.4-mini
-      commit: openai-codex/gpt-5.4-mini
-      vision: openai-codex/gpt-5.4
+      default: openai-codex/gpt-5.6-terra:medium
+      smol: openai-codex/gpt-5.6-luna
+      plan: openai-codex/gpt-5.6-sol:xhigh
+      advisor: openai-codex/gpt-5.6-sol
+      tiny: openai-codex/gpt-5.6-luna
+      slow: openai-codex/gpt-5.6-sol:xhigh
+      task: openai-codex/gpt-5.6-luna
+      commit: openai-codex/gpt-5.6-luna
+      vision: openai-codex/gpt-5.6-terra
   # Local LLM stack — LiteLLM proxy front (~/local-llm), OpenAI-compatible.
   # Keyless: the proxy sets no master_key, so no Authorization header is sent.
   # contextWindow per model matches the backend's launched --ctx-size in
