@@ -4,9 +4,10 @@
 # Bypass all checks: CLAUDE_GUARD=0 claude ...
 
 set -euo pipefail
-REAL=/home/paul/.local/bin/claude
+REAL="$HOME/.local/bin/claude"
 
-if [[ "${CLAUDE_GUARD:-1}" != "0" ]]; then
+# Guard checks are Linux-only (crabbot): pgrep -c and /proc/meminfo don't exist on macOS.
+if [[ "${CLAUDE_GUARD:-1}" != "0" && -r /proc/meminfo ]]; then
   sessions=$(pgrep -cx claude || true)
   avail_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
   total_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
