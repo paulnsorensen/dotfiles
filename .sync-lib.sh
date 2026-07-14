@@ -250,15 +250,15 @@ _cz_render_claude_agent() {
     } > "$out"
 }
 
-# Vendor external skills (skills/_registry.yaml sources that include claude)
-# into <dst>. Clones each source into a cache dir; offline falls back to the
-# cached checkout with a warning. A source that has never been cloned and
-# cannot be cloned fails the assembly (loud, per fail-fast). Unpinned sources
-# float to latest of their default branch on every sync (offline → cached
-# checkout); a pin change is always honored, an unchanged pin costs no network.
-#   _cz_vendor_external_skills <skills_registry_yaml> <dst_dir>
+# Vendor external skills from skills/_registry.yaml into <dst>. Clones each
+# source into a cache dir; offline falls back to the cached checkout with a
+# warning. A source that has never been cloned and cannot be cloned fails the
+# assembly (loud, per fail-fast). Unpinned sources float to latest of their
+# default branch on every sync (offline → cached checkout); a pin change is
+# always honored, an unchanged pin costs no network.
+#   _cz_vendor_external_skills <skills_registry_yaml> <dst_dir> <harness>
 _cz_vendor_external_skills() {
-    local registry="$1" dst="$2"
+    local registry="$1" dst="$2" harness="$3"
     [[ -f "$registry" ]] || return 0
     local cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/claude-skill-sources"
     mkdir -p "$cache_root"
@@ -266,10 +266,10 @@ _cz_vendor_external_skills() {
     local source
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
-        # Per-source harness filter: absent → all harnesses (claude included).
+        # Per-source harness filter: absent means every harness.
         local harnesses
-        harnesses=$(yq -r ".sources.\"$source\".harnesses // [\"claude\"] | join(\" \")" "$registry")
-        [[ " $harnesses " == *" claude "* ]] || continue
+        harnesses=$(yq -r ".sources.\"$source\".harnesses // [] | join(\" \")" "$registry")
+        [[ -z "$harnesses" || " $harnesses " == *" $harness "* ]] || continue
 
         local pin cache
         pin=$(yq -r ".sources.\"$source\".pin // \"\"" "$registry")
@@ -357,7 +357,7 @@ sync_claude_chezmoi_sources() {
         fi
         _cz_copy_encoded "$root/skills/$name" "$staging/exact_skills/$(_cz_encode_name "$name" true false)" || return 1
     done < <(yq -r '.claude.skills // [] | .[]' "$claude_reg")
-    _cz_vendor_external_skills "$root/skills/_registry.yaml" "$staging/exact_skills" || return 1
+    _cz_vendor_external_skills "$root/skills/_registry.yaml" "$staging/exact_skills" claude || return 1
     mkdir -p "$staging/exact_skills"
 
     # agents — rendered from agents/registry.yaml
@@ -407,6 +407,51 @@ sync_claude_chezmoi_sources() {
         fi
     done
     log_info "Assembled claude chezmoi source state (dot_claude/exact_*)"
+    return 0
+}
+
+# Assemble the OMP-native global skills payload from the same selected sources
+# as Claude. OMP discovers ~/.omp/agent/skills independently; it never reads
+# ~/.agents/skills or ~/.claude/skills.
+#   sync_omp_chezmoi_sources <dotfiles_root> [<chezmoi_source_dir>]
+sync_omp_chezmoi_sources() {
+    local root="$1"
+    local src="${2:-$root/chezmoi}"
+    local claude_reg="$src/.chezmoidata/claude.yaml"
+
+    if ! command -v yq &>/dev/null; then
+        log_warning "yq not found — skipping OMP chezmoi source assembly"
+        return 0
+    fi
+    if [[ ! -f "$claude_reg" ]]; then
+        log_error "claude registry not found: $claude_reg"
+        return 1
+    fi
+
+    local staging
+    staging=$(mktemp -d "${TMPDIR:-/tmp}/omp-cz-src.XXXXXX") || return 1
+    # shellcheck disable=SC2064
+    trap "rm -rf '$staging'" RETURN
+
+    local name
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        if [[ ! -d "$root/skills/$name" ]]; then
+            log_error "OMP skill selection references unknown skill: $name (no skills/$name)"
+            return 1
+        fi
+        _cz_copy_encoded "$root/skills/$name" "$staging/exact_skills/$(_cz_encode_name "$name" true false)" || return 1
+    done < <(yq -r '.claude.skills // [] | .[]' "$claude_reg")
+    _cz_vendor_external_skills "$root/skills/_registry.yaml" "$staging/exact_skills" omp || return 1
+    mkdir -p "$staging/exact_skills"
+
+    if ! rm -rf "${src:?}/dot_omp/private_agent/exact_skills" \
+        || ! mkdir -p "$src/dot_omp/private_agent" \
+        || ! mv "$staging/exact_skills" "$src/dot_omp/private_agent/exact_skills"; then
+        log_error "OMP source assembly: staging swap failed for exact_skills — source state may be incomplete; rerun dots sync before chezmoi apply"
+        return 1
+    fi
+    log_info "Assembled OMP chezmoi source state (dot_omp/private_agent/exact_skills)"
     return 0
 }
 

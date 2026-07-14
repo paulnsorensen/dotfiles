@@ -144,6 +144,14 @@ if ! sync_claude_chezmoi_sources "$dotfiles_dir" "$script_dir"; then
     exit 1
 fi
 
+# Assemble the OMP-native global skill payload separately. OMP only discovers
+# ~/.omp/agent/skills, so the Claude/global skills directories are not a
+# substitute.
+if ! sync_omp_chezmoi_sources "$dotfiles_dir" "$script_dir"; then
+    echo "  ERROR: OMP chezmoi source assembly failed — aborting chezmoi apply" >&2
+    exit 1
+fi
+
 # Trigger chezmoi apply from this checkout so workspace syncs use the source
 # tree that launched dots sync, not a stale sourceDir preserved in
 # ~/.config/chezmoi/chezmoi.toml. Partial-OK — we don't abort the rest of

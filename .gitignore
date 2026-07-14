@@ -107,6 +107,7 @@ tmux/theme.conf
 # (sync_claude_chezmoi_sources); repo dirs skills/, agents/, claude/ are the
 # source of truth.
 chezmoi/dot_claude/exact_*/
+chezmoi/dot_omp/private_agent/exact_skills/
 
 # Node install artifacts (hook runner deps; package-lock.json is tracked)
 node_modules/
