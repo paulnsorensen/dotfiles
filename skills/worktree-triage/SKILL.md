@@ -5,7 +5,7 @@ description: >
   fanning out one read-only haiku content-digest sub-agent per worktree so the
   verdict rests on real contents (unique commits, uncommitted diff, untracked
   files), not just metadata. Use when asked to "triage worktrees", "what's in
-  these stale worktrees", or when /worktree-sweep --triage runs. Recommends only —
+  these stale worktrees". Recommends only —
   never removes, commits, or stashes anything itself.
 model: sonnet
 effort: medium

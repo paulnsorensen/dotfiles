@@ -272,7 +272,6 @@ claude:
     - session-analytics
     - settings-clean
     - skill-improver
-    - spec-verify
     - steel-thread
     - tdd-assertions
     - test-sandbox

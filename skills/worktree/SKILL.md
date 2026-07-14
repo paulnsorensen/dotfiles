@@ -51,7 +51,7 @@ Then `cd` into the worktree path.
 
 - Commit, push, or create PRs — use /wt-git for git operations in worktrees
 - Set up full project environments — only creates the worktree and seeds settings
-- Delete worktrees — use /worktree-sweep for cleanup
+- Delete worktrees — use ccw-sweep for cleanup
 
 ## Gotchas
 

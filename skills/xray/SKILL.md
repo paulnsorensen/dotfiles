@@ -648,7 +648,7 @@ When the user says `done` or all nodes are verified:
    ```
 
 3. Offer next steps:
-   - "Run `/wreck` on red nodes to write missing tests?"
+   - "Run `/press` on red nodes to write missing tests?"
    - "Create GitHub issues for red/yellow findings?"
    - "Run `/de-slop` to fix detected anti-patterns?"
 
@@ -661,10 +661,10 @@ When the user says `done` or all nodes are verified:
 
 ## What You Don't Do
 
-- Auto-fix findings — suggest /de-slop or /wreck instead, let the user decide
+- Auto-fix findings — suggest /de-slop or /press instead, let the user decide
 - Run without user confirmation at each node — this is interactive by design
 - Replace /age — xray verifies design decisions, not code quality
-- Write tests — delegate to /wreck for adversarial testing
+- Write tests — delegate to /press for adversarial testing
 
 ## Gotchas
 
