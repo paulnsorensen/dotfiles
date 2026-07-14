@@ -368,3 +368,13 @@ YAML
     [ "$status" -eq 0 ]
     [ ! -e "$SRC/dot_claude/exact_skills/exact_ext-skill" ]
 }
+
+
+@test "OMP assembly: mirrors selected and OMP-eligible external skills into native discovery path" {
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && sync_omp_chezmoi_sources '$ROOT' '$SRC'"
+    [ "$status" -eq 0 ]
+    local base="$SRC/dot_omp/private_agent/exact_skills"
+    [ -f "$base/exact_alpha-skill/SKILL.md" ]
+    [ -f "$base/exact_beta-skill/SKILL.md" ]
+    [ -f "$base/exact_ext-skill/SKILL.md" ]
+}
