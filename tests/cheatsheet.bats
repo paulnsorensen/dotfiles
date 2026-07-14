@@ -8,7 +8,7 @@ ZSH_DIR="$DOTFILES_DIR/zsh"
 BIN_DIR="$DOTFILES_DIR/bin"
 
 # Internal helpers / prompt machinery — defined in zsh/*.zsh but not user shortcuts.
-INTERNAL="_cc_base _cdd sesh-sessions periodic TRAPWINCH render_prompt update_git_cache git_time_details time_since_commit _vaudeville_register_argcomplete _init_cache"
+INTERNAL="_cc_base _cdd sesh-sessions periodic TRAPWINCH TRAPUSR1 render_prompt update_git_cache git_time_details time_since_commit _prompt_cleanup _prompt_async_start _prompt_async_worker _prompt_git_compute _prompt_load_git_state _vaudeville_register_argcomplete _init_cache"
 # zsh tmux/remote shortcuts — documented in tmux-cheatsheet, not the main sheet.
 TMUX_OWNED="mtmux trl tss tsip ta tls tn tk tsw"
 # Commands provided by external tools (not defined as aliases/functions here).
