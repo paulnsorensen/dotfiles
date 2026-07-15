@@ -30,10 +30,31 @@ defaults write com.cmuxterm.app browserOpenTerminalLinksInCmuxBrowser -bool fals
 
 # Disable the input-source switching shortcuts so they free up Control+Space
 # for the tmux prefix. ID 60 = "Select the previous input source" (⌃Space),
-# ID 61 = "Select next source in Input menu" (⌃⇧Space, the reverse).
+# ID 61 = "Select next source in Input menu" (⌃⌥Space, the reverse).
+#
+# CAVEAT (macOS 26 Tahoe): writing enabled=0 here sets the *preference*, which a
+# fresh login reads — but it does NOT disable the shortcut on an already-running
+# session (activateSettings no longer flushes it). To take effect now without a
+# logout, also uncheck it in:
+#   System Settings > Keyboard > Keyboard Shortcuts… > Input Sources >
+#   "Select the previous input source".
 defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 60 "{enabled = 0;}"
 defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 61 "{enabled = 0;}"
-# Reload the symbolic-hotkey settings so the change takes effect without re-login.
+
+# Show Launchpad on ⌘⇧Space (ID 160): parameters = (32 = space char, 49 = space
+# keycode, 1179648 = ⌘+⇧). Verified working on macOS 26 (Tahoe).
+defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 160 "{enabled = 1; value = { parameters = (32, 49, 1179648); type = standard; }; }"
+
+# NOT scriptable here (managed elsewhere, left untouched by this script):
+#   - Spotlight's ⌘Space (Tahoe "Super Spotlight") lives in an opaque
+#     SSActionKeyboardAliasStore — change it in System Settings > Keyboard >
+#     Keyboard Shortcuts… > Spotlight. (We moved Spotlight to ⌃⌘Space there.)
+#   - Alfred's launcher hotkey (⌘Space) is set in the Alfred app; to version it,
+#     point Alfred's sync folder at $DOTFILES/alfred/ (see alfred/.sync).
+
+# Reload symbolic-hotkey prefs. On Tahoe this reliably applies additive bindings
+# (e.g. ID 160) but may NOT disable a reserved system shortcut on a live session
+# (see ID 60 caveat above) — a logout or the System Settings toggle is the sure fix.
 /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u || true
 
 for plist in "$SCRIPT_DIR"/*.plist; do
