@@ -93,6 +93,16 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ $status -eq 0 ]]
 }
 
+@test "hallouminate plugin reaches every supported harness" {
+    local registry="$DOTFILES_DIR/agents/plugins/registry.yaml"
+    [[ -f "$registry" ]] || skip "cross-harness plugin registry not found"
+
+    run yq -r '.plugins.hallouminate.harnesses | sort | join(",")' "$registry"
+    [[ $status -eq 0 ]]
+    [[ "$output" == "claude,codex,copilot,crush,cursor,opencode" ]]
+    [[ "$(yq -r '.plugins.hallouminate.native' "$registry")" == "true" ]]
+}
+
 @test "packages.yaml is valid YAML" {
     run yq '.' "$DOTFILES_DIR/packages/packages.yaml"
     [[ $status -eq 0 ]]

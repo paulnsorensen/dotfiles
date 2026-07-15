@@ -808,6 +808,19 @@ YAML
     grep -qE 'chezmoi .*apply --force' "$CHEZMOI_SYNC"
 }
 
+@test "hallouminate nightly installer fails clearly without npm" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-hallouminate.sh.tmpl"
+    local script="$TEST_HOME/install-hallouminate.sh"
+    chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
+    mkdir -p "$TEST_HOME/empty-bin"
+
+    run env PATH="$TEST_HOME/empty-bin" /bin/bash "$script"
+    assert_failure
+    assert_output_contains "npm is required to install @paulnsorensen/hallouminate-nightly"
+}
+
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────
 
 @test "chezmoi apply deploys the assembled ~/.claude payload + renders templates" {
@@ -829,30 +842,13 @@ YAML
     chmod +x "$claude_bin/claude"
     PATH="$claude_bin:$PATH"
 
-    # The hallouminate run_onchange installer hits the network (gh api +
-    # curl-piped installer) when the binary isn't already present. CI's
-    # isolated $HOME has no gh auth, so `gh api` fails hard (exit 4, not
-    # just empty output) and the script would fall through to a REAL
-    # release download — non-hermetic and flaky. Stub both `hallouminate`
-    # (already "installed") and `gh`'s releases/latest lookup to the same
-    # fake tag so the script's existing already-latest short-circuit fires
-    # and no network call happens, mirroring the claude-CLI stub above.
-    local hallouminate_bin="$TEST_HOME/fake-hallouminate-bin"
-    mkdir -p "$hallouminate_bin"
-    printf '#!/usr/bin/env bash\necho "hallouminate 0.0.0-test"\n' > "$hallouminate_bin/hallouminate"
-    chmod +x "$hallouminate_bin/hallouminate"
-    printf '#!/usr/bin/env bash\ncase "$*" in\n  *"releases/latest"*) echo "v0.0.0-test" ;;\n  *) exit 1 ;;\nesac\n' > "$hallouminate_bin/gh"
-    chmod +x "$hallouminate_bin/gh"
-    PATH="$hallouminate_bin:$PATH"
-
-    # The tilth run_onchange installer must also stay hermetic during the
-    # end-to-end apply. Simulate offline npm and an absent global package:
-    # the script should warn and continue, not abort under `set -euo pipefail`
-    # from the failed `npm ls` probe or attempt a real install.
+    # The hallouminate and tilth run_onchange installers resolve their npm
+    # nightlies during apply. Keep the e2e hermetic: both see npm as offline
+    # and absent, warn, and never attempt a global install.
     local npm_bin="$TEST_HOME/fake-npm-bin"
     mkdir -p "$npm_bin"
     # shellcheck disable=SC2016
-    printf '#!/usr/bin/env bash\ncase "$1 $2 $3" in\n  "view @paulnsorensen/tilth-nightly version") exit 1 ;;\n  "ls -g @paulnsorensen/tilth-nightly") exit 1 ;;\n  "ls -g tilth") exit 1 ;;\n  "install -g @paulnsorensen/tilth-nightly@latest") echo "unexpected npm install" >&2; exit 99 ;;\n  *) echo "unexpected npm $*" >&2; exit 99 ;;\nesac\n' > "$npm_bin/npm"
+    printf '#!/usr/bin/env bash\ncase "$1 $2 $3" in\n  "view @paulnsorensen/hallouminate-nightly version"|"view @paulnsorensen/tilth-nightly version") exit 1 ;;\n  "ls -g @paulnsorensen/hallouminate-nightly"|"ls -g @paulnsorensen/tilth-nightly"|"ls -g hallouminate"|"ls -g tilth") exit 1 ;;\n  "install -g @paulnsorensen/hallouminate-nightly@latest"|"install -g @paulnsorensen/tilth-nightly@latest") echo "unexpected npm install" >&2; exit 99 ;;\n  *) echo "unexpected npm $*" >&2; exit 99 ;;\nesac\n' > "$npm_bin/npm"
     chmod +x "$npm_bin/npm"
     PATH="$npm_bin:$PATH"
 
