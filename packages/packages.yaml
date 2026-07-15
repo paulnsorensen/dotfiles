@@ -132,8 +132,10 @@ packages:
   # Cargo
   - cargo-llvm-cov: { source: cargo }
   - cargo-update: { source: cargo }            # provides `cargo install-update` for idempotent `dots up`
-  - tilth: { source: cargo, git: "https://github.com/paulnsorensen/tilth", branch: main }
-  - hallouminate: { source: cargo, git: "https://github.com/paulnsorensen/hallouminate", branch: main }
+  # tilth and hallouminate are installed from their npm nightly channels
+  # (@paulnsorensen/{tilth,hallouminate}-nightly) by the run_onchange_after_
+  # install-{tilth,hallouminate}.sh.tmpl scripts — a cargo build here would
+  # shadow that nightly binary on PATH.
   # Install from Git because the crates.io `rtk` collides with the desired package.
   # If an unrelated `rtk` is already present from `cargo install rtk`, remove it first
   # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.
