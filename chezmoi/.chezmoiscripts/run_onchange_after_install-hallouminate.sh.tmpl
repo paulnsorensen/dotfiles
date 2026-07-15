@@ -1,6 +1,6 @@
 #!/bin/bash
 # run_onchange — keeps the hallouminate binary on the fork's nightly channel
-# current on every `dots sync`, mirroring install-tilth.sh.tmpl.
+# current on every `dots sync`, mirroring run_onchange_after_install-tilth.sh.tmpl.
 #
 # hallouminate is Paul's fork (github.com/paulnsorensen/hallouminate). Its
 # nightly workflow publishes a rolling npm package
@@ -23,6 +23,10 @@
 set -euo pipefail
 
 PKG="@paulnsorensen/hallouminate-nightly"
+if ! command -v npm >/dev/null 2>&1; then
+    echo "ERROR: npm is required to install $PKG; install Node.js and rerun 'dots sync'." >&2
+    exit 1
+fi
 
 installed_version() {
     npm ls -g "$PKG" --depth=0 2>/dev/null | sed -n 's/.*hallouminate-nightly@//p' | tr -d '[:space:]' || true
