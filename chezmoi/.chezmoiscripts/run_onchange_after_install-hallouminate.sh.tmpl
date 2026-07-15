@@ -1,53 +1,23 @@
 #!/bin/bash
-# run_onchange — keeps the hallouminate binary on the fork's nightly channel
-# current on every `dots sync`, mirroring install-tilth.sh.tmpl.
+# run_onchange — keeps the hallouminate nightly binary current and deploys its
+# plugin across the harnesses declared in agents/plugins/registry.yaml.
 #
-# hallouminate is Paul's fork (github.com/paulnsorensen/hallouminate). Its
-# nightly workflow publishes a rolling npm package
-# `@paulnsorensen/hallouminate-nightly` (scoped, bin `hallouminate`, versioned
-# 0.0.0-experimental.<run>) off every push to main — that is the channel the
-# hallouminate MCP (`command: hallouminate`, `hallouminate serve`) should run.
-# `npm i -g` needs --allow-scripts because the postinstall (install.js)
-# downloads the platform binary (SHA-256 sidecar verified), which npm blocks by
-# default. This retires both the cargo-dist prebuilt installer and the
-# cargo-git source build — sync now grabs latest, self-gated when current.
+# Binary delivery mirrors run_onchange_after_install-tilth.sh.tmpl. The npm
+# package contains only the platform binary installer, so plugin delivery uses
+# a separately refreshed git cache: native marketplace installs for Claude Code,
+# Codex, and Copilot; decomposed MCP/skills for opencode, Cursor, and Crush.
 #
-# Version note: the Rust binary's `--version` stays 0.3.0 (Cargo "fork law"),
-# so the freshness check compares the *npm package* version, not the binary.
-#
-# Re-trigger marker: run_onchange fires only when the rendered body changes.
-# Computed fail-safe — the inner `sh -c` ends in `echo`, so an OFFLINE
-# `dots sync` renders a stable empty marker instead of aborting the apply:
-#   latest nightly version: {{ output "sh" "-c" "npm view @paulnsorensen/hallouminate-nightly version 2>/dev/null | tr -d '[:space:]'; echo" }}
+# Re-trigger markers: the npm nightly version and helper body. The inner
+# version probe ends in echo so an offline template render remains stable.
+# latest nightly version: {{ output "sh" "-c" "npm view @paulnsorensen/hallouminate-nightly version 2>/dev/null | tr -d '[:space:]'; echo" }}
+# helper hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/lib/hallouminate-install.sh 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
 
 set -euo pipefail
 
-PKG="@paulnsorensen/hallouminate-nightly"
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+# shellcheck source=../lib/hallouminate-install.sh
+# shellcheck disable=SC1091
+source "$SOURCE_DIR/lib/hallouminate-install.sh"
 
-installed_version() {
-    npm ls -g "$PKG" --depth=0 2>/dev/null | sed -n 's/.*hallouminate-nightly@//p' | tr -d '[:space:]' || true
-}
-
-latest="$(npm view "$PKG" version 2>/dev/null || true)"
-current="$(installed_version)"
-
-if [[ -n "$latest" && "$current" == "$latest" ]]; then
-    echo "✓ hallouminate (nightly) $current already latest ($latest) — nothing to do"
-elif [[ -z "$latest" ]]; then
-    echo "⚠ Could not resolve latest $PKG from npm (offline?) — keeping installed ${current:-none}" >&2
-else
-    echo "Installing $PKG@latest (was ${current:-none}, latest $latest)..."
-    npm install -g "$PKG@latest" --allow-scripts="$PKG"
-    echo "✓ hallouminate (nightly) $(installed_version) installed"
-fi
-
-# Keep the fork's nightly the single source of truth for the `hallouminate` bin.
-# Both the upstream public `hallouminate` npm package and a `cargo install` /
-# cargo-dist build expose a `hallouminate` binary and would compete for / shadow
-# it on PATH.
-if npm ls -g hallouminate --depth=0 >/dev/null 2>&1; then
-    echo "⚠ upstream public 'hallouminate' is also installed globally and competes for the 'hallouminate' bin — 'npm rm -g hallouminate' to keep the nightly fork canonical." >&2
-fi
-if [[ -f "$HOME/.cargo/bin/hallouminate" ]]; then
-    echo "⚠ ~/.cargo/bin/hallouminate shadows the npm binary on PATH — remove it so 'hallouminate' resolves to the nightly fork." >&2
-fi
+hallouminate_install_nightly
+hallouminate_sync_plugins "$HOME/.cache/ap/plugins/hallouminate"
