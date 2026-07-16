@@ -1,9 +1,9 @@
 /**
  * Renders the altitude-3 dependency DAG (model.items + model.edges) to a PNG.
  *
- * layoutDag(model) runs elkjs layered layout over the raw items/edges — no
- * altitude filtering happens here; that's the caller's job (a separate
- * filter step upstream produces the altitude-3-only model this consumes).
+ * layoutDag(model) restricts the model to altitude-3 items (filterByAltitude)
+ * at entry, then runs elkjs layered layout over the surviving items/edges —
+ * items tagged out of altitude 3 never reach the DAG.
  *
  * renderDag(model) takes the positioned elk graph and paints it: node cards
  * via satori (for real text shaping) composited with hand-built SVG <path>
@@ -20,6 +20,8 @@ import { join } from 'node:path';
 import ELK from 'elkjs';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
+
+import { filterByAltitude } from './altitudeFilter.js';
 
 const elk = new ELK();
 
@@ -42,14 +44,16 @@ function estimateNodeWidth(title) {
 }
 
 /**
- * Lays out model.items/model.edges with elkjs and returns the positioned
- * graph (children carry x/y/width/height plus the source RoadmapItem under
- * `.item`; edges carry `.sections` with routed points). Exported for testing.
+ * Filters the model to altitude 3, lays out the remaining items/edges with
+ * elkjs, and returns the positioned graph (children carry x/y/width/height
+ * plus the source RoadmapItem under `.item`; edges carry `.sections` with
+ * routed points). Exported for testing.
  *
- * @param {import('./types.js').RoadmapModel} model
+ * @param {import('./types.js').RoadmapModel} inputModel
  * @param {{layoutOptions?: Record<string, string>}} [options]
  */
-async function layoutDag(model, options = {}) {
+async function layoutDag(inputModel, options = {}) {
+  const model = filterByAltitude(inputModel, 3);
   const graph = {
     id: 'root',
     layoutOptions: {
