@@ -15,6 +15,7 @@
 /** @type {import('../../src/types.js').RoadmapModel} */
 export const fixtureModel = {
   subject: 'KIP',
+  bucketMode: 'quarters',
   buckets: [
     { id: '2026-Q3', label: 'Q3 2026' },
     { id: '2026-Q4', label: 'Q4 2026' },

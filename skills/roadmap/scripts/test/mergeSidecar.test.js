@@ -380,3 +380,8 @@ test('source files contain no raw control bytes (a raw NUL once made git treat m
     assert.equal(bad, -1, `${name} contains raw control byte 0x${buf[bad]?.toString(16)} at offset ${bad}`);
   }
 });
+
+test('mergeSidecar exposes the sidecar bucket mode on the model for renderers', () => {
+  assert.equal(mergeSidecar(linearModel, 'subject: KIP\nbuckets: cycles\n').bucketMode, 'cycles');
+  assert.equal(mergeSidecar(linearModel, 'subject: KIP\nbuckets: quarters\n').bucketMode, 'quarters');
+});

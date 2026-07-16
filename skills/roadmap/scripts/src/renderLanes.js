@@ -10,8 +10,9 @@
  * - item bars snap to the bucket columns their bucketIds span; items
  *   sharing a lane are stacked into sub-rows so bars never overlap
  * - milestone verticals render only for milestones with a non-null date,
- *   positioned at the bucket their date falls into (quarter derived from
- *   the ISO date), inside their item's sub-row
+ *   positioned at the bucket their date falls into (derived in the model's
+ *   bucket mode); a date outside every known bucket falls back to the
+ *   item's start bucket, inside their item's sub-row
  *
  * Pure function: no I/O, no randomness. Element seed/versionNonce are
  * derived deterministically from the element id so repeat calls over the
@@ -19,6 +20,7 @@
  */
 
 import { filterByAltitude } from './altitudeFilter.js';
+import { bucketIdForDate } from './mergeSidecar.js';
 
 export const FRAME_NAME = 'Altitude 2 — Workstreams';
 
@@ -122,12 +124,6 @@ function bucketIndexById(buckets, bucketId) {
   return buckets.findIndex((bucket) => bucket.id === bucketId);
 }
 
-/** Derives a "<year>-Q<quarter>" bucket id from an ISO date, for milestone placement. */
-function quarterBucketIdForDate(dateIso) {
-  const date = new Date(dateIso);
-  const quarter = Math.floor(date.getUTCMonth() / 3) + 1;
-  return `${date.getUTCFullYear()}-Q${quarter}`;
-}
 
 function itemBucketRange(item, buckets) {
   const indices = item.bucketIds
@@ -270,7 +266,7 @@ export function renderLanes(inputModel) {
     item.milestones
       .filter((milestone) => milestone.date)
       .forEach((milestone) => {
-        const derivedBucketId = quarterBucketIdForDate(milestone.date);
+        const derivedBucketId = bucketIdForDate(milestone.date, model.bucketMode);
         const derivedIndex = bucketIndexById(buckets, derivedBucketId);
         const bucketIndex = derivedIndex !== -1 ? derivedIndex : range.start;
         const milestoneX = laneHeaderWidth + bucketIndex * bucketWidth + bucketWidth / 2;

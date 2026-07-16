@@ -104,6 +104,7 @@
 /**
  * @typedef {Object} RoadmapModel
  * @property {string} subject
+ * @property {'quarters'|'cycles'} bucketMode  active bucket derivation mode
  * @property {RoadmapBucket[]} buckets   ordered coarse time bands
  * @property {RoadmapLane[]} lanes
  * @property {RoadmapItem[]} items

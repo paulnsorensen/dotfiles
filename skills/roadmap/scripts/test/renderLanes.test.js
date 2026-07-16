@@ -209,3 +209,49 @@ test('an item whose laneId matches no model lane renders no bar and no label', (
   assert.ok(!itemLabels.some((label) => label.customData.itemRef === 'ingest-api'), 'unknown-lane item must have no label');
   assert.equal(itemBars.length, fixtureModel.items.length - 1, 'other items still render');
 });
+
+test('cycles-mode milestones land in the bucket of their date, not the item start bucket', () => {
+  const model = {
+    ...fixtureModel,
+    bucketMode: 'cycles',
+    buckets: [
+      { id: 'C0', label: 'Cycle 0' },
+      { id: 'C1', label: 'Cycle 1' },
+    ],
+    items: [
+      {
+        ref: 'cycle-item',
+        title: 'Cycle item',
+        laneId: 'ingest',
+        bucketIds: ['C0', 'C1'],
+        status: 'started',
+        // 2024-01-20 is day 19 from the 2024-01-01 cycle epoch -> 14-day cycle 1
+        milestones: [{ id: 'cm1', title: 'Mid milestone', date: '2024-01-20' }],
+        unlocks: [],
+        altitudes: [2],
+      },
+    ],
+    edges: [],
+    outcomes: [],
+  };
+
+  const { elements } = renderLanes(model);
+  const line = elements.find((element) => element.customData?.kind === 'milestone');
+  assert.ok(line, 'expected a milestone line');
+  assert.equal(line.customData.bucketId, 'C1', 'milestone must resolve to its date bucket in cycles mode');
+});
+
+test('a milestone whose date matches no model bucket falls back to the item start bucket', () => {
+  const model = {
+    ...fixtureModel,
+    items: fixtureModel.items.map((item) =>
+      item.ref === 'extraction-v2'
+        ? { ...item, milestones: [{ id: 'm1', title: 'Far future', date: '2099-01-01' }] }
+        : item,
+    ),
+  };
+
+  const { elements } = renderLanes(model);
+  const line = elements.find((element) => element.customData?.kind === 'milestone');
+  assert.equal(line.customData.bucketId, '2026-Q3', 'unresolvable milestone date snaps to the item start bucket');
+});

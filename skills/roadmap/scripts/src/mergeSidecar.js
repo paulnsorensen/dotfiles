@@ -163,6 +163,11 @@ function bucketsBetween(startDate, targetDate, mode) {
   return buckets;
 }
 
+/** Derives the bucket id an ISO date falls into, in the given bucket mode. */
+export function bucketIdForDate(dateIso, mode) {
+  return mode === 'cycles' ? cycleFromIndex(cycleIndex(dateIso)).id : quarterFromIndex(quarterIndex(dateIso)).id;
+}
+
 function laneMapFromSidecar(sidecarLanes) {
   const laneByInitiative = new Map();
   if (!sidecarLanes) return laneByInitiative;
@@ -240,6 +245,7 @@ export function mergeSidecar(linearModel, yamlText) {
 
   return {
     subject: parsed.subject,
+    bucketMode: mode,
     buckets,
     lanes,
     items,
