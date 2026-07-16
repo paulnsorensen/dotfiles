@@ -1,6 +1,6 @@
 {
-  "model": "opus",
-  "effortLevel": "medium",
+  "model": "claude-fable-5[1m]",
+  "effortLevel": "high",
   "env": {
     "ENABLE_TOOL_SEARCH": "true",
     "SSL_CERT_FILE": "/etc/ssl/cert.pem"

@@ -258,6 +258,35 @@ Order matters: prune-first loses the race.
 **Detection**: A pruned key that resurrects, or any process whose command line
 points into `~/.claude/plugins/cache/`.
 
+## Known drift pattern: native-plugin `enabledPlugins` entries stripped on every session start
+
+**Symptom**: `hallouminate@hallouminate` / `milknado@milknado` vanish from
+`enabledPlugins` in live `~/.claude/settings.json` shortly after every
+`dots sync` restores them; plugin MCPs disconnect in new sessions. First hit
+2026-07-15.
+
+**Why it happens**: The Claude CLI rewrites `enabledPlugins` from its own
+runtime state at session start, and drops entries for plugins missing from
+`~/.claude/plugins/installed_plugins.json`. The reconcile that installs the
+native plugins (`chezmoi/lib/claude-plugin-reconcile.sh`, install leg) is
+dispatched by a `run_onchange` script keyed on the **hash of
+`agents/plugins/registry.yaml`** — so if the CLI's installed state is lost (or
+predates the install leg) while the registry is unchanged, nothing ever
+reinstalls, and `dots sync` ↔ CLI-strip loop forever. Restoring the settings
+entry alone is treating the symptom.
+
+**Fix**: `claude plugin install <name>@<name>` at user scope for each native
+plugin. The install writes both `installed_plugins.json` and the
+`enabledPlugins` entries; once the runtime knows the plugin, CLI rewrites
+preserve the entry.
+
+**Detection**: `jq '.plugins | keys' ~/.claude/plugins/installed_plugins.json`
+missing a plugin that `enabledPlugins` (per the chezmoi render) enables.
+
+**Open hardening idea**: make the reconcile re-run condition include
+`installed_plugins.json` state (or teach `/harness-doctor` this check), so a
+lost install self-heals without a registry edit.
+
 ## Gotcha: official plugins are enabled by `claude/plugins/registry.yaml`, not the claude.yaml base
 
 `enabledPlugins` in `chezmoi/.chezmoidata/claude.yaml` is only the BASE layer;
