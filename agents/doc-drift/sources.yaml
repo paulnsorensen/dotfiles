@@ -25,7 +25,7 @@ sources:
     signal: { type: npm, ref: "@anthropic-ai/claude-code" }
     docs: https://code.claude.com/docs
     governs: [harnesses/claude.md, chezmoi/.chezmoidata/claude.yaml]
-    reconciled: "2.1.205"
+    reconciled: "2.1.211"
 
   - id: codex-cli
     signal: { type: npm, ref: "@openai/codex" }
