@@ -275,6 +275,12 @@ _cz_vendor_external_skills() {
         local pin cache sp
         pin=$(yq -r ".sources.\"$source\".pin // \"\"" "$registry")
         sp=$(yq -r ".sources.\"$source\".skills_path // \"skills\"" "$registry")
+        # skills_path is interpolated into cache paths — reject values that
+        # would escape the source's cache subtree (fail loud, per fail-fast).
+        if [[ -z "$sp" || "$sp" == /* || "$sp" == *..* ]]; then
+            log_error "external skill source $source: invalid skills_path '$sp' (must be relative, no '..')"
+            return 1
+        fi
         cache="$cache_root/${source//\//__}"
 
         if [[ ! -d "$cache/.git" ]]; then

@@ -401,6 +401,21 @@ YAML
     [ -f "$SRC/dot_claude/exact_skills/exact_ext-skill/SKILL.md" ]
 }
 
+@test "assembly: a skills_path escaping the cache subtree fails loud" {
+    for bad in "../evil" "/abs/path" '""'; do
+        cat > "$ROOT/skills/_registry.yaml" <<YAML
+sources:
+  owner/plugin-repo:
+    skills_path: $bad
+YAML
+        local nested="$TEST_HOME/.cache/dotfiles/claude-skill-sources/owner__plugin-repo"
+        mkdir -p "$nested/.git"
+        run_assembly
+        [ "$status" -ne 0 ] || { echo "skills_path '$bad' did not fail"; return 1; }
+        [[ "$output" == *"invalid skills_path"* ]]
+    done
+}
+
 @test "assembly: explicit skills list resolves under skills_path" {
     cat > "$ROOT/skills/_registry.yaml" <<'YAML'
 sources:

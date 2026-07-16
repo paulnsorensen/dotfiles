@@ -317,14 +317,25 @@ seed_skill_cache_offline() {
     local cache="$TEST_HOME/.cache/dotfiles/claude-skill-sources"
     local registry="$REAL_DOTFILES_DIR/skills/_registry.yaml"
     # Registry-driven: seed every source at its skills_path so a registry
-    # addition can't strand the offline vendor on a fake-git clone.
-    local src enc sp
+    # addition can't strand the offline vendor on a fake-git clone. Sources
+    # with an explicit `skills:` list get those names seeded (the vendor
+    # resolves the list against the cache; a dummy name would match nothing
+    # and silently vendor zero skills); default-scan sources get dummy-<enc>.
+    local src enc sp skill
     while IFS= read -r src; do
         [[ -z "$src" ]] && continue
         enc="${src//\//__}"
         sp=$(yq -r ".sources.\"$src\".skills_path // \"skills\"" "$registry")
-        mkdir -p "$cache/$enc/.git" "$cache/$enc/$sp/dummy-$enc"
-        echo "# dummy" > "$cache/$enc/$sp/dummy-$enc/SKILL.md"
+        mkdir -p "$cache/$enc/.git"
+        local -a names=()
+        while IFS= read -r skill; do
+            [[ -n "$skill" && "$skill" != "null" ]] && names+=("$skill")
+        done < <(yq -r ".sources.\"$src\".skills // [] | .[]" "$registry")
+        (( ${#names[@]} > 0 )) || names=("dummy-$enc")
+        for skill in "${names[@]}"; do
+            mkdir -p "$cache/$enc/$sp/$skill"
+            echo "# dummy" > "$cache/$enc/$sp/$skill/SKILL.md"
+        done
     done < <(yq -r '.sources | keys | .[]' "$registry")
     local fake_bin="$TEST_HOME/fake-git-bin"
     mkdir -p "$fake_bin"
