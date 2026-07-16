@@ -95,6 +95,18 @@ test('publish with no pngs appends only the heading and bookmark, never calling 
   assert.equal(children[1].type, 'bookmark');
 });
 
+test('publish with shareLink null omits the bookmark block (no Excalidraw scene exists at CLI time)', async () => {
+  const notionClient = makeRecordingNotionClient();
+
+  await publish({ pngs: [], shareLink: null, notionPage: 'page-5' }, { notionClient });
+
+  const [{ children }] = notionClient.calls;
+  assert.deepEqual(
+    children.map((child) => child.type),
+    ['heading_2'],
+  );
+});
+
 test('publish rejects via the default uploadImage when none is injected, and never calls the notion client', async () => {
   const notionClient = makeRecordingNotionClient();
 

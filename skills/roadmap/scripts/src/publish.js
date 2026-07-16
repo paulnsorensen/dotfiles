@@ -1,8 +1,10 @@
 
 /**
  * publish() pushes a rendered roadmap (altitude PNGs + the Excalidraw share
- * link) onto a Notion page: a heading, a bookmark block for the share link,
- * and one image block per PNG, in one `blocks.children.append` call.
+ * link) onto a Notion page: a heading, a bookmark block for the share link
+ * (omitted when shareLink is null — e.g. at CLI time, before the skill layer
+ * creates the Excalidraw scene), and one image block per PNG, in one
+ * `blocks.children.append` call.
  *
  * `notionClient` is injected — this module never constructs one; the CLI
  * wires the real @notionhq/client `Client` instance.
@@ -69,7 +71,7 @@ async function defaultUploadImage(png) {
 /**
  * @param {Object} input
  * @param {*[]} input.pngs  altitude PNG entries, one image block per entry
- * @param {string} input.shareLink  Excalidraw share URL
+ * @param {string|null} input.shareLink  Excalidraw share URL; null omits the bookmark block
  * @param {string} input.notionPage  Notion page id blocks are appended to
  * @param {Object} deps
  * @param {import('@notionhq/client').Client} deps.notionClient
@@ -84,8 +86,12 @@ export async function publish(
     imageBlocks.push(imageBlock(await uploadImage(png)));
   }
 
+  const children = [headingBlock()];
+  if (shareLink !== null && shareLink !== undefined) children.push(bookmarkBlock(shareLink));
+  children.push(...imageBlocks);
+
   return notionClient.blocks.children.append({
     block_id: notionPage,
-    children: [headingBlock(), bookmarkBlock(shareLink), ...imageBlocks],
+    children,
   });
 }
