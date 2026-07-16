@@ -378,3 +378,55 @@ YAML
     [ -f "$base/exact_beta-skill/SKILL.md" ]
     [ -f "$base/exact_ext-skill/SKILL.md" ]
 }
+
+@test "assembly: a source with skills_path vendors skills discovered under the nested dir" {
+    cat > "$ROOT/skills/_registry.yaml" <<'YAML'
+sources:
+  owner/plugin-repo:
+    skills_path: plugins/thing/skills
+YAML
+    local nested="$TEST_HOME/.cache/dotfiles/claude-skill-sources/owner__plugin-repo"
+    mkdir -p "$nested/.git" "$nested/plugins/thing/skills/nested-skill"
+    echo "# nested" > "$nested/plugins/thing/skills/nested-skill/SKILL.md"
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/dot_claude/exact_skills/exact_nested-skill/SKILL.md" ]
+}
+
+@test "assembly: a source without skills_path still vendors from repo-root skills/ (default unchanged)" {
+    # owner/ext-repo (setup fixture) has no skills_path; its skill lives at
+    # the repo-root skills/ext-skill, the pre-skills_path default location.
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/dot_claude/exact_skills/exact_ext-skill/SKILL.md" ]
+}
+
+@test "assembly: a skills_path escaping the cache subtree fails loud" {
+    for bad in "../evil" "/abs/path" '""'; do
+        cat > "$ROOT/skills/_registry.yaml" <<YAML
+sources:
+  owner/plugin-repo:
+    skills_path: $bad
+YAML
+        local nested="$TEST_HOME/.cache/dotfiles/claude-skill-sources/owner__plugin-repo"
+        mkdir -p "$nested/.git"
+        run_assembly
+        [ "$status" -ne 0 ] || { echo "skills_path '$bad' did not fail"; return 1; }
+        [[ "$output" == *"invalid skills_path"* ]]
+    done
+}
+
+@test "assembly: explicit skills list resolves under skills_path" {
+    cat > "$ROOT/skills/_registry.yaml" <<'YAML'
+sources:
+  owner/plugin-repo:
+    skills_path: plugins/thing/skills
+    skills: [nested-skill]
+YAML
+    local nested="$TEST_HOME/.cache/dotfiles/claude-skill-sources/owner__plugin-repo"
+    mkdir -p "$nested/.git" "$nested/plugins/thing/skills/nested-skill"
+    echo "# nested" > "$nested/plugins/thing/skills/nested-skill/SKILL.md"
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/dot_claude/exact_skills/exact_nested-skill/SKILL.md" ]
+}

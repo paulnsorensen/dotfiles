@@ -37,8 +37,8 @@ STDIN"
     run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
     [ "$status" -eq 0 ]
     # Static authoritative keys present.
-    [ "$(jq -r '.model' "$OUT")" = "opus" ]
-    [ "$(jq -r '.effortLevel' "$OUT")" = "medium" ]
+    [ "$(jq -r '.model' "$OUT")" = "$(jq -r '.model' "$AUTH")" ]
+    [ "$(jq -r '.effortLevel' "$OUT")" = "$(jq -r '.effortLevel' "$AUTH")" ]
     # Registry-authored keys composed in.
     jq -e '.enabledPlugins | has("plugin-dev@claude-plugins-official")' "$OUT" >/dev/null
     jq -e '.hooks.PreToolUse | length > 0' "$OUT" >/dev/null
@@ -57,11 +57,12 @@ STDIN"
 
 @test "modify_settings: class-a drift is overwritten from source" {
     # In-app /model + theme change must be discarded on the next apply.
-    run_modify '{"model":"sonnet","theme":"light","effortLevel":"high"}'
+    # Drift values are chosen to differ from the authoritative source.
+    run_modify '{"model":"drifted-model","theme":"light","effortLevel":"drifted-effort"}'
     [ "$status" -eq 0 ]
-    [ "$(jq -r '.model' "$OUT")" = "opus" ]
+    [ "$(jq -r '.model' "$OUT")" = "$(jq -r '.model' "$AUTH")" ]
     [ "$(jq -r '.theme' "$OUT")" = "dark-daltonized" ]
-    [ "$(jq -r '.effortLevel' "$OUT")" = "medium" ]
+    [ "$(jq -r '.effortLevel' "$OUT")" = "$(jq -r '.effortLevel' "$AUTH")" ]
 }
 
 @test "modify_settings: formerly-ap keys are registry-authored — live drift is WIPED" {
@@ -86,7 +87,7 @@ STDIN"
     [ "$status" -ne 0 ]
     # registry values authored in
     [ "$(jq -r '.permissions.defaultMode' "$OUT")" = "auto" ]
-    [ "$(jq -r '.model' "$OUT")" = "opus" ]
+    [ "$(jq -r '.model' "$OUT")" = "$(jq -r '.model' "$AUTH")" ]
     jq -e '.enabledPlugins | has("plugin-dev@claude-plugins-official")' "$OUT" >/dev/null
     jq -e '.permissions.deny | length > 0' "$OUT" >/dev/null
 }
@@ -206,7 +207,7 @@ cz_apply() {
     setup_chezmoi_apply_env
     cz_apply
     [ "$status" -eq 0 ]
-    [ "$(jq -r .model "$SETTINGS")" = "opus" ]
+    [ "$(jq -r .model "$SETTINGS")" = "$(jq -r .model "$AUTH")" ]
     # lib/ is .chezmoiignore'd — the authoritative source is never deployed.
     [ ! -e "$CZ_INT_DEST/lib" ]
 }

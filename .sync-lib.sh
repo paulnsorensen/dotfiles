@@ -255,8 +255,9 @@ _cz_render_claude_agent() {
 # warning. A source that has never been cloned and cannot be cloned fails the
 # assembly (loud, per fail-fast). Unpinned sources float to latest of their
 # default branch on every sync (offline → cached checkout); a pin change is
-# always honored, an unchanged pin costs no network.
-#   _cz_vendor_external_skills <skills_registry_yaml> <dst_dir> <harness>
+# always honored, an unchanged pin costs no network. Per-source `skills_path`
+# (default "skills") relocates the in-repo skills dir the source is scanned
+# under, for sources that bundle skills at a nested path (e.g. plugin repos).
 _cz_vendor_external_skills() {
     local registry="$1" dst="$2" harness="$3"
     [[ -f "$registry" ]] || return 0
@@ -271,8 +272,15 @@ _cz_vendor_external_skills() {
         harnesses=$(yq -r ".sources.\"$source\".harnesses // [] | join(\" \")" "$registry")
         [[ -z "$harnesses" || " $harnesses " == *" $harness "* ]] || continue
 
-        local pin cache
+        local pin cache sp
         pin=$(yq -r ".sources.\"$source\".pin // \"\"" "$registry")
+        sp=$(yq -r ".sources.\"$source\".skills_path // \"skills\"" "$registry")
+        # skills_path is interpolated into cache paths — reject values that
+        # would escape the source's cache subtree (fail loud, per fail-fast).
+        if [[ -z "$sp" || "$sp" == /* || "$sp" == *..* ]]; then
+            log_error "external skill source $source: invalid skills_path '$sp' (must be relative, no '..')"
+            return 1
+        fi
         cache="$cache_root/${source//\//__}"
 
         if [[ ! -d "$cache/.git" ]]; then
@@ -311,7 +319,7 @@ _cz_vendor_external_skills() {
         done < <(yq -r ".sources.\"$source\".skills // [] | .[]" "$registry")
         if (( ${#names[@]} == 0 )); then
             local d
-            for d in "$cache"/skills/*/; do
+            for d in "$cache/$sp"/*/; do
                 [[ -f "$d/SKILL.md" ]] && names+=("$(basename "$d")")
             done
         fi
@@ -319,11 +327,11 @@ _cz_vendor_external_skills() {
         local skill
         for skill in "${names[@]:-}"; do
             [[ -z "$skill" ]] && continue
-            if [[ ! -d "$cache/skills/$skill" ]]; then
+            if [[ ! -d "$cache/$sp/$skill" ]]; then
                 log_warning "external skill source $source: skill '$skill' not found, skipping"
                 continue
             fi
-            _cz_copy_encoded "$cache/skills/$skill" "$dst/$(_cz_encode_name "$skill" true false)" || return 1
+            _cz_copy_encoded "$cache/$sp/$skill" "$dst/$(_cz_encode_name "$skill" true false)" || return 1
         done
     done < <(yq -r '.sources | keys | .[]' "$registry")
 }
