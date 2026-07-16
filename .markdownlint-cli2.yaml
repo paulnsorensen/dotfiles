@@ -9,7 +9,9 @@ config:
   no-emphasis-as-heading: false
 
 ignores:
-  - node_modules/**
+  # Match node_modules at any depth — skills that npm-install (e.g.
+  # skills/roadmap/scripts) create nested trees the root glob misses.
+  - "**/node_modules/**"
   - .worktrees/**
   - reference/**
   - tmux/plugins/**
