@@ -175,3 +175,37 @@ test('excludes items not tagged for altitude 2', () => {
     'altitude-excluded item must have no label',
   );
 });
+
+test('an item whose bucketIds match no model bucket renders no bar and no label', () => {
+  const model = {
+    ...fixtureModel,
+    items: fixtureModel.items.map((item) =>
+      item.ref === 'ingest-api' ? { ...item, bucketIds: ['2099-Q1'] } : item,
+    ),
+  };
+
+  const { elements } = renderLanes(model);
+  const itemBars = byKind(elements, 'itemBar');
+  const itemLabels = byKind(elements, 'itemLabel');
+
+  assert.ok(!itemBars.some((bar) => bar.customData.itemRef === 'ingest-api'), 'unknown-bucket item must have no bar');
+  assert.ok(!itemLabels.some((label) => label.customData.itemRef === 'ingest-api'), 'unknown-bucket item must have no label');
+  assert.equal(itemBars.length, fixtureModel.items.length - 1, 'other items still render');
+});
+
+test('an item whose laneId matches no model lane renders no bar and no label', () => {
+  const model = {
+    ...fixtureModel,
+    items: fixtureModel.items.map((item) =>
+      item.ref === 'ingest-api' ? { ...item, laneId: 'no-such-lane' } : item,
+    ),
+  };
+
+  const { elements } = renderLanes(model);
+  const itemBars = byKind(elements, 'itemBar');
+  const itemLabels = byKind(elements, 'itemLabel');
+
+  assert.ok(!itemBars.some((bar) => bar.customData.itemRef === 'ingest-api'), 'unknown-lane item must have no bar');
+  assert.ok(!itemLabels.some((label) => label.customData.itemRef === 'ingest-api'), 'unknown-lane item must have no label');
+  assert.equal(itemBars.length, fixtureModel.items.length - 1, 'other items still render');
+});

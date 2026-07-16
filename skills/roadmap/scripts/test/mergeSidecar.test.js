@@ -279,3 +279,104 @@ notion:
 `;
   assert.throws(() => mergeSidecar(linearModel, yaml), /notion\.workspace/);
 });
+
+test('empty sidecar text fails validation on the missing subject, not with a crash', () => {
+  assert.throws(() => mergeSidecar(linearModel, ''), /"subject": missing required field/);
+});
+
+test('throws for a non-string subject value', () => {
+  assert.throws(() => mergeSidecar(linearModel, 'subject: 5\nbuckets: quarters\n'), /"subject": expected string, got number/);
+});
+
+test('a project with targetDate before startDate gets empty bucketIds and adds no buckets', () => {
+  const model = {
+    ...linearModel,
+    projects: [
+      {
+        ref: 'inverted',
+        title: 'Inverted dates',
+        initiativeId: 'ingest',
+        status: 'planned',
+        startDate: '2026-12-01',
+        targetDate: '2026-07-01',
+        milestones: [],
+      },
+    ],
+  };
+  const result = mergeSidecar(model, 'subject: KIP\nbuckets: quarters\n');
+  assert.deepEqual(result.items[0].bucketIds, []);
+  assert.deepEqual(result.buckets, []);
+});
+
+test('a project with only one of startDate/targetDate maps to the single bucket of that date', () => {
+  const model = {
+    ...linearModel,
+    projects: [
+      {
+        ref: 'target-only',
+        title: 'Target only',
+        initiativeId: 'ingest',
+        status: 'planned',
+        startDate: null,
+        targetDate: '2026-08-15',
+        milestones: [],
+      },
+      {
+        ref: 'start-only',
+        title: 'Start only',
+        initiativeId: 'ingest',
+        status: 'planned',
+        startDate: '2027-02-01',
+        targetDate: null,
+        milestones: [],
+      },
+    ],
+  };
+  const result = mergeSidecar(model, 'subject: KIP\nbuckets: quarters\n');
+  assert.deepEqual(result.items[0].bucketIds, ['2026-Q3']);
+  assert.deepEqual(result.items[1].bucketIds, ['2027-Q1']);
+});
+
+test('a sidecar item keyed by a ref unknown to Linear creates no phantom item; its blocks edge joins the union', () => {
+  const yaml = `
+subject: KIP
+buckets: quarters
+items:
+  ghost:
+    blocks: [ingest-api]
+`;
+  const result = mergeSidecar(linearModel, yaml);
+  assert.deepEqual(
+    result.items.map((item) => item.ref).sort(),
+    linearModel.projects.map((project) => project.ref).sort(),
+  );
+  assert.ok(
+    result.edges.some((edge) => edge.sourceRef === 'ghost' && edge.targetRef === 'ingest-api' && edge.source === 'sidecar'),
+    'dangling sidecar blocks edge stays in the union (altitudeFilter drops it downstream)',
+  );
+});
+
+test('dedupe is direction-sensitive: a sidecar edge reversing a linear edge is kept, not deduped', () => {
+  const yaml = `
+subject: KIP
+buckets: quarters
+items:
+  extraction-v2:
+    blocks: [ingest-api]
+`;
+  const result = mergeSidecar(linearModel, yaml);
+  const pairs = result.edges.map((edge) => `${edge.sourceRef}->${edge.targetRef}:${edge.source}`);
+  assert.ok(pairs.includes('ingest-api->extraction-v2:linear'));
+  assert.ok(pairs.includes('extraction-v2->ingest-api:sidecar'));
+});
+
+test('source files contain no raw control bytes (a raw NUL once made git treat mergeSidecar.js as binary)', async () => {
+  const { readdir, readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const srcDir = new URL('../src/', import.meta.url).pathname;
+  for (const name of await readdir(srcDir)) {
+    const buf = await readFile(join(srcDir, name));
+    const bad = buf.findIndex((byte) => byte < 0x09 || (byte > 0x0d && byte < 0x20));
+    assert.equal(bad, -1, `${name} contains raw control byte 0x${buf[bad]?.toString(16)} at offset ${bad}`);
+  }
+});

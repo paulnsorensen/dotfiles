@@ -78,3 +78,34 @@ test('renderDag accepts an injected font loader', async () => {
   assert.ok(Buffer.isBuffer(png));
   assert.deepEqual(png.subarray(0, PNG_MAGIC.length), PNG_MAGIC);
 });
+
+test('a cycle in the edges still lays out and renders a PNG (elk breaks cycles, never throws)', async () => {
+  const cyclicModel = {
+    ...fixtureModel,
+    edges: [
+      ...fixtureModel.edges,
+      { sourceRef: 'extraction-v2', targetRef: 'ingest-api', source: 'sidecar' },
+    ],
+  };
+
+  const graph = await layoutDag(cyclicModel);
+  const edgePairs = graph.edges.map((edge) => `${edge.sources[0]}->${edge.targets[0]}`).sort();
+  assert.deepEqual(edgePairs, ['extraction-v2->ingest-api', 'ingest-api->extraction-v2']);
+  assert.ok(graph.edges.every((edge) => edge.sections?.length > 0), 'both cycle edges must be routed');
+
+  const png = await renderDag(cyclicModel);
+  assert.deepEqual(png.subarray(0, PNG_MAGIC.length), PNG_MAGIC);
+});
+
+test('a self-blocking edge still lays out and renders a PNG', async () => {
+  const selfLoopModel = {
+    ...fixtureModel,
+    edges: [...fixtureModel.edges, { sourceRef: 'ingest-api', targetRef: 'ingest-api', source: 'sidecar' }],
+  };
+
+  const graph = await layoutDag(selfLoopModel);
+  assert.equal(graph.edges.length, 2);
+
+  const png = await renderDag(selfLoopModel);
+  assert.deepEqual(png.subarray(0, PNG_MAGIC.length), PNG_MAGIC);
+});

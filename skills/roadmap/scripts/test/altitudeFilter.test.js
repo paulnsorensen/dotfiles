@@ -83,3 +83,30 @@ test('preserves non-filtered model fields unchanged', () => {
   assert.deepEqual(result.lanes, fixtureModel.lanes);
   assert.deepEqual(result.notion, fixtureModel.notion);
 });
+
+test('an empty altitudes array excludes the item at every altitude (distinct from absent)', () => {
+  const emptyAltitudesModel = {
+    ...fixtureModel,
+    items: [{ ...fixtureModel.items[0], altitudes: [] }],
+    edges: [],
+    outcomes: [],
+  };
+
+  for (const altitude of [1, 2, 3]) {
+    const result = filterByAltitude(emptyAltitudesModel, altitude);
+    assert.equal(result.items.length, 0, `altitudes: [] must exclude the item at altitude ${altitude}`);
+  }
+});
+
+test('drops edges whose target ref matches no item (dangling sidecar edge)', () => {
+  const danglingModel = {
+    ...fixtureModel,
+    edges: [...fixtureModel.edges, { sourceRef: 'ingest-api', targetRef: 'ghost', source: 'sidecar' }],
+  };
+
+  const result = filterByAltitude(danglingModel, 3);
+  assert.ok(
+    !result.edges.some((edge) => edge.targetRef === 'ghost'),
+    'an edge pointing at a non-existent item must not survive the filter',
+  );
+});

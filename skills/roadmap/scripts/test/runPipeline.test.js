@@ -91,3 +91,39 @@ test('all capabilities present: no skipped entries', async () => {
 test('missing readFile capability throws (required, not optional-by-capability)', async () => {
   await assert.rejects(() => runPipeline('/path/sidecar.yaml', {}));
 });
+
+test('a renderer throw mid-pipeline rejects the run — no partial-success result is returned', async () => {
+  const logs = [];
+  const calls = [];
+  const renderers = {
+    renderExec: async () => {
+      calls.push('renderExec');
+      return { frame: 'exec' };
+    },
+    renderLanes: async () => {
+      calls.push('renderLanes');
+      throw new Error('lanes renderer exploded');
+    },
+    renderDag: async () => {
+      calls.push('renderDag');
+      return { png: 'dag.png' };
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      runPipeline('/path/sidecar.yaml', {
+        readFile: async () => sidecarModel,
+        renderers,
+        publish: async () => ({ notionPageUrl: 'https://notion.so/x' }),
+        log: (message) => logs.push(message),
+      }),
+    /lanes renderer exploded/,
+  );
+
+  assert.deepEqual(calls, ['renderExec', 'renderLanes'], 'pipeline must stop at the failing renderer');
+  assert.ok(
+    !logs.some((line) => line.startsWith('skipped renderers')),
+    'a renderer failure is an error, never reported as a graceful skip',
+  );
+});
