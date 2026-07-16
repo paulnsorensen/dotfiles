@@ -83,6 +83,23 @@ test('renderer capabilities build the RoadmapModel from raw YAML and null linear
   assert.ok(Array.isArray(lanes.elements));
 });
 
+test('renderers build the RoadmapModel once per pipeline model', async () => {
+  const { capabilities } = buildCapabilities({ env: {}, sidecarText: SIDECAR_MINIMAL });
+  let sidecarReads = 0;
+  const model = {
+    linear: null,
+    get sidecar() {
+      sidecarReads += 1;
+      return SIDECAR_MINIMAL;
+    },
+  };
+
+  await capabilities.renderers.renderExec(model);
+  await capabilities.renderers.renderLanes(model);
+
+  assert.equal(sidecarReads, 1);
+});
+
 test('publish capability appends to the sidecar notion page with no bookmark and no images', async () => {
   const appendCalls = [];
   const notionClient = {

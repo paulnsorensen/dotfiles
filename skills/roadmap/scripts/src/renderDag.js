@@ -218,9 +218,10 @@ async function renderDag(model, options = {}) {
     const loadFont = options.loadFont ?? defaultFontLoader;
     const fontData = await loadFont();
     nodesSvg = await renderNodeCardsSatori(graph.children, { width, height, margin, fontData, fontName });
-  } catch {
+  } catch (error) {
     // satori fidelity path failed (no usable system TTF, unparseable font, etc.) —
     // fall back to hand-built SVG rects/text so renderDag still ships a PNG.
+    console.error(`renderDag: satori node rendering failed (${error.message}); falling back to plain SVG`);
     nodesSvg = buildNodeCardsPlainSvg(graph.children, margin);
   }
 

@@ -58,7 +58,15 @@ export function buildCapabilities({ env, sidecarText, createNotionClient = defau
   const subject = parsed.subject;
   const notionPage = parsed.notion?.page;
   const emptyLinear = { team: subject, projects: [], initiatives: [], relations: [] };
-  const toRoadmapModel = (model) => mergeSidecar(model.linear ?? emptyLinear, model.sidecar);
+  const roadmapModels = new WeakMap();
+  const toRoadmapModel = (model) => {
+    let roadmapModel = roadmapModels.get(model);
+    if (!roadmapModel) {
+      roadmapModel = mergeSidecar(model.linear ?? emptyLinear, model.sidecar);
+      roadmapModels.set(model, roadmapModel);
+    }
+    return roadmapModel;
+  };
   const skipped = [];
 
   const capabilities = {

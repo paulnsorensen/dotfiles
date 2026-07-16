@@ -53,7 +53,9 @@ test('renderDag resolves to a non-empty PNG buffer', async () => {
   assert.deepEqual(png.subarray(0, PNG_MAGIC.length), PNG_MAGIC);
 });
 
-test('renderDag falls back to plain SVG when the font loader fails', async () => {
+test('renderDag falls back to plain SVG when the font loader fails', async (t) => {
+  const errorLog = t.mock.method(console, 'error', () => {});
+
   const png = await renderDag(fixtureModel, {
     loadFont: async () => {
       throw new Error('no font available');
@@ -63,6 +65,11 @@ test('renderDag falls back to plain SVG when the font loader fails', async () =>
   assert.ok(Buffer.isBuffer(png));
   assert.ok(png.length > 0);
   assert.deepEqual(png.subarray(0, PNG_MAGIC.length), PNG_MAGIC);
+
+  assert.equal(errorLog.mock.callCount(), 1);
+  const notice = errorLog.mock.calls[0].arguments[0];
+  assert.match(notice, /renderDag/);
+  assert.match(notice, /no font available/);
 });
 
 test('renderDag accepts an injected font loader', async () => {

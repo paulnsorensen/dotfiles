@@ -220,7 +220,7 @@ export function renderLanes(inputModel) {
     const range = itemBucketRange(item, buckets);
     if (laneIndex === -1 || range === null) return;
 
-    const laneItems = itemsByLane.get(item.laneId) ?? [item];
+    const laneItems = itemsByLane.get(item.laneId);
     const subRowIndex = laneItems.indexOf(item);
     const subRowHeight = laneHeight / laneItems.length;
 
