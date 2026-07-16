@@ -61,7 +61,7 @@ sources:
     signal: { type: gh_release, ref: twpayne/chezmoi }
     docs: https://www.chezmoi.io/reference/
     governs: [chezmoi/]
-    reconciled: "v2.70.5"
+    reconciled: "v2.71.0"
 
 
   - id: serena
