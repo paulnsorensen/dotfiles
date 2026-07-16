@@ -315,11 +315,17 @@ EOF
 # Seed the external-skill cache + a git shim so no network is touched.
 seed_skill_cache_offline() {
     local cache="$TEST_HOME/.cache/dotfiles/claude-skill-sources"
-    local src
-    for src in paulnsorensen__easy-cheese paulnsorensen__skillz-that-grillz; do
-        mkdir -p "$cache/$src/.git" "$cache/$src/skills/dummy-$src"
-        echo "# dummy" > "$cache/$src/skills/dummy-$src/SKILL.md"
-    done
+    local registry="$REAL_DOTFILES_DIR/skills/_registry.yaml"
+    # Registry-driven: seed every source at its skills_path so a registry
+    # addition can't strand the offline vendor on a fake-git clone.
+    local src enc sp
+    while IFS= read -r src; do
+        [[ -z "$src" ]] && continue
+        enc="${src//\//__}"
+        sp=$(yq -r ".sources.\"$src\".skills_path // \"skills\"" "$registry")
+        mkdir -p "$cache/$enc/.git" "$cache/$enc/$sp/dummy-$enc"
+        echo "# dummy" > "$cache/$enc/$sp/dummy-$enc/SKILL.md"
+    done < <(yq -r '.sources | keys | .[]' "$registry")
     local fake_bin="$TEST_HOME/fake-git-bin"
     mkdir -p "$fake_bin"
     printf '#!/usr/bin/env bash\nexit 1\n' > "$fake_bin/git"

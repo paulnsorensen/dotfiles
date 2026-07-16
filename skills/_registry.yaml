@@ -5,9 +5,16 @@
 # agentskills.io specification.
 #
 # Optional fields:
-#   skills:  explicit list of skill names (passed as repeated --skill; else '*')
-#   pin:     git branch or tag (appended as <repo>@<ref> → `git clone --branch`;
-#            commit SHAs are NOT supported by the clone-based fetch)
+#   skills:      explicit list of skill names (passed as repeated --skill; else '*')
+#   pin:         git branch or tag (appended as <repo>@<ref> → `git clone --branch`;
+#                commit SHAs are NOT supported by the clone-based fetch)
+#   skills_path: in-repo dir to scan for skills (default "skills"); consumed by
+#                the chezmoi assembly path (_cz_vendor_external_skills in
+#                .sync-lib.sh) for harnesses restricted via `harnesses:`. The
+#                npx `skills add` path (chezmoi/lib/install-external.sh) does
+#                NOT read it — sources restricted to `harnesses: [omp]` are
+#                skipped there because omp is absent from
+#                agent-profile/agent_profile/skill_agents.txt (intended).
 #
 # Installs always run with --copy (overwrite); the source repo is shallow-cloned
 # once per entry and copied into every configured harness in one invocation.
@@ -24,3 +31,12 @@ sources:
   paulnsorensen/skillz-that-grillz:
     description: Other useful skills
     harnesses: [claude]
+  paulnsorensen/hallouminate:
+    description: hallouminate plugin-bundled wiki skills (vendored for omp; claude/codex get them via the native plugin)
+    skills_path: plugins/hallouminate/skills
+    harnesses: [omp]
+    skills: [wiki-ingest, wiki-init, wiki-query, wiki-reindex, wiki-roadmap]
+  paulnsorensen/milknado:
+    description: milknado plugin-bundled skills (vendored for omp; claude gets them via the native plugin)
+    skills_path: plugins/milknado/skills
+    harnesses: [omp]

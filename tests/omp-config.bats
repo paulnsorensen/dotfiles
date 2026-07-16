@@ -152,26 +152,31 @@ STDIN"
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
 
-@test "omp-mcp: native user config keeps only direct MCP servers" {
+@test "omp-mcp: native user config keeps direct MCP servers, no omp-scoped plugin duplicates" {
     local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
     local plugin_registry="$REAL_DOTFILES_DIR/agents/plugins/registry.yaml"
     jq -e '.mcpServers.context7.command == "npx"' "$cfg"
     jq -e '.mcpServers.context7.args == ["-y", "@upstash/context7-mcp"]' "$cfg"
     jq -e '.mcpServers.context7.env.CONTEXT7_API_KEY == "${CONTEXT7_API_KEY}"' "$cfg"
-    jq -e '.mcpServers | has("hallouminate") | not' "$cfg"
-    jq -e '.mcpServers | has("milknado") | not' "$cfg"
+    jq -e '.mcpServers.hallouminate.command == "hallouminate"' "$cfg"
+    jq -e '.mcpServers.hallouminate.args == ["serve"]' "$cfg"
+    jq -e '.mcpServers.milknado.command == "uvx"' "$cfg"
+    jq -e '.mcpServers.milknado.args == ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]' "$cfg"
 
-    # Plugin-owned MCPs arrive through OMP's native plugin discovery as
-    # plugin:server namespaces. Listing the same server here creates duplicate
-    # bare + plugin-prefixed MCP instances.
+    # hallouminate/milknado are vendored here directly: neither lists `omp` in
+    # agents/plugins/registry.yaml `harnesses:`, so OMP never gets them via
+    # plugin decomposition (that mechanism is claude/codex/opencode/cursor/
+    # copilot/crush only). Listing a server here only duplicates a
+    # plugin-owned MCP for a harness the plugin registry actually decomposes
+    # onto.
     local duplicates
     duplicates=$(
         comm -12 \
             <(jq -r '.mcpServers | keys[]' "$cfg" | sort) \
-            <(yq -r '.plugins | keys | .[]' "$plugin_registry" | sort)
+            <(yq -r '.plugins | to_entries | map(select(.value.harnesses // [] | index("omp"))) | .[].key' "$plugin_registry" | sort)
     )
     if [ -n "$duplicates" ]; then
-        echo "dot_omp/private_agent/mcp.json duplicates plugin-owned MCP server(s):"
+        echo "dot_omp/private_agent/mcp.json duplicates omp-scoped plugin-owned MCP server(s):"
         printf '%s\n' "$duplicates"
         return 1
     fi
