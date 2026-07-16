@@ -7,10 +7,12 @@
  */
 
 const LINEAR_API_URL = 'https://api.linear.app/graphql';
+const PAGE_SIZE = 50;
 
 const QUERY = `
-  query RoadmapTeamData($teamKey: String!) {
-    projects(filter: { team: { key: { eq: $teamKey } } }) {
+  query RoadmapTeamData($teamKey: String!, $projectsAfter: String, $issuesAfter: String) {
+    projects(filter: { team: { key: { eq: $teamKey } } }, first: ${PAGE_SIZE}, after: $projectsAfter) {
+      pageInfo { hasNextPage endCursor }
       nodes {
         id
         slugId
@@ -24,7 +26,8 @@ const QUERY = `
         inverseRelations { nodes { type relatedProject { id slugId } } }
       }
     }
-    issues(filter: { team: { key: { eq: $teamKey } } }) {
+    issues(filter: { team: { key: { eq: $teamKey } } }, first: ${PAGE_SIZE}, after: $issuesAfter) {
+      pageInfo { hasNextPage endCursor }
       nodes {
         id
         project { id slugId }
@@ -109,26 +112,52 @@ export async function fetchLinear(team, { transport = fetch } = {}) {
     throw new Error('LINEAR_API_KEY environment variable is not set');
   }
 
-  const response = await transport(LINEAR_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: apiKey,
-    },
-    body: JSON.stringify({ query: QUERY, variables: { teamKey: team } }),
-  });
+  const requestPage = async (variables) => {
+    const response = await transport(LINEAR_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: apiKey,
+      },
+      body: JSON.stringify({ query: QUERY, variables }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`Linear API request failed with status ${response.status}`);
-  }
+    if (!response.ok) {
+      throw new Error(`Linear API request failed with status ${response.status}`);
+    }
 
-  const body = await response.json();
-  if (body.errors?.length) {
-    throw new Error(`Linear API returned errors: ${body.errors.map((error) => error.message).join('; ')}`);
-  }
+    const body = await response.json();
+    if (body.errors?.length) {
+      throw new Error(`Linear API returned errors: ${body.errors.map((error) => error.message).join('; ')}`);
+    }
+    return body;
+  };
 
-  const projectNodes = body.data?.projects?.nodes ?? [];
-  const issueNodes = body.data?.issues?.nodes ?? [];
+  // Both connections page in lockstep within one query; an exhausted connection
+  // stops accumulating (and keeps its final cursor) while the other finishes.
+  const projectNodes = [];
+  const issueNodes = [];
+  let projectsAfter = null;
+  let issuesAfter = null;
+  let projectsDone = false;
+  let issuesDone = false;
+
+  do {
+    const body = await requestPage({ teamKey: team, projectsAfter, issuesAfter });
+    const projects = body.data?.projects;
+    const issues = body.data?.issues;
+
+    if (!projectsDone) {
+      projectNodes.push(...(projects?.nodes ?? []));
+      projectsDone = !projects?.pageInfo?.hasNextPage;
+      projectsAfter = projects?.pageInfo?.endCursor ?? projectsAfter;
+    }
+    if (!issuesDone) {
+      issueNodes.push(...(issues?.nodes ?? []));
+      issuesDone = !issues?.pageInfo?.hasNextPage;
+      issuesAfter = issues?.pageInfo?.endCursor ?? issuesAfter;
+    }
+  } while (!projectsDone || !issuesDone);
 
   const relations = [];
   const seen = new Set();

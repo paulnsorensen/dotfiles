@@ -124,7 +124,7 @@ test('fetchLinear posts a single read-only GraphQL request to api.linear.app', a
   const payload = JSON.parse(init.body);
   assert.match(payload.query, /projects/);
   assert.match(payload.query, /issues/);
-  assert.deepEqual(payload.variables, { teamKey: 'KIP' });
+  assert.deepEqual(payload.variables, { teamKey: 'KIP', projectsAfter: null, issuesAfter: null });
 });
 
 test('fetchLinear maps projects, milestones, and deduped initiatives', async () => {
@@ -201,4 +201,106 @@ test('fetchLinear throws when the GraphQL response contains errors', async () =>
   const transport = async () => jsonResponse({ errors: [{ message: 'boom' }] });
 
   await assert.rejects(() => fetchLinear('KIP', { transport }), /boom/);
+});
+
+function pagedProject(ref) {
+  return {
+    id: ref,
+    slugId: ref,
+    name: `Project ${ref}`,
+    status: null,
+    startDate: null,
+    targetDate: null,
+    initiative: null,
+    projectMilestones: { nodes: [] },
+    relations: { nodes: [] },
+    inverseRelations: { nodes: [] },
+  };
+}
+
+function connectionPage(nodes, { hasNextPage, endCursor }) {
+  return { pageInfo: { hasNextPage, endCursor }, nodes };
+}
+
+test('fetchLinear pages through both connections until exhausted and accumulates all pages', async () => {
+  const pages = [
+    {
+      data: {
+        projects: connectionPage([pagedProject('proj-a')], { hasNextPage: true, endCursor: 'proj-cursor-1' }),
+        issues: connectionPage([], { hasNextPage: true, endCursor: 'issue-cursor-1' }),
+      },
+    },
+    {
+      data: {
+        projects: connectionPage([pagedProject('proj-b')], { hasNextPage: false, endCursor: null }),
+        issues: connectionPage(
+          [
+            {
+              id: 'issue-x',
+              project: { id: 'proj-a', slugId: 'proj-a' },
+              relations: {
+                nodes: [{ type: 'blocks', relatedIssue: { id: 'issue-y', project: { id: 'proj-b', slugId: 'proj-b' } } }],
+              },
+            },
+          ],
+          { hasNextPage: false, endCursor: null },
+        ),
+      },
+    },
+  ];
+  const calls = [];
+  const transport = async (url, init) => {
+    calls.push(JSON.parse(init.body));
+    return jsonResponse(pages[calls.length - 1]);
+  };
+
+  const model = await fetchLinear('KIP', { transport });
+
+  assert.equal(calls.length, 2, 'loop must terminate after the last page');
+  assert.deepEqual(calls[0].variables, { teamKey: 'KIP', projectsAfter: null, issuesAfter: null });
+  assert.deepEqual(calls[1].variables, {
+    teamKey: 'KIP',
+    projectsAfter: 'proj-cursor-1',
+    issuesAfter: 'issue-cursor-1',
+  });
+  assert.match(calls[0].query, /pageInfo\s*\{\s*hasNextPage\s+endCursor\s*\}/);
+
+  assert.deepEqual(
+    model.projects.map((project) => project.ref),
+    ['proj-a', 'proj-b'],
+    'projects from both pages must be in the model',
+  );
+  assert.deepEqual(model.relations, [{ sourceRef: 'proj-a', targetRef: 'proj-b', type: 'blocks' }]);
+});
+
+test('fetchLinear does not duplicate an exhausted connection while the other keeps paging', async () => {
+  const pages = [
+    {
+      data: {
+        projects: connectionPage([pagedProject('proj-a')], { hasNextPage: false, endCursor: 'proj-cursor-final' }),
+        issues: connectionPage([], { hasNextPage: true, endCursor: 'issue-cursor-1' }),
+      },
+    },
+    {
+      data: {
+        // server re-answers the exhausted projects connection; nodes must not re-accumulate
+        projects: connectionPage([], { hasNextPage: false, endCursor: null }),
+        issues: connectionPage([], { hasNextPage: false, endCursor: null }),
+      },
+    },
+  ];
+  const calls = [];
+  const transport = async (url, init) => {
+    calls.push(JSON.parse(init.body));
+    return jsonResponse(pages[calls.length - 1]);
+  };
+
+  const model = await fetchLinear('KIP', { transport });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(
+    model.projects.map((project) => project.ref),
+    ['proj-a'],
+    'exhausted projects connection must not accumulate twice',
+  );
 });
