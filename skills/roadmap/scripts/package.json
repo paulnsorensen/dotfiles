@@ -1,0 +1,18 @@
+
+{
+  "name": "roadmap-generator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Layered roadmap diagram generator: Linear + sidecar YAML in, Excalidraw frames + dependency-DAG PNG out",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@notionhq/client": "^2.3.0",
+    "elkjs": "^0.9.3",
+    "satori": "^0.12.2",
+    "@resvg/resvg-js": "^2.6.2",
+    "yaml": "^2.5.0"
+  }
+}
