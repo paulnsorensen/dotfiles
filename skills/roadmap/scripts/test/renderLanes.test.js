@@ -150,3 +150,28 @@ test('every element is well-formed Excalidraw shape/text data', () => {
     }
   }
 });
+
+test('excludes items not tagged for altitude 2', () => {
+  // Altitude exclusion: an item whose altitudes omit 2 must never reach the
+  // workstream swimlanes — no bar and no label for it.
+  const model = {
+    ...fixtureModel,
+    items: fixtureModel.items.map((item) =>
+      item.ref === 'dashboards' ? { ...item, altitudes: [1, 3] } : item,
+    ),
+  };
+
+  const { elements } = renderLanes(model);
+  const itemBars = byKind(elements, 'itemBar');
+  const itemLabels = byKind(elements, 'itemLabel');
+
+  assert.equal(itemBars.length, fixtureModel.items.length - 1);
+  assert.ok(
+    !itemBars.some((bar) => bar.customData.itemRef === 'dashboards'),
+    'altitude-excluded item must have no bar',
+  );
+  assert.ok(
+    !itemLabels.some((label) => label.customData.itemRef === 'dashboards'),
+    'altitude-excluded item must have no label',
+  );
+});

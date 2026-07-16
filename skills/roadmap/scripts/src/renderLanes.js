@@ -18,6 +18,8 @@
  * same model produce identical output.
  */
 
+import { filterByAltitude } from './altitudeFilter.js';
+
 export const FRAME_NAME = 'Altitude 2 — Workstreams';
 
 export const LANE_GEOMETRY = {
@@ -146,10 +148,11 @@ function groupItemsByLane(items) {
 }
 
 /**
- * @param {import('./types.js').RoadmapModel} model
+ * @param {import('./types.js').RoadmapModel} inputModel
  * @returns {{frameName: string, elements: object[]}}
  */
-export function renderLanes(model) {
+export function renderLanes(inputModel) {
+  const model = filterByAltitude(inputModel, 2);
   const { buckets, lanes, items } = model;
   const { laneHeaderWidth, bucketWidth, bucketHeaderHeight, laneHeight } = LANE_GEOMETRY;
 
