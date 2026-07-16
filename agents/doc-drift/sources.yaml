@@ -55,7 +55,7 @@ sources:
     signal: { type: npm, ref: tavily-mcp }
     docs: https://github.com/tavily-ai/tavily-mcp
     governs: [chezmoi/.chezmoidata/claude.yaml, agents/mcp/registry.yaml]
-    reconciled: "0.2.20"
+    reconciled: "0.2.21"
 
   - id: chezmoi
     signal: { type: gh_release, ref: twpayne/chezmoi }
