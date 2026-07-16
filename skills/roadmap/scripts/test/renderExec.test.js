@@ -84,3 +84,27 @@ test('renderExec elements all carry required Excalidraw fields', () => {
     }
   }
 });
+
+test('renderExec excludes items not tagged for altitude 1 (and empty outcomes drop with them)', () => {
+  // Altitude exclusion: an item whose altitudes omit 1 must never reach the
+  // exec view, and an outcome left with no visible items must not render a card.
+  const model = {
+    ...fixtureModel,
+    items: fixtureModel.items.map((item) =>
+      item.ref === 'dashboards' ? { ...item, altitudes: [2, 3] } : item,
+    ),
+  };
+
+  const { elements } = renderExec(model);
+  const allText = elements
+    .filter((element) => element.type === 'text')
+    .map((element) => element.text)
+    .join('\n');
+
+  assert.ok(!allText.includes('Leadership dashboards'), 'altitude-excluded item title must not render');
+  assert.ok(
+    !allText.includes('Roadmap reads itself'),
+    'outcome whose only item is altitude-excluded must not render',
+  );
+  assert.equal(elements.filter((element) => element.type === 'rectangle').length, 2);
+});

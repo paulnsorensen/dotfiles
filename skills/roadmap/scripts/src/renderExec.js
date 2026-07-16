@@ -6,6 +6,8 @@
  * unlocks lines. No arrows, no dates — this altitude is outcome-only.
  */
 
+import { filterByAltitude } from './altitudeFilter.js';
+
 /** @typedef {import('./types.js').RoadmapModel} RoadmapModel */
 
 const HORIZONS = ['now', 'next', 'later'];
@@ -30,10 +32,11 @@ function buildCardLines(outcome, items) {
 }
 
 /**
- * @param {RoadmapModel} model
+ * @param {RoadmapModel} inputModel
  * @returns {{frameName: string, elements: object[]}}
  */
-export function renderExec(model) {
+export function renderExec(inputModel) {
+  const model = filterByAltitude(inputModel, 1);
   const elements = [];
   let idCounter = 0;
   const nextId = (prefix) => `${prefix}-${idCounter++}`;
