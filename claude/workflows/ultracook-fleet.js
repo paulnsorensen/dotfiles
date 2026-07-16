@@ -308,11 +308,9 @@ function slugify(text) {
 const rawArg =
   typeof args === 'string'
     ? args
-    : args && typeof args === 'object' && args.roadmap_slug
+    : args && typeof args === 'object' && typeof args.roadmap_slug === 'string'
       ? args.roadmap_slug
-      : args != null
-        ? String(args)
-        : ''
+      : ''
 const roadmapSlug = rawArg.trim()
 
 if (!roadmapSlug) {

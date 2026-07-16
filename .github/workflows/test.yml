@@ -55,3 +55,6 @@ jobs:
 
     - name: Run tests
       run: just test
+
+    - name: Run smoke tests
+      run: just smoke
