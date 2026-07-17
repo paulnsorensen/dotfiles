@@ -31,7 +31,7 @@ sources:
     signal: { type: npm, ref: "@openai/codex" }
     docs: https://developers.openai.com/codex
     governs: [harnesses/codex.md, agents/hooks/registry.yaml, agents/registry.yaml]
-    reconciled: "0.143.0"
+    reconciled: "0.144.5"
 
   - id: opencode
     signal: { type: npm, ref: opencode-ai }
