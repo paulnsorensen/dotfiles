@@ -13,7 +13,7 @@ lint-shell:
     shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/claude-mcp-reconcile.sh chezmoi/lib/claude-plugin-reconcile.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-codex.sh chezmoi/lib/install-shared-assets.sh
     shellcheck -x -e SC1091 -s bash agents/hooks/session-start-cheese-flair.sh
     shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh
-    shellcheck -x -e SC1091 -s bash tests/workflows-parse.sh
+    shellcheck -x -e SC1091 -s bash tests/workflows-test.sh
     @echo "shellcheck: ok"
 
 # ruff on python files
@@ -52,9 +52,9 @@ lint-markdown-fix:
 test *ARGS:
     ./tests/run-tests.sh {{ARGS}}
 
-# smoke tests — parse checks on workflow definitions
+# smoke tests — execute workflow definitions offline
 smoke:
-    ./tests/workflows-parse.sh
+    ./tests/workflows-test.sh
 
 # validate the opt-in local-llm stack — shellcheck scripts + parse configs
 check-llm:
