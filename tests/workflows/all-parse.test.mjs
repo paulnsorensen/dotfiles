@@ -18,7 +18,7 @@ const workflowPaths = (await readdir(workflowSourceDirectory, { withFileTypes: t
 
 test('every shipped workflow loads with its meta export', async () => {
   for (const path of workflowPaths) {
-    const workflow = await loadWorkflow(resolve(root, path))
+    const workflow = await loadWorkflow(path)
     assert.equal(typeof workflow.meta.name, 'string', path)
     assert.equal(typeof workflow.run, 'function', path)
   }

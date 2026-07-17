@@ -48,6 +48,9 @@ function validateValue(value, schema, path) {
     throw new SchemaError(path + ': expected one of ' + schema.enum.join(', ') + ', got ' + JSON.stringify(value))
   }
   if (schema.required) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new SchemaError(path + ': expected object, got ' + (Array.isArray(value) ? 'array' : typeof value))
+    }
     for (const key of schema.required) {
       if (!Object.hasOwn(value, key)) throw new SchemaError(path + '.' + key + ': required')
     }
