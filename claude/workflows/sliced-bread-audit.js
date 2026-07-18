@@ -2,14 +2,14 @@
 export const meta = {
   name: 'sliced-bread-audit',
   description:
-    'Deep slice-by-slice audit of a Sliced Bread codebase: map the slices, fan out one fable evaluator per slice plus a cross-slice dependency pass, adversarially verify every finding by 3-vote refutation, and open one labeled GitHub issue per confirmed finding.',
+    'Deep slice-by-slice audit of a Sliced Bread codebase: map the slices, pipeline one fable evaluator per slice straight into verification (batch citation-check plus an adversarial refuter on blocker/high), run a concurrent cross-slice dependency pass, and open labeled GitHub issues for confirmed findings in batches.',
   whenToUse:
     'Audit a repo (or subtree) against Sliced Bread architecture and code quality with findings landing as GitHub issues. Requires gh auth in the target repo. Pass {dry_run: true} to preview without filing issues.',
   phases: [
     { title: 'Map', detail: 'discover slices; in parallel, gh setup (labels + existing audit issues)' },
-    { title: 'Evaluate', detail: 'one fable evaluator per slice + one cross-slice dependency pass', model: 'fable' },
-    { title: 'Verify', detail: '3 adversarial fable refuters per floor-meeting finding, majority vote', model: 'fable' },
-    { title: 'File', detail: 'dedupe against existing issues, cap, open one gh issue per confirmed finding' },
+    { title: 'Evaluate', detail: 'one fable evaluator per slice (pipelined into Verify) + concurrent cross-slice pass', model: 'fable' },
+    { title: 'Verify', detail: 'per-slice batch citation-check; one adversarial fable refuter per blocker/high', model: 'fable' },
+    { title: 'File', detail: 'dedupe against existing issues, cap, file gh issues in batches of 10' },
   ],
 }
 
@@ -135,14 +135,42 @@ const SETUP_SCHEMA = {
   },
 }
 
-const ISSUE_SCHEMA = {
+const CITATION_SCHEMA = {
   type: 'object',
-  required: ['created'],
+  required: ['results'],
   properties: {
-    created: { type: 'boolean' },
-    url: { type: 'string' },
-    title: { type: 'string' },
-    skipped_reason: { type: 'string' },
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['index', 'ok'],
+        properties: {
+          index: { type: 'integer' },
+          ok: { type: 'boolean' },
+          reason: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
+const BATCH_ISSUE_SCHEMA = {
+  type: 'object',
+  required: ['results'],
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['index', 'created'],
+        properties: {
+          index: { type: 'integer' },
+          created: { type: 'boolean' },
+          url: { type: 'string' },
+          skipped_reason: { type: 'string' },
+        },
+      },
+    },
   },
 }
 
@@ -199,13 +227,24 @@ function evalPrompt(item, sliceIndex) {
   ].join('\n')
 }
 
-function verifyPrompt(f, lens) {
+function citationPrompt(findings) {
   return [
-    `Adversarially try to REFUTE this audit finding through the ${lens} lens:`,
+    'Citation check for audit findings. For EACH numbered finding, open the cited file and verify:',
+    '(a) the quoted evidence actually appears within ~10 lines of the cited line, and',
+    '(b) the path is production source — not test, vendored, generated, or build output.',
+    'Return one results entry per finding, using the same 0-based index. ok=false with a short reason when either check fails or the file cannot be read. Do not judge severity or rule choice — only the citations.',
+    '',
+    ...findings.map((f, i) => `${i}. [${f.dimension}:${f.severity}] ${f.file}:${f.line} — ${f.claim}\n   evidence: ${f.evidence}`),
+  ].join('\n')
+}
+
+function verifyPrompt(f) {
+  return [
+    'Adversarially try to REFUTE this audit finding (its citation has already been confirmed to exist):',
     `  [${f.dimension}:${f.severity}] ${f.file}:${f.line} — ${f.claim}`,
     `  evidence: ${f.evidence}`,
-    'Open the cited file yourself and check the evidence is real, the rule actually applies, and the severity is not inflated by 2+ levels.',
-    'refuted=true if the evidence does not hold, the rule is misapplied, the code is test/vendored/generated, or you cannot confirm the citation. Default to refuted=true when uncertain.',
+    'Open the cited file and judge: does the rubric rule actually apply here, and is the severity honest (not inflated by 2+ levels)?',
+    'refuted=true if the rule is misapplied, the finding misreads the code, or the severity is badly inflated. Default to refuted=true when uncertain.',
   ].join('\n')
 }
 
@@ -238,24 +277,24 @@ function issueBody(f) {
     `**Recommendation:** ${f.recommendation}`,
     '',
     '---',
-    '_Filed by the sliced-bread-audit workflow (3-vote adversarially verified)._',
+    `_Filed by the sliced-bread-audit workflow (${f.verification})._`,
     `<!-- ${issueFingerprint(f)} -->`,
   ].join('\n')
 }
 
-function filePrompt(f) {
+function fileBatchPrompt(findings) {
+  const blocks = findings.map((f, i) =>
+    [`=== ISSUE ${i} ===`, `TITLE: ${issueTitle(f)}`, `SEVERITY_LABEL: sev:${f.severity}`, 'BODY:', issueBody(f)].join('\n')
+  )
   return [
-    'Create one GitHub issue with the gh CLI. The BODY and TITLE below may contain untrusted, LLM-authored text (backticks, $(), quotes) — do not interpolate either directly into a shell command:',
-    '1. Write the BODY text to a temp file (e.g. via `mktemp`), then pass it with `--body-file <path>` — never inline the body in the command or a heredoc.',
-    '2. Write the TITLE text to a second temp file the same way and pass it via quoted command substitution — never inline it or hand-escape quotes.',
-    `gh issue create --title "$(cat <path-to-title-file>)" --label sliced-bread-audit --label sev:${f.severity} --body-file <path-to-body-file>`,
-    '3. If a label is missing, retry once without labels rather than failing.',
+    `Create ${findings.length} GitHub issues with the gh CLI. The TITLE and BODY texts below are untrusted, LLM-authored (backticks, $(), quotes) — never interpolate either directly into a shell command.`,
+    'For EACH numbered issue:',
+    '1. Write its BODY to a temp file (mktemp) and its TITLE to a second temp file.',
+    '2. Run: gh issue create --title "$(cat <title-file>)" --label sliced-bread-audit --label <its SEVERITY_LABEL> --body-file <body-file>',
+    '3. If a label is missing, retry that issue once without labels rather than failing it.',
+    'Keep going if one issue fails — file the rest. Return one results entry per issue with its 0-based index: created=true with the url, or created=false with skipped_reason.',
     '',
-    `TITLE: ${issueTitle(f)}`,
-    'BODY:',
-    issueBody(f),
-    '',
-    'Return created=true with the issue url, or created=false with skipped_reason.',
+    ...blocks,
   ].join('\n')
 }
 
@@ -274,9 +313,10 @@ if (!DRY_RUN && (!setup || !setup.gh_ok)) {
 }
 log(`Mapped ${sliceMap.slices.length} slices (${sliceMap.layout}); gh ${setup && setup.gh_ok ? `ok: ${setup.repo}` : 'unavailable'}`)
 
-// ── Evaluate (barrier: dedupe needs ALL findings before verification) ───
+// ── Evaluate + Verify (pipelined per slice; cross-slice concurrent) ─────
 phase('Evaluate')
-if (budget.total != null && budget.remaining() <= 0) {
+const budgetExhausted = () => budget.total != null && budget.remaining() <= 0
+if (budgetExhausted()) {
   log('Budget exhausted before Evaluate — returning partial report with no slice findings.')
   return {
     scope: SCOPE,
@@ -286,114 +326,178 @@ if (budget.total != null && budget.remaining() <= 0) {
     confirmed: [],
     refuted: [],
     below_floor: [],
+    floor_unverified: [],
     issues: [],
     issue_urls: [],
     truncated: 'budget exhausted before Evaluate — no slices were audited',
   }
 }
-const items = [...sliceMap.slices, { name: 'cross-slice', path: SCOPE, kind: 'cross-slice' }]
-const evalResults = await parallel(
-  items.map((it) => () =>
-    agent(evalPrompt(it, sliceMap.slices), {
-      label: `eval:${it.name}`,
+
+const sortDesc = (fs) => [...fs].sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity])
+const bucketKey = (f) => `${f.file}::${f.dimension}::${lineBucket(f.line)}`
+let skippedSlices = 0
+
+// Verify one batch of findings: severity-sorted batch citation-check (one low
+// agent), then one adversarial refuter per blocker/high. Mediums and lows ship
+// on a confirmed citation alone; budget exhaustion degrades blockers-first.
+async function verifyFindings(findings, label) {
+  const below = findings.filter((f) => SEV_RANK[f.severity] < SEV_RANK[MIN_SEVERITY])
+  const floor = sortDesc(findings.filter((f) => SEV_RANK[f.severity] >= SEV_RANK[MIN_SEVERITY]))
+  const out = { confirmed: [], refuted: [], below, unverified: [] }
+  if (!floor.length) return out
+  if (budgetExhausted()) {
+    out.unverified = floor
+    return out
+  }
+  const cite = await agent(citationPrompt(floor), {
+    label: `cite:${label}`,
+    phase: 'Verify',
+    schema: CITATION_SCHEMA,
+    model: 'fable',
+    effort: 'low',
+  })
+  if (!cite) {
+    // Citation agent died — nothing ships unchecked.
+    out.unverified = floor
+    return out
+  }
+  const byIndex = new Map((cite.results || []).map((r) => [r.index, r]))
+  const cited = []
+  floor.forEach((f, i) => {
+    const r = byIndex.get(i)
+    if (r && r.ok) cited.push(f)
+    else out.refuted.push({ ...f, refute_reason: r && r.reason ? `citation: ${r.reason}` : 'citation unconfirmed' })
+  })
+  out.confirmed.push(
+    ...cited.filter((f) => SEV_RANK[f.severity] < SEV_RANK.high).map((f) => ({ ...f, verification: 'citation-checked' }))
+  )
+  const contested = cited.filter((f) => SEV_RANK[f.severity] >= SEV_RANK.high)
+  const votes = await parallel(
+    contested.map((f) => async () => {
+      if (budgetExhausted()) return { budget_skipped: true }
+      return agent(verifyPrompt(f), {
+        label: `refute:${f.file}:${f.line}`,
+        phase: 'Verify',
+        schema: VERDICT_SCHEMA,
+        model: 'fable',
+        effort: 'high',
+      })
+    })
+  )
+  contested.forEach((f, i) => {
+    const v = votes[i]
+    if (v && v.budget_skipped) out.unverified.push(f)
+    else if (!v || v.refuted) {
+      // A crashed refuter counts as a refutation: an unconfirmed blocker/high must not ship.
+      out.refuted.push({
+        ...f,
+        refute_reason: v ? `refuter: ${(v.reasoning || '').slice(0, 140)}` : 'refuter crashed (conservative refute)',
+      })
+    } else out.confirmed.push({ ...f, verification: 'citation-checked + refuter-tested' })
+  })
+  return out
+}
+
+const crossItem = { name: 'cross-slice', path: SCOPE, kind: 'cross-slice' }
+const [sliceResults, crossEval] = await parallel([
+  () =>
+    pipeline(
+      sliceMap.slices,
+      (s) => {
+        if (budgetExhausted()) {
+          skippedSlices++
+          return null
+        }
+        return agent(evalPrompt(s, sliceMap.slices), {
+          label: `eval:${s.name}`,
+          phase: 'Evaluate',
+          schema: FINDINGS_SCHEMA,
+          model: 'fable',
+          effort: 'high',
+        })
+      },
+      (evalRes, s) => {
+        if (!evalRes) return null
+        const raw = evalRes.findings.map((f) => ({ ...f, slice: evalRes.slice }))
+        return verifyFindings(raw, s.name).then((v) => ({ raw, ...v }))
+      }
+    ),
+  () =>
+    agent(evalPrompt(crossItem, sliceMap.slices), {
+      label: 'eval:cross-slice',
       phase: 'Evaluate',
       schema: FINDINGS_SCHEMA,
       model: 'fable',
       effort: 'high',
-    })
-  )
-)
+    }),
+])
 
-const allFindings = evalResults
-  .filter(Boolean)
-  .flatMap((r) => r.findings.map((f) => ({ ...f, slice: r.slice })))
+const sliceOut = (sliceResults || []).filter(Boolean)
+const sliceRaw = sliceOut.flatMap((r) => r.raw)
+if (skippedSlices) log(`Budget exhausted mid-Evaluate — ${skippedSlices} slices not audited.`)
 
-// Dedupe (same defect flagged by a slice pass AND the cross-slice pass):
-// bucket by file + dimension + ~10-line window, keep the highest severity.
-const bySeverity = [...allFindings].sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity])
-const seen = new Set()
-const deduped = []
-for (const f of bySeverity) {
-  const key = `${f.file}::${f.dimension}::${lineBucket(f.line)}`
-  if (seen.has(key)) continue
-  seen.add(key)
-  deduped.push(f)
+// Cross-slice findings: keep only those strictly more severe than every slice
+// finding in the same bucket (the File-stage fingerprint dedupe keeps the
+// higher-severity duplicate, so nothing is lost by dropping the rest here).
+const bucketBest = new Map()
+for (const f of sliceRaw) {
+  const k = bucketKey(f)
+  bucketBest.set(k, Math.max(bucketBest.get(k) ?? -1, SEV_RANK[f.severity]))
 }
-const floorMet = deduped.filter((f) => SEV_RANK[f.severity] >= SEV_RANK[MIN_SEVERITY])
-const belowFloor = deduped.length - floorMet.length
-log(`${allFindings.length} raw findings → ${deduped.length} after dedupe; verifying ${floorMet.length} at ${MIN_SEVERITY}+ (${belowFloor} below floor recorded, not verified)`)
+const crossRaw = crossEval ? crossEval.findings.map((f) => ({ ...f, slice: 'cross-slice' })) : []
+const crossFresh = crossRaw.filter((f) => (bucketBest.get(bucketKey(f)) ?? -1) < SEV_RANK[f.severity])
+const crossVerified = await verifyFindings(crossFresh, 'cross-slice')
 
-// ── Verify: 3 diverse-lens refuters per finding, majority survives ──────
-phase('Verify')
-if (budget.total != null && budget.remaining() <= 0) {
-  log(`Budget exhausted before Verify — returning partial report; ${floorMet.length} floor-meeting findings excluded as unverified.`)
-  return {
-    scope: SCOPE,
-    layout: sliceMap.layout,
-    slices: sliceMap.slices.map((s) => s.name),
-    raw_findings: allFindings.length,
-    confirmed: [],
-    refuted: [],
-    below_floor: deduped
-      .filter((f) => SEV_RANK[f.severity] < SEV_RANK[MIN_SEVERITY])
-      .map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.claim}`),
-    floor_unverified: floorMet.map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.claim}`),
-    issues: [],
-    issue_urls: [],
-    truncated: `budget exhausted before Verify — ${floorMet.length} findings met the severity floor but were not adversarially verified`,
-  }
-}
-const LENSES = ['evidence-accuracy', 'rule-applicability', 'severity-calibration']
-const MAJORITY = Math.floor(LENSES.length / 2) + 1
-const verified = await parallel(
-  floorMet.map((f) => () =>
-    parallel(
-      LENSES.map((lens) => () =>
-        agent(verifyPrompt(f, lens), {
-          label: `verify:${f.file}:${f.line}`,
-          phase: 'Verify',
-          schema: VERDICT_SCHEMA,
-          model: 'fable',
-        })
-      )
-    ).then((votes) => {
-      const live = votes.filter(Boolean)
-      const refutations = live.filter((v) => v.refuted).length
-      // Missing votes count as refutations: an unconfirmed finding must not ship.
-      const survives = live.length - refutations >= MAJORITY
-      return { ...f, survives, refutations: refutations + (LENSES.length - live.length) }
-    })
-  )
+const confirmedAll = sortDesc([...sliceOut.flatMap((r) => r.confirmed), ...crossVerified.confirmed])
+const refutedAll = [...sliceOut.flatMap((r) => r.refuted), ...crossVerified.refuted]
+const belowAll = [...sliceOut.flatMap((r) => r.below), ...crossVerified.below]
+const unverifiedAll = [...sliceOut.flatMap((r) => r.unverified), ...crossVerified.unverified]
+log(
+  `${sliceRaw.length + crossRaw.length} raw findings → ${confirmedAll.length} confirmed, ${refutedAll.length} refuted, ${unverifiedAll.length} unverified, ${belowAll.length} below floor`
 )
-const confirmed = verified
-  .filter(Boolean)
-  .filter((f) => f.survives)
-  .sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity])
-const refuted = verified.filter(Boolean).filter((f) => !f.survives)
-log(`${confirmed.length} findings confirmed, ${refuted.length} refuted`)
 
 // ── File issues ─────────────────────────────────────────────────────────
 phase('File')
+// Intra-run fingerprint dedupe (slice × slice collisions): confirmedAll is
+// severity-sorted, so first-seen keeps the highest severity.
+const fpSeen = new Set()
+const uniqueConfirmed = confirmedAll.filter((f) => {
+  const fp = issueFingerprint(f)
+  if (fpSeen.has(fp)) return false
+  fpSeen.add(fp)
+  return true
+})
 const existing = new Set(((setup && setup.existing_fingerprints) || []).map((t) => t.trim()))
-const fresh = confirmed.filter((f) => !existing.has(issueFingerprint(f)))
-const dupes = confirmed.length - fresh.length
+const fresh = uniqueConfirmed.filter((f) => !existing.has(issueFingerprint(f)))
+const dupes = uniqueConfirmed.length - fresh.length
 const toFile = fresh.slice(0, MAX_ISSUES)
 if (fresh.length > MAX_ISSUES) log(`Capping at ${MAX_ISSUES} issues — ${fresh.length - MAX_ISSUES} confirmed findings NOT filed (in the returned report)`)
 if (dupes) log(`${dupes} findings skipped — a matching audit issue (any state) already exists`)
 
+const FILE_CHUNK = 10
 let issues = []
 if (DRY_RUN) {
   log(`Dry run — would file ${toFile.length} issues`)
   issues = toFile.map((f) => ({ created: false, title: issueTitle(f), skipped_reason: 'dry_run' }))
 } else if (!setup || !setup.gh_ok) {
   issues = toFile.map((f) => ({ created: false, title: issueTitle(f), skipped_reason: 'gh unavailable' }))
-} else {
-  issues = await parallel(
-    toFile.map((f) => () =>
-      agent(filePrompt(f), { label: `issue:${f.file}`, phase: 'File', schema: ISSUE_SCHEMA, effort: 'low' })
+} else if (toFile.length) {
+  const chunks = []
+  for (let i = 0; i < toFile.length; i += FILE_CHUNK) chunks.push(toFile.slice(i, i + FILE_CHUNK))
+  const batches = await parallel(
+    chunks.map((c, ci) => () =>
+      agent(fileBatchPrompt(c), { label: `issues:batch-${ci + 1}`, phase: 'File', schema: BATCH_ISSUE_SCHEMA, effort: 'low' })
     )
   )
-  issues = issues.filter(Boolean)
+  // Iterate the chunk, not the agent's results array, so a partial results
+  // array cannot silently drop findings from the Filed X/Y accounting.
+  issues = batches.flatMap((b, ci) =>
+    chunks[ci].map((f, fi) => {
+      const r = b && (b.results || []).find((x) => x.index === fi)
+      if (!r) return { created: false, title: issueTitle(f), skipped_reason: b ? 'no result from filing agent' : 'filing agent failed' }
+      return { created: r.created === true, url: r.url, title: issueTitle(f), skipped_reason: r.skipped_reason }
+    })
+  )
 }
 
 const filed = issues.filter((i) => i.created)
@@ -403,15 +507,15 @@ return {
   scope: SCOPE,
   layout: sliceMap.layout,
   slices: sliceMap.slices.map((s) => s.name),
-  raw_findings: allFindings.length,
-  confirmed: confirmed.map((f) => ({
-    severity: f.severity, dimension: f.dimension, slice: f.slice, refutations: f.refutations,
+  raw_findings: sliceRaw.length + crossRaw.length,
+  confirmed: uniqueConfirmed.map((f) => ({
+    severity: f.severity, dimension: f.dimension, slice: f.slice, verification: f.verification,
     location: `${f.file}:${f.line}`, claim: f.claim, recommendation: f.recommendation,
   })),
-  refuted: refuted.map((f) => `${f.file}:${f.line} — ${f.claim} (${f.refutations}/${LENSES.length} votes to refute)`),
-  below_floor: deduped
-    .filter((f) => SEV_RANK[f.severity] < SEV_RANK[MIN_SEVERITY])
-    .map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.claim}`),
+  refuted: refutedAll.map((f) => `${f.file}:${f.line} — ${f.claim} (${f.refute_reason})`),
+  below_floor: belowAll.map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.claim}`),
+  floor_unverified: unverifiedAll.map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.claim}`),
   issues,
   issue_urls: filed.map((i) => i.url),
+  ...(skippedSlices ? { truncated: `budget exhausted — ${skippedSlices} slices were not audited` } : {}),
 }
