@@ -21,6 +21,8 @@ export const meta = {
 // invocation) reading this report.
 
 const DEFAULT_MAX_PAGES = 40
+const MAX_PAGES = 200
+const UNSAFE_REPO_ROOT_CHARS = /[;&|`$(){}<>'"\\]/
 
 const VERDICT_ENUM = ['current', 'stale', 'contradicted']
 
@@ -167,12 +169,21 @@ function reportPrompt(results, truncated, totalPagesFound, maxPages) {
 // ── run ───────────────────────────────────────────────────────────────────
 
 const opts = args && typeof args === 'object' ? args : {}
-const repoRoot = (typeof opts.repoRoot === 'string' && opts.repoRoot.trim()) || '.'
+const rawRepoRoot = (typeof opts.repoRoot === 'string' && opts.repoRoot.trim()) || '.'
+const repoRootUnsafe = UNSAFE_REPO_ROOT_CHARS.test(rawRepoRoot)
+if (repoRootUnsafe) {
+  log(`wiki-drift-audit: repoRoot "${rawRepoRoot}" contains unsafe characters — falling back to ".".`)
+}
+const repoRoot = repoRootUnsafe ? '.' : rawRepoRoot
 const rawMaxPages = Number(opts.maxPages)
 if (opts.maxPages !== undefined && !(Number.isFinite(rawMaxPages) && rawMaxPages > 0)) {
   log(`wiki-drift-audit: maxPages "${opts.maxPages}" is not a usable positive number — falling back to ${DEFAULT_MAX_PAGES}.`)
 }
-const maxPages = Number.isFinite(rawMaxPages) && rawMaxPages > 0 ? Math.floor(rawMaxPages) : DEFAULT_MAX_PAGES
+let maxPages = Number.isFinite(rawMaxPages) && rawMaxPages > 0 ? Math.floor(rawMaxPages) : DEFAULT_MAX_PAGES
+if (maxPages > MAX_PAGES) {
+  log(`wiki-drift-audit: maxPages ${maxPages} exceeds max ${MAX_PAGES} — clamping to ${MAX_PAGES}.`)
+  maxPages = MAX_PAGES
+}
 
 phase('Map')
 log(`Listing wiki pages under ${repoRoot}/.hallouminate/wiki/ (maxPages=${maxPages}).`)
@@ -201,7 +212,7 @@ phase('Verify')
 const flaggedPages = falsifyResults.filter((r) => Array.isArray(r.claims) && r.claims.some((c) => c.verdict === 'stale' || c.verdict === 'contradicted'))
 if (flaggedPages.length) {
   log(`${flaggedPages.length}/${falsifyResults.length} page(s) carry a stale/contradicted claim — running adversarial second opinion.`)
-  const reverified = await parallel(flaggedPages.map((r) => () => agent(verifyPrompt(r, repoRoot), { schema: PAGE_CLAIMS_SCHEMA, phase: 'Verify', label: `verify:${r.page}` })))
+  const reverified = await pipeline(flaggedPages, (r) => agent(verifyPrompt(r, repoRoot), { schema: PAGE_CLAIMS_SCHEMA, phase: 'Verify', label: `verify:${r.page}` }))
   const reverifiedByPage = new Map(reverified.filter(Boolean).map((v) => [v.page, v]))
   for (let i = 0; i < falsifyResults.length; i++) {
     const r = falsifyResults[i]
@@ -230,7 +241,7 @@ if (flaggedPages.length) {
     } else {
       flaggedPositions.forEach((pos) => {
         const matched = rvByClaim.get(r.claims[pos].claim)
-        if (matched) r.claims[pos] = matched
+        r.claims[pos] = matched || { ...r.claims[pos], unverified: true }
       })
     }
   }
