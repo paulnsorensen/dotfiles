@@ -51,11 +51,11 @@ for (const min_severity of ['critical', 'blocker!', 'HIGH', 'toString']) {
   })
 }
 
-for (const max_issues of [0, -1, 2.5, 'ten']) {
-  test(`rejects a non-positive-integer max_issues before dispatching any agent: ${JSON.stringify(max_issues)}`, async () => {
+for (const max_issues of [0, -1, 2.5, 'ten', 101]) {
+  test(`rejects an out-of-range max_issues before dispatching any agent: ${JSON.stringify(max_issues)}`, async () => {
     const { globals, trace } = createRuntime()
     const result = await workflow.run({ ...globals, args: { max_issues } })
-    assert.match(result.error, /max_issues must be a positive integer/)
+    assert.match(result.error, /max_issues must be an integer from 1 to 100/)
     assert.equal(trace.agents.length, 0)
   })
 }
@@ -516,4 +516,84 @@ test('does not count a URL-less filing response as created', async () => {
   assert.deepEqual(Array.from(result.issue_urls), [])
   assert.equal(result.issues[0].created, false)
   assert.equal(result.issues[0].skipped_reason, 'filing agent returned created=true without url')
+})
+
+test('dedupes confirmed findings by line bucket (floor(line/10)) — same bucket collapses, adjacent bucket does not', async () => {
+  const { globals } = build({
+    slices: [slice('x')],
+    on: ({ opts }) => {
+      if (opts.label === 'eval:x') {
+        return {
+          slice: 'x',
+          findings: [
+            finding({ line: 5 }),
+            finding({ line: 9 }),
+            finding({ line: 10 }),
+          ],
+        }
+      }
+      if (opts.label.startsWith('cite:')) return citeOk(3)
+      if (opts.label.startsWith('issues:batch')) {
+        return { results: [{ index: 0, created: true, url: 'https://gh/1' }, { index: 1, created: true, url: 'https://gh/2' }] }
+      }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: {} })
+
+  // line 9 shares bucket 0 with line 5 (floor(5/10) === floor(9/10) === 0) and is dropped;
+  // line 10 is bucket 1 and survives as its own confirmed finding.
+  assert.deepEqual(
+    Array.from(result.confirmed, (entry) => entry.location),
+    ['domains/x/a.py:5', 'domains/x/a.py:10'],
+  )
+  assert.equal(result.issues.length, 2)
+  assert.deepEqual(Array.from(result.issues, (issue) => issue.location), ['domains/x/a.py:5', 'domains/x/a.py:10'])
+})
+
+test('a triple-backtick run in evidence stays inside the issue body code fence', async () => {
+  const evidence = 'before\n```js\nsomeCode()\n```\nafter'
+  const { globals } = build({
+    slices: [slice('x')],
+    on: ({ opts }) => {
+      if (opts.label === 'eval:x') return { slice: 'x', findings: [finding({ evidence })] }
+      if (opts.label.startsWith('cite:')) return citeOk(1)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { dry_run: true } })
+  const body = result.issues[0].body
+
+  const fenceMatch = body.match(/\*\*Evidence:\*\*\n(`+)\n/)
+  assert.ok(fenceMatch, 'expected a fence line right after **Evidence:**')
+  const fence = fenceMatch[1]
+  assert.equal(fence, '````')
+  assert.equal(fence.length, 4)
+
+  const longestBacktickRunInEvidence = Math.max(...(evidence.match(/`+/g) || []).map((run) => run.length))
+  assert.equal(longestBacktickRunInEvidence, 3)
+  assert.ok(fence.length > longestBacktickRunInEvidence)
+
+  assert.equal(body, [
+    `**Dimension:** model-purity · **Severity:** medium · **Slice:** x`,
+    '',
+    '**Location:** `domains/x/a.py:40`',
+    '',
+    '**Finding:** imports an ORM directly',
+    '',
+    '**Impact:** domain behavior now depends on persistence infrastructure',
+    '',
+    '**Evidence:**',
+    fence,
+    evidence,
+    fence,
+    '',
+    '**Recommendation:** introduce a port',
+    '',
+    '---',
+    '_Filed by the sliced-bread-audit workflow (citation-checked)._',
+    '<!-- sba:domains/x/a.py:model-purity:4 -->',
+  ].join('\n'))
 })
