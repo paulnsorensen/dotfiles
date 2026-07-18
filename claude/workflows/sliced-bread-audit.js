@@ -302,7 +302,7 @@ function fileBatchPrompt(findings) {
 phase('Map')
 const [sliceMap, setup] = await parallel([
   () => agent(mapPrompt(), { label: 'map:slices', phase: 'Map', schema: SLICE_MAP_SCHEMA, model: 'fable' }),
-  () => agent(setupPrompt(), { label: 'map:gh-setup', phase: 'Map', schema: SETUP_SCHEMA, effort: 'low' }),
+  () => agent(setupPrompt(), { label: 'map:gh-setup', phase: 'Map', schema: SETUP_SCHEMA, model: 'haiku', effort: 'low' }),
 ])
 
 if (!sliceMap || !sliceMap.slices.length) {
@@ -353,7 +353,7 @@ async function verifyFindings(findings, label) {
     label: `cite:${label}`,
     phase: 'Verify',
     schema: CITATION_SCHEMA,
-    model: 'fable',
+    model: 'sonnet',
     effort: 'low',
   })
   if (!cite) {
@@ -486,7 +486,7 @@ if (DRY_RUN) {
   for (let i = 0; i < toFile.length; i += FILE_CHUNK) chunks.push(toFile.slice(i, i + FILE_CHUNK))
   const batches = await parallel(
     chunks.map((c, ci) => () =>
-      agent(fileBatchPrompt(c), { label: `issues:batch-${ci + 1}`, phase: 'File', schema: BATCH_ISSUE_SCHEMA, effort: 'low' })
+      agent(fileBatchPrompt(c), { label: `issues:batch-${ci + 1}`, phase: 'File', schema: BATCH_ISSUE_SCHEMA, model: 'haiku', effort: 'low' })
     )
   )
   // Iterate the chunk, not the agent's results array, so a partial results
