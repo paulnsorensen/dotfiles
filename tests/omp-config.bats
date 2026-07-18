@@ -272,7 +272,7 @@ TOML
 }
 
 # --- omp extension modules are chezmoi-managed -----------------------------
-# rtk.ts, cheese-flair.ts, and sliced-bread-audit.ts under dot_omp/private_agent/
+# rtk.ts, cheese-flair.ts, sliced-bread-audit.ts, and nih-scanner.ts under
 # extensions deploy to ~/.omp/agent/extensions/ (auto-discovered by omp's extension
 # loader). Nothing in .chezmoiignore may exclude them, or the extensions silently
 # never deploy.
@@ -290,11 +290,18 @@ TOML
     [[ "$output" == *".omp/agent/extensions/rtk.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/sliced-bread-audit.ts"* ]]
+    [[ "$output" == *".omp/agent/extensions/nih-scanner.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
 }
 
 @test "omp-ext: sliced bread audit command handler contract" {
     command -v node >/dev/null 2>&1 || skip "node not installed"
     run node --test "$REAL_DOTFILES_DIR/tests/extensions/sliced-bread-audit.test.mjs"
+    [ "$status" -eq 0 ]
+}
+
+@test "omp-ext: nih scanner command handler contract" {
+    command -v node >/dev/null 2>&1 || skip "node not installed"
+    run node --test "$REAL_DOTFILES_DIR/tests/extensions/nih-scanner.test.mjs"
     [ "$status" -eq 0 ]
 }
