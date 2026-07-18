@@ -248,7 +248,7 @@ const grounded = (await pipeline(
     if (!ground) return null
     if (ground.verdict !== 'stale' && ground.verdict !== 'superseded') return { item, ground, verify: null }
     return agent(verifyPrompt(item, ground), { schema: VERIFY_SCHEMA, phase: 'Verify', label: `verify:${item.kind}#${item.number}`, agentType: 'explorer' })
-      .then((verify) => verify, () => null)
+      .catch(() => null)
       .then((verify) => {
         const verifyFailed = verify == null
         if (verifyFailed) log(`Verify crashed for ${item.kind}#${item.number} (verdict=${ground.verdict}) — routing to needs-human.`)
