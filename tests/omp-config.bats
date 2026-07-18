@@ -292,3 +292,9 @@ TOML
     [[ "$output" == *".omp/agent/extensions/sliced-bread-audit.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
 }
+
+@test "omp-ext: sliced bread audit command handler contract" {
+    command -v node >/dev/null 2>&1 || skip "node not installed"
+    run node --test "$REAL_DOTFILES_DIR/tests/extensions/sliced-bread-audit.test.mjs"
+    [ "$status" -eq 0 ]
+}

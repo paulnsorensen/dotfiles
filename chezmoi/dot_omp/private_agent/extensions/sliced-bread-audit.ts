@@ -1,5 +1,5 @@
-// Sliced Bread audit command. It sends a structured user prompt so OMP's native
-// `workflow` magic keyword creates and drives the task graph with the active tools.
+// Sliced Bread audit command. It sends a structured user prompt whose standalone
+// `workflowz` routing token activates OMP's native task-graph mode.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
@@ -22,11 +22,11 @@ const DEFAULT_OPTIONS: Options = {
 
 function usage(reason?: string): string {
   const prefix = reason ? `${reason}\n\n` : ""
-  return `${prefix}Usage: /sliced-bread-audit [scope] [--dry-run] [--min-severity=blocker|high|medium|low] [--max-issues=N] [--workers=N]`
+  return `${prefix}Usage: /sliced-bread-audit [scope] [--dry-run] [--min-severity=blocker|high|medium|low] [--max-issues=1..100] [--workers=1..16]`
 }
 
 function isSeverity(value: string): value is Options["minSeverity"] {
-  return value in SEVERITIES
+  return Object.hasOwn(SEVERITIES, value)
 }
 
 function parseOptions(raw: string): Options | string {
@@ -42,7 +42,7 @@ function parseOptions(raw: string): Options | string {
       options.minSeverity = severity
     } else if (token.startsWith("--max-issues=")) {
       const value = Number(token.slice("--max-issues=".length))
-      if (!Number.isInteger(value) || value < 1) return usage("max-issues must be a positive integer")
+      if (!Number.isInteger(value) || value < 1 || value > 100) return usage("max-issues must be an integer from 1 to 100")
       options.maxIssues = value
     } else if (token.startsWith("--workers=")) {
       const value = Number(token.slice("--workers=".length))
@@ -70,7 +70,7 @@ export default function (pi: ExtensionAPI) {
         return
       }
 
-      await pi.sendUserMessage(`workflow
+      await pi.sendUserMessage(`workflowz
 
 Run a Sliced Bread architecture and code-quality audit.
 
@@ -80,7 +80,7 @@ Maximum issues: ${options.maxIssues}
 Evaluation workers: ${options.workers}
 Dry run: ${options.dryRun}
 
-Build this as a deterministic task graph, not as a single review. First map the scope into vertical slices; merge micro-directories with fewer than three files into their parent. In parallel, prepare GitHub deduplication context and assign evaluator workers to slices plus one cross-slice dependency/API pass. Every evaluator returns structured candidate findings with dimension, severity, file, line, quoted evidence, behavioral impact, and one-line fix direction.
+Build this as a deterministic task graph, not as a single review. First map the scope into vertical slices; merge micro-directories with fewer than three files into their parent. In parallel, prepare GitHub deduplication context and assign evaluator workers to slices plus one cross-slice dependency/API pass. Run no more than ${options.workers} evaluator tasks concurrently, including the cross-slice pass. Every evaluator returns structured candidate findings with dimension, severity, file, line, quoted evidence, behavioral impact, and one-line fix direction.
 
 After all evaluators finish, run a citation-verification task that rejects uncited, below-floor, or malformed findings. Then run an independent adversarial-refuter task against every blocker and high finding; retain only verified high-severity findings. Dedupe surviving findings by file, dimension, and ten-line bucket, then against existing audit issues.
 
