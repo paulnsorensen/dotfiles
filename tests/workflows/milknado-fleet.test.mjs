@@ -4,10 +4,10 @@ import test from 'node:test'
 
 import { createRuntime, loadWorkflow } from './harness.mjs'
 
-const path = resolve(import.meta.dirname, '../../claude/workflows/ultracook-fleet.js')
+const path = resolve(import.meta.dirname, '../../claude/workflows/milknado-fleet.js')
 
 for (const args of [undefined, '', {}, { roadmap_slug: '   ' }]) {
-  test(`ultracook-fleet rejects an empty roadmap slug before dispatching agents: ${JSON.stringify(args)}`, async () => {
+  test(`milknado-fleet rejects an empty roadmap slug before dispatching agents: ${JSON.stringify(args)}`, async () => {
     const workflow = await loadWorkflow(path)
     const { globals, trace } = createRuntime()
 
