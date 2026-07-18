@@ -1,4 +1,4 @@
-# milknado.toml — ultracook-fleet partition worker config
+# milknado.toml — milknado-fleet partition worker config
 #
 # This file is copied into each partition worktree by the Partition phase.
 # It configures the claude -p execution agent and empty quality_gates

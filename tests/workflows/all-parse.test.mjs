@@ -89,8 +89,8 @@ test('every workflow declares the meta fields the runtime requires', async () =>
   }
 })
 
-test('ultracook worker config retains its required execution keys', async () => {
-  const source = await readFile(resolve(root, 'claude/workflows/ultracook-fleet-worker.toml'), 'utf8')
+test('milknado worker config retains its required execution keys', async () => {
+  const source = await readFile(resolve(root, 'claude/workflows/milknado-fleet-worker.toml'), 'utf8')
 
   for (const key of ['execution_agent', 'quality_gates', 'concurrency_limit', 'db_path', 'worktree_pattern']) {
     assert.match(source, new RegExp(`^${key}\\s*=`, 'm'), key)
