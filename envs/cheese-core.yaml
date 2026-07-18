@@ -1,0 +1,12 @@
+name: cheese-core
+description: Core hallouminate wiki + tilth-nightly MCP + easy-cheese review skills for a general Claude Cloud session
+marketplaces:                 # → claude plugin marketplace add <ref>
+  - ref: paulnsorensen/hallouminate     # owner/repo the CLI accepts (source: agents/plugins/registry.yaml)
+plugins:                      # → claude plugin install <id>
+  - id: hallouminate@hallouminate       # <plugin>@<marketplace-id>; CONFIRM id via `claude plugin marketplace list`
+mcp:                          # npx-launched MCP servers (NOT plugins)
+  - name: tilth
+    package: "@paulnsorensen/tilth-nightly"
+skills:                       # skill packs via the skills CLI
+  - pack: paulnsorensen/easy-cheese
+    args: "--all --global"    # per easy-cheese README: npx skills@latest add paulnsorensen/easy-cheese --all --global

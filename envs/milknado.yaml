@@ -1,0 +1,10 @@
+name: milknado
+description: Milknado Mikado execution engine for goal-graph-driven Claude Cloud sessions
+marketplaces:                 # → claude plugin marketplace add <ref>
+  - ref: paulnsorensen/milknado         # owner/repo the CLI accepts (source: agents/plugins/registry.yaml)
+plugins:                      # → claude plugin install <id>
+  - id: milknado@milknado               # <plugin>@<marketplace-id>; CONFIRM id via `claude plugin marketplace list`
+skills:                       # skill packs via the skills CLI
+  # TODO(confirm): "the recent" packs — user to name which additional packs belong here
+  - pack: paulnsorensen/easy-cheese
+    args: "--all --global"    # per easy-cheese README: npx skills@latest add paulnsorensen/easy-cheese --all --global
