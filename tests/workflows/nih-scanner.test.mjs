@@ -217,3 +217,157 @@ test('the report is built only from confirmed findings', async () => {
   const rankPrompt = trace.agents.find(({ opts }) => opts.label === 'rank').prompt
   assert.doesNotMatch(rankPrompt, /otherFn/)
 })
+
+test('a non-refuted verify without a named library is not confirmed (needs-human, low confidence)', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: baseRespond({
+      'scan:.': () => ({
+        scanMeta: { languages: ['typescript'], filesScanned: 10, serenaAvailable: true, scope: '.' },
+        candidates: [candidate()],
+      }),
+      'verify:generateUUID': () => ({ refuted: false, reasoning: 'plausible but no concrete library named', effort: 'S' }),
+    }),
+  })
+
+  const result = await workflow.run({ ...globals, args: '.' })
+
+  assert.equal(result.confirmed.length, 0)
+  assert.equal(result.candidates[0].verifyFailed, true)
+  assert.equal(result.candidates[0].confidence, 'low')
+  assert.match(result.candidates[0].note, /without naming a replacement library/)
+})
+
+test('a non-refuted verify with a whitespace-only library is not confirmed', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: baseRespond({
+      'scan:.': () => ({
+        scanMeta: { languages: ['typescript'], filesScanned: 10, serenaAvailable: true, scope: '.' },
+        candidates: [candidate()],
+      }),
+      'verify:generateUUID': () => confirmVerdict({ library: '   ' }),
+    }),
+  })
+
+  const result = await workflow.run({ ...globals, args: '.' })
+
+  assert.equal(result.confirmed.length, 0)
+  assert.equal(result.candidates[0].verifyFailed, true)
+  assert.equal(result.candidates[0].confidence, 'low')
+})
+
+test('scanMeta flags underScanned when aggregated filesScanned is less than detected fileCount', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: baseRespond({
+      detect: () => detected({ fileCount: 50 }),
+      'scan:.': () => ({
+        scanMeta: { languages: ['typescript'], filesScanned: 12, serenaAvailable: true, scope: '.' },
+        candidates: [],
+      }),
+    }),
+  })
+
+  const result = await workflow.run({ ...globals, args: '.' })
+
+  assert.equal(result.scanMeta.underScanned, true)
+  assert.equal(result.scanMeta.filesScanned, 12)
+  assert.match(trace.logs.join('\n'), /Under-scanned: scanned 12 of 50/)
+})
+
+test('scanMeta does not flag underScanned when filesScanned covers detected fileCount', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({ respond: baseRespond({}) })
+
+  const result = await workflow.run({ ...globals, args: '.' })
+
+  assert.equal(result.scanMeta.underScanned, false)
+  assert.doesNotMatch(trace.logs.join('\n'), /Under-scanned/)
+})
+
+test('a crashed Rank agent returns report:null while keeping candidates and confirmed', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: baseRespond({
+      'scan:.': () => ({
+        scanMeta: { languages: ['typescript'], filesScanned: 10, serenaAvailable: true, scope: '.' },
+        candidates: [candidate()],
+      }),
+      'verify:generateUUID': () => confirmVerdict(),
+      rank: () => { throw new Error('rank agent crashed') },
+    }),
+  })
+
+  const result = await workflow.run({ ...globals, args: '.' })
+
+  assert.equal(result.report, null)
+  assert.equal(result.confirmed.length, 1)
+  assert.equal(result.candidates.length, 1)
+  assert.match(trace.logs.join('\n'), /Rank agent crashed/)
+})
+
+test('budget exhaustion before Verify skips Verify/Rank and returns the capped candidates unverified', async () => {
+  const workflow = await loadWorkflow(path)
+  let spent = 0
+  const budget = { total: 10, spent: () => spent, remaining: () => Math.max(0, 10 - spent) }
+  const { globals, trace } = createRuntime({
+    respond: baseRespond({
+      'scan:.': () => {
+        spent = 10
+        return { scanMeta: { languages: ['typescript'], filesScanned: 10, serenaAvailable: true, scope: '.' }, candidates: [candidate()] }
+      },
+    }),
+  })
+
+  const result = await workflow.run({ ...globals, args: '.', budget })
+
+  assert.equal(result.confirmed.length, 0)
+  assert.equal(result.candidates.length, 1)
+  assert.equal(result.report, null)
+  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['detect', 'scan:.'])
+  assert.match(trace.logs.join('\n'), /skipping Verify\/Rank/)
+})
+
+test('budget exhaustion before Rank skips Rank and returns confirmed candidates without a report', async () => {
+  const workflow = await loadWorkflow(path)
+  let spent = 0
+  const budget = { total: 10, spent: () => spent, remaining: () => Math.max(0, 10 - spent) }
+  const { globals, trace } = createRuntime({
+    respond: baseRespond({
+      'scan:.': () => ({
+        scanMeta: { languages: ['typescript'], filesScanned: 10, serenaAvailable: true, scope: '.' },
+        candidates: [candidate()],
+      }),
+      'verify:generateUUID': () => {
+        spent = 10
+        return confirmVerdict()
+      },
+    }),
+  })
+
+  const result = await workflow.run({ ...globals, args: '.', budget })
+
+  assert.equal(result.confirmed.length, 1)
+  assert.equal(result.report, null)
+  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['detect', 'scan:.', 'verify:generateUUID'])
+  assert.match(trace.logs.join('\n'), /skipping Rank/)
+})
+
+test('verifyPrompt uses disjoint effort buckets S=1-3, M=4-9, L=10+', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: baseRespond({
+      'scan:.': () => ({
+        scanMeta: { languages: ['typescript'], filesScanned: 10, serenaAvailable: true, scope: '.' },
+        candidates: [candidate()],
+      }),
+      'verify:generateUUID': () => confirmVerdict(),
+    }),
+  })
+
+  await workflow.run({ ...globals, args: '.' })
+
+  const verifyPrompt = trace.agents.find(({ opts }) => opts.label === 'verify:generateUUID').prompt
+  assert.match(verifyPrompt, /S = 1-3 callers, M = 4-9, L = 10\+/)
+})

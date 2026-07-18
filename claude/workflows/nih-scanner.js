@@ -213,7 +213,7 @@ function verifyPrompt(candidate) {
     '',
     'Known false positives to rule out: stdlib usage (structuredClone, crypto.randomUUID, Intl, http.Client, logging.basicConfig, timedelta), intentional/domain logic, code that already delegates to an installed dependency, or code too trivial to matter.',
     'Rule 12: an NIH confirmation is a positive claim that a specific library supplies this functionality — you must NAME the replacement library and explain why the local code duplicates it. If you cannot, set refuted=true.',
-    'If not refuted, also return library (the specific replacement), effort (S = 1-3 callers, M = 4-10, L = 10+, based on the usage count above), and a citation backing your claim.',
+    'If not refuted, also return library (the specific replacement), effort (S = 1-3 callers, M = 4-9, L = 10+, based on the usage count above), and a citation backing your claim.',
   ].join('\n')
 }
 
@@ -257,6 +257,25 @@ const scanResults = await parallel(
 const validScans = scanResults.filter(Boolean)
 const rawCandidates = validScans.flatMap((r) => r.candidates || [])
 
+// scanMeta is aggregated across every chunk (not just the last one) so a
+// self-truncated fan-out (each nih-scanner agent has a bounded tool-call
+// budget) is visible instead of silently reading as "clean". serenaAvailable
+// is AND-reduced: the aggregate is only true when every chunk had it.
+const scannedMetas = validScans.map((r) => r.scanMeta).filter(Boolean)
+const filesScanned = scannedMetas.reduce((sum, m) => sum + (typeof m.filesScanned === 'number' ? m.filesScanned : 0), 0)
+const serenaAvailable = scannedMetas.length > 0 && scannedMetas.every((m) => m.serenaAvailable === true)
+const underScanned = filesScanned < detected.fileCount
+if (underScanned) {
+  log(`Under-scanned: scanned ${filesScanned} of ${detected.fileCount} detected file(s) — a scan agent may have self-truncated; results could be incomplete.`)
+}
+const scanMeta = {
+  ...detected,
+  filesScanned,
+  serenaAvailable,
+  underScanned,
+  ...(underScanned ? { underScanNote: `Only ${filesScanned} of ${detected.fileCount} detected file(s) were scanned; findings may be incomplete.` } : {}),
+}
+
 const seen = new Set()
 const deduped = []
 for (const candidate of rawCandidates) {
@@ -280,6 +299,11 @@ if (meetsUsage.length > maxCandidates) {
 }
 log(`Scan produced ${capped.length} candidate(s) to verify.`)
 
+if (budget.total != null && budget.remaining() <= 0) {
+  log(`Budget exhausted (remaining ${budget.remaining()}) — skipping Verify/Rank for ${capped.length} scanned candidate(s).`)
+  return { scanMeta, candidates: capped, confirmed: [], report: null }
+}
+
 phase('Verify')
 const verified = await pipeline(
   capped,
@@ -293,15 +317,20 @@ const verified = await pipeline(
 )
 
 // candidates carries every verified survivor, flagged with its verify outcome
-// (confirmed / refuted / crashed) — a crashed verify is KEPT here, never
-// silently dropped or silently confirmed. confirmed narrows to the subset
-// that survived adversarial verification.
+// (confirmed / refuted / crashed / unnamed-library). A crashed verify, and a
+// non-refuted verify that names no replacement library (Rule 12 requires
+// naming one to count as a confirmation), are both KEPT here flagged
+// needs-human — never silently dropped or silently confirmed. confirmed
+// narrows to the subset that survived adversarial verification.
 const candidates = verified.filter(Boolean).map((v) => {
   if (v.verifyFailed) {
     return { ...v.candidate, confidence: 'low', verifyFailed: true, note: 'verify crashed — needs human review' }
   }
   if (v.verify && v.verify.refuted) {
     return { ...v.candidate, refuted: true }
+  }
+  if (!v.verify || typeof v.verify.library !== 'string' || !v.verify.library.trim()) {
+    return { ...v.candidate, confidence: 'low', verifyFailed: true, note: 'verify confirmed without naming a replacement library — needs human review' }
   }
   return {
     ...v.candidate,
@@ -315,9 +344,15 @@ const candidates = verified.filter(Boolean).map((v) => {
 const confirmed = candidates.filter((c) => c.confirmed === true)
 const refutedCount = candidates.filter((c) => c.refuted === true).length
 const needsHumanCount = candidates.filter((c) => c.verifyFailed === true).length
-log(`Verified ${capped.length} candidate(s): ${confirmed.length} confirmed, ${refutedCount} refuted, ${needsHumanCount} crashed (flagged needs-human).`)
+log(`Verified ${capped.length} candidate(s): ${confirmed.length} confirmed, ${refutedCount} refuted, ${needsHumanCount} flagged needs-human.`)
+
+if (budget.total != null && budget.remaining() <= 0) {
+  log(`Budget exhausted (remaining ${budget.remaining()}) — skipping Rank for ${confirmed.length} confirmed candidate(s).`)
+  return { scanMeta, candidates, confirmed, report: null }
+}
 
 phase('Rank')
-const report = await agent(reportPrompt(confirmed), { schema: REPORT_SCHEMA, phase: 'Rank', label: 'rank', effort: 'high' })
+const report = await agent(reportPrompt(confirmed), { schema: REPORT_SCHEMA, phase: 'Rank', label: 'rank', effort: 'high' }).catch(() => null)
+if (!report) log('Rank agent crashed — returning candidates and confirmed findings without a synthesized report.')
 
-return { scanMeta: detected, candidates, confirmed, report }
+return { scanMeta, candidates, confirmed, report }

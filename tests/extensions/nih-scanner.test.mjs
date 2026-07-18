@@ -101,6 +101,7 @@ for (const { args, reason } of [
   { args: '--unknown', reason: 'Unknown option: --unknown' },
   { args: '--min-usage=-1', reason: 'min-usage must be an integer >= 0' },
   { args: '--min-usage=1.5', reason: 'min-usage must be an integer >= 0' },
+  { args: '--min-usage=', reason: 'min-usage must be an integer >= 0' },
   { args: '--max-candidates=0', reason: 'max-candidates must be an integer from 1 to 100' },
   { args: '--max-candidates=101', reason: 'max-candidates must be an integer from 1 to 100' },
   { args: '--max-candidates=1.5', reason: 'max-candidates must be an integer from 1 to 100' },

@@ -30,8 +30,9 @@ function parseOptions(raw: string): Options | string {
 
   for (const token of raw.trim().split(/\s+/).filter(Boolean)) {
     if (token.startsWith("--min-usage=")) {
-      const value = Number(token.slice("--min-usage=".length))
-      if (!Number.isInteger(value) || value < 0) return usage("min-usage must be an integer >= 0")
+      const rawValue = token.slice("--min-usage=".length)
+      const value = Number(rawValue)
+      if (!rawValue.trim() || !Number.isInteger(value) || value < 0) return usage("min-usage must be an integer >= 0")
       options.minUsage = value
     } else if (token.startsWith("--max-candidates=")) {
       const value = Number(token.slice("--max-candidates=".length))
