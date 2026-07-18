@@ -272,10 +272,11 @@ TOML
 }
 
 # --- omp extension modules are chezmoi-managed -----------------------------
-# rtk.ts and cheese-flair.ts under dot_omp/private_agent/extensions/ deploy to
-# ~/.omp/agent/extensions/ (auto-discovered by omp's extension loader). Nothing
-# in .chezmoiignore may exclude them, or the extensions silently never deploy.
-@test "omp-ext: rtk.ts and cheese-flair.ts are chezmoi-managed" {
+# rtk.ts, cheese-flair.ts, and sliced-bread-audit.ts under dot_omp/private_agent/
+# extensions deploy to ~/.omp/agent/extensions/ (auto-discovered by omp's extension
+# loader). Nothing in .chezmoiignore may exclude them, or the extensions silently
+# never deploy.
+@test "omp-ext: managed extension modules are chezmoi-managed" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
     local cfg="$TEST_HOME/cz-ext.toml"
     cat > "$cfg" <<TOML
@@ -288,5 +289,6 @@ TOML
     [ "$status" -eq 0 ]
     [[ "$output" == *".omp/agent/extensions/rtk.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
+    [[ "$output" == *".omp/agent/extensions/sliced-bread-audit.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
 }
