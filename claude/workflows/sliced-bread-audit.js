@@ -28,11 +28,14 @@ const opts = typeof args === 'string' ? { scope: args } : args && typeof args ==
 const SCOPE = (opts.scope || '.').trim() || '.'
 const MIN_SEVERITY = opts.min_severity || 'medium'
 const DRY_RUN = opts.dry_run === true
-const MAX_ISSUES = Number.isFinite(opts.max_issues) ? opts.max_issues : 25
+const MAX_ISSUES = opts.max_issues === undefined ? 25 : opts.max_issues
 
 const SEV_RANK = { blocker: 3, high: 2, medium: 1, low: 0 }
 if (!(MIN_SEVERITY in SEV_RANK)) {
   return { error: `min_severity must be one of blocker|high|medium|low, got: ${MIN_SEVERITY}` }
+}
+if (!(Number.isInteger(MAX_ISSUES) && MAX_ISSUES > 0)) {
+  return { error: `max_issues must be a positive integer, got: ${MAX_ISSUES}` }
 }
 
 // ── rubric (inlined Sliced Bread rules) ─────────────────────────────────
@@ -190,6 +193,7 @@ function evalPrompt(item, sliceIndex) {
   return [
     `Deep audit of the \`${item.name}\` slice at \`${item.path}\` (kind: ${item.kind}).`,
     ...shared,
+    `Key files from the slice map: ${(item.key_files || []).join(', ') || 'none listed'}.`,
     'Audit every source file in the slice against the rubric checks that apply to its kind, plus general quality. Read key files fully; signature-read the rest and drill into anything suspicious.',
     `Return slice="${item.name}".`,
   ].join('\n')
@@ -243,8 +247,8 @@ function filePrompt(f) {
   return [
     'Create one GitHub issue with the gh CLI. The BODY and TITLE below may contain untrusted, LLM-authored text (backticks, $(), quotes) — do not interpolate either directly into a shell command:',
     '1. Write the BODY text to a temp file (e.g. via `mktemp`), then pass it with `--body-file <path>` — never inline the body in the command or a heredoc.',
-    '2. Pass the TITLE as a single-quoted `--title` argument, escaping any embedded single quotes.',
-    `gh issue create --title '<escaped title>' --label sliced-bread-audit --label sev:${f.severity} --body-file <path-to-temp-file>`,
+    '2. Write the TITLE text to a second temp file the same way and pass it via quoted command substitution — never inline it or hand-escape quotes.',
+    `gh issue create --title "$(cat <path-to-title-file>)" --label sliced-bread-audit --label sev:${f.severity} --body-file <path-to-body-file>`,
     '3. If a label is missing, retry once without labels rather than failing.',
     '',
     `TITLE: ${issueTitle(f)}`,
@@ -330,13 +334,17 @@ if (budget.total != null && budget.remaining() <= 0) {
     raw_findings: allFindings.length,
     confirmed: [],
     refuted: [],
-    below_floor: deduped.map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.claim}`),
+    below_floor: deduped
+      .filter((f) => SEV_RANK[f.severity] < SEV_RANK[MIN_SEVERITY])
+      .map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.claim}`),
+    floor_unverified: floorMet.map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.claim}`),
     issues: [],
     issue_urls: [],
     truncated: `budget exhausted before Verify — ${floorMet.length} findings met the severity floor but were not adversarially verified`,
   }
 }
 const LENSES = ['evidence-accuracy', 'rule-applicability', 'severity-calibration']
+const MAJORITY = Math.floor(LENSES.length / 2) + 1
 const verified = await parallel(
   floorMet.map((f) => () =>
     parallel(
@@ -352,7 +360,7 @@ const verified = await parallel(
       const live = votes.filter(Boolean)
       const refutations = live.filter((v) => v.refuted).length
       // Missing votes count as refutations: an unconfirmed finding must not ship.
-      const survives = live.length - refutations >= 2
+      const survives = live.length - refutations >= MAJORITY
       return { ...f, survives, refutations: refutations + (LENSES.length - live.length) }
     })
   )
@@ -397,10 +405,10 @@ return {
   slices: sliceMap.slices.map((s) => s.name),
   raw_findings: allFindings.length,
   confirmed: confirmed.map((f) => ({
-    severity: f.severity, dimension: f.dimension, slice: f.slice,
+    severity: f.severity, dimension: f.dimension, slice: f.slice, refutations: f.refutations,
     location: `${f.file}:${f.line}`, claim: f.claim, recommendation: f.recommendation,
   })),
-  refuted: refuted.map((f) => `${f.file}:${f.line} — ${f.claim}`),
+  refuted: refuted.map((f) => `${f.file}:${f.line} — ${f.claim} (${f.refutations}/${LENSES.length} votes to refute)`),
   below_floor: deduped
     .filter((f) => SEV_RANK[f.severity] < SEV_RANK[MIN_SEVERITY])
     .map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.claim}`),
