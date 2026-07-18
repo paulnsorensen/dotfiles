@@ -23,9 +23,15 @@ export const meta = {
 // Args: { tasks: [{ slug, brief, files? }], correctiveRounds? }
 //   - tasks MUST be file-disjoint (declare `files` to get the overlap check —
 //     it's advisory: an overlap logs a warning but does not block the run).
-//   - correctiveRounds defaults to 1: on a 'revise' verdict, one corrective
-//     coder pass runs in the SAME worktree, then the reviewer re-checks once;
-//     if still 'revise' and rounds remain, repeat up to the cap.
+//   - every task needs a non-empty `slug` (/^[a-z0-9][a-z0-9._-]*$/) and a
+//     non-empty `brief` — curd/<slug> is interpolated into the coder's literal
+//     `git checkout -B` command, so an invalid slug fails the whole run fast.
+//   - re-running a slug resets curd/<slug> to origin/main — a prior run's
+//     commits on that branch are discarded (intentional retry semantics).
+//   - correctiveRounds defaults to 1, clamped to a max of 3: on a 'revise'
+//     verdict, one corrective coder pass runs in the SAME worktree, then the
+//     reviewer re-checks once; if still 'revise' and rounds remain, repeat up
+//     to the cap.
 //
 // This workflow never merges, commits to main, pushes, or opens a PR — it
 // hands back worktree paths + branch names for the orchestrator to carry
@@ -34,11 +40,33 @@ export const meta = {
 
 const input = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { log(`args was a string but not valid JSON (${e.message}) — treating as no tasks`); return {} } })() : args || {}
 const TASKS = Array.isArray(input.tasks) ? input.tasks : []
-const CORRECTIVE_ROUNDS = Number.isInteger(input.correctiveRounds) && input.correctiveRounds >= 0 ? input.correctiveRounds : 1
+const MAX_CORRECTIVE_ROUNDS = 3
+let CORRECTIVE_ROUNDS = Number.isInteger(input.correctiveRounds) && input.correctiveRounds >= 0 ? input.correctiveRounds : 1
+if (CORRECTIVE_ROUNDS > MAX_CORRECTIVE_ROUNDS) {
+  log(`Requested correctiveRounds ${CORRECTIVE_ROUNDS} exceeds max ${MAX_CORRECTIVE_ROUNDS}; clamping to ${MAX_CORRECTIVE_ROUNDS}.`)
+  CORRECTIVE_ROUNDS = MAX_CORRECTIVE_ROUNDS
+}
 
 if (!TASKS.length) {
   log('No tasks provided. Usage: /curd-flock with args = { tasks: [{ slug, brief, files? }], correctiveRounds? }')
   return { error: 'No tasks provided.' }
+}
+
+// ---- slug/brief fail-fast validation (finding 1: curd/<slug> is interpolated into a literal git checkout -B command) ----
+const SLUG_RE = /^[a-z0-9][a-z0-9._-]*$/
+function findInvalidTasks(tasks) {
+  const invalid = []
+  for (const t of tasks) {
+    const slugOk = typeof t.slug === 'string' && t.slug.length > 0 && SLUG_RE.test(t.slug)
+    const briefOk = typeof t.brief === 'string' && t.brief.length > 0
+    if (!slugOk || !briefOk) invalid.push(typeof t.slug === 'string' && t.slug ? t.slug : '(missing slug)')
+  }
+  return invalid
+}
+const invalidTasks = findInvalidTasks(TASKS)
+if (invalidTasks.length) {
+  log(`Invalid task(s): ${invalidTasks.join(', ')} — every task needs a non-empty slug matching ${SLUG_RE} and a non-empty brief`)
+  return { error: `Invalid task slug/brief for: ${invalidTasks.join(', ')}` }
 }
 
 // ---- file-disjoint check (advisory — logs, never blocks) ----
@@ -78,7 +106,7 @@ if (duplicateSlugs.length) {
 const ISO = (branch) => `
 ## Isolation contract (read first)
 - You are running in a FRESH, ISOLATED git worktree dedicated to this one task. Other tasks run concurrently in their own worktrees — never reach outside your scope.
-- First command: \`git checkout -B ${branch} origin/main\` — start from a clean origin/main base on your own branch.
+- First command: \`git checkout -B ${branch} origin/main\` — start from a clean origin/main base on your own branch. Re-running this slug resets ${branch} to origin/main; a prior run's commits on it are discarded (intentional retry semantics).
 - Work ONLY this task. Do NOT implement sibling tasks. Do NOT touch files outside the declared scope.
 - Do NOT push. Do NOT open a PR. Do NOT run \`git fetch\`/\`pull\`. Commit locally on ${branch} only.
 - Final commit: \`git add -A && git commit\` with a Conventional Commits subject. No flair, no emojis in the commit message.
@@ -197,7 +225,7 @@ Taste-test findings to fix:
 ${JSON.stringify({ issues: review.issues, lenses: review.lenses, recommendation: review.recommendation })}
 
 ## How to work
-1. \`cd ${worktreePath}\` — do NOT create a new worktree or checkout ${branch} elsewhere; it is already checked out here.
+1. \`cd ${worktreePath}\` and confirm it exists and is checked out on ${branch} (\`git rev-parse --abbrev-ref HEAD\`). If the worktree is missing (it can be reaped when a prior run made no changes), recreate it with \`git worktree add ${worktreePath} ${branch}\` — ${branch} is the durable artifact, not the worktree directory.
 2. Address ONLY the taste-test findings — do not re-architect, do not expand scope.
 3. Re-verify with the project's relevant gate(s). Read full output.
 4. Commit the fix on ${branch} (Conventional Commits, no flair). Do NOT push.
@@ -216,47 +244,70 @@ const results = await pipeline(
     return agent(buildCoderPrompt(t), {
       label: `implement:${t.slug}`, phase: 'Implement', agentType: 'coder',
       isolation: 'worktree', schema: CODER_SCHEMA,
-    }).then((impl) => ({ t, branch, impl }))
+    }).then((impl) => ({ t, branch, impl, failure: null }))
+      .catch((e) => {
+        log(`${t.slug}: implement agent crashed (${e.message}) — recording as failed, not dropping the task`)
+        return { t, branch, impl: null, failure: { stage: 'implement', message: e.message } }
+      })
   },
 
-  ({ t, branch, impl }) => {
+  ({ t, branch, impl, failure }) => {
+    if (failure) return { t, branch, impl, review: null, rounds: 0, failure }
     if (!impl || impl.status !== 'done' || !impl.committed) {
-      return { t, branch, impl, review: { slug: t.slug, verdict: 'revise', lenses: [], issues: ['implement stage did not complete or did not commit'], recommendation: 'human follow-up' }, rounds: 0 }
+      return { t, branch, impl, review: { slug: t.slug, verdict: 'revise', lenses: [], issues: ['implement stage did not complete or did not commit'], recommendation: 'human follow-up' }, rounds: 0, failure: null }
     }
     return agent(buildReviewerPrompt(t, branch, impl), {
       label: `review:${t.slug}`, phase: 'Review', agentType: 'reviewer', effort: 'high', schema: REVIEW_SCHEMA,
-    }).then((review) => ({ t, branch, impl, review, rounds: 0 }))
+    }).then((review) => ({ t, branch, impl, review, rounds: 0, failure: null }))
+      .catch((e) => {
+        log(`${t.slug}: review agent crashed (${e.message}) — recording as failed, not dropping the task`)
+        return { t, branch, impl, review: null, rounds: 0, failure: { stage: 'review', message: e.message } }
+      })
   },
 
-  async ({ t, branch, impl, review, rounds }) => {
+  async ({ t, branch, impl, review, rounds, failure }) => {
+    if (failure) return { t, branch, impl, review, corrections: [], rounds, failure }
     let corrections = []
     let curReview = review
     let round = rounds
     while (curReview && curReview.verdict === 'revise' && round < CORRECTIVE_ROUNDS && impl && impl.status === 'done' && impl.committed) {
-      const correction = await agent(buildCorrectivePrompt(t, impl.worktree_path, branch, curReview), {
-        label: `correct:${t.slug}:r${round + 1}`, phase: 'Correct', agentType: 'coder',
-        schema: CORRECT_SCHEMA,
-      })
+      let correction
+      try {
+        correction = await agent(buildCorrectivePrompt(t, impl.worktree_path, branch, curReview), {
+          label: `correct:${t.slug}:r${round + 1}`, phase: 'Correct', agentType: 'coder',
+          schema: CORRECT_SCHEMA,
+        })
+      } catch (e) {
+        log(`${t.slug}: correct agent crashed (round ${round + 1}, ${e.message}) — stopping corrective loop, recording as failed`)
+        corrections.push(null)
+        return { t, branch, impl, review: curReview, corrections, rounds: round, failure: { stage: 'correct', message: e.message } }
+      }
       corrections.push(correction)
       round++
       if (!correction || !correction.committed) {
         log(`${t.slug}: corrective round ${round} produced ${correction ? 'an uncommitted correction' : 'no correction'} — stopping corrective loop`)
         break
       }
-      curReview = await agent(buildReviewerPrompt(t, branch, correction), {
-        label: `review:${t.slug}:r${round}`, phase: 'Review', agentType: 'reviewer', effort: 'high', schema: REVIEW_SCHEMA,
-      })
+      try {
+        curReview = await agent(buildReviewerPrompt(t, branch, correction), {
+          label: `review:${t.slug}:r${round}`, phase: 'Review', agentType: 'reviewer', effort: 'high', schema: REVIEW_SCHEMA,
+        })
+      } catch (e) {
+        log(`${t.slug}: re-review agent crashed (round ${round}, ${e.message}) — stopping corrective loop, recording as failed`)
+        return { t, branch, impl, review: curReview, corrections, rounds: round, failure: { stage: 'review', message: e.message } }
+      }
     }
-    return { t, branch, impl, review: curReview, corrections, rounds: round }
+    return { t, branch, impl, review: curReview, corrections, rounds: round, failure: null }
   },
 )
 
 phase('Report')
 const tasks = results.map((r) => {
   if (!r) return null
-  const { t, branch, impl, review, corrections, rounds } = r
+  const { t, branch, impl, review, corrections, rounds, failure } = r
   let status
-  if (!impl || impl.status !== 'done' || !impl.committed) status = 'failed'
+  if (failure) status = 'failed'
+  else if (!impl || impl.status !== 'done' || !impl.committed) status = 'failed'
   else if (!review || review.verdict === 'revise') status = 'failed'
   else status = rounds > 0 ? 'revised-clean' : 'clean'
   return {
@@ -264,6 +315,7 @@ const tasks = results.map((r) => {
     branch,
     status,
     corrective_rounds_used: rounds,
+    failure: failure || undefined,
     impl: impl ? { status: impl.status, summary: impl.summary, files_changed: impl.files_changed, verification: impl.verification, committed: impl.committed } : null,
     review: review ? { verdict: review.verdict, lenses: review.lenses, issues: review.issues } : null,
     corrections: corrections && corrections.length ? corrections : undefined,
