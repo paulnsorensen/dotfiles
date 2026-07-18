@@ -19,6 +19,9 @@ export const meta = {
 // runs them in a restricted scope) — sinceIso is a REQUIRED caller-supplied
 // cutoff, never derived here.
 
+const UNSAFE_DEVROOT_CHARS = /[\s;&|`$(){}<>"'\\]/
+const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/
+const MAX_CANDIDATES = 50
 const WORKFLOW_SCRIPT_SCHEMA = {
   type: 'object',
   required: ['candidates'],
@@ -204,11 +207,26 @@ function reportPrompt(question, verified) {
 
 const rawArgs = args && typeof args === 'object' ? args : {}
 const sinceIso = typeof rawArgs.sinceIso === 'string' ? rawArgs.sinceIso.trim() : ''
-const devRoot = typeof rawArgs.devRoot === 'string' && rawArgs.devRoot.trim() ? rawArgs.devRoot.trim() : '~/Dev'
+
+const DEFAULT_DEV_ROOT = '~/Dev'
+const requestedDevRoot = typeof rawArgs.devRoot === 'string' ? rawArgs.devRoot.trim() : ''
+let devRoot = DEFAULT_DEV_ROOT
+if (requestedDevRoot) {
+  if (UNSAFE_DEVROOT_CHARS.test(requestedDevRoot)) {
+    log(`devRoot "${requestedDevRoot}" contains unsafe characters; falling back to ${DEFAULT_DEV_ROOT}.`)
+  } else {
+    devRoot = requestedDevRoot
+  }
+}
 
 if (!sinceIso) {
   log('No sinceIso provided. Usage: /session-harvest {"sinceIso": "<ISO timestamp>", "devRoot": "~/Dev"} — the cutoff must be supplied by the caller.')
   return { error: 'sinceIso is required — workflow scripts cannot compute the current time themselves.' }
+}
+
+if (!ISO8601_RE.test(sinceIso)) {
+  log(`sinceIso "${sinceIso}" does not look like an ISO-8601 timestamp; rejecting.`)
+  return { error: 'sinceIso must be an ISO-8601 timestamp (e.g. 2026-07-01T00:00:00Z).' }
 }
 
 phase('Sweep')
@@ -240,6 +258,15 @@ log(`Sweep found ${merged.length} candidate(s) (workflows: ${(scriptsResult && s
 if (!merged.length) {
   log('Nothing to verify — no salvage candidates found in this sweep.')
   return { since: sinceIso, devRoot, candidates_found: 0, verified_relevant: 0, rows: [], summary: 'No salvage candidates found.' }
+}
+if (merged.length > MAX_CANDIDATES) {
+  log(`${merged.length} candidate(s) exceeds max ${MAX_CANDIDATES}; truncating before verify.`)
+  merged.splice(MAX_CANDIDATES)
+}
+
+if (budget.total != null && budget.remaining() <= 0) {
+  log(`Budget exhausted (remaining ${budget.remaining()}) — skipping Verify/Report for ${merged.length} candidate(s).`)
+  return { since: sinceIso, devRoot, candidates_found: merged.length, verified_relevant: 0, rows: [], summary: 'Budget exhausted before verification.' }
 }
 
 phase('Verify')
