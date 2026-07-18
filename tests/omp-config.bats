@@ -54,7 +54,7 @@ STDIN"
     [ "$(yq '.tui.tight' "$OUT")" = "true" ]
     [ "$(yq '.startup.quiet' "$OUT")" = "true" ]
     [ "$(yq '.compaction.thresholdTokens' "$OUT")" = "120000" ]
-    [ "$(yq '.compaction.strategy' "$OUT")" = "snapcompact" ]
+    [ "$(yq '.compaction.strategy' "$OUT")" = "shake" ]
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.compaction.midTurnEnabled' "$OUT")" = "true" ]
     [ "$(yq '.compaction.autoContinue' "$OUT")" = "true" ]
