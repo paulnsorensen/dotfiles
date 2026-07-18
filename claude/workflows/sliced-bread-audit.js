@@ -8,7 +8,7 @@ export const meta = {
   phases: [
     { title: 'Map', detail: 'discover slices; in parallel, gh setup (labels + existing audit issues)' },
     { title: 'Evaluate', detail: 'one fable evaluator per slice (pipelined into Verify) + concurrent cross-slice pass', model: 'fable' },
-    { title: 'Verify', detail: 'per-slice batch citation-check; one adversarial fable refuter per blocker/high', model: 'fable' },
+    { title: 'Verify', detail: 'per-slice sonnet batch citation-check; one adversarial fable refuter per blocker/high' },
     { title: 'File', detail: 'dedupe against existing issues, cap, file gh issues in batches of 10' },
   ],
 }
