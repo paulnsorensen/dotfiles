@@ -1,5 +1,5 @@
 export const meta = {
-  name: 'ultracook-fleet',
+  name: 'milknado-fleet',
   description:
     'Parallelize the easy-cheese pipeline (cook→press→age→cure→age→cure→age) across an entire hallouminate roadmap. Each roadmap goal becomes a git branch + PR, driven by milknado as the execution engine.',
   whenToUse:
@@ -13,11 +13,11 @@ export const meta = {
   ],
 }
 
-// Tracked source: claude/workflows/ultracook-fleet.js in the dotfiles repo.
+// Tracked source: claude/workflows/milknado-fleet.js in the dotfiles repo.
 // Deployed to ~/.claude/workflows/ as a symlink by claude/.sync (the `configs`
-// array). Invoked as `/ultracook-fleet <roadmap-slug>`; `args` is the slug.
+// array). Invoked as `/milknado-fleet <roadmap-slug>`; `args` is the slug.
 //
-// Architecture (spec: ultracook-fleet):
+// Architecture (spec: milknado-fleet):
 //   - MCP calls (milknado MCP tools) live INSIDE agent() calls — MCP is
 //     undefined in Workflow script scope (node-runner.js:9-14).
 //   - The .js script owns deterministic fan-out, sequencing, and schema.
@@ -136,7 +136,7 @@ function partitionPrompt(goal, roadmapSlug, projectRoot, mainBranch) {
   const branch = `uf/${goal.slug}`
   const wt = `${projectRoot}/.worktrees/uf-${goal.slug}`
   return [
-    'You are building one partition for an ultracook-fleet run.',
+    'You are building one partition for a milknado-fleet run.',
     '',
     `Goal id: ${goal.id}`,
     `Goal slug: ${goal.slug}`,
@@ -153,7 +153,7 @@ function partitionPrompt(goal, roadmapSlug, projectRoot, mainBranch) {
     '   If the worktree already exists (branch already exists or path exists), skip creation.',
     '',
     '2. Copy the milknado.toml worker config into the partition worktree:',
-    `   cp ${projectRoot}/claude/workflows/ultracook-fleet-worker.toml ${wt}/milknado.toml`,
+    `   cp ${projectRoot}/claude/workflows/milknado-fleet-worker.toml ${wt}/milknado.toml`,
     '   (This sets execution_agent and quality_gates for the partition.)',
     '',
     '3. Initialize milknado db in the partition worktree:',
@@ -282,8 +282,8 @@ function harvestPrompt(partition, roadmapSlug, projectRoot, mainBranch, isWip) {
     '',
     '3. Open a PR for this partition:',
     `   gh pr create --base ${mainBranch} --head ${partition.branch}${isWip ? ' --draft' : ''}`,
-    `     --title "${titlePrefix}feat(${partition.goal_slug}): easy-cheese pipeline via ultracook-fleet"`,
-    `     --body "Automated by /ultracook-fleet roadmap=${roadmapSlug} goal=${partition.goal_slug}.`,
+    `     --title "${titlePrefix}feat(${partition.goal_slug}): easy-cheese pipeline via milknado-fleet"`,
+    `     --body "Automated by /milknado-fleet roadmap=${roadmapSlug} goal=${partition.goal_slug}.`,
     `            Phases: cook→press→age→cure→age→cure→age (all run as milknado tasks)."`,
     '   Capture the PR URL from the output.',
     '',
@@ -314,8 +314,8 @@ const rawArg =
 const roadmapSlug = rawArg.trim()
 
 if (!roadmapSlug) {
-  log('No roadmap slug provided. Usage: /ultracook-fleet <roadmap-slug>')
-  return { error: 'No roadmap slug provided. Usage: /ultracook-fleet <roadmap-slug>' }
+  log('No roadmap slug provided. Usage: /milknado-fleet <roadmap-slug>')
+  return { error: 'No roadmap slug provided. Usage: /milknado-fleet <roadmap-slug>' }
 }
 
 // Resolve project root: this workflow runs in the primary checkout.
