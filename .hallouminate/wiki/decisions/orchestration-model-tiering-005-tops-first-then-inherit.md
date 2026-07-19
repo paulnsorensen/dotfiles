@@ -1,0 +1,8 @@
+# ADR orchestration-model-tiering-005: Hybrid pin/inherit, deployed tops-first  [status: accepted]
+
+- **Context:** Registry agents needed a rule for which get `model: inherit` and which stay pinned, and the deployment order matters because `inherit` cascades whatever model the launcher picked.
+- **Decision:** Hybrid, keyed on *why* each agent has its tier: pin the quality gates (reviewer/fromage-secaudit/fromage-age-arch → opus/high — must never downgrade in a lean session); pin the mechanical workers (whey-drainer/duckdb-expert/fromage-age-history/worktree-content-digest → haiku/low — must never upgrade in a deep session); flip the phase backbone (explorer/researcher/coder/generalist) to `model: inherit` with the `effort` key dropped so both axes cascade. Deploy sequence: lower both tops (settings floor + Conductor pref) **first**, then land the inherit flip.
+- **Alternatives:** All-inherit is wrong in both directions — it downgrades gates in lean sessions and upgrades workers in deep ones. Flipping inherit before the tops change would run the whole backbone on the old flagship tops (fable/opus), the opposite of the goal. Mid-tier fork targets (ghostbuster/nih-scanner/ricotta-reducer/roquefort-wrecker/fromage-fort) pin sonnet rather than inherit — same never-upgrade rationale as workers; ghostbuster's skill/agent split-brain resolves to the registry value (sonnet/medium) as canonical.
+- **Consequences:** Tier intent is legible per agent class; session tier changes only move the backbone. The two-commit sequencing is a hard ordering constraint on the implementation plan (not parallelizable curds).
+
+Related: [[decisions/orchestration-model-tiering-002-sonnet-top-both-paths]]

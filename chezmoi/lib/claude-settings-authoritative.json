@@ -1,5 +1,5 @@
 {
-  "model": "claude-fable-5[1m]",
+  "model": "claude-sonnet-5[1m]",
   "effortLevel": "high",
   "env": {
     "ENABLE_TOOL_SEARCH": "true",

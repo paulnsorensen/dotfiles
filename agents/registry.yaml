@@ -220,7 +220,7 @@ agents:
   explorer:
     description: Read-only codebase investigator. Answers "where / how / what" questions by searching and reading — never writes. Returns a structured findings digest (file:line citations, call paths, conclusions), keeping the file dumps out of the parent's context. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
     models:
-      claude: sonnet
+      claude: inherit
       codex: gpt-5.6-terra
       opencode: inherit
     disallowedTools:
@@ -231,7 +231,6 @@ agents:
     - Grep
     - Glob
     color: cyan
-    effort: medium
     skills:
     - cheez-search
     - cheez-read
@@ -240,7 +239,7 @@ agents:
   researcher:
     description: External-research agent. Answers questions outside the codebase — library/API docs, current web facts, version/changelog checks, best-practice comparisons, GitHub examples — via Context7, Tavily, web fetch, and gh, then writes a durable cited research slug under .cheese/research/. Read-only against code. Returns a condensed claim-level digest (the heavy fetch bodies stay on disk, out of the parent's context). Models the easy-cheese research phase. Use PROACTIVELY before implementing against an unfamiliar library or API, when a claim needs a current source instead of a guess, or whenever a skill (/mold, /cook, /briesearch, or any user-installed skill) would otherwise rely on stale training data.
     models:
-      claude: sonnet
+      claude: inherit
       codex: gpt-5.6-terra
       opencode: inherit
     disallowedTools:
@@ -250,7 +249,6 @@ agents:
     - Grep
     - Glob
     color: blue
-    effort: medium
     skills:
     - briesearch
     - cheez-search
@@ -279,14 +277,15 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/reviewer.md
   coder:
-    # Runs on sonnet at medium effort: Sonnet 5 matches Opus at low/medium effort
-    # at a fraction of the token cost, and the write surface's loop is bounded.
+    # Backbone phase agent: model: inherit, no effort key — both axes cascade
+    # with the session (a lean Sonnet/high top runs the coder at Sonnet/high; a
+    # deep session lifts it too). See decisions/orchestration-model-tiering-005.
     # Denies native Edit/Write/Grep/Glob/NotebookEdit — all edits go through
     # cheez-write (tilth); keeps Read. Denies Agent — a dispatched coder is a
     # level-1 subagent and cannot fan out.
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop, editing through the cheez-write (tilth) skill. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through cheez-write (tilth) — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
-      claude: sonnet
+      claude: inherit
       codex: gpt-5.6-terra
       opencode: inherit
     disallowedTools:
@@ -297,7 +296,6 @@ agents:
     - Write
     - NotebookEdit
     color: green
-    effort: medium
     skills:
     - cook
     - press
@@ -322,7 +320,7 @@ agents:
     # level-1 subagent cannot fan out).
     description: General-purpose catch-all for an open-ended, multi-step task that does not fit a specialist phase agent — mixed research, code reading, and synthesis in one dispatch. The capped stand-in for the built-in general-purpose agent. Prefer a specialist when the task is cleanly one shape — explorer for "where/how/what" code questions, researcher for external/library/web facts, reviewer for checking a diff before it lands, coder for writing or changing code. Use this only as the fallback when no single specialist owns the task. Routes file I/O through the cheez-* (tilth) skills.
     models:
-      claude: sonnet
+      claude: inherit
       codex: gpt-5.6-terra
       opencode: inherit
     disallowedTools:
@@ -331,10 +329,38 @@ agents:
     - Glob
     - NotebookEdit
     color: yellow
-    effort: medium
     skills:
     - cheez-search
     - cheez-read
     - cheez-write
     maxTurns: 100
     body_path: agents/agent_definitions/generalist.md
+  # ── deliberate reasoning brain ────────────────────────────────────────────
+  # The one Fable/xhigh tier reachable on demand. Pinned in frontmatter (not
+  # inherit) because fable/xhigh is the deliberate reasoning tier, invoked via
+  # the routing ladder — not carried ambiently by the Sonnet top. The plain
+  # Agent tool has no effort param, so the frontmatter `effort: xhigh` pin is
+  # what makes xhigh reachable by name. Read-only: it decides and plans, never
+  # edits and never fans out (a level-1 subagent has no Agent tool). Serves both
+  # the Agent-tool dispatch and the default-pipeline workflow's plan/judge
+  # stages. `deep-thinker` is a placeholder name. Claude-only: fable is a Claude
+  # tier and the other harnesses are frozen pending their migration spec.
+  # See decisions/orchestration-model-tiering-00{1,3,4}.
+  deep-thinker:
+    description: Deliberate reasoning brain (Fable at xhigh effort). Dispatched for a single hard reasoning question — it plans, judges, or synthesizes and returns a decision, never editing code and never fanning out. Read-only. Used by the top-level routing ladder (via the Agent tool) and by the default-pipeline workflow's plan and judge stages. Prefer it over inline reasoning only when the question is genuinely hard; route trivial questions inline and multi-step work to the pipeline.
+    models:
+      claude: fable
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - Agent
+    - Grep
+    - Glob
+    color: magenta
+    effort: xhigh
+    skills:
+    - cheez-search
+    - cheez-read
+    maxTurns: 50
+    body_path: agents/agent_definitions/deep-thinker.md

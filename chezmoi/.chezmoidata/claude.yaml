@@ -291,6 +291,7 @@ claude:
   # Frontmatter is rendered from agents/registry.yaml metadata at assembly time.
   agents:
     - coder
+    - deep-thinker
     - duckdb-expert
     - explorer
     - fromage-age-arch

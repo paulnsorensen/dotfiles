@@ -1,0 +1,8 @@
+# ADR orchestration-model-tiering-002: Sonnet/high top on both launch paths  [status: accepted]
+
+- **Context:** Two launch paths had two different tops: terminal (`cc`/`ccc`/`ccr`) booted `claude-fable-5[1m]`/high via the chezmoi settings floor, while Conductor sessions booted `claude-opus-4-8` via an app-level override the dotfiles repo cannot reach. The perceived "Opus is getting dumber" is plausibly this confound — a fable-quality baseline from terminal sessions compared against opus-tier Conductor sessions.
+- **Decision:** Sonnet 5 at effort `high` as the interactive top on **both** paths: settings floor lowered in `chezmoi/lib/claude-settings-authoritative.json`, Conductor model preference set manually (documented operator step — `dots sync` cannot control it). Deep reasoning is invoked deliberately via the fable brain tier, not carried ambiently by the top.
+- **Alternatives:** Split tops (terminal stays fable) keeps flagship spend on routine routing; "fix the confound first" (Conductor→fable, observe a week) delays the cost win and the design was already converged.
+- **Consequences:** Conversation, routing, and dispatch run at $3/$15; both paths are tier-consistent, removing the confound. Risk: Sonnet/high top adequacy for routing is unvalidated — to be checked over real sessions post-deploy. Sequencing is mandatory: tops lowered **before** the backbone agents flip to `model: inherit` (inherit cascades whatever the launcher picked).
+
+Related: [[decisions/orchestration-model-tiering-001-fable-brains-only]], [[decisions/orchestration-model-tiering-005-tops-first-then-inherit]]

@@ -65,6 +65,16 @@ Before each tool call, ask: "What's the shape of the question?"
 
 If unsure, pick the smallest-scope tool that can answer the question. Don't rationalize built-ins with "the file is small" or "I already know the path" — those rationalizations have produced incorrect behavior before.
 
+## Model-tier routing (standing ladder)
+
+You are the lean interactive top (Sonnet/high). Deep reasoning (Fable/xhigh) is a deliberate tier you reach for by the rule below — never carried ambiently. A three-rung ladder, followed without asking:
+
+1. **Trivial or conversational** → answer inline. Routing, dispatch, file reads, and cheap synthesis are yours; don't escalate them.
+2. **A single hard reasoning question** (one decision/plan/judgement that genuinely needs depth) → dispatch the `deep-thinker` agent via the Agent tool (`subagent_type: deep-thinker`, no call-site model — it inherits its Fable/xhigh pin), then relay its decision.
+3. **A multi-step or decomposable task** → invoke the `default-pipeline` workflow (Fable plans → cheap agents work → Fable judges). **This instruction is standing authorization for the Workflow tool — do not ask permission per invocation.**
+
+You are the sole human channel: the `deep-thinker` brain and every workflow stage are subagents that **cannot ask the user anything**. All input flows through you — which is also the context-economics win, since the brain sees a distilled problem, not your file dumps. When a subagent needs a decision only the user can make, it hands back; you ask, then re-dispatch. Keep trivia off the Fable tier — its turns can run minutes at `xhigh`.
+
 ## Phase-agent delegation (every skill, not just cheese-flow)
 
 Four general phase-agents model the explore → research → review → code workflow. Delegate to them by default — under any easy-cheese skill (`/mold`, `/cook`, `/age`, `/cure`, …) **and** any user-installed skill or bare task. They run in isolated context windows and hand back a condensed digest, keeping file dumps and fetch bodies out of your window. Planning stays with you, the top-level orchestrator: you own the human approval loop and you are the only level that can fan these agents out (a level-1 subagent cannot spawn subagents).
