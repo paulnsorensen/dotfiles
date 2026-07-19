@@ -92,10 +92,15 @@ omp:
     task:
       eager: default
     # Consent answer omp recorded live (autoqa prompt) — promoted to survive
-    # the wholesale re-author.
+    # the wholesale re-author. Key renamed upstream (oh-my-pi v17.0.2) from
+    # nested `dev.autoqa.consent` to flat `dev.autoqaConsent`; v17.0.5 adds an
+    # automatic on-load migration that rewrites any live file still holding
+    # the old nested form. Author the new flat key here — otherwise a
+    # machine whose live config.yml gets auto-migrated by omp trips the
+    # modify_config.yml unknown-key gate (`dev.autoqaConsent` wouldn't match
+    # any path in this registry's desired document) and halts `chezmoi apply`.
     dev:
-      autoqa:
-        consent: granted
+      autoqaConsent: granted
     # Reasoning goes to the interactive session (default) and the reasoning
     # roles (plan/slow). GPT-5.6 Sol is the high-cost/deep tier; Terra is the
     # everyday Codex model; Luna covers cheap delegation and commit text.
