@@ -49,7 +49,7 @@ sources:
     signal: { type: npm, ref: "@upstash/context7-mcp" }
     docs: https://github.com/upstash/context7
     governs: [chezmoi/.chezmoidata/claude.yaml, agents/mcp/registry.yaml]
-    reconciled: "3.2.3"
+    reconciled: "3.2.4"
 
   - id: tavily-mcp
     signal: { type: npm, ref: tavily-mcp }
