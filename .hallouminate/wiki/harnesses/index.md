@@ -4,6 +4,7 @@ The repo deploys one harness-agnostic config (see [[../architecture/index]]) int
 
 - [[claude]] — Claude Code (Anthropic). The primary harness; the only one supporting `ap` isolated launches.
 - [[codex]] — OpenAI Codex CLI.
+  - [[codex-hooks-schema]] — the `~/.codex/hooks.json` object-with-`hooks`-map shape the renderer must emit (a flat array parses as JSON but Codex rejects it).
 - [[opencode]] — opencode (sst/opencode).
 - [[copilot]] — GitHub Copilot CLI.
 - [[cursor]] — Cursor (the AI code editor). An IDE plugin surface, not a CLI harness, but a full `ap` render target — see its page for the MCP-via-registry vs plugin-tree split.

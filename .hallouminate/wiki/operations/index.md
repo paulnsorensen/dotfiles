@@ -4,6 +4,8 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 
 - [[local-llm]] — the opt-in local-LLM stack: llama.cpp workers behind a LiteLLM proxy, the `localLLM` chezmoi gate, what's managed vs. runtime-only, and the `llm-*` commands.
 - [[sync-and-chezmoi]] — how `dots sync` deploys (the symlink + `.sync` system, `SYNC_SKIP_LIST`, `bin/` PATH-from-clone), the chezmoi-managed subset, and the "shell functions need tests" convention.
+- [[claude-dotfiles-ownership]] — treating `~/.claude/` as a runtime tree with repo-owned inputs: the settings scope model, the `modify_settings.json` merge/ownership policy, and the provenance-aware destructive-cleanup rule.
+- [[rtk-diff-false-drift]] — why the rtk `diff`→`git diff` rewrite can report false file drift (a `~/.gitattributes` symlink error makes the command exit non-zero regardless of file equality), and to compare with `shasum`/`cmp` instead.
 - [[dev-environment]] — git tooling (difftastic, mergiraf, the conflict-resolution chain), prek pre-commit hooks, Claude marketplace plugins, and skhd.
 - [[tmux-plugin-gotchas]] — tmux plugin wiring: why continuum silently disarms when `status-right` is rewritten after TPM runs, the required plugin declaration order, catppuccin palette injection via `theme/generate.sh`, and the live vs. repo plugin tree.
 - [[remote-access]] — the remote-shell stack: Tailscale mesh transport → mosh (UDP, survives roaming/sleep) → tmux session persistence, the `mtmux` wrapper, and why Tailscale stays a manual install under the Homebrew-on-Linux package model.
