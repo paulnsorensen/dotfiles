@@ -22,6 +22,14 @@ the high-effort posture is carried.)
 `gh` auth is the environment's native GitHub OAuth. No other setup is
 required.
 
+**All manifest repos are checked out into the workspace by the environment**
+(declared as the routine's `sources`), each under the workspace root by its
+repo name (e.g. `dotfiles/`, `cheez-wiki/`, `algorhythm/`). This dotfiles
+checkout — where `routine.md`, `sources.yaml`, and the `wiki-curator` skill
+live — is the working directory. Do not `git clone` the manifest repos in the
+common case; operate on the checkouts already present. (Runtime clone remains
+only a per-repo fallback — see the subagent brief.)
+
 A push notification is delivered on each run and immediately surfaces any
 issue this routine opens, so you (the human) see the question in the Claude
 app. (The push itself is configured at routine-registration time, not in
@@ -70,10 +78,10 @@ slash command. Its curation procedure, summarized:
    (`sources[]`: `name`, `owner`, `clone`, `wiki_path`, `category`,
    `seed_if_missing`, and `role` where present).
 
-3. Dispatch **one subagent per repo, in parallel** — each subagent clones and
-   works only its own repo (file-disjoint). If subagent dispatch isn't
-   available in this environment, process repos **sequentially in this same
-   context** instead — the per-repo logic is identical.
+3. Dispatch **one subagent per repo, in parallel** — each subagent works only
+   its own already-checked-out repo (file-disjoint). If subagent dispatch
+   isn't available in this environment, process repos **sequentially in this
+   same context** instead — the per-repo logic is identical.
 
 4. Collect each subagent's one-line result and print a summary table:
 
@@ -95,22 +103,26 @@ You own exactly ONE repo. Inputs: `name`, `owner`, `clone`, `wiki_path`,
    open `wiki-harvest`-labeled issue for this repo (title/label search) —
    if found, report `dup` and do not re-ask via the issue path in step 6.
 
-2. **Reachability pre-flight.** Before cloning, confirm write reach:
+2. **Reachability pre-flight.** Before working the repo, confirm write reach:
 
        gh repo view <owner>/<name> --json viewerCanAdminister
 
    If the call errors on a permission/auth failure, or returns
-   `viewerCanAdminister: false`, report `UNREACHABLE` and skip curation
-   entirely for this repo — do not clone or do any curation work. This
-   catches a read-reachable-but-not-write-reachable repo before wasting a
-   curation pass; it's the expected risk for the cross-org `sorensen-labs`
-   repo (`algorhythm`) reaching outside the `paulnsorensen` OAuth
-   scope.
+   `viewerCanAdminister: false`, report `UNREACHABLE` and do not curate or
+   open a PR for this repo. This catches a read-reachable-but-not-write-
+   reachable repo before wasting a curation pass; it's the expected risk for
+   the cross-org `sorensen-labs` repo (`algorhythm`) reaching outside the
+   `paulnsorensen` OAuth scope.
 
-3. **Clone.** Clone `<owner>/<name>` from `<clone>`. Keep the loud
-   fail-on-push as a backstop: if the clone or a later push still fails due
-   to auth/permission, STOP for this repo and report `UNREACHABLE` loudly.
-   Never swallow the failure. Continue with the other repos regardless.
+3. **Locate the checkout.** The environment has already checked out `<name>`
+   into the workspace (see Environment) — find its directory under the
+   workspace root and work there. If the repo is NOT present (e.g. the env
+   could not check out a cross-org repo), attempt a one-time fallback
+   `git clone <clone>`; if that also fails on auth/permission, STOP for this
+   repo and report `UNREACHABLE` loudly. Keep the loud fail-on-push as a
+   backstop: if a later push fails on auth/permission, STOP and report
+   `UNREACHABLE`. Never swallow the failure. Continue with the other repos
+   regardless.
 
 4. **Wiki presence.** If `<wiki_path>` (`.hallouminate/wiki`) is absent:
    - `seed_if_missing: true` — create a minimal starter
