@@ -76,7 +76,7 @@ omp:
     advisor:
       enabled: false
     compaction:
-      strategy: snapcompact
+      strategy: shake
       thresholdTokens: 120000
       keepRecentTokens: 20000
       midTurnEnabled: true
