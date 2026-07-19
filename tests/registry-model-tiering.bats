@@ -69,9 +69,13 @@ render() {
     [ "$status" -eq 0 ] || { echo "render deep-thinker failed: $output"; return 1; }
     [[ "$output" == *"model: fable"* ]] || { echo "expected 'model: fable'"; echo "$output"; return 1; }
     [[ "$output" == *"effort: xhigh"* ]] || { echo "expected 'effort: xhigh'"; echo "$output"; return 1; }
-    # brain, not hands: Edit/Write must be denied
-    [[ "$output" == *"disallowedTools:"*"Edit"* ]] || { echo "expected Edit in disallowedTools"; echo "$output"; return 1; }
-    [[ "$output" == *"Write"* ]] || { echo "expected Write denied"; echo "$output"; return 1; }
+    # brain, not hands: Edit/Write must be members of the disallowedTools
+    # frontmatter list, not just substrings anywhere in the rendered output
+    deny="$(printf '%s\n' "$output" | sed -n 's/^disallowedTools:[[:space:]]*//p' | head -n1 | tr -d '[]')"
+    [[ -n "$deny" ]] || { echo "no disallowedTools line in frontmatter"; echo "$output"; return 1; }
+    for tool in Edit Write; do
+        [[ ",${deny// /}," == *",$tool,"* ]] || { echo "expected $tool in disallowedTools: [$deny]"; return 1; }
+    done
 }
 
 @test "deep-thinker is selected in the claude registry so it deploys" {
