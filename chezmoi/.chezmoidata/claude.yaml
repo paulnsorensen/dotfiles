@@ -267,6 +267,7 @@ claude:
     - nih-audit
     - prompt-analytics
     - rennet
+    - routine-env
     - routine-scaffold
     - serena-project-config
     - session-analytics
