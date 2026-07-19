@@ -18,6 +18,7 @@ these, 25% pull from the wider bank.
 - Cheddar King
 - The Cheesiah
 - Don Curdleone
+- Dr. Gorgonzola
 
 ## Curated names
 
