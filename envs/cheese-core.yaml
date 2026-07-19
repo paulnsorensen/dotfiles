@@ -1,9 +1,11 @@
 name: cheese-core
-description: Core hallouminate wiki + tilth-nightly MCP + easy-cheese review skills for a general Claude Cloud session
+description: Core hallouminate wiki + tilth-nightly MCP + tilth-cwd-inject plugin + easy-cheese review skills for a general Claude Cloud session
 marketplaces:                 # → claude plugin marketplace add <ref>
   - ref: paulnsorensen/hallouminate     # owner/repo the CLI accepts (source: agents/plugins/registry.yaml)
+  - ref: paulnsorensen/tilth            # BLOCKED — no root marketplace.json yet; see envs/README.md#known-gaps
 plugins:                      # → claude plugin install <id>
   - id: hallouminate@hallouminate       # <plugin>@<marketplace-id>; CONFIRM id via `claude plugin marketplace list`
+  - id: tilth-cwd-inject@tilth          # cwd-injects tilth MCP calls; NOT the MCP server itself (see mcp: below); BLOCKED, see envs/README.md#known-gaps
 mcp:                          # npx-launched MCP servers (NOT plugins)
   - name: tilth
     package: "@paulnsorensen/tilth-nightly"

@@ -42,16 +42,38 @@ skills:                       # skill packs via the skills CLI
 ```
 
 `plugins[].id` marketplace coordinates come from `agents/plugins/registry.yaml` (the cross-harness
-plugin registry) — do not invent new coordinates here; that registry is the source of truth for which
-plugin lives at which marketplace. Every `plugins[].id` carries an inline comment that the exact id
-must be confirmed via `claude plugin marketplace list` before use, since the marketplace's `.name`
+plugin registry) where an entry exists — do not invent new coordinates here when it does; that registry
+is the source of truth for which plugin lives at which marketplace. **Exception:** `tilth` has no entry
+in `agents/plugins/registry.yaml` (only `hallouminate` and `milknado` are registered there), so its
+`ref`/`id` are sourced directly from the `paulnsorensen/tilth` repo instead — see "Known gaps" below for
+why that repo isn't registry-eligible yet. Every `plugins[].id` carries an inline comment that the exact
+id must be confirmed via `claude plugin marketplace list` before use, since the marketplace's `.name`
 field in its `marketplace.json` is not assumed by this file.
 
 ## Env defns
 
-- `cheese-core.yaml` — hallouminate wiki MCP/plugin + tilth-nightly MCP + easy-cheese review skills.
-- `milknado.yaml` — milknado Mikado execution plugin + easy-cheese review skills (skills list has an
-  open `TODO(confirm)` for additional packs).
+- `cheese-core.yaml` — hallouminate wiki MCP/plugin + tilth-nightly MCP + tilth-cwd-inject plugin +
+  easy-cheese review skills.
+- `milknado.yaml` — same bundle as `cheese-core.yaml`, plus the milknado Mikado execution plugin
+  (skills list has an open `TODO(confirm)` for additional packs).
+
+## Known gaps
+
+- **`tilth-cwd-inject@tilth` is currently non-installable.** `<certain>` (verified via
+  `gh api repos/paulnsorensen/tilth/git/trees/main?recursive=true` on 2026-07-18): the `paulnsorensen/tilth`
+  repo has no root `.claude-plugin/marketplace.json` — only `plugin/claude/.claude-plugin/plugin.json`
+  (a bare plugin payload named `tilth-cwd-inject`, not a marketplace). Compare `paulnsorensen/hallouminate`
+  and `paulnsorensen/milknado`, both of which have a root `.claude-plugin/marketplace.json`. Until tilth's
+  upstream adds one (mirroring hallouminate's `{name, plugins: [{name, source}]}` shape),
+  `claude plugin marketplace add paulnsorensen/tilth` will fail, and `tilth-cwd-inject@tilth` is a
+  placeholder id — same as the existing `CONFIRM via claude plugin marketplace list` caveat on every
+  other `plugins[].id`, just with a stronger, verified-broken severity rather than merely-unconfirmed.
+- The `tilth-cwd-inject` plugin only bundles the PreToolUse hook that auto-injects `cwd` into tilth MCP
+  calls (mirrors the hand-wired hook in this repo's own `chezmoi/.chezmoidata/claude.yaml`) — it does
+  **not** bundle an `.mcp.json`, so it cannot replace the `mcp:` entry that actually launches the tilth
+  MCP server. Both entries are required; removing `mcp:` would drop tilth entirely. `<don't know>`
+  whether tilth MCP calls still function without the hook (e.g. by passing `cwd` explicitly) or error
+  outright — not tested.
 
 ## Consumption
 
