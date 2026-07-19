@@ -1,7 +1,7 @@
 ---
 name: ghostbuster
-model: opus
-effort: high
+model: sonnet
+effort: medium
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
 allowed-tools: Read, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, mcp__serena__*

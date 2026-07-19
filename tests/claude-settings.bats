@@ -33,6 +33,18 @@ $1
 STDIN"
 }
 
+@test "settings floor: the terminal top is the Sonnet 5 tier at high (spec: orchestration-model-tiering)" {
+    # The tests above guard the floor-overrides-drift MECHANISM (OUT == AUTH).
+    # This pins the floor's VALUE: the interactive top is a deliberate tier —
+    # Sonnet 5 at high, not the old flagship. A drift back to fable/opus would
+    # pass every mechanism test but breaks the tiering; this fails loud. The
+    # `[1m]` (or any) suffix is tolerated; the tier and effort are pinned.
+    run jq -r '.model' "$AUTH"
+    [ "$status" -eq 0 ]
+    [[ "$output" == claude-sonnet-5* ]] || { echo "top model '$output' is not the Sonnet 5 tier"; return 1; }
+    [ "$(jq -r '.effortLevel' "$AUTH")" = "high" ]
+}
+
 @test "modify_settings: empty stdin emits the composed desired document (fresh machine)" {
     run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
     [ "$status" -eq 0 ]

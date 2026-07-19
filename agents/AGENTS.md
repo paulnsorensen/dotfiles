@@ -149,7 +149,12 @@ The task-to-tool tables, the serena-vs-tilth edit-shape guide, and the routing s
 
 ## Deep Think
 
-For reasoning-heavy synthesis (design, spec, research), the deepest path is Opus at `xhigh` effort. Hooks cannot change model/effort mid-session, so the graceful switch is checkpoint-and-relaunch: run `/wheypoint` to write a resumable handoff, then relaunch. Opus is already the default model; raise effort with `/effort xhigh` (or relaunch the session on it).
+The interactive top is Sonnet/high on both launch paths (terminal settings floor; Conductor app preference — a manual operator step). Deep reasoning is a deliberate tier, not the ambient default: reach the Fable/`xhigh` brain on demand rather than relaunching the session. Two paths, picked by the model-tier routing ladder in `agents/preamble.md`:
+
+- **One hard reasoning question** → dispatch the `deep-thinker` agent (Fable/`xhigh`) via the Agent tool; relay its decision.
+- **A multi-step or decomposable task** → invoke the `default-pipeline` workflow (Fable plans → cheap agents work → Fable judges).
+
+Both return to the Sonnet top, which owns the human channel. The old checkpoint-and-relaunch dance (`/wheypoint` + `/effort xhigh`) is no longer the deep path — it's only for preserving state across a `/clear`, not for reaching the reasoning tier.
 
 ## Banned Phrases
 

@@ -107,3 +107,4 @@ Global **claude** config is chezmoi-authoritative: the claude registry `chezmoi/
 - Reference docs go in `reference/` (gitignored, not synced).
 - `git commit --no-verify` only for rare temporary prek overrides (see `prek.toml`).
 - Prefix shell commands with `rtk` (token-filtering proxy; a hook auto-rewrites them anyway). Full reference: `~/.claude/RTK.md` or `rtk --help`.
+- **Conductor's top-level model is a manual step.** The terminal top is the chezmoi settings floor (`chezmoi/lib/claude-settings-authoritative.json` → Sonnet/high, applied by `dots sync`), but Conductor launches with its own app-level model preference that no file under repo control reaches. To keep both launch paths tier-consistent (Sonnet/high), set the Conductor app's model preference to Sonnet manually — and redo it on a new machine. Drift here is the likely source of "Opus is getting dumber" (a Sonnet terminal baseline vs. whatever Conductor booted).
