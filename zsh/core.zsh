@@ -42,6 +42,12 @@ export PATH="$HOME/.local/bin:$PATH"
 # cargo install puts binaries in ~/.cargo/bin
 [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
 
+# .NET SDK + global tools (dotnet tool install, e.g. godotenv) live under ~/.dotnet
+if [[ -d "$HOME/.dotnet" ]]; then
+  export DOTNET_ROOT="$HOME/.dotnet"
+  export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
+fi
+
 # prek cache/logs — persistent location writable by Claude sandbox
 export PREK_HOME="$HOME/Dev/.prek"
 

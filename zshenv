@@ -36,3 +36,10 @@ fi
 if [[ -d "$HOME/.cargo/bin" && ":$PATH:" != *":$HOME/.cargo/bin:"* ]]; then
   export PATH="$HOME/.cargo/bin:$PATH"
 fi
+
+# .NET SDK + global tools (e.g. godotenv) for non-interactive shells. Interactive
+# shells get these via zsh/core.zsh; mirrored here for the non-interactive path.
+if [[ -d "$HOME/.dotnet" ]]; then
+  export DOTNET_ROOT="$HOME/.dotnet"
+  [[ ":$PATH:" != *":$DOTNET_ROOT:"* ]] && export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
+fi
