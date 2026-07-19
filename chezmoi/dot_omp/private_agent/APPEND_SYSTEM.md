@@ -32,3 +32,4 @@ Repository instructions override generic defaults. Match local style and existin
 
 - Prefer OMP-native file, search, edit, and code-intelligence tools over shell; use shell for tests, builds, and non-file operations.
 - Prefix shell commands with `rtk` (e.g. `rtk git status`, `rtk cargo test`) — it compacts output when a filter exists and passes through unchanged otherwise, so it is always safe to use.
+- Spawn sub-agents with the `task` tool. A worker always starts blank — zero prior conversation turns, and there is no inherit switch — so write a complete, self-contained brief into `assignment`, plus `context` for state shared across a batch. Never assume the worker can see earlier conversation; it can't.
