@@ -97,12 +97,11 @@ omp:
     task:
       eager: default
     # Consent answer omp recorded live (autoqa prompt) — promoted to survive
-    # the wholesale re-author. omp migrated this from flat `dev.autoqaConsent`
-    # to nested `dev.autoqa.consent` — match the live shape or the unknown-key
-    # gate in modify_config.yml trips.
+    # the wholesale re-author. omp stores this as a flat `dev.autoqaConsent`
+    # key, not a nested `dev.autoqa.consent` object — match the live shape or
+    # the unknown-key gate in modify_config.yml trips on both paths.
     dev:
-      autoqa:
-        consent: granted
+      autoqaConsent: granted
     # omp-introduced toggle (hides the model's thinking block in the TUI),
     # promoted to survive the wholesale re-author.
     hideThinkingBlock: true
