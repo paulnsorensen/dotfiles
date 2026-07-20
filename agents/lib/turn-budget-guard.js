@@ -11,13 +11,16 @@
 //   PreToolUse  — increment the per-agent turn counter, read live context
 //                 tokens; deny at the turn hard ceiling immediately. The
 //                 context hard ceiling gets a short grace window
-//                 (BYTE_GRACE_CALLS), but ONLY when the agent's first
-//                 observed reading is already above hard — the true resume
-//                 signature (SendMessage resume: SubagentStop wipes turn
-//                 state but the transcript persists, so a continued agent
-//                 can start above ctxHard on call 1). A fresh agent that
-//                 crosses ctxHard mid-run is denied immediately — a fresh
-//                 agent physically cannot exceed hard on its first call.
+//                 (CTX_GRACE_CALLS), but ONLY when the agent's first
+//                 observed reading is already above hard, or no prior real
+//                 (non-zero) reading has been observed yet for this agent —
+//                 the resume signature (SendMessage resume: SubagentStop
+//                 wipes turn state but the transcript persists, so a
+//                 continued agent can start above ctxHard on call 1, or on
+//                 a later call if its early reading(s) hit a transient
+//                 transcript-not-found miss). A fresh agent whose first
+//                 real reading lands under hard, then crosses ctxHard
+//                 mid-run, gets none of this window.
 //   PostToolUse — once per agent, inject a wrap-up nudge when either signal
 //                 crosses its soft threshold (the graceful handoff window);
 //                 a sterner one-time hard nudge fires when context tokens
@@ -68,7 +71,13 @@ const STALE_HOURS = 6;
 // the agent's FIRST observed reading is already above hard (see the
 // graceEligible marker in handle()) — a fresh agent that crosses hard
 // mid-run gets none of this window.
-const BYTE_GRACE_CALLS = 3;
+const CTX_GRACE_CALLS = 3;
+
+// Byte-to-token conversion for the fallback signal below — restores the
+// module's prior ~4-bytes/token calibration on the token scale so the
+// fallback compares against ctxHard/ctxSoft correctly instead of a raw byte
+// count against a token threshold.
+const BYTES_PER_TOKEN_ESTIMATE = 4;
 
 // Cap decisions.jsonl; rotated to one `.1` generation on SubagentStop once
 // it crosses this (see rotateLogIfLarge).
@@ -79,12 +88,12 @@ const DECISION_LOG_MAX_BYTES = 5 * 1024 * 1024;
 // `message.usage` line (input_tokens + cache_creation_input_tokens +
 // cache_read_input_tokens — the summed live context the model last
 // ingested), not a byte proxy: ~110K-token soft / ~130K-token hard. When no
-// usage line can be read, `statSync(...).size` (byte count) stands in as a
-// fail-open fallback proxy for the same thresholds — an under-count against
-// the real token figure, but strictly monotonic, which is all a ceiling
-// needs. Per Claude Code's documented async transcript writes, the reading
-// can trail the model's live context by up to one turn; acceptable for a
-// monotonic ceiling. Unknown agent_types fall to `default`.
+// usage line can be read, `statSync(...).size / BYTES_PER_TOKEN_ESTIMATE`
+// (a ~4-bytes/token estimate on the token scale) stands in as a fail-open
+// fallback proxy for the same thresholds — strictly monotonic, which is all
+// a ceiling needs. Per Claude Code's documented async transcript writes, the
+// reading can trail the model's live context by up to one turn; acceptable
+// for a monotonic ceiling. Unknown agent_types fall to `default`.
 const CONTEXT_SOFT_TOKENS = 110_000;
 const CONTEXT_HARD_TOKENS = 130_000;
 const BUDGETS = {
@@ -215,6 +224,15 @@ function graceEligibleFile(dir) {
   return path.join(dir, 'grace-eligible');
 }
 
+// One-shot marker: set the first time a call for this agent produces a real
+// (non-zero) context reading, regardless of turn. Lets grace eligibility
+// (#9) latch on a resume whose early call(s) hit a transient transcript-
+// not-found miss (tokens=0 on turns===1) without opening the window for a
+// fresh agent whose first real reading is under hard and later crosses it.
+function realReadingSeenFile(dir) {
+  return path.join(dir, 'real-reading-seen');
+}
+
 function nudgedFile(dir) {
   return path.join(dir, 'nudged');
 }
@@ -307,23 +325,24 @@ function cleanup(dir) {
   }
 }
 
-// Read the LAST assistant transcript line's `message.usage` tokens
-// (input_tokens + cache_creation_input_tokens + cache_read_input_tokens) —
-// the real live context the model last ingested. Scans forward once,
-// keeping only the latest match rather than holding every parsed line.
-// Returns null when the file can't be read, has no assistant/usage line, or
-// a line fails to parse — the caller falls back to the byte-size proxy.
-function tokensFromTranscript(file) {
-  let content;
-  try {
-    content = fs.readFileSync(file, 'utf8');
-  } catch {
-    return null;
-  }
+// Byte window read from the tail of a transcript before falling back to a
+// full-file read below — keeps the common case bounded instead of O(file
+// size) on every Pre/PostToolUse call. One turn's transcript bytes
+// comfortably fit inside this window, so the full-read fallback is rare.
+const TAIL_READ_BYTES = 256 * 1024;
+
+// Scan transcript content for the LAST assistant `message.usage` tokens
+// (input_tokens + cache_creation_input_tokens + cache_read_input_tokens).
+// A per-line try/catch means one torn/malformed line (e.g. an in-progress
+// async write, or a partial first line from a tail-window read) is skipped
+// rather than treated as a fatal parse failure that discards every good
+// reading already accumulated. Shared by both the tail-window and
+// full-file read paths below.
+function lastUsageTokens(content) {
   let lastTokens = null;
-  try {
-    for (const line of content.split('\n')) {
-      if (!line.trim()) continue;
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue;
+    try {
       const record = JSON.parse(line);
       const usage = record && record.type === 'assistant' && record.message && record.message.usage;
       if (usage && typeof usage.input_tokens === 'number') {
@@ -331,11 +350,45 @@ function tokensFromTranscript(file) {
           (usage.cache_creation_input_tokens || 0) +
           (usage.cache_read_input_tokens || 0);
       }
+    } catch {
+      /* torn/malformed line — skip it, keep any reading already seen */
     }
+  }
+  return lastTokens;
+}
+
+// Read the LAST assistant transcript line's `message.usage` tokens — the
+// real live context the model last ingested. Reads only the tail window
+// first (the common case); falls back to a full-file read only when the
+// tail yields no usage line, so correctness is never sacrificed for speed.
+// Returns null when the file can't be read at all or no usage line is found
+// anywhere in it — the caller falls back to the byte-size proxy.
+function tokensFromTranscript(file) {
+  let size;
+  try {
+    size = fs.statSync(file).size;
   } catch {
     return null;
   }
-  return lastTokens;
+  if (size > TAIL_READ_BYTES) {
+    try {
+      const fd = fs.openSync(file, 'r');
+      const buf = Buffer.alloc(TAIL_READ_BYTES);
+      fs.readSync(fd, buf, 0, TAIL_READ_BYTES, size - TAIL_READ_BYTES);
+      fs.closeSync(fd);
+      const tail = lastUsageTokens(buf.toString('utf8'));
+      if (tail !== null) return tail;
+    } catch {
+      /* fall through to the full-file read below */
+    }
+  }
+  let content;
+  try {
+    content = fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  return lastUsageTokens(content);
 }
 
 // Locate the sub-agent's own transcript (`agent-<agent_id>.jsonl`) under
@@ -346,16 +399,17 @@ function tokensFromTranscript(file) {
 // miss / error → 0 (fail-open to the turn ceiling alone).
 function contextTokens(transcriptPath, sessionId, agentId) {
   try {
-    if (!transcriptPath || !sessionId || !agentId) return 0;
+    if (!transcriptPath || !sessionId || !agentId) return { tokens: 0, source: 'none' };
     const root = path.join(path.dirname(transcriptPath), sanitize(sessionId));
     const target = `agent-${agentId}.jsonl`;
     const hit = findFile(root, target, 4);
-    if (!hit) return 0;
+    if (!hit) return { tokens: 0, source: 'none' };
     const tokens = tokensFromTranscript(hit);
-    if (tokens !== null) return tokens;
-    return fs.statSync(hit).size; // fail-open: byte-size proxy fallback
+    if (tokens !== null) return { tokens, source: 'tokens' };
+    // fail-open: byte-size proxy fallback, converted to the token scale
+    return { tokens: Math.round(fs.statSync(hit).size / BYTES_PER_TOKEN_ESTIMATE), source: 'bytes-fallback' };
   } catch {
-    return 0;
+    return { tokens: 0, source: 'none' };
   }
 }
 
@@ -366,8 +420,12 @@ function contextTokensFromEvent(event) {
   if (event.agent_transcript_path) {
     try {
       const tokens = tokensFromTranscript(event.agent_transcript_path);
-      if (tokens !== null) return tokens;
-      return fs.statSync(event.agent_transcript_path).size; // fail-open: byte-size proxy fallback
+      if (tokens !== null) return { tokens, source: 'tokens' };
+      // fail-open: byte-size proxy fallback, converted to the token scale
+      return {
+        tokens: Math.round(fs.statSync(event.agent_transcript_path).size / BYTES_PER_TOKEN_ESTIMATE),
+        source: 'bytes-fallback',
+      };
     } catch {
       /* fall through to the walk-based fallback below */
     }
@@ -546,21 +604,33 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
 
   if (evt === 'PreToolUse') {
     const state = incrementTurn(dir);
-    const tokens = contextTokensFromEvent(event);
+    const { tokens, source: ctxSource } = contextTokensFromEvent(event);
     // Resume-only grace: eligibility is decided once, on the agent's first
-    // observed call. A fresh agent physically cannot exceed ctxHard on call
-    // 1 without having been resumed with an already-large transcript, so
-    // only that first-call-over-hard signature earns the grace window.
-    if (state.turns === 1 && tokens > budget.ctxHard) {
+    // observed reading over ctxHard. The over-hard-on-turn-1 signature is
+    // almost always a resume (SubagentStop wiped turn state but the
+    // transcript persists) — a fresh agent's own transcript grows one turn
+    // at a time, so it can only cross ctxHard mid-run, not on call 1; the
+    // rare exception (a fresh agent spawned with an already-large inline
+    // context) also earns the short window, which is acceptable. A resume
+    // whose first call(s) hit a transient transcript-not-found miss
+    // (tokens===0) can still latch on its first over-hard reading, tracked
+    // via realReadingSeenFile — but only if no earlier real reading was
+    // already seen (that would mean a fresh agent crossing mid-run).
+    const seenBefore = fileExists(realReadingSeenFile(dir));
+    if (tokens > budget.ctxHard && (state.turns === 1 || !seenBefore)) {
       try { markOnce(dir, graceEligibleFile(dir)); } catch { /* fail-open: eligibility best-effort */ }
+    }
+    if (tokens > 0) {
+      try { markOnce(dir, realReadingSeenFile(dir)); } catch { /* best-effort */ }
     }
     const graceEligible = fileExists(graceEligibleFile(dir));
     debug(`pre type=${type} turns=${state.turns}/${budget.turnHard} ` +
-      `tokens=${tokens}/${budget.ctxHard} grace=${state.graceUsed}/${BYTE_GRACE_CALLS} eligible=${graceEligible}`);
+      `tokens=${tokens}/${budget.ctxHard} grace=${state.graceUsed}/${CTX_GRACE_CALLS} eligible=${graceEligible}`);
     const fields = {
       budget_type: type,
       turns: state.turns,
       tokens,
+      ctx_source: ctxSource,
       graceUsed: state.graceUsed,
       ...thresholdFields(budget),
     };
@@ -571,10 +641,10 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       return { action: 'deny', reason };
     }
     if (tokens > budget.ctxHard) {
-      if (graceEligible && state.graceUsed < BYTE_GRACE_CALLS) {
+      if (graceEligible && state.graceUsed < CTX_GRACE_CALLS) {
         const graceUsed = incrementGrace(dir);
-        writeDecision(event, { ...fields, graceUsed, action: 'allow', reason: 'byte-grace' });
-        return { action: 'allow', reason: 'byte-grace' };
+        writeDecision(event, { ...fields, graceUsed, action: 'allow', reason: 'ctx-grace' });
+        return { action: 'allow', reason: 'ctx-grace' };
       }
       const reason = denyReason(type, state.turns, tokens, budget);
       writeDecision(event, { ...fields, action: 'deny', reason: 'hard-ceiling' });
@@ -587,11 +657,12 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
 
   if (evt === 'PostToolUse') {
     let state = readState(dir);
-    const tokens = contextTokensFromEvent(event);
+    const { tokens, source: ctxSource } = contextTokensFromEvent(event);
     const fields = {
       budget_type: type,
       turns: state.turns,
       tokens,
+      ctx_source: ctxSource,
       graceUsed: state.graceUsed,
       ...thresholdFields(budget),
     };
@@ -600,7 +671,8 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       const created = markHardNudged(dir);
       if (created) {
         markNudged(dir); // suppress the soft nudge too — one nudge per agent max
-        const remaining = Math.max(0, BYTE_GRACE_CALLS - state.graceUsed);
+        const graceEligible = fileExists(graceEligibleFile(dir));
+        const remaining = graceEligible ? Math.max(0, CTX_GRACE_CALLS - state.graceUsed) : 0;
         debug(`hard-nudge type=${type} turns=${state.turns} tokens=${tokens} remaining=${remaining}`);
         const context = hardNudgeContext(type, budget, remaining);
         writeDecision(event, { ...fields, action: 'nudge', reason: 'hard-threshold' });
@@ -666,6 +738,6 @@ module.exports = {
   hardNudgeContext,
   sweepStale,
   rotateLogIfLarge,
-  BYTE_GRACE_CALLS,
+  CTX_GRACE_CALLS,
   DECISION_LOG_MAX_BYTES,
 };

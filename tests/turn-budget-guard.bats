@@ -74,6 +74,18 @@ mark_hard_nudged() {
     : > "$dir/hard-nudged"
 }
 
+# Mark that a real (non-zero) context reading has already been observed for
+# this agent. A live mid-run agent always has this marker (its earlier
+# PreToolUse calls read real tokens); seed it in tests that fake a mid-run
+# agent via seed_turns, so grace eligibility correctly treats a mid-run
+# over-hard crossing as ineligible (not a transient-miss resume).
+mark_real_reading_seen() {
+    local session="$1" agent="$2"
+    local dir="$CLAUDE_TURN_BUDGET_DIR/$session/$agent"
+    mkdir -p "$dir"
+    : > "$dir/real-reading-seen"
+}
+
 # Current turns count for (session, agent) — 0 when the file is absent.
 turns_count() {
     local file="$CLAUDE_TURN_BUDGET_DIR/$1/$2/turns"
@@ -197,7 +209,11 @@ post_event() {
     # first observed call and grace does not apply, regardless of the token
     # reading. This is the Change 3 fix: a normal agent that crosses hard
     # mid-run gets an immediate deny, not a multi-call grace window.
+    # A live mid-run agent has already logged real readings, so seed the
+    # real-reading-seen marker; without it, an over-hard crossing would look
+    # like a transient-miss resume and wrongly earn grace.
     seed_turns s2 b1 5
+    mark_real_reading_seen s2 b1
     seed_usage_transcript s2 b1 "$((130000 + 1)):0:0"  # > ctxHard (130000)
     fire "$(pre_event s2 b1 coder)"
     [[ "$(verdict)" == "deny" ]]
@@ -223,6 +239,7 @@ post_event() {
     [[ "$(log_record | jq -r '.budget_type')" == "coder" ]]
     [[ "$(log_record | jq -r '.turns')" == "6" ]]
     [[ "$(log_record | jq -r '.tokens')" == "100000" ]]
+    [[ "$(log_record | jq -r '.ctx_source')" == "tokens" ]]
 }
 
 @test "A2: tokens exactly AT the context-hard ceiling -> allow (strict '>')" {
@@ -248,6 +265,7 @@ post_event() {
 
 @test "A2: Codex direct agent_transcript_path drives the context ceiling" {
     seed_turns s2 codex1 1  # increments to 2 -> not first call, grace does not apply
+    mark_real_reading_seen s2 codex1  # live mid-run agent has seen real readings
     local agent_tx="$TEST_HOME/codex-agent.jsonl"
     jq -nc --argjson inp $((130000 + 1)) \
         '{type:"assistant", message:{usage:{input_tokens:$inp, cache_creation_input_tokens:0, cache_read_input_tokens:0}}}' \
@@ -282,7 +300,7 @@ post_event() {
 
     fire "$(pre_event s2b grace1 coder)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "byte-grace" ]]
+    [[ "$(log_record | jq -r '.reason')" == "ctx-grace" ]]
     [[ "$(grace_count s2b grace1)" == "1" ]]
 
     fire "$(pre_event s2b grace1 coder)"
@@ -553,7 +571,7 @@ post_event() {
         '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:"coder", session_id:$s, transcript_path:$p, agent_transcript_path:$atp, tool_name:"Bash", tool_input:{}}')
     fire "$json"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "byte-grace" ]]
+    [[ "$(log_record | jq -r '.reason')" == "ctx-grace" ]]
     [[ "$(log_record | jq -r '.tokens')" == "$((130000 + 1))" ]]
 }
 
@@ -566,23 +584,72 @@ post_event() {
     [[ "$(log_record | jq -r '.tokens')" == "28000" ]]
 }
 
-@test "B2: a transcript with no parseable JSON line falls back to the raw byte-size proxy" {
+@test "B2: a transcript with no parseable JSON line falls back to the byte-size proxy on the token scale" {
+    # Fallback is bytes / BYTES_PER_TOKEN_ESTIMATE (4): 12345 -> round -> 3086.
     seed_transcript s10 tok2 12345
     fire "$(pre_event s10 tok2 coder)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.tokens')" == "12345" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "3086" ]]
+    [[ "$(log_record | jq -r '.ctx_source')" == "bytes-fallback" ]]
 }
 
-@test "B3: valid JSONL with no assistant usage line falls back to the raw byte-size proxy" {
+@test "B3: valid JSONL with no assistant usage line falls back to the byte-size proxy on the token scale" {
     local dir="$PROJ/s10/subagents"
     mkdir -p "$dir"
     local file="$dir/agent-tok3.jsonl"
     printf '{"type":"user","message":{"content":"hi"}}\n' > "$file"
-    local size
+    local size expected
     size=$(file_size "$file")
+    expected=$(node -e "console.log(Math.round($size / 4))")
     fire "$(pre_event s10 tok3 coder)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.tokens')" == "$size" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "$expected" ]]
+    [[ "$(log_record | jq -r '.ctx_source')" == "bytes-fallback" ]]
+}
+
+@test "B4: byte fallback that exceeds ctxHard on the token scale denies a mid-run agent" {
+    # A transcript with no usage line and > 520000 bytes -> / 4 > 130000
+    # tokens, so the fallback proxy must still enforce the hard ceiling.
+    # seed_turns > 1 + real-reading-seen so this is a mid-run crossing (no
+    # grace), proving the fallback denies on the token scale rather than
+    # comparing raw bytes.
+    seed_turns s10 tok4 5
+    mark_real_reading_seen s10 tok4
+    seed_transcript s10 tok4 520004  # 520004 / 4 = 130001 > ctxHard
+    fire "$(pre_event s10 tok4 coder)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$(log_record | jq -r '.ctx_source')" == "bytes-fallback" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "130001" ]]
+}
+
+@test "B5: a good-then-torn transcript keeps the last GOOD summed usage, not the byte fallback" {
+    # Valid assistant usage lines followed by a half-written final line: the
+    # per-line parse must skip the torn line and preserve the last good
+    # reading (28000), NOT discard everything and drop to the byte proxy.
+    seed_usage_transcript s10 tok5 "1000:0:0" "5000:2000:1000" "20000:5000:3000"
+    local file="$PROJ/s10/subagents/agent-tok5.jsonl"
+    printf '{"type":"assistant","message":{"usage":{"input_tokens":9\n' >> "$file"
+    fire "$(pre_event s10 tok5 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "28000" ]]
+    [[ "$(log_record | jq -r '.ctx_source')" == "tokens" ]]
+}
+
+@test "B6: a resume whose first call misses the transcript still earns grace on its first over-hard reading" {
+    # #9: on turns=1 the transcript is unlocatable (tokens=0 -> no real
+    # reading, no eligibility yet). On turns=2 the located transcript is
+    # over ctxHard; because no real reading was ever seen, this latches
+    # grace-eligibility (the transient-miss resume path) rather than denying
+    # like a fresh mid-run crosser.
+    # Call 1: no transcript fixture -> contextTokens resolves to 0.
+    fire "$(pre_event s10 tok6 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "within-budget" ]]
+    # Call 2: transcript now present and over-hard -> grace, not deny.
+    seed_usage_transcript s10 tok6 "$((130000 + 1)):0:0"
+    fire "$(pre_event s10 tok6 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "ctx-grace" ]]
 }
 
 # ── A8 — stale sweep ─────────────────────────────────────────────────
