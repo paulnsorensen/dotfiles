@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// turn-budget-guard.js — per-sub-agent turn + context-byte ceiling.
+// turn-budget-guard.js — per-sub-agent turn + context-token ceiling.
 //
 // Claude Code's `maxTurns` sub-agent frontmatter does not enforce (upstream
 // #41143: the hardcoded default always wins, and background spawns drop the
@@ -9,24 +9,34 @@
 // consistent `agent_id`. The main orchestrator's tool calls carry no
 // `agent_id`, so the hook no-ops on them — only sub-agents are capped.
 //   PreToolUse  — increment the per-agent turn counter, read live context
-//                 bytes; deny at the turn hard ceiling immediately. The byte
-//                 hard ceiling gets a short grace window (BYTE_GRACE_CALLS)
-//                 instead of an immediate deny — a continued sub-agent
-//                 (SendMessage resume) can already sit above byteHard on its
-//                 very first call, with no soft-nudge window behind it.
+//                 tokens; deny at the turn hard ceiling immediately. The
+//                 context hard ceiling gets a short grace window
+//                 (CTX_GRACE_CALLS), but ONLY when the agent's first
+//                 observed reading is already above hard, or no prior real
+//                 (non-zero) reading has been observed yet for this agent —
+//                 the resume signature (SendMessage resume: SubagentStop
+//                 wipes turn state but the transcript persists, so a
+//                 continued agent can start above ctxHard on call 1, or on
+//                 a later call if its early reading(s) hit a transient
+//                 transcript-not-found miss). A fresh agent whose first
+//                 real reading lands under hard, then crosses ctxHard
+//                 mid-run, gets none of this window.
 //   PostToolUse — once per agent, inject a wrap-up nudge when either signal
 //                 crosses its soft threshold (the graceful handoff window);
-//                 a sterner one-time hard nudge fires when bytes cross the
-//                 byte hard ceiling, even if the soft nudge already fired.
+//                 a sterner one-time hard nudge fires when context tokens
+//                 cross the hard ceiling, even if the soft nudge already
+//                 fired.
 //   SubagentStop — delete the agent's counter dir, sweep stale dirs so a
 //                 missed Stop can't leak forever, and rotate the decision
 //                 log past a size cap.
 //
-// Budgets are keyed by `agent_type` (table + default fallback). The byte
+// Budgets are keyed by `agent_type` (table + default fallback). The context
 // ceiling is the sharper proxy for context rot: the sub-agent's own
 // transcript (`agent-<agent_id>.jsonl`) is located live under the project
-// dir and stat'd. If it can't be found the byte signal is 0 (fail-open to
-// the turn ceiling alone).
+// dir and its last assistant `message.usage` tokens summed. If no usage
+// line is found the byte size of the file stands in as a proxy; if the
+// transcript can't be found at all the signal is 0 (fail-open to the turn
+// ceiling alone).
 //
 // Per-agent counters live as append/marker files (turns, grace, nudged,
 // hard-nudged) under one dir per (session_id, agent_id) — no read-modify-
@@ -54,37 +64,51 @@ function debug(msg) {
 // missed SubagentStop.
 const STALE_HOURS = 6;
 
-// A continued sub-agent's transcript may already sit above byteHard on its
+// A continued sub-agent's transcript may already sit above ctxHard on its
 // first call after resume (SubagentStop wipes turn state but the transcript
 // persists) — allow this many over-hard calls before denying, so there's a
-// window to persist a handoff instead of an instant wall.
-const BYTE_GRACE_CALLS = 3;
+// window to persist a handoff instead of an instant wall. Granted only when
+// the agent's FIRST observed reading is already above hard (see the
+// graceEligible marker in handle()) — a fresh agent that crosses hard
+// mid-run gets none of this window.
+const CTX_GRACE_CALLS = 3;
+
+// Byte-to-token conversion for the fallback signal below — restores the
+// module's prior ~4-bytes/token calibration on the token scale so the
+// fallback compares against ctxHard/ctxSoft correctly instead of a raw byte
+// count against a token threshold.
+const BYTES_PER_TOKEN_ESTIMATE = 4;
 
 // Cap decisions.jsonl; rotated to one `.1` generation on SubagentStop once
 // it crosses this (see rotateLogIfLarge).
 const DECISION_LOG_MAX_BYTES = 5 * 1024 * 1024;
 
-// Per-agent_type budgets. Turn ceilings are hand-set; byte ceilings use a
-// byte proxy hand-calibrated against JSONL transcript size, not an exact
-// bytes/token conversion — the JSON envelope (keys, escaping, tool-call
-// wrappers) inflates bytes per token, while the untranscripted system
-// prompt deflates it. ~110K-token soft / ~130K-token hard at a 4-bytes/
-// token estimate. Unknown types fall to `default`.
-const CONTEXT_SOFT_BYTES = 110 * 1024 * 4;
-const CONTEXT_HARD_BYTES = 130 * 1024 * 4;
+// Per-agent_type budgets. Turn ceilings are hand-set. Context ceilings are
+// real token counts read from the transcript's last assistant
+// `message.usage` line (input_tokens + cache_creation_input_tokens +
+// cache_read_input_tokens — the summed live context the model last
+// ingested), not a byte proxy: ~110K-token soft / ~130K-token hard. When no
+// usage line can be read, `statSync(...).size / BYTES_PER_TOKEN_ESTIMATE`
+// (a ~4-bytes/token estimate on the token scale) stands in as a fail-open
+// fallback proxy for the same thresholds — strictly monotonic, which is all
+// a ceiling needs. Per Claude Code's documented async transcript writes, the
+// reading can trail the model's live context by up to one turn; acceptable
+// for a monotonic ceiling. Unknown agent_types fall to `default`.
+const CONTEXT_SOFT_TOKENS = 110_000;
+const CONTEXT_HARD_TOKENS = 130_000;
 const BUDGETS = {
-  coder: { turnSoft: 75, turnHard: 100, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
+  coder: { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   // general-purpose sub-agents run the same coder-shaped workloads.
-  'general-purpose': { turnSoft: 75, turnHard: 100, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
+  'general-purpose': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   // milknado worker's exact reported agent_type is unobserved — key both
   // plausible spellings at coder tier so whichever the plugin emits resolves
   // correctly instead of silently falling to `default`.
-  'milknado-worker': { turnSoft: 75, turnHard: 100, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
-  'milknado:milknado-worker': { turnSoft: 75, turnHard: 100, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
-  reviewer: { turnSoft: 40, turnHard: 50, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
-  explorer: { turnSoft: 40, turnHard: 50, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
-  researcher: { turnSoft: 40, turnHard: 50, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
-  default: { turnSoft: 40, turnHard: 50, byteSoft: CONTEXT_SOFT_BYTES, byteHard: CONTEXT_HARD_BYTES },
+  'milknado-worker': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
+  'milknado:milknado-worker': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
+  reviewer: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
+  explorer: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
+  researcher: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
+  default: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
 };
 
 function budgetFor(agentType) {
@@ -148,8 +172,8 @@ function thresholdFields(budget) {
   return {
     turnSoft: budget.turnSoft,
     turnHard: budget.turnHard,
-    byteSoft: budget.byteSoft,
-    byteHard: budget.byteHard,
+    ctxSoft: budget.ctxSoft,
+    ctxHard: budget.ctxHard,
   };
 }
 
@@ -194,6 +218,19 @@ function turnsFile(dir) {
 
 function graceFile(dir) {
   return path.join(dir, 'grace');
+}
+
+function graceEligibleFile(dir) {
+  return path.join(dir, 'grace-eligible');
+}
+
+// One-shot marker: set the first time a call for this agent produces a real
+// (non-zero) context reading, regardless of turn. Lets grace eligibility
+// (#9) latch on a resume whose early call(s) hit a transient transcript-
+// not-found miss (tokens=0 on turns===1) without opening the window for a
+// fresh agent whose first real reading is under hard and later crosses it.
+function realReadingSeenFile(dir) {
+  return path.join(dir, 'real-reading-seen');
 }
 
 function nudgedFile(dir) {
@@ -288,37 +325,126 @@ function cleanup(dir) {
   }
 }
 
-// Locate the sub-agent's own transcript (`agent-<agent_id>.jsonl`) under
-// <dirname(transcript_path)>/<session_id>/ and return its byte size. The
-// real path is .../<session_id>/subagents/agent-<agent_id>.jsonl, but the
-// scheme is undocumented/internal, so walk for the file rather than hardcode
-// the join — tolerant of layout drift across CC versions. Any miss / error
-// → 0 (fail-open to the turn ceiling alone).
-function contextBytes(transcriptPath, sessionId, agentId) {
+// Byte window read from the tail of a transcript before falling back to a
+// full-file read below — keeps the common case bounded instead of O(file
+// size) on every Pre/PostToolUse call. One turn's transcript bytes
+// comfortably fit inside this window, so the full-read fallback is rare.
+const TAIL_READ_BYTES = 256 * 1024;
+
+// Scan transcript content for the LAST assistant `message.usage` tokens
+// (input_tokens + cache_creation_input_tokens + cache_read_input_tokens).
+// A per-line try/catch means one torn/malformed line (e.g. an in-progress
+// async write, or a partial first line from a tail-window read) is skipped
+// rather than treated as a fatal parse failure that discards every good
+// reading already accumulated. Shared by both the tail-window and
+// full-file read paths below.
+function lastUsageTokens(content) {
+  let lastTokens = null;
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const record = JSON.parse(line);
+      const usage = record && record.type === 'assistant' && record.message && record.message.usage;
+      if (usage && typeof usage.input_tokens === 'number') {
+        lastTokens = usage.input_tokens +
+          (usage.cache_creation_input_tokens || 0) +
+          (usage.cache_read_input_tokens || 0);
+      }
+    } catch {
+      /* torn/malformed line — skip it, keep any reading already seen */
+    }
+  }
+  return lastTokens;
+}
+
+// Read the LAST assistant transcript line's `message.usage` tokens — the
+// real live context the model last ingested. Reads only the tail window
+// first (the common case); falls back to a full-file read only when the
+// tail yields no usage line, so correctness is never sacrificed for speed.
+// Returns null when the file can't be read at all or no usage line is found
+// anywhere in it — the caller falls back to the byte-size proxy.
+function tokensFromTranscript(file) {
+  let fd;
   try {
-    if (!transcriptPath || !sessionId || !agentId) return 0;
-    const root = path.join(path.dirname(transcriptPath), sanitize(sessionId));
-    const target = `agent-${agentId}.jsonl`;
-    const hit = findFile(root, target, 4);
-    if (!hit) return 0;
-    return fs.statSync(hit).size;
+    fd = fs.openSync(file, 'r');
   } catch {
-    return 0;
+    return null;
+  }
+  try {
+    let size;
+    try {
+      size = fs.fstatSync(fd).size;
+    } catch {
+      return null;
+    }
+    if (size > TAIL_READ_BYTES) {
+      try {
+        const buf = Buffer.alloc(TAIL_READ_BYTES);
+        fs.readSync(fd, buf, 0, TAIL_READ_BYTES, size - TAIL_READ_BYTES);
+        const tail = lastUsageTokens(buf.toString('utf8'));
+        if (tail !== null) return tail;
+      } catch {
+        /* fall through to the full-file read below */
+      }
+    }
+    // Full-file read through the SAME descriptor — never re-open by path,
+    // so no check-then-use window exists anywhere in this function.
+    try {
+      const buf = Buffer.alloc(size);
+      const read = fs.readSync(fd, buf, 0, size, 0);
+      return lastUsageTokens(buf.toString('utf8', 0, read));
+    } catch {
+      return null;
+    }
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      /* fd already closed or invalid; nothing more to clean up */
+    }
   }
 }
 
-// A failed stat of the primary (Codex) path must fall through to the
+// Locate the sub-agent's own transcript (`agent-<agent_id>.jsonl`) under
+// <dirname(transcript_path)>/<session_id>/ and return its context signal.
+// The real path is .../<session_id>/subagents/agent-<agent_id>.jsonl, but
+// the scheme is undocumented/internal, so walk for the file rather than
+// hardcode the join — tolerant of layout drift across CC versions. Any
+// miss / error → 0 (fail-open to the turn ceiling alone).
+function contextTokens(transcriptPath, sessionId, agentId) {
+  try {
+    if (!transcriptPath || !sessionId || !agentId) return { tokens: 0, source: 'none' };
+    const root = path.join(path.dirname(transcriptPath), sanitize(sessionId));
+    const target = `agent-${agentId}.jsonl`;
+    const hit = findFile(root, target, 4);
+    if (!hit) return { tokens: 0, source: 'none' };
+    const tokens = tokensFromTranscript(hit);
+    if (tokens !== null) return { tokens, source: 'tokens' };
+    // fail-open: byte-size proxy fallback, converted to the token scale
+    return { tokens: Math.round(fs.statSync(hit).size / BYTES_PER_TOKEN_ESTIMATE), source: 'bytes-fallback' };
+  } catch {
+    return { tokens: 0, source: 'none' };
+  }
+}
+
+// A failed read of the primary (Codex) path must fall through to the
 // walk-based fallback, not short-circuit to 0 — the fallback is exactly for
 // when the primary path doesn't resolve.
-function contextBytesFromEvent(event) {
+function contextTokensFromEvent(event) {
   if (event.agent_transcript_path) {
     try {
-      return fs.statSync(event.agent_transcript_path).size;
+      const tokens = tokensFromTranscript(event.agent_transcript_path);
+      if (tokens !== null) return { tokens, source: 'tokens' };
+      // fail-open: byte-size proxy fallback, converted to the token scale
+      return {
+        tokens: Math.round(fs.statSync(event.agent_transcript_path).size / BYTES_PER_TOKEN_ESTIMATE),
+        source: 'bytes-fallback',
+      };
     } catch {
       /* fall through to the walk-based fallback below */
     }
   }
-  return contextBytes(event.transcript_path, event.session_id, event.agent_id);
+  return contextTokens(event.transcript_path, event.session_id, event.agent_id);
 }
 
 // Depth-capped recursive search for a file by exact name. No external glob
@@ -406,11 +532,9 @@ function rotateLogIfLarge(maxBytes) {
   }
 }
 
-function denyReason(agentType, turns, bytes, budget) {
-  const kb = Math.round(bytes / 1024);
-  const hardKb = Math.round(budget.byteHard / 1024);
+function denyReason(agentType, turns, tokens, budget) {
   return `Sub-agent budget exceeded (type '${agentType || 'default'}': ` +
-    `turns ${turns}/${budget.turnHard}, context ~${kb}KB/${hardKb}KB). ` +
+    `turns ${turns}/${budget.turnHard}, context ${tokens}/${budget.ctxHard} tokens). ` +
     `Stop calling tools now — synthesize your findings and return your final ` +
     `text response. Every further tool call is denied until this sub-agent returns. ` +
     `If your task is incomplete, open your final reply with ` +
@@ -419,18 +543,18 @@ function denyReason(agentType, turns, bytes, budget) {
 
 function nudgeContext(agentType, budget) {
   return `Approaching this sub-agent's budget (type '${agentType || 'default'}': ` +
-    `soft ${budget.turnSoft} turns / ~${Math.round(budget.byteSoft / 1024)}KB context). ` +
+    `soft ${budget.turnSoft} turns / ${budget.ctxSoft} context tokens). ` +
     `Persist your handoff or partial results now and wrap up: tool calls are ` +
     `hard-blocked at the ceiling, so prefer returning a concise final answer ` +
     `over further exploration.`;
 }
 
-// Sterner one-time nudge for crossing the byte HARD ceiling (as opposed to
-// the soft-threshold nudgeContext above) — the grace window is short, so
+// Sterner one-time nudge for crossing the context HARD ceiling (as opposed
+// to the soft-threshold nudgeContext above) — the grace window is short, so
 // this must land before it runs out.
 function hardNudgeContext(agentType, budget, remainingCalls) {
   return `Context hard ceiling exceeded (type '${agentType || 'default'}': ` +
-    `~${Math.round(budget.byteHard / 1024)}KB). At most ${remainingCalls} further ` +
+    `${budget.ctxHard} tokens). At most ${remainingCalls} further ` +
     `tool call(s) will be allowed before this sub-agent is denied outright. ` +
     `Persist your handoff NOW — do not keep exploring. If your task is ` +
     `incomplete, open your final reply with "status: blocked: out of context" ` +
@@ -494,29 +618,49 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
 
   if (evt === 'PreToolUse') {
     const state = incrementTurn(dir);
-    const bytes = contextBytesFromEvent(event);
+    const { tokens, source: ctxSource } = contextTokensFromEvent(event);
+    // Resume-only grace: eligibility is decided once, on the agent's first
+    // observed reading over ctxHard. The over-hard-on-turn-1 signature is
+    // almost always a resume (SubagentStop wiped turn state but the
+    // transcript persists) — a fresh agent's own transcript grows one turn
+    // at a time, so it can only cross ctxHard mid-run, not on call 1; the
+    // rare exception (a fresh agent spawned with an already-large inline
+    // context) also earns the short window, which is acceptable. A resume
+    // whose first call(s) hit a transient transcript-not-found miss
+    // (tokens===0) can still latch on its first over-hard reading, tracked
+    // via realReadingSeenFile — but only if no earlier real reading was
+    // already seen (that would mean a fresh agent crossing mid-run).
+    const seenBefore = fileExists(realReadingSeenFile(dir));
+    if (tokens > budget.ctxHard && (state.turns === 1 || !seenBefore)) {
+      try { markOnce(dir, graceEligibleFile(dir)); } catch { /* fail-open: eligibility best-effort */ }
+    }
+    if (tokens > 0) {
+      try { markOnce(dir, realReadingSeenFile(dir)); } catch { /* best-effort */ }
+    }
+    const graceEligible = fileExists(graceEligibleFile(dir));
     debug(`pre type=${type} turns=${state.turns}/${budget.turnHard} ` +
-      `bytes=${bytes}/${budget.byteHard} grace=${state.graceUsed}/${BYTE_GRACE_CALLS}`);
+      `tokens=${tokens}/${budget.ctxHard} grace=${state.graceUsed}/${CTX_GRACE_CALLS} eligible=${graceEligible}`);
     const fields = {
       budget_type: type,
       turns: state.turns,
-      bytes,
+      tokens,
+      ctx_source: ctxSource,
       graceUsed: state.graceUsed,
       ...thresholdFields(budget),
     };
     if (state.turns > budget.turnHard) {
-      const reason = denyReason(type, state.turns, bytes, budget);
+      const reason = denyReason(type, state.turns, tokens, budget);
       writeDecision(event, { ...fields, action: 'deny', reason: 'hard-ceiling' });
       emit.deny(reason);
       return { action: 'deny', reason };
     }
-    if (bytes > budget.byteHard) {
-      if (state.graceUsed < BYTE_GRACE_CALLS) {
+    if (tokens > budget.ctxHard) {
+      if (graceEligible && state.graceUsed < CTX_GRACE_CALLS) {
         const graceUsed = incrementGrace(dir);
-        writeDecision(event, { ...fields, graceUsed, action: 'allow', reason: 'byte-grace' });
-        return { action: 'allow', reason: 'byte-grace' };
+        writeDecision(event, { ...fields, graceUsed, action: 'allow', reason: 'ctx-grace' });
+        return { action: 'allow', reason: 'ctx-grace' };
       }
-      const reason = denyReason(type, state.turns, bytes, budget);
+      const reason = denyReason(type, state.turns, tokens, budget);
       writeDecision(event, { ...fields, action: 'deny', reason: 'hard-ceiling' });
       emit.deny(reason);
       return { action: 'deny', reason };
@@ -527,21 +671,23 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
 
   if (evt === 'PostToolUse') {
     let state = readState(dir);
-    const bytes = contextBytesFromEvent(event);
+    const { tokens, source: ctxSource } = contextTokensFromEvent(event);
     const fields = {
       budget_type: type,
       turns: state.turns,
-      bytes,
+      tokens,
+      ctx_source: ctxSource,
       graceUsed: state.graceUsed,
       ...thresholdFields(budget),
     };
 
-    if (bytes > budget.byteHard && !state.hardNudged) {
+    if (tokens > budget.ctxHard && !state.hardNudged) {
       const created = markHardNudged(dir);
       if (created) {
         markNudged(dir); // suppress the soft nudge too — one nudge per agent max
-        const remaining = Math.max(0, BYTE_GRACE_CALLS - state.graceUsed);
-        debug(`hard-nudge type=${type} turns=${state.turns} bytes=${bytes} remaining=${remaining}`);
+        const graceEligible = fileExists(graceEligibleFile(dir));
+        const remaining = graceEligible ? Math.max(0, CTX_GRACE_CALLS - state.graceUsed) : 0;
+        debug(`hard-nudge type=${type} turns=${state.turns} tokens=${tokens} remaining=${remaining}`);
         const context = hardNudgeContext(type, budget, remaining);
         writeDecision(event, { ...fields, action: 'nudge', reason: 'hard-threshold' });
         emit.nudge(context);
@@ -556,9 +702,9 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       writeDecision(event, { ...fields, action: 'allow', reason: 'already-nudged' });
       return { action: 'allow', reason: 'already-nudged' };
     }
-    if (state.turns >= budget.turnSoft || bytes >= budget.byteSoft) {
+    if (state.turns >= budget.turnSoft || tokens >= budget.ctxSoft) {
       markNudged(dir);
-      debug(`nudge type=${type} turns=${state.turns} bytes=${bytes}`);
+      debug(`nudge type=${type} turns=${state.turns} tokens=${tokens}`);
       const context = nudgeContext(type, budget);
       writeDecision(event, { ...fields, action: 'nudge', reason: 'soft-threshold' });
       emit.nudge(context);
@@ -596,16 +742,16 @@ module.exports = {
   markNudged,
   markHardNudged,
   cleanup,
-  contextBytes,
+  contextTokens,
   logPath,
   writeDecision,
-  contextBytesFromEvent,
+  contextTokensFromEvent,
   handle,
   denyReason,
   nudgeContext,
   hardNudgeContext,
   sweepStale,
   rotateLogIfLarge,
-  BYTE_GRACE_CALLS,
+  CTX_GRACE_CALLS,
   DECISION_LOG_MAX_BYTES,
 };

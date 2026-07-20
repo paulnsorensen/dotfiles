@@ -110,31 +110,46 @@ Claude's internal prompt fleet-wide. The only documented lever on a built-in is
 ## Enforcement layer: the turn-budget-guard hook (PRs #392, #401, #407)
 
 `agents/hooks/turn-budget-guard.sh` → `agents/lib/turn-budget-guard.js` caps each
-sub-agent on a dual ceiling — tool-call turns AND transcript bytes, whichever
-trips first — via PreToolUse hard-deny, a one-time PostToolUse wrap-up nudge, and
+sub-agent on a dual ceiling — tool-call turns AND context **tokens** (real
+`message.usage` from the transcript, not a byte proxy; PR #484), whichever trips
+first — via PreToolUse hard-deny, a one-time PostToolUse wrap-up nudge, and
 SubagentStop cleanup. Keyed on `agent_id` (hook events inside a sub-agent carry
 it; orchestrator calls don't, so the guard no-ops on them). Fail-open on every
 error path — the guard caps runaways, it must never become a denial-of-service.
 
-Non-obvious facts a future agent would re-derive (learned in PR #407):
+Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
 
-- **Continued agents vs the byte wall.** SubagentStop wipes the turn counter but
-  the transcript persists, so a SendMessage-continued agent already over the
-  byte hard ceiling was denied on its *first* tool call with no handoff window
-  (observed live in the decision log). Hence the 3-call grace window past the
-  byte ceiling plus a hard nudge instructing the agent to persist a handoff and
-  return `status: blocked: out of context` — the orchestrator's re-dispatch
-  contract. The turn ceiling gets no grace: it ramps slowly and the soft nudge
-  precedes it by design.
+- **Context is real tokens; grace is resume-only (PR #484).** The signal is the
+  last assistant `message.usage` sum (`input + cache_creation + cache_read`), not
+  transcript bytes. SubagentStop wipes the turn counter but the transcript
+  persists, so a SendMessage-continued agent can start already over `ctxHard` on
+  its *first* tool call with no soft-nudge behind it. The 3-call grace window
+  (`CTX_GRACE_CALLS`) plus the hard nudge (persist a handoff, return
+  `status: blocked: out of context`) is therefore granted **only** on that resume
+  signature: eligibility latches when a call is over-hard AND either it is the
+  agent's first observed call OR no real (non-zero) reading was ever seen before
+  (tracked by a `real-reading-seen` marker, so a transient first-call transcript
+  miss on resume does not lose the window). A *fresh* agent that crosses `ctxHard`
+  mid-run is denied immediately — its earlier calls logged real readings, so it is
+  never grace-eligible. The naive "latch on the first over-hard reading" would
+  reintroduce that mid-run bug; the marker is what keeps the two cases apart. The
+  turn ceiling still gets no grace: it ramps slowly and the soft nudge precedes it
+  by design.
 - **State is append-only on purpose.** Parallel tool calls in one batch fire
   concurrent PreToolUse hooks; the original state.json read-modify-write lost
   increments (duplicate turn counts observed live). Counters are the byte size
   of an append-only file (O_APPEND writes are atomic); nudge flags are `wx`
   marker files (EEXIST = already set, never re-emit).
-- **The byte signal is a proxy, not a conversion.** Transcript JSONL size ≈
-  context: the JSON envelope inflates bytes/token while the untranscripted
-  system prompt deflates it. Thresholds are calibrated against live denies —
-  don't treat the 4-bytes/token arithmetic as exact.
+- **The token signal, and the byte fallback (PR #484).** Primary signal is the
+  real `message.usage` token sum, read from only the last ~256KB tail of the
+  transcript (a full-file read is the fallback when the tail has no usage line).
+  When no usage line parses at all, transcript byte size ÷ `BYTES_PER_TOKEN_ESTIMATE`
+  (4) stands in as a monotonic proxy **on the token scale** — never raw bytes
+  against the token ceiling, which was a ~4× over-count that prematurely denied
+  healthy agents (the #484 bug). Every decision record carries `ctx_source`
+  (`tokens` | `bytes-fallback` | `none`) so logs never conflate the two scales. A
+  torn/half-written final transcript line is skipped per-line, preserving the last
+  good reading instead of collapsing to the byte fallback.
 - **The decision log is debug-gated for the orchestrator.** Orchestrator
   no-agent-id records were 64% of `decisions.jsonl` volume on the hot path of
   every tool call; they only log under `CLAUDE_TURN_BUDGET_DEBUG`. The log
