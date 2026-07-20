@@ -1,5 +1,14 @@
-# Local LLM provider config for omp (LiteLLM proxy front, keyless loopback).
-# Authored WHOLESALE from the `omp.models` subtree of .chezmoidata/omp.yaml on
-# every `chezmoi apply` — hand-edits here are WIPED. Edit the registry (which
-# carries the contextWindow/--ctx-size warning), then `dots sync`.
-{{ .omp.models | toYaml -}}
+# OMP custom model registry. Always render the file so non-local custom
+# providers can live in `.omp.models`; add the loopback local-llm provider only
+# on hosts that opted into the local stack.
+providers:
+{{ if .omp.models.providers }}
+{{ .omp.models.providers | toYaml | indent 2 }}
+{{ end }}
+{{ if get . "localLLM" }}
+  local-llm:
+{{ index .omp.localModels.providers "local-llm" | toYaml | indent 4 }}
+{{ end }}
+{{ if and (not .omp.models.providers) (not (get . "localLLM")) }}
+  {}
+{{ end }}

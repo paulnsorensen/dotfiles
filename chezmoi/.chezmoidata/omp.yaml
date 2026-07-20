@@ -92,6 +92,8 @@ omp:
       formatOnWrite: false
     github:
       enabled: true
+    astGrep:
+      enabled: true
     task:
       eager: default
     # Consent answer omp recorded live (autoqa prompt) — promoted to survive
@@ -117,12 +119,19 @@ omp:
       task: openai-codex/gpt-5.6-luna
       commit: openai-codex/gpt-5.6-luna
       vision: openai-codex/gpt-5.6-terra
+  # Custom model registry — always rendered to ~/.omp/agent/models.yml so
+  # non-local custom providers can be added here without enabling the local LLM
+  # stack. Keep built-in remote models in modelRoles/config.yml; do not mirror
+  # OMP's bundled catalog here.
+  models:
+    providers: {}
   # Local LLM stack — LiteLLM proxy front (~/local-llm), OpenAI-compatible.
   # Keyless: the proxy sets no master_key, so no Authorization header is sent.
   # contextWindow per model matches the backend's launched --ctx-size in
   # ~/local-llm/configs/llama-swap.yaml — do not inflate, or requests overflow
-  # the real llama.cpp n_ctx and fail.
-  models:
+  # the real llama.cpp n_ctx and fail. The models.yml template merges this
+  # provider only on hosts with localLLM = true.
+  localModels:
     providers:
       local-llm:
         baseUrl: http://127.0.0.1:4000/v1

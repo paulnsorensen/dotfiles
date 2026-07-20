@@ -30,9 +30,9 @@ Repository instructions override generic defaults. Match local style and existin
 
 ## Work tracking
 
-- Native Todo is disabled. Use Milknado MCP when work needs a plan.
-- Create one goal for the current request, add executable work as child tasks, claim a task before starting it, and mark it done after verification.
-- Use Milknado node IDs for updates. Never mirror the same task in another tracker.
+- Native Todo is disabled. Do not create Milknado nodes for focused, single-threaded work with no coordination or durable-resume need; execute it directly.
+- Before using Milknado, decide whether persistent planning, dependencies, delegation, cross-session handoff, or user-requested tracking will materially help. If not, do not use it as a replacement TODO list.
+- When it will help, create one goal for the request, add only executable child tasks with real prerequisites or ownership boundaries, claim the active task, and mark it done after verification. Use node IDs for updates; never mirror the same task in another tracker.
 
 ## Tooling
 

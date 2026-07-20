@@ -30,9 +30,10 @@ lib/
 !.omp/agent/APPEND_SYSTEM.md
 {{- /*
 Local LLM stack is per-machine, opt-in. When the localLLM flag is false,
-ignore the whole stack tree + its systemd units so non-LLM machines stay
-clean. (.chezmoiignore is rendered as a template, so this conditional works
-even though the rest of the file is static.)
+ignore the stack tree + its systemd units so non-LLM machines stay clean.
+Keep .omp/agent/models.yml managed regardless: its template renders the
+loopback local-llm provider only when localLLM is true, while still allowing
+non-local custom providers to be specified on every host.
 
 `get` (not bare `.localLLM`) is deliberate: chezmoi renders templates with
 missingkey=error, so a bare reference would fail `chezmoi apply` on any
@@ -45,8 +46,8 @@ local-llm/**
 .config/systemd/user/local-llm.target
 .config/systemd/user/llama-swap.service
 .config/systemd/user/worker-npu.service
-.omp/agent/models.yml
 {{ end }}
+
 {{ if (get . "localLLM") }}
 # Stack enabled: the global README*/*.md rules above would otherwise skip
 # local-llm/README.md, which local-llm.target's Documentation= points at.
