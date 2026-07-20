@@ -151,6 +151,34 @@ test('decompose merges file-overlapping curds, writes mini-specs, and fans out o
   assert.ok(result.curds.every((c) => c.status === 'clean'))
 })
 
+test('mini-spec agent dropping a curd slug fails loud before any cook agent spawns', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 3 })
+      if (opts.label === 'decompose:plan') {
+        return decompose([
+          { slug: 'a', brief: 'do a', files: ['shared.js'] },
+          { slug: 'b', brief: 'do b', files: ['shared.js'] },
+          { slug: 'c', brief: 'do c', files: ['only-c.js'] },
+        ])
+      }
+      if (opts.label === 'decompose:write-minispecs') {
+        return miniSpecs([
+          { slug: 'a', spec_path: '/specs/parent--a.md' },
+        ])
+      }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+
+  assert.match(result.error, /Unresolved mini-spec path/)
+  assert.match(result.error, /c/)
+  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:')), false)
+})
+
 test('phase order and per-phase model/agentType/isolation assertions', async () => {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
@@ -504,4 +532,18 @@ test('an invalid parent slug from the resolver fails loud before any phase agent
   assert.match(result.error, /Invalid parent slug/)
   assert.equal(trace.agents.length, 1)
   assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:')), false)
+})
+
+test('an invalid spec arg fails loud before any phase agent spawns', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'bad slug; rm -rf /' } })
+
+  assert.match(result.error, /Invalid spec arg/)
+  assert.equal(trace.agents.length, 0)
 })

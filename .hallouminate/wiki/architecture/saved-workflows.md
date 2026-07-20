@@ -24,4 +24,4 @@ Source of truth is `claude/workflows/*.js`. `dots sync` copies the whole dir int
 
 Related: [[architecture/agents-dir]], [[operations/sync-and-chezmoi]], [[adr/cheese-factory-workflow]].
 
-_Source: main-clone wiki page (untracked) + cheese-factory-workflow implementation session (PR #486) · Updated: 2026-07-20 · Supersedes: untracked main-clone copy of this page_
+*Source: main-clone wiki page (untracked) + cheese-factory-workflow implementation session (PR #486) · Updated: 2026-07-20 · Supersedes: untracked main-clone copy of this page*

@@ -45,6 +45,11 @@ if (CORRECTIVE_ROUNDS > MAX_CORRECTIVE_ROUNDS) {
 }
 
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]*$/
+const SPEC_ARG_RE = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/
+if (SPEC_ARG !== null && (!SPEC_ARG_RE.test(SPEC_ARG) || SPEC_ARG.includes('..'))) {
+  log(`Invalid spec arg: ${SPEC_ARG}`)
+  return { error: `Invalid spec arg: ${SPEC_ARG}` }
+}
 const branchFor = (slug) => `curd/${slug}`
 
 // ---- schemas ----
@@ -362,6 +367,11 @@ if (candidateCurds >= 2) {
 
     const miniSpecs = await agent(miniSpecPrompt(parentSlug, merged), { label: 'decompose:write-minispecs', phase: 'Decompose', agentType: 'coder', model: 'opus', schema: MINISPEC_SCHEMA })
     const pathBySlug = new Map(miniSpecs.curds.map((c) => [c.slug, c.spec_path]))
+    const unresolvedSlugs = merged.filter((c) => !pathBySlug.get(c.slug)).map((c) => c.slug)
+    if (unresolvedSlugs.length) {
+      log(`Mini-spec agent did not resolve a spec_path for curd slug(s): ${unresolvedSlugs.join(', ')}`)
+      return { error: `Unresolved mini-spec path(s) for curd slug(s): ${unresolvedSlugs.join(', ')}` }
+    }
     curds = merged.map((c) => ({ ...c, spec_path: pathBySlug.get(c.slug) }))
   }
 } else {

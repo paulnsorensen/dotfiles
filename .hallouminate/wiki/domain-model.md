@@ -12,7 +12,7 @@ _Code_: NEW ENTITY (claude/workflows/cheese-factory.js mode)
 
 **Taste-test** — the standalone post-cook reviewer gate (drift / readability / scope / production-path / wired-callers).
 _Avoid_: quick review
-_Code_: claude/workflows/curd-flock.js:206-213 (lens set; promoted to standalone opus agent in cheese-factory)
+_Code_: claude/workflows/cheese-factory.js:252-263 (`tastePrompt` lens set)
 
 **Mini-spec** — per-curd spec written by the decomposer at `specs/<parent>--<curd>.md`, using mold's mini-spec schema.
 _Avoid_: sub-spec
