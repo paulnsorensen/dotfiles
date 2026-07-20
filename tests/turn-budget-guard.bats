@@ -95,6 +95,24 @@ seed_transcript() {
         "$dir/agent-$agent.jsonl" "$bytes"
 }
 
+# Write a real transcript fixture: one assistant JSONL line per "usage"
+# spec arg, each shaped input_tokens:cache_creation:cache_read. The probe
+# reads only the LAST matching line's summed usage.
+seed_usage_transcript() {
+    local session="$1" agent="$2"; shift 2
+    local dir="$PROJ/$session/subagents"
+    mkdir -p "$dir"
+    local file="$dir/agent-$agent.jsonl"
+    : > "$file"
+    local spec inp cc cr
+    for spec in "$@"; do
+        IFS=':' read -r inp cc cr <<< "$spec"
+        jq -nc --argjson inp "$inp" --argjson cc "$cc" --argjson cr "$cr" \
+            '{type:"assistant", message:{usage:{input_tokens:$inp, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr}}}' \
+            >> "$file"
+    done
+}
+
 file_size() {
     node -e 'try { process.stdout.write(String(require("fs").statSync(process.argv[1]).size)) } catch { process.stdout.write("0") }' "$1"
 }
@@ -172,26 +190,29 @@ post_event() {
     [[ "$output" == *"status: blocked: out of context"* ]]
 }
 
-# ── A2 — hard byte wall ──────────────────────────────────────────────
+# ── A2 ── hard context wall ──────────────────────────────────────
 
-@test "A2: byte size over the byte-hard ceiling denies even under the turn wall" {
+@test "A2: tokens over the context-hard ceiling denies immediately (non-resumed agent)" {
+    # turns=5 -> increments to 6 on this call, so this is NOT the agent's
+    # first observed call and grace does not apply, regardless of the token
+    # reading. This is the Change 3 fix: a normal agent that crosses hard
+    # mid-run gets an immediate deny, not a multi-call grace window.
     seed_turns s2 b1 5
-    seed_grace s2 b1 3  # grace already exhausted
-    seed_transcript s2 b1 $((521 * 1024))  # hard cap = ~130K tokens = 520 KiB proxy
+    seed_usage_transcript s2 b1 "$((130000 + 1)):0:0"  # > ctxHard (130000)
     fire "$(pre_event s2 b1 coder)"
     [[ "$(verdict)" == "deny" ]]
 }
 
-@test "A2: under both turn and byte ceilings -> allow" {
+@test "A2: under both turn and context ceilings -> allow" {
     seed_turns s2 b1 5
-    seed_transcript s2 b1 $((100 * 1024))
+    seed_usage_transcript s2 b1 "100000:0:0"
     fire "$(pre_event s2 b1 coder)"
     [[ "$(verdict)" == "allow" ]]
 }
 
 @test "A2: PreToolUse allow writes a JSONL decision without stdout noise" {
     seed_turns s2 log1 5
-    seed_transcript s2 log1 $((100 * 1024))
+    seed_usage_transcript s2 log1 "100000:0:0"
     fire "$(pre_event s2 log1 coder)"
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_count)" == "1" ]]
@@ -201,25 +222,17 @@ post_event() {
     [[ "$(log_record | jq -r '.agent_id')" == "log1" ]]
     [[ "$(log_record | jq -r '.budget_type')" == "coder" ]]
     [[ "$(log_record | jq -r '.turns')" == "6" ]]
-    [[ "$(log_record | jq -r '.bytes')" == "$((100 * 1024))" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "100000" ]]
 }
 
-@test "A2: bytes exactly AT the byte-hard ceiling -> allow (strict '>')" {
-    # byteHard = 130*1024*4 = 532480. The wall is `bytes > byteHard`,
-    # so a transcript sitting exactly on the ceiling must still pass. Mirrors
-    # the A1 turn boundary; a `>=` regression would deny here.
+@test "A2: tokens exactly AT the context-hard ceiling -> allow (strict '>')" {
+    # ctxHard = 130000. The wall is `tokens > ctxHard`, so a transcript
+    # sitting exactly on the ceiling must still pass. Mirrors the A1 turn
+    # boundary; a `>=` regression would deny here.
     seed_turns s2 b2 5
-    seed_transcript s2 b2 $((130 * 1024 * 4))
+    seed_usage_transcript s2 b2 "130000:0:0"
     fire "$(pre_event s2 b2 coder)"
     [[ "$(verdict)" == "allow" ]]
-}
-
-@test "A2: bytes one over the byte-hard ceiling -> allowed via grace, not denied" {
-    seed_turns s2 b3 5
-    seed_transcript s2 b3 $((130 * 1024 * 4 + 1))
-    fire "$(pre_event s2 b3 coder)"
-    [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "byte-grace" ]]
 }
 
 @test "A2: PreToolUse deny writes a deny record while stdout stays hook JSON" {
@@ -233,24 +246,24 @@ post_event() {
     [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
 }
 
-@test "A2: Codex direct agent_transcript_path drives byte ceiling" {
-    seed_turns s2 codex1 1
-    seed_grace s2 codex1 3  # grace exhausted so the over-hard byte size denies outright
+@test "A2: Codex direct agent_transcript_path drives the context ceiling" {
+    seed_turns s2 codex1 1  # increments to 2 -> not first call, grace does not apply
     local agent_tx="$TEST_HOME/codex-agent.jsonl"
-    node -e 'require("fs").writeFileSync(process.argv[1], "x".repeat(Number(process.argv[2])))' \
-        "$agent_tx" $((521 * 1024))
+    jq -nc --argjson inp $((130000 + 1)) \
+        '{type:"assistant", message:{usage:{input_tokens:$inp, cache_creation_input_tokens:0, cache_read_input_tokens:0}}}' \
+        > "$agent_tx"
     local json
     json=$(jq -nc --arg p "$agent_tx" \
         '{harness:"codex",hook_event_name:"PreToolUse",agent_id:"codex1",agent_type:"coder",session_id:"s2",agent_transcript_path:$p,tool_name:"Bash",tool_input:{}}')
     fire "$json"
     [[ "$(verdict)" == "deny" ]]
     [[ "$(log_record | jq -r '.harness')" == "codex" ]]
-    [[ "$(log_record | jq -r '.bytes')" == "$((521 * 1024))" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "$((130000 + 1))" ]]
 }
 
 @test "A2: Codex standard agent_id and agent_type still enforce the turn wall" {
     seed_turns s2 codex2 100
-    seed_transcript s2 codex2 $((100 * 1024))
+    seed_usage_transcript s2 codex2 "100000:0:0"
     local json
     json=$(jq -nc --arg p "$PROJ/s2.jsonl" \
         '{harness:"codex",hook_event_name:"PreToolUse",agent_id:"codex2",agent_type:"coder",session_id:"s2",transcript_path:$p,tool_name:"Bash",tool_input:{}}')
@@ -259,11 +272,13 @@ post_event() {
     jq -s -e 'length == 1 and .[0].harness == "codex" and .[0].action == "deny" and .[0].budget_type == "coder"' "$CLAUDE_TURN_BUDGET_LOG" >/dev/null
 }
 
-# ── A2b — byte-hard grace window ─────────────────────────────────────
+# ── A2b ── resume-only context-hard grace window ───────────────
 
-@test "A2b: over-byteHard agent gets exactly 3 grace allows, then a deny" {
-    seed_turns s2b grace1 5
-    seed_transcript s2b grace1 $((130 * 1024 * 4 + 1))
+@test "A2b: an agent whose FIRST call is already over context-hard gets exactly 3 grace allows, then a deny" {
+    # No seed_turns call: the agent's first PreToolUse is turns=1, and the
+    # transcript is already over ctxHard on that first call — the resume
+    # signature that earns the grace window.
+    seed_usage_transcript s2b grace1 "$((130000 + 1)):0:0"
 
     fire "$(pre_event s2b grace1 coder)"
     [[ "$(verdict)" == "allow" ]]
@@ -282,6 +297,21 @@ post_event() {
     [[ "$(verdict)" == "deny" ]]
     [[ "$(grace_count s2b grace1)" == "3" ]]  # grace does not increment past the cap
     [[ "$output" == *"status: blocked: out of context"* ]]
+}
+
+@test "A2b: an agent that STARTS below context-hard and later crosses it is denied immediately, no grace" {
+    # First call (turns=1) has a transcript under ctxHard, so graceEligible
+    # is never set. A later call that crosses ctxHard gets no grace window
+    # at all -- the Change 3 fix.
+    seed_usage_transcript s2b grace2 "50000:0:0"  # under ctxHard on the first call
+    fire "$(pre_event s2b grace2 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "within-budget" ]]
+
+    seed_usage_transcript s2b grace2 "$((130000 + 1)):0:0"  # crosses ctxHard on the SECOND call
+    fire "$(pre_event s2b grace2 coder)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$(grace_count s2b grace2)" == "0" ]]  # never granted, never consumed
 }
 
 # ── A3 — soft nudge fires once ───────────────────────────────────────
@@ -316,18 +346,18 @@ post_event() {
     [[ "$(turns_count s3 c1)" == "75" ]]
 }
 
-@test "A3: soft byte threshold nudges even when turns are low" {
+@test "A3: soft context-token threshold nudges even when turns are low" {
     seed_turns s3 c2 1
-    seed_transcript s3 c2 $((440 * 1024))  # soft cap = ~110K tokens = 440 KiB proxy
+    seed_usage_transcript s3 c2 "$((110000 + 1)):0:0"  # > ctxSoft (110000)
     fire "$(post_event s3 c2 coder)"
     [[ "$(verdict)" == "nudge" ]]
 }
 
-# ── A3b — hard nudge (byte hard ceiling, PostToolUse) ────────────────
+# ── A3b ── hard nudge (context-hard ceiling, PostToolUse) ───────────
 
 @test "A3b: hard nudge fires once on first crossing and suppresses the soft nudge too" {
     seed_turns s3b d1 1
-    seed_transcript s3b d1 $((130 * 1024 * 4 + 1))
+    seed_usage_transcript s3b d1 "$((130000 + 1)):0:0"
     fire "$(post_event s3b d1 coder)"
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"hard ceiling"* ]]
@@ -344,7 +374,7 @@ post_event() {
 @test "A3b: hard nudge still fires even when the soft nudge already fired" {
     seed_turns s3b d2 1
     mark_nudged s3b d2
-    seed_transcript s3b d2 $((130 * 1024 * 4 + 1))
+    seed_usage_transcript s3b d2 "$((130000 + 1)):0:0"
     fire "$(post_event s3b d2 coder)"
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"hard ceiling"* ]]
@@ -496,9 +526,9 @@ post_event() {
     chmod 644 "$dir/turns"
 }
 
-@test "A7: unlocatable transcript -> byte signal 0, allow when turns are low" {
+@test "A7: unlocatable transcript -> context signal 0, allow when turns are low" {
     seed_turns s7 g2 1
-    # No transcript fixture written; contextBytes must resolve to 0.
+    # No transcript fixture written; contextTokens must resolve to 0.
     fire "$(pre_event s7 g2 coder)"
     [[ "$(verdict)" == "allow" ]]
 }
@@ -511,18 +541,48 @@ post_event() {
     jq -e '.hookSpecificOutput.permissionDecision == "deny"' <<<"$output" >/dev/null
 }
 
-# ── A7b — Codex agent_transcript_path stat failure falls through ────
+# ── A7b ── Codex agent_transcript_path stat failure falls through ────
 
 @test "A7b: failed agent_transcript_path stat falls through to the transcript walk" {
-    seed_turns s7b g3 1
-    seed_transcript s7b g3 $((130 * 1024 * 4 + 1))  # over-hard, locatable via the walk
+    # No seed_turns: first call (turns=1) with an over-hard transcript from
+    # the start -- the resume signature, so grace applies via the walk-
+    # located fallback transcript.
+    seed_usage_transcript s7b g3 "$((130000 + 1)):0:0"  # over-hard, locatable via the walk
     local json
     json=$(jq -nc --arg s "s7b" --arg a "g3" --arg p "$PROJ/s7b.jsonl" --arg atp "$TEST_HOME/does-not-exist.jsonl" \
         '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:"coder", session_id:$s, transcript_path:$p, agent_transcript_path:$atp, tool_name:"Bash", tool_input:{}}')
     fire "$json"
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_record | jq -r '.reason')" == "byte-grace" ]]
-    [[ "$(log_record | jq -r '.bytes')" == "$((130 * 1024 * 4 + 1))" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "$((130000 + 1))" ]]
+}
+
+# ── B ── real token-usage probe (last-assistant summed usage) ────────
+
+@test "B1: token probe returns the summed LAST assistant usage line, not an earlier one" {
+    seed_usage_transcript s10 tok1 "1000:0:0" "5000:2000:1000" "20000:5000:3000"
+    fire "$(pre_event s10 tok1 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "28000" ]]
+}
+
+@test "B2: a transcript with no parseable JSON line falls back to the raw byte-size proxy" {
+    seed_transcript s10 tok2 12345
+    fire "$(pre_event s10 tok2 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "12345" ]]
+}
+
+@test "B3: valid JSONL with no assistant usage line falls back to the raw byte-size proxy" {
+    local dir="$PROJ/s10/subagents"
+    mkdir -p "$dir"
+    local file="$dir/agent-tok3.jsonl"
+    printf '{"type":"user","message":{"content":"hi"}}\n' > "$file"
+    local size
+    size=$(file_size "$file")
+    fire "$(pre_event s10 tok3 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "$size" ]]
 }
 
 # ── A8 — stale sweep ─────────────────────────────────────────────────
