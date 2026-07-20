@@ -364,22 +364,34 @@ function lastUsageTokens(content) {
 // Returns null when the file can't be read at all or no usage line is found
 // anywhere in it — the caller falls back to the byte-size proxy.
 function tokensFromTranscript(file) {
-  let size;
+  let fd;
   try {
-    size = fs.statSync(file).size;
+    fd = fs.openSync(file, 'r');
   } catch {
     return null;
   }
-  if (size > TAIL_READ_BYTES) {
+  try {
+    let size;
     try {
-      const fd = fs.openSync(file, 'r');
-      const buf = Buffer.alloc(TAIL_READ_BYTES);
-      fs.readSync(fd, buf, 0, TAIL_READ_BYTES, size - TAIL_READ_BYTES);
-      fs.closeSync(fd);
-      const tail = lastUsageTokens(buf.toString('utf8'));
-      if (tail !== null) return tail;
+      size = fs.fstatSync(fd).size;
     } catch {
-      /* fall through to the full-file read below */
+      return null;
+    }
+    if (size > TAIL_READ_BYTES) {
+      try {
+        const buf = Buffer.alloc(TAIL_READ_BYTES);
+        fs.readSync(fd, buf, 0, TAIL_READ_BYTES, size - TAIL_READ_BYTES);
+        const tail = lastUsageTokens(buf.toString('utf8'));
+        if (tail !== null) return tail;
+      } catch {
+        /* fall through to the full-file read below */
+      }
+    }
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      /* fd already closed or invalid; nothing more to clean up */
     }
   }
   let content;

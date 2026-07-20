@@ -332,6 +332,29 @@ post_event() {
     [[ "$(grace_count s2b grace2)" == "0" ]]  # never granted, never consumed
 }
 
+@test "A2b: a resumed agent whose first call misses the transcript (tokens=0) still earns grace on a later over-hard reading" {
+    # Simulate a resume already past turn 1 (state.turns != 1), whose first
+    # observed call hits a transient transcript-not-found miss: tokens=0,
+    # so real-reading-seen never gets marked. seenBefore stays false, so a
+    # later over-hard reading still latches grace eligibility even though
+    # turns != 1 -- the !seenBefore branch of the eligibility gate.
+    seed_turns s2b grace3 5
+
+    # First call: no transcript seeded -> tokens=0, ctx_source "none".
+    fire "$(pre_event s2b grace3 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "within-budget" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "0" ]]
+
+    # Second call: transcript now over ctxHard, turns is 7 (not 1) -- still
+    # grace-eligible because no real reading was seen before this one.
+    seed_usage_transcript s2b grace3 "$((130000 + 1)):0:0"
+    fire "$(pre_event s2b grace3 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "ctx-grace" ]]
+    [[ "$(grace_count s2b grace3)" == "1" ]]
+}
+
 # ── A3 — soft nudge fires once ───────────────────────────────────────
 
 @test "A3: PostToolUse crossing the soft turn threshold nudges once, then never repeats" {
