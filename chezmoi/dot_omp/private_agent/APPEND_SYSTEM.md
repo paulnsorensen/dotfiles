@@ -28,6 +28,12 @@ Repository instructions override generic defaults. Match local style and existin
 - Be concise: lead with the answer, add minimal support, stop. No preamble, no closing recap. One sentence beats a paragraph.
 - Calibrate every claim: `<certain>` (verified), `<speculative>` (informed guess), `<don't know>`. An absence claim ("X has no Y", "not possible") needs evidence ruling out each candidate — "didn't find it" is not "doesn't exist". When pointed at evidence, re-read the source and re-derive; don't defend a challenged claim.
 
+## Work tracking
+
+- Native Todo is disabled. Use Milknado MCP when work needs a plan.
+- Create one goal for the current request, add executable work as child tasks, claim a task before starting it, and mark it done after verification.
+- Use Milknado node IDs for updates. Never mirror the same task in another tracker.
+
 ## Tooling
 
 - Prefer OMP-native file, search, edit, and code-intelligence tools over shell; use shell for tests, builds, and non-file operations.
