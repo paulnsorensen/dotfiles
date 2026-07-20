@@ -1,0 +1,100 @@
+# wiki-harvest — repos whose .hallouminate/wiki/ this routine curates.
+#
+# A weekly Claude cloud routine (agents/wiki-harvest/routine.md) runs the
+# /wiki-curator methodology over each repo's `.hallouminate/wiki/` tree and
+# opens ONE PR per repo with the curated edits. PRs are never auto-merged — a
+# human reviews and merges each one. After a merge, a local `git pull` +
+# `hallouminate index` feeds the curated knowledge into the cheez-wiki
+# Obsidian vault ("the brain").
+#
+# cheez-wiki is dual-purpose: it is BOTH the parent command-center corpus
+# (aggregates the sibling wikis below via hallouminate corpora) AND the local
+# Obsidian vault that the human reads. Its own routine entry curates its own
+# pages only — it does not duplicate sibling-repo content into itself.
+#
+# Schema per entry:
+#   name             repo name (also the GitHub repo slug component)
+#   owner            GitHub org/user that owns the repo
+#   clone            https clone URL
+#   wiki_path        path to the hallouminate wiki tree (always .hallouminate/wiki)
+#   category         grouping used for the header comments below
+#   seed_if_missing  if true and wiki_path doesn't exist yet, the routine
+#                    seeds a starter index.md before curating; if false, a
+#                    missing wiki_path is a quiet no-change exit
+#   role             optional; "parent" marks cheez-wiki as the aggregating
+#                    corpus + Obsidian vault (see above)
+
+sources:
+  # cheese-suite — the paulnsorensen cheese-flow tool family.
+  - name: cheez-wiki
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/cheez-wiki
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    role: parent
+    seed_if_missing: false
+
+  - name: dotfiles
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/dotfiles
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    seed_if_missing: false
+
+  - name: milknado
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/milknado
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    seed_if_missing: false
+
+  - name: easy-cheese
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/easy-cheese
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    seed_if_missing: false
+
+  - name: tilth
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/tilth
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    seed_if_missing: false
+
+  - name: hallouminate
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/hallouminate
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    seed_if_missing: false
+
+  - name: skillz-that-grillz
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/skillz-that-grillz
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    # has no .hallouminate/wiki yet — the routine seeds a starter index.md
+    # then curates.
+    seed_if_missing: true
+
+  # home-labs — personal infra repos.
+  - name: crabbot
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/crabbot
+    wiki_path: .hallouminate/wiki
+    category: home-labs
+    # private repo.
+    seed_if_missing: false
+
+  # products — algorhythm, the sole cross-org repo under sorensen-labs. The
+  # hosted routine's gh OAuth reaching a different org from paulnsorensen is
+  # unconfirmed until the first live run; the routine must fail loud (report
+  # UNREACHABLE, never silent) if it cannot clone or push/PR to it.
+  - name: algorhythm
+    owner: sorensen-labs
+    clone: https://github.com/sorensen-labs/algorhythm
+    wiki_path: .hallouminate/wiki
+    category: products
+    # CROSS-ORG.
+    seed_if_missing: false
