@@ -66,7 +66,18 @@ You own exactly ONE drifted source. Inputs: `<id>`, `<reconciled>` →
 
 4. **Act by class** — exactly one artifact, on branch `doc-drift/<id>-<current>`:
    - **no-op** → open a PR that ONLY bumps `reconciled: "<current>"` for `<id>`
-     in `agents/doc-drift/sources.yaml`.
+     in `agents/doc-drift/sources.yaml`, then **merge it** — nothing but the
+     marker changed, so there is nothing to review:
+
+         gh pr ready <pr>   # in case gh opened it as a draft
+         # Prefer CI-gated auto-merge where the repo has required checks:
+         gh pr merge <pr> --squash --delete-branch --auto \
+           || gh pr merge <pr> --squash --delete-branch
+
+     The `--auto` attempt gates on required checks (merge queue) where branch
+     protection exists; where it doesn't (GitHub rejects `--auto` with "clean
+     status" / "no protected branch rules"), the fallback merges the marker
+     bump directly. Only ever a no-op bump merges this way.
      Title: `chore(doc-drift): bump <id> to <current> (no-op)`.
    - **small** → open a PR with the config / renderer / wiki edits AND the
      `reconciled` bump. Run `just check`; if the env can't, say so in the body
@@ -82,8 +93,12 @@ You own exactly ONE drifted source. Inputs: `<id>`, `<reconciled>` →
 
 ## Invariants
 
-- **Never auto-merge.** Every PR is human-reviewed and CI-gated (`just check`);
-  merging + the follow-on `dots sync` stay with the human.
+- **Auto-merge only no-op bumps.** A no-op `reconciled`-bump PR (marker advance
+  only, no config/renderer/wiki edits) is merged automatically — there is
+  nothing to review. It is CI-gated where the repo has required-check branch
+  protection (via `--auto`); where it doesn't, the marker bump merges directly.
+  Every **small** and **large/idea** artifact stays human-reviewed; merging a
+  reviewed PR and the follow-on `dots sync` stay with the human.
 - **`reconciled` advances only inside a PR** — never a direct push to `main`.
 - **One artifact per drifted item.** Honor the dedup.
 - **Subagents are file-disjoint** — each touches only its own `governs` files
