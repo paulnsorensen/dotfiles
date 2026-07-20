@@ -6,6 +6,8 @@ sources:
   - chezmoi/.chezmoidata/omp.yaml
   - chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md
   - chezmoi/dot_omp/private_agent/extensions/milknado-todo-guard.ts
+  - milknado.toml
+  - tests/config-validation.bats
   - tests/omp-config.bats
   - tests/extensions/milknado-todo-guard.test.mjs
   - https://github.com/can1357/oh-my-pi/blob/39c95e5e29b1c8b082059f57421ce445c3dffdd4/docs/tools/todo.md
@@ -36,6 +38,8 @@ todo:
 ```
 
 These values live at `chezmoi/.chezmoidata/omp.yaml:68-70`. The config renderer owns both keys, so a live value of `true` is reset on the next apply. Before the cutover, OMP 17.0.5 reported both values as `true`; `prewalk.enabled` was `false` and `tools.xdev` was `true`.
+
+Milknado task completion fails closed when the project defines no quality gates. The root `milknado.toml:1-3` therefore pins `quality_gates = ["just check"]`, reusing the repository's authoritative verification recipe. Every built-in flavor inherits this gate; omitting the key would let agents claim nodes but prevent them from marking verified work done.
 
 `todo.enabled: false` removes the model-facing Todo tool. It does not unregister OMP's separately wired `/todo` command, which can still mutate native session state. Disabling reminders alone therefore does not establish single ownership.
 
@@ -86,6 +90,8 @@ Do not build that adapter unless native-looking Todo behavior becomes a requirem
 - The extension-contract test executes every extension handler test (`tests/omp-config.bats:297-310`).
 
 `tests/extensions/milknado-todo-guard.test.mjs:32-62` separately pins exact-command blocking, warning contents, the handled action, negative inputs, the continue action, and absence of spurious notifications. The implementation handoff recorded a green 15-test OMP config suite, a green two-test guard suite, and a clean prompt-policy markdown lint run.
+
+`tests/config-validation.bats:9-15` proves the project config exists, parses as TOML, and resolves the exact `just check` gate. `milknado agents check` validates base agent resolution; a direct profile probe confirmed that `implement`, `spec`, `spike`, `prototype`, and `research` all inherit `just check`.
 
 ## Remaining policy
 

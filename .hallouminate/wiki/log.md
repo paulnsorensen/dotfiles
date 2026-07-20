@@ -17,3 +17,5 @@
 
 2026-07-20 · 79ffca5de4346cf6 · new-page · harnesses/omp.md · Curated OMP Todo behavior, extension seams, adapter constraints, and the guarded-direct-cutover decision.
 2026-07-20 · f9494484bf66a3a5 · merged · harnesses/omp.md · Added the implemented Milknado ownership contract, exact input-event protocol, verification coverage, and residual autocomplete/lifecycle limits.
+
+2026-07-20 · fb6d1f78afb65c9f · merged · harnesses/omp.md · Recorded Milknado's fail-closed completion behavior, the repository-wide just check gate, inherited flavor resolution, and config validation coverage.
