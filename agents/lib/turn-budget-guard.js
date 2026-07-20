@@ -387,6 +387,15 @@ function tokensFromTranscript(file) {
         /* fall through to the full-file read below */
       }
     }
+    // Full-file read through the SAME descriptor — never re-open by path,
+    // so no check-then-use window exists anywhere in this function.
+    try {
+      const buf = Buffer.alloc(size);
+      const read = fs.readSync(fd, buf, 0, size, 0);
+      return lastUsageTokens(buf.toString('utf8', 0, read));
+    } catch {
+      return null;
+    }
   } finally {
     try {
       fs.closeSync(fd);
@@ -394,13 +403,6 @@ function tokensFromTranscript(file) {
       /* fd already closed or invalid; nothing more to clean up */
     }
   }
-  let content;
-  try {
-    content = fs.readFileSync(file, 'utf8');
-  } catch {
-    return null;
-  }
-  return lastUsageTokens(content);
 }
 
 // Locate the sub-agent's own transcript (`agent-<agent_id>.jsonl`) under
