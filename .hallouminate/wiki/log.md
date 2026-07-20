@@ -21,3 +21,7 @@
 2026-07-20 · f9494484bf66a3a5 · merged · harnesses/omp.md · Added the implemented Milknado ownership contract, exact input-event protocol, verification coverage, and residual autocomplete/lifecycle limits.
 
 2026-07-20 · fb6d1f78afb65c9f · merged · harnesses/omp.md · Recorded Milknado's fail-closed completion behavior, the repository-wide just check gate, inherited flavor resolution, and config validation coverage.
+
+- 2026-07-20 · c7392ceb2d2f2bc2 · new-page · architecture/saved-workflows.md · cheese-factory replaces curd-flock (PR #486); page seeded from untracked main-clone copy so the corpus converges
+- 2026-07-20 · c7392ceb2d2f2bc2 · merged · architecture/saved-workflows.md · smoke-verified: workflow-spawned agents have the Skill tool (resolves cheese-factory spec open question)
+- 2026-07-20 · c7392ceb2d2f2bc2 · merged · architecture/saved-workflows.md · vm-realm deepEqual gotcha for tests/workflows (spread-clone / Array.from convention)
