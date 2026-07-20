@@ -4,6 +4,16 @@
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
+# ── Milknado ─────────────────────────────────────────────────────────────────
+
+@test "milknado config pins the repository verification gate" {
+    local config="$DOTFILES_DIR/milknado.toml"
+    [[ -f "$config" ]]
+    run yq -p=toml -o=json '.' "$config"
+    [[ $status -eq 0 ]]
+    [[ "$(yq -p=toml '.milknado.quality_gates | join(",")' "$config")" == "just check" ]]
+}
+
 # ── Atuin ─────────────────────────────────────────────────────────────────────
 
 @test "atuin config is valid TOML" {

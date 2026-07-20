@@ -65,6 +65,9 @@ omp:
       artifactSpillThreshold: 2
       artifactHeadBytes: 1
       artifactTailBytes: 1
+    todo:
+      enabled: false
+      reminders: false
     read:
       toolResultPreview: false
     skills:

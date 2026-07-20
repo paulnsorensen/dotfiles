@@ -49,6 +49,8 @@ STDIN"
     [ "$(yq '.tools.artifactSpillThreshold' "$OUT")" = "2" ]
     [ "$(yq '.tools.artifactHeadBytes' "$OUT")" = "1" ]
     [ "$(yq '.tools.artifactTailBytes' "$OUT")" = "1" ]
+    [ "$(yq '.todo.enabled' "$OUT")" = "false" ]
+    [ "$(yq '.todo.reminders' "$OUT")" = "false" ]
     [ "$(yq '.read.toolResultPreview' "$OUT")" = "false" ]
     [ "$(yq '.skills.enableSkillCommands' "$OUT")" = "true" ]
     [ "$(yq '.tui.tight' "$OUT")" = "true" ]
@@ -79,12 +81,17 @@ theme:
   dark: titanium
   light: dark
 disabledProviders: []
+todo:
+  enabled: true
+  reminders: true
 setupVersion: 1'
     [ "$status" -eq 0 ]
     [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]
     [ "$(yq '.theme.dark' "$OUT")" = "chocolate-donut" ]
     [ "$(yq '.theme.light' "$OUT")" = "light" ]
     [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md" ]
+    [ "$(yq '.todo.enabled' "$OUT")" = "false" ]
+    [ "$(yq '.todo.reminders' "$OUT")" = "false" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }
 
@@ -272,7 +279,7 @@ TOML
 }
 
 # --- omp extension modules are chezmoi-managed -----------------------------
-# rtk.ts, cheese-flair.ts, and sliced-bread-audit.ts under dot_omp/private_agent/
+# rtk.ts, cheese-flair.ts, sliced-bread-audit.ts, and milknado-todo-guard.ts
 # extensions deploy to ~/.omp/agent/extensions/ (auto-discovered by omp's extension
 # loader). Nothing in .chezmoiignore may exclude them, or the extensions silently
 # never deploy.
@@ -290,11 +297,14 @@ TOML
     [[ "$output" == *".omp/agent/extensions/rtk.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/sliced-bread-audit.ts"* ]]
+    [[ "$output" == *".omp/agent/extensions/milknado-todo-guard.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
 }
 
-@test "omp-ext: sliced bread audit command handler contract" {
+@test "omp-ext: extension handler contracts" {
     command -v node >/dev/null 2>&1 || skip "node not installed"
-    run node --test "$REAL_DOTFILES_DIR/tests/extensions/sliced-bread-audit.test.mjs"
+    run node --test "$REAL_DOTFILES_DIR"/tests/extensions/*.test.mjs
     [ "$status" -eq 0 ]
+    [[ "$output" == *"registers the command and dispatches the exact default workflow contract"* ]]
+    [[ "$output" == *"blocks native todo commands and identifies Milknado as the owner"* ]]
 }

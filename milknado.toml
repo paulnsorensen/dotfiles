@@ -1,0 +1,3 @@
+[milknado]
+# Native task completion fails closed without an explicit project gate.
+quality_gates = ["just check"]
