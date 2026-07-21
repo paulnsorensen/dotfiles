@@ -82,7 +82,7 @@ packages:
   - skhd: { platform: mac }                   # Hotkey daemon (from koekeishiya/formulae tap)
   - emdash: { source: cask, platform: mac }   # Desktop UI for running coding agents in parallel
   - claude-code: { source: cask, platform: mac } # Claude Code — terminal AI coding assistant
-  - cursor: { source: cask, platform: mac }    # Cursor — AI code editor
+  - cursor: { source: cask, platform: mac, greedy: false } # Cursor — AI code editor; self-updates in-app, and greedy reinstall of the root-owned .app prompts for sudo
   - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)
   - obsidian: { source: cask, platform: mac }  # Obsidian — Markdown knowledge base
   - alt-tab: { source: cask, platform: mac }   # AltTab — window switcher (prefs restored by alttab/.sync)
