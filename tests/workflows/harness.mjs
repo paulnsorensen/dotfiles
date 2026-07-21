@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { createContext, Script } from 'node:vm'
 
 const GLOBALS = ['agent', 'parallel', 'pipeline', 'phase', 'log', 'workflow', 'args', 'budget', 'Date', 'Math']
-const SUPPORTED_SCHEMA_KEYS = new Set(['type', 'required', 'properties', 'items', 'enum', 'description'])
+const SUPPORTED_SCHEMA_KEYS = new Set(['type', 'required', 'properties', 'items', 'enum', 'description', 'pattern'])
 
 export class SchemaError extends Error {
   constructor(message) {
@@ -43,6 +43,9 @@ function validateValue(value, schema, path) {
   if (schema.type && !isType(value, schema.type)) {
     const actual = Array.isArray(value) ? 'array' : typeof value
     throw new SchemaError(path + ': expected ' + schema.type + ', got ' + actual)
+  }
+  if (schema.pattern && typeof value === 'string' && !new RegExp(schema.pattern).test(value)) {
+    throw new SchemaError(path + ': expected to match /' + schema.pattern + '/, got ' + JSON.stringify(value))
   }
   if (schema.enum && !schema.enum.includes(value)) {
     throw new SchemaError(path + ': expected one of ' + schema.enum.join(', ') + ', got ' + JSON.stringify(value))

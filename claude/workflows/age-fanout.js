@@ -42,6 +42,12 @@ const SAFE_REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 // this is the same char class without move-my-cheese's extra `..` exclusion.
 const RANGE_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 const PATH_RE = /^[A-Za-z0-9._/-]+$/
+// Verbatim slug of a `### heading` in ~/.claude/skills/age/references/dimensions.md's
+// "## Per-dimension rubrics" section (e.g. "correctness", "deslop") -- the
+// packet phase must return exactly these, byte-matched, so the Review
+// phase's `### ${dim}` heading lookup resolves.
+const DIM_SLUG_PATTERN = '^[a-z][a-z-]*$'
+const DIM_SLUG_RE = new RegExp(DIM_SLUG_PATTERN)
 
 const isValidPath = (p) => typeof p === 'string' && PATH_RE.test(p)
 const isValidRange = (r) => typeof r === 'string' && RANGE_RE.test(r)
@@ -71,9 +77,11 @@ const ROUTE_CURDS = input.route_curds || null
 // ---- schemas ----
 const PACKET_SCHEMA = {
   type: 'object',
-  required: ['dimensions', 'packet_path'],
+  required: ['skill_files_ok', 'dimensions', 'packet_path'],
   properties: {
-    dimensions: { type: 'array', items: { type: 'string' } },
+    skill_files_ok: { type: 'boolean' },
+    blocked_reason: { type: 'string' },
+    dimensions: { type: 'array', items: { type: 'string', pattern: DIM_SLUG_PATTERN } },
     packet_path: { type: 'string' },
   },
 }
@@ -143,11 +151,13 @@ function packetPrompt(worktreePath, range, slug) {
 
 cd ${worktreePath} first.
 
+First verify these files exist and are readable: \`~/.claude/skills/age/SKILL.md\`, \`~/.claude/skills/age/references/dimensions.md\`, \`~/.claude/skills/age/references/packet.md\`. If any is missing or unreadable, stop here and return {"skill_files_ok":false,"blocked_reason":"<which file, and why>","dimensions":[],"packet_path":""} -- do not guess a dimension list or improvise a packet from memory.
+
 Assemble the shared context packet per \`~/.claude/skills/age/references/packet.md\` for the diff range \`${range}\`, and write it to \`.cheese/age/${slug}-packet.md\` (via Bash redirection).
 
-Then parse the dimension list from \`~/.claude/skills/age/references/dimensions.md\`'s per-dimension \`###\` headings under its per-dimension-rubrics section — read the file and list exactly the dimensions it defines, do not assume a fixed list.
+Then parse the dimension list from \`~/.claude/skills/age/references/dimensions.md\`: find its \`## Per-dimension rubrics\` section and list exactly the \`###\` heading text beneath it, verbatim and lowercase, one entry per heading -- do not invent, rename, expand, or title-case any heading. These strings feed directly into a \`### <dim>\` heading lookup in the Review phase, so they must byte-match the heading text exactly. If that section is absent or its headings don't parse cleanly, return {"skill_files_ok":false,"blocked_reason":"<what went wrong>","dimensions":[],"packet_path":""} instead of guessing.
 
-Return {"dimensions":["<dim>", ...],"packet_path":".cheese/age/${slug}-packet.md"}.`
+Return {"skill_files_ok":true,"dimensions":["<dim>", ...],"packet_path":".cheese/age/${slug}-packet.md"}.`
 }
 
 function reviewPrompt(dim, worktreePath, range, packetPath) {
@@ -164,13 +174,15 @@ ${NO_CHAIN_DIRECTIVE}
 Return {"findings":[{"dimension":"${dim}","severity":"blocker|high|medium|low","file":"<path>","line":<int>,"claim":"<what's wrong>","why_it_matters":"<impact>","fix_direction":"<how to fix>","also_relevant_to":["<dim>", ...]}]}.`
 }
 
-function reconcilePrompt(worktreePath, slug, findings, routeCurds) {
+function reconcilePrompt(worktreePath, slug, findings, routeCurds, packetPath, range) {
   return `You are the Reconcile phase for /age-fanout, curd "${slug}". cd ${worktreePath} first.
+
+Context packet: ${packetPath}. Diff range reviewed: \`${range}\`.
 
 Worker findings (JSON, not yet deduped):
 ${JSON.stringify(findings)}
 
-Apply the "§ Dimension boundaries" table (verbatim) from \`~/.claude/skills/age/references/dimensions.md\` to (a) any file:line flagged by 2 or more workers, and (b) every \`also_relevant_to\` tag. Dedup findings describing the same defect. Write the findings report to \`.cheese/age/${slug}.md\` in the format described in \`~/.claude/skills/age/SKILL.md § Output\`, including the handoff slug at the top per that section's template — read it there rather than assuming the shape.
+Apply the "§ Dimension boundaries" table (verbatim) from \`~/.claude/skills/age/references/dimensions.md\` to (a) any file:line flagged by 2 or more workers, and (b) every \`also_relevant_to\` tag. Dedup findings describing the same defect. Write the findings report to \`.cheese/age/${slug}.md\` in the format described in \`~/.claude/skills/age/SKILL.md § Output\`, including the handoff slug at the top per that section's template — read it there rather than assuming the shape. Ground the report's Orientation and Confidence sections in the context packet and the diff range above.
 
 ${routeCurds ? `This review spans multiple curd branches. Determine per-finding ownership by running \`git log <branch> --name-only\` for each of these branches and matching each finding's file to the branch that touched it:
 ${JSON.stringify(routeCurds)}
@@ -190,9 +202,21 @@ try {
   return { status: 'blocked', error: `packet phase failed: ${e.message}` }
 }
 
+if (!packet.skill_files_ok) {
+  log(`Packet phase reported the age skill file contract is broken: ${packet.blocked_reason || 'unspecified'}`)
+  return { status: 'blocked', error: packet.blocked_reason || 'age skill files missing or unreadable' }
+}
+
 if (!Array.isArray(packet.dimensions) || packet.dimensions.length === 0) {
   log('Packet phase returned no dimensions.')
   return { status: 'blocked', error: 'packet phase returned no dimensions' }
+}
+
+// Authoritative in-script guard, kept alongside the schema `pattern` above: some agent-runtime schema validators silently ignore `pattern`, so this check enforces the slug shape regardless of what the runtime validated.
+const invalidDimensions = packet.dimensions.filter((d) => !DIM_SLUG_RE.test(d))
+if (invalidDimensions.length) {
+  log(`Packet phase returned non-slug dimension(s): ${invalidDimensions.join(', ')}`)
+  return { status: 'blocked', error: `invalid dimension slug(s): ${invalidDimensions.join(', ')}` }
 }
 
 const dimensions = packet.dimensions
@@ -218,7 +242,7 @@ const allFindings = survivors.flatMap((r) => r.findings || [])
 phase('Reconcile')
 let reconcile
 try {
-  reconcile = await agent(reconcilePrompt(WORKTREE_PATH, SLUG, allFindings, ROUTE_CURDS), { label: 'reconcile', phase: 'Reconcile', agentType: 'reviewer', model: 'opus', schema: RECONCILE_SCHEMA })
+  reconcile = await agent(reconcilePrompt(WORKTREE_PATH, SLUG, allFindings, ROUTE_CURDS, packet.packet_path, RANGE), { label: 'reconcile', phase: 'Reconcile', agentType: 'reviewer', model: 'opus', schema: RECONCILE_SCHEMA })
 } catch (e) {
   log(`Reconcile phase failed: ${e.message}`)
   return { status: 'blocked', error: `reconcile phase failed: ${e.message}` }

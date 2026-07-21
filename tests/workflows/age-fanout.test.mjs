@@ -10,7 +10,7 @@ const BASE_ARGS = { worktree_path: '/tmp/worktrees/parent', range: 'origin/main.
 const DIMS = ['correctness', 'security', 'deslop']
 
 function packetOk(dims = DIMS, slug = 'parent') {
-  return { dimensions: dims, packet_path: `.cheese/age/${slug}-packet.md` }
+  return { skill_files_ok: true, dimensions: dims, packet_path: `.cheese/age/${slug}-packet.md` }
 }
 
 function reviewOk(dim, findings = []) {
@@ -151,7 +151,7 @@ test('packet returns no dimensions: blocked after exactly one agent call', async
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
-      if (opts.label === 'packet') return { dimensions: [], packet_path: '.cheese/age/parent-packet.md' }
+      if (opts.label === 'packet') return { skill_files_ok: true, dimensions: [], packet_path: '.cheese/age/parent-packet.md' }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -212,4 +212,41 @@ test('all review workers lost: returns blocked, no reconcile call', async () => 
 
   assert.equal(result.status, 'blocked')
   assert.equal(trace.agents.some((c) => c.opts.label === 'reconcile'), false)
+})
+
+test('packet reports skill_files_ok:false: blocked, only the packet agent ran, zero review agents dispatched', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'packet') return { skill_files_ok: false, blocked_reason: 'dimensions.md missing', dimensions: [], packet_path: '' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: BASE_ARGS })
+
+  assert.equal(result.status, 'blocked')
+  assert.match(result.error, /dimensions\.md missing/)
+  assert.equal(trace.agents.length, 1)
+  assert.equal(trace.agents[0].opts.label, 'packet')
+  assert.equal(trace.agents.some((c) => c.opts.label.startsWith('review:')), false)
+})
+
+test('packet returns a non-slug dimension: ends blocked/failed with zero review agents dispatched', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'packet') return { skill_files_ok: true, dimensions: ['correctness', 'Not Invented Here'], packet_path: '.cheese/age/parent-packet.md' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: BASE_ARGS })
+
+  // The harness's schema `pattern` may reject the bad dimension at the agent() wrapper
+  // (surfaced through the packet phase's try/catch) or the in-script invalidDimensions
+  // guard may catch it first -- either outcome is acceptable; what matters is the
+  // end-to-end property: blocked, with zero reviewer dispatches.
+  assert.equal(result.status, 'blocked')
+  assert.equal(trace.agents.some((c) => c.opts.label.startsWith('review:')), false)
 })
