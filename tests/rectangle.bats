@@ -57,6 +57,21 @@ EOF
     chmod +x "$MOCK_BIN/pkill"
 }
 
+# Make `defaults read $bundle dotfilesKeymapHash` return a given stamp, while
+# every other `defaults` call still logs to $MOCK_LOG like the base mock.
+_mock_defaults_stamp() {
+    cat > "$MOCK_BIN/defaults" <<EOF
+#!/usr/bin/env bash
+if [[ "\$1" == "read" && "\$3" == "dotfilesKeymapHash" ]]; then
+    echo "$1"
+    exit 0
+fi
+printf 'defaults %s\n' "\$*" >> "$MOCK_LOG"
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/defaults"
+}
+
 # ── rectangle_restart ──
 
 @test "rectangle_restart hard-kills with pkill -9 then relaunches" {
@@ -94,13 +109,31 @@ EOF
 
 @test "rectangle_write_shortcuts writes numeric-typed dict leaves, not an ASCII plist string" {
     source "$LIB"
-    run rectangle_write_shortcuts com.knollsoft.Hookshot
+    run rectangle_write_shortcuts com.knollsoft.Hookshot deadbeef
     [ "$status" -eq 0 ]
     # Rectangle's documented schema: -dict-add with -float leaves (NSNumber),
     # so keyCode/modifierFlags land as numbers the shortcut parser honors.
     grep -qF 'defaults write com.knollsoft.Hookshot leftHalf -dict-add keyCode -float 123 modifierFlags -float 1835008' "$MOCK_LOG"
     # the old ASCII plist-dict string form (lands leaves as NSString) must be gone
     ! grep -qF '{ keyCode =' "$MOCK_LOG"
+    # the stamp is written with the given hash
+    grep -qF 'defaults write com.knollsoft.Hookshot dotfilesKeymapHash -string deadbeef' "$MOCK_LOG"
+}
+
+# ── rectangle_config_hash ──
+
+@test "rectangle_config_hash hashes the shortcut table plus the three QoL values" {
+    source "$LIB"
+    expected="$( { rectangle_shortcuts; echo "subsequentExecutionMode=0"; echo "launchOnLogin=true"; echo "hideMenubarIcon=false"; } | shasum -a 256 | awk '{print $1}')"
+    [ "$(rectangle_config_hash)" = "$expected" ]
+}
+
+@test "rectangle_config_hash changes when the shortcut table changes" {
+    source "$LIB"
+    before="$(rectangle_config_hash)"
+    rectangle_shortcuts() { echo "leftHalf|999|1835008"; }
+    after="$(rectangle_config_hash)"
+    [ "$before" != "$after" ]
 }
 
 # ── rectangle_sync guards ──
@@ -143,4 +176,40 @@ EOF
     source "$LIB"
     run rectangle_sync
     [[ "$output" != *"restart Rectangle Pro to load"* ]]
+}
+
+# ── rectangle_sync idempotent stamp ──
+
+@test "rectangle_sync skips (no writes, no restart) when the stamp matches the desired hash" {
+    source "$LIB"
+    hash="$(rectangle_config_hash)"
+    _mock_defaults_stamp "$hash"
+    run rectangle_sync
+    [ "$status" -eq 0 ]
+    ! grep -q '^defaults write' "$MOCK_LOG"
+    ! grep -q '^pkill' "$MOCK_LOG"
+    ! grep -q '^killall' "$MOCK_LOG"
+    [[ "$output" == *"already applied"* ]]
+    [[ "$output" == *"skipping"* ]]
+}
+
+@test "rectangle_sync writes, restarts, and stamps the new hash when the stamp is missing" {
+    source "$LIB"
+    hash="$(rectangle_config_hash)"
+    run rectangle_sync
+    [ "$status" -eq 0 ]
+    grep -q 'defaults write com.knollsoft.Hookshot leftHalf' "$MOCK_LOG"
+    grep -qF "defaults write com.knollsoft.Hookshot dotfilesKeymapHash -string $hash" "$MOCK_LOG"
+    grep -q 'pkill -9 -f Rectangle Pro' "$MOCK_LOG"
+}
+
+@test "rectangle_sync writes, restarts, and stamps the new hash when the stamp is stale" {
+    source "$LIB"
+    _mock_defaults_stamp "stale-hash-does-not-match"
+    hash="$(rectangle_config_hash)"
+    run rectangle_sync
+    [ "$status" -eq 0 ]
+    grep -q 'defaults write com.knollsoft.Hookshot leftHalf' "$MOCK_LOG"
+    grep -qF "defaults write com.knollsoft.Hookshot dotfilesKeymapHash -string $hash" "$MOCK_LOG"
+    grep -q 'pkill -9 -f Rectangle Pro' "$MOCK_LOG"
 }

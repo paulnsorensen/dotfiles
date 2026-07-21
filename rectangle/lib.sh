@@ -40,6 +40,19 @@ previousDisplay|33|$ctrl_opt_cmd
 EOF
 }
 
+# Hash the full desired config (shortcut table + QoL values) so rectangle_sync
+# can skip re-applying when nothing changed. Text comparison of live `defaults
+# read` output is fragile (NSNumber float-vs-int printing) -- a hash of our own
+# desired inputs sidesteps that entirely.
+rectangle_config_hash() {
+    {
+        rectangle_shortcuts
+        echo "subsequentExecutionMode=0"
+        echo "launchOnLogin=true"
+        echo "hideMenubarIcon=false"
+    } | shasum -a 256 | awk '{print $1}'
+}
+
 # Write every shortcut plus quality-of-life defaults to $bundle. Idempotent --
 # every keyCode/modifierFlags leaf is rewritten each run.
 #
@@ -48,7 +61,7 @@ EOF
 # (TerminalCommands.md). An ASCII plist-dict string "{ keyCode = N; ... }"
 # lands the leaves as NSString, which Rectangle's shortcut parser ignores.
 rectangle_write_shortcuts() {
-    local bundle="$1" cmd keycode mods
+    local bundle="$1" hash="$2" cmd keycode mods
     while IFS='|' read -r cmd keycode mods; do
         [[ -z "$cmd" ]] && continue
         defaults write "$bundle" "$cmd" -dict-add keyCode -float "$keycode" modifierFlags -float "$mods"
@@ -57,6 +70,7 @@ rectangle_write_shortcuts() {
     defaults write "$bundle" subsequentExecutionMode -int 0  # cycle 1/2 -> 2/3 -> 1/3 on repeat
     defaults write "$bundle" launchOnLogin -bool true
     defaults write "$bundle" hideMenubarIcon -bool false
+    defaults write "$bundle" dotfilesKeymapHash -string "$hash"
 
     # Flush the prefs cache so a running Rectangle Pro doesn't overwrite these
     # external writes with its in-memory copy when it next quits.
@@ -84,7 +98,15 @@ rectangle_sync() {
         return 0
     fi
 
-    rectangle_write_shortcuts "$RECTANGLE_BUNDLE"
+    local hash stamp
+    hash="$(rectangle_config_hash)"
+    stamp="$(defaults read "$RECTANGLE_BUNDLE" dotfilesKeymapHash 2>/dev/null || true)"
+    if [[ "$stamp" == "$hash" ]]; then
+        echo "rectangle/.sync: keymap already applied to $RECTANGLE_BUNDLE - skipping (no restart)"
+        return 0
+    fi
+
+    rectangle_write_shortcuts "$RECTANGLE_BUNDLE" "$hash"
     rectangle_restart
 
     echo "rectangle/.sync: wrote SizeUp keymap to $RECTANGLE_BUNDLE and reloaded Rectangle Pro"
