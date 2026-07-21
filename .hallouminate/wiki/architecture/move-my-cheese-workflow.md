@@ -39,6 +39,34 @@ history breaks the ancestor check); the patch-id alone can't scope an
 incremental review. Together: restack-only → skip; new commits on unrewritten
 history → incremental; rewrite with content changes → full.
 
+## Threshold-gated dimension fan-out (ADR-007)
+
+Before dispatching the single-reviewer Age agent, the script computes
+
+```
+fanOut = (!aged_sha || aged_dirty) && (changed_files > 15 || additions + deletions > 800)
+```
+
+using diff stats recon now gathers via `gh pr view --json changedFiles,additions,deletions`.
+When it holds, the Age runs as `workflow('age-fanout', {worktree_path, range,
+slug: 'pr-<n>'})` — one reviewer per /age dimension, semantics read at runtime
+from the deployed skill files — instead of one inline reviewer. Two deliberate
+bounds:
+
+- **Only full-review candidates fan out.** A clean marker means the scope will
+  be skip or incremental (small delta), where fan-out cost isn't justified; the
+  marker/patch-id logic above stays entirely on the single-reviewer path.
+- **The gate lives in JS, the scope decision in the agent.** The fan-out
+  decision needs stats *before* dispatch; the skip/incremental/full decision
+  needs `git patch-id` and stays agent-side. When both could apply, dirty=1 or
+  no-marker guarantees the agent would have chosen full anyway.
+
+The child call is wrapped in try/catch: if `age-fanout` is unavailable, the PR
+falls back to the single-reviewer path rather than failing. A prep agent
+creates the worktree only when the Rescue phase didn't already leave one.
+Rationale and the child workflow's design: [[adr/cheese-factory-workflow]]
+(ADR-007).
+
 Related: [[architecture/agents-dir]] (deploy path: `claude/workflows/` →
 `~/.claude/workflows/` via `dots sync`), tests in
 `tests/workflows/move-my-cheese.test.mjs` (offline harness, `just smoke`).

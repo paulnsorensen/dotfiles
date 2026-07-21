@@ -6,7 +6,7 @@ export const meta = {
     { title: 'Discover', detail: 'haiku lists open PRs when none are given; workflow returns candidates with no further dispatch' },
     { title: 'Recon', detail: 'one haiku batch agent builds the manifest: merge state, CI, head sha, aged-marker sha/patch-id per PR' },
     { title: 'Rescue', detail: 'sonnet coder per PR in an isolated worktree: /plate restack (+/melt on conflicts), fix real CI failures, commit' },
-    { title: 'Age', detail: 'opus reviewer: skip if diff patch-id unchanged since last age; incremental <aged-sha>..HEAD when ancestor; else full /age vs base' },
+    { title: 'Age', detail: 'opus reviewer: skip if diff patch-id unchanged since last age; incremental <aged-sha>..HEAD when ancestor; else full /age vs base, threshold-gated dimension fan-out via age-fanout for large full reviews' },
     { title: 'Cure', detail: 'sonnet coder runs /cure --auto --stake medium+ only when age reports medium+ findings' },
     { title: 'Re-age', detail: 'opus reviewer re-checks once after cure; still medium+ marks the PR dirty' },
     { title: 'Finalize', detail: 'haiku pushes to the PR branch (never force), upserts the aged-marker comment, re-runs infra-flake CI' },
@@ -38,6 +38,15 @@ export const meta = {
 //   otherwise                -> full /age origin/<base>...HEAD
 // Finalize re-stamps the marker at the pushed HEAD with the chain's verdict.
 
+//
+// Threshold-gated dimension fan-out: when Age's scope decision above lands on
+// a full review (no aged marker, or a dirty marker forcing full — clean
+// markers stay on the single-reviewer path since their scope is skip or
+// incremental) and the diff is large (>15 changed files or >800 changed
+// lines, mirroring /age SKILL.md's scale threshold), Age dispatches the
+// shared age-fanout child workflow instead of the single opus reviewer, then
+// maps its result into the same AGE_SCHEMA shape so cure/re-age/finalize are
+// unaffected.
 const NO_CHAIN_DIRECTIVE = 'Do not chain forward to the next phase even though your auto-mode contract documents that. Write your handoff slug and stop. The move-my-cheese orchestrator is driving the chain. Run in the foreground — do not background yourself, spawn detached processes, or defer work to a later session. If you cannot complete the phase within your context window, write a partial slug with status: halt: <reason> and stop; do not silently timeout.'
 
 const MARKER_PREFIX = 'move-my-cheese:aged'
@@ -94,7 +103,7 @@ const RECON_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['number', 'branch', 'base', 'state', 'is_draft', 'merge_state', 'ci', 'head_sha'],
+        required: ['number', 'branch', 'base', 'state', 'is_draft', 'merge_state', 'ci', 'head_sha', 'changed_files', 'additions', 'deletions'],
         properties: {
           number: { type: 'integer' },
           title: { type: 'string' },
@@ -106,6 +115,9 @@ const RECON_SCHEMA = {
           ci: { type: 'string', enum: ['pass', 'fail', 'pending', 'none'] },
           failing_run_ids: { type: 'array', items: { type: 'integer' } },
           head_sha: { type: 'string' },
+          changed_files: { type: 'integer', description: 'gh pr view --json changedFiles' },
+          additions: { type: 'integer', description: 'gh pr view --json additions' },
+          deletions: { type: 'integer', description: 'gh pr view --json deletions' },
           aged_sha: { type: 'string', description: 'sha= from the move-my-cheese:aged marker comment, empty if none' },
           aged_patch: { type: 'string', description: 'patch= from the marker comment, empty if none' },
           aged_dirty: { type: 'boolean', description: 'dirty=1 in the marker comment — the last age left unresolved medium+ findings; false if absent' },
@@ -177,14 +189,14 @@ function reconPrompt(prNumbers) {
   return `You are a cheap batch-recon agent for the move-my-cheese workflow. Use Bash. Build a manifest for PRs: ${prNumbers.join(', ')}.
 
 For each PR gather:
-1. \`gh pr view <n> --json number,title,headRefName,baseRefName,state,isDraft,mergeStateStatus,headRefOid,url\`
+1. \`gh pr view <n> --json number,title,headRefName,baseRefName,state,isDraft,mergeStateStatus,headRefOid,url,changedFiles,additions,deletions\`
 2. CI: \`gh pr checks <n>\` — classify overall as pass | fail | pending | none. For failures, collect the failing run ids (integers from the check detail URLs / \`gh run list --branch <branch>\`).
 3. Aged marker: \`gh api repos/{owner}/{repo}/issues/<n>/comments --jq '.[].body'\` and find the last comment containing "${MARKER_PREFIX}". Parse \`sha=<sha>\`, \`patch=<patch-id>\`, and \`dirty=<0|1>\` from it. Empty strings / false if no marker (older markers have no dirty= field — treat as false).
 4. Unresolved review threads count: \`gh api graphql\` reviewThreads with isResolved=false, or 0 if none/unavailable.
 
 Prefer the gh-pr-batch / gh-pr-checks-batch helpers if they are on PATH (one call for all PRs).
 
-Return {"prs":[{"number":<n>,"title":"...","branch":"...","base":"...","state":"OPEN|CLOSED|MERGED","is_draft":true|false,"merge_state":"<mergeStateStatus>","ci":"pass|fail|pending|none","failing_run_ids":[...],"head_sha":"...","aged_sha":"...","aged_patch":"...","aged_dirty":true|false,"unresolved_threads":<n>,"url":"..."}, ...]}.`
+Return {"prs":[{"number":<n>,"title":"...","branch":"...","base":"...","state":"OPEN|CLOSED|MERGED","is_draft":true|false,"merge_state":"<mergeStateStatus>","ci":"pass|fail|pending|none","failing_run_ids":[...],"head_sha":"...","changed_files":<n>,"additions":<n>,"deletions":<n>,"aged_sha":"...","aged_patch":"...","aged_dirty":true|false,"unresolved_threads":<n>,"url":"..."}, ...]}.`
 }
 
 function isoContract(pr) {
@@ -230,6 +242,52 @@ ${pr.aged_dirty
 ${NO_CHAIN_DIRECTIVE} In particular: do NOT invoke /cure yourself even if /age --auto documents that chain.
 
 Read the resulting age report and determine whether any finding is medium severity or above. Return {"status":"ok","mode":"skipped-unchanged|incremental|full","scope":"<exact ref-range reviewed, empty if skipped>","slug":"<age handoff slug, empty if skipped>","artifact":"<.cheese/age/... path, empty if skipped>","worktree_path":"<git rev-parse --show-toplevel>","has_medium_plus_findings":true|false}.`
+}
+
+const AGE_FANOUT_PREP_SCHEMA = {
+  type: 'object',
+  required: ['worktree_path'],
+  properties: { worktree_path: { type: 'string' } },
+}
+
+function ageFanoutPrepPrompt(pr) {
+  return `You are a cheap worktree-prep agent for the move-my-cheese workflow, PR #${pr.number}. Use Bash.
+
+Run: \`git fetch origin ${pr.branch} ${pr.base} && git checkout -B ${pr.branch} origin/${pr.branch}\`.
+
+Return {"worktree_path":"<git rev-parse --show-toplevel>"}.`
+}
+
+// Threshold-gated dimension fan-out: only when Age will be a full review (no
+// marker, or a dirty marker forcing full) AND the diff is large enough that
+// splitting review dimensions across sub-agents pays for itself (/age
+// SKILL.md scale threshold: >15 files or ~25KB / ~800 lines).
+function wantsAgeFanout(pr) {
+  return (!pr.aged_sha || pr.aged_dirty) && (pr.changed_files > 15 || (pr.additions + pr.deletions) > 800)
+}
+
+async function runAgeFanout(pr, worktreePath) {
+  let wt = worktreePath
+  if (!wt) {
+    const prep = await agent(ageFanoutPrepPrompt(pr), { label: `age-fanout-prep:${pr.number}`, phase: 'Age', model: 'haiku', isolation: 'worktree', schema: AGE_FANOUT_PREP_SCHEMA })
+    wt = prep.worktree_path
+  }
+  const scope = `origin/${pr.base}...HEAD`
+  const slug = `pr-${pr.number}`
+  const fan = await workflow('age-fanout', { worktree_path: wt, range: scope, slug })
+  // age-fanout signals internal failure by RETURNING {status:'blocked'}, not by
+  // throwing — treat non-ok as a throw so the caller's catch falls back to the
+  // single-reviewer path instead of stamping an unreviewed PR clean.
+  if (!fan || fan.status !== 'ok') throw new Error((fan && fan.error) || 'age-fanout returned non-ok')
+  return {
+    status: fan.status,
+    mode: 'full',
+    scope,
+    slug,
+    artifact: fan.artifact,
+    worktree_path: wt,
+    has_medium_plus_findings: fan.has_medium_plus_findings,
+  }
 }
 
 function curePrompt(pr, worktreePath, ageResult) {
@@ -333,10 +391,19 @@ if (dispatch.length) {
       }
     },
 
-    // Age — incremental when the marker allows it.
+    // Age — incremental when the marker allows it; large full-review diffs
+    // fan out across age-fanout's dimensions instead of one opus reviewer.
     async ({ pr, rescue, failure }) => {
       if (failure) return { pr, rescue, age: null, failure }
       const worktreePath = rescue ? rescue.worktree_path : null
+      if (wantsAgeFanout(pr)) {
+        try {
+          const age = await runAgeFanout(pr, worktreePath)
+          return { pr, rescue, age, failure: null }
+        } catch (e) {
+          log(`PR #${pr.number}: age-fanout unavailable (${e.message}) — falling back to single-reviewer age.`)
+        }
+      }
       try {
         const age = await agent(agePrompt(pr, worktreePath), {
           label: `age:${pr.number}`,
