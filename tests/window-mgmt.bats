@@ -83,11 +83,11 @@ MOCK
     assert_output_contains "write com.test topLeft -dict-add keyCode -float 123 modifierFlags -float 917504"
 }
 
-@test "rectangle_write_shortcuts: writes all 19 shortcuts plus 3 quality-of-life defaults" {
+@test "rectangle_write_shortcuts: writes all 19 shortcuts plus 3 quality-of-life defaults plus the hash stamp" {
     source "$RECT_LIB"
-    rectangle_write_shortcuts com.test
+    rectangle_write_shortcuts com.test deadbeef
     count=$(grep -c '^write com.test' "$DEFAULTS_LOG")
-    [ "$count" -eq 22 ]
+    [ "$count" -eq 23 ]
 }
 
 @test "rectangle_sync: skips on non-Darwin without writing defaults" {
