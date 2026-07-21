@@ -13,7 +13,7 @@ review to `/age`, fixes to `/cure`; the workflow only orchestrates.
 Each aged PR carries one upserted comment:
 
 ```
-<!-- move-my-cheese:aged sha=<head-sha> patch=<patch-id> -->
+<!-- move-my-cheese:aged sha=<head-sha> patch=<patch-id> dirty=<0|1> -->
 ```
 
 Chosen over git notes (local unless explicitly pushed, invisible on GitHub)
@@ -23,13 +23,16 @@ PR itself.
 
 ## Why the marker records BOTH sha and patch-id
 
-The Age phase decides its scope in three steps, in order:
+The Age phase decides its scope in four steps, in order:
 
-1. `git diff origin/<base>...HEAD | git patch-id --stable` equals the marker
+1. Marker `dirty=1` (the previous age left unresolved medium+ findings) →
+   **full** `/age` — skip/incremental would hide those findings, and triage
+   never short-circuits a dirty head as fresh.
+2. `git diff origin/<base>...HEAD | git patch-id --stable` equals the marker
    `patch=` → the reviewable content is unchanged (e.g. a `/plate` restack
    rewrote history but changed nothing) → **skip `/age` entirely**.
-2. Marker `sha=` is an ancestor of HEAD → **incremental** `/age <sha>..HEAD`.
-3. Otherwise → **full** `/age origin/<base>...HEAD`.
+3. Marker `sha=` is an ancestor of HEAD → **incremental** `/age <sha>..HEAD`.
+4. Otherwise → **full** `/age origin/<base>...HEAD`.
 
 The sha alone would force a full re-age after every restack (rewritten
 history breaks the ancestor check); the patch-id alone can't scope an
