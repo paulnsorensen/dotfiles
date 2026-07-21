@@ -20,6 +20,9 @@ function reconPr(number, overrides = {}) {
     ci: 'pass',
     failing_run_ids: [],
     head_sha: `head-${number}`,
+    changed_files: 3,
+    additions: 20,
+    deletions: 5,
     aged_sha: '',
     aged_patch: '',
     unresolved_threads: 0,
@@ -432,4 +435,181 @@ test('unresolved review threads are surfaced in the log for /affinage', async ()
 
   assert.equal(result.results[0].unresolved_threads, 3)
   assert.equal(trace.logs.some((l) => l.includes('/affinage')), true)
+})
+
+test('large-diff no-marker PR fans out to age-fanout with exact args; no single-reviewer age agent', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'recon') return { prs: [reconPr(80, { changed_files: 20, additions: 500, deletions: 400, merge_state: 'DIRTY' })] }
+      if (opts.label === 'rescue:80') return rescue(80)
+      if (opts.label === 'finalize:80') return finalize(80)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const workflowCalls = []
+  const fanoutWorkflow = async (name, opts) => {
+    workflowCalls.push({ name, opts })
+    return { status: 'ok', artifact: '.cheese/age/pr-80.md', has_medium_plus_findings: false }
+  }
+
+  const result = await workflow.run({ ...globals, workflow: fanoutWorkflow, args: { prs: [80] } })
+
+  assert.equal(workflowCalls.length, 1)
+  assert.equal(workflowCalls[0].name, 'age-fanout')
+  assert.deepEqual(JSON.parse(JSON.stringify(workflowCalls[0].opts)), { worktree_path: '/tmp/worktrees/pr-80', range: 'origin/main...HEAD', slug: 'pr-80' })
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:80'), false)
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age-fanout-prep:80'), false)
+  assert.equal(result.results[0].status, 'clean')
+})
+
+test('large-diff clean-marker PR does not fan out — gate off, single-reviewer age path', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'recon') return { prs: [reconPr(81, { changed_files: 20, additions: 500, deletions: 400, aged_sha: 'old-sha', aged_patch: 'oldpatch', aged_dirty: false })] }
+      if (opts.label === 'age:81') return age(81, false, { mode: 'incremental', scope: 'old-sha..HEAD' })
+      if (opts.label === 'finalize:81') return finalize(81)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const workflowCalls = []
+  const fanoutWorkflow = async (name, opts) => { workflowCalls.push({ name, opts }); throw new Error('should not be called') }
+
+  const result = await workflow.run({ ...globals, workflow: fanoutWorkflow, args: { prs: [81] } })
+
+  assert.equal(workflowCalls.length, 0)
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:81'), true)
+  assert.equal(result.results[0].status, 'clean')
+})
+
+test('large-diff dirty-marker PR fans out despite a marker present', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'recon') return { prs: [reconPr(82, { changed_files: 20, additions: 500, deletions: 400, aged_sha: 'old-sha', aged_patch: 'oldpatch', aged_dirty: true })] }
+      if (opts.label === 'age-fanout-prep:82') return { worktree_path: '/tmp/worktrees/pr-82' }
+      if (opts.label === 'finalize:82') return finalize(82)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const workflowCalls = []
+  const fanoutWorkflow = async (name, opts) => {
+    workflowCalls.push({ name, opts })
+    return { status: 'ok', artifact: '.cheese/age/pr-82.md', has_medium_plus_findings: false }
+  }
+
+  await workflow.run({ ...globals, workflow: fanoutWorkflow, args: { prs: [82] } })
+
+  assert.equal(workflowCalls.length, 1)
+  assert.equal(workflowCalls[0].name, 'age-fanout')
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:82'), false)
+})
+
+test('fan-out reuses the rescue worktree — no age-fanout-prep agent dispatched', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'recon') return { prs: [reconPr(83, { changed_files: 20, additions: 500, deletions: 400, merge_state: 'DIRTY' })] }
+      if (opts.label === 'rescue:83') return rescue(83, { worktree_path: '/tmp/worktrees/pr-83-rescued' })
+      if (opts.label === 'finalize:83') return finalize(83)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const workflowCalls = []
+  const fanoutWorkflow = async (name, opts) => {
+    workflowCalls.push({ name, opts })
+    return { status: 'ok', artifact: '.cheese/age/pr-83.md', has_medium_plus_findings: false }
+  }
+
+  await workflow.run({ ...globals, workflow: fanoutWorkflow, args: { prs: [83] } })
+
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age-fanout-prep:83'), false)
+  assert.equal(workflowCalls[0].opts.worktree_path, '/tmp/worktrees/pr-83-rescued')
+})
+
+test('fan-out with no rescue worktree dispatches a prep agent first, feeding its worktree_path to workflow()', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'recon') return { prs: [reconPr(84, { changed_files: 20, additions: 500, deletions: 400 })] }
+      if (opts.label === 'age-fanout-prep:84') return { worktree_path: '/tmp/worktrees/pr-84-prepped' }
+      if (opts.label === 'finalize:84') return finalize(84)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const workflowCalls = []
+  const fanoutWorkflow = async (name, opts) => {
+    workflowCalls.push({ name, opts })
+    return { status: 'ok', artifact: '.cheese/age/pr-84.md', has_medium_plus_findings: false }
+  }
+
+  await workflow.run({ ...globals, workflow: fanoutWorkflow, args: { prs: [84] } })
+
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age-fanout-prep:84'), true)
+  assert.equal(workflowCalls[0].opts.worktree_path, '/tmp/worktrees/pr-84-prepped')
+})
+
+test('age-fanout workflow() throwing falls back to the single-reviewer age agent', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'recon') return { prs: [reconPr(85, { changed_files: 20, additions: 500, deletions: 400 })] }
+      if (opts.label === 'age-fanout-prep:85') return { worktree_path: '/tmp/worktrees/pr-85' }
+      if (opts.label === 'age:85') return age(85, false)
+      if (opts.label === 'finalize:85') return finalize(85)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const fanoutWorkflow = async () => { throw new Error('age-fanout workflow unavailable') }
+
+  const result = await workflow.run({ ...globals, workflow: fanoutWorkflow, args: { prs: [85] } })
+
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:85'), true)
+  assert.equal(result.results[0].status, 'clean')
+  assert.equal(trace.logs.some((l) => l.includes('age-fanout unavailable')), true)
+})
+
+test('age-fanout RETURNING status blocked (no throw) also falls back to the single-reviewer age agent', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'recon') return { prs: [reconPr(87, { changed_files: 20, additions: 500, deletions: 400 })] }
+      if (opts.label === 'age-fanout-prep:87') return { worktree_path: '/tmp/worktrees/pr-87' }
+      if (opts.label === 'age:87') return age(87, false)
+      if (opts.label === 'finalize:87') return finalize(87)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  // age-fanout signals internal failure by RETURNING blocked, not throwing —
+  // without the status guard this stamps an unreviewed PR clean.
+  const fanoutWorkflow = async () => ({ status: 'blocked', error: 'packet phase returned no dimensions' })
+
+  const result = await workflow.run({ ...globals, workflow: fanoutWorkflow, args: { prs: [87] } })
+
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:87'), true)
+  assert.equal(result.results[0].status, 'clean')
+  assert.equal(result.results[0].age_mode, 'full')
+})
+
+test('fan-out result with has_medium_plus_findings:true dispatches cure with the fan-out slug', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'recon') return { prs: [reconPr(86, { changed_files: 20, additions: 500, deletions: 400 })] }
+      if (opts.label === 'age-fanout-prep:86') return { worktree_path: '/tmp/worktrees/pr-86' }
+      if (opts.label === 'cure:86') return cure(true)
+      if (opts.label === 'reage:86') return age(86, false, { mode: 'incremental' })
+      if (opts.label === 'finalize:86') return finalize(86)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const fanoutWorkflow = async () => ({ status: 'ok', artifact: '.cheese/age/pr-86.md', has_medium_plus_findings: true })
+
+  const result = await workflow.run({ ...globals, workflow: fanoutWorkflow, args: { prs: [86] } })
+
+  const cureCall = trace.agents.find(({ opts }) => opts.label === 'cure:86')
+  assert.notEqual(cureCall, undefined)
+  assert.match(cureCall.prompt, /pr-86/)
+  assert.equal(result.results[0].cured, true)
 })

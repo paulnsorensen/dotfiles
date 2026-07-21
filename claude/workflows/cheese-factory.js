@@ -1,25 +1,34 @@
 export const meta = {
   name: 'cheese-factory',
   description:
-    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press->age->cure->re-age per curd, then barrier-plate clean branches into (stacked) PRs.',
+    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Decompose', detail: 'opus decomposer produces curds; JS merges file-overlapping curds; mini-specs written per curd' },
     { title: 'Cook', detail: 'sonnet coder implements one curd in an isolated worktree via /cook --auto' },
     { title: 'Taste', detail: 'opus reviewer 5-lens gate over the cook diff; revise triggers a bounded corrective pass' },
     { title: 'Press', detail: 'sonnet coder hardens tests via /press --auto' },
-    { title: 'Age', detail: 'opus reviewer runs /age --auto' },
-    { title: 'Cure', detail: 'sonnet coder runs /cure --auto --stake medium+, only when age reports medium+ findings' },
-    { title: 'Re-age', detail: 'opus reviewer re-checks once after cure; still medium+ marks the curd dirty' },
+    { title: 'Integrate', detail: 'one coder merges surviving curd branches into an integration branch, slug-sorted, --no-ff; conflicts exclude that curd downstream' },
+    { title: 'Age', detail: 'barrier review of the whole integrated diff; large diffs fan out via the age-fanout child workflow, else one opus reviewer runs /age --auto and routes findings per curd' },
+    { title: 'Cure', detail: 'parallel sonnet coders fix only curds with medium+ routed findings via /cure --auto --stake medium+' },
+    { title: 'Re-age', detail: 'once, only if a cure committed: re-merge cured branches, then re-review scoped to the prior findings; still medium+ marks the curd dirty' },
     { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
-    { title: 'Report', detail: 'per-curd status, branch, PR url, and excluded-curd reasons' },
+    { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, and excluded-curd reasons' },
   ],
 }
 
 // Tracked source: claude/workflows/cheese-factory.js in the dotfiles repo.
 // Replaces claude/workflows/curd-flock.js (deleted, no alias). Spec:
 // specs/cheese-factory-workflow.md (durable corpus). See
-// .hallouminate/wiki/adr/cheese-factory-workflow.md for ADR-001..005.
+// .hallouminate/wiki/adr/cheese-factory-workflow.md for ADR-001..006.
+//
+// Review moved from per-curd to a barrier whole-diff age before plate
+// (ADR-006): reviewing each curd's diff in isolation left cross-curd
+// behavioral interactions reviewed by nobody — curd A and curd B can each
+// look correct alone and still break when their changes compose. The union
+// diff is now aged once at the Integrate barrier instead, with /age's
+// dimension fan-out (via the shared age-fanout child workflow) kicking in
+// when the integrated diff is large.
 //
 // Args: { spec?: string /* slug | path */, correctiveRounds? = 2 }
 //   - no spec: Resolve lists durable-corpus candidates and the workflow
@@ -141,10 +150,57 @@ const PHASE_SCHEMA = {
   properties: { status: { type: 'string' }, artifact: { type: 'string' }, orientation: { type: 'string' } },
 }
 
-const AGE_SCHEMA = {
+const INTEGRATE_SCHEMA = {
+  type: 'object',
+  required: ['worktree_path', 'merged', 'conflicted', 'files_changed', 'lines_changed'],
+  properties: {
+    worktree_path: { type: 'string' },
+    merged: { type: 'array', items: { type: 'string' } },
+    conflicted: { type: 'array', items: { type: 'string' } },
+    files_changed: { type: 'integer' },
+    lines_changed: { type: 'integer' },
+  },
+}
+
+const AGE_BARRIER_SCHEMA = {
   type: 'object',
   required: ['status', 'has_medium_plus_findings'],
-  properties: { status: { type: 'string' }, artifact: { type: 'string' }, has_medium_plus_findings: { type: 'boolean' } },
+  properties: {
+    status: { type: 'string' },
+    artifact: { type: 'string' },
+    has_medium_plus_findings: { type: 'boolean' },
+    per_curd: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          slug: { type: 'string' },
+          has_medium_plus_findings: { type: 'boolean' },
+          findings: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                dimension: { type: 'string' },
+                severity: { type: 'string' },
+                file: { type: 'string' },
+                line: { type: 'integer' },
+                claim: { type: 'string' },
+                why_it_matters: { type: 'string' },
+                fix_direction: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+}
+
+const CURE_SCHEMA = {
+  type: 'object',
+  required: ['status', 'committed'],
+  properties: { status: { type: 'string' }, committed: { type: 'boolean' }, artifact: { type: 'string' } },
 }
 
 const PLATE_SCHEMA = {
@@ -283,24 +339,58 @@ ${NO_CHAIN_DIRECTIVE}
 Return {"status":"...","artifact":"...","orientation":"..."}.`
 }
 
-function agePrompt(curd, worktreePath, label) {
-  return `You are the ${label} phase for curd "${curd.slug}". cd ${worktreePath} first.
+function integratePrompt(parentSlug, refs) {
+  return `You are the Integrate barrier for the /cheese-factory workflow. You are in an isolated worktree of the project repo (worktrees share the repo's branches).
 
-Run \`/age ${curd.slug} --auto\` via the Skill tool.
+Surviving curd branches (slug-sorted): ${JSON.stringify(refs)}
 
-${NO_CHAIN_DIRECTIVE}
+1. \`git checkout -B integration/${parentSlug} origin/main\`.
+2. Merge each branch in the listed order: \`git merge --no-ff <branch>\` (the branches are local to this repo; fall back to \`origin/<branch>\` only if the local ref is missing). If a merge conflicts, run \`git merge --abort\`, record that entry's slug as conflicted, and continue with the remaining branches.
+3. Report stats for the integrated diff by parsing \`git diff --shortstat origin/main...HEAD\`: files_changed, and lines_changed = insertions + deletions.
 
-Read the resulting age report and determine whether any finding is medium severity or above. Return {"status":"...","artifact":"...","has_medium_plus_findings":true|false}.`
+Do not push. Do not edit any file yourself. ${NO_CHAIN_DIRECTIVE}
+
+Return {"worktree_path":"<git rev-parse --show-toplevel>","merged":["<slug>", ...],"conflicted":["<slug>", ...],"files_changed":<n>,"lines_changed":<n>}.`
 }
 
-function curePrompt(curd, worktreePath) {
-  return `You are the Cure phase for curd "${curd.slug}". cd ${worktreePath} first.
+function ageBarrierPrompt(worktreePath, refs, label, priorFindings) {
+  return `You are a read-only opus reviewer running the ${label} barrier of the /cheese-factory workflow. cd ${worktreePath} first (the integration branch merging the surviving curd branches).
 
-Run \`/cure ${curd.slug} --auto --stake medium+\` via the Skill tool.
+${label === 'Re-age'
+    ? `A cure pass just ran and the integration branch was re-merged. Re-review \`git diff origin/main...HEAD\` SCOPED to these previously reported findings (HEAD now includes the cure commits) and judge each resolved or still present:
+${JSON.stringify(priorFindings)}`
+    : `Run \`/age origin/main...HEAD --auto\` via the Skill tool over the whole integrated diff.`}
+
+Curd branches in this integration: ${JSON.stringify(refs)}. Route every medium+ finding to the curd whose branch touched the file (curds are file-disjoint, so ownership is deterministic — use \`git log <branch> --name-only\` if unsure).
+
+${NO_CHAIN_DIRECTIVE} In particular: do NOT invoke /cure yourself even if /age --auto documents that chain.
+
+Return {"status":"ok","artifact":"<.cheese/age/... report path>","has_medium_plus_findings":true|false,"per_curd":[{"slug":"...","has_medium_plus_findings":true|false,"findings":[{"dimension":"...","severity":"blocker|high|medium|low","file":"...","line":<n>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]}]} — one per_curd entry per curd branch, findings limited to medium+.`
+}
+
+function curePrompt(curd, branch, findings) {
+  return `You are the Cure phase for curd "${curd.slug}".
+
+cd into the curd worktree for branch ${branch}: if the Cook phase's worktree still exists (\`git worktree list\`), use it; otherwise recreate one with \`git worktree add <path> ${branch}\`. Do NOT re-checkout the branch from origin/main — it carries the cook/press commits.
+
+Run \`/cure --auto --stake medium+\` via the Skill tool, giving it this routed finding list as its input (the /cure skill accepts a finding list directly):
+${JSON.stringify(findings)}
+
+Commit locally on ${branch}. Do not push. ${NO_CHAIN_DIRECTIVE}
+
+Return {"status":"ok|partial|blocked","committed":true|false,"artifact":"..."}.`
+}
+
+function remergePrompt(parentSlug, worktreePath, refs) {
+  return `You are the re-merge step of the Re-age barrier for the /cheese-factory workflow. cd ${worktreePath} first.
+
+A cure pass added commits to some curd branches. Rebuild the integration branch: \`git checkout -B integration/${parentSlug} origin/main\`, then merge every surviving curd branch in the listed order with \`git merge --no-ff <branch>\`; on conflict \`git merge --abort\`, record the slug as conflicted, continue.
+
+Surviving curd branches (slug-sorted): ${JSON.stringify(refs)}
 
 ${NO_CHAIN_DIRECTIVE}
 
-Return {"status":"...","artifact":"...","orientation":"..."}.`
+Return {"worktree_path":"<git rev-parse --show-toplevel>","merged":[...],"conflicted":[...],"files_changed":<n>,"lines_changed":<n>} (stats from \`git diff --shortstat origin/main...HEAD\`).`
 }
 
 function platePrompt(cleanCurds, singlePass) {
@@ -433,48 +523,115 @@ const chainResults = await pipeline(
     }
     return { curd, branch, cook, taste, tasteRounds, press, failure: null }
   },
-
-  async ({ curd, branch, cook, taste, tasteRounds, press, failure }) => {
-    if (failure) return { curd, branch, cook, taste, press, age: null, cure: null, reage: null, failure }
-    let age
-    try {
-      age = await agent(agePrompt(curd, cook.worktree_path, 'Age'), { label: `age:${curd.slug}`, phase: 'Age', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA })
-    } catch (e) {
-      return { curd, branch, cook, taste, press, age: null, cure: null, reage: null, failure: { stage: 'age', message: e.message } }
-    }
-
-    if (!age.has_medium_plus_findings) {
-      return { curd, branch, cook, taste, press, age, cure: null, reage: null, failure: null }
-    }
-
-    let cure
-    try {
-      cure = await agent(curePrompt(curd, cook.worktree_path), { label: `cure:${curd.slug}`, phase: 'Cure', agentType: 'coder', model: 'sonnet', schema: PHASE_SCHEMA })
-    } catch (e) {
-      return { curd, branch, cook, taste, press, age, cure: null, reage: null, failure: { stage: 'cure', message: e.message } }
-    }
-
-    let reage
-    try {
-      reage = await agent(agePrompt(curd, cook.worktree_path, 'Re-age'), { label: `reage:${curd.slug}`, phase: 'Re-age', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA })
-    } catch (e) {
-      return { curd, branch, cook, taste, press, age, cure, reage: null, failure: { stage: 'reage', message: e.message } }
-    }
-
-    return { curd, branch, cook, taste, press, age, cure, reage, failure: null }
-  },
 )
 
-// ---- Plate (barrier — runs once after every chain finishes) ----
+// ---- Integrate (barrier — merge surviving branches into one integration worktree) ----
+const surviving = chainResults.filter((r) => r && !r.failure)
+
+let integrate = null
+let integratedRefs = []
+if (surviving.length) {
+  phase('Integrate')
+  const refs = surviving
+    .map((r) => ({ slug: r.curd.slug, branch: r.branch }))
+    .sort((a, b) => (a.slug < b.slug ? -1 : 1))
+  try {
+    integrate = await agent(integratePrompt(parentSlug, refs), { label: 'integrate', phase: 'Integrate', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA })
+  } catch (e) {
+    log(`Integrate failed (${e.message}) — all surviving curds excluded.`)
+  }
+  if (integrate) {
+    const conflicted = new Set(integrate.conflicted || [])
+    integratedRefs = refs.filter((r) => !conflicted.has(r.slug))
+    if (conflicted.size) log(`Integration conflicts excluded curd(s): ${[...conflicted].join(', ')}`)
+  }
+}
+
+// ---- Age (barrier — whole integrated diff, fan-out when large) ----
+let ageResult = null
+let ageMode = null
+if (integrate && integratedRefs.length) {
+  phase('Age')
+  // Thresholds from /age SKILL.md § scale threshold (>15 files / ~25 KB ≈ 800 lines).
+  const useFanout = integrate.files_changed > 15 || integrate.lines_changed > 800
+  if (useFanout) {
+    try {
+      const fan = await workflow('age-fanout', { worktree_path: integrate.worktree_path, range: 'origin/main...HEAD', slug: parentSlug, route_curds: integratedRefs })
+      if (!fan || fan.status !== 'ok') throw new Error((fan && fan.error) || 'age-fanout returned non-ok')
+      ageResult = fan
+      ageMode = 'fanout'
+    } catch (e) {
+      log(`age-fanout unavailable (${e.message}) — falling back to a single-reviewer barrier age.`)
+    }
+  }
+  if (!ageResult) {
+    try {
+      ageResult = await agent(ageBarrierPrompt(integrate.worktree_path, integratedRefs, 'Age', null), { label: 'age:barrier', phase: 'Age', agentType: 'reviewer', model: 'opus', schema: AGE_BARRIER_SCHEMA })
+      ageMode = 'single'
+    } catch (e) {
+      log(`Barrier age failed (${e.message}) — integrated curds cannot be verified; excluding them from plate.`)
+    }
+  }
+}
+
+// ---- Cure (parallel — only curds with medium+ routed findings) ----
+let toCure = []
+let cureBySlug = new Map()
+if (ageResult && ageResult.has_medium_plus_findings) {
+  phase('Cure')
+  toCure = (ageResult.per_curd || []).filter((p) => p && p.has_medium_plus_findings && integratedRefs.some((r) => r.slug === p.slug))
+  const cures = await parallel(toCure.map((p) => () => {
+    const ref = integratedRefs.find((r) => r.slug === p.slug)
+    const entry = surviving.find((r) => r.curd.slug === p.slug)
+    return agent(curePrompt(entry.curd, ref.branch, p.findings || []), { label: `cure:${p.slug}`, phase: 'Cure', agentType: 'coder', model: 'sonnet', schema: CURE_SCHEMA })
+      .then((cure) => ({ slug: p.slug, cure }))
+  }))
+  cureBySlug = new Map(cures.filter(Boolean).map((c) => [c.slug, c.cure]))
+}
+
+// ---- Re-age (once — only if a cure committed) ----
+let remerge = null
+let reage = null
+if ([...cureBySlug.values()].some((c) => c && c.committed)) {
+  phase('Re-age')
+  try {
+    remerge = await agent(remergePrompt(parentSlug, integrate.worktree_path, integratedRefs), { label: 're-merge', phase: 'Re-age', model: 'haiku', schema: INTEGRATE_SCHEMA })
+  } catch (e) {
+    log(`Re-merge failed (${e.message}) — cured curds stay dirty.`)
+  }
+  if (remerge) {
+    try {
+      reage = await agent(ageBarrierPrompt(integrate.worktree_path, integratedRefs, 'Re-age', toCure.flatMap((p) => p.findings || [])), { label: 'age:reage', phase: 'Re-age', agentType: 'reviewer', model: 'opus', schema: AGE_BARRIER_SCHEMA })
+    } catch (e) {
+      log(`Re-age failed (${e.message}) — cured curds stay dirty.`)
+    }
+  }
+}
+
+// ---- Status resolution ----
+const agePerCurdBySlug = new Map(((ageResult && ageResult.per_curd) || []).map((p) => [p.slug, p]))
+const reageBySlug = new Map(((reage && reage.per_curd) || []).map((p) => [p.slug, p]))
+const remergeConflicted = new Set((remerge && remerge.conflicted) || [])
+const unroutedFindings = Boolean(ageResult && ageResult.has_medium_plus_findings && agePerCurdBySlug.size === 0)
+if (unroutedFindings) log('Barrier age reported medium+ findings but no per-curd routing — integrated curds marked dirty.')
+
 const withStatus = chainResults.map((r) => {
   if (!r) return null
-  const { curd, branch, failure, reage } = r
-  let status
-  let excluded_reason
-  if (failure) { status = 'failed'; excluded_reason = `${failure.stage}: ${failure.message}` }
-  else if (reage && reage.has_medium_plus_findings) { status = 'dirty'; excluded_reason = 're-age still reports medium+ findings' }
-  else status = 'clean'
-  return { curd, branch, status, excluded_reason }
+  const { curd, branch, failure } = r
+  if (failure) return { curd, branch, status: 'failed', excluded_reason: `${failure.stage}: ${failure.message}` }
+  if (!integrate) return { curd, branch, status: 'failed', excluded_reason: 'integrate: barrier integration failed' }
+  if (!integratedRefs.some((ref) => ref.slug === curd.slug)) return { curd, branch, status: 'failed', excluded_reason: 'integrate: merge conflict' }
+  if (!ageResult) return { curd, branch, status: 'failed', excluded_reason: 'age: barrier age failed' }
+  if (unroutedFindings) return { curd, branch, status: 'dirty', excluded_reason: 'age reported medium+ findings without per-curd routing' }
+  const p = agePerCurdBySlug.get(curd.slug)
+  if (!p || !p.has_medium_plus_findings) return { curd, branch, status: 'clean' }
+  const cure = cureBySlug.get(curd.slug)
+  if (!cure || !cure.committed) return { curd, branch, status: 'dirty', excluded_reason: 'cure did not commit a fix' }
+  if (remergeConflicted.has(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-merge conflicted after cure' }
+  if (!reage) return { curd, branch, status: 'dirty', excluded_reason: 're-age did not run after cure' }
+  const rp = reageBySlug.get(curd.slug)
+  if (rp && rp.has_medium_plus_findings) return { curd, branch, status: 'dirty', excluded_reason: 're-age still reports medium+ findings' }
+  return { curd, branch, status: 'clean' }
 })
 
 const cleanEntries = withStatus.filter((r) => r && r.status === 'clean')
@@ -493,12 +650,14 @@ phase('Report')
 const curdsOut = withStatus.map((r) => {
   if (!r) return null
   const plate = plateBySlug.get(r.curd.slug)
+  const p = agePerCurdBySlug.get(r.curd.slug)
   return {
     slug: r.curd.slug,
     branch: r.branch,
     status: r.status,
     pr_url: plate ? plate.pr_url : undefined,
     excluded_reason: r.excluded_reason,
+    age: ageMode ? { mode: ageMode, has_medium_plus_findings: Boolean(p && p.has_medium_plus_findings) } : undefined,
   }
 })
 
@@ -506,4 +665,8 @@ const summary = { clean: 0, dirty: 0, failed: 0 }
 for (const c of curdsOut) if (c) summary[c.status] = (summary[c.status] || 0) + 1
 log(`Report: ${curdsOut.length} curd(s) — clean:${summary.clean} dirty:${summary.dirty} failed:${summary.failed}`)
 
-return { curds: curdsOut, summary }
+return {
+  curds: curdsOut,
+  summary,
+  integration: integrate ? { merged: integrate.merged, conflicted: integrate.conflicted } : null,
+}
