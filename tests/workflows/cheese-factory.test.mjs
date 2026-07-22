@@ -363,6 +363,8 @@ test('plate runs exactly once, after all chains, with only clean curds', async (
       if (opts.label === 'taste:good') return taste('pass')
       if (opts.label === 'press:good') return phaseOk('good', 'press')
       if (opts.label === 'cook:bad') return cook('bad', { status: 'blocked' })
+      if (opts.label === 'cook:bad:c1') return cook('bad', { status: 'blocked' })
+      if (opts.label === 'cook:bad:c2') return cook('bad', { status: 'blocked' })
       if (opts.label === 'integrate') return integrateResult({ merged: ['good'] })
       if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'good', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'good', status: 'plated', pr_url: 'https://example.test/pr/good' }])
@@ -910,23 +912,69 @@ test('an integrate failure fails the whole chain before age:barrier', async () =
   assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
 })
 
-test('a cook that never reaches ok status blocks the curd before integrate', async () => {
+test('a cook that never reaches ok status blocks the curd before integrate, dispatching exactly 2 continuations', async () => {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
       if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
       if (opts.label === 'cook:parent') return cook('parent', { status: 'blocked' })
+      if (opts.label === 'cook:parent:c1') return cook('parent', { status: 'blocked' })
+      if (opts.label === 'cook:parent:c2') return cook('parent', { status: 'blocked' })
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
 
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
 
+  const continuationCalls = trace.agents.filter(({ opts }) => /^cook:parent:c\d+$/.test(opts.label))
+  assert.equal(continuationCalls.length, 2)
   assert.equal(trace.agents.some(({ opts }) => opts.label === 'integrate'), false)
   assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:barrier'), false)
   assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
   assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /cook did not report status ok/)
+  assert.match(result.curds[0].excluded_reason, /cook did not reach status ok with a worktree_path \(last status: blocked\) — curd\/parent may carry committed WIP from continuation rounds/)
+})
+
+test('a blocked cook with a worktree_path gets a continuation that reaches ok, and the chain proceeds through taste\/press', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
+      if (opts.label === 'cook:parent') return cook('parent', { status: 'blocked' })
+      if (opts.label === 'cook:parent:c1') return cook('parent', { status: 'ok' })
+      if (opts.label === 'taste:parent') return taste('pass')
+      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
+      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
+      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
+      if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'plated', pr_url: 'https://example.test/pr/parent' }])
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+
+  const labels = trace.agents.map(({ opts }) => opts.label)
+  assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:c1', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate'])
+  assert.equal(result.curds[0].status, 'clean')
+  assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
+})
+
+test('a blocked cook without a worktree_path gets no continuation and fails immediately', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
+      if (opts.label === 'cook:parent') return { status: 'blocked', worktree_path: '', artifact: '.cheese/cook/parent.md', orientation: 'stuck' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+
+  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:parent:c')), false)
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'integrate'), false)
+  assert.equal(result.curds[0].status, 'failed')
+  assert.match(result.curds[0].excluded_reason, /cook did not reach status ok with a worktree_path \(last status: blocked\)/)
 })
 
 test('age:barrier reporting medium+ with no per-curd routing marks the curd dirty', async () => {
@@ -949,4 +997,123 @@ test('age:barrier reporting medium+ with no per-curd routing marks the curd dirt
   assert.match(result.curds[0].excluded_reason, /age reported medium\+ findings without per-curd routing/)
   assert.match(trace.logs.join('\n'), /no per-curd routing/)
   assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
+})
+
+test('a bare non-JSON string spec arg runs resolve in spec mode with the arg quoted in the prompt', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'resolve') return resolveMissing('Usage: /cheese-factory { spec: <slug-or-path> } — spec not found at /specs/parent.md')
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  await workflow.run({ ...globals, args: '/specs/parent.md' })
+
+  assert.equal(trace.agents.length, 1)
+  assert.match(trace.agents[0].prompt, /A spec was given: "\/specs\/parent\.md"/)
+})
+
+test('a JSON-quoted string spec arg behaves like a bare string', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
+
+  const result = await workflow.run({ ...globals, args: JSON.stringify('parent') })
+
+  assert.equal(result.curds[0].status, 'clean')
+})
+
+test('absolute and ~/ spec paths pass validation; a spec arg with .. is rejected', async () => {
+  const workflow = await loadWorkflow(path)
+
+  for (const spec of ['/abs/path.md', '~/x/y.md']) {
+    const { globals } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
+    const result = await workflow.run({ ...globals, args: { spec } })
+    assert.equal(result.curds[0].status, 'clean')
+  }
+
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => { throw new Error(`unexpected agent ${opts.label}`) },
+  })
+  const result = await workflow.run({ ...globals, args: { spec: 'a/../b' } })
+
+  assert.match(result.error, /Invalid spec arg/)
+  assert.equal(trace.agents.length, 0)
+})
+
+test('two curds coupled purely by depends_on merge into one and fall back to single-pass', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
+      if (opts.label === 'decompose:plan') {
+        return decompose([
+          { slug: 'a', brief: 'do a', files: ['a.js'] },
+          { slug: 'b', brief: 'do b', files: ['b.js'], depends_on: ['a'] },
+        ])
+      }
+      if (opts.label === 'cook:parent') return cook('parent')
+      if (opts.label === 'taste:parent') return taste('pass')
+      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
+      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
+      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
+      if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'plated', pr_url: 'https://example.test/pr/parent' }])
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'decompose:write-minispecs'), false)
+  assert.equal(result.curds.length, 1)
+  assert.equal(result.curds[0].slug, 'parent')
+  assert.equal(result.curds[0].status, 'clean')
+  assert.match(trace.logs.join('\n'), /single-pass/)
+})
+
+test('a depends_on edge merges two of three curds, leaving the third independent and fanning out', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 3 })
+      if (opts.label === 'decompose:plan') {
+        return decompose([
+          { slug: 'a', brief: 'do a', files: ['a.js'] },
+          { slug: 'b', brief: 'do b', files: ['b.js'], depends_on: ['a'] },
+          { slug: 'c', brief: 'do c', files: ['c.js'] },
+        ])
+      }
+      if (opts.label === 'decompose:write-minispecs') {
+        return miniSpecs([
+          { slug: 'a', spec_path: '/specs/parent--a.md' },
+          { slug: 'c', spec_path: '/specs/parent--c.md' },
+        ])
+      }
+      if (opts.label === 'cook:a') return cook('a')
+      if (opts.label === 'taste:a') return taste('pass')
+      if (opts.label === 'press:a') return phaseOk('a', 'press')
+      if (opts.label === 'cook:c') return cook('c')
+      if (opts.label === 'taste:c') return taste('pass')
+      if (opts.label === 'press:c') return phaseOk('c', 'press')
+      if (opts.label === 'integrate') return integrateResult({ merged: ['a', 'c'] })
+      if (opts.label === 'age:barrier') {
+        return ageBarrierResult({
+          hasMediumPlus: false,
+          perCurd: [
+            { slug: 'a', has_medium_plus_findings: false, findings: [] },
+            { slug: 'c', has_medium_plus_findings: false, findings: [] },
+          ],
+        })
+      }
+      if (opts.label === 'plate') return plate([{ slug: 'a', status: 'plated', pr_url: 'https://example.test/pr/a' }, { slug: 'c', status: 'plated', pr_url: 'https://example.test/pr/c' }])
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:b'), false)
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:a'), true)
+  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:c'), true)
+  assert.match(trace.logs.join('\n'), /Merged coupled curd group\(s\): a\+b/)
 })
