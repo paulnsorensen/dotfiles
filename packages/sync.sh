@@ -549,8 +549,8 @@ sync_harness_selfupdate() {
 }
 ########## Main
 
-if ! command -v yq &>/dev/null; then
-    if [[ "$PLATFORM" == "Darwin" ]]; then
+if [[ "$PLATFORM" == "Darwin" ]]; then
+    if ! command -v yq &>/dev/null; then
         if command -v brew &>/dev/null; then
             log_info "Bootstrapping yq..."
             brew install yq
@@ -558,9 +558,9 @@ if ! command -v yq &>/dev/null; then
             log_warning "yq not found and brew not available"
             exit 1
         fi
-    elif [[ "$PLATFORM" == "Linux" ]]; then
-        bootstrap_yq_linux || exit 1
     fi
+elif [[ "$PLATFORM" == "Linux" ]]; then
+    command -v yq &>/dev/null && yq_is_mikefarah || bootstrap_yq_linux || exit 1
 fi
 
 # Bootstrap uv on Linux. uv is the linchpin for the agent-profile / base-

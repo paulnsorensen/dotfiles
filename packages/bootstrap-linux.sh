@@ -155,7 +155,7 @@ main() {
     fi
     # yq up front — the registry queries below all need Mike Farah's Go yq,
     # which isn't in Ubuntu's apt. Reuses sync.sh's bootstrap_yq_linux.
-    command -v yq &>/dev/null || bootstrap_yq_linux || return 1
+    command -v yq &>/dev/null && yq_is_mikefarah || bootstrap_yq_linux || return 1
     # bootstrap_yq_linux drops yq in ~/.local/bin, which isn't on a fresh box's
     # PATH; extend it before any registry query (mirrors bin/linux-install).
     export PATH="$HOME/.local/bin:$PATH"

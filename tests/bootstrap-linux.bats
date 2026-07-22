@@ -4,8 +4,8 @@
 # Sources the script (main is guarded behind BASH_SOURCE==$0) and exercises the
 # registry-derivation + toolchain-detection functions directly. Network/sudo
 # paths (the actual brew/rustup installs) are not exercised here. The reused
-# helpers (bootstrap_brew_deps_linux / linuxbrew_shellenv / bootstrap_yq_linux)
-# live in packages/lib-linux-bootstrap.sh and are covered by packages.bats.
+# helpers (bootstrap_brew_deps_linux / linuxbrew_shellenv / bootstrap_yq_linux /
+# yq_is_mikefarah) live in packages/lib-linux-bootstrap.sh and are covered below.
 
 load test_helper
 
@@ -108,7 +108,13 @@ YAML
 # the sync handoff. yq is mocked to emit one formula so `brew install` runs.
 stub_main_env() {
     export PLATFORM="Linux"
-    printf '#!/bin/bash\necho jq\n' > "$MOCK_BIN/yq"
+    cat > "$MOCK_BIN/yq" << 'EOF'
+#!/bin/bash
+case "$1" in
+    --version) echo "yq (https://github.com/mikefarah/yq/) version v4.44.1" ;;
+    *) echo jq ;;
+esac
+EOF
     printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/cargo"
     chmod +x "$MOCK_BIN/yq" "$MOCK_BIN/cargo"
     # Capture the sync.sh handoff: main runs `bash "$SCRIPT_DIR/sync.sh"`, so a
@@ -150,4 +156,43 @@ EOF
     assert_failure
     assert_output_contains "finished with failures"
     assert_output_contains "brew-install"
+}
+
+@test "yq_is_mikefarah detects Mike Farah's Go yq" {
+    printf '#!/bin/bash\necho "yq (https://github.com/mikefarah/yq/) version v4.44.1"\n' > "$MOCK_BIN/yq"
+    chmod +x "$MOCK_BIN/yq"
+    PATH="$MOCK_BIN:$PATH" run yq_is_mikefarah
+    assert_success
+}
+
+@test "yq_is_mikefarah rejects Ubuntu's kislyuk yq" {
+    printf '#!/bin/bash\necho "yq 3.2.3"\n' > "$MOCK_BIN/yq"
+    chmod +x "$MOCK_BIN/yq"
+    PATH="$MOCK_BIN:$PATH" run yq_is_mikefarah
+    assert_failure
+}
+
+@test "yq_is_mikefarah fails when yq --version errors" {
+    printf '#!/bin/bash\nexit 1\n' > "$MOCK_BIN/yq"
+    chmod +x "$MOCK_BIN/yq"
+    PATH="$MOCK_BIN:$PATH" run yq_is_mikefarah
+    assert_failure
+}
+
+@test "bootstrap_yq_linux falls back to go install when curl fails" {
+    printf '#!/bin/bash\necho x86_64\n' > "$MOCK_BIN/uname"
+    chmod +x "$MOCK_BIN/uname"
+    printf '#!/bin/bash\nexit 1\n' > "$MOCK_BIN/curl"
+    chmod +x "$MOCK_BIN/curl"
+    cat > "$MOCK_BIN/go" << EOF
+#!/bin/bash
+echo "GOBIN=\$GOBIN \$*" > "$TEST_HOME/go-argv.log"
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/go"
+    PATH="$MOCK_BIN:$PATH" run bootstrap_yq_linux
+    assert_success
+    run cat "$TEST_HOME/go-argv.log"
+    assert_output_contains "GOBIN=$HOME/.local/bin"
+    assert_output_contains "install github.com/mikefarah/yq/v4@latest"
 }
