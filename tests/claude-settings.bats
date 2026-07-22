@@ -495,3 +495,82 @@ run_native() {
     [ "$status" -eq 0 ]
     [ "$(jq -r '.env.SSL_CERT_FILE' "$OUT")" = "/etc/ssl/cert.pem" ]
 }
+
+# ── ignore-list (claude-settings-ignore.txt) ────────────────────────────────
+# Ignore-listed dot-paths are exempt from the unknown-key gate (prefix
+# semantics) and have their live value overlaid onto the merged output when
+# the repo doesn't already own that leaf (issue #355).
+
+# Build a custom CHEZMOI_SOURCE_DIR at $TEST_HOME/ignroot/chezmoi with its own
+# lib/claude-settings-ignore.txt holding $1. Sets IGN_SRC.
+setup_ignore_registry() {
+    local root="$TEST_HOME/ignroot"
+    IGN_SRC="$root/chezmoi"
+    mkdir -p "$IGN_SRC/lib" "$IGN_SRC/.chezmoidata"
+    cp "$AUTH" "$IGN_SRC/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/.chezmoidata/claude.yaml" "$IGN_SRC/.chezmoidata/claude.yaml"
+    printf '%s\n' "$1" > "$IGN_SRC/lib/claude-settings-ignore.txt"
+}
+
+run_modify_ignore() {
+    run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$IGN_SRC' sh '$SCRIPT' <<'STDIN' >'$OUT'
+$1
+STDIN"
+}
+
+@test "modify_settings: ignore-listed leaf + prefix are exempt from the gate; unowned live values survive" {
+    setup_ignore_registry 'tui
+env.SSL_CERT_FILE'
+    run_modify_ignore '{"tui":{"theme":"solarized"},"env":{"ENABLE_TOOL_SEARCH":"true","SSL_CERT_FILE":"/custom/cert.pem"}}'
+    # Exit 0 proves both entries passed the gate. tui is not repo-owned, so its
+    # live value survives. env.SSL_CERT_FILE IS repo/platform-owned — the
+    # authoritative-wins conflict rule (next test) and the Darwin/Linux pin
+    # tests above own its value assertions.
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.tui.theme' "$OUT")" = "solarized" ]
+}
+
+@test "modify_settings: a live key outside the ignore list still halts the gate" {
+    setup_ignore_registry 'tui'
+    run_modify_ignore '{"env":{"ENABLE_TOOL_SEARCH":"true","FOO":"bar"}}'
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"env.FOO"* ]]
+}
+
+@test "modify_settings: authoritative value wins over ignore when both own the path" {
+    # model is authoritative-owned and platform-neutral (env.SSL_CERT_FILE is
+    # deleted from desired on non-Darwin, so it can't pin this rule portably).
+    setup_ignore_registry 'model'
+    run_modify_ignore '{"model":"drifted-model"}'
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.model' "$OUT")" = "$(jq -r '.model' "$AUTH")" ]
+}
+
+@test "modify_settings: empty ignore file behaves exactly like today (unknown key halts)" {
+    setup_ignore_registry ''
+    run_modify_ignore '{"env":{"ENABLE_TOOL_SEARCH":"true","FOO":"bar"}}'
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"env.FOO"* ]]
+}
+
+@test "modify_settings: missing ignore file behaves exactly like today (unknown key halts)" {
+    local root="$TEST_HOME/noignroot"
+    local src="$root/chezmoi"
+    mkdir -p "$src/lib" "$src/.chezmoidata"
+    cp "$AUTH" "$src/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/.chezmoidata/claude.yaml" "$src/.chezmoidata/claude.yaml"
+    # No lib/claude-settings-ignore.txt written.
+    run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$src' sh '$SCRIPT' <<'STDIN' >'$OUT'
+{\"tui\":{\"theme\":\"solarized\"}}
+STDIN"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"tui.theme"* ]]
+}
+
+@test "modify_settings: ignore-listed prefix passes arbitrary live keys under it, authoritative keeps its own" {
+    setup_ignore_registry 'env'
+    run_modify_ignore '{"env":{"ENABLE_TOOL_SEARCH":"true","WHATEVER":"live-value"}}'
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.env.WHATEVER' "$OUT")" = "live-value" ]
+    [ "$(jq -r '.env.ENABLE_TOOL_SEARCH' "$OUT")" = "$(jq -r '.env.ENABLE_TOOL_SEARCH' "$AUTH")" ]
+}

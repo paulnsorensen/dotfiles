@@ -4,7 +4,7 @@
 #   stdin  = current live file contents (empty on a fresh machine)
 #   stdout = the new file contents chezmoi writes back
 #
-# The desired file is composed from four committed sources:
+# The desired file is composed from five committed sources:
 #   * $CHEZMOI_SOURCE_DIR/lib/claude-settings-authoritative.json — static
 #     repo-owned keys (model, effortLevel, env, sandbox, theme, ...).
 #   * $CHEZMOI_SOURCE_DIR/.chezmoidata/claude.yaml — the claude registry;
@@ -26,6 +26,10 @@
 #     root at ~/.cache/ap/plugins/<key>; path: entries at the expanded path. A
 #     missing plugin cache warns and skips (the sync clones it later; the next
 #     apply converges). This native path is never gated.
+#   * $CHEZMOI_SOURCE_DIR/lib/claude-settings-ignore.txt — dot-paths (one per
+#     line, "#" comments and blank lines allowed) exempt from the unknown-key
+#     halt gate below (prefix semantics) whose live values are overlaid back
+#     onto the merged document when the repo doesn't already own that leaf.
 #
 # EVERY managed key is overwritten from source — live drift (in-app /model
 # changes, session-granted permissions, in-app plugin toggles) is discarded.
@@ -38,6 +42,10 @@
 # the registry) instead of being silently clobbered. `enabledPlugins` and
 # `extraKnownMarketplaces` subtrees are exempt (their keys are dynamic plugin
 # names, not schema) — live entries there are wiped, not halted on.
+# claude-settings-ignore.txt paths are exempt the same way, but unlike the
+# dynamic-plugin subtrees their live value is preserved (overlaid onto
+# $desired) rather than wiped, unless the repo's own desired document already
+# owns that leaf.
 #
 # ${HOME} in registry string values is expanded here — needed for keys Claude
 # reads as literal JSON (e.g. marketplace directory paths).
@@ -46,6 +54,7 @@ set -eu
 
 AUTH="${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/lib/claude-settings-authoritative.json"
 REG="$CHEZMOI_SOURCE_DIR/.chezmoidata/claude.yaml"
+IGNORE="$CHEZMOI_SOURCE_DIR/lib/claude-settings-ignore.txt"
 
 live=$(cat)
 
@@ -66,6 +75,22 @@ for src in "$AUTH" "$REG"; do
         exit 1
     fi
 done
+
+# ── ignore-list parsing ─────────────────────────────────────────────────────
+# claude-settings-ignore.txt lists dot-paths (blank lines and "#" comments
+# allowed) exempt from the unknown-key gate below (prefix semantics — the
+# path and its whole subtree) whose live values get overlaid back onto
+# $desired when $desired doesn't already own that leaf. Missing or empty
+# file: no ignore paths, behavior unchanged.
+ignore_paths='[]'
+if [ -f "$IGNORE" ]; then
+    ignore_paths=$(jq -R -s '
+        split("\n")
+        | map(gsub("#.*"; "") | gsub("^[ \t]+|[ \t]+$"; ""))
+        | map(select(length > 0))
+        | map(split("."))
+    ' "$IGNORE")
+fi
 
 # ── plugin-registry overlay ────────────────────────────────────────────────
 # Compose the gate-filtered plugin overlay for enabledPlugins /
@@ -246,15 +271,15 @@ fi
 # every live node-path (not just scalar leaves) so a new key whose value is an
 # empty object/array or null is caught too.
 unknown=$(
-    printf '%s' "$live" | jq -r --argjson desired "$desired" '
+    printf '%s' "$live" | jq -r --argjson desired "$desired" --argjson ignore "$ignore_paths" '
         def sig: [ .[] | strings ];
-        [ ["enabledPlugins"], ["extraKnownMarketplaces"] ] as $dyn
+        ([ ["enabledPlugins"], ["extraKnownMarketplaces"] ] + $ignore) as $exempt
         | (([ $desired | paths | sig ] + [["env","SSL_CERT_FILE"]]) | unique) as $known
         | [ paths | sig ]
         | map(select(
               . as $p
               | (($known | any(. == $p)) | not)
-              and ([ $dyn[] | . as $pre | ($p[0:($pre | length)] == $pre) ] | any | not)
+              and ([ $exempt[] | . as $pre | ($p[0:($pre | length)] == $pre) ] | any | not)
           ))
         | unique
         | map(join("."))
@@ -273,6 +298,26 @@ if [ -n "$unknown" ]; then
         echo "  $REG"
     } >&2
     exit 1
+fi
+
+# ── ignore-list overlay ─────────────────────────────────────────────────────
+# Ignore-listed paths passed the gate above; copy their live value onto
+# $desired wherever $desired doesn't already own that leaf (repo intent wins
+# ties, matching the halt-gate comment above).
+desired=$(
+    printf '%s' "$live" | jq --argjson desired "$desired" --argjson ignore "$ignore_paths" '
+        . as $live
+        | [ paths(scalars) | select(. as $p
+              | [ $ignore[] | . as $pre | ($p[0:($pre | length)] == $pre) ] | any) ] as $overlay
+        | reduce $overlay[] as $p
+            ($desired; if (getpath($p) == null) then setpath($p; $live | getpath($p)) else . end)
+    '
+)
+
+# The Darwin-only SSL_CERT_FILE pin stays gone on non-Darwin even if the
+# overlay above just restored it from a live copy (platform intent wins).
+if [ "$(uname -s)" != "Darwin" ]; then
+    desired=$(printf '%s' "$desired" | jq 'del(.env.SSL_CERT_FILE)')
 fi
 
 # ── write ────────────────────────────────────────────────────────────────────
