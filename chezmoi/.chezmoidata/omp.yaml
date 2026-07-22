@@ -97,9 +97,13 @@ omp:
     task:
       eager: default
     # Consent answer omp recorded live (autoqa prompt) — promoted to survive
-    # the wholesale re-author. omp stores this as a flat `dev.autoqaConsent`
-    # key, not a nested `dev.autoqa.consent` object — match the live shape or
-    # the unknown-key gate in modify_config.yml trips on both paths.
+    # the wholesale re-author. Flat `dev.autoqaConsent` is omp's canonical
+    # file shape since v17.0.0 (oh-my-pi 46ad908 renamed away from nested
+    # `dev.autoqa.consent`; nested survives only as legacy read-migration).
+    # If the unknown-key gate trips on nested `dev.autoqa.*` paths, that
+    # machine's config.yml is a stale pre-rename serialization — normalize it
+    # with `omp config set dev.autoqaConsent granted` (forces a re-save);
+    # do NOT fold nested into this registry, it breaks every other machine.
     dev:
       autoqaConsent: granted
     # omp-introduced toggle (hides the model's thinking block in the TUI),
