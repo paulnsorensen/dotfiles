@@ -58,6 +58,47 @@ EOF
     assert_output_contains "unknown signal type"
 }
 
+@test "doc-drift-scan: exits 1 when yq is not Mike Farah's Go yq" {
+    cat > "$MOCK_BIN/yq" <<'EOF'
+#!/usr/bin/env bash
+[[ "$1" == "--version" ]] && { echo "yq (https://github.com/kislyuk/yq/) 3.2.3"; exit 0; }
+exit 1
+EOF
+    chmod +x "$MOCK_BIN/yq"
+    cat > "$FIXTURE" <<'EOF'
+sources:
+  - id: foo
+    signal: { type: npm, ref: foo }
+    reconciled: "1.0.0"
+EOF
+    run "$REAL_BIN/doc-drift-scan" "$FIXTURE"
+    assert_failure
+    assert_output_contains "mikefarah"
+}
+
+@test "doc-drift-scan: warns on stderr when gh is absent for a gh_release source, preserving unresolved status" {
+    NOGH_BIN="$TEST_HOME/nogh-bin"
+    mkdir -p "$NOGH_BIN"
+    # gh must be genuinely absent: symlink only what doc-drift-scan needs, and
+    # point PATH at just this dir. Including /bin or /usr/bin would leak the
+    # runner's gh (Ubuntu ships it in /usr/bin; /bin->/usr/bin under usrmerge).
+    for t in bash yq grep; do ln -s "$(command -v "$t")" "$NOGH_BIN/$t"; done
+    cat > "$FIXTURE" <<'EOF'
+sources:
+  - id: chezmoi
+    signal: { type: gh_release, ref: twpayne/chezmoi }
+    reconciled: "v2.70.5"
+EOF
+    saved_path="$PATH"
+    PATH="$NOGH_BIN"
+    run "$REAL_BIN/doc-drift-scan" "$FIXTURE"
+    PATH="$saved_path"
+    assert_success
+    assert_output_contains "gh binary not found"
+    json="$(echo "$output" | sed -n '/^\[/,$p')"
+    [[ "$(echo "$json" | jq -r '.[0].status')" == "unresolved" ]]
+}
+
 # --- Output shape ---
 
 @test "doc-drift-scan: emits a valid JSON array" {

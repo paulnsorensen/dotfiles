@@ -30,6 +30,7 @@ packages:
   - bat
   - ast-grep
   - git-delta
+  - git-lfs                                  # gitconfig.tmpl declares filter "lfs"; this installs the binary
   - tmux
   - tinty
   - prek

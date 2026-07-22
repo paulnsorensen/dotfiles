@@ -77,6 +77,13 @@ linuxbrew_shellenv() {
     return 0
 }
 
+# True iff the yq on PATH is Mike Farah's Go yq (prints "yq (https://github.com/mikefarah/yq/) version ..."),
+# not Ubuntu's apt kislyuk/yq (a jq wrapper printing a different banner).
+yq_is_mikefarah() {
+    command -v yq &>/dev/null || return 1
+    yq --version 2>/dev/null | grep -q mikefarah
+}
+
 # Bootstrap Mike Farah's Go yq into ~/.local/bin on Linux.
 #
 # Linux note: Ubuntu's apt yq is kislyuk/yq (a jq wrapper using jq syntax),
@@ -97,11 +104,21 @@ bootstrap_yq_linux() {
     local url="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}"
     log_info "Downloading Mike Farah yq → $dest"
     if ! curl -fsSL "$url" -o "$dest.tmp"; then
-        log_error "Failed to download yq from $url"
+        log_warning "Failed to download yq from $url; trying go install"
         rm -f "$dest.tmp"
+        if command -v go &>/dev/null; then
+            if GOBIN="$HOME/.local/bin" go install github.com/mikefarah/yq/v4@latest; then
+                log_info "Installed yq via go install"
+                hash -r 2>/dev/null || true
+                return 0
+            fi
+            log_error "go install github.com/mikefarah/yq/v4@latest failed"
+        fi
+        log_error "Failed to install yq (curl download and go install both failed)"
         return 1
     fi
     chmod +x "$dest.tmp"
     mv "$dest.tmp" "$dest"
+    log_info "Installed yq via curl download"
     hash -r 2>/dev/null || true
 }

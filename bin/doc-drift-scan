@@ -20,6 +20,16 @@ if [[ ! -f "$SOURCES" ]]; then
     exit 1
 fi
 
+if ! command -v yq &>/dev/null || ! yq --version 2>/dev/null | grep -q mikefarah; then
+    echo "doc-drift-scan: yq is missing or not Mike Farah's Go yq (mikefarah/yq)." >&2
+    echo "  Bootstrap it via 'dots sync' / packages/bootstrap-linux.sh, or: GOBIN=\"\$HOME/.local/bin\" go install github.com/mikefarah/yq/v4@latest" >&2
+    exit 1
+fi
+
+if yq '.sources[].signal.type' "$SOURCES" 2>/dev/null | grep -q gh_release && ! command -v gh &>/dev/null; then
+    echo "doc-drift-scan: gh binary not found — gh_release sources will report unresolved" >&2
+fi
+
 resolve_version() {
     local type="$1" ref="$2"
     case "$type" in

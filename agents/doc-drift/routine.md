@@ -12,7 +12,17 @@ context window.
 `gh` auth is the environment's native GitHub OAuth. The environment provides
 two MCP connectors the routine uses to research each drift: **Tavily** (web
 search / page extract, for release notes and changelogs) and **Context7**
-(library / API / config docs). No other setup is required.
+(library / API / config docs).
+
+`bin/doc-drift-scan` requires Mike Farah's Go yq; its preflight detects the
+wrong flavor (Ubuntu's kislyuk python-yq) and fails loudly rather than
+misparsing the registry. Fix via `dots sync` (bootstraps the toolchain) or,
+where GitHub release downloads are proxy-blocked, directly:
+`GOBIN=~/.local/bin go install github.com/mikefarah/yq/v4@latest`.
+
+In environments without a `gh` binary, `gh_release` sources in the scan
+output report as unresolved. Resolve them via the GitHub MCP connector
+(repo-scoped) or Tavily against `github.com/<owner>/<repo>/releases/latest`.
 
 ## Orchestrator steps
 

@@ -285,8 +285,8 @@ TOML
 }
 
 # --- omp extension modules are chezmoi-managed -----------------------------
-# rtk.ts, cheese-flair.ts, sliced-bread-audit.ts, and milknado-todo-guard.ts
-# extensions deploy to ~/.omp/agent/extensions/ (auto-discovered by omp's extension
+# rtk.ts, cheese-flair.ts, sliced-bread-audit.ts, milknado-todo-guard.ts, and
+# no-fork-all.ts extensions deploy to ~/.omp/agent/extensions/ (auto-discovered by omp's extension
 # loader). Nothing in .chezmoiignore may exclude them, or the extensions silently
 # never deploy.
 @test "omp-ext: managed extension modules are chezmoi-managed" {
@@ -304,6 +304,7 @@ TOML
     [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/sliced-bread-audit.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/milknado-todo-guard.ts"* ]]
+    [[ "$output" == *".omp/agent/extensions/no-fork-all.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
 }
 
@@ -313,4 +314,5 @@ TOML
     [ "$status" -eq 0 ]
     [[ "$output" == *"registers the command and dispatches the exact default workflow contract"* ]]
     [[ "$output" == *"blocks native todo commands and identifies Milknado as the owner"* ]]
+    [[ "$output" == *"blocks task spawns with fork_turns:'all'"* ]]
 }
