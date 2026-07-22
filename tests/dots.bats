@@ -45,7 +45,7 @@ echo "stub-sync UPGRADE_MODE=${UPGRADE_MODE:-unset}"
 STUB
     cat > "$stub_dir/chezmoi/lib/install-external.sh" <<'STUB'
 #!/bin/bash
-echo "stub-skill-sync args=$*"
+echo "stub-skill-sync args=$* SKILL_EXCLUDE_AGENTS=${SKILL_EXCLUDE_AGENTS:-unset}"
 STUB
     : > "$stub_dir/skills/_registry.yaml"
     chmod +x "$stub_dir/.sync" "$stub_dir/packages/sync.sh" \
@@ -100,6 +100,31 @@ STUB
     assert_success  # package upgrade is the primary action; skill failure shouldn't abort
     assert_output_contains "stub-sync UPGRADE_MODE=true"
     assert_output_contains "Remote skills refresh failed"
+}
+
+@test "dots upgrade excludes only claude-code from the skill-CLI refresh (codex included, issue #442)" {
+    # Regression guard for #442: codex's ~/.agents/skills only got .system
+    # because a prior exclude list was too broad. SKILL_EXCLUDE_AGENTS must
+    # name claude-code only, so codex (and any other skills-CLI harness)
+    # still gets refreshed by install-external.sh.
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
+    assert_success
+    assert_output_contains "SKILL_EXCLUDE_AGENTS=claude-code"
+    assert_output_not_contains "SKILL_EXCLUDE_AGENTS=claude-code,codex"
+    assert_output_not_contains "SKILL_EXCLUDE_AGENTS=unset"
+}
+
+@test "dots sync never invokes the skills-CLI refresh (cadence boundary, issue #442)" {
+    # Plain \`dots sync\` is the offline, chezmoi-native cadence; the npx
+    # skills-CLI refresh (install-external.sh) is upgrade-only. A regression
+    # that pulls it into sync would silently add network I/O to every sync.
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_not_contains "stub-skill-sync"
 }
 
 @test "dots with no arguments shows status" {

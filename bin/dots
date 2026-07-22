@@ -436,6 +436,10 @@ case "${1:-status}" in
         # `npx skills add --force` re-clones each source at its latest default
         # branch (float-to-latest), so always run it — the install does its own
         # work; there's no cheap upstream-up-to-date probe to short-circuit on.
+        # Cadence split (intentional): plain `dots sync` never runs this —
+        # it deliberately does NOT refresh ~/.agents/skills for codex or other
+        # skills-CLI harnesses. That refresh is `dots upgrade`'s job, gated
+        # behind the network/npx cadence, not the offline chezmoi-native sync.
         if ! SKILL_EXCLUDE_AGENTS="claude-code" bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
                 "$DOTFILES_DIR/skills/_registry.yaml" --force; then
             echo -e "${YELLOW}⚠️  Remote skills refresh failed (continuing)${NC}" >&2
