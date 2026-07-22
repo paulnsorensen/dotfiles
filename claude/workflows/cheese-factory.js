@@ -4,8 +4,8 @@ export const meta = {
     'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
-    { title: 'Decompose', detail: 'opus decomposer produces curds; JS merges file-overlapping curds; mini-specs written per curd' },
-    { title: 'Cook', detail: 'sonnet coder implements one curd in an isolated worktree via /cook --auto' },
+    { title: 'Decompose', detail: 'opus decomposer produces curds with depends_on edges; JS merges file-overlapping or dependency-coupled curds; mini-specs written per curd' },
+    { title: 'Cook', detail: 'sonnet coder implements one curd in an isolated worktree via /cook --auto; a blocked/halted cook gets up to 2 fresh-coder continuations that commit the partial work first' },
     { title: 'Taste', detail: 'opus reviewer 5-lens gate over the cook diff; revise triggers a bounded corrective pass' },
     { title: 'Press', detail: 'sonnet coder hardens tests via /press --auto' },
     { title: 'Integrate', detail: 'one coder merges surviving curd branches into an integration branch, slug-sorted, --no-ff; conflicts exclude that curd downstream' },
@@ -20,7 +20,7 @@ export const meta = {
 // Tracked source: claude/workflows/cheese-factory.js in the dotfiles repo.
 // Replaces claude/workflows/curd-flock.js (deleted, no alias). Spec:
 // specs/cheese-factory-workflow.md (durable corpus). See
-// .hallouminate/wiki/adr/cheese-factory-workflow.md for ADR-001..006.
+// .hallouminate/wiki/adr/cheese-factory-workflow.md for ADR-001..009.
 //
 // Review moved from per-curd to a barrier whole-diff age before plate
 // (ADR-006): reviewing each curd's diff in isolation left cross-curd
@@ -30,7 +30,10 @@ export const meta = {
 // dimension fan-out (via the shared age-fanout child workflow) kicking in
 // when the integrated diff is large.
 //
-// Args: { spec?: string /* slug | path */, correctiveRounds? = 2 }
+// Args: { spec?: string /* slug | path */, correctiveRounds? = 2 } — a bare
+//   (non-JSON) string arg is treated as the spec itself, since the harness
+//   invoke hint passes slash arguments as bare strings. Absolute and ~/
+//   spec paths are accepted.
 //   - no spec: Resolve lists durable-corpus candidates and the workflow
 //     returns them, dispatching no further agent.
 //   - spec given but missing on disk: Resolve fails loud with a usage
@@ -42,9 +45,19 @@ export const meta = {
 // travel with the branch) — every phase agent must cd into the worktree
 // before invoking a skill. Plate opens/updates PRs but never merges.
 
-const NO_CHAIN_DIRECTIVE = 'Do not chain forward to the next phase even though your auto-mode contract documents that. Write your handoff slug and stop. The /cheese-factory orchestrator is driving the chain. Run in the foreground — do not background yourself, spawn detached processes, or defer work to a later session. If you cannot complete the phase within your context window, write a partial slug with status: halt: <reason> and stop; do not silently timeout.'
+const NO_CHAIN_DIRECTIVE = 'Do not chain forward to the next phase even though your auto-mode contract documents that. Write your handoff slug and stop. The /cheese-factory orchestrator is driving the chain. Run in the foreground — do not background yourself, spawn detached processes, or defer work to a later session. If you cannot complete the phase within your context window: first commit any work-in-progress locally on your branch (write phases), then write a partial slug with status: halt: <reason> and stop; do not silently timeout.'
 
-const input = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { log(`args was a string but not valid JSON (${e.message}) — treating as no spec`); return {} } })() : args || {}
+const input = typeof args === 'string'
+  ? (() => {
+      try {
+        const parsed = JSON.parse(args)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+        if (typeof parsed === 'string' && parsed.length) return { spec: parsed.trim() }
+      } catch { /* not JSON — fall through */ }
+      log('args was a bare string — treating it as the spec')
+      return { spec: args.trim() }
+    })()
+  : args || {}
 const SPEC_ARG = typeof input.spec === 'string' && input.spec.length ? input.spec : null
 const MAX_CORRECTIVE_ROUNDS = 3
 let CORRECTIVE_ROUNDS = Number.isInteger(input.correctiveRounds) && input.correctiveRounds >= 0 ? input.correctiveRounds : 2
@@ -53,8 +66,11 @@ if (CORRECTIVE_ROUNDS > MAX_CORRECTIVE_ROUNDS) {
   CORRECTIVE_ROUNDS = MAX_CORRECTIVE_ROUNDS
 }
 
+const COOK_CONTINUATIONS = 2
+const CONTINUABLE_COOK_RE = /^(blocked|halt)\b/i
+
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]*$/
-const SPEC_ARG_RE = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/
+const SPEC_ARG_RE = /^(?:~\/|\/)?[a-zA-Z0-9._][a-zA-Z0-9._/-]*$/ // slug, relative, absolute, or ~/ path ('..' rejected separately)
 if (SPEC_ARG !== null && (!SPEC_ARG_RE.test(SPEC_ARG) || SPEC_ARG.includes('..'))) {
   log(`Invalid spec arg: ${SPEC_ARG}`)
   return { error: `Invalid spec arg: ${SPEC_ARG}` }
@@ -95,6 +111,7 @@ const DECOMPOSE_SCHEMA = {
           slug: { type: 'string' },
           brief: { type: 'string' },
           files: { type: 'array', items: { type: 'string' } },
+          depends_on: { type: 'array', items: { type: 'string' } },
         },
       },
     },
@@ -215,18 +232,23 @@ const PLATE_SCHEMA = {
 }
 
 // ---- pure helpers ----
-function mergeOverlappingCurds(curds) {
-  const groups = curds.map((c) => ({ slugs: [c.slug], briefs: [c.brief], files: new Set(c.files || []) }))
+function mergeCoupledCurds(curds) {
+  const groups = curds.map((c) => ({ slugs: [c.slug], briefs: [c.brief], files: new Set(c.files || []), deps: new Set(c.depends_on || []) }))
+  const coupled = (a, b) =>
+    [...a.files].some((f) => b.files.has(f)) ||
+    a.slugs.some((s) => b.deps.has(s)) ||
+    b.slugs.some((s) => a.deps.has(s))
   let changed = true
   while (changed) {
     changed = false
     findPair:
     for (let i = 0; i < groups.length; i++) {
       for (let j = i + 1; j < groups.length; j++) {
-        if ([...groups[i].files].some((f) => groups[j].files.has(f))) {
+        if (coupled(groups[i], groups[j])) {
           groups[i].slugs.push(...groups[j].slugs)
           groups[i].briefs.push(...groups[j].briefs)
           for (const f of groups[j].files) groups[i].files.add(f)
+          for (const d of groups[j].deps) groups[i].deps.add(d)
           groups.splice(j, 1)
           changed = true
           break findPair
@@ -267,12 +289,17 @@ Return only the structured JSON described above.`
 }
 
 function decomposePrompt(specText) {
-  return `You are an opus decomposer for the /cheese-factory workflow. Read the spec below and split it into file-disjoint curds — independently implementable units of work.
+  return `You are an opus decomposer for the /cheese-factory workflow. Read the spec below and split it into file-disjoint, independently implementable curds.
 
 Spec:
 ${specText}
 
-Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...]}, ...]}. Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`
+Splitting rules:
+- Split ONLY where curds are truly independent: file-disjoint AND semantically independent — each curd must build and pass its tests branched from origin/main alone, without any sibling curd's unlanded work.
+- If the spec declares a multi-site contract (one deliverable spanning N named sites), keep those sites in ONE curd — never split an indivisible contract.
+- If one curd would consume symbols, exports, or behavior another curd introduces, either fold them into one curd or declare the edge in "depends_on" — dependency-coupled curds are merged back into one curd rather than run in parallel.
+
+Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...],"depends_on":["<sibling-slug>", ...]}, ...]} ("depends_on" optional, omit or leave empty when independent). Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`
 }
 
 function miniSpecPrompt(parentSlug, curds) {
@@ -299,6 +326,24 @@ function cookPrompt(curd) {
   return `You are the Cook phase of the /cheese-factory pipeline for curd "${curd.slug}".
 ${isoContract(branch)}
 Run \`/cook ${curd.spec_path} --auto\` via the Skill tool.
+
+${NO_CHAIN_DIRECTIVE}
+
+Report the resolved worktree path (\`git rev-parse --show-toplevel\`) and your /cook handoff slug fields. Return {"status":"...","artifact":"...","worktree_path":"...","orientation":"..."}.`
+}
+
+function cookContinuationPrompt(curd, prevCook, round) {
+  const branch = branchFor(curd.slug)
+  return `You are a FRESH Cook continuation (round ${round}/${COOK_CONTINUATIONS}) of the /cheese-factory pipeline for curd "${curd.slug}". A previous cook exhausted its context and stopped partway (its handoff: status "${prevCook.status}"${prevCook.orientation ? `, orientation "${prevCook.orientation}"` : ''}).
+
+1. cd ${prevCook.worktree_path} — if that worktree was reaped, recreate it: \`git worktree add ${prevCook.worktree_path} ${branch}\`.
+2. FIRST ACTION inside the worktree: preserve any partial work — \`git add -A && git commit -m "wip(${curd.slug}): partial cook (continuation seed)"\` (skip if the tree is clean).
+3. Orient from what exists: \`git diff origin/main...${branch}\` plus the previous partial handoff${prevCook.artifact ? ` at ${prevCook.artifact}` : ''} — then resume \`/cook ${curd.spec_path} --auto\` via the Skill tool, completing ONLY the remaining acceptance criteria. Do not redo work already committed.
+
+## Isolation contract (continuation)
+- Do NOT run \`git checkout -B ${branch} origin/main\` — ${branch} carries the partial work.
+- Work ONLY this curd's scope. Do NOT touch sibling curds' files. Do NOT push, open a PR, or merge.
+- Commit locally on ${branch} only, Conventional Commits, no flair/emojis.
 
 ${NO_CHAIN_DIRECTIVE}
 
@@ -437,7 +482,9 @@ let singlePass = false
 if (candidateCurds >= 2) {
   phase('Decompose')
   const decomposed = await agent(decomposePrompt(resolved.spec_text), { label: 'decompose:plan', phase: 'Decompose', model: 'opus', schema: DECOMPOSE_SCHEMA })
-  const merged = mergeOverlappingCurds(decomposed.curds)
+  const merged = mergeCoupledCurds(decomposed.curds)
+  const mergedGroups = merged.filter((c) => c.merged_from)
+  if (mergedGroups.length) log(`Merged coupled curd group(s): ${mergedGroups.map((c) => c.merged_from.join('+')).join(', ')}`)
 
   if (merged.length < 2) {
     log(`Decomposition merged down to ${merged.length} curd(s) — running single-pass against the parent spec.`)
@@ -476,14 +523,26 @@ log(`Running ${curds.length} curd chain(s)${singlePass ? ' (single-pass)' : ''}:
 const chainResults = await pipeline(
   curds,
 
-  (curd) => agent(cookPrompt(curd), { label: `cook:${curd.slug}`, phase: 'Cook', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: COOK_SCHEMA })
-    .then((cook) => ({ curd, branch: branchFor(curd.slug), cook, failure: null }))
-    .catch((e) => ({ curd, branch: branchFor(curd.slug), cook: null, failure: { stage: 'cook', message: e.message } })),
+  async (curd) => {
+    const branch = branchFor(curd.slug)
+    try {
+      let cook = await agent(cookPrompt(curd), { label: `cook:${curd.slug}`, phase: 'Cook', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: COOK_SCHEMA })
+      let round = 0
+      while (cook && typeof cook.status === 'string' && CONTINUABLE_COOK_RE.test(cook.status) && cook.worktree_path && round < COOK_CONTINUATIONS) {
+        round++
+        log(`${curd.slug}: cook returned "${cook.status}" — dispatching fresh-coder continuation ${round}/${COOK_CONTINUATIONS}.`)
+        cook = await agent(cookContinuationPrompt(curd, cook, round), { label: `cook:${curd.slug}:c${round}`, phase: 'Cook', agentType: 'coder', model: 'sonnet', schema: COOK_SCHEMA })
+      }
+      return { curd, branch, cook, failure: null }
+    } catch (e) {
+      return { curd, branch, cook: null, failure: { stage: 'cook', message: e.message } }
+    }
+  },
 
   async ({ curd, branch, cook, failure }) => {
     if (failure) return { curd, branch, cook, taste: null, tasteRounds: 0, failure }
     if (!cook || cook.status !== 'ok' || !cook.worktree_path) {
-      return { curd, branch, cook, taste: null, tasteRounds: 0, failure: { stage: 'cook', message: 'cook did not report status ok with a worktree_path' } }
+      return { curd, branch, cook, taste: null, tasteRounds: 0, failure: { stage: 'cook', message: `cook did not reach status ok with a worktree_path (last status: ${cook ? cook.status : 'none'}) — ${branch} may carry committed WIP from continuation rounds` } }
     }
     let taste
     try {
