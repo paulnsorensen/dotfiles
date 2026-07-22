@@ -95,7 +95,7 @@ Default is the inline digest — `artifact:` is omitted when the digest is compl
 
 Default to one coder. Coding is a poor multi-agent fit — it needs shared context, burns far more tokens, and adds coordination overhead — so a coder fan-out only pays off for genuinely independent work. Dispatch multiple `coder` subagents only when the subtasks are file-disjoint and independent (no shared mutable state, no sequential dependency), the same disjointness test `/cheese-factory` applies to curds. Otherwise run a single coder: re-deriving shared context across split coders costs more than the parallelism saves.
 
-**Dispatch sizing.** Size each coder dispatch to finish inside one context window (~120k). If the coder would need broad investigation before editing (large files, test-suite audits), pre-stage it with an explorer dispatch and hand the coder a findings digest; split multi-finding packages so one dispatch carries only what it can complete. A coder that burns its budget on investigation hands back a note instead of a diff.
+**Dispatch sizing.** Size each coder dispatch to finish inside one context window (~120k). Pre-stage with an explorer dispatch — hand the coder exact line anchors and seam signatures inlined into its own dispatch prompt, not just a file name — or split the dispatch outright when the target file exceeds ~800 lines, more than ~5 distinct edit sites are in scope, or a full test-suite audit is in scope; split multi-finding packages so one dispatch carries only what it can complete. A coder pre-armed with anchors does near-zero exploration and spends its budget writing; one that burns its budget on investigation hands back a note instead of a diff.
 
 ### Fresh-context taste-test (after `coder` returns)
 
