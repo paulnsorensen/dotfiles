@@ -5,4 +5,5 @@
 # "#" comments are ignored.
 
 tui
-env.SSL_CERT_FILE
+# env.SSL_CERT_FILE is intentionally NOT listed here — its gate exemption
+# lives in the hard-coded $known entry in dot_claude/modify_settings.json.

@@ -79,14 +79,20 @@ EOF
 @test "doc-drift-scan: warns on stderr when gh is absent for a gh_release source, preserving unresolved status" {
     NOGH_BIN="$TEST_HOME/nogh-bin"
     mkdir -p "$NOGH_BIN"
-    ln -s "$(command -v yq)" "$NOGH_BIN/yq"
+    # gh must be genuinely absent: symlink only what doc-drift-scan needs, and
+    # point PATH at just this dir. Including /bin or /usr/bin would leak the
+    # runner's gh (Ubuntu ships it in /usr/bin; /bin->/usr/bin under usrmerge).
+    for t in bash yq grep; do ln -s "$(command -v "$t")" "$NOGH_BIN/$t"; done
     cat > "$FIXTURE" <<'EOF'
 sources:
   - id: chezmoi
     signal: { type: gh_release, ref: twpayne/chezmoi }
     reconciled: "v2.70.5"
 EOF
-    PATH="$NOGH_BIN:/bin:/usr/bin" run "$REAL_BIN/doc-drift-scan" "$FIXTURE"
+    saved_path="$PATH"
+    PATH="$NOGH_BIN"
+    run "$REAL_BIN/doc-drift-scan" "$FIXTURE"
+    PATH="$saved_path"
     assert_success
     assert_output_contains "gh binary not found"
     json="$(echo "$output" | sed -n '/^\[/,$p')"
