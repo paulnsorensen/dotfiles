@@ -71,7 +71,7 @@ sources:
     # --prerelease=allow), so a schema change can land a release ahead — fine
     # for triage, we reconcile on stable.
     governs: [chezmoi/dot_serena/modify_serena_config.yml, packages/packages.yaml]
-    reconciled: "v1.6.0"
+    reconciled: "v1.6.1"
 
   - id: oh-my-pi
     signal: { type: gh_release, ref: can1357/oh-my-pi }
