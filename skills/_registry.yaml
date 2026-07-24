@@ -36,12 +36,3 @@ sources:
   paulnsorensen/skillz-that-grillz:
     description: Other useful skills
     harnesses: [claude]
-  paulnsorensen/hallouminate:
-    description: hallouminate plugin-bundled wiki skills (vendored for omp; claude/codex get them via the native plugin)
-    skills_path: plugins/hallouminate/skills
-    harnesses: [omp]
-    skills: [wiki-ingest, wiki-init, wiki-query, wiki-reindex, wiki-roadmap]
-  paulnsorensen/milknado:
-    description: milknado plugin-bundled skills (vendored for omp; claude gets them via the native plugin)
-    skills_path: plugins/milknado/skills
-    harnesses: [omp]

@@ -61,6 +61,7 @@ run_sync() {
     install_prek_hooks
     install_tilth_claude_code
     reconcile_claude_mcps
+    sync_omp_plugins "$dir"
 
     unset DOTFILES_DEV
 
