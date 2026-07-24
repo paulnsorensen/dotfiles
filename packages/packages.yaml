@@ -28,6 +28,7 @@ packages:
   - fd
   - eza
   - bat
+  - glow                                         # Terminal markdown renderer
   - ast-grep
   - git-delta
   - git-lfs                                  # gitconfig.tmpl declares filter "lfs"; this installs the binary
