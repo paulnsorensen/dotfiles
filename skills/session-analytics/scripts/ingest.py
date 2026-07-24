@@ -341,6 +341,7 @@ def run_sql(sql, db_path=None):
         capture_output=True,
         text=True,
         timeout=600,
+        check=False,
     )
     if result.returncode != 0:
         print(f"ERROR: {result.stderr[:500]}", file=sys.stderr)
