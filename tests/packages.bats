@@ -24,6 +24,9 @@ setup() {
     export GH_LOG="$TEST_HOME/gh.log"
     export NPM_LOG="$TEST_HOME/npm.log"
     export SUDO_LOG="$TEST_HOME/sudo.log"
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+    export CODEX_LOG="$TEST_HOME/codex.log"
+    export OMP_LOG="$TEST_HOME/omp.log"
 
     write_mock_brew
     write_mock_cargo
@@ -32,6 +35,12 @@ setup() {
     # Mock sudo records its args and no-ops — guarantees the Linux brew-deps
     # bootstrap can never run a real `sudo apt-get` against the test machine.
     write_mock_sudo
+    # Mock the native AI harnesses as present-and-recording, so no test ever
+    # shells out to the real claude/codex/omp (self-update hits the network /
+    # mutates the real install). Install/absence tests override these.
+    write_mock_harness claude
+    write_mock_harness codex
+    write_mock_harness omp
     export PATH="$MOCK_BIN:$PATH"
 }
 
@@ -42,6 +51,34 @@ echo "sudo $*" >> "$SUDO_LOG"
 exit 0
 MOCKSUDO
     chmod +x "$MOCK_BIN/sudo"
+}
+
+# Mock an AI-harness CLI (claude/codex/omp): record args to its log, exit 0.
+write_mock_harness() {
+    local name="$1" log
+    case "$name" in
+        claude) log="$CLAUDE_LOG" ;;
+        codex)  log="$CODEX_LOG" ;;
+        omp)    log="$OMP_LOG" ;;
+    esac
+    cat > "$MOCK_BIN/$name" << MOCKHARNESS
+#!/bin/bash
+echo "$name \$*" >> "$log"
+exit 0
+MOCKHARNESS
+    chmod +x "$MOCK_BIN/$name"
+}
+
+# Mock curl for native-installer tests: record the URL, emit nothing so the
+# downstream `| bash` / `| sh` runs an empty (no-op) script.
+write_mock_curl() {
+    export CURL_LOG="$TEST_HOME/curl.log"
+    cat > "$MOCK_BIN/curl" << 'MOCKCURL'
+#!/bin/bash
+echo "curl $*" >> "$CURL_LOG"
+exit 0
+MOCKCURL
+    chmod +x "$MOCK_BIN/curl"
 }
 
 write_mock_uv() {
@@ -810,47 +847,23 @@ MOCKCARGO
     ! grep -q "cargo install --force cargo-llvm-cov" "$CARGO_LOG"
 }
 
-# --- Integration: sync_harness_selfupdate ---
+# --- Integration: sync_native_harnesses ---
+# claude/codex/omp are mocked present in setup(); each test overrides as needed.
 
-@test "UPGRADE_MODE runs claude update and codex update when both present" {
+@test "UPGRADE_MODE runs native update for claude, codex, and omp when present" {
     write_test_yaml
-
-    export CLAUDE_LOG="$TEST_HOME/claude.log"
-    export CODEX_LOG="$TEST_HOME/codex.log"
-
-    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
-#!/bin/bash
-echo "claude \$*" >> "$CLAUDE_LOG"
-exit 0
-MOCKCLAUDE
-    chmod +x "$MOCK_BIN/claude"
-
-    cat > "$MOCK_BIN/codex" << MOCKCODEX
-#!/bin/bash
-echo "codex \$*" >> "$CODEX_LOG"
-exit 0
-MOCKCODEX
-    chmod +x "$MOCK_BIN/codex"
 
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
 
     grep -q "claude update" "$CLAUDE_LOG"
     grep -q "codex update" "$CODEX_LOG"
+    grep -q "omp update" "$OMP_LOG"
 }
 
-@test "UPGRADE_MODE skips codex update when codex absent but still runs claude update" {
+@test "UPGRADE_MODE skips codex when absent but still updates claude and omp" {
     write_test_yaml
-
-    export CLAUDE_LOG="$TEST_HOME/claude.log"
-
-    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
-#!/bin/bash
-echo "claude \$*" >> "$CLAUDE_LOG"
-exit 0
-MOCKCLAUDE
-    chmod +x "$MOCK_BIN/claude"
-    # No codex mock — intentionally absent
+    rm -f "$MOCK_BIN/codex"   # intentionally absent; codex has no installer
 
     local clean_path
     clean_path=$(scrub_toolchain_path | tr ':' '\n' | while IFS= read -r d; do [[ -x "$d/codex" ]] || printf '%s:' "$d"; done)
@@ -858,42 +871,24 @@ MOCKCLAUDE
     assert_success
 
     grep -q "claude update" "$CLAUDE_LOG"
-    assert_output_contains "codex not found"
+    grep -q "omp update" "$OMP_LOG"
+    assert_output_contains "codex not found — no native installer, skipping"
 }
 
-@test "non-UPGRADE_MODE does not invoke claude or codex update" {
+@test "non-UPGRADE_MODE does not invoke any harness update" {
     write_test_yaml
-
-    export CLAUDE_LOG="$TEST_HOME/claude.log"
-    export CODEX_LOG="$TEST_HOME/codex.log"
-
-    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
-#!/bin/bash
-echo "claude \$*" >> "$CLAUDE_LOG"
-exit 0
-MOCKCLAUDE
-    chmod +x "$MOCK_BIN/claude"
-
-    cat > "$MOCK_BIN/codex" << MOCKCODEX
-#!/bin/bash
-echo "codex \$*" >> "$CODEX_LOG"
-exit 0
-MOCKCODEX
-    chmod +x "$MOCK_BIN/codex"
 
     run_sync
     assert_success
 
     [[ ! -f "$CLAUDE_LOG" ]] || ! grep -q "claude update" "$CLAUDE_LOG"
     [[ ! -f "$CODEX_LOG" ]] || ! grep -q "codex update" "$CODEX_LOG"
+    [[ ! -f "$OMP_LOG" ]] || ! grep -q "omp update" "$OMP_LOG"
 }
 
 @test "UPGRADE_MODE continues and exits 0 when one harness updater fails" {
     write_test_yaml
-
-    export CLAUDE_LOG="$TEST_HOME/claude.log"
-    export CODEX_LOG="$TEST_HOME/codex.log"
-
+    # Make claude update fail; codex + omp still succeed.
     cat > "$MOCK_BIN/claude" << MOCKCLAUDE
 #!/bin/bash
 echo "claude \$*" >> "$CLAUDE_LOG"
@@ -901,16 +896,72 @@ exit 1
 MOCKCLAUDE
     chmod +x "$MOCK_BIN/claude"
 
-    cat > "$MOCK_BIN/codex" << MOCKCODEX
-#!/bin/bash
-echo "codex \$*" >> "$CODEX_LOG"
-exit 0
-MOCKCODEX
-    chmod +x "$MOCK_BIN/codex"
-
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
 
     assert_output_contains "claude update failed"
     grep -q "codex update" "$CODEX_LOG"
+    grep -q "omp update" "$OMP_LOG"
+}
+
+@test "native install: claude and omp installed via official installer when missing" {
+    write_test_yaml
+    rm -f "$MOCK_BIN/claude" "$MOCK_BIN/omp"
+    write_mock_curl
+
+    # Absent from PATH entirely so the native installer path fires.
+    local clean_path
+    clean_path=$(scrub_toolchain_path | tr ':' '\n' | while IFS= read -r d; do [[ -x "$d/claude" || -x "$d/omp" ]] || printf '%s:' "$d"; done)
+    PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q "claude.ai/install.sh" "$CURL_LOG"
+    grep -q "omp.sh/install" "$CURL_LOG"
+    assert_output_contains "Installing claude (native)"
+    assert_output_contains "Installing omp (native)"
+}
+
+@test "native install: codex is skipped (no dots-managed installer)" {
+    write_test_yaml
+    rm -f "$MOCK_BIN/codex"
+    write_mock_curl
+
+    local clean_path
+    clean_path=$(scrub_toolchain_path | tr ':' '\n' | while IFS= read -r d; do [[ -x "$d/codex" ]] || printf '%s:' "$d"; done)
+    PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
+    assert_success
+
+    assert_output_contains "codex not found — no native installer, skipping"
+    [[ ! -f "$CURL_LOG" ]] || ! grep -q "codex" "$CURL_LOG"
+}
+
+@test "migration: lingering brew claude-code cask and omp formula are uninstalled" {
+    write_test_yaml
+    # Long lists with the target at the FRONT: grep -qx matches immediately and
+    # closes the pipe while the mock is still producing, so a `brew list | grep
+    # -qx` pipeline SIGPIPEs the producer and — under set -o pipefail — reports
+    # failure on a real match, silently skipping the uninstall. Regression guard
+    # for that bug; the migration must fire regardless of list length/position.
+    local formulae cask i
+    formulae="omp"
+    for i in $(seq 1 200); do formulae+=$'\n'"filler-formula-$i"; done
+    cask="claude-code"
+    for i in $(seq 1 200); do cask+=$'\n'"filler-cask-$i"; done
+    write_mock_brew "$formulae" "$cask"
+
+    run_sync
+    assert_success
+
+    grep -q "uninstall --cask claude-code" "$BREW_LOG"
+    grep -q "uninstall omp" "$BREW_LOG"
+}
+
+@test "migration: no brew uninstall when neither brew copy is present" {
+    write_test_yaml
+    # Default mock brew reports no formulae/casks installed.
+
+    run_sync
+    assert_success
+
+    ! grep -q "uninstall" "$BREW_LOG"
 }
