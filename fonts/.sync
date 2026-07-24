@@ -6,16 +6,16 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 0
 fi
 
-fonts=(hack hack-nerd-font fira-code monoid)
+fonts=(hack jetbrains-mono-nerd-font fira-code monoid)
 
 # Map cask name to font filename glob for manual install detection
 font_pattern() {
     case "$1" in
-        hack)           echo "Hack-*" ;;
-        hack-nerd-font) echo "HackNF*" ;;
-        fira-code)      echo "FiraCode*" ;;
-        monoid)         echo "Monoid*" ;;
-        *)              echo "${1}*" ;;
+        hack)                     echo "Hack-*" ;;
+        jetbrains-mono-nerd-font) echo "JetBrainsMonoNerdFont-*" ;;
+        fira-code)                echo "FiraCode*" ;;
+        monoid)                   echo "Monoid*" ;;
+        *)                        echo "${1}*" ;;
     esac
 }
 

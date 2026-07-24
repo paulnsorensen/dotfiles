@@ -107,6 +107,30 @@ run_iterm_scrub() {
     grep -q "$TEST_HOME" "$live"
 }
 
+@test "iterm2 base plist: default profile uses a ligature-capable font" {
+    run python3 -c "
+import plistlib
+with open('$REAL_DOTFILES_DIR/iterm2/iterm2.base.plist', 'rb') as f:
+    data = plistlib.load(f)
+bookmark = data['New Bookmarks'][0]
+print(bookmark['Normal Font'])
+print(bookmark['Non Ascii Font'])
+"
+    assert_success
+    assert_output_contains "JetBrainsMonoNF-Regular 14"
+    # Nerd Fonts strips ligatures from *NerdFontMono* variants by policy (ryanoasis/nerd-fonts#677) —
+    # guard against a future edit "helpfully" switching to that variant and silently reintroducing
+    # the exact bug this font was chosen to fix.
+    ! echo "$output" | grep -q "NerdFontMono"
+    ! echo "$output" | grep -qi "HackNFM"
+    # Guard against reverting to the font's on-disk *filename* ("JetBrainsMonoNerdFont-Regular"),
+    # which looks right but isn't: it's not the PostScript name iTerm2's plist actually resolves,
+    # so iTerm2 would silently fall back to its default font. Verified against the real font binary
+    # (ryanoasis/nerd-fonts v3.4.0 JetBrainsMono.zip) via fontTools — PostScript name is
+    # "JetBrainsMonoNF-Regular", not "JetBrainsMonoNerdFont-Regular".
+    ! echo "$output" | grep -q "JetBrainsMonoNerdFont-Regular"
+}
+
 @test "iterm2 sync: runs defaults write commands" {
     create_base_plist
     touch "$ITERM_DIR/background/i_know_how_to_make_ducks.png"
@@ -198,14 +222,14 @@ with open('$resolved_iterm/com.googlecode.iterm2.plist', 'wb') as f:
     run bash -c "
         $(sed -n '/^font_pattern()/,/^}/p' "$FONTS_SYNC")
         font_pattern hack
-        font_pattern hack-nerd-font
+        font_pattern jetbrains-mono-nerd-font
         font_pattern fira-code
         font_pattern monoid
         font_pattern unknown-font
     "
     assert_success
     assert_output_contains "Hack-*"
-    assert_output_contains "HackNF*"
+    assert_output_contains "JetBrainsMonoNerdFont-*"
     assert_output_contains "FiraCode*"
     assert_output_contains "Monoid*"
     assert_output_contains "unknown-font*"
@@ -214,7 +238,7 @@ with open('$resolved_iterm/com.googlecode.iterm2.plist', 'wb') as f:
 @test "fonts sync: skips fonts already installed manually" {
     mkdir -p "$TEST_HOME/Library/Fonts"
     touch "$TEST_HOME/Library/Fonts/Hack-Regular.ttf"
-    touch "$TEST_HOME/Library/Fonts/HackNFM-Regular.ttf"
+    touch "$TEST_HOME/Library/Fonts/JetBrainsMonoNerdFont-Regular.ttf"
     touch "$TEST_HOME/Library/Fonts/FiraCode-Regular.ttf"
     touch "$TEST_HOME/Library/Fonts/Monoid-Regular.ttf"
 
@@ -231,4 +255,5 @@ with open('$resolved_iterm/com.googlecode.iterm2.plist', 'wb') as f:
     assert_output_contains "Installing font-"
     grep -q "brew install --cask font-hack" "$BREW_LOG"
     grep -q "brew install --cask font-fira-code" "$BREW_LOG"
+    grep -q "brew install --cask font-jetbrains-mono-nerd-font" "$BREW_LOG"
 }
