@@ -129,6 +129,18 @@ omp:
   # OMP's bundled catalog here.
   models:
     providers: {}
+  # Native OMP plugin installs — reconciled by sync_omp_plugins (.sync-lib.sh)
+  # on every dots sync: marketplace add + plugin install for entries here,
+  # uninstall/remove for managed entries no longer listed. npm-installed omp
+  # plugins are NOT managed here. Plugin-owned MCPs must NOT also appear in
+  # dot_omp/private_agent/mcp.json (dual server / plugin:server namespaces).
+  plugins:
+    milknado:
+      marketplace: milknado
+      source: paulnsorensen/milknado
+    hallouminate:
+      marketplace: hallouminate
+      source: paulnsorensen/hallouminate
   # Local LLM stack — LiteLLM proxy front (~/local-llm), OpenAI-compatible.
   # Keyless: the proxy sets no master_key, so no Authorization header is sent.
   # contextWindow per model matches the backend's launched --ctx-size in
