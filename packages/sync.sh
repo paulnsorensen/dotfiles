@@ -524,28 +524,93 @@ sync_gh_extensions() {
     log_success "gh extensions sync complete"
 }
 
-########## Harness self-updaters
-# CLIs installed by their own native installers (not covered by packages.yaml).
-# Only runs in UPGRADE_MODE.
+########## Native AI-harness CLIs
+# claude, codex, and omp are managed through their own native installers and
+# self-updaters, NOT Homebrew — the brew cask/formula lag the fast-moving
+# release channels and (for claude/omp) shadow-fight the native ~/.local/bin
+# binary on PATH. Every sync: migrate off brew (uninstall a lingering copy)
+# and install the native binary when missing. In UPGRADE_MODE: self-update.
+# codex has no brew footprint and no dots-managed installer — update only.
 
-sync_harness_selfupdate() {
-    [[ "${UPGRADE_MODE:-false}" == "true" ]] || return 0
+# Brew package to migrate off, per harness ("" = none; "cask:NAME" = cask).
+native_harness_brew_pkg() {
+    case "$1" in
+        claude) echo "cask:claude-code" ;;
+        omp)    echo "omp" ;;
+        *)      echo "" ;;
+    esac
+}
 
-    log_info "Upgrading AI harness CLIs..."
+# Harnesses with a dots-managed native installer (codex is installed elsewhere).
+native_harness_has_installer() {
+    case "$1" in claude|omp) return 0 ;; *) return 1 ;; esac
+}
+
+native_harness_install() {
+    case "$1" in
+        claude) curl -fsSL https://claude.ai/install.sh | bash ;;
+        omp)    curl -fsSL https://omp.sh/install | sh ;;
+    esac
+}
+
+# Uninstall a lingering Homebrew copy so it stops shadowing the native binary.
+migrate_harness_off_brew() {
+    local harness="$1" spec cask_flag=""
+    spec="$(native_harness_brew_pkg "$harness")"
+    [[ -z "$spec" ]] && return 0
+    command -v brew &>/dev/null || return 0
+
+    # Capture the list first, then match the here-string. A `brew list | grep
+    # -qx` pipeline is unsafe under `set -o pipefail`: grep -q closes the pipe
+    # on first match and the still-producing brew gets SIGPIPE (141), so the
+    # pipeline reports failure even on a match — silently skipping migration.
+    local installed
+    if [[ "$spec" == cask:* ]]; then
+        cask_flag="--cask"
+        spec="${spec#cask:}"
+        installed=$(brew list --cask 2>/dev/null || true)
+    else
+        installed=$(brew list --formulae 2>/dev/null || true)
+    fi
+    grep -qxF "$spec" <<<"$installed" || return 0
+
+    log_info "  Removing Homebrew $spec (now native-managed)..."
+    # shellcheck disable=SC2086  # cask_flag intentionally unquoted (may be empty)
+    if ! brew uninstall $cask_flag "$spec" </dev/null; then
+        log_warning "brew uninstall $spec failed — continuing"
+    fi
+}
+
+sync_native_harnesses() {
+    log_info "Syncing native AI-harness CLIs..."
 
     local harness
-    for harness in claude codex; do
+    for harness in claude codex omp; do
+        migrate_harness_off_brew "$harness"
+
         if ! command -v "$harness" &>/dev/null; then
-            log_info "  $harness not found — skipping"
-            continue
+            if native_harness_has_installer "$harness"; then
+                echo "  Installing $harness (native)..."
+                if native_harness_install "$harness"; then
+                    hash -r 2>/dev/null || true
+                    log_success "  Installed $harness"
+                else
+                    log_warning "  $harness native install failed — continuing"
+                fi
+            else
+                log_info "  $harness not found — no native installer, skipping"
+            fi
         fi
+
+        [[ "${UPGRADE_MODE:-false}" == "true" ]] || continue
+        command -v "$harness" &>/dev/null || continue
         echo "  Updating $harness..."
         if ! "$harness" update </dev/null; then
             log_warning "$harness update failed — continuing"
         fi
     done
 
-    log_success "Harness CLI update complete"
+    log_success "Native harness sync complete"
 }
 ########## Main
 
@@ -591,7 +656,7 @@ sync_rustup_proxies
 sync_npm
 sync_uv
 sync_gh_extensions
-sync_harness_selfupdate
+sync_native_harnesses
 
 if ((${#FAILED[@]})); then
     echo ""

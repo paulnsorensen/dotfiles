@@ -77,6 +77,22 @@ upgrade_uv_tools() {
     done
 }
 
+# True when $dir is a *linked* git worktree rather than the primary clone.
+# Home-directory symlinks (~/.zshrc, ~/.zshenv, …) must only ever point at the
+# primary clone: syncing from an ephemeral worktree (Conductor/ccw) repoints
+# them at a path that dangles the moment the worktree is removed, silently
+# breaking the shell — DOTFILES_DIR (derived from ~/.zshrc's resolved target)
+# then points at a dead path, dropping bin/ off PATH. Fails open (returns
+# non-linked) when git is unavailable or $dir is not a repo, so non-git
+# deploys and the test harness are unaffected.
+dir_is_linked_worktree() {
+    local d="${1:-$dir}" gitdir common
+    command -v git &>/dev/null || return 1
+    gitdir=$(git -C "$d" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+    common=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+    [[ "$gitdir" != "$common" ]]
+}
+
 # Symlink a single file/dir, or dispatch to its .sync script if present
 sync_entry() {
     local file="$1"
@@ -90,6 +106,19 @@ sync_entry() {
         if ! bash "$dir/$file/.sync"; then
             log_error "sync for $file FAILED (continuing — will report at end)"
             SYNC_FAILURES+=("$file")
+        fi
+        return 0
+    fi
+
+    # Guard against the worktree-hijack: never create (or destroy) a global home
+    # symlink while syncing from a linked worktree. Removing the existing block
+    # too is deliberate — otherwise we'd delete the good primary-pointing link
+    # (line below) before bailing. Warn once, not per-file.
+    if dir_is_linked_worktree; then
+        if [[ "${_WORKTREE_SYMLINK_WARNED:-}" != "1" ]]; then
+            log_warning "Skipping home symlinks: syncing from a linked git worktree ($dir)."
+            log_warning "  Run 'dots sync' from the primary clone so ~/.zshrc etc. don't dangle when this worktree is removed."
+            _WORKTREE_SYMLINK_WARNED=1
         fi
         return 0
     fi
