@@ -46,7 +46,7 @@ A personal dotfiles repo configuring a vim-centric, terminal-based dev environme
 - `dots rollback` — prints the git-backed undo path (`git revert` + `dots sync`); no stateful snapshots.
 - `dots claude diff` — preview pending chezmoi changes under `~/.claude` (settings.json + exact_ trees) before a sync overwrites them wholesale; does not cover `~/.claude.json` MCP drift (reconciles via the claude CLI).
 - `dots profile launch claude <name>` · `dots profile list` · `dots profile describe <name>`
-- `dots resume [--dry-run] [--session <name>]` — restore last tmux-resurrect snapshot and type per-pane agent-resume commands
+- `dots resume [--dry-run] [--session <name>] [--restore [<snapshot>]]` — restore a tmux-resurrect snapshot and type per-pane agent-resume commands. Bare `resume` restores `last` only when no server is running (post-reboot); `--restore` repoints `last` to any snapshot (fzf picker, or pass a basename / bare timestamp) and restores it additively even into a live server
 
 ### Agent config — edit a registry, then sync
 

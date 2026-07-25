@@ -119,6 +119,107 @@ teardown() {
     [[ "$output" == "opencode --session ses_new" ]]
 }
 
+# --- snapshot picker: list, format, point-at, pick ---
+
+# seed_resurrect <name> <sessions-csv> <window-count> — write a minimal
+# snapshot file under the resurrect dir with the requested state/window lines.
+seed_resurrect() {
+    local name="$1" sessions="$2" windows="$3" dir="$HOME/.tmux/resurrect" s w
+    mkdir -p "$dir"
+    local f="$dir/tmux_resurrect_${name}.txt"
+    : > "$f"
+    for ((w = 0; w < windows; w++)); do
+        printf 'window\tsess\t%d\t:zsh\t1\t:*\tlayout\t:\n' "$w" >> "$f"
+    done
+    local IFS=,
+    for s in $sessions; do
+        printf 'state\t%s\n' "$s" >> "$f"
+    done
+}
+
+@test "resume_snapshot_line summarizes sessions and window count" {
+    seed_resurrect 20260610T075410 "crabbot,easy-cheese" 3
+    run resume_snapshot_line "$HOME/.tmux/resurrect/tmux_resurrect_20260610T075410.txt"
+    assert_success
+    [[ "$output" == "tmux_resurrect_20260610T075410.txt	crabbot,easy-cheese	3	"* ]]
+}
+
+@test "resume_list_snapshots orders newest first by mtime" {
+    seed_resurrect 20260610T070000 "old" 1
+    seed_resurrect 20260610T090000 "new" 1
+    touch -t 202606100700 "$HOME/.tmux/resurrect/tmux_resurrect_20260610T070000.txt"
+    touch -t 202606100900 "$HOME/.tmux/resurrect/tmux_resurrect_20260610T090000.txt"
+
+    run resume_list_snapshots
+    assert_success
+    [[ "${lines[0]}" == "tmux_resurrect_20260610T090000.txt	new	"* ]]
+    [[ "${lines[1]}" == "tmux_resurrect_20260610T070000.txt	old	"* ]]
+}
+
+@test "resume_format_menu renders a bracketed sessions column and an age" {
+    seed_resurrect 20260610T075410 "crabbot" 2
+    touch -t 202606100754 "$HOME/.tmux/resurrect/tmux_resurrect_20260610T075410.txt"
+    local saved now
+    saved=$(resume_file_mtime "$HOME/.tmux/resurrect/tmux_resurrect_20260610T075410.txt")
+    now=$((saved + 3600))
+
+    run resume_format_menu "$now"
+    assert_success
+    [[ "$output" == "tmux_resurrect_20260610T075410.txt	[crabbot]	2win	1h0m" ]]
+}
+
+@test "resume_point_last accepts a bare timestamp and repoints the symlink" {
+    seed_resurrect 20260610T075410 "crabbot" 1
+    run resume_point_last 20260610T075410
+    assert_success
+    [[ "$(readlink "$HOME/.tmux/resurrect/last")" == "tmux_resurrect_20260610T075410.txt" ]]
+}
+
+@test "resume_point_last accepts a full basename too" {
+    seed_resurrect 20260610T075410 "crabbot" 1
+    run resume_point_last tmux_resurrect_20260610T075410.txt
+    assert_success
+    [[ "$(readlink "$HOME/.tmux/resurrect/last")" == "tmux_resurrect_20260610T075410.txt" ]]
+}
+
+@test "resume_point_last fails on a missing snapshot" {
+    mkdir -p "$HOME/.tmux/resurrect"
+    run resume_point_last 20990101T000000
+    [[ "$status" -eq 1 ]]
+    assert_output_contains "no snapshot"
+}
+
+@test "resume_pick_snapshot returns the basename of the fzf-chosen line" {
+    seed_resurrect 20260610T075410 "crabbot" 1
+    local bin_dir="$TEST_HOME/fzfbin"
+    mkdir -p "$bin_dir"
+    # Stub fzf: echo the first (only) menu line, mimicking a selection.
+    printf '#!/usr/bin/env bash\nhead -1\n' > "$bin_dir/fzf"
+    chmod +x "$bin_dir/fzf"
+
+    RESUME_FZF="$bin_dir/fzf" run resume_pick_snapshot 9999999999
+    assert_success
+    [[ "$output" == "tmux_resurrect_20260610T075410.txt" ]]
+}
+
+@test "resume_pick_snapshot returns 1 when no snapshots exist" {
+    mkdir -p "$HOME/.tmux/resurrect"
+    run resume_pick_snapshot 9999999999
+    [[ "$status" -eq 1 ]]
+}
+
+@test "resume_parse_args captures --restore with an explicit snapshot" {
+    run resume_parse_args --restore 20260610T075410
+    assert_success
+    [[ "$output" == "false		true	20260610T075410" ]]
+}
+
+@test "resume_parse_args treats a bare --restore as picker mode" {
+    run resume_parse_args --restore
+    assert_success
+    [[ "$output" == "false		true	" ]]
+}
+
 # --- dots resume integration: mock tmux on PATH, verify table + send-keys ---
 
 stub_tmux() {
@@ -132,6 +233,11 @@ case "\$1" in
         ;;
     has-session)
         exit 0
+        ;;
+    run-shell)
+        # Real tmux run-shell executes the command inside the server; mirror
+        # that so the vendored restore.sh stub actually runs.
+        exec bash -c "\$2"
         ;;
     list-panes)
         printf '%s\n' '$panes'
@@ -147,7 +253,7 @@ STUB
     chmod +x "$bin_dir/tmux"
 }
 
-@test "dots resume --dry-run prints the table and sends no keys" {
+@test "dots resume --dry-run reports the plan and sends no keys" {
     local proj="$HOME/.claude/projects/-home-paul-Dev-dotfiles"
     mkdir -p "$proj"
     : > "$proj/dry-run-session.jsonl"
@@ -157,14 +263,13 @@ STUB
     PATH="$bin_dir:$PATH" run dots resume --dry-run
 
     assert_success
-    assert_output_contains "PANE"
+    assert_output_contains "dry-run"
     assert_output_contains "%1"
-    assert_output_contains "claude"
-    assert_output_contains "dry-run-session"
+    assert_output_contains "claude --resume dry-run-session"
     [[ ! -f "$TEST_HOME/send-keys.log" ]]
 }
 
-@test "dots resume (no --dry-run) types the resume command into the matched pane" {
+@test "dots resume (no --dry-run) types AND runs the resume command in the matched pane" {
     local proj="$HOME/.claude/projects/-home-paul-Dev-dotfiles"
     mkdir -p "$proj"
     : > "$proj/type-session.jsonl"
@@ -175,8 +280,38 @@ STUB
 
     assert_success
     [[ -f "$TEST_HOME/send-keys.log" ]]
-    grep -qx -- "SEND-KEYS: send-keys -t %2 claude --resume type-session" "$TEST_HOME/send-keys.log"
-    ! grep -qE -- "Enter|C-m" "$TEST_HOME/send-keys.log"
+    # Command typed with a trailing Enter so it actually runs.
+    grep -qx -- "SEND-KEYS: send-keys -t %2 claude --resume type-session Enter" "$TEST_HOME/send-keys.log"
+}
+
+@test "resume_main --restore repoints last and runs restore even with a live server" {
+    seed_resurrect 20260610T075410 "crabbot" 1
+
+    local bin_dir="$TEST_HOME/mockbin"
+    stub_tmux "$bin_dir" ""   # list-sessions exits 0 -> server is up
+
+    # Fake dotfiles tree with a restore.sh stub that records it ran.
+    local fake="$TEST_HOME/fake-dotfiles"
+    mkdir -p "$fake/tmux/plugins/tmux-resurrect/scripts"
+    printf '#!/usr/bin/env bash\necho ran >> "%s/restore.log"\n' "$TEST_HOME" \
+        > "$fake/tmux/plugins/tmux-resurrect/scripts/restore.sh"
+    chmod +x "$fake/tmux/plugins/tmux-resurrect/scripts/restore.sh"
+
+    PATH="$bin_dir:$PATH" DOTFILES_DIR="$fake" run resume_main --restore 20260610T075410
+    assert_success
+    [[ "$(readlink "$HOME/.tmux/resurrect/last")" == "tmux_resurrect_20260610T075410.txt" ]]
+    [[ -f "$TEST_HOME/restore.log" ]]
+}
+
+@test "resume_main --restore --dry-run reports without repointing last" {
+    seed_resurrect 20260610T075410 "crabbot" 1
+    local bin_dir="$TEST_HOME/mockbin"
+    stub_tmux "$bin_dir" ""
+
+    PATH="$bin_dir:$PATH" run resume_main --restore 20260610T075410 --dry-run
+    assert_success
+    [[ ! -e "$HOME/.tmux/resurrect/last" ]]
+    assert_output_contains "would restore snapshot"
 }
 
 @test "dots resume skips panes with no resumable session" {
@@ -185,6 +320,18 @@ STUB
     PATH="$bin_dir:$PATH" run dots resume --dry-run
 
     assert_success
-    assert_output_contains "PANE"
+    assert_output_contains "no resumable agent sessions"
     [[ "$output" != *"%3"* ]]
+}
+
+@test "resume_list_snapshots caps the picker at RESUME_MAX_SNAPSHOTS" {
+    local i
+    for i in $(seq -w 1 25); do
+        seed_resurrect "202606100000${i}" "s$i" 1
+        touch -t "2026061000${i}" "$HOME/.tmux/resurrect/tmux_resurrect_202606100000${i}.txt"
+    done
+
+    RESUME_MAX_SNAPSHOTS=20 run resume_list_snapshots
+    assert_success
+    [[ "${#lines[@]}" -eq 20 ]]
 }
