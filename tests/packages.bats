@@ -954,7 +954,7 @@ MOCKOMP
         echo "claude's native installer ran, but claude is mise-managed now" >&2
         return 1
     fi
-    grep -q -- "--ref v17.1.2" "$SH_LOG"
+    grep -q -- "--ref v17.1.3" "$SH_LOG"
     assert_output_contains "Installing omp (native)"
 }
 

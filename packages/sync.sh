@@ -674,7 +674,7 @@ sync_gh_extensions() {
 # left. omp has no mise plugin, so it keeps its own native install +
 # self-update.
 
-OMP_PIN="v17.1.2"
+OMP_PIN="v17.1.3"
 
 # Brew package to migrate off, per harness ("" = none; "cask:NAME" = cask).
 native_harness_brew_pkg() {
