@@ -1,0 +1,75 @@
+#!/usr/bin/env bats
+# Validate the mise manifest — every tool pinned to an exact version, no
+# floating specifiers, structurally valid TOML, and the full tool count.
+
+DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
+CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
+
+@test "mise config exists" {
+    [[ -f "$CONFIG" ]]
+}
+
+@test "mise config is valid TOML" {
+    run yq '.' "$CONFIG" -p toml -o json
+    [[ $status -eq 0 ]]
+}
+
+@test "mise config pins exactly 52 tools (45 aqua + 3 core-plugin + 4 backend)" {
+    run yq -p=toml -o=json '.tools | length' "$CONFIG"
+    [[ $status -eq 0 ]]
+    [[ "$output" == "52" ]]
+}
+
+@test "no tool version is 'latest' or a floating range specifier" {
+    local versions v
+    # -r strips yq's JSON string quoting; without it a bare `[[ ]]` comparison
+    # never matches. A `case` (not a bare `[[ ]]` per line) is used deliberately:
+    # macOS ships bash 3.2, whose `set -e` does not abort a loop body when a
+    # non-terminal `[[ ]]` inside it fails — an explicit `return 1` is required.
+    versions=$(yq -p=toml -o=json '.tools' "$CONFIG" | jq -r '.[]')
+    [[ -n "$versions" ]]
+    while IFS= read -r v; do
+        [[ -z "$v" ]] && continue
+        case "$v" in
+            latest|'^'*|'~'*|*'*'*)
+                echo "floating version specifier: $v" >&2
+                return 1
+                ;;
+        esac
+    done <<<"$versions"
+}
+
+@test "no duplicate keys in the [tools] table" {
+    # TOML parsers may silently let a duplicate key's second value win
+    # (yq does), which would hide a dropped pin behind an unchanged
+    # top-level count. Check the raw source, not the parsed result.
+    local keys dupes
+    keys=$(awk '/^\[tools\]/{f=1; next} /^\[/{f=0} f && NF && $0 !~ /^#/ {sub(/=.*/, ""); gsub(/^[ \t]+|[ \t]+$/, ""); print}' "$CONFIG")
+    [[ -n "$keys" ]]
+    dupes=$(echo "$keys" | sort | uniq -d)
+    [[ -z "$dupes" ]]
+}
+
+@test "claude, codex, and rtk are pinned to exact tags, not floating" {
+    [[ "$(yq -p=toml '.tools."aqua:anthropics/claude-code"' "$CONFIG")" == "v2.1.219" ]]
+    [[ "$(yq -p=toml '.tools."aqua:openai/codex"' "$CONFIG")" == "rust-v0.145.0" ]]
+    [[ "$(yq -p=toml '.tools."aqua:rtk-ai/rtk"' "$CONFIG")" == "v0.43.0" ]]
+}
+
+@test "non-semver tag shapes are kept raw (rust-analyzer date-stamp, tmux 3.7b)" {
+    [[ "$(yq -p=toml '.tools."aqua:rust-lang/rust-analyzer"' "$CONFIG")" == "2026-07-20" ]]
+    [[ "$(yq -p=toml '.tools."aqua:tmux/tmux"' "$CONFIG")" == "3.7b" ]]
+}
+
+@test "core-plugin tools (node, bun, rust) are stripped of git-tag prefixes" {
+    [[ "$(yq -p=toml '.tools.node' "$CONFIG")" == "24.18.0" ]]
+    [[ "$(yq -p=toml '.tools.bun' "$CONFIG")" == "1.3.14" ]]
+    [[ "$(yq -p=toml '.tools.rust' "$CONFIG")" == "1.97.1" ]]
+}
+
+@test "backend-managed tools use their backend prefix syntax" {
+    [[ "$(yq -p=toml '.tools."npm:bash-language-server"' "$CONFIG")" == "5.6.0" ]]
+    [[ "$(yq -p=toml '.tools."npm:yaml-language-server"' "$CONFIG")" == "1.24.0" ]]
+    [[ "$(yq -p=toml '.tools."npm:pyright"' "$CONFIG")" == "1.1.411" ]]
+    [[ "$(yq -p=toml '.tools."go:golang.org/x/tools/gopls"' "$CONFIG")" == "v0.23.0" ]]
+}
