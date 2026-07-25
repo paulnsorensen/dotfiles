@@ -15,6 +15,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Install just
       uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
@@ -28,7 +30,9 @@ jobs:
         args: "--version"
 
     - name: Install Node linters
-      run: npm install -g eslint@8 markdownlint-cli2
+      run: |
+        npm ci --prefix .github/lint-deps
+        echo "$(pwd)/.github/lint-deps/node_modules/.bin" >> "$GITHUB_PATH"
 
     - name: Run linters
       run: just lint
@@ -38,6 +42,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Install just
       uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0

@@ -1,4 +1,4 @@
-# CodeQL — static analysis for Python and JavaScript.
+# CodeQL — static analysis for Python, JavaScript, and GitHub Actions workflows.
 # Uses "advanced" setup (workflow file). Conflicts with the UI-driven
 # "default" setup; disable that first if it was enabled.
 # See: https://docs.github.com/code-security/code-scanning
@@ -25,9 +25,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [javascript-typescript, python]
+        language: [javascript-typescript, python, actions]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
