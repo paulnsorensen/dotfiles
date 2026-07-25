@@ -57,31 +57,24 @@ def strip_frontmatter(text: str) -> str:
 # Tools whose presence means an agent can modify files. Used to derive
 # read-only intent for harnesses that sandbox by capability (codex
 # ``sandbox_mode``, opencode ``permission.edit``) rather than by an explicit
-# tool list. Includes the MCP write surfaces — tilth's writer and serena's
-# symbol-edit tools — not just the built-in editors, so an agent that bans
-# ``Write`` but keeps ``mcp__tilth__tilth_write`` is not mistaken for
-# read-only.
+# tool list. Includes tilth's writer, not just the built-in editors, so an
+# agent that bans ``Write`` but keeps ``mcp__tilth__tilth_write`` is not
+# mistaken for read-only.
 _WRITE_TOOLS = frozenset({
     "Edit",
     "Write",
     "MultiEdit",
     "NotebookEdit",
     "mcp__tilth__tilth_write",
-    "mcp__serena__replace_symbol_body",
-    "mcp__serena__insert_before_symbol",
-    "mcp__serena__insert_after_symbol",
-    "mcp__serena__replace_content",
-    "mcp__serena__rename_symbol",
-    "mcp__serena__safe_delete_symbol",
 })
 
 
 def _grants_write(tool: str) -> bool:
     """True when a tool entry confers a file-write capability.
 
-    Matches an exact write tool or a trailing-``*`` wildcard (e.g.
-    ``mcp__serena__*``) that subsumes one — registries grant whole MCP
-    servers by glob, so a literal set-membership check would miss them."""
+    Matches an exact write tool or a trailing-``*`` wildcard that subsumes
+    one — registries grant whole MCP servers by glob, so a literal
+    set-membership check would miss them."""
     if tool in _WRITE_TOOLS:
         return True
     if tool.endswith("*"):
@@ -95,8 +88,8 @@ def agent_is_read_only(item: dict[str, Any]) -> bool:
 
     Read-only when the agent either disallows a write tool
     (``disallowedTools``) or declares a ``tools`` whitelist that contains no
-    write tool. A wildcard grant such as ``mcp__serena__*`` counts as a write
-    tool (it subsumes serena's editors). An agent that declares neither signal
+    tool. An agent that declares neither signal is treated as writable (no
+    sandbox imposed).\"\"\"
     is treated as writable (no sandbox imposed)."""
     if any(_grants_write(t) for t in item.get("disallowedTools") or ()):
         return True

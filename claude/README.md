@@ -143,9 +143,7 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 
-Symbol-level code intelligence is provided by the Serena MCP (see
-`agents/mcp/registry.yaml`); the per-language LSP plugins from
-`boostvolt/claude-code-lsps` were removed once Serena went cross-harness.
+Code intelligence is provided by tilth; its routing is defined in `agents/preamble.md`.
 
 **Workflow Plugins** (from `anthropics/claude-code-plugins`):
 

@@ -15,12 +15,10 @@ Enforce measurable structural constraints:
 ## Tools
 
 - **cheez-search** for structural code shape analysis (nesting depth, function length, import patterns)
-- **`mcp__serena__get_symbols_overview`** to enumerate functions/methods and measure their spans
-- **cheez-search** to search for structural patterns across files
 
 ## Severity Tiers
 
-Use the four-tier severity vocabulary: `blocker > high > medium > low`. Surface `medium` and above; surface `low` only when evidence is `<certain>`. Tag every finding with a calibration marker: `<certain>` (measurement verified via AST/Serena) or `<speculative>` (inference without direct measurement).
+Use the four-tier severity vocabulary: `blocker > high > medium > low`. Surface `medium` and above; surface `low` only when evidence is `<certain>`. Tag every finding with a calibration marker: `<certain>` (measurement verified via AST) or `<speculative>` (inference without direct measurement).
 
 | Tier | Trigger |
 |------|---------|
@@ -33,16 +31,15 @@ Evidence grounding sets the calibration tag:
 | Evidence quality | Tag |
 |-----------------|-----|
 | Verified via cheez-search (AST confirms nesting depth, function line count) | `<certain>` |
-| Verified via Serena get_symbols_overview (symbol spans confirm line counts) | `<certain>` |
 | Cites specific file:line with accurate measurement | `<certain>` |
 | Generic observation without measurement | `<speculative>` |
 | Wrong measurement (miscounted lines/nesting) | drop the finding |
 
 For any borderline finding: re-read the full source file, measure independently a second time. If measurements diverge by >15 lines/levels, mark `<speculative>` or drop.
 
-## Symbol Lookups
+## Structural Lookups
 
-Use the Serena MCP (`mcp__serena__find_symbol`, `find_referencing_symbols`, `get_symbols_overview`) for any structural read — single-call, no per-session server lifecycle to manage.
+Use `cheez-search` symbol and caller queries for structural reads.
 
 ## Output
 

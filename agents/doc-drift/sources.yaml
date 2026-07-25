@@ -64,14 +64,6 @@ sources:
     reconciled: "v2.71.1"
 
 
-  - id: serena
-    signal: { type: gh_release, ref: oraios/serena }
-    docs: https://oraios.github.io/serena
-    # gh_release tracks stable; we install the PyPI prerelease (serena-agent,
-    # --prerelease=allow), so a schema change can land a release ahead — fine
-    # for triage, we reconcile on stable.
-    governs: [chezmoi/dot_serena/modify_serena_config.yml, packages/packages.yaml]
-    reconciled: "v1.6.1"
 
   - id: oh-my-pi
     signal: { type: gh_release, ref: can1357/oh-my-pi }

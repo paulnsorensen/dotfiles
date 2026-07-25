@@ -77,7 +77,6 @@ settings:
     - mcp__context7__*
     - mcp__tavily__*
     - mcp__tilth__*
-    - mcp__serena__*
     - mcp__hallouminate__*
     - WebSearch
     - WebFetch

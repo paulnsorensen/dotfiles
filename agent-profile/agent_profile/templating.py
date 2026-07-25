@@ -3,10 +3,10 @@
 The MCP registry at ``agents/mcp/registry.yaml`` lets each entry branch
 its arg or env values per harness via Go templates against ``$h``::
 
-    serena:
-      command: serena-mux
+    example-mcp:
+      command: example-mcp
       env:
-        SERENA_MUX_HARNESS: '{{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}'
+        HARNESS: '{{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}'
 
 The retired ``agents/mcp/sync.sh`` ran the whole registry through ``chezmoi
 execute-template`` once per harness (HARNESS=<harness>) before deploying.

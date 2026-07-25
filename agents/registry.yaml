@@ -106,7 +106,7 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/ghostbuster.md
   nih-scanner:
-    description: Structural NIH pattern scanner. Uses Serena MCP and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
+    description: Structural NIH pattern scanner. Uses AST search and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
     models:
       claude: sonnet
       codex: gpt-5.6-terra
@@ -136,7 +136,6 @@ agents:
     - Read
     - Bash
     - Agent
-    - mcp__serena__*
     skills:
     - cheez-search
     - de-slop
@@ -153,7 +152,6 @@ agents:
     - Read
     - Write
     - Bash
-    - mcp__serena__*
     skills:
     - cheez-search
     maxTurns: 50

@@ -8,8 +8,7 @@ description: >
   follow callers/callees layer by layer, and cross-check the impact radius.
   Use when the user says "trace this through", "map the X flow", "blast radius
   for Y", "what touches Z", "find the entry point for", "what's affected by
-  this change", or invokes /steel-thread. Do NOT use for single-symbol lookups
-  (Serena), filesystem search (/scout), or dead-code detection (/ghostbuster).
+  (tilth), filesystem search (/scout), or dead-code detection (/ghostbuster).
 license: MIT
 ---
 
@@ -130,9 +129,7 @@ infrastructure. For each layer:
   findings into the session graph. Use `/xray` for *did this implementation
   satisfy the spec*; `/steel-thread` for *where does this concept live and what
   touches it*.
-- Serena MCP (`mcp__serena__find_symbol`, `find_referencing_symbols`) —
-  single-symbol code intelligence. Faster for "what's the signature of Y" or
-  "who calls Z" when you already have the exact symbol.
+- tilth symbol/caller search — use for a known symbol's signature or callers.
 - `/ghostbuster` — dead code / stale spec detection. Disjoint concern.
 - `/grok-codebase` — its Phase 5 traces one full request end-to-end as a
   standalone onboarding artifact.
