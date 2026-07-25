@@ -685,6 +685,18 @@ YAML
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
 }
 
+@test "mise install failure preserves stale native harness binaries" {
+    write_test_yaml
+    mkdir -p "$TEST_HOME/.local/bin"
+    touch "$TEST_HOME/.local/bin/claude" "$TEST_HOME/.local/bin/codex"
+    write_mock_mise 1
+
+    run_sync
+    assert_failure
+    [[ -e "$TEST_HOME/.local/bin/claude" ]]
+    [[ -e "$TEST_HOME/.local/bin/codex" ]]
+}
+
 # --- Integration: missing toolchain ---
 
 # Build a curated PATH for "missing toolchain" tests. Keeps real yq/jq/shasum

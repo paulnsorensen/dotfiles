@@ -671,7 +671,18 @@ if [[ "$PLATFORM" == "Darwin" || "$PLATFORM" == "Linux" ]]; then
     sync_brew
 fi
 
+failures_before_mise=${#FAILED[@]}
 sync_mise
+if ((${#FAILED[@]} > failures_before_mise)); then
+    if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
+        log_error "package bootstrap failed: ${FAILED[*]}"
+    else
+        echo ""
+        log_error "failed to install ${#FAILED[@]} package(s): ${FAILED[*]}"
+        log_warning "cache NOT saved due to install failures"
+    fi
+    exit 1
+fi
 
 if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
     if ((${#FAILED[@]})); then
