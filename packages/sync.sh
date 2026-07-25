@@ -260,11 +260,37 @@ sync_brew() {
     log_success "Brew sync complete"
 }
 
+########## mise (version-managed tool installs)
+# mise itself is the one deliberately-unpinned bootstrap tool: `mise install`
+# unconditionally converges to whatever ~/.config/mise/config.toml declares
+# (chezmoi-deployed separately), so the pinned surfaces live in that config,
+# not here.
+
+sync_mise() {
+    if ! command -v mise &>/dev/null; then
+        if ! command -v brew &>/dev/null; then
+            log_warning "brew not found — skipping mise bootstrap"
+            return 0
+        fi
+        log_info "Bootstrapping mise..."
+        if ! brew install mise; then
+            log_error "Failed to install mise"
+            FAILED+=("mise")
+            return 0
+        fi
+    fi
+
+    log_info "Converging mise-managed tool versions..."
+    if ! mise install </dev/null; then
+        log_warning "mise install failed — continuing"
+    fi
+}
+
 ########## Cargo
 
 sync_cargo() {
     local cargo_pkgs
-    cargo_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "cargo") | [.key, (.value.git // ""), (.value.branch // "")] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    cargo_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "cargo") | [.key, (.value.git // ""), (.value.branch // ""), (.value.version // ""), (.value.rev // "")] | join("|")' "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$cargo_pkgs" ]] && return 0
 
     if ! command -v cargo &>/dev/null; then
@@ -301,8 +327,35 @@ sync_cargo() {
     # Install pass — only touch packages that aren't installed yet. The
     # upgrade pass below handles already-installed packages idempotently
     # (via cargo-install-update) instead of force-reinstalling every time.
-    while IFS=$'\t' read -r name git_url branch; do
+    # Pinned packages (version or rev) are installed unconditionally every
+    # run so drift is corrected, and excluded from the upgrade pass below.
+    local all_names=() pinned_names=()
+    while IFS='|' read -r name git_url branch version rev; do
         [[ -z "$name" ]] && continue
+        all_names+=("$name")
+
+        if [[ -n "$version" || -n "$rev" ]]; then
+            pinned_names+=("$name")
+            if [[ -n "$rev" && -z "$git_url" ]]; then
+                log_error "Invalid cargo package config for $name: rev requires git_url"
+                FAILED+=("$name")
+                continue
+            fi
+            local pin_args=()
+            if [[ -n "$rev" ]]; then
+                pin_args+=(--git "$git_url" --rev "$rev")
+                echo "  Installing $name from $git_url@$rev (pinned)..."
+            else
+                pin_args+=(--version "$version")
+                echo "  Installing $name@$version (pinned)..."
+            fi
+            if ! cargo install "${pin_args[@]}" "$name" </dev/null; then
+                log_error "Failed to install $name"
+                FAILED+=("$name")
+            fi
+            continue
+        fi
+
         if echo "$installed" | grep -qx "$name"; then
             echo "  + $name"
             continue
@@ -334,11 +387,25 @@ sync_cargo() {
 
     # Upgrade pass — cargo-install-update checks crates.io / git tip per
     # package and skips anything already at latest. Avoids the previous
-    # force-reinstall-everything-every-time behavior of `dots up`.
+    # force-reinstall-everything-every-time behavior of `dots up`. Pinned
+    # packages are excluded so a pin never drifts to latest.
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
         if command -v cargo-install-update &>/dev/null; then
             log_info "Upgrading cargo packages (skipping up-to-date)..."
-            cargo install-update --all --git </dev/null || log_warning "cargo install-update failed"
+            if ((${#pinned_names[@]})); then
+                local unpinned_names=()
+                local n
+                for n in "${all_names[@]}"; do
+                    if ! printf '%s\n' "${pinned_names[@]}" | grep -qxF "$n"; then
+                        unpinned_names+=("$n")
+                    fi
+                done
+                if ((${#unpinned_names[@]})); then
+                    cargo install-update "${unpinned_names[@]}" --git </dev/null || log_warning "cargo install-update failed"
+                fi
+            else
+                cargo install-update --all --git </dev/null || log_warning "cargo install-update failed"
+            fi
         else
             log_warning "cargo-update not installed — skipping cargo upgrade pass"
             log_warning "  Install with: cargo install cargo-update"
@@ -380,7 +447,7 @@ sync_rustup_proxies() {
 sync_npm() {
     local npm_pkgs skip_platform
     if [[ "$PLATFORM" == "Darwin" ]]; then skip_platform="linux"; else skip_platform="mac"; fi
-    npm_pkgs=$(yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"npm\" and (.value.platform == \"$skip_platform\" | not)) | [.key, (.value.pkg // .key)] | @tsv" "$PACKAGES_FILE" 2>/dev/null)
+    npm_pkgs=$(yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"npm\" and (.value.platform == \"$skip_platform\" | not)) | [.key, (.value.pkg // .key), (.value.version // \"\")] | @tsv" "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$npm_pkgs" ]] && return 0
 
     if ! command -v npm &>/dev/null; then
@@ -417,8 +484,18 @@ sync_npm() {
         rm -f "$outdated_stderr"
     fi
 
-    while IFS=$'\t' read -r name pkg; do
+    while IFS=$'\t' read -r name pkg version; do
         [[ -z "$name" ]] && continue
+
+        if [[ -n "$version" ]]; then
+            echo "  Installing $pkg@$version (pinned)..."
+            if ! npm install -g "$pkg@$version" </dev/null; then
+                log_error "Failed to install $pkg@$version"
+                FAILED+=("$pkg")
+            fi
+            continue
+        fi
+
         local already=false
         echo "$installed" | grep -qx "$pkg" && already=true
 
@@ -451,7 +528,10 @@ sync_uv() {
     local uv_pkgs
     # `flags` is emitted as a space-joined string in the third TSV column.
     # Empty / missing flags collapse to an empty field.
-    uv_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "uv") | [.key, (.value.pkg // .key), ((.value.flags // []) | join(" "))] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    # Joined with "|", not @tsv/real tabs — see sync_cargo's comment: bash's
+    # `read` collapses tab runs even under a custom IFS, silently swallowing
+    # an empty field (e.g. no flags) sitting next to a pinned version.
+    uv_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "uv") | [.key, (.value.pkg // .key), ((.value.flags // []) | join(" ")), (.value.version // ""), (.value.rev // "")] | join("|")' "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$uv_pkgs" ]] && return 0
 
     if ! command -v uv &>/dev/null; then
@@ -463,10 +543,34 @@ sync_uv() {
     local installed
     installed=$(uv tool list 2>/dev/null | awk '/^[a-zA-Z]/ {print $1}' || true)
 
-    while IFS=$'\t' read -r name pkg flags_str; do
+    local all_names=() pinned_names=()
+    while IFS='|' read -r name pkg flags_str version rev; do
         [[ -z "$name" ]] && continue
+        all_names+=("$name")
         # shellcheck disable=SC2206  # word-splitting on flags_str is intentional
         local flags_array=($flags_str)
+
+        if [[ -n "$version" || -n "$rev" ]]; then
+            pinned_names+=("$name")
+            local target
+            if [[ -n "$rev" ]]; then
+                # git+URL@ref pins carry the ref inline (e.g. @main); swap it
+                # for the real commit so the URL stays a single well-formed
+                # git+ spec instead of appending a second @ref.
+                target="${pkg/@main/@$rev}"
+            elif [[ -n "$version" ]]; then
+                target="$pkg==$version"
+            else
+                target="$pkg"
+            fi
+            echo "  Installing $target (pinned)..."
+            if ! uv tool install ${flags_array[@]+"${flags_array[@]}"} "$target" </dev/null; then
+                log_error "Failed to install $target"
+                FAILED+=("$pkg")
+            fi
+            continue
+        fi
+
         if echo "$installed" | grep -qx "$name"; then
             echo "  + $name"
         else
@@ -480,7 +584,19 @@ sync_uv() {
 
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
         log_info "Upgrading uv tools..."
-        uv tool upgrade --all </dev/null || log_warning "uv tool upgrade --all failed"
+        if ((${#pinned_names[@]})); then
+            local unpinned_names=() n
+            for n in "${all_names[@]}"; do
+                if ! printf '%s\n' "${pinned_names[@]}" | grep -qxF "$n"; then
+                    unpinned_names+=("$n")
+                fi
+            done
+            if ((${#unpinned_names[@]})); then
+                uv tool upgrade "${unpinned_names[@]}" </dev/null || log_warning "uv tool upgrade failed"
+            fi
+        else
+            uv tool upgrade --all </dev/null || log_warning "uv tool upgrade --all failed"
+        fi
     fi
 
     log_success "UV sync complete"
@@ -490,7 +606,7 @@ sync_uv() {
 
 sync_gh_extensions() {
     local ext_pkgs
-    ext_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "gh-extension") | [.key, (.value.pkg // .key)] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
+    ext_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "gh-extension") | [.key, (.value.pkg // .key), (.value.version // "")] | @tsv' "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$ext_pkgs" ]] && return 0
 
     if ! command -v gh &>/dev/null; then
@@ -503,8 +619,21 @@ sync_gh_extensions() {
     # gh extension list emits tab-separated rows: "gh <name>\t<owner>/<repo>\t<version>"
     installed=$(gh extension list 2>/dev/null | awk -F'\t' '{print $2}' || true)
 
-    while IFS=$'\t' read -r name pkg; do
+    local all_names=() pinned_names=()
+    while IFS=$'\t' read -r name pkg version; do
         [[ -z "$name" ]] && continue
+        all_names+=("$name")
+
+        if [[ -n "$version" ]]; then
+            pinned_names+=("$name")
+            echo "  Installing $pkg --pin $version..."
+            if ! gh extension install "$pkg" --pin "$version" </dev/null; then
+                log_error "Failed to install $pkg"
+                FAILED+=("$pkg")
+            fi
+            continue
+        fi
+
         if echo "$installed" | grep -qx "$pkg"; then
             echo "  + $name"
         else
@@ -518,19 +647,34 @@ sync_gh_extensions() {
 
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
         log_info "Upgrading gh extensions..."
-        gh extension upgrade --all </dev/null || log_warning "gh extension upgrade --all failed"
+        if ((${#pinned_names[@]})); then
+            local unpinned_names=() n
+            for n in "${all_names[@]}"; do
+                if ! printf '%s\n' "${pinned_names[@]}" | grep -qxF "$n"; then
+                    unpinned_names+=("$n")
+                fi
+            done
+            if ((${#unpinned_names[@]})); then
+                gh extension upgrade "${unpinned_names[@]}" </dev/null || log_warning "gh extension upgrade failed"
+            fi
+        else
+            gh extension upgrade --all </dev/null || log_warning "gh extension upgrade --all failed"
+        fi
     fi
 
     log_success "gh extensions sync complete"
 }
 
 ########## Native AI-harness CLIs
-# claude, codex, and omp are managed through their own native installers and
+# claude and omp are managed through their own native installers and
 # self-updaters, NOT Homebrew — the brew cask/formula lag the fast-moving
-# release channels and (for claude/omp) shadow-fight the native ~/.local/bin
-# binary on PATH. Every sync: migrate off brew (uninstall a lingering copy)
-# and install the native binary when missing. In UPGRADE_MODE: self-update.
-# codex has no brew footprint and no dots-managed installer — update only.
+# release channels and shadow-fight the native ~/.local/bin binary on PATH.
+# claude and codex are mise-managed (see sync_mise); this section migrates
+# any stale native/brew binary off PATH so mise's shim is the only thing
+# left. omp has no mise plugin, so it keeps its own native install +
+# self-update.
+
+OMP_PIN="v17.1.2"
 
 # Brew package to migrate off, per harness ("" = none; "cask:NAME" = cask).
 native_harness_brew_pkg() {
@@ -538,18 +682,6 @@ native_harness_brew_pkg() {
         claude) echo "cask:claude-code" ;;
         omp)    echo "omp" ;;
         *)      echo "" ;;
-    esac
-}
-
-# Harnesses with a dots-managed native installer (codex is installed elsewhere).
-native_harness_has_installer() {
-    case "$1" in claude|omp) return 0 ;; *) return 1 ;; esac
-}
-
-native_harness_install() {
-    case "$1" in
-        claude) curl -fsSL https://claude.ai/install.sh | bash ;;
-        omp)    curl -fsSL https://omp.sh/install | sh ;;
     esac
 }
 
@@ -581,34 +713,43 @@ migrate_harness_off_brew() {
     fi
 }
 
+# Remove a stale native-installed binary for a mise-migrated harness so
+# mise's shim is the only thing left on PATH.
+migrate_harness_off_native() {
+    local harness="$1"
+    local path="$HOME/.local/bin/$harness"
+    [[ -e "$path" ]] || return 0
+    log_info "  Removing native $harness binary (now mise-managed)..."
+    rm -f "$path"
+}
+
 sync_native_harnesses() {
     log_info "Syncing native AI-harness CLIs..."
 
     local harness
-    for harness in claude codex omp; do
+    for harness in claude codex; do
         migrate_harness_off_brew "$harness"
-
-        if ! command -v "$harness" &>/dev/null; then
-            if native_harness_has_installer "$harness"; then
-                echo "  Installing $harness (native)..."
-                if native_harness_install "$harness"; then
-                    hash -r 2>/dev/null || true
-                    log_success "  Installed $harness"
-                else
-                    log_warning "  $harness native install failed — continuing"
-                fi
-            else
-                log_info "  $harness not found — no native installer, skipping"
-            fi
-        fi
-
-        [[ "${UPGRADE_MODE:-false}" == "true" ]] || continue
-        command -v "$harness" &>/dev/null || continue
-        echo "  Updating $harness..."
-        if ! "$harness" update </dev/null; then
-            log_warning "$harness update failed — continuing"
-        fi
+        migrate_harness_off_native "$harness"
     done
+
+    migrate_harness_off_brew "omp"
+
+    if ! command -v omp &>/dev/null; then
+        echo "  Installing omp (native)..."
+        if curl -fsSL https://omp.sh/install | sh -s -- --ref "$OMP_PIN"; then
+            hash -r 2>/dev/null || true
+            log_success "  Installed omp"
+        else
+            log_warning "  omp native install failed — continuing"
+        fi
+    fi
+
+    if [[ "${UPGRADE_MODE:-false}" == "true" ]] && command -v omp &>/dev/null; then
+        echo "  Updating omp..."
+        if ! omp update </dev/null; then
+            log_warning "omp update failed — continuing"
+        fi
+    fi
 
     log_success "Native harness sync complete"
 }
@@ -651,6 +792,7 @@ if [[ "$PLATFORM" == "Darwin" || "$PLATFORM" == "Linux" ]]; then
     sync_brew
 fi
 
+sync_mise
 sync_cargo
 sync_rustup_proxies
 sync_npm
