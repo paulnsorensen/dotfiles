@@ -674,6 +674,13 @@ sync_gh_extensions() {
 # left. omp has no mise plugin, so it keeps its own native install +
 # self-update.
 
+# Pass --binary explicitly: omp.sh's installer defaults to a bun source
+# build whenever --ref is given, and that build (`bun install -g
+# packages/coding-agent` against the cloned monorepo) trips bun's
+# self-referential-workspace-loop check on this package's own dependency
+# on itself — reproduces even on a known-good already-installed pin, so
+# it's a bun/installer incompatibility, not a bad release. --binary
+# downloads the prebuilt release asset instead, sidestepping bun entirely.
 OMP_PIN="v17.1.3"
 
 # Brew package to migrate off, per harness ("" = none; "cask:NAME" = cask).
@@ -736,7 +743,7 @@ sync_native_harnesses() {
 
     if ! command -v omp &>/dev/null; then
         echo "  Installing omp (native)..."
-        if curl -fsSL https://omp.sh/install | sh -s -- --ref "$OMP_PIN"; then
+        if curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN"; then
             hash -r 2>/dev/null || true
             log_success "  Installed omp"
         else
