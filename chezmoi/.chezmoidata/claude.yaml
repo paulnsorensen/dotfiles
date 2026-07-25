@@ -41,12 +41,14 @@ claude:
         TILTH_MCP_CWD_HOOK_INJECTED: "1"
     context7:
       command: npx
-      args: ["-y", "@upstash/context7-mcp"]
+      # renovate: datasource=npm depName=@upstash/context7-mcp
+      args: ["-y", "@upstash/context7-mcp@3.2.4"]
       env:
         CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
     tavily:
       command: npx
-      args: ["-y", "tavily-mcp@latest"]
+      # renovate: datasource=npm depName=tavily-mcp
+      args: ["-y", "tavily-mcp@0.2.21"]
       env:
         TAVILY_API_KEY: "${TAVILY_API_KEY}"
 
