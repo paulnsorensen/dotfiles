@@ -64,12 +64,12 @@ ${GREEN}Usage:${NC} dots [command] [args]
 ${BLUE}Commands:${NC}
   ${GREEN}update${NC}          Pull latest changes and run sync
   ${GREEN}sync${NC}            Run the sync script
-  ${GREEN}upgrade${NC}         Upgrade packages, force-refresh skills + vendor cache, apply
+  ${GREEN}upgrade${NC}         Pull dotfiles, then upgrade brew remainder/casks and exempt channels
   ${GREEN}status${NC}          Show git status of dotfiles
   ${GREEN}rollback${NC}        Show how to undo a sync (git revert + dots sync)
   ${GREEN}doctor${NC}          Run health checks and profile shell
   ${GREEN}profile${NC}         Manage harness-agnostic agent profiles (run 'dots profile help')
-  ${GREEN}bootstrap${NC}       One-shot Linux provision (brew + rustup + packages)
+  ${GREEN}bootstrap${NC}       One-shot Linux provision (brew + pinned manifests)
   ${GREEN}claude diff${NC}     Preview what a sync would change under ~/.claude
                   (settings.json + exact_ trees; NOT ~/.claude.json MCP drift,
                    which reconciles via the claude CLI, not chezmoi)
@@ -253,7 +253,7 @@ do_doctor() {
         issues=$((issues + 1))
     else
         echo -e "  ${RED}✗ prek not found${NC}"
-        echo -e "    Run: ${GREEN}brew install prek${NC}"
+        echo -e "    Run: ${GREEN}dots sync${NC}"
         issues=$((issues + 1))
     fi
 
@@ -422,28 +422,13 @@ case "${1:-status}" in
         resume_main "$@"
         ;;
     upgrade|up)
-        echo -e "${BLUE}⬆️  Upgrading packages and refreshing config...${NC}"
+        echo -e "${BLUE}⬆️  Updating dotfiles, then upgrading unpinned channels...${NC}"
         cd_dotfiles
-        # Full refresh sync: UPGRADE_MODE upgrades package versions, `refresh`
-        # force-pulls the external-skill vendor cache (plain `dots sync` reuses
-        # a stale cache, so upstream skill removals never reach ~/.claude), then
-        # chezmoi apply prunes anything the fresh assembly dropped. Runs before
-        # the npx skill refresh so package tools (node) are present for it.
-        UPGRADE_MODE=true do_sync refresh
-
-        echo
-        echo -e "${BLUE}⬆️  Refreshing remote skills...${NC}"
-        # `npx skills add --force` re-clones each source at its latest default
-        # branch (float-to-latest), so always run it — the install does its own
-        # work; there's no cheap upstream-up-to-date probe to short-circuit on.
-        # Cadence split (intentional): plain `dots sync` never runs this —
-        # it deliberately does NOT refresh ~/.agents/skills for codex or other
-        # skills-CLI harnesses. That refresh is `dots upgrade`'s job, gated
-        # behind the network/npx cadence, not the offline chezmoi-native sync.
-        if ! SKILL_EXCLUDE_AGENTS="claude-code" bash "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
-                "$DOTFILES_DIR/skills/_registry.yaml" --force; then
-            echo -e "${YELLOW}⚠️  Remote skills refresh failed (continuing)${NC}" >&2
-        fi
+        git pull --rebase
+        # UPGRADE_MODE bypasses the package cache, but pinned installers still
+        # converge to their recorded versions. Do not pass `refresh` or run the
+        # skills CLI: those float remote skill sources outside the pin contract.
+        UPGRADE_MODE=true do_sync
         ;;
     status|st)
         do_status
@@ -469,7 +454,7 @@ case "${1:-status}" in
         "$DOTFILES_DIR/agent-profile/ap" "$@"
         ;;
     bootstrap|b)
-        echo -e "${BLUE}🧰 Bootstrapping this Linux box (brew + rustup + packages)...${NC}"
+        echo -e "${BLUE}🧰 Bootstrapping this Linux box (brew + pinned manifests)...${NC}"
         cd_dotfiles
         bash "$DOTFILES_DIR/packages/bootstrap-linux.sh"
         ;;

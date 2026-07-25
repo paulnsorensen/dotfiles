@@ -44,10 +44,19 @@ run_sync() {
       brew install yq
     fi
 
-    log_info "Syncing packages"
-    bash "$dir/packages/sync.sh"
-
-    upgrade_uv_tools
+    if ! command -v chezmoi &>/dev/null; then
+        log_info "Bootstrapping mise-managed chezmoi before initial apply"
+        PACKAGES_BOOTSTRAP_ONLY=true \
+            MISE_CONFIG_FILE="$dir/chezmoi/dot_config/mise/config.toml" \
+            FORCE_PACKAGES=true \
+            bash "$dir/packages/sync.sh"
+        export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims:$PATH"
+        hash -r 2>/dev/null || true
+        if ! command -v chezmoi &>/dev/null; then
+            log_error "chezmoi unavailable after package bootstrap"
+            exit 1
+        fi
+    fi
 
     log_info "Creating $olddir for backup of any existing dotfiles in ~"
     mkdir -p "$olddir"
@@ -56,6 +65,12 @@ run_sync() {
         sync_entry "$file"
     done
     sync_hidden_dirs
+
+    # Chezmoi deploys the mise manifest during the entry loop above. Run the
+    # package convergence only after that apply so config-only pin bumps take
+    # effect in the same sync.
+    log_info "Syncing packages"
+    bash "$dir/packages/sync.sh"
 
     install_tpm
     install_prek_hooks

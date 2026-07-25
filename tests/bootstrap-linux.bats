@@ -2,10 +2,8 @@
 # Unit tests for packages/bootstrap-linux.sh
 #
 # Sources the script (main is guarded behind BASH_SOURCE==$0) and exercises the
-# registry-derivation + toolchain-detection functions directly. Network/sudo
-# paths (the actual brew/rustup installs) are not exercised here. The reused
-# helpers (bootstrap_brew_deps_linux / linuxbrew_shellenv / bootstrap_yq_linux /
-# yq_is_mikefarah) live in packages/lib-linux-bootstrap.sh and are covered below.
+# registry derivation and bootstrap handoff. Network/sudo paths are mocked; the
+# reused helpers live in packages/lib-linux-bootstrap.sh and are covered below.
 
 load test_helper
 
@@ -84,28 +82,21 @@ YAML
     assert_output_contains "already installed"
 }
 
-@test "bootstrap_rustup is a no-op when cargo is already on PATH" {
-    printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/cargo"
-    chmod +x "$MOCK_BIN/cargo"
-    PATH="$MOCK_BIN:$PATH" run bootstrap_rustup
-    assert_success
-    assert_output_contains "already present"
-}
 
 @test "real packages.yaml: bootstrap brew list excludes mac-only and non-brew sources" {
     export PACKAGES_FILE="$REAL_DOTFILES_DIR/packages/packages.yaml"
     run get_bootstrap_brew_pkgs
     assert_success
-    # Spot-check a few known entries from the real registry.
-    assert_output_contains "ripgrep"
-    assert_output_contains "node"
-    assert_output_not_contains "skhd"        # mac-only (koekeishiya tap)
-    assert_output_not_contains "claude-code" # cask, mac-only
-    assert_output_not_contains "rtk"         # cargo (git-sourced)
+    # The brew remainder stays; mise-owned tools must not return.
+    assert_output_contains "tree"
+    assert_output_contains "htop"
+    assert_output_not_contains "ripgrep"
+    assert_output_not_contains "node"
+    assert_output_not_contains "rtk"
 }
 
-# Stub the toolchain externals and yq so main reaches install_brew_packages and
-# the sync handoff. yq is mocked to emit one formula so `brew install` runs.
+# Stub bootstrap externals and yq so main reaches install_brew_packages and
+# the manifest-convergence handoff.
 stub_main_env() {
     export PLATFORM="Linux"
     cat > "$MOCK_BIN/yq" << 'EOF'
@@ -115,8 +106,7 @@ case "$1" in
     *) echo jq ;;
 esac
 EOF
-    printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/cargo"
-    chmod +x "$MOCK_BIN/yq" "$MOCK_BIN/cargo"
+    chmod +x "$MOCK_BIN/yq"
     # Capture the sync.sh handoff: main runs `bash "$SCRIPT_DIR/sync.sh"`, so a
     # PATH-shadowing bash records FORCE_PACKAGES and the script it was handed.
     cat > "$MOCK_BIN/bash" << EOF

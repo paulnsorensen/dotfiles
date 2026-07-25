@@ -33,8 +33,8 @@ esac
 MOCK
     chmod +x "$MOCK_BIN/git"
 
-    # Mock brew, prek, uv, tmux, yq, omp — no-ops
-    for cmd in brew prek uv tmux yq omp; do
+    # Mock bootstrap/runtime commands — no-ops
+    for cmd in brew prek uv tmux yq omp chezmoi; do
         printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/$cmd"
         chmod +x "$MOCK_BIN/$cmd"
     done
@@ -165,6 +165,65 @@ SCRIPT
     run bash "$SYNC_SCRIPT"
     assert_success
     assert_output_contains "Running .sync for mysubdir"
+}
+
+@test "package sync runs after chezmoi applies the mise manifest" {
+    cd "$FAKE_DOTFILES"
+    export SYNC_EVENTS="$TEST_HOME/sync-events.log"
+    mkdir -p "$FAKE_DOTFILES/chezmoi"
+    cat > "$FAKE_DOTFILES/chezmoi/.sync" << 'SCRIPT'
+#!/bin/bash
+printf 'chezmoi-apply\n' >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/chezmoi/.sync"
+    cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
+#!/bin/bash
+printf 'packages-sync\n' >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    run cat "$SYNC_EVENTS"
+    [[ "$output" == $'chezmoi-apply\npackages-sync' ]]
+}
+
+@test "fresh machine bootstraps mise tools before chezmoi then converges packages" {
+    cd "$FAKE_DOTFILES"
+    export SYNC_EVENTS="$TEST_HOME/sync-events.log"
+    rm -f "$MOCK_BIN/chezmoi"
+    mkdir -p "$FAKE_DOTFILES/chezmoi/dot_config/mise"
+    printf '[tools]\n' > "$FAKE_DOTFILES/chezmoi/dot_config/mise/config.toml"
+    cat > "$FAKE_DOTFILES/chezmoi/.sync" << 'SCRIPT'
+#!/bin/bash
+printf 'chezmoi-apply\n' >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/chezmoi/.sync"
+    cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
+#!/bin/bash
+if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
+    printf 'packages-bootstrap\n' >> "$SYNC_EVENTS"
+    cat > "$MOCK_BIN/chezmoi" << 'MOCK'
+#!/bin/bash
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/chezmoi"
+else
+    printf 'packages-sync\n' >> "$SYNC_EVENTS"
+fi
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    run cat "$SYNC_EVENTS"
+    local bootstrap_line apply_line sync_line
+    bootstrap_line=$(printf '%s\n' "$output" | awk '/packages-bootstrap/{print NR; exit}')
+    apply_line=$(printf '%s\n' "$output" | awk '/chezmoi-apply/{print NR; exit}')
+    sync_line=$(printf '%s\n' "$output" | awk '/packages-sync/{print NR; exit}')
+    [[ -n "$bootstrap_line" && -n "$apply_line" && -n "$sync_line" ]]
+    [[ "$bootstrap_line" -lt "$apply_line" ]]
+    [[ "$apply_line" -lt "$sync_line" ]]
 }
 
 @test "hidden .copilot .sync runs after visible sync scripts" {

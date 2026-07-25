@@ -339,10 +339,10 @@ SH
     [ "$output" = "shimmed" ]
 }
 
-@test "zshenv moves existing mise shims ahead of a stale native PATH entry" {
+@test "zshenv moves existing mise shims ahead of later cargo and dotnet prepends" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     local fake_xdg="$TEST_HOME/xdg-data-existing"
-    mkdir -p "$fake_xdg/mise/shims"
+    mkdir -p "$fake_xdg/mise/shims" "$TEST_HOME/.cargo/bin" "$TEST_HOME/.dotnet/tools"
     local stale_bin="$TEST_HOME/stale-bin-existing"
     mkdir -p "$stale_bin"
     cat > "$stale_bin/claude" <<'SH'
@@ -356,10 +356,11 @@ echo shimmed
 SH
     chmod +x "$fake_xdg/mise/shims/claude"
 
-    run zsh -c "XDG_DATA_HOME='$fake_xdg'; PATH='$stale_bin:$fake_xdg/mise/shims':/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'; claude"
+    run zsh -c "HOME='$TEST_HOME'; XDG_DATA_HOME='$fake_xdg'; PATH='$stale_bin:$fake_xdg/mise/shims':/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'; print -r -- \$path[1]; claude"
 
     assert_success
-    [ "$output" = "shimmed" ]
+    [ "${lines[0]}" = "$fake_xdg/mise/shims" ]
+    [ "${lines[1]}" = "shimmed" ]
 }
 
 @test "zshenv sources cleanly with no XDG_DATA_HOME and no mise shims dir present" {
