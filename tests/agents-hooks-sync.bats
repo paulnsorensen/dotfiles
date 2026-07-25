@@ -15,10 +15,16 @@
 load test_helper
 
 setup_file() {
-    # hook_codex_apply (agents/hooks/lib.sh) mktemps hook-sync.XXXXXX.toml in
-    # the shared $TMPDIR; the non-trailing Xs don't randomize, so concurrent
-    # tests collide on the same literal path. Keep this file serial.
-    export BATS_NO_PARALLELIZE_WITHIN_FILE=true
+    local registry_json
+
+    # shellcheck source=../claude/lib/sync-common.sh
+    source "$REAL_DOTFILES_DIR/claude/lib/sync-common.sh"
+    # shellcheck source=../agents/hooks/lib.sh
+    source "$REAL_DOTFILES_DIR/agents/hooks/lib.sh"
+
+    registry_json=$(yq -o=json '.hooks' "$REAL_DOTFILES_DIR/agents/hooks/registry.yaml")
+    printf '%s\n' "$registry_json" > "$BATS_FILE_TMPDIR/registry.json"
+    hook_filter_for_harness claude "$registry_json" > "$BATS_FILE_TMPDIR/claude-hooks.json"
 }
 
 setup() {
@@ -35,11 +41,12 @@ setup() {
     # shellcheck source=../agents/hooks/lib.sh
     source "$REAL_DOTFILES_DIR/agents/hooks/lib.sh"
 
-    # Default REGISTRY_JSON / HARNESS_DESIRED_JSON used by most tests.
+    # Load a fresh copy of the immutable file-scoped registry cache so tests
+    # can freely replace either variable without leaking state.
     export REGISTRY_JSON
-    REGISTRY_JSON=$(yq -o=json '.hooks' "$REGISTRY_FILE")
+    REGISTRY_JSON=$(< "$BATS_FILE_TMPDIR/registry.json")
     export HARNESS_DESIRED_JSON
-    HARNESS_DESIRED_JSON=$(hook_filter_for_harness claude "$REGISTRY_JSON")
+    HARNESS_DESIRED_JSON=$(< "$BATS_FILE_TMPDIR/claude-hooks.json")
 }
 
 teardown() {

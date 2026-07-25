@@ -3,6 +3,7 @@ import { createContext, Script } from 'node:vm'
 
 const GLOBALS = ['agent', 'parallel', 'pipeline', 'phase', 'log', 'workflow', 'args', 'budget', 'Date', 'Math']
 const SUPPORTED_SCHEMA_KEYS = new Set(['type', 'required', 'properties', 'items', 'enum', 'description', 'pattern'])
+const workflowCache = new Map()
 
 export class SchemaError extends Error {
   constructor(message) {
@@ -145,7 +146,7 @@ export function createRuntime({ respond = () => { throw new Error('agent fixture
   return { globals, trace }
 }
 
-export async function loadWorkflow(path) {
+async function compileWorkflow(path) {
   const source = await readFile(path, 'utf8')
   const match = source.match(/^\s*export\s+const\s+meta\s*=\s*(\{[\s\S]*?\n\})\s*;?/m)
   if (!match) throw new Error('workflow meta export not found: ' + path)
@@ -153,6 +154,12 @@ export async function loadWorkflow(path) {
   const meta = Function('return (' + match[1] + ')')()
   const body = source.slice(0, match.index) + source.slice(match.index + match[0].length)
   const script = new Script('(async () => {\n' + body + '\n})()', { filename: path })
+  return { meta, script }
+}
+
+export async function loadWorkflow(path) {
+  if (!workflowCache.has(path)) workflowCache.set(path, compileWorkflow(path))
+  const { meta, script } = await workflowCache.get(path)
 
   return {
     meta,

@@ -6,17 +6,13 @@
 
 load test_helper
 
-setup_file() {
-    # Several tests here run chezmoi/.sync, whose assembly step rewrites the
-    # REAL repo's chezmoi/dot_claude/exact_* trees (rm -rf + repopulate).
-    # Under `bats --jobs N` two such tests race on that shared tree and fail
-    # nondeterministically. Keep this file serial.
-    export BATS_NO_PARALLELIZE_WITHIN_FILE=true
-}
 
 setup() {
     setup_test_env
     export CHEZMOI_SYNC="$REAL_DOTFILES_DIR/chezmoi/.sync"
+    export SYNC_LIB="$REAL_DOTFILES_DIR/.sync-lib.sh"
+    # shellcheck source=../.sync-lib.sh
+    source "$SYNC_LIB"
     # The ap live-install path (install-base-profile) and the claude asset
     # installer were retired (spec: chezmoi-authoritative-claude): ~/.claude
     # deploys via dot_claude/exact_* + modify_settings.json, and user-scope
@@ -53,6 +49,34 @@ SH
     echo "$fake_bin"
 }
 
+run_chezmoi_preflight() {
+    run prepare_chezmoi_wiring "$REAL_DOTFILES_DIR" "$REAL_DOTFILES_DIR/chezmoi"
+}
+
+write_valid_chezmoi_config() {
+    local source_dir="${1:-$REAL_DOTFILES_DIR/chezmoi}"
+    mkdir -p "$HOME/.config/chezmoi"
+    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$source_dir"
+
+[data]
+email = "user@example.com"
+work = false
+EOF
+}
+
+make_isolated_chezmoi_source() {
+    local root="$TEST_HOME/dotfiles"
+    local source_dir="$root/chezmoi"
+    mkdir -p "$source_dir"
+    cp -R "$REAL_DOTFILES_DIR/chezmoi/." "$source_dir/"
+    local sibling
+    for sibling in agent-profile agents claude codex cursor; do
+        ln -s "$REAL_DOTFILES_DIR/$sibling" "$root/$sibling"
+    done
+    echo "$source_dir"
+}
+
 @test "chezmoi/.sync: missing config + chezmoi present + no TTY fails loud" {
     local fake_bin
     fake_bin=$(make_fake_chezmoi)
@@ -60,7 +84,7 @@ SH
 
     [[ ! -e "$HOME/.config/chezmoi/chezmoi.toml" ]]
 
-    run bash "$CHEZMOI_SYNC"
+    run_chezmoi_preflight
     assert_failure
     assert_output_contains "no TTY available to run init"
     # Critical: we must NOT write a stub. The whole point of the change is to
@@ -75,7 +99,7 @@ SH
     # bats teardown.
     PATH="/usr/bin:/bin"
 
-    run bash "$CHEZMOI_SYNC"
+    run_chezmoi_preflight
     assert_success
     assert_output_contains "Skipping chezmoi setup"
     [[ ! -e "$HOME/.config/chezmoi/chezmoi.toml" ]]
@@ -92,7 +116,7 @@ SH
 sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
 EOF
 
-    run bash "$CHEZMOI_SYNC"
+    run_chezmoi_preflight
     assert_failure
     assert_output_contains "no [data] block"
     # Stub left in place for the user to inspect/delete manually.
@@ -123,7 +147,7 @@ EOF
     local before
     before=$(shasum -a 256 "$config" | awk '{print $1}')
 
-    run bash "$CHEZMOI_SYNC"
+    run_chezmoi_preflight
     assert_success
 
     local after
@@ -150,7 +174,7 @@ work = false
 EOF
 
     PATH="$fake_bin:$PATH"
-    run bash "$CHEZMOI_SYNC"
+    run apply_chezmoi_source "$REAL_DOTFILES_DIR/chezmoi"
     assert_success
     grep -qF 'sourceDir = "/some/stale/checkout/chezmoi"' "$config"
 
@@ -163,154 +187,61 @@ EOF
 
 # ── legacy symlink migration ───────────────────────────────────────────
 
-@test "chezmoi/.sync removes dangling ~/.gitconfig symlink pointing into dotfiles" {
-    # Simulate the post-#167 state: ~/.gitconfig still symlinked at the old
-    # pre-chezmoi location, target file deleted.
+@test "chezmoi preflight removes dangling ~/.gitconfig symlink pointing into dotfiles" {
     ln -s "$REAL_DOTFILES_DIR/gitconfig" "$HOME/.gitconfig"
     [[ -L "$HOME/.gitconfig" ]]
-    [[ ! -e "$HOME/.gitconfig" ]]  # dangling
+    [[ ! -e "$HOME/.gitconfig" ]]
 
-    # Pre-populate a valid config so the script doesn't bail on missing
-    # config before reaching the migration step.
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "user@example.com"
-work = false
-EOF
-
-    # Mock chezmoi so apply is a no-op (we're testing migration, not apply).
-    local fake_bin
-    fake_bin=$(make_fake_chezmoi)
-    PATH="$fake_bin:$PATH"
-
-    run bash "$CHEZMOI_SYNC"
+    run migrate_legacy_chezmoi_symlinks "$REAL_DOTFILES_DIR"
     assert_success
     [[ ! -L "$HOME/.gitconfig" ]]
     [[ ! -e "$HOME/.gitconfig" ]]
     assert_output_contains "Removed legacy dotfiles symlink"
 }
 
-@test "chezmoi/.sync removes live ~/.gitconfig symlink that resolves into dotfiles" {
-    # Symlink to a real file inside the dotfiles checkout — live, not dangling.
-    # Migration must still claim this path because chezmoi will overwrite it.
+@test "chezmoi preflight removes live ~/.gitconfig symlink that resolves into dotfiles" {
     local fake_target="$REAL_DOTFILES_DIR/chezmoi/.gitattributes"
-    [[ -f "$fake_target" ]]  # sanity check
+    [[ -f "$fake_target" ]]
     ln -s "$fake_target" "$HOME/.gitconfig"
-    [[ -L "$HOME/.gitconfig" ]]
-    [[ -e "$HOME/.gitconfig" ]]
 
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "user@example.com"
-work = false
-EOF
-
-    local fake_bin
-    fake_bin=$(make_fake_chezmoi)
-    PATH="$fake_bin:$PATH"
-
-    run bash "$CHEZMOI_SYNC"
+    run migrate_legacy_chezmoi_symlinks "$REAL_DOTFILES_DIR"
     assert_success
     [[ ! -e "$HOME/.gitconfig" ]]
 }
 
-@test "chezmoi/.sync preserves real file at ~/.gitconfig (no migration)" {
-    # If the user already has a real ~/.gitconfig (chezmoi-rendered or
-    # hand-edited), the migration must not touch it.
+@test "chezmoi preflight preserves real file at ~/.gitconfig" {
     printf '[user]\n\temail = real@example.com\n' > "$HOME/.gitconfig"
-    [[ -f "$HOME/.gitconfig" && ! -L "$HOME/.gitconfig" ]]
 
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "user@example.com"
-work = false
-EOF
-
-    local fake_bin
-    fake_bin=$(make_fake_chezmoi)
-    PATH="$fake_bin:$PATH"
-
-    run bash "$CHEZMOI_SYNC"
+    run migrate_legacy_chezmoi_symlinks "$REAL_DOTFILES_DIR"
     assert_success
     [[ -f "$HOME/.gitconfig" && ! -L "$HOME/.gitconfig" ]]
     grep -qF 'real@example.com' "$HOME/.gitconfig"
 }
 
-@test "chezmoi/.sync preserves ~/.gitconfig symlink pointing outside dotfiles" {
-    # Symlink to a path outside the dotfiles checkout (e.g. user manages
-    # their own gitconfig via a different tool). Migration must not touch it.
+@test "chezmoi preflight preserves ~/.gitconfig symlink pointing outside dotfiles" {
     local outside_target="$TEST_HOME/elsewhere/gitconfig"
     mkdir -p "$(dirname "$outside_target")"
     printf '[user]\n\temail = elsewhere@example.com\n' > "$outside_target"
     ln -s "$outside_target" "$HOME/.gitconfig"
-    [[ -L "$HOME/.gitconfig" ]]
 
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "user@example.com"
-work = false
-EOF
-
-    local fake_bin
-    fake_bin=$(make_fake_chezmoi)
-    PATH="$fake_bin:$PATH"
-
-    run bash "$CHEZMOI_SYNC"
+    run migrate_legacy_chezmoi_symlinks "$REAL_DOTFILES_DIR"
     assert_success
     [[ -L "$HOME/.gitconfig" ]]
     [[ "$(readlink "$HOME/.gitconfig")" == "$outside_target" ]]
 }
 
-@test "chezmoi/.sync migrates ~/.copilot/mcp-config.json legacy symlink too" {
-    # Smoke test that the migration list covers the other chezmoi-managed
-    # path. Real-world this was a regular file, but if anyone left a
-    # dotfiles-pointing symlink during a half-migration it must still be
-    # claimed.
+@test "chezmoi preflight migrates ~/.copilot/mcp-config.json legacy symlink too" {
     mkdir -p "$HOME/.copilot"
     ln -s "$REAL_DOTFILES_DIR/nonexistent-mcp.json" "$HOME/.copilot/mcp-config.json"
-    [[ -L "$HOME/.copilot/mcp-config.json" ]]
 
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "user@example.com"
-work = false
-EOF
-
-    local fake_bin
-    fake_bin=$(make_fake_chezmoi)
-    PATH="$fake_bin:$PATH"
-
-    run bash "$CHEZMOI_SYNC"
+    run migrate_legacy_chezmoi_symlinks "$REAL_DOTFILES_DIR"
     assert_success
     [[ ! -e "$HOME/.copilot/mcp-config.json" ]]
 }
 
-# ── prelink_claude_writethrough (first-install symlink ordering) ───────
-#
-# Regression guard for the first-install race between chezmoi/.sync (runs
-# first alphabetically) and claude/.sync (creates the ~/.claude/{hooks,
-# reference, settings.json} symlinks). Without the prelink, chezmoi's
 # ── claude source assembly (pre-apply) ────────────────────────────────
-# chezmoi/.sync assembles the registry-selected ~/.claude payload into
-# dot_claude/exact_* BEFORE chezmoi apply, so exact_ deletion semantics see a
-# complete tree. The external-skill vendoring is fed from a seeded cache so
-# these tests stay offline (a fake git that fails `pull` exercises the
-# use-cached-checkout fallback).
+# External-skill vendoring is fed from a seeded cache so the retained
+# end-to-end apply test stays offline.
 
 # Seed the external-skill cache + a git shim so no network is touched.
 seed_skill_cache_offline() {
@@ -344,60 +275,17 @@ seed_skill_cache_offline() {
     echo "$fake_bin"
 }
 
-@test "chezmoi/.sync assembles dot_claude/exact_* before chezmoi apply" {
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
 
-[data]
-email = "user@example.com"
-work = false
-EOF
-    local git_bin fake_bin
-    git_bin=$(seed_skill_cache_offline)
-    fake_bin=$(make_fake_chezmoi)
-    PATH="$git_bin:$fake_bin:$PATH"
-
-    run bash "$CHEZMOI_SYNC"
-    assert_success
-    [[ "$output" == *"Assembled claude chezmoi source state"* ]]
-
-    local src="$REAL_DOTFILES_DIR/chezmoi/dot_claude"
-    local tree
-    for tree in exact_skills exact_agents exact_commands exact_hooks exact_lib exact_reference exact_workflows; do
-        [[ -d "$src/$tree" ]] || { echo "missing $src/$tree" >&2; return 1; }
-    done
-    # Registry-selected local skill assembled with exact_ prefix.
-    [[ -d "$src/exact_skills/exact_de-slop" ]]
-    # Vendored external skill (from the seeded offline cache).
-    [[ -f "$src/exact_skills/exact_dummy-paulnsorensen__easy-cheese/SKILL.md" ]]
-    # Rendered agent carries registry frontmatter.
-    grep -q '^model: haiku$' "$src/exact_agents/whey-drainer.md"
-    grep -q '^name: whey-drainer$' "$src/exact_agents/whey-drainer.md"
-    # Hook scripts keep their executable_ attribute.
-    [[ -f "$src/exact_hooks/executable_git-guard.sh" ]]
-}
-
-@test "chezmoi/.sync no longer pre-links ~/.claude/{hooks,reference} (exact_ dirs own them)" {
+@test "chezmoi preflight no longer pre-links ~/.claude/{hooks,reference}" {
     [[ ! -e "$HOME/.claude" ]]
-    mkdir -p "$HOME/.config/chezmoi"
-    cat > "$HOME/.config/chezmoi/chezmoi.toml" <<EOF
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
-
-[data]
-email = "user@example.com"
-work = false
-EOF
-    local git_bin fake_bin
-    git_bin=$(seed_skill_cache_offline)
+    write_valid_chezmoi_config
+    local fake_bin
     fake_bin=$(make_fake_chezmoi)
-    PATH="$git_bin:$fake_bin:$PATH"
+    PATH="$fake_bin:$PATH"
 
-    run bash "$CHEZMOI_SYNC"
+    run_chezmoi_preflight
     assert_success
     [[ "$output" != *"Pre-linked"* ]]
-    # No write-through symlinks left behind — chezmoi (faked here) owns the
-    # real dirs on apply.
     [[ ! -L "$HOME/.claude/hooks" ]]
     [[ ! -L "$HOME/.claude/reference" ]]
 }
@@ -411,6 +299,10 @@ sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
 email = "user@example.com"
 work = false
 EOF
+    local isolated_source="$TEST_HOME/chezmoi-source"
+    mkdir -p "$isolated_source/.chezmoidata"
+    cp "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml" "$isolated_source/.chezmoidata/"
+    export CHEZMOI_SOURCE_DIR_OVERRIDE="$isolated_source"
     # Empty cache + failing git → external vendoring cannot clone → assembly
     # must abort the sync (a partial exact_ tree would DELETE live entries).
     local fake_bin="$TEST_HOME/fake-git-bin"
@@ -795,19 +687,16 @@ YAML
 
 # ── chezmoi/.sync first-run logic ──────────────────────────────────────
 
-@test "chezmoi/.sync references the init flow for TTY first-run" {
-    # We can't reliably fake a TTY in bats, but the init branch must be
-    # present in the script. Asserting on the source text locks in the
-    # contract that a TTY + template + chezmoi binary triggers init.
-    grep -q 'chezmoi init --source' "$CHEZMOI_SYNC"
-    grep -q '\[\[ -t 0 \]\]' "$CHEZMOI_SYNC"
-    grep -q '\.chezmoi\.toml\.tmpl' "$CHEZMOI_SYNC"
+@test "chezmoi preflight references the init flow for TTY first-run" {
+    grep -q 'chezmoi init --source' "$SYNC_LIB"
+    grep -q '\[\[ -t 0 \]\]' "$SYNC_LIB"
+    grep -q '\.chezmoi\.toml\.tmpl' "$SYNC_LIB"
+    grep -q 'prepare_chezmoi_wiring' "$CHEZMOI_SYNC"
 }
 
 @test "chezmoi/.sync calls chezmoi apply --force after wiring config" {
-    # Apply is unconditional (gated only on chezmoi presence) so templates
-    # and run_onchange installers run on every dots sync.
-    grep -qE 'chezmoi .*apply --force' "$CHEZMOI_SYNC"
+    grep -qE 'chezmoi .*apply --force' "$SYNC_LIB"
+    grep -q 'apply_chezmoi_source' "$CHEZMOI_SYNC"
 }
 
 @test "hallouminate nightly installer fails clearly without npm" {
@@ -827,6 +716,9 @@ YAML
 
 @test "chezmoi apply deploys the assembled ~/.claude payload + renders templates" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local isolated_source
+    isolated_source=$(make_isolated_chezmoi_source)
+    export CHEZMOI_SOURCE_DIR_OVERRIDE="$isolated_source"
 
     # Feed the external-skill vendoring from the seeded offline cache so the
     # assembly step never touches the network.
@@ -859,7 +751,7 @@ YAML
     # so chezmoi apply renders cleanly.
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
-sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+sourceDir = "$isolated_source"
 
 [data]
 email = "test@example.com"
@@ -870,11 +762,25 @@ TOML
 
     run bash "$CHEZMOI_SYNC"
     assert_success
+    assert_output_contains "Assembled claude chezmoi source state"
     # The reconcile ran (via the stub) and wrote its ownership manifest.
     assert_file_exists "$HOME/.claude/.chezmoi-mcp-manifest"
 
     run chezmoi apply --force
     assert_success
+
+    # The single production assembly populated every exact_ category before
+    # apply, including vendored skills and rendered/attributed files.
+    local source_claude="$isolated_source/dot_claude"
+    local tree
+    for tree in exact_skills exact_agents exact_commands exact_hooks exact_lib exact_reference exact_workflows; do
+        [[ -d "$source_claude/$tree" ]] \
+            || { echo "missing $source_claude/$tree" >&2; return 1; }
+    done
+    [[ -f "$source_claude/exact_skills/exact_dummy-paulnsorensen__easy-cheese/SKILL.md" ]]
+    grep -q '^name: whey-drainer$' "$source_claude/exact_agents/whey-drainer.md"
+    grep -q '^model: haiku$' "$source_claude/exact_agents/whey-drainer.md"
+    [[ -f "$source_claude/exact_hooks/executable_git-guard.sh" ]]
 
     # Skills deploy via the assembled dot_claude/exact_skills tree — real
     # directories at ~/.claude/skills/<name>, deletion-propagating.
