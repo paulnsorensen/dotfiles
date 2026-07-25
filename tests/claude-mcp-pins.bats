@@ -20,13 +20,13 @@ tavily_arg() { yq eval '.claude.mcps.tavily.args[1]' "$CLAUDE_YAML"; }
 @test "context7 args pin an exact version, not @latest or bare" {
     run context7_arg
     [ "$status" -eq 0 ]
-    [ "$output" = "@upstash/context7-mcp@3.2.4" ]
+    [[ "$output" =~ ^@upstash/context7-mcp@[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
 @test "tavily args pin an exact version, not @latest or bare" {
     run tavily_arg
     [ "$status" -eq 0 ]
-    [ "$output" = "tavily-mcp@0.2.21" ]
+    [[ "$output" =~ ^tavily-mcp@[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
 @test "context7 pin is not a float (@latest or bare package name)" {
@@ -40,13 +40,13 @@ tavily_arg() { yq eval '.claude.mcps.tavily.args[1]' "$CLAUDE_YAML"; }
 }
 
 @test "context7 has an adjacent renovate annotation for its exact depName" {
-    run grep -B1 'args: \["-y", "@upstash/context7-mcp@3.2.4"\]' "$CLAUDE_YAML"
+    run grep -B1 'args: \["-y", "@upstash/context7-mcp@' "$CLAUDE_YAML"
     [ "$status" -eq 0 ]
     [[ "$output" == *"# renovate: datasource=npm depName=@upstash/context7-mcp"* ]]
 }
 
 @test "tavily has an adjacent renovate annotation for its exact depName" {
-    run grep -B1 'args: \["-y", "tavily-mcp@0.2.21"\]' "$CLAUDE_YAML"
+    run grep -B1 'args: \["-y", "tavily-mcp@' "$CLAUDE_YAML"
     [ "$status" -eq 0 ]
     [[ "$output" == *"# renovate: datasource=npm depName=tavily-mcp"* ]]
 }
