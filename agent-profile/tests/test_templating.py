@@ -53,7 +53,7 @@ def test_needs_render_true_for_string_with_open_delim():
 
 
 def test_needs_render_false_for_string_without_open_delim():
-    assert templating.needs_render("serena-mux") is False
+    assert templating.needs_render("example-mux") is False
     assert templating.needs_render("") is False
 
 
@@ -85,7 +85,7 @@ def test_render_value_resolves_per_harness_branch():
 @needs_chezmoi
 def test_render_value_passes_through_plain_strings():
     # No template syntax => chezmoi prints it back verbatim.
-    assert templating.render_value("serena-mux", "codex") == "serena-mux"
+    assert templating.render_value("example-mux", "codex") == "example-mux"
 
 
 # ─── render_value: fall-backs ──────────────────────────────────────────
@@ -129,29 +129,29 @@ def test_render_value_returns_original_when_chezmoi_errors(capsys):
 @needs_chezmoi
 def test_render_mcp_resolves_env_per_harness():
     mcp = {
-        "name": "serena",
-        "command": "serena-mux",
+        "name": "example-mcp",
+        "command": "example-mux",
         "env": {
-            "SERENA_MUX_HARNESS": (
+            "HARNESS": (
                 '{{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}'
             ),
             "OTHER_VAR": "static-value",
         },
     }
     out_claude = templating.render_mcp_for_harness(mcp, "claude")
-    assert out_claude["env"]["SERENA_MUX_HARNESS"] == "claude-code"
+    assert out_claude["env"]["HARNESS"] == "claude-code"
     assert out_claude["env"]["OTHER_VAR"] == "static-value"
 
     out_codex = templating.render_mcp_for_harness(mcp, "codex")
-    assert out_codex["env"]["SERENA_MUX_HARNESS"] == "codex"
+    assert out_codex["env"]["HARNESS"] == "codex"
     assert out_codex["env"]["OTHER_VAR"] == "static-value"
 
 
 @needs_chezmoi
 def test_render_mcp_resolves_args_per_harness():
     mcp = {
-        "name": "serena",
-        "command": "serena",
+        "name": "example-mcp",
+        "command": "example-mcp",
         "args": [
             "start-mcp-server",
             '--context={{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}',

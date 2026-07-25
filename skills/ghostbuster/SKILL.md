@@ -4,7 +4,7 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, mcp__serena__*
+allowed-tools: Read, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, mcp__tilth__*
 description: >
   Dead-code forensics and spec cross-reference. Finds unreachable, orphaned,
   missing, or dormant code and classifies it DEAD, ZOMBIE, GHOST, or DORMANT.
@@ -120,5 +120,5 @@ Group findings by recommended action:
 
 - Dynamic dispatch (trait impls, interface implementations, duck typing) can hide callers — confidence is capped at 95 for this reason
 - Recently touched code (< 2 weeks) gets a confidence penalty — it may be WIP
-- Shell functions sourced via `. script.sh` won't appear in Serena — Grep-only for shell
+- Shell functions sourced via `. script.sh` need text search for reference counting
 - Specs use varied formats for symbol references — the agent casts a wide net but may miss prose-only references

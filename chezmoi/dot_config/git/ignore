@@ -12,8 +12,6 @@
 .cheese/hard/
 .cheese/notes/
 
-# Serena LSP project state
-.serena/
 
 # Per-task git worktrees created by the /worktree skill
 .worktrees/

@@ -44,7 +44,6 @@ Distilled from `.cheese/notes/strip-log.md` + Phase D decisions.
 | `bin/cheatsheet` | SKIP | Personal cheatsheet |
 | `bin/claude-json-prune` | SKIP | Personal session pruner |
 | `bin/record-prompt` | SKIP | Personal prompt recorder |
-| `bin/serena-sweep` | SKIP | Personal serena sweep |
 
 ---
 

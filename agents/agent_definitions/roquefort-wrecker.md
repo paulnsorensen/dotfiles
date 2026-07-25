@@ -115,9 +115,7 @@ N low findings not surfaced (speculative or out-of-scope)
 
 ## Symbol Intelligence
 
-Symbol-level type info comes from the Serena MCP (`mcp__serena__find_symbol`
-with `include_body=true` for the equivalent of LSP hover;
-`mcp__serena__get_diagnostics_for_file` for type errors after edits).
+Use `cheez-search` symbol and caller queries to inspect the production path and identify affected tests.
 
 ## Quality Gates
 

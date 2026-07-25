@@ -17,13 +17,9 @@ You receive:
 
 ## Protocol
 
-### 1. Serena availability check
+### 1. Structural search
 
-Symbol intelligence is provided by the Serena MCP. Before any
-`mcp__serena__*` call:
-
-1. Call `mcp__serena__get_symbols_overview` on the first source file
-2. If it errors, note the failure and fall back to Grep for reference counting
+Use `cheez-search` symbol and caller queries for reference counting.
 
 ### 2. Discover Files
 
@@ -62,22 +58,7 @@ Build a lookup: `{symbol → [spec_file, line_number]}`.
 
 For each source file, identify exported/public symbols:
 
-**Serena mode** (preferred):
-
-- `mcp__serena__get_symbols_overview` to list top-level symbols in each file
-- `mcp__serena__find_referencing_symbols` on each exported symbol — count callers outside the defining file
-
-**Grep fallback** (when Serena unavailable):
-
-| Language | Export pattern |
-|----------|---------------|
-| TypeScript/JS | `export function`, `export const`, `export class`, `export interface`, `export type`, `export default`, `module.exports` |
-| Python | Functions/classes at module level (not prefixed with `_`), `__all__` entries |
-| Rust | `pub fn`, `pub struct`, `pub enum`, `pub trait`, `pub type`, `pub const`, `pub mod` |
-| Go | Capitalized function/type/const names |
-| Shell | Functions defined with `function name()` or `name()` |
-
-For each exported symbol, count references from other files. Zero external references = candidate.
+Use `cheez-search` to list exported/public symbols and run caller queries for each. Zero external references is a candidate.
 
 ### 5. Scan for Internal Dead Code
 
@@ -142,44 +123,9 @@ Older last-touch dates strengthen the case that code is truly dead (not just rec
 
 ## Severity Tiers
 
-Use the four-tier severity vocabulary: `blocker > high > medium > low`. Surface `medium` and above; surface `low` only when evidence is `<certain>`. Tag every finding with a calibration marker: `<certain>` (zero references verified via Serena/grep) or `<speculative>` (inferred — dynamic dispatch, codegen, or recency leaves doubt).
+Use the four-tier severity vocabulary: `blocker > high > medium > low`. Surface `medium` and above; surface `low` only when evidence is `<certain>`. Tag every finding with `<certain>` when a `cheez-search` caller query verifies zero references, otherwise `<speculative>`.
 
-### Step 1: Default tier by category
-
-| Category | Default tier | Reasoning |
-|----------|--------------|-----------|
-| DEAD | `medium` | Zero references is a strong signal |
-| ZOMBIE | `low` | Ambiguous — could be in-progress work |
-| GHOST | `medium` | Spec referencing nonexistent code is notable |
-| DORMANT | `medium` | Transitive dead code is real but harder to verify |
-
-### Step 2: Evidence sets the calibration tag
-
-| Evidence | Tag |
-|----------|-----|
-| Verified via Serena `find_referencing_symbols` returns 0 | `<certain>` |
-| Grep confirms zero matches across codebase | `<certain>` |
-| Last git touch > 3 months ago | `<certain>` |
-| Deleted file found in git history (GHOST) | `<certain>` |
-| Last git touch < 2 weeks ago | `<speculative>` |
-| Symbol is a type/interface (may be used via duck typing) | `<speculative>` |
-| Close match exists in codebase (possible rename) | `<speculative>` |
-
-### Step 3: Context modifiers
-
-| Signal | Effect |
-|--------|--------|
-| Part of a dormant chain (3+ symbols) | bump one tier |
-| Multiple specs reference the symbol (ZOMBIE) | bump one tier |
-| Symbol is in a test helper file | downgrade one tier |
-| Public API boundary (exported from barrel/index) | downgrade one tier |
-| Symbol is a user-invoked CLI entry point (shell function, bin/ script, main()) | drop the finding |
-
-Never assign `blocker` — dead code is never a release blocker. Cap at `high`, and only for a verified dormant chain of exported symbols; dynamic dispatch, reflection, and codegen can always hide callers.
-
-### Step 4: Re-assess borderline findings
-
-For any `low` or borderline `medium`: clear your mental state, re-read the source file, and assess independently a second time. If the two assessments conflict, mark `<speculative>`. Only surface `<speculative>` findings at `medium` or above.
+Never assign `blocker` — dead code is never a release blocker. Cap at `high`, and only for a verified dormant chain of exported symbols; dynamic dispatch, reflection, and codegen can hide callers.
 
 ## Output
 
@@ -192,7 +138,7 @@ Write the full JSON report to `$TMPDIR/ghostbuster-{slug}.json`. The JSON schema
     "languages": ["typescript", "python"],
     "filesScanned": 42,
     "specsFound": 3,
-    "serenaAvailable": true,
+    "structuralSearchUsed": true,
     "gitHistoryUsed": true
   },
   "findings": [
@@ -207,7 +153,7 @@ Write the full JSON report to `$TMPDIR/ghostbuster-{slug}.json`. The JSON schema
         "referenceCount": 0,
         "specMentions": [],
         "lastGitTouch": "2025-08-14",
-        "verifiedVia": "Serena find_referencing_symbols"
+        "verifiedVia": "cheez-search caller query"
       },
       "action": "Safe to delete — zero callers, no spec references, untouched for 7 months"
     }
@@ -219,7 +165,7 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 
 ```
 ## Ghostbuster Summary
-**Scope**: {scope} | **Files**: N | **Specs/Docs**: N | **Serena**: yes/no
+**Scope**: {scope} | **Files**: N | **Specs/Docs**: N
 **Findings (medium+, or certain lows)**:
 | # | Severity | Calibration | Category | File:Symbol | Action |
 |---|----------|-------------|----------|-------------|--------|
@@ -239,8 +185,7 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 
 ## Rules
 
-- Serena first for symbol-aware reference counting, Grep as backup — Serena's LSP backing is generally more accurate than text search but can still miss callers under heavy dynamic dispatch or codegen (see Gotchas)
-- Budget ~40 tool calls. Prioritize: utility dirs → domain code → infrastructure
+- Use `cheez-search` caller queries for reference counting; dynamic dispatch and codegen can still hide callers.
 - Include the file path and symbol name for every finding — vague findings are useless
 - Specs can live anywhere: `.claude/specs/`, `docs/specs/`, `specs/`, `SPEC.md` — glob broadly
 - Surface medium+ (and certain lows) — below that, don't surface. The orchestrator trusts your threshold.
@@ -250,11 +195,10 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 
 ## Gotchas
 
-- **Dynamic dispatch hides callers**: Trait impls (Rust), interface implementations (Go/TS), duck typing (Python) mean Serena's `find_referencing_symbols` (LSP-backed) can miss callers. Mark types/interfaces `<speculative>`.
-- **Codegen and macros**: Rust `derive` macros, Python decorators, and TS decorators can generate callers invisible to Serena. If a symbol has a decorator/derive attribute, mark it `<speculative>`.
+- **Dynamic dispatch and codegen hide callers**: trait impls (Rust), interface implementations (Go/TS), duck typing (Python), and macros can evade structural search. Mark types/interfaces `<speculative>`.
 - **Re-exports**: A symbol exported from a barrel file may appear to have 0 direct callers but is the module's public API. Check barrel files before flagging.
 - **Test helpers**: Functions in test files with 0 callers outside tests aren't dead — they're test infrastructure. Downgrade one tier, don't auto-flag.
-- **Shell functions**: Shell functions defined in sourced files (`. script.sh` or `source script.sh`) won't show up in Serena's symbol index — no LSP backend covers shell. Use Grep exclusively for shell.
+- **Shell functions**: Shell functions defined in sourced files (`. script.sh` or `source script.sh`) need text search for reference counting.
 - **Spec format variance**: Some specs use backticks, some use prose references, some use code blocks. Cast a wide net when parsing — regex for `functionName`, not just `` `functionName` ``.
 - **User-invoked functions**: Shell functions, CLI commands, and `main()` entry points are called from the terminal, not from code. Zero grep references is expected. Check if the function is in a sourced file or bin/ directory before flagging.
 - **Documentation references are GHOST sources too**: CLAUDE.md, README.md, and docs/ files reference code symbols just like specs do. The test run's most certain findings were GHOSTs from CLAUDE.md, not spec files.

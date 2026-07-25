@@ -3,7 +3,7 @@ name: grok-codebase
 description: >
   Build lasting understanding of an unfamiliar codebase via a four-pillar model
   (Building Blocks, Entry Points, Infrastructure, Egress) plus an adaptive
-  Socratic quiz, orchestrating Serena, tilth, and Context7.
+  Socratic quiz, using tilth and Context7.
   Use when the user says "help me understand this codebase", "grok this repo",
   "onboard me", "learn this project", "memorize this codebase", "study this
   code", "walk me through this code", or "quiz me on this repo". Do NOT use for
@@ -11,7 +11,7 @@ description: >
 argument-hint: <optional focus area, e.g. "auth flow" or "payments">
 model: sonnet
 effort: medium
-allowed-tools: Read, Write, TodoWrite, Skill, Bash(git:*), Bash(ls:*), Bash(cat:*), Bash(jq:*), Bash(yq:*), Bash(tokei:*), mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__find_implementations, mcp__serena__find_declaration, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__tilth__*, mcp__context7__*
+allowed-tools: Read, Write, TodoWrite, Skill, Bash(git:*), Bash(ls:*), Bash(cat:*), Bash(jq:*), Bash(yq:*), Bash(tokei:*), mcp__tilth__*, mcp__context7__*
 metadata:
   version: 1.0.0
   author: paulnsorensen
@@ -33,15 +33,13 @@ and finish with an adaptive Socratic quiz.
 1. **Structural tools before raw reads.** Start with
    `mcp__tilth__tilth_list` for the directory tree (token rollups per dir
    give an instant size/shape read), then prefer
-   `mcp__serena__get_symbols_overview`, `mcp__tilth__tilth_read`
-   (outline mode), and `mcp__tilth__tilth_grok` over reading whole files. Whole-file `Read` is a last resort for non-code files
-   (README, manifests, CI YAML, env templates) — the user's CLAUDE.md
-   explicitly routes code search through tilth.
+   `mcp__tilth__tilth_search`, `mcp__tilth__tilth_read` (outline mode), and
+   `mcp__tilth__tilth_grok` over reading whole files. Whole-file `Read` is a
+   last resort for non-code files (README, manifests, CI YAML, env templates).
 2. **One pillar at a time.** Don't skip ahead. Complete pillar 1 before
    starting pillar 2 — out-of-order grokking produces shallow understanding
    that fails on the quiz.
-3. **Persist findings to disk, not memory.** This setup excludes serena's
-   memory tools. Instead, after each pillar `Write` an artifact to
+3. **Persist findings to disk, not memory.** After each pillar `Write` an
    `.cheese/grok/<repo-name>/<pillar-slug>.md`. Pillar slugs:
    `01-building-blocks`, `02-entry-points`, `03-infrastructure`, `04-egress`,
    `05-trace.md`, `summary.md`, `quiz-results.md`. The user can review
@@ -66,8 +64,8 @@ Run in parallel where possible:
 
 1. `git log --oneline -10 && git status` — recent activity, branch state.
 2. `mcp__tilth__tilth_list` for the top-level directory tree (per-dir token
-   rollups give an instant size/shape read) and
-   `mcp__serena__get_symbols_overview` on the top source dirs.
+   rollups give an instant size/shape read) and `mcp__tilth__tilth_search` on
+   the top source dirs.
 3. `Read` of `README.md`, the primary manifest (`package.json` /
    `pyproject.toml` / `go.mod` / `Cargo.toml` / `pom.xml`), and any
    `CLAUDE.md` / `AGENTS.md` at the repo root.
@@ -89,8 +87,8 @@ Workflow:
    per-dir token rollups are the closest quick proxy for a C4 Component
    diagram. Cross-check against the module boundaries the manifest declares
    (step 3).
-2. For each top-level source directory:
-   `mcp__serena__get_symbols_overview(relative_path=<dir>)`.
+2. For each top-level source directory, use `mcp__tilth__tilth_search` to
+   identify public symbols and module boundaries.
 3. **TS/JS specifically:** read `package.json` `workspaces`, `exports`, and
    `tsconfig.json` `paths`/`baseUrl`. These define the *intended* module
    boundaries — compare them against the graph's *de facto* communities. When
@@ -99,9 +97,9 @@ Workflow:
    `mcp__tilth__tilth_grok(target=<symbol>)` on each — that returns
    def + body + sig + callees + callers + siblings + tests in one shot.
 5. Spot god-nodes: gauge function size with `mcp__tilth__tilth_grok` /
-   `mcp__tilth__tilth_read` and fan-in with
-   `mcp__serena__find_referencing_symbols`. Flag any function >150 LOC or any
-   module with >25 inbound references.
+   `mcp__tilth__tilth_read` and fan-in with `mcp__tilth__tilth_search`
+   caller queries. Flag any function >150 LOC or any module with >25 inbound
+   references.
 
 `Write` `.cheese/grok/<repo>/01-building-blocks.md` with a table:
 `Block | Path | Public API | Key types | God-nodes?`. See `GUIDE.md §2` for

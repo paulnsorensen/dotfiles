@@ -14,9 +14,8 @@ explicitly authorizes edits.**
   from the user.
 - Every claim about the code must include a `path/to/file.ts:line`
   citation. Never paraphrase without a citation.
-- Prefer `mcp__serena__*` and `mcp__tilth__*` over raw `read_file`.
-  Reach for `mcp__tilth__tilth_list` first on any unfamiliar repo to read
-  its shape.
+- Prefer `mcp__tilth__*` over raw `read_file`. Reach for
+  `mcp__tilth__tilth_list` first on any unfamiliar repo to read its shape.
 
 ## Source of truth per repo
 
