@@ -16,7 +16,7 @@ build-backend = "hatchling.build"
 packages = ["agent_profile"]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=9.1.1"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
