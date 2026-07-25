@@ -27,13 +27,13 @@ fi
 
 # mise shims dir ahead of stale native/brew copies for non-interactive shells
 # (e.g. agent Bash tools, ssh/mosh). Plain PATH-prepend, not `mise activate` —
-# that's for interactive shells only (zsh/core.zsh). Idempotent guard.
+# that's for interactive shells only (zsh/core.zsh). `path` is unique, so this
+# also moves an existing later copy ahead of stale earlier PATH entries.
 MISE_SHIMS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims"
-if [[ -d "$MISE_SHIMS_DIR" && ":$PATH:" != *":$MISE_SHIMS_DIR:"* ]]; then
-  export PATH="$MISE_SHIMS_DIR:$PATH"
+if [[ -d "$MISE_SHIMS_DIR" ]]; then
+  path=("$MISE_SHIMS_DIR" "${path[@]}")
 fi
 unset MISE_SHIMS_DIR
-
 # rustup proxy dir + cargo bin on PATH for non-interactive shells (e.g. agent
 # Bash tools). cargo/config.toml sets rustc-wrapper=sccache unconditionally;
 # without rustc on PATH here, sccache fails with "cannot find binary path".

@@ -339,6 +339,29 @@ SH
     [ "$output" = "shimmed" ]
 }
 
+@test "zshenv moves existing mise shims ahead of a stale native PATH entry" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fake_xdg="$TEST_HOME/xdg-data-existing"
+    mkdir -p "$fake_xdg/mise/shims"
+    local stale_bin="$TEST_HOME/stale-bin-existing"
+    mkdir -p "$stale_bin"
+    cat > "$stale_bin/claude" <<'SH'
+#!/bin/sh
+echo stale
+SH
+    chmod +x "$stale_bin/claude"
+    cat > "$fake_xdg/mise/shims/claude" <<'SH'
+#!/bin/sh
+echo shimmed
+SH
+    chmod +x "$fake_xdg/mise/shims/claude"
+
+    run zsh -c "XDG_DATA_HOME='$fake_xdg'; PATH='$stale_bin:$fake_xdg/mise/shims':/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'; claude"
+
+    assert_success
+    [ "$output" = "shimmed" ]
+}
+
 @test "zshenv sources cleanly with no XDG_DATA_HOME and no mise shims dir present" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     run zsh -c "unset XDG_DATA_HOME; HOME='$TEST_HOME'; PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'" 2>&1
