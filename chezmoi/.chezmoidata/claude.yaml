@@ -41,22 +41,16 @@ claude:
         TILTH_MCP_CWD_HOOK_INJECTED: "1"
     context7:
       command: npx
-      args: ["-y", "@upstash/context7-mcp"]
+      # renovate: datasource=npm depName=@upstash/context7-mcp
+      args: ["-y", "@upstash/context7-mcp@3.2.4"]
       env:
         CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
     tavily:
       command: npx
-      args: ["-y", "tavily-mcp@latest"]
+      # renovate: datasource=npm depName=tavily-mcp
+      args: ["-y", "tavily-mcp@0.2.21"]
       env:
         TAVILY_API_KEY: "${TAVILY_API_KEY}"
-    serena:
-      command: serena
-      args:
-        - start-mcp-server
-        - --context=claude-code
-        - --project-from-cwd
-        - --enable-web-dashboard=false
-        - --open-web-dashboard=false
 
   # ── settings.json `hooks` key (authored wholesale) ─────────────────────────
   # Scripts live in ~/.claude/hooks (deployed via exact_hooks from
@@ -228,7 +222,6 @@ claude:
       - "mcp__context7__*"
       - "mcp__hallouminate__*"
       - "mcp__plugin_playwright_playwright__*"
-      - "mcp__serena__*"
       - "mcp__tavily__*"
       - "mcp__tilth__*"
     deny:
@@ -269,7 +262,6 @@ claude:
     - rennet
     - routine-env
     - routine-scaffold
-    - serena-project-config
     - session-analytics
     - settings-clean
     - skill-improver

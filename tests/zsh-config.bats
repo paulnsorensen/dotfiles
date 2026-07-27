@@ -283,3 +283,101 @@ SH
     fi
     [[ $failed -eq 0 ]]
 }
+
+@test "core.zsh activates mise, guarded so a missing binary can't break shell startup" {
+    local core_file="$REAL_DOTFILES_DIR/zsh/core.zsh"
+
+    grep -q 'command -v mise' "$core_file"
+    local mise_activation="eval \"\$(mise activate zsh)\""
+    grep -Fq "$mise_activation" "$core_file"
+
+    # mise activation must come after the pyenv block so its shims win PATH
+    # over any stale pyenv shim of the same tool name.
+    local pyenv_line mise_line
+    pyenv_line=$(grep -n 'pyenv init' "$core_file" | cut -d: -f1)
+    mise_line=$(grep -n 'mise activate zsh' "$core_file" | cut -d: -f1)
+    [ -n "$pyenv_line" ]
+    [ -n "$mise_line" ]
+    [ "$mise_line" -gt "$pyenv_line" ]
+}
+
+@test "core.zsh sources cleanly in zsh even when mise is not on PATH" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zsh/core.zsh'" 2>&1
+    assert_success
+}
+
+@test "zshenv prepends the mise shims dir ahead of stale PATH entries" {
+    local zshenv_file="$REAL_DOTFILES_DIR/zshenv"
+
+    grep -q 'mise/shims' "$zshenv_file"
+    local mise_shims_guard="if [[ -d \"\$MISE_SHIMS_DIR\""
+    grep -Fq "$mise_shims_guard" "$zshenv_file"
+}
+
+@test "zshenv's mise shims guard resolves ahead of a stale native PATH entry" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fake_xdg="$TEST_HOME/xdg-data"
+    mkdir -p "$fake_xdg/mise/shims"
+    # A stale native copy of a mise-managed tool sits earlier on PATH.
+    local stale_bin="$TEST_HOME/stale-bin"
+    mkdir -p "$stale_bin"
+    cat > "$stale_bin/claude" <<'SH'
+#!/bin/sh
+echo stale
+SH
+    chmod +x "$stale_bin/claude"
+    cat > "$fake_xdg/mise/shims/claude" <<'SH'
+#!/bin/sh
+echo shimmed
+SH
+    chmod +x "$fake_xdg/mise/shims/claude"
+
+    run zsh -c "XDG_DATA_HOME='$fake_xdg'; PATH='$stale_bin':/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'; claude"
+
+    assert_success
+    [ "$output" = "shimmed" ]
+}
+
+@test "zshenv moves existing mise shims ahead of a stale native PATH entry" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fake_xdg="$TEST_HOME/xdg-data-existing"
+    mkdir -p "$fake_xdg/mise/shims"
+    local stale_bin="$TEST_HOME/stale-bin-existing"
+    mkdir -p "$stale_bin"
+    cat > "$stale_bin/claude" <<'SH'
+#!/bin/sh
+echo stale
+SH
+    chmod +x "$stale_bin/claude"
+    cat > "$fake_xdg/mise/shims/claude" <<'SH'
+#!/bin/sh
+echo shimmed
+SH
+    chmod +x "$fake_xdg/mise/shims/claude"
+
+    run zsh -c "XDG_DATA_HOME='$fake_xdg'; PATH='$stale_bin:$fake_xdg/mise/shims':/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'; claude"
+
+    assert_success
+    [ "$output" = "shimmed" ]
+}
+
+@test "zshenv sources cleanly with no XDG_DATA_HOME and no mise shims dir present" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "unset XDG_DATA_HOME; HOME='$TEST_HOME'; PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'" 2>&1
+    assert_success
+}
+
+@test "zshenv's mise shims guard is idempotent — double-sourcing doesn't grow PATH" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fake_xdg="$TEST_HOME/xdg-data-idempotent"
+    mkdir -p "$fake_xdg/mise/shims"
+
+    run zsh -c "XDG_DATA_HOME='$fake_xdg'; PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'; source '$REAL_DOTFILES_DIR/zshenv'; echo \$PATH"
+
+    assert_success
+    local shims_dir="$fake_xdg/mise/shims"
+    local occurrences
+    occurrences=$(grep -o "$shims_dir" <<< "$output" | wc -l | tr -d ' ')
+    [ "$occurrences" -eq 1 ]
+}

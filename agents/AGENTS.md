@@ -138,14 +138,13 @@ For project architecture (when a project opts in), see the **Sliced Bread** patt
 
 ## Code-Intelligence Routing
 
-Two MCPs cover code intelligence; they layer rather than overlap.
+tilth is the code-intelligence floor for workspace file I/O and search.
 
-- **tilth** — file I/O floor. Default for read/grep/edit; replaces host Grep/Read/Edit/Glob.
-- **serena** — LSP-grounded symbol layer. Use when ground-truth semantics matter (overloads, generics, dispatch, type info). Memory tools and `onboarding` are excluded in `~/.serena/serena_config.yml` — do not try to call them.
+- **tilth** — default for read/grep/edit; replaces host Grep/Read/Edit/Glob.
 
 Built-in `Read` / `Edit` / `Write` / `Glob` / `Grep` are last-resort: use only when the file is outside the workspace, no MCP server can parse it, or a multi-file regex doesn't fit an MCP equivalent.
 
-The task-to-tool tables, the serena-vs-tilth edit-shape guide, and the routing self-check live in the system-prompt preamble (`agents/preamble.md` in the dotfiles repo), wired into every harness.
+The task-to-tool table and routing self-check live in the system-prompt preamble (`agents/preamble.md` in the dotfiles repo), wired into every harness.
 
 ## Deep Think
 

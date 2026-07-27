@@ -12,9 +12,7 @@
 #   - todoist-flow:               In-repo Todoist productivity plugin (directory source)
 #   - local:                      Out-of-repo local plugins; `path:` resolves the source dir
 #
-# Symbol-level code intelligence is provided by the Serena MCP (see agents/mcp/
-# registry.yaml). Per-language LSP plugins were removed once Serena went
-# cross-harness — keep symbol routing in one place.
+# Code intelligence is provided by tilth; keep routing in agents/preamble.md.
 #
 # Usage:
 #   plugin-sync           Sync plugins (install missing)

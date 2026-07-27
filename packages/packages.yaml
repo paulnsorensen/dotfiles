@@ -68,7 +68,12 @@ packages:
   # which wires the systemd daemon. Then `tailscale up`. See operations/remote-access wiki.
   - anomalyco/tap/opencode                    # open-source AI coding agent (fresher than homebrew-core)
   - charmbracelet/tap/crush                   # Charm terminal AI coding agent (MCP via crush.json)
-  - can1357/tap/omp
+  # claude, codex, and omp are NOT brew-managed — they ship on fast-moving
+  # native channels with their own self-updaters (`claude update`, `codex
+  # update`, `omp update`). packages/sync.sh:sync_native_harnesses installs
+  # them via their official installers, self-updates in UPGRADE_MODE, and
+  # migrates any lingering brew copy off (the brew cask/formula lagged and
+  # shadow-fought the native ~/.local/bin binary on PATH).
 
   # Rust build acceleration
   - sccache                                   # rustc wrapper for compile caching
@@ -83,7 +88,6 @@ packages:
   - terminal-notifier: { platform: mac }      # macOS notifications from terminal
   - skhd: { platform: mac }                   # Hotkey daemon (from koekeishiya/formulae tap)
   - emdash: { source: cask, platform: mac }   # Desktop UI for running coding agents in parallel
-  - claude-code: { source: cask, platform: mac } # Claude Code — terminal AI coding assistant
   - cursor: { source: cask, platform: mac, greedy: false } # Cursor — AI code editor; self-updates in-app, and greedy reinstall of the root-owned .app prompts for sudo
   - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)
   - obsidian: { source: cask, platform: mac }  # Obsidian — Markdown knowledge base
@@ -107,33 +111,47 @@ packages:
   - pyright
   - gopls: { dev: true }
   - rust-analyzer
-  - vtsls: { source: npm, pkg: "@vtsls/language-server" }
+  # renovate: datasource=npm depName=@vtsls/language-server
+  - vtsls: { source: npm, pkg: "@vtsls/language-server", version: "0.3.0" }
 
   # Linters
-  - eslint: { source: npm, pkg: "eslint@8" }
-  - markdownlint-cli2: { source: npm }
-  - ccusage: { source: npm }
-  - agent-skills: { source: npm, pkg: "@govcraft/agent-skills" }
-  - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux } # `gt` — stacked-diff PR workflow (mac uses the withgraphite/tap brew formula)
+  # renovate: datasource=npm depName=eslint
+  - eslint: { source: npm, version: "8.57.1" }
+  # renovate: datasource=npm depName=markdownlint-cli2
+  - markdownlint-cli2: { source: npm, version: "0.23.1" }
+  # renovate: datasource=npm depName=ccusage
+  - ccusage: { source: npm, version: "20.0.18" }
+  # renovate: datasource=npm depName=@govcraft/agent-skills
+  - agent-skills: { source: npm, pkg: "@govcraft/agent-skills", version: "0.4.4" }
+  # renovate: datasource=npm depName=@withgraphite/graphite-cli
+  - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux, version: "1.8.6" } # `gt` — stacked-diff PR workflow (mac uses the withgraphite/tap brew formula)
 
   # uv tools (Python)
-  - ralphify: { source: uv }
-  - ruff: { source: uv }                      # Python linter (just lint-python)
-  - check-jsonschema: { source: uv }
-  - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref" }
-  - tavily-cli: { source: uv }                # provides `tvly` CLI for Tavily API
+  # renovate: datasource=pypi depName=ralphify
+  - ralphify: { source: uv, version: "0.3.0" }
+  # renovate: datasource=pypi depName=ruff
+  - ruff: { source: uv, version: "0.16.0" }                      # Python linter (just lint-python)
+  # renovate: datasource=pypi depName=check-jsonschema
+  - check-jsonschema: { source: uv, version: "0.37.4" }
+  # renovate: datasource=git-refs depName=agentskills/agentskills
+  - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref", rev: "38a2ff82958afee88dadf4831509e6f7e9d8ef4e" }
+  # renovate: datasource=pypi depName=tavily-cli
+  - tavily-cli: { source: uv, version: "0.1.5" }                # provides `tvly` CLI for Tavily API
   - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main" }  # Mikado execution engine; exposes `milknado-mcp` for the MCP registry
   # Serena pins Python 3.13 and ships pre-release builds on PyPI; the `flags`
   # array is passed through to `uv tool install` verbatim. Exposes the `serena`
   # binary, which the MCP registry invokes per harness via --context.
-  - serena-agent: { source: uv, flags: ["--python", "3.13", "--prerelease=allow"] }
+  # renovate: datasource=pypi depName=serena-agent
+  - serena-agent: { source: uv, version: "1.6.1", flags: ["--python", "3.13", "--prerelease=allow"] }
 
   # gh CLI extensions
-  - gh-stack: { source: gh-extension, pkg: github/gh-stack }   # native PR-stack management (used by /pr-stack)
+  # renovate: datasource=github-releases depName=github/gh-stack
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.0.8" }   # native PR-stack management (used by /pr-stack)
 
   # Cargo
   - cargo-llvm-cov: { source: cargo }
-  - cargo-update: { source: cargo }            # provides `cargo install-update` for idempotent `dots up`
+  # renovate: datasource=crate depName=cargo-update
+  - cargo-update: { source: cargo, version: "22.1.0" }            # provides `cargo install-update` for idempotent `dots up`
   # tilth and hallouminate are installed from their npm nightly channels
   # (@paulnsorensen/{tilth,hallouminate}-nightly) by the run_onchange_after_
   # install-{tilth,hallouminate}.sh.tmpl scripts — a cargo build here would

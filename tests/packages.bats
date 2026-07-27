@@ -24,6 +24,10 @@ setup() {
     export GH_LOG="$TEST_HOME/gh.log"
     export NPM_LOG="$TEST_HOME/npm.log"
     export SUDO_LOG="$TEST_HOME/sudo.log"
+    export CLAUDE_LOG="$TEST_HOME/claude.log"
+    export CODEX_LOG="$TEST_HOME/codex.log"
+    export OMP_LOG="$TEST_HOME/omp.log"
+    export MISE_LOG="$TEST_HOME/mise.log"
 
     write_mock_brew
     write_mock_cargo
@@ -32,6 +36,13 @@ setup() {
     # Mock sudo records its args and no-ops — guarantees the Linux brew-deps
     # bootstrap can never run a real `sudo apt-get` against the test machine.
     write_mock_sudo
+    # Mock the native AI harnesses as present-and-recording, so no test ever
+    # shells out to the real claude/codex/omp (self-update hits the network /
+    # mutates the real install). Install/absence tests override these.
+    write_mock_harness claude
+    write_mock_harness codex
+    write_mock_harness omp
+    write_mock_mise
     export PATH="$MOCK_BIN:$PATH"
 }
 
@@ -44,13 +55,65 @@ MOCKSUDO
     chmod +x "$MOCK_BIN/sudo"
 }
 
+# Mock an AI-harness CLI (claude/codex/omp): record args to its log, exit 0.
+write_mock_harness() {
+    local name="$1" log
+    case "$name" in
+        claude) log="$CLAUDE_LOG" ;;
+        codex)  log="$CODEX_LOG" ;;
+        omp)    log="$OMP_LOG" ;;
+    esac
+    cat > "$MOCK_BIN/$name" << MOCKHARNESS
+#!/bin/bash
+echo "$name \$*" >> "$log"
+exit 0
+MOCKHARNESS
+    chmod +x "$MOCK_BIN/$name"
+}
+
+# Mock curl for native-installer tests: record the URL, emit nothing so the
+# downstream `| bash` / `| sh` runs an empty (no-op) script.
+write_mock_curl() {
+    export CURL_LOG="$TEST_HOME/curl.log"
+    cat > "$MOCK_BIN/curl" << 'MOCKCURL'
+#!/bin/bash
+echo "curl $*" >> "$CURL_LOG"
+exit 0
+MOCKCURL
+    chmod +x "$MOCK_BIN/curl"
+}
+
+# Mock sh for native-installer tests: curl's mock emits nothing, so a
+# `curl ... | sh -s -- --ref X` pipeline hands its stdin to this mock instead
+# of a real installer script. Records args so a `--ref` pin is assertable.
+write_mock_sh() {
+    export SH_LOG="$TEST_HOME/sh.log"
+    cat > "$MOCK_BIN/sh" << 'MOCKSH'
+#!/bin/bash
+echo "sh $*" >> "$SH_LOG"
+exit 0
+MOCKSH
+    chmod +x "$MOCK_BIN/sh"
+}
+
 write_mock_uv() {
+    export UV_LOG="$TEST_HOME/uv.log"
     cat > "$MOCK_BIN/uv" << 'MOCKUV'
 #!/bin/bash
+echo "uv $*" >> "$UV_LOG"
 [[ "$1 $2" == "tool list" ]] && echo ""
 exit 0
 MOCKUV
     chmod +x "$MOCK_BIN/uv"
+}
+
+write_mock_mise() {
+    cat > "$MOCK_BIN/mise" << MOCKMISE
+#!/bin/bash
+echo "mise \$*" >> "$MISE_LOG"
+exit 0
+MOCKMISE
+    chmod +x "$MOCK_BIN/mise"
 }
 
 teardown() {
@@ -521,8 +584,20 @@ YAML
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "unchanged (cached), skipping"
+    assert_output_contains "unchanged (cached), syncing Claude"
 
+    [[ ! -f "$BREW_LOG" ]]
+}
+
+@test "sync cache restores the Claude mise package" {
+    write_test_yaml
+    shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
+
+    run bash "$SYNC_SCRIPT"
+
+    assert_success
+    assert_output_contains "syncing Claude"
+    grep -q "mise install aqua:anthropics/claude-code@v2.1.219" "$MISE_LOG"
     [[ ! -f "$BREW_LOG" ]]
 }
 
@@ -810,107 +885,231 @@ MOCKCARGO
     ! grep -q "cargo install --force cargo-llvm-cov" "$CARGO_LOG"
 }
 
-# --- Integration: sync_harness_selfupdate ---
+# --- Integration: sync_native_harnesses ---
+# claude/codex/omp are mocked present in setup(); each test overrides as needed.
 
-@test "UPGRADE_MODE runs claude update and codex update when both present" {
+@test "UPGRADE_MODE updates omp; claude/codex are mise-managed and never self-update" {
     write_test_yaml
-
-    export CLAUDE_LOG="$TEST_HOME/claude.log"
-    export CODEX_LOG="$TEST_HOME/codex.log"
-
-    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
-#!/bin/bash
-echo "claude \$*" >> "$CLAUDE_LOG"
-exit 0
-MOCKCLAUDE
-    chmod +x "$MOCK_BIN/claude"
-
-    cat > "$MOCK_BIN/codex" << MOCKCODEX
-#!/bin/bash
-echo "codex \$*" >> "$CODEX_LOG"
-exit 0
-MOCKCODEX
-    chmod +x "$MOCK_BIN/codex"
 
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
 
-    grep -q "claude update" "$CLAUDE_LOG"
-    grep -q "codex update" "$CODEX_LOG"
+    grep -q "omp update" "$OMP_LOG"
+    if [[ -f "$CLAUDE_LOG" ]] && grep -q "claude update" "$CLAUDE_LOG"; then
+        echo "claude was updated, but claude is mise-managed and must never self-update" >&2
+        return 1
+    fi
+    if [[ -f "$CODEX_LOG" ]] && grep -q "codex update" "$CODEX_LOG"; then
+        echo "codex was updated, but codex is mise-managed and must never self-update" >&2
+        return 1
+    fi
 }
 
-@test "UPGRADE_MODE skips codex update when codex absent but still runs claude update" {
+@test "UPGRADE_MODE still updates omp regardless of codex presence; claude/codex never self-update" {
     write_test_yaml
-
-    export CLAUDE_LOG="$TEST_HOME/claude.log"
-
-    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
-#!/bin/bash
-echo "claude \$*" >> "$CLAUDE_LOG"
-exit 0
-MOCKCLAUDE
-    chmod +x "$MOCK_BIN/claude"
-    # No codex mock — intentionally absent
+    rm -f "$MOCK_BIN/codex"   # absent — irrelevant now, codex is never touched by this function
 
     local clean_path
     clean_path=$(scrub_toolchain_path | tr ':' '\n' | while IFS= read -r d; do [[ -x "$d/codex" ]] || printf '%s:' "$d"; done)
     UPGRADE_MODE=true PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
     assert_success
 
-    grep -q "claude update" "$CLAUDE_LOG"
-    assert_output_contains "codex not found"
+    grep -q "omp update" "$OMP_LOG"
+    if [[ -f "$CLAUDE_LOG" ]] && grep -q "claude update" "$CLAUDE_LOG"; then
+        echo "claude was updated, but claude is mise-managed and must never self-update" >&2
+        return 1
+    fi
 }
 
-@test "non-UPGRADE_MODE does not invoke claude or codex update" {
+@test "non-UPGRADE_MODE does not invoke any harness update" {
     write_test_yaml
-
-    export CLAUDE_LOG="$TEST_HOME/claude.log"
-    export CODEX_LOG="$TEST_HOME/codex.log"
-
-    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
-#!/bin/bash
-echo "claude \$*" >> "$CLAUDE_LOG"
-exit 0
-MOCKCLAUDE
-    chmod +x "$MOCK_BIN/claude"
-
-    cat > "$MOCK_BIN/codex" << MOCKCODEX
-#!/bin/bash
-echo "codex \$*" >> "$CODEX_LOG"
-exit 0
-MOCKCODEX
-    chmod +x "$MOCK_BIN/codex"
 
     run_sync
     assert_success
 
     [[ ! -f "$CLAUDE_LOG" ]] || ! grep -q "claude update" "$CLAUDE_LOG"
     [[ ! -f "$CODEX_LOG" ]] || ! grep -q "codex update" "$CODEX_LOG"
+    [[ ! -f "$OMP_LOG" ]] || ! grep -q "omp update" "$OMP_LOG"
 }
 
-@test "UPGRADE_MODE continues and exits 0 when one harness updater fails" {
+@test "UPGRADE_MODE continues and exits 0 when omp's updater fails" {
     write_test_yaml
-
-    export CLAUDE_LOG="$TEST_HOME/claude.log"
-    export CODEX_LOG="$TEST_HOME/codex.log"
-
-    cat > "$MOCK_BIN/claude" << MOCKCLAUDE
+    # Make omp update fail — it's the only harness this function still self-updates.
+    cat > "$MOCK_BIN/omp" << MOCKOMP
 #!/bin/bash
-echo "claude \$*" >> "$CLAUDE_LOG"
+echo "omp \$*" >> "$OMP_LOG"
 exit 1
-MOCKCLAUDE
-    chmod +x "$MOCK_BIN/claude"
-
-    cat > "$MOCK_BIN/codex" << MOCKCODEX
-#!/bin/bash
-echo "codex \$*" >> "$CODEX_LOG"
-exit 0
-MOCKCODEX
-    chmod +x "$MOCK_BIN/codex"
+MOCKOMP
+    chmod +x "$MOCK_BIN/omp"
 
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
 
-    assert_output_contains "claude update failed"
-    grep -q "codex update" "$CODEX_LOG"
+    assert_output_contains "omp update failed"
+    grep -q "omp update" "$OMP_LOG"
+}
+
+@test "native install: only omp installs via its official installer when missing; claude/codex never install here" {
+    write_test_yaml
+    rm -f "$MOCK_BIN/claude" "$MOCK_BIN/omp"
+    write_mock_curl
+    write_mock_sh
+
+    # Absent from PATH entirely so the native installer path fires for omp.
+    local clean_path
+    clean_path=$(scrub_toolchain_path | tr ':' '\n' | while IFS= read -r d; do [[ -x "$d/claude" || -x "$d/omp" ]] || printf '%s:' "$d"; done)
+    PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q "omp.sh/install" "$CURL_LOG"
+    if grep -q "claude.ai/install.sh" "$CURL_LOG"; then
+        echo "claude's native installer ran, but claude is mise-managed now" >&2
+        return 1
+    fi
+    grep -q -- "--binary --ref v17.1.3" "$SH_LOG"
+    assert_output_contains "Installing omp (native)"
+}
+
+@test "native harness sync never touches codex (mise-managed, no installer or update path here)" {
+    write_test_yaml
+    rm -f "$MOCK_BIN/codex"
+    write_mock_curl
+
+    local clean_path
+    clean_path=$(scrub_toolchain_path | tr ':' '\n' | while IFS= read -r d; do [[ -x "$d/codex" ]] || printf '%s:' "$d"; done)
+    PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
+    assert_success
+
+    [[ ! -f "$CURL_LOG" ]] || ! grep -q "codex" "$CURL_LOG"
+}
+
+@test "migration: lingering brew claude-code cask and omp formula are uninstalled" {
+    write_test_yaml
+    # Long lists with the target at the FRONT: grep -qx matches immediately and
+    # closes the pipe while the mock is still producing, so a `brew list | grep
+    # -qx` pipeline SIGPIPEs the producer and — under set -o pipefail — reports
+    # failure on a real match, silently skipping the uninstall. Regression guard
+    # for that bug; the migration must fire regardless of list length/position.
+    local formulae cask i
+    formulae="omp"
+    for i in $(seq 1 200); do formulae+=$'\n'"filler-formula-$i"; done
+    cask="claude-code"
+    for i in $(seq 1 200); do cask+=$'\n'"filler-cask-$i"; done
+    write_mock_brew "$formulae" "$cask"
+
+    run_sync
+    assert_success
+
+    grep -q "uninstall --cask claude-code" "$BREW_LOG"
+    grep -q "uninstall omp" "$BREW_LOG"
+}
+
+@test "migration: no brew uninstall when neither brew copy is present" {
+    write_test_yaml
+    # Default mock brew reports no formulae/casks installed.
+
+    run_sync
+    assert_success
+
+    ! grep -q "uninstall" "$BREW_LOG"
+}
+
+# --- mise + version/rev-aware installs ---
+
+@test "sync_mise bootstraps mise via brew when absent" {
+    write_test_yaml
+    rm -f "$MOCK_BIN/mise"
+    # Remove host mise binaries too; this test must exercise the bootstrap
+    # branch even on a developer machine where mise is installed.
+    local path_without_mise
+    path_without_mise=$(tr ':' '\n' <<<"$PATH" | while IFS= read -r dir; do
+        [[ -x "$dir/mise" ]] || printf '%s:' "$dir"
+    done)
+
+    PATH="$MOCK_BIN:${path_without_mise%:}" run_sync
+    assert_success
+
+    grep -q "install mise" "$BREW_LOG"
+}
+
+@test "sync_mise skips the brew bootstrap when mise is already on PATH" {
+    write_test_yaml
+
+    run_sync
+    assert_success
+
+    ! grep -q "install mise" "$BREW_LOG"
+    grep -q "install" "$MISE_LOG"
+}
+
+@test "a pinned cargo package installs at its exact version, unconditionally" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - cargo-llvm-cov: { source: cargo, version: "1.2.3" }
+YAML
+    run_sync
+    assert_success
+
+    grep -q -- "--version 1.2.3 cargo-llvm-cov" "$CARGO_LOG"
+}
+
+@test "a pinned npm package installs at its exact version, unconditionally" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - markdownlint-cli2: { source: npm, version: "1.2.3" }
+YAML
+    run_sync
+    assert_success
+
+    grep -q "install -g markdownlint-cli2@1.2.3" "$NPM_LOG"
+}
+
+@test "a pinned uv package installs at its exact version, unconditionally" {
+    write_mock_uv
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - ruff: { source: uv, version: "1.2.3" }
+YAML
+    run_sync
+    assert_success
+
+    grep -q "tool install ruff==1.2.3" "$UV_LOG"
+}
+
+@test "a pinned gh-extension installs at its exact tag via --pin, unconditionally" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: "github/gh-stack", version: "1.2.3" }
+YAML
+    run_sync
+    assert_success
+
+    grep -q -- "extension install github/gh-stack --pin 1.2.3" "$GH_LOG"
+}
+
+@test "UPGRADE_MODE excludes a pinned cargo package from the upgrade-all pass, but still upgrades an unpinned sibling" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - cargo-llvm-cov: { source: cargo, version: "1.2.3" }
+  - cargo-nextest: { source: cargo }
+YAML
+    printf '#!/bin/bash\necho "cargo-install-update $*" >> "%s"\nexit 0\n' "$CARGO_LOG" > "$MOCK_BIN/cargo-install-update"
+    chmod +x "$MOCK_BIN/cargo-install-update"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q "cargo install-update cargo-nextest --git" "$CARGO_LOG"
+    ! grep -q -- "cargo install-update.*cargo-llvm-cov" "$CARGO_LOG"
+}
+
+@test "migrate_harness_off_native removes a stale mise-migrated harness binary from ~/.local/bin" {
+    write_test_yaml
+    mkdir -p "$TEST_HOME/.local/bin"
+    touch "$TEST_HOME/.local/bin/claude"
+
+    run_sync
+    assert_success
+
+    [[ ! -e "$TEST_HOME/.local/bin/claude" ]]
 }

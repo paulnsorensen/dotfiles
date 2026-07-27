@@ -160,31 +160,28 @@ STDIN"
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
 
-@test "omp-mcp: native user config keeps direct MCP servers, no omp-scoped plugin duplicates" {
+@test "omp-mcp: native user config keeps context7 only; hallouminate/milknado are native OMP plugins" {
     local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
-    local plugin_registry="$REAL_DOTFILES_DIR/agents/plugins/registry.yaml"
+    local omp_reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/omp.yaml"
     jq -e '.mcpServers.context7.command == "npx"' "$cfg"
     jq -e '.mcpServers.context7.args == ["-y", "@upstash/context7-mcp"]' "$cfg"
     jq -e '.mcpServers.context7.env.CONTEXT7_API_KEY == "${CONTEXT7_API_KEY}"' "$cfg"
-    jq -e '.mcpServers.hallouminate.command == "hallouminate"' "$cfg"
-    jq -e '.mcpServers.hallouminate.args == ["serve"]' "$cfg"
-    jq -e '.mcpServers.milknado.command == "uvx"' "$cfg"
-    jq -e '.mcpServers.milknado.args == ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]' "$cfg"
 
-    # hallouminate/milknado are vendored here directly: neither lists `omp` in
-    # agents/plugins/registry.yaml `harnesses:`, so OMP never gets them via
-    # plugin decomposition (that mechanism is claude/codex/opencode/cursor/
-    # copilot/crush only). Listing a server here only duplicates a
-    # plugin-owned MCP for a harness the plugin registry actually decomposes
-    # onto.
+    # hallouminate/milknado are now installed as native OMP marketplace
+    # plugins (chezmoi/.chezmoidata/omp.yaml `.omp.plugins`), which supply
+    # their own MCP servers. Listing them here too would duplicate the
+    # server under both the bare name and OMP's plugin-scoped namespace.
+    jq -e 'has("hallouminate") | not' <<<"$(jq '.mcpServers' "$cfg")"
+    jq -e 'has("milknado") | not' <<<"$(jq '.mcpServers' "$cfg")"
+
     local duplicates
     duplicates=$(
         comm -12 \
             <(jq -r '.mcpServers | keys[]' "$cfg" | sort) \
-            <(yq -r '.plugins | to_entries | map(select(.value.harnesses // [] | index("omp"))) | .[].key' "$plugin_registry" | sort)
+            <(yq -r '.omp.plugins // {} | keys[]' "$omp_reg" | sort)
     )
     if [ -n "$duplicates" ]; then
-        echo "dot_omp/private_agent/mcp.json duplicates omp-scoped plugin-owned MCP server(s):"
+        echo "dot_omp/private_agent/mcp.json duplicates a native OMP plugin MCP server:"
         printf '%s\n' "$duplicates"
         return 1
     fi

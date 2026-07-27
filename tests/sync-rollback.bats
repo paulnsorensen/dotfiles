@@ -33,8 +33,8 @@ esac
 MOCK
     chmod +x "$MOCK_BIN/git"
 
-    # Mock brew, prek, uv, tmux, yq — no-ops
-    for cmd in brew prek uv tmux yq; do
+    # Mock brew, prek, uv, tmux, yq, omp — no-ops
+    for cmd in brew prek uv tmux yq omp; do
         printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/$cmd"
         chmod +x "$MOCK_BIN/$cmd"
     done
@@ -43,6 +43,10 @@ MOCK
     mkdir -p "$FAKE_DOTFILES/packages"
     printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/packages/sync.sh"
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+
+    # Mock chezmoi/.chezmoidata/omp.yaml registry — empty plugin set
+    mkdir -p "$FAKE_DOTFILES/chezmoi/.chezmoidata"
+    printf 'omp:\n  plugins: {}\n' > "$FAKE_DOTFILES/chezmoi/.chezmoidata/omp.yaml"
 
     export PATH="$MOCK_BIN:$PATH"
 

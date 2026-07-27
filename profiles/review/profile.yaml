@@ -1,7 +1,7 @@
 # review — read-only PR review (ccp parity).
 # Reviewers read and file comments; they don't fix. Edit/Write/NotebookEdit
-# and the serena mutators are denied; the tool surface is a read-only
-# whitelist. MCP world is tilth + context7.
+# and tilth's writer are denied; the tool surface is a read-only whitelist.
+# MCP world is tilth + context7.
 name: review
 description: Read-only PR review
 # Cheese sub-agents are available in this closed world too
@@ -26,12 +26,6 @@ permissions_deny:
   - Write
   - NotebookEdit
   - mcp__tilth__tilth_write
-  - mcp__serena__replace_symbol_body
-  - mcp__serena__replace_content
-  - mcp__serena__insert_before_symbol
-  - mcp__serena__insert_after_symbol
-  - mcp__serena__rename_symbol
-  - mcp__serena__safe_delete_symbol
 # Per-profile plugin set (ccp settings-merge parity).
 enabled_plugins:
   "claude-md-management@claude-plugins-official": true

@@ -77,6 +77,22 @@ upgrade_uv_tools() {
     done
 }
 
+# True when $dir is a *linked* git worktree rather than the primary clone.
+# Home-directory symlinks (~/.zshrc, ~/.zshenv, …) must only ever point at the
+# primary clone: syncing from an ephemeral worktree (Conductor/ccw) repoints
+# them at a path that dangles the moment the worktree is removed, silently
+# breaking the shell — DOTFILES_DIR (derived from ~/.zshrc's resolved target)
+# then points at a dead path, dropping bin/ off PATH. Fails open (returns
+# non-linked) when git is unavailable or $dir is not a repo, so non-git
+# deploys and the test harness are unaffected.
+dir_is_linked_worktree() {
+    local d="${1:-$dir}" gitdir common
+    command -v git &>/dev/null || return 1
+    gitdir=$(git -C "$d" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+    common=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+    [[ "$gitdir" != "$common" ]]
+}
+
 # Symlink a single file/dir, or dispatch to its .sync script if present
 sync_entry() {
     local file="$1"
@@ -90,6 +106,19 @@ sync_entry() {
         if ! bash "$dir/$file/.sync"; then
             log_error "sync for $file FAILED (continuing — will report at end)"
             SYNC_FAILURES+=("$file")
+        fi
+        return 0
+    fi
+
+    # Guard against the worktree-hijack: never create (or destroy) a global home
+    # symlink while syncing from a linked worktree. Removing the existing block
+    # too is deliberate — otherwise we'd delete the good primary-pointing link
+    # (line below) before bailing. Warn once, not per-file.
+    if dir_is_linked_worktree; then
+        if [[ "${_WORKTREE_SYMLINK_WARNED:-}" != "1" ]]; then
+            log_warning "Skipping home symlinks: syncing from a linked git worktree ($dir)."
+            log_warning "  Run 'dots sync' from the primary clone so ~/.zshrc etc. don't dangle when this worktree is removed."
+            _WORKTREE_SYMLINK_WARNED=1
         fi
         return 0
     fi
@@ -460,6 +489,113 @@ sync_omp_chezmoi_sources() {
         return 1
     fi
     log_info "Assembled OMP chezmoi source state (dot_omp/private_agent/exact_skills)"
+    return 0
+}
+
+# Reconcile native OMP marketplace plugins (milknado, hallouminate) against
+# the `.omp.plugins` subtree of chezmoi/.chezmoidata/omp.yaml. Runs after
+# chezmoi apply so the mcp.json cutover (context7 only) lands with the
+# plugin-owned MCP servers that replace it. Idempotent: a converged state
+# makes zero `omp` mutating calls. npm-installed plugins (`omp plugin list
+# --json` `.npm[]`) are never touched — only `.marketplace[]` entries whose
+# id matches `<name>@<marketplace>` for a marketplace this function owns.
+#   sync_omp_plugins <dotfiles_root>
+sync_omp_plugins() {
+    local root="$1"
+    local reg="$root/chezmoi/.chezmoidata/omp.yaml"
+
+    if ! command -v omp &>/dev/null; then
+        log_warning "omp not found — skipping OMP plugin reconcile"
+        return 0
+    fi
+    if ! command -v yq &>/dev/null; then
+        log_warning "yq not found — skipping OMP plugin reconcile"
+        return 0
+    fi
+    if ! command -v jq &>/dev/null; then
+        log_warning "jq not found — skipping OMP plugin reconcile"
+        return 0
+    fi
+    if [[ ! -f "$reg" ]]; then
+        log_error "omp registry not found: $reg"
+        return 1
+    fi
+
+    log_info "Reconciling OMP native plugins..."
+
+    # Desired: name\tmarketplace\tsource, one per registry entry.
+    local desired
+    desired=$(yq -r '.omp.plugins // {} | to_entries | .[] | [.key, .value.marketplace, .value.source] | @tsv' "$reg")
+
+    local desired_marketplaces
+    desired_marketplaces=$(printf '%s\n' "$desired" | awk -F'\t' 'NF{print $2}' | sort -u)
+
+    # Current marketplaces (empty if the file doesn't exist yet). Guarded:
+    # under the caller's `set -e`, an unguarded jq failure on a malformed
+    # file would abort the whole sync with no diagnostic.
+    local current_marketplaces=""
+    if [[ -f "$HOME/.omp/marketplaces.json" ]]; then
+        if ! current_marketplaces=$(jq -r '.marketplaces[].name' "$HOME/.omp/marketplaces.json" 2>/dev/null); then
+            log_warning "  ~/.omp/marketplaces.json malformed or missing .marketplaces — treating as none"
+            current_marketplaces=""
+        fi
+    fi
+
+    # Current marketplace-installed plugin ids (e.g. "milknado@milknado").
+    # npm-installed plugins live under `.npm` and are never read here.
+    local current_installed=""
+    current_installed=$(omp plugin list --json 2>/dev/null | jq -r '.marketplace[]?.id' 2>/dev/null) || current_installed=""
+
+    # --- Additions: marketplace add, then plugin install ---------------
+    local name marketplace source
+    while IFS=$'\t' read -r name marketplace source; do
+        [[ -z "$name" ]] && continue
+
+        if ! grep -qxF "$marketplace" <<<"$current_marketplaces"; then
+            log_info "  Adding OMP marketplace: $source"
+            if ! omp plugin marketplace add "$source" >/dev/null 2>&1; then
+                log_error "omp plugin marketplace add $source failed"
+                return 1
+            fi
+            current_marketplaces=$(printf '%s\n%s' "$current_marketplaces" "$marketplace")
+        fi
+
+        if ! grep -qxF "${name}@${marketplace}" <<<"$current_installed"; then
+            log_info "  Installing OMP plugin: ${name}@${marketplace}"
+            if ! omp plugin install "${name}@${marketplace}" >/dev/null 2>&1; then
+                log_error "omp plugin install ${name}@${marketplace} failed"
+                return 1
+            fi
+        fi
+    done <<<"$desired"
+
+    # --- Removals: uninstall plugins, then remove marketplaces no longer
+    # referenced by any registry entry. Restricted to marketplace-sourced
+    # ids (never touches `.npm`). ---------------------------------------
+    local id
+    while IFS= read -r id; do
+        [[ -z "$id" ]] && continue
+        if ! printf '%s\n' "$desired" | awk -F'\t' -v id="$id" '$1"@"$2 == id {found=1} END{exit !found}'; then
+            log_info "  Uninstalling OMP plugin no longer in registry: $id"
+            if ! omp plugin uninstall "$id" >/dev/null 2>&1; then
+                log_error "omp plugin uninstall $id failed"
+                return 1
+            fi
+        fi
+    done <<<"$current_installed"
+
+    local mp
+    while IFS= read -r mp; do
+        [[ -z "$mp" ]] && continue
+        if ! grep -qxF "$mp" <<<"$desired_marketplaces"; then
+            log_info "  Removing OMP marketplace no longer in registry: $mp"
+            if ! omp plugin marketplace remove "$mp" >/dev/null 2>&1; then
+                log_error "omp plugin marketplace remove $mp failed"
+                return 1
+            fi
+        fi
+    done <<<"$current_marketplaces"
+
     return 0
 }
 

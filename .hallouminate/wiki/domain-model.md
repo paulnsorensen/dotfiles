@@ -24,3 +24,27 @@ _Code_: NEW ENTITY (claude/workflows/cheese-factory.js phase)
 
 **No-chain-forward** — directive carried by every phase spawn overriding a skill's `--auto` chaining: write your handoff slug and stop.
 _Code_: ~/.claude/skills/ultracook/SKILL.md:87-91
+
+**Pinned surface** — any package whose installed version is exactly recorded in a manifest and moves only via merged bump PRs (never machine-side upgrade).
+_Avoid_: managed package, locked dep
+_Code_: NEW ENTITY (chezmoi/dot_config/mise/config.toml + packages.yaml `version:` fields + claude.yaml MCP args)
+
+**Brew remainder** — the ~16 formulae + taps + casks left on unpinned brew after the mise migration; the only surface `dots up` still upgrades.
+_Avoid_: legacy packages
+_Code_: packages/packages.yaml (post-migration residue)
+
+**Exempt channel** — own-authored package deliberately left floating (tilth/hallouminate nightlies, milknado@main); a trusted-author boundary, not an oversight.
+_Avoid_: unpinned dep
+_Code_: chezmoi/.chezmoiscripts/run_onchange_after_install-{tilth,hallouminate}.sh.tmpl
+
+**Mise manifest** — the repo-authored, chezmoi-deployed mise config holding all aqua/backend tool pins.
+_Avoid_: tool-versions file
+_Code_: NEW ENTITY (chezmoi/dot_config/mise/config.toml → ~/.config/mise/config.toml)
+
+**Harness** — a native AI coding agent binary (claude, codex, omp) managed by sync's native-harness loop.
+_Avoid_: agent binary
+_Code_: packages/sync.sh:584-614 (`sync_native_harnesses`)
+
+**Renovate runner** — the self-hosted cron workflow executing Renovate against this repo's four pinned surfaces.
+_Avoid_: update bot
+_Code_: NEW ENTITY (.github/workflows/renovate.yml + renovate.json5)
