@@ -1,0 +1,7 @@
+[Unit]
+Description=Development workloads with measured NVMe I/O ceiling
+
+[Slice]
+IOAccounting=yes
+IOReadBandwidthMax=/dev/nvme0n1 629145600
+IOWriteBandwidthMax=/dev/nvme0n1 209715200

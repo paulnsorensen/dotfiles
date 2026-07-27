@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# PATH wrapper: keep Codex sessions inside dev-heavy.slice on Linux.
+
+set -euo pipefail
+REAL="${CODEX_REAL:-$HOME/.local/bin/codex}"
+[[ -x "$REAL" ]] || { echo "codex wrapper: $REAL is missing" >&2; exit 1; }
+
+if [[ "${DEV_HEAVY_ACTIVE:-0}" == 1 ]]; then
+    exec "$REAL" "$@"
+fi
+
+exec "${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/agent-run" "$REAL" "$@"

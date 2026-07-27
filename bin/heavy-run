@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Queue and run one heavyweight build/test/link job across all worktrees.
+
+set -euo pipefail
+
+if (( $# == 0 )); then
+    echo "Usage: heavy-run <command> [args…]" >&2
+    exit 2
+fi
+[[ "${1:-}" == -- ]] && shift
+(( $# > 0 )) || { echo "heavy-run: missing command" >&2; exit 2; }
+
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
+# shellcheck source=lib/dev-heavy.sh
+source "$DOTFILES_DIR/bin/lib/dev-heavy.sh"
+dev_heavy_require_ready
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/crabbot-heavy-run"
+WAIT_SECONDS="${HEAVY_RUN_WAIT_SECONDS:-900}"
+umask 077
+mkdir -p "$STATE_DIR"
+exec 9>"$STATE_DIR/lease.lock"
+
+started=$SECONDS
+while ! flock -n 9; do
+    if [[ -s "$STATE_DIR/holder" ]]; then
+        echo "heavy-run: waiting for current lease ($(tr '\n' ' ' < "$STATE_DIR/holder"))" >&2
+    else
+        echo "heavy-run: waiting for the current heavyweight job" >&2
+    fi
+    if (( WAIT_SECONDS > 0 && SECONDS - started >= WAIT_SECONDS )); then
+        echo "heavy-run: timed out after ${WAIT_SECONDS}s" >&2
+        exit 75
+    fi
+    sleep 5
+done
+
+unit="heavy-job-$(date +%s)-$$.scope"
+holder="$STATE_DIR/holder"
+tmp="$holder.$$"
+{
+    printf 'pid=%s\nstarted=%s\ncommand=' "$$" "$(date --iso-8601=seconds)"
+    printf '%q ' "$@"
+    printf '\n'
+} > "$tmp"
+mv -f "$tmp" "$holder"
+trap 'rm -f "$holder"' EXIT
+
+dev_heavy_run_scope "$unit" "$@"

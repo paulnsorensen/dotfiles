@@ -30,4 +30,9 @@ fi
 # Per-server NODE_OPTIONS in MCP configs override this for MCP children.
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
 
+AGENT_RUN="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/agent-run"
+if [[ "${DEV_HEAVY_ACTIVE:-0}" != 1 && -x "$AGENT_RUN" ]]; then
+    exec "$AGENT_RUN" "$REAL" "$@"
+fi
+
 exec "$REAL" "$@"

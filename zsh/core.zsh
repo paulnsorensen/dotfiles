@@ -33,11 +33,11 @@ elif [[ $OSTYPE == linux* ]]; then
   unset _brew_bin
 fi
 
-# Add dotfiles bin to PATH
-export PATH="$DOTFILES_DIR/bin:$PATH"
-
-# Add local bin to PATH
+# Add local bin before dotfiles-owned launchers.
 export PATH="$HOME/.local/bin:$PATH"
+
+# Keep dotfiles launchers ahead of installed binaries.
+export PATH="$DOTFILES_DIR/bin:$PATH"
 
 # cargo install puts binaries in ~/.cargo/bin
 [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
