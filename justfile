@@ -20,11 +20,9 @@ lint-shell:
 lint-python:
     ruff check skills/session-analytics/scripts/
 
-# eslint on JS hooks (eslint v8 for --no-eslintrc support)
+# eslint on JS hooks (config in claude/hooks/eslint.config.js)
 lint-js:
-    cd claude/hooks && eslint --no-eslintrc --env node --env es2020 \
-        --rule '{"no-undef": "error", "no-unused-vars": "warn", "no-redeclare": "error"}' \
-        *.js
+    cd claude/hooks && eslint *.js
 
 # markdownlint on markdown files
 lint-markdown:
@@ -40,9 +38,7 @@ lint-python-fix:
 
 # eslint --fix
 lint-js-fix:
-    cd claude/hooks && eslint --fix --no-eslintrc --env node --env es2020 \
-        --rule '{"no-undef": "error", "no-unused-vars": "warn", "no-redeclare": "error"}' \
-        *.js
+    cd claude/hooks && eslint --fix *.js
 
 # markdownlint --fix
 lint-markdown-fix:
