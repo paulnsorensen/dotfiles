@@ -6,7 +6,7 @@
 set -euo pipefail
 
 AGENTS_DOTFILES="${AGENTS_DOTFILES:-$HOME/Dev/dotfiles/agents}"
-CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
+CLAUDE_BIN="${CLAUDE_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/claude}"
 
 flags=()
 

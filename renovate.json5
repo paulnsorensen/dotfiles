@@ -1,0 +1,58 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "enabledManagers": ["mise", "custom.regex"],
+
+  "mise": {
+    "managerFilePatterns": [
+      "/^chezmoi\\/dot_config\\/mise\\/config\\.toml$/"
+    ]
+  },
+
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update packages.yaml version and revision pins",
+      "managerFilePatterns": ["/^packages\\/packages\\.yaml$/"],
+      "matchStrings": [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+- [^\\n]*(?:version|rev): "(?<currentValue>[^"]+)"'
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "Update pinned npx MCP packages",
+      "managerFilePatterns": ["/^chezmoi\\/\\.chezmoidata\\/claude\\.yaml$/"],
+      "matchStrings": [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+args: \\["-y", "[^"]+@(?<currentValue>[^"]+)"\\]'
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "Update the oh-my-pi native installer pin",
+      "managerFilePatterns": ["/^packages\\/sync\\.sh$/"],
+      "matchStrings": [
+        'OMP_PIN="(?<currentValue>[^"]+)"'
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "can1357/oh-my-pi"
+    }
+  ],
+
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "ignoreTests": false,
+  "platformAutomerge": false,
+
+  "packageRules": [
+    {
+      "description": "Automerge patch and minor updates after CI passes",
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Require manual review for major updates",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    }
+  ]
+}

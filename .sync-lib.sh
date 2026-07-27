@@ -189,14 +189,6 @@ parse_sync_args() {
     done
 }
 
-# Upgrade uv-managed tools
-upgrade_uv_tools() {
-    command -v uv &>/dev/null || return 0
-    log_info "Upgrading uv-managed tools..."
-    uv tool upgrade --all 2>&1 | while read -r line; do
-      log_info "  $line"
-    done
-}
 
 # True when $dir is a *linked* git worktree rather than the primary clone.
 # Home-directory symlinks (~/.zshrc, ~/.zshenv, …) must only ever point at the

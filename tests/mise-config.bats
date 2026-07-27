@@ -51,14 +51,19 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
 
 @test "claude, codex, and rtk are pinned to exact tags, not floating" {
-    [[ "$(yq -p=toml '.tools."aqua:anthropics/claude-code"' "$CONFIG")" == "v2.1.219" ]]
-    [[ "$(yq -p=toml '.tools."aqua:openai/codex"' "$CONFIG")" == "rust-v0.145.0" ]]
-    [[ "$(yq -p=toml '.tools."aqua:rtk-ai/rtk"' "$CONFIG")" == "v0.43.0" ]]
+    local tool version
+    for tool in \
+        'aqua:anthropics/claude-code' \
+        'aqua:openai/codex' \
+        'aqua:rtk-ai/rtk'; do
+        version="$(yq -p=toml -o=json '.tools' "$CONFIG" | jq -r --arg tool "$tool" '.[$tool]')"
+        [[ "$version" =~ ^(v|rust-v)[0-9]+\.[0-9]+\.[0-9]+$ ]]
+    done
 }
 
-@test "non-semver tag shapes are kept raw (rust-analyzer date-stamp, tmux 3.7b)" {
+@test "non-semver tag shapes are kept raw (rust-analyzer date-stamp, tmux v3.7b)" {
     [[ "$(yq -p=toml '.tools."aqua:rust-lang/rust-analyzer"' "$CONFIG")" == "2026-07-20" ]]
-    [[ "$(yq -p=toml '.tools."aqua:tmux/tmux"' "$CONFIG")" == "3.7b" ]]
+    [[ "$(yq -p=toml '.tools."aqua:tmux/tmux-builds"' "$CONFIG")" == "v3.7b" ]]
 }
 
 @test "core-plugin tools (node, bun, rust) are stripped of git-tag prefixes" {

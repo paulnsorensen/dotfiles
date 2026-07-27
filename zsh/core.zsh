@@ -85,6 +85,13 @@ if command -v pyenv 1>/dev/null 2>&1; then
   export PATH="$DOTFILES_DIR/bin:$PATH"
 fi
 
+# init mise if it exists — re-prepend its shims dir ahead of pyenv/native
+# copies so a mise-managed tool (e.g. claude, codex) resolves before any
+# stale native/brew install still on PATH from before migration.
+if command -v mise 1>/dev/null 2>&1; then
+  eval "$(mise activate zsh)"
+fi
+
 # Source .env file if it exists (key=value only, no command execution)
 if [[ -f "$DOTFILES_DIR/.env" ]]; then
     while IFS='=' read -r key val; do

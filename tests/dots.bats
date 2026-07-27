@@ -25,14 +25,11 @@ teardown() {
     assert_output_contains "rollback"
 }
 
-# Stub a dotfiles tree wired for `dots upgrade`: `.sync` prints its args and
-# runs packages/sync.sh (mirroring the real do_sync path), packages/sync.sh
-# prints its UPGRADE_MODE, install-external.sh prints its args. All must be
-# invoked — `dots upgrade` now runs a refresh sync, then the skill refresh.
+# Stub a dotfiles tree wired for `dots upgrade`: git and .sync record their
+# invocations so the pull-before-sync order and upgrade scope are observable.
 stub_upgrade_dotfiles() {
     local stub_dir="$1"
-    mkdir -p "$stub_dir/packages" "$stub_dir/bin" \
-             "$stub_dir/chezmoi/lib" "$stub_dir/skills"
+    mkdir -p "$stub_dir/packages" "$stub_dir/bin"
     cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
     cat > "$stub_dir/.sync" <<'STUB'
 #!/bin/bash
@@ -43,88 +40,63 @@ STUB
 #!/bin/bash
 echo "stub-sync UPGRADE_MODE=${UPGRADE_MODE:-unset}"
 STUB
-    cat > "$stub_dir/chezmoi/lib/install-external.sh" <<'STUB'
+    cat > "$stub_dir/bin/git" <<'STUB'
 #!/bin/bash
-echo "stub-skill-sync args=$* SKILL_EXCLUDE_AGENTS=${SKILL_EXCLUDE_AGENTS:-unset}"
+echo "stub-git $*"
+if [[ "$1" == "pull" && "${GIT_PULL_FAIL:-false}" == "true" ]]; then
+    exit 1
+fi
 STUB
-    : > "$stub_dir/skills/_registry.yaml"
-    chmod +x "$stub_dir/.sync" "$stub_dir/packages/sync.sh" \
-             "$stub_dir/chezmoi/lib/install-external.sh"
+    chmod +x "$stub_dir/.sync" "$stub_dir/packages/sync.sh" "$stub_dir/bin/git"
 }
 
-@test "dots upgrade runs a refresh sync (UPGRADE_MODE=true), then skill-sync --force" {
+@test "dots upgrade pulls before an upgrade sync without refreshing remote skills" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
-    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
     assert_success
-    assert_output_contains "Upgrading packages"
-    # do_sync refresh: forwards the `refresh` arg (force-pulls the vendor cache)
-    # and runs packages/sync.sh with UPGRADE_MODE=true.
-    assert_output_contains "stub-dotsync args=refresh"
+    assert_output_contains "stub-git pull --rebase"
+    assert_output_contains "stub-dotsync args="
     assert_output_contains "stub-sync UPGRADE_MODE=true"
-    assert_output_contains "Refreshing remote skills"
-    assert_output_contains "stub-skill-sync args=$stub_dir/skills/_registry.yaml --force"
+    assert_output_not_contains "args=refresh"
+    assert_output_not_contains "skill-sync"
+    assert_output_not_contains "Refreshing remote skills"
 
-    # Lock down ordering: the refresh sync (which installs package tools) must
-    # run before the npx skill refresh that depends on them.
-    local sync_line skill_line
-    sync_line=$(printf '%s\n' "$output" | grep -n 'stub-dotsync args=refresh' | head -1 | cut -d: -f1)
-    skill_line=$(printf '%s\n' "$output" | grep -n 'stub-skill-sync args=' | head -1 | cut -d: -f1)
-    [[ "$sync_line" -lt "$skill_line" ]] || {
-        echo "Expected refresh sync before skill refresh; got sync=$sync_line skill=$skill_line" >&2
+    local pull_line sync_line
+    pull_line=$(printf '%s\n' "$output" | grep -n 'stub-git pull --rebase' | head -1 | cut -d: -f1)
+    sync_line=$(printf '%s\n' "$output" | grep -n 'stub-dotsync args=' | head -1 | cut -d: -f1)
+    [[ "$pull_line" -lt "$sync_line" ]] || {
+        echo "Expected git pull before upgrade sync; got pull=$pull_line sync=$sync_line" >&2
         return 1
     }
 }
 
-@test "dots up shorthand routes to upgrade (packages + skill refresh)" {
+@test "dots up shorthand uses the same pull then scoped-upgrade flow" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
-    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" up
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" up
     assert_success
+    assert_output_contains "stub-git pull --rebase"
     assert_output_contains "stub-sync UPGRADE_MODE=true"
-    assert_output_contains "stub-skill-sync args=$stub_dir/skills/_registry.yaml --force"
+    assert_output_not_contains "args=refresh"
+    assert_output_not_contains "skill-sync"
 }
 
-@test "dots upgrade keeps going when skill-sync fails (warns but exits 0)" {
+@test "dots upgrade stops before sync when git pull fails" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
-    # Replace skill-sync stub with a failing one
-    cat > "$stub_dir/chezmoi/lib/install-external.sh" <<'STUB'
-#!/bin/bash
-echo "stub-skill-sync FAILING" >&2
-exit 1
-STUB
-    chmod +x "$stub_dir/chezmoi/lib/install-external.sh"
-
-    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
-    assert_success  # package upgrade is the primary action; skill failure shouldn't abort
-    assert_output_contains "stub-sync UPGRADE_MODE=true"
-    assert_output_contains "Remote skills refresh failed"
+    GIT_PULL_FAIL=true PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
+    assert_failure
+    assert_output_contains "stub-git pull --rebase"
+    assert_output_not_contains "stub-dotsync"
 }
 
-@test "dots upgrade excludes only claude-code from the skill-CLI refresh (codex included, issue #442)" {
-    # Regression guard for #442: codex's ~/.agents/skills only got .system
-    # because a prior exclude list was too broad. SKILL_EXCLUDE_AGENTS must
-    # name claude-code only, so codex (and any other skills-CLI harness)
-    # still gets refreshed by install-external.sh.
+@test "dots sync never invokes the skills-CLI refresh" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
-    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
     assert_success
-    assert_output_contains "SKILL_EXCLUDE_AGENTS=claude-code"
-    assert_output_not_contains "SKILL_EXCLUDE_AGENTS=claude-code,codex"
-    assert_output_not_contains "SKILL_EXCLUDE_AGENTS=unset"
-}
-
-@test "dots sync never invokes the skills-CLI refresh (cadence boundary, issue #442)" {
-    # Plain \`dots sync\` is the offline, chezmoi-native cadence; the npx
-    # skills-CLI refresh (install-external.sh) is upgrade-only. A regression
-    # that pulls it into sync would silently add network I/O to every sync.
-    local stub_dir="$TEST_HOME/stub-dotfiles"
-    stub_upgrade_dotfiles "$stub_dir"
-    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
-    assert_success
-    assert_output_not_contains "stub-skill-sync"
+    assert_output_not_contains "skill-sync"
 }
 
 @test "dots with no arguments shows status" {

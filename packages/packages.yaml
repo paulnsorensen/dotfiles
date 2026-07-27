@@ -12,105 +12,44 @@
 packages:
   - tinted-theming/tinted: { source: tap }
   - koekeishiya/formulae: { source: tap }     # skhd
-  - oven-sh/bun: { source: tap }              # bun
-  - anomalyco/tap: { source: tap }            # opencode
 
-  # Core CLI
-  - jq
-  - yq
-  - fzf
-  - gh
-  - shellcheck
-  - bats-core                                 # bats test runner (tests/*.bats)
+  # Core CLI not owned by the mise manifest
   - tree
   - htop
-  - ripgrep
-  - fd
-  - eza
-  - bat
-  - glow                                         # Terminal markdown renderer
-  - ast-grep
-  - git-delta
-  - git-lfs                                  # gitconfig.tmpl declares filter "lfs"; this installs the binary
-  - tmux
   - tinty
-  - prek
-  - zoxide
-  - atuin
-  - bottom
-  - dust
-  - procs
-  - tokei
-  - yazi
-  - difftastic
-  - mergiraf
-  - lazygit
-  - git-town
-  - joshmedeski/sesh: { source: tap }            # sesh tap (joshmedeski/sesh/sesh)
-  - sesh                                          # session switcher (joshmedeski/sesh tap); tmux binds guarded with if-shell
-  - just
-  - chezmoi
-  - duckdb
   - watch
   - parallel                                  # GNU parallel — run shell jobs concurrently
-  - node                                      # bundles npm on mac + linux
-  - bun                                       # JS/TS runtime
-  - sd
-  - vhs
   - gettext
   - taf2/tap/mdvi
 
-  # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh → tmux)
-  - mosh                                        # resilient mobile shell (UDP 60000-61000); survives roaming/sleep
+  # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh)
+  - mosh                                      # resilient mobile shell (UDP 60000-61000); survives roaming/sleep
   # Tailscale: install manually, not via brew/dots sync. macOS uses the website/
   # App Store install (one GUI variant — never run two side by side); Linux uses
   # the official installer `curl -fsSL https://tailscale.com/install.sh | sh`,
   # which wires the systemd daemon. Then `tailscale up`. See operations/remote-access wiki.
-  - anomalyco/tap/opencode                    # open-source AI coding agent (fresher than homebrew-core)
-  - charmbracelet/tap/crush                   # Charm terminal AI coding agent (MCP via crush.json)
-  # claude, codex, and omp are NOT brew-managed — they ship on fast-moving
-  # native channels with their own self-updaters (`claude update`, `codex
-  # update`, `omp update`). packages/sync.sh:sync_native_harnesses installs
-  # them via their official installers, self-updates in UPGRADE_MODE, and
-  # migrates any lingering brew copy off (the brew cask/formula lagged and
-  # shadow-fought the native ~/.local/bin binary on PATH).
-
-  # Rust build acceleration
-  - sccache                                   # rustc wrapper for compile caching
-  - cargo-nextest                             # faster, parallel test runner
-
-  # Rust build deps (transitive native toolchain requirements)
-  - protobuf                                  # protoc — required by lance-encoding build script (hallouminate)
 
   # macOS-only
-  - mas: { platform: mac }                    # Mac App Store CLI
   - trash: { platform: mac }                  # Move to Trash (safer rm)
   - terminal-notifier: { platform: mac }      # macOS notifications from terminal
   - skhd: { platform: mac }                   # Hotkey daemon (from koekeishiya/formulae tap)
   - emdash: { source: cask, platform: mac }   # Desktop UI for running coding agents in parallel
-  - cursor: { source: cask, platform: mac, greedy: false } # Cursor — AI code editor; self-updates in-app, and greedy reinstall of the root-owned .app prompts for sudo
+  - cursor: { source: cask, platform: mac, greedy: false } # Cursor — AI code editor; self-updates in-app
   - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)
-  - obsidian: { source: cask, platform: mac }  # Obsidian — Markdown knowledge base
-  - alt-tab: { source: cask, platform: mac }   # AltTab — window switcher (prefs restored by alttab/.sync)
-  - alfred: { source: cask, platform: mac }    # Alfred — launcher (sync folder wired by alfred/.sync)
-  - rectangle-pro: { source: cask, platform: mac } # Rectangle Pro — window snapping (shortcuts set by rectangle/.sync)
-  - rjyo/moshi/moshi-hook: { platform: mac }   # Moshi phone bridge (agents/hooks/registry.yaml); linux uses Moshi's own installer (~/.local/bin)
+  - obsidian: { source: cask, platform: mac } # Obsidian — Markdown knowledge base
+  - alt-tab: { source: cask, platform: mac }  # AltTab — window switcher (prefs restored by alttab/.sync)
+  - alfred: { source: cask, platform: mac }   # Alfred — launcher (sync folder wired by alfred/.sync)
+  - rectangle-pro: { source: cask, platform: mac } # Rectangle Pro — window snapping
+  - rjyo/moshi/moshi-hook: { platform: mac }  # Moshi phone bridge; Linux uses Moshi's own installer
 
   # Linux-only
   - xclip: { platform: linux }
 
   # Dev (DOTFILES_DEV=true)
   - pyenv: { dev: true }
-  - uv
-  - rustup
-  - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app; greedy upgrade triggers repeated sudo prompts
+  - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app
 
-  # LSP servers (for Claude Code LSP plugins)
-  - bash-language-server
-  - yaml-language-server
-  - pyright
-  - gopls: { dev: true }
-  - rust-analyzer
+  # LSP servers not owned by mise
   # renovate: datasource=npm depName=@vtsls/language-server
   - vtsls: { source: npm, pkg: "@vtsls/language-server", version: "0.3.0" }
 
@@ -124,40 +63,30 @@ packages:
   # renovate: datasource=npm depName=@govcraft/agent-skills
   - agent-skills: { source: npm, pkg: "@govcraft/agent-skills", version: "0.4.4" }
   # renovate: datasource=npm depName=@withgraphite/graphite-cli
-  - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux, version: "1.8.6" } # `gt` — stacked-diff PR workflow (mac uses the withgraphite/tap brew formula)
+  - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux, version: "1.8.6" } # `gt` — stacked-diff PR workflow
 
   # uv tools (Python)
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.16.0" }                      # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.16.0" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
   - check-jsonschema: { source: uv, version: "0.37.4" }
   # renovate: datasource=git-refs depName=agentskills/agentskills
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref", rev: "38a2ff82958afee88dadf4831509e6f7e9d8ef4e" }
   # renovate: datasource=pypi depName=tavily-cli
-  - tavily-cli: { source: uv, version: "0.1.5" }                # provides `tvly` CLI for Tavily API
-  - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main" }  # Mikado execution engine; exposes `milknado-mcp` for the MCP registry
-  # Serena pins Python 3.13 and ships pre-release builds on PyPI; the `flags`
-  # array is passed through to `uv tool install` verbatim. Exposes the `serena`
-  # binary, which the MCP registry invokes per harness via --context.
+  - tavily-cli: { source: uv, version: "0.1.5" } # provides `tvly` CLI for Tavily API
+  - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main" } # approved floating own-authored channel
+  # Serena pins Python 3.13 and ships pre-release builds on PyPI.
   # renovate: datasource=pypi depName=serena-agent
   - serena-agent: { source: uv, version: "1.6.1", flags: ["--python", "3.13", "--prerelease=allow"] }
 
   # gh CLI extensions
   # renovate: datasource=github-releases depName=github/gh-stack
-  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.0.8" }   # native PR-stack management (used by /pr-stack)
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.0.8" }
 
   # Cargo
-  - cargo-llvm-cov: { source: cargo }
   # renovate: datasource=crate depName=cargo-update
-  - cargo-update: { source: cargo, version: "22.1.0" }            # provides `cargo install-update` for idempotent `dots up`
-  # tilth and hallouminate are installed from their npm nightly channels
-  # (@paulnsorensen/{tilth,hallouminate}-nightly) by the run_onchange_after_
-  # install-{tilth,hallouminate}.sh.tmpl scripts — a cargo build here would
-  # shadow that nightly binary on PATH.
-  # Install from Git because the crates.io `rtk` collides with the desired package.
-  # If an unrelated `rtk` is already present from `cargo install rtk`, remove it first
-  # so `dots sync` does not incorrectly treat the Git-sourced package as already satisfied.
-  # Pin to `master` (stable releases); the default branch `develop` lags behind.
-  - rtk: { source: cargo, git: "https://github.com/rtk-ai/rtk", branch: master }
+  - cargo-update: { source: cargo, version: "22.1.0" } # provides `cargo install-update`
+  # tilth and hallouminate stay on their own-authored npm nightly channels via
+  # chezmoi run_onchange installers; no cargo copy may shadow them.
