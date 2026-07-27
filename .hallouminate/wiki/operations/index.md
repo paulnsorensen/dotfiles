@@ -10,5 +10,7 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 - [[tmux-plugin-gotchas]] — tmux plugin wiring: why continuum silently disarms when `status-right` is rewritten after TPM runs, the required plugin declaration order, catppuccin palette injection via `theme/generate.sh`, and the live vs. repo plugin tree.
 - [[remote-access]] — the remote-shell stack: Tailscale mesh transport → mosh (UDP, survives roaming/sleep) → tmux session persistence, the `mtmux` wrapper, and why Tailscale stays a manual install under the Homebrew-on-Linux package model.
 
+- [[subagent-dispatch-analytics]] — measured behaviour of the phase agents across 578 real runs: dispatch size (not detail) drives the coder's 37% out-of-context rate, line anchors don't rescue an oversized dispatch, ~40% of the coder's budget goes to pre-write exploration, and the tool-reroute hook catches under 8% of the shell searches it targets. Query pack in `references/subagent-runs.md`.
+
 - [[omp-config-shape-drift]] — unknown-key gate tripping on nested `dev.autoqa.*` means a stale per-machine config serialization: normalize with an `omp config set` re-save; never fold the nested shape into the shared registry (the #487 flip-flop).
 - [[omp-fanout-worker-models]] — OMP fan-out guardrails and evidence-dated worker-model cost research: separate parent reasoning from cheap worker roles, bound task fan-out, and treat speed rankings as provisional until measured locally.
