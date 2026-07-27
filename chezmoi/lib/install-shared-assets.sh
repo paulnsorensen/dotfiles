@@ -38,9 +38,9 @@ for target in "$@"; do
         chmod +x "$target"
     else
         # `cp -f` overwrites content but preserves the destination's mode,
-        # so a stale +x from a previous deploy would persist. Clear it
-        # explicitly to keep the target mode in sync with the source.
-        chmod -x "$target"
+        # so stale executable bits from a previous deploy would persist.
+        # Clear all of them explicitly to keep the target mode in sync.
+        chmod a-x "$target"
     fi
     echo "  Copied $(basename "$source_file") -> $target"
 done
