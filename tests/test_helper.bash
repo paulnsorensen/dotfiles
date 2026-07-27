@@ -50,11 +50,9 @@ teardown_test_env() {
     [[ "$ORIGINAL_XDG_DATA_HOME"   != "__unset__" ]] && export XDG_DATA_HOME="$ORIGINAL_XDG_DATA_HOME"
     [[ "$ORIGINAL_XDG_CACHE_HOME"  != "__unset__" ]] && export XDG_CACHE_HOME="$ORIGINAL_XDG_CACHE_HOME"
 
-    # Clean up test directory. Go's module cache (populated when a hook
-    # under test shells out to `go`, e.g. prek's install-hooks) marks its
-    # files and dirs read-only, so a plain rm -rf fails with "Permission
-    # denied" — chmod everything writable first.
-    if [[ -d "$TEST_HOME" ]]; then
+    # Most sandboxes remove cleanly. Go's module cache can contain read-only
+    # files, so only pay for the recursive chmod traversal after removal fails.
+    if [[ -d "$TEST_HOME" ]] && ! rm -rf "$TEST_HOME" 2>/dev/null; then
         chmod -R u+w "$TEST_HOME" 2>/dev/null || true
         rm -rf "$TEST_HOME"
     fi

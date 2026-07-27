@@ -9,6 +9,18 @@ load test_helper
 
 SYNC_SCRIPT="$REAL_DOTFILES_DIR/packages/sync.sh"
 
+setup_file() {
+    export MOCK_BIN="$BATS_FILE_TMPDIR/package-mocks"
+    mkdir -p "$MOCK_BIN"
+    write_mock_brew
+    write_mock_cargo
+    write_mock_gh
+    write_mock_npm
+    write_mock_sudo
+    write_mock_harness claude
+    write_mock_harness codex
+    write_mock_harness omp
+}
 setup() {
     setup_test_env
     export PACKAGES_FILE="$TEST_HOME/packages.yaml"
@@ -18,6 +30,7 @@ setup() {
 
     export MOCK_BIN="$TEST_HOME/bin"
     mkdir -p "$MOCK_BIN"
+    cp -p "$BATS_FILE_TMPDIR/package-mocks/"* "$MOCK_BIN/"
 
     export BREW_LOG="$TEST_HOME/brew.log"
     export CARGO_LOG="$TEST_HOME/cargo.log"
@@ -32,19 +45,9 @@ setup() {
     export MISE_BOOTSTRAP_CONFIG_FILE="$TEST_HOME/missing-bootstrap-config.toml"
     printf '[tools]\n' > "$MISE_CONFIG_FILE"
 
-    write_mock_brew
-    write_mock_cargo
-    write_mock_gh
-    write_mock_npm
-    # Mock sudo records its args and no-ops — guarantees the Linux brew-deps
-    # bootstrap can never run a real `sudo apt-get` against the test machine.
-    write_mock_sudo
-    # Mock the native AI harnesses as present-and-recording, so no test ever
-    # shells out to the real claude/codex/omp (self-update hits the network /
-    # mutates the real install). Install/absence tests override these.
-    write_mock_harness claude
-    write_mock_harness codex
-    write_mock_harness omp
+    # mise/curl/sh mocks stay per-test: some tests override them with failure
+    # variants, and they are cheap. The expensive shared mocks are generated
+    # once in setup_file() and copied in above.
     write_mock_mise
     write_mock_curl
     write_mock_sh
@@ -62,15 +65,15 @@ MOCKSUDO
 
 # Mock an AI-harness CLI (claude/codex/omp): record args to its log, exit 0.
 write_mock_harness() {
-    local name="$1" log
+    local name="$1" log_var
     case "$name" in
-        claude) log="$CLAUDE_LOG" ;;
-        codex)  log="$CODEX_LOG" ;;
-        omp)    log="$OMP_LOG" ;;
+        claude) log_var="CLAUDE_LOG" ;;
+        codex)  log_var="CODEX_LOG" ;;
+        omp)    log_var="OMP_LOG" ;;
     esac
     cat > "$MOCK_BIN/$name" << MOCKHARNESS
 #!/bin/bash
-echo "$name \$*" >> "$log"
+echo "$name \$*" >> "\$$log_var"
 exit 0
 MOCKHARNESS
     chmod +x "$MOCK_BIN/$name"
@@ -134,7 +137,7 @@ write_mock_brew() {
     local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}" outdated_casks="${4:-}"
     cat > "$MOCK_BIN/brew" << MOCKBREW
 #!/bin/bash
-echo "brew \$*" >> "$BREW_LOG"
+echo "brew \$*" >> "\$BREW_LOG"
 case "\$1" in
     list)
         if [[ "\$2" == "--formulae" ]]; then
@@ -196,7 +199,7 @@ write_mock_gh() {
     local installed="${1:-}" fail_repo="${2:-}"
     cat > "$MOCK_BIN/gh" << MOCKGH
 #!/bin/bash
-echo "gh \$*" >> "$GH_LOG"
+echo "gh \$*" >> "\$GH_LOG"
 case "\$1" in
     extension)
         case "\$2" in

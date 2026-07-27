@@ -93,7 +93,7 @@ def test_settings_allow_and_deny_both_union_merge(env):
 # ── shipped _permissions fragment + global wiring ────────────────────
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def global_manifest():
     """Resolve the real shipped ``global`` profile (which now includes
     ``_permissions``). Skips if the repo profiles aren't where we expect."""
@@ -104,7 +104,7 @@ def global_manifest():
     return parse_manifest(gdir)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def opencode_global_manifest():
     """Resolve the real shipped ``opencode-global`` live wrapper."""
     # Anchor file-relative (parents[2] = repo root) so this guard can't silently

@@ -295,7 +295,7 @@ hook_claude_apply() {
     outer=$(_hook_build_outer "$event" claude "$cmd" "$matcher" "$timeout" "$async_field")
 
     local tmp
-    tmp=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.json")
+    tmp=$(mktemp "${TMPDIR:-/tmp}/hook-sync-json.XXXXXX")
     jq --arg e "$event" --arg c "$cmd" --argjson b "$outer" '
         .hooks //= {}
         | .hooks[$e] //= []
@@ -350,7 +350,7 @@ _hook_codex_read_current_json() {
     [[ ! -s "$CODEX_CONFIG_FILE" ]] && { printf '%s\n' '{}'; return 0; }
 
     local yq_err out rc=0
-    yq_err=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.err")
+    yq_err=$(mktemp "${TMPDIR:-/tmp}/hook-sync-err.XXXXXX")
     out=$(yq -p=toml -o=json '.' "$CODEX_CONFIG_FILE" 2>"$yq_err") || rc=$?
     if (( rc != 0 )); then
         echo -e "${RED}    refusing to overwrite unparseable $CODEX_CONFIG_FILE:${NC}" >&2
@@ -434,7 +434,7 @@ hook_codex_apply() {
         | .hooks[$e] += [$b]
     ' <<<"$current_json")
 
-    tmp=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX.toml")
+    tmp=$(mktemp "${TMPDIR:-/tmp}/hook-sync.XXXXXX")
     if ! yq -p=json -o=toml '.' <<<"$merged" > "$tmp" 2>/dev/null; then
         echo -e "${RED}    yq failed to emit TOML; refusing to overwrite $CODEX_CONFIG_FILE${NC}" >&2
         rm -f "$tmp"

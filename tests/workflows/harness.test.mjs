@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -45,6 +45,27 @@ test('a workflow fails when an agent schema uses an unsupported keyword', async 
     workflow.run(createRuntime({ respond: () => 'fixture' }).globals),
     /unsupported schema keyword "minLength"/,
   )
+})
+
+test('loadWorkflow caches compilation but creates a fresh VM context for every run', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'workflow-harness-'))
+  const path = join(directory, 'cached.js')
+  await writeFile(path, [
+    'export const meta = {',
+    "  name: 'cached',",
+    '}',
+    '',
+    'globalThis.runs = (globalThis.runs ?? 0) + 1',
+    'return globalThis.runs',
+    '',
+  ].join('\n'))
+
+  const first = await loadWorkflow(path)
+  await unlink(path)
+  const cached = await loadWorkflow(path)
+
+  assert.equal(await first.run(createRuntime().globals), 1)
+  assert.equal(await cached.run(createRuntime().globals), 1)
 })
 
 test('validate rejects null for an object schema', () => {
