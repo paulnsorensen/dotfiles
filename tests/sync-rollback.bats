@@ -214,7 +214,16 @@ fi
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
 
-    run bash "$SYNC_SCRIPT"
+    # A real fresh machine has no chezmoi anywhere. Removing only the MOCK_BIN
+    # copy is not enough when a host chezmoi is on PATH (dev machines, and CI
+    # installs one to /usr/local/bin) — that satisfies `command -v chezmoi` and
+    # skips the bootstrap branch. Strip every PATH dir holding a chezmoi binary
+    # so the fresh-machine bootstrap fires deterministically.
+    local clean_path
+    clean_path=$(tr ':' '\n' <<<"$PATH" | while IFS= read -r d; do
+        [[ -x "$d/chezmoi" ]] || printf '%s:' "$d"
+    done)
+    PATH="${clean_path%:}" run bash "$SYNC_SCRIPT"
     assert_success
     run cat "$SYNC_EVENTS"
     local bootstrap_line apply_line sync_line
