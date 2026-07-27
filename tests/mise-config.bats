@@ -14,10 +14,10 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ $status -eq 0 ]]
 }
 
-@test "mise config pins exactly 52 tools (45 aqua + 3 core-plugin + 4 backend)" {
+@test "mise config pins exactly 51 tools (43 aqua + 3 core-plugin + 5 backend)" {
     run yq -p=toml -o=json '.tools | length' "$CONFIG"
     [[ $status -eq 0 ]]
-    [[ "$output" == "52" ]]
+    [[ "$output" == "51" ]]
 }
 
 @test "no tool version is 'latest' or a floating range specifier" {
@@ -76,5 +76,11 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ "$(yq -p=toml '.tools."npm:bash-language-server"' "$CONFIG")" == "5.6.0" ]]
     [[ "$(yq -p=toml '.tools."npm:yaml-language-server"' "$CONFIG")" == "1.24.0" ]]
     [[ "$(yq -p=toml '.tools."npm:pyright"' "$CONFIG")" == "1.1.411" ]]
-    [[ "$(yq -p=toml '.tools."go:golang.org/x/tools/gopls"' "$CONFIG")" == "v0.23.0" ]]
+    [[ "$(yq -p=toml '.tools."cargo:eza"' "$CONFIG")" == "0.23.5" ]]
+    [[ "$(yq -p=toml '.tools."cargo:tokei"' "$CONFIG")" == "14.0.0" ]]
+}
+
+@test "gopls stays dropped (needs a Go toolchain; aqua entry is go_install-type)" {
+    run grep -c 'gopls' <(yq -p=toml -o=json '.tools | keys' "$CONFIG")
+    [[ "$output" == "0" ]]
 }
