@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Launch a whole Claude/Codex session inside the measured development slice.
+
+set -euo pipefail
+
+if (( $# == 0 )); then
+    echo "Usage: agent-run <command> [args…]" >&2
+    exit 2
+fi
+[[ "${1:-}" == -- ]] && shift
+(( $# > 0 )) || { echo "agent-run: missing command" >&2; exit 2; }
+
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
+# shellcheck source=lib/dev-heavy.sh
+source "$DOTFILES_DIR/bin/lib/dev-heavy.sh"
+dev_heavy_require_ready
+
+dev_heavy_run_scope "agent-session-$$.scope" "$@"

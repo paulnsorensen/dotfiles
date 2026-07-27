@@ -14,10 +14,18 @@ flags=()
 [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && \
     flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
 
+
 # Fresh .env keys at process start (mirrors _cc_base's launcher prefix) —
 # Conductor doesn't source zsh init, so .env keys may be absent from its env.
 launcher="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-env-exec"
+runner="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/agent-run"
 if [[ -x "$launcher" ]]; then
+    if [[ -x "$runner" && "${DEV_HEAVY_ACTIVE:-0}" != 1 ]]; then
+        exec "$launcher" "$runner" "$CLAUDE_BIN" "${flags[@]}" "$@"
+    fi
     exec "$launcher" "$CLAUDE_BIN" "${flags[@]}" "$@"
+fi
+if [[ -x "$runner" && "${DEV_HEAVY_ACTIVE:-0}" != 1 ]]; then
+    exec "$runner" "$CLAUDE_BIN" "${flags[@]}" "$@"
 fi
 exec "$CLAUDE_BIN" "${flags[@]}" "$@"

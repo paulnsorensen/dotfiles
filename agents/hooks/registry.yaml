@@ -234,3 +234,15 @@ hooks:
     async: true
     harnesses: [claude]
     description: Moshi bridge — turn-end notification to phone
+
+
+  # ─── Heavy-job admission ─────────────────────────────────────────────
+  # Agent-issued compiler/linker-heavy commands must use the queued wrapper;
+  # ordinary reads, formatting, and MCP work remain concurrent.
+  heavy-admission:
+    event: PreToolUse
+    script: agents/hooks/heavy-admission.sh
+    harnesses: [claude, codex]
+    matcher: "Bash"
+    timeout: 5
+    description: Require heavy-run for compiler/linker-heavy agent commands
