@@ -15,6 +15,28 @@ The repo seeds/writes `~/.codex/config.toml` through chezmoi/prompt installers; 
 | Settings / config | <https://developers.openai.com/codex/config-reference> | `~/.codex/config.toml`. Base copied once; thereafter user-owned. Searchable schema of every key (agents, approval policy, providers, features incl. hooks, permissions, sandbox, `[mcp_servers]`, OTel). |
 | Skills | <https://developers.openai.com/codex/skills> | `skills/` → shared `.agents/skills/<n>/`. Codex **does** support `SKILL.md` skills (progressive disclosure). |
 
+### Sub-agent routing knobs (July 2026)
+
+From the "Practical Sub-Agent Routing" ingest (2026-07-24) — the Codex-side
+levers for the routing policy in [[architecture/subagent-routing-policy]]:
+
+- **Per-agent TOML** (`~/.codex/agents/<n>.toml`, rendered by `ap` from
+  `agents/registry.yaml`) carries independent `model`,
+  `model_reasoning_effort`, `sandbox_mode`, MCP, and skill settings — the full
+  role/tier split (scoper luna/terra low–medium · workers terra medium ·
+  planner/reviewer sol high–xhigh, read-only) is expressible per agent.
+- **`[agents]` block in `config.toml`**: `enabled`,
+  `max_concurrent_threads_per_session` (~6 is a sane local cap),
+  `default_subagent_model`, `default_subagent_reasoning_effort`. Not yet present
+  in the repo seed `codex/config.toml` — and the seed is copy-once
+  (`install-codex.sh` backfills only missing root keys), so shipping this block
+  to an existing machine needs a backfill entry, not just a seed edit.
+- **AGENTS.md is the routing-policy carrier**: Codex discovers it global →
+  project with closer files overriding, so a stricter scoper/review policy can
+  live inside a sensitive subtree (payments, auth) and override the global one.
+- Codex's own guidance: start parallelism with read-heavy work (exploration,
+  tests, triage, summarization); be conservative with parallel writers.
+
 ## Isolated settings
 
 `ap launch codex <profile>` isolates by redirecting `CODEX_HOME` to a fresh generated home, not by passing a `--strict-mcp-config` / `--setting-sources` equivalent. The generated `config.toml` carries the profile MCP world, optional `model_instructions_file`, and the repo's Auto permission defaults: `approval_policy = "on-request"`, `approvals_reviewer = "auto_review"`, and `sandbox_mode = "workspace-write"`.[^isolated-auto-perms] Codex still has no per-launch built-in tool whitelist; per-server enable/disable is the only MCP filtering Codex exposes (no per-tool filtering via `codex mcp`).

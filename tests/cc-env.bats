@@ -20,6 +20,7 @@ load test_helper
 
 CLAUDE_ZSH="$REAL_DOTFILES_DIR/zsh/claude.zsh"
 CC_ENV_EXEC="$REAL_DOTFILES_DIR/bin/cc-env-exec"
+DOTSCLAUDE="$REAL_DOTFILES_DIR/bin/dotsclaude"
 
 setup() {
     FIXTURE_DIR="$(mktemp -d)"
@@ -120,6 +121,22 @@ EOF
     run env -u DOTFILES_DIR HOME="$FIXTURE_DIR" "$CC_ENV_EXEC" sh -c 'printf %s "$FB_KEY"'
     [ "$status" -eq 0 ]
     [ "$output" = "fb" ]
+}
+
+@test "dotsclaude uses the mise Claude shim by default" {
+    export HOME="$FIXTURE_DIR"
+    export XDG_DATA_HOME="$FIXTURE_DIR/.local/share"
+    mkdir -p "$XDG_DATA_HOME/mise/shims"
+    cat > "$XDG_DATA_HOME/mise/shims/claude" <<'EOF'
+#!/usr/bin/env bash
+echo mise-claude "$@"
+EOF
+    chmod +x "$XDG_DATA_HOME/mise/shims/claude"
+
+    run env DOTFILES_DIR="$FIXTURE_DIR" AGENTS_DOTFILES="$FIXTURE_DIR/agents" "$DOTSCLAUDE" --version
+
+    [ "$status" -eq 0 ]
+    [ "$output" = "mise-claude --version" ]
 }
 
 # ── _cc_base wiring (end-to-end in zsh, tmux/claude mocked) ──

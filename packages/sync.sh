@@ -81,11 +81,6 @@ save_cache() {
     cache_hash > "$CACHE_FILE"
 }
 
-if check_cache; then
-    log_success "Package manifests unchanged (cached), skipping"
-    exit 0
-fi
-
 ########## Query helpers
 # Entry format: bare string OR single-key map (key = name, value = overrides)
 # Map queries use: to_entries[0] | .key = name, .value.* = properties
@@ -319,7 +314,7 @@ sync_mise() {
     fi
 
     log_info "Converging mise-managed tool versions from $mise_config..."
-    if ! MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install </dev/null; then
+    if ! MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install "$@" </dev/null; then
         log_error "mise install failed"
         FAILED+=("mise-install")
         return 0
@@ -648,6 +643,13 @@ sync_native_harnesses() {
 
     log_success "Native harness sync complete"
 }
+# Claude is invoked by chezmoi later in this sync, so keep its mise binary
+# present even when the package declaration cache is valid.
+if check_cache; then
+    log_success "Package manifests unchanged (cached), syncing Claude"
+    sync_mise "aqua:anthropics/claude-code@v2.1.219"
+    exit 0
+fi
 ########## Main
 
 if [[ "$PLATFORM" == "Darwin" ]]; then

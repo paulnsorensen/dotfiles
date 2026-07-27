@@ -601,10 +601,23 @@ YAML
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "unchanged (cached), skipping"
+    assert_output_contains "unchanged (cached), syncing Claude"
+
     [[ ! -f "$BREW_LOG" ]]
-    [[ ! -f "$MISE_LOG" ]]
     [[ ! -f "$CURL_LOG" ]]
+}
+
+@test "sync cache restores the Claude mise package" {
+    write_test_yaml
+    run_sync
+    assert_success
+    rm -f "$BREW_LOG" "$MISE_LOG" "$CURL_LOG"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "syncing Claude"
+    grep -q "mise install aqua:anthropics/claude-code@v2.1.219" "$MISE_LOG"
+    [[ ! -f "$BREW_LOG" ]]
 }
 
 @test "a mise config-only change invalidates the package cache and reconverges" {
@@ -851,7 +864,7 @@ MOCKBREW
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "unchanged (cached), skipping"
+    assert_output_contains "unchanged (cached), syncing Claude"
     [[ "$(wc -l < "$SH_LOG")" -eq "$before" ]]
 }
 
@@ -936,6 +949,18 @@ MOCKBREW
 @test "sync_mise bootstraps mise via brew and converges in the same run" {
     write_test_yaml
     rm -f "$MOCK_BIN/mise"
+    # Remove host mise binaries too; this test must exercise the bootstrap
+    # branch even on a developer machine where mise is installed.
+    local path_without_mise
+    path_without_mise=$(tr ':' '\n' <<<"$PATH" | while IFS= read -r dir; do
+        [[ -x "$dir/mise" ]] || printf '%s:' "$dir"
+    done)
+    # Homebrew co-locates yq/jq with mise, so stripping the mise dir also drops
+    # them; keep them reachable via MOCK_BIN (always on PATH, never stripped).
+    ln -sf "$(command -v yq)" "$MOCK_BIN/yq"
+    ln -sf "$(command -v jq)" "$MOCK_BIN/jq"
+    # The mocked brew places a working mise on `brew install mise`, so this test
+    # exercises both the bootstrap call and the subsequent convergence call.
     cat > "$MOCK_BIN/brew" << MOCKBREW
 #!/bin/bash
 echo "brew \$*" >> "$BREW_LOG"
@@ -951,7 +976,7 @@ exit 0
 MOCKBREW
     chmod +x "$MOCK_BIN/brew"
 
-    run_sync
+    PATH="$MOCK_BIN:${path_without_mise%:}" run_sync
     assert_success
     grep -q "install mise" "$BREW_LOG"
     grep -q "mise install config=$MISE_CONFIG_FILE" "$MISE_LOG"
