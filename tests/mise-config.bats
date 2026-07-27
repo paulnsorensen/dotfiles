@@ -56,9 +56,9 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ "$(yq -p=toml '.tools."aqua:rtk-ai/rtk"' "$CONFIG")" == "v0.43.0" ]]
 }
 
-@test "non-semver tag shapes are kept raw (rust-analyzer date-stamp, tmux 3.7b)" {
+@test "non-semver tag shapes are kept raw (rust-analyzer date-stamp, tmux v3.7b)" {
     [[ "$(yq -p=toml '.tools."aqua:rust-lang/rust-analyzer"' "$CONFIG")" == "2026-07-20" ]]
-    [[ "$(yq -p=toml '.tools."aqua:tmux/tmux"' "$CONFIG")" == "3.7b" ]]
+    [[ "$(yq -p=toml '.tools."aqua:tmux/tmux-builds"' "$CONFIG")" == "v3.7b" ]]
 }
 
 @test "core-plugin tools (node, bun, rust) are stripped of git-tag prefixes" {
