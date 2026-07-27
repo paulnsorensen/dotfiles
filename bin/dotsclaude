@@ -17,7 +17,9 @@ flags=()
 # Fresh .env keys at process start (mirrors _cc_base's launcher prefix) —
 # Conductor doesn't source zsh init, so .env keys may be absent from its env.
 launcher="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-env-exec"
+# ${flags[@]+…} guard: bash 3.2 (macOS /bin/bash) treats an empty array
+# expansion as unbound under `set -u`.
 if [[ -x "$launcher" ]]; then
-    exec "$launcher" "$CLAUDE_BIN" "${flags[@]}" "$@"
+    exec "$launcher" "$CLAUDE_BIN" ${flags[@]+"${flags[@]}"} "$@"
 fi
-exec "$CLAUDE_BIN" "${flags[@]}" "$@"
+exec "$CLAUDE_BIN" ${flags[@]+"${flags[@]}"} "$@"

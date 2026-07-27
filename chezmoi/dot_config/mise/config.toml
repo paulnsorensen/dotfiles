@@ -12,9 +12,14 @@
 #     itself reports, stripped of any git-tag prefix (mise core plugins
 #     query the tool's own version scheme, not a GitHub tag).
 #   - npm-backend entries: bare semver (npm versions never carry a prefix).
-#   - go-backend entry (gopls): kept with its `v` prefix — Go module
-#     versions are always `vX.Y.Z` per the Go modules versioning spec, so
-#     this isn't a guess at a stripped form, it's the module version itself.
+#   - cargo-backend entries (eza, tokei): bare crates.io semver. Both were
+#     aqua-pinned until the aqua registry retyped them as `cargo`-type
+#     packages (no prebuilt binaries), which mise's aqua backend refuses.
+#
+# gopls was dropped 2026-07-27: the aqua registry types it `go_install`
+# (unsupported by mise's aqua backend) and the go backend needs a full Go
+# toolchain — no Go work on this machine. Re-add alongside a pinned `go`
+# core-plugin entry if that changes.
 #
 # rust-analyzer uses a date-stamp release tag (not semver) and tmux uses
 # `v3.7b` — both kept as-is, not normalized to look more like semver.
@@ -34,7 +39,6 @@
 "aqua:bats-core/bats-core" = "v1.14.0"
 "aqua:BurntSushi/ripgrep" = "15.2.0"
 "aqua:sharkdp/fd" = "v10.4.2"
-"aqua:eza-community/eza" = "v0.23.5"
 "aqua:sharkdp/bat" = "v0.26.1"
 "aqua:charmbracelet/glow" = "v2.1.2"
 "aqua:ast-grep/ast-grep" = "0.45.0"
@@ -47,7 +51,6 @@
 "aqua:ClementTsang/bottom" = "0.14.6"
 "aqua:bootandy/dust" = "v1.2.4"
 "aqua:dalance/procs" = "v0.14.12"
-"aqua:XAMPPRocky/tokei" = "v14.0.0"
 "aqua:sxyazi/yazi" = "v26.5.6"
 "aqua:Wilfred/difftastic" = "0.69.0"
 "aqua:codeberg.org/mergiraf/mergiraf" = "v0.18.0"
@@ -79,4 +82,5 @@ rust = "1.97.1"
 "npm:bash-language-server" = "5.6.0"
 "npm:yaml-language-server" = "1.24.0"
 "npm:pyright" = "1.1.411"
-"go:golang.org/x/tools/gopls" = "v0.23.0"
+"cargo:eza" = "0.23.5"
+"cargo:tokei" = "14.0.0"
