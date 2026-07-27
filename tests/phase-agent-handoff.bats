@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1090,SC2034,SC2317
+# shellcheck disable=SC1090,SC2016,SC2034,SC2317
 # Tests for the phase-agent cross-phase handoff convention documented in
 # agents/preamble.md and agents/agent_definitions/{explorer,researcher,reviewer,coder}.md.
 # Locks the spec's core invariant: the four-field handoff block must stay
@@ -71,6 +71,73 @@ block_sha() {
     assert_success
 }
 
+@test "phase handoff defers role-specific turn caps to the registry" {
+    local registry="$AGENTS_DIR/registry.yaml"
+
+    run grep -Fq 'Turn caps are role-specific and come from `agents/registry.yaml` `maxTurns`' "$PREAMBLE"
+    assert_success
+    run grep -Fq '130k tokens / 100 turns' "$PREAMBLE"
+    assert_failure
+
+    run yq '.agents.reviewer.maxTurns' "$registry"
+    [[ "$output" == "50" ]] || { echo "reviewer maxTurns drifted: $output" >&2; return 1; }
+    run yq '.agents.coder.maxTurns' "$registry"
+    [[ "$output" == "100" ]] || { echo "coder maxTurns drifted: $output" >&2; return 1; }
+    run grep -Fq '130k tokens / 100 turns' "$AGENTS_DIR/agent_definitions/coder.md"
+    assert_success
+}
+
+@test "runtime phase prompts keep rules but not dispatch analytics" {
+    local prompt
+    for prompt in "$PREAMBLE" "$AGENTS_DIR/agent_definitions/coder.md"; do
+        for metric in '207 real dispatches' 'Measured coverage today' '37% of real coder runs' 'Real runs route only half'; do
+            run grep -Fq "$metric" "$prompt"
+            assert_failure
+        done
+    done
+}
+
+@test "coder sizing thresholds are heuristics and blocking requires a concrete split" {
+    local coder="$AGENTS_DIR/agent_definitions/coder.md"
+
+    run grep -Fq 'Dispatch sizing — heuristics, not refusal rules.' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'only when you can name a concrete natural split' "$coder"
+    assert_success
+    run grep -Fq 'it will not fit' "$coder"
+    assert_failure
+}
+
+@test "reviewer dispatch selects an explicit output mode and defines both schemas" {
+    local reviewer="$AGENTS_DIR/agent_definitions/reviewer.md"
+
+    run grep -Fq 'Review mode: severity-report' "$reviewer"
+    assert_success
+    run grep -Fq 'Review mode: taste-test' "$reviewer"
+    assert_success
+    run grep -Fq 'Do not infer the mode from words such as “lenses”' "$reviewer"
+    assert_success
+    run grep -Fq -- '- Drift: pass | revise — <evidence>' "$reviewer"
+    assert_success
+    run grep -Fq -- '- Locked decision: pass | halt — <evidence>' "$reviewer"
+    assert_success
+    run grep -Fq 'Review mode: taste-test' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'Review mode: severity-report' "$PREAMBLE"
+    assert_success
+}
+
+@test "reviewer may write only its own artifact through cheez-write" {
+    local registry="$AGENTS_DIR/registry.yaml"
+
+    run yq -e '.agents.reviewer.skills[] | select(. == "cheez-write")' "$registry"
+    assert_success
+    run yq -e '.agents.reviewer.disallowedTools[] | select(. == "Write")' "$registry"
+    assert_success
+    run grep -Fq 'write only your own `.cheese/` artifact through `cheez-write`' "$AGENTS_DIR/agent_definitions/reviewer.md"
+    assert_success
+}
+
 # The descriptions promise read-only phase agents that cannot recurse, and a
 # coder that edits only through tilth (cheez-write). Lock those tool-surface contracts in the
 # registry so they can't silently drift. The same metadata renders to Claude,
@@ -106,7 +173,7 @@ block_sha() {
 
 @test "read-only phase agents deny code edits and subagent fan-out in the registry" {
     local registry="$AGENTS_DIR/registry.yaml"
-    # explorer + reviewer are fully read-only: deny Write and Agent.
+    # explorer + reviewer deny native Write and subagent fan-out; reviewer writes only its own artifact through cheez-write.
     for agent in explorer reviewer; do
         run yq ".agents.${agent}.disallowedTools" "$registry"
         assert_success

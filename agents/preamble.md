@@ -42,8 +42,10 @@ Four general phase-agents model the explore → research → review → code wor
 |---|---|---|
 | "where / how / what" about unfamiliar code — orientation, blast-radius, "find me X" | `explorer` (read-only) | cited findings digest |
 | A question outside the codebase — library/API docs, current web facts, versions, comparisons | `researcher` (read-only on code; writes `.cheese/research/`) | cited claim table + slug path |
-| Checking a diff/PR/branch/path before it lands | `reviewer` (read-only) | severity-grouped findings |
+| Checking a diff/PR/branch/path before it lands | `reviewer` (source-read-only; own artifact allowed) | named severity report or taste-test verdicts |
 | Writing or changing code — spec, bug fix, applying review findings | `coder` (full write surface) | what changed + verification |
+
+Every reviewer dispatch names `Review mode: severity-report` for a full review or `Review mode: taste-test` for the fresh-context gate. Never leave the dialect implicit.
 
 Default self-check before doing phase work inline: "Is this an explore / research / review / code task that a phase-agent should own?" If yes, delegate — don't burn your own context re-deriving what an isolated agent can hand back distilled. Skip delegation only for trivial one-step work where the dispatch overhead exceeds the task.
 
@@ -58,17 +60,17 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-Default is the inline digest — `artifact:` is omitted when the digest is complete (explorer/reviewer outputs are designed small). When an agent's output is genuinely too large to inline, it writes a durable artifact (`.cheese/<phase>/<slug>.md`, or `.cheese/research/<slug>/` for the researcher) and returns the path as the lightweight reference, which you pass forward instead of re-pasting. `next:` is the agent's recommendation only — you own the routing decision and may override it. A `status: blocked: out of context` handback means the agent hit its context budget (130k tokens / 100 turns) mid-task — never resume the exhausted agent, including via SendMessage: a resumed transcript inherits the spent context and starts near-full. Dispatch a fresh one from the `artifact:` slug so it picks up where the last left off. When that `artifact:` path lives inside a disposable isolation worktree (`.claude/worktrees/agent-*`), copy it to a durable location (the main workspace's `.cheese/` or `.context/`) immediately on receiving the handback, before dispatching the successor — isolation worktrees are auto-cleaned when their tree looks unchanged, and gitignored/untracked artifacts don't count as changes.
+Default is the inline digest — `artifact:` is omitted when the digest is complete (explorer/reviewer outputs are designed small). When output is genuinely too large to inline, the agent writes a durable artifact (`.cheese/<phase>/<slug>.md`, or `.cheese/research/<slug>/` for the researcher) and returns its path. `next:` is advisory; you own routing. Turn caps are role-specific and come from `agents/registry.yaml` `maxTurns`; never apply the coder's cap to other roles. A `status: blocked: out of context` handback means the agent exhausted its role or context budget — never resume it, because the transcript stays spent. Dispatch a fresh agent from the artifact. If the artifact is inside a disposable isolation worktree (`.claude/worktrees/agent-*`), copy it to the main workspace's `.cheese/` or `.context/` before dispatching the successor; ignored artifacts do not keep isolation worktrees alive.
 
 ### Coder fan-out
 
 Default to one coder. Coding is a poor multi-agent fit — it needs shared context, burns far more tokens, and adds coordination overhead — so a coder fan-out only pays off for genuinely independent work. Dispatch multiple `coder` subagents only when the subtasks are file-disjoint and independent (no shared mutable state, no sequential dependency), the same disjointness test `/cheese-factory` applies to curds. Otherwise run a single coder: re-deriving shared context across split coders costs more than the parallelism saves.
 
-**Dispatch sizing — split first, anchor second.** A coder's window is 130k tokens. Across 207 real dispatches, 37% ended `blocked: out of context`, and the failure rate tracks dispatch size almost linearly: 5.6% under 2.5k prompt chars, 18% at 2.5–4k, 56% at 4–6k, 67% above 6k. Anchors do not rescue an oversized dispatch — controlling for length, anchored and unanchored runs fail at the same rate. **Splitting is the lever; anchoring is a refinement.**
+**Dispatch sizing — heuristics, not refusal rules.** Consider splitting when more than ~5 distinct edit sites are in scope, a target file over ~800 lines must be read whole, a test-suite audit rides with implementation, or the prompt has grown past ~4k characters. These thresholds signal risk; split only when you can name a coherent boundary. Otherwise dispatch the cohesive task. Once it fits, pre-stage unfamiliar work with an explorer and inline exact line anchors and seam signatures.
 
-So: split outright when more than ~5 distinct edit sites are in scope, a target file over ~800 lines must be read whole, or a test-suite audit rides along with implementation. Split multi-finding packages so one dispatch carries only what it can complete. Treat your own prompt length as the tell — if you are past ~4k characters, you are probably bundling two dispatches, and pasting more source or more anchors will not fix that. Then pre-stage with an explorer and inline exact line anchors and seam signatures, which buys roughly a quarter off the coder's pre-write exploration (median 14 tool calls → 11) once the job already fits.
+The measurement detail behind these rules lives in `.hallouminate/wiki/operations/subagent-dispatch-analytics.md`; runtime prompts keep the prescriptive contract.
 
-**What every coder dispatch must carry.** Six fields, in this order. The coder validates them on arrival and flags what's missing.
+**What every coder dispatch should carry.** Six fields, in this order. The coder validates them on arrival and flags what's missing.
 
 | field | states |
 |---|---|
@@ -79,7 +81,7 @@ So: split outright when more than ~5 distinct edit sites are in scope, a target 
 | **Locked decisions** | design calls already made and not the coder's to revisit — omit only when there genuinely are none |
 | **Return format** | the handback shape, or "coder default" |
 
-Measured coverage today: 95% name a gate command, 82% carry a scope fence, 64% carry line anchors, 54% state a return format, 34% a handoff schema, and only 7% state locked decisions. Locked decisions and a literal success string are the two cheapest fields to add and the two most often missing.
+A missing field is a prompt to ask or state an assumption, not an automatic refusal. Always provide a literal success condition; provide locked decisions when any exist.
 
 ### Fresh-context taste-test (after `coder` returns)
 
@@ -87,7 +89,7 @@ The `coder` self-checks the taste-test lenses inline, but the writing context ca
 
 **Cost gate.** Run it only when the coder's diff **touches more than one file OR adds public surface** (a new exported function, type, or CLI seam); single-file no-public-surface fixes keep the coder's inline check. A coder-nested `/cook` that cleared the gate records `taste_test: deferred-to-orchestrator` in its slug — your signal to run the pass.
 
-**How.** Dispatch the read-only `reviewer` phase-agent over the coder's diff, **named with no call-site model** — its def pins `model: opus` (Codex `gpt-5`), so on those harnesses it runs at ≥ the writer's tier, never the coder's `sonnet`. (On opencode both defs pin `inherit`, so the pass runs at the orchestrator's tier — your level, not below it.) Not `model: inherit` at the call site (tracks your tier, not the reviewer's pin); not a hardcoded call-site model. Scope the dispatch *prompt* to the lenses below — the same agent `/age` drives, but this is a fast pre-handoff gate, not a full ten-dimension review. Pass `{spec/contract, diff, cut-test list, locked decisions}`; it returns `pass | revise` per lens (`halt` for Locked-decision):
+**How.** Dispatch the named `reviewer` phase-agent with no call-site model so its registry model applies. Set `Review mode: taste-test` explicitly; the reviewer must not infer the mode from lens names. Pass `{spec/contract, diff, cut-test list, locked decisions}`. It prefixes the shared four-field handoff, then returns `pass | revise` for each lens below (`pass | halt` for Locked decision), using the exact taste-test schema in `agents/agent_definitions/reviewer.md`:
 
 - **Drift / readability / scope / simplify** — the standard cook lenses.
 - **Production path** — every spec acceptance criterion has a *production* path that exercises it, not only tests that manufacture the state.
