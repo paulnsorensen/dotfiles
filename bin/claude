@@ -4,7 +4,7 @@
 # Bypass all checks: CLAUDE_GUARD=0 claude ...
 
 set -euo pipefail
-REAL="$HOME/.local/bin/claude"
+REAL="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/claude"
 
 # Guard checks are Linux-only (crabbot): pgrep -c and /proc/meminfo don't exist on macOS.
 if [[ "${CLAUDE_GUARD:-1}" != "0" && -r /proc/meminfo ]]; then
