@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Wrapper around `gh stack rebase` that works around a gh-stack bug: its
+# local trunk-tracking branch (stack-trunk/origin-<default>) is documented
+# to fast-forward to match the remote before the cascade rebase, but when
+# it can't compare cleanly it silently skips the update and rebases the
+# whole stack onto the STALE trunk instead ("Could not compare trunk ...
+# skipping trunk update"). That drops any commits merged into the real
+# default branch since the trunk ref last advanced, surfacing as spurious
+# file-deletion conflicts further up the stack.
+#
+# Usage: gh-stack-rebase [gh stack rebase flags...]
+set -euo pipefail
+
+remote="origin"
+args=("$@")
+for i in "${!args[@]}"; do
+    if [[ "${args[$i]}" == "--remote" && -n "${args[$((i + 1))]:-}" ]]; then
+        remote="${args[$((i + 1))]}"
+    fi
+done
+
+default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
+git fetch "$remote" "$default_branch"
+
+trunk_branch="$(git for-each-ref --format='%(refname:short)' 'refs/heads/stack-trunk/*' | head -1)"
+
+if [[ -z "$trunk_branch" ]]; then
+    echo "gh-stack-rebase: no stack-trunk/* branch found — nothing to fast-forward, delegating as-is" >&2
+elif git worktree list --porcelain | grep -qx "branch refs/heads/$trunk_branch"; then
+    echo "gh-stack-rebase: $trunk_branch is checked out in another worktree — skipping fast-forward, fix manually if the rebase warns about a stale trunk" >&2
+else
+    git fetch . "$remote/$default_branch:$trunk_branch"
+fi
+
+exec gh stack rebase "$@"

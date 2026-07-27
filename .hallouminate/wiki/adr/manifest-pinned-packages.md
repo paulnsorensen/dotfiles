@@ -45,3 +45,13 @@ Rationale record for the `manifest-pinned-packages` spec (durable spec: `~/.loca
 - **Decision:** Leave them floating; the `run_onchange_after_install-*.sh.tmpl` nightly scripts stay untouched. Third-party moving refs (skills-ref@main, rtk@master) DO get pinned (rtk via aqua).
 - **Alternatives:** Pin everything — rejected: daily nightly-bump PR noise with no trust gain (author == user).
 - **Consequences:** A trusted-author boundary exists in the manifest; documented, deliberate.
+
+### ADR-007: Apply the manifest before package convergence  [status: accepted]
+
+- **Context:** A mise pin can change in the chezmoi source without changing packages.yaml; running package sync before chezmoi apply leaves the machine on the old tool version. A failed install must also remain retryable rather than becoming a cache hit.
+- **Decision:** On a configured machine, .sync applies the dotfiles/chezmoi entries first, then runs packages/sync.sh. On a fresh machine, it invokes package sync in bootstrap-only mode against the repository's mise manifest, verifies chezmoi became available, applies chezmoi, then performs normal package convergence. The package cache hashes packages.yaml, the selected mise config, and the OMP pin; it is written only after all installers succeed.
+- **Consequences:** A manifest-only bump converges in the same sync; bootstrap failures stop before partial convergence is reported as complete; dots up can pull the bump and run pin-aware upgrade mode without floating pinned channels.
+
+Sources: .sync:47-73, packages/sync.sh:44-63, 291-329, 667-689, and bin/dots:205-224.[^1]
+
+[^1]: .sync:47-73; packages/sync.sh:44-63, 291-329, 667-689; bin/dots:205-224

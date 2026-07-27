@@ -262,7 +262,19 @@ sync_brew() {
         # upgrades through upgrade_casks_greedy instead, which honors the
         # exclusion list. `brew outdated --cask --greedy-auto-updates` is a
         # superset of the plain outdated set, so nothing is missed.
-        brew upgrade --formula </dev/null || log_warning "brew upgrade failed"
+        local -a upgrade_formulae=()
+        local formula
+        while IFS= read -r formula; do
+            [[ -n "$formula" ]] && upgrade_formulae+=( "$formula" )
+        done < <(get_platform_pkgs)
+        if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
+            while IFS= read -r formula; do
+                [[ -n "$formula" ]] && upgrade_formulae+=( "$formula" )
+            done < <(get_platform_pkgs "--dev")
+        fi
+        if ((${#upgrade_formulae[@]})); then
+            brew upgrade --formula "${upgrade_formulae[@]}" </dev/null || log_warning "brew upgrade failed"
+        fi
         # Casks flagged `auto_updates true` (e.g. Cursor) are skipped by a plain
         # `brew upgrade`; --greedy-auto-updates version-checks them and reinstalls
         # only on a diff. Excludes `version :latest` casks (no version to compare,
@@ -539,7 +551,7 @@ sync_gh_extensions() {
 
         if [[ -n "$version" ]]; then
             echo "  Installing $pkg --pin $version..."
-            if ! gh extension install "$pkg" --pin "$version" </dev/null; then
+            if ! gh extension install "$pkg" --pin "$version" --force </dev/null; then
                 log_error "Failed to install $pkg"
                 FAILED+=("$pkg")
             fi
@@ -671,7 +683,18 @@ if [[ "$PLATFORM" == "Darwin" || "$PLATFORM" == "Linux" ]]; then
     sync_brew
 fi
 
+failures_before_mise=${#FAILED[@]}
 sync_mise
+if ((${#FAILED[@]} > failures_before_mise)); then
+    if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
+        log_error "package bootstrap failed: ${FAILED[*]}"
+    else
+        echo ""
+        log_error "failed to install ${#FAILED[@]} package(s): ${FAILED[*]}"
+        log_warning "cache NOT saved due to install failures"
+    fi
+    exit 1
+fi
 
 if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
     if ((${#FAILED[@]})); then

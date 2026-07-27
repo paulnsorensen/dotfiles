@@ -331,6 +331,23 @@ run_sync() {
     grep -q "brew install watch" "$BREW_LOG"
 }
 
+@test "UPGRADE_MODE upgrades only declared brew formulae" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - curl
+  - tree
+YAML
+    # A lingering mise-migrated formula must not be pulled into the upgrade set.
+    write_mock_brew "ripgrep"
+
+    DOTFILES_DEV=false UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    grep -q -- "brew upgrade --formula curl tree" "$BREW_LOG"
+    ! grep -q -E '^brew upgrade --formula$' "$BREW_LOG"
+    ! grep -q -- "brew upgrade --formula.*ripgrep" "$BREW_LOG"
+}
+
 @test "sync installs mac-only packages on Darwin" {
     [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
 
@@ -685,6 +702,18 @@ YAML
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
 }
 
+@test "mise install failure preserves stale native harness binaries" {
+    write_test_yaml
+    mkdir -p "$TEST_HOME/.local/bin"
+    touch "$TEST_HOME/.local/bin/claude" "$TEST_HOME/.local/bin/codex"
+    write_mock_mise 1
+
+    run_sync
+    assert_failure
+    [[ -e "$TEST_HOME/.local/bin/claude" ]]
+    [[ -e "$TEST_HOME/.local/bin/codex" ]]
+}
+
 # --- Integration: missing toolchain ---
 
 # Build a curated PATH for "missing toolchain" tests. Keeps real yq/jq/shasum
@@ -850,8 +879,10 @@ MOCKBREW
 
     run_sync
     assert_success
+    local expected_omp_pin
+    expected_omp_pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
     grep -q "omp.sh/install" "$CURL_LOG"
-    grep -q -- "--binary --ref v17.1.3" "$SH_LOG"
+    grep -q -- "--binary --ref $expected_omp_pin" "$SH_LOG"
     [[ ! -f "$OMP_LOG" ]] || ! grep -q "omp update" "$OMP_LOG"
 }
 
@@ -873,7 +904,9 @@ MOCKBREW
 
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
-    grep -q -- "--binary --ref v17.1.3" "$SH_LOG"
+    local expected_omp_pin
+    expected_omp_pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
+    grep -q -- "--binary --ref $expected_omp_pin" "$SH_LOG"
     [[ ! -f "$OMP_LOG" ]] || ! grep -q "omp update" "$OMP_LOG"
 }
 
@@ -1062,7 +1095,7 @@ YAML
     run_sync
     assert_success
 
-    grep -q -- "extension install github/gh-stack --pin 1.2.3" "$GH_LOG"
+    grep -q -- "extension install github/gh-stack --pin 1.2.3 --force" "$GH_LOG"
 }
 
 @test "UPGRADE_MODE reconverges a pinned cargo package without floating an unpinned sibling" {
