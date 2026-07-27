@@ -167,3 +167,35 @@ Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
   `default` (40 soft / 50 hard turns). `general-purpose` — the ultracook /
   cheese-factory full-peer worker — sits at coder tier (75/100) for this reason;
   a new pipeline-scale agent type left off the table gets half a coder's budget.
+
+## Upstream spawn-depth and concurrency caps (July 2026)
+
+Two upstream env knobs sit beside the turn/context guard as runaway backstops
+(from the "Practical Sub-Agent Routing" ingest, 2026-07-24):
+
+- `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` — nested spawning is **off by default**;
+  depth 1 below the main thread is the safest setting, 2 only for a measured
+  reviewer→verifier workflow. Our registry already denies `Agent` on every leaf
+  agent (coder, explorer, researcher, reviewer, generalist), so the env cap is a
+  backstop, not the primary control — keep `Agent` out of leaf tool lists either
+  way.
+- `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` — a small local cap (~6) is easier to
+  budget and debug than the documented higher defaults.
+
+Two adjacent facts worth keeping with the caps: the built-in **Explore now
+inherits the main conversation's model** (cheap exploration requires our own
+explorer def with an explicitly cheap `model:`, not the built-in), and **agent
+teams** are experimental with materially higher token + coordination cost —
+subagents stay the default unless teammates must talk to each other directly.
+
+**Opus 5 delegation eagerness (2026-07-24).** Claude Opus 5 delegates to
+subagents more readily than prior models, which turns these caps from
+theoretical backstops into live controls: give orchestrators explicit
+delegation criteria or deterministic spawn caps rather than trusting restraint.
+The official guide's rules of thumb: don't delegate work finishable in a
+handful of tool calls; don't spawn subagents to verify/double-check your own
+work (Opus 5 self-corrects natively); one subagent when one suffices.
+Delegation still pays on genuinely independent, sizeable tracks. Full deltas:
+[[operations/prompting-claude-opus-5]].
+
+*Source: "Practical Sub-Agent Routing" guide (hash ac33ad5418f0c6a0) + "Prompting Claude Opus 5" (hash 9a680a14e9bdf39a) · Updated: 2026-07-24*
