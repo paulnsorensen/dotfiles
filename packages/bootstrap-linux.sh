@@ -8,10 +8,8 @@
 #   1. bootstrap_yq_linux      — Mike Farah yq (registry queries need it)
 #   2. bootstrap_brew_deps_linux — system C toolchain Homebrew builds against
 #   3. bootstrap_brew          — Homebrew (the one sudo step; print-and-pause)
-#   4. bootstrap_rustup        — Rust toolchain via rustup.rs (no sudo)
-#   5. install_brew_packages   — taps + brew formulae derived from packages.yaml
-#   6. hand off to packages/sync.sh for cargo/npm/uv/gh, which already work
-#      identically on Linux once the toolchains exist.
+#   4. install_brew_packages   — brew remainder derived from packages.yaml
+#   5. hand off to packages/sync.sh for exact mise/custom-registry convergence.
 #
 # Steps 1-2 and the linuxbrew PATH sourcing reuse packages/sync.sh's helpers
 # (packages/lib-linux-bootstrap.sh) rather than duplicating them.
@@ -99,25 +97,6 @@ bootstrap_brew() {
     log_success "Homebrew ready"
 }
 
-# Rust toolchain via rustup (no sudo; installs to ~/.rustup + ~/.cargo).
-bootstrap_rustup() {
-    if command -v cargo &>/dev/null; then
-        log_info "Rust toolchain already present"
-        return 0
-    fi
-    log_info "Installing Rust toolchain via rustup (no sudo)..."
-    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; then
-        log_error "rustup install failed"
-        return 1
-    fi
-    # shellcheck disable=SC1091
-    [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
-    if ! command -v cargo &>/dev/null; then
-        log_error "cargo still not found after rustup"
-        return 1
-    fi
-    log_success "Rust toolchain ready"
-}
 
 install_brew_packages() {
     local taps formulae
@@ -164,16 +143,15 @@ main() {
         return 1
     fi
 
-    # Homebrew's build toolchain first (sudo prompt lands up front), then brew,
-    # rustup, and the derived formula set.
+    # Homebrew's build toolchain first (sudo prompt lands up front), then brew
+    # and the remaining formula set. packages/sync.sh installs the exact mise
+    # toolchain before processing pinned custom-registry packages.
     bootstrap_brew_deps_linux
-    bootstrap_brew   || return 1
-    bootstrap_rustup || return 1
+    bootstrap_brew || return 1
     install_brew_packages
 
-    # Hand cargo/npm/uv/gh to the existing sync (works identically on Linux).
-    # FORCE_PACKAGES bypasses the hash cache so the sync runs on the fresh box.
-    log_info "Handing off to packages/sync.sh for cargo/npm/uv/gh..."
+    # FORCE_PACKAGES bypasses the cache on the fresh box.
+    log_info "Handing off to packages/sync.sh for manifest convergence..."
     FORCE_PACKAGES=true bash "$SCRIPT_DIR/sync.sh" || FAILED+=("sync.sh")
 
     if ((${#FAILED[@]})); then

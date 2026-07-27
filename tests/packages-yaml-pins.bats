@@ -129,16 +129,13 @@ PINNED_ENTRIES=(
     fi
 }
 
-@test "rtk and cargo-llvm-cov are untouched (out of this curd's scope)" {
-    local rtk_map cargo_llvm_cov_map
-    rtk_map=$(yq -o=json -I=0 '.packages[] | select(kind == "map") | select(has("rtk")) | .rtk' "$PACKAGES_YAML")
-    if [[ "$rtk_map" != '{"source":"cargo","git":"https://github.com/rtk-ai/rtk","branch":"master"}' ]]; then
-        echo "rtk map changed: $rtk_map" >&2
-        return 1
-    fi
-    cargo_llvm_cov_map=$(yq -o=json -I=0 '.packages[] | select(kind == "map") | select(has("cargo-llvm-cov")) | ."cargo-llvm-cov"' "$PACKAGES_YAML")
-    if [[ "$cargo_llvm_cov_map" != '{"source":"cargo"}' ]]; then
-        echo "cargo-llvm-cov map changed: $cargo_llvm_cov_map" >&2
-        return 1
-    fi
+@test "rtk and cargo-llvm-cov cargo installer entries are absent after mise migration" {
+    local name count
+    for name in rtk cargo-llvm-cov; do
+        count=$(yq -r ".packages[] | select(kind == \"map\") | select(has(\"$name\")) | .\"$name\"" "$PACKAGES_YAML" | wc -l | tr -d ' ')
+        if [[ "$count" != "0" ]]; then
+            echo "$name still has a packages.yaml installer entry" >&2
+            return 1
+        fi
+    done
 }

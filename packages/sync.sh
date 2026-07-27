@@ -1,8 +1,8 @@
 #!/bin/bash
 ############################
 # packages/sync.sh
-# Unified package sync from flat packages.yaml
-# Uses SHA-256 hash cache to skip when unchanged
+# Unified package sync from packages.yaml + the mise/OMP pins
+# Uses a composite SHA-256 cache to skip unchanged successful state
 ############################
 
 set -euo pipefail
@@ -12,6 +12,10 @@ PACKAGES_FILE="${PACKAGES_FILE:-$SCRIPT_DIR/packages.yaml}"
 CACHE_DIR="${CACHE_DIR:-${HOME}/.local/state/dotfiles}"
 CACHE_FILE="${CACHE_FILE:-$CACHE_DIR/packages.hash}"
 PLATFORM="$(uname)"
+MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
+MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
+# renovate: datasource=github-tags depName=can1357/oh-my-pi
+OMP_PIN="v17.1.3"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -37,9 +41,31 @@ fi
 
 ########## Cache
 
+mise_config_path() {
+    if [[ -f "$MISE_CONFIG_FILE" ]]; then
+        printf '%s\n' "$MISE_CONFIG_FILE"
+    elif [[ -f "$MISE_BOOTSTRAP_CONFIG_FILE" ]]; then
+        printf '%s\n' "$MISE_BOOTSTRAP_CONFIG_FILE"
+    fi
+}
+
+cache_hash() {
+    local mise_config
+    mise_config="$(mise_config_path)"
+    {
+        shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1
+        if [[ -n "$mise_config" ]]; then
+            shasum -a 256 "$mise_config" | cut -d' ' -f1
+        else
+            printf 'mise-config-missing\n'
+        fi
+        printf '%s\n' "$OMP_PIN"
+    } | shasum -a 256 | cut -d' ' -f1
+}
+
 check_cache() {
-    if [[ "${FORCE_PACKAGES:-false}" == "true" ]]; then
-        log_info "FORCE_PACKAGES set, bypassing cache"
+    if [[ "${FORCE_PACKAGES:-false}" == "true" || "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
+        log_info "Package cache bypassed"
         return 1
     fi
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
@@ -47,17 +73,13 @@ check_cache() {
         return 1
     fi
     [[ -f "$CACHE_FILE" ]] || return 1
-    local current stored
-    current=$(shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1)
-    stored=$(<"$CACHE_FILE")
-    [[ "$current" == "$stored" ]]
+    [[ "$(cache_hash)" == "$(<"$CACHE_FILE")" ]]
 }
 
 save_cache() {
     mkdir -p "$CACHE_DIR"
-    shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
+    cache_hash > "$CACHE_FILE"
 }
-
 
 ########## Query helpers
 # Entry format: bare string OR single-key map (key = name, value = overrides)
@@ -257,15 +279,15 @@ sync_brew() {
 }
 
 ########## mise (version-managed tool installs)
-# mise itself is the one deliberately-unpinned bootstrap tool: `mise install`
-# unconditionally converges to whatever ~/.config/mise/config.toml declares
-# (chezmoi-deployed separately), so the pinned surfaces live in that config,
-# not here.
+# mise itself is the one deliberately-unpinned bootstrap tool. The live
+# chezmoi-deployed manifest wins; before first apply, the repo source manifest
+# bootstraps chezmoi and the other exact pins.
 
 sync_mise() {
     if ! command -v mise &>/dev/null; then
         if ! command -v brew &>/dev/null; then
-            log_warning "brew not found — skipping mise bootstrap"
+            log_error "brew not found — cannot bootstrap mise"
+            FAILED+=("mise")
             return 0
         fi
         log_info "Bootstrapping mise..."
@@ -274,12 +296,32 @@ sync_mise() {
             FAILED+=("mise")
             return 0
         fi
+        hash -r 2>/dev/null || true
     fi
 
-    log_info "Converging mise-managed tool versions..."
-    if ! mise install "$@" </dev/null; then
-        log_warning "mise install failed — continuing"
+    if ! command -v mise &>/dev/null; then
+        log_error "mise unavailable after bootstrap"
+        FAILED+=("mise")
+        return 0
     fi
+
+    local mise_config
+    mise_config="$(mise_config_path)"
+    if [[ -z "$mise_config" ]]; then
+        log_error "mise config not found: $MISE_CONFIG_FILE or $MISE_BOOTSTRAP_CONFIG_FILE"
+        FAILED+=("mise-config")
+        return 0
+    fi
+
+    log_info "Converging mise-managed tool versions from $mise_config..."
+    if ! MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install "$@" </dev/null; then
+        log_error "mise install failed"
+        FAILED+=("mise-install")
+        return 0
+    fi
+
+    export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims:$PATH"
+    hash -r 2>/dev/null || true
 }
 
 ########## Cargo
@@ -290,48 +332,21 @@ sync_cargo() {
     [[ -z "$cargo_pkgs" ]] && return 0
 
     if ! command -v cargo &>/dev/null; then
-        # Bootstrap toolchain if rustup is installed but no toolchain yet
-        if command -v rustup &>/dev/null; then
-            log_info "Bootstrapping Rust stable toolchain..."
-            if ! rustup default stable; then
-                log_error "Failed to bootstrap Rust toolchain"
-                FAILED+=("rustup-bootstrap")
-                return 0
-            fi
-            # Brew-installed rustup keeps cargo proxies in opt/rustup/bin
-            local rustup_prefix rustup_bin
-            rustup_prefix="$(brew --prefix rustup 2>/dev/null || true)"
-            rustup_bin="$rustup_prefix/bin"
-            if [[ -n "$rustup_prefix" && -d "$rustup_bin" ]]; then
-                export PATH="$rustup_bin:$PATH"
-            elif [[ -f "$HOME/.cargo/env" ]]; then
-                # shellcheck disable=SC1091
-                source "$HOME/.cargo/env"
-            fi
-        fi
-        if ! command -v cargo &>/dev/null; then
-            log_error "cargo not found — cannot install cargo-source packages (rustup is no longer dev-gated; install failed?)"
-            FAILED+=("cargo-toolchain")
-            return 0
-        fi
+        log_error "cargo not found after mise convergence — cannot install cargo-source packages"
+        FAILED+=("cargo-toolchain")
+        return 0
     fi
 
     log_info "Syncing cargo packages"
     local installed
     installed=$(cargo install --list 2>/dev/null | grep -E '^\S' | cut -d' ' -f1 || true)
 
-    # Install pass — only touch packages that aren't installed yet. The
-    # upgrade pass below handles already-installed packages idempotently
-    # (via cargo-install-update) instead of force-reinstalling every time.
-    # Pinned packages (version or rev) are installed unconditionally every
-    # run so drift is corrected, and excluded from the upgrade pass below.
-    local all_names=() pinned_names=()
+    # Pinned packages (version or rev) are installed unconditionally so drift
+    # is corrected. Unpinned entries install once and never float in UPGRADE_MODE.
     while IFS='|' read -r name git_url branch version rev; do
         [[ -z "$name" ]] && continue
-        all_names+=("$name")
 
         if [[ -n "$version" || -n "$rev" ]]; then
-            pinned_names+=("$name")
             if [[ -n "$rev" && -z "$git_url" ]]; then
                 log_error "Invalid cargo package config for $name: rev requires git_url"
                 FAILED+=("$name")
@@ -381,62 +396,10 @@ sync_cargo() {
         fi
     done <<< "$cargo_pkgs"
 
-    # Upgrade pass — cargo-install-update checks crates.io / git tip per
-    # package and skips anything already at latest. Avoids the previous
-    # force-reinstall-everything-every-time behavior of `dots up`. Pinned
-    # packages are excluded so a pin never drifts to latest.
-    if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
-        if command -v cargo-install-update &>/dev/null; then
-            log_info "Upgrading cargo packages (skipping up-to-date)..."
-            if ((${#pinned_names[@]})); then
-                local unpinned_names=()
-                local n
-                for n in "${all_names[@]}"; do
-                    if ! printf '%s\n' "${pinned_names[@]}" | grep -qxF "$n"; then
-                        unpinned_names+=("$n")
-                    fi
-                done
-                if ((${#unpinned_names[@]})); then
-                    cargo install-update "${unpinned_names[@]}" --git </dev/null || log_warning "cargo install-update failed"
-                fi
-            else
-                cargo install-update --all --git </dev/null || log_warning "cargo install-update failed"
-            fi
-        else
-            log_warning "cargo-update not installed — skipping cargo upgrade pass"
-            log_warning "  Install with: cargo install cargo-update"
-        fi
-    fi
 
     log_success "Cargo sync complete"
 }
 
-########## Rustup proxies
-# Brew-installed rustup doesn't always create ~/.cargo/bin proxies for
-# toolchain binaries (rust-analyzer, rustfmt, etc.). Ensure they exist.
-
-sync_rustup_proxies() {
-    command -v rustup &>/dev/null || return 0
-    local sysroot
-    sysroot="$(rustup run stable rustc --print sysroot 2>/dev/null || true)"
-    [[ -n "$sysroot" && -d "$sysroot/bin" ]] || return 0
-    local toolchain_bin="$sysroot/bin"
-
-    local cargo_bin="${HOME}/.cargo/bin"
-    mkdir -p "$cargo_bin"
-
-    local proxied=(rust-analyzer rustfmt cargo-fmt clippy-driver)
-    for bin in "${proxied[@]}"; do
-        [[ -x "$toolchain_bin/$bin" ]] || continue
-        if [[ ! -e "$cargo_bin/$bin" ]]; then
-            log_info "Creating rustup proxy: $bin"
-            if ! ln -sf "$toolchain_bin/$bin" "$cargo_bin/$bin"; then
-                log_error "Failed to create proxy: $bin"
-                FAILED+=("rustup-proxy:$bin")
-            fi
-        fi
-    done
-}
 
 ########## NPM
 
@@ -452,33 +415,8 @@ sync_npm() {
     fi
 
     log_info "Syncing npm packages"
-    local installed outdated
+    local installed
     installed=$(npm ls -g --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' || true)
-
-    # In upgrade mode, ask npm once which globals are outdated. Anything
-    # not in this set is at latest and gets skipped — no more
-    # reinstall-every-package every `dots up`. `npm outdated -g` exits
-    # non-zero when packages are outdated (deliberate, per docs); the
-    # real failure mode we guard against is registry / network / auth
-    # errors, where stdout is empty or non-JSON. In that case we don't
-    # know what's outdated, so fall back to the old "upgrade everything
-    # already-installed" behavior rather than silently skipping every
-    # package as "(latest)".
-    outdated=""
-    local outdated_unknown=false
-    if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
-        local outdated_raw outdated_stderr
-        outdated_stderr=$(mktemp)
-        outdated_raw=$(npm outdated -g --json 2>"$outdated_stderr") || true
-        if echo "$outdated_raw" | jq -e 'type == "object"' &>/dev/null; then
-            outdated=$(echo "$outdated_raw" | jq -r 'keys[]?' 2>/dev/null || true)
-        else
-            outdated_unknown=true
-            log_warning "npm outdated -g failed; upgrading all installed globals instead"
-            [[ -s "$outdated_stderr" ]] && log_warning "  $(head -1 "$outdated_stderr")"
-        fi
-        rm -f "$outdated_stderr"
-    fi
 
     while IFS=$'\t' read -r name pkg version; do
         [[ -z "$name" ]] && continue
@@ -489,29 +427,14 @@ sync_npm() {
                 log_error "Failed to install $pkg@$version"
                 FAILED+=("$pkg")
             fi
-            continue
-        fi
-
-        local already=false
-        echo "$installed" | grep -qx "$pkg" && already=true
-
-        if $already; then
-            if [[ "${UPGRADE_MODE:-false}" != "true" ]]; then
-                echo "  + $name"
-                continue
+        elif echo "$installed" | grep -qx "$pkg"; then
+            echo "  + $name"
+        else
+            echo "  Installing $pkg..."
+            if ! npm install -g "$pkg" </dev/null; then
+                log_error "Failed to install $pkg"
+                FAILED+=("$pkg")
             fi
-            if ! $outdated_unknown && ! echo "$outdated" | grep -qx "$pkg"; then
-                echo "  + $name (latest)"
-                continue
-            fi
-        fi
-
-        local action="Installing"
-        $already && action="Upgrading"
-        echo "  $action $pkg..."
-        if ! npm install -g "$pkg" </dev/null; then
-            log_error "Failed to $action $pkg"
-            FAILED+=("$pkg")
         fi
     done <<< "$npm_pkgs"
 
@@ -579,19 +502,15 @@ sync_uv() {
     done <<< "$uv_pkgs"
 
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
-        log_info "Upgrading uv tools..."
-        if ((${#pinned_names[@]})); then
-            local unpinned_names=() n
-            for n in "${all_names[@]}"; do
-                if ! printf '%s\n' "${pinned_names[@]}" | grep -qxF "$n"; then
-                    unpinned_names+=("$n")
-                fi
-            done
-            if ((${#unpinned_names[@]})); then
-                uv tool upgrade "${unpinned_names[@]}" </dev/null || log_warning "uv tool upgrade failed"
+        local unpinned_names=() n
+        for n in "${all_names[@]}"; do
+            if ! printf '%s\n' "${pinned_names[@]}" | grep -qxF "$n"; then
+                unpinned_names+=("$n")
             fi
-        else
-            uv tool upgrade --all </dev/null || log_warning "uv tool upgrade --all failed"
+        done
+        if ((${#unpinned_names[@]})); then
+            log_info "Upgrading intentionally unpinned uv tools..."
+            uv tool upgrade "${unpinned_names[@]}" </dev/null || log_warning "uv tool upgrade failed"
         fi
     fi
 
@@ -615,13 +534,10 @@ sync_gh_extensions() {
     # gh extension list emits tab-separated rows: "gh <name>\t<owner>/<repo>\t<version>"
     installed=$(gh extension list 2>/dev/null | awk -F'\t' '{print $2}' || true)
 
-    local all_names=() pinned_names=()
     while IFS=$'\t' read -r name pkg version; do
         [[ -z "$name" ]] && continue
-        all_names+=("$name")
 
         if [[ -n "$version" ]]; then
-            pinned_names+=("$name")
             echo "  Installing $pkg --pin $version..."
             if ! gh extension install "$pkg" --pin "$version" </dev/null; then
                 log_error "Failed to install $pkg"
@@ -641,43 +557,15 @@ sync_gh_extensions() {
         fi
     done <<< "$ext_pkgs"
 
-    if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
-        log_info "Upgrading gh extensions..."
-        if ((${#pinned_names[@]})); then
-            local unpinned_names=() n
-            for n in "${all_names[@]}"; do
-                if ! printf '%s\n' "${pinned_names[@]}" | grep -qxF "$n"; then
-                    unpinned_names+=("$n")
-                fi
-            done
-            if ((${#unpinned_names[@]})); then
-                gh extension upgrade "${unpinned_names[@]}" </dev/null || log_warning "gh extension upgrade failed"
-            fi
-        else
-            gh extension upgrade --all </dev/null || log_warning "gh extension upgrade --all failed"
-        fi
-    fi
 
     log_success "gh extensions sync complete"
 }
 
 ########## Native AI-harness CLIs
-# claude and omp are managed through their own native installers and
-# self-updaters, NOT Homebrew — the brew cask/formula lag the fast-moving
-# release channels and shadow-fight the native ~/.local/bin binary on PATH.
-# claude and codex are mise-managed (see sync_mise); this section migrates
-# any stale native/brew binary off PATH so mise's shim is the only thing
-# left. omp has no mise plugin, so it keeps its own native install +
-# self-update.
+# claude and codex are mise-managed. Remove stale native/brew copies so mise's
+# shim is the only one on PATH. OMP remains on its native installer, but the
+# installer is always invoked with OMP_PIN whenever package sync is not cached.
 
-# Pass --binary explicitly: omp.sh's installer defaults to a bun source
-# build whenever --ref is given, and that build (`bun install -g
-# packages/coding-agent` against the cloned monorepo) trips bun's
-# self-referential-workspace-loop check on this package's own dependency
-# on itself — reproduces even on a known-good already-installed pin, so
-# it's a bun/installer incompatibility, not a bad release. --binary
-# downloads the prebuilt release asset instead, sidestepping bun entirely.
-OMP_PIN="v17.1.3"
 
 # Brew package to migrate off, per harness ("" = none; "cask:NAME" = cask).
 native_harness_brew_pkg() {
@@ -737,21 +625,20 @@ sync_native_harnesses() {
 
     migrate_harness_off_brew "omp"
 
-    if ! command -v omp &>/dev/null; then
-        echo "  Installing omp (native)..."
-        if curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN"; then
-            hash -r 2>/dev/null || true
-            log_success "  Installed omp"
-        else
-            log_warning "  omp native install failed — continuing"
-        fi
-    fi
-
-    if [[ "${UPGRADE_MODE:-false}" == "true" ]] && command -v omp &>/dev/null; then
-        echo "  Updating omp..."
-        if ! omp update </dev/null; then
-            log_warning "omp update failed — continuing"
-        fi
+    # --binary is required: omp.sh's installer defaults to a bun source build
+    # whenever --ref is given, and that build (`bun install -g
+    # packages/coding-agent` against the cloned monorepo) trips bun's
+    # self-referential-workspace-loop check on the package's own dependency on
+    # itself — reproduces even reinstalling an already-working pin, so it's a
+    # bun/installer incompatibility, not a bad release. --binary fetches the
+    # prebuilt release asset instead, sidestepping bun entirely.
+    echo "  Converging omp to $OMP_PIN (native)..."
+    if curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN"; then
+        hash -r 2>/dev/null || true
+        log_success "  Converged omp to $OMP_PIN"
+    else
+        log_error "omp native install failed"
+        FAILED+=("omp")
     fi
 
     log_success "Native harness sync complete"
@@ -759,7 +646,7 @@ sync_native_harnesses() {
 # Claude is invoked by chezmoi later in this sync, so keep its mise binary
 # present even when the package declaration cache is valid.
 if check_cache; then
-    log_success "packages.yaml unchanged (cached), syncing Claude"
+    log_success "Package manifests unchanged (cached), syncing Claude"
     sync_mise "aqua:anthropics/claude-code@v2.1.219"
     exit 0
 fi
@@ -779,32 +666,22 @@ elif [[ "$PLATFORM" == "Linux" ]]; then
     command -v yq &>/dev/null && yq_is_mikefarah || bootstrap_yq_linux || exit 1
 fi
 
-# Bootstrap uv on Linux. uv is the linchpin for the agent-profile / base-
-# profile pipeline (chezmoi's run_onchange_*-{agent,base}-profile.sh.tmpl
-# both bail without it), and it isn't in Ubuntu's apt. Use the official
-# astral installer to drop it into ~/.local/bin without sudo.
-bootstrap_uv_linux() {
-    local bin_dir="$HOME/.local/bin"
-    mkdir -p "$bin_dir"
-    log_info "Bootstrapping uv → $bin_dir"
-    if ! curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$bin_dir" INSTALLER_NO_MODIFY_PATH=1 sh; then
-        log_error "uv install script failed"
-        return 1
-    fi
-    hash -r 2>/dev/null || true
-}
-
-if [[ "$PLATFORM" == "Linux" ]] && ! command -v uv &>/dev/null; then
-    bootstrap_uv_linux || log_warning "Continuing without uv — base-profile render will be skipped"
-fi
 
 if [[ "$PLATFORM" == "Darwin" || "$PLATFORM" == "Linux" ]]; then
     sync_brew
 fi
 
 sync_mise
+
+if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
+    if ((${#FAILED[@]})); then
+        log_error "package bootstrap failed: ${FAILED[*]}"
+        exit 1
+    fi
+    log_success "Package bootstrap complete"
+    exit 0
+fi
 sync_cargo
-sync_rustup_proxies
 sync_npm
 sync_uv
 sync_gh_extensions

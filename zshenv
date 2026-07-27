@@ -34,6 +34,7 @@ if [[ -d "$MISE_SHIMS_DIR" ]]; then
   path=("$MISE_SHIMS_DIR" "${path[@]}")
 fi
 unset MISE_SHIMS_DIR
+
 # rustup proxy dir + cargo bin on PATH for non-interactive shells (e.g. agent
 # Bash tools). cargo/config.toml sets rustc-wrapper=sccache unconditionally;
 # without rustc on PATH here, sccache fails with "cannot find binary path".
@@ -52,3 +53,12 @@ if [[ -d "$HOME/.dotnet" ]]; then
   export DOTNET_ROOT="$HOME/.dotnet"
   [[ ":$PATH:" != *":$DOTNET_ROOT:"* ]] && export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
 fi
+
+# mise shims must remain first after every later PATH prepend above. Plain
+# PATH manipulation keeps non-interactive shells fast; interactive activation
+# stays in zsh/core.zsh. `path` is unique, so this also moves a later copy.
+MISE_SHIMS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims"
+if [[ -d "$MISE_SHIMS_DIR" ]]; then
+  path=("$MISE_SHIMS_DIR" "${path[@]}")
+fi
+unset MISE_SHIMS_DIR
