@@ -584,8 +584,20 @@ YAML
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "unchanged (cached), skipping"
+    assert_output_contains "unchanged (cached), syncing Claude"
 
+    [[ ! -f "$BREW_LOG" ]]
+}
+
+@test "sync cache restores the Claude mise package" {
+    write_test_yaml
+    shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
+
+    run bash "$SYNC_SCRIPT"
+
+    assert_success
+    assert_output_contains "syncing Claude"
+    grep -q "mise install aqua:anthropics/claude-code@v2.1.219" "$MISE_LOG"
     [[ ! -f "$BREW_LOG" ]]
 }
 
@@ -1007,12 +1019,14 @@ MOCKOMP
 @test "sync_mise bootstraps mise via brew when absent" {
     write_test_yaml
     rm -f "$MOCK_BIN/mise"
-    # The mocked brew doesn't simulate actually placing a working `mise`
-    # binary on PATH the way a real `brew install` would, so this test only
-    # proves the bootstrap call fires — the "already present" test below
-    # covers the subsequent `mise install` convergence call.
+    # Remove host mise binaries too; this test must exercise the bootstrap
+    # branch even on a developer machine where mise is installed.
+    local path_without_mise
+    path_without_mise=$(tr ':' '\n' <<<"$PATH" | while IFS= read -r dir; do
+        [[ -x "$dir/mise" ]] || printf '%s:' "$dir"
+    done)
 
-    run_sync
+    PATH="$MOCK_BIN:${path_without_mise%:}" run_sync
     assert_success
 
     grep -q "install mise" "$BREW_LOG"

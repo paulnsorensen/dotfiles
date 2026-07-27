@@ -58,10 +58,6 @@ save_cache() {
     shasum -a 256 "$PACKAGES_FILE" | cut -d' ' -f1 > "$CACHE_FILE"
 }
 
-if check_cache; then
-    log_success "packages.yaml unchanged (cached), skipping"
-    exit 0
-fi
 
 ########## Query helpers
 # Entry format: bare string OR single-key map (key = name, value = overrides)
@@ -281,7 +277,7 @@ sync_mise() {
     fi
 
     log_info "Converging mise-managed tool versions..."
-    if ! mise install </dev/null; then
+    if ! mise install "$@" </dev/null; then
         log_warning "mise install failed — continuing"
     fi
 }
@@ -760,6 +756,13 @@ sync_native_harnesses() {
 
     log_success "Native harness sync complete"
 }
+# Claude is invoked by chezmoi later in this sync, so keep its mise binary
+# present even when the package declaration cache is valid.
+if check_cache; then
+    log_success "packages.yaml unchanged (cached), syncing Claude"
+    sync_mise "aqua:anthropics/claude-code@v2.1.219"
+    exit 0
+fi
 ########## Main
 
 if [[ "$PLATFORM" == "Darwin" ]]; then
