@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1090,SC2034,SC2317
+# shellcheck disable=SC1090,SC2016,SC2034,SC2317
 # Tests for chezmoi/lib/install-agents-doc.sh — copies a single shared agents
 # doc to one or more harness-specific target paths, replacing any pre-existing
 # symlink (legacy claude/.sync layout) with a real file.
@@ -83,4 +83,12 @@ teardown() { teardown_test_env; }
     run bash "$INSTALLER" "$SRC" "$target"
     assert_success
     assert_file_exists "$target"
+}
+
+@test "run-on-change installs the shared Sliced Bread reference" {
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl"
+
+    grep -Fq '%q/../agents/reference/sliced-bread.md' "$template"
+    grep -Fq '"$DOTFILES_ROOT/agents/reference/sliced-bread.md"' "$template"
+    grep -Fq '"$HOME/.agents/reference/sliced-bread.md"' "$template"
 }
