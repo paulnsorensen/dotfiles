@@ -41,6 +41,7 @@ packages:
   - alfred: { source: cask, platform: mac }   # Alfred — launcher (sync folder wired by alfred/.sync)
   - rectangle-pro: { source: cask, platform: mac } # Rectangle Pro — window snapping
   - rjyo/moshi/moshi-hook: { platform: mac }  # Moshi phone bridge; Linux uses Moshi's own installer
+  - mas: { platform: mac }                    # Mac App Store CLI (was mise-pinned; aqua build is darwin-only)
 
   # Linux-only
   - xclip: { platform: linux }
