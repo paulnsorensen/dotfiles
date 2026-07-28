@@ -537,12 +537,25 @@ function isCheckpointWrite(event) {
   const input = event.tool_input;
   if (!input || !Array.isArray(input.edits) || input.edits.length !== 1) return false;
   const edit = input.edits[0];
-  if (!edit || typeof edit.path !== 'string' || !edit.path.trim()) return false;
+  if (
+    !edit ||
+    typeof edit.path !== 'string' ||
+    !edit.path.trim() ||
+    !Array.isArray(edit.ops) ||
+    edit.ops.length === 0
+  ) return false;
+  const contentOperations = new Set([
+    'prepend', 'append', 'replace', 'insert_before', 'insert_after',
+    'replace_block', 'insert_after_block',
+  ]);
   const cwd = [input.cwd, event.cwd, process.cwd()].find(
     (candidate) => typeof candidate === 'string' && candidate.trim(),
   );
   const target = path.resolve(cwd, edit.path);
-  return target.split(path.sep).some((segment) => segment === '.cheese' || segment === '.context');
+  return (
+    target.split(path.sep).some((segment) => segment === '.cheese' || segment === '.context') &&
+    edit.ops.every((operation) => contentOperations.has(operation?.op))
+  );
 }
 
 function emitDeny(reason) {

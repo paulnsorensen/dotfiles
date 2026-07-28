@@ -144,13 +144,13 @@ pre_event() {
 checkpoint_event() {
     local session="$1" agent="$2" type="$3" target="$4"
     jq -nc --arg s "$session" --arg a "$agent" --arg t "$type" --arg p "$PROJ/$session.jsonl" --arg cwd "$PROJ" --arg target "$target" \
-        '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"mcp__tilth__tilth_write", tool_input:{cwd:$cwd, edits:[{path:$target}]}}'
+        '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"mcp__tilth__tilth_write", tool_input:{cwd:$cwd, edits:[{path:$target, ops:[{op:"append",content:"checkpoint"}]}]}}'
 }
 
 multiple_checkpoint_event() {
     local session="$1" agent="$2" type="$3"
     jq -nc --arg s "$session" --arg a "$agent" --arg t "$type" --arg p "$PROJ/$session.jsonl" --arg cwd "$PROJ" \
-        '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"mcp__tilth__tilth_write", tool_input:{cwd:$cwd, edits:[{path:".cheese/one.md"},{path:".context/two.md"}]}}'
+        '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"mcp__tilth__tilth_write", tool_input:{cwd:$cwd, edits:[{path:".cheese/one.md",ops:[{op:"append",content:"checkpoint"}]},{path:".context/two.md",ops:[{op:"append",content:"checkpoint"}]}]}}'
 }
 
 post_event() {
@@ -324,9 +324,18 @@ post_event() {
     [[ "$(verdict)" == "allow" ]]
 }
 
-@test "A2b: classifier only accepts the exact tilth tool and exact checkpoint path segments" {
-    local valid event_cwd process_cwd invalid_segment native_write alias other_tilth missing empty multiple mixed
+@test "A2b: classifier only accepts content-writing ops for the exact tilth checkpoint" {
+    local valid all_content_ops event_cwd process_cwd invalid_segment native_write alias other_tilth missing empty missing_ops empty_ops multiple mixed delete delete_block delete_file move_file move_outside mixed_destructive mixed_rename
     valid=$(checkpoint_event s2b classifier coder .cheese/handoff.md)
+    all_content_ops=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [
+        {op:"prepend",content:"checkpoint"},
+        {op:"append",content:"checkpoint"},
+        {op:"replace",start:1,end:1,content:"checkpoint"},
+        {op:"insert_before",line:1,content:"checkpoint"},
+        {op:"insert_after",line:1,content:"checkpoint"},
+        {op:"replace_block",at:1,content:"checkpoint"},
+        {op:"insert_after_block",at:1,content:"checkpoint"}
+    ]')
     event_cwd=$(jq -nc --argjson event "$valid" --arg cwd "$PROJ/.context" \
         '$event | .tool_input |= del(.cwd) | .cwd = $cwd | .tool_input.edits[0].path = "handoff.md"')
     process_cwd=$(jq -nc --argjson event "$valid" \
@@ -337,12 +346,21 @@ post_event() {
     other_tilth=$(jq -nc --argjson event "$valid" '$event | .tool_name = "mcp__tilth__tilth_read"')
     missing=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits = [{}]')
     empty=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].path = ""')
+    missing_ops=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0] |= del(.ops)')
+    empty_ops=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = []')
     multiple=$(multiple_checkpoint_event s2b classifier coder)
     mixed=$(jq -nc --argjson event "$multiple" '$event | .tool_input.edits[1].path = "notes/outside.md"')
+    delete=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"delete",start:1,end:1}]')
+    delete_block=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"delete_block",at:1}]')
+    delete_file=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"delete_file"}]')
+    move_file=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"move_file",dest:".context/moved.md"}]')
+    move_outside=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"move_file",dest:"notes/moved.md"}]')
+    mixed_destructive=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops += [{op:"delete_file"}]')
+    mixed_rename=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops += [{op:"move_file",dest:"notes/moved.md"}]')
     run node -e 'const {isCheckpointWrite}=require(process.argv[1]); console.log(JSON.stringify(process.argv.slice(2).map((event) => isCheckpointWrite(JSON.parse(event)))));' \
-        "$HOOK_JS" "$valid" "$event_cwd" "$process_cwd" "$invalid_segment" "$native_write" "$alias" "$other_tilth" "$missing" "$empty" "$multiple" "$mixed"
+        "$HOOK_JS" "$valid" "$all_content_ops" "$event_cwd" "$process_cwd" "$invalid_segment" "$native_write" "$alias" "$other_tilth" "$missing" "$empty" "$missing_ops" "$empty_ops" "$multiple" "$mixed" "$delete" "$delete_block" "$delete_file" "$move_file" "$move_outside" "$mixed_destructive" "$mixed_rename"
     assert_success
-    [[ "$output" == "[true,true,true,false,false,false,false,false,false,false,false]" ]]
+    [[ "$output" == "[true,true,true,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false]" ]]
 }
 
 @test "A2b: concurrent valid checkpoints spend the allowance exactly once" {
