@@ -111,6 +111,7 @@ All other packages (productivity tools, editors, optional CLIs). See catalog.
 | `agents/lib/git-guard.js` | COPY | Needed by git-guard |
 | `agents/lib/sensitive-file-guard.js` | COPY | Needed by sensitive-file-guard |
 | `agents/mcp/registry.yaml` | EMPTY+SCHEMA | All MCPs are catalog |
+| `agents/reference/sliced-bread.md` | COPY | Generic shared architectural pattern reference |
 | `agents/registry.yaml` | EMPTY+SCHEMA | All sub-agents are catalog |
 | `agents/lib/cheese-flair.sh` | SKIP | Personal flair library |
 | `agents/hooks/session-start-cheese-flair.sh` | SKIP | Personal flair hook |
@@ -144,7 +145,6 @@ All other packages (productivity tools, editors, optional CLIs). See catalog.
 | File | Decision | Reason |
 |---|---|---|
 | `claude/plugins/registry.yaml` | EMPTY+SCHEMA | All plugins are catalog |
-| `claude/reference/sliced-bread.md` | COPY | Generic architectural pattern reference |
 | `claude/reference/cheese-flair.md` | SKIP | Personal flair reference |
 
 ---

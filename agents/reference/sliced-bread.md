@@ -1,7 +1,7 @@
 # Sliced Bread Architecture — Rationale & Anti-Patterns
 
-Supplement to the compact rules in CLAUDE.md. Read this when reviewing architecture
-decisions or planning new domain structure.
+Supplement to the compact rules in the global agent instructions. Read this when
+reviewing architecture decisions or planning new domain structure.
 
 ## Why Vertical Slices?
 
