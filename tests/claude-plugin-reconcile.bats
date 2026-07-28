@@ -294,3 +294,92 @@ SH
     # Manifest byte-for-byte unchanged.
     diff <(printf 'gone\nmilknado\n') "$MANIFEST"
 }
+
+@test "reconcile: install exits 0 but does not write installed_plugins.json → verified failure, WARN, manifest unchanged" {
+    # A plugin install that reports success but never lands the entry must not
+    # be swallowed as "already installed" — verify the post-condition instead
+    # of trusting the exit code (spec: plugin-reconcile-self-heal, Change 2).
+    mk_cache milknado milknado >/dev/null
+
+    # Override the mock: 'plugin install' exits 0 without touching $INSTALLED.
+    cat > "$TEST_HOME/fake-bin/claude" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CALLS"
+case "$1 $2" in
+    "plugin marketplace")
+        case "$3" in
+            add)
+                root="$4"
+                name=$(jq -r '.name' "$root/.claude-plugin/marketplace.json")
+                jq --arg n "$name" --arg p "$root" \
+                    '.[$n] = {source: {source: "directory", path: $p}}' "$KNOWN" > "$KNOWN.tmp" \
+                    && mv "$KNOWN.tmp" "$KNOWN"
+                ;;
+        esac
+        ;;
+    "plugin install") ;;  # exits 0, INSTALLED left untouched
+esac
+exit 0
+SH
+    chmod +x "$TEST_HOME/fake-bin/claude"
+
+    mkdir -p "${MANIFEST%/*}"
+    printf 'stale\n' > "$MANIFEST"
+    local manifest_before
+    manifest_before=$(cat "$MANIFEST")
+
+    run_reconcile_installed "$(jq -nc --argjson a "$(desired_entry milknado)" '[$a]')"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"WARN"* ]]
+    [[ "$output" == *"milknado@milknado"* ]]
+    [[ "$output" == *"claude plugin install milknado@milknado"* ]]
+    # Failed install → manifest rewrite skipped → byte-identical to before.
+    [ "$(cat "$MANIFEST")" = "$manifest_before" ]
+    # No destructive marketplace op ran despite the install failure.
+    run grep -q "marketplace remove" "$CALLS"; [ "$status" -ne 0 ]
+}
+
+@test "reconcile: install exits 1 but the id lands at user scope → treated as success (|| true tolerance)" {
+    # The CLI's install exit code is ambiguous (nonzero can mean "already
+    # installed"); the post-condition check is what actually decides. Drive
+    # the real install path (not the skip check) by leaving milknado@milknado
+    # OUT of $INSTALLED beforehand, and have the stub land the user-scope
+    # entry itself before exiting 1 — this is the only way to exercise the
+    # `|| true` tolerance around a real 'claude plugin install' call.
+    mk_cache milknado milknado >/dev/null
+
+    cat > "$TEST_HOME/fake-bin/claude" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CALLS"
+case "$1 $2" in
+    "plugin marketplace")
+        case "$3" in
+            add)
+                root="$4"
+                name=$(jq -r '.name' "$root/.claude-plugin/marketplace.json")
+                jq --arg n "$name" --arg p "$root" \
+                    '.[$n] = {source: {source: "directory", path: $p}}' "$KNOWN" > "$KNOWN.tmp" \
+                    && mv "$KNOWN.tmp" "$KNOWN"
+                ;;
+        esac
+        ;;
+    "plugin install")
+        id="$3"
+        jq --arg id "$id" '.plugins[$id] = [{scope: "user"}]' "$INSTALLED" > "$INSTALLED.tmp" \
+            && mv "$INSTALLED.tmp" "$INSTALLED"
+        exit 1
+        ;;
+esac
+exit 0
+SH
+    chmod +x "$TEST_HOME/fake-bin/claude"
+
+    run_reconcile_installed "$(jq -nc --argjson a "$(desired_entry milknado)" '[$a]')"
+    [ "$status" -eq 0 ]
+    # Real install path ran (id not pre-seeded — skip check did not short-circuit).
+    grep -q "plugin install milknado@milknado" "$CALLS"
+    # Post-condition verify saw the user-scope landing despite the nonzero exit.
+    [ "$(jq -r '.plugins["milknado@milknado"][0].scope' "$INSTALLED")" = "user" ]
+    [ -f "$MANIFEST" ]
+    grep -qx "milknado" "$MANIFEST"
+}

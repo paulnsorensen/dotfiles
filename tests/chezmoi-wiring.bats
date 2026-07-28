@@ -447,6 +447,17 @@ EOF
     grep -qF '.chezmoi-mcp-manifest' "$MCP_TMPL"
 }
 
+@test "plugin reconcile run_onchange embeds an installed user-scope ids projection" {
+    local plugin_tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-plugins.sh.tmpl"
+    assert_file_exists "$plugin_tmpl"
+    # A projection of installed_plugins.json (not a whole-file hash — see the
+    # in-template rationale) so an out-of-band uninstall re-runs the reconcile
+    # on the next sync without any repo file changing (spec:
+    # plugin-reconcile-self-heal, Change 1).
+    grep -qF 'installed user-scope ids:' "$plugin_tmpl"
+    grep -qF '.claude/plugins/installed_plugins.json' "$plugin_tmpl"
+}
+
 @test "MCP reconcile run_onchange renders and fails loud without jq/yq" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
     local script="$TEST_HOME/mcp-onchange.sh"
