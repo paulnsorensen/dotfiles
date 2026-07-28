@@ -49,6 +49,8 @@ Every reviewer dispatch names `Review mode: severity-report` for a full review o
 
 Default self-check before doing phase work inline: "Is this an explore / research / review / code task that a phase-agent should own?" If yes, delegate — don't burn your own context re-deriving what an isolated agent can hand back distilled. Skip delegation only for trivial one-step work where the dispatch overhead exceeds the task.
 
+**Delegate implement and verify. Retain diagnose.** When narrowing hypotheses about an unexplained failure, diagnose inline; once the cause is known, delegate the fix. This does not apply to implementing a known change or running a known gate, and complements structured `/pasteurize` debugging.
+
 ### Cross-phase handoff
 
 Isolated phase-agents don't share context — each returns a condensed digest to you, and you thread that digest (or the artifact it points at) into the next phase's dispatch prompt. That is where context lives between phases: in the handoff, not in shared memory. Every phase-agent opens its digest with the same four-field block so you can machine-read where it landed:
@@ -60,7 +62,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-Default is the inline digest — `artifact:` is omitted when the digest is complete (explorer/reviewer outputs are designed small). When output is genuinely too large to inline, the agent writes a durable artifact (`.cheese/<phase>/<slug>.md`, or `.cheese/research/<slug>/` for the researcher) and returns its path. `next:` is advisory; you own routing. Turn caps are role-specific and come from `agents/registry.yaml` `maxTurns`; never apply the coder's cap to other roles. A `status: blocked: out of context` handback means the agent exhausted its role or context budget — never resume it, because the transcript stays spent. Dispatch a fresh agent from the artifact. If the artifact is inside a disposable isolation worktree (`.claude/worktrees/agent-*`), copy it to the main workspace's `.cheese/` or `.context/` before dispatching the successor; ignored artifacts do not keep isolation worktrees alive.
+Default is the inline digest — `artifact:` is omitted when the digest is complete (explorer/reviewer outputs are designed small). When output is genuinely too large to inline, the agent writes a durable artifact (`.cheese/<phase>/<slug>.md`, or `.cheese/research/<slug>/` for the researcher) and returns its path. `next:` is advisory; you own routing. Turn caps are role-specific and come from `agents/registry.yaml` `maxTurns`; never apply the coder's cap to other roles. After two failed attempts at the same assertion with an unchanged failure mode, a coder returns `status: blocked: suspect-environment — <one-line hypothesis>` rather than attempting a third; include the smallest reproduction and the two hypotheses it cannot distinguish. Retain that narrow diagnosis inline, then dispatch a fresh coder once the cause is known. A `status: blocked: out of context` handback means the agent exhausted its role or context budget — never resume it, because the transcript stays spent. Dispatch a fresh agent from the artifact. If the artifact is inside a disposable isolation worktree (`.claude/worktrees/agent-*`), copy it to the main workspace's `.cheese/` or `.context/` before dispatching the successor; ignored artifacts do not keep isolation worktrees alive.
 
 ### Coder fan-out
 
@@ -70,7 +72,7 @@ Default to one coder. Coding is a poor multi-agent fit — it needs shared conte
 
 The measurement detail behind these rules lives in `.hallouminate/wiki/operations/subagent-dispatch-analytics.md`; runtime prompts keep the prescriptive contract.
 
-**What every coder dispatch should carry.** Six fields, in this order. The coder validates them on arrival and flags what's missing.
+**What every coder dispatch should carry.** Seven fields, in this order. The coder validates them on arrival and flags what's missing.
 
 | field | states |
 |---|---|
@@ -79,6 +81,7 @@ The measurement detail behind these rules lives in `.hallouminate/wiki/operation
 | **Done means** | the literal gate command *and* what green looks like — exit 0, a pass count, a `grep` that must return empty. "Run the gates" is not a success condition |
 | **Scope fence** | what not to touch; whether to commit |
 | **Locked decisions** | design calls already made and not the coder's to revisit — omit only when there genuinely are none |
+| **Known-false leads** | empirical dead ends already measured, each with ruling-out evidence and explicit `do not re-investigate`; omit only when genuinely none; distinct from design decisions |
 | **Return format** | the handback shape, or "coder default" |
 
 A missing field is a prompt to ask or state an assumption, not an automatic refusal. Always provide a literal success condition; provide locked decisions when any exist.

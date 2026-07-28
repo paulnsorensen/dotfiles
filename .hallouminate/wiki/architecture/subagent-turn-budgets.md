@@ -119,22 +119,18 @@ error path — the guard caps runaways, it must never become a denial-of-service
 
 Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
 
-- **Context is real tokens; grace is resume-only (PR #484).** The signal is the
-  last assistant `message.usage` sum (`input + cache_creation + cache_read`), not
-  transcript bytes. SubagentStop wipes the turn counter but the transcript
-  persists, so a SendMessage-continued agent can start already over `ctxHard` on
-  its *first* tool call with no soft-nudge behind it. The 3-call grace window
-  (`CTX_GRACE_CALLS`) plus the hard nudge (persist a handoff, return
-  `status: blocked: out of context`) is therefore granted **only** on that resume
-  signature: eligibility latches when a call is over-hard AND either it is the
-  agent's first observed call OR no real (non-zero) reading was ever seen before
-  (tracked by a `real-reading-seen` marker, so a transient first-call transcript
-  miss on resume does not lose the window). A *fresh* agent that crosses `ctxHard`
-  mid-run is denied immediately — its earlier calls logged real readings, so it is
-  never grace-eligible. The naive "latch on the first over-hard reading" would
-  reintroduce that mid-run bug; the marker is what keeps the two cases apart. The
-  turn ceiling still gets no grace: it ramps slowly and the soft nudge precedes it
-  by design.
+- **Context is real tokens; each hard ceiling reserves one checkpoint write (#552).**
+  The signal remains the last assistant `message.usage` sum (`input +
+  cache_creation + cache_read`), not transcript bytes. Once either the turn or
+  context hard ceiling is exceeded, arbitrary tool calls are denied, but exactly
+  one `mcp__tilth__tilth_write` call with one edit target beneath a `.cheese/` or
+  `.context/` path segment may persist resumable state. The guard atomically
+  creates `checkpoint-spent` before allowing the call, so concurrent attempts
+  have one winner and a failed tool execution still consumes the allowance.[^checkpoint-write]
+  Fresh and resumed agents use the same rule; the old three-call resume grace and
+  its eligibility markers were removed after retained decision logs showed zero
+  grace grants while fresh mid-run crossings accounted for every observed hard
+  denial.[^checkpoint-evidence]
 - **State is append-only on purpose.** Parallel tool calls in one batch fire
   concurrent PreToolUse hooks; the original state.json read-modify-write lost
   increments (duplicate turn counts observed live). Counters are the byte size
@@ -199,3 +195,6 @@ Delegation still pays on genuinely independent, sizeable tracks. Full deltas:
 [[operations/prompting-claude-opus-5]].
 
 *Source: "Practical Sub-Agent Routing" guide (hash ac33ad5418f0c6a0) + "Prompting Claude Opus 5" (hash 9a680a14e9bdf39a) · Updated: 2026-07-24*
+
+[^checkpoint-write]: `agents/lib/turn-budget-guard.js:499-545,603-630`; `tests/turn-budget-guard.bats:269-360`
+[^checkpoint-evidence]: <https://github.com/paulnsorensen/dotfiles/issues/552>

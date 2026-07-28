@@ -9,18 +9,9 @@
 // consistent `agent_id`. The main orchestrator's tool calls carry no
 // `agent_id`, so the hook no-ops on them — only sub-agents are capped.
 //   PreToolUse  — increment the per-agent turn counter, read live context
-//                 tokens; deny at the turn hard ceiling immediately. The
-//                 context hard ceiling gets a short grace window
-//                 (CTX_GRACE_CALLS), but ONLY when the agent's first
-//                 observed reading is already above hard, or no prior real
-//                 (non-zero) reading has been observed yet for this agent —
-//                 the resume signature (SendMessage resume: SubagentStop
-//                 wipes turn state but the transcript persists, so a
-//                 continued agent can start above ctxHard on call 1, or on
-//                 a later call if its early reading(s) hit a transient
-//                 transcript-not-found miss). A fresh agent whose first
-//                 real reading lands under hard, then crosses ctxHard
-//                 mid-run, gets none of this window.
+//                 tokens; over either hard ceiling, permit one atomic
+//                 mcp__tilth__tilth_write checkpoint with exactly one path
+//                 under .cheese/ or .context/, then deny every other call.
 //   PostToolUse — once per agent, inject a wrap-up nudge when either signal
 //                 crosses its soft threshold (the graceful handoff window);
 //                 a sterner one-time hard nudge fires when context tokens
@@ -38,7 +29,7 @@
 // transcript can't be found at all the signal is 0 (fail-open to the turn
 // ceiling alone).
 //
-// Per-agent counters live as append/marker files (turns, grace, nudged,
+// Per-agent counters live as append/marker files (turns, checkpoint-spent, nudged,
 // hard-nudged) under one dir per (session_id, agent_id) — no read-modify-
 // write of a single state.json, so concurrent tool calls can't race a lost
 // increment or fail-open on a torn read.
@@ -63,15 +54,6 @@ function debug(msg) {
 // Prune counter dirs whose turns file is older than this — backstop for a
 // missed SubagentStop.
 const STALE_HOURS = 6;
-
-// A continued sub-agent's transcript may already sit above ctxHard on its
-// first call after resume (SubagentStop wipes turn state but the transcript
-// persists) — allow this many over-hard calls before denying, so there's a
-// window to persist a handoff instead of an instant wall. Granted only when
-// the agent's FIRST observed reading is already above hard (see the
-// graceEligible marker in handle()) — a fresh agent that crosses hard
-// mid-run gets none of this window.
-const CTX_GRACE_CALLS = 3;
 
 // Byte-to-token conversion for the fallback signal below — restores the
 // module's prior ~4-bytes/token calibration on the token scale so the
@@ -202,7 +184,7 @@ function sanitize(id) {
 }
 
 // The per-(session_id, agent_id) counter directory. Holds append/marker
-// files: turns, grace, nudged, hard-nudged (plus a legacy state.json from a
+// files: turns, checkpoint-spent, nudged, hard-nudged (plus a legacy state.json from a
 // pre-rewrite agent, tolerated only by sweepStale's fallback).
 function counterPath(sessionId, agentId) {
   return path.join(baseDir(), sanitize(sessionId), sanitize(agentId));
@@ -216,21 +198,8 @@ function turnsFile(dir) {
   return path.join(dir, 'turns');
 }
 
-function graceFile(dir) {
-  return path.join(dir, 'grace');
-}
-
-function graceEligibleFile(dir) {
-  return path.join(dir, 'grace-eligible');
-}
-
-// One-shot marker: set the first time a call for this agent produces a real
-// (non-zero) context reading, regardless of turn. Lets grace eligibility
-// (#9) latch on a resume whose early call(s) hit a transient transcript-
-// not-found miss (tokens=0 on turns===1) without opening the window for a
-// fresh agent whose first real reading is under hard and later crosses it.
-function realReadingSeenFile(dir) {
-  return path.join(dir, 'real-reading-seen');
+function checkpointSpentFile(dir) {
+  return path.join(dir, 'checkpoint-spent');
 }
 
 function nudgedFile(dir) {
@@ -264,7 +233,7 @@ function fileExists(file) {
 function readState(dir) {
   return {
     turns: fileSize(turnsFile(dir)),
-    graceUsed: fileSize(graceFile(dir)),
+    checkpointSpent: fileExists(checkpointSpentFile(dir)),
     nudged: fileExists(nudgedFile(dir)),
     hardNudged: fileExists(hardNudgedFile(dir)),
   };
@@ -288,11 +257,6 @@ function appendCounter(dir, file) {
 function incrementTurn(dir) {
   appendCounter(dir, turnsFile(dir));
   return readState(dir);
-}
-
-// One increment per grace-consumed over-hard byte call (PreToolUse only).
-function incrementGrace(dir) {
-  return appendCounter(dir, graceFile(dir));
 }
 
 // Create `file` iff absent — atomic create-if-absent via the 'wx' flag.
@@ -532,33 +496,53 @@ function rotateLogIfLarge(maxBytes) {
   }
 }
 
-function denyReason(agentType, turns, tokens, budget) {
-  return `Sub-agent budget exceeded (type '${agentType || 'default'}': ` +
-    `turns ${turns}/${budget.turnHard}, context ${tokens}/${budget.ctxHard} tokens). ` +
-    `Stop calling tools now — synthesize your findings and return your final ` +
-    `text response. Every further tool call is denied until this sub-agent returns. ` +
+function checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent) {
+  const exceeded = [];
+  if (turns > budget.turnHard) exceeded.push(`turns ${turns}/${budget.turnHard}`);
+  if (tokens > budget.ctxHard) exceeded.push(`context ${tokens}/${budget.ctxHard} tokens`);
+  const status = checkpointSpent
+    ? 'Stop calling tools now — synthesize your findings and return inline. The checkpoint allowance is spent.'
+    : 'One mcp__tilth__tilth_write with exactly one edit targeting .cheese/ or .context/ remains. No tool call is allowed except that constrained checkpoint write; after it, return inline.';
+  return `Sub-agent budget exceeded (type '${agentType || 'default'}': ${exceeded.join(', ')}). ` +
+    `${status} ` +
     `If your task is incomplete, open your final reply with ` +
     `"status: blocked: out of context" so the orchestrator re-dispatches a fresh agent.`;
+}
+
+function denyReason(agentType, turns, tokens, budget, checkpointSpent) {
+  return checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent);
 }
 
 function nudgeContext(agentType, budget) {
   return `Approaching this sub-agent's budget (type '${agentType || 'default'}': ` +
     `soft ${budget.turnSoft} turns / ${budget.ctxSoft} context tokens). ` +
-    `Persist your handoff or partial results now and wrap up: tool calls are ` +
-    `hard-blocked at the ceiling, so prefer returning a concise final answer ` +
-    `over further exploration.`;
+    `Persist your handoff or partial results now and wrap up: non-checkpoint ` +
+    `tool calls are hard-blocked at the ceiling, so prefer returning a concise ` +
+    `final answer over further exploration.`;
 }
 
-// Sterner one-time nudge for crossing the context HARD ceiling (as opposed
-// to the soft-threshold nudgeContext above) — the grace window is short, so
-// this must land before it runs out.
-function hardNudgeContext(agentType, budget, remainingCalls) {
+// Sterner one-time nudge for crossing the context HARD ceiling.
+function hardNudgeContext(agentType, budget, checkpointSpent) {
+  const checkpoint = checkpointSpent
+    ? 'The one checkpoint allowance is already spent; return inline now.'
+    : 'One mcp__tilth__tilth_write with exactly one edit targeting .cheese/ or .context/ is allowed to persist a checkpoint.';
   return `Context hard ceiling exceeded (type '${agentType || 'default'}': ` +
-    `${budget.ctxHard} tokens). At most ${remainingCalls} further ` +
-    `tool call(s) will be allowed before this sub-agent is denied outright. ` +
-    `Persist your handoff NOW — do not keep exploring. If your task is ` +
+    `${budget.ctxHard} tokens). ${checkpoint} Do not keep exploring. If your task is ` +
     `incomplete, open your final reply with "status: blocked: out of context" ` +
     `so the orchestrator re-dispatches a fresh agent.`;
+}
+
+function isCheckpointWrite(event) {
+  if (event.tool_name !== 'mcp__tilth__tilth_write') return false;
+  const input = event.tool_input;
+  if (!input || !Array.isArray(input.edits) || input.edits.length !== 1) return false;
+  const edit = input.edits[0];
+  if (!edit || typeof edit.path !== 'string' || !edit.path.trim()) return false;
+  const cwd = [input.cwd, event.cwd, process.cwd()].find(
+    (candidate) => typeof candidate === 'string' && candidate.trim(),
+  );
+  const target = path.resolve(cwd, edit.path);
+  return target.split(path.sep).some((segment) => segment === '.cheese' || segment === '.context');
 }
 
 function emitDeny(reason) {
@@ -619,49 +603,26 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
   if (evt === 'PreToolUse') {
     const state = incrementTurn(dir);
     const { tokens, source: ctxSource } = contextTokensFromEvent(event);
-    // Resume-only grace: eligibility is decided once, on the agent's first
-    // observed reading over ctxHard. The over-hard-on-turn-1 signature is
-    // almost always a resume (SubagentStop wiped turn state but the
-    // transcript persists) — a fresh agent's own transcript grows one turn
-    // at a time, so it can only cross ctxHard mid-run, not on call 1; the
-    // rare exception (a fresh agent spawned with an already-large inline
-    // context) also earns the short window, which is acceptable. A resume
-    // whose first call(s) hit a transient transcript-not-found miss
-    // (tokens===0) can still latch on its first over-hard reading, tracked
-    // via realReadingSeenFile — but only if no earlier real reading was
-    // already seen (that would mean a fresh agent crossing mid-run).
-    const seenBefore = fileExists(realReadingSeenFile(dir));
-    if (tokens > budget.ctxHard && (state.turns === 1 || !seenBefore)) {
-      try { markOnce(dir, graceEligibleFile(dir)); } catch { /* fail-open: eligibility best-effort */ }
-    }
-    if (tokens > 0) {
-      try { markOnce(dir, realReadingSeenFile(dir)); } catch { /* best-effort */ }
-    }
-    const graceEligible = fileExists(graceEligibleFile(dir));
     debug(`pre type=${type} turns=${state.turns}/${budget.turnHard} ` +
-      `tokens=${tokens}/${budget.ctxHard} grace=${state.graceUsed}/${CTX_GRACE_CALLS} eligible=${graceEligible}`);
+      `tokens=${tokens}/${budget.ctxHard} checkpointSpent=${state.checkpointSpent}`);
     const fields = {
       budget_type: type,
       turns: state.turns,
       tokens,
       ctx_source: ctxSource,
-      graceUsed: state.graceUsed,
+      checkpointSpent: state.checkpointSpent,
       ...thresholdFields(budget),
     };
-    if (state.turns > budget.turnHard) {
-      const reason = denyReason(type, state.turns, tokens, budget);
-      writeDecision(event, { ...fields, action: 'deny', reason: 'hard-ceiling' });
-      emit.deny(reason);
-      return { action: 'deny', reason };
-    }
-    if (tokens > budget.ctxHard) {
-      if (graceEligible && state.graceUsed < CTX_GRACE_CALLS) {
-        const graceUsed = incrementGrace(dir);
-        writeDecision(event, { ...fields, graceUsed, action: 'allow', reason: 'ctx-grace' });
-        return { action: 'allow', reason: 'ctx-grace' };
+    if (state.turns > budget.turnHard || tokens > budget.ctxHard) {
+      if (isCheckpointWrite(event) && !state.checkpointSpent) {
+        if (markOnce(dir, checkpointSpentFile(dir))) {
+          writeDecision(event, { ...fields, checkpointSpent: true, action: 'allow', reason: 'checkpoint-write' });
+          return { action: 'allow', reason: 'checkpoint-write' };
+        }
       }
-      const reason = denyReason(type, state.turns, tokens, budget);
-      writeDecision(event, { ...fields, action: 'deny', reason: 'hard-ceiling' });
+      const checkpointSpent = fileExists(checkpointSpentFile(dir));
+      const reason = denyReason(type, state.turns, tokens, budget, checkpointSpent);
+      writeDecision(event, { ...fields, checkpointSpent, action: 'deny', reason: 'hard-ceiling' });
       emit.deny(reason);
       return { action: 'deny', reason };
     }
@@ -677,7 +638,7 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       turns: state.turns,
       tokens,
       ctx_source: ctxSource,
-      graceUsed: state.graceUsed,
+      checkpointSpent: state.checkpointSpent,
       ...thresholdFields(budget),
     };
 
@@ -685,10 +646,9 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       const created = markHardNudged(dir);
       if (created) {
         markNudged(dir); // suppress the soft nudge too — one nudge per agent max
-        const graceEligible = fileExists(graceEligibleFile(dir));
-        const remaining = graceEligible ? Math.max(0, CTX_GRACE_CALLS - state.graceUsed) : 0;
-        debug(`hard-nudge type=${type} turns=${state.turns} tokens=${tokens} remaining=${remaining}`);
-        const context = hardNudgeContext(type, budget, remaining);
+        const checkpointSpent = fileExists(checkpointSpentFile(dir));
+        debug(`hard-nudge type=${type} turns=${state.turns} tokens=${tokens} checkpointSpent=${checkpointSpent}`);
+        const context = hardNudgeContext(type, budget, checkpointSpent);
         writeDecision(event, { ...fields, action: 'nudge', reason: 'hard-threshold' });
         emit.nudge(context);
         return { action: 'nudge', reason: context };
@@ -738,7 +698,6 @@ module.exports = {
   counterPath,
   readState,
   incrementTurn,
-  incrementGrace,
   markNudged,
   markHardNudged,
   cleanup,
@@ -750,8 +709,8 @@ module.exports = {
   denyReason,
   nudgeContext,
   hardNudgeContext,
+  isCheckpointWrite,
   sweepStale,
   rotateLogIfLarge,
-  CTX_GRACE_CALLS,
   DECISION_LOG_MAX_BYTES,
 };
