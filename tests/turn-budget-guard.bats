@@ -11,8 +11,8 @@
 #
 # State is append/marker files under the per-(session,agent) counter dir, not
 # a single state.json: `turns` (1 byte per PreToolUse call, count = file
-# size), `grace` (same pattern, byte-hard grace calls used), `nudged` /
-# `hard-nudged` (marker files, existence = flag). Helpers below seed those
+# size), `checkpoint-spent`, `nudged` / `hard-nudged` (marker files,
+# existence = flag). Helpers below seed those
 # files directly instead of writing a JSON blob.
 
 load test_helper
@@ -51,15 +51,6 @@ seed_turns() {
         "$dir/turns" "$turns"
 }
 
-# Seed the grace counter to N by appending N bytes to the `grace` file.
-seed_grace() {
-    local session="$1" agent="$2" grace="$3"
-    local dir="$CLAUDE_TURN_BUDGET_DIR/$session/$agent"
-    mkdir -p "$dir"
-    node -e 'require("fs").writeFileSync(process.argv[1], "x".repeat(Number(process.argv[2])))' \
-        "$dir/grace" "$grace"
-}
-
 mark_nudged() {
     local session="$1" agent="$2"
     local dir="$CLAUDE_TURN_BUDGET_DIR/$session/$agent"
@@ -74,27 +65,9 @@ mark_hard_nudged() {
     : > "$dir/hard-nudged"
 }
 
-# Mark that a real (non-zero) context reading has already been observed for
-# this agent. A live mid-run agent always has this marker (its earlier
-# PreToolUse calls read real tokens); seed it in tests that fake a mid-run
-# agent via seed_turns, so grace eligibility correctly treats a mid-run
-# over-hard crossing as ineligible (not a transient-miss resume).
-mark_real_reading_seen() {
-    local session="$1" agent="$2"
-    local dir="$CLAUDE_TURN_BUDGET_DIR/$session/$agent"
-    mkdir -p "$dir"
-    : > "$dir/real-reading-seen"
-}
-
 # Current turns count for (session, agent) — 0 when the file is absent.
 turns_count() {
     local file="$CLAUDE_TURN_BUDGET_DIR/$1/$2/turns"
-    [[ -f "$file" ]] && wc -c < "$file" | tr -d ' ' || echo 0
-}
-
-# Current grace-used count for (session, agent) — 0 when the file is absent.
-grace_count() {
-    local file="$CLAUDE_TURN_BUDGET_DIR/$1/$2/grace"
     [[ -f "$file" ]] && wc -c < "$file" | tr -d ' ' || echo 0
 }
 
@@ -168,6 +141,18 @@ pre_event() {
         '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"Bash", tool_input:{}}'
 }
 
+checkpoint_event() {
+    local session="$1" agent="$2" type="$3" target="$4"
+    jq -nc --arg s "$session" --arg a "$agent" --arg t "$type" --arg p "$PROJ/$session.jsonl" --arg cwd "$PROJ" --arg target "$target" \
+        '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"mcp__tilth__tilth_write", tool_input:{cwd:$cwd, edits:[{path:$target, ops:[{op:"append",content:"checkpoint"}]}]}}'
+}
+
+multiple_checkpoint_event() {
+    local session="$1" agent="$2" type="$3"
+    jq -nc --arg s "$session" --arg a "$agent" --arg t "$type" --arg p "$PROJ/$session.jsonl" --arg cwd "$PROJ" \
+        '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"mcp__tilth__tilth_write", tool_input:{cwd:$cwd, edits:[{path:".cheese/one.md",ops:[{op:"append",content:"checkpoint"}]},{path:".context/two.md",ops:[{op:"append",content:"checkpoint"}]}]}}'
+}
+
 post_event() {
     local session="$1" agent="$2" type="$3"
     jq -nc --arg s "$session" --arg a "$agent" --arg t "$type" --arg p "$PROJ/$session.jsonl" \
@@ -204,16 +189,8 @@ post_event() {
 
 # ── A2 ── hard context wall ──────────────────────────────────────
 
-@test "A2: tokens over the context-hard ceiling denies immediately (non-resumed agent)" {
-    # turns=5 -> increments to 6 on this call, so this is NOT the agent's
-    # first observed call and grace does not apply, regardless of the token
-    # reading. This is the Change 3 fix: a normal agent that crosses hard
-    # mid-run gets an immediate deny, not a multi-call grace window.
-    # A live mid-run agent has already logged real readings, so seed the
-    # real-reading-seen marker; without it, an over-hard crossing would look
-    # like a transient-miss resume and wrongly earn grace.
+@test "A2: Bash over the context-hard ceiling denies immediately" {
     seed_turns s2 b1 5
-    mark_real_reading_seen s2 b1
     seed_usage_transcript s2 b1 "$((130000 + 1)):0:0"  # > ctxHard (130000)
     fire "$(pre_event s2 b1 coder)"
     [[ "$(verdict)" == "deny" ]]
@@ -264,8 +241,7 @@ post_event() {
 }
 
 @test "A2: Codex direct agent_transcript_path drives the context ceiling" {
-    seed_turns s2 codex1 1  # increments to 2 -> not first call, grace does not apply
-    mark_real_reading_seen s2 codex1  # live mid-run agent has seen real readings
+    seed_turns s2 codex1 1
     local agent_tx="$TEST_HOME/codex-agent.jsonl"
     jq -nc --argjson inp $((130000 + 1)) \
         '{type:"assistant", message:{usage:{input_tokens:$inp, cache_creation_input_tokens:0, cache_read_input_tokens:0}}}' \
@@ -290,69 +266,115 @@ post_event() {
     jq -s -e 'length == 1 and .[0].harness == "codex" and .[0].action == "deny" and .[0].budget_type == "coder"' "$CLAUDE_TURN_BUDGET_LOG" >/dev/null
 }
 
-# ── A2b ── resume-only context-hard grace window ───────────────
+# ── A2b ── one constrained checkpoint over either hard ceiling ───────
 
-@test "A2b: an agent whose FIRST call is already over context-hard gets exactly 3 grace allows, then a deny" {
-    # No seed_turns call: the agent's first PreToolUse is turns=1, and the
-    # transcript is already over ctxHard on that first call — the resume
-    # signature that earns the grace window.
-    seed_usage_transcript s2b grace1 "$((130000 + 1)):0:0"
-
-    fire "$(pre_event s2b grace1 coder)"
+@test "A2b: valid checkpoint write is allowed over the context-hard ceiling" {
+    seed_usage_transcript s2b checkpoint1 "$((130000 + 1)):0:0"
+    fire "$(checkpoint_event s2b checkpoint1 coder .cheese/handoff.md)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "ctx-grace" ]]
-    [[ "$(grace_count s2b grace1)" == "1" ]]
-
-    fire "$(pre_event s2b grace1 coder)"
-    [[ "$(verdict)" == "allow" ]]
-    [[ "$(grace_count s2b grace1)" == "2" ]]
-
-    fire "$(pre_event s2b grace1 coder)"
-    [[ "$(verdict)" == "allow" ]]
-    [[ "$(grace_count s2b grace1)" == "3" ]]
-
-    fire "$(pre_event s2b grace1 coder)"
-    [[ "$(verdict)" == "deny" ]]
-    [[ "$(grace_count s2b grace1)" == "3" ]]  # grace does not increment past the cap
-    [[ "$output" == *"status: blocked: out of context"* ]]
+    [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
+    [[ "$(log_record | jq -r '.checkpointSpent')" == "true" ]]
+    [[ -f "$CLAUDE_TURN_BUDGET_DIR/s2b/checkpoint1/checkpoint-spent" ]]
 }
 
-@test "A2b: an agent that STARTS below context-hard and later crosses it is denied immediately, no grace" {
-    # First call (turns=1) has a transcript under ctxHard, so graceEligible
-    # is never set. A later call that crosses ctxHard gets no grace window
-    # at all -- the Change 3 fix.
-    seed_usage_transcript s2b grace2 "50000:0:0"  # under ctxHard on the first call
-    fire "$(pre_event s2b grace2 coder)"
+@test "A2b: the 101st coder call may be a valid .context checkpoint" {
+    seed_turns s2b checkpoint2 100
+    fire "$(checkpoint_event s2b checkpoint2 coder .context/handoff.md)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "within-budget" ]]
-
-    seed_usage_transcript s2b grace2 "$((130000 + 1)):0:0"  # crosses ctxHard on the SECOND call
-    fire "$(pre_event s2b grace2 coder)"
-    [[ "$(verdict)" == "deny" ]]
-    [[ "$(grace_count s2b grace2)" == "0" ]]  # never granted, never consumed
+    [[ "$(log_record | jq -r '.turns')" == "101" ]]
+    [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
 }
 
-@test "A2b: a resumed agent whose first call misses the transcript (tokens=0) still earns grace on a later over-hard reading" {
-    # Simulate a resume already past turn 1 (state.turns != 1), whose first
-    # observed call hits a transient transcript-not-found miss: tokens=0,
-    # so real-reading-seen never gets marked. seenBefore stays false, so a
-    # later over-hard reading still latches grace eligibility even though
-    # turns != 1 -- the !seenBefore branch of the eligibility gate.
-    seed_turns s2b grace3 5
-
-    # First call: no transcript seeded -> tokens=0, ctx_source "none".
-    fire "$(pre_event s2b grace3 coder)"
+@test "A2b: a second valid checkpoint is denied after the allowance is spent" {
+    seed_turns s2b checkpoint3 100
+    fire "$(checkpoint_event s2b checkpoint3 coder .cheese/first.md)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "within-budget" ]]
-    [[ "$(log_record | jq -r '.tokens')" == "0" ]]
+    fire "$(checkpoint_event s2b checkpoint3 coder .context/second.md)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$output" == *"Stop calling tools now"* ]]
+    [[ "$output" == *"checkpoint allowance is spent"* ]]
+    [[ "$output" == *"return inline"* ]]
+    [[ "$(log_record | jq -r '.checkpointSpent')" == "true" ]]
+}
 
-    # Second call: transcript now over ctxHard, turns is 7 (not 1) -- still
-    # grace-eligible because no real reading was seen before this one.
-    seed_usage_transcript s2b grace3 "$((130000 + 1)):0:0"
-    fire "$(pre_event s2b grace3 coder)"
+@test "A2b: an invalid checkpoint path is denied without spending the allowance" {
+    seed_turns s2b checkpoint4 100
+    fire "$(checkpoint_event s2b checkpoint4 coder notes/handoff.md)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$output" == *"One mcp__tilth__tilth_write"* ]]
+    [[ "$output" == *"No tool call is allowed except"* ]]
+    [[ ! -f "$CLAUDE_TURN_BUDGET_DIR/s2b/checkpoint4/checkpoint-spent" ]]
+    fire "$(checkpoint_event s2b checkpoint4 coder .cheese/handoff.md)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "ctx-grace" ]]
-    [[ "$(grace_count s2b grace3)" == "1" ]]
+}
+
+@test "A2b: multiple edits are denied without spending the allowance" {
+    seed_turns s2b checkpoint5 100
+    fire "$(multiple_checkpoint_event s2b checkpoint5 coder)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ ! -f "$CLAUDE_TURN_BUDGET_DIR/s2b/checkpoint5/checkpoint-spent" ]]
+}
+
+@test "A2b: a resume already over hard is denied unless it is the valid checkpoint" {
+    seed_usage_transcript s2b checkpoint6 "$((130000 + 1)):0:0"
+    fire "$(pre_event s2b checkpoint6 coder)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ ! -f "$CLAUDE_TURN_BUDGET_DIR/s2b/checkpoint6/checkpoint-spent" ]]
+    fire "$(checkpoint_event s2b checkpoint6 coder .context/resume.md)"
+    [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A2b: classifier only accepts content-writing ops for the exact tilth checkpoint" {
+    local valid all_content_ops event_cwd process_cwd invalid_segment native_write alias other_tilth missing empty missing_ops empty_ops multiple mixed delete delete_block delete_file move_file move_outside mixed_destructive mixed_rename
+    valid=$(checkpoint_event s2b classifier coder .cheese/handoff.md)
+    all_content_ops=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [
+        {op:"prepend",content:"checkpoint"},
+        {op:"append",content:"checkpoint"},
+        {op:"replace",start:1,end:1,content:"checkpoint"},
+        {op:"insert_before",line:1,content:"checkpoint"},
+        {op:"insert_after",line:1,content:"checkpoint"},
+        {op:"replace_block",at:1,content:"checkpoint"},
+        {op:"insert_after_block",at:1,content:"checkpoint"}
+    ]')
+    event_cwd=$(jq -nc --argjson event "$valid" --arg cwd "$PROJ/.context" \
+        '$event | .tool_input |= del(.cwd) | .cwd = $cwd | .tool_input.edits[0].path = "handoff.md"')
+    process_cwd=$(jq -nc --argjson event "$valid" \
+        '$event | .tool_input |= del(.cwd) | del(.cwd) | .tool_input.edits[0].path = ".context/process.md"')
+    invalid_segment=$(checkpoint_event s2b classifier coder .cheesecake/handoff.md)
+    native_write=$(jq -nc --argjson event "$valid" '$event | .tool_name = "Write"')
+    alias=$(jq -nc --argjson event "$valid" '$event | .tool_name = "cheez-write"')
+    other_tilth=$(jq -nc --argjson event "$valid" '$event | .tool_name = "mcp__tilth__tilth_read"')
+    missing=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits = [{}]')
+    empty=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].path = ""')
+    missing_ops=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0] |= del(.ops)')
+    empty_ops=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = []')
+    multiple=$(multiple_checkpoint_event s2b classifier coder)
+    mixed=$(jq -nc --argjson event "$multiple" '$event | .tool_input.edits[1].path = "notes/outside.md"')
+    delete=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"delete",start:1,end:1}]')
+    delete_block=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"delete_block",at:1}]')
+    delete_file=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"delete_file"}]')
+    move_file=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"move_file",dest:".context/moved.md"}]')
+    move_outside=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [{op:"move_file",dest:"notes/moved.md"}]')
+    mixed_destructive=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops += [{op:"delete_file"}]')
+    mixed_rename=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops += [{op:"move_file",dest:"notes/moved.md"}]')
+    run node -e 'const {isCheckpointWrite}=require(process.argv[1]); console.log(JSON.stringify(process.argv.slice(2).map((event) => isCheckpointWrite(JSON.parse(event)))));' \
+        "$HOOK_JS" "$valid" "$all_content_ops" "$event_cwd" "$process_cwd" "$invalid_segment" "$native_write" "$alias" "$other_tilth" "$missing" "$empty" "$missing_ops" "$empty_ops" "$multiple" "$mixed" "$delete" "$delete_block" "$delete_file" "$move_file" "$move_outside" "$mixed_destructive" "$mixed_rename"
+    assert_success
+    [[ "$output" == "[true,true,true,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false]" ]]
+}
+
+@test "A2b: concurrent valid checkpoints spend the allowance exactly once" {
+    seed_turns s2b checkpoint7 100
+    local json
+    json=$(checkpoint_event s2b checkpoint7 coder .cheese/concurrent.md)
+    printf '%s' "$json" | "$DEPLOY/hooks/turn-budget-guard.sh" > "$TEST_HOME/first.out" &
+    local first=$!
+    printf '%s' "$json" | "$DEPLOY/hooks/turn-budget-guard.sh" > "$TEST_HOME/second.out" &
+    local second=$!
+    wait "$first"
+    wait "$second"
+    [[ "$(jq -s 'map(select(.reason == "checkpoint-write")) | length' "$CLAUDE_TURN_BUDGET_LOG")" == "1" ]]
+    [[ "$(jq -sr 'map(.action) | sort | join(",")' "$CLAUDE_TURN_BUDGET_LOG")" == "allow,deny" ]]
 }
 
 # ── A3 — soft nudge fires once ───────────────────────────────────────
@@ -362,6 +384,7 @@ post_event() {
     fire "$(post_event s3 c1 coder)"
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"wrap up"* ]]
+    [[ "$output" == *"non-checkpoint tool calls are hard-blocked"* ]]
 
     # Marker set — a second PostToolUse must not nudge again.
     fire "$(post_event s3 c1 coder)"
@@ -402,6 +425,7 @@ post_event() {
     fire "$(post_event s3b d1 coder)"
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"hard ceiling"* ]]
+    [[ "$output" == *"mcp__tilth__tilth_write"* ]]
     [[ "$output" == *"status: blocked: out of context"* ]]
     [[ -f "$CLAUDE_TURN_BUDGET_DIR/s3b/d1/hard-nudged" ]]
     [[ -f "$CLAUDE_TURN_BUDGET_DIR/s3b/d1/nudged" ]]
@@ -585,16 +609,12 @@ post_event() {
 # ── A7b ── Codex agent_transcript_path stat failure falls through ────
 
 @test "A7b: failed agent_transcript_path stat falls through to the transcript walk" {
-    # No seed_turns: first call (turns=1) with an over-hard transcript from
-    # the start -- the resume signature, so grace applies via the walk-
-    # located fallback transcript.
     seed_usage_transcript s7b g3 "$((130000 + 1)):0:0"  # over-hard, locatable via the walk
     local json
     json=$(jq -nc --arg s "s7b" --arg a "g3" --arg p "$PROJ/s7b.jsonl" --arg atp "$TEST_HOME/does-not-exist.jsonl" \
         '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:"coder", session_id:$s, transcript_path:$p, agent_transcript_path:$atp, tool_name:"Bash", tool_input:{}}')
     fire "$json"
-    [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "ctx-grace" ]]
+    [[ "$(verdict)" == "deny" ]]
     [[ "$(log_record | jq -r '.tokens')" == "$((130000 + 1))" ]]
 }
 
@@ -630,14 +650,10 @@ post_event() {
     [[ "$(log_record | jq -r '.ctx_source')" == "bytes-fallback" ]]
 }
 
-@test "B4: byte fallback that exceeds ctxHard on the token scale denies a mid-run agent" {
+@test "B4: byte fallback that exceeds ctxHard on the token scale denies Bash" {
     # A transcript with no usage line and > 520000 bytes -> / 4 > 130000
     # tokens, so the fallback proxy must still enforce the hard ceiling.
-    # seed_turns > 1 + real-reading-seen so this is a mid-run crossing (no
-    # grace), proving the fallback denies on the token scale rather than
-    # comparing raw bytes.
     seed_turns s10 tok4 5
-    mark_real_reading_seen s10 tok4
     seed_transcript s10 tok4 520004  # 520004 / 4 = 130001 > ctxHard
     fire "$(pre_event s10 tok4 coder)"
     [[ "$(verdict)" == "deny" ]]
@@ -658,21 +674,12 @@ post_event() {
     [[ "$(log_record | jq -r '.ctx_source')" == "tokens" ]]
 }
 
-@test "B6: a resume whose first call misses the transcript still earns grace on its first over-hard reading" {
-    # #9: on turns=1 the transcript is unlocatable (tokens=0 -> no real
-    # reading, no eligibility yet). On turns=2 the located transcript is
-    # over ctxHard; because no real reading was ever seen, this latches
-    # grace-eligibility (the transient-miss resume path) rather than denying
-    # like a fresh mid-run crosser.
-    # Call 1: no transcript fixture -> contextTokens resolves to 0.
-    fire "$(pre_event s10 tok6 coder)"
+@test "B6: byte fallback allows the same constrained checkpoint exception" {
+    seed_transcript s10 tok6 520004
+    fire "$(checkpoint_event s10 tok6 coder .context/byte-fallback.md)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "within-budget" ]]
-    # Call 2: transcript now present and over-hard -> grace, not deny.
-    seed_usage_transcript s10 tok6 "$((130000 + 1)):0:0"
-    fire "$(pre_event s10 tok6 coder)"
-    [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "ctx-grace" ]]
+    [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
+    [[ "$(log_record | jq -r '.ctx_source')" == "bytes-fallback" ]]
 }
 
 # ── A8 — stale sweep ─────────────────────────────────────────────────

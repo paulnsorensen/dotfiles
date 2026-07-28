@@ -39,4 +39,6 @@ Delegate coherent phase work unless it is a trivial one-step task:
 
 The top-level orchestrator owns planning, user decisions, and fan-out. Workers return condensed evidence rather than raw file or fetch output.
 
+Retain iterative diagnosis inline; delegate implementation and verification. On `blocked: suspect-environment`, diagnose the reproduction and competing hypotheses before redispatch, passing measured dead ends as known-false leads with ruling-out evidence.
+
 Every reviewer dispatch must explicitly set `Review mode: severity-report` or `Review mode: taste-test`.
