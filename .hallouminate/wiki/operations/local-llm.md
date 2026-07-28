@@ -21,6 +21,10 @@ Always-on workers OOM'd the 59GiB Strix Point box (iGPU "VRAM" = system RAM), so
 
 - **ManagedOOM kill policy is a two-repo pairing (2026-07-08 livelock)**: `llama-swap.service` sets `ManagedOOMMemoryPressure=kill` / `ManagedOOMMemoryPressureLimit=60%` / `ManagedOOMSwap=kill` ("LLM stack dies first"), but these are **inert until `systemd-oomd` is installed and running** — that install lives in the crabbot repo (`cluster/thrash-protection.sh`, run with sudo), not here. Backstory: the 2026-07-04 OOM protections (score adjusts + slice caps) *prevented* kernel OOM kills so well that a 59G-host memory squeeze became a 7.5-hour unattributable page-cache-thrash livelock (1.2 GB/s reads, 83% iowait, load 130, no OOM) instead of a quick kill — PSI-based killing via oomd is the fix, MemAvailable-based killers (earlyoom) would not have fired. Full incident: crabbot `cluster/recovery.md` § "host PSI livelock". Verify live: `systemctl --user show llama-swap.service -p ManagedOOMMemoryPressure` (expect `kill`) and `systemctl is-active systemd-oomd`.
 
+- **Bats polling must not post-increment from zero**: Bats fails a test when an unguarded command returns non-zero, and Bash `(( i++ ))` returns status 1 while advancing an initial zero. In the `opencode-lean` background warm-up tests, that made the first polling iteration fail whenever the mock curl had not created its marker yet; use `(( ++i ))` or an assignment whose first status is successful.[^bats-poll]
+
+[^bats-poll]: `tests/local-llm.bats:781-782`, `tests/local-llm.bats:875-876`; failures reproduced in GitHub Actions runs 30387564473 and 30310136883.
+
 ## Why opt-in and gated
 
 The stack is heavy (models + built llama.cpp + lemonade) and machine-specific, so it must never deploy by accident on a fresh box. It's gated by the chezmoi `localLLM` flag (`.chezmoi.toml.tmpl`): `dots sync` prompts *"Manage local LLM stack on this machine?"* on first init (persisted to `~/.config/chezmoi/chezmoi.toml`; re-prompt by deleting that file). When off, `.chezmoiignore` skips the whole tree so nothing deploys.
