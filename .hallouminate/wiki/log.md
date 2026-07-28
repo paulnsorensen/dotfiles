@@ -38,3 +38,8 @@
 2026-07-24 · 32c0769bb78d8fb7 · new-page · architecture/knowledge-graph-playbook.md · KG playbook digest: stage-tiered models (haiku extraction / sonnet reasoning), hybrid deterministic-blocking + LLM arbitration, shared-memory/blackboard for orchestrator-workers (90.2% / 10-15x), grounded evaluation + escalate-unverifiable, precision-first store writes (scoped vs Opus 5 report-everything reviews), production checklist + feedback-loop doctrine.
 2026-07-24 · 32c0769bb78d8fb7 · merged · architecture/fanout-fanin-discipline.md · New section: shared memory instead of the orchestrator bottleneck (blackboard, 90.2% / 10-15x figures, hallouminate as the repo's store).
 2026-07-24 · 32c0769bb78d8fb7 · merged · architecture/subagent-routing-policy.md · Two doctrine lines: deterministic pre-filter before LLM arbitration (Layered authority); grounded reviewer + escalate-unverifiable (Where to spend the strong model).
+
+2026-07-28 · ca104a4762647d63 · merged · architecture/global-agents-doc.md · Added the external evidence and working 4–5k effective-global-stack budget hypothesis, clarified technical limits versus adherence targets, recorded content-placement guidance, and refreshed current repo-stack measurements.
+
+2026-07-28 · preamble-20260728 · merged · architecture/agents-dir.md · Reassigned phase handoff ownership from the preamble to the four agent bodies and recorded the compact preamble's direct tilth, wiki-grounding, and delegation responsibilities.
+2026-07-28 · preamble-20260728 · merged · adr/cheese-factory-workflow.md · Replaced stale preamble fan-out and continuation attributions with ADR-005 and coder-owned contracts.

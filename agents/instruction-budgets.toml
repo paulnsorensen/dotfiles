@@ -1,0 +1,176 @@
+version = 1
+encodings = ["o200k_base", "cl100k_base"]
+
+# Fixed ceilings are raised deliberately, never derived during the check.
+[[source]]
+path = "AGENTS.md"
+max_tokens = 2700
+
+[[source]]
+path = "CLAUDE.md"
+max_tokens = 100
+
+[[source]]
+path = "agent-profile/AGENTS.md"
+max_tokens = 600
+
+[[source]]
+path = "agents/AGENTS.md"
+max_tokens = 4100
+
+[[source]]
+path = "agents/RTK.md"
+max_tokens = 300
+
+[[source]]
+path = "agents/preamble.md"
+max_tokens = 2600
+
+[[source]]
+path = "profiles/codex-code/AGENTS.md"
+max_tokens = 400
+
+[[source]]
+path = "profiles/codex-plan/AGENTS.md"
+max_tokens = 300
+
+[[source]]
+path = "profiles/fe/CLAUDE.md"
+max_tokens = 900
+
+[[source]]
+path = "profiles/mgmt/CLAUDE.md"
+max_tokens = 600
+
+[[source]]
+path = "profiles/plugin/CLAUDE.md"
+max_tokens = 900
+
+[[source]]
+path = "profiles/review/CLAUDE.md"
+max_tokens = 700
+
+[[source]]
+path = "profiles/rtkonly/CLAUDE.md"
+max_tokens = 700
+
+[[source]]
+path = "profiles/skills-doctor/CLAUDE.md"
+max_tokens = 300
+
+[[source]]
+path = "profiles/spec/CLAUDE.md"
+max_tokens = 700
+
+[[source]]
+path = "profiles/todo/CLAUDE.md"
+max_tokens = 900
+
+[[source]]
+path = "chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
+max_tokens = 900
+
+[[source]]
+path = ".github/copilot-instructions.md"
+max_tokens = 800
+
+[[source]]
+path = ".github/instructions/claude-config.instructions.md"
+max_tokens = 500
+
+[[source]]
+path = ".github/instructions/code-review.instructions.md"
+max_tokens = 500
+
+[[source]]
+path = ".github/instructions/coding-agent.instructions.md"
+max_tokens = 400
+
+[[source]]
+path = ".github/instructions/shell.instructions.md"
+max_tokens = 200
+
+[[stack]]
+name = "global_codex"
+sources = ["agents/AGENTS.md", "agents/preamble.md"]
+max_tokens = 6750
+
+[[stack]]
+name = "global_claude"
+sources = ["agents/AGENTS.md", "agents/preamble.md", "agents/RTK.md"]
+max_tokens = 7000
+
+[[stack]]
+name = "repo_codex"
+sources = ["agents/AGENTS.md", "agents/preamble.md", "AGENTS.md"]
+max_tokens = 9250
+
+[[stack]]
+name = "repo_claude"
+sources = ["agents/AGENTS.md", "agents/preamble.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md"]
+max_tokens = 9750
+
+[[stack]]
+name = "nested_agent_profile_codex"
+sources = ["agents/AGENTS.md", "agents/preamble.md", "AGENTS.md", "agent-profile/AGENTS.md"]
+max_tokens = 10000
+
+[[stack]]
+name = "omp"
+sources = ["chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"]
+max_tokens = 1000
+
+[[stack]]
+name = "copilot_coding_max"
+sources = ["AGENTS.md", ".github/copilot-instructions.md", ".github/instructions/coding-agent.instructions.md", ".github/instructions/shell.instructions.md", ".github/instructions/claude-config.instructions.md"]
+max_tokens = 4500
+
+[[stack]]
+name = "copilot_review_max"
+sources = ["AGENTS.md", ".github/copilot-instructions.md", ".github/instructions/code-review.instructions.md", ".github/instructions/shell.instructions.md", ".github/instructions/claude-config.instructions.md"]
+max_tokens = 4500
+
+[[stack]]
+name = "profile_codex_code"
+sources = ["AGENTS.md", "profiles/codex-code/AGENTS.md"]
+max_tokens = 3250
+
+[[stack]]
+name = "profile_codex_plan"
+sources = ["AGENTS.md", "profiles/codex-plan/AGENTS.md"]
+max_tokens = 3000
+
+[[stack]]
+name = "profile_fe"
+sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/fe/CLAUDE.md"]
+max_tokens = 8000
+
+[[stack]]
+name = "profile_plugin"
+sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/plugin/CLAUDE.md"]
+max_tokens = 8000
+
+[[stack]]
+name = "profile_review"
+sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/review/CLAUDE.md"]
+max_tokens = 7750
+
+[[stack]]
+name = "profile_rtkonly"
+sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/rtkonly/CLAUDE.md"]
+max_tokens = 7750
+
+[[stack]]
+name = "profile_skills_doctor"
+sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/skills-doctor/CLAUDE.md"]
+max_tokens = 7250
+
+[[stack]]
+name = "profile_spec"
+sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/spec/CLAUDE.md"]
+max_tokens = 7750
+
+[[stack]]
+name = "profile_todo"
+sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/todo/CLAUDE.md"]
+max_tokens = 8000

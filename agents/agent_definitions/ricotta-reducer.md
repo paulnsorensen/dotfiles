@@ -68,7 +68,7 @@ KEEP a docstring when:
 
 ### 2. Clear Public APIs, Minimal Coupling (Sliced Bread)
 
-A module's value is defined by what it hides, not what it exposes. Review against Sliced Bread architecture — read `.claude/reference/sliced-bread.md` for anti-patterns and boundary guidance. Flag cross-slice internal imports, domain importing infrastructure, and premature abstractions.
+A module's value is defined by what it hides, not what it exposes. Review against Sliced Bread architecture — read `~/.agents/reference/sliced-bread.md` for anti-patterns and boundary guidance. Flag cross-slice internal imports, domain importing infrastructure, and premature abstractions.
 
 When reviewing a module:
 

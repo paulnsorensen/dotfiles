@@ -43,6 +43,16 @@ Milknado task completion fails closed when the project defines no quality gates.
 
 `todo.enabled: false` removes the model-facing Todo tool. It does not unregister OMP's separately wired `/todo` command, which can still mutate native session state. Disabling reminders alone therefore does not establish single ownership.
 
+## Hook isolation
+
+OMP does not receive entries from `agents/hooks/registry.yaml`: the registry synchronizer implements only Claude and Codex backends and its default loop names those two targets.[^1] OMP also disables discovery of the Claude, Codex, and other external harness providers that could import their hooks.[^2]
+
+Instead OMP deploys native extensions under `~/.omp/agent/extensions/`: `cheese-flair.ts`, `rtk.ts`, `milknado-todo-guard.ts`, `no-fork-all.ts`, and `sliced-bread-audit.ts`. The flair extension intentionally runs the same deployed `~/.claude/hooks/session-start-cheese-flair.sh` script, so it shares flair output but is not a registry-hook installation.[^3]
+
+[^1]: `agents/hooks/sync.sh:3-18`, `agents/hooks/sync.sh:75-80`
+[^2]: `chezmoi/.chezmoidata/omp.yaml:20-24`, `chezmoi/.chezmoidata/omp.yaml:46-53`
+[^3]: `chezmoi/dot_omp/private_agent/extensions/cheese-flair.ts:1-26`, `chezmoi/dot_omp/private_agent/extensions/rtk.ts:1-84`, `chezmoi/dot_omp/private_agent/extensions/milknado-todo-guard.ts:1-15`, `chezmoi/dot_omp/private_agent/extensions/no-fork-all.ts:1-19`, `chezmoi/dot_omp/private_agent/extensions/sliced-bread-audit.ts:1-94`
+
 ## `/todo` guard
 
 `chezmoi/dot_omp/private_agent/extensions/milknado-todo-guard.ts:3-13` handles the remaining command path. The guard:

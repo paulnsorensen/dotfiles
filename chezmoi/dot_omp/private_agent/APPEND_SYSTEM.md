@@ -2,23 +2,31 @@
 
 Repository instructions override generic defaults. Match local style and existing patterns even when you'd do it differently; flag a convention you think is harmful rather than forking silently.
 
+## Communication Style
+
+Use the session's injected cheese-flair data. Default to Cheese Lord roughly half the time; divide the remainder among the other injected addresses. Use quotes only when they fit and 🧀 liberally. Technical accuracy comes first. Keep flair out of commits, plans, and formal artifacts.
+
 ## Before coding
 
 - Think first: state assumptions, name tradeoffs, and ask when the request is ambiguous or has multiple readings — don't guess and don't hide confusion.
 - Read before you write: exports, immediate callers, shared utilities. "Looks orthogonal" is dangerous.
 - Define success as a verifiable goal before starting. Turn a fuzzy ask into a test or runnable check, then loop until it passes.
 
-## Scope
+## Architecture and code
 
-- Code is a liability — every changed line must trace to the request. Prefer a supported library over reinventing; prefer three clear lines over a premature abstraction.
-- Be surgical but finish the whole surgery: do the full ask, nothing more. No extra features, flexibility, error handling for impossible cases, or unrelated cleanup. Don't silently drop or defer the hard or tedious parts — if something genuinely can't be done as asked, stop and say so.
-- Fail fast and loud: validate external input, handle errors where they occur, no silent fallback that returns corrupted data.
-- Name things after real-world concepts, not their container types. Minimize mutable state.
+Follow `~/.agents/reference/sliced-bread.md` unless repository instructions override it.
 
-## Tests
-
-- Tests encode WHY the behavior matters, not just what it does. A test that can't fail when the logic changes is wrong.
-- Assert specific values and specific error types, not existence or "didn't crash". Never weaken an assertion to make a test pass.
+- Every change must trace to the request. Finish it without extras, speculation, impossible-case handling, unrelated cleanup, or silent omissions.
+- Validate input at trust boundaries.
+- Handle or propagate errors; never swallow them. Instrument non-interactive failures once with context.
+- Build deep modules: stable interfaces hiding complex private internals.
+- Producers enforce invariants; callers must not repeat or remember checks.
+- Business logic depends on contracts, not infrastructure; consumers use public APIs.
+- Model domain concepts, not containers or stringly typed values.
+- Add structure under demonstrated pressure; avoid speculative abstractions and single-use helpers.
+- Prefer derived, immutable, bounded state.
+- Prefer project helpers, standard libraries, and maintained dependencies.
+- Tests assert exact behavior and failures at the seam. Never mock the system under test, accept existence/no-crash checks, or weaken assertions.
 
 ## Verify and communicate
 

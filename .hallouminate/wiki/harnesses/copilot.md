@@ -15,6 +15,12 @@ GitHub's coding-agent CLI. Config lives under `~/.copilot/` and (project-scoped)
 | Settings / config | <https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference> | `~/.copilot/` layout + `settings.json`. (`config.json` holds auto-managed trusted-folders/permissions — see [configure-copilot-cli](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/configure-copilot-cli).) |
 | Skills | <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills> | `skills/` → `.github/skills/<n>/`. Copilot reads `.github/skills`, `.claude/skills`, `.agents/skills`, or `~/.copilot/skills`. |
 
+### Instruction budget
+
+The repo-owned Copilot stack is budgeted separately from Claude/Codex. The coding maximum is 4,361 / 4,335 tokens and the review maximum is 4,452 / 4,432 (`o200k_base` / `cl100k_base`); both have a fixed 4,500-token ceiling. Each maximum combines root `AGENTS.md`, repo-wide Copilot instructions, the applicable coding/review instructions, and the shell + Claude-config path instructions. Personal and organization instructions remain external to this repo-owned ceiling.[^budget]
+
+[^budget]: `agents/instruction-budgets.toml:123-131`, `tests/helpers/agent_instruction_budget.py:93-115`, `.github/copilot-instructions.md:1-70`, `.github/instructions/*.instructions.md`
+
 ## Isolated settings
 
 Not available. Copilot CLI has no closed-world launch flags; `ap` isolated launches are Claude-only.

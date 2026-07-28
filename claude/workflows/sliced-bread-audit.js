@@ -20,7 +20,7 @@ export const meta = {
 //     dry_run?: boolean, max_issues?: number, workers?: number }
 //
 // The architecture rubric below is inlined from
-// ~/.claude/reference/sliced-bread.md so evaluators work in any repo without
+// ~/.agents/reference/sliced-bread.md so evaluators work in any repo without
 // depending on that file being readable.
 
 // ── args ────────────────────────────────────────────────────────────────
