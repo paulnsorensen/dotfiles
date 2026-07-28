@@ -779,7 +779,7 @@ MOCK
 
     # The warm-up is backgrounded — poll briefly for the marker to appear.
     local i=0
-    while [[ ! -f "$warm_log" ]] && (( i < 50 )); do sleep 0.1; (( i++ )); done
+    while [[ ! -f "$warm_log" ]] && (( i < 50 )); do sleep 0.1; (( ++i )); done
     assert_file_exists "$warm_log"
     run cat "$warm_log"
     assert_output_contains "http://127.0.0.1:4000/v1/chat/completions"
@@ -873,7 +873,7 @@ MOCK
     assert_output_contains "opencode-called"
 
     local i=0
-    while [[ ! -f "$warm_log" ]] && (( i < 50 )); do sleep 0.1; (( i++ )); done
+    while [[ ! -f "$warm_log" ]] && (( i < 50 )); do sleep 0.1; (( ++i )); done
     assert_file_exists "$warm_log"
     run cat "$warm_log"
     assert_output_contains "http://127.0.0.1:4000/v1/chat/completions"
