@@ -301,7 +301,7 @@ run_sync() {
         jq yq fzf gh shellcheck bats-core ripgrep fd eza bat glow ast-grep
         git-delta git-lfs tmux prek zoxide atuin bottom dust procs tokei yazi
         difftastic mergiraf lazygit git-town sesh just chezmoi duckdb node bun
-        sd vhs opencode crush sccache cargo-nextest protobuf mas uv rustup
+        sd vhs opencode crush sccache cargo-nextest protobuf uv rustup
         rust-analyzer cargo-llvm-cov rtk bash-language-server yaml-language-server
         pyright gopls oven-sh/bun anomalyco/tap anomalyco/tap/opencode
         joshmedeski/sesh charmbracelet/tap/crush
