@@ -30,6 +30,7 @@ from agent_profile import (
     compile_command,
     discover,
     fetch_sources_command,
+    ingest,
 )
 from agent_profile import (
     manifest as manifest_mod,
@@ -80,6 +81,7 @@ Commands:
   list                          List available profiles
   describe <name>               Show resolved manifest for a profile
   path <name>                   Print profile source dir
+  agents-json <registry.yaml>   Print resolved agent items (tier -> models)
   compile <name> --baseline <dir> --out <dir>
                                 Compile live profile fragments
   install <name> [opts]         Deprecated; use dots sync or ap compile
@@ -227,6 +229,25 @@ def cmd_copilot_flags(name: str, out: Any) -> int:
     manifest = parse_manifest(profile_dir)
     for flag in launch_flags(manifest):
         print(flag, file=out)
+    return 0
+
+
+def cmd_agents_json(registry: str, out: Any) -> int:
+    """Print an agent registry's resolved items as a JSON array.
+
+    Each agent's ``tier`` is resolved into ``models`` against the sibling
+    ``models.yaml`` (see ingest.expand_agents). The Claude source-assembly
+    renderer in .sync-lib.sh consumes this instead of reading the registry
+    with yq, so tier resolution has exactly one implementation rather than
+    one per language.
+
+    Takes a registry path, not a profile: the assembly runs against an
+    arbitrary repo root (its own tests drive it with a synthetic one), which
+    has a registry but no profile tree."""
+    path = Path(registry)
+    if not path.is_file():
+        raise CliError(f"ap: agent registry '{registry}' not found")
+    print(json.dumps(ingest.expand_agents(path, str(path.parent.parent))), file=out)
     return 0
 
 
@@ -887,6 +908,10 @@ def main(argv: list[str] | None = None) -> int:
             if not rest:
                 raise CliError("profile name required")
             return cmd_copilot_flags(rest[0], sys.stdout)
+        if sub == "agents-json":
+            if not rest:
+                raise CliError("ap: agents-json needs an agent registry path")
+            return cmd_agents_json(rest[0], sys.stdout)
         if sub == "perms":
             local = "--local" in rest
             rest_no_local = [a for a in rest if a != "--local"]

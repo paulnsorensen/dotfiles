@@ -441,7 +441,41 @@ def _expand_hooks(
     return out
 
 
-def _expand_agents(
+def _load_model_pins(path: Path) -> dict[str, dict[str, Any]]:
+    """Load ``agents/models.yaml``'s ``pins:`` map, or {} if the file is absent."""
+    if not path.is_file():
+        return {}
+    data = _load_yaml_mapping(path)
+    pins = data.get("pins") or {}
+    return pins if isinstance(pins, dict) else {}
+
+
+def _resolve_agent_tier(
+    item: dict[str, Any], pins: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    """Resolve ``tier:`` (agents/models.yaml) into ``models``.
+
+    Precedence: the agent's own ``models.<harness>`` wins, else
+    ``pins[tier][harness]``, else the field stays absent. An unknown
+    ``tier`` is a hard failure naming the agent and the valid tiers."""
+    tier = item.pop("tier", None)
+    if tier is None:
+        return item
+    if tier not in pins:
+        from agent_profile._validate import ParseError
+
+        valid = ", ".join(sorted(pins)) or "(none defined in agents/models.yaml)"
+        raise ParseError(
+            f"ap: agent '{item.get('name')}' references unknown tier "
+            f"'{tier}' (valid tiers: {valid})"
+        )
+    resolved = dict(pins[tier])
+    resolved.update(item.get("models") or {})
+    item["models"] = resolved
+    return item
+
+
+def expand_agents(
     path: Path, source_dir: str
 ) -> list[dict[str, Any]]:
     """Normalize the agent registry mapping into a profile item list.
@@ -450,14 +484,20 @@ def _expand_agents(
     entry becomes ``{name, ...fields, _source_dir}`` with ``_source_dir`` set
     to the repo root so ``body_path`` (e.g. ``agents/agent_definitions/<name>.md``)
     resolves against the repo, not the profile dir. No env resolution — agent
-    metadata carries no ``${VAR}`` refs."""
+    metadata carries no ``${VAR}`` refs.
+
+    An agent's ``tier:`` (looked up against ``models.yaml`` beside ``path``)
+    resolves into ``models`` here — see ``_resolve_agent_tier`` — so
+    downstream renderers keep reading ``item["models"]`` unchanged."""
     data = _load_yaml_mapping(path)
     agents = data.get("agents") or {}
+    pins = _load_model_pins(path.parent / "models.yaml")
     out: list[dict[str, Any]] = []
     for name, body in agents.items():
         if not isinstance(body, dict):
             continue
-        out.append({"name": name, **body, "_source_dir": source_dir})
+        item = {"name": name, **body, "_source_dir": source_dir}
+        out.append(_resolve_agent_tier(item, pins))
     return out
 
 
@@ -854,7 +894,7 @@ def expand_registries(
 
     agents_path = directive.get("agents")
     if agents_path:
-        out["agents"] = _expand_agents(repo_root / agents_path, source_dir)
+        out["agents"] = expand_agents(repo_root / agents_path, source_dir)
 
     hooks_path = directive.get("hooks")
     if hooks_path:

@@ -1,0 +1,15 @@
+# agents/models.yaml — model-tier lookup table for agents/registry.yaml.
+#
+# Each agent references a tier via `tier: <name>` instead of transcribing
+# claude/codex model ids. Precedence, resolved in ap's ingest layer
+# (agent_profile/ingest.py, expand_registries):
+#   1. the agent's own `models.<harness>` wins
+#   2. else `pins[tier][harness]`
+#   3. else the field is absent (unchanged from today)
+# An unknown `tier` on an agent is a hard error. `cursor:`/`opencode:` are
+# NOT tier-derived — see agents/registry.yaml's header and the spec's
+# Deliberate non-goal.
+pins:
+  fast: {claude: haiku, codex: gpt-5.6-luna}
+  mid: {claude: sonnet, codex: gpt-5.6-terra}
+  deep: {claude: opus, codex: gpt-5.6-sol}

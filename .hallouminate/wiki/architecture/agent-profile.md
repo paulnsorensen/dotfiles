@@ -29,6 +29,48 @@ registries:
 
 `ingest.py:expand_registries` reads each registry relative to the repo root, normalizes every entry into a profile *item* (a registry entry **is** a profile item — no translation layer), and stamps `_source_dir = <repo_root>` so payload files (`body_path`, hook `script`, skill `path`) resolve against the repo. The plugin registry is the exception: it resolves a marketplace root to a payload root and emits MCP, skill, agent, hook, and native-plugin items with `_source_dir` stamped at the payload root. Ingest also resolves inline `${VAR}` env refs from `$DOTFILES_DIR/.env` (`env.py`) and drops `optional` MCPs with unset credentials. Plugin `commands/` are intentionally not decomposed.
 
+#### Model tiers: `tier:` → `agents/models.yaml`
+
+An agent in `agents/registry.yaml` names a **tier** rather than transcribing model ids:
+
+```yaml
+coder:
+  tier: mid
+  models: {opencode: inherit}   # optional per-harness override
+```
+
+`agents/models.yaml` holds the lookup:
+
+```yaml
+pins:
+  fast: {claude: haiku,  codex: gpt-5.6-luna}
+  mid:  {claude: sonnet, codex: gpt-5.6-terra}
+  deep: {claude: opus,   codex: gpt-5.6-sol}
+```
+
+Resolution is `ingest.py:expand_agents` → `_resolve_agent_tier` (ingest.py:453-513), which runs at ingest time so **every renderer keeps reading `item["models"]` unchanged** — the tier never reaches a renderer. Precedence:
+
+1. the agent's own `models.<harness>` wins
+2. else `pins[tier][harness]`
+3. else the harness key stays absent
+
+An unknown `tier` is a hard `ParseError` naming the agent and the valid tiers. Regression coverage: `agent-profile/tests/test_model_tiers.py`.
+
+**Why only claude and codex are pinned.** Those two are 100% tier-consistent across all 16 agents. `cursor` and `opencode` are not — the `mid` tier alone renders as `auto` ×3, `claude-sonnet` ×1, `claude-haiku` ×1, and absent ×5 — so folding them into the pins table would change rendered output rather than refactor it. They stay inline in each agent's `models:` map until someone decides which divergences are intentional. Known open anomaly: `roquefort-wrecker` is tier `mid` but pins Cursor to `claude-haiku`, the only agent whose Cursor model sits a tier below its Claude model.
+
+`tests/agent-skill-model-effort.bats` asserts the tier↔effort mapping (fast→low, mid→medium, deep→high) and the claude↔codex pairing of the three pins rows. That pairing used to be asserted 16 times, once per agent; the pins table is now the only place it is written down.
+
+#### `ap agents-json <registry.yaml>`
+
+`.sync-lib.sh:_cz_render_claude_agent` assembles the chezmoi `dot_claude/exact_agents/` tree and was, until the tier change, a **second independent reader** of `agents/registry.yaml` — it rendered Claude frontmatter with its own yq/jq pipeline, including `line("model"; .models.claude)`. Keeping it working would have meant duplicating tier resolution in jq.
+
+Instead the shell now consumes `ap agents-json <registry.yaml>` (`cli.py:cmd_agents_json`), which prints `expand_agents(...)`'s resolved item list as a JSON array. Tier resolution has exactly one implementation.
+
+Two wiring details worth knowing:
+
+- The command takes a **registry path, not a profile name**. The assembly renders an arbitrary repo root — `tests/sync-claude-sources.bats` drives it with a synthetic one that has a registry but no `profiles/` tree — so a profile-scoped command would not work there.
+- `.sync-lib.sh` invokes `${BASH_SOURCE[0]%/*}/bin/ap` with `DOTFILES_DIR=` cleared. `bin/ap` prefers `$DOTFILES_DIR/agent-profile` over its own location when resolving the uv project, so an inherited `DOTFILES_DIR` pointing at another clone (routine in a Conductor workspace) would otherwise run the wrong `agent_profile`. The tool comes from the library's own clone; the data comes from `$root`.
+
 ### `parse.py`: profile.yaml → `Manifest`
 
 `parse_manifest` resolves a profile into a `Manifest` dataclass. It DFS-walks the `include:` graph (`_parse_with_includes`, cycle-detecting on the resolution stack so a diamond DAG is legal), concatenates item arrays (includes first so the outer profile's items append last), and deep-merges `settings` (with `permissions_allow` unioned + sorted).

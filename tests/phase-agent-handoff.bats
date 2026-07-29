@@ -155,17 +155,27 @@ block_sha() {
 # coder that edits only through tilth. Lock those tool-surface contracts in the
 # registry so they cannot silently drift. The same metadata renders to Claude,
 # Codex, opencode, and Copilot CLI; Copilot ignores model overrides.
+# Asserted against the RESOLVED view (`ap agents-json`), not the registry text:
+# claude/codex now arrive from the agent's `tier:` via agents/models.yaml, so
+# reading `.models.claude` off the registry would see null and prove nothing.
+# What matters is that a model reaches the renderer, wherever it came from.
 @test "phase agents declare model intent for model-aware harnesses" {
-    local registry="$AGENTS_DIR/registry.yaml"
+    local resolved
+    resolved=$(uv run --project "$REAL_DOTFILES_DIR/agent-profile" --frozen \
+        -m agent_profile agents-json "$AGENTS_DIR/registry.yaml") \
+        || { echo "ap agents-json failed" >&2; return 1; }
+    local agent harness model
     for agent in explorer researcher reviewer coder; do
         for harness in claude codex opencode; do
-            run yq ".agents.${agent}.models.${harness}" "$registry"
-            assert_success
-            [[ "$output" != "null" ]] || { echo "$agent missing $harness model" >&2; return 1; }
+            model=$(jq -r --arg a "$agent" --arg h "$harness" \
+                '.[] | select(.name == $a) | .models[$h] // "null"' <<<"$resolved")
+            [[ "$model" != "null" && -n "$model" ]] \
+                || { echo "$agent missing $harness model" >&2; return 1; }
         done
-        run yq ".agents.${agent}.models.copilot" "$registry"
-        assert_success
-        [[ "$output" == "null" ]] || { echo "$agent must not set Copilot model (renderer ignores it)" >&2; return 1; }
+        model=$(jq -r --arg a "$agent" \
+            '.[] | select(.name == $a) | .models.copilot // "null"' <<<"$resolved")
+        [[ "$model" == "null" ]] \
+            || { echo "$agent must not set Copilot model (renderer ignores it)" >&2; return 1; }
     done
 }
 

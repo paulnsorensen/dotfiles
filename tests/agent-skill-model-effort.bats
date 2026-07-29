@@ -15,6 +15,7 @@
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 REGISTRY="$DOTFILES_DIR/agents/registry.yaml"
+MODELS="$DOTFILES_DIR/agents/models.yaml"
 CLAUDE_YAML="$DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
 
 setup() { command -v yq >/dev/null 2>&1 || skip "yq not installed"; }
@@ -29,6 +30,17 @@ expected_effort() {
     esac
 }
 
+# Expected effort for a registry tier name. Agents name a tier; the claude
+# model behind it lives in agents/models.yaml.
+expected_effort_for_tier() {
+    case "$1" in
+        fast) echo low ;;
+        mid) echo medium ;;
+        deep) echo high ;;
+        *) echo "UNMAPPED" ;;
+    esac
+}
+
 expected_codex_model() {
     case "$1" in
         haiku) echo gpt-5.6-luna ;;
@@ -38,27 +50,50 @@ expected_codex_model() {
     esac
 }
 
-@test "every agent has an explicit claude model and effort" {
-    local a model effort
+@test "every agent has an explicit tier and effort" {
+    local a tier effort
     while IFS= read -r a; do
-        model="$(yq -r ".agents.\"$a\".models.claude // \"\"" "$REGISTRY")"
+        tier="$(yq -r ".agents.\"$a\".tier // \"\"" "$REGISTRY")"
         effort="$(yq -r ".agents.\"$a\".effort // \"\"" "$REGISTRY")"
-        [[ -n "$model" ]] || { echo "agent '$a' has no models.claude" >&2; return 1; }
+        [[ -n "$tier" ]] || { echo "agent '$a' has no tier" >&2; return 1; }
         [[ -n "$effort" ]] || { echo "agent '$a' has no effort" >&2; return 1; }
     done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
 }
 
 @test "every agent's effort matches the tier→effort mapping" {
-    local a model effort want
+    local a tier effort want
     while IFS= read -r a; do
-        model="$(yq -r ".agents.\"$a\".models.claude" "$REGISTRY")"
+        tier="$(yq -r ".agents.\"$a\".tier" "$REGISTRY")"
         effort="$(yq -r ".agents.\"$a\".effort" "$REGISTRY")"
-        want="$(expected_effort "$model")"
+        want="$(expected_effort_for_tier "$tier")"
         [[ "$want" != "UNMAPPED" ]] \
-            || { echo "agent '$a' claude model '$model' is outside the haiku/sonnet/opus mapping" >&2; return 1; }
+            || { echo "agent '$a' tier '$tier' is outside the fast/mid/deep mapping" >&2; return 1; }
         [[ "$effort" == "$want" ]] \
-            || { echo "agent '$a' is $model/$effort — mapping wants $model/$want" >&2; return 1; }
+            || { echo "agent '$a' is $tier/$effort — mapping wants $tier/$want" >&2; return 1; }
     done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
+}
+
+@test "every tier in agents/models.yaml pairs its claude and codex models" {
+    # This used to be asserted 16 times, once per agent. The pins table is now
+    # the only place the pairing is written down, so assert it there — and
+    # assert every tier the effort mapping knows about actually exists.
+    local tier claude_model codex_model want
+    while IFS= read -r tier; do
+        claude_model="$(yq -r ".pins.\"$tier\".claude // \"\"" "$MODELS")"
+        codex_model="$(yq -r ".pins.\"$tier\".codex // \"\"" "$MODELS")"
+        want="$(expected_codex_model "$claude_model")"
+        [[ "$want" != "UNMAPPED" ]] \
+            || { echo "tier '$tier' claude model '$claude_model' has no Codex tier mapping" >&2; return 1; }
+        [[ "$codex_model" == "$want" ]] \
+            || { echo "tier '$tier' codex model '$codex_model' — mapping wants '$want'" >&2; return 1; }
+        [[ "$(expected_effort "$claude_model")" == "$(expected_effort_for_tier "$tier")" ]] \
+            || { echo "tier '$tier' names claude model '$claude_model' but their efforts disagree" >&2; return 1; }
+    done < <(yq -r '.pins | keys | .[]' "$MODELS")
+
+    for tier in fast mid deep; do
+        [[ "$(yq -r ".pins.\"$tier\" // \"\"" "$MODELS")" != "" ]] \
+            || { echo "agents/models.yaml is missing tier '$tier'" >&2; return 1; }
+    done
 }
 
 @test "no agent carries a reserved xhigh/max effort" {
@@ -70,16 +105,21 @@ expected_codex_model() {
     done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
 }
 
-@test "every agent uses the GPT-5.6 Codex model matching its tier" {
-    local a claude_model codex_model want
+# An agent may still override a single harness inline. Those overrides are
+# deliberate escapes from the tier, so assert only that they are not a silent
+# re-transcription of what the tier already says.
+@test "no agent's inline models override restates its tier" {
+    local a tier harness inline pinned
     while IFS= read -r a; do
-        claude_model="$(yq -r ".agents.\"$a\".models.claude // \"\"" "$REGISTRY")"
-        codex_model="$(yq -r ".agents.\"$a\".models.codex // \"\"" "$REGISTRY")"
-        want="$(expected_codex_model "$claude_model")"
-        [[ "$want" != "UNMAPPED" ]] \
-            || { echo "agent '$a' claude model '$claude_model' has no Codex tier mapping" >&2; return 1; }
-        [[ "$codex_model" == "$want" ]] \
-            || { echo "agent '$a' codex model '$codex_model' — mapping wants '$want'" >&2; return 1; }
+        tier="$(yq -r ".agents.\"$a\".tier // \"\"" "$REGISTRY")"
+        [[ -n "$tier" ]] || continue
+        for harness in claude codex; do
+            inline="$(yq -r ".agents.\"$a\".models.$harness // \"\"" "$REGISTRY")"
+            [[ -n "$inline" ]] || continue
+            pinned="$(yq -r ".pins.\"$tier\".$harness // \"\"" "$MODELS")"
+            [[ "$inline" != "$pinned" ]] \
+                || { echo "agent '$a' sets models.$harness to '$inline', which tier '$tier' already gives — drop it" >&2; return 1; }
+        done
     done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
 }
 

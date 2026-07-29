@@ -361,22 +361,32 @@ _cz_copy_encoded() {
     return 0
 }
 
-# Render one claude sub-agent file: YAML frontmatter from agents/registry.yaml
-# metadata + the instruction body from body_path. Mirrors ap's claude renderer
-# output shape (verified by diff against a live render).
-#   _cz_render_claude_agent <registry_yaml> <name> <dotfiles_root> <out_file>
+# Render one claude sub-agent file: YAML frontmatter from ap's resolved
+# agent JSON (see `ap agents-json`) + the instruction body from body_path.
+# ap's ingest resolves tier -> models once (agents/registry.yaml + tier ->
+# agents/models.yaml pins); reading that resolved dump here keeps this the
+# only Claude-side reader of the registry instead of re-deriving tier
+# resolution in jq. Mirrors ap's claude renderer output shape (verified by
+# diff against a live render).
+#   _cz_render_claude_agent <agents_json> <name> <dotfiles_root> <out_file>
 _cz_render_claude_agent() {
-    local registry="$1" name="$2" root="$3" out="$4"
+    local agents_json="$1" name="$2" root="$3" out="$4"
+    local agent_json
+    agent_json=$(jq -c --arg name "$name" '.[] | select(.name == $name)' <<<"$agents_json")
+    if [[ -z "$agent_json" ]]; then
+        log_error "claude agent '$name': not found in ap agents-json output"
+        return 1
+    fi
     local body_path
-    body_path=$(yq -r ".agents.\"$name\".body_path // \"\"" "$registry")
+    body_path=$(jq -r '.body_path // ""' <<<"$agent_json")
     if [[ -z "$body_path" || ! -f "$root/$body_path" ]]; then
-        log_error "claude agent '$name': body_path missing (registry: $registry)"
+        log_error "claude agent '$name': body_path missing (registry: $root/agents/registry.yaml)"
         return 1
     fi
     {
         echo "---"
         echo "name: $name"
-        yq -o=json ".agents.\"$name\"" "$registry" | jq -r '
+        jq -r '
             def line(k; v): if v == null then empty else k + ": " + v end;
             line("description";     .description),
             line("tools";           (if .tools then (.tools | join(", ")) else null end)),
@@ -386,7 +396,7 @@ _cz_render_claude_agent() {
             line("effort";          .effort),
             line("maxTurns";        (if .maxTurns then (.maxTurns | tostring) else null end)),
             line("skills";          (if .skills then "[" + (.skills | join(", ")) + "]" else null end))
-        '
+        ' <<<"$agent_json"
         echo "---"
         cat "$root/$body_path"
     } > "$out"
@@ -510,11 +520,22 @@ sync_claude_chezmoi_sources() {
     _cz_vendor_external_skills "$root/skills/_registry.yaml" "$staging/exact_skills" claude || return 1
     mkdir -p "$staging/exact_skills"
 
-    # agents — rendered from agents/registry.yaml
+    # agents — rendered from ap's resolved agent JSON (one reader of
+    # agents/registry.yaml + tier resolution instead of two independent ones)
+    # `ap` comes from THIS library's own clone, the registry from $root: the
+    # assembly renders an arbitrary repo root (its tests pass a synthetic one),
+    # which owns a registry but not necessarily a bin/ or profiles/ tree.
+    # DOTFILES_DIR= forces bin/ap to resolve its uv project from its own
+    # location rather than an inherited env var pointing at another clone.
+    local agents_json ap_bin="${BASH_SOURCE[0]%/*}/bin/ap"
+    if ! agents_json=$(DOTFILES_DIR='' "$ap_bin" agents-json "$root/agents/registry.yaml"); then
+        log_error "claude source assembly: $ap_bin agents-json failed"
+        return 1
+    fi
     mkdir -p "$staging/exact_agents"
     while IFS= read -r name; do
         [[ -z "$name" ]] && continue
-        _cz_render_claude_agent "$root/agents/registry.yaml" "$name" "$root" \
+        _cz_render_claude_agent "$agents_json" "$name" "$root" \
             "$staging/exact_agents/$name.md" || return 1
     done < <(yq -r '.claude.agents // [] | .[]' "$claude_reg")
 
