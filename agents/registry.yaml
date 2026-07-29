@@ -9,6 +9,17 @@
 # all metadata lives here. tools/disallowedTools are LISTS (renderers join
 # to CSV for claude/cursor and derive sandbox/permission for codex/opencode).
 # models is per-harness; color/effort/maxTurns/skills are Claude-honored fields.
+#
+# The Skill TOOL is withheld from every agent that does not invoke a skill.
+# Granting it injects the full skill listing into the spawn context — measured
+# at 11,355 tokens on 2.1.219, ~40% of a typical sub-agent's spawn weight, and
+# independent of the `skills:` preload list below. Withholding it by denylist
+# and omitting it from an allowlist save identically. Only researcher and
+# reviewer keep it; their bodies invoke `briesearch` and `age` through it.
+#
+# ToolSearch must be granted wherever an `mcp__` server is allowlisted: without
+# it Claude Code disables deferred MCP loading and every MCP schema loads
+# eagerly. ToolSearch itself measured at zero added context.
 agents:
   fromage-age-arch:
     description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
@@ -22,6 +33,8 @@ agents:
     - NotebookEdit
     - Grep
     - Glob
+    - Skill
+    - Agent
     color: red
     effort: high
     skills: []
@@ -42,6 +55,7 @@ agents:
     - Agent
     - Grep
     - Glob
+    - Skill
     color: red
     effort: low
     skills: []
@@ -76,6 +90,8 @@ agents:
     - AskUserQuestion
     - Grep
     - Glob
+    - Skill
+    - Agent
     color: red
     effort: high
     skills: []
@@ -97,6 +113,8 @@ agents:
     - Write
     - Grep
     - Glob
+    - Skill
+    - Agent
     maxTurns: 50
     body_path: agents/agent_definitions/ghostbuster.md
   nih-scanner:
@@ -115,6 +133,8 @@ agents:
     - AskUserQuestion
     - Grep
     - Glob
+    - Skill
+    - Agent
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/nih-scanner.md
@@ -125,10 +145,15 @@ agents:
       codex: gpt-5.6-terra
       cursor: claude-sonnet
     effort: medium
+    # Missed in the cheez→tilth migration: the body used to name the Serena MCP
+    # for symbol lookups while the allowlist granted no MCP at all, so dead-code
+    # verification had no structural backend. Granted tilth (plus the ToolSearch
+    # its deferral requires) to match every other read-only analysis agent.
     tools:
     - Read
     - Bash
-    - Agent
+    - ToolSearch
+    - mcp__tilth
     skills:
     - de-slop
     maxTurns: 50
@@ -140,10 +165,14 @@ agents:
       codex: gpt-5.6-terra
       cursor: claude-haiku
     effort: medium
+    # Body directs symbol/caller queries through tilth, which the allowlist did
+    # not grant; ToolSearch accompanies it so the MCP schemas stay deferred.
     tools:
     - Read
     - Write
     - Bash
+    - ToolSearch
+    - mcp__tilth
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/roquefort-wrecker.md
@@ -218,6 +247,7 @@ agents:
     - Agent
     - Grep
     - Glob
+    - Skill
     color: cyan
     effort: medium
     skills: []
@@ -229,15 +259,21 @@ agents:
       claude: sonnet
       codex: gpt-5.6-terra
       opencode: inherit
+    # briesearch is preloaded rather than reached through the Skill tool: the
+    # tool costs 11,355 tokens (it injects the whole skill listing) against
+    # ~3,400 to preload this one skill, for the same capability. reviewer makes
+    # the opposite trade because preloading `age` costs more than the tool.
     disallowedTools:
     - Edit
     - NotebookEdit
     - Agent
     - Grep
     - Glob
+    - Skill
     color: blue
     effort: medium
-    skills: []
+    skills:
+    - briesearch
     maxTurns: 50
     body_path: agents/agent_definitions/researcher.md
   reviewer:
@@ -261,21 +297,25 @@ agents:
   coder:
     # Runs on sonnet at medium effort: Sonnet 5 matches Opus at low/medium effort
     # at a fraction of the token cost, and the write surface's loop is bounded.
-    # Denies native Edit/Write/Grep/Glob/NotebookEdit — workspace file operations
-    # route through tilth directly. Denies Agent — a dispatched coder is a
-    # level-1 subagent and cannot fan out.
+    # Grants an explicit allowlist rather than a denylist: an allowlist keeps
+    # eager built-in tool schemas out of the spawn context, which is the bulk of
+    # sub-agent spawn weight (MCP schemas are already deferred). Workspace file
+    # operations route through tilth directly, so native Edit/Write/Grep/Glob/
+    # NotebookEdit are simply not granted. Agent is not granted — a dispatched
+    # coder is a level-1 subagent and cannot fan out.
+    # ToolSearch MUST stay in this list: Claude Code disables deferred MCP tool
+    # loading entirely when ToolSearch is absent from an agent's pool, which
+    # would load every MCP schema eagerly and cost more than the allowlist saves.
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop through tilth MCP tools. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through tilth_write — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: sonnet
       codex: gpt-5.6-terra
       opencode: inherit
-    disallowedTools:
-    - Agent
-    - Grep
-    - Glob
-    - Edit
-    - Write
-    - NotebookEdit
+    tools:
+    - Bash
+    - Read
+    - ToolSearch
+    - mcp__tilth
     color: green
     effort: medium
     # No frontmatter skills. Claude Code auto-invokes every listed skill at
@@ -307,6 +347,7 @@ agents:
     - Grep
     - Glob
     - NotebookEdit
+    - Skill
     color: yellow
     effort: medium
     skills: []

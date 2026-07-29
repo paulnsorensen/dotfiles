@@ -227,12 +227,49 @@ block_sha() {
 
 @test "coder denies native edit/search tools and subagent fan-out in the registry" {
     local registry="$AGENTS_DIR/registry.yaml"
+    # The coder may express its grant as either a `tools` allowlist or a
+    # `disallowedTools` denylist. Assert the invariant, not the shape: a tool is
+    # withheld when it is absent from the allowlist, or named in the denylist.
+    run yq -e '.agents.coder.tools' "$registry"
+    local has_allowlist=$([[ "$status" -eq 0 ]] && echo yes || echo no)
+
     # Exact membership per tool: a substring check for Edit would match NotebookEdit.
     for tool in Edit Write NotebookEdit Grep Glob Agent; do
-        run yq -e ".agents.coder.disallowedTools[] | select(. == \"$tool\")" "$registry"
-        [[ "$status" -eq 0 ]] || { echo "coder must deny $tool (workspace file operations go through tilth)" >&2; return 1; }
+        if [[ "$has_allowlist" == yes ]]; then
+            run yq -e ".agents.coder.tools[] | select(. == \"$tool\")" "$registry"
+            [[ "$status" -ne 0 ]] || { echo "coder must not grant $tool (workspace file operations go through tilth)" >&2; return 1; }
+        else
+            run yq -e ".agents.coder.disallowedTools[] | select(. == \"$tool\")" "$registry"
+            [[ "$status" -eq 0 ]] || { echo "coder must deny $tool (workspace file operations go through tilth)" >&2; return 1; }
+        fi
     done
+
     # The harness may expose native Read, but the coder body routes reads through tilth_read.
-    run yq -e '.agents.coder.disallowedTools[] | select(. == "Read")' "$registry"
-    [[ "$status" -ne 0 ]] || { echo "coder must keep native Read available" >&2; return 1; }
+    if [[ "$has_allowlist" == yes ]]; then
+        run yq -e '.agents.coder.tools[] | select(. == "Read")' "$registry"
+        [[ "$status" -eq 0 ]] || { echo "coder must keep native Read available" >&2; return 1; }
+    else
+        run yq -e '.agents.coder.disallowedTools[] | select(. == "Read")' "$registry"
+        [[ "$status" -ne 0 ]] || { echo "coder must keep native Read available" >&2; return 1; }
+    fi
+}
+
+@test "an agent allowlisting an MCP server also grants ToolSearch" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    # Claude Code disables deferred MCP tool loading outright when ToolSearch is
+    # absent from an agent's pool, so every MCP schema loads eagerly instead of
+    # by name. An allowlist naming an mcp__ server without ToolSearch therefore
+    # costs more context than granting no allowlist at all.
+    local offenders
+    offenders=$(yq -r '
+        .agents | to_entries[]
+        | select(.value.tools != null)
+        | select([.value.tools[] | select(test("^mcp__"))] | length > 0)
+        | select([.value.tools[] | select(. == "ToolSearch")] | length == 0)
+        | .key' "$registry")
+    [[ -z "$offenders" ]] || {
+        echo "these agents allowlist an mcp__ server without ToolSearch, which disables MCP deferral:" >&2
+        echo "$offenders" >&2
+        return 1
+    }
 }
