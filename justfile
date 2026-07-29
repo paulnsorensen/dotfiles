@@ -18,7 +18,7 @@ lint-shell:
 
 # ruff on python files
 lint-python:
-    ruff check skills/session-analytics/scripts/
+    ruff check skills/session-analytics/scripts/ agent-profile/agent_profile/
 
 # eslint on JS hooks (config in claude/hooks/eslint.config.js)
 lint-js:
@@ -31,9 +31,11 @@ lint-markdown:
 # autofix where supported (shellcheck has no autofix)
 lint-fix: lint-python-fix lint-js-fix lint-markdown-fix
 
-# ruff --fix + ruff format
+# ruff --fix + ruff format. agent-profile is check-only: `ruff format` over the
+# package is a ~300-line reformat unrelated to any lint rule, so it stays out
+# until someone lands it as its own commit.
 lint-python-fix:
-    ruff check --fix skills/session-analytics/scripts/
+    ruff check --fix skills/session-analytics/scripts/ agent-profile/agent_profile/
     ruff format skills/session-analytics/scripts/
 
 # eslint --fix
@@ -44,8 +46,15 @@ lint-js-fix:
 lint-markdown-fix:
     markdownlint-cli2 --fix '**/*.md'
 
-# run all tests
-test *ARGS:
+# run python + bats tests
+test *ARGS: test-python (test-bats ARGS)
+
+# agent-profile pytest suite
+test-python:
+    uv run --project agent-profile --frozen -m pytest agent-profile/tests
+
+# bats test suite
+test-bats *ARGS:
     ./tests/run-tests.sh {{ARGS}}
 
 # smoke tests — execute workflow definitions offline

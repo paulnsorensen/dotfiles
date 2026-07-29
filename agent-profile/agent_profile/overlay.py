@@ -61,6 +61,7 @@ import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
+
 from agent_profile.env import load_dotenv, resolve_env_value, resolve_item_env
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import mcp_server_entry
@@ -409,9 +410,9 @@ def _write_codex_config(
     and MCP world. The fresh config trusts no projects, so any
     ``.codex/config.toml`` in the working tree is loaded but inert."""
     sections: list[str] = [
-        'approval_policy = "on-request"\n'
+        ('approval_policy = "on-request"\n'
         'approvals_reviewer = "auto_review"\n'
-        'sandbox_mode = "workspace-write"\n'
+        'sandbox_mode = "workspace-write"\n')
     ]
     if manifest.system_prompt:
         sp = profile_dir / manifest.system_prompt

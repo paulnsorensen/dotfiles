@@ -102,16 +102,10 @@ def test_agent_writable_when_whitelist_grants_tilth_write() -> None:
     )
 
 
-def test_agent_writable_when_whitelist_grants_serena_editor() -> None:
+def test_agent_writable_when_whitelist_grants_tilth_wildcard() -> None:
+    # mcp__tilth__* subsumes tilth's writer — not read-only.
     assert not agent_is_read_only(
-        {"tools": ["Read", "mcp__serena__replace_symbol_body"]}
-    )
-
-
-def test_agent_writable_when_whitelist_grants_serena_wildcard() -> None:
-    # mcp__serena__* subsumes serena's editors — not read-only.
-    assert not agent_is_read_only(
-        {"tools": ["Read", "Grep", "Glob", "Bash", "mcp__serena__*"]}
+        {"tools": ["Read", "Grep", "Glob", "Bash", "mcp__tilth__*"]}
     )
 
 

@@ -731,9 +731,9 @@ def _hermetic_dotenv(monkeypatch, tmp_path):
 
 
 def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
-    """The shipped review profile must keep: Edit/Write/NotebookEdit + every
-    serena mutator + tilth_write denied; a read-only tool whitelist; a closed
-    MCP world of exactly tilth + context7."""
+    """The shipped review profile must keep: Edit/Write/NotebookEdit + tilth_write
+    denied; a read-only tool whitelist; a closed MCP world of exactly tilth +
+    context7."""
     _hermetic_dotenv(monkeypatch, tmp_path)
     pdir = find_profile_dir("review")
     assert pdir is not None, "real profiles/review not found"
@@ -748,12 +748,6 @@ def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
         "Write",
         "NotebookEdit",
         "mcp__tilth__tilth_write",
-        "mcp__serena__replace_symbol_body",
-        "mcp__serena__replace_content",
-        "mcp__serena__insert_before_symbol",
-        "mcp__serena__insert_after_symbol",
-        "mcp__serena__rename_symbol",
-        "mcp__serena__safe_delete_symbol",
     ):
         assert must_deny in deny, f"review profile dropped deny: {must_deny}"
 
@@ -1397,9 +1391,9 @@ def test_opencode_launch_profile_wins_name_collision(env, monkeypatch):
 
 def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
     """The shipped review profile launched on opencode must stay read-only:
-    OPENCODE_PERMISSION denies edit (from Edit/Write) and every serena
-    mutator + tilth_write appears as an mcp__* deny key. Closed MCP world is
-    exactly tilth + context7 (own, enabled)."""
+    OPENCODE_PERMISSION denies edit (from Edit/Write) and tilth_write appears
+    as an mcp__* deny key. Closed MCP world is exactly tilth + context7
+    (own, enabled)."""
     _hermetic_dotenv(monkeypatch, tmp_path)
     pdir = find_profile_dir("review")
     assert pdir is not None, "real profiles/review not found"
@@ -1408,12 +1402,7 @@ def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
 
     perm = json.loads(env["OPENCODE_PERMISSION"])
     assert perm["edit"] == "deny"
-    for mutator in (
-        "mcp__tilth__tilth_write",
-        "mcp__serena__replace_symbol_body",
-        "mcp__serena__rename_symbol",
-        "mcp__serena__safe_delete_symbol",
-    ):
+    for mutator in ("mcp__tilth__tilth_write",):
         assert perm[mutator] == "deny", f"review lost opencode deny: {mutator}"
 
     config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
