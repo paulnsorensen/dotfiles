@@ -140,15 +140,16 @@ block_sha() {
     assert_success
 }
 
-@test "reviewer may write only its own artifact through cheez-write" {
+@test "reviewer may write only its own artifact through tilth_write" {
     local registry="$AGENTS_DIR/registry.yaml"
 
-    run yq -e '.agents.reviewer.skills[] | select(. == "cheez-write")' "$registry"
-    assert_success
     run yq -e '.agents.reviewer.disallowedTools[] | select(. == "Write")' "$registry"
     assert_success
-    run grep -Fq 'write only your own `.cheese/` artifact through `cheez-write`' "$AGENTS_DIR/agent_definitions/reviewer.md"
+    run grep -Fq 'write only your own `.cheese/` artifact through `tilth_write`' "$AGENTS_DIR/agent_definitions/reviewer.md"
     assert_success
+    # The retired cheez-write skill must not return as the reviewer's write path.
+    run grep -Fq 'cheez-write' "$AGENTS_DIR/agent_definitions/reviewer.md"
+    assert_failure
 }
 
 # The descriptions promise read-only phase agents that cannot recurse, and a
@@ -172,25 +173,42 @@ block_sha() {
 @test "phase-agent skill references use installed names and stay scoped" {
     local registry="$AGENTS_DIR/registry.yaml"
 
+    # explorer carries no frontmatter skills. Its two former entries
+    # (cheez-search, cheez-read) named skills that no longer exist on disk.
     run yq '.agents.explorer.skills | join(" ")' "$registry"
     assert_success
-    [[ "$output" == "cheez-search cheez-read" ]] || { echo "explorer skills drifted: $output" >&2; return 1; }
+    [[ -z "$output" ]] || { echo "explorer skills drifted: $output" >&2; return 1; }
 
-    for agent in researcher reviewer; do
-        run yq ".agents.${agent}.skills | join(\" \")" "$registry"
-        assert_success
-        [[ "$output" != *cheese-flow:* ]] || { echo "$agent still references cheese-flow" >&2; return 1; }
-        [[ "$output" != *scout* ]] || { echo "$agent should not carry scout" >&2; return 1; }
+    # Retired names must never reappear in ANY agent's skills list. They cost
+    # nothing while the file is absent — but frontmatter skills are auto-invoked
+    # at spawn, so the day someone adds a skill under one of these names, every
+    # agent still listing it silently starts pasting that entire SKILL.md into
+    # its context on every dispatch. A fleet-wide context regression would be
+    # near-impossible to trace back to a stale registry entry, so guard the
+    # names directly rather than trusting them to stay unresolvable.
+    for dead in cheez-search cheez-read cheez-write commit scout; do
+        run yq -e ".agents[].skills[] | select(. == \"$dead\")" "$registry"
+        [[ "$status" -ne 0 ]] || { echo "retired skill '$dead' is back in an agent skills list" >&2; return 1; }
     done
 
+    run yq -r '.agents[].skills[]' "$registry"
+    assert_success
+    [[ "$output" != *cheese-flow:* ]] || { echo "a cheese-flow: prefixed skill is back in an agent skills list" >&2; return 1; }
+
+    # The coder carries NO frontmatter skills. Claude Code auto-invokes every
+    # listed skill at spawn, pasting each full SKILL.md body in as a user
+    # message before the agent reads its task — it is an auto-invoke list, not
+    # an availability list. Measured at 32,740 tokens for the old six-skill
+    # list: 52% of the 130k context ceiling burned before the first tool call.
+    # Skills stay reachable on demand through the Skill tool.
     run yq '.agents.coder.skills | join(" ")' "$registry"
     assert_success
-    [[ "$output" == "cook press cure de-slop tdd-assertions commit" ]] || { echo "coder skills drifted: $output" >&2; return 1; }
+    [[ -z "$output" ]] || { echo "coder must carry no frontmatter skills (auto-invoked at spawn, costs context): $output" >&2; return 1; }
 }
 
 @test "read-only phase agents deny code edits and subagent fan-out in the registry" {
     local registry="$AGENTS_DIR/registry.yaml"
-    # explorer + reviewer deny native Write and subagent fan-out; reviewer writes only its own artifact through cheez-write.
+    # explorer + reviewer deny native Write and subagent fan-out; reviewer writes only its own artifact through tilth_write.
     for agent in explorer reviewer; do
         run yq ".agents.${agent}.disallowedTools" "$registry"
         assert_success

@@ -19,7 +19,7 @@ You receive:
 
 ### 1. Structural search
 
-Use `cheez-search` symbol and caller queries for reference counting.
+Use `tilth_search` symbol and caller queries for reference counting.
 
 ### 2. Discover Files
 
@@ -58,7 +58,7 @@ Build a lookup: `{symbol → [spec_file, line_number]}`.
 
 For each source file, identify exported/public symbols:
 
-Use `cheez-search` to list exported/public symbols and run caller queries for each. Zero external references is a candidate.
+Use `tilth_search` to list exported/public symbols and run caller queries for each. Zero external references is a candidate.
 
 ### 5. Scan for Internal Dead Code
 
@@ -123,7 +123,7 @@ Older last-touch dates strengthen the case that code is truly dead (not just rec
 
 ## Severity Tiers
 
-Use the four-tier severity vocabulary: `blocker > high > medium > low`. Surface `medium` and above; surface `low` only when evidence is `<certain>`. Tag every finding with `<certain>` when a `cheez-search` caller query verifies zero references, otherwise `<speculative>`.
+Use the four-tier severity vocabulary: `blocker > high > medium > low`. Surface `medium` and above; surface `low` only when evidence is `<certain>`. Tag every finding with `<certain>` when a `tilth_search` caller query verifies zero references, otherwise `<speculative>`.
 
 Never assign `blocker` — dead code is never a release blocker. Cap at `high`, and only for a verified dormant chain of exported symbols; dynamic dispatch, reflection, and codegen can hide callers.
 
@@ -153,7 +153,7 @@ Write the full JSON report to `$TMPDIR/ghostbuster-{slug}.json`. The JSON schema
         "referenceCount": 0,
         "specMentions": [],
         "lastGitTouch": "2025-08-14",
-        "verifiedVia": "cheez-search caller query"
+        "verifiedVia": "tilth_search caller query"
       },
       "action": "Safe to delete — zero callers, no spec references, untouched for 7 months"
     }
@@ -185,7 +185,7 @@ Return to the orchestrator ONLY a structured summary (max 2000 chars):
 
 ## Rules
 
-- Use `cheez-search` caller queries for reference counting; dynamic dispatch and codegen can still hide callers.
+- Use `tilth_search` caller queries for reference counting; dynamic dispatch and codegen can still hide callers.
 - Include the file path and symbol name for every finding — vague findings are useless
 - Specs can live anywhere: `.claude/specs/`, `docs/specs/`, `specs/`, `SPEC.md` — glob broadly
 - Surface medium+ (and certain lows) — below that, don't surface. The orchestrator trusts your threshold.
