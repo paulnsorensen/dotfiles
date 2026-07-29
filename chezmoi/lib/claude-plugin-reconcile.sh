@@ -55,6 +55,7 @@ claude_plugin_reconcile() {
         < <(jq -r '.[].key' <<<"$desired_json")
 
     _in() { local n="$1"; shift; local x; for x in "$@"; do [[ "$x" == "$n" ]] && return 0; done; return 1; }
+    _user_installed() { [[ -f "$installed_file" ]] && jq -e --arg id "$1" '(.plugins[$id] // []) | any(.scope == "user")' "$installed_file" >/dev/null 2>&1; }
 
     # ── prime ──────────────────────────────────────────────────────────────
     # Add each desired marketplace by root; record its canonical name (taken
@@ -82,6 +83,31 @@ claude_plugin_reconcile() {
         fi
     done < <(jq -r '.[] | [.key, .marketplace_root] | @tsv' <<<"$desired_json")
 
+    # ── install desired plugins at user scope ────────────────────────────────
+    # Enabling via settings.json does not populate installed_plugins.json; the
+    # CLI must install. Idempotent: skip ids already user-installed. Verify by
+    # post-condition rather than exit code: `claude plugin install`'s exit code
+    # does not distinguish a real failure from an "already installed" nonzero,
+    # so re-read installed_file and assert the id landed at user scope. A real
+    # failure sets rc=1, which defers the destructive prune/uninstall legs
+    # below, leaves the manifest unchanged, and propagates to the caller so
+    # chezmoi retries this run_onchange on the next apply.
+    if [[ -n "$installed_file" ]]; then
+        local id
+        for id in "${owned_ids[@]:-}"; do
+            [[ -z "$id" ]] && continue
+            if _user_installed "$id"; then
+                continue
+            fi
+            echo "  Installing plugin (user scope): $id"
+            claude plugin install "$id" >/dev/null 2>&1 || true
+            if ! _user_installed "$id"; then
+                echo "  WARN: 'claude plugin install $id' did not result in a user-scope install — run 'claude plugin install $id' by hand." >&2
+                rc=1
+            fi
+        done
+    fi
+
     # ── prune (manifest-owned marketplaces only) ───────────────────────────
     if [[ -f "$manifest" ]]; then
         while IFS= read -r _n; do [[ -n "$_n" ]] && prior_names+=("$_n"); done < "$manifest"
@@ -102,24 +128,6 @@ claude_plugin_reconcile() {
                 echo "  Removing retired marketplace: $m"
                 claude plugin marketplace remove "$m" >/dev/null 2>&1 || rc=1
             fi
-        done
-    fi
-
-    # ── install desired plugins at user scope ────────────────────────────────
-    # Enabling via settings.json does not populate installed_plugins.json; the
-    # CLI must install. Idempotent: skip ids already user-installed; tolerate an
-    # "already installed" nonzero exit without failing the reconcile.
-    if [[ -n "$installed_file" ]]; then
-        local id
-        for id in "${owned_ids[@]:-}"; do
-            [[ -z "$id" ]] && continue
-            if [[ -f "$installed_file" ]] \
-                && jq -e --arg id "$id" '(.plugins[$id] // []) | any(.scope == "user")' "$installed_file" >/dev/null 2>&1; then
-                continue
-            fi
-            echo "  Installing plugin (user scope): $id"
-            claude plugin install "$id" >/dev/null 2>&1 \
-                || echo "  WARN: 'claude plugin install $id' failed (may already be installed) — left as-is." >&2
         done
     fi
 
