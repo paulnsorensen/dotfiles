@@ -82,6 +82,11 @@ const BUDGETS = {
   coder: { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   // general-purpose sub-agents run the same coder-shaped workloads.
   'general-purpose': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
+  // generalist is the capped stand-in for the built-in general-purpose
+  // agent (agents/registry.yaml declares maxTurns: 100) — mirror
+  // general-purpose's budget exactly so it isn't halved by falling to
+  // `default`.
+  generalist: { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   // milknado worker's exact reported agent_type is unobserved — key both
   // plausible spellings at coder tier so whichever the plugin emits resolves
   // correctly instead of silently falling to `default`.
@@ -90,6 +95,10 @@ const BUDGETS = {
   reviewer: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   explorer: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   researcher: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
+  // fork inherits the parent's full transcript at spawn; PreToolUse
+  // captures a baseline snapshot and charges only accumulation past it (see
+  // chargedTokens). Turn/context ceilings match `default`.
+  fork: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   default: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
 };
 
@@ -210,6 +219,12 @@ function hardNudgedFile(dir) {
   return path.join(dir, 'hard-nudged');
 }
 
+// Fork's captured baseline: the inherited context-token reading at its first
+// PreToolUse. Absent for every other agent type.
+function baselineFile(dir) {
+  return path.join(dir, 'baseline');
+}
+
 function fileSize(file) {
   try {
     return fs.statSync(file).size;
@@ -236,7 +251,47 @@ function readState(dir) {
     checkpointSpent: fileExists(checkpointSpentFile(dir)),
     nudged: fileExists(nudgedFile(dir)),
     hardNudged: fileExists(hardNudgedFile(dir)),
+    baseline: readBaseline(dir),
   };
+}
+
+// Fork's captured baseline token count, or null when absent/unparseable —
+// null means "no baseline yet" and callers fail open to the absolute
+// comparison. Never throws.
+function readBaseline(dir) {
+  try {
+    const raw = fs.readFileSync(baselineFile(dir), 'utf8');
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+// Create-if-absent snapshot of a fork's inherited context tokens, taken at
+// its first PreToolUse. Atomic 'wx' create: first writer wins, so concurrent
+// batched PreToolUse calls can't race a read-modify-write. Fail-open — a
+// write error (EEXIST from losing the race, or any other failure) is
+// swallowed; baseline capture is best-effort and never blocks the call.
+function captureBaseline(dir, tokens) {
+  try {
+    ensureCounterDir(dir);
+    fs.writeFileSync(baselineFile(dir), String(tokens), { flag: 'wx' });
+  } catch {
+    /* fail-open */
+  }
+}
+
+// Tokens to charge against ctxSoft/ctxHard. Forks with a captured baseline
+// are charged only accumulation past it, and only when the current reading
+// is itself trustworthy (source === 'tokens') — a bytes-fallback or absent
+// reading is a different scale and must never be diffed against a
+// tokens-scale baseline. Every other type, a fork with no baseline yet, or
+// an untrustworthy current reading keeps today's absolute token count — the
+// fail-open path.
+function chargedTokens(type, tokens, baseline, source) {
+  if (type !== 'fork' || baseline === null || source !== 'tokens') return tokens;
+  return Math.max(0, tokens - baseline);
 }
 
 function ensureCounterDir(dir) {
@@ -614,19 +669,23 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
   }
 
   if (evt === 'PreToolUse') {
-    const state = incrementTurn(dir);
     const { tokens, source: ctxSource } = contextTokensFromEvent(event);
+    if (type === 'fork' && ctxSource === 'tokens') captureBaseline(dir, tokens);
+    const state = incrementTurn(dir);
+    const charged = chargedTokens(type, tokens, state.baseline, ctxSource);
     debug(`pre type=${type} turns=${state.turns}/${budget.turnHard} ` +
-      `tokens=${tokens}/${budget.ctxHard} checkpointSpent=${state.checkpointSpent}`);
+      `tokens=${charged}/${budget.ctxHard} checkpointSpent=${state.checkpointSpent}`);
     const fields = {
       budget_type: type,
       turns: state.turns,
       tokens,
+      baseline: state.baseline,
+      charged_tokens: charged,
       ctx_source: ctxSource,
       checkpointSpent: state.checkpointSpent,
       ...thresholdFields(budget),
     };
-    if (state.turns > budget.turnHard || tokens > budget.ctxHard) {
+    if (state.turns > budget.turnHard || charged > budget.ctxHard) {
       if (isCheckpointWrite(event) && !state.checkpointSpent) {
         if (markOnce(dir, checkpointSpentFile(dir))) {
           writeDecision(event, { ...fields, checkpointSpent: true, action: 'allow', reason: 'checkpoint-write' });
@@ -634,7 +693,7 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
         }
       }
       const checkpointSpent = fileExists(checkpointSpentFile(dir));
-      const reason = denyReason(type, state.turns, tokens, budget, checkpointSpent);
+      const reason = denyReason(type, state.turns, charged, budget, checkpointSpent);
       writeDecision(event, { ...fields, checkpointSpent, action: 'deny', reason: 'hard-ceiling' });
       emit.deny(reason);
       return { action: 'deny', reason };
@@ -646,21 +705,24 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
   if (evt === 'PostToolUse') {
     let state = readState(dir);
     const { tokens, source: ctxSource } = contextTokensFromEvent(event);
+    const charged = chargedTokens(type, tokens, state.baseline, ctxSource);
     const fields = {
       budget_type: type,
       turns: state.turns,
       tokens,
+      baseline: state.baseline,
+      charged_tokens: charged,
       ctx_source: ctxSource,
       checkpointSpent: state.checkpointSpent,
       ...thresholdFields(budget),
     };
 
-    if (tokens > budget.ctxHard && !state.hardNudged) {
+    if (charged > budget.ctxHard && !state.hardNudged) {
       const created = markHardNudged(dir);
       if (created) {
         markNudged(dir); // suppress the soft nudge too — one nudge per agent max
         const checkpointSpent = fileExists(checkpointSpentFile(dir));
-        debug(`hard-nudge type=${type} turns=${state.turns} tokens=${tokens} checkpointSpent=${checkpointSpent}`);
+        debug(`hard-nudge type=${type} turns=${state.turns} tokens=${charged} checkpointSpent=${checkpointSpent}`);
         const context = hardNudgeContext(type, budget, checkpointSpent);
         writeDecision(event, { ...fields, action: 'nudge', reason: 'hard-threshold' });
         emit.nudge(context);
@@ -675,9 +737,9 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       writeDecision(event, { ...fields, action: 'allow', reason: 'already-nudged' });
       return { action: 'allow', reason: 'already-nudged' };
     }
-    if (state.turns >= budget.turnSoft || tokens >= budget.ctxSoft) {
+    if (state.turns >= budget.turnSoft || charged >= budget.ctxSoft) {
       markNudged(dir);
-      debug(`nudge type=${type} turns=${state.turns} tokens=${tokens}`);
+      debug(`nudge type=${type} turns=${state.turns} tokens=${charged}`);
       const context = nudgeContext(type, budget);
       writeDecision(event, { ...fields, action: 'nudge', reason: 'soft-threshold' });
       emit.nudge(context);

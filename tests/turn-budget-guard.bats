@@ -812,3 +812,70 @@ backdate_mtime() {
     [[ "$(log_record | jq -r '.harness')" == "opencode" ]]
     [[ "$(log_record | jq -r '.action')" == "deny" ]]
 }
+
+# ── A12 ── fork baseline exemption ───────────────────────────────────
+
+@test "A12: fork's first call, inherited context far above ctxHard, is allowed" {
+    seed_turns s3 f1 5
+    seed_usage_transcript s3 f1 "178791:0:0"  # real observed inherited figure, > ctxHard (130000)
+    fire "$(pre_event s3 f1 fork)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.budget_type')" == "fork" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "178791" ]]
+    [[ "$(log_record | jq -r '.baseline')" == "178791" ]]
+    [[ "$(log_record | jq -r '.charged_tokens')" == "0" ]]
+    [[ "$(cat "$CLAUDE_TURN_BUDGET_DIR/s3/f1/baseline")" == "178791" ]]
+}
+
+@test "A12: fork is denied once its OWN accumulation past baseline exceeds ctxHard" {
+    seed_turns s4 f2 5
+    seed_usage_transcript s4 f2 "178791:0:0"
+    fire "$(pre_event s4 f2 fork)"
+    [[ "$(verdict)" == "allow" ]]
+
+    seed_usage_transcript s4 f2 "$((178791 + 130001)):0:0"  # baseline + 130001 charged tokens
+    fire "$(pre_event s4 f2 fork)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$(log_record | jq -r '.baseline')" == "178791" ]]
+    [[ "$(log_record | jq -r '.charged_tokens')" == "130001" ]]
+}
+
+@test "A12: a non-fork type (coder) at 130001 tokens is still denied — absolute path untouched" {
+    seed_turns s5 c1 5
+    seed_usage_transcript s5 c1 "130001:0:0"
+    fire "$(pre_event s5 c1 coder)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$(log_record | jq -r '.charged_tokens')" == "130001" ]]
+    [[ -z "$(log_record | jq -r '.baseline')" || "$(log_record | jq -r '.baseline')" == "null" ]]
+}
+
+@test "A12: fork's first call with an untrustworthy (source=none) reading does not poison the baseline" {
+    seed_turns s6 f3 5
+    # No transcript fixture written -> contextTokensFromEvent resolves to
+    # tokens:0, source:'none'. An untrustworthy first reading must not
+    # captureBaseline at 0, or the fork would be charged absolutely forever.
+    fire "$(pre_event s6 f3 fork)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ ! -e "$CLAUDE_TURN_BUDGET_DIR/s6/f3/baseline" ]]
+
+    # A later, trustworthy (source='tokens') reading still establishes the
+    # baseline -- even though the inherited figure alone exceeds ctxHard,
+    # it is allowed because it becomes the baseline rather than being
+    # compared against a stale/absent one.
+    seed_usage_transcript s6 f3 "178791:0:0"
+    fire "$(pre_event s6 f3 fork)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.baseline')" == "178791" ]]
+    [[ "$(log_record | jq -r '.charged_tokens')" == "0" ]]
+    [[ "$(cat "$CLAUDE_TURN_BUDGET_DIR/s6/f3/baseline")" == "178791" ]]
+}
+
+# ── A13 — generalist resolves the general-purpose tier ───────────────
+
+@test "A13: generalist at 51 turns is allowed (registry maxTurns: 100, not default's 50)" {
+    seed_turns s13 g1 51
+    fire "$(pre_event s13 g1 generalist)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.budget_type')" == "generalist" ]]
+    [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
+}

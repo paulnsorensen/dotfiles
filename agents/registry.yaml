@@ -24,8 +24,7 @@ agents:
     - Glob
     color: red
     effort: high
-    skills:
-    - cheez-search
+    skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-arch.md
   fromage-age-history:
@@ -45,8 +44,7 @@ agents:
     - Glob
     color: red
     effort: low
-    skills:
-    - cheez-search
+    skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-history.md
   fromage-fort:
@@ -63,9 +61,6 @@ agents:
     - Bash
     skills:
     - gh
-    - cheez-search
-    - cheez-write
-    - commit
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-fort.md
   fromage-secaudit:
@@ -83,8 +78,7 @@ agents:
     - Glob
     color: red
     effort: high
-    skills:
-    - cheez-search
+    skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-secaudit.md
   ghostbuster:
@@ -121,8 +115,7 @@ agents:
     - AskUserQuestion
     - Grep
     - Glob
-    skills:
-    - cheez-search
+    skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/nih-scanner.md
   ricotta-reducer:
@@ -137,7 +130,6 @@ agents:
     - Bash
     - Agent
     skills:
-    - cheez-search
     - de-slop
     maxTurns: 50
     body_path: agents/agent_definitions/ricotta-reducer.md
@@ -152,8 +144,7 @@ agents:
     - Read
     - Write
     - Bash
-    skills:
-    - cheez-search
+    skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/roquefort-wrecker.md
   duckdb-expert:
@@ -189,8 +180,7 @@ agents:
     tools:
     - Bash
     - Read
-    skills:
-    - cheez-search
+    skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/whey-drainer.md
   worktree-content-digest:
@@ -213,7 +203,7 @@ agents:
   # are full-phase workers an orchestrator dispatches to. Their descriptions
   # carry PROACTIVE triggers so they fire under every easy-cheese skill and any
   # user-installed skill that needs grounding before it acts. They route file
-  # I/O through the cheez-* skills (tilth MCP), not host tools.
+  # I/O through the tilth MCP tools, not host tools.
   # Copilot CLI renders these agents too, but ignores per-agent model overrides.
   explorer:
     description: Read-only codebase investigator. Answers "where / how / what" questions by searching and reading — never writes. Returns a structured findings digest (file:line citations, call paths, conclusions), keeping the file dumps out of the parent's context. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
@@ -230,9 +220,7 @@ agents:
     - Glob
     color: cyan
     effort: medium
-    skills:
-    - cheez-search
-    - cheez-read
+    skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/explorer.md
   researcher:
@@ -249,14 +237,11 @@ agents:
     - Glob
     color: blue
     effort: medium
-    skills:
-    - briesearch
-    - cheez-search
-    - cheez-read
+    skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/researcher.md
   reviewer:
-    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path through an explicit severity-report or taste-test contract. Source-read-only — never writes fixes; may write only its own .cheese artifact through cheez-write. A top-level /age orchestrator may supply specialist evidence. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
+    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path through an explicit severity-report or taste-test contract. Source-read-only — never writes fixes; may write only its own .cheese artifact through tilth_write. A top-level /age orchestrator may supply specialist evidence. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
     models:
       claude: opus
       codex: gpt-5.6-sol
@@ -270,11 +255,7 @@ agents:
     - Glob
     color: red
     effort: high
-    skills:
-    - age
-    - cheez-search
-    - cheez-read
-    - cheez-write
+    skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/reviewer.md
   coder:
@@ -297,13 +278,13 @@ agents:
     - NotebookEdit
     color: green
     effort: medium
-    skills:
-    - cook
-    - press
-    - cure
-    - de-slop
-    - tdd-assertions
-    - commit
+    # No frontmatter skills. Claude Code auto-invokes every listed skill at
+    # spawn, pasting each full SKILL.md body in as a user message before the
+    # agent reads its task — it is an auto-invoke list, not an availability
+    # list. The old list (cook/press/cure/de-slop/tdd-assertions/commit) cost
+    # 32,740 tokens, 52% of the 130k context ceiling, every dispatch. The
+    # coder still reaches any skill on demand via the Skill tool.
+    skills: []
     maxTurns: 100
     body_path: agents/agent_definitions/coder.md
   generalist:
@@ -316,7 +297,7 @@ agents:
     # built-in. Cap 100 matches measured general-purpose work (p90 101) so it
     # clips only the runaway tail, not legitimate p90 runs. Denies Agent (a
     # level-1 subagent cannot fan out).
-    description: General-purpose catch-all for an open-ended, multi-step task that does not fit a specialist phase agent — mixed research, code reading, and synthesis in one dispatch. The capped stand-in for the built-in general-purpose agent. Prefer a specialist when the task is cleanly one shape — explorer for "where/how/what" code questions, researcher for external/library/web facts, reviewer for checking a diff before it lands, coder for writing or changing code. Use this only as the fallback when no single specialist owns the task. Routes file I/O through the cheez-* (tilth) skills.
+    description: General-purpose catch-all for an open-ended, multi-step task that does not fit a specialist phase agent — mixed research, code reading, and synthesis in one dispatch. The capped stand-in for the built-in general-purpose agent. Prefer a specialist when the task is cleanly one shape — explorer for "where/how/what" code questions, researcher for external/library/web facts, reviewer for checking a diff before it lands, coder for writing or changing code. Use this only as the fallback when no single specialist owns the task. Routes file I/O through the tilth MCP tools.
     models:
       claude: sonnet
       codex: gpt-5.6-terra
@@ -328,9 +309,6 @@ agents:
     - NotebookEdit
     color: yellow
     effort: medium
-    skills:
-    - cheez-search
-    - cheez-read
-    - cheez-write
+    skills: []
     maxTurns: 100
     body_path: agents/agent_definitions/generalist.md

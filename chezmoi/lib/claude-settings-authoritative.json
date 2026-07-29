@@ -57,6 +57,9 @@
   "editorMode": "vim",
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
+  "worktree": {
+    "baseRef": "head"
+  },
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [

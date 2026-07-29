@@ -115,7 +115,7 @@ N low findings not surfaced (speculative or out-of-scope)
 
 ## Symbol Intelligence
 
-Use `cheez-search` symbol and caller queries to inspect the production path and identify affected tests.
+Use `tilth_search` symbol and caller queries to inspect the production path and identify affected tests.
 
 ## Quality Gates
 

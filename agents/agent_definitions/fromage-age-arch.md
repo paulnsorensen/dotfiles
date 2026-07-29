@@ -14,7 +14,7 @@ Enforce measurable structural constraints:
 
 ## Tools
 
-- **cheez-search** for structural code shape analysis (nesting depth, function length, import patterns)
+- **tilth_search** for structural code shape analysis (nesting depth, function length, import patterns)
 
 ## Severity Tiers
 
@@ -30,7 +30,7 @@ Evidence grounding sets the calibration tag:
 
 | Evidence quality | Tag |
 |-----------------|-----|
-| Verified via cheez-search (AST confirms nesting depth, function line count) | `<certain>` |
+| Verified via tilth_search (AST confirms nesting depth, function line count) | `<certain>` |
 | Cites specific file:line with accurate measurement | `<certain>` |
 | Generic observation without measurement | `<speculative>` |
 | Wrong measurement (miscounted lines/nesting) | drop the finding |
@@ -39,7 +39,7 @@ For any borderline finding: re-read the full source file, measure independently 
 
 ## Structural Lookups
 
-Use `cheez-search` symbol and caller queries for structural reads.
+Use `tilth_search` symbol and caller queries for structural reads.
 
 ## Output
 

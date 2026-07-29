@@ -13,7 +13,7 @@ You receive:
 
 ### 1. Structural search
 
-Use `cheez-search` symbol and caller queries alongside ast-grep.
+Use `tilth_search` symbol and caller queries alongside ast-grep.
 
 ### 2. Discover Files
 
@@ -111,7 +111,7 @@ Glob: {scope}/**/lib/**/*.{ts,js,py,rs,go}
 Glob: {scope}/**/common/**/*.{ts,js,py,rs,go}
 ```
 
-For each utility file found, use `cheez-search` to inventory exported functions. Flag functions whose names match known library functionality:
+For each utility file found, use `tilth_search` to inventory exported functions. Flag functions whose names match known library functionality:
 
 | Function name pattern | Category | Common library |
 |----------------------|----------|----------------|
@@ -133,7 +133,7 @@ For each utility file found, use `cheez-search` to inventory exported functions.
 
 ### 5. Measure Usage
 
-For each flagged function, use `cheez-search` caller queries to count callers:
+For each flagged function, use `tilth_search` caller queries to count callers:
 
 - 0 callers → dead code (note, but lower priority for NIH audit)
 - 1-3 callers → low coupling, easy migration (S effort)
