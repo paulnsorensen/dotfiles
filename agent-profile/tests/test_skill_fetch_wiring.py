@@ -9,14 +9,13 @@ by any renderer (that would copy the repo root by accident).
 from __future__ import annotations
 
 import pytest
-
 from agent_profile import cli
 from agent_profile.parse import parse_manifest
 from agent_profile.renderers.claude import ClaudeRenderer
 from agent_profile.renderers.codex import CodexRenderer
 from agent_profile.renderers.copilot import CopilotRenderer
-from tests.conftest import install_profile, write_profile
 
+from tests.conftest import install_profile, write_profile
 
 # ─── renderers skip source-only skills ────────────────────────────────
 

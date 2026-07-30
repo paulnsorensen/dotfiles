@@ -16,12 +16,11 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_profile import cli, compile_command, shared
+from agent_profile.cli import ALL_HARNESSES, CliError
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import Manifest, ParseError
 from agent_profile.renderers.base import MergedConfigError, mcps_for
-from agent_profile.cli import ALL_HARNESSES, CliError
 
 GOLDEN = Path(__file__).parent / "fixtures" / "golden"
 

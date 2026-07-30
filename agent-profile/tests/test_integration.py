@@ -13,6 +13,7 @@ import json
 
 from agent_profile import cli
 from agent_profile.manifest import manifest_path
+
 from tests.conftest import install_profile, write_profile
 
 
@@ -272,7 +273,8 @@ def test_two_profiles_share_skill_refcounted(env, capsys, stub_renderers):
         )
     # The stub renderer does not write skills; use the shared writer directly
     # to exercise ref-counting on .agents/skills/<n>/ at the manifest level.
-    from agent_profile import shared, manifest as m
+    from agent_profile import manifest as m
+    from agent_profile import shared
 
     out_a: list[str] = []
     shared.copy_shared_skill(env.target, "widget", env.profiles / "alpha/skills/widget", out_a)

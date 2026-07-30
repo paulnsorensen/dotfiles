@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from agent_profile.parse import Manifest
 from agent_profile.renderers.copilot import CopilotRenderer
 
@@ -490,7 +489,7 @@ def test_render_then_clean_round_trip(target, src):
 
 # ─── canonical permissions (curd 4) ─────────────────────────────────────
 
-from agent_profile.renderers.copilot import launch_flags as _launch_flags  # noqa: E402
+from agent_profile.renderers.copilot import launch_flags as _launch_flags
 
 
 def _perm_manifest(src: Path, settings: dict, **sections) -> Manifest:

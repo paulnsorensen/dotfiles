@@ -190,9 +190,11 @@ AGENTS_DOTFILES="$DOTFILES_DIR/agents"
 
 # base-sync is RETIRED (spec: chezmoi-authoritative-claude, decision E1/A2).
 # Global claude config now deploys via chezmoi from
-# chezmoi/.chezmoidata/claude.yaml on `dots sync` (additions AND removals);
-# other harnesses (codex/opencode/cursor/copilot) are frozen pending their own
-# migration spec. `ap` remains only for scoped/ephemeral profiles (`ccp <name>`).
+# chezmoi/.chezmoidata/claude.yaml on `dots sync` (additions AND removals).
+# Codex followed (spec: chezmoi-authoritative-codex): chezmoi/.chezmoidata/
+# codex.yaml + private_dot_codex/ deploy ~/.codex the same way. opencode/cursor/
+# copilot are still frozen pending their own migration spec. `ap` remains only
+# for scoped/ephemeral profiles (`ccp <name>`).
 alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'
 # Claude's MCP edit surface is the claude registry; `dots sync` reconciles

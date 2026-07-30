@@ -13,13 +13,13 @@ from __future__ import annotations
 import sys
 
 import pytest
-
 from agent_profile import fetch_sources_command as fsc
 from agent_profile.fetch_sources_command import (
     FetchSourcesError,
     cmd_fetch_sources,
     fetch_sources,
 )
+
 from tests.compile_fixtures import write_live_profile, write_minimal_includes
 from tests.conftest import write_profile
 

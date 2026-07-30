@@ -17,6 +17,7 @@ When work establishes a durable decision or gotcha, record its *why* with `add_m
 | `ap` profiles, renderers, install/launch | [[architecture/agent-profile]] |
 | MCP secret passthrough | [[architecture/mcp-secret-handling]] |
 | Config drift and settings repair | [[architecture/config-drift]] |
+| Codex-authoritative chezmoi regime | [[architecture/chezmoi-authoritative-codex]] |
 | Harness wiring | [[harnesses/index]] |
 | Sync and chezmoi | [[operations/sync-and-chezmoi]] |
 | Git tooling, prek, Claude plugins, skhd | [[operations/dev-environment]] |
@@ -35,10 +36,19 @@ Never edit a rendered target. Edit the source, then deploy.
 | Local/external skill | `skills/` or `skills/_registry.yaml` + `claude.yaml` | `dots sync` |
 | Cross-harness plugin | `agents/plugins/registry.yaml` | `dots sync` or `plugin-sync` |
 | Claude-native plugin | `claude/plugins/registry.yaml` | `dots sync` |
+| Codex MCP, config scalar, or agent selection | `chezmoi/.chezmoidata/codex.yaml` | `dots sync` |
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
 | Package / profile / OMP config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/omp.yaml` | relevant `dots` command |
 
-Claude-global configuration is chezmoi-authoritative; other harnesses remain frozen pending migration.
+Claude-global and Codex-global configuration are chezmoi-authoritative; opencode,
+Cursor, and Copilot remain frozen pending migration.
+
+Codex hooks are not declared in `codex.yaml` — they derive from
+`agents/hooks/registry.yaml` (entries whose `harnesses` includes codex).
+`~/.codex/config.toml` is merged, not overwritten: the CLI writes its own runtime
+state (`projects`, `hooks.state`, `marketplaces`, `plugins`) into the same file, so
+only registry-declared keys are overlaid. `mcp_servers` is the exception — it is
+replaced wholesale, so deleting a server there evicts it from the live file.
 
 ## Required gates
 

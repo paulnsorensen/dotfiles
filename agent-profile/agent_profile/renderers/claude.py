@@ -827,7 +827,7 @@ def _managed_signatures_per_event(
 
 def _prune_settings_blocks(
     event_array: list, signatures: _ManagedSigs
-) -> "list | None":
+) -> list | None:
     """Rebuild a settings.json event array with managed hooks removed at the
     inner-hook level. Returns ``None`` when nothing matched (the caller
     short-circuits to avoid a no-op rewrite). A block whose inner hooks are

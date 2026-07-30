@@ -19,7 +19,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import Renderer
 from agent_profile.renderers.opencode import OpencodeRenderer
@@ -559,7 +558,6 @@ def test_corrupt_config_raises_clean_error(tmp_path: Path):
     cli.main → clean stderr + exit 1) on both render and clean, not an
     uncaught JSONDecodeError traceback. Exercises the shared
     base.read_json_object guard used by all three merged-file renderers."""
-    import pytest
 
     from agent_profile.renderers.base import MergedConfigError
 
@@ -574,7 +572,6 @@ def test_corrupt_config_raises_clean_error(tmp_path: Path):
 def test_non_object_config_raises_clean_error(tmp_path: Path):
     """A JSON array (valid JSON, wrong shape) is also a clean MergedConfigError
     rather than an AttributeError when the renderer calls .setdefault/.get."""
-    import pytest
 
     from agent_profile.renderers.base import MergedConfigError
 

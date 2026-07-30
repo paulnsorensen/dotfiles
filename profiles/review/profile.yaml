@@ -1,6 +1,6 @@
 # review — read-only PR review (ccp parity).
-# Reviewers read and file comments; they don't fix. Edit/Write/NotebookEdit
-# and tilth's writer are denied; the tool surface is a read-only whitelist.
+# Reviewers read and file comments; they don't fix. Edit/Write/MultiEdit/
+# NotebookEdit and tilth's writer are denied; the tool surface is a read-only whitelist.
 # MCP world is tilth + context7.
 name: review
 description: Read-only PR review
@@ -24,6 +24,7 @@ tools:
 permissions_deny:
   - Edit
   - Write
+  - MultiEdit
   - NotebookEdit
   - mcp__tilth__tilth_write
 # Per-profile plugin set (ccp settings-merge parity).

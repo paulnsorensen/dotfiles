@@ -1,0 +1,76 @@
+#!/bin/sh
+# Merge the repo-authored Codex config into ~/.codex/config.toml on every
+# `chezmoi apply` (spec: chezmoi-authoritative-codex).
+#
+#   stdin  = current live file contents (empty on a fresh machine)
+#   stdout = the new file contents chezmoi writes back
+#
+# Source of truth: $CHEZMOI_SOURCE_DIR/.chezmoidata/codex.yaml — the `codex`
+# key's `config` (root scalars + nested tables) and `mcps` (MCP servers).
+#
+# PRESERVE-BY-DEFAULT — the inverse of dot_claude/modify_settings.json.
+# Claude's settings.json is wholly repo-owned, so that script wipes unmanaged
+# keys and HALTS on unknown ones. Codex's config.toml is different: the CLI
+# writes its own runtime state into the same file —
+#
+#   [projects."<path>"]        trust levels, added on first run in a directory
+#   [hooks.state."<f>:<e>:i"]  per-hook trust hashes (approval memory)
+#   [marketplaces.*]           plugin marketplace registrations + revisions
+#   [plugins.*]                installed plugin enablement
+#   [tui.model_availability_nux]  per-model NUX counters
+#
+# — and a wholesale rewrite would destroy it (re-prompting every hook approval
+# and forgetting every trusted project). So this script overlays ONLY what the
+# registry declares and leaves every other key untouched. Deep-merging `tui`
+# is why model_availability_nux survives alongside the declared input_mode.
+#
+# `mcp_servers` is the single exception: it is REPLACED wholesale, so a server
+# deleted from codex.yaml is EVICTED from the live file. The predecessor
+# (chezmoi/lib/install-codex.sh) only ever backfilled missing keys, which is
+# how [mcp_servers.serena] kept running for weeks after #512 removed Serena
+# from the repo — and kept littering repos with .serena/ dirs.
+#
+# `model_instructions_file` is deliberately NOT in the registry: it is written
+# with an absolute path by run_onchange_after_install-prompts.sh.tmpl (TOML
+# cannot expand `~`). Preserve-by-default keeps whatever that script set.
+
+set -eu
+
+live=$(cat)
+
+emit_unchanged() {
+    printf '%s' "$live"
+    echo "modify_config.toml: $1 — left ~/.codex/config.toml unchanged" >&2
+    exit 0
+}
+
+# Degrade safely rather than emitting a truncated document: without the
+# tooling or the registry we cannot compute the merge, and a partial write
+# would cost the user their Codex trust state.
+command -v yq >/dev/null 2>&1 || emit_unchanged "yq not installed"
+command -v jq >/dev/null 2>&1 || emit_unchanged "jq not installed"
+
+registry="${CHEZMOI_SOURCE_DIR:-}/.chezmoidata/codex.yaml"
+[ -f "$registry" ] || emit_unchanged "registry not found at $registry"
+
+# A fresh machine has no file at all; an unparseable one must not be silently
+# replaced (that would discard real state), so bail loud and leave it be.
+if [ -z "$(printf '%s' "$live" | tr -d '[:space:]')" ]; then
+    live_json='{}'
+elif ! live_json=$(printf '%s' "$live" | yq -p=toml -o=json '.' 2>/dev/null); then
+    emit_unchanged "live config.toml is not parseable TOML"
+fi
+[ -n "$live_json" ] && [ "$live_json" != "null" ] || live_json='{}'
+
+repo_json=$(yq -o=json '.codex' "$registry")
+
+# jq's `*` is a recursive object merge with the right side winning, so declared
+# leaves override while undeclared siblings (and whole runtime tables) survive.
+# yq hoists root scalars above table headers on output, so key order here is
+# irrelevant to TOML validity.
+printf '%s' "$live_json" | jq --argjson repo "$repo_json" '
+    ($repo.config // {}) as $cfg
+    | ($repo.mcps // {}) as $mcps
+    | (. * $cfg)
+    | if ($mcps | length) > 0 then .mcp_servers = $mcps else del(.mcp_servers) end
+' | yq -p=json -o=toml '.'

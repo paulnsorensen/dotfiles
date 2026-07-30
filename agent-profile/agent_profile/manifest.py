@@ -249,9 +249,10 @@ def diff_and_clean(
     for f in dropped:
         if not f:
             continue
-        if selected_harnesses is not None:
-            if not _owner_overlap(selected_harnesses, _path_owners(f)):
-                continue
+        if selected_harnesses is not None and not _owner_overlap(
+            selected_harnesses, _path_owners(f)
+        ):
+            continue
         if other_profiles_claim_file(target, profile, f):
             continue
         abs_path = base / f

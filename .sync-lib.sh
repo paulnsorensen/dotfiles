@@ -125,6 +125,10 @@ assemble_chezmoi_sources() {
         echo "  ERROR: claude chezmoi source assembly failed — aborting chezmoi apply" >&2
         return 1
     fi
+    if ! sync_codex_chezmoi_sources "$dotfiles_root" "$source_dir"; then
+        echo "  ERROR: codex chezmoi source assembly failed — aborting chezmoi apply" >&2
+        return 1
+    fi
     if ! sync_omp_chezmoi_sources "$dotfiles_root" "$source_dir"; then
         echo "  ERROR: OMP chezmoi source assembly failed — aborting chezmoi apply" >&2
         return 1
@@ -557,6 +561,230 @@ sync_claude_chezmoi_sources() {
         fi
     done
     log_info "Assembled claude chezmoi source state (dot_claude/exact_*)"
+    return 0
+}
+
+# ── codex chezmoi source assembly ───────────────────────────────────────────
+# sync_codex_chezmoi_sources <dotfiles_root> [<chezmoi_source_dir>]
+#
+# Assembles the registry-selected ~/.codex payload into chezmoi source state as
+# exact_ directories, so `chezmoi apply` DELETES anything live that is no longer
+# selected (spec: chezmoi-authoritative-codex). Mirrors
+# sync_claude_chezmoi_sources.
+#
+#   private_dot_codex/exact_agents    ← agents/agent_definitions/<name>.md per
+#                               codex.yaml `agents`, rendered to TOML from
+#                               agents/registry.yaml metadata
+#   private_dot_codex/exact_hooks     ← script of every codex-harness registry hook
+#   private_dot_codex/exact_lib       ← those hooks' shared_assets under agents/lib
+#   private_dot_codex/exact_reference ← those hooks' shared_assets under agents/reference
+#   private_dot_codex/hooks.json      ← derived hook wiring
+#
+# config.toml is deliberately NOT assembled here: it carries Codex-CLI runtime
+# state (projects trust, hooks.state hashes, marketplaces, plugins) that a
+# wholesale rewrite would destroy, so private_dot_codex/modify_private_config.toml merges it in
+# place instead.
+#
+# The assembled trees are DERIVED state (gitignored); the repo dirs stay the
+# single source of truth. Runs inside `dots sync` before `chezmoi apply`.
+
+# Render one codex sub-agent file as TOML. Field mapping mirrors ap's codex
+# renderer (agent-profile/agent_profile/renderers/codex.py:129-159): name,
+# description, optional model (models.codex), sandbox_mode="read-only" for
+# read-only agents, then developer_instructions.
+#
+# The read-only predicate replicates agent_profile.shared.agent_is_read_only:
+# read-only when NO write tool remains reachable — every write tool is either
+# banned by disallowedTools or excluded by a tools whitelist. Banning `Write`
+# alone must NOT imply read-only, or agents that write through
+# mcp__tilth__tilth_write (coder, researcher, reviewer, explorer's overflow
+# artifact) would be sandboxed out of their own job.
+# tests/sync-codex-sources.bats asserts parity so the two copies cannot drift.
+#   _cz_render_codex_agent <registry_yaml> <name> <dotfiles_root> <out_file>
+_cz_render_codex_agent() {
+    local registry="$1" name="$2" root="$3" out="$4"
+    local body_path body
+    body_path=$(yq -r ".agents.\"$name\".body_path // \"\"" "$registry") || return 1
+    if [[ -z "$body_path" || "$body_path" == "null" || ! -f "$root/$body_path" ]]; then
+        log_error "codex agent '$name': body_path missing (registry: $registry)"
+        return 1
+    fi
+    body=$(cat "$root/$body_path") || return 1
+    if ! yq -o=json ".agents.\"$name\"" "$registry" \
+        | jq --arg name "$name" --arg body "$body" '
+            def wt: ["Edit","Write","MultiEdit","NotebookEdit","mcp__tilth__tilth_write"];
+            def covers($entry; $tool): ($entry == $tool)
+                or (($entry | endswith("*")) and ($tool | startswith($entry[0:-1])));
+            def available($tool; $tools; $dis):
+                (($dis | any(covers(.; $tool))) | not)
+                and (($tools | length) == 0 or ($tools | any(covers(.; $tool))));
+            def read_only:
+                ((.tools // [])) as $tools
+                | ((.disallowedTools // [])) as $dis
+                | (wt | any(available(.; $tools; $dis))) | not;
+            { name: $name, description: (.description // "") }
+            + (if (.models.codex // "") != "" then { model: .models.codex } else {} end)
+            + (if read_only then { sandbox_mode: "read-only" } else {} end)
+            + { developer_instructions: $body }
+        ' \
+        | yq -p=json -o=toml '.' > "$out"; then
+        log_error "codex source assembly: rendering agent '$name' failed"
+        return 1
+    fi
+    return 0
+}
+
+# Build ~/.codex/hooks.json from the codex-harness entries of the hook
+# registry. Codex requires a JSON OBJECT with a top-level `hooks` map (event →
+# matcher groups → command handlers); a flat array parses as JSON but Codex
+# rejects it (see .hallouminate/wiki/harnesses/codex-hooks-schema.md).
+# Commands are absolute: Codex runs hook commands from the session working
+# directory, not from ~/.codex, so a relative path would never resolve.
+#   _cz_codex_hooks_json <hook_registry_yaml> <deployed_hooks_dir>
+_cz_codex_hooks_json() {
+    local registry="$1" hooks_dir="$2"
+    yq -o=json '.hooks' "$registry" | jq --arg dir "$hooks_dir" '
+        to_entries
+        | map(select([((.value.harnesses // ["claude","codex"])[]) == "codex"] | any))
+        | map(.value)
+        | map(select(.script != null))
+        | group_by(.event)
+        | map({ (.[0].event): [ .[] | {
+                hooks: [ { type: "command",
+                           command: ("bash " + $dir + "/" + (.script | split("/") | last)) }
+                         + (if .timeout then { timeout: .timeout } else {} end) ] }
+              + (if .matcher then { matcher: .matcher } else {} end) ] })
+        | add
+        | { hooks: (. // {}) }
+    '
+}
+
+# Stage one hook shared_asset. Assets are declared repo-relative under agents/
+# (e.g. agents/lib/git-guard.js); the deployed layout strips that prefix so the
+# self-locating hook scripts resolve them (HARNESS_ROOT = ~/.codex). Every path
+# component is chezmoi-encoded.
+#   _cz_stage_codex_asset <dotfiles_root> <asset_rel_path> <staging_dir>
+_cz_stage_codex_asset() {
+    local root="$1" asset="$2" staging="$3"
+    if [[ ! -f "$root/$asset" ]]; then
+        log_error "hook registry references missing shared_asset: $asset"
+        return 1
+    fi
+    local rest="${asset#agents/}"
+    if [[ "$rest" == "$asset" ]]; then
+        log_error "codex source assembly: shared_asset outside agents/: $asset"
+        return 1
+    fi
+    # First component selects the tree (lib → exact_lib); the rest is nested.
+    local tree="${rest%%/*}" remainder="${rest#*/}" dir enc comp
+    dir="$staging/exact_$tree"
+    while [[ "$remainder" == */* ]]; do
+        comp="${remainder%%/*}"
+        remainder="${remainder#*/}"
+        enc="$(_cz_encode_name "$comp" true false)"
+        dir="$dir/$enc"
+    done
+    mkdir -p "$dir" || return 1
+    local is_exec=false
+    [[ -x "$root/$asset" ]] && is_exec=true
+    enc="$(_cz_encode_name "$remainder" false "$is_exec")"
+    if ! cp -L "$root/$asset" "$dir/$enc"; then
+        log_error "codex source assembly: shared_asset copy failed: $asset"
+        return 1
+    fi
+    return 0
+}
+
+sync_codex_chezmoi_sources() {
+    local root="$1" src="${2:-$1/chezmoi}"
+    local codex_reg="$src/.chezmoidata/codex.yaml"
+    local hook_reg="$root/agents/hooks/registry.yaml"
+
+    if ! command -v yq >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+        log_error "codex source assembly needs yq and jq — skipping would delete live ~/.codex state (exact_ semantics)"
+        return 1
+    fi
+    if [[ ! -f "$codex_reg" ]]; then
+        log_error "codex registry not found: $codex_reg"
+        return 1
+    fi
+    if [[ ! -f "$hook_reg" ]]; then
+        log_error "hook registry not found: $hook_reg"
+        return 1
+    fi
+
+    local staging
+    staging=$(mktemp -d "${TMPDIR:-/tmp}/codex-cz-src.XXXXXX") || return 1
+    # shellcheck disable=SC2064
+    trap "rm -rf '$staging'" RETURN
+
+    # agents — rendered from agents/registry.yaml, validated against it
+    local name harnesses
+    mkdir -p "$staging/exact_agents"
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        if [[ "$(yq -r ".agents | has(\"$name\")" "$root/agents/registry.yaml")" != "true" ]]; then
+            log_error "codex registry selects unknown agent: $name (not in agents/registry.yaml)"
+            return 1
+        fi
+        harnesses=$(yq -r ".agents.\"$name\" | [((.harnesses // [\"claude\",\"codex\"])[]) == \"codex\"] | any" \
+            "$root/agents/registry.yaml")
+        if [[ "$harnesses" != "true" ]]; then
+            log_error "codex registry selects agent '$name', but its registry entry does not declare the codex harness"
+            return 1
+        fi
+        _cz_render_codex_agent "$root/agents/registry.yaml" "$name" "$root" \
+            "$staging/exact_agents/$name.toml" || return 1
+    done < <(yq -r '.codex.agents // [] | .[]' "$codex_reg")
+
+    # hooks — scripts + shared_assets of every codex-harness registry entry
+    mkdir -p "$staging/exact_hooks" "$staging/exact_lib" "$staging/exact_reference"
+    local hook_scripts hook_script
+    if ! hook_scripts=$(yq -r '.hooks[] | select(.script != null) | select([((.harnesses // ["claude", "codex"])[]) == "codex"] | any) | .script' "$hook_reg"); then
+        log_error "codex source assembly: reading hook registry ($hook_reg) failed — hook assembly aborted"
+        return 1
+    fi
+    if [[ -n "$hook_scripts" ]]; then
+        while IFS= read -r hook_script; do
+            [[ -z "$hook_script" || "$hook_script" == "null" ]] && continue
+            if [[ ! -f "$root/$hook_script" ]]; then
+                log_error "hook registry references missing script: $hook_script"
+                return 1
+            fi
+            if ! cp -L "$root/$hook_script" "$staging/exact_hooks/$(_cz_encode_name "$(basename "$hook_script")" false true)"; then
+                log_error "codex source assembly: hook copy failed: $hook_script"
+                return 1
+            fi
+        done <<<"$hook_scripts"
+    fi
+
+    local asset
+    while IFS= read -r asset; do
+        [[ -z "$asset" || "$asset" == "null" ]] && continue
+        _cz_stage_codex_asset "$root" "$asset" "$staging" || return 1
+    done < <(yq -r '.hooks[] | select([((.harnesses // ["claude", "codex"])[]) == "codex"] | any) | (.shared_assets // [])[]' "$hook_reg")
+
+    # hooks.json — derived wiring, absolute command paths
+    if ! _cz_codex_hooks_json "$hook_reg" "$HOME/.codex/hooks" > "$staging/hooks.json"; then
+        log_error "codex source assembly: building hooks.json failed"
+        return 1
+    fi
+
+    # Swap staged trees into the chezmoi source dir (all-or-nothing per dir).
+    local tree
+    for tree in exact_agents exact_hooks exact_lib exact_reference; do
+        if ! rm -rf "${src:?}/private_dot_codex/$tree" \
+            || ! mkdir -p "$src/private_dot_codex" \
+            || ! mv "$staging/$tree" "$src/private_dot_codex/$tree"; then
+            log_error "codex source assembly: staging swap failed for $tree — source state may be incomplete; rerun dots sync before chezmoi apply"
+            return 1
+        fi
+    done
+    if ! mv "$staging/hooks.json" "$src/private_dot_codex/hooks.json"; then
+        log_error "codex source assembly: staging swap failed for hooks.json"
+        return 1
+    fi
+    log_info "Assembled codex chezmoi source state (private_dot_codex/exact_*, hooks.json)"
     return 0
 }
 
