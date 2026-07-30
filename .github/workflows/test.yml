@@ -67,6 +67,14 @@ jobs:
       with:
         node-version: 24
 
+    - name: Install yq
+      run: |
+        yq_version="$(awk -F ' = ' '/^"aqua:mikefarah\/yq" = / { gsub(/"/, "", $2); print $2; exit }' chezmoi/dot_config/mise/config.toml)"
+        test -n "$yq_version" || { echo "yq pin missing from mise config" >&2; exit 1; }
+        mkdir -p "$RUNNER_TEMP/bin"
+        GOBIN="$RUNNER_TEMP/bin" go install "github.com/mikefarah/yq/v4@$yq_version"
+        "$RUNNER_TEMP/bin/yq" --version
+        echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
     - name: Run tests
       run: just test
 
