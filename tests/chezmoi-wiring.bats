@@ -71,7 +71,7 @@ make_isolated_chezmoi_source() {
     mkdir -p "$source_dir"
     cp -R "$REAL_DOTFILES_DIR/chezmoi/." "$source_dir/"
     local sibling
-    for sibling in agent-profile agents claude codex cursor; do
+    for sibling in agent-profile agents claude cursor; do
         ln -s "$REAL_DOTFILES_DIR/$sibling" "$root/$sibling"
     done
     echo "$source_dir"

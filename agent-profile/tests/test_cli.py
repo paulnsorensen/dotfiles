@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from agent_profile import cli
+
 from tests.conftest import install_profile, write_profile
 
 REVIEWER_BODY = "Reviewer body for foo\n"

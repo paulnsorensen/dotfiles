@@ -21,10 +21,8 @@ import json
 from pathlib import Path
 
 import pytest
-
-from agent_profile.ingest import expand_registries
 from agent_profile._validate import ParseError
-
+from agent_profile.ingest import expand_registries
 
 # ─── fixture helpers ──────────────────────────────────────────────────────────
 
@@ -179,7 +177,7 @@ def test_source_dir_repo_root_stamping_copies_wrong_tree(tmp_path):
     nothing — there is no 'skills/cook' at the repo root in this test. Only
     at the payload root.
     """
-    market_root, payload = _make_plugin_with_marketplace(
+    market_root, _payload = _make_plugin_with_marketplace(
         tmp_path,
         "myplugin",
         skill_names=["cook"],
@@ -213,7 +211,7 @@ def test_source_dir_repo_root_stamping_copies_wrong_tree(tmp_path):
 
 def test_mcp_decomposed_from_plugin(tmp_path):
     """A plugin's .mcp.json produces a decomposed MCP item."""
-    market_root, payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
+    market_root, _payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
     _make_plugins_registry(
         tmp_path,
         {"myplugin": {"path": str(market_root), "harnesses": ["codex", "opencode"]}},
@@ -230,7 +228,7 @@ def test_mcp_decomposed_from_plugin(tmp_path):
 
 def test_mcp_harnesses_from_plugin_registry_entry(tmp_path):
     """The harnesses list from the registry entry attaches to the decomposed MCP."""
-    market_root, payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
+    market_root, _payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
     _make_plugins_registry(
         tmp_path,
         {"myplugin": {"path": str(market_root), "harnesses": ["codex", "opencode", "cursor"]}},
@@ -254,7 +252,7 @@ def test_mcp_env_var_stays_literal_not_substituted(tmp_path):
     The assertion proves the value in the MCP item is still the literal reference,
     not the resolved value — env expansion is the renderer's job at launch time.
     """
-    market_root, payload = _make_plugin_with_marketplace(
+    market_root, _payload = _make_plugin_with_marketplace(
         tmp_path,
         "myplugin",
         mcp_env={"MY_SECRET": "${MY_SECRET}"},
@@ -281,7 +279,7 @@ def test_mcp_env_var_stays_literal_not_substituted(tmp_path):
 
 def test_skills_discovered_from_plugin_payload(tmp_path):
     """Skills under plugin payload skills/<n>/SKILL.md are decomposed."""
-    market_root, payload = _make_plugin_with_marketplace(
+    market_root, _payload = _make_plugin_with_marketplace(
         tmp_path,
         "myplugin",
         skill_names=["harvest", "load-roadmap"],
@@ -307,7 +305,7 @@ def test_skills_references_subdir_not_treated_as_skill(tmp_path):
     milknado-config has skills/milknado-config/references/flavor-presets.md.
     The references/ dir lacks a SKILL.md so it must be skipped.
     """
-    market_root, payload = _make_plugin_with_marketplace(
+    market_root, _payload = _make_plugin_with_marketplace(
         tmp_path,
         "myplugin",
         skill_with_refs="milknado-config",
@@ -333,7 +331,7 @@ def test_skills_path_field_is_relative_to_payload(tmp_path):
     Renderers compute: Path(item['_source_dir']) / item['path']
     So 'path' must be 'skills/<name>' (relative to payload, not repo).
     """
-    market_root, payload = _make_plugin_with_marketplace(
+    market_root, _payload = _make_plugin_with_marketplace(
         tmp_path,
         "myplugin",
         skill_names=["cook"],
@@ -361,7 +359,7 @@ def test_skills_path_field_is_relative_to_payload(tmp_path):
 
 def test_gate_unless_propagates_to_mcp(tmp_path):
     """gate_unless from the plugin registry entry propagates to the MCP item."""
-    market_root, payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
+    market_root, _payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
     _make_plugins_registry(
         tmp_path,
         {
@@ -397,7 +395,7 @@ def test_skill_name_collision_with_existing_registry_fails_loud(tmp_path):
     (cook_dir / "SKILL.md").write_text("# cook\n")
 
     # Plugin also exports 'cook'
-    market_root, payload = _make_plugin_with_marketplace(
+    market_root, _payload = _make_plugin_with_marketplace(
         tmp_path,
         "myplugin",
         skill_names=["cook"],
@@ -488,7 +486,7 @@ def milknado_market(tmp_path):
 
 def test_milknado_mcp_portable_uvx(milknado_market, tmp_path):
     """milknado MCP decomposes with the portable uvx milknado-mcp args."""
-    market_root, payload = milknado_market
+    market_root, _payload = milknado_market
     _make_plugins_registry(
         tmp_path,
         {
@@ -512,7 +510,7 @@ def test_milknado_mcp_portable_uvx(milknado_market, tmp_path):
 
 def test_milknado_three_skills_discovered(milknado_market, tmp_path):
     """milknado decomposes into exactly 3 skills."""
-    market_root, payload = milknado_market
+    market_root, _payload = milknado_market
     _make_plugins_registry(
         tmp_path,
         {
@@ -955,9 +953,8 @@ def test_git_source_resolves_mcp_and_skill(tmp_path):
     )
 
     from agent_profile.ingest import _expand_plugins
-    import yaml
     reg_path = tmp_path / "agents" / "plugins" / "registry.yaml"
-    out_mcps, out_skills, _out_agents, _out_hooks, out_native = _expand_plugins(
+    out_mcps, out_skills, _out_agents, _out_hooks, _out_native = _expand_plugins(
         reg_path, tmp_path, {}, cache_root=cache_root
     )
 
@@ -995,7 +992,8 @@ def test_git_source_subdir(tmp_path):
         json.dumps({"mcpServers": {"nested": {"command": "uvx", "args": ["nested-mcp"]}}})
     )
 
-    import subprocess, os
+    import os
+    import subprocess
     env = {"GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@test",
            "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@test"}
     env.update(os.environ)

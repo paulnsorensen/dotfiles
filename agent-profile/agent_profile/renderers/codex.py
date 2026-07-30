@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -793,7 +793,7 @@ def _managed_basenames_per_event(
 
 def _prune_event_blocks(
     event_array: object, event_managed: set[str]
-) -> "tomlkit.items.AoT | None":
+) -> tomlkit.items.AoT | None:
     """Return a rebuilt AoT containing only the blocks the caller should
     keep, or ``None`` when no block matched ``event_managed`` (the
     caller short-circuits in that case to avoid a no-op rewrite).
@@ -821,7 +821,7 @@ def _is_array_of_tables(value: object) -> bool:
     """tomlkit exposes [[hooks.SessionStart]] as an Array-of-Tables. Other
     `hooks.<key>` values (a scalar typo, a sub-table for some future
     feature) are not arrays and must not be walked."""
-    return isinstance(value, list) or isinstance(value, tomlkit.items.AoT)
+    return isinstance(value, (list, tomlkit.items.AoT))
 
 
 def _is_managed_legacy_block(

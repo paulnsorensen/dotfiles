@@ -14,15 +14,15 @@ contents, monkeypatching ``os.execvp`` so nothing actually launches.
 from __future__ import annotations
 
 import json
-import tomllib
 from pathlib import Path
 
 import pytest
-
+import tomllib
 from agent_profile import cli, overlay
 from agent_profile import fetch as overlay_fetch
 from agent_profile.discover import find_profile_dir
 from agent_profile.parse import Manifest, parse_manifest
+
 from tests.conftest import write_profile
 
 # Repo root: agent-profile/tests/test_overlay.py → ../../ is the dotfiles clone.
@@ -731,9 +731,12 @@ def _hermetic_dotenv(monkeypatch, tmp_path):
 
 
 def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
-    """The shipped review profile must keep: Edit/Write/NotebookEdit + every
-    serena mutator + tilth_write denied; a read-only tool whitelist; a closed
-    MCP world of exactly tilth + context7."""
+    """The shipped review profile must keep: Edit/Write/MultiEdit/NotebookEdit +
+    tilth_write denied; a read-only tool whitelist; a closed MCP world of
+    exactly tilth + context7.
+
+    The serena mutators this used to assert went away with #512, which removed
+    the Serena MCP from the repo entirely."""
     _hermetic_dotenv(monkeypatch, tmp_path)
     pdir = find_profile_dir("review")
     assert pdir is not None, "real profiles/review not found"
@@ -746,14 +749,9 @@ def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
     for must_deny in (
         "Edit",
         "Write",
+        "MultiEdit",
         "NotebookEdit",
         "mcp__tilth__tilth_write",
-        "mcp__serena__replace_symbol_body",
-        "mcp__serena__replace_content",
-        "mcp__serena__insert_before_symbol",
-        "mcp__serena__insert_after_symbol",
-        "mcp__serena__rename_symbol",
-        "mcp__serena__safe_delete_symbol",
     ):
         assert must_deny in deny, f"review profile dropped deny: {must_deny}"
 
@@ -857,12 +855,12 @@ def test_isolated_missing_system_prompt_fails_loud(tmp_path):
 
 def _claude_manifest(tmp_path, **over):
     """A minimal isolated manifest with one stdio MCP, overridable per test."""
-    base = dict(
-        name="p",
-        mcps=[{"name": "tilth", "command": "tilth", "args": ["--mcp"],
+    base = {
+        "name": "p",
+        "mcps": [{"name": "tilth", "command": "tilth", "args": ["--mcp"],
                "_source_dir": str(tmp_path)}],
-        isolated=True,
-    )
+        "isolated": True,
+    }
     base.update(over)
     return Manifest(**base)
 
@@ -953,6 +951,23 @@ def test_codex_mcp_servers_are_toml_tables(tmp_path, monkeypatch):
         "command": "tilth",
         "args": ["--mcp"],
     }
+
+
+def test_oss_docs_profile_writes_pinned_playwright_mcp_for_codex(tmp_path, monkeypatch):
+    """Codex ignores enabled_plugins, so browser verification must be a profile MCP."""
+    monkeypatch.setenv("DOTFILES_DIR", str(REPO_ROOT))
+    profile = REPO_ROOT / "profiles" / "oss-docs"
+    manifest = parse_manifest(profile)
+    scratch = tmp_path / "codex-home"
+    scratch.mkdir()
+    _, env = overlay._build_isolated_codex(manifest, profile, scratch)
+    cfg = _codex_config(env)
+    assert cfg["mcp_servers"]["playwright"] == {
+        "command": "npx",
+        "args": ["-y", "@playwright/mcp@0.0.78"],
+    }
+    assert cfg["mcp_servers"]["context7"]["args"] == ["-y", "@upstash/context7-mcp@3.2.4"]
+    assert cfg["mcp_servers"]["tavily"]["args"] == ["-y", "tavily-mcp@0.2.21"]
 
 
 def test_codex_isolated_config_defaults_to_auto_permissions(tmp_path, monkeypatch):
@@ -1397,9 +1412,11 @@ def test_opencode_launch_profile_wins_name_collision(env, monkeypatch):
 
 def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
     """The shipped review profile launched on opencode must stay read-only:
-    OPENCODE_PERMISSION denies edit (from Edit/Write) and every serena
-    mutator + tilth_write appears as an mcp__* deny key. Closed MCP world is
-    exactly tilth + context7 (own, enabled)."""
+    OPENCODE_PERMISSION denies edit (from Edit/Write) and tilth_write appears as
+    an mcp__* deny key. Closed MCP world is exactly tilth + context7 (own,
+    enabled).
+
+    The serena mutators this used to assert went away with #512."""
     _hermetic_dotenv(monkeypatch, tmp_path)
     pdir = find_profile_dir("review")
     assert pdir is not None, "real profiles/review not found"
@@ -1408,12 +1425,7 @@ def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
 
     perm = json.loads(env["OPENCODE_PERMISSION"])
     assert perm["edit"] == "deny"
-    for mutator in (
-        "mcp__tilth__tilth_write",
-        "mcp__serena__replace_symbol_body",
-        "mcp__serena__rename_symbol",
-        "mcp__serena__safe_delete_symbol",
-    ):
+    for mutator in ("mcp__tilth__tilth_write",):
         assert perm[mutator] == "deny", f"review lost opencode deny: {mutator}"
 
     config = json.loads(env["OPENCODE_CONFIG_CONTENT"])

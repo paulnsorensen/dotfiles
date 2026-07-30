@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from agent_profile.cli import main
+
 from tests.conftest import write_profile
 
 

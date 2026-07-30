@@ -26,13 +26,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
-from agent_profile.ingest import expand_registries
 from agent_profile._validate import ParseError
-
+from agent_profile.ingest import expand_registries
 
 # ── Fixture helpers ───────────────────────────────────────────────────────────
 
@@ -170,7 +168,7 @@ def test_marketplace_root_has_no_mcp_json(tmp_path):
     This locks in the structural invariant that the marketplace root is NOT
     also the payload root for multi-plugin marketplaces.
     """
-    repo, market_root, payload = _make_standard_milknado(tmp_path)
+    _repo, market_root, payload = _make_standard_milknado(tmp_path)
     assert not (market_root / ".mcp.json").is_file(), (
         "marketplace root should not have .mcp.json directly"
     )
@@ -184,7 +182,7 @@ def test_marketplace_root_has_no_mcp_json(tmp_path):
 
 def test_mcp_decomposed_from_payload_not_marketplace_root(tmp_path):
     """MCP is read from plugins[].source dir, not the marketplace root itself."""
-    repo, market_root, payload = _make_standard_milknado(
+    repo, _market_root, _payload = _make_standard_milknado(
         tmp_path, harnesses=["codex", "opencode"], claude_native=False
     )
 
@@ -300,7 +298,7 @@ def test_plugin_mcp_unset_nonoptional_env_var_raises(tmp_path):
     to catch typos in env var references.
     """
     from agent_profile.env import EnvResolutionError
-    repo, market_root, payload = _make_standard_milknado(
+    repo, _market_root, _payload = _make_standard_milknado(
         tmp_path,
         harnesses=["codex"],
         claude_native=False,
@@ -357,7 +355,7 @@ def test_plugin_mcp_optional_unset_env_var_drops_mcp(tmp_path):
 
 def test_claude_native_entry_produces_native_plugin_record(tmp_path):
     """claude_native=True produces a native_plugins record with marketplace info."""
-    repo, market_root, payload = _make_standard_milknado(tmp_path)
+    repo, _market_root, _payload = _make_standard_milknado(tmp_path)
 
     out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, repo, {})
     assert "native_plugins" in out
@@ -370,7 +368,7 @@ def test_claude_native_entry_produces_native_plugin_record(tmp_path):
 
 def test_non_native_entry_produces_no_native_plugin_record(tmp_path):
     """claude_native=False (or omitted) entry has no native_plugins record."""
-    repo, market_root, payload = _make_standard_milknado(
+    repo, _market_root, _payload = _make_standard_milknado(
         tmp_path, harnesses=["codex"], claude_native=False
     )
 
@@ -380,7 +378,7 @@ def test_non_native_entry_produces_no_native_plugin_record(tmp_path):
 
 def test_claude_native_mcp_excludes_claude_from_harnesses(tmp_path):
     """DEDUP: claude is removed from decomposed MCP harnesses for claude_native."""
-    repo, market_root, payload = _make_standard_milknado(
+    repo, _market_root, _payload = _make_standard_milknado(
         tmp_path, harnesses=["claude", "codex", "opencode"],
     )
 
@@ -395,7 +393,7 @@ def test_claude_native_mcp_excludes_claude_from_harnesses(tmp_path):
 
 def test_claude_native_mcp_claude_only_becomes_empty_harnesses(tmp_path):
     """When harnesses=[claude] only, claude_native produces empty harnesses list."""
-    repo, market_root, payload = _make_standard_milknado(
+    repo, _market_root, _payload = _make_standard_milknado(
         tmp_path, harnesses=["claude"],
     )
 
@@ -407,7 +405,7 @@ def test_claude_native_mcp_claude_only_becomes_empty_harnesses(tmp_path):
 
 def test_claude_native_skills_carry_from_native_plugin_flag(tmp_path):
     """DEDUP: skills from claude_native plugins carry _from_native_plugin=True."""
-    repo, market_root, payload = _make_standard_milknado(
+    repo, _market_root, _payload = _make_standard_milknado(
         tmp_path, with_skill=True
     )
 
@@ -419,7 +417,7 @@ def test_claude_native_skills_carry_from_native_plugin_flag(tmp_path):
 
 def test_non_native_skills_have_no_native_flag(tmp_path):
     """Non-native plugin skills do NOT carry _from_native_plugin flag."""
-    repo, market_root, payload = _make_standard_milknado(
+    repo, _market_root, _payload = _make_standard_milknado(
         tmp_path, harnesses=["codex"], claude_native=False, with_skill=True
     )
 
@@ -602,7 +600,7 @@ def test_claude_renderer_enabled_plugins_key_uses_marketplace_name(tmp_path):
     """
     from agent_profile.renderers.claude import ClaudeRenderer
 
-    manifest, market_root = _make_manifest_with_native(tmp_path, "milknado")
+    manifest, _market_root = _make_manifest_with_native(tmp_path, "milknado")
     target = tmp_path / "home"
     target.mkdir()
 
@@ -666,7 +664,7 @@ def test_claude_renderer_skips_native_plugin_skills(tmp_path):
     skill_src.mkdir(parents=True)
     (skill_src / "SKILL.md").write_text("skill content")
 
-    manifest, market_root = _make_manifest_with_native(tmp_path)
+    manifest, _market_root = _make_manifest_with_native(tmp_path)
     manifest = Manifest(
         isolated=True,
         name="base",
@@ -770,7 +768,7 @@ def test_claude_renderer_skips_native_agents(tmp_path):
     agent_body = payload / "my-agent.md"
     agent_body.write_text("# Agent")
 
-    manifest, market_root = _make_manifest_with_native(tmp_path)
+    manifest, _market_root = _make_manifest_with_native(tmp_path)
     manifest = Manifest(
         isolated=True,
         name="base",
@@ -804,7 +802,7 @@ def test_claude_renderer_skips_native_commands(tmp_path):
     payload.mkdir()
     (payload / "my-cmd.md").write_text("# cmd")
 
-    manifest, market_root = _make_manifest_with_native(tmp_path)
+    manifest, _market_root = _make_manifest_with_native(tmp_path)
     manifest = Manifest(
         isolated=True,
         name="base",

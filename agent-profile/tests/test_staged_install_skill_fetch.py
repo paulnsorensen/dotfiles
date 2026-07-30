@@ -9,8 +9,8 @@ existing fetch behavior.
 from __future__ import annotations
 
 from agent_profile import cli
-from tests.conftest import install_profile, write_profile
 
+from tests.conftest import install_profile, write_profile
 
 # ─── staged install skips the global skill fetch ──────────────────────────────
 

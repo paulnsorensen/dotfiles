@@ -16,7 +16,6 @@ import subprocess
 import types
 
 import pytest
-
 from agent_profile import fetch
 from agent_profile.fetch import (
     SKILL_AGENT,
@@ -26,7 +25,6 @@ from agent_profile.fetch import (
     fetch_external_source,
     skill_agent_for,
 )
-
 
 # ─── harness -> skills-CLI agent mapping ──────────────────────────────
 

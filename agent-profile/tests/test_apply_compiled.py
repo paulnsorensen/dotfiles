@@ -10,7 +10,6 @@ import json
 import sys
 
 import pytest
-
 from agent_profile import apply_compiled
 from agent_profile.compiled_types import ApplyState
 
@@ -429,8 +428,8 @@ def test_apply_registers_user_mcps_via_cli(tmp_path, monkeypatch):
     assert result.registered_mcps == ("context7",)
     assert log.read_text().splitlines() == [
         "mcp remove context7 --scope user",
-        "mcp add context7 --scope user -e CONTEXT7_API_KEY=${CONTEXT7_API_KEY} "
-        "-- npx -y @upstash/context7-mcp",
+        ("mcp add context7 --scope user -e CONTEXT7_API_KEY=${CONTEXT7_API_KEY} "
+        "-- npx -y @upstash/context7-mcp"),
     ]
 
 

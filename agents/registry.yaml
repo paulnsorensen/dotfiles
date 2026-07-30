@@ -20,6 +20,8 @@ agents:
     - Edit
     - Write
     - NotebookEdit
+    - MultiEdit
+    - mcp__tilth__tilth_write
     - Grep
     - Glob
     color: red
@@ -37,6 +39,8 @@ agents:
     - Edit
     - Write
     - NotebookEdit
+    - MultiEdit
+    - mcp__tilth__tilth_write
     - WebSearch
     - WebFetch
     - Agent
@@ -73,6 +77,8 @@ agents:
     - Write
     - Edit
     - NotebookEdit
+    - MultiEdit
+    - mcp__tilth__tilth_write
     - AskUserQuestion
     - Grep
     - Glob
@@ -95,6 +101,8 @@ agents:
     - WebFetch
     - AskUserQuestion
     - Write
+    - MultiEdit
+    - mcp__tilth__tilth_write
     - Grep
     - Glob
     maxTurns: 50
@@ -110,6 +118,8 @@ agents:
     - Edit
     - Write
     - NotebookEdit
+    - MultiEdit
+    - mcp__tilth__tilth_write
     - WebSearch
     - WebFetch
     - AskUserQuestion

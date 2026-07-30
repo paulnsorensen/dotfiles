@@ -19,10 +19,9 @@ import os
 from pathlib import Path
 
 import pytest
-
 from agent_profile.parse import parse_manifest
-from tests.conftest import write_profile
 
+from tests.conftest import write_profile
 
 # ── settings-level deny channel union-merge (parse) ──────────────────
 

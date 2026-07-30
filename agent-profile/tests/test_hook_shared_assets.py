@@ -20,7 +20,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from agent_profile.parse import parse_manifest
 from agent_profile.renderers.base import shared_asset_relpath
 from agent_profile.renderers.claude import ClaudeRenderer

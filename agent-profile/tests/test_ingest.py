@@ -15,12 +15,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from agent_profile._validate import ParseError
 from agent_profile.env import EnvResolutionError
 from agent_profile.ingest import expand_registries
 from agent_profile.renderers.base import body_abs
-
 
 # ─── fixtures: a miniature dotfiles-shaped repo ───────────────────────
 

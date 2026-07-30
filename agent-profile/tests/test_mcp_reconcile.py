@@ -18,13 +18,12 @@ from __future__ import annotations
 
 import json
 
-import pytest
-import tomlkit
-
 import agent_profile.renderers.claude as cl
+import pytest
 from agent_profile import cli
 from agent_profile.parse import Manifest
 from agent_profile.renderers.registry import build_registry
+
 from tests.conftest import install_profile, write_profile
 
 

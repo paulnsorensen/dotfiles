@@ -18,14 +18,13 @@ hand-rolled escaping — tomlkit owns the escaping now.
 from __future__ import annotations
 
 import json
-import shutil
 import shlex
-import tomllib
+import shutil
 from pathlib import Path
 
 import pytest
 import tomlkit
-
+import tomllib
 from agent_profile.parse import Manifest
 from agent_profile.renderers.codex import CodexRenderer
 
@@ -36,17 +35,17 @@ RENDERER_SRC = Path(__file__).parent.parent / "agent_profile" / "renderers" / "c
 def _manifest(src: Path, **sections) -> Manifest:
     """Build a Manifest with ``_source_dir`` stamped on every item — the
     Python analogue of the bats ``merged`` helper."""
-    base = dict(
-        name="p1",
-        description="test",
-        mcps=[],
-        agents=[],
-        skills=[],
-        commands=[],
-        hooks=[],
-        settings={},
-        isolated=True,
-    )
+    base = {
+        "name": "p1",
+        "description": "test",
+        "mcps": [],
+        "agents": [],
+        "skills": [],
+        "commands": [],
+        "hooks": [],
+        "settings": {},
+        "isolated": True,
+    }
     base.update(sections)
     for key in ("mcps", "agents", "skills", "commands", "hooks"):
         base[key] = [{**item, "_source_dir": str(src)} for item in base[key]]
@@ -858,7 +857,7 @@ def test_scrub_resolves_dotenv_via_home_fallback_when_dotfiles_dir_unset(
 # Lever 1: the Bash(...) subset lowers to a .rules file of prefix_rule()s.
 # Lever 3: mcp__server__tool allow/deny lowers to enabled/disabled_tools.
 
-import tomllib as _tomllib  # noqa: E402
+import tomllib as _tomllib
 
 _RULES_REL = ".codex/rules/ap-canonical.rules"
 
@@ -870,7 +869,7 @@ def _parse_prefix_rules(text: str) -> list[tuple[list[str], str]]:
 
     out = []
     for block in re.split(r"\)\n", text):
-        pm = re.search(r"pattern = \[(.*?)\]", block, re.S)
+        pm = re.search(r"pattern = \[(.*?)\]", block, re.DOTALL)
         dm = re.search(r'decision = "(\w+)"', block)
         if pm and dm:
             pattern = [s.strip().strip('"') for s in pm.group(1).split(",") if s.strip()]
@@ -1217,7 +1216,7 @@ def test_clean_leaves_sibling_default_rules_untouched(renderer, src, target):
 # installs via the codex CLI (mocked), its decomposed MCP/skills are not written
 # into config.toml / .agents/skills, and clean() un-registers via the CLI.
 
-from unittest.mock import MagicMock, patch  # noqa: E402
+from unittest.mock import MagicMock, patch
 
 
 def _make_codex_native_marketplace(tmp_path, market_name="milknado"):
@@ -1283,7 +1282,7 @@ def test_codex_native_install_shells_marketplace_and_plugin_add(tmp_path):
 def test_codex_native_marketplace_add_uses_root_with_manifest(tmp_path):
     """The path passed to marketplace add holds the manifest codex actually
     parses: .agents/plugins/marketplace.json (not .claude-plugin/...)."""
-    manifest, market_root = _make_codex_native_marketplace(tmp_path)
+    manifest, _market_root = _make_codex_native_marketplace(tmp_path)
     target = tmp_path / "home"
     target.mkdir()
 
@@ -1366,7 +1365,7 @@ def test_codex_native_plugin_mcp_absent_from_config(tmp_path):
 
 def test_codex_native_clean_unregisters(tmp_path):
     """clean() runs `codex plugin remove` + `codex plugin marketplace remove`."""
-    manifest, market_root = _make_codex_native_marketplace(tmp_path)
+    manifest, _market_root = _make_codex_native_marketplace(tmp_path)
     target = tmp_path / "home"
     target.mkdir()
 
@@ -1435,9 +1434,10 @@ def test_codex_native_marketplace_add_failure_raises(tmp_path):
             return MagicMock(returncode=1, stderr="invalid marketplace file", stdout="")
         return MagicMock(returncode=0, stdout="", stderr="")
 
-    with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(RuntimeError, match="marketplace add"):
-            CodexRenderer().render(manifest, target)
+    with patch("subprocess.run", side_effect=fake_run), pytest.raises(
+        RuntimeError, match="marketplace add"
+    ):
+        CodexRenderer().render(manifest, target)
 
 
 def test_codex_native_plugin_add_warns_on_nonzero(tmp_path, capsys):

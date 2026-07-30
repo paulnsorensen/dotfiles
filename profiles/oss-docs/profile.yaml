@@ -1,0 +1,40 @@
+# oss-docs — OSS documentation and public-site work.
+# Closed MCP world: code navigation, current library and web research, repo-wiki
+# grounding, and browser verification. Framework and CMS decisions stay with the
+# target project; this profile does not impose either.
+name: oss-docs
+description: Open-source docs + public-site quality
+registries:
+  agents: agents/registry.yaml
+isolated: true
+system_prompt: CLAUDE.md
+permissions_allow:
+  - "mcp__plugin_playwright_playwright__*"
+enabled_plugins:
+  "playwright@claude-plugins-official": true
+  "frontend-design@claude-plugins-official": true
+  "plugin-dev@claude-plugins-official": false
+  "skill-creator@claude-plugins-official": false
+mcps:
+  - name: context7
+    command: npx
+    # renovate: datasource=npm depName=@upstash/context7-mcp
+    args: ["-y", "@upstash/context7-mcp@3.2.4"]
+    env:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+  - name: playwright
+    command: npx
+    # renovate: datasource=npm depName=@playwright/mcp
+    args: ["-y", "@playwright/mcp@0.0.78"]
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]
+  - name: tavily
+    command: npx
+    # renovate: datasource=npm depName=tavily-mcp
+    args: ["-y", "tavily-mcp@0.2.21"]
+    env:
+      TAVILY_API_KEY: "${TAVILY_API_KEY}"
+  - name: hallouminate
+    command: hallouminate
+    args: ["serve"]

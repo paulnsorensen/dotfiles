@@ -35,21 +35,46 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
 # ── Codex ───────────────────────────────────────────────────────────────────
 
-@test "codex config seed is valid TOML" {
-    local config="$DOTFILES_DIR/codex/config.toml"
-    [[ -f "$config" ]] || skip "codex config seed not found"
-    run yq '.' "$config" -p toml -o json
+@test "codex registry is valid YAML with the required top-level keys" {
+    # Replaces the retired codex/config.toml seed: ~/.codex/config.toml is now
+    # merged from this registry by chezmoi/private_dot_codex/modify_private_config.toml.
+    local reg="$DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
+    [[ -f "$reg" ]]
+    run yq -e '.' "$reg"
     [[ $status -eq 0 ]]
+    [[ "$(yq -oy -r '.codex.config.model' "$reg")" != "null" ]]
+    [[ "$(yq -oy -r '.codex.mcps | length' "$reg")" -gt 0 ]]
+    [[ "$(yq -oy -r '.codex.agents | length' "$reg")" -gt 0 ]]
 }
 
-@test "codex config seed registers tilth in edit mode (--edit)" {
-    # Reproducibility guard: the agents/mcp sync that once populated
-    # ~/.codex/config.toml is retired, so this seed is the only source of tilth
+@test "codex registry registers tilth in edit mode (--edit)" {
+    # Reproducibility guard: this registry is the only source of tilth for Codex
     # on a fresh setup. Without --edit tilth is read-only and cheez-write breaks.
-    local config="$DOTFILES_DIR/codex/config.toml"
-    [[ -f "$config" ]] || skip "codex config seed not found"
-    [[ "$(yq -p=toml '.mcp_servers.tilth.command' "$config")" == "tilth" ]]
-    yq -p=toml '.mcp_servers.tilth.args[]' "$config" | grep -qx -- '--edit'
+    local reg="$DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
+    [[ "$(yq -oy -r '.codex.mcps.tilth.command' "$reg")" == "tilth" ]]
+    yq -oy -r '.codex.mcps.tilth.args[]' "$reg" | grep -qx -- '--edit'
+}
+
+@test "codex registry declares no env block (secrets stay out of config.toml)" {
+    # Codex is terminal-launched and its MCP children inherit the exported shell
+    # env, so neither a secret nor a ${VAR} placeholder may be written to disk.
+    # See .hallouminate/wiki/architecture/mcp-secret-handling.md.
+    local reg="$DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
+    [[ "$(yq -oy -r '[.codex.mcps[] | select(has("env"))] | length' "$reg")" == "0" ]]
+}
+
+@test "codex registry only selects agents that declare the codex harness" {
+    local reg="$DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
+    local agents="$DOTFILES_DIR/agents/registry.yaml"
+    local name
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        run yq -oy -r ".agents.\"$name\" | [((.harnesses // [\"claude\",\"codex\"])[]) == \"codex\"] | any" "$agents"
+        [[ "$output" == "true" ]] || {
+            echo "codex.yaml selects $name, which does not declare the codex harness" >&2
+            return 1
+        }
+    done < <(yq -oy -r '.codex.agents[]' "$reg")
 }
 
 # ── Shell scripts ─────────────────────────────────────────────────────────────
