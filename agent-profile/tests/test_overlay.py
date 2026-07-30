@@ -953,6 +953,23 @@ def test_codex_mcp_servers_are_toml_tables(tmp_path, monkeypatch):
     }
 
 
+def test_oss_docs_profile_writes_pinned_playwright_mcp_for_codex(tmp_path, monkeypatch):
+    """Codex ignores enabled_plugins, so browser verification must be a profile MCP."""
+    monkeypatch.setenv("DOTFILES_DIR", str(REPO_ROOT))
+    profile = REPO_ROOT / "profiles" / "oss-docs"
+    manifest = parse_manifest(profile)
+    scratch = tmp_path / "codex-home"
+    scratch.mkdir()
+    _, env = overlay._build_isolated_codex(manifest, profile, scratch)
+    cfg = _codex_config(env)
+    assert cfg["mcp_servers"]["playwright"] == {
+        "command": "npx",
+        "args": ["-y", "@playwright/mcp@0.0.78"],
+    }
+    assert cfg["mcp_servers"]["context7"]["args"] == ["-y", "@upstash/context7-mcp@3.2.4"]
+    assert cfg["mcp_servers"]["tavily"]["args"] == ["-y", "tavily-mcp@0.2.21"]
+
+
 def test_codex_isolated_config_defaults_to_auto_permissions(tmp_path, monkeypatch):
     """Isolated Codex launches bypass ~/.codex/config.toml, so the generated
     config must carry the same Auto permissions defaults as the live seed."""

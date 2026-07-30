@@ -45,6 +45,12 @@ the declared `input_mode`.
 `mcp_servers` is the single exception: **replaced wholesale**, so deleting a server
 from the registry evicts it from the live file. That is the serena fix.
 
+The merge also removes only legacy `[[hooks.<event>]]` entries whose first command
+points to a Codex-harnessed hook basename in `agents/hooks/registry.yaml`; it keeps
+`hooks.state` trust hashes and user-authored hook blocks.[^1]
+
+[^1]: chezmoi/private_dot_codex/modify_private_config.toml; agents/hooks/registry.yaml
+
 Everything else (`exact_agents`, `exact_hooks`, `exact_lib`, `exact_reference`) is
 an `exact_` tree, so apply deletes what the registry no longer selects — verified
 by the stale `lib/tool-reroute.js` and `lib/reroute/` disappearing on first sync.
@@ -83,12 +89,11 @@ by capability (`sandbox_mode`), so shipping that would have sandboxed `coder`,
 Read-only now means **no write tool remains reachable**: every entry of
 `_WRITE_TOOLS` is banned by `disallowedTools` or excluded by a `tools` whitelist.
 
-Remaining gap: the ban lists themselves are incomplete. Agents whose *intent* is
-read-only still retain `mcp__tilth__tilth_write`, so they get no sandbox. Five are
-provably safe to tighten (`fromage-age-arch`, `fromage-age-history`,
-`fromage-secaudit`, `ghostbuster`, `nih-scanner`); the other five genuinely write
-`.cheese` artifacts — including `explorer`, whose out-of-context path writes a
-partial `.cheese/explore/<slug>.md` so the parent can re-dispatch.
+The five read-only agents (`fromage-age-arch`, `fromage-age-history`,
+`fromage-secaudit`, `ghostbuster`, `nih-scanner`) deny every `_WRITE_TOOLS` entry,
+so their rendered Codex agents carry `sandbox_mode = "read-only"`.[^1] Other
+agents retain a required write path, including `explorer`'s out-of-context
+`.cheese/explore/<slug>.md` artifact.
 
 ## Scope
 

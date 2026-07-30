@@ -122,6 +122,54 @@ EOF
     [ "$output" = "0" ]
 }
 
+@test "modify_config.toml removes managed legacy hooks without touching runtime or user hooks" {
+    local live="$TEST_HOME/live.toml"
+    cat >"$live" <<'EOF'
+[hooks.state."/home/u/.codex/hooks.json:session_start:0:0"]
+trusted_hash = "sha256:deadbeef"
+
+[[hooks.SessionStart]]
+matcher = "startup|resume"
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "bash $HOME/.codex/hooks/session-start-cheese-flair.sh"
+timeout = 5
+
+[[hooks.SessionStart]]
+matcher = "resume"
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "bash \"$HOME/.codex/hooks/session-start-cheese-flair.sh\""
+
+[[hooks.SessionStart]]
+matcher = "startup"
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "bash /opt/user/custom-startup.sh"
+
+[[hooks.PreToolUse]]
+matcher = "Bash"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "bash \"$HOME/.codex/hooks/git-guard.sh\""
+
+[[hooks.PreToolUse]]
+matcher = "Read"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "bash /opt/user/custom-pre-tool.sh"
+EOF
+
+    run sh "$MERGE" <"$live"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" >"$TEST_HOME/out.toml"
+    [ "$(yq -p=toml -oy -r '.hooks.state."/home/u/.codex/hooks.json:session_start:0:0".trusted_hash' "$TEST_HOME/out.toml")" = "sha256:deadbeef" ]
+    [ "$(yq -p=toml -oy -r '.hooks.SessionStart | length' "$TEST_HOME/out.toml")" = "1" ]
+    [ "$(yq -p=toml -oy -r '.hooks.SessionStart[0].hooks[0].command' "$TEST_HOME/out.toml")" = "bash /opt/user/custom-startup.sh" ]
+    [ "$(yq -p=toml -oy -r '.hooks.PreToolUse | length' "$TEST_HOME/out.toml")" = "1" ]
+    [ "$(yq -p=toml -oy -r '.hooks.PreToolUse[0].hooks[0].command' "$TEST_HOME/out.toml")" = "bash /opt/user/custom-pre-tool.sh" ]
+}
+
 # ── assembly: hooks.json shape ──────────────────────────────────────────────
 
 @test "assembled hooks.json is an object with a hooks map, not a flat array" {
@@ -194,6 +242,16 @@ for n in sel:
     # whey-drainer's [Bash, Read] whitelist grants no writer at all.
     _cz_render_codex_agent "$reg" whey-drainer "$REAL_DOTFILES_DIR" "$TEST_HOME/wd.toml"
     [ "$(yq -p=toml -oy -r '.sandbox_mode' "$TEST_HOME/wd.toml")" = "read-only" ]
+}
+
+@test "designated read-only agents render with Codex read-only sandboxes" {
+    source "$REAL_DOTFILES_DIR/.sync-lib.sh"
+    local reg="$REAL_DOTFILES_DIR/agents/registry.yaml"
+    local name
+    for name in fromage-age-arch fromage-age-history fromage-secaudit ghostbuster nih-scanner; do
+        _cz_render_codex_agent "$reg" "$name" "$REAL_DOTFILES_DIR" "$TEST_HOME/$name.toml"
+        [ "$(yq -p=toml -oy -r '.sandbox_mode' "$TEST_HOME/$name.toml")" = "read-only" ]
+    done
 }
 
 @test "rendered codex agent carries the registry model and a TOML body" {

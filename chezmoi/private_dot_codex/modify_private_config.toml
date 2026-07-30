@@ -63,14 +63,42 @@ fi
 [ -n "$live_json" ] && [ "$live_json" != "null" ] || live_json='{}'
 
 repo_json=$(yq -o=json '.codex' "$registry")
+hooks_registry="${CHEZMOI_SOURCE_DIR:-}/../agents/hooks/registry.yaml"
+hooks_json=$(yq -o=json '.' "$hooks_registry" 2>/dev/null || printf '{"hooks":{}}')
 
 # jq's `*` is a recursive object merge with the right side winning, so declared
 # leaves override while undeclared siblings (and whole runtime tables) survive.
-# yq hoists root scalars above table headers on output, so key order here is
-# irrelevant to TOML validity.
-printf '%s' "$live_json" | jq --argjson repo "$repo_json" '
+# Registry-managed legacy [[hooks.<event>]] blocks must go: Codex merges them
+# with hooks.json. hooks.state and user-authored blocks remain untouched.
+printf '%s' "$live_json" | jq --argjson repo "$repo_json" --argjson hook_registry "$hooks_json" '
+    def managed_legacy($basenames):
+        (.hooks? | type) == "array"
+        and (.hooks | length) > 0
+        and (.hooks[0].command? | type) == "string"
+        and ((.hooks[0].command | split(" ") | last | gsub("^[\u0027\\\"]|[\u0027\\\"]$"; "")) as $script
+             | ($script | contains("/.codex/hooks/"))
+             and (($script | split("/") | last) as $basename | ($basenames | index($basename))));
     ($repo.config // {}) as $cfg
     | ($repo.mcps // {}) as $mcps
+    | reduce (
+        $hook_registry.hooks // {}
+        | to_entries[]
+        | select((.value.harnesses // ["claude", "codex"]) | index("codex"))
+        | select(.value.event and .value.script)
+        | {event: .value.event, basename: (.value.script | split("/") | last)}
+      ) as $hook ({}; .[$hook.event] = ((.[$hook.event] // []) + [$hook.basename])) as $managed
     | (. * $cfg)
     | if ($mcps | length) > 0 then .mcp_servers = $mcps else del(.mcp_servers) end
+    | if (.hooks? | type) == "object" then
+        .hooks |= reduce (to_entries[]) as $entry
+          ({};
+           if (($managed[$entry.key] // []) | length) > 0
+              and ($entry.value | type) == "array"
+              and ($entry.value | length) > 0
+           then ($entry.value | map(select(managed_legacy($managed[$entry.key]) | not))) as $kept
+                | if ($kept | length) == 0 then . else .[$entry.key] = $kept end
+           else .[$entry.key] = $entry.value
+           end)
+      else .
+      end
 ' | yq -p=json -o=toml '.'
