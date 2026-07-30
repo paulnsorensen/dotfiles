@@ -70,6 +70,7 @@ hooks_json=$(yq -o=json '.' "$hooks_registry" 2>/dev/null || printf '{"hooks":{}
 # leaves override while undeclared siblings (and whole runtime tables) survive.
 # Registry-managed legacy [[hooks.<event>]] blocks must go: Codex merges them
 # with hooks.json. hooks.state and user-authored blocks remain untouched.
+# jq 1.7 rejects the trailing `as $managed` unless the full reduce is parenthesized.
 printf '%s' "$live_json" | jq --argjson repo "$repo_json" --argjson hook_registry "$hooks_json" '
     def managed_legacy($basenames):
         (.hooks? | type) == "array"
@@ -80,13 +81,13 @@ printf '%s' "$live_json" | jq --argjson repo "$repo_json" --argjson hook_registr
              and (($script | split("/") | last) as $basename | ($basenames | index($basename))));
     ($repo.config // {}) as $cfg
     | ($repo.mcps // {}) as $mcps
-    | reduce (
+    | (reduce (
         $hook_registry.hooks // {}
         | to_entries[]
         | select((.value.harnesses // ["claude", "codex"]) | index("codex"))
         | select(.value.event and .value.script)
         | {event: .value.event, basename: (.value.script | split("/") | last)}
-      ) as $hook ({}; .[$hook.event] = ((.[$hook.event] // []) + [$hook.basename])) as $managed
+      ) as $hook ({}; .[$hook.event] = ((.[$hook.event] // []) + [$hook.basename]))) as $managed
     | (. * $cfg)
     | if ($mcps | length) > 0 then .mcp_servers = $mcps else del(.mcp_servers) end
     | if (.hooks? | type) == "object" then

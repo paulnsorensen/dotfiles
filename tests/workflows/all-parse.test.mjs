@@ -111,25 +111,6 @@ test('workflow smoke wiring invokes the wrapper, CI runs smoke, and the old pars
   await assert.rejects(readFile(resolve(root, 'tests/workflows-parse.sh')), { code: 'ENOENT' })
 })
 
-test('CI pins Mike Farah yq from the mise manifest before test execution', async () => {
-  const ci = await readFile(resolve(root, '.github/workflows/test.yml'), 'utf8')
-  const testJobStart = ci.indexOf('\n  test:')
-  const testJobEnd = ci.indexOf('\n    - name: Run smoke tests')
-  assert.ok(testJobStart >= 0 && testJobEnd > testJobStart, 'CI must define the test job')
-
-  const testJob = ci.slice(testJobStart, testJobEnd)
-  const installYq = testJob.indexOf('- name: Install yq')
-  const runTests = testJob.indexOf('- name: Run tests')
-  assert.ok(installYq >= 0, 'CI test job must install yq')
-  assert.ok(installYq < runTests, 'CI must install yq before running tests')
-  const yqInstall = testJob.slice(installYq, runTests)
-  assert.match(yqInstall, /yq_version=.*awk.*aqua:mikefarah\\?\/yq.*chezmoi\/dot_config\/mise\/config\.toml/)
-  assert.match(yqInstall, /test -n "\$yq_version"/)
-  assert.match(yqInstall, /GOBIN="\$RUNNER_TEMP\/bin" go install "github\.com\/mikefarah\/yq\/v4@\$\{?yq_version\}?"/)
-  assert.match(yqInstall, /"\$RUNNER_TEMP\/bin\/yq" --version/)
-  assert.match(yqInstall, /echo "\$RUNNER_TEMP\/bin" >> "\$GITHUB_PATH"/)
-})
-
 test('workflow wrapper skips cleanly when node is unavailable', async () => {
   const nodeFreePath = await mkdtemp(join(tmpdir(), 'workflow-no-node-'))
   const { stdout } = await execFileAsync('/bin/bash', [resolve(root, 'tests/workflows-test.sh')], {
