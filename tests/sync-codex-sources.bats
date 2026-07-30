@@ -13,6 +13,7 @@
 #   4. the read-only predicate matches agent_profile.shared.agent_is_read_only.
 
 load test_helper
+bats_require_minimum_version 1.5.0
 
 setup() {
     setup_test_env
@@ -49,7 +50,7 @@ enabled = true
 model_availability_nux = { "gpt-5.5" = 4 }
 EOF
 
-    run sh "$MERGE" <"$live"
+    run --separate-stderr sh "$MERGE" <"$live"
     [ "$status" -eq 0 ]
     local out="$TEST_HOME/out.toml"
     printf '%s' "$output" >"$out"
@@ -80,7 +81,7 @@ args = ["start-mcp-server"]
 command = "tilth"
 EOF
 
-    run sh "$MERGE" <"$live"
+    run --separate-stderr sh "$MERGE" <"$live"
     [ "$status" -eq 0 ]
     local out="$TEST_HOME/out.toml"
     printf '%s' "$output" >"$out"
@@ -91,7 +92,7 @@ EOF
 }
 
 @test "modify_config.toml seeds a fresh machine from empty stdin" {
-    run sh "$MERGE" </dev/null
+    run --separate-stderr sh "$MERGE" </dev/null
     [ "$status" -eq 0 ]
     local out="$TEST_HOME/out.toml"
     printf '%s' "$output" >"$out"
@@ -102,17 +103,16 @@ EOF
 @test "modify_config.toml leaves an unparseable live file untouched" {
     local live="$TEST_HOME/bad.toml"
     printf 'this is [not valid = toml\n' >"$live"
-    run sh "$MERGE" <"$live"
+    run --separate-stderr sh "$MERGE" <"$live"
     # Fail safe: emit the original bytes rather than a partial document that
-    # would cost the user their trust state. bats folds stderr into $output,
-    # so assert the payload rode through AND that it said why.
+    # would cost the user their trust state.
     [ "$status" -eq 0 ]
     [[ "$output" == *"this is [not valid = toml"* ]]
-    [[ "$output" == *"not parseable TOML"* ]]
+    [[ "$stderr" == *"not parseable TOML"* ]]
 }
 
 @test "modify_config.toml pins npx MCP args (no floats)" {
-    run sh "$MERGE" </dev/null
+    run --separate-stderr sh "$MERGE" </dev/null
     [ "$status" -eq 0 ]
     printf '%s' "$output" >"$TEST_HOME/out.toml"
     local args
@@ -160,7 +160,7 @@ type = "command"
 command = "bash /opt/user/custom-pre-tool.sh"
 EOF
 
-    run sh "$MERGE" <"$live"
+    run --separate-stderr sh "$MERGE" <"$live"
     [ "$status" -eq 0 ]
     printf '%s' "$output" >"$TEST_HOME/out.toml"
     [ "$(yq -p=toml -oy -r '.hooks.state."/home/u/.codex/hooks.json:session_start:0:0".trusted_hash' "$TEST_HOME/out.toml")" = "sha256:deadbeef" ]
