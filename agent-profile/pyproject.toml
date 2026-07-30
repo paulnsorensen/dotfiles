@@ -18,7 +18,11 @@ packages = ["agent_profile"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-xdist>=3.6.1",
     "tiktoken==0.13.0",
 ]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# NOTE: -n auto is deliberately NOT in addopts. `just test-python` passes it so
+# the gate fans across all cores, while a bare `pytest -k foo --pdb` stays serial
+# and debuggable (xdist breaks --pdb and defers -x).

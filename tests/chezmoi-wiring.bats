@@ -71,7 +71,7 @@ make_isolated_chezmoi_source() {
     mkdir -p "$source_dir"
     cp -R "$REAL_DOTFILES_DIR/chezmoi/." "$source_dir/"
     local sibling
-    for sibling in agent-profile agents claude codex cursor; do
+    for sibling in agent-profile agents claude cursor; do
         ln -s "$REAL_DOTFILES_DIR/$sibling" "$root/$sibling"
     done
     echo "$source_dir"
@@ -445,6 +445,17 @@ EOF
     grep -qF '.claude.mcps | toJson | sha256sum' "$MCP_TMPL"
     grep -qF 'lib/claude-mcp-reconcile.sh' "$MCP_TMPL"
     grep -qF '.chezmoi-mcp-manifest' "$MCP_TMPL"
+}
+
+@test "plugin reconcile run_onchange embeds an installed user-scope ids projection" {
+    local plugin_tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-plugins.sh.tmpl"
+    assert_file_exists "$plugin_tmpl"
+    # A projection of installed_plugins.json (not a whole-file hash — see the
+    # in-template rationale) so an out-of-band uninstall re-runs the reconcile
+    # on the next sync without any repo file changing (spec:
+    # plugin-reconcile-self-heal, Change 1).
+    grep -qF 'installed user-scope ids:' "$plugin_tmpl"
+    grep -qF '.claude/plugins/installed_plugins.json' "$plugin_tmpl"
 }
 
 @test "MCP reconcile run_onchange renders and fails loud without jq/yq" {

@@ -52,6 +52,7 @@ print_cheatsheet() {
     row "ccr [args]"          "cc --resume"
     row "ccs"                 "fzf-jump to a running claude session"
     row "ccp <name>"          "launch a scoped profile (ccp list)"
+    row "cdp <name>"          "launch a scoped Codex profile (cdp list)"
     row "cxp [args]"          "codex tight planning profile"
     row "cxc [args]"          "codex tight coding profile"
 

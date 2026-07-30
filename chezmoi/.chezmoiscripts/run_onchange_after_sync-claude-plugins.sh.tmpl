@@ -14,6 +14,15 @@
 # apply.
 #
 # registry plugins hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/plugins/registry.yaml 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
+#
+# Also embed a projection (not a whole-file hash) of live runtime state:
+# installed_plugins.json carries lastUpdated/gitCommitSha fields that churn on
+# every CLI plugin refresh, so hashing the whole file would re-run this prime
+# on every apply. Projecting just the set of user-scope install ids and
+# indexed marketplace names catches an out-of-band uninstall (the drift class
+# that motivated this) while staying quiet when nothing meaningful changed.
+# installed user-scope ids: {{ output "sh" "-c" "jq -r '(.plugins // {}) | to_entries[] | select(.value | any(.scope==\"user\")) | .key' ~/.claude/plugins/installed_plugins.json 2>/dev/null | sort | tr '\n' ' ' || true" }}
+# indexed marketplaces:     {{ output "sh" "-c" "jq -r 'keys[]' ~/.claude/plugins/known_marketplaces.json 2>/dev/null | sort | tr '\n' ' ' || true" }}
 
 set -euo pipefail
 

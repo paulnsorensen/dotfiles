@@ -4,7 +4,6 @@ Codex and Copilot renderers (agent_profile.permissions)."""
 from __future__ import annotations
 
 import pytest
-
 from agent_profile.permissions import (
     bash_argv,
     named_mcp_tools,

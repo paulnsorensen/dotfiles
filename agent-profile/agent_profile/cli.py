@@ -30,17 +30,19 @@ from agent_profile import (
     compile_command,
     discover,
     fetch_sources_command,
+)
+from agent_profile import (
     manifest as manifest_mod,
 )
 from agent_profile.install_command import install_deprecation_message
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import ParseError, parse_manifest
+from agent_profile.permissions import parse_mcp_rule
 from agent_profile.renderers.base import (
     MergedConfigError,
     Renderer,
     includes_harness,
 )
-from agent_profile.permissions import parse_mcp_rule
 
 ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot", "crush"]
 

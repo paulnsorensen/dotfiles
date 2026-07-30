@@ -21,6 +21,7 @@ from pathlib import Path
 
 from agent_profile import compile_command
 from agent_profile.renderers.registry import build_registry
+
 from tests.conftest import write_profile
 
 _PROFILE_YAML = (

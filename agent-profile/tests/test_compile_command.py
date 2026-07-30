@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from agent_profile import cli, compile_command
 from agent_profile.renderers.registry import build_registry
+
 from tests.compile_fixtures import (
     write_live_profile,
     write_minimal_includes,

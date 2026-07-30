@@ -291,6 +291,7 @@ def _plugin_hooks(
     native_harnesses: set[str],
 ) -> list[dict[str, Any]]:
     import json as _json
+
     from agent_profile._validate import ParseError
 
     manifest = payload_root / ".claude-plugin" / "plugin.json"
@@ -532,7 +533,7 @@ def _expand_skills(
     out: list[dict[str, Any]] = []
     for rel in paths:
         target = repo_root / rel
-        if rel.endswith(".yaml") or rel.endswith(".yml"):
+        if rel.endswith((".yaml", ".yml")):
             out.extend(_expand_external_skills(target, source_dir))
         else:
             out.extend(_expand_local_skills(target, source_dir))
@@ -626,6 +627,7 @@ def _expand_plugins(
     still provide command behavior inside the native harness.
     """
     import json as _json
+
     from agent_profile._validate import ParseError
 
     data = _load_yaml_mapping(path)

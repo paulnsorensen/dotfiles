@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from agent_profile.parse import Manifest, parse_manifest
 from agent_profile.renderers.base import gate_blocks, mcps_for
 from agent_profile.renderers.claude import ClaudeRenderer

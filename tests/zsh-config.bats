@@ -70,19 +70,28 @@ teardown() {
     grep -q "alias zrl=" "$aliases_file"
 }
 
-@test "codex profile shortcuts launch tight profiles" {
+@test "codex profile shortcuts launch tight and scoped profiles" {
     local claude_file="$REAL_DOTFILES_DIR/zsh/claude.zsh"
 
     grep -Fxq 'cxp() { dots profile launch codex codex-plan "$@"; }' "$claude_file"
     grep -Fxq 'cxc() { dots profile launch codex codex-code "$@"; }' "$claude_file"
+    grep -Fxq '    dots profile launch codex "$@"' "$claude_file"
 }
 
 @test "codex profile shortcuts pass through arguments" {
     command -v zsh &>/dev/null || skip "zsh not installed"
-    run zsh -c "dots() { print -r -- \"\$*\"; }; source '$REAL_DOTFILES_DIR/zsh/claude.zsh'; cxp --sandbox workspace; cxc --model gpt-5"
+    run zsh -c "dots() { print -r -- \"\$*\"; }; source '$REAL_DOTFILES_DIR/zsh/claude.zsh'; cdp oss-docs --model gpt-5; cxp --sandbox workspace; cxc --model gpt-5"
 
     assert_success
-    [[ "$output" == $'profile launch codex codex-plan --sandbox workspace\nprofile launch codex codex-code --model gpt-5' ]]
+    [[ "$output" == $'profile launch codex oss-docs --model gpt-5\nprofile launch codex codex-plan --sandbox workspace\nprofile launch codex codex-code --model gpt-5' ]]
+}
+
+@test "codex scoped profile shortcut lists profiles" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "dots() { print -r -- \"\$*\"; }; source '$REAL_DOTFILES_DIR/zsh/claude.zsh'; cdp list"
+
+    assert_success
+    [[ "$output" == "profile list" ]]
 }
 
 @test "omp wrapper appends the default-profile system prompt" {

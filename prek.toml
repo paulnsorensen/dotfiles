@@ -11,9 +11,8 @@ hooks = [
   { id = "trailing-whitespace", args = ["--markdown-linebreak-ext=md"], exclude = "vimrc|agent-profile/tests/fixtures/golden/" },
   { id = "end-of-file-fixer", exclude = "agent-profile/tests/fixtures/golden/" },
   { id = "check-yaml" },
-  { id = "check-toml" },
-  # chezmoi modify_ scripts carry a target extension (.json) but are shell
-  # scripts, not JSON — exclude them from JSON parsing (shellcheck covers them).
+  # Chezmoi `modify_` scripts use their managed target extension but contain shell.
+  { id = "check-toml", exclude = "^chezmoi/private_dot_codex/modify_private_config\\.toml$" },
   { id = "check-json", exclude = "^chezmoi/dot_claude/modify_settings\\.json$" },
   { id = "check-merge-conflict" },
   { id = "detect-private-key", exclude = "tests/" },

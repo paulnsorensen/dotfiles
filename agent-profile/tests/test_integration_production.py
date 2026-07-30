@@ -29,10 +29,10 @@ import json
 
 import pytest
 import tomlkit
-
 from agent_profile import cli
 from agent_profile.manifest import manifest_path
 from agent_profile.renderers.registry import build_registry
+
 from tests.conftest import install_profile, write_profile
 
 

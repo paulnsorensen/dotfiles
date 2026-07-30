@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from agent_profile.compiled_types import DriftRecord
 from agent_profile.drift import (
     DriftError,
@@ -12,6 +11,7 @@ from agent_profile.drift import (
     compute_drift,
     format_drift,
 )
+
 from tests.compile_fixtures import write_json, write_text
 
 

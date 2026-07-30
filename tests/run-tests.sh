@@ -104,8 +104,12 @@ run_tests() {
     # Suppress GNU parallel's citation notice (bats --jobs dispatches via parallel)
     mkdir -p "$HOME/.parallel" && touch "$HOME/.parallel/will-cite"
 
+    # Core count, portably: nproc on Linux, sysctl on macOS (which has no nproc
+    # unless coreutils is installed). Probing sysctl FIRST silently fell back to
+    # 4 on every Linux box — `sysctl -n hw.ncpu` is a macOS key, so a 24-core
+    # machine ran the suite 6x under-parallelised.
     local jobs
-    jobs=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    jobs=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
     # Parallel across files AND within files. A file whose tests share state
     # opts out via BATS_NO_PARALLELIZE_WITHIN_FILE=true in its setup_file().

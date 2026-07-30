@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_profile import cli
 from agent_profile.parse import parse_manifest
 

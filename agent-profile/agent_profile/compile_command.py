@@ -12,10 +12,10 @@ from typing import Any, Protocol
 
 from agent_profile import discover
 from agent_profile.compiled_types import (
+    MERGED_SETTINGS_BY_HARNESS,
     CompiledFile,
     CompiledManifest,
     CompileTarget,
-    MERGED_SETTINGS_BY_HARNESS,
 )
 from agent_profile.drift import FileComparison, compute_drift
 from agent_profile.parse import parse_manifest

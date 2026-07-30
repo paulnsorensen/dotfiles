@@ -69,32 +69,43 @@ _WRITE_TOOLS = frozenset({
 })
 
 
-def _grants_write(tool: str) -> bool:
-    """True when a tool entry confers a file-write capability.
+def _covers(entry: str, tool: str) -> bool:
+    """True when a tool-config entry names ``tool``.
 
-    Matches an exact write tool or a trailing-``*`` wildcard that subsumes
-    one — registries grant whole MCP servers by glob, so a literal
-    set-membership check would miss them."""
-    if tool in _WRITE_TOOLS:
+    Matches the exact name or a trailing-``*`` wildcard that subsumes it —
+    registries grant whole MCP servers by glob, so a literal set-membership
+    check would miss them."""
+    if entry == tool:
         return True
-    if tool.endswith("*"):
-        prefix = tool[:-1]
-        return any(w.startswith(prefix) for w in _WRITE_TOOLS)
-    return False
+    return entry.endswith("*") and tool.startswith(entry[:-1])
+
+
+def _write_tool_available(tool: str, tools: tuple, disallowed: tuple) -> bool:
+    """True when ``tool`` is still reachable under an agent's tool config."""
+    if any(_covers(d, tool) for d in disallowed):
+        return False
+    # A whitelist, when present, is exhaustive: anything unlisted is denied.
+    return not tools or any(_covers(t, tool) for t in tools)
 
 
 def agent_is_read_only(item: dict[str, Any]) -> bool:
-    """True when an agent's tool config forbids file writes.
+    """True when an agent's tool config leaves no file-write capability.
 
-    Read-only when the agent either disallows a write tool
-    (``disallowedTools``) or declares a ``tools`` whitelist that contains no
-    tool. An agent that declares neither signal is treated as writable (no
-    sandbox imposed).\"\"\"
-    is treated as writable (no sandbox imposed)."""
-    if any(_grants_write(t) for t in item.get("disallowedTools") or ()):
-        return True
-    tools = item.get("tools") or ()
-    return bool(tools) and not any(_grants_write(t) for t in tools)
+    Read-only means *no* write tool remains reachable: every entry of
+    :data:`_WRITE_TOOLS` is either banned by ``disallowedTools`` or excluded by
+    a ``tools`` whitelist. An agent that bans the built-in editors but keeps a
+    write-capable MCP tool (``mcp__tilth__tilth_write``) is therefore writable —
+    banning ``Write`` alone must not imply read-only, or capability-sandboxing
+    harnesses would deny writes to agents whose whole job is writing (``coder``
+    mutates the tree exclusively through ``tilth_write``).
+
+    An agent that declares neither signal keeps every write tool, so it is
+    writable and no sandbox is imposed."""
+    disallowed = tuple(item.get("disallowedTools") or ())
+    tools = tuple(item.get("tools") or ())
+    return not any(
+        _write_tool_available(w, tools, disallowed) for w in _WRITE_TOOLS
+    )
 
 
 def claude_agent_frontmatter(item: dict[str, Any]) -> dict[str, str]:

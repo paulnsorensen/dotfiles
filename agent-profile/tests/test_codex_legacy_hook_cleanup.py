@@ -21,7 +21,6 @@ from pathlib import Path
 
 import pytest
 import tomlkit
-
 from agent_profile.parse import Manifest
 from agent_profile.renderers.codex import CodexRenderer
 
