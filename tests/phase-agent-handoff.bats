@@ -179,6 +179,13 @@ block_sha() {
     assert_success
     [[ -z "$output" ]] || { echo "explorer skills drifted: $output" >&2; return 1; }
 
+    # Researcher denies the Skill tool, so its single routing skill must remain
+    # preloaded or the body loses the framework it assumes is already present.
+    run yq -e '(.agents.researcher.skills | length) == 1 and .agents.researcher.skills[0] == "briesearch"' "$registry"
+    assert_success
+    run yq -e '.agents.researcher.disallowedTools[] | select(. == "Skill")' "$registry"
+    assert_success
+
     # Retired names must never reappear in ANY agent's skills list. They cost
     # nothing while the file is absent — but frontmatter skills are auto-invoked
     # at spawn, so the day someone adds a skill under one of these names, every
@@ -200,10 +207,45 @@ block_sha() {
     # message before the agent reads its task — it is an auto-invoke list, not
     # an availability list. Measured at 32,740 tokens for the old six-skill
     # list: 52% of the 130k context ceiling burned before the first tool call.
-    # Skills stay reachable on demand through the Skill tool.
+    # Required role discipline is inlined in the body; Skill stays ungranted.
     run yq '.agents.coder.skills | join(" ")' "$registry"
     assert_success
     [[ -z "$output" ]] || { echo "coder must carry no frontmatter skills (auto-invoked at spawn, costs context): $output" >&2; return 1; }
+}
+
+
+@test "only reviewer retains Skill; no subagent retains Agent" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    local skill_grants agent_grants
+    skill_grants=$(yq -oj '.agents' "$registry" | jq -r '
+        to_entries[]
+        | select(
+            if (.value.tools != null) then
+                ((.value.tools | index("Skill")) != null)
+            else
+                (((.value.disallowedTools // []) | index("Skill")) == null)
+            end
+        )
+        | .key')
+    [[ "$skill_grants" == "reviewer" ]] || {
+        echo "unexpected Skill grants: $skill_grants" >&2
+        return 1
+    }
+
+    agent_grants=$(yq -oj '.agents' "$registry" | jq -r '
+        to_entries[]
+        | select(
+            if (.value.tools != null) then
+                ((.value.tools | index("Agent")) != null)
+            else
+                (((.value.disallowedTools // []) | index("Agent")) == null)
+            end
+        )
+        | .key')
+    [[ -z "$agent_grants" ]] || {
+        echo "subagents must not retain Agent: $agent_grants" >&2
+        return 1
+    }
 }
 
 @test "read-only phase agents deny code edits and subagent fan-out in the registry" {
@@ -252,6 +294,15 @@ block_sha() {
         run yq -e '.agents.coder.disallowedTools[] | select(. == "Read")' "$registry"
         [[ "$status" -ne 0 ]] || { echo "coder must keep native Read available" >&2; return 1; }
     fi
+
+    # Positive grants matter as much as the denied native fallbacks: without the
+    # server and its writer, the body cannot perform its only mutation path.
+    if [[ "$has_allowlist" == yes ]]; then
+        for tool in Bash ToolSearch mcp__tilth mcp__tilth__tilth_write; do
+            run yq -e ".agents.coder.tools[] | select(. == \"$tool\")" "$registry"
+            [[ "$status" -eq 0 ]] || { echo "coder must grant $tool" >&2; return 1; }
+        done
+    fi
 }
 
 @test "an agent allowlisting an MCP server also grants ToolSearch" {
@@ -272,4 +323,40 @@ block_sha() {
         echo "$offenders" >&2
         return 1
     }
+}
+
+
+@test "roquefort wrecker keeps its structural tilth grant" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    for tool in ToolSearch mcp__tilth; do
+        run yq -e ".agents.roquefort-wrecker.tools[] | select(. == \"$tool\")" "$registry"
+        [[ "$status" -eq 0 ]] || { echo "roquefort-wrecker must grant $tool" >&2; return 1; }
+    done
+}
+
+
+@test "ricotta reducer grants only its required read-side tilth tools" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    local tools
+    tools=$(yq -r '.agents.ricotta-reducer.tools[]' "$registry")
+
+    for tool in mcp__tilth__tilth_search mcp__tilth__tilth_read mcp__tilth__tilth_grok; do
+        run grep -Fxq -- "$tool" <<<"$tools"
+        [[ "$status" -eq 0 ]] || { echo "ricotta-reducer must grant $tool" >&2; return 1; }
+    done
+    for tool in mcp__tilth 'mcp__tilth__*' mcp__tilth__tilth_write; do
+        run grep -Fxq -- "$tool" <<<"$tools"
+        [[ "$status" -ne 0 ]] || { echo "ricotta-reducer must not grant write-capable $tool" >&2; return 1; }
+    done
+}
+
+@test "fromage-fort uses thread state and shell-safe reply transport" {
+    local body="$AGENTS_DIR/agent_definitions/fromage-fort.md"
+
+    for contract in reviewThreads isResolved isOutdated '--input -'; do
+        run grep -Fq -- "$contract" "$body"
+        [[ "$status" -eq 0 ]] || { echo "fromage-fort missing $contract contract" >&2; return 1; }
+    done
+    run grep -Eq -- '(-f|--raw-field) body=' "$body"
+    [[ "$status" -ne 0 ]] || { echo "fromage-fort must not interpolate reply bodies into shell arguments" >&2; return 1; }
 }

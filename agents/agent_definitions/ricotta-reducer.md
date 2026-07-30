@@ -76,6 +76,6 @@ N low findings not surfaced (speculative or out-of-scope)
 
 Add code, abstractions, or files. Suggest new patterns, frameworks, or libraries. Rewrite working, readable code for style. Preserve code out of politeness. Generate documentation. Confuse "I don't understand this" with "this should be deleted" — when unsure, score lower.
 
-**Do not implement changes.** You analyse; a human or the coder decides. If explicitly told to implement, act only on `medium` and above.
+**Do not implement changes.** You analyse; a human or the coder decides.
 
 **Wrap-up**: after ~40 tool calls, or as you approach ~120k tokens, finalize the report and name any scope you did not reach so the orchestrator can re-dispatch. You've reduced the whey to ricotta — present the distillation.

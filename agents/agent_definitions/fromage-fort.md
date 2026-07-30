@@ -8,20 +8,45 @@ Your prompt carries a PR number. Derive owner/repo from the current git remote.
 
 ## Phase 1 — fetch threads and review bodies
 
-Everything goes through the `gh` CLI. Fetch both inline threads and PR-level review bodies:
+Everything goes through the `gh` CLI. Fetch PR context, unresolved inline threads with their thread state, and PR-level review bodies:
 
 ```bash
 gh pr view {pr} --json reviews,comments,reviewRequests
 gh pr diff {pr}
-gh api repos/{owner}/{repo}/pulls/{pr}/comments   # inline threads
-gh api repos/{owner}/{repo}/pulls/{pr}/reviews    # PR-level bodies
+gh api graphql --paginate \
+  -F owner='{owner}' -F name='{repo}' -F pr={pr} \
+  -f query='
+    query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $pr) {
+          reviewThreads(first: 100, after: $endCursor) {
+            nodes {
+              isResolved
+              isOutdated
+              comments(first: 100) {
+                nodes {
+                  databaseId
+                  body
+                  path
+                  line
+                  author { login }
+                  pullRequestReview { databaseId }
+                }
+              }
+            }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    }'
+gh api repos/{owner}/{repo}/pulls/{pr}/reviews
 ```
 
-**Inline threads** — unresolved only; skip outdated. Group by thread: first comment is the suggestion, the rest is conversation.
+**Inline threads** — keep only GraphQL `reviewThreads` nodes where `isResolved` and `isOutdated` are both false. Group each node's comments as one conversation.
 
 **Review bodies** — keep only reviews with a non-empty `body`; empty ones are containers for inline comments. Bodies are PR-level summaries (Age Review tables, Copilot overviews, `CHANGES_REQUESTED` write-ups) and one body may hold several suggestions — parse it into individual items.
 
-**Deduplicate**: when a review has both a body and inline comments (linked by `pull_request_review_id`), score the body only for suggestions its inline comments don't already cover.
+**Deduplicate**: when a review has both a body and inline comments (linked by `pullRequestReview.databaseId`), score the body only for suggestions its inline comments don't already cover.
 
 ## Phase 2 — classify, ground, score
 
@@ -72,14 +97,18 @@ Show every thread, and give each row a one-line expansion.
 
 ## Phase 4 — execute
 
-**FIX** — read the source, apply the change with `Edit`, then reply:
+**FIX** — read the source and apply the change with `Edit`. Compose each reply outside the shell: use `Write` to save the exact reply text to a temporary file, then encode that file as JSON on stdin. Never interpolate reviewer-derived text into a quoted shell command or `-f`/`--raw-field` argument.
 
 ```bash
 # inline thread
-gh api repos/{owner}/{repo}/pulls/{pr}/comments/{commentId}/replies -f body="Fixed: <what changed>."
+jq -Rs '{body: .}' < "$reply_file" |
+  gh api --method POST repos/{owner}/{repo}/pulls/{pr}/comments/{commentId}/replies --input -
 # review body item
-gh api repos/{owner}/{repo}/issues/{pr}/comments -f body="Re: @reviewer's review — Fixed: <what changed>."
+jq -Rs '{body: .}' < "$reply_file" |
+  gh api --method POST repos/{owner}/{repo}/issues/{pr}/comments --input -
 ```
+
+Delete the temporary reply file after a successful post.
 
 **PUSH BACK** — reply professionally with the *reason*, citing CLAUDE.md conventions, the complexity budget, or the early-dev stance. Skip purely stylistic suggestions and mark them SKIP.
 

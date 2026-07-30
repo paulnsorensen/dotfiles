@@ -14,8 +14,8 @@
 # Granting it injects the full skill listing into the spawn context — measured
 # at 11,355 tokens on 2.1.219, ~40% of a typical sub-agent's spawn weight, and
 # independent of the `skills:` preload list below. Withholding it by denylist
-# and omitting it from an allowlist save identically. Only researcher and
-# reviewer keep it; their bodies invoke `briesearch` and `age` through it.
+# and omitting it from an allowlist save identically. Only reviewer keeps it
+# to invoke `age`; researcher preloads `briesearch` and denies the tool.
 #
 # ToolSearch must be granted wherever an `mcp__` server is allowlisted: without
 # it Claude Code disables deferred MCP loading and every MCP schema loads
@@ -156,14 +156,16 @@ agents:
       cursor: claude-sonnet
     effort: medium
     # Missed in the cheez→tilth migration: the body used to name the Serena MCP
-    # for symbol lookups while the allowlist granted no MCP at all, so dead-code
-    # verification had no structural backend. Granted tilth (plus the ToolSearch
-    # its deferral requires) to match every other read-only analysis agent.
+    # for symbol lookups while the allowlist granted no MCP at all. Grant only
+    # tilth's read-side tools, plus the ToolSearch their deferral requires, so
+    # the structural backend does not violate this analysis-only role.
     tools:
     - Read
     - Bash
     - ToolSearch
-    - mcp__tilth
+    - mcp__tilth__tilth_search
+    - mcp__tilth__tilth_read
+    - mcp__tilth__tilth_grok
     skills:
     - de-slop
     maxTurns: 50
@@ -316,6 +318,8 @@ agents:
     # ToolSearch MUST stay in this list: Claude Code disables deferred MCP tool
     # loading entirely when ToolSearch is absent from an agent's pool, which
     # would load every MCP schema eagerly and cost more than the allowlist saves.
+    # The exact tilth_write grant accompanies Claude's whole-server shorthand
+    # so Codex/opencode read-only derivation also sees the mutation surface.
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop through tilth MCP tools. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through tilth_write — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: sonnet
@@ -326,14 +330,15 @@ agents:
     - Read
     - ToolSearch
     - mcp__tilth
+    - mcp__tilth__tilth_write
     color: green
     effort: medium
     # No frontmatter skills. Claude Code auto-invokes every listed skill at
     # spawn, pasting each full SKILL.md body in as a user message before the
     # agent reads its task — it is an auto-invoke list, not an availability
     # list. The old list (cook/press/cure/de-slop/tdd-assertions/commit) cost
-    # 32,740 tokens, 52% of the 130k context ceiling, every dispatch. The
-    # coder still reaches any skill on demand via the Skill tool.
+    # 32,740 tokens, 52% of the 130k context ceiling, every dispatch. Required
+    # role discipline is inlined in the coder body; Skill remains ungranted.
     skills: []
     maxTurns: 100
     body_path: agents/agent_definitions/coder.md

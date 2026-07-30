@@ -248,7 +248,7 @@ for n in sel:
     source "$REAL_DOTFILES_DIR/.sync-lib.sh"
     local reg="$REAL_DOTFILES_DIR/agents/registry.yaml"
     local name
-    for name in fromage-age-arch fromage-age-history fromage-secaudit ghostbuster nih-scanner; do
+    for name in fromage-age-arch fromage-age-history fromage-secaudit ghostbuster nih-scanner ricotta-reducer; do
         _cz_render_codex_agent "$reg" "$name" "$REAL_DOTFILES_DIR" "$TEST_HOME/$name.toml"
         [ "$(yq -p=toml -oy -r '.sandbox_mode' "$TEST_HOME/$name.toml")" = "read-only" ]
     done
