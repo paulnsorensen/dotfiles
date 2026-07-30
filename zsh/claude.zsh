@@ -120,6 +120,22 @@ ccp() {
     dots profile launch claude "$@"
 }
 
+# cdp <name> — launch a scoped Codex profile (profiles/<name>/profile.yaml).
+#   cdp oss-docs            → dots profile launch codex oss-docs
+#   cdp list                → dots profile list
+cdp() {
+    if [[ -z "$1" ]]; then
+        echo "Usage: cdp <profile> [-- codex args...]" >&2
+        echo "  cdp list   list available profiles" >&2
+        return 1
+    fi
+    if [[ "$1" == "list" || "$1" == "ls" ]]; then
+        dots profile list
+        return
+    fi
+    dots profile launch codex "$@"
+}
+
 # Tight Codex profile shortcuts.
 cxp() { dots profile launch codex codex-plan "$@"; }
 cxc() { dots profile launch codex codex-code "$@"; }
