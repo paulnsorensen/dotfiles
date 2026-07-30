@@ -132,9 +132,10 @@ teardown() {
 
 # --- Mock helpers ---
 
-# Usage: write_mock_brew [installed_formulae] [installed_casks] [fail_pkg] [outdated_greedy_casks]
+# Usage: write_mock_brew [installed_formulae] [installed_casks] [fail_pkg] [outdated_greedy_casks] [info_json]
 write_mock_brew() {
-    local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}" outdated_casks="${4:-}"
+    local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}" outdated_casks="${4:-}" info_json="${5:-}"
+    [[ -z "$info_json" ]] && info_json='{"casks":[]}'
     cat > "$MOCK_BIN/brew" << MOCKBREW
 #!/bin/bash
 echo "brew \$*" >> "\$BREW_LOG"
@@ -154,7 +155,10 @@ case "\$1" in
     tap)
         if [[ \$# -eq 1 ]]; then echo ""; fi
         ;;
-    install)
+    info)
+        echo '$info_json'
+        ;;
+    install|reinstall)
         if [[ -n "$fail_pkg" && ("\$2" == "$fail_pkg" || "\$3" == "$fail_pkg") ]]; then
             exit 1
         fi
@@ -403,6 +407,81 @@ YAML
     assert_success
 
     ! grep -q "brew install --cask" "$BREW_LOG"
+}
+
+@test "heal reinstalls managed cask whose app bundle is missing" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
+
+    export CASK_APPDIR="$TEST_HOME/Applications"
+    mkdir -p "$CASK_APPDIR"
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - fakecask: { source: cask, platform: mac }
+YAML
+    write_mock_brew "" "fakecask" "" "" '{"casks":[{"token":"fakecask","artifacts":[{"app":["Fakecask.app"]}]}]}'
+
+    run_sync
+    assert_success
+
+    grep -q "brew reinstall --cask fakecask" "$BREW_LOG"
+}
+
+@test "heal skips cask whose app bundle is present" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
+
+    export CASK_APPDIR="$TEST_HOME/Applications"
+    mkdir -p "$CASK_APPDIR/Fakecask.app"
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - fakecask: { source: cask, platform: mac }
+YAML
+    write_mock_brew "" "fakecask" "" "" '{"casks":[{"token":"fakecask","artifacts":[{"app":["Fakecask.app"]}]}]}'
+
+    run_sync
+    assert_success
+
+    ! grep -q "reinstall" "$BREW_LOG"
+}
+
+@test "heal runs on the cached fast-path" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
+
+    export CASK_APPDIR="$TEST_HOME/Applications"
+    mkdir -p "$CASK_APPDIR/Fakecask.app"
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - fakecask: { source: cask, platform: mac }
+YAML
+    write_mock_brew "" "fakecask" "" "" '{"casks":[{"token":"fakecask","artifacts":[{"app":["Fakecask.app"]}]}]}'
+    run_sync
+    assert_success
+    rm -f "$BREW_LOG"
+
+    rm -rf "$CASK_APPDIR/Fakecask.app"
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "unchanged (cached)"
+    grep -q "brew reinstall --cask fakecask" "$BREW_LOG"
+}
+
+@test "failed heal reinstall fails the cached sync" {
+    [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
+
+    export CASK_APPDIR="$TEST_HOME/Applications"
+    mkdir -p "$CASK_APPDIR/Fakecask.app"
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - fakecask: { source: cask, platform: mac }
+YAML
+    write_mock_brew "" "fakecask" "" "" '{"casks":[{"token":"fakecask","artifacts":[{"app":["Fakecask.app"]}]}]}'
+    run_sync
+    assert_success
+    rm -f "$BREW_LOG"
+
+    rm -rf "$CASK_APPDIR/Fakecask.app"
+    write_mock_brew "" "fakecask" "fakecask" "" '{"casks":[{"token":"fakecask","artifacts":[{"app":["Fakecask.app"]}]}]}'
+    run bash "$SYNC_SCRIPT"
+    assert_failure
 }
 
 # A PATH with the C build toolchain (gcc/make/file) absent but every tool
