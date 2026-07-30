@@ -41,9 +41,16 @@ Read before judging. The repo's design rationale lives in the wiki; the
 *direction of travel* lives in git history.
 
 - **Wiki** (`repo:dotfiles:wiki`): `list_tree`, then `read_markdown` /
-  `ground` on `architecture/agent-profile.md`, `architecture/agents-dir.md`,
-  and the relevant `harnesses/<harness>.md`. These define what `ap` is
+  `ground` on `architecture/config-drift.md` **first** (its "Current state"
+  section defines who owns each live surface *today* and catalogs known drift
+  patterns), then `architecture/agent-profile.md`, `architecture/agents-dir.md`,
+  and the relevant `harnesses/<harness>.md`. These define what the repo is
   *supposed* to produce and where each harness's config lives.
+  - **The wiki overrides this skill.** Any target-state fact baked into this
+    file (paths, ownership, anchor commits) can go stale; when the wiki's
+    current-state pages disagree with a claim here, follow the wiki and flag
+    the skill for a `/skill-improver` pass — do not classify drift against the
+    stale model.
   - If `ground` errors with a schema/index error (e.g. `missing column
     chunk_id`), the LanceDB index is stale — run `hallouminate index` (or note
     it as a dotfiles bug if it won't rebuild) and fall back to `read_markdown`.
@@ -54,22 +61,27 @@ Read before judging. The repo's design rationale lives in the wiki; the
   git -C "$DOTFILES_DIR" log --oneline --grep='ap\|migrat\|settings\|hook' -20
   ```
 
-  Anchor commit: **#217 `feat(ap): add global profile + migrate settings.json
-  to chezmoi seed`** — the point hooks moved from `settings.json` into the
-  plugin tree and `settings.json` became a seed-once `create_` file. Anything
-  in `settings.json` matching a *pre-#217* shape is a stale-remnant candidate.
+  Historical anchor commit: **#217 `feat(ap): add global profile + migrate
+  settings.json to chezmoi seed`** — the point hooks first moved out of
+  `settings.json`. Since then Claude went **fully chezmoi-authoritative**:
+  `settings.json` is composed wholesale by `chezmoi/dot_claude/modify_settings.json`
+  from `chezmoi/.chezmoidata/claude.yaml`. Anything live matching a pre-#217
+  shape is still a stale-remnant candidate, but the *current* owner is the
+  modify script, not a plugin tree (which may not exist at all on the machine).
 
 Key target-state facts to hold:
 
 - Registries (edit surface): `agents/mcp/registry.yaml`,
   `agents/hooks/registry.yaml`, `agents/registry.yaml`, `skills/`.
-- `base` = registry union (render primitive); `global` = live install overlay
-  (`target_default: $HOME`, `local` marketplace, `enabled_plugins: global@local`).
-- Hook wiring lives in the **plugin tree's** `plugin.json`
-  (`~/.claude/plugins/local/global/.claude-plugin/plugin.json`), **NOT** in
-  `~/.claude/settings.json`. `ap install global` only jq-merges
-  `enabledPlugins` + `extraKnownMarketplaces` into `settings.json`, preserving
-  user keys — it never writes `.hooks` there.
+- `base` = registry union (render primitive). `profiles/global` is a
+  **deprecated stub** superseded by `profiles/live` — check the profile's own
+  yaml before describing it.
+- Claude's `~/.claude/settings.json` (hooks, enabledPlugins,
+  extraKnownMarketplaces, permissions) is **chezmoi-authoritative**: composed
+  wholesale by `chezmoi/dot_claude/modify_settings.json` from
+  `chezmoi/.chezmoidata/claude.yaml` + the plugin registries. Skills and
+  agents render flat to `~/.claude/skills/` and `~/.claude/agents/`; a
+  `~/.claude/plugins/local/` tree is historical and may be absent entirely.
 - The Claude-specific JS guards (`~/.claude/hooks/*.js`), `rtk`, and any tmux
   hook are **settings-only and legit** — not plugin-managed, so not drift.
 
@@ -79,7 +91,7 @@ Read the live files per harness (use `cheez-read`/`jq`, not blind cat):
 
 | Harness | Live files |
 |---|---|
-| claude | `~/.claude/settings.json`, `~/.claude/plugins/local/global/.claude-plugin/plugin.json`, `~/.claude/plugins/local/global/.mcp.json` |
+| claude | `~/.claude/settings.json` (+ `~/.claude/plugins/local/global/` only if that historical tree exists) |
 | codex | `~/.codex/config.toml` (`[mcp_servers]`, `[[hooks.*]]`), `~/.codex/hooks.json` |
 | opencode | `~/.config/opencode/opencode.json` (`mcp`, `provider`) |
 | cursor | `~/.cursor/mcp.json`, `~/.cursor/hooks.json` |
@@ -87,14 +99,24 @@ Read the live files per harness (use `cheez-read`/`jq`, not blind cat):
 
 ### 3. Render the target — diff live vs `ap`
 
-Render `base` into a throwaway target (never touches live config) and diff:
+For **Claude**, the authoritative check is the chezmoi modify script itself —
+feed it the live file and diff the result against live (byte-identical = no
+drift):
+
+```bash
+sh "$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" \
+  < ~/.claude/settings.json | diff - ~/.claude/settings.json
+```
+
+For the other harnesses, render `base` into a throwaway target (never touches
+live config) and diff:
 
 ```bash
 TMP="$(mktemp -d)"
 DOTFILES_DIR="$DOTFILES_DIR" ap install base --target "$TMP"
-dots profile describe global          # resolved manifest for the live overlay
-# Compare e.g. rendered plugin.json hooks vs live plugin.json,
-# rendered .mcp.json vs live, codex config_servers vs rendered.
+dots profile describe live            # resolved manifest for the live overlay
+# Compare e.g. codex mcp_servers vs rendered, opencode/cursor mcp files vs
+# rendered payloads.
 ```
 
 For each difference, ask: *is the live side a superset (extra entries) or does
@@ -146,10 +168,16 @@ Two stale-remnant classes self-heal **inside the renderers**, on every
   prior render merged into a persistent file (codex `config.toml`,
   opencode/cursor/copilot JSON, claude user-scope `~/.claude.json`). claude
   plugin-scoped `.mcp.json` is whole-file so it never drifts.
+  **Caveat ([#561](https://github.com/paulnsorensen/dotfiles/issues/561))**:
+  this reconcile is *windowed* — it only fires on the sync that crosses the
+  drop, and cursor's live `mcp.json` is a disconnected surface no code path
+  prunes at all. A registry-dropped MCP found live in opencode/cursor with the
+  drop already behind the manifest cache needs a manual `jq del(...)` heal —
+  see the wiki's config-drift § "registry MCP drops stranded in opencode/cursor".
 
-So the heal for both is just **`dots profile install global`** (or a full
-`dots sync`) — it re-runs the renderers + reconcile. opencode/cursor/copilot
-receive no registry hooks, so there's no hook drift there.
+So the heal for both is just **`dots sync`** — it re-runs the renderers +
+reconcile. opencode/cursor/copilot receive no registry hooks, so there's no
+hook drift there.
 
 The doctor's value is *explaining why* drift appeared and catching the classes
 the renderers don't auto-heal. For those, propose the precise edit and confirm

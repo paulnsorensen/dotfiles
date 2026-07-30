@@ -183,6 +183,50 @@ upgrade_casks_greedy() {
     fi
 }
 
+# Repairs a class of drift `brew_install_pkgs` and `upgrade_casks_greedy`
+# can't see: brew's own state says a managed cask is installed, but its app
+# bundle was deleted out-of-band (e.g. dragged to the Trash). `brew list
+# --cask` still lists it, so the install pass skips it as already-present,
+# and there's no upgrade path that would ever reinstall it — real incident:
+# Cursor.app vanished from /Applications while `brew list --cask` still
+# showed `cursor`, requiring a manual `brew reinstall --cask cursor`.
+# Two brew calls are cheap enough to run even when the manifest-hash cache
+# short-circuits the rest of sync_brew.
+heal_missing_cask_apps() {
+    [[ "$PLATFORM" == "Darwin" ]] || return 0
+    command -v brew &>/dev/null || return 0
+    local managed installed
+    managed=$(get_source_pkgs "cask")
+    if [[ "${DOTFILES_DEV:-false}" == "true" ]]; then
+        managed+=$'\n'"$(get_source_pkgs "cask" "--dev")"
+    fi
+    [[ -n "$managed" ]] || return 0
+    installed=$(brew list --cask 2>/dev/null || true)
+    local -a present=()
+    local cask
+    while IFS= read -r cask; do
+        [[ -z "$cask" ]] && continue
+        grep -qx "${cask##*/}" <<< "$installed" && present+=("${cask##*/}")
+    done <<< "$managed"
+    ((${#present[@]})) || return 0
+    local json
+    if ! json=$(brew info --cask --json=v2 "${present[@]}" 2>/dev/null); then
+        log_warning "brew info --cask failed; skipping cask app heal"
+        return 0
+    fi
+    local appdir="${CASK_APPDIR:-/Applications}" token app
+    # shellcheck disable=SC2016  # $t in the yq expression is a yq variable, not shell
+    while IFS=$'\t' read -r token app; do
+        [[ -z "$token" || -z "$app" ]] && continue
+        [[ -e "$appdir/$app" || -e "$HOME/Applications/$app" ]] && continue
+        echo "  ! $token: $app missing from $appdir — reinstalling"
+        if ! brew reinstall --cask "$token" </dev/null; then
+            log_error "Failed to reinstall $token"
+            FAILED+=("$token")
+        fi
+    done < <(yq -r '.casks[] | .token as $t | .artifacts[] | select(tag == "!!map") | .app | select(. != null) | .[] | select(tag == "!!str") | $t + "\t" + .' <<< "$json" 2>/dev/null)
+}
+
 sync_brew() {
     # Install the OS build toolchain first so any sudo prompt is up front.
     bootstrap_brew_deps_linux
@@ -251,6 +295,8 @@ sync_brew() {
             brew_install_pkgs "Dev casks" "$(get_source_pkgs "cask" "--dev")" "$installed_casks" --cask
         fi
     fi
+
+    [[ "$PLATFORM" == "Darwin" ]] && heal_missing_cask_apps
 
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
         log_info "Upgrading brew packages..."
@@ -659,6 +705,11 @@ sync_native_harnesses() {
 # present even when the package declaration cache is valid.
 if check_cache; then
     log_success "Package manifests unchanged (cached), syncing Claude"
+    heal_missing_cask_apps
+    if ((${#FAILED[@]})); then
+        log_error "failed to heal ${#FAILED[@]} package(s): ${FAILED[*]}"
+        exit 1
+    fi
     sync_mise "aqua:anthropics/claude-code@v2.1.219"
     exit 0
 fi
