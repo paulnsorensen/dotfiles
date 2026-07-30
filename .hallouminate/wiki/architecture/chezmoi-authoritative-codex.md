@@ -49,8 +49,6 @@ The merge also removes only legacy `[[hooks.<event>]]` entries whose first comma
 points to a Codex-harnessed hook basename in `agents/hooks/registry.yaml`; it keeps
 `hooks.state` trust hashes and user-authored hook blocks.[^1]
 
-[^1]: chezmoi/private_dot_codex/modify_private_config.toml; agents/hooks/registry.yaml
-
 Everything else (`exact_agents`, `exact_hooks`, `exact_lib`, `exact_reference`) is
 an `exact_` tree, so apply deletes what the registry no longer selects — verified
 by the stale `lib/tool-reroute.js` and `lib/reroute/` disappearing on first sync.
@@ -91,7 +89,7 @@ Read-only now means **no write tool remains reachable**: every entry of
 
 The five read-only agents (`fromage-age-arch`, `fromage-age-history`,
 `fromage-secaudit`, `ghostbuster`, `nih-scanner`) deny every `_WRITE_TOOLS` entry,
-so their rendered Codex agents carry `sandbox_mode = "read-only"`.[^1] Other
+so their rendered Codex agents carry `sandbox_mode = "read-only"`.[^2] Other
 agents retain a required write path, including `explorer`'s out-of-context
 `.cheese/explore/<slug>.md` artifact.
 
@@ -104,3 +102,6 @@ Cursor, and Copilot remain frozen.
 
 See also [[codex-first-class-review]], [[codex-hooks-schema]],
 [[sync-and-chezmoi]], [[config-drift]].
+
+[^1]: chezmoi/private_dot_codex/modify_private_config.toml; agents/hooks/registry.yaml
+[^2]: agents/registry.yaml; agent-profile/agent_profile/shared.py:63-108; tests/sync-codex-sources.bats
