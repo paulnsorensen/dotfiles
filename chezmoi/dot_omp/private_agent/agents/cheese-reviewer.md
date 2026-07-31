@@ -2,6 +2,7 @@
 name: cheese-reviewer
 description: Use this agent when a change needs a Cheese-style severity-ranked review without applying fixes. Typical triggers include reviewing a branch or diff for correctness, security, test quality, unnecessary complexity, performance risk, and maintainability issues.
 tools: read,grep,glob,bash,ast_grep
+model: "@strong"
 thinkingLevel: high
 ---
 
