@@ -42,7 +42,7 @@ claude:
     context7:
       command: npx
       # renovate: datasource=npm depName=@upstash/context7-mcp
-      args: ["-y", "@upstash/context7-mcp@3.2.4"]
+      args: ["-y", "@upstash/context7-mcp@3.2.5"]
       env:
         CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
     tavily:
