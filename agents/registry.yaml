@@ -38,7 +38,7 @@ agents:
     - Skill
     - Agent
     color: red
-    effort: xhigh
+    effort: high
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-arch.md
@@ -71,7 +71,7 @@ agents:
       claude: sonnet
       codex: gpt-5.6-luna
       cursor: auto
-    effort: xhigh
+    effort: medium
     tools:
     - Read
     - Write
@@ -99,7 +99,7 @@ agents:
     - Skill
     - Agent
     color: red
-    effort: xhigh
+    effort: high
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-secaudit.md
@@ -109,7 +109,7 @@ agents:
       claude: sonnet
       codex: gpt-5.6-terra
       cursor: auto
-    effort: high
+    effort: medium
     disallowedTools:
     - Edit
     - NotebookEdit
@@ -154,7 +154,7 @@ agents:
       claude: sonnet
       codex: gpt-5.6-terra
       cursor: claude-sonnet
-    effort: high
+    effort: medium
     # Missed in the cheez→tilth migration: the body used to name the Serena MCP
     # for symbol lookups while the allowlist granted no MCP at all. Grant only
     # tilth's read-side tools, plus the ToolSearch their deferral requires, so
@@ -176,7 +176,7 @@ agents:
       claude: sonnet
       codex: gpt-5.6-luna
       cursor: claude-haiku
-    effort: xhigh
+    effort: medium
     # Body directs symbol/caller queries through tilth, which the allowlist did
     # not grant; ToolSearch accompanies it so the MCP schemas stay deferred.
     tools:
@@ -261,7 +261,7 @@ agents:
     - Glob
     - Skill
     color: cyan
-    effort: high
+    effort: medium
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/explorer.md
@@ -283,7 +283,7 @@ agents:
     - Glob
     - Skill
     color: blue
-    effort: high
+    effort: medium
     skills:
     - briesearch
     maxTurns: 50
@@ -302,14 +302,13 @@ agents:
     - Grep
     - Glob
     color: red
-    effort: xhigh
+    effort: high
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/reviewer.md
   coder:
-    # Runs on Luna at xhigh effort: the task is bounded by an approved contract,
-    # while deeper reasoning protects implementation and verification quality at
-    # the high-volume worker tier.
+    # Codex uses Luna for bounded high-volume work. OMP's native coder pairs the
+    # same family with xhigh thinking; registry effort remains Claude-specific.
     # Grants an explicit allowlist rather than a denylist: an allowlist keeps
     # eager built-in tool schemas out of the spawn context, which is the bulk of
     # sub-agent spawn weight (MCP schemas are already deferred). Workspace file
@@ -333,7 +332,7 @@ agents:
     - mcp__tilth
     - mcp__tilth__tilth_write
     color: green
-    effort: xhigh
+    effort: medium
     # No frontmatter skills. Claude Code auto-invokes every listed skill at
     # spawn, pasting each full SKILL.md body in as a user message before the
     # agent reads its task — it is an auto-invoke list, not an availability
@@ -365,7 +364,7 @@ agents:
     - NotebookEdit
     - Skill
     color: yellow
-    effort: xhigh
+    effort: medium
     skills: []
     maxTurns: 100
     body_path: agents/agent_definitions/generalist.md

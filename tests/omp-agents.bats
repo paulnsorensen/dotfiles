@@ -22,6 +22,19 @@ expected_omp_model() {
     esac
 }
 
+expected_omp_thinking() {
+    case "$1" in
+        fromage-age-arch|fromage-secaudit|reviewer) echo xhigh ;;
+        ghostbuster|ricotta-reducer|researcher) echo high ;;
+        generalist) echo xhigh ;;
+        fromage-fort|roquefort-wrecker|coder) echo xhigh ;;
+        explorer) echo high ;;
+        nih-scanner) echo medium ;;
+        fromage-age-history|duckdb-expert|whey-drainer|worktree-content-digest) echo low ;;
+        *) return 1 ;;
+    esac
+}
+
 @test "OMP defines every canonical agent with its canonical name" {
     local expected actual
     expected="$(canonical_agents)"
@@ -34,8 +47,8 @@ expected_omp_model() {
     [[ "$actual" == "$expected" ]]
 }
 
-@test "OMP canonical agents use valid native frontmatter and model tiers" {
-    local name file codex_model expected_model actual_model expected_effort actual_effort description tools tool
+@test "OMP canonical agents use valid native frontmatter and workload routes" {
+    local name file codex_model expected_model actual_model expected_thinking actual_thinking description tools tool
 
     while IFS= read -r name; do
         file="$OMP_AGENTS/$name.md"
@@ -49,9 +62,9 @@ expected_omp_model() {
         actual_model="$(frontmatter '.model' "$file")"
         [[ "$actual_model" == "$expected_model" ]]
 
-        expected_effort="$(yq -oy -r ".agents.\"$name\".effort" "$REGISTRY")"
-        actual_effort="$(frontmatter '.thinkingLevel' "$file")"
-        [[ "$actual_effort" == "$expected_effort" ]]
+        expected_thinking="$(expected_omp_thinking "$name")"
+        actual_thinking="$(frontmatter '.thinkingLevel' "$file")"
+        [[ "$actual_thinking" == "$expected_thinking" ]]
 
         tools="$(frontmatter '.tools' "$file")"
         [[ -n "$tools" && "$tools" != "null" ]]
@@ -104,4 +117,6 @@ expected_omp_model() {
     [[ "$(yq -oy -r '.omp.config.modelRoles.default' "$OMP_CONFIG")" == "@balanced:medium" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.plan' "$OMP_CONFIG")" == "@strong:xhigh" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.task' "$OMP_CONFIG")" == "@fast" ]]
+    [[ "$(frontmatter '.model' "$OMP_AGENTS/cheese-reviewer.md")" == "@strong" ]]
+    [[ "$(frontmatter '.thinkingLevel' "$OMP_AGENTS/cheese-reviewer.md")" == "xhigh" ]]
 }
