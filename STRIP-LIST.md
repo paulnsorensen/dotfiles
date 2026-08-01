@@ -190,7 +190,7 @@ All other packages (productivity tools, editors, optional CLIs). See catalog.
 | `tests/install-bats.sh` | COPY | Bats installer |
 | `tests/test_helper.bash` | COPY | Test helper |
 | `tests/dots.bats` | COPY+GENERICIZE | Added BASH_SOURCE path-derivation regression test |
-| `tests/sync-rollback.bats` | COPY | Tests sync machinery |
+| `tests/sync-orchestrator.bats` | COPY | Tests sync machinery |
 | `tests/packages.bats` | COPY | Tests packages machinery |
 | `tests/chezmoi-wiring.bats` | COPY (adapted) | Removed tests for stripped personal content |
 | `tests/install-base-profile.bats` | COPY | Tests base profile installer |
