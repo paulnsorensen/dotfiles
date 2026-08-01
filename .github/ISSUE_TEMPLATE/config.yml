@@ -1,0 +1,7 @@
+# Disable blank issues so users start from a template, and surface
+# alternative support channels for non-bug, non-feature questions.
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/paulnsorensen/dotfiles/security/advisories/new
+    about: Report a vulnerability privately via a draft security advisory.
