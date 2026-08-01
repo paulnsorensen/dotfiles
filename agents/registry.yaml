@@ -38,7 +38,7 @@ agents:
     - Skill
     - Agent
     color: red
-    effort: high
+    effort: xhigh
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-age-arch.md
@@ -69,9 +69,9 @@ agents:
     description: PR review comment responder. Triages both inline review threads AND PR-level review body comments using severity tiers (blocker/high/medium/low) — fixes high-severity items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       cursor: auto
-    effort: medium
+    effort: xhigh
     tools:
     - Read
     - Write
@@ -99,7 +99,7 @@ agents:
     - Skill
     - Agent
     color: red
-    effort: high
+    effort: xhigh
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/fromage-secaudit.md
@@ -109,7 +109,7 @@ agents:
       claude: sonnet
       codex: gpt-5.6-terra
       cursor: auto
-    effort: medium
+    effort: high
     disallowedTools:
     - Edit
     - NotebookEdit
@@ -129,7 +129,7 @@ agents:
     description: Structural NIH pattern scanner. Uses AST search and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       cursor: auto
     effort: medium
     disallowedTools:
@@ -154,7 +154,7 @@ agents:
       claude: sonnet
       codex: gpt-5.6-terra
       cursor: claude-sonnet
-    effort: medium
+    effort: high
     # Missed in the cheez→tilth migration: the body used to name the Serena MCP
     # for symbol lookups while the allowlist granted no MCP at all. Grant only
     # tilth's read-side tools, plus the ToolSearch their deferral requires, so
@@ -174,9 +174,9 @@ agents:
     description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       cursor: claude-haiku
-    effort: medium
+    effort: xhigh
     # Body directs symbol/caller queries through tilth, which the allowlist did
     # not grant; ToolSearch accompanies it so the MCP schemas stay deferred.
     tools:
@@ -250,7 +250,7 @@ agents:
     description: Read-only codebase investigator. Answers "where / how / what" questions by searching and reading — never writes. Returns a structured findings digest (file:line citations, call paths, conclusions), keeping the file dumps out of the parent's context. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       opencode: inherit
     disallowedTools:
     - Edit
@@ -261,7 +261,7 @@ agents:
     - Glob
     - Skill
     color: cyan
-    effort: medium
+    effort: high
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/explorer.md
@@ -283,7 +283,7 @@ agents:
     - Glob
     - Skill
     color: blue
-    effort: medium
+    effort: high
     skills:
     - briesearch
     maxTurns: 50
@@ -302,13 +302,14 @@ agents:
     - Grep
     - Glob
     color: red
-    effort: high
+    effort: xhigh
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/reviewer.md
   coder:
-    # Runs on sonnet at medium effort: Sonnet 5 matches Opus at low/medium effort
-    # at a fraction of the token cost, and the write surface's loop is bounded.
+    # Runs on Luna at xhigh effort: the task is bounded by an approved contract,
+    # while deeper reasoning protects implementation and verification quality at
+    # the high-volume worker tier.
     # Grants an explicit allowlist rather than a denylist: an allowlist keeps
     # eager built-in tool schemas out of the spawn context, which is the bulk of
     # sub-agent spawn weight (MCP schemas are already deferred). Workspace file
@@ -323,7 +324,7 @@ agents:
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop through tilth MCP tools. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through tilth_write — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       opencode: inherit
     tools:
     - Bash
@@ -332,7 +333,7 @@ agents:
     - mcp__tilth
     - mcp__tilth__tilth_write
     color: green
-    effort: medium
+    effort: xhigh
     # No frontmatter skills. Claude Code auto-invokes every listed skill at
     # spawn, pasting each full SKILL.md body in as a user message before the
     # agent reads its task — it is an auto-invoke list, not an availability
@@ -364,7 +365,7 @@ agents:
     - NotebookEdit
     - Skill
     color: yellow
-    effort: medium
+    effort: xhigh
     skills: []
     maxTurns: 100
     body_path: agents/agent_definitions/generalist.md

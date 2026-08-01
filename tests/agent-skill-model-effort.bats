@@ -1,17 +1,11 @@
 #!/usr/bin/env bats
-# Guard the agent/skill model+effort retune (spec: agent-model-effort-retune).
+# Guard workload-specific agent routes and the selected-skill effort policy.
 #
-# WHY: the retune's whole premise is that EVERY agent and skill carries an
-# EXPLICIT model+effort following ONE uniform tier→effort mapping
-# (haiku→low, sonnet→medium, opus→high). Nothing else in the suite pins those
-# values, so a future edit could drop an effort, flip sonnet→high, or leave a
-# skill model-less and every other test would still pass. These assertions are
-# the regression guard for the retune: they fail the moment the mapping drifts.
-#
-# Scope: Claude models/efforts plus the Codex model tier paired to each agent.
-# The Codex mapping is high/opus→Sol, medium/sonnet→Terra, low/haiku→Luna.
-# xhigh/max remain reserved for the manual deep-think path and must not appear
-# on any agent/skill.
+# Agents choose the Codex capability tier from task breadth and stakes, then
+# choose effort independently from reasoning demand. This keeps bounded workers
+# on Luna without forcing low effort and reserves Sol for quality-first review.
+# Selected Claude skills retain the uniform haiku→low, sonnet→medium,
+# opus→high mapping; xhigh/max remain manual-only for skills.
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 REGISTRY="$DOTFILES_DIR/agents/registry.yaml"
@@ -19,7 +13,7 @@ CLAUDE_YAML="$DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
 
 setup() { command -v yq >/dev/null 2>&1 || skip "yq not installed"; }
 
-# Expected effort for a claude model tier, per the uniform mapping rule.
+# Expected effort for selected skills, per their uniform Claude tier mapping.
 expected_effort() {
     case "$1" in
         haiku) echo low ;;
@@ -29,11 +23,15 @@ expected_effort() {
     esac
 }
 
-expected_codex_model() {
+expected_agent_route() {
     case "$1" in
-        haiku) echo gpt-5.6-luna ;;
-        sonnet) echo gpt-5.6-terra ;;
-        opus) echo gpt-5.6-sol ;;
+        fromage-age-arch|fromage-secaudit|reviewer) echo "gpt-5.6-sol xhigh" ;;
+        ghostbuster|ricotta-reducer|researcher) echo "gpt-5.6-terra high" ;;
+        generalist) echo "gpt-5.6-terra xhigh" ;;
+        fromage-fort|roquefort-wrecker|coder) echo "gpt-5.6-luna xhigh" ;;
+        explorer) echo "gpt-5.6-luna high" ;;
+        nih-scanner) echo "gpt-5.6-luna medium" ;;
+        fromage-age-history|duckdb-expert|whey-drainer|worktree-content-digest) echo "gpt-5.6-luna low" ;;
         *) echo "UNMAPPED" ;;
     esac
 }
@@ -48,38 +46,17 @@ expected_codex_model() {
     done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
 }
 
-@test "every agent's effort matches the tier→effort mapping" {
-    local a model effort want
+@test "every agent matches its workload-specific Codex model and effort" {
+    local a codex_model effort want actual
     while IFS= read -r a; do
-        model="$(yq -r ".agents.\"$a\".models.claude" "$REGISTRY")"
-        effort="$(yq -r ".agents.\"$a\".effort" "$REGISTRY")"
-        want="$(expected_effort "$model")"
-        [[ "$want" != "UNMAPPED" ]] \
-            || { echo "agent '$a' claude model '$model' is outside the haiku/sonnet/opus mapping" >&2; return 1; }
-        [[ "$effort" == "$want" ]] \
-            || { echo "agent '$a' is $model/$effort — mapping wants $model/$want" >&2; return 1; }
-    done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
-}
-
-@test "no agent carries a reserved xhigh/max effort" {
-    local a effort
-    while IFS= read -r a; do
-        effort="$(yq -r ".agents.\"$a\".effort // \"\"" "$REGISTRY")"
-        [[ "$effort" != "xhigh" && "$effort" != "max" ]] \
-            || { echo "agent '$a' has reserved effort '$effort' (xhigh/max are manual-only)" >&2; return 1; }
-    done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
-}
-
-@test "every agent uses the GPT-5.6 Codex model matching its tier" {
-    local a claude_model codex_model want
-    while IFS= read -r a; do
-        claude_model="$(yq -r ".agents.\"$a\".models.claude // \"\"" "$REGISTRY")"
         codex_model="$(yq -r ".agents.\"$a\".models.codex // \"\"" "$REGISTRY")"
-        want="$(expected_codex_model "$claude_model")"
+        effort="$(yq -r ".agents.\"$a\".effort // \"\"" "$REGISTRY")"
+        want="$(expected_agent_route "$a")"
         [[ "$want" != "UNMAPPED" ]] \
-            || { echo "agent '$a' claude model '$claude_model' has no Codex tier mapping" >&2; return 1; }
-        [[ "$codex_model" == "$want" ]] \
-            || { echo "agent '$a' codex model '$codex_model' — mapping wants '$want'" >&2; return 1; }
+            || { echo "agent '$a' has no workload route" >&2; return 1; }
+        actual="$codex_model $effort"
+        [[ "$actual" == "$want" ]] \
+            || { echo "agent '$a' is $actual — workload policy wants $want" >&2; return 1; }
     done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
 }
 

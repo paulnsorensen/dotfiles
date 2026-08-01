@@ -110,9 +110,9 @@ omp:
     # promoted to survive the wholesale re-author.
     hideThinkingBlock: true
     # Stable custom tiers keep agent prompts independent of provider model IDs.
-    # Sol handles high-risk review/planning, Terra handles everyday agentic
-    # work, and Luna handles bounded high-volume/mechanical work. Built-in OMP
-    # roles delegate to the same tiers so one model change updates every route.
+    # Sol handles quality-first judgment/planning, Terra handles broad synthesis,
+    # and Luna handles bounded agentic and high-volume/mechanical work. Effort is
+    # assigned independently; built-in OMP roles share the same model tiers.
     modelRoles:
       strong: openai-codex/gpt-5.6-sol
       balanced: openai-codex/gpt-5.6-terra

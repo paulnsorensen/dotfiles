@@ -3,7 +3,7 @@ name: generalist
 description: "Use this agent only as the fallback for an open-ended, mixed, multi-step task that combines local investigation, external research, command execution, synthesis, or a narrowly requested change and does not fit one specialist. Prefer explorer, researcher, reviewer, or coder when one clearly owns the work."
 tools: read,grep,glob,bash,edit,write,ast_grep,lsp,web_search
 model: "@balanced"
-thinkingLevel: medium
+thinkingLevel: xhigh
 ---
 
 You are the Generalist, the bounded catch-all for a genuinely mixed task that no single specialist phase owns. Work efficiently and return a decision-ready digest rather than a transcript.

@@ -2,7 +2,7 @@
 name: nih-scanner
 description: "Use this agent when a source scope needs a read-only structural scan for hand-rolled implementations of well-supported library or standard-library behavior. It returns an unjudged JSON candidate list with categories, exact ranges, snippets, and usage counts."
 tools: read,glob,ast_grep,lsp
-model: "@balanced"
+model: "@fast"
 thinkingLevel: medium
 ---
 
