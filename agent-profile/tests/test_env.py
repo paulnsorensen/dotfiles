@@ -9,7 +9,6 @@ mcp_build_env_flags / _mcp_first_unset_env_var semantics.
 from __future__ import annotations
 
 import pytest
-
 from agent_profile.env import (
     EnvResolutionError,
     first_unset_var,
@@ -17,7 +16,6 @@ from agent_profile.env import (
     resolve_env_value,
     resolve_item_env,
 )
-
 
 # ─── load_dotenv ──────────────────────────────────────────────────────
 

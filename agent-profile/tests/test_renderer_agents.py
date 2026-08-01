@@ -80,7 +80,23 @@ def test_strip_frontmatter_unterminated_is_noop() -> None:
 
 
 def test_agent_is_read_only_from_disallowed() -> None:
-    assert agent_is_read_only({"disallowedTools": ["Edit", "Write"]})
+    # Read-only requires that NO write tool remains reachable. Banning the two
+    # built-in editors still leaves MultiEdit/NotebookEdit/tilth_write, so this
+    # agent can write — `coder` bans exactly these and mutates the tree through
+    # mcp__tilth__tilth_write.
+    assert not agent_is_read_only({"disallowedTools": ["Edit", "Write"]})
+    # Banning every write tool is what read-only actually means.
+    assert agent_is_read_only(
+        {
+            "disallowedTools": [
+                "Edit",
+                "Write",
+                "MultiEdit",
+                "NotebookEdit",
+                "mcp__tilth__tilth_write",
+            ]
+        }
+    )
 
 
 def test_agent_is_read_only_from_whitelist() -> None:
@@ -102,28 +118,44 @@ def test_agent_writable_when_whitelist_grants_tilth_write() -> None:
     )
 
 
-def test_agent_writable_when_whitelist_grants_serena_editor() -> None:
+def test_agent_writable_when_whitelist_grants_mcp_editor() -> None:
+    # Retargeted from serena to tilth: #512 removed the Serena MCP, so
+    # mcp__tilth__tilth_write is the write-capable MCP tool that survives.
+    assert not agent_is_read_only({"tools": ["Read", "mcp__tilth__tilth_write"]})
+
+
+def test_agent_writable_when_whitelist_grants_mcp_wildcard() -> None:
+    # mcp__tilth__* subsumes tilth's writer — not read-only. Registries grant
+    # whole MCP servers by glob, so wildcard coverage has to be honoured.
     assert not agent_is_read_only(
-        {"tools": ["Read", "mcp__serena__replace_symbol_body"]}
+        {"tools": ["Read", "Grep", "Glob", "Bash", "mcp__tilth__*"]}
     )
 
 
-def test_agent_writable_when_whitelist_grants_serena_wildcard() -> None:
-    # mcp__serena__* subsumes serena's editors — not read-only.
-    assert not agent_is_read_only(
-        {"tools": ["Read", "Grep", "Glob", "Bash", "mcp__serena__*"]}
-    )
-
-
-def test_agent_read_only_when_whitelist_is_pure_serena_readers() -> None:
-    # A wildcard is required to grant writes; naming only read tools stays read-only.
+def test_agent_read_only_when_whitelist_is_pure_mcp_readers() -> None:
+    # Naming only read tools stays read-only — a wildcard or the writer itself
+    # is required to grant writes.
     assert agent_is_read_only(
-        {"tools": ["Read", "mcp__serena__find_symbol", "mcp__serena__get_symbols_overview"]}
+        {"tools": ["Read", "mcp__tilth__tilth_read", "mcp__tilth__tilth_search"]}
     )
 
 
 def test_agent_is_read_only_from_disallowed_mcp_write() -> None:
-    assert agent_is_read_only({"disallowedTools": ["mcp__tilth__tilth_write"]})
+    # Banning only tilth's writer leaves the built-in editors reachable.
+    assert not agent_is_read_only({"disallowedTools": ["mcp__tilth__tilth_write"]})
+    # A wildcard ban covers tilth_write; with the built-ins banned too, nothing
+    # can write.
+    assert agent_is_read_only(
+        {
+            "disallowedTools": [
+                "Edit",
+                "Write",
+                "MultiEdit",
+                "NotebookEdit",
+                "mcp__tilth__*",
+            ]
+        }
+    )
 
 
 # ── schema flow-through (parse keeps the field) ────────────────────────
@@ -245,11 +277,33 @@ def test_codex_sandbox_read_only_from_whitelist(tmp_path: Path) -> None:
 
 
 def test_codex_sandbox_read_only_from_disallowed(tmp_path: Path) -> None:
+    # Banning every write tool sandboxes the codex agent read-only.
     CodexRenderer().render(
-        _agent_manifest(tmp_path, disallowedTools=["Edit", "Write"]), tmp_path
+        _agent_manifest(
+            tmp_path,
+            disallowedTools=[
+                "Edit",
+                "Write",
+                "MultiEdit",
+                "NotebookEdit",
+                "mcp__tilth__tilth_write",
+            ],
+        ),
+        tmp_path,
     )
     content = (tmp_path / ".codex" / "agents" / "ghostbuster.toml").read_text()
     assert 'sandbox_mode = "read-only"' in content
+
+
+def test_codex_no_sandbox_when_tilth_writer_survives(tmp_path: Path) -> None:
+    # Banning the built-in editors while keeping tilth's writer must NOT sandbox
+    # the agent — that is coder's shape, and read-only would break its job.
+    CodexRenderer().render(
+        _agent_manifest(tmp_path, disallowedTools=["Edit", "Write", "NotebookEdit"]),
+        tmp_path,
+    )
+    content = (tmp_path / ".codex" / "agents" / "ghostbuster.toml").read_text()
+    assert "sandbox_mode" not in content
 
 
 def test_codex_no_sandbox_when_writable(tmp_path: Path) -> None:
@@ -369,8 +423,13 @@ def test_agent_writable_when_disallowed_is_non_write_only() -> None:
 
 
 def test_agent_read_only_for_full_write_tool_set() -> None:
-    assert agent_is_read_only({"disallowedTools": ["NotebookEdit"]})
-    assert agent_is_read_only({"disallowedTools": ["MultiEdit"]})
+    # Banning a single write tool never implies read-only — the others remain.
+    assert not agent_is_read_only({"disallowedTools": ["NotebookEdit"]})
+    assert not agent_is_read_only({"disallowedTools": ["MultiEdit"]})
+    # A whitelist granting no write tool is read-only (whey-drainer's shape).
+    assert agent_is_read_only({"tools": ["Bash", "Read"]})
+    # Declaring neither signal keeps every write tool: writable, no sandbox.
+    assert not agent_is_read_only({})
 
 
 def test_strip_frontmatter_preserves_later_horizontal_rule() -> None:

@@ -20,7 +20,6 @@ import subprocess
 from unittest.mock import patch
 
 import pytest
-
 from agent_profile import templating
 
 CHEZMOI = shutil.which("chezmoi")

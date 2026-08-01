@@ -13,13 +13,11 @@ import json
 from pathlib import Path
 
 import pytest
-
+from agent_profile.cli import _resolve_target
 from agent_profile.parse import Manifest, parse_manifest
 from agent_profile.renderers.claude import ClaudeRenderer
-from agent_profile.cli import _resolve_target
 
 from tests.conftest import write_profile
-
 
 # ── target_default + _resolve_target ─────────────────────────────────
 

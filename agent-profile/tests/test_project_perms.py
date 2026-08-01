@@ -8,14 +8,13 @@ fall-through-guard (missing fragment → error, floor not rendered).
 from __future__ import annotations
 
 import json
-import tomllib
 from pathlib import Path
 
+import tomllib
 from agent_profile import cli
-from agent_profile.parse import parse_manifest, Manifest
+from agent_profile.parse import Manifest, parse_manifest
 from agent_profile.renderers.claude import ClaudeRenderer
 from agent_profile.renderers.codex import CodexRenderer
-
 
 # ── helpers ────────────────────────────────────────────────────────────
 

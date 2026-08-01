@@ -9,80 +9,20 @@
 # all metadata lives here. tools/disallowedTools are LISTS (renderers join
 # to CSV for claude/cursor and derive sandbox/permission for codex/opencode).
 # models is per-harness; color/effort/maxTurns/skills are Claude-honored fields.
+#
+# The Skill TOOL is withheld from every agent that does not invoke a skill.
+# Granting it injects the full skill listing into the spawn context — measured
+# at 11,355 tokens on 2.1.219, ~40% of a typical sub-agent's spawn weight, and
+# independent of the `skills:` preload list below. Withholding it by denylist
+# and omitting it from an allowlist save identically. Only reviewer keeps it
+# to invoke `age`; researcher preloads `briesearch` and denies the tool.
+#
+# ToolSearch must be granted wherever an `mcp__` server is allowlisted: without
+# it Claude Code disables deferred MCP loading and every MCP schema loads
+# eagerly. ToolSearch itself measured at zero added context.
 agents:
-  fromage-age-arch:
-    description: Complexity and structure reviewer. Enforces complexity budgets (line counts, params, nesting) and Sliced Bread file organization. Does NOT cover encapsulation, dead code, or bugs.
-    models:
-      claude: opus
-      codex: gpt-5.6-sol
-      cursor: auto
-    disallowedTools:
-    - Edit
-    - Write
-    - NotebookEdit
-    - Grep
-    - Glob
-    color: red
-    effort: high
-    skills: []
-    maxTurns: 50
-    body_path: agents/agent_definitions/fromage-age-arch.md
-  fromage-age-history:
-    description: Git history analyst. Produces per-file risk scores that the orchestrator uses to adjust sibling findings. Does NOT find bugs or architecture issues — only outputs score modifiers.
-    models:
-      claude: haiku
-      codex: gpt-5.6-luna
-      cursor: claude-haiku
-    disallowedTools:
-    - Edit
-    - Write
-    - NotebookEdit
-    - WebSearch
-    - WebFetch
-    - Agent
-    - Grep
-    - Glob
-    color: red
-    effort: low
-    skills: []
-    maxTurns: 50
-    body_path: agents/agent_definitions/fromage-age-history.md
-  fromage-fort:
-    description: PR review comment responder. Triages both inline review threads AND PR-level review body comments using severity tiers (blocker/high/medium/low) — fixes high-severity items, pushes back on bad suggestions, asks about uncertain ones. Named for the strong cheese made from leftover scraps — it takes leftover review comments and turns them into something useful.
-    models:
-      claude: sonnet
-      codex: gpt-5.6-terra
-      cursor: auto
-    effort: medium
-    tools:
-    - Read
-    - Write
-    - Edit
-    - Bash
-    skills:
-    - gh
-    maxTurns: 50
-    body_path: agents/agent_definitions/fromage-fort.md
-  fromage-secaudit:
-    description: Security and dependency health auditor. Scans for vulnerabilities, unused/overweight deps, stdlib alternatives, and OWASP issues. Read-only. Returns stake-grouped findings (high/medium) with file:line citations and one-line recommendations — ~2 KB digest, no severity rewriting, no auto-fixes. Used as an easy-cheese fork target when /age needs evidence on the security dimension.
-    models:
-      claude: opus
-      codex: gpt-5.6-sol
-      cursor: auto
-    disallowedTools:
-    - Write
-    - Edit
-    - NotebookEdit
-    - AskUserQuestion
-    - Grep
-    - Glob
-    color: red
-    effort: high
-    skills: []
-    maxTurns: 50
-    body_path: agents/agent_definitions/fromage-secaudit.md
   ghostbuster:
-    description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with severity-tier scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Suitable as an easy-cheese fork target when /age needs evidence on the deslop dimension.
+    description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with severity-tier scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Dispatched by the /ghostbuster skill; referenced by /nih-audit and /steel-thread.
     models:
       claude: sonnet
       codex: gpt-5.6-terra
@@ -95,55 +35,52 @@ agents:
     - WebFetch
     - AskUserQuestion
     - Write
+    - MultiEdit
+    - mcp__tilth__tilth_write
     - Grep
     - Glob
+    - Skill
+    - Agent
     maxTurns: 50
     body_path: agents/agent_definitions/ghostbuster.md
   nih-scanner:
-    description: Structural NIH pattern scanner. Uses AST search and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Suitable as an easy-cheese fork target when /age needs evidence on the NIH dimension.
+    description: Structural NIH pattern scanner. Uses AST search and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Dispatched by the /nih-audit skill's structural-scan phase.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       cursor: auto
     effort: medium
     disallowedTools:
     - Edit
     - Write
     - NotebookEdit
+    - MultiEdit
+    - mcp__tilth__tilth_write
     - WebSearch
     - WebFetch
     - AskUserQuestion
     - Grep
     - Glob
+    - Skill
+    - Agent
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/nih-scanner.md
-  ricotta-reducer:
-    description: Code simplification and distillation agent. Strips genAI bloat, speculative abstractions, and unnecessary documentation. Produces a simplification report categorized by DELETE, INLINE, UNDOCUMENT, and DECOUPLE with severity-tier scoring. Analysis and detection only — never adds code (de-slop runs in scan mode, not auto-fix).
-    models:
-      claude: sonnet
-      codex: gpt-5.6-terra
-      cursor: claude-sonnet
-    effort: medium
-    tools:
-    - Read
-    - Bash
-    - Agent
-    skills:
-    - de-slop
-    maxTurns: 50
-    body_path: agents/agent_definitions/ricotta-reducer.md
   roquefort-wrecker:
     description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       cursor: claude-haiku
     effort: medium
+    # Body directs symbol/caller queries through tilth, which the allowlist did
+    # not grant; ToolSearch accompanies it so the MCP schemas stay deferred.
     tools:
     - Read
     - Write
     - Bash
+    - ToolSearch
+    - mcp__tilth
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/roquefort-wrecker.md
@@ -171,7 +108,7 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/duckdb-expert.md
   whey-drainer:
-    description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — call from /cook taste-test, /press, or /cure post-fix to gate the next step on test pass. Does NOT write tests.
+    description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — dispatched by /xray, and callable from any skill that needs a test gate without the log. Does NOT write tests.
     models:
       claude: haiku
       codex: gpt-5.6-luna
@@ -209,7 +146,7 @@ agents:
     description: Read-only codebase investigator. Answers "where / how / what" questions by searching and reading — never writes. Returns a structured findings digest (file:line citations, call paths, conclusions), keeping the file dumps out of the parent's context. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       opencode: inherit
     disallowedTools:
     - Edit
@@ -218,6 +155,7 @@ agents:
     - Agent
     - Grep
     - Glob
+    - Skill
     color: cyan
     effort: medium
     skills: []
@@ -229,15 +167,21 @@ agents:
       claude: sonnet
       codex: gpt-5.6-terra
       opencode: inherit
+    # briesearch is preloaded rather than reached through the Skill tool: the
+    # tool costs 11,355 tokens (it injects the whole skill listing) against
+    # ~3,400 to preload this one skill, for the same capability. reviewer makes
+    # the opposite trade because preloading `age` costs more than the tool.
     disallowedTools:
     - Edit
     - NotebookEdit
     - Agent
     - Grep
     - Glob
+    - Skill
     color: blue
     effort: medium
-    skills: []
+    skills:
+    - briesearch
     maxTurns: 50
     body_path: agents/agent_definitions/researcher.md
   reviewer:
@@ -259,31 +203,38 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/reviewer.md
   coder:
-    # Runs on sonnet at medium effort: Sonnet 5 matches Opus at low/medium effort
-    # at a fraction of the token cost, and the write surface's loop is bounded.
-    # Denies native Edit/Write/Grep/Glob/NotebookEdit — workspace file operations
-    # route through tilth directly. Denies Agent — a dispatched coder is a
-    # level-1 subagent and cannot fan out.
+    # Codex uses Luna for bounded high-volume work. OMP's native coder pairs the
+    # same family with xhigh thinking; registry effort remains Claude-specific.
+    # Grants an explicit allowlist rather than a denylist: an allowlist keeps
+    # eager built-in tool schemas out of the spawn context, which is the bulk of
+    # sub-agent spawn weight (MCP schemas are already deferred). Workspace file
+    # operations route through tilth directly, so native Edit/Write/Grep/Glob/
+    # NotebookEdit are simply not granted. Agent is not granted — a dispatched
+    # coder is a level-1 subagent and cannot fan out.
+    # ToolSearch MUST stay in this list: Claude Code disables deferred MCP tool
+    # loading entirely when ToolSearch is absent from an agent's pool, which
+    # would load every MCP schema eagerly and cost more than the allowlist saves.
+    # The exact tilth_write grant accompanies Claude's whole-server shorthand
+    # so Codex/opencode read-only derivation also sees the mutation surface.
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop through tilth MCP tools. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through tilth_write — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       opencode: inherit
-    disallowedTools:
-    - Agent
-    - Grep
-    - Glob
-    - Edit
-    - Write
-    - NotebookEdit
+    tools:
+    - Bash
+    - Read
+    - ToolSearch
+    - mcp__tilth
+    - mcp__tilth__tilth_write
     color: green
     effort: medium
     # No frontmatter skills. Claude Code auto-invokes every listed skill at
     # spawn, pasting each full SKILL.md body in as a user message before the
     # agent reads its task — it is an auto-invoke list, not an availability
     # list. The old list (cook/press/cure/de-slop/tdd-assertions/commit) cost
-    # 32,740 tokens, 52% of the 130k context ceiling, every dispatch. The
-    # coder still reaches any skill on demand via the Skill tool.
+    # 32,740 tokens, 52% of the 130k context ceiling, every dispatch. Required
+    # role discipline is inlined in the coder body; Skill remains ungranted.
     skills: []
     maxTurns: 100
     body_path: agents/agent_definitions/coder.md
@@ -307,6 +258,7 @@ agents:
     - Grep
     - Glob
     - NotebookEdit
+    - Skill
     color: yellow
     effort: medium
     skills: []

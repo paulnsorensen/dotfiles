@@ -43,8 +43,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 def _load_skill_agents() -> dict[str, str]:
@@ -114,11 +115,7 @@ def _default_runner(argv: list[str]) -> int:
     for line in combined.splitlines():
         lower = line.lstrip().lower()
         if (
-            lower.startswith("error")
-            or lower.startswith("failed")
-            or "error:" in lower
-            or "failed to" in lower
-            or "✖" in line
+            lower.startswith(("error", "failed")) or "error:" in lower or "failed to" in lower or "✖" in line
         ):
             # Print the suspicious line so the caller can surface it.
             print(line, file=sys.stderr)

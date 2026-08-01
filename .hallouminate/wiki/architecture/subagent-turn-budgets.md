@@ -54,9 +54,9 @@ Well-sampled agents (n ≥ 6). `peak` columns are the per-chain peak context;
 | whey-drainer | 8 | 7 | 15 | 18 | 21 | 20K | 62K | 0 |
 | duckdb-expert | 6 | 13 | 23 | 23 | 23 | 30K | 36K | 0 |
 
-Scanners are too thin to percentile (n ≤ 3 each): `ghostbuster`, `ricotta-reducer`,
-`fromage-age-arch`, `nih-scanner`, `fromage-secaudit`, `roquefort-wrecker` —
-observed max turns 50–94.
+Scanners are too thin to percentile (n ≤ 3 each): `ghostbuster`, `nih-scanner`,
+`roquefort-wrecker`, plus the since-removed (2026-07) `ricotta-reducer`,
+`fromage-age-arch`, `fromage-secaudit` — observed max turns 50–94.
 
 Across all 732 invocations: mean 34 turns, p50 23, p95 108, p99 181, max 339.
 

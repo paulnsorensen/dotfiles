@@ -1,0 +1,82 @@
+# Codex registry — the authoritative source for global ~/.codex config.
+#
+# Mirrors chezmoi/.chezmoidata/claude.yaml for the Codex harness (spec:
+# chezmoi-authoritative-codex). Consumed by:
+#   * chezmoi/dot_codex/modify_config.toml  → ~/.codex/config.toml (merge)
+#   * sync_codex_chezmoi_sources (.sync-lib.sh) → dot_codex/exact_agents,
+#     exact_hooks, hooks.json (assembled derived state, gitignored)
+#
+# Codex's config.toml mixes repo-authored keys with Codex-CLI runtime state
+# (projects trust levels, hooks.state trust hashes, marketplaces, plugins,
+# tui.model_availability_nux). The merge script overlays ONLY what this file
+# declares and preserves everything else, so the CLI's own state survives
+# `chezmoi apply`. `mcp_servers` is the one exception: it is replaced wholesale
+# so a server removed here is EVICTED from the live file (before this regime,
+# install-codex.sh only ever backfilled, which is how serena outlived #512).
+#
+# Hooks are NOT declared here — they derive from agents/hooks/registry.yaml,
+# filtered to entries whose `harnesses` includes codex.
+codex:
+  # ── root config.toml keys (overlaid; undeclared live keys preserved) ──────
+  # `model_instructions_file` is deliberately absent: it is written into the
+  # live file by chezmoi/.chezmoiscripts/run_onchange_after_install-prompts.sh.tmpl
+  # with an absolute path (TOML cannot expand `~`). Omitting it here means the
+  # merge preserves whatever that script set.
+  config:
+    model: "gpt-5.6-terra"
+    model_reasoning_effort: "medium"
+    approval_policy: "on-request"
+    approvals_reviewer: "guardian_subagent"
+    sandbox_mode: "workspace-write"
+    service_tier: "default"
+    sandbox_workspace_write:
+      network_access: true
+    tui:
+      # Deep-merged: tui.model_availability_nux is CLI state and survives.
+      input_mode: "vim"
+
+  # ── MCP servers (→ config.toml [mcp_servers]; replaced wholesale) ─────────
+  # No `env` blocks by design. Codex is terminal-launched and its MCP children
+  # inherit the exported shell env (zsh exports every .env key on init), so
+  # neither a real secret nor a `${VAR}` placeholder is written to disk. See
+  # .hallouminate/wiki/architecture/mcp-secret-handling.md — "codex — scrub-by-
+  # keyname": neither the placeholder nor a secret lands in config.toml.
+  #
+  # npx entries are exact-pinned per spec manifest-pinned-packages (no floats),
+  # matching claude.yaml so one Renovate bump moves both harnesses together.
+  mcps:
+    tilth:
+      command: tilth
+      # `--edit` enables the tilth_write tool; without it tilth is read-only.
+      args: ["--mcp", "--edit"]
+      tools:
+        tilth_write:
+          approval_mode: approve
+    context7:
+      command: npx
+      # renovate: datasource=npm depName=@upstash/context7-mcp
+      args: ["-y", "@upstash/context7-mcp@3.2.4"]
+    tavily:
+      command: npx
+      # renovate: datasource=npm depName=tavily-mcp
+      args: ["-y", "tavily-mcp@0.2.21"]
+    milknado:
+      command: uvx
+      args: ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]
+
+  # ── ~/.codex/agents selection (agents/agent_definitions/) ────────────────
+  # Rendered to <name>.toml from agents/registry.yaml metadata at assembly
+  # time. Every name must exist in the registry AND declare the codex harness;
+  # the assembler fails loud otherwise.
+  agents:
+    - coder
+    - duckdb-expert
+    - explorer
+    - generalist
+    - ghostbuster
+    - nih-scanner
+    - researcher
+    - reviewer
+    - roquefort-wrecker
+    - whey-drainer
+    - worktree-content-digest

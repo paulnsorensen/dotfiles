@@ -357,6 +357,56 @@ leg hard-fail loudly when `cargo` is absent instead of silently skipping.
 `git ls-remote <repo> <branch>`; and `command -v cargo` — absent on a machine
 that lists ungated `source: cargo` packages is the tell.
 
+## Known drift pattern: brew cask state survives an out-of-band app deletion
+
+**Symptom**: A managed cask's app bundle is gone from `/Applications` but
+`brew list --cask` still lists it, so `dots sync` skips it as installed and no
+upgrade path ever repairs it. First hit 2026-07-29: `/Applications/Cursor.app`
+missing (Caskroom copy still present, `cursor` binary link never created), so
+`ap launch cursor` failed with `cannot exec 'cursor'`.
+
+**Why it happens**: brew's install state lives in the Caskroom, not the
+artifact locations. Deleting the app (Trash, or an in-app self-update gone
+wrong) leaves the state intact. `greedy: false` casks (cursor, docker-desktop)
+never get an upgrade-triggered reinstall either, and the packages manifest-hash
+cache short-circuits sync entirely when nothing was edited — so the drift is
+permanent until manual `brew reinstall --cask <name>`.
+
+**Fix (automated since 2026-07-29)**: `packages/sync.sh:heal_missing_cask_apps`
+checks each installed managed cask's `app` artifacts (via
+`brew info --cask --json=v2` + yq) against `/Applications` (override:
+`CASK_APPDIR`) and `~/Applications`, and reinstalls on a miss. It runs inside
+`sync_brew` AND on the cached fast-path, so a valid manifest cache no longer
+masks the drift. Covered in `tests/packages.bats` (heal tests).
+
+**Detection**: `brew list --cask` name present + `[[ ! -e /Applications/<App> ]]`.
+
+## Known drift pattern: registry MCP drops stranded in opencode/cursor live configs
+
+**Symptom**: An MCP removed from `agents/mcp/registry.yaml` lingers in
+`~/.config/opencode/opencode.json` / `~/.cursor/mcp.json` indefinitely. First
+hit 2026-07-29: `serena` (dropped 5d43056e, 2026-07-24) still live in both
+five days and many syncs later, its binary long gone.
+
+**Why it happens**: two gaps ([#561](https://github.com/paulnsorensen/dotfiles/issues/561)).
+`_reconcile_dropped_mcps` diffs the *prior cached manifest* against the current
+one, so the prune fires only on the sync that crosses the drop — miss that
+window (sync error, manifest refreshed first) and the evidence is gone. And
+cursor's live `mcp.json` is a disconnected user-owned surface (see § global
+settings disconnected): no code path prunes it at all anymore.
+
+**Fix**: manual `jq 'del(.mcp.<name>)'` (opencode) / `del(.mcpServers.<name>)`
+(cursor) to a temp file, validate, move into place. While healing cursor, also
+check `envFile` values — a render from a worktree checkout bakes the worktree's
+dotenv path in (`renderers/cursor.py:_dotenv_abs_path` resolves
+`${DOTFILES_DIR}` at render time), which goes stale when the worktree is
+removed; repoint at the main clone's dotenv path. Permanent fix (stateless
+reconcile against the current registry) tracked in #561.
+
+**Detection**: live server names absent from `agents/mcp/registry.yaml` with
+repo provenance (matching command shape); any cursor `envFile` containing
+`.worktrees/`.
+
 ## Gotcha: `just check` fails locally on macOS while green in CI (GNU-only test idioms)
 
 **Symptom**: `just check` red on a single bats test locally on macOS, but CI

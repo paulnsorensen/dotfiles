@@ -26,8 +26,8 @@ from pathlib import Path
 from agent_profile.parse import Manifest
 from agent_profile.renderers.claude import (
     ClaudeRenderer,
-    _ManagedSigs,
     _managed_signatures_per_event,
+    _ManagedSigs,
     _prune_settings_blocks,
 )
 

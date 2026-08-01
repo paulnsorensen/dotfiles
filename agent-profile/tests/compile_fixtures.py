@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import yaml
-
 from agent_profile.compiled_types import CompileTarget
 
 

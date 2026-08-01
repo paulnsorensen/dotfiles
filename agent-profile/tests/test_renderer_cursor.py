@@ -17,7 +17,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from agent_profile.parse import Manifest
 from agent_profile.renderers.cursor import CursorRenderer
 
@@ -229,7 +228,7 @@ def test_hook_with_default_membership_is_claude_only(tmp_path):
 
 
 def test_missing_hook_script_raises(tmp_path):
-    m, target, src = _manifest(
+    m, target, _ = _manifest(
         tmp_path,
         hooks=[{"event": "PreToolUse", "script": "hooks/nope.sh", "harnesses": ["cursor"]}],
     )

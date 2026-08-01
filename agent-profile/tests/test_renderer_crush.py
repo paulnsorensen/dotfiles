@@ -6,9 +6,8 @@ import json
 from pathlib import Path
 
 import pytest
-
 from agent_profile.parse import Manifest
-from agent_profile.renderers.base import Renderer, MergedConfigError
+from agent_profile.renderers.base import MergedConfigError, Renderer
 from agent_profile.renderers.crush import CrushRenderer
 
 

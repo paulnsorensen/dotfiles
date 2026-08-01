@@ -39,6 +39,9 @@ path = "profiles/fe/CLAUDE.md"
 max_tokens = 900
 
 [[source]]
+path = "profiles/oss-docs/CLAUDE.md"
+max_tokens = 600
+[[source]]
 path = "profiles/mgmt/CLAUDE.md"
 max_tokens = 600
 
@@ -145,6 +148,10 @@ name = "profile_fe"
 sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/fe/CLAUDE.md"]
 max_tokens = 8000
 
+[[stack]]
+name = "profile_oss_docs"
+sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/oss-docs/CLAUDE.md"]
+max_tokens = 8000
 [[stack]]
 name = "profile_plugin"
 sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/plugin/CLAUDE.md"]

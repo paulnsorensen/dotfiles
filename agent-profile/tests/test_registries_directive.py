@@ -10,8 +10,8 @@ union of the three separate registries.
 from __future__ import annotations
 
 import pytest
-
 from agent_profile.parse import ParseError, parse_manifest, parse_one
+
 from tests.conftest import write_profile
 
 

@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from agent_profile.compiled_types import CompileTarget, VALID_COMPILE_HARNESSES
+from agent_profile.compiled_types import VALID_COMPILE_HARNESSES, CompileTarget
 
 _ENV_REF_RE = re.compile(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)")
 

@@ -179,6 +179,13 @@ block_sha() {
     assert_success
     [[ -z "$output" ]] || { echo "explorer skills drifted: $output" >&2; return 1; }
 
+    # Researcher denies the Skill tool, so its single routing skill must remain
+    # preloaded or the body loses the framework it assumes is already present.
+    run yq -e '(.agents.researcher.skills | length) == 1 and .agents.researcher.skills[0] == "briesearch"' "$registry"
+    assert_success
+    run yq -e '.agents.researcher.disallowedTools[] | select(. == "Skill")' "$registry"
+    assert_success
+
     # Retired names must never reappear in ANY agent's skills list. They cost
     # nothing while the file is absent — but frontmatter skills are auto-invoked
     # at spawn, so the day someone adds a skill under one of these names, every
@@ -200,10 +207,45 @@ block_sha() {
     # message before the agent reads its task — it is an auto-invoke list, not
     # an availability list. Measured at 32,740 tokens for the old six-skill
     # list: 52% of the 130k context ceiling burned before the first tool call.
-    # Skills stay reachable on demand through the Skill tool.
+    # Required role discipline is inlined in the body; Skill stays ungranted.
     run yq '.agents.coder.skills | join(" ")' "$registry"
     assert_success
     [[ -z "$output" ]] || { echo "coder must carry no frontmatter skills (auto-invoked at spawn, costs context): $output" >&2; return 1; }
+}
+
+
+@test "only reviewer retains Skill; no subagent retains Agent" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    local skill_grants agent_grants
+    skill_grants=$(yq -oj '.agents' "$registry" | jq -r '
+        to_entries[]
+        | select(
+            if (.value.tools != null) then
+                ((.value.tools | index("Skill")) != null)
+            else
+                (((.value.disallowedTools // []) | index("Skill")) == null)
+            end
+        )
+        | .key')
+    [[ "$skill_grants" == "reviewer" ]] || {
+        echo "unexpected Skill grants: $skill_grants" >&2
+        return 1
+    }
+
+    agent_grants=$(yq -oj '.agents' "$registry" | jq -r '
+        to_entries[]
+        | select(
+            if (.value.tools != null) then
+                ((.value.tools | index("Agent")) != null)
+            else
+                (((.value.disallowedTools // []) | index("Agent")) == null)
+            end
+        )
+        | .key')
+    [[ -z "$agent_grants" ]] || {
+        echo "subagents must not retain Agent: $agent_grants" >&2
+        return 1
+    }
 }
 
 @test "read-only phase agents deny code edits and subagent fan-out in the registry" {
@@ -227,12 +269,67 @@ block_sha() {
 
 @test "coder denies native edit/search tools and subagent fan-out in the registry" {
     local registry="$AGENTS_DIR/registry.yaml"
+    # The coder may express its grant as either a `tools` allowlist or a
+    # `disallowedTools` denylist. Assert the invariant, not the shape: a tool is
+    # withheld when it is absent from the allowlist, or named in the denylist.
+    run yq -e '.agents.coder.tools' "$registry"
+    local has_allowlist=$([[ "$status" -eq 0 ]] && echo yes || echo no)
+
     # Exact membership per tool: a substring check for Edit would match NotebookEdit.
     for tool in Edit Write NotebookEdit Grep Glob Agent; do
-        run yq -e ".agents.coder.disallowedTools[] | select(. == \"$tool\")" "$registry"
-        [[ "$status" -eq 0 ]] || { echo "coder must deny $tool (workspace file operations go through tilth)" >&2; return 1; }
+        if [[ "$has_allowlist" == yes ]]; then
+            run yq -e ".agents.coder.tools[] | select(. == \"$tool\")" "$registry"
+            [[ "$status" -ne 0 ]] || { echo "coder must not grant $tool (workspace file operations go through tilth)" >&2; return 1; }
+        else
+            run yq -e ".agents.coder.disallowedTools[] | select(. == \"$tool\")" "$registry"
+            [[ "$status" -eq 0 ]] || { echo "coder must deny $tool (workspace file operations go through tilth)" >&2; return 1; }
+        fi
     done
+
     # The harness may expose native Read, but the coder body routes reads through tilth_read.
-    run yq -e '.agents.coder.disallowedTools[] | select(. == "Read")' "$registry"
-    [[ "$status" -ne 0 ]] || { echo "coder must keep native Read available" >&2; return 1; }
+    if [[ "$has_allowlist" == yes ]]; then
+        run yq -e '.agents.coder.tools[] | select(. == "Read")' "$registry"
+        [[ "$status" -eq 0 ]] || { echo "coder must keep native Read available" >&2; return 1; }
+    else
+        run yq -e '.agents.coder.disallowedTools[] | select(. == "Read")' "$registry"
+        [[ "$status" -ne 0 ]] || { echo "coder must keep native Read available" >&2; return 1; }
+    fi
+
+    # Positive grants matter as much as the denied native fallbacks: without the
+    # server and its writer, the body cannot perform its only mutation path.
+    if [[ "$has_allowlist" == yes ]]; then
+        for tool in Bash ToolSearch mcp__tilth mcp__tilth__tilth_write; do
+            run yq -e ".agents.coder.tools[] | select(. == \"$tool\")" "$registry"
+            [[ "$status" -eq 0 ]] || { echo "coder must grant $tool" >&2; return 1; }
+        done
+    fi
+}
+
+@test "an agent allowlisting an MCP server also grants ToolSearch" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    # Claude Code disables deferred MCP tool loading outright when ToolSearch is
+    # absent from an agent's pool, so every MCP schema loads eagerly instead of
+    # by name. An allowlist naming an mcp__ server without ToolSearch therefore
+    # costs more context than granting no allowlist at all.
+    local offenders
+    offenders=$(yq -r '
+        .agents | to_entries[]
+        | select(.value.tools != null)
+        | select([.value.tools[] | select(test("^mcp__"))] | length > 0)
+        | select([.value.tools[] | select(. == "ToolSearch")] | length == 0)
+        | .key' "$registry")
+    [[ -z "$offenders" ]] || {
+        echo "these agents allowlist an mcp__ server without ToolSearch, which disables MCP deferral:" >&2
+        echo "$offenders" >&2
+        return 1
+    }
+}
+
+
+@test "roquefort wrecker keeps its structural tilth grant" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    for tool in ToolSearch mcp__tilth; do
+        run yq -e ".agents.roquefort-wrecker.tools[] | select(. == \"$tool\")" "$registry"
+        [[ "$status" -eq 0 ]] || { echo "roquefort-wrecker must grant $tool" >&2; return 1; }
+    done
 }

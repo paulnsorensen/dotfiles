@@ -21,7 +21,7 @@ Covers:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from agent_profile.parse import Manifest
 from agent_profile.renderers.copilot import CopilotRenderer
