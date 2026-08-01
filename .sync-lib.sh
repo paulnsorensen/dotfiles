@@ -745,6 +745,23 @@ install_tilth_claude_code() {
     fi
 }
 
+# Materialize the vault-backed secrets cache (bin/lib/vault.sh) before the
+# MCP reconcile bakes resolved ${VAR} values into ~/.claude.json.
+materialize_secrets() {
+    local lib="$dir/bin/lib/vault.sh"
+    if [[ ! -f "$lib" ]]; then
+        log_warning "Skipping secret materialization (bin/lib/vault.sh missing)"
+        return 0
+    fi
+    log_info "Materializing vault secrets..."
+    # shellcheck source=bin/lib/vault.sh
+    source "$lib"
+    if ! DOTFILES_DIR="$dir" vault_materialize; then
+        log_error "Failed to materialize vault secrets"
+        return 1
+    fi
+}
+
 # Re-reconcile user-scope claude MCPs as the FINAL write of every sync.
 #
 # WHY unconditional (unlike the hash-gated run_onchange reconcile):

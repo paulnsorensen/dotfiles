@@ -340,7 +340,7 @@ sync_mise() {
 
 sync_cargo() {
     local cargo_pkgs
-    cargo_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "cargo") | [.key, (.value.git // ""), (.value.branch // ""), (.value.version // ""), (.value.rev // "")] | join("|")' "$PACKAGES_FILE" 2>/dev/null)
+    cargo_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "cargo") | [.key, (.value.git // ""), (.value.branch // ""), (.value.version // ""), (.value.rev // ""), (.value.gate_unless // "")] | join("|")' "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$cargo_pkgs" ]] && return 0
 
     if ! command -v cargo &>/dev/null; then
@@ -355,8 +355,13 @@ sync_cargo() {
 
     # Pinned packages (version or rev) are installed unconditionally so drift
     # is corrected. Unpinned entries install once and never float in UPGRADE_MODE.
-    while IFS='|' read -r name git_url branch version rev; do
+    while IFS='|' read -r name git_url branch version rev gate; do
         [[ -z "$name" ]] && continue
+
+        if [[ -n "$gate" && "${!gate:-false}" == "true" ]]; then
+            echo "  Skipping $name (gate_unless $gate=true)"
+            continue
+        fi
 
         if [[ -n "$version" || -n "$rev" ]]; then
             if [[ -n "$rev" && -z "$git_url" ]]; then

@@ -37,6 +37,11 @@ Never edit a rendered target. Edit the source, then deploy.
 | Claude-native plugin | `claude/plugins/registry.yaml` | `dots sync` |
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
 | Package / profile / OMP config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/omp.yaml` | relevant `dots` command |
+| Secret (API key, token) | the vault — never a file. Key names: `secrets/secrets.env.tmpl` | `bin/vault-provision`, then `dots sync` |
+
+Secrets never live in `.env`; it holds only non-secret toggles. `bin/lib/vault.sh`
+detects 1Password (`op`) or Bitwarden Secrets Manager (`bws`) and materializes
+`$XDG_CACHE_HOME/dotfiles/secrets.env` (0600), which every loader reads.
 
 Claude-global configuration is chezmoi-authoritative; other harnesses remain frozen pending migration.
 

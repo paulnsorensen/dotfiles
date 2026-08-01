@@ -1,0 +1,90 @@
+#!/bin/bash
+# vault.sh — sourced library: detect the per-machine secret vault (1Password
+# or Bitwarden Secrets Manager) and materialize its secrets into a cached
+# .env-format file consumed by every loader (agents/mcp/sync.sh,
+# zsh/core.zsh, bin/cc-env-exec, agent-profile's ap render). Deep module —
+# the only place that knows a vault exists.
+set -euo pipefail
+
+vault_detect() {
+    if command -v op &>/dev/null; then
+        echo onepassword
+    elif command -v bws &>/dev/null; then
+        echo bitwarden
+    else
+        echo "vault: neither 'op' (1Password) nor 'bws' (Bitwarden Secrets Manager) found." >&2
+        echo "vault: run bin/vault-provision to set up a vault." >&2
+        return 1
+    fi
+}
+
+vault_secrets_file() {
+    echo "${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/secrets.env"
+}
+
+vault_token() {
+    security find-generic-password -w -s BWS_ACCESS_TOKEN -a "$USER" 2>/dev/null || {
+        echo "vault: no Bitwarden access token in Keychain (service BWS_ACCESS_TOKEN)." >&2
+        echo "vault: run bin/vault-provision to store one." >&2
+        return 1
+    }
+}
+
+# ISOLATED SEAM — bws's `-o env` exact quoting/escaping is UNVERIFIED against
+# values containing quotes, newlines, or '#'. This is the ONLY function that
+# knows the fetch format; swap its body to
+# `bws secret list "$BWS_PROJECT_ID" -o json | jq -r '.[] | "\(.key)=\(.value)"'`
+# without touching anything else in this file if that proves unsafe.
+_vault_fetch_bitwarden() {
+    bws secret list "$BWS_PROJECT_ID" -o env
+}
+
+_vault_fetch_onepassword() {
+    op inject -i "$1"
+}
+
+# Writes the cache under umask 077, via temp file + validate + atomic mv, so
+# a partial/empty vault response cannot clobber a good cache. Every key named
+# in secrets/secrets.env.tmpl must be present and non-empty in the response;
+# on failure the prior cache is untouched and this returns non-zero naming
+# the missing keys.
+vault_materialize() {
+    local backend tmpl out tmp prev_umask token key val missing=()
+    tmpl="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/secrets/secrets.env.tmpl"
+    out="$(vault_secrets_file)"
+    [[ -f "$tmpl" ]] || { echo "vault: template not found: $tmpl" >&2; return 1; }
+
+    backend="$(vault_detect)" || return 1
+    mkdir -p "$(dirname "$out")"
+
+    prev_umask="$(umask)"
+    tmp=""
+    trap 'umask "$prev_umask"; [[ -n "$tmp" && -f "$tmp" ]] && rm -f "$tmp"' RETURN
+    umask 077
+    tmp="$(mktemp "${out}.XXXXXX")" || return 1
+
+    case "$backend" in
+        bitwarden)
+            [[ -n "${BWS_PROJECT_ID:-}" ]] || { echo "vault: BWS_PROJECT_ID is unset (set it in .env)" >&2; return 1; }
+            token="$(vault_token)" || return 1
+            BWS_ACCESS_TOKEN="$token" _vault_fetch_bitwarden > "$tmp" || { echo "vault: bws fetch failed" >&2; return 1; }
+            ;;
+        onepassword)
+            _vault_fetch_onepassword "$tmpl" > "$tmp" || { echo "vault: op inject failed" >&2; return 1; }
+            ;;
+    esac
+
+    while IFS='=' read -r key _; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        val="$(grep -m1 "^${key}=" "$tmp" | cut -d= -f2-)"
+        [[ -n "$val" ]] || missing+=("$key")
+    done < "$tmpl"
+
+    if (( ${#missing[@]} > 0 )); then
+        echo "vault: materialize failed, missing/empty keys: ${missing[*]}" >&2
+        return 1
+    fi
+
+    chmod 600 "$tmp"
+    mv "$tmp" "$out"
+}

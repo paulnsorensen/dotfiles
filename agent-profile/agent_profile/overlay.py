@@ -61,7 +61,7 @@ import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
-from agent_profile.env import load_dotenv, resolve_env_value, resolve_item_env
+from agent_profile.env import load_dotenv, resolve_env_value, resolve_item_env, vault_cache_path
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import mcp_server_entry
 from agent_profile.renderers.codex import CodexRenderer, _collect_mcp_tool_scopes
@@ -78,12 +78,12 @@ class IsolationError(Exception):
 
 
 def _dotenv() -> dict[str, str]:
-    """Load ``$DOTFILES_DIR/.env`` for render-time ``${VAR}`` resolution
-    (spec D4), mirroring :func:`agent_profile.parse._repo_root`."""
+    """Load ``$DOTFILES_DIR/.env`` plus the materialized vault cache (cache
+    wins) for render-time ``${VAR}`` resolution (spec D4)."""
     repo_root = Path(
         os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles")
     )
-    return load_dotenv(repo_root / ".env")
+    return {**load_dotenv(repo_root / ".env"), **load_dotenv(vault_cache_path())}
 
 
 def _warn_ignored(name: str, harness: str) -> None:

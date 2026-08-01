@@ -16,8 +16,18 @@ if (( $# == 0 )); then
     exit 2
 fi
 
+# shellcheck source=lib/vault.sh
+source "${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/lib/vault.sh"
 env_file="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/.env"
-if [[ -f "$env_file" ]]; then
+cache_file="$(vault_secrets_file)"
+
+if [[ ! -r "$cache_file" ]]; then
+    echo "cc-env-exec: vault secrets cache unreadable: $cache_file (run 'dots sync' to materialize it, or bin/vault-provision for first-time setup)" >&2
+    exit 1
+fi
+
+for f in "$env_file" "$cache_file"; do
+    [[ -f "$f" ]] || continue
     while IFS= read -r line; do
         [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
         if [[ "$line" != *=* ]]; then
@@ -28,7 +38,7 @@ if [[ -f "$env_file" ]]; then
         val="${line#*=}"
         export "$key=$val" 2>/dev/null \
             || echo "cc-env-exec: skipping invalid .env line: $key" >&2
-    done < "$env_file"
-fi
+    done < "$f"
+done
 
 exec "$@"

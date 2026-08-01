@@ -140,8 +140,12 @@ if [[ "${LOGIN_SHELL_CHANGED:-0}" == "1" ]]; then
 fi
 echo -e "${GREEN}Next steps:${NC}"
 echo "  1. Log out and back in if the login shell changed."
-echo "  2. \`cp .env.example .env\` and fill the API keys you use."
+echo "  2. \`cp .env.example .env\` and set the toggles you want (no secrets live here)."
 echo "  3. \`dots sync\`                # installs exact pins + materializes config"
+echo
+echo "  Secrets come from a vault, not .env. On macOS run \`bin/vault-provision\`."
+echo "  On Linux there is no Keychain yet — export BWS_ACCESS_TOKEN yourself, then"
+echo "  \`source bin/lib/vault.sh && vault_materialize\`."
 
 if ((${#FAILED[@]})); then
     exit 1
