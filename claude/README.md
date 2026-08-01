@@ -77,11 +77,6 @@ repo-root `agents/registry.yaml` (metadata) with bodies under
 
 | Agent | Purpose |
 |-------|---------|
-| `fromage-secaudit` | Security and dependency health audit |
-| `fromage-fort` | PR review comment responder with severity-tier scoring |
-| `fromage-age-arch` | Complexity budgets, nesting smells, file structure |
-| `fromage-age-history` | Git history risk signals → per-file score modifiers |
-| `ricotta-reducer` | Code distillation and simplification (analysis only) |
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
 | `nih-scanner` | Structural NIH pattern scanner |

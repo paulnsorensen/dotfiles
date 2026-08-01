@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Per-file git history risk analysis for the Age pipeline
+# Per-file git history risk analysis for the /git-risk skill
 # Usage: git-file-risk <file> [file ...]
 # Output: JSON array with risk signals per file
 set -euo pipefail
