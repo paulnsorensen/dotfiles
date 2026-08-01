@@ -47,7 +47,7 @@ agents:
     description: Structural NIH pattern scanner. Uses AST search and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Dispatched by the /nih-audit skill's structural-scan phase.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       cursor: auto
     effort: medium
     disallowedTools:
@@ -70,7 +70,7 @@ agents:
     description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       cursor: claude-haiku
     effort: medium
     # Body directs symbol/caller queries through tilth, which the allowlist did
@@ -146,7 +146,7 @@ agents:
     description: Read-only codebase investigator. Answers "where / how / what" questions by searching and reading — never writes. Returns a structured findings digest (file:line citations, call paths, conclusions), keeping the file dumps out of the parent's context. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       opencode: inherit
     disallowedTools:
     - Edit
@@ -203,8 +203,8 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/reviewer.md
   coder:
-    # Runs on sonnet at medium effort: Sonnet 5 matches Opus at low/medium effort
-    # at a fraction of the token cost, and the write surface's loop is bounded.
+    # Codex uses Luna for bounded high-volume work. OMP's native coder pairs the
+    # same family with xhigh thinking; registry effort remains Claude-specific.
     # Grants an explicit allowlist rather than a denylist: an allowlist keeps
     # eager built-in tool schemas out of the spawn context, which is the bulk of
     # sub-agent spawn weight (MCP schemas are already deferred). Workspace file
@@ -219,7 +219,7 @@ agents:
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop through tilth MCP tools. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through tilth_write — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: sonnet
-      codex: gpt-5.6-terra
+      codex: gpt-5.6-luna
       opencode: inherit
     tools:
     - Bash
