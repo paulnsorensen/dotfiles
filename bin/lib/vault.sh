@@ -1,10 +1,11 @@
-#!/bin/bash
+# shellcheck shell=bash
 # vault.sh — sourced library: detect the per-machine secret vault (1Password
 # or Bitwarden Secrets Manager) and materialize its secrets into a cached
 # .env-format file consumed by every loader (agents/mcp/sync.sh,
 # zsh/core.zsh, bin/cc-env-exec, agent-profile's ap render). Deep module —
 # the only place that knows a vault exists.
-set -euo pipefail
+#
+# Functions only — no top-level side effects, so sourcing is safe.
 
 vault_detect() {
     if command -v op &>/dev/null; then
@@ -44,28 +45,36 @@ _vault_fetch_onepassword() {
 }
 
 # Writes the cache under umask 077, via temp file + validate + atomic mv, so
-# a partial/empty vault response cannot clobber a good cache. Every key named
-# in secrets/secrets.env.tmpl must be present and non-empty in the response;
-# on failure the prior cache is untouched and this returns non-zero naming
-# the missing keys.
+# a partial/empty vault response cannot clobber a good cache. The response is
+# reduced to a closed set: only keys named in secrets/secrets.env.tmpl are
+# kept, every one of them must be present and non-empty, and any response
+# line that isn't a recognized "KEY=value" pair (an unlisted key, or a
+# value that split across lines because it embedded a newline) fails the
+# whole materialize. On failure the prior cache is untouched and this
+# returns non-zero naming the problem.
 vault_materialize() {
-    local backend tmpl out tmp prev_umask token key val missing=()
+    local backend tmpl out tmp prev_umask token key line env_file missing=()
+    local -A tmpl_keys resp
     tmpl="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/secrets/secrets.env.tmpl"
     out="$(vault_secrets_file)"
     [[ -f "$tmpl" ]] || { echo "vault: template not found: $tmpl" >&2; return 1; }
 
     backend="$(vault_detect)" || return 1
-    mkdir -p "$(dirname "$out")"
+    mkdir -p "$(dirname "$out")" || return 1
 
     prev_umask="$(umask)"
     tmp=""
-    trap 'umask "$prev_umask"; [[ -n "$tmp" && -f "$tmp" ]] && rm -f "$tmp"' RETURN
+    trap 'trap - RETURN; umask "$prev_umask"; [[ -n "$tmp" && -f "$tmp" ]] && rm -f "$tmp"' RETURN
     umask 077
     tmp="$(mktemp "${out}.XXXXXX")" || return 1
 
     case "$backend" in
         bitwarden)
-            [[ -n "${BWS_PROJECT_ID:-}" ]] || { echo "vault: BWS_PROJECT_ID is unset (set it in .env)" >&2; return 1; }
+            if [[ -z "${BWS_PROJECT_ID:-}" ]]; then
+                env_file="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/.env"
+                [[ -f "$env_file" ]] && BWS_PROJECT_ID="$(sed -n 's/^BWS_PROJECT_ID=//p' "$env_file" | tail -n1)"
+            fi
+            [[ -n "${BWS_PROJECT_ID:-}" ]] || { echo "vault: BWS_PROJECT_ID is unset (run bin/vault-provision to set it)" >&2; return 1; }
             token="$(vault_token)" || return 1
             BWS_ACCESS_TOKEN="$token" _vault_fetch_bitwarden > "$tmp" || { echo "vault: bws fetch failed" >&2; return 1; }
             ;;
@@ -76,15 +85,34 @@ vault_materialize() {
 
     while IFS='=' read -r key _; do
         [[ -z "$key" || "$key" == \#* ]] && continue
-        val="$(grep -m1 "^${key}=" "$tmp" | cut -d= -f2-)"
-        [[ -n "$val" ]] || missing+=("$key")
+        tmpl_keys["$key"]=1
     done < "$tmpl"
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" ]] && continue
+        key="${line%%=*}"
+        if [[ "$line" != "$key="* || -z "${tmpl_keys[$key]:-}" ]]; then
+            echo "vault: materialize failed, unexpected or malformed entry in vault response" >&2
+            return 1
+        fi
+        resp["$key"]="${line#*=}"
+    done < "$tmp"
+
+    for key in "${!tmpl_keys[@]}"; do
+        [[ -n "${resp[$key]:-}" ]] || missing+=("$key")
+    done
 
     if (( ${#missing[@]} > 0 )); then
         echo "vault: materialize failed, missing/empty keys: ${missing[*]}" >&2
         return 1
     fi
 
-    chmod 600 "$tmp"
-    mv "$tmp" "$out"
+    : > "$tmp"
+    while IFS='=' read -r key _; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        printf '%s=%s\n' "$key" "${resp[$key]}" >> "$tmp"
+    done < "$tmpl"
+
+    chmod 600 "$tmp" || return 1
+    mv "$tmp" "$out" || return 1
 }

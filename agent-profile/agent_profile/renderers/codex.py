@@ -38,7 +38,7 @@ from pathlib import Path
 import tomlkit
 
 from agent_profile import shared
-from agent_profile.env import load_dotenv
+from agent_profile.env import load_layered_env
 from agent_profile.parse import Manifest
 from agent_profile.permissions import (
     bash_argv,
@@ -63,11 +63,12 @@ _DENY_DECISION = "forbidden"
 
 
 def _inherited_env_keys() -> frozenset[str]:
-    """Keys present in $DOTFILES_DIR/.env (resolved via the same fallback
-    as :func:`overlay._dotenv`). The codex renderer treats any env var
-    listed here as already-exported by the user's shell (zsh/core.zsh
-    sources .env on startup) and omits it from rendered MCP env blocks
-    so credentials aren't duplicated as plaintext in ~/.codex/config.toml.
+    """Keys present in the layered $DOTFILES_DIR/.env + vault cache merge
+    (resolved via the same fallback as :func:`overlay._dotenv`). The codex
+    renderer treats any env var listed here as already-exported by the
+    user's shell (zsh/core.zsh sources both .env and the vault cache on
+    startup) and omits it from rendered MCP env blocks so credentials
+    aren't duplicated as plaintext in ~/.codex/config.toml.
 
     Set ``AP_CODEX_INHERIT_ENV=0`` to disable the scrub (forces every
     env entry to be baked, matching the pre-scrub behaviour).
@@ -77,7 +78,7 @@ def _inherited_env_keys() -> frozenset[str]:
     repo_root = Path(
         os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles")
     )
-    return frozenset(load_dotenv(repo_root / ".env").keys())
+    return frozenset(load_layered_env(repo_root).keys())
 
 
 class CodexRenderer:
@@ -399,14 +400,15 @@ class CodexRenderer:
     # tomlkit round-trip. config.toml is a merged file (never a whole-file
     # artefact); clean() removes our entries by name.
     #
-    # Env-block scrubbing: keys present in $DOTFILES_DIR/.env are dropped
-    # from the rendered [mcp_servers.*.env] table. Reason: zsh/core.zsh
-    # exports every key=value from .env into the interactive shell, so
-    # codex (a terminal-launched CLI) and its MCP server children already
-    # inherit those values at runtime. Re-baking them as plaintext in
-    # ~/.codex/config.toml just duplicates the credential on disk for no
-    # behavioural gain. Non-.env env entries (e.g. SERENA_MUX_HARNESS,
-    # which is render-time per-harness, not a credential) stay baked.
+    # Env-block scrubbing: keys present in the layered .env + vault cache
+    # merge are dropped from the rendered [mcp_servers.*.env] table. Reason:
+    # zsh/core.zsh exports every key=value from both .env and the vault cache
+    # into the interactive shell, so codex (a terminal-launched CLI) and its
+    # MCP server children already inherit those values at runtime. Re-baking
+    # them as plaintext in ~/.codex/config.toml just duplicates the
+    # credential on disk for no behavioural gain. Non-layered env entries
+    # (e.g. SERENA_MUX_HARNESS, which is render-time per-harness, not a
+    # credential) stay baked.
     def _write_mcps(self, manifest: Manifest, target: Path) -> None:
         mcps = base.mcps_for(manifest, "codex", _CODEX_MCP_DEFAULT)
         if not mcps:
