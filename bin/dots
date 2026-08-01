@@ -159,10 +159,11 @@ do_sync() {
     "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
 
     case " ${sync_args[*]} " in
-        *" --help "*|*" -h "*) return 0 ;;
+        *" --help "*|*" -h "*|*" --dry-run "*) return 0 ;;
     esac
 
-    SKILL_EXCLUDE_AGENTS=claude-code \
+    local skill_exclude_agents="${SKILL_EXCLUDE_AGENTS:+$SKILL_EXCLUDE_AGENTS }claude-code"
+    SKILL_EXCLUDE_AGENTS="$skill_exclude_agents" \
         "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
         "$DOTFILES_DIR/skills/_registry.yaml" --force
 }

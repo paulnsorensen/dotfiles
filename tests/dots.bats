@@ -103,6 +103,22 @@ STUB
     assert_output_contains "stub-skill-sync args=[$stub_dir/skills/_registry.yaml --force] exclude=claude-code"
 }
 
+@test "dots sync preserves caller skill exclusions" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    SKILL_EXCLUDE_AGENTS=cursor PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "exclude=cursor claude-code"
+}
+
+@test "dots sync --dry-run skips the skill refresh" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync --dry-run
+    assert_success
+    assert_output_not_contains "stub-skill-sync"
+}
+
 @test "dots with no arguments shows status" {
     # Don't try to create repo in actual dotfiles dir - it already exists
     # Just run the command
