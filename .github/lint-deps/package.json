@@ -4,6 +4,6 @@
   "description": "Pinned Node lint tool versions for .github/workflows/test.yml (avoids adhoc npm -g installs).",
   "devDependencies": {
     "eslint": "8.57.1",
-    "markdownlint-cli2": "0.23.1"
+    "markdownlint-cli2": "0.23.2"
   }
 }
