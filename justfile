@@ -68,5 +68,13 @@ check-llm:
     yq -e '.' chezmoi/local-llm/configs/llama-swap.yaml > /dev/null
     @echo "check-llm: ok"
 
-# pre-push gate: autofix what we can, then lint + unit tests + smoke checks
-check: lint-fix lint test test-python smoke
+# pre-push gate: lint-fix mutates files first (must not race readers) and
+# already gates the fixable linters (ruff/eslint/markdownlint --fix all exit
+# non-zero on unfixable findings); shellcheck has no fixer so it still runs
+# standalone. The remaining legs are independent and IO/CPU-bound, so they
+# fan out via GNU parallel; bats (test) goes last since it's the slowest.
+# Plain `lint` stays out of the gate — its fixable legs are redundant with
+# lint-fix, and lint-shell already covers the one leg that needs no fixer.
+check: lint-fix
+    @mkdir -p "$HOME/.parallel" && touch "$HOME/.parallel/will-cite"
+    parallel -k --group just ::: lint-shell test-python smoke test

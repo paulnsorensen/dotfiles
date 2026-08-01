@@ -20,6 +20,9 @@ setup_file() {
     write_mock_harness claude
     write_mock_harness codex
     write_mock_harness omp
+    write_mock_mise
+    write_mock_curl
+    write_mock_sh
 }
 setup() {
     setup_test_env
@@ -30,7 +33,15 @@ setup() {
 
     export MOCK_BIN="$TEST_HOME/bin"
     mkdir -p "$MOCK_BIN"
-    cp -p "$BATS_FILE_TMPDIR/package-mocks/"* "$MOCK_BIN/"
+    # Symlink (not copy) the mocks generated once in setup_file(): macOS
+    # syspolicyd assesses every NEW executable inode on first exec, so
+    # sharing inodes across tests pays that tax once per suite run instead
+    # of once per test. write_mock_* override helpers rm -f the symlink
+    # before writing so they never truncate the shared master.
+    local f
+    for f in "$BATS_FILE_TMPDIR/package-mocks/"*; do
+        ln -s "$f" "$MOCK_BIN/$(basename "$f")"
+    done
 
     export BREW_LOG="$TEST_HOME/brew.log"
     export CARGO_LOG="$TEST_HOME/cargo.log"
@@ -41,20 +52,23 @@ setup() {
     export CODEX_LOG="$TEST_HOME/codex.log"
     export OMP_LOG="$TEST_HOME/omp.log"
     export MISE_LOG="$TEST_HOME/mise.log"
+    export CURL_LOG="$TEST_HOME/curl.log"
+    export SH_LOG="$TEST_HOME/sh.log"
+    export UV_LOG="$TEST_HOME/uv.log"
     export MISE_CONFIG_FILE="$TEST_HOME/mise-config.toml"
     export MISE_BOOTSTRAP_CONFIG_FILE="$TEST_HOME/missing-bootstrap-config.toml"
     printf '[tools]\n' > "$MISE_CONFIG_FILE"
 
-    # mise/curl/sh mocks stay per-test: some tests override them with failure
-    # variants, and they are cheap. The expensive shared mocks are generated
-    # once in setup_file() and copied in above.
-    write_mock_mise
-    write_mock_curl
-    write_mock_sh
+    # The invoking shell may export DOTFILES_DEV; sanitize it so dev-gated
+    # behavior (e.g. cask heal's `brew list --cask`) only runs when a test
+    # opts in explicitly.
+    unset DOTFILES_DEV
+
     export PATH="$MOCK_BIN:$PATH"
 }
 
 write_mock_sudo() {
+    rm -f "$MOCK_BIN/sudo"
     cat > "$MOCK_BIN/sudo" << 'MOCKSUDO'
 #!/bin/bash
 echo "sudo $*" >> "$SUDO_LOG"
@@ -71,6 +85,7 @@ write_mock_harness() {
         codex)  log_var="CODEX_LOG" ;;
         omp)    log_var="OMP_LOG" ;;
     esac
+    rm -f "$MOCK_BIN/$name"
     cat > "$MOCK_BIN/$name" << MOCKHARNESS
 #!/bin/bash
 echo "$name \$*" >> "\$$log_var"
@@ -82,7 +97,7 @@ MOCKHARNESS
 # Mock curl for native-installer tests: record the URL, emit nothing so the
 # downstream `| bash` / `| sh` runs an empty (no-op) script.
 write_mock_curl() {
-    export CURL_LOG="$TEST_HOME/curl.log"
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << 'MOCKCURL'
 #!/bin/bash
 echo "curl $*" >> "$CURL_LOG"
@@ -96,17 +111,17 @@ MOCKCURL
 # of a real installer script. Records args so a `--ref` pin is assertable.
 write_mock_sh() {
     local exit_status="${1:-0}"
-    export SH_LOG="$TEST_HOME/sh.log"
+    rm -f "$MOCK_BIN/sh"
     cat > "$MOCK_BIN/sh" << MOCKSH
 #!/bin/bash
-echo "sh \$*" >> "$SH_LOG"
+echo "sh \$*" >> "\$SH_LOG"
 exit $exit_status
 MOCKSH
     chmod +x "$MOCK_BIN/sh"
 }
 
 write_mock_uv() {
-    export UV_LOG="$TEST_HOME/uv.log"
+    rm -f "$MOCK_BIN/uv"
     cat > "$MOCK_BIN/uv" << 'MOCKUV'
 #!/bin/bash
 echo "uv $*" >> "$UV_LOG"
@@ -118,9 +133,10 @@ MOCKUV
 
 write_mock_mise() {
     local exit_status="${1:-0}"
+    rm -f "$MOCK_BIN/mise"
     cat > "$MOCK_BIN/mise" << MOCKMISE
 #!/bin/bash
-echo "mise \$* config=\${MISE_GLOBAL_CONFIG_FILE:-unset}" >> "$MISE_LOG"
+echo "mise \$* config=\${MISE_GLOBAL_CONFIG_FILE:-unset}" >> "\$MISE_LOG"
 exit $exit_status
 MOCKMISE
     chmod +x "$MOCK_BIN/mise"
@@ -136,6 +152,7 @@ teardown() {
 write_mock_brew() {
     local formulae="${1:-}" casks="${2:-}" fail_pkg="${3:-}" outdated_casks="${4:-}" info_json="${5:-}"
     [[ -z "$info_json" ]] && info_json='{"casks":[]}'
+    rm -f "$MOCK_BIN/brew"
     cat > "$MOCK_BIN/brew" << MOCKBREW
 #!/bin/bash
 echo "brew \$*" >> "\$BREW_LOG"
@@ -170,6 +187,7 @@ MOCKBREW
 }
 
 write_mock_cargo() {
+    rm -f "$MOCK_BIN/cargo"
     cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
 #!/bin/bash
 echo "cargo $*" >> "$CARGO_LOG"
@@ -184,6 +202,7 @@ MOCKCARGO
 }
 
 write_mock_npm() {
+    rm -f "$MOCK_BIN/npm"
     cat > "$MOCK_BIN/npm" << 'MOCKNPM'
 #!/bin/bash
 echo "npm $*" >> "$NPM_LOG"
@@ -201,6 +220,7 @@ MOCKNPM
 #   fail_repo:       exit non-zero when `gh extension install` is asked for this repo
 write_mock_gh() {
     local installed="${1:-}" fail_repo="${2:-}"
+    rm -f "$MOCK_BIN/gh"
     cat > "$MOCK_BIN/gh" << MOCKGH
 #!/bin/bash
 echo "gh \$*" >> "\$GH_LOG"
@@ -523,6 +543,7 @@ path_without_buildtools() {
     # Stub the full toolchain so the check passes regardless of host state.
     local t
     for t in gcc make file git curl; do
+        rm -f "$MOCK_BIN/$t"
         printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/$t"; chmod +x "$MOCK_BIN/$t"
     done
     write_test_yaml
@@ -906,6 +927,7 @@ MOCKRUSTUP
 
     # brew outdated failing must NOT be silently swallowed as "nothing to
     # upgrade" — emit a warning and skip the pass, like the other brew ops.
+    rm -f "$MOCK_BIN/brew"
     cat > "$MOCK_BIN/brew" << 'MOCKBREW'
 #!/bin/bash
 echo "brew $*" >> "$BREW_LOG"
@@ -1076,6 +1098,7 @@ MOCKBREW
     ln -sf "$(command -v jq)" "$MOCK_BIN/jq"
     # The mocked brew places a working mise on `brew install mise`, so this test
     # exercises both the bootstrap call and the subsequent convergence call.
+    rm -f "$MOCK_BIN/brew"
     cat > "$MOCK_BIN/brew" << MOCKBREW
 #!/bin/bash
 echo "brew \$*" >> "$BREW_LOG"
@@ -1186,6 +1209,7 @@ packages:
   - cargo-update: { source: cargo, version: "1.2.3" }
   - cargo-audit: { source: cargo }
 YAML
+    rm -f "$MOCK_BIN/cargo"
     cat > "$MOCK_BIN/cargo" << 'MOCKCARGO'
 #!/bin/bash
 echo "cargo $*" >> "$CARGO_LOG"

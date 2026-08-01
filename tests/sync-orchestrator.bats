@@ -7,13 +7,11 @@
 
 load test_helper
 
-SYNC_SCRIPT="$REAL_DOTFILES_DIR/.sync"
+export SYNC_SCRIPT="$REAL_DOTFILES_DIR/.sync"
 
-setup() {
-    setup_test_env
-    export MOCK_BIN="$TEST_HOME/bin"
-    export FAKE_DOTFILES="$TEST_HOME/dotfiles"
-    mkdir -p "$MOCK_BIN" "$FAKE_DOTFILES"
+setup_file() {
+    export MOCK_BIN="$BATS_FILE_TMPDIR/sync-mocks"
+    mkdir -p "$MOCK_BIN"
 
     # Mock git — canned output; clone creates fake TPM dir structure
     cat > "$MOCK_BIN/git" << 'MOCK'
@@ -39,32 +37,58 @@ MOCK
         chmod +x "$MOCK_BIN/$cmd"
     done
 
-    # Mock packages/sync.sh
+    # Helper script: sources sync functions and calls a named function.
+    # Quoted heredoc — no write-time substitution — so $TEST_HOME and
+    # $SYNC_SCRIPT resolve from the environment at runtime, letting this
+    # master executable be shared (symlinked) across every test.
+    cat > "$MOCK_BIN/call-sync-fn" << 'HELPER'
+#!/bin/bash
+set -euo pipefail
+export HOME="$TEST_HOME"
+export DOTFILES_STATE_DIR="$TEST_HOME/.local/state/dotfiles"
+eval "$(awk '/^########## Main$/{exit} {print}' "$SYNC_SCRIPT")"
+if [[ -n "${FAKE_DIR:-}" ]]; then
+    dir="$FAKE_DIR"
+    cd "$FAKE_DIR"
+fi
+"$@"
+HELPER
+    chmod +x "$MOCK_BIN/call-sync-fn"
+
+    # Mock packages/sync.sh — no-op default, symlinked into each test's
+    # fake dotfiles tree; tests that override its content rm -f first.
+    export FAKE_DOTFILES_MASTER="$BATS_FILE_TMPDIR/sync-fixtures"
+    mkdir -p "$FAKE_DOTFILES_MASTER/packages"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES_MASTER/packages/sync.sh"
+    chmod +x "$FAKE_DOTFILES_MASTER/packages/sync.sh"
+}
+
+setup() {
+    setup_test_env
+    export MOCK_BIN_MASTER="$BATS_FILE_TMPDIR/sync-mocks"
+    export FAKE_DOTFILES_MASTER="$BATS_FILE_TMPDIR/sync-fixtures"
+    export MOCK_BIN="$TEST_HOME/bin"
+    export FAKE_DOTFILES="$TEST_HOME/dotfiles"
+    mkdir -p "$MOCK_BIN" "$FAKE_DOTFILES"
+
+    # Symlink (not copy) the mocks generated once in setup_file(): macOS
+    # syspolicyd assesses every NEW executable inode on first exec, so
+    # sharing inodes across tests pays that tax once per suite run instead
+    # of once per test. Any test that rewrites a mock's content must rm -f
+    # the symlink first so it never truncates the shared master.
+    local f
+    for f in "$MOCK_BIN_MASTER/"*; do
+        ln -s "$f" "$MOCK_BIN/$(basename "$f")"
+    done
+
     mkdir -p "$FAKE_DOTFILES/packages"
-    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/packages/sync.sh"
-    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+    ln -s "$FAKE_DOTFILES_MASTER/packages/sync.sh" "$FAKE_DOTFILES/packages/sync.sh"
 
     # Mock chezmoi/.chezmoidata/omp.yaml registry — empty plugin set
     mkdir -p "$FAKE_DOTFILES/chezmoi/.chezmoidata"
     printf 'omp:\n  plugins: {}\n' > "$FAKE_DOTFILES/chezmoi/.chezmoidata/omp.yaml"
 
     export PATH="$MOCK_BIN:$PATH"
-
-    # Helper script: sources sync functions and calls a named function
-    cat > "$MOCK_BIN/call-sync-fn" << HELPER
-#!/bin/bash
-set -euo pipefail
-export HOME="$TEST_HOME"
-export DOTFILES_STATE_DIR="$TEST_HOME/.local/state/dotfiles"
-export SYNC_SCRIPT="$SYNC_SCRIPT"
-eval "\$(awk '/^########## Main\$/{exit} {print}' "$SYNC_SCRIPT")"
-if [[ -n "\${FAKE_DIR:-}" ]]; then
-    dir="\$FAKE_DIR"
-    cd "\$FAKE_DIR"
-fi
-"\$@"
-HELPER
-    chmod +x "$MOCK_BIN/call-sync-fn"
 }
 
 teardown() {
@@ -176,6 +200,7 @@ SCRIPT
 printf 'chezmoi-apply\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/chezmoi/.sync"
+    rm -f "$FAKE_DOTFILES/packages/sync.sh"
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
 printf 'packages-sync\n' >> "$SYNC_EVENTS"
@@ -199,6 +224,7 @@ SCRIPT
 printf 'chezmoi-apply\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/chezmoi/.sync"
+    rm -f "$FAKE_DOTFILES/packages/sync.sh"
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
 if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
