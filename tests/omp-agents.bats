@@ -9,6 +9,13 @@ canonical_agents() {
     yq -oy -r '.agents | keys | .[]' "$REGISTRY"
 }
 
+omp_agent_names() {
+    local file
+    for file in "$OMP_AGENTS"/*.md; do
+        basename "${file%.md}"
+    done | sort
+}
+
 frontmatter() {
     yq --front-matter=extract -oy -r "$1" "$2"
 }
@@ -24,25 +31,26 @@ expected_omp_model() {
 
 expected_omp_thinking() {
     case "$1" in
-        fromage-age-arch|fromage-secaudit|reviewer) echo xhigh ;;
-        ghostbuster|ricotta-reducer|researcher) echo high ;;
+        reviewer) echo xhigh ;;
+        ghostbuster|researcher) echo high ;;
         generalist) echo xhigh ;;
-        fromage-fort|roquefort-wrecker|coder) echo xhigh ;;
+        roquefort-wrecker|coder) echo xhigh ;;
         explorer) echo high ;;
         nih-scanner) echo medium ;;
-        fromage-age-history|duckdb-expert|whey-drainer|worktree-content-digest) echo low ;;
+        duckdb-expert|whey-drainer|worktree-content-digest) echo low ;;
         *) return 1 ;;
     esac
 }
 
-@test "OMP defines every canonical agent with its canonical name" {
+@test "OMP defines exactly every canonical agent plus its native reviewer" {
     local expected actual
-    expected="$(canonical_agents)"
-    actual="$(
-        while IFS= read -r name; do
-            [[ -f "$OMP_AGENTS/$name.md" ]] && printf '%s\n' "$name"
-        done <<< "$expected"
+    expected="$(
+        {
+            canonical_agents
+            printf '%s\n' cheese-reviewer
+        } | sort
     )"
+    actual="$(omp_agent_names)"
 
     [[ "$actual" == "$expected" ]]
 }

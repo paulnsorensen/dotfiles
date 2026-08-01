@@ -255,6 +255,7 @@ claude:
     - de-slop
     - ghostbuster
     - git-hygiene
+    - git-risk
     - grok-codebase
     - harness-doctor
     - nih-audit
@@ -285,16 +286,11 @@ claude:
     - coder
     - duckdb-expert
     - explorer
-    - fromage-age-arch
-    - fromage-age-history
-    - fromage-fort
-    - fromage-secaudit
     - generalist
     - ghostbuster
     - nih-scanner
     - researcher
     - reviewer
-    - ricotta-reducer
     - roquefort-wrecker
     - whey-drainer
     - worktree-content-digest

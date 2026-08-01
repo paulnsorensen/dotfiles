@@ -22,9 +22,9 @@ expected_effort() {
 
 expected_agent_codex_model() {
     case "$1" in
-        fromage-age-arch|fromage-secaudit|reviewer) echo gpt-5.6-sol ;;
-        ghostbuster|ricotta-reducer|researcher|generalist) echo gpt-5.6-terra ;;
-        fromage-fort|roquefort-wrecker|coder|explorer|nih-scanner|fromage-age-history|duckdb-expert|whey-drainer|worktree-content-digest) echo gpt-5.6-luna ;;
+        reviewer) echo gpt-5.6-sol ;;
+        ghostbuster|researcher|generalist) echo gpt-5.6-terra ;;
+        roquefort-wrecker|coder|explorer|nih-scanner|duckdb-expert|whey-drainer|worktree-content-digest) echo gpt-5.6-luna ;;
         *) echo UNMAPPED ;;
     esac
 }

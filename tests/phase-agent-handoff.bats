@@ -333,30 +333,3 @@ block_sha() {
         [[ "$status" -eq 0 ]] || { echo "roquefort-wrecker must grant $tool" >&2; return 1; }
     done
 }
-
-
-@test "ricotta reducer grants only its required read-side tilth tools" {
-    local registry="$AGENTS_DIR/registry.yaml"
-    local tools
-    tools=$(yq -r '.agents.ricotta-reducer.tools[]' "$registry")
-
-    for tool in mcp__tilth__tilth_search mcp__tilth__tilth_read mcp__tilth__tilth_grok; do
-        run grep -Fxq -- "$tool" <<<"$tools"
-        [[ "$status" -eq 0 ]] || { echo "ricotta-reducer must grant $tool" >&2; return 1; }
-    done
-    for tool in mcp__tilth 'mcp__tilth__*' mcp__tilth__tilth_write; do
-        run grep -Fxq -- "$tool" <<<"$tools"
-        [[ "$status" -ne 0 ]] || { echo "ricotta-reducer must not grant write-capable $tool" >&2; return 1; }
-    done
-}
-
-@test "fromage-fort uses thread state and shell-safe reply transport" {
-    local body="$AGENTS_DIR/agent_definitions/fromage-fort.md"
-
-    for contract in reviewThreads isResolved isOutdated '--input -'; do
-        run grep -Fq -- "$contract" "$body"
-        [[ "$status" -eq 0 ]] || { echo "fromage-fort missing $contract contract" >&2; return 1; }
-    done
-    run grep -Eq -- '(-f|--raw-field) body=' "$body"
-    [[ "$status" -ne 0 ]] || { echo "fromage-fort must not interpolate reply bodies into shell arguments" >&2; return 1; }
-}
