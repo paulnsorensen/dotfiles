@@ -12,14 +12,24 @@ load test_helper
 HOOK_SH="$REAL_DOTFILES_DIR/agents/hooks/sensitive-file-guard.sh"
 HOOK_JS="$REAL_DOTFILES_DIR/agents/lib/sensitive-file-guard.js"
 
+setup_file() {
+    export GUARD_MASTER="$BATS_FILE_TMPDIR/guard-mocks"
+    mkdir -p "$GUARD_MASTER/hooks" "$GUARD_MASTER/lib"
+    cp "$HOOK_SH" "$GUARD_MASTER/hooks/sensitive-file-guard.sh"
+    cp "$HOOK_JS" "$GUARD_MASTER/lib/sensitive-file-guard.js"
+    chmod +x "$GUARD_MASTER/hooks/sensitive-file-guard.sh"
+}
+
 setup() {
     setup_test_env
     # Mirror the deployed layout: <root>/hooks/<bridge> + <root>/lib/<logic>.
+    # Symlink (not copy) the setup_file-built master: macOS syspolicyd assesses
+    # every NEW executable inode on first exec, so sharing inodes across tests
+    # pays that tax once per suite run instead of once per test.
     DEPLOY="$TEST_HOME/.claude"
     mkdir -p "$DEPLOY/hooks" "$DEPLOY/lib"
-    cp "$HOOK_SH" "$DEPLOY/hooks/sensitive-file-guard.sh"
-    cp "$HOOK_JS" "$DEPLOY/lib/sensitive-file-guard.js"
-    chmod +x "$DEPLOY/hooks/sensitive-file-guard.sh"
+    ln -s "$GUARD_MASTER/hooks/sensitive-file-guard.sh" "$DEPLOY/hooks/sensitive-file-guard.sh"
+    ln -s "$GUARD_MASTER/lib/sensitive-file-guard.js" "$DEPLOY/lib/sensitive-file-guard.js"
 }
 
 teardown() {

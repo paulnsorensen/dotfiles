@@ -20,15 +20,24 @@ HOOK_JS="$REAL_DOTFILES_DIR/agents/lib/git-guard.js"
 CURSOR_HOOK="$REAL_DOTFILES_DIR/cursor/plugins/local/cheese-grok/hooks/git-guard.sh"
 COPILOT_HOOK="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/hooks/executable_git-guard.sh"
 
+setup_file() {
+    export GUARD_MASTER="$BATS_FILE_TMPDIR/guard-mocks"
+    mkdir -p "$GUARD_MASTER/hooks" "$GUARD_MASTER/lib"
+    cp "$HOOK_SH" "$GUARD_MASTER/hooks/git-guard.sh"
+    cp "$HOOK_JS" "$GUARD_MASTER/lib/git-guard.js"
+    chmod +x "$GUARD_MASTER/hooks/git-guard.sh"
+}
+
 setup() {
     setup_test_env
-    # Mirror the deployed layout for the Claude/Codex bridge:
-    #   <root>/hooks/<bridge> + <root>/lib/<logic>.
+    # Mirror the deployed layout for the Claude/Codex bridge. Symlink (not
+    # copy) the setup_file-built master: macOS syspolicyd assesses every NEW
+    # executable inode on first exec, so sharing inodes across tests pays
+    # that tax once per suite run instead of once per test.
     DEPLOY="$TEST_HOME/.claude"
     mkdir -p "$DEPLOY/hooks" "$DEPLOY/lib"
-    cp "$HOOK_SH" "$DEPLOY/hooks/git-guard.sh"
-    cp "$HOOK_JS" "$DEPLOY/lib/git-guard.js"
-    chmod +x "$DEPLOY/hooks/git-guard.sh"
+    ln -s "$GUARD_MASTER/hooks/git-guard.sh" "$DEPLOY/hooks/git-guard.sh"
+    ln -s "$GUARD_MASTER/lib/git-guard.js" "$DEPLOY/lib/git-guard.js"
 
     # A real repo with one committed file, then a dirty working-tree edit.
     REPO="$TEST_HOME/repo"
