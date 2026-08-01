@@ -1,8 +1,8 @@
 # Skill Install Registry — external skill source repos, consumed by two legs:
 #   1. chezmoi assembly (_cz_vendor_external_skills in .sync-lib.sh): vendors
 #      skills for claude + omp on every `dots sync`.
-#   2. npx `skills add` (chezmoi/lib/install-external.sh): installs into the
-#      non-claude harnesses (SKILL_HARNESSES); run by `dots upgrade`.
+#   2. npx `skills add` (chezmoi/lib/install-external.sh): refreshes
+#      non-claude harnesses (SKILL_HARNESSES) on every `dots sync`.
 #
 # Each entry is a GitHub repo in OWNER/REPO format. Skills are auto-discovered
 # by the `skills` CLI (`--skill '*'`) from `skills/<name>/SKILL.md` per the
@@ -26,8 +26,8 @@
 # Harnesses are configured in .env via SKILL_HARNESSES (space-separated).
 #
 # Usage:
-#   dots sync            Vendor + deploy for claude/omp (chezmoi leg)
-#   dots upgrade         Also refresh non-claude harnesses (npx leg, --force)
+#   dots sync            Vendor + deploy for claude/omp; refresh non-claude skills
+#   dots upgrade         Pull dotfiles, then run the same sync + skill refresh
 #   skill-ls             List installed global skills (npx skills list --global)
 
 sources:

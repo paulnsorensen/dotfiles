@@ -29,8 +29,9 @@ teardown() {
 # invocations so the pull-before-sync order and upgrade scope are observable.
 stub_upgrade_dotfiles() {
     local stub_dir="$1"
-    mkdir -p "$stub_dir/packages" "$stub_dir/bin"
+    mkdir -p "$stub_dir/packages" "$stub_dir/bin" "$stub_dir/chezmoi/lib" "$stub_dir/skills"
     cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    : > "$stub_dir/skills/_registry.yaml"
     cat > "$stub_dir/.sync" <<'STUB'
 #!/bin/bash
 echo "stub-dotsync args=$*"
@@ -40,6 +41,10 @@ STUB
 #!/bin/bash
 echo "stub-sync UPGRADE_MODE=${UPGRADE_MODE:-unset}"
 STUB
+    cat > "$stub_dir/chezmoi/lib/install-external.sh" <<'STUB'
+#!/bin/bash
+echo "stub-skill-sync args=[$*] exclude=${SKILL_EXCLUDE_AGENTS:-unset}"
+STUB
     cat > "$stub_dir/bin/git" <<'STUB'
 #!/bin/bash
 echo "stub-git $*"
@@ -47,10 +52,10 @@ if [[ "$1" == "pull" && "${GIT_PULL_FAIL:-false}" == "true" ]]; then
     exit 1
 fi
 STUB
-    chmod +x "$stub_dir/.sync" "$stub_dir/packages/sync.sh" "$stub_dir/bin/git"
+    chmod +x "$stub_dir/.sync" "$stub_dir/packages/sync.sh" "$stub_dir/chezmoi/lib/install-external.sh" "$stub_dir/bin/git"
 }
 
-@test "dots upgrade pulls before an upgrade sync without refreshing remote skills" {
+@test "dots upgrade pulls before an upgrade sync and refreshes remote skills" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
     PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
@@ -58,9 +63,8 @@ STUB
     assert_output_contains "stub-git pull --rebase"
     assert_output_contains "stub-dotsync args="
     assert_output_contains "stub-sync UPGRADE_MODE=true"
+    assert_output_contains "stub-skill-sync args=[$stub_dir/skills/_registry.yaml --force] exclude=claude-code"
     assert_output_not_contains "args=refresh"
-    assert_output_not_contains "skill-sync"
-    assert_output_not_contains "Refreshing remote skills"
 
     local pull_line sync_line
     pull_line=$(printf '%s\n' "$output" | grep -n 'stub-git pull --rebase' | head -1 | cut -d: -f1)
@@ -71,15 +75,15 @@ STUB
     }
 }
 
-@test "dots up shorthand uses the same pull then scoped-upgrade flow" {
+@test "dots up shorthand uses the same pull, sync, and skill-refresh flow" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
     PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" up
     assert_success
     assert_output_contains "stub-git pull --rebase"
     assert_output_contains "stub-sync UPGRADE_MODE=true"
+    assert_output_contains "stub-skill-sync args=[$stub_dir/skills/_registry.yaml --force] exclude=claude-code"
     assert_output_not_contains "args=refresh"
-    assert_output_not_contains "skill-sync"
 }
 
 @test "dots upgrade stops before sync when git pull fails" {
@@ -91,12 +95,28 @@ STUB
     assert_output_not_contains "stub-dotsync"
 }
 
-@test "dots sync never invokes the skills-CLI refresh" {
+@test "dots sync refreshes non-Claude skills" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
     PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
     assert_success
-    assert_output_not_contains "skill-sync"
+    assert_output_contains "stub-skill-sync args=[$stub_dir/skills/_registry.yaml --force] exclude=claude-code"
+}
+
+@test "dots sync preserves caller skill exclusions" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    SKILL_EXCLUDE_AGENTS=cursor PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "exclude=cursor claude-code"
+}
+
+@test "dots sync --dry-run skips the skill refresh" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync --dry-run
+    assert_success
+    assert_output_not_contains "stub-skill-sync"
 }
 
 @test "dots with no arguments shows status" {
@@ -171,13 +191,18 @@ STUB
 
 @test "dots sync with no args dispatches to .sync with no extra args" {
     local stub_dir="$TEST_HOME/sync-dotfiles"
-    mkdir -p "$stub_dir/bin"
+    mkdir -p "$stub_dir/bin" "$stub_dir/chezmoi/lib" "$stub_dir/skills"
     cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    : > "$stub_dir/skills/_registry.yaml"
     cat > "$stub_dir/.sync" <<'STUB'
 #!/bin/bash
 echo "stub-dotsync argc=$# args=[$*]"
 STUB
-    chmod +x "$stub_dir/.sync"
+    cat > "$stub_dir/chezmoi/lib/install-external.sh" <<'STUB'
+#!/bin/bash
+exit 0
+STUB
+    chmod +x "$stub_dir/.sync" "$stub_dir/chezmoi/lib/install-external.sh"
 
     DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
     assert_success

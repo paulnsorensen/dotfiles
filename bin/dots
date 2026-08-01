@@ -157,6 +157,15 @@ do_sync() {
     done
 
     "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
+
+    case " ${sync_args[*]} " in
+        *" --help "*|*" -h "*|*" --dry-run "*) return 0 ;;
+    esac
+
+    local skill_exclude_agents="${SKILL_EXCLUDE_AGENTS:+$SKILL_EXCLUDE_AGENTS }claude-code"
+    SKILL_EXCLUDE_AGENTS="$skill_exclude_agents" \
+        "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
+        "$DOTFILES_DIR/skills/_registry.yaml" --force
 }
 
 # Show status
@@ -426,8 +435,8 @@ case "${1:-status}" in
         cd_dotfiles
         git pull --rebase
         # UPGRADE_MODE bypasses the package cache, but pinned installers still
-        # converge to their recorded versions. Do not pass `refresh` or run the
-        # skills CLI: those float remote skill sources outside the pin contract.
+        # converge to their recorded versions. `do_sync` also refreshes
+        # unpinned external skills for non-Claude harnesses.
         UPGRADE_MODE=true do_sync
         ;;
     status|st)
