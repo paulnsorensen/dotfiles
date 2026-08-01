@@ -4,15 +4,16 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Agent, mcp__serena__*
+allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Bash(npm audit:*), Bash(uv pip audit:*), Bash(pip-audit:*), Bash(cargo audit:*), Bash(govulncheck:*), Agent, mcp__serena__*
 description: >
   Scan for custom code that duplicates well-supported libraries, then recommend
   migrations with effort estimates. Detects hand-rolled utilities, retry logic,
   validation, date handling, and DIY parsers. Use when the user mentions
   reinventing the wheel, asks "is there a library/crate for this", wants a build
   vs buy audit, says "what are we maintaining that we shouldn't be", or "should
-  we just use lodash for this". Do NOT use for code-quality review (/age) or
-  dead-code removal (/simplify or /ghostbuster).
+  we just use lodash for this". Also covers dependency health — vulnerable,
+  unused, overweight, or stdlib-replaceable deps. Do NOT use for code-quality
+  review (/age) or dead-code removal (/simplify or /ghostbuster).
 ---
 
 # /nih-audit — Not Invented Here Audit
@@ -70,7 +71,35 @@ Store as `depManifest`:
 Infer from manifest types + file extensions in scope. This determines which
 ast-grep patterns the scanner will run.
 
-**Tool budget**: ~5 calls.
+### 0.4 Dependency Health
+
+Same manifests, three cheap checks — a dependency you can delete beats one you
+replace.
+
+Run whichever audit tool the ecosystem already has. Never install one:
+
+| Ecosystem | Command |
+|---|---|
+| Node | `npm audit --json 2>/dev/null \| head -50` |
+| Python | `uv pip audit 2>/dev/null \|\| pip-audit 2>/dev/null` |
+| Rust | `cargo audit 2>/dev/null` |
+| Go | `govulncheck ./... 2>/dev/null` |
+
+If the tool is absent, report it as skipped — an unrun audit is not a clean one.
+
+Then, per dependency in `depManifest`:
+
+- **Possibly unused** — zero import matches in source. Plugins, runtime-only
+  deps, and CLI tools are used implicitly: mark those `<speculative>` and
+  downgrade rather than recommending removal.
+- **Overweight** — a heavyweight package pulled in for a single function.
+- **Stdlib-replaceable** — `lodash` → native methods, `axios` → `fetch`,
+  `uuid` → `crypto.randomUUID()`.
+
+These are dependency findings, not NIH candidates: they need no library research,
+so they skip Phases 2–3 and go straight to the Dependency Health block in 4.4.
+
+**Tool budget**: ~10 calls.
 
 ---
 
@@ -340,6 +369,15 @@ recommendation above threshold):
 - NIH candidates found: N
 - Already using best option: N (filtered out)
 - Ambiguous (scoring passes diverge >20): N
+
+### Dependency Health
+- Vulnerabilities: N (tools run: `npm audit`; skipped: `cargo audit` not installed)
+- Possibly unused: N | Overweight: N | Stdlib-replaceable: N
+
+| Dep | Issue | Calibration | Action |
+|---|-------|-------------|--------|
+| lodash | 0 imports in source | `<certain>` | Remove |
+| axios | used for 2 GET calls | `<speculative>` | Replace with `fetch` |
 
 ### All Findings (sorted by score, descending)
 
