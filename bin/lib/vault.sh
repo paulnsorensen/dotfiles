@@ -62,15 +62,16 @@ vault_token() {
 # file, a provisioned machine whose id lives only in the file would be judged
 # unprovisioned and silently skipped, leaving a stale cache behind.
 _vault_project_id() {
-    local env_file
+    local env_file id
     if [[ -n "${BWS_PROJECT_ID:-}" ]]; then
         echo "$BWS_PROJECT_ID"
         return 0
     fi
     env_file="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/.env"
     [[ -f "$env_file" ]] || return 1
-    sed -n 's/^BWS_PROJECT_ID=//p' "$env_file" | tail -n1 | grep -q . || return 1
-    sed -n 's/^BWS_PROJECT_ID=//p' "$env_file" | tail -n1
+    id="$(sed -n 's/^BWS_PROJECT_ID=//p' "$env_file" | tail -n1)"
+    [[ -n "$id" ]] || return 1
+    echo "$id"
 }
 
 # True when this machine has everything a materialize attempt needs. Lets
@@ -108,6 +109,10 @@ _vault_fetch_onepassword() {
 # returns non-zero naming the problem.
 vault_materialize() {
     local backend tmpl out tmp prev_umask token key line missing=()
+    (( ${BASH_VERSINFO[0]:-0} >= 4 )) || {
+        echo "vault: materialize requires bash >= 4 (found ${BASH_VERSINFO[0]:-0}); this shell is likely macOS /bin/bash 3.2 — re-run under Homebrew bash" >&2
+        return 1
+    }
     local -A tmpl_keys resp
     tmpl="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/secrets/secrets.env.tmpl"
     out="$(vault_secrets_file)"

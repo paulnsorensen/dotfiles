@@ -121,10 +121,29 @@ EOF
 
     run bash -c "source '$VAULT_LIB'; vault_materialize"
     [ "$status" -ne 0 ]
+    [[ "$output" == *"unexpected or malformed entry"* ]]
 
     source "$VAULT_LIB"
-    run cat "$(vault_secrets_file)"
-    [[ "$output" != *"EVIL_KEY"* ]]
+    [ ! -e "$(vault_secrets_file)" ]
+}
+
+@test "vault_materialize: fails loudly under /bin/bash 3.2 instead of corrupting the cache" {
+    _setup_materialize_fixture
+    cat > "$MOCK_BIN/op" <<'EOF'
+#!/usr/bin/env bash
+[[ "$1" == inject ]] || exit 1
+printf 'FOO_KEY=foo\nBAR_KEY=bar\n'
+EOF
+    chmod +x "$MOCK_BIN/op"
+
+    [ -x /bin/bash ] || skip "/bin/bash not present on this host"
+
+    run /bin/bash -c "source '$VAULT_LIB'; vault_materialize"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"requires bash >= 4"* ]]
+
+    source "$VAULT_LIB"
+    [ ! -e "$(vault_secrets_file)" ]
 }
 
 @test "vault_materialize: rejects a response whose value split across a newline" {
@@ -154,6 +173,31 @@ EOF
         source '$VAULT_LIB'
         wrapper() {
             DOTFILES_DIR='$DOTFILES_DIR' vault_materialize
+        }
+        wrapper
+        echo AFTER_WRAPPER
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"AFTER_WRAPPER"* ]]
+}
+
+@test "materialize_secrets: real caller (.sync-lib.sh) survives a wrapper frame under set -euo pipefail" {
+    _setup_materialize_fixture
+    cat > "$MOCK_BIN/op" <<'EOF'
+#!/usr/bin/env bash
+[[ "$1" == inject ]] || exit 1
+printf 'FOO_KEY=foo\nBAR_KEY=bar\n'
+EOF
+    chmod +x "$MOCK_BIN/op"
+
+    run bash -c "
+        set -euo pipefail
+        dir='$REAL_DOTFILES_DIR'
+        source '$VAULT_LIB'
+        source '$REAL_DOTFILES_DIR/.sync-lib.sh'
+        SYNC_FAILURES=()
+        wrapper() {
+            DOTFILES_DIR='$DOTFILES_DIR' materialize_secrets
         }
         wrapper
         echo AFTER_WRAPPER

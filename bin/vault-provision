@@ -64,7 +64,14 @@ if [[ -n "$store_token" ]]; then
     echo
     [[ -n "$token" ]] || die "empty token"
     if [[ "$(uname -s)" == Darwin ]]; then
-        security add-generic-password -U -s BWS_ACCESS_TOKEN -a "$USER" -w "$token"
+        # -w with no value falls back to reading two lines (entry +
+        # confirmation) from stdin via readpassphrase(3) when no tty is
+        # attached, keeping the token out of argv (research:
+        # .cheese/research/secret-argv-exposure/secret-argv-exposure.md).
+        security add-generic-password -U -s BWS_ACCESS_TOKEN -a "$USER" -w <<EOF
+$token
+$token
+EOF
         echo "Stored in Keychain (service BWS_ACCESS_TOKEN)."
     else
         # Headless Linux has no keyring daemon; a 0600 file is the storage.
@@ -129,6 +136,10 @@ while IFS='=' read -r secret_key _; do
 
     [[ -n "$value" ]] || die "no value for $secret_key"
     [[ "$value" == -* ]] && echo "  WARNING: $secret_key starts with '-'; verify it stored correctly" >&2
+    # bws 2.1.0 has no stdin/file/env path for the secret VALUE (positional
+    # argv only) — an upstream limitation, not fixable here. The value is
+    # briefly visible in /proc/<pid>/cmdline during this call. See
+    # .cheese/research/secret-argv-exposure/secret-argv-exposure.md.
     bws secret create "$secret_key" "$value" "$project_id" -o none
     unset value
 done < "$TMPL"
