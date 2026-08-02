@@ -137,6 +137,9 @@ EOF
     chmod +x "$MOCK_BIN/op"
 
     [ -x /bin/bash ] || skip "/bin/bash not present on this host"
+    local sys_bash_major
+    sys_bash_major="$(/bin/bash -c 'echo "${BASH_VERSINFO[0]:-0}"')"
+    (( sys_bash_major < 4 )) || skip "/bin/bash is ${sys_bash_major}.x; this guard only trips on bash 3.2"
 
     run /bin/bash -c "source '$VAULT_LIB'; vault_materialize"
     [ "$status" -ne 0 ]
