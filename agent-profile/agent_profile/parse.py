@@ -39,7 +39,7 @@ from agent_profile.compile_target_validation import (
     validate_compile_targets,
 )
 from agent_profile.compiled_types import CompileTarget
-from agent_profile.env import load_dotenv, vault_cache_path
+from agent_profile.env import load_layered_env
 from agent_profile.ingest import expand_registries
 
 _ITEM_SECTIONS = ("mcps", "agents", "skills", "commands", "hooks")
@@ -253,7 +253,7 @@ def _expand_registries_directive(
             "section -> registry path(s)"
         )
     repo_root = _repo_root()
-    dotenv = {**load_dotenv(repo_root / ".env"), **load_dotenv(vault_cache_path())}
+    dotenv = load_layered_env(repo_root)
     return expand_registries(directive, repo_root, dotenv)
 
 

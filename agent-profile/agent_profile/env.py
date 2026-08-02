@@ -36,6 +36,16 @@ def vault_cache_path() -> Path:
     return Path(xdg_cache) / "dotfiles" / "secrets.env"
 
 
+def load_layered_env(repo_root: Path) -> dict[str, str]:
+    """Load ``repo_root/.env`` plus the materialized vault cache, cache wins.
+
+    Single source of truth for the ``.env`` + vault-cache merge (spec D4):
+    every render-time ``${VAR}`` resolver in this codebase must see the
+    cache's values for keys the vault has taken over, not the (now-stale or
+    absent) ``.env`` copy."""
+    return {**load_dotenv(repo_root / ".env"), **load_dotenv(vault_cache_path())}
+
+
 VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 

@@ -100,6 +100,66 @@ EOF
 
     run bash -c "source '$VAULT_LIB'; vault_materialize"
     [ "$status" -ne 0 ]
+    [[ "$output" == *"missing/empty keys"* ]]
+    [[ "$output" == *"BAR_KEY"* ]]
+
+    source "$VAULT_LIB"
+    local cache_dir
+    cache_dir="$(dirname "$(vault_secrets_file)")"
+    run bash -c "ls '$cache_dir'/secrets.env.* 2>/dev/null"
+    [ -z "$output" ]
+}
+
+@test "vault_materialize: rejects a response with an unlisted key" {
+    _setup_materialize_fixture
+    cat > "$MOCK_BIN/op" <<'EOF'
+#!/usr/bin/env bash
+[[ "$1" == inject ]] || exit 1
+printf 'FOO_KEY=foo\nBAR_KEY=bar\nEVIL_KEY=oops\n'
+EOF
+    chmod +x "$MOCK_BIN/op"
+
+    run bash -c "source '$VAULT_LIB'; vault_materialize"
+    [ "$status" -ne 0 ]
+
+    source "$VAULT_LIB"
+    run cat "$(vault_secrets_file)"
+    [[ "$output" != *"EVIL_KEY"* ]]
+}
+
+@test "vault_materialize: rejects a response whose value split across a newline" {
+    _setup_materialize_fixture
+    cat > "$MOCK_BIN/op" <<'EOF'
+#!/usr/bin/env bash
+[[ "$1" == inject ]] || exit 1
+printf 'FOO_KEY=foo\nbar\nBAR_KEY=bar\n'
+EOF
+    chmod +x "$MOCK_BIN/op"
+
+    run bash -c "source '$VAULT_LIB'; vault_materialize"
+    [ "$status" -ne 0 ]
+}
+
+@test "materialize: leaked RETURN trap doesn't kill a caller with frames on the stack (B1 regression)" {
+    _setup_materialize_fixture
+    cat > "$MOCK_BIN/op" <<'EOF'
+#!/usr/bin/env bash
+[[ "$1" == inject ]] || exit 1
+printf 'FOO_KEY=foo\nBAR_KEY=bar\n'
+EOF
+    chmod +x "$MOCK_BIN/op"
+
+    run bash -c "
+        set -euo pipefail
+        source '$VAULT_LIB'
+        wrapper() {
+            DOTFILES_DIR='$DOTFILES_DIR' vault_materialize
+        }
+        wrapper
+        echo AFTER_WRAPPER
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"AFTER_WRAPPER"* ]]
 }
 
 @test "vault_materialize: rejects a response with an empty value" {
