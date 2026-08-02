@@ -71,4 +71,33 @@ wrapper*, from inside a function, under the caller's real strict mode, and
 asserts a statement after the call still executes. Top-level-only coverage
 cannot see this class of defect.
 
+## Rule 4: bash 4+ features need a version guard, not a shebang alone
+
+macOS ships bash **3.2.57** at `/bin/bash` and always will (GPLv3). Homebrew's
+bash 5 lives on `PATH`, so any script whose shebang is `#!/bin/bash` — or which
+is exec'd directly, as `bin/dots:128,159` execs `.sync` — runs 3.2 regardless of
+what an interactive `bash --version` reports.
+
+The trap here is that 3.2 does not reject bash-4 syntax loudly. `local -A`
+**no-ops**: the declaration succeeds, and every associative subscript then
+collapses to index `0`. In `vault_materialize` that meant the closed-set key
+check passed for *any* key and every template key was written with the *last*
+response line's value — while the function still returned `0`, so
+`materialize_secrets` logged success and recorded nothing in `SYNC_FAILURES`.
+The observable result was one real token exported under four unrelated key
+names to four third-party services, silently, on every macOS sync.
+
+Two mitigations, both required:
+
+- Guard explicitly, **before** the first bash-4 construct (the construct itself
+  will not raise): `(( ${BASH_VERSINFO[0]:-0} >= 4 )) || { …; return 1; }`.
+- Use `#!/usr/bin/env bash` in executables so `PATH` resolution can find bash 5.
+  This alone is insufficient — it fixes the common case but silently regresses
+  on any machine without a newer bash on `PATH`.
+
+Interacts with Rule 3: the defect shipped green because every materialize test
+used `run bash -c …`, resolving `bash` from `PATH` (Homebrew 5.3) and never
+`/bin/bash`. Coverage for a bash-version guard must pin the interpreter
+explicitly; the ambient one is the wrong one.
+
 Related: [[cc-launch-env]] (the sibling loader), [[mcp-secret-handling]].
