@@ -47,21 +47,37 @@ fi
 # ─── access token → Keychain ────────────────────────────────────────────────
 
 step "Bitwarden access token"
-if security find-generic-password -s BWS_ACCESS_TOKEN -a "$USER" &>/dev/null; then
-    echo "A token is already in the Keychain."
+if vault_token &>/dev/null; then
+    if [[ "$(uname -s)" == Darwin ]]; then
+        echo "A token is already in the Keychain."
+    else
+        echo "A token is already at $(vault_token_file)."
+    fi
     read -r -p "Replace it? [y/N] " reply
-    [[ "$reply" == [yY] ]] && unset_existing=1 || unset_existing=""
+    [[ "$reply" == [yY] ]] && store_token=1 || store_token=""
 else
-    unset_existing=1
+    store_token=1
 fi
 
-if [[ -n "$unset_existing" ]]; then
+if [[ -n "$store_token" ]]; then
     read -r -s -p "Paste the machine-account access token: " token
     echo
     [[ -n "$token" ]] || die "empty token"
-    security add-generic-password -U -s BWS_ACCESS_TOKEN -a "$USER" -w "$token"
+    if [[ "$(uname -s)" == Darwin ]]; then
+        security add-generic-password -U -s BWS_ACCESS_TOKEN -a "$USER" -w "$token"
+        echo "Stored in Keychain (service BWS_ACCESS_TOKEN)."
+    else
+        # Headless Linux has no keyring daemon; a 0600 file is the storage.
+        # Create it empty at 0600 BEFORE writing so the token is never briefly
+        # world-readable.
+        token_file="$(vault_token_file)"
+        mkdir -p "$(dirname "$token_file")"
+        (umask 077; : > "$token_file")
+        chmod 600 "$token_file"
+        printf '%s\n' "$token" > "$token_file"
+        echo "Stored at $token_file (mode 600)."
+    fi
     unset token
-    echo "Stored in Keychain (service BWS_ACCESS_TOKEN)."
 fi
 
 BWS_ACCESS_TOKEN="$(vault_token)" || die "could not read the token back from the Keychain"

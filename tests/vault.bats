@@ -230,3 +230,122 @@ YAML
     [[ " ${names[*]} " == *" cargo-update "* ]]
     [[ " ${names[*]} " != *" bws "* ]]
 }
+
+# ── headless-Linux token storage ──
+#
+# vault_token branches on `uname -s`; these mock uname to exercise the Linux
+# path on any host. A headless box has no keyring daemon, so the token is a
+# 0600 file and the mode check is the only thing standing between a readable
+# token and a leaked one.
+
+mock_linux_uname() {
+    cat > "$MOCK_BIN/uname" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "-s" ]] && echo Linux || echo Linux
+EOF
+    chmod +x "$MOCK_BIN/uname"
+}
+
+@test "vault_token: on Linux reads the 0600 token file" {
+    mock_linux_uname
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+    mkdir -p "$XDG_CONFIG_HOME/dotfiles"
+    printf 'tok-abc123\n' > "$XDG_CONFIG_HOME/dotfiles/bws-token"
+    chmod 600 "$XDG_CONFIG_HOME/dotfiles/bws-token"
+
+    source "$VAULT_LIB"
+    run vault_token
+    [ "$status" -eq 0 ]
+    [ "$output" = "tok-abc123" ]
+}
+
+@test "vault_token: on Linux refuses a group/world-readable token file" {
+    mock_linux_uname
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+    mkdir -p "$XDG_CONFIG_HOME/dotfiles"
+    printf 'tok-abc123\n' > "$XDG_CONFIG_HOME/dotfiles/bws-token"
+    chmod 644 "$XDG_CONFIG_HOME/dotfiles/bws-token"
+
+    source "$VAULT_LIB"
+    run vault_token
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"must be mode 600"* ]]
+    # the secret itself must never be echoed on the refusal path
+    [[ "$output" != *"tok-abc123"* ]]
+}
+
+@test "vault_token: on Linux a missing token file names bin/vault-provision" {
+    mock_linux_uname
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+
+    source "$VAULT_LIB"
+    run vault_token
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"bin/vault-provision"* ]]
+}
+
+# ── bootstrap split: unprovisioned vs provisioned-but-broken ──
+
+@test "vault_provisioned: false when bws exists but no token is stored" {
+    mock_linux_uname
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/bws"
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+    export BWS_PROJECT_ID=proj-1
+
+    source "$VAULT_LIB"
+    run vault_provisioned
+    [ "$status" -ne 0 ]
+}
+
+@test "vault_provisioned: false when a token exists but BWS_PROJECT_ID is unset" {
+    mock_linux_uname
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/bws"
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+    mkdir -p "$XDG_CONFIG_HOME/dotfiles"
+    printf 'tok\n' > "$XDG_CONFIG_HOME/dotfiles/bws-token"
+    chmod 600 "$XDG_CONFIG_HOME/dotfiles/bws-token"
+    unset BWS_PROJECT_ID
+
+    source "$VAULT_LIB"
+    run vault_provisioned
+    [ "$status" -ne 0 ]
+}
+
+@test "vault_provisioned: true once token and project id are both present" {
+    mock_linux_uname
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/bws"
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+    mkdir -p "$XDG_CONFIG_HOME/dotfiles"
+    printf 'tok\n' > "$XDG_CONFIG_HOME/dotfiles/bws-token"
+    chmod 600 "$XDG_CONFIG_HOME/dotfiles/bws-token"
+    export BWS_PROJECT_ID=proj-1
+
+    source "$VAULT_LIB"
+    run vault_provisioned
+    [ "$status" -eq 0 ]
+}
+
+@test "vault_provisioned: true for 1Password without any bws token or project id" {
+    cat > "$MOCK_BIN/op" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/op"
+    unset BWS_PROJECT_ID
+
+    source "$VAULT_LIB"
+    run vault_provisioned
+    [ "$status" -eq 0 ]
+}

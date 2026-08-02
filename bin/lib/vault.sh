@@ -22,12 +22,49 @@ vault_secrets_file() {
     echo "${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/secrets.env"
 }
 
+vault_token_file() {
+    echo "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/bws-token"
+}
+
+# Token storage is platform-specific. macOS uses the Keychain (Bitwarden's own
+# documented pattern). A headless Linux box has no keyring daemon, so libsecret
+# is unavailable and the token lives in a 0600 file instead; this refuses to
+# read one that is group- or world-readable rather than leaking it silently.
 vault_token() {
-    security find-generic-password -w -s BWS_ACCESS_TOKEN -a "$USER" 2>/dev/null || {
-        echo "vault: no Bitwarden access token in Keychain (service BWS_ACCESS_TOKEN)." >&2
+    local file mode
+    if [[ "$(uname -s)" == Darwin ]]; then
+        security find-generic-password -w -s BWS_ACCESS_TOKEN -a "$USER" 2>/dev/null || {
+            echo "vault: no Bitwarden access token in Keychain (service BWS_ACCESS_TOKEN)." >&2
+            echo "vault: run bin/vault-provision to store one." >&2
+            return 1
+        }
+        return 0
+    fi
+
+    file="$(vault_token_file)"
+    if [[ ! -f "$file" ]]; then
+        echo "vault: no Bitwarden access token at $file." >&2
         echo "vault: run bin/vault-provision to store one." >&2
         return 1
-    }
+    fi
+    mode="$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file" 2>/dev/null)"
+    if [[ "$mode" != 600 ]]; then
+        echo "vault: $file must be mode 600, found ${mode:-unknown}; refusing to read it." >&2
+        return 1
+    fi
+    cat "$file"
+}
+
+# True when this machine has everything a materialize attempt needs. Lets
+# callers tell "vault never set up" (warn, keep going) apart from "vault set up
+# but broken" (fail loud) — without that split, `dots sync` cannot bootstrap a
+# machine that has no vault yet.
+vault_provisioned() {
+    local backend
+    backend="$(vault_detect 2>/dev/null)" || return 1
+    [[ "$backend" == onepassword ]] && return 0
+    [[ -n "${BWS_PROJECT_ID:-}" ]] || return 1
+    vault_token >/dev/null 2>&1
 }
 
 # ISOLATED SEAM — bws's `-o env` exact quoting/escaping is UNVERIFIED against

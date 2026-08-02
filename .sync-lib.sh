@@ -981,9 +981,16 @@ materialize_secrets() {
         log_warning "Skipping secret materialization (bin/lib/vault.sh missing)"
         return 0
     fi
-    log_info "Materializing vault secrets..."
     # shellcheck source=bin/lib/vault.sh
     source "$lib"
+    # A machine with no vault yet must still be able to bootstrap: skip rather
+    # than abort, or `dots sync` can never reach the steps that install and
+    # provision one. A vault that IS set up and fails is a real error.
+    if ! vault_provisioned; then
+        log_warning "Skipping secret materialization (no vault provisioned — run bin/vault-provision)"
+        return 0
+    fi
+    log_info "Materializing vault secrets..."
     if ! DOTFILES_DIR="$dir" vault_materialize; then
         log_error "Failed to materialize vault secrets"
         return 1
