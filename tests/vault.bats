@@ -397,6 +397,35 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "vault_provisioned: true when the project id is only in the toggles file, not the env" {
+    # Regression: vault_materialize falls back to reading BWS_PROJECT_ID from
+    # the toggles file. If vault_provisioned only consulted the environment, a
+    # provisioned machine would be judged unprovisioned and sync would SKIP
+    # materialization silently, serving a stale cache forever.
+    mock_linux_uname
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/bws"
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+    mkdir -p "$XDG_CONFIG_HOME/dotfiles"
+    printf 'tok\n' > "$XDG_CONFIG_HOME/dotfiles/bws-token"
+    chmod 600 "$XDG_CONFIG_HOME/dotfiles/bws-token"
+
+    export DOTFILES_DIR="$TEST_HOME/dotfiles"
+    mkdir -p "$DOTFILES_DIR"
+    printf 'DOTFILES_DEV=false\nBWS_PROJECT_ID=proj-from-file\n' > "$DOTFILES_DIR/.env"
+    unset BWS_PROJECT_ID
+
+    source "$VAULT_LIB"
+    run vault_provisioned
+    [ "$status" -eq 0 ]
+
+    run _vault_project_id
+    [ "$output" = "proj-from-file" ]
+}
+
 @test "vault_provisioned: true for 1Password without any bws token or project id" {
     cat > "$MOCK_BIN/op" <<'EOF'
 #!/usr/bin/env bash

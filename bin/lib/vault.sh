@@ -56,6 +56,23 @@ vault_token() {
     cat "$file"
 }
 
+# Resolve the project id from the environment, falling back to the toggles
+# file. Both vault_provisioned and vault_materialize MUST agree on this: if
+# provisioned() only checked the environment while materialize() read the
+# file, a provisioned machine whose id lives only in the file would be judged
+# unprovisioned and silently skipped, leaving a stale cache behind.
+_vault_project_id() {
+    local env_file
+    if [[ -n "${BWS_PROJECT_ID:-}" ]]; then
+        echo "$BWS_PROJECT_ID"
+        return 0
+    fi
+    env_file="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/.env"
+    [[ -f "$env_file" ]] || return 1
+    sed -n 's/^BWS_PROJECT_ID=//p' "$env_file" | tail -n1 | grep -q . || return 1
+    sed -n 's/^BWS_PROJECT_ID=//p' "$env_file" | tail -n1
+}
+
 # True when this machine has everything a materialize attempt needs. Lets
 # callers tell "vault never set up" (warn, keep going) apart from "vault set up
 # but broken" (fail loud) — without that split, `dots sync` cannot bootstrap a
@@ -64,7 +81,7 @@ vault_provisioned() {
     local backend
     backend="$(vault_detect 2>/dev/null)" || return 1
     [[ "$backend" == onepassword ]] && return 0
-    [[ -n "${BWS_PROJECT_ID:-}" ]] || return 1
+    _vault_project_id >/dev/null 2>&1 || return 1
     vault_token >/dev/null 2>&1
 }
 
@@ -90,7 +107,7 @@ _vault_fetch_onepassword() {
 # whole materialize. On failure the prior cache is untouched and this
 # returns non-zero naming the problem.
 vault_materialize() {
-    local backend tmpl out tmp prev_umask token key line env_file missing=()
+    local backend tmpl out tmp prev_umask token key line missing=()
     local -A tmpl_keys resp
     tmpl="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/secrets/secrets.env.tmpl"
     out="$(vault_secrets_file)"
@@ -107,11 +124,8 @@ vault_materialize() {
 
     case "$backend" in
         bitwarden)
-            if [[ -z "${BWS_PROJECT_ID:-}" ]]; then
-                env_file="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/.env"
-                [[ -f "$env_file" ]] && BWS_PROJECT_ID="$(sed -n 's/^BWS_PROJECT_ID=//p' "$env_file" | tail -n1)"
-            fi
-            [[ -n "${BWS_PROJECT_ID:-}" ]] || { echo "vault: BWS_PROJECT_ID is unset (run bin/vault-provision to set it)" >&2; return 1; }
+            BWS_PROJECT_ID="$(_vault_project_id)" \
+                || { echo "vault: BWS_PROJECT_ID is unset (run bin/vault-provision to set it)" >&2; return 1; }
             token="$(vault_token)" || return 1
             BWS_ACCESS_TOKEN="$token" _vault_fetch_bitwarden > "$tmp" || { echo "vault: bws fetch failed" >&2; return 1; }
             ;;
