@@ -31,6 +31,11 @@ setup() {
     # script into the fixture so e2e tests stay grounded in shipped code.
     mkdir -p "$FIXTURE_DIR/bin"
     cp "$CC_ENV_EXEC" "$FIXTURE_DIR/bin/cc-env-exec"
+    mkdir -p "$FIXTURE_DIR/bin/lib"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$FIXTURE_DIR/bin/lib/vault.sh"
+    export XDG_CACHE_HOME="$FIXTURE_DIR/.cache"
+    mkdir -p "$XDG_CACHE_HOME/dotfiles"
+    printf 'CACHE_KEY=cached\n' > "$XDG_CACHE_HOME/dotfiles/secrets.env"
 }
 
 teardown() {
@@ -116,11 +121,21 @@ EOF
 }
 
 @test "cc-env-exec falls back to ~/Dev/dotfiles when DOTFILES_DIR is unset" {
+    mkdir -p "$FIXTURE_DIR/Dev/dotfiles/bin/lib"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$FIXTURE_DIR/Dev/dotfiles/bin/lib/vault.sh"
     mkdir -p "$FIXTURE_DIR/Dev/dotfiles"
     printf 'FB_KEY=fb\n' > "$FIXTURE_DIR/Dev/dotfiles/.env"
     run env -u DOTFILES_DIR HOME="$FIXTURE_DIR" "$CC_ENV_EXEC" sh -c 'printf %s "$FB_KEY"'
     [ "$status" -eq 0 ]
     [ "$output" = "fb" ]
+}
+
+@test "cc-env-exec exits non-zero with vault-provision guidance when the secrets cache is missing" {
+    export DOTFILES_DIR="$FIXTURE_DIR"
+    export XDG_CACHE_HOME="$FIXTURE_DIR/empty-cache"
+    run "$CC_ENV_EXEC" sh -c 'printf ok'
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"vault-provision"* ]]
 }
 
 @test "dotsclaude uses the mise Claude shim by default" {

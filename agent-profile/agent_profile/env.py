@@ -23,9 +23,28 @@ the render rather than emitting a half-configured server entry.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any
+
+
+def vault_cache_path() -> Path:
+    """Materialized vault secrets cache path — mirrors ``vault_secrets_file``
+    in bin/lib/vault.sh, the single source of truth for all four loaders."""
+    xdg_cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(xdg_cache) / "dotfiles" / "secrets.env"
+
+
+def load_layered_env(repo_root: Path) -> dict[str, str]:
+    """Load ``repo_root/.env`` plus the materialized vault cache, cache wins.
+
+    Single source of truth for the ``.env`` + vault-cache merge (spec D4):
+    every render-time ``${VAR}`` resolver in this codebase must see the
+    cache's values for keys the vault has taken over, not the (now-stale or
+    absent) ``.env`` copy."""
+    return {**load_dotenv(repo_root / ".env"), **load_dotenv(vault_cache_path())}
+
 
 VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")

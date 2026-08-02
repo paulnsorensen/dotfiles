@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# vault-provision — one-time setup of the Bitwarden Secrets Manager vault that
+# backs this machine's secrets. Stores the machine-account access token in the
+# macOS Keychain (Bitwarden's own documented pattern), creates the project,
+# pushes each secret named in secrets/secrets.env.tmpl, then materializes the
+# cache via bin/lib/vault.sh.
+#
+# Web-vault prerequisites (no CLI path exists for these):
+#   1. Enable Secrets Manager on the account
+#   2. Create a machine account
+#   3. Generate an access token for it
+#   4. Grant that machine account access to the project (after step "project"
+#      below creates it, or pre-create the project in the web vault)
+#
+# Usage:
+#   bin/vault-provision              # migrate: take values from the existing .env
+#   bin/vault-provision --interactive # prompt for each value (fresh machine)
+set -euo pipefail
+
+# Self-locate rather than trusting an inherited DOTFILES_DIR: this script
+# provisions the clone it lives in, and must work from a worktree. Exported so
+# the sourced vault.sh resolves the same tree.
+DOTFILES_DIR="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
+export DOTFILES_DIR
+# shellcheck source=lib/vault.sh
+source "$DOTFILES_DIR/bin/lib/vault.sh"
+
+TMPL="$DOTFILES_DIR/secrets/secrets.env.tmpl"
+ENV_FILE="$DOTFILES_DIR/.env"
+PROJECT_NAME="${BWS_PROJECT_NAME:-dotfiles}"
+INTERACTIVE=""
+
+[[ "${1:-}" == "--interactive" ]] && INTERACTIVE=1
+
+die() { echo "vault-provision: $*" >&2; exit 1; }
+step() { echo; echo "==> $*"; }
+
+command -v bws &>/dev/null || die "bws not found. Install it: cargo install bws --locked"
+[[ -f "$TMPL" ]] || die "template not found: $TMPL"
+
+if command -v op &>/dev/null; then
+    die "'op' is present — this machine uses 1Password, not Bitwarden.
+Store the six secrets as fields on the 1Password item referenced by $TMPL,
+then run: source bin/lib/vault.sh && vault_materialize"
+fi
+
+# ─── access token → Keychain ────────────────────────────────────────────────
+
+step "Bitwarden access token"
+if vault_token &>/dev/null; then
+    if [[ "$(uname -s)" == Darwin ]]; then
+        echo "A token is already in the Keychain."
+    else
+        echo "A token is already at $(vault_token_file)."
+    fi
+    read -r -p "Replace it? [y/N] " reply
+    [[ "$reply" == [yY] ]] && store_token=1 || store_token=""
+else
+    store_token=1
+fi
+
+if [[ -n "$store_token" ]]; then
+    read -r -s -p "Paste the machine-account access token: " token
+    echo
+    [[ -n "$token" ]] || die "empty token"
+    if [[ "$(uname -s)" == Darwin ]]; then
+        # -w with no value falls back to reading two lines (entry +
+        # confirmation) from stdin via readpassphrase(3) when no tty is
+        # attached, keeping the token out of argv (research:
+        # .cheese/research/secret-argv-exposure/secret-argv-exposure.md).
+        security add-generic-password -U -s BWS_ACCESS_TOKEN -a "$USER" -w <<EOF
+$token
+$token
+EOF
+        echo "Stored in Keychain (service BWS_ACCESS_TOKEN)."
+    else
+        # Headless Linux has no keyring daemon; a 0600 file is the storage.
+        # Create it empty at 0600 BEFORE writing so the token is never briefly
+        # world-readable.
+        token_file="$(vault_token_file)"
+        mkdir -p "$(dirname "$token_file")"
+        (umask 077; : > "$token_file")
+        chmod 600 "$token_file"
+        printf '%s\n' "$token" > "$token_file"
+        echo "Stored at $token_file (mode 600)."
+    fi
+    unset token
+fi
+
+BWS_ACCESS_TOKEN="$(vault_token)" || die "could not read the token back from the Keychain"
+export BWS_ACCESS_TOKEN
+
+# ─── project ────────────────────────────────────────────────────────────────
+
+step "Project '$PROJECT_NAME'"
+project_id="$(bws project list -o json 2>/dev/null \
+    | jq -r --arg n "$PROJECT_NAME" '.[] | select(.name == $n) | .id' | head -1)"
+
+if [[ -n "$project_id" ]]; then
+    echo "Reusing existing project: $project_id"
+else
+    project_id="$(bws project create "$PROJECT_NAME" -o json | jq -r '.id')"
+    [[ -n "$project_id" && "$project_id" != null ]] || die "project create failed"
+    echo "Created project: $project_id"
+    echo "NOTE: grant this machine account access to the project in the web vault,"
+    echo "      otherwise the secret writes below will fail."
+fi
+
+# ─── secrets ────────────────────────────────────────────────────────────────
+
+step "Pushing secrets"
+existing="$(bws secret list "$project_id" -o json 2>/dev/null || echo '[]')"
+
+# Values whose first character is '-' can misparse as a flag (bws issue seen on
+# 1.0.0). API keys starting with '-' are vanishingly rare; this warns rather
+# than silently mangling one.
+while IFS='=' read -r secret_key _; do
+    [[ -z "$secret_key" || "$secret_key" == \#* ]] && continue
+
+    if jq -e --arg k "$secret_key" '.[] | select(.key == $k)' <<<"$existing" >/dev/null 2>&1; then
+        echo "  $secret_key — already in vault, skipping"
+        continue
+    fi
+
+    if [[ -n "$INTERACTIVE" ]]; then
+        read -r -s -p "  $secret_key: " value; echo
+    else
+        value="$(grep -m1 "^${secret_key}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+        value="${value%\"}"; value="${value#\"}"
+        if [[ -z "$value" ]]; then
+            read -r -s -p "  $secret_key (not in .env): " value; echo
+        else
+            echo "  $secret_key — taken from .env"
+        fi
+    fi
+
+    [[ -n "$value" ]] || die "no value for $secret_key"
+    [[ "$value" == -* ]] && echo "  WARNING: $secret_key starts with '-'; verify it stored correctly" >&2
+    # bws 2.1.0 has no stdin/file/env path for the secret VALUE (positional
+    # argv only) — an upstream limitation, not fixable here. The value is
+    # briefly visible in /proc/<pid>/cmdline during this call. See
+    # .cheese/research/secret-argv-exposure/secret-argv-exposure.md.
+    bws secret create "$secret_key" "$value" "$project_id" -o none
+    unset value
+done < "$TMPL"
+
+# ─── record the project id ──────────────────────────────────────────────────
+
+step "Recording BWS_PROJECT_ID in .env"
+if grep -q '^BWS_PROJECT_ID=' "$ENV_FILE" 2>/dev/null; then
+    tmp="$(mktemp)"
+    sed "s|^BWS_PROJECT_ID=.*|BWS_PROJECT_ID=$project_id|" "$ENV_FILE" > "$tmp"
+    cat "$tmp" > "$ENV_FILE"
+    rm -f "$tmp"
+else
+    printf 'BWS_PROJECT_ID=%s\n' "$project_id" >> "$ENV_FILE"
+fi
+export BWS_PROJECT_ID="$project_id"
+
+# ─── materialize + verify ───────────────────────────────────────────────────
+
+step "Materializing the secrets cache"
+vault_materialize || die "materialize failed — the vault is provisioned but the cache was not written"
+echo "Cache written: $(vault_secrets_file)"
+
+step "Done. Now remove these lines from $ENV_FILE:"
+cut -d= -f1 "$TMPL" | grep -v '^#' | grep -v '^$' | sed 's/^/  /'

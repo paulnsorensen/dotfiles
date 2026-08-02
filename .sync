@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ############################
 # .sync
 # Dotfiles sync orchestrator
@@ -38,6 +38,16 @@ run_sync() {
     record_sync_time
     parse_sync_args "$@"
 
+    # Export ONEPASSWORD_PRESENT before packages/sync.sh runs so a 1Password
+    # machine's bws gate_unless suppresses installing the Bitwarden CLI.
+    if [[ -f "$dir/bin/lib/vault.sh" ]]; then
+        # shellcheck source=bin/lib/vault.sh
+        source "$dir/bin/lib/vault.sh"
+        ONEPASSWORD_PRESENT=false
+        [[ "$(vault_detect 2>/dev/null)" == "onepassword" ]] && ONEPASSWORD_PRESENT=true
+        export ONEPASSWORD_PRESENT
+    fi
+
     # Bootstrap yq (needed by packages/sync.sh to parse YAML)
     if [[ "$(uname)" == "Darwin" ]] && ! command -v yq &>/dev/null; then
       log_info "Bootstrapping yq..."
@@ -75,6 +85,7 @@ run_sync() {
     install_tpm
     install_prek_hooks
     install_tilth_claude_code
+    materialize_secrets
     reconcile_claude_mcps
     sync_omp_plugins "$dir"
 
