@@ -26,6 +26,37 @@ fi
 unset _sync_script_path
 
 ########## Functions
+verify_harness_versions() {
+    local phase="${1:-after package convergence}"
+    local omp_version codex_version
+
+    if ! command -v omp >/dev/null 2>&1; then
+        log_error "omp unavailable $phase"
+        return 1
+    fi
+    if ! omp_version="$(omp --version 2>/dev/null)"; then
+        log_error "omp --version failed $phase"
+        return 1
+    fi
+    if [[ "$omp_version" != "omp/17.2.4" ]]; then
+        log_error "omp version mismatch $phase: expected omp/17.2.4, got $omp_version"
+        return 1
+    fi
+
+    if ! command -v codex >/dev/null 2>&1; then
+        log_error "codex unavailable $phase"
+        return 1
+    fi
+    if ! codex_version="$(codex --version 2>/dev/null)"; then
+        log_error "codex --version failed $phase"
+        return 1
+    fi
+    if [[ "$codex_version" != "codex-cli 0.146.0" ]]; then
+        log_error "codex version mismatch $phase: expected codex-cli 0.146.0, got $codex_version"
+        return 1
+    fi
+}
+
 
 # Record the current sync timestamp
 record_sync_time() {
@@ -66,11 +97,31 @@ run_sync() {
     done
     sync_hidden_dirs
 
-    # Chezmoi deploys the mise manifest during the entry loop above. Run the
-    # package convergence only after that apply so config-only pin bumps take
-    # effect in the same sync.
+    # Chezmoi's first apply deploys the mise manifest used by package sync.
+    # Re-apply after upgraded harness binaries converge so the final config
+    # apply runs against their new schemas.
     log_info "Syncing packages"
     bash "$dir/packages/sync.sh"
+    export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims:$PATH"
+    hash -r 2>/dev/null || true
+
+    if [[ -f "$dir/chezmoi/.sync" ]]; then
+        if verify_harness_versions; then
+            log_info "Applying chezmoi after package convergence"
+            if ! CHEZMOI_SYNC_PHASE=final bash "$dir/chezmoi/.sync"; then
+                log_error "final chezmoi apply failed; upgraded packages are retained"
+                SYNC_FAILURES+=("chezmoi")
+            else
+                if ! verify_harness_versions "after final chezmoi apply"; then
+                    log_error "post-apply harness-version verification failed; upgraded packages are retained"
+                    SYNC_FAILURES+=("harness-versions")
+                fi
+            fi
+        else
+            log_error "final chezmoi apply skipped; upgraded packages are retained"
+            SYNC_FAILURES+=("harness-versions")
+        fi
+    fi
 
     install_tpm
     install_prek_hooks

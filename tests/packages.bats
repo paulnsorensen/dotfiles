@@ -51,6 +51,7 @@ setup() {
     export CLAUDE_LOG="$TEST_HOME/claude.log"
     export CODEX_LOG="$TEST_HOME/codex.log"
     export OMP_LOG="$TEST_HOME/omp.log"
+    export EVENT_LOG="$TEST_HOME/events.log"
     export MISE_LOG="$TEST_HOME/mise.log"
     export CURL_LOG="$TEST_HOME/curl.log"
     export SH_LOG="$TEST_HOME/sh.log"
@@ -64,6 +65,7 @@ setup() {
     # opts in explicitly.
     unset DOTFILES_DEV
 
+    write_mock_codesign
     export PATH="$MOCK_BIN:$PATH"
 }
 
@@ -106,18 +108,37 @@ MOCKCURL
     chmod +x "$MOCK_BIN/curl"
 }
 
-# Mock sh for native-installer tests: curl's mock emits nothing, so a
-# `curl ... | sh -s -- --ref X` pipeline hands its stdin to this mock instead
-# of a real installer script. Records args so a `--ref` pin is assertable.
 write_mock_sh() {
     local exit_status="${1:-0}"
     rm -f "$MOCK_BIN/sh"
     cat > "$MOCK_BIN/sh" << MOCKSH
 #!/bin/bash
 echo "sh \$*" >> "\$SH_LOG"
+echo "sh \$*" >> "\$EVENT_LOG"
 exit $exit_status
 MOCKSH
     chmod +x "$MOCK_BIN/sh"
+}
+
+write_mock_codesign() {
+    local exit_status="${1:-0}"
+    export CODESIGN_LOG="$TEST_HOME/codesign.log"
+    cat > "$MOCK_BIN/codesign" << MOCKCODESIGN
+#!/bin/bash
+echo "codesign \$*" >> "$CODESIGN_LOG"
+echo "codesign \$*" >> "$EVENT_LOG"
+exit $exit_status
+MOCKCODESIGN
+    chmod +x "$MOCK_BIN/codesign"
+}
+
+write_mock_uname() {
+    local platform="$1"
+    cat > "$MOCK_BIN/uname" << MOCKUNAME
+#!/bin/bash
+printf '%s\n' "$platform"
+MOCKUNAME
+    chmod +x "$MOCK_BIN/uname"
 }
 
 write_mock_uv() {
@@ -723,7 +744,7 @@ YAML
     assert_success
     assert_output_contains "unchanged (cached), syncing Claude"
 
-    [[ ! -f "$BREW_LOG" ]]
+    ! grep -Eq '^brew (install|reinstall|uninstall|upgrade)( |$)' "$BREW_LOG"
     [[ ! -f "$CURL_LOG" ]]
 }
 
@@ -737,7 +758,7 @@ YAML
     assert_success
     assert_output_contains "syncing Claude"
     grep -q "mise install aqua:anthropics/claude-code@v2.1.219" "$MISE_LOG"
-    [[ ! -f "$BREW_LOG" ]]
+    ! grep -Eq '^brew (install|reinstall|uninstall|upgrade)( |$)' "$BREW_LOG"
 }
 
 @test "a mise config-only change invalidates the package cache and reconverges" {
@@ -978,6 +999,18 @@ MOCKBREW
 
 # --- Integration: native harness convergence ---
 
+@test "managed OMP and Codex pins are exact" {
+    grep -q '^OMP_PIN="v17.2.4"$' "$SYNC_SCRIPT"
+    grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
+}
+@test "doc-drift records match the managed harness pins" {
+    local sources="$REAL_DOTFILES_DIR/agents/doc-drift/sources.yaml"
+    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.4" ]
+    [ "$(yq -r '.sources[] | select(.id == "codex-cli") | .reconciled' "$sources")" = "0.146.0" ]
+}
+
+
 @test "package sync converges OMP_PIN and never invokes omp update" {
     write_test_yaml
 
@@ -1023,6 +1056,42 @@ MOCKBREW
     assert_output_contains "omp native install failed"
     assert_output_contains "cache NOT saved"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+}
+
+@test "Darwin signs a freshly converged native omp after installation" {
+    write_mock_uname Darwin
+    write_test_yaml
+
+    run_sync
+    assert_success
+
+    local expected_events
+    expected_events=$(printf 'sh -s -- --binary --ref v17.2.4\ncodesign --force --sign - %s' \
+        "$TEST_HOME/.local/bin/omp")
+    run cat "$EVENT_LOG"
+    [[ "$output" == "$expected_events" ]]
+}
+
+@test "Darwin signing failure fails convergence and does not save cache" {
+    write_mock_uname Darwin
+    write_mock_codesign 1
+    write_test_yaml
+
+    run_sync
+    assert_failure
+    assert_output_contains "omp ad-hoc signing failed"
+    assert_output_contains "cache NOT saved"
+    [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+}
+
+@test "Linux native omp convergence never invokes codesign" {
+    write_mock_uname Linux
+    write_mock_codesign 1
+    write_test_yaml
+
+    run_sync
+    assert_success
+    [[ ! -f "$CODESIGN_LOG" ]] || [[ ! -s "$CODESIGN_LOG" ]]
 }
 
 @test "native harness sync never installs or self-updates mise-managed claude and codex" {

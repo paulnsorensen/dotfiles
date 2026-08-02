@@ -43,3 +43,5 @@
 
 2026-07-28 · preamble-20260728 · merged · architecture/agents-dir.md · Reassigned phase handoff ownership from the preamble to the four agent bodies and recorded the compact preamble's direct tilth, wiki-grounding, and delegation responsibilities.
 2026-07-28 · preamble-20260728 · merged · adr/cheese-factory-workflow.md · Replaced stale preamble fan-out and continuation attributions with ADR-005 and coder-owned contracts.
+
+2026-08-01 · 6d6acbacd0478a02 · merged · harnesses/omp.md · Corrected exact-version verification to include both pre-final-apply and post-successful-final-apply probes, retention on post-probe failure, and current regression ranges.

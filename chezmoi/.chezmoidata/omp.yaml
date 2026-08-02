@@ -80,7 +80,6 @@ omp:
       enabled: false
     compaction:
       strategy: shake
-      thresholdTokens: 120000
       keepRecentTokens: 20000
       midTurnEnabled: true
       autoContinue: true
@@ -96,6 +95,9 @@ omp:
       enabled: true
     task:
       eager: default
+      enableLsp: true
+    retry:
+      modelFallback: false
     # Consent answer omp recorded live (autoqa prompt) — promoted to survive
     # the wholesale re-author. Flat `dev.autoqaConsent` is omp's canonical
     # file shape since v17.0.0 (oh-my-pi 46ad908 renamed away from nested

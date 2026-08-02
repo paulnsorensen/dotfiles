@@ -1,8 +1,7 @@
 #!/bin/bash
-# Wire chezmoi for the dotfiles repo: clean up legacy symlinks that the
-# pre-chezmoi sync left at $HOME, ensure ~/.config/chezmoi/chezmoi.toml
-# exists with sourceDir + [data], then run `chezmoi apply` against this
-# checkout.
+# Wire chezmoi's source-managed config into ~/.config/chezmoi, then run one
+# apply pass. The root sync invokes this once to deploy the mise manifest and
+# again after package convergence; the latter is the final cutover apply.
 #
 # First-run rules (the stub-fallback that masked bug #167 is gone):
 #   - TTY  + chezmoi   → `chezmoi init` renders .chezmoi.toml.tmpl with

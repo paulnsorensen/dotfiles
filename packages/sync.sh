@@ -14,8 +14,7 @@ CACHE_FILE="${CACHE_FILE:-$CACHE_DIR/packages.hash}"
 PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
-# renovate: datasource=github-tags depName=can1357/oh-my-pi
-OMP_PIN="v17.1.3"
+OMP_PIN="v17.2.4"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -692,8 +691,13 @@ sync_native_harnesses() {
     # prebuilt release asset instead, sidestepping bun entirely.
     echo "  Converging omp to $OMP_PIN (native)..."
     if curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN"; then
-        hash -r 2>/dev/null || true
-        log_success "  Converged omp to $OMP_PIN"
+        if [[ "$PLATFORM" == "Darwin" ]] && ! codesign --force --sign - "$HOME/.local/bin/omp" </dev/null; then
+            log_error "omp ad-hoc signing failed"
+            FAILED+=("omp")
+        else
+            hash -r 2>/dev/null || true
+            log_success "  Converged omp to $OMP_PIN"
+        fi
     else
         log_error "omp native install failed"
         FAILED+=("omp")

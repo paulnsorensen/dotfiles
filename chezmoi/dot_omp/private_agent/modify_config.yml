@@ -19,7 +19,9 @@
 # schema is a key omp introduced. The script prints it and EXITS NON-ZERO,
 # which halts `chezmoi apply` and leaves the live file untouched — a new omp
 # config key is surfaced (fold it into the registry) instead of being silently
-# clobbered. No dynamic-key subtrees exist here (setupVersion is handled by
+# clobbered. The one explicit retired-key path below is allow-delete migration:
+# it is removed by wholesale rendering, while every genuinely unknown path
+# still halts. No dynamic-key subtrees exist here (setupVersion is handled by
 # inclusion in the desired document).
 #
 # NOTE: ~/.omp/agent/ also holds live sqlite DBs (agent.db, history.db,
@@ -90,12 +92,16 @@ desired=$(printf '%s' "$live_json" | jq --argjson desired "$desired" '
 # node-path (not just scalar leaves) so a new key whose value is an empty
 # object/array or null is caught too. setupVersion is in the desired document
 # (preserved above), so it never trips this gate.
+retired_paths='[["compaction","thresholdTokens"]]'
 unknown=$(
-    printf '%s' "$live_json" | jq -r --argjson desired "$desired" '
+    printf '%s' "$live_json" | jq -r \
+        --argjson desired "$desired" \
+        --argjson retired "$retired_paths" '
         def sig: [ .[] | strings ];
         ([ $desired | paths | sig ] | unique) as $known
         | [ paths | sig ]
-        | map(select(. as $p | (($known | any(. == $p)) | not)))
+        | map(select(. as $p |
+            (($known | any(. == $p)) or ($retired | any(. == $p))) | not))
         | unique
         | map(join("."))
         | .[]
