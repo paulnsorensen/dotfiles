@@ -7,7 +7,7 @@ the tables below. **Pack authors: write SQL against these tables; never reach
 into a harness's native format.**
 
 Every session-scoped table carries a `harness` column
-(`claude`/`codex`/`opencode`/`cursor`/`copilot`). Filter or group by it to
+(`claude`/`codex`/`opencode`/`omp`/`cursor`/`copilot`). Filter or group by it to
 compare sources; omit it to aggregate across all reachable harnesses.
 
 ## `tool_uses`
