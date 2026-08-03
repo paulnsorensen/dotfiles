@@ -30,8 +30,8 @@ sources:
   - id: codex-cli
     signal: { type: npm, ref: "@openai/codex" }
     docs: https://developers.openai.com/codex
-    governs: [harnesses/codex.md, agents/hooks/registry.yaml, agents/registry.yaml]
-    reconciled: "0.144.6"
+    governs: [harnesses/codex.md, agents/hooks/registry.yaml, agents/registry.yaml, chezmoi/dot_config/mise/config.toml]
+    reconciled: "0.146.0"
 
   - id: opencode
     signal: { type: npm, ref: opencode-ai }
@@ -68,5 +68,5 @@ sources:
   - id: oh-my-pi
     signal: { type: gh_release, ref: can1357/oh-my-pi }
     docs: https://github.com/can1357/oh-my-pi
-    governs: [chezmoi/.chezmoidata/omp.yaml, chezmoi/dot_omp/private_agent/modify_config.yml]
-    reconciled: "v17.2.4"
+    governs: [chezmoi/.chezmoidata/omp.yaml, chezmoi/dot_omp/private_agent/modify_config.yml, packages/sync.sh]
+    reconciled: "v17.2.5"

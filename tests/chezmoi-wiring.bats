@@ -705,6 +705,38 @@ YAML
     grep -q 'prepare_chezmoi_wiring' "$CHEZMOI_SYNC"
 }
 
+@test "chezmoi prepare wires only while direct and final phases fully apply" {
+    local fake_root="$TEST_HOME/chezmoi-phase"
+    mkdir -p "$fake_root/chezmoi"
+    cp "$CHEZMOI_SYNC" "$fake_root/chezmoi/.sync"
+    cat > "$fake_root/.sync-lib.sh" <<'SCRIPT'
+prepare_chezmoi_wiring() {
+    printf 'prepare\n'
+}
+assemble_chezmoi_sources() {
+    printf 'assemble\n'
+}
+apply_chezmoi_source() {
+    printf 'apply\n'
+}
+SCRIPT
+
+    run env CHEZMOI_SYNC_PHASE=prepare CHEZMOI_WIRING_SKIP=false \
+        bash "$fake_root/chezmoi/.sync"
+    assert_success
+    [[ "$output" == "prepare" ]]
+
+    run env CHEZMOI_SYNC_PHASE= CHEZMOI_WIRING_SKIP=false \
+        bash "$fake_root/chezmoi/.sync"
+    assert_success
+    [[ "$output" == $'prepare\nassemble\napply' ]]
+
+    run env CHEZMOI_SYNC_PHASE=final CHEZMOI_WIRING_SKIP=false \
+        bash "$fake_root/chezmoi/.sync"
+    assert_success
+    [[ "$output" == $'prepare\nassemble\napply' ]]
+}
+
 @test "chezmoi/.sync calls chezmoi apply --force after wiring config" {
     grep -qE 'chezmoi .*apply --force' "$SYNC_LIB"
     grep -q 'apply_chezmoi_source' "$CHEZMOI_SYNC"

@@ -15,7 +15,7 @@ PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
 # renovate: datasource=github-tags depName=can1357/oh-my-pi
-OMP_PIN="v17.1.6"
+OMP_PIN="v17.2.5"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -677,6 +677,21 @@ migrate_harness_off_native() {
     rm -f "$path"
 }
 
+# Remove the legacy global Bun package whose ~/.bun/bin/omp symlink otherwise
+# shadows the native binary installed under ~/.local/bin.
+migrate_omp_off_bun() {
+    local path="$HOME/.bun/bin/omp" target
+    [[ -L "$path" ]] || return 0
+    target="$(readlink "$path")"
+    [[ "$target" == *"/@oh-my-pi/pi-coding-agent/"* ]] || return 0
+
+    log_info "  Removing Bun-managed omp (now native-managed)..."
+    if command -v bun &>/dev/null && ! bun remove -g @oh-my-pi/pi-coding-agent </dev/null; then
+        log_warning "bun remove @oh-my-pi/pi-coding-agent failed — removing its stale omp symlink"
+    fi
+    rm -f "$path"
+}
+
 sync_native_harnesses() {
     log_info "Syncing native AI-harness CLIs..."
 
@@ -687,6 +702,7 @@ sync_native_harnesses() {
     done
 
     migrate_harness_off_brew "omp"
+    migrate_omp_off_bun
 
     # --binary is required: omp.sh's installer defaults to a bun source build
     # whenever --ref is given, and that build (`bun install -g
@@ -697,14 +713,18 @@ sync_native_harnesses() {
     # prebuilt release asset instead, sidestepping bun entirely.
     echo "  Converging omp to $OMP_PIN (native)..."
     if curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN"; then
-        hash -r 2>/dev/null || true
-        log_success "  Converged omp to $OMP_PIN"
+        if [[ "$PLATFORM" == "Darwin" ]] && ! codesign --force --sign - "$HOME/.local/bin/omp" </dev/null; then
+            log_error "omp ad-hoc signing failed"
+            FAILED+=("omp")
+        else
+            hash -r 2>/dev/null || true
+            log_success "  Converged omp to $OMP_PIN"
+        fi
     else
         log_error "omp native install failed"
         FAILED+=("omp")
     fi
 
-    log_success "Native harness sync complete"
 }
 # Claude is invoked by chezmoi later in this sync, so keep its mise binary
 # present even when the package declaration cache is valid.

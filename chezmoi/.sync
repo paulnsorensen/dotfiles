@@ -1,8 +1,6 @@
 #!/bin/bash
-# Wire chezmoi for the dotfiles repo: clean up legacy symlinks that the
-# pre-chezmoi sync left at $HOME, ensure ~/.config/chezmoi/chezmoi.toml
-# exists with sourceDir + [data], then run `chezmoi apply` against this
-# checkout.
+# Wire chezmoi's source-managed config into ~/.config/chezmoi. The prepare
+# phase stops after wiring; direct and final invocations assemble and apply.
 #
 # First-run rules (the stub-fallback that masked bug #167 is gone):
 #   - TTY  + chezmoi   → `chezmoi init` renders .chezmoi.toml.tmpl with
@@ -39,6 +37,7 @@ source "$dotfiles_dir/.sync-lib.sh"
 if ! prepare_chezmoi_wiring "$dotfiles_dir" "$source_dir"; then
     exit 1
 fi
+[[ "${CHEZMOI_SYNC_PHASE:-}" == "prepare" ]] && exit 0
 "${CHEZMOI_WIRING_SKIP:-false}" && exit 0
 
 if ! assemble_chezmoi_sources "$dotfiles_dir" "$source_dir"; then

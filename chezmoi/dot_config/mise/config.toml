@@ -2,12 +2,8 @@
 #
 # Every tool is pinned to an exact version (no `latest`, no `^`/`~` ranges).
 # Version-string convention:
-#   - `aqua:` entries: the raw GitHub release tag exactly as researched
-#     (e.g. "v1.2.3", "jq-1.8.2", "rust-v0.145.0") — mise normalizes aqua
-#     versions per-tool via the aqua registry's own prefix/filter metadata,
-#     which cannot be verified offline for all 45 entries here. Keeping the
-#     raw tag is the defensible, verifiable-from-research choice: consistency
-#     over an unverifiable guess at the stripped form.
+#   - `aqua:` entries use the researched raw GitHub release tag; Aqua applies
+#     per-tool prefix/filter normalization from its registry metadata.
 #   - core-plugin entries (node, bun, rust): the plain semver the tool
 #     itself reports, stripped of any git-tag prefix (mise core plugins
 #     query the tool's own version scheme, not a GitHub tag).
@@ -77,7 +73,7 @@
 "aqua:rust-lang/rust-analyzer" = "2026-07-20"
 "aqua:taiki-e/cargo-llvm-cov" = "v0.8.7"
 "aqua:anthropics/claude-code" = "v2.1.220"
-"aqua:openai/codex" = "rust-v0.145.0"
+"aqua:openai/codex" = "rust-v0.146.0"
 "aqua:rtk-ai/rtk" = "v0.44.0"
 
 node = "24.18.0"

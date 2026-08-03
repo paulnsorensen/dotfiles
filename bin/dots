@@ -158,9 +158,11 @@ do_sync() {
 
     "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
 
-    case " ${sync_args[*]} " in
-        *" --help "*|*" -h "*|*" --dry-run "*) return 0 ;;
-    esac
+    if ((${#sync_args[@]})); then
+        case " ${sync_args[*]} " in
+            *" --help "*|*" -h "*|*" --dry-run "*) return 0 ;;
+        esac
+    fi
 
     local skill_exclude_agents="${SKILL_EXCLUDE_AGENTS:+$SKILL_EXCLUDE_AGENTS }claude-code"
     SKILL_EXCLUDE_AGENTS="$skill_exclude_agents" \

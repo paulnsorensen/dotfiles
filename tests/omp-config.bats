@@ -59,12 +59,13 @@ STDIN"
     [ "$(yq '.skills.enableSkillCommands' "$OUT")" = "true" ]
     [ "$(yq '.tui.tight' "$OUT")" = "true" ]
     [ "$(yq '.startup.quiet' "$OUT")" = "true" ]
-    [ "$(yq '.compaction.thresholdTokens' "$OUT")" = "120000" ]
-    [ "$(yq '.compaction.strategy' "$OUT")" = "shake" ]
+    [ "$(yq 'has("compaction") and (.compaction | has("thresholdTokens"))' "$OUT")" = "false" ]
+    [ "$(yq '.compaction.strategy' "$OUT")" = "snapcompact" ]
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.compaction.midTurnEnabled' "$OUT")" = "true" ]
     [ "$(yq '.compaction.autoContinue' "$OUT")" = "true" ]
-    [ "$(yq '.lsp.enabled' "$OUT")" = "true" ]
+    [ "$(yq '.task.enableLsp' "$OUT")" = "true" ]
+    [ "$(yq '.retry.modelFallback' "$OUT")" = "false" ]
     [ "$(yq '.lsp.lazy' "$OUT")" = "true" ]
     [ "$(yq '.lsp.diagnosticsOnWrite' "$OUT")" = "true" ]
     [ "$(yq '.lsp.diagnosticsOnEdit' "$OUT")" = "false" ]
@@ -99,6 +100,40 @@ setupVersion: 1'
     [ "$(yq '.todo.reminders' "$OUT")" = "false" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }
+@test "omp-config: retired thresholdTokens and shake strategy are migrated" {
+    run_modify 'symbolPreset: nerd
+theme:
+  dark: chocolate-donut
+  light: light
+compaction:
+  strategy: shake
+  thresholdTokens: 60000
+  keepRecentTokens: 20000
+  midTurnEnabled: true
+  autoContinue: true
+setupVersion: 1'
+    [ "$status" -eq 0 ]
+    [ "$(yq 'has("compaction") and (.compaction | has("thresholdTokens"))' "$OUT")" = "false" ]
+    [ "$(yq '.compaction.strategy' "$OUT")" = "snapcompact" ]
+    [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
+    [ "$(yq '.setupVersion' "$OUT")" = "1" ]
+}
+@test "omp-config: unknown compaction key is not covered by retired-key deletion" {
+    run_modify 'symbolPreset: nerd
+theme:
+  dark: chocolate-donut
+  light: light
+compaction:
+  strategy: shake
+  keepRecentTokens: 20000
+  unexpectedNewOption: true
+setupVersion: 1'
+    [ "$status" -ne 0 ]
+    [ ! -s "$OUT" ]
+    [[ "$output" == *"compaction.unexpectedNewOption"* ]]
+    [[ "$output" == *".chezmoidata/omp.yaml"* ]]
+}
+
 
 @test "omp-config: unknown key halts (non-zero, no write, key + registry named on stderr)" {
     run_modify 'symbolPreset: nerd
@@ -286,10 +321,9 @@ TOML
 }
 
 # --- omp extension modules are chezmoi-managed -----------------------------
-# rtk.ts, cheese-flair.ts, sliced-bread-audit.ts, milknado-todo-guard.ts, and
-# no-fork-all.ts extensions deploy to ~/.omp/agent/extensions/ (auto-discovered by omp's extension
-# loader). Nothing in .chezmoiignore may exclude them, or the extensions silently
-# never deploy.
+# The remaining native extensions deploy to ~/.omp/agent/extensions/
+# (auto-discovered by omp's extension loader). Nothing in .chezmoiignore may
+# exclude them, or the extensions silently never deploy.
 @test "omp-ext: managed extension modules are chezmoi-managed" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
     local cfg="$TEST_HOME/cz-ext.toml"
@@ -305,8 +339,39 @@ TOML
     [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/sliced-bread-audit.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/milknado-todo-guard.ts"* ]]
-    [[ "$output" == *".omp/agent/extensions/no-fork-all.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
+    [[ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/no-fork-all.ts" ]]
+    grep -Fxq '.omp/agent/extensions/no-fork-all.ts' \
+        "$REAL_DOTFILES_DIR/chezmoi/.chezmoiremove"
+    ! grep -Eq 'assignment|fork_turns' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
+}
+@test "omp-ext: actual apply removes retired extension and preserves native extensions" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local cfg="$TEST_HOME/cz-apply.toml"
+    local destination="$TEST_HOME/deployed"
+    local extension
+    mkdir -p "$destination/.omp/agent/extensions"
+    printf 'retired sentinel\n' > "$destination/.omp/agent/extensions/no-fork-all.ts"
+    for extension in rtk.ts cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
+        printf 'managed sentinel\n' > "$destination/.omp/agent/extensions/$extension"
+    done
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+destDir = "$destination"
+
+[data]
+email = "test@example.com"
+work = false
+localLLM = false
+TOML
+
+    run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" apply --force --exclude=scripts
+    [ "$status" -eq 0 ]
+    [ ! -e "$destination/.omp/agent/extensions/no-fork-all.ts" ]
+    for extension in rtk.ts cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
+        [ -e "$destination/.omp/agent/extensions/$extension" ]
+    done
 }
 
 @test "omp-ext: extension handler contracts" {
@@ -315,5 +380,4 @@ TOML
     [ "$status" -eq 0 ]
     [[ "$output" == *"registers the command and dispatches the exact default workflow contract"* ]]
     [[ "$output" == *"blocks native todo commands and identifies Milknado as the owner"* ]]
-    [[ "$output" == *"blocks task spawns with fork_turns:'all'"* ]]
 }

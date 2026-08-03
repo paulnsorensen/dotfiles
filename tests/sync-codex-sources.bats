@@ -66,8 +66,36 @@ EOF
     [ "$(yq -p=toml -oy -r '.tui.model_availability_nux."gpt-5.5"' "$out")" = "4" ]
     # An undeclared root scalar owned by another sync leg is preserved.
     [ "$(yq -p=toml -oy -r '.model_instructions_file' "$out")" = "/home/u/.codex/preamble.md" ]
+    # Declared routing and protected execution policy stay exact.
+    [ "$(yq -p=toml -oy -r '.model' "$out")" = "gpt-5.6-terra" ]
+    [ "$(yq -p=toml -oy -r '.model_reasoning_effort' "$out")" = "medium" ]
+    [ "$(yq -p=toml -oy -r '.approval_policy' "$out")" = "on-request" ]
+    [ "$(yq -p=toml -oy -r '.approvals_reviewer' "$out")" = "guardian_subagent" ]
+    [ "$(yq -p=toml -oy -r '.sandbox_mode' "$out")" = "workspace-write" ]
+    [ "$(yq -p=toml -oy -r '.sandbox_workspace_write.network_access' "$out")" = "true" ]
+    [ "$(yq -p=toml -oy -r '.service_tier' "$out")" = "default" ]
     # A declared key overrides live drift.
     [ "$(yq -p=toml -oy -r '.model' "$out")" != "stale-model" ]
+}
+
+@test "modify_config.toml bounds runtime agents without colliding with selected agents" {
+    local live="$TEST_HOME/live.toml"
+    cat >"$live" <<'EOF'
+[agents]
+max_threads = 64
+max_depth = 4
+custom_runtime_key = "keep"
+EOF
+
+    run --separate-stderr sh "$MERGE" <"$live"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" >"$TEST_HOME/out.toml"
+    [ "$(yq -p=toml -oy -r '.agents.max_threads' "$TEST_HOME/out.toml")" = "32" ]
+    [ "$(yq -p=toml -oy -r '.agents.max_depth' "$TEST_HOME/out.toml")" = "1" ]
+    [ "$(yq -p=toml -oy -r '.agents.custom_runtime_key' "$TEST_HOME/out.toml")" = "keep" ]
+    [ "$(yq -oy -r '.codex.agents | type' "$CHEZMOI_SOURCE_DIR/.chezmoidata/codex.yaml")" = "!!seq" ]
+    [ "$(yq -p=toml -oy -r '.model_context_window // "ABSENT"' "$TEST_HOME/out.toml")" = "ABSENT" ]
+    [ "$(yq -p=toml -oy -r '.model_auto_compact_token_limit // "ABSENT"' "$TEST_HOME/out.toml")" = "ABSENT" ]
 }
 
 @test "modify_config.toml evicts an MCP server absent from the registry" {
