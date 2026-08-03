@@ -292,6 +292,109 @@ def opencode_normalize(path):
             }
 
 
+def omp_discover():
+    root = os.path.expanduser("~/.omp/agent/sessions")
+    if not os.path.isdir(root):
+        return []
+    out = []
+    for dirpath, _dirs, files in os.walk(root):
+        out.extend(os.path.join(dirpath, f) for f in files if f.endswith(".jsonl"))
+    return out
+
+
+def omp_normalize(path):
+    """oh-my-pi session JSONL -> canonical envelope.
+
+    The ``session`` header entry carries id + cwd, threaded onto every row.
+    ``message`` entries: assistant ``toolCall`` blocks become tool_use blocks
+    (other blocks pass through); role ``toolResult`` becomes a user tool_result
+    block joined on ``toolCallId``, with the msg-level ``isError`` boolean as
+    the error flag; role ``user`` passes through. Tool names (``bash``, ``read``,
+    ``mcp__<server>_<tool>``) are kept verbatim.
+    """
+    session_id = None
+    cwd = None
+    for entry in _iter_jsonl(path):
+        if not isinstance(entry, dict):
+            continue
+        etype = entry.get("type")
+        if etype == "session":
+            session_id = entry.get("id") or session_id
+            cwd = entry.get("cwd") or cwd
+            continue
+        if etype != "message":
+            continue
+        msg = entry.get("message")
+        if not isinstance(msg, dict):
+            continue
+        ts = entry.get("timestamp")
+        role = msg.get("role")
+        if role == "assistant":
+            blocks = []
+            for block in msg.get("content") or []:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "toolCall":
+                    args = block.get("arguments")
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            args = {"raw": args}
+                    if not isinstance(args, dict):
+                        args = {"raw": args}
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": block.get("id"),
+                            "name": block.get("name"),
+                            "input": args,
+                        }
+                    )
+                else:
+                    blocks.append(block)
+            yield {
+                "harness": "omp",
+                "type": "assistant",
+                "timestamp": ts,
+                "sessionId": session_id,
+                "cwd": cwd,
+                "message": {"content": blocks},
+            }
+        elif role == "toolResult":
+            text = "\n".join(
+                b.get("text", "")
+                for b in msg.get("content") or []
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+            yield {
+                "harness": "omp",
+                "type": "user",
+                "timestamp": ts,
+                "sessionId": session_id,
+                "cwd": cwd,
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": msg.get("toolCallId"),
+                            "content": text,
+                            "is_error": "true" if msg.get("isError") else "false",
+                        }
+                    ]
+                },
+            }
+        elif role == "user":
+            yield {
+                "harness": "omp",
+                "type": "user",
+                "timestamp": ts,
+                "sessionId": session_id,
+                "cwd": cwd,
+                "message": {"content": msg.get("content")},
+            }
+
+
 def cursor_discover():
     # Cursor stores chat in an opaque state.vscdb SQLite blob whose schema is
     # undocumented and fragile across versions. No reliable adapter yet — see
@@ -318,6 +421,7 @@ ADAPTERS = [
     ("claude", claude_discover, claude_normalize),
     ("codex", codex_discover, codex_normalize),
     ("opencode", opencode_discover, opencode_normalize),
+    ("omp", omp_discover, omp_normalize),
     ("cursor", cursor_discover, None),
     ("copilot", copilot_discover, None),
 ]

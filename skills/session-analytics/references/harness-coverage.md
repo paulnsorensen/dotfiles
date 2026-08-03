@@ -7,7 +7,7 @@ accessible logs is recorded here and skipped non-fatally — full coverage of wh
 is reachable, not parsing the unparseable.
 
 Every canonical table carries a `harness` column (`claude` / `codex` /
-`opencode` / `cursor` / `copilot`) so one query can compare sources. See
+`opencode` / `omp` / `cursor` / `copilot`) so one query can compare sources. See
 `canonical-schema.md` for the table shapes.
 
 ## Coverage status
@@ -17,6 +17,7 @@ Every canonical table carries a `harness` column (`claude` / `codex` /
 | claude | `~/.claude/projects/**/*.jsonl` | JSONL, one turn per line; assistant/user `message.content[]` blocks | `claude_normalize` (pass-through, already canonical) | parsed |
 | codex | `~/.codex/sessions/**/*.jsonl` | JSONL rollout; `session_meta` + `response_item`/`event_msg` payloads | `codex_normalize` | parsed |
 | opencode | `~/.local/share/opencode/opencode.db` | SQLite; `part` table rows with `type='tool'`, joined to `session.directory` | `opencode_normalize` | parsed |
+| omp | `~/.omp/agent/sessions/<flattened-project-dir>/*.jsonl` | JSONL; `session` header + `message` entries with `toolCall` / `toolResult` | `omp_normalize` | parsed |
 | cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | SQLite blob, undocumented schema, fragile across versions | none | **no accessible logs** |
 | copilot | `~/.copilot/` | holds `skills/` + `mcp-config.json` only; no local transcript found | none | **no accessible logs** |
 
@@ -56,6 +57,39 @@ adapter targets the DB). A `part` row with `data.type='tool'` carries
   `tool_result` (`is_error='true'` on error).
 
 `session.directory` supplies `cwd`. Opened read-only (`mode=ro`).
+
+### omp
+
+oh-my-pi session JSONL, one file per session under a flattened-path project dir
+(e.g. `-Dev-dotfiles`). The `session` header entry (`{type:'session', id, cwd,
+timestamp, title}`) supplies sessionId + cwd for every row. `message` entries:
+
+- assistant `toolCall` content blocks → `tool_use` (`arguments` becomes `input`,
+  so `bash_cmd` extracts from `input.command`); `text`/`thinking` blocks pass
+  through;
+- role `toolResult` → a user `tool_result` block, joined on `toolCallId`;
+- role `user` passes through.
+
+Error flag: every `toolResult` message carries a **msg-level `isError` boolean**
+— one convention for builtin and MCP tools. For MCP tools a duplicate flag lives
+at `details.xdev.inner.isError`; verified perfectly consistent with the
+msg-level flag across all sessions, so the adapter reads only the msg-level one.
+
+Caveats:
+
+- **MCP naming** is a third scheme: `mcp__tilth_search` = `mcp__` + server +
+  *single* underscore + tool. These rows land in `mcp_calls` (the `mcp__%`
+  prefix filter matches), but any query that splits server/method on a
+  double-underscore separator will misparse omp names — split on the prefix +
+  first `_` instead when filtering `harness='omp'`.
+- **Shaken content**: context-compacted tool results are stored as a stub like
+  `[shaken ~275 tokens — recover: artifact://46 (region 2)]`. Kept verbatim —
+  content-based metrics (result length, error-text matching) undercount for
+  shaken rows.
+- **Tool-call id reuse**: `toolCall` ids (`write_0|fc_...`) are not globally
+  unique — a small fraction (~0.3%) repeat across sessions, so session-agnostic
+  `tool_use_id` joins can slightly overcount; join on `sessionId` too when
+  exactness matters.
 
 ### cursor — no accessible logs
 

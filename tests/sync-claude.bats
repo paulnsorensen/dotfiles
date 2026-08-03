@@ -50,6 +50,11 @@ create_mock_mcp_sync_dir() {
     local name="$1"
     local root="$TEST_HOME/$name"
     mkdir -p "$root/agents/mcp" "$root/claude/lib"
+    # agents/mcp/sync.sh sources bin/lib/vault.sh and loads the materialized
+    # secrets cache; stage both so the fixture mirrors a provisioned machine.
+    mkdir -p "$root/bin/lib" "$TEST_HOME/.cache/dotfiles"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$root/bin/lib/vault.sh"
+    printf 'GH_TOKEN=x\n' > "$TEST_HOME/.cache/dotfiles/secrets.env"
     cp "$SYNC_COMMON" "$root/claude/lib/sync-common.sh"
     cp "$MCP_SYNC" "$root/agents/mcp/sync.sh"
     cp "$MCP_LIB"  "$root/agents/mcp/lib.sh"

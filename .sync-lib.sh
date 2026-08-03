@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Shared sync helpers sourced by .sync.
 # Logging, skip-list dispatch, per-entry sync, and bootstrap installers.
 #
@@ -971,6 +971,37 @@ install_tilth_claude_code() {
     if [[ ! -f "${HOME}/.claude/tilth/inject-cwd.js" ]]; then
         log_warning "tilth install claude-code --edit ran but ~/.claude/tilth/inject-cwd.js is missing — hook wiring may be stale"
     fi
+}
+
+# Materialize the vault-backed secrets cache (bin/lib/vault.sh) before the
+# MCP reconcile bakes resolved ${VAR} values into ~/.claude.json. Reports
+# failure through SYNC_FAILURES (like sync_entry above) rather than
+# aborting run_sync, so a broken vault doesn't skip the reconcile/plugin
+# steps that follow or suppress the end-of-run failure summary.
+#
+# Assumes bin/lib/vault.sh is already sourced (run_sync sources it early,
+# before this runs, to compute ONEPASSWORD_PRESENT) — not re-sourced here to
+# avoid loading it twice in the same shell. Direct/standalone callers (e.g.
+# tests) must source it themselves first.
+materialize_secrets() {
+    local lib="$dir/bin/lib/vault.sh"
+    if [[ ! -f "$lib" ]]; then
+        log_warning "Skipping secret materialization (bin/lib/vault.sh missing)"
+        return 0
+    fi
+    # A machine with no vault yet must still be able to bootstrap: skip rather
+    # than abort, or `dots sync` can never reach the steps that install and
+    # provision one. A vault that IS set up and fails is a real error.
+    if ! vault_provisioned; then
+        log_warning "Skipping secret materialization (no vault provisioned — run bin/vault-provision)"
+        return 0
+    fi
+    log_info "Materializing vault secrets..."
+    if ! DOTFILES_DIR="$dir" vault_materialize; then
+        log_error "Failed to materialize vault secrets (continuing — will report at end)"
+        SYNC_FAILURES+=("vault-secrets")
+    fi
+    return 0
 }
 
 # Re-reconcile user-scope claude MCPs as the FINAL write of every sync.

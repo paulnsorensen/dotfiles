@@ -26,7 +26,7 @@ import pytest
 import tomlkit
 import tomllib
 from agent_profile.parse import Manifest
-from agent_profile.renderers.codex import CodexRenderer
+from agent_profile.renderers.codex import CodexRenderer, _inherited_env_keys
 
 GOLDEN = Path(__file__).parent / "fixtures" / "golden" / "codex"
 RENDERER_SRC = Path(__file__).parent.parent / "agent_profile" / "renderers" / "codex.py"
@@ -851,6 +851,22 @@ def test_scrub_resolves_dotenv_via_home_fallback_when_dotfiles_dir_unset(
     renderer.render(m, target)
     text = (target / ".codex" / "config.toml").read_text()
     assert secret not in text
+
+
+def test_inherited_env_keys_includes_cache_only_key(monkeypatch, tmp_path):
+    """B5: a vault-migrated credential lives only in the cache, not .env.
+    _inherited_env_keys must still surface it, so the codex renderer treats
+    it as already-exported and never bakes it into config.toml."""
+    dotfiles = tmp_path / "df"
+    dotfiles.mkdir()
+    (dotfiles / ".env").write_text("")
+    cache_dir = tmp_path / "cache" / "dotfiles"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "secrets.env").write_text("CACHE_ONLY_KEY=val\n")
+    monkeypatch.setenv("DOTFILES_DIR", str(dotfiles))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv("AP_CODEX_INHERIT_ENV", raising=False)
+    assert "CACHE_ONLY_KEY" in _inherited_env_keys()
 
 
 # ─── canonical permissions (curd 3) ─────────────────────────────────────
