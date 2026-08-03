@@ -60,7 +60,7 @@ STDIN"
     [ "$(yq '.tui.tight' "$OUT")" = "true" ]
     [ "$(yq '.startup.quiet' "$OUT")" = "true" ]
     [ "$(yq 'has("compaction") and (.compaction | has("thresholdTokens"))' "$OUT")" = "false" ]
-    [ "$(yq '.compaction.strategy' "$OUT")" = "shake" ]
+    [ "$(yq '.compaction.strategy' "$OUT")" = "snapcompact" ]
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.compaction.midTurnEnabled' "$OUT")" = "true" ]
     [ "$(yq '.compaction.autoContinue' "$OUT")" = "true" ]
@@ -100,7 +100,7 @@ setupVersion: 1'
     [ "$(yq '.todo.reminders' "$OUT")" = "false" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }
-@test "omp-config: retired thresholdTokens is deleted from the prior managed document" {
+@test "omp-config: retired thresholdTokens and shake strategy are migrated" {
     run_modify 'symbolPreset: nerd
 theme:
   dark: chocolate-donut
@@ -114,7 +114,7 @@ compaction:
 setupVersion: 1'
     [ "$status" -eq 0 ]
     [ "$(yq 'has("compaction") and (.compaction | has("thresholdTokens"))' "$OUT")" = "false" ]
-    [ "$(yq '.compaction.strategy' "$OUT")" = "shake" ]
+    [ "$(yq '.compaction.strategy' "$OUT")" = "snapcompact" ]
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }

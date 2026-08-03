@@ -10,7 +10,7 @@ The managed OMP system append tells callers to pass `assignment` and `fork_turns
 
 ## Decision
 
-After verifying the installed OMP 17.2.4 Task schema, remove the `assignment` and `fork_turns` guidance, delete `no-fork-all.ts` and its dedicated test, and update the managed-extension assertion and durable OMP wiki page. Set `task.enableLsp: true`. Leave every other auto-discovered extension unchanged. Do not add a shim or replacement field mapping.
+After verifying the installed OMP 17.2.5 Task schema, remove the `assignment` and `fork_turns` guidance, delete `no-fork-all.ts` and its dedicated test, and update the managed-extension assertion and durable OMP wiki page. Set `task.enableLsp: true`. Leave every other auto-discovered extension unchanged. Do not add a shim or replacement field mapping.
 
 ## Alternatives
 
@@ -20,6 +20,6 @@ After verifying the installed OMP 17.2.4 Task schema, remove the `assignment` an
 
 ## Consequences
 
-OMP callers receive one native Task contract, delegated workers can use LSP, and the extension surface loses a no-op guard. The deletion is gated on live 17.2.4 schema inspection and focused tests so an upstream schema change cannot silently remove a real boundary.
+OMP callers receive one native Task contract, delegated workers can use LSP, and the extension surface loses a no-op guard. The deletion is gated on live 17.2.5 schema inspection and focused tests so an upstream schema change cannot silently remove a real boundary.
 
 Sources: `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md:49-50`; `chezmoi/dot_omp/private_agent/extensions/no-fork-all.ts`; `tests/extensions/no-fork-all.test.mjs`; `harnesses/omp.md`.

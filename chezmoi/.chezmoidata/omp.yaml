@@ -79,7 +79,9 @@ omp:
     advisor:
       enabled: false
     compaction:
-      strategy: shake
+      # Preserve old turns as model-readable image archives; unlike shake,
+      # this does not depend on the model noticing artifact recovery links.
+      strategy: snapcompact
       keepRecentTokens: 20000
       midTurnEnabled: true
       autoContinue: true

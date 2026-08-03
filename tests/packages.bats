@@ -47,6 +47,7 @@ setup() {
     export CARGO_LOG="$TEST_HOME/cargo.log"
     export GH_LOG="$TEST_HOME/gh.log"
     export NPM_LOG="$TEST_HOME/npm.log"
+    export BUN_LOG="$TEST_HOME/bun.log"
     export SUDO_LOG="$TEST_HOME/sudo.log"
     export CLAUDE_LOG="$TEST_HOME/claude.log"
     export CODEX_LOG="$TEST_HOME/codex.log"
@@ -235,6 +236,15 @@ exit 0
 MOCKNPM
     chmod +x "$MOCK_BIN/npm"
 }
+write_mock_bun() {
+    cat > "$MOCK_BIN/bun" << 'MOCKBUN'
+#!/bin/bash
+echo "bun $*" >> "$BUN_LOG"
+exit 0
+MOCKBUN
+    chmod +x "$MOCK_BIN/bun"
+}
+
 
 # Usage: write_mock_gh [installed_repos] [fail_repo]
 #   installed_repos: newline-separated list of "owner/repo" already installed
@@ -1000,16 +1010,29 @@ MOCKBREW
 # --- Integration: native harness convergence ---
 
 @test "managed OMP and Codex pins are exact" {
-    grep -q '^OMP_PIN="v17.2.4"$' "$SYNC_SCRIPT"
+    grep -q '^OMP_PIN="v17.2.5"$' "$SYNC_SCRIPT"
     grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
 @test "doc-drift records match the managed harness pins" {
     local sources="$REAL_DOTFILES_DIR/agents/doc-drift/sources.yaml"
-    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.4" ]
+    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.5" ]
     [ "$(yq -r '.sources[] | select(.id == "codex-cli") | .reconciled' "$sources")" = "0.146.0" ]
 }
 
+
+@test "package sync removes a stale Bun OMP before native convergence" {
+    write_mock_bun
+    mkdir -p "$TEST_HOME/.bun/bin"
+    ln -s ../install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js \
+        "$TEST_HOME/.bun/bin/omp"
+    write_test_yaml
+
+    run_sync
+    assert_success
+    grep -qx "bun remove -g @oh-my-pi/pi-coding-agent" "$BUN_LOG"
+    [[ ! -L "$TEST_HOME/.bun/bin/omp" ]]
+}
 
 @test "package sync converges OMP_PIN and never invokes omp update" {
     write_test_yaml
@@ -1067,7 +1090,7 @@ MOCKBREW
     assert_success
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.2.4\ncodesign --force --sign - %s' \
+    expected_events=$(printf 'sh -s -- --binary --ref v17.2.5\ncodesign --force --sign - %s' \
         "$TEST_HOME/.local/bin/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]

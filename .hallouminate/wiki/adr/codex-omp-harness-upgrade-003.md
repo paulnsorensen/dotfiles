@@ -10,7 +10,7 @@ The normal sync flow applies chezmoi-managed configuration before normal package
 
 ## Decision
 
-Treat OMP 17.2.4 and Codex 0.146.0 as one cutover. Run focused source/render tests, install both exact pins, perform the final chezmoi apply under the upgraded schemas, then verify versions, effective configuration, and fresh OMP/Codex scenarios. If the final apply or smoke check fails, return failure with exact diagnostics and retain the successfully upgraded binaries; do not claim completion.
+Treat OMP 17.2.5 and Codex 0.146.0 as one cutover. Run focused source/render tests, install both exact pins, perform the final chezmoi apply under the upgraded schemas, then verify versions, effective configuration, and fresh OMP/Codex scenarios. If the final apply or smoke check fails, return failure with exact diagnostics and retain the successfully upgraded binaries; do not claim completion.
 
 ## Alternatives
 
