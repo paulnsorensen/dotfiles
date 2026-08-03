@@ -58,7 +58,7 @@ packages:
   # renovate: datasource=npm depName=eslint
   - eslint: { source: npm, version: "10.8.0" }
   # renovate: datasource=npm depName=markdownlint-cli2
-  - markdownlint-cli2: { source: npm, version: "0.23.1" }
+  - markdownlint-cli2: { source: npm, version: "0.23.2" }
   # renovate: datasource=npm depName=ccusage
   - ccusage: { source: npm, version: "20.0.18" }
   # renovate: datasource=npm depName=@govcraft/agent-skills
