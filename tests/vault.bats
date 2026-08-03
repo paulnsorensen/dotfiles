@@ -49,8 +49,7 @@ exit 0
 EOF
     chmod +x "$MOCK_BIN/bws"
 
-    source "$VAULT_LIB"
-    run vault_detect
+    run env PATH="$MOCK_BIN:/usr/bin:/bin" bash -c "source '$VAULT_LIB'; vault_detect"
     [ "$status" -eq 0 ]
     [ "$output" = "bitwarden" ]
 }
@@ -79,6 +78,9 @@ EOF
 # ── vault_materialize ──
 
 _setup_materialize_fixture() {
+    if [[ "${1:-true}" == true ]] && ((BASH_VERSINFO[0] < 4)); then
+        skip "vault_materialize requires bash >= 4"
+    fi
     export DOTFILES_DIR="$TEST_HOME/dotfiles"
     mkdir -p "$DOTFILES_DIR/secrets"
     printf 'FOO_KEY=\nBAR_KEY=\n' > "$DOTFILES_DIR/secrets/secrets.env.tmpl"
@@ -128,7 +130,7 @@ EOF
 }
 
 @test "vault_materialize: fails loudly under /bin/bash 3.2 instead of corrupting the cache" {
-    _setup_materialize_fixture
+    _setup_materialize_fixture false
     cat > "$MOCK_BIN/op" <<'EOF'
 #!/usr/bin/env bash
 [[ "$1" == inject ]] || exit 1
@@ -390,7 +392,6 @@ EOF
     [ "$status" -ne 0 ]
     [[ "$output" == *"bin/vault-provision"* ]]
 }
-
 # ── bootstrap split: unprovisioned vs provisioned-but-broken ──
 
 @test "vault_provisioned: false when bws exists but no token is stored" {
@@ -403,8 +404,7 @@ EOF
     export XDG_CONFIG_HOME="$TEST_HOME/.config"
     export BWS_PROJECT_ID=proj-1
 
-    source "$VAULT_LIB"
-    run vault_provisioned
+    run env PATH="$MOCK_BIN:/usr/bin:/bin" bash -c "source '$VAULT_LIB'; vault_provisioned"
     [ "$status" -ne 0 ]
 }
 
@@ -421,8 +421,7 @@ EOF
     chmod 600 "$XDG_CONFIG_HOME/dotfiles/bws-token"
     unset BWS_PROJECT_ID
 
-    source "$VAULT_LIB"
-    run vault_provisioned
+    run env PATH="$MOCK_BIN:/usr/bin:/bin" bash -c "source '$VAULT_LIB'; vault_provisioned"
     [ "$status" -ne 0 ]
 }
 
