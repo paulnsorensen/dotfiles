@@ -112,6 +112,16 @@ done
 [[ -f "$_dotfiles_cache_env" ]] || echo "dotfiles: vault secrets cache missing ($_dotfiles_cache_env) — run 'bin/vault-provision'" >&2
 unset _dotfiles_env_file _dotfiles_cache_env
 
+
+# Fall back to the macOS Keychain for BWS credentials in interactive shells.
+if [[ $OSTYPE == darwin* && -o interactive ]] &&
+  (( ! ${+BWS_ACCESS_TOKEN} )) &&
+  command -v security 1>/dev/null 2>&1; then
+  _bws_access_token=$(security find-generic-password -a "$USER" -s bws_access_token -w 2>/dev/null)
+  [[ -n $_bws_access_token ]] && export BWS_ACCESS_TOKEN="$_bws_access_token"
+  unset _bws_access_token
+fi
+
 # Vi mode cursor shapes (orthogonal to prompt choice — works with any prompt)
 function zle-line-init zle-keymap-select {
   if [[ $KEYMAP == vicmd ]]; then

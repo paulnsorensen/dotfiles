@@ -63,17 +63,97 @@ EOF
 
 # ── vault_token ──
 
-@test "vault_token: missing Keychain item fails naming bin/vault-provision" {
+@test "vault_token: missing Keychain item uses bws_access_token and names bin/vault-provision" {
+    cat > "$MOCK_BIN/uname" <<'EOF'
+#!/usr/bin/env bash
+echo Darwin
+EOF
     cat > "$MOCK_BIN/security" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$@" > "$TEST_HOME/security.args"
 exit 1
 EOF
-    chmod +x "$MOCK_BIN/security"
+    chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/security"
 
     source "$VAULT_LIB"
     run vault_token
     [ "$status" -ne 0 ]
+    [ "$(sed -n '3p' "$TEST_HOME/security.args")" = "-s" ]
+    [ "$(sed -n '4p' "$TEST_HOME/security.args")" = "bws_access_token" ]
     [[ "$output" == *"bin/vault-provision"* ]]
+}
+
+@test "vault-provision stores Darwin tokens in the bws_access_token Keychain service" {
+    [[ "$(uname)" == Darwin ]] || skip "macOS only"
+    command -v bash &>/dev/null || skip "bash not installed"
+    local fixture="$TEST_HOME/dotfiles"
+    local bash_path
+    bash_path="$(command -v bash)"
+    mkdir -p "$fixture/bin/lib" "$fixture/secrets"
+    cp "$REAL_DOTFILES_DIR/bin/vault-provision" "$fixture/bin/vault-provision"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$fixture/bin/lib/vault.sh"
+    cp "$REAL_DOTFILES_DIR/secrets/secrets.env.tmpl" "$fixture/secrets/secrets.env.tmpl"
+    cat > "$fixture/.env" <<'EOF'
+DOTFILES_DEV=false
+GH_TOKEN=gh
+GITHUB_PERSONAL_ACCESS_TOKEN=github
+CONTEXT7_API_KEY=context7
+TAVILY_API_KEY=tavily
+SERPER_API_KEY=serper
+TODOIST_API_KEY=todoist
+EOF
+
+    cat > "$MOCK_BIN/security" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == find-generic-password ]]; then
+    [[ -f "$TEST_HOME/security.state" ]] || exit 1
+    printf '%s\n' machine-token
+    exit 0
+fi
+if [[ "$1" == add-generic-password ]]; then
+    printf '%s\n' "$@" > "$TEST_HOME/security.args"
+    cat >/dev/null
+    : > "$TEST_HOME/security.state"
+    exit 0
+fi
+exit 1
+EOF
+
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == project && "$2" == list ]]; then
+    printf '[]'
+elif [[ "$1" == project && "$2" == create ]]; then
+    printf '{"id":"proj-1"}'
+elif [[ "$1" == secret && "$2" == list ]]; then
+    if [[ "$5" == env ]]; then
+        printf 'GH_TOKEN=gh\nGITHUB_PERSONAL_ACCESS_TOKEN=github\nCONTEXT7_API_KEY=context7\nTAVILY_API_KEY=tavily\nSERPER_API_KEY=serper\nTODOIST_API_KEY=todoist\n'
+    else
+        printf '[]'
+    fi
+elif [[ "$1" == secret && "$2" == create ]]; then
+    exit 0
+else
+    exit 1
+fi
+EOF
+
+    cat > "$MOCK_BIN/jq" <<'EOF'
+#!/usr/bin/env bash
+input="$(cat)"
+if [[ "$1" == -e ]]; then
+    exit 1
+fi
+if [[ "$input" == *'"id":"proj-1"'* ]]; then printf 'proj-1\n'; fi; exit 0
+EOF
+    chmod +x "$MOCK_BIN/security" "$MOCK_BIN/bws" "$MOCK_BIN/jq"
+    printf 'machine-token\n' > "$TEST_HOME/token.input"
+
+    run env "PATH=$MOCK_BIN:/usr/bin:/bin" "HOME=$TEST_HOME" "USER=$USER" "XDG_CACHE_HOME=$TEST_HOME/.cache" "$bash_path" "$fixture/bin/vault-provision" < "$TEST_HOME/token.input"
+    assert_success
+    [ "$(sed -n '3p' "$TEST_HOME/security.args")" = "-s" ]
+    [ "$(sed -n '4p' "$TEST_HOME/security.args")" = "bws_access_token" ]
+    grep -q '^BWS_PROJECT_ID=proj-1$' "$fixture/.env"
 }
 
 # ── vault_materialize ──

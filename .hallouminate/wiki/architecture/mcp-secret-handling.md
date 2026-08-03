@@ -92,6 +92,13 @@ apply-time key to resolve now). Copilot's `${VAR}` expansion regressed in CLI
 v0.0.407 (gh#1403) and is thinly documented — if env passthrough breaks on a CLI
 upgrade, that template is where to revisit.
 
+## Bitwarden access-token bootstrap
+
+On macOS, interactive zsh reads the machine-account token from the Keychain service `bws_access_token` under `$USER` and exports it as `BWS_ACCESS_TOKEN`; this matches the existing machine entry.[^1] Linux keeps the existing 0600 token-file path.[^2]
+
+[^1]: zsh/core.zsh:116-122
+[^2]: bin/lib/vault.sh:30-57
+
 ## What was intentionally left alone
 
 - **codex stays on scrub** (already clean — never wrote secrets in the

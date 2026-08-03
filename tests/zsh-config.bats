@@ -391,3 +391,41 @@ SH
     occurrences=$(grep -o "$shims_dir" <<< "$output" | wc -l | tr -d ' ')
     [ "$occurrences" -eq 1 ]
 }
+
+
+@test "macOS core.zsh loads the BWS token from Keychain and preserves existing tokens" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    [[ $OSTYPE == darwin* ]] || skip "macOS only"
+    local fakebin="$TEST_HOME/Dev/dotfiles/bin"
+    local security_log="$TEST_HOME/security.log"
+    mkdir -p "$fakebin" "$TEST_HOME/.cache/dotfiles"
+    : > "$TEST_HOME/.cache/dotfiles/secrets.env"
+    : > "$security_log"
+    cat > "$fakebin/security" <<'SH'
+#!/bin/sh
+[ "$1" = "find-generic-password" ] &&
+[ "$2" = "-a" ] &&
+[ "$3" = "$USER" ] &&
+[ "$4" = "-s" ] &&
+[ "$5" = "bws_access_token" ] &&
+[ "$6" = "-w" ] || exit 1
+printf '%s\n' called >> "$SECURITY_LOG"
+printf '%s\n' 'token-from-keychain'
+SH
+    chmod +x "$fakebin/security"
+
+    run env "PATH=$fakebin:/usr/bin:/bin" "HOME=$TEST_HOME" "USER=$USER" "DOTFILES_DIR=$TEST_HOME/Dev/dotfiles" "XDG_CACHE_HOME=$TEST_HOME/.cache" "SECURITY_LOG=$security_log" zsh -fic "unset BWS_ACCESS_TOKEN; source '$TEST_HOME/Dev/dotfiles/zsh/core.zsh'; printenv BWS_ACCESS_TOKEN"
+    assert_success
+    [[ "$output" == "token-from-keychain" ]]
+    [ "$(cat "$security_log")" = called ]
+
+    run env "PATH=$fakebin:/usr/bin:/bin" "HOME=$TEST_HOME" "USER=$USER" "DOTFILES_DIR=$TEST_HOME/Dev/dotfiles" "XDG_CACHE_HOME=$TEST_HOME/.cache" "SECURITY_LOG=$security_log" BWS_ACCESS_TOKEN=already-set zsh -fic "source '$TEST_HOME/Dev/dotfiles/zsh/core.zsh'; printenv BWS_ACCESS_TOKEN"
+    assert_success
+    [[ "$output" == "already-set" ]]
+    [ "$(cat "$security_log")" = called ]
+
+    run env "PATH=$fakebin:/usr/bin:/bin" "HOME=$TEST_HOME" "USER=$USER" "DOTFILES_DIR=$TEST_HOME/Dev/dotfiles" "XDG_CACHE_HOME=$TEST_HOME/.cache" "SECURITY_LOG=$security_log" BWS_ACCESS_TOKEN= zsh -fic "source '$TEST_HOME/Dev/dotfiles/zsh/core.zsh'"
+    assert_success
+    [[ -z "$output" ]]
+    [ "$(cat "$security_log")" = called ]
+}

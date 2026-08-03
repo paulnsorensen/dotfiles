@@ -27,15 +27,16 @@ vault_token_file() {
     echo "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/bws-token"
 }
 
-# Token storage is platform-specific. macOS uses the Keychain (Bitwarden's own
-# documented pattern). A headless Linux box has no keyring daemon, so libsecret
-# is unavailable and the token lives in a 0600 file instead; this refuses to
-# read one that is group- or world-readable rather than leaking it silently.
+# Token storage is platform-specific. macOS uses the Keychain service
+# `bws_access_token` (Bitwarden's own documented pattern). A headless Linux
+# box has no keyring daemon, so libsecret is unavailable and the token lives
+# in a 0600 file instead; this refuses to read one that is group- or
+# world-readable rather than leaking it silently.
 vault_token() {
     local file mode
     if [[ "$(uname -s)" == Darwin ]]; then
-        security find-generic-password -w -s BWS_ACCESS_TOKEN -a "$USER" 2>/dev/null || {
-            echo "vault: no Bitwarden access token in Keychain (service BWS_ACCESS_TOKEN)." >&2
+        security find-generic-password -w -s bws_access_token -a "$USER" 2>/dev/null || {
+            echo "vault: no Bitwarden access token in Keychain (service bws_access_token)." >&2
             echo "vault: run bin/vault-provision to store one." >&2
             return 1
         }

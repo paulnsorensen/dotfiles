@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # vault-provision — one-time setup of the Bitwarden Secrets Manager vault that
 # backs this machine's secrets. Stores the machine-account access token in the
-# macOS Keychain (Bitwarden's own documented pattern), creates the project,
-# pushes each secret named in secrets/secrets.env.tmpl, then materializes the
-# cache via bin/lib/vault.sh.
+# macOS Keychain under the `bws_access_token` service (Bitwarden's own documented
+# pattern), creates the project, pushes each secret named in secrets/secrets.env.tmpl,
+# then materializes the cache via bin/lib/vault.sh.
 #
 # Web-vault prerequisites (no CLI path exists for these):
 #   1. Enable Secrets Manager on the account
@@ -44,7 +44,7 @@ Store the six secrets as fields on the 1Password item referenced by $TMPL,
 then run: source bin/lib/vault.sh && vault_materialize"
 fi
 
-# ─── access token → Keychain ────────────────────────────────────────────────
+# ─── access token → Keychain (service bws_access_token) ──────────────────────
 
 step "Bitwarden access token"
 if vault_token &>/dev/null; then
@@ -68,11 +68,11 @@ if [[ -n "$store_token" ]]; then
         # confirmation) from stdin via readpassphrase(3) when no tty is
         # attached, keeping the token out of argv (research:
         # .cheese/research/secret-argv-exposure/secret-argv-exposure.md).
-        security add-generic-password -U -s BWS_ACCESS_TOKEN -a "$USER" -w <<EOF
+        security add-generic-password -U -s bws_access_token -a "$USER" -w <<EOF
 $token
 $token
 EOF
-        echo "Stored in Keychain (service BWS_ACCESS_TOKEN)."
+        echo "Stored in Keychain (service bws_access_token)."
     else
         # Headless Linux has no keyring daemon; a 0600 file is the storage.
         # Create it empty at 0600 BEFORE writing so the token is never briefly
@@ -165,3 +165,4 @@ echo "Cache written: $(vault_secrets_file)"
 
 step "Done. Now remove these lines from $ENV_FILE:"
 cut -d= -f1 "$TMPL" | grep -v '^#' | grep -v '^$' | sed 's/^/  /'
+echo "  BWS_ACCESS_TOKEN (if present; keep the machine-account token in Keychain)"
