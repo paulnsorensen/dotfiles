@@ -1054,6 +1054,7 @@ MOCKBREW
     run_sync
     assert_failure
     assert_output_contains "omp native install failed"
+    assert_output_not_contains "Native harness sync complete"
     assert_output_contains "cache NOT saved"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
 }
@@ -1080,6 +1081,7 @@ MOCKBREW
     run_sync
     assert_failure
     assert_output_contains "omp ad-hoc signing failed"
+    assert_output_not_contains "Native harness sync complete"
     assert_output_contains "cache NOT saved"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
 }

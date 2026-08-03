@@ -1,7 +1,6 @@
 #!/bin/bash
-# Wire chezmoi's source-managed config into ~/.config/chezmoi, then run one
-# apply pass. The root sync invokes this once to deploy the mise manifest and
-# again after package convergence; the latter is the final cutover apply.
+# Wire chezmoi's source-managed config into ~/.config/chezmoi. The prepare
+# phase stops after wiring; direct and final invocations assemble and apply.
 #
 # First-run rules (the stub-fallback that masked bug #167 is gone):
 #   - TTY  + chezmoi   → `chezmoi init` renders .chezmoi.toml.tmpl with
@@ -38,6 +37,7 @@ source "$dotfiles_dir/.sync-lib.sh"
 if ! prepare_chezmoi_wiring "$dotfiles_dir" "$source_dir"; then
     exit 1
 fi
+[[ "${CHEZMOI_SYNC_PHASE:-}" == "prepare" ]] && exit 0
 "${CHEZMOI_WIRING_SKIP:-false}" && exit 0
 
 if ! assemble_chezmoi_sources "$dotfiles_dir" "$source_dir"; then

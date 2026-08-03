@@ -709,7 +709,6 @@ sync_native_harnesses() {
         FAILED+=("omp")
     fi
 
-    log_success "Native harness sync complete"
 }
 # Claude is invoked by chezmoi later in this sync, so keep its mise binary
 # present even when the package declaration cache is valid.
