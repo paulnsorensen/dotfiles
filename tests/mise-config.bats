@@ -84,3 +84,16 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     run grep -c 'gopls' <(yq -p=toml -o=json '.tools | keys' "$CONFIG")
     [[ "$output" == "0" ]]
 }
+
+@test "just check pins XDG_CACHE_HOME before parallel (mise cache leak guard)" {
+    # GNU parallel exports XDG_CACHE_HOME to its jobs even when the parent
+    # leaves it unset, and mise resolves an empty value to a *relative* `mise`
+    # cache dir — every `just check` then dropped mise/aqua-*/bin_paths caches
+    # into the repo root. The bats sandbox alone can't cover this: the leak
+    # comes from the gate's own fan-out, outside any test's environment.
+    local recipe
+    recipe=$(awk '/^check:/{f=1} f' "$DOTFILES_DIR/justfile")
+    [[ -n "$recipe" ]]
+    # shellcheck disable=SC2016  # a literal grep pattern, not an expansion
+    echo "$recipe" | grep -qF 'XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel'
+}
