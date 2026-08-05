@@ -46,7 +46,9 @@ def _compile_live(tmp_path, monkeypatch, *, with_live_settings: bool) -> dict:
     return json.loads((out / "manifest.json").read_text())
 
 
-def test_live_compile_emits_only_generated_fragments(tmp_path, monkeypatch):
+def test_live_compile_emits_only_generated_fragments(
+    tmp_path, monkeypatch, shipped_profile_secrets
+):
     data = _compile_live(tmp_path, monkeypatch, with_live_settings=True)
     files = data["files"]
 
@@ -66,7 +68,9 @@ def test_live_compile_emits_only_generated_fragments(tmp_path, monkeypatch):
     assert all(f["generated"] is True for f in files)
 
 
-def test_absent_live_settings_is_clean_create_not_drift(tmp_path, monkeypatch):
+def test_absent_live_settings_is_clean_create_not_drift(
+    tmp_path, monkeypatch, shipped_profile_secrets
+):
     data = _compile_live(tmp_path, monkeypatch, with_live_settings=False)
     settings_drift = [
         r for r in data["drift"] if r["relative_path"] == ".claude/settings.json"

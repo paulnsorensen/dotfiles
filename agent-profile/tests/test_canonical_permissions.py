@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from agent_profile.parse import parse_manifest
 
-from tests.conftest import write_profile
+from tests.conftest import SHIPPED_PROFILE_DOTENV, write_profile
 
 # ── settings-level deny channel union-merge (parse) ──────────────────
 
@@ -114,7 +114,13 @@ def opencode_global_manifest():
     odir = repo / "profiles" / "opencode-global"
     if not (odir / "profile.yaml").is_file():
         pytest.skip(f"opencode-global profile not found at {odir}")
-    return parse_manifest(odir)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("DOTFILES_DIR", str(repo))
+        patch.setattr(
+            "agent_profile.parse.load_layered_env",
+            lambda _repo_root: dict(SHIPPED_PROFILE_DOTENV),
+        )
+        return parse_manifest(odir)
 
 
 def test_opencode_global_resolves_canonical_permissions_at_opencode_target(

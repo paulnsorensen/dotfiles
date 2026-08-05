@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from agent_profile import cli, compile_command, shared
+from agent_profile import cli, compile_command, overlay, parse, shared
 from agent_profile.cli import ALL_HARNESSES, CliError
 from agent_profile.manifest import ManifestCorrupt
 from agent_profile.parse import Manifest, ParseError
@@ -80,6 +80,21 @@ def env(monkeypatch, tmp_path):
     e.target = target
     e.tmp = tmp_path
     return e
+
+
+SHIPPED_PROFILE_DOTENV = {
+    "CONTEXT7_API_KEY": "test-context7",
+    "TAVILY_API_KEY": "test-tavily",
+}
+
+
+@pytest.fixture
+def shipped_profile_secrets(monkeypatch):
+    """Give checked-in profiles deterministic non-secret MCP credentials."""
+    dotenv = dict(SHIPPED_PROFILE_DOTENV)
+    monkeypatch.setattr(parse, "load_layered_env", lambda _repo_root: dict(dotenv))
+    monkeypatch.setattr(overlay, "_dotenv", lambda: dict(dotenv))
+    return dotenv
 
 
 def write_profile(root: Path, name: str, yaml_text: str, files: dict | None = None):

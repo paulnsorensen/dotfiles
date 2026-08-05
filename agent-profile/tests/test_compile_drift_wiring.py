@@ -23,7 +23,9 @@ from agent_profile.renderers.registry import build_registry
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_compile_skips_drift_for_disconnected_live_settings(tmp_path, monkeypatch):
+def test_compile_skips_drift_for_disconnected_live_settings(
+    tmp_path, monkeypatch, shipped_profile_secrets
+):
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
     (home / ".claude" / "settings.json").write_text(

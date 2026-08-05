@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_live_global_settings_stay_unmanaged_across_compile_then_apply(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, shipped_profile_secrets
 ):
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
