@@ -27,7 +27,7 @@ The implementation extracts config/bootstrap/migration logic into sourced functi
 
 ## Gate mismatch
 
-`just test` and `just check` run Bats, while `just smoke` runs Node workflow tests; neither invokes the 909-test `agent-profile` pytest suite.[^10] A local pytest run took 25–38 seconds and exposed four failures on 2026-07-25. Treat adding pytest to the gate as a coverage correction, benchmarked separately from Bats speed work.[^11]
+GitHub CI's `test` job runs `just test` (Bats), `just test-python` (agent-profile pytest), and `just smoke` (Node workflow tests) as separate steps. The workflow-smoke test asserts those exact recipes so deleting one fails before merge.[^10]
 
 ## Implemented results (2026-07-25)
 
@@ -85,4 +85,3 @@ Use at least three warm runs and report the median. Bats supports `-T/--timing`;
 [^8]: tests/test_helper.bash:44-58
 [^9]: agent-profile/tests/test_canonical_permissions.py:93-118; local `uv run pytest -q --durations=20`, 2026-07-25.
 [^10]: justfile:51-68; tests/workflows-test.sh:1-18
-[^11]: Local benchmark, 2026-07-25: `uv run pytest -q --durations=20`; 903 passed, 2 skipped, 4 failed in 25.11s.
