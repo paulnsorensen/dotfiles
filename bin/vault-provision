@@ -16,6 +16,7 @@
 #   bin/vault-provision              # migrate: take values from the existing .env
 #   bin/vault-provision --interactive # prompt for each value (fresh machine)
 set -euo pipefail
+set +x
 
 # Self-locate rather than trusting an inherited DOTFILES_DIR: this script
 # provisions the clone it lives in, and must work from a worktree. Exported so
@@ -34,24 +35,54 @@ INTERACTIVE=""
 
 die() { echo "vault-provision: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
+_provision_token_file() {
+    echo "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/bws-token"
+}
 
-command -v bws &>/dev/null || die "bws not found. Install it: cargo install bws --locked"
+_provision_token() {
+    local file mode token
+    if [[ "$(uname -s)" == Darwin ]]; then
+        token="$(security find-generic-password -w -s BWS_ACCESS_TOKEN -a "$USER" 2>/dev/null)" || return 1
+        if [[ -z "$token" ]]; then
+            echo "vault-provision: Bitwarden access token in Keychain is empty; run bin/vault-provision to replace it." >&2
+            return 1
+        fi
+        printf '%s\n' "$token"
+        return 0
+    fi
+
+    file="$(_provision_token_file)"
+    [[ -f "$file" ]] || return 1
+    mode="$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file" 2>/dev/null)"
+    [[ "$mode" == 600 ]] || return 1
+    token="$(<"$file")"
+    [[ -n "$token" ]] || return 1
+    printf '%s\n' "$token"
+}
+
+
 [[ -f "$TMPL" ]] || die "template not found: $TMPL"
 
-if command -v op &>/dev/null; then
-    die "'op' is present — this machine uses 1Password, not Bitwarden.
-Store the six secrets as fields on the 1Password item referenced by $TMPL,
-then run: source bin/lib/vault.sh && vault_materialize"
+if vault_disables_bitwarden_install; then
+    die "Bitwarden provisioning is disabled for this machine.
+Configure the six fields on the 1Password item named by DOTFILES_OP_ITEM, then run:
+  source bin/lib/vault.sh && vault_materialize onepassword
+To provision Bitwarden instead, set DOTFILES_VAULT_PROVIDER=bitwarden in .env."
+else
+    provider_status=$?
+    (( provider_status == 1 )) || exit "$provider_status"
 fi
+
+command -v bws &>/dev/null || die "bws not found. Install it: cargo install bws --locked"
 
 # ─── access token → Keychain ────────────────────────────────────────────────
 
 step "Bitwarden access token"
-if vault_token &>/dev/null; then
+if _provision_token &>/dev/null; then
     if [[ "$(uname -s)" == Darwin ]]; then
         echo "A token is already in the Keychain."
     else
-        echo "A token is already at $(vault_token_file)."
+        echo "A token is already at $(_provision_token_file)."
     fi
     read -r -p "Replace it? [y/N] " reply
     [[ "$reply" == [yY] ]] && store_token=1 || store_token=""
@@ -77,7 +108,7 @@ EOF
         # Headless Linux has no keyring daemon; a 0600 file is the storage.
         # Create it empty at 0600 BEFORE writing so the token is never briefly
         # world-readable.
-        token_file="$(vault_token_file)"
+        token_file="$(_provision_token_file)"
         mkdir -p "$(dirname "$token_file")"
         (umask 077; : > "$token_file")
         chmod 600 "$token_file"
@@ -87,7 +118,7 @@ EOF
     unset token
 fi
 
-BWS_ACCESS_TOKEN="$(vault_token)" || die "could not read the token back from the Keychain"
+BWS_ACCESS_TOKEN="$(_provision_token)" || die "could not read the token back from its secure storage"
 export BWS_ACCESS_TOKEN
 
 # ─── project ────────────────────────────────────────────────────────────────
@@ -160,7 +191,7 @@ export BWS_PROJECT_ID="$project_id"
 # ─── materialize + verify ───────────────────────────────────────────────────
 
 step "Materializing the secrets cache"
-vault_materialize || die "materialize failed — the vault is provisioned but the cache was not written"
+vault_materialize bitwarden || die "materialize failed — the vault is provisioned but the cache was not written"
 echo "Cache written: $(vault_secrets_file)"
 
 step "Done. Now remove these lines from $ENV_FILE:"

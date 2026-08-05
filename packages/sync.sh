@@ -59,6 +59,7 @@ cache_hash() {
         else
             printf 'mise-config-missing\n'
         fi
+        printf 'BITWARDEN_DISABLED=%s\n' "${BITWARDEN_DISABLED:-false}"
         printf '%s\n' "$OMP_PIN"
     } | shasum -a 256 | cut -d' ' -f1
 }

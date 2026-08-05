@@ -979,25 +979,25 @@ install_tilth_claude_code() {
 # aborting run_sync, so a broken vault doesn't skip the reconcile/plugin
 # steps that follow or suppress the end-of-run failure summary.
 #
-# Assumes bin/lib/vault.sh is already sourced (run_sync sources it early,
-# before this runs, to compute ONEPASSWORD_PRESENT) — not re-sourced here to
-# avoid loading it twice in the same shell. Direct/standalone callers (e.g.
-# tests) must source it themselves first.
+# Assumes bin/lib/vault.sh is already sourced (run_sync sources it early for
+# package policy). Direct/standalone callers (e.g. tests) must source it first.
 materialize_secrets() {
-    local lib="$dir/bin/lib/vault.sh"
+    local lib="$dir/bin/lib/vault.sh" provider
     if [[ ! -f "$lib" ]]; then
         log_warning "Skipping secret materialization (bin/lib/vault.sh missing)"
         return 0
     fi
-    # A machine with no vault yet must still be able to bootstrap: skip rather
-    # than abort, or `dots sync` can never reach the steps that install and
-    # provision one. A vault that IS set up and fails is a real error.
-    if ! vault_provisioned; then
-        log_warning "Skipping secret materialization (no vault provisioned — run bin/vault-provision)"
+    if ! provider="$(vault_resolve)"; then
+        log_error "Failed to resolve a vault provider (continuing — will report at end)"
+        SYNC_FAILURES+=("vault-secrets")
+        return 0
+    fi
+    if [[ "$provider" == unconfigured ]]; then
+        log_warning "Skipping secret materialization (no vault configured; set DOTFILES_VAULT_PROVIDER in .env, then set DOTFILES_OP_ITEM or run bin/vault-provision)"
         return 0
     fi
     log_info "Materializing vault secrets..."
-    if ! DOTFILES_DIR="$dir" vault_materialize; then
+    if ! DOTFILES_DIR="$dir" vault_materialize "$provider"; then
         log_error "Failed to materialize vault secrets (continuing — will report at end)"
         SYNC_FAILURES+=("vault-secrets")
     fi

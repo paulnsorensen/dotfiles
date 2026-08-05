@@ -6,6 +6,7 @@
 # Integration tests run the full script against a fake dotfiles directory.
 
 load test_helper
+bats_require_minimum_version 1.5.0
 
 export SYNC_SCRIPT="$REAL_DOTFILES_DIR/.sync"
 
@@ -105,6 +106,51 @@ teardown() {
     teardown_test_env
 }
 
+assert_explicit_provider_package_handoff() {
+    local provider="$1" expected="$2"
+    cd "$FAKE_DOTFILES" || return
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    mkdir -p "$FAKE_DOTFILES/bin/lib"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$FAKE_DOTFILES/bin/lib/vault.sh"
+    cat >> "$FAKE_DOTFILES/bin/lib/vault.sh" <<'MOCK'
+vault_materialize() { :; }
+MOCK
+    rm -f "$FAKE_DOTFILES/packages/sync.sh"
+    cat > "$FAKE_DOTFILES/packages/sync.sh" <<'MOCK'
+#!/bin/bash
+printf 'BITWARDEN_DISABLED=%s\n' "${BITWARDEN_DISABLED:-unset}" > "$PACKAGE_HANDOFF_LOG"
+MOCK
+    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+    export PACKAGE_HANDOFF_LOG="$HOME/package-handoff.log"
+
+    rm -f "$MOCK_BIN/op" "$MOCK_BIN/bws" "$MOCK_BIN/security"
+    case "$provider" in
+        onepassword)
+            printf 'DOTFILES_VAULT_PROVIDER=onepassword\nDOTFILES_OP_ITEM=op://Employee/dotfiles\n' > "$FAKE_DOTFILES/.env"
+            cat > "$MOCK_BIN/op" <<'MOCK'
+#!/bin/bash
+[[ "$*" == "item get dotfiles --vault Employee --format json" ]]
+MOCK
+            printf '#!/bin/bash\nexit 1\n' > "$MOCK_BIN/bws"
+            ;;
+        bitwarden)
+            printf 'DOTFILES_VAULT_PROVIDER=bitwarden\nBWS_PROJECT_ID=project-active\n' > "$FAKE_DOTFILES/.env"
+            printf '#!/bin/bash\nexit 1\n' > "$MOCK_BIN/op"
+            printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/bws"
+            printf '#!/bin/bash\nprintf "test-token\\n"\n' > "$MOCK_BIN/security"
+            ;;
+    esac
+    chmod +x "$MOCK_BIN/op" "$MOCK_BIN/bws"
+    [[ ! -e "$MOCK_BIN/security" ]] || chmod +x "$MOCK_BIN/security"
+
+    run bash "$SYNC_SCRIPT"
+
+    assert_success
+    run cat "$PACKAGE_HANDOFF_LOG"
+    assert_success
+    [[ "$output" == "BITWARDEN_DISABLED=$expected" ]]
+}
+
 
 @test "record_sync_time writes timestamp" {
     run call-sync-fn record_sync_time
@@ -119,9 +165,82 @@ teardown() {
 @test "no args runs default sync" {
     cd "$FAKE_DOTFILES"
     printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    mkdir -p "$FAKE_DOTFILES/bin/lib"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$FAKE_DOTFILES/bin/lib/vault.sh"
+    for cmd in op bws; do
+        printf '#!/bin/bash\nexit 1\n' > "$MOCK_BIN/$cmd"
+        chmod +x "$MOCK_BIN/$cmd"
+    done
     run bash "$SYNC_SCRIPT"
     assert_success
     assert_output_contains "Sync completed successfully"
+    assert_output_contains "set DOTFILES_VAULT_PROVIDER in .env"
+    assert_output_contains "bin/vault-provision"
+}
+@test "invalid provider sync removes a stale vault cache before failing" {
+    cd "$FAKE_DOTFILES"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    printf 'DOTFILES_VAULT_PROVIDER=typo\n' > "$FAKE_DOTFILES/.env"
+    mkdir -p "$FAKE_DOTFILES/bin/lib" "$HOME/.cache/dotfiles"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$FAKE_DOTFILES/bin/lib/vault.sh"
+    local cache="$HOME/.cache/dotfiles/secrets.env"
+    printf '# vault-provider=onepassword\n# vault-source=op://Employee/dotfiles\nFOO_KEY=stale\n' > "$cache"
+
+    run bash "$SYNC_SCRIPT"
+
+    assert_failure
+    assert_output_contains "auto, onepassword, or bitwarden"
+    [ ! -e "$cache" ]
+}
+
+
+@test "active checkout resolver uses the exact configured item instead of stale inherited settings" {
+    cd "$FAKE_DOTFILES"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    printf 'DOTFILES_VAULT_PROVIDER=onepassword\nDOTFILES_OP_ITEM=op://Employee/dotfiles\n' > "$FAKE_DOTFILES/.env"
+    mkdir -p "$FAKE_DOTFILES/bin/lib"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$FAKE_DOTFILES/bin/lib/vault.sh"
+    cat >> "$FAKE_DOTFILES/bin/lib/vault.sh" <<'MOCK'
+vault_materialize() {
+    printf '%s\n' "$1" > "$HOME/materialize-provider"
+}
+MOCK
+    export OP_LOG="$HOME/op.log"
+    export BWS_LOG="$HOME/bws.log"
+    rm -f "$MOCK_BIN/op" "$MOCK_BIN/bws"
+    cat > "$MOCK_BIN/op" <<'MOCK'
+#!/bin/bash
+printf '%s\n' "$*" >> "$OP_LOG"
+[[ "$*" == "item get dotfiles --vault Employee --format json" ]]
+MOCK
+    cat > "$MOCK_BIN/bws" <<'MOCK'
+#!/bin/bash
+printf '%s\n' "$*" >> "$BWS_LOG"
+exit 65
+MOCK
+    chmod +x "$MOCK_BIN/op" "$MOCK_BIN/bws"
+
+    export DOTFILES_VAULT_PROVIDER=bitwarden
+    export DOTFILES_OP_ITEM=op://Private/dotfiles
+    export BWS_PROJECT_ID=project-stale
+    run bash "$SYNC_SCRIPT"
+
+    assert_success
+    run cat "$OP_LOG"
+    assert_success
+    [[ "$output" == "item get dotfiles --vault Employee --format json" ]]
+    [[ ! -e "$BWS_LOG" ]]
+    run cat "$HOME/materialize-provider"
+    assert_success
+    [[ "$output" == onepassword ]]
+}
+
+@test "sync exports the onepassword package policy handoff" {
+    assert_explicit_provider_package_handoff onepassword true
+}
+
+@test "sync exports the bitwarden package policy handoff" {
+    assert_explicit_provider_package_handoff bitwarden false
 }
 
 @test "dev argument sets DOTFILES_DEV=true" {

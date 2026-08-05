@@ -9,6 +9,10 @@ set -euo pipefail  # Fail fast on errors
 ########## Variables
 
 dir=$(pwd)
+if [[ -n "${DOTFILES_DIR:-}" && "$DOTFILES_DIR" != "$dir" ]]; then
+    unset DOTFILES_VAULT_PROVIDER DOTFILES_OP_ITEM BWS_PROJECT_ID
+fi
+export DOTFILES_DIR="$dir"
 olddir=~/.dotfiles.bak             # old dotfiles backup directory
 
 # State management
@@ -69,14 +73,20 @@ run_sync() {
     record_sync_time
     parse_sync_args "$@"
 
-    # Export ONEPASSWORD_PRESENT before packages/sync.sh runs so a 1Password
-    # machine's bws gate_unless suppresses installing the Bitwarden CLI.
+    # Export the package-policy decision before packages/sync.sh runs. Explicit
+    # provider intent wins; auto preserves the no-package-churn op-presence rule.
     if [[ -f "$dir/bin/lib/vault.sh" ]]; then
+        local vault_gate_status
         # shellcheck source=bin/lib/vault.sh
         source "$dir/bin/lib/vault.sh"
-        ONEPASSWORD_PRESENT=false
-        [[ "$(vault_detect 2>/dev/null)" == "onepassword" ]] && ONEPASSWORD_PRESENT=true
-        export ONEPASSWORD_PRESENT
+        BITWARDEN_DISABLED=false
+        if vault_disables_bitwarden_install; then
+            BITWARDEN_DISABLED=true
+        else
+            vault_gate_status=$?
+            (( vault_gate_status == 1 )) || return "$vault_gate_status"
+        fi
+        export BITWARDEN_DISABLED
     fi
 
     # Bootstrap yq (needed by packages/sync.sh to parse YAML)
