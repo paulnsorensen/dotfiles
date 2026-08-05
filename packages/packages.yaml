@@ -81,7 +81,7 @@ packages:
 
   # gh CLI extensions
   # renovate: datasource=github-releases depName=github/gh-stack
-  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.0.8" }
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
 
   # Cargo
   # renovate: datasource=crate depName=cargo-update
