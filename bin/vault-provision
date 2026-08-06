@@ -1,198 +1,375 @@
 #!/usr/bin/env bash
-# vault-provision — one-time setup of the Bitwarden Secrets Manager vault that
-# backs this machine's secrets. Stores the machine-account access token in the
-# macOS Keychain (Bitwarden's own documented pattern), creates the project,
-# pushes each secret named in secrets/secrets.env.tmpl, then materializes the
-# cache via bin/lib/vault.sh.
-#
-# Web-vault prerequisites (no CLI path exists for these):
-#   1. Enable Secrets Manager on the account
-#   2. Create a machine account
-#   3. Generate an access token for it
-#   4. Grant that machine account access to the project (after step "project"
-#      below creates it, or pre-create the project in the web vault)
-#
-# Usage:
-#   bin/vault-provision              # migrate: take values from the existing .env
-#   bin/vault-provision --interactive # prompt for each value (fresh machine)
+# Provision agent-secret service identities and their per-consumer credentials.
+# Secret values are captured only in memory and streamed to a privileged writer;
+# this command never prints them, creates a user cache, or writes a Linux token.
 set -euo pipefail
-set +x
 
-# Self-locate rather than trusting an inherited DOTFILES_DIR: this script
-# provisions the clone it lives in, and must work from a worktree. Exported so
-# the sourced vault.sh resolves the same tree.
-DOTFILES_DIR="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
-export DOTFILES_DIR
+DOTFILES_DIR="${DOTFILES_DIR:-$(cd -- "${BASH_SOURCE[0]%/*}/.." && pwd)}"
+DESTDIR="${DESTDIR:-}"
+DESTDIR="${DESTDIR%/}"
+SCRIPT_DIR="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd)"
 # shellcheck source=lib/vault.sh
-source "$DOTFILES_DIR/bin/lib/vault.sh"
+source "$SCRIPT_DIR/lib/vault.sh"
+vault_load_settings "$DOTFILES_DIR/.env"
 
-TMPL="$DOTFILES_DIR/secrets/secrets.env.tmpl"
-ENV_FILE="$DOTFILES_DIR/.env"
-PROJECT_NAME="${BWS_PROJECT_NAME:-dotfiles}"
-INTERACTIVE=""
+usage() {
+    cat >&2 <<'EOF'
+Usage: vault-provision [--request-user USER] [--operator-user USER]
 
-[[ "${1:-}" == "--interactive" ]] && INTERACTIVE=1
-
-die() { echo "vault-provision: $*" >&2; exit 1; }
-step() { echo; echo "==> $*"; }
-_provision_token_file() {
-    echo "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/bws-token"
+Resolve the configured vault provider and install service-owned credentials and
+policies for context7, tavily, todoist, and GitHub. Secret values are never
+printed, stored in a daily-user cache, or exposed to agent processes.
+EOF
 }
 
-_provision_token() {
-    local file mode token
-    if [[ "$(uname -s)" == Darwin ]]; then
-        token="$(security find-generic-password -w -s BWS_ACCESS_TOKEN -a "$USER" 2>/dev/null)" || return 1
-        if [[ -z "$token" ]]; then
-            echo "vault-provision: Bitwarden access token in Keychain is empty; run bin/vault-provision to replace it." >&2
+request_user="${SUDO_USER:-${USER:-}}"
+operator_user=root
+while (( $# > 0 )); do
+    case "$1" in
+        --request-user)
+            (( $# >= 2 )) || { usage; exit 2; }
+            request_user="$2"
+            shift 2
+            ;;
+        --operator-user)
+            (( $# >= 2 )) || { usage; exit 2; }
+            operator_user="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage >&1
+            exit 0
+            ;;
+        *)
+            echo "vault-provision: unknown argument '$1'." >&2
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+[[ -n "$request_user" && -n "$operator_user" ]] || {
+    echo "vault-provision: request and operator users are required." >&2
+    exit 2
+}
+[[ "$(id -u "$request_user")" != "$(id -u "$operator_user")" ]] || {
+    echo "vault-provision: request and operator users must be distinct." >&2
+    exit 2
+}
+
+provider="$(vault_resolve)" || exit $?
+[[ "$provider" != unconfigured ]] || {
+    echo "vault-provision: no vault provider is ready; configure .env or run the provider login first." >&2
+    exit 1
+}
+
+installer="$DOTFILES_DIR/bin/agent-secret-install"
+[[ -x "$installer" ]] || {
+    echo "vault-provision: missing executable $installer." >&2
+    exit 1
+}
+
+if [[ -z "$DESTDIR" && $EUID -ne 0 ]]; then
+    sudo_bin="$(type -P sudo || true)"
+    [[ -n "$sudo_bin" ]] || {
+        echo "vault-provision: root or sudo is required to install service-owned credentials." >&2
+        exit 1
+    }
+else
+    sudo_bin=""
+fi
+
+run_privileged() {
+    if [[ -n "$DESTDIR" || $EUID -eq 0 ]]; then
+        "$@"
+    else
+        "$sudo_bin" "$@"
+    fi
+}
+
+install_node_runtime() {
+    local source_npx="$1" source_bin source_root version destination target chown_path
+    local wrapper temporary
+    source_bin="${source_npx%/*}"
+    source_root="${source_bin%/bin}"
+    [[ -x "$source_bin/node" && -f "$source_root/lib/node_modules/npm/bin/npx-cli.js" ]] || {
+        echo "vault-provision: npx and node must come from one complete Node installation." >&2
+        return 1
+    }
+    version="$("$source_bin/node" --version)"
+    [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+        echo "vault-provision: node returned an invalid version '$version'." >&2
+        return 1
+    }
+    destination="/usr/local/libexec/dotfiles/node-${version#v}"
+    target="$DESTDIR$destination"
+    if [[ ! -x "$target/bin/node" || ! -f "$target/lib/node_modules/npm/bin/npx-cli.js" ]]; then
+        run_privileged /usr/bin/install -d -m 0755 "$target"
+        run_privileged /bin/cp -RL "$source_root/." "$target/"
+    fi
+    if [[ -z "$DESTDIR" ]]; then
+        for chown_path in /usr/bin/chown /usr/sbin/chown /bin/chown; do
+            [[ -x "$chown_path" ]] && break
+        done
+        [[ -x "$chown_path" ]] || {
+            echo "vault-provision: chown not found." >&2
             return 1
-        fi
-        printf '%s\n' "$token"
+        }
+        run_privileged "$chown_path" -hR 0:0 "$target"
+    fi
+    run_privileged /bin/chmod -R go-w "$target"
+
+    wrapper="$destination/bin/agent-secret-npx"
+    temporary="$(mktemp)"
+    printf '#!/bin/sh\nexec %s/bin/node %s/lib/node_modules/npm/bin/npx-cli.js \"$@\"\n' \
+        "$destination" "$destination" > "$temporary"
+    if [[ -n "$DESTDIR" ]]; then
+        /usr/bin/install -m 0755 "$temporary" "$DESTDIR$wrapper"
+    else
+        run_privileged /usr/bin/install -o root -g 0 -m 0755 "$temporary" "$wrapper"
+    fi
+    rm -f "$temporary"
+    NODE_RUNTIME_NPX="$wrapper"
+}
+
+install_github_runtime() {
+    local source="$1" destination=/usr/local/libexec/dotfiles/github-mcp-server
+    local target="$DESTDIR$destination"
+    [[ "$source" == /* && -x "$source" ]] || {
+        echo "vault-provision: github-mcp-server did not resolve to an executable absolute path." >&2
+        return 1
+    }
+    run_privileged /usr/bin/install -d -m 0755 "${target%/*}"
+    if [[ -n "$DESTDIR" ]]; then
+        /usr/bin/install -m 0755 "$source" "$target"
+    else
+        run_privileged /usr/bin/install -o root -g 0 -m 0755 "$source" "$target"
+    fi
+    GITHUB_MCP_RUNTIME="$destination"
+}
+
+write_privileged_value() {
+    local value="$1" path="$2"
+    # tee receives the value on stdin; it is never an argument, log line, or
+    # environment variable of the installer/broker.
+    if [[ -n "$DESTDIR" || $EUID -eq 0 ]]; then
+        printf '%s\n' "$value" | /usr/bin/tee "$path" >/dev/null
+        /bin/chmod 600 "$path"
+    else
+        printf '%s\n' "$value" | "$sudo_bin" /usr/bin/tee "$path" >/dev/null
+        "$sudo_bin" /bin/chmod 600 "$path"
+    fi
+}
+
+ensure_bitwarden_value() {
+    local key="$1" project_id token value
+    if value="$(vault_secret_value bitwarden "$key" 2>/dev/null)"; then
+        VAULT_PROVISION_VALUE="$value"
         return 0
     fi
-
-    file="$(_provision_token_file)"
-    [[ -f "$file" ]] || return 1
-    mode="$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file" 2>/dev/null)"
-    [[ "$mode" == 600 ]] || return 1
-    token="$(<"$file")"
-    [[ -n "$token" ]] || return 1
-    printf '%s\n' "$token"
+    token="$(_vault_token)" || return 1
+    project_id="$(_vault_project_id)" || return 1
+    printf 'Enter %s (input hidden): ' "$key" >&2
+    IFS= read -r -s value
+    printf '\n' >&2
+    [[ -n "$value" ]] || {
+        echo "vault-provision: refusing an empty value for $key." >&2
+        return 1
+    }
+    # bws output is suppressed; the value is passed only to the provider CLI.
+    BWS_ACCESS_TOKEN="$token" bws secret create "$key" "$value" "$project_id" -o json >/dev/null
+    VAULT_PROVISION_VALUE="$value"
 }
 
-
-[[ -f "$TMPL" ]] || die "template not found: $TMPL"
-
-if vault_disables_bitwarden_install; then
-    die "Bitwarden provisioning is disabled for this machine.
-Configure the six fields on the 1Password item named by DOTFILES_OP_ITEM, then run:
-  source bin/lib/vault.sh && vault_materialize onepassword
-To provision Bitwarden instead, set DOTFILES_VAULT_PROVIDER=bitwarden in .env."
-else
-    provider_status=$?
-    (( provider_status == 1 )) || exit "$provider_status"
-fi
-
-command -v bws &>/dev/null || die "bws not found. Install it: cargo install bws --locked"
-
-# ─── access token → Keychain ────────────────────────────────────────────────
-
-step "Bitwarden access token"
-if _provision_token &>/dev/null; then
-    if [[ "$(uname -s)" == Darwin ]]; then
-        echo "A token is already in the Keychain."
+read_provider_value() {
+    local key="$1"
+    VAULT_PROVISION_VALUE=""
+    if [[ "$provider" == bitwarden ]]; then
+        ensure_bitwarden_value "$key"
     else
-        echo "A token is already at $(_provision_token_file)."
+        VAULT_PROVISION_VALUE="$(vault_secret_value "$provider" "$key")"
     fi
-    read -r -p "Replace it? [y/N] " reply
-    [[ "$reply" == [yY] ]] && store_token=1 || store_token=""
-else
-    store_token=1
-fi
+    [[ -n "$VAULT_PROVISION_VALUE" ]] || {
+        echo "vault-provision: provider returned an empty value for $key." >&2
+        return 1
+    }
+}
 
-if [[ -n "$store_token" ]]; then
-    read -r -s -p "Paste the machine-account access token: " token
-    echo
-    [[ -n "$token" ]] || die "empty token"
-    if [[ "$(uname -s)" == Darwin ]]; then
-        # -w with no value falls back to reading two lines (entry +
-        # confirmation) from stdin via readpassphrase(3) when no tty is
-        # attached, keeping the token out of argv (research:
-        # .cheese/research/secret-argv-exposure/secret-argv-exposure.md).
-        security add-generic-password -U -s BWS_ACCESS_TOKEN -a "$USER" -w <<EOF
-$token
-$token
-EOF
-        echo "Stored in Keychain (service BWS_ACCESS_TOKEN)."
+install_consumer() {
+    local consumer="$1" key="$2"
+    shift 2
+    local credential_path="/etc/dotfiles/agent-secret/credentials/${consumer}.credential"
+    local value
+    local pem_prefix='-----BEGIN '
+    local -a tool_flags=()
+    case "$consumer" in
+        context7)
+            tool_flags=(
+                --read-tool resolve-library-id
+                --read-tool query-docs
+            )
+            ;;
+        tavily)
+            tool_flags=(
+                --read-tool tavily_search
+                --read-tool tavily_extract
+            )
+            ;;
+        todoist)
+            tool_flags=(
+                --read-tool find-activity
+                --read-tool find-comments
+                --read-tool find-completed-tasks
+                --read-tool find-filters
+                --read-tool find-labels
+                --read-tool find-project-collaborators
+                --read-tool find-projects
+                --read-tool find-reminders
+                --read-tool find-sections
+                --read-tool find-tasks
+                --read-tool find-tasks-by-date
+                --read-tool get-overview
+                --read-tool get-productivity-stats
+                --read-tool get-project-activity-stats
+                --read-tool get-project-health
+                --read-tool get-workspace-insights
+                --read-tool analyze-project-health
+                --read-tool export-project-template
+                --read-tool fetch
+                --read-tool fetch-object
+                --read-tool list-workspaces
+                --read-tool search
+                --read-tool user-info
+                --read-tool view-attachment
+                --write-tool add-comments
+                --write-tool add-filters
+                --write-tool add-labels
+                --write-tool add-projects
+                --write-tool add-reminders
+                --write-tool add-sections
+                --write-tool add-tasks
+                --write-tool complete-tasks
+                --write-tool delete-object
+                --write-tool import-project-template
+                --write-tool manage-assignments
+                --write-tool project-management
+                --write-tool project-move
+                --write-tool reorder-objects
+                --write-tool reschedule-tasks
+                --write-tool uncomplete-tasks
+                --write-tool update-comments
+                --write-tool update-filters
+                --write-tool update-labels
+                --write-tool update-projects
+                --write-tool update-reminders
+                --write-tool update-sections
+                --write-tool update-tasks
+            )
+            ;;
+        github)
+            tool_flags=(
+                --read-tool get_commit
+                --read-tool get_file_contents
+                --read-tool issue_read
+                --read-tool list_branches
+                --read-tool list_commits
+                --read-tool list_issues
+                --read-tool list_pull_requests
+                --read-tool pull_request_read
+                --read-tool search_code
+                --read-tool search_issues
+                --read-tool search_pull_requests
+                --read-tool search_repositories
+                --write-tool add_issue_comment
+                --write-tool create_branch
+                --write-tool create_or_update_file
+                --write-tool create_pull_request
+                --write-tool issue_write
+                --write-tool push_files
+                --write-tool update_pull_request
+            )
+            ;;
+        *) echo "vault-provision: unsupported consumer '$consumer'." >&2; return 2 ;;
+    esac
+
+    read_provider_value "$key"
+    value="$VAULT_PROVISION_VALUE"
+    if [[ "$consumer" == github ]]; then
+        case "$value" in
+            "$pem_prefix"'RSA PRIVATE KEY-----'*|"$pem_prefix"'PRIVATE KEY-----'*) ;;
+            *)
+                echo "vault-provision: GITHUB_APP_PRIVATE_KEY is not a PEM private key." >&2
+                return 1
+                ;;
+        esac
+    fi
+    if [[ -n "$DESTDIR" ]]; then
+        /usr/bin/install -d -m 700 "$DESTDIR/etc/dotfiles/agent-secret/credentials"
     else
-        # Headless Linux has no keyring daemon; a 0600 file is the storage.
-        # Create it empty at 0600 BEFORE writing so the token is never briefly
-        # world-readable.
-        token_file="$(_provision_token_file)"
-        mkdir -p "$(dirname "$token_file")"
-        (umask 077; : > "$token_file")
-        chmod 600 "$token_file"
-        printf '%s\n' "$token" > "$token_file"
-        echo "Stored at $token_file (mode 600)."
+        run_privileged /usr/bin/install -d -o root -g 0 -m 700 \
+            /etc/dotfiles/agent-secret/credentials
     fi
-    unset token
-fi
+    write_privileged_value "$value" "$DESTDIR$credential_path"
 
-BWS_ACCESS_TOKEN="$(_provision_token)" || die "could not read the token back from its secure storage"
-export BWS_ACCESS_TOKEN
-
-# ─── project ────────────────────────────────────────────────────────────────
-
-step "Project '$PROJECT_NAME'"
-project_id="$(bws project list -o json 2>/dev/null \
-    | jq -r --arg n "$PROJECT_NAME" '.[] | select(.name == $n) | .id' | head -1)"
-
-if [[ -n "$project_id" ]]; then
-    echo "Reusing existing project: $project_id"
-else
-    project_id="$(bws project create "$PROJECT_NAME" -o json | jq -r '.id')"
-    [[ -n "$project_id" && "$project_id" != null ]] || die "project create failed"
-    echo "Created project: $project_id"
-    echo "NOTE: grant this machine account access to the project in the web vault,"
-    echo "      otherwise the secret writes below will fail."
-fi
-
-# ─── secrets ────────────────────────────────────────────────────────────────
-
-step "Pushing secrets"
-existing="$(bws secret list "$project_id" -o json 2>/dev/null || echo '[]')"
-
-# Values whose first character is '-' can misparse as a flag (bws issue seen on
-# 1.0.0). API keys starting with '-' are vanishingly rare; this warns rather
-# than silently mangling one.
-while IFS='=' read -r secret_key _; do
-    [[ -z "$secret_key" || "$secret_key" == \#* ]] && continue
-
-    if jq -e --arg k "$secret_key" '.[] | select(.key == $k)' <<<"$existing" >/dev/null 2>&1; then
-        echo "  $secret_key — already in vault, skipping"
-        continue
-    fi
-
-    if [[ -n "$INTERACTIVE" ]]; then
-        read -r -s -p "  $secret_key: " value; echo
+    local -a command=(
+        "$installer" install "$consumer"
+        --request-user "$request_user"
+        --operator-user "$operator_user"
+        --credential-env "$key"
+        --credential-file "$credential_path"
+        "${tool_flags[@]}"
+        -- "$@"
+    )
+    if [[ -n "$DESTDIR" ]]; then
+        DESTDIR="$DESTDIR" "${command[@]}"
     else
-        value="$(grep -m1 "^${secret_key}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
-        value="${value%\"}"; value="${value#\"}"
-        if [[ -z "$value" ]]; then
-            read -r -s -p "  $secret_key (not in .env): " value; echo
-        else
-            echo "  $secret_key — taken from .env"
-        fi
+        run_privileged "${command[@]}"
     fi
+    unset value VAULT_PROVISION_VALUE
+}
 
-    [[ -n "$value" ]] || die "no value for $secret_key"
-    [[ "$value" == -* ]] && echo "  WARNING: $secret_key starts with '-'; verify it stored correctly" >&2
-    # bws 2.1.0 has no stdin/file/env path for the secret VALUE (positional
-    # argv only) — an upstream limitation, not fixable here. The value is
-    # briefly visible in /proc/<pid>/cmdline during this call. See
-    # .cheese/research/secret-argv-exposure/secret-argv-exposure.md.
-    bws secret create "$secret_key" "$value" "$project_id" -o none
-    unset value
-done < "$TMPL"
+github_app_id="$(_vault_setting GITHUB_APP_ID "")"
+github_installation_id="$(_vault_setting GITHUB_APP_INSTALLATION_ID "")"
+[[ "$github_app_id" =~ ^[A-Za-z0-9_-]+$ ]] || {
+    echo "vault-provision: GITHUB_APP_ID must be set to an App ID or client ID." >&2
+    exit 1
+}
+[[ "$github_installation_id" =~ ^[0-9]+$ ]] || {
+    echo "vault-provision: GITHUB_APP_INSTALLATION_ID must be a numeric installation ID." >&2
+    exit 1
+}
+github_mcp_path="$(command -v github-mcp-server 2>/dev/null)" || {
+    echo "vault-provision: github-mcp-server is required; run dots sync first." >&2
+    exit 1
+}
+install_github_runtime "$github_mcp_path"
+github_mcp_path="$GITHUB_MCP_RUNTIME"
 
-# ─── record the project id ──────────────────────────────────────────────────
+npx_path="$(command -v npx 2>/dev/null)" || {
+    echo "vault-provision: npx is required to install local MCP consumers." >&2
+    exit 1
+}
+[[ "$npx_path" == /* ]] || {
+    echo "vault-provision: npx did not resolve to an absolute path." >&2
+    exit 1
+}
+install_node_runtime "$npx_path"
+npx_path="$NODE_RUNTIME_NPX"
+# renovate: datasource=npm depName=@upstash/context7-mcp
+install_consumer context7 CONTEXT7_API_KEY "$npx_path" -y @upstash/context7-mcp@3.2.5
+# renovate: datasource=npm depName=tavily-mcp
+install_consumer tavily TAVILY_API_KEY "$npx_path" -y tavily-mcp@0.2.22
+# renovate: datasource=npm depName=@doist/todoist-mcp
+install_consumer todoist TODOIST_API_KEY "$npx_path" -y @doist/todoist-mcp@12.5.0
+install_consumer github GITHUB_APP_PRIVATE_KEY "$github_mcp_path" stdio \
+    --app-id "$github_app_id" \
+    --app-installation-id "$github_installation_id" \
+    --toolsets repos,issues,pull_requests
 
-step "Recording BWS_PROJECT_ID in .env"
-if grep -q '^BWS_PROJECT_ID=' "$ENV_FILE" 2>/dev/null; then
-    tmp="$(mktemp)"
-    sed "s|^BWS_PROJECT_ID=.*|BWS_PROJECT_ID=$project_id|" "$ENV_FILE" > "$tmp"
-    cat "$tmp" > "$ENV_FILE"
-    rm -f "$tmp"
-else
-    printf 'BWS_PROJECT_ID=%s\n' "$project_id" >> "$ENV_FILE"
-fi
-export BWS_PROJECT_ID="$project_id"
-
-# ─── materialize + verify ───────────────────────────────────────────────────
-
-step "Materializing the secrets cache"
-vault_materialize bitwarden || die "materialize failed — the vault is provisioned but the cache was not written"
-echo "Cache written: $(vault_secrets_file)"
-
-step "Done. Now remove these lines from $ENV_FILE:"
-cut -d= -f1 "$TMPL" | grep -v '^#' | grep -v '^$' | sed 's/^/  /'
+# Record non-secret provider provenance for operators; policy files remain the
+# broker's exact schema and contain no provider values.
+metadata_path="/etc/dotfiles/agent-secret/provider.json"
+metadata="$(printf '{"provider":"%s","source":"%s"}\n' "$provider" "$(vault_source "$provider")")"
+write_privileged_value "$metadata" "$DESTDIR$metadata_path"
+unset metadata metadata_path provider request_user operator_user sudo_bin npx_path
+unset github_app_id github_installation_id github_mcp_path GITHUB_MCP_RUNTIME

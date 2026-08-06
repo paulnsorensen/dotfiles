@@ -350,20 +350,36 @@ EOF
         [[ "$(yq -r ".claude | has(\"$key\")" "$reg")" == "true" ]] \
             || { echo "claude.yaml missing section: $key" >&2; return 1; }
     done
-    # No plaintext secrets: every mcp env value must be a ${VAR} passthrough,
-    # except the named marker key TILTH_MCP_CWD_HOOK_INJECTED (tilth's "1"
-    # flag, which can never carry a secret) -- mirrors the named-allowlist
-    # exemption used for inject-cwd.js below.
-    run yq -r '.claude.mcps[].env // {} | to_entries[] | .["key"] + "=" + (.["value"]|tostring)' "$reg"
-    local line
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        [[ "$line" == "TILTH_MCP_CWD_HOOK_INJECTED=1" ]] && continue
-        local val="${line#*=}"
-        # shellcheck disable=SC2016  # literal ${ } passthrough form, not expansion
-        [[ "$val" == '${'*'}' ]] || { echo "non-passthrough mcp env value: $line" >&2; return 1; }
-    done <<<"$output"
+    # Secret-bearing servers use the fixed local proxy and never carry
+    # credential placeholders or envFile entries.
+    local consumer
+    for consumer in context7 tavily github; do
+        [[ "$(yq -r ".claude.mcps.$consumer.command" "$reg")" == "agent-secret-proxy" ]] \
+            || { echo "claude MCP $consumer is not proxy-backed" >&2; return 1; }
+        [[ "$(yq -r ".claude.mcps.$consumer.args | join(\" \")" "$reg")" == "--socket /var/run/dotfiles-agent-secrets/$consumer.sock" ]] \
+            || { echo "claude MCP $consumer has the wrong proxy socket" >&2; return 1; }
+        [[ "$(yq -r ".claude.mcps.$consumer | has(\"env\")" "$reg")" == "false" ]] \
+            || { echo "claude MCP $consumer still carries an env block" >&2; return 1; }
+        [[ "$(yq -r ".claude.mcps.$consumer | has(\"envFile\")" "$reg")" == "false" ]] \
+            || { echo "claude MCP $consumer still carries envFile" >&2; return 1; }
+    done
+    local retired
+    for retired in \
+        CONTEXT7_API_KEY TAVILY_API_KEY TODOIST_API_KEY GITHUB_APP_PRIVATE_KEY \
+        SERPER_API_KEY GH_TOKEN GITHUB_PERSONAL_ACCESS_TOKEN; do
+        if grep -qF "$retired" "$reg"; then
+            echo "retired secret name remains in claude registry: $retired" >&2
+            return 1
+        fi
+    done
 }
+
+@test "claude registry: retained nonsecret MCP env marker is explicit" {
+    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+    command -v yq >/dev/null 2>&1 || skip "yq not installed"
+    [[ "$(yq -r '.claude.mcps.tilth.env.TILTH_MCP_CWD_HOOK_INJECTED' "$reg")" == "1" ]]
+}
+
 
 @test "claude registry: tilth cwd-inject hook uses \${HOME} braces, not \$HOME" {
     # The authored command must byte-match what `tilth install claude-code`
@@ -625,34 +641,41 @@ YAML
     fi
 }
 
-@test "copilot template emits literal \${VAR} placeholders, never resolved secrets" {
-    # MCP-secret-passthrough: the template emits the LITERAL ${CONTEXT7_API_KEY}
-    # / ${TAVILY_API_KEY} so Copilot expands them at launch — the secret stays
-    # in .env and never lands in ~/.copilot/mcp-config.json. Render with real
-    # secrets in the env and assert they do NOT appear in the output.
+@test "copilot template emits fixed secret proxies with no retired credentials" {
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
     local rendered
     rendered="$(CONTEXT7_API_KEY=ctx7-real-secret TAVILY_API_KEY=tav-real-secret \
+        TODOIST_API_KEY=todo-real-secret SERPER_API_KEY=serper-real-secret \
+        GH_TOKEN=gh-real-secret GITHUB_PERSONAL_ACCESS_TOKEN=pat-real-secret \
+        GITHUB_APP_PRIVATE_KEY=github-app-real-secret \
         chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
-    # Valid JSON.
     jq -e . <<<"$rendered" >/dev/null
-    # Literal placeholders present, both servers emitted unconditionally.
-    # SC2016: intentional literal — the rendered value IS the string ${VAR}.
-    # shellcheck disable=SC2016
-    [[ "$(jq -r '.mcpServers.context7.env.CONTEXT7_API_KEY' <<<"$rendered")" == '${CONTEXT7_API_KEY}' ]]
-    # shellcheck disable=SC2016
-    [[ "$(jq -r '.mcpServers.tavily.env.TAVILY_API_KEY' <<<"$rendered")" == '${TAVILY_API_KEY}' ]]
-    # No resolved secret leaked onto disk.
-    if grep -qE 'ctx7-real-secret|tav-real-secret' <<<"$rendered"; then
-        echo "copilot template leaked a resolved secret into the rendered config" >&2
-        return 1
-    fi
-    # The removed unset-var guard branch must be gone.
-    if grep -q '"mcpServers": {}' "$tmpl"; then
-        echo "copilot template still carries the removed empty-stub guard" >&2
-        return 1
-    fi
+    for consumer in context7 tavily github; do
+        jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" <<<"$rendered"
+        jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" <<<"$rendered"
+        jq -e "(.mcpServers.$consumer | has(\"env\") | not)" <<<"$rendered"
+        jq -e "(.mcpServers.$consumer | has(\"envFile\") | not)" <<<"$rendered"
+    done
+    local retired
+    for retired in \
+        CONTEXT7_API_KEY TAVILY_API_KEY TODOIST_API_KEY GITHUB_APP_PRIVATE_KEY \
+        SERPER_API_KEY GH_TOKEN GITHUB_PERSONAL_ACCESS_TOKEN; do
+        if grep -qF "$retired" <<<"$rendered"; then
+            echo "retired secret name remains in Copilot config: $retired" >&2
+            return 1
+        fi
+    done
+    local value
+    for value in \
+        ctx7-real-secret tav-real-secret todo-real-secret github-app-real-secret \
+        serper-real-secret gh-real-secret pat-real-secret; do
+        if grep -qF "$value" <<<"$rendered"; then
+            echo "secret value leaked into Copilot config: $value" >&2
+            return 1
+        fi
+    done
 }
+
 
 
 @test "copilot sensitive-file-guard source files exist" {
@@ -789,9 +812,10 @@ SCRIPT
     chmod +x "$npm_bin/npm"
     PATH="$npm_bin:$PATH"
 
-    # Templated dotfiles need [data] for .email and env vars for the
-    # copilot template's fail-fast guard. Bootstrap both before .sync runs
-    # so chezmoi apply renders cleanly.
+    # The Copilot template is proxy-backed and needs no credential environment.
+    # Bootstrap the chezmoi data needed by the other templates before .sync.
+    # The generated MCP config remains valid with all retired credentials unset.
+
     mkdir -p "$HOME/.config/chezmoi"
     cat > "$HOME/.config/chezmoi/chezmoi.toml" <<TOML
 sourceDir = "$isolated_source"
@@ -800,8 +824,6 @@ sourceDir = "$isolated_source"
 email = "test@example.com"
 work = false
 TOML
-    export CONTEXT7_API_KEY="test-context7-key"
-    export TAVILY_API_KEY="test-tavily-key"
 
     run bash "$CHEZMOI_SYNC"
     assert_success
@@ -850,50 +872,59 @@ TOML
         return 1
     fi
 
-    # MCP-secret-passthrough: the copilot template renders the LITERAL ${VAR}
-    # placeholders, NOT the resolved keys — Copilot expands them at launch, so
-    # the secret stays in .env and never lands in this file on disk.
+    # Fixed proxy arguments are the only secret-bearing MCP configuration.
     assert_file_exists "$HOME/.copilot/mcp-config.json"
-    # SC2016: the single quotes are intentional — we assert the LITERAL ${VAR}
-    # placeholder text is present, not its expansion.
-    # shellcheck disable=SC2016
-    grep -qF '"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"' "$HOME/.copilot/mcp-config.json"
-    # shellcheck disable=SC2016
-    grep -qF '"TAVILY_API_KEY": "${TAVILY_API_KEY}"' "$HOME/.copilot/mcp-config.json"
-    # The supplied secret values must NOT be baked into the rendered file.
-    if grep -qE 'test-context7-key|test-tavily-key' "$HOME/.copilot/mcp-config.json"; then
-        echo "copilot mcp-config baked a resolved secret instead of a placeholder" >&2
-        return 1
-    fi
+    for consumer in context7 tavily github; do
+        jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" \
+            "$HOME/.copilot/mcp-config.json"
+        jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" \
+            "$HOME/.copilot/mcp-config.json"
+        jq -e "(.mcpServers.$consumer | has(\"env\") | not)" \
+            "$HOME/.copilot/mcp-config.json"
+        jq -e "(.mcpServers.$consumer | has(\"envFile\") | not)" \
+            "$HOME/.copilot/mcp-config.json"
+    done
+    local retired
+    for retired in \
+        CONTEXT7_API_KEY TAVILY_API_KEY TODOIST_API_KEY GITHUB_APP_PRIVATE_KEY \
+        SERPER_API_KEY GH_TOKEN GITHUB_PERSONAL_ACCESS_TOKEN; do
+        if grep -qF "$retired" "$HOME/.copilot/mcp-config.json"; then
+            echo "retired secret name remains in rendered Copilot config: $retired" >&2
+            return 1
+        fi
+    done
 }
 
-@test "copilot template emits servers with literal placeholders even when keys are unset" {
+@test "copilot template emits fixed proxies with all retired credentials unset" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    # MCP-secret-passthrough: because the env values are now runtime ${VAR}
-    # placeholders (Copilot expands them at launch), there is no apply-time key
-    # to resolve. The template therefore always emits the full server set —
-    # even on a fresh box with no .env yet — instead of the old warnf +
-    # empty-mcpServers stub. The MCPs simply won't work until .env is populated.
-    #
-    # Render the template in isolation (execute-template) rather than a full
-    # `chezmoi apply`: apply would run the whole chezmoi script suite (the
-    # ap-migration run_once, wholesale settings authorship, MCP reconcile)
-    # against the test HOME — this test pins the copilot template alone.
+    # Render in isolation: proxy-backed servers do not depend on any secret
+    # environment at apply time.
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
     local rendered
     rendered="$(env -u CONTEXT7_API_KEY -u TAVILY_API_KEY \
+        -u TODOIST_API_KEY -u GITHUB_APP_PRIVATE_KEY -u SERPER_API_KEY \
+        -u GH_TOKEN -u GITHUB_PERSONAL_ACCESS_TOKEN \
         chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
-    # Valid JSON; both keyed servers present with literal placeholders.
     jq -e . <<<"$rendered" >/dev/null
-    # SC2016: intentional literal — the rendered value IS the string ${VAR}.
-    # shellcheck disable=SC2016
-    [[ "$(jq -r '.mcpServers.context7.env.CONTEXT7_API_KEY' <<<"$rendered")" == '${CONTEXT7_API_KEY}' ]]
-    # shellcheck disable=SC2016
-    [[ "$(jq -r '.mcpServers.tavily.env.TAVILY_API_KEY' <<<"$rendered")" == '${TAVILY_API_KEY}' ]]
-    # No empty-mcpServers stub fallback.
+    for consumer in context7 tavily github; do
+        jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" <<<"$rendered"
+        jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" <<<"$rendered"
+        jq -e "(.mcpServers.$consumer | has(\"env\") | not)" <<<"$rendered"
+        jq -e "(.mcpServers.$consumer | has(\"envFile\") | not)" <<<"$rendered"
+    done
+    local retired
+    for retired in \
+        CONTEXT7_API_KEY TAVILY_API_KEY TODOIST_API_KEY GITHUB_APP_PRIVATE_KEY \
+        SERPER_API_KEY GH_TOKEN GITHUB_PERSONAL_ACCESS_TOKEN; do
+        if grep -qF "$retired" <<<"$rendered"; then
+            echo "retired secret name remains in Copilot template output: $retired" >&2
+            return 1
+        fi
+    done
     [[ "$(jq -r '.mcpServers | length' <<<"$rendered")" -ge 4 ]]
 }
+
 
 
 # ── claude settings.json repo-authoritative via modify_ ────────────────────

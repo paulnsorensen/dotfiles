@@ -973,36 +973,6 @@ install_tilth_claude_code() {
     fi
 }
 
-# Materialize the vault-backed secrets cache (bin/lib/vault.sh) before the
-# MCP reconcile bakes resolved ${VAR} values into ~/.claude.json. Reports
-# failure through SYNC_FAILURES (like sync_entry above) rather than
-# aborting run_sync, so a broken vault doesn't skip the reconcile/plugin
-# steps that follow or suppress the end-of-run failure summary.
-#
-# Assumes bin/lib/vault.sh is already sourced (run_sync sources it early for
-# package policy). Direct/standalone callers (e.g. tests) must source it first.
-materialize_secrets() {
-    local lib="$dir/bin/lib/vault.sh" provider
-    if [[ ! -f "$lib" ]]; then
-        log_warning "Skipping secret materialization (bin/lib/vault.sh missing)"
-        return 0
-    fi
-    if ! provider="$(vault_resolve)"; then
-        log_error "Failed to resolve a vault provider (continuing — will report at end)"
-        SYNC_FAILURES+=("vault-secrets")
-        return 0
-    fi
-    if [[ "$provider" == unconfigured ]]; then
-        log_warning "Skipping secret materialization (no vault configured; set DOTFILES_VAULT_PROVIDER in .env, then set DOTFILES_OP_ITEM or run bin/vault-provision)"
-        return 0
-    fi
-    log_info "Materializing vault secrets..."
-    if ! DOTFILES_DIR="$dir" vault_materialize "$provider"; then
-        log_error "Failed to materialize vault secrets (continuing — will report at end)"
-        SYNC_FAILURES+=("vault-secrets")
-    fi
-    return 0
-}
 
 # Re-reconcile user-scope claude MCPs as the FINAL write of every sync.
 #

@@ -65,10 +65,7 @@ mcp_load_dotenv "$DOTFILES_DIR/.env"
 
 # shellcheck source=../../bin/lib/vault.sh
 source "$DOTFILES_DIR/bin/lib/vault.sh"
-VAULT_SECRETS_FILE="$(vault_secrets_file)"
-[[ -r "$VAULT_SECRETS_FILE" ]] \
-    || { echo -e "${RED}Error: vault secrets cache unreadable: $VAULT_SECRETS_FILE (run 'dots sync' to materialize it)${NC}" >&2; exit 1; }
-mcp_load_dotenv "$VAULT_SECRETS_FILE"
+vault_unset_retired_secrets
 
 for cmd in yq jq chezmoi; do
     command -v "$cmd" &>/dev/null \

@@ -1,117 +1,91 @@
-# MCP secret handling — `${VAR}` passthrough per harness
+# MCP secret handling — local per-consumer brokers
 
-## Why secrets are NOT baked at ingest
+Managed MCP credentials never enter the daily user's environment or harness
+configuration. Every managed Context7, Tavily, Todoist, and GitHub registration
+launches `agent-secret-proxy` with one fixed UNIX-socket path. A separate system
+service owns the reusable credential and enforces the consumer's MCP tool
+ceiling.
 
-`ap` carries MCP `env` values as the **literal `${VAR}`** from ingest all the
-way to each renderer, instead of resolving the secret at sync time. The goal:
-keep real API keys out of the rendered config files on disk
-(`~/.claude.json`, `~/.cursor/mcp.json`, `~/.config/opencode/opencode.json`,
-`~/.copilot/mcp-config.json`). Each harness expands the placeholder itself at
-launch from its process env. The secret *values* now come from the vault cache
-(`$XDG_CACHE_HOME/dotfiles/secrets.env`, materialized from 1Password/Bitwarden
-by `bin/lib/vault.sh` — see AGENTS.md), which `zsh/core.zsh` sources alongside
-`.env` on shell init (cache wins on collision); `.env` itself now holds only
-non-secret toggles. So shell-launched CLIs still inherit the vars, just from
-the cache rather than `.env`.
+## Trust boundary
 
-Before this change, `ingest._expand_mcps` called `resolve_item_env`, so every
-renderer received the resolved secret and wrote it to disk — the keys sat in
-plaintext.
+- The **daily user** launches harnesses and is assumed adversarial.
+- Each **broker service identity** owns one upstream consumer and no other
+  credential.
+- The **operator identity** is distinct from the daily user and alone can open
+  the control socket used for mutation approval.
+- Root and the OS service manager remain trusted.
 
-## The ingest split: validate without substituting
+The installer creates separate request and control sockets with mode `0600` and
+different owners. The broker binds both sockets as root, then permanently drops
+to the service identity before accepting traffic
+(`scripts/agent-secret-broker.py`, `Broker.start`).
 
-`ingest.py:_expand_mcps` decouples **validation** from **substitution**:
+## Credential lifecycle
 
-- `optional` MCP with an unset `${VAR}` → dropped non-fatally (protects against
-  rendering a server whose credential the user definitely lacks).
-- non-`optional` MCP with an unset `${VAR}` → **fails loud** at ingest (catches
-  a typo'd var name) — but WITHOUT substituting the value.
-- otherwise → the item is appended with its env block **untouched** (the literal
-  `${VAR}` rides through).
+`bin/vault-provision` is the only vault-reading operator path. It resolves the
+configured 1Password or Bitwarden provider, reads only the four managed runtime
+fields, and writes each value to a distinct root-owned mode-`0600` credential
+file. `bin/agent-secret-install` installs the matching root-owned policy and
+service definition. GitHub uses a repository-scoped App installation: its
+non-secret App and installation IDs are fixed upstream arguments, while only
+the App private key enters the GitHub service environment.
 
-The fail-loud has a real blast radius on **claude**: an unset referenced var
-with no default makes Claude fail to parse the *entire* `~/.claude.json`, so
-every MCP dies. The `optional`-drop is what prevents this for credential-gated
-servers (e.g. `todoist` without `TODOIST_API_KEY`). context7/tavily are
-non-optional, so a fresh box with no `.env` will fail the base-profile render
-until the keys are populated — intended, not a bug.
+The provisioner snapshots the selected Node runtime and official
+`github-mcp-server` binary into root-owned, non-writable service runtimes and
+pins exact npm MCP package versions. This prevents the daily user or a package
+manager from replacing an upstream executable after provisioning.
 
-## Per-harness placeholder syntax (they diverge)
+`.env` contains non-secret settings only. `zsh/core.zsh`, `bin/cc-env-exec`,
+`bin/dots`, and `agents/mcp/sync.sh` clear the retired credential names before
+launching a child. They also remove the obsolete
+`$XDG_CACHE_HOME/dotfiles/secrets.env` file.
 
-The hard part: the `${VAR}` runtime-expansion syntax is **not** uniform.
+## Operator workflow
 
-| Harness | Expands at runtime? | Placeholder emitted | Where written |
-|---|---|---|---|
-| **claude** | yes | `${VAR}` (literal) | `claude mcp add -e K='${VAR}'` (user scope) / plugin `.mcp.json` |
-| **codex** | n/a — inherits shell env | — (scrubbed) | `~/.codex/config.toml` |
-| **opencode** | yes | `{env:VAR}` | `opencode.json` `mcp.*.environment` |
-| **cursor** | yes, but GUI-launched | `envFile` → abs `.env`/cache | `~/.cursor/mcp.json` |
-| **copilot** | yes (fragile) | `${VAR}` (literal) | chezmoi template, NOT the `ap` renderer |
+1. Install packages with `dots sync`. Put `GITHUB_APP_ID` and
+   `GITHUB_APP_INSTALLATION_ID` in `.env`, and put
+   `GITHUB_APP_PRIVATE_KEY` plus the three provider API keys in the selected
+   vault source.
+2. Run `bin/vault-provision --request-user <daily-user> --operator-user
+   <separate-operator>` from an authenticated operator session. Reprovisioning
+   replaces the root-owned snapshots and restarts every Linux or macOS broker.
+3. When an agent receives a pending write, inspect it as the operator with
+   `/usr/local/libexec/dotfiles/agent-secretctl --consumer <name> pending`.
+4. Approve only the matching request with
+   `/usr/local/libexec/dotfiles/agent-secretctl --consumer <name> approve
+   --nonce <nonce>`. Any argument change, replay, or 60-second expiry fails
+   closed.
 
-### claude — literal passthrough, no code change
+## MCP enforcement
 
-`_register_user_mcps` / `mcp_server_entry` already pass `entry["env"]` through;
-with the literal flowing in, the CLI stores `${VAR}` verbatim and Claude expands
-it at launch. Empirically verified: `claude mcp add probe -e PROBE_KEY='${FAKE}'`
-stores `"${FAKE}"` literally.
+The broker exposes only policy-listed tools from `tools/list`. A read call is
+forwarded without interaction. A write call first returns a pending nonce and
+canonical argument digest; it is forwarded only after `agent-secretctl` submits
+an approval matching consumer, tool, canonical arguments, nonce, and expiry.
+Approvals expire after 60 seconds and are consumed once.
 
-### codex — scrub-by-keyname, unchanged
+The GitHub policy exposes bounded repository, issue, and pull-request tools.
+App installation scope and permissions provide the provider-side ceiling;
+broker approval is still required for every GitHub mutation.
 
-`codex.py`'s `_inherited_env_keys` drops any env key present in the layered
-env — `$DOTFILES_DIR/.env` **plus** the vault cache, via `load_layered_env`
-(`AP_CODEX_INHERIT_ENV=0` disables the scrub, baking every value) — from the
-rendered TOML (zsh already exports them; codex is terminal-launched so its MCP
-children inherit at runtime). The registry shape is `KEY: "${KEY}"` (key ==
-varname), so the scrub stays correct regardless of whether the value is the literal `${VAR}`
-or a resolved secret. Neither the placeholder nor a secret lands in
-`config.toml`.
+The upstream process receives a fresh minimal environment containing only
+`HOME`, `PATH`, `NO_COLOR`, and that consumer's one credential variable.
+Responses and errors are recursively redacted before they cross the request
+socket.
 
-### opencode — rewrite `${VAR}` → `{env:VAR}`
+Unknown tools, changed arguments, missing nonces, expired approvals, replayed
+approvals, unsafe policy files, and user-writable upstream executables all fail
+closed.
 
-opencode does **not** understand `${VAR}` — it passes it through verbatim and
-breaks (unset → silent empty string). `opencode._to_opencode_env` rewrites every
-`${VAR}` occurrence to opencode's own `{env:VAR}` token; plain literals (e.g.
-`SERENA_MUX_HARNESS`, a render-time per-harness value, not a secret) pass
-through untouched.
+## Managed configuration surfaces
 
-### cursor — drop `${VAR}`, add `envFile`
+The fixed proxy command is canonical in `agents/mcp/registry.yaml` and is
+mirrored by `profiles/*/profile.yaml`,
+`chezmoi/.chezmoidata/claude.yaml`,
+`chezmoi/dot_omp/private_agent/mcp.json`, and
+`chezmoi/private_dot_copilot/mcp-config.json.tmpl`. No managed entry has an
+`env` or `envFile` credential delivery channel.
 
-Cursor's `${env:VAR}` resolves against Cursor's *process* env, but a Finder/Dock
-launch inherits **no** shell `.env`. So `_cursor_mcp_entry` splits env into
-`${VAR}`-referencing entries vs plain literals: literals stay in `env`; if any
-`${VAR}`-ref existed, the entry drops those keys and gains an `envFile` field
-(stdio servers only — all ours are stdio). `_env_file_for_keys` picks that
-single path per server: the vault cache (`secrets.env`) for keys the vault has
-taken over, otherwise `${DOTFILES_DIR}/.env` (`os.path.expandvars`, `~/Dev/dotfiles`
-fallback — the `discover.py` pattern). A server whose keys split across both
-sources can't be one `envFile`, so it fails loud rather than losing half its
-credentials.
-A machine-specific absolute path in user config is acceptable — same precedent as the marketplace path in
-`claude.py`'s `_merge_root_settings`.
-
-### copilot — chezmoi template, not the renderer
-
-copilot is **excluded** from the `ap` MCP default membership
-(`_COPILOT_MCP_DEFAULT = (claude, codex)`), so the `ap` copilot renderer writes
-nothing for context7/tavily. The live `~/.copilot/mcp-config.json` is written by
-the chezmoi template `private_dot_copilot/mcp-config.json.tmpl`, which emits the
-literal `${CONTEXT7_API_KEY}` / `${TAVILY_API_KEY}` and always emits the servers
-(the old unset-var warnf + empty-`mcpServers` stub branch is gone — there is no
-apply-time key to resolve now). Copilot's `${VAR}` expansion regressed in CLI
-v0.0.407 (gh#1403) and is thinly documented — if env passthrough breaks on a CLI
-upgrade, that template is where to revisit.
-
-## What was intentionally left alone
-
-- **codex stays on scrub** (already clean — never wrote secrets in the
-  shell-inherited common case).
-- **`overlay.py` (isolated-launch path)** still resolves `${VAR}` to the secret
-  in its **ephemeral** scratch `.mcp.json` — that file is passed directly to the
-  launched `claude` via `--mcp-config` and discarded, never a persistent config.
-  This is `ccp` parity (the retired `gen-profile-mcp.sh` resolved too).
-- **Legacy bash `agents/mcp/lib.sh`** (`mcp_cursor_add` et al.) still bakes
-  secrets at sync time, but that native-CLI path no longer runs on `dots sync`
-  (superseded by the `ap` renderers). Dormant; not in scope.
-
-See also [[agent-profile]] for the renderer architecture, [[cursor]],
-[[opencode]], [[copilot]] for the per-harness config surfaces.
+See [[agent-secret-isolation-001]], [[agent-secret-isolation-002]], and
+[[agent-secret-isolation-003]] for the accepted identity, firewall, and approval
+decisions.

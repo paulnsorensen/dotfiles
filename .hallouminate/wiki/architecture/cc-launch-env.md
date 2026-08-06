@@ -1,54 +1,46 @@
-# cc launch-time env loading — bin/cc-env-exec
+# cc launch-time environment — bin/cc-env-exec
 
-## Why a launch-time loader exists at all
+`bin/cc-env-exec` gives every new Claude/tmux launch the current non-secret
+machine settings while actively removing retired credential variables and the
+obsolete user credential cache.
 
-The `${VAR}` MCP secret passthrough ([[mcp-secret-handling]]) assumes the
-claude process inherits the secret keys from its environment — the vault cache
-(`secrets.env`) plus `.env`. Shell init
-(`zsh/core.zsh`) covers a freshly started interactive shell — but **not** the
-tmux path `_cc_base` uses: a `tmux new-session` command runs with the **tmux
-server's** environment, not the launching client's (verified empirically on
-tmux 3.6 — a client-exported var does not reach the new session). A server
-started before a key was added to `.env` therefore spawned claude without it,
-and one unset referenced `${VAR}` makes Claude fail to parse the entire
-`~/.claude.json`, killing every MCP.
+## Why a launch-time wrapper exists
 
-## The design: exec wrapper, not `tmux -e` (PR #282)
+A `tmux new-session` command runs with the tmux server's environment, not the
+launching client's. A long-lived server can therefore retain stale settings or
+credential variables after the source shell changes.
 
-`bin/cc-env-exec` sources `bin/lib/vault.sh`, then does a safe key=value parse
-(skip blanks/comments, split on first `=`, no command execution — same loop as
-`zsh/core.zsh`) over **both** `.env` and the vault cache (`secrets.env`, cache
-wins), exports the pairs, then `exec "$@"`. Unlike shell init it **fails loud**
-(exit 1) when the vault cache is unreadable — a headless launch must not run
-claude with half its credentials. `_cc_base` (`zsh/claude.zsh`) prepends it to the
-claude command on all three launch paths and degrades to plain `claude` when
-the wrapper is missing.
+`_cc_base` (`zsh/claude.zsh`) prepends `cc-env-exec` to the Claude command on
+all launch paths. The wrapper parses only the explicit non-secret allowlist from
+`.env`, clears every retired secret name, removes
+`$XDG_CACHE_HOME/dotfiles/secrets.env`, and then replaces itself with the target
+via `exec`.
 
-`tmux new-session -e K=V` (tmux ≥ 3.2) was tested, worked, and was
-**rejected in review**: it puts every secret in the tmux client's argv, which
-is `ps`-visible to other local users for the lifetime of the attached client
-(`/proc/<pid>/cmdline` is world-readable; env is owner-only — that asymmetry
-is the point). The wrapper keeps secrets on disk/env only and reads `.env` at
-actual process start, so it is also immune to a stale launching shell.
+The parser treats `.env` values as data and never sources the file. Unknown
+keys, including old credential assignments, are not exported.
 
-Side benefit: `cc-env-exec claude -p '...'` is the sanctioned headless/cron
-launcher — non-interactive contexts never source `zsh/core.zsh`.
+## Why secrets are not passed through tmux
 
-## Known limits
+The previous design considered both inherited environment values and
+`tmux new-session -e K=V`. Both leave reusable credentials reachable by the
+daily user; command-line arguments also make values visible through process
+inspection. Managed MCP credentials now stay behind the per-consumer broker
+described in [[mcp-secret-handling]].
 
-- `tmux new-session -A` attaching to an existing session keeps that session's
-  old environment; only newly created sessions pick up new keys. Kill the
-  session to refresh.
-- `cc`/`ccc`/`ccr` are interactive-zsh functions; bare `claude` invocations
-  bypass the wrapper. Use `cc-env-exec claude ...` in scripts.
+`cc-env-exec claude -p '...'` remains the sanctioned headless or cron launcher.
+Non-interactive contexts do not need to source `zsh/core.zsh`.
+
+## Known limit
+
+`tmux new-session -A` attaching to an existing session keeps that session's
+existing process tree. Newly started commands pass through the wrapper and are
+sanitized, but already-running descendants must be restarted.
 
 ## Gotcha: sensitive-file guard vs "`.env`" in text
 
-The Claude sensitive-file Bash guard substring-matches `.env` in the *command
-text*, so a `git commit -m` message or `gh pr create --title` that merely
-mentions `.env` is blocked. Route the text through a file instead:
-`git commit -F <file>`, `gh pr create --body-file <file>`, and keep the
-literal string out of titles.
+The Claude sensitive-file Bash guard substring-matches `.env` in command text,
+so a commit message or PR title that merely names the file may be blocked.
+Route such text through a file instead: `git commit -F <file>` and
+`gh pr create --body-file <file>`.
 
-Tests: `tests/cc-env.bats` (wrapper unit tests + zsh e2e with mocked
-tmux/claude, including the no-secret-in-argv assertions).
+Tests: `tests/cc-env.bats` and `tests/vault.bats`.

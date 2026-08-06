@@ -49,18 +49,30 @@ _Code_: packages/sync.sh:680-708 (`sync_native_harnesses`)
 _Avoid_: update bot
 _Code_: NEW ENTITY (.github/workflows/renovate.yml + renovate.json5)
 
-**Vault provider** — the secret backend selected by `vault_resolve` to materialize the provider-neutral cache.
+**Vault provider** — the secret backend selected by `vault_resolve` for the privileged credential-provisioning path.
 _Avoid_: vault CLI, detected executable
-_Code_: `bin/lib/vault.sh:234-371` (`vault_resolve`, `_vault_resolve_unlocked`)
+_Code_: `bin/lib/vault.sh` (`vault_resolve`, `_vault_resolve_unlocked`)
 
-**Vault source locator** — the non-secret, provider-specific identity of the item or project from which the six-key manifest is materialized.
+**Vault source locator** — the non-secret, provider-specific identity of the item or project from which the operator reads runtime credentials.
 _Avoid_: vault profile, source URI
-_Code_: `bin/lib/vault.sh:42-44` (`_vault_onepassword_item`); `bin/lib/vault.sh:443-448` (`_vault_project_id`)
+_Code_: `bin/lib/vault.sh` (`_vault_onepassword_item`, `_vault_project_id`)
 
-**Cache provenance** — non-secret comments in the shared cache that identify its provider and source locator, allowing a source change to invalidate stale credentials before a fetch.
-_Avoid_: cache owner, cache backend
-_Code_: `bin/lib/vault.sh:82-93` (`_vault_cache_matches`); `bin/lib/vault.sh:148-225` (cache reconciliation and invalidation)
+**Vault resolution lock** — the persistent mode-0600 advisory-lock inode that serializes provider readiness probes through `flock` on Linux or pathname-and-command `lockf` on macOS.
+_Avoid_: cache lock, PID lock, disposable lock file
+_Code_: `bin/lib/vault.sh` (`_vault_with_resolution_lock`, `vault_resolve`)
 
-**Cache transaction lock** — the persistent mode-0600 advisory-lock inode that serializes resolver and materializer cache transactions through `flock` on Linux or the pathname-and-command form of `lockf` on macOS.
-_Avoid_: PID lock, reaper lock, disposable lock file
-_Code_: `bin/lib/vault.sh:95-146` (`_vault_with_cache_lock`); `bin/lib/vault.sh:234-238`; `bin/lib/vault.sh:470-486`
+**Daily user** — the interactive OS account that launches managed harnesses and may be controlled by an adversarial agent.
+_Avoid_: agent identity, trusted user
+_Code_: `zsh/core.zsh` (retired credential names are removed before harness launch)
+
+**Broker service identity** — a dedicated system account that owns exactly one credentialed upstream MCP consumer.
+_Avoid_: vault user, proxy user
+_Code_: `bin/agent-secret-install`; `services/agent-secret/`
+
+**Operator identity** — a separate authenticated OS account allowed to approve one exact pending mutation through the broker control socket.
+_Avoid_: daily user, agent approver
+_Code_: `bin/agent-secretctl`
+
+**MCP firewall** — the broker enforcement point that filters the advertised and callable MCP tool surface and gates mutations without exposing credentials.
+_Avoid_: credential proxy, secret API
+_Code_: `scripts/agent-secret-broker.py`

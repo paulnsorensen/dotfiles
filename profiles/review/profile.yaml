@@ -40,7 +40,8 @@ mcps:
     command: tilth
     args: ["--mcp", "--edit"]
   - name: context7
-    command: npx
-    args: ["-y", "@upstash/context7-mcp"]
-    env:
-      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+    command: agent-secret-proxy
+    args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
+  - name: github
+    command: agent-secret-proxy
+    args: ["--socket", "/var/run/dotfiles-agent-secrets/github.sock"]
