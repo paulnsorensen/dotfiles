@@ -69,4 +69,4 @@ sources:
     signal: { type: gh_release, ref: can1357/oh-my-pi }
     docs: https://github.com/can1357/oh-my-pi
     governs: [chezmoi/.chezmoidata/omp.yaml, chezmoi/dot_omp/private_agent/modify_config.yml, packages/sync.sh]
-    reconciled: "v17.2.5"
+    reconciled: "v17.2.10"
