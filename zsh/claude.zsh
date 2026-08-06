@@ -272,13 +272,13 @@ ccw() {
             || { echo "ccw: not in a git repo — use ccw <repo>/<slug>" >&2; return 1; }
     fi
 
-    # Find ccw-init in DOTFILES_DIR or the target repo.
-    local ccw_init="${DOTFILES_DIR}/bin/ccw-init"
-    [[ -f "${ccw_init}" ]] || ccw_init="${repo_dir}/bin/ccw-init"
-    [[ -f "${ccw_init}" ]] || { echo "ccw-init not found" >&2; return 1; }
+    # Find wt in DOTFILES_DIR or the target repo.
+    local wt_bin="${DOTFILES_DIR}/bin/wt"
+    [[ -f "${wt_bin}" ]] || wt_bin="${repo_dir}/bin/wt"
+    [[ -f "${wt_bin}" ]] || { echo "wt not found" >&2; return 1; }
 
     local result
-    result="$(cd "${repo_dir}" && "${ccw_init}" "${slug}")" || return 1
+    result="$(cd "${repo_dir}" && "${wt_bin}" "${slug}")" || return 1
 
     local wt_path
     wt_path="$(echo "$result" | jq -er '.path')" || { echo "ccw: failed to parse worktree path" >&2; return 1; }
@@ -286,6 +286,15 @@ ccw() {
 
     cd "${wt_path}" && cc "$@"
 }
+
+# wt — create (or resume) a worktree without launching Claude (lives in bin/).
+#   wt <slug>     → branch off the current branch (default)
+#   wt -m <slug>  → same, explicit
+#   wt -o <slug>  → branch off origin/<default-branch> (fetches first)
+# Prints the {path, branch, base_sha, base_branch, created} JSON — same
+# machinery ccw() uses, minus the cd + claude launch.
+alias wto='wt -o'
+alias wtm='wt -m'
 
 # Clean worktrees — single-repo (current dir) or full sweep (~/Dev)
 ccw-clean() {

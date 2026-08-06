@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# worktree.sh — shared worktree helpers, sourced by bin/ccw-sweep and bin/ccw-find.
+# worktree.sh — shared worktree helpers, sourced by bin/ccw-sweep, bin/ccw-find, and bin/wt.
 #
 # Parallels the .sync <-> .sync-lib.sh "lib beside script" precedent, scoped to
 # bin/. Every consumer sources this via its own resolved dir; bats tests source
@@ -35,7 +35,7 @@ resolve_default_branch() {
 
 # wt_list_nested <wt_path> — emit nested child worktree paths one level under
 # <wt_path>/.worktrees/*. That is the only basis worktrees are created on:
-# ccw-init writes <repo>/.worktrees/<slug>, and ccw()'s nested picker
+# wt writes <repo>/.worktrees/<slug>, and ccw()'s nested picker
 # (zsh/claude.zsh) globs .worktrees/* (and .worktrees/*/.worktrees/*). Only
 # paths that are real git worktrees (have a .git entry) are emitted; one path
 # per line.

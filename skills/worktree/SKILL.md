@@ -2,7 +2,7 @@
 name: worktree
 model: haiku
 effort: low
-allowed-tools: Bash(ccw-init:*), Bash(cd:*)
+allowed-tools: Bash(wt:*), Bash(cd:*)
 description: >
   Create or resume an isolated git worktree for a Claude Code task, keeping main
   clean. Use when asked to "create a worktree", "resume a worktree", set up an
@@ -22,7 +22,8 @@ The task slug is provided as an argument. If none was given, ask the user for on
 ### 2. Run the helper
 
 ```bash
-ccw-init <slug>
+wt <slug>       # branch off the current branch (default)
+wt -o <slug>    # branch off origin/<default-branch> (fetches first)
 ```
 
 This single command handles everything:

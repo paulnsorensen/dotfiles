@@ -61,7 +61,7 @@ if git -C "$repo_root" show-ref --verify --quiet "refs/heads/${branch}"; then
     fi
 fi
 
-# Drop the symlinked Claude projects dir created by ccw-init, if present.
+# Drop the symlinked Claude projects dir created by wt, if present.
 wt_key="${wt_dir//[\/.]/-}"
 projects="${HOME}/.claude/projects/${wt_key}"
 if [[ -L "$projects" ]]; then
