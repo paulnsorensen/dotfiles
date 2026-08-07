@@ -34,16 +34,13 @@ _scaffold_lean_agents() {
         > "$HOME/local-llm/configs/lean-agents/agents/lean-coder.md"
 }
 
-setup() {
-    setup_test_env
-    export MOCK_BIN="$TEST_HOME/bin"
-    mkdir -p "$MOCK_BIN"
-
-    # Fake curl: distinguishes the /v1/models probe from a chat completion.
-    #   FAKE_PORT=up|down           — controls the /v1/models probe
-    #   FAKE_MODELS="a b c"         — model ids the /v1/models body lists
-    #   FAKE_COMPLETION=ok|empty|fail — controls the chat completion
-    #   FAKE_SERVED=<model>         — the `.model` the proxy "answered" with
+# Fake curl: distinguishes the /v1/models probe from a chat completion.
+#   FAKE_PORT=up|down           — controls the /v1/models probe
+#   FAKE_MODELS="a b c"         — model ids the /v1/models body lists
+#   FAKE_COMPLETION=ok|empty|fail — controls the chat completion
+#   FAKE_SERVED=<model>         — the `.model` the proxy "answered" with
+write_mock_curl() {
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << 'MOCK'
 #!/bin/bash
 args="$*"
@@ -70,14 +67,40 @@ fi
 exit 0
 MOCK
     chmod +x "$MOCK_BIN/curl"
+}
 
-    # Fake systemctl: FAKE_ACTIVE is a space-separated list of active units.
+# Fake systemctl: FAKE_ACTIVE is a space-separated list of active units.
+write_mock_systemctl() {
+    rm -f "$MOCK_BIN/systemctl"
     cat > "$MOCK_BIN/systemctl" << 'MOCK'
 #!/bin/bash
 unit="${!#}"   # last positional arg
 [[ " ${FAKE_ACTIVE:-} " == *" $unit "* ]] && exit 0 || exit 3
 MOCK
     chmod +x "$MOCK_BIN/systemctl"
+}
+
+setup_file() {
+    export MOCK_BIN="$BATS_FILE_TMPDIR/local-llm-mocks"
+    mkdir -p "$MOCK_BIN"
+    write_mock_curl
+    write_mock_systemctl
+}
+
+setup() {
+    setup_test_env
+    export MOCK_BIN="$TEST_HOME/bin"
+    mkdir -p "$MOCK_BIN"
+
+    # Symlink the mocks generated once in setup_file(). Measurements showed a
+    # first-exec delay for fresh script inodes. Symlinking reuses the target inode
+    # and improved timings; the mechanism is unspecified. Test bodies with bespoke
+    # curl/opencode/tar/uname mocks rm -f the symlink before writing so they never
+    # truncate the shared master.
+    local f
+    for f in "$BATS_FILE_TMPDIR/local-llm-mocks/"*; do
+        ln -s "$f" "$MOCK_BIN/$(basename "$f")"
+    done
 
     _scaffold_lean_agents
     export PATH="$MOCK_BIN:$PATH"
@@ -439,6 +462,7 @@ teardown() {
 }
 
 @test "install-llama-swap downloads the pinned release, installs binary, stamps version" {
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << 'MOCK'
 #!/bin/bash
 out=""; url=""
@@ -495,6 +519,7 @@ MOCK
     echo "$LLAMA_SWAP_VERSION" > "$LLAMA_SWAP_BIN_DIR/llama-swap.version"
 
     # Poison curl: any download attempt fails loudly.
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << 'MOCK'
 #!/bin/bash
 exit 99
@@ -637,6 +662,7 @@ MOCK
     chmod +x "$MOCK_BIN/opencode"
 
     local llm_up_log="$TEST_HOME/llm-up-called"
+    rm -f "$MOCK_BIN/systemctl"
     cat > "$MOCK_BIN/systemctl" << 'MOCK'
 #!/bin/bash
 echo "$*" >> "${LLM_UP_LOG:?}"
@@ -659,6 +685,7 @@ MOCK
 
     local llm_up_log="$TEST_HOME/llm-up.log"
     # systemctl mock: log calls, succeeds
+    rm -f "$MOCK_BIN/systemctl"
     cat > "$MOCK_BIN/systemctl" << 'MOCK'
 #!/bin/bash
 echo "$*" >> "${LLM_UP_LOG:?}"
@@ -667,6 +694,7 @@ MOCK
     chmod +x "$MOCK_BIN/systemctl"
 
     # curl mock: port starts down, comes up after first probe
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << 'MOCK'
 #!/bin/bash
 count_file="${CURL_COUNT_FILE:?}"
@@ -700,6 +728,7 @@ exit 0
 MOCK
     chmod +x "$MOCK_BIN/opencode"
 
+    rm -f "$MOCK_BIN/systemctl"
     cat > "$MOCK_BIN/systemctl" << 'MOCK'
 #!/bin/bash
 exit 0
@@ -707,6 +736,7 @@ MOCK
     chmod +x "$MOCK_BIN/systemctl"
 
     # curl always returns down -- stack never comes up
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << 'MOCK'
 #!/bin/bash
 [[ "$*" == */v1/models* ]] && exit 7
@@ -762,6 +792,7 @@ MOCK
     # (incl. the -d JSON body) so we can assert the warm-up call shape after it
     # lands (it is backgrounded).
     local warm_log="$TEST_HOME/warm.log"
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << MOCK
 #!/bin/bash
 if [[ "\$*" == *chat/completions* ]]; then
@@ -797,6 +828,7 @@ MOCK
     chmod +x "$MOCK_BIN/opencode"
 
     local warm_log="$TEST_HOME/warm.log"
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << MOCK
 #!/bin/bash
 if [[ "\$*" == *chat/completions* ]]; then
@@ -827,6 +859,7 @@ MOCK
     # chat/completions sleeps 10s; if the function blocked on it, opencode-lean
     # would take >10s. The probe stays fast so only the warm-up could stall.
     local warm_done="$TEST_HOME/warm-done"
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << MOCK
 #!/bin/bash
 [[ "\$*" == *chat/completions* ]] && { sleep 10; echo done > "$warm_done"; }
@@ -857,6 +890,7 @@ MOCK
     chmod +x "$MOCK_BIN/opencode"
 
     local warm_log="$TEST_HOME/warm.log"
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << MOCK
 #!/bin/bash
 if [[ "\$*" == *chat/completions* ]]; then
@@ -892,6 +926,7 @@ MOCK
     chmod +x "$MOCK_BIN/opencode"
 
     local warm_log="$TEST_HOME/warm.log"
+    rm -f "$MOCK_BIN/curl"
     cat > "$MOCK_BIN/curl" << MOCK
 #!/bin/bash
 if [[ "\$*" == *chat/completions* ]]; then

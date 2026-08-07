@@ -19,17 +19,36 @@ HOOK_SH="$REAL_DOTFILES_DIR/agents/hooks/tool-reroute.sh"
 HOOK_JS="$REAL_DOTFILES_DIR/agents/lib/tool-reroute.js"
 MOD_DIR="$REAL_DOTFILES_DIR/agents/lib/tool-reroute"
 
+setup_file() {
+    export GUARD_MASTER="$BATS_FILE_TMPDIR/guard-mocks"
+    mkdir -p "$GUARD_MASTER/hooks" "$GUARD_MASTER/lib/tool-reroute"
+    cp "$HOOK_SH" "$GUARD_MASTER/hooks/tool-reroute.sh"
+    cp "$HOOK_JS" "$GUARD_MASTER/lib/tool-reroute.js"
+    cp "$MOD_DIR"/*.js "$GUARD_MASTER/lib/tool-reroute/"
+    chmod +x "$GUARD_MASTER/hooks/tool-reroute.sh"
+}
+
+# Symlink the setup_file-built master into a deploy root. Measurements showed
+# a first-exec delay for fresh script inodes. Symlinking reuses the target inode
+# and improved timings; the mechanism is unspecified.
+deploy_reroute() {
+    local root="$1"
+    mkdir -p "$root/hooks" "$root/lib/tool-reroute"
+    ln -s "$GUARD_MASTER/hooks/tool-reroute.sh" "$root/hooks/tool-reroute.sh"
+    ln -s "$GUARD_MASTER/lib/tool-reroute.js" "$root/lib/tool-reroute.js"
+    local f
+    for f in "$GUARD_MASTER/lib/tool-reroute/"*; do
+        ln -s "$f" "$root/lib/tool-reroute/$(basename "$f")"
+    done
+}
+
 setup() {
     setup_test_env
     # Mirror the deployed layout: <root>/hooks/<bridge> + <root>/lib/<logic>
     # + <root>/lib/tool-reroute/<modules>. <root> ends in `.claude` so the
     # bridge's path-based harness detection resolves to claude (→ rtk hook claude).
     DEPLOY="$TEST_HOME/.claude"
-    mkdir -p "$DEPLOY/hooks" "$DEPLOY/lib/tool-reroute"
-    cp "$HOOK_SH" "$DEPLOY/hooks/tool-reroute.sh"
-    cp "$HOOK_JS" "$DEPLOY/lib/tool-reroute.js"
-    cp "$MOD_DIR"/*.js "$DEPLOY/lib/tool-reroute/"
-    chmod +x "$DEPLOY/hooks/tool-reroute.sh"
+    deploy_reroute "$DEPLOY"
     W="$REAL_DOTFILES_DIR"   # a real dir to stand in as the event cwd
 }
 
@@ -445,11 +464,7 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 # detection resolves HARNESS=codex (→ `rtk hook codex`). Echoes the bridge path.
 deploy_codex() {
     local root="$TEST_HOME/.codex"
-    mkdir -p "$root/hooks" "$root/lib/tool-reroute"
-    cp "$HOOK_SH" "$root/hooks/tool-reroute.sh"
-    cp "$HOOK_JS" "$root/lib/tool-reroute.js"
-    cp "$MOD_DIR"/*.js "$root/lib/tool-reroute/"
-    chmod +x "$root/hooks/tool-reroute.sh"
+    deploy_reroute "$root"
     printf '%s' "$root/hooks/tool-reroute.sh"
 }
 

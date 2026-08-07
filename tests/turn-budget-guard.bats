@@ -21,14 +21,24 @@ HOOK_SH="$REAL_DOTFILES_DIR/agents/hooks/turn-budget-guard.sh"
 HOOK_JS="$REAL_DOTFILES_DIR/agents/lib/turn-budget-guard.js"
 OPENCODE_PLUGIN="$REAL_DOTFILES_DIR/chezmoi/dot_config/opencode/plugins/turn-budget-guard.js"
 
+setup_file() {
+    export GUARD_MASTER="$BATS_FILE_TMPDIR/guard-mocks"
+    mkdir -p "$GUARD_MASTER/hooks" "$GUARD_MASTER/lib"
+    cp "$HOOK_SH" "$GUARD_MASTER/hooks/turn-budget-guard.sh"
+    cp "$HOOK_JS" "$GUARD_MASTER/lib/turn-budget-guard.js"
+    chmod +x "$GUARD_MASTER/hooks/turn-budget-guard.sh"
+}
+
 setup() {
     setup_test_env
     # Mirror the deployed layout: <root>/hooks/<bridge> + <root>/lib/<logic>.
+    # Symlink the setup_file-built master. Measurements showed a first-exec
+    # delay for fresh script inodes. Symlinking reuses the target inode and
+    # improved timings; the mechanism is unspecified.
     DEPLOY="$TEST_HOME/.claude"
     mkdir -p "$DEPLOY/hooks" "$DEPLOY/lib"
-    cp "$HOOK_SH" "$DEPLOY/hooks/turn-budget-guard.sh"
-    cp "$HOOK_JS" "$DEPLOY/lib/turn-budget-guard.js"
-    chmod +x "$DEPLOY/hooks/turn-budget-guard.sh"
+    ln -s "$GUARD_MASTER/hooks/turn-budget-guard.sh" "$DEPLOY/hooks/turn-budget-guard.sh"
+    ln -s "$GUARD_MASTER/lib/turn-budget-guard.js" "$DEPLOY/lib/turn-budget-guard.js"
 
     export CLAUDE_TURN_BUDGET_DIR="$TEST_HOME/budget"
     export CLAUDE_TURN_BUDGET_LOG="$TEST_HOME/turn-budget-decisions.jsonl"
