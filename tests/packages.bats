@@ -1010,13 +1010,13 @@ MOCKBREW
 # --- Integration: native harness convergence ---
 
 @test "managed OMP and Codex pins are exact" {
-    grep -q '^OMP_PIN="v17.2.5"$' "$SYNC_SCRIPT"
+    grep -q '^OMP_PIN="v17.2.10"$' "$SYNC_SCRIPT"
     grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
 @test "doc-drift records match the managed harness pins" {
     local sources="$REAL_DOTFILES_DIR/agents/doc-drift/sources.yaml"
-    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.5" ]
+    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.10" ]
     [ "$(yq -r '.sources[] | select(.id == "codex-cli") | .reconciled' "$sources")" = "0.146.0" ]
 }
 
@@ -1090,7 +1090,7 @@ MOCKBREW
     assert_success
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.2.5\ncodesign --force --sign - %s' \
+    expected_events=$(printf 'sh -s -- --binary --ref v17.2.10\ncodesign --force --sign - %s' \
         "$TEST_HOME/.local/bin/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
