@@ -92,11 +92,11 @@ setup() {
     export MOCK_BIN="$TEST_HOME/bin"
     mkdir -p "$MOCK_BIN"
 
-    # Symlink (not copy) the mocks generated once in setup_file(): macOS
-    # syspolicyd assesses every NEW executable inode on first exec, so
-    # sharing inodes across tests pays that tax once per suite run instead
-    # of once per test. Test bodies with bespoke curl/opencode/tar/uname mocks
-    # rm -f the symlink before writing so they never truncate the shared master.
+    # Symlink the mocks generated once in setup_file(). Measurements showed a
+    # first-exec delay for fresh script inodes. Symlinking reuses the target inode
+    # and improved timings; the mechanism is unspecified. Test bodies with bespoke
+    # curl/opencode/tar/uname mocks rm -f the symlink before writing so they never
+    # truncate the shared master.
     local f
     for f in "$BATS_FILE_TMPDIR/local-llm-mocks/"*; do
         ln -s "$f" "$MOCK_BIN/$(basename "$f")"

@@ -28,10 +28,9 @@ setup_file() {
     chmod +x "$GUARD_MASTER/hooks/tool-reroute.sh"
 }
 
-# Symlink (not copy) the setup_file-built master into a deploy root: macOS
-# syspolicyd assesses every NEW executable inode on first exec, so sharing
-# inodes across tests pays that tax once per suite run instead of once per
-# test.
+# Symlink the setup_file-built master into a deploy root. Measurements showed
+# a first-exec delay for fresh script inodes. Symlinking reuses the target inode
+# and improved timings; the mechanism is unspecified.
 deploy_reroute() {
     local root="$1"
     mkdir -p "$root/hooks" "$root/lib/tool-reroute"

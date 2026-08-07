@@ -23,9 +23,9 @@ setup_file() {
 setup() {
     setup_test_env
     # Mirror the deployed layout: <root>/hooks/<bridge> + <root>/lib/<logic>.
-    # Symlink (not copy) the setup_file-built master: macOS syspolicyd assesses
-    # every NEW executable inode on first exec, so sharing inodes across tests
-    # pays that tax once per suite run instead of once per test.
+    # Symlink the setup_file-built master. Measurements showed a first-exec
+    # delay for fresh script inodes. Symlinking reuses the target inode and
+    # improved timings; the mechanism is unspecified.
     DEPLOY="$TEST_HOME/.claude"
     mkdir -p "$DEPLOY/hooks" "$DEPLOY/lib"
     ln -s "$GUARD_MASTER/hooks/sensitive-file-guard.sh" "$DEPLOY/hooks/sensitive-file-guard.sh"

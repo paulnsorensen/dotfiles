@@ -30,10 +30,10 @@ setup_file() {
 
 setup() {
     setup_test_env
-    # Mirror the deployed layout for the Claude/Codex bridge. Symlink (not
-    # copy) the setup_file-built master: macOS syspolicyd assesses every NEW
-    # executable inode on first exec, so sharing inodes across tests pays
-    # that tax once per suite run instead of once per test.
+    # Mirror the deployed layout for the Claude/Codex bridge. Symlink the
+    # setup_file-built master. Measurements showed a first-exec delay for fresh
+    # script inodes. Symlinking reuses the target inode and improved timings;
+    # the mechanism is unspecified.
     DEPLOY="$TEST_HOME/.claude"
     mkdir -p "$DEPLOY/hooks" "$DEPLOY/lib"
     ln -s "$GUARD_MASTER/hooks/git-guard.sh" "$DEPLOY/hooks/git-guard.sh"
