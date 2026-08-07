@@ -1192,6 +1192,34 @@ EOF
     [ "${#lock_artifacts[@]}" -eq 0 ]
 }
 
+@test "cache lock: lockf child re-sources a relatively sourced library after cwd changes" {
+    local fixture elsewhere isolated_bin command
+    fixture="$TEST_HOME/relative-vault"
+    elsewhere="$TEST_HOME/elsewhere"
+    isolated_bin="$TEST_HOME/lockf-bin"
+    mkdir -p "$fixture" "$elsewhere" "$isolated_bin"
+    cp "$VAULT_LIB" "$fixture/vault.sh"
+    for command in mkdir chmod; do
+        ln -s "$(command -v "$command")" "$isolated_bin/$command"
+    done
+    cat > "$isolated_bin/lockf" <<'EOF'
+#!/bin/bash
+[[ "$1" == -k && "$2" == -s && "$3" == -t ]] || exit 64
+shift 4
+lock=$1
+shift
+[[ -e "$lock" ]] || exit 65
+"$@"
+EOF
+    chmod +x "$isolated_bin/lockf"
+
+    run env PATH="$isolated_bin" VAULT_FIXTURE_DIR="$fixture" VAULT_OTHER_DIR="$elsewhere" \
+        "$BASH" -c 'cd "$VAULT_FIXTURE_DIR"; source ./vault.sh; cd "$VAULT_OTHER_DIR"; vault_resolve'
+
+    assert_success
+    [ "$output" = unconfigured ]
+}
+
 @test "vault_materialize: wrong-source cache is absent when provider fetch begins" {
     _setup_materialize_fixture
     source "$VAULT_LIB"
@@ -1404,19 +1432,9 @@ case "$input" in
     *) exit 65 ;;
 esac
 EOF
-    cat > "$MOCK_BIN/sleep" <<'EOF'
-#!/usr/bin/env bash
-if [[ "${REQUEST_ROLE:-}" == new && ! -e "$CONTROL/new-contended" ]]; then
-    : > "$CONTROL/new-contended"
-    while [[ ! -e "$CONTROL/release-old" ]]; do
-        /bin/sleep 0.01
-    done
-fi
-exec /bin/sleep "$@"
-EOF
-    chmod +x "$MOCK_BIN/op" "$MOCK_BIN/sleep"
+    chmod +x "$MOCK_BIN/op"
 
-    REQUEST_ROLE=old "$BASH" -c \
+    "$BASH" -c \
         "source '$VAULT_LIB'; vault_materialize onepassword" \
         > "$CONTROL/old-output" 2>&1 &
     old_pid=$!
@@ -1426,11 +1444,13 @@ EOF
 DOTFILES_VAULT_PROVIDER=onepassword
 DOTFILES_OP_ITEM=op://New/dotfiles
 EOF
-    REQUEST_ROLE=new "$BASH" -c \
-        "source '$VAULT_LIB'; vault_materialize onepassword" \
-        > "$CONTROL/new-output" 2>&1 &
+    "$BASH" -c \
+        'source "$1"; : > "$CONTROL/new-contended"; vault_materialize onepassword' \
+        vault-new "$VAULT_LIB" > "$CONTROL/new-output" 2>&1 &
     new_pid=$!
     wait_for_vault_marker "$CONTROL/new-contended" "$new_pid"
+    kill -0 "$new_pid"
+    [ ! -e "$CONTROL/new-fetch-started" ]
     if cmp -s "$cache" "$before"; then
         initial_cache_state=unchanged
     else

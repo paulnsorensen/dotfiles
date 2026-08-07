@@ -107,7 +107,7 @@ teardown() {
 }
 
 assert_explicit_provider_package_handoff() {
-    local provider="$1" expected="$2"
+    local provider="$1" expected="$2" token_file
     cd "$FAKE_DOTFILES" || return
     printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
     mkdir -p "$FAKE_DOTFILES/bin/lib"
@@ -138,6 +138,10 @@ MOCK
             printf '#!/bin/bash\nexit 1\n' > "$MOCK_BIN/op"
             printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/bws"
             printf '#!/bin/bash\nprintf "test-token\\n"\n' > "$MOCK_BIN/security"
+            token_file="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/bws-token"
+            mkdir -p "${token_file%/*}"
+            printf 'test-token\n' > "$token_file"
+            chmod 600 "$token_file"
             ;;
     esac
     chmod +x "$MOCK_BIN/op" "$MOCK_BIN/bws"

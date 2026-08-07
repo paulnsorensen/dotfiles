@@ -5,7 +5,16 @@
 # zsh/core.zsh, bin/cc-env-exec, agent-profile's ap render). Deep module —
 # the only place that knows a vault exists.
 #
-# Functions only — no top-level side effects, so sourcing is safe.
+# Captures only its own absolute physical path at source time; all behavior
+# remains behind functions so sourcing is otherwise side-effect-free.
+
+_VAULT_LIBRARY_PATH="$(
+    source_path="${BASH_SOURCE[0]}"
+    source_dir="${source_path%/*}"
+    [[ "$source_dir" != "$source_path" ]] || source_dir=.
+    cd -P "$source_dir" || exit
+    printf '%s/%s\n' "$PWD" "${source_path##*/}"
+)"
 
 _vault_setting() {
     local name="$1" default="$2" env_file line value=""
@@ -95,7 +104,7 @@ _vault_cache_matches() {
 _vault_with_cache_lock() (
     local lock="$1" callback="$2"
     local timeout="${_VAULT_LOCK_TIMEOUT:-10}" status attempt acquired=false
-    local shell="${BASH:-bash}" library="${BASH_SOURCE[0]}"
+    local shell="${BASH:-bash}"
     shift 2
     [[ "$timeout" =~ ^[0-9]+$ ]] || timeout=10
 
@@ -132,7 +141,7 @@ _vault_with_cache_lock() (
             callback="$2"
             shift 2
             "$callback" "$@"
-        ' vault-lock "$library" "$callback" "$@"
+        ' vault-lock "$_VAULT_LIBRARY_PATH" "$callback" "$@"
         status=$?
         if ((status == 75)); then
             echo "vault: timed out waiting for cache lock $lock; another vault transaction is still active." >&2
@@ -497,7 +506,7 @@ _vault_materialize_unlocked() (
     local key value line serialization_status cache_disposition="" published=false
     local template_keys=() missing=()
 
-    # shellcheck disable=SC2329 # Invoked by the EXIT trap below.
+    # shellcheck disable=SC2317,SC2329 # Invoked by the EXIT trap below.
     _vault_materialize_cleanup() {
         local exit_status=$? cleanup_status=0
         trap - EXIT HUP INT TERM
