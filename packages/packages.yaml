@@ -87,6 +87,6 @@ packages:
   # renovate: datasource=crate depName=cargo-update
   - cargo-update: { source: cargo, version: "22.1.0" } # provides `cargo install-update`
   # renovate: datasource=crate depName=bws
-  - bws: { source: cargo, version: "2.1.0", gate_unless: ONEPASSWORD_PRESENT }
+  - bws: { source: cargo, version: "2.1.0", gate_unless: BITWARDEN_DISABLED }
   # tilth and hallouminate stay on their own-authored npm nightly channels via
   # chezmoi run_onchange installers; no cargo copy may shadow them.

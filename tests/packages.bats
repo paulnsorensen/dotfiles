@@ -306,6 +306,13 @@ run_sync() {
     assert_success
 }
 
+@test "real bws package is gated by BITWARDEN_DISABLED" {
+    run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.key == "bws") | .value.gate_unless' \
+        "$REAL_DOTFILES_DIR/packages/packages.yaml"
+    assert_success
+    [[ "$output" == "BITWARDEN_DISABLED" ]]
+}
+
 @test "all platform values are mac or linux" {
     run yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.platform != null) | .value.platform' \
         "$REAL_DOTFILES_DIR/packages/packages.yaml"
@@ -1057,6 +1064,25 @@ MOCKBREW
     assert_success
     assert_output_contains "unchanged (cached), syncing Claude"
     [[ "$(wc -l < "$SH_LOG")" -eq "$before" ]]
+}
+
+@test "vault package policy change invalidates the package cache" {
+    write_test_yaml
+    cat >> "$PACKAGES_FILE" <<'YAML'
+  - bws: { source: cargo, gate_unless: BITWARDEN_DISABLED }
+YAML
+
+    BITWARDEN_DISABLED=true run_sync
+    assert_success
+    if grep -q "cargo install bws" "$CARGO_LOG"; then
+        echo "bws was installed while BITWARDEN_DISABLED=true" >&2
+        return 1
+    fi
+
+    BITWARDEN_DISABLED=false run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_not_contains "unchanged (cached)"
+    grep -q "cargo install bws" "$CARGO_LOG"
 }
 
 @test "UPGRADE_MODE reconverges pinned omp without using its floating updater" {

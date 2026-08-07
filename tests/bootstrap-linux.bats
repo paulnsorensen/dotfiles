@@ -107,17 +107,18 @@ case "$1" in
 esac
 EOF
     chmod +x "$MOCK_BIN/yq"
-    # Capture the sync.sh handoff: main runs `bash "$SCRIPT_DIR/sync.sh"`, so a
-    # PATH-shadowing bash records FORCE_PACKAGES and the script it was handed.
+    # Capture the sync.sh handoff and keep host-installed provider CLIs out of
+    # command discovery. Individual table rows add only the provider CLI they
+    # intend to expose.
     cat > "$MOCK_BIN/bash" << EOF
 #!/bin/bash
-echo "handoff force=\${FORCE_PACKAGES:-unset} script=\$1" > "$TEST_HOME/handoff.log"
-exit 0
+printf 'handoff force=%s bitwarden_disabled=%s script=%s\n' \
+    "\${FORCE_PACKAGES:-unset}" "\${BITWARDEN_DISABLED:-unset}" "\$1" > "$TEST_HOME/handoff.log"
 EOF
     chmod +x "$MOCK_BIN/bash"
     # apt/sudo toolchain step is out of scope for these unit tests.
     bootstrap_brew_deps_linux() { :; }
-    export PATH="$MOCK_BIN:$PATH"
+    export PATH="$MOCK_BIN:/usr/bin:/bin"
 }
 
 @test "main hands off to sync.sh with FORCE_PACKAGES=true" {
@@ -130,6 +131,51 @@ EOF
     run cat "$TEST_HOME/handoff.log"
     assert_output_contains "force=true"
     assert_output_contains "sync.sh"
+}
+
+@test "main hands provider policy through to package sync" {
+    write_test_yaml
+    printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/brew"
+    chmod +x "$MOCK_BIN/brew"
+
+    local row provider op_state expected_status expected_disabled
+    local cases=(
+        'onepassword|without-op|0|true'
+        'bitwarden|without-op|0|false'
+        'auto|with-op|0|true'
+        'auto|without-op|0|false'
+        'invalid|without-op|2|'
+    )
+    for row in "${cases[@]}"; do
+        IFS='|' read -r provider op_state expected_status expected_disabled <<< "$row"
+        rm -f "$MOCK_BIN/op" "$MOCK_BIN/bws" "$TEST_HOME/handoff.log"
+        if [[ "$op_state" == with-op ]]; then
+            printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/op"
+            chmod +x "$MOCK_BIN/op"
+        fi
+        unset BITWARDEN_DISABLED
+        export DOTFILES_VAULT_PROVIDER="$provider"
+        stub_main_env
+
+        [[ -z "$(command -v bws)" ]]
+        if [[ "$op_state" == with-op ]]; then
+            [[ "$(command -v op)" == "$MOCK_BIN/op" ]]
+        else
+            [[ -z "$(command -v op)" ]]
+        fi
+
+        run main
+
+        [[ "$status" -eq "$expected_status" ]]
+        if [[ "$expected_status" -eq 0 ]]; then
+            run cat "$TEST_HOME/handoff.log"
+            assert_success
+            [[ "$output" == "handoff force=true bitwarden_disabled=$expected_disabled script=$REAL_DOTFILES_DIR/packages/sync.sh" ]]
+        else
+            assert_output_contains "invalid vault provider policy"
+            [[ ! -e "$TEST_HOME/handoff.log" ]]
+        fi
+    done
 }
 
 @test "main exits non-zero when a brew formula install fails" {

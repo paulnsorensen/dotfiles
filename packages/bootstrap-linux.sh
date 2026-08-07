@@ -128,6 +128,7 @@ install_brew_packages() {
 ########## Main
 
 main() {
+    local vault_policy_status
     if [[ "$PLATFORM" != "Linux" ]]; then
         log_error "bootstrap-linux.sh is Linux-only (use 'dots sync' on macOS)."
         return 1
@@ -149,6 +150,26 @@ main() {
     bootstrap_brew_deps_linux
     bootstrap_brew || return 1
     install_brew_packages
+
+    # Keep the direct bootstrap path aligned with .sync's provider-aware cargo
+    # gate before handing the registry to packages/sync.sh.
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/../bin/lib/vault.sh" || {
+        log_error "vault policy unavailable; refusing package convergence"
+        return 1
+    }
+    if vault_disables_bitwarden_install; then
+        BITWARDEN_DISABLED=true
+    else
+        vault_policy_status=$?
+        if [[ "$vault_policy_status" -eq 1 ]]; then
+            BITWARDEN_DISABLED=false
+        else
+            log_error "invalid vault provider policy; refusing package convergence"
+            return "$vault_policy_status"
+        fi
+    fi
+    export BITWARDEN_DISABLED
 
     # FORCE_PACKAGES bypasses the cache on the fresh box.
     log_info "Handing off to packages/sync.sh for manifest convergence..."
