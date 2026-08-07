@@ -397,10 +397,12 @@ settings disconnected): no code path prunes it at all anymore.
 
 **Fix**: manual `jq 'del(.mcp.<name>)'` (opencode) / `del(.mcpServers.<name>)`
 (cursor) to a temp file, validate, move into place. While healing cursor, also
-check `envFile` values — a render from a worktree checkout bakes the worktree's
-dotenv path in (`renderers/cursor.py:_dotenv_abs_path` resolves
-`${DOTFILES_DIR}` at render time), which goes stale when the worktree is
-removed; repoint at the main clone's dotenv path. Permanent fix (stateless
+check `envFile` values — when the envFile resolves to `.env` (not the
+vault-cache `secrets.env`, which is XDG-stable), a render from a worktree
+checkout bakes the worktree's `${DOTFILES_DIR}/.env` path in
+(`renderers/cursor.py:_env_file_for_keys` resolves it at render time), which
+goes stale when the worktree is removed; repoint at the main clone's `.env`
+path. Permanent fix (stateless
 reconcile against the current registry) tracked in #561.
 
 **Detection**: live server names absent from `agents/mcp/registry.yaml` with
