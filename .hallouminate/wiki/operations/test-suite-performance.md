@@ -79,6 +79,12 @@ Caveat: the test host had severe ambient syspolicyd noise (~128,600 log lines in
 
 `packages.bats` `setup()` now unsets `DOTFILES_DEV`: leaked as `true` from the invoking shell, `heal_missing_cask_apps` (#569) runs `brew list --cask` on the cache-hit path on Darwin, failing the two cache-skip tests on dev machines while Linux CI stays green (the heal is Darwin-only). Tests opt in explicitly.
 
+## macOS fixture-path normalization (2026-08-06)
+
+macOS commonly supplies `TMPDIR` with a trailing slash. `tests/test_helper.bash` appends another separator when constructing `TEST_HOME`, while child scripts such as `.sync` derive their working directory with `pwd`, which collapses repeated separators. Tests that compare emitted absolute paths must derive the expected path from `pwd` after entering the fixture directory; do not skip these platform-independent behaviors on macOS.[^14]
+
+[^14]: tests/test_helper.bash:10; .sync:11; tests/sync-orchestrator.bats:396-404
+
 ## Benchmarking protocol
 
 Use at least three warm runs and report the median. Bats supports `-T/--timing`; use JUnit output to aggregate testcase duration by `classname`, but validate suspected files alone because parallel resource contention inflates individual test durations. Compare the existing CPU-count job setting with one lower and one oversubscribed value before changing it.

@@ -399,7 +399,8 @@ SCRIPT
 
     run bash "$SYNC_SCRIPT"
     assert_failure
-    [[ "$output" == *"final chezmoi runner missing: $FAKE_DOTFILES/chezmoi/.sync"* ]]
+    local expected_runner="$(pwd)/chezmoi/.sync"
+    [[ "$output" == *"final chezmoi runner missing: $expected_runner"* ]]
     [[ "$output" == *"Sync completed with FAILURES in: chezmoi"* ]]
 }
 @test "harness version mismatch fails closed before final chezmoi apply" {
