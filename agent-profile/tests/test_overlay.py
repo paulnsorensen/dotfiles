@@ -953,7 +953,9 @@ def test_codex_mcp_servers_are_toml_tables(tmp_path, monkeypatch):
     }
 
 
-def test_oss_docs_profile_writes_pinned_playwright_mcp_for_codex(tmp_path, monkeypatch):
+def test_oss_docs_profile_writes_pinned_playwright_mcp_for_codex(
+    tmp_path, monkeypatch, shipped_profile_secrets
+):
     """Codex ignores enabled_plugins, so browser verification must be a profile MCP."""
     monkeypatch.setenv("DOTFILES_DIR", str(REPO_ROOT))
     profile = REPO_ROOT / "profiles" / "oss-docs"
@@ -966,7 +968,7 @@ def test_oss_docs_profile_writes_pinned_playwright_mcp_for_codex(tmp_path, monke
         "command": "npx",
         "args": ["-y", "@playwright/mcp@0.0.78"],
     }
-    assert cfg["mcp_servers"]["context7"]["args"] == ["-y", "@upstash/context7-mcp@3.2.4"]
+    assert cfg["mcp_servers"]["context7"]["args"] == ["-y", "@upstash/context7-mcp@3.2.5"]
     assert cfg["mcp_servers"]["tavily"]["args"] == ["-y", "tavily-mcp@0.2.21"]
 
 

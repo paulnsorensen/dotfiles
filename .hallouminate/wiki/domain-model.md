@@ -43,7 +43,7 @@ _Code_: NEW ENTITY (chezmoi/dot_config/mise/config.toml → ~/.config/mise/confi
 
 **Harness** — a native AI coding agent binary (claude, codex, omp) managed by sync's native-harness loop.
 _Avoid_: agent binary
-_Code_: packages/sync.sh:584-614 (`sync_native_harnesses`)
+_Code_: packages/sync.sh:680-708 (`sync_native_harnesses`)
 
 **Renovate runner** — the self-hosted cron workflow executing Renovate against this repo's four pinned surfaces.
 _Avoid_: update bot

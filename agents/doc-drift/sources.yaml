@@ -30,20 +30,20 @@ sources:
   - id: codex-cli
     signal: { type: npm, ref: "@openai/codex" }
     docs: https://developers.openai.com/codex
-    governs: [harnesses/codex.md, agents/hooks/registry.yaml, agents/registry.yaml]
-    reconciled: "0.144.6"
+    governs: [harnesses/codex.md, agents/hooks/registry.yaml, agents/registry.yaml, chezmoi/dot_config/mise/config.toml]
+    reconciled: "0.146.0"
 
   - id: opencode
     signal: { type: npm, ref: opencode-ai }
     docs: https://opencode.ai/docs
     governs: [harnesses/opencode.md]
-    reconciled: "1.18.10"
+    reconciled: "1.18.14"
 
   - id: copilot-cli
     signal: { type: npm, ref: "@github/copilot" }
     docs: https://docs.github.com/en/copilot/how-tos/copilot-cli
     governs: [harnesses/copilot.md]
-    reconciled: "1.0.76"
+    reconciled: "1.0.78"
 
   - id: context7-mcp
     signal: { type: npm, ref: "@upstash/context7-mcp" }
@@ -55,18 +55,18 @@ sources:
     signal: { type: npm, ref: tavily-mcp }
     docs: https://github.com/tavily-ai/tavily-mcp
     governs: [chezmoi/.chezmoidata/claude.yaml, agents/mcp/registry.yaml]
-    reconciled: "0.2.21"
+    reconciled: "0.2.22"
 
   - id: chezmoi
     signal: { type: gh_release, ref: twpayne/chezmoi }
     docs: https://www.chezmoi.io/reference/
     governs: [chezmoi/]
-    reconciled: "v2.71.1"
+    reconciled: "v2.72.0"
 
 
 
   - id: oh-my-pi
     signal: { type: gh_release, ref: can1357/oh-my-pi }
     docs: https://github.com/can1357/oh-my-pi
-    governs: [chezmoi/.chezmoidata/omp.yaml, chezmoi/dot_omp/private_agent/modify_config.yml]
-    reconciled: "v17.2.0"
+    governs: [chezmoi/.chezmoidata/omp.yaml, chezmoi/dot_omp/private_agent/modify_config.yml, packages/sync.sh]
+    reconciled: "v17.2.10"

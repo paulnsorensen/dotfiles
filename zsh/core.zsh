@@ -92,13 +92,25 @@ if command -v mise 1>/dev/null 2>&1; then
   eval "$(mise activate zsh)"
 fi
 
-# Source .env file if it exists (key=value only, no command execution)
-if [[ -f "$DOTFILES_DIR/.env" ]]; then
+# Source .env + the vault secrets cache if they exist (key=value only, no
+# command execution). Cache wins on collision. A missing cache warns on
+# every new shell but never breaks the shell (unlike agents/mcp/sync.sh and
+# cc-env-exec, which fail loud — a fresh terminal must not brick on a vault
+# hiccup).
+# Cache path duplicated from bin/lib/vault.sh's vault_secrets_file() and
+# agent-profile/agent_profile/env.py's vault_cache_path() — zsh can't source
+# the bash lib. Keep all three in sync if the contract changes.
+_dotfiles_cache_env="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/secrets.env"
+for _dotfiles_env_file in "$DOTFILES_DIR/.env" "$_dotfiles_cache_env"; do
+  if [[ -f "$_dotfiles_env_file" ]]; then
     while IFS='=' read -r key val; do
-        [[ -z "$key" || "$key" == \#* ]] && continue
-        export "$key=$val"
-    done < "$DOTFILES_DIR/.env"
-fi
+      [[ -z "$key" || "$key" == \#* ]] && continue
+      export "$key=$val"
+    done < "$_dotfiles_env_file"
+  fi
+done
+[[ -f "$_dotfiles_cache_env" ]] || echo "dotfiles: vault secrets cache missing ($_dotfiles_cache_env) — run 'bin/vault-provision'" >&2
+unset _dotfiles_env_file _dotfiles_cache_env
 
 # Vi mode cursor shapes (orthogonal to prompt choice — works with any prompt)
 function zle-line-init zle-keymap-select {

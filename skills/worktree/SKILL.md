@@ -2,7 +2,7 @@
 name: worktree
 model: haiku
 effort: low
-allowed-tools: Bash(ccw-init:*), Bash(cd:*)
+allowed-tools: Bash(wt:*), Bash(cd:*)
 description: >
   Create or resume an isolated git worktree for a Claude Code task, keeping main
   clean. Use when asked to "create a worktree", "resume a worktree", set up an
@@ -19,10 +19,29 @@ Create or resume an isolated git worktree for a task.
 
 The task slug is provided as an argument. If none was given, ask the user for one.
 
-### 2. Run the helper
+### 2. Decide the base branch
+
+Two modes (`wtm`/`wto` are the interactive-shell aliases for these — this
+skill calls `wt` directly since Bash-tool commands aren't an interactive
+shell):
+
+- **`-m`** (or the flagless default) — branch off the current branch. Use
+  when the task extends what's already happening here: continuing
+  in-progress work, splitting a large feature into sub-tasks, or the new
+  work depends on local commits/changes that aren't upstream yet.
+- **`-o`** — branch off `origin/<default-branch>` (fetches first). Use when
+  the task is independent of the current branch: an unrelated fix or
+  feature, or the current branch already has committed work or an open PR
+  for something else — starting from origin keeps the new task from being
+  entangled with it.
+
+If it's unclear which the task is, ask the user.
+
+### 3. Run the helper
 
 ```bash
-ccw-init <slug>
+wt <slug>       # -m: branch off the current branch (default) — extends current work
+wt -o <slug>    # branch off origin/<default-branch> (fetches first) — independent task
 ```
 
 This single command handles everything:
@@ -35,7 +54,7 @@ This single command handles everything:
 
 It outputs JSON to stdout with: `path`, `branch`, `base_sha`, `base_branch`, `created`.
 
-### 3. Confirm
+### 4. Confirm
 
 Parse the JSON output and report:
 

@@ -149,6 +149,9 @@ MOCK
 
     local fake_dotfiles="$TEST_HOME/fake-dotfiles"
     mkdir -p "$fake_dotfiles/agents/mcp" "$fake_dotfiles/claude/lib"
+    mkdir -p "$fake_dotfiles/bin/lib" "$TEST_HOME/.cache/dotfiles"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$fake_dotfiles/bin/lib/vault.sh"
+    printf 'GH_TOKEN=x\n' > "$TEST_HOME/.cache/dotfiles/secrets.env"
     cp "$REAL_DOTFILES_DIR/agents/mcp/sync.sh" "$fake_dotfiles/agents/mcp/sync.sh"
     cp "$REAL_DOTFILES_DIR/agents/mcp/lib.sh"  "$fake_dotfiles/agents/mcp/lib.sh"
     cp "$REAL_DOTFILES_DIR/claude/lib/sync-common.sh" "$fake_dotfiles/claude/lib/sync-common.sh"
@@ -203,6 +206,9 @@ MOCK
     # Stand up a minimal registry the script can read.
     local fake_dotfiles="$TEST_HOME/fake-dotfiles"
     mkdir -p "$fake_dotfiles/agents/mcp" "$fake_dotfiles/claude/lib"
+    mkdir -p "$fake_dotfiles/bin/lib" "$TEST_HOME/.cache/dotfiles"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$fake_dotfiles/bin/lib/vault.sh"
+    printf 'GH_TOKEN=x\n' > "$TEST_HOME/.cache/dotfiles/secrets.env"
     cp "$REAL_DOTFILES_DIR/agents/mcp/sync.sh" "$fake_dotfiles/agents/mcp/sync.sh"
     cp "$REAL_DOTFILES_DIR/agents/mcp/lib.sh"  "$fake_dotfiles/agents/mcp/lib.sh"
     cp "$REAL_DOTFILES_DIR/claude/lib/sync-common.sh" "$fake_dotfiles/claude/lib/sync-common.sh"

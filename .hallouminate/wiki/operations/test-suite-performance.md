@@ -25,9 +25,9 @@ The implementation extracts config/bootstrap/migration logic into sourced functi
 - Reusing prepared Git repository histories through local clones/worktrees in `ccw-sweep`, `git-file-risk`, and similar suites remains a measured follow-up.
 - Pytest's read-only `global_manifest` and `opencode_global_manifest` fixtures are module-scoped. Previously, eight repeated setups each cost roughly one second in the 2026-07-25 profile.[^9]
 
-## Gate mismatch
+## CI gate coverage
 
-`just test` and `just check` run Bats, while `just smoke` runs Node workflow tests; neither invokes the 909-test `agent-profile` pytest suite.[^10] A local pytest run took 25–38 seconds and exposed four failures on 2026-07-25. Treat adding pytest to the gate as a coverage correction, benchmarked separately from Bats speed work.[^11]
+GitHub CI's `test` job runs `just test` (Bats), `just test-python` (agent-profile pytest), and `just smoke` (Node workflow tests) as separate steps. The workflow-smoke test asserts those exact recipes so deleting one fails before merge.[^10]
 
 ## Implemented results (2026-07-25)
 
@@ -94,5 +94,4 @@ Use at least three warm runs and report the median. Bats supports `-T/--timing`;
 [^7]: fbc80c6:tests/packages.bats:12-45,47-187,208-210
 [^8]: tests/test_helper.bash:44-58
 [^9]: agent-profile/tests/test_canonical_permissions.py:93-118; local `uv run pytest -q --durations=20`, 2026-07-25.
-[^10]: justfile:51-68; tests/workflows-test.sh:1-18
-[^11]: Local benchmark, 2026-07-25: `uv run pytest -q --durations=20`; 903 passed, 2 skipped, 4 failed in 25.11s.
+[^10]: justfile:51-68; .github/workflows/test.yml:40-77; tests/workflows/all-parse.test.mjs:102-114

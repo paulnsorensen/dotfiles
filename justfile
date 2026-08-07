@@ -77,4 +77,8 @@ check-llm:
 # lint-fix, and lint-shell already covers the one leg that needs no fixer.
 check: lint-fix
     @mkdir -p "$HOME/.parallel" && touch "$HOME/.parallel/will-cite"
-    parallel -k --group just ::: lint-shell test-python smoke test
+    # GNU parallel exports XDG_CACHE_HOME to its jobs even when it is unset in
+    # the parent, and an empty value makes mise resolve its cache dir to a
+    # *relative* `mise`, dumping aqua bin_paths caches into the repo root. Pin
+    # a real value so the shimmed tools every leg runs cache under $HOME.
+    XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel -k --group just ::: lint-shell test-python smoke test

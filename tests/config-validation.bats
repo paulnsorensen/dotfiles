@@ -168,14 +168,19 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
 @test "dots sync ignores the retired --accept-agent-drift flag (compat shim)" {
     local shim="$BATS_TEST_TMPDIR/dots-home"
-    mkdir -p "$shim/Dev/dotfiles"
+    mkdir -p "$shim/Dev/dotfiles/chezmoi/lib" "$shim/Dev/dotfiles/skills"
     run env DOTFILES_DIR="$shim/Dev/dotfiles" bash -c '
         cp "$1/bin/dots" "$DOTFILES_DIR/dots"
+        : > "$DOTFILES_DIR/skills/_registry.yaml"
         cat > "$DOTFILES_DIR/.sync" <<'"'"'SH'"'"'
 #!/usr/bin/env bash
 printf "DOTS_ACCEPT_AGENT_DRIFT=%s args=%s\n" "${DOTS_ACCEPT_AGENT_DRIFT:-}" "$*"
 SH
-        chmod +x "$DOTFILES_DIR/.sync"
+        cat > "$DOTFILES_DIR/chezmoi/lib/install-external.sh" <<'"'"'SH'"'"'
+#!/usr/bin/env bash
+exit 0
+SH
+        chmod +x "$DOTFILES_DIR/.sync" "$DOTFILES_DIR/chezmoi/lib/install-external.sh"
         "$DOTFILES_DIR/dots" sync --accept-agent-drift refresh
     ' _ "$DOTFILES_DIR"
     [[ $status -eq 0 ]]

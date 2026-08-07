@@ -554,6 +554,19 @@ EOF
     assert_failure
 }
 
+@test "skill sync: per-repo harnesses honor SKILL_EXCLUDE_AGENTS" {
+    write_registry "acme/widgets" "    harnesses:
+      - claude"
+    write_env "claude-code cursor"
+
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync --dry-run
+    assert_success
+    assert_output_contains "Excluding harness 'claude' (claude-code)"
+    assert_output_contains "No valid harnesses for acme/widgets"
+    run grep -F 'skills add acme/widgets' <<< "$output"
+    assert_failure
+}
+
 @test "skill sync: source without harnesses: still installs into all SKILL_HARNESSES" {
     write_registry "acme/widgets"
     write_env "claude-code cursor"

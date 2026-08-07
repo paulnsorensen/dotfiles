@@ -1,10 +1,59 @@
-# Dotfiles-managed allowlist. Only the Cursor plugin source
-# (cursor/plugins/local/cheese-grok/) belongs in version control; it is
-# deployed into a real ~/.cursor by chezmoi's install-cursor-plugin.sh.
-# Everything else under this dir would be a deploy artifact or Cursor IDE
-# runtime cache — none of it belongs in the repo. (~/.cursor is NOT symlinked
-# here anymore; `cursor` is in SYNC_SKIP_LIST, so nothing leaks back.)
+# >>> CURSOR MANAGED BLOCK >>>
+# Ignore everything in .cursor
 *
-!.gitignore
+# Un-ignore projects so we can descend to allowlisted subdirs
+!projects/
+projects/*
+!projects/*/
+projects/*/*
+# MCP tool descriptors, resources, prompts
+!projects/*/mcps/
+!projects/*/mcps/**
+# Agent transcripts for citation
+!projects/*/agent-transcripts/
+!projects/*/agent-transcripts/**
+# Terminal output files
+!projects/*/terminals/
+!projects/*/terminals/**
+# Conversation notes (shared scratchpad)
+!projects/*/agent-notes/
+!projects/*/agent-notes/**
+# Large tool output files
+!projects/*/agent-tools/
+!projects/*/agent-tools/**
+# Plugin cache (rules, skills, agents)
 !plugins/
 !plugins/**
+# Built-in Cursor skills
+!skills-cursor/
+!skills-cursor/**
+# User's personal skills
+!skills/
+!skills/**
+# User's personal slash commands
+!commands/
+!commands/**
+# User's plan files
+!plans/
+!plans/**
+# Subagent state/transcripts
+!subagents/
+!subagents/**
+# User-level cursor rules
+!rules/
+!rules/**
+# <<< CURSOR MANAGED BLOCK <<<
+
+# >>> DOTFILES MANAGED BLOCK — MUST STAY LAST >>>
+# ~/.cursor is symlinked to this directory, so Cursor writes its runtime state
+# (skills/, commands/, rules/, projects/, subagents/, plans/, skills-cursor/)
+# straight into the repo, and its git-sync rewrites the block above to
+# re-include all of it. The root .gitignore's `/cursor/*` cannot win that
+# fight: a nested .gitignore outranks its parents. So the re-ignore lives here,
+# after Cursor's block, where last-match-wins puts us on top. Only the plugin
+# source (cursor/plugins/local/) is tracked.
+/*
+!/.gitignore
+!/plugins/
+!/plugins/**
+# <<< DOTFILES MANAGED BLOCK — MUST STAY LAST <<<

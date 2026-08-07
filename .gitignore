@@ -45,6 +45,14 @@ claude/reference/cheese-flair.md
 # Claude Code local state (settings.local.json, specs)
 .claude/
 
+# Milknado per-repo graph state (SQLite DB + WAL/SHM sidecars). Runtime only —
+# regenerated per run, never shared through the repo.
+.milknado/
+
+# Serena MCP per-repo state. project.yml is machine-generated from an onboarding
+# scan (absolute paths, local language-server config), so nothing here travels.
+.serena/
+
 # Hallouminate per-repo state. Track config.toml (portable, relative paths)
 # and the curated wiki/ corpus so the repo:dotfiles:wiki setup travels with a
 # clone; ignore everything else here (LanceDB caches, scratch indexes).

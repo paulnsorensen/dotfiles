@@ -38,6 +38,14 @@ setup_test_env() {
     export ORIGINAL_XDG_DATA_HOME="${XDG_DATA_HOME-__unset__}"
     export ORIGINAL_XDG_CACHE_HOME="${XDG_CACHE_HOME-__unset__}"
     unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME
+
+    # Pin mise's config/data/cache dirs under the sandbox. mise discovers
+    # its config by climbing cwd, not via $HOME, so an unset MISE_CONFIG_DIR
+    # lets it find the real ~/.config/mise/config.toml and leak cache files
+    # (mise/aqua-*/**/bin_paths-*.msgpack.z) into the repo root.
+    export MISE_CONFIG_DIR="$TEST_HOME/.config/mise"
+    export MISE_DATA_DIR="$TEST_HOME/.local/share/mise"
+    export MISE_CACHE_DIR="$TEST_HOME/.cache/mise"
 }
 
 # Teardown test environment

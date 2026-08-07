@@ -3,7 +3,8 @@
 ## Why a launch-time loader exists at all
 
 The `${VAR}` MCP secret passthrough ([[mcp-secret-handling]]) assumes the
-claude process inherits `.env` keys from its environment. Shell init
+claude process inherits the secret keys from its environment — the vault cache
+(`secrets.env`) plus `.env`. Shell init
 (`zsh/core.zsh`) covers a freshly started interactive shell — but **not** the
 tmux path `_cc_base` uses: a `tmux new-session` command runs with the **tmux
 server's** environment, not the launching client's (verified empirically on
@@ -14,9 +15,12 @@ and one unset referenced `${VAR}` makes Claude fail to parse the entire
 
 ## The design: exec wrapper, not `tmux -e` (PR #282)
 
-`bin/cc-env-exec` does a safe `.env` parse (skip blanks/comments, split on
-first `=`, no command execution — same loop as `zsh/core.zsh`), exports the
-pairs, then `exec "$@"`. `_cc_base` (`zsh/claude.zsh`) prepends it to the
+`bin/cc-env-exec` sources `bin/lib/vault.sh`, then does a safe key=value parse
+(skip blanks/comments, split on first `=`, no command execution — same loop as
+`zsh/core.zsh`) over **both** `.env` and the vault cache (`secrets.env`, cache
+wins), exports the pairs, then `exec "$@"`. Unlike shell init it **fails loud**
+(exit 1) when the vault cache is unreadable — a headless launch must not run
+claude with half its credentials. `_cc_base` (`zsh/claude.zsh`) prepends it to the
 claude command on all three launch paths and degrades to plain `claude` when
 the wrapper is missing.
 

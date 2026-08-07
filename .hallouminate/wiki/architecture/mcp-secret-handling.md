@@ -7,8 +7,12 @@ way to each renderer, instead of resolving the secret at sync time. The goal:
 keep real API keys out of the rendered config files on disk
 (`~/.claude.json`, `~/.cursor/mcp.json`, `~/.config/opencode/opencode.json`,
 `~/.copilot/mcp-config.json`). Each harness expands the placeholder itself at
-launch from its process env (zsh exports every `.env` key on shell init, so
-shell-launched CLIs already have the vars).
+launch from its process env. The secret *values* now come from the vault cache
+(`$XDG_CACHE_HOME/dotfiles/secrets.env`, materialized from 1Password/Bitwarden
+by `bin/lib/vault.sh` — see AGENTS.md), which `zsh/core.zsh` sources alongside
+`.env` on shell init (cache wins on collision); `.env` itself now holds only
+non-secret toggles. So shell-launched CLIs still inherit the vars, just from
+the cache rather than `.env`.
 
 Before this change, `ingest._expand_mcps` called `resolve_item_env`, so every
 renderer received the resolved secret and wrote it to disk — the keys sat in
@@ -41,7 +45,7 @@ The hard part: the `${VAR}` runtime-expansion syntax is **not** uniform.
 | **claude** | yes | `${VAR}` (literal) | `claude mcp add -e K='${VAR}'` (user scope) / plugin `.mcp.json` |
 | **codex** | n/a — inherits shell env | — (scrubbed) | `~/.codex/config.toml` |
 | **opencode** | yes | `{env:VAR}` | `opencode.json` `mcp.*.environment` |
-| **cursor** | yes, but GUI-launched | `envFile` → abs `.env` | `~/.cursor/mcp.json` |
+| **cursor** | yes, but GUI-launched | `envFile` → abs `.env`/cache | `~/.cursor/mcp.json` |
 | **copilot** | yes (fragile) | `${VAR}` (literal) | chezmoi template, NOT the `ap` renderer |
 
 ### claude — literal passthrough, no code change
@@ -53,10 +57,12 @@ stores `"${FAKE}"` literally.
 
 ### codex — scrub-by-keyname, unchanged
 
-`codex.py` drops any env key present in `$DOTFILES_DIR/.env` from the rendered
-TOML (zsh already exports them; codex is terminal-launched so its MCP children
-inherit at runtime). The registry shape is `KEY: "${KEY}"` (key == varname), so
-the scrub stays correct regardless of whether the value is the literal `${VAR}`
+`codex.py`'s `_inherited_env_keys` drops any env key present in the layered
+env — `$DOTFILES_DIR/.env` **plus** the vault cache, via `load_layered_env`
+(`AP_CODEX_INHERIT_ENV=0` disables the scrub, baking every value) — from the
+rendered TOML (zsh already exports them; codex is terminal-launched so its MCP
+children inherit at runtime). The registry shape is `KEY: "${KEY}"` (key ==
+varname), so the scrub stays correct regardless of whether the value is the literal `${VAR}`
 or a resolved secret. Neither the placeholder nor a secret lands in
 `config.toml`.
 
@@ -74,10 +80,13 @@ Cursor's `${env:VAR}` resolves against Cursor's *process* env, but a Finder/Dock
 launch inherits **no** shell `.env`. So `_cursor_mcp_entry` splits env into
 `${VAR}`-referencing entries vs plain literals: literals stay in `env`; if any
 `${VAR}`-ref existed, the entry drops those keys and gains an `envFile` field
-pointing at the absolute `.env` (stdio servers only — all ours are stdio).
-The abs path resolves `${DOTFILES_DIR}/.env` via `os.path.expandvars` with the
-`~/Dev/dotfiles` fallback (the `discover.py` pattern). A machine-specific abs
-path in user config is acceptable — same precedent as the marketplace path in
+(stdio servers only — all ours are stdio). `_env_file_for_keys` picks that
+single path per server: the vault cache (`secrets.env`) for keys the vault has
+taken over, otherwise `${DOTFILES_DIR}/.env` (`os.path.expandvars`, `~/Dev/dotfiles`
+fallback — the `discover.py` pattern). A server whose keys split across both
+sources can't be one `envFile`, so it fails loud rather than losing half its
+credentials.
+A machine-specific absolute path in user config is acceptable — same precedent as the marketplace path in
 `claude.py`'s `_merge_root_settings`.
 
 ### copilot — chezmoi template, not the renderer

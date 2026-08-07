@@ -1,7 +1,7 @@
 ---
 name: session-analytics
 description: >
-  Query coding-agent session logs (Claude, Codex, opencode) via DuckDB for usage
+  Query coding-agent session logs (Claude, Codex, opencode, oh-my-pi) via DuckDB for usage
   analytics, tool patterns, error forensics, and routing decisions. Use when the
   user says "session analytics", "query my logs", "tool usage", "how often do I
   use", "check my sessions", "analyze my usage", or asks about tool/agent/skill
@@ -39,7 +39,7 @@ batch/fan-out executor.
 ## How it works
 
 Session logs come from several harnesses (Claude JSONL, Codex rollout JSONL,
-opencode SQLite). `ingest.py` runs one normalizing **adapter** per harness into
+opencode SQLite, oh-my-pi JSONL). `ingest.py` runs one normalizing **adapter** per harness into
 one canonical row shape with a `harness` column, then materializes pre-flattened
 tables so you can answer questions with single SQL queries. cursor/copilot have
 no accessible logs today (see `harness-coverage.md`).
@@ -74,7 +74,7 @@ gotchas) lives in `references/canonical-schema.md`. Read it when you need a
 column you don't already know. The common tables: `tool_uses`, `tool_results`,
 `skill_invocations`, `agent_spawns`, `mcp_calls`, `stop_events`, `stop_hooks`,
 `permission_denials`, `sessions`, `raw_entries` — each carrying a `harness`
-column so you can filter or compare Claude vs Codex vs opencode.
+column so you can filter or compare Claude vs Codex vs opencode vs oh-my-pi.
 
 ## Query Catalog
 

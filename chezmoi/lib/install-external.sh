@@ -75,7 +75,7 @@ echo
 
 HARNESSES="${SKILL_HARNESSES:-}"
 # SKILL_EXCLUDE_AGENTS (space-separated agent IDs) subtracts from the harness
-# list. `dots upgrade` passes claude-code: ~/.claude/skills is chezmoi-managed
+# list. `dots sync` passes claude-code: ~/.claude/skills is chezmoi-managed
 # (exact_) and external skills are vendored into source state by
 # sync_claude_chezmoi_sources — installing them live would just be deleted on
 # the next apply (spec: chezmoi-authoritative-claude).
@@ -219,6 +219,10 @@ install_source() {
             fi
             if [[ " $KNOWN_AGENTS" != *" $cli_id "* ]]; then
                 echo -e "    ${YELLOW}Skipping '$ap_name' ($cli_id) for $repo (not a supported skills CLI agent)${NC}" >&2
+                continue
+            fi
+            if [[ " ${SKILL_EXCLUDE_AGENTS:-} " == *" $cli_id "* ]]; then
+                echo -e "    ${YELLOW}Excluding harness '$ap_name' ($cli_id) for $repo (SKILL_EXCLUDE_AGENTS)${NC}"
                 continue
             fi
             repo_agent_flags+=(--agent "$cli_id")

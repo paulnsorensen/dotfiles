@@ -79,8 +79,9 @@ omp:
     advisor:
       enabled: false
     compaction:
-      strategy: shake
-      thresholdTokens: 120000
+      # Preserve old turns as model-readable image archives; unlike shake,
+      # this does not depend on the model noticing artifact recovery links.
+      strategy: snapcompact
       keepRecentTokens: 20000
       midTurnEnabled: true
       autoContinue: true
@@ -96,6 +97,9 @@ omp:
       enabled: true
     task:
       eager: default
+      enableLsp: true
+    retry:
+      modelFallback: false
     # Consent answer omp recorded live (autoqa prompt) — promoted to survive
     # the wholesale re-author. Flat `dev.autoqaConsent` is omp's canonical
     # file shape since v17.0.0 (oh-my-pi 46ad908 renamed away from nested
@@ -109,24 +113,31 @@ omp:
     # omp-introduced toggle (hides the model's thinking block in the TUI),
     # promoted to survive the wholesale re-author.
     hideThinkingBlock: true
-    # Reasoning goes to the interactive session (default) and the reasoning
-    # roles (plan/slow). GPT-5.6 Sol is the high-cost/deep tier; Terra is the
-    # everyday Codex model; Luna covers cheap delegation and commit text.
-    # `task` in particular inherits the active session model unless pinned.
+    # Stable custom tiers keep agent prompts independent of provider model IDs.
+    # Sol handles quality-first judgment/planning, Terra handles broad synthesis,
+    # and Luna handles bounded agentic and high-volume/mechanical work. Native OMP
+    # agents assign thinking independently from these role aliases.
+    # omp introduced named tier aliases (strong/balanced/fast) + `@alias` refs
+    # and a `designer` role (2026-07 upgrade); folded in to match the live
+    # canonical form — same models as the previous concrete-value block.
     modelRoles:
-      default: openai-codex/gpt-5.6-terra:medium
-      smol: openai-codex/gpt-5.6-luna
-      plan: openai-codex/gpt-5.6-sol:xhigh
-      advisor: openai-codex/gpt-5.6-sol
-      tiny: openai-codex/gpt-5.6-luna
-      slow: openai-codex/gpt-5.6-sol:xhigh
-      task: openai-codex/gpt-5.6-luna
-      commit: openai-codex/gpt-5.6-luna
-      vision: openai-codex/gpt-5.6-terra
-  # Custom model registry — always rendered to ~/.omp/agent/models.yml so
-  # non-local custom providers can be added here without enabling the local LLM
-  # stack. Keep built-in remote models in modelRoles/config.yml; do not mirror
-  # OMP's bundled catalog here.
+      strong: openai-codex/gpt-5.6-sol
+      balanced: openai-codex/gpt-5.6-terra
+      fast: openai-codex/gpt-5.6-luna
+      default: '@balanced:medium'
+      smol: '@fast'
+      plan: '@strong:xhigh'
+      advisor: '@strong'
+      tiny: '@fast'
+      slow: '@strong:xhigh'
+      task: '@fast'
+      commit: '@fast'
+      vision: '@balanced'
+      designer: '@balanced'
+      # Custom model registry — always rendered to ~/.omp/agent/models.yml so
+      # non-local custom providers can be added here without enabling the local LLM
+      # stack. Keep built-in remote models in modelRoles/config.yml; do not mirror
+      # OMP's bundled catalog here.
   models:
     providers: {}
   # Native OMP plugin installs — reconciled by sync_omp_plugins (.sync-lib.sh)

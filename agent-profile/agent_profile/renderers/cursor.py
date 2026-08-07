@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_profile import shared
-from agent_profile.env import VAR_RE
+from agent_profile.env import VAR_RE, load_dotenv, vault_cache_path
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import (
     agents_for,
@@ -295,16 +295,39 @@ def _agent_frontmatter(item: dict[str, Any]) -> dict[str, Any]:
     return shared.claude_agent_frontmatter(item)
 
 
-def _dotenv_abs_path() -> str:
-    """Absolute path to the dotfiles ``.env`` Cursor's ``envFile`` points at.
-
-    Resolves ``${DOTFILES_DIR}/.env`` via :func:`os.path.expandvars`, falling
-    back to ``~/Dev/dotfiles`` when ``DOTFILES_DIR`` is unset (the
-    :mod:`discover` pattern). A machine-specific absolute path in user config
-    is acceptable here — it matches the marketplace-path precedent in
-    ``claude.py``'s ``_merge_root_settings``."""
+def _repo_root() -> Path:
+    """Dotfiles repo root, resolved the same way as every other ``${VAR}``
+    consumer: ``${DOTFILES_DIR}`` via :func:`os.path.expandvars`, falling
+    back to ``~/Dev/dotfiles`` when unset (the :mod:`discover` pattern)."""
     dotfiles = os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles")
-    return str(Path(os.path.expandvars(dotfiles)) / ".env")
+    return Path(os.path.expandvars(dotfiles))
+
+
+def _env_file_for_keys(keys: set[str]) -> str:
+    """Absolute path to the single ``envFile`` that can supply every key in
+    ``keys``.
+
+    A key the vault has migrated resolves from the materialized cache; a
+    key still in ``.env`` resolves from ``.env``. Cursor's ``envFile`` is a
+    single path, so a server whose ``${VAR}`` keys are split across both
+    sources cannot be represented and fails loud rather than silently
+    losing half its credentials (mirrors the self-reference fail-loud
+    below). A machine-specific absolute path in user config is acceptable
+    here — it matches the marketplace-path precedent in ``claude.py``'s
+    ``_merge_root_settings``."""
+    repo_root = _repo_root()
+    cache_keys = load_dotenv(vault_cache_path()).keys()
+    in_cache = {k for k in keys if k in cache_keys}
+    in_dotenv_only = keys - in_cache
+    if in_cache and in_dotenv_only:
+        raise ValueError(
+            "cursor renderer: env keys "
+            f"{sorted(in_cache)} resolve from the vault cache but "
+            f"{sorted(in_dotenv_only)} resolve from .env — Cursor's envFile "
+            "can only point at one file, so this server's secrets cannot be "
+            "represented by a single envFile. Handle this MCP explicitly."
+        )
+    return str(vault_cache_path() if in_cache else repo_root / ".env")
 
 
 def _has_var_ref(value: str) -> bool:
@@ -332,8 +355,10 @@ def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
     does NOT resolve against the shell ``.env`` (a Finder/Dock launch inherits
     no shell env). Cursor's stdio servers support an ``envFile`` field that
     loads a ``.env`` at launch — so any ``${VAR}``-referencing entry is dropped
-    from ``env`` and the abs ``.env`` path is added as ``envFile`` instead.
-    Plain literals (no ``${VAR}``) stay in ``env``.
+    from ``env`` and the ``envFile`` path is added instead — the vault
+    cache when the key was migrated there, ``.env`` otherwise (see
+    :func:`_env_file_for_keys`). Plain literals (no ``${VAR}``) stay in
+    ``env``.
 
     ``envFile`` can only represent the exact self-reference shape
     ``KEY: "${KEY}"`` (it loads vars by their own names). A renamed key or an
@@ -356,11 +381,11 @@ def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
                     'KEY: "${KEY}" form, or handle this MCP explicitly.'
                 )
         literals = {k: v for k, v in env.items() if not _has_var_ref(str(v))}
-        has_var_ref = len(literals) != len(env)
+        var_ref_keys = set(env) - set(literals)
         if literals:
             entry["env"] = literals
-        if has_var_ref:
-            entry["envFile"] = _dotenv_abs_path()
+        if var_ref_keys:
+            entry["envFile"] = _env_file_for_keys(var_ref_keys)
     return entry
 
 

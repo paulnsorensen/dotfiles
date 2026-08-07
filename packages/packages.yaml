@@ -58,9 +58,9 @@ packages:
   # renovate: datasource=npm depName=eslint
   - eslint: { source: npm, version: "10.8.0" }
   # renovate: datasource=npm depName=markdownlint-cli2
-  - markdownlint-cli2: { source: npm, version: "0.23.1" }
+  - markdownlint-cli2: { source: npm, version: "0.23.2" }
   # renovate: datasource=npm depName=ccusage
-  - ccusage: { source: npm, version: "20.0.18" }
+  - ccusage: { source: npm, version: "20.0.19" }
   # renovate: datasource=npm depName=@govcraft/agent-skills
   - agent-skills: { source: npm, pkg: "@govcraft/agent-skills", version: "0.4.4" }
   # renovate: datasource=npm depName=@withgraphite/graphite-cli
@@ -70,7 +70,7 @@ packages:
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.16.0" } # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.16.1" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
   - check-jsonschema: { source: uv, version: "0.37.4" }
   # renovate: datasource=git-refs depName=agentskills/agentskills
@@ -81,10 +81,12 @@ packages:
 
   # gh CLI extensions
   # renovate: datasource=github-releases depName=github/gh-stack
-  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.0.8" }
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
 
   # Cargo
   # renovate: datasource=crate depName=cargo-update
   - cargo-update: { source: cargo, version: "22.1.0" } # provides `cargo install-update`
+  # renovate: datasource=crate depName=bws
+  - bws: { source: cargo, version: "2.1.0", gate_unless: ONEPASSWORD_PRESENT }
   # tilth and hallouminate stay on their own-authored npm nightly channels via
   # chezmoi run_onchange installers; no cargo copy may shadow them.

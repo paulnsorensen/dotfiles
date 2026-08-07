@@ -99,7 +99,7 @@ test('milknado worker config retains its required execution keys', async () => {
 })
 
 
-test('workflow smoke wiring invokes the wrapper, CI runs smoke, and the old parse guard is gone', async () => {
+test('workflow smoke wiring invokes the wrapper, CI runs every test recipe, and the old parse guard is gone', async () => {
   const [justfile, ci] = await Promise.all([
     readFile(resolve(root, 'justfile'), 'utf8'),
     readFile(resolve(root, '.github/workflows/test.yml'), 'utf8'),
@@ -107,6 +107,8 @@ test('workflow smoke wiring invokes the wrapper, CI runs smoke, and the old pars
 
   assert.match(justfile, /^smoke:\n\s+\.\/tests\/workflows-test\.sh$/m)
   assert.doesNotMatch(justfile, /workflows-parse\.sh/)
+  assert.match(ci, /- name: Run tests\n\s+run: just test/)
+  assert.match(ci, /- name: Run Python tests\n\s+run: just test-python/)
   assert.match(ci, /- name: Run smoke tests\n\s+run: just smoke/)
   await assert.rejects(readFile(resolve(root, 'tests/workflows-parse.sh')), { code: 'ENOENT' })
 })

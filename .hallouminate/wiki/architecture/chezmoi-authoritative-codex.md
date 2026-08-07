@@ -87,8 +87,9 @@ by capability (`sandbox_mode`), so shipping that would have sandboxed `coder`,
 Read-only now means **no write tool remains reachable**: every entry of
 `_WRITE_TOOLS` is banned by `disallowedTools` or excluded by a `tools` whitelist.
 
-The five read-only agents (`fromage-age-arch`, `fromage-age-history`,
-`fromage-secaudit`, `ghostbuster`, `nih-scanner`) deny every `_WRITE_TOOLS` entry,
+The read-only agents (`ghostbuster`, `nih-scanner`; before the 2026-07
+specialist removal also `fromage-age-arch`, `fromage-age-history`,
+`fromage-secaudit`) deny every `_WRITE_TOOLS` entry,
 so their rendered Codex agents carry `sandbox_mode = "read-only"`.[^2] Other
 agents retain a required write path, including `explorer`'s out-of-context
 `.cheese/explore/<slug>.md` artifact.
