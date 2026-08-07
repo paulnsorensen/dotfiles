@@ -1,11 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-slug="${1:-}"
-if [[ -z "$slug" ]]; then
-    echo "Usage: ccw-init <slug>" >&2
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/worktree.sh
+source "${SCRIPT_DIR}/lib/worktree.sh"
+
+usage() {
+    echo "Usage: wt [-o|-m] <slug>" >&2
+    echo "  -o   branch off origin/<default-branch> (fetches first)" >&2
+    echo "  -m   branch off the current branch (default)" >&2
     exit 1
-fi
+}
+
+base_mode="current"
+while getopts "om" opt; do
+    case "$opt" in
+        o) base_mode="origin" ;;
+        m) base_mode="current" ;;
+        *) usage ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+slug="${1:-}"
+[[ -z "$slug" ]] && usage
 
 if [[ "$slug" =~ [^a-zA-Z0-9_-] ]]; then
     echo "slug must contain only a-z, 0-9, hyphens, underscores" >&2
@@ -22,11 +40,22 @@ wt_dir="${repo_root}/.worktrees/${slug}"
 branch="claude/${slug}"
 
 created=false
+start_point=""
 if [[ -d "${wt_dir}" ]]; then
     echo "Resuming worktree: ${wt_dir}" >&2
 else
-    echo "Creating worktree: ${wt_dir} (branch: ${branch})" >&2
-    git -C "${repo_root}" worktree add "${wt_dir}" -b "${branch}" 1>&2 || exit 1
+    start_point="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD)"
+    if [[ "$base_mode" == "origin" ]]; then
+        git -C "${repo_root}" fetch origin 1>&2 \
+            || { echo "wt: git fetch origin failed" >&2; exit 1; }
+        default_branch="$(resolve_default_branch "${repo_root}")" || {
+            echo "wt: could not resolve origin's default branch" >&2
+            exit 1
+        }
+        start_point="origin/${default_branch}"
+    fi
+    echo "Creating worktree: ${wt_dir} (branch: ${branch}, from: ${start_point})" >&2
+    git -C "${repo_root}" worktree add "${wt_dir}" -b "${branch}" "${start_point}" 1>&2 || exit 1
     created=true
 fi
 
@@ -68,7 +97,11 @@ if [[ ! -f "${claude_local}" ]]; then
 fi
 
 base_sha="$(git -C "${wt_dir}" rev-parse --short HEAD)"
-base_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD)"
+if [[ "${created}" == true ]]; then
+    base_branch="${start_point}"
+else
+    base_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD)"
+fi
 
 jq -n \
     --arg path "${wt_dir}" \

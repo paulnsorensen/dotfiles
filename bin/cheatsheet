@@ -66,6 +66,9 @@ print_cheatsheet() {
     row "ccw-rm <slug>"       "remove worktree + branch + tmux session"
     row "ccw-sweep"           "sweep all repos under ~/Dev"
     row "ccw-check"           "verify worktree permissions"
+    row "wt <slug>"           "create/resume a worktree, no claude launch"
+    row "wto <slug>"          "wt -o: branch off origin/<default-branch>"
+    row "wtm <slug>"          "wt -m: branch off the current branch"
     row "wt-git <path>"       "git in a worktree (no cd)"
 
     hdr "MCP / Hooks / Agents"
