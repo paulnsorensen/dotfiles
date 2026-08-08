@@ -27,6 +27,11 @@ APPROVAL_TTL = 60
 MAX_LINE = 1 << 20
 READ_BUFFER = 64 << 10
 RESPONSE_DRAIN_TIMEOUT = 30
+# macOS getsockopt(SOL_LOCAL, LOCAL_PEERCRED) reads struct xucred (sys/ucred.h);
+# CPython's socket module exposes neither the constants nor a getpeereid() method.
+_DARWIN_SOL_LOCAL = 0
+_DARWIN_LOCAL_PEERCRED = 0x001
+_DARWIN_XUCRED_FORMAT = "=IIH2x16I"
 
 
 class ConfigError(Exception):
@@ -221,14 +226,10 @@ def _peer_uid(connection: socket.socket) -> int:
             credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
             return struct.unpack("3i", credentials)[1]
         if sys.platform == "darwin":
-            method = getattr(connection, "getpeereid", None)
-            if method is not None:
-                uid, _gid = method()
-                return int(uid)
-            module_method = getattr(socket, "getpeereid", None)
-            if module_method is not None:
-                uid, _gid = module_method(connection)
-                return int(uid)
+            credentials = connection.getsockopt(
+                _DARWIN_SOL_LOCAL, _DARWIN_LOCAL_PEERCRED, struct.calcsize(_DARWIN_XUCRED_FORMAT)
+            )
+            return struct.unpack(_DARWIN_XUCRED_FORMAT, credentials)[1]
     except (AttributeError, OSError, struct.error, TypeError, ValueError):
         pass
     raise ConfigError("peer credentials are unavailable")

@@ -62,13 +62,30 @@ expected = {
 assert policy == expected, (policy, expected)
 PY
     assert_success
-    [[ "$(stat -c '%a' "$policy")" == 600 ]]
-    [[ "$(stat -c '%a' "$INSTALL_ROOT/var/run/dotfiles-agent-secrets")" == 755 ]]
-    unit="$INSTALL_ROOT/etc/systemd/system/dotfiles-agent-secret@.service"
-    [[ "$(stat -c '%a' "$INSTALL_ROOT/var/lib/dotfiles-agent-secrets/fixture")" == 700 ]]
-    [[ "$(grep '^ExecStart=' "$unit")" == *'--run-user agent-secret-fixture --upstream-home /var/lib/dotfiles-agent-secrets/fixture'* ]]
-    [[ "$(grep '^ExecStart=' "$unit")" == *'--socket /var/run/dotfiles-agent-secrets/fixture.sock --control-socket /var/run/dotfiles-agent-secrets/fixture.control.sock'* ]]
-    [[ "$(grep '^CapabilityBoundingSet=' "$unit")" == 'CapabilityBoundingSet=CAP_CHOWN CAP_SETGID CAP_SETUID' ]]
+    if [[ "$(uname -s)" == Darwin ]]; then
+        home_abs="/var/db/dotfiles-agent-secrets/fixture"
+    else
+        home_abs="/var/lib/dotfiles-agent-secrets/fixture"
+    fi
+    home="$INSTALL_ROOT$home_abs"
+    [[ "$(stat -c '%a' "$policy" 2>/dev/null || stat -f '%Lp' "$policy")" == 600 ]]
+    [[ "$(stat -c '%a' "$INSTALL_ROOT/var/run/dotfiles-agent-secrets" 2>/dev/null || stat -f '%Lp' "$INSTALL_ROOT/var/run/dotfiles-agent-secrets")" == 755 ]]
+    [[ "$(stat -c '%a' "$home" 2>/dev/null || stat -f '%Lp' "$home")" == 700 ]]
+    if [[ "$(uname -s)" == Darwin ]]; then
+        plist="$INSTALL_ROOT/Library/LaunchDaemons/com.dotfiles.agent-secret.fixture.plist"
+        plist_value() {
+            grep -A1 "<string>$1</string>" "$plist" | tail -n1 | sed -e 's/^[[:space:]]*<string>//' -e 's|</string>$||'
+        }
+        [[ "$(plist_value --run-user)" == 'agent-secret-fixture' ]]
+        [[ "$(plist_value --upstream-home)" == "$home_abs" ]]
+        [[ "$(plist_value --socket)" == '/var/run/dotfiles-agent-secrets/fixture.sock' ]]
+        [[ "$(plist_value --control-socket)" == '/var/run/dotfiles-agent-secrets/fixture.control.sock' ]]
+    else
+        unit="$INSTALL_ROOT/etc/systemd/system/dotfiles-agent-secret@.service"
+        [[ "$(grep '^ExecStart=' "$unit")" == *'--run-user agent-secret-fixture --upstream-home /var/lib/dotfiles-agent-secrets/fixture'* ]]
+        [[ "$(grep '^ExecStart=' "$unit")" == *'--socket /var/run/dotfiles-agent-secrets/fixture.sock --control-socket /var/run/dotfiles-agent-secrets/fixture.control.sock'* ]]
+        [[ "$(grep '^CapabilityBoundingSet=' "$unit")" == 'CapabilityBoundingSet=CAP_CHOWN CAP_SETGID CAP_SETUID' ]]
+    fi
     run grep -R -q 'installer-secret-sentinel' "$INSTALL_ROOT"
     [[ "$status" -ne 0 ]]
 }
@@ -115,6 +132,10 @@ PY
     [[ -z "$output" ]]
     [[ ! -e "$INSTALL_ROOT/etc/dotfiles/agent-secret-broker/fixture.json" ]]
     [[ -e "$CREDENTIAL" ]]
-    [[ -e "$INSTALL_ROOT/etc/systemd/system/dotfiles-agent-secret@.service" ]]
+    if [[ "$(uname -s)" == Darwin ]]; then
+        [[ ! -e "$INSTALL_ROOT/Library/LaunchDaemons/com.dotfiles.agent-secret.fixture.plist" ]]
+    else
+        [[ -e "$INSTALL_ROOT/etc/systemd/system/dotfiles-agent-secret@.service" ]]
+    fi
     [[ -x "$INSTALL_ROOT/usr/local/libexec/dotfiles/agent-secret-broker.py" ]]
 }
