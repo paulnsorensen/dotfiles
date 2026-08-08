@@ -69,7 +69,7 @@
 "aqua:mozilla/sccache" = "v0.17.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "cargo-nextest-0.9.140"
 "aqua:protocolbuffers/protobuf/protoc" = "v35.1"
-"aqua:astral-sh/uv" = "0.12.0"
+"aqua:astral-sh/uv" = "0.12.1"
 "aqua:rust-lang/rust-analyzer" = "2026-07-20"
 "aqua:taiki-e/cargo-llvm-cov" = "v0.8.7"
 "aqua:anthropics/claude-code" = "v2.1.220"
