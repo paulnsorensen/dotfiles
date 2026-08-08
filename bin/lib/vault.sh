@@ -136,8 +136,8 @@ _vault_token() (
     trap - DEBUG RETURN ERR
     local token
     if [[ "$(uname -s)" == Darwin ]]; then
-        token="$(security find-generic-password -w -s BWS_ACCESS_TOKEN -a "${USER:-}" 2>/dev/null)" || {
-            echo "vault: no Bitwarden access token in Keychain (service BWS_ACCESS_TOKEN)." >&2
+        token="$(security find-generic-password -w -s bws_access_token -a "${USER:-}" 2>/dev/null)" || {
+            echo "vault: no Bitwarden access token in Keychain (service bws_access_token)." >&2
             echo "vault: run bin/vault-provision to store one." >&2
             return 1
         }
