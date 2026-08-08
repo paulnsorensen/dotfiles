@@ -1,245 +1,71 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC2016  # single-quoted 'sh -c "$VAR"' is intentional:
-# the variable must expand in the exec'd shell (after cc-env-exec exports
-# it), not in the bats process — that expansion IS the assertion.
-# Tests for the .env launch-time loader: bin/cc-env-exec loads
-# $DOTFILES_DIR/.env (safe key=value parse, no command execution — matching
-# zsh/core.zsh's loader) and execs the given command; _cc_base (zsh/claude.zsh)
-# prepends it to the claude command on every launch path. Rationale: a new
-# tmux session inherits the tmux SERVER's environment — not the launching
-# client's — so a server started before a key was added would launch claude
-# without it and every ${VAR}-referencing MCP in ~/.claude.json would die.
-# The wrapper (rather than `tmux new-session -e K=V`) keeps secrets out of
-# tmux's argv, which is `ps`-visible to other local users for the lifetime
-# of the attached client.
-#
-# The wrapper is exercised directly; the _cc_base wiring is exercised
-# end-to-end in zsh with tmux/claude mocked on $PATH.
-
+# Tests for bin/cc-env-exec: explicit non-secret settings only.
 load test_helper
 
-CLAUDE_ZSH="$REAL_DOTFILES_DIR/zsh/claude.zsh"
-CC_ENV_EXEC="$REAL_DOTFILES_DIR/bin/cc-env-exec"
-DOTSCLAUDE="$REAL_DOTFILES_DIR/bin/dotsclaude"
-
 setup() {
-    FIXTURE_DIR="$(mktemp -d)"
-    MOCK_BIN="$(mktemp -d)"
-    export PATH="$MOCK_BIN:$PATH"
-    export MOCK_ARGS_FILE="$MOCK_BIN/args"
-    # _cc_base resolves the launcher under $DOTFILES_DIR — ship the real
-    # script into the fixture so e2e tests stay grounded in shipped code.
-    mkdir -p "$FIXTURE_DIR/bin"
-    cp "$CC_ENV_EXEC" "$FIXTURE_DIR/bin/cc-env-exec"
-    mkdir -p "$FIXTURE_DIR/bin/lib"
-    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$FIXTURE_DIR/bin/lib/vault.sh"
-    export XDG_CACHE_HOME="$FIXTURE_DIR/.cache"
-    mkdir -p "$XDG_CACHE_HOME/dotfiles"
-    printf 'CACHE_KEY=cached\n' > "$XDG_CACHE_HOME/dotfiles/secrets.env"
+    setup_test_env
+    export DOTFILES_DIR="$TEST_HOME/dotfiles"
+    mkdir -p "$DOTFILES_DIR/bin/lib"
+    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$DOTFILES_DIR/bin/lib/vault.sh"
 }
 
 teardown() {
-    rm -rf "$FIXTURE_DIR" "$MOCK_BIN"
+    teardown_test_env
 }
 
-# Mock tmux: report no existing session, record new-session invocations.
-_mock_tmux() {
-    cat > "$MOCK_BIN/tmux" <<'EOF'
-#!/usr/bin/env bash
-[[ "$1" == "has-session" ]] && exit 1
-[[ "$1" == "new-session" ]] && printf '%s\n' "$@" > "$MOCK_ARGS_FILE"
-exit 0
-EOF
-    chmod +x "$MOCK_BIN/tmux"
-}
-
-# ── bin/cc-env-exec unit tests ──
-
-@test "cc-env-exec exists and is executable" {
-    [ -x "$CC_ENV_EXEC" ]
-}
-
-@test "cc-env-exec exports .env keys to the exec'd command" {
-    printf 'A_KEY=one\nB_KEY=two\n' > "$FIXTURE_DIR/.env"
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    run "$CC_ENV_EXEC" sh -c 'printf %s:%s "$A_KEY" "$B_KEY"'
-    [ "$status" -eq 0 ]
-    [ "$output" = "one:two" ]
-}
-
-@test "cc-env-exec skips comments and blank lines" {
-    printf '# a comment\n\nKEY=val\n' > "$FIXTURE_DIR/.env"
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    run "$CC_ENV_EXEC" sh -c 'printf %s "$KEY"'
-    [ "$status" -eq 0 ]
-    [ "$output" = "val" ]
-}
-
-@test "cc-env-exec keeps everything after the first = in the value" {
-    printf 'TOKEN=a=b=c\n' > "$FIXTURE_DIR/.env"
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    run "$CC_ENV_EXEC" sh -c 'printf %s "$TOKEN"'
-    [ "$status" -eq 0 ]
-    [ "$output" = "a=b=c" ]
-}
-
-@test "cc-env-exec still execs the command when .env is missing" {
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    run "$CC_ENV_EXEC" sh -c 'printf ok'
-    [ "$status" -eq 0 ]
-    [ "$output" = "ok" ]
-}
-
-@test "cc-env-exec never executes value content" {
-    printf 'EVIL=$(touch %s/pwned)\n' "$FIXTURE_DIR" > "$FIXTURE_DIR/.env"
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    run "$CC_ENV_EXEC" sh -c 'printf %s "$EVIL"'
-    [ "$status" -eq 0 ]
-    [ "$output" = "\$(touch $FIXTURE_DIR/pwned)" ]
-    [ ! -f "$FIXTURE_DIR/pwned" ]
-}
-
-@test "cc-env-exec passes the exec'd command's exit status through" {
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    run "$CC_ENV_EXEC" sh -c 'exit 7'
-    [ "$status" -eq 7 ]
-}
-
-@test "cc-env-exec without a command prints usage and exits 2" {
-    run "$CC_ENV_EXEC"
+@test "cc-env-exec requires a command" {
+    run "$REAL_DOTFILES_DIR/bin/cc-env-exec"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"Usage"* ]]
+    [[ "$output" == *"Usage:"* ]]
 }
 
-@test "cc-env-exec skips an invalid identifier line and continues" {
-    printf '1BAD=x\nGOOD=y\n' > "$FIXTURE_DIR/.env"
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    run "$CC_ENV_EXEC" sh -c 'printf %s "$GOOD"'
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"y"* ]]
-    [[ "$output" == *"skipping invalid .env line"* ]]
-}
-
-@test "cc-env-exec falls back to ~/Dev/dotfiles when DOTFILES_DIR is unset" {
-    mkdir -p "$FIXTURE_DIR/Dev/dotfiles/bin/lib"
-    cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$FIXTURE_DIR/Dev/dotfiles/bin/lib/vault.sh"
-    mkdir -p "$FIXTURE_DIR/Dev/dotfiles"
-    printf 'FB_KEY=fb\n' > "$FIXTURE_DIR/Dev/dotfiles/.env"
-    run env -u DOTFILES_DIR HOME="$FIXTURE_DIR" "$CC_ENV_EXEC" sh -c 'printf %s "$FB_KEY"'
-    [ "$status" -eq 0 ]
-    [ "$output" = "fb" ]
-}
-
-@test "cc-env-exec exits non-zero with vault-provision guidance when the secrets cache is missing" {
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    export XDG_CACHE_HOME="$FIXTURE_DIR/empty-cache"
-    run "$CC_ENV_EXEC" sh -c 'printf ok'
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"vault-provision"* ]]
-}
-
-@test "dotsclaude uses the mise Claude shim by default" {
-    export HOME="$FIXTURE_DIR"
-    export XDG_DATA_HOME="$FIXTURE_DIR/.local/share"
-    mkdir -p "$XDG_DATA_HOME/mise/shims"
-    cat > "$XDG_DATA_HOME/mise/shims/claude" <<'EOF'
-#!/usr/bin/env bash
-echo mise-claude "$@"
+@test "cc-env-exec exports documented settings and ignores unknown .env keys" {
+    cat > "$DOTFILES_DIR/.env" <<'EOF'
+CLAUDE_SETUP_DIR=/tmp/claude
+DOTFILES_DEV=true
+UNKNOWN_SETTING=must-not-be-loaded
 EOF
-    chmod +x "$XDG_DATA_HOME/mise/shims/claude"
-
-    run env DOTFILES_DIR="$FIXTURE_DIR" AGENTS_DOTFILES="$FIXTURE_DIR/agents" "$DOTSCLAUDE" --version
-
+    run "$REAL_DOTFILES_DIR/bin/cc-env-exec" bash -c \
+        "printf '%s|%s|%s\n' \"\${CLAUDE_SETUP_DIR:-}\" \"\${DOTFILES_DEV:-}\" \"\${UNKNOWN_SETTING:-}\""
     [ "$status" -eq 0 ]
-    [ "$output" = "mise-claude --version" ]
+    [ "$output" = '/tmp/claude|true|' ]
 }
 
-# ── _cc_base wiring (end-to-end in zsh, tmux/claude mocked) ──
-
-@test "cc routes the tmux command through cc-env-exec with no secret in argv" {
-    command -v zsh &>/dev/null || skip "zsh not installed"
-    printf 'FRESH_KEY=hot\n' > "$FIXTURE_DIR/.env"
-    _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
-    [ "$status" -eq 0 ]
-    [ -f "$MOCK_ARGS_FILE" ]
-    # The spawned command is the wrapper + claude…
-    [[ "$(tail -n 1 "$MOCK_ARGS_FILE")" == "$FIXTURE_DIR/bin/cc-env-exec claude"* ]]
-    # …and the secret never appears anywhere in tmux's argv.
-    ! grep -qF 'FRESH_KEY=hot' "$MOCK_ARGS_FILE"
-    ! grep -qx -- '-e' "$MOCK_ARGS_FILE"
-}
-
-@test "cc --new routes through cc-env-exec with no secret in argv (inside-tmux dedicated-session path)" {
-    command -v zsh &>/dev/null || skip "zsh not installed"
-    printf 'FRESH_KEY=hot\n' > "$FIXTURE_DIR/.env"
-    _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' TMUX=fake; source '$CLAUDE_ZSH'; cc --new"
-    [ "$status" -eq 0 ]
-    [ -f "$MOCK_ARGS_FILE" ]
-    [[ "$(tail -n 1 "$MOCK_ARGS_FILE")" == "$FIXTURE_DIR/bin/cc-env-exec claude"* ]]
-    ! grep -qF 'FRESH_KEY=hot' "$MOCK_ARGS_FILE"
-    ! grep -qx -- '-e' "$MOCK_ARGS_FILE"
-}
-
-@test "direct claude path gets fresh .env keys via the wrapper" {
-    command -v zsh &>/dev/null || skip "zsh not installed"
-    printf 'FRESH_KEY=hot\n' > "$FIXTURE_DIR/.env"
-    cat > "$MOCK_BIN/claude" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "${FRESH_KEY:-unset}" > "$MOCK_ARGS_FILE"
+@test "cc-env-exec parses values as data rather than executing .env" {
+    cat > "$DOTFILES_DIR/.env" <<'EOF'
+CLAUDE_SETUP_DIR=$(touch /tmp/cc-env-exec-must-not-exist)
 EOF
-    chmod +x "$MOCK_BIN/claude"
-    # TMUX set without --new → the direct-exec else branch.
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' TMUX=fake; source '$CLAUDE_ZSH'; cc"
+    rm -f /tmp/cc-env-exec-must-not-exist
+    run "$REAL_DOTFILES_DIR/bin/cc-env-exec" bash -c \
+        "printf '%s\n' \"\$CLAUDE_SETUP_DIR\""
     [ "$status" -eq 0 ]
-    [ "$(cat "$MOCK_ARGS_FILE")" = "hot" ]
+    [ "$output" = "\$(touch /tmp/cc-env-exec-must-not-exist)" ]
+    [ ! -e /tmp/cc-env-exec-must-not-exist ]
 }
 
-@test "cc launches cleanly when .env is missing" {
-    command -v zsh &>/dev/null || skip "zsh not installed"
-    # No .env in the fixture dir at all.
-    _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
+@test "cc-env-exec clears every retired value before exec" {
+    cat > "$DOTFILES_DIR/.env" <<'EOF'
+CLAUDE_SETUP_DIR=/tmp/claude
+EOF
+    run env DOTFILES_DIR="$DOTFILES_DIR" \
+        GH_TOKEN=gh GITHUB_PERSONAL_ACCESS_TOKEN=pat \
+        GITHUB_APP_PRIVATE_KEY=app-key \
+        CONTEXT7_API_KEY=context7 TAVILY_API_KEY=tavily \
+        SERPER_API_KEY=serper TODOIST_API_KEY=todoist \
+        "$REAL_DOTFILES_DIR/bin/cc-env-exec" bash -c 'env'
     [ "$status" -eq 0 ]
-    [ -f "$MOCK_ARGS_FILE" ]
-    grep -qx 'new-session' "$MOCK_ARGS_FILE"
-    grep -qx -- '-s' "$MOCK_ARGS_FILE"
+    [[ "$output" != *GH_TOKEN=* ]]
+    [[ "$output" != *GITHUB_PERSONAL_ACCESS_TOKEN=* ]]
+    [[ "$output" != *GITHUB_APP_PRIVATE_KEY=* ]]
+    [[ "$output" != *CONTEXT7_API_KEY=* ]]
+    [[ "$output" != *TAVILY_API_KEY=* ]]
+    [[ "$output" != *SERPER_API_KEY=* ]]
+    [[ "$output" != *TODOIST_API_KEY=* ]]
 }
 
-@test "cc falls back to plain claude when the launcher is absent" {
-    command -v zsh &>/dev/null || skip "zsh not installed"
-    rm "$FIXTURE_DIR/bin/cc-env-exec"
-    _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
+@test "missing .env does not create a cache or fail the command" {
+    run "$REAL_DOTFILES_DIR/bin/cc-env-exec" bash -c 'printf "%s\n" ok'
     [ "$status" -eq 0 ]
-    [ "$(tail -n 1 "$MOCK_ARGS_FILE")" = "claude" ]
-}
-
-@test "user args survive the wrapper prefix (ccc → --continue is final)" {
-    command -v zsh &>/dev/null || skip "zsh not installed"
-    printf 'K_ONE=v1\n' > "$FIXTURE_DIR/.env"
-    _mock_tmux
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; ccc"
-    [ "$status" -eq 0 ]
-    [ "$(tail -n 1 "$MOCK_ARGS_FILE")" = "$FIXTURE_DIR/bin/cc-env-exec claude --continue" ]
-}
-
-@test "cc-env-exec skips whitespace-only and indented-comment lines silently" {
-    printf '   \n  # indented comment\nKEY=val\n' > "$FIXTURE_DIR/.env"
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    run "$CC_ENV_EXEC" sh -c 'printf %s "$KEY"'
-    [ "$status" -eq 0 ]
-    # Exact match: the value and nothing else — no spurious warnings.
-    [ "$output" = "val" ]
-}
-
-@test "cc-env-exec skips a line without = and does not clobber an inherited var" {
-    printf 'NOEQ_VAR\nKEY=val\n' > "$FIXTURE_DIR/.env"
-    export DOTFILES_DIR="$FIXTURE_DIR"
-    export NOEQ_VAR="inherited"
-    run "$CC_ENV_EXEC" sh -c 'printf %s:%s "$NOEQ_VAR" "$KEY"'
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"inherited:val"* ]]
-    [[ "$output" == *"skipping .env line without"* ]]
+    [ "$output" = ok ]
+    [ ! -e "$HOME/.cache/dotfiles/secrets.env" ]
 }

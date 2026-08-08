@@ -2,14 +2,19 @@
   "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
   "mcpServers": {
     "context7": {
-      "command": "npx",
+      "command": "agent-secret-proxy",
       "args": [
-        "-y",
-        "@upstash/context7-mcp"
-      ],
-      "env": {
-        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
-      }
+        "--socket",
+        "/var/run/dotfiles-agent-secrets/context7.sock"
+      ]
+    },
+    "github": {
+      "command": "agent-secret-proxy",
+      "args": [
+        "--socket",
+        "/var/run/dotfiles-agent-secrets/github.sock"
+      ]
     }
+
   }
 }

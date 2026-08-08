@@ -166,7 +166,7 @@ MOCK
 }
 
 
-@test "no args runs default sync" {
+@test "no args syncs without provisioning daily-user credentials" {
     cd "$FAKE_DOTFILES"
     printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
     mkdir -p "$FAKE_DOTFILES/bin/lib"
@@ -178,8 +178,6 @@ MOCK
     run bash "$SYNC_SCRIPT"
     assert_success
     assert_output_contains "Sync completed successfully"
-    assert_output_contains "set DOTFILES_VAULT_PROVIDER in .env"
-    assert_output_contains "bin/vault-provision"
 }
 @test "invalid provider sync removes a stale vault cache before failing" {
     cd "$FAKE_DOTFILES"
@@ -198,17 +196,12 @@ MOCK
 }
 
 
-@test "active checkout resolver uses the exact configured item instead of stale inherited settings" {
+@test "active checkout settings override stale inherited provider without secret reads" {
     cd "$FAKE_DOTFILES"
     printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
     printf 'DOTFILES_VAULT_PROVIDER=onepassword\nDOTFILES_OP_ITEM=op://Employee/dotfiles\n' > "$FAKE_DOTFILES/.env"
     mkdir -p "$FAKE_DOTFILES/bin/lib"
     cp "$REAL_DOTFILES_DIR/bin/lib/vault.sh" "$FAKE_DOTFILES/bin/lib/vault.sh"
-    cat >> "$FAKE_DOTFILES/bin/lib/vault.sh" <<'MOCK'
-vault_materialize() {
-    printf '%s\n' "$1" > "$HOME/materialize-provider"
-}
-MOCK
     export OP_LOG="$HOME/op.log"
     export BWS_LOG="$HOME/bws.log"
     rm -f "$MOCK_BIN/op" "$MOCK_BIN/bws"
@@ -230,13 +223,9 @@ MOCK
     run bash "$SYNC_SCRIPT"
 
     assert_success
-    run cat "$OP_LOG"
-    assert_success
-    [[ "$output" == "item get dotfiles --vault Employee --format json" ]]
+    [[ ! -e "$OP_LOG" ]]
     [[ ! -e "$BWS_LOG" ]]
-    run cat "$HOME/materialize-provider"
-    assert_success
-    [[ "$output" == onepassword ]]
+    [[ ! -e "$HOME/materialize-provider" ]]
 }
 
 @test "sync exports the onepassword package policy handoff" {

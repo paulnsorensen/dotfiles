@@ -22,9 +22,8 @@ extra_args:
   - --dangerously-skip-permissions
 mcps:
   - name: todoist
-    command: npx
-    args: ["-y", "@doist/todoist-ai"]
-    env:
-      TODOIST_API_KEY: "${TODOIST_API_KEY}"
+    command: agent-secret-proxy
+    args: ["--socket", "/var/run/dotfiles-agent-secrets/todoist.sock"]
+
 skills:
   - { name: todoist, source: paulnsorensen/easy-cheese }

@@ -12,8 +12,9 @@ Defined in `mcp-scope.yaml` (registry-validated):
 
 - **tilth** — `mcp__tilth__*` — AST-aware read/search; replaces grep/cat when inspecting the diff's neighborhood.
 - **context7** — `mcp__context7__*` — library docs when the diff touches an unfamiliar API and you need to judge correctness.
+- **github** — `mcp__github__*` — brokered scoped-App access; mutations need operator approval.
 
-GitHub plugin MCPs (PRs, review comments) come through the separately-loaded github plugin. For web research during a review, use the `/gh` or `/briesearch` skills (forked) to keep main context clean.
+For web research during a review, use the `/gh` or `/briesearch` skills (forked) to keep main context clean.
 
 ## Working standards
 

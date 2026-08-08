@@ -21,6 +21,7 @@ packages:
   - parallel                                  # GNU parallel — run shell jobs concurrently
   - gettext
   - taf2/tap/mdvi
+  - github-mcp-server                       # official GitHub App-backed MCP binary; snapshotted by vault-provision
 
   # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh)
   - mosh                                      # resilient mobile shell (UDP 60000-61000); survives roaming/sleep

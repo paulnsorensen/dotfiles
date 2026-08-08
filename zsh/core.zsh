@@ -55,22 +55,22 @@ export PREK_HOME="$HOME/Dev/.prek"
 export EDITOR="$(which vim)"
 export VISUAL=$EDITOR
 export PAGER=less
-export LESS='-i -M -R'  # case insensitive searching, status line, and colors
+export LESS='-i -M -R'  # case insensitive, status line, and colors
 
 # Shell behavior
-setopt VI                    # Vi editing mode
-setopt NO_BEEP              # Never ever beep. Ever
-KEYTIMEOUT=1                # Fast escape key timeout for vi mode (1/100th of a second)
-MAILCHECK=0                 # disable mail checking
+setopt VI
+setopt NO_BEEP
+KEYTIMEOUT=1
+MAILCHECK=0
 
 # History configuration
 HISTFILE=~/.zsh_history
 HISTSIZE=10000
 SAVEHIST=10000
-setopt HIST_IGNORE_ALL_DUPS # Remove older duplicate entries
-setopt HIST_IGNORE_SPACE    # Don't record commands starting with space
-setopt SHARE_HISTORY        # Share history between sessions
-setopt HIST_VERIFY          # Show command with history expansion before running
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_IGNORE_SPACE
+setopt SHARE_HISTORY
+setopt HIST_VERIFY
 
 # Key bindings for vi mode
 bindkey -v
@@ -92,25 +92,39 @@ if command -v mise 1>/dev/null 2>&1; then
   eval "$(mise activate zsh)"
 fi
 
-# Source .env + the vault secrets cache if they exist (key=value only, no
-# command execution). Cache wins on collision. A missing cache warns on
-# every new shell but never breaks the shell (unlike agents/mcp/sync.sh and
-# cc-env-exec, which fail loud — a fresh terminal must not brick on a vault
-# hiccup).
-# Cache path duplicated from bin/lib/vault.sh's vault_secrets_file() and
-# agent-profile/agent_profile/env.py's vault_cache_path() — zsh can't source
-# the bash lib. Keep all three in sync if the contract changes.
-_dotfiles_cache_env="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/secrets.env"
-for _dotfiles_env_file in "$DOTFILES_DIR/.env" "$_dotfiles_cache_env"; do
-  if [[ -f "$_dotfiles_env_file" ]]; then
-    while IFS='=' read -r key val; do
-      [[ -z "$key" || "$key" == \#* ]] && continue
-      export "$key=$val"
-    done < "$_dotfiles_env_file"
-  fi
+# Load only the documented non-secret .env settings. Never source the file,
+# consult a vault cache, or pass retired credentials to child processes.
+for _dotfiles_secret in \
+  GH_TOKEN \
+  GITHUB_PERSONAL_ACCESS_TOKEN \
+  GITHUB_APP_PRIVATE_KEY \
+  CONTEXT7_API_KEY \
+  TAVILY_API_KEY \
+  SERPER_API_KEY \
+  TODOIST_API_KEY; do
+  unset "$_dotfiles_secret"
 done
-[[ -f "$_dotfiles_cache_env" ]] || echo "dotfiles: vault secrets cache missing ($_dotfiles_cache_env) — run 'bin/vault-provision'" >&2
-unset _dotfiles_env_file _dotfiles_cache_env
+rm -f -- "${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/secrets.env"
+
+_dotfiles_env_file="$DOTFILES_DIR/.env"
+if [[ -f "$_dotfiles_env_file" ]]; then
+  while IFS= read -r _dotfiles_line || [[ -n "$_dotfiles_line" ]]; do
+    [[ "$_dotfiles_line" =~ ^[[:space:]]*$ || "$_dotfiles_line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$_dotfiles_line" == *=* ]] || continue
+    _dotfiles_key="${_dotfiles_line%%=*}"
+    _dotfiles_value="${_dotfiles_line#*=}"
+    case "$_dotfiles_key" in
+      CLAUDE_SETUP_DIR|DOTFILES_VAULT_PROVIDER|DOTFILES_OP_ITEM|BWS_PROJECT_ID|\
+      DOTFILES_DEV|CHEESE_FLOW|VAUDEVILLE|TODOIST|SKILL_HARNESSES)
+        if [[ "$_dotfiles_value" == \"*\" && "$_dotfiles_value" == *\" ]]; then
+          _dotfiles_value="${_dotfiles_value[2,-2]}"
+        fi
+        export "$_dotfiles_key=$_dotfiles_value"
+        ;;
+    esac
+  done < "$_dotfiles_env_file"
+fi
+unset _dotfiles_secret _dotfiles_env_file _dotfiles_line _dotfiles_key _dotfiles_value
 
 # Vi mode cursor shapes (orthogonal to prompt choice — works with any prompt)
 function zle-line-init zle-keymap-select {

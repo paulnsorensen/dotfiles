@@ -14,7 +14,9 @@ The planning MCPs are opt-in — Notion and Linear both require OAuth and are on
 
 ## GitHub
 
-No GitHub MCP. GitHub planning items (issues, projects, PRs) are handled by the `gh` CLI and the `/gh` skill via Bash, which work inside this isolated world. Use `git` for read-only local context.
+The inherited **github** MCP uses a repository-scoped App behind the local
+broker. Reads are unattended; every issue, PR, or comment mutation requires
+separate operator approval. Use `git` for read-only local context.
 
 ## When to use
 

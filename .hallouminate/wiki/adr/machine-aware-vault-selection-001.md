@@ -12,7 +12,7 @@ Related spec: `/Users/paul/.local/share/cheese/paulnsorensen-dotfiles/specs/mach
 
 Replace `vault_detect` and `vault_provisioned` with a clean resolver cutover. Machine-local `.env` accepts `DOTFILES_VAULT_PROVIDER=auto|onepassword|bitwarden` and `DOTFILES_OP_ITEM=op://<vault>/<item>`, defaulting to `auto` and `op://Private/dotfiles`.
 
-An explicit provider is authoritative: missing executable, configuration, authentication, vault, or item is an error and never triggers fallback. In `auto`, exactly one ready provider is selected, two ready providers are an ambiguity error, and zero ready providers with no cache is the non-failing bootstrap-unconfigured state. 1Password readiness is exact configured-item metadata access, not `op whoami`; Bitwarden readiness is executable, project ID, and token availability.
+An explicit provider is authoritative: missing executable, configuration, authentication, vault, or item is an error and never triggers fallback. In `auto`, exactly one ready provider is selected, two ready providers are an ambiguity error, and zero ready providers is the non-failing bootstrap-unconfigured state. 1Password readiness is exact configured-item metadata access, not `op whoami`; Bitwarden readiness is executable, project ID, and token availability.
 
 Package intent is a separate predicate: explicit `onepassword` suppresses `bws`, explicit `bitwarden` enables it, and `auto` preserves the existing executable-presence gate so transient authentication cannot cause package churn.
 
@@ -25,6 +25,6 @@ Package intent is a separate predicate: explicit `onepassword` suppresses `bws`,
 
 ## Consequences
 
-The work laptop can set `DOTFILES_VAULT_PROVIDER=onepassword` and `DOTFILES_OP_ITEM=op://Employee/dotfiles`; personal machines retain the `Private/dotfiles` default. Machines with both providers ready must choose explicitly. Auto mode probes both providers, while explicit mode probes only the selected provider. All callers migrate to `vault_resolve`, `vault_disables_bitwarden_install`, `vault_materialize(provider)`, and `vault_secrets_file`; no compatibility aliases remain.
+The work laptop can set `DOTFILES_VAULT_PROVIDER=onepassword` and `DOTFILES_OP_ITEM=op://Employee/dotfiles`; personal machines retain the `Private/dotfiles` default. Machines with both providers ready must choose explicitly. Auto mode probes both providers, while explicit mode probes only the selected provider. `vault_resolve` and `vault_disables_bitwarden_install` remain the provider-selection APIs. Credential materialization and `vault_secrets_file` were superseded by the privileged per-consumer broker design in [[../architecture/agent-secret-isolation-001]].
 
-Sources: `bin/lib/vault.sh:10-44`; `.sync:76-90`; `.sync-lib.sh:984-1005`; `.env.example:12-20`; [1Password item commands](https://www.1password.dev/cli/reference/management-commands/item); [1Password desktop integration](https://www.1password.dev/cli/app-integration).
+Sources: `bin/lib/vault.sh`; `.sync`; `.env.example`; [1Password item commands](https://www.1password.dev/cli/reference/management-commands/item); [1Password desktop integration](https://www.1password.dev/cli/app-integration).
