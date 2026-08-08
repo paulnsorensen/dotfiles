@@ -223,8 +223,16 @@ claude:
       - "mcp__tavily__*"
       - "mcp__tilth__*"
     deny:
+      # Vault master-credential paths. The Bitwarden access token reads the
+      # whole project, so it outranks every individual key. Prefix rules
+      # only — an absolute path or `sh -c` sidesteps them: friction, not a
+      # boundary. The enforcing control is the root-owned broker credential;
+      # the Keychain item (service bws_access_token) holds the operator token.
+      - "Bash(/usr/bin/security:*)"
+      - "Bash(bws:*)"
       - "Bash(rm -rf:*)"
       - "Bash(rtk proxy git grep:*)"
+      - "Bash(security:*)"
       - "Bash(sudo:*)"
       - "Read(**/*.key)"
       - "Read(**/*.p12)"
