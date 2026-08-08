@@ -35,7 +35,7 @@
 [tools]
 "aqua:jqlang/jq" = "jq-1.8.2"
 "aqua:mikefarah/yq" = "v4.53.3"
-"aqua:junegunn/fzf" = "v0.74.1"
+"aqua:junegunn/fzf" = "v0.74.2"
 "aqua:cli/cli" = "v2.97.0"
 "aqua:koalaman/shellcheck" = "v0.11.0"
 "aqua:bats-core/bats-core" = "v1.14.0"
