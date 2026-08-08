@@ -79,7 +79,7 @@ cheese_plugin_cache_prepare() (
         echo "  ERROR: plugin cache preparation already holds $lock" >&2
         return 1
     fi
-    # shellcheck disable=SC2329  # Invoked by the EXIT trap below.
+    # shellcheck disable=SC2317,SC2329  # Invoked by the EXIT trap below.
     cleanup_plugin_cache_prepare() {
         [[ -z "$staging" ]] || rm -rf -- "$staging"
         rm -f -- "$cache_root/.current.$$.tmp" "$cache_root"/.*.link.$$
