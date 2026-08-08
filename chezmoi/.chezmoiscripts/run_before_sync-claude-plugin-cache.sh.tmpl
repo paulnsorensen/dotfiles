@@ -1,0 +1,22 @@
+#!/bin/bash
+# Always run before chezmoi updates targets. Native plugin checkouts must exist
+# before modify_settings.json resolves extraKnownMarketplaces on a clean apply.
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+REG_FILE="$SOURCE_DIR/../agents/plugins/registry.yaml"
+
+for cmd in git jq yq; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "  ERROR: $cmd not found — plugin cache cannot be prepared; install $cmd and rerun 'dots sync'" >&2
+        exit 1
+    fi
+done
+if [[ ! -f "$REG_FILE" ]]; then
+    echo "  ERROR: plugin registry not found: $REG_FILE" >&2
+    exit 1
+fi
+
+# shellcheck source=../lib/claude-plugin-reconcile.sh
+source "$SOURCE_DIR/lib/claude-plugin-reconcile.sh"
+cheese_plugin_cache_prepare "$REG_FILE" "$HOME/.cache/cheese-flow/plugins"

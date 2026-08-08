@@ -49,13 +49,6 @@ lint-markdown-fix:
 test *ARGS:
     ./tests/run-tests.sh {{ARGS}}
 
-# pytest on agent-profile, fanned across all cores via pytest-xdist. Kept out of
-# pyproject addopts so a bare `pytest -k foo --pdb` stays serial and debuggable.
-# Plain `uv run` (not --no-sync) so a cold or stale env self-heals rather than
-# failing the gate.
-test-python *ARGS:
-    cd agent-profile && uv run pytest -n auto {{ARGS}}
-
 # smoke tests — execute workflow definitions offline
 smoke:
     ./tests/workflows-test.sh
@@ -81,4 +74,4 @@ check: lint-fix
     # the parent, and an empty value makes mise resolve its cache dir to a
     # *relative* `mise`, dumping aqua bin_paths caches into the repo root. Pin
     # a real value so the shimmed tools every leg runs cache under $HOME.
-    XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel -k --group just ::: lint-shell test-python smoke test
+    XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel -k --group just ::: lint-shell smoke test

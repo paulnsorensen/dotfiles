@@ -10,15 +10,24 @@
 #   2. the merge EVICTS an MCP server dropped from the registry (the serena
 #      class of bug that install-codex.sh could never fix);
 #   3. hooks.json is an object with a `hooks` map and absolute commands;
-#   4. the read-only predicate matches agent_profile.shared.agent_is_read_only.
+#   4. the read-only predicate matches the pinned `cheese profile compile`
 
 load test_helper
 bats_require_minimum_version 1.5.0
 
 setup() {
     setup_test_env
-    command -v yq >/dev/null 2>&1 || skip "yq not installed"
-    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    # Public-engine parity is part of the standard gate, not an optional
+    # developer-local check. CI provisions the pinned cheese-flow entry from
+    # packages/packages.yaml plus jq/yq before invoking Bats; a missing tool
+    # must fail the gate instead of silently skipping every parity assertion.
+    local prerequisite
+    for prerequisite in yq jq cheese; do
+        if ! command -v "$prerequisite" >/dev/null 2>&1; then
+            printf 'required Codex parity prerequisite missing: %s\n' "$prerequisite" >&2
+            return 1
+        fi
+    done
     MERGE="$REAL_DOTFILES_DIR/chezmoi/private_dot_codex/modify_private_config.toml"
     export MERGE
     export CHEZMOI_SOURCE_DIR="$REAL_DOTFILES_DIR/chezmoi"
@@ -226,38 +235,73 @@ EOF
 
 # ── assembly: read-only predicate parity ────────────────────────────────────
 
-@test "codex read-only predicate matches agent_profile.shared" {
-    command -v uv >/dev/null 2>&1 || skip "uv not installed"
+@test "codex read-only predicate matches cheese profile compile output" {
+    # cheese is required by setup; parity never silently skips.
     source "$REAL_DOTFILES_DIR/.sync-lib.sh"
+    local baseline="$TEST_HOME/cheese-profile-baseline"
+    local output_root
+    output_root=$(mktemp -d "${TEST_HOME}.cheese-profile.XXXXXX")
+    mkdir -p "$baseline"
+
+    # Profile resolution requires every git-backed plugin cache boundary and
+    # marketplace declaration to exist. Empty plugin payloads are sufficient
+    # because this parity test compares dotfiles-owned agent sandbox
+    # projections, not external plugin content.
+    local plugin plugin_root
+    while IFS= read -r plugin; do
+        plugin_root="$HOME/.cache/cheese-flow/plugins/$plugin"
+        mkdir -p "$plugin_root/.claude-plugin"
+        jq -n --arg name "$plugin" '{name: $name, plugins: [{name: $name, source: "./"}]}' > "$plugin_root/.claude-plugin/marketplace.json"
+    done < <(
+        yq -r '.plugins | to_entries[] | select(.value.git and (.value.path == null)) | .key' \
+            "$REAL_DOTFILES_DIR/agents/plugins/registry.yaml"
+    )
+
+    # The engine's published generation is the behavioral ground truth. The
+    # source root is explicit; baseline and publication are independent
+    # control trees, matching the public compile contract.
+    run cheese profile compile live --source-root "$REAL_DOTFILES_DIR" --baseline "$baseline" --output "$output_root"
+    [ "$status" -eq 0 ] || {
+        echo "$output" >&2
+        return 1
+    }
+
+    local manifest="$output_root/manifest.json"
+    assert_file_exists "$manifest"
+    local generation
+    generation=$(jq -r '.generation // empty' "$manifest")
+    [ -n "$generation" ]
+
     local reg="$REAL_DOTFILES_DIR/agents/registry.yaml"
-
-    # Ground truth: the Python the renderers actually use.
-    local python_out
-    python_out=$(cd "$REAL_DOTFILES_DIR/agent-profile" && uv run --no-sync python -c "
-import sys, yaml
-sys.path.insert(0, '.')
-from agent_profile.shared import agent_is_read_only
-reg = yaml.safe_load(open('../agents/registry.yaml'))['agents']
-sel = yaml.safe_load(open('../chezmoi/.chezmoidata/codex.yaml'))['codex']['agents']
-for n in sel:
-    print(f'{n} {str(agent_is_read_only(reg[n])).lower()}')
-") || skip "python ground truth unavailable"
-
-    local name expected actual toml
-    while read -r name expected; do
+    local codex_reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
+    local name fragment engine_toml expected_toml engine_mode expected_mode
+    while read -r name; do
         [ -z "$name" ] && continue
-        toml="$TEST_HOME/$name.toml"
-        _cz_render_codex_agent "$reg" "$name" "$REAL_DOTFILES_DIR" "$toml"
-        if [ "$(yq -p=toml -oy -r '.sandbox_mode // "none"' "$toml")" = "read-only" ]; then
-            actual=true
-        else
-            actual=false
-        fi
-        [ "$actual" = "$expected" ] || {
-            echo "read-only drift for $name: bash=$actual python=$expected" >&2
+        fragment=$(jq -r --arg name "$name" '
+            .files[]
+            | select(
+                .harness == "codex"
+                and .destination_path == (".codex/agents/" + $name + ".toml")
+            )
+            | .fragment_path
+        ' "$manifest")
+        [ -n "$fragment" ] || {
+            echo "cheese profile compile emitted no Codex fragment for $name" >&2
             return 1
         }
-    done <<<"$python_out"
+        engine_toml="$output_root/$fragment"
+        assert_file_exists "$engine_toml"
+
+        expected_toml="$TEST_HOME/$name.toml"
+        _cz_render_codex_agent "$reg" "$name" "$REAL_DOTFILES_DIR" "$expected_toml"
+        engine_mode=$(yq -p=toml -oy -r '.sandbox_mode // "none"' "$engine_toml")
+        expected_mode=$(yq -p=toml -oy -r '.sandbox_mode // "none"' "$expected_toml")
+        [ "$engine_mode" = "$expected_mode" ] || {
+            echo "read-only drift for $name: cheese=$engine_mode bash=$expected_mode" >&2
+            return 1
+        }
+    done < <(yq -r '.codex.agents // [] | .[]' "$codex_reg")
+    rm -rf "$output_root"
 }
 
 @test "an agent keeping tilth_write is not sandboxed read-only" {

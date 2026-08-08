@@ -5,11 +5,8 @@
 [[repos]]
 repo = "builtin"
 hooks = [
-  # Golden fixtures are byte-exact expected renderer output (compared with `==`),
-  # so they must never be auto-normalized — e.g. bare-agent.md legitimately ends
-  # in `---\n\n`, which end-of-file-fixer would otherwise collapse to `---\n`.
-  { id = "trailing-whitespace", args = ["--markdown-linebreak-ext=md"], exclude = "vimrc|agent-profile/tests/fixtures/golden/" },
-  { id = "end-of-file-fixer", exclude = "agent-profile/tests/fixtures/golden/" },
+  { id = "trailing-whitespace", args = ["--markdown-linebreak-ext=md"], exclude = "vimrc" },
+  { id = "end-of-file-fixer" },
   { id = "check-yaml" },
   # Chezmoi `modify_` scripts use their managed target extension but contain shell.
   { id = "check-toml", exclude = "^chezmoi/private_dot_codex/modify_private_config\\.toml$" },

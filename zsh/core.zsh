@@ -97,9 +97,8 @@ fi
 # every new shell but never breaks the shell (unlike agents/mcp/sync.sh and
 # cc-env-exec, which fail loud — a fresh terminal must not brick on a vault
 # hiccup).
-# Cache path duplicated from bin/lib/vault.sh's vault_secrets_file() and
-# agent-profile/agent_profile/env.py's vault_cache_path() — zsh can't source
-# the bash lib. Keep all three in sync if the contract changes.
+# Cache path duplicated from bin/lib/vault.sh's vault_secrets_file() because
+# zsh can't source the bash lib. Keep both in sync if the contract changes.
 _dotfiles_cache_env="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/secrets.env"
 for _dotfiles_env_file in "$DOTFILES_DIR/.env" "$_dotfiles_cache_env"; do
   if [[ -f "$_dotfiles_env_file" ]]; then

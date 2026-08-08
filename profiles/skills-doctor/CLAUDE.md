@@ -4,12 +4,16 @@ This session is for debugging agent skills, profile rendering, harness config, a
 
 ## Why this profile exists
 
-Skill/profile work needs `ap`, local profile files, the repo wiki, and skill-routing context without pulling in unrelated productivity or app-specific surfaces. This profile keeps the MCP scope to code navigation plus the wiki.
+Skill/profile work uses the `cheese profile` commands, local profile files,
+the repo wiki, and skill-routing context without pulling in unrelated
+productivity or app-specific surfaces. This profile keeps the MCP scope to code
+navigation plus the wiki.
 
 ## MCPs in scope
 
 - **tilth** — AST-aware read/search/write for dotfiles and skill/profile sources.
-- **hallouminate** — repo wiki grounding for `ap`, harness, and skill-system design decisions.
+- **hallouminate** — repo wiki grounding for cheese-flow profile, harness, and
+  skill-system design decisions.
 
 ## Skills in scope
 
@@ -18,6 +22,7 @@ Skill/profile work needs `ap`, local profile files, the repo wiki, and skill-rou
 
 ## Defaults
 
-1. Ground `ap`, harness, plugin, or skill-system claims in the wiki or code before answering.
+1. Ground cheese-flow profile, harness, plugin, or skill-system claims in the
+   wiki or code before answering.
 2. Edit source registries/profiles only; never hand-edit rendered harness artifacts.
 3. Keep fixes narrow: profile/skill diagnostics first, unrelated dotfiles cleanup out of scope.

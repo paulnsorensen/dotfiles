@@ -161,8 +161,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     grep -qE "^alias skill-edit='\\\$\\{EDITOR:-vim\\} \\\$DOTFILES_DIR/skills/_registry\\.yaml'" "$aliases_file"
 }
 
-@test "skill-* alias targets resolve to real artifacts (ap shim + registry)" {
-    [[ -x "$DOTFILES_DIR/agent-profile/ap" ]]
+@test "skill-edit target resolves to the external skills registry" {
     [[ -f "$DOTFILES_DIR/skills/_registry.yaml" ]]
 }
 
@@ -191,7 +190,7 @@ SH
 
 @test "base-sync is retired from zsh/claude.zsh (chezmoi owns claude deploys)" {
     local claude_file="$DOTFILES_DIR/zsh/claude.zsh"
-    # No function or alias may resurrect the ap live-install entry point.
+    # No function or alias may resurrect the live profile-install entry point.
     if grep -qE '^base-sync\(\)|alias base-sync=' "$claude_file"; then
         echo "base-sync still defined in zsh/claude.zsh" >&2
         return 1

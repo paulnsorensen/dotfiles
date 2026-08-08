@@ -4,7 +4,7 @@ Dotfiles repo for a vim-centric, macOS-oriented terminal environment: zsh, git, 
 
 ## Ground first
 
-This is a router, not the full reference. Before changing agent config, harness wiring, `ap`, registries, chezmoi, sync, or local-LLM plumbing, query `repo:dotfiles:wiki` with `ground`, `read_markdown`, or `list_tree`.
+This is a router, not the full reference. Before changing agent config, harness wiring, profile CLI, registries, chezmoi, sync, or local-LLM plumbing, query `repo:dotfiles:wiki` with `ground`, `read_markdown`, or `list_tree`.
 
 When work establishes a durable decision or gotcha, record its *why* with `add_markdown`; direct wiki edits require `hallouminate index`.
 
@@ -14,7 +14,7 @@ When work establishes a durable decision or gotcha, record its *why* with `add_m
 |---|---|
 | Registries, MCPs, hooks, agents, skills, system prompt | [[architecture/agents-dir]] |
 | Plugins across harnesses | [[architecture/cross-harness-plugins]] |
-| `ap` profiles, renderers, install/launch | [[architecture/agent-profile]] |
+| Profiles, renderers, compile/apply/launch | [[architecture/agent-profile]] |
 | MCP secret passthrough | [[architecture/mcp-secret-handling]] |
 | Config drift and settings repair | [[architecture/config-drift]] |
 | Codex-authoritative chezmoi regime | [[architecture/chezmoi-authoritative-codex]] |
@@ -23,7 +23,7 @@ When work establishes a durable decision or gotcha, record its *why* with `add_m
 | Git tooling, prek, Claude plugins, skhd | [[operations/dev-environment]] |
 | Remote access | [[operations/remote-access]] |
 
-**Layout:** `bin/` (live CLI), `agents/` (registries and definitions), `agent-profile/` (`ap`), `profiles/`, harness directories, `skills/`, `chezmoi/`, `packages/`, `zsh/`, `tests/`, and `.hallouminate/wiki/`.
+**Layout:** `bin/` (live CLI), `agents/` (registries and definitions), `profiles/`, harness directories, `skills/`, `chezmoi/`, `packages/`, `zsh/`, `tests/`, and `.hallouminate/wiki/`.
 
 ## Source of truth
 

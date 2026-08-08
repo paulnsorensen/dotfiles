@@ -11,10 +11,6 @@ path = "CLAUDE.md"
 max_tokens = 100
 
 [[source]]
-path = "agent-profile/AGENTS.md"
-max_tokens = 600
-
-[[source]]
 path = "agents/AGENTS.md"
 max_tokens = 4100
 
@@ -113,10 +109,6 @@ name = "repo_claude"
 sources = ["agents/AGENTS.md", "agents/preamble.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md"]
 max_tokens = 9750
 
-[[stack]]
-name = "nested_agent_profile_codex"
-sources = ["agents/AGENTS.md", "agents/preamble.md", "AGENTS.md", "agent-profile/AGENTS.md"]
-max_tokens = 10000
 
 [[stack]]
 name = "omp"

@@ -51,6 +51,28 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
 
+    - name: Install Codex parity prerequisites
+      env:
+        CHEESE_FLOW_REV: 862d8176cb5e87fc557e30c995fc8b2c7d49270d
+        YQ_VERSION: v4.53.3
+        YQ_SHA256: fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq
+        curl -fsSL --retry 3 \
+          "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+          -o "$RUNNER_TEMP/yq"
+        printf '%s  %s\n' "$YQ_SHA256" "$RUNNER_TEMP/yq" | sha256sum -c -
+        sudo install -m 0755 "$RUNNER_TEMP/yq" /usr/local/bin/yq
+        uv tool install --force \
+          --from "git+https://github.com/paulnsorensen/cheese-flow.git@${CHEESE_FLOW_REV}" \
+          cheese-flow
+        export PATH="$HOME/.local/bin:$PATH"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        command -v jq
+        command -v yq
+        command -v cheese
+
     - name: Install bats
       run: sudo npm install -g bats
 
@@ -69,9 +91,6 @@ jobs:
 
     - name: Run tests
       run: just test
-
-    - name: Run Python tests
-      run: just test-python
 
     - name: Run smoke tests
       run: just smoke

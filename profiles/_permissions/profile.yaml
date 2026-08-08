@@ -7,8 +7,8 @@
 # `mcp__*` is lever 3 (MCP-tool scoping); everything else is lever 1
 # (per-command/tool). So this is one flat list per allow/deny.
 #
-# Edit here, then `dots sync` (runs `ap install global` +
-# `ap install opencode-global`) re-asserts the set onto every live harness.
+# Edit here; explicitly compiling and applying profile `live` through
+# `dots profile` re-asserts the set onto every live harness.
 # The live wrappers include this fragment; isolated profiles (review) do NOT
 # and keep their own closed-world deny lists.
 #

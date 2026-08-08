@@ -752,12 +752,10 @@ SH
 }
 
 # The standalone run_onchange_after_install-hooks chezmoi template was
-# retired in curd 7: hook deployment now flows through the base-profile
-# render (ap → claude/codex renderers, which copy the hook script + its
-# shared_assets). The hooks sync.sh lib still backs the `hook-sync` alias
-# and is exercised by the upsert/idempotence tests above; the rendered
-# deploy payload is covered by agent-profile's renderer tests and
-# tests/install-base-profile.bats.
+# retired: hook deployment now flows through the cheese-flow profile render,
+# which copies each hook script and its shared assets. The hooks sync.sh lib
+# still backs the `hook-sync` alias and is exercised by the upsert/idempotence
+# tests above.
 
 # ── hardening: filter honors per-entry harnesses list ──────────────────
 
@@ -1001,11 +999,9 @@ TOML
 # ── post-migration: SessionStart wiring lives in the plugin tree ───────
 #
 # The committed `claude/settings.json` was retired in favor of the
-# chezmoi-seeded `~/.claude/settings.json` + ap-rendered plugin tree.
-# The SessionStart hook is now declared by the plugin's `plugin.json`
-# (rendered by `ap install global` into
-# `~/.claude/plugins/local/global/.claude-plugin/plugin.json`), not by a
-# hand-written entry in the user settings file.
+# chezmoi-seeded `~/.claude/settings.json` plus the cheese-flow profile
+# plugin tree. The SessionStart hook is declared by the profile's
+# `plugin.json`, not by a hand-written entry in the user settings file.
 #
 # The two old tests here ("carries the SessionStart entry with timeout 5"
 # and "sync against itself is a no-op") locked the OLD behavior against

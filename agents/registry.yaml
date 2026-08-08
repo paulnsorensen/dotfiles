@@ -2,8 +2,8 @@
 #
 # Single source of truth for the cheese sub-agents. Edited via
 # `agent-edit`; expanded into the `base` profile (and any profile that
-# declares `registries: { agents: agents/registry.yaml }`) by ap's ingest
-# layer, then rendered into every harness by the five renderers.
+# declares `registries: { agents: agents/registry.yaml }`) by cheese-flow's
+# profile parser, then rendered into every harness by the five renderers.
 #
 # Bodies are instruction-only Markdown at body_path (frontmatter stripped);
 # all metadata lives here. tools/disallowedTools are LISTS (renderers join

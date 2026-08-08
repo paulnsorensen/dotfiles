@@ -28,7 +28,7 @@ export const meta = {
 // Agent-type dependency: the Ground phase routes web sub-questions to the
 // `researcher` agent type, code sub-questions to `explorer`, and the durable-
 // cache Recall to `explorer`. All ship in the user's global agent registry
-// (rendered into every harness via `ap`), so they resolve in any project. The
+// (rendered into every harness via chezmoi), so they resolve in any project. The
 // deep fan-out's scope/search/extract agents run as the default workflow agent
 // and reach hallouminate / tavily / context7 / tilth via ToolSearch.
 

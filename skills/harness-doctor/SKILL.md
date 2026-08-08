@@ -4,9 +4,9 @@ model: sonnet
 effort: medium
 description: >
   Diagnose and self-heal harness-config drift between live files
-  (~/.claude, ~/.codex, opencode, Cursor, Copilot) and what `ap` renders from
-  the dotfiles registries. Use when the user says "harness doctor", "check my
-  harness config", "settings drifted", "why is this hook firing twice", or asks
+  (~/.claude, ~/.codex, opencode, Cursor, Copilot) and what `cheese profile`
+  compiles from the dotfiles registries. Use when the user says "harness doctor",
+  "check my harness config", "settings drifted", "why is this hook firing twice", or asks
   to audit agent config. In Codex, invoke via `$harness-doctor` or `/skills`,
   not `/harness-doctor`. Do NOT use for general code review (/age), single-file
   permission cleanup (/settings-clean), or app-level debugging.
@@ -15,8 +15,8 @@ description: >
 # harness-doctor
 
 Audit the gap between **live** harness config on this machine and the
-**target state** the dotfiles repo intends (`ap` rendering the registries into
-each harness). Drift accumulates because some live files are seed-once and
+**target state** the dotfiles repo intends (`cheese profile` compiling the
+registries for each harness). Drift accumulates because some live files are
 user-owned — chezmoi never prunes them — so pre-migration leftovers linger
 (dead hooks, double-fired hooks, stale MCP entries).
 
@@ -97,7 +97,7 @@ Read the live files per harness (use `cheez-read`/`jq`, not blind cat):
 | cursor | `~/.cursor/mcp.json`, `~/.cursor/hooks.json` |
 | copilot | `~/.copilot/mcp-config.json`, `~/.copilot/hooks/` |
 
-### 3. Render the target — diff live vs `ap`
+### 3. Compile the target and diff it against live state
 
 For **Claude**, the authoritative check is the chezmoi modify script itself —
 feed it the live file and diff the result against live (byte-identical = no
@@ -108,15 +108,17 @@ sh "$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" \
   < ~/.claude/settings.json | diff - ~/.claude/settings.json
 ```
 
-For the other harnesses, render `base` into a throwaway target (never touches
-live config) and diff:
+For the other harnesses, compile `live` into a throwaway publication root
+(never touches live config) and diff:
 
 ```bash
 TMP="$(mktemp -d)"
-DOTFILES_DIR="$DOTFILES_DIR" ap install base --target "$TMP"
-dots profile describe live            # resolved manifest for the live overlay
-# Compare e.g. codex mcp_servers vs rendered, opencode/cursor mcp files vs
-# rendered payloads.
+mkdir -p "$TMP"/{baseline,home}
+HOME="$TMP/home" cheese profile compile live \
+  --source-root "$DOTFILES_DIR" --baseline "$TMP/baseline" --output "$TMP/output"
+cheese profile describe live --source-root "$DOTFILES_DIR"
+# Compare e.g. codex mcp_servers vs compiled, opencode/cursor mcp files vs
+# compiled payloads.
 ```
 
 For each difference, ask: *is the live side a superset (extra entries) or does

@@ -1,0 +1,14 @@
+# Canonical external-skill map: profile harness name -> `skills` CLI --agent ID.
+#
+# The external-skill installer reads the values as the supported `skills` CLI
+# agent IDs and the keys as the per-source harness names in skills/_registry.yaml.
+# Keep this map in the dotfiles source tree as the canonical registry for
+# external-skill installation.
+#
+# Format: key=value, one per line. Comments (#) and blanks ignored.
+
+claude=claude-code
+codex=codex
+cursor=cursor
+copilot=github-copilot
+opencode=opencode

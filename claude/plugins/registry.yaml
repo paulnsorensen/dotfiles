@@ -21,7 +21,7 @@
 plugins:
   # --- Workflow plugins ---
   # load: false → payload stays installed but globally disabled; the fe and
-  # plugin ap profiles flip these on per-session via enabled_plugins.
+  # plugin profiles flip these on per-session via enabled_plugins.
   playwright@claude-plugins-official:
     description: Browser testing and automation with Playwright
     scope: user

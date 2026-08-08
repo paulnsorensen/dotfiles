@@ -3,14 +3,13 @@
 # `git restore`, `git reset --hard`, `git clean -f`, `git checkout .`/`-f`)
 # when the targeted paths have uncommitted changes. The detection logic lives
 # in the sibling Node module (lib/git-guard.js); this bridge exists so the
-# entry deploys as a `.sh` that runs correctly whether invoked directly via
-# shebang (the `ap` plugin-tree path) or as `bash <path>` (the legacy sync
-# path) — a `.js` script entry would break under the latter.
+# entry deploys as a `.sh` that works both via its generated-tree shebang and
+# as `bash <path>` from source assembly; a `.js` entry would break under the
+# latter.
 #
 # Self-locating (same rationale as session-start-cheese-flair.sh): anchor to
-# the deployed path so the same file works under ~/.claude and the plugin
-# tree. `ap` deploys this script alongside lib/git-guard.js via the registry's
-# `shared_assets`.
+# the deployed path so the same file works under ~/.claude and the generated
+# plugin tree, where it is placed beside lib/git-guard.js.
 #
 # Fail-open: a missing logic file or absent node must never block a git op —
 # the guard hardens, it must not become a denial-of-service.

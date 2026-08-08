@@ -23,9 +23,9 @@
 #     plugin registry. Native-claude entries (resolved `native:` set includes
 #     claude) overlay their marketplace + enabledPlugins entry, keyed by the
 #     marketplace.json `.name` (may differ from the YAML key). git: entries
-#     root at ~/.cache/ap/plugins/<key>; path: entries at the expanded path. A
-#     missing plugin cache warns and skips (the sync clones it later; the next
-#     apply converges). This native path is never gated.
+#     root at ~/.cache/cheese-flow/plugins/<key>; path: entries at the expanded
+#     path. A missing plugin cache warns and skips; normal chezmoi applies run
+#     the pre-sync cache producer before this modifier. This path is never gated.
 #   * $CHEZMOI_SOURCE_DIR/lib/claude-settings-ignore.txt — dot-paths (one per
 #     line, "#" comments and blank lines allowed) exempt from the unknown-key
 #     halt gate below (prefix semantics) whose live values are overlaid back
@@ -146,7 +146,7 @@ NATIVE_REG="$CHEZMOI_SOURCE_DIR/../agents/plugins/registry.yaml"
 # Native-claude overlay: entries whose resolved `native:` set includes claude
 # get their marketplace + enabledPlugins entry, keyed by the marketplace.json
 # `.name` (authoritative; may differ from the YAML key). git: entries root at
-# ~/.cache/ap/plugins/<key>; path: entries at the expanded path (~/, absolute,
+# ~/.cache/cheese-flow/plugins/<key>; path: entries at the expanded path (~/, absolute,
 # or repo-relative). A missing cache / marketplace.json warns and skips (never
 # fails the apply). Emits one JSON object {enabled:{...}, marketplaces:{...}}.
 native_plugin_overlays() {
@@ -171,7 +171,7 @@ native_plugin_overlays() {
         | while IFS="$(printf '\t')" read -r key kind rawpath; do
             [ -z "$key" ] && continue
             case "$kind" in
-                git) root="$HOME/.cache/ap/plugins/$key" ;;
+                git) root="$HOME/.cache/cheese-flow/plugins/$key" ;;
                 path)
                     # shellcheck disable=SC2088  # literal "~/" expanded below
                     case "$rawpath" in

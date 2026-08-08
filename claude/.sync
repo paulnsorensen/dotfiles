@@ -21,8 +21,8 @@ mkdir -p "$CLAUDE_DIR"
 
 # RTK agent setup is done manually via the `rtk-init-*` aliases in
 # zsh/claude.zsh — running `rtk init` during sync would rewrite
-# ~/.claude/settings.json on every invocation. The Claude Code hook is
-# wired through the agents/ registries + `ap` render, so it needs no init here.
+# ~/.claude/settings.json on every invocation. Claude Code hooks are wired
+# through the agents/ registries + chezmoi, so they need no init here.
 
 # Set up local-marketplace + cache symlinks for ~/Dev/vaudeville so plugin sync
 # can resolve it. Gate name is read from the registry to keep the gate field
