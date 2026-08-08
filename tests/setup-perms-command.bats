@@ -3,9 +3,12 @@
 load test_helper
 
 setup() {
+    source "$REAL_DOTFILES_DIR/.sync-lib.sh"
+    local rendered_dir="$BATS_TEST_TMPDIR/exact_commands"
+    _cz_copy_encoded "$REAL_DOTFILES_DIR/claude/commands" "$rendered_dir"
     command_files=(
-        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/exact_commands/setup-perms.md"
         "$REAL_DOTFILES_DIR/claude/commands/setup-perms.md"
+        "$rendered_dir/setup-perms.md"
     )
 }
 

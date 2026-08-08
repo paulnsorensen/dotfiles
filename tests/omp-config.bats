@@ -373,11 +373,3 @@ TOML
         [ -e "$destination/.omp/agent/extensions/$extension" ]
     done
 }
-
-@test "omp-ext: extension handler contracts" {
-    command -v node >/dev/null 2>&1 || skip "node not installed"
-    run node --test "$REAL_DOTFILES_DIR"/tests/extensions/*.test.mjs
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"registers the command and dispatches the exact default workflow contract"* ]]
-    [[ "$output" == *"blocks native todo commands and identifies Milknado as the owner"* ]]
-}

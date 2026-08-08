@@ -71,6 +71,8 @@ hooks_json=$(yq -o=json '.' "$hooks_registry" 2>/dev/null || printf '{"hooks":{}
 # Registry-managed legacy [[hooks.<event>]] blocks must go: Codex merges them
 # with hooks.json. hooks.state and user-authored blocks remain untouched.
 # jq 1.7 rejects the trailing `as $managed` unless the full reduce is parenthesized.
+# Keep root scalars before tables: yq otherwise nests late scalars under the
+# final table while encoding JSON back to TOML.
 printf '%s' "$live_json" | jq --argjson repo "$repo_json" --argjson hook_registry "$hooks_json" '
     def managed_legacy($basenames):
         (.hooks? | type) == "array"
@@ -102,4 +104,5 @@ printf '%s' "$live_json" | jq --argjson repo "$repo_json" --argjson hook_registr
            end)
       else .
       end
+    | (to_entries | sort_by(if (.value | type) == "object" then 1 else 0 end) | from_entries)
 ' | yq -p=json -o=toml '.'

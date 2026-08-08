@@ -623,14 +623,17 @@ printf 'packages-sync\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
 
-    local clean_path codex_only
+    local clean_path no_omp mock name
     clean_path=$(tr ':' '\n' <<<"$PATH" | while IFS= read -r d; do
         [[ -x "$d/omp" ]] || printf '%s:' "$d"
     done)
-    codex_only="$TEST_HOME/codex-only"
-    mkdir -p "$codex_only"
-    ln -s "$MOCK_BIN/codex" "$codex_only/codex"
-    PATH="$codex_only:${clean_path%:}" run bash "$SYNC_SCRIPT"
+    no_omp="$TEST_HOME/no-omp"
+    mkdir -p "$no_omp"
+    for mock in "$MOCK_BIN"/*; do
+        name=$(basename "$mock")
+        [[ "$name" == "omp" ]] || ln -s "$mock" "$no_omp/$name"
+    done
+    PATH="$no_omp:${clean_path%:}" run bash "$SYNC_SCRIPT"
     assert_failure
     local sync_output="$output"
     run cat "$SYNC_EVENTS"

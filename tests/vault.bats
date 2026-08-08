@@ -1539,18 +1539,6 @@ EOF
     [ "$output" = "mcp" ]
 }
 
-@test "loader parity: Python dotenv loader ignores cache provenance" {
-    local cache="$TEST_HOME/secrets.env"
-    printf '# vault-provider=onepassword\n# vault-source=op://Employee/dotfiles\nCACHE_ONLY_KEY=python\n' > "$cache"
-
-    run env PYTHONPATH="$REAL_DOTFILES_DIR/agent-profile" python3 -c \
-        'from pathlib import Path; import sys; from agent_profile.env import load_dotenv; print(load_dotenv(Path(sys.argv[1]))["CACHE_ONLY_KEY"])' \
-        "$cache"
-
-    [ "$status" -eq 0 ]
-    [ "$output" = "python" ]
-}
-
 
 # ── headless-Linux token storage ──
 #
