@@ -1,5 +1,0 @@
-{
-  "event": "PreToolUse",
-  "matcher": "Bash",
-  "script": ".github/hooks/h.sh"
-}

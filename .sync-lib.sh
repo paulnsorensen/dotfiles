@@ -156,9 +156,9 @@ apply_chezmoi_source() {
 # Directory names that are never symlinked or dispatched to.
 # Documented in the wiki (operations/sync-and-chezmoi.md) — keep in sync.
 # `cursor` is skipped like `codex`: ~/.cursor is a real dir owned by chezmoi's
-# install-cursor-plugin.sh + the ap cursor renderer, NOT a symlink to this repo
+# install-cursor-plugin.sh plus the profile renderer, NOT a symlink to this repo
 # (a whole-dir symlink leaked all of Cursor's runtime state back into dotfiles).
-SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "brew" "apt" "agents" "agent-profile" "codex" "cursor")
+SYNC_SKIP_LIST=(".git" ".local" ".worktrees" "reference" "packages" "brew" "apt" "agents" "codex" "cursor")
 
 # Failure ledger — every .sync script that exits non-zero appends its name
 # here. .sync inspects this at the end of run_sync, prints a
@@ -365,9 +365,9 @@ _cz_copy_encoded() {
     return 0
 }
 
-# Render one claude sub-agent file: YAML frontmatter from agents/registry.yaml
-# metadata + the instruction body from body_path. Mirrors ap's claude renderer
-# output shape (verified by diff against a live render).
+# Render one Claude sub-agent file: YAML frontmatter from agents/registry.yaml
+# plus the instruction body from body_path. This matches the profile compiler's
+# Claude fragment shape, verified against a generated profile.
 #   _cz_render_claude_agent <registry_yaml> <name> <dotfiles_root> <out_file>
 _cz_render_claude_agent() {
     local registry="$1" name="$2" root="$3" out="$4"
@@ -588,12 +588,11 @@ sync_claude_chezmoi_sources() {
 # The assembled trees are DERIVED state (gitignored); the repo dirs stay the
 # single source of truth. Runs inside `dots sync` before `chezmoi apply`.
 
-# Render one codex sub-agent file as TOML. Field mapping mirrors ap's codex
-# renderer (agent-profile/agent_profile/renderers/codex.py:129-159): name,
-# description, optional model (models.codex), sandbox_mode="read-only" for
-# read-only agents, then developer_instructions.
+# Render one Codex sub-agent file as TOML. Field mapping matches the profile
+# compiler: name, description, optional model (models.codex),
+# sandbox_mode="read-only" for read-only agents, then developer_instructions.
 #
-# The read-only predicate replicates agent_profile.shared.agent_is_read_only:
+# The read-only predicate follows the engine contract:
 # read-only when NO write tool remains reachable — every write tool is either
 # banned by disallowedTools or excluded by a tools whitelist. Banning `Write`
 # alone must NOT imply read-only, or agents that write through

@@ -5,7 +5,7 @@
 # Reads SKILL_HARNESSES from .env (space-separated `skills`-CLI agent IDs, e.g.
 # "claude-code cursor github-copilot codex") and installs the skills from each
 # source repo in the given registry into every harness at user (global) scope.
-# A per-source `harnesses:` list (ap harness names, e.g. [claude]) restricts
+# A per-source `harnesses:` list (profile harness names, e.g. [claude]) restricts
 # installation to only those harnesses, overriding SKILL_HARNESSES for that entry.
 #
 # Why `npx skills` (the Vercel `skills` CLI) over `gh skill install`: gh fetched
@@ -124,14 +124,13 @@ trap 'rm -f "$FAIL_COUNTER"' EXIT
 # installed nothing, and the cache below would then be written as if the run
 # worked — silently masking the misconfiguration until --force.
 #
-# The canonical set lives in agent-profile/agent_profile/skill_agents.txt,
-# which fetch.py loads as SKILL_AGENT (keys) -> agent ID (values). Extracting
-# the values here means the ap path and this legacy path share one source of
-# truth — adding a harness in that file makes it valid in both, by design.
-SKILL_AGENTS_FILE="$DOTFILES_DIR/agent-profile/agent_profile/skill_agents.txt"
+# The canonical set lives in agents/skill_agents.txt. Extracting the values
+# here keeps the supported `skills` CLI IDs in one source of truth while the
+# installer accepts the per-source harness names from the same map.
+SKILL_AGENTS_FILE="$DOTFILES_DIR/agents/skill_agents.txt"
 if [[ ! -f "$SKILL_AGENTS_FILE" ]]; then
     echo -e "${RED}Error: canonical skill-agents map not found at $SKILL_AGENTS_FILE${NC}" >&2
-    echo "  Expected the shared truth-source (fetch.py reads the same file)." >&2
+    echo "  Expected the shared source-tree truth-source." >&2
     exit 1
 fi
 KNOWN_AGENTS=$(awk -F= '/^[[:space:]]*#/ {next} NF==2 {gsub(/[[:space:]]/, "", $2); print $2}' "$SKILL_AGENTS_FILE" | tr '\n' ' ')
@@ -184,7 +183,7 @@ skill_flags() {
 
 # Install every skill from one source repo into all harnesses in a single
 # `npx skills add` (one shallow clone, repeated --agent for the harnesses).
-# If the registry entry has a `harnesses:` list (ap harness names, e.g. [claude]),
+# If the registry entry has a `harnesses:` list (profile harness names, e.g. [claude]),
 # only those harnesses are targeted; otherwise falls back to all SKILL_HARNESSES.
 install_source() {
     local repo="$1" pin="$2"
@@ -197,9 +196,8 @@ install_source() {
         skill_args+=("$tok")
     done < <(skill_flags "$repo")
 
-    # Per-repo harness restriction: if `harnesses:` is set, build a filtered
-    # agent-flags array from the ap harness names (mapped via skill_agents.txt).
-    # Falls back to the global AGENT_FLAGS when unset.
+    # Per-repo harness restriction: if `harnesses:` is set, map those names through
+    # skill_agents.txt. Falls back to the global AGENT_FLAGS when unset.
     local repo_agent_flags=("${AGENT_FLAGS[@]}")
     local repo_supported="$SUPPORTED_HARNESSES"
     local raw_harnesses

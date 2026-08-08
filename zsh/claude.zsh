@@ -140,40 +140,17 @@ cdp() {
 cxp() { dots profile launch codex codex-plan "$@"; }
 cxc() { dots profile launch codex codex-code "$@"; }
 
-# Copilot CLI launch wrapper — injects the canonical allow/deny lists as
-# --allow-tool / --deny-tool flags (lever 1). Copilot has no config-file
-# surface for per-command rules, so the rules only apply when Copilot is
-# launched through this wrapper; a bare `copilot` run gets nothing. MCP-tool
-# scoping (lever 3) lands in ~/.copilot/mcp-config.json at install time and
-# applies regardless of launch path.
+# Copilot CLI launch wrapper — route through cheese-flow's policy-controlled
+# profile launch so the engine owns the complete allow/deny surface.
 copilot() {
-    # Fail-closed: this wrapper's entire job is lowering the canonical
-    # allow/deny security floor. If `ap` is missing or errors (e.g. a profile
-    # that won't parse), launching Copilot unrestricted would silently drop
-    # that floor — so capture the flags and exit status separately, and on any
-    # failure (including a mid-stream crash after partial output) abort loudly
-    # rather than launch with a missing or truncated deny set.
-    local out status
-    out="$(ap copilot-flags global)"
-    status=$?
-    if (( status != 0 )); then
-        echo "copilot: permission flags unavailable (ap exited $status) — refusing to launch unrestricted." >&2
-        echo "copilot: fix \`ap copilot-flags global\`, or run \`command copilot\` to bypass the floor deliberately." >&2
-        return "$status"
-    fi
-    local -a flags=()
-    local line
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && flags+=("$line")
-    done <<< "$out"
-    command copilot "${flags[@]}" "$@"
+    cheese profile launch copilot global --source-root "$DOTFILES_DIR" -- "$@"
 }
 
 # ═══════════════════════════════════════════════════════════════════
 # Scoped profiles — `dots profile launch <harness> <name>`
 # ═══════════════════════════════════════════════════════════════════
-# The retired `ccp` launcher is superseded by the harness-agnostic `ap`
-# tool: profiles live at profiles/<name>/profile.yaml and launch via
+# The scoped launcher delegates to `cheese profile`; profiles live at
+# profiles/<name>/profile.yaml and launch via
 #   dots profile launch claude <name> [-- claude args...]
 # Isolated profiles (isolated: true) reproduce the old ccp closed-world
 # semantics (strict MCP scope, --setting-sources "", --tools whitelist,
@@ -188,13 +165,11 @@ copilot() {
 CLAUDE_DOTFILES="$DOTFILES_DIR/claude"
 AGENTS_DOTFILES="$DOTFILES_DIR/agents"
 
-# base-sync is RETIRED (spec: chezmoi-authoritative-claude, decision E1/A2).
 # Global claude config now deploys via chezmoi from
 # chezmoi/.chezmoidata/claude.yaml on `dots sync` (additions AND removals).
 # Codex followed (spec: chezmoi-authoritative-codex): chezmoi/.chezmoidata/
 # codex.yaml + private_dot_codex/ deploy ~/.codex the same way. opencode/cursor/
-# copilot are still frozen pending their own migration spec. `ap` remains only
-# for scoped/ephemeral profiles (`ccp <name>`).
+# copilot are still frozen pending their own migration spec.
 alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'
 # Claude's MCP edit surface is the claude registry; `dots sync` reconciles
@@ -202,14 +177,13 @@ alias mcp-ls='claude mcp list'
 alias mcp-edit='${EDITOR:-vim} $DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml'
 
 # ═══════════════════════════════════════════════════════════════════
-# Hook Management (harness-agnostic — edit surface; deploy via `ap`)
+# Hook Management (harness-agnostic — edit surface; deploy via `dots sync`)
 # ═══════════════════════════════════════════════════════════════════
 alias hook-edit='${EDITOR:-vim} $AGENTS_DOTFILES/hooks/registry.yaml'
 alias hook-ls='yq -r ".hooks | keys | .[]" $AGENTS_DOTFILES/hooks/registry.yaml'
 
 # ═══════════════════════════════════════════════════════════════════
-# Agent Management (harness-agnostic — edit surface; deploy via `ap`)
-# ═══════════════════════════════════════════════════════════════════
+# Agent Management (harness-agnostic — edit surface; deploy via `dots sync`)
 alias agent-edit='${EDITOR:-vim} $AGENTS_DOTFILES/registry.yaml'
 alias agent-ls='yq -r ".agents | keys | .[]" $AGENTS_DOTFILES/registry.yaml'
 
@@ -333,7 +307,8 @@ alias claude-settings='${EDITOR:-vim} ~/.claude/settings.json'
 # Plugin Management
 # plugins: agents/plugins/registry.yaml (cross-harness; edit -> dots sync)
 # claude-only plugins: claude/plugins/registry.yaml (edit -> dots sync)
-# claude/plugins/sync.sh is retired; ap now handles marketplace registration.
+# claude/plugins/sync.sh is retired; marketplace registration is handled by
+# the native Claude CLI during `dots sync`.
 # ═══════════════════════════════════════════════════════════════════
 alias plugin='claude plugin'
 alias plugin-ls='claude plugin list'

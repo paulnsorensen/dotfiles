@@ -14,7 +14,6 @@ import tiktoken
 DISCOVERY_PATTERNS = (
     "AGENTS.md",
     "CLAUDE.md",
-    "agent-profile/AGENTS.md",
     "agents/AGENTS.md",
     "agents/RTK.md",
     "agents/preamble.md",

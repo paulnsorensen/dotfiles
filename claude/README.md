@@ -13,8 +13,8 @@ dots sync
 Nothing here is symlinked into `~/.claude/` anymore — a directory symlink let Claude's runtime writes leak back into the repo. Deployment now:
 
 - `commands/`, `hooks/`, `reference/`, `workflows/` → **one-way copies** via `chezmoi/lib/install-claude-assets.sh` (manifest-tracked; edits need a `dots sync` to go live).
-- `agents/`, MCP servers, `skills/` → rendered/copied from the repo-root `agents/` registries by the `ap` tool + chezmoi (shared with Codex et al.).
-- `settings.json` → seeded once by chezmoi, then jq-merged by `ap install global`.
+- `agents/`, MCP servers, `skills/` → rendered/copied from the repo-root `agents/` registries by chezmoi (shared with Codex et al.).
+- `settings.json` → seeded and merged by chezmoi from the Claude registry.
 
 ## Directory Structure
 
@@ -71,7 +71,7 @@ Retired commands superseded by the easy-cheese kit live in `archive/`
 
 Specialized agents invoked via Task tool with `subagent_type`. Defined in the
 repo-root `agents/registry.yaml` (metadata) with bodies under
-`agents/agent_definitions/`, rendered into every harness by `ap`.
+`agents/agent_definitions/`, rendered into every harness by chezmoi.
 
 ### Review & Test Agents
 

@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # PreToolUse hook: block reads/writes of .env files, private keys, and
 # credential stores. The detection logic lives in the sibling Node module
-# (lib/sensitive-file-guard.js); this bridge exists so the entry deploys as
-# a `.sh` that runs correctly whether invoked directly via shebang (the `ap`
-# plugin-tree path) or as `bash <path>` (the legacy sync path) — a `.js`
-# script entry would break under the latter.
+# (lib/sensitive-file-guard.js); this bridge deploys as a `.sh` that works both
+# via its generated-tree shebang and as `bash <path>` from source assembly. A
+# `.js` entry would break under the latter.
 #
 # Self-locating (same rationale as session-start-cheese-flair.sh): anchor to
-# the deployed path so the same file works under ~/.claude and the plugin
-# tree. `ap` deploys this script alongside lib/sensitive-file-guard.js via
-# the registry's `shared_assets`.
+# the deployed path so the same file works under ~/.claude and the generated
+# plugin tree, where it is placed beside lib/sensitive-file-guard.js.
 #
 # Fail-open: a missing logic file or absent node must never block a tool
 # call — the guard hardens, it must not become a denial-of-service.

@@ -1,8 +1,8 @@
 # agents/plugins/registry.yaml — cross-harness plugin registry
 #
-# Each entry names a plugin and points at its marketplace root. At ingest time,
-# `ap` auto-discovers the plugin's primitives from the payload dir and
-# decomposes them into the existing per-harness renderers:
+# Each entry names a plugin and points at its marketplace root. At profile
+# expansion time, cheese-flow discovers the payload primitives and feeds them
+# into the existing per-harness renderers:
 #
 #   .mcp.json                         → MCP server(s), with the entry's harnesses list
 #   skills/<n>/SKILL.md               → path: skill items
@@ -11,7 +11,7 @@
 #
 # `commands/` is intentionally NOT decomposed. Native plugin installs may still
 # expose commands inside their native harness; the decomposed path does not.
-# _source_dir on every emitted item is stamped at the plugin payload root
+# `_source_dir` on every emitted item is stamped at the plugin payload root
 # (NOT the repo root). Renderers resolve payload files via:
 #   Path(item["_source_dir"]) / item["path"]
 #
@@ -20,15 +20,13 @@
 #                  in the marketplace.json — that named plugin is the one
 #                  decomposed. A key/name mismatch fails loud at ingest.
 #
-#   Source (exactly one required; both or neither raises ParseError):
+#   Source (at least one is required; path wins when both are present):
 #   path:          marketplace root (local checkout); ~-relative, /absolute, or
 #                  repo-relative. Use on machines that have a local dev tree.
-#   git:           clone URL (e.g. https://github.com/org/repo). The repo is
-#                  cloned / refreshed into ~/.cache/ap/plugins/<KEY>.
-#   branch:        branch to clone (optional; default: main). Only with git:.
-#   subdir:        sub-directory inside the repo whose root is the marketplace
-#                  root (i.e. contains .claude-plugin/marketplace.json).
-#                  Optional; default: repo root. Relative paths only; no '..'.
+#   git:           clone URL (e.g. https://github.com/org/repo). Dotfiles
+#                  prepares / refreshes the checkout at
+#                  ~/.cache/cheese-flow/plugins/<KEY>.
+#   branch:        branch to prepare (optional; default: main). Used with git:.
 #
 #   harnesses:     primitive membership list. MCP membership is explicit to
 #                  avoid blanket-wide per-request token tax; non-MCP plugin
@@ -36,33 +34,31 @@
 #   native:        which harnesses get the NATIVE marketplace install (atomic
 #                  plugin install + plugin-scoped mcp__plugin_<plugin>_<server>__
 #                  tool names) instead of decomposed primitives. Accepts:
-#                    true            → every DRIVABLE harness in `harnesses`
-#                                      (drivable = claude, codex, copilot)
+#                    true            → every supported native harness in
+#                                      harnesses (claude, copilot)
 #                    false / absent  → decomposed everywhere (default)
-#                    [claude, ...]   → only the listed harnesses (must be ⊆
-#                                      drivable AND ⊆ `harnesses`; else fail loud)
+#                    [claude, ...]    → only the listed supported native
+#                                      harnesses; must be ⊆ `harnesses`
 #                  Non-native harnesses always get decomposed primitives. The
-#                  renderers rewrite the canonical mcp__<server>__* permission
-#                  rules + skill allowed-tools to the plugin-namespaced form on
-#                  harnesses where the plugin is native.
-#   claude_native / codex_native: DEPRECATED aliases — true OR's the harness
-#                  into the resolved `native:` set.
+#                  renderers rewrite canonical mcp__<server>__* permission
+#                  rules + skill allowed-tools to the plugin-namespaced form
+#                  on harnesses where the plugin is native.
 #   gate_unless:   optional env var gate on the decomposed MCP items (same
-#                  semantics as the MCP registry gate). Does NOT gate the
-#                  Claude-native install path — that descriptor carries no gate.
+#                  semantics as the MCP registry). Does NOT gate a native
+#                  install descriptor.
 #   description:   human-readable description
 #
 # Per-harness reach:
 #   claude   → native marketplace install when native ∋ claude; else MCP + skills + agents + hooks
-#   codex    → native marketplace install when native ∋ codex; else MCP + skills + agents + hooks
+#   codex    → MCP + skills + agents + hooks (never native in this contract)
 #   opencode → MCP + skills + agents (never native — no drivable CLI install)
 #   cursor   → MCP + skills + agents + hooks (never native — GUI marketplace only)
 #   copilot  → native marketplace install when native ∋ copilot; else skills + hooks + agents (+ MCP if harnesses ∋ copilot)
 #   crush    → MCP only (never native — no plugin concept)
 #   commands → unsupported on the decomposed path for every harness
 #
-# Edit this file, then run `dots sync` to deploy (base-sync retired;
-# claude-global config is chezmoi-authoritative — see chezmoi/.chezmoidata/claude.yaml).
+# Edit this file, then run `dots sync` to deploy; global Claude configuration
+# remains chezmoi-authoritative (see chezmoi/.chezmoidata/claude.yaml).
 
 plugins:
   # milknado: Mikado execution engine
@@ -75,18 +71,15 @@ plugins:
     branch: main
     harnesses: [claude, codex, opencode, cursor, copilot, crush]
     native: [claude, copilot]
-    # codex omitted from native: — milknado's upstream .agents/plugins/marketplace.json
-    # (the manifest codex reads) lacks a top-level `name`, so
-    # `codex plugin marketplace add` exits 1 and codex would get NEITHER the
-    # native install NOR the decomposed MCP (DEDUP strips codex when native).
-    # Re-enable by adding `codex` to the list (or switching to `native: true`)
-    # once upstream adds `"name": "milknado"`, then confirm
-    # `codex plugin marketplace add` succeeds against ~/.cache/ap/plugins/milknado.
+    # Codex stays on the decomposed path: native projection is supported only
+    # for Claude and Copilot, and DEDUP must not hide Codex primitives.
+    # Keep the native list explicit until every supported native renderer
+    # accepts this marketplace.
     description: Mikado execution engine — goal decomposition, batch planning, detached ralph-loop runs
 
   # hallouminate: per-repo markdown wiki (LLM-authored notes + semantic search).
   # Payload: 1 MCP (`hallouminate serve`) + skills (wiki-ingest, wiki-init, etc).
-  # native: true — native on claude+codex+copilot, decomposed on opencode/cursor/crush.
+  # native: true — native on claude+copilot, decomposed on codex/opencode/cursor/crush.
   # Going native rescopes the MCP tools to mcp__plugin_hallouminate_hallouminate__*
   # on the native harnesses; the renderers rewrite the canonical
   # mcp__hallouminate__* permission glob and rennet's allowed-tools accordingly

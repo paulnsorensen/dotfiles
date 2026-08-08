@@ -2,7 +2,7 @@
 # vault.sh — sourced library: resolve the per-machine secret vault (1Password
 # or Bitwarden Secrets Manager) and materialize its secrets into a cached
 # .env-format file consumed by every loader (agents/mcp/sync.sh,
-# zsh/core.zsh, bin/cc-env-exec, agent-profile's ap render). Deep module —
+# zsh/core.zsh, bin/cc-env-exec, and the cheese profile CLI). Deep module —
 # the only place that knows a vault exists.
 #
 # Captures only its own absolute physical path at source time; all behavior

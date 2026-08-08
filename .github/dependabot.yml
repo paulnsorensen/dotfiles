@@ -12,10 +12,3 @@ updates:
     groups:
       actions-minor-and-patch:
         update-types: [minor, patch]
-  - package-ecosystem: "uv"
-    directory: /agent-profile
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    cooldown:
-      default-days: 7

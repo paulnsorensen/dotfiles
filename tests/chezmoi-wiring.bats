@@ -13,10 +13,10 @@ setup() {
     export SYNC_LIB="$REAL_DOTFILES_DIR/.sync-lib.sh"
     # shellcheck source=../.sync-lib.sh
     source "$SYNC_LIB"
-    # The ap live-install path (install-base-profile) and the claude asset
-    # installer were retired (spec: chezmoi-authoritative-claude): ~/.claude
-    # deploys via dot_claude/exact_* + modify_settings.json, and user-scope
-    # MCPs reconcile via this run_onchange template.
+    # The legacy live-install path and Claude asset installer were retired
+    # (spec: chezmoi-authoritative-claude): ~/.claude deploys via
+    # dot_claude/exact_* + modify_settings.json, and user-scope MCPs reconcile
+    # via this run_onchange template.
     export MCP_TMPL="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-mcps.sh.tmpl"
 }
 
@@ -71,7 +71,7 @@ make_isolated_chezmoi_source() {
     mkdir -p "$source_dir"
     cp -R "$REAL_DOTFILES_DIR/chezmoi/." "$source_dir/"
     local sibling
-    for sibling in agent-profile agents claude cursor; do
+    for sibling in agents claude cursor; do
         ln -s "$REAL_DOTFILES_DIR/$sibling" "$root/$sibling"
     done
     echo "$source_dir"
@@ -326,14 +326,16 @@ EOF
     assert_file_exists "$REAL_DOTFILES_DIR/chezmoi/.chezmoiroot"
 }
 
-@test "retired ap-era installers are gone from the source tree" {
+@test "retired profile installers are gone from the source tree" {
+    local legacy_profile="agent""-""profile"
+    local base_profile="base""-""profile"
     local stale
     for stale in \
-        "chezmoi/.chezmoiscripts/run_onchange_after_install-base-profile.sh.tmpl" \
+        "chezmoi/.chezmoiscripts/run_onchange_after_install-${base_profile}.sh.tmpl" \
         "chezmoi/.chezmoiscripts/run_onchange_after_install-claude-assets.sh.tmpl" \
-        "chezmoi/lib/install-base-profile.sh" \
+        "chezmoi/lib/install-${base_profile}.sh" \
         "chezmoi/lib/install-claude-assets.sh" \
-        "chezmoi/lib/agent-profile-sync.sh"; do
+        "chezmoi/lib/${legacy_profile}-sync.sh"; do
         if [[ -e "$REAL_DOTFILES_DIR/$stale" ]]; then
             echo "retired file still present: $stale" >&2
             return 1
@@ -447,15 +449,17 @@ EOF
     grep -qF '.chezmoi-mcp-manifest' "$MCP_TMPL"
 }
 
-@test "plugin reconcile run_onchange embeds an installed user-scope ids projection" {
-    local plugin_tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-plugins.sh.tmpl"
-    assert_file_exists "$plugin_tmpl"
-    # A projection of installed_plugins.json (not a whole-file hash — see the
-    # in-template rationale) so an out-of-band uninstall re-runs the reconcile
-    # on the next sync without any repo file changing (spec:
-    # plugin-reconcile-self-heal, Change 1).
-    grep -qF 'installed user-scope ids:' "$plugin_tmpl"
-    grep -qF '.claude/plugins/installed_plugins.json' "$plugin_tmpl"
+@test "plugin cache and reconcile scripts expose their independent rerun contracts" {
+    local cache_tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_before_sync-claude-plugin-cache.sh.tmpl"
+    local reconcile_tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_sync-claude-plugins.sh.tmpl"
+    assert_file_exists "$cache_tmpl"
+    assert_file_exists "$reconcile_tmpl"
+    grep -qF 'cheese_plugin_cache_prepare' "$cache_tmpl"
+    grep -qF 'installed user-scope ids:' "$reconcile_tmpl"
+    grep -qF '.claude/plugins/installed_plugins.json' "$reconcile_tmpl"
+    if grep -qF 'cheese_plugin_cache_prepare' "$reconcile_tmpl"; then
+        return 1
+    fi
 }
 
 @test "MCP reconcile run_onchange renders and fails loud without jq/yq" {
@@ -547,10 +551,9 @@ sources:
 YAML
 
     # Force a non-empty harness list so the script doesn't early-exit at the
-    # SKILL_HARNESSES-empty branch. Use a valid agent ID so the allowlist
-    # guard (mirrors agent_profile/fetch.py's SKILL_AGENT) passes — the test
-    # is asserting *npx failure propagation*, not allowlist behavior. On dev
-    # machines the real .env's SKILL_HARNESSES overrides this; harmless,
+    # SKILL_HARNESSES-empty branch. Use a valid agent ID so the installer's
+    # harness allowlist passes — the test is asserting *npx failure propagation*,
+    # not allowlist behavior. On dev machines the real .env's SKILL_HARNESSES overrides this; harmless,
     # since every fake-npx invocation fails regardless of which IDs are in
     # the loop.
     export SKILL_HARNESSES="claude-code"
@@ -763,11 +766,41 @@ SCRIPT
     isolated_source=$(make_isolated_chezmoi_source)
     export CHEZMOI_SOURCE_DIR_OVERRIDE="$isolated_source"
 
+    # The production plugin-cache producer must clone git sources. Replace the
+    # isolated source's registry with one local remote, while leaving the real
+    # agent definitions available to the assembly step.
+    local isolated_root="${isolated_source%/chezmoi}"
+    local plugin_upstream="$TEST_HOME/plugin-upstream"
+    local real_git
+    real_git=$(command -v git)
+    plugin_cache_upstream "$plugin_upstream"
+    rm "$isolated_root/agents"
+    cp -R "$REAL_DOTFILES_DIR/agents" "$isolated_root/agents"
+    cat > "$isolated_root/agents/plugins/registry.yaml" <<EOF
+plugins:
+  demo:
+    git: "$plugin_upstream"
+    branch: main
+    harnesses: [claude]
+    native: []
+EOF
+
     # Feed the external-skill vendoring from the seeded offline cache so the
     # assembly step never touches the network.
     local git_bin
     git_bin=$(seed_skill_cache_offline)
     PATH="$git_bin:$PATH"
+    cat > "$git_bin/git" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1-}" == clone || "\${1-}" == hash-object ]]; then
+    exec "$real_git" "\$@"
+fi
+if [[ "\${1-}" == -C && "\${2-}" == "$HOME/.cache/cheese-flow/plugins"* ]]; then
+    exec "$real_git" "\$@"
+fi
+exit 1
+EOF
+    chmod +x "$git_bin/git"
 
     # The MCP-reconcile run_onchange fails loud without the `claude` CLI
     # (CI has no claude). Stub it — all reconcile writes go through the CLI
@@ -804,6 +837,9 @@ TOML
     export TAVILY_API_KEY="test-tavily-key"
 
     run bash "$CHEZMOI_SYNC"
+    if (( status != 0 )); then
+        printf '%s\n' "$output" >&2
+    fi
     assert_success
     assert_output_contains "Assembled claude chezmoi source state"
     # The reconcile ran (via the stub) and wrote its ownership manifest.
@@ -878,7 +914,7 @@ TOML
     #
     # Render the template in isolation (execute-template) rather than a full
     # `chezmoi apply`: apply would run the whole chezmoi script suite (the
-    # ap-migration run_once, wholesale settings authorship, MCP reconcile)
+    # legacy migration run_once, wholesale settings authorship, MCP reconcile
     # against the test HOME — this test pins the copilot template alone.
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
     local rendered
@@ -918,7 +954,7 @@ TOML
     [[ -z "$has_session" ]]
 }
 
-@test "claude settings.json: authoritative source does NOT pre-bake ap-managed marketplace/plugin" {
+@test "claude settings.json: authoritative source does NOT pre-bake registry-managed marketplace/plugin" {
     # `local` marketplace + plugin enablement are owned by the claude registry
     # (claude.yaml enabledPlugins / extraKnownMarketplaces), rendered into the
     # live file by modify_settings.json. Pre-baking them in the seed would
@@ -981,4 +1017,212 @@ TOML
     # the chezmoi seed is the source of truth. A re-introduced file would
     # quietly fight the chezmoi-seeded one via the legacy symlink path.
     [[ ! -f "$REAL_DOTFILES_DIR/claude/settings.json" ]]
+}
+
+# ── native-plugin cache production wiring ───────────────────────────────────
+# These tests execute the rendered producer and reconciler around the real
+# settings modifier. The registry uses a local git remote, so no network is
+# required.
+
+plugin_cache_fixture() {
+    local root="$1" upstream="$2" source="$1/chezmoi"
+    mkdir -p "$source/.chezmoiscripts" "$source/lib" "$source/dot_claude"
+    mkdir -p "$source/.chezmoidata" "$root/agents/plugins" "$root/claude/plugins"
+    printf 'plugins: {}\n' > "$root/claude/plugins/registry.yaml"
+    cp "$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_before_sync-claude-plugin-cache.sh.tmpl" \
+        "$source/.chezmoiscripts/"
+    cp "$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_sync-claude-plugins.sh.tmpl" \
+        "$source/.chezmoiscripts/"
+    cp "$REAL_DOTFILES_DIR/chezmoi/lib/claude-plugin-reconcile.sh" "$source/lib/"
+    cp "$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" \
+        "$source/dot_claude/"
+    cp "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" \
+        "$source/lib/"
+    cp "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml" "$source/.chezmoidata/"
+    cat > "$root/agents/plugins/registry.yaml" <<EOF
+plugins:
+  demo:
+    git: "$upstream"
+    branch: main
+    harnesses: [claude]
+    native: [claude]
+EOF
+    printf '%s\n' "$source"
+}
+
+plugin_cache_upstream() {
+    local repo="$1"
+    git init -q -b main "$repo"
+    mkdir -p "$repo/.claude-plugin"
+    printf '{"name":"demo"}\n' > "$repo/.claude-plugin/marketplace.json"
+    printf 'first\n' > "$repo/version"
+    git -C "$repo" add .
+    git -C "$repo" -c user.name=test -c user.email=test@example.com commit -qm first
+}
+
+plugin_fake_claude() {
+    local fake_bin="$TEST_HOME/plugin-fake-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/claude" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${CALLS:?}"
+known="$HOME/.claude/plugins/known_marketplaces.json"
+installed="$HOME/.claude/plugins/installed_plugins.json"
+case "$1 $2" in
+    "plugin marketplace")
+        mkdir -p "${known%/*}"
+        [[ -f "$known" ]] || printf '{}\n' > "$known"
+        case "$3" in
+            add)
+                root="$4"
+                name=$(jq -r '.name // empty' "$root/.claude-plugin/marketplace.json")
+                jq --arg n "$name" --arg p "$root" \
+                    '.[$n] = {source: {source: "directory", path: $p}}' \
+                    "$known" > "$known.tmp"
+                mv "$known.tmp" "$known"
+                ;;
+            remove)
+                jq --arg n "$4" 'del(.[$n])' "$known" > "$known.tmp"
+                mv "$known.tmp" "$known"
+                ;;
+        esac
+        ;;
+    "plugin install")
+        mkdir -p "${installed%/*}"
+        [[ -f "$installed" ]] || printf '{"version":2,"plugins":{}}\n' > "$installed"
+        jq --arg id "$3" '.plugins[$id] = [{scope:"user"}]' \
+            "$installed" > "$installed.tmp"
+        mv "$installed.tmp" "$installed"
+        ;;
+    "plugin uninstall")
+        [[ -f "$installed" ]] || exit 0
+        jq --arg id "$3" \
+            '(.plugins[$id] // []) |= map(select(.scope != "user"))' \
+            "$installed" > "$installed.tmp"
+        mv "$installed.tmp" "$installed"
+        ;;
+esac
+SH
+    chmod +x "$fake_bin/claude"
+    printf '%s\n' "$fake_bin"
+}
+
+render_plugin_scripts() {
+    local source="$1" before="$2" after="$3"
+    chezmoi --source "$source" execute-template \
+        < "$source/.chezmoiscripts/run_before_sync-claude-plugin-cache.sh.tmpl" \
+        > "$before"
+    chezmoi --source "$source" execute-template \
+        < "$source/.chezmoiscripts/run_after_sync-claude-plugins.sh.tmpl" \
+        > "$after"
+}
+
+require_plugin_wiring_prerequisites() {
+    local prerequisite
+    for prerequisite in chezmoi git jq yq; do
+        if ! command -v "$prerequisite" >/dev/null 2>&1; then
+            printf 'required plugin-wiring prerequisite missing: %s\n' "$prerequisite" >&2
+            return 1
+        fi
+    done
+}
+
+@test "clean apply order prepares cache before settings and reconciliation" {
+    require_plugin_wiring_prerequisites
+    local upstream="$TEST_HOME/plugin-upstream"
+    plugin_cache_upstream "$upstream"
+    local root="$TEST_HOME/plugin-source" source
+    source=$(plugin_cache_fixture "$root" "$upstream")
+    local before="$TEST_HOME/rendered-plugin-before.sh"
+    local after="$TEST_HOME/rendered-plugin-after.sh"
+    render_plugin_scripts "$source" "$before" "$after"
+    local fake_bin calls="$TEST_HOME/plugin-calls.log"
+    fake_bin=$(plugin_fake_claude)
+    : > "$calls"
+
+    local legacy="$TEST_HOME/.cache/ap/plugins" legacy_before="$TEST_HOME/legacy-before"
+    mkdir -p "$legacy/demo"
+    printf 'legacy sentinel\n' > "$legacy/demo/sentinel"
+    cp -R "$legacy" "$legacy_before"
+
+    run env HOME="$TEST_HOME" bash "$before"
+    [ "$status" -eq 0 ]
+    local cache="$TEST_HOME/.cache/cheese-flow/plugins/demo"
+    [ -L "$cache" ]
+    [ "$(cat "$cache/version")" = first ]
+
+    run env HOME="$TEST_HOME" CHEZMOI_SOURCE_DIR="$source" \
+        sh "$source/dot_claude/modify_settings.json" </dev/null
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" > "$TEST_HOME/settings.json"
+    [ "$(jq -r '.extraKnownMarketplaces.demo.source.path' "$TEST_HOME/settings.json")" = "$cache" ]
+
+    run env HOME="$TEST_HOME" PATH="$fake_bin:$PATH" CALLS="$calls" bash "$after"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.demo.source.path' "$TEST_HOME/.claude/plugins/known_marketplaces.json")" = "$cache" ]
+    [ "$(jq -r '.plugins["demo@demo"][0].scope' "$TEST_HOME/.claude/plugins/installed_plugins.json")" = user ]
+
+    printf 'second\n' > "$upstream/version"
+    git -C "$upstream" add version
+    git -C "$upstream" -c user.name=test -c user.email=test@example.com commit -qm second
+    run env HOME="$TEST_HOME" bash "$before"
+    [ "$status" -eq 0 ]
+    run env HOME="$TEST_HOME" PATH="$fake_bin:$PATH" CALLS="$calls" bash "$after"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$cache/version")" = second ]
+    run diff -ruN "$legacy_before" "$legacy"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "clean settings consumer sees native plugin on the first prepared apply" {
+    require_plugin_wiring_prerequisites
+    local upstream="$TEST_HOME/plugin-upstream-empty"
+    plugin_cache_upstream "$upstream"
+    local root="$TEST_HOME/plugin-source-empty" source
+    source=$(plugin_cache_fixture "$root" "$upstream")
+    local before="$TEST_HOME/rendered-plugin-before-empty.sh"
+    local after="$TEST_HOME/rendered-plugin-after-empty.sh"
+    render_plugin_scripts "$source" "$before" "$after"
+    local clean_home="$TEST_HOME/clean-home" fake_bin calls="$TEST_HOME/plugin-empty-calls.log"
+    mkdir -p "$clean_home"
+    fake_bin=$(plugin_fake_claude)
+    : > "$calls"
+
+    run bash -c 'HOME="$1" CHEZMOI_SOURCE_DIR="$2" sh "$3" </dev/null 2>"$4"' \
+        _ "$clean_home" "$source" "$source/dot_claude/modify_settings.json" \
+        "$TEST_HOME/pre-cache.stderr"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.extraKnownMarketplaces.demo // null' <<<"$output")" = null ]
+
+    run env HOME="$clean_home" bash "$before"
+    [ "$status" -eq 0 ]
+    local cache="$clean_home/.cache/cheese-flow/plugins/demo"
+    run env HOME="$clean_home" CHEZMOI_SOURCE_DIR="$source" \
+        sh "$source/dot_claude/modify_settings.json" </dev/null
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.extraKnownMarketplaces.demo.source.path' <<<"$output")" = "$cache" ]
+
+    run env HOME="$clean_home" PATH="$fake_bin:$PATH" CALLS="$calls" bash "$after"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.demo.source.path' "$clean_home/.claude/plugins/known_marketplaces.json")" = "$cache" ]
+}
+
+@test "live plugin/profile/config surfaces never use the retired cache root" {
+    local surface
+    for surface in \
+        "$REAL_DOTFILES_DIR/agents/plugins/registry.yaml" \
+        "$REAL_DOTFILES_DIR/claude/plugins/registry.yaml" \
+        "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml" \
+        "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml" \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" \
+        "$REAL_DOTFILES_DIR/chezmoi/lib/claude-plugin-reconcile.sh" \
+        "$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_before_sync-claude-plugin-cache.sh.tmpl" \
+        "$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_sync-claude-plugins.sh.tmpl"; do
+        if awk '!/^[[:space:]]*#/ && /\.cache\/ap\/plugins/' "$surface" | grep -q .; then
+            printf 'retired cache root found in live surface: %s\n' "$surface" >&2
+            return 1
+        fi
+    done
 }

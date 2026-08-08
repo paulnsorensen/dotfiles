@@ -1,0 +1,68 @@
+#!/bin/bash
+# Always run after chezmoi updates targets. settings.json already references the
+# prepared native-plugin cache; this reconciles Claude's runtime marketplace
+# index and user-scope installations with that desired state.
+#
+# Runtime-state projections document the two self-healing inputs consumed on
+# every apply without using their volatile metadata as a run-onchange trigger.
+# installed user-scope ids: {{ output "sh" "-c" "jq -r '(.plugins // {}) | to_entries[] | select(.value | any(.scope==\"user\")) | .key' ~/.claude/plugins/installed_plugins.json 2>/dev/null | sort | tr '\n' ' ' || true" }}
+# indexed marketplaces:     {{ output "sh" "-c" "jq -r 'keys[]' ~/.claude/plugins/known_marketplaces.json 2>/dev/null | sort | tr '\n' ' ' || true" }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+REG_FILE="$SOURCE_DIR/../agents/plugins/registry.yaml"
+
+for cmd in jq yq; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "  ERROR: $cmd not found — claude plugin reconcile cannot run; install $cmd and rerun 'dots sync'" >&2
+        exit 1
+    fi
+done
+if [[ ! -f "$REG_FILE" ]]; then
+    echo "  ERROR: plugin registry not found: $REG_FILE" >&2
+    exit 1
+fi
+
+# shellcheck source=../lib/claude-plugin-reconcile.sh
+source "$SOURCE_DIR/lib/claude-plugin-reconcile.sh"
+
+repo_root=$(cd "$SOURCE_DIR/.." && pwd)
+desired_json=$(
+    yq -o=json '.plugins' "$REG_FILE" \
+        | jq -r '
+            ["claude","codex","copilot"] as $drivable
+            | to_entries[] | .key as $key | .value as $v
+            | ( if ($v.native == true)
+                    then (($v.harnesses // []) - (($v.harnesses // []) - $drivable))
+                elif (($v.native | type) == "array") then $v.native
+                else [] end
+              ) as $nat0
+            | ($nat0 + (if $v.claude_native == true then ["claude"] else [] end)) as $nat
+            | select($nat | index("claude"))
+            | if $v.git then [$key, "git", ""]
+              elif $v.path then [$key, "path", $v.path]
+              else empty end
+            | @tsv' \
+        | while IFS="$(printf '\t')" read -r key kind rawpath; do
+            [[ -z "$key" ]] && continue
+            case "$kind" in
+                (git) root="$HOME/.cache/cheese-flow/plugins/$key" ;;
+                (path)
+                    # shellcheck disable=SC2088  # literal "~/" expanded below
+                    case "$rawpath" in
+                        ("~/"*) root="$HOME/${rawpath#"~/"}" ;;
+                        (/*)    root="$rawpath" ;;
+                        (*)     root="$repo_root/$rawpath" ;;
+                    esac
+                    ;;
+            esac
+            jq -n --arg k "$key" --arg r "$root" '{key: $k, marketplace_root: $r}'
+        done | jq -s '.'
+)
+
+claude_plugin_reconcile \
+    "$desired_json" \
+    "$HOME/.claude/plugins/known_marketplaces.json" \
+    "$HOME/.claude/.chezmoi-plugin-manifest" \
+    "$HOME/.claude/plugins/installed_plugins.json"

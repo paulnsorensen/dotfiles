@@ -25,6 +25,143 @@
 #   * Missing `claude` CLI is non-fatal: the durable settings.json write already
 #     happened; priming is best-effort. Warn and return 0.
 
+# _cheese_atomic_link_replace <source_link> <destination>
+#   GNU mv needs -T to replace a symlink-to-directory rather than following it;
+#   BSD/macOS mv uses -h for the same operation.
+_cheese_atomic_link_replace() {
+    local source_link="$1" destination="$2"
+    if mv -Tf -- "$source_link" "$destination" 2>/dev/null; then
+        return 0
+    fi
+    mv -fh "$source_link" "$destination"
+}
+
+# cheese_plugin_cache_prepare <registry> <cache_root>
+#   Clone every git-backed marketplace before publishing anything. Successful
+#   runs publish one immutable content-addressed generation through .current;
+#   stable per-plugin symlinks follow that pointer. Old generations remain valid
+#   for readers that resolved them before publication.
+cheese_plugin_cache_prepare() (
+    set -euo pipefail
+
+    local registry="$1" cache_root="$2" registry_json rows
+    local key url branch commit generation generations generation_root
+    local staging="" lock="${cache_root}.lock" manifest destination link_tmp
+
+    for command_name in git jq yq; do
+        if ! command -v "$command_name" >/dev/null 2>&1; then
+            echo "  ERROR: $command_name not found — plugin cache cannot be prepared" >&2
+            return 1
+        fi
+    done
+    if ! registry_json=$(yq -o=json '.plugins // {}' "$registry"); then
+        echo "  ERROR: invalid plugin registry: $registry" >&2
+        return 1
+    fi
+    if ! rows=$(jq -r '
+        to_entries[]
+        | select((.value | type) == "object" and (.value | has("git")))
+        | [
+            .key,
+            (if (.value.git | type) == "string" and (.value.git | length) > 0
+             then .value.git else error("git must be a non-empty string") end),
+            (if (.value.branch // "main") | type == "string" and length > 0
+             then (.value.branch // "main") else error("branch must be a non-empty string") end)
+          ]
+        | @tsv
+    ' <<<"$registry_json"); then
+        echo "  ERROR: invalid git plugin metadata in $registry" >&2
+        return 1
+    fi
+
+    mkdir -p "$cache_root"
+    if ! mkdir "$lock" 2>/dev/null; then
+        echo "  ERROR: plugin cache preparation already holds $lock" >&2
+        return 1
+    fi
+    # shellcheck disable=SC2329  # Invoked by the EXIT trap below.
+    cleanup_plugin_cache_prepare() {
+        [[ -z "$staging" ]] || rm -rf -- "$staging"
+        rm -f -- "$cache_root/.current.$$.tmp" "$cache_root"/.*.link.$$
+        rm -rf -- "$lock"
+    }
+    trap cleanup_plugin_cache_prepare EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    staging=$(mktemp -d "${cache_root}.stage.XXXXXX")
+    manifest="$staging/.commits"
+    : > "$manifest"
+    while IFS="$(printf '\t')" read -r key url branch; do
+        [[ -z "$key" ]] && continue
+        case "$key" in
+            (.*|*[!A-Za-z0-9._-]*)
+                echo "  ERROR: unsafe plugin cache key: $key" >&2
+                return 1
+                ;;
+        esac
+        if ! git clone --quiet --depth 1 --branch "$branch" --single-branch -- "$url" "$staging/$key"; then
+            echo "  ERROR: failed to prepare plugin cache for $key" >&2
+            return 1
+        fi
+        commit=$(git -C "$staging/$key" rev-parse HEAD)
+        printf '%s\t%s\n' "$key" "$commit" >> "$manifest"
+    done <<<"$rows"
+
+    generation=$(git hash-object "$manifest")
+    generations="$cache_root/.generations"
+    generation_root="$generations/$generation"
+    mkdir -p "$generations"
+    if [[ -e "$generation_root" ]]; then
+        if [[ ! -f "$generation_root/.commits" ]] \
+            || [[ "$(git hash-object "$generation_root/.commits")" != "$generation" ]]; then
+            echo "  ERROR: plugin cache generation $generation has invalid metadata" >&2
+            return 1
+        fi
+        while IFS="$(printf '\t')" read -r key commit; do
+            [[ -z "$key" ]] && continue
+            if [[ ! -d "$generation_root/$key/.git" ]] \
+                || [[ "$(git -C "$generation_root/$key" rev-parse HEAD)" != "$commit" ]] \
+                || [[ -n "$(git -C "$generation_root/$key" status --porcelain)" ]]; then
+                echo "  ERROR: plugin cache generation $generation is corrupt at $key" >&2
+                return 1
+            fi
+        done < "$manifest"
+        rm -rf -- "$staging"
+        staging=""
+    else
+        mv -- "$staging" "$generation_root"
+        staging=""
+    fi
+
+    ln -s ".generations/$generation" "$cache_root/.current.$$.tmp"
+    _cheese_atomic_link_replace "$cache_root/.current.$$.tmp" "$cache_root/.current"
+
+    while IFS="$(printf '\t')" read -r key commit; do
+        [[ -z "$key" ]] && continue
+        destination="$cache_root/$key"
+        link_tmp="$cache_root/.$key.link.$$"
+        ln -s ".current/$key" "$link_tmp"
+        if [[ -e "$destination" && ! -L "$destination" ]]; then
+            mv -- "$destination" "$cache_root/.legacy.$key.$$"
+            if ! _cheese_atomic_link_replace "$link_tmp" "$destination"; then
+                mv -- "$cache_root/.legacy.$key.$$" "$destination"
+                return 1
+            fi
+        else
+            _cheese_atomic_link_replace "$link_tmp" "$destination"
+        fi
+    done < "$generation_root/.commits"
+
+    for destination in "$cache_root"/*; do
+        [[ -e "$destination" || -L "$destination" ]] || continue
+        [[ -L "$destination" ]] || continue
+        key=${destination##*/}
+        [[ -e "$generation_root/$key" ]] || rm -f -- "$destination"
+    done
+)
+
 # claude_plugin_reconcile <desired_json> <known_file> <manifest_path> [installed_file]
 #   desired_json  — JSON array of {key, marketplace_root} for native-claude
 #                   entries (resolved the same way as the modify_settings.json

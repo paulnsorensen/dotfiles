@@ -12,14 +12,13 @@ setup() {
 teardown() { teardown_test_env; }
 
 run_budget_check() {
-    run uv run --project "$REAL_DOTFILES_DIR/agent-profile" --frozen \
-        python "$HELPER" "$@"
+    run uv run --no-project --with tiktoken==0.13.0 python "$HELPER" "$@"
 }
 
 @test "agent instructions stay within both tokenizer budgets" {
     run_budget_check "$CONFIG"
     assert_success
-    assert_output_contains "source agent-profile/AGENTS.md:"
+    assert_output_contains "source AGENTS.md:"
     assert_output_contains "stack global_claude:"
     assert_output_contains "stack copilot_coding_max:"
     assert_output_contains "o200k_base="

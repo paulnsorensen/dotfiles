@@ -208,11 +208,11 @@ All other packages (productivity tools, editors, optional CLIs). See catalog.
 
 ---
 
-## agent-profile/
+## Profile engine (historical)
 
 | Decision | Reason |
 |---|---|
-| COPY entire dir (excluding `.venv/`, `.pytest_cache/`, `.cheese/`) | Vendored tool; pure machinery |
+| REMOVED | Reusable mechanics moved to the pinned cheese-flow package; dotplate no longer copies a private engine. |
 
 ---
 

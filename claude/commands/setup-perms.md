@@ -1,6 +1,6 @@
 ---
 name: setup-perms
-description: Scaffold canonical repo-level permissions for this project — portable rules go to the committed fragment + ap perms render; path-scoped destructive rules go to the gitignored .claude/settings.local.json. Pass --local to keep everything personal.
+description: Scaffold canonical repo-level permissions for this project — portable rules go to the committed fragment + cheese profile permissions render; path-scoped destructive rules go to the gitignored .claude/settings.local.json. Pass --local to keep everything personal.
 allowed-tools: Read, Write, Bash, Glob
 ---
 
@@ -8,13 +8,13 @@ allowed-tools: Read, Write, Bash, Glob
 
 Scaffold or update `.agent-profiles/_permissions/profile.yaml` with portable
 permissions for this project, render the committed project config via
-`ap perms`, then merge machine-specific destructive rules into the gitignored
+`cheese profile permissions`, then merge machine-specific destructive rules into the gitignored
 `.claude/settings.local.json`.
 
 Two layers, split by portability:
 
 - **Committed (portable):** safe, path-free rules — the fragment plus the
-  `ap perms` render. Identical on every clone; absolute paths and usernames
+  `cheese profile permissions` render. Identical on every clone; absolute paths and usernames
   never reach version control.
 - **Local (machine-specific):** destructive commands scoped to this clone's
   absolute project root — written only to `.claude/settings.local.json`
@@ -201,10 +201,10 @@ settings:
 No absolute paths, no `$PWD` — if a rule needs the project path, it belongs in
 the local destructive set (step 5), not here.
 
-### 4. Render with ap perms
+### 4. Render with cheese profile permissions
 
-- Default (committed files): `ap perms --target "$(pwd)"`
-- Under `--local` (personal, gitignored): `ap perms --local --target "$(pwd)"`
+- Default (committed files): `cheese profile permissions --project-root "$(pwd)"`
+- Under `--local` (personal, gitignored): `cheese profile permissions --local --project-root "$(pwd)"`
 
 This writes:
 
@@ -219,8 +219,8 @@ union the destructive rules into `permissions.allow`: keep every existing
 entry, dedupe, sort alphabetically, and preserve all sibling keys. Never
 remove entries you did not add.
 
-Ordering under `--local`: run `ap perms --local` (step 4) FIRST, then this
-merge — `ap perms` owns `permissions.{allow,deny}` wholesale and would drop
+Ordering under `--local`: run `cheese profile permissions --local --project-root "$(pwd)"` (step 4) FIRST, then this
+merge — `cheese profile permissions` owns `permissions.{allow,deny}` wholesale and would drop
 rules merged before it ran.
 
 ### 6. Print a summary
@@ -244,12 +244,12 @@ the Codex TUI or CLI. This is expected behavior — not a bug in the overlay.
   paths or `$PWD` substitutions — portability across clones and machines is
   the contract. Path-scoped rules live only in `settings.local.json`.
 - Codex gets no destructive path rules: it has no personal-layer analog
-  (`ap perms --local` skips it), so Codex prompts for destructive commands.
+  (`cheese profile permissions --local` skips it), so Codex prompts for destructive commands.
   Expected, not a gap to fix here.
 - Overwrite the entire `permissions` block in `profile.yaml` on re-run — do
   NOT merge with old accumulated permissions. For `settings.local.json` the
   opposite holds: merge additively, never drop entries you did not write.
-- A bare `ap perms --local` re-render overwrites `permissions.{allow,deny}`
+- Running `cheese profile permissions --local --project-root "$(pwd)"` directly overwrites `permissions.{allow,deny}`
   in `settings.local.json` with just the portable set, dropping the merged
   destructive rules — re-run `/setup-perms --local` to restore them.
 - Sort allow lists alphabetically for readability.

@@ -1,10 +1,9 @@
-# global — migration stub for the old live install profile.
+# global — launch-only personal policy profile.
 #
-# Live deployment moved to `profiles/live/profile.yaml` and `dots sync`. This
-# profile keeps the old name parseable for migration docs/tests, but `ap install`
-# is deprecated and no longer deploys it.
+# Persistent deployment uses `profiles/live/profile.yaml` through explicit
+# `dots profile compile` and `dots profile apply` commands.
 name: global
-description: Deprecated live install alias; use `dots sync` / profile `live`
+description: Global launch profile; persistent deployment uses profile `live`
 include: [base, _permissions]
 target_default: $HOME
 marketplaces:

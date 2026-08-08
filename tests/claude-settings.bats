@@ -387,9 +387,9 @@ setup_native_registry() {
 }
 
 # mk_git_cache <key> <marketplace-name>: a git-style cache under
-# ~/.cache/ap/plugins/<key> (HOME is the sandbox) with a marketplace.json.
+# ~/.cache/cheese-flow/plugins/<key> (HOME is the sandbox) with a marketplace.json.
 mk_git_cache() {
-    local dir="$HOME/.cache/ap/plugins/$1/.claude-plugin"
+    local dir="$HOME/.cache/cheese-flow/plugins/$1/.claude-plugin"
     mkdir -p "$dir"
     printf '{"name": "%s"}\n' "$2" > "$dir/marketplace.json"
 }
@@ -409,7 +409,7 @@ run_native() {
     # enabledPlugins keyed <key>@<name>; marketplace keyed by <name>.
     [ "$(jq -r '.enabledPlugins["widget@acme"]' "$OUT")" = "true" ]
     [ "$(jq -r '.extraKnownMarketplaces["acme"].source.source' "$OUT")" = "directory" ]
-    [ "$(jq -r '.extraKnownMarketplaces["acme"].source.path' "$OUT")" = "$HOME/.cache/ap/plugins/widget" ]
+    [ "$(jq -r '.extraKnownMarketplaces["acme"].source.path' "$OUT")" = "$HOME/.cache/cheese-flow/plugins/widget" ]
     # The YAML key is NOT used as the marketplace name.
     run jq -e '.extraKnownMarketplaces["widget"]' "$OUT"
     [ "$status" -ne 0 ]
