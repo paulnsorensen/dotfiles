@@ -1,0 +1,21 @@
+{
+  "autoRun": {
+    "allow_instructions": [
+      "Allow any shell command whose first token is rtk (the required shell wrapper in this environment).",
+      "Allow routine developer shell tools: git, gh, just, dots, jq, yq, rg, fd, node, npm, npx, uv, uvx, python3, python, mise, cargo, go, rustc, tokei, bat, delta, pretk, prek, sed, awk, sort, uniq, wc, tr, cut, tee, xargs, env, printf, basename, dirname, realpath, mktemp, mkdir, touch, cp, mv, ln, chmod, ls, find, tree, file, stat, head, tail, cat, echo, true, false, test, which, command, type, diff, patch.",
+      "Allow all tilth MCP tools (tilth_list, tilth_search, tilth_read, tilth_grok, tilth_diff, tilth_deps, tilth_write) under any tilth server id (tilth, user-tilth).",
+      "Allow all hallouminate MCP tools (ground, read_markdown, add_markdown, list_tree, list_files, list_corpora, index, backlinks, corpus_stats, get_footnote, delete_markdown) under any hallouminate server id (hallouminate, user-hallouminate, plugin-hallouminate-hallouminate).",
+      "Allow all milknado MCP tools under any milknado server id (milknado, user-milknado, plugin-milknado-milknado) — required for easy-cheese /ultracook and mikado graph work.",
+      "Allow context7 MCP tools (resolve-library-id, query-docs) and tavily MCP tools used by /briesearch and easy-cheese research phases.",
+      "Allow easy-cheese phase work: reading and writing under .cheese/, ralphs/, .hallouminate/, ~/.local/share/cheese/, ~/.claude/skills/, ~/.agents/skills/, and ~/.cursor/skills*/.",
+      "Allow running easy-cheese skills and related CLIs: cheese, cook, mold, press, cure, age, melt, plate, pasteurize, wheypoint, ultracook, affinage, culture, cut, rennet, hard-cheese, and their python helpers under skills/*/scripts/.",
+      "Allow just check, just test, dots sync, dots test, dots doctor, prek, and other repo gate commands commonly used after easy-cheese edits.",
+      "Allow WebFetch to cursor.com, github.com, raw.githubusercontent.com, docs sites needed for library docs, and package registries."
+    ],
+    "block_instructions": [
+      "Ask before git push --force, git reset --hard, git clean -fd, or recursive deletes outside the workspace temp dirs.",
+      "Ask before reading or writing .env files, private keys (*.pem, id_rsa, id_ed25519), and credential stores (.netrc, .npmrc with tokens, kubeconfig, aws credentials).",
+      "Ask before installing system packages with brew/apt that modify the machine outside the project, unless the user explicitly requested setup."
+    ]
+  }
+}
