@@ -22,10 +22,6 @@ mcps:
   - name: context7
     command: agent-secret-proxy
     args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
-
-  - name: github
-    command: agent-secret-proxy
-    args: ["--socket", "/var/run/dotfiles-agent-secrets/github.sock"]
   - name: hallouminate
     command: hallouminate
     args: ["serve"]

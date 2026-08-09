@@ -353,7 +353,7 @@ EOF
     # Secret-bearing servers use the fixed local proxy and never carry
     # credential placeholders or envFile entries.
     local consumer
-    for consumer in context7 tavily github; do
+    for consumer in context7 tavily; do
         [[ "$(yq -r ".claude.mcps.$consumer.command" "$reg")" == "agent-secret-proxy" ]] \
             || { echo "claude MCP $consumer is not proxy-backed" >&2; return 1; }
         [[ "$(yq -r ".claude.mcps.$consumer.args | join(\" \")" "$reg")" == "--socket /var/run/dotfiles-agent-secrets/$consumer.sock" ]] \
@@ -650,7 +650,7 @@ YAML
         GITHUB_APP_PRIVATE_KEY=github-app-real-secret \
         chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
     jq -e . <<<"$rendered" >/dev/null
-    for consumer in context7 tavily github; do
+    for consumer in context7 tavily; do
         jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" <<<"$rendered"
         jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"env\") | not)" <<<"$rendered"
@@ -874,7 +874,7 @@ TOML
 
     # Fixed proxy arguments are the only secret-bearing MCP configuration.
     assert_file_exists "$HOME/.copilot/mcp-config.json"
-    for consumer in context7 tavily github; do
+    for consumer in context7 tavily; do
         jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" \
             "$HOME/.copilot/mcp-config.json"
         jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" \
@@ -907,7 +907,7 @@ TOML
         -u GH_TOKEN -u GITHUB_PERSONAL_ACCESS_TOKEN \
         chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
     jq -e . <<<"$rendered" >/dev/null
-    for consumer in context7 tavily github; do
+    for consumer in context7 tavily; do
         jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" <<<"$rendered"
         jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"env\") | not)" <<<"$rendered"

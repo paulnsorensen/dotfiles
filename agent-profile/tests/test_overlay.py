@@ -733,7 +733,7 @@ def _hermetic_dotenv(monkeypatch, tmp_path):
 def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
     """The shipped review profile must keep: Edit/Write/MultiEdit/NotebookEdit +
     tilth_write denied; a read-only tool whitelist; a closed MCP world of
-    tilth + context7 + brokered GitHub.
+    tilth + context7.
 
     The serena mutators this used to assert went away with #512, which removed
     the Serena MCP from the repo entirely."""
@@ -761,7 +761,7 @@ def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
 
     mcp_path = flags[flags.index("--mcp-config") + 1]
     servers = json.loads(Path(mcp_path).read_text())["mcpServers"]
-    assert set(servers) == {"tilth", "context7", "github"}
+    assert set(servers) == {"tilth", "context7"}
 
 
 def _assert_real_tight_codex_profile(name: str, prompt_phrase: str, monkeypatch, tmp_path):
@@ -1423,8 +1423,8 @@ def test_opencode_launch_profile_wins_name_collision(env, monkeypatch):
 def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
     """The shipped review profile launched on opencode must stay read-only:
     OPENCODE_PERMISSION denies edit (from Edit/Write) and tilth_write appears as
-    an mcp__* deny key. The closed MCP world is tilth + context7 + brokered
-    GitHub (owned and enabled).
+    an mcp__* deny key. The closed MCP world is tilth + context7 (owned and
+    enabled).
 
     The serena mutators this used to assert went away with #512."""
     _hermetic_dotenv(monkeypatch, tmp_path)
@@ -1440,7 +1440,7 @@ def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
 
     config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
     own = {n for n, rec in config["mcp"].items() if rec.get("enabled") is not False}
-    assert own == {"tilth", "context7", "github"}
+    assert own == {"tilth", "context7"}
 
 
 def test_real_review_profile_on_codex_projects_permission_rules(monkeypatch, tmp_path, capsys):

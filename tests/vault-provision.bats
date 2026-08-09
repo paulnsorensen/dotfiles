@@ -23,8 +23,6 @@ setup() {
     cat > "$FIXTURE_DOTFILES/.env" <<'EOF'
 DOTFILES_VAULT_PROVIDER=onepassword
 DOTFILES_OP_ITEM=op://fixture/Agent Secrets
-GITHUB_APP_ID=Iv1fixture
-GITHUB_APP_INSTALLATION_ID=424242
 EOF
 
     cat > "$TEST_HOME/fake-bin/op" <<'EOF'
@@ -32,24 +30,11 @@ EOF
 set -euo pipefail
 case "${1:-}" in
     item) exit 0 ;;
-    read)
-        if [[ "${2##*/}" == GITHUB_APP_PRIVATE_KEY ]]; then
-            printf '%s%s\nfixture\n%s%s\n' \
-                '-----BEGIN PRIVATE ' 'KEY-----' '-----END PRIVATE ' 'KEY-----'
-        else
-            printf 'credential-%s\n' "${2##*/}"
-        fi
-        ;;
+    read) printf 'credential-%s\n' "${2##*/}" ;;
     *) exit 2 ;;
 esac
 EOF
     chmod +x "$TEST_HOME/fake-bin/op"
-
-    cat > "$TEST_HOME/fake-bin/github-mcp-server" <<'EOF'
-#!/usr/bin/env bash
-printf 'fixture github-mcp-server\n'
-EOF
-    chmod +x "$TEST_HOME/fake-bin/github-mcp-server"
 
     export NODE_ROOT="$TEST_HOME/node-v24.18.0"
     mkdir -p "$NODE_ROOT/bin" "$NODE_ROOT/lib/node_modules/npm/bin"
@@ -81,9 +66,6 @@ teardown() { teardown_test_env; }
     [ -x "$runtime/bin/node" ]
     [ -x "$runtime/bin/agent-secret-npx" ]
     [ ! -L "$runtime/bin/npx" ]
-    local github_runtime="$INSTALL_ROOT/usr/local/libexec/dotfiles/github-mcp-server"
-    [ -x "$github_runtime" ]
-    grep -qF 'fixture github-mcp-server' "$github_runtime"
     grep -qF \
         'exec /usr/local/libexec/dotfiles/node-24.18.0/bin/node /usr/local/libexec/dotfiles/node-24.18.0/lib/node_modules/npm/bin/npx-cli.js "$@"' \
         "$runtime/bin/agent-secret-npx"
@@ -92,22 +74,13 @@ teardown() { teardown_test_env; }
 
     local credentials="$INSTALL_ROOT/etc/dotfiles/agent-secret/credentials"
     local consumer key
-    for consumer in context7 tavily todoist github; do
+    for consumer in context7 tavily todoist; do
         case "$consumer" in
             context7) key=CONTEXT7_API_KEY ;;
             tavily) key=TAVILY_API_KEY ;;
             todoist) key=TODOIST_API_KEY ;;
-            github) key=GITHUB_APP_PRIVATE_KEY ;;
         esac
-        if [[ "$consumer" == github ]]; then
-            local pem_begin='-----BEGIN PRIVATE ''KEY-----'
-            local pem_end='-----END PRIVATE ''KEY-----'
-            [ "$(cat "$credentials/$consumer.credential")" = "$pem_begin
-fixture
-$pem_end" ]
-        else
-            [ "$(cat "$credentials/$consumer.credential")" = "credential-$key" ]
-        fi
+        [ "$(cat "$credentials/$consumer.credential")" = "credential-$key" ]
         [ "$(file_mode "$credentials/$consumer.credential")" = 600 ]
         run grep -qF "credential-$key" \
             "$INSTALL_ROOT/etc/dotfiles/agent-secret-broker/$consumer.json"
@@ -148,23 +121,6 @@ $pem_end" ]
         "update-comments", "update-filters", "update-labels", "update-projects",
         "update-reminders", "update-sections", "update-tasks"
     ]' "$policy/todoist.json" >/dev/null
-    jq -e '.upstream == {
-        "argv": [
-            "/usr/local/libexec/dotfiles/github-mcp-server", "stdio",
-            "--app-id", "Iv1fixture",
-            "--app-installation-id", "424242",
-            "--toolsets", "repos,issues,pull_requests"
-        ],
-        "credential_env": "GITHUB_APP_PRIVATE_KEY",
-        "credential_file": "/etc/dotfiles/agent-secret/credentials/github.credential"
-    } and .tools.read == [
-        "get_commit", "get_file_contents", "issue_read", "list_branches",
-        "list_commits", "list_issues", "list_pull_requests", "pull_request_read",
-        "search_code", "search_issues", "search_pull_requests", "search_repositories"
-    ] and .tools.write == [
-        "add_issue_comment", "create_branch", "create_or_update_file",
-        "create_pull_request", "issue_write", "push_files", "update_pull_request"
-    ]' "$policy/github.json" >/dev/null
 
     jq -e '.provider == "onepassword" and .source == "op://fixture/Agent Secrets"' \
         "$INSTALL_ROOT/etc/dotfiles/agent-secret/provider.json" >/dev/null

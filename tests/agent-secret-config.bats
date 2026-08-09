@@ -30,15 +30,14 @@ assert_json_proxy() {
     assert_yaml_proxy "$registry" '.mcps.context7' context7
     assert_yaml_proxy "$registry" '.mcps.tavily' tavily
     assert_yaml_proxy "$registry" '.mcps.todoist' todoist
-    assert_yaml_proxy "$registry" '.mcps.github' github
 
     local spec
     for spec in \
-        'fe:context7' 'fe:tavily' 'fe:github' \
-        'oss-docs:context7' 'oss-docs:tavily' 'oss-docs:github' \
-        'plugin:context7' 'plugin:github' \
-        'review:context7' 'review:github' \
-        'spec:context7' 'spec:tavily' 'spec:github' \
+        'fe:context7' 'fe:tavily' \
+        'oss-docs:context7' 'oss-docs:tavily' \
+        'plugin:context7' \
+        'review:context7' \
+        'spec:context7' 'spec:tavily' \
         'todo:todoist'; do
         local profile=${spec%%:*} consumer=${spec#*:}
         local file="$REAL_DOTFILES_DIR/profiles/$profile/profile.yaml"
@@ -49,19 +48,14 @@ assert_json_proxy() {
     local claude="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
     assert_yaml_proxy "$claude" '.claude.mcps.context7' context7
     assert_yaml_proxy "$claude" '.claude.mcps.tavily' tavily
-    assert_yaml_proxy "$claude" '.claude.mcps.github' github
 
     local codex="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
     assert_yaml_proxy "$codex" '.codex.mcps.context7' context7
     assert_yaml_proxy "$codex" '.codex.mcps.tavily' tavily
-    assert_yaml_proxy "$codex" '.codex.mcps.github' github
 
     assert_json_proxy \
         "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json" \
         '.mcpServers.context7' context7
-    assert_json_proxy \
-        "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json" \
-        '.mcpServers.github' github
 }
 
 @test "rendered Copilot MCP config contains no credential delivery channel" {
@@ -77,7 +71,6 @@ assert_json_proxy() {
 
     assert_json_proxy "$rendered" '.mcpServers.context7' context7
     assert_json_proxy "$rendered" '.mcpServers.tavily' tavily
-    assert_json_proxy "$rendered" '.mcpServers.github' github
 
     local retired
     for retired in \

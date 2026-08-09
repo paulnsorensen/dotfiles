@@ -1,7 +1,7 @@
 # MCP secret handling — local per-consumer brokers
 
 Managed MCP credentials never enter the daily user's environment or harness
-configuration. Every managed Context7, Tavily, Todoist, and GitHub registration
+configuration. Every managed Context7, Tavily, and Todoist registration
 launches `agent-secret-proxy` with one fixed UNIX-socket path. A separate system
 service owns the reusable credential and enforces the consumer's MCP tool
 ceiling.
@@ -23,17 +23,15 @@ to the service identity before accepting traffic
 ## Credential lifecycle
 
 `bin/vault-provision` is the only vault-reading operator path. It resolves the
-configured 1Password or Bitwarden provider, reads only the four managed runtime
+configured 1Password or Bitwarden provider, reads only the three managed runtime
 fields, and writes each value to a distinct root-owned mode-`0600` credential
 file. `bin/agent-secret-install` installs the matching root-owned policy and
-service definition. GitHub uses a repository-scoped App installation: its
-non-secret App and installation IDs are fixed upstream arguments, while only
-the App private key enters the GitHub service environment.
+service definition.
 
-The provisioner snapshots the selected Node runtime and official
-`github-mcp-server` binary into root-owned, non-writable service runtimes and
-pins exact npm MCP package versions. This prevents the daily user or a package
-manager from replacing an upstream executable after provisioning.
+The provisioner snapshots the selected Node runtime into a root-owned,
+non-writable service runtime and pins exact npm MCP package versions. This
+prevents the daily user or a package manager from replacing an upstream
+executable after provisioning.
 
 `.env` contains non-secret settings only. `zsh/core.zsh`, `bin/cc-env-exec`,
 `bin/dots`, and `agents/mcp/sync.sh` clear the retired credential names before
@@ -42,10 +40,8 @@ launching a child. They also remove the obsolete
 
 ## Operator workflow
 
-1. Install packages with `dots sync`. Put `GITHUB_APP_ID` and
-   `GITHUB_APP_INSTALLATION_ID` in `.env`, and put
-   `GITHUB_APP_PRIVATE_KEY` plus the three provider API keys in the selected
-   vault source.
+1. Install packages with `dots sync`. Put the three provider API keys in the
+   selected vault source.
 2. Run `bin/vault-provision --request-user <daily-user> --operator-user
    <separate-operator>` from an authenticated operator session. Reprovisioning
    replaces the root-owned snapshots and restarts every Linux or macOS broker.
@@ -63,10 +59,6 @@ forwarded without interaction. A write call first returns a pending nonce and
 canonical argument digest; it is forwarded only after `agent-secretctl` submits
 an approval matching consumer, tool, canonical arguments, nonce, and expiry.
 Approvals expire after 60 seconds and are consumed once.
-
-The GitHub policy exposes bounded repository, issue, and pull-request tools.
-App installation scope and permissions provide the provider-side ceiling;
-broker approval is still required for every GitHub mutation.
 
 The upstream process receives a fresh minimal environment containing only
 `HOME`, `PATH`, `NO_COLOR`, and that consumer's one credential variable.

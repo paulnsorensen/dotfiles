@@ -53,8 +53,6 @@ EOF
 CLAUDE_SETUP_DIR=/tmp/claude
 DOTFILES_DEV=true
 UNKNOWN_SETTING=must-not-escape
-GITHUB_APP_ID=Iv1.fixture
-GITHUB_APP_INSTALLATION_ID=424242
 CONTEXT7_API_KEY=retired-value
 TAVILY_API_KEY=retired-value
 SERPER_API_KEY=retired-value
@@ -68,9 +66,9 @@ EOF
     export GITHUB_APP_PRIVATE_KEY=inherited-value
     export UNKNOWN_SETTING=inherited-value
 
-    run env DOTFILES_DIR="$DOTFILES_DIR" bash -c "source '$VAULT_LIB'; vault_load_settings '$DOTFILES_DIR/.env'; printf '%s|%s|%s|%s|%s|%s\n' \"\${CLAUDE_SETUP_DIR:-}\" \"\${DOTFILES_DEV:-}\" \"\${UNKNOWN_SETTING:-}\" \"\${CONTEXT7_API_KEY+x}\" \"\${GITHUB_APP_ID:-}\" \"\${GITHUB_APP_PRIVATE_KEY+x}\""
+    run env DOTFILES_DIR="$DOTFILES_DIR" bash -c "source '$VAULT_LIB'; vault_load_settings '$DOTFILES_DIR/.env'; printf '%s|%s|%s|%s|%s\n' \"\${CLAUDE_SETUP_DIR:-}\" \"\${DOTFILES_DEV:-}\" \"\${UNKNOWN_SETTING:-}\" \"\${CONTEXT7_API_KEY+x}\" \"\${GITHUB_APP_PRIVATE_KEY+x}\""
     [ "$status" -eq 0 ]
-    [ "$output" = '/tmp/claude|true|inherited-value||Iv1.fixture|' ]
+    [ "$output" = '/tmp/claude|true|inherited-value||' ]
 }
 
 @test "retired secret names are cleared before a child exec" {

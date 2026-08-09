@@ -52,13 +52,6 @@ mcps:
     scope: user
     description: AI-powered technical web research through a per-consumer credential broker; backs /briesearch
 
-  github:
-    command: agent-secret-proxy
-    args: ["--socket", "/var/run/dotfiles-agent-secrets/github.sock"]
-    scope: user
-    description: Repository-scoped GitHub App through a local read/write approval proxy
-
-
   todoist:
     command: agent-secret-proxy
     args: ["--socket", "/var/run/dotfiles-agent-secrets/todoist.sock"]

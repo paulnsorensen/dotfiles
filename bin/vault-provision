@@ -17,7 +17,7 @@ usage() {
 Usage: vault-provision [--request-user USER] [--operator-user USER]
 
 Resolve the configured vault provider and install service-owned credentials and
-policies for context7, tavily, todoist, and GitHub. Secret values are never
+policies for context7, tavily, and todoist. Secret values are never
 printed, stored in a daily-user cache, or exposed to agent processes.
 EOF
 }
@@ -132,22 +132,6 @@ install_node_runtime() {
     NODE_RUNTIME_NPX="$wrapper"
 }
 
-install_github_runtime() {
-    local source="$1" destination=/usr/local/libexec/dotfiles/github-mcp-server
-    local target="$DESTDIR$destination"
-    [[ "$source" == /* && -x "$source" ]] || {
-        echo "vault-provision: github-mcp-server did not resolve to an executable absolute path." >&2
-        return 1
-    }
-    run_privileged /usr/bin/install -d -m 0755 "${target%/*}"
-    if [[ -n "$DESTDIR" ]]; then
-        /usr/bin/install -m 0755 "$source" "$target"
-    else
-        run_privileged /usr/bin/install -o root -g 0 -m 0755 "$source" "$target"
-    fi
-    GITHUB_MCP_RUNTIME="$destination"
-}
-
 write_privileged_value() {
     local value="$1" path="$2"
     # tee receives the value on stdin; it is never an argument, log line, or
@@ -200,7 +184,6 @@ install_consumer() {
     shift 2
     local credential_path="/etc/dotfiles/agent-secret/credentials/${consumer}.credential"
     local value
-    local pem_prefix='-----BEGIN '
     local -a tool_flags=()
     case "$consumer" in
         context7)
@@ -266,43 +249,11 @@ install_consumer() {
                 --write-tool update-tasks
             )
             ;;
-        github)
-            tool_flags=(
-                --read-tool get_commit
-                --read-tool get_file_contents
-                --read-tool issue_read
-                --read-tool list_branches
-                --read-tool list_commits
-                --read-tool list_issues
-                --read-tool list_pull_requests
-                --read-tool pull_request_read
-                --read-tool search_code
-                --read-tool search_issues
-                --read-tool search_pull_requests
-                --read-tool search_repositories
-                --write-tool add_issue_comment
-                --write-tool create_branch
-                --write-tool create_or_update_file
-                --write-tool create_pull_request
-                --write-tool issue_write
-                --write-tool push_files
-                --write-tool update_pull_request
-            )
-            ;;
         *) echo "vault-provision: unsupported consumer '$consumer'." >&2; return 2 ;;
     esac
 
     read_provider_value "$key"
     value="$VAULT_PROVISION_VALUE"
-    if [[ "$consumer" == github ]]; then
-        case "$value" in
-            "$pem_prefix"'RSA PRIVATE KEY-----'*|"$pem_prefix"'PRIVATE KEY-----'*) ;;
-            *)
-                echo "vault-provision: GITHUB_APP_PRIVATE_KEY is not a PEM private key." >&2
-                return 1
-                ;;
-        esac
-    fi
     if [[ -n "$DESTDIR" ]]; then
         /usr/bin/install -d -m 700 "$DESTDIR/etc/dotfiles/agent-secret/credentials"
     else
@@ -328,23 +279,6 @@ install_consumer() {
     unset value VAULT_PROVISION_VALUE
 }
 
-github_app_id="$(_vault_setting GITHUB_APP_ID "")"
-github_installation_id="$(_vault_setting GITHUB_APP_INSTALLATION_ID "")"
-[[ "$github_app_id" =~ ^[A-Za-z0-9_-]+$ ]] || {
-    echo "vault-provision: GITHUB_APP_ID must be set to an App ID or client ID." >&2
-    exit 1
-}
-[[ "$github_installation_id" =~ ^[0-9]+$ ]] || {
-    echo "vault-provision: GITHUB_APP_INSTALLATION_ID must be a numeric installation ID." >&2
-    exit 1
-}
-github_mcp_path="$(command -v github-mcp-server 2>/dev/null)" || {
-    echo "vault-provision: github-mcp-server is required; run dots sync first." >&2
-    exit 1
-}
-install_github_runtime "$github_mcp_path"
-github_mcp_path="$GITHUB_MCP_RUNTIME"
-
 npx_path="$(command -v npx 2>/dev/null)" || {
     echo "vault-provision: npx is required to install local MCP consumers." >&2
     exit 1
@@ -361,10 +295,6 @@ install_consumer context7 CONTEXT7_API_KEY "$npx_path" -y @upstash/context7-mcp@
 install_consumer tavily TAVILY_API_KEY "$npx_path" -y tavily-mcp@0.2.22
 # renovate: datasource=npm depName=@doist/todoist-mcp
 install_consumer todoist TODOIST_API_KEY "$npx_path" -y @doist/todoist-mcp@12.5.0
-install_consumer github GITHUB_APP_PRIVATE_KEY "$github_mcp_path" stdio \
-    --app-id "$github_app_id" \
-    --app-installation-id "$github_installation_id" \
-    --toolsets repos,issues,pull_requests
 
 # Record non-secret provider provenance for operators; policy files remain the
 # broker's exact schema and contain no provider values.
@@ -372,4 +302,3 @@ metadata_path="/etc/dotfiles/agent-secret/provider.json"
 metadata="$(printf '{"provider":"%s","source":"%s"}\n' "$provider" "$(vault_source "$provider")")"
 write_privileged_value "$metadata" "$DESTDIR$metadata_path"
 unset metadata metadata_path provider request_user operator_user sudo_bin npx_path
-unset github_app_id github_installation_id github_mcp_path GITHUB_MCP_RUNTIME

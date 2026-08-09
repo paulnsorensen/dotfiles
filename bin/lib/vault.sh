@@ -54,7 +54,6 @@ vault_load_settings() {
         value="${line#*=}"
         case "$key" in
             CLAUDE_SETUP_DIR|DOTFILES_VAULT_PROVIDER|DOTFILES_OP_ITEM|BWS_PROJECT_ID|\
-            GITHUB_APP_ID|GITHUB_APP_INSTALLATION_ID|\
             DOTFILES_DEV|CHEESE_FLOW|VAUDEVILLE|TODOIST|SKILL_HARNESSES)
                 if [[ "$value" == \"*\" && "$value" == *\" ]]; then
                     value="${value:1:${#value}-2}"
@@ -313,7 +312,7 @@ vault_secret_value() (
     trap - DEBUG RETURN ERR
     local provider="$1" key="$2" item project_id token raw line found=false
     case "$key" in
-        CONTEXT7_API_KEY|TAVILY_API_KEY|TODOIST_API_KEY|GITHUB_APP_PRIVATE_KEY) ;;
+        CONTEXT7_API_KEY|TAVILY_API_KEY|TODOIST_API_KEY) ;;
         *) echo "vault: refusing non-runtime secret key '$key'." >&2; return 2 ;;
     esac
 
@@ -343,5 +342,5 @@ vault_secret_value() (
 )
 
 vault_runtime_keys() {
-    printf '%s\n' CONTEXT7_API_KEY TAVILY_API_KEY TODOIST_API_KEY GITHUB_APP_PRIVATE_KEY
+    printf '%s\n' CONTEXT7_API_KEY TAVILY_API_KEY TODOIST_API_KEY
 }
