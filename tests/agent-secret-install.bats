@@ -82,8 +82,10 @@ PY
         [[ "$(plist_value --control-socket)" == '/var/run/dotfiles-agent-secrets/fixture.control.sock' ]]
     else
         unit="$INSTALL_ROOT/etc/systemd/system/dotfiles-agent-secret@.service"
-        [[ "$(grep '^ExecStart=' "$unit")" == *'--run-user agent-secret-fixture --upstream-home /var/lib/dotfiles-agent-secrets/fixture'* ]]
-        [[ "$(grep '^ExecStart=' "$unit")" == *'--socket /var/run/dotfiles-agent-secrets/fixture.sock --control-socket /var/run/dotfiles-agent-secrets/fixture.control.sock'* ]]
+        exec_start="$(grep '^ExecStart=' "$unit")"
+        [[ "$exec_start" == *'--policy /etc/dotfiles/agent-secret-broker/%i.json'* ]]
+        [[ "$exec_start" == *'--socket /var/run/dotfiles-agent-secrets/%i.sock --control-socket /var/run/dotfiles-agent-secrets/%i.control.sock'* ]]
+        [[ "$exec_start" == *'--run-user agent-secret-%i --upstream-home /var/lib/dotfiles-agent-secrets/%i'* ]]
         [[ "$(grep '^CapabilityBoundingSet=' "$unit")" == 'CapabilityBoundingSet=CAP_CHOWN CAP_SETGID CAP_SETUID' ]]
     fi
     run grep -R -q 'installer-secret-sentinel' "$INSTALL_ROOT"
@@ -175,4 +177,31 @@ run_trusted_executable() {
     run run_trusted_executable "$TEST_HOME/python3"
     assert_failure
     [[ "$output" == *"root-owned and not group/other-writable"* ]]
+}
+
+@test "the shared systemd template never bakes in one consumer's paths" {
+    [[ "$(uname -s)" == Linux ]] || skip "the systemd template is Linux-only"
+    run install_fixture
+    assert_success
+    run env DESTDIR="$INSTALL_ROOT" "$INSTALLER" install second \
+        --credential-env SECOND_SECRET \
+        --credential-file "$CREDENTIAL" \
+        --request-user "$REQUEST_USER" \
+        --operator-user "$OPERATOR_USER" \
+        --read-tool read.item \
+        -- /usr/bin/tavily-mcp --stdio
+    assert_success
+
+    # Both consumers get their own policy, but a single unit file backs every
+    # instance. Installing the second must not repoint the first at it.
+    [[ -f "$INSTALL_ROOT/etc/dotfiles/agent-secret-broker/fixture.json" ]]
+    [[ -f "$INSTALL_ROOT/etc/dotfiles/agent-secret-broker/second.json" ]]
+
+    unit="$INSTALL_ROOT/etc/systemd/system/dotfiles-agent-secret@.service"
+    run grep -nE 'fixture|second' "$unit"
+    [[ "$status" -ne 0 ]]
+    # The sandbox paths must be instance-generic too, or every instance would be
+    # confined to the last-installed consumer's policy and state directory.
+    [[ "$(grep '^ReadOnlyPaths=' "$unit")" == 'ReadOnlyPaths=/etc/dotfiles/agent-secret-broker/%i.json' ]]
+    [[ "$(grep '^ReadWritePaths=' "$unit")" == 'ReadWritePaths=/var/run/dotfiles-agent-secrets /var/lib/dotfiles-agent-secrets/%i' ]]
 }
