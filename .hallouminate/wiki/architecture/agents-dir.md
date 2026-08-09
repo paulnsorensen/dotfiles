@@ -25,14 +25,16 @@ These four are unioned by the `base` profile — the only profile that reads *al
 
 A mapping of `name → {command, args, env, scope, harnesses, gate_unless, optional, description}`. The non-obvious fields:
 
-- **`harnesses`** (default `[claude, codex, opencode, cursor]`) — membership list. Each renderer filters the MCP list to entries that include its own name. The defaults differ slightly per renderer, encoded as `_MCP_DEFAULT` constants in each renderer rather than in the registry.
+- **`harnesses`** (registry-documented default `[claude, codex, opencode, cursor, crush]`) — membership list. Each renderer filters the MCP list to entries that include its own name. **There is no single default:** the effective fallback is the `_MCP_DEFAULT`-style constant in the renderer doing the pass, and they genuinely differ (codex and copilot fall back to `[claude, codex]` only). Read the constant in the renderer you care about rather than trusting the registry comment.
 - **`gate_unless`** (claude-only) — `gate_unless: CHEESE_FLOW` means "skip this entry under Claude when `$CHEESE_FLOW == "true"`". The cheese-flow plugin ships its own `context7`/`tavily`/`tilth` via the plugin's bundled `.mcp.json`; registering them user-scope too would spawn duplicate processes. Codex/opencode have no plugin system, so the gate is ignored there and the entry installs normally (`base.gate_blocks` returns `False` for any non-claude harness).
-- **`optional`** — when true, the entry is dropped *non-fatally* at ingest if any `${VAR}` it references is unset (e.g. `todoist` without `TODOIST_API_KEY`). A non-optional entry with an unset ref fails the install loud.
+- **`optional`** — when true, the entry is dropped *non-fatally* at ingest if any `${VAR}` it references is unset. A non-optional entry with an unset ref fails the install loud. **No managed entry uses this any more**: since the credential-broker cutover every managed MCP launches `agent-secret-proxy` against a fixed socket and carries no `env`/`${VAR}` at all (see [[mcp-secret-handling]]). The field survives for profile-local entries that still resolve a credential from `.env`.
 - **`scope`** (claude-only) — `user`/`project`/`local`; other harnesses have no scope concept.
 
 #### Per-harness `args`/`env` via Go templates
 
-A handful of MCP values must differ per harness. The registry expresses this with Go-template syntax against `$h` (the active harness), e.g. serena's `SERENA_MUX_HARNESS: '{{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}'`. The leading comment line `# {{ $h := env "HARNESS" }}` documents the binding.
+A handful of MCP values must differ per harness. The registry expresses this with Go-template syntax against `$h` (the active harness), e.g. `'{{ if eq $h "claude" }}claude-code{{ else }}{{ $h }}{{ end }}'`. The leading comment line `# {{ $h := env "HARNESS" }}` documents the binding.
+
+The mechanism is live but **currently unexercised** — its only real user was serena's `SERENA_MUX_HARNESS`, and serena is retired ([[serena-retirement]]). Expect to be the first to re-use it, and expect no existing entry to copy from.
 
 `ap` renders this per-value: `agent_profile/templating.py:render_value` shells out to `chezmoi execute-template` only for strings containing `{{` (the common bare-string case incurs zero subprocess overhead), prepending the same `{{ $h := env "HARNESS" }}` preamble so `$h` resolves. A missing `chezmoi` binary falls back to the unrendered string with a one-time stderr warning rather than crashing — `ap` doesn't hard-depend on chezmoi.
 

@@ -33,3 +33,20 @@ relevant page rather than loading the whole reference into every session.
 - [[operations/index]] — the operational plumbing: the sync + chezmoi deploy
   system, the opt-in local-LLM stack, and the local dev environment (git
   tooling, prek, plugins, skhd).
+- [[adr/index]] — repo-wide accepted decision records (context / decision /
+  alternatives / consequences): the cheese-factory workflow, manifest-pinned
+  packages, the sub-agent routing overhaul, the Codex+OMP harness upgrade, and
+  machine-aware vault selection.
+- [[decisions/index]] — the `session-convergence` ADR series (analytics access,
+  where the convergence sweep lives, wheypoint provenance fields).
+- [[domain-model]] — the ubiquitous language for this repo's agent-orchestration
+  domain. Merge into it; don't overwrite.
+- [[log]] — the ingest log: one line per page created or merged, with the commit
+  that prompted it.
+
+**Three ADR homes exist**, and the split is historical rather than designed:
+`adr/` (repo-wide), `decisions/` (the session-convergence series only), and
+ADRs authored beside their topic page (`architecture/agent-secret-isolation-00N`).
+Before adding a new record, put it where its *siblings* live rather than
+inventing a fourth home. <speculative>Consolidating the first two is probably
+right, but nothing in the repo settles which name wins.</speculative>
