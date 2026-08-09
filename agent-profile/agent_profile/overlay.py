@@ -79,8 +79,7 @@ class IsolationError(Exception):
 
 
 def _dotenv() -> dict[str, str]:
-    """Load ``$DOTFILES_DIR/.env`` plus the materialized vault cache (cache
-    wins) for render-time ``${VAR}`` resolution (spec D4)."""
+    """Load the repository's non-secret ``.env`` settings."""
     repo_root = Path(
         os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles")
     )

@@ -23,11 +23,6 @@
 #   description  — human-readable purpose
 
 mcps:
-  # context7, tavily — provided by the cheese-flow plugin's .mcp.json when
-  # CHEESE_FLOW=true. Plugin MCPs are session-wide and accessible to all
-  # skills/agents. Registering them here too would spawn duplicate processes
-  # under Claude. Codex has no plugin system, so gate_unless is ignored there
-  # and the entry installs normally.
   #
   # shadcn lives in the FE profile only — see profiles/fe/profile.yaml.
   # Installing user-scope loads its tool schemas in every session even though
@@ -46,30 +41,21 @@ mcps:
   # would trip the plugin-MCP-name collision guard in _expand_plugins.
 
   context7:
-    command: npx
-    args: ["-y", "@upstash/context7-mcp"]
-    env:
-      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+    command: agent-secret-proxy
+    args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
     scope: user
-    description: Library/framework docs (React, Tailwind, Next.js, …); backs /briesearch when cheese-flow is unavailable
-    gate_unless: CHEESE_FLOW
+    description: Library/framework docs through a per-consumer credential broker; backs /briesearch
 
   tavily:
-    command: npx
-    args: ["-y", "tavily-mcp@latest"]
-    env:
-      TAVILY_API_KEY: "${TAVILY_API_KEY}"
+    command: agent-secret-proxy
+    args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
     scope: user
-    description: AI-powered technical web research; backs /briesearch when cheese-flow is unavailable
-    gate_unless: CHEESE_FLOW
+    description: AI-powered technical web research through a per-consumer credential broker; backs /briesearch
 
   todoist:
-    command: npx
-    args: ["-y", "@doist/todoist-ai"]
-    env:
-      TODOIST_API_KEY: "${TODOIST_API_KEY}"
+    command: agent-secret-proxy
+    args: ["--socket", "/var/run/dotfiles-agent-secrets/todoist.sock"]
     scope: user
-    optional: true   # skip non-fatally when TODOIST_API_KEY is unset
     # Scoped out of every harness: todoist's ~45 tools ≈ 38k tokens (62% of the
     # MCP tool footprint) are eager-loaded into every request by opencode, codex,
     # cursor, and copilot (only claude defers via ToolSearch — see

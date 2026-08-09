@@ -41,12 +41,9 @@ codex:
   # ── MCP servers (→ config.toml [mcp_servers]; replaced wholesale) ─────────
   # No `env` blocks by design. Codex is terminal-launched and its MCP children
   # inherit the exported shell env (zsh exports every .env key on init), so
-  # neither a real secret nor a `${VAR}` placeholder is written to disk. See
-  # .hallouminate/wiki/architecture/mcp-secret-handling.md — "codex — scrub-by-
-  # keyname": neither the placeholder nor a secret lands in config.toml.
-  #
-  # npx entries are exact-pinned per spec manifest-pinned-packages (no floats),
-  # matching claude.yaml so one Renovate bump moves both harnesses together.
+  # Secret-bearing MCPs connect through fixed local broker sockets. The
+  # generated config contains neither credential placeholders nor package
+  # runners that inherit the daily user's environment.
   mcps:
     tilth:
       command: tilth
@@ -56,13 +53,11 @@ codex:
         tilth_write:
           approval_mode: approve
     context7:
-      command: npx
-      # renovate: datasource=npm depName=@upstash/context7-mcp
-      args: ["-y", "@upstash/context7-mcp@3.2.5"]
+      command: agent-secret-proxy
+      args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
     tavily:
-      command: npx
-      # renovate: datasource=npm depName=tavily-mcp
-      args: ["-y", "tavily-mcp@0.2.21"]
+      command: agent-secret-proxy
+      args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
     milknado:
       command: uvx
       args: ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]

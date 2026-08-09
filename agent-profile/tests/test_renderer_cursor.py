@@ -17,7 +17,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from agent_profile.env import vault_cache_path
 from agent_profile.parse import Manifest
 from agent_profile.renderers.cursor import CursorRenderer, _env_file_for_keys
 
@@ -452,31 +451,13 @@ def test_mcp_embedded_var_ref_fails_loud(tmp_path, monkeypatch):
 # ─── _env_file_for_keys (B5 regression) ──────────────────────────────
 
 
-def test_env_file_for_keys_cache_only_selects_cache_file(monkeypatch, tmp_path):
+
+
+def test_env_file_for_keys_selects_nonsecret_dotenv(monkeypatch):
     monkeypatch.setenv("DOTFILES_DIR", "/abs/dots")
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    cache_dir = tmp_path / "cache" / "dotfiles"
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "secrets.env").write_text("TAVILY_API_KEY=v\n")
-    assert _env_file_for_keys({"TAVILY_API_KEY"}) == str(vault_cache_path())
+    assert _env_file_for_keys({"DISPLAY_MODE"}) == "/abs/dots/.env"
 
 
-def test_env_file_for_keys_dotenv_only_selects_dotenv_file(monkeypatch, tmp_path):
-    monkeypatch.setenv("DOTFILES_DIR", "/abs/dots")
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    assert _env_file_for_keys({"TODOIST_API_KEY"}) == "/abs/dots/.env"
-
-
-def test_env_file_for_keys_mixed_source_raises(monkeypatch, tmp_path):
-    """B5: a server whose ${VAR} keys are split across .env and the vault
-    cache cannot be represented by Cursor's single envFile path."""
-    monkeypatch.setenv("DOTFILES_DIR", "/abs/dots")
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    cache_dir = tmp_path / "cache" / "dotfiles"
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "secrets.env").write_text("TAVILY_API_KEY=v\n")
-    with pytest.raises(ValueError, match="single envFile"):
-        _env_file_for_keys({"TAVILY_API_KEY", "TODOIST_API_KEY"})
 
 def test_mcp_merge_preserves_user_entries(tmp_path):
     m, target, _ = _manifest(

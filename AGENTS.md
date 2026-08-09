@@ -15,7 +15,7 @@ When work establishes a durable decision or gotcha, record its *why* with `add_m
 | Registries, MCPs, hooks, agents, skills, system prompt | [[architecture/agents-dir]] |
 | Plugins across harnesses | [[architecture/cross-harness-plugins]] |
 | `ap` profiles, renderers, install/launch | [[architecture/agent-profile]] |
-| MCP secret passthrough | [[architecture/mcp-secret-handling]] |
+| MCP credential isolation | [[architecture/agent-secret-isolation-001]] |
 | Config drift and settings repair | [[architecture/config-drift]] |
 | Codex-authoritative chezmoi regime | [[architecture/chezmoi-authoritative-codex]] |
 | Harness wiring | [[harnesses/index]] |
@@ -39,11 +39,13 @@ Never edit a rendered target. Edit the source, then deploy.
 | Codex MCP, config scalar, or agent selection | `chezmoi/.chezmoidata/codex.yaml` | `dots sync` |
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
 | Package / profile / OMP config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/omp.yaml` | relevant `dots` command |
-| Secret (API key, token) | the vault — never a file. Key names: `secrets/secrets.env.tmpl` | `bin/vault-provision`, then `dots sync` |
+| Secret (API key, token) | the vault — never `.env`. Key names: `secrets/secrets.env.tmpl` | run `bin/vault-provision` as the operator |
 
-Secrets never live in `.env`; it holds only non-secret toggles. `bin/lib/vault.sh`
-detects 1Password (`op`) or Bitwarden Secrets Manager (`bws`) and materializes
-`$XDG_CACHE_HOME/dotfiles/secrets.env` (0600), which every loader reads.
+`.env` holds only non-secret settings. `bin/vault-provision` reads the exact
+runtime fields from 1Password (`op`) or Bitwarden Secrets Manager (`bws`) and
+installs one root-owned credential, policy, and service identity per consumer.
+Harness MCP configs contain only fixed `agent-secret-proxy` socket paths; daily
+loaders remove retired credential names and the obsolete user cache before exec.
 
 Claude-global and Codex-global configuration are chezmoi-authoritative; opencode,
 Cursor, and Copilot remain frozen pending migration.

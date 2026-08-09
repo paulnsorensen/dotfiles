@@ -733,7 +733,7 @@ def _hermetic_dotenv(monkeypatch, tmp_path):
 def test_real_review_profile_locks_security_contract(monkeypatch, tmp_path):
     """The shipped review profile must keep: Edit/Write/MultiEdit/NotebookEdit +
     tilth_write denied; a read-only tool whitelist; a closed MCP world of
-    exactly tilth + context7.
+    tilth + context7.
 
     The serena mutators this used to assert went away with #512, which removed
     the Serena MCP from the repo entirely."""
@@ -804,8 +804,7 @@ def test_real_codex_code_profile_is_tight_codex_world(monkeypatch, tmp_path):
     )
 
 def test_real_todo_profile_is_closed_todoist_world(monkeypatch, tmp_path):
-    """The shipped todo profile must be a closed world: the ONLY MCP is
-    todoist, with its API key resolved, and skip-permissions in extra_args."""
+    """The shipped todo profile exposes only the credential-isolating Todoist proxy."""
     _hermetic_dotenv(monkeypatch, tmp_path)
     pdir = find_profile_dir("todo")
     assert pdir is not None, "real profiles/todo not found"
@@ -816,7 +815,10 @@ def test_real_todo_profile_is_closed_todoist_world(monkeypatch, tmp_path):
     mcp_path = flags[flags.index("--mcp-config") + 1]
     servers = json.loads(Path(mcp_path).read_text())["mcpServers"]
     assert set(servers) == {"todoist"}
-    assert servers["todoist"]["env"]["TODOIST_API_KEY"] == "stub-td"
+    assert servers["todoist"] == {
+        "command": "agent-secret-proxy",
+        "args": ["--socket", "/var/run/dotfiles-agent-secrets/todoist.sock"],
+    }
     assert "--dangerously-skip-permissions" in flags
     assert env.get("ENABLE_CLAUDEAI_MCP_SERVERS") == "true"
 
@@ -968,8 +970,14 @@ def test_oss_docs_profile_writes_pinned_playwright_mcp_for_codex(
         "command": "npx",
         "args": ["-y", "@playwright/mcp@0.0.78"],
     }
-    assert cfg["mcp_servers"]["context7"]["args"] == ["-y", "@upstash/context7-mcp@3.2.5"]
-    assert cfg["mcp_servers"]["tavily"]["args"] == ["-y", "tavily-mcp@0.2.21"]
+    assert cfg["mcp_servers"]["context7"] == {
+        "command": "agent-secret-proxy",
+        "args": ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"],
+    }
+    assert cfg["mcp_servers"]["tavily"] == {
+        "command": "agent-secret-proxy",
+        "args": ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"],
+    }
 
 
 def test_codex_isolated_config_defaults_to_auto_permissions(tmp_path, monkeypatch):
@@ -1415,7 +1423,7 @@ def test_opencode_launch_profile_wins_name_collision(env, monkeypatch):
 def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
     """The shipped review profile launched on opencode must stay read-only:
     OPENCODE_PERMISSION denies edit (from Edit/Write) and tilth_write appears as
-    an mcp__* deny key. Closed MCP world is exactly tilth + context7 (own,
+    an mcp__* deny key. The closed MCP world is tilth + context7 (owned and
     enabled).
 
     The serena mutators this used to assert went away with #512."""

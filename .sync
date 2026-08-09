@@ -5,6 +5,18 @@
 ############################
 
 set -euo pipefail  # Fail fast on errors
+for _sync_secret in \
+    GH_TOKEN \
+    GITHUB_PERSONAL_ACCESS_TOKEN \
+    GITHUB_APP_PRIVATE_KEY \
+    CONTEXT7_API_KEY \
+    TAVILY_API_KEY \
+    SERPER_API_KEY \
+    TODOIST_API_KEY; do
+    unset "$_sync_secret"
+done
+unset _sync_secret
+
 
 ########## Variables
 
@@ -79,6 +91,7 @@ run_sync() {
         local vault_gate_status
         # shellcheck source=bin/lib/vault.sh
         source "$dir/bin/lib/vault.sh"
+        vault_unset_retired_secrets
         BITWARDEN_DISABLED=false
         if vault_disables_bitwarden_install; then
             BITWARDEN_DISABLED=true
@@ -153,7 +166,6 @@ run_sync() {
     install_tpm
     install_prek_hooks
     install_tilth_claude_code
-    materialize_secrets
     reconcile_claude_mcps
     sync_omp_plugins "$dir"
 

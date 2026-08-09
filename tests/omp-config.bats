@@ -199,12 +199,22 @@ STDIN"
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
 
-@test "omp-mcp: native user config keeps context7 only; hallouminate/milknado are native OMP plugins" {
+@test "omp-mcp: native user config keeps brokered context7 only; wiki/planner are plugins" {
     local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
     local omp_reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/omp.yaml"
-    jq -e '.mcpServers.context7.command == "npx"' "$cfg"
-    jq -e '.mcpServers.context7.args == ["-y", "@upstash/context7-mcp"]' "$cfg"
-    jq -e '.mcpServers.context7.env.CONTEXT7_API_KEY == "${CONTEXT7_API_KEY}"' "$cfg"
+    jq -e '.mcpServers.context7.command == "agent-secret-proxy"' "$cfg"
+    jq -e '.mcpServers.context7.args == ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]' "$cfg"
+    jq -e '(.mcpServers.context7 | has("env") | not)' "$cfg"
+    jq -e '(.mcpServers.context7 | has("envFile") | not)' "$cfg"
+    local retired
+    for retired in \
+        CONTEXT7_API_KEY TAVILY_API_KEY TODOIST_API_KEY GITHUB_APP_PRIVATE_KEY \
+        SERPER_API_KEY GH_TOKEN GITHUB_PERSONAL_ACCESS_TOKEN; do
+        if grep -qF "$retired" "$cfg"; then
+            echo "retired secret name remains in OMP MCP config: $retired" >&2
+            return 1
+        fi
+    done
 
     # hallouminate/milknado are now installed as native OMP marketplace
     # plugins (chezmoi/.chezmoidata/omp.yaml `.omp.plugins`), which supply

@@ -24,9 +24,9 @@
 # the assembly step vendors them into the same exact_skills tree so chezmoi
 # stays authoritative over the whole ~/.claude/skills dir.
 #
-# Never put plaintext secrets here — this file is committed. MCP env values
-# use ${VAR} passthrough (resolved by Claude at server spawn from the parent
-# environment), exactly like agents/mcp/registry.yaml did.
+# Never put plaintext secrets here — this file is committed. Secret-bearing
+# MCPs use fixed agent-secret-proxy sockets and carry no env or envFile fields.
+
 #
 # String values may reference ${HOME}; modify_settings.json expands it before
 # writing (needed for keys Claude reads as literal JSON, e.g. marketplace paths).
@@ -40,17 +40,11 @@ claude:
       env:
         TILTH_MCP_CWD_HOOK_INJECTED: "1"
     context7:
-      command: npx
-      # renovate: datasource=npm depName=@upstash/context7-mcp
-      args: ["-y", "@upstash/context7-mcp@3.2.5"]
-      env:
-        CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+      command: agent-secret-proxy
+      args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
     tavily:
-      command: npx
-      # renovate: datasource=npm depName=tavily-mcp
-      args: ["-y", "tavily-mcp@0.2.21"]
-      env:
-        TAVILY_API_KEY: "${TAVILY_API_KEY}"
+      command: agent-secret-proxy
+      args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
 
   # ── settings.json `hooks` key (authored wholesale) ─────────────────────────
   # Scripts live in ~/.claude/hooks (deployed via exact_hooks from
@@ -225,8 +219,16 @@ claude:
       - "mcp__tavily__*"
       - "mcp__tilth__*"
     deny:
+      # Vault master-credential paths. The Bitwarden access token reads the
+      # whole project, so it outranks every individual key. Prefix rules
+      # only — an absolute path or `sh -c` sidesteps them: friction, not a
+      # boundary. The enforcing control is the root-owned broker credential;
+      # the Keychain item (service bws_access_token) holds the operator token.
+      - "Bash(/usr/bin/security:*)"
+      - "Bash(bws:*)"
       - "Bash(rm -rf:*)"
       - "Bash(rtk proxy git grep:*)"
+      - "Bash(security:*)"
       - "Bash(sudo:*)"
       - "Read(**/*.key)"
       - "Read(**/*.p12)"

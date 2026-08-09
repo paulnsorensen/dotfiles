@@ -16,7 +16,6 @@ from agent_profile.env import (
     load_layered_env,
     resolve_env_value,
     resolve_item_env,
-    vault_cache_path,
 )
 
 # ─── load_dotenv ──────────────────────────────────────────────────────
@@ -185,42 +184,15 @@ def test_resolve_item_env_unset_raises_with_item_name():
     assert "todoist" in str(exc.value)
 
 
-# ─── load_layered_env / vault_cache_path ──────────────────────────────
+# ─── load_layered_env / .env-only ─────────────────────────────────────
 
 
-def test_load_layered_env_cache_wins_over_dotenv(tmp_path, monkeypatch):
-    # PR #580's headline precedence contract: a key migrated to the vault
-    # cache must shadow its stale .env copy, not the other way around.
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+def test_load_layered_env_reads_repo_dotenv_only(tmp_path):
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    (repo_root / ".env").write_text("SHARED_KEY=dotenv-value\n")
-    cache_dir = tmp_path / "cache" / "dotfiles"
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "secrets.env").write_text("SHARED_KEY=cache-value\n")
-    assert load_layered_env(repo_root)["SHARED_KEY"] == "cache-value"
+    (repo_root / ".env").write_text("DOTENV_ONLY=a\nANOTHER_KEY=b\n")
 
-
-def test_load_layered_env_merges_keys_unique_to_each_source(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    (repo_root / ".env").write_text("DOTENV_ONLY=a\n")
-    cache_dir = tmp_path / "cache" / "dotfiles"
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "secrets.env").write_text("CACHE_ONLY=b\n")
-    merged = load_layered_env(repo_root)
-    assert merged == {"DOTENV_ONLY": "a", "CACHE_ONLY": "b"}
-
-
-def test_vault_cache_path_uses_xdg_cache_home_when_set(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
-    assert vault_cache_path() == tmp_path / "xdg" / "dotfiles" / "secrets.env"
-
-
-def test_vault_cache_path_falls_back_to_home_cache_when_unset(monkeypatch):
-    from pathlib import Path
-
-    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path("/home/testuser")))
-    assert vault_cache_path() == Path("/home/testuser/.cache/dotfiles/secrets.env")
+    assert load_layered_env(repo_root) == {
+        "DOTENV_ONLY": "a",
+        "ANOTHER_KEY": "b",
+    }

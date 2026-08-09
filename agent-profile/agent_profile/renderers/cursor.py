@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_profile import shared
-from agent_profile.env import VAR_RE, load_dotenv, vault_cache_path
+from agent_profile.env import VAR_RE
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import (
     agents_for,
@@ -304,30 +304,8 @@ def _repo_root() -> Path:
 
 
 def _env_file_for_keys(keys: set[str]) -> str:
-    """Absolute path to the single ``envFile`` that can supply every key in
-    ``keys``.
-
-    A key the vault has migrated resolves from the materialized cache; a
-    key still in ``.env`` resolves from ``.env``. Cursor's ``envFile`` is a
-    single path, so a server whose ``${VAR}`` keys are split across both
-    sources cannot be represented and fails loud rather than silently
-    losing half its credentials (mirrors the self-reference fail-loud
-    below). A machine-specific absolute path in user config is acceptable
-    here — it matches the marketplace-path precedent in ``claude.py``'s
-    ``_merge_root_settings``."""
-    repo_root = _repo_root()
-    cache_keys = load_dotenv(vault_cache_path()).keys()
-    in_cache = {k for k in keys if k in cache_keys}
-    in_dotenv_only = keys - in_cache
-    if in_cache and in_dotenv_only:
-        raise ValueError(
-            "cursor renderer: env keys "
-            f"{sorted(in_cache)} resolve from the vault cache but "
-            f"{sorted(in_dotenv_only)} resolve from .env — Cursor's envFile "
-            "can only point at one file, so this server's secrets cannot be "
-            "represented by a single envFile. Handle this MCP explicitly."
-        )
-    return str(vault_cache_path() if in_cache else repo_root / ".env")
+    """Return the repository's non-secret ``.env`` file."""
+    return str(_repo_root() / ".env")
 
 
 def _has_var_ref(value: str) -> bool:
@@ -351,14 +329,10 @@ def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
     Unlike the base ``mcp_server_entry``, Cursor's bash always emits
     ``args`` (defaulting to ``[]``) and appends ``env`` only when present.
 
-    MCP-secret-passthrough: Cursor is GUI-launched, so a ``${VAR}`` in ``env``
-    does NOT resolve against the shell ``.env`` (a Finder/Dock launch inherits
-    no shell env). Cursor's stdio servers support an ``envFile`` field that
-    loads a ``.env`` at launch — so any ``${VAR}``-referencing entry is dropped
-    from ``env`` and the ``envFile`` path is added instead — the vault
-    cache when the key was migrated there, ``.env`` otherwise (see
-    :func:`_env_file_for_keys`). Plain literals (no ``${VAR}``) stay in
-    ``env``.
+    Cursor is GUI-launched, so a ``${VAR}`` in ``env`` does not resolve
+    against the shell environment. Cursor's ``envFile`` loads the repository's
+    non-secret ``.env`` settings. Reusable credentials are never represented
+    by this renderer; credentialed MCPs use ``agent-secret-proxy``.
 
     ``envFile`` can only represent the exact self-reference shape
     ``KEY: "${KEY}"`` (it loads vars by their own names). A renamed key or an
