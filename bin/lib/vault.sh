@@ -310,7 +310,7 @@ _vault_fetch_onepassword() {
 vault_secret_value() (
     set +x
     trap - DEBUG RETURN ERR
-    local provider="$1" key="$2" item project_id token raw line found=false
+    local provider="$1" key="$2" item project_id token raw line value found=false
     case "$key" in
         CONTEXT7_API_KEY|TAVILY_API_KEY|TODOIST_API_KEY) ;;
         *) echo "vault: refusing non-runtime secret key '$key'." >&2; return 2 ;;
@@ -328,7 +328,11 @@ vault_secret_value() (
             raw="$(BWS_ACCESS_TOKEN="$token" _vault_fetch_bitwarden "$project_id")" || return 1
             while IFS= read -r line || [[ -n "$line" ]]; do
                 [[ "$line" == "$key="* ]] || continue
-                printf '%s\n' "${line#*=}"
+                value="${line#*=}"
+                if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+                    value="${value:1:${#value}-2}"
+                fi
+                printf '%s\n' "$value"
                 found=true
                 break
             done <<< "$raw"

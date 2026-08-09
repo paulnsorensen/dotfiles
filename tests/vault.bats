@@ -103,3 +103,57 @@ EOF
     [ "$status" -eq 2 ]
     [[ "$output" == *"refusing non-runtime secret key"* ]]
 }
+
+@test "runtime secret reader strips bws env-format quotes from bitwarden values" {
+    printf 'DOTFILES_VAULT_PROVIDER=bitwarden\nBWS_PROJECT_ID=test-project\n' > "$DOTFILES_DIR/.env"
+    cat > "$MOCK_BIN/security" <<'EOF'
+#!/usr/bin/env bash
+printf 'test-token\n'
+EOF
+    chmod +x "$MOCK_BIN/security"
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+printf 'TAVILY_API_KEY="quoted-fixture-value"\nCONTEXT7_API_KEY="other-fixture"\n'
+EOF
+    chmod +x "$MOCK_BIN/bws"
+
+    run bash -c "source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
+    [ "$status" -eq 0 ]
+    [ "$output" = "quoted-fixture-value" ]
+}
+
+@test "runtime secret reader passes through an unquoted bitwarden value unchanged" {
+    printf 'DOTFILES_VAULT_PROVIDER=bitwarden\nBWS_PROJECT_ID=test-project\n' > "$DOTFILES_DIR/.env"
+    cat > "$MOCK_BIN/security" <<'EOF'
+#!/usr/bin/env bash
+printf 'test-token\n'
+EOF
+    chmod +x "$MOCK_BIN/security"
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+printf 'TAVILY_API_KEY=unquoted-fixture-value\n'
+EOF
+    chmod +x "$MOCK_BIN/bws"
+
+    run bash -c "source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
+    [ "$status" -eq 0 ]
+    [ "$output" = "unquoted-fixture-value" ]
+}
+
+@test "runtime secret reader only strips a matched surrounding quote pair" {
+    printf 'DOTFILES_VAULT_PROVIDER=bitwarden\nBWS_PROJECT_ID=test-project\n' > "$DOTFILES_DIR/.env"
+    cat > "$MOCK_BIN/security" <<'EOF'
+#!/usr/bin/env bash
+printf 'test-token\n'
+EOF
+    chmod +x "$MOCK_BIN/security"
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+printf 'TAVILY_API_KEY=fixture-se"cret-value\n'
+EOF
+    chmod +x "$MOCK_BIN/bws"
+
+    run bash -c "source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
+    [ "$status" -eq 0 ]
+    [ "$output" = 'fixture-se"cret-value' ]
+}
