@@ -117,7 +117,7 @@ printf 'TAVILY_API_KEY="quoted-fixture-value"\nCONTEXT7_API_KEY="other-fixture"\
 EOF
     chmod +x "$MOCK_BIN/bws"
 
-    run bash -c "source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
+    run bash -c "export BWS_ACCESS_TOKEN=test-token; source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
     [ "$status" -eq 0 ]
     [ "$output" = "quoted-fixture-value" ]
 }
@@ -135,7 +135,7 @@ printf 'TAVILY_API_KEY=unquoted-fixture-value\n'
 EOF
     chmod +x "$MOCK_BIN/bws"
 
-    run bash -c "source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
+    run bash -c "export BWS_ACCESS_TOKEN=test-token; source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
     [ "$status" -eq 0 ]
     [ "$output" = "unquoted-fixture-value" ]
 }
@@ -153,7 +153,7 @@ printf 'TAVILY_API_KEY=fixture-se"cret-value\n'
 EOF
     chmod +x "$MOCK_BIN/bws"
 
-    run bash -c "source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
+    run bash -c "export BWS_ACCESS_TOKEN=test-token; source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
     [ "$status" -eq 0 ]
     [ "$output" = 'fixture-se"cret-value' ]
 }
