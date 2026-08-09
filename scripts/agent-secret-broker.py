@@ -689,14 +689,19 @@ class Broker:
         try:
             listener.bind(str(path))
             listener.listen(64)
+            # Narrow the mode before handing the socket away. chmod needs the
+            # euid to own the file or CAP_FOWNER, and the unit's bounding set
+            # is CAP_CHOWN/CAP_SETGID/CAP_SETUID only — so chowning first makes
+            # the chmod fail with EPERM. This order also never widens exposure:
+            # the socket is 0600 before any other uid can own it.
+            os.chmod(path, 0o600)
             if os.geteuid() == 0:
                 os.chown(path, owner_uid, -1)
             elif owner_uid != os.geteuid():
                 raise ConfigError("socket owner differs from broker user")
-            os.chmod(path, 0o600)
         except (ConfigError, OSError) as exc:
             listener.close()
-            raise ConfigError("socket cannot be created") from exc
+            raise ConfigError(f"socket cannot be created: {path}") from exc
         return listener
 
     def start(self) -> None:
