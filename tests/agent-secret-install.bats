@@ -155,3 +155,24 @@ PY
     [[ -z "$output" ]]
     [[ -x "$INSTALL_ROOT/usr/local/libexec/dotfiles/agent-secret-broker.py" ]]
 }
+
+run_trusted_executable() {
+    bash -c 'die() { echo "$@" >&2; exit 1; }
+        eval "$(sed -n "/^trusted_executable/,/^}/p" "$1")"
+        DESTDIR= trusted_executable "$2" "python interpreter"' _ "$INSTALLER" "$1"
+}
+
+@test "trusted_executable accepts a symlink to a root-owned interpreter" {
+    ln -s /bin/sh "$TEST_HOME/python3"
+    run run_trusted_executable "$TEST_HOME/python3"
+    assert_success
+}
+
+@test "trusted_executable still rejects a symlink to a user-owned executable" {
+    printf '#!/bin/sh\n' > "$TEST_HOME/user-owned"
+    chmod 755 "$TEST_HOME/user-owned"
+    ln -s "$TEST_HOME/user-owned" "$TEST_HOME/python3"
+    run run_trusted_executable "$TEST_HOME/python3"
+    assert_failure
+    [[ "$output" == *"root-owned and not group/other-writable"* ]]
+}
