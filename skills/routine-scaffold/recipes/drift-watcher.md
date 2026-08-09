@@ -2,7 +2,12 @@
 
 The reference pattern — watch external upstreams whose docs/releases govern your
 config, detect drift, and triage each into a PR or an issue. Generalizes the live
-`agents/doc-drift/` watcher.
+doc-drift watcher, `routines/doc-drift/` in the `paulnsorensen/routines` repo.
+
+Note that watcher now lives in a *different* repo from the one it watches, so
+its `governs` paths and its `reconciled` markers resolve in different trees —
+see its "Two repos" section for how a drift that spans both is split into a
+paired config PR and marker PR.
 
 - **Shape:** scan-and-triage watcher (the full triad).
 - **Suggested trigger:** `cron` — e.g. `0 8 * * 1,4` (Mon + Thu 08:00 UTC).

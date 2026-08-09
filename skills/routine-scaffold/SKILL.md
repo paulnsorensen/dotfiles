@@ -22,8 +22,11 @@ routine. A **cloud routine** is a scheduled or event-triggered Claude Code agent
 that runs in a hosted environment, reads a version-controlled prompt, and opens
 PRs/issues for a human to dispose — it never merges its own work.
 
-The live `agents/doc-drift/` watcher is the reference pattern this skill
-generalizes. Read [`references/routine-authoring.md`](references/routine-authoring.md),
+The live doc-drift watcher is the reference pattern this skill generalizes. It
+lives in the `paulnsorensen/routines` repo at `routines/doc-drift/` (with its
+scanner at `bin/doc-drift-scan`) — routines were consolidated out of the repos
+they act on, so that repo is also where a new routine authored by this skill
+should usually land. Read [`references/routine-authoring.md`](references/routine-authoring.md),
 [`references/safety.md`](references/safety.md),
 [`references/triggers.md`](references/triggers.md), and
 [`references/schedule-mechanics.md`](references/schedule-mechanics.md) as the
