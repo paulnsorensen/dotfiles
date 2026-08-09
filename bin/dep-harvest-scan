@@ -1,0 +1,303 @@
+#!/usr/bin/env bash
+# dep-harvest-scan — list open Renovate/Dependabot PRs across every repo in
+# the manifest, classify each by semver bump and CI/mergeability, and assign
+# a verdict. All the classification math lives here (not in the routine's
+# judgment) so triage is deterministic and testable.
+#
+# Usage:  dep-harvest-scan [sources.yaml]
+# Output: JSON array, one object per open bot PR:
+#         {repo,number,title,url,author,package,from_version,to_version,
+#          bump,ci,mergeable,draft,verdict,status}
+#         bump     ∈ {patch, minor, major, unknown}
+#         ci       ∈ {green, red, pending, none}
+#         verdict  ∈ {auto-merge, already-automerging, repair-candidate, hold}
+#         status   == "ok"
+#         Plus, for a repo whose gh call failed after one retry:
+#         {repo, status:"unreachable", reason:"<classification>: <gh stderr>"}.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "${0%/*}" && pwd)"
+SOURCES="${1:-$SCRIPT_DIR/../agents/dep-harvest/sources.yaml}"
+
+if [[ ! -f "$SOURCES" ]]; then
+    echo "dep-harvest-scan: sources file not found: $SOURCES" >&2
+    exit 1
+fi
+
+if ! command -v yq &>/dev/null || ! yq --version 2>/dev/null | grep -q mikefarah; then
+    echo "dep-harvest-scan: yq is missing or not Mike Farah's Go yq (mikefarah/yq)." >&2
+    echo "  Bootstrap it via 'dots sync' / packages/bootstrap-linux.sh, or: GOBIN=\"\$HOME/.local/bin\" go install github.com/mikefarah/yq/v4@latest" >&2
+    exit 1
+fi
+
+if ! command -v gh &>/dev/null; then
+    echo "dep-harvest-scan: gh binary not found — required to list and classify PRs." >&2
+    echo "  Bootstrap it via 'dots sync' / packages/bootstrap-linux.sh." >&2
+    exit 1
+fi
+
+if ! command -v jq &>/dev/null; then
+    echo "dep-harvest-scan: jq binary not found — required to classify PRs and build output." >&2
+    echo "  Bootstrap it via 'dots sync' / packages/bootstrap-linux.sh." >&2
+    exit 1
+fi
+
+# gh pr list caps at this many open PRs per repo. Hitting the cap is reported
+# on stderr rather than silently dropping bot PRs past the boundary.
+PR_LIMIT=100
+
+# Seconds to sleep between a transient gh failure and its single retry.
+GH_RETRY_SLEEP="${DEP_HARVEST_RETRY_SLEEP:-2}"
+
+# Bot logins recognized as dependency-update authors (both gh's "app/<slug>"
+# and GraphQL's "<slug>[bot]" forms show up depending on token type).
+is_bot_login() {
+    case "$1" in
+        app/renovate | renovate\[bot\] | app/dependabot | dependabot\[bot\]) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# True for a login that looks like SOME bot (gh's "app/<slug>" or GraphQL's
+# "<slug>[bot]") without being one this scanner recognizes — e.g.
+# dependabot-preview[bot] or a self-hosted Renovate. Used to log a skip rather
+# than let an unrecognized bot vanish into the same silence as a human PR.
+looks_like_unrecognized_bot() {
+    case "$1" in
+        app/* | *\[bot\]) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Parse a PR title into package/from_version/to_version. Sets globals
+# package, from_version, to_version (each "" when not found).
+parse_title() {
+    local title="$1"
+    package=""; from_version=""; to_version=""
+    # Dependabot: "Bump <pkg> from <a> to <b>" (also "build(deps): bump ...")
+    if [[ "$title" =~ [Bb]ump\ (.+)\ from\ v?([0-9][0-9A-Za-z.+_-]*)\ to\ v?([0-9][0-9A-Za-z.+_-]*) ]]; then
+        package="${BASH_REMATCH[1]}"
+        from_version="${BASH_REMATCH[2]}"
+        to_version="${BASH_REMATCH[3]}"
+        return
+    fi
+    # Renovate: "Update <pkg> to v<b>", "chore(deps): update <pkg> to v<b>",
+    # "chore(deps): update dependency <pkg> to v<b>" — only the target version
+    # is present in the title, so from_version stays unset here; the caller
+    # recovers it from the PR body via parse_renovate_from_body.
+    if [[ "$title" =~ [Uu]pdate\ (dependency\ )?(.+)\ to\ v?([0-9][0-9A-Za-z.+_-]*)$ ]]; then
+        package="${BASH_REMATCH[2]}"
+        to_version="${BASH_REMATCH[3]}"
+        return
+    fi
+}
+
+# Recover a Renovate PR's missing from_version from its body's version-table
+# row, e.g. "| [pkg](url) | dependencies | patch | [`1.2.3` -> `1.2.4`] |"
+# (tolerates a leading v and both "->" and the unicode "→"). Takes the first
+# such pair found. Sets global from_version; leaves it unset if no pair is
+# found — the unknown/hold path stays the safe fallback.
+parse_renovate_from_body() {
+    local body="$1"
+    # shellcheck disable=SC2016 # regex literal, must not expand in the shell
+    local renovate_re='`v?([0-9][0-9A-Za-z.+_-]*)`[[:space:]]*(->|→)[[:space:]]*`v?([0-9][0-9A-Za-z.+_-]*)`'
+    if [[ "$body" =~ $renovate_re ]]; then
+        from_version="${BASH_REMATCH[1]}"
+    fi
+}
+
+# Classify a from/to version pair. Missing either version, a non-numeric
+# major/minor/patch component, an identical pair, or a downgrade all resolve
+# to "unknown" — the hold path is what protects the human, this stays purely
+# mechanical. Every component is re-parsed with base-10 forcing (10#) before
+# comparison so a zero-padded component ("09") is never misread as octal.
+classify_bump() {
+    local from="$1" to="$2"
+    if [[ -z "$from" || -z "$to" ]]; then
+        echo unknown; return
+    fi
+    from="${from#v}"; to="${to#v}"
+    local fmaj fmin fpat tmaj tmin tpat part
+    IFS=. read -r fmaj fmin fpat _ <<<"$from"
+    IFS=. read -r tmaj tmin tpat _ <<<"$to"
+    for part in "$fmaj" "$fmin" "$fpat" "$tmaj" "$tmin" "$tpat"; do
+        [[ "$part" =~ ^[0-9]+$ ]] || { echo unknown; return; }
+    done
+    fmaj=$((10#$fmaj)); fmin=$((10#$fmin)); fpat=$((10#$fpat))
+    tmaj=$((10#$tmaj)); tmin=$((10#$tmin)); tpat=$((10#$tpat))
+    if ((tmaj != fmaj)); then
+        ((tmaj > fmaj)) && echo major || echo unknown
+    elif ((tmin != fmin)); then
+        ((tmin > fmin)) && echo minor || echo unknown
+    elif ((tpat > fpat)); then
+        echo patch
+    else
+        echo unknown
+    fi
+}
+
+# Classify a PR's statusCheckRollup (compact JSON array) into green/red/
+# pending/none, checking whichever of state/conclusion/status each entry
+# carries (gh's rollup mixes StatusContext and CheckRun shapes). This is an
+# allow-list, not a deny-list: an unrecognized value must fall to pending,
+# never to green.
+classify_ci() {
+    local rollup="$1"
+    if [[ "$(jq 'length' <<<"$rollup")" -eq 0 ]]; then
+        echo none; return
+    fi
+    if jq -e 'any(.[]; [.state, .conclusion, .status][]? as $s |
+            $s == "FAILURE" or $s == "ERROR" or $s == "TIMED_OUT" or
+            $s == "CANCELLED" or $s == "ACTION_REQUIRED" or
+            $s == "STARTUP_FAILURE" or $s == "STALE")' <<<"$rollup" >/dev/null; then
+        echo red; return
+    fi
+    # Green-clean requires every present state/conclusion/status field to be
+    # in the green set, AND (since COMPLETED is a CheckRun .status that must
+    # be paired with a .conclusion) a COMPLETED entry with no recognized
+    # green conclusion is NOT green.
+    if jq -e '(all(.[]; ([.state,.conclusion,.status] | map(select(.!=null))) as $vals |
+            ($vals | all(. == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED" or . == "COMPLETED")))) and
+            (all(.[]; .status != "COMPLETED" or
+                ((.conclusion // null) as $c | $c == "SUCCESS" or $c == "NEUTRAL" or $c == "SKIPPED")))' \
+            <<<"$rollup" >/dev/null; then
+        echo green; return
+    fi
+    echo pending
+}
+
+# Gated auto-merge: only a patch/minor bump with green CI, no conflict, and
+# not a draft ever gets auto-merge. A PR where Renovate/Dependabot already
+# has GitHub auto-merge enabled short-circuits to already-automerging before
+# any other check, so the routine coordinates with (rather than duplicates)
+# that system's own label/comment traffic. Everything else falls through to
+# hold, except a patch/minor PR blocked only by red CI or a conflict, which
+# is a repair candidate.
+classify_verdict() {
+    local bump="$1" ci="$2" mergeable="$3" draft="$4" auto_merge_enabled="$5"
+    if [[ "$auto_merge_enabled" == "true" ]]; then
+        echo already-automerging; return
+    fi
+    if [[ "$draft" != "true" && ("$bump" == "patch" || "$bump" == "minor") ]]; then
+        if [[ "$ci" == "green" && "$mergeable" == "MERGEABLE" ]]; then
+            echo auto-merge; return
+        fi
+        if [[ "$ci" == "red" || "$mergeable" == "CONFLICTING" ]]; then
+            echo repair-candidate; return
+        fi
+    fi
+    echo hold
+}
+
+# Classify a gh failure's first stderr line into a short reason.
+classify_gh_failure() {
+    local line="$1"
+    case "$line" in
+        *[Rr]ate*[Ll]imit* | *429*) echo rate-limited ;;
+        *"HTTP 5"[0-9][0-9]* | *"Internal Server Error"* | *"Bad Gateway"* | *"Service Unavailable"* | *"Gateway Timeout"*) echo server-error ;;
+        *"HTTP 401"* | *"HTTP 403"* | *[Aa]uthentication* | *[Pp]ermission* | *[Nn]ot\ authoriz*) echo not-authorized ;;
+        *) echo unknown ;;
+    esac
+}
+
+# Fetch a repo's open PRs via gh, retrying once after a short sleep when the
+# failure looks like a rate limit or a transient 5xx. Sets global prs_json on
+# success. On failure (after the retry, or immediately for a non-transient
+# failure) sets global gh_fail_reason to "<classification>: <first line of
+# gh's stderr>" and returns 1.
+fetch_prs() {
+    local repo="$1" stderr_file stderr_line classification attempt
+    stderr_file=$(mktemp)
+    for attempt in 1 2; do
+        if prs_json=$(gh pr list --repo "$repo" --state open --limit "$PR_LIMIT" \
+                --json number,title,url,author,isDraft,mergeable,statusCheckRollup,body,autoMergeRequest \
+                2>"$stderr_file"); then
+            rm -f "$stderr_file"
+            return 0
+        fi
+        stderr_line=$(head -n1 "$stderr_file")
+        classification=$(classify_gh_failure "$stderr_line")
+        if [[ "$attempt" -eq 1 && ("$classification" == "rate-limited" || "$classification" == "server-error") ]]; then
+            sleep "$GH_RETRY_SLEEP"
+            continue
+        fi
+        break
+    done
+    rm -f "$stderr_file"
+    gh_fail_reason="${classification}: ${stderr_line}"
+    return 1
+}
+
+results=()
+count=$(yq '.sources | length' "$SOURCES")
+
+for ((i = 0; i < count; i++)); do
+    owner=$(yq ".sources[$i].owner" "$SOURCES")
+    name=$(yq ".sources[$i].name" "$SOURCES")
+    repo="$owner/$name"
+
+    if ! fetch_prs "$repo"; then
+        results+=("$(jq -n --arg repo "$repo" --arg reason "$gh_fail_reason" \
+            '{repo: $repo, status: "unreachable", reason: $reason}')")
+        continue
+    fi
+
+    if [[ "$(jq 'length' <<<"$prs_json")" -eq "$PR_LIMIT" ]]; then
+        echo "dep-harvest-scan: $repo returned the full $PR_LIMIT-PR page — open bot PRs past that boundary were NOT scanned." >&2
+    fi
+
+    while IFS= read -r pr; do
+        [[ -z "$pr" ]] && continue
+        login=$(jq -r '.author.login' <<<"$pr")
+        if ! is_bot_login "$login"; then
+            if looks_like_unrecognized_bot "$login"; then
+                echo "dep-harvest-scan: $repo#$(jq -r '.number' <<<"$pr") skipped — unrecognized bot login '$login'." >&2
+            fi
+            continue
+        fi
+
+        number=$(jq -r '.number' <<<"$pr")
+        title=$(jq -r '.title' <<<"$pr")
+        url=$(jq -r '.url' <<<"$pr")
+        body=$(jq -r '.body' <<<"$pr")
+        draft=$(jq -r '.isDraft' <<<"$pr")
+        mergeable=$(jq -r '.mergeable' <<<"$pr")
+        rollup=$(jq -c '.statusCheckRollup' <<<"$pr")
+        auto_merge_enabled=$(jq -r 'if .autoMergeRequest != null then "true" else "false" end' <<<"$pr")
+
+        parse_title "$title"
+        if [[ -n "$to_version" && -z "$from_version" ]]; then
+            parse_renovate_from_body "$body"
+        fi
+        bump=$(classify_bump "$from_version" "$to_version")
+        ci=$(classify_ci "$rollup")
+        verdict=$(classify_verdict "$bump" "$ci" "$mergeable" "$draft" "$auto_merge_enabled")
+
+        results+=("$(jq -n \
+            --arg repo "$repo" \
+            --argjson number "$number" \
+            --arg title "$title" \
+            --arg url "$url" \
+            --arg author "$login" \
+            --arg package "$package" \
+            --arg from_version "$from_version" \
+            --arg to_version "$to_version" \
+            --arg bump "$bump" \
+            --arg ci "$ci" \
+            --arg mergeable "$mergeable" \
+            --argjson draft "$draft" \
+            --arg verdict "$verdict" \
+            '{repo: $repo, number: $number, title: $title, url: $url, author: $author,
+              package: ($package | if . == "" then null else . end),
+              from_version: ($from_version | if . == "" then null else . end),
+              to_version: ($to_version | if . == "" then null else . end),
+              bump: $bump, ci: $ci, mergeable: $mergeable, draft: $draft,
+              verdict: $verdict, status: "ok"}')")
+    done < <(jq -c '.[]' <<<"$prs_json")
+done
+
+if ((${#results[@]} == 0)); then
+    echo "[]"
+else
+    printf '%s\n' "${results[@]}" | jq -s .
+fi

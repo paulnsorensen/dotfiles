@@ -1,0 +1,127 @@
+# dep-harvest — repos whose open Renovate/Dependabot PRs this routine triages.
+#
+# A weekly Claude cloud routine (agents/dep-harvest/routine.md) fans out one
+# subagent per repo with at least one open bot PR (per bin/dep-harvest-scan's
+# JSON). Each PR ends the run in exactly one terminal state: auto-merge-enabled
+# (never a direct merge), repaired then auto-merge-enabled, held (labeled +
+# commented for a human), or the repo is reported UNREACHABLE. Separately, the
+# routine mines each bump's changelog for capabilities worth adopting and
+# files at most one adoption issue per repo.
+#
+# GATE: auto-merge is enabled ONLY for a patch/minor bump with green CI and no
+# conflict. Every major bump, every unparseable version, and every red or
+# pending CI that repair did not turn green stays with a human — never
+# auto-merged.
+#
+# Schema per entry:
+#   name       repo name (also the GitHub repo slug component)
+#   owner      GitHub org/user that owns the repo
+#   clone      https clone URL
+#   category   grouping used for the header comments below
+#
+# Deliberately EXCLUDED: paulnsorensen/n8n-mcp. It is a fork of an upstream
+# project — its bot PRs track the upstream's own dependencies, not ours to
+# merge or repair.
+
+sources:
+  # cheese-suite — the paulnsorensen cheese-flow tool family.
+  - name: dotfiles
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/dotfiles
+    category: cheese-suite
+
+  - name: cheez-wiki
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/cheez-wiki
+    category: cheese-suite
+
+  - name: milknado
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/milknado
+    category: cheese-suite
+
+  - name: easy-cheese
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/easy-cheese
+    category: cheese-suite
+
+  - name: tilth
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/tilth
+    category: cheese-suite
+
+  - name: hallouminate
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/hallouminate
+    category: cheese-suite
+
+  - name: skillz-that-grillz
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/skillz-that-grillz
+    category: cheese-suite
+
+  - name: cheese-flow
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/cheese-flow
+    category: cheese-suite
+
+  - name: cheeselord-design
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/cheeselord-design
+    category: cheese-suite
+
+  - name: sliced-bread-architecture
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/sliced-bread-architecture
+    category: cheese-suite
+
+  # home-labs — personal infra repos.
+  - name: crabbot
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/crabbot
+    category: home-labs
+
+  - name: docs
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/docs
+    category: home-labs
+
+  # products — sorensen-labs. The hosted routine's gh OAuth reaching a
+  # different org from paulnsorensen is unconfirmed until the first live run;
+  # the routine must fail loud (report UNREACHABLE, never silent) if it
+  # cannot reach or push/PR to any of these.
+  - name: algorhythm
+    owner: sorensen-labs
+    clone: https://github.com/sorensen-labs/algorhythm
+    category: products
+    # CROSS-ORG.
+
+  - name: ffl
+    owner: sorensen-labs
+    clone: https://github.com/sorensen-labs/ffl
+    category: products
+    # CROSS-ORG.
+
+  - name: poln8r
+    owner: sorensen-labs
+    clone: https://github.com/sorensen-labs/poln8r
+    category: products
+    # CROSS-ORG.
+
+  - name: tdbr
+    owner: sorensen-labs
+    clone: https://github.com/sorensen-labs/tdbr
+    category: products
+    # CROSS-ORG.
+
+  - name: tern
+    owner: sorensen-labs
+    clone: https://github.com/sorensen-labs/tern
+    category: products
+    # CROSS-ORG.
+
+  - name: kaupmangr
+    owner: sorensen-labs
+    clone: https://github.com/sorensen-labs/kaupmangr
+    category: products
+    # CROSS-ORG.

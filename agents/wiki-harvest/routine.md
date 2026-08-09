@@ -128,8 +128,8 @@ roll-up (step 8). Gather the digest for every reachable repo — even a
    entirely for this repo — do not clone or do any curation work. This
    catches a read-reachable-but-not-write-reachable repo before wasting a
    curation pass; it's the expected risk for the cross-org `sorensen-labs`
-   repo (`algorhythm`) reaching outside the `paulnsorensen` OAuth
-   scope.
+   repos (`algorhythm`, `ffl`, `poln8r`) reaching outside the `paulnsorensen`
+   OAuth scope.
 
 3. **Clone.** Clone `<owner>/<name>` from `<clone>`. Keep the loud
    fail-on-push as a backstop: if the clone or a later push still fails due

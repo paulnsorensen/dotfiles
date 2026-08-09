@@ -84,6 +84,29 @@ sources:
     # then curates.
     seed_if_missing: true
 
+  - name: cheese-flow
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/cheese-flow
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    seed_if_missing: false
+
+  - name: cheeselord-design
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/cheeselord-design
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    # has no .hallouminate/wiki yet — seed a starter index.md then curate.
+    seed_if_missing: true
+
+  - name: sliced-bread-architecture
+    owner: paulnsorensen
+    clone: https://github.com/paulnsorensen/sliced-bread-architecture
+    wiki_path: .hallouminate/wiki
+    category: cheese-suite
+    # has no .hallouminate/wiki yet — seed a starter index.md then curate.
+    seed_if_missing: true
+
   # home-labs — personal infra repos.
   - name: crabbot
     owner: paulnsorensen
@@ -93,14 +116,32 @@ sources:
     # private repo.
     seed_if_missing: false
 
-  # products — algorhythm, the sole cross-org repo under sorensen-labs. The
-  # hosted routine's gh OAuth reaching a different org from paulnsorensen is
-  # unconfirmed until the first live run; the routine must fail loud (report
-  # UNREACHABLE, never silent) if it cannot clone or push/PR to it.
+  # products — the cross-org repos under sorensen-labs. The hosted routine's gh
+  # OAuth reaching a different org from paulnsorensen is unconfirmed until the
+  # first live run; the routine must fail loud (report UNREACHABLE, never
+  # silent) if it cannot clone or push/PR to any of them.
   - name: algorhythm
     owner: sorensen-labs
     clone: https://github.com/sorensen-labs/algorhythm
     wiki_path: .hallouminate/wiki
     category: products
     # CROSS-ORG.
+    seed_if_missing: false
+
+  - name: ffl
+    owner: sorensen-labs
+    clone: https://github.com/sorensen-labs/ffl
+    wiki_path: .hallouminate/wiki
+    category: products
+    # CROSS-ORG, private. Has no .hallouminate/wiki yet — seed only if the
+    # repo's purpose is clear from its README/code; otherwise ask via issue
+    # per the routine's step-4 guard rather than seeding a guess.
+    seed_if_missing: true
+
+  - name: poln8r
+    owner: sorensen-labs
+    clone: https://github.com/sorensen-labs/poln8r
+    wiki_path: .hallouminate/wiki
+    category: products
+    # CROSS-ORG, internal visibility.
     seed_if_missing: false
