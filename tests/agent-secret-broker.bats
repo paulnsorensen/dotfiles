@@ -158,6 +158,57 @@ PY
     assert_success
 }
 
+@test "proxy loop returns cleanly when the selector loop raises OSError" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import pathlib
+import socket
+import sys
+import tempfile
+
+spec = importlib.util.spec_from_file_location("agent_secret_broker", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+sock_path = pathlib.Path(tempfile.mkdtemp()) / "proxy-test.sock"
+server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+server.bind(str(sock_path))
+server.listen(1)
+
+
+class Args:
+    socket = str(sock_path)
+    consumer = None
+    sub_socket = None
+
+
+class FailingSelector:
+    def register(self, fileobj, events, data=None):
+        pass
+
+    def unregister(self, fileobj):
+        pass
+
+    def get_map(self):
+        return {"placeholder": True}
+
+    def select(self, timeout=None):
+        raise OSError("simulated failure")
+
+    def close(self):
+        pass
+
+
+module.selectors.DefaultSelector = lambda: FailingSelector()
+
+result = module.run_proxy(Args())
+assert result == 1, result
+server.close()
+PY
+    assert_success
+}
+
 @test "proxy drains an in-flight response after standard input closes" {
     run proxy_call '{"jsonrpc":"2.0","id":30,"method":"slow"}'
     assert_success

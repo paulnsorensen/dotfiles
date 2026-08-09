@@ -54,10 +54,12 @@ EOF
 teardown() { teardown_test_env; }
 
 @test "vault-provision renders root-bound credentials policies and runtime" {
+    export DECOY_DOTFILES="$TEST_HOME/decoy-dotfiles"
+    mkdir -p "$DECOY_DOTFILES"
     run env \
-        DOTFILES_DIR="$FIXTURE_DOTFILES" \
+        DOTFILES_DIR="$DECOY_DOTFILES" \
         DESTDIR="$INSTALL_ROOT" \
-        "$REAL_DOTFILES_DIR/bin/vault-provision" \
+        "$FIXTURE_DOTFILES/bin/vault-provision" \
         --request-user "$(id -un)" --operator-user root
     assert_success
     [ -z "$output" ]

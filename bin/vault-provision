@@ -4,7 +4,7 @@
 # this command never prints them, creates a user cache, or writes a Linux token.
 set -euo pipefail
 
-DOTFILES_DIR="${DOTFILES_DIR:-$(cd -- "${BASH_SOURCE[0]%/*}/.." && pwd)}"
+DOTFILES_DIR="$(cd -- "${BASH_SOURCE[0]%/*}/.." && pwd)"
 DESTDIR="${DESTDIR:-}"
 DESTDIR="${DESTDIR%/}"
 SCRIPT_DIR="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd)"

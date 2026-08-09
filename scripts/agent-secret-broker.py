@@ -860,7 +860,7 @@ def run_proxy(args: argparse.Namespace) -> int:
                         return 0
                     sys.stdout.buffer.write(chunk)
                     sys.stdout.buffer.flush()
-    except (OSError, selectors.error):
+    except OSError:
         return 1
     finally:
         selector.close()

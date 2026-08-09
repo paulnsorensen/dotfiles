@@ -139,3 +139,19 @@ PY
     fi
     [[ -x "$INSTALL_ROOT/usr/local/libexec/dotfiles/agent-secret-broker.py" ]]
 }
+
+@test "installer ignores an inherited DOTFILES_DIR and uses its own sibling files" {
+    export DECOY_DOTFILES="$TEST_HOME/decoy-dotfiles"
+    mkdir -p "$DECOY_DOTFILES/bin"
+    run env DOTFILES_DIR="$DECOY_DOTFILES" DESTDIR="$INSTALL_ROOT" "$INSTALLER" install fixture \
+        --credential-env FIXTURE_SECRET \
+        --credential-file "$CREDENTIAL" \
+        --request-user "$REQUEST_USER" \
+        --operator-user "$OPERATOR_USER" \
+        --read-tool read.item \
+        --write-tool write.item \
+        -- /usr/bin/context7-mcp --stdio
+    assert_success
+    [[ -z "$output" ]]
+    [[ -x "$INSTALL_ROOT/usr/local/libexec/dotfiles/agent-secret-broker.py" ]]
+}
