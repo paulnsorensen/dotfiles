@@ -164,6 +164,23 @@ MOCKMISE
     chmod +x "$MOCK_BIN/mise"
 }
 
+# mise mock that appends a new pin to the manifest the first time it runs,
+# standing in for a concurrent `git pull` landing renovate bumps while the sync
+# is already past its install decision.
+write_mock_mise_landing_new_pin() {
+    rm -f "$MOCK_BIN/mise"
+    cat > "$MOCK_BIN/mise" << 'MOCKMISE'
+#!/bin/bash
+echo "mise $* config=${MISE_GLOBAL_CONFIG_FILE:-unset}" >> "$MISE_LOG"
+if [[ ! -e "$MISE_CONFIG_FILE.landed" ]]; then
+    printf 'node = "24.0.0"\n' >> "$MISE_CONFIG_FILE"
+    touch "$MISE_CONFIG_FILE.landed"
+fi
+exit 0
+MOCKMISE
+    chmod +x "$MOCK_BIN/mise"
+}
+
 teardown() {
     teardown_test_env
 }
@@ -841,6 +858,24 @@ YAML
     assert_output_contains "mise install failed"
     assert_output_contains "cache NOT saved"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+}
+
+@test "a pin landing mid-run is never cached as converged" {
+    write_test_yaml
+    write_mock_mise_landing_new_pin
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ -s "$CACHE_FILE" ]]
+
+    # The pin arrived after mise converged, so it was never installed: the next
+    # sync has to miss the cache and reconverge instead of skipping it.
+    write_mock_mise
+    rm -f "$MISE_LOG"
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_not_contains "unchanged (cached)"
+    grep -q "mise install" "$MISE_LOG"
 }
 
 @test "mise install failure preserves stale native harness binaries" {
