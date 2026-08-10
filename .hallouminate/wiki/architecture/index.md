@@ -21,21 +21,21 @@ How this dotfiles repo configures AI coding agents. The model is **one harness-a
 - [[codex-first-class-review]] — Codex first-class fixes: user-level hook command resolution, hook-health diagnostics in `harness-doctor`, isolated Codex profile projection, MCP tool-scope cleanup, and the remaining `PreToolUse` matcher-verification gap.
 - [[chezmoi-authoritative-codex]] — the Codex counterpart to the Claude ADR series: `~/.codex` converges on `dots sync` from `codex.yaml` + `private_dot_codex/`, why `config.toml` is *merged* (the CLI writes its own runtime state into the same file) while `mcp_servers` is replaced wholesale, and the chezmoi attribute-order / `private_` gotchas.
 
-### Routing and orchestration doctrine
+## Routing and orchestration doctrine
 
 - [[subagent-routing-policy]] — "discover, then commit": never ask a cheap worker to judge its own capability; gather bounded facts, let a deterministic policy pick the route, and spend frontier tokens only at serial bottlenecks (the shared plan, the fresh-context review).
 - [[fanout-fanin-discipline]] — the *how* to [[subagent-routing-policy]]'s *whether*: the wall-clock-vs-token economics of a fan-out, and why parallelism buys latency rather than lower total spend.
 - [[knowledge-graph-playbook]] — digest of the Anthropic KG/multi-agent playbook, kept for the doctrine that transfers here: stage-tiered model selection, shared memory over an orchestrator bottleneck, grounded evaluation, unattended-loop discipline.
 - [[omp-agent-model-effort]] — the workload→model/effort table for OMP-native agents, and the rule that registry `effort` is Claude-only and must never be mirrored into OMP frontmatter.
 
-### Profiles and workflows
+## Profiles and workflows
 
 - [[oss-docs-profile]] — the isolated `oss-docs` profile: what it supplies (code nav, grounding, current docs, browser verification), what it deliberately leaves to the target project, and the `cdp oss-docs` shortcut.
 - [[review-profile-write-deny]] — the `review` profile must deny `MultiEdit` explicitly: Claude names it separately, so denying `Edit`/`Write` does not cover it.
 - [[saved-workflows]] — `claude/workflows/*.js` is the source; `chezmoi/dot_claude/exact_workflows/` is a gitignored assembled artifact. The whole dir syncs, so no registry entry is needed.
 - [[move-my-cheese-workflow]] — the incremental PR-age marker workflow: why convoy's combine/consolidate phases were dropped (background runs cannot pause for an approval gate) and why the marker is a PR comment rather than a git note.
 
-### Conventions and retirements
+## Conventions and retirements
 
 - [[sourced-shell-libraries]] — the `bin/lib/*.sh` + `.sync-lib.sh` contract: no top-level side effects, including strict mode. Learned the hard way in PR #580.
 - [[serena-retirement]] — Serena is no longer installed, configured, or exposed as an MCP; tilth is the sole code-intelligence MCP. Usage data behind the call is on the page. **Any surviving Serena reference elsewhere in this wiki is historical, not routing guidance.**
