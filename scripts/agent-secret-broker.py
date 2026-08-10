@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Any, NoReturn
 
 SOCKET_ROOT = "/var/run/dotfiles-agent-secrets"
-APPROVAL_TTL = 60
+APPROVAL_TTL_ENV = "AGENT_SECRET_BROKER_APPROVAL_TTL"
 MAX_LINE = 1 << 20
 READ_BUFFER = 64 << 10
 RESPONSE_DRAIN_TIMEOUT = 30
@@ -81,6 +81,22 @@ class ClaimResult:
 
 def _fail(message: str) -> NoReturn:
     raise ConfigError(message)
+
+
+def _approval_ttl() -> int:
+    raw = os.environ.get(APPROVAL_TTL_ENV)
+    if raw is None:
+        return 60
+    try:
+        ttl = int(raw)
+    except ValueError:
+        _fail(f"{APPROVAL_TTL_ENV} must be a positive integer")
+    if ttl <= 0:
+        _fail(f"{APPROVAL_TTL_ENV} must be a positive integer")
+    return ttl
+
+
+APPROVAL_TTL = _approval_ttl()
 
 
 def _validate_abs_path(value: Any, label: str) -> pathlib.Path:

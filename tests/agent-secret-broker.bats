@@ -276,12 +276,34 @@ PY
     [[ "$output" == *"$nonce"* ]]
 }
 
-@test "approval expires after the fixed sixty-second TTL" {
-    run proxy_call '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"write.item","arguments":{}}}'
+@test "approval succeeds within TTL and is rejected once the TTL elapses" {
+    local ttl_socket="$TEST_ROOT/ttl-request.sock"
+    local ttl_control="$TEST_ROOT/ttl-control.sock"
+    AGENT_SECRET_BROKER_APPROVAL_TTL=2 "$BROKER" --policy "$POLICY" --socket "$ttl_socket" --control-socket "$ttl_control" >"$TEST_ROOT/ttl-broker.log" 2>&1 &
+    local ttl_pid=$!
+    for _ in {1..50}; do
+        [[ -S "$ttl_socket" && -S "$ttl_control" ]] && break
+        sleep 0.02
+    done
+
+    run bash -c "printf '%s\n' \"\$1\" | '$PROXY' --socket '$ttl_socket'" _ '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"write.item","arguments":{}}}'
     assert_success
-    nonce="$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"]["data"]["nonce"])')"
-    sleep 61
-    run "$CTL" approve --socket "$CONTROL" --nonce "$nonce"
+    within_nonce="$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"]["data"]["nonce"])')"
+    run "$CTL" approve --socket "$ttl_control" --nonce "$within_nonce"
+    assert_success
+    [[ "$output" == "{\"action\":\"approve\",\"nonce\":\"$within_nonce\",\"ok\":true}" ]]
+
+    run bash -c "printf '%s\n' \"\$1\" | '$PROXY' --socket '$ttl_socket'" _ '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"write.item","arguments":{"expiry":true}}}'
+    assert_success
+    expiring_nonce="$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"]["data"]["nonce"])')"
+    for _ in {1..100}; do
+        run "$CTL" approve --socket "$ttl_control" --nonce "$expiring_nonce"
+        [[ "$output" == *'"code":"expired"'* ]] && break
+        sleep 0.05
+    done
     assert_failure
     [[ "$output" == *'"code":"expired"'* ]]
+
+    kill "$ttl_pid" 2>/dev/null || true
+    wait "$ttl_pid" 2>/dev/null || true
 }
