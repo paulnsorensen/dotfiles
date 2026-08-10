@@ -15,7 +15,7 @@ PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
 # renovate: datasource=github-tags depName=can1357/oh-my-pi
-OMP_PIN="v17.2.10"
+OMP_PIN="v17.2.12"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -64,6 +64,13 @@ cache_hash() {
     } | shasum -a 256 | cut -d' ' -f1
 }
 
+# Composite hash of every package input, snapshotted before the first
+# installer runs. Both the cache check and the cache write read this snapshot
+# instead of re-hashing: the manifests can change mid-run (a concurrent
+# `git pull` landing renovate pins), and re-hashing at save time would record
+# inputs that were never installed, turning every later run into a false cache
+# hit that skips the new pins.
+CACHE_HASH_AT_CONVERGENCE=""
 check_cache() {
     if [[ "${FORCE_PACKAGES:-false}" == "true" || "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
         log_info "Package cache bypassed"
@@ -74,12 +81,12 @@ check_cache() {
         return 1
     fi
     [[ -f "$CACHE_FILE" ]] || return 1
-    [[ "$(cache_hash)" == "$(<"$CACHE_FILE")" ]]
+    [[ "$CACHE_HASH_AT_CONVERGENCE" == "$(<"$CACHE_FILE")" ]]
 }
 
 save_cache() {
     mkdir -p "$CACHE_DIR"
-    cache_hash > "$CACHE_FILE"
+    printf '%s\n' "$CACHE_HASH_AT_CONVERGENCE" > "$CACHE_FILE"
 }
 
 ########## Query helpers
@@ -727,6 +734,9 @@ sync_native_harnesses() {
     fi
 
 }
+
+# Snapshot the inputs before the first installer runs.
+CACHE_HASH_AT_CONVERGENCE="$(cache_hash)"
 # Claude is invoked by chezmoi later in this sync, so keep its mise binary
 # present even when the package declaration cache is valid.
 if check_cache; then
