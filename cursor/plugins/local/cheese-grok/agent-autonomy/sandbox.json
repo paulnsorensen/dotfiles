@@ -1,0 +1,20 @@
+{
+  "type": "workspace_readwrite",
+  "additionalReadonlyPaths": [
+    "/Users/paul/.claude/skills",
+    "/Users/paul/.agents/skills",
+    "/Users/paul/.cursor/skills",
+    "/Users/paul/.cursor/skills-cursor",
+    "/Users/paul/.codex/skills",
+    "/Users/paul/.local/share/mise"
+  ],
+  "additionalReadwritePaths": [
+    "/Users/paul/.local/share/cheese",
+    "/Users/paul/.cursor/projects",
+    "/tmp",
+    "/Users/paul/Dev"
+  ],
+  "networkPolicy": {
+    "default": "allow"
+  }
+}

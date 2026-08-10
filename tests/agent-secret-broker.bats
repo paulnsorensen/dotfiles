@@ -276,12 +276,78 @@ PY
     [[ "$output" == *"$nonce"* ]]
 }
 
-@test "approval expires after the fixed sixty-second TTL" {
-    run proxy_call '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"write.item","arguments":{}}}'
+@test "approval succeeds within TTL and is rejected once the TTL elapses" {
+    local ttl_socket="$TEST_ROOT/ttl-request.sock"
+    local ttl_control="$TEST_ROOT/ttl-control.sock"
+    AGENT_SECRET_BROKER_APPROVAL_TTL=2 "$BROKER" --policy "$POLICY" --socket "$ttl_socket" --control-socket "$ttl_control" >"$TEST_ROOT/ttl-broker.log" 2>&1 &
+    local ttl_pid=$!
+    for _ in {1..50}; do
+        [[ -S "$ttl_socket" && -S "$ttl_control" ]] && break
+        sleep 0.02
+    done
+
+    run bash -c "printf '%s\n' \"\$1\" | '$PROXY' --socket '$ttl_socket'" _ '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"write.item","arguments":{}}}'
     assert_success
-    nonce="$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"]["data"]["nonce"])')"
-    sleep 61
-    run "$CTL" approve --socket "$CONTROL" --nonce "$nonce"
+    within_nonce="$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"]["data"]["nonce"])')"
+    run "$CTL" approve --socket "$ttl_control" --nonce "$within_nonce"
+    assert_success
+    [[ "$output" == "{\"action\":\"approve\",\"nonce\":\"$within_nonce\",\"ok\":true}" ]]
+
+    run bash -c "printf '%s\n' \"\$1\" | '$PROXY' --socket '$ttl_socket'" _ '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"write.item","arguments":{"expiry":true}}}'
+    assert_success
+    expiring_nonce="$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"]["data"]["nonce"])')"
+    for _ in {1..100}; do
+        run "$CTL" approve --socket "$ttl_control" --nonce "$expiring_nonce"
+        [[ "$output" == *'"code":"expired"'* ]] && break
+        sleep 0.05
+    done
     assert_failure
     [[ "$output" == *'"code":"expired"'* ]]
+
+    kill "$ttl_pid" 2>/dev/null || true
+    wait "$ttl_pid" 2>/dev/null || true
+}
+
+@test "socket mode is narrowed before ownership leaves the broker" {
+    run "$PYTHON" - \
+        "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" \
+        "$TEST_ROOT/ordering.sock" <<'PY'
+import importlib.util
+import os
+import pathlib
+import sys
+
+module_path, socket_path = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("broker_under_test", module_path)
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+# The systemd unit grants CAP_CHOWN/CAP_SETGID/CAP_SETUID only. Without
+# CAP_FOWNER the kernel requires the caller to still own a file to chmod it,
+# so handing the socket to another uid first makes the chmod fail with EPERM.
+# Model exactly that: pretend to run as root and refuse a chmod issued after
+# ownership has already moved away.
+real_chmod = os.chmod
+owner = {"uid": 0}
+
+def guarded_chmod(path, mode):
+    if owner["uid"] != 0:
+        raise PermissionError(1, "Operation not permitted")
+    real_chmod(path, mode)
+
+def recording_chown(path, uid, gid):
+    owner["uid"] = uid
+
+os.chmod = guarded_chmod
+os.chown = recording_chown
+os.geteuid = lambda: 0
+
+listener = module.Broker._bind(pathlib.Path(socket_path), 12345)
+listener.close()
+assert owner["uid"] == 12345, "ownership was never transferred"
+print("bound")
+PY
+    assert_success
+    [[ "$output" == *bound* ]]
 }

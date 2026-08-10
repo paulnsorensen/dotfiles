@@ -37,7 +37,7 @@ sources:
     signal: { type: npm, ref: opencode-ai }
     docs: https://opencode.ai/docs
     governs: [harnesses/opencode.md]
-    reconciled: "1.18.14"
+    reconciled: "1.18.15"
 
   - id: copilot-cli
     signal: { type: npm, ref: "@github/copilot" }
@@ -49,7 +49,7 @@ sources:
     signal: { type: npm, ref: "@upstash/context7-mcp" }
     docs: https://github.com/upstash/context7
     governs: [chezmoi/.chezmoidata/claude.yaml, agents/mcp/registry.yaml]
-    reconciled: "3.2.5"
+    reconciled: "4.0.0"
 
   - id: tavily-mcp
     signal: { type: npm, ref: tavily-mcp }
@@ -69,4 +69,4 @@ sources:
     signal: { type: gh_release, ref: can1357/oh-my-pi }
     docs: https://github.com/can1357/oh-my-pi
     governs: [chezmoi/.chezmoidata/omp.yaml, chezmoi/dot_omp/private_agent/modify_config.yml, packages/sync.sh]
-    reconciled: "v17.2.10"
+    reconciled: "v17.2.12"

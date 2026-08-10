@@ -74,7 +74,7 @@ STDIN"
     [ "$(yq '.modelRoles.task' "$OUT")" = "@fast" ]
     [ "$(yq '.modelRoles.commit' "$OUT")" = "@fast" ]
     [ "$(yq '.astGrep.enabled' "$OUT")" = "true" ]
-    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md" ]
+    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md,agent-plugins" ]
     # setupVersion is machine state — never authored on a fresh machine.
     [ "$(yq 'has("setupVersion")' "$OUT")" = "false" ]
 }
@@ -95,7 +95,7 @@ setupVersion: 1'
     [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]
     [ "$(yq '.theme.dark' "$OUT")" = "chocolate-donut" ]
     [ "$(yq '.theme.light' "$OUT")" = "light" ]
-    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md" ]
+    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md,agent-plugins" ]
     [ "$(yq '.todo.enabled' "$OUT")" = "false" ]
     [ "$(yq '.todo.reminders' "$OUT")" = "false" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]

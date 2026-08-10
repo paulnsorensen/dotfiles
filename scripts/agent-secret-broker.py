@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Any, NoReturn
 
 SOCKET_ROOT = "/var/run/dotfiles-agent-secrets"
-APPROVAL_TTL = 60
+APPROVAL_TTL_ENV = "AGENT_SECRET_BROKER_APPROVAL_TTL"
 MAX_LINE = 1 << 20
 READ_BUFFER = 64 << 10
 RESPONSE_DRAIN_TIMEOUT = 30
@@ -81,6 +81,22 @@ class ClaimResult:
 
 def _fail(message: str) -> NoReturn:
     raise ConfigError(message)
+
+
+def _approval_ttl() -> int:
+    raw = os.environ.get(APPROVAL_TTL_ENV)
+    if raw is None:
+        return 60
+    try:
+        ttl = int(raw)
+    except ValueError:
+        _fail(f"{APPROVAL_TTL_ENV} must be a positive integer")
+    if ttl <= 0:
+        _fail(f"{APPROVAL_TTL_ENV} must be a positive integer")
+    return ttl
+
+
+APPROVAL_TTL = _approval_ttl()
 
 
 def _validate_abs_path(value: Any, label: str) -> pathlib.Path:
@@ -210,6 +226,29 @@ def socket_path(value: str, label: str) -> pathlib.Path:
     if path.parent == path:
         _fail(f"invalid {label}")
     return path
+
+
+def ensure_socket_parent(value: str, request_gid: int) -> None:
+    path = pathlib.Path(value)
+    parent = path.parent
+    if parent != pathlib.Path(SOCKET_ROOT):
+        _fail("socket path parent is not managed")
+    if os.geteuid() != 0:
+        _fail("creating the managed socket parent requires root")
+    try:
+        parent.mkdir(mode=0o710, parents=True, exist_ok=True)
+        info = parent.lstat()
+    except OSError as exc:
+        raise ConfigError("socket path parent cannot be created") from exc
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        _fail("socket path parent is not a directory")
+    if info.st_uid != 0:
+        _fail("socket path parent must be root-owned")
+    try:
+        os.chown(parent, 0, request_gid)
+        os.chmod(parent, 0o710)
+    except OSError as exc:
+        raise ConfigError("socket path parent permissions cannot be set") from exc
 
 
 def default_request_socket(consumer: str) -> pathlib.Path:
@@ -689,14 +728,19 @@ class Broker:
         try:
             listener.bind(str(path))
             listener.listen(64)
+            # Narrow the mode before handing the socket away. chmod needs the
+            # euid to own the file or CAP_FOWNER, and the unit's bounding set
+            # is CAP_CHOWN/CAP_SETGID/CAP_SETUID only — so chowning first makes
+            # the chmod fail with EPERM. This order also never widens exposure:
+            # the socket is 0600 before any other uid can own it.
+            os.chmod(path, 0o600)
             if os.geteuid() == 0:
                 os.chown(path, owner_uid, -1)
             elif owner_uid != os.geteuid():
                 raise ConfigError("socket owner differs from broker user")
-            os.chmod(path, 0o600)
         except (ConfigError, OSError) as exc:
             listener.close()
-            raise ConfigError("socket cannot be created") from exc
+            raise ConfigError(f"socket cannot be created: {path}") from exc
         return listener
 
     def start(self) -> None:
@@ -921,6 +965,7 @@ def _build_parser(mode: str | None) -> argparse.ArgumentParser:
         parser.add_argument("--control-socket")
         parser.add_argument("--run-user")
         parser.add_argument("--upstream-home", default="/")
+        parser.add_argument("--ensure-socket-parent", action="store_true")
     if mode == "proxy":
         parser.add_argument("--socket")
         parser.add_argument("--consumer")
@@ -977,6 +1022,10 @@ def main(argv: list[str] | None = None) -> int:
         request_value = args.socket or str(default_request_socket(policy.consumer))
         control_value = args.control_socket or str(default_control_socket(policy.consumer))
         run_user = _resolve_run_user(args.run_user, policy)
+        if args.ensure_socket_parent:
+            request_gid = pwd.getpwuid(policy.request_uid).pw_gid
+            ensure_socket_parent(request_value, request_gid)
+            ensure_socket_parent(control_value, request_gid)
         upstream_home = pathlib.Path(args.upstream_home)
         if not upstream_home.is_absolute() or not upstream_home.is_dir():
             _fail("upstream home must be an existing absolute directory")

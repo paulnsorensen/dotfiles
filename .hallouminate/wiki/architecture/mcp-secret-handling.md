@@ -20,6 +20,12 @@ different owners. The broker binds both sockets as root, then permanently drops
 to the service identity before accepting traffic
 (`scripts/agent-secret-broker.py`, `Broker.start`).
 
+CPython's `socket` module has no `getpeereid()` and exposes neither the
+constant nor a helper for macOS peer-credential lookup. On Darwin the broker
+reads peer UID via `getsockopt(SOL_LOCAL, LOCAL_PEERCRED)` into a
+`struct xucred` (`scripts/agent-secret-broker.py:30-33`); missing this dropped
+every client connection until fixed.
+
 ## Credential lifecycle
 
 `bin/vault-provision` is the only vault-reading operator path. It resolves the
@@ -38,13 +44,24 @@ executable after provisioning.
 launching a child. They also remove the obsolete
 `$XDG_CACHE_HOME/dotfiles/secrets.env` file.
 
+`bws -o env` output quotes values. The legacy shell-sourcing flow stripped
+those quotes for free; the broker path reads the raw bytes, so
+`vault_secret_value` must strip the matched surrounding quote pair itself or
+every credential file ends up quote-wrapped and rejected by the upstream API.
+
 ## Operator workflow
 
 1. Install packages with `dots sync`. Put the three provider API keys in the
    selected vault source.
 2. Run `bin/vault-provision --request-user <daily-user> --operator-user
-   <separate-operator>` from an authenticated operator session. Reprovisioning
-   replaces the root-owned snapshots and restarts every Linux or macOS broker.
+   <separate-operator>` from an authenticated operator session, as the user and
+   not under `sudo` — the script sudos internally, and readiness needs the
+   user's own Keychain session. A `sudo`'d run also leaves a root-owned
+   `~/.cache/dotfiles/vault-resolution.lock` that blocks later user runs.
+   `DOTFILES_DIR` resolves script-relative rather than from the environment, so
+   an inherited `DOTFILES_DIR` pointing at another clone can no longer anchor
+   the install elsewhere. Reprovisioning replaces the root-owned snapshots and
+   restarts every Linux or macOS broker.
 3. When an agent receives a pending write, inspect it as the operator with
    `/usr/local/libexec/dotfiles/agent-secretctl --consumer <name> pending`.
 4. Approve only the matching request with
