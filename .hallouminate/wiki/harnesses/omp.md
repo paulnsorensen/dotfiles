@@ -1,11 +1,13 @@
 ---
 status: reviewed
-last_verified: 2026-08-03
+last_verified: 2026-08-07
 confidence: high
 sources:
   - chezmoi/.chezmoidata/omp.yaml
   - chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md
   - chezmoi/dot_omp/private_agent/extensions/milknado-todo-guard.ts
+  - chezmoi/dot_omp/private_agent/extensions/doom-loop-guard.ts
+  - tests/extensions/doom-loop-guard.test.mjs
   - milknado.toml
   - tests/config-validation.bats
   - tests/omp-config.bats
@@ -18,7 +20,7 @@ sources:
 ---
 # OMP
 
-OMP 17.2.5 uses Milknado as its sole work tracker. Native Todo and its reminders are disabled in the repo-authoritative chezmoi data, the system prompt assigns planning to Milknado MCP, and a directly discovered input extension consumes `/todo` before OMP can create a disconnected native list.
+OMP 17.2.10 uses Milknado as its sole work tracker. Native Todo and its reminders are disabled in the repo-authoritative chezmoi data, the system prompt assigns planning to Milknado MCP, and a directly discovered input extension consumes `/todo` before OMP can create a disconnected native list.
 
 ## Ownership contract
 
@@ -49,11 +51,11 @@ Milknado task completion fails closed when the project defines no quality gates.
 
 OMP does not receive entries from `agents/hooks/registry.yaml`: the registry synchronizer implements only Claude and Codex backends and its default loop names those two targets.[^1] OMP also disables discovery of the Claude, Codex, and other external harness providers that could import their hooks.[^2]
 
-Instead OMP deploys native extensions under `~/.omp/agent/extensions/`: `cheese-flair.ts`, `rtk.ts`, `milknado-todo-guard.ts`, and `sliced-bread-audit.ts`. The flair extension intentionally runs the same deployed `~/.claude/hooks/session-start-cheese-flair.sh` script, so it shares flair output but is not a registry-hook installation.[^3]
+Instead OMP deploys native extensions under `~/.omp/agent/extensions/`: `cheese-flair.ts`, `rtk.ts`, `milknado-todo-guard.ts`, `sliced-bread-audit.ts`, and `doom-loop-guard.ts`. The flair extension runs the shared deployed session-start script. The doom-loop extension similarly imports the shared detector from `~/.claude/lib/doom-loop-guard.js`, increments a request scope on `agent_start`, and translates verdicts through OMP's native `tool_call` response surface.[^3]
 
 [^1]: `agents/hooks/sync.sh:3-18`, `agents/hooks/sync.sh:75-80`
 [^2]: `chezmoi/.chezmoidata/omp.yaml:20-24`, `chezmoi/.chezmoidata/omp.yaml:46-53`
-[^3]: `chezmoi/dot_omp/private_agent/extensions/cheese-flair.ts:1-26`, `chezmoi/dot_omp/private_agent/extensions/rtk.ts:1-84`, `chezmoi/dot_omp/private_agent/extensions/milknado-todo-guard.ts:1-15`, `chezmoi/dot_omp/private_agent/extensions/sliced-bread-audit.ts:1-94`
+[^3]: `chezmoi/dot_omp/private_agent/extensions/cheese-flair.ts:1-26`, `chezmoi/dot_omp/private_agent/extensions/rtk.ts:1-84`, `chezmoi/dot_omp/private_agent/extensions/milknado-todo-guard.ts:1-15`, `chezmoi/dot_omp/private_agent/extensions/sliced-bread-audit.ts:1-94`, `chezmoi/dot_omp/private_agent/extensions/doom-loop-guard.ts:1-62`
 
 ## `/todo` guard
 
@@ -99,11 +101,11 @@ Do not build that adapter unless native-looking Todo behavior becomes a requirem
 - Fresh renders assert `compaction.strategy: shake`, `keepRecentTokens: 20000`, no `thresholdTokens`, `task.enableLsp: true`, and `retry.modelFallback: false` (`tests/omp-config.bats:34-80`).
 - Drift repair starts with both settings true and verifies they are reset (`tests/omp-config.bats:82-102`).
 - The retired-key regression feeds the prior managed document, deletes `compaction.thresholdTokens` through wholesale rendering, and keeps genuinely unknown keys fail-closed (`tests/omp-config.bats:103-129`).
-- The managed-file test proves chezmoi deploys the four remaining extension modules and system prompt while `.chezmoiremove` owns removal of `no-fork-all.ts` (`tests/omp-config.bats:307-332`).
-- The real apply regression seeds a pre-existing retired extension, applies into an explicit temporary destination with scripts excluded, and verifies deletion plus survival of all four modules (`tests/omp-config.bats:333-359`).
-- The extension-contract test executes every remaining extension handler test (`tests/omp-config.bats:361-368`).
+- The managed-file test proves chezmoi deploys the five native extension modules and system prompt while `.chezmoiremove` owns removal of `no-fork-all.ts` (`tests/omp-config.bats:327-349`).
+- The real apply regression seeds a pre-existing retired extension, applies into an explicit temporary destination with scripts excluded, and verifies deletion plus survival of all five modules (`tests/omp-config.bats:350-376`).
+- The extension-contract test executes every native extension handler test, including doom-loop steering/blocking/abort behavior (`tests/omp-config.bats:378-383`).
 
-Root `dots sync` verifies exact live outputs `omp/17.2.5` and `codex-cli 0.146.0` after package convergence, applies the final chezmoi state under those schemas, and repeats both exact probes after a successful final apply. A failed final apply skips post-apply probes; a failed post-apply probe reports `harness-versions` while retaining upgraded binaries. The focused ordering, mismatch, absence, command-failure, and upgraded-state-retention tests live at `tests/sync-orchestrator.bats:180-548`.
+Root `dots sync` verifies exact live outputs `omp/17.2.10` and `codex-cli 0.146.0` after package convergence, applies the final chezmoi state under those schemas, and repeats both exact probes after a successful final apply. A failed final apply skips post-apply probes; a failed post-apply probe reports `harness-versions` while retaining upgraded binaries. The focused ordering, mismatch, absence, command-failure, and upgraded-state-retention tests live at `tests/sync-orchestrator.bats:180-548`.
 
 `tests/extensions/milknado-todo-guard.test.mjs:32-62` separately pins exact-command blocking, warning contents, the handled action, negative inputs, the continue action, and absence of spurious notifications. The focused OMP config suite and all remaining extension handler tests pass in the corrective gate.
 
@@ -113,4 +115,4 @@ Root `dots sync` verifies exact live outputs `omp/17.2.5` and `codex-cli 0.146.0
 
 Completed request graphs remain durable in Milknado. This cutover does not decide whether old graphs should be retained permanently, archived, or deleted; any lifecycle policy must preserve the single-owner rule and be implemented in Milknado rather than reintroducing native Todo state.
 
-_Source: OMP Todo-to-Milknado research, guarded cutover, and Codex/OMP upgrade verification · Updated: 2026-08-03 · Supersedes: native OMP Todo ownership_
+_Source: OMP Todo-to-Milknado research, guarded cutover, doom-loop adapter, and Codex/OMP upgrade verification · Updated: 2026-08-07 · Supersedes: native OMP Todo ownership_

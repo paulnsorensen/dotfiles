@@ -73,6 +73,11 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/sensitive-file-guard.sh"'
             timeout: 5
+      - matcher: ".*"
+        hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/doom-loop-guard.sh"'
+            timeout: 5
       - matcher: "Bash|Grep|Glob"
         hooks:
           - type: command

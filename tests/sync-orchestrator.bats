@@ -39,7 +39,7 @@ MOCK
     done
     cat > "$MOCK_BIN/omp" << 'MOCK'
 #!/bin/bash
-[[ "$1" == "--version" ]] && printf 'omp/17.2.5\n'
+[[ "$1" == "--version" ]] && printf 'omp/17.2.10\n'
 MOCK
     chmod +x "$MOCK_BIN/omp"
     cat > "$MOCK_BIN/codex" << 'MOCK'
@@ -362,7 +362,7 @@ SCRIPT
     cat > "$MOCK_BIN/omp" << 'SCRIPT'
 #!/bin/bash
 if [[ "$1" == "--version" ]]; then
-    version='omp/17.2.5'
+    version='omp/17.2.10'
     printf 'omp-version=%s\n' "$version" >> "$SYNC_EVENTS"
     printf '%s\n' "$version"
 fi
@@ -386,10 +386,10 @@ SCRIPT
     local expected_events
     expected_events='chezmoi-prepare
 packages-sync
-omp-version=omp/17.2.5
+omp-version=omp/17.2.10
 codex-version=codex-cli 0.146.0
 chezmoi-final-apply
-omp-version=omp/17.2.5
+omp-version=omp/17.2.10
 codex-version=codex-cli 0.146.0'
     [[ "$output" == "$expected_events" ]]
 }
@@ -414,7 +414,7 @@ SCRIPT
     rm -f "$FAKE_DOTFILES/packages/sync.sh"
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
-printf 'omp=17.2.5 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
+printf 'omp=17.2.10 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
 printf 'packages-sync\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
@@ -430,7 +430,7 @@ if [[ "$1" == "--version" ]]; then
     if [[ "$count" -eq 2 ]]; then
         version='omp/17.1.3'
     else
-        version='omp/17.2.5'
+        version='omp/17.2.10'
     fi
     printf 'omp-version=%s\n' "$version" >> "$SYNC_EVENTS"
     printf '%s\n' "$version"
@@ -452,8 +452,8 @@ SCRIPT
     assert_failure
     local sync_output="$output"
     run cat "$SYNC_EVENTS"
-    [[ "$output" == $'chezmoi-apply-1\npackages-sync\nomp-version=omp/17.2.5\ncodex-version=codex-cli 0.146.0\nchezmoi-final-apply-complete\nomp-version=omp/17.1.3' ]]
-    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.5 codex=0.146.0" ]]
+    [[ "$output" == $'chezmoi-apply-1\npackages-sync\nomp-version=omp/17.2.10\ncodex-version=codex-cli 0.146.0\nchezmoi-final-apply-complete\nomp-version=omp/17.1.3' ]]
+    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.10 codex=0.146.0" ]]
     [[ "$sync_output" == *"omp version mismatch after final chezmoi apply"* ]]
     [[ "$sync_output" == *"harness-versions"* ]]
 }
@@ -482,7 +482,7 @@ SCRIPT
     rm -f "$FAKE_DOTFILES/packages/sync.sh"
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
-printf 'omp=17.2.5 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
+printf 'omp=17.2.10 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
 printf 'packages-sync\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
@@ -490,8 +490,8 @@ SCRIPT
     cat > "$MOCK_BIN/omp" << 'SCRIPT'
 #!/bin/bash
 if [[ "$1" == "--version" ]]; then
-    printf 'omp-version=omp/17.2.5\n' >> "$SYNC_EVENTS"
-    printf 'omp/17.2.5\n'
+    printf 'omp-version=omp/17.2.10\n' >> "$SYNC_EVENTS"
+    printf 'omp/17.2.10\n'
 fi
 SCRIPT
     chmod +x "$MOCK_BIN/omp"
@@ -510,8 +510,8 @@ SCRIPT
     local sync_output="$output"
     local sync_stderr="$stderr"
     run cat "$SYNC_EVENTS"
-    [[ "$output" == $'chezmoi-prepare\npackages-sync\nomp-version=omp/17.2.5\ncodex-version=codex-cli 0.146.0\nchezmoi-final-apply-failed' ]]
-    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.5 codex=0.146.0" ]]
+    [[ "$output" == $'chezmoi-prepare\npackages-sync\nomp-version=omp/17.2.10\ncodex-version=codex-cli 0.146.0\nchezmoi-final-apply-failed' ]]
+    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.10 codex=0.146.0" ]]
     [[ "$sync_output" == *"Sync completed with FAILURES in: chezmoi"* ||
         "$sync_stderr" == *"Sync completed with FAILURES in: chezmoi"* ]]
 }
@@ -543,14 +543,14 @@ SCRIPT
     rm -f "$FAKE_DOTFILES/packages/sync.sh"
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
-printf 'omp=17.2.5 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
+printf 'omp=17.2.10 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
 printf 'packages-sync\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
     rm -f "$MOCK_BIN/omp"
     cat > "$MOCK_BIN/omp" << 'SCRIPT'
 #!/bin/bash
-[[ "$1" == "--version" ]] && printf 'omp/17.2.5\n'
+[[ "$1" == "--version" ]] && printf 'omp/17.2.10\n'
 SCRIPT
     chmod +x "$MOCK_BIN/omp"
     rm -f "$MOCK_BIN/codex"
@@ -565,7 +565,7 @@ SCRIPT
     local sync_output="$output"
     run cat "$SYNC_EVENTS"
     [[ "$output" == $'chezmoi-apply-1\npackages-sync' ]]
-    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.5 codex=0.146.0" ]]
+    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.10 codex=0.146.0" ]]
     [[ "$sync_output" == *"codex version mismatch"* ]]
 }
 @test "final harness verification prefers the post-package mise shim" {
@@ -606,6 +606,39 @@ SCRIPT
     [[ "$output" == "packages-sync"$'\nfinal-codex='"$TEST_HOME/.local/share/mise/shims/codex codex-cli 0.146.0" ]]
 }
 
+@test "pre-apply Codex probe uses tracked mise config before live config is applied" {
+    cd "$FAKE_DOTFILES"
+    export SYNC_EVENTS="$TEST_HOME/sync-events.log"
+    mkdir -p "$FAKE_DOTFILES/chezmoi/dot_config/mise"
+    printf '[tools]\n' > "$FAKE_DOTFILES/chezmoi/dot_config/mise/config.toml"
+    cat > "$FAKE_DOTFILES/chezmoi/.sync" << 'SCRIPT'
+#!/bin/bash
+[[ "${CHEZMOI_SYNC_PHASE:-}" == "final" ]] || exit 0
+touch "$TEST_HOME/live-mise-config"
+printf 'chezmoi-final-apply\n' >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/chezmoi/.sync"
+
+    rm -f "$MOCK_BIN/codex"
+    cat > "$MOCK_BIN/codex" << 'SCRIPT'
+#!/bin/bash
+[[ "$1" == "--version" ]] || exit 0
+if [[ -f "$TEST_HOME/live-mise-config" || -n "${MISE_OVERRIDE_CONFIG_FILENAMES:-}" ]]; then
+    version='codex-cli 0.146.0'
+else
+    version='codex-cli 0.145.0'
+fi
+printf 'codex-config=%s\n' "${MISE_OVERRIDE_CONFIG_FILENAMES:-live}" >> "$SYNC_EVENTS"
+printf '%s\n' "$version"
+SCRIPT
+    chmod +x "$MOCK_BIN/codex"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    run cat "$SYNC_EVENTS"
+    [[ "$output" == codex-config=*/chezmoi/dot_config/mise/config.toml$'\nchezmoi-final-apply\ncodex-config=live' ]]
+}
+
 @test "missing OMP after package convergence fails closed before final apply" {
     cd "$FAKE_DOTFILES"
     export SYNC_EVENTS="$TEST_HOME/sync-events.log"
@@ -618,7 +651,7 @@ SCRIPT
     rm -f "$FAKE_DOTFILES/packages/sync.sh"
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
-printf 'omp=17.2.5 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
+printf 'omp=17.2.10 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
 printf 'packages-sync\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
@@ -635,7 +668,7 @@ SCRIPT
     local sync_output="$output"
     run cat "$SYNC_EVENTS"
     [[ "$output" == $'chezmoi-apply\npackages-sync' ]]
-    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.5 codex=0.146.0" ]]
+    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.10 codex=0.146.0" ]]
     [[ "$sync_output" == *"omp unavailable after package convergence"* ]]
 }
 
@@ -651,7 +684,7 @@ SCRIPT
     rm -f "$FAKE_DOTFILES/packages/sync.sh"
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
-printf 'omp=17.2.5 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
+printf 'omp=17.2.10 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
 printf 'packages-sync\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
@@ -671,7 +704,7 @@ SCRIPT
     local sync_stderr="$stderr"
     run cat "$SYNC_EVENTS"
     [[ "$output" == $'chezmoi-apply\npackages-sync' ]]
-    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.5 codex=0.146.0" ]]
+    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.10 codex=0.146.0" ]]
     [[ "$sync_output" == *"omp --version failed after package convergence"* ]]
     [[ "$sync_stderr" == *"omp probe exploded: fixture diagnostic"* ]]
 }
@@ -719,7 +752,7 @@ SCRIPT
     rm -f "$FAKE_DOTFILES/packages/sync.sh"
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
-printf 'omp=17.2.5 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
+printf 'omp=17.2.10 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
 printf 'packages-sync\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
@@ -736,7 +769,7 @@ SCRIPT
     local sync_output="$output"
     run cat "$SYNC_EVENTS"
     [[ "$output" == $'chezmoi-apply\npackages-sync' ]]
-    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.5 codex=0.146.0" ]]
+    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.10 codex=0.146.0" ]]
     [[ "$sync_output" == *"codex unavailable after package convergence"* ]]
 }
 
@@ -752,7 +785,7 @@ SCRIPT
     rm -f "$FAKE_DOTFILES/packages/sync.sh"
     cat > "$FAKE_DOTFILES/packages/sync.sh" << 'SCRIPT'
 #!/bin/bash
-printf 'omp=17.2.5 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
+printf 'omp=17.2.10 codex=0.146.0\n' > "$TEST_HOME/upgraded-binaries"
 printf 'packages-sync\n' >> "$SYNC_EVENTS"
 SCRIPT
     chmod +x "$FAKE_DOTFILES/packages/sync.sh"
@@ -772,7 +805,7 @@ SCRIPT
     local sync_stderr="$stderr"
     run cat "$SYNC_EVENTS"
     [[ "$output" == $'chezmoi-apply\npackages-sync' ]]
-    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.5 codex=0.146.0" ]]
+    [[ "$(<"$TEST_HOME/upgraded-binaries")" == "omp=17.2.10 codex=0.146.0" ]]
     [[ "$sync_output" == *"codex --version failed after package convergence"* ]]
     [[ "$sync_stderr" == *"codex probe exploded: fixture diagnostic"* ]]
 }

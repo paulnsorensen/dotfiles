@@ -42,6 +42,7 @@ STDIN"
     # Registry-authored keys composed in.
     jq -e '.enabledPlugins | has("plugin-dev@claude-plugins-official")' "$OUT" >/dev/null
     jq -e '.hooks.PreToolUse | length > 0' "$OUT" >/dev/null
+    [ "$(jq '[.hooks.PreToolUse[] | select(.matcher == ".*") | .hooks[] | select(.command == "\"$HOME/.claude/hooks/doom-loop-guard.sh\"" and .timeout == 5)] | length' "$OUT")" -eq 1 ]
     jq -e '.permissions.allow | length > 0' "$OUT" >/dev/null
     jq -e '.permissions.deny | index("Bash(sudo:*)")' "$OUT" >/dev/null
     # (${HOME} expansion in registry marketplace paths is covered by the

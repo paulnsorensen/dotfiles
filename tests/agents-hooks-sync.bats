@@ -97,6 +97,21 @@ teardown() {
     [[ "$(jq -r 'has("sensitive-file-guard")' <<<"$x")" == "true" ]]
 }
 
+@test "doom-loop-guard is a claude+codex catch-all PreToolUse hook" {
+    local entry c x
+    entry=$(yq -o=json '.hooks."doom-loop-guard"' "$REGISTRY_FILE")
+    [[ "$(jq -r '.event' <<<"$entry")" == "PreToolUse" ]]
+    [[ "$(jq -r '.script' <<<"$entry")" == "agents/hooks/doom-loop-guard.sh" ]]
+    [[ "$(jq -r '.shared_assets[0]' <<<"$entry")" == "agents/lib/doom-loop-guard.js" ]]
+    [[ "$(jq -r '.matcher' <<<"$entry")" == ".*" ]]
+    c=$(hook_filter_for_harness claude "$REGISTRY_JSON")
+    x=$(hook_filter_for_harness codex "$REGISTRY_JSON")
+    [[ "$(jq -r 'has("doom-loop-guard")' <<<"$c")" == "true" ]]
+    [[ "$(jq -r 'has("doom-loop-guard")' <<<"$x")" == "true" ]]
+    assert_file_exists "$REAL_DOTFILES_DIR/agents/hooks/doom-loop-guard.sh"
+    assert_file_exists "$REAL_DOTFILES_DIR/agents/lib/doom-loop-guard.js"
+}
+
 @test "registry command entries carry no machine-specific absolute paths" {
     # Issue #263: the moshi hooks hardcoded '/home/paul/.local/bin/moshi-hook',
     # so all four fired against a nonexistent path every session on macOS.
