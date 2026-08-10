@@ -51,6 +51,12 @@ omp:
       - github
       - opencode
       - agents-md
+      # v17.2.11 added a separate agent-plugins.org discovery provider that
+      # scans the same ~/.claude and ~/.omp plugin roots as claude-plugins
+      # and auto-imports skills/MCP for conformant plugin.json roots. Shut
+      # off per the policy above; if milknado/hallouminate later ship an
+      # agent-plugins.org plugin.json, this must be revisited deliberately.
+      - agent-plugins
     display:
       showTokenUsage: true
       cacheMissMarker: true
