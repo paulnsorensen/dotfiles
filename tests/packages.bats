@@ -768,7 +768,7 @@ YAML
     [[ -s "$CACHE_FILE" ]]
 }
 
-@test "sync skips all installers when package inputs and pins match the cache" {
+@test "sync skips non-mise installers when package inputs and pins match the cache" {
     write_test_yaml
     run_sync
     assert_success
@@ -776,13 +776,13 @@ YAML
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "unchanged (cached), syncing Claude"
+    assert_output_contains "unchanged (cached), syncing mise"
 
     ! grep -Eq '^brew (install|reinstall|uninstall|upgrade)( |$)' "$BREW_LOG"
     [[ ! -f "$CURL_LOG" ]]
 }
 
-@test "sync cache restores the Claude mise package" {
+@test "sync cache restores every configured mise package" {
     write_test_yaml
     run_sync
     assert_success
@@ -790,9 +790,20 @@ YAML
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "syncing Claude"
-    grep -q "mise install aqua:anthropics/claude-code@v2.1.219" "$MISE_LOG"
+    assert_output_contains "syncing mise"
+    [[ "$(<"$MISE_LOG")" == "mise install config=$MISE_CONFIG_FILE" ]]
     ! grep -Eq '^brew (install|reinstall|uninstall|upgrade)( |$)' "$BREW_LOG"
+}
+
+@test "cached sync fails when mise cannot restore configured tools" {
+    write_test_yaml
+    run_sync
+    assert_success
+    write_mock_mise 1
+
+    run bash "$SYNC_SCRIPT"
+    assert_failure
+    assert_output_contains "failed to heal 1 package(s): mise-install"
 }
 
 @test "a mise config-only change invalidates the package cache and reconverges" {
@@ -1097,7 +1108,7 @@ MOCKBREW
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "unchanged (cached), syncing Claude"
+    assert_output_contains "unchanged (cached), syncing mise"
     [[ "$(wc -l < "$SH_LOG")" -eq "$before" ]]
 }
 
