@@ -307,3 +307,47 @@ PY
     kill "$ttl_pid" 2>/dev/null || true
     wait "$ttl_pid" 2>/dev/null || true
 }
+
+@test "socket mode is narrowed before ownership leaves the broker" {
+    run "$PYTHON" - \
+        "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" \
+        "$TEST_ROOT/ordering.sock" <<'PY'
+import importlib.util
+import os
+import pathlib
+import sys
+
+module_path, socket_path = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("broker_under_test", module_path)
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+# The systemd unit grants CAP_CHOWN/CAP_SETGID/CAP_SETUID only. Without
+# CAP_FOWNER the kernel requires the caller to still own a file to chmod it,
+# so handing the socket to another uid first makes the chmod fail with EPERM.
+# Model exactly that: pretend to run as root and refuse a chmod issued after
+# ownership has already moved away.
+real_chmod = os.chmod
+owner = {"uid": 0}
+
+def guarded_chmod(path, mode):
+    if owner["uid"] != 0:
+        raise PermissionError(1, "Operation not permitted")
+    real_chmod(path, mode)
+
+def recording_chown(path, uid, gid):
+    owner["uid"] = uid
+
+os.chmod = guarded_chmod
+os.chown = recording_chown
+os.geteuid = lambda: 0
+
+listener = module.Broker._bind(pathlib.Path(socket_path), 12345)
+listener.close()
+assert owner["uid"] == 12345, "ownership was never transferred"
+print("bound")
+PY
+    assert_success
+    [[ "$output" == *bound* ]]
+}
