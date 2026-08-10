@@ -53,10 +53,10 @@ codex:
         tilth_write:
           approval_mode: approve
     context7:
-      command: agent-secret-proxy
+      command: /usr/local/libexec/dotfiles/agent-secret-proxy
       args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
     tavily:
-      command: agent-secret-proxy
+      command: /usr/local/libexec/dotfiles/agent-secret-proxy
       args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
     milknado:
       command: uvx
