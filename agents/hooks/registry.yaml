@@ -104,6 +104,20 @@ hooks:
     timeout: 5
     description: Block reads/writes of .env, private keys, and credential stores
 
+  # ─── Doom-loop detection ────────────────────────────────────────────
+  # Observe at 2 identical calls, block at 3, and stop at 6. Codex derives
+  # its registration here; Claude declares the matching hook in claude.yaml.
+  # OMP has a native adapter because it does not consume this registry.
+  doom-loop-guard:
+    event: PreToolUse
+    script: agents/hooks/doom-loop-guard.sh
+    shared_assets:
+      - agents/lib/doom-loop-guard.js
+    harnesses: [claude, codex]
+    matcher: ".*"
+    timeout: 5
+    description: Observe and block repeated identical tool calls that make no progress
+
   # ─── Tool reroute ───────────────────────────────────────────────────
   # Transparently REWRITES wrong-tool Bash/Grep/Glob calls to their tilth /
   # wt-git shell equivalent via updatedInput (grep/rg/ag/ack → tilth, cd+git →

@@ -349,6 +349,7 @@ TOML
     [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/sliced-bread-audit.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/milknado-todo-guard.ts"* ]]
+    [[ "$output" == *".omp/agent/extensions/doom-loop-guard.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
     [[ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/no-fork-all.ts" ]]
     grep -Fxq '.omp/agent/extensions/no-fork-all.ts' \
@@ -363,7 +364,7 @@ TOML
     local extension
     mkdir -p "$destination/.omp/agent/extensions"
     printf 'retired sentinel\n' > "$destination/.omp/agent/extensions/no-fork-all.ts"
-    for extension in rtk.ts cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
+    for extension in rtk.ts cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts doom-loop-guard.ts; do
         printf 'managed sentinel\n' > "$destination/.omp/agent/extensions/$extension"
     done
     cat > "$cfg" <<TOML
@@ -379,7 +380,7 @@ TOML
     run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" apply --force --exclude=scripts
     [ "$status" -eq 0 ]
     [ ! -e "$destination/.omp/agent/extensions/no-fork-all.ts" ]
-    for extension in rtk.ts cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
+    for extension in rtk.ts cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts doom-loop-guard.ts; do
         [ -e "$destination/.omp/agent/extensions/$extension" ]
     done
 }
@@ -390,4 +391,6 @@ TOML
     [ "$status" -eq 0 ]
     [[ "$output" == *"registers the command and dispatches the exact default workflow contract"* ]]
     [[ "$output" == *"blocks native todo commands and identifies Milknado as the owner"* ]]
+    [[ "$output" == *"OMP observes, blocks, and aborts within one agent run"* ]]
+    [[ "$output" == *"OMP resets repetition counts for a new agent run"* ]]
 }

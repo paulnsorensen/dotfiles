@@ -63,7 +63,17 @@ verify_harness_versions() {
         log_error "codex unavailable $phase"
         return 1
     fi
-    if ! codex_version="$(codex --version)"; then
+    # Before chezmoi applies the new global config, make the shim resolve the
+    # tracked pin rather than the stale live config. The post-apply probe must
+    # use the live config so it still catches a failed cutover.
+    if [[ "$phase" == "after package convergence" ]]; then
+        if ! codex_version="$(
+            MISE_OVERRIDE_CONFIG_FILENAMES="$dir/chezmoi/dot_config/mise/config.toml" codex --version
+        )"; then
+            log_error "codex --version failed $phase"
+            return 1
+        fi
+    elif ! codex_version="$(codex --version)"; then
         log_error "codex --version failed $phase"
         return 1
     fi

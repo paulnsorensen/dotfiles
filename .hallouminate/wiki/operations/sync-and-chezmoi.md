@@ -25,6 +25,12 @@ The custom backup/restore/rollback subsystem has been **deleted** (chezmoi-conso
 - **Pre-brew bootstraps on Linux** (brew isn't on PATH yet when these run): yq is downloaded as the Mike Farah Go binary into `~/.local/bin` (Ubuntu's apt `yq` is the wrong kislyuk/yq), and `uv` via the astral installer.
 - Other sources (`cargo`, `npm`, `uv`, `gh-extension`) run cross-platform unconditionally. On Linux, npm comes from the brew `node` formula (which bundles it).
 
+### Two-phase Codex version verification
+
+The pre-apply Codex probe must resolve the version from the tracked mise config by setting `MISE_OVERRIDE_CONFIG_FILENAMES` to `chezmoi/dot_config/mise/config.toml`; the live config can still name the previous version before chezmoi applies. The post-apply probe intentionally uses normal mise discovery to verify that the live config has converged.[^1]
+
+[^1]: .sync:54-67; tests/sync-orchestrator.bats:609-640
+
 ## Chezmoi-managed subset
 
 chezmoi renders the files that need per-machine templating (work vs. personal git email), per-OS branching, or secret injection — things plain symlinks can't do. Everything else stays on the symlink system.
