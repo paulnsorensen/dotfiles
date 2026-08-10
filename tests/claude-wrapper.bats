@@ -4,6 +4,11 @@ load test_helper
 
 setup() {
     setup_test_env
+    # The guard reads live machine state — pgrep -cx claude and /proc/meminfo —
+    # so leaving it armed makes this fail whenever the host happens to sit at the
+    # 8-session ceiling or under 15% free RAM. Delegation is what's under test, so
+    # disarm the guard rather than depend on ambient load.
+    export CLAUDE_GUARD=0
     export XDG_DATA_HOME="$TEST_HOME/.local/share"
     mkdir -p "$XDG_DATA_HOME/mise/shims"
     cat > "$XDG_DATA_HOME/mise/shims/claude" <<'SH'
