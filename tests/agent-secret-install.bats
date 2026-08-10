@@ -80,6 +80,7 @@ PY
         [[ "$(plist_value --upstream-home)" == "$home_abs" ]]
         [[ "$(plist_value --socket)" == '/var/run/dotfiles-agent-secrets/fixture.sock' ]]
         [[ "$(plist_value --control-socket)" == '/var/run/dotfiles-agent-secrets/fixture.control.sock' ]]
+        grep -q '<string>--ensure-socket-parent</string>' "$plist"
     else
         unit="$INSTALL_ROOT/etc/systemd/system/dotfiles-agent-secret@.service"
         exec_start="$(grep '^ExecStart=' "$unit")"
