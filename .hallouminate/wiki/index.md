@@ -33,3 +33,6 @@ relevant page rather than loading the whole reference into every session.
 - [[operations/index]] — the operational plumbing: the sync + chezmoi deploy
   system, the opt-in local-LLM stack, and the local dev environment (git
   tooling, prek, plugins, skhd).
+- [[sources/index]] — localized vendor evidence: what an external doc or
+  upstream source actually says, verified and dated, so a page here can cite a
+  claim instead of restating a guess.

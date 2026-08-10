@@ -45,3 +45,9 @@
 2026-07-28 · preamble-20260728 · merged · adr/cheese-factory-workflow.md · Replaced stale preamble fan-out and continuation attributions with ADR-005 and coder-owned contracts.
 
 2026-08-01 · 6d6acbacd0478a02 · merged · harnesses/omp.md · Corrected exact-version verification to include both pre-final-apply and post-successful-final-apply probes, retention on post-probe failure, and current regression ranges.
+
+2026-08-09 · bitwarden-runbook-20260809 · new-page · operations/bitwarden-secrets-manager.md · Bitwarden provider runbook reconciled against b09e39c: three-Secret inventory (GitHub App dropped), web-application creation to keep values out of the `bws secret create` argv fallback, the single-line constraint imposed by env-output parsing, least-privilege machine account, root-shell token boundary, and rotation with broker restart.
+2026-08-09 · bitwarden-runbook-20260809 · new-page · sources/*.md · Localized verified Bitwarden vendor evidence (Secrets, access tokens, machine accounts, CLI, quick start, plans) plus the bws 2.1.0 renderer source behind the single-line constraint.
+2026-08-09 · bitwarden-runbook-20260809 · merged · architecture/mcp-secret-handling.md · Linked the provider-side Bitwarden runbook from the broker architecture page.
+2026-08-09 · bitwarden-runbook-20260809 · merged · index.md, operations/index.md · Registered the sources section and the Bitwarden runbook.
+2026-08-09 · bitwarden-runbook-20260809 · conflict-flagged · sources/bws-2-1-0-output-rendering.md · Corrected the superseded claim that the fetch path uses `-o json` with `jq`: b09e39c ships `bws secret list -o env` with matched-quote stripping, so multiline values remain unsupported and JSON is recorded as the fix if that need returns.

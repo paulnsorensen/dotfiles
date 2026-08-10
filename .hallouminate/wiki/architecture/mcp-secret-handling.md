@@ -98,3 +98,7 @@ mirrored by `profiles/*/profile.yaml`,
 See [[agent-secret-isolation-001]], [[agent-secret-isolation-002]], and
 [[agent-secret-isolation-003]] for the accepted identity, firewall, and approval
 decisions.
+
+[[../operations/bitwarden-secrets-manager]] is the provider-side runbook for the
+Bitwarden path: exact Secret names, machine-account permission, the temporary
+root-shell access token, and key rotation.
