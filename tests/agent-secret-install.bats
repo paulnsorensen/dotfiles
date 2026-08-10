@@ -215,6 +215,121 @@ EOF
     [[ -x "$INSTALL_ROOT/usr/local/libexec/dotfiles/agent-secret-broker.py" ]]
 }
 
+run_installer_helper() {
+    local helper="$1" stub_owner="${STUB_STAT_OWNER:-}" stub_mode="${STUB_STAT_MODE:-}"
+    shift
+    # shellcheck disable=SC2016  # expansions belong to the isolated child shell
+    env -u DESTDIR PATH="${INSTALLER_HELPER_PATH:-$PATH}" bash -c '
+        source "$1"
+        helper="$2"
+        stub_owner="$3"
+        stub_mode="$4"
+        shift 4
+        if [[ -n "$stub_owner" ]]; then
+            stat() {
+                case "$2" in
+                    "%u") printf "%s\n" "$stub_owner" ;;
+                    "%a"|"%Lp") printf "%s\n" "$stub_mode" ;;
+                    *) return 64 ;;
+                esac
+            }
+        fi
+        "$helper" "$@"
+    ' _ "$INSTALLER" "$helper" "$stub_owner" "$stub_mode" "$@"
+}
+
+@test "credential_is_private validates ownership and mode independently" {
+    local credential="$TEST_HOME/credential"
+    printf 'x' > "$credential"
+    chmod 600 "$credential"
+
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=644 run run_installer_helper credential_is_private "$credential"
+    assert_failure
+    [[ "$output" == "agent-secret-install: credential file must be root-owned mode 0600: $credential" ]]
+
+    STUB_STAT_OWNER=1 STUB_STAT_MODE=600 run run_installer_helper credential_is_private "$credential"
+    assert_failure
+    [[ "$output" == "agent-secret-install: credential file must be root-owned mode 0600: $credential" ]]
+}
+
+@test "credential_is_private accepts root ownership with mode 0600" {
+    local credential="$TEST_HOME/credential"
+    printf 'x' > "$credential"
+    chmod 600 "$credential"
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=600 run run_installer_helper credential_is_private "$credential"
+    assert_success
+    [[ -z "$output" ]]
+}
+
+@test "trusted_executable validates writable mode bits independently" {
+    local executable="$TEST_HOME/upstream"
+    printf '#!/bin/sh\n' > "$executable"
+    chmod 755 "$executable"
+
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=775 run run_installer_helper trusted_executable "$executable" upstream
+    assert_failure
+    [[ "$output" == "agent-secret-install: upstream must be root-owned and not group/other-writable: $executable" ]]
+
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=757 run run_installer_helper trusted_executable "$executable" upstream
+    assert_failure
+    [[ "$output" == "agent-secret-install: upstream must be root-owned and not group/other-writable: $executable" ]]
+}
+
+@test "trusted_executable accepts root ownership without writable group or other bits" {
+    local executable="$TEST_HOME/upstream"
+    printf '#!/bin/sh\n' > "$executable"
+    chmod 755 "$executable"
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=755 run run_installer_helper trusted_executable "$executable" upstream
+    assert_success
+    [[ -z "$output" ]]
+}
+
+@test "ensure_identity no-ops for a service user that already exists" {
+    local platform
+    if [[ "$(uname -s)" == Darwin ]]; then platform=macos; else platform=linux; fi
+    run run_installer_helper ensure_identity "$platform" "$(id -un)" "$TEST_HOME"
+    assert_success
+    [[ -z "$output" ]]
+}
+
+@test "ensure_identity dispatches an unknown user to the platform identity creator" {
+    local fake_bin="$TEST_HOME/fake-bin"
+    local platform service_user=agent-secret-install-test-nonexistent
+    local home="$TEST_HOME/nonexistent-home" expected
+    mkdir -p "$fake_bin"
+
+    if [[ "$(uname -s)" == Darwin ]]; then
+        platform=macos
+        cat > "$fake_bin/dscl" <<'EOF'
+#!/usr/bin/env bash
+printf 'dscl:%s\n' "$*"
+case "$2" in
+    -read|-search) exit 1 ;;
+esac
+exit 23
+EOF
+        expected="dscl:. -create /Groups/$service_user"
+    else
+        platform=linux
+        cat > "$fake_bin/getent" <<'EOF'
+#!/usr/bin/env bash
+exit 2
+EOF
+        cat > "$fake_bin/useradd" <<'EOF'
+#!/usr/bin/env bash
+printf 'useradd:%s\n' "$*"
+exit 23
+EOF
+        expected="useradd:--system --user-group --home-dir $home --shell /usr/sbin/nologin $service_user"
+    fi
+    chmod +x "$fake_bin"/*
+
+    INSTALLER_HELPER_PATH="$fake_bin:$PATH" run \
+        run_installer_helper ensure_identity "$platform" "$service_user" "$home"
+    [ "$status" -eq 23 ]
+    [[ "$output" == "$expected" ]]
+}
+
 run_trusted_executable() {
     bash -c 'die() { echo "$@" >&2; exit 1; }
         eval "$(sed -n "/^trusted_executable/,/^}/p" "$1")"
