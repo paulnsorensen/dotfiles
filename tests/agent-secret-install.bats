@@ -155,3 +155,71 @@ PY
     [[ -z "$output" ]]
     [[ -x "$INSTALL_ROOT/usr/local/libexec/dotfiles/agent-secret-broker.py" ]]
 }
+
+@test "credential_is_private rejects non-0600 mode and non-root ownership directly" {
+    local wrong_mode="$TEST_HOME/credential-wrong-mode"
+    printf 'x' > "$wrong_mode"
+    chmod 644 "$wrong_mode"
+    run bash -c "source '$INSTALLER'; credential_is_private '$wrong_mode'"
+    assert_failure
+    [[ "$output" == "agent-secret-install: credential file must be root-owned mode 0600: $wrong_mode" ]]
+
+    local right_mode_wrong_owner="$TEST_HOME/credential-right-mode-wrong-owner"
+    printf 'x' > "$right_mode_wrong_owner"
+    chmod 600 "$right_mode_wrong_owner"
+    run bash -c "source '$INSTALLER'; credential_is_private '$right_mode_wrong_owner'"
+    assert_failure
+    [[ "$output" == "agent-secret-install: credential file must be root-owned mode 0600: $right_mode_wrong_owner" ]]
+}
+
+@test "credential_is_private accepts a root-owned 0600 credential" {
+    [[ "$(id -u)" == 0 ]] || skip "requires chown to root; unprivileged sandboxes cannot produce a root-owned file"
+    local credential="$TEST_HOME/credential-root-owned"
+    printf 'x' > "$credential"
+    chown 0 "$credential"
+    chmod 600 "$credential"
+    run bash -c "source '$INSTALLER'; credential_is_private '$credential'"
+    assert_success
+}
+
+@test "trusted_executable rejects group-writable and world-writable executables directly" {
+    local group_writable="$TEST_HOME/exec-group-writable"
+    printf '#!/bin/sh\n' > "$group_writable"
+    chmod 775 "$group_writable"
+    run bash -c "source '$INSTALLER'; trusted_executable '$group_writable' upstream"
+    assert_failure
+    [[ "$output" == "agent-secret-install: upstream must be root-owned and not group/other-writable: $group_writable" ]]
+
+    local world_writable="$TEST_HOME/exec-world-writable"
+    printf '#!/bin/sh\n' > "$world_writable"
+    chmod 757 "$world_writable"
+    run bash -c "source '$INSTALLER'; trusted_executable '$world_writable' upstream"
+    assert_failure
+    [[ "$output" == "agent-secret-install: upstream must be root-owned and not group/other-writable: $world_writable" ]]
+}
+
+@test "trusted_executable accepts a root-owned non-group-writable executable" {
+    [[ "$(id -u)" == 0 ]] || skip "requires chown to root; unprivileged sandboxes cannot produce a root-owned file"
+    local executable="$TEST_HOME/exec-root-owned"
+    printf '#!/bin/sh\n' > "$executable"
+    chown 0 "$executable"
+    chmod 755 "$executable"
+    run bash -c "source '$INSTALLER'; trusted_executable '$executable' upstream"
+    assert_success
+}
+
+@test "ensure_identity no-ops for a service user that already exists" {
+    local platform
+    if [[ "$(uname -s)" == Darwin ]]; then platform=macos; else platform=linux; fi
+    run bash -c "source '$INSTALLER'; ensure_identity '$platform' '$(id -un)' '$TEST_HOME'"
+    assert_success
+}
+
+@test "ensure_identity attempts real identity creation for an unknown service user" {
+    [[ "$(id -u)" != 0 ]] || skip "root would perform a real system identity creation; unsafe to exercise here"
+    local platform
+    if [[ "$(uname -s)" == Darwin ]]; then platform=macos; else platform=linux; fi
+    run bash -c "source '$INSTALLER'; ensure_identity '$platform' 'agent-secret-install-test-nonexistent' '$TEST_HOME/nonexistent-home'"
+    assert_failure
+    [[ -n "$output" ]]
+}
