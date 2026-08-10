@@ -50,3 +50,7 @@ ADRs authored beside their topic page (`architecture/agent-secret-isolation-00N`
 Before adding a new record, put it where its *siblings* live rather than
 inventing a fourth home. <speculative>Consolidating the first two is probably
 right, but nothing in the repo settles which name wins.</speculative>
+
+- [[sources/index]] — localized vendor evidence: what an external doc or
+  upstream source actually says, verified and dated, so a page here can cite a
+  claim instead of restating a guess.

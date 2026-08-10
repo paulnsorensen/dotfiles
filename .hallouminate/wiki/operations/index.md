@@ -15,6 +15,7 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 - [[omp-config-shape-drift]] — unknown-key gate tripping on nested `dev.autoqa.*` means a stale per-machine config serialization: normalize with an `omp config set` re-save; never fold the nested shape into the shared registry (the #487 flip-flop).
 - [[omp-fanout-worker-models]] — OMP fan-out guardrails and evidence-dated worker-model cost research: separate parent reasoning from cheap worker roles, bound task fan-out, and treat speed rankings as provisional until measured locally.
 
+- [[bitwarden-secrets-manager]] — the Bitwarden provider runbook behind `bin/vault-provision`: the exact three-Secret inventory, why records are created in the web application rather than via `bws secret create`, the single-line constraint the env-output fetch imposes, least-privilege machine account, root-shell access-token boundary, and key rotation.
 ## Packaging and machine state
 
 - [[brew-machine-prune]] — the machine-side half of [[../adr/manifest-pinned-packages]]: `sync_brew` never uninstalls, so strays accumulate until pruned by hand. Read before pruning — `rustup` and `mise` must stay in brew (mise's `rust` is a symlink into rustup's tree; mise itself is the bootstrap trust root).

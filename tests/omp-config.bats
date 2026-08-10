@@ -202,7 +202,7 @@ STDIN"
 @test "omp-mcp: native user config keeps brokered context7 only; wiki/planner are plugins" {
     local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
     local omp_reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/omp.yaml"
-    jq -e '.mcpServers.context7.command == "agent-secret-proxy"' "$cfg"
+    jq -e '.mcpServers.context7.command == "/usr/local/libexec/dotfiles/agent-secret-proxy"' "$cfg"
     jq -e '.mcpServers.context7.args == ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]' "$cfg"
     jq -e '(.mcpServers.context7 | has("env") | not)' "$cfg"
     jq -e '(.mcpServers.context7 | has("envFile") | not)' "$cfg"
