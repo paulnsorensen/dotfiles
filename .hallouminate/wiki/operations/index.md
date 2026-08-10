@@ -16,3 +16,14 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 - [[omp-fanout-worker-models]] — OMP fan-out guardrails and evidence-dated worker-model cost research: separate parent reasoning from cheap worker roles, bound task fan-out, and treat speed rankings as provisional until measured locally.
 
 - [[bitwarden-secrets-manager]] — the Bitwarden provider runbook behind `bin/vault-provision`: the exact three-Secret inventory, why records are created in the web application rather than via `bws secret create`, the single-line constraint the env-output fetch imposes, least-privilege machine account, root-shell access-token boundary, and key rotation.
+
+## Packaging and machine state
+
+- [[brew-machine-prune]] — the machine-side half of [[../adr/manifest-pinned-packages]]: `sync_brew` never uninstalls, so strays accumulate until pruned by hand. Read before pruning — `rustup` and `mise` must stay in brew (mise's `rust` is a symlink into rustup's tree; mise itself is the bootstrap trust root).
+- [[mise-aqua-backend-retypes]] — an aqua-registry package retype breaks a working pin with no version change; the fix is a backend migration, not a version bump.
+- [[rectangle-sync]] — why `rectangle/.sync` needs a hash stamp: it used to hard-restart Rectangle Pro on every `dots sync`, and SIGKILL leaves no crash report, so "the app keeps crashing" had no diagnostic trail.
+
+## Measurement and prompting
+
+- [[test-suite-performance]] — the Bats suite is dominated by repeated integration setup, not runner parallelism; keep the CPU-count default and shorten the work inside tests instead of tuning job count.
+- [[prompting-claude-opus-5]] — the Opus 5 behaviour deltas that actually change decisions here: model-tier pins, review fan-out sizing, verification scaffolding, delegation restraint.
