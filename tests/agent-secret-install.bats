@@ -93,6 +93,62 @@ PY
     [[ "$status" -ne 0 ]]
 }
 
+@test "installer renders a write-only policy with an empty read-tool array" {
+    run env DESTDIR="$INSTALL_ROOT" "$INSTALLER" install write-only \
+        --credential-env FIXTURE_SECRET \
+        --credential-file "$CREDENTIAL" \
+        --request-user "$REQUEST_USER" \
+        --operator-user "$OPERATOR_USER" \
+        --write-tool write.item \
+        -- /usr/bin/context7-mcp --stdio
+    assert_success
+    [[ -z "$output" ]]
+
+    jq -e '.tools.read == []
+        and .tools.write == ["write.item"]
+        and .upstream.argv == ["/usr/bin/context7-mcp", "--stdio"]' \
+        "$INSTALL_ROOT/etc/dotfiles/agent-secret-broker/write-only.json" >/dev/null
+}
+
+@test "installer leaves an existing LaunchDaemons directory unchanged" {
+    local fake_bin="$TEST_HOME/fake-bin"
+    local launch_daemons="$INSTALL_ROOT/Library/LaunchDaemons"
+    local real_install
+    real_install="$(command -v install)"
+    mkdir -p "$fake_bin" "$launch_daemons"
+
+    cat > "$fake_bin/uname" <<'EOF'
+#!/usr/bin/env bash
+printf 'Darwin\n'
+EOF
+    cat > "$fake_bin/install" <<'EOF'
+#!/usr/bin/env bash
+target=""
+for target; do :; done
+if [[ "${1:-}" == -d && -d "$target" ]]; then
+    printf 'install: chmod 755 %s: Operation not permitted\n' "$target" >&2
+    exit 1
+fi
+exec "$REAL_INSTALL" "$@"
+EOF
+    chmod +x "$fake_bin/uname" "$fake_bin/install"
+
+    run env \
+        PATH="$fake_bin:$PATH" \
+        REAL_INSTALL="$real_install" \
+        DESTDIR="$INSTALL_ROOT" \
+        "$INSTALLER" install launchd-existing \
+        --credential-env FIXTURE_SECRET \
+        --credential-file "$CREDENTIAL" \
+        --request-user "$REQUEST_USER" \
+        --operator-user "$OPERATOR_USER" \
+        --read-tool read.item \
+        -- /usr/bin/context7-mcp
+    assert_success
+    [[ -z "$output" ]]
+    [ -f "$launch_daemons/com.dotfiles.agent-secret.launchd-existing.plist" ]
+}
+
 @test "installer rejects empty policy, shared identities, and unsafe credentials" {
     run env DESTDIR="$INSTALL_ROOT" "$INSTALLER" install fixture \
         --credential-env FIXTURE_SECRET \
