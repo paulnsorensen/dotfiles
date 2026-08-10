@@ -164,6 +164,23 @@ MOCKMISE
     chmod +x "$MOCK_BIN/mise"
 }
 
+# mise mock that appends a new pin to the manifest the first time it runs,
+# standing in for a concurrent `git pull` landing renovate bumps while the sync
+# is already past its install decision.
+write_mock_mise_landing_new_pin() {
+    rm -f "$MOCK_BIN/mise"
+    cat > "$MOCK_BIN/mise" << 'MOCKMISE'
+#!/bin/bash
+echo "mise $* config=${MISE_GLOBAL_CONFIG_FILE:-unset}" >> "$MISE_LOG"
+if [[ ! -e "$MISE_CONFIG_FILE.landed" ]]; then
+    printf 'node = "24.0.0"\n' >> "$MISE_CONFIG_FILE"
+    touch "$MISE_CONFIG_FILE.landed"
+fi
+exit 0
+MOCKMISE
+    chmod +x "$MOCK_BIN/mise"
+}
+
 teardown() {
     teardown_test_env
 }
@@ -843,6 +860,24 @@ YAML
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
 }
 
+@test "a pin landing mid-run is never cached as converged" {
+    write_test_yaml
+    write_mock_mise_landing_new_pin
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ -s "$CACHE_FILE" ]]
+
+    # The pin arrived after mise converged, so it was never installed: the next
+    # sync has to miss the cache and reconverge instead of skipping it.
+    write_mock_mise
+    rm -f "$MISE_LOG"
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_not_contains "unchanged (cached)"
+    grep -q "mise install" "$MISE_LOG"
+}
+
 @test "mise install failure preserves stale native harness binaries" {
     write_test_yaml
     mkdir -p "$TEST_HOME/.local/bin"
@@ -1017,13 +1052,13 @@ MOCKBREW
 # --- Integration: native harness convergence ---
 
 @test "managed OMP and Codex pins are exact" {
-    grep -q '^OMP_PIN="v17.2.10"$' "$SYNC_SCRIPT"
+    grep -q '^OMP_PIN="v17.2.12"$' "$SYNC_SCRIPT"
     grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
 @test "doc-drift records match the managed harness pins" {
     local sources="$REAL_DOTFILES_DIR/agents/doc-drift/sources.yaml"
-    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.10" ]
+    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.12" ]
     [ "$(yq -r '.sources[] | select(.id == "codex-cli") | .reconciled' "$sources")" = "0.146.0" ]
 }
 
@@ -1116,7 +1151,7 @@ YAML
     assert_success
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.2.10\ncodesign --force --sign - %s' \
+    expected_events=$(printf 'sh -s -- --binary --ref v17.2.12\ncodesign --force --sign - %s' \
         "$TEST_HOME/.local/bin/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
