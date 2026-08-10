@@ -212,6 +212,28 @@ def socket_path(value: str, label: str) -> pathlib.Path:
     return path
 
 
+def ensure_socket_parent(value: str) -> None:
+    path = pathlib.Path(value)
+    parent = path.parent
+    if parent != pathlib.Path(SOCKET_ROOT):
+        _fail("socket path parent is not managed")
+    if os.geteuid() != 0:
+        _fail("creating the managed socket parent requires root")
+    try:
+        parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        info = parent.lstat()
+    except OSError as exc:
+        raise ConfigError("socket path parent cannot be created") from exc
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        _fail("socket path parent is not a directory")
+    if info.st_uid != 0 or info.st_mode & 0o022:
+        _fail("socket path parent ownership or mode is unsafe")
+    try:
+        os.chmod(parent, 0o755)
+    except OSError as exc:
+        raise ConfigError("socket path parent mode cannot be set") from exc
+
+
 def default_request_socket(consumer: str) -> pathlib.Path:
     return pathlib.Path(SOCKET_ROOT) / f"{consumer}.sock"
 
@@ -921,6 +943,7 @@ def _build_parser(mode: str | None) -> argparse.ArgumentParser:
         parser.add_argument("--control-socket")
         parser.add_argument("--run-user")
         parser.add_argument("--upstream-home", default="/")
+        parser.add_argument("--ensure-socket-parent", action="store_true")
     if mode == "proxy":
         parser.add_argument("--socket")
         parser.add_argument("--consumer")
@@ -977,6 +1000,9 @@ def main(argv: list[str] | None = None) -> int:
         request_value = args.socket or str(default_request_socket(policy.consumer))
         control_value = args.control_socket or str(default_control_socket(policy.consumer))
         run_user = _resolve_run_user(args.run_user, policy)
+        if args.ensure_socket_parent:
+            ensure_socket_parent(request_value)
+            ensure_socket_parent(control_value)
         upstream_home = pathlib.Path(args.upstream_home)
         if not upstream_home.is_absolute() or not upstream_home.is_dir():
             _fail("upstream home must be an existing absolute directory")
