@@ -15,7 +15,7 @@ PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
 # renovate: datasource=github-tags depName=can1357/oh-my-pi
-OMP_PIN="v17.2.10"
+OMP_PIN="v17.2.12"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -64,6 +64,13 @@ cache_hash() {
     } | shasum -a 256 | cut -d' ' -f1
 }
 
+# Composite hash of every package input, snapshotted before the first
+# installer runs. Both the cache check and the cache write read this snapshot
+# instead of re-hashing: the manifests can change mid-run (a concurrent
+# `git pull` landing renovate pins), and re-hashing at save time would record
+# inputs that were never installed, turning every later run into a false cache
+# hit that skips the new pins.
+CACHE_HASH_AT_CONVERGENCE=""
 check_cache() {
     if [[ "${FORCE_PACKAGES:-false}" == "true" || "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
         log_info "Package cache bypassed"
@@ -74,12 +81,12 @@ check_cache() {
         return 1
     fi
     [[ -f "$CACHE_FILE" ]] || return 1
-    [[ "$(cache_hash)" == "$(<"$CACHE_FILE")" ]]
+    [[ "$CACHE_HASH_AT_CONVERGENCE" == "$(<"$CACHE_FILE")" ]]
 }
 
 save_cache() {
     mkdir -p "$CACHE_DIR"
-    cache_hash > "$CACHE_FILE"
+    printf '%s\n' "$CACHE_HASH_AT_CONVERGENCE" > "$CACHE_FILE"
 }
 
 ########## Query helpers
@@ -713,20 +720,36 @@ sync_native_harnesses() {
     # bun/installer incompatibility, not a bad release. --binary fetches the
     # prebuilt release asset instead, sidestepping bun entirely.
     echo "  Converging omp to $OMP_PIN (native)..."
-    if curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN"; then
-        if [[ "$PLATFORM" == "Darwin" ]] && ! codesign --force --sign - "$HOME/.local/bin/omp" </dev/null; then
+    local install_status=0 omp_path="$HOME/.local/bin/omp" omp_version=""
+    curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN" ||
+        install_status=$?
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        if ! codesign --force --sign - "$omp_path" </dev/null; then
             log_error "omp ad-hoc signing failed"
             FAILED+=("omp")
-        else
-            hash -r 2>/dev/null || true
-            log_success "  Converged omp to $OMP_PIN"
+            return
         fi
-    else
+        if ((install_status != 0)); then
+            omp_version="$("$omp_path" --version 2>/dev/null || true)"
+            if [[ "$omp_version" != "omp/${OMP_PIN#v}" ]]; then
+                log_error "omp native install failed"
+                FAILED+=("omp")
+                return
+            fi
+        fi
+    elif ((install_status != 0)); then
         log_error "omp native install failed"
         FAILED+=("omp")
+        return
     fi
 
+    hash -r 2>/dev/null || true
+    log_success "  Converged omp to $OMP_PIN"
+
 }
+
+# Snapshot the inputs before the first installer runs.
+CACHE_HASH_AT_CONVERGENCE="$(cache_hash)"
 # Claude is invoked by chezmoi later in this sync, so keep its mise binary
 # present even when the package declaration cache is valid.
 if check_cache; then

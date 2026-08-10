@@ -17,13 +17,14 @@ usage() {
 Usage: vault-provision [--request-user USER] [--operator-user USER]
 
 Resolve the configured vault provider and install service-owned credentials and
-policies for context7, tavily, and todoist. Secret values are never
-printed, stored in a daily-user cache, or exposed to agent processes.
+policies for context7 and tavily, plus todoist when TODOIST=true. Secret values
+are never printed, stored in a daily-user cache, or exposed to agent processes.
 EOF
 }
 
 request_user="${SUDO_USER:-${USER:-}}"
 operator_user=root
+privileged_install=false
 while (( $# > 0 )); do
     case "$1" in
         --request-user)
@@ -35,6 +36,10 @@ while (( $# > 0 )); do
             (( $# >= 2 )) || { usage; exit 2; }
             operator_user="$2"
             shift 2
+            ;;
+        --privileged-install)
+            privileged_install=true
+            shift
             ;;
         -h|--help)
             usage >&1
@@ -57,34 +62,14 @@ done
     exit 2
 }
 
-provider="$(vault_resolve)" || exit $?
-[[ "$provider" != unconfigured ]] || {
-    echo "vault-provision: no vault provider is ready; configure .env or run the provider login first." >&2
-    exit 1
-}
-
 installer="$DOTFILES_DIR/bin/agent-secret-install"
 [[ -x "$installer" ]] || {
     echo "vault-provision: missing executable $installer." >&2
     exit 1
 }
 
-if [[ -z "$DESTDIR" && $EUID -ne 0 ]]; then
-    sudo_bin="$(type -P sudo || true)"
-    [[ -n "$sudo_bin" ]] || {
-        echo "vault-provision: root or sudo is required to install service-owned credentials." >&2
-        exit 1
-    }
-else
-    sudo_bin=""
-fi
-
 run_privileged() {
-    if [[ -n "$DESTDIR" || $EUID -eq 0 ]]; then
-        "$@"
-    else
-        "$sudo_bin" "$@"
-    fi
+    "$@"
 }
 
 install_node_runtime() {
@@ -136,13 +121,8 @@ write_privileged_value() {
     local value="$1" path="$2"
     # tee receives the value on stdin; it is never an argument, log line, or
     # environment variable of the installer/broker.
-    if [[ -n "$DESTDIR" || $EUID -eq 0 ]]; then
-        printf '%s\n' "$value" | /usr/bin/tee "$path" >/dev/null
-        /bin/chmod 600 "$path"
-    else
-        printf '%s\n' "$value" | "$sudo_bin" /usr/bin/tee "$path" >/dev/null
-        "$sudo_bin" /bin/chmod 600 "$path"
-    fi
+    printf '%s\n' "$value" | /usr/bin/tee "$path" >/dev/null
+    /bin/chmod 600 "$path"
 }
 
 ensure_bitwarden_value() {
@@ -180,10 +160,9 @@ read_provider_value() {
 }
 
 install_consumer() {
-    local consumer="$1" key="$2"
-    shift 2
+    local consumer="$1" key="$2" value="$3"
+    shift 3
     local credential_path="/etc/dotfiles/agent-secret/credentials/${consumer}.credential"
-    local value
     local -a tool_flags=()
     case "$consumer" in
         context7)
@@ -252,8 +231,6 @@ install_consumer() {
         *) echo "vault-provision: unsupported consumer '$consumer'." >&2; return 2 ;;
     esac
 
-    read_provider_value "$key"
-    value="$VAULT_PROVISION_VALUE"
     if [[ -n "$DESTDIR" ]]; then
         /usr/bin/install -d -m 700 "$DESTDIR/etc/dotfiles/agent-secret/credentials"
     else
@@ -276,7 +253,75 @@ install_consumer() {
     else
         run_privileged "${command[@]}"
     fi
-    unset value VAULT_PROVISION_VALUE
+    unset value
+}
+
+read_payload_field() {
+    local name="$1"
+    IFS= read -r -d '' "$name" || {
+        echo "vault-provision: incomplete privileged payload." >&2
+        return 1
+    }
+}
+
+provision_payload() {
+    local npx_path provider_name provider_source todoist_enabled
+    local context7_value tavily_value todoist_value=""
+    [[ -n "$DESTDIR" || $EUID -eq 0 ]] || {
+        echo "vault-provision: privileged install requires root." >&2
+        return 1
+    }
+
+    read_payload_field npx_path
+    read_payload_field provider_name
+    read_payload_field provider_source
+    read_payload_field todoist_enabled
+    read_payload_field context7_value
+    read_payload_field tavily_value
+    [[ "$todoist_enabled" == false || "$todoist_enabled" == true ]] || {
+        echo "vault-provision: invalid Todoist payload state." >&2
+        return 1
+    }
+    [[ "$todoist_enabled" == false ]] || read_payload_field todoist_value
+
+    install_node_runtime "$npx_path"
+    npx_path="$NODE_RUNTIME_NPX"
+    # renovate: datasource=npm depName=@upstash/context7-mcp
+    install_consumer context7 CONTEXT7_API_KEY "$context7_value" "$npx_path" -y @upstash/context7-mcp@3.2.5
+    # renovate: datasource=npm depName=tavily-mcp
+    install_consumer tavily TAVILY_API_KEY "$tavily_value" "$npx_path" -y tavily-mcp@0.2.22
+    if [[ "$todoist_enabled" == true ]]; then
+        # renovate: datasource=npm depName=@doist/todoist-mcp
+        install_consumer todoist TODOIST_API_KEY "$todoist_value" "$npx_path" -y @doist/todoist-mcp@12.5.0
+    fi
+
+    local metadata_path="/etc/dotfiles/agent-secret/provider.json"
+    local metadata
+    metadata="$(printf '{"provider":"%s","source":"%s"}\n' \
+        "$provider_name" "$provider_source")"
+    write_privileged_value "$metadata" "$DESTDIR$metadata_path"
+}
+
+emit_payload() {
+    printf '%s\0' \
+        "$npx_path" \
+        "$provider" \
+        "$(vault_source "$provider")" \
+        "$todoist_enabled" \
+        "$context7_value" \
+        "$tavily_value"
+    [[ "$todoist_enabled" == false ]] || printf '%s\0' "$todoist_value"
+}
+
+if [[ "$privileged_install" == true ]]; then
+    provision_payload
+    exit
+fi
+
+provider="$(vault_resolve)" || exit $?
+[[ "$provider" != unconfigured ]] || {
+    echo "vault-provision: no vault provider is ready; configure .env or run the provider login first." >&2
+    exit 1
 }
 
 npx_path="$(command -v npx 2>/dev/null)" || {
@@ -287,18 +332,33 @@ npx_path="$(command -v npx 2>/dev/null)" || {
     echo "vault-provision: npx did not resolve to an absolute path." >&2
     exit 1
 }
-install_node_runtime "$npx_path"
-npx_path="$NODE_RUNTIME_NPX"
-# renovate: datasource=npm depName=@upstash/context7-mcp
-install_consumer context7 CONTEXT7_API_KEY "$npx_path" -y @upstash/context7-mcp@3.2.5
-# renovate: datasource=npm depName=tavily-mcp
-install_consumer tavily TAVILY_API_KEY "$npx_path" -y tavily-mcp@0.2.22
-# renovate: datasource=npm depName=@doist/todoist-mcp
-install_consumer todoist TODOIST_API_KEY "$npx_path" -y @doist/todoist-mcp@12.5.0
 
-# Record non-secret provider provenance for operators; policy files remain the
-# broker's exact schema and contain no provider values.
-metadata_path="/etc/dotfiles/agent-secret/provider.json"
-metadata="$(printf '{"provider":"%s","source":"%s"}\n' "$provider" "$(vault_source "$provider")")"
-write_privileged_value "$metadata" "$DESTDIR$metadata_path"
-unset metadata metadata_path provider request_user operator_user sudo_bin npx_path
+read_provider_value CONTEXT7_API_KEY
+context7_value="$VAULT_PROVISION_VALUE"
+read_provider_value TAVILY_API_KEY
+tavily_value="$VAULT_PROVISION_VALUE"
+todoist_enabled=false
+todoist_value=""
+if [[ "${TODOIST:-false}" == true ]]; then
+    todoist_enabled=true
+    read_provider_value TODOIST_API_KEY
+    todoist_value="$VAULT_PROVISION_VALUE"
+fi
+unset VAULT_PROVISION_VALUE
+
+if [[ -n "$DESTDIR" || $EUID -eq 0 ]]; then
+    emit_payload | provision_payload
+else
+    sudo_bin="$(type -P sudo || true)"
+    [[ -n "$sudo_bin" ]] || {
+        echo "vault-provision: root or sudo is required to install service-owned credentials." >&2
+        exit 1
+    }
+    emit_payload | "$sudo_bin" "$SCRIPT_DIR/vault-provision" \
+        --privileged-install \
+        --request-user "$request_user" \
+        --operator-user "$operator_user"
+fi
+
+unset context7_value npx_path operator_user privileged_install provider request_user
+unset sudo_bin tavily_value todoist_enabled todoist_value

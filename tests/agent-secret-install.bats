@@ -80,14 +80,73 @@ PY
         [[ "$(plist_value --upstream-home)" == "$home_abs" ]]
         [[ "$(plist_value --socket)" == '/var/run/dotfiles-agent-secrets/fixture.sock' ]]
         [[ "$(plist_value --control-socket)" == '/var/run/dotfiles-agent-secrets/fixture.control.sock' ]]
+        grep -q '<string>--ensure-socket-parent</string>' "$plist"
     else
         unit="$INSTALL_ROOT/etc/systemd/system/dotfiles-agent-secret@.service"
-        [[ "$(grep '^ExecStart=' "$unit")" == *'--run-user agent-secret-fixture --upstream-home /var/lib/dotfiles-agent-secrets/fixture'* ]]
-        [[ "$(grep '^ExecStart=' "$unit")" == *'--socket /var/run/dotfiles-agent-secrets/fixture.sock --control-socket /var/run/dotfiles-agent-secrets/fixture.control.sock'* ]]
+        exec_start="$(grep '^ExecStart=' "$unit")"
+        [[ "$exec_start" == *'--policy /etc/dotfiles/agent-secret-broker/%i.json'* ]]
+        [[ "$exec_start" == *'--socket /var/run/dotfiles-agent-secrets/%i.sock --control-socket /var/run/dotfiles-agent-secrets/%i.control.sock'* ]]
+        [[ "$exec_start" == *'--run-user agent-secret-%i --upstream-home /var/lib/dotfiles-agent-secrets/%i'* ]]
         [[ "$(grep '^CapabilityBoundingSet=' "$unit")" == 'CapabilityBoundingSet=CAP_CHOWN CAP_SETGID CAP_SETUID' ]]
     fi
     run grep -R -q 'installer-secret-sentinel' "$INSTALL_ROOT"
     [[ "$status" -ne 0 ]]
+}
+
+@test "installer renders a write-only policy with an empty read-tool array" {
+    run env DESTDIR="$INSTALL_ROOT" "$INSTALLER" install write-only \
+        --credential-env FIXTURE_SECRET \
+        --credential-file "$CREDENTIAL" \
+        --request-user "$REQUEST_USER" \
+        --operator-user "$OPERATOR_USER" \
+        --write-tool write.item \
+        -- /usr/bin/context7-mcp --stdio
+    assert_success
+    [[ -z "$output" ]]
+
+    jq -e '.tools.read == []
+        and .tools.write == ["write.item"]
+        and .upstream.argv == ["/usr/bin/context7-mcp", "--stdio"]' \
+        "$INSTALL_ROOT/etc/dotfiles/agent-secret-broker/write-only.json" >/dev/null
+}
+
+@test "installer leaves an existing LaunchDaemons directory unchanged" {
+    local fake_bin="$TEST_HOME/fake-bin"
+    local launch_daemons="$INSTALL_ROOT/Library/LaunchDaemons"
+    local real_install
+    real_install="$(command -v install)"
+    mkdir -p "$fake_bin" "$launch_daemons"
+
+    cat > "$fake_bin/uname" <<'EOF'
+#!/usr/bin/env bash
+printf 'Darwin\n'
+EOF
+    cat > "$fake_bin/install" <<'EOF'
+#!/usr/bin/env bash
+target=""
+for target; do :; done
+if [[ "${1:-}" == -d && -d "$target" ]]; then
+    printf 'install: chmod 755 %s: Operation not permitted\n' "$target" >&2
+    exit 1
+fi
+exec "$REAL_INSTALL" "$@"
+EOF
+    chmod +x "$fake_bin/uname" "$fake_bin/install"
+
+    run env \
+        PATH="$fake_bin:$PATH" \
+        REAL_INSTALL="$real_install" \
+        DESTDIR="$INSTALL_ROOT" \
+        "$INSTALLER" install launchd-existing \
+        --credential-env FIXTURE_SECRET \
+        --credential-file "$CREDENTIAL" \
+        --request-user "$REQUEST_USER" \
+        --operator-user "$OPERATOR_USER" \
+        --read-tool read.item \
+        -- /usr/bin/context7-mcp
+    assert_success
+    [[ -z "$output" ]]
+    [ -f "$launch_daemons/com.dotfiles.agent-secret.launchd-existing.plist" ]
 }
 
 @test "installer rejects empty policy, shared identities, and unsafe credentials" {
@@ -156,70 +215,165 @@ PY
     [[ -x "$INSTALL_ROOT/usr/local/libexec/dotfiles/agent-secret-broker.py" ]]
 }
 
-@test "credential_is_private rejects non-0600 mode and non-root ownership directly" {
-    local wrong_mode="$TEST_HOME/credential-wrong-mode"
-    printf 'x' > "$wrong_mode"
-    chmod 644 "$wrong_mode"
-    run bash -c "source '$INSTALLER'; credential_is_private '$wrong_mode'"
-    assert_failure
-    [[ "$output" == "agent-secret-install: credential file must be root-owned mode 0600: $wrong_mode" ]]
-
-    local right_mode_wrong_owner="$TEST_HOME/credential-right-mode-wrong-owner"
-    printf 'x' > "$right_mode_wrong_owner"
-    chmod 600 "$right_mode_wrong_owner"
-    run bash -c "source '$INSTALLER'; credential_is_private '$right_mode_wrong_owner'"
-    assert_failure
-    [[ "$output" == "agent-secret-install: credential file must be root-owned mode 0600: $right_mode_wrong_owner" ]]
+run_installer_helper() {
+    local helper="$1" stub_owner="${STUB_STAT_OWNER:-}" stub_mode="${STUB_STAT_MODE:-}"
+    shift
+    # shellcheck disable=SC2016  # expansions belong to the isolated child shell
+    env -u DESTDIR PATH="${INSTALLER_HELPER_PATH:-$PATH}" bash -c '
+        source "$1"
+        helper="$2"
+        stub_owner="$3"
+        stub_mode="$4"
+        shift 4
+        if [[ -n "$stub_owner" ]]; then
+            stat() {
+                case "$2" in
+                    "%u") printf "%s\n" "$stub_owner" ;;
+                    "%a"|"%Lp") printf "%s\n" "$stub_mode" ;;
+                    *) return 64 ;;
+                esac
+            }
+        fi
+        "$helper" "$@"
+    ' _ "$INSTALLER" "$helper" "$stub_owner" "$stub_mode" "$@"
 }
 
-@test "credential_is_private accepts a root-owned 0600 credential" {
-    [[ "$(id -u)" == 0 ]] || skip "requires chown to root; unprivileged sandboxes cannot produce a root-owned file"
-    local credential="$TEST_HOME/credential-root-owned"
+@test "credential_is_private validates ownership and mode independently" {
+    local credential="$TEST_HOME/credential"
     printf 'x' > "$credential"
-    chown 0 "$credential"
     chmod 600 "$credential"
-    run bash -c "source '$INSTALLER'; credential_is_private '$credential'"
+
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=644 run run_installer_helper credential_is_private "$credential"
+    assert_failure
+    [[ "$output" == "agent-secret-install: credential file must be root-owned mode 0600: $credential" ]]
+
+    STUB_STAT_OWNER=1 STUB_STAT_MODE=600 run run_installer_helper credential_is_private "$credential"
+    assert_failure
+    [[ "$output" == "agent-secret-install: credential file must be root-owned mode 0600: $credential" ]]
+}
+
+@test "credential_is_private accepts root ownership with mode 0600" {
+    local credential="$TEST_HOME/credential"
+    printf 'x' > "$credential"
+    chmod 600 "$credential"
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=600 run run_installer_helper credential_is_private "$credential"
     assert_success
+    [[ -z "$output" ]]
 }
 
-@test "trusted_executable rejects group-writable and world-writable executables directly" {
-    local group_writable="$TEST_HOME/exec-group-writable"
-    printf '#!/bin/sh\n' > "$group_writable"
-    chmod 775 "$group_writable"
-    run bash -c "source '$INSTALLER'; trusted_executable '$group_writable' upstream"
-    assert_failure
-    [[ "$output" == "agent-secret-install: upstream must be root-owned and not group/other-writable: $group_writable" ]]
-
-    local world_writable="$TEST_HOME/exec-world-writable"
-    printf '#!/bin/sh\n' > "$world_writable"
-    chmod 757 "$world_writable"
-    run bash -c "source '$INSTALLER'; trusted_executable '$world_writable' upstream"
-    assert_failure
-    [[ "$output" == "agent-secret-install: upstream must be root-owned and not group/other-writable: $world_writable" ]]
-}
-
-@test "trusted_executable accepts a root-owned non-group-writable executable" {
-    [[ "$(id -u)" == 0 ]] || skip "requires chown to root; unprivileged sandboxes cannot produce a root-owned file"
-    local executable="$TEST_HOME/exec-root-owned"
+@test "trusted_executable validates writable mode bits independently" {
+    local executable="$TEST_HOME/upstream"
     printf '#!/bin/sh\n' > "$executable"
-    chown 0 "$executable"
     chmod 755 "$executable"
-    run bash -c "source '$INSTALLER'; trusted_executable '$executable' upstream"
+
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=775 run run_installer_helper trusted_executable "$executable" upstream
+    assert_failure
+    [[ "$output" == "agent-secret-install: upstream must be root-owned and not group/other-writable: $executable" ]]
+
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=757 run run_installer_helper trusted_executable "$executable" upstream
+    assert_failure
+    [[ "$output" == "agent-secret-install: upstream must be root-owned and not group/other-writable: $executable" ]]
+}
+
+@test "trusted_executable accepts root ownership without writable group or other bits" {
+    local executable="$TEST_HOME/upstream"
+    printf '#!/bin/sh\n' > "$executable"
+    chmod 755 "$executable"
+    STUB_STAT_OWNER=0 STUB_STAT_MODE=755 run run_installer_helper trusted_executable "$executable" upstream
     assert_success
+    [[ -z "$output" ]]
 }
 
 @test "ensure_identity no-ops for a service user that already exists" {
     local platform
     if [[ "$(uname -s)" == Darwin ]]; then platform=macos; else platform=linux; fi
-    run bash -c "source '$INSTALLER'; ensure_identity '$platform' '$(id -un)' '$TEST_HOME'"
+    run run_installer_helper ensure_identity "$platform" "$(id -un)" "$TEST_HOME"
+    assert_success
+    [[ -z "$output" ]]
+}
+
+@test "ensure_identity dispatches an unknown user to the platform identity creator" {
+    local fake_bin="$TEST_HOME/fake-bin"
+    local platform service_user=agent-secret-install-test-nonexistent
+    local home="$TEST_HOME/nonexistent-home" expected
+    mkdir -p "$fake_bin"
+
+    if [[ "$(uname -s)" == Darwin ]]; then
+        platform=macos
+        cat > "$fake_bin/dscl" <<'EOF'
+#!/usr/bin/env bash
+printf 'dscl:%s\n' "$*"
+case "$2" in
+    -read|-search) exit 1 ;;
+esac
+exit 23
+EOF
+        expected="dscl:. -create /Groups/$service_user"
+    else
+        platform=linux
+        cat > "$fake_bin/getent" <<'EOF'
+#!/usr/bin/env bash
+exit 2
+EOF
+        cat > "$fake_bin/useradd" <<'EOF'
+#!/usr/bin/env bash
+printf 'useradd:%s\n' "$*"
+exit 23
+EOF
+        expected="useradd:--system --user-group --home-dir $home --shell /usr/sbin/nologin $service_user"
+    fi
+    chmod +x "$fake_bin"/*
+
+    INSTALLER_HELPER_PATH="$fake_bin:$PATH" run \
+        run_installer_helper ensure_identity "$platform" "$service_user" "$home"
+    [ "$status" -eq 23 ]
+    [[ "$output" == "$expected" ]]
+}
+
+run_trusted_executable() {
+    bash -c 'die() { echo "$@" >&2; exit 1; }
+        eval "$(sed -n "/^trusted_executable/,/^}/p" "$1")"
+        DESTDIR= trusted_executable "$2" "python interpreter"' _ "$INSTALLER" "$1"
+}
+
+@test "trusted_executable accepts a symlink to a root-owned interpreter" {
+    ln -s /bin/sh "$TEST_HOME/python3"
+    run run_trusted_executable "$TEST_HOME/python3"
     assert_success
 }
 
-@test "ensure_identity attempts real identity creation for an unknown service user" {
-    [[ "$(id -u)" != 0 ]] || skip "root would perform a real system identity creation; unsafe to exercise here"
-    local platform
-    if [[ "$(uname -s)" == Darwin ]]; then platform=macos; else platform=linux; fi
-    run bash -c "source '$INSTALLER'; ensure_identity '$platform' 'agent-secret-install-test-nonexistent' '$TEST_HOME/nonexistent-home'"
+@test "trusted_executable still rejects a symlink to a user-owned executable" {
+    printf '#!/bin/sh\n' > "$TEST_HOME/user-owned"
+    chmod 755 "$TEST_HOME/user-owned"
+    ln -s "$TEST_HOME/user-owned" "$TEST_HOME/python3"
+    run run_trusted_executable "$TEST_HOME/python3"
     assert_failure
-    [[ -n "$output" ]]
+    [[ "$output" == *"root-owned and not group/other-writable"* ]]
+}
+
+@test "the shared systemd template never bakes in one consumer's paths" {
+    [[ "$(uname -s)" == Linux ]] || skip "the systemd template is Linux-only"
+    run install_fixture
+    assert_success
+    run env DESTDIR="$INSTALL_ROOT" "$INSTALLER" install second \
+        --credential-env SECOND_SECRET \
+        --credential-file "$CREDENTIAL" \
+        --request-user "$REQUEST_USER" \
+        --operator-user "$OPERATOR_USER" \
+        --read-tool read.item \
+        -- /usr/bin/tavily-mcp --stdio
+    assert_success
+
+    # Both consumers get their own policy, but a single unit file backs every
+    # instance. Installing the second must not repoint the first at it.
+    [[ -f "$INSTALL_ROOT/etc/dotfiles/agent-secret-broker/fixture.json" ]]
+    [[ -f "$INSTALL_ROOT/etc/dotfiles/agent-secret-broker/second.json" ]]
+
+    unit="$INSTALL_ROOT/etc/systemd/system/dotfiles-agent-secret@.service"
+    run grep -nE 'fixture|second' "$unit"
+    [[ "$status" -ne 0 ]]
+    # The sandbox paths must be instance-generic too, or every instance would be
+    # confined to the last-installed consumer's policy and state directory.
+    [[ "$(grep '^ReadOnlyPaths=' "$unit")" == 'ReadOnlyPaths=/etc/dotfiles/agent-secret-broker/%i.json' ]]
+    [[ "$(grep '^ReadWritePaths=' "$unit")" == 'ReadWritePaths=/var/run/dotfiles-agent-secrets /var/lib/dotfiles-agent-secrets/%i' ]]
 }

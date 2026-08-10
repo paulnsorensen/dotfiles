@@ -354,7 +354,7 @@ EOF
     # credential placeholders or envFile entries.
     local consumer
     for consumer in context7 tavily; do
-        [[ "$(yq -r ".claude.mcps.$consumer.command" "$reg")" == "agent-secret-proxy" ]] \
+        [[ "$(yq -r ".claude.mcps.$consumer.command" "$reg")" == "/usr/local/libexec/dotfiles/agent-secret-proxy" ]] \
             || { echo "claude MCP $consumer is not proxy-backed" >&2; return 1; }
         [[ "$(yq -r ".claude.mcps.$consumer.args | join(\" \")" "$reg")" == "--socket /var/run/dotfiles-agent-secrets/$consumer.sock" ]] \
             || { echo "claude MCP $consumer has the wrong proxy socket" >&2; return 1; }
@@ -651,7 +651,7 @@ YAML
         chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
     jq -e . <<<"$rendered" >/dev/null
     for consumer in context7 tavily; do
-        jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" <<<"$rendered"
+        jq -e ".mcpServers.$consumer.command == \"/usr/local/libexec/dotfiles/agent-secret-proxy\"" <<<"$rendered"
         jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"env\") | not)" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"envFile\") | not)" <<<"$rendered"
@@ -875,7 +875,7 @@ TOML
     # Fixed proxy arguments are the only secret-bearing MCP configuration.
     assert_file_exists "$HOME/.copilot/mcp-config.json"
     for consumer in context7 tavily; do
-        jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" \
+        jq -e ".mcpServers.$consumer.command == \"/usr/local/libexec/dotfiles/agent-secret-proxy\"" \
             "$HOME/.copilot/mcp-config.json"
         jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" \
             "$HOME/.copilot/mcp-config.json"
@@ -908,7 +908,7 @@ TOML
         chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
     jq -e . <<<"$rendered" >/dev/null
     for consumer in context7 tavily; do
-        jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" <<<"$rendered"
+        jq -e ".mcpServers.$consumer.command == \"/usr/local/libexec/dotfiles/agent-secret-proxy\"" <<<"$rendered"
         jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"env\") | not)" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"envFile\") | not)" <<<"$rendered"

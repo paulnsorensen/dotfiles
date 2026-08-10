@@ -30,7 +30,10 @@ EOF
 set -euo pipefail
 case "${1:-}" in
     item) exit 0 ;;
-    read) printf 'credential-%s\n' "${2##*/}" ;;
+    read)
+        [[ "${FAIL_TODOIST_READ:-false}" != true || "${2##*/}" != TODOIST_API_KEY ]] || exit 1
+        printf 'credential-%s\n' "${2##*/}"
+        ;;
     *) exit 2 ;;
 esac
 EOF
@@ -54,6 +57,8 @@ EOF
 teardown() { teardown_test_env; }
 
 @test "vault-provision renders root-bound credentials policies and runtime" {
+    printf 'TODOIST=true\n' >> "$FIXTURE_DOTFILES/.env"
+
     export DECOY_DOTFILES="$TEST_HOME/decoy-dotfiles"
     mkdir -p "$DECOY_DOTFILES"
     run env \
@@ -126,4 +131,58 @@ teardown() { teardown_test_env; }
 
     jq -e '.provider == "onepassword" and .source == "op://fixture/Agent Secrets"' \
         "$INSTALL_ROOT/etc/dotfiles/agent-secret/provider.json" >/dev/null
+}
+
+assert_todoist_disabled() {
+    run env -u TODOIST \
+        FAIL_TODOIST_READ=true \
+        DOTFILES_DIR="$TEST_HOME/decoy-dotfiles" \
+        DESTDIR="$INSTALL_ROOT" \
+        "$FIXTURE_DOTFILES/bin/vault-provision" \
+        --request-user "$(id -un)" --operator-user root
+    assert_success
+    [ -z "$output" ]
+
+    local credentials="$INSTALL_ROOT/etc/dotfiles/agent-secret/credentials"
+    [ "$(cat "$credentials/context7.credential")" = credential-CONTEXT7_API_KEY ]
+    [ "$(cat "$credentials/tavily.credential")" = credential-TAVILY_API_KEY ]
+    [ ! -e "$credentials/todoist.credential" ]
+    [ ! -e "$INSTALL_ROOT/etc/dotfiles/agent-secret-broker/todoist.json" ]
+    [ ! -e "$INSTALL_ROOT/Library/LaunchDaemons/com.dotfiles.agent-secret.todoist.plist" ]
+
+    local service_home=/var/lib/dotfiles-agent-secrets/todoist
+    [[ "$(uname -s)" == Darwin ]] && service_home=/var/db/dotfiles-agent-secrets/todoist
+    [ ! -e "$INSTALL_ROOT$service_home" ]
+}
+
+@test "vault-provision skips Todoist when TODOIST is unset" {
+    assert_todoist_disabled
+}
+
+@test "vault-provision skips Todoist when TODOIST=false" {
+    printf 'TODOIST=false\n' >> "$FIXTURE_DOTFILES/.env"
+    assert_todoist_disabled
+}
+
+@test "vault-provision uses one sudo transaction" {
+    local sudo_log="$TEST_HOME/sudo.log"
+    cat > "$TEST_HOME/fake-bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SUDO_LOG"
+[[ "$1" == */vault-provision && "${2:-}" == --privileged-install ]] || exit 97
+DESTDIR="$INSTALL_ROOT" "$@"
+EOF
+    chmod +x "$TEST_HOME/fake-bin/sudo"
+
+    run env -u DESTDIR -u TODOIST \
+        INSTALL_ROOT="$INSTALL_ROOT" \
+        SUDO_LOG="$sudo_log" \
+        "$FIXTURE_DOTFILES/bin/vault-provision" \
+        --request-user "$(id -un)" --operator-user root
+    assert_success
+    [ -z "$output" ]
+    [ "$(wc -l < "$sudo_log")" -eq 1 ]
+    [[ "$(cat "$sudo_log")" == *" --privileged-install "* ]]
+    [ -f "$INSTALL_ROOT/etc/dotfiles/agent-secret/credentials/context7.credential" ]
+    [ -f "$INSTALL_ROOT/etc/dotfiles/agent-secret/credentials/tavily.credential" ]
 }
