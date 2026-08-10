@@ -1143,6 +1143,28 @@ YAML
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
 }
 
+@test "Darwin signs and validates a downloaded omp after installer smoke failure" {
+    write_mock_uname Darwin
+    write_mock_sh 1
+    mkdir -p "$TEST_HOME/.local/bin"
+    cat > "$TEST_HOME/.local/bin/omp" <<'EOF'
+#!/usr/bin/env bash
+printf 'omp/17.2.12\n'
+EOF
+    chmod +x "$TEST_HOME/.local/bin/omp"
+    write_test_yaml
+
+    run_sync
+    assert_success
+    assert_output_contains "Converged omp to v17.2.12"
+
+    local expected_events
+    expected_events=$(printf 'sh -s -- --binary --ref v17.2.12\ncodesign --force --sign - %s' \
+        "$TEST_HOME/.local/bin/omp")
+    run cat "$EVENT_LOG"
+    [[ "$output" == "$expected_events" ]]
+}
+
 @test "Darwin signs a freshly converged native omp after installation" {
     write_mock_uname Darwin
     write_test_yaml

@@ -720,18 +720,31 @@ sync_native_harnesses() {
     # bun/installer incompatibility, not a bad release. --binary fetches the
     # prebuilt release asset instead, sidestepping bun entirely.
     echo "  Converging omp to $OMP_PIN (native)..."
-    if curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN"; then
-        if [[ "$PLATFORM" == "Darwin" ]] && ! codesign --force --sign - "$HOME/.local/bin/omp" </dev/null; then
+    local install_status=0 omp_path="$HOME/.local/bin/omp" omp_version=""
+    curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN" ||
+        install_status=$?
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        if ! codesign --force --sign - "$omp_path" </dev/null; then
             log_error "omp ad-hoc signing failed"
             FAILED+=("omp")
-        else
-            hash -r 2>/dev/null || true
-            log_success "  Converged omp to $OMP_PIN"
+            return
         fi
-    else
+        if ((install_status != 0)); then
+            omp_version="$("$omp_path" --version 2>/dev/null || true)"
+            if [[ "$omp_version" != "omp/${OMP_PIN#v}" ]]; then
+                log_error "omp native install failed"
+                FAILED+=("omp")
+                return
+            fi
+        fi
+    elif ((install_status != 0)); then
         log_error "omp native install failed"
         FAILED+=("omp")
+        return
     fi
+
+    hash -r 2>/dev/null || true
+    log_success "  Converged omp to $OMP_PIN"
 
 }
 
