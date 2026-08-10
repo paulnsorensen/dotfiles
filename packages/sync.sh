@@ -380,7 +380,7 @@ sync_mise() {
     fi
 
     log_info "Converging mise-managed tool versions from $mise_config..."
-    if ! MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install "$@" </dev/null; then
+    if ! MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install </dev/null; then
         log_error "mise install failed"
         FAILED+=("mise-install")
         return 0
@@ -750,16 +750,16 @@ sync_native_harnesses() {
 
 # Snapshot the inputs before the first installer runs.
 CACHE_HASH_AT_CONVERGENCE="$(cache_hash)"
-# Claude is invoked by chezmoi later in this sync, so keep its mise binary
-# present even when the package declaration cache is valid.
+# Even with an unchanged manifest, reconcile every mise tool so a deleted or
+# previously failed install cannot leave the active config unresolved.
 if check_cache; then
-    log_success "Package manifests unchanged (cached), syncing Claude"
+    log_success "Package manifests unchanged (cached), syncing mise"
     heal_missing_cask_apps
+    sync_mise
     if ((${#FAILED[@]})); then
         log_error "failed to heal ${#FAILED[@]} package(s): ${FAILED[*]}"
         exit 1
     fi
-    sync_mise "aqua:anthropics/claude-code@v2.1.219"
     exit 0
 fi
 ########## Main
