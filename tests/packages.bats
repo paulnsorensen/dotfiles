@@ -164,6 +164,20 @@ MOCKMISE
     chmod +x "$MOCK_BIN/mise"
 }
 
+# mise mock that records the GitHub credential command it was handed, so a
+# test can prove sync authenticates mise's release lookups instead of letting
+# them fall back to the anonymous 60/hr per-IP budget.
+write_mock_mise_recording_github_auth() {
+    rm -f "$MOCK_BIN/mise"
+    cat > "$MOCK_BIN/mise" << MOCKMISE
+#!/bin/bash
+echo "mise \$* config=\${MISE_GLOBAL_CONFIG_FILE:-unset}" >> "\$MISE_LOG"
+printf '%s\n' "\${MISE_GITHUB_CREDENTIAL_COMMAND-unset}" > "$TEST_HOME/mise-github-auth"
+exit 0
+MOCKMISE
+    chmod +x "$MOCK_BIN/mise"
+}
+
 # mise mock that appends a new pin to the manifest the first time it runs,
 # standing in for a concurrent `git pull` landing renovate bumps while the sync
 # is already past its install decision.
@@ -793,6 +807,20 @@ YAML
     assert_output_contains "syncing mise"
     [[ "$(<"$MISE_LOG")" == "mise install config=$MISE_CONFIG_FILE" ]]
     ! grep -Eq '^brew (install|reinstall|uninstall|upgrade)( |$)' "$BREW_LOG"
+}
+
+@test "sync hands mise a gh-backed GitHub credential command" {
+    # Regression: gh keeps its token in the macOS keychain, so hosts.yml has no
+    # oauth_token and mise's default gh_cli_tokens reader found nothing. Every
+    # aqua release lookup then went out anonymous against the 60/hr per-IP cap,
+    # and a rate-limited 403 caches nothing — so the non-semver pins re-fetched
+    # on every run and starved the rest of the sync of requests.
+    write_test_yaml
+    write_mock_mise_recording_github_auth
+
+    run_sync
+    assert_success
+    [[ "$(<"$TEST_HOME/mise-github-auth")" == "gh auth token" ]]
 }
 
 @test "cached sync fails when mise cannot restore configured tools" {

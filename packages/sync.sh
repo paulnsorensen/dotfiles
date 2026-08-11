@@ -379,6 +379,19 @@ sync_mise() {
         return 0
     fi
 
+    # Authenticate mise's GitHub reads. gh stores its token in the macOS
+    # keychain, so ~/.config/gh/hosts.yml carries no `oauth_token` and mise's
+    # default gh_cli_tokens reader finds nothing — leaving the aqua release
+    # lookups anonymous against the 60/hr per-IP cap, which they exhaust and
+    # then re-request every run (a 403 caches nothing). Must be the env var:
+    # MISE_GLOBAL_CONFIG_FILE below demotes ~/.config/mise/config.toml to a
+    # non-global config, where mise ignores a `credential_command` setting and
+    # rejects the file as untrusted. zsh/core.zsh exports this for interactive
+    # shells; repeated here so bootstrap and non-interactive runs are covered.
+    if command -v gh &>/dev/null; then
+        export MISE_GITHUB_CREDENTIAL_COMMAND="gh auth token"
+    fi
+
     log_info "Converging mise-managed tool versions from $mise_config..."
     if ! MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install </dev/null; then
         log_error "mise install failed"
