@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # Tests for install_tilth_claude_code (.sync-lib.sh) — the post-chezmoi sync
-# step that drops the always-current ~/.claude/tilth/inject-cwd.js script via
-# `tilth install claude-code` (issue #389: hook wiring itself is
-# registry-authored in chezmoi/.chezmoidata/claude.yaml).
+# step that registers tilth's edit-mode claude-code integration via
+# `tilth install claude-code --edit`. tilth retired the inject-cwd.js
+# PreToolUse hook, so the step no longer drops or checks a hook script.
 
 load test_helper
 
@@ -38,13 +38,13 @@ SH
 
     run_install_tilth
     assert_success
-    assert_output_contains "tilth not installed, skipping claude-code hook wiring"
+    assert_output_contains "tilth not installed, skipping claude-code install"
     [[ ! -f "$TILTH_CALLS" ]]
 }
 
-@test "install_tilth_claude_code warns loudly when inject-cwd.js is missing after install" {
-    # tilth mock "succeeds" but never drops the hook script — simulates a
-    # stale/broken \`tilth install claude-code --edit\` (issue #403).
+@test "install_tilth_claude_code never mentions the retired inject-cwd.js hook" {
+    # tilth retired the inject-cwd.js PreToolUse hook; the install step must
+    # not warn about (or expect) the hook script anymore.
     cat > "$MOCK_BIN/tilth" <<'SH'
 #!/bin/bash
 exit 0
@@ -53,19 +53,5 @@ SH
 
     run_install_tilth
     assert_success
-    assert_output_contains "inject-cwd.js is missing"
-}
-
-@test "install_tilth_claude_code is silent about inject-cwd.js when the file exists" {
-    mkdir -p "$TEST_HOME/.claude/tilth"
-    touch "$TEST_HOME/.claude/tilth/inject-cwd.js"
-    cat > "$MOCK_BIN/tilth" <<'SH'
-#!/bin/bash
-exit 0
-SH
-    chmod +x "$MOCK_BIN/tilth"
-
-    run_install_tilth
-    assert_success
-    assert_output_not_contains "inject-cwd.js is missing"
+    assert_output_not_contains "inject-cwd.js"
 }
