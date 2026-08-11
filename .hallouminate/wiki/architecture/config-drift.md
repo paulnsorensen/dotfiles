@@ -326,7 +326,11 @@ emitting a read format its current `main` had removed (per-line `<hash>|`
 anchors, deleted in tilth PR #99) and missing a feature its `install` step now
 depends on (the auto-created `~/.claude/tilth/inject-cwd.js` cwd-injection hook,
 tilth PR #118). The stale hook then leaves the `claude.yaml` `mcp__tilth__.*`
-PreToolUse wiring pointing at a missing file.
+PreToolUse wiring pointing at a missing file. (Historical: as of 2026-08-10
+tilth retired the inject-cwd.js hook entirely — the `mcp__tilth__.*` PreToolUse
+entry and the `TILTH_MCP_CWD_HOOK_INJECTED` MCP env marker were removed from
+`claude.yaml`, and `.sync-lib.sh` no longer drops or checks the script. An
+omitted `cwd` now gets tilth's teaching refusal instead of silent injection.)
 
 **Why it happens**: `packages/packages.yaml` gates the toolchain provider
 `rustup: { dev: true }` (dev machines only, `packages/sync.sh:87`), while the

@@ -374,34 +374,16 @@ EOF
     done
 }
 
-@test "claude registry: retained nonsecret MCP env marker is explicit" {
-    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    command -v yq >/dev/null 2>&1 || skip "yq not installed"
-    [[ "$(yq -r '.claude.mcps.tilth.env.TILTH_MCP_CWD_HOOK_INJECTED' "$reg")" == "1" ]]
-}
-
-
-@test "claude registry: tilth cwd-inject hook uses \${HOME} braces, not \$HOME" {
-    # The authored command must byte-match what `tilth install claude-code`
-    # writes (an absolute expanded path), which modify_settings.json produces
-    # only from ${HOME} (braces, author-time expansion). A regression to
-    # $HOME (matching sibling hooks) would silently reintroduce oscillation.
+@test "claude registry: tilth retired inject-cwd hook and env marker stay gone" {
+    # tilth retired the inject-cwd.js PreToolUse hook. A reappearing hook
+    # entry or TILTH_MCP_CWD_HOOK_INJECTED marker would make an omitted cwd
+    # silently fill with the session root instead of tilth's teaching refusal.
     command -v yq >/dev/null 2>&1 || skip "yq not installed"
     local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    local cmd
-    cmd=$(yq -r '.claude.hooks.PreToolUse[] | select(.matcher == "mcp__tilth__.*") | .hooks[0].command' "$reg")
-    [[ -n "$cmd" && "$cmd" != "null" ]] \
-        || { echo "no PreToolUse entry with matcher mcp__tilth__.*" >&2; return 1; }
-    # shellcheck disable=SC2016  # literal ${HOME} form, byte-matched not expanded
-    [[ "$cmd" == 'node "${HOME}/.claude/tilth/inject-cwd.js"' ]] \
-        || { echo "tilth cwd hook command drifted: $cmd" >&2; return 1; }
-}
-
-@test "claude registry: tilth MCP env carries the cwd-hook-injected marker" {
-    command -v yq >/dev/null 2>&1 || skip "yq not installed"
-    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    [[ "$(yq -r '.claude.mcps.tilth.env.TILTH_MCP_CWD_HOOK_INJECTED' "$reg")" == "1" ]] \
-        || { echo "claude.yaml mcps.tilth.env.TILTH_MCP_CWD_HOOK_INJECTED missing or not \"1\"" >&2; return 1; }
+    [[ "$(yq -r '.claude.hooks.PreToolUse[] | select(.matcher == "mcp__tilth__.*")' "$reg")" == "" ]] \
+        || { echo "retired mcp__tilth__.* PreToolUse hook reappeared in claude.yaml" >&2; return 1; }
+    [[ "$(yq -r '.claude.mcps.tilth | has("env")' "$reg")" == "false" ]] \
+        || { echo "claude MCP tilth carries an env block (retired TILTH_MCP_CWD_HOOK_INJECTED?)" >&2; return 1; }
 }
 
 @test "claude registry: selected skills and agents resolve to real repo sources" {
@@ -431,14 +413,11 @@ EOF
     # break every session after apply. Check both the $HOME-pathed script and
     # relative *.js runner args.
     #
-    # inject-cwd.js is exempt: it's dropped into ~/.claude/tilth/ by
-    # `tilth install claude-code` (a post-chezmoi sync step, not exact_hooks),
-    # so it never lives in claude/hooks or agents/hooks. state.sh is exempt
-    # for the same reason: it ships inside the tmux-claude-session-manager
+    # state.sh is exempt: it ships inside the tmux-claude-session-manager
     # TPM plugin (~/.tmux/plugins/...), installed by `prefix+I`, not by dots sync.
     command -v yq >/dev/null 2>&1 || skip "yq not installed"
     local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    local -a exempt_scripts=("inject-cwd.js" "state.sh")
+    local -a exempt_scripts=("state.sh")
     local tok script found ex
     while IFS= read -r tok; do
         [[ -z "$tok" ]] && continue
