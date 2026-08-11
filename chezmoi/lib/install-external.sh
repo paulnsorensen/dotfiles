@@ -55,9 +55,19 @@ done
 
 # Source .env for SKILL_HARNESSES
 if [[ -f "$DOTFILES_DIR/.env" ]]; then
+    env_line=0
     while IFS='=' read -r key val; do
+        env_line=$((env_line + 1))
         key="${key#export }"
-        [[ -z "$key" || "$key" =~ ^# ]] && continue
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        # `export` aborts the script on a key that is not a shell identifier —
+        # a whitespace-only line or a `KEY = value` spacing slip is enough — so
+        # reject those here instead of letting one stray line kill the install.
+        if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            [[ "$key" =~ ^[[:space:]]*$ ]] ||
+                echo -e "${YELLOW}Warning: ignoring .env line $env_line (not KEY=value)${NC}" >&2
+            continue
+        fi
         # Strip surrounding quotes from value (env loader is naive)
         val="${val%\"}"
         val="${val#\"}"
