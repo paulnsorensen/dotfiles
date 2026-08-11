@@ -135,6 +135,28 @@ assemble_chezmoi_sources() {
     fi
 }
 
+# Land the tracked mise manifest before package convergence reads it.
+#
+# mise loads ~/.config/mise/config.toml *after* any --source manifest and lets
+# it win, so convergence resolves the live pins rather than the tracked ones.
+# Leaving that copy to the final apply deadlocks every pin bump: the stale file
+# pins the old version, `mise install` therefore never requests the new one,
+# and the harness-version gate — seeing the old binary — skips the very apply
+# that would refresh it. The manifest is an input to convergence, not an
+# output of it, so it has to land first.
+apply_mise_manifest() {
+    local source_dir="$1"
+    local target="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    command -v chezmoi &>/dev/null || return 0
+    if chezmoi --source "$source_dir" apply --force "$target"; then
+        echo "  Applied tracked mise manifest -> $target"
+    else
+        # Non-fatal: the harness-version gate stays the authority on whether
+        # convergence actually produced the pinned harnesses.
+        echo "  WARNING: could not apply $target — package convergence may read stale pins" >&2
+    fi
+}
+
 apply_chezmoi_source() {
     local source_dir="$1" chezmoi_status=0
     if command -v chezmoi &>/dev/null; then

@@ -721,12 +721,15 @@ assemble_chezmoi_sources() {
 apply_chezmoi_source() {
     printf 'apply\n'
 }
+apply_mise_manifest() {
+    printf 'mise-manifest\n'
+}
 SCRIPT
 
     run env CHEZMOI_SYNC_PHASE=prepare CHEZMOI_WIRING_SKIP=false \
         bash "$fake_root/chezmoi/.sync"
     assert_success
-    [[ "$output" == "prepare" ]]
+    [[ "$output" == $'prepare\nmise-manifest' ]]
 
     run env CHEZMOI_SYNC_PHASE= CHEZMOI_WIRING_SKIP=false \
         bash "$fake_root/chezmoi/.sync"
@@ -737,6 +740,37 @@ SCRIPT
         bash "$fake_root/chezmoi/.sync"
     assert_success
     [[ "$output" == $'prepare\nassemble\napply' ]]
+}
+
+# Regression: the tracked mise manifest is an INPUT to package convergence.
+# mise lets the live ~/.config/mise/config.toml override any --source manifest,
+# so leaving it to the final apply pins the old version, starves `mise install`
+# of the new one, and lets the harness-version gate skip the apply that would
+# have fixed it — a deadlock no re-run escapes.
+@test "chezmoi prepare lands the tracked mise manifest before package convergence" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    local source_dir="$TEST_HOME/mise-src"
+    mkdir -p "$source_dir/dot_config/mise"
+    cat > "$source_dir/dot_config/mise/config.toml" <<'TOML'
+[tools]
+"aqua:openai/codex" = "rust-v9.9.9"
+TOML
+
+    local target="$TEST_HOME/.config/mise/config.toml"
+    mkdir -p "${target%/*}"
+    cat > "$target" <<'TOML'
+[tools]
+"aqua:openai/codex" = "rust-v0.0.1"
+TOML
+
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+    run apply_mise_manifest "$source_dir"
+    assert_success
+
+    # The stale live pin must be gone before any `mise install` reads it.
+    grep -q 'rust-v9.9.9' "$target"
+    ! grep -q 'rust-v0.0.1' "$target"
 }
 
 @test "chezmoi/.sync calls chezmoi apply --force after wiring config" {
