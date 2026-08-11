@@ -37,7 +37,7 @@ fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 wt_dir="${repo_root}/.worktrees/${slug}"
-branch="claude/${slug}"
+branch="worktree/${slug}"
 
 created=false
 start_point=""
