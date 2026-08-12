@@ -325,7 +325,10 @@ vault_secret_value() (
         bitwarden)
             project_id="$(_vault_project_id)" || return 1
             token="$(_vault_token)" || return 1
-            raw="$(BWS_ACCESS_TOKEN="$token" _vault_fetch_bitwarden "$project_id")" || return 1
+            if ! raw="$(BWS_ACCESS_TOKEN="$token" _vault_fetch_bitwarden "$project_id")"; then
+                echo "vault: Bitwarden fetch failed." >&2
+                return 3
+            fi
             while IFS= read -r line || [[ -n "$line" ]]; do
                 [[ "$line" == "$key="* ]] || continue
                 value="${line#*=}"

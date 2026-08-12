@@ -43,7 +43,10 @@ EOF
     mkdir -p "$NODE_ROOT/bin" "$NODE_ROOT/lib/node_modules/npm/bin"
     cat > "$NODE_ROOT/bin/node" <<'EOF'
 #!/usr/bin/env bash
-[[ "${1:-}" == --version ]] && printf 'v24.18.0\n'
+case "${1:-}" in
+    --version) printf 'v24.18.0\n' ;;
+    -p) printf '%s/bin/node\n' "$NODE_ROOT" ;;
+esac
 EOF
     cat > "$NODE_ROOT/lib/node_modules/npm/bin/npx-cli.js" <<'EOF'
 #!/usr/bin/env node
@@ -185,4 +188,54 @@ EOF
     [[ "$(cat "$sudo_log")" == *" --privileged-install "* ]]
     [ -f "$INSTALL_ROOT/etc/dotfiles/agent-secret/credentials/context7.credential" ]
     [ -f "$INSTALL_ROOT/etc/dotfiles/agent-secret/credentials/tavily.credential" ]
+}
+
+
+@test "vault-provision rejects a Node prefix inside Homebrew Cellar" {
+    local cellar="$TEST_HOME/opt/homebrew/Cellar/node/24.18.0"
+    mkdir -p "$cellar/bin" "$cellar/lib/node_modules/npm/bin"
+    cp "$NODE_ROOT/bin/node" "$cellar/bin/node"
+    cp "$NODE_ROOT/lib/node_modules/npm/bin/npx-cli.js" "$cellar/lib/node_modules/npm/bin/npx-cli.js"
+    chmod +x "$cellar/bin/node" "$cellar/lib/node_modules/npm/bin/npx-cli.js"
+    ln -s ../lib/node_modules/npm/bin/npx-cli.js "$cellar/bin/npx"
+    export NODE_ROOT="$cellar"
+    export PATH="$cellar/bin:$PATH"
+    run env DESTDIR="$INSTALL_ROOT" "$FIXTURE_DOTFILES/bin/vault-provision" \
+        --request-user "$(id -un)" --operator-user root
+    assert_failure
+    [[ "$output" == *"Homebrew Cellar"* ]]
+}
+
+@test "ensure_bitwarden_value prompts and creates only when the secret is missing" {
+    local log="$TEST_HOME/bws.log"
+    # shellcheck disable=SC2016
+    run env BWS_LOG="$log" bash -c '
+        source <(sed -n "/^ensure_bitwarden_value()/,/^}/p" "$1")
+        vault_secret_value() { return 1; }
+        _vault_token() { printf token; }
+        _vault_project_id() { printf project; }
+        bws() { printf "%s\n" "$*" >> "$BWS_LOG"; }
+        ensure_bitwarden_value TAVILY_API_KEY <<< missing-value
+        printf "value=%s\n" "$VAULT_PROVISION_VALUE"
+    ' _ "$FIXTURE_DOTFILES/bin/vault-provision"
+    assert_success
+    [[ "$output" == *"Enter TAVILY_API_KEY (input hidden):"* ]]
+    [[ "$output" == *"value=missing-value"* ]]
+    [[ "$(cat "$log")" == *"secret create TAVILY_API_KEY missing-value project -o json"* ]]
+}
+
+@test "ensure_bitwarden_value propagates fetch errors without prompting or creating" {
+    local log="$TEST_HOME/bws.log"
+    # shellcheck disable=SC2016
+    run env BWS_LOG="$log" bash -c '
+        source <(sed -n "/^ensure_bitwarden_value()/,/^}/p" "$1")
+        vault_secret_value() { return 3; }
+        _vault_token() { printf token; }
+        _vault_project_id() { printf project; }
+        bws() { printf "%s\n" "$*" >> "$BWS_LOG"; }
+        ensure_bitwarden_value TAVILY_API_KEY
+    ' _ "$FIXTURE_DOTFILES/bin/vault-provision"
+    [ "$status" -eq 3 ]
+    [[ "$output" != *"Enter TAVILY_API_KEY"* ]]
+    [ ! -e "$log" ]
 }

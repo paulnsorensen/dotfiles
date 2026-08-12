@@ -377,3 +377,52 @@ run_trusted_executable() {
     [[ "$(grep '^ReadOnlyPaths=' "$unit")" == 'ReadOnlyPaths=/etc/dotfiles/agent-secret-broker/%i.json' ]]
     [[ "$(grep '^ReadWritePaths=' "$unit")" == 'ReadWritePaths=/var/run/dotfiles-agent-secrets /var/lib/dotfiles-agent-secrets/%i' ]]
 }
+
+
+@test "launchd restart waits for bootout and retries bootstrap" {
+    local fake_bin="$TEST_HOME/fake-bin" log="$TEST_HOME/launchctl.log" state="$TEST_HOME/launchctl.state"
+    mkdir -p "$fake_bin"
+    printf loaded > "$state"
+    cat > "$fake_bin/launchctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$LAUNCHCTL_LOG"
+case "$1" in
+    print)
+        if [[ -s "$LAUNCHCTL_STATE" ]]; then
+            if [[ "$(cat "$LAUNCHCTL_STATE")" == pending ]]; then
+                : > "$LAUNCHCTL_STATE"
+            fi
+            exit 0
+        fi
+        exit 1
+        ;;
+    bootout) printf pending > "$LAUNCHCTL_STATE" ;;
+    bootstrap)
+        attempt="$(cat "$LAUNCHCTL_BOOTSTRAPS" 2>/dev/null || printf 0)"
+        attempt=$((attempt + 1))
+        printf '%s\n' "$attempt" > "$LAUNCHCTL_BOOTSTRAPS"
+        (( attempt >= 2 )) || exit 5
+        ;;
+esac
+EOF
+    chmod +x "$fake_bin/launchctl"
+    # shellcheck disable=SC2016
+    run env PATH="$fake_bin:$PATH" LAUNCHCTL_LOG="$log" LAUNCHCTL_STATE="$state" \
+        LAUNCHCTL_BOOTSTRAPS="$TEST_HOME/bootstraps" bash -c \
+        'source <(sed -n "/^restart_launchd_service()/,/^}/p" "$1"); restart_launchd_service fixture /tmp/fixture.plist' _ "$INSTALLER"
+    assert_success
+    [[ "$(grep -c '^bootout' "$log")" -eq 1 ]]
+    [[ "$(grep -c '^bootstrap' "$log")" -eq 2 ]]
+
+    : > "$log"
+    : > "$state"
+    rm -f "$TEST_HOME/bootstraps"
+    # shellcheck disable=SC2016
+    run env PATH="$fake_bin:$PATH" LAUNCHCTL_LOG="$log" LAUNCHCTL_STATE="$state" \
+        LAUNCHCTL_BOOTSTRAPS="$TEST_HOME/bootstraps" bash -c \
+        'source <(sed -n "/^restart_launchd_service()/,/^}/p" "$1"); restart_launchd_service fixture /tmp/fixture.plist' _ "$INSTALLER"
+    assert_success
+    [[ "$(grep -c '^bootstrap' "$log")" -eq 2 ]]
+    run grep -q '^bootout' "$log"
+    [ "$status" -ne 0 ]
+}

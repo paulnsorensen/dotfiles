@@ -157,3 +157,21 @@ EOF
     [ "$status" -eq 0 ]
     [ "$output" = 'fixture-se"cret-value' ]
 }
+
+
+@test "runtime secret reader distinguishes Bitwarden fetch errors from missing values" {
+    printf 'DOTFILES_VAULT_PROVIDER=bitwarden\nBWS_PROJECT_ID=test-project\n' > "$DOTFILES_DIR/.env"
+    cat > "$MOCK_BIN/security" <<'EOF'
+#!/usr/bin/env bash
+printf 'test-token\n'
+EOF
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+exit 7
+EOF
+    chmod +x "$MOCK_BIN/security" "$MOCK_BIN/bws"
+
+    run bash -c "export BWS_ACCESS_TOKEN=test-token; source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
+    [ "$status" -eq 3 ]
+    [[ "$output" == *"Bitwarden fetch failed"* ]]
+}
