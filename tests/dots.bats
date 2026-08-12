@@ -142,6 +142,55 @@ STUB
     assert_output_contains "Profiling shell startup"
 }
 
+stub_broker_install_root() {
+    local root="$1"
+    mkdir -p "$root"
+    cp "$DOTFILES_DIR/bin/agent-secret-broker" "$root/agent-secret-broker"
+    cp "$DOTFILES_DIR/bin/agent-secret-proxy" "$root/agent-secret-proxy"
+    cp "$DOTFILES_DIR/bin/agent-secretctl" "$root/agent-secretctl"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-python.sh" "$root/agent-secret-python.sh"
+    cp "$DOTFILES_DIR/scripts/agent-secret-broker.py" "$root/agent-secret-broker.py"
+}
+
+@test "dots doctor reports stale installed broker assets" {
+    local root="$TEST_HOME/agent-secret-libexec" fake_bin="$TEST_HOME/fake-bin"
+    stub_broker_install_root "$root"
+    printf '\n# stale fixture\n' >> "$root/agent-secret-broker.py"
+    mkdir -p "$fake_bin"
+    printf '#!/bin/sh\nexit 0\n' > "$fake_bin/chezmoi"
+    printf '#!/bin/sh\nexit 0\n' > "$fake_bin/prek"
+    chmod +x "$fake_bin/chezmoi" "$fake_bin/prek"
+
+    PATH="$fake_bin:$PATH" AGENT_SECRET_INSTALL_ROOT="$root" run dots doctor
+
+    assert_success
+    assert_output_contains "Broker assets: stale"
+    assert_output_contains "agent-secret-broker.py"
+}
+
+@test "dots sync warns when installed broker assets are stale" {
+    local stub_dir="$TEST_HOME/stale-sync-dotfiles" root="$TEST_HOME/agent-secret-libexec"
+    mkdir -p "$stub_dir/bin/lib" "$stub_dir/scripts" "$stub_dir/chezmoi/lib" "$stub_dir/skills"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-staleness.sh" "$stub_dir/bin/lib/agent-secret-staleness.sh"
+    cp "$DOTFILES_DIR/bin/agent-secret-broker" "$stub_dir/bin/agent-secret-broker"
+    cp "$DOTFILES_DIR/bin/agent-secret-proxy" "$stub_dir/bin/agent-secret-proxy"
+    cp "$DOTFILES_DIR/bin/agent-secretctl" "$stub_dir/bin/agent-secretctl"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-python.sh" "$stub_dir/bin/lib/agent-secret-python.sh"
+    cp "$DOTFILES_DIR/scripts/agent-secret-broker.py" "$stub_dir/scripts/agent-secret-broker.py"
+    printf '#!/bin/sh\nexit 0\n' > "$stub_dir/.sync"
+    printf '#!/bin/sh\nexit 0\n' > "$stub_dir/chezmoi/lib/install-external.sh"
+    chmod +x "$stub_dir/.sync" "$stub_dir/chezmoi/lib/install-external.sh"
+    stub_broker_install_root "$root"
+    printf '\n# stale fixture\n' >> "$root/agent-secret-broker.py"
+
+    DOTFILES_DIR="$stub_dir" AGENT_SECRET_INSTALL_ROOT="$root" run "$stub_dir/bin/dots" sync
+
+    assert_success
+    assert_output_contains "agent-secret broker deployment is stale"
+    assert_output_contains "bin/vault-provision"
+}
+
 @test "dots handles unknown commands gracefully" {
     run dots nonexistent
     assert_failure

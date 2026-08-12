@@ -29,6 +29,12 @@ else
     unset _dots_secret
 fi
 unset _dots_vault_lib
+_dots_staleness_lib="$DOTFILES_DIR/bin/lib/agent-secret-staleness.sh"
+if [[ -r "$_dots_staleness_lib" ]]; then
+    # shellcheck source=bin/lib/agent-secret-staleness.sh
+    source "$_dots_staleness_lib"
+fi
+unset _dots_staleness_lib
 
 # Colors
 GREEN='\033[0;32m'
@@ -172,6 +178,19 @@ do_sync() {
         esac
     fi
 
+    if declare -F agent_secret_broker_status >/dev/null 2>&1; then
+        local broker_status broker_rc=0
+        broker_status=$(agent_secret_broker_status "$DOTFILES_DIR") || broker_rc=$?
+        if [[ "$broker_rc" -eq 1 ]]; then
+            echo -e "${YELLOW}⚠ agent-secret broker deployment is stale${NC}" >&2
+            echo "  $broker_status" >&2
+            echo "  Run: bin/vault-provision" >&2
+        elif [[ "$broker_rc" -gt 1 ]]; then
+            echo -e "${YELLOW}⚠ agent-secret broker staleness check unavailable${NC}" >&2
+            echo "  $broker_status" >&2
+        fi
+    fi
+
     local skill_exclude_agents="${SKILL_EXCLUDE_AGENTS:+$SKILL_EXCLUDE_AGENTS }claude-code"
     SKILL_EXCLUDE_AGENTS="$skill_exclude_agents" \
         "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
@@ -290,6 +309,36 @@ do_doctor() {
         echo -e "  ${GREEN}✓ All required commands found${NC}"
     else
         echo -e "  ${RED}✗ Missing: ${missing_deps[*]}${NC}"
+    fi
+
+    # Check root-owned agent-secret broker deployment against source assets.
+    echo -e "${BLUE}Checking agent-secret broker deployment...${NC}"
+    if declare -F agent_secret_broker_status >/dev/null 2>&1; then
+        local broker_status broker_rc=0
+        broker_status=$(agent_secret_broker_status "$DOTFILES_DIR") || broker_rc=$?
+        case "$broker_rc" in
+            0)
+                if [[ "$broker_status" == "current" ]]; then
+                    echo -e "  ${GREEN}✓ Broker assets match the source${NC}"
+                else
+                    echo -e "  ${YELLOW}⚠ Broker assets: not installed${NC}"
+                    echo "    Run: bin/vault-provision"
+                fi
+                ;;
+            1)
+                echo -e "  ${RED}✗ Broker assets: stale${NC}"
+                echo "    $broker_status"
+                echo "    Run: bin/vault-provision"
+                issues=$((issues + 1))
+                ;;
+            *)
+                echo -e "  ${RED}✗ Broker assets: unable to check${NC}"
+                echo "    $broker_status"
+                issues=$((issues + 1))
+                ;;
+        esac
+    else
+        echo -e "  ${YELLOW}⚠ Broker staleness check unavailable${NC}"
     fi
 
     # Check chezmoi health (deps, paths, encryption backends)
