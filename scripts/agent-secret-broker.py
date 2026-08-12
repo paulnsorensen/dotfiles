@@ -27,6 +27,8 @@ APPROVAL_TTL_ENV = "AGENT_SECRET_BROKER_APPROVAL_TTL"
 MAX_LINE = 1 << 20
 READ_BUFFER = 64 << 10
 RESPONSE_DRAIN_TIMEOUT = 30
+_ALLOWED_METHODS = frozenset({"initialize", "notifications/initialized", "ping", "tools/list", "tools/call"})
+
 # macOS getsockopt(SOL_LOCAL, LOCAL_PEERCRED) reads struct xucred (sys/ucred.h);
 # CPython's socket module exposes neither the constants nor a getpeereid() method.
 _DARWIN_SOL_LOCAL = 0
@@ -670,11 +672,14 @@ class ClientSession:
             self.send_error(request if isinstance(request, dict) else None, -32600, "invalid request")
             return
         method = request.get("method")
+        if not isinstance(method, str):
+            self.send_error(request, -32600, "invalid request")
+            return
+        if method not in _ALLOWED_METHODS:
+            self.send_error(request, -32601, "method not allowed")
+            return
         if method == "tools/call":
             self._handle_tool_call(request, raw)
-            return
-        if not isinstance(method, str):
-            self.forward(request, raw)
             return
         self.forward(request, raw)
 

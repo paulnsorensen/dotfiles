@@ -35,7 +35,7 @@ for line in sys.stdin:
     request_id = request.get("id")
     if method == "initialize":
         result = {"protocolVersion": "2025-06-18", "capabilities": {}}
-    elif method == "slow":
+    elif method == "ping":
         time.sleep(2.2)
         result = {"delayed": True}
     elif method == "notifications/initialized":
@@ -100,6 +100,19 @@ pending_nonce() {
     [[ "$output" == *'"text":"read-ok"'* ]]
     [[ "$output" == *'"credential_env":"[REDACTED]"'* ]]
     [[ "$output" != *'sentinel-credential-value'* ]]
+}
+
+@test "unlisted MCP methods fail closed without forwarding" {
+    for request in \
+        '{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"secret://hidden"}}' \
+        '{"jsonrpc":"2.0","id":5,"method":"prompts/get","params":{"name":"hidden"}}' \
+        '{"jsonrpc":"2.0","id":6,"method":"x-vendor/secret"}'; do
+        run proxy_call "$request"
+        assert_success
+        [[ "$output" == *'"code":-32601'* ]]
+        [[ "$output" == *'"message":"method not allowed"'* ]]
+    done
+    [[ ! -e "$STARTED" ]]
 }
 
 @test "response delivery completes before the client session becomes idle" {
@@ -210,7 +223,7 @@ PY
 }
 
 @test "proxy drains an in-flight response after standard input closes" {
-    run proxy_call '{"jsonrpc":"2.0","id":30,"method":"slow"}'
+    run proxy_call '{"jsonrpc":"2.0","id":30,"method":"ping"}'
     assert_success
     [[ "$output" == '{"id":30,"jsonrpc":"2.0","result":{"delayed":true}}' ]]
 }
