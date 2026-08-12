@@ -351,3 +351,178 @@ PY
     assert_success
     [[ "$output" == *bound* ]]
 }
+
+
+@test "pending store rejects distinct requests after the per-consumer cap" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import sys
+from types import SimpleNamespace
+spec = importlib.util.spec_from_file_location("broker_under_test", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+store = module.PendingStore(SimpleNamespace(consumer="fixture"))
+for index in range(module.PENDING_CAP):
+    store.create_or_get("write.item", {"index": index})
+try:
+    store.create_or_get("write.item", {"index": module.PENDING_CAP})
+except RuntimeError as exc:
+    assert str(exc) == "pending store full"
+else:
+    raise AssertionError("pending store accepted an entry beyond the cap")
+PY
+    assert_success
+}
+
+@test "upstream session respawns once after a crashed process" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import pathlib
+import sys
+import tempfile
+import time
+from types import SimpleNamespace
+spec = importlib.util.spec_from_file_location("broker_under_test", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+root = pathlib.Path(tempfile.mkdtemp())
+script = root / "upstream.py"
+script.write_text("import sys; sys.stdin.readline(); print('{}', flush=True)\n")
+policy = SimpleNamespace(
+    upstream=SimpleNamespace(argv=(sys.executable, str(script)), credential_env="TOKEN"),
+    credential="secret",
+)
+lines = []
+session = module.UpstreamSession(policy, lines.append, root)
+session.send(b"{}\n")
+time.sleep(module.UPSTREAM_RESTART_BASE * 1.5)
+session.send(b"{}\n")
+time.sleep(0.1)
+session.close()
+assert len(lines) == 2, lines
+PY
+    assert_success
+}
+
+@test "SIGTERM closes broker sockets" {
+    local term_socket="$TEST_ROOT/term-request.sock"
+    local term_control="$TEST_ROOT/term-control.sock"
+    "$BROKER" --policy "$POLICY" --socket "$term_socket" --control-socket "$term_control" >"$TEST_ROOT/term-broker.log" 2>&1 &
+    local term_pid=$!
+    for _ in {1..50}; do
+        [[ -S "$term_socket" && -S "$term_control" ]] && break
+        sleep 0.02
+    done
+    [[ -S "$term_socket" && -S "$term_control" ]]
+    kill -TERM "$term_pid"
+    wait "$term_pid" 2>/dev/null || true
+    [[ ! -e "$term_socket" ]]
+    [[ ! -e "$term_control" ]]
+}
+
+@test "reader remains bound to the process it was given" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import io
+import pathlib
+import sys
+from types import SimpleNamespace
+spec = importlib.util.spec_from_file_location("broker_under_test", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+policy = SimpleNamespace(upstream=SimpleNamespace(), credential="secret")
+lines = []
+session = module.UpstreamSession(policy, lines.append, pathlib.Path("/tmp"))
+old = SimpleNamespace(stdout=io.BytesIO(b"old\n"))
+new = SimpleNamespace(stdout=io.BytesIO(b"new\n"))
+session._process = new
+session._read(old)
+assert lines == [b"old\n"], lines
+PY
+    assert_success
+}
+
+@test "crash-loop restart attempts stay behind the backoff circuit" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import io
+import pathlib
+import sys
+from types import SimpleNamespace
+spec = importlib.util.spec_from_file_location("broker_under_test", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+spawned = []
+class Stdin:
+    def write(self, payload):
+        return len(payload)
+    def flush(self):
+        pass
+class DeadProcess:
+    stdin = Stdin()
+    stdout = io.BytesIO()
+    def poll(self):
+        return 1
+    def wait(self, timeout=0):
+        return 1
+    def kill(self):
+        pass
+def spawn(*args, **kwargs):
+    spawned.append(True)
+    return DeadProcess()
+module.subprocess.Popen = spawn
+policy = SimpleNamespace(
+    upstream=SimpleNamespace(argv=("/bin/false",), credential_env="TOKEN"),
+    credential="secret",
+)
+session = module.UpstreamSession(policy, lambda _line: None, pathlib.Path("/tmp"))
+session.send(b"{}\n")
+for _ in range(8):
+    try:
+        session.send(b"{}\n")
+    except RuntimeError:
+        pass
+assert len(spawned) == 2, spawned
+PY
+    assert_success
+}
+
+@test "failed upstream send rolls back request state and restores idle" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import pathlib
+import sys
+from types import SimpleNamespace
+spec = importlib.util.spec_from_file_location("broker_under_test", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+class FailingUpstream:
+    def send(self, _payload):
+        raise RuntimeError("upstream unavailable")
+class Connection:
+    def __init__(self):
+        self.payloads = []
+    def sendall(self, payload):
+        self.payloads.append(payload)
+policy = SimpleNamespace(credential="secret")
+broker = SimpleNamespace(policy=policy, upstream_home=pathlib.Path("/tmp"))
+connection = Connection()
+session = module.ClientSession(broker, connection)
+session._upstream = FailingUpstream()
+session._methods["1"] = "initialize"
+session._idle.clear()
+assert not session.forward({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+assert session._methods["1"] == "initialize"
+assert not session._idle.is_set()
+session._methods.clear()
+assert not session.forward({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+assert session._methods == {}
+assert session._idle.is_set()
+PY
+    assert_success
+}

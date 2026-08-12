@@ -15,6 +15,7 @@ import socket
 import stat
 import struct
 import subprocess
+import signal
 import sys
 import threading
 import time
@@ -27,6 +28,9 @@ APPROVAL_TTL_ENV = "AGENT_SECRET_BROKER_APPROVAL_TTL"
 MAX_LINE = 1 << 20
 READ_BUFFER = 64 << 10
 RESPONSE_DRAIN_TIMEOUT = 30
+UPSTREAM_RESTART_BASE = 0.1
+UPSTREAM_RESTART_MAX = 1.0
+PENDING_CAP = 256
 # macOS getsockopt(SOL_LOCAL, LOCAL_PEERCRED) reads struct xucred (sys/ucred.h);
 # CPython's socket module exposes neither the constants nor a getpeereid() method.
 _DARWIN_SOL_LOCAL = 0
@@ -335,6 +339,9 @@ class PendingStore:
             previous = self._by_key.get(key)
             if previous is not None and previous.state in {"pending", "approved"}:
                 return previous
+            active = sum(item.state in {"pending", "approved"} for item in self._by_nonce.values())
+            if active >= PENDING_CAP:
+                raise RuntimeError("pending store full")
             nonce = secrets.token_urlsafe(24)
             expires_at = int(now) + APPROVAL_TTL
             item = PendingApproval(
@@ -475,46 +482,83 @@ class UpstreamSession:
         self._process: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
         self._reader: threading.Thread | None = None
+        self._restart_failures = 0
+        self._restart_after = 0.0
 
     def send(self, payload: bytes) -> None:
         with self._lock:
-            if self._process is None:
+            for _attempt in range(2):
+                process = self._process
+                if process is None or process.poll() is not None:
+                    blocked = _attempt == 0 and time.monotonic() < self._restart_after
+                    if process is not None:
+                        self._process = None
+                        try:
+                            process.wait(timeout=0)
+                        except (OSError, subprocess.TimeoutExpired):
+                            pass
+                        self._mark_restart()
+                    if blocked:
+                        raise RuntimeError("upstream unavailable")
+                    try:
+                        executable_dir = str(pathlib.Path(self._policy.upstream.argv[0]).parent)
+                        process = subprocess.Popen(
+                            self._policy.upstream.argv,
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL,
+                            cwd=self._upstream_home,
+                            env={
+                                self._policy.upstream.credential_env: self._policy.credential,
+                                "HOME": str(self._upstream_home),
+                                "NO_COLOR": "1",
+                                "PATH": f"{executable_dir}:/usr/local/bin:/usr/bin:/bin",
+                            },
+                            close_fds=True,
+                        )
+                    except OSError:
+                        self._process = None
+                        self._mark_restart()
+                        if _attempt:
+                            raise RuntimeError("upstream unavailable")
+                        continue
+                    self._process = process
+                    self._reader = threading.Thread(target=self._read, args=(process,), daemon=True)
+                    self._reader.start()
+                if process.stdin is None:
+                    self._process = None
+                    self._mark_restart()
+                    if _attempt:
+                        raise RuntimeError("upstream unavailable")
+                    continue
                 try:
-                    executable_dir = str(pathlib.Path(self._policy.upstream.argv[0]).parent)
-                    self._process = subprocess.Popen(
-                        self._policy.upstream.argv,
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                        cwd=self._upstream_home,
-                        env={
-                            self._policy.upstream.credential_env: self._policy.credential,
-                            "HOME": str(self._upstream_home),
-                            "NO_COLOR": "1",
-                            "PATH": f"{executable_dir}:/usr/local/bin:/usr/bin:/bin",
-                        },
-                        close_fds=True,
-                    )
-                except OSError as exc:
-                    raise RuntimeError("upstream unavailable") from exc
-                self._reader = threading.Thread(target=self._read, daemon=True)
-                self._reader.start()
-            process = self._process
-            if process.stdin is None:
-                raise RuntimeError("upstream unavailable")
-            try:
-                process.stdin.write(payload.rstrip(b"\r\n") + b"\n")
-                process.stdin.flush()
-            except OSError as exc:
-                raise RuntimeError("upstream unavailable") from exc
+                    process.stdin.write(payload.rstrip(b"\r\n") + b"\n")
+                    process.stdin.flush()
+                    return
+                except OSError:
+                    self._process = None
+                    self._mark_restart()
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+            raise RuntimeError("upstream unavailable")
 
-    def _read(self) -> None:
-        process = self._process
-        if process is None or process.stdout is None:
+    def _mark_restart(self) -> None:
+        self._restart_failures += 1
+        delay = min(UPSTREAM_RESTART_BASE * (2 ** (self._restart_failures - 1)), UPSTREAM_RESTART_MAX)
+        self._restart_after = time.monotonic() + delay
+
+    def _read(self, process: subprocess.Popen[bytes]) -> None:
+        if process.stdout is None:
             return
         try:
             for line in process.stdout:
                 self._on_line(line)
+                with self._lock:
+                    if self._process is process:
+                        self._restart_failures = 0
+                        self._restart_after = 0.0
         except OSError:
             return
 
@@ -569,14 +613,27 @@ class ClientSession:
                 self._upstream_line,
                 self.broker.upstream_home,
             )
+        method_key: str | None = None
+        previous_method: str | None = None
         if "id" in request and isinstance(request.get("method"), str):
+            method_key = _id_key(request["id"])
             with self._state_lock:
-                self._methods[_id_key(request["id"])] = request["method"]
+                previous_method = self._methods.get(method_key)
+                self._methods[method_key] = request["method"]
                 self._idle.clear()
         payload = raw if raw is not None else _json_line(request)
         try:
             self._upstream.send(payload)
         except RuntimeError:
+            if method_key is not None:
+                with self._state_lock:
+                    if self._methods.get(method_key) == request["method"]:
+                        if previous_method is None:
+                            self._methods.pop(method_key, None)
+                        else:
+                            self._methods[method_key] = previous_method
+                    if not self._methods:
+                        self._idle.set()
             self.send_error(request, -32010, "upstream unavailable")
             return False
         return True
@@ -631,7 +688,13 @@ class ClientSession:
         if tool in self.broker.policy.read_tools:
             self.forward(request, raw)
             return
-        pending = self.broker.pending.create_or_get(tool, arguments)
+        try:
+            pending = self.broker.pending.create_or_get(tool, arguments)
+        except RuntimeError as exc:
+            if str(exc) == "pending store full":
+                self.send_error(request, -32005, "pending store full")
+                return
+            raise
         nonce = params.get("approval_nonce", params.get("_approval_nonce"))
         claim = self.broker.pending.claim(tool, arguments, nonce if isinstance(nonce, str) else None)
         if claim.status == "approved":
@@ -857,12 +920,15 @@ class Broker:
 
     def run(self) -> int:
         self.start()
+        previous_term = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGTERM, lambda _signum, _frame: self._stop.set())
         try:
             while not self._stop.wait(1):
                 pass
         except KeyboardInterrupt:
             return 0
         finally:
+            signal.signal(signal.SIGTERM, previous_term)
             self.close()
         return 0
 
