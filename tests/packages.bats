@@ -109,6 +109,10 @@ MOCKCURL
     chmod +x "$MOCK_BIN/curl"
 }
 
+# Mock the piped omp.sh installer. Like the real one it truncates
+# "$PI_INSTALL_DIR/omp" in place — so aiming it at a running binary fails with
+# ETXTBSY — and it writes the binary before the exit status it is asked for,
+# modelling macOS where the download lands but the unsigned smoke test fails.
 write_mock_sh() {
     local exit_status="${1:-0}"
     rm -f "$MOCK_BIN/sh"
@@ -116,6 +120,15 @@ write_mock_sh() {
 #!/bin/bash
 echo "sh \$*" >> "\$SH_LOG"
 echo "sh \$*" >> "\$EVENT_LOG"
+ref=""
+while [ \$# -gt 0 ]; do
+    [ "\$1" = "--ref" ] && ref="\$2"
+    shift
+done
+dir="\${PI_INSTALL_DIR:-\$HOME/.local/bin}"
+mkdir -p "\$dir"
+printf '#!/bin/bash\nprintf "omp/%s\\\\n"\n' "\${ref#v}" > "\$dir/omp" || exit 1
+chmod +x "\$dir/omp"
 exit $exit_status
 MOCKSH
     chmod +x "$MOCK_BIN/sh"
@@ -580,7 +593,7 @@ path_without_buildtools() {
     local stub="$TEST_HOME/nobuild-stub"
     mkdir -p "$stub"
     local -a needed=(bash sh env uname id yq jq shasum sha256sum curl git \
-        awk sed grep cut sort tr head tail cat chmod mkdir rm ln mktemp \
+        awk sed grep cut sort tr head tail cat chmod mkdir rm mv ln mktemp \
         dirname basename tee wc printf find xargs sleep)
     local tool src
     for tool in "${needed[@]}"; do
@@ -1170,6 +1183,34 @@ YAML
     [[ ! -f "$OMP_LOG" ]] || ! grep -q "omp update" "$OMP_LOG"
 }
 
+# The upstream installer truncates its target in place, so a live omp session
+# makes the kernel refuse the write with ETXTBSY. A real ELF is required to
+# reproduce it: an interpreted script is only held open for reading.
+@test "package sync converges omp while a running omp holds the live binary" {
+    local omp_path="$TEST_HOME/.local/bin/omp"
+    mkdir -p "$TEST_HOME/.local/bin"
+    cp "$(command -v bash)" "$omp_path"
+    "$omp_path" -c 'sleep 300' &
+    local holder=$! waited=0
+    # Wait for the exec to land, else the install races past the busy window.
+    # A read-write open never truncates, so probing is safe.
+    until ! (exec 3<>"$omp_path") 2>/dev/null; do
+        kill -0 "$holder" 2>/dev/null && ((waited++ < 100)) ||
+            { kill "$holder" 2>/dev/null; fail "held omp binary never became busy"; }
+        sleep 0.05
+    done
+    write_test_yaml
+
+    run_sync
+    local sync_status="$status"
+    kill "$holder" 2>/dev/null || true
+    wait "$holder" 2>/dev/null || true
+
+    [[ "$sync_status" -eq 0 ]]
+    assert_output_contains "Converged omp to v17.2.12"
+    [[ "$("$omp_path")" == "omp/17.2.12" ]]
+}
+
 @test "omp installer failure fails loudly and does not save cache" {
     write_test_yaml
     write_mock_sh 1
@@ -1185,21 +1226,16 @@ YAML
 @test "Darwin signs and validates a downloaded omp after installer smoke failure" {
     write_mock_uname Darwin
     write_mock_sh 1
-    mkdir -p "$TEST_HOME/.local/bin"
-    cat > "$TEST_HOME/.local/bin/omp" <<'EOF'
-#!/usr/bin/env bash
-printf 'omp/17.2.12\n'
-EOF
-    chmod +x "$TEST_HOME/.local/bin/omp"
     write_test_yaml
 
     run_sync
     assert_success
     assert_output_contains "Converged omp to v17.2.12"
+    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/17.2.12" ]]
 
     local expected_events
     expected_events=$(printf 'sh -s -- --binary --ref v17.2.12\ncodesign --force --sign - %s' \
-        "$TEST_HOME/.local/bin/omp")
+        "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
 }
@@ -1213,7 +1249,7 @@ EOF
 
     local expected_events
     expected_events=$(printf 'sh -s -- --binary --ref v17.2.12\ncodesign --force --sign - %s' \
-        "$TEST_HOME/.local/bin/omp")
+        "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
 }

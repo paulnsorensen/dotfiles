@@ -713,6 +713,59 @@ migrate_omp_off_bun() {
     rm -f "$path"
 }
 
+# Install the pinned omp release into $1 and rename it over the live binary.
+#
+# The upstream installer curls the release asset directly onto its install
+# target, so pointing it at ~/.local/bin fails with ETXTBSY whenever an omp
+# session is running. Staging into a sibling directory and renaming into place
+# swaps the directory entry instead, leaving live processes on the old inode.
+#
+# --binary is required: omp.sh's installer defaults to a bun source build
+# whenever --ref is given, and that build (`bun install -g
+# packages/coding-agent` against the cloned monorepo) trips bun's
+# self-referential-workspace-loop check on the package's own dependency on
+# itself — reproduces even reinstalling an already-working pin, so it's a
+# bun/installer incompatibility, not a bad release. --binary fetches the
+# prebuilt release asset instead, sidestepping bun entirely.
+converge_omp_native() {
+    local stage_dir="$1" staged="$1/omp" install_status=0
+
+    mkdir -p "$stage_dir"
+    # The installer closes by telling the user to add its install dir to PATH
+    # unless it is already there; putting the throwaway stage dir on PATH keeps
+    # it from printing that instruction for a directory removed moments later.
+    curl -fsSL https://omp.sh/install |
+        PI_INSTALL_DIR="$stage_dir" PATH="$stage_dir:$PATH" sh -s -- --binary --ref "$OMP_PIN" ||
+        install_status=$?
+
+    if [[ ! -f "$staged" ]]; then
+        log_error "omp native install failed"
+        return 1
+    fi
+
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        if ! codesign --force --sign - "$staged" </dev/null; then
+            log_error "omp ad-hoc signing failed"
+            return 1
+        fi
+        # The installer's own smoke test fails on the still-unsigned download,
+        # so re-check the signed binary rather than trusting its exit status.
+        if ((install_status != 0)) &&
+            [[ "$("$staged" --version 2>/dev/null || true)" != "omp/${OMP_PIN#v}" ]]; then
+            log_error "omp native install failed"
+            return 1
+        fi
+    elif ((install_status != 0)); then
+        log_error "omp native install failed"
+        return 1
+    fi
+
+    if ! mv -f "$staged" "$HOME/.local/bin/omp"; then
+        log_error "omp native install failed"
+        return 1
+    fi
+}
+
 sync_native_harnesses() {
     log_info "Syncing native AI-harness CLIs..."
 
@@ -725,40 +778,16 @@ sync_native_harnesses() {
     migrate_harness_off_brew "omp"
     migrate_omp_off_bun
 
-    # --binary is required: omp.sh's installer defaults to a bun source build
-    # whenever --ref is given, and that build (`bun install -g
-    # packages/coding-agent` against the cloned monorepo) trips bun's
-    # self-referential-workspace-loop check on the package's own dependency on
-    # itself — reproduces even reinstalling an already-working pin, so it's a
-    # bun/installer incompatibility, not a bad release. --binary fetches the
-    # prebuilt release asset instead, sidestepping bun entirely.
     echo "  Converging omp to $OMP_PIN (native)..."
-    local install_status=0 omp_path="$HOME/.local/bin/omp" omp_version=""
-    curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN" ||
-        install_status=$?
-    if [[ "$PLATFORM" == "Darwin" ]]; then
-        if ! codesign --force --sign - "$omp_path" </dev/null; then
-            log_error "omp ad-hoc signing failed"
-            FAILED+=("omp")
-            return
-        fi
-        if ((install_status != 0)); then
-            omp_version="$("$omp_path" --version 2>/dev/null || true)"
-            if [[ "$omp_version" != "omp/${OMP_PIN#v}" ]]; then
-                log_error "omp native install failed"
-                FAILED+=("omp")
-                return
-            fi
-        fi
-    elif ((install_status != 0)); then
-        log_error "omp native install failed"
+    local stage_dir="$HOME/.local/bin/.omp-stage"
+    rm -rf "$stage_dir"
+    if converge_omp_native "$stage_dir"; then
+        hash -r 2>/dev/null || true
+        log_success "  Converged omp to $OMP_PIN"
+    else
         FAILED+=("omp")
-        return
     fi
-
-    hash -r 2>/dev/null || true
-    log_success "  Converged omp to $OMP_PIN"
-
+    rm -rf "$stage_dir"
 }
 
 # Snapshot the inputs before the first installer runs.

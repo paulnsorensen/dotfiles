@@ -37,7 +37,12 @@ source "$dotfiles_dir/.sync-lib.sh"
 if ! prepare_chezmoi_wiring "$dotfiles_dir" "$source_dir"; then
     exit 1
 fi
-[[ "${CHEZMOI_SYNC_PHASE:-}" == "prepare" ]] && exit 0
+if [[ "${CHEZMOI_SYNC_PHASE:-}" == "prepare" ]]; then
+    # Package convergence runs next and resolves tool versions through the live
+    # mise config, so the tracked manifest has to be in place before it starts.
+    apply_mise_manifest "$source_dir"
+    exit 0
+fi
 "${CHEZMOI_WIRING_SKIP:-false}" && exit 0
 
 if ! assemble_chezmoi_sources "$dotfiles_dir" "$source_dir"; then
