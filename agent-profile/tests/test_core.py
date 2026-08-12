@@ -202,9 +202,8 @@ def test_parse_manifest_permissions_dedup_sorted(env):
 
 def test_parse_manifest_permissions_deny_union_sorted(env):
     """``settings.permissions_deny`` unions+sorts across includes, mirroring
-    the allow channel. This is the installable deny channel (distinct from the
-    top-level isolated-launch ``permissions_deny``) that the opencode renderer
-    consumes."""
+    the allow channel. This is the installable deny channel, distinct from the
+    top-level isolated-launch ``permissions_deny``."""
     write_profile(
         env.profiles, "base", "name: base\nsettings:\n  permissions_deny: [x, y]\n"
     )

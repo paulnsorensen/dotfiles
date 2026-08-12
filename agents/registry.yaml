@@ -6,8 +6,8 @@
 # layer, then rendered into every harness by the five renderers.
 #
 # Bodies are instruction-only Markdown at body_path (frontmatter stripped);
-# all metadata lives here. tools/disallowedTools are LISTS (renderers join
-# to CSV for claude/cursor and derive sandbox/permission for codex/opencode).
+# all metadata lives here. tools/disallowedTools are LISTS; renderers join them
+# for Claude/Cursor and derive Codex sandbox policy.
 # models is per-harness; color/effort/maxTurns/skills are Claude-honored fields.
 #
 # The Skill TOOL is withheld from every agent that does not invoke a skill.
@@ -147,7 +147,6 @@ agents:
     models:
       claude: sonnet
       codex: gpt-5.6-luna
-      opencode: inherit
     disallowedTools:
     - Edit
     - Write
@@ -166,7 +165,6 @@ agents:
     models:
       claude: sonnet
       codex: gpt-5.6-terra
-      opencode: inherit
     # briesearch is preloaded rather than reached through the Skill tool: the
     # tool costs 11,355 tokens (it injects the whole skill listing) against
     # ~3,400 to preload this one skill, for the same capability. reviewer makes
@@ -189,7 +187,6 @@ agents:
     models:
       claude: opus
       codex: gpt-5.6-sol
-      opencode: inherit
     disallowedTools:
     - Edit
     - Write
@@ -215,12 +212,11 @@ agents:
     # loading entirely when ToolSearch is absent from an agent's pool, which
     # would load every MCP schema eagerly and cost more than the allowlist saves.
     # The exact tilth_write grant accompanies Claude's whole-server shorthand
-    # so Codex/opencode read-only derivation also sees the mutation surface.
+    # so Codex read-only derivation also sees the mutation surface.
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop through tilth MCP tools. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through tilth_write — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: sonnet
       codex: gpt-5.6-luna
-      opencode: inherit
     tools:
     - Bash
     - Read
@@ -252,7 +248,6 @@ agents:
     models:
       claude: sonnet
       codex: gpt-5.6-terra
-      opencode: inherit
     disallowedTools:
     - Agent
     - Grep

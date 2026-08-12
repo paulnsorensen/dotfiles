@@ -1,12 +1,12 @@
 # The `agents/` Registry System
 
-`agents/` is the harness-agnostic source of truth for everything an AI coding agent needs that varies by *content* but not by *harness*: MCP servers, cross-cutting hooks, cheese sub-agent definitions, the system-prompt body, and the shared name/quote bank. One set of registries, rendered into five different on-disk layouts (Claude Code, Codex, opencode, Cursor, Copilot) by the `ap` tool.
+`agents/` is the shared source for MCP servers, cross-cutting hooks, sub-agent definitions, system-prompt content, and the common name/quote bank. `ap` lowers compatible registries into four layouts (Claude, Codex, Cursor, Copilot); the OMP and Pi assemblers consume selected shared assets through their native chezmoi trees.
 
-The split that matters: **`agents/` declares *what*; `ap` (the `agent-profile/` package) decides *where and in what shape*.** This page covers the *what* — the registries and their conventions. The renderer mechanics live in the companion page [[agent-profile]].
+The split that matters: **`agents/` declares shared content; each harness adapter owns its native shape.** `ap` is one adapter, not the owner of every live harness.
 
 ## Why registries instead of per-harness config
 
-Each harness wants its config in a different place and format — Claude reads a plugin tree, Codex reads `~/.codex/config.toml` + `.codex/agents/*.toml`, opencode reads a merged `opencode.json`, etc. Maintaining five copies of "install the tilth MCP" by hand drifts immediately. So the repo keeps one declarative registry per concern and renders all five.
+Harnesses want different native shapes: Claude uses a plugin tree, Codex uses `config.toml` plus agent TOML, Cursor uses MCP/plugin files, Copilot uses its own MCP and hook schemas, and OMP/Pi use native package trees. One shared declaration with explicit adapters prevents those copies from drifting.
 
 The registries are also the stable **edit surface**: `mcp-edit`, `hook-edit`, `agent-edit`, `skill-edit` open the relevant YAML. You never hand-edit a rendered artifact — you edit a registry and re-run the deploy.
 
@@ -25,10 +25,10 @@ These four are unioned by the `base` profile — the only profile that reads *al
 
 A mapping of `name → {command, args, env, scope, harnesses, gate_unless, optional, description}`. The non-obvious fields:
 
-- **`harnesses`** (registry-documented default `[claude, codex, opencode, cursor, crush]`) — membership list. Each renderer filters the MCP list to entries that include its own name. **There is no single default:** the effective fallback is the `_MCP_DEFAULT`-style constant in the renderer doing the pass, and they genuinely differ (codex and copilot fall back to `[claude, codex]` only). Read the constant in the renderer you care about rather than trusting the registry comment.
-- **`gate_unless`** (claude-only) — `gate_unless: CHEESE_FLOW` means "skip this entry under Claude when `$CHEESE_FLOW == "true"`". The cheese-flow plugin ships its own `context7`/`tavily`/`tilth` via the plugin's bundled `.mcp.json`; registering them user-scope too would spawn duplicate processes. Codex/opencode have no plugin system, so the gate is ignored there and the entry installs normally (`base.gate_blocks` returns `False` for any non-claude harness).
-- **`optional`** — when true, the entry is dropped *non-fatally* at ingest if any `${VAR}` it references is unset. A non-optional entry with an unset ref fails the install loud. **No managed entry uses this any more**: since the credential-broker cutover every managed MCP launches `agent-secret-proxy` against a fixed socket and carries no `env`/`${VAR}` at all (see [[mcp-secret-handling]]). The field survives for profile-local entries that still resolve a credential from `.env`.
-- **`scope`** (claude-only) — `user`/`project`/`local`; other harnesses have no scope concept.
+- **`harnesses`** — explicit membership list. The current shared default is the four `ap` targets; individual renderers can narrow their fallback, so read the renderer constant when absence semantics matter.
+- **`gate_unless`** (Claude-only) — skips an MCP when the named environment flag is active, avoiding duplicate plugin-owned and user-scope servers. Non-Claude renderers ignore it.
+- **`optional`** — drops an entry non-fatally when a referenced environment variable is absent. Managed entries now use the credential broker, so this mainly survives for profile-local MCPs.
+- **`scope`** (Claude-only) — `user`, `project`, or `local`.
 
 #### Per-harness `args`/`env` via Go templates
 
@@ -44,11 +44,11 @@ Note: the bash-style `${VAR}` env refs (resolved from `$DOTFILES_DIR/.env`) are 
 
 A mapping of `name → {event, script|command, shared_assets, harnesses, matcher, timeout, async, description}`. Key design points:
 
-- **`script` vs `command` are mutually exclusive.** `script` is a repo-relative path that gets *deployed* (copied) into the harness layout; `command` is a literal string used verbatim with no file deploy. The **Claude** renderer raises loudly if both or neither is set (`claude.py`); the Codex/Cursor/Copilot renderers assume `script` and silently ignore a stray `command`, so the both/neither invariant is enforced only under Claude.
-- **`shared_assets`** — repo-relative data files the hook script reads at runtime (its lib + bank). Each must live under `agents/<subdir>/<file>` and is deployed to `~/.<harness>/<subdir>/<file>`. Because the chezmoi installer derives its copy list from this field, *adding a new hook with new assets is a pure registry edit* — no installer change.
-- **`harnesses`** defaults to **claude-only** (every renderer's hook default is `("claude",)`); any other harness needs an explicit opt-in. opencode has no hook renderer at all, so it never receives hooks regardless. The shipped cheese-flair hook lists `[claude, codex]` explicitly.
-- **`matcher`** — event-and-harness-dependent. Only `(PreToolUse, PostToolUse)` write a matcher under Claude; `SessionStart` writes one only under Codex (a `startup|resume|clear` source regex). The valid-events set and the matcher rules live in `agents/hooks/lib.sh`; the claude renderer re-encodes the claude half as `_CLAUDE_MATCHER_EVENTS = {PreToolUse, PostToolUse}` and that pair must stay in sync with lib.sh.
-- **`async`** (claude-only boolean) — an explicit `false` is preserved (distinct from absent).
+- **`script` vs `command` are mutually exclusive.** `script` deploys a repo file; `command` is literal. Claude validates the invariant; the other renderers consume script-backed entries.
+- **`shared_assets`** — runtime files copied beside a hook under the target harness tree.
+- **`harnesses`** defaults to Claude-only; every additional renderer requires explicit membership.
+- **`matcher`** is event- and harness-specific: Claude emits tool matchers, while Codex accepts a session-source matcher.
+- **`async`** is a Claude-only boolean.
 
 #### The self-locating hook (why `shared_assets` works)
 
@@ -58,9 +58,9 @@ A mapping of `name → {event, script|command, shared_assets, harnesses, matcher
 
 The cheese sub-agents. Metadata lives in the registry; instruction bodies live as frontmatter-free Markdown at `body_path` under `agents/agent_definitions/`. This split keeps all per-harness metadata in one YAML file while bodies stay editable prose.
 
-- **`models` is per-harness**: `{claude: sonnet, codex: gpt-5-codex, cursor: claude-sonnet, opencode: inherit}`. Each renderer reads its own key; `inherit`/absent means "no override". Copilot ignores model overrides.
-- **`maxTurns` is Claude frontmatter**: set it in `agents/registry.yaml` when a forked Claude sub-agent needs a hard turn cap. The shared Claude/Cursor agent file carries the field, Claude honors it, and Cursor ignores it. Specialist agents and the `explorer`/`researcher`/`reviewer` phase agents are capped at `maxTurns: 50`; `coder` and `generalist` get `100` for longer implementation/synthesis runs; `worktree-content-digest` gets `30`.[^max-turns]
-- **`tools` / `disallowedTools` are lists.** Renderers join to CSV for Claude/Cursor frontmatter, and *derive* sandbox/read-only intent for Codex (`sandbox_mode = "read-only"`) and opencode (`permission.edit: deny`). The read-only derivation (`shared.agent_is_read_only`) counts the MCP write surfaces — `mcp__tilth__tilth_write`, serena's symbol editors — not just `Edit`/`Write`, and treats a trailing-`*` grant like `mcp__serena__*` as conferring write.
+- **`models` is per-harness**: each renderer reads its own key; `inherit` or absence means no override. Copilot ignores model overrides.
+- **`maxTurns` is Claude frontmatter**: the shared Claude/Cursor file carries it, Claude honors it, and Cursor ignores it.[^max-turns]
+- **`tools` / `disallowedTools` are lists.** Claude/Cursor render CSV frontmatter; Codex derives sandbox/read-only intent. `shared.agent_is_read_only` also counts MCP write surfaces, not only `Edit`/`Write`.
 
 Two tiers live here: narrow specialists (`ghostbuster`, `nih-scanner`, `roquefort-wrecker`, `duckdb-expert`, `whey-drainer`, `worktree-content-digest`) used as fork targets by dotfiles-local skills, and four general phase agents (`explorer`/`researcher`/`reviewer`/`coder`) modelling the explore→research→review→code loop. The former `/age` fork specialists (`fromage-age-arch`, `fromage-age-history`, `fromage-secaudit`, `fromage-fort`, `ricotta-reducer`) were removed 2026-07-31 — the reduced `/age` + `age-fanout` workflow dispatches only `explorer`/`reviewer` workers, leaving them dispatcher-less (see [[agent-vs-skill-tiering]]). Planning is intentionally *not* an agent: it owns the human-approval loop and a level-1 sub-agent can't fan out, so it stays an orchestrator concern.
 
@@ -70,23 +70,23 @@ The four phase agents hand results back through their **final message**, which t
 
 Two sources unioned at ingest (`ingest._expand_skills`):
 
-- **Local**: every `skills/<name>/SKILL.md` becomes a `path:` item, copied into each harness by the renderers.
-- **External**: `_registry.yaml`'s `sources: {OWNER/REPO: {pin, skills}}` becomes `source:` items, *not* copied by renderers — they're fetched at install time via `npx skills add` (one shallow `git clone` per source repo, installed to all harnesses in one call; see `cli._fetch_external_skills`).
+- **Local**: `skills/<name>/SKILL.md` becomes a `path:` item for `ap`; OMP and Pi copy the selected local set into their exact chezmoi trees.
+- **External**: `_registry.yaml` sources are fetched by `npx skills add` for CLI-supported harnesses and vendored by the chezmoi assemblers for OMP/Pi, honoring each source's `harnesses:` filter.
 
 ## The edit → render → deploy workflow
 
-1. **Edit a registry** (`mcp-edit` / `hook-edit` / `agent-edit` / `skill-edit`).
-2. **`ap` renders.** The `base` profile expands the four registries into one item list; `ap`'s five renderers materialize that list per harness. The unified manual deploy entry point is `base-sync`, which dispatches the live wrapper profiles (`global` for the dot-dir harnesses, `opencode-global` for opencode).
-3. **chezmoi drives it on `dots sync`** via `run_onchange_after_install-base-profile.sh.tmpl`, which forks to `chezmoi/lib/install-base-profile.sh` and runs `ap install global` (dot-dir harnesses) + `ap install opencode-global` (opencode). The run_onchange hash covers `base`, `global`, `_permissions`, `opencode-global`, all registry inputs, the hook scripts, the shared-asset libs, *and* the `ap` renderer source — so editing a renderer, live wrapper, permission floor, or hook script re-deploys on the next plain `dots sync`.
+1. **Edit the appropriate source.** Shared registry commands cover MCP, hooks, agents, and skills; native OMP/Pi settings stay in their own `.chezmoidata` registries.
+2. **Render or assemble.** `ap` compiles explicit profiles for Claude, Codex, Cursor, and Copilot. `.sync-lib.sh` assembles the exact Claude, Codex, OMP, and Pi payload trees.
+3. **Deploy with `dots sync`.** Chezmoi applies native files, then harness-specific reconcilers converge CLI-managed MCPs and packages. `ap install global` is no longer the machine-convergence path.
 
-The standalone `agents/mcp/sync.sh` and `agents/hooks/sync.sh` still exist for the legacy native-CLI path but are **no longer the deploy path** — `dots sync` does not run them.
+The standalone `agents/mcp/sync.sh` and `agents/hooks/sync.sh` remain legacy native-CLI helpers; `dots sync` does not call them.
 
 ## The non-registry files in `agents/`
 
 Shared agent *content* that chezmoi copies directly (not through `ap`):
 
-- **`agents/AGENTS.md`** — global coding-agent preferences. chezmoi copies it to `~/.claude/CLAUDE.md` *and* `~/.codex/AGENTS.md` (via `install-agents-doc.sh`).
-- **`agents/preamble.md`** — the compact standing system-prompt body: direct batched tilth routing, repository-wiki grounding, and phase-agent selection. Phase-specific handoff, sizing, coder, and review procedures live in agent or skill definitions instead. The preamble *replaces* the bundled system prompt per harness: Codex via `model_instructions_file` in `config.toml`, opencode via `~/.config/opencode/agents/build.md` (both wired by `install-prompts.sh`), Claude via `--system-prompt-file` in the `cc`/`ccc`/`ccr` wrappers (`zsh/claude.zsh`). The user-side AGENTS.md/CLAUDE.md cascade loads *on top of* this replaced prompt.
+- **`agents/AGENTS.md`** — global coding-agent preferences installed as `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and `~/.pi/agent/AGENTS.md`.
+- **`agents/preamble.md`** — the compact standing system-prompt body. Claude wrappers pass it with `--system-prompt-file`; `install-prompts.sh` installs it as Codex's `model_instructions_file`. OMP and Pi use separate native `APPEND_SYSTEM.md` files because their prompt contracts differ.
 - **`agents/RTK.md`** — RTK proxy reference, Claude-only (copied to `~/.claude/RTK.md`).
 
 See [[../harnesses/index]] for how each harness consumes these artifacts and the official docs for its native config surfaces.

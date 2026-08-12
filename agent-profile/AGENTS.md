@@ -1,8 +1,8 @@
 # AGENTS.md — `agent-profile/` (the `ap` renderer)
 
 The Python package behind `ap`: it lowers the declarative registries + profiles
-(`agents/`, `profiles/`) into per-harness config for Claude, Codex, opencode,
-Cursor, and Copilot. Architecture and rationale live in the wiki — ground there
+into per-harness config for Claude, Codex, Cursor, and Copilot. Architecture
+and rationale live in the wiki — ground there
 before non-trivial work:
 
 - [[architecture/agent-profile]] — install vs launch, profiles, the renderers.

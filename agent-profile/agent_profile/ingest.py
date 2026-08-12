@@ -78,8 +78,8 @@ def _as_csv_list(value: Any) -> list[str]:
     return list(value)
 
 
-_AGENT_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
-_SKILL_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
+_AGENT_HARNESSES = ("claude", "codex", "cursor", "copilot")
+_SKILL_HARNESSES = ("claude", "codex", "cursor", "copilot")
 _HOOK_HARNESSES = ("claude", "codex", "cursor", "copilot")
 _COMMAND_HOOK_HARNESSES = ("claude", "codex")
 

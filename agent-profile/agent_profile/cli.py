@@ -44,7 +44,7 @@ from agent_profile.renderers.base import (
     includes_harness,
 )
 
-ALL_HARNESSES = ["claude", "codex", "opencode", "cursor", "copilot", "crush"]
+ALL_HARNESSES = ["claude", "codex", "cursor", "copilot"]
 
 # Harness-name -> Renderer. Populated by the wiring barrel; tests inject
 # stubs via set_renderers(). Empty by default (seed phase ships no
@@ -94,9 +94,8 @@ Install/launch options:
   --profile-src <dir>           Extra search root for profile lookup
 
 Uninstall accepts --target and --profile-src. --harness is honored but
-limited: every cleaner still runs (shared/merged files like
-opencode.json, .mcp.json carry profile-authored entries across the
-harness boundary; a partial cleanup would leave dangling entries).
+limited: every cleaner still runs because shared files such as `.mcp.json`
+carry profile-authored entries across harness boundaries.
 
 Perms options:
   --local                       Write settings.local.json (gitignored); skip Codex
@@ -440,7 +439,7 @@ def _reconcile_dropped_mcps(
     """Evict MCP servers that fell out of a harness since the last install.
 
     Renderers MERGE MCPs into persistent/user-owned files (codex config.toml,
-    opencode/cursor/copilot JSON, claude user-scope ~/.claude.json), so a
+    cursor/copilot JSON, claude user-scope ~/.claude.json), so a
     server that stops rendering into a harness lingers — render only writes
     the current set. A server is "dropped" from a harness either by leaving
     the registry entirely OR by losing that harness from its membership (e.g.
@@ -533,15 +532,13 @@ def _fetch_external_skills(
         )
         return
 
-    skill_harnesses = [h for h in harnesses if h in ("claude", "codex", "cursor", "copilot", "opencode")]
+    skill_harnesses = [h for h in harnesses if h in ("claude", "codex", "cursor", "copilot")]
     if not skill_harnesses:
         return
 
     # Group items by source repo (shared rule: a bare `source:` = all skills
     # for that repo, winning over explicit sibling names; `pin` is per-source;
-    # first-seen order preserved so output/test assertions stay deterministic).
-    # Harnesses with no `npx skills` backend (currently crush) were filtered out
-    # above.
+    # first-seen order is preserved so output and tests stay deterministic.
     try:
         for source, names, pin in group_external_sources(manifest.skills):
             label = "*" if names is None else ", ".join(names)
@@ -675,7 +672,7 @@ def cmd_launch(
     if not harness:
         raise CliError(
             f"{colors.RED}ap launch: harness required "
-            f"(claude|codex|opencode|cursor|copilot|crush){colors.NC}"
+            f"(claude|codex|cursor|copilot){colors.NC}"
         )
     if harness not in ALL_HARNESSES:
         raise CliError(
@@ -723,11 +720,10 @@ def _launch_isolated(
     colors: _Colors,
     out: Any,
 ) -> NoReturn:
-    """Closed-world launch (spec D1): dispatch to the per-harness isolation
-    builder, inject the profile env, exec the harness. claude/codex/opencode
-    each build the closed world by a different mechanism behind one
-    ``(flags, env)`` contract; cursor/copilot/crush have no isolation lever
-    and fail loud (``IsolationError`` -> ``CliError``)."""
+    """Closed-world launch: dispatch to the per-harness isolation builder,
+    inject the profile environment, and exec the harness. Claude and Codex
+    provide isolation builders; Cursor and Copilot fail loud because they have
+    no runtime isolation lever."""
     from agent_profile.env import EnvResolutionError
     from agent_profile.overlay import IsolationError, build_isolated_launch
 
@@ -859,7 +855,7 @@ def _validate_harnesses(harnesses: list[str], colors: _Colors) -> None:
         if h not in ALL_HARNESSES:
             raise CliError(
                 f"{colors.RED}ap: unknown harness '{h}' "
-                f"(valid: claude|codex|opencode|cursor|copilot|crush){colors.NC}"
+                f"(valid: claude|codex|cursor|copilot){colors.NC}"
             )
 
 
@@ -897,9 +893,8 @@ def main(argv: list[str] | None = None) -> int:
                 a == "--harness" or a.startswith("--harness=")
                 for a in rest_no_local
             )
-            # An explicit --harness must fail loud on any out-of-scope value
-            # (e.g. claude,opencode) rather than silently dropping it. The
-            # all-harness DEFAULT still filters quietly down to claude/codex.
+            # Explicit out-of-scope harnesses fail rather than being dropped.
+            # The all-harness default still filters to Claude and Codex.
             if explicit_harness:
                 unsupported = [
                     h for h in harnesses if h not in ("claude", "codex")

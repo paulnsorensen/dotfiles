@@ -62,22 +62,6 @@ resume_codex_session() {
     printf '%s\t%s\n' "$best_id" "$best_mtime"
 }
 
-# resume_opencode_session <cwd> — newest session row whose directory matches.
-# Prints "<session-id>\t<updated-epoch-seconds>"; returns 1 on no match.
-# RESUME_OPENCODE_DB overrides the db path for tests.
-resume_opencode_session() {
-    local cwd="$1" db="${RESUME_OPENCODE_DB:-$HOME/.local/share/opencode/opencode.db}"
-    [[ -f "$db" ]] || return 1
-    local escaped row id ms
-    escaped=${cwd//\'/\'\'}
-    row=$(sqlite3 -readonly "$db" \
-        "SELECT id, time_updated FROM session WHERE directory = '$escaped' ORDER BY time_updated DESC LIMIT 1;" \
-        2>/dev/null) || true
-    [[ -n "$row" ]] || return 1
-    id="${row%%|*}"
-    ms="${row##*|}"
-    printf '%s\t%s\n' "$id" "$((ms / 1000))"
-}
 
 # resume_resurrect_dir — mirror tmux-resurrect's own default resolution
 # (scripts/helpers.sh): ~/.tmux/resurrect if present, else the XDG data dir.
@@ -154,10 +138,6 @@ resume_best_match() {
         id="${line%%$'\t'*}"; epoch="${line##*$'\t'}"
         if (( epoch > best_epoch )); then best_epoch=$epoch; best_id=$id; best_harness="codex"; fi
     fi
-    if line=$(resume_opencode_session "$cwd"); then
-        id="${line%%$'\t'*}"; epoch="${line##*$'\t'}"
-        if (( epoch > best_epoch )); then best_epoch=$epoch; best_id=$id; best_harness="opencode"; fi
-    fi
 
     [[ -n "$best_harness" ]] || return 1
     printf '%s\t%s\t%s\n' "$best_harness" "$best_id" "$best_epoch"
@@ -170,7 +150,6 @@ resume_command_for() {
     case "$harness" in
         claude) printf 'claude --resume %s' "$id" ;;
         codex) printf 'codex resume %s' "$id" ;;
-        opencode) printf 'opencode --session %s' "$id" ;;
     esac
 }
 

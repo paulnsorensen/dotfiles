@@ -1,25 +1,22 @@
 # The global agents doc — what lives where and why
 
 `agents/AGENTS.md` is the single source for cross-project agent preferences.
-`dots sync` (via `chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl`)
-copies it verbatim to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`.
-`agents/RTK.md` deploys to `~/.claude/RTK.md` only — RTK's rewrite hook lives in
-the Claude harness, so Codex gets no RTK doc (the `@RTK.md` import at the bottom
-of AGENTS.md is benign literal text there).
+`dots sync` installs it as `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and
+`~/.pi/agent/AGENTS.md`.
+`agents/RTK.md` deploys to `~/.claude/RTK.md` only because the rewrite hook is
+Claude-specific; the `@RTK.md` line is benign literal text in the other harnesses.
 
 ## Why routing detail lives in the preamble, not the agents doc
 
-Both `agents/AGENTS.md` (as `~/.claude/CLAUDE.md`) and `agents/preamble.md` are
-standing context in their Claude/Codex sessions — the preamble replaces the bundled system
-prompt (Claude Code via `--system-prompt-file` in `zsh/claude.zsh`; Codex via
-`model_instructions_file` in `~/.codex/config.toml`; opencode via
-`~/.config/opencode/agents/build.md`), and the agents doc loads on top of it.
-Duplicating routing guidance across both paid its token cost twice per session
-for zero extra signal (2026-07 "loop and harness" review). Decision: the
-preamble **owns** the task-to-tool tables, the serena-vs-tilth edit-shape
-guide, the Codex `exec_command` rule, and the routing self-check; the agents
-doc keeps only the two-MCP split and a pointer. When editing routing guidance,
-edit the preamble — don't re-grow the section in AGENTS.md.
+Claude and Codex receive both the shared agents doc and `agents/preamble.md`.
+The preamble replaces the bundled system prompt through Claude's launcher and
+Codex's `model_instructions_file`; the agents doc loads as additional context.
+Duplicating routing guidance in both paid its token cost twice, so the preamble
+owns task-to-tool routing and the agents doc keeps stable cross-project rules.
+
+Pi loads the same global agents doc but uses its own native
+`~/.pi/agent/APPEND_SYSTEM.md`; OMP has a separate addendum as well. Their
+prompt contracts are not forced through the Claude/Codex preamble installer.
 
 Same review deduped RTK to one canonical doc (`agents/RTK.md`): the repo-root
 `RTK.md` and the `rtk init` block in the repo `CLAUDE.md` were deleted (the
@@ -59,10 +56,16 @@ Related: [[architecture/agents-dir]] · [[harnesses/index]] ·
 | This-repo Claude (+ RTK + root wrapper/doc) | 3,203 | 3,215 | 9,750 |
 | Nested `agent-profile/` Codex (+ path-scoped `AGENTS.md`) | 3,463 | 3,473 | 10,000 |
 | OMP addendum | 887 | 896 | 1,000 |
+| Pi addendum | — | — | 1,100 |
 
-The previous audit missed three repo-owned classes: `agent-profile/AGENTS.md`, the selected profile prompts under `profiles/*/{AGENTS,CLAUDE}.md`, and Copilot's repo/path instructions. All are source-bounded now. `profiles/mgmt/CLAUDE.md` remains bounded but is excluded from injected stacks because its non-isolated profile does not consume `system_prompt`. The selected profile stacks are conservative this-repo maxima; the actual renderer paths are Claude `--append-system-prompt-file`, Codex `model_instructions_file`, and OpenCode additive `instructions`.[^2]
+The previous audit missed three repo-owned classes: `agent-profile/AGENTS.md`,
+selected profile prompts, and Copilot repo/path instructions. The active
+renderer paths are Claude's append-system file and Codex's
+`model_instructions_file`.[^2]
 
-Copilot has separate 4,500-token ceilings for its coding and review maxima; OMP remains separate because it disables external agents-doc discovery. Conductor's app-owned system/workspace instruction is outside the repo-owned manifest. The repo's Conductor settings only define `just check`, while `agents/preamble.md` reaches Claude through the separate `_cc_base` zsh launcher; do not count that preamble in a Conductor launch without inspecting the live app/user launch configuration.[^3]
+Copilot has separate coding/review ceilings; OMP and Pi have independent native
+addendum ceilings because neither is rendered by `ap`. Conductor's app-owned
+instructions remain outside this repo-owned manifest.[^3]
 
 The counts concatenate source text and exclude harness-native prompts, tool schemas, invoked skills, sub-agent bodies, user messages, and external personal/organization instructions.
 
@@ -109,9 +112,9 @@ The complete research report is retained in the durable cheese corpus.[^10]
 
 _Source: effective-global-instruction-stack research · Updated: 2026-07-28 · Supersedes: treating mechanical next-boundary ceilings as ideal target sizes_
 
-Sliced Bread now has a harness-neutral source at `agents/reference/sliced-bread.md` and a single normative live path at `~/.agents/reference/sliced-bread.md`. The agents-doc installer deploys that copy, while global Claude/Codex instructions and OMP's compact addendum name the same path.[^shared-reference]
+Sliced Bread has a harness-neutral source at `agents/reference/sliced-bread.md` and a normative live path at `~/.agents/reference/sliced-bread.md`. The agents-doc installer deploys that copy; Claude/Codex instructions and the OMP and Pi addenda name the same path.[^shared-reference]
 
 The global rules were consolidated from thirteen overlapping rules to five operational rules after their distinct requirements moved into the earlier behavior and coding-principle sections. The last-written thirteen-rule block remains verbatim at `archive/agents-rules.md`; the archive does not deploy.[^rules-archive]
 
-[^shared-reference]: `agents/reference/sliced-bread.md`; `chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl`; `agents/AGENTS.md:44-57`; `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md`
+[^shared-reference]: `agents/reference/sliced-bread.md`; `chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl`; `agents/AGENTS.md`; `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md`; `chezmoi/dot_pi/private_agent/APPEND_SYSTEM.md`
 [^rules-archive]: `agents/AGENTS.md:71-95`; `archive/agents-rules.md`; `archive/README.md`

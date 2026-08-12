@@ -5,31 +5,26 @@ The `harnesses` field on an `agents/mcp/registry.yaml` entry is not just a
 token-budget** lever. The reason is that harnesses differ in *when* they send
 an MCP server's tool schemas to the model.
 
-## The split: Claude defers, everyone else eager-loads
+## The split: Claude defers; Codex, Cursor, and Copilot eager-load
 
-Measured + sourced 2026-06 (research artifacts under
-`.cheese/research/mcp-schema-loading/` and
-`.cheese/research/opencode-mcp-eager-load/`):
+Measured and sourced in the 2026-06 research artifact under
+`.cheese/research/mcp-schema-loading/`:
 
 | Harness | MCP tool-schema loading | Consequence |
 |---|---|---|
 | **Claude Code** | **Lazy / deferred by default** since v2.1.x (2026-01-14). Only tool *names* enter context at session start; full JSON schemas fetched on demand via `ToolSearch`. `ENABLE_TOOL_SEARCH` controls it (`true`/`false`/`auto`/`auto:N`); `alwaysLoad: true` opts a server out. Disabled on Vertex / non-first-party `ANTHROPIC_BASE_URL`. | A big MCP set costs ~names-only until used (~85% schema-token cut). |
-| **opencode** | **Eager** — `SessionTools.resolve` adds every connected server's `mcp.tools()` defs to the LLM tool array every turn. `tools:{x:false}` / `permission` blocks *execution*, **not** prompt injection. No ToolSearch equivalent (sst/opencode#23045). | Full schema cost every request. |
 | **Codex CLI** | **Eager** — lazy load is an open FR (#9266, #14507), unshipped. | Full schema cost every request. |
 | **Cursor** | **Eager** + hard 40-tool cap (tools 41+ silently dropped). | Full cost + invisible tools past 40. |
 | **Copilot CLI** | **Eager** — compaction-based context mgmt, no deferral. | Full cost; large sets trigger compaction loops. |
 
-**Claude Code is the outlier, not the norm.** The intuition "MCP tools are cheap
-because they load on demand" is *Claude-specific*. On the other four harnesses,
-every configured MCP tool schema is paid for on every single request whether or
-not the model ever calls it.
+**Claude Code is the outlier.** The other three `ap` render targets pay the
+configured schema cost on every request, whether or not the model calls a tool.
 
 ## Why this drives registry membership
 
-Because four of the five render targets eager-load, an MCP that is irrelevant to
-coding is dead weight measured in tens of thousands of tokens *per request* on
-those harnesses. So the `harnesses` list is a budget decision: keep an MCP out
-of harnesses that would pay for schemas they never use.
+Because three of four targets eager-load, an irrelevant MCP is dead weight on
+those harnesses. The `harnesses` list is therefore both a compatibility and a
+token-budget decision.
 
 Measured tool-schema footprint of the full MCP set, **after the 2026-06 tool-surface
 trim** (~55k tokens; the three trimmed servers carry their pre-trim count in parens):
@@ -43,10 +38,9 @@ trim** (~55k tokens; the three trimmed servers carry their pre-trim count in par
 | hallouminate | 8 (was 9)¹ | ~2,050 | 4% |
 | context7 | 2 | ~1,200 | 2% |
 
-This repo applies one of the three trims — serena `excluded_tools` 8→11 (exposed tools 12→9). Together they cut the **eager-harness
-coding set** (everything except the already-scoped-out todoist) from ~22.8k to
-~17.05k tokens/request — a ~5.75k/request saving on codex / opencode / cursor /
-copilot, stacking on the ~38k already shed by scoping todoist out.
+The trims reduce the eager-harness coding set from roughly 22.8k to 17.05k
+tokens per request — about 5.75k saved on Codex, Cursor, and Copilot, in
+addition to the Todoist exclusion.
 
 ¹ The hallouminate `globalize_markdown` drop (9→8, ~250 tokens) ships separately
 upstream and is **not** applied by this repo's config; the table row above already
@@ -80,8 +74,8 @@ coding harness sheds the 38k tokens.
 
 ## Takeaways for future edits
 
-- Adding an MCP to the default `harnesses` set taxes opencode / codex / cursor /
-  copilot on **every request**, not just when used. Budget accordingly.
+- Adding an MCP to the default set taxes Codex, Cursor, and Copilot on every
+  request, not just when used.
 - For an MCP that is only occasionally relevant, prefer scoping it to a dedicated
   profile (inline `mcps:`) over the default set — see Todoist / [[agents-dir]].
 - Claude Code's lazy behavior can mask the cost — a set that feels free in Claude

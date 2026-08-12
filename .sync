@@ -44,7 +44,7 @@ unset _sync_script_path
 ########## Functions
 verify_harness_versions() {
     local phase="${1:-after package convergence}"
-    local omp_version codex_version
+    local omp_version codex_version pi_version
 
     if ! command -v omp >/dev/null 2>&1; then
         log_error "omp unavailable $phase"
@@ -69,6 +69,19 @@ verify_harness_versions() {
     fi
     if [[ "$codex_version" != "codex-cli 0.146.0" ]]; then
         log_error "codex version mismatch $phase: expected codex-cli 0.146.0, got $codex_version"
+        return 1
+    fi
+
+    if ! command -v pi >/dev/null 2>&1; then
+        log_error "pi unavailable $phase"
+        return 1
+    fi
+    if ! pi_version="$(pi --version)"; then
+        log_error "pi --version failed $phase"
+        return 1
+    fi
+    if [[ "$pi_version" != "0.84.1" ]]; then
+        log_error "pi version mismatch $phase: expected 0.84.1, got $pi_version"
         return 1
     fi
 }
@@ -168,6 +181,7 @@ run_sync() {
     install_tilth_claude_code
     reconcile_claude_mcps
     sync_omp_plugins "$dir"
+    sync_pi_packages
 
     unset DOTFILES_DEV
 

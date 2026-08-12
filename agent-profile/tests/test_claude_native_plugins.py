@@ -125,7 +125,7 @@ def _make_standard_milknado(
     )
     entry: dict = {
         "path": str(market_root),
-        "harnesses": harnesses or ["claude", "codex", "opencode"],
+        "harnesses": harnesses or ["claude", "codex", "cursor"],
         "claude_native": claude_native,
         "description": "Mikado engine",
     }
@@ -183,7 +183,7 @@ def test_marketplace_root_has_no_mcp_json(tmp_path):
 def test_mcp_decomposed_from_payload_not_marketplace_root(tmp_path):
     """MCP is read from plugins[].source dir, not the marketplace root itself."""
     repo, _market_root, _payload = _make_standard_milknado(
-        tmp_path, harnesses=["codex", "opencode"], claude_native=False
+        tmp_path, harnesses=["codex", "cursor"], claude_native=False
     )
 
     out = expand_registries(
@@ -379,7 +379,7 @@ def test_non_native_entry_produces_no_native_plugin_record(tmp_path):
 def test_claude_native_mcp_excludes_claude_from_harnesses(tmp_path):
     """DEDUP: claude is removed from decomposed MCP harnesses for claude_native."""
     repo, _market_root, _payload = _make_standard_milknado(
-        tmp_path, harnesses=["claude", "codex", "opencode"],
+        tmp_path, harnesses=["claude", "codex", "cursor"],
     )
 
     out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, repo, {})
@@ -388,7 +388,7 @@ def test_claude_native_mcp_excludes_claude_from_harnesses(tmp_path):
     harnesses = mcps[0].get("harnesses", [])
     assert "claude" not in harnesses, f"claude should be excluded: {harnesses}"
     assert "codex" in harnesses
-    assert "opencode" in harnesses
+    assert "cursor" in harnesses
 
 
 def test_claude_native_mcp_claude_only_becomes_empty_harnesses(tmp_path):
@@ -692,10 +692,10 @@ def test_claude_renderer_skips_native_plugin_skills(tmp_path):
 def test_claude_renderer_dedup_mcp_not_in_user_scope(tmp_path):
     """After DEDUP, an MCP with harnesses=[codex] is not rendered for Claude.
 
-    This test is NOT vacuous: the MCP item has harnesses=[codex,opencode]
-    (claude was in the original harnesses but removed by DEDUP). The renderer
-    must not register it at user scope for Claude. If DEDUP is removed and the
-    item regains harnesses=[claude,codex,opencode], this test would FAIL because
+    This test is NOT vacuous: the MCP item has harnesses=[codex,cursor]
+    (Claude was in the original harnesses but removed by deduplication). The
+    renderer must not register it for Claude. If deduplication is removed and
+    the item regains harnesses=[claude,codex,cursor], this test fails because
     the plugin .mcp.json would contain milknado.
     """
     from agent_profile.parse import Manifest
@@ -713,12 +713,12 @@ def test_claude_renderer_dedup_mcp_not_in_user_scope(tmp_path):
     )
 
     # Manifest with MCP that originally had claude in harnesses but DEDUP removed it.
-    # harnesses=["codex", "opencode"] — claude NOT present.
+    # harnesses=["codex", "cursor"] — Claude is absent.
     mcp_item = {
         "name": "milknado",
         "command": "uvx",
         "args": ["milknado-mcp"],
-        "harnesses": ["codex", "opencode"],  # claude removed by DEDUP
+        "harnesses": ["codex", "cursor"],  # Claude removed by deduplication
         "_source_dir": str(payload),
     }
     manifest = Manifest(
@@ -749,7 +749,7 @@ def test_claude_renderer_dedup_mcp_not_in_user_scope(tmp_path):
     if plugin_mcp.is_file():
         mcp_data = json.loads(plugin_mcp.read_text())
         servers = mcp_data.get("mcpServers", {})
-        # milknado must not appear in the plugin .mcp.json (harnesses=[codex,opencode])
+        # milknado must not appear in plugin .mcp.json (harnesses=[codex,cursor])
         # If DEDUP is removed, this would fail because claude would be in harnesses
         assert "milknado" not in servers, (
             f"milknado appears in plugin .mcp.json — DEDUP is not working: {servers}"

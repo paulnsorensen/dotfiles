@@ -1,6 +1,5 @@
 #!/bin/bash
-# install-prompts.sh — wire agents/preamble.md as the system prompt for
-# harnesses that support replacement (Codex CLI, opencode).
+# install-prompts.sh — wire agents/preamble.md as the Codex system prompt.
 #
 # Claude Code reads preamble.md directly via the cc/ccc/ccr wrappers
 # in zsh/claude.zsh (--system-prompt-file), so it is not handled here.
@@ -14,22 +13,13 @@
 #               (codex-rs/core/gpt_5_*_prompt.md). AGENTS.md cascade still
 #               loads as developer-role messages (untouched).
 #
-#   opencode  — copy preamble.md to <OPENCODE_HOME>/agents/build.md.
-#               opencode reads {agent,agents}/**/*.md and uses the file body
-#               as the agent's system prompt
-#               (packages/opencode/src/config/agent.ts:125). "build" is the
-#               default agent, so bare `opencode` picks it up.
-#
-# Harness CLIs that are not installed are skipped silently.
 #
 # Usage:
 #   install-prompts.sh <preamble_path>
 #
 # Honors:
 #   CODEX_HOME        defaults to ~/.codex
-#   OPENCODE_HOME     defaults to ~/.config/opencode
 #   INSTALL_PROMPTS_HAVE_CODEX       force-on/off codex detection (for tests)
-#   INSTALL_PROMPTS_HAVE_OPENCODE    force-on/off opencode detection (for tests)
 #   INSTALL_PROMPTS_HAVE_YQ          force-on/off yq detection (for tests)
 
 set -euo pipefail
@@ -96,20 +86,6 @@ install_prompts_wire_codex() {
     fi
 }
 
-install_prompts_wire_opencode() {
-    local preamble="$1"
-    local opencode_home="${OPENCODE_HOME:-$HOME/.config/opencode}"
-    local opencode_prompt="$opencode_home/agents/build.md"
-
-    install_prompts_have opencode || {
-        echo "  Skipped opencode wiring (opencode not installed)"
-        return 0
-    }
-
-    mkdir -p "$(dirname "$opencode_prompt")"
-    cp -f "$preamble" "$opencode_prompt"
-    echo "  Copied preamble.md -> $opencode_prompt"
-}
 
 install_prompts_main() {
     local preamble="${1:-}"
@@ -122,7 +98,6 @@ install_prompts_main() {
         return 0
     fi
     install_prompts_wire_codex "$preamble"
-    install_prompts_wire_opencode "$preamble"
 }
 
 # Only run main when this file is executed directly (not when sourced by bats).

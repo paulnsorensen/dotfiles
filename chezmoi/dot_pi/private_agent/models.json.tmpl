@@ -1,0 +1,7 @@
+{{- if get . "localLLM" -}}
+{{ dict "providers" .pi.localModels.providers | toPrettyJson }}
+{{- else -}}
+{
+  "providers": {}
+}
+{{- end }}

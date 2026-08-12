@@ -407,10 +407,9 @@ run_sync() {
         jq yq fzf gh shellcheck bats-core ripgrep fd eza bat glow ast-grep
         git-delta git-lfs tmux prek zoxide atuin bottom dust procs tokei yazi
         difftastic mergiraf lazygit git-town sesh just chezmoi duckdb node bun
-        sd vhs opencode crush sccache cargo-nextest protobuf uv rustup
+        sd vhs sccache cargo-nextest protobuf uv rustup
         rust-analyzer cargo-llvm-cov rtk bash-language-server yaml-language-server
-        pyright gopls oven-sh/bun anomalyco/tap anomalyco/tap/opencode
-        joshmedeski/sesh charmbracelet/tap/crush
+        pyright gopls oven-sh/bun joshmedeski/sesh
     )
     local name
     for name in "${migrated[@]}"; do
@@ -1214,6 +1213,7 @@ YAML
 @test "omp installer failure fails loudly and does not save cache" {
     write_test_yaml
     write_mock_sh 1
+    write_mock_uname Linux
 
     run_sync
     assert_failure
@@ -1489,4 +1489,20 @@ MOCKCARGO
     assert_success
 
     [[ ! -e "$TEST_HOME/.local/bin/claude" ]]
+}
+
+@test "retired harness cleanup removes brew, mise, and native installs" {
+    write_test_yaml
+    write_mock_brew $'opencode\ncrush'
+    mkdir -p "$TEST_HOME/.local/bin"
+    touch "$TEST_HOME/.local/bin/opencode" "$TEST_HOME/.local/bin/crush"
+
+    run_sync
+    assert_success
+
+    grep -qx "brew uninstall opencode" "$BREW_LOG"
+    grep -qx "brew uninstall crush" "$BREW_LOG"
+    grep -q "mise uninstall --yes --all aqua:anomalyco/opencode aqua:charmbracelet/crush" "$MISE_LOG"
+    [[ ! -e "$TEST_HOME/.local/bin/opencode" ]]
+    [[ ! -e "$TEST_HOME/.local/bin/crush" ]]
 }

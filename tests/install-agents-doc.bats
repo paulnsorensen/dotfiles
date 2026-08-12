@@ -92,3 +92,9 @@ teardown() { teardown_test_env; }
     grep -Fq '"$DOTFILES_ROOT/agents/reference/sliced-bread.md"' "$template"
     grep -Fq '"$HOME/.agents/reference/sliced-bread.md"' "$template"
 }
+
+@test "run-on-change installs shared agent instructions for upstream Pi" {
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl"
+
+    grep -Fq '"$HOME/.pi/agent/AGENTS.md"' "$template"
+}

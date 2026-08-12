@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "XRay Dependency Graph",
+  "description": "Semantic dependency graph for /xray design verification sessions",
+  "type": "object",
+  "required": ["meta", "nodes", "edges", "dfsOrder"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["slug", "created", "lastVerified", "gitSha", "targetPath"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "type": "string",
+          "description": "URL-safe identifier derived from target path"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastVerified": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "gitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$",
+          "description": "Git HEAD SHA at last save — used for staleness detection on resume"
+        },
+        "targetPath": {
+          "type": "string",
+          "description": "Root path that was xrayed (relative to repo root)"
+        },
+        "barrelFile": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Path to the barrel/index file (the module's barrel), or null if none found"
+        },
+        "barrelExports": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": ["name", "visibility"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "signature": {
+                "type": ["string", "null"],
+                "default": null,
+                "description": "Function signature or type declaration (null for re-exports, constants, or when LSP hover unavailable)"
+              },
+              "visibility": {
+                "type": "string",
+                "enum": ["public"],
+                "description": "Always public — barrel exports are the module's contract"
+              }
+            }
+          },
+          "description": "Public exports from the barrel file — the module's API contract"
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "filePath", "symbolName", "type", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique node identifier (e.g. file path or file:symbol)"
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "symbolName": {
+            "type": "string",
+            "description": "Primary exported symbol or module name"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["module", "function", "type"],
+            "description": "module = file-level, function/type = symbol-level (drill-down)"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["unverified", "green", "yellow", "red"],
+            "description": "Traffic light verdict — tool proposes, user confirms"
+          },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "description": "User and analyst observations"
+          },
+          "evidence": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "description": "Concrete evidence supporting the traffic light (test counts, spec alignment, de-slop findings)"
+          },
+          "lastVerified": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "default": null
+          },
+          "visibility": {
+            "type": "string",
+            "enum": ["public", "private"],
+            "default": "public",
+            "description": "Symbol visibility — public symbols form the API surface, private are tracked for dead-code analysis"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["entry-point", "hub", "domain", "utility", "leaf", "terminal"],
+            "default": "domain",
+            "description": "Architectural role computed from edge topology: entry-point (fanIn==0), hub (high fanIn+fanOut), domain (business logic), utility (widely imported, few deps), leaf (fanOut==0), terminal (well-known external lib)"
+          },
+          "fanIn": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of modules that depend on this node (incoming import edges). Only computed for type:module nodes."
+          },
+          "fanOut": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of modules this node depends on (outgoing import edges). Only computed for type:module nodes."
+          },
+          "threads": {
+            "type": ["object", "null"],
+            "default": null,
+            "description": "Steel-thread pipeline output captured for this node — written when the user runs `thread <symbol>` or when blast-radius evidence is needed for a yellow/red verdict",
+            "additionalProperties": false,
+            "properties": {
+              "directCallers": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "qualified_name or name<file:line> of each direct caller"
+              },
+              "flows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["name", "criticality", "chain"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string" },
+                    "criticality": { "type": "string" },
+                    "chain": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Ordered entry → ... → leaf symbol path"
+                    }
+                  }
+                }
+              },
+              "blastRadius": {
+                "type": "object",
+                "required": ["depth", "functions", "files"],
+                "additionalProperties": false,
+                "properties": {
+                  "depth": { "type": "integer", "minimum": 1 },
+                  "functions": { "type": "integer", "minimum": 0 },
+                  "files": { "type": "integer", "minimum": 0 }
+                }
+              },
+              "hub": { "type": "boolean" },
+              "bridge": { "type": "boolean" },
+              "capturedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Source node ID (the importer/caller)"
+          },
+          "to": {
+            "type": "string",
+            "description": "Target node ID (the imported/callee)"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["import", "call"],
+            "description": "import = static dependency, call = runtime invocation"
+          },
+          "label": {
+            "type": "string",
+            "default": "",
+            "description": "Optional edge annotation (e.g. imported symbol name)"
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Number of distinct symbols imported (for import edges) or call sites (for call edges) between these nodes"
+          }
+        }
+      }
+    },
+    "dfsOrder": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Node IDs in leaf-first DFS order — verification traversal sequence"
+    }
+  }
+}

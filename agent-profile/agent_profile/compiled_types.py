@@ -9,7 +9,6 @@ from typing import Any
 VALID_COMPILE_HARNESSES = (
     "claude",
     "codex",
-    "opencode",
     "cursor",
     "copilot",
 )

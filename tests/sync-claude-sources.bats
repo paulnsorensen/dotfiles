@@ -379,6 +379,23 @@ YAML
     [ -f "$base/exact_ext-skill/SKILL.md" ]
 }
 
+@test "Pi assembly: mirrors selected skills and shared Pi-family resources" {
+    mkdir -p "$SRC/dot_omp/private_agent/extensions" "$SRC/dot_omp/private_agent/themes"
+    echo "rtk" > "$SRC/dot_omp/private_agent/extensions/rtk.ts"
+    echo "flair" > "$SRC/dot_omp/private_agent/extensions/cheese-flair.ts"
+    echo "{}" > "$SRC/dot_omp/private_agent/themes/chocolate-donut.json"
+
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && sync_pi_chezmoi_sources '$ROOT' '$SRC'"
+    [ "$status" -eq 0 ]
+    local base="$SRC/dot_pi/private_agent"
+    [ -f "$base/exact_skills/exact_alpha-skill/SKILL.md" ]
+    [ -f "$base/exact_skills/exact_beta-skill/SKILL.md" ]
+    [ -f "$base/exact_skills/exact_ext-skill/SKILL.md" ]
+    [ "$(cat "$base/extensions/rtk.ts")" = "rtk" ]
+    [ "$(cat "$base/extensions/cheese-flair.ts")" = "flair" ]
+    [ "$(cat "$base/themes/chocolate-donut.json")" = "{}" ]
+}
+
 @test "assembly: a source with skills_path vendors skills discovered under the nested dir" {
     cat > "$ROOT/skills/_registry.yaml" <<'YAML'
 sources:

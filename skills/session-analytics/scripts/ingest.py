@@ -23,7 +23,6 @@ import json
 import os
 import re
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
@@ -213,87 +212,8 @@ def codex_normalize(path):
             }
 
 
-def opencode_discover():
-    db = os.path.expanduser("~/.local/share/opencode/opencode.db")
-    return [db] if os.path.isfile(db) else []
-
-
-def opencode_normalize(path):
-    """opencode SQLite (part table, type='tool') -> canonical envelope.
-
-    A tool part carries {tool, callID, state:{status,input,output}}. We emit
-    an assistant tool_use and, for any terminal status (completed/error), a
-    paired user tool_result. session.directory supplies cwd.
-    """
-    try:
-        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    except sqlite3.Error as exc:
-        print(f"opencode: cannot open {path}: {exc}", file=sys.stderr)
-        return
-    try:
-        rows = con.execute(
-            """
-            SELECT p.session_id, p.time_created, p.data, s.directory
-            FROM part p
-            LEFT JOIN session s ON s.id = p.session_id
-            WHERE json_extract(p.data, '$.type') = 'tool'
-            ORDER BY p.time_created
-            """
-        ).fetchall()
-    except sqlite3.Error as exc:
-        print(f"opencode: query failed on {path}: {exc}", file=sys.stderr)
-        con.close()
-        return
-    con.close()
-    for session_id, time_created, data, directory in rows:
-        try:
-            part = json.loads(data)
-        except (json.JSONDecodeError, TypeError):
-            continue
-        ts = _ms_to_iso(time_created)
-        call_id = part.get("callID") or part.get("id")
-        state = part.get("state") or {}
-        yield {
-            "harness": "opencode",
-            "type": "assistant",
-            "timestamp": ts,
-            "sessionId": session_id,
-            "cwd": directory,
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "id": call_id,
-                        "name": part.get("tool"),
-                        "input": state.get("input") or {},
-                    }
-                ]
-            },
-        }
-        if "output" in state or state.get("status") in ("completed", "error"):
-            yield {
-                "harness": "opencode",
-                "type": "user",
-                "timestamp": ts,
-                "sessionId": session_id,
-                "cwd": directory,
-                "message": {
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": call_id,
-                            "content": str(state.get("output", ""))[:500],
-                            "is_error": "true"
-                            if state.get("status") == "error"
-                            else "false",
-                        }
-                    ]
-                },
-            }
-
-
-def omp_discover():
-    root = os.path.expanduser("~/.omp/agent/sessions")
+def _pi_family_discover(config_dir):
+    root = os.path.expanduser(config_dir)
     if not os.path.isdir(root):
         return []
     out = []
@@ -302,8 +222,16 @@ def omp_discover():
     return out
 
 
-def omp_normalize(path):
-    """oh-my-pi session JSONL -> canonical envelope.
+def omp_discover():
+    return _pi_family_discover("~/.omp/agent/sessions")
+
+
+def pi_discover():
+    return _pi_family_discover("~/.pi/agent/sessions")
+
+
+def _pi_family_normalize(path, harness):
+    """Pi-family session JSONL -> canonical envelope.
 
     The ``session`` header entry carries id + cwd, threaded onto every row.
     ``message`` entries: assistant ``toolCall`` blocks become tool_use blocks
@@ -354,7 +282,7 @@ def omp_normalize(path):
                 else:
                     blocks.append(block)
             yield {
-                "harness": "omp",
+                "harness": harness,
                 "type": "assistant",
                 "timestamp": ts,
                 "sessionId": session_id,
@@ -368,7 +296,7 @@ def omp_normalize(path):
                 if isinstance(b, dict) and b.get("type") == "text"
             )
             yield {
-                "harness": "omp",
+                "harness": harness,
                 "type": "user",
                 "timestamp": ts,
                 "sessionId": session_id,
@@ -386,13 +314,21 @@ def omp_normalize(path):
             }
         elif role == "user":
             yield {
-                "harness": "omp",
+                "harness": harness,
                 "type": "user",
                 "timestamp": ts,
                 "sessionId": session_id,
                 "cwd": cwd,
                 "message": {"content": msg.get("content")},
             }
+
+
+def omp_normalize(path):
+    return _pi_family_normalize(path, "omp")
+
+
+def pi_normalize(path):
+    return _pi_family_normalize(path, "pi")
 
 
 def cursor_discover():
@@ -420,8 +356,8 @@ def _ms_to_iso(ms):
 ADAPTERS = [
     ("claude", claude_discover, claude_normalize),
     ("codex", codex_discover, codex_normalize),
-    ("opencode", opencode_discover, opencode_normalize),
     ("omp", omp_discover, omp_normalize),
+    ("pi", pi_discover, pi_normalize),
     ("cursor", cursor_discover, None),
     ("copilot", copilot_discover, None),
 ]

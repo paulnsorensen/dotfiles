@@ -490,7 +490,15 @@ sync_cargo() {
 sync_npm() {
     local npm_pkgs skip_platform
     if [[ "$PLATFORM" == "Darwin" ]]; then skip_platform="linux"; else skip_platform="mac"; fi
-    npm_pkgs=$(yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"npm\" and (.value.platform == \"$skip_platform\" | not)) | [.key, (.value.pkg // .key), (.value.version // \"\")] | @tsv" "$PACKAGES_FILE" 2>/dev/null)
+    npm_pkgs=$(
+        yq -o=json '.packages' "$PACKAGES_FILE" |
+            jq -r --arg skip "$skip_platform" '
+                .[] | select(type == "object") | to_entries[0]
+                | select(.value.source == "npm" and .value.platform != $skip)
+                | [.key, (.value.pkg // .key), (.value.version // "-"), ((.value.flags // []) | @json)]
+                | @tsv
+            '
+    )
     [[ -z "$npm_pkgs" ]] && return 0
 
     if ! command -v npm &>/dev/null; then
@@ -502,20 +510,27 @@ sync_npm() {
     local installed
     installed=$(npm ls -g --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' || true)
 
-    while IFS=$'\t' read -r name pkg version; do
+    while IFS=$'\t' read -r name pkg version flags_json; do
         [[ -z "$name" ]] && continue
+        local flag
+        local -a install_args=(-g)
+        while IFS= read -r flag; do
+            install_args+=("$flag")
+        done < <(jq -r '.[]' <<<"$flags_json")
 
-        if [[ -n "$version" ]]; then
+        if [[ "$version" != "-" ]]; then
             echo "  Installing $pkg@$version (pinned)..."
-            if ! npm install -g "$pkg@$version" </dev/null; then
+            install_args+=("$pkg@$version")
+            if ! npm install "${install_args[@]}" </dev/null; then
                 log_error "Failed to install $pkg@$version"
                 FAILED+=("$pkg")
             fi
-        elif echo "$installed" | grep -qx "$pkg"; then
+        elif grep -qx "$pkg" <<<"$installed"; then
             echo "  + $name"
         else
             echo "  Installing $pkg..."
-            if ! npm install -g "$pkg" </dev/null; then
+            install_args+=("$pkg")
+            if ! npm install "${install_args[@]}" </dev/null; then
                 log_error "Failed to install $pkg"
                 FAILED+=("$pkg")
             fi
@@ -766,6 +781,30 @@ converge_omp_native() {
     fi
 }
 
+# Remove every package-manager and native binary left by retired harnesses.
+retire_harnesses() {
+    local harness installed
+
+    if command -v brew &>/dev/null; then
+        installed=$(brew list --formulae 2>/dev/null || true)
+        for harness in opencode crush; do
+            if grep -qxF "$harness" <<<"$installed"; then
+                log_info "  Removing retired Homebrew $harness..."
+                brew uninstall "$harness" </dev/null || FAILED+=("retired-$harness-brew")
+            fi
+        done
+    fi
+
+    if command -v mise &>/dev/null && ! MISE_GLOBAL_CONFIG_FILE="$MISE_BOOTSTRAP_CONFIG_FILE" \
+        mise uninstall --yes --all \
+        aqua:anomalyco/opencode aqua:charmbracelet/crush </dev/null; then
+        log_error "failed to uninstall retired OpenCode/Crush mise packages"
+        FAILED+=("retired-harnesses")
+    fi
+
+    rm -f "$HOME/.local/bin/opencode" "$HOME/.local/bin/crush"
+}
+
 sync_native_harnesses() {
     log_info "Syncing native AI-harness CLIs..."
 
@@ -837,6 +876,7 @@ if ((${#FAILED[@]} > failures_before_mise)); then
     fi
     exit 1
 fi
+retire_harnesses
 
 if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
     if ((${#FAILED[@]})); then

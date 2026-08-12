@@ -164,10 +164,6 @@ if command -v ast-grep &> /dev/null; then
   alias sg='ast-grep'
 fi
 
-# opencode - terminal AI coding agent
-if command -v opencode &> /dev/null; then
-  alias oc='opencode'
-fi
 
 # Oh My Pi - isolated native config with managed prompt addendum
 if command -v omp &> /dev/null; then
@@ -184,6 +180,24 @@ if command -v omp &> /dev/null; then
 
   ompt() {
     PI_CONFIG_DIR=.omp-tight omp "$@"
+  }
+fi
+
+# Upstream Pi - separate native config with the managed prompt addendum.
+if command -v pi &> /dev/null; then
+  pi() {
+    case "${1:-}" in
+      install|remove|uninstall|update|list|config|auth|--help|-h|--version|-v|--list-models)
+        command pi "$@"
+        return
+        ;;
+    esac
+    local addendum="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/APPEND_SYSTEM.md"
+    if [[ -f "$addendum" ]]; then
+      command pi --append-system-prompt "$(<"$addendum")" "$@"
+    else
+      command pi "$@"
+    fi
   }
 fi
 

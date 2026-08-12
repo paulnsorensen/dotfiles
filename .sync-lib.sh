@@ -133,6 +133,10 @@ assemble_chezmoi_sources() {
         echo "  ERROR: OMP chezmoi source assembly failed — aborting chezmoi apply" >&2
         return 1
     fi
+    if ! sync_pi_chezmoi_sources "$dotfiles_root" "$source_dir"; then
+        echo "  ERROR: Pi chezmoi source assembly failed — aborting chezmoi apply" >&2
+        return 1
+    fi
 }
 
 # Land the tracked mise manifest before package convergence reads it.
@@ -855,6 +859,59 @@ sync_omp_chezmoi_sources() {
     return 0
 }
 
+# Assemble upstream Pi's global skills and shared Pi-family resources.
+# Pi discovers these under ~/.pi/agent independently of OMP.
+#   sync_pi_chezmoi_sources <dotfiles_root> [<chezmoi_source_dir>]
+sync_pi_chezmoi_sources() {
+    local root="$1"
+    local src="${2:-$root/chezmoi}"
+    local claude_reg="$src/.chezmoidata/claude.yaml"
+    local omp_agent="$src/dot_omp/private_agent"
+
+    if ! command -v yq &>/dev/null; then
+        log_warning "yq not found — skipping Pi chezmoi source assembly"
+        return 0
+    fi
+    if [[ ! -f "$claude_reg" ]]; then
+        log_error "claude registry not found: $claude_reg"
+        return 1
+    fi
+
+    local staging
+    staging=$(mktemp -d "${TMPDIR:-/tmp}/pi-cz-src.XXXXXX") || return 1
+    # shellcheck disable=SC2064
+    trap "rm -rf '$staging'" RETURN
+
+    local name
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        if [[ ! -d "$root/skills/$name" ]]; then
+            log_error "Pi skill selection references unknown skill: $name (no skills/$name)"
+            return 1
+        fi
+        _cz_copy_encoded "$root/skills/$name" "$staging/exact_skills/$(_cz_encode_name "$name" true false)" || return 1
+    done < <(yq -r '.claude.skills // [] | .[]' "$claude_reg")
+    _cz_vendor_external_skills "$root/skills/_registry.yaml" "$staging/exact_skills" pi || return 1
+
+    mkdir -p "$staging/exact_skills" "$staging/extensions" "$staging/themes"
+    cp "$omp_agent/extensions/rtk.ts" "$omp_agent/extensions/cheese-flair.ts" \
+        "$staging/extensions/" || return 1
+    cp "$omp_agent/themes/chocolate-donut.json" "$staging/themes/" || return 1
+
+    local tree
+    for tree in exact_skills extensions themes; do
+        if ! rm -rf "${src:?}/dot_pi/private_agent/$tree" \
+            || ! mkdir -p "$src/dot_pi/private_agent" \
+            || ! mv "$staging/$tree" "$src/dot_pi/private_agent/$tree"; then
+            log_error "Pi source assembly: staging swap failed for $tree"
+            return 1
+        fi
+    done
+    rm -rf "$src/dot_pi/private_agent/exact_extensions" \
+        "$src/dot_pi/private_agent/exact_themes"
+    log_info "Assembled Pi chezmoi source state (skills, extensions, themes)"
+}
+
 # Reconcile native OMP marketplace plugins (milknado, hallouminate) against
 # the `.omp.plugins` subtree of chezmoi/.chezmoidata/omp.yaml. Runs after
 # chezmoi apply so the mcp.json cutover (context7 only) lands with the
@@ -960,6 +1017,20 @@ sync_omp_plugins() {
     done <<<"$current_marketplaces"
 
     return 0
+}
+
+# Reconcile the pinned Pi extension packages declared in settings.json after
+# chezmoi has authored that file. Pinned npm specs do not float on updates.
+sync_pi_packages() {
+    if ! command -v pi &>/dev/null; then
+        log_warning "pi not found — skipping Pi package reconcile"
+        return 0
+    fi
+    log_info "Reconciling Pi packages"
+    if ! pi update --extensions; then
+        log_error "Pi package reconcile failed"
+        return 1
+    fi
 }
 
 # Install prek pre-commit hooks (clears conflicting core.hooksPath first)

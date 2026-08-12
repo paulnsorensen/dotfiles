@@ -47,6 +47,14 @@ MOCK
 [[ "$1" == "--version" ]] && printf 'codex-cli 0.146.0\n'
 MOCK
     chmod +x "$MOCK_BIN/codex"
+    cat > "$MOCK_BIN/pi" << 'MOCK'
+#!/bin/bash
+if [[ "$1" == "--version" ]]; then
+    printf '0.84.1\n'
+fi
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/pi"
 
     # Helper script: sources sync functions and calls a named function.
     # Quoted heredoc — no write-time substitution — so $TEST_HOME and
@@ -163,6 +171,36 @@ MOCK
     local ts
     ts=$(cat "$TEST_HOME/.local/state/dotfiles/last_sync")
     [[ "$ts" =~ ^[0-9]+$ ]]
+}
+
+@test "Pi package reconcile updates extensions without floating the CLI" {
+    rm -f "$MOCK_BIN/pi"
+    export PI_LOG="$TEST_HOME/pi.log"
+    cat > "$MOCK_BIN/pi" <<'MOCK'
+#!/bin/bash
+printf '%s\n' "$*" >> "$PI_LOG"
+MOCK
+    chmod +x "$MOCK_BIN/pi"
+
+    run call-sync-fn sync_pi_packages
+    assert_success
+    run cat "$PI_LOG"
+    [ "$output" = "update --extensions" ]
+}
+
+@test "Pi version mismatch fails the harness gate" {
+    rm -f "$MOCK_BIN/pi"
+    cat > "$MOCK_BIN/pi" <<'MOCK'
+#!/bin/bash
+if [[ "$1" == "--version" ]]; then
+    printf '0.83.0\n'
+fi
+MOCK
+    chmod +x "$MOCK_BIN/pi"
+
+    run call-sync-fn verify_harness_versions "after package convergence"
+    assert_failure
+    assert_output_contains "pi version mismatch after package convergence: expected 0.84.1, got 0.83.0"
 }
 
 

@@ -38,7 +38,7 @@ Never edit a rendered target. Edit the source, then deploy.
 | Claude-native plugin | `claude/plugins/registry.yaml` | `dots sync` |
 | Codex MCP, config scalar, or agent selection | `chezmoi/.chezmoidata/codex.yaml` | `dots sync` |
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
-| Package / profile / OMP config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/omp.yaml` | relevant `dots` command |
+| Package / profile / OMP or Pi config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/{omp,pi}.yaml` | relevant `dots` command |
 | Secret (API key, token) | the vault — never `.env`. Key names: `secrets/secrets.env.tmpl` | run `bin/vault-provision` as the operator |
 
 `.env` holds only non-secret settings. `bin/vault-provision` reads the exact
@@ -47,8 +47,8 @@ installs one root-owned credential, policy, and service identity per consumer.
 Harness MCP configs contain only fixed `agent-secret-proxy` socket paths; daily
 loaders remove retired credential names and the obsolete user cache before exec.
 
-Claude-global and Codex-global configuration are chezmoi-authoritative; opencode,
-Cursor, and Copilot remain frozen pending migration.
+Claude, Codex, OMP, and Pi global configuration are chezmoi-authoritative;
+Cursor and Copilot remain frozen pending migration.
 
 Codex hooks are not declared in `codex.yaml` — they derive from
 `agents/hooks/registry.yaml` (entries whose `harnesses` includes codex).

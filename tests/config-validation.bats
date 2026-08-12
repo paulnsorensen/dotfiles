@@ -134,7 +134,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
     run yq -r '.plugins.hallouminate.harnesses | sort | join(",")' "$registry"
     [[ $status -eq 0 ]]
-    [[ "$output" == "claude,codex,copilot,crush,cursor,opencode" ]]
+    [[ "$output" == "claude,codex,copilot,cursor" ]]
     [[ "$(yq -r '.plugins.hallouminate.native' "$registry")" == "true" ]]
 }
 

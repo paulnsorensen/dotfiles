@@ -158,12 +158,9 @@ for harness in $HARNESSES; do
     SUPPORTED_HARNESSES+="${SUPPORTED_HARNESSES:+ }$harness"
 done
 
-# Filter, don't fail: SKILL_HARNESSES is shared with agents the `skills` CLI
-# doesn't support (e.g. crush, antigravity — valid install targets elsewhere,
-# but the CLI only knows the set in skill_agents.txt). Skipping them with a
-# loud warning lets the supported agents still get their skills, instead of a
-# single unsupported entry aborting the whole refresh. The original silent-
-# no-op masking risk is still covered — we warn explicitly per skipped agent.
+# Filter rather than fail: SKILL_HARNESSES can include agents unsupported by
+# the `skills` CLI (for example antigravity). Skipping them with a loud warning
+# lets supported agents continue instead of aborting the refresh.
 if (( ${#SKIPPED_AGENTS[@]} > 0 )); then
     echo -e "${YELLOW}Skipping SKILL_HARNESSES agents the 'skills' CLI doesn't support: ${SKIPPED_AGENTS[*]}${NC}" >&2
     echo "  Supported: $KNOWN_AGENTS" >&2

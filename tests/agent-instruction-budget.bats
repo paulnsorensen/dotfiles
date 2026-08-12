@@ -21,6 +21,7 @@ run_budget_check() {
     assert_success
     assert_output_contains "source agent-profile/AGENTS.md:"
     assert_output_contains "stack global_claude:"
+    assert_output_contains "stack pi:"
     assert_output_contains "stack copilot_coding_max:"
     assert_output_contains "o200k_base="
     assert_output_contains "cl100k_base="

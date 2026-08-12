@@ -28,6 +28,8 @@ lib/
 !.claude/**
 # Global *.md ignore would otherwise skip the managed OMP prompt addendum.
 !.omp/agent/APPEND_SYSTEM.md
+# Pi's assembled skills and prompt contain Markdown managed under exact_ trees.
+!.pi/agent/**
 {{- /*
 Local LLM stack is per-machine, opt-in. When the localLLM flag is false,
 ignore the stack tree + its systemd units so non-LLM machines stay clean.

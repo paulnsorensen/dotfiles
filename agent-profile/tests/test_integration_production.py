@@ -11,11 +11,10 @@ These tests close that gap. They wire the production renderers (the
 exact path ``__main__`` takes) and assert the cross-renderer interactions
 the per-curd goldens cannot see:
 
-  - one ``cmd_install`` fans a multi-surface profile across codex, opencode,
-    cursor, and the shared ``.claude/agents`` write;
-  - the production round-trip tears every merged file (``.codex/config.toml``,
-    ``opencode.json``, ``.cursor/mcp.json``) and whole-file artefact back to
-    empty, manifest ``{}``;
+  - one ``cmd_install`` fans a multi-surface profile across Claude, Codex,
+    Cursor, and Copilot;
+  - the production round-trip removes all whole-file artifacts and leaves
+    merged live MCP files unmanaged;
   - a user-authored ``.codex/config.toml`` comment survives the full
     install→uninstall merged-file cycle driven by the CLI (not just the
     codex unit test);
@@ -47,9 +46,8 @@ def prod_renderers():
 
 
 def _multi_surface_yaml(name: str) -> str:
-    # An agent (→ shared .claude/agents + cursor/opencode read it), a skill
-    # (→ shared .agents/skills, read by codex+opencode+cursor), two MCPs
-    # explicitly scoped to codex+opencode+cursor, and a cursor hook.
+    # An agent spans every renderer, a skill spans Claude/Codex/Cursor/Copilot,
+    # the MCP is explicitly scoped to Codex/Cursor/Copilot, and the hook to Cursor.
     return (
         f"name: {name}\n"
         "description: multi-surface profile\n"
@@ -64,7 +62,7 @@ def _multi_surface_yaml(name: str) -> str:
         "  - name: srv\n"
         "    command: /bin/true\n"
         "    args: [--flag]\n"
-        "    harnesses: [codex, opencode, cursor, crush]\n"
+        "    harnesses: [codex, cursor, copilot]\n"
         "hooks:\n"
         "  - name: h\n"
         "    event: PreToolUse\n"
@@ -108,9 +106,7 @@ def test_production_install_touches_all_surfaces(env, capsys, prod_renderers):
     # Non-isolated installs no longer own any merged live config/MCP surfaces.
     for merged in (
         ".codex/config.toml",
-        "opencode.json",
         ".cursor/mcp.json",
-        ".config/crush/crush.json",
     ):
         assert not (t / merged).exists(), f"{merged} should stay unmanaged"
 
@@ -118,10 +114,8 @@ def test_production_install_touches_all_surfaces(env, capsys, prod_renderers):
     files = manifest["multi"]["files"]
     assert files == sorted(set(files)), "tracked files must be sorted + deduped"
     for merged in (
-        "opencode.json",
         ".codex/config.toml",
         ".cursor/mcp.json",
-        ".config/crush/crush.json",
     ):
         assert merged not in files, f"{merged} is a merged file, must not be tracked"
     assert ".claude/agents/rev.md" in files
@@ -148,10 +142,8 @@ def test_production_install_uninstall_roundtrip_clean(env, capsys, prod_renderer
         assert not (t / rel).exists(), f"{rel} survived uninstall"
 
     for merged in (
-        "opencode.json",
         ".codex/config.toml",
         ".cursor/mcp.json",
-        ".config/crush/crush.json",
     ):
         assert not (t / merged).exists(), f"merged {merged} should remain unmanaged"
 
@@ -208,10 +200,10 @@ def test_production_codex_user_config_preserved_through_cli(
 
 
 def test_production_refcount_shared_agent_full_install(env, capsys, prod_renderers):
-    """Two profiles defining an agent of the same name both write
-    ``.claude/agents/shared.md`` through the real renderers (claude + cursor
-    + opencode all target it). First uninstall must keep it (beta claims);
-    second removes it. Exercises ref-count across renderers, not via stubs."""
+    """Two profiles defining the same agent both write
+    ``.claude/agents/shared.md`` through the real Claude and Cursor renderers.
+    The first uninstall keeps the file because beta still claims it; the second
+    removes it."""
     for p, body in (("alpha", "alpha body"), ("beta", "beta body")):
         write_profile(
             env.profiles,
