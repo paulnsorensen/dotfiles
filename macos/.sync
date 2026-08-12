@@ -42,6 +42,7 @@ defaults write com.cmuxterm.app browserOpenTerminalLinksInCmuxBrowser -bool fals
 #
 # ID 160 shows Launchpad on ⌘⇧Space: parameters = (32 = space char,
 # 49 = space keycode, 1179648 = ⌘+⇧).
+# shellcheck disable=SC2119 # The helper's default domain is intentional.
 macos_write_symbolic_hotkeys
 
 # NOT scriptable here (managed elsewhere, left untouched by this script):
