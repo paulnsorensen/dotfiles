@@ -86,6 +86,7 @@ The standalone `agents/mcp/sync.sh` and `agents/hooks/sync.sh` still exist for t
 Shared agent *content* that chezmoi copies directly (not through `ap`):
 
 - **`agents/AGENTS.md`** — global coding-agent preferences. chezmoi copies it to `~/.claude/CLAUDE.md` *and* `~/.codex/AGENTS.md` (via `install-agents-doc.sh`).
+  System-wide behavioral claims have an evidence precondition: positive claims cite the exact source range or verification command; absence claims require a complete read or named exhaustive search; decision inputs are verified before presentation; artifact claims inspect the built artifact; and capped result sets are recounted before quoting totals. Confidence labels remain optional presentation metadata rather than evidence.[^evidence-policy]
 - **`agents/preamble.md`** — the compact standing system-prompt body: direct batched tilth routing, repository-wiki grounding, and phase-agent selection. Phase-specific handoff, sizing, coder, and review procedures live in agent or skill definitions instead. The preamble *replaces* the bundled system prompt per harness: Codex via `model_instructions_file` in `config.toml`, opencode via `~/.config/opencode/agents/build.md` (both wired by `install-prompts.sh`), Claude via `--system-prompt-file` in the `cc`/`ccc`/`ccr` wrappers (`zsh/claude.zsh`). The user-side AGENTS.md/CLAUDE.md cascade loads *on top of* this replaced prompt.
 - **`agents/RTK.md`** — RTK proxy reference, Claude-only (copied to `~/.claude/RTK.md`).
 
@@ -93,5 +94,6 @@ See [[../harnesses/index]] for how each harness consumes these artifacts and the
 
 [^max-turns]: Verified against Claude Code 2.1.195 local binary strings (`xLl` parser reads frontmatter `maxTurns` and stores `maxTurns`; invalid values warn "Must be a positive integer") and implemented in `agent-profile/agent_profile/shared.py:144` plus `agents/registry.yaml:27` (the first `maxTurns:` entry).
 [^handoff]: `agents/agent_definitions/{explorer,researcher,reviewer,coder}.md`, `tests/phase-agent-handoff.bats:18-42`
+[^evidence-policy]: `agents/AGENTS.md:12-20`; `tests/agent-evidence-policy.bats:15-31`
 
 *Source: preamble and coder prompt consolidation · Updated: 2026-07-28 · Supersedes: preamble-owned phase handoff schema*
