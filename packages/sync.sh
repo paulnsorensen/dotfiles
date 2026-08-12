@@ -614,14 +614,23 @@ sync_gh_extensions() {
     fi
 
     log_info "Syncing gh extensions"
-    local installed
+    local ext_list installed
     # gh extension list emits tab-separated rows: "gh <name>\t<owner>/<repo>\t<version>"
-    installed=$(gh extension list 2>/dev/null | awk -F'\t' '{print $2}' || true)
+    ext_list=$(gh extension list 2>/dev/null || true)
+    installed=$(awk -F'\t' '{print $2}' <<< "$ext_list")
 
     while IFS=$'\t' read -r name pkg version; do
         [[ -z "$name" ]] && continue
 
         if [[ -n "$version" ]]; then
+            # `--force` reinstalls unconditionally and reaches the GitHub API on
+            # every run, so a transient API failure against an extension already
+            # sitting at its pin would fail the whole sync. A converged pin has
+            # nothing to fetch.
+            if [[ "$(awk -F'\t' -v repo="$pkg" '$2 == repo {print $3; exit}' <<< "$ext_list")" == "$version" ]]; then
+                echo "  + $name ($version)"
+                continue
+            fi
             echo "  Installing $pkg --pin $version..."
             if ! gh extension install "$pkg" --pin "$version" --force </dev/null; then
                 log_error "Failed to install $pkg"
