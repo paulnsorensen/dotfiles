@@ -257,8 +257,6 @@ claude:
     - nih-audit
     - prompt-analytics
     - rennet
-    - routine-env
-    - routine-scaffold
     - session-analytics
     - settings-clean
     - skill-improver
@@ -268,7 +266,6 @@ claude:
     - tool-efficiency
     - tui-design
     - version-doctor
-    - wiki-curator
     - work-recovery
     - worktree
     - worktree-find
