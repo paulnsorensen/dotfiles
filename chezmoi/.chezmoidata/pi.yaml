@@ -29,6 +29,8 @@ pi:
       - npm:pi-mcp-adapter@2.23.0
       # renovate: datasource=npm depName=pi-subagents
       - npm:pi-subagents@0.46.0
+      # renovate: datasource=npm depName=pi-vim
+      - npm:pi-vim@0.14.1
   localModels:
     providers:
       local-llm:

@@ -1,6 +1,6 @@
 ---
 status: reviewed
-last_verified: 2026-08-03
+last_verified: 2026-08-10
 confidence: high
 sources:
   - chezmoi/.chezmoidata/omp.yaml
@@ -10,15 +10,18 @@ sources:
   - tests/config-validation.bats
   - tests/omp-config.bats
   - tests/sync-orchestrator.bats
+  - tests/omp-plugins.bats
+  - .sync-lib.sh
   - .sync
   - tests/extensions/milknado-todo-guard.test.mjs
   - https://github.com/can1357/oh-my-pi/blob/39c95e5e29b1c8b082059f57421ce445c3dffdd4/docs/tools/todo.md
   - https://github.com/can1357/oh-my-pi/blob/39c95e5e29b1c8b082059f57421ce445c3dffdd4/packages/coding-agent/src/modes/controllers/input-controller.ts
   - https://github.com/can1357/oh-my-pi/blob/39c95e5e29b1c8b082059f57421ce445c3dffdd4/packages/coding-agent/src/extensibility/extensions/types.ts
+  - https://github.com/sysid/pi-extensions/tree/main/packages/vim-editor
 ---
 # OMP
 
-OMP 17.2.5 uses Milknado as its sole work tracker. Native Todo and its reminders are disabled in the repo-authoritative chezmoi data, the system prompt assigns planning to Milknado MCP, and a directly discovered input extension consumes `/todo` before OMP can create a disconnected native list.
+OMP 17.2.12 uses Milknado as its sole work tracker. Native Todo and its reminders are disabled in the repo-authoritative chezmoi data, the system prompt assigns planning to Milknado MCP, and a directly discovered input extension consumes `/todo` before OMP can create a disconnected native list.
 
 ## Ownership contract
 
@@ -44,6 +47,12 @@ These values live at `chezmoi/.chezmoidata/omp.yaml:68-70`. The config renderer 
 Milknado task completion fails closed when the project defines no quality gates. The root `milknado.toml:1-3` therefore pins `quality_gates = ["just check"]`, reusing the repository's authoritative verification recipe. Every built-in flavor inherits this gate; omitting the key would let agents claim nodes but prevent them from marking verified work done.
 
 `todo.enabled: false` removes the model-facing Todo tool. It does not unregister OMP's separately wired `/todo` command, which can still mutate native session state. Disabling reminders alone therefore does not establish single ownership.
+
+## Vim input mode
+
+`@sysid/pi-vim@1.0.3` provides OMP's modal prompt editor. It starts in INSERT, switches to NORMAL on `Esc`, and exposes the package's Vim motions and edits. The exact npm version lives under `omp.npmPlugins` in `chezmoi/.chezmoidata/omp.yaml`.
+
+`sync_omp_plugins` installs missing or stale managed npm plugins while preserving unrelated user-installed npm plugins. OMP accepts the package's legacy `pi.extensions` manifest through its Pi-compatibility loader. `tests/omp-plugins.bats` proves missing, stale, converged, and unmanaged-package behavior; a live PTY smoke exercised INSERT → NORMAL with text retained.
 
 ## Hook isolation
 
@@ -113,4 +122,4 @@ Root `dots sync` verifies exact live outputs `omp/17.2.5` and `codex-cli 0.146.0
 
 Completed request graphs remain durable in Milknado. This cutover does not decide whether old graphs should be retained permanently, archived, or deleted; any lifecycle policy must preserve the single-owner rule and be implemented in Milknado rather than reintroducing native Todo state.
 
-_Source: OMP Todo-to-Milknado research, guarded cutover, and Codex/OMP upgrade verification · Updated: 2026-08-03 · Supersedes: native OMP Todo ownership_
+_Source: OMP Todo-to-Milknado research, guarded cutover, Codex/OMP upgrade verification, and live modal-editor smoke · Updated: 2026-08-10 · Supersedes: native OMP Todo ownership_

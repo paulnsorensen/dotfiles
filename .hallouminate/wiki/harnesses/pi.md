@@ -23,6 +23,8 @@ This split intentionally differs from OMP's `config.yml`/`models.yml` schema. Sh
 
 Skills are exact because the registry is the complete selection. Extensions and themes are merge-managed so package- or application-installed Pi resources survive `dots sync`.
 
+`pi-vim@0.14.1` supplies modal prompt editing. It starts in INSERT and supports NORMAL, VISUAL, V-LINE, and EX modes. The pin belongs to `pi.yaml` `settings.packages`; `sync_pi_packages` reconciles it through Pi's native package manager.
+
 Pi discovers these resources under `~/.pi/agent/` independently of OMP. The common files stay single-source in `dot_omp/private_agent/`; the assembler copies them into Pi's deployment tree so neither live harness depends on the other's config directory.
 
 ## Instructions and system prompt
@@ -49,6 +51,7 @@ The `packages` array in `pi.yaml` pins `pi-mcp-adapter` and `pi-subagents`. Afte
 | Packages | [packages.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/packages.md) | `pi.yaml` `settings.packages` + `sync_pi_packages` |
 | MCP | [extensions.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md) | `pi-mcp-adapter` + `mcp.json` |
 | Sub-agents | [packages.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/packages.md) | pinned `pi-subagents` package |
+| Vim input | [`pi-vim`](https://github.com/lajarre/pi-vim) | pinned `pi-vim` package |
 
 ## Verification seam
 

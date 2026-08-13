@@ -912,13 +912,12 @@ sync_pi_chezmoi_sources() {
     log_info "Assembled Pi chezmoi source state (skills, extensions, themes)"
 }
 
-# Reconcile native OMP marketplace plugins (milknado, hallouminate) against
-# the `.omp.plugins` subtree of chezmoi/.chezmoidata/omp.yaml. Runs after
-# chezmoi apply so the mcp.json cutover (context7 only) lands with the
-# plugin-owned MCP servers that replace it. Idempotent: a converged state
-# makes zero `omp` mutating calls. npm-installed plugins (`omp plugin list
-# --json` `.npm[]`) are never touched — only `.marketplace[]` entries whose
-# id matches `<name>@<marketplace>` for a marketplace this function owns.
+# Reconcile OMP marketplace plugins and pinned npm plugins against the
+# `.omp.plugins` and `.omp.npmPlugins` subtrees of
+# chezmoi/.chezmoidata/omp.yaml. Runs after chezmoi apply so the mcp.json
+# cutover (context7 only) lands with the plugin-owned MCP servers that replace
+# it. Idempotent: a converged state makes zero `omp` mutating calls. Marketplace
+# entries are exact-owned; unrelated npm plugins are preserved.
 #   sync_omp_plugins <dotfiles_root>
 sync_omp_plugins() {
     local root="$1"
@@ -943,9 +942,13 @@ sync_omp_plugins() {
 
     log_info "Reconciling OMP native plugins..."
 
-    # Desired: name\tmarketplace\tsource, one per registry entry.
+    # Desired marketplace plugins: name\tmarketplace\tsource.
     local desired
-    desired=$(yq -r '.omp.plugins // {} | to_entries | .[] | [.key, .value.marketplace, .value.source] | @tsv' "$reg")
+    desired=$(yq -r '.omp.plugins // {} | to_entries | .[] | select(.value.marketplace and .value.source) | [.key, .value.marketplace, .value.source] | @tsv' "$reg")
+
+    # Desired npm plugins: package\tversion.
+    local desired_npm
+    desired_npm=$(yq -r '.omp.npmPlugins // {} | to_entries | .[] | [.key, .value] | @tsv' "$reg")
 
     local desired_marketplaces
     desired_marketplaces=$(printf '%s\n' "$desired" | awk -F'\t' 'NF{print $2}' | sort -u)
@@ -961,10 +964,18 @@ sync_omp_plugins() {
         fi
     fi
 
+    local plugin_state
+    plugin_state=$(omp plugin list --json 2>/dev/null) || plugin_state='{}'
+
     # Current marketplace-installed plugin ids (e.g. "milknado@milknado").
-    # npm-installed plugins live under `.npm` and are never read here.
-    local current_installed=""
-    current_installed=$(omp plugin list --json 2>/dev/null | jq -r '.marketplace[]?.id' 2>/dev/null) || current_installed=""
+    local current_installed
+    current_installed=$(jq -r '.marketplace[]?.id' <<<"$plugin_state" 2>/dev/null) || current_installed=""
+
+    # Current npm plugin package/version pairs.
+    local current_npm
+    current_npm=$(jq -r '
+        .npm[]? | [.name, .version] | @tsv
+    ' <<<"$plugin_state" 2>/dev/null) || current_npm=""
 
     # --- Additions: marketplace add, then plugin install ---------------
     local name marketplace source
@@ -988,6 +999,19 @@ sync_omp_plugins() {
             fi
         fi
     done <<<"$desired"
+
+    # --- Pinned npm plugins: install missing packages and exact upgrades ---
+    local package version
+    while IFS=$'\t' read -r package version; do
+        [[ -z "$package" ]] && continue
+        if ! grep -qxF "$package"$'\t'"$version" <<<"$current_npm"; then
+            log_info "  Installing OMP npm plugin: ${package}@${version}"
+            if ! omp plugin install "${package}@${version}" >/dev/null 2>&1; then
+                log_error "omp plugin install ${package}@${version} failed"
+                return 1
+            fi
+        fi
+    done <<<"$desired_npm"
 
     # --- Removals: uninstall plugins, then remove marketplaces no longer
     # referenced by any registry entry. Restricted to marketplace-sourced

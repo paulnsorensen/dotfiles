@@ -83,7 +83,7 @@ TOML
     [ ! -e "$destination/.config/crush" ]
 
     packages=$(jq -c '.packages' "$destination/.pi/agent/settings.json")
-    [ "$packages" = '["npm:pi-mcp-adapter@2.23.0","npm:pi-subagents@0.46.0"]' ]
+    [ "$packages" = '["npm:pi-mcp-adapter@2.23.0","npm:pi-subagents@0.46.0","npm:pi-vim@0.14.1"]' ]
     [ "$(jq -r '.mcpServers.tilth.command' "$destination/.pi/agent/mcp.json")" = "tilth" ]
     [ "$(jq -r '.mcpServers.hallouminate.args[0]' "$destination/.pi/agent/mcp.json")" = "serve" ]
 }

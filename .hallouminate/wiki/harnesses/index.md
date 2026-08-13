@@ -9,7 +9,7 @@ The repo deploys one harness-agnostic config (see [[../architecture/index]]) int
 - [[copilot]] — GitHub Copilot CLI.
 - [[cursor]] — Cursor. An IDE plugin surface and full `ap` render target; MCP flows through the shared registry while other capabilities ship through the plugin tree.
 - [[omp]] — oh-my-pi. Not an `ap` target: `omp.yaml` + `dot_omp/` own its native config, agents, extensions, themes, and selected skills.
-  - [[omp-plugins]] — milknado and hallouminate install as native OMP marketplace plugins reconciled by `sync_omp_plugins`.
+  - [[omp-plugins]] — marketplace plugins plus pinned npm extensions are reconciled by `sync_omp_plugins`.
 - [[pi]] — upstream Pi coding agent. Not an `ap` target or OMP alias: `pi.yaml` + `dot_pi/` own its settings, models, MCP adapter, instructions, shared extensions/theme, and selected skills.
 
 ## Capability support matrix
@@ -30,6 +30,7 @@ Notes:
 
 - **OMP and Pi are native siblings, not `ap` render targets.** Their upstream schemas and discovery rules differ enough that a generic renderer would obscure ownership. Chezmoi authors each harness's native files and the sync assembler copies only deliberately shared resources.
 - **Pi sub-agents and MCP are package-provided.** `pi-subagents` and `pi-mcp-adapter` supply those capabilities; `mcp.json` controls the adapter's server/tool projection.
+- **Modal input is package-provided.** OMP pins `@sysid/pi-vim`; Pi pins `pi-vim`. Both survive sync through their native package registries rather than copied extension files.
 - **Cursor** is an IDE, not a launchable CLI. Its non-MCP capabilities ship as a Cursor 2.x plugin tree; MCP flows through the shared registry.
 - **Isolated launch** is implemented only where the harness has a tested closed-world lever: Claude and Codex through `ap`, OMP through `PI_CONFIG_DIR`. Copilot, Cursor, and Pi have no repo launcher that claims isolation.
 
@@ -44,3 +45,4 @@ Notes:
 | Skills | `skills/` + `skills/_registry.yaml` | rendered/copied for all active harnesses; OMP and Pi exact trees are assembled before chezmoi applies |
 | System prompt | `agents/preamble.md` + native addenda | Claude system-prompt file · Codex `model_instructions_file` · OMP/Pi launcher addenda |
 | Global instructions | `agents/AGENTS.md` | `~/.claude/CLAUDE.md` · `~/.codex/AGENTS.md` · `~/.pi/agent/AGENTS.md` |
+| Modal prompt input | `omp.yaml` `npmPlugins` + `pi.yaml` `settings.packages` | OMP `@sysid/pi-vim` · Pi `pi-vim` |
