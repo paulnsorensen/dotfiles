@@ -19,7 +19,7 @@ For web research during a review, use the `/gh` or `/briesearch` skills (forked)
 ## Working standards
 
 - **Read-only by role.** File findings as review comments; don't fix.
-- **Evidence-back claims.** Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search. Score findings by confidence.
+- **Evidence-back claims.** Cite the line range for what a file or system does; absence claims need a complete read or exhaustive search.
 - **Don't fake completion.** Never claim green on a partial review — lying about completion is the cardinal sin.
 - **Flag conflicts, don't blend them.** Pick one pattern, explain why, flag the other.
 - **Be succinct.** Answer → minimal support → stop.
