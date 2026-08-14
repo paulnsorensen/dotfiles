@@ -1,0 +1,136 @@
+---
+name: wt-git
+model: haiku
+effort: low
+allowed-tools: Bash(git:*), Bash(gh:*), Bash(wt-git:*), Read, Grep, Glob
+description: >
+  Run git and GitHub operations inside a worktree you're not currently in,
+  without tripping Claude Code's Seatbelt safety heuristics (compound cd+git,
+  heredoc PR bodies). Use whenever you need to commit, push, or create PRs in
+  another worktree — especially from orchestrators — or when about to write "cd <path> && git" or a heredoc gh PR
+  body.
+---
+
+# wt-git
+
+Git and GitHub operations for worktrees without triggering safety heuristics.
+
+## The Problem
+
+Claude Code's bash safety checks block two common worktree patterns:
+
+1. **`cd /path && git commit`** — triggers "bare repository attack" warning
+2. **`gh pr create --body "$(cat <<'EOF' ## Summary ...)"`** — triggers "# hides arguments" warning
+
+Both cause approval prompts that break automated workflows. Neither can be suppressed via `permissions.allow` or `bypassPermissions`.
+
+## The Fix
+
+### Git operations: use `wt-git`
+
+The `wt-git` wrapper runs `git -C <path>` under the hood — a single command, no `cd &&`.
+
+```bash
+# Instead of: cd .worktrees/my-task && git status
+wt-git .worktrees/my-task status
+
+# Instead of: cd .worktrees/my-task && git add -A && git commit -m "feat: thing"
+wt-git .worktrees/my-task add file1.rs file2.rs
+wt-git .worktrees/my-task commit -m "feat: add feature"
+
+# Instead of: cd .worktrees/my-task && git push origin claude/my-task
+wt-git .worktrees/my-task push origin claude/my-task
+
+# Instead of: cd .worktrees/my-task && git log --oneline -5
+wt-git .worktrees/my-task log --oneline -5
+
+# Instead of: cd .worktrees/my-task && git diff --cached
+wt-git .worktrees/my-task diff --cached
+```
+
+`wt-git` accepts any git subcommand — it's a transparent passthrough to `git -C`.
+
+### GitHub operations: use MCP tools
+
+For PR creation, use the GitHub MCP plugin instead of `gh pr create`. MCP tools don't go through bash at all, so no heuristic fires.
+
+```
+mcp__plugin_github_github__create_pull_request(
+  owner: "paulnsorensen",
+  repo: "my-repo",
+  title: "feat: add feature",
+  body: "## Summary\n- Added feature X\n\n## Test plan\n- [x] Tests pass",
+  head: "claude/my-task",
+  base: "main"
+)
+```
+
+For operations MCP doesn't cover, write the body to a temp file to avoid heredoc:
+
+```bash
+# Write PR body to file (no # heuristic trigger)
+cat > /tmp/pr-body.md << 'BODY'
+## Summary
+- Added feature X
+
+## Test plan
+- [x] Tests pass
+BODY
+
+# Create PR reading body from file
+gh pr create --title "feat: add feature" --body-file /tmp/pr-body.md --base main --head claude/my-task
+```
+
+### When you're already inside the worktree
+
+If the agent is running inside the worktree directory (e.g., spawned with `isolation: "worktree"`), use plain `git` — no `cd` needed, no wrapper needed:
+
+```bash
+git add file1.rs
+git commit -m "feat: add feature"
+git push origin HEAD
+```
+
+The heuristic only fires on `cd <path> && git`, not on bare `git` commands.
+
+## Quick Reference
+
+| Operation | From outside worktree | From inside worktree |
+|-----------|----------------------|---------------------|
+| Any git command | `wt-git <path> <cmd>` | `git <cmd>` |
+| Create PR | MCP `create_pull_request` | MCP `create_pull_request` |
+| PR with body | `gh pr create --body-file /tmp/body.md` | `gh pr create --body-file /tmp/body.md` |
+| Push | `wt-git <path> push origin <branch>` | `git push origin HEAD` |
+
+## Common Workflows
+
+### Full commit + push + PR from outside
+
+```bash
+wt-git .worktrees/my-task add src/lib.rs src/main.rs
+wt-git .worktrees/my-task commit -m "feat: add feature"
+wt-git .worktrees/my-task push origin claude/my-task
+```
+
+Then use MCP `create_pull_request` for the PR.
+
+### Check worktree state
+
+```bash
+wt-git .worktrees/my-task status
+wt-git .worktrees/my-task log --oneline origin/main..HEAD
+wt-git .worktrees/my-task diff --stat origin/main...HEAD
+```
+
+## What You Don't Do
+
+- Create worktrees — use /worktree for that
+- Handle non-worktree git operations — use /commit for the main repo
+- Resolve merge conflicts — use the standard git workflow
+
+## Gotchas
+
+- `wt-git` wrapper must be on PATH (sourced from zsh/claude.zsh) — sub-agents may not have it
+- `gh pr create --body-file` still triggers heuristic if the temp file path contains `#`
+- MCP `create_pull_request` requires exact `owner/repo` strings — parse from `git remote`
+- Worktree paths with spaces break compound commands — always quote paths

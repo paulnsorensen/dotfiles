@@ -183,6 +183,14 @@ if command -v omp &> /dev/null; then
   }
 fi
 
+# Upstream Pi - native config; Pi auto-loads APPEND_SYSTEM.md from its
+# config dir itself, so the wrapper only needs to forward through.
+if command -v pi &> /dev/null; then
+  pi() {
+    command pi "$@"
+  }
+fi
+
 # =============================================================================
 # Rust Replacements (modern coreutils)
 # =============================================================================

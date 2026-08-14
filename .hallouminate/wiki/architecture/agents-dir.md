@@ -1,12 +1,12 @@
 # The `agents/` Registry System
 
-`agents/` is the shared source for MCP servers, cross-cutting hooks, sub-agent definitions, system-prompt content, and the common name/quote bank. `ap` lowers compatible registries into four layouts (Claude, Codex, Cursor, Copilot); the OMP assembler consumes selected shared assets through its native chezmoi tree.
+`agents/` is the shared source for MCP servers, cross-cutting hooks, sub-agent definitions, system-prompt content, and the common name/quote bank. `ap` lowers compatible registries into four layouts (Claude, Codex, Cursor, Copilot); the OMP and Pi assemblers consume selected shared assets through their native chezmoi trees.
 
 The split that matters: **`agents/` declares shared content; each harness adapter owns its native shape.** `ap` is one adapter, not the owner of every live harness.
 
 ## Why registries instead of per-harness config
 
-Harnesses want different native shapes: Claude uses a plugin tree, Codex uses `config.toml` plus agent TOML, Cursor uses MCP/plugin files, Copilot uses its own MCP and hook schemas, and OMP uses a native package tree. One shared declaration with explicit adapters prevents those copies from drifting.
+Harnesses want different native shapes: Claude uses a plugin tree, Codex uses `config.toml` plus agent TOML, Cursor uses MCP/plugin files, Copilot uses its own MCP and hook schemas, and OMP/Pi use native package trees. One shared declaration with explicit adapters prevents those copies from drifting.
 
 The registries are also the stable **edit surface**: `mcp-edit`, `hook-edit`, `agent-edit`, `skill-edit` open the relevant YAML. You never hand-edit a rendered artifact — you edit a registry and re-run the deploy.
 
@@ -70,13 +70,13 @@ The four phase agents hand results back through their **final message**, which t
 
 Two sources unioned at ingest (`ingest._expand_skills`):
 
-- **Local**: `skills/<name>/SKILL.md` becomes a `path:` item for `ap`; OMP copies the selected local set into its exact chezmoi tree.
-- **External**: `_registry.yaml` sources are fetched by `npx skills add` for CLI-supported harnesses and vendored by the chezmoi assembler for OMP, honoring each source's `harnesses:` filter.
+- **Local**: `skills/<name>/SKILL.md` becomes a `path:` item for `ap`; OMP and Pi copy the selected local set into their exact chezmoi trees.
+- **External**: `_registry.yaml` sources are fetched by `npx skills add` for CLI-supported harnesses and vendored by the chezmoi assemblers for OMP/Pi, honoring each source's `harnesses:` filter.
 
 ## The edit → render → deploy workflow
 
-1. **Edit the appropriate source.** Shared registry commands cover MCP, hooks, agents, and skills; native OMP settings stay in its own `.chezmoidata` registry.
-2. **Render or assemble.** `ap` compiles explicit profiles for Claude, Codex, Cursor, and Copilot. `.sync-lib.sh` assembles the exact Claude, Codex, and OMP payload trees.
+1. **Edit the appropriate source.** Shared registry commands cover MCP, hooks, agents, and skills; native OMP/Pi settings stay in their own `.chezmoidata` registries.
+2. **Render or assemble.** `ap` compiles explicit profiles for Claude, Codex, Cursor, and Copilot. `.sync-lib.sh` assembles the exact Claude, Codex, OMP, and Pi payload trees.
 3. **Deploy with `dots sync`.** Chezmoi applies native files, then harness-specific reconcilers converge CLI-managed MCPs and packages. `ap install global` is no longer the machine-convergence path.
 
 The standalone `agents/mcp/sync.sh` and `agents/hooks/sync.sh` remain legacy native-CLI helpers; `dots sync` does not call them.
@@ -85,8 +85,8 @@ The standalone `agents/mcp/sync.sh` and `agents/hooks/sync.sh` remain legacy nat
 
 Shared agent *content* that chezmoi copies directly (not through `ap`):
 
-- **`agents/AGENTS.md`** — global coding-agent preferences installed as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`.
-- **`agents/preamble.md`** — the compact standing system-prompt body. Claude wrappers pass it with `--system-prompt-file`; `install-prompts.sh` installs it as Codex's `model_instructions_file`. OMP uses a separate native `APPEND_SYSTEM.md` because its prompt contract differs.
+- **`agents/AGENTS.md`** — global coding-agent preferences installed as `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and `~/.pi/agent/AGENTS.md`.
+- **`agents/preamble.md`** — the compact standing system-prompt body. Claude wrappers pass it with `--system-prompt-file`; `install-prompts.sh` installs it as Codex's `model_instructions_file`. OMP and Pi use separate native `APPEND_SYSTEM.md` files because their prompt contracts differ.
 - **`agents/RTK.md`** — RTK proxy reference, Claude-only (copied to `~/.claude/RTK.md`).
 
 See [[../harnesses/index]] for how each harness consumes these artifacts and the official docs for its native config surfaces.
