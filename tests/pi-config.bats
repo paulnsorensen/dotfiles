@@ -88,6 +88,75 @@ TOML
     [ "$(jq -r '.mcpServers.hallouminate.args[0]' "$destination/.pi/agent/mcp.json")" = "serve" ]
 }
 
+@test "pi config: localLLM=true renders the local model provider registry in models.json" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    cfg="$TEST_HOME/chezmoi.toml"
+    destination="$TEST_HOME/home"
+    mkdir -p "$destination"
+    cat >"$cfg" <<TOML
+sourceDir = "$CZ_SRC"
+destDir = "$destination"
+
+[data]
+email = "test@example.com"
+work = false
+localLLM = true
+TOML
+
+    run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$CZ_SRC" apply --force --exclude=scripts
+    [ "$status" -eq 0 ]
+
+    expected=$(yq -o=json '.pi.localModels.providers' "$REGISTRY" | jq -S .)
+    actual=$(jq -S '.providers' "$destination/.pi/agent/models.json")
+    [ "$actual" = "$expected" ]
+}
+
+@test "pi config: localLLM=false renders an empty provider set in models.json" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    cfg="$TEST_HOME/chezmoi.toml"
+    destination="$TEST_HOME/home"
+    mkdir -p "$destination"
+    cat >"$cfg" <<TOML
+sourceDir = "$CZ_SRC"
+destDir = "$destination"
+
+[data]
+email = "test@example.com"
+work = false
+localLLM = false
+TOML
+
+    run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$CZ_SRC" apply --force --exclude=scripts
+    [ "$status" -eq 0 ]
+
+    actual=$(jq -c . "$destination/.pi/agent/models.json")
+    [ "$actual" = '{"providers":{}}' ]
+}
+
+@test "pi config: local model provider schema enforces required shape" {
+    providers=$(yq -o=json '.pi.localModels.providers' "$REGISTRY")
+    provider_count=$(jq 'length' <<<"$providers")
+    [ "$provider_count" -gt 0 ]
+
+    while IFS= read -r provider; do
+        [ "$(jq -r '.baseUrl | type' <<<"$provider")" = "string" ]
+        [ "$(jq -r '.api | type' <<<"$provider")" = "string" ]
+        [ "$(jq -r '.apiKey | type' <<<"$provider")" = "string" ]
+        [ "$(jq -r '.models | type' <<<"$provider")" = "array" ]
+        [ "$(jq '.models | length' <<<"$provider")" -gt 0 ]
+        while IFS= read -r model; do
+            [ "$(jq -r '.id | type' <<<"$model")" = "string" ]
+            [ "$(jq -r '.name | type' <<<"$model")" = "string" ]
+            [ "$(jq -r '.reasoning | type' <<<"$model")" = "boolean" ]
+            [ "$(jq -r '.input | type' <<<"$model")" = "array" ]
+            [ "$(jq -r '.contextWindow | type' <<<"$model")" = "number" ]
+            [ "$(jq -r '.maxTokens | type' <<<"$model")" = "number" ]
+        done < <(jq -c '.models[]' <<<"$provider")
+    done < <(jq -c '.[]' <<<"$providers")
+}
+
 @test "pi install: package registry pins the CLI and passes the safe npm flag" {
     [ "$(yq -r '.packages[] | select(has("pi")) | .pi.pkg' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "@earendil-works/pi-coding-agent" ]
     [ "$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "0.84.1" ]

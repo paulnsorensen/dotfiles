@@ -2,7 +2,7 @@
 
 # target_param: {TOOL}        (a tool name; '%' to scan all tools)
 
-# harness: respects harness=<all|claude|codex|omp>
+# harness: respects harness=<all|claude|codex|omp|pi>
 
 # owner: tool-efficiency
 

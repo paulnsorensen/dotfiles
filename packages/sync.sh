@@ -616,6 +616,70 @@ sync_uv() {
     log_success "UV sync complete"
 }
 
+# Install any configured npm/uv package that is missing, without reconverging
+# already-present pinned packages — sync_npm/sync_uv reinstall pinned entries
+# unconditionally, which is correct for a full sync but would repeat on every
+# cache hit. Runs on the cache-hit fast-path so a deleted or never-installed
+# pinned tool (e.g. the pi CLI, milknado) is repaired without a full sync.
+heal_missing_npm_uv() {
+    if command -v npm &>/dev/null; then
+        local skip_platform npm_pkgs installed
+        if [[ "$PLATFORM" == "Darwin" ]]; then skip_platform="linux"; else skip_platform="mac"; fi
+        npm_pkgs=$(
+            yq -o=json '.packages' "$PACKAGES_FILE" |
+                jq -r --arg skip "$skip_platform" '
+                    .[] | select(type == "object") | to_entries[0]
+                    | select(.value.source == "npm" and .value.platform != $skip)
+                    | [.key, (.value.pkg // .key), (.value.version // "-"), ((.value.flags // []) | @json)]
+                    | @tsv
+                '
+        )
+        if [[ -n "$npm_pkgs" ]]; then
+            installed=$(npm ls -g --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' || true)
+            while IFS=$'\t' read -r name pkg version flags_json; do
+                [[ -z "$name" ]] && continue
+                grep -qx "$pkg" <<<"$installed" && continue
+                echo "  ! $name missing — installing..."
+                local flag
+                local -a install_args=(-g)
+                while IFS= read -r flag; do
+                    install_args+=("$flag")
+                done < <(jq -r '.[]' <<<"$flags_json")
+                install_args+=("$([[ "$version" != "-" ]] && echo "$pkg@$version" || echo "$pkg")")
+                if ! npm install "${install_args[@]}" </dev/null; then
+                    log_error "Failed to install $pkg"
+                    FAILED+=("$pkg")
+                fi
+            done <<< "$npm_pkgs"
+        fi
+    fi
+
+    if command -v uv &>/dev/null; then
+        local uv_pkgs installed
+        uv_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "uv") | [.key, (.value.pkg // .key), ((.value.flags // []) | join(" ")), (.value.version // ""), (.value.rev // "")] | join("|")' "$PACKAGES_FILE" 2>/dev/null)
+        if [[ -n "$uv_pkgs" ]]; then
+            installed=$(uv tool list 2>/dev/null | awk '/^[a-zA-Z]/ {print $1}' || true)
+            while IFS='|' read -r name pkg flags_str version rev; do
+                [[ -z "$name" ]] && continue
+                grep -qx "$name" <<<"$installed" && continue
+                echo "  ! $name missing — installing..."
+                # shellcheck disable=SC2206  # word-splitting on flags_str is intentional
+                local -a flags_array=($flags_str)
+                local target="$pkg"
+                if [[ -n "$rev" ]]; then
+                    target="${pkg/@main/@$rev}"
+                elif [[ -n "$version" ]]; then
+                    target="$pkg==$version"
+                fi
+                if ! uv tool install ${flags_array[@]+"${flags_array[@]}"} "$target" </dev/null; then
+                    log_error "Failed to install $target"
+                    FAILED+=("$pkg")
+                fi
+            done <<< "$uv_pkgs"
+        fi
+    fi
+}
+
 ########## gh extensions
 
 sync_gh_extensions() {
@@ -837,6 +901,7 @@ if check_cache; then
     log_success "Package manifests unchanged (cached), syncing mise"
     heal_missing_cask_apps
     sync_mise
+    heal_missing_npm_uv
     if ((${#FAILED[@]})); then
         log_error "failed to heal ${#FAILED[@]} package(s): ${FAILED[*]}"
         exit 1
