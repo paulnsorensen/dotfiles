@@ -323,8 +323,11 @@ vault_secret_value() (
             _vault_fetch_onepassword "$item" "$key"
             ;;
         bitwarden)
-            project_id="$(_vault_project_id)" || return 1
-            token="$(_vault_token)" || return 1
+            project_id="$(_vault_project_id)" || {
+                echo "vault: Bitwarden project id is not configured." >&2
+                return 3
+            }
+            token="$(_vault_token)" || return 3
             if ! raw="$(BWS_ACCESS_TOKEN="$token" _vault_fetch_bitwarden "$project_id")"; then
                 echo "vault: Bitwarden fetch failed." >&2
                 return 3

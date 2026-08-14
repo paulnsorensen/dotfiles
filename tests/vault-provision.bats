@@ -239,3 +239,69 @@ EOF
     [[ "$output" != *"Enter TAVILY_API_KEY"* ]]
     [ ! -e "$log" ]
 }
+
+@test "require_trusted_interpreter accepts a symlink to a root-owned interpreter" {
+    ln -s /bin/sh "$TEST_HOME/node"
+    run bash -c '
+        eval "$(sed -n "/^require_trusted_interpreter()/,/^}/p" "$1")"
+        DESTDIR= require_trusted_interpreter "$2"
+    ' _ "$FIXTURE_DOTFILES/bin/vault-provision" "$TEST_HOME/node"
+    assert_success
+}
+
+@test "require_trusted_interpreter rejects a user-owned interpreter and never executes it" {
+    local marker="$TEST_HOME/node-executed"
+    cat > "$TEST_HOME/node" <<EOF
+#!/usr/bin/env bash
+touch '$marker'
+EOF
+    chmod 755 "$TEST_HOME/node"
+
+    run bash -c '
+        eval "$(sed -n "/^require_trusted_interpreter()/,/^}/p" "$1")"
+        DESTDIR= require_trusted_interpreter "$2"
+    ' _ "$FIXTURE_DOTFILES/bin/vault-provision" "$TEST_HOME/node"
+    assert_failure
+    [[ "$output" == *"root-owned and not group/other-writable"* ]]
+    [ ! -e "$marker" ]
+}
+
+@test "install_node_runtime refreshes a snapshot that only has the old two marker files" {
+    local target="$INSTALL_ROOT/usr/local/libexec/dotfiles/node-24.18.0"
+    mkdir -p "$target/bin" "$target/lib/node_modules/npm/bin"
+    printf '#!/bin/sh\n' > "$target/bin/node"
+    chmod +x "$target/bin/node"
+    printf 'stale-npx-cli\n' > "$target/lib/node_modules/npm/bin/npx-cli.js"
+
+    run env -u TODOIST DESTDIR="$INSTALL_ROOT" \
+        "$FIXTURE_DOTFILES/bin/vault-provision" \
+        --request-user "$(id -un)" --operator-user root
+    assert_success
+    [ -z "$output" ]
+
+    [ -x "$target/bin/node" ]
+    [ -x "$target/bin/npx" ]
+    [ ! -L "$target/lib/node_modules/npm" ]
+    [ "$(cat "$target/lib/node_modules/npm/bin/npx-cli.js")" != stale-npx-cli ]
+}
+
+@test "ensure_bitwarden_value surfaces a Bitwarden fetch failure instead of swallowing it" {
+    cat > "$TEST_HOME/fake-bin/security" <<'EOF'
+#!/usr/bin/env bash
+printf 'test-token\n'
+EOF
+    cat > "$TEST_HOME/fake-bin/bws" <<'EOF'
+#!/usr/bin/env bash
+exit 7
+EOF
+    chmod +x "$TEST_HOME/fake-bin/security" "$TEST_HOME/fake-bin/bws"
+
+    # shellcheck disable=SC2016
+    run env BWS_PROJECT_ID=test-project DOTFILES_DIR="$FIXTURE_DOTFILES" bash -c '
+        source "$DOTFILES_DIR/bin/lib/vault.sh"
+        source <(sed -n "/^ensure_bitwarden_value()/,/^}/p" "$1")
+        ensure_bitwarden_value TAVILY_API_KEY
+    ' _ "$FIXTURE_DOTFILES/bin/vault-provision"
+    [ "$status" -eq 3 ]
+    [[ "$output" == *"Bitwarden fetch failed"* ]]
+}

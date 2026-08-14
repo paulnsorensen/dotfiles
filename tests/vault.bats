@@ -175,3 +175,29 @@ EOF
     [ "$status" -eq 3 ]
     [[ "$output" == *"Bitwarden fetch failed"* ]]
 }
+
+@test "runtime secret reader distinguishes a missing Bitwarden secret from an unconfigured project id" {
+    printf 'DOTFILES_VAULT_PROVIDER=bitwarden\n' > "$DOTFILES_DIR/.env"
+    unset BWS_PROJECT_ID
+
+    run bash -c "source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
+    [ "$status" -eq 3 ]
+    [[ "$output" == *"Bitwarden project id is not configured"* ]]
+}
+
+@test "runtime secret reader reports a missing Bitwarden secret with status 1" {
+    printf 'DOTFILES_VAULT_PROVIDER=bitwarden\nBWS_PROJECT_ID=test-project\n' > "$DOTFILES_DIR/.env"
+    cat > "$MOCK_BIN/security" <<'EOF'
+#!/usr/bin/env bash
+printf 'test-token\n'
+EOF
+    cat > "$MOCK_BIN/bws" <<'EOF'
+#!/usr/bin/env bash
+printf 'CONTEXT7_API_KEY=other-fixture\n'
+EOF
+    chmod +x "$MOCK_BIN/security" "$MOCK_BIN/bws"
+
+    run bash -c "export BWS_ACCESS_TOKEN=test-token; source '$VAULT_LIB'; vault_secret_value bitwarden TAVILY_API_KEY"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Bitwarden secret 'TAVILY_API_KEY' is missing"* ]]
+}

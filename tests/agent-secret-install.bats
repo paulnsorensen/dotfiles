@@ -426,3 +426,71 @@ EOF
     run grep -q '^bootout' "$log"
     [ "$status" -ne 0 ]
 }
+
+@test "launchd restart reports a timeout when the service never unloads" {
+    local fake_bin="$TEST_HOME/fake-bin" log="$TEST_HOME/launchctl.log"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/launchctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$LAUNCHCTL_LOG"
+case "$1" in
+    print) exit 0 ;;
+    bootout) exit 0 ;;
+esac
+EOF
+    chmod +x "$fake_bin/launchctl"
+    # shellcheck disable=SC2016
+    run env PATH="$fake_bin:$PATH" LAUNCHCTL_LOG="$log" bash -c \
+        'source <(sed -n "/^restart_launchd_service()/,/^}/p" "$1"); restart_launchd_service fixture /tmp/fixture.plist' _ "$INSTALLER"
+    assert_failure
+    [[ "$output" == *"timed out waiting for system/com.dotfiles.agent-secret.fixture to unload."* ]]
+}
+
+@test "launchd restart reports bootstrap failure after 3 attempts" {
+    local fake_bin="$TEST_HOME/fake-bin" log="$TEST_HOME/launchctl.log"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/launchctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$LAUNCHCTL_LOG"
+case "$1" in
+    print) exit 1 ;;
+    bootstrap) exit 5 ;;
+esac
+EOF
+    chmod +x "$fake_bin/launchctl"
+    # shellcheck disable=SC2016
+    run env PATH="$fake_bin:$PATH" LAUNCHCTL_LOG="$log" bash -c \
+        'source <(sed -n "/^restart_launchd_service()/,/^}/p" "$1"); restart_launchd_service fixture /tmp/fixture.plist' _ "$INSTALLER"
+    assert_failure
+    [[ "$(grep -c '^bootstrap' "$log")" -eq 3 ]]
+    [[ "$output" == *"launchctl bootstrap failed for system/com.dotfiles.agent-secret.fixture after 3 attempts."* ]]
+}
+
+@test "launchd restart logs a bootout failure but continues to bootstrap" {
+    local fake_bin="$TEST_HOME/fake-bin" log="$TEST_HOME/launchctl.log" state="$TEST_HOME/launchctl.state"
+    mkdir -p "$fake_bin"
+    printf loaded > "$state"
+    cat > "$fake_bin/launchctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$LAUNCHCTL_LOG"
+case "$1" in
+    print)
+        [[ -s "$LAUNCHCTL_STATE" ]] && exit 0
+        exit 1
+        ;;
+    bootout)
+        : > "$LAUNCHCTL_STATE"
+        exit 3
+        ;;
+    bootstrap) exit 0 ;;
+esac
+EOF
+    chmod +x "$fake_bin/launchctl"
+    # shellcheck disable=SC2016
+    run env PATH="$fake_bin:$PATH" LAUNCHCTL_LOG="$log" LAUNCHCTL_STATE="$state" bash -c \
+        'source <(sed -n "/^restart_launchd_service()/,/^}/p" "$1"); restart_launchd_service fixture /tmp/fixture.plist' _ "$INSTALLER"
+    assert_success
+    [[ "$(grep -c '^bootout' "$log")" -eq 1 ]]
+    [[ "$(grep -c '^bootstrap' "$log")" -eq 1 ]]
+    [[ "$output" == *"launchctl bootout failed for system/com.dotfiles.agent-secret.fixture; continuing."* ]]
+}
