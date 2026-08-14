@@ -85,6 +85,9 @@ socket.
 Unknown tools, changed arguments, missing nonces, expired approvals, replayed
 approvals, unsafe policy files, and user-writable upstream executables all fail
 closed.
+Broker lifecycle is bounded: each broker caps active pending approvals at 256; a dead upstream gets one retry, then exponential restart backoff capped at one second until healthy output resets it. SIGTERM restores the handler and closes both sockets, while failed sends roll back request state before reporting the upstream error.[^1]
+
+[^1]: scripts/agent-secret-broker.py:31-33, 317-344, 465-582, 610-640, 921-933; tests/agent-secret-broker.bats:356-528
 
 ## Managed configuration surfaces
 
