@@ -61,6 +61,9 @@ codex:
     milknado:
       command: uvx
       args: ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]
+    hallouminate:
+      command: hallouminate
+      args: ["serve"]
 
   # ── ~/.codex/agents selection (agents/agent_definitions/) ────────────────
   # Rendered to <name>.toml from agents/registry.yaml metadata at assembly
