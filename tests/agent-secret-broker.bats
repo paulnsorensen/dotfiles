@@ -171,6 +171,99 @@ PY
     assert_success
 }
 
+@test "methodless response from client is forwarded upstream, not rejected" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import json
+import sys
+from types import SimpleNamespace
+
+spec = importlib.util.spec_from_file_location("agent_secret_broker", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+class RecordingConnection:
+    def __init__(self):
+        self.payloads = []
+
+    def sendall(self, payload):
+        self.payloads.append(payload)
+
+
+class FakeUpstream:
+    def __init__(self):
+        self.sent = []
+
+    def send(self, payload):
+        self.sent.append(payload)
+
+
+connection = RecordingConnection()
+broker = SimpleNamespace(policy=SimpleNamespace(credential="sentinel"))
+session = module.ClientSession(broker, connection)
+session._upstream = FakeUpstream()
+
+response_line = json.dumps({"jsonrpc": "2.0", "id": 42, "result": {"roots": []}}).encode()
+session.handle_line(response_line + b"\n")
+
+assert session._upstream.sent == [response_line], session._upstream.sent
+assert connection.payloads == [], connection.payloads
+PY
+    assert_success
+}
+
+@test "initialize capabilities are filtered to match the allowed method set" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import json
+import sys
+from types import SimpleNamespace
+
+spec = importlib.util.spec_from_file_location("agent_secret_broker", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+class RecordingConnection:
+    def __init__(self):
+        self.payloads = []
+
+    def sendall(self, payload):
+        self.payloads.append(payload)
+
+
+connection = RecordingConnection()
+broker = SimpleNamespace(policy=SimpleNamespace(credential="sentinel"))
+session = module.ClientSession(broker, connection)
+session._methods["1"] = "initialize"
+
+session._upstream_line(
+    json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {
+                    "tools": {"listChanged": True},
+                    "resources": {},
+                    "prompts": {},
+                    "logging": {},
+                },
+            },
+        }
+    ).encode()
+)
+
+sent = json.loads(connection.payloads[0])
+assert sent["result"]["capabilities"] == {"tools": {"listChanged": True}}, sent
+PY
+    assert_success
+}
+
 @test "proxy loop returns cleanly when the selector loop raises OSError" {
     run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
 import importlib.util
