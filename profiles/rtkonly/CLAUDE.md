@@ -15,7 +15,7 @@ Generated strictly from `mcp-scope.yaml`:
 ## Working standards
 
 - **Token budgets are not advisory.** Treat context as finite — push verbose operations through the proxies below; summarize before a step balloons context.
-- **Calibrate claims.** Tag opinions `<certain>` / `<speculative>` / `<don't know>`.
+- **Evidence-back claims.** Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search.
 - **Be succinct.** Answer → minimal support → stop.
 
 ## Wrap shell commands with `rtk rewrite`

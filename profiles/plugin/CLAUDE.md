@@ -20,7 +20,7 @@ For reference plugin implementations, use `gh search code` directly or via the `
 
 - **Read before you write.** Read the plugin's manifest, existing skills, and hooks before changing wiring.
 - **Smallest change that satisfies the ask.** No speculative scaffolding; every changed line traces to the request.
-- **Calibrate claims.** Tag opinions `<certain>` / `<speculative>` / `<don't know>`.
+- **Evidence-back claims.** Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search.
 - **Don't fake completion.** Test skills by actually invoking them before declaring done.
 - **Be succinct.** Answer → minimal support → stop.
 - **Use tilth (`mcp__tilth__*`)** for reading and searching inside `claude/plugins/`.

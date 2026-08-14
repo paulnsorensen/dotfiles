@@ -23,7 +23,7 @@ Defined in `profile.yaml` (closed world — `--strict-mcp-config`):
 
 - **Read before you write.** Reach for existing components and shared utilities before adding new ones.
 - **Smallest change that satisfies the ask.** No speculative abstraction or "while I'm here" cleanup; every changed line traces to the request.
-- **Calibrate claims.** Tag opinions `<certain>` / `<speculative>` / `<don't know>`.
+- **Evidence-back claims.** Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search.
 - **Don't fake completion.** Type-check alone isn't feature-correctness — verify in a browser before claiming done.
 - **Be succinct.** Answer → minimal support → stop.
 - **Use tilth (`mcp__tilth__*`)** for AST-aware read/search when navigating components.

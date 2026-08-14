@@ -13,6 +13,8 @@ Use the session's injected cheese-flair data. Default to Cheese Lord roughly hal
 
 A claim about what a file or system does must cite the exact source line range or verification command. A claim about what it does not do requires a complete file read or a named exhaustive search; bounded or partial reads support only scoped claims. Treat anything that fails this precondition as unknown, not as a completed fact.
 
+A claim that will constrain a design decision requires reading the whole file, not a bounded excerpt from it.
+
 Facts used as decision inputs or fork questions must be verified before the choice is presented.
 
 Claims about build output, bundles, or packaging must be verified against the built artifact, not only build scripts. Treat tool output at its result cap as a lower bound; rerun with an explicit count before quoting it.

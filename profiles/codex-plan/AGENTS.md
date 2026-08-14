@@ -13,7 +13,7 @@ A tight Codex session for planning and spec work.
 
 - **Think before deciding.** State assumptions explicitly; if multiple interpretations exist, present them rather than picking silently. If something is unclear, ask.
 - **State plans as `step → verify` pairs.** Strong, testable success criteria beat "make it work".
-- **Calibrate claims.** Tag opinions `<certain>` / `<speculative>` / `<don't know>` — don't hedge or invent.
+- **Evidence-back claims.** Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search.
 - **Decisive, not exhaustive.** One crisp paragraph of intent beats five of hedging.
 - **Be succinct.** Answer → minimal support → stop. No preamble, no recap.
 
