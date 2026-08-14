@@ -1,8 +1,7 @@
 # live — the only profile dots sync deploys to this machine.
 #
-# The profile carries the base registry union plus the live permission floor and
-# compiles into two target roots: $HOME for the dot-dir harnesses, and
-# $HOME/.config/opencode for opencode's root-relative renderer.
+# The profile carries the base registry union plus the live permission floor
+# and compiles all supported renderers into $HOME.
 name: live
 description: Live compiled agent config for dots sync
 include: [base, _permissions]
@@ -11,9 +10,6 @@ compile_targets:
   home:
     target_root: $HOME
     harnesses: [claude, codex, cursor, copilot]
-  opencode:
-    target_root: $HOME/.config/opencode
-    harnesses: [opencode]
 
 # Claude plugin wiring mirrors the former global live overlay. The compiled
 # apply path writes the plugin tree under ~/.claude/plugins/local/live and

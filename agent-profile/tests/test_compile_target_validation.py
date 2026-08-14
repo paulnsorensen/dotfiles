@@ -25,18 +25,18 @@ def test_valid_compile_targets_resolve_to_absolute_roots(env, monkeypatch):
         env,
         {
             "home": {"target_root": "$HOME", "harnesses": ["claude", "codex"]},
-            "opencode": {
-                "target_root": "${HOME}/.config/opencode",
-                "harnesses": ["opencode"],
+            "cursor": {
+                "target_root": "${HOME}/.cursor",
+                "harnesses": ["cursor"],
             },
         },
     )
 
     manifest = parse_manifest(env.profiles / "live")
 
-    assert [target.name for target in manifest.compile_targets] == ["home", "opencode"]
+    assert [target.name for target in manifest.compile_targets] == ["home", "cursor"]
     assert manifest.compile_targets[0].resolved_root == env.tmp / "home"
-    assert manifest.compile_targets[1].resolved_root == env.tmp / "home/.config/opencode"
+    assert manifest.compile_targets[1].resolved_root == env.tmp / "home/.cursor"
 
 
 @pytest.mark.parametrize(

@@ -10,5 +10,19 @@ stops/disables/masks them so a still-running stale copy can't restart. */ -}}
 # Retired in #289: the manual 70B opus tier cannot work on this box (bandwidth
 # + RAM); opus-grade work routes to cloud models.
 .config/systemd/user/worker-opus.service
+local-llm/configs/lean.json
 {{ end }}
 .omp/agent/extensions/no-fork-all.ts
+
+# Retired native harnesses. Remove their configuration and runtime state;
+# package binaries are removed by packages/sync.sh.
+.config/opencode
+.opencode
+.config/opencode-profiles
+.local/share/opencode
+.local/state/opencode
+.cache/opencode
+.config/crush
+.local/share/crush
+.local/state/crush
+.cache/crush

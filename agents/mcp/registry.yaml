@@ -15,7 +15,7 @@
 #                  mcp_build_env_flags) are untouched by the templating pass.
 #   env          — env vars; values can reference shell vars via "${VAR}"
 #   scope        — claude-only: user | project | local (default user)
-#   harnesses    — list of harness names to install into; default: [claude, codex, opencode, cursor, crush]
+#   harnesses    — list of harness names; default: [claude, codex, cursor, copilot]
 #   gate_unless  — claude-only: skip install when env var == "true" (defer to a plugin's bundled MCP)
 #   optional     — when true, skip this MCP non-fatally if any ${VAR} it
 #                  references is unset (instead of failing the sync). Use for
@@ -56,10 +56,9 @@ mcps:
     command: agent-secret-proxy
     args: ["--socket", "/var/run/dotfiles-agent-secrets/todoist.sock"]
     scope: user
-    # Scoped out of every harness: todoist's ~45 tools ≈ 38k tokens (62% of the
-    # MCP tool footprint) are eager-loaded into every request by opencode, codex,
-    # cursor, and copilot (only claude defers via ToolSearch — see
-    # .cheese/research/mcp-schema-loading). It is irrelevant to coding; the `todo`
+    # Scoped out of every harness: todoist's ~45 tools ≈ 38k tokens are
+    # eager-loaded into every request by Codex, Cursor, and Copilot. Claude
+    # alone defers via ToolSearch. It is irrelevant to coding; the `todo`
     # profile defines todoist inline, so productivity sessions still get it.
     # Empty list (not absent) renders into nothing — base.py:item_harnesses only
     # falls back to the default set when `harnesses` is missing.

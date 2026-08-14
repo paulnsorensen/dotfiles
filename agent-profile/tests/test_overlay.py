@@ -164,9 +164,8 @@ def test_isolated_launch_passthrough_appended_last(env, monkeypatch):
 
 
 def test_isolated_launch_unsupported_harness_rejected(env, capsys):
-    """cursor/copilot/crush have no runtime-isolation lever: an isolated
-    launch against one fails loud (IsolationError -> CliError). codex and
-    opencode are now SUPPORTED — see their own tests."""
+    """Cursor and Copilot have no runtime-isolation lever; launching an
+    isolated profile against either fails loud."""
     write_isolated_todo(env.profiles)
     rc = cli.main(["launch", "cursor", "todo", "--target", str(env.target)])
     assert rc == 1
@@ -867,7 +866,7 @@ def _claude_manifest(tmp_path, **over):
     return Manifest(**base)
 
 
-@pytest.mark.parametrize("harness", ["cursor", "copilot", "crush", "bogus"])
+@pytest.mark.parametrize("harness", ["cursor", "copilot", "bogus"])
 def test_dispatch_unsupported_harness_raises(tmp_path, harness):
     """Every harness without an isolation builder fails loud on dispatch."""
     m = _claude_manifest(tmp_path)
@@ -875,10 +874,9 @@ def test_dispatch_unsupported_harness_raises(tmp_path, harness):
         overlay.build_isolated_launch(m, tmp_path, harness)
 
 
-def test_dispatch_table_keys_are_the_three_isolating_harnesses(tmp_path):
-    """The closed-world contract is claude/codex/opencode only; cursor/
-    copilot/crush are deliberately absent (no runtime-isolation lever)."""
-    assert set(overlay._ISOLATION_BUILDERS) == {"claude", "codex", "opencode"}
+def test_dispatch_table_keys_are_the_isolating_harnesses(tmp_path):
+    """Only Claude and Codex expose a closed-world isolation mechanism."""
+    assert set(overlay._ISOLATION_BUILDERS) == {"claude", "codex"}
 
 
 # ─── codex builder (#221) ────────────────────────────────────────
@@ -1215,232 +1213,6 @@ def test_codex_launch_does_not_hard_fail(env, monkeypatch):
     assert (Path(cli.os.environ["CODEX_HOME"]) / "config.toml").is_file()
 
 
-# ─── opencode builder (#222) ─────────────────────────────────────
-
-
-def test_opencode_emits_config_content_env(tmp_path, monkeypatch):
-    """opencode isolates via env vars, not flags: flags is empty and the MCP
-    world rides in OPENCODE_CONFIG_CONTENT."""
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))  # no registry -> no inherited
-    m = _claude_manifest(tmp_path)
-    flags, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    assert flags == []
-    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
-    assert config["mcp"]["tilth"] == {
-        "type": "local",
-        "enabled": True,
-        "command": ["tilth", "--mcp"],
-    }
-
-
-def test_opencode_disables_project_config(tmp_path, monkeypatch):
-    """L1: OPENCODE_DISABLE_PROJECT_CONFIG=true so a project-level opencode.json
-    in the working tree can't leak its MCPs into the closed world (the
-    inherited-disable list only covers the global registry)."""
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    m = _claude_manifest(tmp_path)
-    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    assert env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "true"
-
-
-def test_opencode_disables_inherited_registry_servers(tmp_path, monkeypatch):
-    """Inherited servers (registry membership includes opencode) are pinned
-    enabled:false so the global config doesn't leak into the closed world;
-    a server the profile ALSO declares stays enabled (profile wins)."""
-    dots = tmp_path / "dots"
-    (dots / "agents" / "mcp").mkdir(parents=True)
-    (dots / "agents" / "mcp" / "registry.yaml").write_text(
-        "mcps:\n"
-        "  hallouminate:\n    command: hallouminate\n    args: [serve]\n"
-        "  serena:\n    command: serena\n    args: [start]\n"
-        "  todoist:\n    command: npx\n    harnesses: []\n"  # scoped out everywhere
-        "  tilth:\n    command: tilth\n"  # profile also declares this
-    )
-    monkeypatch.setenv("DOTFILES_DIR", str(dots))
-    m = _claude_manifest(tmp_path)  # declares tilth (enabled)
-    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    mcp = json.loads(env["OPENCODE_CONFIG_CONTENT"])["mcp"]
-    assert mcp["hallouminate"] == {"enabled": False}
-    assert mcp["serena"] == {"enabled": False}
-    assert "todoist" not in mcp  # harnesses: [] -> not an opencode-inherited server
-    assert mcp["tilth"]["enabled"] is True  # profile's own record wins
-
-
-def test_opencode_missing_registry_warns_on_stderr(tmp_path, monkeypatch, capsys):
-    """When the opencode registry is absent, a warning fires on stderr."""
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))  # no registry.yaml here
-    m = _claude_manifest(tmp_path)
-    overlay.build_isolated_launch(m, tmp_path, "opencode")
-    err = capsys.readouterr().err
-    assert "could not read opencode registry" in err
-    assert "inherited global MCPs may not be sealed" in err
-
-
-def test_opencode_unparseable_registry_warns_on_stderr(tmp_path, monkeypatch, capsys):
-    """When the opencode registry contains invalid YAML, a warning fires on stderr."""
-    dots = tmp_path / "dots"
-    (dots / "agents" / "mcp").mkdir(parents=True)
-    (dots / "agents" / "mcp" / "registry.yaml").write_text(": {bad: [yaml\n")
-    monkeypatch.setenv("DOTFILES_DIR", str(dots))
-    m = _claude_manifest(tmp_path)
-    overlay.build_isolated_launch(m, tmp_path, "opencode")
-    err = capsys.readouterr().err
-    assert "could not read opencode registry" in err
-    assert "inherited global MCPs may not be sealed" in err
-
-
-def test_opencode_system_prompt_additive_instructions(tmp_path, monkeypatch):
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    m = _claude_manifest(tmp_path, system_prompt="CLAUDE.md")
-    (tmp_path / "CLAUDE.md").write_text("oc sp\n")
-    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
-    assert config["instructions"] == [str(tmp_path / "CLAUDE.md")]
-
-
-def test_opencode_permission_maps_deny(tmp_path, monkeypatch):
-    """D2: permissions_deny -> OPENCODE_PERMISSION. Edit/Write -> edit:deny;
-    mcp__* passes through verbatim; NotebookEdit (no opencode key) is
-    dropped+logged."""
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    m = _claude_manifest(
-        tmp_path,
-        permissions_deny=["Edit", "Write", "NotebookEdit",
-                          "mcp__tilth__tilth_write"],
-    )
-    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    perm = json.loads(env["OPENCODE_PERMISSION"])
-    assert perm["edit"] == "deny"
-    assert perm["mcp__tilth__tilth_write"] == "deny"
-    assert "NotebookEdit" not in perm  # no opencode equivalent
-
-
-def test_opencode_permission_map_covers_each_claude_key(tmp_path, monkeypatch):
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    m = _claude_manifest(
-        tmp_path, permissions_deny=["Read", "Grep", "Glob", "Bash"]
-    )
-    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    perm = json.loads(env["OPENCODE_PERMISSION"])
-    assert perm == {"read": "deny", "grep": "deny",
-                    "glob": "deny", "bash": "deny"}
-
-
-def test_opencode_no_deny_omits_permission_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    m = _claude_manifest(tmp_path)  # no permissions_deny
-    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    assert "OPENCODE_PERMISSION" not in env
-
-
-def test_opencode_notebookedit_only_logs_and_omits_env(tmp_path, monkeypatch, capsys):
-    """A deny list of only-unmappable keys logs the drop and emits no
-    OPENCODE_PERMISSION (nothing mapped)."""
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    m = _claude_manifest(tmp_path, permissions_deny=["NotebookEdit"])
-    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    assert "OPENCODE_PERMISSION" not in env
-    assert "permissions_deny[NotebookEdit] ignored for harness opencode" \
-        in capsys.readouterr().err
-
-
-def test_opencode_mcp_env_rewritten_to_placeholder(tmp_path, monkeypatch):
-    """opencode doesn't grok ${VAR}; the renderer rewrites it to {env:VAR} so
-    opencode expands at launch and no secret is baked into the env JSON."""
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    m = Manifest(
-        name="p",
-        isolated=True,
-        mcps=[{"name": "context7", "command": "npx", "args": ["-y", "c7"],
-               "env": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"},
-               "_source_dir": str(tmp_path)}],
-    )
-    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    mcp = json.loads(env["OPENCODE_CONFIG_CONTENT"])["mcp"]
-    assert mcp["context7"]["environment"]["CONTEXT7_API_KEY"] == "{env:CONTEXT7_API_KEY}"
-
-
-def test_opencode_profile_env_injected_alongside(tmp_path, monkeypatch):
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    m = _claude_manifest(tmp_path, env={"MY_FLAG": "on"})
-    _, env = overlay.build_isolated_launch(m, tmp_path, "opencode")
-    assert env["MY_FLAG"] == "on"
-    assert "OPENCODE_CONFIG_CONTENT" in env
-
-
-def test_opencode_drops_plugins_and_extra_args_with_warning(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
-    m = _claude_manifest(
-        tmp_path, enabled_plugins={"x@y": True}, extra_args=["--foo"]
-    )
-    overlay.build_isolated_launch(m, tmp_path, "opencode")
-    err = capsys.readouterr().err
-    assert "field enabled_plugins ignored for harness opencode" in err
-    assert "field extra_args ignored for harness opencode" in err
-
-
-def test_opencode_launch_injects_config_env(env, monkeypatch):
-    """`dots profile launch opencode <iso>` injects OPENCODE_CONFIG_CONTENT
-    and execs opencode with empty isolation flags."""
-    write_isolated_todo(env.profiles)
-    rec = _capture_exec(monkeypatch)
-    with pytest.raises(SystemExit):
-        cli.main(["launch", "opencode", "todo", "--target", str(env.target)])
-    assert rec["file"] == "opencode"
-    assert cli.os.environ.get("OPENCODE_CONFIG_CONTENT")
-    config = json.loads(cli.os.environ["OPENCODE_CONFIG_CONTENT"])
-    assert "todoist" in config["mcp"]
-
-
-def test_opencode_launch_profile_wins_name_collision(env, monkeypatch):
-    """Full launch path: when a profile MCP name collides with an inherited
-    registry server, the profile's enabled record wins end-to-end (not just in
-    the _opencode_mcp_block unit). Drive `launch opencode todo` with a registry
-    that declares todoist (the profile's own server) AND hallouminate
-    (inherited-only); the injected OPENCODE_CONFIG_CONTENT must keep todoist
-    enabled with the profile command and pin hallouminate enabled:false."""
-    write_isolated_todo(env.profiles)
-    dots = env.tmp / "empty-dots"  # the env fixture's DOTFILES_DIR
-    (dots / "agents" / "mcp").mkdir(parents=True)
-    (dots / "agents" / "mcp" / "registry.yaml").write_text(
-        "mcps:\n"
-        "  todoist:\n    command: should-be-overridden\n"  # collides with profile
-        "  hallouminate:\n    command: hallouminate\n    args: [serve]\n"
-    )
-    rec = _capture_exec(monkeypatch)
-    with pytest.raises(SystemExit):
-        cli.main(["launch", "opencode", "todo", "--target", str(env.target)])
-    assert rec["file"] == "opencode"
-    mcp = json.loads(cli.os.environ["OPENCODE_CONFIG_CONTENT"])["mcp"]
-    assert mcp["todoist"]["enabled"] is True, "profile server lost to inherited disable"
-    assert mcp["todoist"]["command"] == ["npx", "-y", "@doist/todoist-ai"]
-    assert mcp["hallouminate"] == {"enabled": False}
-
-
-# ─── migrated-profile fidelity on non-claude harnesses ────────────────
-
-
-def test_real_review_profile_read_only_on_opencode(monkeypatch, tmp_path):
-    """The shipped review profile launched on opencode must stay read-only:
-    OPENCODE_PERMISSION denies edit (from Edit/Write) and tilth_write appears as
-    an mcp__* deny key. The closed MCP world is tilth + context7 (owned and
-    enabled).
-
-    The serena mutators this used to assert went away with #512."""
-    _hermetic_dotenv(monkeypatch, tmp_path)
-    pdir = find_profile_dir("review")
-    assert pdir is not None, "real profiles/review not found"
-    m = parse_manifest(pdir)
-    _, env = overlay.build_isolated_launch(m, pdir, "opencode")
-
-    perm = json.loads(env["OPENCODE_PERMISSION"])
-    assert perm["edit"] == "deny"
-    for mutator in ("mcp__tilth__tilth_write",):
-        assert perm[mutator] == "deny", f"review lost opencode deny: {mutator}"
-
-    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
-    own = {n for n, rec in config["mcp"].items() if rec.get("enabled") is not False}
-    assert own == {"tilth", "context7"}
 
 
 def test_real_review_profile_on_codex_projects_permission_rules(monkeypatch, tmp_path, capsys):

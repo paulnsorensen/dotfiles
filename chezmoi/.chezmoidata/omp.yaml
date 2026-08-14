@@ -49,7 +49,6 @@ omp:
       - cursor
       - gemini
       - github
-      - opencode
       - agents-md
       # v17.2.11 added a separate agent-plugins.org discovery provider that
       # scans the same ~/.claude and ~/.omp plugin roots as claude-plugins

@@ -79,11 +79,11 @@ def test_model_override_writes_frontmatter(tmp_path):
     body.write_text("agent body\n")
     out: list[str] = []
     shared.render_model_override(
-        tmp_path, "opencode", "agent_singular", "a", body, "claude-opus", out
+        tmp_path, "cursor", "agent_singular", "a", body, "claude-opus", out
     )
-    written = (tmp_path / ".opencode/agent/a.md").read_text()
+    written = (tmp_path / ".cursor/agent/a.md").read_text()
     assert written == "---\nmodel: claude-opus\n---\nagent body\n"
-    assert out == [".opencode/agent/a.md"]
+    assert out == [".cursor/agent/a.md"]
 
 
 def test_model_override_inherit_is_noop(tmp_path):
@@ -99,9 +99,9 @@ def test_model_override_command_kind_uses_commands_dir(tmp_path):
     body = tmp_path / "b.md"
     body.write_text("cmd body\n")
     out: list[str] = []
-    shared.render_model_override(tmp_path, "opencode", "command", "do-thing", body, "m", out)
-    assert (tmp_path / ".opencode/commands/do-thing.md").is_file()
-    assert out == [".opencode/commands/do-thing.md"]
+    shared.render_model_override(tmp_path, "cursor", "command", "do-thing", body, "m", out)
+    assert (tmp_path / ".cursor/commands/do-thing.md").is_file()
+    assert out == [".cursor/commands/do-thing.md"]
 
 
 def test_model_override_unknown_kind_raises(tmp_path):

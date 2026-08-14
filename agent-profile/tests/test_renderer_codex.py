@@ -1334,8 +1334,8 @@ def test_codex_native_skills_skipped(tmp_path):
 
 
 def test_codex_native_plugin_mcp_absent_from_config(tmp_path):
-    """After DEDUP, an MCP with harnesses=[opencode] (codex removed) is not
-    written into config.toml's [mcp_servers] for codex.
+    """After deduplication, an MCP scoped only to Cursor is absent from Codex
+    config.
 
     Not vacuous: the item originally carried codex in harnesses; DEDUP removed
     it. If DEDUP were dropped, mcps_for(..., 'codex') would include it and the
@@ -1346,7 +1346,7 @@ def test_codex_native_plugin_mcp_absent_from_config(tmp_path):
         "name": "milknado",
         "command": "uvx",
         "args": ["milknado-mcp"],
-        "harnesses": ["opencode"],  # codex removed by DEDUP
+        "harnesses": ["cursor"],  # Codex removed by deduplication
         "_source_dir": str(market_root),
     }]
     target = tmp_path / "home"

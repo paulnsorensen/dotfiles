@@ -450,9 +450,8 @@ def test_mcptest_shared_agent_carries_claude_model(rendered_mcptest):
     )
     # The user-scoped shared file is the one Claude actually resolves — it
     # wins over the plugin-scoped copy (priority 4 > 5), so it MUST carry the
-    # claude model (and color/effort/skills). A neutral shared file would
-    # silently drop the agent's pinned model. opencode reads its own
-    # .opencode/agent/ path (unaffected); Cursor overrides via .cursor/agents/.
+    # Claude model (plus color, effort, and skills). A neutral shared file would
+    # silently drop the pinned model; Cursor uses its own override path.
     assert "model: opus" in on_disk
 
 

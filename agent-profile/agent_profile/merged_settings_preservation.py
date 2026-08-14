@@ -34,10 +34,8 @@ DISCONNECTED_GLOBAL_SETTINGS = frozenset(
     {
         ".claude/settings.json",
         ".codex/config.toml",
-        "opencode.json",
         ".cursor/mcp.json",
         ".copilot/mcp-config.json",
-        ".config/crush/crush.json",
     }
 )
 

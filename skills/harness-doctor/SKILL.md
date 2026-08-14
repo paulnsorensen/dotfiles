@@ -3,10 +3,9 @@ name: harness-doctor
 model: sonnet
 effort: medium
 description: >
-  Diagnose and self-heal harness-config drift between live files
-  (~/.claude, ~/.codex, opencode, Cursor, Copilot) and what `ap` renders from
-  the dotfiles registries. Use when the user says "harness doctor", "check my
-  harness config", "settings drifted", "why is this hook firing twice", or asks
+  Diagnose and self-heal harness-config drift between Claude, Codex, Cursor,
+  Copilot, and the dotfiles registries. Use when the user says "harness doctor",
+  "check my harness config", "settings drifted", "why is this hook firing twice", or asks
   to audit agent config. In Codex, invoke via `$harness-doctor` or `/skills`,
   not `/harness-doctor`. Do NOT use for general code review (/age), single-file
   permission cleanup (/settings-clean), or app-level debugging.
@@ -87,13 +86,12 @@ Key target-state facts to hold:
 
 ### 2. Snapshot live config
 
-Read the live files per harness (use `cheez-read`/`jq`, not blind cat):
+Read the live files per harness (use `cheez-read`/`jq`, not blind `cat`):
 
 | Harness | Live files |
 |---|---|
 | claude | `~/.claude/settings.json` (+ `~/.claude/plugins/local/global/` only if that historical tree exists) |
 | codex | `~/.codex/config.toml` (`[mcp_servers]`, `[[hooks.*]]`), `~/.codex/hooks.json` |
-| opencode | `~/.config/opencode/opencode.json` (`mcp`, `provider`) |
 | cursor | `~/.cursor/mcp.json`, `~/.cursor/hooks.json` |
 | copilot | `~/.copilot/mcp-config.json`, `~/.copilot/hooks/` |
 
@@ -108,15 +106,14 @@ sh "$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" \
   < ~/.claude/settings.json | diff - ~/.claude/settings.json
 ```
 
-For the other harnesses, render `base` into a throwaway target (never touches
-live config) and diff:
+For Codex, Cursor, and Copilot, render `base` into a throwaway target (never
+touch live config) and diff:
 
 ```bash
 TMP="$(mktemp -d)"
 DOTFILES_DIR="$DOTFILES_DIR" ap install base --target "$TMP"
 dots profile describe live            # resolved manifest for the live overlay
-# Compare e.g. codex mcp_servers vs rendered, opencode/cursor mcp files vs
-# rendered payloads.
+# Compare Codex MCP tables and Cursor/Copilot MCP files with rendered payloads.
 ```
 
 For each difference, ask: *is the live side a superset (extra entries) or does
@@ -162,22 +159,10 @@ Two stale-remnant classes self-heal **inside the renderers**, on every
     `plugin.json`.
   - **codex** — `codex.py:_clean_legacy_config_toml_hooks` strips legacy
     `[[hooks.*]]` blocks from `config.toml` the same way.
-- **Dropped MCPs.** `cli.py:_reconcile_dropped_mcps` diffs the prior resolved
-  manifest (cached in `manifest.json`) against the current one and calls each
-  renderer's `prune_mcps` to evict servers removed from the registry that a
-  prior render merged into a persistent file (codex `config.toml`,
-  opencode/cursor/copilot JSON, claude user-scope `~/.claude.json`). claude
-  plugin-scoped `.mcp.json` is whole-file so it never drifts.
-  **Caveat ([#561](https://github.com/paulnsorensen/dotfiles/issues/561))**:
-  this reconcile is *windowed* — it only fires on the sync that crosses the
-  drop, and cursor's live `mcp.json` is a disconnected surface no code path
-  prunes at all. A registry-dropped MCP found live in opencode/cursor with the
-  drop already behind the manifest cache needs a manual `jq del(...)` heal —
-  see the wiki's config-drift § "registry MCP drops stranded in opencode/cursor".
-
-So the heal for both is just **`dots sync`** — it re-runs the renderers +
-reconcile. opencode/cursor/copilot receive no registry hooks, so there's no
-hook drift there.
+- **Dropped MCPs.** `cli.py:_reconcile_dropped_mcps` reports registry entries
+  removed since the prior resolved manifest. Non-isolated live MCP config is
+  chezmoi/user-owned, so diagnose and repair it through its authoritative owner;
+  do not expect `ap install` to mutate those files.
 
 The doctor's value is *explaining why* drift appeared and catching the classes
 the renderers don't auto-heal. For those, propose the precise edit and confirm

@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from agent_profile.parse import parse_manifest
 
-from tests.conftest import SHIPPED_PROFILE_DOTENV, write_profile
+from tests.conftest import write_profile
 
 # ── settings-level deny channel union-merge (parse) ──────────────────
 
@@ -103,43 +103,6 @@ def global_manifest():
     return parse_manifest(gdir)
 
 
-@pytest.fixture(scope="module")
-def opencode_global_manifest():
-    """Resolve the real shipped ``opencode-global`` live wrapper."""
-    # Anchor file-relative (parents[2] = repo root) so this guard can't silently
-    # skip on a checkout without DOTFILES_DIR. odir is always a directory, so the
-    # dropped `not odir.is_file()` conjunct was dead; a missing profile.yaml is
-    # the only real miss.
-    repo = Path(__file__).resolve().parents[2]
-    odir = repo / "profiles" / "opencode-global"
-    if not (odir / "profile.yaml").is_file():
-        pytest.skip(f"opencode-global profile not found at {odir}")
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setenv("DOTFILES_DIR", str(repo))
-        patch.setattr(
-            "agent_profile.parse.load_layered_env",
-            lambda _repo_root: dict(SHIPPED_PROFILE_DOTENV),
-        )
-        return parse_manifest(odir)
-
-
-def test_opencode_global_resolves_canonical_permissions_at_opencode_target(
-    opencode_global_manifest,
-):
-    """``opencode-global`` still targets ``$HOME/.config/opencode`` and carries
-    the canonical live safety + secret-protection floor.
-
-    Search-tool rerouting moved out of the deny list and into hooks/prompting, so
-    only the coarse cross-harness safety rules plus secret guards remain here.
-    """
-    assert opencode_global_manifest.target_default == "$HOME/.config/opencode"
-    allow = set(opencode_global_manifest.settings.get("permissions_allow", []))
-    deny = set(opencode_global_manifest.settings.get("permissions_deny", []))
-    for rule in ("Bash(git:*)", "Edit"):
-        assert rule in allow
-    for rule in ("Bash(rm -rf:*)", "Read(.env)", "Read(**/.aws/credentials)"):
-        assert rule in deny
-    assert "Grep" not in deny
 
 def test_global_resolves_canonical_allow_and_deny(global_manifest):
     """``global`` resolves both canonical lists via ``_permissions``.
@@ -207,16 +170,11 @@ def test_global_deny_seed_safety_floor(global_manifest):
 
 
 def test_global_deny_seed_protects_secrets(global_manifest):
-    """Secret-protection deny rules (private keys, credential stores, cert
-    files) are declared in the canonical _permissions fragment so every
-    harness renderer lowers them onto its native permission surface.
-    opencode denies .env by default, so .env itself is included for
-    cross-harness coverage but .env.* is NOT — adding it would clobber
-    .env.example allows under the renderer's allow-then-deny batching
-    (opencode is last-match-wins; the renderer emits all allow entries
-    before all deny, so a .env.* deny would override an .env.example
-    allow). Claude+Codex also have the PreToolUse hook
-    (agents/lib/sensitive-file-guard.js) as a redundant guard."""
+    """Secret-protection rules are declared in the canonical permissions
+    fragment so every renderer lowers them onto its native surface. Exact
+    `.env` paths are denied, but `.env.*` is not because that would also block
+    safe fixtures such as `.env.example`. Claude and Codex additionally apply
+    the sensitive-file PreToolUse hook."""
     deny = set(global_manifest.settings.get("permissions_deny", []))
     # Private keys + cert files.
     for rule in (
@@ -240,7 +198,7 @@ def test_global_deny_seed_protects_secrets(global_manifest):
         "Read(**/.git-credentials)",
     ):
         assert rule in deny, f"{rule} missing from canonical deny list"
-    # Secret files + .env (cross-harness; opencode defaults cover .env too).
+    # Secret files and exact .env paths.
     for rule in (
         "Read(**/secrets.*)",
         "Read(**/*.secret)",
@@ -264,32 +222,3 @@ def test_sanctioned_tools_not_denied(global_manifest):
     assert "Bash(rg:*)" not in allow
     assert "Bash(rg:*)" not in deny
     assert "Read" not in deny
-
-
-def test_nonisolated_opencode_render_leaves_live_config_unmanaged(env):
-    """A non-isolated live-style render no longer writes ``opencode.json``.
-
-    The merged live config moved to chezmoi ownership, so the renderer may still
-    write whole-file artefacts (agents/skills) but must not create the root
-    ``opencode.json`` surface for a plain profile install.
-    """
-    from agent_profile.renderers.opencode import OpencodeRenderer
-
-    write_profile(
-        env.profiles,
-        "_perms_t",
-        "name: _perms_t\n"
-        "settings:\n"
-        "  permissions_allow:\n"
-        "    - Bash(git:*)\n"
-        "    - Edit\n",
-    )
-    write_profile(
-        env.profiles,
-        "glob_t",
-        "name: glob_t\ninclude: [_perms_t]\n",
-    )
-    m = parse_manifest(env.profiles / "glob_t")
-    written = OpencodeRenderer().render(m, env.target)
-    assert written == []
-    assert not (env.target / "opencode.json").exists()

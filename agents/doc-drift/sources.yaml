@@ -33,11 +33,6 @@ sources:
     governs: [harnesses/codex.md, agents/hooks/registry.yaml, agents/registry.yaml, chezmoi/dot_config/mise/config.toml]
     reconciled: "0.146.0"
 
-  - id: opencode
-    signal: { type: npm, ref: opencode-ai }
-    docs: https://opencode.ai/docs
-    governs: [harnesses/opencode.md]
-    reconciled: "1.18.15"
 
   - id: copilot-cli
     signal: { type: npm, ref: "@github/copilot" }

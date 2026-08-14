@@ -214,7 +214,7 @@ def test_mcp_decomposed_from_plugin(tmp_path):
     market_root, _payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(market_root), "harnesses": ["codex", "opencode"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex", "cursor"]}},
     )
 
     out = expand_registries(
@@ -231,7 +231,7 @@ def test_mcp_harnesses_from_plugin_registry_entry(tmp_path):
     market_root, _payload = _make_plugin_with_marketplace(tmp_path, "myplugin")
     _make_plugins_registry(
         tmp_path,
-        {"myplugin": {"path": str(market_root), "harnesses": ["codex", "opencode", "cursor"]}},
+        {"myplugin": {"path": str(market_root), "harnesses": ["codex", "cursor", "copilot"]}},
     )
 
     out = expand_registries(
@@ -240,7 +240,7 @@ def test_mcp_harnesses_from_plugin_registry_entry(tmp_path):
         {},
     )
     mcp = next(m for m in out["mcps"] if m["name"] == "myplugin")
-    assert mcp["harnesses"] == ["codex", "opencode", "cursor"]
+    assert mcp["harnesses"] == ["codex", "cursor", "copilot"]
 
 
 def test_mcp_env_var_stays_literal_not_substituted(tmp_path):
@@ -430,7 +430,7 @@ def test_plugin_with_no_skills_directory(tmp_path):
     )
     _make_plugins_registry(
         tmp_path,
-        {"mcp-only": {"path": str(market_root), "harnesses": ["crush"]}},
+        {"mcp-only": {"path": str(market_root), "harnesses": ["copilot"]}},
     )
 
     out = expand_registries(
@@ -492,7 +492,7 @@ def test_milknado_mcp_portable_uvx(milknado_market, tmp_path):
         {
             "milknado": {
                 "path": str(market_root),
-                "harnesses": ["claude", "codex", "opencode", "cursor", "copilot", "crush"],
+                "harnesses": ["claude", "codex", "cursor", "copilot"],
                 "claude_native": True,
             }
         },
@@ -516,7 +516,7 @@ def test_milknado_three_skills_discovered(milknado_market, tmp_path):
         {
             "milknado": {
                 "path": str(market_root),
-                "harnesses": ["claude", "codex", "opencode", "cursor", "copilot", "crush"],
+                "harnesses": ["claude", "codex", "cursor", "copilot"],
             }
         },
     )
@@ -1123,7 +1123,7 @@ def test_codex_native_strips_codex_from_mcp_harnesses(tmp_path):
         tmp_path,
         {"milknado": {
             "path": str(tmp_path / "market" / "milknado"),
-            "harnesses": ["claude", "codex", "opencode"],
+            "harnesses": ["claude", "codex", "cursor"],
             "codex_native": True,
         }},
     )
@@ -1134,7 +1134,7 @@ def test_codex_native_strips_codex_from_mcp_harnesses(tmp_path):
     harnesses = mcps[0].get("harnesses", [])
     assert "codex" not in harnesses, f"codex should be excluded: {harnesses}"
     assert "claude" in harnesses, "claude must remain (claude_native not set)"
-    assert "opencode" in harnesses
+    assert "cursor" in harnesses
 
 
 def test_codex_native_and_claude_native_strip_both(tmp_path):
@@ -1144,7 +1144,7 @@ def test_codex_native_and_claude_native_strip_both(tmp_path):
         tmp_path,
         {"milknado": {
             "path": str(tmp_path / "market" / "milknado"),
-            "harnesses": ["claude", "codex", "opencode"],
+            "harnesses": ["claude", "codex", "cursor"],
             "claude_native": True,
             "codex_native": True,
         }},
@@ -1152,7 +1152,7 @@ def test_codex_native_and_claude_native_strip_both(tmp_path):
 
     out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
     harnesses = out["mcps"][0].get("harnesses", [])
-    assert harnesses == ["opencode"], f"both native harnesses must be stripped: {harnesses}"
+    assert harnesses == ["cursor"], f"both native harnesses must be stripped: {harnesses}"
 
 
 def test_legacy_native_flag_outside_harnesses_fails_loud(tmp_path):
@@ -1165,7 +1165,7 @@ def test_legacy_native_flag_outside_harnesses_fails_loud(tmp_path):
         tmp_path,
         {"milknado": {
             "path": str(tmp_path / "market" / "milknado"),
-            "harnesses": ["opencode"],
+            "harnesses": ["cursor"],
             "claude_native": True,
         }},
     )
@@ -1252,16 +1252,16 @@ def test_native_true_resolves_to_drivable_intersect_harnesses(tmp_path):
         tmp_path,
         {"halloum": {
             "path": str(tmp_path / "market" / "halloum"),
-            "harnesses": ["claude", "codex", "opencode", "cursor", "copilot", "crush"],
+            "harnesses": ["claude", "codex", "cursor", "copilot"],
             "native": True,
         }},
     )
 
     out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})
-    # MCP: the three drivable harnesses stripped, decompose-only ones remain.
+    # MCP: the three native-capable harnesses are stripped; Cursor remains.
     harnesses = out["mcps"][0].get("harnesses", [])
     assert "claude" not in harnesses and "codex" not in harnesses and "copilot" not in harnesses
-    assert set(harnesses) == {"opencode", "cursor", "crush"}, harnesses
+    assert harnesses == ["cursor"], harnesses
     # native descriptor carries all three drivable bools.
     native = out["native_plugins"][0]
     assert native["claude_native"] is True
@@ -1281,7 +1281,7 @@ def test_native_list_selects_only_listed_harnesses(tmp_path):
         tmp_path,
         {"milknado": {
             "path": str(tmp_path / "market" / "milknado"),
-            "harnesses": ["claude", "codex", "opencode", "cursor", "copilot"],
+            "harnesses": ["claude", "codex", "cursor", "copilot"],
             "native": ["claude", "copilot"],
         }},
     )
@@ -1470,7 +1470,7 @@ def test_agents_discovered_from_plugin_payload(tmp_path):
     assert [agent["name"] for agent in out["agents"]] == ["alpha", "b"]
     assert out["agents"][0]["body_path"] == "agents/a.md"
     assert out["agents"][0]["_source_dir"] == str(payload)
-    assert out["agents"][0]["harnesses"] == ["claude", "codex", "opencode", "cursor", "copilot"]
+    assert out["agents"][0]["harnesses"] == ["claude", "codex", "cursor", "copilot"]
 
 
 def test_agent_frontmatter_metadata_is_normalized(tmp_path):
@@ -1481,7 +1481,7 @@ def test_agent_frontmatter_metadata_is_normalized(tmp_path):
         "tools": "Read, Grep, Bash",
         "disallowedTools": ["Edit", "Write"],
         "model": "sonnet",
-        "models": {"opencode": "gpt-5.4"},
+        "models": {"cursor": "claude-sonnet"},
         "color": "blue",
         "effort": "high",
         "skills": "scout, gh",
@@ -1493,7 +1493,7 @@ def test_agent_frontmatter_metadata_is_normalized(tmp_path):
     assert agent["tools"] == ["Read", "Grep", "Bash"]
     assert agent["disallowedTools"] == ["Edit", "Write"]
     assert agent["skills"] == ["scout", "gh"]
-    assert agent["models"] == {"claude": "sonnet", "opencode": "gpt-5.4"}
+    assert agent["models"] == {"claude": "sonnet", "cursor": "claude-sonnet"}
     assert agent["color"] == "blue"
     assert agent["effort"] == "high"
 
@@ -1515,14 +1515,14 @@ def test_claude_native_and_codex_native_agents_are_excluded(tmp_path):
     _write_plugin_agent(payload, "worker.md", {"name": "worker"})
     _make_plugins_registry(tmp_path, {"plug": {
         "path": str(tmp_path / "market" / "plug"),
-        "harnesses": ["claude", "codex", "opencode"],
+        "harnesses": ["claude", "codex", "cursor"],
         "claude_native": True,
         "codex_native": True,
     }})
 
     agent = expand_registries({"plugins": "agents/plugins/registry.yaml"}, tmp_path, {})["agents"][0]
 
-    assert agent["harnesses"] == ["opencode"]
+    assert agent["harnesses"] == ["cursor"]
     assert agent["_from_native_plugin"] is True
     assert agent["_from_codex_native_plugin"] is True
 
@@ -1602,7 +1602,7 @@ def test_agent_without_frontmatter_uses_stem_name(tmp_path):
 
     assert agent["name"] == "plain"
     assert agent["body_path"] == "agents/plain.md"
-    assert agent["harnesses"] == ["claude", "codex", "opencode", "cursor", "copilot"]
+    assert agent["harnesses"] == ["claude", "codex", "cursor", "copilot"]
     assert "description" not in agent
     assert "models" not in agent
     assert "tools" not in agent
@@ -1671,3 +1671,21 @@ def test_hook_names_unique_across_outer_entries_same_event(tmp_path):
     assert names == ["plug-PostToolUse-0-0-fmt", "plug-PostToolUse-1-0-fmt"]
     assert len(set(names)) == 2
     assert [h["matcher"] for h in hooks] == ["Write", "Edit"]
+
+
+def test_plugin_rejects_unknown_harness(tmp_path):
+    market_root, _payload = _make_plugin_with_marketplace(tmp_path, "retired")
+    _make_plugins_registry(
+        tmp_path,
+        {"retired": {"path": str(market_root), "harnesses": ["opencode"]}},
+    )
+
+    with pytest.raises(
+        ParseError,
+        match="plugin 'retired' has unknown harness 'opencode'",
+    ):
+        expand_registries(
+            {"plugins": "agents/plugins/registry.yaml"},
+            tmp_path,
+            {},
+        )

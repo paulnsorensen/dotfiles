@@ -11,8 +11,8 @@ Behavioral port of agent-profile/lib/manifest.sh. The manifest lives at
     }
 
 ``files`` are removed on uninstall, but only when no *other* installed
-profile also claims the same path (ref-counting for shared artefacts like
-``.mcp.json``, ``opencode.json``, ``.claude/agents/<shared>.md``).
+profile also claims the same path (ref-counting shared artefacts such as
+``.mcp.json`` and ``.claude/agents/<shared>.md``).
 ``merged_json`` is the resolved manifest passed to each renderer's
 ``clean`` so it can surgically undo merges even after the profile dir is
 deleted.
@@ -191,21 +191,18 @@ def _path_owners(file: str) -> list[str]:
     """Port of ``_ap_path_owners``."""
     if file.startswith(".claude/plugins/local/"):
         return ["claude"]
-    # Top-level .claude/agents/<n>.md is the cross-harness shared write
-    # target — claude, opencode, and cursor all write there.
+    # Top-level .claude/agents/<n>.md is shared by Claude and Cursor.
     if file.startswith(".claude/agents/"):
-        return ["claude", "opencode", "cursor"]
+        return ["claude", "cursor"]
     if file.startswith(".codex/"):
         return ["codex"]
     if file.startswith(".cursor/"):
         return ["cursor"]
-    if file.startswith(".opencode/"):
-        return ["opencode"]
     if file.startswith(".github/"):
         return ["copilot"]
-    # .agents/skills/<n>/ is shared by codex+opencode+cursor.
+    # .agents/skills/<n>/ is shared by Codex and Cursor.
     if file.startswith(".agents/skills/"):
-        return ["codex", "opencode", "cursor"]
+        return ["codex", "cursor"]
     return []
 
 

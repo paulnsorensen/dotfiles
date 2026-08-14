@@ -249,8 +249,7 @@ def test_mcp_entries_land_as_mcp_servers(tmp_path):
 
 
 def test_mcp_default_membership_includes_cursor(tmp_path):
-    """An MCP with no `harnesses` defaults to [claude,codex,opencode,cursor]
-    — cursor IS in the default set, so it lands."""
+    """An MCP with no `harnesses` defaults to Claude, Codex, and Cursor."""
     m, target, _ = _manifest(
         tmp_path,
         mcps=[{"name": "foo", "command": "npx"}],

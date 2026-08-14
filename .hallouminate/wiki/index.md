@@ -25,11 +25,11 @@ relevant page rather than loading the whole reference into every session.
 
 ## Sections
 
-- [[architecture/index]] — how the repo configures AI agents: the `agents/`
-  registry system, the `ap` tool that renders it into every harness, secret
-  handling, config drift, and the cross-harness guards.
+- [[architecture/index]] — how the repo configures AI agents through shared
+  registries, the four-target `ap` compiler, and chezmoi-managed native
+  harnesses, including secret handling, config drift, and cross-harness guards.
 - [[harnesses/index]] — the supported agent harnesses (Claude Code, Codex,
-  opencode, Copilot, Cursor): official docs per capability + how this repo wires each.
+  Copilot, Cursor, OMP): official docs and repo wiring per capability.
 - [[operations/index]] — the operational plumbing: the sync + chezmoi deploy
   system, the opt-in local-LLM stack, and the local dev environment (git
   tooling, prek, plugins, skhd).

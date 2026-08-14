@@ -33,7 +33,7 @@ Keep a pack to ~4-6 queries. The digest the agent returns must fit ~2 KB.
 
 ## Harness filtering
 
-Every spawn carries a `harness=<all|claude|codex|opencode|omp|cursor|copilot>`
+Every spawn carries a `harness=<all|claude|codex|omp|cursor|copilot>`
 parameter. In pack SQL:
 
 - `harness='all'` → omit the harness predicate (aggregate every reachable source).

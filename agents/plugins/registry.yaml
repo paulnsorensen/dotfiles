@@ -55,10 +55,8 @@
 # Per-harness reach:
 #   claude   → native marketplace install when native ∋ claude; else MCP + skills + agents + hooks
 #   codex    → native marketplace install when native ∋ codex; else MCP + skills + agents + hooks
-#   opencode → MCP + skills + agents (never native — no drivable CLI install)
 #   cursor   → MCP + skills + agents + hooks (never native — GUI marketplace only)
 #   copilot  → native marketplace install when native ∋ copilot; else skills + hooks + agents (+ MCP if harnesses ∋ copilot)
-#   crush    → MCP only (never native — no plugin concept)
 #   commands → unsupported on the decomposed path for every harness
 #
 # Edit this file, then run `dots sync` to deploy (base-sync retired;
@@ -73,7 +71,7 @@ plugins:
   milknado:
     git: https://github.com/paulnsorensen/milknado
     branch: main
-    harnesses: [claude, codex, opencode, cursor, copilot, crush]
+    harnesses: [claude, codex, cursor, copilot]
     native: [claude, copilot]
     # codex omitted from native: — milknado's upstream .agents/plugins/marketplace.json
     # (the manifest codex reads) lacks a top-level `name`, so
@@ -86,18 +84,15 @@ plugins:
 
   # hallouminate: per-repo markdown wiki (LLM-authored notes + semantic search).
   # Payload: 1 MCP (`hallouminate serve`) + skills (wiki-ingest, wiki-init, etc).
-  # native: true — native on claude+codex+copilot, decomposed on opencode/cursor/crush.
-  # Going native rescopes the MCP tools to mcp__plugin_hallouminate_hallouminate__*
-  # on the native harnesses; the renderers rewrite the canonical
-  # mcp__hallouminate__* permission glob and rennet's allowed-tools accordingly
-  # (renderer-side, no canonical-source edit). Decomposed harnesses keep the
-  # bare mcp__hallouminate__* (claude/cursor grammar) / lowered <server>_<tool>
-  # (opencode/crush). Migrated out of agents/mcp/registry.yaml — the
-  # decomposition provides the MCP on non-native harnesses; a duplicate there
-  # would fail loud.
+  # native: true — native on Claude, Codex, and Copilot; decomposed on Cursor.
+  # Native installation rescopes MCP tools to
+  # mcp__plugin_hallouminate_hallouminate__*. Renderers rewrite the canonical
+  # mcp__hallouminate__* permission glob and rennet's allowed tools. Cursor
+  # keeps the canonical mcp__hallouminate__* names. The decomposed MCP replaces
+  # the old standalone registry entry.
   hallouminate:
     git: https://github.com/paulnsorensen/hallouminate
     branch: main
-    harnesses: [claude, codex, opencode, cursor, copilot, crush]
+    harnesses: [claude, codex, cursor, copilot]
     native: true
     description: Per-repo markdown wiki — semantic search + LLM-authored notes; bundles 6 wiki skills

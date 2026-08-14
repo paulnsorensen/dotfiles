@@ -164,10 +164,6 @@ if command -v ast-grep &> /dev/null; then
   alias sg='ast-grep'
 fi
 
-# opencode - terminal AI coding agent
-if command -v opencode &> /dev/null; then
-  alias oc='opencode'
-fi
 
 # Oh My Pi - isolated native config with managed prompt addendum
 if command -v omp &> /dev/null; then

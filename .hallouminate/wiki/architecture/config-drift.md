@@ -7,7 +7,7 @@ self-heal (legacy hooks + dropped MCPs).
 
 ## Current state: global settings disconnected
 
-Non-isolated `ap install global` no longer read-modify-writes harness-global settings files. The live global config surfaces — `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.config/opencode/opencode.json`, `~/.cursor/mcp.json`, `~/.copilot/mcp-config.json`, and `~/.config/crush/crush.json` — are now chezmoi/user-owned surfaces. `ap` renders generated artifacts (plugin trees, agents, hooks, skills) and isolated-profile settings only; `agent-profile/agent_profile/compiled_types.py:17-20` keeps merged settings out of compiled manifests.
+Non-isolated `ap install global` no longer read-modify-writes harness-global settings. Claude, Codex, Cursor, and Copilot live files are chezmoi- or user-owned; `ap` owns generated artifacts and isolated-profile settings only.
 
 Historical drift still matters because older apply-state and older live files may contain entries that `ap` used to merge. `ap apply-compiled` now preserves those disconnected legacy paths if a prior state file still lists them, so migration removes ownership without deleting a live user settings file (`agent-profile/agent_profile/merged_settings_preservation.py:31-42`, `agent-profile/agent_profile/apply_compiled.py:151-171`).
 
@@ -385,33 +385,20 @@ masks the drift. Covered in `tests/packages.bats` (heal tests).
 
 **Detection**: `brew list --cask` name present + `[[ ! -e /Applications/<App> ]]`.
 
-## Known drift pattern: registry MCP drops stranded in opencode/cursor live configs
+## Known drift pattern: registry MCP drops stranded in Cursor
 
-**Symptom**: An MCP removed from `agents/mcp/registry.yaml` lingers in
-`~/.config/opencode/opencode.json` / `~/.cursor/mcp.json` indefinitely. First
-hit 2026-07-29: `serena` (dropped 5d43056e, 2026-07-24) still live in both
-five days and many syncs later, its binary long gone.
+**Symptom:** an MCP removed from `agents/mcp/registry.yaml` can remain in
+`~/.cursor/mcp.json` after its executable disappears.
 
-**Why it happens**: two gaps ([#561](https://github.com/paulnsorensen/dotfiles/issues/561)).
-`_reconcile_dropped_mcps` diffs the *prior cached manifest* against the current
-one, so the prune fires only on the sync that crosses the drop — miss that
-window (sync error, manifest refreshed first) and the evidence is gone. And
-cursor's live `mcp.json` is a disconnected user-owned surface (see § global
-settings disconnected): no code path prunes it at all anymore.
+**Why:** Cursor's live MCP file is a disconnected user-owned surface; the
+compiler no longer prunes it. The stateless reconcile fix is tracked in #561.
 
-**Fix**: manual `jq 'del(.mcp.<name>)'` (opencode) / `del(.mcpServers.<name>)`
-(cursor) to a temp file, validate, move into place. While healing cursor, also
-check `envFile` values — when the envFile resolves to `.env` (not the
-vault-cache `secrets.env`, which is XDG-stable), a render from a worktree
-checkout bakes the worktree's `${DOTFILES_DIR}/.env` path in
-(`renderers/cursor.py:_env_file_for_keys` resolves it at render time), which
-goes stale when the worktree is removed; repoint at the main clone's `.env`
-path. Permanent fix (stateless
-reconcile against the current registry) tracked in #561.
+**Fix:** remove the stale `mcpServers.<name>` entry with a validated JSON edit.
+Also repoint any `envFile` containing a deleted worktree path to the stable main
+clone or vault-cache path.
 
-**Detection**: live server names absent from `agents/mcp/registry.yaml` with
-repo provenance (matching command shape); any cursor `envFile` containing
-`.worktrees/`.
+**Detection:** compare live server names with `agents/mcp/registry.yaml`; flag
+Cursor `envFile` values containing `.worktrees/`.
 
 ## Gotcha: `just check` fails locally on macOS while green in CI (GNU-only test idioms)
 

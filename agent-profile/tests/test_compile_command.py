@@ -55,10 +55,12 @@ def test_compile_live_writes_harness_fragments_and_target_manifest(
 
     claude_agent = out / "fragments/home/claude/.claude/agents/reviewer.md"
     codex_agent = out / "fragments/home/codex/.codex/agents/reviewer.md"
-    opencode_agent = out / "fragments/opencode/opencode/.opencode/agents/reviewer.md"
+    cursor_agent = out / "fragments/home/cursor/.cursor/agents/reviewer.md"
+    copilot_agent = out / "fragments/home/copilot/.copilot/agents/reviewer.md"
     assert claude_agent.read_text() == "review body\n"
     assert codex_agent.read_text() == "review body\n"
-    assert opencode_agent.read_text() == "review body\n"
+    assert cursor_agent.read_text() == "review body\n"
+    assert copilot_agent.read_text() == "review body\n"
 
     data = json.loads((out / "manifest.json").read_text())
     assert data["profile"] == "live"
@@ -69,12 +71,6 @@ def test_compile_live_writes_harness_fragments_and_target_manifest(
             "resolved_root": str(home),
             "harnesses": ["claude", "codex", "cursor", "copilot"],
         },
-        {
-            "name": "opencode",
-            "symbolic_root": "$HOME/.config/opencode",
-            "resolved_root": str(home / ".config/opencode"),
-            "harnesses": ["opencode"],
-        },
     ]
     assert {
         (entry["target"], entry["harness"], entry["relative_path"])
@@ -82,14 +78,14 @@ def test_compile_live_writes_harness_fragments_and_target_manifest(
     } >= {
         ("home", "claude", ".claude/agents/reviewer.md"),
         ("home", "codex", ".codex/agents/reviewer.md"),
-        ("opencode", "opencode", ".opencode/agents/reviewer.md"),
+        ("home", "cursor", ".cursor/agents/reviewer.md"),
+        ("home", "copilot", ".copilot/agents/reviewer.md"),
     }
     disconnected = {
         ("home", "claude", ".claude/settings.json"),
         ("home", "codex", ".codex/config.toml"),
         ("home", "cursor", ".cursor/mcp.json"),
         ("home", "copilot", ".copilot/mcp-config.json"),
-        ("opencode", "opencode", "opencode.json"),
     }
     assert {
         (entry["target"], entry["harness"], entry["relative_path"])

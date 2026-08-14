@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC1090,SC2034,SC2317
 # Tests for chezmoi/lib/install-prompts.sh — wires agents/preamble.md as the
-# replacement system prompt for Codex CLI and opencode.
+# replacement Codex system prompt.
 
 load test_helper
 
@@ -15,7 +15,6 @@ setup() {
 Test preamble content for assertion checks.
 MD
     export CODEX_HOME="$TEST_HOME/.codex"
-    export OPENCODE_HOME="$TEST_HOME/.config/opencode"
 }
 
 teardown() { teardown_test_env; }
@@ -29,17 +28,16 @@ teardown() { teardown_test_env; }
 }
 
 @test "install-prompts.sh is a no-op when preamble file is missing" {
-    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=1 \
+    INSTALL_PROMPTS_HAVE_CODEX=1 \
         run bash "$LIB" "$TEST_HOME/does-not-exist.md"
     assert_success
     [[ ! -e "$CODEX_HOME/preamble.md" ]]
-    [[ ! -e "$OPENCODE_HOME/agents/build.md" ]]
 }
 
 # ── Codex wiring ─────────────────────────────────────────────────────────────
 
 @test "install-prompts.sh skips Codex when codex CLI is missing" {
-    INSTALL_PROMPTS_HAVE_CODEX=0 INSTALL_PROMPTS_HAVE_OPENCODE=0 \
+    INSTALL_PROMPTS_HAVE_CODEX=0 \
         run bash "$LIB" "$PREAMBLE_SRC"
     assert_success
     assert_output_contains "Skipped Codex wiring"
@@ -47,7 +45,7 @@ teardown() { teardown_test_env; }
 }
 
 @test "install-prompts.sh copies preamble.md to \$CODEX_HOME/preamble.md when codex is present" {
-    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=0 \
+    INSTALL_PROMPTS_HAVE_CODEX=1 \
         run bash "$LIB" "$PREAMBLE_SRC"
     assert_success
     assert_file_exists "$CODEX_HOME/preamble.md"
@@ -55,7 +53,7 @@ teardown() { teardown_test_env; }
 }
 
 @test "install-prompts.sh skips config.toml edit when it doesn't exist yet" {
-    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=0 \
+    INSTALL_PROMPTS_HAVE_CODEX=1 \
         run bash "$LIB" "$PREAMBLE_SRC"
     assert_success
     assert_output_contains "Skipped"
@@ -69,7 +67,7 @@ teardown() { teardown_test_env; }
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 TOML
-    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=0 INSTALL_PROMPTS_HAVE_YQ=1 \
+    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
         run bash "$LIB" "$PREAMBLE_SRC"
     assert_success
     grep -q "model_instructions_file" "$CODEX_HOME/config.toml"
@@ -86,10 +84,10 @@ TOML
     cat > "$CODEX_HOME/config.toml" <<'TOML'
 approval_policy = "on-request"
 TOML
-    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=0 INSTALL_PROMPTS_HAVE_YQ=1 \
+    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
         bash "$LIB" "$PREAMBLE_SRC"
     local before; before=$(shasum -a 256 "$CODEX_HOME/config.toml" | awk '{print $1}')
-    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=0 INSTALL_PROMPTS_HAVE_YQ=1 \
+    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
         bash "$LIB" "$PREAMBLE_SRC"
     local after; after=$(shasum -a 256 "$CODEX_HOME/config.toml" | awk '{print $1}')
     [[ "$before" == "$after" ]]
@@ -100,53 +98,13 @@ TOML
     cat > "$CODEX_HOME/config.toml" <<'TOML'
 approval_policy = "on-request"
 TOML
-    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=0 INSTALL_PROMPTS_HAVE_YQ=0 \
+    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=0 \
         run bash "$LIB" "$PREAMBLE_SRC"
     assert_success
     assert_output_contains "yq not installed"
     ! grep -q "model_instructions_file" "$CODEX_HOME/config.toml"
 }
 
-# ── opencode wiring ──────────────────────────────────────────────────────────
-
-@test "install-prompts.sh skips opencode when opencode CLI is missing" {
-    INSTALL_PROMPTS_HAVE_CODEX=0 INSTALL_PROMPTS_HAVE_OPENCODE=0 \
-        run bash "$LIB" "$PREAMBLE_SRC"
-    assert_success
-    assert_output_contains "Skipped opencode wiring"
-    [[ ! -e "$OPENCODE_HOME/agents/build.md" ]]
-}
-
-@test "install-prompts.sh copies preamble.md to opencode agents/build.md when opencode is present" {
-    INSTALL_PROMPTS_HAVE_CODEX=0 INSTALL_PROMPTS_HAVE_OPENCODE=1 \
-        run bash "$LIB" "$PREAMBLE_SRC"
-    assert_success
-    assert_file_exists "$OPENCODE_HOME/agents/build.md"
-    diff "$PREAMBLE_SRC" "$OPENCODE_HOME/agents/build.md"
-}
-
-@test "install-prompts.sh creates opencode agents/ dir if absent" {
-    [[ ! -d "$OPENCODE_HOME/agents" ]]
-    INSTALL_PROMPTS_HAVE_CODEX=0 INSTALL_PROMPTS_HAVE_OPENCODE=1 \
-        run bash "$LIB" "$PREAMBLE_SRC"
-    assert_success
-    [[ -d "$OPENCODE_HOME/agents" ]]
-}
-
-# ── both harnesses ───────────────────────────────────────────────────────────
-
-@test "install-prompts.sh wires both harnesses when both are present" {
-    mkdir -p "$CODEX_HOME"
-    cat > "$CODEX_HOME/config.toml" <<'TOML'
-approval_policy = "on-request"
-TOML
-    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=1 INSTALL_PROMPTS_HAVE_YQ=1 \
-        run bash "$LIB" "$PREAMBLE_SRC"
-    assert_success
-    assert_file_exists "$CODEX_HOME/preamble.md"
-    assert_file_exists "$OPENCODE_HOME/agents/build.md"
-    grep -q "model_instructions_file" "$CODEX_HOME/config.toml"
-}
 
 # ── regression: model_instructions_file must stay a root-level key (#262) ─────
 
@@ -158,7 +116,7 @@ approval_policy = "on-request"
 [tui.model_availability_nux]
 seen = true
 TOML
-    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=0 INSTALL_PROMPTS_HAVE_YQ=1 \
+    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
         run bash "$LIB" "$PREAMBLE_SRC"
     assert_success
     # Codex reads model_instructions_file as a ROOT key. The old yq -i append
@@ -183,7 +141,7 @@ approval_policy = "on-request"
 seen = true
 TOML
     for _ in 1 2 3; do
-        INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_OPENCODE=0 INSTALL_PROMPTS_HAVE_YQ=1 \
+        INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
             bash "$LIB" "$PREAMBLE_SRC"
     done
     [[ "$(grep -c 'model_instructions_file' "$CODEX_HOME/config.toml")" -eq 1 ]]

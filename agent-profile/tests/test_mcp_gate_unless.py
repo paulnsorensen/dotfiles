@@ -23,7 +23,7 @@ from agent_profile.renderers.claude import ClaudeRenderer
 
 from .conftest import write_profile
 
-_ALL = ("claude", "codex", "opencode", "cursor", "copilot", "crush")
+_ALL = ("claude", "codex", "cursor", "copilot")
 
 
 # ─── gate_blocks: claude-only, exact-"true" process-env match ─────────
@@ -54,7 +54,7 @@ def test_gate_is_claude_only(monkeypatch):
     # harness ignores it (a plugin-provided MCP is a claude concern).
     monkeypatch.setenv("CHEESE_FLOW", "true")
     item = {"name": "tilth", "command": "tilth", "gate_unless": "CHEESE_FLOW"}
-    for harness in ("codex", "opencode", "cursor", "copilot", "crush"):
+    for harness in ("codex", "cursor", "copilot"):
         assert gate_blocks(item, harness) is False
 
 

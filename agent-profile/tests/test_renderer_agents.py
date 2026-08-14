@@ -6,12 +6,9 @@ Covers the behaviour added when the cheese sub-agents began rendering through
   - a leading YAML frontmatter block is stripped from agent bodies, so no
     harness emits a double frontmatter block and codex does not leak
     frontmatter into ``developer_instructions``;
-  - ``disallowedTools`` survives into the claude / cursor / copilot
-    frontmatter (the read-only restriction the cheese agents depend on);
-  - read-only intent maps to codex ``sandbox_mode`` and an opencode
-    ``permission.edit: deny``;
-  - opencode emits a real ``agents/<name>.md`` subagent file (root-relative
-    to its target config dir → ``~/.config/opencode/agents/``).
+  - ``disallowedTools`` survives into Claude, Cursor, and Copilot
+    frontmatter;
+  - read-only intent maps to Codex ``sandbox_mode``.
 """
 
 from __future__ import annotations
@@ -24,7 +21,6 @@ from agent_profile.renderers.claude import ClaudeRenderer
 from agent_profile.renderers.codex import CodexRenderer
 from agent_profile.renderers.copilot import CopilotRenderer
 from agent_profile.renderers.cursor import CursorRenderer
-from agent_profile.renderers.opencode import OpencodeRenderer
 from agent_profile.shared import agent_is_read_only, strip_frontmatter
 
 _PLAIN_BODY = "You are the ghostbuster.\n"
@@ -342,60 +338,6 @@ def test_copilot_agent_disallowed_tools(tmp_path: Path) -> None:
     assert "disallowedTools: [Edit, Write]" in content
 
 
-# ── opencode ──────────────────────────────────────────────────────────
-
-
-def test_opencode_renders_subagent(tmp_path: Path) -> None:
-    written = OpencodeRenderer().render(
-        _agent_manifest(
-            tmp_path, tools=["Read", "Grep"], models={"opencode": "gpt-5.4"}
-        ),
-        tmp_path,
-    )
-    rel = "agents/ghostbuster.md"
-    assert rel in written
-    content = (tmp_path / "agents" / "ghostbuster.md").read_text()
-    assert content.startswith("---\n")
-    assert "mode: subagent" in content
-    assert "description: Finds dead code" in content
-    assert "model: gpt-5.4" in content
-    assert content.rstrip().endswith("You are the ghostbuster.")
-
-
-def test_opencode_subagent_read_only_permission(tmp_path: Path) -> None:
-    OpencodeRenderer().render(
-        _agent_manifest(tmp_path, tools=["Read", "Grep"]), tmp_path
-    )
-    content = (tmp_path / "agents" / "ghostbuster.md").read_text()
-    assert "permission:" in content
-    assert "edit: deny" in content
-
-
-def test_opencode_subagent_writable_omits_permission(tmp_path: Path) -> None:
-    OpencodeRenderer().render(
-        _agent_manifest(tmp_path, tools=["Read", "Edit"]), tmp_path
-    )
-    content = (tmp_path / "agents" / "ghostbuster.md").read_text()
-    assert "edit: deny" not in content
-
-
-def test_opencode_subagent_strips_frontmatter(tmp_path: Path) -> None:
-    OpencodeRenderer().render(
-        _agent_manifest(tmp_path, body=_FRONTMATTERED_BODY), tmp_path
-    )
-    content = (tmp_path / "agents" / "ghostbuster.md").read_text()
-    assert _delims(content) == 2
-    assert "stale frontmatter metadata" not in content
-
-
-def test_opencode_subagent_omits_inherit_model(tmp_path: Path) -> None:
-    OpencodeRenderer().render(
-        _agent_manifest(tmp_path, tools=["Read"], models={"opencode": "inherit"}),
-        tmp_path,
-    )
-    content = (tmp_path / "agents" / "ghostbuster.md").read_text()
-    assert "model:" not in content
-
 
 # ── hardening (press) ─────────────────────────────────────────────────
 
@@ -450,13 +392,11 @@ def test_agent_harness_filtering_applies_to_all_agent_renderers(tmp_path: Path) 
 
     ClaudeRenderer().render(agent, tmp_path / "claude")
     CursorRenderer().render(agent, tmp_path / "cursor")
-    OpencodeRenderer().render(agent, tmp_path / "opencode")
     CopilotRenderer().render(agent, tmp_path / "copilot")
     CodexRenderer().render(agent, tmp_path / "codex")
 
     assert not (tmp_path / "claude" / ".claude" / "agents" / "ghostbuster.md").exists()
     assert not (tmp_path / "cursor" / ".claude" / "agents" / "ghostbuster.md").exists()
-    assert not (tmp_path / "opencode" / "agents" / "ghostbuster.md").exists()
     assert not (tmp_path / "copilot" / ".github" / "agents" / "ghostbuster.agent.md").exists()
     content = (tmp_path / "codex" / ".codex" / "agents" / "ghostbuster.toml").read_text()
     assert 'name = "ghostbuster"' in content
@@ -513,13 +453,11 @@ def test_skill_harness_filtering_applies_to_all_skill_renderers(tmp_path: Path) 
 
     ClaudeRenderer().render(skill, tmp_path / "claude")
     CursorRenderer().render(skill, tmp_path / "cursor")
-    OpencodeRenderer().render(skill, tmp_path / "opencode")
     CopilotRenderer().render(skill, tmp_path / "copilot")
     CodexRenderer().render(skill, tmp_path / "codex")
 
     assert not (tmp_path / "claude" / ".claude" / "skills" / "deslop").exists()
     assert not (tmp_path / "cursor" / ".agents" / "skills" / "deslop").exists()
-    assert not (tmp_path / "opencode" / "skills" / "deslop").exists()
     assert not (tmp_path / "copilot" / ".github" / "skills" / "deslop").exists()
     codex_skill = tmp_path / "codex" / ".agents" / "skills" / "deslop" / "SKILL.md"
     assert codex_skill.read_text() == "# deslop\n"

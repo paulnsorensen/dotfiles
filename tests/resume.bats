@@ -78,21 +78,6 @@ teardown() {
     [[ "$status" -eq 1 ]]
 }
 
-@test "resume_opencode_session finds the newest session for a directory" {
-    local db="$TEST_HOME/opencode.db"
-    sqlite3 "$db" "CREATE TABLE session (id text PRIMARY KEY, directory text NOT NULL, time_updated integer NOT NULL);"
-    sqlite3 "$db" "INSERT INTO session (id, directory, time_updated) VALUES ('ses_old', '/home/paul/Dev/dotfiles', 1000000);"
-    sqlite3 "$db" "INSERT INTO session (id, directory, time_updated) VALUES ('ses_new', '/home/paul/Dev/dotfiles', 9000000);"
-
-    RESUME_OPENCODE_DB="$db" run resume_opencode_session "/home/paul/Dev/dotfiles"
-    assert_success
-    [[ "$output" == "ses_new	9000" ]]
-}
-
-@test "resume_opencode_session returns 1 when the db is missing" {
-    RESUME_OPENCODE_DB="$TEST_HOME/no-such.db" run resume_opencode_session "/home/paul/Dev/dotfiles"
-    [[ "$status" -eq 1 ]]
-}
 
 @test "resume_format_age renders days, hours, and minutes" {
     run resume_format_age 200000 100000
@@ -115,8 +100,6 @@ teardown() {
     run resume_command_for codex 0000abcd-abcd-abcd-abcd-000000000001
     [[ "$output" == "codex resume 0000abcd-abcd-abcd-abcd-000000000001" ]]
 
-    run resume_command_for opencode ses_new
-    [[ "$output" == "opencode --session ses_new" ]]
 }
 
 # --- dots resume integration: mock tmux on PATH, verify table + send-keys ---

@@ -2,7 +2,7 @@
 
 # target_param: {SESSION}     (a sessionId)
 
-# harness: respects harness=<all|claude|codex|opencode>
+# harness: respects harness=<all|claude|codex|omp>
 
 # owner: work-recovery (report-only)
 
