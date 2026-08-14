@@ -35,7 +35,7 @@ for line in sys.stdin:
     request_id = request.get("id")
     if method == "initialize":
         result = {"protocolVersion": "2025-06-18", "capabilities": {}}
-    elif method == "slow":
+    elif method == "ping":
         time.sleep(2.2)
         result = {"delayed": True}
     elif method == "notifications/initialized":
@@ -102,6 +102,19 @@ pending_nonce() {
     [[ "$output" != *'sentinel-credential-value'* ]]
 }
 
+@test "unlisted MCP methods fail closed without forwarding" {
+    for request in \
+        '{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"secret://hidden"}}' \
+        '{"jsonrpc":"2.0","id":5,"method":"prompts/get","params":{"name":"hidden"}}' \
+        '{"jsonrpc":"2.0","id":6,"method":"x-vendor/secret"}'; do
+        run proxy_call "$request"
+        assert_success
+        [[ "$output" == *'"code":-32601'* ]]
+        [[ "$output" == *'"message":"method not allowed"'* ]]
+    done
+    [[ ! -e "$STARTED" ]]
+}
+
 @test "response delivery completes before the client session becomes idle" {
     run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
 import importlib.util
@@ -158,6 +171,99 @@ PY
     assert_success
 }
 
+@test "methodless response from client is forwarded upstream, not rejected" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import json
+import sys
+from types import SimpleNamespace
+
+spec = importlib.util.spec_from_file_location("agent_secret_broker", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+class RecordingConnection:
+    def __init__(self):
+        self.payloads = []
+
+    def sendall(self, payload):
+        self.payloads.append(payload)
+
+
+class FakeUpstream:
+    def __init__(self):
+        self.sent = []
+
+    def send(self, payload):
+        self.sent.append(payload)
+
+
+connection = RecordingConnection()
+broker = SimpleNamespace(policy=SimpleNamespace(credential="sentinel"))
+session = module.ClientSession(broker, connection)
+session._upstream = FakeUpstream()
+
+response_line = json.dumps({"jsonrpc": "2.0", "id": 42, "result": {"roots": []}}).encode()
+session.handle_line(response_line + b"\n")
+
+assert session._upstream.sent == [response_line], session._upstream.sent
+assert connection.payloads == [], connection.payloads
+PY
+    assert_success
+}
+
+@test "initialize capabilities are filtered to match the allowed method set" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import json
+import sys
+from types import SimpleNamespace
+
+spec = importlib.util.spec_from_file_location("agent_secret_broker", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+class RecordingConnection:
+    def __init__(self):
+        self.payloads = []
+
+    def sendall(self, payload):
+        self.payloads.append(payload)
+
+
+connection = RecordingConnection()
+broker = SimpleNamespace(policy=SimpleNamespace(credential="sentinel"))
+session = module.ClientSession(broker, connection)
+session._methods["1"] = "initialize"
+
+session._upstream_line(
+    json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {
+                    "tools": {"listChanged": True},
+                    "resources": {},
+                    "prompts": {},
+                    "logging": {},
+                },
+            },
+        }
+    ).encode()
+)
+
+sent = json.loads(connection.payloads[0])
+assert sent["result"]["capabilities"] == {"tools": {"listChanged": True}}, sent
+PY
+    assert_success
+}
+
 @test "proxy loop returns cleanly when the selector loop raises OSError" {
     run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
 import importlib.util
@@ -210,7 +316,7 @@ PY
 }
 
 @test "proxy drains an in-flight response after standard input closes" {
-    run proxy_call '{"jsonrpc":"2.0","id":30,"method":"slow"}'
+    run proxy_call '{"jsonrpc":"2.0","id":30,"method":"ping"}'
     assert_success
     [[ "$output" == '{"id":30,"jsonrpc":"2.0","result":{"delayed":true}}' ]]
 }

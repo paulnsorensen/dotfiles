@@ -693,14 +693,27 @@ sync_gh_extensions() {
     fi
 
     log_info "Syncing gh extensions"
-    local installed
+    local ext_list installed installed_version
     # gh extension list emits tab-separated rows: "gh <name>\t<owner>/<repo>\t<version>"
-    installed=$(gh extension list 2>/dev/null | awk -F'\t' '{print $2}' || true)
+    ext_list=$(gh extension list 2>/dev/null || true)
+    installed=$(awk -F'\t' '{print $2}' <<< "$ext_list")
 
     while IFS=$'\t' read -r name pkg version; do
         [[ -z "$name" ]] && continue
 
         if [[ -n "$version" ]]; then
+            # `gh extension list` marks a pinned install by appending ", pinned"
+            # to its version column. Bare version equality does not prove the
+            # extension is pinned — an unpinned (floating) install can sit at
+            # the same version by coincidence — and a full commit-SHA pin can
+            # never equal gh's truncated display of that SHA. Only skip the
+            # `--force` install (which reaches the GitHub API on every run)
+            # when gh itself reports this exact pin as converged.
+            installed_version=$(awk -F'\t' -v repo="$pkg" '$2 == repo {print $3; exit}' <<< "$ext_list")
+            if [[ "$installed_version" == "$version, pinned" ]]; then
+                echo "  + $name ($version)"
+                continue
+            fi
             echo "  Installing $pkg --pin $version..."
             if ! gh extension install "$pkg" --pin "$version" --force </dev/null; then
                 log_error "Failed to install $pkg"
