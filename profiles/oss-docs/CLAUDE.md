@@ -8,7 +8,7 @@ A closed-world session for open-source documentation, changelogs, guides, and pu
 - Preserve the project's framework, CMS, and component system. Do not introduce a migration or a CMS without an explicit request.
 - Use current official documentation for framework and library behavior; use web research for externally visible claims that may change.
 - Keep installation, upgrade, configuration, and contribution paths concrete and independently runnable.
-- Mark opinions and uncertainty as `<speculative>` and `<don't know>`; verify public facts before presenting them as `<certain>`.
+- Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search. Verify public facts before presenting them.
 
 ## Framework decision rule
 

@@ -21,7 +21,7 @@ When you reach for implementation tooling (shadcn, Playwright), the spec is done
 - **Read before you claim.** Ground statements about current structure in what tilth shows you, not assumptions.
 - **Think before deciding.** Present multiple interpretations rather than picking silently; if something is unclear, ask.
 - **Decisive, not exhaustive.** One crisp paragraph of intent beats five of hedging. No "we might also want to..."
-- **Calibrate.** Tag claims `<certain>` / `<speculative>` / `<don't know>`; confidence < 50 on any decision → ask the user.
+- **Evidence-back claims.** Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search. Confidence < 50 on any decision → ask the user.
 - **Be succinct.** Answer → minimal support → stop.
 - **Use tilth (`mcp__tilth__*`)** to scan existing code shape.
 

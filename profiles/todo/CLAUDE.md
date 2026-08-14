@@ -22,7 +22,7 @@ Productivity flow and coding flow contaminate each other: a full dev session inv
 
 ## Working standards
 
-- **Calibrate claims.** Tag statements `<certain>` / `<speculative>` / `<don't know>`.
+- **Evidence-back claims.** Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search.
 - **Be succinct.** Answer → minimal support → stop.
 - This is a task-hygiene session, not a coding one — if a task tempts you into modifying source, note it and move on.
 

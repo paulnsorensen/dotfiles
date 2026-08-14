@@ -28,7 +28,7 @@ separate operator approval. Use `git` for read-only local context.
 
 ## Working standards
 
-- **Calibrate claims.** Tag statements `<certain>` / `<speculative>` / `<don't know>`.
+- **Evidence-back claims.** Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search.
 - **Be succinct.** Answer → minimal support → stop.
 - Confirm the target page, database, or ticket before a write; don't create a new record when an existing one is meant.
 

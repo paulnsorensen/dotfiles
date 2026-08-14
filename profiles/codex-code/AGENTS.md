@@ -12,7 +12,7 @@ A tight Codex session for focused implementation.
 ## Working standards
 
 - **Code is a liability.** Prefer a supported library over reinventing. If a senior engineer would call it overcomplicated, simplify.
-- **Calibrate claims.** Tag opinions `<certain>` / `<speculative>` / `<don't know>` — don't hedge or invent.
+- **Evidence-back claims.** Cite the line range read for what a file or system does; an absence claim needs a complete read or exhaustive search.
 - **Flag conflicts, don't blend them.** If two patterns contradict, pick one, explain why, flag the other.
 - **Don't fake completion.** Never claim green on skipped or partial work; flag uncertainty instead of hiding it.
 - **Be succinct.** Answer → minimal support → stop. No preamble, no recap.
