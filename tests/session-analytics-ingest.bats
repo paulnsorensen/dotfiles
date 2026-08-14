@@ -158,3 +158,69 @@ JSONL
     run q "SELECT count(*) AS n FROM tool_uses WHERE harness IN ('cursor','copilot');"
     assert_output_contains '"n":0'
 }
+
+# --- #704 ingest-gap hardening --------------------------------------------
+
+@test "ingest: codex exec_command populates bash_cmd from cmd" {
+    cat > "$TEST_HOME/.codex/sessions/2026/05/30/rollout-execcmd.jsonl" <<'JSONL'
+{"timestamp":"2026-05-30T13:00:00Z","type":"session_meta","payload":{"id":"x-3","cwd":"/work/codex"}}
+{"timestamp":"2026-05-30T13:00:02Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"git status\",\"workdir\":\"/work/codex\"}","call_id":"call-x-3"}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT bash_cmd FROM tool_uses WHERE harness='codex' AND tool_use_id='call-x-3';"
+    assert_output_contains '"bash_cmd":"git status"'
+}
+
+@test "ingest: codex shell argv array normalizes to the -lc payload string" {
+    # write_codex_fixture's shell call carries command:[\"ls\"] — before #704
+    # the array extracted to NULL and command-level analysis was blind.
+    write_codex_fixture
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT bash_cmd FROM tool_uses WHERE harness='codex' AND tool_use_id='call-x-1';"
+    assert_output_contains '"bash_cmd":"ls"'
+}
+
+@test "ingest: codex custom_tool_call exec raw string round-trips call + output" {
+    cat > "$TEST_HOME/.codex/sessions/2026/05/30/rollout-custom.jsonl" <<'JSONL'
+{"timestamp":"2026-05-30T14:00:00Z","type":"session_meta","payload":{"id":"x-4","cwd":"/work/codex"}}
+{"timestamp":"2026-05-30T14:00:02Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"text(ALL_TOOLS.length)","call_id":"call-x-4"}}
+{"timestamp":"2026-05-30T14:00:03Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-x-4","output":"42"}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    # The exec call's raw code string is the command...
+    run q "SELECT bash_cmd FROM tool_uses WHERE harness='codex' AND tool_use_id='call-x-4';"
+    assert_output_contains '"bash_cmd":"text(ALL_TOOLS.length)"'
+    # ...and custom_tool_call_output lands as a joined tool_result (this was
+    # the ~50% codex result-join gap — every custom output was dropped).
+    run q "SELECT content, is_error FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-4';"
+    assert_output_contains '"content":"42"'
+    assert_output_contains '"is_error":"false"'
+}
+
+@test "ingest: claude absent is_error backfills to explicit false, flagged inexplicit" {
+    cat > "$TEST_HOME/.claude/projects/proj/sess-noflag.jsonl" <<'JSONL'
+{"type":"assistant","timestamp":"2026-05-30T10:00:00Z","sessionId":"c-2","cwd":"/w","message":{"content":[{"type":"tool_use","id":"tu-nf-1","name":"Read","input":{"file_path":"/x"}}]}}
+{"type":"user","timestamp":"2026-05-30T10:00:01Z","sessionId":"c-2","message":{"content":[{"type":"tool_result","tool_use_id":"tu-nf-1","content":"ok"}]}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    # Absent flag must become an explicit 'false' (never NULL — a NULL is
+    # invisible to the catalog's string compares), with is_error_explicit
+    # recording that the source block carried no flag.
+    run q "SELECT is_error, is_error_explicit FROM tool_results WHERE tool_use_id='tu-nf-1';"
+    assert_output_contains '"is_error":"false"'
+    assert_output_contains '"is_error_explicit":false'
+}
+
+@test "ingest: the coverage stanza reports per-harness join + flag quality" {
+    write_claude_fixture
+    write_codex_fixture
+    run python3 "$INGEST" --force
+    assert_success
+    assert_output_contains "Coverage (per harness):"
+    assert_output_contains "results_joined_pct"
+    assert_output_contains "explicit_error_flag_pct"
+}

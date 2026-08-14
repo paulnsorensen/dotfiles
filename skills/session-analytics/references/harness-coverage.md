@@ -30,6 +30,21 @@ Native format is already the canonical envelope (`type`, `timestamp`,
 up by the recursive walk, but those turns have no direct user interaction (no
 stop events, no denials).
 
+Claude omits `is_error` on most successful tool results; the flattener
+backfills those to `'false'` and marks them `is_error_explicit = false`
+(measured: ~99.5% of absent-flag results carry non-error content, so claude
+error rates are floors — a handful of harness-side truncation notices lack the
+flag).
+
+**`bash_cmd` is the model-typed command, pre-hook.** A PreToolUse
+`updatedInput` rewrite (e.g. the tool-reroute hook's `git status` → `rtk git
+status`) executes the rewritten command but the transcript records the
+original — verified live: a hook-rewritten call produced rtk-format output
+while the JSONL logged the plain command. Hook rewrite coverage is therefore
+NOT measurable from claude transcripts; a low `rtk %` in `bash_cmd` says only
+how often the model typed the prefix itself (this artifact produced the false
+"rtk hook barely fires on claude" finding in issue #702).
+
 ### codex
 
 Rollout JSONL. Each line is `{timestamp, type, payload}`:
@@ -38,9 +53,17 @@ Rollout JSONL. Each line is `{timestamp, type, payload}`:
   following row in the file.
 - `turn_context` — refreshes `payload.cwd`.
 - `response_item / function_call` and `custom_tool_call` → an assistant
-  `tool_use` block. The tool name (`shell`, `apply_patch`, custom tools) is kept
-  verbatim; `arguments` is JSON-parsed into `input`.
-- `response_item / function_call_output` → a user `tool_result` block.
+  `tool_use` block. The tool name (`shell`, `exec_command`, `exec`,
+  `apply_patch`, custom tools) is kept verbatim; `arguments` is JSON-parsed
+  into `input`. For shell-ish tools, `input.command` is **normalized to the
+  executed command string** so `bash_cmd` populates: `exec_command` copies
+  `cmd`, legacy `shell` argv arrays collapse to the `-lc`/`-c` payload (or a
+  space-join), and the `exec` custom tool's raw code-string argument becomes
+  the command.
+- `response_item / function_call_output` **and `custom_tool_call_output`** → a
+  user `tool_result` block. (Dropping the custom outputs was the ~50%
+  result-join gap — issue #704.) `tool_search_output` items have no matching
+  call item and are dropped.
 
 Codex has no `Skill` / `Agent` tool primitives, so `skill_invocations` and
 `agent_spawns` stay claude-centric. `reasoning` items (encrypted) are dropped.
@@ -98,3 +121,10 @@ e.g. token/cost data is absent from most logs (`token-economics` degrades to
 "insufficient signal"), and codex/omp lack Claude's hook + permission-denial
 entries, so `stop_hooks` / `permission_denials` are effectively claude-only.
 Packs must degrade gracefully rather than fabricate.
+
+`ingest.py` prints a per-harness **coverage stanza** after every run:
+`results_joined_pct` (tool calls with a joined result — low means per-tool
+error rates for that harness are floors, not estimates) and
+`explicit_error_flag_pct` (results whose error flag came from the source
+rather than the `'false'` backfill). Read it before quoting cross-harness
+error-rate comparisons.

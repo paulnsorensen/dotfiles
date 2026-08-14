@@ -43,7 +43,8 @@ Flattened from user `message.content[]` blocks where `type='tool_result'`.
 | harness | VARCHAR | Source harness |
 | tool_use_id | VARCHAR | Matches `tool_uses.tool_use_id` |
 | content | VARCHAR | Result text (truncated to 500 chars) |
-| is_error | VARCHAR | `'true'` if the call failed (string, not boolean) |
+| is_error | VARCHAR | `'true'` if the call failed (string, not boolean). Never NULL — an absent source flag backfills to `'false'` |
+| is_error_explicit | BOOLEAN | Whether the source block carried the flag. `false` means `is_error` was backfilled (claude omits the flag on most successes) |
 | timestamp | VARCHAR | ISO timestamp |
 | sessionId | VARCHAR | Session identifier |
 
@@ -94,10 +95,17 @@ lack a field you need.
 
 ## Type gotchas
 
-- `is_error` is VARCHAR `'true'`/`'false'` — compare as strings.
+- `is_error` is VARCHAR `'true'`/`'false'` — compare as strings. It is never
+  NULL: an absent source flag is backfilled to `'false'` (`is_error_explicit`
+  records which rows were backfilled). Measured on claude logs: ~99.5% of
+  absent-flag results carry non-error content, so the backfill is sound;
+  claude error rates remain floors, not exact estimates.
+- `is_error_explicit` is a real BOOLEAN — `-json` prints it bare
+  (`true`/`false`), unlike the VARCHAR `is_error`.
 - Timestamps are VARCHAR ISO strings — cast for date math (`timestamp::TIMESTAMP`,
   `timestamp::DATE`).
-- DuckDB CLI `-json` returns every value as a string, including integers/booleans.
+- DuckDB CLI `-json` preserves column types: BOOLEAN/BIGINT print bare, the
+  schema's many VARCHAR columns print as strings.
 - Empty result sets print `[]`.
 - `input` is JSON — use `json_extract_string()` for fields not already
   materialized as columns.
