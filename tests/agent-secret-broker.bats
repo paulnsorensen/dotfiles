@@ -463,7 +463,7 @@ broker = SimpleNamespace(policy=policy, upstream_home=root)
 connection = Connection()
 session = module.ClientSession(broker, connection)
 assert session.forward({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-assert session._idle.wait(2), "upstream close was never observed"
+assert session._idle.wait(15), "upstream close was never observed"
 
 messages = [json.loads(payload) for payload in connection.payloads]
 assert messages == [

@@ -679,13 +679,13 @@ class ClientSession:
         with self._state_lock:
             pending = list(self._methods.items())
             self._methods.clear()
-            self._idle.set()
         for message_key, method in pending:
             print(
                 f"agent-secret-broker: upstream closed with pending request {message_key} ({method})",
                 file=sys.stderr,
             )
             self.send_error({"id": json.loads(message_key)}, -32010, "upstream closed")
+        self._idle.set()
 
     def _upstream_line(self, line: bytes) -> bool:
         try:
@@ -1048,7 +1048,10 @@ def run_control(args: argparse.Namespace) -> int:
                 message[name] = value
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-            connection.settimeout(5)
+            # Loaded CI runners can push python startup + broker scheduling past
+            # a few seconds; a control command that times out here fails silently
+            # (returns 1 with no output), so keep this bound generous.
+            connection.settimeout(20)
             connection.connect(str(path))
             connection.sendall(_json_line(message))
             with connection.makefile("rb") as stream:
