@@ -6,10 +6,11 @@
 // rewrite target (the Grep/Glob tools, shell write-redirects), and DELEGATES
 // every other Bash command to the harness's rtk hook for token compaction.
 //
-// Three detection modules run in order; the FIRST hit wins:
-//   search → grep/rg/ag/ack/find + the Grep/Glob tools
-//   cd-git → `cd <path> && git …`
-//   io     → write-redirect (deny) / bare `cat` (rewrite)
+// Four detection modules run in order; the FIRST hit wins:
+//   search      → grep/rg/ag/ack/find + the Grep/Glob tools
+//   cd-git      → `cd <path> && git …`
+//   io          → write-redirect (deny) / bare `cat` (rewrite)
+//   tilth-write → wrong-shape tilth_write payload (deny with the current shape)
 // Each module's detect() returns {rewrite} (allow + updatedInput), {reason}
 // (deny + message), or null. A null from every module on a Bash call means
 // "not ours" → delegate to `rtk hook <harness>` (argv[2]), piping the original
@@ -24,8 +25,9 @@ const { spawnSync } = require('child_process');
 const search = require('./tool-reroute/search');
 const cdGit = require('./tool-reroute/cd-git');
 const io = require('./tool-reroute/io');
+const tilthWrite = require('./tool-reroute/tilth-write');
 
-const MODULES = [search, cdGit, io];
+const MODULES = [search, cdGit, io, tilthWrite];
 
 // Pure over (toolName, input, cwd): the first module hit, or null. The unit-
 // testable core the stdin adapter calls.
