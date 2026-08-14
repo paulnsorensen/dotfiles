@@ -139,7 +139,7 @@ do_update() {
         echo -e "${GREEN}✅ Updated successfully!${NC}"
         echo
         echo -e "${BLUE}Running sync...${NC}"
-        "$DOTFILES_DIR/.sync"
+        do_sync
     else
         echo -e "${YELLOW}⚠️  Local changes detected${NC}" >&2
         echo "Please commit or stash your changes first" >&2
