@@ -297,9 +297,9 @@ EOF
     chmod +x "$TEST_HOME/fake-bin/security" "$TEST_HOME/fake-bin/bws"
 
     # shellcheck disable=SC2016
-    run env BWS_PROJECT_ID=test-project DOTFILES_DIR="$FIXTURE_DOTFILES" bash -c '
+    run env BWS_PROJECT_ID=test-project BWS_ACCESS_TOKEN=test-token DOTFILES_DIR="$FIXTURE_DOTFILES" bash -c '
         source "$DOTFILES_DIR/bin/lib/vault.sh"
-        source <(sed -n "/^ensure_bitwarden_value()/,/^}/p" "$1")
+        eval "$(sed -n "/^ensure_bitwarden_value()/,/^}/p" "$1")"
         ensure_bitwarden_value TAVILY_API_KEY
     ' _ "$FIXTURE_DOTFILES/bin/vault-provision"
     [ "$status" -eq 3 ]
