@@ -291,8 +291,12 @@ MOCKBUN
 
 
 # Usage: write_mock_gh [installed_repos] [fail_repo]
-#   installed_repos: newline-separated "owner/repo" or "owner/repo@version"
-#                    already installed (version defaults to v0.0.0)
+#   installed_repos: newline-separated entries already installed:
+#                    "owner/repo"          unpinned, v0.0.0
+#                    "owner/repo@version"  pinned at version (gh's own
+#                                          `gh extension list` marks a
+#                                          pinned install with ", pinned")
+#                    "owner/repo~version"  unpinned, but floating at version
 #   fail_repo:       exit non-zero when `gh extension install` is asked for this repo
 write_mock_gh() {
     local installed="${1:-}" fail_repo="${2:-}"
@@ -306,9 +310,13 @@ case "\$1" in
             list)
                 while IFS= read -r entry; do
                     [[ -z "\$entry" ]] && continue
-                    repo="\${entry%@*}"
-                    version="v0.0.0"
-                    [[ "\$entry" == *@* ]] && version="\${entry##*@}"
+                    repo="\$entry" version="v0.0.0" pinned=0
+                    if [[ "\$entry" == *@* ]]; then
+                        repo="\${entry%@*}" version="\${entry##*@}" pinned=1
+                    elif [[ "\$entry" == *~* ]]; then
+                        repo="\${entry%~*}" version="\${entry##*~}"
+                    fi
+                    [[ "\$pinned" == 1 ]] && version="\$version, pinned"
                     printf 'gh %s\t%s\t%s\n' "\${repo##*/gh-}" "\$repo" "\$version"
                 done <<< "$installed"
                 ;;
@@ -778,6 +786,38 @@ packages:
   - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
 YAML
     write_mock_gh "github/gh-stack@v0.0.8"
+
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack --pin v0.1.0 --force" "$GH_LOG"
+}
+
+@test "sync never skips a full-SHA pin gh can only show truncated" {
+    # Regression: a full commit-SHA pin can never string-equal gh's own
+    # truncated `gh extension list` display of that SHA, so the convergence
+    # check must not treat this as comparable and must always reinstall.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "1234567890123456789012345678901234567890" }
+YAML
+    write_mock_gh "github/gh-stack@1234567"
+
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack --pin 1234567890123456789012345678901234567890 --force" "$GH_LOG"
+}
+
+@test "sync pins a gh extension that floats at the target version but isn't pinned" {
+    # Regression: version equality alone is not proof of pinning — an
+    # unpinned (floating) install can coincidentally sit at the pin's
+    # version and must still be pinned, not skipped.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+YAML
+    write_mock_gh "github/gh-stack~v0.1.0"
 
     run_sync
     assert_success
