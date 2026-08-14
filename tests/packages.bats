@@ -291,7 +291,12 @@ MOCKBUN
 
 
 # Usage: write_mock_gh [installed_repos] [fail_repo]
-#   installed_repos: newline-separated list of "owner/repo" already installed
+#   installed_repos: newline-separated entries already installed:
+#                    "owner/repo"          unpinned, v0.0.0
+#                    "owner/repo@version"  pinned at version (gh's own
+#                                          `gh extension list` marks a
+#                                          pinned install with ", pinned")
+#                    "owner/repo~version"  unpinned, but floating at version
 #   fail_repo:       exit non-zero when `gh extension install` is asked for this repo
 write_mock_gh() {
     local installed="${1:-}" fail_repo="${2:-}"
@@ -303,9 +308,16 @@ case "\$1" in
     extension)
         case "\$2" in
             list)
-                while IFS= read -r repo; do
-                    [[ -z "\$repo" ]] && continue
-                    printf 'gh %s\t%s\tv0.0.0\n' "\${repo##*/gh-}" "\$repo"
+                while IFS= read -r entry; do
+                    [[ -z "\$entry" ]] && continue
+                    repo="\$entry" version="v0.0.0" pinned=0
+                    if [[ "\$entry" == *@* ]]; then
+                        repo="\${entry%@*}" version="\${entry##*@}" pinned=1
+                    elif [[ "\$entry" == *~* ]]; then
+                        repo="\${entry%~*}" version="\${entry##*~}"
+                    fi
+                    [[ "\$pinned" == 1 ]] && version="\$version, pinned"
+                    printf 'gh %s\t%s\t%s\n' "\${repo##*/gh-}" "\$repo" "\$version"
                 done <<< "$installed"
                 ;;
             install)
@@ -752,6 +764,82 @@ YAML
     assert_output_contains "Failed to install github/gh-stack"
     assert_output_contains "cache NOT saved"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+}
+
+@test "sync skips pinned gh extension already at its pin" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+YAML
+    write_mock_gh "github/gh-stack@v0.1.0"
+
+    run_sync
+    assert_success
+
+    assert_output_contains "+ gh-stack (v0.1.0)"
+    ! grep -q "gh extension install" "$GH_LOG"
+}
+
+@test "sync repins a gh extension sitting at the wrong version" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+YAML
+    write_mock_gh "github/gh-stack@v0.0.8"
+
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack --pin v0.1.0 --force" "$GH_LOG"
+}
+
+@test "sync never skips a full-SHA pin gh can only show truncated" {
+    # Regression: a full commit-SHA pin can never string-equal gh's own
+    # truncated `gh extension list` display of that SHA, so the convergence
+    # check must not treat this as comparable and must always reinstall.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "1234567890123456789012345678901234567890" }
+YAML
+    write_mock_gh "github/gh-stack@1234567"
+
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack --pin 1234567890123456789012345678901234567890 --force" "$GH_LOG"
+}
+
+@test "sync pins a gh extension that floats at the target version but isn't pinned" {
+    # Regression: version equality alone is not proof of pinning — an
+    # unpinned (floating) install can coincidentally sit at the pin's
+    # version and must still be pinned, not skipped.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+YAML
+    write_mock_gh "github/gh-stack~v0.1.0"
+
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack --pin v0.1.0 --force" "$GH_LOG"
+}
+
+@test "a converged pin survives a failing gh extension install" {
+    # Regression: the pinned branch shelled out to a forced install on every
+    # run, so one GitHub API blip failed the whole sync — and took the legs
+    # after it (native harnesses, cache save) down with it — even though the
+    # extension was already exactly at its pin and had nothing to fetch.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+YAML
+    write_mock_gh "github/gh-stack@v0.1.0" "github/gh-stack"
+
+    run_sync
+    assert_success
+
+    [[ -s "$CACHE_FILE" ]]
 }
 
 @test "UPGRADE_MODE never floats gh extensions" {
