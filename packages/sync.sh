@@ -779,6 +779,30 @@ converge_omp_native() {
     fi
 }
 
+# Remove every package-manager and native binary left by retired harnesses.
+retire_harnesses() {
+    local harness installed
+
+    if command -v brew &>/dev/null; then
+        installed=$(brew list --formulae 2>/dev/null || true)
+        for harness in opencode crush; do
+            if grep -qxF "$harness" <<<"$installed"; then
+                log_info "  Removing retired Homebrew $harness..."
+                brew uninstall "$harness" </dev/null || FAILED+=("retired-$harness-brew")
+            fi
+        done
+    fi
+
+    if command -v mise &>/dev/null && ! MISE_GLOBAL_CONFIG_FILE="$MISE_BOOTSTRAP_CONFIG_FILE" \
+        mise uninstall --yes --all \
+        aqua:anomalyco/opencode aqua:charmbracelet/crush </dev/null; then
+        log_error "failed to uninstall retired OpenCode/Crush mise packages"
+        FAILED+=("retired-harnesses")
+    fi
+
+    rm -f "$HOME/.local/bin/opencode" "$HOME/.local/bin/crush"
+}
+
 sync_native_harnesses() {
     log_info "Syncing native AI-harness CLIs..."
 
@@ -850,6 +874,7 @@ if ((${#FAILED[@]} > failures_before_mise)); then
     fi
     exit 1
 fi
+retire_harnesses
 
 if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
     if ((${#FAILED[@]})); then

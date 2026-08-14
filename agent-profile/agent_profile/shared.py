@@ -3,8 +3,8 @@
 Behavioral port of agent-profile/lib/shared_writer.sh. Several harnesses
 read the same on-disk file shapes:
 
-  - ``.claude/agents/<n>.md``   -> Claude (via plugin), opencode, Cursor
-  - ``.agents/skills/<n>/``     -> Codex, opencode, Cursor
+  - ``.claude/agents/<n>.md``   -> Claude (via plugin), Cursor
+  - ``.agents/skills/<n>/``     -> Codex, Cursor
 
 Each writer appends every file it writes (relative to ``target``) to the
 caller-supplied ``out_files`` accumulator, deduping, so the install
@@ -55,8 +55,8 @@ def strip_frontmatter(text: str) -> str:
 
 
 # Tools whose presence means an agent can modify files. Used to derive
-# read-only intent for harnesses that sandbox by capability (codex
-# ``sandbox_mode``, opencode ``permission.edit``) rather than by an explicit
+# read-only intent for harnesses that sandbox by capability (for example,
+# Codex ``sandbox_mode``) rather than by an explicit
 # tool list. Includes tilth's writer, not just the built-in editors, so an
 # agent that bans ``Write`` but keeps ``mcp__tilth__tilth_write`` is not
 # mistaken for read-only.
@@ -239,7 +239,6 @@ _OVERRIDE_SUBDIRS = {
     "agent": "agents",
     "agents": "agents",
     "agent_singular": "agent",
-    "opencode_agent": "agent",
     "command": "commands",
     "commands": "commands",
 }

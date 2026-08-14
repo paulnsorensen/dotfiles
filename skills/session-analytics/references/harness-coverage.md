@@ -6,8 +6,8 @@ per harness; every adapter is discovery-gated and best-effort. A harness with no
 accessible logs is recorded here and skipped non-fatally — full coverage of what
 is reachable, not parsing the unparseable.
 
-Every canonical table carries a `harness` column (`claude` / `codex` /
-`opencode` / `omp` / `cursor` / `copilot`) so one query can compare sources. See
+Every canonical table carries a `harness` column (`claude` / `codex` / `omp` /
+`cursor` / `copilot`) so one query can compare sources. See
 `canonical-schema.md` for the table shapes.
 
 ## Coverage status
@@ -16,7 +16,6 @@ Every canonical table carries a `harness` column (`claude` / `codex` /
 |---------|-------------|--------|---------|--------|
 | claude | `~/.claude/projects/**/*.jsonl` | JSONL, one turn per line; assistant/user `message.content[]` blocks | `claude_normalize` (pass-through, already canonical) | parsed |
 | codex | `~/.codex/sessions/**/*.jsonl` | JSONL rollout; `session_meta` + `response_item`/`event_msg` payloads | `codex_normalize` | parsed |
-| opencode | `~/.local/share/opencode/opencode.db` | SQLite; `part` table rows with `type='tool'`, joined to `session.directory` | `opencode_normalize` | parsed |
 | omp | `~/.omp/agent/sessions/<flattened-project-dir>/*.jsonl` | JSONL; `session` header + `message` entries with `toolCall` / `toolResult` | `omp_normalize` | parsed |
 | cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | SQLite blob, undocumented schema, fragile across versions | none | **no accessible logs** |
 | copilot | `~/.copilot/` | holds `skills/` + `mcp-config.json` only; no local transcript found | none | **no accessible logs** |
@@ -45,18 +44,6 @@ Rollout JSONL. Each line is `{timestamp, type, payload}`:
 
 Codex has no `Skill` / `Agent` tool primitives, so `skill_invocations` and
 `agent_spawns` stay claude-centric. `reasoning` items (encrypted) are dropped.
-
-### opencode
-
-SQLite at `opencode.db` (older builds used JSON files under `storage/`; the
-adapter targets the DB). A `part` row with `data.type='tool'` carries
-`{tool, callID, state:{status, input, output}}`:
-
-- the part → an assistant `tool_use` (tool name verbatim, `state.input` as input);
-- when `state.output` is present (or `status='error'`) → a paired user
-  `tool_result` (`is_error='true'` on error).
-
-`session.directory` supplies `cwd`. Opened read-only (`mode=ro`).
 
 ### omp
 
@@ -108,6 +95,6 @@ Re-evaluate if a transcript store appears.
 
 Some metrics are only reliable on harnesses that record the underlying field —
 e.g. token/cost data is absent from most logs (`token-economics` degrades to
-"insufficient signal"), and codex/opencode lack Claude's hook + permission-denial
+"insufficient signal"), and codex/omp lack Claude's hook + permission-denial
 entries, so `stop_hooks` / `permission_denials` are effectively claude-only.
 Packs must degrade gracefully rather than fabricate.

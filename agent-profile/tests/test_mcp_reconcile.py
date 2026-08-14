@@ -1,17 +1,12 @@
 """test_mcp_reconcile.py — install-time reconcile of MCP servers dropped
 from the registry.
 
-Renderers MERGE MCP entries into persistent/user-owned files (codex
-config.toml, opencode/cursor/copilot JSON, claude user-scope
-~/.claude.json). A server removed from the registry would otherwise
-linger, since render only writes the current set. cmd_install now diffs
-the prior resolved manifest (cached in manifest.json) against the current
-one and has each in-scope renderer prune the dropped servers.
+Install reconciliation diffs the prior resolved manifest against the current
+one and asks each in-scope renderer to prune dropped servers. Non-isolated
+renderers leave user-owned live MCP config untouched.
 
-Tests assert: a dropped MCP is evicted from every merge-target harness on
-re-install, the surviving MCP and unrelated user entries are preserved, a
-fresh install (no prior) prunes nothing, and the claude user-scope path
-unregisters exactly the dropped server via the CLI.
+Tests cover dropped-name reporting, fresh installs, scope changes, and exact
+Claude CLI unregistration while preserving unrelated user configuration.
 """
 
 from __future__ import annotations
@@ -42,7 +37,7 @@ def _yaml(name: str, mcp_names: list[str]) -> str:
             f"  - name: {n}",
             "    command: /bin/true",
             "    args: [--flag]",
-            "    harnesses: [codex, opencode, cursor, copilot]",
+            "    harnesses: [codex, cursor, copilot]",
         ]
     return "\n".join(lines) + "\n"
 
@@ -63,8 +58,6 @@ def test_nonisolated_install_leaves_live_mcp_configs_unmanaged(
     cfg = t / ".codex" / "config.toml"
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text('[mcp_servers.user-srv]\ncommand = "/usr/bin/env"\n')
-    oc = t / "opencode.json"
-    oc.write_text(json.dumps({"mcp": {"user-srv": {"command": ["/usr/bin/env"]}}}) + "\n")
     cur = t / ".cursor" / "mcp.json"
     cur.parent.mkdir(parents=True, exist_ok=True)
     cur.write_text(json.dumps({"mcpServers": {"user-srv": {"command": "/usr/bin/env"}}}) + "\n")
@@ -73,7 +66,6 @@ def test_nonisolated_install_leaves_live_mcp_configs_unmanaged(
     cop.write_text(json.dumps({"mcpServers": {"user-srv": {"command": "/usr/bin/env"}}}) + "\n")
     expected = {
         cfg: cfg.read_text(),
-        oc: oc.read_text(),
         cur: cur.read_text(),
         cop: cop.read_text(),
     }
@@ -98,7 +90,6 @@ def test_fresh_install_prunes_nothing(env, capsys, prod_renderers):
     t = env.target
     for merged in (
         ".codex/config.toml",
-        "opencode.json",
         ".cursor/mcp.json",
         ".copilot/mcp-config.json",
     ):
@@ -281,7 +272,7 @@ def test_nonisolated_scoped_mcp_changes_leave_live_configs_unmanaged(
         "p",
         _yaml_scoped(
             "p",
-            {"srv1": ["codex", "opencode", "cursor", "copilot"], "srv2": []},
+            {"srv1": ["codex", "cursor", "copilot"], "srv2": []},
         ),
     )
     assert _install(env, "p") == 0

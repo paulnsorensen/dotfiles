@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copilot CLI preToolUse adapter: block reads/writes of .env files, private
-# keys, and credential stores. Parallel to the Cursor adapter and the opencode
-# deny-list — Copilot has its own hook protocol, so it gets its own thin shim.
+# keys, and credential stores. Copilot has its own hook protocol, so this
+# remains a dedicated thin shim.
 #
 # Detection is NOT re-implemented here: this shim translates Copilot's
 # preToolUse protocol to/from the shared Node logic in lib/sensitive-file-guard.js

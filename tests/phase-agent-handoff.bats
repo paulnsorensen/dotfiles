@@ -154,12 +154,12 @@ block_sha() {
 
 # The descriptions promise read-only phase agents that cannot recurse, and a
 # coder that edits only through tilth. Lock those tool-surface contracts in the
-# registry so they cannot silently drift. The same metadata renders to Claude,
-# Codex, opencode, and Copilot CLI; Copilot ignores model overrides.
+# registry so they cannot silently drift. Claude and Codex consume the model
+# metadata; Copilot ignores model overrides.
 @test "phase agents declare model intent for model-aware harnesses" {
     local registry="$AGENTS_DIR/registry.yaml"
     for agent in explorer researcher reviewer coder; do
-        for harness in claude codex opencode; do
+        for harness in claude codex; do
             run yq ".agents.${agent}.models.${harness}" "$registry"
             assert_success
             [[ "$output" != "null" ]] || { echo "$agent missing $harness model" >&2; return 1; }

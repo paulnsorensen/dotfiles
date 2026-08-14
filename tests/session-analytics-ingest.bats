@@ -8,7 +8,6 @@
 # The adapters under test:
 #   - claude   : ~/.claude/projects/**/*.jsonl              (assistant/user blocks)
 #   - codex    : ~/.codex/sessions/**/*.jsonl               (response_item payloads)
-#   - opencode : ~/.local/share/opencode/opencode.db        (part table, type='tool')
 #   - cursor   : state.vscdb  -> documented "no accessible logs" (best-effort)
 #   - copilot  : ~/.copilot   -> documented "no accessible logs" (best-effort)
 #
@@ -22,10 +21,8 @@ DB="$TEST_HOME/.claude/analytics/sessions.duckdb"
 setup() {
     setup_test_env
     command -v duckdb  >/dev/null || skip "duckdb not installed"
-    command -v sqlite3 >/dev/null || skip "sqlite3 not installed"
     mkdir -p "$TEST_HOME/.claude/projects/proj"
     mkdir -p "$TEST_HOME/.codex/sessions/2026/05/30"
-    mkdir -p "$TEST_HOME/.local/share/opencode"
 }
 
 teardown() { teardown_test_env; }
@@ -49,17 +46,6 @@ write_codex_fixture() {
 JSONL
 }
 
-# A minimal opencode DB: one session + one tool part.
-write_opencode_fixture() {
-    local db="$TEST_HOME/.local/share/opencode/opencode.db"
-    sqlite3 "$db" <<'SQL'
-CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, time_created INTEGER);
-CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT);
-INSERT INTO session VALUES ('o-1','/work/opencode',1780000000000);
-INSERT INTO part VALUES ('p-1','m-1','o-1',1780000001000,
-  '{"type":"tool","tool":"bash","callID":"oc-1","state":{"status":"completed","input":{"command":"echo hi"}}}');
-SQL
-}
 
 q() { duckdb "$DB" -json -c "$1"; }
 
@@ -81,28 +67,15 @@ q() { duckdb "$DB" -json -c "$1"; }
     assert_output_contains '"n":1'
 }
 
-@test "ingest: opencode adapter normalizes a tool part into a tool_use tagged harness=opencode" {
-    write_opencode_fixture
-    run python3 "$INGEST" --force
-    assert_success
-    run q "SELECT count(*) AS n FROM tool_uses WHERE harness='opencode';"
-    assert_output_contains '"n":1'
-    # A 'completed' tool part with no output key must still emit a paired
-    # tool_result, or the call's request/result correlation is silently lost.
-    run q "SELECT count(*) AS n FROM tool_results WHERE harness='opencode' AND tool_use_id='oc-1';"
-    assert_output_contains '"n":1'
-}
 
 @test "ingest: a harness-filtered query unifies multiple sources in one schema" {
     write_claude_fixture
     write_codex_fixture
-    write_opencode_fixture
     run python3 "$INGEST" --force
     assert_success
-    # The canonical schema must surface rows from at least the reachable
-    # non-claude harnesses (codex + opencode), proving sources unify.
+    # The canonical schema must surface both reachable harnesses.
     run q "SELECT count(DISTINCT harness) AS n FROM tool_uses;"
-    assert_output_contains '"n":3'
+    assert_output_contains '"n":2'
 }
 
 @test "ingest: sessions table carries the harness column" {
@@ -115,7 +88,7 @@ q() { duckdb "$DB" -json -c "$1"; }
 
 @test "ingest: harness adapters with no logs are non-fatal (claude-only still succeeds)" {
     write_claude_fixture
-    # No codex/opencode fixtures written — those adapters must record "no logs"
+    # No codex/omp fixtures written — those adapters must record "no logs"
     # and the run must still complete and load the claude rows.
     run python3 "$INGEST" --force
     assert_success
@@ -153,25 +126,6 @@ JSONL
     assert_output_contains '"is_error":"true"'
 }
 
-@test "ingest: opencode tool output maps status->is_error (completed=false, error=true)" {
-    local db="$TEST_HOME/.local/share/opencode/opencode.db"
-    sqlite3 "$db" <<'SQL'
-CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, time_created INTEGER);
-CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT);
-INSERT INTO session VALUES ('o-1','/work/opencode',1780000000000);
-INSERT INTO part VALUES ('p-1','m-1','o-1',1780000001000,
-  '{"type":"tool","tool":"bash","callID":"oc-ok","state":{"status":"completed","input":{"command":"echo hi"},"output":"hi"}}');
-INSERT INTO part VALUES ('p-2','m-1','o-1',1780000002000,
-  '{"type":"tool","tool":"read","callID":"oc-err","state":{"status":"error","input":{},"output":"boom"}}');
-SQL
-    run python3 "$INGEST" --force
-    assert_success
-    # A completed tool result must be is_error=false; an errored one is_error=true.
-    run q "SELECT is_error FROM tool_results WHERE harness='opencode' AND tool_use_id='oc-ok';"
-    assert_output_contains '"is_error":"false"'
-    run q "SELECT is_error FROM tool_results WHERE harness='opencode' AND tool_use_id='oc-err';"
-    assert_output_contains '"is_error":"true"'
-}
 
 @test "ingest: a malformed JSONL line is skipped without aborting the run" {
     cat > "$TEST_HOME/.claude/projects/proj/sess-corrupt.jsonl" <<'JSONL'

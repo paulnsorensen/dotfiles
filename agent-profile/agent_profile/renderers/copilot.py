@@ -1,9 +1,9 @@
 """copilot.py — render an agent profile into Copilot CLI's project layout.
 
-Behavioral port of agent-profile/renderers/copilot.sh. Unlike
-Codex/opencode/Cursor, Copilot reads from its own paths under ``.github/``
-and ``.copilot/`` — it does not consume the shared ``.claude/agents/`` or
-``.agents/skills/`` trees. So this renderer copies the skill tree directly
+Unlike Codex and Cursor, Copilot reads from its own paths under ``.github/``
+and ``.copilot/`` rather than the shared ``.claude/agents/`` or
+``.agents/skills/`` trees. This renderer copies the skill tree directly into
+``.github/skills/<n>/`` and emits an ``.agent.md`` file under
 into ``.github/skills/<n>/`` and emits an ``.agent.md`` file under
 ``.github/agents/<n>.agent.md`` per subagent.
 
@@ -56,8 +56,7 @@ from agent_profile.renderers.base import (
 )
 from agent_profile.shared import strip_frontmatter, track_file
 
-# Copilot's MCP membership default in the bash select() is claude+codex
-# (narrower than the common claude/codex/opencode triple).
+# Copilot's MCP membership default is Claude and Codex.
 _COPILOT_MCP_DEFAULT = ("claude", "codex")
 
 # Hooks default to claude-only membership (bash ``.harnesses // ["claude"]``).

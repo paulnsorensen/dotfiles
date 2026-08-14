@@ -2,10 +2,9 @@
 
 MCP-secret-passthrough: ``ap`` carries the literal ``${VAR}`` from ingest to
 each renderer instead of baking the resolved secret. This module is the
-cross-harness backstop: render a ``${VAR}``-bearing MCP through every
-``ap`` renderer that writes a persistent config (claude plugin-scope, codex,
-opencode, cursor) with real secret values present in the process env, then
-grep the entire rendered tree and assert no secret value leaked to disk.
+cross-harness backstop: render a ``${VAR}``-bearing MCP through each
+``ap`` renderer that writes persistent MCP config (Claude plugin scope, Codex,
+and Cursor) with real secret values present, then assert no secret leaked.
 
 copilot is excluded from the ``ap`` MCP default membership, so its live
 config is written by the chezmoi template, not a renderer here — that arm is
@@ -20,15 +19,14 @@ from agent_profile.parse import Manifest
 from agent_profile.renderers.claude import ClaudeRenderer
 from agent_profile.renderers.codex import CodexRenderer
 from agent_profile.renderers.cursor import CursorRenderer
-from agent_profile.renderers.opencode import OpencodeRenderer
 
 SECRET = "sk-real-secret-VALUE-do-not-leak"
 VARNAME = "CONTEXT7_API_KEY"
 
 
 def _manifest() -> Manifest:
-    """A plugin-scope manifest with one ${VAR}-bearing MCP that every
-    persistent-config renderer (claude/codex/opencode/cursor) accepts."""
+    """A plugin-scope manifest with one ${VAR}-bearing MCP accepted by each
+    persistent-config renderer."""
     return Manifest(
         name="secrets",
         mcps=[
@@ -37,7 +35,7 @@ def _manifest() -> Manifest:
                 "command": "npx",
                 "args": ["-y", "@upstash/context7-mcp"],
                 "env": {VARNAME: f"${{{VARNAME}}}"},
-                # Default membership = [claude, codex, opencode, cursor].
+                # Default membership = [claude, codex, cursor].
                 "_source_dir": ".",
             }
         ],
@@ -74,7 +72,6 @@ def test_no_renderer_bakes_the_secret(tmp_path, monkeypatch):
     for renderer in (
         ClaudeRenderer(),
         CodexRenderer(),
-        OpencodeRenderer(),
         CursorRenderer(),
     ):
         renderer.render(_manifest(), target)

@@ -55,10 +55,15 @@ from typing import Any
 
 import yaml
 
+from agent_profile._validate import ParseError
 from agent_profile.env import (
     EnvResolutionError,
     first_unset_var,
     resolve_item_env,
+)
+from agent_profile.harnesses import (
+    SUPPORTED_ITEM_HARNESSES,
+    validate_supported_harnesses,
 )
 
 
@@ -78,10 +83,22 @@ def _as_csv_list(value: Any) -> list[str]:
     return list(value)
 
 
-_AGENT_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
-_SKILL_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
-_HOOK_HARNESSES = ("claude", "codex", "cursor", "copilot")
+_AGENT_HARNESSES = SUPPORTED_ITEM_HARNESSES
+_SKILL_HARNESSES = SUPPORTED_ITEM_HARNESSES
+_HOOK_HARNESSES = SUPPORTED_ITEM_HARNESSES
 _COMMAND_HOOK_HARNESSES = ("claude", "codex")
+
+
+def _validate_explicit_harnesses(
+    value: Any,
+    *,
+    context: str,
+) -> list[str]:
+    return validate_supported_harnesses(
+        value,
+        context=context,
+        error_type=ParseError,
+    )
 
 # Harnesses whose native marketplace install is drivable from `ap`. A plugin's
 # `native:` field may only name these; the rest always get decomposed primitives.
@@ -414,6 +431,11 @@ def _expand_mcps(
         if not isinstance(body, dict):
             continue
         item: dict[str, Any] = {"name": name, **body, "_source_dir": source_dir}
+        if "harnesses" in item:
+            item["harnesses"] = _validate_explicit_harnesses(
+                item["harnesses"],
+                context=f"ap: mcps item '{name}'",
+            )
         unset = first_unset_var(item, dotenv)
         if unset is not None:
             if item.get("optional"):
@@ -437,6 +459,11 @@ def _expand_hooks(
         if not isinstance(body, dict):
             continue
         item = {"name": name, **body, "_source_dir": source_dir}
+        if "harnesses" in item:
+            item["harnesses"] = _validate_explicit_harnesses(
+                item["harnesses"],
+                context=f"ap: hooks item '{name}'",
+            )
         out.append(resolve_item_env(item, dotenv))
     return out
 
@@ -457,7 +484,13 @@ def _expand_agents(
     for name, body in agents.items():
         if not isinstance(body, dict):
             continue
-        out.append({"name": name, **body, "_source_dir": source_dir})
+        item = {"name": name, **body, "_source_dir": source_dir}
+        if "harnesses" in item:
+            item["harnesses"] = _validate_explicit_harnesses(
+                item["harnesses"],
+                context=f"ap: agents item '{name}'",
+            )
+        out.append(item)
     return out
 
 
@@ -478,6 +511,11 @@ def _expand_external_skills(
             body = {}  # bare `owner/repo:` → repo-level auto-discovery
         elif not isinstance(body, dict):
             continue  # malformed non-mapping body (typo) — skip, as MCP/hook readers do
+        if "harnesses" in body:
+            _validate_explicit_harnesses(
+                body["harnesses"],
+                context=f"ap: skills item '{repo}'",
+            )
         pin = body.get("pin")
         names = _as_list(body.get("skills"))
         if names:
@@ -642,6 +680,13 @@ def _expand_plugins(
     for name, body in plugins.items():
         if not isinstance(body, dict):
             continue
+        if "harnesses" in body:
+            harnesses = _validate_explicit_harnesses(
+                body["harnesses"],
+                context=f"ap: plugin '{name}'",
+            )
+        else:
+            harnesses = []
 
         path_str = body.get("path")
         git_url = body.get("git")
@@ -686,7 +731,6 @@ def _expand_plugins(
             ) from exc
 
         marketplace_name: str = market_data.get("name") or name
-        harnesses: list[str] = _as_list(body.get("harnesses"))
         gate_unless = body.get("gate_unless")
         native_harnesses = resolved_native_harnesses(body, plugin=name)
         description = body.get("description") or ""

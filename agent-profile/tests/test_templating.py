@@ -69,7 +69,7 @@ def test_needs_render_false_for_non_strings():
 @needs_chezmoi
 def test_render_value_resolves_bare_harness_var():
     assert templating.render_value("{{ $h }}", "codex") == "codex"
-    assert templating.render_value("{{ $h }}", "opencode") == "opencode"
+    assert templating.render_value("{{ $h }}", "cursor") == "cursor"
 
 
 @needs_chezmoi
@@ -78,7 +78,7 @@ def test_render_value_resolves_per_harness_branch():
     assert templating.render_value(tmpl, "claude") == "claude-code"
     assert templating.render_value(tmpl, "codex") == "codex"
     assert templating.render_value(tmpl, "cursor") == "cursor"
-    assert templating.render_value(tmpl, "opencode") == "opencode"
+    assert templating.render_value(tmpl, "copilot") == "copilot"
 
 
 @needs_chezmoi

@@ -76,11 +76,10 @@ dumb zone. Quality-at-large-context is the orchestrator's problem (taste-test ga
 
 ## Shipped caps (PR #344) and the gap to the data
 
-`coder: 100`; all 14 other rendered agents: `50`. Emitted by
-`claude_agent_frontmatter()` in `agent-profile/agent_profile/shared.py` (a
-Claude-honored frontmatter field; Cursor reads the shared file and ignores it,
-and codex/opencode/copilot build their own agent frontmatter, so the field is
-Claude-only).
+`coder: 100`; all 14 other rendered agents: `50`. Claude honors the `maxTurns`
+frontmatter emitted by `claude_agent_frontmatter()`; Cursor reads the shared
+file but ignores that field, while Codex and Copilot render their own agent
+frontmatter.
 
 These are a deliberate **flat, conservative tightening**, not the raw p95s — for
 several agents the cap sits *below* the measured p95 (e.g. `coder` p95 183 vs cap
@@ -150,15 +149,6 @@ Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
   no-agent-id records were 64% of `decisions.jsonl` volume on the hot path of
   every tool call; they only log under `CLAUDE_TURN_BUDGET_DEBUG`. The log
   rotates at 5MB (single `.1` generation) beside the SubagentStop sweep.
-- **opencode tool hooks carry no identity.** `tool.execute.before/after` input
-  is only `{tool, sessionID, callID}` — the adapter resolves
-  `client.session.get()` and treats parentID-set AND agent-non-empty as
-  sub-agent, with sessionID as the identity key and `session.idle`/`deleted` as
-  the SubagentStop equivalent. Deny-by-throw is safe there: opencode v1.17.14
-  triggers plugins inside the AI SDK tool `execute()`, and `ai@6.0.168`
-  `execute-tool-call.ts` catches every execute throw into a model-visible
-  `tool-error`, not a turn crash. The byte signal is inert on opencode (no
-  transcript path) — turn-ceiling-only enforcement.
 - **New heavy agent types must be added to `BUDGETS`.** Unknown types fall to
   `default` (40 soft / 50 hard turns). `general-purpose` — the ultracook /
   cheese-factory full-peer worker — sits at coder tier (75/100) for this reason;

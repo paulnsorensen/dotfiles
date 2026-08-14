@@ -1,6 +1,6 @@
 # Claude Code
 
-Anthropic's CLI — the primary harness. Claude is the only harness where `ap` isolated launch can use Claude-native closed-world flags; Codex and opencode isolate through different wrapper mechanisms. Docs root: [code.claude.com/docs](https://code.claude.com/docs).
+Anthropic's CLI and the primary harness. Claude isolated launches use native closed-world flags; Codex isolates through its own config-root wrapper. Docs: <https://code.claude.com/docs>.
 
 Config lives under `~/.claude/`. The repo deploys it as a Claude *plugin tree* (`~/.claude/plugins/local/global/`) plus shared user-scoped files, wired live via `~/.claude/settings.json` (`enabledPlugins` + `extraKnownMarketplaces`). See [[../architecture/agent-profile]] § the `global` install.
 

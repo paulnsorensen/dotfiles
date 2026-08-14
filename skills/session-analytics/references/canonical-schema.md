@@ -7,7 +7,7 @@ the tables below. **Pack authors: write SQL against these tables; never reach
 into a harness's native format.**
 
 Every session-scoped table carries a `harness` column
-(`claude`/`codex`/`opencode`/`omp`/`cursor`/`copilot`). Filter or group by it to
+(`claude`/`codex`/`omp`/`cursor`/`copilot`). Filter or group by it to
 compare sources; omit it to aggregate across all reachable harnesses.
 
 ## `tool_uses`
@@ -76,8 +76,8 @@ One row per `(harness, sessionId, cwd, branch)`. Columns: `harness`,
 
 ## `stop_hooks`
 
-System entries with subtype `stop_hook_summary` (claude only — codex/opencode
-emit none). Columns: `harness`, `timestamp`, `sessionId`, `hookCount`,
+System entries with subtype `stop_hook_summary` (claude only — codex/omp emit
+none). Columns: `harness`, `timestamp`, `sessionId`, `hookCount`,
 `hookInfos` (JSON), `hookErrors` (JSON), `preventedContinuation`, `stopReason`,
 `hasOutput`, `level`.
 

@@ -192,8 +192,8 @@ AGENTS_DOTFILES="$DOTFILES_DIR/agents"
 # Global claude config now deploys via chezmoi from
 # chezmoi/.chezmoidata/claude.yaml on `dots sync` (additions AND removals).
 # Codex followed (spec: chezmoi-authoritative-codex): chezmoi/.chezmoidata/
-# codex.yaml + private_dot_codex/ deploy ~/.codex the same way. opencode/cursor/
-# copilot are still frozen pending their own migration spec. `ap` remains only
+# codex.yaml + private_dot_codex/ deploy ~/.codex the same way. Cursor and
+# Copilot remain frozen pending their own migration specs. `ap` remains only
 # for scoped/ephemeral profiles (`ccp <name>`).
 alias mcp='claude mcp'
 alias mcp-ls='claude mcp list'

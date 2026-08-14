@@ -374,57 +374,6 @@ copilot_guard() {
     [[ "$(copilot_guard write 'git reset --hard')" == "allow" ]]
 }
 
-# ── opencode adapter (plugin tool.execute.before, throw = deny) ────────
-# opencode has no shell-command hook; its plugin intercepts the bash tool and
-# throws on a destructive-dirty op. Exercised by importing the plugin in node
-# and driving the returned tool.execute.before handler.
-
-OPENCODE_PLUGIN="$REAL_DOTFILES_DIR/chezmoi/dot_config/opencode/plugins/git-guard.js"
-
-# Echo "deny" if the handler throws, else "allow".
-opencode_guard() {
-    local tool="$1" cmd="$2" dir="${3:-$REPO}"
-    DOTFILES_DIR="$REAL_DOTFILES_DIR" \
-    OG_PLUGIN="$OPENCODE_PLUGIN" OG_TOOL="$tool" OG_CMD="$cmd" OG_DIR="$dir" \
-    run node --input-type=module -e '
-      const { GitGuard } = await import(process.env.OG_PLUGIN);
-      const hooks = await GitGuard({ directory: process.env.OG_DIR });
-      const before = hooks["tool.execute.before"];
-      if (!before) { console.log("allow"); process.exit(0); }
-      try {
-        await before({ tool: process.env.OG_TOOL }, { args: { command: process.env.OG_CMD } });
-        console.log("allow");
-      } catch { console.log("deny"); }
-    '
-    [ "$status" -eq 0 ]
-    echo "$output"
-}
-
-@test "opencode plugin denies reset --hard on a dirty tree" {
-    dirty_tracked
-    [[ "$(opencode_guard bash 'git reset --hard')" == "deny" ]]
-}
-
-@test "opencode plugin allows reset --hard on a CLEAN tree" {
-    [[ "$(opencode_guard bash 'git reset --hard')" == "allow" ]]
-}
-
-@test "opencode plugin ignores non-bash tools" {
-    dirty_tracked
-    [[ "$(opencode_guard read 'git reset --hard')" == "allow" ]]
-}
-
-@test "opencode plugin CLAUDE_GIT_GUARD=0 disables (no handler registered)" {
-    dirty_tracked
-    DOTFILES_DIR="$REAL_DOTFILES_DIR" OG_PLUGIN="$OPENCODE_PLUGIN" OG_DIR="$REPO" \
-    run env CLAUDE_GIT_GUARD=0 node --input-type=module -e '
-      const { GitGuard } = await import(process.env.OG_PLUGIN);
-      const hooks = await GitGuard({ directory: process.env.OG_DIR });
-      console.log(hooks["tool.execute.before"] ? "armed" : "disabled");
-    '
-    [ "$status" -eq 0 ]
-    [[ "$output" == "disabled" ]]
-}
 
 # ── deploy wiring ──────────────────────────────────────────────────────
 
@@ -451,11 +400,4 @@ opencode_guard() {
     [[ "$(jq -r '.hooks.preToolUse[0].type' <<<"$rendered")" == "command" ]]
     [[ "$(jq -r '.hooks.preToolUse[0].matcher' <<<"$rendered")" == "bash|shell" ]]
     [[ "$(jq -r '.hooks.preToolUse[0].bash' <<<"$rendered")" == */.copilot/hooks/git-guard.sh ]]
-}
-
-@test "opencode plugin is deployed to the plugins dir and exports a Plugin" {
-    local p="$REAL_DOTFILES_DIR/chezmoi/dot_config/opencode/plugins/git-guard.js"
-    [[ -f "$p" ]]
-    grep -q 'tool.execute.before' "$p"
-    grep -q 'export const GitGuard' "$p"
 }

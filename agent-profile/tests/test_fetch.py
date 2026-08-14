@@ -37,14 +37,13 @@ def test_skill_agent_maps_copilot_to_github_copilot():
     assert skill_agent_for("copilot") == "github-copilot"
 
 
-def test_skill_agent_passes_through_codex_cursor_opencode():
+def test_skill_agent_passes_through_codex_and_cursor():
     assert skill_agent_for("codex") == "codex"
     assert skill_agent_for("cursor") == "cursor"
-    assert skill_agent_for("opencode") == "opencode"
 
 
-def test_skill_agent_table_covers_all_five():
-    assert set(SKILL_AGENT) == {"claude", "codex", "cursor", "copilot", "opencode"}
+def test_skill_agent_table_covers_supported_harnesses():
+    assert set(SKILL_AGENT) == {"claude", "codex", "cursor", "copilot"}
 
 
 def test_skill_agent_unknown_harness_raises():

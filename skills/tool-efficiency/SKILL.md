@@ -24,8 +24,8 @@ with the shared confidence × severity model, it does not just report numbers.
 ## Input
 
 A target: a tool name (`Bash`, `Read`, `Edit`), a command prefix (`git`,
-`cargo`), or an MCP server (`serena`, `tilth`). If none given, ask. Optionally a
-harness filter (`all` default, or `claude`/`codex`/`opencode`).
+`cargo`), or an MCP server (`serena`, `tilth`). If none is given, ask.
+Optionally accept a harness filter (`all`, `claude`, `codex`, or `omp`).
 
 ## Owned domains
 
@@ -97,5 +97,5 @@ N findings were `<don't know>` or insufficient-signal (not shown).
 
 - `token-economics` is `<don't know>` on most logs (no token fields) — say
   "insufficient signal", do not invent a cost.
-- Permission denials and stop-hooks are claude-dominant; on codex/opencode treat
+- Permission denials and stop-hooks are Claude-dominant; on Codex/OMP treat
   their absence as missing signal, not as zero friction.

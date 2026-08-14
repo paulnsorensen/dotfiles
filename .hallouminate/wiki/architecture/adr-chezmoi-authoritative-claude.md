@@ -22,8 +22,8 @@ Related: [[architecture/agent-profile]], [[operations/sync-and-chezmoi]].
   pruning — rejected: the residue problem is structural (three writers, no
   single authority).
 - **Consequences:** One workflow for claude (edit registry → `dots sync`).
-  Codex/opencode/cursor/copilot live config stops refreshing until their
-  follow-up migrations land.
+  Other harness live configs stopped refreshing until their follow-up
+  migrations landed.
 
 ## ADR-002: Claude forks to its own registry — `chezmoi/.chezmoidata/claude.yaml` [status: accepted]
 

@@ -38,6 +38,24 @@ def test_parse_one_injects_source_dir(env):
     assert out["hooks"][0]["_source_dir"] == str(env.profiles / "srctest")
 
 
+@pytest.mark.parametrize("section", ("mcps", "agents", "skills", "commands", "hooks"))
+def test_parse_one_rejects_unknown_item_harness(section, env):
+    write_profile(
+        env.profiles,
+        "retired-harness",
+        f"name: retired-harness\n"
+        f"{section}:\n"
+        "  - name: retired-item\n"
+        "    harnesses: [opencode]\n",
+    )
+
+    with pytest.raises(
+        ParseError,
+        match=rf"{section} item 'retired-item' has unknown harness 'opencode'",
+    ):
+        parse_one(env.profiles / "retired-harness")
+
+
 def test_parse_one_missing_name_fails(env):
     write_profile(env.profiles, "nameless", "description: noname\n")
     with pytest.raises(ParseError, match="missing required field 'name'"):
@@ -202,9 +220,8 @@ def test_parse_manifest_permissions_dedup_sorted(env):
 
 def test_parse_manifest_permissions_deny_union_sorted(env):
     """``settings.permissions_deny`` unions+sorts across includes, mirroring
-    the allow channel. This is the installable deny channel (distinct from the
-    top-level isolated-launch ``permissions_deny``) that the opencode renderer
-    consumes."""
+    the allow channel. This is the installable deny channel, distinct from the
+    top-level isolated-launch ``permissions_deny``."""
     write_profile(
         env.profiles, "base", "name: base\nsettings:\n  permissions_deny: [x, y]\n"
     )

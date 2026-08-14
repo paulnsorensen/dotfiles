@@ -40,9 +40,26 @@ from agent_profile.compile_target_validation import (
 )
 from agent_profile.compiled_types import CompileTarget
 from agent_profile.env import load_layered_env
+from agent_profile.harnesses import validate_supported_harnesses
 from agent_profile.ingest import expand_registries
 
 _ITEM_SECTIONS = ("mcps", "agents", "skills", "commands", "hooks")
+
+
+def _validate_item_harnesses(
+    section: str,
+    item: dict[str, Any],
+    *,
+    manifest_path: Path,
+) -> None:
+    if "harnesses" not in item:
+        return
+    item_name = item.get("name") or "<unnamed>"
+    validate_supported_harnesses(
+        item["harnesses"],
+        context=f"ap_parse_one: {manifest_path} {section} item '{item_name}'",
+        error_type=ParseError,
+    )
 
 
 @dataclass
@@ -147,7 +164,8 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
             item_name = item.get("name") if isinstance(item, dict) else None
             if item_name:
                 _validate_name("item name", str(item_name), str(manifest_path))
-
+            if isinstance(item, dict):
+                _validate_item_harnesses(section, item, manifest_path=manifest_path)
     for section in ("agents", "commands"):
         for item in raw.get(section) or []:
             bp = item.get("body_path") if isinstance(item, dict) else None

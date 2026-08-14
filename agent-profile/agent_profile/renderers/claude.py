@@ -57,9 +57,8 @@ from agent_profile.renderers.base import (
     skills_for,
 )
 
-# The bash .mcp.json select() defaults membership to all three of
-# claude/codex/opencode; we keep claude's projection identical.
-_MCP_DEFAULT = ("claude", "codex", "opencode")
+# MCP entries without explicit membership target Claude and Codex.
+_MCP_DEFAULT = ("claude", "codex")
 # Hooks default to claude-only membership (matches the bash
 # `(.harnesses // ["claude"])`).
 _HOOK_DEFAULT = ("claude",)
@@ -246,8 +245,7 @@ class ClaudeRenderer:
                     data.pop("permissions", None)
 
         # Don't delete the file if other keys remain — they are user-owned.
-        # Only if we reduced it to {} do we unlink, matching opencode's
-        # "the profile owned it" rule.
+        # Only unlink it if the profile's removal reduced it to an empty object.
         if data == {}:
             settings.unlink()
             return
@@ -615,10 +613,9 @@ class ClaudeRenderer:
         canonical ``permissions.{allow,deny}`` into the live
         ``<base>/.claude/settings.json``, preserving siblings.
 
-        Mirrors :meth:`OpencodeRenderer.render` for ``opencode.json``: read,
-        own-our-keys, write. The file is shared (chezmoi-seeded user config
-        + per-profile additions) so it is intentionally NOT tracked in the
-        install manifest. :meth:`clean` un-merges by removing exactly the
+        Read the shared config, own our keys, and write it back. The file is
+        intentionally absent from the install manifest; :meth:`clean`
+        surgically removes the profile-owned entries.
         keys this method added.
 
         This runs only for isolated launches (gated ``if manifest.isolated``

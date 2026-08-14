@@ -2,7 +2,7 @@
 
 # target_param: {KEYWORD}     (a topic substring; '%' to scan broadly)
 
-# harness: respects harness=<all|claude|codex|opencode>
+# harness: respects harness=<all|claude|codex|omp>
 
 # owner: prompt-analytics
 

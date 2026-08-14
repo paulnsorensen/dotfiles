@@ -204,7 +204,7 @@ def test_selective_reinstall_keeps_other_harness_files(env, capsys, stub_rendere
         "name: multi\n"
         "agents:\n  - name: a\n    body_path: agents/a.md\n"
         "mcps:\n  - name: omni\n    command: /bin/true\n"
-        "    harnesses: [claude, codex, opencode, cursor, copilot]\n",
+        "    harnesses: [claude, codex, cursor, copilot]\n",
         {"agents/a.md": "body\n"},
     )
     run(["install", "multi", "--target", str(env.target)])
@@ -218,27 +218,27 @@ def test_selective_reinstall_keeps_other_harness_files(env, capsys, stub_rendere
 
 
 def test_uninstall_harness_subset_still_runs_all_cleaners(env, capsys, stub_renderers):
-    # MCP scoped to opencode -> opencode merged file written. Uninstall with
-    # --harness claude must still run opencode_clean (all cleaners run).
+    # MCP scoped to Cursor -> its merged file is written. Uninstall with
+    # --harness claude must still run every cleaner.
     write_profile(
         env.profiles,
         "multi",
         "name: multi\n"
         "agents:\n  - name: a\n    body_path: agents/a.md\n"
         "mcps:\n  - name: omni\n    command: /bin/true\n"
-        "    harnesses: [claude, codex, opencode, cursor, copilot]\n",
+        "    harnesses: [claude, codex, cursor, copilot]\n",
         {"agents/a.md": "body\n"},
     )
     run(["install", "multi", "--target", str(env.target)])
     capsys.readouterr()
-    opencode_merged = env.target / "opencode.json"
-    assert opencode_merged.is_file()
-    assert "omni" in json.loads(opencode_merged.read_text())["mcpServers"]
+    cursor_merged = env.target / "cursor.json"
+    assert cursor_merged.is_file()
+    assert "omni" in json.loads(cursor_merged.read_text())["mcpServers"]
 
     run(["uninstall", "multi", "--harness", "claude", "--target", str(env.target)])
     capsys.readouterr()
-    # opencode_clean evicted omni; the stub removes the now-empty file.
-    assert not opencode_merged.exists()
+    # Cursor cleanup evicts omni; the stub removes the now-empty file.
+    assert not cursor_merged.exists()
 
 
 def test_unknown_harness_rejected_before_any_render(env, capsys, stub_renderers):

@@ -18,9 +18,8 @@ Install/launch options:
   --profile-src <dir>           Extra search root for profile lookup
 
 Uninstall accepts --target and --profile-src. --harness is honored but
-limited: every cleaner still runs (shared/merged files like
-opencode.json, .mcp.json carry profile-authored entries across the
-harness boundary; a partial cleanup would leave dangling entries).
+limited: every cleaner still runs because shared files such as `.mcp.json`
+carry profile-authored entries across harness boundaries.
 
 Perms options:
   --local                       Write settings.local.json (gitignored); skip Codex

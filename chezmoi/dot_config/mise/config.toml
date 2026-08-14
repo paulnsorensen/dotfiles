@@ -64,8 +64,7 @@
 "aqua:duckdb/duckdb" = "v1.5.5"
 "aqua:chmln/sd" = "v1.1.0"
 "aqua:charmbracelet/vhs" = "v0.11.0"
-"aqua:anomalyco/opencode" = "v1.18.14"
-"aqua:charmbracelet/crush" = "v0.88.0"
+
 "aqua:mozilla/sccache" = "v0.17.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "cargo-nextest-0.9.140"
 "aqua:protocolbuffers/protobuf/protoc" = "v35.1"
