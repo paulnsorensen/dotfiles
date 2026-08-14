@@ -146,10 +146,10 @@ omp:
   models:
     providers: {}
   # Native OMP plugin installs — reconciled by sync_omp_plugins (.sync-lib.sh)
-  # on every dots sync: marketplace add + plugin install for entries here,
-  # uninstall/remove for managed entries no longer listed. npm-installed omp
-  # plugins are NOT managed here. Plugin-owned MCPs must NOT also appear in
-  # dot_omp/private_agent/mcp.json (dual server / plugin:server namespaces).
+  # on every dots sync. Marketplace entries are exact-owned. Pinned npm
+  # entries are installed or upgraded while unrelated npm plugins survive.
+  # Plugin-owned MCPs must NOT also appear in dot_omp/private_agent/mcp.json
+  # (dual server / plugin:server namespaces).
   plugins:
     milknado:
       marketplace: milknado
@@ -157,6 +157,9 @@ omp:
     hallouminate:
       marketplace: hallouminate
       source: paulnsorensen/hallouminate
+  npmPlugins:
+    # renovate: datasource=npm depName=@sysid/pi-vim
+    "@sysid/pi-vim": 1.0.3
   # Local LLM stack — LiteLLM proxy front (~/local-llm), OpenAI-compatible.
   # Keyless: the proxy sets no master_key, so no Authorization header is sent.
   # contextWindow per model matches the backend's launched --ctx-size in

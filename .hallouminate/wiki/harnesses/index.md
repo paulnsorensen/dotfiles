@@ -42,3 +42,4 @@ Notes:
 | Skills | `skills/` + `skills/_registry.yaml` | rendered/copied for all active harnesses; OMP's exact tree is assembled before chezmoi applies |
 | System prompt | `agents/preamble.md` + native addendum | Claude system-prompt file · Codex `model_instructions_file` · OMP launcher addendum |
 | Global instructions | `agents/AGENTS.md` | `~/.claude/CLAUDE.md` · `~/.codex/AGENTS.md` |
+| Modal prompt input | `omp.yaml` `npmPlugins` | OMP `@sysid/pi-vim` |
