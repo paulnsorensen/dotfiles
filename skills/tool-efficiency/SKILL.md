@@ -25,7 +25,7 @@ with the shared confidence × severity model, it does not just report numbers.
 
 A target: a tool name (`Bash`, `Read`, `Edit`), a command prefix (`git`,
 `cargo`), or an MCP server (`serena`, `tilth`). If none is given, ask.
-Optionally accept a harness filter (`all`, `claude`, `codex`, or `omp`).
+Optionally accept a harness filter (`all`, `claude`, `codex`, `omp`, or `pi`).
 
 ## Owned domains
 
