@@ -27,6 +27,15 @@ APPROVAL_TTL_ENV = "AGENT_SECRET_BROKER_APPROVAL_TTL"
 MAX_LINE = 1 << 20
 READ_BUFFER = 64 << 10
 RESPONSE_DRAIN_TIMEOUT = 30
+_ALLOWED_METHODS = frozenset({"initialize", "notifications/initialized", "ping", "tools/list", "tools/call"})
+_CAPABILITY_METHOD_PREFIXES = {
+    "tools": "tools/",
+    "resources": "resources/",
+    "prompts": "prompts/",
+    "logging": "logging/",
+    "completions": "completion/",
+}
+
 # macOS getsockopt(SOL_LOCAL, LOCAL_PEERCRED) reads struct xucred (sys/ucred.h);
 # CPython's socket module exposes neither the constants nor a getpeereid() method.
 _DARWIN_SOL_LOCAL = 0
@@ -596,6 +605,8 @@ class ClientSession:
                 method = self._methods.pop(_id_key(message["id"]), None)
             if method == "tools/list":
                 self._filter_tools(message)
+            elif method == "initialize":
+                self._filter_capabilities(message)
         if "result" in message and isinstance(message["result"], dict):
             self._filter_tools(message)
         self.send(message)
@@ -614,6 +625,17 @@ class ClientSession:
             for tool in result["tools"]
             if isinstance(tool, dict) and isinstance(tool.get("name"), str) and tool["name"] in allowed
         ]
+
+    def _filter_capabilities(self, message: dict[str, Any]) -> None:
+        result = message.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("capabilities"), dict):
+            return
+        capabilities = result["capabilities"]
+        result["capabilities"] = {
+            key: value
+            for key, value in capabilities.items()
+            if any(method.startswith(_CAPABILITY_METHOD_PREFIXES.get(key, "\0")) for method in _ALLOWED_METHODS)
+        }
 
     def _handle_tool_call(self, request: dict[str, Any], raw: bytes) -> None:
         params = request.get("params")
@@ -670,11 +692,20 @@ class ClientSession:
             self.send_error(request if isinstance(request, dict) else None, -32600, "invalid request")
             return
         method = request.get("method")
-        if method == "tools/call":
-            self._handle_tool_call(request, raw)
+        if method is None:
+            if "id" in request and ("result" in request or "error" in request):
+                self.forward(request, raw)
+            else:
+                self.send_error(request, -32600, "invalid request")
             return
         if not isinstance(method, str):
-            self.forward(request, raw)
+            self.send_error(request, -32600, "invalid request")
+            return
+        if method not in _ALLOWED_METHODS:
+            self.send_error(request, -32601, "method not allowed")
+            return
+        if method == "tools/call":
+            self._handle_tool_call(request, raw)
             return
         self.forward(request, raw)
 
