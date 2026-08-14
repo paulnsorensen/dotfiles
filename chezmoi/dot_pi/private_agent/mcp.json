@@ -8,6 +8,7 @@
       "command": "tilth",
       "args": ["--mcp", "--edit"],
       "directTools": ["tilth_search", "tilth_read", "tilth_write"],
+      "approveTools": ["tilth_write"],
       "toolPrefix": "none"
     },
     "context7": {

@@ -116,7 +116,7 @@ SH
     [ "${lines[3]}" = "gpt-5" ]
 }
 
-@test "pi wrapper appends the managed upstream prompt text" {
+@test "pi wrapper leaves args untouched (Pi's native auto-load owns the addendum)" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     local fakebin="$TEST_HOME/bin"
     mkdir -p "$fakebin" "$TEST_HOME/.pi/agent"
@@ -130,10 +130,9 @@ SH
     run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; pi --model gpt-5"
 
     assert_success
-    [ "${lines[0]}" = "--append-system-prompt" ]
-    [ "${lines[1]}" = "pi addendum" ]
-    [ "${lines[2]}" = "--model" ]
-    [ "${lines[3]}" = "gpt-5" ]
+    [ "${lines[0]}" = "--model" ]
+    [ "${lines[1]}" = "gpt-5" ]
+    [ "${#lines[@]}" -eq 2 ]
 }
 
 @test "pi wrapper leaves package-management subcommands first" {

@@ -898,6 +898,13 @@ sync_pi_chezmoi_sources() {
         "$staging/extensions/" || return 1
     cp "$omp_agent/themes/chocolate-donut.json" "$staging/themes/" || return 1
 
+    # Pi-only extensions (not shared with OMP) live in a stable, non-clobbered
+    # source dir so they survive the rm -rf/mv swap below every sync run.
+    local pi_own_extensions="$src/dot_pi/private_agent/extensions_src"
+    if [[ -d "$pi_own_extensions" ]]; then
+        cp "$pi_own_extensions"/*.ts "$staging/extensions/" || return 1
+    fi
+
     local tree
     for tree in exact_skills extensions themes; do
         if ! rm -rf "${src:?}/dot_pi/private_agent/$tree" \

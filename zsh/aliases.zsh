@@ -183,21 +183,11 @@ if command -v omp &> /dev/null; then
   }
 fi
 
-# Upstream Pi - separate native config with the managed prompt addendum.
+# Upstream Pi - native config; Pi auto-loads APPEND_SYSTEM.md from its
+# config dir itself, so the wrapper only needs to forward through.
 if command -v pi &> /dev/null; then
   pi() {
-    case "${1:-}" in
-      install|remove|uninstall|update|list|config|auth|--help|-h|--version|-v|--list-models)
-        command pi "$@"
-        return
-        ;;
-    esac
-    local addendum="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/APPEND_SYSTEM.md"
-    if [[ -f "$addendum" ]]; then
-      command pi --append-system-prompt "$(<"$addendum")" "$@"
-    else
-      command pi "$@"
-    fi
+    command pi "$@"
   }
 fi
 
