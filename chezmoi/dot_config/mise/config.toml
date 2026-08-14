@@ -43,7 +43,7 @@
 "aqua:sharkdp/fd" = "v10.4.2"
 "aqua:sharkdp/bat" = "v0.26.1"
 "aqua:charmbracelet/glow" = "v2.1.2"
-"aqua:ast-grep/ast-grep" = "0.45.0"
+"aqua:ast-grep/ast-grep" = "0.45.1"
 "aqua:dandavison/delta" = "0.19.2"
 "aqua:git-lfs/git-lfs" = "v3.7.1"
 "aqua:tmux/tmux-builds" = "v3.7b"
