@@ -367,12 +367,111 @@ for index in range(module.PENDING_CAP):
     store.create_or_get("write.item", {"index": index})
 try:
     store.create_or_get("write.item", {"index": module.PENDING_CAP})
-except RuntimeError as exc:
+except module.PendingStoreFull as exc:
     assert str(exc) == "pending store full"
 else:
     raise AssertionError("pending store accepted an entry beyond the cap")
 PY
     assert_success
+}
+
+@test "pending store rejects entries once retained bytes exceed the byte cap" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import sys
+from types import SimpleNamespace
+spec = importlib.util.spec_from_file_location("broker_under_test", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+store = module.PendingStore(SimpleNamespace(consumer="fixture"))
+chunk = "x" * (module.PENDING_BYTES_CAP // 4)
+accepted = 0
+try:
+    for index in range(module.PENDING_CAP):
+        store.create_or_get("write.item", {"index": index, "padding": chunk})
+        accepted += 1
+except module.PendingStoreFull as exc:
+    assert str(exc) == "pending store full"
+else:
+    raise AssertionError("pending store accepted unbounded retained bytes")
+assert accepted < module.PENDING_CAP, accepted
+PY
+    assert_success
+}
+
+@test "malformed upstream output does not reset the backoff circuit" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import io
+import pathlib
+import sys
+from types import SimpleNamespace
+spec = importlib.util.spec_from_file_location("broker_under_test", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+policy = SimpleNamespace(upstream=SimpleNamespace(), credential="secret")
+session = module.UpstreamSession(policy, lambda _line: False, pathlib.Path("/tmp"))
+session._restart_failures = 3
+session._restart_after = 999999999.0
+process = SimpleNamespace(stdout=io.BytesIO(b"not-json\n"))
+session._process = process
+session._read(process)
+assert session._restart_failures == 3, session._restart_failures
+assert session._restart_after == 999999999.0, session._restart_after
+PY
+    assert_success
+}
+
+@test "upstream EOF fails pending requests with a JSON-RPC error and logs a diagnostic" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import json
+import pathlib
+import sys
+import tempfile
+import threading
+from types import SimpleNamespace
+
+spec = importlib.util.spec_from_file_location("broker_under_test", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+root = pathlib.Path(tempfile.mkdtemp())
+script = root / "upstream.py"
+script.write_text("import sys; sys.stdin.readline()\n")
+
+policy = SimpleNamespace(
+    upstream=SimpleNamespace(argv=(sys.executable, str(script)), credential_env="TOKEN"),
+    credential="secret",
+)
+
+
+class Connection:
+    def __init__(self):
+        self.payloads = []
+        self.lock = threading.Lock()
+
+    def sendall(self, payload):
+        with self.lock:
+            self.payloads.append(payload)
+
+
+broker = SimpleNamespace(policy=policy, upstream_home=root)
+connection = Connection()
+session = module.ClientSession(broker, connection)
+assert session.forward({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+assert session._idle.wait(2), "upstream close was never observed"
+
+messages = [json.loads(payload) for payload in connection.payloads]
+assert messages == [
+    {"jsonrpc": "2.0", "id": 1, "error": {"code": -32010, "message": "upstream closed"}}
+], messages
+PY
+    assert_success
+    [[ "$output" == *"upstream closed with pending request"* ]]
 }
 
 @test "upstream session respawns once after a crashed process" {

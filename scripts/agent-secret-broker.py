@@ -11,11 +11,11 @@ import pathlib
 import pwd
 import secrets
 import selectors
+import signal
 import socket
 import stat
 import struct
 import subprocess
-import signal
 import sys
 import threading
 import time
@@ -31,6 +31,8 @@ RESPONSE_DRAIN_TIMEOUT = 30
 UPSTREAM_RESTART_BASE = 0.1
 UPSTREAM_RESTART_MAX = 1.0
 PENDING_CAP = 256
+PENDING_BYTES_CAP = 8 << 20  # bytes; bounds retained attacker-controlled arguments regardless of entry count
+UPSTREAM_WRITE_TIMEOUT = 5.0
 # macOS getsockopt(SOL_LOCAL, LOCAL_PEERCRED) reads struct xucred (sys/ucred.h);
 # CPython's socket module exposes neither the constants nor a getpeereid() method.
 _DARWIN_SOL_LOCAL = 0
@@ -40,6 +42,10 @@ _DARWIN_XUCRED_FORMAT = "=IIH2x16I"
 
 class ConfigError(Exception):
     """A policy or command-line boundary rejected an input."""
+
+
+class PendingStoreFull(Exception):
+    """The pending-approval store is at capacity by count or by retained bytes."""
 
 
 @dataclass(frozen=True)
@@ -339,9 +345,13 @@ class PendingStore:
             previous = self._by_key.get(key)
             if previous is not None and previous.state in {"pending", "approved"}:
                 return previous
-            active = sum(item.state in {"pending", "approved"} for item in self._by_nonce.values())
-            if active >= PENDING_CAP:
-                raise RuntimeError("pending store full")
+            active_items = [item for item in self._by_nonce.values() if item.state in {"pending", "approved"}]
+            if len(active_items) >= PENDING_CAP:
+                raise PendingStoreFull("pending store full")
+            size = len(canonical.encode("utf-8"))
+            active_bytes = sum(len(item.canonical_arguments.encode("utf-8")) for item in active_items)
+            if active_bytes + size > PENDING_BYTES_CAP:
+                raise PendingStoreFull("pending store full")
             nonce = secrets.token_urlsafe(24)
             expires_at = int(now) + APPROVAL_TTL
             item = PendingApproval(
@@ -469,16 +479,39 @@ def _drop_privileges(account: pwd.struct_passwd) -> None:
         _fail("service identity transition failed")
 
 
+def _write_upstream(process: subprocess.Popen[bytes], payload: bytes, timeout: float) -> None:
+    stdin = process.stdin
+    if stdin is None:
+        raise OSError("upstream stdin is closed")
+    outcome: dict[str, OSError] = {}
+
+    def _do_write() -> None:
+        try:
+            stdin.write(payload)
+            stdin.flush()
+        except OSError as exc:
+            outcome["error"] = exc
+
+    writer = threading.Thread(target=_do_write, daemon=True)
+    writer.start()
+    writer.join(timeout)
+    if writer.is_alive():
+        raise TimeoutError("upstream did not accept input")
+    if "error" in outcome:
+        raise outcome["error"]
+
 class UpstreamSession:
     def __init__(
         self,
         policy: BrokerPolicy,
-        on_line: Callable[[bytes], None],
+        on_line: Callable[[bytes], bool],
         upstream_home: pathlib.Path,
+        on_closed: Callable[[], None] | None = None,
     ):
         self._policy = policy
         self._on_line = on_line
         self._upstream_home = upstream_home
+        self._on_closed = on_closed
         self._process: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
         self._reader: threading.Thread | None = None
@@ -490,7 +523,7 @@ class UpstreamSession:
             for _attempt in range(2):
                 process = self._process
                 if process is None or process.poll() is not None:
-                    blocked = _attempt == 0 and time.monotonic() < self._restart_after
+                    blocked = time.monotonic() < self._restart_after
                     if process is not None:
                         self._process = None
                         try:
@@ -532,10 +565,9 @@ class UpstreamSession:
                         raise RuntimeError("upstream unavailable")
                     continue
                 try:
-                    process.stdin.write(payload.rstrip(b"\r\n") + b"\n")
-                    process.stdin.flush()
+                    _write_upstream(process, payload.rstrip(b"\r\n") + b"\n", UPSTREAM_WRITE_TIMEOUT)
                     return
-                except OSError:
+                except (OSError, TimeoutError):
                     self._process = None
                     self._mark_restart()
                     try:
@@ -545,7 +577,7 @@ class UpstreamSession:
             raise RuntimeError("upstream unavailable")
 
     def _mark_restart(self) -> None:
-        self._restart_failures += 1
+        self._restart_failures = min(self._restart_failures + 1, 32)
         delay = min(UPSTREAM_RESTART_BASE * (2 ** (self._restart_failures - 1)), UPSTREAM_RESTART_MAX)
         self._restart_after = time.monotonic() + delay
 
@@ -554,13 +586,17 @@ class UpstreamSession:
             return
         try:
             for line in process.stdout:
-                self._on_line(line)
-                with self._lock:
-                    if self._process is process:
-                        self._restart_failures = 0
-                        self._restart_after = 0.0
+                if self._on_line(line):
+                    with self._lock:
+                        if self._process is process:
+                            self._restart_failures = 0
+                            self._restart_after = 0.0
         except OSError:
-            return
+            pass
+        with self._lock:
+            current = self._process is process
+        if current and self._on_closed is not None:
+            self._on_closed()
 
     def close(self) -> None:
         with self._lock:
@@ -612,6 +648,7 @@ class ClientSession:
                 self.broker.policy,
                 self._upstream_line,
                 self.broker.upstream_home,
+                on_closed=self._upstream_closed,
             )
         method_key: str | None = None
         previous_method: str | None = None
@@ -638,15 +675,27 @@ class ClientSession:
             return False
         return True
 
-    def _upstream_line(self, line: bytes) -> None:
+    def _upstream_closed(self) -> None:
+        with self._state_lock:
+            pending = list(self._methods.items())
+            self._methods.clear()
+            self._idle.set()
+        for message_key, method in pending:
+            print(
+                f"agent-secret-broker: upstream closed with pending request {message_key} ({method})",
+                file=sys.stderr,
+            )
+            self.send_error({"id": json.loads(message_key)}, -32010, "upstream closed")
+
+    def _upstream_line(self, line: bytes) -> bool:
         try:
             message = json.loads(line.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             if self.broker.policy.credential.encode("utf-8") in line:
                 self.send_error(None, -32011, "upstream response rejected")
-            return
+            return False
         if not isinstance(message, dict):
-            return
+            return False
         has_id = "id" in message
         if has_id:
             with self._state_lock:
@@ -660,6 +709,7 @@ class ClientSession:
             with self._state_lock:
                 if not self._methods:
                     self._idle.set()
+        return True
 
     def _filter_tools(self, message: dict[str, Any]) -> None:
         result = message.get("result")
@@ -690,11 +740,9 @@ class ClientSession:
             return
         try:
             pending = self.broker.pending.create_or_get(tool, arguments)
-        except RuntimeError as exc:
-            if str(exc) == "pending store full":
-                self.send_error(request, -32005, "pending store full")
-                return
-            raise
+        except PendingStoreFull:
+            self.send_error(request, -32005, "pending store full")
+            return
         nonce = params.get("approval_nonce", params.get("_approval_nonce"))
         claim = self.broker.pending.claim(tool, arguments, nonce if isinstance(nonce, str) else None)
         if claim.status == "approved":
@@ -915,14 +963,14 @@ class Broker:
             try:
                 if path.is_socket():
                     path.unlink()
-            except OSError:
-                pass
+            except OSError as exc:
+                print(f"agent-secret-broker: failed to remove socket {path}: {exc}", file=sys.stderr)
 
     def run(self) -> int:
-        self.start()
         previous_term = signal.getsignal(signal.SIGTERM)
         signal.signal(signal.SIGTERM, lambda _signum, _frame: self._stop.set())
         try:
+            self.start()
             while not self._stop.wait(1):
                 pass
         except KeyboardInterrupt:
