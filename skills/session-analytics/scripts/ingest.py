@@ -244,8 +244,8 @@ def codex_normalize(path):
             }
 
 
-def omp_discover():
-    root = os.path.expanduser("~/.omp/agent/sessions")
+def _pi_family_discover(config_dir):
+    root = os.path.expanduser(config_dir)
     if not os.path.isdir(root):
         return []
     out = []
@@ -254,8 +254,16 @@ def omp_discover():
     return out
 
 
-def omp_normalize(path):
-    """oh-my-pi session JSONL -> canonical envelope.
+def omp_discover():
+    return _pi_family_discover("~/.omp/agent/sessions")
+
+
+def pi_discover():
+    return _pi_family_discover("~/.pi/agent/sessions")
+
+
+def _pi_family_normalize(path, harness):
+    """Pi-family session JSONL -> canonical envelope.
 
     The ``session`` header entry carries id + cwd, threaded onto every row.
     ``message`` entries: assistant ``toolCall`` blocks become tool_use blocks
@@ -306,7 +314,7 @@ def omp_normalize(path):
                 else:
                     blocks.append(block)
             yield {
-                "harness": "omp",
+                "harness": harness,
                 "type": "assistant",
                 "timestamp": ts,
                 "sessionId": session_id,
@@ -320,7 +328,7 @@ def omp_normalize(path):
                 if isinstance(b, dict) and b.get("type") == "text"
             )
             yield {
-                "harness": "omp",
+                "harness": harness,
                 "type": "user",
                 "timestamp": ts,
                 "sessionId": session_id,
@@ -338,13 +346,21 @@ def omp_normalize(path):
             }
         elif role == "user":
             yield {
-                "harness": "omp",
+                "harness": harness,
                 "type": "user",
                 "timestamp": ts,
                 "sessionId": session_id,
                 "cwd": cwd,
                 "message": {"content": msg.get("content")},
             }
+
+
+def omp_normalize(path):
+    return _pi_family_normalize(path, "omp")
+
+
+def pi_normalize(path):
+    return _pi_family_normalize(path, "pi")
 
 
 def cursor_discover():
@@ -373,6 +389,7 @@ ADAPTERS = [
     ("claude", claude_discover, claude_normalize),
     ("codex", codex_discover, codex_normalize),
     ("omp", omp_discover, omp_normalize),
+    ("pi", pi_discover, pi_normalize),
     ("cursor", cursor_discover, None),
     ("copilot", copilot_discover, None),
 ]

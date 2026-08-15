@@ -1,7 +1,8 @@
 # The global agents doc — what lives where and why
 
 `agents/AGENTS.md` is the single source for cross-project agent preferences.
-`dots sync` installs it as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`.
+`dots sync` installs it as `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and
+`~/.pi/agent/AGENTS.md`.
 `agents/RTK.md` deploys to `~/.claude/RTK.md` only because the rewrite hook is
 Claude-specific; the `@RTK.md` line is benign literal text in the other harnesses.
 
@@ -13,8 +14,9 @@ Codex's `model_instructions_file`; the agents doc loads as additional context.
 Duplicating routing guidance in both paid its token cost twice, so the preamble
 owns task-to-tool routing and the agents doc keeps stable cross-project rules.
 
-OMP uses its own native `~/.omp/agent/APPEND_SYSTEM.md`; its prompt contract is
-not forced through the Claude/Codex preamble installer.
+Pi loads the same global agents doc but uses its own native
+`~/.pi/agent/APPEND_SYSTEM.md`; OMP has a separate addendum as well. Their
+prompt contracts are not forced through the Claude/Codex preamble installer.
 
 Same review deduped RTK to one canonical doc (`agents/RTK.md`): the repo-root
 `RTK.md` and the `rtk init` block in the repo `CLAUDE.md` were deleted (the
@@ -54,14 +56,15 @@ Related: [[architecture/agents-dir]] · [[harnesses/index]] ·
 | This-repo Claude (+ RTK + root wrapper/doc) | 3,203 | 3,215 | 9,750 |
 | Nested `agent-profile/` Codex (+ path-scoped `AGENTS.md`) | 3,463 | 3,473 | 10,000 |
 | OMP addendum | 887 | 896 | 1,000 |
+| Pi addendum | — | — | 1,100 |
 
 The previous audit missed three repo-owned classes: `agent-profile/AGENTS.md`,
 selected profile prompts, and Copilot repo/path instructions. The active
 renderer paths are Claude's append-system file and Codex's
 `model_instructions_file`.[^2]
 
-Copilot has separate coding/review ceilings; OMP has an independent native
-addendum ceiling because it is not rendered by `ap`. Conductor's app-owned
+Copilot has separate coding/review ceilings; OMP and Pi have independent native
+addendum ceilings because neither is rendered by `ap`. Conductor's app-owned
 instructions remain outside this repo-owned manifest.[^3]
 
 The counts concatenate source text and exclude harness-native prompts, tool schemas, invoked skills, sub-agent bodies, user messages, and external personal/organization instructions.
@@ -109,9 +112,9 @@ The complete research report is retained in the durable cheese corpus.[^10]
 
 _Source: effective-global-instruction-stack research · Updated: 2026-07-28 · Supersedes: treating mechanical next-boundary ceilings as ideal target sizes_
 
-Sliced Bread has a harness-neutral source at `agents/reference/sliced-bread.md` and a normative live path at `~/.agents/reference/sliced-bread.md`. The agents-doc installer deploys that copy; Claude/Codex instructions and the OMP addendum name the same path.[^shared-reference]
+Sliced Bread has a harness-neutral source at `agents/reference/sliced-bread.md` and a normative live path at `~/.agents/reference/sliced-bread.md`. The agents-doc installer deploys that copy; Claude/Codex instructions and the OMP and Pi addenda name the same path.[^shared-reference]
 
 The global rules were consolidated from thirteen overlapping rules to five operational rules after their distinct requirements moved into the earlier behavior and coding-principle sections. The last-written thirteen-rule block remains verbatim at `archive/agents-rules.md`; the archive does not deploy.[^rules-archive]
 
-[^shared-reference]: `agents/reference/sliced-bread.md`; `chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl`; `agents/AGENTS.md`; `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md`
+[^shared-reference]: `agents/reference/sliced-bread.md`; `chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl`; `agents/AGENTS.md`; `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md`; `chezmoi/dot_pi/private_agent/APPEND_SYSTEM.md`
 [^rules-archive]: `agents/AGENTS.md:71-95`; `archive/agents-rules.md`; `archive/README.md`

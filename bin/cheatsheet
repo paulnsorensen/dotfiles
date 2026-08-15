@@ -138,6 +138,7 @@ print_cheatsheet() {
 
     hdr "AI agents"
     row "copilot"             "GitHub Copilot (allow/deny floor)"
+    row "pi [args]"           "Upstream Pi + managed native config"
     row "omp [args]"          "Oh My Pi + managed prompt addendum"
     row "ompt"                "Oh My Pi tight profile"
     row "vdv"                 "vaudeville (SLM enforcement)"

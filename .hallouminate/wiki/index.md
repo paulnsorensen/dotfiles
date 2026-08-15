@@ -29,7 +29,7 @@ relevant page rather than loading the whole reference into every session.
   registries, the four-target `ap` compiler, and chezmoi-managed native
   harnesses, including secret handling, config drift, and cross-harness guards.
 - [[harnesses/index]] — the supported agent harnesses (Claude Code, Codex,
-  Copilot, Cursor, OMP): official docs and repo wiring per capability.
+  Copilot, Cursor, OMP, Pi): official docs and repo wiring per capability.
 - [[operations/index]] — the operational plumbing: the sync + chezmoi deploy
   system, the opt-in local-LLM stack, and the local dev environment (git
   tooling, prek, plugins, skhd).

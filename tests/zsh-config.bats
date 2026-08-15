@@ -116,6 +116,44 @@ SH
     [ "${lines[3]}" = "gpt-5" ]
 }
 
+@test "pi wrapper leaves args untouched (Pi's native auto-load owns the addendum)" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fakebin="$TEST_HOME/bin"
+    mkdir -p "$fakebin" "$TEST_HOME/.pi/agent"
+    cat > "$fakebin/pi" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@"
+SH
+    chmod +x "$fakebin/pi"
+    printf 'pi addendum\n' > "$TEST_HOME/.pi/agent/APPEND_SYSTEM.md"
+
+    run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; pi --model gpt-5"
+
+    assert_success
+    [ "${lines[0]}" = "--model" ]
+    [ "${lines[1]}" = "gpt-5" ]
+    [ "${#lines[@]}" -eq 2 ]
+}
+
+@test "pi wrapper leaves package-management subcommands first" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fakebin="$TEST_HOME/bin"
+    mkdir -p "$fakebin" "$TEST_HOME/.pi/agent"
+    cat > "$fakebin/pi" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@"
+SH
+    chmod +x "$fakebin/pi"
+    printf 'pi addendum\n' > "$TEST_HOME/.pi/agent/APPEND_SYSTEM.md"
+
+    run zsh -c "PATH='$fakebin':\$PATH; HOME='$TEST_HOME'; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; pi update --extensions"
+
+    assert_success
+    [ "${lines[0]}" = "update" ]
+    [ "${lines[1]}" = "--extensions" ]
+    [ "${#lines[@]}" -eq 2 ]
+}
+
 @test "ompt wrapper appends the tight-profile system prompt, not the default" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     local fakebin="$TEST_HOME/bin"

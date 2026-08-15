@@ -17,9 +17,7 @@ One classifier, four harness adapters:
 | Cursor | `beforeShellExecution` | `cursor/plugins/local/cheese-grok/hooks/git-guard.sh` + `hooks.json` | exit 2 |
 | Copilot CLI | `preToolUse` (`bash\|shell`) | `chezmoi/private_dot_copilot/hooks/executable_git-guard.sh` + `git-guard.json.tmpl` | `{permissionDecision:"deny",…}` on stdout, exit 0 |
 
-The non-Claude adapters resolve the shared classifier through `$DOTFILES_DIR`.
-OMP currently receives no git-guard adapter; its extension registry must not be
-described as enforcing this classifier.
+The non-Claude adapters resolve the shared classifier through `$DOTFILES_DIR`. OMP and Pi currently receive no git-guard adapter; their extension registries must not be described as enforcing this classifier.
 
 ## Claude-only pre-tool guards
 

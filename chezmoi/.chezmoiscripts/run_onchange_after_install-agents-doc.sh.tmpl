@@ -14,18 +14,17 @@ SOURCE_DIR="{{ .chezmoi.sourceDir }}"
 DOTFILES_ROOT="$SOURCE_DIR/.."
 INSTALLER="$SOURCE_DIR/lib/install-agents-doc.sh"
 
-# Shared global preferences → every harness's instructions file
+# Shared global preferences → each harness that consumes the global agents doc
 "$INSTALLER" "$DOTFILES_ROOT/agents/AGENTS.md" \
     "$HOME/.claude/CLAUDE.md" \
-    "$HOME/.codex/AGENTS.md"
+    "$HOME/.codex/AGENTS.md" \
+    "$HOME/.pi/agent/AGENTS.md"
 
 # Shared architecture reference → harness-neutral location
 "$INSTALLER" "$DOTFILES_ROOT/agents/reference/sliced-bread.md" \
     "$HOME/.agents/reference/sliced-bread.md"
 
-# RTK is Claude-specific (the hook lives in the Claude harness). Don't push
-# the Claude-flavored RTK.md into ~/.codex/ — leave Codex users to write their
-# own RTK.md (or none). The @RTK.md import at the bottom of AGENTS.md resolves
-# for Claude and is benign literal text for Codex.
+# RTK is Claude-specific because its rewrite hook lives there. The `@RTK.md`
+# import remains benign literal text for Codex and Pi.
 "$INSTALLER" "$DOTFILES_ROOT/agents/RTK.md" \
     "$HOME/.claude/RTK.md"

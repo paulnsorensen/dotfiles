@@ -74,6 +74,10 @@ path = "chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
 max_tokens = 900
 
 [[source]]
+path = "chezmoi/dot_pi/private_agent/APPEND_SYSTEM.md"
+max_tokens = 1000
+
+[[source]]
 path = ".github/copilot-instructions.md"
 max_tokens = 800
 
@@ -122,6 +126,11 @@ max_tokens = 10000
 name = "omp"
 sources = ["chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"]
 max_tokens = 1000
+
+[[stack]]
+name = "pi"
+sources = ["chezmoi/dot_pi/private_agent/APPEND_SYSTEM.md"]
+max_tokens = 1100
 
 [[stack]]
 name = "copilot_coding_max"

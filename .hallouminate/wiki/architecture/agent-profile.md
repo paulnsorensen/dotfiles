@@ -136,7 +136,7 @@ Three names must agree (`claude.py:_LOCAL_MARKETPLACE`): the marketplace key (`l
 
 - Claude settings, payloads, and MCPs converge from `claude.yaml`, `dot_claude/`, and the manifest-tracked CLI reconcile.
 - Codex config and payloads converge from `codex.yaml` and `private_dot_codex/`; Cursor and Copilot use their dedicated chezmoi/plugin installers.
-- OMP is outside `ap`; its native registry and source tree are assembled directly before chezmoi applies.
+- OMP and Pi are outside `ap`; their native registries and source trees are assembled directly before chezmoi applies.
 - Manual `ap install` remains useful for explicit targets and generated artifacts. `ccp <name>` / `dots profile launch` still own Claude and Codex isolated launches; `ap copilot-flags` supports the Copilot wrapper.
 
 Sibling scripts that survive: `install-agent-profile` (warms the uv env for `ccp`), `install-prompts` + `install-agents-doc` (the non-`ap` agent content — preamble + AGENTS.md, see [[agents-dir]]).

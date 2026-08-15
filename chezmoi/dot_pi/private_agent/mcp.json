@@ -1,0 +1,35 @@
+{
+  "settings": {
+    "hostConfigDiscovery": "off",
+    "freezeDirectTools": true
+  },
+  "mcpServers": {
+    "tilth": {
+      "command": "tilth",
+      "args": ["--mcp", "--edit"],
+      "directTools": ["tilth_search", "tilth_read", "tilth_write"],
+      "approveTools": ["tilth_write"],
+      "toolPrefix": "none"
+    },
+    "context7": {
+      "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",
+      "args": ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
+    },
+    "tavily": {
+      "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",
+      "args": ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
+    },
+    "milknado": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/paulnsorensen/milknado@main",
+        "milknado-mcp"
+      ]
+    },
+    "hallouminate": {
+      "command": "hallouminate",
+      "args": ["serve"]
+    }
+  }
+}

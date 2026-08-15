@@ -8,6 +8,8 @@
 # The adapters under test:
 #   - claude   : ~/.claude/projects/**/*.jsonl              (assistant/user blocks)
 #   - codex    : ~/.codex/sessions/**/*.jsonl               (response_item payloads)
+#   - omp      : ~/.omp/agent/sessions/**/*.jsonl           (Pi-family messages)
+#   - pi       : ~/.pi/agent/sessions/**/*.jsonl            (Pi-family messages)
 #   - cursor   : state.vscdb  -> documented "no accessible logs" (best-effort)
 #   - copilot  : ~/.copilot   -> documented "no accessible logs" (best-effort)
 #
@@ -23,6 +25,7 @@ setup() {
     command -v duckdb  >/dev/null || skip "duckdb not installed"
     mkdir -p "$TEST_HOME/.claude/projects/proj"
     mkdir -p "$TEST_HOME/.codex/sessions/2026/05/30"
+    mkdir -p "$TEST_HOME/.pi/agent/sessions/2026/05/30"
 }
 
 teardown() { teardown_test_env; }
@@ -46,6 +49,15 @@ write_codex_fixture() {
 JSONL
 }
 
+# A minimal upstream Pi session: header + native toolCall + toolResult messages.
+write_pi_fixture() {
+    cat > "$TEST_HOME/.pi/agent/sessions/2026/05/30/session-pi.jsonl" <<'JSONL'
+{"type":"session","id":"p-1","timestamp":"2026-05-30T11:30:00Z","cwd":"/work/pi"}
+{"type":"message","id":"m-1","timestamp":"2026-05-30T11:30:02Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"call-p-1","name":"read","arguments":{"path":"README.md"}}]}}
+{"type":"message","id":"m-2","timestamp":"2026-05-30T11:30:03Z","message":{"role":"toolResult","toolCallId":"call-p-1","toolName":"read","content":[{"type":"text","text":"Pi"}],"isError":false}}
+JSONL
+}
+
 
 q() { duckdb "$DB" -json -c "$1"; }
 
@@ -65,6 +77,18 @@ q() { duckdb "$DB" -json -c "$1"; }
     assert_success
     run q "SELECT count(*) AS n FROM tool_uses WHERE harness='codex';"
     assert_output_contains '"n":1'
+}
+
+@test "ingest: upstream Pi adapter preserves native tool calls and harness identity" {
+    write_pi_fixture
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT tool_name, json_extract_string(input, '$.path') AS path FROM tool_uses WHERE harness='pi' AND tool_use_id='call-p-1';"
+    assert_output_contains '"tool_name":"read"'
+    assert_output_contains '"path":"README.md"'
+    run q "SELECT content, is_error FROM tool_results WHERE harness='pi' AND tool_use_id='call-p-1';"
+    assert_output_contains '"content":"Pi"'
+    assert_output_contains '"is_error":"false"'
 }
 
 

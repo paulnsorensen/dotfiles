@@ -1,0 +1,73 @@
+#!/bin/sh
+# Author ~/.pi/agent/settings.json from .chezmoidata/pi.yaml. The registry owns
+# the whole settings document; only Pi's changelog marker is machine state.
+
+set -eu
+
+REG="${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/.chezmoidata/pi.yaml"
+live=$(cat)
+
+for tool in yq jq; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "modify_settings.json: $tool missing — Pi settings not enforced this sync" >&2
+        printf '%s' "$live"
+        exit 0
+    fi
+done
+
+if [ ! -f "$REG" ]; then
+    echo "modify_settings.json: registry missing: $REG" >&2
+    exit 1
+fi
+
+desired=$(yq -o=json '.pi.settings' "$REG" | jq '.')
+if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_settings.json: registry .pi.settings is missing or not a map" >&2
+    echo "  fix the pi.settings subtree, then re-run dots sync:" >&2
+    echo "  $REG" >&2
+    exit 1
+fi
+
+if [ -z "$live" ]; then
+    printf '%s\n' "$desired"
+    exit 0
+fi
+
+live_json=$(printf '%s' "$live" | jq '.' 2>/dev/null) || live_json=
+if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_settings.json: live ~/.pi/agent/settings.json is not a JSON object" >&2
+    echo "  Fix or remove it, then re-run dots sync." >&2
+    exit 1
+fi
+
+desired=$(printf '%s' "$live_json" | jq --argjson desired "$desired" '
+    if has("lastChangelogVersion")
+    then $desired + {lastChangelogVersion: .lastChangelogVersion}
+    else $desired
+    end
+')
+
+unknown=$(
+    printf '%s' "$live_json" | jq -r --argjson desired "$desired" '
+        def sig: [ .[] | strings ];
+        ([ $desired | paths | sig ] | unique) as $known
+        | [ paths | sig ]
+        | map(select(. as $path | ($known | any(. == $path)) | not))
+        | unique
+        | map(join("."))
+        | .[]
+    '
+)
+
+if [ -n "$unknown" ]; then
+    {
+        echo "Pi settings.json has key-path(s) the repo does not know about:"
+        printf '%s\n' "$unknown" | sed 's/^/  + /'
+        echo
+        echo "Pi likely introduced these. Fold each into the registry, then re-run dots sync:"
+        echo "  $REG"
+    } >&2
+    exit 1
+fi
+
+printf '%s\n' "$desired"

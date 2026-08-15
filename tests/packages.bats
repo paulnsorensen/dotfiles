@@ -896,6 +896,51 @@ YAML
     [[ ! -f "$CURL_LOG" ]]
 }
 
+@test "sync heals a missing pinned npm package on a cache hit" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.84.1", flags: ["--ignore-scripts"] }
+YAML
+    run_sync
+    assert_success
+    rm -f "$NPM_LOG" "$BREW_LOG" "$MISE_LOG" "$CURL_LOG" "$SH_LOG"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "unchanged (cached), syncing mise"
+
+    grep -q "install -g --ignore-scripts @earendil-works/pi-coding-agent@0.84.1" "$NPM_LOG"
+}
+
+@test "sync leaves an already-installed pinned npm package untouched on a cache hit" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.84.1", flags: ["--ignore-scripts"] }
+YAML
+    run_sync
+    assert_success
+    rm -f "$NPM_LOG" "$BREW_LOG" "$MISE_LOG" "$CURL_LOG" "$SH_LOG"
+
+    # Simulate the package already being present so the heal short-circuits.
+    rm -f "$MOCK_BIN/npm"
+    cat > "$MOCK_BIN/npm" << 'MOCKNPM'
+#!/bin/bash
+echo "npm $*" >> "$NPM_LOG"
+case "$1" in
+    ls) echo '{"dependencies":{"@earendil-works/pi-coding-agent":{}}}' ;;
+    outdated) echo '{}' ;;
+esac
+exit 0
+MOCKNPM
+    chmod +x "$MOCK_BIN/npm"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "unchanged (cached), syncing mise"
+
+    ! grep -q "npm install" "$NPM_LOG"
+}
+
 @test "sync cache restores every configured mise package" {
     write_test_yaml
     run_sync
