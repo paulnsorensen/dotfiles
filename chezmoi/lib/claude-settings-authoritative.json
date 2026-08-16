@@ -89,5 +89,6 @@
       "Fonduing"
     ]
   },
-  "skipWorkflowUsageWarning": true
+  "skipWorkflowUsageWarning": true,
+  "autoMemoryEnabled": false
 }

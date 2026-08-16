@@ -94,4 +94,8 @@ Before making a negative or absence claim, state the exact scope checked, identi
 
 When I point to contrary evidence, reopen that exact source and re-derive the conclusion. Correct errors plainly; don't defend the prior answer or cite your own earlier writing as evidence.
 
+### Rule 6 — Route Durable Project Knowledge to the Wiki
+
+When a repo has a `.hallouminate/wiki/`, record durable project knowledge (architecture, gotchas, decisions) there via `add_markdown` — versioned and shared — not in a machine-local agent memory store.
+
 @RTK.md
