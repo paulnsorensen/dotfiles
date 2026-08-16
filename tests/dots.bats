@@ -142,6 +142,71 @@ STUB
     assert_output_contains "Profiling shell startup"
 }
 
+stub_broker_install_root() {
+    local root="$1"
+    mkdir -p "$root"
+    cp "$DOTFILES_DIR/bin/agent-secret-broker" "$root/agent-secret-broker"
+    cp "$DOTFILES_DIR/bin/agent-secret-proxy" "$root/agent-secret-proxy"
+    cp "$DOTFILES_DIR/bin/agent-secretctl" "$root/agent-secretctl"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-python.sh" "$root/agent-secret-python.sh"
+    cp "$DOTFILES_DIR/scripts/agent-secret-broker.py" "$root/agent-secret-broker.py"
+}
+
+@test "dots doctor reports stale installed broker assets" {
+    local root="$TEST_HOME/agent-secret-libexec" fake_bin="$TEST_HOME/fake-bin"
+    stub_broker_install_root "$root"
+    mkdir -p "$fake_bin"
+    printf '#!/bin/sh\nexit 0\n' > "$fake_bin/chezmoi"
+    printf '#!/bin/sh\nexit 0\n' > "$fake_bin/prek"
+    chmod +x "$fake_bin/chezmoi" "$fake_bin/prek"
+
+    PATH="$fake_bin:$PATH" AGENT_SECRET_INSTALL_ROOT="$root" run dots doctor
+    assert_success
+    assert_output_contains "Broker assets match the source"
+    local baseline_issues
+    baseline_issues=$(printf '%s\n' "$output" | grep -oE 'Found [0-9]+' | grep -oE '[0-9]+' || true)
+    baseline_issues="${baseline_issues:-0}"
+
+    printf '\n# stale fixture\n' >> "$root/agent-secret-broker.py"
+
+    PATH="$fake_bin:$PATH" AGENT_SECRET_INSTALL_ROOT="$root" run dots doctor
+    assert_success
+    assert_output_contains "Broker assets: stale"
+    assert_output_contains "agent-secret-broker.py"
+    local stale_issues
+    stale_issues=$(printf '%s\n' "$output" | grep -oE 'Found [0-9]+' | grep -oE '[0-9]+' || true)
+    stale_issues="${stale_issues:-0}"
+
+    [[ "$stale_issues" -eq $((baseline_issues + 1)) ]] || {
+        echo "Expected stale-broker issue count to be baseline+1 (baseline=$baseline_issues, stale=$stale_issues)" >&2
+        return 1
+    }
+}
+
+@test "dots sync warns when installed broker assets are stale" {
+    local stub_dir="$TEST_HOME/stale-sync-dotfiles" root="$TEST_HOME/agent-secret-libexec"
+    mkdir -p "$stub_dir/bin/lib" "$stub_dir/scripts" "$stub_dir/chezmoi/lib" "$stub_dir/skills"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-staleness.sh" "$stub_dir/bin/lib/agent-secret-staleness.sh"
+    cp "$DOTFILES_DIR/bin/dots" "$stub_dir/bin/dots"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-assets.sh" "$stub_dir/bin/lib/agent-secret-assets.sh"
+    cp "$DOTFILES_DIR/bin/agent-secret-broker" "$stub_dir/bin/agent-secret-broker"
+    cp "$DOTFILES_DIR/bin/agent-secret-proxy" "$stub_dir/bin/agent-secret-proxy"
+    cp "$DOTFILES_DIR/bin/agent-secretctl" "$stub_dir/bin/agent-secretctl"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-python.sh" "$stub_dir/bin/lib/agent-secret-python.sh"
+    cp "$DOTFILES_DIR/scripts/agent-secret-broker.py" "$stub_dir/scripts/agent-secret-broker.py"
+    printf '#!/bin/sh\nexit 0\n' > "$stub_dir/.sync"
+    printf '#!/bin/sh\nexit 0\n' > "$stub_dir/chezmoi/lib/install-external.sh"
+    chmod +x "$stub_dir/.sync" "$stub_dir/chezmoi/lib/install-external.sh"
+    stub_broker_install_root "$root"
+    printf '\n# stale fixture\n' >> "$root/agent-secret-broker.py"
+
+    DOTFILES_DIR="$stub_dir" AGENT_SECRET_INSTALL_ROOT="$root" run "$stub_dir/bin/dots" sync
+
+    assert_success
+    assert_output_contains "agent-secret broker deployment is stale"
+    assert_output_contains "bin/vault-provision"
+}
+
 @test "dots handles unknown commands gracefully" {
     run dots nonexistent
     assert_failure
@@ -157,6 +222,56 @@ STUB
     DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" u 2>&1
     assert_success
     assert_output_contains "Updating"
+}
+
+# Stub a real git origin + clone wired for `dots update`: the clone tracks
+# origin, and a second commit lands on origin after cloning so `dots update`
+# has something to pull before it runs `do_sync` (and the broker check within).
+stub_update_dotfiles() {
+    local origin_dir="$1" stub_dir="$2"
+    mkdir -p "$origin_dir/bin/lib" "$origin_dir/chezmoi/lib" "$origin_dir/skills" "$origin_dir/scripts"
+    cp "$DOTFILES_DIR/bin/dots" "$origin_dir/bin/dots"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-staleness.sh" "$origin_dir/bin/lib/agent-secret-staleness.sh"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-assets.sh" "$origin_dir/bin/lib/agent-secret-assets.sh"
+    cp "$DOTFILES_DIR/bin/agent-secret-broker" "$origin_dir/bin/agent-secret-broker"
+    cp "$DOTFILES_DIR/bin/agent-secret-proxy" "$origin_dir/bin/agent-secret-proxy"
+    cp "$DOTFILES_DIR/bin/agent-secretctl" "$origin_dir/bin/agent-secretctl"
+    cp "$DOTFILES_DIR/bin/lib/agent-secret-python.sh" "$origin_dir/bin/lib/agent-secret-python.sh"
+    cp "$DOTFILES_DIR/scripts/agent-secret-broker.py" "$origin_dir/scripts/agent-secret-broker.py"
+    : > "$origin_dir/skills/_registry.yaml"
+    printf '#!/bin/bash\nexit 0\n' > "$origin_dir/chezmoi/lib/install-external.sh"
+    printf '#!/bin/bash\necho "stub-dotsync args=$*"\n' > "$origin_dir/.sync"
+    chmod +x "$origin_dir/chezmoi/lib/install-external.sh" "$origin_dir/.sync"
+    (
+        cd "$origin_dir" || exit 1
+        git init --quiet
+        git config user.email "test@example.com"
+        git config user.name "Test User"
+        git add -A
+        git commit -m "Initial commit" --quiet
+    )
+    git clone --quiet "$origin_dir" "$stub_dir"
+    (
+        cd "$origin_dir" || exit 1
+        printf '#!/bin/bash\necho "stub-dotsync args=$*"\n# second commit\n' > .sync
+        git add -A
+        git commit -m "Second commit" --quiet
+    )
+}
+
+@test "dots update runs the broker staleness check after pulling" {
+    local origin_dir="$TEST_HOME/update-origin" stub_dir="$TEST_HOME/update-dotfiles"
+    local root="$TEST_HOME/agent-secret-libexec"
+    stub_update_dotfiles "$origin_dir" "$stub_dir"
+    stub_broker_install_root "$root"
+    printf '\n# stale fixture\n' >> "$root/agent-secret-broker.py"
+
+    DOTFILES_DIR="$stub_dir" AGENT_SECRET_INSTALL_ROOT="$root" run "$stub_dir/bin/dots" update
+
+    assert_success
+    assert_output_contains "stub-dotsync args="
+    assert_output_contains "agent-secret broker deployment is stale"
+    assert_output_contains "bin/vault-provision"
 }
 
 @test "dots sync shorthand works" {
