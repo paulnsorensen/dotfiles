@@ -12,6 +12,7 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 
 - [[subagent-dispatch-analytics]] — measured behaviour of the phase agents across 578 real runs: dispatch size (not detail) drives the coder's 37% out-of-context rate, line anchors don't rescue an oversized dispatch, ~40% of the coder's budget goes to pre-write exploration, and the tool-reroute hook catches under 8% of the shell searches it targets. Query pack in `references/subagent-runs.md`.
 
+- [[mise-manifest-precedence]] — why the live `~/.config/mise/config.toml` outranking any `--source` manifest can deadlock `dots sync` on a pin bump (no re-run escapes it — the fix is landing the manifest before convergence reads it), plus the sibling omp `ETXTBSY` staging fix and the `gh`-token mise-GitHub-auth fix from the same investigation (PR #677).
 - [[omp-config-shape-drift]] — unknown-key gate tripping on nested `dev.autoqa.*` means a stale per-machine config serialization: normalize with an `omp config set` re-save; never fold the nested shape into the shared registry (the #487 flip-flop).
 - [[omp-fanout-worker-models]] — OMP fan-out guardrails and evidence-dated worker-model cost research: separate parent reasoning from cheap worker roles, bound task fan-out, and treat speed rankings as provisional until measured locally.
 

@@ -51,3 +51,6 @@
 2026-08-09 · bitwarden-runbook-20260809 · merged · architecture/mcp-secret-handling.md · Linked the provider-side Bitwarden runbook from the broker architecture page.
 2026-08-09 · bitwarden-runbook-20260809 · merged · index.md, operations/index.md · Registered the sources section and the Bitwarden runbook.
 2026-08-09 · bitwarden-runbook-20260809 · conflict-flagged · sources/bws-2-1-0-output-rendering.md · Corrected the superseded claim that the fetch path uses `-o json` with `jq`: b09e39c ships `bws secret list -o env` with matched-quote stripping, so multiline values remain unsupported and JSON is recorded as the fix if that need returns.
+
+2026-08-16 · wiki-harvest-dotfiles-20260816 · new-page · operations/mise-manifest-precedence.md · Captured the mise config-precedence sync deadlock from PR #677 (live config outranks `--source` manifest, no re-run escapes it, fix is manifest-before-convergence ordering) plus the sibling omp ETXTBSY staging fix and the `gh auth token` mise-GitHub-auth fix from the same investigation; the PR description flagged this as wiki-worthy but out of scope for that PR.
+2026-08-16 · wiki-harvest-dotfiles-20260816 · merged · operations/sync-and-chezmoi.md, operations/index.md · Linked the new mise-manifest-precedence gotcha from the phase-ordering section and the operations index.
