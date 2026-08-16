@@ -54,6 +54,25 @@ globs = ["**/*.md"]
 exclude = ["**/.git/**"]
 
 {{ end -}}
+{{ if stat (joinPath .chezmoi.homeDir "Dev" "reference" "godot-docs") -}}
+# Godot engine manual (godotengine/godot-docs), shallow clone pinned to branch
+# 4.7 to match tdbr's Godot version — update with `git pull --ff-only`, bump
+# the branch on engine upgrades. Lives outside any repo (flat corpus, not a
+# tdbr submodule): corpora are a machine-level concern, and a submodule would
+# tax every tdbr checkout/worktree with ~30 MB of third-party rst. classes/
+# (the generated API reference, 2/3 of files) is excluded — Context7 and the
+# in-editor help cover API lookups; the hand-written manual is where grounding
+# value lives. NOTE: the format registry has no rst handler yet (format.rs
+# format_from_extension), so this corpus indexes zero chunks until that patch
+# lands — unsupported files are skipped per-file, not fatal; only a missing
+# corpus path aborts the run (hallouminate#101), hence the stat guard.
+[[corpus]]
+name = "godot-docs"
+paths = ["~/Dev/reference/godot-docs"]
+globs = ["**/*.rst"]
+exclude = ["**/.git/**", "**/classes/**"]
+
+{{ end -}}
 # Top-level embeddings default for all repos (per-repo config can override).
 # snowflake-arctic-embed-s: 384-dim, English, retrieval-tuned. Full precision
 # (quantized=false) — corpora are small, so keep max quality.
