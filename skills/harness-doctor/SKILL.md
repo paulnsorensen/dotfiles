@@ -233,6 +233,17 @@ future doctor run would otherwise re-derive, persist it via `add_markdown`
 After writing, the file reindexes automatically; if you edited via a plain file
 write instead, run `hallouminate index`.
 
+### 7b. Misplaced project knowledge (wiki repos only)
+
+Auto-memory is disabled globally (`autoMemoryEnabled: false`, issue #717), so a
+repo with a `.hallouminate/wiki/` should hold no project-scoped agent memory.
+When `.hallouminate/wiki/` exists, scan `~/.claude/projects/<slug>/memory/` for
+files whose frontmatter declares `type: project` and list each under **Needs
+your call**, recommending migration into the wiki (`/wiki-curator` /
+`add_markdown`). Do **not** open a gh issue (the content is not a repo-source
+bug) and do **not** auto-delete (that would destroy the only copy before it is
+migrated).
+
 ### 8. Report
 
 Emit a compact summary grouped by class:
