@@ -22,7 +22,7 @@ mcps:
   - name: playwright
     command: npx
     # renovate: datasource=npm depName=@playwright/mcp
-    args: ["-y", "@playwright/mcp@0.0.78"]
+    args: ["-y", "@playwright/mcp@0.0.79"]
   - name: tilth
     command: tilth
     args: ["--mcp", "--edit"]
