@@ -15,4 +15,4 @@ permissions_allow:
 mcps:
   - name: tilth
     command: tilth
-    args: ["--mcp", "--edit"]
+    args: ["--mcp", "--edit", "--search-surface", "both"]
