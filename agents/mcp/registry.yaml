@@ -30,9 +30,9 @@ mcps:
 
   tilth:
     command: tilth
-    args: ["--mcp", "--edit"]
+    args: ["--mcp", "--edit", "--search-surface", "both"]
     scope: user
-    description: AST-aware code search/read/edit (Tree-sitter); backs cheez-* skills when cheese-flow is unavailable
+    description: AST-aware code search/read/edit (Tree-sitter); backs cheez-* skills when cheese-flow is unavailable. --search-surface both exposes the search-v2 trial engine (tilth_search_v2) alongside the v1 tools (tilth PR #193).
     gate_unless: CHEESE_FLOW
 
   # hallouminate (per-repo markdown wiki) migrated to agents/plugins/registry.yaml
