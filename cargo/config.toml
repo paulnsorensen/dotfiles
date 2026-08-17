@@ -10,3 +10,11 @@ rustc-wrapper = "sccache"
 # Linker: leave at default. Apple's ld (Xcode 15+, currently ld-1267) is the
 # fast parallel rewrite and beats lld for Mach-O on Apple Silicon. Don't add
 # `-fuse-ld=lld` here unless benchmarks on this machine prove otherwise.
+
+# Linux (this box): mold via clang cuts link time and peak link memory — the
+# latter matters because parallel agent gates were getting OOM-reaped under
+# earlyoom. The macOS guidance above still holds for the default (Apple
+# Silicon) target, which is left untouched. Validated with mold 2.42 + clang.
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]

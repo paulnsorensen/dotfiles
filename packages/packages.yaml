@@ -45,6 +45,8 @@ packages:
 
   # Linux-only
   - xclip: { platform: linux }
+  - mold: { platform: linux }                 # fast linker for target.x86_64-unknown-linux-gnu (cargo/config.toml)
+  - llvm: { platform: linux }                 # provides clang, required by cargo/config.toml's mold linker config
 
   # Dev (DOTFILES_DEV=true)
   - pyenv: { dev: true }
