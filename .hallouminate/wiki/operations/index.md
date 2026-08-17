@@ -27,6 +27,9 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 
 - [[brew-machine-prune]] — the machine-side half of [[../adr/manifest-pinned-packages]]: `sync_brew` never uninstalls, so strays accumulate until pruned by hand. Read before pruning — `rustup` and `mise` must stay in brew (mise's `rust` is a symlink into rustup's tree; mise itself is the bootstrap trust root).
 - [[mise-aqua-backend-retypes]] — an aqua-registry package retype breaks a working pin with no version change; the fix is a backend migration, not a version bump.
+- [[mise-manifest-precedence]] — the live `~/.config/mise/config.toml` outranks any `MISE_GLOBAL_CONFIG_FILE` manifest, so a stale live file silently swallows a pin bump and wedges `dots sync` in a loop no re-run escapes; the fix is `apply_mise_manifest` in the prepare phase — do not delete it as redundant.
+- [[mise-github-auth]] — `gh` keeps its token in the macOS keychain, so mise's default reader finds nothing and aqua release lookups go anonymous against the 60/hr cap; must be fixed with `MISE_GITHUB_CREDENTIAL_COMMAND`, never a `[settings]` block.
+- [[omp-install-etxtbsy]] — `curl: (23)` during an omp install is `ETXTBSY` from overwriting a running binary, not a network fault; the fix is stage-then-`rename(2)`.
 - [[rectangle-sync]] — why `rectangle/.sync` needs a hash stamp: it used to hard-restart Rectangle Pro on every `dots sync`, and SIGKILL leaves no crash report, so "the app keeps crashing" had no diagnostic trail.
 
 ## Measurement and prompting

@@ -14,6 +14,23 @@ How `dots sync` deploys this repo to a machine. Two mechanisms coexist: a custom
 
 The custom backup/restore/rollback subsystem has been **deleted** (chezmoi-consolidation, Stage 1). `dots rollback` no longer snapshots — it prints the git-backed undo path (`git revert` + `dots sync`). `dots backups` / `dots clean` are gone (`tests/dots.bats` asserts the retirement). The manifest/backup scaffolding in `.sync` has been removed; only `last_sync` (timestamp) remains. The file has been renamed from `.sync-with-rollback` to `.sync`.
 
+## Phase ordering: prepare → package-sync → final
+
+`dots sync` applies chezmoi **twice**, with package convergence in between, because the two have a circular dependency: packages are pinned by a chezmoi-managed manifest, and some chezmoi templates need the converged binaries.
+
+`run_sync` (`.sync`) drives it:
+
+1. **prepare** — `chezmoi` is dispatched with `CHEZMOI_SYNC_PHASE=prepare` (`.sync:130`). `chezmoi/.sync` wires chezmoi, applies the mise manifest, and **exits early at `:44`** without applying any generated config. If `chezmoi` isn't installed yet, a bootstrap-only `packages/sync.sh` run precedes all this (`.sync:111-123`).
+2. **package-sync** — `packages/sync.sh` runs with `MISE_CONFIG_FILE` pointed at the tracked source (`.sync:140-141`), converging brew, mise, cargo, npm, uv, and gh extensions. mise shims go on `PATH` immediately after (`.sync:142-143`).
+3. **final** — gated on `verify_harness_versions` (`.sync:146`). On pass, `CHEZMOI_SYNC_PHASE=final bash chezmoi/.sync` applies everything (`.sync:148`), then re-verifies (`.sync:152`). On fail, the apply is **skipped** and a `harness-versions` entry is recorded (`.sync:157-159`).
+
+A skipped or failed final apply does not abort the run — upgraded packages are retained, failures accumulate in `SYNC_FAILURES`, and the run exits 1 at the end (`.sync:174-182`) after the remaining steps (TPM, prek hooks, tilth, Claude MCP reconcile, omp plugins) still execute.
+
+Two consequences worth internalizing:
+
+- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/17.2.12` at `.sync:57`, `codex-cli 0.146.0` at `.sync:70` — and covers only those two harnesses. Bumping a pin means editing both the manifest and these literals.
+- **The final apply is the only step that refreshes most live config**, so anything the package phase reads from a live file must be applied during *prepare* instead. That is exactly the trap in [[mise-manifest-precedence]], and the reason `apply_mise_manifest` exists in the prepare branch.
+
 ## Package installation (`packages/sync.sh`)
 
 `.sync` forks to `packages/sync.sh`, which installs everything declared in `packages/packages.yaml` (SHA-256-cached to skip when the file is unchanged).
