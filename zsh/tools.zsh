@@ -62,12 +62,14 @@ if command -v sccache &>/dev/null; then
     export CARGO_INCREMENTAL=0
 fi
 
-# ─── bounded cargo parallelism (earlyoom coexistence) ────────────────────
+# ─── bounded cargo parallelism (earlyoom coexistence, Linux only) ───────
 # Parallel agent fan-outs that each run a Rust gate multiply peak memory and
 # get OOM-reaped (earlyoom --prefer targets claude/node/rustc/cargo on this
-# box). Cap jobs so one gate stays under the kill threshold; override
-# per-shell (CARGO_BUILD_JOBS=N) for a one-off fast build.
-export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-6}"
+# box). earlyoom is Linux-only, so cap jobs only there; override per-shell
+# (CARGO_BUILD_JOBS=N) for a one-off fast build.
+if [[ "$DOTFILES_OS" == "linux" ]]; then
+  export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-6}"
+fi
 
 # ─── vaudeville (SLM hook enforcement for Claude Code) ───────────────────
 export VAUDEVILLE_DEBUG="${VAUDEVILLE_DEBUG:-0}"
