@@ -36,3 +36,5 @@ sources:
   paulnsorensen/skillz-that-grillz:
     description: Other useful skills
     harnesses: [claude]
+  paulnsorensen/sliced-bread-architecture:
+    description: Sliced Bread doctrine skills — seam/spine coherence review, five-rule change review, slice depth scoring
