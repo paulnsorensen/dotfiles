@@ -344,7 +344,7 @@ class PendingStore:
             previous = self._by_key.get(key)
             if previous is not None and previous.state in {"pending", "approved"}:
                 return previous
-            nonce = secrets.token_urlsafe(24)
+            nonce = secrets.token_hex(24)
             expires_at = int(now) + APPROVAL_TTL
             item = PendingApproval(
                 consumer=self._policy.consumer,
