@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # Tests for the tool-reroute PreToolUse hook (harness-agnostic).
 #   agents/hooks/tool-reroute.sh  — bash bridge (self-locating, claude/codex)
-#   agents/lib/tool-reroute.js    — dispatcher (search → cd-git → io → delegate)
-#   agents/lib/tool-reroute/{shell,search,cd-git,io}.js — lexer + modules
+#   agents/lib/tool-reroute.js    — dispatcher (search → cd-git → io → tilth-write → delegate)
+#   agents/lib/tool-reroute/{shell,search,cd-git,io,tilth-write}.js — lexer + modules
 #
 # WHY: hard-denying grep/cat/find does not stop the model RETRYING — the static
 # permissions_deny even overrides a hook deny, so the redirect never lands. This
@@ -293,14 +293,14 @@ RTK
 
 # ── deploy wiring ────────────────────────────────────────────────────────
 
-@test "tool-reroute: registry registers tool-reroute for claude matching Bash|Grep|Glob" {
+@test "tool-reroute: registry registers tool-reroute for claude matching Bash|Grep|Glob|tilth_write" {
     local reg="$REAL_DOTFILES_DIR/agents/hooks/registry.yaml"
     [[ "$(yq -r '.hooks.tool-reroute.event' "$reg")" == "PreToolUse" ]]
     [[ "$(yq -r '.hooks.tool-reroute.script' "$reg")" == "agents/hooks/tool-reroute.sh" ]]
-    [[ "$(yq -r '.hooks.tool-reroute.matcher' "$reg")" == "Bash|Grep|Glob" ]]
+    [[ "$(yq -r '.hooks.tool-reroute.matcher' "$reg")" == "Bash|Grep|Glob|mcp__tilth__tilth_write" ]]
     [[ "$(yq -r '.hooks.tool-reroute.harnesses | join(",")' "$reg")" == "claude" ]]
     [[ "$(yq -r '.hooks.tool-reroute.shared_assets[0]' "$reg")" == "agents/lib/tool-reroute.js" ]]
-    [[ "$(yq -r '.hooks.tool-reroute.shared_assets | length' "$reg")" -ge 5 ]]
+    [[ "$(yq -r '.hooks.tool-reroute.shared_assets | length' "$reg")" -ge 6 ]]
 }
 
 @test "tool-reroute: the standalone rtk hook claude registration is removed from claude settings" {
@@ -503,4 +503,60 @@ deploy_codex() {
     run env -i PATH="$stub" bash -c "printf '%s' '$j' | '$DEPLOY/hooks/tool-reroute.sh'"
     [ "$status" -eq 0 ]
     [[ -z "$output" ]]
+}
+
+# ── tool-reroute/tilth-write: wrong-shape tilth_write corrector (#345) ────
+# A wrong-shape payload would otherwise burn the round trip on tilth's
+# server-side error; the module denies with the CURRENT shape and a runnable
+# example. Checks are structural only — valid shapes (and merely-unknown op
+# names, which tilth's own error teaches) must never deny.
+
+@test "tool-reroute/tilth-write: retired top-level files array denies with the current shape" {
+    local out; out=$(out_for_input mcp__tilth__tilth_write '{"files":[{"path":"a.rs","edits":[]}],"cwd":"/r"}')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'"edits"'* ]]
+    [[ "$(reason "$out")" == *'op: "replace"'* ]]
+}
+
+@test "tool-reroute/tilth-write: flat start/end/content section (no ops array) denies" {
+    local out; out=$(out_for_input mcp__tilth__tilth_write '{"edits":[{"path":"a.rs","start":1,"end":2,"content":"x"}],"cwd":"/r"}')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'"ops" array'* ]]
+}
+
+@test "tool-reroute/tilth-write: op missing the op discriminator denies" {
+    local out; out=$(out_for_input mcp__tilth__tilth_write '{"edits":[{"path":"a.rs","ops":[{"start":1,"end":2,"content":"x"}]}],"cwd":"/r"}')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'"op" discriminator'* ]]
+}
+
+@test "tool-reroute/tilth-write: replacement instead of content denies" {
+    local out; out=$(out_for_input mcp__tilth__tilth_write '{"edits":[{"path":"a.rs","ops":[{"op":"replace","start":1,"end":2,"replacement":"x"}]}],"cwd":"/r"}')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'"content"'* ]]
+}
+
+@test "tool-reroute/tilth-write: a valid call is NOT denied (no output)" {
+    local out; out=$(out_for_input mcp__tilth__tilth_write '{"edits":[{"path":"a.rs","tag":"1A2B","ops":[{"op":"replace","start":1,"end":2,"content":"x"}]}],"cwd":"/r"}')
+    [[ -z "$out" ]]
+}
+
+@test "tool-reroute/tilth-write: an unknown op NAME is NOT denied (tilth's own error teaches it)" {
+    # Hardcoding a valid-op list here would hard-block valid calls the day
+    # tilth adds an op — unknown names must fall through to the server error.
+    local out; out=$(out_for_input mcp__tilth__tilth_write '{"edits":[{"path":"a.rs","ops":[{"op":"frobnicate","start":1,"end":2,"content":"x"}]}],"cwd":"/r"}')
+    ! denied "$out"
+}
+
+@test "tool-reroute/tilth-write: create_file and replace_text shapes are NOT denied" {
+    local out
+    out=$(out_for_input mcp__tilth__tilth_write '{"edits":[{"path":"new.rs","ops":[{"op":"create_file","content":"x"}]}],"cwd":"/r"}')
+    [[ -z "$out" ]]
+    out=$(out_for_input mcp__tilth__tilth_write '{"edits":[{"path":"a.rs","tag":"1A2B","ops":[{"op":"replace_text","old":"a","new":"b"}]}],"cwd":"/r"}')
+    [[ -z "$out" ]]
+}
+
+@test "tool-reroute/tilth-write: other MCP tools are untouched (tilth_read passes)" {
+    local out; out=$(out_for_input mcp__tilth__tilth_read '{"paths":["a.rs"],"cwd":"/r"}')
+    [[ -z "$out" ]]
 }
