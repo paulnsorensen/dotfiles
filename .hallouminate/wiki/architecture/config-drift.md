@@ -415,5 +415,38 @@ logic bug. Tracked in
 test using GNU-only flags (`touch -d @epoch`, `date -d`, `sed -i` without a
 backup arg, `readlink -f`) is a portability suspect.
 
+## Known drift pattern: native-only `sync.sh` ping-pongs cross-harness plugins every sync
+
+**Symptom**: Every `dots sync` logs the Claude plugin reconcile removing
+`hallouminate@hallouminate` and `milknado@milknado` ("Not in registry (2) …
+Removing … Successfully uninstalled"), then a later leg re-installs them. Net
+end-state is correct (both stay installed + enabled), but each sync does a
+wasteful uninstall→reinstall of git-cloned plugins and prints an alarming
+removal. First hit 2026-08-17.
+
+**Why it happens**: two reconcilers own the same live plugin set. The
+cross-harness one (`chezmoi/lib/claude-plugin-reconcile.sh`) INSTALLS the
+native-Claude plugins from `agents/plugins/registry.yaml`. The narrowed
+native-only one (`claude/plugins/sync.sh`, run from `claude/.sync`) reconciles
+against `claude/plugins/registry.yaml` — which does NOT list hallouminate /
+milknado (they migrated to the cross-harness registry; the native registry's
+own comment says so) — and `--force`-removes anything not listed. sync.sh was
+blind to the cross-harness registry, so it treated the natives as strangers and
+removed them on every run.
+
+**Fix (2026-08-17)**: `claude/plugins/sync.sh` now reads
+`agents/plugins/registry.yaml`, resolves which plugins are native on Claude
+(`native == true` and harnesses ∋ claude, OR `native` list ∋ claude, OR the
+deprecated `claude_native` alias), and drops any installed key whose plugin
+name (before `@`) matches from the removal-candidate set (`CURRENT_NAMES`).
+They are thus neither removed by sync.sh nor re-added by it — the cross-harness
+reconcile remains their sole installer. Matching on the plugin name (not the
+full `<name>@<marketplace>` key) is robust because the registry KEY equals the
+marketplace's `plugins[].name` by schema invariant. Regression tests:
+`tests/plugin-sync.bats` ("cross-harness native plugins are never proposed for
+removal", "--force never uninstalls a cross-harness native plugin"). This is
+distinct from the CLI-strip pattern above (that one is the Claude CLI dropping
+`enabledPlugins`; this one is our own sync.sh removing the install).
+
 See [[agent-profile]] for the `ap` render/install model and [[../harnesses/claude]]
 for where each Claude config surface lives.
