@@ -559,7 +559,8 @@ EOF
     SKILL_EXCLUDE_AGENTS="claude-code" run_sync --dry-run
     assert_success
     assert_output_contains "Excluding harness 'claude' (claude-code)"
-    assert_output_contains "No valid harnesses for acme/widgets"
+    # All harnesses excluded (not a bad harness) is expected, not a warning.
+    assert_output_contains "acme/widgets → nothing for this leg (all harnesses excluded"
     run grep -F 'skills add acme/widgets' <<< "$output"
     assert_failure
 }
