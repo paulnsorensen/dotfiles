@@ -98,4 +98,12 @@ When I point to contrary evidence, reopen that exact source and re-derive the co
 
 When a repo has a `.hallouminate/wiki/`, record durable project knowledge (architecture, gotchas, decisions) there via `add_markdown` — versioned and shared — not in a machine-local agent memory store.
 
+### Rule 7 — Isolate Spawned Write-Capable Agents
+
+Spawn every agent that may write the tree with `isolation: 'worktree'` unless the task needs the main checkout's live state. This is the default everywhere agents are dispatched — a `/cheese`-routed fan-out, a hand-written `Workflow`, or a bare `Agent` call — not only saved workflows that happen to pass the flag. The failure is silent: an agent in the shared checkout looks fine until another session rebases or moves the tree under it, invalidating the base ref its report derived from.
+
+Opt out only for a named exception, and say which: a barrier phase that must see every agent's edits at once; a gate that needs prior-run artifacts (`coverage/lcov.info`, a warm Nx cache); or a repo where a cold `node_modules` per worktree is prohibitive (Yarn 4 + pnpm-linker monorepos).
+
+Pin the base ref too. A worktree pins the tree, not what an agent diffs against — `HEAD~N` and `origin/main` still move mid-run. Hand each spawned agent an explicit base sha to diff and report against.
+
 @RTK.md
