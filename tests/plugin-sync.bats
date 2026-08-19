@@ -125,3 +125,44 @@ manifest_with_orphans() {
     run cat "$CLAUDE_LOG"
     [[ "$output" != *"marketplace add"*"todoist-flow"* ]]
 }
+
+# A manifest with the cross-harness native plugins (hallouminate, milknado)
+# installed at USER scope, plus an unrelated user-scope orphan (claude-hud).
+# hallouminate/milknado live in agents/plugins/registry.yaml (native ∋ claude),
+# NOT in this native-only registry — they must be protected from removal.
+manifest_with_cross_harness_natives() {
+    write_manifest '{
+      "version": 2,
+      "plugins": {
+        "hallouminate@hallouminate": [{"scope":"user"}],
+        "milknado@milknado":         [{"scope":"user"}],
+        "claude-hud@claude-hud":      [{"scope":"user"}]
+      }
+    }'
+}
+
+@test "sync.sh: cross-harness native plugins are never proposed for removal" {
+    # Regression: sync.sh reconciles against the native-only registry, which
+    # does not list hallouminate/milknado. Without protection it would remove
+    # them every sync (uninstall→reinstall ping-pong with the cross-harness
+    # reconcile). They must be dropped from the removal candidate set.
+    manifest_with_cross_harness_natives
+    run bash "$SYNC" --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"remove: hallouminate"* ]]
+    [[ "$output" != *"remove: milknado"* ]]
+    # The unrelated user-scope orphan is still flagged — protection is scoped.
+    [[ "$output" == *"Would prompt to remove: claude-hud@claude-hud"* ]]
+}
+
+@test "sync.sh: --force never uninstalls a cross-harness native plugin" {
+    manifest_with_cross_harness_natives
+    run bash "$SYNC" --force
+    [ "$status" -eq 0 ]
+    run cat "$CLAUDE_LOG"
+    # No `claude plugin remove` for the protected plugins reached the CLI.
+    [[ "$output" != *"plugin remove"*"hallouminate"* ]]
+    [[ "$output" != *"plugin remove"*"milknado"* ]]
+    # The orphan was removed.
+    [[ "$output" == *"plugin remove"*"claude-hud"* ]]
+}
