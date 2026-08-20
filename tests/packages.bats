@@ -1195,6 +1195,15 @@ MOCKBREW
     grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
+
+@test "sync OMP verification follows the managed package pin" {
+    local managed expected
+    managed=$(sed -n 's/^OMP_PIN="v\([^"]*\)"$/\1/p' "$SYNC_SCRIPT")
+    expected=$(sed -n 's/.*omp_version.*!= "omp\/\([^"]*\)".*/\1/p' \
+        "$REAL_DOTFILES_DIR/.sync")
+    [[ -n "$managed" ]]
+    [[ "$expected" == "$managed" ]]
+}
 @test "doc-drift records match the managed harness pins" {
     local sources="$REAL_DOTFILES_DIR/agents/doc-drift/sources.yaml"
     [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.15" ]

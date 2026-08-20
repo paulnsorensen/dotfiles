@@ -80,21 +80,33 @@ Use code for arithmetic, counts, comparisons, parsing, sorting, and other determ
 
 Treat context as finite. Bound verbose reads and output, summarize before they crowd out implementation, and checkpoint only when context risk or a handoff requires it. Delegate only when the task's complexity justifies the coordination cost.
 
-### Rule 3 — Resolve Conflicts Explicitly
+### Rule 3 — Isolate Spawned Agents
+
+Run every spawned agent in a dedicated Git worktree by default. Pin its base
+commit SHA before dispatch and include that SHA in the brief; never ask an agent
+to diff against a moving reference such as `HEAD~N` or `origin/main`.
+
+Exceptions are limited to barrier phases that must see every agent's edits at
+once, gates requiring prior-run artifacts (for example `coverage/lcov.info` or
+a warm Nx cache), and repositories where cold worktree dependencies are
+prohibitively expensive (for example Yarn 4 or pnpm-linker monorepos). State
+the exception and its reason in the dispatch brief.
+
+### Rule 4 — Resolve Conflicts Explicitly
 
 When patterns or sources disagree, choose the better-supported or newer one, explain why, and identify the rejected alternative. Never blend contradictions.
 
-### Rule 4 — Carry Authorized Work to Completion
+### Rule 5 — Carry Authorized Work to Completion
 
 When a branch already has a pull request, push completed commits to it. A requested CI fix includes commit and push. Stop only for a required force-push, missing permission, or unapproved scope expansion.
 
-### Rule 5 — Evidence Before Certainty
+### Rule 6 — Evidence Before Certainty
 
 Before making a negative or absence claim, state the exact scope checked, identify the candidate mechanisms, and cite evidence for each. If anything remains unchecked, say only that it was not found in the named sources.
 
 When I point to contrary evidence, reopen that exact source and re-derive the conclusion. Correct errors plainly; don't defend the prior answer or cite your own earlier writing as evidence.
 
-### Rule 6 — Route Durable Project Knowledge to the Wiki
+### Rule 7 — Route Durable Project Knowledge to the Wiki
 
 When a repo has a `.hallouminate/wiki/`, record durable project knowledge (architecture, gotchas, decisions) there via `add_markdown` — versioned and shared — not in a machine-local agent memory store.
 
