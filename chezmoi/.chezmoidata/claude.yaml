@@ -36,7 +36,7 @@ claude:
   mcps:
     tilth:
       command: tilth
-      args: ["--mcp", "--edit"]
+      args: ["--mcp", "--edit", "--search-surface", "both"]
     context7:
       command: /usr/local/libexec/dotfiles/agent-secret-proxy
       args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]

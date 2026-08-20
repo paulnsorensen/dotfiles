@@ -786,7 +786,7 @@ def _assert_real_tight_codex_profile(name: str, prompt_phrase: str, monkeypatch,
     assert set(cfg["mcp_servers"]) == {"tilth"}
     assert cfg["mcp_servers"]["tilth"] == {
         "command": "tilth",
-        "args": ["--mcp", "--edit"],
+        "args": ["--mcp", "--edit", "--search-surface", "both"],
     }
     assert prompt_phrase in (pdir / "AGENTS.md").read_text()
 
