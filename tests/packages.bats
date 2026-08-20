@@ -1191,7 +1191,7 @@ MOCKBREW
 # --- Integration: native harness convergence ---
 
 @test "managed OMP and Codex pins are exact" {
-    grep -q '^OMP_PIN="v17.2.15"$' "$SYNC_SCRIPT"
+    grep -q '^OMP_PIN="v17.3.0"$' "$SYNC_SCRIPT"
     grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
@@ -1294,8 +1294,8 @@ YAML
     wait "$holder" 2>/dev/null || true
 
     [[ "$sync_status" -eq 0 ]]
-    assert_output_contains "Converged omp to v17.2.15"
-    [[ "$("$omp_path")" == "omp/17.2.15" ]]
+    assert_output_contains "Converged omp to v17.3.0"
+    [[ "$("$omp_path")" == "omp/17.3.0" ]]
 }
 
 @test "omp installer failure fails loudly and does not save cache" {
@@ -1318,11 +1318,11 @@ YAML
 
     run_sync
     assert_success
-    assert_output_contains "Converged omp to v17.2.15"
-    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/17.2.15" ]]
+    assert_output_contains "Converged omp to v17.3.0"
+    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/17.3.0" ]]
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.2.15\ncodesign --force --sign - %s' \
+    expected_events=$(printf 'sh -s -- --binary --ref v17.3.0\ncodesign --force --sign - %s' \
         "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
@@ -1336,7 +1336,7 @@ YAML
     assert_success
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.2.15\ncodesign --force --sign - %s' \
+    expected_events=$(printf 'sh -s -- --binary --ref v17.3.0\ncodesign --force --sign - %s' \
         "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
