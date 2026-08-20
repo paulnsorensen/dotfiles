@@ -35,7 +35,7 @@ mcps:
     args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
   - name: tilth
     command: tilth
-    args: ["--mcp", "--edit"]
+    args: ["--mcp", "--edit", "--search-surface", "both"]
   - name: tavily
     command: agent-secret-proxy
     args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]

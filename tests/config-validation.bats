@@ -47,12 +47,45 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ "$(yq -oy -r '.codex.agents | length' "$reg")" -gt 0 ]]
 }
 
-@test "codex registry registers tilth in edit mode (--edit)" {
-    # Reproducibility guard: this registry is the only source of tilth for Codex
-    # on a fresh setup. Without --edit tilth is read-only and cheez-write breaks.
-    local reg="$DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
-    [[ "$(yq -oy -r '.codex.mcps.tilth.command' "$reg")" == "tilth" ]]
-    yq -oy -r '.codex.mcps.tilth.args[]' "$reg" | grep -qx -- '--edit'
+@test "managed tilth MCPs expose search v2 alongside v1 in edit mode" {
+    local expected='["--mcp","--edit","--search-surface","both"]'
+    local entry path query actual rendered profile
+
+    for entry in \
+        "$DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml:.claude.mcps.tilth.args" \
+        "$DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml:.codex.mcps.tilth.args" \
+        "$DOTFILES_DIR/agents/mcp/registry.yaml:.mcps.tilth.args"; do
+        path=${entry%%:*}
+        query=${entry#*:}
+        actual=$(yq -I=0 -o=json "$query" "$path")
+        [[ "$actual" == "$expected" ]] || {
+            echo "$path: expected $expected, got $actual" >&2
+            return 1
+        }
+    done
+
+    path="$DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
+    actual=$(jq -c '.mcpServers.tilth.args' "$path")
+    [[ "$actual" == "$expected" ]] || {
+        echo "$path: expected $expected, got $actual" >&2
+        return 1
+    }
+
+    path="$DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
+    rendered=$(chezmoi execute-template < "$path")
+    actual=$(jq -c '.mcpServers.tilth.args' <<< "$rendered")
+    [[ "$actual" == "$expected" ]] || {
+        echo "$path: expected $expected, got $actual" >&2
+        return 1
+    }
+
+    for profile in "$DOTFILES_DIR"/profiles/{codex-code,codex-plan,fe,oss-docs,plugin,review,rtkonly,skills-doctor,spec}/profile.yaml; do
+        actual=$(yq -I=0 -o=json '.mcps[] | select(.name == "tilth") | .args' "$profile")
+        [[ "$actual" == "$expected" ]] || {
+            echo "$profile: expected $expected, got $actual" >&2
+            return 1
+        }
+    done
 }
 
 @test "codex registry declares no env block (secrets stay out of config.toml)" {

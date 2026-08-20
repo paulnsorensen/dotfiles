@@ -38,7 +38,7 @@ enabled_plugins:
 mcps:
   - name: tilth
     command: tilth
-    args: ["--mcp", "--edit"]
+    args: ["--mcp", "--edit", "--search-surface", "both"]
   - name: context7
     command: agent-secret-proxy
     args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
