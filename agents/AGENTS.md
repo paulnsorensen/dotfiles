@@ -110,5 +110,4 @@ When I point to contrary evidence, reopen that exact source and re-derive the co
 
 When a repo has a `.hallouminate/wiki/`, record durable project knowledge (architecture, gotchas, decisions) there via `add_markdown` — versioned and shared — not in a machine-local agent memory store.
 
-
 @RTK.md
