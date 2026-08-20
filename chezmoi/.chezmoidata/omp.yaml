@@ -144,7 +144,27 @@ omp:
       # stack. Keep built-in remote models in modelRoles/config.yml; do not mirror
       # OMP's bundled catalog here.
   models:
-    providers: {}
+    providers:
+      # OpenRouter Pareto Code router. Not in OMP's bundled OpenRouter catalog
+      # (models.dev has not indexed the preset), so it needs an explicit
+      # provider block. Referenced as
+      # `openrouter-pareto/openrouter/pareto-code`. Provider id is deliberately
+      # NOT `openrouter` to avoid shadowing OMP's built-in OpenRouter list.
+      # contextWindow is conservative: the router advertises 2M but the model
+      # actually serving a request varies per request. apiKey uses the
+      # documented `!<command>` stdout form so no key lands in the repo.
+      openrouter-pareto:
+        api: openai-completions
+        apiKey: '!printenv OPENROUTER_API_KEY'
+        baseUrl: https://openrouter.ai/api/v1
+        models:
+          - contextWindow: 200000
+            id: openrouter/pareto-code
+            input:
+              - text
+            maxTokens: 16384
+            name: Pareto Code Router (OpenRouter)
+            reasoning: true
   # Native OMP plugin installs — reconciled by sync_omp_plugins (.sync-lib.sh)
   # on every dots sync. Marketplace entries are exact-owned. Pinned npm
   # entries are installed or upgraded while unrelated npm plugins survive.
