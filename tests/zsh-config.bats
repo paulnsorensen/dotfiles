@@ -70,6 +70,14 @@ teardown() {
     grep -q "alias zrl=" "$aliases_file"
 }
 
+@test "mtmux enables predictive echo for remote tmux sessions" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "mosh() { printf '%s\n' \"\$@\"; }; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; mtmux edge main"
+
+    assert_success
+    [[ "$output" == $'--predict=always\nedge\n--\ntmux\nnew\n-A\n-s\nmain' ]]
+}
+
 @test "codex profile shortcuts launch tight and scoped profiles" {
     local claude_file="$REAL_DOTFILES_DIR/zsh/claude.zsh"
 
