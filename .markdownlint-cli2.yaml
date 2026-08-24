@@ -22,7 +22,5 @@ ignores:
   # test suite) from skills/ etc., which are linted at source.
   - chezmoi/dot_claude/exact_*/**
   - chezmoi/private_dot_codex/exact_*/**
-  # Cursor IDE runtime output (gitignored via /cursor/*); the only intentional
-  # markdown under cursor/ is plugins/. Not ours to lint.
-  - cursor/skills-cursor/**
-  - cursor/extensions/**
+  # Cursor IDE runtime output is gitignored and not repository documentation.
+  - cursor/**
