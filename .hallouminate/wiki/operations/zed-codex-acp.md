@@ -1,44 +1,27 @@
 # Zed + Codex (ACP)
 
-Zed is installed as a macOS-only Homebrew cask (`zed: { source: cask, platform: mac }` in
-`packages/packages.yaml`), following [zed.dev/docs/installation](https://zed.dev/docs/installation).
-Codex runs inside Zed as an **external agent over ACP** (Agent Client Protocol), configured in
-`chezmoi/dot_config/zed/settings.json.tmpl` → `~/.config/zed/settings.json`.
+Zed is installed as a macOS-only Homebrew cask (`zed: { source: cask, platform: mac }` in `packages/packages.yaml`). Codex runs inside Zed as ACP External Agents, configured by `chezmoi/dot_config/zed/settings.json.tmpl` and rendered to `~/.config/zed/settings.json`.
 
-## Why an adapter, not `codex acp`
+## Two retained Codex entries
 
-The installed Codex CLI (0.145.0) has **no native `acp` subcommand** — its ACP surface is the
-newer `app-server`. Zed talks to Codex through a separate adapter:
+The live configuration contains two distinct Codex entries, both preserved in chezmoi:
 
-- The original `zed-industries/codex-acp` binary was **archived 2026-07-22**; development moved to
-  **`@agentclientprotocol/codex-acp`** (npm, a Rust binary built on Codex's app-server).
-- We pin that adapter in `packages/packages.yaml` as an npm package (`codex-acp`, mac-only) rather
-  than relying on `npx` at runtime or Zed's ACP Registry auto-install. The Registry path installs
-  the same adapter but leaves nothing in the dotfiles.
+- `codex-acp` is Zed's ACP Registry agent with `fast-mode: true`.
+- `Codex` is the repository-managed custom agent that launches the pinned `@agentclientprotocol/codex-acp` executable.
 
-## How the binary path resolves
+Do not collapse these entries without an explicit user decision: the registry entry was added through Zed and the custom entry is the established repository configuration. The npm package remains pinned in `packages/packages.yaml` because the custom entry resolves it with chezmoi's `lookPath`.
 
-`settings.json` uses `agent_servers.Codex` with `type: custom`. The `command` is a chezmoi template
-that resolves the installed bin, falling back to the bare name: `(or (lookPath "codex-acp")
-"codex-acp") | quote`.
+Codex retains its native authentication and billing configuration. No credentials belong in Zed settings or this repository.
 
-`packages/sync.sh` runs **before** the final `chezmoi apply` (see `.sync`), so `npm install -g`
-lands the `codex-acp` bin (npm global prefix `/opt/homebrew`) before chezmoi renders the template,
-and `lookPath` resolves the absolute path. On a host where it isn't installed yet, the template
-falls back to the bare name `codex-acp` (PATH resolution).
+## Operational boundary
 
-## Auth and secrets
+- Zed launches the configured ACP agent and hosts its thread; Codex owns runtime, model selection, authentication, and native permissions.
+- Non-darwin hosts ignore `.config/zed/**` through `chezmoi/.chezmoiignore`, because Zed is a macOS-only cask here.
+- The ACP Registry is the normal place to repair or reinstall the registry-backed entry: run `zed: acp registry` from Zed's Command Palette.
 
-`env` is `{}` — the adapter reuses your `~/.codex` login (ChatGPT login / Codex API key / OpenAI
-API key, whichever Codex is configured with). No secrets live in the Zed config, consistent with
-the repo's no-plaintext-secrets rule.
+See [[zed-workspace-and-agents]] for the shared workspace layout, OMP sidecar, and deuteranopia theme decisions.
 
-## Gotchas
+## Sources
 
-- Non-darwin hosts are gated out in `chezmoi/.chezmoiignore` (`.config/zed/**`), since the cask is
-  mac-only.
-- If Codex fails to start when Zed is launched from Finder/Dock (vs. the `zed` CLI), suspect a
-  minimal GUI `PATH` — the adapter may need `codex` on `PATH` to reach the app-server. Launching
-  Zed from a shell, or adding a `PATH` entry under `agent_servers.Codex.env`, resolves it.
-- Bump the pinned `codex-acp` version in `packages/packages.yaml` (renovate tracks
-  `@agentclientprotocol/codex-acp`).
+- [Zed External Agents](https://zed.dev/docs/ai/external-agents)
+- [ACP Registry](https://github.com/agentclientprotocol/registry)
