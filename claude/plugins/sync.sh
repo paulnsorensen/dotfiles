@@ -123,38 +123,6 @@ else
     CURRENT_NAMES=""
 fi
 
-# Protect cross-harness-owned native plugins from removal. agents/plugins/
-# registry.yaml (NOT this native-only registry) is the source of truth for
-# plugins whose Claude install is native — hallouminate, milknado. Those are
-# installed by the cross-harness reconcile (chezmoi/lib/claude-plugin-reconcile.sh),
-# not here, so they are absent from DESIRED_NAMES and would otherwise be proposed
-# for removal every sync (an uninstall→reinstall ping-pong). Drop any installed
-# key whose plugin name (before '@') is a native-Claude cross-harness plugin, so
-# it is neither removed here nor re-added by this script.
-CROSS_HARNESS_REGISTRY="$DOTFILES_DIR/agents/plugins/registry.yaml"
-if [[ -n "$CURRENT_NAMES" && -f "$CROSS_HARNESS_REGISTRY" ]]; then
-    # native ∋ claude when: native == true and harnesses ∋ claude, OR native is a
-    # list containing claude, OR the deprecated claude_native alias is true.
-    NATIVE_CLAUDE_PLUGINS=$(yq -o=json '.plugins' "$CROSS_HARNESS_REGISTRY" | jq -r '
-        to_entries[]
-        | (.value.native) as $n
-        | (.value.harnesses // []) as $h
-        | select(
-            (.value.claude_native // false) == true
-            or ($n == true and ($h | index("claude") != null))
-            or (($n | type) == "array" and ($n | index("claude") != null))
-          )
-        | .key
-    ' 2>/dev/null | sort || true)
-    if [[ -n "$NATIVE_CLAUDE_PLUGINS" ]]; then
-        CURRENT_NAMES=$(while IFS= read -r key; do
-            [[ -z "$key" ]] && continue
-            grep -qxF -- "${key%@*}" <<< "$NATIVE_CLAUDE_PLUGINS" && continue
-            printf '%s\n' "$key"
-        done <<< "$CURRENT_NAMES")
-    fi
-fi
-
 get_description() { yq ".plugins.\"$1\".description // \"\"" "$REGISTRY_FILE"; }
 get_item_scope() { echo "user"; }
 remove_item() { claude plugin remove -s "$2" "$1" 2>/dev/null; }
