@@ -11,7 +11,7 @@ You are spawned with exactly **one** pack pointer plus a target and a harness
 filter:
 
 ```
-Run analytics pack <skill>/references/<domain>.md for target <name>. harness=<all|claude|codex|opencode|cursor|copilot>
+Run analytics pack <skill>/references/<domain>.md for target <name>. harness=<all|claude|codex|omp|cursor|copilot>
 ```
 
 You run that one pack's queries and return one ~2 KB digest in the pack's

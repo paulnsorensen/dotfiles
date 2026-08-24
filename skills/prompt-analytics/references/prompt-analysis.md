@@ -2,7 +2,7 @@
 
 # target_param: {KEYWORD}     (a substring to focus on; '%' for all prompts)
 
-# harness: respects harness=<all|claude|codex|opencode>
+# harness: respects harness=<all|claude|codex|omp>
 
 # owner: prompt-analytics
 

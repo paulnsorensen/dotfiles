@@ -4,7 +4,6 @@
 #
 #   healthcheck.sh             Full smoke test (units + ports + completions + swap registry)
 #   healthcheck.sh --quiet     Lightweight subset for `dots doctor` (no completions)
-#   healthcheck.sh --opencode  Also run an opencode end-to-end probe through the provider
 #
 # Source-safe by design: functions are defined at top level WITHOUT enabling
 # errexit, so bats can `source` this file and call the decision functions
@@ -124,25 +123,10 @@ llm_quick_check() {
     return "$rc"
 }
 
-# opencode end-to-end: prove the wired provider actually reaches a model.
-llm_opencode_e2e() {
-    if ! command -v opencode &>/dev/null; then
-        echo -e "  ${YELLOW}⚠ opencode not installed — skipping e2e${NC}"
-        return 0
-    fi
-    local out
-    if out=$(opencode run --pure -m local-llm/local-haiku "reply with OK" 2>/dev/null) \
-        && [[ -n "$out" ]]; then
-        echo -e "  ${GREEN}✓ opencode reached local-llm/local-haiku${NC}"
-        return 0
-    fi
-    echo -e "  ${RED}✗ opencode could not reach local-llm/local-haiku${NC}"
-    return 1
-}
 
 # Full smoke test. Returns non-zero if any hard tier is unhealthy.
 llm_health_report() {
-    local with_opencode="${1:-false}" hard_fail=0
+    local hard_fail=0
 
     echo -e "${BLUE}LiteLLM proxy${NC}"
     if llm_proxy_up; then
@@ -201,11 +185,6 @@ llm_health_report() {
         echo -e "$note"
     done
 
-    if [[ "$with_opencode" == "true" ]]; then
-        echo
-        echo -e "${BLUE}opencode end-to-end${NC}"
-        llm_opencode_e2e || true
-    fi
 
     echo
     if [[ $hard_fail -eq 0 ]]; then
@@ -218,13 +197,12 @@ llm_health_report() {
 
 main() {
     set -euo pipefail
-    local quiet=false opencode=false a
+    local quiet=false a
     for a in "$@"; do
         case "$a" in
             --quiet)    quiet=true ;;
-            --opencode) opencode=true ;;
             -h|--help)
-                echo "usage: healthcheck.sh [--quiet] [--opencode]"
+                echo "usage: healthcheck.sh [--quiet]"
                 return 0 ;;
             *) echo "unknown arg: $a" >&2; return 2 ;;
         esac
@@ -235,7 +213,7 @@ main() {
     if [[ "$quiet" == "true" ]]; then
         llm_quick_check
     else
-        llm_health_report "$opencode"
+        llm_health_report
     fi
 }
 

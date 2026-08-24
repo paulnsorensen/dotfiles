@@ -315,8 +315,8 @@ def test_records_sorted_by_target_file_then_path(tmp_path):
         [
             _comparison(
                 tmp_path,
-                target="opencode",
-                relative_path="opencode.json",
+                target="secondary",
+                relative_path="config.json",
                 baseline={"z": 1, "a": 1},
                 live={"z": 2, "a": 2},
                 compiled={"z": 1, "a": 1},
@@ -334,8 +334,8 @@ def test_records_sorted_by_target_file_then_path(tmp_path):
     keys = [(r.target, r.relative_path, r.path) for r in records]
     assert keys == [
         ("home", ".claude/settings.json", "k"),
-        ("opencode", "opencode.json", "a"),
-        ("opencode", "opencode.json", "z"),
+        ("secondary", "config.json", "a"),
+        ("secondary", "config.json", "z"),
     ]
 
 
@@ -352,8 +352,8 @@ def test_format_groups_by_target_then_file_then_key(tmp_path):
             ),
             _comparison(
                 tmp_path,
-                target="opencode",
-                relative_path="opencode.json",
+                target="secondary",
+                relative_path="config.json",
                 baseline={"theme": "dark"},
                 live={"theme": "light"},
                 compiled={"theme": "dark"},
@@ -372,7 +372,7 @@ def test_format_groups_by_target_then_file_then_key(tmp_path):
         '    live:     ["a", "b"]\n'
         '    compiled: ["a"]\n'
         "\n"
-        "opencode  opencode.json\n"
+        "secondary  config.json\n"
         "  theme\n"
         '    baseline: "dark"\n'
         '    live:     "light"\n'

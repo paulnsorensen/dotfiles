@@ -16,7 +16,7 @@ teardown() { teardown_test_env; }
 
 broker_package() {
     local consumer=$1 line
-    line=$(grep -E "^install_consumer $consumer " "$PROVISIONER")
+    line=$(grep -E "^[[:space:]]*install_consumer $consumer " "$PROVISIONER")
     printf '%s\n' "${line##* }"
 }
 

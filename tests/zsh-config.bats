@@ -70,6 +70,14 @@ teardown() {
     grep -q "alias zrl=" "$aliases_file"
 }
 
+@test "mtmux enables predictive echo for remote tmux sessions" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "mosh() { printf '%s\n' \"\$@\"; }; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; mtmux edge main"
+
+    assert_success
+    [[ "$output" == $'--predict=always\nedge\n--\ntmux\nnew\n-A\n-s\nmain' ]]
+}
+
 @test "codex profile shortcuts launch tight and scoped profiles" {
     local claude_file="$REAL_DOTFILES_DIR/zsh/claude.zsh"
 
@@ -314,6 +322,21 @@ SH
     command -v zsh &>/dev/null || skip "zsh not installed"
     run zsh -c "PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zsh/core.zsh'" 2>&1
     assert_success
+}
+
+@test "core.zsh hands mise a gh-backed GitHub credential command" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    command -v gh &>/dev/null || skip "gh not installed"
+    # Regression: gh keeps its token in the macOS keychain, so hosts.yml has no
+    # oauth_token and mise's default gh_cli_tokens reader found nothing —
+    # leaving every aqua release lookup anonymous against the 60/hr per-IP cap.
+    #
+    # Only the gh-present branch is asserted. core.zsh unconditionally prepends
+    # /opt/homebrew/bin (which carries both gh and mise) before reaching the
+    # guard, so a no-gh shell cannot be simulated by controlling PATH here.
+    run zsh --no-rcs -c "source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\$MISE_GITHUB_CREDENTIAL_COMMAND\""
+    assert_success
+    [[ "$output" == *"CRED=[gh auth token]"* ]]
 }
 
 @test "zshenv prepends the mise shims dir ahead of stale PATH entries" {

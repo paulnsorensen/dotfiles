@@ -2,10 +2,19 @@
   "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
   "mcpServers": {
     "context7": {
-      "command": "agent-secret-proxy",
+      "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",
       "args": [
         "--socket",
         "/var/run/dotfiles-agent-secrets/context7.sock"
+      ]
+    },
+    "tilth": {
+      "command": "tilth",
+      "args": [
+        "--mcp",
+        "--edit",
+        "--search-surface",
+        "both"
       ]
     }
   }

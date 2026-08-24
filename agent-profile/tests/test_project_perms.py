@@ -453,7 +453,7 @@ def test_cmd_perms_unsupported_harness_errors(tmp_path, env, capsys):
     silently no-op with exit 0. Mirrors the loud failure every other
     subcommand gives on an unknown harness."""
     _write_perm_fragment(tmp_path, allow=["Bash(git:*)"])
-    result = run(["perms", "--harness", "opencode", "--target", str(tmp_path)])
+    result = run(["perms", "--harness", "cursor", "--target", str(tmp_path)])
     assert result != 0
     err = capsys.readouterr().err
     assert "claude, codex" in err
@@ -464,17 +464,16 @@ def test_cmd_perms_unsupported_harness_errors(tmp_path, env, capsys):
 def test_cmd_perms_mixed_supported_and_unsupported_harness_errors(
     tmp_path, env, capsys
 ):
-    """WHY: an explicit --harness mixing a supported and an unsupported value
-    (claude,opencode) must fail loud naming the bad value — NOT silently drop
-    opencode and render Claude only. The all-harness default still filters
-    quietly down to claude/codex; an explicit typo must not slip through."""
+    """An explicit --harness mixing a supported and an unsupported perms value
+    must fail loud naming the bad value rather than rendering only Claude. The
+    all-harness default still filters quietly to Claude and Codex."""
     _write_perm_fragment(tmp_path, allow=["Bash(git:*)"])
     result = run(
-        ["perms", "--harness", "claude,opencode", "--target", str(tmp_path)]
+        ["perms", "--harness", "claude,cursor", "--target", str(tmp_path)]
     )
     assert result != 0
     err = capsys.readouterr().err
-    assert "opencode" in err
+    assert "cursor" in err
     assert "claude, codex" in err
     # The loud error must abort before any render.
     assert not (tmp_path / ".claude").exists()

@@ -48,19 +48,22 @@ codex:
     tilth:
       command: tilth
       # `--edit` enables the tilth_write tool; without it tilth is read-only.
-      args: ["--mcp", "--edit"]
+      args: ["--mcp", "--edit", "--search-surface", "both"]
       tools:
         tilth_write:
           approval_mode: approve
     context7:
-      command: agent-secret-proxy
+      command: /usr/local/libexec/dotfiles/agent-secret-proxy
       args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
     tavily:
-      command: agent-secret-proxy
+      command: /usr/local/libexec/dotfiles/agent-secret-proxy
       args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
     milknado:
       command: uvx
       args: ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]
+    hallouminate:
+      command: hallouminate
+      args: ["serve"]
 
   # ── ~/.codex/agents selection (agents/agent_definitions/) ────────────────
   # Rendered to <name>.toml from agents/registry.yaml metadata at assembly

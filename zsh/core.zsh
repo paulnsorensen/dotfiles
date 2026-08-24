@@ -89,6 +89,16 @@ fi
 # copies so a mise-managed tool (e.g. claude, codex) resolves before any
 # stale native/brew install still on PATH from before migration.
 if command -v mise 1>/dev/null 2>&1; then
+  # gh keeps its token in the macOS keychain, so ~/.config/gh/hosts.yml has no
+  # `oauth_token` and mise's default gh_cli_tokens reader finds nothing —
+  # leaving every aqua release lookup anonymous against the 60/hr per-IP cap.
+  # This has to be the env var, not a [settings] block: packages/sync.sh runs
+  # `mise install` with MISE_GLOBAL_CONFIG_FILE aimed at the repo source, which
+  # demotes ~/.config/mise/config.toml to a non-global config where mise
+  # ignores credential_command and demands `mise trust`.
+  if command -v gh 1>/dev/null 2>&1; then
+    export MISE_GITHUB_CREDENTIAL_COMMAND="gh auth token"
+  fi
   eval "$(mise activate zsh)"
 fi
 

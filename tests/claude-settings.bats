@@ -574,3 +574,14 @@ STDIN"
     [ "$(jq -r '.env.WHATEVER' "$OUT")" = "live-value" ]
     [ "$(jq -r '.env.ENABLE_TOOL_SEARCH' "$OUT")" = "$(jq -r '.env.ENABLE_TOOL_SEARCH' "$AUTH")" ]
 }
+
+# ── auto-memory disable (AC-1, issue #717) ──────────────────────────────────
+# Claude auto-memory is turned off globally via the chezmoi-authoritative
+# settings, so durable project knowledge lands in the repo wiki, not a
+# machine-local store. Sourced from the static authoritative JSON.
+
+@test "modify_settings: auto-memory is disabled in the composed settings (autoMemoryEnabled=false)" {
+    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.autoMemoryEnabled' "$OUT")" = "false" ]
+}

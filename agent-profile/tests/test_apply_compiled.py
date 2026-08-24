@@ -87,25 +87,25 @@ def test_apply_updates_existing_file_in_place(tmp_path):
 
 def test_apply_writes_to_each_target_resolved_root(tmp_path):
     home = tmp_path / "home"
-    oc = tmp_path / "oc"
+    cursor = tmp_path / "cursor"
     cache = tmp_path / "compiled"
     f_home = _fragment(cache, "home", "claude", ".claude/agents/r.md", "h\n")
-    f_oc = _fragment(cache, "opencode", "opencode", ".opencode/agents/r.md", "o\n")
+    f_cursor = _fragment(cache, "cursor", "cursor", ".cursor/agents/r.md", "c\n")
     targets = [
         _target("home", home),
         _target(
-            "opencode",
-            oc,
-            symbolic="$HOME/.config/opencode",
-            harnesses=("opencode",),
+            "cursor",
+            cursor,
+            symbolic="$HOME/.cursor",
+            harnesses=("cursor",),
         ),
     ]
-    mpath = _write_manifest(cache, _manifest(targets, [f_home, f_oc]))
+    mpath = _write_manifest(cache, _manifest(targets, [f_home, f_cursor]))
 
     apply_compiled.apply_compiled(mpath)
 
     assert (home / ".claude/agents/r.md").read_text() == "h\n"
-    assert (oc / ".opencode/agents/r.md").read_text() == "o\n"
+    assert (cursor / ".cursor/agents/r.md").read_text() == "c\n"
 
 
 def test_apply_writes_state_beside_manifest_by_default(tmp_path):

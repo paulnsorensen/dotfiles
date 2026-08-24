@@ -45,6 +45,8 @@ packages:
 
   # Linux-only
   - xclip: { platform: linux }
+  - mold: { platform: linux }                 # fast linker for target.x86_64-unknown-linux-gnu (cargo/config.toml)
+  - llvm: { platform: linux }                 # provides clang, required by cargo/config.toml's mold linker config
 
   # Dev (DOTFILES_DEV=true)
   - pyenv: { dev: true }
@@ -56,11 +58,11 @@ packages:
 
   # Linters
   # renovate: datasource=npm depName=eslint
-  - eslint: { source: npm, version: "10.8.0" }
+  - eslint: { source: npm, version: "10.8.1" }
   # renovate: datasource=npm depName=markdownlint-cli2
   - markdownlint-cli2: { source: npm, version: "0.23.2" }
   # renovate: datasource=npm depName=ccusage
-  - ccusage: { source: npm, version: "20.0.19" }
+  - ccusage: { source: npm, version: "20.0.20" }
   # renovate: datasource=npm depName=@govcraft/agent-skills
   - agent-skills: { source: npm, pkg: "@govcraft/agent-skills", version: "0.4.4" }
   # renovate: datasource=npm depName=@withgraphite/graphite-cli
@@ -70,9 +72,9 @@ packages:
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.16.1" } # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.16.3" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
-  - check-jsonschema: { source: uv, version: "0.37.4" }
+  - check-jsonschema: { source: uv, version: "0.38.0" }
   # renovate: datasource=git-refs depName=agentskills/agentskills
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref", rev: "38a2ff82958afee88dadf4831509e6f7e9d8ef4e" }
   # renovate: datasource=pypi depName=tavily-cli

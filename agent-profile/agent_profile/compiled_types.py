@@ -6,13 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-VALID_COMPILE_HARNESSES = (
-    "claude",
-    "codex",
-    "opencode",
-    "cursor",
-    "copilot",
-)
+from agent_profile.harnesses import SUPPORTED_ITEM_HARNESSES
+
+VALID_COMPILE_HARNESSES = SUPPORTED_ITEM_HARNESSES
 
 # Live compiled deployment no longer owns any harness-global merged settings.
 # Those files move to chezmoi management, so compile emits only generated

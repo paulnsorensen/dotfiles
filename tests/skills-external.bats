@@ -119,12 +119,9 @@ run_sync() {
 }
 
 @test "skill sync: unsupported SKILL_HARNESSES agent is skipped, supported ones still install" {
-    # SKILL_HARNESSES is shared with agents the `skills` CLI doesn't support
-    # (e.g. crush, antigravity — valid install targets elsewhere). An
-    # unsupported entry must be skipped with a loud warning, NOT abort the
-    # whole refresh: the supported agents should still get their skills. The
-    # silent-no-op masking risk the old hard-fail guarded is covered by the
-    # explicit per-skip warning.
+    # SKILL_HARNESSES can name agents unsupported by the `skills` CLI. An
+    # unsupported entry must be skipped with a loud warning, not abort the
+    # whole refresh.
     write_registry
     write_env "claude-code bogus-agent"
 

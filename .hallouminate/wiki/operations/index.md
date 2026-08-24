@@ -14,3 +14,25 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 
 - [[omp-config-shape-drift]] — unknown-key gate tripping on nested `dev.autoqa.*` means a stale per-machine config serialization: normalize with an `omp config set` re-save; never fold the nested shape into the shared registry (the #487 flip-flop).
 - [[omp-fanout-worker-models]] — OMP fan-out guardrails and evidence-dated worker-model cost research: separate parent reasoning from cheap worker roles, bound task fan-out, and treat speed rankings as provisional until measured locally.
+
+- [[bitwarden-secrets-manager]] — the Bitwarden provider runbook behind `bin/vault-provision`: the exact three-Secret inventory, why records are created in the web application rather than via `bws secret create`, the single-line constraint the env-output fetch imposes, least-privilege machine account, root-shell access-token boundary, and key rotation.
+
+## Repo-local traps
+
+- [[git-stash-hygiene]] — the dotfiles tree carries unrelated WIP stashes, so a bare `git stash pop` applies someone else's WIP; pop only your own stash by exact ref, and untracked files don't stash via pathspec.
+- [[just-check-claude-guard-flake]] — `just check` test 349 (claude-wrapper.bats) fails purely because ≥8 Claude sessions are running (the launcher guard), not because of the diff; confirm with `pgrep -cx claude` and rerun under `CLAUDE_GUARD=0`.
+- [[cloud-routines-location]] — the five Claude Code cloud routines live in the private `paulnsorensen/routines` repo, not in dotfiles/tilth; edit them there.
+
+## Packaging and machine state
+
+- [[brew-machine-prune]] — the machine-side half of [[../adr/manifest-pinned-packages]]: `sync_brew` never uninstalls, so strays accumulate until pruned by hand. Read before pruning — `rustup` and `mise` must stay in brew (mise's `rust` is a symlink into rustup's tree; mise itself is the bootstrap trust root).
+- [[mise-aqua-backend-retypes]] — an aqua-registry package retype breaks a working pin with no version change; the fix is a backend migration, not a version bump.
+- [[mise-manifest-precedence]] — the live `~/.config/mise/config.toml` outranks any `MISE_GLOBAL_CONFIG_FILE` manifest, so a stale live file silently swallows a pin bump and wedges `dots sync` in a loop no re-run escapes; the fix is `apply_mise_manifest` in the prepare phase — do not delete it as redundant.
+- [[mise-github-auth]] — `gh` keeps its token in the macOS keychain, so mise's default reader finds nothing and aqua release lookups go anonymous against the 60/hr cap; must be fixed with `MISE_GITHUB_CREDENTIAL_COMMAND`, never a `[settings]` block.
+- [[omp-install-etxtbsy]] — `curl: (23)` during an omp install is `ETXTBSY` from overwriting a running binary, not a network fault; the fix is stage-then-`rename(2)`.
+- [[rectangle-sync]] — why `rectangle/.sync` needs a hash stamp: it used to hard-restart Rectangle Pro on every `dots sync`, and SIGKILL leaves no crash report, so "the app keeps crashing" had no diagnostic trail.
+
+## Measurement and prompting
+
+- [[test-suite-performance]] — the Bats suite is dominated by repeated integration setup, not runner parallelism; keep the CPU-count default and shorten the work inside tests instead of tuning job count.
+- [[prompting-claude-opus-5]] — the Opus 5 behaviour deltas that actually change decisions here: model-tier pins, review fan-out sizing, verification scaffolding, delegation restraint.

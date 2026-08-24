@@ -8,7 +8,7 @@ reads or emits API-key, PAT, env, or envFile values.
   "mcpServers": {
     "context7": {
       "type": "local",
-      "command": "agent-secret-proxy",
+      "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",
       "args": [
         "--socket",
         "/var/run/dotfiles-agent-secrets/context7.sock"
@@ -20,7 +20,7 @@ reads or emits API-key, PAT, env, or envFile values.
 
     "tavily": {
       "type": "local",
-      "command": "agent-secret-proxy",
+      "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",
       "args": [
         "--socket",
         "/var/run/dotfiles-agent-secrets/tavily.sock"
@@ -35,7 +35,9 @@ reads or emits API-key, PAT, env, or envFile values.
       "command": "tilth",
       "args": [
         "--mcp",
-        "--edit"
+        "--edit",
+        "--search-surface",
+        "both"
       ],
       "tools": [
         "*"

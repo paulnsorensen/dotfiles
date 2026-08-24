@@ -7,7 +7,7 @@ self-heal (legacy hooks + dropped MCPs).
 
 ## Current state: global settings disconnected
 
-Non-isolated `ap install global` no longer read-modify-writes harness-global settings files. The live global config surfaces — `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.config/opencode/opencode.json`, `~/.cursor/mcp.json`, `~/.copilot/mcp-config.json`, and `~/.config/crush/crush.json` — are now chezmoi/user-owned surfaces. `ap` renders generated artifacts (plugin trees, agents, hooks, skills) and isolated-profile settings only; `agent-profile/agent_profile/compiled_types.py:17-20` keeps merged settings out of compiled manifests.
+Non-isolated `ap install global` no longer read-modify-writes harness-global settings. Claude, Codex, Cursor, and Copilot live files are chezmoi- or user-owned; `ap` owns generated artifacts and isolated-profile settings only.
 
 Historical drift still matters because older apply-state and older live files may contain entries that `ap` used to merge. `ap apply-compiled` now preserves those disconnected legacy paths if a prior state file still lists them, so migration removes ownership without deleting a live user settings file (`agent-profile/agent_profile/merged_settings_preservation.py:31-42`, `agent-profile/agent_profile/apply_compiled.py:151-171`).
 
@@ -326,7 +326,11 @@ emitting a read format its current `main` had removed (per-line `<hash>|`
 anchors, deleted in tilth PR #99) and missing a feature its `install` step now
 depends on (the auto-created `~/.claude/tilth/inject-cwd.js` cwd-injection hook,
 tilth PR #118). The stale hook then leaves the `claude.yaml` `mcp__tilth__.*`
-PreToolUse wiring pointing at a missing file.
+PreToolUse wiring pointing at a missing file. (Historical: as of 2026-08-10
+tilth retired the inject-cwd.js hook entirely — the `mcp__tilth__.*` PreToolUse
+entry and the `TILTH_MCP_CWD_HOOK_INJECTED` MCP env marker were removed from
+`claude.yaml`, and `.sync-lib.sh` no longer drops or checks the script. An
+omitted `cwd` now gets tilth's teaching refusal instead of silent injection.)
 
 **Why it happens**: `packages/packages.yaml` gates the toolchain provider
 `rustup: { dev: true }` (dev machines only, `packages/sync.sh:87`), while the
@@ -381,33 +385,20 @@ masks the drift. Covered in `tests/packages.bats` (heal tests).
 
 **Detection**: `brew list --cask` name present + `[[ ! -e /Applications/<App> ]]`.
 
-## Known drift pattern: registry MCP drops stranded in opencode/cursor live configs
+## Known drift pattern: registry MCP drops stranded in Cursor
 
-**Symptom**: An MCP removed from `agents/mcp/registry.yaml` lingers in
-`~/.config/opencode/opencode.json` / `~/.cursor/mcp.json` indefinitely. First
-hit 2026-07-29: `serena` (dropped 5d43056e, 2026-07-24) still live in both
-five days and many syncs later, its binary long gone.
+**Symptom:** an MCP removed from `agents/mcp/registry.yaml` can remain in
+`~/.cursor/mcp.json` after its executable disappears.
 
-**Why it happens**: two gaps ([#561](https://github.com/paulnsorensen/dotfiles/issues/561)).
-`_reconcile_dropped_mcps` diffs the *prior cached manifest* against the current
-one, so the prune fires only on the sync that crosses the drop — miss that
-window (sync error, manifest refreshed first) and the evidence is gone. And
-cursor's live `mcp.json` is a disconnected user-owned surface (see § global
-settings disconnected): no code path prunes it at all anymore.
+**Why:** Cursor's live MCP file is a disconnected user-owned surface; the
+compiler no longer prunes it. The stateless reconcile fix is tracked in #561.
 
-**Fix**: manual `jq 'del(.mcp.<name>)'` (opencode) / `del(.mcpServers.<name>)`
-(cursor) to a temp file, validate, move into place. While healing cursor, also
-check `envFile` values — when the envFile resolves to `.env` (not the
-vault-cache `secrets.env`, which is XDG-stable), a render from a worktree
-checkout bakes the worktree's `${DOTFILES_DIR}/.env` path in
-(`renderers/cursor.py:_env_file_for_keys` resolves it at render time), which
-goes stale when the worktree is removed; repoint at the main clone's `.env`
-path. Permanent fix (stateless
-reconcile against the current registry) tracked in #561.
+**Fix:** remove the stale `mcpServers.<name>` entry with a validated JSON edit.
+Also repoint any `envFile` containing a deleted worktree path to the stable main
+clone or vault-cache path.
 
-**Detection**: live server names absent from `agents/mcp/registry.yaml` with
-repo provenance (matching command shape); any cursor `envFile` containing
-`.worktrees/`.
+**Detection:** compare live server names with `agents/mcp/registry.yaml`; flag
+Cursor `envFile` values containing `.worktrees/`.
 
 ## Gotcha: `just check` fails locally on macOS while green in CI (GNU-only test idioms)
 
@@ -423,6 +414,68 @@ logic bug. Tracked in
 [#404](https://github.com/paulnsorensen/dotfiles/issues/404). Detection: any
 test using GNU-only flags (`touch -d @epoch`, `date -d`, `sed -i` without a
 backup arg, `readlink -f`) is a portability suspect.
+
+## Known drift pattern: bootstrap `@latest` yq in ~/.local/bin shadows the mise pin
+
+**Symptom**: `just check` red locally on `tests/sync-codex-sources.bats`
+(`modify_config.toml preserves Codex-CLI runtime state`) while CI is green. The
+assertion `.model_reasoning_effort == "medium"` fails; the merged codex config
+nests `model_reasoning_effort`, `approval_policy`, `approvals_reviewer`,
+`sandbox_mode`, and `service_tier` **under** `[tui.model_availability_nux]`
+instead of at root. First hit 2026-08-23 on Linux.
+
+**Why it happens**: `packages/lib-linux-bootstrap.sh:bootstrap_yq_linux`
+installed yq via `@latest` (release URL and the `go install` fallback) into
+`~/.local/bin`, which sits ahead of the mise shims on PATH. So the bootstrap
+binary — whatever `@latest` resolved to at first-run — permanently shadows the
+mise-pinned yq (`chezmoi/dot_config/mise/config.toml`, `aqua:mikefarah/yq`).
+Here the bootstrap yq was **v4.53.2**, whose TOML emitter serializes root
+scalars in object key-order *after* nested tables; TOML then parses any scalar
+following a `[table]` header as a member of that table. The codex merge
+(`chezmoi/private_dot_codex/modify_private_config.toml`) does `live * $cfg`,
+which appends newly-introduced `$cfg` scalars after the merged `tui` table, so
+v4.53.2 absorbs them into `[tui.model_availability_nux]`. **v4.53.3 fixed the
+emitter.** CI uses the pinned v4.53.3, so it never saw it. Only bites the
+*first* merge that introduces a scalar the live file lacks — existing installs
+already have those keys at root, so `*` overrides them in place (idempotent),
+which is why the live `~/.codex/config.toml` stayed healthy.
+
+**Fix**: pin the bootstrap install to the mise-declared version. `bootstrap_yq_linux`
+now calls `yq_pinned_version()` (greps the version out of the mise config — yq
+isn't installed yet at bootstrap) and installs exactly that, refusing when the
+pin can't be resolved ([#765](https://github.com/paulnsorensen/dotfiles/pull/765)).
+Immediate unblock on an already-shadowed box: `rm ~/.local/bin/yq` so PATH falls
+through to the linuxbrew/mise v4.53.3.
+
+**Detection**: `which -a yq` showing `~/.local/bin/yq` ahead of the mise shim,
+and its `yq --version` differing from `aqua:mikefarah/yq` in the mise config.
+Same local-red/CI-green class as the macOS GNU-idiom gotcha above.
+
+## Known drift pattern: stray `/tmp/.git` trips the ap install-guard in tests
+
+**Symptom**: `just check` red locally on the `agent-profile` install tests
+(`test_install_guard_silent_when_cwd_not_in_git_repo` plus the
+`test_skill_fetch_wiring.py` install cases), each failing with `ap install:
+refusing to install profile ... into a git working tree (cwd: /tmp/pytest-of-paul/...)`.
+CI is green. First hit 2026-08-23.
+
+**Why it happens**: `agent_profile/cli.py:_within_git_repo` walks `start` and
+every ancestor testing `(d / ".git").exists()` — a pure filesystem check with no
+git invocation and no mount-boundary logic (git itself stops at the `/tmp`
+tmpfs boundary and would report "not a git repository"). The install tests stage
+under pytest's `tmp_path` (`/tmp/pytest-of-paul/...`). A stray **empty**
+`/tmp/.git` directory (created out-of-band by some tool) is therefore seen as an
+ancestor repo, so the guard fires and every `tmp_path`-based install test that
+expects the no-repo path fails.
+
+**Fix**: `rmdir /tmp/.git` (it's empty). Not a committed-code bug — a fresh CI
+runner has no `/tmp/.git`. A latent robustness gap remains: `_within_git_repo`
+treats any directory named `.git` as a repo without checking for a real gitdir
+(a valid `.git` has `HEAD`); tightening that, or staging tests off `/tmp`, would
+harden it, but neither is required to unblock.
+
+**Detection**: `[ -e /tmp/.git ]` while the install-guard tests fail on a
+`/tmp/pytest-of-paul/...` cwd.
 
 See [[agent-profile]] for the `ap` render/install model and [[../harnesses/claude]]
 for where each Claude config surface lives.

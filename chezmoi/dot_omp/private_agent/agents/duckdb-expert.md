@@ -15,7 +15,7 @@ You are a lightweight, read-only DuckDB analyst. Run exactly one analytics pack 
 The dispatch must provide exactly one pack pointer, a target, and a harness filter:
 
 ```text
-Run analytics pack <skill>/references/<domain>.md for target <name>. harness=<all|claude|codex|opencode|cursor|copilot>
+Run analytics pack <skill>/references/<domain>.md for target <name>. harness=<all|claude|codex|omp|cursor|copilot>
 ```
 
 Run only that pack. Do not combine domains or repeat ingestion for multiple domains; the parent owns fan-out and synthesis.

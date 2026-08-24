@@ -1,16 +1,13 @@
 # _permissions — canonical cross-harness allow/deny lists.
 #
-# Declared once here; each harness renderer lowers these onto its native
-# permission surface (Claude root settings.json, opencode per-tool map,
-# Codex .rules + config.toml, Copilot launch flags + mcp-config, Cursor
-# cli-config). The lever split is DERIVED, not declared: an entry matching
+# Declared once here; each renderer lowers these onto its native permission
+# surface: Claude settings, Codex rules/config, Copilot launch/MCP config, and
+# Cursor CLI config. The lever split is DERIVED, not declared: an entry matching
 # `mcp__*` is lever 3 (MCP-tool scoping); everything else is lever 1
 # (per-command/tool). So this is one flat list per allow/deny.
 #
-# Edit here, then `dots sync` (runs `ap install global` +
-# `ap install opencode-global`) re-asserts the set onto every live harness.
-# The live wrappers include this fragment; isolated profiles (review) do NOT
-# and keep their own closed-world deny lists.
+# Edit here, then `dots sync` reasserts the set onto every live harness. The
+# live profile includes this fragment; isolated profiles keep their own denies.
 #
 # `global` sets `mcp_scope: user`, so MCPs register with bare names
 # (`mcp__<server>__*`). The lever-3 rules below therefore use bare names.
@@ -85,8 +82,7 @@ settings:
   #   1. Search/IO routing. The tool-reroute hook (claude-only) now OWNS this:
   #      it REWRITES grep/rg/ag/ack/cat/find to tilth and DELEGATES the rest to
   #      rtk, so grep/ag/ack and the Grep/Glob tools are no longer denied here.
-  #      Un-denying them on the four hookless harnesses (cursor/copilot/opencode)
-  #      is accepted — those keep the routing system-prompt nudge. Bash(rg:*)'s
+  #      Cursor and Copilot keep the routing system-prompt nudge. Bash(rg:*)'s
   #      allow stays removed (a stray rg prompts rather than running unfiltered).
   #      Only the `rtk proxy git grep` tunnel stays denied below: the lexer's
   #      rtk-strip turns it into `git grep`, which has no tilth rewrite target.
@@ -98,14 +94,9 @@ settings:
     - Bash(rtk proxy git grep:*)
     - Bash(sudo:*)
     - Bash(rm -rf:*)
-    # Secret-protection floor (cross-harness). opencode denies .env by
-    # default (https://opencode.ai/docs/permissions), so .env itself is
-    # included for the other harnesses but .env.* is NOT — adding it would
-    # clobber .env.example allows under the renderer's allow-then-deny
-    # batching (opencode is last-match-wins; the renderer emits all allow
-    # entries before all deny, so a .env.* deny would override an
-    # .env.example allow). Claude+Codex also have the PreToolUse hook
-    # (agents/lib/sensitive-file-guard.js) as a redundant guard.
+    # Secret-protection floor. `.env.*` is intentionally not denied because it
+    # would also block safe fixtures such as `.env.example`. Claude and Codex
+    # additionally enforce the sensitive-file PreToolUse hook.
     - Read(.env)
     - Read(**/.env)
     - Read(**/*.pem)

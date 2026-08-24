@@ -11,7 +11,7 @@ setup() {
     git -C "$REPO" config user.email t@t.test
     git -C "$REPO" config user.name tester
     git -C "$REPO" commit --allow-empty -q -m init
-    git -C "$REPO" worktree add -q "$REPO/.worktrees/feat" -b claude/feat
+    git -C "$REPO" worktree add -q "$REPO/.worktrees/feat" -b worktree/feat
 
     # Deterministic tmux stub: report no session so no kill is attempted.
     STUB="$TMPROOT/stub"
@@ -49,7 +49,7 @@ teardown() {
     run ccw-rm feat
     [ "$status" -eq 0 ]
     [ ! -d "$REPO/.worktrees/feat" ]
-    run git -C "$REPO" show-ref --verify --quiet refs/heads/claude/feat
+    run git -C "$REPO" show-ref --verify --quiet refs/heads/worktree/feat
     [ "$status" -ne 0 ]
 }
 

@@ -6,7 +6,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from agent_profile.compiled_types import VALID_COMPILE_HARNESSES, CompileTarget
+from agent_profile.compiled_types import CompileTarget
+from agent_profile.harnesses import validate_supported_harnesses
 
 _ENV_REF_RE = re.compile(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)")
 
@@ -108,19 +109,13 @@ def _validate_harnesses(
     target_name: str,
     harness_owners: dict[str, str],
 ) -> list[str]:
-    if isinstance(harnesses, str) or not isinstance(harnesses, list | tuple):
-        raise _target_error(manifest_path, target_name, "harnesses must be a list")
-
-    normalized: list[str] = []
-    for harness in harnesses:
-        harness_name = str(harness)
-        if harness_name not in VALID_COMPILE_HARNESSES:
-            valid = "|".join(VALID_COMPILE_HARNESSES)
-            raise _target_error(
-                manifest_path,
-                target_name,
-                f"has unknown harness '{harness_name}' (valid: {valid})",
-            )
+    context = f"ap_parse_one: {manifest_path} compile target '{target_name}'"
+    normalized = validate_supported_harnesses(
+        harnesses,
+        context=context,
+        error_type=CompileTargetValidationError,
+    )
+    for harness_name in normalized:
         owner = harness_owners.get(harness_name)
         if owner is not None:
             raise _target_error(
@@ -129,7 +124,6 @@ def _validate_harnesses(
                 f"duplicates harness '{harness_name}' already assigned to target '{owner}'",
             )
         harness_owners[harness_name] = target_name
-        normalized.append(harness_name)
 
     return normalized
 

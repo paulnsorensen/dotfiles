@@ -10,16 +10,16 @@ setup() {
 teardown() { teardown_test_env; }
 
 assert_yaml_proxy() {
-    local file=$1 query=$2 consumer=$3
-    [[ "$(yq -r "$query.command" "$file")" == "agent-secret-proxy" ]]
+    local file=$1 query=$2 consumer=$3 command=${4:-agent-secret-proxy}
+    [[ "$(yq -r "$query.command" "$file")" == "$command" ]]
     [[ "$(yq -r "$query.args | @json" "$file")" == "[\"--socket\",\"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" ]]
     [[ "$(yq -r "$query | has(\"env\")" "$file")" == false ]]
     [[ "$(yq -r "$query | has(\"envFile\")" "$file")" == false ]]
 }
 
 assert_json_proxy() {
-    local file=$1 query=$2 consumer=$3
-    jq -e "$query.command == \"agent-secret-proxy\"" "$file" >/dev/null
+    local file=$1 query=$2 consumer=$3 command=${4:-agent-secret-proxy}
+    jq -e "$query.command == \"$command\"" "$file" >/dev/null
     jq -e "$query.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" "$file" >/dev/null
     jq -e "$query | has(\"env\") | not" "$file" >/dev/null
     jq -e "$query | has(\"envFile\") | not" "$file" >/dev/null
@@ -45,17 +45,19 @@ assert_json_proxy() {
             "$file" ".mcps[] | select(.name == \"$consumer\")" "$consumer"
     done
 
+    local libexec_proxy=/usr/local/libexec/dotfiles/agent-secret-proxy
+
     local claude="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    assert_yaml_proxy "$claude" '.claude.mcps.context7' context7
-    assert_yaml_proxy "$claude" '.claude.mcps.tavily' tavily
+    assert_yaml_proxy "$claude" '.claude.mcps.context7' context7 "$libexec_proxy"
+    assert_yaml_proxy "$claude" '.claude.mcps.tavily' tavily "$libexec_proxy"
 
     local codex="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
-    assert_yaml_proxy "$codex" '.codex.mcps.context7' context7
-    assert_yaml_proxy "$codex" '.codex.mcps.tavily' tavily
+    assert_yaml_proxy "$codex" '.codex.mcps.context7' context7 "$libexec_proxy"
+    assert_yaml_proxy "$codex" '.codex.mcps.tavily' tavily "$libexec_proxy"
 
     assert_json_proxy \
         "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json" \
-        '.mcpServers.context7' context7
+        '.mcpServers.context7' context7 "$libexec_proxy"
 }
 
 @test "rendered Copilot MCP config contains no credential delivery channel" {
@@ -69,8 +71,9 @@ assert_json_proxy() {
         chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template \
         < "$template" > "$rendered"
 
-    assert_json_proxy "$rendered" '.mcpServers.context7' context7
-    assert_json_proxy "$rendered" '.mcpServers.tavily' tavily
+    local libexec_proxy=/usr/local/libexec/dotfiles/agent-secret-proxy
+    assert_json_proxy "$rendered" '.mcpServers.context7' context7 "$libexec_proxy"
+    assert_json_proxy "$rendered" '.mcpServers.tavily' tavily "$libexec_proxy"
 
     local retired
     for retired in \

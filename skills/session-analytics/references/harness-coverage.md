@@ -6,8 +6,8 @@ per harness; every adapter is discovery-gated and best-effort. A harness with no
 accessible logs is recorded here and skipped non-fatally — full coverage of what
 is reachable, not parsing the unparseable.
 
-Every canonical table carries a `harness` column (`claude` / `codex` /
-`opencode` / `omp` / `cursor` / `copilot`) so one query can compare sources. See
+Every canonical table carries a `harness` column (`claude` / `codex` / `omp` /
+`cursor` / `copilot`) so one query can compare sources. See
 `canonical-schema.md` for the table shapes.
 
 ## Coverage status
@@ -16,7 +16,6 @@ Every canonical table carries a `harness` column (`claude` / `codex` /
 |---------|-------------|--------|---------|--------|
 | claude | `~/.claude/projects/**/*.jsonl` | JSONL, one turn per line; assistant/user `message.content[]` blocks | `claude_normalize` (pass-through, already canonical) | parsed |
 | codex | `~/.codex/sessions/**/*.jsonl` | JSONL rollout; `session_meta` + `response_item`/`event_msg` payloads | `codex_normalize` | parsed |
-| opencode | `~/.local/share/opencode/opencode.db` | SQLite; `part` table rows with `type='tool'`, joined to `session.directory` | `opencode_normalize` | parsed |
 | omp | `~/.omp/agent/sessions/<flattened-project-dir>/*.jsonl` | JSONL; `session` header + `message` entries with `toolCall` / `toolResult` | `omp_normalize` | parsed |
 | cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | SQLite blob, undocumented schema, fragile across versions | none | **no accessible logs** |
 | copilot | `~/.copilot/` | holds `skills/` + `mcp-config.json` only; no local transcript found | none | **no accessible logs** |
@@ -31,6 +30,21 @@ Native format is already the canonical envelope (`type`, `timestamp`,
 up by the recursive walk, but those turns have no direct user interaction (no
 stop events, no denials).
 
+Claude omits `is_error` on most successful tool results; the flattener
+backfills those to `'false'` and marks them `is_error_explicit = false`
+(measured: ~99.5% of absent-flag results carry non-error content, so claude
+error rates are floors — a handful of harness-side truncation notices lack the
+flag).
+
+**`bash_cmd` is the model-typed command, pre-hook.** A PreToolUse
+`updatedInput` rewrite (e.g. the tool-reroute hook's `git status` → `rtk git
+status`) executes the rewritten command but the transcript records the
+original — verified live: a hook-rewritten call produced rtk-format output
+while the JSONL logged the plain command. Hook rewrite coverage is therefore
+NOT measurable from claude transcripts; a low `rtk %` in `bash_cmd` says only
+how often the model typed the prefix itself (this artifact produced the false
+"rtk hook barely fires on claude" finding in issue #702).
+
 ### codex
 
 Rollout JSONL. Each line is `{timestamp, type, payload}`:
@@ -39,24 +53,20 @@ Rollout JSONL. Each line is `{timestamp, type, payload}`:
   following row in the file.
 - `turn_context` — refreshes `payload.cwd`.
 - `response_item / function_call` and `custom_tool_call` → an assistant
-  `tool_use` block. The tool name (`shell`, `apply_patch`, custom tools) is kept
-  verbatim; `arguments` is JSON-parsed into `input`.
-- `response_item / function_call_output` → a user `tool_result` block.
+  `tool_use` block. The tool name (`shell`, `exec_command`, `exec`,
+  `apply_patch`, custom tools) is kept verbatim; `arguments` is JSON-parsed
+  into `input`. For shell-ish tools, `input.command` is **normalized to the
+  executed command string** so `bash_cmd` populates: `exec_command` copies
+  `cmd`, legacy `shell` argv arrays collapse to the `-lc`/`-c` payload (or a
+  space-join), and the `exec` custom tool's raw code-string argument becomes
+  the command.
+- `response_item / function_call_output` **and `custom_tool_call_output`** → a
+  user `tool_result` block. (Dropping the custom outputs was the ~50%
+  result-join gap — issue #704.) `tool_search_output` items have no matching
+  call item and are dropped.
 
 Codex has no `Skill` / `Agent` tool primitives, so `skill_invocations` and
 `agent_spawns` stay claude-centric. `reasoning` items (encrypted) are dropped.
-
-### opencode
-
-SQLite at `opencode.db` (older builds used JSON files under `storage/`; the
-adapter targets the DB). A `part` row with `data.type='tool'` carries
-`{tool, callID, state:{status, input, output}}`:
-
-- the part → an assistant `tool_use` (tool name verbatim, `state.input` as input);
-- when `state.output` is present (or `status='error'`) → a paired user
-  `tool_result` (`is_error='true'` on error).
-
-`session.directory` supplies `cwd`. Opened read-only (`mode=ro`).
 
 ### omp
 
@@ -108,6 +118,13 @@ Re-evaluate if a transcript store appears.
 
 Some metrics are only reliable on harnesses that record the underlying field —
 e.g. token/cost data is absent from most logs (`token-economics` degrades to
-"insufficient signal"), and codex/opencode lack Claude's hook + permission-denial
+"insufficient signal"), and codex/omp lack Claude's hook + permission-denial
 entries, so `stop_hooks` / `permission_denials` are effectively claude-only.
 Packs must degrade gracefully rather than fabricate.
+
+`ingest.py` prints a per-harness **coverage stanza** after every run:
+`results_joined_pct` (tool calls with a joined result — low means per-tool
+error rates for that harness are floors, not estimates) and
+`explicit_error_flag_pct` (results whose error flag came from the source
+rather than the `'false'` backfill). Read it before quoting cross-harness
+error-rate comparisons.

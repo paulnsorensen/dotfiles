@@ -2,7 +2,7 @@
 
 # target_param: {TOOL}        (usually 'Bash'; '%' for all tools)
 
-# harness: claude-dominant — denials/hooks barely exist on codex/opencode
+# harness: claude-dominant — denials/hooks barely exist on codex/omp
 
 # owner: tool-efficiency
 
@@ -10,9 +10,9 @@ Permission denials, allowlist gaps, and compound-command friction. Run by
 `duckdb-expert`, one spawn. Schema:
 `skills/session-analytics/references/canonical-schema.md`.
 
-> Denials and stop-hooks are recorded almost exclusively for claude. On a
-> codex/opencode filter, expect empty results — report "insufficient signal",
-> not "no friction".
+> Denials and stop-hooks are recorded almost exclusively for Claude. On a
+> Codex/OMP filter, report empty results as "insufficient signal", not
+> "no friction".
 
 ## 1. Denial categories (root-cause buckets)
 

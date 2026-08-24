@@ -465,7 +465,7 @@ case "${1:-status}" in
         ;;
     profile|p)
         shift
-        if [[ "${1:-}" == "install" && ( "${2:-}" == "global" || "${2:-}" == "opencode-global" ) ]]; then
+        if [[ "${1:-}" == "install" && "${2:-}" == "global" ]]; then
             echo -e "${YELLOW}⚠️  profile '$2' is a migration stub; running dots sync instead.${NC}" >&2
             do_sync
             exit $?

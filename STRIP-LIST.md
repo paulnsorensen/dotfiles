@@ -96,7 +96,6 @@ All other packages (productivity tools, editors, optional CLIs). See catalog.
 | `.chezmoiignore` | COPY | Standard ignores |
 | `lib/install-cursor-plugin.sh` | GENERICIZE | Fixed comment referencing old `cheese-grok` plugin name |
 | `lib/install-codex.sh` | COPY | Machinery lib |
-| `lib/install-local-llm.sh` | COPY | Machinery lib |
 | `lib/install-prompts.sh` | COPY | Machinery lib |
 
 ---

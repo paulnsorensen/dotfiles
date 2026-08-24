@@ -1,9 +1,8 @@
 #!/usr/bin/env bats
 # Behavioural tests for sync_omp_plugins() in .sync-lib.sh — the reconcile
-# that installs milknado + hallouminate as native OMP marketplace plugins from
-# the `.omp.plugins` subtree of chezmoi/.chezmoidata/omp.yaml. Idempotent: a
-# converged machine makes zero mutating `omp` calls. `.npm[]`-installed
-# plugins are never touched — only `.marketplace[]` entries this function owns.
+# that installs registry-owned OMP marketplace plugins and pinned npm plugins.
+# Idempotent: a converged machine makes zero mutating `omp` calls. Unmanaged
+# npm plugins are preserved.
 #
 # The `omp` CLI is mocked with a recorder that also applies marketplace
 # add/remove and install/uninstall to fixture state (~/.omp/marketplaces.json
@@ -25,7 +24,7 @@ setup() {
     export NPM_JSON="$TEST_HOME/omp-npm.json"
     mkdir -p "$TEST_HOME/.omp"
     : > "$INSTALLED"
-    printf '[]' > "$NPM_JSON"
+    printf '[{"name":"@sysid/pi-vim","version":"1.0.3"}]' > "$NPM_JSON"
 
     # Mock omp CLI: records argv; applies marketplace add/remove and plugin
     # install/uninstall to fixture state; plugin list --json reads it back.
@@ -51,7 +50,15 @@ case "$1 $2 $3" in
 esac
 case "$1 $2" in
     "plugin install")
-        printf '%s\n' "$3" >> "$INSTALLED"
+        if [[ "$3" == "@sysid/pi-vim@"* ]]; then
+            version="${3##*@}"
+            jq --arg v "$version" '
+                map(select(.name != "@sysid/pi-vim"))
+                + [{name:"@sysid/pi-vim", version:$v}]
+            ' "$NPM_JSON" > "$NPM_JSON.tmp" && mv "$NPM_JSON.tmp" "$NPM_JSON"
+        else
+            printf '%s\n' "$3" >> "$INSTALLED"
+        fi
         exit 0
         ;;
     "plugin uninstall")
@@ -84,6 +91,8 @@ omp:
     hallouminate:
       marketplace: hallouminate
       source: paulnsorensen/hallouminate
+  npmPlugins:
+    "@sysid/pi-vim": 1.0.3
 YAML
 
     seed_marketplaces() {
@@ -119,6 +128,28 @@ mp_entry() {
     grep -qxF "milknado@milknado" "$INSTALLED"
 }
 
+@test "sync_omp_plugins: missing managed npm plugin installs its exact version" {
+    seed_marketplaces "$(mp_entry milknado),$(mp_entry hallouminate)"
+    printf 'milknado@milknado\nhallouminate@hallouminate\n' > "$INSTALLED"
+    printf '[]' > "$NPM_JSON"
+
+    run bash -c "source '$LIB'; sync_omp_plugins '$FIX'"
+    [ "$status" -eq 0 ]
+    grep -qxF "plugin install @sysid/pi-vim@1.0.3" "$CALLS"
+    [ "$(jq -r '.[] | select(.name == "@sysid/pi-vim") | .version' "$NPM_JSON")" = "1.0.3" ]
+}
+
+@test "sync_omp_plugins: stale managed npm plugin is upgraded to its exact version" {
+    seed_marketplaces "$(mp_entry milknado),$(mp_entry hallouminate)"
+    printf 'milknado@milknado\nhallouminate@hallouminate\n' > "$INSTALLED"
+    printf '[{"name":"@sysid/pi-vim","version":"1.0.2"}]' > "$NPM_JSON"
+
+    run bash -c "source '$LIB'; sync_omp_plugins '$FIX'"
+    [ "$status" -eq 0 ]
+    grep -qxF "plugin install @sysid/pi-vim@1.0.3" "$CALLS"
+    [ "$(jq -r '.[] | select(.name == "@sysid/pi-vim") | .version' "$NPM_JSON")" = "1.0.3" ]
+}
+
 @test "sync_omp_plugins: missing plugin (marketplace present) triggers install only" {
     seed_marketplaces "$(mp_entry milknado),$(mp_entry hallouminate)"
     printf 'hallouminate@hallouminate\n' > "$INSTALLED"
@@ -149,14 +180,15 @@ YAML
     ! jq -e '.marketplaces[] | select(.name == "milknado")' "$MP_JSON" >/dev/null
 }
 
-@test "sync_omp_plugins: npm-installed plugins are never touched" {
+@test "sync_omp_plugins: unmanaged npm plugins survive managed convergence" {
     seed_marketplaces "$(mp_entry milknado),$(mp_entry hallouminate)"
     printf 'milknado@milknado\nhallouminate@hallouminate\n' > "$INSTALLED"
-    printf '[{"id":"some-npm-plugin","scope":"user"}]' > "$NPM_JSON"
+    printf '[{"name":"some-npm-plugin","version":"1.0.0"}]' > "$NPM_JSON"
 
     run bash -c "source '$LIB'; sync_omp_plugins '$FIX'"
     [ "$status" -eq 0 ]
     ! grep -qF "some-npm-plugin" "$CALLS"
+    grep -qxF "plugin install @sysid/pi-vim@1.0.3" "$CALLS"
 }
 
 @test "sync_omp_plugins: malformed marketplaces.json degrades to empty instead of aborting under set -e" {

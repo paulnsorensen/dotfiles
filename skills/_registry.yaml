@@ -43,3 +43,5 @@ sources:
     # one the clone fails and the sync reports the source unavailable rather
     # than silently dropping the skills.
     skills: [wiki-curator, routine-scaffold, routine-env]
+  paulnsorensen/sliced-bread-architecture:
+    description: Sliced Bread doctrine skills — seam/spine coherence review, five-rule change review, slice depth scoring

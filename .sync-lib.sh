@@ -135,6 +135,28 @@ assemble_chezmoi_sources() {
     fi
 }
 
+# Land the tracked mise manifest before package convergence reads it.
+#
+# mise loads ~/.config/mise/config.toml *after* any --source manifest and lets
+# it win, so convergence resolves the live pins rather than the tracked ones.
+# Leaving that copy to the final apply deadlocks every pin bump: the stale file
+# pins the old version, `mise install` therefore never requests the new one,
+# and the harness-version gate — seeing the old binary — skips the very apply
+# that would refresh it. The manifest is an input to convergence, not an
+# output of it, so it has to land first.
+apply_mise_manifest() {
+    local source_dir="$1"
+    local target="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    command -v chezmoi &>/dev/null || return 0
+    if chezmoi --source "$source_dir" apply --force "$target"; then
+        echo "  Applied tracked mise manifest -> $target"
+    else
+        # Non-fatal: the harness-version gate stays the authority on whether
+        # convergence actually produced the pinned harnesses.
+        echo "  WARNING: could not apply $target — package convergence may read stale pins" >&2
+    fi
+}
+
 apply_chezmoi_source() {
     local source_dir="$1" chezmoi_status=0
     if command -v chezmoi &>/dev/null; then
@@ -833,13 +855,12 @@ sync_omp_chezmoi_sources() {
     return 0
 }
 
-# Reconcile native OMP marketplace plugins (milknado, hallouminate) against
-# the `.omp.plugins` subtree of chezmoi/.chezmoidata/omp.yaml. Runs after
-# chezmoi apply so the mcp.json cutover (context7 only) lands with the
-# plugin-owned MCP servers that replace it. Idempotent: a converged state
-# makes zero `omp` mutating calls. npm-installed plugins (`omp plugin list
-# --json` `.npm[]`) are never touched — only `.marketplace[]` entries whose
-# id matches `<name>@<marketplace>` for a marketplace this function owns.
+# Reconcile OMP marketplace plugins and pinned npm plugins against the
+# `.omp.plugins` and `.omp.npmPlugins` subtrees of
+# chezmoi/.chezmoidata/omp.yaml. Runs after chezmoi apply so the mcp.json
+# cutover (context7 only) lands with the plugin-owned MCP servers that replace
+# it. Idempotent: a converged state makes zero `omp` mutating calls. Marketplace
+# entries are exact-owned; unrelated npm plugins are preserved.
 #   sync_omp_plugins <dotfiles_root>
 sync_omp_plugins() {
     local root="$1"
@@ -864,9 +885,13 @@ sync_omp_plugins() {
 
     log_info "Reconciling OMP native plugins..."
 
-    # Desired: name\tmarketplace\tsource, one per registry entry.
+    # Desired marketplace plugins: name\tmarketplace\tsource.
     local desired
-    desired=$(yq -r '.omp.plugins // {} | to_entries | .[] | [.key, .value.marketplace, .value.source] | @tsv' "$reg")
+    desired=$(yq -r '.omp.plugins // {} | to_entries | .[] | select(.value.marketplace and .value.source) | [.key, .value.marketplace, .value.source] | @tsv' "$reg")
+
+    # Desired npm plugins: package\tversion.
+    local desired_npm
+    desired_npm=$(yq -r '.omp.npmPlugins // {} | to_entries | .[] | [.key, .value] | @tsv' "$reg")
 
     local desired_marketplaces
     desired_marketplaces=$(printf '%s\n' "$desired" | awk -F'\t' 'NF{print $2}' | sort -u)
@@ -882,10 +907,18 @@ sync_omp_plugins() {
         fi
     fi
 
+    local plugin_state
+    plugin_state=$(omp plugin list --json 2>/dev/null) || plugin_state='{}'
+
     # Current marketplace-installed plugin ids (e.g. "milknado@milknado").
-    # npm-installed plugins live under `.npm` and are never read here.
-    local current_installed=""
-    current_installed=$(omp plugin list --json 2>/dev/null | jq -r '.marketplace[]?.id' 2>/dev/null) || current_installed=""
+    local current_installed
+    current_installed=$(jq -r '.marketplace[]?.id' <<<"$plugin_state" 2>/dev/null) || current_installed=""
+
+    # Current npm plugin package/version pairs.
+    local current_npm
+    current_npm=$(jq -r '
+        .npm[]? | [.name, .version] | @tsv
+    ' <<<"$plugin_state" 2>/dev/null) || current_npm=""
 
     # --- Additions: marketplace add, then plugin install ---------------
     local name marketplace source
@@ -909,6 +942,19 @@ sync_omp_plugins() {
             fi
         fi
     done <<<"$desired"
+
+    # --- Pinned npm plugins: install missing packages and exact upgrades ---
+    local package version
+    while IFS=$'\t' read -r package version; do
+        [[ -z "$package" ]] && continue
+        if ! grep -qxF "$package"$'\t'"$version" <<<"$current_npm"; then
+            log_info "  Installing OMP npm plugin: ${package}@${version}"
+            if ! omp plugin install "${package}@${version}" >/dev/null 2>&1; then
+                log_error "omp plugin install ${package}@${version} failed"
+                return 1
+            fi
+        fi
+    done <<<"$desired_npm"
 
     # --- Removals: uninstall plugins, then remove marketplaces no longer
     # referenced by any registry entry. Restricted to marketplace-sourced
@@ -957,20 +1003,18 @@ install_prek_hooks() {
     done
 }
 
-# Wire tilth's cwd-injection PreToolUse hook (drops the current inject-cwd.js
-# script; the hook wiring itself is registry-authored in claude.yaml)
+# Install tilth's claude-code integration (edit-mode MCP entry). Prune the
+# retired inject-cwd.js hook first; current tilth warns whenever it remains.
 install_tilth_claude_code() {
     if ! command -v tilth &>/dev/null; then
-        log_warning "tilth not installed, skipping claude-code hook wiring"
+        log_warning "tilth not installed, skipping claude-code install"
         return 0
     fi
-    log_info "Wiring tilth cwd-injection hook (tilth install claude-code --edit)..."
+    rm -f "$HOME/.claude/tilth/inject-cwd.js"
+    log_info "Installing tilth claude-code integration (tilth install claude-code --edit)..."
     tilth install claude-code --edit 2>&1 | while read -r line; do
         log_info "  $line"
     done
-    if [[ ! -f "${HOME}/.claude/tilth/inject-cwd.js" ]]; then
-        log_warning "tilth install claude-code --edit ran but ~/.claude/tilth/inject-cwd.js is missing — hook wiring may be stale"
-    fi
 }
 
 

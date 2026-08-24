@@ -47,8 +47,8 @@ installs one root-owned credential, policy, and service identity per consumer.
 Harness MCP configs contain only fixed `agent-secret-proxy` socket paths; daily
 loaders remove retired credential names and the obsolete user cache before exec.
 
-Claude-global and Codex-global configuration are chezmoi-authoritative; opencode,
-Cursor, and Copilot remain frozen pending migration.
+Claude, Codex, and OMP global configuration are chezmoi-authoritative;
+Cursor and Copilot remain frozen pending migration.
 
 Codex hooks are not declared in `codex.yaml` — they derive from
 `agents/hooks/registry.yaml` (entries whose `harnesses` includes codex).

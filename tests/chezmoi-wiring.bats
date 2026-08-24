@@ -354,7 +354,7 @@ EOF
     # credential placeholders or envFile entries.
     local consumer
     for consumer in context7 tavily; do
-        [[ "$(yq -r ".claude.mcps.$consumer.command" "$reg")" == "agent-secret-proxy" ]] \
+        [[ "$(yq -r ".claude.mcps.$consumer.command" "$reg")" == "/usr/local/libexec/dotfiles/agent-secret-proxy" ]] \
             || { echo "claude MCP $consumer is not proxy-backed" >&2; return 1; }
         [[ "$(yq -r ".claude.mcps.$consumer.args | join(\" \")" "$reg")" == "--socket /var/run/dotfiles-agent-secrets/$consumer.sock" ]] \
             || { echo "claude MCP $consumer has the wrong proxy socket" >&2; return 1; }
@@ -374,34 +374,16 @@ EOF
     done
 }
 
-@test "claude registry: retained nonsecret MCP env marker is explicit" {
-    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    command -v yq >/dev/null 2>&1 || skip "yq not installed"
-    [[ "$(yq -r '.claude.mcps.tilth.env.TILTH_MCP_CWD_HOOK_INJECTED' "$reg")" == "1" ]]
-}
-
-
-@test "claude registry: tilth cwd-inject hook uses \${HOME} braces, not \$HOME" {
-    # The authored command must byte-match what `tilth install claude-code`
-    # writes (an absolute expanded path), which modify_settings.json produces
-    # only from ${HOME} (braces, author-time expansion). A regression to
-    # $HOME (matching sibling hooks) would silently reintroduce oscillation.
+@test "claude registry: tilth retired inject-cwd hook and env marker stay gone" {
+    # tilth retired the inject-cwd.js PreToolUse hook. A reappearing hook
+    # entry or TILTH_MCP_CWD_HOOK_INJECTED marker would make an omitted cwd
+    # silently fill with the session root instead of tilth's teaching refusal.
     command -v yq >/dev/null 2>&1 || skip "yq not installed"
     local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    local cmd
-    cmd=$(yq -r '.claude.hooks.PreToolUse[] | select(.matcher == "mcp__tilth__.*") | .hooks[0].command' "$reg")
-    [[ -n "$cmd" && "$cmd" != "null" ]] \
-        || { echo "no PreToolUse entry with matcher mcp__tilth__.*" >&2; return 1; }
-    # shellcheck disable=SC2016  # literal ${HOME} form, byte-matched not expanded
-    [[ "$cmd" == 'node "${HOME}/.claude/tilth/inject-cwd.js"' ]] \
-        || { echo "tilth cwd hook command drifted: $cmd" >&2; return 1; }
-}
-
-@test "claude registry: tilth MCP env carries the cwd-hook-injected marker" {
-    command -v yq >/dev/null 2>&1 || skip "yq not installed"
-    local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    [[ "$(yq -r '.claude.mcps.tilth.env.TILTH_MCP_CWD_HOOK_INJECTED' "$reg")" == "1" ]] \
-        || { echo "claude.yaml mcps.tilth.env.TILTH_MCP_CWD_HOOK_INJECTED missing or not \"1\"" >&2; return 1; }
+    [[ "$(yq -r '.claude.hooks.PreToolUse[] | select(.matcher == "mcp__tilth__.*")' "$reg")" == "" ]] \
+        || { echo "retired mcp__tilth__.* PreToolUse hook reappeared in claude.yaml" >&2; return 1; }
+    [[ "$(yq -r '.claude.mcps.tilth | has("env")' "$reg")" == "false" ]] \
+        || { echo "claude MCP tilth carries an env block (retired TILTH_MCP_CWD_HOOK_INJECTED?)" >&2; return 1; }
 }
 
 @test "claude registry: selected skills and agents resolve to real repo sources" {
@@ -431,14 +413,11 @@ EOF
     # break every session after apply. Check both the $HOME-pathed script and
     # relative *.js runner args.
     #
-    # inject-cwd.js is exempt: it's dropped into ~/.claude/tilth/ by
-    # `tilth install claude-code` (a post-chezmoi sync step, not exact_hooks),
-    # so it never lives in claude/hooks or agents/hooks. state.sh is exempt
-    # for the same reason: it ships inside the tmux-claude-session-manager
+    # state.sh is exempt: it ships inside the tmux-claude-session-manager
     # TPM plugin (~/.tmux/plugins/...), installed by `prefix+I`, not by dots sync.
     command -v yq >/dev/null 2>&1 || skip "yq not installed"
     local reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
-    local -a exempt_scripts=("inject-cwd.js" "state.sh")
+    local -a exempt_scripts=("state.sh")
     local tok script found ex
     while IFS= read -r tok; do
         [[ -z "$tok" ]] && continue
@@ -651,7 +630,7 @@ YAML
         chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
     jq -e . <<<"$rendered" >/dev/null
     for consumer in context7 tavily; do
-        jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" <<<"$rendered"
+        jq -e ".mcpServers.$consumer.command == \"/usr/local/libexec/dotfiles/agent-secret-proxy\"" <<<"$rendered"
         jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"env\") | not)" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"envFile\") | not)" <<<"$rendered"
@@ -742,12 +721,15 @@ assemble_chezmoi_sources() {
 apply_chezmoi_source() {
     printf 'apply\n'
 }
+apply_mise_manifest() {
+    printf 'mise-manifest\n'
+}
 SCRIPT
 
     run env CHEZMOI_SYNC_PHASE=prepare CHEZMOI_WIRING_SKIP=false \
         bash "$fake_root/chezmoi/.sync"
     assert_success
-    [[ "$output" == "prepare" ]]
+    [[ "$output" == $'prepare\nmise-manifest' ]]
 
     run env CHEZMOI_SYNC_PHASE= CHEZMOI_WIRING_SKIP=false \
         bash "$fake_root/chezmoi/.sync"
@@ -760,6 +742,37 @@ SCRIPT
     [[ "$output" == $'prepare\nassemble\napply' ]]
 }
 
+# Regression: the tracked mise manifest is an INPUT to package convergence.
+# mise lets the live ~/.config/mise/config.toml override any --source manifest,
+# so leaving it to the final apply pins the old version, starves `mise install`
+# of the new one, and lets the harness-version gate skip the apply that would
+# have fixed it — a deadlock no re-run escapes.
+@test "chezmoi prepare lands the tracked mise manifest before package convergence" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    local source_dir="$TEST_HOME/mise-src"
+    mkdir -p "$source_dir/dot_config/mise"
+    cat > "$source_dir/dot_config/mise/config.toml" <<'TOML'
+[tools]
+"aqua:openai/codex" = "rust-v9.9.9"
+TOML
+
+    local target="$TEST_HOME/.config/mise/config.toml"
+    mkdir -p "${target%/*}"
+    cat > "$target" <<'TOML'
+[tools]
+"aqua:openai/codex" = "rust-v0.0.1"
+TOML
+
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+    run apply_mise_manifest "$source_dir"
+    assert_success
+
+    # The stale live pin must be gone before any `mise install` reads it.
+    grep -q 'rust-v9.9.9' "$target"
+    ! grep -q 'rust-v0.0.1' "$target"
+}
+
 @test "chezmoi/.sync calls chezmoi apply --force after wiring config" {
     grep -qE 'chezmoi .*apply --force' "$SYNC_LIB"
     grep -q 'apply_chezmoi_source' "$CHEZMOI_SYNC"
@@ -768,7 +781,7 @@ SCRIPT
 @test "hallouminate nightly installer fails clearly without npm" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-hallouminate.sh.tmpl"
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl"
     local script="$TEST_HOME/install-hallouminate.sh"
     chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
     mkdir -p "$TEST_HOME/empty-bin"
@@ -802,7 +815,7 @@ SCRIPT
     chmod +x "$claude_bin/claude"
     PATH="$claude_bin:$PATH"
 
-    # The hallouminate and tilth run_onchange installers resolve their npm
+    # The hallouminate and tilth run_after installers resolve their npm
     # nightlies during apply. Keep the e2e hermetic: both see npm as offline
     # and absent, warn, and never attempt a global install.
     local npm_bin="$TEST_HOME/fake-npm-bin"
@@ -875,7 +888,7 @@ TOML
     # Fixed proxy arguments are the only secret-bearing MCP configuration.
     assert_file_exists "$HOME/.copilot/mcp-config.json"
     for consumer in context7 tavily; do
-        jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" \
+        jq -e ".mcpServers.$consumer.command == \"/usr/local/libexec/dotfiles/agent-secret-proxy\"" \
             "$HOME/.copilot/mcp-config.json"
         jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" \
             "$HOME/.copilot/mcp-config.json"
@@ -908,7 +921,7 @@ TOML
         chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl")"
     jq -e . <<<"$rendered" >/dev/null
     for consumer in context7 tavily; do
-        jq -e ".mcpServers.$consumer.command == \"agent-secret-proxy\"" <<<"$rendered"
+        jq -e ".mcpServers.$consumer.command == \"/usr/local/libexec/dotfiles/agent-secret-proxy\"" <<<"$rendered"
         jq -e ".mcpServers.$consumer.args == [\"--socket\", \"/var/run/dotfiles-agent-secrets/$consumer.sock\"]" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"env\") | not)" <<<"$rendered"
         jq -e "(.mcpServers.$consumer | has(\"envFile\") | not)" <<<"$rendered"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ccw-rm — tear down one worktree in a single step: remove the worktree, delete
-# its claude/<slug> branch, kill its tmux session, and drop the linked Claude
+# its checked-out branch, kill its tmux session, and drop the linked Claude
 # projects dir. Run from inside the repo (the worktree's parent).
 #
 # Usage: ccw-rm <slug> [--force]
@@ -27,10 +27,15 @@ if ! repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
 fi
 
 wt_dir="${repo_root}/.worktrees/${slug}"
-branch="claude/${slug}"
 
 if [[ ! -d "$wt_dir" ]]; then
     echo "ccw-rm: no worktree at ${wt_dir}" >&2
+    exit 1
+fi
+
+branch="$(git -C "$wt_dir" branch --show-current)"
+if [[ -z "$branch" ]]; then
+    echo "ccw-rm: worktree ${wt_dir} has a detached HEAD; refusing to remove an unknown branch" >&2
     exit 1
 fi
 

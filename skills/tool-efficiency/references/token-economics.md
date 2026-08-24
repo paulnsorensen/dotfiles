@@ -15,9 +15,9 @@ Token accounting per session/turn — **only where the logs record it**. Run by
 > **Signal caveat (record in every digest):** token data is **per assistant turn,
 > not per tool call** — claude logs carry a rich `message.usage`
 > (`input_tokens`, `output_tokens`, `cache_*`), so claude-scoped findings are
-> real; codex `token_count` events are session-level rate-limit info (no per-turn
-> cost) and opencode usage is not surfaced by the current adapter, so on those
-> harnesses this degrades to `<don't know>` / "insufficient signal". The
+> real; Codex `token_count` events are session-level rate-limit info and OMP
+> usage is not surfaced by the current adapter. Those harnesses therefore
+> degrade to `<don't know>` / "insufficient signal". The
 > canonical schema does not materialize a token column — query
 > `raw_entries.message.usage` directly. Do NOT estimate cost from token counts
 > (no price table here); report token volume, not dollars — see the platform
@@ -63,7 +63,7 @@ GROUP BY tool_name ORDER BY calls DESC LIMIT 15;
 
 ### Signal Check
 - Usage fields present in logs: yes / no  (per harness)
-- claude usually yes (per-turn); codex/opencode usually no → "insufficient signal".
+- Claude usually yes (per-turn); Codex/OMP usually no → "insufficient signal".
 
 ### Token Aggregates (only if usage present — per session, NOT per tool)
 | Session | Input | Output | Cache read |

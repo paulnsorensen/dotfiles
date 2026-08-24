@@ -3,8 +3,8 @@
 Behavioral port of agent-profile/renderers/cursor.sh. Cursor reads two
 cross-harness shared paths natively, delegated to the shared writers:
 
-  - ``.claude/agents/<name>.md``     — subagent body (Cursor + Claude + opencode)
-  - ``.agents/skills/<name>/SKILL.md`` — skill tree (Cursor + Codex + opencode)
+  - ``.claude/agents/<name>.md``       — subagent body (Cursor + Claude)
+  - ``.agents/skills/<name>/SKILL.md`` — skill tree (Cursor + Codex)
 
 Cursor-specific surfaces written here:
 
@@ -61,9 +61,8 @@ from agent_profile.renderers.base import (
 )
 from agent_profile.templating import render_mcp_for_harness
 
-# Cursor's MCP membership default — wider than the base claude/codex/opencode
-# triple because Cursor opts itself into the shared default set.
-_CURSOR_MCP_DEFAULT = ("claude", "codex", "opencode", "cursor")
+# Cursor opts itself into the shared Claude/Codex MCP default.
+_CURSOR_MCP_DEFAULT = ("claude", "codex", "cursor")
 
 # Hooks default to claude-only membership (bash: `.harnesses // ["claude"]`).
 _CURSOR_HOOK_DEFAULT = ("claude",)
@@ -365,7 +364,7 @@ def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
 
 def _cursor_mcps(manifest: Manifest) -> list[dict[str, Any]]:
     """The MCPs whose membership includes ``cursor`` (default
-    ``[claude, codex, opencode, cursor]``).
+    ``[claude, codex, cursor]``).
 
     Entries are rendered through :func:`render_mcp_for_harness` so
     per-harness Go templates in ``args``/``env`` resolve for cursor —

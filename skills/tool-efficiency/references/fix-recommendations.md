@@ -12,9 +12,9 @@ servers to repair or retire. Advisory only: it recommends the fix, it never
 applies it. Run by `duckdb-expert`, one spawn. Schema:
 `skills/session-analytics/references/canonical-schema.md`.
 
-> Denials and allowlist gaps are recorded almost exclusively for claude. On a
-> codex/opencode filter, expect those sections empty — report "insufficient
-> signal", not "nothing to fix". The high-error-tool and MCP queries span all
+> Denials and allowlist gaps are recorded almost exclusively for Claude. On a
+> Codex/OMP filter, report empty sections as "insufficient signal", not
+> "nothing to fix". High-error-tool and MCP queries span all harnesses.
 > harnesses.
 
 ## 1. High-error tools — swap or fix the call shape

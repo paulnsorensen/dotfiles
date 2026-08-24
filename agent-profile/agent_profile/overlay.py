@@ -15,16 +15,13 @@ harnesses reach the closed world by *different mechanisms* but fit one
 - **codex** carries it in a redirected ``CODEX_HOME`` (a fresh dir with a
   generated ``config.toml`` + an ``auth.json`` symlink), since codex 0.135.0
   has no top-level no-user-config flag.
-- **opencode** carries it in launch env vars (``OPENCODE_CONFIG_CONTENT`` +
-  ``OPENCODE_PERMISSION``), since opencode has no "ignore inherited config"
-  flag — isolation is an inline highest-layer override.
 
 :func:`build_isolated_launch` selects a per-harness builder from
 :data:`_ISOLATION_BUILDERS` and returns ``(flags, env)``;
 ``cli._launch_isolated`` injects ``env`` into ``os.environ`` then execs
-``harness + flags + exec_args`` identically for all three. cursor/copilot/
-crush have no runtime-isolation levers, so an isolated launch against them
-raises :class:`IsolationError` on the dispatch miss (fail loud).
+``harness + flags + exec_args`` identically for both. Cursor and Copilot
+have no runtime-isolation levers, so an isolated launch against them raises
+:class:`IsolationError` on the dispatch miss.
 
 Per-harness caveats (also in AGENTS.md § Profile System):
 
@@ -42,13 +39,6 @@ Per-harness caveats (also in AGENTS.md § Profile System):
   with one it can inject servers/approvals. Out of scope. Project
   ``.codex/config.toml`` is loaded but inert (the fresh config trusts no
   projects).
-- **opencode cannot suppress project ``AGENTS.md`` / ``CLAUDE.md``
-  auto-load** — the profile's system prompt is *appended* via
-  ``instructions``; an isolated opencode launch is not a fully-closed
-  instruction world.
-- **opencode MCP-tool deny keys** (``mcp__*`` as ``OPENCODE_PERMISSION``
-  freeform keys) are syntactically accepted but enforcement is unconfirmed —
-  best-effort.
 """
 
 from __future__ import annotations
@@ -66,16 +56,11 @@ from agent_profile.env import load_layered_env, resolve_env_value, resolve_item_
 from agent_profile.parse import Manifest
 from agent_profile.renderers.base import mcp_server_entry
 from agent_profile.renderers.codex import CodexRenderer, _collect_mcp_tool_scopes
-from agent_profile.renderers.opencode import (
-    OPENCODE_MCP_DEFAULT,
-    mcp_server_record,
-)
 
 
 class IsolationError(Exception):
-    """Raised when an isolated profile is launched against a harness with no
-    runtime-isolation mechanism (cursor/copilot/crush) — there is no builder
-    in :data:`_ISOLATION_BUILDERS` for it, so the closed world can't be built."""
+    """Raised when an isolated profile targets a harness with no
+    runtime-isolation mechanism."""
 
 
 def _dotenv() -> dict[str, str]:
@@ -558,159 +543,12 @@ def _build_isolated_codex(
     return [], env
 
 
-# ─── opencode (launch env vars; inline highest-layer override) ───────
-
-# Claude permission token -> opencode permission key. NotebookEdit has no
-# opencode equivalent (dropped + logged). ``mcp__*`` deny entries pass
-# through as freeform keys verbatim (best-effort; enforcement unconfirmed).
-_CLAUDE_TO_OPENCODE_PERM = {
-    "Edit": "edit",
-    "Write": "edit",
-    "Read": "read",
-    "Grep": "grep",
-    "Glob": "glob",
-    "Bash": "bash",
-}
-
-
-def _inherited_opencode_mcps() -> list[str]:
-    """The MCP server names opencode inherits from its global config —
-    i.e. every registry server whose membership includes ``opencode``.
-
-    An isolated opencode launch sets each of these ``enabled: false`` in
-    ``OPENCODE_CONFIG_CONTENT.mcp`` so the global-config servers (layer 2,
-    not suppressible) don't leak into the closed world. Read from the same
-    ``agents/mcp/registry.yaml`` the renderers use, applying opencode's MCP
-    membership default. A missing/unparseable registry yields an empty list
-    (the profile's own servers still render — the closed world just doesn't
-    explicitly disable inherited ones)."""
-    import yaml
-
-    from agent_profile.renderers.base import includes_harness
-
-    repo_root = Path(
-        os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles")
-    )
-    registry = repo_root / "agents" / "mcp" / "registry.yaml"
-    if not registry.is_file():
-        print(
-            f"ap: could not read opencode registry {registry} (file not found);"
-            " inherited global MCPs may not be sealed",
-            file=sys.stderr,
-        )
-        return []
-    try:
-        data = yaml.safe_load(registry.read_text()) or {}
-    except yaml.YAMLError as exc:
-        print(
-            f"ap: could not read opencode registry {registry} ({exc});"
-            " inherited global MCPs may not be sealed",
-            file=sys.stderr,
-        )
-        return []
-    mcps = data.get("mcps")
-    if not isinstance(mcps, dict):
-        return []
-    names: list[str] = []
-    for name, entry in mcps.items():
-        item = entry if isinstance(entry, dict) else {}
-        if includes_harness(item, "opencode", OPENCODE_MCP_DEFAULT):
-            names.append(name)
-    return names
-
-
-def _opencode_mcp_block(manifest: Manifest) -> dict:
-    """Build ``OPENCODE_CONFIG_CONTENT.mcp``: the profile's own servers plus
-    every inherited server pinned ``enabled: false``.
-
-    The profile servers reuse the opencode renderer's record shape (``type:
-    local`` + ``{env:VAR}`` placeholder rewrite). Inherited servers the
-    profile also declares are NOT disabled — the profile's own (enabled)
-    record wins, matching opencode's deep-merge override."""
-    block: dict[str, dict] = {}
-    own = {mcp["name"] for mcp in manifest.mcps}
-    for name in _inherited_opencode_mcps():
-        if name not in own:
-            block[name] = {"enabled": False}
-    for mcp in manifest.mcps:
-        block[mcp["name"]] = mcp_server_record(mcp)
-    return block
-
-
-def _opencode_permission(manifest: Manifest) -> dict:
-    """Translate the profile's ``permissions_deny`` to an ``OPENCODE_PERMISSION``
-    block (spec D2 — keeps ``review`` genuinely read-only on opencode).
-
-    ``Edit``/``Write`` -> ``edit: deny``; ``Read``/``Grep``/``Glob``/``Bash``
-    -> their opencode key. ``NotebookEdit`` has no opencode equivalent
-    (dropped + logged). ``mcp__*`` entries pass through verbatim as freeform
-    permission keys (best-effort). Returns ``{}`` when nothing maps."""
-    perm: dict[str, str] = {}
-    for entry in manifest.permissions_deny:
-        if entry.startswith("mcp__"):
-            perm[entry] = "deny"
-            continue
-        mapped = _CLAUDE_TO_OPENCODE_PERM.get(entry)
-        if mapped is None:
-            _warn_ignored(f"permissions_deny[{entry}]", "opencode")
-            continue
-        perm[mapped] = "deny"
-    return perm
-
-
-def _build_isolated_opencode(
-    manifest: Manifest,
-    profile_dir: Path,
-    scratch: Path | None = None,
-) -> tuple[list[str], dict[str, str]]:
-    """Assemble the opencode closed-world launch env for an isolated profile.
-
-    opencode has no isolation CLI flag, so ``flags`` is empty and isolation
-    rides in the env: ``OPENCODE_CONFIG_CONTENT`` (highest non-managed layer —
-    suppresses the global-config seed write) carries the profile MCP world
-    (own servers + inherited servers ``enabled: false``) and the system
-    prompt as an additive ``instructions`` file path; ``OPENCODE_PERMISSION``
-    carries the ``permissions_deny`` translation (omitted when nothing maps).
-    ``OPENCODE_DISABLE_PROJECT_CONFIG`` keeps a project-level ``opencode.json``
-    in the working tree from leaking its MCPs into the closed world (the
-    inherited-disable list only covers the global registry). The profile's
-    ``env`` is injected alongside.
-
-    ``enabled_plugins`` (claude marketplace) and ``extra_args`` (raw claude
-    flags) are claude-only — ignored-with-warning (D3)."""
-    for name, present in (
-        ("enabled_plugins", bool(manifest.enabled_plugins)),
-        ("extra_args", bool(manifest.extra_args)),
-    ):
-        if present:
-            _warn_ignored(name, "opencode")
-
-    config: dict = {"mcp": _opencode_mcp_block(manifest)}
-    if manifest.system_prompt:
-        sp = profile_dir / manifest.system_prompt
-        if not sp.is_file():
-            raise IsolationError(
-                f"system_prompt file not found for profile '{manifest.name}': {sp}"
-            )
-        config["instructions"] = [str(sp)]
-
-    env: dict[str, str] = {
-        "OPENCODE_CONFIG_CONTENT": json.dumps(config),
-        "OPENCODE_DISABLE_PROJECT_CONFIG": "true",
-    }
-    permission = _opencode_permission(manifest)
-    if permission:
-        env["OPENCODE_PERMISSION"] = json.dumps(permission)
-    env.update(manifest.env)
-    return [], env
-
 
 # ─── dispatch ────────────────────────────────────────────────────────
 
 _ISOLATION_BUILDERS = {
     "claude": _build_isolated_claude,
     "codex": _build_isolated_codex,
-    "opencode": _build_isolated_opencode,
 }
 
 
@@ -723,9 +561,8 @@ def build_isolated_launch(
     """Build an isolated profile's ``(flags, env)`` for ``harness``.
 
     Selects the per-harness builder from :data:`_ISOLATION_BUILDERS`. A
-    harness with no builder (cursor/copilot/crush — no runtime-isolation
-    lever) raises :class:`IsolationError`; the caller lowers it to a clean
-    ``CliError``."""
+    harness with no builder (Cursor or Copilot) raises
+    :class:`IsolationError`; the caller lowers it to a clean ``CliError``."""
     builder = _ISOLATION_BUILDERS.get(harness)
     if builder is None:
         raise IsolationError(

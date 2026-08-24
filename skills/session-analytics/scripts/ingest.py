@@ -23,7 +23,6 @@ import json
 import os
 import re
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
@@ -136,13 +135,41 @@ def _codex_output_is_error(out):
     return "false"
 
 
+def _codex_command(name, parsed, raw_input):
+    """The executed command string for codex shell-ish tools, or None.
+
+    Mirrors claude's ``input.command`` so ``tool_uses.bash_cmd`` populates:
+    ``exec_command`` carries it in ``cmd``; legacy ``shell`` carries an argv
+    array (the ``-lc``/``-c`` payload is the real command); the ``exec``
+    custom tool's argument IS the raw code string.
+    """
+    if name == "exec_command" and isinstance(parsed, dict):
+        cmd = parsed.get("cmd")
+        return cmd if isinstance(cmd, str) else None
+    if name == "shell" and isinstance(parsed, dict):
+        cmd = parsed.get("command")
+        if isinstance(cmd, str):
+            return cmd
+        if isinstance(cmd, list) and cmd:
+            if len(cmd) == 3 and cmd[1] in ("-lc", "-c"):
+                return str(cmd[2])
+            return " ".join(str(c) for c in cmd)
+        return None
+    if name == "exec" and isinstance(raw_input, str):
+        return raw_input
+    return None
+
+
 def codex_normalize(path):
     """Codex rollout JSONL -> canonical envelope.
 
     session_meta carries id + cwd; a response_item/function_call becomes an
-    assistant tool_use block; a function_call_output becomes a user
-    tool_result block. Codex tool names (shell / apply_patch / custom tools)
-    are kept verbatim so harness comparison stays honest.
+    assistant tool_use block; a function_call_output OR custom_tool_call_output
+    becomes a user tool_result block (dropping the custom outputs was the ~50%
+    result-join gap — issue #704). Codex tool names (shell / apply_patch /
+    custom tools) are kept verbatim, and ``input.command`` is normalized to the
+    executed command string for shell-ish tools so ``bash_cmd`` extracts.
+    ``tool_search_output`` items have no matching call item and are dropped.
     """
     session_id = None
     cwd = None
@@ -172,6 +199,10 @@ def codex_normalize(path):
                 parsed = {"raw": raw_input}
             if not isinstance(parsed, dict):
                 parsed = {"raw": parsed}
+            name = payload.get("name")
+            command = _codex_command(name, parsed, raw_input)
+            if command is not None:
+                parsed["command"] = command
             yield {
                 "harness": "codex",
                 "type": "assistant",
@@ -183,13 +214,13 @@ def codex_normalize(path):
                         {
                             "type": "tool_use",
                             "id": payload.get("call_id"),
-                            "name": payload.get("name"),
+                            "name": name,
                             "input": parsed,
                         }
                     ]
                 },
             }
-        elif ptype == "function_call_output":
+        elif ptype in ("function_call_output", "custom_tool_call_output"):
             out = payload.get("output")
             is_error = _codex_output_is_error(out)
             if isinstance(out, dict):
@@ -207,85 +238,6 @@ def codex_normalize(path):
                             "tool_use_id": payload.get("call_id"),
                             "content": out,
                             "is_error": is_error,
-                        }
-                    ]
-                },
-            }
-
-
-def opencode_discover():
-    db = os.path.expanduser("~/.local/share/opencode/opencode.db")
-    return [db] if os.path.isfile(db) else []
-
-
-def opencode_normalize(path):
-    """opencode SQLite (part table, type='tool') -> canonical envelope.
-
-    A tool part carries {tool, callID, state:{status,input,output}}. We emit
-    an assistant tool_use and, for any terminal status (completed/error), a
-    paired user tool_result. session.directory supplies cwd.
-    """
-    try:
-        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    except sqlite3.Error as exc:
-        print(f"opencode: cannot open {path}: {exc}", file=sys.stderr)
-        return
-    try:
-        rows = con.execute(
-            """
-            SELECT p.session_id, p.time_created, p.data, s.directory
-            FROM part p
-            LEFT JOIN session s ON s.id = p.session_id
-            WHERE json_extract(p.data, '$.type') = 'tool'
-            ORDER BY p.time_created
-            """
-        ).fetchall()
-    except sqlite3.Error as exc:
-        print(f"opencode: query failed on {path}: {exc}", file=sys.stderr)
-        con.close()
-        return
-    con.close()
-    for session_id, time_created, data, directory in rows:
-        try:
-            part = json.loads(data)
-        except (json.JSONDecodeError, TypeError):
-            continue
-        ts = _ms_to_iso(time_created)
-        call_id = part.get("callID") or part.get("id")
-        state = part.get("state") or {}
-        yield {
-            "harness": "opencode",
-            "type": "assistant",
-            "timestamp": ts,
-            "sessionId": session_id,
-            "cwd": directory,
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "id": call_id,
-                        "name": part.get("tool"),
-                        "input": state.get("input") or {},
-                    }
-                ]
-            },
-        }
-        if "output" in state or state.get("status") in ("completed", "error"):
-            yield {
-                "harness": "opencode",
-                "type": "user",
-                "timestamp": ts,
-                "sessionId": session_id,
-                "cwd": directory,
-                "message": {
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": call_id,
-                            "content": str(state.get("output", ""))[:500],
-                            "is_error": "true"
-                            if state.get("status") == "error"
-                            else "false",
                         }
                     ]
                 },
@@ -420,7 +372,6 @@ def _ms_to_iso(ms):
 ADAPTERS = [
     ("claude", claude_discover, claude_normalize),
     ("codex", codex_discover, codex_normalize),
-    ("opencode", opencode_discover, opencode_normalize),
     ("omp", omp_discover, omp_normalize),
     ("cursor", cursor_discover, None),
     ("copilot", copilot_discover, None),
@@ -570,6 +521,11 @@ def main():
     """)
 
     # Step 3: tool_results (from user message content blocks).
+    # Claude omits is_error on most successful results (measured: ~99.5% of
+    # absent-flag blocks carry non-error content), so an absent flag backfills
+    # to explicit 'false' rather than a NULL every string compare treats as
+    # success silently. is_error_explicit preserves whether the source block
+    # carried the flag, so coverage stays measurable (issue #704).
     print("  Creating tool_results...")
     run_sql("""
         CREATE TABLE tool_results AS
@@ -586,7 +542,8 @@ def main():
             harness,
             json_extract_string(block, '$.tool_use_id') AS tool_use_id,
             substr(json_extract_string(block, '$.content'), 1, 500) AS content,
-            json_extract_string(block, '$.is_error') AS is_error,
+            coalesce(json_extract_string(block, '$.is_error'), 'false') AS is_error,
+            json_extract_string(block, '$.is_error') IS NOT NULL AS is_error_explicit,
             timestamp, sessionId
         FROM content_blocks
         WHERE json_extract_string(block, '$.type') = 'tool_result';
@@ -702,6 +659,32 @@ def main():
             (SELECT count(*) FROM mcp_calls) AS mcp_calls,
             (SELECT count(*) FROM sessions) AS sessions,
             (SELECT count(*) FROM permission_denials) AS permission_denials;
+    """,
+        db_path=DB_PATH,
+    )
+
+    # Coverage stanza (issue #704): measurement quality per harness, so
+    # consumers can see how much of the call volume has joined results and how
+    # many error flags were explicit in the source vs backfilled. A low
+    # joined_pct means per-tool error rates for that harness are floors.
+    print("\nCoverage (per harness):")
+    run_sql(
+        """
+        WITH result_ids AS (SELECT DISTINCT tool_use_id FROM tool_results)
+        SELECT
+            u.harness,
+            count(*) AS tool_uses,
+            round(100.0 * avg(CASE WHEN r.tool_use_id IS NOT NULL THEN 1 ELSE 0 END), 1)
+                AS results_joined_pct,
+            (SELECT count(*) FROM tool_results tr WHERE tr.harness = u.harness)
+                AS tool_results,
+            (SELECT round(100.0 * avg(CASE WHEN tr.is_error_explicit THEN 1 ELSE 0 END), 1)
+               FROM tool_results tr WHERE tr.harness = u.harness)
+                AS explicit_error_flag_pct
+        FROM tool_uses u
+        LEFT JOIN result_ids r ON u.tool_use_id = r.tool_use_id
+        GROUP BY u.harness
+        ORDER BY u.harness;
     """,
         db_path=DB_PATH,
     )

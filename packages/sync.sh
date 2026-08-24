@@ -15,7 +15,7 @@ PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
 # renovate: datasource=github-tags depName=can1357/oh-my-pi
-OMP_PIN="v17.2.12"
+OMP_PIN="v17.3.4"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -379,8 +379,21 @@ sync_mise() {
         return 0
     fi
 
+    # Authenticate mise's GitHub reads. gh stores its token in the macOS
+    # keychain, so ~/.config/gh/hosts.yml carries no `oauth_token` and mise's
+    # default gh_cli_tokens reader finds nothing — leaving the aqua release
+    # lookups anonymous against the 60/hr per-IP cap, which they exhaust and
+    # then re-request every run (a 403 caches nothing). Must be the env var:
+    # MISE_GLOBAL_CONFIG_FILE below demotes ~/.config/mise/config.toml to a
+    # non-global config, where mise ignores a `credential_command` setting and
+    # rejects the file as untrusted. zsh/core.zsh exports this for interactive
+    # shells; repeated here so bootstrap and non-interactive runs are covered.
+    if command -v gh &>/dev/null; then
+        export MISE_GITHUB_CREDENTIAL_COMMAND="gh auth token"
+    fi
+
     log_info "Converging mise-managed tool versions from $mise_config..."
-    if ! MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install "$@" </dev/null; then
+    if ! MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install </dev/null; then
         log_error "mise install failed"
         FAILED+=("mise-install")
         return 0
@@ -601,14 +614,27 @@ sync_gh_extensions() {
     fi
 
     log_info "Syncing gh extensions"
-    local installed
+    local ext_list installed installed_version
     # gh extension list emits tab-separated rows: "gh <name>\t<owner>/<repo>\t<version>"
-    installed=$(gh extension list 2>/dev/null | awk -F'\t' '{print $2}' || true)
+    ext_list=$(gh extension list 2>/dev/null || true)
+    installed=$(awk -F'\t' '{print $2}' <<< "$ext_list")
 
     while IFS=$'\t' read -r name pkg version; do
         [[ -z "$name" ]] && continue
 
         if [[ -n "$version" ]]; then
+            # `gh extension list` marks a pinned install by appending ", pinned"
+            # to its version column. Bare version equality does not prove the
+            # extension is pinned — an unpinned (floating) install can sit at
+            # the same version by coincidence — and a full commit-SHA pin can
+            # never equal gh's truncated display of that SHA. Only skip the
+            # `--force` install (which reaches the GitHub API on every run)
+            # when gh itself reports this exact pin as converged.
+            installed_version=$(awk -F'\t' -v repo="$pkg" '$2 == repo {print $3; exit}' <<< "$ext_list")
+            if [[ "$installed_version" == "$version, pinned" ]]; then
+                echo "  + $name ($version)"
+                continue
+            fi
             echo "  Installing $pkg --pin $version..."
             if ! gh extension install "$pkg" --pin "$version" --force </dev/null; then
                 log_error "Failed to install $pkg"
@@ -700,6 +726,83 @@ migrate_omp_off_bun() {
     rm -f "$path"
 }
 
+# Install the pinned omp release into $1 and rename it over the live binary.
+#
+# The upstream installer curls the release asset directly onto its install
+# target, so pointing it at ~/.local/bin fails with ETXTBSY whenever an omp
+# session is running. Staging into a sibling directory and renaming into place
+# swaps the directory entry instead, leaving live processes on the old inode.
+#
+# --binary is required: omp.sh's installer defaults to a bun source build
+# whenever --ref is given, and that build (`bun install -g
+# packages/coding-agent` against the cloned monorepo) trips bun's
+# self-referential-workspace-loop check on the package's own dependency on
+# itself — reproduces even reinstalling an already-working pin, so it's a
+# bun/installer incompatibility, not a bad release. --binary fetches the
+# prebuilt release asset instead, sidestepping bun entirely.
+converge_omp_native() {
+    local stage_dir="$1" staged="$1/omp" install_status=0
+
+    mkdir -p "$stage_dir"
+    # The installer closes by telling the user to add its install dir to PATH
+    # unless it is already there; putting the throwaway stage dir on PATH keeps
+    # it from printing that instruction for a directory removed moments later.
+    curl -fsSL https://omp.sh/install |
+        PI_INSTALL_DIR="$stage_dir" PATH="$stage_dir:$PATH" sh -s -- --binary --ref "$OMP_PIN" ||
+        install_status=$?
+
+    if [[ ! -f "$staged" ]]; then
+        log_error "omp native install failed"
+        return 1
+    fi
+
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        if ! codesign --force --sign - "$staged" </dev/null; then
+            log_error "omp ad-hoc signing failed"
+            return 1
+        fi
+        # The installer's own smoke test fails on the still-unsigned download,
+        # so re-check the signed binary rather than trusting its exit status.
+        if ((install_status != 0)) &&
+            [[ "$("$staged" --version 2>/dev/null || true)" != "omp/${OMP_PIN#v}" ]]; then
+            log_error "omp native install failed"
+            return 1
+        fi
+    elif ((install_status != 0)); then
+        log_error "omp native install failed"
+        return 1
+    fi
+
+    if ! mv -f "$staged" "$HOME/.local/bin/omp"; then
+        log_error "omp native install failed"
+        return 1
+    fi
+}
+
+# Remove every package-manager and native binary left by retired harnesses.
+retire_harnesses() {
+    local harness installed
+
+    if command -v brew &>/dev/null; then
+        installed=$(brew list --formulae 2>/dev/null || true)
+        for harness in opencode crush; do
+            if grep -qxF "$harness" <<<"$installed"; then
+                log_info "  Removing retired Homebrew $harness..."
+                brew uninstall "$harness" </dev/null || FAILED+=("retired-$harness-brew")
+            fi
+        done
+    fi
+
+    if command -v mise &>/dev/null && ! MISE_GLOBAL_CONFIG_FILE="$MISE_BOOTSTRAP_CONFIG_FILE" \
+        mise uninstall --yes --all \
+        aqua:anomalyco/opencode aqua:charmbracelet/crush </dev/null; then
+        log_error "failed to uninstall retired OpenCode/Crush mise packages"
+        FAILED+=("retired-harnesses")
+    fi
+
+    rm -f "$HOME/.local/bin/opencode" "$HOME/.local/bin/crush"
+}
+
 sync_native_harnesses() {
     log_info "Syncing native AI-harness CLIs..."
 
@@ -712,41 +815,30 @@ sync_native_harnesses() {
     migrate_harness_off_brew "omp"
     migrate_omp_off_bun
 
-    # --binary is required: omp.sh's installer defaults to a bun source build
-    # whenever --ref is given, and that build (`bun install -g
-    # packages/coding-agent` against the cloned monorepo) trips bun's
-    # self-referential-workspace-loop check on the package's own dependency on
-    # itself — reproduces even reinstalling an already-working pin, so it's a
-    # bun/installer incompatibility, not a bad release. --binary fetches the
-    # prebuilt release asset instead, sidestepping bun entirely.
     echo "  Converging omp to $OMP_PIN (native)..."
-    if curl -fsSL https://omp.sh/install | sh -s -- --binary --ref "$OMP_PIN"; then
-        if [[ "$PLATFORM" == "Darwin" ]] && ! codesign --force --sign - "$HOME/.local/bin/omp" </dev/null; then
-            log_error "omp ad-hoc signing failed"
-            FAILED+=("omp")
-        else
-            hash -r 2>/dev/null || true
-            log_success "  Converged omp to $OMP_PIN"
-        fi
+    local stage_dir="$HOME/.local/bin/.omp-stage"
+    rm -rf "$stage_dir"
+    if converge_omp_native "$stage_dir"; then
+        hash -r 2>/dev/null || true
+        log_success "  Converged omp to $OMP_PIN"
     else
-        log_error "omp native install failed"
         FAILED+=("omp")
     fi
-
+    rm -rf "$stage_dir"
 }
 
 # Snapshot the inputs before the first installer runs.
 CACHE_HASH_AT_CONVERGENCE="$(cache_hash)"
-# Claude is invoked by chezmoi later in this sync, so keep its mise binary
-# present even when the package declaration cache is valid.
+# Even with an unchanged manifest, reconcile every mise tool so a deleted or
+# previously failed install cannot leave the active config unresolved.
 if check_cache; then
-    log_success "Package manifests unchanged (cached), syncing Claude"
+    log_success "Package manifests unchanged (cached), syncing mise"
     heal_missing_cask_apps
+    sync_mise
     if ((${#FAILED[@]})); then
         log_error "failed to heal ${#FAILED[@]} package(s): ${FAILED[*]}"
         exit 1
     fi
-    sync_mise "aqua:anthropics/claude-code@v2.1.219"
     exit 0
 fi
 ########## Main
@@ -782,6 +874,7 @@ if ((${#FAILED[@]} > failures_before_mise)); then
     fi
     exit 1
 fi
+retire_harnesses
 
 if [[ "${PACKAGES_BOOTSTRAP_ONLY:-false}" == "true" ]]; then
     if ((${#FAILED[@]})); then

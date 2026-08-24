@@ -2,7 +2,7 @@
 
 # target_param: {SERVER}      (an MCP server name, e.g. 'serena'; '%' for all)
 
-# harness: respects harness=<all|claude|codex|opencode>
+# harness: respects harness=<all|claude|codex|omp>
 
 # owner: tool-efficiency
 
@@ -10,9 +10,9 @@ Per-MCP call volume, error rate, method spread, and idle-server detection. Run
 by `duckdb-expert`, one spawn. Schema:
 `skills/session-analytics/references/canonical-schema.md`.
 
-> mcp_calls is derived from tool names starting `mcp__`; codex/opencode encode
-> MCP differently, so this is claude-dominant. Apply the harness filter and note
-> the caveat.
+> `mcp_calls` derives from tool names starting `mcp__`; Codex and OMP encode
+> MCP differently, so this is Claude-dominant. Apply the harness filter and
+> state the caveat.
 
 ## 1. Calls + error rate for the target server
 

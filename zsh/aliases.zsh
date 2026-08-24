@@ -82,6 +82,7 @@ alias trl='tmux source-file ~/.tmux.conf && echo "tmux config reloaded"'
 # =============================================================================
 # Canonical resilient remote shell: mosh keeps the connection alive across
 # network changes / sleep; tmux keeps the session alive across disconnects.
+# Force predictive local echo because mtmux targets links where hiding RTT matters.
 # Usage: mtmux <host> [session]   (host = MagicDNS name or Tailscale IP)
 mtmux() {
     local host="$1" session="${2:-main}"
@@ -89,7 +90,7 @@ mtmux() {
         echo "usage: mtmux <host> [session]" >&2
         return 2
     fi
-    mosh "$host" -- tmux new -A -s "$session"
+    mosh --predict=always "$host" -- tmux new -A -s "$session"
 }
 
 # Tailscale shortcuts
@@ -164,10 +165,6 @@ if command -v ast-grep &> /dev/null; then
   alias sg='ast-grep'
 fi
 
-# opencode - terminal AI coding agent
-if command -v opencode &> /dev/null; then
-  alias oc='opencode'
-fi
 
 # Oh My Pi - isolated native config with managed prompt addendum
 if command -v omp &> /dev/null; then

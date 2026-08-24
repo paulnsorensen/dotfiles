@@ -77,6 +77,8 @@ canonical argument digest; it is forwarded only after `agent-secretctl` submits
 an approval matching consumer, tool, canonical arguments, nonce, and expiry.
 Approvals expire after 60 seconds and are consumed once.
 
+The broker also applies a default-deny method allowlist: only `initialize`, `notifications/initialized`, `ping`, `tools/list`, and `tools/call` are forwarded; unlisted JSON-RPC methods receive `-32601` before any upstream process starts.[^1]
+
 The upstream process receives a fresh minimal environment containing only
 `HOME`, `PATH`, `NO_COLOR`, and that consumer's one credential variable.
 Responses and errors are recursively redacted before they cross the request
@@ -98,3 +100,9 @@ mirrored by `profiles/*/profile.yaml`,
 See [[agent-secret-isolation-001]], [[agent-secret-isolation-002]], and
 [[agent-secret-isolation-003]] for the accepted identity, firewall, and approval
 decisions.
+
+[[../operations/bitwarden-secrets-manager]] is the provider-side runbook for the
+Bitwarden path: exact Secret names, machine-account permission, the temporary
+root-shell access token, and key rotation.
+
+[^1]: scripts/agent-secret-broker.py:30, 673-684

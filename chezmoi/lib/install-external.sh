@@ -55,9 +55,19 @@ done
 
 # Source .env for SKILL_HARNESSES
 if [[ -f "$DOTFILES_DIR/.env" ]]; then
+    env_line=0
     while IFS='=' read -r key val; do
+        env_line=$((env_line + 1))
         key="${key#export }"
-        [[ -z "$key" || "$key" =~ ^# ]] && continue
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        # `export` aborts the script on a key that is not a shell identifier —
+        # a whitespace-only line or a `KEY = value` spacing slip is enough — so
+        # reject those here instead of letting one stray line kill the install.
+        if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            [[ "$key" =~ ^[[:space:]]*$ ]] ||
+                echo -e "${YELLOW}Warning: ignoring .env line $env_line (not KEY=value)${NC}" >&2
+            continue
+        fi
         # Strip surrounding quotes from value (env loader is naive)
         val="${val%\"}"
         val="${val#\"}"
@@ -148,12 +158,9 @@ for harness in $HARNESSES; do
     SUPPORTED_HARNESSES+="${SUPPORTED_HARNESSES:+ }$harness"
 done
 
-# Filter, don't fail: SKILL_HARNESSES is shared with agents the `skills` CLI
-# doesn't support (e.g. crush, antigravity — valid install targets elsewhere,
-# but the CLI only knows the set in skill_agents.txt). Skipping them with a
-# loud warning lets the supported agents still get their skills, instead of a
-# single unsupported entry aborting the whole refresh. The original silent-
-# no-op masking risk is still covered — we warn explicitly per skipped agent.
+# Filter rather than fail: SKILL_HARNESSES can include agents unsupported by
+# the `skills` CLI (for example antigravity). Skipping them with a loud warning
+# lets supported agents continue instead of aborting the refresh.
 if (( ${#SKIPPED_AGENTS[@]} > 0 )); then
     echo -e "${YELLOW}Skipping SKILL_HARNESSES agents the 'skills' CLI doesn't support: ${SKIPPED_AGENTS[*]}${NC}" >&2
     echo "  Supported: $KNOWN_AGENTS" >&2

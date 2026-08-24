@@ -84,6 +84,18 @@ yq_is_mikefarah() {
     yq --version 2>/dev/null | grep -q mikefarah
 }
 
+# The pinned Mike Farah yq version, read from the mise config that owns yq in
+# steady state (chezmoi/dot_config/mise/config.toml). Bootstrap must install
+# this exact version: ~/.local/bin precedes the mise shims on PATH, so a
+# version-drifted bootstrap binary silently shadows the pinned one (a v4.53.2
+# TOML-emitter regression once corrupted the codex config.toml merge). Parsed
+# with grep, not yq — this runs precisely because yq is not yet installed.
+yq_pinned_version() {
+    local mise_config
+    mise_config="$(dirname "${BASH_SOURCE[0]}")/../chezmoi/dot_config/mise/config.toml"
+    grep -oE '"aqua:mikefarah/yq"[[:space:]]*=[[:space:]]*"v[0-9.]+"' "$mise_config" 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+'
+}
+
 # Bootstrap Mike Farah's Go yq into ~/.local/bin on Linux.
 #
 # Linux note: Ubuntu's apt yq is kislyuk/yq (a jq wrapper using jq syntax),
@@ -100,19 +112,25 @@ bootstrap_yq_linux() {
             return 1
             ;;
     esac
+    local version
+    version=$(yq_pinned_version)
+    if [[ -z "$version" ]]; then
+        log_error "Could not resolve the pinned yq version from mise config; refusing to install an unpinned yq"
+        return 1
+    fi
     mkdir -p "$HOME/.local/bin"
-    local url="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}"
-    log_info "Downloading Mike Farah yq → $dest"
+    local url="https://github.com/mikefarah/yq/releases/download/${version}/yq_linux_${arch}"
+    log_info "Downloading Mike Farah yq ${version} → $dest"
     if ! curl -fsSL "$url" -o "$dest.tmp"; then
         log_warning "Failed to download yq from $url; trying go install"
         rm -f "$dest.tmp"
         if command -v go &>/dev/null; then
-            if GOBIN="$HOME/.local/bin" go install github.com/mikefarah/yq/v4@latest; then
+            if GOBIN="$HOME/.local/bin" go install "github.com/mikefarah/yq/v4@${version}"; then
                 log_info "Installed yq via go install"
                 hash -r 2>/dev/null || true
                 return 0
             fi
-            log_error "go install github.com/mikefarah/yq/v4@latest failed"
+            log_error "go install github.com/mikefarah/yq/v4@${version} failed"
         fi
         log_error "Failed to install yq (curl download and go install both failed)"
         return 1

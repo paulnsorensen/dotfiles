@@ -20,10 +20,6 @@ def live_profile_yaml(*, compile_targets: dict | None = None, **overrides: objec
                 "target_root": "$HOME",
                 "harnesses": ["claude", "codex", "cursor", "copilot"],
             },
-            "opencode": {
-                "target_root": "$HOME/.config/opencode",
-                "harnesses": ["opencode"],
-            },
         },
         "enabled_plugins": {"global@local": True},
         "marketplaces": {"local": "$HOME/.claude/plugins/local"},

@@ -2,7 +2,7 @@
 
 # target_param: {PROJECT}     (a project/cwd substring; '%' for all recent)
 
-# harness: respects harness=<all|claude|codex|opencode>
+# harness: respects harness=<all|claude|codex|omp>
 
 # owner: work-recovery (report-only)
 

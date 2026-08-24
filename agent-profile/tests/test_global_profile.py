@@ -335,9 +335,8 @@ def test_claude_renderer_no_op_when_profile_declares_neither(tmp_path):
 
 
 def test_claude_renderer_clean_removes_only_profile_keys(tmp_path):
-    """``clean()`` removes the profile's enabledPlugins + marketplaces
-    entries while leaving siblings intact (mirrors opencode's surgical
-    un-merge)."""
+    """``clean()`` removes the profile's enabledPlugins and marketplace
+    entries while leaving siblings intact."""
     _seed_settings(
         tmp_path,
         {
@@ -368,9 +367,7 @@ def test_claude_renderer_clean_removes_only_profile_keys(tmp_path):
 
 
 def test_claude_renderer_clean_unlinks_when_only_owned_keys(tmp_path):
-    """When ``clean()`` reduces the file to ``{}`` (profile owned all
-    keys), the file is removed — matches opencode's "the profile owned
-    it" rule."""
+    """When ``clean()`` reduces the file to ``{}``, the file is removed."""
     _seed_settings(
         tmp_path,
         {

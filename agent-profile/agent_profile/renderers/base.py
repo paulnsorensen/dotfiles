@@ -1,7 +1,7 @@
 """base.py — the Renderer seam + shared helpers for all harness renderers.
 
 This module is the public contract the harness-renderer curds
-(claude, codex, opencode, cursor, copilot) build on. It defines the
+(Claude, Codex, Cursor, Copilot) build on. It defines the
 :class:`Renderer` protocol and the helpers that replace the repeated bash
 ``jq``-extraction loop so each renderer inherits them instead of
 re-deriving membership filtering and MCP projection.
@@ -11,12 +11,10 @@ Renderer protocol contract
 A renderer is an object exposing:
 
   - ``name: str`` — the harness name (``"claude"``, ``"codex"``, …).
-  - ``render(manifest, target, logical_root=None) -> list[str]`` — write this harness's
-    artefacts under ``target`` and return the list of relative paths
-    written (whole-file artefacts only; merged files such as
-    ``opencode.json`` are *not* listed — they are surgically undone in
-    ``clean``). The returned list feeds the install manifest, so it must
-    contain each path at most once.
+  - ``render(manifest, target, logical_root=None) -> list[str]`` — write this
+    harness's artifacts under ``target`` and return every whole-file path
+    written. Merged files are not listed because ``clean`` surgically removes
+    their owned entries. Each path appears at most once.
   - ``clean(manifest, target) -> None`` — surgically un-merge this
     harness's contributions to shared/merged files (e.g. drop the
     profile's entries from ``.codex/config.toml``'s ``[mcp_servers]``).
@@ -50,21 +48,22 @@ from typing import Any, Protocol, runtime_checkable
 import tomlkit
 
 from agent_profile._validate import ParseError
+from agent_profile.harnesses import SUPPORTED_ITEM_HARNESSES
 from agent_profile.parse import Manifest
 from agent_profile.shared import track_file
 from agent_profile.templating import render_mcp_for_harness
 
 # Agent and skill items without explicit membership render everywhere that has
 # that primitive. Hooks retain the legacy claude-only default.
-DEFAULT_AGENT_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
-DEFAULT_SKILL_HARNESSES = ("claude", "codex", "opencode", "cursor", "copilot")
+DEFAULT_AGENT_HARNESSES = SUPPORTED_ITEM_HARNESSES
+DEFAULT_SKILL_HARNESSES = SUPPORTED_ITEM_HARNESSES
 DEFAULT_HOOK_HARNESSES = ("claude",)
 
 
 class MergedConfigError(Exception):
-    """Raised when a user-editable merged config (``opencode.json``,
-    ``.cursor/mcp.json``, ``.copilot/mcp-config.json``) is present but not a
-    JSON object. Mirrors :class:`~agent_profile.manifest.ManifestCorrupt`:
+    """Raised when a user-editable merged config such as
+    ``.cursor/mcp.json`` or ``.copilot/mcp-config.json`` is not a JSON object.
+    Mirrors :class:`~agent_profile.manifest.ManifestCorrupt`:
     surfaces a clean stderr line + exit 1 instead of an uncaught
     ``JSONDecodeError`` traceback. Caught by ``cli.main``."""
 
@@ -97,10 +96,10 @@ class Renderer(Protocol):
     def prune_mcps(self, manifest: Manifest, target: Path) -> None:
         """Evict ``manifest``'s MCP servers from this harness's merged file.
 
-        Called by the install reconcile to remove servers a prior render
-        wrote into a persistent/user-owned file (codex ``config.toml``,
-        opencode/cursor/copilot merged JSON, claude user-scope
-        ``~/.claude.json``) that have since been dropped from the registry.
+        Called by install reconciliation to remove servers that a prior render
+        wrote into a persistent/user-owned file (Codex ``config.toml``,
+        Cursor/Copilot merged JSON, or Claude user-scope ``~/.claude.json``)
+        and that have since been dropped from the registry.
         ``manifest`` carries ONLY the dropped MCPs — every other item list is
         empty — so an implementation must touch nothing but MCP entries."""
         ...
@@ -131,8 +130,8 @@ def gate_blocks(item: dict[str, Any], harness: str) -> bool:
 
         map(select((.value.gate_unless // "") as $g | $g == "" or (env[$g] // "false") != "true"))
 
-    The gate is claude-scoped: codex/opencode/cursor/copilot ignore it (a
-    plugin-provided MCP is a claude concern). An item is blocked when it
+    The gate is Claude-scoped; other harnesses ignore it because a
+    plugin-provided MCP is a Claude concern. An item is blocked when it
     carries a ``gate_unless`` var that is exactly ``"true"`` in the process
     environment (the cheese-flow plugin seeds ``CHEESE_FLOW``), matching the
     bash ``env[$g]`` read — not the ``.env`` file."""
@@ -329,9 +328,9 @@ def dump_toml(path: Path, doc: tomlkit.TOMLDocument) -> None:
 def read_json_object(path: Path, label: str) -> dict[str, Any]:
     """Load an existing user-editable merged-config JSON object.
 
-    The merged-file renderers (opencode/cursor/copilot) read configs the
-    user may hand-edit. A corrupt or non-object file raises
-    :class:`MergedConfigError` (caught by ``cli.main`` → clean stderr +
+    The merged-file renderers (Cursor and Copilot) read configs the user may
+    hand-edit. A corrupt or non-object file raises :class:`MergedConfigError`
+    (caught by ``cli.main`` → clean stderr +
     exit 1) instead of an uncaught ``JSONDecodeError`` / ``AttributeError``
     traceback. The caller is responsible for the absent-file default
     (these renderers bootstrap differently), so ``path`` must exist."""

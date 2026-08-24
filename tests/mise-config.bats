@@ -14,10 +14,10 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ $status -eq 0 ]]
 }
 
-@test "mise config pins exactly 50 tools (42 aqua + 3 core-plugin + 5 backend)" {
+@test "mise config pins exactly 48 tools (40 aqua + 3 core-plugin + 5 backend)" {
     run yq -p=toml -o=json '.tools | length' "$CONFIG"
     [[ $status -eq 0 ]]
-    [[ "$output" == "50" ]]
+    [[ "$output" == "48" ]]
 }
 
 @test "no tool version is 'latest' or a floating range specifier" {
@@ -75,7 +75,7 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 @test "backend-managed tools use their backend prefix syntax" {
     [[ "$(yq -p=toml '.tools."npm:bash-language-server"' "$CONFIG")" == "5.6.0" ]]
     [[ "$(yq -p=toml '.tools."npm:yaml-language-server"' "$CONFIG")" == "1.24.0" ]]
-    [[ "$(yq -p=toml '.tools."npm:pyright"' "$CONFIG")" == "1.1.411" ]]
+    [[ "$(yq -p=toml '.tools."npm:pyright"' "$CONFIG")" == "1.1.413" ]]
     [[ "$(yq -p=toml '.tools."cargo:eza"' "$CONFIG")" == "0.23.5" ]]
     [[ "$(yq -p=toml '.tools."cargo:tokei"' "$CONFIG")" == "14.0.0" ]]
 }

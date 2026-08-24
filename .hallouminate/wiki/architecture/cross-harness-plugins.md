@@ -121,7 +121,7 @@ plugins:
     # -or-
     path: ~/Dev/myplugin               # local checkout marketplace root
 
-    harnesses: [claude, codex, opencode, cursor, copilot, crush]
+    harnesses: [claude, codex, cursor, copilot]
     native: true              # native install on every drivable harness here
                               # ({claude, codex, copilot}); or false / [list]
     gate_unless: MY_ENV_VAR   # optional gate
@@ -148,7 +148,7 @@ membership flows.
 `resolved_native_harnesses` in `ingest.py`) to the set of harnesses that get the
 native marketplace install instead of decomposed primitives:
 
-- `true` → every **drivable** harness in this entry's `harnesses`. `DRIVABLE = {claude, codex, copilot}` — the three harnesses with a CLI-drivable local install. opencode/cursor/crush are never native (no drivable install; ruled out by cited mechanism in [[harnesses/index]]).
+- `true` → every **drivable** harness in this entry's `harnesses`. `DRIVABLE = {claude, codex, copilot}`; Cursor is never native because this repo has no CLI-drivable marketplace install for it.
 - `false` / absent → decomposed everywhere (default).
 - `[claude, ...]` → only the listed harnesses. Validated **fail-loud**: a member that is not in `DRIVABLE`, or not in this entry's `harnesses`, raises `ParseError` (a silent no-op is the failure this guards).
 
@@ -177,11 +177,10 @@ Native install (per drivable harness):
 
 ### Native re-namespacing + the renderer-side rewrite (Phase 4)
 
-A native install re-namespaces the plugin's MCP tools to
-`mcp__plugin_<plugin>_<server>__*` **on the native harness only**. Decomposed
-harnesses keep the bare `mcp__<server>__*` (claude/cursor grammar) or the lowered
-`<server>_<tool>` / `mcp_<server>_<tool>` (opencode/crush). So the canonical
-permission/skill references cannot be a single literal.
+A native install re-namespaces plugin MCP tools to
+`mcp__plugin_<plugin>_<server>__*` on that harness. Decomposed targets keep
+their native bare-server naming (for example Cursor's `mcp__<server>__*`), so
+canonical permission references cannot assume the plugin namespace.
 
 Resolution (**design A — renderer-side rewrite, canonical source untouched**):
 `permissions.native_mcp_server_plugins(native_plugins, harness)` builds a
@@ -196,10 +195,10 @@ frontmatter, but **only in the claude renderer's own `.claude/skills/` copy** �
 scopes are **not** rewritten: they apply to config.toml-managed (decomposed)
 servers keyed by bare name; a native plugin's server is never in `[mcp_servers]`.
 
-`hallouminate` is `native: true` (claude+codex+copilot): its `mcp__hallouminate__*`
-becomes `mcp__plugin_hallouminate_hallouminate__*` on those three, stays bare on
-cursor, and lowers on opencode/crush — all via the rewrite, with no edit to
-`profiles/_permissions/profile.yaml` or `skills/rennet/SKILL.md`.
+`hallouminate` is native on Claude, Codex, and Copilot: its
+`mcp__hallouminate__*` reference becomes
+`mcp__plugin_hallouminate_hallouminate__*` there and stays bare on Cursor,
+without changing canonical permission or skill sources.
 
 **`gate_unless`** — propagates to the decomposed MCP's `gate_unless` field,
 using the same semantics as the MCP registry gate (see [[agents-dir]]). It
@@ -213,30 +212,20 @@ gates only the decomposed MCP items, not the native install paths.
 |---|---|---|
 | claude | native marketplace install when `claude_native`; else MCP + skills + agents + hooks | custom `/commands` on decomposed path |
 | codex | native marketplace install when `codex_native`; else MCP + skills + agents + hooks | custom `/commands` on decomposed path |
-| opencode | MCP + skills + agents | hooks, commands, atomic install |
 | cursor | MCP + skills + agents + hooks | custom `/commands` on decomposed path |
 | copilot | skills + hooks + agents; MCP only if `harnesses` includes copilot | custom `/commands` |
-| crush | MCP only | all non-MCP primitives |
 
 ---
 
 ## The hybrid decision: native where available, decompose the rest
 
-Claude Code has a native plugin system (marketplace install, plugin-scoped
-`mcp__plugin_<name>_<server>__*` tool names, plugin-owned commands/hooks). The
-other harnesses have no equivalent atomic install — they only accept
-primitives via their config renderers.
+Claude, Codex, and Copilot have native plugin install paths; Cursor receives
+decomposed MCP, skill, agent, and hook primitives.
 
-The chosen model: each harness with a native plugin system gets the native
-install when its flag is set (`claude_native` → claude, `codex_native` → codex);
-every other harness gets decomposed primitives via the existing renderers. No
-renderer changes are needed for the decomposed path. The two native paths are
-independent — a plugin can be claude-native, codex-native, both, or neither.
-
-For entries where a harness's native flag is `false`/omitted, that harness
-receives decomposed primitives, same as the non-native harnesses. Copilot,
-opencode, cursor, and crush have no usable native-install CLI, so they always
-decompose.
+Each drivable native harness gets an atomic marketplace install when included
+in the plugin's resolved `native` set. Otherwise its renderer receives the
+decomposed primitives. The three native decisions are independent, and Cursor
+always decomposes.
 
 ---
 
@@ -370,7 +359,7 @@ loading interacts with secret passthrough.
   Native installs may expose commands inside Claude/Codex, but the decomposed
   path emits no command items and there is no commands registry.
 - **`clean`/uninstall ref-counting** — decomposed items land in shared/merged
-  files (opencode.json, .cursor/mcp.json) and shared skill trees. `clean()`
+  files (for example `.cursor/mcp.json`) and shared skill trees. `clean()`
   must attribute items to the plugin so uninstalling one plugin doesn't strip
   another's contributions. The renderers handle this via their existing
   surgical-removal logic.
@@ -429,7 +418,7 @@ loading interacts with secret passthrough.
 milknado:
   git: https://github.com/paulnsorensen/milknado
   branch: main
-  harnesses: [claude, codex, opencode, cursor, copilot, crush]
+  harnesses: [claude, codex, cursor, copilot]
   claude_native: true
   # codex_native: DISABLED on main. milknado's upstream
   # .agents/plugins/marketplace.json (the manifest codex's `plugin marketplace
@@ -450,8 +439,8 @@ milknado:
   (the claude renderer registers the marketplace; the codex renderer ignores the
   descriptor since its flag is off). With only `claude_native`, DEDUP strips
   `claude` from MCP/skill/agent/hook harnesses; `codex` stays, so decomposed
-  primitives still reach codex/opencode/cursor/copilot as supported (+ crush for
-  MCP if listed). When `codex_native` is re-enabled upstream, DEDUP would
+  primitives still reach Codex, Cursor, and Copilot where supported. When
+  `codex_native` is re-enabled upstream, DEDUP would
   additionally strip `codex` and the codex renderer would install via the codex
   CLI instead.
 

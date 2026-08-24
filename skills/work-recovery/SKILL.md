@@ -138,5 +138,5 @@ After writing, print the note's path so the user can resume with
   paraphrase so the user can correct a wrong inference.
 - "Last verified state" depends on the session actually having run a test/build
   command — if none, say so plainly rather than guess.
-- codex/opencode sessions lack Claude's Skill/Agent entries; reconstruct from
-  tool_uses (file paths, bash commands) instead.
+- Codex and OMP sessions lack Claude's Skill/Agent entries; reconstruct from
+  `tool_uses` (file paths and shell commands) instead.

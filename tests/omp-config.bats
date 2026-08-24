@@ -74,7 +74,7 @@ STDIN"
     [ "$(yq '.modelRoles.task' "$OUT")" = "@fast" ]
     [ "$(yq '.modelRoles.commit' "$OUT")" = "@fast" ]
     [ "$(yq '.astGrep.enabled' "$OUT")" = "true" ]
-    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md,agent-plugins" ]
+    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,agents-md,agent-plugins" ]
     # setupVersion is machine state — never authored on a fresh machine.
     [ "$(yq 'has("setupVersion")' "$OUT")" = "false" ]
 }
@@ -95,7 +95,7 @@ setupVersion: 1'
     [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]
     [ "$(yq '.theme.dark' "$OUT")" = "chocolate-donut" ]
     [ "$(yq '.theme.light' "$OUT")" = "light" ]
-    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,opencode,agents-md,agent-plugins" ]
+    [ "$(yq '.disabledProviders | join(",")' "$OUT")" = "claude,codex,cursor,gemini,github,agents-md,agent-plugins" ]
     [ "$(yq '.todo.enabled' "$OUT")" = "false" ]
     [ "$(yq '.todo.reminders' "$OUT")" = "false" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
@@ -202,7 +202,7 @@ STDIN"
 @test "omp-mcp: native user config keeps brokered context7 only; wiki/planner are plugins" {
     local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
     local omp_reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/omp.yaml"
-    jq -e '.mcpServers.context7.command == "agent-secret-proxy"' "$cfg"
+    jq -e '.mcpServers.context7.command == "/usr/local/libexec/dotfiles/agent-secret-proxy"' "$cfg"
     jq -e '.mcpServers.context7.args == ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]' "$cfg"
     jq -e '(.mcpServers.context7 | has("env") | not)' "$cfg"
     jq -e '(.mcpServers.context7 | has("envFile") | not)' "$cfg"

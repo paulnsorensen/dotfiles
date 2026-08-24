@@ -2,7 +2,7 @@
 
 # target_param: {TOOL}        (a tool name or a Bash command prefix)
 
-# harness: respects harness=<all|claude|codex|opencode>; 'all' omits the predicate
+# harness: respects harness=<all|claude|codex|omp>; 'all' omits the predicate
 
 # owner: tool-efficiency
 

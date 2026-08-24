@@ -2,7 +2,6 @@
 # Tests for the turn-budget-guard sub-agent ceiling hook.
 #   agents/hooks/turn-budget-guard.sh  — bash bridge (self-locating)
 #   agents/lib/turn-budget-guard.js    — turn/byte counter + decision logic
-#   chezmoi/dot_config/opencode/plugins/turn-budget-guard.js — opencode adapter
 #
 # Behavior is exercised through the stdin/stdout hook protocol against a
 # deployed-layout fixture (hooks/ + lib/ siblings), so the test covers both
@@ -19,7 +18,6 @@ load test_helper
 
 HOOK_SH="$REAL_DOTFILES_DIR/agents/hooks/turn-budget-guard.sh"
 HOOK_JS="$REAL_DOTFILES_DIR/agents/lib/turn-budget-guard.js"
-OPENCODE_PLUGIN="$REAL_DOTFILES_DIR/chezmoi/dot_config/opencode/plugins/turn-budget-guard.js"
 
 setup_file() {
     export GUARD_MASTER="$BATS_FILE_TMPDIR/guard-mocks"
@@ -780,48 +778,6 @@ backdate_mtime() {
     [[ "$(turns_count s11 h1)" == "2" ]]
 }
 
-# ── A9 — opencode plugin adapter ─────────────────────────────────────
-
-@test "A9: opencode plugin fail-opens and logs when no stable sub-agent id exists" {
-    export CLAUDE_TURN_BUDGET_DEBUG=1
-    run env \
-        DOTFILES_DIR="$REAL_DOTFILES_DIR" \
-        CLAUDE_TURN_BUDGET_DIR="$CLAUDE_TURN_BUDGET_DIR" \
-        CLAUDE_TURN_BUDGET_LOG="$CLAUDE_TURN_BUDGET_LOG" \
-        CLAUDE_TURN_BUDGET_DEBUG="$CLAUDE_TURN_BUDGET_DEBUG" \
-        OPENCODE_PLUGIN="$OPENCODE_PLUGIN" \
-        node --input-type=module -e '
-            const plugin = await import(process.env.OPENCODE_PLUGIN);
-            const hooks = await plugin.TurnBudgetGuard({ directory: process.cwd(), session: { id: "op-s" } });
-            await hooks["tool.execute.before"]({ tool: "bash" }, { args: { command: "echo ok" } });
-        '
-    assert_success
-    [[ "$(log_count)" == "1" ]]
-    [[ "$(log_record | jq -r '.harness')" == "opencode" ]]
-    [[ "$(log_record | jq -r '.action')" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "no-agent-id" ]]
-}
-
-@test "A9: opencode plugin denies when shared guard denies stable sub-agent" {
-    seed_turns op-s op-a 100
-    run env \
-        DOTFILES_DIR="$REAL_DOTFILES_DIR" \
-        CLAUDE_TURN_BUDGET_DIR="$CLAUDE_TURN_BUDGET_DIR" \
-        CLAUDE_TURN_BUDGET_LOG="$CLAUDE_TURN_BUDGET_LOG" \
-        OPENCODE_PLUGIN="$OPENCODE_PLUGIN" \
-        node --input-type=module -e '
-            const plugin = await import(process.env.OPENCODE_PLUGIN);
-            const client = { session: { get: async () => ({ data: { parentID: "op-s", agent: "coder" } }) } };
-            const hooks = await plugin.TurnBudgetGuard({ directory: process.cwd(), client });
-            await hooks["tool.execute.before"](
-                { tool: "bash", sessionID: "op-a", callID: "c1" },
-                { args: { command: "echo ok" } },
-            );
-        '
-    [[ "$status" -ne 0 ]]
-    [[ "$(log_record | jq -r '.harness')" == "opencode" ]]
-    [[ "$(log_record | jq -r '.action')" == "deny" ]]
-}
 
 # ── A12 ── fork baseline exemption ───────────────────────────────────
 

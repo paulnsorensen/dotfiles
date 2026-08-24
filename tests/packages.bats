@@ -109,6 +109,10 @@ MOCKCURL
     chmod +x "$MOCK_BIN/curl"
 }
 
+# Mock the piped omp.sh installer. Like the real one it truncates
+# "$PI_INSTALL_DIR/omp" in place — so aiming it at a running binary fails with
+# ETXTBSY — and it writes the binary before the exit status it is asked for,
+# modelling macOS where the download lands but the unsigned smoke test fails.
 write_mock_sh() {
     local exit_status="${1:-0}"
     rm -f "$MOCK_BIN/sh"
@@ -116,6 +120,15 @@ write_mock_sh() {
 #!/bin/bash
 echo "sh \$*" >> "\$SH_LOG"
 echo "sh \$*" >> "\$EVENT_LOG"
+ref=""
+while [ \$# -gt 0 ]; do
+    [ "\$1" = "--ref" ] && ref="\$2"
+    shift
+done
+dir="\${PI_INSTALL_DIR:-\$HOME/.local/bin}"
+mkdir -p "\$dir"
+printf '#!/bin/bash\nprintf "omp/%s\\\\n"\n' "\${ref#v}" > "\$dir/omp" || exit 1
+chmod +x "\$dir/omp"
 exit $exit_status
 MOCKSH
     chmod +x "$MOCK_BIN/sh"
@@ -160,6 +173,20 @@ write_mock_mise() {
 #!/bin/bash
 echo "mise \$* config=\${MISE_GLOBAL_CONFIG_FILE:-unset}" >> "\$MISE_LOG"
 exit $exit_status
+MOCKMISE
+    chmod +x "$MOCK_BIN/mise"
+}
+
+# mise mock that records the GitHub credential command it was handed, so a
+# test can prove sync authenticates mise's release lookups instead of letting
+# them fall back to the anonymous 60/hr per-IP budget.
+write_mock_mise_recording_github_auth() {
+    rm -f "$MOCK_BIN/mise"
+    cat > "$MOCK_BIN/mise" << MOCKMISE
+#!/bin/bash
+echo "mise \$* config=\${MISE_GLOBAL_CONFIG_FILE:-unset}" >> "\$MISE_LOG"
+printf '%s\n' "\${MISE_GITHUB_CREDENTIAL_COMMAND-unset}" > "$TEST_HOME/mise-github-auth"
+exit 0
 MOCKMISE
     chmod +x "$MOCK_BIN/mise"
 }
@@ -264,7 +291,12 @@ MOCKBUN
 
 
 # Usage: write_mock_gh [installed_repos] [fail_repo]
-#   installed_repos: newline-separated list of "owner/repo" already installed
+#   installed_repos: newline-separated entries already installed:
+#                    "owner/repo"          unpinned, v0.0.0
+#                    "owner/repo@version"  pinned at version (gh's own
+#                                          `gh extension list` marks a
+#                                          pinned install with ", pinned")
+#                    "owner/repo~version"  unpinned, but floating at version
 #   fail_repo:       exit non-zero when `gh extension install` is asked for this repo
 write_mock_gh() {
     local installed="${1:-}" fail_repo="${2:-}"
@@ -276,9 +308,16 @@ case "\$1" in
     extension)
         case "\$2" in
             list)
-                while IFS= read -r repo; do
-                    [[ -z "\$repo" ]] && continue
-                    printf 'gh %s\t%s\tv0.0.0\n' "\${repo##*/gh-}" "\$repo"
+                while IFS= read -r entry; do
+                    [[ -z "\$entry" ]] && continue
+                    repo="\$entry" version="v0.0.0" pinned=0
+                    if [[ "\$entry" == *@* ]]; then
+                        repo="\${entry%@*}" version="\${entry##*@}" pinned=1
+                    elif [[ "\$entry" == *~* ]]; then
+                        repo="\${entry%~*}" version="\${entry##*~}"
+                    fi
+                    [[ "\$pinned" == 1 ]] && version="\$version, pinned"
+                    printf 'gh %s\t%s\t%s\n' "\${repo##*/gh-}" "\$repo" "\$version"
                 done <<< "$installed"
                 ;;
             install)
@@ -380,10 +419,9 @@ run_sync() {
         jq yq fzf gh shellcheck bats-core ripgrep fd eza bat glow ast-grep
         git-delta git-lfs tmux prek zoxide atuin bottom dust procs tokei yazi
         difftastic mergiraf lazygit git-town sesh just chezmoi duckdb node bun
-        sd vhs opencode crush sccache cargo-nextest protobuf uv rustup
+        sd vhs sccache cargo-nextest protobuf uv rustup
         rust-analyzer cargo-llvm-cov rtk bash-language-server yaml-language-server
-        pyright gopls oven-sh/bun anomalyco/tap anomalyco/tap/opencode
-        joshmedeski/sesh charmbracelet/tap/crush
+        pyright gopls oven-sh/bun joshmedeski/sesh
     )
     local name
     for name in "${migrated[@]}"; do
@@ -566,7 +604,7 @@ path_without_buildtools() {
     local stub="$TEST_HOME/nobuild-stub"
     mkdir -p "$stub"
     local -a needed=(bash sh env uname id yq jq shasum sha256sum curl git \
-        awk sed grep cut sort tr head tail cat chmod mkdir rm ln mktemp \
+        awk sed grep cut sort tr head tail cat chmod mkdir rm mv ln mktemp \
         dirname basename tee wc printf find xargs sleep)
     local tool src
     for tool in "${needed[@]}"; do
@@ -727,6 +765,82 @@ YAML
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
 }
 
+@test "sync skips pinned gh extension already at its pin" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+YAML
+    write_mock_gh "github/gh-stack@v0.1.0"
+
+    run_sync
+    assert_success
+
+    assert_output_contains "+ gh-stack (v0.1.0)"
+    ! grep -q "gh extension install" "$GH_LOG"
+}
+
+@test "sync repins a gh extension sitting at the wrong version" {
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+YAML
+    write_mock_gh "github/gh-stack@v0.0.8"
+
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack --pin v0.1.0 --force" "$GH_LOG"
+}
+
+@test "sync never skips a full-SHA pin gh can only show truncated" {
+    # Regression: a full commit-SHA pin can never string-equal gh's own
+    # truncated `gh extension list` display of that SHA, so the convergence
+    # check must not treat this as comparable and must always reinstall.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "1234567890123456789012345678901234567890" }
+YAML
+    write_mock_gh "github/gh-stack@1234567"
+
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack --pin 1234567890123456789012345678901234567890 --force" "$GH_LOG"
+}
+
+@test "sync pins a gh extension that floats at the target version but isn't pinned" {
+    # Regression: version equality alone is not proof of pinning — an
+    # unpinned (floating) install can coincidentally sit at the pin's
+    # version and must still be pinned, not skipped.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+YAML
+    write_mock_gh "github/gh-stack~v0.1.0"
+
+    run_sync
+    assert_success
+
+    grep -q "gh extension install github/gh-stack --pin v0.1.0 --force" "$GH_LOG"
+}
+
+@test "a converged pin survives a failing gh extension install" {
+    # Regression: the pinned branch shelled out to a forced install on every
+    # run, so one GitHub API blip failed the whole sync — and took the legs
+    # after it (native harnesses, cache save) down with it — even though the
+    # extension was already exactly at its pin and had nothing to fetch.
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+YAML
+    write_mock_gh "github/gh-stack@v0.1.0" "github/gh-stack"
+
+    run_sync
+    assert_success
+
+    [[ -s "$CACHE_FILE" ]]
+}
+
 @test "UPGRADE_MODE never floats gh extensions" {
     write_test_yaml
     write_mock_gh "github/gh-stack"
@@ -768,7 +882,7 @@ YAML
     [[ -s "$CACHE_FILE" ]]
 }
 
-@test "sync skips all installers when package inputs and pins match the cache" {
+@test "sync skips non-mise installers when package inputs and pins match the cache" {
     write_test_yaml
     run_sync
     assert_success
@@ -776,13 +890,13 @@ YAML
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "unchanged (cached), syncing Claude"
+    assert_output_contains "unchanged (cached), syncing mise"
 
     ! grep -Eq '^brew (install|reinstall|uninstall|upgrade)( |$)' "$BREW_LOG"
     [[ ! -f "$CURL_LOG" ]]
 }
 
-@test "sync cache restores the Claude mise package" {
+@test "sync cache restores every configured mise package" {
     write_test_yaml
     run_sync
     assert_success
@@ -790,9 +904,34 @@ YAML
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "syncing Claude"
-    grep -q "mise install aqua:anthropics/claude-code@v2.1.219" "$MISE_LOG"
+    assert_output_contains "syncing mise"
+    [[ "$(<"$MISE_LOG")" == "mise install config=$MISE_CONFIG_FILE" ]]
     ! grep -Eq '^brew (install|reinstall|uninstall|upgrade)( |$)' "$BREW_LOG"
+}
+
+@test "sync hands mise a gh-backed GitHub credential command" {
+    # Regression: gh keeps its token in the macOS keychain, so hosts.yml has no
+    # oauth_token and mise's default gh_cli_tokens reader found nothing. Every
+    # aqua release lookup then went out anonymous against the 60/hr per-IP cap,
+    # and a rate-limited 403 caches nothing — so the non-semver pins re-fetched
+    # on every run and starved the rest of the sync of requests.
+    write_test_yaml
+    write_mock_mise_recording_github_auth
+
+    run_sync
+    assert_success
+    [[ "$(<"$TEST_HOME/mise-github-auth")" == "gh auth token" ]]
+}
+
+@test "cached sync fails when mise cannot restore configured tools" {
+    write_test_yaml
+    run_sync
+    assert_success
+    write_mock_mise 1
+
+    run bash "$SYNC_SCRIPT"
+    assert_failure
+    assert_output_contains "failed to heal 1 package(s): mise-install"
 }
 
 @test "a mise config-only change invalidates the package cache and reconverges" {
@@ -1052,7 +1191,7 @@ MOCKBREW
 # --- Integration: native harness convergence ---
 
 @test "managed OMP and Codex pins are exact" {
-    grep -q '^OMP_PIN="v17.2.12"$' "$SYNC_SCRIPT"
+    grep -q '^OMP_PIN="v17.3.4"$' "$SYNC_SCRIPT"
     grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
@@ -1062,6 +1201,15 @@ MOCKBREW
 # manifest. The two now drift independently: bumping a pin here does NOT
 # update the marker there. doc-drift's own weekly run is what reconciles them,
 # and its `small` path opens a paired PR against this repo when it does.
+
+@test "sync OMP verification follows the managed package pin" {
+    local managed expected
+    managed=$(sed -n 's/^OMP_PIN="v\([^"]*\)"$/\1/p' "$SYNC_SCRIPT")
+    expected=$(sed -n 's/.*omp_version.*!= "omp\/\([^"]*\)".*/\1/p' \
+        "$REAL_DOTFILES_DIR/.sync")
+    [[ -n "$managed" ]]
+    [[ "$expected" == "$managed" ]]
+}
 
 
 @test "package sync removes a stale Bun OMP before native convergence" {
@@ -1098,7 +1246,7 @@ MOCKBREW
 
     run bash "$SYNC_SCRIPT"
     assert_success
-    assert_output_contains "unchanged (cached), syncing Claude"
+    assert_output_contains "unchanged (cached), syncing mise"
     [[ "$(wc -l < "$SH_LOG")" -eq "$before" ]]
 }
 
@@ -1132,9 +1280,38 @@ YAML
     [[ ! -f "$OMP_LOG" ]] || ! grep -q "omp update" "$OMP_LOG"
 }
 
+# The upstream installer truncates its target in place, so a live omp session
+# makes the kernel refuse the write with ETXTBSY. A real ELF is required to
+# reproduce it: an interpreted script is only held open for reading.
+@test "package sync converges omp while a running omp holds the live binary" {
+    local omp_path="$TEST_HOME/.local/bin/omp"
+    mkdir -p "$TEST_HOME/.local/bin"
+    cp "$(command -v bash)" "$omp_path"
+    "$omp_path" -c 'sleep 300' &
+    local holder=$! waited=0
+    # Wait for the exec to land, else the install races past the busy window.
+    # A read-write open never truncates, so probing is safe.
+    until ! (exec 3<>"$omp_path") 2>/dev/null; do
+        kill -0 "$holder" 2>/dev/null && ((waited++ < 100)) ||
+            { kill "$holder" 2>/dev/null; fail "held omp binary never became busy"; }
+        sleep 0.05
+    done
+    write_test_yaml
+
+    run_sync
+    local sync_status="$status"
+    kill "$holder" 2>/dev/null || true
+    wait "$holder" 2>/dev/null || true
+
+    [[ "$sync_status" -eq 0 ]]
+    assert_output_contains "Converged omp to v17.3.4"
+    [[ "$("$omp_path")" == "omp/17.3.4" ]]
+}
+
 @test "omp installer failure fails loudly and does not save cache" {
     write_test_yaml
     write_mock_sh 1
+    write_mock_uname Linux
 
     run_sync
     assert_failure
@@ -1142,6 +1319,23 @@ YAML
     assert_output_not_contains "Native harness sync complete"
     assert_output_contains "cache NOT saved"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
+}
+
+@test "Darwin signs and validates a downloaded omp after installer smoke failure" {
+    write_mock_uname Darwin
+    write_mock_sh 1
+    write_test_yaml
+
+    run_sync
+    assert_success
+    assert_output_contains "Converged omp to v17.3.4"
+    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/17.3.4" ]]
+
+    local expected_events
+    expected_events=$(printf 'sh -s -- --binary --ref v17.3.4\ncodesign --force --sign - %s' \
+        "$TEST_HOME/.local/bin/.omp-stage/omp")
+    run cat "$EVENT_LOG"
+    [[ "$output" == "$expected_events" ]]
 }
 
 @test "Darwin signs a freshly converged native omp after installation" {
@@ -1152,8 +1346,8 @@ YAML
     assert_success
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.2.12\ncodesign --force --sign - %s' \
-        "$TEST_HOME/.local/bin/omp")
+    expected_events=$(printf 'sh -s -- --binary --ref v17.3.4\ncodesign --force --sign - %s' \
+        "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
 }
@@ -1393,4 +1587,20 @@ MOCKCARGO
     assert_success
 
     [[ ! -e "$TEST_HOME/.local/bin/claude" ]]
+}
+
+@test "retired harness cleanup removes brew, mise, and native installs" {
+    write_test_yaml
+    write_mock_brew $'opencode\ncrush'
+    mkdir -p "$TEST_HOME/.local/bin"
+    touch "$TEST_HOME/.local/bin/opencode" "$TEST_HOME/.local/bin/crush"
+
+    run_sync
+    assert_success
+
+    grep -qx "brew uninstall opencode" "$BREW_LOG"
+    grep -qx "brew uninstall crush" "$BREW_LOG"
+    grep -q "mise uninstall --yes --all aqua:anomalyco/opencode aqua:charmbracelet/crush" "$MISE_LOG"
+    [[ ! -e "$TEST_HOME/.local/bin/opencode" ]]
+    [[ ! -e "$TEST_HOME/.local/bin/crush" ]]
 }

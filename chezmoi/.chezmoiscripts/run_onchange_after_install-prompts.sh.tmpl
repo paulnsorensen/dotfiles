@@ -1,9 +1,8 @@
 #!/bin/bash
 # run_onchange — re-runs whenever agents/preamble.md changes.
 #
-# Forks to chezmoi/lib/install-prompts.sh, which wires preamble.md as the
-# system prompt for Codex CLI and opencode. Claude Code reads it directly
-# via cc/ccc/ccr in zsh/claude.zsh (--system-prompt-file).
+# Forks to chezmoi/lib/install-prompts.sh, which wires preamble.md for Codex.
+# Claude Code reads it through the cc/ccc/ccr zsh wrappers.
 #
 # Prompts hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/preamble.md 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
 
