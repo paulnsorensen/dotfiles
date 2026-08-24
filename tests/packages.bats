@@ -1195,6 +1195,12 @@ MOCKBREW
     grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
+# The companion assertion — that doc-drift's `reconciled` markers match the
+# pins above — used to live here. doc-drift moved to paulnsorensen/routines
+# (routines/doc-drift/sources.yaml), so this suite can no longer see the
+# manifest. The two now drift independently: bumping a pin here does NOT
+# update the marker there. doc-drift's own weekly run is what reconciles them,
+# and its `small` path opens a paired PR against this repo when it does.
 
 @test "sync OMP verification follows the managed package pin" {
     local managed expected
@@ -1203,11 +1209,6 @@ MOCKBREW
         "$REAL_DOTFILES_DIR/.sync")
     [[ -n "$managed" ]]
     [[ "$expected" == "$managed" ]]
-}
-@test "doc-drift records match the managed harness pins" {
-    local sources="$REAL_DOTFILES_DIR/agents/doc-drift/sources.yaml"
-    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.15" ]
-    [ "$(yq -r '.sources[] | select(.id == "codex-cli") | .reconciled' "$sources")" = "0.146.0" ]
 }
 
 
