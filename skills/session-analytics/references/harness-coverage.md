@@ -17,7 +17,7 @@ Every canonical table carries a `harness` column (`claude` / `codex` / `omp` /
 | claude | `~/.claude/projects/**/*.jsonl` | JSONL, one turn per line; assistant/user `message.content[]` blocks | `claude_normalize` (pass-through, already canonical) | parsed |
 | codex | `~/.codex/sessions/**/*.jsonl` | JSONL rollout; `session_meta` + `response_item`/`event_msg` payloads | `codex_normalize` | parsed |
 | omp | `~/.omp/agent/sessions/<flattened-project-dir>/*.jsonl` | JSONL; `session` header + `message` entries with `toolCall` / `toolResult` | `omp_normalize` | parsed |
-| cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | SQLite blob, undocumented schema, fragile across versions | none | **no accessible logs** |
+| cursor | `~/.cursor/projects/<project-slug>/agent-transcripts/<uuid>/<uuid>.jsonl` (+ `subagents/*.jsonl`) | JSONL, one message per line; `role`/`message.content[]` blocks, plus `turn_ended` status lines | `cursor_normalize` | parsed |
 | copilot | `~/.copilot/` | holds `skills/` + `mcp-config.json` only; no local transcript found | none | **no accessible logs** |
 
 ## Per-harness format notes
@@ -101,12 +101,38 @@ Caveats:
   `tool_use_id` joins can slightly overcount; join on `sessionId` too when
   exactness matters.
 
-### cursor — no accessible logs
+### cursor
 
-Chat is persisted in `state.vscdb`, an opaque SQLite blob whose schema is
-undocumented and changes between Cursor versions. No stable adapter exists; the
-discover step returns `[]` and the run continues. Re-evaluate if Cursor ships a
-documented export.
+Each transcript file (top-level or `subagents/<uuid>.jsonl`) is one session,
+session id = the uuid filename. Lines are `{"role": "user"|"assistant",
+"message": {"content": [...]}}` or `{"type": "turn_ended", "status": ...}`;
+content blocks are only `text` and `tool_use` (`{"type":"tool_use","name":...,
+"input":{...}}`).
+
+`cwd` is decoded from the project-slug directory name (dashes stand in for
+slashes, e.g. `Users-paul-Dev-football` → `/Users/paul/Dev/football`) —
+best-effort: a project directory whose own name contains a dash is ambiguous,
+so the decode always splits on every dash. `gitBranch` is always null (not
+recorded).
+
+Cursor tool_use blocks carry no id, and there are no `tool_result` blocks at
+all — no result content, no `is_error`, no per-call timestamps. The adapter
+synthesizes a deterministic `tool_use_id` (`session:line:block_idx`) since
+nothing needs to join against it, and stamps every row with the most recent
+`<timestamp>Weekday, Mon D, YYYY, H:MM AM (UTC±N)</timestamp>` tag seen in a
+prior user turn (embedded alongside `<user_query>`), converted to UTC and
+carried forward — so cursor timestamps are turn-granularity, not per-call.
+Because of this, cursor has 0% `results_joined_pct` by construction (not a
+measurement gap) and is excluded from any error-rate query.
+
+`CallMcpTool` calls (`{"name":"CallMcpTool","input":{"server":...,
+"toolName":...}}`) are remapped to `mcp__<server>__<toolName>` to match the
+`mcp__%` filter and the double-underscore split convention used by claude/codex.
+
+`turn_ended` lines (`{"status":"success"|"error"}`) become a stop_events row
+with `stop_reason` set to the status string — a different vocabulary from
+claude's `end_turn`/`stop_sequence`/`max_tokens`, so the flattening SQL's
+stop_reason filter lists both sets.
 
 ### copilot — no accessible logs
 
