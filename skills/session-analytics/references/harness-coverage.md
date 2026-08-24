@@ -110,10 +110,12 @@ content blocks are only `text` and `tool_use` (`{"type":"tool_use","name":...,
 "input":{...}}`).
 
 `cwd` is decoded from the project-slug directory name (dashes stand in for
-slashes, e.g. `Users-paul-Dev-football` → `/Users/paul/Dev/football`) —
-best-effort: a project directory whose own name contains a dash is ambiguous,
-so the decode always splits on every dash. `gitBranch` is always null (not
-recorded).
+slashes). A directory whose own name contains a dash is ambiguous if every dash
+is treated as a separator, so the adapter walks left-to-right and at each step
+takes the longest prefix of remaining segments that exists on disk
+(`Users-paul-Dev-easy-cheese` → `/Users/paul/Dev/easy-cheese` when that path is
+real). Unresolved tails fall back to a naive split. `gitBranch` is always null
+(not recorded).
 
 Cursor tool_use blocks carry no id, and there are no `tool_result` blocks at
 all — no result content, no `is_error`, no per-call timestamps. The adapter
@@ -125,14 +127,30 @@ carried forward — so cursor timestamps are turn-granularity, not per-call.
 Because of this, cursor has 0% `results_joined_pct` by construction (not a
 measurement gap) and is excluded from any error-rate query.
 
-`CallMcpTool` calls (`{"name":"CallMcpTool","input":{"server":...,
-"toolName":...}}`) are remapped to `mcp__<server>__<toolName>` to match the
-`mcp__%` filter and the double-underscore split convention used by claude/codex.
+`CallMcpTool` calls that carry both `server` and `toolName`
+(`{"name":"CallMcpTool","input":{"server":..., "toolName":...}}`) are remapped
+to `mcp__<server>__<toolName>` to match the `mcp__%` filter and the
+double-underscore split convention used by claude/codex. Incomplete wrappers
+(missing either key — observed on a subset of live transcripts) keep the native
+`CallMcpTool` name rather than collapsing to `mcp__None__None`. The remapped
+row's `input` stays the wrapper object (`server` / `toolName` / `arguments`);
+packs that read MCP args from `input.query` / `input.cwd` will see those fields
+under `input.arguments` for cursor.
+
+Cursor dispatches sub-agents with `Task` (not Claude's `Agent`). `agent_spawns`
+includes both names so cursor Task rows land there; `subagent_type` still fills
+`agent_type`. Each `subagents/<uuid>.jsonl` file is its own `sessionId`, but the
+adapter sets `isSidechain=true` and `parentUuid` to the parent transcript uuid
+so reconstruction can join the same way Claude packs use `isSidechain`.
+Discovery only walks `**/agent-transcripts/**/*.jsonl` — other JSONL under
+`~/.cursor/projects` is ignored.
 
 `turn_ended` lines (`{"status":"success"|"error"}`) become a stop_events row
-with `stop_reason` set to the status string — a different vocabulary from
-claude's `end_turn`/`stop_sequence`/`max_tokens`, so the flattening SQL's
-stop_reason filter lists both sets.
+with `stop_reason` set to the status string. User-abort errors
+(`"error": "User aborted request"`) map to `aborted` instead of sharing
+`error` with model failures. The flattening SQL's stop_reason filter lists
+claude's `end_turn`/`stop_sequence`/`max_tokens` and cursor's
+`success`/`error`/`aborted`.
 
 ### copilot — no accessible logs
 

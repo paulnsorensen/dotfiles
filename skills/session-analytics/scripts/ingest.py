@@ -354,6 +354,8 @@ def cursor_discover():
         return []
     out = []
     for dirpath, _dirs, files in os.walk(root):
+        if "agent-transcripts" not in dirpath.split(os.sep):
+            continue
         out.extend(os.path.join(dirpath, f) for f in files if f.endswith(".jsonl"))
     return out
 
@@ -383,17 +385,75 @@ def _cursor_session_id(path):
     return os.path.splitext(os.path.basename(path))[0]
 
 
-def _cursor_project_cwd(path):
-    """Decode the project slug directory (dashes standing in for slashes) into a cwd.
+def _cursor_resolve_slug(slug, fs_root="/"):
+    """Decode a dash-encoded absolute path, preferring the longest existing dir.
 
-    Best-effort: a project directory whose own basename contains a dash is
-    ambiguous (e.g. "my-blog" under ~/Dev could decode either as one segment
-    or two) — this always splits on every dash.
+    Cursor project slugs replace path separators with dashes
+    (``Users-paul-Dev-easy-cheese``). A directory whose own name contains a
+    dash is ambiguous if every dash is treated as a separator. Walk
+    left-to-right and at each step take the longest prefix of remaining
+    segments that exists under ``fs_root``; fall back to a naive split for
+    any unresolved tail.
     """
+    parts = [p for p in slug.split("-") if p]
+    if not parts:
+        return "/"
+    prefix = fs_root.rstrip("/")
+    i = 0
+    while i < len(parts):
+        matched = None
+        next_i = None
+        for j in range(len(parts), i, -1):
+            candidate = "-".join(parts[i:j])
+            trial = f"{prefix}/{candidate}" if prefix else f"/{candidate}"
+            if os.path.isdir(trial):
+                matched = trial
+                next_i = j
+                break
+        if matched is None:
+            rest = "/".join(parts[i:])
+            return f"{prefix}/{rest}" if prefix else f"/{rest}"
+        prefix = matched
+        i = next_i
+    return prefix or "/"
+
+
+def _cursor_project_cwd(path):
+    """Decode the project-slug directory into a cwd via filesystem resolve."""
     root = os.path.expanduser("~/.cursor/projects")
     rel = os.path.relpath(path, root)
     slug = rel.split(os.sep, 1)[0]
-    return "/" + slug.replace("-", "/")
+    return _cursor_resolve_slug(slug)
+
+
+def _cursor_lineage(path):
+    """Return (is_sidechain, parent_uuid) from an agent-transcripts path."""
+    parts = os.path.normpath(path).split(os.sep)
+    try:
+        i = parts.index("agent-transcripts")
+    except ValueError:
+        return False, None
+    if i + 3 < len(parts) and parts[i + 2] == "subagents":
+        return True, parts[i + 1]
+    return False, None
+
+
+def _cursor_remap_mcp(name, tool_input):
+    if name != "CallMcpTool":
+        return name
+    server = tool_input.get("server")
+    tool_name = tool_input.get("toolName")
+    if isinstance(server, str) and server and isinstance(tool_name, str) and tool_name:
+        return f"mcp__{server}__{tool_name}"
+    return name
+
+
+def _cursor_stop_reason(entry):
+    status = entry.get("status")
+    err = entry.get("error")
+    if status == "error" and isinstance(err, str) and "abort" in err.lower():
+        return "aborted"
+    return status
 
 
 def cursor_normalize(path):
@@ -401,15 +461,18 @@ def cursor_normalize(path):
 
     One file per transcript (session id = the uuid filename); subagent
     transcripts live in a sibling ``subagents/`` dir with their own uuid/file.
-    ``cwd`` is decoded from the project-slug directory name. There are no
-    per-call timestamps or tool_result blocks: the most recent <timestamp>
+    ``cwd`` is decoded from the project-slug directory name (longest existing
+    path wins). Subagent files set ``isSidechain`` + ``parentUuid``. There are
+    no per-call timestamps or tool_result blocks: the most recent <timestamp>
     seen in a user turn is carried forward onto later tool_use rows, and
     tool_use ids are synthesized (``session:line:block``) since results can
-    never be joined. ``CallMcpTool`` calls are remapped to
-    ``mcp__<server>__<toolName>`` so they land in ``mcp_calls``.
+    never be joined. ``CallMcpTool`` calls with both ``server`` and
+    ``toolName`` are remapped to ``mcp__<server>__<toolName>`` so they land
+    in ``mcp_calls``; incomplete wrappers keep the native name.
     """
     session_id = _cursor_session_id(path)
     cwd = _cursor_project_cwd(path)
+    is_sidechain, parent_uuid = _cursor_lineage(path)
     timestamp = None
     for line_no, entry in enumerate(_iter_jsonl(path)):
         if not isinstance(entry, dict):
@@ -421,7 +484,9 @@ def cursor_normalize(path):
                 "timestamp": timestamp,
                 "sessionId": session_id,
                 "cwd": cwd,
-                "message": {"stop_reason": entry.get("status")},
+                "isSidechain": is_sidechain,
+                "parentUuid": parent_uuid,
+                "message": {"stop_reason": _cursor_stop_reason(entry)},
             }
             continue
         role = entry.get("role")
@@ -448,8 +513,7 @@ def cursor_normalize(path):
             tool_input = block.get("input")
             if not isinstance(tool_input, dict):
                 tool_input = {}
-            if name == "CallMcpTool":
-                name = f"mcp__{tool_input.get('server')}__{tool_input.get('toolName')}"
+            name = _cursor_remap_mcp(name, tool_input)
             out_blocks.append(
                 {
                     "type": "tool_use",
@@ -465,6 +529,8 @@ def cursor_normalize(path):
                 "timestamp": timestamp,
                 "sessionId": session_id,
                 "cwd": cwd,
+                "isSidechain": is_sidechain,
+                "parentUuid": parent_uuid,
                 "message": {"content": out_blocks},
             }
 
@@ -676,7 +742,7 @@ def main():
         WHERE type = 'assistant'
           AND message IS NOT NULL
           AND json_extract_string(message, '$.stop_reason')
-              IN ('end_turn', 'stop_sequence', 'max_tokens', 'success', 'error');
+              IN ('end_turn', 'stop_sequence', 'max_tokens', 'success', 'error', 'aborted');
     """)
 
     # Step 5: agent_spawns.
@@ -690,7 +756,7 @@ def main():
             agent_mode AS mode,
             timestamp, sessionId, cwd
         FROM tool_uses
-        WHERE tool_name = 'Agent';
+        WHERE tool_name IN ('Agent', 'Task');
     """)
 
     # Step 6: skill_invocations.
