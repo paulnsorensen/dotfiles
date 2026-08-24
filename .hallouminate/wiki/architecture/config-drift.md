@@ -415,38 +415,67 @@ logic bug. Tracked in
 test using GNU-only flags (`touch -d @epoch`, `date -d`, `sed -i` without a
 backup arg, `readlink -f`) is a portability suspect.
 
-## Known drift pattern: native-only `sync.sh` ping-pongs cross-harness plugins every sync
+## Known drift pattern: bootstrap `@latest` yq in ~/.local/bin shadows the mise pin
 
-**Symptom**: Every `dots sync` logs the Claude plugin reconcile removing
-`hallouminate@hallouminate` and `milknado@milknado` ("Not in registry (2) …
-Removing … Successfully uninstalled"), then a later leg re-installs them. Net
-end-state is correct (both stay installed + enabled), but each sync does a
-wasteful uninstall→reinstall of git-cloned plugins and prints an alarming
-removal. First hit 2026-08-17.
+**Symptom**: `just check` red locally on `tests/sync-codex-sources.bats`
+(`modify_config.toml preserves Codex-CLI runtime state`) while CI is green. The
+assertion `.model_reasoning_effort == "medium"` fails; the merged codex config
+nests `model_reasoning_effort`, `approval_policy`, `approvals_reviewer`,
+`sandbox_mode`, and `service_tier` **under** `[tui.model_availability_nux]`
+instead of at root. First hit 2026-08-23 on Linux.
 
-**Why it happens**: two reconcilers own the same live plugin set. The
-cross-harness one (`chezmoi/lib/claude-plugin-reconcile.sh`) INSTALLS the
-native-Claude plugins from `agents/plugins/registry.yaml`. The narrowed
-native-only one (`claude/plugins/sync.sh`, run from `claude/.sync`) reconciles
-against `claude/plugins/registry.yaml` — which does NOT list hallouminate /
-milknado (they migrated to the cross-harness registry; the native registry's
-own comment says so) — and `--force`-removes anything not listed. sync.sh was
-blind to the cross-harness registry, so it treated the natives as strangers and
-removed them on every run.
+**Why it happens**: `packages/lib-linux-bootstrap.sh:bootstrap_yq_linux`
+installed yq via `@latest` (release URL and the `go install` fallback) into
+`~/.local/bin`, which sits ahead of the mise shims on PATH. So the bootstrap
+binary — whatever `@latest` resolved to at first-run — permanently shadows the
+mise-pinned yq (`chezmoi/dot_config/mise/config.toml`, `aqua:mikefarah/yq`).
+Here the bootstrap yq was **v4.53.2**, whose TOML emitter serializes root
+scalars in object key-order *after* nested tables; TOML then parses any scalar
+following a `[table]` header as a member of that table. The codex merge
+(`chezmoi/private_dot_codex/modify_private_config.toml`) does `live * $cfg`,
+which appends newly-introduced `$cfg` scalars after the merged `tui` table, so
+v4.53.2 absorbs them into `[tui.model_availability_nux]`. **v4.53.3 fixed the
+emitter.** CI uses the pinned v4.53.3, so it never saw it. Only bites the
+*first* merge that introduces a scalar the live file lacks — existing installs
+already have those keys at root, so `*` overrides them in place (idempotent),
+which is why the live `~/.codex/config.toml` stayed healthy.
 
-**Fix (2026-08-17)**: `claude/plugins/sync.sh` now reads
-`agents/plugins/registry.yaml`, resolves which plugins are native on Claude
-(`native == true` and harnesses ∋ claude, OR `native` list ∋ claude, OR the
-deprecated `claude_native` alias), and drops any installed key whose plugin
-name (before `@`) matches from the removal-candidate set (`CURRENT_NAMES`).
-They are thus neither removed by sync.sh nor re-added by it — the cross-harness
-reconcile remains their sole installer. Matching on the plugin name (not the
-full `<name>@<marketplace>` key) is robust because the registry KEY equals the
-marketplace's `plugins[].name` by schema invariant. Regression tests:
-`tests/plugin-sync.bats` ("cross-harness native plugins are never proposed for
-removal", "--force never uninstalls a cross-harness native plugin"). This is
-distinct from the CLI-strip pattern above (that one is the Claude CLI dropping
-`enabledPlugins`; this one is our own sync.sh removing the install).
+**Fix**: pin the bootstrap install to the mise-declared version. `bootstrap_yq_linux`
+now calls `yq_pinned_version()` (greps the version out of the mise config — yq
+isn't installed yet at bootstrap) and installs exactly that, refusing when the
+pin can't be resolved ([#765](https://github.com/paulnsorensen/dotfiles/pull/765)).
+Immediate unblock on an already-shadowed box: `rm ~/.local/bin/yq` so PATH falls
+through to the linuxbrew/mise v4.53.3.
+
+**Detection**: `which -a yq` showing `~/.local/bin/yq` ahead of the mise shim,
+and its `yq --version` differing from `aqua:mikefarah/yq` in the mise config.
+Same local-red/CI-green class as the macOS GNU-idiom gotcha above.
+
+## Known drift pattern: stray `/tmp/.git` trips the ap install-guard in tests
+
+**Symptom**: `just check` red locally on the `agent-profile` install tests
+(`test_install_guard_silent_when_cwd_not_in_git_repo` plus the
+`test_skill_fetch_wiring.py` install cases), each failing with `ap install:
+refusing to install profile ... into a git working tree (cwd: /tmp/pytest-of-paul/...)`.
+CI is green. First hit 2026-08-23.
+
+**Why it happens**: `agent_profile/cli.py:_within_git_repo` walks `start` and
+every ancestor testing `(d / ".git").exists()` — a pure filesystem check with no
+git invocation and no mount-boundary logic (git itself stops at the `/tmp`
+tmpfs boundary and would report "not a git repository"). The install tests stage
+under pytest's `tmp_path` (`/tmp/pytest-of-paul/...`). A stray **empty**
+`/tmp/.git` directory (created out-of-band by some tool) is therefore seen as an
+ancestor repo, so the guard fires and every `tmp_path`-based install test that
+expects the no-repo path fails.
+
+**Fix**: `rmdir /tmp/.git` (it's empty). Not a committed-code bug — a fresh CI
+runner has no `/tmp/.git`. A latent robustness gap remains: `_within_git_repo`
+treats any directory named `.git` as a repo without checking for a real gitdir
+(a valid `.git` has `HEAD`); tightening that, or staging tests off `/tmp`, would
+harden it, but neither is required to unblock.
+
+**Detection**: `[ -e /tmp/.git ]` while the install-guard tests fail on a
+`/tmp/pytest-of-paul/...` cwd.
 
 See [[agent-profile]] for the `ap` render/install model and [[../harnesses/claude]]
 for where each Claude config surface lives.

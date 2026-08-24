@@ -230,5 +230,12 @@ EOF
     assert_success
     run cat "$TEST_HOME/go-argv.log"
     assert_output_contains "GOBIN=$HOME/.local/bin"
-    assert_output_contains "install github.com/mikefarah/yq/v4@latest"
+    assert_output_contains "install github.com/mikefarah/yq/v4@$(yq_pinned_version)"
+    assert_output_not_contains "@latest"
+}
+
+@test "yq_pinned_version resolves a concrete mise-pinned version, never latest" {
+    run yq_pinned_version
+    assert_success
+    [[ "$output" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }

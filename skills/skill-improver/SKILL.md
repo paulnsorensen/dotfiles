@@ -67,7 +67,7 @@ mode** it catches, and a checkable test. Detail and before/after examples live i
 |------|--------------------|-------|
 | **Predictability** | Fixed protocol with checkable completion criteria → «premature completion» | Every step ends on a done-condition an agent can verify. No "produce a change list" vagueness. |
 | **Invocation** | `description` = trigger conditions only, front-loaded, third person → «description-as-workflow-summary», «summary description» | Description lists trigger phrases + a "Do NOT use for", and states no internal workflow (a workflow summary makes agents skip the body — Vincent, A/B-tested). Model-invocation earns its always-on context load. |
-| **Information hierarchy** | Progressive disclosure is a *branch* test — inline what every run needs, disclose only what some runs reach; body < 500 lines → «sprawl», «@-link force-load» | Relocating a block saves context only if runs branch on it (an every-run block relocated just adds navigation). Cross-reference skills by name, never `@file` (force-loads immediately). |
+| **Information hierarchy** | Progressive disclosure is a *branch* test — inline what every run needs, disclose only what some runs reach; body under the 5k-token Level-2 budget (bytes/4, not lines — prose-dense lines pass the 500-line rule while blowing the budget); references one-level-deep, triggered, non-orphan → «sprawl», «@-link force-load», «untriggered split» | Body ≤ ~5k tok (measure bytes/4 on the body; report lines as secondary). Relocating a block saves context only if runs branch on it *and* the `## References` entry names a read-trigger — an every-run or untriggered relocation just adds navigation (F3). References sit one level deep, each linked with a stated trigger, none orphaned repo-wide. Cross-reference skills by name, never `@file` (force-loads immediately). Mechanics + repo-wide checks: `references/progressive-disclosure.md`. |
 | **Leading words** | Anchor behavior with compact pretrained concepts → «duplication», «no-op weak word» | A triad spelled at three sites or "fast, deterministic, low-overhead" collapses into one word. Strengthen weak words (`be thorough` → `relentless`), don't restate. |
 | **Pruning** | Single source of truth; every line still relevant; delete no-ops → «sediment», «no-op» | No meaning lives in two places. No line the model already obeys by default. Delete whole sentences that fail the no-op test, don't trim them. |
 | **Tool scoping** | Three-tier (read-only / write-scoped / focused); hard `disallowedTools`, not prose → «prose-only tool constraints», «unbounded tool access» | Tools match the tier. A "read-only" claim in prose is backed by `disallowedTools: [Edit, Write, NotebookEdit]`. Nothing listed that's unused. |
@@ -102,7 +102,7 @@ kernel is imported (see References); the working defaults:
 ## Skill Improvement Report: <name>
 
 ### Summary
-- Type: agent | skill · Model: <model> · Tools: <N allowed, N disallowed> · Size: <N lines>
+- Type: agent | skill · Model: <model> · Tools: <N allowed, N disallowed> · Size: <~N tok vs 5k budget, N lines>
 - Findings: N total (N surfaced, N below the bar / don't-know)
 
 ### Recommendations (surfaced)
@@ -156,6 +156,7 @@ Read on demand, when a lens fires:
 - `../session-analytics/references/calibration.md` — the confidence × severity
   kernel (imported single source of truth, not redefined here).
 - `references/anti-patterns.md` — expanded failure-mode catalog + diagnostic checklist.
+- `references/progressive-disclosure.md` — token-budget + reference-tree checks; read when the Information hierarchy lens fires.
 - `references/description-optimization.md` — trigger optimization, before/after.
 - `references/decision-frameworks.md` — reasoning scaffolds, degrees of freedom.
 - `references/hooks-catalog.md` — companion hooks for enforcement findings.

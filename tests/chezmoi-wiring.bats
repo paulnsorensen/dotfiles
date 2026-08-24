@@ -781,7 +781,7 @@ TOML
 @test "hallouminate nightly installer fails clearly without npm" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
-    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-hallouminate.sh.tmpl"
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl"
     local script="$TEST_HOME/install-hallouminate.sh"
     chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
     mkdir -p "$TEST_HOME/empty-bin"
@@ -815,7 +815,7 @@ TOML
     chmod +x "$claude_bin/claude"
     PATH="$claude_bin:$PATH"
 
-    # The hallouminate and tilth run_onchange installers resolve their npm
+    # The hallouminate and tilth run_after installers resolve their npm
     # nightlies during apply. Keep the e2e hermetic: both see npm as offline
     # and absent, warn, and never attempt a global install.
     local npm_bin="$TEST_HOME/fake-npm-bin"

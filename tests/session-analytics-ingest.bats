@@ -8,7 +8,7 @@
 # The adapters under test:
 #   - claude   : ~/.claude/projects/**/*.jsonl              (assistant/user blocks)
 #   - codex    : ~/.codex/sessions/**/*.jsonl               (response_item payloads)
-#   - cursor   : state.vscdb  -> documented "no accessible logs" (best-effort)
+#   - cursor   : ~/.cursor/projects/**/agent-transcripts/**/*.jsonl
 #   - copilot  : ~/.copilot   -> documented "no accessible logs" (best-effort)
 #
 # shellcheck disable=SC1090,SC2317
@@ -43,6 +43,18 @@ write_codex_fixture() {
 {"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"x-1","timestamp":"2026-05-30T11:00:00Z","cwd":"/work/codex"}}
 {"timestamp":"2026-05-30T11:00:02Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"ls\"]}","call_id":"call-x-1"}}
 {"timestamp":"2026-05-30T11:00:03Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-1","output":"a.txt"}}
+JSONL
+}
+
+write_cursor_fixture() {
+    local slug="${1:-zz-nope-dash-name}"
+    local parent="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    local dir="$TEST_HOME/.cursor/projects/$slug/agent-transcripts/$parent"
+    mkdir -p "$dir"
+    cat > "$dir/$parent.jsonl" <<'JSONL'
+{"role":"user","message":{"content":[{"type":"text","text":"<timestamp>Sunday, Aug 23, 2026, 9:00 PM (UTC-7)</timestamp>\n<user_query>hi</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"tool_use","name":"CallMcpTool","input":{"server":"user-tilth","toolName":"tilth_list","arguments":{"cwd":"/tmp"}}},{"type":"tool_use","name":"CallMcpTool","input":{"arguments":{"cwd":"/tmp"},"description":"orphan"}},{"type":"tool_use","name":"Task","input":{"description":"explore","subagent_type":"explorer","prompt":"look"}},{"type":"tool_use","name":"Shell","input":{"command":"ls","description":"list"}}]}}
+{"type":"turn_ended","status":"error","error":"User aborted request"}
 JSONL
 }
 
@@ -149,13 +161,11 @@ JSONL
     assert_output_contains "No accessible sessions from any harness"
 }
 
-@test "ingest: cursor/copilot are documented no-log skips, never appear as harnesses" {
+@test "ingest: copilot is a documented no-log skip and never appears as a harness" {
     write_claude_fixture
     run python3 "$INGEST" --force
     assert_success
-    # These two harnesses are best-effort no-accessible-logs: they must not
-    # materialize phantom rows under their own harness tag.
-    run q "SELECT count(*) AS n FROM tool_uses WHERE harness IN ('cursor','copilot');"
+    run q "SELECT count(*) AS n FROM tool_uses WHERE harness='copilot';"
     assert_output_contains '"n":0'
 }
 
@@ -223,4 +233,71 @@ JSONL
     assert_output_contains "Coverage (per harness):"
     assert_output_contains "results_joined_pct"
     assert_output_contains "explicit_error_flag_pct"
+}
+
+@test "ingest: cursor remaps CallMcpTool only when server and toolName are present" {
+    write_cursor_fixture
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT count(*) AS n FROM mcp_calls WHERE harness='cursor' AND tool_name='mcp__user-tilth__tilth_list';"
+    assert_output_contains '"n":1'
+    run q "SELECT count(*) AS n FROM tool_uses WHERE harness='cursor' AND tool_name='CallMcpTool';"
+    assert_output_contains '"n":1'
+    run q "SELECT count(*) AS n FROM tool_uses WHERE harness='cursor' AND tool_name='mcp__None__None';"
+    assert_output_contains '"n":0'
+}
+
+@test "ingest: cursor Task rows land in agent_spawns and aborts become stop_reason=aborted" {
+    write_cursor_fixture
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT agent_type FROM agent_spawns WHERE harness='cursor';"
+    assert_output_contains '"agent_type":"explorer"'
+    run q "SELECT stop_reason FROM stop_events WHERE harness='cursor';"
+    assert_output_contains '"stop_reason":"aborted"'
+    run q "SELECT project FROM sessions WHERE harness='cursor';"
+    assert_output_contains '"project":"/zz/nope/dash/name"'
+}
+
+@test "ingest: cursor subagent files set isSidechain and parentUuid" {
+    local parent="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    local child="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    local dir="$TEST_HOME/.cursor/projects/zz-nope-dash-name/agent-transcripts/$parent/subagents"
+    mkdir -p "$dir"
+    cat > "$dir/$child.jsonl" <<'JSONL'
+{"role":"user","message":{"content":[{"type":"text","text":"<timestamp>Sunday, Aug 23, 2026, 9:01 PM (UTC-7)</timestamp>\n<user_query>sub</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"path":"/tmp/x"}}]}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT isSidechain, parentUuid FROM raw_entries WHERE harness='cursor' AND sessionId='$child' LIMIT 1;"
+    assert_output_contains '"isSidechain":true'
+    assert_output_contains "\"parentUuid\":\"$parent\""
+}
+
+@test "ingest: cursor discover ignores jsonl outside agent-transcripts" {
+    write_cursor_fixture
+    mkdir -p "$TEST_HOME/.cursor/projects/zz-nope-dash-name"
+    echo '{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{}}]}}' > "$TEST_HOME/.cursor/projects/zz-nope-dash-name/noise.jsonl"
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT count(*) AS n FROM tool_uses WHERE harness='cursor' AND tool_name='Read';"
+    assert_output_contains '"n":0'
+}
+
+@test "ingest: cursor cwd resolve prefers the longest existing path segment" {
+    run python3 -c "
+import importlib.util, os, tempfile
+spec = importlib.util.spec_from_file_location('ingest', '''$INGEST''')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+root = tempfile.mkdtemp()
+os.makedirs(os.path.join(root, 'Users', 'paul', 'Dev', 'easy-cheese'))
+got = mod._cursor_resolve_slug('Users-paul-Dev-easy-cheese', fs_root=root)
+want = os.path.join(root, 'Users', 'paul', 'Dev', 'easy-cheese')
+assert got == want, got
+print('ok')
+"
+    assert_success
+    assert_output_contains "ok"
 }

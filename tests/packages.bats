@@ -1191,14 +1191,24 @@ MOCKBREW
 # --- Integration: native harness convergence ---
 
 @test "managed OMP and Codex pins are exact" {
-    grep -q '^OMP_PIN="v17.2.12"$' "$SYNC_SCRIPT"
+    grep -q '^OMP_PIN="v17.3.4"$' "$SYNC_SCRIPT"
     grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
-@test "doc-drift records match the managed harness pins" {
-    local sources="$REAL_DOTFILES_DIR/agents/doc-drift/sources.yaml"
-    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.12" ]
-    [ "$(yq -r '.sources[] | select(.id == "codex-cli") | .reconciled' "$sources")" = "0.146.0" ]
+# The companion assertion — that doc-drift's `reconciled` markers match the
+# pins above — used to live here. doc-drift moved to paulnsorensen/routines
+# (routines/doc-drift/sources.yaml), so this suite can no longer see the
+# manifest. The two now drift independently: bumping a pin here does NOT
+# update the marker there. doc-drift's own weekly run is what reconciles them,
+# and its `small` path opens a paired PR against this repo when it does.
+
+@test "sync OMP verification follows the managed package pin" {
+    local managed expected
+    managed=$(sed -n 's/^OMP_PIN="v\([^"]*\)"$/\1/p' "$SYNC_SCRIPT")
+    expected=$(sed -n 's/.*omp_version.*!= "omp\/\([^"]*\)".*/\1/p' \
+        "$REAL_DOTFILES_DIR/.sync")
+    [[ -n "$managed" ]]
+    [[ "$expected" == "$managed" ]]
 }
 
 
@@ -1294,8 +1304,8 @@ YAML
     wait "$holder" 2>/dev/null || true
 
     [[ "$sync_status" -eq 0 ]]
-    assert_output_contains "Converged omp to v17.2.12"
-    [[ "$("$omp_path")" == "omp/17.2.12" ]]
+    assert_output_contains "Converged omp to v17.3.4"
+    [[ "$("$omp_path")" == "omp/17.3.4" ]]
 }
 
 @test "omp installer failure fails loudly and does not save cache" {
@@ -1318,11 +1328,11 @@ YAML
 
     run_sync
     assert_success
-    assert_output_contains "Converged omp to v17.2.12"
-    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/17.2.12" ]]
+    assert_output_contains "Converged omp to v17.3.4"
+    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/17.3.4" ]]
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.2.12\ncodesign --force --sign - %s' \
+    expected_events=$(printf 'sh -s -- --binary --ref v17.3.4\ncodesign --force --sign - %s' \
         "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
@@ -1336,7 +1346,7 @@ YAML
     assert_success
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.2.12\ncodesign --force --sign - %s' \
+    expected_events=$(printf 'sh -s -- --binary --ref v17.3.4\ncodesign --force --sign - %s' \
         "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]

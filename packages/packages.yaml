@@ -36,6 +36,7 @@ packages:
   - emdash: { source: cask, platform: mac }   # Desktop UI for running coding agents in parallel
   - cursor: { source: cask, platform: mac, greedy: false } # Cursor — AI code editor; self-updates in-app
   - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)
+  - zed: { source: cask, platform: mac }      # Zed — code editor; Codex wired as an ACP agent (chezmoi/dot_config/zed)
   - obsidian: { source: cask, platform: mac } # Obsidian — Markdown knowledge base
   - alt-tab: { source: cask, platform: mac }  # AltTab — window switcher (prefs restored by alttab/.sync)
   - alfred: { source: cask, platform: mac }   # Alfred — launcher (sync folder wired by alfred/.sync)
@@ -62,17 +63,21 @@ packages:
   # renovate: datasource=npm depName=markdownlint-cli2
   - markdownlint-cli2: { source: npm, version: "0.23.2" }
   # renovate: datasource=npm depName=ccusage
-  - ccusage: { source: npm, version: "20.0.19" }
+  - ccusage: { source: npm, version: "20.0.20" }
   # renovate: datasource=npm depName=@govcraft/agent-skills
   - agent-skills: { source: npm, pkg: "@govcraft/agent-skills", version: "0.4.4" }
   # renovate: datasource=npm depName=@withgraphite/graphite-cli
   - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux, version: "1.8.6" } # `gt` — stacked-diff PR workflow
 
+  # Zed external-agent adapters (ACP)
+  # renovate: datasource=npm depName=@agentclientprotocol/codex-acp
+  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "1.6.2", platform: mac } # runs Codex as a Zed ACP agent
+
   # uv tools (Python)
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.16.2" } # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.16.3" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
   - check-jsonschema: { source: uv, version: "0.38.0" }
   # renovate: datasource=git-refs depName=agentskills/agentskills

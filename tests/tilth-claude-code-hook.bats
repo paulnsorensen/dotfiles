@@ -42,6 +42,21 @@ SH
     [[ ! -f "$TILTH_CALLS" ]]
 }
 
+@test "install_tilth_claude_code removes the retired cwd hook before invoking tilth" {
+    local retired_hook="$HOME/.claude/tilth/inject-cwd.js"
+    mkdir -p "${retired_hook%/*}"
+    printf 'retired\n' > "$retired_hook"
+    cat > "$MOCK_BIN/tilth" <<'SH'
+#!/bin/bash
+[[ ! -e "$HOME/.claude/tilth/inject-cwd.js" ]] || exit 70
+SH
+    chmod +x "$MOCK_BIN/tilth"
+
+    run_install_tilth
+    assert_success
+    [[ ! -e "$retired_hook" ]]
+}
+
 @test "install_tilth_claude_code never mentions the retired inject-cwd.js hook" {
     # tilth retired the inject-cwd.js PreToolUse hook; the install step must
     # not warn about (or expect) the hook script anymore.
