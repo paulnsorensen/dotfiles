@@ -103,6 +103,18 @@ omp:
     task:
       eager: default
       enableLsp: true
+      # omp-introduced (v17.3.x): per-task reasoning-effort control and task
+      # sandbox isolation mode — folded in at omp's live defaults.
+      enableEffort: true
+      isolation:
+        mode: auto
+    # omp-introduced (v17.3.x) cross-harness slash-command import toggles.
+    # All off, matching the external-discovery shutdown policy above.
+    commands:
+      enableClaudeUser: false
+      enableClaudeProject: false
+      enableOpencodeUser: false
+      enableOpencodeProject: false
     retry:
       modelFallback: false
     # Consent answer omp recorded live (autoqa prompt) — promoted to survive
