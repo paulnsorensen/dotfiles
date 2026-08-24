@@ -28,6 +28,9 @@ REGISTRY_FILE="$SCRIPT_DIR/registry.yaml"
 # installed (and at what scope). CLAUDE_INSTALLED_PLUGINS_FILE is the test seam
 # for this otherwise-hardcoded path.
 INSTALLED_PLUGINS_FILE="${CLAUDE_INSTALLED_PLUGINS_FILE:-$HOME/.claude/plugins/installed_plugins.json}"
+# Marketplace names owned by the cross-harness reconcile. This manifest is the
+# authority for which otherwise-extra user installs this script must preserve.
+CHEZMOI_PLUGIN_MANIFEST_FILE="${CLAUDE_CHEZMOI_PLUGIN_MANIFEST_FILE:-$HOME/.claude/.chezmoi-plugin-manifest}"
 
 # shellcheck source=../lib/sync-common.sh
 source "$SCRIPT_DIR/../lib/sync-common.sh"
@@ -156,7 +159,36 @@ get_description() { yq ".plugins.\"$1\".description // \"\"" "$REGISTRY_FILE"; }
 get_item_scope() { echo "user"; }
 remove_item() { claude plugin remove -s "$2" "$1" 2>/dev/null; }
 
+exclude_chezmoi_owned_removals() {
+    [[ -z "$TO_REMOVE" ]] && return 0
+
+    local owned_marketplaces
+    if [[ ! -f "$CHEZMOI_PLUGIN_MANIFEST_FILE" || ! -r "$CHEZMOI_PLUGIN_MANIFEST_FILE" ]] \
+        || ! owned_marketplaces=$(<"$CHEZMOI_PLUGIN_MANIFEST_FILE"); then
+        echo -e "${YELLOW}Warning: Plugin ownership manifest is missing or unreadable: $CHEZMOI_PLUGIN_MANIFEST_FILE${NC}" >&2
+        echo -e "${YELLOW}Skipping destructive plugin removals; installs will continue.${NC}" >&2
+        TO_REMOVE=""
+        remove_count=0
+        return 0
+    fi
+
+    local filtered="" name marketplace
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        marketplace=${name##*@}
+        if grep -Fqx -- "$marketplace" <<<"$owned_marketplaces"; then
+            continue
+        fi
+        filtered="${filtered}${filtered:+$'\n'}${name}"
+    done <<<"$TO_REMOVE"
+
+    TO_REMOVE="$filtered"
+    # shellcheck disable=SC2034  # consumed by sync-common.sh
+    remove_count=$(_count_nonempty "$TO_REMOVE")
+}
+
 sync_compute_diff
+exclude_chezmoi_owned_removals
 sync_show_plan "plugins" || exit 0
 
 if [[ -n "$TO_ADD" ]]; then
