@@ -24,7 +24,9 @@ setup() {
     unset TODOIST CHEESE_FLOW VAUDEVILLE
     mk_claude_mock
     MANIFEST="$TEST_HOME/installed_plugins.json"
+    OWNERSHIP_MANIFEST="$TEST_HOME/.chezmoi-plugin-manifest"
     export CLAUDE_INSTALLED_PLUGINS_FILE="$MANIFEST"
+    export CLAUDE_CHEZMOI_PLUGIN_MANIFEST_FILE="$OWNERSHIP_MANIFEST"
 }
 
 teardown() { teardown_test_env; }
@@ -49,6 +51,10 @@ write_manifest() {
     printf '%s\n' "$1" > "$MANIFEST"
 }
 
+write_ownership_manifest() {
+    printf '%s' "$1" > "$OWNERSHIP_MANIFEST"
+}
+
 # A manifest with the 5 registry plugins + an orphan user-scope plugin
 # (claude-hud) + a project-scope plugin (hallouminate).
 manifest_with_orphans() {
@@ -64,6 +70,7 @@ manifest_with_orphans() {
         "hallouminate@hallouminate":                    [{"scope":"project","projectPath":"/somewhere"}]
       }
     }'
+    write_ownership_manifest ""
 }
 
 @test "sync.sh: never writes settings.json (dry-run leaves it byte-identical)" {
@@ -97,6 +104,40 @@ manifest_with_orphans() {
     [[ "$output" == *"Would prompt to remove: claude-hud@claude-hud"* ]]
     # Project-scoped plugin is excluded from CURRENT_NAMES → never a candidate.
     [[ "$output" != *"hallouminate"* ]]
+}
+
+@test "sync.sh: protects only installed ids from an exactly owned marketplace" {
+    write_manifest '{
+      "version": 2,
+      "plugins": {
+        "hallouminate@hallouminate": [{"scope":"user"}],
+        "hallouminate@other":        [{"scope":"user"}]
+      }
+    }'
+    write_ownership_manifest $'hallouminate\n'
+
+    run bash "$SYNC" --force
+    [ "$status" -eq 0 ]
+    run grep -F "plugin remove -s user hallouminate@hallouminate" "$CLAUDE_LOG"
+    [ "$status" -ne 0 ]
+    run grep -F "plugin remove -s user hallouminate@other" "$CLAUDE_LOG"
+    [ "$status" -eq 0 ]
+}
+
+@test "sync.sh: missing ownership manifest skips forced removals but still installs" {
+    manifest_with_orphans
+    jq 'del(.plugins["skill-creator@claude-plugins-official"])' "$MANIFEST" > "$MANIFEST.tmp"
+    mv "$MANIFEST.tmp" "$MANIFEST"
+    rm "$OWNERSHIP_MANIFEST"
+
+    run bash "$SYNC" --force
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ownership manifest"* ]]
+    [[ "$output" == *"Skipping destructive plugin removals"* ]]
+    run grep -F "plugin remove -s user claude-hud@claude-hud" "$CLAUDE_LOG"
+    [ "$status" -ne 0 ]
+    run grep -F "plugin install -s user skill-creator@claude-plugins-official" "$CLAUDE_LOG"
+    [ "$status" -eq 0 ]
 }
 
 @test "sync.sh: missing manifest yields no removals of desired plugins" {
