@@ -1,0 +1,16 @@
+// Managed by chezmoi — source: chezmoi/dot_config/zed/settings.json.tmpl
+// Codex runs as a Zed external agent (ACP) through the
+// @agentclientprotocol/codex-acp adapter, pinned in packages/packages.yaml.
+// The command resolves to the npm-installed codex-acp binary at apply time
+// (packages sync runs before chezmoi apply). Auth reuses your ~/.codex login,
+// so no secrets live here.
+{
+  "agent_servers": {
+    "Codex": {
+      "type": "custom",
+      "command": {{ (or (lookPath "codex-acp") "codex-acp") | quote }},
+      "args": [],
+      "env": {}
+    }
+  }
+}
