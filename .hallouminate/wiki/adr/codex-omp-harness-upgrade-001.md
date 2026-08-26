@@ -31,7 +31,6 @@ The cutover must verify the rendered configuration under OMP 17.2.5, assert that
 
 Sources: `chezmoi/.chezmoidata/omp.yaml`; [OMP 17.2.5 compaction documentation](https://github.com/can1357/oh-my-pi/blob/v17.2.5/docs/compaction.md); [artifact recovery protection fix](https://github.com/can1357/oh-my-pi/pull/7327); [OMP 17.2.5 release](https://github.com/can1357/oh-my-pi/releases/tag/v17.2.5).
 
-
 ### Update — OMP v18 (2026-08-25)
 
 OMP v18.0.0 retired `compaction.strategy` in favor of an ordered fallback

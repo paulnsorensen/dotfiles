@@ -1287,19 +1287,26 @@ YAML
     local omp_path="$TEST_HOME/.local/bin/omp"
     mkdir -p "$TEST_HOME/.local/bin"
     cp "$(command -v bash)" "$omp_path"
-    "$omp_path" -c 'sleep 300' &
+    # A trailing builtin stops bash exec-optimizing `-c` into sleep, which
+    # would release the binary and leave the busy window to a startup race.
+    # Detach all stdio: any inherited fd left open by the holder (or its
+    # forked sleep) keeps bats' output pipe alive and hangs the run.
+    "$omp_path" -c 'sleep 300; :' </dev/null >/dev/null 2>&1 &
     local holder=$! waited=0
     # Wait for the exec to land, else the install races past the busy window.
     # A read-write open never truncates, so probing is safe.
     until ! (exec 3<>"$omp_path") 2>/dev/null; do
         kill -0 "$holder" 2>/dev/null && ((waited++ < 100)) ||
-            { kill "$holder" 2>/dev/null; fail "held omp binary never became busy"; }
+            { kill "$holder" 2>/dev/null
+              echo "held omp binary never became busy" >&2
+              return 1; }
         sleep 0.05
     done
     write_test_yaml
 
     run_sync
     local sync_status="$status"
+    pkill -P "$holder" 2>/dev/null || true
     kill "$holder" 2>/dev/null || true
     wait "$holder" 2>/dev/null || true
 
