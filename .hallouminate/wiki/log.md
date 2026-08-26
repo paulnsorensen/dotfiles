@@ -57,3 +57,6 @@
 2026-08-17 · mise-precedence-20260817 · new-page · operations/omp-install-etxtbsy.md · Split the omp `ETXTBSY` staging fix (#677) out of the precedence page. Corrected the mechanism direction: the running process holds the inode open for execution and the kernel refuses the writer.
 2026-08-17 · mise-precedence-20260817 · merged · operations/sync-and-chezmoi.md · Added the prepare → package-sync → final-apply phase-ordering section that two pages referenced but which did not exist, including the hardcoded-literal behaviour of `verify_harness_versions`.
 2026-08-17 · mise-precedence-20260817 · merged · operations/index.md · Registered the three new pages under Packaging and machine state.
+
+2026-08-23 · omp-guard-lockstep-20260823 · merged · operations/sync-and-chezmoi.md · Refreshed the stale `verify_harness_versions` literal (`omp/17.2.12`→`omp/17.3.0`, line spans) and added the OMP guard/pin lockstep gotcha: the two renovate managers over `.sync` and `packages/sync.sh` plus the `groupName: oh-my-pi` packageRule that bundles them into one PR (a split deadlocks automerge on the `tests/packages.bats` tripwire); codex-cli still manual (#743, #754).
+2026-08-23 · omp-guard-lockstep-20260823 · merged · operations/mise-manifest-precedence.md · Corrected the same stale `omp/17.2.12` literal and line numbers, cross-linked the new lockstep note.
