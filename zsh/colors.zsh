@@ -21,8 +21,8 @@ __SDW_BG_ALT_256=236
 __SDW_BG_HIGHLIGHT="#44403b"
 __SDW_BG_HIGHLIGHT_256=238
 
-__SDW_DIM="#636363"
-__SDW_DIM_256=241
+__SDW_DIM="#939393"
+__SDW_DIM_256=246
 
 __SDW_FG="#dac2b1"
 __SDW_FG_256=181
@@ -35,7 +35,7 @@ __SDW_FG_BRIGHT_256=231
 # -----------------------------------------------------------------------------
 
 # Red (errors)
-__SDW_RED="#e8575b"
+__SDW_RED="#eb6b6f"
 __SDW_RED_256=167
 
 # Green (success)
@@ -47,7 +47,7 @@ __SDW_YELLOW="#ffae00"
 __SDW_YELLOW_256=214
 
 # Blue (functions)
-__SDW_BLUE="#768da1"
+__SDW_BLUE="#8196a8"
 __SDW_BLUE_256=103
 
 # Magenta (constants, keywords)
