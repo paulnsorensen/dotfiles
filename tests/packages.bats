@@ -1191,10 +1191,16 @@ MOCKBREW
 # --- Integration: native harness convergence ---
 
 @test "managed OMP and Codex pins are exact" {
-    grep -q '^OMP_PIN="v17.3.0"$' "$SYNC_SCRIPT"
+    grep -q '^OMP_PIN="v18.0.5"$' "$SYNC_SCRIPT"
     grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
+# The companion assertion — that doc-drift's `reconciled` markers match the
+# pins above — used to live here. doc-drift moved to paulnsorensen/routines
+# (routines/doc-drift/sources.yaml), so this suite can no longer see the
+# manifest. The two now drift independently: bumping a pin here does NOT
+# update the marker there. doc-drift's own weekly run is what reconciles them,
+# and its `small` path opens a paired PR against this repo when it does.
 
 @test "sync OMP verification follows the managed package pin" {
     local managed expected
@@ -1203,11 +1209,6 @@ MOCKBREW
         "$REAL_DOTFILES_DIR/.sync")
     [[ -n "$managed" ]]
     [[ "$expected" == "$managed" ]]
-}
-@test "doc-drift records match the managed harness pins" {
-    local sources="$REAL_DOTFILES_DIR/agents/doc-drift/sources.yaml"
-    [ "$(yq -r '.sources[] | select(.id == "oh-my-pi") | .reconciled' "$sources")" = "v17.2.15" ]
-    [ "$(yq -r '.sources[] | select(.id == "codex-cli") | .reconciled' "$sources")" = "0.146.0" ]
 }
 
 
@@ -1286,25 +1287,32 @@ YAML
     local omp_path="$TEST_HOME/.local/bin/omp"
     mkdir -p "$TEST_HOME/.local/bin"
     cp "$(command -v bash)" "$omp_path"
-    "$omp_path" -c 'sleep 300' &
+    # A trailing builtin stops bash exec-optimizing `-c` into sleep, which
+    # would release the binary and leave the busy window to a startup race.
+    # Detach all stdio: any inherited fd left open by the holder (or its
+    # forked sleep) keeps bats' output pipe alive and hangs the run.
+    "$omp_path" -c 'sleep 300; :' </dev/null >/dev/null 2>&1 &
     local holder=$! waited=0
     # Wait for the exec to land, else the install races past the busy window.
     # A read-write open never truncates, so probing is safe.
     until ! (exec 3<>"$omp_path") 2>/dev/null; do
         kill -0 "$holder" 2>/dev/null && ((waited++ < 100)) ||
-            { kill "$holder" 2>/dev/null; fail "held omp binary never became busy"; }
+            { kill "$holder" 2>/dev/null
+              echo "held omp binary never became busy" >&2
+              return 1; }
         sleep 0.05
     done
     write_test_yaml
 
     run_sync
     local sync_status="$status"
+    pkill -P "$holder" 2>/dev/null || true
     kill "$holder" 2>/dev/null || true
     wait "$holder" 2>/dev/null || true
 
     [[ "$sync_status" -eq 0 ]]
-    assert_output_contains "Converged omp to v17.3.0"
-    [[ "$("$omp_path")" == "omp/17.3.0" ]]
+    assert_output_contains "Converged omp to v18.0.5"
+    [[ "$("$omp_path")" == "omp/18.0.5" ]]
 }
 
 @test "omp installer failure fails loudly and does not save cache" {
@@ -1327,11 +1335,11 @@ YAML
 
     run_sync
     assert_success
-    assert_output_contains "Converged omp to v17.3.0"
-    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/17.3.0" ]]
+    assert_output_contains "Converged omp to v18.0.5"
+    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/18.0.5" ]]
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.3.0\ncodesign --force --sign - %s' \
+    expected_events=$(printf 'sh -s -- --binary --ref v18.0.5\ncodesign --force --sign - %s' \
         "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
@@ -1345,7 +1353,7 @@ YAML
     assert_success
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v17.3.0\ncodesign --force --sign - %s' \
+    expected_events=$(printf 'sh -s -- --binary --ref v18.0.5\ncodesign --force --sign - %s' \
         "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]

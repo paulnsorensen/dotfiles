@@ -185,10 +185,21 @@ claude_plugin_reconcile() {
         if (( any_missing == 1 )); then
             for _k in "${prior_names[@]:-}"; do [[ -n "$_k" ]] && keep+=("$_k"); done
         fi
+        local manifest_tmp
+        manifest_tmp=$(mktemp "${manifest}.tmp.XXXXXX") || return 1
         if [[ ${#keep[@]} -gt 0 ]]; then
-            printf '%s\n' "${keep[@]}" | sort -u > "$manifest"
+            if ! printf '%s\n' "${keep[@]}" | sort -u > "$manifest_tmp"; then
+                rm -f "$manifest_tmp"
+                echo "  WARN: could not write plugin ownership manifest; manifest left unchanged" >&2
+                return 1
+            fi
         else
-            : > "$manifest"
+            : > "$manifest_tmp"
+        fi
+        if ! mv "$manifest_tmp" "$manifest"; then
+            rm -f "$manifest_tmp"
+            echo "  WARN: could not replace plugin ownership manifest; manifest left unchanged" >&2
+            return 1
         fi
     else
         echo "  WARN: one or more plugin marketplace operations failed; manifest left unchanged" >&2

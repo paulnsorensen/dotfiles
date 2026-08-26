@@ -1,0 +1,55 @@
+// Managed by chezmoi — source: chezmoi/dot_config/zed/settings.json.tmpl
+// Codex has registry and pinned custom ACP entries; OMP exposes ACP as `omp acp`.
+// Authentication stays in each agent's native configuration, never here.
+// Install the Modus Themes extension in Zed before applying the selected theme.
+{
+  "theme": {
+    "dark": "Modus Vivendi Deuteranopia",
+    "light": "Modus Operandi Deuteranopia",
+    "mode": "system"
+  },
+  "agent_servers": {
+    "codex-acp": {
+      "default_config_options": {
+        "fast-mode": true
+      },
+      "type": "registry"
+    },
+    "Codex": {
+      "type": "custom",
+      "command": {{ (or (lookPath "codex-acp") "codex-acp") | quote }},
+      "args": [],
+      "env": {}
+    },
+    "OMP": {
+      "type": "custom",
+      "command": {{ (or (lookPath "omp") "omp") | quote }},
+      "args": ["acp"],
+      "env": {}
+    }
+  },
+  "project_panel": {
+    "dock": "left",
+    "default_width": 260,
+    "starts_open": true,
+    "entry_spacing": "standard",
+    "file_icons": true,
+    "folder_icons": true,
+    "git_status": true,
+    "auto_reveal_entries": true,
+    "sticky_scroll": true,
+    "sort_mode": "directories_first"
+  },
+  "agent": {
+    "enabled": true,
+    "button": true,
+    "dock": "right",
+    "default_width": 520
+  },
+  "terminal": {
+    "dock": "bottom",
+    "default_height": 280,
+    "starts_open": false
+  },
+  "bottom_dock_layout": "contained"
+}

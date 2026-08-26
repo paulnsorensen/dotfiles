@@ -55,7 +55,7 @@ Assistant messages where the model stopped generating. Columns: `harness`,
 
 ## `agent_spawns`
 
-Subset of `tool_uses` for `Agent` calls (claude). Columns: `harness`,
+Subset of `tool_uses` for `Agent` (claude) and `Task` (cursor) calls. Columns: `harness`,
 `agent_type` (defaults to `general-purpose`), `description`, `mode`, `timestamp`,
 `sessionId`, `cwd`.
 

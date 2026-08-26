@@ -54,8 +54,8 @@ verify_harness_versions() {
         log_error "omp --version failed $phase"
         return 1
     fi
-    if [[ "$omp_version" != "omp/17.3.0" ]]; then
-        log_error "omp version mismatch $phase: expected omp/17.3.0, got $omp_version"
+    if [[ "$omp_version" != "omp/18.0.5" ]]; then
+        log_error "omp version mismatch $phase: expected omp/18.0.5, got $omp_version"
         return 1
     fi
 

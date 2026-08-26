@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta
 
 DB_DIR = os.path.expanduser("~/.claude/analytics")
 DB_PATH = os.path.join(DB_DIR, "sessions.duckdb")
@@ -348,10 +349,190 @@ def omp_normalize(path):
 
 
 def cursor_discover():
-    # Cursor stores chat in an opaque state.vscdb SQLite blob whose schema is
-    # undocumented and fragile across versions. No reliable adapter yet — see
-    # references/harness-coverage.md. Discovery-gated best-effort: report and skip.
-    return []
+    root = os.path.expanduser("~/.cursor/projects")
+    if not os.path.isdir(root):
+        return []
+    out = []
+    for dirpath, _dirs, files in os.walk(root):
+        if "agent-transcripts" not in dirpath.split(os.sep):
+            continue
+        out.extend(os.path.join(dirpath, f) for f in files if f.endswith(".jsonl"))
+    return out
+
+
+_CURSOR_TIMESTAMP_RE = re.compile(
+    r"<timestamp>\w+, (\w+ \d+, \d+, \d+:\d+ [AP]M) \(UTC([+-]\d+)\)</timestamp>"
+)
+
+
+def _cursor_parse_timestamp(text):
+    """Parse a <timestamp>Weekday, Mon D, YYYY, H:MM AM (UTC±N)</timestamp> tag to ISO-8601 UTC."""
+    m = _CURSOR_TIMESTAMP_RE.search(text)
+    if not m:
+        return None
+    dt_str, offset = m.groups()
+    try:
+        # Naive parse is intentional: the UTC offset is applied manually on
+        # the next line, so a %z-aware parse would double-count it.
+        dt = datetime.strptime(dt_str, "%b %d, %Y, %I:%M %p")  # noqa: DTZ007
+    except ValueError:
+        return None
+    dt -= timedelta(hours=int(offset))
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _cursor_session_id(path):
+    return os.path.splitext(os.path.basename(path))[0]
+
+
+def _cursor_resolve_slug(slug, fs_root="/"):
+    """Decode a dash-encoded absolute path, preferring the longest existing dir.
+
+    Cursor project slugs replace path separators with dashes
+    (``Users-paul-Dev-easy-cheese``). A directory whose own name contains a
+    dash is ambiguous if every dash is treated as a separator. Walk
+    left-to-right and at each step take the longest prefix of remaining
+    segments that exists under ``fs_root``; fall back to a naive split for
+    any unresolved tail.
+    """
+    parts = [p for p in slug.split("-") if p]
+    if not parts:
+        return "/"
+    prefix = fs_root.rstrip("/")
+    i = 0
+    while i < len(parts):
+        matched = None
+        next_i = None
+        for j in range(len(parts), i, -1):
+            candidate = "-".join(parts[i:j])
+            trial = f"{prefix}/{candidate}" if prefix else f"/{candidate}"
+            if os.path.isdir(trial):
+                matched = trial
+                next_i = j
+                break
+        if matched is None:
+            rest = "/".join(parts[i:])
+            return f"{prefix}/{rest}" if prefix else f"/{rest}"
+        prefix = matched
+        i = next_i
+    return prefix or "/"
+
+
+def _cursor_project_cwd(path):
+    """Decode the project-slug directory into a cwd via filesystem resolve."""
+    root = os.path.expanduser("~/.cursor/projects")
+    rel = os.path.relpath(path, root)
+    slug = rel.split(os.sep, 1)[0]
+    return _cursor_resolve_slug(slug)
+
+
+def _cursor_lineage(path):
+    """Return (is_sidechain, parent_uuid) from an agent-transcripts path."""
+    parts = os.path.normpath(path).split(os.sep)
+    try:
+        i = parts.index("agent-transcripts")
+    except ValueError:
+        return False, None
+    if i + 3 < len(parts) and parts[i + 2] == "subagents":
+        return True, parts[i + 1]
+    return False, None
+
+
+def _cursor_remap_mcp(name, tool_input):
+    if name != "CallMcpTool":
+        return name
+    server = tool_input.get("server")
+    tool_name = tool_input.get("toolName")
+    if isinstance(server, str) and server and isinstance(tool_name, str) and tool_name:
+        return f"mcp__{server}__{tool_name}"
+    return name
+
+
+def _cursor_stop_reason(entry):
+    status = entry.get("status")
+    err = entry.get("error")
+    if status == "error" and isinstance(err, str) and "abort" in err.lower():
+        return "aborted"
+    return status
+
+
+def cursor_normalize(path):
+    """Cursor agent-transcript JSONL -> canonical envelope.
+
+    One file per transcript (session id = the uuid filename); subagent
+    transcripts live in a sibling ``subagents/`` dir with their own uuid/file.
+    ``cwd`` is decoded from the project-slug directory name (longest existing
+    path wins). Subagent files set ``isSidechain`` + ``parentUuid``. There are
+    no per-call timestamps or tool_result blocks: the most recent <timestamp>
+    seen in a user turn is carried forward onto later tool_use rows, and
+    tool_use ids are synthesized (``session:line:block``) since results can
+    never be joined. ``CallMcpTool`` calls with both ``server`` and
+    ``toolName`` are remapped to ``mcp__<server>__<toolName>`` so they land
+    in ``mcp_calls``; incomplete wrappers keep the native name.
+    """
+    session_id = _cursor_session_id(path)
+    cwd = _cursor_project_cwd(path)
+    is_sidechain, parent_uuid = _cursor_lineage(path)
+    timestamp = None
+    for line_no, entry in enumerate(_iter_jsonl(path)):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("type") == "turn_ended":
+            yield {
+                "harness": "cursor",
+                "type": "assistant",
+                "timestamp": timestamp,
+                "sessionId": session_id,
+                "cwd": cwd,
+                "isSidechain": is_sidechain,
+                "parentUuid": parent_uuid,
+                "message": {"stop_reason": _cursor_stop_reason(entry)},
+            }
+            continue
+        role = entry.get("role")
+        msg = entry.get("message")
+        if not isinstance(msg, dict):
+            continue
+        blocks = msg.get("content")
+        if not isinstance(blocks, list):
+            continue
+        if role == "user":
+            for block in blocks:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    ts = _cursor_parse_timestamp(block.get("text") or "")
+                    if ts:
+                        timestamp = ts
+            continue
+        if role != "assistant":
+            continue
+        out_blocks = []
+        for block_idx, block in enumerate(blocks):
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            name = block.get("name")
+            tool_input = block.get("input")
+            if not isinstance(tool_input, dict):
+                tool_input = {}
+            name = _cursor_remap_mcp(name, tool_input)
+            out_blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": f"{session_id}:{line_no}:{block_idx}",
+                    "name": name,
+                    "input": tool_input,
+                }
+            )
+        if out_blocks:
+            yield {
+                "harness": "cursor",
+                "type": "assistant",
+                "timestamp": timestamp,
+                "sessionId": session_id,
+                "cwd": cwd,
+                "isSidechain": is_sidechain,
+                "parentUuid": parent_uuid,
+                "message": {"content": out_blocks},
+            }
 
 
 def copilot_discover():
@@ -373,7 +554,7 @@ ADAPTERS = [
     ("claude", claude_discover, claude_normalize),
     ("codex", codex_discover, codex_normalize),
     ("omp", omp_discover, omp_normalize),
-    ("cursor", cursor_discover, None),
+    ("cursor", cursor_discover, cursor_normalize),
     ("copilot", copilot_discover, None),
 ]
 
@@ -561,7 +742,7 @@ def main():
         WHERE type = 'assistant'
           AND message IS NOT NULL
           AND json_extract_string(message, '$.stop_reason')
-              IN ('end_turn', 'stop_sequence', 'max_tokens');
+              IN ('end_turn', 'stop_sequence', 'max_tokens', 'success', 'error', 'aborted');
     """)
 
     # Step 5: agent_spawns.
@@ -575,7 +756,7 @@ def main():
             agent_mode AS mode,
             timestamp, sessionId, cwd
         FROM tool_uses
-        WHERE tool_name = 'Agent';
+        WHERE tool_name IN ('Agent', 'Task');
     """)
 
     # Step 6: skill_invocations.

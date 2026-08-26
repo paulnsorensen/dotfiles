@@ -295,6 +295,26 @@ SH
     diff <(printf 'gone\nmilknado\n') "$MANIFEST"
 }
 
+@test "reconcile: failed manifest generation preserves the prior ownership file" {
+    mk_cache milknado milknado >/dev/null
+    mkdir -p "${MANIFEST%/*}"
+    printf 'milknado\n' > "$MANIFEST"
+
+    cat > "$TEST_HOME/fake-bin/sort" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+    chmod +x "$TEST_HOME/fake-bin/sort"
+
+    run_reconcile "$(jq -nc --argjson a "$(desired_entry milknado)" '[$a]')"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"manifest left unchanged"* ]]
+    diff <(printf 'milknado\n') "$MANIFEST"
+    run bash -c "compgen -G '$MANIFEST.tmp.*'"
+    [ "$status" -ne 0 ]
+}
+
 @test "reconcile: install exits 0 but does not write installed_plugins.json → verified failure, WARN, manifest unchanged" {
     # A plugin install that reports success but never lands the entry must not
     # be swallowed as "already installed" — verify the post-condition instead

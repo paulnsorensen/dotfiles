@@ -1,7 +1,7 @@
 ---
 name: session-analytics
 description: >
-  Query coding-agent session logs (Claude, Codex, oh-my-pi) via DuckDB for usage
+  Query coding-agent session logs (Claude, Codex, oh-my-pi, Cursor) via DuckDB for usage
   analytics, tool patterns, error forensics, and routing decisions. Use when the
   user says "session analytics", "query my logs", "tool usage", "how often do I
   use", "check my sessions", "analyze my usage", or asks about tool/agent/skill
@@ -39,10 +39,12 @@ batch/fan-out executor.
 ## How it works
 
 Session logs come from several harnesses (Claude JSONL, Codex rollout JSONL,
-oh-my-pi JSONL). `ingest.py` runs one normalizing **adapter** per harness into
-one canonical row shape with a `harness` column, then materializes pre-flattened
-tables so you can answer questions with single SQL queries. cursor/copilot have
-no accessible logs today (see `harness-coverage.md`).
+oh-my-pi JSONL, Cursor agent-transcript JSONL). `ingest.py` runs one normalizing
+**adapter** per harness into one canonical row shape with a `harness` column, then
+materializes pre-flattened tables so you can answer questions with single SQL
+queries. Copilot has no accessible logs today. Cursor has no `tool_result`
+blocks (0% `results_joined` by construction) — exclude it from error-rate
+queries. See `harness-coverage.md`.
 
 ## Step 1: Ensure the database exists
 
@@ -74,7 +76,7 @@ gotchas) lives in `references/canonical-schema.md`. Read it when you need a
 column you don't already know. The common tables: `tool_uses`, `tool_results`,
 `skill_invocations`, `agent_spawns`, `mcp_calls`, `stop_events`, `stop_hooks`,
 `permission_denials`, `sessions`, `raw_entries` — each carrying a `harness`
-column so you can filter or compare Claude vs Codex vs oh-my-pi.
+column so you can filter or compare Claude vs Codex vs oh-my-pi vs Cursor.
 
 ## Query Catalog
 
