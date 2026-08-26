@@ -58,9 +58,11 @@ STDIN"
     [ "$(yq '.read.toolResultPreview' "$OUT")" = "false" ]
     [ "$(yq '.skills.enableSkillCommands' "$OUT")" = "true" ]
     [ "$(yq '.tui.tight' "$OUT")" = "true" ]
+    [ "$(yq '.composer.shape' "$OUT")" = "box" ]
     [ "$(yq '.startup.quiet' "$OUT")" = "true" ]
     [ "$(yq 'has("compaction") and (.compaction | has("thresholdTokens"))' "$OUT")" = "false" ]
-    [ "$(yq '.compaction.strategy' "$OUT")" = "snapcompact" ]
+    [ "$(yq 'has("compaction") and (.compaction | has("strategy"))' "$OUT")" = "false" ]
+    [ "$(yq '.compaction.methodOrder | join(",")' "$OUT")" = "snapcompact,remote,soft" ]
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.compaction.midTurnEnabled' "$OUT")" = "true" ]
     [ "$(yq '.compaction.autoContinue' "$OUT")" = "true" ]
@@ -114,7 +116,8 @@ compaction:
 setupVersion: 1'
     [ "$status" -eq 0 ]
     [ "$(yq 'has("compaction") and (.compaction | has("thresholdTokens"))' "$OUT")" = "false" ]
-    [ "$(yq '.compaction.strategy' "$OUT")" = "snapcompact" ]
+    [ "$(yq 'has("compaction") and (.compaction | has("strategy"))' "$OUT")" = "false" ]
+    [ "$(yq '.compaction.methodOrder | join(",")' "$OUT")" = "snapcompact,remote,soft" ]
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }

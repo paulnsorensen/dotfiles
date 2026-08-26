@@ -30,3 +30,17 @@ Compaction occurs later on large-context models, uses no remote compaction-model
 The cutover must verify the rendered configuration under OMP 17.2.5, assert that `thresholdTokens` remains absent, and retain the 20k recent-tail policy.
 
 Sources: `chezmoi/.chezmoidata/omp.yaml`; [OMP 17.2.5 compaction documentation](https://github.com/can1357/oh-my-pi/blob/v17.2.5/docs/compaction.md); [artifact recovery protection fix](https://github.com/can1357/oh-my-pi/pull/7327); [OMP 17.2.5 release](https://github.com/can1357/oh-my-pi/releases/tag/v17.2.5).
+
+
+### Update — OMP v18 (2026-08-25)
+
+OMP v18.0.0 retired `compaction.strategy` in favor of an ordered fallback
+list `compaction.methodOrder` (upstream default
+`[remote, snapcompact, handoff, shake, soft]`). The v18 in-place migration
+rewrote the pinned `strategy: snapcompact` as
+`methodOrder: [snapcompact, remote, soft]` — snapcompact still first, so
+this ADR's decision is unchanged in effect. The registry
+(`chezmoi/.chezmoidata/omp.yaml`) now declares `methodOrder` at those
+migrated values, and `modify_config.yml` lists
+`["compaction","strategy"]` as a retired path so pre-v18 machines migrate
+instead of halting the unknown-key gate. `thresholdTokens` remains absent.
