@@ -30,7 +30,7 @@ teardown() { teardown_test_env; }
 
     # Correct names catppuccin/tmux v2 declares via `-ogq` — must be present
     # verbatim or the plugin's exact-name match never sees our override.
-    grep -qx 'set -g @thm_surface_0   "#3c291c"' "$conf"
+    grep -qx 'set -g @thm_surface_0   "#312b27"' "$conf"
     grep -qx 'set -g @thm_fg          "#dac2b1"' "$conf"
 
     # Old mismatched names must be gone — their presence is exactly the bug:
@@ -51,7 +51,7 @@ teardown() { teardown_test_env; }
     jq empty "$theme_file"
     [ "$(jq -r '.name' "$theme_file")" = "Chocolate Donut" ]
     [ "$(jq -r '.themes[0].appearance' "$theme_file")" = "dark" ]
-    [ "$(jq -r '.themes[0].style.background' "$theme_file")" = "#2a1c12" ]
+    [ "$(jq -r '.themes[0].style.background' "$theme_file")" = "#221d1a" ]
     [ "$(jq -r '.themes[0].style["terminal.ansi.red"]' "$theme_file")" = "#e8575b" ]
     # Bright row: the one non-obvious mapping — bright_yellow comes from base09.
     [ "$(jq -r '.themes[0].style["terminal.ansi.bright_yellow"]' "$theme_file")" = "#e9b76b" ]

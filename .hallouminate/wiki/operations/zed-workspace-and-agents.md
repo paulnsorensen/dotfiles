@@ -31,7 +31,6 @@ A theme cannot make status accessible when Zed communicates it by color alone. V
 - [Modus Themes accessibility rationale](https://protesilaos.com/emacs/modus-themes)
 - [WCAG 2.1 SC 1.4.1: Use of Color](https://www.w3.org/WAI/WCAG21/Understanding/use-of-color.html)
 
-
 ## Vim, fonts, and editor behavior (2026-08-26)
 
 `settings.json.tmpl` now also configures vim mode and editor basics: `vim_mode` with system clipboard, smartcase f/t motions, relative line numbers, and `vertical_scroll_margin: 5` mirroring vimrc's `scrolloff=5`; `tab_size: 2` matching vimrc's `tabstop=2`; `format_on_save: "off"` with final-newline/trailing-whitespace on save because prek owns formatting. Fonts are JetBrainsMono Nerd Font (buffer + terminal, size 14) with Hack Nerd Font Mono fallback. A managed `keymap.json` binds `ctrl-h/j/k/l` pane navigation in `Editor && vim_mode == normal` only (deliberately NOT in Terminal context, so the terminal keeps its own ctrl-h/j/k/l; cost: those keys can't navigate out of a focused terminal) and `cmd-j` → `workspace::ToggleBottomDock`. Claude Code is a fourth `agent_servers` entry: registry key `claude-acp` (NOT `claude-code-acp`).
