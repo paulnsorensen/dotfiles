@@ -52,19 +52,19 @@ teardown() { teardown_test_env; }
     [ "$(jq -r '.name' "$theme_file")" = "Chocolate Donut" ]
     [ "$(jq -r '.themes[0].appearance' "$theme_file")" = "dark" ]
     [ "$(jq -r '.themes[0].style.background' "$theme_file")" = "#221d1a" ]
-    [ "$(jq -r '.themes[0].style["terminal.ansi.red"]' "$theme_file")" = "#e8575b" ]
+    [ "$(jq -r '.themes[0].style["terminal.ansi.red"]' "$theme_file")" = "#eb6b6f" ]
     # Bright row: the one non-obvious mapping — bright_yellow comes from base09.
     [ "$(jq -r '.themes[0].style["terminal.ansi.bright_yellow"]' "$theme_file")" = "#e9b76b" ]
     # Contract syntax colors (mirror the vimrc highlight mapping).
-    [ "$(jq -r '.themes[0].style.syntax.comment.color' "$theme_file")" = "#636363" ]
+    [ "$(jq -r '.themes[0].style.syntax.comment.color' "$theme_file")" = "#939393" ]
     [ "$(jq -r '.themes[0].style.syntax.string.color' "$theme_file")" = "#88b994" ]
     [ "$(jq -r '.themes[0].style.syntax.keyword.color' "$theme_file")" = "#b287cd" ]
-    [ "$(jq -r '.themes[0].style.syntax.function.color' "$theme_file")" = "#768da1" ]
+    [ "$(jq -r '.themes[0].style.syntax.function.color' "$theme_file")" = "#8196a8" ]
     [ "$(jq -r '.themes[0].style.syntax.type.color' "$theme_file")" = "#ffae00" ]
     [ "$(jq -r '.themes[0].style.syntax.number.color' "$theme_file")" = "#e9b76b" ]
     # Players render like Zed's shipped themes: background = cursor accent,
     # selection = that accent at ~24% alpha (3d suffix).
     [ "$(jq -r '.themes[0].style.players[0].background' "$theme_file")" = "$(jq -r '.themes[0].style.players[0].cursor' "$theme_file")" ]
-    [ "$(jq -r '.themes[0].style.players[0].cursor' "$theme_file")" = "#768da1" ]
-    [[ "$(jq -r '.themes[0].style.players[0].selection' "$theme_file")" == \#768da13d ]]
+    [ "$(jq -r '.themes[0].style.players[0].cursor' "$theme_file")" = "#8196a8" ]
+    [[ "$(jq -r '.themes[0].style.players[0].selection' "$theme_file")" == \#8196a83d ]]
 }
