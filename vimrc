@@ -89,19 +89,19 @@ highlight Debug ctermfg=167
 highlight Underlined ctermfg=103 cterm=underline
 highlight Error ctermfg=231 ctermbg=167
 highlight Todo ctermfg=234 ctermbg=214
-highlight CursorLine cterm=NONE ctermbg=235
-highlight CursorLineNr ctermfg=214 ctermbg=235
+highlight CursorLine cterm=NONE ctermbg=236
+highlight CursorLineNr ctermfg=214 ctermbg=236
 highlight LineNr ctermfg=241 ctermbg=NONE
 highlight Visual ctermbg=238
 highlight Search ctermfg=234 ctermbg=214
 highlight IncSearch ctermfg=234 ctermbg=45
 highlight StatusLine ctermfg=181 ctermbg=238
-highlight StatusLineNC ctermfg=241 ctermbg=235
+highlight StatusLineNC ctermfg=241 ctermbg=236
 highlight VertSplit ctermfg=238 ctermbg=NONE
-highlight Pmenu ctermfg=181 ctermbg=235
+highlight Pmenu ctermfg=181 ctermbg=236
 highlight PmenuSel ctermfg=234 ctermbg=214
 highlight Directory ctermfg=103
-highlight Folded ctermfg=241 ctermbg=235
+highlight Folded ctermfg=241 ctermbg=236
 highlight FoldColumn ctermfg=241 ctermbg=NONE
 
 " Key Mappings (matching your VS Code vim setup)

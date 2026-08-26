@@ -1,0 +1,22 @@
+// Managed by chezmoi — source: chezmoi/dot_config/zed/keymap.json
+// Pane navigation is bound in "Editor && vim_mode == normal" (not the bare
+// Workspace/Dock contexts) so ctrl-h/j/k/l reach the terminal's own input
+// unshadowed when the terminal pane is focused. See zed.dev/docs/key-bindings
+// and zed.dev/docs/vim for the confirmed context-expression syntax and the
+// ActivatePaneLeft/Right/Up/Down action names.
+[
+  {
+    "context": "Editor && vim_mode == normal",
+    "bindings": {
+      "ctrl-h": "workspace::ActivatePaneLeft",
+      "ctrl-j": "workspace::ActivatePaneDown",
+      "ctrl-k": "workspace::ActivatePaneUp",
+      "ctrl-l": "workspace::ActivatePaneRight"
+    }
+  },
+  {
+    "bindings": {
+      "cmd-j": "workspace::ToggleBottomDock"
+    }
+  }
+]
