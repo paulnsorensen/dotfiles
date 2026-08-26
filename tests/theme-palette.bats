@@ -39,3 +39,32 @@ teardown() { teardown_test_env; }
     ! grep -q '@thm_surface0\b' "$conf"
     ! grep -q '@thm_text\b' "$conf"
 }
+
+@test "generate_zed_theme writes a valid Zed user theme from the base24 scheme" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    run bash "$THEME_REPO/theme/generate.sh"
+    assert_success
+
+    local theme_file="$THEME_REPO/chezmoi/dot_config/zed/themes/dotfiles-theme.json"
+    assert_file_exists "$theme_file"
+
+    jq empty "$theme_file"
+    [ "$(jq -r '.name' "$theme_file")" = "Chocolate Donut" ]
+    [ "$(jq -r '.themes[0].appearance' "$theme_file")" = "dark" ]
+    [ "$(jq -r '.themes[0].style.background' "$theme_file")" = "#2a1c12" ]
+    [ "$(jq -r '.themes[0].style["terminal.ansi.red"]' "$theme_file")" = "#e8575b" ]
+    # Bright row: the one non-obvious mapping — bright_yellow comes from base09.
+    [ "$(jq -r '.themes[0].style["terminal.ansi.bright_yellow"]' "$theme_file")" = "#e9b76b" ]
+    # Contract syntax colors (mirror the vimrc highlight mapping).
+    [ "$(jq -r '.themes[0].style.syntax.comment.color' "$theme_file")" = "#636363" ]
+    [ "$(jq -r '.themes[0].style.syntax.string.color' "$theme_file")" = "#88b994" ]
+    [ "$(jq -r '.themes[0].style.syntax.keyword.color' "$theme_file")" = "#b287cd" ]
+    [ "$(jq -r '.themes[0].style.syntax.function.color' "$theme_file")" = "#768da1" ]
+    [ "$(jq -r '.themes[0].style.syntax.type.color' "$theme_file")" = "#ffae00" ]
+    [ "$(jq -r '.themes[0].style.syntax.number.color' "$theme_file")" = "#e9b76b" ]
+    # Players render like Zed's shipped themes: background = cursor accent,
+    # selection = that accent at ~24% alpha (3d suffix).
+    [ "$(jq -r '.themes[0].style.players[0].background' "$theme_file")" = "$(jq -r '.themes[0].style.players[0].cursor' "$theme_file")" ]
+    [ "$(jq -r '.themes[0].style.players[0].cursor' "$theme_file")" = "#768da1" ]
+    [[ "$(jq -r '.themes[0].style.players[0].selection' "$theme_file")" == \#768da13d ]]
+}
