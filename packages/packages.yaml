@@ -77,7 +77,7 @@ packages:
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.16.3" } # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.16.4" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
   - check-jsonschema: { source: uv, version: "0.38.0" }
   # renovate: datasource=git-refs depName=agentskills/agentskills
