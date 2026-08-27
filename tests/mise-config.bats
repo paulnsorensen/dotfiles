@@ -69,7 +69,7 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 @test "core-plugin tools (node, bun, rust) are stripped of git-tag prefixes" {
     [[ "$(yq -p=toml '.tools.node' "$CONFIG")" == "24.18.1" ]]
     [[ "$(yq -p=toml '.tools.bun' "$CONFIG")" == "1.3.14" ]]
-    [[ "$(yq -p=toml '.tools.rust' "$CONFIG")" == "1.97.1" ]]
+    [[ "$(yq -p=toml '.tools.rust' "$CONFIG")" == "1.98.0" ]]
 }
 
 @test "backend-managed tools use their backend prefix syntax" {
