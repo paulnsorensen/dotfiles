@@ -72,7 +72,7 @@
 "aqua:rust-lang/rust-analyzer" = "2026-07-20"
 "aqua:taiki-e/cargo-llvm-cov" = "v0.9.0"
 "aqua:anthropics/claude-code" = "v2.1.237"
-"aqua:openai/codex" = "rust-v0.146.0"
+"aqua:openai/codex" = "rust-v0.150.1"
 "aqua:rtk-ai/rtk" = "v0.45.0"
 
 node = "24.18.1"

@@ -38,10 +38,18 @@
 #   timeout        — seconds (verified against
 #                    developers.openai.com/codex/hooks → "timeout is in
 #                    seconds"; Claude uses the same unit)
-#   async          — claude-only boolean. true → Claude fires the hook
-#                    without blocking the turn; false → synchronous. An
-#                    explicit `false` is preserved on write (it is not the
-#                    same as an absent field). Codex ignores it.
+#   async          — boolean. true → the harness fires the hook without
+#                    blocking the turn; false → synchronous. An explicit
+#                    `false` is preserved on write (it is not the same as an
+#                    absent field). Historically claude-only — as of Codex
+#                    CLI 0.148.0, `async: true` on a command hook is also
+#                    honored upstream (background hooks are informational
+#                    only there: they cannot block, approve, or rewrite).
+#                    Our renderer (agents/hooks/lib.sh) still normalizes
+#                    async to empty for codex regardless of this field —
+#                    deliberately unchanged pending a decision on which
+#                    codex hooks, if any, should run async (out of scope
+#                    for this registry; see agents/hooks/lib.sh).
 #   description    — human-readable purpose
 hooks:
   session-start-cheese-flair:
