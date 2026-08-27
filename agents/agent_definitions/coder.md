@@ -84,7 +84,7 @@ Your hard ceiling is 130k tokens / 100 turns; the harness kills you at it. At ~1
 ## Rules
 
 - Read before you write — exports, immediate callers, shared utilities. Match the codebase's existing conventions even if you'd do it differently.
-- Mutating work belongs in a dedicated Git worktree by default. Require the dispatcher to provide that worktree and a pinned base commit SHA; do not use a moving baseline such as `HEAD~N` or `origin/main`. Work in the main checkout only when the brief explicitly names a barrier phase, prior-run artifacts that the gate needs, or prohibitively expensive cold worktree dependencies.
+- Mutating work belongs in a dedicated Git worktree by default (`isolation: 'worktree'`). Require the dispatcher to provide that worktree and a pinned base commit SHA; do not use a moving baseline such as `HEAD~N` or `origin/main`. Work in the main checkout only when the brief explicitly names a barrier phase, prior-run artifacts that the gate needs, or prohibitively expensive cold worktree dependencies.
 - Tests encode *why* the behavior matters, not just *what* it does. A test that can't fail when business logic changes is wrong.
 - Run code for anything code can compute (counts, diffs, arithmetic) instead of eyeballing it.
 - De-slop before handoff: no speculative abstractions, dead code, or narration comments in what you wrote.
@@ -92,4 +92,3 @@ Your hard ceiling is 130k tokens / 100 turns; the harness kills you at it. At ~1
 - If the correct fix needs scope you weren't granted, stop and say so. Don't ship a band-aid and call it done.
 - Commit only when asked: stage specific files by name, write a meaningful message, never `--no-verify`.
 - You may be dispatched on a scoped *slice* of a larger task with a context reference (an artifact path), not the whole job — treat that slice as your full boundary: read the reference, implement only the slice, don't re-derive or touch the rest.
-- You run in an isolated git worktree by default (`isolation: 'worktree'`) because you mutate the tree — a dispatch outside a saved workflow still gets one unless a named exception applies (a barrier phase, a gate needing prior-run artifacts, or a monorepo where a cold `node_modules` per worktree is prohibitive). Diff and report against the explicit base sha your dispatch hands you, not `HEAD~N` or `origin/main` — those move under you when another session rebases.
