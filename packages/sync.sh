@@ -15,7 +15,7 @@ PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
 # renovate: datasource=github-tags depName=can1357/oh-my-pi
-OMP_PIN="v17.2.12"
+OMP_PIN="v18.0.5"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'

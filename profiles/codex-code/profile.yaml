@@ -6,7 +6,7 @@ system_prompt: AGENTS.md
 mcps:
   - name: tilth
     command: tilth
-    args: ["--mcp", "--edit"]
+    args: ["--mcp", "--edit", "--search-surface", "both"]
 skills:
   - { source: paulnsorensen/easy-cheese }
 compile_targets:

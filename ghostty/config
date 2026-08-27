@@ -13,16 +13,16 @@ font-thicken = true
 font-thicken-strength = 200
 
 # Core colors
-background = #2a1c12
+background = #221d1a
 foreground = #dac2b1
 
 # Cursor
 cursor-color = #dac2b1
-cursor-text = #2a1c12
+cursor-text = #221d1a
 cursor-style = block
 
 # Selection
-selection-background = #4f4030
+selection-background = #44403b
 selection-foreground = #f8f8f8
 
 # Background image (duck, matches iTerm2)
@@ -32,15 +32,15 @@ background-image-position = center-left
 background-blur = 20
 
 # ANSI palette (0-7: normal, 8-15: bright)
-palette = 0=#3c291c
-palette = 1=#e8575b
+palette = 0=#312b27
+palette = 1=#eb6b6f
 palette = 2=#88b994
 palette = 3=#ffae00
-palette = 4=#768da1
+palette = 4=#8196a8
 palette = 5=#b287cd
 palette = 6=#00c4fb
 palette = 7=#dac2b1
-palette = 8=#636363
+palette = 8=#939393
 palette = 9=#ff7558
 palette = 10=#00dac0
 palette = 11=#e9b76b
@@ -51,7 +51,7 @@ palette = 15=#f8f8f8
 
 # Split panes
 unfocused-split-opacity = 0.85
-split-divider-color = #4f4030
+split-divider-color = #44403b
 
 # Window
 window-padding-x = 4

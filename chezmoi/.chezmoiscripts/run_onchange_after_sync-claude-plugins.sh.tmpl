@@ -15,14 +15,15 @@
 #
 # registry plugins hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/plugins/registry.yaml 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
 #
-# Also embed a projection (not a whole-file hash) of live runtime state:
+# Also embed projections (not whole-file hashes) of live runtime state.
 # installed_plugins.json carries lastUpdated/gitCommitSha fields that churn on
 # every CLI plugin refresh, so hashing the whole file would re-run this prime
-# on every apply. Projecting just the set of user-scope install ids and
-# indexed marketplace names catches an out-of-band uninstall (the drift class
-# that motivated this) while staying quiet when nothing meaningful changed.
+# on every apply. Projecting only user-scope install ids, indexed marketplace
+# names, and ownership-manifest state catches out-of-band drift while staying
+# quiet when nothing meaningful changed.
 # installed user-scope ids: {{ output "sh" "-c" "jq -r '(.plugins // {}) | to_entries[] | select(.value | any(.scope==\"user\")) | .key' ~/.claude/plugins/installed_plugins.json 2>/dev/null | sort | tr '\n' ' ' || true" }}
 # indexed marketplaces:     {{ output "sh" "-c" "jq -r 'keys[]' ~/.claude/plugins/known_marketplaces.json 2>/dev/null | sort | tr '\n' ' ' || true" }}
+# owned marketplaces manifest state: {{ output "sh" "-c" "manifest=\"$HOME/.claude/.chezmoi-plugin-manifest\"; if [ ! -e \"$manifest\" ]; then printf 'missing'; elif [ ! -s \"$manifest\" ]; then printf 'present-empty'; else printf 'present-nonempty '; sort \"$manifest\" 2>/dev/null | tr '\\n' ' '; fi" }}
 
 set -euo pipefail
 

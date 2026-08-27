@@ -1003,13 +1003,14 @@ install_prek_hooks() {
     done
 }
 
-# Install tilth's claude-code integration (edit-mode MCP entry). tilth retired
-# the inject-cwd.js PreToolUse hook, so no hook script is dropped or checked.
+# Install tilth's claude-code integration (edit-mode MCP entry). Prune the
+# retired inject-cwd.js hook first; current tilth warns whenever it remains.
 install_tilth_claude_code() {
     if ! command -v tilth &>/dev/null; then
         log_warning "tilth not installed, skipping claude-code install"
         return 0
     fi
+    rm -f "$HOME/.claude/tilth/inject-cwd.js"
     log_info "Installing tilth claude-code integration (tilth install claude-code --edit)..."
     tilth install claude-code --edit 2>&1 | while read -r line; do
         log_info "  $line"

@@ -558,8 +558,10 @@ EOF
 
     SKILL_EXCLUDE_AGENTS="claude-code" run_sync --dry-run
     assert_success
-    assert_output_contains "Excluding harness 'claude' (claude-code)"
-    assert_output_contains "No valid harnesses for acme/widgets"
+    local blue=$'\033[0;34m'
+    [[ "$output" == *"${blue}Excluding harness 'claude' (claude-code)"* ]]
+    [[ "$output" == *"${blue}acme/widgets → nothing for this leg"* ]]
+    assert_output_not_contains "No valid harnesses for acme/widgets"
     run grep -F 'skills add acme/widgets' <<< "$output"
     assert_failure
 }

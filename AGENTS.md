@@ -41,21 +41,7 @@ Never edit a rendered target. Edit the source, then deploy.
 | Package / profile / OMP config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/omp.yaml` | relevant `dots` command |
 | Secret (API key, token) | the vault — never `.env`. Key names: `secrets/secrets.env.tmpl` | run `bin/vault-provision` as the operator |
 
-`.env` holds only non-secret settings. `bin/vault-provision` reads the exact
-runtime fields from 1Password (`op`) or Bitwarden Secrets Manager (`bws`) and
-installs one root-owned credential, policy, and service identity per consumer.
-Harness MCP configs contain only fixed `agent-secret-proxy` socket paths; daily
-loaders remove retired credential names and the obsolete user cache before exec.
-
-Claude, Codex, and OMP global configuration are chezmoi-authoritative;
-Cursor and Copilot remain frozen pending migration.
-
-Codex hooks are not declared in `codex.yaml` — they derive from
-`agents/hooks/registry.yaml` (entries whose `harnesses` includes codex).
-`~/.codex/config.toml` is merged, not overwritten: the CLI writes its own runtime
-state (`projects`, `hooks.state`, `marketplaces`, `plugins`) into the same file, so
-only registry-declared keys are overlaid. `mcp_servers` is the exception — it is
-replaced wholesale, so deleting a server there evicts it from the live file.
+Implementation details (vault provisioning, codex merge semantics, credential isolation) live in the wiki — see [[operations/sync-and-chezmoi]] and [[architecture/chezmoi-authoritative-codex]].
 
 ## Required gates
 

@@ -36,5 +36,12 @@ sources:
   paulnsorensen/skillz-that-grillz:
     description: Other useful skills
     harnesses: [claude]
+  paulnsorensen/routines:
+    description: Cloud-routine skills — wiki-curator (applied by the routines at runtime), routine-scaffold, routine-env
+    # PRIVATE repo. _cz_vendor_external_skills clones plain HTTPS, so this
+    # source depends on a git credential helper (`gh auth setup-git`); without
+    # one the clone fails and the sync reports the source unavailable rather
+    # than silently dropping the skills.
+    skills: [wiki-curator, routine-scaffold, routine-env]
   paulnsorensen/sliced-bread-architecture:
     description: Sliced Bread doctrine skills — seam/spine coherence review, five-rule change review, slice depth scoring

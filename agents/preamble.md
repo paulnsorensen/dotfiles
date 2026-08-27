@@ -10,7 +10,7 @@ Use tilth directly for workspace code and file operations.
 4. **Write in batch** — use one `tilth_write` call with tag-anchored edit sections for the complete coherent change.
 5. **Inspect the result** — use `tilth_diff` before verification.
 
-Use shell only for tests, builds, and operations tilth does not cover. Choose the smallest tilth operation that answers the question; do not split related reads or edits into repetitive calls.
+Use shell only for tests, builds, and operations tilth does not cover.
 
 ## Ground in the repository wiki first
 

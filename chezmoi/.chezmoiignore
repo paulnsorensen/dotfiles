@@ -53,3 +53,8 @@ local-llm/**
 # local-llm/README.md, which local-llm.target's Documentation= points at.
 !local-llm/README.md
 {{ end }}
+
+{{- if ne .chezmoi.os "darwin" }}
+# Zed ships as a macOS-only cask here; keep its config off non-darwin hosts.
+.config/zed/**
+{{- end }}

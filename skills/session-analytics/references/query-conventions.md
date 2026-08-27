@@ -40,9 +40,10 @@ parameter. In pack SQL:
 - a specific harness → add `WHERE harness = '<name>'` (or `AND harness = ...`).
 
 State in the pack header which mode it expects. Domains that depend on
-claude-only fields (`stop_hooks`, `permission_denials`, `skill_invocations`,
-`agent_spawns`) should say so and degrade to "insufficient signal" on other
-harnesses rather than report zero as if it were meaningful.
+claude-only fields (`stop_hooks`, `permission_denials`, `skill_invocations`)
+should say so and degrade to "insufficient signal" on other harnesses rather
+than report zero as if it were meaningful. `agent_spawns` includes Claude
+`Agent` and Cursor `Task`.
 
 ## Substitution
 

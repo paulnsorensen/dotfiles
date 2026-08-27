@@ -55,7 +55,7 @@ endif
 " Chocolate Donut color definitions
 " Using terminal colors that match Chocolate Donut
 highlight Normal ctermfg=181 ctermbg=NONE
-highlight Comment ctermfg=241
+highlight Comment ctermfg=246
 highlight Constant ctermfg=179
 highlight String ctermfg=108
 highlight Character ctermfg=108
@@ -89,20 +89,20 @@ highlight Debug ctermfg=167
 highlight Underlined ctermfg=103 cterm=underline
 highlight Error ctermfg=231 ctermbg=167
 highlight Todo ctermfg=234 ctermbg=214
-highlight CursorLine cterm=NONE ctermbg=235
-highlight CursorLineNr ctermfg=214 ctermbg=235
-highlight LineNr ctermfg=241 ctermbg=NONE
+highlight CursorLine cterm=NONE ctermbg=236
+highlight CursorLineNr ctermfg=214 ctermbg=236
+highlight LineNr ctermfg=246 ctermbg=NONE
 highlight Visual ctermbg=238
 highlight Search ctermfg=234 ctermbg=214
 highlight IncSearch ctermfg=234 ctermbg=45
 highlight StatusLine ctermfg=181 ctermbg=238
-highlight StatusLineNC ctermfg=241 ctermbg=235
+highlight StatusLineNC ctermfg=246 ctermbg=236
 highlight VertSplit ctermfg=238 ctermbg=NONE
-highlight Pmenu ctermfg=181 ctermbg=235
+highlight Pmenu ctermfg=181 ctermbg=236
 highlight PmenuSel ctermfg=234 ctermbg=214
 highlight Directory ctermfg=103
-highlight Folded ctermfg=241 ctermbg=235
-highlight FoldColumn ctermfg=241 ctermbg=NONE
+highlight Folded ctermfg=246 ctermbg=236
+highlight FoldColumn ctermfg=246 ctermbg=NONE
 
 " Key Mappings (matching your VS Code vim setup)
 let mapleader = " "           " Set leader key to space

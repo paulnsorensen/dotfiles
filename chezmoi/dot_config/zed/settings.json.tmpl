@@ -1,0 +1,79 @@
+// Managed by chezmoi — source: chezmoi/dot_config/zed/settings.json.tmpl
+// Codex has registry and pinned custom ACP entries; OMP exposes ACP as `omp acp`.
+// Authentication stays in each agent's native configuration, never here.
+// Dark theme is the generated dotfiles theme; light falls back to Modus (install its Zed extension).
+// Vim keybindings mirror vimrc: scrolloff=5, system clipboard, smartcase f/t motions.
+// prek owns formatting (final newline, trailing whitespace); Zed does not format on save.
+{
+  "theme": {
+    "dark": "Chocolate Donut",
+    "light": "Modus Operandi Deuteranopia",
+    "mode": "system"
+  },
+  "vim_mode": true,
+  "vim": {
+    "use_system_clipboard": "always",
+    "use_smartcase_find": true,
+    "toggle_relative_line_numbers": true
+  },
+  "relative_line_numbers": "enabled",
+  "vertical_scroll_margin": 5,
+  "tab_size": 2,
+  "hard_tabs": false,
+  "format_on_save": "off",
+  "ensure_final_newline_on_save": true,
+  "remove_trailing_whitespace_on_save": true,
+  "soft_wrap": "none",
+  "buffer_font_family": "JetBrainsMono Nerd Font",
+  "buffer_font_fallbacks": ["Hack Nerd Font Mono"],
+  "buffer_font_size": 14,
+  "agent_servers": {
+    "codex-acp": {
+      "default_config_options": {
+        "fast-mode": true
+      },
+      "type": "registry"
+    },
+    "Codex": {
+      "type": "custom",
+      "command": {{ (or (lookPath "codex-acp") "codex-acp") | quote }},
+      "args": [],
+      "env": {}
+    },
+    "OMP": {
+      "type": "custom",
+      "command": {{ (or (lookPath "omp") "omp") | quote }},
+      "args": ["acp"],
+      "env": {}
+    },
+    "claude-acp": {
+      "type": "registry"
+    }
+  },
+  "project_panel": {
+    "dock": "left",
+    "default_width": 260,
+    "starts_open": true,
+    "entry_spacing": "standard",
+    "file_icons": true,
+    "folder_icons": true,
+    "git_status": true,
+    "auto_reveal_entries": true,
+    "sticky_scroll": true,
+    "sort_mode": "directories_first"
+  },
+  "agent": {
+    "enabled": true,
+    "button": true,
+    "dock": "right",
+    "default_width": 520
+  },
+  "terminal": {
+    "dock": "bottom",
+    "default_height": 280,
+    "starts_open": false,
+    "font_family": "JetBrainsMono Nerd Font",
+    "font_size": 14
+  },
+  "bottom_dock_layout": "contained"
+}

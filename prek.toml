@@ -13,7 +13,8 @@ hooks = [
   { id = "check-yaml" },
   # Chezmoi `modify_` scripts use their managed target extension but contain shell.
   { id = "check-toml", exclude = "^chezmoi/private_dot_codex/modify_private_config\\.toml$" },
-  { id = "check-json", exclude = "^chezmoi/dot_claude/modify_settings\\.json$" },
+  # Zed's keymap.json is JSONC (full-line // comments); Zed parses it, strict JSON doesn't.
+  { id = "check-json", exclude = "^(chezmoi/dot_claude/modify_settings\\.json|chezmoi/dot_config/zed/keymap\\.json)$" },
   { id = "check-merge-conflict" },
   { id = "detect-private-key", exclude = "tests/" },
   { id = "check-added-large-files", args = ["--maxkb=1024"] },

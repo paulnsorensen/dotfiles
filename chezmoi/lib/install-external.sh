@@ -214,6 +214,7 @@ install_source() {
     if [[ -n "$raw_harnesses" ]]; then
         repo_agent_flags=()
         repo_supported=""
+        local repo_excluded=0 repo_dropped_other=0
         while IFS= read -r ap_name; do
             [[ -z "$ap_name" ]] && continue
             local cli_id
@@ -222,21 +223,32 @@ install_source() {
                 "$SKILL_AGENTS_FILE")
             if [[ -z "$cli_id" ]]; then
                 echo -e "    ${YELLOW}Skipping unknown harness '$ap_name' for $repo (not in skill_agents.txt)${NC}" >&2
+                repo_dropped_other=$((repo_dropped_other + 1))
                 continue
             fi
             if [[ " $KNOWN_AGENTS" != *" $cli_id "* ]]; then
                 echo -e "    ${YELLOW}Skipping '$ap_name' ($cli_id) for $repo (not a supported skills CLI agent)${NC}" >&2
+                repo_dropped_other=$((repo_dropped_other + 1))
                 continue
             fi
             if [[ " ${SKILL_EXCLUDE_AGENTS:-} " == *" $cli_id "* ]]; then
-                echo -e "    ${YELLOW}Excluding harness '$ap_name' ($cli_id) for $repo (SKILL_EXCLUDE_AGENTS)${NC}"
+                echo -e "    ${BLUE}Excluding harness '$ap_name' ($cli_id) for $repo (SKILL_EXCLUDE_AGENTS)${NC}"
+                repo_excluded=$((repo_excluded + 1))
                 continue
             fi
             repo_agent_flags+=(--agent "$cli_id")
             repo_supported="${repo_supported:+$repo_supported }$cli_id"
         done <<< "$raw_harnesses"
         if (( ${#repo_agent_flags[@]} == 0 )); then
-            echo -e "    ${YELLOW}No valid harnesses for $repo — skipping.${NC}"
+            # All-excluded (via SKILL_EXCLUDE_AGENTS) with no genuinely bad
+            # harness is expected — e.g. a claude-only source on `dots sync`,
+            # where claude skills are vendored via chezmoi, not this npx leg.
+            # Only warn when a harness was actually unknown/unsupported.
+            if (( repo_dropped_other == 0 && repo_excluded > 0 )); then
+                echo -e "    ${BLUE}$repo → nothing for this leg (all harnesses excluded via SKILL_EXCLUDE_AGENTS).${NC}"
+            else
+                echo -e "    ${YELLOW}No valid harnesses for $repo — skipping.${NC}"
+            fi
             return 0
         fi
     fi

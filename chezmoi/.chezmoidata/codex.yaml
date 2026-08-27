@@ -48,7 +48,7 @@ codex:
     tilth:
       command: tilth
       # `--edit` enables the tilth_write tool; without it tilth is read-only.
-      args: ["--mcp", "--edit"]
+      args: ["--mcp", "--edit", "--search-surface", "both"]
       tools:
         tilth_write:
           approval_mode: approve

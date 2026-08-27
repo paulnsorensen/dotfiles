@@ -79,6 +79,10 @@ omp:
       enableSkillCommands: true
     tui:
       tight: true
+    # omp-introduced (v18): input-composer frame shape — folded at omp's live
+    # default.
+    composer:
+      shape: box
     startup:
       quiet: true
     advisor:
@@ -86,7 +90,13 @@ omp:
     compaction:
       # Preserve old turns as model-readable image archives; unlike shake,
       # this does not depend on the model noticing artifact recovery links.
-      strategy: snapcompact
+      # omp v18 replaced `strategy` with an ordered fallback list; snapcompact
+      # stays first per ADR codex-omp-harness-upgrade-001 (folded from the
+      # live v18 migration of `strategy: snapcompact`).
+      methodOrder:
+        - snapcompact
+        - remote
+        - soft
       keepRecentTokens: 20000
       midTurnEnabled: true
       autoContinue: true
@@ -103,6 +113,18 @@ omp:
     task:
       eager: default
       enableLsp: true
+      # omp-introduced (v17.3.x): per-task reasoning-effort control and task
+      # sandbox isolation mode — folded in at omp's live defaults.
+      enableEffort: true
+      isolation:
+        mode: auto
+    # omp-introduced (v17.3.x) cross-harness slash-command import toggles.
+    # All off, matching the external-discovery shutdown policy above.
+    commands:
+      enableClaudeUser: false
+      enableClaudeProject: false
+      enableOpencodeUser: false
+      enableOpencodeProject: false
     retry:
       modelFallback: false
     # Consent answer omp recorded live (autoqa prompt) — promoted to survive

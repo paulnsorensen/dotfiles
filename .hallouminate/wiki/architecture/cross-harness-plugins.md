@@ -322,6 +322,29 @@ to `agents/plugins/registry.yaml`.
 
 ---
 
+### Removal ownership handoff
+
+The Claude-only sync does not parse `agents/plugins/registry.yaml`. After it
+computes its install/removal diff, it excludes removal candidates whose
+marketplace suffix appears in `~/.claude/.chezmoi-plugin-manifest`; that manifest
+is the cross-harness reconciler's canonical marketplace-ownership boundary.[^sync-removal-ownership]
+Matching the full marketplace suffix, rather than only the plugin name, keeps
+`widget@acme` distinct from an unrelated `widget@other`.[^canonical-plugin-id]
+
+A missing or unreadable ownership manifest fails closed: Claude-only plugin
+installs continue, but the destructive removal set is cleared with a warning.
+The reconciler writes the manifest to a same-directory temporary file and
+atomically renames it, so an interrupted rewrite exposes either the old complete
+ownership set or the new one, never a truncated intermediate.[^ownership-atomic]
+The run-onchange template projects `missing`, `present-empty`, or
+`present-nonempty` plus the owned names, so deletion or content drift schedules
+the reconciler to rebuild the manifest.[^ownership-self-heal]
+
+[^sync-removal-ownership]: claude/plugins/sync.sh:31-33,130-160; chezmoi/lib/claude-plugin-reconcile.sh:15-24
+[^canonical-plugin-id]: chezmoi/lib/claude-plugin-reconcile.sh:61-79,134-150; tests/plugin-sync.bats:109-125
+[^ownership-atomic]: chezmoi/lib/claude-plugin-reconcile.sh:178-203; tests/claude-plugin-reconcile.bats:298-316
+[^ownership-self-heal]: chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-plugins.sh.tmpl:18-26; tests/plugin-sync.bats:127-141; tests/chezmoi-wiring.bats:456-463
+
 ## Membership and the per-request MCP token tax
 
 Every MCP in a harness's config is loaded at startup and its schema is
