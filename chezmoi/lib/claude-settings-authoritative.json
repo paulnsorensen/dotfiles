@@ -90,5 +90,6 @@
     ]
   },
   "skipWorkflowUsageWarning": true,
+  "askUserQuestionTimeout": "never",
   "autoMemoryEnabled": false
 }
