@@ -58,6 +58,9 @@ assert_json_proxy() {
     assert_json_proxy \
         "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json" \
         '.mcpServers.context7' context7 "$libexec_proxy"
+    assert_json_proxy \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json" \
+        '.mcpServers.tavily' tavily "$libexec_proxy"
 }
 
 @test "rendered Copilot MCP config contains no credential delivery channel" {

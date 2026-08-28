@@ -8,6 +8,13 @@
         "/var/run/dotfiles-agent-secrets/context7.sock"
       ]
     },
+    "tavily": {
+      "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",
+      "args": [
+        "--socket",
+        "/var/run/dotfiles-agent-secrets/tavily.sock"
+      ]
+    },
     "tilth": {
       "command": "tilth",
       "args": [
