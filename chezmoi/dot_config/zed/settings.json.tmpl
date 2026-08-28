@@ -3,8 +3,17 @@
 // Authentication stays in each agent's native configuration, never here.
 // Dark theme is the generated dotfiles theme; light falls back to Modus (install its Zed extension).
 // Vim keybindings mirror vimrc: scrolloff=5, system clipboard, smartcase f/t motions.
-// prek owns formatting (final newline, trailing whitespace); Zed does not format on save.
+// Zed formats on save via each language's LSP/formatter; prek remains the commit-time
+// backstop for final newline + trailing whitespace. Shell + Markdown opt out of format-on-save.
+// context_servers wire the MCP roster to Zed's native Agent Panel; secret-bearing servers
+// reuse the shared per-service agent-secret-proxy sockets (no plaintext, no new broker).
 {
+  // Telemetry opt-out folded in from live drift so chezmoi stops re-adding it each sync.
+  "telemetry": {
+    "diagnostics": false,
+    "metrics": false,
+    "anthropic_retention": false
+  },
   "theme": {
     "dark": "Chocolate Donut",
     "light": "Modus Operandi Deuteranopia",
@@ -20,13 +29,74 @@
   "vertical_scroll_margin": 5,
   "tab_size": 2,
   "hard_tabs": false,
-  "format_on_save": "off",
+  "format_on_save": "on",
+  "formatter": "language_server",
   "ensure_final_newline_on_save": true,
   "remove_trailing_whitespace_on_save": true,
   "soft_wrap": "none",
   "buffer_font_family": "JetBrainsMono Nerd Font",
   "buffer_font_fallbacks": ["Hack Nerd Font Mono"],
   "buffer_font_size": 14,
+  "languages": {
+    "Python": {
+      // ruff is the repo's Python formatter (on PATH via mise); the language server handles types.
+      "formatter": {
+        "external": { "command": "ruff", "arguments": ["format", "-"] }
+      },
+      "format_on_save": "on"
+    },
+    "Rust": {
+      "formatter": "language_server",
+      "format_on_save": "on"
+    },
+    "Shell Script": {
+      // No shfmt wired; leave shell untouched on save (prek handles whitespace).
+      "format_on_save": "off"
+    },
+    "Markdown": {
+      // Don't reflow prose / wiki pages.
+      "format_on_save": "off"
+    }
+  },
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "check": { "command": "clippy" }
+      }
+    }
+  },
+  "context_servers": {
+    "tilth": {
+      "source": "custom",
+      "command": "tilth",
+      "args": ["--mcp", "--edit", "--search-surface", "both"],
+      "env": {}
+    },
+    "context7": {
+      "source": "custom",
+      "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",
+      "args": ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"],
+      "env": {}
+    },
+    "tavily": {
+      "source": "custom",
+      "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",
+      "args": ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"],
+      "env": {}
+    },
+    "hallouminate": {
+      "source": "custom",
+      "command": "hallouminate",
+      "args": ["serve"],
+      "env": {}
+    },
+    "milknado": {
+      "source": "custom",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"],
+      "env": {}
+    }
+  },
   "agent_servers": {
     "codex-acp": {
       "default_config_options": {
@@ -41,6 +111,10 @@
       "env": {}
     },
     "OMP": {
+      // Pin OMP's ACP model to modelRoles.strong (see chezmoi/.chezmoidata/omp.yaml).
+      "default_config_options": {
+        "model": "openai-codex/gpt-5.6-sol"
+      },
       "type": "custom",
       "command": {{ (or (lookPath "omp") "omp") | quote }},
       "args": ["acp"],
