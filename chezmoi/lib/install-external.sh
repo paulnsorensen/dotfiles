@@ -264,7 +264,7 @@ install_source() {
     fi
 
     local output
-    if output=$(npx "${args[@]}" 2>&1); then
+    if output=$(GIT_TERMINAL_PROMPT=0 npx "${args[@]}" 2>&1); then
         echo -e "    ${GREEN}✓${NC} $repo → $repo_supported"
     else
         echo -e "    ${RED}✗${NC} $repo → $repo_supported"
