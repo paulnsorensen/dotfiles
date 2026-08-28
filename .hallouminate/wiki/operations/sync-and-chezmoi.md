@@ -103,3 +103,14 @@ Every shell function that does real work needs a bats test. `.sync` (and any orc
 - New shell logic goes into a named function in a sourced library (`.sync-lib.sh`, `chezmoi/lib/*.sh`, `claude/lib/sync-common.sh`), taking inputs as arguments (no hidden globals).
 - A `tests/<area>.bats` file exercises every branch; mock externals (`gh`, `claude`, `yq`, `jq`, `chezmoi`) by putting fakes earlier on `$PATH` (see `tests/chezmoi-wiring.bats`, `tests/skills-external.bats`).
 - `.sync` scripts stay thin: parse args, source lib, dispatch. Add new test files to `tests/run-tests.sh` so `dots test` runs them.
+
+## Gotcha: private skill sources need a git credential helper (self-healed since 2026-08-28)
+
+**Symptom (historical):** `dots up`/`dots sync` hung on `Username for 'https://github.com'` mid-sync. Cause: `_cz_vendor_external_skills` (.sync-lib.sh) clones external skill sources over plain HTTPS, and `skills/_registry.yaml` includes the PRIVATE repo `paulnsorensen/routines` — on a box where `gh` was authed but `gh auth setup-git` had never run, git had no credential helper and fell back to an interactive prompt. (A typed GitHub password would not have worked anyway — git password auth is dead; only the helper-supplied token works.)
+
+**Fix (in code):**
+
+- All network git calls in the vendoring loop (clone / pin fetch / float pull) and the `npx skills add` leg (chezmoi/lib/install-external.sh) run with `GIT_TERMINAL_PROMPT=0` — a missing helper now fails loud with a pointer to `gh auth setup-git` instead of prompting.
+- `_cz_ensure_github_credential_helper` (.sync-lib.sh) self-heals before vendoring: gh present + authed + no `credential.https://github.com.helper` configured → runs `gh auth setup-git` automatically; otherwise warns once and never fails the sync.
+
+**Rationale:** the registry comment always claimed a helper-less clone "fails and reports the source unavailable" — the code never enforced it until this change. Fresh Linux/macOS boxes now converge without manual `gh auth setup-git`.

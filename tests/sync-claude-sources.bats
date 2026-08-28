@@ -199,11 +199,15 @@ SH
     grep -q "fetch --depth 1 origin v2.0.0" "$GIT_CALLS"
     grep -q "checkout --detach FETCH_HEAD" "$GIT_CALLS"
     [ "$(cat "$CACHE/.dotfiles-pin")" = "v2.0.0" ]
-    # Same pin again: marker short-circuits — no further network.
+    # Same pin again: marker short-circuits — no further fetch/checkout
+    # network calls. (_cz_ensure_github_credential_helper's own `git config
+    # --get` probe still runs once per sync — that's not the pin-fetch path
+    # under test here.)
     : > "$GIT_CALLS"
     run_assembly
     [ "$status" -eq 0 ]
-    [ ! -s "$GIT_CALLS" ]
+    ! grep -q "fetch --depth 1" "$GIT_CALLS"
+    ! grep -q "checkout --detach" "$GIT_CALLS"
 }
 
 @test "assembly: a pin that cannot be fetched fails loud" {

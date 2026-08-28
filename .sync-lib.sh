@@ -426,6 +426,30 @@ _cz_render_claude_agent() {
 # always honored, an unchanged pin costs no network. Per-source `skills_path`
 # (default "skills") relocates the in-repo skills dir the source is scanned
 # under, for sources that bundle skills at a nested path (e.g. plugin repos).
+# Idempotent, best-effort: if github.com already has a git credential
+# helper configured, or gh can wire one, wire it before vendoring runs so a
+# private skill source's clone can authenticate instead of hitting an
+# interactive prompt. Never fails the sync — a missing/unauthenticated gh
+# just gets one log_warning; callers do not need to check the return.
+#   _cz_ensure_github_credential_helper
+_cz_ensure_github_credential_helper() {
+    [[ -n "${_CZ_GITHUB_CRED_HELPER_CHECKED:-}" ]] && return 0
+    _CZ_GITHUB_CRED_HELPER_CHECKED=1
+
+    git config --get credential.https://github.com.helper &>/dev/null && return 0
+
+    if command -v gh &>/dev/null && gh auth status &>/dev/null; then
+        if gh auth setup-git &>/dev/null; then
+            log_info "wired gh as the git credential helper for github.com"
+        else
+            log_warning "gh auth setup-git failed — private skill sources may fail to clone"
+        fi
+        return 0
+    fi
+
+    log_warning "no git credential helper for github.com — a private skill source may fail to clone (run 'gh auth login' then 'gh auth setup-git')"
+}
+
 _cz_vendor_external_skills() {
     local registry="$1" dst="$2" harness="$3"
     [[ -f "$registry" ]] || return 0
@@ -454,8 +478,8 @@ _cz_vendor_external_skills() {
         if [[ ! -d "$cache/.git" ]]; then
             local -a clone_args=(clone --depth 1)
             [[ -n "$pin" ]] && clone_args+=(--branch "$pin")
-            if ! git "${clone_args[@]}" "https://github.com/$source" "$cache"; then
-                log_error "external skill source $source: clone failed and no cache exists"
+            if ! GIT_TERMINAL_PROMPT=0 git "${clone_args[@]}" "https://github.com/$source" "$cache"; then
+                log_error "external skill source $source: clone failed and no cache exists (a private source needs a git credential helper — run 'gh auth setup-git')"
                 return 1
             fi
             [[ -n "$pin" ]] && echo "$pin" > "$cache/.dotfiles-pin"
@@ -464,7 +488,7 @@ _cz_vendor_external_skills() {
             # the registry schema). .dotfiles-pin records the checked-out pin
             # so an unchanged pin costs no network on the sync hot path.
             if [[ "$(cat "$cache/.dotfiles-pin" 2>/dev/null)" != "$pin" ]]; then
-                if git -C "$cache" fetch --depth 1 origin "$pin" >/dev/null 2>&1 \
+                if GIT_TERMINAL_PROMPT=0 git -C "$cache" fetch --depth 1 origin "$pin" >/dev/null 2>&1 \
                     && git -C "$cache" checkout --detach FETCH_HEAD >/dev/null 2>&1; then
                     echo "$pin" > "$cache/.dotfiles-pin"
                 else
@@ -475,7 +499,7 @@ _cz_vendor_external_skills() {
         else
             # Unpinned: float to latest of the default branch on every sync.
             # Offline (pull fails) falls back to the existing cached checkout.
-            git -C "$cache" pull --ff-only >/dev/null 2>&1 \
+            GIT_TERMINAL_PROMPT=0 git -C "$cache" pull --ff-only >/dev/null 2>&1 \
                 || log_warning "external skill source $source: pull failed, using cached checkout"
         fi
 
@@ -533,6 +557,7 @@ sync_claude_chezmoi_sources() {
         fi
         _cz_copy_encoded "$root/skills/$name" "$staging/exact_skills/$(_cz_encode_name "$name" true false)" || return 1
     done < <(yq -r '.claude.skills // [] | .[]' "$claude_reg")
+    _cz_ensure_github_credential_helper
     _cz_vendor_external_skills "$root/skills/_registry.yaml" "$staging/exact_skills" claude || return 1
     mkdir -p "$staging/exact_skills"
 
@@ -842,6 +867,7 @@ sync_omp_chezmoi_sources() {
         fi
         _cz_copy_encoded "$root/skills/$name" "$staging/exact_skills/$(_cz_encode_name "$name" true false)" || return 1
     done < <(yq -r '.claude.skills // [] | .[]' "$claude_reg")
+    _cz_ensure_github_credential_helper
     _cz_vendor_external_skills "$root/skills/_registry.yaml" "$staging/exact_skills" omp || return 1
     mkdir -p "$staging/exact_skills"
 

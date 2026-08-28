@@ -320,6 +320,65 @@ EOF
     [[ ! -f "$HOME/chezmoi-args.log" ]] || ! grep -q '^apply$' "$HOME/chezmoi-args.log"
 }
 
+# ── github credential helper self-heal + prompt guard ──────────────────
+
+@test "_cz_ensure_github_credential_helper wires gh when no helper is configured and gh is authed" {
+    local fake_bin="$TEST_HOME/fake-gh-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/gh" <<SH
+#!/usr/bin/env bash
+if [[ "\$1 \$2" == "auth status" ]]; then exit 0; fi
+if [[ "\$1 \$2" == "auth setup-git" ]]; then echo called >> "$TEST_HOME/gh-setup-git.log"; exit 0; fi
+exit 1
+SH
+    chmod +x "$fake_bin/gh"
+
+    PATH="$fake_bin:$PATH" run _cz_ensure_github_credential_helper
+    assert_success
+    assert_output_contains "wired gh as the git credential helper"
+    assert_file_exists "$TEST_HOME/gh-setup-git.log"
+}
+
+@test "_cz_ensure_github_credential_helper is a no-op when a helper is already configured" {
+    git config --global credential.https://github.com.helper store
+
+    local fake_bin="$TEST_HOME/fake-gh-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/gh" <<SH
+#!/usr/bin/env bash
+echo called >> "$TEST_HOME/gh-invoked.log"
+exit 0
+SH
+    chmod +x "$fake_bin/gh"
+
+    PATH="$fake_bin:$PATH" run _cz_ensure_github_credential_helper
+    assert_success
+    [[ ! -f "$TEST_HOME/gh-invoked.log" ]]
+}
+
+@test "_cz_vendor_external_skills runs git clone with GIT_TERMINAL_PROMPT=0" {
+    local fake_bin="$TEST_HOME/fake-git-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/git" <<'SH'
+#!/usr/bin/env bash
+printf 'GIT_TERMINAL_PROMPT=%s args=%s\n' "${GIT_TERMINAL_PROMPT-unset}" "$*" >> "$HOME/git-calls.log"
+exit 1
+SH
+    chmod +x "$fake_bin/git"
+
+    local registry="$TEST_HOME/registry.yaml"
+    cat > "$registry" <<'YAML'
+sources:
+  someorg/somerepo:
+    description: test
+YAML
+
+    PATH="$fake_bin:$PATH" run _cz_vendor_external_skills "$registry" "$TEST_HOME/dst" claude
+    assert_failure
+    assert_file_exists "$TEST_HOME/git-calls.log"
+    grep -q '^GIT_TERMINAL_PROMPT=0 args=clone' "$TEST_HOME/git-calls.log"
+}
+
 # ── source-tree scaffold ────────────────────────────────────────────────
 
 @test "chezmoi/.chezmoiroot exists" {
