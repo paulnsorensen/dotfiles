@@ -50,6 +50,7 @@ def main() -> int:
     encodings = config.get("encodings", [])
     sources = config.get("source", [])
     stacks = config.get("stack", [])
+    families = config.get("family", [])
     errors: list[str] = []
 
     if config.get("version") != 1:
@@ -86,6 +87,30 @@ def main() -> int:
         for name, count in counts.items():
             if count > limit:
                 errors.append(f"{path} exceeds {name} budget: {count} > {limit}")
+
+    for family in families:
+        pattern = family["glob"]
+        overrides = family.get("overrides", {})
+        members = sorted(
+            path.relative_to(root).as_posix()
+            for path in root.glob(pattern)
+            if path.is_file()
+        )
+        for member in members:
+            limit = overrides.get(member, family["max_tokens"])
+            text = (root / member).read_text()
+            counts = {
+                name: len(tokenizer.encode(text, disallowed_special=()))
+                for name, tokenizer in tokenizers.items()
+            }
+            print(
+                f"family {pattern} {member}: "
+                + " ".join(f"{name}={count}" for name, count in counts.items())
+                + f" max={limit}"
+            )
+            for name, count in counts.items():
+                if count > limit:
+                    errors.append(f"{member} exceeds {name} budget: {count} > {limit}")
 
     stack_names = [entry["name"] for entry in stacks]
     if len(set(stack_names)) != len(stack_names):
