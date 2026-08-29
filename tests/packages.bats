@@ -421,7 +421,7 @@ run_sync() {
         difftastic mergiraf lazygit git-town sesh just chezmoi duckdb node bun
         sd vhs sccache cargo-nextest protobuf uv rustup
         rust-analyzer cargo-llvm-cov rtk bash-language-server yaml-language-server
-        pyright gopls oven-sh/bun joshmedeski/sesh
+        basedpyright gopls oven-sh/bun joshmedeski/sesh
     )
     local name
     for name in "${migrated[@]}"; do

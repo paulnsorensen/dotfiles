@@ -26,6 +26,7 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 
 ## Packaging and machine state
 
+- [[basedpyright]] — the global Python type checker: mise-pinned basedpyright replacing stock pyright (compat shims keep `pyright-langserver` resolving), its stricter `recommended` default with `failOnWarnings`, the based-only rules, the `--writebaseline` adoption workflow, and zero-config GitHub Actions annotations.
 - [[brew-machine-prune]] — the machine-side half of [[../adr/manifest-pinned-packages]]: `sync_brew` never uninstalls, so strays accumulate until pruned by hand. Read before pruning — `rustup` and `mise` must stay in brew (mise's `rust` is a symlink into rustup's tree; mise itself is the bootstrap trust root).
 - [[mise-aqua-backend-retypes]] — an aqua-registry package retype breaks a working pin with no version change; the fix is a backend migration, not a version bump.
 - [[mise-manifest-precedence]] — the live `~/.config/mise/config.toml` outranks any `MISE_GLOBAL_CONFIG_FILE` manifest, so a stale live file silently swallows a pin bump and wedges `dots sync` in a loop no re-run escapes; the fix is `apply_mise_manifest` in the prepare phase — do not delete it as redundant.
