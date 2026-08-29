@@ -3,90 +3,38 @@ name: prompt-analytics
 model: opus
 effort: high
 description: >
-  Analyze how prompts and skill routing behave across coding-agent sessions and
-  produce calibrated recommendations — prompt-pattern analysis, routing accuracy,
-  and knowledge gaps. Use when the user says "analyze my prompts", "prompt
-  patterns", "is routing working", "which skill should have fired", "knowledge
-  gaps", "what do I keep asking", or invokes /prompt-analytics. Do NOT use for auditing a
-  single skill/agent definition (that is /skill-improver), tool/MCP efficiency
-  (that is /tool-efficiency), or one-off interactive log queries (that is
-  /session-analytics).
-allowed-tools: Read, Agent, Bash
+  Analyze prompt patterns, skill-routing behavior, and knowledge gaps across
+  coding-agent sessions and produce calibrated recommendations. Use for
+  /prompt-analytics, "analyze my prompts", or "is routing working".
+allowed-tools: Read, Bash
 ---
 
-# prompts
+# prompt-analytics
 
-Analyze prompt and routing behavior across sessions, then produce calibrated
-recommendations. Judgment skill — scores findings with the shared
-confidence × severity model.
+Judgment skill: score findings with the shared confidence × severity model.
+Target: a skill/router name for `routing-accuracy`, a keyword/topic for
+`knowledge-gaps`, `%` for a broad `prompt-analysis` sweep. Ask if unclear.
 
-## Input
+Run `<skill-dir>/scripts/analyze.sh <domain> <target> [harness]` for each
+relevant domain: `prompt-analysis`, `routing-accuracy`, `knowledge-gaps`, or
+`all`.
 
-A target framing for the analysis: a skill/router name for routing accuracy, a
-keyword/topic for knowledge gaps, or `all` for a broad prompt-pattern sweep. If
-unclear, ask. Optional harness filter (`all` default).
+Then calibrate with `../session-analytics/references/calibration.md`. Two
+domains are explicitly weaker signal — honor that: `routing-accuracy` has no
+intent ground-truth (correlational at best — never claim the *right* skill
+fired) and `knowledge-gaps` is medium-signal (a recurring topic is not proof
+of a missing skill). Their findings lean `<speculative>`; demote to
+`<don't know>` when data is thin.
 
-## Owned domains
-
-Three analytics packs under `references/`:
-
-| Domain | Pack | What it surfaces |
-|--------|------|------------------|
-| prompt-analysis | `prompt-analysis.md` | Recurring user-prompt shapes, repeated asks, session openers |
-| routing-accuracy | `routing-accuracy.md` | Did the right skill fire? (correlational — no ground truth) |
-| knowledge-gaps | `knowledge-gaps.md` | Topics that recur without a resolving skill/tool (medium signal) |
-
-## Protocol
-
-1. **Ingest** — `python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py`
-   (1-hour TTL). Best-effort.
-2. **Fan out** — spawn **one parallel `duckdb-expert` per relevant domain**
-   (one-domain-per-spawn):
-
-   ```
-   spawn duckdb-expert "Run analytics pack prompt-analytics/references/<domain>.md for target {TARGET}. harness={HARNESS}"
-   ```
-
-3. **Collect** the digests.
-4. **Calibrate** with `../session-analytics/references/calibration.md`. Two of
-   these domains are explicitly weaker signal — honor that: `routing-accuracy`
-   has no intent ground-truth (correlational at best) and `knowledge-gaps` is
-   medium-signal. Findings from them lean `<speculative>`; demote to
-   `<don't know>` when the data is thin.
-5. **Report** (below).
-
-## Report
+Report format:
 
 ```
 ## Prompt & Routing Report: {TARGET}
-
-### Summary
-- Target: <skill/topic/all>  ·  Harness: <filter>
-- Domains run: <list>
-- Findings: N surfaced, N below the bar
-
-### Recommendations (surfaced)
-| # | Severity | Confidence | Domain | Issue | Recommendation |
-|---|----------|------------|--------|-------|----------------|
-
-### Detail
-For each surfaced finding: What / Why (with the metric) / How.
-
-### Below the Bar
-N findings were `<don't know>` or insufficient-signal (not shown).
+### Summary        — target · harness · domains run · N surfaced / N below bar
+### Recommendations — | # | Severity | Confidence | Domain | Issue | Recommendation |
+### Detail         — per finding: What / Why (the metric) / How
+### Below the Bar  — count only
 ```
 
-## What this skill never does
-
-- Score with a 0-100 number — uses the shared qualitative model.
-- Treat correlation as causation: routing-accuracy lacks ground truth and must
-  say so.
-- Run more than one domain per `duckdb-expert` spawn.
-- Rewrite prompts or skill descriptions — it recommends; the human decides.
-
-## Gotchas
-
-- `routing-accuracy` infers intent from what fired next; it cannot prove the
-  *right* skill fired. Always tag its findings `<speculative>` at most.
-- `knowledge-gaps` is medium-signal — a recurring topic isn't proof of a missing
-  skill. Degrade to "insufficient signal" rather than over-claim.
+Never: a 0-100 score; treating correlation as causation; rewriting prompts or
+skill descriptions (recommend only — the human decides).
