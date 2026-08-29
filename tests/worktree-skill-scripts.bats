@@ -104,6 +104,21 @@ assert_not_contains() {
     assert_not_contains "$output" ".worktrees/alpha"
 }
 
+@test "find-touching.sh marks truncation beyond 8 files" {
+    make_worktree alpha
+    for i in 0 1 2 3 4 5 6 7 8 9; do
+        echo x > "$REPO/.worktrees/alpha/t$i.txt"
+    done
+    git -C "$REPO/.worktrees/alpha" add .
+    git -C "$REPO/.worktrees/alpha" commit -qm "test files"
+
+    run "$SKILLS/worktree-find/scripts/find-touching.sh" 't*.txt' --root "$DEV"
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "    t0.txt"
+    assert_contains "$output" "(+2 more)"
+    assert_not_contains "$output" "t9.txt"
+}
+
 @test "find-touching.sh reports no match plainly" {
     make_worktree alpha
     run "$SKILLS/worktree-find/scripts/find-touching.sh" 'nope/*' --root "$DEV"

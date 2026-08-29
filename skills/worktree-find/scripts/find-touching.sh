@@ -27,7 +27,7 @@ while IFS=$'\t' read -r wt meta; do
 
     found=1
     printf '%s\t%s\n' "$wt" "$meta"
-    printf '%s\n' "$files" | head -8 | sed 's/^/    /'
+    awk 'NR<=8 {print "    " $0} END {if (NR>8) print "    … (+" NR-8 " more)"}' <<<"$files"
 done < <(ccw-find "$@")
 
 if (( ! found )); then

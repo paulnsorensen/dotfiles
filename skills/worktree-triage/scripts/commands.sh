@@ -4,9 +4,10 @@
 # from the worktree itself and adds --force when the tree is dirty.
 set -euo pipefail
 
-repo="${1:?usage: commands.sh <repo-root> <slug> <remove|archive>}"
-slug="${2:?usage: commands.sh <repo-root> <slug> <remove|archive>}"
-action="${3:?usage: commands.sh <repo-root> <slug> <remove|archive>}"
+usage='usage: commands.sh <repo-root> <slug> <remove|archive>'
+repo="${1:?$usage}"
+slug="${2:?$usage}"
+action="${3:?$usage}"
 
 wt="$repo/.worktrees/$slug"
 [[ -d "$wt" ]] || { echo "commands.sh: no worktree at $wt" >&2; exit 1; }
@@ -24,7 +25,7 @@ case "$action" in
             echo "commands.sh: $wt is on a detached HEAD — nothing to tag" >&2
             exit 1
         fi
-        printf 'git -C %q tag archive/%s %q\n' "$repo" "$slug" "$branch"
+        printf 'git -C %q tag %q %q\n' "$repo" "archive/$slug" "$branch"
         ;;
     remove) ;;
     *)
@@ -33,7 +34,7 @@ case "$action" in
         ;;
 esac
 
-printf 'git -C %q worktree remove%s .worktrees/%s\n' "$repo" "$force" "$slug"
+printf 'git -C %q worktree remove%s %q\n' "$repo" "$force" ".worktrees/$slug"
 if [[ -n "$branch" ]]; then
     printf 'git -C %q branch -D %q\n' "$repo" "$branch"
 fi

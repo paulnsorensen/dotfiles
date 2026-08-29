@@ -5,8 +5,9 @@
 # Code's "# hides arguments" heuristic and `cd <path> && git` trips another.
 set -euo pipefail
 
-path="${1:?usage: pr-create.sh <worktree-path> <title> [gh flags...] < body.md}"
-title="${2:?usage: pr-create.sh <worktree-path> <title> [gh flags...] < body.md}"
+usage='usage: pr-create.sh <worktree-path> <title> [gh flags...] < body.md'
+path="${1:?$usage}"
+title="${2:?$usage}"
 shift 2
 
 body="$(mktemp "${TMPDIR:-/tmp}/prbody.XXXXXX")"
