@@ -402,13 +402,19 @@ PY
     run bash -c "printf '%s\n' \"\$1\" | '$PROXY' --socket '$ttl_socket'" _ '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"write.item","arguments":{"expiry":true}}}'
     assert_success
     expiring_nonce="$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"]["data"]["nonce"])')"
-    for _ in {1..100}; do
-        run "$CTL" approve --socket "$ttl_control" --nonce "$expiring_nonce"
-        [[ "$output" == *'"code":"expired"'* ]] && break
-        sleep 0.05
-    done
+    [[ -n "$expiring_nonce" ]]
+    # Leave the request pending and let the 2s TTL elapse. The first approve
+    # after expiry deterministically reports "expired": cleanup marks the
+    # still-pending item expired within that same call, so there is no
+    # transient window to race and no bounded poll loop to exhaust under load.
+    sleep 3
+    run "$CTL" approve --socket "$ttl_control" --nonce "$expiring_nonce"
     assert_failure
-    [[ "$output" == *'"code":"expired"'* ]]
+    if [[ "$output" != *'"code":"expired"'* ]]; then
+        echo "Expected expired approval, got: $output" >&2
+        cat "$TEST_ROOT/ttl-broker.log" >&2
+        return 1
+    fi
 
     kill "$ttl_pid" 2>/dev/null || true
     wait "$ttl_pid" 2>/dev/null || true
