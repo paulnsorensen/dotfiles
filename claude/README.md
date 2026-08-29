@@ -100,8 +100,7 @@ Reusable tool-usage instructions injected into agents and commands.
 | `commit` | Git staging and conventional commits |
 | `tui-design` | TUI design and implementation (ratatui, Textual) |
 | `worktree` | Isolated git worktree management |
-| `de-slop` | AI code anti-pattern detection and fixes |
-| `tdd-assertions` | Weak test assertion detection |
+| `de-slop` | AI anti-pattern fixes: production code slop + weak test assertions |
 | `respond` | PR review comment triage with confidence scoring |
 | `age` | Staff Engineer code review orchestrator (spawns 6 parallel sub-agents) |
 

@@ -131,9 +131,9 @@ judgment to bring.
   almost certainly has users.
 - **Workflow / Cheddar Flow** beyond a brief reference. The full skill
   catalog is in the global file; the local overlay just needs to remind
-  Claude that `/age`, `/cure`, `/respond`, `/de-slop`, and
-  `/tdd-assertions` exist and are preferred. For autonomous flows on
-  large changes, `/ultracook` chains cook → press → age → cure.
+  Claude that `/age`, `/cure`, `/respond`, and `/de-slop` exist and are
+  preferred. For autonomous flows on large changes, `/ultracook` chains
+  cook → press → age → cure.
 - **Troubleshooting one-liners** (`/go`, `/lsp`) — meta-tool
   state, irrelevant to any project.
 - **RTK** — the rtk proxy is a personal tooling layer; it's auto-applied
@@ -177,7 +177,7 @@ language-specific tooling only when applicable>
 
 ## Workflow shortcuts
 
-<brief reference: /age, /cure, /respond, /de-slop, /tdd-assertions —
+<brief reference: /age, /cure, /respond, /de-slop —
 no full descriptions; these are reminders for Claude>
 
 ## Build system
