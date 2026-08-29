@@ -15,8 +15,6 @@ allowed-tools: Read, Glob, Grep, Agent, Bash
 # skill-improver
 
 Audit an agent or skill definition, then emit a calibrated improvement report.
-This skill eats its own cooking — it audits against the same framework it embodies
-and calibrates its own findings the way it tells others to.
 
 **Predictability is the root virtue.** A good skill drives the agent through the
 same *process* every run (not the same output). Every lens below serves it: the
@@ -28,7 +26,8 @@ model, Matt Pocock's `writing-great-skills`, and Jesse Vincent's `writing-skills
 ## Input
 
 A path to an agent definition (`agents/*.md`) or a skill (`skills/*/SKILL.md`).
-If none is given, ask. Runs inline at opus tier (set in frontmatter).
+If none is given, ask. Runs inline at opus tier — finding calibration is the
+product, and it degrades at lower tiers.
 
 ## Protocol
 
@@ -39,8 +38,8 @@ Read the target and any files it points at. Classify: **agent** (has
 
 ### Phase 2 — Analytics (optional branch)
 
-Empirical usage data, best-effort — skip if the DB or logs are absent and note the
-dropped Usage lens in the report. Never block the audit on it.
+Empirical usage data, best-effort — if the DB, logs, or ingestion are missing or
+fail, drop the Usage lens and note it in the report. Never block the audit on it.
 
 1. `python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py`
 2. Fan out **one `duckdb-expert` spawn per owned domain** (read-only) — this skill
@@ -54,8 +53,7 @@ dropped Usage lens in the report. Never block the audit on it.
    | `agent-orchestration` | undeclared spawns, fork behavior, error rate |
    | `drift-regression` | declining usage, single-project concentration, hook interruptions |
 
-3. Carry the digests into the **Usage** lens below. If ingestion fails, drop that
-   lens and note it in the report.
+3. Carry the digests into the **Usage** lens below.
 
 ### Phase 3 — Audit against the rubric
 
@@ -125,8 +123,9 @@ N findings were `<don't know>` or speculative-trivial (not shown).
 ```
 
 After the report: if the audit found activation/trigger issues, suggest
-`/skill-creator` to generate eval queries and measure trigger rate before/after —
-static audit finds problems; eval-driven iteration validates the fix.
+`/skill-creator` (official-marketplace plugin; enabled in the `plugin` profile) to
+generate eval queries and measure trigger rate before/after — static audit finds
+problems; eval-driven iteration validates the fix.
 
 ## What this skill never does
 
@@ -145,9 +144,6 @@ static audit finds problems; eval-driven iteration validates the fix.
   pressure — and the one that catches the most false positives.
 - Not every finding needs a hook — recommend one only for a rule that must hold
   every time.
-- Progressive disclosure saves context only for *branchy* runs. Relocating content
-  an every-run path reads just moves the sprawl and adds navigation cost — prune it
-  instead. This skill's own body is the worked example.
 
 ## References
 
@@ -157,8 +153,11 @@ Read on demand, when a lens fires:
   kernel (imported single source of truth, not redefined here).
 - `references/anti-patterns.md` — expanded failure-mode catalog + diagnostic checklist.
 - `references/progressive-disclosure.md` — token-budget + reference-tree checks; read when the Information hierarchy lens fires.
-- `references/description-optimization.md` — trigger optimization, before/after.
-- `references/decision-frameworks.md` — reasoning scaffolds, degrees of freedom.
-- `references/hooks-catalog.md` — companion hooks for enforcement findings.
+- `references/description-optimization.md` — read when the Invocation lens fires;
+  trigger optimization, before/after.
+- `references/decision-frameworks.md` — read when the Prompt-quality lens flags
+  rigid rules on a judgment task; reasoning scaffolds, degrees of freedom.
+- `references/hooks-catalog.md` — read when a finding needs 100%-of-the-time
+  enforcement; companion hooks.
 - `references/skill-usage.md`, `references/agent-orchestration.md`,
   `references/drift-regression.md` — the analytics packs (Phase 2).
