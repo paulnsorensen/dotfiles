@@ -261,7 +261,6 @@ claude:
     - settings-clean
     - skill-improver
     - steel-thread
-    - tdd-assertions
     - test-sandbox
     - tool-efficiency
     - tui-design
