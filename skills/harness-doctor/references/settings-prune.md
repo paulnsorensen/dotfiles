@@ -1,15 +1,6 @@
----
-name: settings-clean
-model: haiku
-effort: low
-context: fork
-description: Clean a bloated .claude/settings.local.json by removing redundant, stale, and junk permission entries and ensuring hook-redirected skills are allowed. Use when the user says "clean settings", "prune settings", "settings cleanup", or invokes /settings-clean; also proactively when settings.local.json exceeds ~30 entries. Only touches settings.local.json (gitignored), never settings.json (committed).
-allowed-tools: Read, Write, Bash(jq:*), Bash(cp:*), Bash(mkdir:*), Bash(mv:*), Bash(date:*)
----
+# Settings prune mode
 
-# Settings Clean
-
-Prune bloated `.claude/settings.local.json` files by removing permission entries that are redundant, stale, or junk — and ensure that skills referenced by hooks are actually allowed.
+Prune bloated `.claude/settings.local.json` files by removing permission entries that are redundant, stale, or junk — and ensure that skills referenced by hooks are actually allowed. Only touches `settings.local.json` (gitignored), never `settings.json` (committed).
 
 Claude Code's permission system only appends to `permissions.allow` — it never prunes — so these files grow unbounded. Meanwhile, hooks block legacy tools and redirect to skills that may not be in the allow list, creating a broken redirect loop.
 

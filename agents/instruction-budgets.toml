@@ -93,6 +93,18 @@ max_tokens = 400
 path = ".github/instructions/shell.instructions.md"
 max_tokens = 200
 
+# Families budget every file matching a glob, so adding or deleting a member
+# needs no edit here. `overrides` pins named members to their own fixed
+# ceiling; an override whose file no longer exists is ignored.
+[[family]]
+glob = "skills/*/SKILL.md"
+max_tokens = 5000
+
+# Follow-up shrink target: xray sits above the family cap today. Trim it under
+# 5000 tokens, then delete this override.
+[family.overrides]
+"skills/xray/SKILL.md" = 5800
+
 [[stack]]
 name = "global_codex"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]

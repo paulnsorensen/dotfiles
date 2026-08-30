@@ -89,7 +89,8 @@ hook. See `hooks-catalog.md` for the implementation.
 
 ## Automated Optimization
 
-If you have `claude -p` (Claude Code CLI), use the skill-creator's loop:
+If you have `claude -p` (Claude Code CLI), use the skill-creator's loop
+(official-marketplace plugin; enabled in the `plugin` profile):
 
 1. Create 20 eval queries (10 should-trigger, 10 should-not-trigger)
 2. Make should-trigger queries realistic and messy, not clean abstractions
