@@ -72,4 +72,4 @@ Then, per dependency in `depManifest`:
 
 These are dependency findings, not NIH candidates: they need no library research,
 so they skip Phases 2–3 and go straight to the Dependency Health block of the
-report (see `report-format.md`).
+report (see `output-format.md`).
