@@ -23,7 +23,7 @@ That demotion has a second consequence, which is why the GitHub-auth fix looks s
 A pin bump lands in the repo. The affected machine's live `config.toml` is two days stale. Then:
 
 1. `.sync` exports `MISE_CONFIG_FILE` at the repo source and `sync_mise` runs `MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install` (`packages/sync.sh:396`). The live config outranks it, so **the bumped version is never requested**.
-2. `verify_harness_versions` (`.sync:45-74`) checks the installed `omp` and `codex` binaries and gates the final `chezmoi apply` on them matching (`.sync:146`). It compares against **hardcoded literals** in `.sync` — `omp/17.3.0` at `:57-58`, `codex-cli 0.146.0` at `:70-71` — not against the manifest, and it covers only those two harnesses. (The OMP literal is now renovate-locked to its install pin; see [[sync-and-chezmoi]].)
+2. `verify_harness_versions` (`.sync:45-74`) checks the installed `omp` and `codex` binaries and gates the final `chezmoi apply` on them matching (`.sync:146`). It compares against **hardcoded literals** in `.sync` — `omp/18.0.5` at `:57-58`, `codex-cli 0.146.0` at `:70-71` — not against the manifest, and it covers only those two harnesses. (The OMP literal is now renovate-locked to its install pin; see [[sync-and-chezmoi]].)
 3. The gate sees the old binary and skips the final apply (`.sync:157-159`), recording a `harness-versions` failure.
 4. That skipped apply was **the only step that would have refreshed the live `config.toml`** to the new pin.
 
