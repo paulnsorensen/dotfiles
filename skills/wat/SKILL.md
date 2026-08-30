@@ -1,7 +1,7 @@
 ---
 name: wat
-description: "Stop. That last message did not land: re-pitch it."
+description: "I lost the thread. Explain your last answer again, more clearly."
 disable-model-invocation: true
 ---
 
-Wait, I don't understand where you've got to here. Re-pitch that: give me a little bit of context, talk in ASD-STE100 Simplified Technical English, and use the ubiquitous language from easy-cheese's glossary and domain model.
+I lost the thread. Explain your last answer again. Start with the context I need, then use ASD-STE100 Simplified Technical English. For Easy Cheese or Hallouminate topics, use the project glossary and domain model at `~/Dev/easy-cheese/.hallouminate/wiki/domain-model.md` or `~/Dev/hallouminate/.hallouminate/wiki/domain-model.md`.
