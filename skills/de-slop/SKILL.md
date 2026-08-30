@@ -27,12 +27,17 @@ files → assertions, a mixed diff → both.
 
 ## Protocol
 
-1. **Detect language(s) and target(s)** in the code under review
-2. **Read the matching references** — `references/<lang>.md` for production,
+1. **Resolve scope** — an explicit argument (PR number, branch, path, or
+   pasted code) sets the target; otherwise diff the upstream range
+   (`git diff @{upstream}...HEAD`, else `main...HEAD`) and include any
+   uncommitted working-tree changes
+2. **Detect language(s) and target(s)** in the scoped code
+3. **Read the matching references** — `references/<lang>.md` for production,
    `references/<lang>-tests.md` for assertions; only what's present
-3. **Scan** for the cross-language patterns below plus the language-specific ones
-4. **Fix directly** — rewrite to idiomatic code and strong assertions
-5. **Explain briefly** — one line per fix
+4. **Scan** for the cross-language patterns below plus the language-specific ones
+5. **Fix directly** — rewrite to idiomatic code and strong assertions
+6. **Explain briefly** — one line per fix; note deliberate skips in one line
+   each (idiomatic context, unclear intent) rather than arguing them
 
 ## Production patterns (every language)
 
@@ -52,7 +57,7 @@ files → assertions, a mixed diff → both.
 | 12 | Copy-paste instead of reuse — the top measured slop signal (GitClear) | Find the original and extract or reuse it |
 | 13 | Fake modularity — `utils.py` for one function, God class split across files | New file needs 3+ functions AND a distinct responsibility |
 | 14 | Placeholder/apology comments — `// ... rest of the code`, `// quick hack` | Delete; implement the real thing or remove the stub |
-| 15 | Phantom edge-case handling — inputs that cannot occur | Delete any branch nobody can name a real input for |
+| 15 | Phantom edge-case handling — branches, clamps, or guards for states that cannot occur, including ones adjacent code already guarantees structurally | Delete any guard nobody can name a real trigger for |
 
 ## Assertion patterns (every framework)
 
@@ -82,7 +87,8 @@ Read only for languages and targets present:
 
 ## Output format
 
-One line per fix; the fix speaks for itself:
+One line per fix; the fix speaks for itself. End with skipped candidates,
+one line each — what was left and why, no debate:
 
 ```
 De-slopped 4 patterns:
@@ -90,6 +96,8 @@ De-slopped 4 patterns:
 - Replaced try/except swallowing with error propagation (fail fast)
 - pytest.raises(Exception) → pytest.raises(ValueError, match="must be positive")
 - mock.assert_called() → mock.assert_called_once_with(user_id=42)
+Skipped:
+- unwrap() in tests/fixtures.rs — idiomatic in test code
 ```
 
 ## What You Don't Do
