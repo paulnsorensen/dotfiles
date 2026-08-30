@@ -39,7 +39,7 @@ language-specific tooling only when applicable>
 
 ## Workflow shortcuts
 
-<brief reference: /age, /cure, /respond, /de-slop, /tdd-assertions —
+<brief reference: /age, /cure, /respond, /de-slop —
 no full descriptions; these are reminders for Claude>
 
 ## Build system

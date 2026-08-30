@@ -11,6 +11,10 @@ The most robust skill architecture uses all three:
 - **Hook** — Runtime enforcement that cannot be overridden by the model
 - **Command** — User-invoked workflow (slash command) for explicit activation
 
+The snippets below are illustrative patterns, not drop-in hooks: Claude Code
+passes hook input as a JSON payload on **stdin** (fields like `tool_name`,
+`tool_input`, `prompt`), not env vars. Adapt before installing.
+
 ## Hook Categories
 
 ### 1. Forced Skill Evaluation (Activation)
@@ -41,7 +45,7 @@ if (shouldEval) {
 }
 ```
 
-Cost: ~$0.007/prompt, ~7s overhead.
+Reported cost (community, not benchmarked): ~$0.007/prompt, ~7s overhead.
 
 ### 2. Output Validation (Quality)
 
@@ -168,7 +172,10 @@ All hooks go in settings.json or `.claude/settings.json`:
 }
 ```
 
-Valid events: `UserPromptSubmit`, `PreToolUse`, `PostToolUse`.
+Events used by this catalog: `UserPromptSubmit`, `PreToolUse`, `PostToolUse`
+(Claude Code also supports `Stop`, `SubagentStop`, `SessionStart`, `SessionEnd`,
+`PreCompact`, `Notification`).
 
-Exit 0 = allow, non-zero = block. Stdout is injected into Claude's context.
-Keep hooks fast (<5 seconds for prompt-level hooks).
+Exit 0 = allow; exit 2 = block (stderr is fed back to Claude); other non-zero =
+non-blocking error. On `UserPromptSubmit` and `SessionStart`, stdout is injected
+into Claude's context. Keep hooks fast (<5 seconds for prompt-level hooks).

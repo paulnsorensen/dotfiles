@@ -59,9 +59,9 @@ cargo vs bazel) so the output references what the project actually uses.
   almost certainly has users.
 - **Workflow / Cheddar Flow** beyond a brief reference. The full skill
   catalog is in the global file; the local overlay just needs to remind
-  Claude that `/age`, `/cure`, `/respond`, `/de-slop`, and
-  `/tdd-assertions` exist and are preferred. For autonomous flows on
-  large changes, `/cook` chains cook → press → age → cure.
+  Claude that `/age`, `/cure`, `/respond`, and `/de-slop` exist and are
+  preferred. For autonomous flows on large changes, `/cook` chains
+  cook → press → age → cure.
 - **Troubleshooting one-liners** (`/go`, `/lsp`) — meta-tool
   state, irrelevant to any project.
 - **RTK** — the rtk proxy is a personal tooling layer; it's auto-applied

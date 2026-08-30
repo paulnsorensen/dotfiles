@@ -40,7 +40,7 @@ For web research during a review, use the `/gh` or `/briesearch` skills (forked)
 
 - Score findings 0-100 confidence. Only report findings >= 50; when < 50, ask.
 - Bundle diff/metadata via `gh-pr-review` or `/gh` — don't read raw PR JSON into main context.
-- When a finding overlaps a skill (weak assertions → `/tdd-assertions`, AI slop → `/de-slop`), route to the skill rather than hand-rolling the critique.
+- When a finding overlaps a skill (weak assertions or AI slop → `/de-slop`), route to the skill rather than hand-rolling the critique.
 - Pushback on bad reviewer suggestions is welcome — don't accept changes just to resolve the thread. `/respond`'s confidence scoring handles this.
 
 ## Hard constraints

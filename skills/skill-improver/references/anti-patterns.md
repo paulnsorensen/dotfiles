@@ -18,7 +18,8 @@ skill-authoring-consensus failure modes (Anthropic progressive disclosure, Pococ
 2. **CLAUDE.md bloat** — 200+ lines with specialized workflows. Move to skills.
    Keep CLAUDE.md under 80 lines with only global rules.
 3. **Deep reference chains** — SKILL.md → ref-a.md → ref-b.md. Max one level deep.
-4. **Monolithic SKILL.md** — 800+ lines. Split into SKILL.md (<500) + references.
+4. **Monolithic SKILL.md** — body over the ~5k-token Level-2 budget (bytes/4;
+   the 500-line rule is a backstop, not the budget). Split into SKILL.md + references.
 5. **Inline scripts** — Step-by-step instructions that are really a script.
    Extract to `scripts/` — executes without loading into context.
 
@@ -89,7 +90,7 @@ skill-authoring-consensus failure modes (Anthropic progressive disclosure, Pococ
 - [ ] Description states no internal workflow (triggers only)
 - [ ] Description in third person with explicit "Use when" + keywords
 - [ ] Description has "Do NOT use for" anti-triggers
-- [ ] SKILL.md under 500 lines
+- [ ] SKILL.md body under ~5k tokens (bytes/4; 500 lines only as backstop)
 - [ ] No content Claude already knows
 - [ ] References max one level deep
 - [ ] No inline scripts that should be external files
