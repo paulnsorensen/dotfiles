@@ -7,7 +7,10 @@ description: >
   Map a concept end-to-end through a layered codebase — find the entry point,
   follow callers/callees layer by layer, and cross-check the impact radius.
   Use when the user says "trace this through", "map the X flow", "blast radius
-  for Y", "what touches Z", "find the entry point for", "what's affected by
+  for Y", "what touches Z", "find the entry point for", or "what's affected by
+  this change". Do NOT use for interactive design verification with per-node
+  verdicts and a saved session — that is /xray (which runs this same trace
+  inside its session via its steel-threads reference) — nor for symbol lookup
   (tilth), filesystem search (/scout), or dead-code detection (/ghostbuster).
 license: MIT
 ---
@@ -125,10 +128,10 @@ infrastructure. For each layer:
 ## See also
 
 - `/xray` — interactive design verification via dependency-graph traversal. Its
-  **Steel Threads** section runs this same trace inside an xray session, writing
-  findings into the session graph. Use `/xray` for *did this implementation
-  satisfy the spec*; `/steel-thread` for *where does this concept live and what
-  touches it*.
+  `references/steel-threads.md` runs this same trace inside an xray session,
+  writing findings into the session graph. Use `/xray` for *did this
+  implementation satisfy the spec*; `/steel-thread` for *where does this
+  concept live and what touches it*.
 - tilth symbol/caller search — use for a known symbol's signature or callers.
 - `/ghostbuster` — dead code / stale spec detection. Disjoint concern.
 - `/grok-codebase` — its Phase 5 traces one full request end-to-end as a
