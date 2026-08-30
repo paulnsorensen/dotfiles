@@ -258,7 +258,6 @@ claude:
     - prompt-analytics
     - rennet
     - session-analytics
-    - settings-clean
     - skill-improver
     - steel-thread
     - test-sandbox
