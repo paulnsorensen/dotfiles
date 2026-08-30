@@ -1192,7 +1192,7 @@ MOCKBREW
 
 @test "managed OMP and Codex pins are exact" {
     grep -q '^OMP_PIN="v18.0.5"$' "$SYNC_SCRIPT"
-    grep -q '^"aqua:openai/codex" = "rust-v0.146.0"$' \
+    grep -q '^"aqua:openai/codex" = "rust-v0.151.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
 # The companion assertion — that doc-drift's `reconciled` markers match the
