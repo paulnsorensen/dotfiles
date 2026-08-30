@@ -73,6 +73,10 @@ Two sources unioned at ingest (`ingest._expand_skills`):
 - **Local**: `skills/<name>/SKILL.md` becomes a `path:` item for `ap`; OMP copies the selected local set into its exact chezmoi tree.
 - **External**: `_registry.yaml` sources are fetched by `npx skills add` for CLI-supported harnesses and vendored by the chezmoi assembler for OMP, honoring each source's `harnesses:` filter.
 
+Pure-prompt, user-invoked skills marked `disable-model-invocation: true` are the model-policy exception: they inherit the session model and omit `model` and `effort`. The tier→effort gate skips these inline skills but still enforces explicit matching fields for selected workflow skills.[^inline-skill-model]
+
+[^inline-skill-model]: `skills/wat/SKILL.md:1-7`; `tests/agent-skill-model-effort.bats:80-106`
+
 ## The edit → render → deploy workflow
 
 1. **Edit the appropriate source.** Shared registry commands cover MCP, hooks, agents, and skills; native OMP settings stay in its own `.chezmoidata` registry.

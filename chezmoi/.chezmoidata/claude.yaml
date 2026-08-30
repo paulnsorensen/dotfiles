@@ -264,6 +264,7 @@ claude:
     - tool-efficiency
     - tui-design
     - version-doctor
+    - wat
     - work-recovery
     - worktree
     - worktree-find
