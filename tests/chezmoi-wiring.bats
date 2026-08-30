@@ -252,12 +252,17 @@ seed_skill_cache_offline() {
     # with an explicit `skills:` list get those names seeded (the vendor
     # resolves the list against the cache; a dummy name would match nothing
     # and silently vendor zero skills); default-scan sources get dummy-<enc>.
-    local src enc sp skill
+    local src enc sp skill pin
     while IFS= read -r src; do
         [[ -z "$src" ]] && continue
         enc="${src//\//__}"
         sp=$(yq -r ".sources.\"$src\".skills_path // \"skills\"" "$registry")
         mkdir -p "$cache/$enc/.git"
+        # A pinned source's cache must record its pin, as a prior sync would
+        # have: offline (fetch fails) then falls back to the cached checkout
+        # instead of hard-failing on an apparently-changed pin.
+        pin=$(yq -r ".sources.\"$src\".pin // \"\"" "$registry")
+        [[ -n "$pin" ]] && echo "$pin" > "$cache/$enc/.dotfiles-pin"
         local -a names=()
         while IFS= read -r skill; do
             [[ -n "$skill" && "$skill" != "null" ]] && names+=("$skill")
@@ -377,6 +382,44 @@ YAML
     assert_failure
     assert_file_exists "$TEST_HOME/git-calls.log"
     grep -q '^GIT_TERMINAL_PROMPT=0 args=clone' "$TEST_HOME/git-calls.log"
+}
+
+@test "_cz_vendor_external_skills refreshes a branch pin when the remote moves" {
+    export XDG_CACHE_HOME="$TEST_HOME/cache"
+
+    # Local origin repo standing in for github.com/someorg/somerepo.
+    local origin="$TEST_HOME/origin-repo"
+    mkdir -p "$origin/skills/foo"
+    git -C "$origin" init -q -b soak
+    echo "v1" > "$origin/skills/foo/SKILL.md"
+    git -C "$origin" add -A
+    git -C "$origin" -c user.email=t@t -c user.name=t commit -qm v1
+
+    # Pre-seed the cache exactly as a prior pinned sync would have left it,
+    # so the function takes the existing-cache path (no network clone).
+    local cache="$XDG_CACHE_HOME/dotfiles/claude-skill-sources/someorg__somerepo"
+    mkdir -p "$(dirname "$cache")"
+    git clone -q --depth 1 --branch soak "$origin" "$cache"
+    echo soak > "$cache/.dotfiles-pin"
+
+    # The branch moves on the remote after the cache was created.
+    echo "v2" > "$origin/skills/foo/SKILL.md"
+    git -C "$origin" add -A
+    git -C "$origin" -c user.email=t@t -c user.name=t commit -qm v2
+
+    local registry="$TEST_HOME/registry.yaml"
+    cat > "$registry" <<'YAML'
+sources:
+  someorg/somerepo:
+    description: test
+    pin: soak
+YAML
+
+    run _cz_vendor_external_skills "$registry" "$TEST_HOME/dst" claude
+    assert_success
+    # An unchanged pin value must still track the branch tip: the vendored
+    # skill carries the post-cache commit, not the frozen clone-time one.
+    grep -rq "^v2$" "$TEST_HOME/dst"
 }
 
 # ── source-tree scaffold ────────────────────────────────────────────────

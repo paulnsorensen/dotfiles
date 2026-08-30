@@ -484,17 +484,24 @@ _cz_vendor_external_skills() {
             fi
             [[ -n "$pin" ]] && echo "$pin" > "$cache/.dotfiles-pin"
         elif [[ -n "$pin" ]]; then
-            # Honor a pin change on an existing cache (pin = branch or tag per
-            # the registry schema). .dotfiles-pin records the checked-out pin
-            # so an unchanged pin costs no network on the sync hot path.
-            if [[ "$(cat "$cache/.dotfiles-pin" 2>/dev/null)" != "$pin" ]]; then
-                if GIT_TERMINAL_PROMPT=0 git -C "$cache" fetch --depth 1 origin "$pin" >/dev/null 2>&1 \
-                    && git -C "$cache" checkout --detach FETCH_HEAD >/dev/null 2>&1; then
-                    echo "$pin" > "$cache/.dotfiles-pin"
-                else
-                    log_error "external skill source $source: cannot check out pin '$pin'"
-                    return 1
+            # Pin = branch or tag per the registry schema. Branch pins move,
+            # so refresh on every sync: fetch the pin and re-checkout when the
+            # remote sha differs (tag pins resolve to the same sha — no churn).
+            # Offline (fetch fails) falls back to the cached checkout unless
+            # the pin value itself changed, matching the unpinned path.
+            if GIT_TERMINAL_PROMPT=0 git -C "$cache" fetch --depth 1 origin "$pin" >/dev/null 2>&1; then
+                if [[ "$(git -C "$cache" rev-parse HEAD)" != "$(git -C "$cache" rev-parse FETCH_HEAD)" ]]; then
+                    if ! git -C "$cache" checkout --detach FETCH_HEAD >/dev/null 2>&1; then
+                        log_error "external skill source $source: cannot check out pin '$pin'"
+                        return 1
+                    fi
                 fi
+                echo "$pin" > "$cache/.dotfiles-pin"
+            elif [[ "$(cat "$cache/.dotfiles-pin" 2>/dev/null)" != "$pin" ]]; then
+                log_error "external skill source $source: cannot fetch changed pin '$pin'"
+                return 1
+            else
+                log_warning "external skill source $source: fetch failed, using cached checkout"
             fi
         else
             # Unpinned: float to latest of the default branch on every sync.
