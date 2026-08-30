@@ -39,7 +39,8 @@ Report format:
 ```
 
 Never: a 0-100 score; surfacing `<don't know>`; fabricating on empty domains;
-applying fixes (recommend only — hand to /cure or /settings-clean).
+applying fixes (recommend only — hand to /cure or /harness-doctor's
+settings-prune mode).
 
 Gotchas: `token-economics` usually lacks token fields — "insufficient
 signal", never invent a cost. Denials/stop-hooks are Claude-dominant — on

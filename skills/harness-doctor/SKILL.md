@@ -4,14 +4,32 @@ model: sonnet
 effort: medium
 description: >
   Diagnose and self-heal harness-config drift between Claude, Codex, Cursor,
-  Copilot, and the dotfiles registries. Use when the user says "harness doctor",
-  "check my harness config", "settings drifted", "why is this hook firing twice", or asks
-  to audit agent config. In Codex, invoke via `$harness-doctor` or `/skills`,
-  not `/harness-doctor`. Do NOT use for general code review (/age), single-file
-  permission cleanup (/settings-clean), or app-level debugging.
+  Copilot, and the dotfiles registries; also prune bloated
+  .claude/settings.local.json permission lists. Use when the user says
+  "harness doctor", "check my harness config", "settings drifted", "why is
+  this hook firing twice", or asks to audit agent config — or for the settings
+  mode: "clean settings", "prune settings", "settings cleanup", or invokes
+  /settings-clean; also proactively when settings.local.json exceeds ~30
+  entries. In Codex, invoke via `$harness-doctor` or `/skills`, not
+  `/harness-doctor`. Do NOT use for general code review (/age) or app-level
+  debugging.
 ---
 
 # harness-doctor
+
+Two modes:
+
+- **Drift audit** (default) — audit the gap between live harness config and
+  the dotfiles target state, classify each difference, heal what's safely
+  healable. This file.
+- **Settings prune** — single-file cleanup of a bloated
+  `.claude/settings.local.json` (junk/covered/one-off permission entries,
+  missing `Skill(...)` allows). Triggered by "clean settings", "prune
+  settings", `/settings-clean`, or a local file past ~30 entries. Read
+  `references/settings-prune.md` and follow it; the rest of this file does
+  not apply.
+
+## Drift audit
 
 Audit the gap between **live** harness config on this machine and the
 **target state** the dotfiles repo intends (`ap` rendering the registries into
@@ -32,217 +50,89 @@ The hard part is the classification, not the diffing. A raw diff between live
 and rendered is noisy; git history + the wiki are what let you say "this is a
 leftover we abandoned" vs "this is a bug" vs "this is the user's own".
 
-## Protocol
+All command detail, checklists, and target-state facts live in
+`references/drift-audit.md` — read it before step 2.
 
 ### 1. Ground — learn the intended state
 
 Read before judging. The repo's design rationale lives in the wiki; the
-*direction of travel* lives in git history.
+*direction of travel* lives in git history (commands in the reference).
 
 - **Wiki** (`repo:dotfiles:wiki`): `list_tree`, then `read_markdown` /
   `ground` on `architecture/config-drift.md` **first** (its "Current state"
   section defines who owns each live surface *today* and catalogs known drift
   patterns), then `architecture/agent-profile.md`, `architecture/agents-dir.md`,
-  and the relevant `harnesses/<harness>.md`. These define what the repo is
-  *supposed* to produce and where each harness's config lives.
-  - **The wiki overrides this skill.** Any target-state fact baked into this
-    file (paths, ownership, anchor commits) can go stale; when the wiki's
-    current-state pages disagree with a claim here, follow the wiki and flag
-    the skill for a `/skill-improver` pass — do not classify drift against the
-    stale model.
-  - If `ground` errors with a schema/index error (e.g. `missing column
-    chunk_id`), the LanceDB index is stale — run `hallouminate index` (or note
-    it as a dotfiles bug if it won't rebuild) and fall back to `read_markdown`.
-- **Git history** — the migration arc that distinguishes stale from novel:
-
-  ```
-  git -C "$DOTFILES_DIR" log --oneline -20 -- agents/ profiles/ chezmoi/dot_claude/
-  git -C "$DOTFILES_DIR" log --oneline --grep='ap\|migrat\|settings\|hook' -20
-  ```
-
-  Historical anchor commit: **#217 `feat(ap): add global profile + migrate
-  settings.json to chezmoi seed`** — the point hooks first moved out of
-  `settings.json`. Since then Claude went **fully chezmoi-authoritative**:
-  `settings.json` is composed wholesale by `chezmoi/dot_claude/modify_settings.json`
-  from `chezmoi/.chezmoidata/claude.yaml`. Anything live matching a pre-#217
-  shape is still a stale-remnant candidate, but the *current* owner is the
-  modify script, not a plugin tree (which may not exist at all on the machine).
-
-Key target-state facts to hold:
-
-- Registries (edit surface): `agents/mcp/registry.yaml`,
-  `agents/hooks/registry.yaml`, `agents/registry.yaml`, `skills/`.
-- `base` = registry union (render primitive). `profiles/global` is a
-  **deprecated stub** superseded by `profiles/live` — check the profile's own
-  yaml before describing it.
-- Claude's `~/.claude/settings.json` (hooks, enabledPlugins,
-  extraKnownMarketplaces, permissions) is **chezmoi-authoritative**: composed
-  wholesale by `chezmoi/dot_claude/modify_settings.json` from
-  `chezmoi/.chezmoidata/claude.yaml` + the plugin registries. Skills and
-  agents render flat to `~/.claude/skills/` and `~/.claude/agents/`; a
-  `~/.claude/plugins/local/` tree is historical and may be absent entirely.
-- The Claude-specific JS guards (`~/.claude/hooks/*.js`), `rtk`, and any tmux
-  hook are **settings-only and legit** — not plugin-managed, so not drift.
+  and the relevant `harnesses/<harness>.md`.
+- **The wiki overrides this skill.** Any target-state fact baked into this
+  skill or its references (paths, ownership, anchor commits) can go stale;
+  when the wiki's current-state pages disagree, follow the wiki and flag the
+  skill for a `/skill-improver` pass — do not classify drift against the
+  stale model.
 
 ### 2. Snapshot live config
 
-Read the live files per harness (use `cheez-read`/`jq`, not blind `cat`):
-
-| Harness | Live files |
-|---|---|
-| claude | `~/.claude/settings.json` (+ `~/.claude/plugins/local/global/` only if that historical tree exists) |
-| codex | `~/.codex/config.toml` (`[mcp_servers]`, `[[hooks.*]]`), `~/.codex/hooks.json` |
-| cursor | `~/.cursor/mcp.json`, `~/.cursor/hooks.json` |
-| copilot | `~/.copilot/mcp-config.json`, `~/.copilot/hooks/` |
+Read the live files per harness (table in the reference). Use
+`cheez-read`/`jq`, not blind `cat`.
 
 ### 3. Render the target — diff live vs `ap`
 
-For **Claude**, the authoritative check is the chezmoi modify script itself —
-feed it the live file and diff the result against live (byte-identical = no
-drift):
+For **Claude**, the authoritative check is feeding live `settings.json`
+through the chezmoi modify script and diffing (byte-identical = no drift).
+For Codex, Cursor, and Copilot, render `base` into a throwaway target and
+diff — never touch live config. Exact commands in the reference.
 
-```bash
-sh "$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" \
-  < ~/.claude/settings.json | diff - ~/.claude/settings.json
-```
-
-For Codex, Cursor, and Copilot, render `base` into a throwaway target (never
-touch live config) and diff:
-
-```bash
-TMP="$(mktemp -d)"
-DOTFILES_DIR="$DOTFILES_DIR" ap install base --target "$TMP"
-dots profile describe live            # resolved manifest for the live overlay
-# Compare Codex MCP tables and Cursor/Copilot MCP files with rendered payloads.
-```
-
-For each difference, ask: *is the live side a superset (extra entries) or does
-it contradict the render?* Extra live-only entries are remnant-or-local;
-contradictions are bugs.
+For each difference, ask: *is the live side a superset (extra entries) or
+does it contradict the render?* Extra live-only entries are
+remnant-or-local; contradictions are bugs.
 
 ### 4. Classify each drift
 
 Walk every difference and bucket it (first match wins):
 
-1. **Stale remnant** — present live, absent from render, AND git history shows
-   the repo moved this responsibility elsewhere. Canonical case: a hook in
-   `~/.claude/settings.json` whose command duplicates a plugin-managed hook
-   (matched by script basename or exact command), or points at a script path
-   under `~/.claude/hooks/` that no longer exists. Verify the path:
+1. **Stale remnant** — present live, absent from render, AND git history
+   shows the repo moved this responsibility elsewhere. Canonical case: a hook
+   in `~/.claude/settings.json` whose command duplicates a plugin-managed
+   hook (matched by script basename or exact command), or points at a script
+   path under `~/.claude/hooks/` that no longer exists. Verify the path:
    `[[ -e <path> ]]` — a dead path is unambiguously stale.
-2. **Dotfiles bug** — the repo source is itself wrong. Checks:
-   - A `script:` in `agents/hooks/registry.yaml` whose file is missing.
-   - A hook `event:` not in `HOOK_EVENTS_VALID` (`agents/hooks/lib.sh`).
-   - A Codex user-level `~/.codex/hooks.json` command that starts with `bash .codex/hooks/` or otherwise names a relative hook script path. User-level Codex hooks run from the session cwd, so repo-relative commands are unsafe drift.
-   - Duplicate Codex hook wiring: the same managed hook basename appears in both `~/.codex/hooks.json` and legacy `[[hooks.<event>]]` blocks in `~/.codex/config.toml`.
-   - An MCP referencing an unset `${VAR}` but not marked `optional: true`.
-   - A skill dir without a `SKILL.md`, or a registry `body_path` that 404s.
-   - The wiki index failing to rebuild (`hallouminate index` errors).
-   - A `run_onchange` hash input list omitting a file the script reads.
+2. **Dotfiles bug** — the repo source is itself wrong. Run the
+   dotfiles-bug checklist in the reference.
 3. **Expected local** — live-only, no repo provenance, plausibly user-added
    (personal hook, extra permission). Report, never touch.
 
 When unsure between bug and local, **ask the user** (AskUserQuestion) rather
-than guess — opening a spurious issue or healing a wanted local entry both cost
-trust.
+than guess — opening a spurious issue or healing a wanted local entry both
+cost trust.
 
 ### 5. Heal stale remnants
 
-Two stale-remnant classes self-heal **inside the renderers**, on every
-`ap install` — not via a bolt-on script:
+Legacy hooks and dropped MCPs self-heal **inside the renderers** on every
+`ap install` — never hand-roll a jq/toml rewrite of a user-owned file when a
+renderer (or a `dots sync`) does it deterministically. The doctor's value is
+*explaining why* drift appeared and catching the classes the renderers don't
+auto-heal; for those, propose the precise edit and confirm before applying.
 
-- **Legacy hooks.** Each renderer prunes its own harness's pre-ap hook
-  leftovers:
-  - **claude** — `claude.py:_clean_legacy_settings_hooks` strips
-    `settings.json` hooks that duplicate a plugin-managed hook (by script
-    basename or exact command), keyed off the hooks it just wired into
-    `plugin.json`.
-  - **codex** — `codex.py:_clean_legacy_config_toml_hooks` strips legacy
-    `[[hooks.*]]` blocks from `config.toml` the same way.
-- **Dropped MCPs.** `cli.py:_reconcile_dropped_mcps` reports registry entries
-  removed since the prior resolved manifest. Non-isolated live MCP config is
-  chezmoi/user-owned, so diagnose and repair it through its authoritative owner;
-  do not expect `ap install` to mutate those files.
-
-The doctor's value is *explaining why* drift appeared and catching the classes
-the renderers don't auto-heal. For those, propose the precise edit and confirm
-before applying — never hand-roll a jq/toml rewrite of a user-owned file when a
-renderer (or a `dots sync`) does it deterministically.
-
-**Known exception — chezmoi settings gate halts on removed hook keys.** Since
-claude went chezmoi-authoritative, `chezmoi/dot_claude/modify_settings.json`
-halts `dots sync` on any live `settings.json` key-path absent from the desired
-document. When a commit *removes* a hook event key (or the last hook carrying a
-field like `timeout`) from `chezmoi/.chezmoidata/claude.yaml`, the stranded live
-key-path trips that gate and no renderer or sync can clear it — this is the one
-case where a manual live prune IS the heal:
-
-```bash
-jq 'del(.hooks.<RemovedEvent>)' ~/.claude/settings.json > /tmp/s.json \
-  && jq -e 'type=="object"' /tmp/s.json >/dev/null \
-  && mv /tmp/s.json ~/.claude/settings.json
-dots sync   # wholesale write owns hooks from here
-```
-
-Confirm each pruned key-path against the removing commit first (`git log -p --
-chezmoi/.chezmoidata/claude.yaml`) — a live-only key with *no* removal commit is
-app-introduced and must be folded in, not pruned. Details:
-`.hallouminate/wiki/architecture/config-drift.md` § registry hook-event removal.
+One known exception (chezmoi settings gate halting on removed hook keys)
+requires a manual live prune — mechanics and the exact renderer functions are
+in the reference.
 
 ### 6. File dotfiles bugs as gh issues (deduped)
 
-For each confirmed **dotfiles bug**, open a GitHub issue — but dedup first:
-
-```bash
-gh issue list --repo "$REPO" --state open --label harness-doctor --json number,title
-```
-
-Skip any bug whose title substantially matches an open issue. For novel bugs:
-
-```bash
-gh issue create --repo "$REPO" \
-  --title "harness-doctor: <one-line bug>" \
-  --label harness-doctor \
-  --body "$(cat <<'EOF'
-**Found by** /harness-doctor on <date>.
-
-**Symptom**: <what's wrong, with file:line>
-**Root cause**: <why — cite git history / wiki>
-**Target state**: <what ap/registries should produce>
-**Suggested fix**: <concrete edit>
-EOF
-)"
-```
-
-Create the `harness-doctor` label first if absent (`gh label create
-harness-doctor --color BFD4F2 --description "Drift/bug found by /harness-doctor"`).
-If `gh` is unauthenticated or offline, write the issue bodies to
-`.cheese/harness-doctor/issues-<date>.md` and tell the user to file them.
+For each confirmed **dotfiles bug**, open a GitHub issue — dedup against open
+`harness-doctor`-labeled issues first. Commands, label bootstrap, offline
+fallback, and the issue body template are in the reference.
 
 ### 7. Learn — write back to the wiki
 
 When the audit surfaces a *new* drift pattern or a non-obvious root cause a
 future doctor run would otherwise re-derive, persist it via `add_markdown`
 (one topic per file, the *why* not the *what* — follow
-`.hallouminate/wiki/index.md` conventions). Good homes:
+`.hallouminate/wiki/index.md` conventions). A recurring drift class extends
+`harnesses/<harness>.md` § drift or `architecture/config-drift.md`; don't
+duplicate `AGENTS.md` or the code, link related pages with `[[name]]`.
 
-- A recurring drift class → extend `harnesses/<harness>.md` § drift, or a new
-  `architecture/config-drift.md`.
-- Don't duplicate `AGENTS.md` or the code; link related pages with `[[name]]`.
-
-After writing, the file reindexes automatically; if you edited via a plain file
-write instead, run `hallouminate index`.
-
-### 7b. Misplaced project knowledge (wiki repos only)
-
-Auto-memory is disabled globally (`autoMemoryEnabled: false`, issue #717), so a
-repo with a `.hallouminate/wiki/` should hold no project-scoped agent memory.
-When `.hallouminate/wiki/` exists, scan `~/.claude/projects/<slug>/memory/` for
-files whose frontmatter declares `type: project` and list each under **Needs
-your call**, recommending migration into the wiki (`/wiki-curator` /
-`add_markdown`). Do **not** open a gh issue (the content is not a repo-source
-bug) and do **not** auto-delete (that would destroy the only copy before it is
-migrated).
+Also check for misplaced project knowledge in wiki repos (agent-memory files
+that belong in the wiki) — detection rules in the reference.
 
 ### 8. Report
 
@@ -264,8 +154,8 @@ Emit a compact summary grouped by class:
 - <ambiguous item> — <question>
 ```
 
-Lead with what changed and what needs the user's attention. Keep file dumps out
-of the report — cite `file:line`, don't paste.
+Lead with what changed and what needs the user's attention. Keep file dumps
+out of the report — cite `file:line`, don't paste.
 
 ## Guard rails
 
