@@ -43,7 +43,7 @@ STDIN"
     [ "$(yq '.modelRoles.balanced' "$OUT")" = "openai-codex/gpt-5.6-terra" ]
     [ "$(yq '.modelRoles.fast' "$OUT")" = "openai-codex/gpt-5.6-luna" ]
     [ "$(yq '.modelRoles.vision' "$OUT")" = "@balanced" ]
-    [ "$(yq '.modelRoles.default' "$OUT")" = "@balanced:medium" ]
+    [ "$(yq '.modelRoles.default' "$OUT")" = "@strong:medium" ]
     [ "$(yq '.modelRoles.plan' "$OUT")" = "@strong:xhigh" ]
     [ "$(yq '.modelRoles.advisor' "$OUT")" = "@strong" ]
     [ "$(yq '.modelRoles.tiny' "$OUT")" = "@fast" ]

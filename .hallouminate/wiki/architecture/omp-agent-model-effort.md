@@ -21,6 +21,7 @@ The retired `fromage-age-arch`, `fromage-age-history`, `fromage-fort`, `fromage-
 ## Harness ownership
 
 - `agents/registry.yaml:models.codex` records the workload-specific Codex family. OMP-native files express that family through `@strong`, `@balanced`, or `@fast` aliases.[^1]
+- `chezmoi/.chezmoidata/omp.yaml:154` sets interactive OMP sessions to `@strong:medium`: Sol quality with bounded reasoning. Agent files still select their own model alias and `thinkingLevel`.[^6]
 - `agents/registry.yaml:effort` is a Claude-honored field. It stays coupled to `models.claude`, not to the Codex family or OMP thinking.[^1]
 - `chezmoi/dot_omp/private_agent/agents/*.md:thinkingLevel` owns OMP reasoning depth. Its value follows the workload table above.[^2]
 
@@ -35,3 +36,5 @@ OpenAI describes Sol as the frontier tier, Terra as the intelligence/cost balanc
 [^3]: `agents/registry.yaml:23-267`, `chezmoi/dot_omp/private_agent/agents/`
 [^4]: <https://developers.openai.com/api/docs/guides/latest-model>
 [^5]: <https://github.com/can1357/oh-my-pi/blob/main/docs/settings.md>, <https://github.com/can1357/oh-my-pi/blob/main/docs/models.md>
+
+[^6]: `chezmoi/.chezmoidata/omp.yaml:150-163`, `tests/omp-config.bats:34-52`, `tests/omp-agents.bats:121-130`

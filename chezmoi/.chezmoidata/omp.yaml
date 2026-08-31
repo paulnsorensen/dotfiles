@@ -151,7 +151,7 @@ omp:
       strong: openai-codex/gpt-5.6-sol
       balanced: openai-codex/gpt-5.6-terra
       fast: openai-codex/gpt-5.6-luna
-      default: '@balanced:medium'
+      default: '@strong:medium'
       smol: '@fast'
       plan: '@strong:xhigh'
       advisor: '@strong'

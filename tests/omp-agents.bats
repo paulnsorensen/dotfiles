@@ -122,7 +122,7 @@ expected_omp_thinking() {
     [[ "$(yq -oy -r '.omp.config.modelRoles.strong' "$OMP_CONFIG")" == "openai-codex/gpt-5.6-sol" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.balanced' "$OMP_CONFIG")" == "openai-codex/gpt-5.6-terra" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.fast' "$OMP_CONFIG")" == "openai-codex/gpt-5.6-luna" ]]
-    [[ "$(yq -oy -r '.omp.config.modelRoles.default' "$OMP_CONFIG")" == "@balanced:medium" ]]
+    [[ "$(yq -oy -r '.omp.config.modelRoles.default' "$OMP_CONFIG")" == "@strong:medium" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.plan' "$OMP_CONFIG")" == "@strong:xhigh" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.task' "$OMP_CONFIG")" == "@fast" ]]
     [[ "$(frontmatter '.model' "$OMP_AGENTS/cheese-reviewer.md")" == "@strong" ]]
