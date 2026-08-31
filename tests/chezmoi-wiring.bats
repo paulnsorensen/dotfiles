@@ -916,17 +916,27 @@ TOML
     chmod +x "$second/lib/node_modules/@paulnsorensen/tilth-nightly/bin/tilth"
     ln -s "../lib/node_modules/@paulnsorensen/tilth-nightly/bin/tilth" "$second/bin/tilth"
 
+    # An upstream package can expose the same bin from another prefix. It is
+    # not the stale nightly and must not receive the nightly removal command.
+    local upstream="$TEST_HOME/upstream-prefix"
+    mkdir -p "$upstream/lib/node_modules/tilth/bin" "$upstream/bin"
+    printf '#!/usr/bin/env bash\n' > "$upstream/lib/node_modules/tilth/bin/tilth"
+    chmod +x "$upstream/lib/node_modules/tilth/bin/tilth"
+    ln -s "../lib/node_modules/tilth/bin/tilth" "$upstream/bin/tilth"
+
     # Active npm: offline view, nothing installed, global prefix elsewhere.
     local npm_bin="$TEST_HOME/shadow-npm-bin"
     mkdir -p "$npm_bin" "$TEST_HOME/active-prefix"
     # shellcheck disable=SC2016
     printf '#!/usr/bin/env bash\ncase "$1 $2" in\n  "prefix -g") echo "%s" ;;\n  *) exit 1 ;;\nesac\n' "$TEST_HOME/active-prefix" > "$npm_bin/npm"
-    chmod +x "$npm_bin/npm"
+    # shellcheck disable=SC2016
+    printf '#!/usr/bin/env bash\n[[ "$1" != "-f" ]] || exit 1\nexec /usr/bin/readlink "$@"\n' > "$npm_bin/readlink"
+    chmod +x "$npm_bin/npm" "$npm_bin/readlink"
 
-    run env PATH="$npm_bin:$second/bin:/usr/bin:/bin" /bin/bash "$script"
+    run env PATH="$npm_bin:$upstream/bin:$second/bin:/usr/bin:/bin" /bin/bash "$script"
     assert_success
-    assert_output_contains "second npm prefix"
-    assert_output_contains "npm rm -g @paulnsorensen/tilth-nightly"
+    assert_output_contains "$second/bin/npm rm -g @paulnsorensen/tilth-nightly"
+    assert_output_not_contains "$upstream/bin/tilth resolves into a second npm prefix"
 }
 
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────

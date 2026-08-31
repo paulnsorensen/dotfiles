@@ -54,13 +54,27 @@ fi
 # A second npm global prefix (homebrew node beside mise node) can hold its own
 # stale copy of the nightly. This npm never updates that copy, and the version
 # strings can match while the postinstall platform binaries differ. Warn when a
-# PATH copy of the bin resolves into a node_modules tree outside this npm's
-# global prefix.
+# PATH copy of the nightly bin resolves into its package tree outside this
+# npm's global prefix. Use readlink without GNU-only -f because macOS ships BSD
+# readlink.
+resolve_path() {
+    local path="$1" target
+    while [[ -L "$path" ]]; do
+        target="$(readlink "$path")" || return 1
+        if [[ "$target" == /* ]]; then
+            path="$target"
+        else
+            path="$(dirname "$path")/$target"
+        fi
+    done
+    cd -P "$(dirname "$path")" && printf '%s/%s\n' "$PWD" "$(basename "$path")"
+}
+
 npm_prefix="$(npm prefix -g 2>/dev/null || true)"
 if [[ -n "$npm_prefix" ]]; then
     while IFS= read -r candidate; do
-        resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
-        if [[ "$resolved" == */node_modules/* && "$resolved" != "$npm_prefix"/* ]]; then
+        resolved="$(resolve_path "$candidate" 2>/dev/null || true)"
+        if [[ "$resolved" == */node_modules/"$PKG"/* && "$resolved" != "$npm_prefix"/* ]]; then
             shadow_root="${resolved%%/node_modules/*}"
             echo "⚠ $candidate resolves into a second npm prefix ($shadow_root) — that copy goes stale because this npm never updates it. Run '${shadow_root%/lib}/bin/npm rm -g $PKG' to remove it." >&2
         fi

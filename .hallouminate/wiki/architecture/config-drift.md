@@ -504,7 +504,7 @@ showing an argument-parse error. Second confirmed hit 2026-08-31:
 `/opt/homebrew/bin/hallouminate` pointed into a stale homebrew-prefix
 `hallouminate-nightly` (installed Jul 27). Both nightly installers
 (`run_after_install-{tilth,hallouminate}.sh.tmpl`) now warn when a PATH copy of
-the bin resolves into a `node_modules` tree outside the active npm prefix.
+the fork nightly resolves into its package tree outside the active npm prefix.
 Before that guard, the shadow warnings covered only upstream-npm and
 `~/.cargo/bin` copies — same family as the yq bootstrap-shadow pattern above.
 
