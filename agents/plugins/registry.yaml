@@ -65,12 +65,15 @@
 plugins:
   # milknado: Mikado execution engine
   # Payload: 1 MCP + 3 skills (harvest, load-roadmap, milknado-config)
-  # NOTE: uvx milknado-mcp requires milknado to be published to PyPI.
-  # Until then, rendered configs will reference the portable form but
-  # the MCP will not launch without a local uvx-resolvable install.
+  # branch: stable — the release workflow points `stable` at the newest
+  # published tag. Its .mcp.json pins the launch to the PyPI release
+  # (`uvx --from milknado==X.Y.Z milknado-mcp`), so a cold MCP start does
+  # not fetch from GitHub. The `main` form (`--from git+...@main`) did a
+  # live git fetch on each cold start; a fetch failure killed the MCP
+  # connection (observed 2026-08-31).
   milknado:
     git: https://github.com/paulnsorensen/milknado
-    branch: main
+    branch: stable
     harnesses: [claude, codex, cursor, copilot]
     native: [claude, copilot]
     # codex omitted from native: — milknado's upstream .agents/plugins/marketplace.json
