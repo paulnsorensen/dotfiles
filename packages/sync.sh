@@ -534,7 +534,7 @@ sync_uv() {
     # Joined with "|", not @tsv/real tabs — see sync_cargo's comment: bash's
     # `read` collapses tab runs even under a custom IFS, silently swallowing
     # an empty field (e.g. no flags) sitting next to a pinned version.
-    uv_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "uv") | [.key, (.value.pkg // .key), ((.value.flags // []) | join(" ")), (.value.version // ""), (.value.rev // "")] | join("|")' "$PACKAGES_FILE" 2>/dev/null)
+    uv_pkgs=$(yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "uv") | [.key, (.value.pkg // .key), ((.value.flags // []) | join(" ")), (.value.version // ""), (.value.rev // ""), ((.value.float // false) | tostring)] | join("|")' "$PACKAGES_FILE" 2>/dev/null)
     [[ -z "$uv_pkgs" ]] && return 0
 
     if ! command -v uv &>/dev/null; then
@@ -546,10 +546,18 @@ sync_uv() {
     local installed
     installed=$(uv tool list 2>/dev/null | awk '/^[a-zA-Z]/ {print $1}' || true)
 
-    local all_names=() pinned_names=()
-    while IFS='|' read -r name pkg flags_str version rev; do
+    local all_names=() pinned_names=() float_names=()
+    while IFS='|' read -r name pkg flags_str version rev float; do
         [[ -z "$name" ]] && continue
         all_names+=("$name")
+        # float: true refreshes an unpinned channel on every sync. A pin
+        # contradicts that; fail loud instead of guessing.
+        if [[ "$float" == "true" && ( -n "$version" || -n "$rev" ) ]]; then
+            log_error "$name: float: true conflicts with a version/rev pin"
+            FAILED+=("$name")
+            continue
+        fi
+        [[ "$float" == "true" ]] && float_names+=("$name")
         # shellcheck disable=SC2206  # word-splitting on flags_str is intentional
         local flags_array=($flags_str)
 
@@ -575,7 +583,12 @@ sync_uv() {
         fi
 
         if echo "$installed" | grep -qx "$name"; then
-            echo "  + $name"
+            if [[ "$float" == "true" ]]; then
+                echo "  Upgrading $name (float)..."
+                uv tool upgrade "$name" </dev/null || log_warning "uv tool upgrade $name failed"
+            else
+                echo "  + $name"
+            fi
         else
             echo "  Installing $pkg${flags_str:+ ($flags_str)}..."
             if ! uv tool install ${flags_array[@]+"${flags_array[@]}"} "$pkg" </dev/null; then
@@ -588,9 +601,14 @@ sync_uv() {
     if [[ "${UPGRADE_MODE:-false}" == "true" ]]; then
         local unpinned_names=() n
         for n in "${all_names[@]}"; do
-            if ! printf '%s\n' "${pinned_names[@]}" | grep -qxF "$n"; then
-                unpinned_names+=("$n")
+            if printf '%s\n' "${pinned_names[@]}" | grep -qxF "$n"; then
+                continue
             fi
+            # float entries were already upgraded in the main loop.
+            if printf '%s\n' ${float_names[@]+"${float_names[@]}"} | grep -qxF "$n"; then
+                continue
+            fi
+            unpinned_names+=("$n")
         done
         if ((${#unpinned_names[@]})); then
             log_info "Upgrading intentionally unpinned uv tools..."

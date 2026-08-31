@@ -8,6 +8,8 @@
 #   platform:    mac | linux (default: both)
 #   flags:       extra args spliced into the installer (uv source only;
 #                e.g. ["--python", "3.13", "--prerelease=allow"])
+#   float:       uv source only; unpinned entries only. Upgrade the tool on
+#                every sync, not only in UPGRADE_MODE (dots up).
 
 packages:
   - tinted-theming/tinted: { source: tap }
@@ -82,7 +84,7 @@ packages:
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref", rev: "38a2ff82958afee88dadf4831509e6f7e9d8ef4e" }
   # renovate: datasource=pypi depName=tavily-cli
   - tavily-cli: { source: uv, version: "0.1.6" } # provides `tvly` CLI for Tavily API
-  - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main" } # approved floating own-authored channel
+  - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main", float: true } # approved floating own-authored channel; every dots sync pulls latest main
 
   # gh CLI extensions
   # renovate: datasource=github-releases depName=github/gh-stack

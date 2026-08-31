@@ -65,15 +65,16 @@
 plugins:
   # milknado: Mikado execution engine
   # Payload: 1 MCP + 3 skills (harvest, load-roadmap, milknado-config)
-  # branch: stable — the release workflow points `stable` at the newest
-  # published tag. Its .mcp.json pins the launch to the PyPI release
-  # (`uvx --from milknado==X.Y.Z milknado-mcp`), so a cold MCP start does
-  # not fetch from GitHub. The `main` form (`--from git+...@main`) did a
-  # live git fetch on each cold start; a fetch failure killed the MCP
-  # connection (observed 2026-08-31).
+  # branch: main — latest skills/agents chosen over launcher robustness
+  # (decided 2026-08-31). The plugin's own .mcp.json launcher
+  # (`uvx --from git+...@main`) fetches GitHub on each cold MCP start and
+  # can fail or run slow; switching to `stable` would pin that launch to
+  # the PyPI release. The fe profile and Zed sidestep the fetch: they
+  # launch the `milknado-mcp` binary that packages.yaml installs with
+  # float: true, so every dots sync upgrades it.
   milknado:
     git: https://github.com/paulnsorensen/milknado
-    branch: stable
+    branch: main
     harnesses: [claude, codex, cursor, copilot]
     native: [claude, copilot]
     # codex omitted from native: — milknado's upstream .agents/plugins/marketplace.json
