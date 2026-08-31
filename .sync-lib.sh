@@ -842,9 +842,9 @@ sync_codex_chezmoi_sources() {
     return 0
 }
 
-# Assemble the OMP-native global skills payload from the same selected sources
-# as Claude. OMP discovers ~/.omp/agent/skills independently; it never reads
-# ~/.agents/skills or ~/.claude/skills.
+# Assemble the OMP-native skills payload from the same selected sources as
+# Claude. OMP also discovers universal skills under ~/.agents/skills, which the
+# non-Claude installer now reconciles against each source checkout.
 #   sync_omp_chezmoi_sources <dotfiles_root> [<chezmoi_source_dir>]
 sync_omp_chezmoi_sources() {
     local root="$1"

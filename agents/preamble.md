@@ -1,5 +1,15 @@
 # Preamble — MCP tool routing
 
+## Writing style
+
+Use Simplified Technical English (ASD-STE100) for prose about the work.
+Use one instruction per sentence.
+Use active voice, present tense, approved words, and one term for each meaning.
+Keep procedural sentences to 20 words and descriptive sentences to 25 words.
+Do not use gerund chains or synonyms.
+Apply this rule to messages, documentation, comments, commits, and specifications.
+Do not apply it to code identifiers or quoted material.
+
 ## Tool routing
 
 Use tilth directly for workspace code and file operations.

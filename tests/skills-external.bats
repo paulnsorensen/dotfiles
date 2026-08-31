@@ -47,6 +47,11 @@ setup() {
 #!/bin/bash
 printf 'npx %s\n' "$*" >> "${NPX_LOG:-/dev/null}"
 
+if [[ "$*" == *" skills list --global --json"* ]]; then
+    printf '%s\n' "${NPX_LIST_JSON:-[]}"
+    exit 0
+fi
+
 # Args look like: --yes skills add <spec> --skill ... --agent ... -g --copy -y
 for a in "$@"; do
     if [[ "$a" == "add" ]]; then
@@ -122,7 +127,8 @@ run_sync() {
     # SKILL_HARNESSES can name agents unsupported by the `skills` CLI. An
     # unsupported entry must be skipped with a loud warning, not abort the
     # whole refresh.
-    write_registry
+    write_registry "acme/widgets" "    skills:
+      - alpha"
     write_env "claude-code bogus-agent"
 
     run_sync
@@ -156,7 +162,8 @@ run_sync() {
     # is chezmoi-managed (exact_), so a live install there would be deleted on
     # the next apply (spec: chezmoi-authoritative-claude). If this filter
     # regressed, upgrade would silently reintroduce the live-install path.
-    write_registry
+    write_registry "acme/widgets" "    skills:
+      - alpha"
     write_env "claude-code cursor"
 
     SKILL_EXCLUDE_AGENTS="claude-code" run_sync
@@ -225,6 +232,39 @@ EOF
     # No `--skill *` when an explicit list is present.
     run grep -F 'skills add acme/widgets --skill *' "$NPX_LOG"
     assert_failure
+}
+
+@test "skill sync: wildcard source removes source-owned skills absent from vendor cache" {
+    write_registry "acme/widgets"
+    write_env "codex cursor"
+
+    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
+    mkdir -p "$repo_cache/skills/current" "$repo_cache/.agents/skills/alternate"
+    printf '%s\n' '# current' > "$repo_cache/skills/current/SKILL.md"
+    printf '%s\n' '# alternate' > "$repo_cache/.agents/skills/alternate/SKILL.md"
+    export NPX_LIST_JSON='[
+      {"name":"current","source":"acme/widgets"},
+      {"name":"alternate","source":"acme/widgets"},
+      {"name":"retired","source":"acme/widgets"},
+      {"name":"foreign","source":"other/source"}
+    ]'
+
+    run_sync
+    assert_success
+    run grep -F 'skills remove' "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills remove retired --global -y" ]]
+}
+
+@test "skill sync: wildcard source without vendor cache fails without caching partial convergence" {
+    write_registry "acme/widgets"
+    write_env "cursor"
+
+    run_sync
+    assert_failure
+    assert_output_contains "Cannot reconcile retired skills for acme/widgets"
+    assert_output_contains "cleanup failed"
+    [[ ! -f "$HOME/.local/state/dotfiles/skill-external-hash" ]]
 }
 
 # ─── install fan-out (one call per repo, repeated --agent) ─────────────
@@ -524,6 +564,9 @@ EOF
     # the CLI pull whatever is now in the repo.
     write_registry "acme/widgets"  # --skill '*'
     write_env "claude-code"
+    local skill="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets/skills/alpha"
+    mkdir -p "$skill"
+    printf '%s\n' '# alpha' > "$skill/SKILL.md"
 
     run_sync
     assert_success
@@ -603,7 +646,9 @@ EOF
 
 @test "skill sync: harnesses: uses ap name → cli-id mapping (claude → claude-code)" {
     write_registry "acme/widgets" "    harnesses:
-      - claude"
+      - claude
+    skills:
+      - alpha"
     write_env "claude-code codex cursor"
 
     run_sync
