@@ -2,6 +2,10 @@
 
 Dotfiles repo for a vim-centric, macOS-oriented terminal environment: zsh, git, and harness-agnostic agent configuration. The root `CLAUDE.md` imports this file.
 
+## Writing style
+
+Always write in Simplified Technical English (ASD-STE100) when writing or discussing the work at hand: one instruction per sentence, short sentences (≤20 words procedural, ≤25 descriptive), active voice, present tense, approved-word and single-meaning discipline, no synonyms, no gerund chains. This governs prose in messages, docs, comments, commits, and specs — not code identifiers or quoted material.
+
 ## Ground first
 
 This is a router, not the full reference. Before changing agent config, harness wiring, `ap`, registries, chezmoi, sync, or local-LLM plumbing, query `repo:dotfiles:wiki` with `ground`, `read_markdown`, or `list_tree`.
