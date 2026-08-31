@@ -28,7 +28,7 @@ A skipped or failed final apply does not abort the run — upgraded packages are
 
 Two consequences worth internalizing:
 
-- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/18.0.5` at `.sync:57-58`, `codex-cli 0.146.0` at `.sync:70-71` — and covers only those two harnesses. The literal and the install pin must move together or `dots sync` fails its post-install harness check (`omp version mismatch: expected omp/18.0.5, got <old version>`). For **OMP** this is now enforced automatically — see the gotcha below; **codex-cli** has no such manager, so its literal is still bumped by hand alongside the manifest.
+- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/18.0.5` at `.sync:57-58`, `codex-cli 0.151.0` at `.sync:70-71` — and covers only those two harnesses. The literal and the install pin must move together or `dots sync` fails its post-install harness check (`omp version mismatch: expected omp/18.0.5, got <old version>`). For **OMP** this is now enforced automatically — see the gotcha below; **codex-cli** has no such manager, so its literal is still bumped by hand alongside the manifest.
 - **The final apply is the only step that refreshes most live config**, so anything the package phase reads from a live file must be applied during *prepare* instead. That is exactly the trap in [[mise-manifest-precedence]], and the reason `apply_mise_manifest` exists in the prepare branch.
 
 ### Gotcha: the OMP guard and installer pin move in one PR
@@ -38,7 +38,9 @@ The OMP verify literal in `.sync` and the actual install pin `OMP_PIN` in `packa
 - A `custom.regex` manager over `.sync` (`renovate.json5:54-66`) rewrites **both** the `!= "omp/<v>"` and `expected omp/<v>` occurrences from the `can1357/oh-my-pi` github-tags datasource, with `extractVersionTemplate` stripping the `v` prefix so the guard's bare `18.0.5` matches the `v18.0.5` tag. A separate manager (`renovate.json5:44-53`) bumps `OMP_PIN` itself.
 - A `groupName: oh-my-pi` packageRule (`renovate.json5:81-85`) bundles both updates into a **single PR**. This grouping is load-bearing, not tidiness: split across two PRs, each would fail the `sync OMP verification follows the managed package pin` tripwire in `tests/packages.bats` on its own, and automerge would deadlock because neither PR can go green alone.
 
-`tests/sync-orchestrator.bats` derives its expected OMP version from `OMP_PIN` in `setup_file`, so a bump needs zero test edits — only the deliberate `omp/17.1.3` fail-closed mismatch fixture stays literal (#754). codex-cli has no equivalent renovate manager; its guard is a manual edit until one is added.
+`tests/sync-orchestrator.bats` derives its expected OMP version from `OMP_PIN` in `setup_file`, so a bump needs zero test edits — only the deliberate `omp/17.1.3` fail-closed mismatch fixture stays literal (#754).
+
+Codex differs: its single source of truth is the mise manifest pin (`"aqua:openai/codex" = "rust-v<v>"` in `chezmoi/dot_config/mise/config.toml`, bumped by renovate's built-in `mise` manager). The `.sync` codex guard literal is still a manual edit — there is no `custom.regex` manager for it, because a `.sync`-only guard bump would deadlock against the manifest bump exactly like the OMP grouping warns. Instead the drift is caught, not auto-fixed: `setup_file` derives `CODEX_VER` from that manifest pin (mirroring `OMP_VER`), so a manifest bump without a matching `.sync` guard bump reds the codex harness check in CI. This closed the #818 hole, where the manifest went to `rust-v0.151.0` but the guard stayed `codex-cli 0.146.0` and CI passed anyway because the mock was hardcoded — `dots sync` then broke on every machine. The guard is now bumped by hand alongside the manifest, but CI no longer lets the two silently drift.
 
 ## Package installation (`packages/sync.sh`)
 
