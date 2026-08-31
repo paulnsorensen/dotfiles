@@ -1,6 +1,6 @@
 # Dev Environment
 
-The local developer-experience tooling that isn't agent config: git diff/merge tooling, pre-commit hooks, Claude marketplace plugins, and the macOS hotkey daemon.
+The local developer-experience tooling that isn't agent config: git diff/merge tooling, pre-commit hooks, and Claude marketplace plugins.
 
 ## Git tooling
 
@@ -28,10 +28,6 @@ Distinct from the `agents/` registry system (see [[../architecture/agents-dir]])
 - **A local/unpublished plugin's bundled MCP must run from its source, not PyPI.** When a `path:` entry points at an out-of-repo clone (e.g. `milknado@milknado` → `~/Dev/milknado`), the plugin's own `.mcp.json` cannot use a bare `uvx <pkg>` — that resolves against PyPI and fails to connect for an unpublished package (`× <pkg> was not found in the package registry`). Point it at the clone: `uvx --from <abs-path> <script>` (or `uv run --project <abs-path> <script>`). Verify with `claude mcp list` (look for `✗ Failed to connect`). Tradeoff: the absolute path is machine-specific, so the marketplace isn't portable until the package is published — then revert to bare `uvx <pkg>`.
 - **A local marketplace must be registered with the CLI, not just jq-written into settings.** `claude/plugins/sync.sh`'s `sync_local_marketplaces` keeps `extraKnownMarketplaces` in the **live `~/.claude/settings.json`** (the committed `claude/settings.json` is retired — see `claude/.sync`; the `CLAUDE_SETTINGS_FILE` env var is the test seam for that hardcoded path). But writing that JSON entry is **not sufficient** — `claude plugin install <name>@<mp>` can only resolve a marketplace the CLI has actually fetched/registered. The entry won't show in `claude plugin marketplace list` and has no `~/.claude/plugins/marketplaces/<name>/` cache dir until you run `claude plugin marketplace add <abs-path>` (idempotent: fetches when missing, "already on disk" no-op when present). So sync runs `marketplace add` per auto-managed local marketplace (`mp_name == plugin_name`); without it a freshly-added local plugin like milknado fails to install on first sync, and the failure is swallowed by the install step's `2>/dev/null`. Symptom: sync prints `Installing <plugin>... failed` but the plugin never lands in `claude plugin list`.
 
-## skhd (macOS hotkey daemon)
+## skhd (removed 2026-08)
 
-Installed from the `koekeishiya/formulae` brew tap, started as a background service by `skhd/.sync`. Config at `skhd/skhdrc` symlinks to `~/.skhdrc`; yabai was removed, so the file is an intentionally empty skeleton.
-
-- **Reload:** `skr` (alias) or `skhd --restart-service` after editing.
-- **First-time:** grant Accessibility to `skhd` in System Settings → Privacy & Security after `dots sync`.
-- Syntax: <https://github.com/koekeishiya/skhd> — hotkeys run any shell command via `$SHELL -c`, support modal/chord modes, app-specific bindings, and key synthesis (`-k`).
+skhd is removed from this repo and this machine. The `skhdrc` was an empty skeleton after the yabai removal, so nothing used it. A stray `asmvik/formulae` tap also shipped `skhd`, which made the bare name ambiguous and broke the `dots up` brew-upgrade leg. The removal deleted `skhd/`, `zsh/skhd.zsh`, the `packages.yaml` entry, and the `koekeishiya/formulae` tap entry. If skhd returns, install it with the fully-qualified name `koekeishiya/formulae/skhd` and grant Accessibility access manually.

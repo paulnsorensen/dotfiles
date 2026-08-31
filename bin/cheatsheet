@@ -130,7 +130,6 @@ print_cheatsheet() {
     row "loc"                 "tokei (code stats)"
     row "uuidg"               "UUID -> clipboard"
     row "c"                   "code -r . (VS Code)"
-    row "skr"                 "restart skhd hotkeys"
 
     hdr "Cargo / Rust"
     row "cn"                  "cargo nextest run"

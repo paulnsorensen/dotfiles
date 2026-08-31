@@ -11,7 +11,6 @@
 
 packages:
   - tinted-theming/tinted: { source: tap }
-  - koekeishiya/formulae: { source: tap }     # skhd
 
   # Core CLI not owned by the mise manifest
   - tree
@@ -32,7 +31,6 @@ packages:
   # macOS-only
   - trash: { platform: mac }                  # Move to Trash (safer rm)
   - terminal-notifier: { platform: mac }      # macOS notifications from terminal
-  - skhd: { platform: mac }                   # Hotkey daemon (from koekeishiya/formulae tap)
   - emdash: { source: cask, platform: mac }   # Desktop UI for running coding agents in parallel
   - cursor: { source: cask, platform: mac, greedy: false } # Cursor — AI code editor; self-updates in-app
   - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)

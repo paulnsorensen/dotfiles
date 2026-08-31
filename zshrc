@@ -22,7 +22,6 @@ source "$DOTFILES_DIR/zsh/tmux.zsh"      # sesh shell-prompt session picker (Alt
 source "$DOTFILES_DIR/zsh/prompt.zsh"
 
 source "$DOTFILES_DIR/zsh/claude.zsh"
-source "$DOTFILES_DIR/zsh/skhd.zsh"
 
 [[ -t 1 ]] && clear
 

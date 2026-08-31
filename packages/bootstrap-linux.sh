@@ -53,7 +53,7 @@ get_bootstrap_brew_pkgs() {
 }
 
 # Homebrew taps (source: tap). Harmless to tap all on Linux even when a tap
-# only provides mac-only formulae (e.g. koekeishiya/formulae → skhd).
+# only provides mac-only formulae.
 get_bootstrap_taps() {
     yq -r '.packages[] | select(kind == "map") | to_entries[0] | select(.value.source == "tap") | .key' "$PACKAGES_FILE"
 }
