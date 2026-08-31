@@ -33,6 +33,9 @@
 sources:
   paulnsorensen/easy-cheese:
     description: Portable agent skills toolkit — mold, cook, press, age, cure, melt, plus cheez-* tilth-backed code intelligence
+    # Soak channel: easy-cheese lands all PRs on `next` and fast-forwards
+    # main only after dogfooding here. Drop the pin to fall back to stable.
+    pin: next
   paulnsorensen/skillz-that-grillz:
     description: Other useful skills
     harnesses: [claude]

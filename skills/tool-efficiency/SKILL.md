@@ -4,98 +4,44 @@ model: opus
 effort: high
 description: >
   Audit how a tool, command, or MCP server is actually used across coding-agent
-  sessions and produce calibrated recommendations — tool-vs-task fit, error
-  forensics, fix recommendations, permission friction, MCP health, and token
-  economics. Use when the user says "tool efficiency", "am I using X
-  efficiently", "audit tool usage", "why does X keep failing", "how do I fix
-  this error", "what should I change", "permission friction", "is this MCP worth
-  it", "tool error rate", "fix recommendations", or invokes /tool-efficiency. Do
-  NOT use for auditing a skill or agent definition (that is /skill-improver) or
-  for one-off interactive log queries (that is /session-analytics).
-allowed-tools: Read, Agent, Bash
+  sessions and produce calibrated fix recommendations. Use for /tool-efficiency,
+  "am I using X efficiently", or "why does X keep failing".
+allowed-tools: Read, Bash
 ---
 
 # tool-efficiency
 
-Audit how a tool / command / MCP server behaves in practice across sessions,
-then produce calibrated recommendations. Judgment skill — it scores findings
-with the shared confidence × severity model, it does not just report numbers.
+Judgment skill: score findings with the shared confidence × severity model,
+don't just report numbers. Target: a tool name, a Bash command prefix, or an
+MCP server; `%` scans everything. Ask if none given.
 
-## Input
+Run `<skill-dir>/scripts/analyze.sh <domain> <target> [harness]` for each
+relevant domain — pick by target:
 
-A target: a tool name (`Bash`, `Read`, `Edit`), a command prefix (`git`,
-`cargo`), or an MCP server (`serena`, `tilth`). If none is given, ask.
-Optionally accept a harness filter (`all`, `claude`, `codex`, or `omp`).
+- MCP server → `mcp-health` + `error-forensics` + `fix-recommendations`
+- Bash command → `tool-usage` + `permission-friction` + `error-forensics`
+- "how do I fix X" / high error rate → `error-forensics` + `fix-recommendations`
+- broad audit → `all` (also runs `token-economics`)
 
-## Owned domains
+Then calibrate each finding with
+`../session-analytics/references/calibration.md` — confidence
+(`<certain>`/`<speculative>`/`<don't know>`) × severity
+(blocker/high/medium/low); `<don't know>` never surfaces.
 
-This skill owns six analytics packs under `references/`:
-
-| Domain | Pack | What it surfaces |
-|--------|------|------------------|
-| tool-usage | `tool-usage.md` | Frequency, project spread, tool-vs-task fit |
-| error-forensics | `error-forensics.md` | Error rate vs baseline, recurring failures |
-| fix-recommendations | `fix-recommendations.md` | Turns errors/friction into concrete fixes (allowlist adds, tool swaps, MCP repair/retire) — advisory only |
-| permission-friction | `permission-friction.md` | Denials, allowlist gaps, compound-command friction |
-| mcp-health | `mcp-health.md` | Per-MCP call volume, error rate, idle servers |
-| token-economics | `token-economics.md` | Token/cost where logged — degrades to "insufficient signal" |
-
-## Protocol
-
-1. **Ingest** — `python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py`
-   (1-hour TTL, fast if cached). Best-effort; skip the analytics if it fails.
-2. **Fan out** — spawn **one parallel `duckdb-expert` per relevant domain**
-   (one-domain-per-spawn; never a single all-domains spawn):
-
-   ```
-   spawn duckdb-expert "Run analytics pack tool-efficiency/references/<domain>.md for target {TARGET}. harness={HARNESS}"
-   ```
-
-   Pick the domains that fit the target: MCP targets → `mcp-health` +
-   `error-forensics` + `fix-recommendations`; a Bash command → `tool-usage` +
-   `permission-friction` + `error-forensics`; "how do I fix X" / high error rate
-   → `error-forensics` + `fix-recommendations`; broad audit → all six.
-3. **Collect** the ~2 KB digests.
-4. **Calibrate** each finding with the shared model in
-   `../session-analytics/references/calibration.md` — confidence
-   (`<certain>`/`<speculative>`/`<don't know>`) × severity
-   (blocker/high/medium/low). `<don't know>` never surfaces.
-5. **Report** (below).
-
-## Report
+Report format:
 
 ```
 ## Tool Efficiency Report: {TARGET}
-
-### Summary
-- Target: <tool/command/MCP>  ·  Harness: <filter>
-- Domains run: <list>
-- Findings: N surfaced, N below the bar
-
-### Recommendations (surfaced)
-| # | Severity | Confidence | Domain | Issue | Recommendation |
-|---|----------|------------|--------|-------|----------------|
-
-### Detail
-For each surfaced finding: What / Why (with the metric that evidences it) / How.
-
-### Below the Bar
-N findings were `<don't know>` or insufficient-signal (not shown).
+### Summary        — target · harness · domains run · N surfaced / N below bar
+### Recommendations — | # | Severity | Confidence | Domain | Issue | Recommendation |
+### Detail         — per finding: What / Why (the metric) / How
+### Below the Bar  — count only
 ```
 
-## What this skill never does
+Never: a 0-100 score; surfacing `<don't know>`; fabricating on empty domains;
+applying fixes (recommend only — hand to /cure or /harness-doctor's
+settings-prune mode).
 
-- Score with a 0-100 number — it uses the shared qualitative model.
-- Surface `<don't know>` findings or fabricate when a domain returns empty.
-- Run more than one domain per `duckdb-expert` spawn.
-- Modify tools, settings, or allowlists — it recommends; the human decides. The
-  `fix-recommendations` domain names the fix (allowlist entry, tool swap, MCP
-  retirement); it never applies it. Hand the surfaced fixes to `/cure` or
-  `/settings-clean` if the user wants them applied.
-
-## Gotchas
-
-- `token-economics` is `<don't know>` on most logs (no token fields) — say
-  "insufficient signal", do not invent a cost.
-- Permission denials and stop-hooks are Claude-dominant; on Codex/OMP treat
-  their absence as missing signal, not as zero friction.
+Gotchas: `token-economics` usually lacks token fields — "insufficient
+signal", never invent a cost. Denials/stop-hooks are Claude-dominant — on
+codex/omp their absence is missing signal, not zero friction.

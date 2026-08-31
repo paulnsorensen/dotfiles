@@ -8,7 +8,8 @@ description: >
   modules, verifying agent output, or auditing design, or when the user says
   "review this module", "verify the design", "is this the right architecture",
   "check this code against the spec", "what does this module actually do", or
-  invokes /xray.
+  invokes /xray. Do NOT use for a standalone "trace this concept" or "blast
+  radius" question with no verification session — that is /steel-thread.
 argument-hint: <module path, spec path, PR number, symbol, or concept>
 allowed-tools: Read, Write, Glob, Grep, Bash(sg:*), Bash(git diff:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(gh:*), Agent, mcp__tilth__tilth_search, mcp__tilth__tilth_read, mcp__tilth__tilth_list, mcp__tilth__tilth_deps
 ---
@@ -22,28 +23,17 @@ Leaves first, confidence bubbles up, evidence backs every verdict.
 
 ## Preflight: Code-intelligence tools
 
-Before any analysis, orient with the code-intelligence tools your harness
-exposes. Use whatever LSP- and MCP-backed tooling is available — symbol and
+Orient with the code-intelligence tools your harness exposes — symbol and
 reference lookup, AST-aware search/read, dependency/blast-radius queries —
-rather than reaching for `grep` first. No specific tool is mandatory; pick
-the best available for each lookup.
-
-In this repo that means the `mcp__tilth__*` tools are the default for
-name-shaped or text-shaped lookups — they outline definitions, callers, and
-usages in one call. No separate index build is needed; tilth lazily parses on
-first use. Where an LSP is available, prefer it for type-grounded questions
-(symbol resolution, call hierarchy, reference sets).
-
-Use these instead of `Grep` / `Glob` / `Read` whenever you need to:
-
-- Find where a symbol is defined or called → `tilth_search(query, kind="symbol"|"callers")`.
-- Pull a file (or a slice) with smart outlining → `tilth_read(paths=[...])`.
-- List files by pattern → `tilth_list(patterns=[...])`.
-- Check a symbol's or file's blast radius → `tilth_deps(path=...)`.
-
-For semantic-meaning queries ("the auth middleware", "the thing that validates
-orders"), lead with a semantic MCP search if one is available; otherwise fall
-back to `tilth_search(kind="any")` over the concept's vocabulary.
+rather than reaching for `grep` first. No specific tool is mandatory. In this
+repo the `mcp__tilth__*` tools are the default: `tilth_search` for symbols,
+callers, or text; `tilth_read` for outlined file reads; `tilth_list` for
+pattern listing; `tilth_deps` for blast radius. No index build needed — tilth
+lazily parses on first use. Prefer an LSP, where available, for type-grounded
+questions (symbol resolution, call hierarchy, reference sets). For
+semantic-meaning queries ("the auth middleware"), lead with a semantic MCP
+search if available; otherwise `tilth_search(kind="any")` over the concept's
+vocabulary.
 
 ## Session Setup
 
@@ -54,9 +44,9 @@ Determine the target type from $ARGUMENTS:
 - **Module path** (e.g. `domains/orders/`, `bin/`): analyze this directory
 - **Spec path** (e.g. `.claude/specs/xray.md`): find the module it describes, analyze that
 - **PR number** (e.g. `#42`): get changed files via `gh pr diff`, analyze those modules
-- **Symbol** (e.g. `validateOrder`, `auth.middleware.requireUser`): resolve it
-  with the available symbol search (LSP symbol lookup or `tilth_search`), then
-  trace its steel threads (see below)
+- **Symbol** (e.g. `validateOrder`): resolve it with the available symbol
+  search (LSP symbol lookup or `tilth_search`), then trace its steel threads
+  (see Steel Threads)
 - **Concept** (e.g. "auth flow"): resolve it with a semantic MCP search if one
   is available, otherwise `tilth_search(kind="any")` over the concept's vocabulary
 
@@ -74,21 +64,21 @@ Look for `.context/xrays/{slug}-graph.json`. If found:
    - Add note: "File changed since last verification"
    - Keep `red` nodes as `red` (already flagged)
    - Keep `unverified` nodes as `unverified`
-5. Display resume summary:
-
-   ```
-   Resumed xray session: {slug}
-   Nodes: {verified} verified, {stale} stale (files changed), {remaining} remaining
-   ```
+5. Display the resume summary (see `references/session-formats.md`)
 
 If no existing session, create `.context/xrays/` if needed.
 
-### Read agent references
+### Read references
 
-Read these references (they're loaded on demand, not upfront):
+Read these on demand, not upfront:
 
 - `references/graph-schema.json` — graph contract
 - `references/sliced-bread-checks.md` — architecture rules
+- `references/session-formats.md` — exact display templates for every block
+  named below (dashboard, triage prompt, breadcrumb, findings, session notes,
+  wrap-up)
+- `references/steel-threads.md` — the thread-tracing pipeline (read when a
+  Steel Threads trigger fires)
 - Agent references are read by the agents themselves
 
 ## Graph Building
@@ -103,87 +93,24 @@ The scout builds the semantic dependency graph using ecosystem dependency tools
 enriches with LSP, computes node roles, and writes the graph JSON + Mermaid
 visualization.
 
-After the scout returns, read the graph JSON and display the opening dashboard:
+After the scout returns, read the graph JSON and display the opening dashboard
+(templates in `references/session-formats.md`):
 
-### 1. Layered Role Dashboard
-
-```
-━━━ {slug} ━━━  {N} nodes, {M} edges, {K} cycles
-
-ENTRY POINTS (nothing imports these)
-  controller.ts          fanIn:0  fanOut:3  [ ]
-
-HUBS (high traffic)
-  service.ts             fanIn:4  fanOut:5  [ ]
-
-DOMAIN (business logic)
-  pricing.ts             fanIn:2  fanOut:2  [ ]
-
-UTILITIES (widely imported, few deps)
-  types.ts               fanIn:6  fanOut:1  [·]
-
-LEAVES (import nothing internal)
-  validator.ts           fanIn:1  fanOut:0  [ ]
-
-[·] = auto-green candidate
-Cycles: {list or "none"}
-```
-
-Group nodes by their `role` field from the graph. Within each group, sort by
-`fanIn` descending. Show `[·]` marker for auto-green candidates (see Triage).
-
-### 1.5. Barrel Entry Points
-
-Display the barrel file's public exports from `meta.barrelExports` as the
-module's contract:
-
-```
-Barrel: {meta.barrelFile}
-Entry points:
-  {barrelExports[].name}({signature or "—"})
-  ...
-```
-
-If no barrel file found, display:
-
-```
-⚠ No barrel/index file found
-```
-
-### 2. API Surface Summary
-
-List all nodes where `visibility: "public"`, grouped by file:
-
-```
-Exports:
-  {module-a}: {symbolName1}, {symbolName2}, {symbolName3}
-  {module-b}: {symbolName1}
-```
-
-### 3. Upfront Health Scan
-
-Spawn a de-slop scan on the whole target directory. Display results in the
-dashboard:
-
-```
-Health: {N} de-slop findings across {M} files
-  {top 3 findings with file:line}
-```
-
-### 4. Encapsulation Summary
-
-From scout's visibility tagging (counts derived from graph nodes):
-
-```
-Encapsulation: {N} public exports, {M} private internals
-```
-
-Issue counts are added here after analyst reports are generated during the DFS loop.
+1. **Layered role dashboard** — nodes grouped by `role`, sorted by `fanIn`
+   descending within each group, with auto-green candidates marked
+2. **Barrel entry points** — the module's public contract from
+   `meta.barrelExports`; warn if no barrel/index file exists
+3. **API surface summary** — all `visibility: "public"` nodes, grouped by file
+4. **Upfront health scan** — spawn a de-slop scan on the whole target
+   directory; show the finding count and top 3 findings
+5. **Encapsulation summary** — public-export vs private-internal counts from
+   the scout's visibility tagging; issue counts are appended later as analyst
+   reports arrive
 
 ## Triage
 
-After displaying the dashboard, classify every node into a triage level before
-starting the DFS loop. This determines how deeply each node gets analyzed.
+After the dashboard, classify every node into a triage level before starting
+the DFS loop. This determines how deeply each node gets analyzed.
 
 ### Classification rules
 
@@ -210,22 +137,10 @@ starting the DFS loop. This determines how deeply each node gets analyzed.
 
 ### Triage prompt
 
-Present the triage plan and let the user adjust:
-
-```
-Triage plan:
-  auto-green: {N} nodes ({list or "types.ts, constants.ts, ..."})
-  light:      {M} nodes ({list})
-  full:       {K} nodes ({list})
-
-  [confirm all]          Accept triage plan
-  [review individually]  Step through each classification
-  [skip triage]          Full analysis on everything
-```
-
-On `confirm all`, apply the triage levels. On `skip triage`, set all nodes to
-`triageLevel: "full"`. On `review individually`, present each node with its
-proposed level and let the user override.
+Present the triage plan (template in `references/session-formats.md`) with
+three options. On `confirm all`, apply the triage levels. On `skip triage`,
+set all nodes to `triageLevel: "full"`. On `review individually`, present each
+node with its proposed level and let the user override.
 
 ## DFS Verification Loop
 
@@ -237,19 +152,8 @@ Advance to next node without prompting.
 
 ### 1. Show position
 
-Display breadcrumb and updated layered view:
-
-```
-━━━ Verifying: {symbolName} ({filePath}) [{role}] ━━━
-Path: {leaf} → {parent} → {grandparent}
-Triage: {auto-green|light|full}
-
-  {root}  [ ]
-  ├── {child-a}  [ ]
-  │   ├── {current} ← YOU ARE HERE
-  │   └── {leaf-2}  [G]
-  └── {child-b}  [ ]
-```
+Display the breadcrumb and updated layered view (template in
+`references/session-formats.md`).
 
 ### 2. Run analysis
 
@@ -264,44 +168,24 @@ The analyst orchestrates spec-finder and researcher sub-agents (full only),
 analyzes contracts, callers, test shape, and architecture, then returns a
 structured node report.
 
-**auto-green nodes**: The analyst returns immediately with evidence. Display:
-
-```
-━━━ {symbolName} — Auto-Green ━━━
-{evidence line}
-```
-
-Auto-confirm as green. Advance to next node without prompting.
+**auto-green nodes**: The analyst returns immediately with evidence. Display
+the auto-green block, auto-confirm as green, and advance without prompting.
 
 ### 3. Run verification
 
-After the analyst returns (light and full only), spawn **xray-verifier** (sonnet) with:
-
-- The node data
-- Test files discovered by the analyst
-- Spec criteria from the analyst's findings
-- Module name
-
-The verifier runs tests via whey-drainer and de-slop scan in parallel,
-then returns a verification report.
+After the analyst returns (light and full only), spawn **xray-verifier**
+(sonnet) with the node data, test files discovered by the analyst, spec
+criteria from the analyst's findings, and the module name. The verifier runs
+tests via whey-drainer and de-slop scan in parallel, then returns a
+verification report.
 
 ### 4. Present findings
 
-Synthesize the analyst and verifier reports into a concise presentation:
-
-```
-━━━ {symbolName} — Analysis ━━━
-
-Role: {role}  fanIn:{N}  fanOut:{M}
-Contracts: {public API summary}
-Spec: {alignment summary or "no spec found"}
-Tests: {pass}/{total}, {behavioral_coverage}% behavioral coverage
-Architecture: {clean or violations}
-De-slop: {finding count}
-Build-vs-buy: {flags or "none"}
-
-Proposed: {GREEN|YELLOW|RED} — {evidence summary}
-```
+Synthesize the analyst and verifier reports into the node findings
+presentation (template in `references/session-formats.md`): role and fan
+counts, contracts, spec alignment, test results and behavioral coverage,
+architecture, de-slop count, build-vs-buy flags, and the proposed
+GREEN/YELLOW/RED verdict with evidence summary.
 
 ### 5. Get user verdict
 
@@ -330,12 +214,10 @@ Present the proposed traffic light and wait for user input:
   Update node with override status and note. Advance.
 - **note: text**: Append to node's notes array. Stay on current node.
 - **skip**: Leave as unverified, advance to next node.
-- **drill symbol**: Expand the node to function-level:
-  - Use LSP `documentSymbol` to list all symbols in the file
-  - Use LSP `callHierarchy` (outgoing) for the drilled symbol
-  - Create child nodes in the graph
-  - Enter sub-DFS on the expanded children
-  - On completion, collapse back and return to the parent node
+- **drill symbol**: Expand the node to function-level: list the file's symbols
+  via LSP `documentSymbol`, follow LSP `callHierarchy` (outgoing) for the
+  drilled symbol, create child nodes in the graph, and enter sub-DFS on the
+  expanded children. On completion, collapse back to the parent node.
 - **drill symbol depth=N**: Same as drill but follow outgoing calls N levels deep.
 - **drill symbol callers**: Use LSP `callHierarchy` (incoming) to show who calls
   this symbol. Display as a flat list, don't enter sub-DFS.
@@ -352,188 +234,35 @@ After each verdict, redisplay the layered role view with updated traffic lights.
 
 ## Navigation
 
-These commands work at any point in the session:
+These commands work at any point in the session, alongside the verdict-menu
+commands above (`drill`, `map`, `thread`, `up`):
 
 | Command | Action |
 |---------|--------|
-| `up` | Bubble to parent node |
-| `down` / `drill <symbol>` | Expand function-level detail |
-| `drill <symbol> depth=N` | N levels of outgoing call hierarchy |
-| `drill <symbol> callers` | Incoming call hierarchy |
 | `next` | Skip to next sibling |
 | `back` | Return to previous node |
 | `tree` | Redisplay layered role dashboard with current traffic lights |
-| `map` | Regenerate full Mermaid graph with current traffic lights |
-| `map <node>` | Ego-centric view: node ± 1 level of dependencies |
-| `thread <symbol>` | Trace steel threads for a symbol (see Steel Threads) |
 | `notes` | Show all accumulated notes across nodes |
 | `status` | Show progress: N verified, M remaining, K stale |
 
 ## Steel Threads
 
 A **steel thread** is an end-to-end execution flow: entry point → call chain →
-leaf. When the user asks "what depends on this", "blast radius of changing X",
-"what flows pass through this", or runs `thread <symbol>` inside the DFS loop,
-run this pipeline. Borrowed from the `/thread` skill but adapted to write
-findings into the xray session graph.
+leaf. Run the pipeline in `references/steel-threads.md` (resolve → first-hop
+dependents → blast radius → thread assembly → architectural weight, with
+output format, session persistence, and gotchas) when:
 
-### When to invoke automatically
-
-- The user runs `thread <symbol>` at the verdict prompt.
+- The user runs `thread <symbol>` at the verdict prompt, or asks "what depends
+  on this", "blast radius of changing X", "what flows pass through this".
 - A node is about to be marked **red** or **yellow** because of architectural
   concerns — trace its threads first so the verdict carries blast-radius
   evidence.
 - A hub node (`role: "hub"` with `fanIn > 5`) is up for analysis — its
   threads are the reason it's a hub.
 
-### Pipeline
-
-Run in order. Stop early if the user only wants a quick answer; the full
-pipeline is for review-grade output.
-
-Use the available LSP- and MCP-backed code-intelligence tools at each step —
-symbol/reference lookup, call hierarchy, dependency/blast-radius queries,
-semantic search. No specific tool is mandatory; the examples below name the
-tilth tools this repo exposes, but any equivalent works.
-
-#### 1. Resolve the target
-
-Resolve the symbol to a concrete definition (file, line, kind) with the
-available symbol search — LSP symbol lookup, a semantic MCP search, or
-`tilth_search(query=<symbol>, kind="symbol")`. Pick the definition whose
-`name` or qualified name matches. If several plausible matches exist, list
-them and ask the user to disambiguate — guessing wastes the rest of the
-pipeline.
-
-If the target is a file path, skip the search and use it directly as the
-changed file for the dependency/blast-radius steps below.
-
-#### 2. First-hop dependents (parallel)
-
-Find who touches the target directly and whether it's tested:
-
-- Direct callers → LSP call hierarchy (incoming) or `tilth_search(kind="callers")`.
-- Importers of the file → `tilth_deps(path=<file>)` or an import/reference query.
-- Tests covering it → `tilth_search` for the symbol name in test files.
-
-Cheap and precise — run them in a single batched turn.
-
-#### 3. Blast radius
-
-Walk the dependency closure outward from the target's file with
-`tilth_deps(path=<file>)` (or an equivalent impact-radius query). Keep the
-depth shallow first; widen only if the first hop returns a handful of nodes —
-cost grows fast.
-
-#### 4. Steel threads (the answer)
-
-Follow the call chain from each first-hop caller outward to its entry point
-(nothing calls it) and inward to the leaves, layer by layer, using call
-hierarchy / caller lookups. Each entry → … → target → … → leaf path is one
-steel thread. If a precomputed flow/impact tool is available, prefer it —
-it already assembles these chains. Rank threads by how critical the entry
-point is when presenting.
-
-#### 5. Architectural weight (optional)
-
-Only when the symbol looks critical or the impact set is large, judge whether
-it is:
-
-- A **hub** — high fan-in/fan-out; blast radius is larger than the raw call
-  graph suggests. Derive from the session graph's `role`/`fanIn`/`fanOut` or
-  a hub-node query if one is available.
-- A **bridge** — a chokepoint between otherwise-disconnected areas. Breaking
-  it splits the graph.
-
-Skip both for obviously leaf-shaped symbols.
-
-#### 6. Fallback for fuzzy targets
-
-If step 1 finds nothing and the user gave a description ("the thing that
-validates orders") rather than a name, broaden the search: run a semantic MCP
-search over the concept vocabulary if available, else `tilth_search(kind="any")`,
-and traverse outward from the best-matching node.
-
-### Output
-
-Drop sections that came back empty:
-
-```
-Target: <qualified_name>  (<file>:<line>, <kind>)
-
-Direct callers (N):
-  <name>  <file>:<line>
-  ...
-
-Importers (N):
-  <file>
-  ...
-
-Tests covering target (N):
-  <test_name>  <file>:<line>
-  ...
-
-Steel threads (M flows, ranked by criticality):
-  [<criticality>] <flow_name>  (<entry_kind>)
-    <entry> → ... → <target> → ... → <leaf>
-  ...
-
-Blast radius (depth 2): N functions, M files
-  Hottest impacted nodes:
-    <name>  <file>  (degree: D)
-    ...
-
-Architectural notes:
-  - <hub/bridge findings, only if surfaced>
-```
-
-Keep each section to ~5 rows; the user can ask for more.
-
-### Persist into the session
-
-After the steel-thread pipeline runs, append a `threads` block to the
-current node in the graph JSON:
-
-```json
-"threads": {
-  "directCallers": [...],
-  "flows": [{"name": ..., "criticality": ..., "chain": [...]}],
-  "blastRadius": {"depth": 2, "functions": N, "files": M},
-  "hub": true|false,
-  "bridge": true|false,
-  "capturedAt": "<timestamp>"
-}
-```
-
-This lets later nodes inherit blast-radius context without re-running the
-pipeline.
-
-### Decision rules
-
-- One target per `thread` invocation. If the user names two symbols, ask
-  which to trace first.
-- Always include the file path next to symbol names — bare names are
-  useless in repos with collisions.
-- If step 4 surfaces zero threads, say so explicitly — the symbol isn't on a
-  reachable execution path (pure helper, dead code, or framework-magic
-  dispatch the call graph couldn't follow). Suggest the user check dead-code
-  detection if appropriate.
-- If the impact set is huge (>50 functions at depth 2), flag it as a
-  warning before dumping — the user probably wants to narrow the change.
-
-### Steel-thread gotchas
-
-- If the user edits the target mid-pipeline, re-resolve it and re-run the
-  caller/dependency lookups before continuing — code-intelligence results go
-  stale as soon as the file changes.
-- Call-graph tools skip dynamic dispatch (decorators, registries, plugin
-  loaders). Symbols invoked only via framework magic will show no callers
-  even when they're on a real execution path — note this in the output.
-- Bare symbol names are ambiguous in repos with shadowed identifiers; prefer
-  a qualified name or file:line when querying and when presenting.
-- File-keyed impact queries (e.g. `tilth_deps` on a file) surface every
-  dependent of the *whole file* — changing one function in a busy file over-
-  reports. Call this out so the user doesn't over-trust the list.
+Findings persist as a `threads` block on the current node, so later nodes
+inherit blast-radius context without re-running the pipeline. For standalone
+concept tracing outside an xray session, route to `/steel-thread` instead.
 
 ## Traffic Light System
 
@@ -582,49 +311,15 @@ When ANY child is red:
 
 After each verdict or on `done`, save:
 
-**Graph JSON** (`.context/xrays/{slug}-graph.json`):
+- **Graph JSON** (`.context/xrays/{slug}-graph.json`): updated node statuses,
+  notes, evidence, lastVerified timestamps; current git HEAD SHA in
+  `meta.gitSha`; updated `meta.lastVerified`
+- **Mermaid graph** (`.context/xrays/{slug}-graph.md`): updated traffic light
+  classDefs on verified nodes
+- **Session notes** (`.context/xrays/{slug}.md`): progress counts, per-node
+  notes, session log — template in `references/session-formats.md`
 
-- Updated node statuses, notes, evidence, lastVerified timestamps
-- Current git HEAD SHA in meta.gitSha
-- Updated meta.lastVerified timestamp
-
-**Mermaid graph** (`.context/xrays/{slug}-graph.md`):
-
-- Updated traffic light classDefs on verified nodes
-
-**Session notes** (`.context/xrays/{slug}.md`):
-
-```markdown
----
-slug: {slug}
-target: {targetPath}
-created: {date}
-lastUpdated: {date}
-gitSha: {sha}
-progress: {verified}/{total} nodes
----
-
-# XRay: {slug}
-
-## Progress
-- Verified: {N} ({green} green, {yellow} yellow, {red} red)
-- Auto-green: {K}
-- Remaining: {M}
-- Stale: {J}
-
-## Node Notes
-### {node-1 symbolName} [{status}]
-{accumulated notes}
-
-### {node-2 symbolName} [{status}]
-{accumulated notes}
-
-## Session Log
-- {timestamp}: Started xray on {target}
-- {timestamp}: {node} marked {color} — {reason}
-```
-
-### Session Limits
+### Session limits
 
 After ~40 tool calls or 15 nodes analyzed, suggest saving progress and resuming
 in a fresh session to avoid context degradation. Interactive sessions accumulate
@@ -635,18 +330,8 @@ context faster than batch operations.
 When the user says `done` or all nodes are verified:
 
 1. Save final state
-2. Display summary:
-
-   ```
-   ━━━ XRay Complete: {slug} ━━━
-   Green: {N}  Yellow: {M}  Red: {K}  Unverified: {J}
-
-   Key findings:
-   - {top finding 1}
-   - {top finding 2}
-   - {top finding 3}
-   ```
-
+2. Display the wrap-up summary (template in `references/session-formats.md`):
+   traffic-light totals plus the top 3 findings
 3. Offer next steps:
    - "Run `/press` on red nodes to write missing tests?"
    - "Create GitHub issues for red/yellow findings?"
@@ -655,6 +340,8 @@ When the user says `done` or all nodes are verified:
 ## Out of Scope
 
 - Not `/age` — that reviews diffs between commits. This reviews design.
+- Not `/steel-thread` — that is standalone concept tracing with no session;
+  xray's thread pipeline writes into the session graph.
 - Not `/de-slop` standalone — de-slop runs as part of xray verification.
 - Not `/test` — test execution is delegated to whey-drainer within xray.
 - Not a CI gate — this is interactive, human-in-the-loop verification.

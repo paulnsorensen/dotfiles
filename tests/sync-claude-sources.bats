@@ -188,10 +188,15 @@ sources:
   owner/ext-repo:
     pin: v2.0.0
 YAML
-    # git shim that succeeds (fetch/checkout are no-ops against the cache).
+    # git shim that succeeds; FETCH_HEAD resolves to a new sha, so the
+    # remote moved relative to the cached checkout.
     cat > "$TEST_HOME/fake-git/git" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GIT_CALLS"
+case "$*" in
+    *"rev-parse FETCH_HEAD"*) echo bbbbbbbb ;;
+    *"rev-parse HEAD"*) echo aaaaaaaa ;;
+esac
 exit 0
 SH
     run_assembly
@@ -199,14 +204,24 @@ SH
     grep -q "fetch --depth 1 origin v2.0.0" "$GIT_CALLS"
     grep -q "checkout --detach FETCH_HEAD" "$GIT_CALLS"
     [ "$(cat "$CACHE/.dotfiles-pin")" = "v2.0.0" ]
-    # Same pin again: marker short-circuits — no further network.
+    # Same pin again: branch pins move, so every sync re-fetches — but when
+    # the remote sha matches the cached checkout there is no re-checkout churn.
+    cat > "$TEST_HOME/fake-git/git" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GIT_CALLS"
+case "$*" in
+    *"rev-parse"*) echo bbbbbbbb ;;
+esac
+exit 0
+SH
     : > "$GIT_CALLS"
     run_assembly
     [ "$status" -eq 0 ]
-    [ ! -s "$GIT_CALLS" ]
+    grep -q "fetch --depth 1 origin v2.0.0" "$GIT_CALLS"
+    ! grep -q "checkout --detach" "$GIT_CALLS"
 }
 
-@test "assembly: a pin that cannot be fetched fails loud" {
+@test "assembly: a changed pin that cannot be fetched fails loud" {
     cat > "$ROOT/skills/_registry.yaml" <<'YAML'
 sources:
   owner/ext-repo:
@@ -214,7 +229,20 @@ sources:
 YAML
     run_assembly
     [ "$status" -ne 0 ]
-    [[ "$output" == *"cannot check out pin"* ]]
+    [[ "$output" == *"cannot fetch changed pin"* ]]
+}
+
+@test "assembly: an unchanged pin that cannot be fetched falls back to cache" {
+    cat > "$ROOT/skills/_registry.yaml" <<'YAML'
+sources:
+  owner/ext-repo:
+    pin: v9.9.9
+YAML
+    echo "v9.9.9" > "$CACHE/.dotfiles-pin"
+    run_assembly
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"using cached checkout"* ]]
+    [ -f "$SRC/dot_claude/exact_skills/exact_ext-skill/SKILL.md" ]
 }
 
 @test "assembly: deselecting a skill removes it from source state (deletion propagates)" {

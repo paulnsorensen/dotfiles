@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
 # Guard Claude tier→effort policy and workload-specific Codex model routes.
 #
-# Canonical agents and selected skills retain the Claude haiku→low,
-# sonnet→medium, opus→high mapping; xhigh/max remain manual-only. Codex models
-# are workload-specific, and OMP thinking is locked separately in omp-agents.bats.
+# Canonical agents and selected workflow skills retain the Claude haiku→low,
+# sonnet→medium, opus→high mapping; inline user-invoked skills inherit the
+# session model. xhigh/max remain manual-only. Codex models are workload-specific.
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 REGISTRY="$DOTFILES_DIR/agents/registry.yaml"
@@ -18,6 +18,10 @@ expected_effort() {
         opus) echo high ;;
         *) echo "UNMAPPED" ;;
     esac
+}
+
+is_inline_skill() {
+    [[ "$(echo "$1" | yq -r '.disable-model-invocation // false')" == "true" ]]
 }
 
 expected_agent_codex_model() {
@@ -73,11 +77,12 @@ expected_agent_codex_model() {
     done < <(yq -r '.agents | keys | .[]' "$REGISTRY")
 }
 
-@test "every selected skill has an explicit model and effort" {
+@test "every selected non-inline skill has an explicit model and effort" {
     local s fm model effort
     while IFS= read -r s; do
         [[ -z "$s" ]] && continue
         fm="$(awk '/^---/{c++; if(c==2)exit; if(c==1)next} c==1{print}' "$DOTFILES_DIR/skills/$s/SKILL.md")"
+        is_inline_skill "$fm" && continue
         model="$(echo "$fm" | yq -r '.model // ""')"
         effort="$(echo "$fm" | yq -r '.effort // ""')"
         [[ -n "$model" ]] || { echo "skill '$s' has no model:" >&2; return 1; }
@@ -85,11 +90,12 @@ expected_agent_codex_model() {
     done < <(yq -r '.claude.skills[]' "$CLAUDE_YAML")
 }
 
-@test "every selected skill's effort matches the tier→effort mapping" {
+@test "every selected non-inline skill's effort matches the tier→effort mapping" {
     local s fm model effort want
     while IFS= read -r s; do
         [[ -z "$s" ]] && continue
         fm="$(awk '/^---/{c++; if(c==2)exit; if(c==1)next} c==1{print}' "$DOTFILES_DIR/skills/$s/SKILL.md")"
+        is_inline_skill "$fm" && continue
         model="$(echo "$fm" | yq -r '.model // ""')"
         effort="$(echo "$fm" | yq -r '.effort // ""')"
         want="$(expected_effort "$model")"

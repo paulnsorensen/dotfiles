@@ -19,7 +19,7 @@ packages = ["agent_profile"]
 dev = [
     "pytest>=9.1.1",
     "pytest-xdist>=3.6.1",
-    "tiktoken==0.13.0",
+    "tiktoken==0.14.0",
 ]
 [tool.pytest.ini_options]
 testpaths = ["tests"]

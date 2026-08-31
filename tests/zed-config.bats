@@ -18,7 +18,7 @@ strip_comments() {
     grep -v '^\s*//' "$1"
 }
 
-@test "zed-settings: renders with vim, fonts, format-on-save off, and agent_servers registry entries" {
+@test "zed-settings: renders with vim, fonts, format-on-save on, LSP, MCP context servers, and agent_servers registry entries" {
     local cfg="$TEST_HOME/cz.toml"
     cat > "$cfg" <<TOML
 sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
@@ -45,7 +45,29 @@ TOML
     [ "$(jq -r '.agent_servers | has("OMP")' "$stripped")" = "true" ]
     [ "$(jq -r '.agent_servers | has("claude-acp")' "$stripped")" = "true" ]
     [ "$(jq -r '.agent_servers["claude-acp"].type' "$stripped")" = "registry" ]
-    [ "$(jq -r '.format_on_save' "$stripped")" = "off" ]
+    [ "$(jq -r '.format_on_save' "$stripped")" = "on" ]
+    [ "$(jq -r '.formatter' "$stripped")" = "language_server" ]
+    # Telemetry opt-out folded in from live drift.
+    [ "$(jq -r '.telemetry.metrics' "$stripped")" = "false" ]
+    [ "$(jq -r '.telemetry.anthropic_retention' "$stripped")" = "false" ]
+    # Built-in LSP: per-language formatting, ruff for Python, clippy for Rust; shell/markdown opt out.
+    [ "$(jq -r '.languages.Python.formatter.external.command' "$stripped")" = "ruff" ]
+    [ "$(jq -r '.languages.Rust.format_on_save' "$stripped")" = "on" ]
+    [ "$(jq -r '.languages["Shell Script"].format_on_save' "$stripped")" = "off" ]
+    [ "$(jq -r '.languages.Markdown.format_on_save' "$stripped")" = "off" ]
+    [ "$(jq -r '.lsp["rust-analyzer"].initialization_options.check.command' "$stripped")" = "clippy" ]
+    # MCP context servers wire the full roster to Zed's native Agent Panel.
+    [ "$(jq -r '.context_servers | has("tilth")' "$stripped")" = "true" ]
+    [ "$(jq -r '.context_servers | has("hallouminate")' "$stripped")" = "true" ]
+    [ "$(jq -r '.context_servers | has("milknado")' "$stripped")" = "true" ]
+    [ "$(jq -r '.context_servers.tilth.source' "$stripped")" = "custom" ]
+    # Secret-bearing servers reuse the shared broker sockets — empty env, no envFile.
+    [ "$(jq -r '.context_servers.context7.command' "$stripped")" = "/usr/local/libexec/dotfiles/agent-secret-proxy" ]
+    [ "$(jq -c '.context_servers.tavily.args' "$stripped")" = '["--socket","/var/run/dotfiles-agent-secrets/tavily.sock"]' ]
+    [ "$(jq -c '.context_servers.context7.env' "$stripped")" = '{}' ]
+    [ "$(jq -r '.context_servers.tavily | has("envFile")' "$stripped")" = "false" ]
+    # OMP ACP model pin preserved (folded from live drift).
+    [ "$(jq -r '.agent_servers.OMP.default_config_options.model' "$stripped")" = "openai-codex/gpt-5.6-sol" ]
     [ "$(jq -r '.project_panel.dock' "$stripped")" = "left" ]
     [ "$(jq -r '.relative_line_numbers' "$stripped")" = "enabled" ]
     [ "$(jq -r '.vertical_scroll_margin' "$stripped")" = "5" ]

@@ -106,14 +106,14 @@ Do not build that adapter unless native-looking Todo behavior becomes a requirem
 
 `tests/omp-config.bats` protects the deployment contract:
 
-- Fresh renders assert `compaction.strategy: shake`, `keepRecentTokens: 20000`, no `thresholdTokens`, `task.enableLsp: true`, and `retry.modelFallback: false` (`tests/omp-config.bats:34-80`).
+- Fresh renders assert `compaction.methodOrder: [snapcompact, remote, soft]` (v18 retired `compaction.strategy`; `has("strategy")` must be `false` — see [[../adr/codex-omp-harness-upgrade-001]]), `composer.shape: box`, `keepRecentTokens: 20000`, no `thresholdTokens`, `task.enableLsp: true`, and `retry.modelFallback: false` (`tests/omp-config.bats:34-80`).
 - Drift repair starts with both settings true and verifies they are reset (`tests/omp-config.bats:82-102`).
 - The retired-key regression feeds the prior managed document, deletes `compaction.thresholdTokens` through wholesale rendering, and keeps genuinely unknown keys fail-closed (`tests/omp-config.bats:103-129`).
 - The managed-file test proves chezmoi deploys the four remaining extension modules and system prompt while `.chezmoiremove` owns removal of `no-fork-all.ts` (`tests/omp-config.bats:307-332`).
 - The real apply regression seeds a pre-existing retired extension, applies into an explicit temporary destination with scripts excluded, and verifies deletion plus survival of all four modules (`tests/omp-config.bats:333-359`).
 - The extension-contract test executes every remaining extension handler test (`tests/omp-config.bats:361-368`).
 
-Root `dots sync` verifies exact live outputs `omp/17.2.5` and `codex-cli 0.146.0` after package convergence, applies the final chezmoi state under those schemas, and repeats both exact probes after a successful final apply. A failed final apply skips post-apply probes; a failed post-apply probe reports `harness-versions` while retaining upgraded binaries. The focused ordering, mismatch, absence, command-failure, and upgraded-state-retention tests live at `tests/sync-orchestrator.bats:180-548`.
+Root `dots sync` verifies exact live outputs — currently `omp/18.0.5` (`OMP_PIN` in `packages/sync.sh`, renovate-locked in lockstep with the `.sync` guard literal; see [[../operations/sync-and-chezmoi]]) and `codex-cli 0.151.0` — after package convergence, applies the final chezmoi state under those schemas, and repeats both exact probes after a successful final apply. A failed final apply skips post-apply probes; a failed post-apply probe reports `harness-versions` while retaining upgraded binaries. The focused ordering, mismatch, absence, command-failure, and upgraded-state-retention tests live at `tests/sync-orchestrator.bats:180-548`.
 
 `tests/extensions/milknado-todo-guard.test.mjs:32-62` separately pins exact-command blocking, warning contents, the handled action, negative inputs, the continue action, and absence of spurious notifications. The focused OMP config suite and all remaining extension handler tests pass in the corrective gate.
 

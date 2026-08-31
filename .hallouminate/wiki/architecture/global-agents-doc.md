@@ -21,6 +21,21 @@ Same review deduped RTK to one canonical doc (`agents/RTK.md`): the repo-root
 zsh hook auto-rewrites commands, so per-command tables carried no signal). If
 `rtk init` is ever re-run it will re-add the block — remove it again.
 
+### tilth search v2 is forced through the preamble (2026-08-29)
+
+`agents/mcp/registry.yaml` runs tilth with `--search-surface both`, so
+`tilth_search_v2` has been *listed* since 2026-08-17 — but /session-analytics
+over 14 days found zero Claude/Codex/Cursor invocations (594 Claude v1 calls,
+0 v2); only oh-my-pi picked v2 unprompted (18 calls, one day). Listing a trial
+tool does not make the model choose it. The preamble's "Search in batch" step
+now names `tilth_search_v2` as the default with v1 as explicit fallback, so the
+force applies to Claude and Codex only (the harnesses that load the preamble).
+Re-assess after ~1 week with `tool_uses` on `mcp__tilth__tilth_search_v2`
+(Claude) / `tilth_search_v2` (Codex); omp logs it truncated as
+`mcp__tilth_search_v`. Baseline to beat: 57% of Claude v1 calls returned
+"0 matches" and then chained into Bash grep. Switching the registry to
+`--search-surface v2` would force all harnesses and drop the v1 fallback.
+
 ## Facts moved out of the agents doc (still true, just not standing context)
 
 - **Agent permission modes**: `acceptEdits` and `bypassPermissions` only
@@ -107,7 +122,7 @@ The complete research report is retained in the durable cheese corpus.[^10]
 [^9]: Du et al., “Context Length Alone Hurts LLM Performance Despite Perfect Retrieval.” <https://arxiv.org/abs/2510.05381>.
 [^10]: `~/.local/share/cheese/paulnsorensen-dotfiles/research/effective-global-instruction-stack/effective-global-instruction-stack.md`
 
-_Source: effective-global-instruction-stack research · Updated: 2026-07-28 · Supersedes: treating mechanical next-boundary ceilings as ideal target sizes_
+*Source: effective-global-instruction-stack research · Updated: 2026-07-28 · Supersedes: treating mechanical next-boundary ceilings as ideal target sizes*
 
 Sliced Bread has a harness-neutral source at `agents/reference/sliced-bread.md` and a normative live path at `~/.agents/reference/sliced-bread.md`. The agents-doc installer deploys that copy; Claude/Codex instructions and the OMP addendum name the same path.[^shared-reference]
 

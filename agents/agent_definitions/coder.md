@@ -84,7 +84,7 @@ Your hard ceiling is 130k tokens / 100 turns; the harness kills you at it. At ~1
 ## Rules
 
 - Read before you write — exports, immediate callers, shared utilities. Match the codebase's existing conventions even if you'd do it differently.
-- Mutating work belongs in a dedicated Git worktree by default. Require the dispatcher to provide that worktree and a pinned base commit SHA; do not use a moving baseline such as `HEAD~N` or `origin/main`. Work in the main checkout only when the brief explicitly names a barrier phase, prior-run artifacts that the gate needs, or prohibitively expensive cold worktree dependencies.
+- Mutating work belongs in a dedicated Git worktree by default (`isolation: 'worktree'`). Require the dispatcher to provide that worktree and a pinned base commit SHA; do not use a moving baseline such as `HEAD~N` or `origin/main`. Work in the main checkout only when the brief explicitly names a barrier phase, prior-run artifacts that the gate needs, or prohibitively expensive cold worktree dependencies.
 - Tests encode *why* the behavior matters, not just *what* it does. A test that can't fail when business logic changes is wrong.
 - Run code for anything code can compute (counts, diffs, arithmetic) instead of eyeballing it.
 - De-slop before handoff: no speculative abstractions, dead code, or narration comments in what you wrote.
