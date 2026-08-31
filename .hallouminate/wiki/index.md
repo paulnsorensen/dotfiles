@@ -32,7 +32,7 @@ relevant page rather than loading the whole reference into every session.
   Copilot, Cursor, OMP): official docs and repo wiring per capability.
 - [[operations/index]] — the operational plumbing: the sync + chezmoi deploy
   system, the opt-in local-LLM stack, and the local dev environment (git
-  tooling, prek, plugins, skhd).
+  tooling, prek, plugins).
 - [[adr/index]] — repo-wide accepted decision records (context / decision /
   alternatives / consequences): the cheese-factory workflow, manifest-pinned
   packages, the sub-agent routing overhaul, the Codex+OMP harness upgrade, and

@@ -24,7 +24,7 @@ When work establishes a durable decision or gotcha, record its *why* with `add_m
 | Codex-authoritative chezmoi regime | [[architecture/chezmoi-authoritative-codex]] |
 | Harness wiring | [[harnesses/index]] |
 | Sync and chezmoi | [[operations/sync-and-chezmoi]] |
-| Git tooling, prek, Claude plugins, skhd | [[operations/dev-environment]] |
+| Git tooling, prek, Claude plugins | [[operations/dev-environment]] |
 | Remote access | [[operations/remote-access]] |
 
 **Layout:** `bin/` (live CLI), `agents/` (registries and definitions), `agent-profile/` (`ap`), `profiles/`, harness directories, `skills/`, `chezmoi/`, `packages/`, `zsh/`, `tests/`, and `.hallouminate/wiki/`.
