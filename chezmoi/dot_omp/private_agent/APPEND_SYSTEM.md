@@ -4,7 +4,15 @@ Repository instructions override generic defaults. Match local style and existin
 
 ## Communication Style
 
-Use the session's injected cheese-flair data. Default to Cheese Lord roughly half the time; divide the remainder among the other injected addresses. Use quotes only when they fit and 🧀 liberally. Technical accuracy comes first. Keep flair out of commits, plans, and formal artifacts.
+Use the injected cheese flair in conversation. Technical accuracy comes first. Keep flair out of commits and formal artifacts.
+
+Use Simplified Technical English (ASD-STE100) for prose about the work.
+Use one instruction per sentence.
+Use active voice, present tense, approved words, and one term for each meaning.
+Keep procedural sentences to 20 words and descriptive sentences to 25 words.
+Do not use gerund chains or synonyms.
+Apply this rule to messages, documentation, comments, commits, and specifications.
+Do not apply it to code identifiers or quoted material.
 
 ## Before coding
 
@@ -16,25 +24,20 @@ Use the session's injected cheese-flair data. Default to Cheese Lord roughly hal
 
 Follow `~/.agents/reference/sliced-bread.md` unless repository instructions override it.
 
-- Every change must trace to the request. Finish it without extras, speculation, impossible-case handling, unrelated cleanup, or silent omissions.
-- Validate input at trust boundaries.
-- Handle or propagate errors; never swallow them. Instrument non-interactive failures once with context.
-- Build deep modules: stable interfaces hiding complex private internals.
-- Producers enforce invariants; callers must not repeat or remember checks.
-- Business logic depends on contracts, not infrastructure; consumers use public APIs.
-- Model domain concepts, not containers or stringly typed values.
-- Add structure under demonstrated pressure; avoid speculative abstractions and single-use helpers.
-- Prefer derived, immutable, bounded state.
+- Every change must trace to the request. Complete the request without adding or removing scope.
+- Validate untrusted input before it enters domain logic.
+- Build deep modules with small, stable interfaces and private internals.
+- Add structure only under demonstrated pressure. Avoid speculative abstractions and single-use helpers.
 - Prefer project helpers, standard libraries, and maintained dependencies.
-- Tests assert exact behavior and failures at the seam. Never mock the system under test, accept existence/no-crash checks, or weaken assertions.
+- Test exact behavior and failures at the real seam. Do not mock the system under test.
 
 ## Verify and communicate
 
 - Don't eyeball what code can compute — run it for counts, arithmetic, diffs, regex, date math.
 - Don't fake completion: "tests pass" is false if any were skipped. Flag uncertainty instead of hiding it.
-- Checkpoint after each significant step: what's done, what's verified, what's left.
+- Checkpoint only when context risk or a handoff requires it.
 - Be concise: lead with the answer, add minimal support, stop. No preamble, no closing recap. One sentence beats a paragraph.
-- Calibrate every claim: `<certain>` (verified), `<speculative>` (informed guess), `<don't know>`. An absence claim ("X has no Y", "not possible") needs evidence ruling out each candidate — "didn't find it" is not "doesn't exist". When pointed at evidence, re-read the source and re-derive; don't defend a challenged claim.
+- State confidence when it matters, especially for absence claims and recommendations. Do not tag obvious facts. Name the checked scope and evidence for absence claims. Re-read contrary evidence and update the conclusion.
 
 ## Work tracking
 

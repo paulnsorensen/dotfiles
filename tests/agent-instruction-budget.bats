@@ -43,6 +43,35 @@ EOF
     assert_output_contains "cl100k_base="
 }
 
+@test "Claude/Codex and OMP system prompts share the writing standard" {
+    local source rule
+    for source in \
+        "$REAL_DOTFILES_DIR/agents/preamble.md" \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"; do
+        for rule in \
+            'Simplified Technical English (ASD-STE100)' \
+            'one instruction per sentence' \
+            'procedural sentences to 20 words' \
+            'comments, commits, and specifications'; do
+            run grep -Fq "$rule" "$source"
+            assert_success
+        done
+    done
+}
+
+@test "OMP prompt keeps the current concise confidence and checkpoint rules" {
+    local append="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
+
+    run grep -Fq 'Checkpoint after each significant step' "$append"
+    assert_failure
+    run grep -Fq "Calibrate every claim: \`<certain>\`" "$append"
+    assert_failure
+    run grep -Fq 'Checkpoint only when context risk or a handoff requires it.' "$append"
+    assert_success
+    run grep -Fq 'Do not tag obvious facts.' "$append"
+    assert_success
+}
+
 @test "family budget passes an under-cap skill" {
     mkdir -p "$TEST_HOME/famroot/skills/tiny"
     echo "one short skill body" > "$TEST_HOME/famroot/skills/tiny/SKILL.md"

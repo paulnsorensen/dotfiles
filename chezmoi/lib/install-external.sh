@@ -189,6 +189,57 @@ skill_flags() {
     fi
 }
 
+# Resolve the source's declarative skill set. Explicit lists are complete. A
+# wildcard source uses the checkout refreshed by the chezmoi assembly step.
+source_skill_names() {
+    local repo="$1" explicit skills_path cache root d
+    explicit=$(yq -r ".sources.\"$repo\".skills // [] | .[]" "$REGISTRY_FILE")
+    if [[ -n "$explicit" ]]; then
+        printf '%s\n' "$explicit"
+        return 0
+    fi
+
+    skills_path=$(yq -r ".sources.\"$repo\".skills_path // \"skills\"" "$REGISTRY_FILE")
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/claude-skill-sources/${repo//\//__}"
+    if [[ ! -d "$cache" ]]; then
+        echo -e "    ${YELLOW}Cannot reconcile retired skills for $repo: vendor cache not found at $cache${NC}" >&2
+        return 1
+    fi
+    for root in "$cache/$skills_path" "$cache/.agents/skills"; do
+        [[ -d "$root" ]] || continue
+        for d in "$root"/*/; do
+            [[ -f "$d/SKILL.md" ]] && basename "$d"
+        done
+    done
+}
+
+remove_stale_source_skills() {
+    local repo="$1" expected installed stale_output name
+    expected=$(source_skill_names "$repo") || return 1
+    if ! installed=$(npx --yes skills list --global --json 2>&1); then
+        echo -e "    ${RED}Could not list installed skills before reconciling $repo${NC}" >&2
+        return 1
+    fi
+    if ! stale_output=$(jq -r --arg source "$repo" --arg expected "$expected" '
+        ($expected | split("\n") | map(select(length > 0))) as $keep
+        | .[]
+        | .name as $name
+        | select(.source == $source and ($keep | index($name)) == null)
+        | $name
+    ' <<<"$installed"); then
+        echo -e "    ${RED}Could not parse installed skills while reconciling $repo${NC}" >&2
+        return 1
+    fi
+    [[ -n "$stale_output" ]] || return 0
+
+    local -a stale=()
+    while IFS= read -r name; do
+        [[ -n "$name" ]] && stale+=("$name")
+    done <<<"$stale_output"
+    npx --yes skills remove "${stale[@]}" --global -y >/dev/null
+    echo -e "    ${GREEN}Removed retired skills:${NC} ${stale[*]}"
+}
+
 # Install every skill from one source repo into all harnesses in a single
 # `npx skills add` (one shallow clone, repeated --agent for the harnesses).
 # If the registry entry has a `harnesses:` list (ap harness names, e.g. [claude]),
@@ -265,7 +316,12 @@ install_source() {
 
     local output
     if output=$(GIT_TERMINAL_PROMPT=0 npx "${args[@]}" 2>&1); then
-        echo -e "    ${GREEN}✓${NC} $repo → $repo_supported"
+        if remove_stale_source_skills "$repo"; then
+            echo -e "    ${GREEN}✓${NC} $repo → $repo_supported"
+        else
+            echo -e "    ${RED}✗${NC} $repo → cleanup failed"
+            echo x >> "$FAIL_COUNTER"
+        fi
     else
         echo -e "    ${RED}✗${NC} $repo → $repo_supported"
         echo x >> "$FAIL_COUNTER"
