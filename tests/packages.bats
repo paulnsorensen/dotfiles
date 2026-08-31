@@ -1549,6 +1549,39 @@ YAML
     ! grep -q "tool upgrade" "$UV_LOG"
 }
 
+@test "a float: true uv tool upgrades on every plain sync" {
+    rm -f "$MOCK_BIN/uv"
+    cat > "$MOCK_BIN/uv" << 'MOCKUV'
+#!/usr/bin/env bash
+echo "uv $*" >> "$UV_LOG"
+if [[ "$1" == "tool" && "$2" == "list" ]]; then
+    echo "milknado v0.2.1"
+fi
+MOCKUV
+    chmod +x "$MOCK_BIN/uv"
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main", float: true }
+YAML
+
+    run_sync
+    assert_success
+    grep -q "tool upgrade milknado" "$UV_LOG"
+    ! grep -q "tool install" "$UV_LOG"
+}
+
+@test "float: true on a pinned uv entry fails loud" {
+    write_mock_uv
+    cat > "$PACKAGES_FILE" << 'YAML'
+packages:
+  - ruff: { source: uv, version: "1.2.3", float: true }
+YAML
+
+    run bash "$SYNC_SCRIPT"
+    [[ $status -ne 0 ]]
+    ! grep -q "tool install" "$UV_LOG"
+}
+
 @test "a pinned gh-extension installs at its exact tag via --pin, unconditionally" {
     cat > "$PACKAGES_FILE" << 'YAML'
 packages:

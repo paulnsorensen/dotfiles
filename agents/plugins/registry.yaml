@@ -65,9 +65,13 @@
 plugins:
   # milknado: Mikado execution engine
   # Payload: 1 MCP + 3 skills (harvest, load-roadmap, milknado-config)
-  # NOTE: uvx milknado-mcp requires milknado to be published to PyPI.
-  # Until then, rendered configs will reference the portable form but
-  # the MCP will not launch without a local uvx-resolvable install.
+  # branch: main — latest skills/agents chosen over launcher robustness
+  # (decided 2026-08-31). The plugin's own .mcp.json launcher
+  # (`uvx --from git+...@main`) fetches GitHub on each cold MCP start and
+  # can fail or run slow; switching to `stable` would pin that launch to
+  # the PyPI release. The fe profile and Zed sidestep the fetch: they
+  # launch the `milknado-mcp` binary that packages.yaml installs with
+  # float: true, so every dots sync upgrades it.
   milknado:
     git: https://github.com/paulnsorensen/milknado
     branch: main
