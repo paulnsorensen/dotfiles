@@ -477,5 +477,36 @@ harden it, but neither is required to unblock.
 **Detection**: `[ -e /tmp/.git ]` while the install-guard tests fail on a
 `/tmp/pytest-of-paul/...` cwd.
 
+## Known drift pattern: second npm global prefix shadows a fork nightly
+
+**Symptom**: the tilth MCP silently absent from sessions (no `mcp__tilth__*`
+tools) while `tilth` on the command line seems fine. First hit 2026-08-25:
+`which tilth` → `/opt/homebrew/bin/tilth`, a symlink into **homebrew node's**
+npm global tree (`/opt/homebrew/lib/node_modules/@paulnsorensen/tilth-nightly`).
+That copy's cached platform binary predated `--search-surface`, so the MCP
+launch (`tilth --mcp --edit --search-surface both`, `claude.yaml`) died with
+`error: unexpected argument '--search-surface' found` on every session start.
+
+**Why it happens**: two node installs (homebrew `node` + mise `node`) each have
+their own npm global prefix, and `/opt/homebrew/bin` sits ahead of the mise
+shims on PATH. `run_after_install-tilth.sh.tmpl` checks freshness with whatever
+`npm` is on PATH (mise), so it sees its own copy current and never touches the
+homebrew-prefix copy — which stays permanently stale. The package.json version
+strings can even MATCH (both `0.0.0-experimental.21.1`) while the postinstall-
+downloaded platform binaries differ, so `npm ls -g` comparison is not a valid
+freshness signal across prefixes.
+
+**Fix**: `/opt/homebrew/bin/npm rm -g @paulnsorensen/tilth-nightly`, then verify
+`which -a tilth` lists only mise paths. Reconnect MCPs (`/mcp` or new session).
+
+**Detection**: `which -a tilth` showing a non-mise path first, or the MCP log
+showing an argument-parse error. Second confirmed hit 2026-08-31:
+`/opt/homebrew/bin/hallouminate` pointed into a stale homebrew-prefix
+`hallouminate-nightly` (installed Jul 27). Both nightly installers
+(`run_after_install-{tilth,hallouminate}.sh.tmpl`) now warn when a PATH copy of
+the bin resolves into a `node_modules` tree outside the active npm prefix.
+Before that guard, the shadow warnings covered only upstream-npm and
+`~/.cargo/bin` copies — same family as the yq bootstrap-shadow pattern above.
+
 See [[agent-profile]] for the `ap` render/install model and [[../harnesses/claude]]
 for where each Claude config surface lives.
