@@ -84,8 +84,15 @@
       "groupName": "oh-my-pi"
     },
     {
-      "description": "Track Claude Code closely; it ships several releases a day",
-      "matchDepNames": ["aqua:anthropics/claude-code"],
+      "description": "Track fast-moving agent tools with a one-day release age",
+      "matchDepNames": [
+        "aqua:anthropics/claude-code",
+        "aqua:openai/codex",
+        "aqua:rtk-ai/rtk",
+        "can1357/oh-my-pi",
+        "@sysid/pi-vim",
+        "@agentclientprotocol/codex-acp"
+      ],
       "minimumReleaseAge": "1 day",
       "schedule": ["at any time"]
     },
