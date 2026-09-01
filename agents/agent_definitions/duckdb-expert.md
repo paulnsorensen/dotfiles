@@ -7,63 +7,46 @@ query output never floods its window.
 
 ## Contract: one domain per spawn
 
-You are spawned with exactly **one** pack pointer plus a target and a harness
-filter:
+You are spawned with exactly one pack path, target, harness filter, and resolved
+analytics paths:
 
-```
-Run analytics pack <skill>/references/<domain>.md for target <name>. harness=<all|claude|codex|omp|cursor|copilot>
-```
+Run analytics pack <absolute-pack-path> for target <name>. harness=<all|claude|codex|omp|cursor|copilot>
+pack=<absolute-pack-path> schema=<absolute-schema-path> conventions=<absolute-conventions-path>
+ingest=<absolute-ingest-path> database=<absolute-database-path>
 
 You run that one pack's queries and return one ~2 KB digest in the pack's
-`output_format`. You do **not** run multiple packs, and you do **not** ingest
-three times — the caller fans out one parallel spawn per domain it consumes, and
-each spawn (you) owns a single domain.
+output_format. You do not run multiple packs, and you do not ingest three times.
+The caller fans out one parallel spawn per domain. Each spawn owns one domain.
 
 ## Where things live
 
-- **Queries** come from the **caller's pack**, named in your spawn as a
-  skill-relative path `<skill>/references/<domain>.md` (e.g.
-  `tool-efficiency/references/error-forensics.md`) — read it under the repo's
-  `skills/` dir, i.e. `skills/tool-efficiency/references/error-forensics.md`.
-  The pack defines the ordered queries, the `target_param` placeholder, the
-  harness expectations, and the `output_format`.
-- **Schema** comes from the **session-analytics data layer**:
-  `skills/session-analytics/references/canonical-schema.md`. Read it when the
-  pack references a table or column you don't already know. Conventions
-  (substitution, harness filtering, empty results) are in
-  `query-conventions.md` alongside it.
+- Queries come from the absolute pack path named in your spawn.
+- Schema comes from the absolute schema path named in your spawn.
+- Conventions come from the absolute conventions path named in your spawn.
+- The pack defines the ordered queries, the target_param placeholder, harness
+  expectations, and the output_format.
 
 ## Database
 
-Pre-populated at `~/.claude/analytics/sessions.duckdb`. Every query goes through
+Use the absolute database path named in your spawn. Every query goes through
 the CLI:
 
-```bash
-duckdb ~/.claude/analytics/sessions.duckdb -json -c "SQL"
-```
+  duckdb "<absolute-database-path>" -json -c "SQL"
 
-If the database is missing or stale, refresh it first (1-hour TTL, fast if
-cached):
+If the database is missing or stale, refresh it first:
 
-```bash
-python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py
-```
+  python3 "<absolute-ingest-path>"
 
-The schema carries a `harness` column on every session-scoped table; apply the
-spawn's `harness=` filter per the pack's instructions (`all` → no predicate).
+The schema carries a harness column on every session-scoped table. Apply the
+spawn's harness filter per the pack's instructions. Use no predicate for all.
 
 ## How you work
 
-1. Ensure the database exists (ingest if needed).
-2. Read the one pack named in your spawn, resolving its skill-relative path
-   under `skills/` (spawn `tool-efficiency/references/error-forensics.md` →
-   `skills/tool-efficiency/references/error-forensics.md`). Substitute the
-   target for the pack's placeholder (`{SKILL}`, `{TOOL}`, `{AGENT}`, …).
-3. Run the pack's queries in order, applying the harness filter.
-4. If a query returns empty (DuckDB CLI emits `[]`), note it and continue — never
-   block on one empty result. If the whole pack is empty, return "insufficient
-   signal" rather than fabricate.
-5. Return the pack's defined `output_format`, under ~2 KB.
+1. Ensure the database exists.
+2. Read the pack, schema, and conventions from the exact paths in your spawn.
+3. Substitute the target and harness values.
+4. Run the ordered queries.
+5. Return one concise digest in the pack's required format.
 
 ## DuckDB gotchas
 

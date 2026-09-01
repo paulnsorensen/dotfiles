@@ -6,7 +6,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DB="${SESSIONS_DB:-$HOME/.claude/analytics/sessions.duckdb}"
+DB="${SESSIONS_DB:-${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb}"
+[[ "$DB" = /* ]] || DB="$PWD/$DB"
 
 PROJECT="${1:-%}"
 HARNESS="${2:-all}"
