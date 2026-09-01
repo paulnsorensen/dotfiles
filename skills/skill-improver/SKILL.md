@@ -41,10 +41,8 @@ Read the target and any files it points at. Classify: **agent** (has
 Empirical usage data, best-effort — if the DB, logs, or ingestion are missing or
 fail, drop the Usage lens and note it in the report. Never block the audit on it.
 
-1. `python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py`
-2. Fan out **one `duckdb-expert` spawn per owned domain** (read-only) — this skill
-   owns three packs under `references/`. Each spawn: *"Run analytics pack
-   skill-improver/references/<pack>.md for target {name}. harness=all"* and returns
+1. Resolve the installed `session-analytics` skill directory from its loaded `SKILL.md` path.
+2. Fan out **one `duckdb-expert` spawn per owned domain** (read-only). Pass each spawn exact absolute paths for its pack, schema, conventions, ingest script, and database. Use: *"Run analytics pack <absolute-pack-path> for target {name}. harness=all"* and return
    one ~2 KB digest. Do not collapse to a single all-domains spawn.
 
    | Pack | Reveals |

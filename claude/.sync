@@ -2,11 +2,7 @@
 # Sync Claude Code config files to ~/.claude/
 set -euo pipefail
 
-CLAUDE_DIR="$HOME/.claude"
 SOURCE_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
-
-# Create ~/.claude if it doesn't exist
-mkdir -p "$CLAUDE_DIR"
 
 # Claude-only asset dirs — commands/, hooks/, reference/, workflows/ — deploy
 # via chezmoi exact_ dirs assembled by sync_claude_chezmoi_sources (see

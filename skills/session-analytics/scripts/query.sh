@@ -8,7 +8,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DB="${SESSIONS_DB:-$HOME/.claude/analytics/sessions.duckdb}"
+DB="${SESSIONS_DB:-${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb}"
+[[ "$DB" = /* ]] || DB="$PWD/$DB"
 
 usage() {
     sed -n '2,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'

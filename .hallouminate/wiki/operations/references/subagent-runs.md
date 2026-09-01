@@ -1,8 +1,8 @@
 # Query pack — reconstructing sub-agent runs
 
 Backing queries for [[operations/subagent-dispatch-analytics]]. Run against
-`~/.claude/analytics/sessions.duckdb` after `python3
-~/.claude/skills/session-analytics/scripts/ingest.py`.
+`${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb`.
+First run `<session-analytics-dir>/scripts/ingest.py`.
 
 ## 1. Rebuild run trees from sidechain entries
 

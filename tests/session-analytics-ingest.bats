@@ -3,7 +3,7 @@
 # Tests for skills/session-analytics/scripts/ingest.py — the multi-harness
 # adapter layer. Each harness adapter must normalize its native session format
 # into one canonical row shape carrying a `harness` column, then load the union
-# into ~/.claude/analytics/sessions.duckdb.
+# into the XDG cache session-analytics database.
 #
 # The adapters under test:
 #   - claude   : ~/.claude/projects/**/*.jsonl              (assistant/user blocks)
@@ -16,10 +16,11 @@
 load test_helper
 
 INGEST="$REAL_DOTFILES_DIR/skills/session-analytics/scripts/ingest.py"
-DB="$TEST_HOME/.claude/analytics/sessions.duckdb"
+DB="$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb"
 
 setup() {
     setup_test_env
+    export XDG_CACHE_HOME="$TEST_HOME/.cache"
     command -v duckdb  >/dev/null || skip "duckdb not installed"
     mkdir -p "$TEST_HOME/.claude/projects/proj"
     mkdir -p "$TEST_HOME/.codex/sessions/2026/05/30"
@@ -296,6 +297,35 @@ os.makedirs(os.path.join(root, 'Users', 'paul', 'Dev', 'easy-cheese'))
 got = mod._cursor_resolve_slug('Users-paul-Dev-easy-cheese', fs_root=root)
 want = os.path.join(root, 'Users', 'paul', 'Dev', 'easy-cheese')
 assert got == want, got
+print('ok')
+"
+    assert_success
+    assert_output_contains "ok"
+}
+
+@test "ingest: configured harness roots and relative database override resolve" {
+    local roots="$TEST_HOME/portable-roots"
+    mkdir -p "$roots/claude/projects/p" "$roots/codex/sessions" \
+        "$roots/cursor/projects/p/agent-transcripts"
+    touch "$roots/claude/projects/p/claude.jsonl"
+    touch "$roots/codex/sessions/codex.jsonl"
+    touch "$roots/cursor/projects/p/agent-transcripts/cursor.jsonl"
+    run env CLAUDE_CONFIG_DIR="$roots/claude" CODEX_HOME="$roots/codex" CURSOR_HOME="$roots/cursor" SESSIONS_DB=relative.db \
+        python3 -c "
+import importlib.util, os
+spec = importlib.util.spec_from_file_location('ingest', '''$INGEST''')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+assert mod.DB_PATH == os.path.abspath('relative.db')
+assert mod.claude_discover() == [
+    os.path.abspath('''$roots/claude/projects/p/claude.jsonl''')
+]
+assert mod.codex_discover() == [
+    os.path.abspath('''$roots/codex/sessions/codex.jsonl''')
+]
+assert mod.cursor_discover() == [
+    os.path.abspath('''$roots/cursor/projects/p/agent-transcripts/cursor.jsonl''')
+]
 print('ok')
 "
     assert_success
