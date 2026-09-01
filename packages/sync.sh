@@ -833,6 +833,18 @@ sync_native_harnesses() {
     migrate_harness_off_brew "omp"
     migrate_omp_off_bun
 
+    # The upstream installer refetches the ~120 MB release asset on every
+    # call, so an uncached sync paid a full download even at the pin — and a
+    # transient network failure then failed the whole sync with nothing
+    # actually wrong. Probe the live binary by absolute path: PATH may still
+    # resolve a shadow that the migrations above just deleted from disk.
+    local omp_bin="$HOME/.local/bin/omp"
+    if [[ -x "$omp_bin" ]] &&
+        [[ "$("$omp_bin" --version 2>/dev/null || true)" == "omp/${OMP_PIN#v}" ]]; then
+        echo "  + omp ($OMP_PIN)"
+        return 0
+    fi
+
     echo "  Converging omp to $OMP_PIN (native)..."
     local stage_dir="$HOME/.local/bin/.omp-stage"
     rm -rf "$stage_dir"

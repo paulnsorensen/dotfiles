@@ -1250,6 +1250,55 @@ MOCKBREW
     [[ "$(wc -l < "$SH_LOG")" -eq "$before" ]]
 }
 
+# Install a fake live omp reporting an exact version, as the real native
+# binary under ~/.local/bin does.
+write_live_omp() {
+    mkdir -p "$TEST_HOME/.local/bin"
+    printf '#!/bin/bash\nprintf "omp/%s\\n"\n' "$1" > "$TEST_HOME/.local/bin/omp"
+    chmod +x "$TEST_HOME/.local/bin/omp"
+}
+
+@test "package sync skips the omp installer when the live binary is at the pin" {
+    local pin
+    pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
+    write_live_omp "${pin#v}"
+    write_test_yaml
+
+    run_sync
+    assert_success
+    assert_output_contains "+ omp ($pin)"
+    [[ ! -f "$SH_LOG" ]] || ! grep -q -- "--binary --ref" "$SH_LOG"
+}
+
+@test "package sync reinstalls omp when the live binary drifts off the pin" {
+    write_live_omp "0.0.1"
+    write_test_yaml
+
+    run_sync
+    assert_success
+    local pin
+    pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
+    grep -q -- "--binary --ref $pin" "$SH_LOG"
+    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/${pin#v}" ]]
+}
+
+@test "a converged omp survives a failing installer" {
+    local pin
+    pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
+    write_live_omp "${pin#v}"
+    # uname Linux takes the branch that fails on the installer status alone,
+    # modelling a network failure rather than Darwin's signed-binary recheck.
+    write_mock_sh 1
+    write_mock_uname Linux
+    write_test_yaml
+
+    run_sync
+    assert_success
+    assert_output_not_contains "omp native install failed"
+    assert_output_contains "Package sync complete"
+    [[ -s "$CACHE_FILE" ]]
+}
+
 @test "vault package policy change invalidates the package cache" {
     write_test_yaml
     cat >> "$PACKAGES_FILE" <<'YAML'
