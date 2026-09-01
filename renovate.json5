@@ -84,6 +84,12 @@
       "groupName": "oh-my-pi"
     },
     {
+      "description": "Track Claude Code closely; it ships several releases a day",
+      "matchDepNames": ["aqua:anthropics/claude-code"],
+      "minimumReleaseAge": "1 day",
+      "schedule": ["at any time"]
+    },
+    {
       "description": "Require manual review for major updates",
       "matchUpdateTypes": ["major"],
       "automerge": false
