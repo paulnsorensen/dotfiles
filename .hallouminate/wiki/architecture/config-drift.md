@@ -508,5 +508,56 @@ the fork nightly resolves into its package tree outside the active npm prefix.
 Before that guard, the shadow warnings covered only upstream-npm and
 `~/.cargo/bin` copies — same family as the yq bootstrap-shadow pattern above.
 
+## Known drift pattern: Claude CLI SGR residue corrupts pasted setting values
+
+**Symptom**: `chezmoi/lib/claude-settings-authoritative.json` carries a model id
+with a literal `[1m` inside it — seen twice as `"opus[1m]"` and (blame
+`86db029c`, 2026-07-15) `"claude-fable-5[1m]"`. `modify_settings.json` composes
+that value wholesale into live `~/.claude/settings.json`, so every machine gets
+an unusable model id.
+
+**Why it happens**: the Claude CLI prints model names wrapped in SGR bold
+(`ESC[1m<name>ESC[22m`). Copying that rendered output into a source document
+drops the ESC byte but keeps the printable `[1m` tail. `od -c` confirms the
+residue is plain ASCII, not a real escape, so it survives every JSON and YAML
+round-trip untouched.
+
+**Why nothing caught it**: Claude Code falls back silently on an unknown model
+id, so nothing fails at runtime. The prek `check-claude-settings-schema` hook
+validates against `json.schemastore.org/claude-code-settings.json`, which types
+`model` as a free-form string with no enum. The corrupt value shipped for about
+six weeks before a doctor run found it.
+
+**Fix**: restore the value, then guard it. `tests/chezmoi-wiring.bats` §
+"authoritative source carries no terminal-escape residue" greps the file for
+`\x1b` or `[<digits>m`. Any source document a human pastes CLI output into is
+exposed to the same class; the other `chezmoi/.chezmoidata/*.yaml` files are
+currently clean but unguarded. Tracked in
+[#831](https://github.com/paulnsorensen/dotfiles/issues/831).
+
+**Detection**: `grep -rnE '\[[0-9]+m' chezmoi/lib/*.json chezmoi/.chezmoidata/*.yaml`.
+
+## Known drift pattern: `cd -P` canonicalization makes macOS-only test failures
+
+**Symptom**: `just check` red on `tests/chezmoi-wiring.bats` § "nightly
+installer warns when a second npm prefix shadows the bin"; CI green. The
+assertion wants `/var/folders/.../second-prefix/bin/npm ...` but the warning
+names `/private/var/folders/.../second-prefix/bin/npm ...`. First hit
+2026-09-01, one commit after 232b749b added the shadow check.
+
+**Why it happens**: the nightly installers' `resolve_path` helper ends in
+`cd -P`, which returns a fully canonicalized directory. On macOS `$TMPDIR` sits
+under `/var`, a symlink to `/private/var`, so the canonical form never equals
+the raw path a bats test built from `$TEST_HOME`. Linux has no such symlink, so
+CI never sees it. The canonicalization is correct and load-bearing — it is how
+the installer finds the real `node_modules` tree behind a bin symlink — so the
+test expectation is the wrong side.
+
+**Fix**: canonicalize the expected path in the test the same way
+(`second_real="$(cd -P "$second" && printf '%s' "$PWD")"`); it is a no-op on
+Linux. Same local-red/CI-green family as the GNU-idiom and yq bootstrap-shadow
+gotchas above: fix the expectation to match the script's documented semantics
+rather than weaken the script.
+
 See [[agent-profile]] for the `ap` render/install model and [[../harnesses/claude]]
 for where each Claude config surface lives.

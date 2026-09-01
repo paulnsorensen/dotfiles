@@ -935,7 +935,14 @@ TOML
 
     run env PATH="$npm_bin:$upstream/bin:$second/bin:/usr/bin:/bin" /bin/bash "$script"
     assert_success
-    assert_output_contains "$second/bin/npm rm -g @paulnsorensen/tilth-nightly"
+    # The installer's resolve_path uses `cd -P`, so the prefix it names is
+    # fully canonicalized. On macOS $TMPDIR lives under /var, a symlink to
+    # /private/var, so the raw $second path never appears in the warning.
+    # Canonicalize the expectation the same way the script does; on Linux
+    # (CI) this is a no-op.
+    local second_real
+    second_real="$(cd -P "$second" && printf '%s' "$PWD")"
+    assert_output_contains "$second_real/bin/npm rm -g @paulnsorensen/tilth-nightly"
     assert_output_not_contains "$upstream/bin/tilth resolves into a second npm prefix"
 }
 
@@ -1096,6 +1103,16 @@ TOML
 
 @test "claude settings.json: authoritative source is valid JSON" {
     jq -e 'type == "object"' "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json" >/dev/null
+}
+
+@test "claude settings.json: authoritative source carries no terminal-escape residue" {
+    # The Claude CLI prints model names wrapped in SGR bold (ESC[1m ... ESC[22m).
+    # Pasting that output into the seed strips the ESC byte but leaves the
+    # literal "[1m" behind, producing an unusable model id. This has shipped
+    # twice: "opus[1m]" and "claude-fable-5[1m]" (blame 86db029c). The
+    # schemastore prek check does not enum model ids, so nothing caught it.
+    ! grep -qE $'\x1b|\[[0-9]+m' \
+        "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json"
 }
 
 @test "claude settings.json: authoritative source has NO legacy SessionStart hook entry" {
