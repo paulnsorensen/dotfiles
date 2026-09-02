@@ -90,6 +90,8 @@ print_cheatsheet() {
     row "tsw"                    "fzf-pick a session and switch / attach"
     row "trl"                    "reload tmux config from the shell"
     row "mtmux <host> [sess]"    "mosh + tmux resilient remote shell"
+    row "tmux-clients"           "per-client written/discarded stats"
+    row "tmux-detach-others"     "detach every client but this one"
     row "tss"                    "tailscale status"
     row "tsip"                   "tailscale ip -4"
 

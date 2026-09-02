@@ -70,12 +70,28 @@ teardown() {
     grep -q "alias zrl=" "$aliases_file"
 }
 
-@test "mtmux enables predictive echo for remote tmux sessions" {
+@test "mtmux enables adaptive predictive echo for remote tmux sessions" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     run zsh -c "mosh() { printf '%s\n' \"\$@\"; }; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; mtmux edge main"
 
     assert_success
-    [[ "$output" == $'--predict=always\nedge\n--\ntmux\nnew\n-A\n-s\nmain' ]]
+    [[ "$output" == $'--predict=adaptive\nedge\n--\ntmux\nnew\n-A\n-s\nmain' ]]
+}
+
+@test "mtmux without host exits 2 with usage" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; mtmux"
+
+    [[ "$status" -eq 2 ]]
+    [[ "$output" == *"usage: mtmux <host> [session]"* ]]
+}
+
+@test "tmux-detach-others outside tmux exits non-zero with usage" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "unset TMUX; source '$REAL_DOTFILES_DIR/zsh/aliases.zsh'; tmux-detach-others"
+
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"usage: tmux-detach-others"* ]]
 }
 
 @test "codex profile shortcuts launch tight and scoped profiles" {
