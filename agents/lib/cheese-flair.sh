@@ -21,7 +21,7 @@ set -uo pipefail
 
 # Resolve the bank: explicit env override, then the reference beside this file.
 if [[ -z "${CHEESE_FLAIR_BANK:-}" ]]; then
-    CHEESE_FLAIR_BANK="$(cd "$(dirname "${BASH_SOURCE[0]}")/../reference" && pwd)/cheese-flair.md"
+    CHEESE_FLAIR_BANK="${BASH_SOURCE[0]%/*}/../reference/cheese-flair.md"
 fi
 
 # Fail fast in CLI context; no-op gracefully when sourced (hook context).

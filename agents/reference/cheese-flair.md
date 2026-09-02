@@ -1,10 +1,11 @@
 # Cheese Flair Bank
 
-The shared cheese-flair library uses this names and quotes bank. The
-SessionStart hook samples this file so the principal instruction file stays slim.
+The shared cheese-flair library reads its names and quotes from this
+bank. The SessionStart hook samples this file, so the principal
+instruction file stays slim.
 
 Browse this deployed file directly.
-Run `bash "<harness-root>/lib/cheese-flair.sh" sample` to sample it.
+Run `bash "$HOME/.claude/lib/cheese-flair.sh" sample` to sample it.
 
 ## Big hitters
 

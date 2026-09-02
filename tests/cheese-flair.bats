@@ -369,21 +369,23 @@ _deploy_harness_layout() {
 
 # ── hardening: lib bank location ──────────────────────────────────────
 
-@test "lib sources its bank beside itself in a copied Codex layout" {
-    local root="${TMPDIR:-/tmp}/cheese-flair-codex-only-$$"
+@test "lib prefers the bank beside itself over one under ~/.claude" {
+    local root="${TMPDIR:-/tmp}/cheese-flair-sibling-wins-$$"
     rm -rf "$root"
-    mkdir -p "$root/.codex/lib" "$root/.codex/reference"
+    mkdir -p "$root/.codex/lib" "$root/.codex/reference" "$root/home/.claude/reference"
     cp "$LIB" "$root/.codex/lib/cheese-flair.sh"
-    cp "$REAL_DOTFILES_DIR/agents/reference/cheese-flair.md" "$root/.codex/reference/"
+    printf '# Cheese Flair Bank\n\n## Quotes\n\n### Sibling\n\n- sibling-quote\n' > "$root/.codex/reference/cheese-flair.md"
+    printf '# Cheese Flair Bank\n\n## Quotes\n\n### Home\n\n- home-quote\n' > "$root/home/.claude/reference/cheese-flair.md"
 
-    run env -u CHEESE_FLAIR_BANK HOME="$root" bash "$root/.codex/lib/cheese-flair.sh" quote
+    run env -u CHEESE_FLAIR_BANK HOME="$root/home" bash "$root/.codex/lib/cheese-flair.sh" quote
     assert_success
-    [[ "$output" == *" — "* ]]
+    [[ "$output" == *"sibling-quote"* ]]
+    [[ "$output" != *"home-quote"* ]]
 
     rm -rf "$root"
 }
 
-@test "lib CLI emits 'bank not found' diagnostic and exits non-zero when no bank exists" {
+@test "lib CLI emits 'bank not found' diagnostic naming the sibling reference path and exits non-zero when no bank exists" {
     local root="${TMPDIR:-/tmp}/cheese-flair-nobank-$$"
     rm -rf "$root"
     mkdir -p "$root/lib"
@@ -391,7 +393,7 @@ _deploy_harness_layout() {
 
     run env -u CHEESE_FLAIR_BANK bash "$root/lib/cheese-flair.sh" name 2>&1
     assert_failure
-    assert_output_contains "bank not found"
+    assert_output_contains "bank not found: $root/lib/../reference/cheese-flair.md"
 
     rm -rf "$root"
 }
