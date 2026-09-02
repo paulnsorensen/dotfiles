@@ -249,7 +249,7 @@ STDIN"
 # both renders: non-local custom providers remain possible on every host, and the
 # local-llm provider only appears where the proxy is expected to exist.
 
-@test "omp-models: localLLM off renders a parseable empty provider map" {
+@test "omp-models: localLLM off still renders the non-local custom providers" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
     local cfg="$TEST_HOME/cz-off.toml"
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/models.yml.tmpl"
@@ -263,8 +263,45 @@ TOML
     [ "$status" -eq 0 ]
     printf '%s' "$output" > "$OUT"
     ! grep -qF '{{' "$OUT"
-    [ "$(yq '.providers | length' "$OUT")" = "0" ]
     [ "$(yq 'has("providers")' "$OUT")" = "true" ]
+    # The .omp.models custom provider map renders on every host, even with the
+    # local-llm stack off. The local-llm loopback provider must NOT appear here.
+    [ "$(yq '.providers | has("local-llm")' "$OUT")" = "false" ]
+    [ "$(yq '.providers | has("openrouter-pareto")' "$OUT")" = "true" ]
+}
+
+# The OpenRouter Pareto Code router (openrouter/pareto-code) is not in OMP's
+# bundled OpenRouter catalog, so it lives as an explicit .omp.models provider
+# and must survive the wholesale models.yml render on every host (the hand-patch
+# it replaces was wiped on each chezmoi apply). Pin the rendered fields.
+@test "omp-models: openrouter-pareto custom provider persists through the render" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local cfg="$TEST_HOME/cz-off.toml"
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/models.yml.tmpl"
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+TOML
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" > "$OUT"
+    ! grep -qF '{{' "$OUT"
+    [ "$(yq '.providers.openrouter-pareto.api' "$OUT")" = "openai-completions" ]
+    [ "$(yq '.providers.openrouter-pareto.apiKey' "$OUT")" = "!printenv OPENROUTER_API_KEY" ]
+    [ "$(yq '.providers.openrouter-pareto.baseUrl' "$OUT")" = "https://openrouter.ai/api/v1" ]
+    # Single model entry — the router preset, referenced as
+    # openrouter-pareto/openrouter/pareto-code.
+    [ "$(yq '.providers.openrouter-pareto.models | length' "$OUT")" = "1" ]
+    [ "$(yq '.providers.openrouter-pareto.models[0].id' "$OUT")" = "openrouter/pareto-code" ]
+    [ "$(yq '.providers.openrouter-pareto.models[0].contextWindow' "$OUT")" = "200000" ]
+    [ "$(yq '.providers.openrouter-pareto.models[0].maxTokens' "$OUT")" = "16384" ]
+    [ "$(yq '.providers.openrouter-pareto.models[0].reasoning' "$OUT")" = "true" ]
+    [ "$(yq '.providers.openrouter-pareto.models[0].input | contains(["text"])' "$OUT")" = "true" ]
+    # No OpenRouter API key may be baked into the rendered file — only the
+    # documented `!<command>` stdout indirection.
+    ! grep -Eiq 'sk-or-|OPENROUTER_API_KEY:[[:space:]]*[A-Za-z0-9]' "$OUT"
 }
 
 @test "omp-models: localLLM on merges the pinned local-llm provider" {
@@ -282,7 +319,10 @@ TOML
     [ "$status" -eq 0 ]
     printf '%s' "$output" > "$OUT"
     ! grep -qF '{{' "$OUT"
-    [ "$(yq '.providers | keys | .[]' "$OUT")" = "local-llm" ]
+    # The always-on .omp.models custom providers render alongside the merged
+    # local-llm loopback provider.
+    [ "$(yq '.providers | has("local-llm")' "$OUT")" = "true" ]
+    [ "$(yq '.providers | has("openrouter-pareto")' "$OUT")" = "true" ]
     [ "$(yq '.providers.local-llm.baseUrl' "$OUT")" = "http://127.0.0.1:4000/v1" ]
     [ "$(yq '.providers.local-llm.api' "$OUT")" = "openai-completions" ]
     [ "$(yq '.providers.local-llm.auth' "$OUT")" = "none" ]
