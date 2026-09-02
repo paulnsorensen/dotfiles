@@ -331,3 +331,44 @@ print('ok')
     assert_success
     assert_output_contains "ok"
 }
+
+# --- portable cache placement hardening ------------------------------------
+
+@test "ingest: SESSIONS_DB stage dir never collides with a sibling 'stage' directory" {
+    write_claude_fixture
+    mkdir -p "$TEST_HOME/stage"
+    touch "$TEST_HOME/stage/file.txt"
+    export SESSIONS_DB="$TEST_HOME/db.duckdb"
+    run python3 "$INGEST" --force
+    assert_success
+    # The pre-existing sibling 'stage' dir must survive: STAGE_DIR is derived
+    # from the database file name, not its parent dir, so it never aliases
+    # (and rmtree's) an unrelated 'stage' directory next to the database.
+    assert_file_exists "$TEST_HOME/stage/file.txt"
+    assert_dir_exists "$TEST_HOME/db.duckdb.stage"
+}
+
+@test "ingest: an apostrophe in SESSIONS_DB's path still ingests (SQL-quoted stage glob)" {
+    write_claude_fixture
+    local qdir="$TEST_HOME/o'brien"
+    mkdir -p "$qdir"
+    export SESSIONS_DB="$qdir/sessions.duckdb"
+    run python3 "$INGEST" --force
+    assert_success
+    run duckdb -init /dev/null "$SESSIONS_DB" -json -c "SELECT count(*) AS n FROM tool_uses WHERE harness='claude';"
+    assert_output_contains '"n":1'
+}
+
+@test "ingest: a relative XDG_CACHE_HOME is ignored; the default resolves under HOME" {
+    run env XDG_CACHE_HOME=relative/cache python3 -c "
+import importlib.util, os
+spec = importlib.util.spec_from_file_location('ingest', '''$INGEST''')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+want = os.path.join(os.path.expanduser('~'), '.cache', 'dotfiles', 'session-analytics')
+assert mod.DEFAULT_DB_DIR == want, mod.DEFAULT_DB_DIR
+print('ok')
+"
+    assert_success
+    assert_output_contains "ok"
+}

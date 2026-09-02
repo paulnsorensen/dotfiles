@@ -2,7 +2,7 @@
 
 Evidence base for the `coder` dispatch contract in [[architecture/agents-dir]]
 and the phase-agent delegation rules in `agents/preamble.md`. Numbers come from
-`/session-analytics` (`~/.claude/analytics/sessions.duckdb`) over 578 sub-agent
+`/session-analytics` (historically `~/.claude/analytics/sessions.duckdb`) over 578 sub-agent
 runs reconstructed from sidechain transcripts.
 
 ## Method

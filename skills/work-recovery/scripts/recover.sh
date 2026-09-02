@@ -5,8 +5,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DB="${SESSIONS_DB:-${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb}"
-[[ "$DB" = /* ]] || DB="$PWD/$DB"
+source "$SCRIPT_DIR/../../session-analytics/scripts/db-path.sh"
+DB="$(sessions_db_path)"
 
 [[ $# -ge 1 ]] || { echo "usage: recover.sh <sessionId>" >&2; exit 2; }
 SESSION="$1"
