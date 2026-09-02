@@ -34,17 +34,29 @@ def _configured_path(name, default):
     return os.path.abspath(os.path.expanduser(value))
 
 
-DEFAULT_DB_DIR = os.path.join(
-    _configured_path("XDG_CACHE_HOME", "~/.cache"),
-    "dotfiles",
-    "session-analytics",
-)
+def _xdg_cache_home():
+    # The XDG Base Directory spec requires ignoring a relative value.
+    value = os.environ.get("XDG_CACHE_HOME")
+    if value and os.path.isabs(os.path.expanduser(value)):
+        return os.path.abspath(os.path.expanduser(value))
+    return os.path.abspath(os.path.expanduser("~/.cache"))
+
+
+def _sql_quote(path):
+    """Escape a filesystem path for embedding as a single-quoted SQL literal."""
+    return path.replace("'", "''")
+
+
+DEFAULT_DB_DIR = os.path.join(_xdg_cache_home(), "dotfiles", "session-analytics")
 DB_PATH = _configured_path(
     "SESSIONS_DB", os.path.join(DEFAULT_DB_DIR, "sessions.duckdb")
 )
 DB_DIR = os.path.dirname(DB_PATH)
 DB_TMP_PATH = f"{DB_PATH}.tmp"
-STAGE_DIR = os.path.join(DB_DIR, "stage")
+# Derived from the database file name, not DB_DIR, so a SESSIONS_DB pointed
+# into an existing directory never aliases (and rmtree's) that directory's
+# own "stage" subdir.
+STAGE_DIR = f"{DB_PATH}.stage"
 TTL_SECONDS = 3600  # 1 hour
 
 # Canonical raw-entry columns the flattening SQL reads. Adapters emit a subset;
@@ -670,7 +682,7 @@ def main():
         CREATE TABLE raw_entries AS
         SELECT *
         FROM read_json(
-            '{stage_glob}',
+            '{_sql_quote(stage_glob)}',
             format='newline_delimited',
             union_by_name=true,
             ignore_errors=true,

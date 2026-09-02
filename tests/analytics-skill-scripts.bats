@@ -97,6 +97,7 @@ assert_not_contains() {
 }
 
 @test "query.sh default database follows XDG_CACHE_HOME" {
+    need_duckdb
     local cache="$TMPROOT/custom-cache"
     local db="$cache/dotfiles/session-analytics/sessions.duckdb"
     mkdir -p "$(dirname "$db")"
