@@ -374,7 +374,7 @@ class CodexRenderer:
                 base.copy_hook_shared_assets(
                     item, base_dir / ".codex", base_dir, out_files
                 )
-                command = f"bash {shlex.quote(str(deploy_dir / rel_script))}"
+                command = f"DOTFILES_HARNESS=codex bash {shlex.quote(str(deploy_dir / rel_script))}"
             elif not command:
                 raise ValueError(
                     f"codex_render: hook event '{event}' has neither 'script' "

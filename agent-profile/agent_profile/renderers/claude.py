@@ -416,7 +416,7 @@ class ClaudeRenderer:
                 # self-locating SessionStart script resolves its lib/bank
                 # under the plugin dir (HARNESS_ROOT = dirname(hooks/)).
                 copy_hook_shared_assets(item, plugin_dir, base, out)
-                cmd = "${CLAUDE_PLUGIN_ROOT}/hooks/" + basename
+                cmd = "DOTFILES_HARNESS=claude ${CLAUDE_PLUGIN_ROOT}/hooks/" + basename
             elif command:
                 # Literal command, used verbatim — no file deploy. For
                 # external bridges (e.g. moshi-hook) that aren't deployed

@@ -1271,7 +1271,7 @@ def test_codex_isolated_home_projects_hooks_agents_rules_and_skills(tmp_path, mo
     assert (home / "rules/ap-canonical.rules").is_file()
     hooks = json.loads((home / "hooks.json").read_text())
     command = hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    assert command == f"bash {home / 'hooks/h.sh'}"
+    assert command == f"DOTFILES_HARNESS=codex bash {home / 'hooks/h.sh'}"
     assert (home / "lib/cheese-flair.sh").read_text() == "# assets\n"
     assert (home / "reference/cheese-flair.md").read_text() == "# bank\n"
     cfg = _codex_config(env)

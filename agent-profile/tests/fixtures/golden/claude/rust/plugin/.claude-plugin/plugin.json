@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cargo-check.sh"
+            "command": "DOTFILES_HARNESS=claude ${CLAUDE_PLUGIN_ROOT}/hooks/cargo-check.sh"
           }
         ]
       }

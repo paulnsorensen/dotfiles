@@ -116,7 +116,8 @@ hooks:
   # `rtk hook <harness>` for token compaction. One dispatcher (tool-reroute.js)
   # runs three independently-removable modules (lib/tool-reroute/{search,cd-git,
   # io}.js); the shared lexer is lib/tool-reroute/shell.js. Both harnesses share
-  # the allow/deny + updatedInput schema, so one script serves claude + codex.
+  # the allow/deny + updatedInput schema, so one script serves claude + codex;
+  # the renderer sets DOTFILES_HARNESS, and the script defaults to claude.
   # Fail-open: a missing logic file, absent node, or absent rtk degrades to the
   # unrewritten command.
   tool-reroute:

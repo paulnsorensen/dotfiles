@@ -13,7 +13,10 @@
 # this alongside lib/tool-reroute.js + lib/tool-reroute/*.js via shared_assets.
 #
 # Harness identity: the delegation step shells out to `rtk hook <harness>`.
-# Set DOTFILES_HARNESS when a non-Claude adapter owns this deployment.
+# The hook must not infer harness identity from an installation path, so the
+# renderer that wires this script into settings.json/hooks.json sets
+# DOTFILES_HARNESS on the command itself (agent-profile/agent_profile/
+# renderers/claude.py and codex.py); this script only reads that env var.
 #
 # Fail-open: a missing logic file or absent node must never block a tool call —
 # the hook rewrites/hardens, it must not become a denial-of-service.
