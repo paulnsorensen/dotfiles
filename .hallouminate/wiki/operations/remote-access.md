@@ -5,7 +5,7 @@ A resilient remote-shell stack for reaching your own machines from anywhere: **T
 Canonical invocation, wrapped by the `mtmux` shell function (`zsh/aliases.zsh`):
 
 ```bash
-mtmux <host> [session]   # = mosh <host> -- tmux new -A -s <session>
+mtmux <host> [session]   # = mosh --predict=adaptive <host> -- tmux new -A -s <session>
                          # host = MagicDNS name or Tailscale IP; session defaults to "main"
 ```
 
@@ -33,6 +33,43 @@ Why not a `packages.yaml` entry? Main (PR #304) **replaced the apt package path 
 - **macOS, to mosh *into* this Mac**: enable OpenSSH — System Settings → General → Sharing → **Remote Login** (or `sudo systemsetup -setremotelogin on`). mosh bootstraps over OpenSSH even though Tailscale is the transport. Tailscale's *own* SSH server is a separate feature (open-source CLI variant only) and is not needed for the mosh path.
 - **Linux host**: `sudo systemctl enable --now ssh` and `locale-gen en_US.UTF-8` (mosh's UTF-8 requirement, server side).
 - **Both**: `tailscale up`, then connect by MagicDNS name (`mtmux <machine>`). The default ACL already permits your own devices.
+
+## Slow or bursty output: client backpressure and window-size contention
+
+Run `tmux-clients` (`zsh/aliases.zsh`) to see each client's `written`,
+`discarded`, and size. A nonzero `discarded` means that client fell behind.
+
+**Discard mechanism.** Since tmux 2.5, `tty.c` discards a client's output
+buffer once it exceeds 8x its pane area in bytes, checked every 100 ms, and
+resumes below 1/8 pane area, then forces a full redraw of that client
+(tmux CHANGES, 2017-05-09: "discard output until it is drained and we are
+able to do a full redraw"). This is the buffer-then-jump feel. No config
+tunes or disables this (tmux issue #1019, open).
+
+**Cause 1: slow client.** A client that reads slower than tmux writes — a
+laggy phone link, a slow renderer — fills the buffer, triggering a discard
+and redraw. **Cause 2: window-size contention.** `window-size latest` sizes
+shared windows to whichever attached client acted most recently (tmux.1);
+a small phone client going active can shrink the window for everyone.
+Whether a better `window-size`/`aggressive-resize` default exists for this
+mix of clients is an open question the research did not confirm.
+
+**Remedies, in order:**
+
+1. Detach stale or idle clients with `tmux-detach-others` (`tmux
+   detach-client -a`) so only the active client drives sizing.
+2. Give phone clients their own session name instead of sharing one; moshi
+   lets the user set the tmux session it attaches (getmoshi.app/docs/tmux).
+3. Keep cmux updated. Two cmux clients on one remote tmux session drove the
+   tmux server to 100% CPU (cmux issue #10129), fixed by cmux PR #10142.
+   A related freeze during heavy output stays open (cmux issue #10471).
+4. Compare plain Ghostty SSH against cmux's ssh-tmux mirror to isolate
+   client render cost from tmux's own discard behavior.
+
+Mosh paces full-screen redraws at half the smoothed round-trip time (MIT
+mosh paper), so large outputs over mosh look chunky by design, not by bug.
+`MOSH_SERVER_NETWORK_TMOUT` resets on any datagram, so a roaming phone
+client keeps its mosh-server alive across network changes.
 
 ## Related
 

@@ -82,7 +82,9 @@ alias trl='tmux source-file ~/.tmux.conf && echo "tmux config reloaded"'
 # =============================================================================
 # Canonical resilient remote shell: mosh keeps the connection alive across
 # network changes / sleep; tmux keeps the session alive across disconnects.
-# Force predictive local echo because mtmux targets links where hiding RTT matters.
+# Adaptive prediction only speculates local echo on high-RTT links (mosh(1));
+# Tailscale direct paths run 11-34ms, so forced prediction just mispredicts
+# against TUIs like Claude and vim and repaints for no gain.
 # Usage: mtmux <host> [session]   (host = MagicDNS name or Tailscale IP)
 mtmux() {
     local host="$1" session="${2:-main}"
@@ -90,7 +92,21 @@ mtmux() {
         echo "usage: mtmux <host> [session]" >&2
         return 2
     fi
-    mosh --predict=always "$host" -- tmux new -A -s "$session"
+    mosh --predict=adaptive "$host" -- tmux new -A -s "$session"
+}
+
+# Show per-client tmux write/discard stats to diagnose backpressure or lag.
+tmux-clients() {
+    tmux list-clients -F '#{client_tty} #{client_termname} #{client_width}x#{client_height} written=#{client_written} discarded=#{client_discarded} last=#{t:client_activity} #{client_flags}'
+}
+
+# Detach every other tmux client, keeping only the one running this command.
+tmux-detach-others() {
+    if [[ -z "$TMUX" ]]; then
+        echo "usage: tmux-detach-others (run inside a tmux client)" >&2
+        return 1
+    fi
+    tmux detach-client -a
 }
 
 # Tailscale shortcuts
