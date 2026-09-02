@@ -12,11 +12,8 @@
 # the same file works under ~/.claude's plugin tree and ~/.codex. `ap` deploys
 # this alongside lib/tool-reroute.js + lib/tool-reroute/*.js via shared_assets.
 #
-# Harness identity: the delegation step shells out to `rtk hook <harness>`.
-# The hook must not infer harness identity from an installation path, so the
-# renderer that wires this script into settings.json/hooks.json sets
-# DOTFILES_HARNESS on the command itself (agent-profile/agent_profile/
-# renderers/claude.py and codex.py); this script only reads that env var.
+# Harness identity: the renderer sets DOTFILES_HARNESS on the command; this
+# script only reads it. See wiki architecture/cross-harness-guards.
 #
 # Fail-open: a missing logic file or absent node must never block a tool call —
 # the hook rewrites/hardens, it must not become a denial-of-service.
@@ -27,7 +24,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_ROOT="$(dirname "$SCRIPT_DIR")"  # ~/.claude/plugins/local/<p> or ~/.codex
 LOGIC="$HARNESS_ROOT/lib/tool-reroute.js"
 
-HARNESS="${DOTFILES_HARNESS:-claude}"
+case "${DOTFILES_HARNESS:-claude}" in
+    claude|codex) HARNESS="${DOTFILES_HARNESS:-claude}" ;;
+    *)            HARNESS="claude" ;;
+esac
 
 [[ -f "$LOGIC" ]] || exit 0
 command -v node >/dev/null 2>&1 || exit 0

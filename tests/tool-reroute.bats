@@ -510,14 +510,22 @@ RTK
 }
 
 @test "tool-reroute: an unrecognized DOTFILES_HARNESS value still fails open" {
-    # rtk itself rejects an unknown hook subcommand (exit 2, no stdout); the
-    # bridge must still exit 0 with no deny and no output — the same
-    # fail-open contract as a genuinely absent rtk.
+    # The bridge only accepts claude|codex; an unrecognized value falls back
+    # to claude rather than passing the bogus value through to rtk. Stub rtk
+    # to echo the harness argument it received, pinning the exact fallback.
+    local stub="$TEST_HOME/rtk-stub-bin"
+    mkdir -p "$stub"
+    cat >"$stub/rtk" <<'RTK'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s' "$2"
+RTK
+    chmod +x "$stub/rtk"
+    local nodedir; nodedir="$(dirname "$(command -v node)")"
     local j; j=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
-    run env DOTFILES_HARNESS=bogus bash -c "printf '%s' '$j' | '$DEPLOY/hooks/tool-reroute.sh'"
+    run env DOTFILES_HARNESS=bogus PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$j' | '$DEPLOY/hooks/tool-reroute.sh'"
     [ "$status" -eq 0 ]
-    ! denied "$output"
-    [[ -z "$output" ]]
+    [[ "$output" == "claude" ]]
 }
 
 @test "tool-reroute: node absent fails open (bridge command -v node guard)" {

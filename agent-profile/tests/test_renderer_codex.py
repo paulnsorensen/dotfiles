@@ -254,7 +254,7 @@ def test_codex_hook_writes_hooks_json_and_script(renderer, src, target):
                 {
                     "matcher": "Bash",
                     "hooks": [
-                        {"type": "command", "command": f"DOTFILES_HARNESS=codex bash {copied}"}
+                        {"type": "command", "command": f"env DOTFILES_HARNESS=codex bash {copied}"}
                     ],
                 }
             ]
@@ -282,9 +282,10 @@ def test_codex_hook_command_resolves_from_unrelated_cwd(renderer, src, target, t
     unrelated_cwd.mkdir()
     command = json.loads((target / ".codex" / "hooks.json").read_text())["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     argv = shlex.split(command)
-    assert argv[0] == "DOTFILES_HARNESS=codex"
-    assert argv[1] == "bash"
-    script = Path(argv[2])
+    assert argv[0] == "env"
+    assert argv[1] == "DOTFILES_HARNESS=codex"
+    assert argv[2] == "bash"
+    script = Path(argv[3])
     assert script.is_absolute()
     assert script.is_file()
     assert not (unrelated_cwd / ".codex" / "hooks" / "h.sh").exists()

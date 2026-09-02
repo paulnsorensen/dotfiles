@@ -50,6 +50,7 @@ from agent_profile.renderers.base import (
     agents_for,
     body_abs,
     copy_hook_shared_assets,
+    hook_env_prefix,
     hooks_for,
     mcp_server_entry,
     mcps_for,
@@ -416,7 +417,7 @@ class ClaudeRenderer:
                 # self-locating SessionStart script resolves its lib/bank
                 # under the plugin dir (HARNESS_ROOT = dirname(hooks/)).
                 copy_hook_shared_assets(item, plugin_dir, base, out)
-                cmd = "DOTFILES_HARNESS=claude ${CLAUDE_PLUGIN_ROOT}/hooks/" + basename
+                cmd = hook_env_prefix(self.name) + "${CLAUDE_PLUGIN_ROOT}/hooks/" + basename
             elif command:
                 # Literal command, used verbatim — no file deploy. For
                 # external bridges (e.g. moshi-hook) that aren't deployed
