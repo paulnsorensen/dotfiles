@@ -966,7 +966,7 @@ def test_oss_docs_profile_writes_pinned_playwright_mcp_for_codex(
     cfg = _codex_config(env)
     assert cfg["mcp_servers"]["playwright"] == {
         "command": "npx",
-        "args": ["-y", "@playwright/mcp@0.0.79"],
+        "args": ["-y", "@playwright/mcp@0.0.80"],
     }
     assert cfg["mcp_servers"]["context7"] == {
         "command": "agent-secret-proxy",
