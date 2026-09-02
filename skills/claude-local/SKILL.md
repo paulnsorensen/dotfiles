@@ -97,6 +97,6 @@ file, ask before regenerating — don't clobber their tweaks.
   project wins. Note this at the top of the output file.
 - **Repo is the user's own dotfiles or a project they own:** the user
   probably wants the full global preferences, not a distillation.
-  Check whether the repo path matches `$DOTFILES_DIR` or contains a
+  Check whether the repo path matches `${DOTFILES_DIR:-~/Dev/dotfiles}` or contains a
   CLAUDE.md that already imports `~/.claude/CLAUDE.md` — if so, ask
   before generating; the overlay may be redundant.
