@@ -40,7 +40,7 @@
 "aqua:koalaman/shellcheck" = "v0.11.0"
 "aqua:bats-core/bats-core" = "v1.14.0"
 "aqua:BurntSushi/ripgrep" = "15.2.0"
-"aqua:sharkdp/fd" = "v10.4.2"
+"aqua:sharkdp/fd" = "v10.5.0"
 "aqua:sharkdp/bat" = "v0.26.1"
 "aqua:charmbracelet/glow" = "v3.0.0"
 "aqua:ast-grep/ast-grep" = "0.45.2"
