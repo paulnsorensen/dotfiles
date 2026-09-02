@@ -21,8 +21,6 @@ The non-Claude adapters resolve the shared classifier through `$DOTFILES_DIR`.
 OMP currently receives no git-guard adapter; its extension registry must not be
 described as enforcing this classifier.
 
-
-
 ## Harness identity: the renderer sets it
 
 A shared hook script must not infer its harness from the deploy path (PR #840 removed the `*.codex*` path match from `agents/hooks/tool-reroute.sh`). Path matching breaks under `ap` isolated launches, custom config roots, and any new harness.
