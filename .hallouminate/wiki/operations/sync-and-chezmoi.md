@@ -53,8 +53,6 @@ Codex differs: its single source of truth is the mise manifest pin (`"aqua:opena
 - **Pre-brew bootstraps on Linux** (brew isn't on PATH yet when these run): yq is downloaded as the Mike Farah Go binary into `~/.local/bin` (Ubuntu's apt `yq` is the wrong kislyuk/yq), and `uv` via the astral installer.
 - Other sources (`cargo`, `npm`, `uv`, `gh-extension`) run cross-platform unconditionally. On Linux, npm comes from the brew `node` formula (which bundles it).
 
-
-
 ### Gotcha: omp native install reports "Release tag not found" on an existing tag
 
 **Symptom**: `dots up` fails with `curl: (56) ... error: 403` then `Release tag not found: v18.x.y`, and `FAILED` lists `omp`. `gh release view` shows the tag exists.
