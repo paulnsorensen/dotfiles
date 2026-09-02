@@ -21,6 +21,20 @@ The non-Claude adapters resolve the shared classifier through `$DOTFILES_DIR`.
 OMP currently receives no git-guard adapter; its extension registry must not be
 described as enforcing this classifier.
 
+
+
+## Harness identity: the renderer sets it
+
+A shared hook script must not infer its harness from the deploy path (PR #840 removed the `*.codex*` path match from `agents/hooks/tool-reroute.sh`). Path matching breaks under `ap` isolated launches, custom config roots, and any new harness.
+
+The contract:
+
+- The `ap` renderer is the adapter. It prefixes every rendered hook command with `DOTFILES_HARNESS=<harness>` (`renderers/claude.py` emits `DOTFILES_HARNESS=claude ${CLAUDE_PLUGIN_ROOT}/hooks/<script>`; `renderers/codex.py` emits `DOTFILES_HARNESS=codex bash <root>/hooks/<script>`).
+- The script reads `${DOTFILES_HARNESS:-claude}` and passes it to logic that needs it (for example `rtk hook <harness>`). An unrecognized value fails open.
+- `tests/test_helper.bash` unsets `DOTFILES_HARNESS` so the bats suite stays hermetic when an operator exports it.
+
+The Claude self-heal matcher in `renderers/claude.py` extracts the hook basename from the text after `/hooks/`, so the prefix does not disturb it. Golden fixtures under `agent-profile/tests/fixtures/golden/` carry the prefix.
+
 ## Claude-only pre-tool guards
 
 Beyond the cross-harness git-guard, Claude wires a `PreToolUse` guard (in `claude/hooks/`):
