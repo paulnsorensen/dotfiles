@@ -53,6 +53,18 @@ Codex differs: its single source of truth is the mise manifest pin (`"aqua:opena
 - **Pre-brew bootstraps on Linux** (brew isn't on PATH yet when these run): yq is downloaded as the Mike Farah Go binary into `~/.local/bin` (Ubuntu's apt `yq` is the wrong kislyuk/yq), and `uv` via the astral installer.
 - Other sources (`cargo`, `npm`, `uv`, `gh-extension`) run cross-platform unconditionally. On Linux, npm comes from the brew `node` formula (which bundles it).
 
+
+
+### Gotcha: omp native install reports "Release tag not found" on an existing tag
+
+**Symptom**: `dots up` fails with `curl: (56) ... error: 403` then `Release tag not found: v18.x.y`, and `FAILED` lists `omp`. `gh release view` shows the tag exists.
+
+**Why**: `converge_omp_native` pipes the upstream `https://omp.sh/install` script. That script resolves the tag through unauthenticated `api.github.com`, which allows 60 requests per hour per IP. The script does not read `GH_TOKEN` or `GITHUB_TOKEN`. When the budget is spent (repeated `dots up` runs, other unauthenticated tooling), the API returns 403 and the script misreports it as a missing tag. This is an upstream limitation, not a pin error.
+
+**Check**: `curl -sI https://api.github.com/repos/can1357/oh-my-pi/releases/tags/$OMP_PIN | grep -i x-ratelimit-remaining`. A value of 0 confirms the cause.
+
+**Fix**: wait for the window to reset (header `x-ratelimit-reset`), then re-run `dots up`. The version probe in `sync_native_harnesses` skips the download once the live binary matches `OMP_PIN`, so the retry is cheap. Recorded 2026-09-02.
+
 ## Chezmoi-managed subset
 
 chezmoi renders the files that need per-machine templating (work vs. personal git email), per-OS branching, or secret injection — things plain symlinks can't do. Everything else stays on the symlink system.
