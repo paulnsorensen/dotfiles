@@ -1191,7 +1191,9 @@ MOCKBREW
 # --- Integration: native harness convergence ---
 
 @test "managed OMP and Codex pins are exact" {
-    grep -q '^OMP_PIN="v18.0.5"$' "$SYNC_SCRIPT"
+    local omp_pin
+    omp_pin="$(omp_pin_version)"
+    grep -q "expected omp/${omp_pin#v}," "$REAL_DOTFILES_DIR/.sync"
     grep -q '^"aqua:openai/codex" = "rust-v0.151.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
@@ -1324,7 +1326,7 @@ YAML
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
     local expected_omp_pin
-    expected_omp_pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
+    expected_omp_pin="$(omp_pin_version)"
     grep -q -- "--binary --ref $expected_omp_pin" "$SH_LOG"
     [[ ! -f "$OMP_LOG" ]] || ! grep -q "omp update" "$OMP_LOG"
 }
@@ -1360,8 +1362,10 @@ YAML
     wait "$holder" 2>/dev/null || true
 
     [[ "$sync_status" -eq 0 ]]
-    assert_output_contains "Converged omp to v18.0.5"
-    [[ "$("$omp_path")" == "omp/18.0.5" ]]
+    local omp_pin
+    omp_pin="$(omp_pin_version)"
+    assert_output_contains "Converged omp to $omp_pin"
+    [[ "$("$omp_path")" == "omp/${omp_pin#v}" ]]
 }
 
 @test "omp installer failure fails loudly and does not save cache" {
@@ -1384,12 +1388,14 @@ YAML
 
     run_sync
     assert_success
-    assert_output_contains "Converged omp to v18.0.5"
-    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/18.0.5" ]]
+    local omp_pin
+    omp_pin="$(omp_pin_version)"
+    assert_output_contains "Converged omp to $omp_pin"
+    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/${omp_pin#v}" ]]
 
     local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v18.0.5\ncodesign --force --sign - %s' \
-        "$TEST_HOME/.local/bin/.omp-stage/omp")
+    expected_events=$(printf 'sh -s -- --binary --ref %s\ncodesign --force --sign - %s' \
+        "$omp_pin" "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
 }
@@ -1401,9 +1407,10 @@ YAML
     run_sync
     assert_success
 
-    local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref v18.0.5\ncodesign --force --sign - %s' \
-        "$TEST_HOME/.local/bin/.omp-stage/omp")
+    local omp_pin expected_events
+    omp_pin="$(omp_pin_version)"
+    expected_events=$(printf 'sh -s -- --binary --ref %s\ncodesign --force --sign - %s' \
+        "$omp_pin" "$TEST_HOME/.local/bin/.omp-stage/omp")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
 }

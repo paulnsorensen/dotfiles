@@ -81,6 +81,13 @@ create_mock_repo() {
     )
 }
 
+# Read the pinned oh-my-pi version from packages/sync.sh, the single
+# source of truth for the native installer pin. Returns the "v"-prefixed
+# tag, e.g. "v18.1.2".
+omp_pin_version() {
+    sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$REAL_DOTFILES_DIR/packages/sync.sh"
+}
+
 # Assert file exists
 assert_file_exists() {
     local file="$1"
