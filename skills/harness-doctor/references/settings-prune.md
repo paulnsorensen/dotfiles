@@ -121,7 +121,7 @@ Hooks redirect blocked commands to skills, but those skills need `Skill(name)` i
 
 ### How to detect
 
-1. **Scan available skills**: Read `skills/*/SKILL.md` to find all skill names. If the skills directory doesn't exist in the current project, check `~/Dev/dotfiles/skills/` (the canonical source).
+1. **Scan available skills**: Read `skills/*/SKILL.md` to find all skill names. If the skills directory does not exist in the current project, check `${DOTFILES_DIR:-~/Dev/dotfiles}/skills/` (the canonical source).
 
 2. **Map hook redirects to required skills**: Each hook block implies a skill that should be allowed:
 
