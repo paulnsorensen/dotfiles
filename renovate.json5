@@ -87,6 +87,7 @@
         "can1357/oh-my-pi",
         "@playwright/mcp",
         "@agentclientprotocol/codex-acp",
+        "@sysid/pi-vim",
         "@upstash/context7-mcp",
         "tavily-mcp",
         "tavily-cli"
