@@ -1,11 +1,11 @@
 # Cheese Flair Bank
 
-The full names + quote bank used by `claude/lib/cheese-flair.sh`. The
-SessionStart hook samples from this file each session so the principal
-`CLAUDE.md` stays slim.
+The shared cheese-flair library reads its names and quotes from this
+bank. The SessionStart hook samples this file, so the principal
+instruction file stays slim.
 
-Browse: `bat ~/.claude/reference/cheese-flair.md`.
-Sample: `bash ~/.claude/lib/cheese-flair.sh sample`.
+Browse this deployed file directly.
+Run `bash "$HOME/.claude/lib/cheese-flair.sh" sample` to sample it.
 
 ## Big hitters
 
