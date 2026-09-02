@@ -107,16 +107,18 @@ hooks:
     timeout: 5
     description: Block reads/writes of .env, private keys, and credential stores
 
-  # ─── Tool reroute ───────────────────────────────────────────────────
+  # ─── Tool reroute ─────────────────────────────────────────────────────
   # Transparently REWRITES wrong-tool Bash/Grep/Glob calls to their tilth /
   # wt-git shell equivalent via updatedInput (grep/rg/ag/ack → tilth, cd+git →
-  # wt-git, bare cat → tilth, find -name → tilth <glob>), DENIES the two cases
-  # with no shell rewrite target (the Grep/Glob tools, shell write-redirects)
-  # naming cheez-search / cheez-write, and DELEGATES every other Bash command to
+  # wt-git, bare cat → tilth, find -name → tilth <glob>), DENIES the cases
+  # with no shell rewrite target (the Grep/Glob tools, shell write-redirects,
+  # wrong-shape tilth_write payloads — #345) naming cheez-search / cheez-write
+  # or the current tilth_write shape, and DELEGATES every other Bash command to
   # `rtk hook <harness>` for token compaction. One dispatcher (tool-reroute.js)
-  # runs three independently-removable modules (lib/tool-reroute/{search,cd-git,
-  # io}.js); the shared lexer is lib/tool-reroute/shell.js. Both harnesses share
-  # the allow/deny + updatedInput schema, so one script serves claude + codex.
+  # runs four independently-removable modules (lib/tool-reroute/{search,cd-git,
+  # io,tilth-write}.js); the shared lexer is lib/tool-reroute/shell.js. Both
+  # harnesses share the allow/deny + updatedInput schema, so one script serves
+  # claude + codex.
   # Fail-open: a missing logic file, absent node, or absent rtk degrades to the
   # unrewritten command.
   tool-reroute:
@@ -128,10 +130,11 @@ hooks:
       - agents/lib/tool-reroute/search.js
       - agents/lib/tool-reroute/cd-git.js
       - agents/lib/tool-reroute/io.js
+      - agents/lib/tool-reroute/tilth-write.js
     harnesses: [claude]
-    matcher: "Bash|Grep|Glob"
+    matcher: "Bash|Grep|Glob|mcp__tilth__tilth_write"
     timeout: 5
-    description: Rewrite wrong-tool Bash/Grep/Glob calls to tilth/wt-git; delegate the rest to rtk
+    description: Rewrite wrong-tool Bash/Grep/Glob calls to tilth/wt-git, correct wrong-shape tilth_write; delegate the rest to rtk
 
   # ─── Deep-think nudge ───────────────────────────────────────────────
   # When a reasoning-heavy skill (briesearch/culture/spec/mold) is invoked at an

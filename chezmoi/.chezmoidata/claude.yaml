@@ -65,7 +65,7 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/sensitive-file-guard.sh"'
             timeout: 5
-      - matcher: "Bash|Grep|Glob"
+      - matcher: "Bash|Grep|Glob|mcp__tilth__tilth_write"
         hooks:
           - type: command
             command: '"$HOME/.claude/hooks/tool-reroute.sh"'
