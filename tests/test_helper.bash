@@ -39,6 +39,10 @@ setup_test_env() {
     export ORIGINAL_XDG_CACHE_HOME="${XDG_CACHE_HOME-__unset__}"
     unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME
 
+    # Unset DOTFILES_HARNESS so the bridge falls back to its claude default
+    # instead of a value inherited from the caller's shell.
+    unset DOTFILES_HARNESS
+
     # Pin mise's config/data/cache dirs under the sandbox. mise discovers
     # its config by climbing cwd, not via $HOME, so an unset MISE_CONFIG_DIR
     # lets it find the real ~/.config/mise/config.toml and leak cache files

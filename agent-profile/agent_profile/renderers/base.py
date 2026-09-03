@@ -185,6 +185,19 @@ def hooks_for(
     ]
 
 
+def hook_env_prefix(harness: str) -> str:
+    """Command prefix that sets ``DOTFILES_HARNESS`` on a rendered hook.
+
+    Uses ``env NAME=value ...`` rather than a bare ``NAME=value ...`` prefix:
+    ``env`` is a real executable, so the prefix survives both a shell (which
+    expands the assignment itself) and a harness that argv-splits the command
+    string and execs the first token directly — the bare form would exec a
+    binary literally named ``DOTFILES_HARNESS=<harness>`` under argv-split
+    semantics, silently disabling the guard. See
+    .hallouminate/wiki/harnesses/codex-hooks-schema.md."""
+    return f"env DOTFILES_HARNESS={harness} "
+
+
 def agents_for(
     manifest: Manifest,
     harness: str,

@@ -21,6 +21,19 @@ The non-Claude adapters resolve the shared classifier through `$DOTFILES_DIR`.
 OMP currently receives no git-guard adapter; its extension registry must not be
 described as enforcing this classifier.
 
+## Harness identity: the renderer sets it
+
+A shared hook script must not infer its harness from the deploy path (PR #840 removed the `*.codex*` path match from `agents/hooks/tool-reroute.sh`). Path matching breaks under `ap` isolated launches, custom config roots, and any new harness.
+
+The contract:
+
+- The `ap` renderers are the adapters; other deploy paths (the retired `agents/hooks/sync.sh`, hand-run scripts, bats) rely on the `claude` default rather than emitting the prefix. Adding `codex` to a hook's `harnesses` list outside an `ap` renderer requires wiring the prefix in too — see `agents/hooks/registry.yaml`'s `tool-reroute` comment.
+- Both renderers prefix every rendered hook command with `env DOTFILES_HARNESS=<harness>` via the shared `renderers/base.hook_env_prefix` helper (`renderers/claude.py` emits `env DOTFILES_HARNESS=claude ${CLAUDE_PLUGIN_ROOT}/hooks/<script>`; `renderers/codex.py` emits `env DOTFILES_HARNESS=codex bash <root>/hooks/<script>`). The `env` form (not a bare assignment prefix) survives a harness that argv-splits the command instead of running it through a shell — see [[../harnesses/codex-hooks-schema]].
+- The script accepts only `claude` or `codex` from `DOTFILES_HARNESS`; anything else, including unset, falls back to `claude` so a hand-run or non-`ap` invocation (bats, manual) fails open instead of crashing on an unset variable.
+- `tests/test_helper.bash` unsets `DOTFILES_HARNESS` so the bats suite stays hermetic when an operator exports it.
+
+The Claude self-heal matcher in `renderers/claude.py` extracts the hook basename from the text after `/hooks/`, so the prefix does not disturb it. Golden fixtures under `agent-profile/tests/fixtures/golden/` carry the prefix.
+
 ## Claude-only pre-tool guards
 
 Beyond the cross-harness git-guard, Claude wires a `PreToolUse` guard (in `claude/hooks/`):

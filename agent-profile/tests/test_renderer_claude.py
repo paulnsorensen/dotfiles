@@ -319,7 +319,7 @@ def test_rust_loaded_manifest_hook_wiring(rendered_rust):
         (target / ".claude/plugins/local/rust/.claude-plugin/plugin.json").read_text()
     )
     cmd = data["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    assert cmd == "${CLAUDE_PLUGIN_ROOT}/hooks/cargo-check.sh"
+    assert cmd == "env DOTFILES_HARNESS=claude ${CLAUDE_PLUGIN_ROOT}/hooks/cargo-check.sh"
     assert data["hooks"]["PreToolUse"][0]["matcher"] == "Bash"
     # The hooks key must land last (matches jq `.hooks = $h`).
     assert list(data.keys()) == ["name", "version", "description", "hooks"]
@@ -668,7 +668,7 @@ hooks:
         (env.target / ".claude/plugins/local/defaulthook/plugin.json").read_text()
     )
     assert data["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == (
-        "${CLAUDE_PLUGIN_ROOT}/hooks/default.sh"
+        "env DOTFILES_HARNESS=claude ${CLAUDE_PLUGIN_ROOT}/hooks/default.sh"
     )
 
 

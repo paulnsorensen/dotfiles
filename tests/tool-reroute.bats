@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Tests for the tool-reroute PreToolUse hook (harness-agnostic).
-#   agents/hooks/tool-reroute.sh  — bash bridge (self-locating, claude/codex)
+#   agents/hooks/tool-reroute.sh  — bash bridge (self-locating, overrideable harness)
 #   agents/lib/tool-reroute.js    — dispatcher (search → cd-git → io → delegate)
 #   agents/lib/tool-reroute/{shell,search,cd-git,io}.js — lexer + modules
 #
@@ -45,8 +45,7 @@ deploy_reroute() {
 setup() {
     setup_test_env
     # Mirror the deployed layout: <root>/hooks/<bridge> + <root>/lib/<logic>
-    # + <root>/lib/tool-reroute/<modules>. <root> ends in `.claude` so the
-    # bridge's path-based harness detection resolves to claude (→ rtk hook claude).
+    # + <root>/lib/tool-reroute/<modules>. The bridge defaults to Claude.
     DEPLOY="$TEST_HOME/.claude"
     deploy_reroute "$DEPLOY"
     W="$REAL_DOTFILES_DIR"   # a real dir to stand in as the event cwd
@@ -460,8 +459,7 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 
 # ── press hardening: codex harness + bridge fail-open ────────────────────
 
-# Deploy the bridge under a `.codex`-suffixed root so the bridge's path-based
-# detection resolves HARNESS=codex (→ `rtk hook codex`). Echoes the bridge path.
+# Deploy the bridge under a `.codex` root. Set `DOTFILES_HARNESS=codex` for delegation. Echo the bridge path.
 deploy_codex() {
     local root="$TEST_HOME/.codex"
     deploy_reroute "$root"
@@ -472,23 +470,62 @@ deploy_codex() {
     local hook; hook=$(deploy_codex)
     # deny is rtk-independent → must fire identically under the codex bridge
     local dj; dj=$(jq -nc --arg w "$W" '{tool_name:"Grep",tool_input:{pattern:"foo"},cwd:$w}')
-    run bash -c "printf '%s' '$dj' | '$hook'"
+    run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$dj' | '$hook'"
     [ "$status" -eq 0 ]
     [[ "$(decision "$output")" == "deny" ]]
     # rewrite is rtk-independent → must fire identically under the codex bridge
     local gj; gj=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"grep foo ."},cwd:$w}')
-    run bash -c "printf '%s' '$gj' | '$hook'"
+    run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$gj' | '$hook'"
     [ "$status" -eq 0 ]
     [[ "$(newcmd "$output")" == "tilth foo --scope ." ]]
     # delegation: `rtk hook codex` errors (no codex subcommand) → fail open.
     # The documented non-goal must still be SAFE: never a deny, never a bogus
     # tilth/wt-git injection — the command just runs.
     local cj; cj=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
-    run bash -c "printf '%s' '$cj' | '$hook'"
+    run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$cj' | '$hook'"
     [ "$status" -eq 0 ]
     ! denied "$output"
     [[ "$output" != *wt-git* ]]
     [[ "$output" != *'"command":"tilth'* ]]
+}
+
+@test "tool-reroute: DOTFILES_HARNESS unset defaults to claude, even under a .codex deploy root" {
+    local hook; hook=$(deploy_codex)
+    # Stub rtk to echo the harness argument it received, so the assertion pins
+    # the exact default value — the bridge must NOT infer codex from the
+    # deploy path; only DOTFILES_HARNESS (set by the renderer) selects it.
+    local stub="$TEST_HOME/rtk-stub-bin"
+    mkdir -p "$stub"
+    cat >"$stub/rtk" <<'RTK'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s' "$2"
+RTK
+    chmod +x "$stub/rtk"
+    local nodedir; nodedir="$(dirname "$(command -v node)")"
+    local j; j=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
+    run env -u DOTFILES_HARNESS PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$j' | '$hook'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "claude" ]]
+}
+
+@test "tool-reroute: an unrecognized DOTFILES_HARNESS value still fails open" {
+    # The bridge only accepts claude|codex; an unrecognized value falls back
+    # to claude rather than passing the bogus value through to rtk. Stub rtk
+    # to echo the harness argument it received, pinning the exact fallback.
+    local stub="$TEST_HOME/rtk-stub-bin"
+    mkdir -p "$stub"
+    cat >"$stub/rtk" <<'RTK'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s' "$2"
+RTK
+    chmod +x "$stub/rtk"
+    local nodedir; nodedir="$(dirname "$(command -v node)")"
+    local j; j=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
+    run env DOTFILES_HARNESS=bogus PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$j' | '$DEPLOY/hooks/tool-reroute.sh'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "claude" ]]
 }
 
 @test "tool-reroute: node absent fails open (bridge command -v node guard)" {

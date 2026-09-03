@@ -75,7 +75,7 @@ def test_compiled_codex_hook_command_rooted_at_deploy_root(env, monkeypatch, tmp
     hooks_json = out / "fragments/home/codex/.codex/hooks.json"
     commands = _hook_commands(hooks_json)
     assert commands, "expected at least one codex hook command"
-    expected = f"bash {home}/.codex/hooks/guard.sh"
+    expected = f"env DOTFILES_HARNESS=codex bash {home}/.codex/hooks/guard.sh"
     for command in commands:
         assert "ap-compile" not in command, (
             f"render tempdir leaked into compiled hooks.json: {command!r}"
