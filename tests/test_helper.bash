@@ -7,7 +7,17 @@ export REAL_DOTFILES_DIR
 export PATH="$REAL_DOTFILES_DIR/bin:$PATH"
 
 # Test environment setup
-export TEST_HOME="${TMPDIR:-/tmp}/dotfiles-test-$$"
+# macOS exports TMPDIR with a trailing slash (/var/folders/.../T/), so the
+# naive "${TMPDIR}/dotfiles-test-$$" carries a double slash. Every consumer
+# that normalizes a path collapses it — bash `cd` rewrites PWD, Python's
+# os.path.abspath rewrites its result — so a test comparing normalized output
+# against a raw "$TEST_HOME/..." literal fails on macOS while passing on Linux,
+# where TMPDIR is usually unset and the base is a bare /tmp. Normalize the base
+# once here instead of teaching each assertion to tolerate both spellings.
+_tmp_base="${TMPDIR:-/tmp}"
+while [[ "$_tmp_base" == */ ]]; do _tmp_base="${_tmp_base%/}"; done
+export TEST_HOME="$_tmp_base/dotfiles-test-$$"
+unset _tmp_base
 
 # Override DOTFILES_DIR for tests to point to the real location
 export DOTFILES_DIR="$REAL_DOTFILES_DIR"
