@@ -41,11 +41,20 @@ Read the target and any files it points at. Classify: **agent** (has
 Empirical usage data, best-effort — if the DB, logs, or ingestion are missing or
 fail, drop the Usage lens and note it in the report. Never block the audit on it.
 
-1. `python3 ~/Dev/dotfiles/skills/session-analytics/scripts/ingest.py`
-2. Fan out **one `duckdb-expert` spawn per owned domain** (read-only) — this skill
-   owns three packs under `references/`. Each spawn: *"Run analytics pack
-   skill-improver/references/<pack>.md for target {name}. harness=all"* and returns
-   one ~2 KB digest. Do not collapse to a single all-domains spawn.
+1. Resolve the installed `session-analytics` skill directory from its loaded `SKILL.md` path.
+2. Compute the absolute database path with the same resolver the scripts use: `$SESSIONS_DB`
+   if set, else `$XDG_CACHE_HOME/dotfiles/session-analytics/sessions.duckdb` when
+   `XDG_CACHE_HOME` is set to an absolute path, else `~/.cache/dotfiles/session-analytics/sessions.duckdb`.
+3. Fan out **one `duckdb-expert` spawn per owned domain** (read-only). Pass each spawn exact
+   absolute paths for its pack, schema, conventions, ingest script, and database. Use:
+
+   ```text
+   Run analytics pack <absolute-pack-path> for target {name}. harness=all
+   pack=<absolute-pack-path> schema=<absolute-schema-path> conventions=<absolute-conventions-path>
+   ingest=<absolute-ingest-path> database=<absolute-database-path>
+   ```
+
+   Return one ~2 KB digest. Do not collapse to a single all-domains spawn.
 
    | Pack | Reveals |
    |------|---------|
@@ -53,7 +62,7 @@ fail, drop the Usage lens and note it in the report. Never block the audit on it
    | `agent-orchestration` | undeclared spawns, fork behavior, error rate |
    | `drift-regression` | declining usage, single-project concentration, hook interruptions |
 
-3. Carry the digests into the **Usage** lens below.
+4. Carry the digests into the **Usage** lens below.
 
 ### Phase 3 — Audit against the rubric
 

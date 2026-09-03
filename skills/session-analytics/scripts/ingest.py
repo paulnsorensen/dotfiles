@@ -28,10 +28,35 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-DB_DIR = os.path.expanduser("~/.claude/analytics")
-DB_PATH = os.path.join(DB_DIR, "sessions.duckdb")
-DB_TMP_PATH = os.path.join(DB_DIR, "sessions.duckdb.tmp")
-STAGE_DIR = os.path.join(DB_DIR, "stage")
+
+def _configured_path(name, default):
+    value = os.environ.get(name) or default
+    return os.path.abspath(os.path.expanduser(value))
+
+
+def _xdg_cache_home():
+    # The XDG Base Directory spec requires ignoring a relative value.
+    value = os.environ.get("XDG_CACHE_HOME")
+    if value and os.path.isabs(os.path.expanduser(value)):
+        return os.path.abspath(os.path.expanduser(value))
+    return os.path.abspath(os.path.expanduser("~/.cache"))
+
+
+def _sql_quote(path):
+    """Escape a filesystem path for embedding as a single-quoted SQL literal."""
+    return path.replace("'", "''")
+
+
+DEFAULT_DB_DIR = os.path.join(_xdg_cache_home(), "dotfiles", "session-analytics")
+DB_PATH = _configured_path(
+    "SESSIONS_DB", os.path.join(DEFAULT_DB_DIR, "sessions.duckdb")
+)
+DB_DIR = os.path.dirname(DB_PATH)
+DB_TMP_PATH = f"{DB_PATH}.tmp"
+# Derived from the database file name, not DB_DIR, so a SESSIONS_DB pointed
+# into an existing directory never aliases (and rmtree's) that directory's
+# own "stage" subdir.
+STAGE_DIR = f"{DB_PATH}.stage"
 TTL_SECONDS = 3600  # 1 hour
 
 # Canonical raw-entry columns the flattening SQL reads. Adapters emit a subset;
@@ -85,7 +110,7 @@ def _iter_jsonl(path):
 
 
 def claude_discover():
-    root = os.path.expanduser("~/.claude/projects")
+    root = os.path.join(_configured_path("CLAUDE_CONFIG_DIR", "~/.claude"), "projects")
     if not os.path.isdir(root):
         return []
     out = []
@@ -104,7 +129,7 @@ def claude_normalize(path):
 
 
 def codex_discover():
-    root = os.path.expanduser("~/.codex/sessions")
+    root = os.path.join(_configured_path("CODEX_HOME", "~/.codex"), "sessions")
     if not os.path.isdir(root):
         return []
     out = []
@@ -349,7 +374,7 @@ def omp_normalize(path):
 
 
 def cursor_discover():
-    root = os.path.expanduser("~/.cursor/projects")
+    root = os.path.join(_configured_path("CURSOR_HOME", "~/.cursor"), "projects")
     if not os.path.isdir(root):
         return []
     out = []
@@ -420,7 +445,7 @@ def _cursor_resolve_slug(slug, fs_root="/"):
 
 def _cursor_project_cwd(path):
     """Decode the project-slug directory into a cwd via filesystem resolve."""
-    root = os.path.expanduser("~/.cursor/projects")
+    root = os.path.join(_configured_path("CURSOR_HOME", "~/.cursor"), "projects")
     rel = os.path.relpath(path, root)
     slug = rel.split(os.sep, 1)[0]
     return _cursor_resolve_slug(slug)
@@ -657,7 +682,7 @@ def main():
         CREATE TABLE raw_entries AS
         SELECT *
         FROM read_json(
-            '{stage_glob}',
+            '{_sql_quote(stage_glob)}',
             format='newline_delimited',
             union_by_name=true,
             ignore_errors=true,

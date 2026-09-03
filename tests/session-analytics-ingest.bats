@@ -3,7 +3,7 @@
 # Tests for skills/session-analytics/scripts/ingest.py — the multi-harness
 # adapter layer. Each harness adapter must normalize its native session format
 # into one canonical row shape carrying a `harness` column, then load the union
-# into ~/.claude/analytics/sessions.duckdb.
+# into the XDG cache session-analytics database.
 #
 # The adapters under test:
 #   - claude   : ~/.claude/projects/**/*.jsonl              (assistant/user blocks)
@@ -16,10 +16,11 @@
 load test_helper
 
 INGEST="$REAL_DOTFILES_DIR/skills/session-analytics/scripts/ingest.py"
-DB="$TEST_HOME/.claude/analytics/sessions.duckdb"
+DB="$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb"
 
 setup() {
     setup_test_env
+    export XDG_CACHE_HOME="$TEST_HOME/.cache"
     command -v duckdb  >/dev/null || skip "duckdb not installed"
     mkdir -p "$TEST_HOME/.claude/projects/proj"
     mkdir -p "$TEST_HOME/.codex/sessions/2026/05/30"
@@ -296,6 +297,76 @@ os.makedirs(os.path.join(root, 'Users', 'paul', 'Dev', 'easy-cheese'))
 got = mod._cursor_resolve_slug('Users-paul-Dev-easy-cheese', fs_root=root)
 want = os.path.join(root, 'Users', 'paul', 'Dev', 'easy-cheese')
 assert got == want, got
+print('ok')
+"
+    assert_success
+    assert_output_contains "ok"
+}
+
+@test "ingest: configured harness roots and relative database override resolve" {
+    local roots="$TEST_HOME/portable-roots"
+    mkdir -p "$roots/claude/projects/p" "$roots/codex/sessions" \
+        "$roots/cursor/projects/p/agent-transcripts"
+    touch "$roots/claude/projects/p/claude.jsonl"
+    touch "$roots/codex/sessions/codex.jsonl"
+    touch "$roots/cursor/projects/p/agent-transcripts/cursor.jsonl"
+    run env CLAUDE_CONFIG_DIR="$roots/claude" CODEX_HOME="$roots/codex" CURSOR_HOME="$roots/cursor" SESSIONS_DB=relative.db \
+        python3 -c "
+import importlib.util, os
+spec = importlib.util.spec_from_file_location('ingest', '''$INGEST''')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+assert mod.DB_PATH == os.path.abspath('relative.db')
+assert mod.claude_discover() == [
+    os.path.abspath('''$roots/claude/projects/p/claude.jsonl''')
+]
+assert mod.codex_discover() == [
+    os.path.abspath('''$roots/codex/sessions/codex.jsonl''')
+]
+assert mod.cursor_discover() == [
+    os.path.abspath('''$roots/cursor/projects/p/agent-transcripts/cursor.jsonl''')
+]
+print('ok')
+"
+    assert_success
+    assert_output_contains "ok"
+}
+
+# --- portable cache placement hardening ------------------------------------
+
+@test "ingest: SESSIONS_DB stage dir never collides with a sibling 'stage' directory" {
+    write_claude_fixture
+    mkdir -p "$TEST_HOME/stage"
+    touch "$TEST_HOME/stage/file.txt"
+    export SESSIONS_DB="$TEST_HOME/db.duckdb"
+    run python3 "$INGEST" --force
+    assert_success
+    # The pre-existing sibling 'stage' dir must survive: STAGE_DIR is derived
+    # from the database file name, not its parent dir, so it never aliases
+    # (and rmtree's) an unrelated 'stage' directory next to the database.
+    assert_file_exists "$TEST_HOME/stage/file.txt"
+    assert_dir_exists "$TEST_HOME/db.duckdb.stage"
+}
+
+@test "ingest: an apostrophe in SESSIONS_DB's path still ingests (SQL-quoted stage glob)" {
+    write_claude_fixture
+    local qdir="$TEST_HOME/o'brien"
+    mkdir -p "$qdir"
+    export SESSIONS_DB="$qdir/sessions.duckdb"
+    run python3 "$INGEST" --force
+    assert_success
+    run duckdb -init /dev/null "$SESSIONS_DB" -json -c "SELECT count(*) AS n FROM tool_uses WHERE harness='claude';"
+    assert_output_contains '"n":1'
+}
+
+@test "ingest: a relative XDG_CACHE_HOME is ignored; the default resolves under HOME" {
+    run env XDG_CACHE_HOME=relative/cache python3 -c "
+import importlib.util, os
+spec = importlib.util.spec_from_file_location('ingest', '''$INGEST''')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+want = os.path.join(os.path.expanduser('~'), '.cache', 'dotfiles', 'session-analytics')
+assert mod.DEFAULT_DB_DIR == want, mod.DEFAULT_DB_DIR
 print('ok')
 "
     assert_success

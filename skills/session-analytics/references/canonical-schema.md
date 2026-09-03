@@ -2,7 +2,7 @@
 
 The shape every harness adapter normalizes into and every analytics pack queries
 against. `ingest.py` loads one canonical row shape (the Claude envelope plus a
-`harness` tag) into `~/.claude/analytics/sessions.duckdb`, then flattens it into
+`harness` tag) into `${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb` by default, then flattens it into
 the tables below. **Pack authors: write SQL against these tables; never reach
 into a harness's native format.**
 

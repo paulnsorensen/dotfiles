@@ -96,6 +96,19 @@ assert_not_contains() {
     assert_contains "$output" "No session database"
 }
 
+@test "query.sh default database follows XDG_CACHE_HOME" {
+    need_duckdb
+    local cache="$TMPROOT/custom-cache"
+    local db="$cache/dotfiles/session-analytics/sessions.duckdb"
+    mkdir -p "$(dirname "$db")"
+    duckdb -init /dev/null "$db" -c "SELECT 1" >/dev/null
+    unset SESSIONS_DB
+    export XDG_CACHE_HOME="$cache"
+    run "$SKILLS/session-analytics/scripts/query.sh" tools
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "$db"
+}
+
 @test "tool-efficiency analyze.sh reports a missing database gracefully" {
     run "$SKILLS/tool-efficiency/scripts/analyze.sh" tool-usage Bash
     [ "$status" -eq 0 ]

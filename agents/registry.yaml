@@ -85,7 +85,7 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/roquefort-wrecker.md
   duckdb-expert:
-    description: Read-only DuckDB analyst for the coding-agent session-analytics database. Spawned with ONE analytics pack pointer (skills/<skill>/references/<domain>.md) plus a target and a harness filter; runs that single domain's queries and returns one structured ~2 KB digest. Reads queries from the caller's pack and the canonical schema from session-analytics. Built for context isolation — consumer skills fan out one parallel spawn per owned domain. Used by skill-improver, tool-efficiency, prompt-analytics, and work-recovery.
+    description: Read-only DuckDB analyst for the coding-agent session-analytics database. Spawned with ONE analytics pack pointer plus a target, a harness filter, and absolute paths for pack, schema, conventions, ingest script, and database — the caller resolves every path; the agent applies no defaults. Runs that single domain's queries and returns one structured ~2 KB digest. Built for context isolation — consumer skills fan out one parallel spawn per owned domain. Used by skill-improver, tool-efficiency, prompt-analytics, and work-recovery.
     models:
       claude: haiku
       codex: gpt-5.6-luna

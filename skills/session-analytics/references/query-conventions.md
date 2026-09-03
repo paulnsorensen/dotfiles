@@ -62,7 +62,7 @@ block on one empty result. A pack that returns all-empty should say
 All queries go through the CLI:
 
 ```bash
-duckdb ~/.claude/analytics/sessions.duckdb -json -c "SQL"
+duckdb "${SESSIONS_DB:-${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb}" -json -c "SQL"
 ```
 
 Ensure the DB exists first (`python3 <session-analytics>/scripts/ingest.py`;

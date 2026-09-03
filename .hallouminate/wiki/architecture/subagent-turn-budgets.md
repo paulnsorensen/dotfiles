@@ -20,7 +20,7 @@ own context window in the first place.
 
 ## How the data was measured
 
-Pulled via the `session-analytics` skill (DuckDB at
+Pulled via the `session-analytics` skill (DuckDB, historically at
 `~/.claude/analytics/sessions.duckdb`), claude harness, all projects. All figures
 are aggregate counts and percentiles — no session IDs, project names, paths, or
 content. Reproduce with the queries in that skill against `raw_entries`.
