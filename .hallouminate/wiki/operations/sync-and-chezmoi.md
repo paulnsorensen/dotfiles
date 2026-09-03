@@ -53,15 +53,13 @@ Codex differs: its single source of truth is the mise manifest pin (`"aqua:opena
 - **Pre-brew bootstraps on Linux** (brew isn't on PATH yet when these run): yq is downloaded as the Mike Farah Go binary into `~/.local/bin` (Ubuntu's apt `yq` is the wrong kislyuk/yq), and `uv` via the astral installer.
 - Other sources (`cargo`, `npm`, `uv`, `gh-extension`) run cross-platform unconditionally. On Linux, npm comes from the brew `node` formula (which bundles it).
 
-### Gotcha: omp native install reports "Release tag not found" on an existing tag
+### Gotcha: omp is installed from the pinned release asset, not the upstream installer
 
-**Symptom**: `dots up` fails with `curl: (56) ... error: 403` then `Release tag not found: v18.x.y`, and `FAILED` lists `omp`. `gh release view` shows the tag exists.
+**History**: `converge_omp_native` used to pipe `https://omp.sh/install`. That script resolves the tag through unauthenticated `api.github.com` (60 requests per hour per IP) and reads no `GH_TOKEN`. A spent budget returned 403, which the script misreported as `Release tag not found: v18.x.y`, and `dots up` failed with `omp` in `FAILED` while `gh release view` showed the tag present. The first response was "wait for the reset window"; the recurrence made that untenable.
 
-**Why**: `converge_omp_native` pipes the upstream `https://omp.sh/install` script. That script resolves the tag through unauthenticated `api.github.com`, which allows 60 requests per hour per IP. The script does not read `GH_TOKEN` or `GITHUB_TOKEN`. When the budget is spent (repeated `dots up` runs, other unauthenticated tooling), the API returns 403 and the script misreports it as a missing tag. This is an upstream limitation, not a pin error.
+**Now**: `converge_omp_native` downloads `https://github.com/can1357/oh-my-pi/releases/download/$OMP_PIN/omp-<os>[-musl]-<arch>` with `curl` directly (`packages/sync.sh`). Release downloads carry no API budget, so the pinned URL needs no API call and no token. `omp_release_asset` maps the host onto the asset name: `uname` for the OS, `sysctl -in hw.optional.arm64` for Darwin (NOT `uname -m`, which reports x86_64 under Rosetta and would pin an Apple Silicon Mac to the translated build), `uname -m` on Linux, plus musl detection.
 
-**Check**: `curl -sI https://api.github.com/repos/can1357/oh-my-pi/releases/tags/$OMP_PIN | grep -i x-ratelimit-remaining`. A value of 0 confirms the cause.
-
-**Fix**: wait for the window to reset (header `x-ratelimit-reset`), then re-run `dots up`. The version probe in `sync_native_harnesses` skips the download once the live binary matches `OMP_PIN`, so the retry is cheap. Recorded 2026-09-02.
+**Order of operations**: download into `~/.local/bin/.omp-stage` → `chmod +x` → ad-hoc `codesign` on Darwin (an unsigned binary is killed on first exec, so signing must precede the probe) → probe `--version` against `OMP_PIN` → `mv` over `~/.local/bin/omp`. The staged rename swaps the directory entry, so a live omp session cannot cause ETXTBSY, and a truncated or unstartable download never reaches the live path. `tests/packages.bats` asserts the pinned asset URL, the absence of any `api.github.com` call, the event order, and both failure legs. Recorded 2026-09-02.
 
 ## Chezmoi-managed subset
 

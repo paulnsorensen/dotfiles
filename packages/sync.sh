@@ -678,8 +678,8 @@ sync_gh_extensions() {
 
 ########## Native AI-harness CLIs
 # claude and codex are mise-managed. Remove stale native/brew copies so mise's
-# shim is the only one on PATH. OMP remains on its native installer, but the
-# installer is always invoked with OMP_PIN whenever package sync is not cached.
+# shim is the only one on PATH. OMP is installed from its pinned GitHub release
+# asset, and that download runs whenever package sync is not cached.
 
 
 # Brew package to migrate off, per harness ("" = none; "cask:NAME" = cask).
@@ -744,49 +744,92 @@ migrate_omp_off_bun() {
     rm -f "$path"
 }
 
-# Install the pinned omp release into $1 and rename it over the live binary.
-#
-# The upstream installer curls the release asset directly onto its install
-# target, so pointing it at ~/.local/bin fails with ETXTBSY whenever an omp
-# session is running. Staging into a sibling directory and renaming into place
-# swaps the directory entry instead, leaving live processes on the old inode.
-#
-# --binary is required: omp.sh's installer defaults to a bun source build
-# whenever --ref is given, and that build (`bun install -g
-# packages/coding-agent` against the cloned monorepo) trips bun's
-# self-referential-workspace-loop check on the package's own dependency on
-# itself — reproduces even reinstalling an already-working pin, so it's a
-# bun/installer incompatibility, not a bad release. --binary fetches the
-# prebuilt release asset instead, sidestepping bun entirely.
-converge_omp_native() {
-    local stage_dir="$1" staged="$1/omp" install_status=0
+# Name the release asset for this host. The asset names follow
+# omp-<os>[-musl]-<arch>, mirroring the platform detection in the upstream
+# installer.
+omp_release_asset() {
+    local os arch libc="" machine ldd_out
+    case "$PLATFORM" in
+        Darwin) os="darwin" ;;
+        Linux)  os="linux" ;;
+        *)
+            log_error "omp: unsupported platform $PLATFORM"
+            return 1
+            ;;
+    esac
 
-    mkdir -p "$stage_dir"
-    # The installer closes by telling the user to add its install dir to PATH
-    # unless it is already there; putting the throwaway stage dir on PATH keeps
-    # it from printing that instruction for a directory removed moments later.
-    curl -fsSL https://omp.sh/install |
-        PI_INSTALL_DIR="$stage_dir" PATH="$stage_dir:$PATH" sh -s -- --binary --ref "$OMP_PIN" ||
-        install_status=$?
-
-    if [[ ! -f "$staged" ]]; then
-        log_error "omp native install failed"
-        return 1
+    if [[ "$os" == "darwin" ]]; then
+        # Read the hardware, not the process: under Rosetta `uname -m` reports
+        # x86_64 on an arm64 Mac, which would pin the machine to the slower
+        # translated build forever. Upstream's installer probes the same flag.
+        if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null || true)" == "1" ]]; then
+            arch="arm64"
+        else
+            arch="x64"
+        fi
+    else
+        machine="$(uname -m)"
+        case "$machine" in
+            arm64 | aarch64) arch="arm64" ;;
+            x86_64 | amd64)  arch="x64" ;;
+            *)
+                log_error "omp: unsupported architecture $machine"
+                return 1
+                ;;
+        esac
     fi
 
+    if [[ "$os" == "linux" ]]; then
+        # Capture before matching: a `ldd | grep -q` pipeline dies on SIGPIPE
+        # under pipefail once grep closes the pipe on its first match.
+        ldd_out="$(ldd --version 2>&1 || true)"
+        if [[ -f /etc/alpine-release || "$ldd_out" == *musl* ]]; then
+            libc="-musl"
+        fi
+    fi
+
+    printf 'omp-%s%s-%s\n' "$os" "$libc" "$arch"
+}
+
+# Install the pinned omp release into $1 and rename it over the live binary.
+#
+# The release asset is fetched straight from the tag's download URL rather than
+# through the upstream https://omp.sh/install script. That script resolves the
+# tag through unauthenticated api.github.com (60 requests per hour per IP) and
+# reads no GH_TOKEN, so a spent budget returned 403 and the script misreported
+# it as a missing tag, failing the whole sync. Release downloads carry no such
+# budget, so the pinned URL is deterministic and needs no API call at all.
+#
+# Staging into a sibling directory and renaming into place swaps the directory
+# entry instead of the file, so writing over ~/.local/bin/omp cannot fail with
+# ETXTBSY while an omp session is running, and live processes keep the old
+# inode.
+converge_omp_native() {
+    local stage_dir="$1" staged="$1/omp" asset url
+    asset="$(omp_release_asset)" || return 1
+    url="https://github.com/can1357/oh-my-pi/releases/download/$OMP_PIN/$asset"
+
+    mkdir -p "$stage_dir"
+    echo "  Downloading $asset ($OMP_PIN)..."
+    if ! curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 30 \
+        "$url" -o "$staged"; then
+        log_error "omp download failed: $url"
+        return 1
+    fi
+    chmod +x "$staged"
+
     if [[ "$PLATFORM" == "Darwin" ]]; then
+        # The unsigned download is killed by macOS on first exec, so sign
+        # before the smoke test below runs it.
         if ! codesign --force --sign - "$staged" </dev/null; then
             log_error "omp ad-hoc signing failed"
             return 1
         fi
-        # The installer's own smoke test fails on the still-unsigned download,
-        # so re-check the signed binary rather than trusting its exit status.
-        if ((install_status != 0)) &&
-            [[ "$("$staged" --version 2>/dev/null || true)" != "omp/${OMP_PIN#v}" ]]; then
-            log_error "omp native install failed"
-            return 1
-        fi
-    elif ((install_status != 0)); then
+    fi
+
+    # Never move a binary that cannot report the pinned version: a truncated
+    # download or a musl build missing libstdc++ fails right here.
+    if [[ "$("$staged" --version 2>/dev/null || true)" != "omp/${OMP_PIN#v}" ]]; then
         log_error "omp native install failed"
         return 1
     fi
@@ -833,8 +876,8 @@ sync_native_harnesses() {
     migrate_harness_off_brew "omp"
     migrate_omp_off_bun
 
-    # The upstream installer refetches the ~120 MB release asset on every
-    # call, so an uncached sync paid a full download even at the pin — and a
+    # The release asset is a ~120 MB download on every call, so an uncached
+    # sync paid a full download even at the pin — and a
     # transient network failure then failed the whole sync with nothing
     # actually wrong. Probe the live binary by absolute path: PATH may still
     # resolve a shadow that the migrations above just deleted from disk.
