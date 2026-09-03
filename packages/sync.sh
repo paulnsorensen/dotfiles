@@ -762,7 +762,16 @@ omp_release_asset() {
         # Read the hardware, not the process: under Rosetta `uname -m` reports
         # x86_64 on an arm64 Mac, which would pin the machine to the slower
         # translated build forever. Upstream's installer probes the same flag.
-        if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null || true)" == "1" ]]; then
+        # `-i` makes sysctl exit 0 for a key this machine does not have, so
+        # empty output means Intel. A non-zero status means the probe itself
+        # failed: never guess an architecture from that.
+        local arm64_flag probe_status=0
+        arm64_flag="$(sysctl -in hw.optional.arm64 2>/dev/null)" || probe_status=$?
+        if ((probe_status != 0)); then
+            log_error "omp: cannot probe Darwin architecture (sysctl failed)"
+            return 1
+        fi
+        if [[ "$arm64_flag" == "1" ]]; then
             arch="arm64"
         else
             arch="x64"
@@ -811,12 +820,27 @@ converge_omp_native() {
 
     mkdir -p "$stage_dir"
     echo "  Downloading $asset ($OMP_PIN)..."
-    if ! curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 30 \
+    # --max-time bounds the whole transfer: the stall floor alone lets a
+    # throttled link dribble a ~200 MB asset for hours with no output, which
+    # is indistinguishable from a hang. --retry rides out a single CDN blip,
+    # which would otherwise redden the sync on a first install or a pin bump.
+    if ! curl -fsSL --connect-timeout 10 --speed-limit 10240 --speed-time 30 \
+        --max-time 1800 --retry 3 --retry-delay 2 --retry-connrefused \
         "$url" -o "$staged"; then
         log_error "omp download failed: $url"
         return 1
     fi
-    chmod +x "$staged"
+    # curl can exit 0 without leaving a file (a stubbed or redirected curl,
+    # a full disk). Name that here rather than letting the version probe
+    # below report the generic failure.
+    if [[ ! -f "$staged" ]]; then
+        log_error "omp download produced no file: $url"
+        return 1
+    fi
+    if ! chmod +x "$staged"; then
+        log_error "omp: cannot make the staged binary executable"
+        return 1
+    fi
 
     if [[ "$PLATFORM" == "Darwin" ]]; then
         # The unsigned download is killed by macOS on first exec, so sign
@@ -828,14 +852,20 @@ converge_omp_native() {
     fi
 
     # Never move a binary that cannot report the pinned version: a truncated
-    # download or a musl build missing libstdc++ fails right here.
-    if [[ "$("$staged" --version 2>/dev/null || true)" != "omp/${OMP_PIN#v}" ]]; then
-        log_error "omp native install failed"
+    # download, a wrong libc variant, or a missing shared library fails right
+    # here. Match a prefix, not the whole line: an upstream that starts
+    # appending its platform to `--version` must not turn every later sync
+    # into a hard failure on a binary that is in fact correct. Keep the
+    # observed output — it carries the loader error that names the cause.
+    local probe
+    probe="$("$staged" --version 2>&1 || true)"
+    if [[ "$probe" != "omp/${OMP_PIN#v}"* ]]; then
+        log_error "omp native install failed: expected omp/${OMP_PIN#v}, got: ${probe:-<no output>}"
         return 1
     fi
 
     if ! mv -f "$staged" "$HOME/.local/bin/omp"; then
-        log_error "omp native install failed"
+        log_error "omp install failed: cannot move the staged binary to $HOME/.local/bin/omp"
         return 1
     fi
 }

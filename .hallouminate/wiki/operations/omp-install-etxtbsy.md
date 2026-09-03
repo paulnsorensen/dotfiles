@@ -1,6 +1,6 @@
 # `curl: (23)` during omp install is `ETXTBSY`, not a network fault
 
-The omp.sh installer curls its release asset **straight onto the live binary path**. If an `omp` session is running, the kernel refuses the write with `ETXTBSY` and curl reports:
+An installer that curls its release asset **straight onto the live binary path** trips this. If an `omp` session is running, the kernel refuses the write with `ETXTBSY` and curl reports:
 
 ```
 curl: (23) client returned ERROR on write
@@ -16,23 +16,23 @@ This is also why the failure is specific to compiled binaries. #677's test note 
 
 ## The fix: stage, then rename
 
-`converge_omp_native` (`packages/sync.sh:743-780`) downloads into a staging dir and moves the result into place:
+`converge_omp_native` in `packages/sync.sh` downloads into a staging dir and moves the result into place:
 
 ```sh
-stage_dir="$HOME/.local/bin/.omp-stage"   # packages/sync.sh:819
+stage_dir="$HOME/.local/bin/.omp-stage"   # sync_native_harnesses
 ...
-mv -f "$staged" "$HOME/.local/bin/omp"    # packages/sync.sh:776
+mv -f "$staged" "$HOME/.local/bin/omp"    # converge_omp_native
 ```
 
 `rename(2)` swaps the **directory entry**, never opening the running binary's inode. Already-running processes keep executing the old inode until they exit; the next launch picks up the new one. No `ETXTBSY`, and no need to ask the user to quit omp first.
 
 The staging dir must stay on the **same filesystem** as the target, or `mv` degrades to copy-and-delete and the whole point is lost. `$HOME/.local/bin/.omp-stage` is a child of the install dir, which guarantees it.
 
-Two smaller details in that function, both deliberate:
+Two further details in that function, both deliberate:
 
-- The stage dir is put on `PATH` during the install (`packages/sync.sh:747-751`) purely so the installer doesn't close by telling the user to add a directory that is deleted seconds later.
-- The installer's own smoke test runs against the still-unsigned download and fails, so the signed binary is **re-checked** rather than trusting the installer's exit status (`packages/sync.sh:764-767`).
+- On Darwin the staged file is ad-hoc signed **before** it is executed: macOS kills an unsigned download on first exec, so signing must precede the version probe.
+- The staged binary must report the pinned version before `mv` runs. A truncated download or a wrong libc variant lands a file that cannot start, and it never reaches the live path.
 
-Landed in #677.
+Landed in #677. The `omp.sh` installer this page originally described is gone — `converge_omp_native` now downloads the pinned release asset itself, so the stage-and-rename is this repo's own code rather than a wrapper around a vendor script. See [[operations/sync-and-chezmoi]] for why the installer was dropped.
 
 Related: [[operations/mise-manifest-precedence]] and [[operations/mise-github-auth]] (the other two failures from the same investigation — all three made `dots sync` fail for reasons that looked unrelated to the actual defect), [[operations/sync-and-chezmoi]].

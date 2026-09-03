@@ -165,6 +165,18 @@ MOCKSYSCTL
     chmod +x "$MOCK_BIN/sysctl"
 }
 
+# Mock `ldd --version`, the Linux libc probe, so the musl/glibc choice is
+# pinned by the test rather than by the host the suite runs on.
+write_mock_ldd() {
+    local libc_line="$1"
+    rm -f "$MOCK_BIN/ldd"
+    cat > "$MOCK_BIN/ldd" << MOCKLDD
+#!/bin/bash
+printf '%s\n' "$libc_line"
+MOCKLDD
+    chmod +x "$MOCK_BIN/ldd"
+}
+
 write_mock_uv() {
     rm -f "$MOCK_BIN/uv"
     cat > "$MOCK_BIN/uv" << 'MOCKUV'
@@ -649,6 +661,10 @@ path_without_buildtools() {
         rm -f "$MOCK_BIN/$t"
         printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/$t"; chmod +x "$MOCK_BIN/$t"
     done
+    # The toolchain check only needs `command -v curl` to resolve, so restore
+    # the recording mock: a bare `exit 0` curl downloads no omp release asset
+    # and fails the native harness leg.
+    write_mock_curl
     write_test_yaml
 
     run_sync
@@ -1298,18 +1314,18 @@ write_live_omp() {
     [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/${pin#v}" ]]
 }
 
-@test "a converged omp survives a failing download" {
+# A curl that always fails proves the download is unreachable: if the skip
+# probe ever regressed, this sync would go red.
+@test "a live binary at the pin makes the download unreachable" {
     local pin
     pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
     write_live_omp "${pin#v}"
-    # A live binary at the pin must skip the download entirely, so even a
-    # network failure cannot fail the sync.
     write_mock_curl 1
     write_test_yaml
 
     run_sync
     assert_success
-    assert_output_not_contains "omp download failed"
+    [[ ! -f "$CURL_LOG" ]] || ! grep -q "releases/download" "$CURL_LOG"
     assert_output_contains "Package sync complete"
     [[ -s "$CACHE_FILE" ]]
 }
@@ -1404,9 +1420,24 @@ YAML
 
     run_sync
     assert_failure
-    assert_output_contains "omp native install failed"
+    # The observed output carries the loader error on a wrong-libc build, so
+    # the message must quote it rather than report a bare failure.
+    assert_output_contains "expected omp/$(omp_pin_version | sed 's/^v//'), got: omp/0.0.2"
     assert_output_contains "cache NOT saved"
     [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/0.0.1" ]]
+}
+
+# An upstream that starts appending its platform to `--version` must not turn
+# a correct binary into a permanent hard failure.
+@test "a version line with a suffix past the pin still converges" {
+    local pin
+    pin="$(omp_pin_version)"
+    write_mock_curl 0 "${pin#v} (darwin-arm64)"
+    write_test_yaml
+
+    run_sync
+    assert_success
+    assert_output_contains "Converged omp to $pin"
 }
 
 @test "Darwin signs a freshly downloaded native omp before it is validated" {
@@ -1428,11 +1459,34 @@ YAML
 
 @test "the release asset follows the host platform and architecture" {
     write_mock_uname Linux x86_64
+    write_mock_ldd "ldd (GNU libc) 2.39"
     write_test_yaml
 
     run_sync
     assert_success
     grep -q "releases/download/$(omp_pin_version)/omp-linux-x64" "$CURL_LOG"
+}
+
+@test "a Linux arm64 host gets the arm64 asset" {
+    write_mock_uname Linux aarch64
+    write_mock_ldd "ldd (GNU libc) 2.39"
+    write_test_yaml
+
+    run_sync
+    assert_success
+    grep -q "releases/download/$(omp_pin_version)/omp-linux-arm64" "$CURL_LOG"
+}
+
+# The glibc and musl builds are mutually unrunnable, so an inverted probe
+# would ship a binary that cannot start on either host class.
+@test "a musl host gets the musl asset" {
+    write_mock_uname Linux x86_64
+    write_mock_ldd "musl libc (x86_64) Version 1.2.5"
+    write_test_yaml
+
+    run_sync
+    assert_success
+    grep -q "releases/download/$(omp_pin_version)/omp-linux-musl-x64" "$CURL_LOG"
 }
 
 # Under Rosetta `uname -m` reports x86_64 on Apple Silicon. Trusting it would
