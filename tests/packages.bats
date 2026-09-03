@@ -22,7 +22,6 @@ setup_file() {
     write_mock_harness omp
     write_mock_mise
     write_mock_curl
-    write_mock_sh
 }
 setup() {
     setup_test_env
@@ -55,7 +54,6 @@ setup() {
     export EVENT_LOG="$TEST_HOME/events.log"
     export MISE_LOG="$TEST_HOME/mise.log"
     export CURL_LOG="$TEST_HOME/curl.log"
-    export SH_LOG="$TEST_HOME/sh.log"
     export UV_LOG="$TEST_HOME/uv.log"
     export MISE_CONFIG_FILE="$TEST_HOME/mise-config.toml"
     export MISE_BOOTSTRAP_CONFIG_FILE="$TEST_HOME/missing-bootstrap-config.toml"
@@ -97,41 +95,37 @@ MOCKHARNESS
     chmod +x "$MOCK_BIN/$name"
 }
 
-# Mock curl for native-installer tests: record the URL, emit nothing so the
-# downstream `| bash` / `| sh` runs an empty (no-op) script.
+# Mock curl: record every call, emit nothing on a piped fetch (so a downstream
+# `| bash` runs an empty script), and satisfy a `-o` release download by
+# writing a fake omp that reports the tag in the URL. $1 sets the exit status,
+# $2 overrides the reported version so a smoke-test failure can be modelled.
 write_mock_curl() {
+    local exit_status="${1:-0}" version="${2:-}"
     rm -f "$MOCK_BIN/curl"
-    cat > "$MOCK_BIN/curl" << 'MOCKCURL'
+    cat > "$MOCK_BIN/curl" << MOCKCURL
 #!/bin/bash
-echo "curl $*" >> "$CURL_LOG"
-exit 0
-MOCKCURL
-    chmod +x "$MOCK_BIN/curl"
-}
-
-# Mock the piped omp.sh installer. Like the real one it truncates
-# "$PI_INSTALL_DIR/omp" in place — so aiming it at a running binary fails with
-# ETXTBSY — and it writes the binary before the exit status it is asked for,
-# modelling macOS where the download lands but the unsigned smoke test fails.
-write_mock_sh() {
-    local exit_status="${1:-0}"
-    rm -f "$MOCK_BIN/sh"
-    cat > "$MOCK_BIN/sh" << MOCKSH
-#!/bin/bash
-echo "sh \$*" >> "\$SH_LOG"
-echo "sh \$*" >> "\$EVENT_LOG"
-ref=""
+echo "curl \$*" >> "\$CURL_LOG"
+out="" url=""
 while [ \$# -gt 0 ]; do
-    [ "\$1" = "--ref" ] && ref="\$2"
+    case "\$1" in
+        -o)    out="\$2"; shift ;;
+        http*) url="\$1" ;;
+    esac
     shift
 done
-dir="\${PI_INSTALL_DIR:-\$HOME/.local/bin}"
-mkdir -p "\$dir"
-printf '#!/bin/bash\nprintf "omp/%s\\\\n"\n' "\${ref#v}" > "\$dir/omp" || exit 1
-chmod +x "\$dir/omp"
+[ -z "\$out" ] || echo "curl -o \$out \$url" >> "\$EVENT_LOG"
+if [ -n "\$out" ] && [ "$exit_status" -eq 0 ]; then
+    version="$version"
+    if [ -z "\$version" ]; then
+        version="\${url#*/releases/download/}"
+        version="\${version%%/*}"
+        version="\${version#v}"
+    fi
+    printf '#!/bin/bash\nprintf "omp/%s\\\\n"\n' "\$version" > "\$out" || exit 1
+fi
 exit $exit_status
-MOCKSH
-    chmod +x "$MOCK_BIN/sh"
+MOCKCURL
+    chmod +x "$MOCK_BIN/curl"
 }
 
 write_mock_codesign() {
@@ -147,12 +141,40 @@ MOCKCODESIGN
 }
 
 write_mock_uname() {
-    local platform="$1"
+    local platform="$1" machine="${2:-$(/usr/bin/uname -m)}"
     cat > "$MOCK_BIN/uname" << MOCKUNAME
 #!/bin/bash
-printf '%s\n' "$platform"
+if [ "\$1" = "-m" ]; then
+    printf '%s\n' "$machine"
+else
+    printf '%s\n' "$platform"
+fi
 MOCKUNAME
     chmod +x "$MOCK_BIN/uname"
+}
+
+# Mock `sysctl -in hw.optional.arm64`, the Darwin arch probe, so the expected
+# asset name does not depend on the host the suite runs on.
+write_mock_sysctl() {
+    local arm64_flag="$1"
+    rm -f "$MOCK_BIN/sysctl"
+    cat > "$MOCK_BIN/sysctl" << MOCKSYSCTL
+#!/bin/bash
+printf '%s\n' "$arm64_flag"
+MOCKSYSCTL
+    chmod +x "$MOCK_BIN/sysctl"
+}
+
+# Mock `ldd --version`, the Linux libc probe, so the musl/glibc choice is
+# pinned by the test rather than by the host the suite runs on.
+write_mock_ldd() {
+    local libc_line="$1"
+    rm -f "$MOCK_BIN/ldd"
+    cat > "$MOCK_BIN/ldd" << MOCKLDD
+#!/bin/bash
+printf '%s\n' "$libc_line"
+MOCKLDD
+    chmod +x "$MOCK_BIN/ldd"
 }
 
 write_mock_uv() {
@@ -639,6 +661,10 @@ path_without_buildtools() {
         rm -f "$MOCK_BIN/$t"
         printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/$t"; chmod +x "$MOCK_BIN/$t"
     done
+    # The toolchain check only needs `command -v curl` to resolve, so restore
+    # the recording mock: a bare `exit 0` curl downloads no omp release asset
+    # and fails the native harness leg.
+    write_mock_curl
     write_test_yaml
 
     run_sync
@@ -886,7 +912,7 @@ YAML
     write_test_yaml
     run_sync
     assert_success
-    rm -f "$BREW_LOG" "$MISE_LOG" "$CURL_LOG" "$SH_LOG"
+    rm -f "$BREW_LOG" "$MISE_LOG" "$CURL_LOG"
 
     run bash "$SYNC_SCRIPT"
     assert_success
@@ -1234,8 +1260,12 @@ MOCKBREW
     assert_success
     local expected_omp_pin
     expected_omp_pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
-    grep -q "omp.sh/install" "$CURL_LOG"
-    grep -q -- "--binary --ref $expected_omp_pin" "$SH_LOG"
+    grep -q "releases/download/$expected_omp_pin/omp-" "$CURL_LOG"
+    # The upstream omp.sh installer resolved the tag through unauthenticated
+    # api.github.com, whose 60/hr per-IP budget failed the sync as a bogus
+    # "Release tag not found". The pinned asset URL needs no API call.
+    ! grep -q "api.github.com" "$CURL_LOG"
+    ! grep -q "omp.sh/install" "$CURL_LOG"
     [[ ! -f "$OMP_LOG" ]] || ! grep -q "omp update" "$OMP_LOG"
 }
 
@@ -1244,12 +1274,12 @@ MOCKBREW
     run_sync
     assert_success
     local before
-    before=$(wc -l < "$SH_LOG")
+    before=$(grep -c "releases/download" "$CURL_LOG")
 
     run bash "$SYNC_SCRIPT"
     assert_success
     assert_output_contains "unchanged (cached), syncing mise"
-    [[ "$(wc -l < "$SH_LOG")" -eq "$before" ]]
+    [[ "$(grep -c "releases/download" "$CURL_LOG")" -eq "$before" ]]
 }
 
 # Install a fake live omp reporting an exact version, as the real native
@@ -1269,7 +1299,7 @@ write_live_omp() {
     run_sync
     assert_success
     assert_output_contains "+ omp ($pin)"
-    [[ ! -f "$SH_LOG" ]] || ! grep -q -- "--binary --ref" "$SH_LOG"
+    [[ ! -f "$CURL_LOG" ]] || ! grep -q "releases/download" "$CURL_LOG"
 }
 
 @test "package sync reinstalls omp when the live binary drifts off the pin" {
@@ -1280,23 +1310,22 @@ write_live_omp() {
     assert_success
     local pin
     pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
-    grep -q -- "--binary --ref $pin" "$SH_LOG"
+    grep -q "releases/download/$pin/omp-" "$CURL_LOG"
     [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/${pin#v}" ]]
 }
 
-@test "a converged omp survives a failing installer" {
+# A curl that always fails proves the download is unreachable: if the skip
+# probe ever regressed, this sync would go red.
+@test "a live binary at the pin makes the download unreachable" {
     local pin
     pin=$(sed -n 's/^OMP_PIN="\([^"]*\)"/\1/p' "$SYNC_SCRIPT")
     write_live_omp "${pin#v}"
-    # uname Linux takes the branch that fails on the installer status alone,
-    # modelling a network failure rather than Darwin's signed-binary recheck.
-    write_mock_sh 1
-    write_mock_uname Linux
+    write_mock_curl 1
     write_test_yaml
 
     run_sync
     assert_success
-    assert_output_not_contains "omp native install failed"
+    [[ ! -f "$CURL_LOG" ]] || ! grep -q "releases/download" "$CURL_LOG"
     assert_output_contains "Package sync complete"
     [[ -s "$CACHE_FILE" ]]
 }
@@ -1327,13 +1356,14 @@ YAML
     assert_success
     local expected_omp_pin
     expected_omp_pin="$(omp_pin_version)"
-    grep -q -- "--binary --ref $expected_omp_pin" "$SH_LOG"
+    grep -q "releases/download/$expected_omp_pin/omp-" "$CURL_LOG"
     [[ ! -f "$OMP_LOG" ]] || ! grep -q "omp update" "$OMP_LOG"
 }
 
-# The upstream installer truncates its target in place, so a live omp session
-# makes the kernel refuse the write with ETXTBSY. A real ELF is required to
-# reproduce it: an interpreted script is only held open for reading.
+# curl truncates its target in place, so downloading straight onto a live omp
+# makes the kernel refuse the write with ETXTBSY — hence the stage-and-rename.
+# A real ELF is required to reproduce it: an interpreted script is only held
+# open for reading.
 @test "package sync converges omp while a running omp holds the live binary" {
     local omp_path="$TEST_HOME/.local/bin/omp"
     mkdir -p "$TEST_HOME/.local/bin"
@@ -1368,51 +1398,117 @@ YAML
     [[ "$("$omp_path")" == "omp/${omp_pin#v}" ]]
 }
 
-@test "omp installer failure fails loudly and does not save cache" {
+@test "omp download failure fails loudly and does not save cache" {
     write_test_yaml
-    write_mock_sh 1
-    write_mock_uname Linux
+    write_mock_curl 1
 
     run_sync
     assert_failure
-    assert_output_contains "omp native install failed"
+    assert_output_contains "omp download failed"
     assert_output_not_contains "Native harness sync complete"
     assert_output_contains "cache NOT saved"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
 }
 
-@test "Darwin signs and validates a downloaded omp after installer smoke failure" {
-    write_mock_uname Darwin
-    write_mock_sh 1
+# A truncated download, or a musl build that cannot start, still lands a file.
+# Only the version probe separates it from a good install, so a staged binary
+# off the pin must never reach ~/.local/bin.
+@test "a staged omp off the pin fails convergence and keeps the live binary" {
+    write_live_omp "0.0.1"
+    write_mock_curl 0 "0.0.2"
+    write_test_yaml
+
+    run_sync
+    assert_failure
+    # The observed output carries the loader error on a wrong-libc build, so
+    # the message must quote it rather than report a bare failure.
+    assert_output_contains "expected omp/$(omp_pin_version | sed 's/^v//'), got: omp/0.0.2"
+    assert_output_contains "cache NOT saved"
+    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/0.0.1" ]]
+}
+
+# An upstream that starts appending its platform to `--version` must not turn
+# a correct binary into a permanent hard failure.
+@test "a version line with a suffix past the pin still converges" {
+    local pin
+    pin="$(omp_pin_version)"
+    write_mock_curl 0 "${pin#v} (darwin-arm64)"
     write_test_yaml
 
     run_sync
     assert_success
-    local omp_pin
-    omp_pin="$(omp_pin_version)"
-    assert_output_contains "Converged omp to $omp_pin"
-    [[ "$("$TEST_HOME/.local/bin/omp")" == "omp/${omp_pin#v}" ]]
+    assert_output_contains "Converged omp to $pin"
+}
 
-    local expected_events
-    expected_events=$(printf 'sh -s -- --binary --ref %s\ncodesign --force --sign - %s' \
-        "$omp_pin" "$TEST_HOME/.local/bin/.omp-stage/omp")
+@test "Darwin signs a freshly downloaded native omp before it is validated" {
+    write_mock_uname Darwin
+    write_mock_sysctl 1
+    write_test_yaml
+
+    run_sync
+    assert_success
+
+    local omp_pin staged expected_events
+    omp_pin="$(omp_pin_version)"
+    staged="$TEST_HOME/.local/bin/.omp-stage/omp"
+    expected_events=$(printf 'curl -o %s https://github.com/can1357/oh-my-pi/releases/download/%s/omp-darwin-arm64\ncodesign --force --sign - %s' \
+        "$staged" "$omp_pin" "$staged")
     run cat "$EVENT_LOG"
     [[ "$output" == "$expected_events" ]]
 }
 
-@test "Darwin signs a freshly converged native omp after installation" {
-    write_mock_uname Darwin
+@test "the release asset follows the host platform and architecture" {
+    write_mock_uname Linux x86_64
+    write_mock_ldd "ldd (GNU libc) 2.39"
     write_test_yaml
 
     run_sync
     assert_success
+    grep -q "releases/download/$(omp_pin_version)/omp-linux-x64" "$CURL_LOG"
+}
 
-    local omp_pin expected_events
-    omp_pin="$(omp_pin_version)"
-    expected_events=$(printf 'sh -s -- --binary --ref %s\ncodesign --force --sign - %s' \
-        "$omp_pin" "$TEST_HOME/.local/bin/.omp-stage/omp")
-    run cat "$EVENT_LOG"
-    [[ "$output" == "$expected_events" ]]
+@test "a Linux arm64 host gets the arm64 asset" {
+    write_mock_uname Linux aarch64
+    write_mock_ldd "ldd (GNU libc) 2.39"
+    write_test_yaml
+
+    run_sync
+    assert_success
+    grep -q "releases/download/$(omp_pin_version)/omp-linux-arm64" "$CURL_LOG"
+}
+
+# The glibc and musl builds are mutually unrunnable, so an inverted probe
+# would ship a binary that cannot start on either host class.
+@test "a musl host gets the musl asset" {
+    write_mock_uname Linux x86_64
+    write_mock_ldd "musl libc (x86_64) Version 1.2.5"
+    write_test_yaml
+
+    run_sync
+    assert_success
+    grep -q "releases/download/$(omp_pin_version)/omp-linux-musl-x64" "$CURL_LOG"
+}
+
+# Under Rosetta `uname -m` reports x86_64 on Apple Silicon. Trusting it would
+# install the translated build on every sync from an x86 shell.
+@test "a Rosetta shell still gets the arm64 asset on Apple Silicon" {
+    write_mock_uname Darwin x86_64
+    write_mock_sysctl 1
+    write_test_yaml
+
+    run_sync
+    assert_success
+    grep -q "releases/download/$(omp_pin_version)/omp-darwin-arm64" "$CURL_LOG"
+}
+
+@test "an Intel Mac gets the x64 asset" {
+    write_mock_uname Darwin x86_64
+    write_mock_sysctl ""
+    write_test_yaml
+
+    run_sync
+    assert_success
+    grep -q "releases/download/$(omp_pin_version)/omp-darwin-x64" "$CURL_LOG"
 }
 
 @test "Darwin signing failure fails convergence and does not save cache" {
