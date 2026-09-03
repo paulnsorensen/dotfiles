@@ -52,31 +52,16 @@ if [[ -f "$HOME/.cargo/bin/tilth" ]]; then
 fi
 
 # A second npm global prefix (homebrew node beside mise node) can hold its own
-# stale copy of the nightly. This npm never updates that copy, and the version
-# strings can match while the postinstall platform binaries differ. Warn when a
-# PATH copy of the nightly bin resolves into its package tree outside this
-# npm's global prefix. Use readlink without GNU-only -f because macOS ships BSD
-# readlink.
-resolve_path() {
-    local path="$1" target
-    while [[ -L "$path" ]]; do
-        target="$(readlink "$path")" || return 1
-        if [[ "$target" == /* ]]; then
-            path="$target"
-        else
-            path="$(dirname "$path")/$target"
-        fi
-    done
-    cd -P "$(dirname "$path")" && printf '%s/%s\n' "$PWD" "$(basename "$path")"
-}
-
-npm_prefix="$(npm prefix -g 2>/dev/null || true)"
-if [[ -n "$npm_prefix" ]]; then
-    while IFS= read -r candidate; do
-        resolved="$(resolve_path "$candidate" 2>/dev/null || true)"
-        if [[ "$resolved" == */node_modules/"$PKG"/* && "$resolved" != "$npm_prefix"/* ]]; then
-            shadow_root="${resolved%%/node_modules/*}"
-            echo "⚠ $candidate resolves into a second npm prefix ($shadow_root) — that copy goes stale because this npm never updates it. Run '${shadow_root%/lib}/bin/npm rm -g $PKG' to remove it." >&2
-        fi
-    done < <(type -ap tilth 2>/dev/null || true)
+# stale copy of the nightly. This npm never updates that copy, and whichever
+# prefix leads on PATH wins the bin — so that copy can pin the MCP to an old
+# binary while sync reports success. Remove it; a warning here was ignored for
+# 34 nightlies. Shared with the sibling installer in bin/lib/npm-nightly.sh.
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+NIGHTLY_LIB="$SOURCE_DIR/../bin/lib/npm-nightly.sh"
+if [[ -r "$NIGHTLY_LIB" ]]; then
+    # shellcheck source=../../bin/lib/npm-nightly.sh
+    source "$NIGHTLY_LIB"
+    npm_nightly_prune_shadows "$PKG" tilth
+else
+    echo "⚠ $NIGHTLY_LIB not found — skipping the $PKG second-prefix shadow prune." >&2
 fi

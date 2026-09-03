@@ -503,10 +503,44 @@ freshness signal across prefixes.
 showing an argument-parse error. Second confirmed hit 2026-08-31:
 `/opt/homebrew/bin/hallouminate` pointed into a stale homebrew-prefix
 `hallouminate-nightly` (installed Jul 27). Both nightly installers
-(`run_after_install-{tilth,hallouminate}.sh.tmpl`) now warn when a PATH copy of
-the fork nightly resolves into its package tree outside the active npm prefix.
+(`run_after_install-{tilth,hallouminate}.sh.tmpl`) detect a PATH copy of the
+fork nightly that resolves into its package tree outside the active npm prefix.
 Before that guard, the shadow warnings covered only upstream-npm and
 `~/.cargo/bin` copies — same family as the yq bootstrap-shadow pattern above.
+
+**Why the warning was not enough (2026-09-02)**: the guard warned but did not
+act, and the warning scrolls past inside a long `dots sync`. The homebrew-prefix
+`hallouminate-nightly` therefore survived **34 nightlies** (`experimental.131.1`,
+Aug 20 → `165.1`), pinning the MCP to hallouminate 0.7.0 while `dots sync`
+reported success every run. The user-visible symptom was subtle rather than
+fatal: `ground` kept answering, but only from the repo-local wiki, because
+union-across-corpora search shipped in v0.9.0 and the stale binary predated it.
+A silently-old binary degrades behaviour without an error to notice.
+
+**Decision**: the prune now removes the shadow instead of naming it. The shared
+implementation is `bin/lib/npm-nightly.sh` (`npm_nightly_prune_shadows`), sourced
+by both installers through `{{ .chezmoi.sourceDir }}/../bin/lib/`; the tests
+symlink `bin` into the isolated chezmoi source for the e2e apply. Two safety
+invariants keep an `npm rm -g` against a prefix the active npm does not own from
+going wrong, both covered in `tests/npm-nightly.bats`:
+
+1. **Stand down when the active prefix is not a real directory.** A stubbed or
+   half-provisioned npm can report a nonexistent prefix, against which *every*
+   other prefix looks like a shadow. This also keeps the chezmoi e2e apply test
+   hermetic without an opt-out flag.
+2. **Canonicalize the active prefix with `cd -P` before comparing.** Found by
+   the test, not by review: `npm_nightly_resolve_path` canonicalizes each
+   candidate, so comparing against a raw prefix means a symlinked prefix (macOS
+   `/var` → `/private/var`, a symlinked homebrew root) never matches its own
+   copies — and the prune deletes the **active** install instead of the shadow.
+   The `cd -P` gotcha below is the same root cause with a much worse blast
+   radius; anything comparing a path against `resolve_path` output must
+   canonicalize both sides.
+
+Only paths inside a `node_modules/<pkg>/` tree are removed, so an upstream
+package or cargo build exposing the same bin still gets a warning and keeps its
+files. A failed removal warns and returns 0 — a `run_after` installer must not
+abort the rest of `dots sync` over a shadow it could not clear.
 
 ## Known drift pattern: Claude CLI SGR residue corrupts pasted setting values
 
