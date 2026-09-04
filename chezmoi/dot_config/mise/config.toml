@@ -45,7 +45,7 @@
 "aqua:charmbracelet/glow" = "v3.0.0"
 "aqua:ast-grep/ast-grep" = "0.45.2"
 "aqua:dandavison/delta" = "0.19.2"
-"aqua:git-lfs/git-lfs" = "v3.7.1"
+"aqua:git-lfs/git-lfs" = "v3.8.0"
 "aqua:tmux/tmux-builds" = "v3.7b"
 "aqua:j178/prek" = "v0.5.0"
 "aqua:ajeetdsouza/zoxide" = "v0.10.0"
