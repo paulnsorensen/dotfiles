@@ -12,6 +12,12 @@ SUPPORTED_ITEM_HARNESSES = (
     "copilot",
 )
 
+# Harnesses that read the chezmoi-assembled ``~/.agents/skills`` directory
+# directly and are never rendered by `ap`. `skills/_registry.yaml` sources
+# may name them alongside ap-renderable harnesses; `ap` drops these before
+# validation instead of rejecting the source as unknown-harness.
+SHARED_DIR_ONLY_HARNESSES = ("zed", "omp")
+
 
 def validate_supported_harnesses(
     harnesses: Any,

@@ -26,6 +26,9 @@ lib/
 # removal semantics). Patterns are target-relative, hence .claude not
 # dot_claude.
 !.claude/**
+# The assembled ~/.agents payload (private_dot_agents/exact_skills) carries
+# .md skill files shared across harnesses; exempt it the same way.
+!.agents/**
 # Global *.md ignore would otherwise skip the managed OMP prompt addendum.
 !.omp/agent/APPEND_SYSTEM.md
 {{- /*

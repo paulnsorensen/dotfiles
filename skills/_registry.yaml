@@ -1,8 +1,8 @@
 # Skill Install Registry — external skill source repos, consumed by two legs:
 #   1. chezmoi assembly (_cz_vendor_external_skills in .sync-lib.sh): vendors
-#      skills for claude + omp on every `dots sync`.
+#      skills for claude + shared dir on every `dots sync`.
 #   2. npx `skills add` (chezmoi/lib/install-external.sh): refreshes
-#      non-claude harnesses (SKILL_HARNESSES) on every `dots sync`.
+#      Cursor only (SKILL_HARNESSES) on every `dots sync`.
 #
 # Each entry is a GitHub repo in OWNER/REPO format. The `skills` CLI discovers
 # `skills/<name>/SKILL.md` and `.agents/skills/<name>/SKILL.md` when the registry
@@ -22,8 +22,16 @@
 #
 # Harnesses are configured in .env via SKILL_HARNESSES (space-separated).
 #
+# Plugin skill sources (milknado, hallouminate below) ship the decomposed
+# skills of a cross-harness plugin (agents/plugins/registry.yaml) into the
+# shared dir via skills_path: plugins/<name>/skills. Their harnesses: is the
+# shared-dir set {codex, copilot, zed, omp} minus the plugin's resolved
+# native set (native: true -> harnesses ∩ {claude, codex, copilot}; a list ->
+# that list; absent/false -> empty) — zed and omp are never native, so every
+# plugin source ships to at least those two.
+#
 # Usage:
-#   dots sync            Vendor + deploy for claude/omp; refresh non-claude skills
+#   dots sync            Vendor + deploy for claude + shared dir; refresh Cursor skills
 #   dots upgrade         Pull dotfiles, then run the same sync + skill refresh
 #   skill-ls             List installed global skills (npx skills list --global)
 
@@ -42,3 +50,11 @@ sources:
     skills: [wiki-curator, routine-scaffold, routine-env]
   paulnsorensen/sliced-bread-architecture:
     description: Sliced Bread doctrine skills — seam/spine coherence review, five-rule change review, slice depth scoring
+  paulnsorensen/milknado:
+    description: Mikado-graph plugin skills (harvest, load-roadmap, milknado-config) for harnesses where the plugin is decomposed
+    skills_path: plugins/milknado/skills
+    harnesses: [codex, zed, omp]
+  paulnsorensen/hallouminate:
+    description: Wiki plugin skills (wiki-*) for harnesses with no plugin system
+    skills_path: plugins/hallouminate/skills
+    harnesses: [zed, omp]

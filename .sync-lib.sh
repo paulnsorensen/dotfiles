@@ -129,8 +129,8 @@ assemble_chezmoi_sources() {
         echo "  ERROR: codex chezmoi source assembly failed — aborting chezmoi apply" >&2
         return 1
     fi
-    if ! sync_omp_chezmoi_sources "$dotfiles_root" "$source_dir"; then
-        echo "  ERROR: OMP chezmoi source assembly failed — aborting chezmoi apply" >&2
+    if ! sync_shared_agents_chezmoi_sources "$dotfiles_root" "$source_dir"; then
+        echo "  ERROR: shared agents chezmoi source assembly failed — aborting chezmoi apply" >&2
         return 1
     fi
 }
@@ -451,7 +451,7 @@ _cz_ensure_github_credential_helper() {
 }
 
 _cz_vendor_external_skills() {
-    local registry="$1" dst="$2" harness="$3"
+    local registry="$1" dst="$2" harnesses_arg="$3"
     [[ -f "$registry" ]] || return 0
     local cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/claude-skill-sources"
     mkdir -p "$cache_root"
@@ -459,10 +459,19 @@ _cz_vendor_external_skills() {
     local source
     while IFS= read -r source; do
         [[ -z "$source" ]] && continue
-        # Per-source harness filter: absent means every harness.
-        local harnesses
+        # Per-source harness filter: absent means every harness; $harnesses_arg
+        # is a space-separated list, matched when it intersects the source's
+        # harnesses: list.
+        local harnesses want match=false
         harnesses=$(yq -r ".sources.\"$source\".harnesses // [] | join(\" \")" "$registry")
-        [[ -z "$harnesses" || " $harnesses " == *" $harness "* ]] || continue
+        if [[ -z "$harnesses" ]]; then
+            match=true
+        else
+            for want in $harnesses_arg; do
+                [[ " $harnesses " == *" $want "* ]] && { match=true; break; }
+            done
+        fi
+        [[ "$match" == true ]] || continue
 
         local pin cache sp
         pin=$(yq -r ".sources.\"$source\".pin // \"\"" "$registry")
@@ -861,26 +870,28 @@ sync_codex_chezmoi_sources() {
     return 0
 }
 
-# Assemble the OMP-native skills payload from the same selected sources as
-# Claude. OMP also discovers universal skills under ~/.agents/skills, which the
-# non-Claude installer now reconciles against each source checkout.
-#   sync_omp_chezmoi_sources <dotfiles_root> [<chezmoi_source_dir>]
-sync_omp_chezmoi_sources() {
+# Assemble the shared ~/.agents/skills payload from the same local skill
+# selection as Claude, plus every registry source (and plugin skill source)
+# whose harnesses: is absent or intersects the shared-dir set. Codex,
+# Copilot, Zed, and OMP all discover skills under this one chezmoi-owned
+# tree; the retired per-harness OMP leg is removed here.
+#   sync_shared_agents_chezmoi_sources <dotfiles_root> [<chezmoi_source_dir>]
+sync_shared_agents_chezmoi_sources() {
     local root="$1"
     local src="${2:-$root/chezmoi}"
     local claude_reg="$src/.chezmoidata/claude.yaml"
 
     if ! command -v yq &>/dev/null; then
-        log_warning "yq not found — skipping OMP chezmoi source assembly"
+        log_warning "yq not found — skipping shared agents chezmoi source assembly"
         return 0
     fi
     if [[ ! -f "$claude_reg" ]]; then
-        log_error "claude registry not found: $claude_reg"
+        log_error "shared agents source assembly: claude registry not found: $claude_reg"
         return 1
     fi
 
     local staging
-    staging=$(mktemp -d "${TMPDIR:-/tmp}/omp-cz-src.XXXXXX") || return 1
+    staging=$(mktemp -d "${TMPDIR:-/tmp}/shared-agents-cz-src.XXXXXX") || return 1
     # shellcheck disable=SC2064
     trap "rm -rf '$staging'" RETURN
 
@@ -888,22 +899,28 @@ sync_omp_chezmoi_sources() {
     while IFS= read -r name; do
         [[ -z "$name" ]] && continue
         if [[ ! -d "$root/skills/$name" ]]; then
-            log_error "OMP skill selection references unknown skill: $name (no skills/$name)"
+            log_error "shared agents skill selection references unknown skill: $name (no skills/$name)"
             return 1
         fi
         _cz_copy_encoded "$root/skills/$name" "$staging/exact_skills/$(_cz_encode_name "$name" true false)" || return 1
     done < <(yq -r '.claude.skills // [] | .[]' "$claude_reg")
     _cz_ensure_github_credential_helper
-    _cz_vendor_external_skills "$root/skills/_registry.yaml" "$staging/exact_skills" omp || return 1
+    _cz_vendor_external_skills "$root/skills/_registry.yaml" "$staging/exact_skills" "codex copilot zed omp" || return 1
     mkdir -p "$staging/exact_skills"
 
-    if ! rm -rf "${src:?}/dot_omp/private_agent/exact_skills" \
-        || ! mkdir -p "$src/dot_omp/private_agent" \
-        || ! mv "$staging/exact_skills" "$src/dot_omp/private_agent/exact_skills"; then
-        log_error "OMP source assembly: staging swap failed for exact_skills — source state may be incomplete; rerun dots sync before chezmoi apply"
+    # Retired OMP-native leg: the shared dir now covers OMP too.
+    if ! rm -rf "${src:?}/dot_omp/private_agent/exact_skills"; then
+        log_error "shared agents source assembly: failed to remove retired dot_omp/private_agent/exact_skills"
         return 1
     fi
-    log_info "Assembled OMP chezmoi source state (dot_omp/private_agent/exact_skills)"
+
+    if ! rm -rf "${src:?}/private_dot_agents/exact_skills" \
+        || ! mkdir -p "$src/private_dot_agents" \
+        || ! mv "$staging/exact_skills" "$src/private_dot_agents/exact_skills"; then
+        log_error "shared agents source assembly: staging swap failed for exact_skills — source state may be incomplete; rerun dots sync before chezmoi apply"
+        return 1
+    fi
+    log_info "Assembled shared agents chezmoi source state (private_dot_agents/exact_skills)"
     return 0
 }
 

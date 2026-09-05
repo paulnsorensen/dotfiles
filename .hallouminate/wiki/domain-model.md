@@ -76,3 +76,19 @@ _Code_: `bin/agent-secretctl`
 **MCP firewall** — the broker enforcement point that filters the advertised and callable MCP tool surface and gates mutations without exposing credentials.
 _Avoid_: credential proxy, secret API
 _Code_: `scripts/agent-secret-broker.py`
+
+**Shared skills dir** — `~/.agents/skills`, the one skill root read by Codex, Zed, Copilot, and OMP's `agents` provider; chezmoi-owned (`chezmoi/private_dot_agents/exact_skills`) after the `shared-agents-skills-exact` spec.
+_Avoid_: codex skills dir, agents dir
+_Code_: `.sync-lib.sh` (`sync_shared_agents_chezmoi_sources`); `agent-profile/agent_profile/renderers/codex.py:7`
+
+**Skill assembler** — a `.sync-lib.sh` function that stages local, vendored-external, and plugin skills into a chezmoi `exact_` source tree before apply (`sync_claude_chezmoi_sources`, `sync_shared_agents_chezmoi_sources`).
+_Avoid_: installer, sync step
+_Code_: `.sync-lib.sh:538-619`
+
+**npx leg** — `chezmoi/lib/install-external.sh`, the `npx skills add` installer for harness dirs chezmoi does not own; Cursor-only after `shared-agents-skills-exact`.
+_Avoid_: external installer, skills CLI path
+_Code_: `chezmoi/lib/install-external.sh`; `bin/dots:175-178`
+
+**Plugin source** — a `skills/_registry.yaml` entry for a plugin repo (`skills_path: plugins/<name>/skills`) whose `harnesses:` is the shared-dir set minus the plugin's resolved native set from `agents/plugins/registry.yaml`.
+_Avoid_: decomposed plugin, plugin skill leg
+_Code_: `skills/_registry.yaml` (milknado, hallouminate entries); [[architecture/adr-shared-agents-skills]]

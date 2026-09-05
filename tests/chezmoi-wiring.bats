@@ -1076,6 +1076,12 @@ TOML
     grep -q '^model: haiku$' "$source_claude/exact_agents/whey-drainer.md"
     [[ -f "$source_claude/exact_hooks/executable_git-guard.sh" ]]
 
+    # Shared agents skills swap into private_dot_agents/exact_skills; the
+    # retired OMP-native leg never reappears.
+    local source_agents="$isolated_source/private_dot_agents"
+    [[ -f "$source_agents/exact_skills/exact_dummy-paulnsorensen__easy-cheese/SKILL.md" ]]
+    [[ ! -e "$isolated_source/dot_omp/private_agent/exact_skills" ]]
+
     # Skills deploy via the assembled dot_claude/exact_skills tree — real
     # directories at ~/.claude/skills/<name>, deletion-propagating.
     local skills_dir="$HOME/.claude/skills"
@@ -1251,4 +1257,21 @@ TOML
     # the chezmoi seed is the source of truth. A re-introduced file would
     # quietly fight the chezmoi-seeded one via the legacy symlink path.
     [[ ! -f "$REAL_DOTFILES_DIR/claude/settings.json" ]]
+}
+
+@test "AC-6 shared agents dir: chezmoiignore, chezmoiremove and gitignore carry the exact_ housekeeping" {
+    grep -qF '!.agents/**' "$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+    grep -qF '.github/skills' "$REAL_DOTFILES_DIR/chezmoi/.chezmoiremove"
+    grep -qF '.omp/agent/skills' "$REAL_DOTFILES_DIR/chezmoi/.chezmoiremove"
+    grep -qF 'chezmoi/private_dot_agents/exact_skills/' "$REAL_DOTFILES_DIR/.gitignore"
+    ! grep -qF 'chezmoi/dot_omp/private_agent/exact_skills/' "$REAL_DOTFILES_DIR/.gitignore"
+}
+
+@test "AC-10 shared agents dir: ADR page names every fork id" {
+    local adr="$REAL_DOTFILES_DIR/.hallouminate/wiki/architecture/adr-shared-agents-skills.md"
+    assert_file_exists "$adr"
+    local fork
+    for fork in approach f1-selection f2-target f3-npx-leg f4-plugins f4-mechanism; do
+        grep -qF "$fork" "$adr" || { echo "missing fork id: $fork" >&2; return 1; }
+    done
 }

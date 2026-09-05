@@ -171,6 +171,43 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ "$(yq -r '.plugins.hallouminate.native' "$registry")" == "true" ]]
 }
 
+@test "AC-7 plugin skill sources ship to the shared dir only on non-native harnesses" {
+    local skills_reg="$DOTFILES_DIR/skills/_registry.yaml"
+    local plugin_reg="$DOTFILES_DIR/agents/plugins/registry.yaml"
+    local shared="codex copilot zed omp"
+    local plugin name skills_path harnesses native_raw native_set expected
+
+    for plugin in milknado hallouminate; do
+        name="paulnsorensen/$plugin"
+        run yq -e ".sources.\"$name\"" "$skills_reg"
+        [[ $status -eq 0 ]] || { echo "$plugin: source $name missing" >&2; return 1; }
+
+        skills_path=$(yq -r ".sources.\"$name\".skills_path // \"\"" "$skills_reg")
+        [[ "$skills_path" == "plugins/$plugin/skills" ]]
+
+        harnesses=$(yq -r ".sources.\"$name\".harnesses // [] | sort | join(\" \")" "$skills_reg")
+        [[ -n "$harnesses" ]]
+
+        native_raw=$(yq -r ".plugins.\"$plugin\".native // false" "$plugin_reg")
+        if [[ "$native_raw" == "true" ]]; then
+            native_set=$(yq -r ".plugins.\"$plugin\".harnesses // [] | map(select(. == \"claude\" or . == \"codex\" or . == \"copilot\")) | join(\" \")" "$plugin_reg")
+        elif [[ "$native_raw" == "false" ]]; then
+            native_set=""
+        else
+            native_set=$(yq -r ".plugins.\"$plugin\".native // [] | join(\" \")" "$plugin_reg")
+        fi
+
+        # shellcheck disable=SC2086 # intentional word-splitting of space-separated lists
+        expected=$(comm -23 <(printf '%s\n' $shared | sort) <(printf '%s\n' $native_set | sort) | tr '\n' ' ')
+        expected="${expected% }"
+
+        [[ "$harnesses" == "$expected" ]] || {
+            echo "$plugin: harnesses {$harnesses} != expected {$expected} (shared {$shared} minus native {$native_set})" >&2
+            return 1
+        }
+    done
+}
+
 @test "packages.yaml is valid YAML" {
     run yq '.' "$DOTFILES_DIR/packages/packages.yaml"
     [[ $status -eq 0 ]]
@@ -251,4 +288,22 @@ SH
         echo "$output" >&2
         return 1
     fi
+}
+
+@test "AC-7 every plugins/<name>/skills source in skills/_registry.yaml has a matching agents/plugins/registry.yaml entry" {
+    local skills_reg="$DOTFILES_DIR/skills/_registry.yaml"
+    local plugin_reg="$DOTFILES_DIR/agents/plugins/registry.yaml"
+    local repo skills_path plugin
+
+    while IFS= read -r repo; do
+        [[ -z "$repo" ]] && continue
+        skills_path=$(yq -r ".sources.\"$repo\".skills_path // \"\"" "$skills_reg")
+        [[ "$skills_path" =~ ^plugins/([^/]+)/skills$ ]] || continue
+        plugin="${BASH_REMATCH[1]}"
+        run yq -e ".plugins.\"$plugin\"" "$plugin_reg"
+        [[ $status -eq 0 ]] || {
+            echo "skills source $repo declares skills_path plugins/$plugin/skills but agents/plugins/registry.yaml has no '$plugin' entry" >&2
+            return 1
+        }
+    done < <(yq -r '.sources | keys | .[]' "$skills_reg")
 }
