@@ -86,7 +86,7 @@ function findRewrite(args) {
 
 function detect(toolName, input) {
   if (toolName === 'Grep' || toolName === 'Glob') {
-    return { reason: reason(`the ${toolName} tool`, (input && input.pattern) || null) };
+    return { reason: reason(`the ${toolName} tool`, (input && input.pattern) || null), module: 'search' };
   }
   if (toolName !== 'Bash') return null;
   const segs = parse((input && input.command) || '');
@@ -98,11 +98,11 @@ function detect(toolName, input) {
   if (!word) return null;
   if (GREP_BINS.has(word)) {
     const rw = grepRewrite(args);
-    return rw ? { rewrite: rw } : null;
+    return rw ? { rewrite: rw, module: 'search' } : null;
   }
   if (word === 'find') {
     const rw = findRewrite(args);
-    return rw ? { rewrite: rw } : null;
+    return rw ? { rewrite: rw, module: 'search' } : null;
   }
   return null;
 }

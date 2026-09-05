@@ -129,6 +129,16 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/turn-budget-guard.sh"'
             timeout: 5
+    PermissionRequest:
+      - hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/permission-log.sh"'
+            timeout: 5
+    PermissionDenied:
+      - hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/permission-log.sh"'
+            timeout: 5
 
   # ── settings.json plugin keys ───────────────────────────────────────────────
   # Base layer for enabledPlugins / extraKnownMarketplaces. modify_settings.json
