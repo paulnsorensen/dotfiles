@@ -77,4 +77,8 @@ Before making a negative or absence claim, state the exact scope checked, identi
 
 When a repo has a `.hallouminate/wiki/`, record durable project knowledge (architecture, gotchas, decisions) there via `add_markdown` — versioned and shared — not in a machine-local agent memory store.
 
+### Rule 8 — No `cd` in Shell Commands
+
+Do not prefix a shell command with `cd`. Use absolute paths, `git -C <path>`, `wt-git <path> <git args>`, or the tool's own directory flag (`yarn --cwd`, `terraform -chdir=`). A compound command that starts with `cd` triggers a permission prompt.
+
 @RTK.md

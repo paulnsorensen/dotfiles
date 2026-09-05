@@ -795,7 +795,7 @@ SH
     # Locks the contract that all whitelisted events round-trip through
     # the filter without erroring. Adding a new event needs both
     # HOOK_EVENTS_VALID and this test updated together.
-    for evt in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop SubagentStop PermissionRequest; do
+    for evt in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop SubagentStop PermissionRequest PermissionDenied; do
         local reg
         reg=$(jq -n --arg e "$evt" '{(("entry-" + $e)): {event: $e, script: "x.sh"}}')
         run hook_filter_for_harness claude "$reg"

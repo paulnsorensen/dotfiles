@@ -35,12 +35,13 @@ set -euo pipefail
 # PermissionRequest is claude-only — codex doesn't fire it. The codex
 # backend will still happily write the entry if a registry author opts
 # codex in, but at run time codex won't trigger it.
-HOOK_EVENTS_VALID=(SessionStart UserPromptSubmit PreToolUse PostToolUse Stop SubagentStop PermissionRequest)
+HOOK_EVENTS_VALID=(SessionStart UserPromptSubmit PreToolUse PostToolUse Stop SubagentStop PermissionRequest PermissionDenied)
 
 # Returns 0 iff the harness writes a `matcher` field into the outer block
 # for that (event, harness) pair.
-#   claude — PreToolUse / PostToolUse (matcher = tool-name regex).
-#            SessionStart, UserPromptSubmit, Stop have no matcher.
+#   claude — PreToolUse / PostToolUse / PermissionRequest / PermissionDenied
+#            (matcher = tool-name regex). SessionStart, UserPromptSubmit,
+#            Stop have no matcher.
 #   codex  — SessionStart (matcher = source regex: startup|resume|clear) and
 #            PreToolUse / PostToolUse (matcher = tool-name regex).
 # Anything not listed here writes the inner hook entry without a matcher
@@ -49,7 +50,7 @@ HOOK_EVENTS_VALID=(SessionStart UserPromptSubmit PreToolUse PostToolUse Stop Sub
 _hook_event_uses_matcher() {
     local event="$1" harness="$2"
     case "$harness:$event" in
-        claude:PreToolUse|claude:PostToolUse) return 0 ;;
+        claude:PreToolUse|claude:PostToolUse|claude:PermissionRequest|claude:PermissionDenied) return 0 ;;
         codex:SessionStart|codex:PreToolUse|codex:PostToolUse) return 0 ;;
         *) return 1 ;;
     esac
