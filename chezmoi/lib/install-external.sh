@@ -93,6 +93,7 @@ echo -e "${BLUE}Skill Sync - Declarative Skill Management${NC}"
 echo
 
 HARNESSES="${SKILL_HARNESSES:-}"
+_raw_harnesses="$HARNESSES"
 # Drop chezmoi-owned agent ids before any other filtering, silently: this
 # npx leg must never install into codex, github-copilot, or zed, wherever
 # they come from (dots sync already owns their skill delivery).
@@ -105,6 +106,10 @@ if [[ -n "$HARNESSES" ]]; then
         _filtered="${_filtered:+$_filtered }$_h"
     done
     HARNESSES="$_filtered"
+fi
+if [[ -n "$_raw_harnesses" && -z "$HARNESSES" ]]; then
+    echo -e "${YELLOW}SKILL_HARNESSES contains only chezmoi-owned agents (${_raw_harnesses}); nothing to install — the shared ~/.agents/skills is assembled by dots sync.${NC}"
+    exit 0
 fi
 # SKILL_EXCLUDE_AGENTS (space-separated agent IDs) subtracts from the harness
 # list. `dots sync` passes claude-code: ~/.claude/skills is chezmoi-managed
@@ -124,7 +129,7 @@ fi
 if [[ -z "$HARNESSES" ]]; then
     echo -e "${YELLOW}SKILL_HARNESSES is empty in .env — nothing to do.${NC}"
     echo "Set SKILL_HARNESSES in .env to a space-separated list of agent IDs."
-    echo "Example: SKILL_HARNESSES=\"claude-code cursor codex\""
+    echo "Example: SKILL_HARNESSES=\"claude-code cursor\""
     exit 0
 fi
 

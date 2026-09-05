@@ -106,7 +106,7 @@ run_sync() {
     run_sync
     assert_success
     assert_output_contains "SKILL_HARNESSES is empty"
-    assert_output_contains "SKILL_HARNESSES=\"claude-code cursor codex\""
+    assert_output_contains "SKILL_HARNESSES=\"claude-code cursor\""
 
     # Crucially: no skills add calls were made.
     run grep -c 'skills add' "$NPX_LOG"
@@ -726,6 +726,16 @@ EOF
     assert_output_not_contains "No valid harnesses" "$sync_output"
     run grep -F -- '--agent cursor' "$NPX_LOG"
     assert_success
+}
+
+@test "AC-5 skill sync: an all-owned SKILL_HARNESSES reports the chezmoi-owned reason, not an empty-.env hint" {
+    write_registry "acme/widgets"
+    write_env "codex github-copilot"
+
+    run_sync
+    assert_success
+    assert_output_contains "SKILL_HARNESSES contains only chezmoi-owned agents (codex github-copilot); nothing to install"
+    assert_output_not_contains "SKILL_HARNESSES is empty in .env"
 }
 
 @test "registry.yaml: real registry parses cleanly with yq" {
