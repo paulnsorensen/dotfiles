@@ -171,6 +171,45 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ "$(yq -r '.plugins.hallouminate.native' "$registry")" == "true" ]]
 }
 
+@test "AC-7 plugin skill sources ship to the shared dir only on non-native harnesses" {
+    local skills_reg="$DOTFILES_DIR/skills/_registry.yaml"
+    local plugin_reg="$DOTFILES_DIR/agents/plugins/registry.yaml"
+    local shared="codex copilot zed omp"
+    local plugin name skills_path harnesses native_raw native_set entry
+
+    for plugin in milknado hallouminate; do
+        name="paulnsorensen/$plugin"
+        run yq -e ".sources.\"$name\"" "$skills_reg"
+        [[ $status -eq 0 ]]
+
+        skills_path=$(yq -r ".sources.\"$name\".skills_path // \"\"" "$skills_reg")
+        [[ "$skills_path" == "plugins/$plugin/skills" ]]
+
+        harnesses=$(yq -r ".sources.\"$name\".harnesses // [] | join(\" \")" "$skills_reg")
+        [[ -n "$harnesses" ]]
+
+        native_raw=$(yq -r ".plugins.\"$plugin\".native // false" "$plugin_reg")
+        if [[ "$native_raw" == "true" ]]; then
+            native_set=$(yq -r ".plugins.\"$plugin\".harnesses // [] | map(select(. == \"claude\" or . == \"codex\" or . == \"copilot\")) | join(\" \")" "$plugin_reg")
+        elif [[ "$native_raw" == "false" ]]; then
+            native_set=""
+        else
+            native_set=$(yq -r ".plugins.\"$plugin\".native // [] | join(\" \")" "$plugin_reg")
+        fi
+
+        for entry in $harnesses; do
+            [[ " $shared " == *" $entry "* ]] || {
+                echo "$plugin: harness '$entry' not in shared-dir set {$shared}" >&2
+                return 1
+            }
+            if [[ " $native_set " == *" $entry "* ]]; then
+                echo "$plugin: harness '$entry' is native ({$native_set}), must not ship to the shared dir" >&2
+                return 1
+            fi
+        done
+    done
+}
+
 @test "packages.yaml is valid YAML" {
     run yq '.' "$DOTFILES_DIR/packages/packages.yaml"
     [[ $status -eq 0 ]]
