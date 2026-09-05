@@ -70,7 +70,7 @@ The four phase agents hand results back through their **final message**, which t
 
 Two sources unioned at ingest (`ingest._expand_skills`):
 
-- **Local**: `skills/<name>/SKILL.md` becomes a `path:` item for `ap`; OMP copies the selected local set into its exact chezmoi tree.
+- **Local**: `skills/<name>/SKILL.md` becomes a `path:` item for `ap`; the selected local set also enters the shared `~/.agents/skills` exact chezmoi tree that Codex, Copilot, Zed, and OMP read.
 - **External**: `_registry.yaml` sources are fetched by `npx skills add` for CLI-supported harnesses and vendored by the chezmoi assembler for OMP, honoring each source's `harnesses:` filter.
 
 Pure-prompt, user-invoked skills marked `disable-model-invocation: true` are the model-policy exception: they inherit the session model and omit `model` and `effort`. The tier→effort gate skips these inline skills but still enforces explicit matching fields for selected workflow skills.[^inline-skill-model]

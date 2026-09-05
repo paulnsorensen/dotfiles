@@ -13,7 +13,7 @@ The repo seeds/writes `~/.codex/config.toml` through chezmoi/prompt installers; 
 | MCP | <https://developers.openai.com/codex/mcp> | Isolated `ap launch codex <profile>` writes generated `[mcp_servers]` tables under redirected `CODEX_HOME`; non-isolated global installs leave live `~/.codex/config.toml` to chezmoi/user ownership. Env keys present in `.env` are scrubbed from isolated rendered tables (see env-scrub below). |
 | System prompt | [AGENTS.md cascade](https://developers.openai.com/codex/guides/agents-md) · [`model_instructions_file` key](https://developers.openai.com/codex/config-reference) | `agents/preamble.md` wired as `model_instructions_file` in `config.toml` (`install-prompts`). `agents/AGENTS.md` → `~/.codex/AGENTS.md` (the instruction chain: `~/.codex/AGENTS.md` → repo root → cwd, concatenated root-down). The `model_instructions_file` key ("replacement for built-in instructions instead of AGENTS.md") is documented in the config reference, the cascade order in the AGENTS.md guide. |
 | Settings / config | <https://developers.openai.com/codex/config-reference> | `~/.codex/config.toml`. Base copied once; thereafter user-owned. Searchable schema of every key (agents, approval policy, providers, features incl. hooks, permissions, sandbox, `[mcp_servers]`, OTel). |
-| Skills | <https://developers.openai.com/codex/skills> | `skills/` → shared `.agents/skills/<n>/`. Codex **does** support `SKILL.md` skills (progressive disclosure). |
+| Skills | <https://developers.openai.com/codex/skills> | `skills/` → shared `~/.agents/skills/<n>/`, a chezmoi `exact_` dir assembled by `sync_shared_agents_chezmoi_sources`. Codex **does** support `SKILL.md` skills (progressive disclosure). |
 
 ### Sub-agent routing knobs (July 2026)
 

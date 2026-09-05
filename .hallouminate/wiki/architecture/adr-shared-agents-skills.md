@@ -40,3 +40,9 @@ Decision series from the `shared-agents-skills-exact` spec (/mold session, 2026-
 - **Decision:** register `paulnsorensen/milknado` (`harnesses: [codex, zed, omp]`) and `paulnsorensen/hallouminate` (`harnesses: [zed, omp]`) as external skill sources with `skills_path: plugins/<name>/skills`. The list is the shared-dir set minus the plugin's resolved native set; `native: true` resolves to `harnesses ∩ {claude, codex, copilot}`.
 - **Alternatives:** teach `ap` two harnesses it cannot render; a plugin leg with a fixed reader set (hallouminate never enters).
 - **Gotcha:** the native rule now lives by hand in two files; `tests/config-validation.bats` cross-checks them.
+
+## Implementation
+
+Landed in the `chezmoi-housekeeping-and-adr` curd (wave 3): `chezmoi/.chezmoiignore` (`!.agents/**`), `chezmoi/.chezmoiremove` (`.github/skills`, `.omp/agent/skills`), `.gitignore` (drops `chezmoi/dot_omp/private_agent/exact_skills/`, adds `chezmoi/private_dot_agents/exact_skills/`), `chezmoi/.chezmoidata/omp.yaml` (`skills.enableAgentsUser: true`), `tests/chezmoi-wiring.bats` (AC-6, AC-10, and a rewritten swap assertion in the e2e apply test), `tests/omp-config.bats` (AC-9). The upstream assembler, npx Cursor-only leg, and plugin registry sources were already in place on `feat/shared-agents-skills` before this curd started.
+
+**Cut halt:** the live `chezmoi --source <dir> diff --dry-run` gate needs a real `$HOME` and chezmoi's symlink handling for `.chezmoiroot`/exact_ dirs is not exercised by this curd's Bats-only RED/GREEN loop; no receipt from that gate exists here. AC-8 (the live-machine `dots sync` check that `~/.agents/skills` ends up de-slop-identical with `~/.github/skills`/`~/.omp/agent/skills` absent) is the integration barrier's gate, not this curd's.

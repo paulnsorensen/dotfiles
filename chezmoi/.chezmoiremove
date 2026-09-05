@@ -26,3 +26,8 @@ local-llm/configs/lean.json
 .local/share/crush
 .local/state/crush
 .cache/crush
+
+# Retired by shared-agents-skills-exact: Copilot and OMP read the
+# chezmoi-assembled ~/.agents/skills.
+.github/skills
+.omp/agent/skills

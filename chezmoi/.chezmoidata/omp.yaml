@@ -77,6 +77,9 @@ omp:
       toolResultPreview: false
     skills:
       enableSkillCommands: true
+      # OMP's `agents` provider reads ~/.agents/skills; key present in the
+      # pinned omp v18.1.10 binary.
+      enableAgentsUser: true
     tui:
       tight: true
     # omp-introduced (v18): input-composer frame shape — folded at omp's live
