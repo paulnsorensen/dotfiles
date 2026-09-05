@@ -62,6 +62,7 @@ from agent_profile.env import (
     resolve_item_env,
 )
 from agent_profile.harnesses import (
+    SHARED_DIR_ONLY_HARNESSES,
     SUPPORTED_ITEM_HARNESSES,
     validate_supported_harnesses,
 )
@@ -511,9 +512,21 @@ def _expand_external_skills(
             body = {}  # bare `owner/repo:` → repo-level auto-discovery
         elif not isinstance(body, dict):
             continue  # malformed non-mapping body (typo) — skip, as MCP/hook readers do
+        harnesses: list[str] | None = None
         if "harnesses" in body:
-            _validate_explicit_harnesses(
-                body["harnesses"],
+            # `ap` never renders zed/omp: they read the chezmoi-assembled
+            # shared skills dir directly, not an ap-rendered target. Drop
+            # them before validation so the registry can name them for
+            # those harnesses without tripping unknown-harness here; an
+            # actual typo still raises.
+            requested = [
+                h for h in _as_list(body["harnesses"])
+                if h not in SHARED_DIR_ONLY_HARNESSES
+            ]
+            if not requested:
+                continue  # no ap-renderable harness left — nothing to emit
+            harnesses = _validate_explicit_harnesses(
+                requested,
                 context=f"ap: skills item '{repo}'",
             )
         pin = body.get("pin")
@@ -527,11 +540,15 @@ def _expand_external_skills(
                 }
                 if pin:
                     item["pin"] = pin
+                if harnesses is not None:
+                    item["harnesses"] = harnesses
                 out.append(item)
         else:
             item = {"source": repo, "_source_dir": source_dir}
             if pin:
                 item["pin"] = pin
+            if harnesses is not None:
+                item["harnesses"] = harnesses
             out.append(item)
     return out
 

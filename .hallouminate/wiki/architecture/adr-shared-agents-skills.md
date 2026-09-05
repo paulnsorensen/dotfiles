@@ -41,6 +41,8 @@ Decision series from the `shared-agents-skills-exact` spec (/mold session, 2026-
 - **Alternatives:** teach `ap` two harnesses it cannot render; a plugin leg with a fixed reader set (hallouminate never enters).
 - **Gotcha:** the native rule now lives by hand in two files; `tests/config-validation.bats` cross-checks them.
 
+- **Amendment (2026-09-05, found at the merged-tree gate):** `ap`'s `ingest._expand_external_skills` also validates each skill-registry source's `harnesses:` against `SUPPORTED_ITEM_HARNESSES`, so `zed`/`omp` broke `parse_manifest()` (11 pytest cases). Decision: `ap` subtracts a fixed `SHARED_DIR_ONLY_HARNESSES = ("zed", "omp")` before validation and skips a source left with no `ap` harness; typos still fail loud. Rejected: a second `shared_harnesses:` key (two keys, one meaning) and extending `SUPPORTED_ITEM_HARNESSES` (every renderer learns harnesses it cannot render).
+
 ## Implementation
 
 Landed in the `chezmoi-housekeeping-and-adr` curd (wave 3): `chezmoi/.chezmoiignore` (`!.agents/**`), `chezmoi/.chezmoiremove` (`.github/skills`, `.omp/agent/skills`), `.gitignore` (drops `chezmoi/dot_omp/private_agent/exact_skills/`, adds `chezmoi/private_dot_agents/exact_skills/`), `chezmoi/.chezmoidata/omp.yaml` (`skills.enableAgentsUser: true`), `tests/chezmoi-wiring.bats` (AC-6, AC-10, and a rewritten swap assertion in the e2e apply test), `tests/omp-config.bats` (AC-9). The upstream assembler, npx Cursor-only leg, and plugin registry sources were already in place on `feat/shared-agents-skills` before this curd started.

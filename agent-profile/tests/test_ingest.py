@@ -340,6 +340,50 @@ def test_expand_repo_level_external_skill_has_no_name(repo):
     assert "name" not in repo_level[0]
 
 
+def test_expand_external_skill_drops_shared_dir_only_harnesses(repo):
+    root, directive = repo
+    # zed/omp read the chezmoi-assembled shared skills dir directly and are
+    # never rendered by ap; they're dropped before validation, leaving the
+    # ap-renderable remainder on the item.
+    (root / "skills" / "_registry.yaml").write_text(
+        "sources:\n"
+        "  paulnsorensen/milknado:\n"
+        "    harnesses: [codex, zed, omp]\n"
+        "    skills: [mold]\n"
+    )
+    out = expand_registries(directive, root, _dotenv())
+    mold = next(s for s in out["skills"] if s.get("source") == "paulnsorensen/milknado")
+    assert mold["harnesses"] == ["codex"]
+
+
+def test_expand_external_skill_all_shared_dir_only_yields_no_item(repo):
+    root, directive = repo
+    # A source naming only shared-dir-only harnesses has no ap-renderable
+    # harness left, so ap emits nothing for it.
+    (root / "skills" / "_registry.yaml").write_text(
+        "sources:\n"
+        "  paulnsorensen/hallouminate:\n"
+        "    harnesses: [zed, omp]\n"
+    )
+    out = expand_registries(directive, root, _dotenv())
+    sources = {s.get("source") for s in out["skills"]}
+    assert "paulnsorensen/hallouminate" not in sources
+
+
+def test_expand_external_skill_unknown_harness_still_raises(repo):
+    root, directive = repo
+    # A genuine typo among the shared-dir-only names still fails loud, naming
+    # the bad harness.
+    (root / "skills" / "_registry.yaml").write_text(
+        "sources:\n"
+        "  paulnsorensen/milknado:\n"
+        "    harnesses: [codex, bogus]\n"
+        "    skills: [mold]\n"
+    )
+    with pytest.raises(ParseError, match="bogus"):
+        expand_registries(directive, root, _dotenv())
+
+
 def test_expand_registries_absent_sections_yield_empty_lists(repo):
     root, _ = repo
     # An empty directive returns every section key, each an empty list — not a
