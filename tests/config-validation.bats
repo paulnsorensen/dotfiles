@@ -175,17 +175,17 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     local skills_reg="$DOTFILES_DIR/skills/_registry.yaml"
     local plugin_reg="$DOTFILES_DIR/agents/plugins/registry.yaml"
     local shared="codex copilot zed omp"
-    local plugin name skills_path harnesses native_raw native_set entry
+    local plugin name skills_path harnesses native_raw native_set expected
 
     for plugin in milknado hallouminate; do
         name="paulnsorensen/$plugin"
         run yq -e ".sources.\"$name\"" "$skills_reg"
-        [[ $status -eq 0 ]]
+        [[ $status -eq 0 ]] || { echo "$plugin: source $name missing" >&2; return 1; }
 
         skills_path=$(yq -r ".sources.\"$name\".skills_path // \"\"" "$skills_reg")
         [[ "$skills_path" == "plugins/$plugin/skills" ]]
 
-        harnesses=$(yq -r ".sources.\"$name\".harnesses // [] | join(\" \")" "$skills_reg")
+        harnesses=$(yq -r ".sources.\"$name\".harnesses // [] | sort | join(\" \")" "$skills_reg")
         [[ -n "$harnesses" ]]
 
         native_raw=$(yq -r ".plugins.\"$plugin\".native // false" "$plugin_reg")
@@ -197,16 +197,14 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
             native_set=$(yq -r ".plugins.\"$plugin\".native // [] | join(\" \")" "$plugin_reg")
         fi
 
-        for entry in $harnesses; do
-            [[ " $shared " == *" $entry "* ]] || {
-                echo "$plugin: harness '$entry' not in shared-dir set {$shared}" >&2
-                return 1
-            }
-            if [[ " $native_set " == *" $entry "* ]]; then
-                echo "$plugin: harness '$entry' is native ({$native_set}), must not ship to the shared dir" >&2
-                return 1
-            fi
-        done
+        # shellcheck disable=SC2086 # intentional word-splitting of space-separated lists
+        expected=$(comm -23 <(printf '%s\n' $shared | sort) <(printf '%s\n' $native_set | sort) | tr '\n' ' ')
+        expected="${expected% }"
+
+        [[ "$harnesses" == "$expected" ]] || {
+            echo "$plugin: harnesses {$harnesses} != expected {$expected} (shared {$shared} minus native {$native_set})" >&2
+            return 1
+        }
     done
 }
 
