@@ -867,7 +867,7 @@ sync_shared_agents_chezmoi_sources() {
         return 0
     fi
     if [[ ! -f "$claude_reg" ]]; then
-        log_error "claude registry not found: $claude_reg"
+        log_error "shared agents source assembly: claude registry not found: $claude_reg"
         return 1
     fi
 
@@ -890,7 +890,10 @@ sync_shared_agents_chezmoi_sources() {
     mkdir -p "$staging/exact_skills"
 
     # Retired OMP-native leg: the shared dir now covers OMP too.
-    rm -rf "${src:?}/dot_omp/private_agent/exact_skills"
+    if ! rm -rf "${src:?}/dot_omp/private_agent/exact_skills"; then
+        log_error "shared agents source assembly: failed to remove retired dot_omp/private_agent/exact_skills"
+        return 1
+    fi
 
     if ! rm -rf "${src:?}/private_dot_agents/exact_skills" \
         || ! mkdir -p "$src/private_dot_agents" \

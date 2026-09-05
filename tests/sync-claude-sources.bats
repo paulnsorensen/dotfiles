@@ -398,12 +398,14 @@ YAML
 }
 
 
-@test "AC-4 assembly: the OMP exact_skills leg is removed and sync_omp_chezmoi_sources is gone" {
+@test "AC-4 assemble_chezmoi_sources removes the retired dot_omp exact_skills tree and sync_omp_chezmoi_sources is undefined" {
     mkdir -p "$SRC/dot_omp/private_agent/exact_skills/stale"
     echo "# stale" > "$SRC/dot_omp/private_agent/exact_skills/stale/SKILL.md"
-    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && sync_shared_agents_chezmoi_sources '$ROOT' '$SRC' && ! declare -F sync_omp_chezmoi_sources >/dev/null"
+    printf 'codex:\n  agents: []\n' > "$SRC/.chezmoidata/codex.yaml"
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && assemble_chezmoi_sources '$ROOT' '$SRC' && ! declare -F sync_omp_chezmoi_sources >/dev/null"
     [ "$status" -eq 0 ]
     [ ! -e "$SRC/dot_omp/private_agent/exact_skills" ]
+    [ -d "$SRC/private_dot_agents/exact_skills" ]
 }
 
 @test "assembly: a source with skills_path vendors skills discovered under the nested dir" {

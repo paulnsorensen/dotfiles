@@ -59,11 +59,13 @@ run_assembly() {
     run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && sync_shared_agents_chezmoi_sources '$ROOT' '$SRC'"
 }
 
-@test "AC-1 shared assembly: selected local skills land under private_dot_agents/exact_skills and an unknown name fails loud" {
+@test "AC-1 shared-agents: builds private_dot_agents/exact_skills from .claude.skills" {
     run_assembly
     [ "$status" -eq 0 ]
     [ -f "$SRC/private_dot_agents/exact_skills/exact_alpha-skill/SKILL.md" ]
+}
 
+@test "AC-1 shared-agents: unknown skill name aborts loud" {
     cat > "$SRC/.chezmoidata/claude.yaml" <<'YAML'
 claude:
   skills:
@@ -75,7 +77,7 @@ YAML
     [[ "$output" == *"ghost-skill"* ]]
 }
 
-@test "AC-2 shared assembly: the harness list vendors codex, zed, and unfiltered sources and skips claude-only" {
+@test "AC-2 shared-agents: vendors codex, zed and unfiltered sources and skips claude-only" {
     cat > "$ROOT/skills/_registry.yaml" <<'YAML'
 sources:
   owner/codex-src:
@@ -85,11 +87,17 @@ sources:
   owner/any-src: {}
   owner/claude-src:
     harnesses: [claude]
+  owner/omp-src:
+    harnesses: [omp]
+  owner/copilot-src:
+    harnesses: [copilot]
 YAML
     seed_cache_source owner/codex-src codex-skill
     seed_cache_source owner/zed-src zed-skill
     seed_cache_source owner/any-src any-skill
     seed_cache_source owner/claude-src claude-skill
+    seed_cache_source owner/omp-src omp-skill
+    seed_cache_source owner/copilot-src copilot-skill
 
     run_assembly
     [ "$status" -eq 0 ]
@@ -97,10 +105,12 @@ YAML
     [ -f "$base/exact_codex-skill/SKILL.md" ]
     [ -f "$base/exact_zed-skill/SKILL.md" ]
     [ -f "$base/exact_any-skill/SKILL.md" ]
+    [ -f "$base/exact_omp-skill/SKILL.md" ]
+    [ -f "$base/exact_copilot-skill/SKILL.md" ]
     [ ! -e "$base/exact_claude-skill" ]
 }
 
-@test "AC-3 shared assembly: a rerun is byte-identical and a deselect drops the skill" {
+@test "AC-3 shared-agents: repeat run is byte-identical" {
     mkdir -p "$ROOT/skills/beta-skill"
     echo "# beta" > "$ROOT/skills/beta-skill/SKILL.md"
     cat > "$SRC/.chezmoidata/claude.yaml" <<'YAML'
@@ -119,6 +129,21 @@ YAML
     run_assembly
     [ "$status" -eq 0 ]
     diff -r "$first" "$SRC/private_dot_agents/exact_skills"
+}
+
+@test "AC-3 shared-agents: deselecting a skill drops it from the tree" {
+    mkdir -p "$ROOT/skills/beta-skill"
+    echo "# beta" > "$ROOT/skills/beta-skill/SKILL.md"
+    cat > "$SRC/.chezmoidata/claude.yaml" <<'YAML'
+claude:
+  skills:
+    - alpha-skill
+    - beta-skill
+YAML
+
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/private_dot_agents/exact_skills/exact_beta-skill/SKILL.md" ]
 
     cat > "$SRC/.chezmoidata/claude.yaml" <<'YAML'
 claude:
