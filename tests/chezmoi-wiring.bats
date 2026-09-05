@@ -71,7 +71,9 @@ make_isolated_chezmoi_source() {
     mkdir -p "$source_dir"
     cp -R "$REAL_DOTFILES_DIR/chezmoi/." "$source_dir/"
     local sibling
-    for sibling in agent-profile agents claude cursor; do
+    # bin/ carries lib/npm-nightly.sh, which the two nightly run_after
+    # installers source through $SOURCE_DIR/..
+    for sibling in agent-profile agents bin claude cursor; do
         ln -s "$REAL_DOTFILES_DIR/$sibling" "$root/$sibling"
     done
     echo "$source_dir"
@@ -941,29 +943,41 @@ TOML
     assert_output_contains "npm is required to install @paulnsorensen/hallouminate-nightly"
 }
 
-@test "nightly installer warns when a second npm prefix shadows the bin" {
+@test "nightly installer removes a second npm prefix's copy of the bin" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
     local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-tilth.sh.tmpl"
     local script="$TEST_HOME/install-tilth.sh"
     chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
 
-    # Second prefix: a tilth bin symlinked into its own node_modules tree.
+    # Second prefix: a tilth bin symlinked into its own node_modules tree,
+    # plus the npm that owns it. This is the copy that must go — a stale one
+    # here pinned the hallouminate MCP to 0.7.0 for 34 nightlies.
     local second="$TEST_HOME/second-prefix"
     mkdir -p "$second/lib/node_modules/@paulnsorensen/tilth-nightly/bin" "$second/bin"
     printf '#!/usr/bin/env bash\n' > "$second/lib/node_modules/@paulnsorensen/tilth-nightly/bin/tilth"
     chmod +x "$second/lib/node_modules/@paulnsorensen/tilth-nightly/bin/tilth"
     ln -s "../lib/node_modules/@paulnsorensen/tilth-nightly/bin/tilth" "$second/bin/tilth"
+    local rm_log="$TEST_HOME/second-prefix-rm.log"
+    cat > "$second/bin/npm" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$rm_log"
+exit 0
+EOF
+    chmod +x "$second/bin/npm"
 
     # An upstream package can expose the same bin from another prefix. It is
-    # not the stale nightly and must not receive the nightly removal command.
+    # not the stale nightly and must not be removed.
     local upstream="$TEST_HOME/upstream-prefix"
     mkdir -p "$upstream/lib/node_modules/tilth/bin" "$upstream/bin"
     printf '#!/usr/bin/env bash\n' > "$upstream/lib/node_modules/tilth/bin/tilth"
     chmod +x "$upstream/lib/node_modules/tilth/bin/tilth"
     ln -s "../lib/node_modules/tilth/bin/tilth" "$upstream/bin/tilth"
+    printf '#!/usr/bin/env bash\necho "upstream npm must not run" >&2\nexit 99\n' > "$upstream/bin/npm"
+    chmod +x "$upstream/bin/npm"
 
     # Active npm: offline view, nothing installed, global prefix elsewhere.
+    # The prefix must be a real directory or the prune stands down by design.
     local npm_bin="$TEST_HOME/shadow-npm-bin"
     mkdir -p "$npm_bin" "$TEST_HOME/active-prefix"
     # shellcheck disable=SC2016
@@ -974,15 +988,23 @@ TOML
 
     run env PATH="$npm_bin:$upstream/bin:$second/bin:/usr/bin:/bin" /bin/bash "$script"
     assert_success
+
     # The installer's resolve_path uses `cd -P`, so the prefix it names is
     # fully canonicalized. On macOS $TMPDIR lives under /var, a symlink to
-    # /private/var, so the raw $second path never appears in the warning.
+    # /private/var, so the raw $second path never appears in the message.
     # Canonicalize the expectation the same way the script does; on Linux
     # (CI) this is a no-op.
     local second_real
     second_real="$(cd -P "$second" && printf '%s' "$PWD")"
-    assert_output_contains "$second_real/bin/npm rm -g @paulnsorensen/tilth-nightly"
-    assert_output_not_contains "$upstream/bin/tilth resolves into a second npm prefix"
+    assert_output_contains "removed the shadow copy at $second_real/lib"
+
+    # The removal went through that prefix's own npm, and named the nightly.
+    [[ -f "$rm_log" ]] || { echo "second prefix npm was never invoked" >&2; return 1; }
+    grep -qx "rm -g @paulnsorensen/tilth-nightly" "$rm_log"
+
+    # The upstream copy keeps its own (warning-only) treatment.
+    assert_output_not_contains "removed the shadow copy at $upstream"
+    [[ -e "$upstream/lib/node_modules/tilth" ]]
 }
 
 # ── end-to-end: chezmoi apply runs the installer ───────────────────────
