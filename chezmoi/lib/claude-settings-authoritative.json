@@ -93,5 +93,10 @@
   "askUserQuestionTimeout": "never",
   "outputStyle": "Concise",
   "autoMemoryEnabled": false,
-  "feedbackDrafts": "off"
+  "feedbackDrafts": "off",
+  "modelSettings": {
+    "claude-fable-5-1": {
+      "effortLevel": "xhigh"
+    }
+  }
 }
