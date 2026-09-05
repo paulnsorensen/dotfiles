@@ -1,0 +1,27 @@
+#!/bin/bash
+# run_onchange — re-runs whenever the dotfiles skills/ tree changes.
+#
+# Hash strategy mirrors run_onchange_after_install-cursor-plugins: walk the
+# working tree under skills/, sort for determinism, shasum file contents.
+# _registry.yaml is excluded: install-local.sh deploys only skill directories
+# (SKILL.md at the root), and the registry drives the npx leg instead.
+#
+# Local skills hash: {{ output "sh" "-c" (printf "find %q/../skills -type f -not -name .DS_Store -not -name _registry.yaml -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir) }}
+
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+INSTALLER="$SOURCE_DIR/lib/install-local.sh"
+
+if [[ ! -d "$DOTFILES_ROOT/skills" ]]; then
+    # Nothing to install (for example a trimmed test tree) — leave the
+    # target dirs alone, like the cursor-plugins installer does.
+    exit 0
+fi
+
+# Zed's built-in agent reads global skills from ~/.agents/skills
+# (zed.dev/docs/ai/skills); Cursor reads ~/.cursor/skills. Claude receives
+# the same tree through the chezmoi exact_skills payload.
+"$INSTALLER" "$DOTFILES_ROOT/skills" "$HOME/.agents/skills"
+"$INSTALLER" "$DOTFILES_ROOT/skills" "$HOME/.cursor/skills"
