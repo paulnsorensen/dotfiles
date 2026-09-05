@@ -19,6 +19,7 @@ How this dotfiles repo configures AI coding agents: shared registries rendered b
 - [[cross-harness-guards]] — the git-guard adapters for Claude, Codex, Cursor, and Copilot plus the Claude-only sensitive-file guard.
 - [[adr-chezmoi-authoritative-claude]] — the ADR series behind chezmoi-authoritative global Claude config: retiring `ap` from live installs, the forked `claude.yaml` registry, MCPs via the `claude mcp` CLI + manifest, and `exact_` dirs + wholesale settings-key authorship.
 - [[codex-first-class-review]] — Codex first-class fixes: user-level hook command resolution, hook-health diagnostics in `harness-doctor`, isolated Codex profile projection, MCP tool-scope cleanup, and the remaining `PreToolUse` matcher-verification gap.
+- [[adr-shared-agents-skills]] — the ADR series behind the shared `~/.agents/skills` `exact_` dir: retiring the frozen non-Claude skill dirs, the one-list `.claude.skills` selection, the npx Cursor-only leg, and the plugin-registry native-vs-shared split.
 - [[chezmoi-authoritative-codex]] — the Codex counterpart to the Claude ADR series: `~/.codex` converges on `dots sync` from `codex.yaml` + `private_dot_codex/`, why `config.toml` is *merged* (the CLI writes its own runtime state into the same file) while `mcp_servers` is replaced wholesale, and the chezmoi attribute-order / `private_` gotchas.
 
 ## Routing and orchestration doctrine

@@ -22,6 +22,7 @@ Decision series from the `shared-agents-skills-exact` spec (/mold session, 2026-
 - **Context:** Codex, Zed, Copilot, and OMP's `agents` provider all read `~/.agents/skills`. `~/.github/skills` is a second Copilot root; `~/.omp/agent/skills` is OMP's native root that outranks the shared one.
 - **Decision:** one `exact_` dir at `chezmoi/private_dot_agents/exact_skills`; `.chezmoiremove` drops the other two; `omp.yaml` sets `skills.enableAgentsUser: true` explicitly (key present in the pinned `~/.local/bin/omp`).
 - **Consequence:** a shared dir cannot withhold a file from one reader. Per-harness exclusion is gone; Copilot sees milknado's skills both natively and in the shared dir.
+- **Consequences:** the first `dots sync` deletes every entry in `~/.agents/skills` the source does not contain. This includes hand-installed skills. `~/.agents/.skill-lock.json` sits outside the `exact_` dir. It keeps stale codex/copilot records until the `skills` CLI rewrites it. Cursor's reconcile is `--agent cursor` scoped.
 
 ## f3-npx-leg: keep `install-external.sh` for Cursor only [status: accepted]
 
@@ -41,7 +42,7 @@ Decision series from the `shared-agents-skills-exact` spec (/mold session, 2026-
 - **Alternatives:** teach `ap` two harnesses it cannot render; a plugin leg with a fixed reader set (hallouminate never enters).
 - **Gotcha:** the native rule now lives by hand in two files; `tests/config-validation.bats` cross-checks them.
 
-- **Amendment (2026-09-05, found at the merged-tree gate):** `ap`'s `ingest._expand_external_skills` also validates each skill-registry source's `harnesses:` against `SUPPORTED_ITEM_HARNESSES`, so `zed`/`omp` broke `parse_manifest()` (11 pytest cases). Decision: `ap` subtracts a fixed `SHARED_DIR_ONLY_HARNESSES = ("zed", "omp")` before validation and skips a source left with no `ap` harness; typos still fail loud. Rejected: a second `shared_harnesses:` key (two keys, one meaning) and extending `SUPPORTED_ITEM_HARNESSES` (every renderer learns harnesses it cannot render).
+- **Amendment (2026-09-05, found at the merged-tree gate):** `ap`'s `ingest._expand_external_skills` also validates each skill-registry source's `harnesses:` against `SUPPORTED_ITEM_HARNESSES`, so `zed`/`omp` broke `parse_manifest()` (11 pytest cases). Decision: `ap` subtracts a fixed `SHARED_DIR_ONLY_HARNESSES = ("zed", "omp")` before validation and skips a source left with no `ap` harness; typos still fail loud. Rejected: a second `shared_harnesses:` key (two keys, one meaning) and extending `SUPPORTED_ITEM_HARNESSES` (every renderer learns harnesses it cannot render). The `ap` fix also attaches the filtered `harnesses` to each external skill item. A `[claude]`-only source (skillz-that-grillz) now renders for Claude only. Previously `ap` rendered it for every harness. Pinned by `test_expand_external_skill_claude_only_source_keeps_claude_harness`.
 
 ## Implementation
 
