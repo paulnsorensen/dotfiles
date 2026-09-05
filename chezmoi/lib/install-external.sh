@@ -22,6 +22,15 @@
 
 set -euo pipefail
 
+# Chezmoi already owns codex, copilot, zed, and omp's skill delivery (the
+# shared ~/.agents/skills dir assembled by `dots sync`); this npx leg must
+# never install into or reconcile them. Two lists because the two call
+# sites use different id namespaces: SKILL_HARNESSES/CHEZMOI_OWNED_AGENTS
+# carries `skills`-CLI agent ids, harnesses:/CHEZMOI_OWNED_HARNESSES carries
+# `ap` harness names.
+CHEZMOI_OWNED_HARNESSES="codex copilot zed omp"
+CHEZMOI_OWNED_AGENTS="codex github-copilot zed"
+
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <registry_path> [--dry-run]" >&2
     exit 2
@@ -84,6 +93,19 @@ echo -e "${BLUE}Skill Sync - Declarative Skill Management${NC}"
 echo
 
 HARNESSES="${SKILL_HARNESSES:-}"
+# Drop chezmoi-owned agent ids before any other filtering, silently: this
+# npx leg must never install into codex, github-copilot, or zed, wherever
+# they come from (dots sync already owns their skill delivery).
+if [[ -n "$HARNESSES" ]]; then
+    _filtered=""
+    for _h in $HARNESSES; do
+        case " ${CHEZMOI_OWNED_AGENTS} " in
+            *" ${_h} "*) echo "  Dropping chezmoi-owned harness: ${_h} (managed by dots sync, not this npx leg)" ;;
+            *) _filtered="${_filtered:+$_filtered }$_h" ;;
+        esac
+    done
+    HARNESSES="$_filtered"
+fi
 # SKILL_EXCLUDE_AGENTS (space-separated agent IDs) subtracts from the harness
 # list. `dots sync` passes claude-code: ~/.claude/skills is chezmoi-managed
 # (exact_) and external skills are vendored into source state by
@@ -214,7 +236,7 @@ source_skill_names() {
 }
 
 remove_stale_source_skills() {
-    local repo="$1" expected installed stale_output name
+    local repo="$1" allowed_agents="$2" expected installed stale_output name
     expected=$(source_skill_names "$repo") || return 1
     if ! installed=$(npx --yes skills list --global --json 2>&1); then
         echo -e "    ${RED}Could not list installed skills before reconciling $repo${NC}" >&2
@@ -236,7 +258,11 @@ remove_stale_source_skills() {
     while IFS= read -r name; do
         [[ -n "$name" ]] && stale+=("$name")
     done <<<"$stale_output"
-    npx --yes skills remove "${stale[@]}" --global -y >/dev/null
+    local -a agent_flags=()
+    for _id in $allowed_agents; do
+        agent_flags+=(--agent "$_id")
+    done
+    npx --yes skills remove "${stale[@]}" --global -y "${agent_flags[@]}" >/dev/null
     echo -e "    ${GREEN}Removed retired skills:${NC} ${stale[*]}"
 }
 
@@ -268,6 +294,9 @@ install_source() {
         local repo_excluded=0 repo_dropped_other=0
         while IFS= read -r ap_name; do
             [[ -z "$ap_name" ]] && continue
+            case " ${CHEZMOI_OWNED_HARNESSES} " in
+                *" ${ap_name} "*) continue ;;
+            esac
             local cli_id
             cli_id=$(awk -F= -v key="$ap_name" \
                 '!/^[[:space:]]*#/ && NF==2 { gsub(/[[:space:]]/, "", $1); gsub(/[[:space:]]/, "", $2); if ($1 == key) print $2 }' \
@@ -316,7 +345,7 @@ install_source() {
 
     local output
     if output=$(GIT_TERMINAL_PROMPT=0 npx "${args[@]}" 2>&1); then
-        if remove_stale_source_skills "$repo"; then
+        if remove_stale_source_skills "$repo" "$repo_supported"; then
             echo -e "    ${GREEN}✓${NC} $repo → $repo_supported"
         else
             echo -e "    ${RED}✗${NC} $repo → cleanup failed"
