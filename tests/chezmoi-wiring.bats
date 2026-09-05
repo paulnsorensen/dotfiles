@@ -422,6 +422,45 @@ YAML
     grep -rq "^v2$" "$TEST_HOME/dst"
 }
 
+@test "_cz_vendor_external_skills re-attaches to the default branch when a pin is removed" {
+    export XDG_CACHE_HOME="$TEST_HOME/cache"
+
+    # Origin: default branch main, plus a soak branch the old pin tracked.
+    local origin="$TEST_HOME/origin-repo"
+    mkdir -p "$origin/skills/foo"
+    git -C "$origin" init -q -b main
+    echo "main-v1" > "$origin/skills/foo/SKILL.md"
+    git -C "$origin" add -A
+    git -C "$origin" -c user.email=t@t -c user.name=t commit -qm main-v1
+    git -C "$origin" checkout -q -b soak
+    echo "soak-v1" > "$origin/skills/foo/SKILL.md"
+    git -C "$origin" add -A
+    git -C "$origin" -c user.email=t@t -c user.name=t commit -qm soak-v1
+    git -C "$origin" checkout -q main
+
+    # Cache as a prior pinned sync leaves it: single-branch shallow clone
+    # of soak, detached on the fetched tip, pin marker present.
+    local cache="$XDG_CACHE_HOME/dotfiles/claude-skill-sources/someorg__somerepo"
+    mkdir -p "$(dirname "$cache")"
+    git clone -q --depth 1 --branch soak "$origin" "$cache"
+    git -C "$cache" checkout -q --detach HEAD
+    echo soak > "$cache/.dotfiles-pin"
+
+    local registry="$TEST_HOME/registry.yaml"
+    cat > "$registry" <<'YAML'
+sources:
+  someorg/somerepo:
+    description: test
+YAML
+
+    run _cz_vendor_external_skills "$registry" "$TEST_HOME/dst" claude
+    assert_success
+    # The vendored skill carries main, not the frozen soak checkout.
+    grep -rq "^main-v1$" "$TEST_HOME/dst"
+    [ "$(git -C "$cache" rev-parse --abbrev-ref HEAD)" = "main" ]
+    [ ! -e "$cache/.dotfiles-pin" ]
+}
+
 # ── source-tree scaffold ────────────────────────────────────────────────
 
 @test "chezmoi/.chezmoiroot exists" {

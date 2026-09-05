@@ -124,3 +124,13 @@ Every shell function that does real work needs a bats test. `.sync` (and any orc
 - `_cz_ensure_github_credential_helper` (.sync-lib.sh) self-heals before vendoring: gh present + authed + no `credential.https://github.com.helper` configured → runs `gh auth setup-git` automatically; otherwise warns once and never fails the sync.
 
 **Rationale:** the registry comment always claimed a helper-less clone "fails and reports the source unavailable" — the code never enforced it until this change. Fresh Linux/macOS boxes now converge without manual `gh auth setup-git`.
+
+## Gotcha: removing a skill `pin` must re-attach the cache to the default branch (fixed 2026-09-04)
+
+**Symptom:** `skills/_registry.yaml` dropped `pin: next` for `paulnsorensen/easy-cheese`, but every `dots sync` still vendored the frozen `next` commit. No error, one warning: `pull failed, using cached checkout`.
+
+**Cause:** the pinned path in `_cz_vendor_external_skills` (`.sync-lib.sh`) leaves the cache on a **detached HEAD** at `FETCH_HEAD`, with a single-branch fetch refspec. The unpinned path runs `git pull --ff-only`, which refuses on a detached HEAD. The warning was written for the offline case, so the stale pin looked like a network blip forever.
+
+**Fix:** the unpinned path now detects a leftover `.dotfiles-pin` marker or a detached HEAD. It reads the remote default branch with `git ls-remote --symref origin HEAD`, widens the refspec with `git remote set-branches`, fetches it, checks out a tracking branch, and deletes the marker. A pin removal is a pin change, so a failure here is a hard error like the pinned path — not a warning. Bats: `tests/chezmoi-wiring.bats` "re-attaches to the default branch when a pin is removed".
+
+**Context:** easy-cheese retired its `next` soak channel upstream (`c4bdcb3`, #558). `main` is the only live branch. The registry now tracks it unpinned.
