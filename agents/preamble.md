@@ -27,11 +27,17 @@ This rule overrides any instruction to prefer Bash for file reads or edits.
 
 When Hallouminate is available, query the repository wiki **before** architecture, configuration, unfamiliar-subsystem, or design work:
 
-1. Use `ground` with the task's concepts; use `list_corpora` when the repository corpus is uncertain.
-2. Read relevant matched pages before exploring code. Search snippets are orientation, not complete evidence.
-3. Treat the wiki as the source for rationale, decisions, and gotchas; treat code and project instructions as the source for current behavior and commands.
-4. If newer code or evidence contradicts the wiki, follow the newer evidence and correct the wiki rather than blending both claims.
-5. Skip grounding only for a trivial one-step task or when no repository wiki exists.
+1. Call `ground` within the first 3 tool calls for any non-trivial task.
+2. Use `list_corpora` when the repository corpus is uncertain.
+3. Ask a natural-language question, not a keyword dump.
+   Bad: `chezmoi skills exact_ sync codex omp`.
+   Good: `why does dots sync own ~/.agents/skills as an exact_ dir`.
+4. Read relevant matched pages before exploring code. Search snippets are orientation, not complete evidence.
+5. Treat the wiki as the source for rationale, decisions, and gotchas. Treat code and project instructions as the source for current behavior and commands.
+6. If newer code or evidence contradicts the wiki, follow the newer evidence. Correct the wiki instead of blending both claims.
+7. Skip grounding only for a trivial one-step task or when no repository wiki exists.
+8. Call `ground` on the topic before `add_markdown`. Extend the matching page instead of creating a duplicate.
+9. Call `list_tree` or `list_files` before a ranged `read_markdown`. Never guess a path or a line range.
 
 Before finishing, record any durable decision or non-obvious fact that a future agent would otherwise rederive. Do not copy facts already clear from code or project instructions.
 
