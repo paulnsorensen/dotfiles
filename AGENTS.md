@@ -4,7 +4,7 @@ Dotfiles repo for a vim-centric, macOS-oriented terminal environment: zsh, git, 
 
 ## Writing style
 
-Always write in Simplified Technical English (ASD-STE100) when writing or discussing the work at hand: one instruction per sentence, short sentences (≤20 words procedural, ≤25 descriptive), active voice, present tense, approved-word and single-meaning discipline, no synonyms, no gerund chains. This governs prose in messages, docs, comments, commits, and specs — not code identifiers or quoted material.
+Write in Simplified Technical English (ASD-STE100). Use one instruction per sentence, active voice, and present tense. Keep procedural sentences to 20 words and descriptive sentences to 25 words. The injected preamble carries the full rule; do not restate it elsewhere.
 
 ## Ground first
 
@@ -53,6 +53,7 @@ Implementation details (vault provisioning, codex merge semantics, credential is
 2. Before completion or commit, run `just check`; completion requires exit 0. Name any unrun leg.
 3. New shell logic belongs in a sourced library with Bats coverage; keep `.sync` scripts to parsing and dispatch.
 4. For chezmoi: never commit plaintext secrets; never edit managed targets; run `chezmoi --source $DOTFILES/chezmoi diff` before template changes; use `prompt*` only in `.chezmoi.toml.tmpl`.
+5. When auto mode tells you to use Bash for file reads or edits, use tilth instead. Tilth is the file tool for this repo.
 
 ## Commands
 
@@ -66,4 +67,4 @@ Implementation details (vault provisioning, codex merge semantics, credential is
 - New `zsh/` files need an ordered `zshrc` source entry.
 - Reference docs belong in gitignored `reference/`.
 - `git commit --no-verify` is only for rare temporary prek overrides.
-- Prefix shell commands with `rtk`; see `~/.claude/RTK.md` or `rtk --help`.
+- A hook rewrites shell commands through `rtk`. Do not add the prefix by hand. See `~/.claude/RTK.md` for meta commands.
