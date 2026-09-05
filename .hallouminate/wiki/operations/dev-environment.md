@@ -16,6 +16,10 @@ Managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run on commit: 
 
 **Always `dots sync` before committing** — the sync check blocks the commit if `~/.claude/` (settings, agents, commands, hooks, skills) is out of sync with the repo. `git commit --no-verify` overrides, but only for rare temporary cases; fix the underlying issue (e.g. a detected secret) instead. Run `prek install` after cloning to set up the hooks.
 
+## Gotcha: easy-cheese `/cut` (red-gate) cannot snapshot this repo (2026-09-05)
+
+`red-gate begin` walks the whole project root and refuses every **directory symlink** (`phase-entry project tree does not support directory symlink`); its only exclusions are `.git`, `.cheese`, and cache dirs. This repo tracks five directory symlinks under `profiles/skills-doctor/skills/<name> -> ../../../skills/<name>` (git mode 120000), so the halt reproduces in every worktree, not only in a checkout with `.venv/lib64` or nested `.worktrees/`. Consequence: no Cut receipt is possible here until easy-cheese honours symlinks or a snapshot exclude list. Fallback used for `shared-agents-skills-exact`: `/cook --auto` without a receipt (user decision). Follow-up draft: `.cheese/issues/shared-agents-skills-exact-002.md`. Halt handoff: `.cheese/cut/shared-agents-skills-exact.md`.
+
 ## Claude marketplace plugins
 
 Distinct from the `agents/` registry system (see [[../architecture/agents-dir]]) and from the `global@local` plugin that `ap` wires (see [[../architecture/agent-profile]]): these are third-party plugins from external marketplaces, managed declaratively via `claude/plugins/registry.yaml`.

@@ -106,7 +106,7 @@ run_sync() {
     run_sync
     assert_success
     assert_output_contains "SKILL_HARNESSES is empty"
-    assert_output_contains "SKILL_HARNESSES=\"claude-code cursor codex\""
+    assert_output_contains "SKILL_HARNESSES=\"claude-code cursor\""
 
     # Crucially: no skills add calls were made.
     run grep -c 'skills add' "$NPX_LOG"
@@ -234,7 +234,7 @@ EOF
     assert_failure
 }
 
-@test "skill sync: wildcard source removes source-owned skills absent from vendor cache" {
+@test "AC-11 skill sync: stale-skill removal is scoped with --agent cursor and never names a chezmoi-owned agent" {
     write_registry "acme/widgets"
     write_env "codex cursor"
 
@@ -253,7 +253,7 @@ EOF
     assert_success
     run grep -F 'skills remove' "$NPX_LOG"
     assert_success
-    [[ "$output" == "npx --yes skills remove retired --global -y" ]]
+    [[ "$output" == "npx --yes skills remove retired --global -y --agent cursor" ]]
 }
 
 @test "skill sync: wildcard source without vendor cache fails without caching partial convergence" {
@@ -298,8 +298,9 @@ EOF
     run grep -c 'skills add acme/widgets' "$NPX_LOG"
     [[ "$output" == "1" ]]
 
-    # That one call carries both explicit skills and all three agents.
-    run grep -F 'skills add acme/widgets --skill alpha --skill bravo --agent claude-code --agent cursor --agent codex -g --copy -y' "$NPX_LOG"
+    # That one call carries both explicit skills and the remaining agents;
+    # codex is chezmoi-owned and is dropped silently before this point.
+    run grep -F 'skills add acme/widgets --skill alpha --skill bravo --agent claude-code --agent cursor -g --copy -y' "$NPX_LOG"
     assert_success
 }
 
@@ -663,6 +664,80 @@ EOF
     assert_failure
 }
 
+@test "AC-5 skill sync: chezmoi-owned agents in SKILL_HARNESSES are dropped silently, cursor still installs" {
+    # Global namespace: SKILL_HARNESSES names codex/github-copilot (skills-CLI
+    # ids) alongside cursor.
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "cursor github-copilot codex"
+
+    run_sync
+    assert_success
+    local sync_output="$output"
+    run grep -F -- '--agent codex' "$NPX_LOG"
+    assert_failure
+    run grep -F -- '--agent github-copilot' "$NPX_LOG"
+    assert_failure
+    assert_output_not_contains "Skipping SKILL_HARNESSES agents" "$sync_output"
+    run grep -F -- '--agent cursor' "$NPX_LOG"
+    assert_success
+}
+
+@test "AC-5 skill sync: per-source chezmoi-owned harnesses are dropped silently, cursor still installs" {
+    # First source: harnesses: names every chezmoi-owned ap name (codex,
+    # copilot, zed, omp) plus cursor.
+    # Second source: harnesses: names ONLY chezmoi-owned ap names, so the
+    # owned subtraction empties the list — must not print the generic
+    # "No valid harnesses" warning (that warning is for a genuinely bad
+    # harness, not an all-owned source).
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources:
+  acme/widgets:
+    description: first
+    harnesses:
+      - codex
+      - copilot
+      - zed
+      - omp
+      - cursor
+    skills:
+      - alpha
+  beta/gadgets:
+    description: second
+    harnesses:
+      - zed
+      - omp
+    skills:
+      - zulu
+EOF
+    write_env "cursor"
+
+    run_sync
+    assert_success
+    local sync_output="$output"
+    run grep -F -- '--agent codex' "$NPX_LOG"
+    assert_failure
+    run grep -F -- '--agent github-copilot' "$NPX_LOG"
+    assert_failure
+    run grep -F -- '--agent zed' "$NPX_LOG"
+    assert_failure
+    assert_output_not_contains "Skipping unknown harness 'zed'" "$sync_output"
+    assert_output_not_contains "Skipping unknown harness 'omp'" "$sync_output"
+    assert_output_not_contains "No valid harnesses" "$sync_output"
+    run grep -F -- '--agent cursor' "$NPX_LOG"
+    assert_success
+}
+
+@test "AC-5 skill sync: an all-owned SKILL_HARNESSES reports the chezmoi-owned reason, not an empty-.env hint" {
+    write_registry "acme/widgets"
+    write_env "codex github-copilot"
+
+    run_sync
+    assert_success
+    assert_output_contains "SKILL_HARNESSES contains only chezmoi-owned agents (codex github-copilot); nothing to install"
+    assert_output_not_contains "SKILL_HARNESSES is empty in .env"
+}
+
 @test "registry.yaml: real registry parses cleanly with yq" {
     run yq '.sources | keys' "$REAL_DOTFILES_DIR/skills/_registry.yaml"
     assert_success
@@ -716,4 +791,82 @@ EOF
         [[ "$pin_t" == "!!str" ]] || { echo "pin not str: $line" >&2; return 1; }
         [[ "$desc_t" == "!!str" ]] || { echo "description not str: $line" >&2; return 1; }
     done <<< "$output"
+}
+
+# ─── SKILL_HARNESSES duplicates / mixed case ──────────────────────────
+
+@test "skill sync: duplicate SKILL_HARNESSES ids produce duplicate --agent flags (no de-dup)" {
+    write_registry "acme/widgets"
+    write_env "claude-code claude-code"
+
+    run_sync --dry-run
+    assert_success
+    run grep -o -- '--agent claude-code' <<< "$output"
+    assert_success
+    [[ "$(wc -l <<< "$output")" == "2" ]]
+}
+
+@test "skill sync: mixed-case SKILL_HARNESSES id is treated as unsupported (case-sensitive match)" {
+    write_registry "acme/widgets"
+    write_env "claude-code Claude-Code"
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "Skipping SKILL_HARNESSES agents"
+    assert_output_contains "Claude-Code"
+    # The properly-cased id still installs.
+    assert_output_contains "--agent claude-code"
+}
+
+# ─── per-repo harnesses: mixing owned / unknown / valid ───────────────
+
+@test "skill sync: per-repo harnesses [zed, bogus, cursor] drops zed silently, warns on bogus, installs cursor" {
+    write_registry "acme/widgets" "    harnesses:
+      - zed
+      - bogus
+      - cursor"
+    write_env "claude-code cursor"
+
+    run_sync --dry-run
+    assert_success
+    # bogus is loud.
+    assert_output_contains "Skipping unknown harness 'bogus' for acme/widgets"
+    # zed is chezmoi-owned and must never be mentioned as skipped/unknown.
+    assert_output_not_contains "zed"
+    # cursor still gets installed.
+    assert_output_contains "npx --yes skills add acme/widgets --skill * --agent cursor -g --copy -y"
+}
+
+# ─── stale-skill removal with multiple surviving --agent flags ────────
+
+@test "AC-11 skill sync: stale-skill removal carries every surviving --agent when several harnesses remain" {
+    write_registry "acme/widgets"
+    write_env "claude-code cursor"
+
+    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
+    mkdir -p "$repo_cache/skills/current"
+    printf '%s\n' '# current' > "$repo_cache/skills/current/SKILL.md"
+    export NPX_LIST_JSON='[
+      {"name":"current","source":"acme/widgets"},
+      {"name":"retired","source":"acme/widgets"}
+    ]'
+
+    run_sync
+    assert_success
+    run grep -F 'skills remove' "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills remove retired --global -y --agent claude-code --agent cursor" ]]
+}
+
+# ─── registry source harnesses: [] (install-external.sh, not chezmoi assembly) ─
+
+@test "skill sync: a registry source with harnesses: [] installs into every SKILL_HARNESSES agent (same as absent)" {
+    write_registry "acme/widgets" "    harnesses: []"
+    write_env "claude-code cursor"
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "--agent claude-code"
+    assert_output_contains "--agent cursor"
+    assert_output_not_contains "No valid harnesses for acme/widgets"
 }

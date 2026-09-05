@@ -57,6 +57,7 @@ STDIN"
     [ "$(yq '.todo.reminders' "$OUT")" = "false" ]
     [ "$(yq '.read.toolResultPreview' "$OUT")" = "false" ]
     [ "$(yq '.skills.enableSkillCommands' "$OUT")" = "true" ]
+    [ "$(yq '.skills.enableAgentsUser' "$OUT")" = "true" ]
     [ "$(yq '.tui.tight' "$OUT")" = "true" ]
     [ "$(yq '.composer.shape' "$OUT")" = "box" ]
     [ "$(yq '.startup.quiet' "$OUT")" = "true" ]

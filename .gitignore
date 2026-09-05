@@ -111,7 +111,11 @@ tmux/theme.conf
 # (sync_claude_chezmoi_sources); repo dirs skills/, agents/, claude/ are the
 # source of truth.
 chezmoi/dot_claude/exact_*/
-chezmoi/dot_omp/private_agent/exact_skills/
+
+# chezmoi shared agents source assembly — DERIVED state rebuilt by dots sync
+# (sync_shared_agents_chezmoi_sources); skills/, .chezmoidata/claude.yaml,
+# and skills/_registry.yaml are the source of truth.
+chezmoi/private_dot_agents/exact_skills/
 
 # chezmoi codex source assembly — DERIVED state rebuilt by dots sync
 # (sync_codex_chezmoi_sources); agents/ and the codex registry are the source
