@@ -11,7 +11,7 @@
 
 const os = require('os');
 const path = require('path');
-const { appendJsonl } = require('./jsonl-log');
+const { appendJsonl, scrubSecrets } = require('./jsonl-log');
 
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const LOGGED_EVENTS = new Set(['PermissionRequest', 'PermissionDenied']);
@@ -34,7 +34,7 @@ function main() {
     }
     if (!LOGGED_EVENTS.has(event.hook_event_name)) return;
     const input = event.tool_input || {};
-    const command = typeof input.command === 'string' ? input.command.slice(0, 500) : null;
+    const command = typeof input.command === 'string' ? scrubSecrets(input.command.slice(0, 500)) : null;
     appendJsonl(logDir(), 'events.jsonl', {
       ts: new Date().toISOString(),
       event: event.hook_event_name || 'unknown',

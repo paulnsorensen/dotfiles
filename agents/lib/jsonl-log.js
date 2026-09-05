@@ -9,6 +9,18 @@
 const fs = require('fs');
 const path = require('path');
 
+// Matches a credential-shaped token so command/reason strings never persist
+// a live secret to disk. Captures the leading marker (kept) and redacts the
+// rest of the token.
+const SECRET_PATTERN = /(Bearer |ghp_|github_pat_|sk-|[A-Z_]*TOKEN=|[A-Z_]*SECRET=|[A-Z_]*KEY=)\S+/g;
+
+// Redact any credential-shaped substring in `str`, e.g. a Bearer token or an
+// inline TOKEN=/SECRET=/KEY= assignment picked up from a logged command.
+function scrubSecrets(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(SECRET_PATTERN, '$1<redacted>');
+}
+
 function rotateIfLarge(file, maxBytes) {
   try {
     if (fs.statSync(file).size > maxBytes) fs.renameSync(file, `${file}.1`);
@@ -31,4 +43,4 @@ function appendJsonl(dir, file, record, maxBytes) {
   }
 }
 
-module.exports = { appendJsonl };
+module.exports = { appendJsonl, scrubSecrets };

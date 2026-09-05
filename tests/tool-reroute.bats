@@ -85,6 +85,13 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
 # case a cd-strip hit's rtk delegate call falls back from.
 SILENT_STUB='cat >/dev/null'
 
+# A stub script body that records rtk's stdin verbatim to <dir>/rtk-stdin.json
+# and prints nothing, so a negative cd-strip case can assert rtk actually ran
+# and received the untouched original command.
+record_stub() {
+    printf 'cat >"%s/rtk-stdin.json"\n' "$1"
+}
+
 # Run out_for with a stub rtk placed first on PATH, so a strip hit's rtk
 # delegate call is deterministic and never depends on a real rtk install.
 out_for_rtk() {
@@ -598,25 +605,30 @@ RTK
 
 @test "tool-reroute/cd-strip: a subdirectory target is left alone" {
     # Not stripped: a real strip would produce updatedInput.command == "ls"
-    # exactly. The silent stub rules out a real rtk supplying its own
-    # updatedInput, so any updatedInput here means cd-strip incorrectly fired.
-    local out; out=$(out_for_rtk "cd $W/sub && ls" "$SILENT_STUB")
+    # exactly. The recording stub proves rtk actually ran and received the
+    # ORIGINAL, untouched command — a crash before delegate() would leave no
+    # recorded stdin, so the negative case can't pass by accident.
+    local out; out=$(out_for_rtk "cd $W/sub && ls" "$(record_stub "$BATS_TEST_TMPDIR")")
     [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "cd $W/sub && ls" ]]
 }
 
 @test "tool-reroute/cd-strip: an unrelated target is left alone" {
-    local out; out=$(out_for_rtk 'cd /other && ls' "$SILENT_STUB")
+    local out; out=$(out_for_rtk 'cd /other && ls' "$(record_stub "$BATS_TEST_TMPDIR")")
     [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'cd /other && ls' ]]
 }
 
 @test "tool-reroute/cd-strip: an || separator is left alone" {
-    local out; out=$(out_for_rtk "cd $W || ls" "$SILENT_STUB")
+    local out; out=$(out_for_rtk "cd $W || ls" "$(record_stub "$BATS_TEST_TMPDIR")")
     [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "cd $W || ls" ]]
 }
 
 @test "tool-reroute/cd-strip: a bare cd with no remainder is left alone" {
-    local out; out=$(out_for "cd $W")
+    local out; out=$(out_for_rtk "cd $W" "$(record_stub "$BATS_TEST_TMPDIR")")
     [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "cd $W" ]]
 }
 
 @test "tool-reroute/cd-strip: the remainder re-classifies against search" {
@@ -647,6 +659,30 @@ RTK
 @test "tool-reroute/cd-strip: a chain of no-op cds collapses in a loop" {
     local out; out=$(out_for_rtk "cd $W && cd $W && ls" "$SILENT_STUB")
     [[ "$(newcmd "$out")" == "ls" ]]
+}
+
+@test "tool-reroute/cd-strip: sibling tool_input fields survive the strip" {
+    local cmd out
+    cmd=$(printf 'cd %s && npm run build' "$W")
+    local stub="$BATS_TEST_TMPDIR/rtk-stub-bin"
+    mkdir -p "$stub"
+    { printf '#!/usr/bin/env bash\n'; printf '%s\n' "$SILENT_STUB"; } >"$stub/rtk"
+    chmod +x "$stub/rtk"
+    local nodedir; nodedir="$(dirname "$(command -v node)")"
+    local json; json=$(jq -nc --arg c "$cmd" --arg w "$W" \
+        '{tool_name:"Bash", tool_input:{command:$c, run_in_background:true, timeout:600000, description:"build"}, cwd:$w}')
+    run env PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$json' | '$DEPLOY/hooks/tool-reroute.sh'"
+    [ "$status" -eq 0 ]
+    out="$output"
+    local expected='{"command":"npm run build","run_in_background":true,"timeout":600000,"description":"build"}'
+    [[ "$(jq -S -c '.hookSpecificOutput.updatedInput' <<<"$out")" == "$(jq -S -c . <<<"$expected")" ]]
+}
+
+@test "tool-reroute/cd-strip: an rtk deny on the stripped command is forwarded verbatim" {
+    local deny='{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"stub deny"}}'
+    local script; script=$(printf 'cat >/dev/null\nprintf %%s '\''%s'\''' "$deny")
+    local out; out=$(out_for_rtk "cd $W && rm -rf /" "$script")
+    [[ "$(jq -S -c . <<<"$out")" == "$(jq -S -c . <<<"$deny")" ]]
 }
 
 @test "tool-reroute/cd-strip: a trailing separator with an empty remainder is not a strip" {

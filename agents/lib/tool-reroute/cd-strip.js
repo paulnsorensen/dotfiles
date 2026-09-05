@@ -15,6 +15,11 @@
 // `~user`) is left alone. Strips in a loop (max 3) so a chain of no-op cds
 // (`cd $cwd && cd $cwd && ls`) collapses fully; a remainder that trims to
 // empty (e.g. a trailing separator with nothing after) is not a strip.
+//
+// The event's `cwd` is Claude Code's tracked cwd, not the shell's live
+// $PWD; the two can diverge after a `pushd`, a sourced script, or a
+// `bash -c 'cd … && …'` — check by grepping decisions.jsonl for `strip`
+// records whose `rewrite` starts with `./`, `../`, or a bare script name.
 
 const os = require('os');
 const path = require('path');

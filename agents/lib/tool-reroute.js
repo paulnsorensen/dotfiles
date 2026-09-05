@@ -25,7 +25,7 @@
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { appendJsonl } = require('./jsonl-log');
+const { appendJsonl, scrubSecrets } = require('./jsonl-log');
 const search = require('./tool-reroute/search');
 const cdStrip = require('./tool-reroute/cd-strip');
 const cdGit = require('./tool-reroute/cd-git');
@@ -81,9 +81,9 @@ function logDecision(harness, event, toolName, cwd, hit, action) {
     tool_name: toolName,
     module: hit.module || null,
     action,
-    command: command.slice(0, 500),
+    command: scrubSecrets(command.slice(0, 500)),
     ...(action === 'rewrite' || action === 'strip'
-      ? { rewrite: hit.rewrite.slice(0, 500) }
+      ? { rewrite: scrubSecrets(hit.rewrite.slice(0, 500)) }
       : { reason: hit.reason }),
   }, MAX_LOG_BYTES);
 }
@@ -138,9 +138,7 @@ function main() {
       if (rtkOut) {
         try {
           const parsed = JSON.parse(rtkOut);
-          if (parsed && parsed.hookSpecificOutput && parsed.hookSpecificOutput.updatedInput !== undefined) {
-            forwarded = rtkOut;
-          }
+          if (parsed && typeof parsed === 'object') forwarded = rtkOut;
         } catch {
           /* rtk printed non-JSON — fall through to the plain strip output */
         }
@@ -148,7 +146,7 @@ function main() {
       process.stdout.write(forwarded !== null ? forwarded : JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          updatedInput: { command: hit.rewrite },
+          updatedInput: { ...input, command: hit.rewrite },
         },
       }));
       return;
@@ -161,7 +159,7 @@ function main() {
           hookEventName: 'PreToolUse',
           permissionDecision: 'allow',
           permissionDecisionReason: `tool-reroute: ${orig} → ${hit.rewrite}`,
-          updatedInput: { command: hit.rewrite },
+          updatedInput: { ...input, command: hit.rewrite },
         },
       }));
       return;

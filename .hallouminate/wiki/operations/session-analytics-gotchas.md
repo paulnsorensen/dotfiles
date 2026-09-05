@@ -17,3 +17,7 @@ tilth 0.8.4 returns the full post-edit file with a fresh tag in every `tilth_wri
 ## Auto-mode classifier prompts are not in transcripts
 
 Only classifier blocks appear (`denied by the Claude Code auto mode classifier`). Approved prompts leave no record. Add a `Notification` hook on `permission_prompt` or a `PermissionDenied` hook to measure prompt volume.
+
+## `cd-strip`'s cwd is Claude Code's tracked cwd, not the shell's live $PWD
+
+The two can diverge after a `pushd`, a sourced script, or a `bash -c 'cd … && …'`. Check by grepping `decisions.jsonl` for `strip` records whose `rewrite` starts with `./`, `../`, or a bare script name.
