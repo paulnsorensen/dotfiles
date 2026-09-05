@@ -385,7 +385,7 @@ PY
 @test "approval succeeds within TTL and is rejected once the TTL elapses" {
     local ttl_socket="$TEST_ROOT/ttl-request.sock"
     local ttl_control="$TEST_ROOT/ttl-control.sock"
-    AGENT_SECRET_BROKER_APPROVAL_TTL=2 "$BROKER" --policy "$POLICY" --socket "$ttl_socket" --control-socket "$ttl_control" >"$TEST_ROOT/ttl-broker.log" 2>&1 &
+    AGENT_SECRET_BROKER_APPROVAL_TTL=5 "$BROKER" --policy "$POLICY" --socket "$ttl_socket" --control-socket "$ttl_control" >"$TEST_ROOT/ttl-broker.log" 2>&1 &
     local ttl_pid=$!
     for _ in {1..50}; do
         [[ -S "$ttl_socket" && -S "$ttl_control" ]] && break
@@ -403,11 +403,11 @@ PY
     assert_success
     expiring_nonce="$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"]["data"]["nonce"])')"
     [[ -n "$expiring_nonce" ]]
-    # Leave the request pending and let the 2s TTL elapse. The first approve
+    # Leave the request pending and let the 5s TTL elapse. The first approve
     # after expiry deterministically reports "expired": cleanup marks the
     # still-pending item expired within that same call, so there is no
     # transient window to race and no bounded poll loop to exhaust under load.
-    sleep 3
+    sleep 6
     run "$CTL" approve --socket "$ttl_control" --nonce "$expiring_nonce"
     assert_failure
     if [[ "$output" != *'"code":"expired"'* ]]; then
