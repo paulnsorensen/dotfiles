@@ -505,6 +505,25 @@ _cz_vendor_external_skills() {
             fi
         else
             # Unpinned: float to latest of the default branch on every sync.
+            # A cache left by a removed pin sits on a detached HEAD, so
+            # `pull --ff-only` fails forever and the stale pin never moves.
+            # The pinned path always writes .dotfiles-pin, so the marker
+            # alone identifies such a cache. Re-attach to the remote default
+            # branch first; a pin removal is a pin change, so failure here
+            # is loud like the pinned path.
+            if [[ -f "$cache/.dotfiles-pin" ]]; then
+                local def
+                def=$(GIT_TERMINAL_PROMPT=0 git -C "$cache" ls-remote --symref origin HEAD 2>/dev/null \
+                    | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2; exit }')
+                if [[ -z "$def" ]] \
+                    || ! git -C "$cache" remote set-branches origin "$def" >/dev/null 2>&1 \
+                    || ! GIT_TERMINAL_PROMPT=0 git -C "$cache" fetch --depth 1 origin "$def" >/dev/null 2>&1 \
+                    || ! git -C "$cache" checkout -q -B "$def" --track "origin/$def" >/dev/null 2>&1; then
+                    log_error "external skill source $source: pin removed but cannot re-attach to the default branch"
+                    return 1
+                fi
+                rm -f "$cache/.dotfiles-pin"
+            fi
             # Offline (pull fails) falls back to the existing cached checkout.
             GIT_TERMINAL_PROMPT=0 git -C "$cache" pull --ff-only >/dev/null 2>&1 \
                 || log_warning "external skill source $source: pull failed, using cached checkout"
