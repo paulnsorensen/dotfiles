@@ -398,13 +398,12 @@ YAML
 }
 
 
-@test "OMP assembly: mirrors selected and OMP-eligible external skills into native discovery path" {
-    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && sync_omp_chezmoi_sources '$ROOT' '$SRC'"
+@test "AC-4 assembly: the OMP exact_skills leg is removed and sync_omp_chezmoi_sources is gone" {
+    mkdir -p "$SRC/dot_omp/private_agent/exact_skills/stale"
+    echo "# stale" > "$SRC/dot_omp/private_agent/exact_skills/stale/SKILL.md"
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && sync_shared_agents_chezmoi_sources '$ROOT' '$SRC' && ! declare -F sync_omp_chezmoi_sources >/dev/null"
     [ "$status" -eq 0 ]
-    local base="$SRC/dot_omp/private_agent/exact_skills"
-    [ -f "$base/exact_alpha-skill/SKILL.md" ]
-    [ -f "$base/exact_beta-skill/SKILL.md" ]
-    [ -f "$base/exact_ext-skill/SKILL.md" ]
+    [ ! -e "$SRC/dot_omp/private_agent/exact_skills" ]
 }
 
 @test "assembly: a source with skills_path vendors skills discovered under the nested dir" {
