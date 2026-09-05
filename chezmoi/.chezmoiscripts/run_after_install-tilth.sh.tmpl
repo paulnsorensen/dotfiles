@@ -48,7 +48,8 @@ if npm ls -g tilth --depth=0 >/dev/null 2>&1; then
     echo "⚠ upstream public 'tilth' is also installed globally and competes for the 'tilth' bin — 'npm rm -g tilth' to keep the nightly fork canonical." >&2
 fi
 if [[ -f "$HOME/.cargo/bin/tilth" ]]; then
-    echo "⚠ ~/.cargo/bin/tilth shadows the npm binary on PATH — remove it so 'tilth' resolves to the nightly fork." >&2
+    rm -f "$HOME/.cargo/bin/tilth"
+    echo "✓ removed ~/.cargo/bin/tilth (stale cargo build that shadowed the nightly on PATH)"
 fi
 
 # A second npm global prefix (homebrew node beside mise node) can hold its own
