@@ -100,9 +100,9 @@ if [[ -n "$HARNESSES" ]]; then
     _filtered=""
     for _h in $HARNESSES; do
         case " ${CHEZMOI_OWNED_AGENTS} " in
-            *" ${_h} "*) echo "  Dropping chezmoi-owned harness: ${_h} (managed by dots sync, not this npx leg)" ;;
-            *) _filtered="${_filtered:+$_filtered }$_h" ;;
+            *" ${_h} "*) continue ;;
         esac
+        _filtered="${_filtered:+$_filtered }$_h"
     done
     HARNESSES="$_filtered"
 fi
@@ -236,7 +236,7 @@ source_skill_names() {
 }
 
 remove_stale_source_skills() {
-    local repo="$1" allowed_agents="$2" expected installed stale_output name
+    local repo="$1" allowed_agents="$2" expected installed stale_output name _id
     expected=$(source_skill_names "$repo") || return 1
     if ! installed=$(npx --yes skills list --global --json 2>&1); then
         echo -e "    ${RED}Could not list installed skills before reconciling $repo${NC}" >&2
@@ -291,11 +291,11 @@ install_source() {
     if [[ -n "$raw_harnesses" ]]; then
         repo_agent_flags=()
         repo_supported=""
-        local repo_excluded=0 repo_dropped_other=0
+        local repo_excluded=0 repo_dropped_other=0 repo_dropped_owned=0
         while IFS= read -r ap_name; do
             [[ -z "$ap_name" ]] && continue
             case " ${CHEZMOI_OWNED_HARNESSES} " in
-                *" ${ap_name} "*) continue ;;
+                *" ${ap_name} "*) repo_dropped_owned=$((repo_dropped_owned + 1)); continue ;;
             esac
             local cli_id
             cli_id=$(awk -F= -v key="$ap_name" \
@@ -324,7 +324,9 @@ install_source() {
             # harness is expected — e.g. a claude-only source on `dots sync`,
             # where claude skills are vendored via chezmoi, not this npx leg.
             # Only warn when a harness was actually unknown/unsupported.
-            if (( repo_dropped_other == 0 && repo_excluded > 0 )); then
+            if (( repo_dropped_other == 0 && repo_excluded == 0 && repo_dropped_owned > 0 )); then
+                echo -e "    ${BLUE}$repo → nothing for this leg (all harnesses are chezmoi-owned, dropped silently).${NC}"
+            elif (( repo_dropped_other == 0 && repo_excluded > 0 )); then
                 echo -e "    ${BLUE}$repo → nothing for this leg (all harnesses excluded via SKILL_EXCLUDE_AGENTS).${NC}"
             else
                 echo -e "    ${YELLOW}No valid harnesses for $repo — skipping.${NC}"

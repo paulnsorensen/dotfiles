@@ -234,7 +234,7 @@ EOF
     assert_failure
 }
 
-@test "skill sync: wildcard source removes source-owned skills absent from vendor cache" {
+@test "AC-11 skill sync: stale-skill removal is scoped with --agent cursor and never names a chezmoi-owned agent" {
     write_registry "acme/widgets"
     write_env "codex cursor"
 
@@ -251,26 +251,6 @@ EOF
 
     run_sync
     assert_success
-    run grep -F 'skills remove' "$NPX_LOG"
-    assert_success
-    [[ "$output" == "npx --yes skills remove retired --global -y --agent cursor" ]]
-}
-
-@test "AC-11 stale-skill reconcile passes --agent cursor only" {
-    write_registry "acme/widgets"
-    write_env "cursor"
-
-    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
-    mkdir -p "$repo_cache/skills/current"
-    printf '%s\n' '# current' > "$repo_cache/skills/current/SKILL.md"
-    export NPX_LIST_JSON='[
-      {"name":"current","source":"acme/widgets"},
-      {"name":"retired","source":"acme/widgets"}
-    ]'
-
-    run_sync
-    assert_success
-
     run grep -F 'skills remove' "$NPX_LOG"
     assert_success
     [[ "$output" == "npx --yes skills remove retired --global -y --agent cursor" ]]
@@ -684,7 +664,7 @@ EOF
     assert_failure
 }
 
-@test "AC-5 chezmoi-owned harnesses are refused in both namespaces and cursor still installs" {
+@test "AC-5 skill sync: chezmoi-owned agents in SKILL_HARNESSES are dropped silently, cursor still installs" {
     # Global namespace: SKILL_HARNESSES names codex/github-copilot (skills-CLI
     # ids) alongside cursor.
     write_registry "acme/widgets" "    skills:
@@ -693,37 +673,57 @@ EOF
 
     run_sync
     assert_success
+    local sync_output="$output"
     run grep -F -- '--agent codex' "$NPX_LOG"
     assert_failure
     run grep -F -- '--agent github-copilot' "$NPX_LOG"
     assert_failure
-    assert_output_not_contains "Skipping SKILL_HARNESSES agents"
+    assert_output_not_contains "Skipping SKILL_HARNESSES agents" "$sync_output"
     run grep -F -- '--agent cursor' "$NPX_LOG"
     assert_success
+}
 
-    # Per-source namespace: harnesses: names every chezmoi-owned ap name
-    # (codex, copilot, zed, omp) plus cursor.
-    write_registry "acme/widgets" "    harnesses:
+@test "AC-5 skill sync: per-source chezmoi-owned harnesses are dropped silently, cursor still installs" {
+    # First source: harnesses: names every chezmoi-owned ap name (codex,
+    # copilot, zed, omp) plus cursor.
+    # Second source: harnesses: names ONLY chezmoi-owned ap names, so the
+    # owned subtraction empties the list — must not print the generic
+    # "No valid harnesses" warning (that warning is for a genuinely bad
+    # harness, not an all-owned source).
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources:
+  acme/widgets:
+    description: first
+    harnesses:
       - codex
       - copilot
       - zed
       - omp
       - cursor
     skills:
-      - alpha"
+      - alpha
+  beta/gadgets:
+    description: second
+    harnesses:
+      - zed
+      - omp
+    skills:
+      - zulu
+EOF
     write_env "cursor"
-    : > "$NPX_LOG"
 
     run_sync
     assert_success
+    local sync_output="$output"
     run grep -F -- '--agent codex' "$NPX_LOG"
     assert_failure
     run grep -F -- '--agent github-copilot' "$NPX_LOG"
     assert_failure
     run grep -F -- '--agent zed' "$NPX_LOG"
     assert_failure
-    assert_output_not_contains "Skipping unknown harness 'zed'"
-    assert_output_not_contains "Skipping unknown harness 'omp'"
+    assert_output_not_contains "Skipping unknown harness 'zed'" "$sync_output"
+    assert_output_not_contains "Skipping unknown harness 'omp'" "$sync_output"
+    assert_output_not_contains "No valid harnesses" "$sync_output"
     run grep -F -- '--agent cursor' "$NPX_LOG"
     assert_success
 }
