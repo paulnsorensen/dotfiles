@@ -792,3 +792,81 @@ EOF
         [[ "$desc_t" == "!!str" ]] || { echo "description not str: $line" >&2; return 1; }
     done <<< "$output"
 }
+
+# ─── SKILL_HARNESSES duplicates / mixed case ──────────────────────────
+
+@test "skill sync: duplicate SKILL_HARNESSES ids produce duplicate --agent flags (no de-dup)" {
+    write_registry "acme/widgets"
+    write_env "claude-code claude-code"
+
+    run_sync --dry-run
+    assert_success
+    run grep -o -- '--agent claude-code' <<< "$output"
+    assert_success
+    [[ "$(wc -l <<< "$output")" == "2" ]]
+}
+
+@test "skill sync: mixed-case SKILL_HARNESSES id is treated as unsupported (case-sensitive match)" {
+    write_registry "acme/widgets"
+    write_env "claude-code Claude-Code"
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "Skipping SKILL_HARNESSES agents"
+    assert_output_contains "Claude-Code"
+    # The properly-cased id still installs.
+    assert_output_contains "--agent claude-code"
+}
+
+# ─── per-repo harnesses: mixing owned / unknown / valid ───────────────
+
+@test "skill sync: per-repo harnesses [zed, bogus, cursor] drops zed silently, warns on bogus, installs cursor" {
+    write_registry "acme/widgets" "    harnesses:
+      - zed
+      - bogus
+      - cursor"
+    write_env "claude-code cursor"
+
+    run_sync --dry-run
+    assert_success
+    # bogus is loud.
+    assert_output_contains "Skipping unknown harness 'bogus' for acme/widgets"
+    # zed is chezmoi-owned and must never be mentioned as skipped/unknown.
+    assert_output_not_contains "zed"
+    # cursor still gets installed.
+    assert_output_contains "npx --yes skills add acme/widgets --skill * --agent cursor -g --copy -y"
+}
+
+# ─── stale-skill removal with multiple surviving --agent flags ────────
+
+@test "AC-11 skill sync: stale-skill removal carries every surviving --agent when several harnesses remain" {
+    write_registry "acme/widgets"
+    write_env "claude-code cursor"
+
+    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
+    mkdir -p "$repo_cache/skills/current"
+    printf '%s\n' '# current' > "$repo_cache/skills/current/SKILL.md"
+    export NPX_LIST_JSON='[
+      {"name":"current","source":"acme/widgets"},
+      {"name":"retired","source":"acme/widgets"}
+    ]'
+
+    run_sync
+    assert_success
+    run grep -F 'skills remove' "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills remove retired --global -y --agent claude-code --agent cursor" ]]
+}
+
+# ─── registry source harnesses: [] (install-external.sh, not chezmoi assembly) ─
+
+@test "skill sync: a registry source with harnesses: [] installs into every SKILL_HARNESSES agent (same as absent)" {
+    write_registry "acme/widgets" "    harnesses: []"
+    write_env "claude-code cursor"
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "--agent claude-code"
+    assert_output_contains "--agent cursor"
+    assert_output_not_contains "No valid harnesses for acme/widgets"
+}

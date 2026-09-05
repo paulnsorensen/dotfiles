@@ -289,3 +289,21 @@ SH
         return 1
     fi
 }
+
+@test "AC-7 every plugins/<name>/skills source in skills/_registry.yaml has a matching agents/plugins/registry.yaml entry" {
+    local skills_reg="$DOTFILES_DIR/skills/_registry.yaml"
+    local plugin_reg="$DOTFILES_DIR/agents/plugins/registry.yaml"
+    local repo skills_path plugin
+
+    while IFS= read -r repo; do
+        [[ -z "$repo" ]] && continue
+        skills_path=$(yq -r ".sources.\"$repo\".skills_path // \"\"" "$skills_reg")
+        [[ "$skills_path" =~ ^plugins/([^/]+)/skills$ ]] || continue
+        plugin="${BASH_REMATCH[1]}"
+        run yq -e ".plugins.\"$plugin\"" "$plugin_reg"
+        [[ $status -eq 0 ]] || {
+            echo "skills source $repo declares skills_path plugins/$plugin/skills but agents/plugins/registry.yaml has no '$plugin' entry" >&2
+            return 1
+        }
+    done < <(yq -r '.sources | keys | .[]' "$skills_reg")
+}

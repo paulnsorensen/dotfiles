@@ -154,3 +154,98 @@ YAML
     [ "$status" -eq 0 ]
     [ ! -e "$SRC/private_dot_agents/exact_skills/exact_beta-skill" ]
 }
+
+@test "AC-2 shared-agents: explicit harnesses: [] is treated the same as absent (vendored)" {
+    cat > "$ROOT/skills/_registry.yaml" <<'YAML'
+sources:
+  owner/empty-list-src:
+    harnesses: []
+YAML
+    seed_cache_source owner/empty-list-src empty-list-skill
+
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/private_dot_agents/exact_skills/exact_empty-list-skill/SKILL.md" ]
+}
+
+@test "skills_path with a trailing slash still resolves the skill directory" {
+    cat > "$ROOT/skills/_registry.yaml" <<'YAML'
+sources:
+  owner/trailing-slash-src:
+    skills_path: skills/
+YAML
+    seed_cache_source owner/trailing-slash-src slash-skill
+
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/private_dot_agents/exact_skills/exact_slash-skill/SKILL.md" ]
+}
+
+@test "skills_path with a leading ./ still resolves the skill directory" {
+    cat > "$ROOT/skills/_registry.yaml" <<'YAML'
+sources:
+  owner/dotslash-src:
+    skills_path: ./skills
+YAML
+    seed_cache_source owner/dotslash-src dotslash-skill
+
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/private_dot_agents/exact_skills/exact_dotslash-skill/SKILL.md" ]
+}
+
+@test "a dot-prefixed skill directory name is encoded exact_dot_ on vendoring" {
+    cat > "$ROOT/skills/_registry.yaml" <<'YAML'
+sources:
+  owner/dotname-src:
+    skills: [.hidden-skill]
+YAML
+    seed_cache_source owner/dotname-src .hidden-skill
+
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/private_dot_agents/exact_skills/exact_dot_hidden-skill/SKILL.md" ]
+    [ ! -e "$SRC/private_dot_agents/exact_skills/exact_.hidden-skill" ]
+}
+
+@test "a skill directory name colliding with the literal_ prefix is double-encoded" {
+    cat > "$ROOT/skills/_registry.yaml" <<'YAML'
+sources:
+  owner/literalname-src:
+    skills: [literal_foo]
+YAML
+    seed_cache_source owner/literalname-src literal_foo
+
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/private_dot_agents/exact_skills/exact_literal_literal_foo/SKILL.md" ]
+}
+
+@test "shared-agents: a staging-swap mv failure logs an error, returns 1, and leaves no partial tree" {
+    # Establish a prior successful assembly so there is real prior state to protect.
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/private_dot_agents/exact_skills/exact_alpha-skill/SKILL.md" ]
+
+    # Shadow `mv` so the final staging-swap step fails, while `rm -rf` and
+    # `mkdir` (also used earlier in the function) keep working normally.
+    local fake_bin="$TEST_HOME/fake-mv"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/mv" <<'SH'
+#!/usr/bin/env bash
+echo "mock mv: refusing to move $*" >&2
+exit 1
+SH
+    chmod +x "$fake_bin/mv"
+    PATH="$fake_bin:$PATH" run_assembly
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"staging swap failed"* ]]
+    [[ "$output" == *"ERROR"* ]]
+    # The function's own error message claims source state "may be
+    # incomplete" -- in fact the preceding `rm -rf` in the same `||` chain
+    # already deleted the prior exact_skills tree before the failed `mv`,
+    # so the prior state is gone, not merely incomplete (same rm-then-mv
+    # semantics as the claude assembler).
+    [ ! -e "$SRC/private_dot_agents/exact_skills/exact_alpha-skill/SKILL.md" ]
+}

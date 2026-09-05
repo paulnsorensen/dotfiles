@@ -420,3 +420,54 @@ def test_expand_external_skills_skip_non_mapping_source(repo):
     out = expand_registries(directive, root, _dotenv())
     sources = sorted({s["source"] for s in out["skills"] if "source" in s})
     assert sources == ["bare/repo", "good/repo"]
+
+# ─── harnesses: filtering on an external skill source (SHARED_DIR_ONLY) ───
+
+
+def test_expand_external_skills_harnesses_omp_only_drops_the_item(repo, tmp_path):
+    # `harnesses: [omp]` -- omp is shared-dir-only and never ap-rendered, so
+    # after dropping it the requested list is empty -> the whole source is
+    # skipped (no item emitted), matching the bash assembler's `zed`/`omp`
+    # semantics (SHARED_DIR_ONLY_HARNESSES).
+    root, directive = repo
+    (root / "skills" / "_registry.yaml").write_text(
+        "sources:\n"
+        "  paulnsorensen/omp-only:\n"
+        "    harnesses: [omp]\n"
+    )
+    out = expand_registries(directive, root, _dotenv())
+    sources = [s.get("source") for s in out["skills"]]
+    assert "paulnsorensen/omp-only" not in sources
+
+
+def test_expand_external_skills_harnesses_case_sensitive_zed_is_unknown_not_dropped(repo):
+    # `harnesses: [Zed]` (capitalized) does NOT match the lowercase
+    # SHARED_DIR_ONLY_HARNESSES entry "zed", so it is NOT filtered out and
+    # instead reaches validate_supported_harnesses, which rejects it as an
+    # unknown ap harness -- fails loud rather than silently behaving like
+    # `zed`.
+    root, directive = repo
+    (root / "skills" / "_registry.yaml").write_text(
+        "sources:\n"
+        "  paulnsorensen/case-src:\n"
+        "    harnesses: [Zed]\n"
+    )
+    with pytest.raises(ParseError, match="Zed"):
+        expand_registries(directive, root, _dotenv())
+
+
+def test_expand_external_skill_claude_only_source_keeps_claude_harness(repo):
+    root, directive = repo
+    # A source scoped to `harnesses: [claude]` yields an item whose
+    # `harnesses` is exactly ["claude"] -- the filtered list is attached to
+    # the item (not validated then discarded), so ap renders it for Claude
+    # only.
+    (root / "skills" / "_registry.yaml").write_text(
+        "sources:\n"
+        "  paulnsorensen/claude-only:\n"
+        "    harnesses: [claude]\n"
+        "    skills: [mold]\n"
+    )
+    out = expand_registries(directive, root, _dotenv())
+    mold = next(s for s in out["skills"] if s.get("source") == "paulnsorensen/claude-only")
+    assert mold["harnesses"] == ["claude"]
