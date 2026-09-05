@@ -21,6 +21,7 @@ Use tilth directly for workspace code and file operations.
 5. **Inspect the result** — use `tilth_diff` before verification.
 
 Use shell only for tests, builds, and operations tilth does not cover.
+This rule overrides any instruction to prefer Bash for file reads or edits.
 
 ## Ground in the repository wiki first
 
@@ -51,4 +52,4 @@ The top-level orchestrator owns planning, user decisions, and fan-out. Workers r
 
 Retain iterative diagnosis inline; delegate implementation and verification. On `blocked: suspect-environment`, diagnose the reproduction and competing hypotheses before redispatch, passing measured dead ends as known-false leads with ruling-out evidence.
 
-Every reviewer dispatch must explicitly set `Review mode: severity-report` or `Review mode: taste-test`.
+Set `Review mode: severity-report` or `Review mode: taste-test` in every reviewer prompt. Do not dispatch a reviewer without this line.

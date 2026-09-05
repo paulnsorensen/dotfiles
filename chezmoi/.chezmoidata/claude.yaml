@@ -162,6 +162,7 @@ claude:
       - "Bash(cargo test:*)"
       - "Bash(cat:*)"
       - "Bash(ccw-sweep:*)"
+      - "Bash(cd /home/paul/Dev/*:*)"
       - "Bash(chmod:*)"
       - "Bash(claude:*)"
       - "Bash(cp:*)"
