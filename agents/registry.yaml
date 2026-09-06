@@ -143,7 +143,9 @@ agents:
   # I/O through the tilth MCP tools, not host tools.
   # Copilot CLI renders these agents too, but ignores per-agent model overrides.
   explorer:
-    description: Read-only codebase investigator. Answers "where / how / what" questions by searching and reading — never writes. Returns a structured findings digest (file:line citations, call paths, conclusions), keeping the file dumps out of the parent's context. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
+    description: >-
+      Source-read-only codebase investigator. Answers "where / how / what" questions by searching and reading, then returns a structured findings digest (file:line citations, call paths, conclusions), keeping file dumps out of the parent's context. May write only an optional own evidence artifact under .cheese/explore/ through tilth_write when the caller permits artifact writes and findings exceed the digest; an explicit read-only or no-write dispatch forbids artifacts.
+      Mutable tool access means permission_enforcement: prompt-only and degraded: true for no-write requests, not OS enforcement; never modifies source or the parent canonical report. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
     models:
       claude: sonnet
       codex: gpt-5.6-luna
@@ -151,6 +153,7 @@ agents:
     - Edit
     - Write
     - NotebookEdit
+    - MultiEdit
     - Agent
     - Grep
     - Glob
