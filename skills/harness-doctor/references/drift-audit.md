@@ -1,170 +1,235 @@
 # Drift audit — mechanics reference
 
-Command detail and checklists backing the drift-audit protocol in `SKILL.md`.
-The wiki (`repo:dotfiles:wiki`) overrides any target-state fact here that goes
-stale.
+This reference defines read-only comparisons for /harness-doctor.
+The wiki defines current ownership. Read architecture/config-drift.md first.
 
-## Target-state facts
+## Read-only contract
 
-- Registries (edit surface): `agents/mcp/registry.yaml`,
-  `agents/hooks/registry.yaml`, `agents/registry.yaml`, `skills/`.
-- `base` = registry union (render primitive). `profiles/global` is a
-  **deprecated stub** superseded by `profiles/live` — check the profile's own
-  yaml before describing it.
-- Claude's `~/.claude/settings.json` (hooks, enabledPlugins,
-  extraKnownMarketplaces, permissions) is **chezmoi-authoritative**: composed
-  wholesale by `chezmoi/dot_claude/modify_settings.json` from
-  `chezmoi/.chezmoidata/claude.yaml` + the plugin registries. Skills and
-  agents render flat to `~/.claude/skills/` and `~/.claude/agents/`; a
-  `~/.claude/plugins/local/` tree is historical and may be absent entirely.
-- The Claude-specific JS guards (`~/.claude/hooks/*.js`), `rtk`, and any tmux
-  hook are **settings-only and legit** — not plugin-managed, so not drift.
-- Historical anchor commit: **#217 `feat(ap): add global profile + migrate
-  settings.json to chezmoi seed`** — the point hooks first moved out of
-  `settings.json`. Since then Claude went fully chezmoi-authoritative.
-  Anything live matching a pre-#217 shape is still a stale-remnant candidate,
-  but the *current* owner is the modify script, not a plugin tree (which may
-  not exist at all on the machine).
+The audit does not write live files. It does not run deployment or apply commands.
+It does not publish GitHub issues or wiki entries. The authorization rule below applies
+to every repair, issue publication, and wiki write.
 
-## Grounding commands
+**Authorization rule:** make a change only when the user explicitly authorizes that
+specific action in the current turn. An audit, diagnosis, or recommendation does not
+authorize a change.
 
-Git history — the migration arc that distinguishes stale from novel:
+Do not invoke a deployment renderer against a live target. Do not use retired targeting flags or
+retired file-reader names. Never print live values or raw file differences.
 
-```bash
-git -C "$DOTFILES_DIR" log --oneline -20 -- agents/ profiles/ chezmoi/dot_claude/
-git -C "$DOTFILES_DIR" log --oneline --grep='ap\|migrat\|settings\|hook' -20
-```
+## Ownership and target inputs
 
-If `ground` errors with a schema/index error (e.g. `missing column chunk_id`),
-the LanceDB index is stale — run `hallouminate index` (or note it as a
-dotfiles bug if it won't rebuild) and fall back to `read_markdown`.
+| Harness | Owner | Live inputs |
+|---|---|---|
+| Claude | chezmoi/dot_claude/modify_settings.json, chezmoi/.chezmoidata/claude.yaml, plugin overlays, and chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-mcps.sh.tmpl | ~/.claude/settings.json and ~/.claude.json |
+| Codex | chezmoi/private_dot_codex/modify_private_config.toml from chezmoi/.chezmoidata/codex.yaml; sync_codex_chezmoi_sources assembles shared hooks | ~/.codex/config.toml, ~/.codex/hooks.json |
+| Cursor | User-owned live files and declared Cursor plugin projections | ~/.cursor/mcp.json, ~/.cursor/hooks.json |
+| Copilot | Chezmoi templates and declared profile projections | ~/.copilot/mcp-config.json, ~/.copilot/hooks/ |
+| OMP | chezmoi/.chezmoidata/omp.yaml and dot_omp/private_agent/modify_config.yml | ~/.omp/agent/config.yml, when OMP is in scope |
 
-## Live config snapshot
+Claude settings ownership includes static settings, Claude registry keys, and
+gate-filtered native plugin overlays. Codex overlays declared keys and MCP servers
+while preserving CLI runtime tables. Cursor and Copilot live files remain user-owned.
 
-Read the live files per harness (use `cheez-read`/`jq`, not blind `cat`):
+## Grounding and provenance
 
-| Harness | Live files |
-|---|---|
-| claude | `~/.claude/settings.json` (+ `~/.claude/plugins/local/global/` only if that historical tree exists) |
-| codex | `~/.codex/config.toml` (`[mcp_servers]`, `[[hooks.*]]`), `~/.codex/hooks.json` |
-| cursor | `~/.cursor/mcp.json`, `~/.cursor/hooks.json` |
-| copilot | `~/.copilot/mcp-config.json`, `~/.copilot/hooks/` |
+Read the wiki before repository inspection:
 
-## Render + diff commands
+    ground repo:dotfiles:wiki "config drift harness ownership"
+    read_markdown repo:dotfiles:wiki architecture/config-drift.md
+    read_markdown repo:dotfiles:wiki architecture/chezmoi-authoritative-codex.md
 
-For **Claude**, the authoritative check is the chezmoi modify script itself —
-feed it the live file and diff the result against live (byte-identical = no
-drift):
+Use repository history only to prove migration provenance:
 
-```bash
-sh "$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" \
-  < ~/.claude/settings.json | diff - ~/.claude/settings.json
-```
+    git -C "$DOTFILES_DIR" log --oneline -20 -- agents/ chezmoi/ profiles/
+    git -C "$DOTFILES_DIR" log --oneline --grep='migration\|settings\|hook' -20
 
-For Codex, Cursor, and Copilot, render `base` into a throwaway target (never
-touch live config) and diff:
+Define the repository before any optional issue check:
 
-```bash
-TMP="$(mktemp -d)"
-DOTFILES_DIR="$DOTFILES_DIR" ap install base --target "$TMP"
-dots profile describe live            # resolved manifest for the live overlay
-# Compare Codex MCP tables and Cursor/Copilot MCP files with rendered payloads.
-```
+    REPO="${REPO:-paulnsorensen/dotfiles}"
 
-## Dotfiles-bug checklist
+## Redacted snapshots
 
-Repo-source-is-wrong checks (any hit is a **dotfiles bug**):
+Report key paths, entry names, and counts only. Never print setting values.
 
-- A `script:` in `agents/hooks/registry.yaml` whose file is missing.
-- A hook `event:` not in `HOOK_EVENTS_VALID` (`agents/hooks/lib.sh`).
-- A Codex user-level `~/.codex/hooks.json` command that starts with
-  `bash .codex/hooks/` or otherwise names a relative hook script path.
-  User-level Codex hooks run from the session cwd, so repo-relative commands
-  are unsafe drift.
-- Duplicate Codex hook wiring: the same managed hook basename appears in both
-  `~/.codex/hooks.json` and legacy `[[hooks.<event>]]` blocks in
-  `~/.codex/config.toml`.
-- An MCP referencing an unset `${VAR}` but not marked `optional: true`.
-- A skill dir without a `SKILL.md`, or a registry `body_path` that 404s.
-- The wiki index failing to rebuild (`hallouminate index` errors).
-- A `run_onchange` hash input list omitting a file the script reads.
+    jq -r '[paths(scalars) | map(select(type == "string")) | join(".")] | sort[]' "$HOME/.claude/settings.json"
+    jq -r '.mcpServers // {} | keys[]' "$HOME/.claude.json"
+    yq -p=toml -o=json '.' "$HOME/.codex/config.toml" | jq -r '[paths(scalars) | map(select(type == "string")) | join(".")] | sort[]'
+    jq -r '[paths(scalars) | map(select(type == "string")) | join(".")] | sort[]' "$HOME/.codex/hooks.json"
+    jq -r '.mcpServers // {} | keys[]' "$HOME/.cursor/mcp.json"
+    jq -r '.mcpServers // {} | keys[]' "$HOME/.copilot/mcp-config.json"
+    yq -p=yaml -o=json '.' "$HOME/.omp/agent/config.yml" | jq -r '[paths(scalars) | map(select(type == "string")) | join(".")] | sort[]'
 
-## Heal mechanics
+Skip a missing optional file. Record only the path and parser error.
 
-Two stale-remnant classes self-heal **inside the renderers**, on every
-`ap install` — not via a bolt-on script:
+## Semantic owner comparisons
 
-- **Legacy hooks.** Each renderer prunes its own harness's pre-ap hook
-  leftovers:
-  - **claude** — `claude.py:_clean_legacy_settings_hooks` strips
-    `settings.json` hooks that duplicate a plugin-managed hook (by script
-    basename or exact command), keyed off the hooks it just wired into
-    `plugin.json`.
-  - **codex** — `codex.py:_clean_legacy_config_toml_hooks` strips legacy
-    `[[hooks.*]]` blocks from `config.toml` the same way.
-- **Dropped MCPs.** `cli.py:_reconcile_dropped_mcps` reports registry entries
-  removed since the prior resolved manifest. Non-isolated live MCP config is
-  chezmoi/user-owned, so diagnose and repair it through its authoritative
-  owner; do not expect `ap install` to mutate those files.
+Create one temporary directory. Each comparison stores normalized owner data in TMP and emits only names or paths:
 
-**Known exception — chezmoi settings gate halts on removed hook keys.** Since
-claude went chezmoi-authoritative, `chezmoi/dot_claude/modify_settings.json`
-halts `dots sync` on any live `settings.json` key-path absent from the desired
-document. When a commit *removes* a hook event key (or the last hook carrying a
-field like `timeout`) from `chezmoi/.chezmoidata/claude.yaml`, the stranded
-live key-path trips that gate and no renderer or sync can clear it — this is
-the one case where a manual live prune IS the heal:
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
 
-```bash
-jq 'del(.hooks.<RemovedEvent>)' ~/.claude/settings.json > /tmp/s.json \
-  && jq -e 'type=="object"' /tmp/s.json >/dev/null \
-  && mv /tmp/s.json ~/.claude/settings.json
-dots sync   # wholesale write owns hooks from here
-```
+    normalize_scalars() {
+        jq -S '[paths(scalars) as $p
+          | {path: ($p | map(tostring) | join(".")), value: getpath($p)}]
+          | sort_by(.path)' "$1"
+    }
 
-Confirm each pruned key-path against the removing commit first
-(`git log -p -- chezmoi/.chezmoidata/claude.yaml`) — a live-only key with *no*
-removal commit is app-introduced and must be folded in, not pruned. Details:
-`.hallouminate/wiki/architecture/config-drift.md` § registry hook-event
-removal.
+    compare_scalars() {
+        jq -n --slurpfile owner "$1" --slurpfile live "$2" '
+          ($owner[0] | map({key: .path, value: .value}) | from_entries) as $o
+          | ($live[0] | map({key: .path, value: .value}) | from_entries) as $l
+          | (($o | keys_unsorted) + ($l | keys_unsorted) | unique[]) as $path
+          | select((($o | has($path)) != ($l | has($path)))
+              or (($o | has($path)) and ($o[$path] != $l[$path])))
+          | $path'
+    }
 
-## gh issue mechanics
+    normalize_mcps() {
+        jq -S '[. // {} | to_entries[] | {name: .key, config: .value}]
+          | sort_by(.name)' "$1"
+    }
 
-Dedup first:
+    normalize_claude_mcps() {
+        jq -S '[. // {} | to_entries[] |
+          {name: .key, config: (
+            .value + {
+              type: (.value.type // "stdio"),
+              command: .value.command,
+              args: (.value.args // []),
+              env: (.value.env // {})
+            }
+          )}] | sort_by(.name)' "$1"
+    }
 
-```bash
-gh issue list --repo "$REPO" --state open --label harness-doctor --json number,title
-```
+    compare_named() {
+        jq -n --slurpfile owner "$1" --slurpfile live "$2" '
+          ($owner[0] | map({key: .name, value: .config}) | from_entries) as $o
+          | ($live[0] | map({key: .name, value: .config}) | from_entries) as $l
+          | (($o | keys_unsorted) + ($l | keys_unsorted) | unique[]) as $name
+          | select((($o | has($name)) != ($l | has($name)))
+              or (($o | has($name)) and ($o[$name] != $l[$name])))
+          | $name'
+    }
 
-Skip any bug whose title substantially matches an open issue. For novel bugs:
+    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" sh "$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" < "$HOME/.claude/settings.json" |
+      normalize_scalars - > "$TMP/claude-owner-scalars"
+    normalize_scalars "$HOME/.claude/settings.json" > "$TMP/claude-live-scalars"
+    compare_scalars "$TMP/claude-owner-scalars" "$TMP/claude-live-scalars"
 
-```bash
-gh issue create --repo "$REPO" \
-  --title "harness-doctor: <one-line bug>" \
-  --label harness-doctor \
-  --body "$(cat <<'EOF'
-**Found by** /harness-doctor on <date>.
+    yq -o=json '.claude.mcps // {}' "$DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml" |
+      normalize_claude_mcps - > "$TMP/claude-owner-mcps"
+    jq -S '.mcpServers // {}' "$HOME/.claude.json" |
+      normalize_claude_mcps - > "$TMP/claude-live-mcps"
+    compare_named "$TMP/claude-owner-mcps" "$TMP/claude-live-mcps"
 
-**Symptom**: <what's wrong, with file:line>
-**Root cause**: <why — cite git history / wiki>
-**Target state**: <what ap/registries should produce>
-**Suggested fix**: <concrete edit>
-EOF
-)"
-```
+These commands compare Claude scalar values and MCP command, argument, and option values.
+They emit differing key paths or MCP names only.
 
-Create the `harness-doctor` label first if absent (`gh label create
-harness-doctor --color BFD4F2 --description "Drift/bug found by /harness-doctor"`).
-If `gh` is unauthenticated or offline, write the issue bodies to
-`.cheese/harness-doctor/issues-<date>.md` and tell the user to file them.
+    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" sh "$DOTFILES_DIR/chezmoi/private_dot_codex/modify_private_config.toml" < "$HOME/.codex/config.toml" |
+      yq -p=toml -o=json '.' |
+      normalize_scalars - > "$TMP/codex-owner-scalars"
+    yq -p=toml -o=json '.' "$HOME/.codex/config.toml" |
+      normalize_scalars - > "$TMP/codex-live-scalars"
+    compare_scalars "$TMP/codex-owner-scalars" "$TMP/codex-live-scalars"
 
-## Misplaced project knowledge (wiki repos only)
+    yq -o=json '.codex.mcps // {}' "$DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml" |
+      normalize_mcps - > "$TMP/codex-owner-mcps"
+    yq -p=toml -o=json '.' "$HOME/.codex/config.toml" |
+      jq -S '[.mcp_servers // {} | to_entries[] | {name: .key, config: .value}]
+        | sort_by(.name)' > "$TMP/codex-live-mcps"
+    compare_named "$TMP/codex-owner-mcps" "$TMP/codex-live-mcps"
 
-Auto-memory is disabled globally (`autoMemoryEnabled: false`, issue #717), so
-a repo with a `.hallouminate/wiki/` should hold no project-scoped agent
-memory. When `.hallouminate/wiki/` exists, scan
-`~/.claude/projects/<slug>/memory/` for files whose frontmatter declares
-`type: project` and list each under **Needs your call**, recommending
-migration into the wiki (`/wiki-curator` / `add_markdown`). Do **not** open a
-gh issue (the content is not a repo-source bug) and do **not** auto-delete
-(that would destroy the only copy before it is migrated).
+Compare only declared Codex paths. Treat projects, hooks.state, marketplaces,
+plugins, and other CLI runtime paths as preserved local state.
+
+## Codex hook comparison
+
+The registry and shared assembly own Codex hook basenames. Compare names only:
+
+    yq -o=json '.hooks // {} | to_entries[] |
+      select((.value.harnesses // ["claude", "codex"]) | index("codex")) |
+      .value.script // empty' "$DOTFILES_DIR/agents/hooks/registry.yaml" |
+      jq -r 'split("/") | last' | sort > "$TMP/codex-owner-hooks"
+
+    jq -r '.. | objects | .command? // empty | strings |
+      select(contains(".codex/hooks/")) |
+      split(".codex/hooks/")[1] | split(" ")[0] | rtrimstr("\"")' "$HOME/.codex/hooks.json" |
+      sort > "$TMP/codex-live-hooks-json"
+
+    yq -p=toml -o=json '.' "$HOME/.codex/config.toml" |
+      jq -r '.. | objects | .command? // empty | strings |
+        select(contains(".codex/hooks/")) |
+        split(".codex/hooks/")[1] | split(" ")[0] | rtrimstr("\"")' |
+      sort > "$TMP/codex-live-hooks-toml"
+
+    comm -3 "$TMP/codex-owner-hooks" "$TMP/codex-live-hooks-json"
+    comm -12 "$TMP/codex-live-hooks-json" "$TMP/codex-live-hooks-toml"
+
+A name in both live hook outputs indicates duplicate legacy wiring. Report the name
+only. Do not print its command, arguments, or environment.
+
+## Intended projections
+
+Do not run agent-profile deployment or compilation for this audit. Those operations
+can install plugins and do not model global settings ownership.
+
+Copilot's chezmoi template can render into TMP without applying it:
+
+    chezmoi --source "$DOTFILES_DIR/chezmoi" execute-template < "$DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl" > "$TMP/copilot-owner.json"
+    jq -r '.mcpServers // {} | keys[]' "$TMP/copilot-owner.json" | sort > "$TMP/copilot-owner-mcps"
+    jq -r '.mcpServers // {} | keys[]' "$HOME/.copilot/mcp-config.json" | sort > "$TMP/copilot-live-mcps"
+    comm -3 "$TMP/copilot-owner-mcps" "$TMP/copilot-live-mcps"
+
+Cursor and Copilot extras remain user-owned. Compare only declared plugin names,
+MCP names, hook names, and counts. Do not classify every live-only entry as stale.
+
+When OMP is in scope, run its modify script into TMP and compare normalized values:
+
+    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" sh "$DOTFILES_DIR/chezmoi/dot_omp/private_agent/modify_config.yml" < "$HOME/.omp/agent/config.yml" |
+      yq -p=yaml -o=json '.' |
+      normalize_scalars - > "$TMP/omp-owner-scalars"
+    yq -p=yaml -o=json '.' "$HOME/.omp/agent/config.yml" |
+      normalize_scalars - > "$TMP/omp-live-scalars"
+    compare_scalars "$TMP/omp-owner-scalars" "$TMP/omp-live-scalars"
+
+## Classification checklist
+
+Classify a difference only when evidence supports it:
+
+1. Stale remnant: the owner abandoned the entry, and history proves the migration.
+2. Dotfiles bug: source validation or the intended projection is wrong.
+3. Expected local: live-only content has no repository provenance.
+4. Needs your call: the evidence supports more than one class.
+
+Check these dotfiles-bug cases:
+
+- A hook script is missing.
+- A hook event is absent from HOOK_EVENTS_VALID.
+- A Codex hook command uses a relative path from a user-level config.
+- A managed Codex hook basename appears in both hooks.json and legacy TOML hooks.
+- An MCP uses an unset variable without an optional marker.
+- A skill directory lacks SKILL.md, or a body_path is missing.
+- A run_onchange hash omits a file that the script reads.
+- The wiki index cannot rebuild.
+
+## Repair and issue publication
+
+Do not perform either action during the default audit. Apply the authorization rule
+above before any action.
+
+After explicit authorization, state the exact file, command, and expected effect first.
+Use the tested owner mechanism. Never hand-edit a rendered target.
+
+After explicit authorization for issue publication, deduplicate first:
+
+    gh issue list --repo "$REPO" --state open --label harness-doctor --json number,title
+
+Ask for confirmation of each novel issue body before using gh issue create.
+If GitHub is unavailable, save proposed bodies under .cheese/harness-doctor/ only
+after explicit authorization for issue preparation.
+
+## Misplaced project knowledge
+
+When .hallouminate/wiki/ exists, inspect project memory for type: project.
+Report candidates under Needs your call. Do not delete or publish an issue for them.
+wiki-curator can migrate them after the user approves.
