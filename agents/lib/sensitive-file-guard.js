@@ -19,6 +19,8 @@
 // Allow-list escape hatch (substring match against the path):
 //   CLAUDE_SENSITIVE_GUARD_ALLOW=/abs/ok.env,fixtures/  (comma-separated)
 
+const path = require('path');
+
 const READ_TOOLS = new Set(['Read', 'mcp__tilth__tilth_read']);
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'mcp__tilth__tilth_write']);
 
@@ -119,20 +121,62 @@ function applyPatchTargets(command) {
   return out;
 }
 
+function resolveEditPath(rawPath, cwd) {
+  if (typeof rawPath !== 'string' || !rawPath || typeof cwd !== 'string' || !cwd || path.isAbsolute(rawPath)) return rawPath;
+  return path.resolve(cwd, rawPath);
+}
+
+function resolveTilthReadPath(rawPath, cwd) {
+  if (typeof rawPath !== 'string') return rawPath;
+  return resolveEditPath(rawPath.split('#', 1)[0], cwd);
+}
+
+function tilthReadTargets(input) {
+  if (!Array.isArray(input.paths)) return [];
+  return input.paths
+    .map((x) => (typeof x === 'string' ? x : x && x.path))
+    .filter(Boolean)
+    .map((rawPath) => resolveTilthReadPath(rawPath, input.cwd));
+}
+
+function editTargets(input) {
+  if (!Array.isArray(input.edits)) return [];
+  const targets = [];
+  for (const edit of input.edits) {
+    if (!edit || typeof edit.path !== 'string' || !edit.path) continue;
+    targets.push(resolveEditPath(edit.path, input.cwd));
+    if (!Array.isArray(edit.ops)) continue;
+    for (const op of edit.ops) {
+      if (op && op.op === 'move_file' && typeof op.dest === 'string' && op.dest) {
+        targets.push(resolveEditPath(op.dest, input.cwd));
+      }
+    }
+  }
+  return targets;
+}
+
 function extractTargets(toolName, input) {
   if (!input) return [];
   if (toolName === 'Bash') return bashTokens(input.command || '');
   // Codex apply_patch: target paths live in the patch headers (command field).
   if (toolName === 'apply_patch') return applyPatchTargets(input.command || '');
   if (READ_TOOLS.has(toolName) || EDIT_TOOLS.has(toolName)) {
-    if (Array.isArray(input.paths)) {
-      return input.paths.map((x) => (typeof x === 'string' ? x : x && x.path)).filter(Boolean);
+    const targets = editTargets(input);
+    if (toolName === 'mcp__tilth__tilth_read') {
+      targets.push(...tilthReadTargets(input));
+    } else if (Array.isArray(input.paths)) {
+      targets.push(...input.paths.map((x) => (typeof x === 'string' ? x : x && x.path)).filter(Boolean));
     }
     if (Array.isArray(input.files)) {
-      return input.files.filter((f) => f && f.path).map((f) => f.path);
+      targets.push(...input.files.filter((f) => f && f.path).map((f) => f.path));
     }
     const single = input.file_path || input.path;
-    return single ? [single] : [];
+    if (single) {
+      targets.push(toolName === 'mcp__tilth__tilth_read'
+        ? resolveTilthReadPath(single, input.cwd)
+        : single);
+    }
+    return targets;
   }
   return [];
 }

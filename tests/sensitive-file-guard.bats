@@ -116,12 +116,40 @@ guard() {
     [[ "$(guard mcp__tilth__tilth_read '{"paths":["README.md","secrets.yaml"]}')" == "deny" ]]
 }
 
+@test "tilth_read .env range selector is denied" {
+    [[ "$(guard mcp__tilth__tilth_read '{"cwd":"/project","paths":[".env#1-2"]}')" == "deny" ]]
+}
+
+@test "tilth_read secrets.yaml heading selector is denied" {
+    [[ "$(guard mcp__tilth__tilth_read '{"cwd":"/project","paths":["secrets.yaml### Credentials"]}')" == "deny" ]]
+}
+
+@test "tilth_read clean selectors are allowed" {
+    [[ "$(guard mcp__tilth__tilth_read '{"cwd":"/project","paths":["README.md#1-2","src/app.js### parse"]}')" == "allow" ]]
+}
+
+@test "non-tilth filename keeps its hash suffix" {
+    [[ "$(guard Read '{"file_path":".env#1-2"}')" == "allow" ]]
+}
+
 @test "tilth_write batch touching .env is denied" {
     [[ "$(guard mcp__tilth__tilth_write '{"files":[{"path":"app.js","content":"ok"},{"path":".env","content":"K=v"}]}')" == "deny" ]]
 }
 
 @test "tilth_write batch of clean files is allowed" {
     [[ "$(guard mcp__tilth__tilth_write '{"files":[{"path":"a.js","content":"ok"},{"path":"b.js","content":"ok"}]}')" == "allow" ]]
+}
+
+@test "tilth_write current edits batch touching .env is denied" {
+    [[ "$(guard mcp__tilth__tilth_write '{"cwd":"/project","edits":[{"path":"app.js","ops":[{"op":"replace_text","old":"a","new":"b"}]},{"path":".env","ops":[{"op":"replace_text","old":"K=1","new":"K=2"}]}]}')" == "deny" ]]
+}
+
+@test "tilth_write current edits batch of clean files is allowed" {
+    [[ "$(guard mcp__tilth__tilth_write '{"cwd":"/project","edits":[{"path":"a.js","ops":[{"op":"replace_text","old":"a","new":"b"}]},{"path":"b.js","ops":[{"op":"replace_text","old":"a","new":"b"}]}]}')" == "allow" ]]
+}
+
+@test "tilth_write move destination touching secret is denied" {
+    [[ "$(guard mcp__tilth__tilth_write '{"cwd":"/project","edits":[{"path":"app.js","ops":[{"op":"move_file","dest":".env"}]}]}')" == "deny" ]]
 }
 
 # ── Bash bypass ───────────────────────────────────────────────────────
