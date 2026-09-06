@@ -248,9 +248,9 @@ block_sha() {
     }
 }
 
-@test "read-only phase agents deny code edits and subagent fan-out in the registry" {
+@test "source-read-only phase agents deny native code edits and subagent fan-out in the registry" {
     local registry="$AGENTS_DIR/registry.yaml"
-    # explorer + reviewer deny native Write and subagent fan-out; reviewer writes only its own artifact through tilth_write.
+    # Explorer and reviewer deny native Write and subagent fan-out. Explorer keeps tilth_write reachable because MCP has no per-path restriction.
     for agent in explorer reviewer; do
         run yq ".agents.${agent}.disallowedTools" "$registry"
         assert_success
@@ -332,4 +332,39 @@ block_sha() {
         run yq -e ".agents.roquefort-wrecker.tools[] | select(. == \"$tool\")" "$registry"
         [[ "$status" -eq 0 ]] || { echo "roquefort-wrecker must grant $tool" >&2; return 1; }
     done
+}
+
+@test "explorer denies native mutation while retaining optional tilth artifact capability" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    local explorer="$AGENTS_DIR/agent_definitions/explorer.md"
+    local omp_explorer="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/agents/explorer.md"
+
+    for tool in Edit Write MultiEdit NotebookEdit Agent; do
+        run yq -e ".agents.explorer.disallowedTools[] | select(. == \"$tool\")" "$registry"
+        assert_success
+    done
+    run yq -e '.agents.explorer.disallowedTools[] | select(. == "mcp__tilth__tilth_write")' "$registry"
+    assert_failure
+
+    for contract in 'source-read-only' '.cheese/explore/<slug>.md' 'canonical report' 'caller permits artifact writes' 'read-only or no-write dispatch' 'permission_enforcement: prompt-only' 'degraded: true' 'OS enforcement'; do
+        run grep -Fqi "$contract" "$explorer"
+        [[ "$status" -eq 0 ]] || { echo "explorer body missing contract: $contract" >&2; return 1; }
+    done
+    run grep -Fqi 'no dedicated artifact writer' "$omp_explorer"
+    assert_success
+    run grep -Fqi 'does not mutate through Bash' "$omp_explorer"
+    assert_success
+}
+
+@test "explorer artifact capability remains writable for the shared sandbox predicate" {
+    command -v python3 >/dev/null 2>&1 || skip "python3 not installed"
+    local result
+    result=$(cd "$REAL_DOTFILES_DIR/agent-profile" && python3 -c '
+import yaml
+from agent_profile.shared import agent_is_read_only
+with open("../agents/registry.yaml") as handle:
+    explorer = yaml.safe_load(handle)["agents"]["explorer"]
+print(str(agent_is_read_only(explorer)).lower())
+') || skip "Python ground truth unavailable"
+    [[ "$result" == false ]]
 }
