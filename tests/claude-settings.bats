@@ -258,6 +258,37 @@ cz_apply() {
     [ "$(jq -r '.permissions.defaultMode' "$OUT")" = "auto" ]
 }
 
+@test "authoritative source: sandbox enables strict containment and retains approved paths" {
+    [ "$(jq -r '.permissions.defaultMode' "$AUTH")" = "auto" ]
+    [ "$(jq -r '.sandbox.enabled' "$AUTH")" = "true" ]
+    [ "$(jq -r '.sandbox.autoAllowBashIfSandboxed' "$AUTH")" = "true" ]
+    [ "$(jq -r '.sandbox.allowUnsandboxedCommands' "$AUTH")" = "false" ]
+    [ "$(jq -r '.sandbox.failIfUnavailable' "$AUTH")" = "true" ]
+
+    [ "$(jq -r '.sandbox.excludedCommands | length' "$AUTH")" = "0" ]
+
+    # shellcheck disable=SC2088 # These values must stay literal JSON policy strings.
+    for path in "~/Dev/.prek" "~/.cache" "~/.local/share" "~/.local/bin" "~/.cheese"; do
+        jq -e --arg path "$path" '.sandbox.filesystem.allowWrite | index($path)' "$AUTH" >/dev/null
+    done
+    for domain in "github.com" "api.github.com" "registry.npmjs.org" "pypi.org" "crates.io"; do
+        jq -e --arg domain "$domain" '.sandbox.network.allowedDomains | index($domain)' "$AUTH" >/dev/null
+    done
+}
+
+@test "modify_settings: interpreter and MCP grants remain convenience controls inside sandbox" {
+    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    # These grants reduce prompts; the OS sandbox still contains Bash and its children.
+    for rule in "Bash(gh:*)" "Bash(node:*)" "Bash(python3:*)" "Bash(uv:*)"; do
+        jq -e --arg rule "$rule" '.permissions.allow | index($rule)' "$OUT" >/dev/null
+    done
+    # MCP tools run outside the Bash sandbox, so these grants do not claim MCP containment.
+    for rule in "mcp__context7__*" "mcp__hallouminate__*" "mcp__tilth__*"; do
+        jq -e --arg rule "$rule" '.permissions.allow | index($rule)' "$OUT" >/dev/null
+    done
+}
+
 # ── plugin-registry overlay composition ─────────────────────────────────────
 # modify_settings.json is the single writer of enabledPlugins /
 # extraKnownMarketplaces: claude.yaml base + a gate-filtered overlay derived
