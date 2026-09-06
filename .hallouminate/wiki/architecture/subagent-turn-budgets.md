@@ -126,6 +126,17 @@ Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
   `.context/` path segment may persist resumable state. The guard atomically
   creates `checkpoint-spent` before allowing the call, so concurrent attempts
   have one winner and a failed tool execution still consumes the allowance.[^checkpoint-write]
+  The edit must use only content-writing ops (`CHECKPOINT_OPS` in the guard:
+  `create_file`, `replace_text`, `prepend`, `append`, `replace`, `insert_*`,
+  `replace_block`, `insert_after_block`); `delete*` and `move_file` stay denied.
+  **Gotcha (#894):** the original set omitted `create_file` and `replace_text`, so
+  a new `.cheese/notes/*.md` handoff was denied and 60 of 61 checkpoint artifacts
+  were lost in one week. Keep the op list in one constant and name it in the deny
+  message, so a future mismatch is self-correcting for the agent.[^checkpoint-ops]
+  The decision log (2026-08-29 → 09-06) shows every hard-ceiling record with
+  `ctx_source=tokens` and zero `bytes-fallback`, so the byte→token switch does not
+  explain the rise in ceiling hits over [[operations/subagent-dispatch-analytics]];
+  the coder context ceiling is the real trip (68 coder agents vs 15 turn-wall agents).
   Fresh and resumed agents use the same rule; the old three-call resume grace and
   its eligibility markers were removed after retained decision logs showed zero
   grace grants while fresh mid-run crossings accounted for every observed hard
@@ -188,3 +199,4 @@ Delegation still pays on genuinely independent, sizeable tracks. Full deltas:
 
 [^checkpoint-write]: `agents/lib/turn-budget-guard.js:499-545,603-630`; `tests/turn-budget-guard.bats:269-360`
 [^checkpoint-evidence]: <https://github.com/paulnsorensen/dotfiles/issues/552>
+[^checkpoint-ops]: <https://github.com/paulnsorensen/dotfiles/issues/894>; `agents/lib/turn-budget-guard.js` `CHECKPOINT_OPS`; `tests/turn-budget-guard.bats` "A2b: a create_file checkpoint"
