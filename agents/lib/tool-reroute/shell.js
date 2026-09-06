@@ -60,6 +60,7 @@ function parse(command) {
     if (c === "'") { // single quotes: everything literal up to the next '
       hasTok = true; i += 1;
       while (i < n && command[i] !== "'") { cur += command[i]; i += 1; }
+      if (i >= n) return [];
       i += 1;
       continue;
     }
@@ -70,6 +71,7 @@ function parse(command) {
           cur += command[i + 1]; i += 2;
         } else { cur += command[i]; i += 1; }
       }
+      if (i >= n) return [];
       i += 1;
       continue;
     }

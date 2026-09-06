@@ -114,19 +114,24 @@ hooks:
   # with no shell rewrite target (the Grep/Glob tools, shell write-redirects)
   # naming cheez-search / cheez-write, and DELEGATES every other Bash command to
   # `rtk hook <harness>` for token compaction. One dispatcher (tool-reroute.js)
-  # runs three independently-removable modules (lib/tool-reroute/{search,cd-git,
-  # io}.js); the shared lexer is lib/tool-reroute/shell.js. Both harnesses share
-  # the allow/deny + updatedInput schema. Harness identity: see wiki
+  # runs four independently-removable modules (lib/tool-reroute/{search,cd-strip,
+  # cd-git,io}.js); cd-strip strips a no-op `cd <cwd> &&` prefix and re-classifies
+  # the remainder; the shared lexer is lib/tool-reroute/shell.js and the shared
+  # jsonl append/rotate helper is lib/jsonl-log.js. Both harnesses share the
+  # allow/deny + updatedInput schema. Harness identity: see wiki
   # architecture/cross-harness-guards.
   # Fail-open: a missing logic file, absent node, or absent rtk degrades to the
-  # unrewritten command.
+  # unrewritten command. Every rewrite/deny is appended to decisions.jsonl
+  # (fail-open, 5 MiB rotation) for observability.
   tool-reroute:
     event: PreToolUse
     script: agents/hooks/tool-reroute.sh
     shared_assets:
       - agents/lib/tool-reroute.js
+      - agents/lib/jsonl-log.js
       - agents/lib/tool-reroute/shell.js
       - agents/lib/tool-reroute/search.js
+      - agents/lib/tool-reroute/cd-strip.js
       - agents/lib/tool-reroute/cd-git.js
       - agents/lib/tool-reroute/io.js
     harnesses: [claude] # adding codex requires the DOTFILES_HARNESS prefix (see wiki architecture/cross-harness-guards)
@@ -238,3 +243,32 @@ hooks:
     async: true
     harnesses: [claude]
     description: Moshi bridge — turn-end notification to phone
+
+  # ─── Permission log ─────────────────────────────────────────────────
+  # Append every PermissionRequest / PermissionDenied event to events.jsonl —
+  # pure observability, never blocks, never denies. One script serves both
+  # events (agents/hooks/permission-log.sh → lib/permission-log.js), split
+  # into two registry entries because a registry entry binds one script to
+  # one event (see turn-budget-guard-{pre,post,stop} for the same shape).
+  # Claude-only: PermissionDenied has no codex equivalent today.
+  # Fail-open: a missing logic file, absent node, or logging error degrades
+  # to a silent no-op — the permission decision itself is untouched.
+  permission-log-request:
+    event: PermissionRequest
+    script: agents/hooks/permission-log.sh
+    shared_assets:
+      - agents/lib/permission-log.js
+      - agents/lib/jsonl-log.js
+    harnesses: [claude]
+    timeout: 5
+    description: Log PermissionRequest events to events.jsonl
+
+  permission-log-denied:
+    event: PermissionDenied
+    script: agents/hooks/permission-log.sh
+    shared_assets:
+      - agents/lib/permission-log.js
+      - agents/lib/jsonl-log.js
+    harnesses: [claude]
+    timeout: 5
+    description: Log PermissionDenied events to events.jsonl

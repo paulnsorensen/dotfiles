@@ -54,7 +54,7 @@ function detect(toolName, input, cwd) {
     if (!word || !WRITE_BINS.has(word)) continue;
     const i = seg.redirectFds.findIndex((fd) => fd === null || fd === '1');
     if (i !== -1 && isRepoWrite(seg.redirectTargets[i], cwd)) {
-      return { reason: writeReason(seg.redirectTargets[i]) };
+      return { reason: writeReason(seg.redirectTargets[i]), module: 'io' };
     }
   }
 
@@ -62,7 +62,7 @@ function detect(toolName, input, cwd) {
   if (segs.length === 1 && segs[0].redirects.length === 0) {
     const { word, args } = commandWord(segs[0].argv);
     if (word === 'cat' && args.length === 1 && !args[0].startsWith('-')) {
-      return { rewrite: `tilth ${shQuote(args[0])}` };
+      return { rewrite: `tilth ${shQuote(args[0])}`, module: 'io' };
     }
   }
   return null;
