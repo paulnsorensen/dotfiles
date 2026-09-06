@@ -252,6 +252,82 @@ setup_worktree() {
     [[ "$output" == blocked:* ]]
 }
 
+@test "worktree-guard: current tilth_write edits batch with outside file is blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    local outside_path="/wt-guard-outside/current-bad.txt"
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" mcp__tilth__tilth_write \
+        "{\"cwd\":\"$TEST_HOME/wt\",\"edits\":[{\"path\":\"inside.txt\",\"ops\":[{\"op\":\"replace_text\"}]},{\"path\":\"$outside_path\",\"ops\":[{\"op\":\"replace_text\"}]}]}" \
+        "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
+@test "hook-runner: current tilth_write edits batch outside file is denied" {
+    setup_worktree
+    run_via_runner worktree-guard.js mcp__tilth__tilth_write \
+        '{"cwd":"'"$TEST_HOME"'/wt","edits":[{"path":"inside.txt","ops":[{"op":"replace_text","old":"a","new":"b"}]},{"path":"/wt-guard-outside/protocol-bad.txt","ops":[{"op":"replace_text","old":"a","new":"b"}]}]}' \
+        "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == *'"permissionDecision":"deny"'* ]]
+}
+
+@test "worktree-guard: tilth_write resolves relative paths from tool_input.cwd" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" mcp__tilth__tilth_write \
+        "{\"cwd\":\"/wt-guard-request\",\"edits\":[{\"path\":\"inside.txt\",\"ops\":[{\"op\":\"replace_text\"}]}]}" \
+        "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: tilth_write move destination outside worktree is blocked" {
+    mkdir -p "$TEST_HOME/main"
+    (
+        cd "$TEST_HOME/main"
+        GIT_TEMPLATE_DIR="" git init -q 2>/dev/null
+        git config user.email "t@e"
+        git config user.name "t"
+        echo "x" > f.txt && git add f.txt && git commit -qm "x" 2>/dev/null
+    ) 2>/dev/null
+    cd "$TEST_HOME/main"
+    git worktree add ../wt -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" mcp__tilth__tilth_write \
+        '{"cwd":"'"$TEST_HOME"'/wt","edits":[{"path":"inside.txt","ops":[{"op":"move_file","dest":"/wt-guard-outside/moved.txt"}]}]}' \
+        "$TEST_HOME/wt"
+    [ "$status" -eq 0 ]
+    if [[ "$output" == *"couldn't create cache file"* ]]; then
+        skip "git xcrun permissions (sandbox issue)"
+    fi
+    [[ "$output" == blocked:* ]]
+}
+
 @test "worktree-guard: CLAUDE_WORKTREE_GUARD_ALLOW makes outside path allowed" {
     mkdir -p "$TEST_HOME/main"
     (

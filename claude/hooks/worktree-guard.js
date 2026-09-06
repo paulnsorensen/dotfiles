@@ -70,13 +70,37 @@ function isAllowedPath(filePath, worktreeRoot, cwd) {
   return false;
 }
 
-function targetPaths(toolName, input) {
+function resolveEditPath(rawPath, inputCwd, eventCwd) {
+  if (typeof rawPath !== 'string' || !rawPath) return rawPath;
+  const cwd = typeof inputCwd === 'string' && inputCwd ? path.resolve(eventCwd, inputCwd) : eventCwd;
+  return path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(cwd, rawPath);
+}
+
+function editTargets(input, eventCwd) {
+  if (!Array.isArray(input.edits)) return [];
+  const targets = [];
+  for (const edit of input.edits) {
+    if (!edit || typeof edit.path !== 'string' || !edit.path) continue;
+    targets.push(resolveEditPath(edit.path, input.cwd, eventCwd));
+    if (!Array.isArray(edit.ops)) continue;
+    for (const op of edit.ops) {
+      if (op && op.op === 'move_file' && typeof op.dest === 'string' && op.dest) {
+        targets.push(resolveEditPath(op.dest, input.cwd, eventCwd));
+      }
+    }
+  }
+  return targets;
+}
+
+function targetPaths(toolName, input, eventCwd) {
   if (!EDIT_TOOLS.has(toolName)) return [];
+  const targets = editTargets(input, eventCwd);
   if (Array.isArray(input.files)) {
-    return input.files.filter((f) => f && f.path).map((f) => f.path);
+    targets.push(...input.files.filter((f) => f && f.path).map((f) => f.path));
   }
   const single = input.file_path || input.path;
-  return single ? [single] : [];
+  if (single) targets.push(single);
+  return targets;
 }
 
 module.exports = {
@@ -87,12 +111,12 @@ module.exports = {
       const cwd = (event && event.cwd) || process.cwd();
       const { isWorktree, worktreeRoot } = detectWorktree(cwd);
       if (!isWorktree) return false;
-      return targetPaths(toolName, input).some((p) => !isAllowedPath(p, worktreeRoot, cwd));
+      return targetPaths(toolName, input, cwd).some((p) => !isAllowedPath(p, worktreeRoot, cwd));
     },
     handler: async (toolName, input, event) => {
       const cwd = (event && event.cwd) || process.cwd();
       const { worktreeRoot } = detectWorktree(cwd);
-      const blocked = targetPaths(toolName, input).filter((p) => !isAllowedPath(p, worktreeRoot, cwd));
+      const blocked = targetPaths(toolName, input, cwd).filter((p) => !isAllowedPath(p, worktreeRoot, cwd));
       return {
         result: `Blocked: write to ${blocked.join(', ')} — outside worktree root (${worktreeRoot}).
 

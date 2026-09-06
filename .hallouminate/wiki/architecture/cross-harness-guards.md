@@ -41,3 +41,26 @@ Beyond the cross-harness git-guard, Claude wires a `PreToolUse` guard (in `claud
 - **`worktree-guard.js`** (Edit/Write/MultiEdit/`tilth_write`) — opt-out: it enforces inside a git worktree by default. `CLAUDE_WORKTREE_GUARD=0` disables; `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2` extends the allowlist (worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, and any `.cheese/` dir are always allowed).
 
 The **secret-protection guard** (`sensitive-file-guard`) is the other cross-harness guard, declared in the `agents/hooks/` registry rather than here — it blocks `.env`/keys/credentials, is fail-open, and honors `CLAUDE_SENSITIVE_GUARD` / `CLAUDE_SENSITIVE_GUARD_ALLOW`. See [[agents-dir]] for the hook-registry mechanics.
+
+### Tilth payload coverage from the harness audit
+
+The audit at base `f5d1e1d` finds that both guards miss current `edits[].path` requests.
+Historical `files[].path` fixtures pass without checking the active MCP contract.[^tilth-payload]
+
+The prepared `fix/harness-guard-payloads` branch extracts each edit path and every `move_file` destination.
+It resolves relative edit paths against the tool request's `cwd`.
+The sensitive-file guard also removes selectors from tilth read paths, but preserves literal `#` characters in write paths.[^tilth-correction]
+
+This distinction prevents a read selector from hiding a sensitive filename.
+It also prevents read-selector rules from changing a literal write target.
+Current-schema fixtures cover mixed batches, move destinations, selectors, and worktree escapes.[^tilth-fixture]
+
+Status: proposed in `fix/harness-guard-payloads`; not merged or deployed.
+Do not treat the main checkout as protected before this branch lands and deploys.
+Keep parser fixtures aligned with the active MCP schema rather than a historical approximation.
+
+[^tilth-payload]: Audit at `f5d1e1d`; `agents/lib/sensitive-file-guard.js:122-137`; `claude/hooks/worktree-guard.js:73-90`.
+[^tilth-correction]: Prepared branch `fix/harness-guard-payloads`; `agents/lib/sensitive-file-guard.js:124-155`; `claude/hooks/worktree-guard.js:73-92`.
+[^tilth-fixture]: Prepared branch `fix/harness-guard-payloads`; `tests/sensitive-file-guard.bats`; `tests/hooks-blockers.bats`.
+
+_Source: harness audit and prepared branch · Updated: 2026-09-05 · Supersedes: unresolved-gap-only description._
