@@ -12,6 +12,9 @@ ignores:
   # Match node_modules at any depth — skills that npm-install (e.g.
   # skills/roadmap/scripts) create nested trees the root glob misses.
   - "**/node_modules/**"
+  # Nested agent worktrees are derived checkouts, not canonical documentation.
+  - "**/.claude/worktrees/**"
+  - "**/.worktrees/**"
   - .worktrees/**
   - reference/**
   - tmux/plugins/**

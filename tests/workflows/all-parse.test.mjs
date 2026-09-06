@@ -107,6 +107,7 @@ test('workflow smoke wiring invokes the wrapper, CI runs every test recipe, and 
 
   assert.match(justfile, /^smoke:\n\s+\.\/tests\/workflows-test\.sh$/m)
   assert.doesNotMatch(justfile, /workflows-parse\.sh/)
+  assert.match(ci, /- name: Install Node test dependencies\n\s+run: \|\n\s+npm ci --prefix \.github\/lint-deps\n\s+echo "\$\(pwd\)\/\.github\/lint-deps\/node_modules\/\.bin" >> "\$GITHUB_PATH"/)
   assert.match(ci, /- name: Run tests\n\s+run: just test/)
   assert.match(ci, /- name: Run Python tests\n\s+run: just test-python/)
   assert.match(ci, /- name: Run smoke tests\n\s+run: just smoke/)
