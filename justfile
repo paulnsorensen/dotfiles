@@ -20,6 +20,7 @@ lint-shell:
 # ruff on python files
 lint-python:
     ruff check skills/session-analytics/scripts/
+    ruff format --check skills/session-analytics/scripts/
 
 # eslint on JS hooks (config in claude/hooks/eslint.config.js)
 lint-js:
@@ -67,17 +68,14 @@ check-llm:
     yq -e '.' chezmoi/local-llm/configs/llama-swap.yaml > /dev/null
     @echo "check-llm: ok"
 
-# pre-push gate: lint-fix mutates files first (must not race readers) and
-# already gates the fixable linters (ruff/eslint/markdownlint --fix all exit
-# non-zero on unfixable findings); shellcheck has no fixer so it still runs
-# standalone. The remaining legs are independent and IO/CPU-bound, so they
-# fan out via GNU parallel; bats (test) goes last since it's the slowest.
-# Plain `lint` stays out of the gate — its fixable legs are redundant with
-# lint-fix, and lint-shell already covers the one leg that needs no fixer.
-check: lint-fix
+# pre-push gate: all lint and test legs are independent and IO/CPU-bound.
+# This gate stays read-only against source files; use `just lint-fix` explicitly
+# when you want supported formatters to modify files.
+# GNU parallel fans out the legs; bats (test) goes last since it is slowest.
+check:
     @mkdir -p "$HOME/.parallel" && touch "$HOME/.parallel/will-cite"
     # GNU parallel exports XDG_CACHE_HOME to its jobs even when it is unset in
     # the parent, and an empty value makes mise resolve its cache dir to a
     # *relative* `mise`, dumping aqua bin_paths caches into the repo root. Pin
     # a real value so the shimmed tools every leg runs cache under $HOME.
-    XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel -k --group just ::: lint-shell test-python smoke test
+    XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel -k --group just ::: lint-shell lint-python lint-js lint-markdown test-python smoke test
