@@ -46,5 +46,10 @@ Check file permissions on the open descriptor.
 Use that same descriptor for writes.
 A pathname check followed by append permits a symlink swap.[^log-safety]
 
+Keep rotation in one bounded open-and-validate loop.
+Separate open sites duplicate validation and trigger CodeQL's check/use heuristic, which does not inspect flags.[^codeql-race]
+
+[^codeql-race]: <https://raw.githubusercontent.com/github/codeql/main/javascript/ql/src/Security/CWE-367/FileSystemRace.ql>; PR 878 alerts 110 and 111.
+
 [^rewrite-safety]: PR 878 review reproductions; `agents/lib/tool-reroute/cd-strip.js`; `agents/lib/tool-reroute/cd-git.js`; `tests/tool-reroute.bats`.
 [^log-safety]: PR 878 review reproductions; `agents/lib/jsonl-log.js`; `agents/lib/permission-log.js`; `tests/permission-log.bats`.

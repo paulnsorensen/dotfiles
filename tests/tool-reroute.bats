@@ -1024,6 +1024,33 @@ NODE
     [[ "$(jq -r .a <"$dir/f.jsonl")" == "y" ]]
 }
 
+@test "jsonl-log: unsafe replacement after rotation fails closed" {
+    local dir="$BATS_TEST_TMPDIR/jsonl-rotate-unsafe"
+    mkdir "$dir"
+    chmod 700 "$dir"
+    local log="$dir/f.jsonl"
+    printf '%s\n' '{"old":"xxxxxxxxxxxxxxxx"}' >"$log"
+    chmod 600 "$log"
+    local target="$BATS_TEST_TMPDIR/rotate-sentinel"
+    printf sentinel >"$target"
+    run node - "$REAL_DOTFILES_DIR/agents/lib/jsonl-log.js" "$dir" "$target" <<'NODE'
+const fs = require('fs')
+const path = require('path')
+const [file, dir, target] = process.argv.slice(2)
+const full = path.join(dir, 'f.jsonl')
+const originalRenameSync = fs.renameSync
+fs.renameSync = (from, to) => {
+  originalRenameSync(from, to)
+  fs.symlinkSync(target, from)
+}
+require(file).appendJsonl(dir, 'f.jsonl', { value: 'new' }, 10)
+NODE
+    [ "$status" -eq 0 ]
+    [ -f "$dir/f.jsonl.1" ]
+    [ -L "$log" ]
+    [[ "$(cat "$target")" == sentinel ]]
+}
+
 @test "jsonl-log: an unwritable dir (a file at the dir path) fails open, no throw" {
     local path="$BATS_TEST_TMPDIR/not-a-dir"
     printf 'x' >"$path"

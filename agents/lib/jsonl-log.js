@@ -78,18 +78,19 @@ function appendJsonl(dir, file, record, maxBytes) {
       typeof value === 'string' ? scrubSecrets(value).slice(0, MAX_STRING_LENGTH) : value
     );
     const line = `${JSON.stringify(record, replacer)}\n`;
-    fd = fs.openSync(full, flags, 0o600);
-    let stat = fs.fstatSync(fd);
-    if (!stat.isFile() || (stat.mode & 0o077) !== 0) return;
-    if (stat.size > maxBytes) {
-      fs.closeSync(fd);
-      fd = null;
-      if (!rotateIfLarge(full, maxBytes)) return;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       fd = fs.openSync(full, flags, 0o600);
-      stat = fs.fstatSync(fd);
+      const stat = fs.fstatSync(fd);
       if (!stat.isFile() || (stat.mode & 0o077) !== 0) return;
+      if (attempt === 0 && stat.size > maxBytes) {
+        fs.closeSync(fd);
+        fd = null;
+        if (!rotateIfLarge(full, maxBytes)) return;
+        continue;
+      }
+      fs.writeSync(fd, line);
+      return;
     }
-    fs.writeSync(fd, line);
   } catch {
     /* fail-open */
   } finally {
