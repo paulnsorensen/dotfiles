@@ -1,224 +1,127 @@
 # Settings prune mode
 
-Prune bloated `.claude/settings.local.json` files by removing permission entries that are redundant, stale, or junk — and ensure that skills referenced by hooks are actually allowed. Only touches `settings.local.json` (gitignored), never `settings.json` (committed).
+Review bloated .claude/settings.local.json permission entries.
+Only settings.local.json may change. Never change settings.json.
 
-Claude Code's permission system only appends to `permissions.allow` — it never prunes — so these files grow unbounded. Meanwhile, hooks block legacy tools and redirect to skills that may not be in the allow list, creating a broken redirect loop.
+Claude Code appends permissions.allow entries, so these files grow.
+Review entries against current tool-reroute behavior before recommending removal.
 
-## Step 1: Read Context
+## Read-only contract
 
-```
-LOCAL:   .claude/settings.local.json     (in the current project root)
-GLOBAL:  ~/.claude/settings.json          (user-wide settings)
-HOOKS:   claude/hooks/*.js                (PreToolUse hooks — for hook-blocked detection)
-SKILLS:  skills/*/SKILL.md                (available skills — for missing skill detection)
-```
+Always start with a dry-run report. The default is read-only.
+Apply the authorization rule from harness-doctor before any write.
 
-If the local file doesn't exist or has no `permissions.allow`, skip to Step 6 (skill additions may still apply).
+## Step 1: Read context
 
-## Step 2: Classify Each Entry
+    LOCAL:  .claude/settings.local.json
+    GLOBAL: ~/.claude/settings.json
+    HOOKS:  agents/lib/tool-reroute.js
 
-Walk through every entry in the local `permissions.allow` array. Classify each into exactly one category, checking in this order (first match wins):
+If the local file does not exist or has no permissions.allow, report that state.
 
-### JUNK — always remove
+## Step 2: Classify each entry
 
-These entries are bugs or nonsense. They never match real commands.
+Walk through every permissions.allow entry.
+Assign exactly one category in this order.
 
-| Pattern | Why it's junk |
+### JUNK
+
+Remove entries that never match real commands:
+
+| Pattern | Reason |
 |---|---|
-| Contains `__NEW_LINE_` | Claude Code serialization bug for multi-line commands |
-| `Bash(done)`, `Bash(fi)`, `Bash(then)`, `Bash(else)` | Shell keywords, not commands |
-| `Bash(cd:*)` | Shell builtin, doesn't go through Bash tool |
-| `Bash(for *)`, `Bash(if *)`, `Bash(while *)` | Shell keywords captured mid-compound-command |
-| Exact duplicate of another entry in the same file | Redundant |
+| Contains __NEW_LINE_ | Claude Code serialization bug |
+| Bash(done), Bash(fi), Bash(then), Bash(else) | Shell keywords |
+| Bash(cd:*) | Shell builtin |
+| `Bash(for *)`, `Bash(if*)`, `Bash(while *)` | Shell keywords |
+| Exact duplicate in the same file | Redundant |
 
-### COVERED — remove if already handled
+### COVERED
 
-An entry is "covered" when a broader permission already exists, either in global settings or elsewhere in the same local file.
+Remove an entry when a broader permission already exists in global settings or
+the same local file.
 
-**Global coverage** — check if the local entry's command prefix matches a global wildcard:
+For Bash entries, compare the first command prefix.
+For Read entries, compare path globs.
+For other entries, compare exact matches.
 
-1. Parse the local entry's first word after `Bash(` as the prefix
-2. If global has `Bash(prefix:*)`, the local entry adds nothing
+Keep an entry when its prefix or path is not covered.
 
-Examples:
+### ONE-OFF
 
-- Local `Bash(git stash:*)` + Global `Bash(git:*)` → covered
-- Local `Bash(which rustup:*)` + Global `Bash(which:*)` → covered
-- Local `Bash(npm install:*)` + Global `Bash(npx:*)` → NOT covered (different prefix)
-
-**Same-file coverage** — also applies to Bash and Read entries within the local file:
-
-- `Read(//path/subdir/**)` is covered by `Read(//path/**)`
-- `Bash(cargo check:*)` is covered by `Bash(cargo:*)`
-- `Bash(python3 -c:*)` is covered by `Bash(python3:*)`
-
-For non-Bash entries: check for exact match in global (e.g., local `Edit` + global `Edit` → covered).
-
-### ONE-OFF — remove ephemeral debug commands
-
-These are commands the user ran once during a session. They accumulate fast and will never be reused.
+Remove specific commands that represent temporary debugging:
 
 | Pattern | Example |
 |---|---|
-| Hardcoded absolute home path (`/Users/`, `/home/`, or `~/`) | `Bash(bash /Users/paul/Dev/dotfiles/agents/mcp/sync.sh ...)` |
-| Pipe chains (`\|`) | `Bash(... 2>&1 \| grep -i ...)` |
-| Command joiners (`;`, `&&`, `\|\|`) | `Bash(command -v cargo && cargo --version)` |
-| Stderr redirects (`2>&1`, `2>/dev/null`) | Debug output capture |
-| `Bash(bash -x ...)` | Debug tracing |
-| `Bash(find ...)` with specific paths | `Bash(find ~/Dev/dotfiles/claude -type f ...)` |
-| `Bash(python3 -c ...)` with inline code | One-off test snippets |
-| Specific PR numbers or commit SHAs | `Bash(gh pr merge 395 --rebase ...)` |
+| Hardcoded home path | A command containing /Users/, /home/, or ~/ |
+| Pipe chain | A command containing a pipe |
+| Command joiner | A command containing `;`, `&&`, or \|\| |
+| Stderr redirect | A command containing 2>&1 or 2>/dev/null |
+| Debug tracing | Bash(bash -x ...) |
+| Specific path search | Bash(find ...) with a specific path |
+| Inline script | Bash(python3 -c ...) |
+| Specific PR or commit | A command containing a PR number or commit SHA |
 
-**Exception**: Don't flag entries that are *just* a clean wildcard (e.g., `Bash(python3:*)`, `Bash(grep:*)`). The patterns above target verbose, specific command strings — not clean `tool:*` patterns.
+Do not remove clean tool wildcards such as `Bash(python3:*)` or `Bash(grep:*)`.
 
-### KEEP — intentional entries
+### KEEP
 
-Everything else stays:
+Keep intentional entries that are not junk, covered, or one-off.
+Keep Skill entries unless the user identifies them as stale.
+Keep MCP, WebFetch, and Read entries without coverage.
 
-- `Skill(*)` entries — user enabled these deliberately
-- `mcp__serena__*` — intentional (symbol-intelligence MCP)
-- `Bash(toolname:*)` wildcards not covered by global or same-file — project-specific
-- Clean `Bash(toolname arg:*)` patterns that don't match one-off patterns
-- `mcp__*` entries not in global
-- `WebFetch(domain:*)` entries — intentional domain allowlists
-- `Read()` entries not covered by a broader Read
+## Step 3: Account for current tool reroute behavior
 
-## Step 3: Present Removal Results
+Read agents/lib/tool-reroute.js before classifying tool permissions.
+The hook routes calls at runtime. It does not imply a redirect-to-skill table.
 
-**Always start with dry-run output**, regardless of whether the user said `--apply`.
-
-Format a table grouped by category (see example in Step 7).
-
-## Step 4: Recommend Deny Entries
-
-Suggest `permissions.deny` entries that reinforce hook blocks. These act as belt-and-suspenders — if Claude's interactive approval re-adds a blocked command to allow, the deny list catches it.
-
-```
-Recommended deny entries (reinforces hook blocks):
-
-  Legacy tools (use dedicated tools instead):
-    "Bash(grep:*)"         → Grep tool or /cheez-search
-    "Bash(egrep:*)"        → Grep tool or /cheez-search
-    "Bash(fgrep:*)"        → Grep tool or /cheez-search
-    "Bash(sed:*)"          → easy-cheese:cheez-write or Edit
-    "Bash(awk:*)"          → easy-cheese:cheez-write or Edit
-    "Bash(find:*)"         → Glob tool or /scout (fd)
-
-  Package installs (require per-use approval):
-    "Bash(npm install:*)"  → approve individually
-    "Bash(pnpm add:*)"     → approve individually
-    "Bash(pnpm install:*)" → approve individually
-    "Bash(yarn add:*)"     → approve individually
-    "Bash(pip install:*)"  → approve individually
-    "Bash(pip3 install:*)" → approve individually
-    "Bash(cargo add:*)"    → approve individually
-    "Bash(go get:*)"       → approve individually
-```
-
-## Step 5: Detect Missing Skills
-
-Hooks redirect blocked commands to skills, but those skills need `Skill(name)` in the allow list or Claude will prompt for permission — defeating the smooth redirect.
-
-### How to detect
-
-1. **Scan available skills**: Read `skills/*/SKILL.md` to find all skill names. If the skills directory does not exist in the current project, check `${DOTFILES_DIR:-~/Dev/dotfiles}/skills/` (the canonical source).
-
-2. **Map hook redirects to required skills**: Each hook block implies a skill that should be allowed:
-
-| Hook blocks | Required skill |
+| Input | Behavior |
 |---|---|
-| `grep`, `egrep`, `fgrep` | `Skill(scout)` |
-| `sed`, `awk` | `Skill(chisel)` |
-| `find` | `Skill(scout)` |
-| `python3 -c` tests | `Skill(test-sandbox)` |
-| dep cache grep, doc+grep | `Skill(lookup)`, `Skill(fetch)` |
-| find+grep chains | `Skill(trace)`, `Skill(lookup)` |
-| `cd && git` | `Skill(wt-git)` |
-| `gh pr create --body` | `Skill(gh)` |
+| Clean standalone grep, rg, ag, or ack | Rewrite to tilth |
+| find with only -name or -path | Rewrite to tilth |
+| cd path followed by && git | Rewrite to wt-git |
+| Bare cat with one file | Rewrite to tilth |
+| Grep or Glob tool | Deny and recommend tilth search |
+| Repository write redirect | Deny and recommend tilth_write |
+| Other Bash calls | Delegate to rtk |
 
-1. **Check what's missing**: Compare available skills + hook-required skills against the current allow list. Report missing ones, prioritizing hook-critical skills first.
+Only clean shapes are rewritten.
+Pipelines, redirects, semantic flags, and regex patterns delegate instead.
 
-### Present as two groups
+Do not add a skill permission because a reroute exists.
+Add a skill permission only for a current user workflow.
 
-```
-Missing skills — hook-critical (redirect won't work without these):
-  + Skill(scout)          ← grep/find hooks redirect here
-  + Skill(chisel)         ← sed/awk hooks redirect here
-  + Skill(test-sandbox)   ← python3 -c hook redirects here
-  + Skill(lookup)         ← dep cache/doc grep hooks redirect here
-  + Skill(fetch)          ← dep cache/doc grep hooks redirect here
-  + Skill(trace)          ← find+grep chain hook redirects here
+## Step 4: Present the dry-run
 
-Missing skills — available but not allowed:
-  + Skill(diff)
-  + Skill(de-slop)
-  + Skill(make)
-  ...
-```
+Report names and counts.
+Do not print permission values or complete settings files.
 
-## Step 6: Present Full Summary
+    Settings Clean: .claude/settings.local.json
+    REMOVALS:
+      JUNK: <count>
+      COVERED: <count>
+      ONE-OFF: <count>
+      Total removed: <count>
+    KEPT: <count>
+    Skill changes: report only when a current user workflow requires them
 
-Combine all recommendations:
+## Step 5: Apply only after explicit authorization
 
-```
-Settings Clean: .claude/settings.local.json
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The user must explicitly authorize this specific repair in the current turn.
+An audit or recommendation does not authorize a write.
 
-REMOVALS:
-  JUNK:           5 entries
-  HOOK-BLOCKED:   2 entries
-  COVERED:       10 entries
-  ONE-OFF:       37 entries
-  ─────────────────────────
-  Total removed: 54 entries
+When authorized:
 
-KEPT:            33 entries
-
-DENY (recommended):     12 entries  (reinforces hooks)
-SKILLS (recommended):   20 entries  (7 hook-critical, 13 available)
-
-Net: 87 allow → 33 allow + 20 skills + 12 deny
-```
-
-## Step 7: Apply (only when asked)
-
-The user must explicitly say `--apply`, "apply", "do it", "clean it", or similar.
-
-When applying:
-
-1. **Backup** the current file:
-
-   ```bash
-   mkdir -p ~/.local/state/dotfiles/backups
-   cp .claude/settings.local.json ~/.local/state/dotfiles/backups/settings.local.json.$(date +%Y%m%d-%H%M%S)
-   ```
-
-2. **Write** the cleaned file, preserving:
-   - All non-`permissions` keys (`sandbox`, `hooks`, `enabledMcpjsonServers`, etc.)
-   - The kept allow entries + new Skill entries, sorted alphabetically
-   - User-approved deny entries
-   - Original JSON formatting (2-space indent)
-
-3. **Report** the result:
-
-   ```
-   Backed up to: ~/.local/state/dotfiles/backups/settings.local.json.20260319-143022
-   Wrote: .claude/settings.local.json
-     allow: 53 entries (33 kept + 20 skills added, was 87)
-     deny:  12 entries (new)
-   ```
+1. Back up settings.local.json.
+2. Write only the reviewed permission changes.
+3. Preserve non-permission keys and approved entries.
+4. Report the backup path and resulting counts.
 
 ## Important
 
-- **Never touch `settings.json`** (the committed project settings). Only `settings.local.json`.
-- **When in doubt, KEEP.** False negatives (keeping junk) are harmless; false positives (removing something needed) cause permission prompts.
-- **No confirmation loops.** Show the dry-run, wait for the user to say apply.
-- **Hook detection is optional.** If no hooks exist, skip HOOK-BLOCKED and deny recommendations. The removal and skill-addition logic still works independently.
-- **Skill detection is best-effort.** If the skills directory can't be found, skip Step 5. The removal logic still works independently.
-
-## Gotchas
-
-- Removing a Bash permission entry forces re-approval next time it's needed — when in doubt, keep it
-- Running during an active session that's accumulating permissions can cause immediate re-addition
-- Pipe characters in regex-style entries need careful matching — don't break valid patterns
-- Hook-redirected skills need their permissions preserved — check hooks before pruning
+- Never touch settings.json.
+- Keep uncertain entries.
+- Show the dry-run before any write.
+- Run hook analysis only when hook files exist.
+- Report missing source files without changing them.
+- Stop if an active session immediately re-adds entries.
