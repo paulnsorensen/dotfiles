@@ -1,18 +1,15 @@
 #!/bin/bash
-# install-prompts.sh — wire agents/preamble.md as the Codex system prompt.
+# install-prompts.sh — add agents/preamble.md to each harness's native prompt.
 #
 # Claude Code reads preamble.md directly via the cc/ccc/ccr wrappers
-# in zsh/claude.zsh (--system-prompt-file), so it is not handled here.
+# in zsh/claude.zsh (--append-system-prompt-file), so it is not handled here.
 #
 # Per-harness mechanism:
 #
-#   Codex     — copy preamble.md to <CODEX_HOME>/preamble.md, then yq-edit
-#               <CODEX_HOME>/config.toml to set
-#                 model_instructions_file = "<CODEX_HOME>/preamble.md"
-#               This REPLACES the bundled per-model system prompt
-#               (codex-rs/core/gpt_5_*_prompt.md). AGENTS.md cascade still
-#               loads as developer-role messages (untouched).
-#
+#   Codex     — copy preamble.md to <CODEX_HOME>/preamble.md for migration
+#               compatibility, then add its content to the native
+#               developer_instructions setting. This preserves Codex's bundled
+#               model instructions and any user-authored developer instructions.
 #
 # Usage:
 #   install-prompts.sh <preamble_path>
@@ -42,6 +39,8 @@ install_prompts_wire_codex() {
     local codex_home="${CODEX_HOME:-$HOME/.codex}"
     local codex_prompt="$codex_home/preamble.md"
     local codex_config="$codex_home/config.toml"
+    local managed_start="<!-- dotfiles:managed-preamble:start -->"
+    local managed_end="<!-- dotfiles:managed-preamble:end -->"
 
     install_prompts_have codex || {
         echo "  Skipped Codex wiring (codex not installed)"
@@ -53,7 +52,7 @@ install_prompts_wire_codex() {
     echo "  Copied preamble.md -> $codex_prompt"
 
     if [[ ! -f "$codex_config" ]]; then
-        echo "  Skipped $codex_config (not yet scaffolded; will pick up the prompt path on next dots sync)"
+        echo "  Skipped $codex_config (not yet scaffolded; will pick up the prompt on next dots sync)"
         return 0
     fi
 
@@ -62,28 +61,52 @@ install_prompts_wire_codex() {
         return 0
     fi
 
-    local current
-    current="$(yq -p=toml '.model_instructions_file // ""' "$codex_config" 2>/dev/null || true)"
-    if [[ "$current" != "$codex_prompt" ]]; then
-        # yq -i appends a new root key at the END of the document, so it lands
-        # inside whatever [table] sits at the bottom of config.toml (codex
-        # auto-adds [tui.*] there). A root key after a table header belongs to
-        # that table, so Codex can't read it as model_instructions_file, the
-        # guard above re-reads "" every run, and duplicates accumulate (#262).
-        # Instead: drop any existing model_instructions_file line(s) — including
-        # a misplaced or duplicated one — and prepend the key at the very top,
-        # before any [section] header, where Codex reads it as a root key.
-        local escaped tmp
-        escaped="${codex_prompt//\\/\\\\}"   # backslash -> \\  for the TOML string
-        escaped="${escaped//\"/\\\"}"         # "        -> \"
-        tmp="$(mktemp)"
-        {
-            printf 'model_instructions_file = "%s"\n' "$escaped"
-            grep -v '^[[:space:]]*model_instructions_file[[:space:]]*=' "$codex_config" || true
-        } >"$tmp"
-        mv "$tmp" "$codex_config"
-        echo "  Set model_instructions_file in $codex_config"
+    local current_model current_dev preamble_text managed_block
+    current_model="$(yq -p=toml -r '.model_instructions_file // ""' "$codex_config" 2>/dev/null || true)"
+    current_dev="$(yq -p=toml -r '.developer_instructions // ""' "$codex_config" 2>/dev/null || true)"
+    preamble_text="$(<"$preamble")"
+    managed_block="${managed_start}
+${preamble_text}
+${managed_end}"
+
+    # Remove the managed block and the separator this installer added before it.
+    while [[ "$current_dev" == *"$managed_start"*"$managed_end"* ]]; do
+        local prefix suffix
+        prefix="${current_dev%%"$managed_start"*}"
+        suffix="${current_dev#*"$managed_end"}"
+        [[ "$prefix" == *$'\n\n' ]] && prefix="${prefix%$'\n\n'}"
+        current_dev="${prefix}${suffix}"
+    done
+    # A first migration can encounter a plain copied preamble from an operator.
+    [[ "$current_dev" == "$preamble_text" ]] && current_dev=
+
+    local new_dev
+    if [[ -n "$current_dev" ]]; then
+        new_dev="${current_dev}"$'\n\n'"$managed_block"
+    else
+        new_dev="$managed_block"
     fi
+
+    # model_instructions_file replaces Codex's vendor prompt. Remove it only
+    # when its value matches the path written by the retired installer.
+    export DOTFILES_MANAGED_DEVELOPER_INSTRUCTIONS="$new_dev"
+    local expression
+    if [[ "$current_model" == "$codex_prompt" ]]; then
+        expression='del(.model_instructions_file) | .developer_instructions = strenv(DOTFILES_MANAGED_DEVELOPER_INSTRUCTIONS)'
+        echo "  Migrated model_instructions_file in $codex_config"
+    else
+        expression='.developer_instructions = strenv(DOTFILES_MANAGED_DEVELOPER_INSTRUCTIONS)'
+    fi
+
+    local tmp
+    tmp="$(mktemp)"
+    if ! yq -p=toml -o=toml "$expression" "$codex_config" >"$tmp"; then
+        rm -f "$tmp"
+        echo "  Skipped $codex_config update (invalid TOML)" >&2
+        return 0
+    fi
+    mv "$tmp" "$codex_config"
+    echo "  Added shared developer instructions to $codex_config"
 }
 
 

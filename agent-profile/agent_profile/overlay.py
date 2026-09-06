@@ -389,15 +389,24 @@ def _write_codex_config(
 ) -> None:
     """Generate ``<codex_home>/config.toml`` for the isolated launch.
 
-    Pins Codex's Auto permissions defaults (workspace-write sandbox with
-    on-request approvals) before adding the profile's optional system prompt
-    and MCP world. The fresh config trusts no projects, so any
+    Pins Codex's Auto permissions defaults before adding the shared preamble
+    or an explicit profile prompt and MCP world. A profile ``system_prompt``
+    remains a deliberate replacement through ``model_instructions_file``.
+    Profiles without one receive the shared preamble through additive
+    ``developer_instructions``. The fresh config trusts no projects, so any
     ``.codex/config.toml`` in the working tree is loaded but inert."""
     sections: list[str] = [
         ('approval_policy = "on-request"\n'
         'approvals_reviewer = "auto_review"\n'
         'sandbox_mode = "workspace-write"\n')
     ]
+    shared_preamble = Path(
+        os.environ.get("DOTFILES_DIR") or str(Path.home() / "Dev/dotfiles")
+    ) / "agents" / "preamble.md"
+    if not manifest.system_prompt and shared_preamble.is_file():
+        sections.append(
+            f"developer_instructions = {_codex_toml_value(shared_preamble.read_text())}\n"
+        )
     if manifest.system_prompt:
         sp = profile_dir / manifest.system_prompt
         if not sp.is_file():

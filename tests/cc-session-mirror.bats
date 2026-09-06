@@ -15,7 +15,8 @@ setup() {
     MOCK_BIN="$(mktemp -d)"
     export PATH="$MOCK_BIN:$PATH"
     export MOCK_ARGS_FILE="$MOCK_BIN/args"
-    mkdir -p "$FIXTURE_DIR/bin"
+    mkdir -p "$FIXTURE_DIR/bin" "$FIXTURE_DIR/agents"
+    printf '%s\n' 'shared prompt' > "$FIXTURE_DIR/agents/preamble.md"
     cp "$REAL_DOTFILES_DIR/bin/cc-env-exec" "$FIXTURE_DIR/bin/cc-env-exec"
     cp "$REAL_DOTFILES_DIR/bin/cc-session-name" "$FIXTURE_DIR/bin/cc-session-name"
     # Not a git repo: cc-session-name falls back to the bare basename of
@@ -94,4 +95,15 @@ EOF
     [ -f "$MOCK_ARGS_FILE" ]
     grep -qx -- '-A' "$MOCK_ARGS_FILE"
     grep -qx -- "$SESSION_NAME" "$MOCK_ARGS_FILE"
+}
+
+@test "cc passes the shared prompt as an additive Claude flag" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    _mock_tmux
+    export MOCK_TMUX_SESSIONS=""
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
+    [ "$status" -eq 0 ]
+    grep -q -- "--append-system-prompt-file" "$MOCK_ARGS_FILE"
+    ! grep -q -- "--system-prompt-file" "$MOCK_ARGS_FILE"
+    grep -q -- "$FIXTURE_DIR/agents/preamble.md" "$MOCK_ARGS_FILE"
 }

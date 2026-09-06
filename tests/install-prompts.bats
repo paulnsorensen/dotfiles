@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC1090,SC2034,SC2317
-# Tests for chezmoi/lib/install-prompts.sh — wires agents/preamble.md as the
-# replacement Codex system prompt.
+# Tests for chezmoi/lib/install-prompts.sh — adds agents/preamble.md to Codex
+# developer instructions without replacing vendor defaults.
 
 load test_helper
 
@@ -61,25 +61,26 @@ teardown() { teardown_test_env; }
     [[ ! -e "$CODEX_HOME/config.toml" ]]
 }
 
-@test "install-prompts.sh sets model_instructions_file in existing config.toml" {
+@test "install-prompts.sh adds shared instructions without replacing vendor defaults" {
     mkdir -p "$CODEX_HOME"
     cat > "$CODEX_HOME/config.toml" <<'TOML'
+model = "vendor-model"
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 TOML
     INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
         run bash "$LIB" "$PREAMBLE_SRC"
     assert_success
-    grep -q "model_instructions_file" "$CODEX_HOME/config.toml"
-    local set_path
-    set_path="$(yq -p=toml '.model_instructions_file' "$CODEX_HOME/config.toml")"
-    [[ "$set_path" == "$CODEX_HOME/preamble.md" ]]
-    # Other keys must survive.
-    grep -q 'approval_policy = "on-request"' "$CODEX_HOME/config.toml"
-    grep -q 'sandbox_mode = "workspace-write"' "$CODEX_HOME/config.toml"
+    local instructions
+    instructions="$(yq -p=toml -r '.developer_instructions' "$CODEX_HOME/config.toml")"
+    [[ "$instructions" == *"Test preamble content for assertion checks."* ]]
+    [[ "$instructions" != *"model_instructions_file"* ]]
+    [[ "$(yq -p=toml -r '.model' "$CODEX_HOME/config.toml")" == "vendor-model" ]]
+    [[ "$(yq -p=toml -r '.approval_policy' "$CODEX_HOME/config.toml")" == "on-request" ]]
+    [[ "$(yq -p=toml -r '.sandbox_mode' "$CODEX_HOME/config.toml")" == "workspace-write" ]]
 }
 
-@test "install-prompts.sh is idempotent on the config.toml edit" {
+@test "install-prompts.sh is idempotent and adds the shared block once" {
     mkdir -p "$CODEX_HOME"
     cat > "$CODEX_HOME/config.toml" <<'TOML'
 approval_policy = "on-request"
@@ -91,6 +92,7 @@ TOML
         bash "$LIB" "$PREAMBLE_SRC"
     local after; after=$(shasum -a 256 "$CODEX_HOME/config.toml" | awk '{print $1}')
     [[ "$before" == "$after" ]]
+    [[ "$(yq -p=toml -r '.developer_instructions' "$CODEX_HOME/config.toml" | grep -c 'Test preamble content')" -eq 1 ]]
 }
 
 @test "install-prompts.sh skips config.toml edit when yq is unavailable" {
@@ -106,12 +108,12 @@ TOML
 }
 
 
-# ── regression: model_instructions_file must stay a root-level key (#262) ─────
+# ── migration and ownership ──────────────────────────────────────────────────
 
-@test "install-prompts.sh keeps model_instructions_file at root when config.toml ends with a [section]" {
+@test "install-prompts.sh migrates the repo-owned model prompt path" {
     mkdir -p "$CODEX_HOME"
-    cat > "$CODEX_HOME/config.toml" <<'TOML'
-approval_policy = "on-request"
+    cat > "$CODEX_HOME/config.toml" <<TOML
+model_instructions_file = "$CODEX_HOME/preamble.md"
 
 [tui.model_availability_nux]
 seen = true
@@ -119,30 +121,31 @@ TOML
     INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
         run bash "$LIB" "$PREAMBLE_SRC"
     assert_success
-    # Codex reads model_instructions_file as a ROOT key. The old yq -i append
-    # dropped it inside the trailing [tui.*] table, so the root read returned "".
-    local root_path nested_path seen_val
-    root_path="$(yq -p=toml '.model_instructions_file // ""' "$CODEX_HOME/config.toml")"
-    nested_path="$(yq -p=toml '.tui.model_availability_nux.model_instructions_file // ""' "$CODEX_HOME/config.toml")"
-    seen_val="$(yq -p=toml '.tui.model_availability_nux.seen' "$CODEX_HOME/config.toml")"
-    # Single compound assertion so ANY mismatch fails the test (bats checks only
-    # the final command's status): root key set, not nested in [tui.*], table kept.
-    [[ "$root_path" == "$CODEX_HOME/preamble.md" ]] \
-        && [[ "$nested_path" == "" ]] \
-        && [[ "$seen_val" == "true" ]]
+    [[ "$(yq -p=toml -r '.model_instructions_file // ""' "$CODEX_HOME/config.toml")" == "" ]]
+    [[ "$(yq -p=toml -r '.developer_instructions' "$CODEX_HOME/config.toml")" == *"Test preamble content"* ]]
+    [[ "$(yq -p=toml -r '.tui.model_availability_nux.seen' "$CODEX_HOME/config.toml")" == "true" ]]
 }
 
-@test "install-prompts.sh does not accumulate duplicate model_instructions_file across runs with a trailing [section]" {
+@test "install-prompts.sh preserves custom model and developer instructions" {
     mkdir -p "$CODEX_HOME"
     cat > "$CODEX_HOME/config.toml" <<'TOML'
-approval_policy = "on-request"
-
-[tui.model_availability_nux]
-seen = true
+model_instructions_file = "/custom/instructions.md"
+developer_instructions = "User custom instructions"
 TOML
-    for _ in 1 2 3; do
-        INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
-            bash "$LIB" "$PREAMBLE_SRC"
-    done
-    [[ "$(grep -c 'model_instructions_file' "$CODEX_HOME/config.toml")" -eq 1 ]]
+    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
+        run bash "$LIB" "$PREAMBLE_SRC"
+    assert_success
+    [[ "$(yq -p=toml -r '.model_instructions_file' "$CODEX_HOME/config.toml")" == "/custom/instructions.md" ]]
+    local instructions
+    instructions="$(yq -p=toml -r '.developer_instructions' "$CODEX_HOME/config.toml")"
+    [[ "$instructions" == *"User custom instructions"* ]]
+    [[ "$instructions" == *"Test preamble content"* ]]
+    [[ "$(printf '%s' "$instructions" | grep -c 'User custom instructions')" -eq 1 ]]
+    [[ "$(printf '%s' "$instructions" | grep -c 'Test preamble content')" -eq 1 ]]
+    local before after
+    before=$(shasum -a 256 "$CODEX_HOME/config.toml" | awk '{print $1}')
+    INSTALL_PROMPTS_HAVE_CODEX=1 INSTALL_PROMPTS_HAVE_YQ=1 \
+        bash "$LIB" "$PREAMBLE_SRC"
+    after=$(shasum -a 256 "$CODEX_HOME/config.toml" | awk '{print $1}')
+    [[ "$before" == "$after" ]]
 }
