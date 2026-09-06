@@ -15,18 +15,21 @@
 const { parse, commandWord, shQuote } = require('./shell');
 
 const CHAIN = new Set(['&&', ';']);
+const UNSAFE_CHARS = ['$', '`', '\\', '*', '?', '[', ']', '{', '}', '~', '<', '#'];
 
 function detect(toolName, input) {
   if (toolName !== 'Bash') return null;
-  const segs = parse((input && input.command) || '');
+  const command = (input && input.command) || '';
+  if (UNSAFE_CHARS.some((char) => command.includes(char))) return null;
+  const segs = parse(command);
   if (segs.length < 2) return null; // clean shape only: cd … && git … [&& git …]*
   if (segs.some((seg) => seg.redirects.length)) return null;
   const cd = commandWord(segs[0].argv);
-  if (cd.word !== 'cd' || cd.args.length !== 1) return null;
+  if (segs[0].argv[0] !== 'cd' || cd.word !== 'cd' || cd.args.length !== 1) return null;
   const path = shQuote(cd.args[0]);
   const parts = [];
   for (const seg of segs.slice(1)) {
-    if (!CHAIN.has(seg.sep)) return null;
+    if (!CHAIN.has(seg.sep) || seg.argv[0] !== 'git') return null;
     const git = commandWord(seg.argv);
     if (git.word !== 'git') return null;
     parts.push({ sep: seg.sep, cmd: `wt-git ${path} ${git.args.map(shQuote).join(' ')}`.trimEnd() });

@@ -108,6 +108,23 @@ out_for_rtk() {
     printf '%s' "$output"
 }
 
+# Variant that passes JSON as a shell argument, preserving literal apostrophes.
+out_for_rtk_safe() {
+    local cmd="$1" script="$2" json
+    local stub="$BATS_TEST_TMPDIR/rtk-stub-bin"
+    mkdir -p "$stub"
+    { printf '#!/usr/bin/env bash\n'; printf '%s\n' "$script"; } >"$stub/rtk"
+    chmod +x "$stub/rtk"
+    local nodedir; nodedir="$(dirname "$(command -v node)")"
+    json=$(jq -nc --arg c "$cmd" --arg w "$W" \
+        '{tool_name:"Bash", tool_input:{command:$c}, cwd:$w}')
+    # shellcheck disable=SC2016
+    # Intentional: preserve positional parameters for the inner shell.
+    run env PATH="$stub:$nodedir:/usr/bin:/bin" bash -c 'printf "%s" "$1" | "$2"' bash "$json" "$DEPLOY/hooks/tool-reroute.sh"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output"
+}
+
 # ── tool-reroute/search: grep/rg/ag/ack/find → tilth (rewrite) ───────────
 
 @test "tool-reroute/search: bash grep rewrites to tilth with --scope" {
@@ -603,6 +620,52 @@ RTK
     no_permission_decision "$out"
 }
 
+@test "tool-reroute/cd-strip: an empty quoted target is left alone" {
+    local out; out=$(out_for_rtk 'cd "" && ls' "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'cd "" && ls' ]]
+}
+
+@test "tool-reroute/cd-strip: a path with a behavior-changing .. component is left alone" {
+    local out; out=$(out_for_rtk "cd $W/agents/.. && ls" "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "cd $W/agents/.. && ls" ]]
+}
+
+@test "tool-reroute/cd-strip: unquoted glob and brace targets are left alone" {
+    local root="$BATS_TEST_TMPDIR/expansion"
+    mkdir "$root"
+    local glob="$root/star*"
+    local brace="$root/{star,other}"
+    mkdir "$glob" "$brace"
+    run node - "$REAL_DOTFILES_DIR/agents/lib/tool-reroute/cd-strip.js" "$glob" <<'NODE'
+const [file, cwd] = process.argv.slice(2)
+const { detect } = require(file)
+process.stdout.write(JSON.stringify(detect("Bash", {command: `cd ${cwd} && printf`}, cwd)))
+NODE
+    [ "$status" -eq 0 ]
+    [[ "$output" == "null" ]]
+    run node - "$REAL_DOTFILES_DIR/agents/lib/tool-reroute/cd-strip.js" "$brace" <<'NODE'
+const [file, cwd] = process.argv.slice(2)
+const { detect } = require(file)
+process.stdout.write(JSON.stringify(detect("Bash", {command: `cd ${cwd} && printf`}, cwd)))
+NODE
+    [ "$status" -eq 0 ]
+    [[ "$output" == "null" ]]
+}
+
+@test "tool-reroute/cd-strip: a quoted dollar expansion target is left alone" {
+    local cwd="$BATS_TEST_TMPDIR/dollar\$name"
+    mkdir "$cwd"
+    run node - "$REAL_DOTFILES_DIR/agents/lib/tool-reroute/cd-strip.js" "$cwd" <<'NODE'
+const [file, cwd] = process.argv.slice(2)
+const { detect } = require(file)
+process.stdout.write(JSON.stringify(detect("Bash", {command: `cd "${cwd}" && printf`}, cwd)))
+NODE
+    [ "$status" -eq 0 ]
+    [[ "$output" == "null" ]]
+}
+
 @test "tool-reroute/cd-strip: a subdirectory target is left alone" {
     # Not stripped: a real strip would produce updatedInput.command == "ls"
     # exactly. The recording stub proves rtk actually ran and received the
@@ -690,6 +753,28 @@ RTK
     [[ "$out" != *'updatedInput'* ]]
 }
 
+@test "tool-reroute/cd-strip: a symlink target is not matched by physical equality" {
+    local link="$BATS_TEST_TMPDIR/logical-link"
+    ln -s "$W" "$link"
+    run node - "$REAL_DOTFILES_DIR/agents/lib/tool-reroute/cd-strip.js" "$W" "$link" <<'NODE'
+const [file, cwd, target] = process.argv.slice(2)
+const { detect } = require(file)
+process.stdout.write(JSON.stringify(detect("Bash", {command: `cd "${cwd}" && ls`}, target)))
+NODE
+    [ "$status" -eq 0 ]
+    [[ "$output" == "null" ]]
+}
+
+@test "tool-reroute/cd-strip: a quoted tilde is not expanded" {
+    run node - "$REAL_DOTFILES_DIR/agents/lib/tool-reroute/cd-strip.js" "$HOME" <<'NODE'
+const [file, cwd] = process.argv.slice(2)
+const { detect } = require(file)
+process.stdout.write(JSON.stringify(detect("Bash", {command: 'cd "~" && ls'}, cwd)))
+NODE
+    [ "$status" -eq 0 ]
+    [[ "$output" == "null" ]]
+}
+
 # ── tool-reroute/cd-git: a git-only chain rewrites every segment ─────────
 
 @test "tool-reroute/cd-git: a && chain rewrites every git segment" {
@@ -705,6 +790,56 @@ RTK
 @test "tool-reroute/cd-git: a non-git segment in the chain is left alone" {
     local out; out=$(out_for 'cd /repo && git add -A && yarn test')
     [[ "$out" != *"wt-git"* ]]
+}
+
+@test "tool-reroute/cd-git: assignments before later git segments delegate" {
+    local cmd='cd /repo && git status && FOO=1 git status'
+    local out; out=$(out_for_rtk "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+}
+
+@test "tool-reroute/cd-git: sudo wrapper before later git delegates" {
+    local cmd='cd /repo && git status && sudo git status'
+    local out; out=$(out_for_rtk "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+}
+
+@test "tool-reroute/cd-git: expansion in later git arguments delegates unchanged" {
+    # shellcheck disable=SC2016
+    # Intentional: preserve literal $message in the fixture.
+    local cmd='cd /repo && git status && git commit -m "$message"'
+    local out; out=$(out_for_rtk "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+}
+
+@test "tool-reroute/cd-git: pathname expansion in later git arguments delegates unchanged" {
+    local cmd out
+    for cmd in \
+        'cd /repo && git status && git add -n *.js' \
+        'cd /repo && git status && git add -n [ab].js' \
+        'cd /repo && git status && git add -n {a,b}.js' \
+        'cd /repo && git status && git add -n ~/src.js' \
+        'cd /repo && git status && git hash-object --stdin < file' \
+        'cd /repo && git status # note'; do
+        out=$(out_for_rtk "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+        [[ "$out" != *'updatedInput'* ]]
+        [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+    done
+}
+
+@test "tool-reroute/cd-git: unterminated later git quotes delegate unchanged" {
+    local cmd="cd /repo && git status && git commit -m 'oops"
+    local out; out=$(out_for_rtk_safe "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+
+    cmd='cd /repo && git status && git commit -m "oops'
+    out=$(out_for_rtk_safe "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ "$out" != *'updatedInput'* ]]
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
 }
 
 # ── tool-reroute/log: rewrite/deny decisions append to decisions.jsonl ───
@@ -738,6 +873,75 @@ RTK
     [ "$(wc -l <"$log")" -eq 1 ]
     [[ "$(jq -r .action <"$log")" == "strip" ]]
     [[ "$(jq -r .module <"$log")" == "cd-strip" ]]
+}
+
+@test "tool-reroute/log: Grep records a bounded sanitized pattern" {
+    local secret="TOKEN=grep-secret"
+    local out; out=$(out_for_input Grep "$(jq -nc --arg p "$secret" '{pattern:$p}')")
+    [[ "$(decision "$out")" == "deny" ]]
+    local log="$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl"
+    [[ "$(jq -r .pattern <"$log")" == "TOKEN=<redacted>" ]]
+    ! grep -Fq "$secret" "$log"
+    [ "$(jq -r '.reason | length' <"$log")" -le 500 ]
+}
+
+@test "jsonl-log: shared persistence redacts lowercase, quoted, and token arguments before truncation" {
+    local dir="$BATS_TEST_TMPDIR/jsonl-redact"
+    run node - "$REAL_DOTFILES_DIR/agents/lib/jsonl-log.js" "$dir" <<'NODE'
+const [file, dir] = process.argv.slice(2)
+const { appendJsonl, scrubSecrets } = require(file)
+const value = `token="quoted-secret" --token argument-secret ${"x".repeat(490)} TOKEN=tail-secret`
+appendJsonl(dir, "f.jsonl", { value }, 5000)
+process.stdout.write(scrubSecrets(value))
+NODE
+    [ "$status" -eq 0 ]
+    [[ "$output" != *quoted-secret* ]]
+    [[ "$output" != *argument-secret* ]]
+    [[ "$output" != *tail-secret* ]]
+    ! grep -Fq quoted-secret "$BATS_TEST_TMPDIR/jsonl-redact/f.jsonl"
+    ! grep -Fq argument-secret "$BATS_TEST_TMPDIR/jsonl-redact/f.jsonl"
+    ! grep -Fq tail-secret "$BATS_TEST_TMPDIR/jsonl-redact/f.jsonl"
+}
+
+@test "jsonl-log: existing broad log directory fails closed" {
+    local dir="$BATS_TEST_TMPDIR/jsonl-broad"
+    mkdir "$dir"
+    chmod 755 "$dir"
+    run node - "$REAL_DOTFILES_DIR/agents/lib/jsonl-log.js" "$dir" <<'NODE'
+const [file, dir] = process.argv.slice(2)
+require(file).appendJsonl(dir, "f.jsonl", { value: "x" }, 1000)
+NODE
+    [ "$status" -eq 0 ]
+    [ ! -e "$dir/f.jsonl" ]
+}
+
+@test "jsonl-log: existing broad log file fails closed" {
+    local dir="$BATS_TEST_TMPDIR/jsonl-file"
+    mkdir "$dir"
+    chmod 700 "$dir"
+    local log="$dir/f.jsonl"
+    printf '%s\n' '{"old":1}' >"$log"
+    chmod 644 "$log"
+    node - "$REAL_DOTFILES_DIR/agents/lib/jsonl-log.js" "$dir" <<'NODE'
+const [file, dir] = process.argv.slice(2)
+require(file).appendJsonl(dir, "f.jsonl", { value: "new" }, 1000)
+NODE
+    [[ "$(wc -l <"$log")" -eq 1 ]]
+    ! grep -Fq '"value":"new"' "$log"
+}
+
+@test "jsonl-log: symlink log file fails closed" {
+    local dir="$BATS_TEST_TMPDIR/jsonl-symlink"
+    mkdir "$dir"
+    chmod 700 "$dir"
+    local target="$BATS_TEST_TMPDIR/sentinel"
+    printf sentinel >"$target"
+    ln -s "$target" "$dir/f.jsonl"
+    node - "$REAL_DOTFILES_DIR/agents/lib/jsonl-log.js" "$dir" <<'NODE'
+const [file, dir] = process.argv.slice(2)
+require(file).appendJsonl(dir, "f.jsonl", { value: "new" }, 1000)
+NODE
+    [[ "$(cat "$target")" == sentinel ]]
 }
 
 # ── jsonl-log: shared append/rotate helper ────────────────────────────────

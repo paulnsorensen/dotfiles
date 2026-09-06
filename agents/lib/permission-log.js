@@ -11,10 +11,18 @@
 
 const os = require('os');
 const path = require('path');
-const { appendJsonl, scrubSecrets } = require('./jsonl-log');
+const { appendJsonl } = require('./jsonl-log');
 
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
+const MAX_SUGGESTIONS = 20;
 const LOGGED_EVENTS = new Set(['PermissionRequest', 'PermissionDenied']);
+
+function suggestionMetadata(value) {
+  if (!Array.isArray(value)) return null;
+  return value.slice(0, MAX_SUGGESTIONS).map((item) => ({
+    type: item && typeof item.type === 'string' ? item.type : null,
+  }));
+}
 
 function logDir() {
   return process.env.CLAUDE_PERMISSION_LOG_DIR
@@ -34,7 +42,7 @@ function main() {
     }
     if (!LOGGED_EVENTS.has(event.hook_event_name)) return;
     const input = event.tool_input || {};
-    const command = typeof input.command === 'string' ? scrubSecrets(input.command.slice(0, 500)) : null;
+    const command = typeof input.command === 'string' ? input.command : null;
     appendJsonl(logDir(), 'events.jsonl', {
       ts: new Date().toISOString(),
       event: event.hook_event_name || 'unknown',
@@ -43,9 +51,9 @@ function main() {
       permission_mode: event.permission_mode || null,
       tool_name: event.tool_name || null,
       command,
-      input_keys: Object.keys(input),
+      input_keys: Object.keys(input).slice(0, 50),
       reason: event.reason || null,
-      suggestions: event.permission_suggestions || null,
+      suggestions: suggestionMetadata(event.permission_suggestions),
     }, MAX_LOG_BYTES);
   });
 }

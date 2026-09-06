@@ -86,7 +86,8 @@ function findRewrite(args) {
 
 function detect(toolName, input) {
   if (toolName === 'Grep' || toolName === 'Glob') {
-    return { reason: reason(`the ${toolName} tool`, (input && input.pattern) || null), module: 'search' };
+    const pattern = input && typeof input.pattern === 'string' ? input.pattern : null;
+    return { reason: reason(`the ${toolName} tool`, pattern), pattern, module: 'search' };
   }
   if (toolName !== 'Bash') return null;
   const segs = parse((input && input.command) || '');

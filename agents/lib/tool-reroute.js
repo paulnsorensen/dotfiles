@@ -62,6 +62,11 @@ function classifyWith(modules, toolName, input, cwd) {
 }
 
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
+const MAX_TEXT_LENGTH = 500;
+
+function safeText(value) {
+  return scrubSecrets(String(value)).slice(0, MAX_TEXT_LENGTH);
+}
 
 function logDir() {
   return process.env.CLAUDE_TOOL_REROUTE_LOG_DIR
@@ -81,9 +86,10 @@ function logDecision(harness, event, toolName, cwd, hit, action) {
     tool_name: toolName,
     module: hit.module || null,
     action,
-    command: scrubSecrets(command.slice(0, 500)),
+    command,
+    ...(hit.pattern !== undefined ? { pattern: hit.pattern } : {}),
     ...(action === 'rewrite' || action === 'strip'
-      ? { rewrite: scrubSecrets(hit.rewrite.slice(0, 500)) }
+      ? { rewrite: hit.rewrite }
       : { reason: hit.reason }),
   }, MAX_LOG_BYTES);
 }
@@ -158,7 +164,7 @@ function main() {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'allow',
-          permissionDecisionReason: `tool-reroute: ${orig} → ${hit.rewrite}`,
+          permissionDecisionReason: safeText('tool-reroute: ' + orig + ' → ' + hit.rewrite),
           updatedInput: { ...input, command: hit.rewrite },
         },
       }));
@@ -170,7 +176,7 @@ function main() {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
-          permissionDecisionReason: hit.reason,
+          permissionDecisionReason: safeText(hit.reason),
         },
       }));
       return;

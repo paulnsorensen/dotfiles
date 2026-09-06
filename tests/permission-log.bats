@@ -61,6 +61,16 @@ send() {
     [[ "$(jq -r '.suggestions[0].type' <"$log")" == "addRules" ]]
 }
 
+@test "permission-log: reason is sanitized and suggestions keep metadata only" {
+    local json
+    json=$(jq -nc --arg w "$W" '{hook_event_name:"PermissionDenied", cwd:$w, tool_name:"Bash", reason:"TOKEN=reason-secret", permission_suggestions:[{type:"addRules", rule:"TOKEN=rule-secret"}]}')
+    send "$json"
+    [ "$status" -eq 0 ]
+    local log; log=$(log_file)
+    [[ "$(jq -r .reason <"$log")" == "TOKEN=<redacted>" ]]
+    [[ "$(jq -c '.suggestions' <"$log")" == '[{"type":"addRules"}]' ]]
+}
+
 @test "permission-log: PermissionDenied event appends a second record" {
     local req; req=$(jq -nc --arg w "$W" '{hook_event_name:"PermissionRequest", session_id:"s1", cwd:$w, permission_mode:"auto", tool_name:"Bash", tool_input:{command:"cd /x && ls"}, permission_suggestions:[{type:"addRules"}]}')
     send "$req"

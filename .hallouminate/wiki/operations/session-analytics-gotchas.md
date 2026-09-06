@@ -21,3 +21,25 @@ Only classifier blocks appear (`denied by the Claude Code auto mode classifier`)
 ## `cd-strip`'s cwd is Claude Code's tracked cwd, not the shell's live $PWD
 
 The two can diverge after a `pushd`, a sourced script, or a `bash -c 'cd … && …'`. Check by grepping `decisions.jsonl` for `strip` records whose `rewrite` starts with `./`, `../`, or a bare script name.
+
+## No-op directory rewrites require logical path safety
+
+Physical path equality does not prove that `cd` has no effect.
+A symlink target can change logical `PWD` while retaining the same physical directory.
+Path normalization can also remove a missing component and hide a failing `cd`.[^rewrite-safety]
+
+Reject uncertain path forms instead of extending a partial shell parser.
+Git-chain rewrites must also preserve environment assignments and wrappers, or leave the command unchanged.[^rewrite-safety]
+
+## Permission logs use bounded metadata
+
+Permission suggestions can include complete shell commands in rule content.
+Persist suggestion metadata rather than rule content.
+Apply redaction at the shared persistence boundary before truncation.
+Caller-only redaction lets new fields bypass the policy; truncation can cut a credential before the sanitizer recognizes it.[^log-safety]
+
+Redaction covers known credential forms, not arbitrary secret detection.
+Keep log directories and files private even when they already exist.[^log-safety]
+
+[^rewrite-safety]: PR 878 review reproductions; `agents/lib/tool-reroute/cd-strip.js`; `agents/lib/tool-reroute/cd-git.js`; `tests/tool-reroute.bats`.
+[^log-safety]: PR 878 review reproductions; `agents/lib/jsonl-log.js`; `agents/lib/permission-log.js`; `tests/permission-log.bats`.

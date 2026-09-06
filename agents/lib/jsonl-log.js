@@ -9,35 +9,71 @@
 const fs = require('fs');
 const path = require('path');
 
-// Matches a credential-shaped token so command/reason strings never persist
-// a live secret to disk. Captures the leading marker (kept) and redacts the
-// rest of the token.
-const SECRET_PATTERN = /(Bearer |ghp_|github_pat_|sk-|[A-Z_]*TOKEN=|[A-Z_]*SECRET=|[A-Z_]*KEY=)\S+/g;
+const MAX_STRING_LENGTH = 500;
 
-// Redact any credential-shaped substring in `str`, e.g. a Bearer token or an
-// inline TOKEN=/SECRET=/KEY= assignment picked up from a logged command.
+// Redact credential-shaped assignments, bearer values, token arguments, and
+// common token prefixes. The replacer below applies this at the write boundary.
 function scrubSecrets(str) {
   if (typeof str !== 'string') return str;
-  return str.replace(SECRET_PATTERN, '$1<redacted>');
+  let result = str;
+  result = result.replace(
+    /((?:[A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD)|TOKEN|SECRET|KEY|PASSWORD|API[-_]?KEY)\s*=\s*)(?:"[^"]*"|'[^']*'|[^\s;&|]+)/gi,
+    '$1<redacted>',
+  );
+  result = result.replace(
+    /((?:--?)(?:token|secret|password|api[-_]?key)(?:=|\s+))(?:"[^"]*"|'[^']*'|[^\s;&|]+)/gi,
+    '$1<redacted>',
+  );
+  result = result.replace(/(\bBearer\s+)(?:"[^"]*"|'[^']*'|\S+)/gi, '$1<redacted>');
+  return result.replace(/(ghp_|github_pat_|sk-)[^\s'";&|]+/gi, '$1<redacted>');
+}
+
+function privateDirectory(dir) {
+  try {
+    const stat = fs.lstatSync(dir);
+    return stat.isDirectory() && !stat.isSymbolicLink() && (stat.mode & 0o077) === 0;
+  } catch {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(dir);
+    return stat.isDirectory() && !stat.isSymbolicLink() && (stat.mode & 0o077) === 0;
+  }
+}
+
+function privateFile(file) {
+  try {
+    const stat = fs.lstatSync(file);
+    return stat.isFile() && !stat.isSymbolicLink() && (stat.mode & 0o077) === 0;
+  } catch {
+    return true;
+  }
 }
 
 function rotateIfLarge(file, maxBytes) {
   try {
-    if (fs.statSync(file).size > maxBytes) fs.renameSync(file, `${file}.1`);
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) return false;
+    if (stat.size <= maxBytes) return true;
+    const rotated = `${file}.1`;
+    if (!privateFile(rotated)) return false;
+    fs.renameSync(file, rotated);
+    return true;
   } catch {
-    /* fail-open */
+    return false;
   }
 }
 
-// Append `record` as one JSON line to `${dir}/${file}`, rotating first when
-// the file already exceeds maxBytes. Fails open on any error (missing dir
-// permissions, disk full, …) — logging must never block the hook.
+// Append one bounded, sanitized JSON line. Existing paths must be private and
+// regular; logging fails open when a path is unsafe.
 function appendJsonl(dir, file, record, maxBytes) {
   try {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (!privateDirectory(dir)) return;
     const full = path.join(dir, file);
-    rotateIfLarge(full, maxBytes);
-    fs.appendFileSync(full, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+    if (!privateFile(full)) return;
+    if (fs.existsSync(full) && !rotateIfLarge(full, maxBytes)) return;
+    const replacer = (_key, value) => (
+      typeof value === 'string' ? scrubSecrets(value).slice(0, MAX_STRING_LENGTH) : value
+    );
+    fs.appendFileSync(full, `${JSON.stringify(record, replacer)}\n`, { mode: 0o600 });
   } catch {
     /* fail-open */
   }
