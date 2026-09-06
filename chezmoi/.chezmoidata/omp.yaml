@@ -77,6 +77,10 @@ omp:
       toolResultPreview: false
     skills:
       enableSkillCommands: true
+      # omp-introduced (v18.1): discovery of universal skills under
+      # ~/.agents/skills, which install-external.sh owns for non-Claude
+      # harnesses. Folded at omp's live default (true) to keep that lane.
+      enableAgentsUser: true
     tui:
       tight: true
     # omp-introduced (v18): input-composer frame shape — folded at omp's live

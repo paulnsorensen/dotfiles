@@ -51,3 +51,17 @@ wrapper injects flags into `omp`, call the raw binary:
 `$(which -a omp | tail -1)`.)
 
 Related: [[sync-and-chezmoi]], [[../harnesses/omp]].
+
+
+## Not every unknown key is drift
+
+The gate also fires on genuinely new upstream keys. Tell the two apart by
+shape: a **nested legacy path** (`dev.autoqa.consent`) is stale
+serialization — normalize the machine. A **flat path that omp's own
+`omp config list` reports** is a new key — fold it into the registry.
+
+Example (2026-09-06, omp 18.1.11): `skills.enableAgentsUser` halted sync on
+a machine whose config was otherwise canonical. `omp config list` listed it
+alongside the other `skills.*` toggles, so it was folded at omp's live
+default (`true`), keeping `~/.agents/skills` discovery on for the
+`install-external.sh` lane (PR #893).
