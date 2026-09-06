@@ -42,25 +42,18 @@ Beyond the cross-harness git-guard, Claude wires a `PreToolUse` guard (in `claud
 
 The **secret-protection guard** (`sensitive-file-guard`) is the other cross-harness guard, declared in the `agents/hooks/` registry rather than here — it blocks `.env`/keys/credentials, is fail-open, and honors `CLAUDE_SENSITIVE_GUARD` / `CLAUDE_SENSITIVE_GUARD_ALLOW`. See [[agents-dir]] for the hook-registry mechanics.
 
-### Tilth payload coverage from the harness audit
+### Tilth payload coverage (PR #891, merged)
 
-The audit at base `f5d1e1d` finds that both guards miss current `edits[].path` requests.
-Historical `files[].path` fixtures pass without checking the active MCP contract.[^tilth-payload]
+An audit at base `f5d1e1d` found that both guards missed current `edits[].path` requests: historical `files[].path` fixtures passed without checking the active MCP contract.[^tilth-payload]
 
-The prepared `fix/harness-guard-payloads` branch extracts each edit path and every `move_file` destination.
-It resolves relative edit paths against the tool request's `cwd`.
-The sensitive-file guard also removes selectors from tilth read paths, but preserves literal `#` characters in write paths.[^tilth-correction]
+PR #891 (`fix/harness-guard-payloads`, commit `5b8bb72`) fixed both guards on `main`. Each guard now extracts every edit path and every `move_file` destination, and resolves a relative edit path against the tool request's `cwd`. The sensitive-file guard also strips selectors from tilth read paths, but preserves literal `#` characters in write paths.[^tilth-correction]
 
-This distinction prevents a read selector from hiding a sensitive filename.
-It also prevents read-selector rules from changing a literal write target.
-Current-schema fixtures cover mixed batches, move destinations, selectors, and worktree escapes.[^tilth-fixture]
+This distinction prevents a read selector from hiding a sensitive filename, and prevents a read-selector rule from changing a literal write target. Regression fixtures cover mixed batches, move destinations, selectors, and worktree escapes.[^tilth-fixture]
 
-Status: proposed in `fix/harness-guard-payloads`; not merged or deployed.
-Do not treat the main checkout as protected before this branch lands and deploys.
-Keep parser fixtures aligned with the active MCP schema rather than a historical approximation.
+Status: merged and deployed on `main`. Keep parser fixtures aligned with the active MCP schema as it evolves, rather than a historical approximation.
 
-[^tilth-payload]: Audit at `f5d1e1d`; `agents/lib/sensitive-file-guard.js:122-137`; `claude/hooks/worktree-guard.js:73-90`.
-[^tilth-correction]: Prepared branch `fix/harness-guard-payloads`; `agents/lib/sensitive-file-guard.js:124-155`; `claude/hooks/worktree-guard.js:73-92`.
-[^tilth-fixture]: Prepared branch `fix/harness-guard-payloads`; `tests/sensitive-file-guard.bats`; `tests/hooks-blockers.bats`.
+[^tilth-payload]: Audit at `f5d1e1d`; `agents/lib/sensitive-file-guard.js:122-137`; `claude/hooks/worktree-guard.js:73-90` (pre-fix line numbers).
+[^tilth-correction]: `agents/lib/sensitive-file-guard.js` (`editTargets`, `resolveTilthReadPath`); `claude/hooks/worktree-guard.js` (`editTargets`, `resolveEditPath`).
+[^tilth-fixture]: `tests/sensitive-file-guard.bats`; `tests/hooks-blockers.bats`.
 
-_Source: harness audit and prepared branch · Updated: 2026-09-05 · Supersedes: unresolved-gap-only description._
+_Source: harness audit + PR #891 · Updated: 2026-09-06 · Supersedes: unresolved-gap-only description._
