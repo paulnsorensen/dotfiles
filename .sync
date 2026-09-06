@@ -67,8 +67,8 @@ verify_harness_versions() {
         log_error "codex --version failed $phase"
         return 1
     fi
-    if [[ "$codex_version" != "codex-cli 0.151.0" ]]; then
-        log_error "codex version mismatch $phase: expected codex-cli 0.151.0, got $codex_version"
+    if [[ "$codex_version" != "codex-cli 0.153.0" ]]; then
+        log_error "codex version mismatch $phase: expected codex-cli 0.153.0, got $codex_version"
         return 1
     fi
 }

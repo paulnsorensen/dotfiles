@@ -1220,7 +1220,7 @@ MOCKBREW
     local omp_pin
     omp_pin="$(omp_pin_version)"
     grep -q "expected omp/${omp_pin#v}," "$REAL_DOTFILES_DIR/.sync"
-    grep -q '^"aqua:openai/codex" = "rust-v0.151.0"$' \
+    grep -q '^"aqua:openai/codex" = "rust-v0.153.0"$' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
 # The companion assertion — that doc-drift's `reconciled` markers match the
