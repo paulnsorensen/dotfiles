@@ -77,6 +77,11 @@ omp:
       toolResultPreview: false
     skills:
       enableSkillCommands: true
+      # omp-introduced (v18): discover ~/.agents/skills, the harness-managed
+      # cross-harness skill cache install-external.sh populates for non-Claude
+      # harnesses. Kept true (omp's live default) — this is the intended
+      # consumer of that dir; chezmoi never owns it (see .chezmoiignore).
+      enableAgentsUser: true
     tui:
       tight: true
     # omp-introduced (v18): input-composer frame shape — folded at omp's live
