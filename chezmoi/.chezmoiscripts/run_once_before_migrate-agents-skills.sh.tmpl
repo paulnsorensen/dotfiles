@@ -1,0 +1,32 @@
+#!/bin/bash
+# run_once_before — one-time migration: prune stale ap-era skill copies from
+# ~/.agents/skills BEFORE install-local.sh adopts that directory.
+#
+# Why: `ap` once wrote real-directory copies of the repo-local skills into
+# ~/.agents/skills/<name>. Those live installs are retired. install-local.sh
+# (run_onchange_after_install-local-skills) warns and skips any unmanaged
+# directory of a name it ships, so the stale copies block adoption forever.
+#
+# The prune deletes <name> only when the dotfiles source ships that skill,
+# .dotfiles-managed does not list it, and no `skills` CLI lockfile key has that
+# basename. Lock-tracked names belong to the skills CLI and stay.
+#
+# Only ~/.agents/skills is pruned. ~/.cursor/skills holds a plugin-owned
+# grok-codebase under .dotfiles-managed-cheese-grok, which this rule would not
+# protect.
+#
+# chezmoi runs run_before_* scripts ahead of run_after_* scripts in a single
+# apply, so the prune precedes the run_onchange installer. run_once_ ensures
+# this never runs again on this host after a clean pass.
+set -euo pipefail
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+DOTFILES_ROOT="$SOURCE_DIR/.."
+
+# A trimmed source tree (tests/chezmoi-wiring.bats) has no skills/ dir.
+[[ -d "$DOTFILES_ROOT/skills" ]] || exit 0
+
+"$SOURCE_DIR/lib/prune-stale-local-skills.sh" \
+    "$DOTFILES_ROOT/skills" \
+    "$HOME/.agents/skills" \
+    "$HOME/.agents/.skill-lock.json"

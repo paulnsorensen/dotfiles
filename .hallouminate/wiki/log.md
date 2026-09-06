@@ -60,3 +60,7 @@
 
 2026-08-23 · omp-guard-lockstep-20260823 · merged · operations/sync-and-chezmoi.md · Refreshed the stale `verify_harness_versions` literal (`omp/17.2.12`→`omp/17.3.0`, line spans) and added the OMP guard/pin lockstep gotcha: the two renovate managers over `.sync` and `packages/sync.sh` plus the `groupName: oh-my-pi` packageRule that bundles them into one PR (a split deadlocks automerge on the `tests/packages.bats` tripwire); codex-cli still manual (#743, #754).
 2026-08-23 · omp-guard-lockstep-20260823 · merged · operations/mise-manifest-precedence.md · Corrected the same stale `omp/17.2.12` literal and line numbers, cross-linked the new lockstep note.
+
+2026-09-04 · zed-skill-parity · created · harnesses/zed.md · Zed as a native (non-`ap`) harness: skills via `~/.agents/skills` (three writers: `skills` CLI canonical store, `ap` shared path, `install-local.sh`), rules via `~/.config/zed/AGENTS.md`, hand-authored `context_servers`; the two-pass prune in `install-external.sh` and why `skills remove` must carry `--agent` flags.
+2026-09-04 · zed-skill-parity · merged · harnesses/index.md · Added the Zed bullet, a Zed column in the capability matrix, and Zed targets in the skills and global-instructions mapping rows.
+2026-09-04 · zed-skill-parity · merged · operations/sync-and-chezmoi.md · Rewrote the `install-external.sh` prune sentence to describe pass 1 (upstream drop) and pass 2 (registry drop) and the `--agent` requirement.

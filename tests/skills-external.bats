@@ -41,14 +41,28 @@ setup() {
 
     # Mocked `npx` — every invocation is logged. Default: succeed.
     # Behavior is configured per-test via $NPX_BEHAVIOR:
-    #   ok        - exit 0 for everything (default)
-    #   fail-add  - `npx ... skills add ...` exits 1
+    #   ok          - exit 0 for everything (default)
+    #   fail-add    - `npx ... skills add ...` exits 1
+    #   fail-list   - `npx ... skills list --global --json` exits 1
+    #   fail-remove - `npx ... skills remove ...` exits 1
     cat > "$MOCK_BIN/npx" << 'MOCK'
 #!/bin/bash
 printf 'npx %s\n' "$*" >> "${NPX_LOG:-/dev/null}"
 
 if [[ "$*" == *" skills list --global --json"* ]]; then
+    if [[ "${NPX_BEHAVIOR:-ok}" == "fail-list" ]]; then
+        echo "mock npx skills: list failed" >&2
+        exit 1
+    fi
     printf '%s\n' "${NPX_LIST_JSON:-[]}"
+    exit 0
+fi
+
+if [[ "$*" == *" skills remove "* ]]; then
+    if [[ "${NPX_BEHAVIOR:-ok}" == "fail-remove" ]]; then
+        echo "mock npx skills: remove failed for $*" >&2
+        exit 1
+    fi
     exit 0
 fi
 
@@ -234,7 +248,7 @@ EOF
     assert_failure
 }
 
-@test "skill sync: wildcard source removes source-owned skills absent from vendor cache" {
+@test "skill sync: wildcard source removes source-owned skills absent from vendor cache, scoped to the leg agents" {
     write_registry "acme/widgets"
     write_env "codex cursor"
 
@@ -245,15 +259,180 @@ EOF
     export NPX_LIST_JSON='[
       {"name":"current","source":"acme/widgets"},
       {"name":"alternate","source":"acme/widgets"},
-      {"name":"retired","source":"acme/widgets"},
-      {"name":"foreign","source":"other/source"}
+      {"name":"retired","source":"acme/widgets"}
     ]'
 
     run_sync
     assert_success
+    # A bare `remove --global` would delete every agent's copy, including the
+    # chezmoi-owned ~/.claude/skills/retired. The --agent flags scope it.
     run grep -F 'skills remove' "$NPX_LOG"
     assert_success
-    [[ "$output" == "npx --yes skills remove retired --global -y" ]]
+    [[ "$output" == "npx --yes skills remove retired --agent codex --agent cursor --global -y" ]]
+}
+
+@test "skill sync: per-repo harnesses: scope the retired-skill remove to that subset" {
+    write_registry "acme/widgets" "    harnesses:
+      - cursor"
+    write_env "codex cursor"
+
+    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
+    mkdir -p "$repo_cache/skills/current"
+    printf '%s\n' '# current' > "$repo_cache/skills/current/SKILL.md"
+    export NPX_LIST_JSON='[
+      {"name":"current","source":"acme/widgets"},
+      {"name":"retired","source":"acme/widgets"}
+    ]'
+
+    run_sync
+    assert_success
+    run grep -F 'skills remove retired' "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills remove retired --agent cursor --global -y" ]]
+}
+
+@test "skill sync: pass 1 remove failure marks the source failed and leaves the cache unwritten" {
+    # A silent remove failure would report the source as converged and write
+    # the cache, so the retired skill would linger until --force.
+    write_registry "acme/widgets"
+    write_env "cursor"
+
+    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
+    mkdir -p "$repo_cache/skills/current"
+    printf '%s\n' '# current' > "$repo_cache/skills/current/SKILL.md"
+    export NPX_LIST_JSON='[
+      {"name":"current","source":"acme/widgets"},
+      {"name":"retired","source":"acme/widgets"}
+    ]'
+    export NPX_BEHAVIOR="fail-remove"
+
+    run_sync
+    assert_failure
+    assert_output_contains "Could not remove retired skills: retired"
+    assert_output_contains "acme/widgets → cleanup failed"
+    assert_output_contains "cache not updated"
+    [[ ! -f "$HOME/.local/state/dotfiles/skill-external-hash" ]]
+}
+
+# ─── registry-removal reconcile (pass 2) ───────────────────────────────
+# Fixture: (i) alpha from a registered all-harness source, (ii) tavily-search
+# from an unregistered source, (iii) grilled from a registered claude-only
+# source, and a local skill with no OWNER/REPO source. Canonical dirs exist
+# for all three; `grilled` is claimed by install-local.sh's manifest.
+
+write_reconcile_fixture() {
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources:
+  acme/widgets:
+    skills:
+      - alpha
+  grill/only:
+    harnesses: [claude]
+    skills:
+      - grilled
+EOF
+    export NPX_LIST_JSON='[
+      {"name":"alpha","source":"acme/widgets"},
+      {"name":"tavily-search","source":"tavily-ai/skills"},
+      {"name":"grilled","source":"grill/only"},
+      {"name":"scratch","source":null}
+    ]'
+    local canonical="$HOME/.agents/skills"
+    mkdir -p "$canonical/alpha" "$canonical/tavily-search" "$canonical/grilled"
+    printf 'grilled\n' > "$canonical/.dotfiles-managed"
+}
+
+@test "skill sync: reconcile removes unregistered and off-leg sources with this leg's --agent flags" {
+    write_reconcile_fixture
+    write_env "claude-code cursor zed"
+
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync
+    assert_success
+    assert_output_contains "Removed unregistered skills: tavily-search grilled (cursor zed)"
+    assert_output_contains "Removed canonical skill dir for zed: $HOME/.agents/skills/tavily-search"
+
+    run grep -F 'skills remove' "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills remove tavily-search grilled --agent cursor --agent zed --global -y" ]]
+
+    # (i) untouched; (ii) canonical dir removed for zed; (iii) manifest-owned
+    # canonical dir preserved.
+    [[ -d "$HOME/.agents/skills/alpha" ]]
+    [[ ! -e "$HOME/.agents/skills/tavily-search" ]]
+    [[ -d "$HOME/.agents/skills/grilled" ]]
+}
+
+@test "skill sync: reconcile leaves ~/.agents/skills alone when zed is not a leg agent" {
+    write_reconcile_fixture
+    write_env "claude-code cursor"
+
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync
+    assert_success
+    assert_output_not_contains "canonical skill dir"
+    [[ -d "$HOME/.agents/skills/tavily-search" ]]
+    [[ -d "$HOME/.agents/skills/grilled" ]]
+
+    run grep -F 'skills remove' "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills remove tavily-search grilled --agent cursor --global -y" ]]
+}
+
+@test "skill sync: reconcile --dry-run prints the plan and removes nothing" {
+    write_reconcile_fixture
+    write_env "claude-code cursor zed"
+
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync --dry-run
+    assert_success
+    assert_output_contains "[dry-run] npx --yes skills remove tavily-search grilled --agent cursor --agent zed --global -y"
+    assert_output_contains "[dry-run] rm -rf $HOME/.agents/skills/tavily-search (zed canonical dir)"
+    assert_output_not_contains "rm -rf $HOME/.agents/skills/grilled"
+
+    run grep -c 'skills remove' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+    [[ -d "$HOME/.agents/skills/tavily-search" ]]
+}
+
+@test "skill sync: reconcile compares a pinned owner/repo@ref source by its owner/repo part" {
+    # `skills add owner/repo@ref` may record the pinned spec as the source.
+    # The registered source is kept; an unregistered pinned source is removed.
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "cursor"
+    export NPX_LIST_JSON='[
+      {"name":"alpha","source":"acme/widgets@next"},
+      {"name":"zulu","source":"gone/repo@v1"}
+    ]'
+
+    run_sync
+    assert_success
+    assert_output_contains "Removed unregistered skills: zulu (cursor)"
+    run grep -F 'skills remove' "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills remove zulu --agent cursor --global -y" ]]
+}
+
+@test "skill sync: reconcile list failure fails loud and leaves the cache unwritten" {
+    write_registry "grill/only" "    harnesses: [claude]"
+    write_env "cursor"
+    export NPX_BEHAVIOR="fail-list"
+
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync
+    assert_failure
+    assert_output_contains "Could not list installed skills for the registry reconcile"
+    assert_output_contains "reconcile failed"
+    assert_output_contains "cache not updated"
+    [[ ! -f "$HOME/.local/state/dotfiles/skill-external-hash" ]]
+}
+
+@test "skill sync: skill_agents.txt maps zed to the zed CLI agent" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "cursor zed"
+
+    run_sync --dry-run
+    assert_success
+    assert_output_not_contains "Skipping SKILL_HARNESSES agents"
+    assert_output_contains "npx --yes skills add acme/widgets --skill alpha --agent cursor --agent zed -g --copy -y"
 }
 
 @test "skill sync: wildcard source without vendor cache fails without caching partial convergence" {
