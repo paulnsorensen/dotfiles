@@ -39,7 +39,12 @@ Apply redaction at the shared persistence boundary before truncation.
 Caller-only redaction lets new fields bypass the policy; truncation can cut a credential before the sanitizer recognizes it.[^log-safety]
 
 Redaction covers known credential forms, not arbitrary secret detection.
-Keep log directories and files private even when they already exist.[^log-safety]
+Keep log directories and files private even when they already exist.
+Open log descriptors in nonblocking mode.
+FIFO paths otherwise block before file-type validation.
+Check file permissions on the open descriptor.
+Use that same descriptor for writes.
+A pathname check followed by append permits a symlink swap.[^log-safety]
 
 [^rewrite-safety]: PR 878 review reproductions; `agents/lib/tool-reroute/cd-strip.js`; `agents/lib/tool-reroute/cd-git.js`; `tests/tool-reroute.bats`.
 [^log-safety]: PR 878 review reproductions; `agents/lib/jsonl-log.js`; `agents/lib/permission-log.js`; `tests/permission-log.bats`.

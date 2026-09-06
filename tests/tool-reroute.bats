@@ -944,6 +944,71 @@ NODE
     [[ "$(cat "$target")" == sentinel ]]
 }
 
+@test "jsonl-log: symlink swap before open does not follow target" {
+    local dir="$BATS_TEST_TMPDIR/jsonl-race"
+    mkdir "$dir"
+    chmod 700 "$dir"
+    local target="$BATS_TEST_TMPDIR/race-sentinel"
+    printf sentinel >"$target"
+    local log="$dir/f.jsonl"
+    printf '%s\n' '{"old":1}' >"$log"
+    chmod 600 "$log"
+    run node - "$REAL_DOTFILES_DIR/agents/lib/jsonl-log.js" "$dir" "$target" <<'NODE'
+const fs = require('fs')
+const path = require('path')
+const [file, dir, target] = process.argv.slice(2)
+const full = path.join(dir, 'f.jsonl')
+const originalOpenSync = fs.openSync
+let swapped = false
+fs.openSync = (name, flags, mode) => {
+  if (!swapped && name === full) {
+    swapped = true
+    fs.unlinkSync(name)
+    fs.symlinkSync(target, name)
+  }
+  return originalOpenSync(name, flags, mode)
+}
+require(file).appendJsonl(dir, 'f.jsonl', { value: 'new' }, 1000)
+if (!swapped) throw new Error('open race was not exercised')
+NODE
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$target")" == sentinel ]]
+    [ -L "$log" ]
+}
+
+@test "jsonl-log: FIFO path fails open without blocking" {
+    local dir="$BATS_TEST_TMPDIR/jsonl-fifo"
+    mkdir "$dir"
+    chmod 700 "$dir"
+    local fifo="$dir/f.jsonl"
+    mkfifo "$fifo"
+    chmod 600 "$fifo"
+    run node - "$REAL_DOTFILES_DIR/agents/lib/jsonl-log.js" "$dir" <<'NODE'
+const { spawn } = require('child_process')
+const [file, dir] = process.argv.slice(2)
+const child = spawn(process.execPath, [
+  '-e',
+  'require(process.argv[1]).appendJsonl(process.argv[2], "f.jsonl", { value: "new" }, 1000)',
+  file,
+  dir,
+], { stdio: 'ignore' })
+const timer = setTimeout(() => {
+  child.kill('SIGKILL')
+  process.exit(124)
+}, 1000)
+child.once('error', () => {
+  clearTimeout(timer)
+  process.exit(1)
+})
+child.once('exit', (code, signal) => {
+  clearTimeout(timer)
+  process.exit(code === 0 && signal === null ? 0 : 1)
+})
+NODE
+    [ "$status" -eq 0 ]
+    [ -p "$fifo" ]
+}
+
 # ── jsonl-log: shared append/rotate helper ────────────────────────────────
 
 @test "jsonl-log: appendJsonl rotates to .1 past maxBytes" {

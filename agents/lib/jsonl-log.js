@@ -65,17 +65,37 @@ function rotateIfLarge(file, maxBytes) {
 // Append one bounded, sanitized JSON line. Existing paths must be private and
 // regular; logging fails open when a path is unsafe.
 function appendJsonl(dir, file, record, maxBytes) {
+  let fd = null;
   try {
     if (!privateDirectory(dir)) return;
     const full = path.join(dir, file);
-    if (!privateFile(full)) return;
-    if (fs.existsSync(full) && !rotateIfLarge(full, maxBytes)) return;
+    const flags = fs.constants.O_WRONLY |
+      fs.constants.O_APPEND |
+      fs.constants.O_CREAT |
+      fs.constants.O_NOFOLLOW |
+      fs.constants.O_NONBLOCK;
     const replacer = (_key, value) => (
       typeof value === 'string' ? scrubSecrets(value).slice(0, MAX_STRING_LENGTH) : value
     );
-    fs.appendFileSync(full, `${JSON.stringify(record, replacer)}\n`, { mode: 0o600 });
+    const line = `${JSON.stringify(record, replacer)}\n`;
+    fd = fs.openSync(full, flags, 0o600);
+    let stat = fs.fstatSync(fd);
+    if (!stat.isFile() || (stat.mode & 0o077) !== 0) return;
+    if (stat.size > maxBytes) {
+      fs.closeSync(fd);
+      fd = null;
+      if (!rotateIfLarge(full, maxBytes)) return;
+      fd = fs.openSync(full, flags, 0o600);
+      stat = fs.fstatSync(fd);
+      if (!stat.isFile() || (stat.mode & 0o077) !== 0) return;
+    }
+    fs.writeSync(fd, line);
   } catch {
     /* fail-open */
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* fail-open */ }
+    }
   }
 }
 
