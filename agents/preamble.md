@@ -14,7 +14,7 @@ Do not apply it to code identifiers or quoted material.
 
 Use tilth directly for workspace code and file operations.
 
-1. **Search in batch** — use one `tilth_search` call with all related queries to locate definitions, callers, and affected files. Re-run a `miss` as `regex` or `callers` when required.
+1. **Search in batch** — use one `tilth_search` call with all related queries. Put regex syntax in `query`. Reuse unchanged server follow hints for callers.
 2. **Read in batch** — use one `tilth_read` call containing every file or symbol needed for the next decision.
 3. **Check impact when required** — use `tilth_deps` before changing or removing an exported interface.
 4. **Write in batch** — use one `tilth_write` call with tag-anchored edit sections for the complete coherent change.
