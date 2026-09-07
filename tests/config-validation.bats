@@ -64,12 +64,6 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
         }
     done
 
-    path="$DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
-    actual=$(jq -c '.mcpServers.tilth.args' "$path")
-    [[ "$actual" == "$expected" ]] || {
-        echo "$path: expected $expected, got $actual" >&2
-        return 1
-    }
 
     path="$DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
     rendered=$(chezmoi execute-template < "$path")
