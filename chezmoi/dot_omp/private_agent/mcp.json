@@ -19,9 +19,7 @@
       "command": "tilth",
       "args": [
         "--mcp",
-        "--edit",
-        "--search-surface",
-        "both"
+        "--edit"
       ]
     }
   }

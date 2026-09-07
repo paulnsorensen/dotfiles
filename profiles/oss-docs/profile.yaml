@@ -25,7 +25,7 @@ mcps:
     args: ["-y", "@playwright/mcp@0.0.80"]
   - name: tilth
     command: tilth
-    args: ["--mcp", "--edit", "--search-surface", "both"]
+    args: ["--mcp", "--edit"]
   - name: tavily
     command: agent-secret-proxy
     args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
