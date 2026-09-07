@@ -542,6 +542,28 @@ package or cargo build exposing the same bin still gets a warning and keeps its
 files. A failed removal warns and returns 0 — a `run_after` installer must not
 abort the rest of `dots sync` over a shadow it could not clear.
 
+## Known drift pattern: moving npm tags can leave a nightly one release behind
+
+**Symptom**: `dots sync` resolves a new nightly version, runs
+`npm install -g <package>@latest`, reports success, but `npm ls -g` still shows
+the preceding version. On 2026-09-07, Tilth resolved `70.1` but retained
+`69.1`. The retained binary then rejected the obsolete `--search-surface both`
+MCP launch arguments.
+
+**Why it happens**: the installer resolves `latest` once for its comparison,
+then asks npm to resolve the moving tag again during installation. Registry
+replication or cached package metadata can make those resolutions disagree.
+The installer also trusted npm's exit status without checking its postcondition.
+
+**Decision**: both nightly installers install the exact resolved version with
+`--prefer-online`. They then compare the installed package version with that
+resolved version and fail the apply on a mismatch.[^nightly-pin]
+
+This check is separate from the second-prefix prune. One protects the active
+npm prefix from a moving-tag race. The other removes stale competing prefixes.
+
+[^nightly-pin]: `chezmoi/.chezmoiscripts/run_after_install-tilth.sh.tmpl:31-48`, `chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl:37-54`, and `tests/chezmoi-wiring.bats`.
+
 ## Known drift pattern: Claude CLI SGR residue corrupts pasted setting values
 
 **Symptom**: `chezmoi/lib/claude-settings-authoritative.json` carries a model id

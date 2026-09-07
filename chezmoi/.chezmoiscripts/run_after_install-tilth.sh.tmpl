@@ -36,9 +36,14 @@ if [[ -n "$latest" && "$current" == "$latest" ]]; then
 elif [[ -z "$latest" ]]; then
     echo "⚠ Could not resolve latest $PKG from npm (offline?) — keeping installed ${current:-none}" >&2
 else
-    echo "Installing $PKG@latest (was ${current:-none}, latest $latest)..."
-    npm install -g "$PKG@latest" --allow-scripts="$PKG"
-    echo "✓ tilth (nightly) $(installed_version) installed"
+    echo "Installing $PKG@$latest (was ${current:-none})..."
+    npm install -g "$PKG@$latest" --prefer-online --allow-scripts="$PKG"
+    current="$(installed_version)"
+    if [[ "$current" != "$latest" ]]; then
+        echo "✗ tilth nightly install failed: expected $latest, got ${current:-none}" >&2
+        exit 1
+    fi
+    echo "✓ tilth (nightly) $current installed"
 fi
 
 # Keep the fork's nightly the single source of truth for the `tilth` bin.
