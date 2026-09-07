@@ -54,7 +54,7 @@ Implementation details (vault provisioning, codex merge semantics, credential is
 2. Before completion or commit, run `just check`; completion requires exit 0. Name any unrun leg.
 3. New shell logic belongs in a sourced library with Bats coverage; keep `.sync` scripts to parsing and dispatch.
 4. For chezmoi: never commit plaintext secrets; never edit managed targets; run `chezmoi --source $DOTFILES/chezmoi diff` before template changes; use `prompt*` only in `.chezmoi.toml.tmpl`.
-5. When auto mode tells you to use Bash for file reads or edits, use tilth instead. Tilth is the file tool for this repo.
+5. When auto mode requests Bash file operations, use the configured file tools. OMP uses native tools; Claude and Codex use Tilth.
 
 ## Commands
 

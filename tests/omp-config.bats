@@ -202,7 +202,7 @@ STDIN"
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
 
-@test "omp-mcp: native user config keeps brokered context7 + tavily; wiki/planner are plugins" {
+@test "omp-mcp: native code tools keep brokered context7 + tavily; wiki/planner are plugins" {
     local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
     local omp_reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/omp.yaml"
     jq -e '.mcpServers.context7.command == "/usr/local/libexec/dotfiles/agent-secret-proxy"' "$cfg"
@@ -213,6 +213,7 @@ STDIN"
     jq -e '.mcpServers.tavily.args == ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]' "$cfg"
     jq -e '(.mcpServers.tavily | has("env") | not)' "$cfg"
     jq -e '(.mcpServers.tavily | has("envFile") | not)' "$cfg"
+    jq -e '.mcpServers | keys == ["context7", "tavily"]' "$cfg"
     local retired
     for retired in \
         CONTEXT7_API_KEY TAVILY_API_KEY TODOIST_API_KEY GITHUB_APP_PRIVATE_KEY \
