@@ -22,6 +22,7 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 
 - [[git-stash-hygiene]] — the dotfiles tree carries unrelated WIP stashes, so a bare `git stash pop` applies someone else's WIP; pop only your own stash by exact ref, and untracked files don't stash via pathspec.
 - [[just-check-claude-guard-flake]] — `just check` test 349 (claude-wrapper.bats) fails purely because ≥8 Claude sessions are running (the launcher guard), not because of the diff; confirm with `pgrep -cx claude` and rerun under `CLAUDE_GUARD=0`.
+- [[just-check-read-only-gate]] — before PR #885, `check` opened with `lint-fix`, so verifying could silently rewrite tracked source; `check` now runs only read-only legs and `lint-fix` is a separate, explicit step.
 - [[cloud-routines-location]] — the five Claude Code cloud routines live in the private `paulnsorensen/routines` repo, not in dotfiles/tilth; edit them there.
 
 ## Packaging and machine state
