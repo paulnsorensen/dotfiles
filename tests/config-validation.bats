@@ -47,8 +47,8 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ "$(yq -oy -r '.codex.agents | length' "$reg")" -gt 0 ]]
 }
 
-@test "managed tilth MCPs expose search v2 alongside v1 in edit mode" {
-    local expected='["--mcp","--edit","--search-surface","both"]'
+@test "managed tilth MCPs use the canonical search surface in edit mode" {
+    local expected='["--mcp","--edit"]'
     local entry path query actual rendered profile
 
     for entry in \
@@ -68,6 +68,14 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     path="$DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
     rendered=$(chezmoi execute-template < "$path")
     actual=$(jq -c '.mcpServers.tilth.args' <<< "$rendered")
+    [[ "$actual" == "$expected" ]] || {
+        echo "$path: expected $expected, got $actual" >&2
+        return 1
+    }
+
+    path="$DOTFILES_DIR/chezmoi/dot_config/zed/settings.json.tmpl"
+    rendered=$(chezmoi execute-template < "$path")
+    actual=$(sed '/^[[:space:]]*\/\//d' <<< "$rendered" | jq -c '.context_servers.tilth.args')
     [[ "$actual" == "$expected" ]] || {
         echo "$path: expected $expected, got $actual" >&2
         return 1

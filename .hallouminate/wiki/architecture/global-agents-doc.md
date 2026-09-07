@@ -21,20 +21,17 @@ Same review deduped RTK to one canonical doc (`agents/RTK.md`): the repo-root
 zsh hook auto-rewrites commands, so per-command tables carried no signal). If
 `rtk init` is ever re-run it will re-add the block — remove it again.
 
-### tilth search v2 is forced through the preamble (2026-08-29)
+### tilth search v2 graduated to the canonical surface (2026-09-07)
 
-`agents/mcp/registry.yaml` runs tilth with `--search-surface both`, so
-`tilth_search_v2` has been *listed* since 2026-08-17 — but /session-analytics
-over 14 days found zero Claude/Codex/Cursor invocations (594 Claude v1 calls,
-0 v2); only oh-my-pi picked v2 unprompted (18 calls, one day). Listing a trial
-tool does not make the model choose it. The preamble's "Search in batch" step
-now names `tilth_search_v2` as the default with v1 as explicit fallback, so the
-force applies to Claude and Codex only (the harnesses that load the preamble).
-Re-assess after ~1 week with `tool_uses` on `mcp__tilth__tilth_search_v2`
-(Claude) / `tilth_search_v2` (Codex); omp logs it truncated as
-`mcp__tilth_search_v`. Baseline to beat: 57% of Claude v1 calls returned
-"0 matches" and then chained into Bash grep. Switching the registry to
-`--search-surface v2` would force all harnesses and drop the v1 fallback.
+Tilth main removed the temporary `tilth_search_v2` alias and the
+`--search-surface` launch flag after the trial graduated. The canonical
+`tilth_search` tool now uses the v2 request and response contract.[^tilth-graduation]
+
+All managed MCP entries therefore launch `tilth --mcp --edit`. The preamble
+names `tilth_search` directly. Retaining the trial flag prevents the MCP
+process from starting, so the flag and tool name must move together.
+
+[^tilth-graduation]: Tilth main `src/main.rs`, `src/mcp/mod.rs`, and `src/mcp/tools/definitions.rs`; dotfiles `agents/preamble.md:17` and `agents/mcp/registry.yaml:31-35`.
 
 ## Facts moved out of the agents doc (still true, just not standing context)
 
