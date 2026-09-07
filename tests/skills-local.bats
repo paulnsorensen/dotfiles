@@ -7,7 +7,7 @@
 # dotfiles-owned ones. Ownership is tracked via <target_dir>/.dotfiles-managed
 # so the installer never deletes a skill it didn't put there.
 
-# shellcheck disable=SC1090,SC2317
+# shellcheck disable=SC1090,SC2016,SC2317
 
 load test_helper
 
@@ -191,6 +191,25 @@ make_source_skill() {
     [[ ! -e "$DST/not-a-skill" ]]
     grep -Fxq commit "$DST/.dotfiles-managed"
     ! grep -Fxq not-a-skill "$DST/.dotfiles-managed"
+}
+
+@test "run_onchange local-skills: renders installer calls for the zed and cursor skill dirs" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local cfg="$TEST_HOME/cz.toml"
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+TOML
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-local-skills.sh.tmpl"
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl"
+    [[ "$status" -eq 0 ]]
+    ! grep -qF '{{' <<<"$output"
+    grep -qE '^# Local skills hash: [0-9a-f]{64}$' <<<"$output"
+    grep -qF "SOURCE_DIR=\"$REAL_DOTFILES_DIR/chezmoi\"" <<<"$output"
+    grep -qF '"$INSTALLER" "$DOTFILES_ROOT/skills" "$HOME/.agents/skills"' <<<"$output"
+    grep -qF '"$INSTALLER" "$DOTFILES_ROOT/skills" "$HOME/.cursor/skills"' <<<"$output"
 }
 
 @test "install-local: ignores _registry.yaml file in source root" {

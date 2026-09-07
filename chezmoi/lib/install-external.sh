@@ -15,6 +15,13 @@
 # source repo and installs to every requested agent in one invocation,
 # collapsing the network surface to one connection per source.
 #
+# Pruning runs in two passes. Both pass explicit --agent flags: a bare
+# `skills remove --global` targets every detected agent and deletes the
+# chezmoi-owned ~/.claude/skills/<name> too. Pass 1 (per source) removes
+# skills the source no longer ships. Pass 2 (after all sources) removes skills
+# whose source is not active on this leg: removed from the registry, or its
+# `harnesses:` maps to no leg agent.
+#
 # Usage:
 #   install-external.sh <registry_path>           Install/update all skills
 #   install-external.sh <registry_path> --dry-run Show what would change
@@ -213,8 +220,13 @@ source_skill_names() {
     done
 }
 
+# Pass 1. The caller passes the --agent flags the source was installed with,
+# so the CLI removes only this leg's copies.
 remove_stale_source_skills() {
-    local repo="$1" expected installed stale_output name
+    local repo="$1"
+    shift
+    local -a agent_flags=("$@")
+    local expected installed stale_output name
     expected=$(source_skill_names "$repo") || return 1
     if ! installed=$(npx --yes skills list --global --json 2>&1); then
         echo -e "    ${RED}Could not list installed skills before reconciling $repo${NC}" >&2
@@ -236,8 +248,81 @@ remove_stale_source_skills() {
     while IFS= read -r name; do
         [[ -n "$name" ]] && stale+=("$name")
     done <<<"$stale_output"
-    npx --yes skills remove "${stale[@]}" --global -y >/dev/null
+    if ! npx --yes skills remove "${stale[@]}" "${agent_flags[@]}" --global -y >/dev/null; then
+        echo -e "    ${RED}Could not remove retired skills:${NC} ${stale[*]}" >&2
+        return 1
+    fi
     echo -e "    ${GREEN}Removed retired skills:${NC} ${stale[*]}"
+}
+
+# Pass 2. Pass 1 sees only sources that are still registered. A source
+# removed from the registry, or one whose `harnesses:` maps to no agent on
+# this leg, would keep its skills installed forever. This pass lists every
+# global skill with an OWNER/REPO source and removes the ones whose source is
+# not in LEG_SOURCES, from this leg's agents only. A pinned OWNER/REPO@REF
+# source is compared by its OWNER/REPO part. When zed is a leg agent,
+# the canonical ~/.agents/skills/<name> dir is removed too: the CLI keeps it
+# alive while Claude's chezmoi copy exists, but Zed reads skills from it.
+# Names in ~/.agents/skills/.dotfiles-managed belong to install-local.sh and
+# stay.
+remove_unregistered_skills() {
+    local installed stale_output name
+    if ! installed=$(npx --yes skills list --global --json 2>&1); then
+        echo -e "  ${RED}Could not list installed skills for the registry reconcile${NC}" >&2
+        return 1
+    fi
+    if ! stale_output=$(jq -r --arg keep "$LEG_SOURCES" '
+        ($keep | split("\n") | map(select(length > 0))) as $keep
+        | .[]
+        | select((.source | type) == "string")
+        | (.source | split("@")[0]) as $src
+        | select($src | test("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"))
+        | select(($keep | index($src)) == null)
+        | .name
+    ' <<<"$installed"); then
+        echo -e "  ${RED}Could not parse installed skills for the registry reconcile${NC}" >&2
+        return 1
+    fi
+    [[ -n "$stale_output" ]] || return 0
+
+    local -a stale=()
+    while IFS= read -r name; do
+        [[ -n "$name" ]] && stale+=("$name")
+    done <<<"$stale_output"
+
+    local zed_leg=false canonical="$HOME/.agents/skills"
+    [[ " $SUPPORTED_HARNESSES " == *" zed "* ]] && zed_leg=true
+    # Names install-local.sh owns in the canonical dir are never removed.
+    canonical_is_local() {
+        [[ -f "$canonical/.dotfiles-managed" ]] && grep -Fxq "$1" "$canonical/.dotfiles-managed"
+    }
+
+    if $DRY_RUN; then
+        echo -e "  ${BLUE}[dry-run]${NC} npx --yes skills remove ${stale[*]} ${AGENT_FLAGS[*]} --global -y"
+        $zed_leg || return 0
+        for name in "${stale[@]}"; do
+            if [[ ! -d "$canonical/$name" ]] || canonical_is_local "$name"; then
+                continue
+            fi
+            echo -e "  ${BLUE}[dry-run]${NC} rm -rf $canonical/$name (zed canonical dir)"
+        done
+        return 0
+    fi
+
+    if ! npx --yes skills remove "${stale[@]}" "${AGENT_FLAGS[@]}" --global -y >/dev/null; then
+        echo -e "  ${RED}Could not remove unregistered skills:${NC} ${stale[*]}" >&2
+        return 1
+    fi
+    echo -e "  ${GREEN}Removed unregistered skills:${NC} ${stale[*]} ($SUPPORTED_HARNESSES)"
+
+    $zed_leg || return 0
+    for name in "${stale[@]}"; do
+        if [[ ! -d "$canonical/$name" ]] || canonical_is_local "$name"; then
+            continue
+        fi
+        rm -rf -- "${canonical:?}/${name:?}"
+        echo -e "  ${GREEN}Removed canonical skill dir for zed:${NC} $canonical/$name"
+    done
 }
 
 # Install every skill from one source repo into all harnesses in a single
@@ -304,6 +389,9 @@ install_source() {
         fi
     fi
 
+    # The source is active on this leg: pass 2 keeps its skills.
+    LEG_SOURCES+="$repo"$'\n'
+
     # `--yes` runs npx non-interactively (auto-installs the `skills` CLI); the
     # CLI's own `-y` skips its scope/confirmation prompts. `-g` = user scope,
     # `--copy` copies files (vs symlinking) to match the old overwrite contract.
@@ -316,7 +404,7 @@ install_source() {
 
     local output
     if output=$(GIT_TERMINAL_PROMPT=0 npx "${args[@]}" 2>&1); then
-        if remove_stale_source_skills "$repo"; then
+        if remove_stale_source_skills "$repo" "${repo_agent_flags[@]}"; then
             echo -e "    ${GREEN}✓${NC} $repo → $repo_supported"
         else
             echo -e "    ${RED}✗${NC} $repo → cleanup failed"
@@ -337,6 +425,9 @@ if [[ -z "$SOURCES" ]]; then
     exit 0
 fi
 
+# Sources with at least one agent on this leg (newline-separated); filled by
+# install_source, read by remove_unregistered_skills.
+LEG_SOURCES=""
 for repo in $SOURCES; do
     description=$(yq -r ".sources.\"$repo\".description // \"\"" "$REGISTRY_FILE")
     pin=$(yq -r ".sources.\"$repo\".pin // \"\"" "$REGISTRY_FILE")
@@ -347,6 +438,13 @@ for repo in $SOURCES; do
     install_source "$repo" "$pin"
     echo
 done
+
+echo -e "${BLUE}Reconcile:${NC} skills from sources not active on this leg"
+remove_unregistered_skills || {
+    echo -e "  ${RED}✗${NC} reconcile failed"
+    echo x >> "$FAIL_COUNTER"
+}
+echo
 
 fail_count=0
 if [[ -s "$FAIL_COUNTER" ]]; then

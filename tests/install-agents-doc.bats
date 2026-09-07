@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1090,SC2016,SC2034,SC2317
+# shellcheck disable=SC1003,SC1090,SC2016,SC2034,SC2317
 # Tests for chezmoi/lib/install-agents-doc.sh — copies a single shared agents
 # doc to one or more harness-specific target paths, replacing any pre-existing
 # symlink (legacy claude/.sync layout) with a real file.
@@ -91,4 +91,22 @@ teardown() { teardown_test_env; }
     grep -Fq '%q/../agents/reference/sliced-bread.md' "$template"
     grep -Fq '"$DOTFILES_ROOT/agents/reference/sliced-bread.md"' "$template"
     grep -Fq '"$HOME/.agents/reference/sliced-bread.md"' "$template"
+}
+
+@test "run-on-change renders the shared preferences fan-out to Claude, Codex, and Zed" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local cfg="$TEST_HOME/cz.toml"
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+TOML
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl"
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl"
+    [[ "$status" -eq 0 ]]
+    ! grep -qF '{{' <<<"$output"
+    grep -qF '"$HOME/.claude/CLAUDE.md" \' <<<"$output"
+    grep -qF '"$HOME/.codex/AGENTS.md" \' <<<"$output"
+    grep -qF '"$HOME/.config/zed/AGENTS.md"' <<<"$output"
 }

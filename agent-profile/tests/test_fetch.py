@@ -17,6 +17,7 @@ import types
 
 import pytest
 from agent_profile import fetch
+from agent_profile.harnesses import SUPPORTED_ITEM_HARNESSES
 from agent_profile.fetch import (
     SKILL_AGENT,
     SkillFetchError,
@@ -43,7 +44,10 @@ def test_skill_agent_passes_through_codex_and_cursor():
 
 
 def test_skill_agent_table_covers_supported_harnesses():
-    assert set(SKILL_AGENT) == {"claude", "codex", "cursor", "copilot"}
+    # Every ap render target has a `skills` CLI agent id. `zed` is the one
+    # CLI-only target: the CLI installs into ~/.agents/skills for it, and
+    # ap has no Zed renderer, so it stays out of SUPPORTED_ITEM_HARNESSES.
+    assert set(SKILL_AGENT) == set(SUPPORTED_ITEM_HARNESSES) | {"zed"}
 
 
 def test_skill_agent_unknown_harness_raises():

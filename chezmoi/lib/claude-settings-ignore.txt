@@ -12,5 +12,8 @@ autoMode
 inputNeededNotifEnabled
 remoteControlAtStartup
 verbose
+# modelSettings: per-model effort-level state written by /model, keyed
+# dynamically by model id (same dynamic-key shape as enabledPlugins).
+modelSettings
 # env.SSL_CERT_FILE is intentionally NOT listed here — its gate exemption
 # lives in the hard-coded $known entry in dot_claude/modify_settings.json.

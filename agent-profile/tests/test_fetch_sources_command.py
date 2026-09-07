@@ -69,7 +69,7 @@ def test_fetch_sources_targets_all_skill_supporting_harnesses(env, monkeypatch):
     assert len(calls) == 1
     argv = calls[0]
     agents = sorted(argv[i + 1] for i, t in enumerate(argv) if t == "--agent")
-    assert agents == sorted(["claude-code", "codex", "cursor", "github-copilot"])
+    assert agents == sorted(["claude-code", "codex", "cursor", "github-copilot", "zed"])
 
 
 def test_fetch_sources_repo_level_source_uses_skill_star(env, monkeypatch):

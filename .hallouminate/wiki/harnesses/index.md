@@ -10,20 +10,21 @@ The repo deploys one harness-agnostic config (see [[../architecture/index]]) int
 - [[cursor]] — Cursor. An IDE plugin surface and full `ap` render target; MCP flows through the shared registry while other capabilities ship through the plugin tree.
 - [[omp]] — oh-my-pi. Not an `ap` target: `omp.yaml` + `dot_omp/` own its native config, agents, extensions, themes, and selected skills.
   - [[omp-plugins]] — native marketplace plugins are reconciled by `sync_omp_plugins`.
+- [[zed]] — Zed. Not an `ap` target. Skills reach `~/.agents/skills` through the `skills` CLI leg and `install-local.sh`; rules through `~/.config/zed/AGENTS.md`; MCP through a hand-authored `context_servers` block. ACP External Agents (Codex, Claude, OMP) own their own config.
 
 ## Capability support matrix
 
 What each harness exposes natively. ✅ = first-class, ⚠️ = exists but indirect, ✗ = not available. Per-capability official links live on each harness page.
 
-| Capability | Claude | Codex | Copilot | Cursor | OMP |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Hooks / extension events | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Sub-agents / agent defs | ✅ | ✅ | ✅ | ✅ | ✅ |
-| MCP servers | ✅ | ✅ | ✅ | ✅ | ✅ |
-| System prompt / instructions | ✅ | ✅ (`AGENTS.md`) | ✅ | ✅ (rules + `AGENTS.md`) | ✅ |
-| Settings / config file | ✅ `settings.json` | ✅ `config.toml` | ✅ `settings.json` | ✅ `plugin.json` / `.cursor/` | ✅ `config.yml` |
-| Skills (`SKILL.md`) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Isolated closed-world launch | ✅ (`ap`) | ✅ (`ap`, redirected `CODEX_HOME`) | ✗ | ✗ | ✅ (`PI_CONFIG_DIR`) |
+| Capability | Claude | Codex | Copilot | Cursor | OMP | Zed |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Hooks / extension events | ✅ | ✅ | ✅ | ✅ | ✅ | ✗ |
+| Sub-agents / agent defs | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ (ACP `agent_servers` only) |
+| MCP servers | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ `context_servers` |
+| System prompt / instructions | ✅ | ✅ (`AGENTS.md`) | ✅ | ✅ (rules + `AGENTS.md`) | ✅ | ✅ (`~/.config/zed/AGENTS.md`) |
+| Settings / config file | ✅ `settings.json` | ✅ `config.toml` | ✅ `settings.json` | ✅ `plugin.json` / `.cursor/` | ✅ `config.yml` | ✅ `settings.json` |
+| Skills (`SKILL.md`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (`~/.agents/skills`) |
+| Isolated closed-world launch | ✅ (`ap`) | ✅ (`ap`, redirected `CODEX_HOME`) | ✗ | ✗ | ✅ (`PI_CONFIG_DIR`) | ✗ |
 
 Notes:
 
@@ -39,7 +40,7 @@ Notes:
 | Hooks | `agents/hooks/registry.yaml` plus native extensions | Claude plugin hooks · Codex `hooks.json` · Copilot `.github/hooks/` · Cursor plugin hooks · OMP TypeScript extensions |
 | Cursor non-MCP capabilities | `cursor/plugins/local/<name>/` | `~/.cursor/{skills,rules,commands,hooks}/` plus merged `hooks.json` / `modes.json` |
 | Sub-agents | `agents/registry.yaml` + native packages | Claude `.md` · Codex `.toml` · Copilot `.agent.md` · OMP native agents |
-| Skills | `skills/` + `skills/_registry.yaml` | rendered/copied for all active harnesses; OMP's exact tree is assembled before chezmoi applies |
+| Skills | `skills/` + `skills/_registry.yaml` | rendered/copied for all active harnesses; OMP's exact tree is assembled before chezmoi applies; Zed and Cursor get `skills/*` from `install-local.sh` and registry sources from the `skills` CLI leg (see [[zed]]) |
 | System prompt | `agents/preamble.md` + native addendum | Claude system-prompt file · Codex `model_instructions_file` · OMP launcher addendum |
-| Global instructions | `agents/AGENTS.md` | `~/.claude/CLAUDE.md` · `~/.codex/AGENTS.md` |
+| Global instructions | `agents/AGENTS.md` | `~/.claude/CLAUDE.md` · `~/.codex/AGENTS.md` · `~/.config/zed/AGENTS.md` |
 | Modal prompt input | `omp.yaml` `npmPlugins` | OMP `@sysid/pi-vim` |

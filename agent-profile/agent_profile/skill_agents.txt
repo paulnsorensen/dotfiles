@@ -12,3 +12,4 @@ claude=claude-code
 codex=codex
 cursor=cursor
 copilot=github-copilot
+zed=zed
