@@ -30,6 +30,7 @@ How this dotfiles repo configures AI coding agents: shared registries rendered b
 
 ## Profiles and workflows
 
+- [[tui-suite]] — the TUI design suite: the `tui-design`/`tui-verify`/`tui-demo`/`term-theme` skills, the isolated `tui` profile, and why agent-tty (adaptive capture) and VHS (scripted, palette-true capture) are both kept rather than one replacing the other.
 - [[oss-docs-profile]] — the isolated `oss-docs` profile: what it supplies (code nav, grounding, current docs, browser verification), what it deliberately leaves to the target project, and the `cdp oss-docs` shortcut.
 - [[review-profile-write-deny]] — the `review` profile must deny `MultiEdit` explicitly: Claude names it separately, so denying `Edit`/`Write` does not cover it.
 - [[saved-workflows]] — `claude/workflows/*.js` is the source; `chezmoi/dot_claude/exact_workflows/` is a gitignored assembled artifact. The whole dir syncs, so no registry entry is needed.

@@ -1,7 +1,7 @@
 # Ratatui Architecture Reference
 
-Patterns for production ratatui apps. Use `fetch` with Context7 for API specifics —
-this covers architecture, not API surface.
+Patterns for production ratatui apps. Use `mcp__context7__resolve-library-id` and `mcp__context7__query-docs` for API specifics.
+This reference covers architecture, not API surface.
 
 ## Bootstrap (v0.29+)
 

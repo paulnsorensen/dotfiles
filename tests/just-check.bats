@@ -66,3 +66,23 @@ run_markdownlint() {
     [[ "$output" == *"canonical.md"* ]]
     [[ "$output" == *"error"* ]]
 }
+
+@test "markdown lint ignores generated OMP skills but checks their canonical source" {
+    local generated="$FIXTURE_DIR/chezmoi/dot_omp/private_agent/exact_skills/exact_fixture"
+    local canonical="$FIXTURE_DIR/skills/fixture"
+    local malformed=$'# Fixture\ntext\n- item'
+    mkdir -p "$generated" "$canonical"
+    printf '%s\n' "$malformed" > "$generated/SKILL.md"
+
+    run run_markdownlint "$FIXTURE_DIR"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"0 issues"* ]]
+    [[ "$(<"$generated/SKILL.md")" == "$malformed" ]]
+
+    printf '%s\n' "$malformed" > "$canonical/SKILL.md"
+    run run_markdownlint "$FIXTURE_DIR"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"skills/fixture/SKILL.md"* ]]
+    [[ "$output" == *"error MD032"* ]]
+    [[ "$(<"$canonical/SKILL.md")" == "$malformed" ]]
+}
