@@ -26,6 +26,7 @@ When work establishes a durable decision or gotcha, record its *why* with `add_m
 | Sync and chezmoi | [[operations/sync-and-chezmoi]] |
 | Git tooling, prek, Claude plugins | [[operations/dev-environment]] |
 | Remote access | [[operations/remote-access]] |
+| TUI design suite, agent-tty, VHS | [[architecture/tui-suite]] |
 
 **Layout:** `bin/` (live CLI), `agents/` (registries and definitions), `agent-profile/` (`ap`), `profiles/`, harness directories, `skills/`, `chezmoi/`, `packages/`, `zsh/`, `tests/`, and `.hallouminate/wiki/`.
 

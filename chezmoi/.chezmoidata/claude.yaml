@@ -271,9 +271,12 @@ claude:
     - session-analytics
     - skill-improver
     - steel-thread
+    - term-theme
     - test-sandbox
     - tool-efficiency
+    - tui-demo
     - tui-design
+    - tui-verify
     - version-doctor
     - wat
     - work-recovery

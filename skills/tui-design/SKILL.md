@@ -3,35 +3,48 @@ name: tui-design
 model: sonnet
 effort: medium
 context: fork
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(mkdir:*), mcp__context7__resolve-library-id, mcp__context7__query-docs
+allowed-tools: Read, Bash(mkdir:*), mcp__tilth__*, mcp__context7__resolve-library-id, mcp__context7__query-docs
 description: >
   Create distinctive, production-grade terminal UIs and full-screen interactive
-  CLI tools in Rust (ratatui/crossterm) or Python (Textual/Rich). Use when the
-  user says "build a dashboard", "terminal UI", "interactive CLI", "TUI app",
-  "system monitor", "log viewer", "file manager", or invokes /tui-design.
+  CLI tools in Rust (ratatui/crossterm), Python (Textual/Rich), or Go
+  (bubbletea/lipgloss). Use when the user says "build a dashboard", "terminal
+  UI", "interactive CLI", "TUI app", "system monitor", "log viewer", "file
+  manager", or invokes /tui-design. Do NOT use to screenshot or verify an
+  already-built TUI (/tui-verify), record a VHS demo or regression tape
+  (/tui-demo), or theme the shell prompt/tmux/terminal palette (/term-theme).
 ---
 
 # tui-design
 
 Design and build professional TUIs. Character grids, not canvases.
 
-## Workflow — Use Existing Skills
+## Discipline
 
-Delegate to the right skill for each phase of TUI development:
+**Iron Law:** No TUI is done until tests pass and `/tui-verify` inspects its rendered states.
 
-| Phase | Skill | Why |
-|-------|-------|-----|
-| Search codebase for patterns | `scout` | rg/fd for fast file and content search |
-| Understand existing code structure | Serena MCP | Symbol lookup, cross-references, type info |
-| Look up ratatui/Textual/crossterm docs | `fetch` | Context7 for version-specific library docs |
-| Find structural code patterns | `trace` | ast-grep for "what implements X?" questions |
-| Edit existing files precisely | `chisel` | sd for multi-file replacements, Edit for precision |
-| Pre-commit smoke test | `diff` | Catch secrets, debug statements, silent failures |
-| Stage and commit | `commit` | Conventional commits, no force-push |
-| GitHub operations (PR, push) | `gh` | gh CLI for all GitHub ops |
+**Red Flags** — stop if you notice these:
 
-**Use `fetch` with Context7 FIRST** when working with ratatui, crossterm, Textual, Rich, or
-cursive APIs. These libraries evolve fast — don't rely on training data for API specifics.
+- The layout relies on a single terminal size.
+- Colors carry state without text or symbols.
+- The test asserts only that rendering does not crash.
+
+| Rationalization | Why it fails | Required action |
+| --- | --- | --- |
+| “The layout is obvious.” | Character grids expose clipping and density defects only at runtime. | Define sizes and inspect screenshots. |
+| “Tests can wait until the end.” | Untested state changes hide regressions during design. | Write the test with the feature. |
+| “Color communicates the state.” | Users may lack color or use `NO_COLOR`. | Add a text or symbol fallback. |
+
+## Workflow — Route to the Right Tool
+
+- **Library docs** (ratatui, crossterm, Textual, Rich, bubbletea, lipgloss):
+  Context7 MCP (`mcp__context7__resolve-library-id` + `query-docs`) FIRST.
+  These libraries evolve fast — don't rely on training data for API specifics.
+- **Code navigation** in the target repo: tilth (search/read/grok), not grep/find.
+- **Commit and PR**: `/plate`.
+- **Adversarial test hardening**: `/press`, after the build loop below.
+- **Visual verification** (does it look right, screenshot it): `/tui-verify`.
+- **Demo GIF, regression tape, palette-true frame**: `/tui-demo`.
+- **Shell prompt, tmux status line, terminal color scheme**: `/term-theme`.
 
 ---
 
@@ -43,7 +56,7 @@ Before coding, commit to a clear interaction model:
 - **Layout pattern**: Choose one: sidebar+main, header+content+statusbar, dashboard grid, multi-pane with tabs, or miller columns. Match the pattern to the data shape.
 - **Information density**: Terminals reward density done well. Show the most important data at a glance — but never sacrifice scannability. Use alignment, box-drawing, and whitespace to create visual lanes.
 - **Interaction model**: Keyboard-first with optional mouse. Vim-style navigation for lists/panels, emacs-style for text inputs. Every action discoverable via status bar hints and `?` help.
-- **Language**: Rust (ratatui + crossterm) for performance-critical, long-running, or systems-level TUIs. Python (Textual) for rapid prototyping, data exploration tools, or when CSS-like styling accelerates development.
+- **Language**: Rust (ratatui + crossterm) for performance-critical, long-running, or systems-level TUIs. Python (Textual) for rapid prototyping, data exploration tools, or when CSS-like styling accelerates development. Go (bubbletea + lipgloss) for single-binary CLI tools that need a light interactive layer.
 
 **CRITICAL**: The terminal is not a web browser. You have a fixed character grid, no fonts, no subpixel rendering, limited color in some environments, and keybinding conflicts with terminal emulators and multiplexers. Design within these constraints — don't fight them.
 
@@ -93,14 +106,14 @@ Universal conventions — users expect them:
 - Alt/Option (unreliable on macOS without terminal config)
 - `Ctrl-I` = Tab, `Ctrl-M` = Enter, `Ctrl-H` = Backspace, `Ctrl-[` = Escape (physical collisions)
 
-### Discoverability is non-negotiable
+Discoverability is non-negotiable: status bar hints (3-5 most important
+context-sensitive keybindings, always visible) plus a `?` help overlay (full
+reference for the current view). Prefer **prefix keys** (`gg`, `dd`) over
+modifier chords for terminal compatibility. Test inside tmux.
 
-1. **Status bar hints**: 3-5 most important context-sensitive keybindings, always visible
-2. **`?` help overlay**: Full keybinding reference for the current view
-3. **Which-key popups**: After a prefix key, show available completions
-4. **Command palette** (optional): `:` or `Ctrl-P` for searchable actions in complex apps
-
-Use **prefix keys** (`gg`, `dd`) instead of modifier chords for maximum terminal compatibility. Make all keybindings user-configurable. Test inside tmux.
+For apps with prefix keys or more than 15 actions, add a which-key popup (show
+available completions after a prefix key), a command palette (`:`/`Ctrl-P`),
+and make keybindings user-configurable. Smaller apps don't need any of these.
 
 ---
 
@@ -114,52 +127,17 @@ Use **prefix keys** (`gg`, `dd`) instead of modifier chords for maximum terminal
 | High | Modal dialog | Centered overlay with OK/Cancel |
 | Catastrophic | Type-to-confirm | `Type "production-db" to confirm:` |
 
-**Overusing confirmations causes habituation** — users auto-click "yes", defeating the purpose.
+### Confirmation guidance
 
----
+Overusing confirmations causes habituation. Users auto-accept prompts without reading them.
 
 ## PTY Management
 
-### Full PTY handoff (shelling out) — in this order
-
-1. Leave alternate screen, 2. Disable mouse capture, 3. Disable raw mode, 4. Show cursor
-2. Spawn child with inherited stdin/stdout/stderr, 6. waitpid()
-3. Re-enable raw mode, 8. Re-enable mouse capture, 9. Re-enter alternate screen, 10. Full redraw
-
-**Rust (ratatui + crossterm):**
-
-Note: `ratatui::init()` handles startup/cleanup and panic hooks automatically. The
-manual crossterm calls below are only needed for PTY handoff (shelling out mid-session):
-
-```rust
-fn shell_out<B: Backend>(terminal: &mut Terminal<B>, cmd: &str, args: &[&str]) -> io::Result<ExitStatus> {
-    crossterm::execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(io::stdout(), crossterm::cursor::Show)?;
-
-    let result = std::process::Command::new(cmd).args(args).status();
-
-    crossterm::terminal::enable_raw_mode()?;
-    crossterm::execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-    terminal.clear()?;
-    result
-}
-```
-
-**Python (Textual):**
-
-```python
-with self.app.suspend():
-    os.system("vim file.txt")  # Terminal fully restored during this block
-```
-
-### Terminal state safety — THE CARDINAL RULE
-
-**Always restore terminal state on every exit path: normal exit, panic, signals.**
-
-- Rust (ratatui >= v0.29): `ratatui::init()` handles panic hooks automatically
-- Python (Textual): `App.run()` lifecycle handles cleanup
-- A TUI that corrupts the terminal on crash will be immediately uninstalled
+Always restore terminal state on every exit path: normal exit, panic, signals—a
+TUI that corrupts the terminal on crash will be immediately uninstalled.
+`ratatui::init()`, Textual's `App.run()`, and bubbletea's `tea.NewProgram(...).Run()`
+handle this automatically. Full PTY handoff (shelling out mid-session) needs a manual
+sequence — code and the shell-out/suspend snippets are in `references/patterns.md`.
 
 ---
 
@@ -186,8 +164,12 @@ Disable all color when `NO_COLOR` is set.
 Every color choice must answer "what does this color **mean**?" If the answer is "it
 looked nice," it's wrong. Centralize color decisions:
 
-- **Rust**: Define a `Theme` struct with semantic slots (`primary`, `surface`, `error`, `muted`). Pass `&theme` to render functions. Use `Color::Reset` for terminal-adaptive fg/bg. See `references/ratatui.md`.
-- **Textual**: Use `.tcss` semantic variables (`$surface`, `$primary`, `$accent`). One `.tcss` file per theme for runtime switching. See `references/textual.md`.
+- **Rust**: `Theme` struct with semantic slots (`primary`, `surface`, `error`, `muted`), passed `&theme` to render functions, `Color::Reset` for terminal-adaptive fg/bg. See `references/ratatui.md`.
+- **Textual**: `.tcss` semantic variables (`$surface`, `$primary`, `$accent`), one file per theme for runtime switching. See `references/textual.md`.
+- **Go**: `Styles` struct of `lipgloss.Style` values keyed by semantic role, built from `lipgloss.AdaptiveColor{Light: ..., Dark: ...}`. See `references/bubbletea.md`.
+
+Designing theme-swappable shell/terminal chrome (prompt, tmux, base24 scheme) is
+`/term-theme`'s job, not this skill's — route there.
 
 ### Resize handling
 
@@ -195,79 +177,14 @@ Handle `SIGWINCH` by recalculating layouts and full redraw. Collapse sidebars be
 
 ---
 
-## Rendering Performance
+## Anti-Patterns and Benchmarks
 
-- **Double-buffered diff rendering**: ratatui and Textual do this automatically
-- **Synchronized Output** (`CSI ? 2026 h` / `l`): like VSync for terminals
-- **BufWriter** for all terminal I/O
-- **Virtual-scroll** large datasets (render only visible rows)
-- Cap render rate at 30-60 FPS; 10-30 FPS sufficient for most UIs
-
----
-
-## TUI Anti-Patterns
-
-AI assistants produce these predictable mistakes in TUI code. Check every one before
-presenting output. These are the TUI-specific equivalents of the `de-slop` patterns.
-
-### 1. Monolithic render function
-
-A 100+ line `ui()` / `render()` with nested layout math and inline styling.
-**Fix:** Delegate to per-panel render functions. Each panel is one function, < 40 lines.
-
-### 2. Hardcoded colors assuming dark background
-
-`Color::White` on `Color::Black`, or `fg="white"` in Textual — invisible on light terminals.
-**Fix:** Use `Color::Reset` (Rust) or `$surface`/`$text` (Textual). Define a `Theme`, never scatter RGB at use sites.
-
-### 3. Ignoring terminal size
-
-Renders sidebar at any width, truncates to garbage below 60 cols.
-**Fix:** Check `area.width` and collapse panels responsively. Test at 40, 80, and 200 cols.
-
-### 4. Blocking the event loop
-
-Network fetch or file I/O inline in the render loop — drops frames, freezes UI.
-**Fix:** Background task via `tokio::spawn` + mpsc (Rust) or `@work` (Textual). Main loop only does recv + draw.
-
-### 5. No state/view separation
-
-Business logic inside the render closure. Mutations during draw.
-**Fix:** TEA split — `App` struct owns state, `handle_event` mutates, `render` is pure read-only.
-
-### 6. Missing panic cleanup
-
-Manual `enable_raw_mode()` without panic hook — crash leaves terminal trashed.
-**Fix:** Use `ratatui::init()` (installs panic hook automatically). Textual's `App.run()` handles this.
-
-### 7. Undiscoverable keybindings
-
-Actions wired to keys but never shown in status bar or `?` help.
-**Fix:** Central keybinding table that feeds BOTH the action handler AND the help display.
-
-### 8. Excessive comments
-
-`// Create the layout`, `// Handle quit key`, `// Render the list` — narrating every line.
-**Fix:** Delete comments that restate code. TUI code is visual — the structure speaks for itself.
-
-### 9. Over-abstracted widget hierarchies
-
-`WidgetFactory`, `RenderManager`, `LayoutBuilder` for a 3-panel app.
-**Fix:** Functions, not abstractions. Extract a trait only when 3+ components genuinely share behavior.
-
----
-
-## Real-World Benchmarks
-
-Study these production TUIs for patterns worth stealing:
-
-- **lazygit**: Command log panel showing exact git commands — builds user trust and teaches
-- **bottom (btm)**: Widget trait per panel, mpsc channels for async data, extensive snapshot test suite
-- **posting**: Textual Screen-per-view pattern, Worker for HTTP, CommandPalette integration
-- **harlequin**: Reactive DataTable, multiple `.tcss` theme files, runtime theme switching
-- **gitui**: Clean TEA pattern, async git notifications, per-tab Component trait
-
-The bar is: would your code look at home in these codebases?
+AI assistants produce predictable mistakes: monolithic render functions,
+hardcoded dark-background colors, ignored terminal size, blocked event loops,
+no state/view separation, missing panic cleanup, undiscoverable keybindings,
+excessive comments, over-abstracted widget hierarchies. Full list with fixes,
+plus production TUIs worth studying (lazygit, bottom, posting, harlequin,
+gitui, glow), in `references/patterns.md`.
 
 ---
 
@@ -275,82 +192,39 @@ The bar is: would your code look at home in these codebases?
 
 ### Rust: ratatui + crossterm
 
-- Default stack for most TUI projects. Bootstrap: `ratatui::init()` / `ratatui::restore()`.
-- Architecture: **TEA** for simple apps (< 5 interactive elements), **Component trait** for multi-panel apps. See `references/ratatui.md` for concrete skeletons.
-- Key patterns: `StatefulWidget` for scroll/selection state, `Constraint::Fill(1)` for flexible layouts, `Layout::vertical/horizontal` builder style.
-- Async: tokio + crossterm `EventStream` + mpsc channels. Never block the render loop.
-- Theme: define a `Theme` struct with semantic color slots — pass `&theme` to every render function.
-- Use `fetch` skill with Context7 for ratatui API lookups — the API surface is large.
+Default stack for most TUI projects. **TEA** for simple apps (< 5 interactive
+elements), **Component trait** for multi-panel apps. `StatefulWidget` for
+scroll/selection state, `Constraint::Fill(1)` for flexible layouts. Async via
+tokio + crossterm `EventStream` + mpsc. See `references/ratatui.md`. Use
+Context7 for API lookups — the surface is large.
 
 ### Python: Textual
 
-- Default for rapid prototyping and data exploration TUIs.
-- Architecture: `compose()` + `yield` widget trees, `Screen` push/pop for navigation, `reactive` attributes with `watch_*` callbacks, `Worker` with `@work(exclusive=True)` for async I/O. See `references/textual.md` for patterns.
-- Theming: `.tcss` files with semantic variables (`$surface`, `$primary`, `$accent`). Multiple `.tcss` files for runtime theme switching.
-- `CommandPalette` for apps with many actions (Ctrl-P searchable commands).
-- Message passing for widget communication — never reach across the widget tree.
-- Use `fetch` skill with Context7 for Textual API lookups.
+Default for rapid prototyping and data exploration TUIs. `compose()` + `yield`
+widget trees, `Screen` push/pop, `reactive` + `watch_*`, `@work(exclusive=True)`
+for async I/O. Message passing between widgets, never reach across the tree.
+See `references/textual.md`. Use Context7 for API lookups.
+
+### Go: bubbletea + lipgloss
+
+Default for single-binary CLI tools that need a light interactive layer.
+Strict Elm pattern: `Init() tea.Cmd`, `Update(tea.Msg) (tea.Model, tea.Cmd)`,
+`View() string`. `lipgloss.Style` per semantic role, `AdaptiveColor` for
+light/dark. See `references/bubbletea.md`. Use Context7 for API lookups.
 
 ---
 
 ## Testing
 
-Generate tests alongside the implementation — a TUI without tests is incomplete.
+Generate tests alongside the implementation — unit and snapshot tests are in
+scope here; adversarial/hardening tests are `/press`'s job. A search test that
+passes on zero results proves nothing — seed fixture data that guarantees at
+least one match, and assert the result set is non-empty. Rust `TestBackend` +
+`insta`, Python `Pilot` + `pytest-textual-snapshot`, Go `teatest` — concrete
+examples in `references/patterns.md` and the per-language reference files.
 
-### Rust: snapshot + event + resize
-
-```rust
-#[test]
-fn renders_main_view() {
-    let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-    let app = App::with_test_data();
-    terminal.draw(|f| app.render(f)).unwrap();
-    insta::assert_snapshot!(terminal.backend().to_string());
-}
-
-#[test]
-fn narrow_terminal_hides_sidebar() {
-    let backend = TestBackend::new(40, 24);
-    // ... render and assert sidebar content absent
-}
-
-#[test]
-fn quit_key_exits() {
-    let mut app = App::new();
-    app.handle_event(key_event('q')).unwrap();
-    assert!(!app.running);
-}
-```
-
-### Python: Pilot + snapshot
-
-```python
-async def test_search_filters(snap_compare):
-    app = MyApp()
-    async with app.run_test() as pilot:
-        await pilot.press("slash")
-        await pilot.type("query")
-        await pilot.press("enter")
-        await pilot.pause()
-        results = app.query(ResultItem)
-        assert all("query" in r.label.plain for r in results)
-
-async def test_main_view(snap_compare):
-    assert await snap_compare("myapp/app.py", terminal_size=(80, 24))
-```
-
-### Integration checklist
-
-Every TUI must be verified against these scenarios:
-
-- **Resize**: 80x24, 120x40, 40x15 — layout adapts, no panics, no overflow
-- **NO_COLOR=1**: text-only indicators still present, no ANSI escapes
-- **tmux**: keybindings work, no conflicts, mouse events pass through
-- **Rapid input**: 100+ keystrokes queued — no event loss or stale renders
-- **SIGINT mid-render**: terminal restored cleanly
-
-See `references/ratatui.md` and `references/textual.md` for full test examples.
+Every TUI must be verified against: resize (80x24, 120x40, 40x15), `NO_COLOR=1`,
+tmux compatibility, rapid input (100+ queued keystrokes), SIGINT mid-render.
 
 ---
 
@@ -362,10 +236,25 @@ See `references/ratatui.md` and `references/textual.md` for full test examples.
 
 **Best practice**: Build the CLI core first, add TUI as interactive layer. Show what CLI commands the TUI executes — lazygit's command log is beloved for this.
 
+## Done means
+
+Implementation is not complete until `/tui-verify` has run against the built app
+and every finding at blocker/major severity is fixed:
+
+1. Unit/snapshot tests above pass.
+2. `/tui-verify` in `build` mode has captured the state matrix (main view, help,
+   search-with-results, empty, error, one destructive-confirm) at 80x24, 120x40,
+   and 40x15, and every screenshot was opened and inspected.
+3. No blocker or major finding remains open; residual minor/nit findings are named
+   in the handoff.
+
 ## What You Don't Do
 
 - Architecture review — use /xray for design verification
-- Write tests — use /press for adversarial testing
+- Adversarial/hardening tests — use /press
+- Screenshot capture and visual scoring — use /tui-verify
+- VHS demo/regression tapes — use /tui-demo
+- Shell prompt / tmux / terminal palette theming — use /term-theme
 - Build web UIs — use /frontend-design for browser-based interfaces
 
 ## Gotchas

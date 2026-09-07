@@ -1,7 +1,7 @@
 # Textual Architecture Reference
 
-Patterns for production Textual apps. Use `fetch` with Context7 for API specifics —
-this covers architecture, not API surface.
+Patterns for production Textual apps. Use `mcp__context7__resolve-library-id` and `mcp__context7__query-docs` for API specifics.
+This reference covers architecture, not API surface.
 
 ## App Skeleton
 

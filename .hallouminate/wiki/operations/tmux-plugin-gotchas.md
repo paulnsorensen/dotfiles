@@ -31,11 +31,11 @@ Because of how continuum arms itself, the ordering is strict:
    `@plugin` list so its `status-right` expressions are already expanded when
    continuum appends.
 
-The canonical layout in `tmux/tmux.conf`:
+The canonical layout in root `tmux.conf`:
 
 ```
 # 1. load theme.conf (sets @thm_* + status-right)
-source-file ~/.config/tmux/theme.conf
+source-file -q ~/Dev/dotfiles/tmux/theme.conf
 
 # 2. plugin declarations (order matters)
 set -g @plugin 'catppuccin/tmux'
@@ -77,3 +77,28 @@ the palette, edit `theme/schemes/<name>.yaml` and run `dots sync` (which calls
 - `tmux/plugins/` in the repo — gitignored and **unreferenced as of June 2026**.
   It is dead weight left over from an earlier layout. Do not add files here
   expecting them to be loaded.
+
+## Isolated smoke checks
+
+Use a private socket and a temporary `@resurrect-dir` before loading root `tmux.conf`.
+A separate socket protects user sessions, but it does not separate resurrect save files.
+The save-directory override prevents test sessions from replacing the user's saved sessions.[^isolation]
+
+The 2026-09-07 trial uses tmux 3.7b and agent-tty 0.5.0.
+It checks configured options, TPM bindings, prefix splits with cwd retention, pane focus, copy-mode entry and exit, and detach.
+Continuum's save hook remains armed after a second config load.
+Manual resurrect save writes the test session into the temporary directory.
+Automatic restore stays off by design; this prevents stale sessions from appearing during a fresh launch.[^restore]
+
+Window dimensions match 120x40, 80x24, and 40x15, minus one status row.
+Initial agent-tty resize captures show stale duplicate status rows.
+An explicit `tmux refresh-client` produces clean frames at all three sizes.
+The trial does not establish whether tmux or the capture tool causes the stale frames.
+The zsh prompt wraps inside narrow panes; the tmux borders and status line remain intact after refresh.
+These captures establish layout evidence, not terminal palette fidelity.
+The trial does not test physical mouse input, the OS clipboard, or Ghostty's extended-key negotiation.
+All test clients and servers are removed after the trial.[^trial]
+
+[^isolation]: Installed `tmux-resurrect/scripts/helpers.sh:1-6` selects a shared default directory unless `@resurrect-dir` overrides it.
+[^restore]: `tmux.conf:172-175`.
+[^trial]: Local 2026-09-07 trial: `.context/tmux-smoke.py`, `.context/tmux-smoke.log`, and `.context/tmux-smoke-refreshed.log`. These files are gitignored evidence.

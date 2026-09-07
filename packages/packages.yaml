@@ -57,6 +57,14 @@ packages:
   # renovate: datasource=npm depName=@vtsls/language-server
   - vtsls: { source: npm, pkg: "@vtsls/language-server", version: "0.3.0" }
 
+  # TUI verification (/tui-verify, /tui-demo)
+  # agent-tty needs Node >=24 <27; run `agent-tty doctor` after install.
+  # Its bundled playwright (1.60) differs from a bare `npx playwright install`;
+  # run once: node "$(npm root -g)/agent-tty/node_modules/playwright/cli.js"
+  # install chromium-headless-shell
+  # renovate: datasource=npm depName=agent-tty
+  - agent-tty: { source: npm, version: "0.5.0" } # persistent PTY + screenshots for /tui-verify (needs Node >=24 <27; run `agent-tty doctor`)
+
   # Linters
   # renovate: datasource=npm depName=eslint
   - eslint: { source: npm, version: "10.9.1" }
