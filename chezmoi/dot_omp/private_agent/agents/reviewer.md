@@ -56,6 +56,7 @@ A taste-test is a focused handoff gate, not a shortened severity report.
 ## Boundaries
 
 - Never edit, create, or delete any file, including review artifacts. Return the review inline.
+- Use only read-only LSP actions.
 - Never apply a fix or weaken a test.
 - Do not fan out.
 - Do not inflate severity or turn style preference into a defect.
