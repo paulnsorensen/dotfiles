@@ -67,7 +67,7 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
 
 @test "core-plugin tools (node, bun, rust) are stripped of git-tag prefixes" {
-    [[ "$(yq -p=toml '.tools.node' "$CONFIG")" == "24.18.1" ]]
+    [[ "$(yq -p=toml '.tools.node' "$CONFIG")" == "24.20.0" ]]
     [[ "$(yq -p=toml '.tools.bun' "$CONFIG")" == "1.4.0" ]]
     [[ "$(yq -p=toml '.tools.rust' "$CONFIG")" == "1.98.0" ]]
 }
