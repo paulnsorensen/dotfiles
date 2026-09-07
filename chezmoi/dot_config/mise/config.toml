@@ -60,7 +60,7 @@
 "aqua:git-town/git-town" = "v24.0.0"
 "aqua:joshmedeski/sesh" = "v2.28.0"
 "aqua:casey/just" = "1.58.0"
-"aqua:twpayne/chezmoi" = "v2.72.0"
+"aqua:twpayne/chezmoi" = "v2.72.1"
 "aqua:duckdb/duckdb" = "v1.5.5"
 "aqua:chmln/sd" = "v1.1.0"
 "aqua:charmbracelet/vhs" = "v0.11.0"
