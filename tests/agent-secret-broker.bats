@@ -463,3 +463,36 @@ PY
     assert_success
     [[ "$output" == *bound* ]]
 }
+
+@test "minted nonces are hyphen-free by construction and approve via the CLI" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import sys
+from types import SimpleNamespace
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("broker_under_test", module_path)
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+policy = SimpleNamespace(consumer="fixture")
+store = module.PendingStore(policy)
+nonces = [store.create_or_get("write.item", {"i": i}).nonce for i in range(5000)]
+leading_hyphen = [nonce for nonce in nonces if nonce.startswith("-")]
+assert not leading_hyphen, f"{len(leading_hyphen)} of {len(nonces)} nonces began with '-'"
+print("ok")
+PY
+    assert_success
+    [[ "$output" == *ok* ]]
+
+    request='{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"write.item","arguments":{"nonce_check":true}}}'
+    run proxy_call "$request"
+    assert_success
+    nonce="$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"]["data"]["nonce"])')"
+    [[ "$nonce" != -* ]]
+
+    run "$CTL" approve --socket "$CONTROL" --nonce "$nonce"
+    assert_success
+    [[ "$output" == "{\"action\":\"approve\",\"nonce\":\"$nonce\",\"ok\":true}" ]]
+}
