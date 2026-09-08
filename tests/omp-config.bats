@@ -47,7 +47,7 @@ STDIN"
     [ "$(yq '.modelRoles.plan' "$OUT")" = "@strong:xhigh" ]
     [ "$(yq '.modelRoles.advisor' "$OUT")" = "@strong" ]
     [ "$(yq '.modelRoles.tiny' "$OUT")" = "@fast" ]
-    [ "$(yq '.modelRoles.slow' "$OUT")" = "@strong:xhigh" ]
+    [ "$(yq '.modelRoles.slow' "$OUT")" = "openai-codex/gpt-6-astra:high" ]
     [ "$(yq '.modelRoles.designer' "$OUT")" = "@balanced" ]
     [ "$(yq '.textVerbosity' "$OUT")" = "medium" ]
     [ "$(yq '.tools.artifactSpillThreshold' "$OUT")" = "2" ]

@@ -161,7 +161,7 @@ omp:
       plan: '@strong:xhigh'
       advisor: '@strong'
       tiny: '@fast'
-      slow: '@strong:xhigh'
+      slow: openai-codex/gpt-6-astra:high
       task: '@fast'
       commit: '@fast'
       vision: '@balanced'
