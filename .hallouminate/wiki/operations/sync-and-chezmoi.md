@@ -18,13 +18,29 @@ The custom backup/restore/rollback subsystem has been **deleted** (chezmoi-conso
 
 `dots sync` applies chezmoi **twice**, with package convergence in between, because the two have a circular dependency: packages are pinned by a chezmoi-managed manifest, and some chezmoi templates need the converged binaries.
 
-`run_sync` (`.sync`) drives it:
+`dots sync` upgrades packages by default before it applies settings.
+`--no-upgrade` disables upgrade mode but retains the previous cached package-sync behavior and harness-version checks.
+Combine it with `refresh` to bypass the package cache without enabling upgrade mode.
+`dots up` retains its Git pull and then uses the same sync path.
+`dots sync` does not pull Git changes.[^upgrade-first]
 
-1. **prepare** — `chezmoi` is dispatched with `CHEZMOI_SYNC_PHASE=prepare` (`.sync:130`). `chezmoi/.sync` wires chezmoi, applies the mise manifest, and **exits early at `:44`** without applying any generated config. If `chezmoi` isn't installed yet, a bootstrap-only `packages/sync.sh` run precedes all this (`.sync:111-123`).
-2. **package-sync** — `packages/sync.sh` runs with `MISE_CONFIG_FILE` pointed at the tracked source (`.sync:140-141`), converging brew, mise, cargo, npm, uv, and gh extensions. mise shims go on `PATH` immediately after (`.sync:142-143`).
-3. **final** — gated on `verify_harness_versions` (`.sync:146`). On pass, `CHEZMOI_SYNC_PHASE=final bash chezmoi/.sync` applies everything (`.sync:148`), then re-verifies (`.sync:152`). On fail, the apply is **skipped** and a `harness-versions` entry is recorded (`.sync:157-159`).
+`run_sync` uses this order:
 
-A skipped or failed final apply does not abort the run — upgraded packages are retained, failures accumulate in `SYNC_FAILURES`, and the run exits 1 at the end (`.sync:174-182`) after the remaining steps (TPM, prek hooks, tilth, Claude MCP reconcile, omp plugins) still execute.
+1. **Prepare:** Bootstrap chezmoi if necessary, then apply only the tracked mise manifest.
+2. **Packages:** Run package convergence with the tracked manifest and the selected upgrade mode.
+3. **Configuration:** Run the remaining directory scripts and symlink steps after package convergence succeeds.
+4. **Final apply:** Check harness versions, apply the full chezmoi source, then check versions again.
+
+The prepare exception prevents stale live mise pins from blocking their own replacement.
+See [[mise-manifest-precedence]].
+Upgrades preserve declared version pins and existing package exclusions.
+They do not replace pinned tools with arbitrary latest releases.
+
+A package process failure stops configuration dispatch.
+A failed final apply retains installed packages and records a sync failure.
+Remaining post-apply steps still run before the failure summary.[^upgrade-first]
+
+[^upgrade-first]: `.sync:125-180`, `.sync-lib.sh:200-221`, `bin/dots` upgrade dispatch, and `tests/sync-orchestrator.bats`. The shared upgrade mode removes the need for a separate package-upgrade command before settings deployment.
 
 Two consequences worth internalizing:
 

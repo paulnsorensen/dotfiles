@@ -41,6 +41,20 @@ and a new top-level `isolation.backend: auto` appeared. `omp config get
 task.isolation.mode` returned `Unknown setting`, so both were folded at live
 defaults — not normalized.
 
+### Retired-key migration must accompany a source rename
+
+On 2026-09-08, `dots sync` fails on the retired `task.isolation.mode` path with both harness versions already correct.
+OMP 18.1.14 rejects that setting and resolves `task.isolation.enabled` to `true`.
+The registry already contains the replacement, but the live file still contains `mode: auto`.[^isolation-migration]
+
+An upgrade-first sequence cannot remove this guard failure by itself.
+Allow deletion of the exact retired path in the modifier when the registry retires a setting.
+Keep the replacement in the registry.
+Do not restore the retired key or exempt its whole parent object.
+Unrelated unknown paths must still halt the apply.
+
+[^isolation-migration]: Verified with `bin/dots sync`, targeted `chezmoi diff`, and `omp config get` on 2026-09-08. Sources: `chezmoi/.chezmoidata/omp.yaml:118-131` and `chezmoi/dot_omp/private_agent/modify_config.yml:88-119`.
+
 ## The stale-serialization case (dev.autoqa)
 
 - omp's canonical file shape is **flat** `dev.autoqaConsent` since v17.0.0

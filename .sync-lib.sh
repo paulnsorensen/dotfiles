@@ -199,6 +199,7 @@ is_skipped() {
 # Parse run_sync arguments into exported env vars
 parse_sync_args() {
     export DOTFILES_DEV=false
+    export UPGRADE_MODE=true
 
     while (( $# )); do
       case $1 in
@@ -209,6 +210,10 @@ parse_sync_args() {
          refresh|r)
               echo "Setting force_packages=true"
               export FORCE_PACKAGES=true
+              ;;
+         --no-upgrade)
+              echo "Setting upgrade=false"
+              export UPGRADE_MODE=false
               ;;
       esac
       shift
@@ -293,6 +298,17 @@ sync_hidden_dirs() {
             SYNC_FAILURES+=("$name")
         fi
     done
+}
+
+
+# Run ordinary symlink and .sync dispatch after package convergence.
+sync_post_package_entries() {
+    local file
+    for file in *; do
+        [[ "$file" == "chezmoi" ]] && continue
+        sync_entry "$file"
+    done
+    sync_hidden_dirs
 }
 
 # Install TPM (tmux plugin manager) if not present, then run install_plugins
