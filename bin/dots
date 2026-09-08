@@ -176,6 +176,17 @@ do_sync() {
     SKILL_EXCLUDE_AGENTS="$skill_exclude_agents" \
         "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
         "$DOTFILES_DIR/skills/_registry.yaml" --force
+
+    # Run after the external installer so a newly refreshed shared skill can
+    # prove the legacy copy is a duplicate during this same sync.
+    local codex_skill_migration="$DOTFILES_DIR/chezmoi/lib/migrate-codex-skill-duplicates.sh"
+    if [[ -f "$codex_skill_migration" ]]; then
+        bash "$codex_skill_migration" \
+            "$HOME/.codex/skills" \
+            "$HOME/.agents/skills" \
+            "" \
+            "$DOTFILES_DIR/skills/_registry.yaml"
+    fi
 }
 
 # Show status
