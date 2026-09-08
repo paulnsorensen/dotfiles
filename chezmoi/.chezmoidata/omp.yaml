@@ -119,10 +119,16 @@ omp:
       eager: default
       enableLsp: true
       # omp-introduced (v17.3.x): per-task reasoning-effort control and task
-      # sandbox isolation mode — folded in at omp's live defaults.
+      # sandbox isolation — folded at omp's live defaults. v18.1.x replaced the
+      # nested `isolation.mode: auto` with a boolean `isolation.enabled` (omp
+      # now reports `task.isolation.mode` as an unknown setting).
       enableEffort: true
       isolation:
-        mode: auto
+        enabled: true
+    # omp-introduced (v18.1.x): top-level sandbox backend selector, sibling to
+    # the per-task `task.isolation` toggle above — folded at omp's live default.
+    isolation:
+      backend: auto
     # omp-introduced (v17.3.x) cross-harness slash-command import toggles.
     # All off, matching the external-discovery shutdown policy above.
     commands:
