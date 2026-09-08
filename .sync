@@ -113,6 +113,7 @@ run_sync() {
         PACKAGES_BOOTSTRAP_ONLY=true \
             MISE_CONFIG_FILE="$dir/chezmoi/dot_config/mise/config.toml" \
             FORCE_PACKAGES=true \
+            UPGRADE_MODE=false \
             bash "$dir/packages/sync.sh"
         export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims:$PATH"
         hash -r 2>/dev/null || true
@@ -125,14 +126,7 @@ run_sync() {
     log_info "Creating $olddir for backup of any existing dotfiles in ~"
     mkdir -p "$olddir"
 
-    for file in *; do
-        if [[ "$file" == "chezmoi" ]]; then
-            CHEZMOI_SYNC_PHASE=prepare sync_entry "$file"
-        else
-            sync_entry "$file"
-        fi
-    done
-    sync_hidden_dirs
+    CHEZMOI_SYNC_PHASE=prepare sync_entry chezmoi
 
     # The prepare phase wires chezmoi without applying generated config.
     # Converge against the tracked source manifest before the final cutover.
@@ -141,6 +135,7 @@ run_sync() {
         bash "$dir/packages/sync.sh"
     export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims:$PATH"
     hash -r 2>/dev/null || true
+    sync_post_package_entries
 
     if [[ -f "$dir/chezmoi/.sync" ]]; then
         if verify_harness_versions; then

@@ -121,6 +121,39 @@ setupVersion: 1'
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }
+@test "omp-config: retired task isolation mode is migrated" {
+    run_modify 'symbolPreset: nerd
+theme:
+  dark: chocolate-donut
+  light: light
+task:
+  enableLsp: true
+  isolation:
+    enabled: true
+    mode: auto
+setupVersion: 1'
+    [ "$status" -eq 0 ]
+    [ "$(yq 'has("task") and (.task.isolation | has("mode") | not)' "$OUT")" = "true" ]
+    [ "$(yq '.task.isolation.enabled' "$OUT")" = "true" ]
+    [ "$(yq '.task.enableLsp' "$OUT")" = "true" ]
+    [ "$(yq '.setupVersion' "$OUT")" = "1" ]
+}
+
+@test "omp-config: unknown task isolation key still halts" {
+    run_modify 'symbolPreset: nerd
+theme:
+  dark: chocolate-donut
+  light: light
+task:
+  enableLsp: true
+  isolation:
+    enabled: true
+    unexpected: true
+setupVersion: 1'
+    [ "$status" -ne 0 ]
+    [ ! -s "$OUT" ]
+    [[ "$output" == *"task.isolation.unexpected"* ]]
+}
 @test "omp-config: unknown compaction key is not covered by retired-key deletion" {
     run_modify 'symbolPreset: nerd
 theme:

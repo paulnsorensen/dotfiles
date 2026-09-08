@@ -92,7 +92,7 @@ desired=$(printf '%s' "$live_json" | jq --argjson desired "$desired" '
 # node-path (not just scalar leaves) so a new key whose value is an empty
 # object/array or null is caught too. setupVersion is in the desired document
 # (preserved above), so it never trips this gate.
-retired_paths='[["compaction","thresholdTokens"],["compaction","strategy"]]'
+retired_paths='[["compaction","thresholdTokens"],["compaction","strategy"],["task","isolation","mode"]]'
 unknown=$(
     printf '%s' "$live_json" | jq -r \
         --argjson desired "$desired" \

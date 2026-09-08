@@ -71,7 +71,7 @@ ${GREEN}Usage:${NC} dots [command] [args]
 
 ${BLUE}Commands:${NC}
   ${GREEN}update${NC}          Pull latest changes and run sync
-  ${GREEN}sync${NC}            Run the sync script
+  ${GREEN}sync${NC}            Run the sync script (upgrades packages by default)
   ${GREEN}upgrade${NC}         Pull dotfiles, then upgrade brew remainder/casks and exempt channels
   ${GREEN}status${NC}          Show git status of dotfiles
   ${GREEN}rollback${NC}        Show how to undo a sync (git revert + dots sync)
@@ -89,6 +89,7 @@ ${BLUE}Quick Actions:${NC}
   ${GREEN}dots u${NC}          Update (shorthand)
   ${GREEN}dots s${NC}          Sync (shorthand)
   ${GREEN}dots s refresh${NC}  Force re-check all packages (bypass cache)
+  ${GREEN}dots s --no-upgrade${NC}  Sync without package upgrades
   ${GREEN}dots up${NC}         Upgrade packages (shorthand)
   ${GREEN}dots t${NC}          Test (shorthand)
 
@@ -447,7 +448,8 @@ case "${1:-status}" in
         # UPGRADE_MODE bypasses the package cache, but pinned installers still
         # converge to their recorded versions. `do_sync` also refreshes
         # unpinned external skills for non-Claude harnesses.
-        UPGRADE_MODE=true do_sync
+        shift
+        UPGRADE_MODE=true do_sync "$@"
         ;;
     status|st)
         do_status
