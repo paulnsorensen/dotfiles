@@ -69,6 +69,10 @@ every credential file ends up quote-wrapped and rejected by the upstream API.
    --nonce <nonce>`. Any argument change, replay, or 60-second expiry fails
    closed.
 
+`dots sync` compares the five repo-owned broker assets with `/usr/local/libexec/dotfiles` and warns when reprovisioning is required; `dots doctor` reports the same hash drift as a health failure. Neither command crosses the operator boundary or rewrites root-owned assets automatically.[^broker-staleness]
+
+[^broker-staleness]: `bin/lib/agent-secret-staleness.sh:1-52`; `bin/dots:181-192,314-342`
+
 ## MCP enforcement
 
 The broker exposes only policy-listed tools from `tools/list`. A read call is
