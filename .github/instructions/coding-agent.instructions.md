@@ -3,31 +3,12 @@ applyTo: "**"
 excludeAgent: "code-review"
 ---
 
-## Coding Agent Guidelines
+## Copilot Implementation Guidance
 
-When implementing changes:
+Use root `AGENTS.md` as the implementation policy. Read the applicable path-scoped instruction file before editing a matching path.
 
-- Read existing code before modifying it — understand the patterns in use
-- Follow the existing code style of the file you are editing
-- Keep changes minimal and focused on the issue at hand
-- Do not refactor surrounding code unless the issue requires it
-- Do not add docstrings to helper functions or private methods with clear names
-- Do not introduce new dependencies without explicit approval
-- Prefer editing existing files over creating new ones
-
-## Dotfiles-Specific Rules
-
-- Shell scripts must use `set -euo pipefail` at the top
-- Quote all variable expansions: `"$var"`, never bare `$var`
-- New zsh config files must be sourced from `zshrc` at the correct load order point
-- New Claude skills go in `skills/<name>/SKILL.md` with frontmatter
-- New agents are registered in `agents/registry.yaml` with their body at `agents/agent_definitions/<name>.md`
-- New MCP servers go in `agents/mcp/registry.yaml`, not hardcoded JSON. The registry is harness-agnostic — entries install into Claude AND Codex by default; set `harnesses: [claude]` or `harnesses: [codex]` to scope a single entry.
-- Run `dots sync` after any changes to files that get symlinked to `~/.claude/`
-
-## Architecture Rules
-
-- Claude skills are self-contained — each defines its own `allowed-tools`
-- Skills reference tools by their correct domain (trace for ast-grep, cheez-search for rg/fd, LSP for symbols)
-- Hooks are JavaScript (pre-tool) or shell (lifecycle) — do not mix
-- `common/` is a leaf — it imports nothing from siblings
+- Edit the declared source of truth, not generated Copilot output.
+- Keep Copilot instruction files concise and preserve their YAML frontmatter.
+- Keep renderer changes in `agent-profile/` with focused tests and the matching wiki update.
+- Keep shared registry changes in `agents/` or `skills/` as the source map requires.
+- Keep native Copilot configuration changes in `chezmoi/private_dot_copilot/`; native plugin declarations remain in `agents/plugins/registry.yaml`.

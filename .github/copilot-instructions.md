@@ -1,69 +1,31 @@
 # Copilot Instructions
 
-## Repository Context
+Copilot uses this file for repository-wide routing. It also reads root `AGENTS.md` and applicable files under `.github/instructions/`.
 
-This is a personal dotfiles repository for a macOS developer environment. It configures zsh shell, iTerm2, VS Code, git, and Claude Code integration. It is NOT an application or library — do not apply generic software patterns.
+Treat root `AGENTS.md` as the repository policy and source-ownership authority. Do not copy its policy into this file. Do not override it with generic application guidance.
 
-## Engineering Principles
+## Start here
 
-1. **Fail Fast and Loud** — Scripts must exit on error. No silent failures, no empty catch blocks.
-2. **Idempotent** — Every script must be safe to run multiple times without side effects.
-3. **YAGNI** — No abstractions without immediate need. One user, no backward compatibility.
-4. **Immutable Patterns** — Prefer pure functions; avoid shared mutable state.
-5. **Loose Coupling** — Configuration modules are independent. Claude skills, agents, and hooks don't cross-import.
+- Read `AGENTS.md` before changing configuration, harness wiring, registries, `ap`, chezmoi, or sync behavior.
+- Read `.hallouminate/wiki/harnesses/copilot.md` for Copilot behavior and native configuration.
+- Read `.hallouminate/wiki/harnesses/index.md` for cross-harness source and output mapping.
+- Read `.hallouminate/wiki/architecture/agents-dir.md` for shared registry ownership.
+- Read `.hallouminate/wiki/architecture/agent-profile.md` for `ap` renderer behavior.
+- Read `.hallouminate/wiki/operations/sync-and-chezmoi.md` for deployment behavior.
 
-## Complexity Budget
+## Edit source, not output
 
-- **Functions**: Maximum 40 lines
-- **Files**: Maximum 300 lines
-- **Parameters**: Maximum 4 per function
-- **Nesting**: Maximum 3 levels deep
+- Shared MCP, hook, agent, and skill sources live in `agents/` and `skills/`.
+- Copilot agent, skill, and hook output lives under `.github/` when a renderer creates it.
+- Copilot MCP defaults live in `chezmoi/private_dot_copilot/mcp-config.json.tmpl`; runtime state remains user-owned.
+- Renderer behavior lives in `agent-profile/`; renderer tests live beside that package.
+- Claude-native configuration data lives in `chezmoi/.chezmoidata/claude.yaml`.
 
-## Code Style
+Use the source-of-truth table in `AGENTS.md` for every edit. Regenerate and deploy through the documented command instead of hand-editing rendered output.
 
-- **Classes**: PascalCase
-- **Functions**: snake_case (Python) / camelCase (JS)
-- **Constants**: SCREAMING_SNAKE_CASE
-- **Files**: kebab-case
-- **Commits**: Conventional Commits format (`feat:`, `fix:`, `chore:`)
+## Copilot-specific guidance
 
-## Architecture
-
-```
-dotfiles/
-  bin/          CLI tools (dots command)
-  claude/       Claude Code config (agents, commands, hooks, MCP)
-  skills/       Agent skill sources (synced to ~/.claude/skills via chezmoi)
-  zsh/          Modular shell config files (sourced by zshrc)
-  .github/      Copilot and workflow config
-```
-
-- `zsh/` files are sourced in order defined by `zshrc` — ordering matters
-- `skills/` are self-contained — each has its own SKILL.md with allowed-tools
-- `agents/agent_definitions/` hold agent bodies; their metadata (including the skills list) lives in `agents/registry.yaml`
-- Claude config syncs to `~/.claude/` via `dots sync`
-
-## Tech Stack
-
-- **Shell**: zsh (macOS), shellcheck for linting
-- **Package Manager**: Homebrew (packages in `.brew`)
-- **Claude Code**: Skills, agents, hooks, MCP servers
-- **Testing**: bats (shell tests via `dots test`)
-- **Sync**: `.sync` orchestrator (symlinks + per-directory `.sync` scripts)
-
-## Build and Test
-
-- `dots sync` — Sync dotfiles (symlinks, Homebrew, fonts)
-- `dots test` — Run test suite (validates shell loading, git hooks, symlinks, Claude config sync)
-- `shellcheck bin/* .sync` — Lint shell scripts
-- `mcp-sync` — Sync MCP servers from registry.yaml
-- `plugin-sync` — Sync plugins from registry.yaml
-
-## What NOT to Do
-
-- Do not suggest Docker, CI/CD pipelines, or deployment workflows
-- Do not add backward-compatibility layers — one user, no production data
-- Do not create abstract base classes, factories, or plugin registries
-- Do not suggest unit tests for shell aliases or simple config files
-- Do not add `#!/usr/bin/env bash` to `.zsh` files (they are sourced, not executed)
-- Do not wrap single-use logic in helper functions
+- Keep repository-wide Copilot guidance here and path-specific guidance in `.github/instructions/*.instructions.md`.
+- Preserve each instruction file's YAML frontmatter and `applyTo` glob.
+- Copilot has no isolated closed-world launcher in this repository. Do not claim that it provides one.
+- Keep changes concise because Copilot combines these files with `AGENTS.md` and other instruction layers.

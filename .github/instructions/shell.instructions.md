@@ -1,13 +1,13 @@
 ---
-applyTo: "**/*.{sh,zsh,bash}"
+applyTo: "bin/**,**/*.sh,**/*.sh.tmpl,**/*.zsh,**/*.bash,.sync,**/.sync,**/*.bats,.vars,iterm2/.scrub,iterm2/.updatetemplate"
 ---
 
-- Use `set -euo pipefail` at the top of executable scripts
-- `.zsh` files in `zsh/` are sourced, not executed — do not add shebangs
-- Quote all variable expansions: `"$var"`, not `$var`
-- Use `[[ ]]` over `[ ]` for conditionals
-- Use `local` for all function-scoped variables
-- Prefer `printf` over `echo` for portable output
-- Use functions for any logic that repeats or exceeds 10 lines
-- Claude/MCP aliases go in `zsh/claude.zsh`, general utilities in `zsh/aliases.zsh`
-- Test shell changes with `dots test` (bats)
+## Shell Files
+
+Use root `AGENTS.md` for shell policy and test requirements.
+
+- Treat `.zsh` files under `zsh/` as sourced libraries, not executable scripts.
+- Add shebangs and strict mode only to executable scripts that own process boundaries.
+- Quote variable expansions and preserve the file's existing shell dialect.
+- Keep Copilot hook scripts under their declared source path; generated `.github/hooks/` files are output.
+- Keep secrets out of shell files and templates.

@@ -1,36 +1,21 @@
 ---
-applyTo: "{claude,skills}/**"
+applyTo: "{agents,agent-profile,chezmoi,claude,skills}/**"
 ---
 
-## Claude Code Configuration
+## Configuration Source Map
 
-This directory contains Claude Code configuration: agents, hooks, MCP servers, plugins, and settings. Skill sources live in `skills/` at the repo root.
+Use root `AGENTS.md` for repository policy and the source-of-truth table. Use the wiki pages named by the Copilot router for rationale.
 
-### File Types
+- `agents/mcp/registry.yaml` owns shared MCP declarations.
+- `agents/hooks/registry.yaml` owns shared hook declarations.
+- `agents/registry.yaml` and `agents/agent_definitions/` own sub-agent metadata and bodies.
+- `skills/_registry.yaml` and `skills/` own external and local skill sources.
+- `claude/plugins/registry.yaml` owns Claude-native plugin declarations and `claude/` owns plugin content.
+- `chezmoi/.chezmoidata/claude.yaml` owns Claude-native registry data.
+- `chezmoi/.chezmoidata/codex.yaml` and `chezmoi/private_dot_codex/` own Codex configuration.
+- `chezmoi/private_dot_copilot/` owns chezmoi-managed Copilot files.
+- `agent-profile/` owns `ap` renderers and their tests.
 
-- `skills/*/SKILL.md` — Skill definitions with YAML frontmatter (name, allowed-tools, model, description)
-- `agents/agent_definitions/*.md` — Agent bodies (instruction-only Markdown; metadata lives in `agents/registry.yaml`)
-- `claude/hooks/*.js` — Pre-tool hooks (JavaScript, `module.exports` pattern)
-- `claude/hooks/*.sh` — Lifecycle hooks (shell, runs at session events)
-- `agents/mcp/registry.yaml` — MCP server registry (source of truth, shared across harnesses)
-- `claude/plugins/registry.yaml` — Plugin registry
-- `claude/settings.json` — Permissions, environment, hooks, enabled plugins
+Copilot renderer output uses `.github/agents/`, `.github/skills/`, and `.github/hooks/`. Treat those files as generated when `ap` creates them.
 
-### Code Intelligence Tool Division
-
-Two complementary tools — changes must respect their boundaries:
-
-| Tool | Domain | Skill |
-|---|---|---|
-| ast-grep (`sg`) | Structural pattern matching (code shapes) | trace |
-| LSP plugins | Type inference, diagnostics, symbol lookup, cross-refs | lsp |
-
-Do not attribute one tool's capabilities to another in descriptions or docs.
-
-### Conventions
-
-- Skills define their own `allowed-tools` — do not add tool permissions to `settings.json` for skill-gated tools
-- Agent `skills:` arrays reference skill names, not tool names
-- Hook filenames match their purpose: `block-*.js` for pre-tool enforcement, `post-*.sh`/`pre-*.sh` for lifecycle
-- MCP changes go through `registry.yaml` + `mcp-sync`, never direct JSON editing
-- All config syncs to `~/.claude/` via `dots sync` — the pre-commit hook verifies this
+When a renderer changes output paths or behavior, update the matching wiki page and regression test in the same change. Use `dots sync` only for deployment after source edits.

@@ -1,49 +1,17 @@
 ---
 applyTo: "**"
-excludeAgent: "coding-agent"
+excludeAgent: "cloud-agent"
 ---
 
-## Code Review Focus
+## Copilot Review Focus
 
-Focus reviews on these categories, in priority order:
+Use root `AGENTS.md` as the review policy. Verify current behavior against source files and the relevant wiki page.
 
-1. **Security** — Flag hardcoded secrets, API keys, tokens, passwords, or credentials in any file
-2. **Silent failures** — Flag empty catch blocks, swallowed errors, missing error handling on I/O operations
-3. **Complexity violations** — Flag functions over 40 lines, files over 300 lines, nesting deeper than 3 levels
-4. **Consistency** — Flag patterns that contradict established conventions in the codebase
-5. **CLAUDE.md quality** — When `CLAUDE.md`, `AGENTS.md`, or `agents/AGENTS.md` is in the diff, verify changes are consistent with the tool division (trace for structural, LSP for semantic navigation and type inference)
+- Check that configuration changes use the source-of-truth paths in `AGENTS.md`.
+- Check that generated Copilot files remain consistent with their registry or chezmoi source.
+- Check `.github/instructions/*.instructions.md` frontmatter and `applyTo` globs when those files change.
+- Check Copilot output paths under `.github/agents/`, `.github/skills/`, and `.github/hooks/` against the renderer.
+- Check secrets at configuration boundaries and reject plaintext credentials.
+- Check renderer behavior changes for matching tests and wiki updates.
 
-## CLAUDE.md Validation
-
-When any `CLAUDE.md` file is modified, check:
-
-- Key Commands section documents all new commands/aliases
-- Architecture section reflects actual directory structure
-- Skill Delegation table matches the skills in `skills/`
-- No duplicate information between `CLAUDE.md`/`AGENTS.md` (project) and `agents/AGENTS.md` (global)
-- Complexity Budget numbers are consistent across all files
-
-## Claude Skill Validation
-
-When any `skills/*/SKILL.md` is modified, check:
-
-- `allowed-tools` lists only tools the skill actually uses
-- `description` accurately describes when to invoke the skill
-- Tool division is respected (no skill claims capabilities belonging to another tool)
-- Examples use correct syntax for the tool (e.g., `sg` patterns, `rg` flags)
-
-## What NOT to Comment On
-
-- ShellCheck issues — handled by pre-commit hooks (prek)
-- Formatting and whitespace — handled by pre-commit hooks
-- Import ordering — not applicable to shell/config files
-- Missing docstrings on internal functions
-- Style preferences consistent with the rest of the codebase
-- Nitpicks with no functional impact
-
-## Review Style
-
-- Only comment when confidence is high
-- If a pattern is used consistently elsewhere in the codebase, do not flag it
-- Suggest specific fixes, not vague improvements
-- One comment per issue — do not repeat the same feedback across files
+Do not invent complexity ceilings or require generic application architecture for this dotfiles repository. Do not review rendered files as source files.
