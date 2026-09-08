@@ -319,6 +319,19 @@ def _approval_digest(consumer: str, tool: str, canonical_arguments: str, nonce: 
     return hashlib.sha256(material).hexdigest()
 
 
+def _new_nonce() -> str:
+    # token_urlsafe draws from the URL-safe base64 alphabet (A-Za-z0-9_-). A
+    # nonce that begins with "-" is parsed by argparse as an option flag, so
+    # `agent-secretctl approve --nonce -Xyz` dies with "expected one argument"
+    # (a ~1/64 flaky break in tests, and an unapprovable nonce for a real
+    # operator). Re-roll until the leading character is CLI-safe; interior
+    # "-"/"_" are harmless. A fresh 24-byte token each draw preserves entropy.
+    while True:
+        nonce = secrets.token_urlsafe(24)
+        if not nonce.startswith("-"):
+            return nonce
+
+
 class PendingStore:
     def __init__(self, policy: BrokerPolicy):
         self._policy = policy
@@ -344,7 +357,7 @@ class PendingStore:
             previous = self._by_key.get(key)
             if previous is not None and previous.state in {"pending", "approved"}:
                 return previous
-            nonce = secrets.token_urlsafe(24)
+            nonce = _new_nonce()
             expires_at = int(now) + APPROVAL_TTL
             item = PendingApproval(
                 consumer=self._policy.consumer,
@@ -1041,7 +1054,40 @@ def _requested_mode(mode: str | None, argv: list[str] | None) -> str | None:
     except (ValueError, IndexError):
         return mode
 
+
+_APPROVE_FLAGS = frozenset({
+    "-h", "--help", "--socket", "--control-socket", "--consumer", "--nonce",
+    "--approval", "--approval-consumer", "--tool", "--expires-at", "--arguments",
+})
+
+
+def _normalize_nonce_argv(argv: list[str] | None) -> list[str]:
+    # A nonce is URL-safe base64 (A-Za-z0-9_-) and may legitimately begin with
+    # "-". argparse reads "--nonce -Xyz" as an option and aborts with "expected
+    # one argument", so an operator cannot approve such a nonce. The broker no
+    # longer mints dash-leading nonces (see _new_nonce), but one issued by a
+    # pre-fix broker may still be pending across a restart. Rewrite the space
+    # form to "--nonce=<value>", which argparse accepts. Only rewrite when the
+    # value is not itself a known flag, so a genuinely missing value still
+    # errors instead of swallowing the next option.
+    values = list(sys.argv[1:] if argv is None else argv)
+    out: list[str] = []
+    i = 0
+    while i < len(values):
+        token = values[i]
+        if token == "--nonce" and i + 1 < len(values):
+            nxt = values[i + 1]
+            if nxt.startswith("-") and nxt not in _APPROVE_FLAGS:
+                out.append(f"--nonce={nxt}")
+                i += 2
+                continue
+        out.append(token)
+        i += 1
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = _normalize_nonce_argv(argv)
     mode = _requested_mode(_mode_from_argv0(), argv)
     parser = _build_parser(mode)
     args = parser.parse_args(argv)

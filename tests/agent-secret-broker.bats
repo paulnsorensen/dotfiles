@@ -463,3 +463,53 @@ PY
     assert_success
     [[ "$output" == *bound* ]]
 }
+
+@test "generated nonces are CLI-safe (never begin with a dash)" {
+    run "$PYTHON" - "$REAL_DOTFILES_DIR/scripts/agent-secret-broker.py" <<'PY'
+import importlib.util
+import secrets
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("broker_under_test", module_path)
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+# A nonce that begins with "-" is read by argparse as a flag, so
+# `agent-secretctl approve --nonce -Xyz` fails with "expected one argument".
+# Deterministic guard: force the generator to emit a dash-leading token first
+# and confirm _new_nonce re-rolls past it.
+seq = iter(["-dash-leading-should-skip", "Safe_nonce_value"])
+real = secrets.token_urlsafe
+secrets.token_urlsafe = lambda n: next(seq)
+try:
+    got = module._new_nonce()
+finally:
+    secrets.token_urlsafe = real
+assert got == "Safe_nonce_value", got
+
+# Statistical guard on the real os.urandom path: no live draw may begin with
+# "-". Unfixed, ~1/64 of draws do, so 5000 samples catch it with near
+# certainty.
+for _ in range(5000):
+    assert not module._new_nonce().startswith("-")
+print("cli-safe")
+PY
+    assert_success
+    [[ "$output" == *cli-safe* ]]
+}
+
+@test "approve accepts a nonce that begins with a dash (CLI hardening)" {
+    # A pre-fix broker could still hold a pending nonce that begins with "-".
+    # Before the hardening argparse aborts with exit 2 and "expected one
+    # argument"; after it, parsing succeeds and only the socket connection to a
+    # nonexistent path fails (exit 1).
+    run "$CTL" approve --socket "$TEST_ROOT/no-such.sock" --nonce "-Ab3xyz_dashlead"
+    [[ "$status" -eq 1 ]]
+    [[ "$output" != *"expected one argument"* ]]
+
+    # A genuinely missing nonce value must still error, not swallow --consumer.
+    run "$CTL" approve --socket "$TEST_ROOT/no-such.sock" --nonce --consumer fixture
+    [[ "$output" == *"expected one argument"* ]]
+}
