@@ -165,8 +165,6 @@ Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
   cheese-factory full-peer worker — sits at coder tier (75/100) for this reason;
   a new pipeline-scale agent type left off the table gets half a coder's budget.
 
-
-
 ### Measured 2026-09-09: the 90k soft-stop was dead text; the resume brief replaces it
 
 `/session-analytics` over 203 unique coder sub-agent transcripts (Jul–Sep 2026, `~/.claude/projects/*/*/subagents/agent-*.jsonl`, context = `input + cache_read + cache_creation` per assistant message):
