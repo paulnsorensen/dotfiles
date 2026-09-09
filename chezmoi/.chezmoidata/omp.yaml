@@ -105,6 +105,8 @@ omp:
       keepRecentTokens: 20000
       midTurnEnabled: true
       autoContinue: true
+      # OMP v18.1.14 enables streaming for remote compaction responses.
+      remoteStreamingV2Enabled: true
     lsp:
       enabled: true
       lazy: true

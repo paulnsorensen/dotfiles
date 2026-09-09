@@ -66,6 +66,7 @@ STDIN"
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.compaction.midTurnEnabled' "$OUT")" = "true" ]
     [ "$(yq '.compaction.autoContinue' "$OUT")" = "true" ]
+    [ "$(yq '.compaction.remoteStreamingV2Enabled' "$OUT")" = "true" ]
     [ "$(yq '.task.enableLsp' "$OUT")" = "true" ]
     [ "$(yq '.retry.modelFallback' "$OUT")" = "false" ]
     [ "$(yq '.lsp.lazy' "$OUT")" = "true" ]
