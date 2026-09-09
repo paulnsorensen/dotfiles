@@ -59,6 +59,7 @@ STDIN"
     [ "$(yq '.skills.enableSkillCommands' "$OUT")" = "true" ]
     [ "$(yq '.tui.tight' "$OUT")" = "true" ]
     [ "$(yq '.composer.shape' "$OUT")" = "box" ]
+    [ "$(yq '.spelling.autocomplete' "$OUT")" = "false" ]
     [ "$(yq '.startup.quiet' "$OUT")" = "true" ]
     [ "$(yq 'has("compaction") and (.compaction | has("thresholdTokens"))' "$OUT")" = "false" ]
     [ "$(yq 'has("compaction") and (.compaction | has("strategy"))' "$OUT")" = "false" ]

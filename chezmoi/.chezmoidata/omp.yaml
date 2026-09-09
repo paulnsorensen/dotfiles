@@ -88,6 +88,9 @@ omp:
     # default.
     composer:
       shape: box
+    spelling:
+      # Disable macOS dictionary completions shown as predictive inline text.
+      autocomplete: false
     startup:
       quiet: true
     advisor:
