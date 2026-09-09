@@ -37,5 +37,7 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 
 ## Measurement and prompting
 
+- [[ci-optimization]] — import-only CI and local measurement contracts, attempt boundaries, and limits on comparison claims.
+
 - [[test-suite-performance]] — the Bats suite is dominated by repeated integration setup, not runner parallelism; keep the CPU-count default and shorten the work inside tests instead of tuning job count.
 - [[prompting-claude-opus-5]] — the Opus 5 behaviour deltas that actually change decisions here: model-tier pins, review fan-out sizing, verification scaffolding, delegation restraint.

@@ -67,3 +67,5 @@
 2026-09-06 · wiki-harvest-20260906 · merged · architecture/cross-harness-guards.md · Corrected stale "proposed, not merged" status on the Tilth payload coverage section: PR #891 (commit 5b8bb72) merged and deployed on main; verified editTargets/move_file handling against agents/lib/sensitive-file-guard.js and claude/hooks/worktree-guard.js.
 
 2026-09-08 · 98ab6e3d49b0f009 · merged · operations/sync-and-chezmoi.md · Record persistent environment setup for parser tests; temporary function assignments cause false failures.
+
+2026-09-08 · c980af7ece888d18 · new-page · operations/ci-optimization.md · Record import-only timing, attempt identity, and comparison limits.

@@ -19,8 +19,8 @@ lint-shell:
 
 # ruff on python files
 lint-python:
-    ruff check skills/session-analytics/scripts/
-    ruff format --check skills/session-analytics/scripts/
+    ruff check skills/session-analytics/scripts/ skills/ci-optimize/scripts tests/ci_optimize/
+    ruff format --check skills/session-analytics/scripts/ skills/ci-optimize/scripts tests/ci_optimize/
 
 # eslint on JS hooks (config in claude/hooks/eslint.config.js)
 lint-js:
