@@ -296,7 +296,7 @@ stub_claude_gate() {
 }
 
 @test "sync parser upgrades by default and honors --no-upgrade over inherited mode" {
-    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh'; parse_sync_args; printf 'default=%s\\n' \"\$UPGRADE_MODE\"; UPGRADE_MODE=true parse_sync_args --no-upgrade; printf 'optout=%s\\n' \"\$UPGRADE_MODE\""
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh'; parse_sync_args; printf 'default=%s\\n' \"\$UPGRADE_MODE\"; export UPGRADE_MODE=true; parse_sync_args --no-upgrade; printf 'optout=%s\\n' \"\$UPGRADE_MODE\""
     assert_success
     assert_output_contains "default=true"
     assert_output_contains "optout=false"
