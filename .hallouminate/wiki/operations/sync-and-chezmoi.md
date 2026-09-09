@@ -130,6 +130,17 @@ Every shell function that does real work needs a bats test. `.sync` (and any orc
 - A `tests/<area>.bats` file exercises every branch; mock externals (`gh`, `claude`, `yq`, `jq`, `chezmoi`) by putting fakes earlier on `$PATH` (see `tests/chezmoi-wiring.bats`, `tests/skills-external.bats`).
 - `.sync` scripts stay thin: parse args, source lib, dispatch. Add new test files to `tests/run-tests.sh` so `dots test` runs them.
 
+### Parser tests must use persistent environment setup
+
+Set `UPGRADE_MODE` with a separate `export UPGRADE_MODE=true` statement before calling `parse_sync_args --no-upgrade`.
+A function-prefix assignment creates a temporary binding that Bash restores after the function returns.
+The old test therefore observed `true` after the parser correctly exported `false`.
+The separate export matches the persistent environment used by the real sync caller.[^parser-test-environment]
+
+[^parser-test-environment]: `tests/dots.bats:298-302`; `.sync:83-86`; `.sync-lib.sh:199-221`. Reproduction on Bash 5.3.15: prefix assignment restores `true`; separate export and inherited child-process environment both retain `false`.
+
+*Source: sync parser regression diagnosis · Updated: 2026-09-08 · Supersedes: none*
+
 ## Gotcha: private skill sources need a git credential helper (self-healed since 2026-08-28)
 
 **Symptom (historical):** `dots up`/`dots sync` hung on `Username for 'https://github.com'` mid-sync. Cause: `_cz_vendor_external_skills` (.sync-lib.sh) clones external skill sources over plain HTTPS, and `skills/_registry.yaml` includes the PRIVATE repo `paulnsorensen/routines` — on a box where `gh` was authed but `gh auth setup-git` had never run, git had no credential helper and fell back to an interactive prompt. (A typed GitHub password would not have worked anyway — git password auth is dead; only the helper-supplied token works.)

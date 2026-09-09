@@ -24,3 +24,19 @@ Related: [[just-check-claude-guard-flake]] — the other `just check` false
 alarm (ambient session count, not a real regression). [[../architecture/config-drift]]
 catalogs the platform-specific `just check` gotchas (macOS-only failures,
 `cd -P` canonicalization); this page is the mutation-during-verification one.
+
+## Boundary for reusable build skills
+
+A reusable build skill must preserve this repository's verification policy.
+The installed `justfile` skill defaults to an autofix `build` gate and a separate non-mutating `ci` gate.[^skill-default]
+Those defaults do not replace this repository's explicit separation between `check` and `lint-fix`.[^repo-gate]
+Otherwise, a command cleanup can restore the mutation defect that this page records.
+
+Local and CI checks can share recipes without sharing one execution schedule.
+The local gate runs independent checks through GNU parallel.
+GitHub CI separates lint and test jobs, then runs three test recipes as separate steps.[^ci-layout]
+Thus, command parity concerns the checks and their inputs, not one required job layout.
+
+[^skill-default]: Installed skill inspected 2026-09-07: `~/.agents/skills/justfile/SKILL.md:34-51,255-258`. This is evidence of the installed default, not its source location.
+[^repo-gate]: `justfile:34-47,71-81`; `AGENTS.md:51-57`.
+[^ci-layout]: `.github/workflows/test.yml:12-82`; `justfile:75-81`.
