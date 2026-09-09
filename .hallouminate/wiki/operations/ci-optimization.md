@@ -37,6 +37,26 @@ An acknowledgement cannot waive a different workflow, event, workload, or valida
 It also cannot prove that checks and artifacts remain equivalent.
 The optimization workflow must verify those properties separately.[^tests]
 
+## Skill approval and deployment
+
+The skill separates a measurement run plan from approval of optimization edits.
+A request to optimize does not approve an unspecified cache or workflow change.
+Local commands, cache operations, costs, cleanup, installs, and remote actions need explicit run-plan authorization.[^skill]
+
+The pressure test confirms that the skill leaves source unchanged before plan approval.
+It also rejects faster CI results when required coverage or its artifact disappears.
+This protects the validation contract rather than accepting any smaller number.[^skill]
+
+Claude selects the local skill through `claude.skills`.
+Its frontmatter uses the repository's `sonnet` / `medium` route.
+The generic skill validator rejects these host fields; the repository's model-effort tests define the applicable contract.[^routing]
+The assembler retains nested directories and executable file attributes.
+Thus, the helper becomes `exact_scripts/executable_ci_optimize.py` in source state.
+Byte tests must use encoded source names, not deployed target names.[^assembly]
+
+The existing OMP and profile paths consume local skills through their own assembly paths.
+This selection does not change Codex global skill selection.[^assembly]
+
 ## Repository gates
 
 The Bats wrapper includes helper unit tests in the existing test gate.
@@ -48,6 +68,9 @@ Related: [[just-check-read-only-gate]] records why generic task-runner defaults 
 [^cli]: `skills/ci-optimize/scripts/ci_optimize.py`, `ci`, `local`, and `compare` commands.
 [^attempts]: [GitHub attempt jobs endpoint](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt); [GitHub run attempt endpoint](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt).
 [^tests]: `tests/ci_optimize/` exercises the CLI data and comparison contracts.
+[^skill]: `skills/ci-optimize/SKILL.md`; approval and validation-equivalence pressure scenarios, 2026-09-08.
+[^routing]: `tests/agent-skill-model-effort.bats`, selected non-inline skill tests; `skills/harness-doctor/SKILL.md`, existing routing convention.
+[^assembly]: `.sync-lib.sh`, `_cz_encode_name` and `sync_claude_chezmoi_sources`; `tests/chezmoi-wiring.bats`, assembled payload test.
 [^gates]: `tests/ci-optimize.bats`; `justfile`, `lint-python` and `check` recipes.
 
 *Source: approved ci-optimize implementation contract and endpoint verification · Updated: 2026-09-08 · Supersedes: none*
