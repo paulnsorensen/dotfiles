@@ -355,6 +355,27 @@ isolated_worktree() {
     [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'git status' ]]
 }
 
+@test "tool-reroute/worktree-git: the codex bridge passes plain git through in an isolated worktree too" {
+    # The passthrough is harness-agnostic (cwd path + command word), so a
+    # future codex deploy of this hook behaves identically. The recording stub
+    # proves no delegate call happened under the codex harness argument.
+    local hook; hook=$(deploy_codex)
+    isolated_worktree
+    local stub="$BATS_TEST_TMPDIR/rtk-stub-bin"
+    mkdir -p "$stub"
+    { printf '#!/usr/bin/env bash\n'; record_stub "$BATS_TEST_TMPDIR"; } >"$stub/rtk"
+    chmod +x "$stub/rtk"
+    local nodedir; nodedir="$(dirname "$(command -v node)")"
+    local j; j=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
+    run env DOTFILES_HARNESS=codex PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$j' | '$hook'"
+    [ "$status" -eq 0 ]
+    [[ -z "$output" ]]
+    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
+    local log="$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl"
+    [[ "$(jq -r .module <"$log")" == "worktree-git" ]]
+    [[ "$(jq -r .harness <"$log")" == "codex" ]]
+}
+
 @test "tool-reroute/log: a worktree-git passthrough logs action passthrough, module worktree-git" {
     isolated_worktree
     out_for_rtk 'git status' "$SILENT_STUB" >/dev/null

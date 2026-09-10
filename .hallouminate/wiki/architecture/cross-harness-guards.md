@@ -48,6 +48,8 @@ Inside a Claude-created isolated worktree, the dispatcher does not delegate a pl
 
 **Why a path test, not `git rev-parse`:** the hook runs on every Bash call inside a 5 s budget. Claude Code's guard applies only to worktrees it creates under `.claude/worktrees/`, so the path test is exact for this purpose.
 
+**Harness scope:** the refusal is Claude Code's. On 2026-09-10, 36 session files under `~/.claude/projects` carry the refusal text; `~/.codex/sessions` and `~/.omp/agent/sessions` carry none. The hook deploys to Claude only (`harnesses: [claude]`). rtk has no `codex` hook subcommand, and OMP rewrites through the vendored `rtk.ts` extension, which has no worktree guard. The check itself is harness-agnostic, so a future codex deploy of the hook behaves the same; a bats case pins it under the codex bridge. The passthrough does not touch `wt-git`: that stays the `cd-git` rewrite target for `cd <path> && git …`.
+
 **Accepted loss:** git output inside isolated agents does not get rtk compaction. Git output is small.
 
 **Residuals:** an agent that types `rtk git …` itself is still refused by Claude Code; the hook does not delegate it either. A `cd <own-cwd> && git …` in a worktree takes the cd-strip path, which still delegates the stripped remainder to rtk.
