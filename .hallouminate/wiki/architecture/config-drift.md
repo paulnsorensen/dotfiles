@@ -311,6 +311,10 @@ re-index. First hit 2026-07-04: four new sibling-wiki `[[corpus]]` entries
 (milknado/easy-cheese/tilth/hallouminate) rendered correctly but were invisible
 until the daemon restarted.
 
+The global baseline does not index `~/.cheese`, because agents do not write durable global knowledge there. It exposes `cheez-wiki` from `~/Dev/cheez-wiki` and omits the `easy-cheese` wiki. The chezmoi template guards the path so missing clones cannot break every index run.[^hallouminate-global-corpora]
+
+[^hallouminate-global-corpora]: `chezmoi/dot_config/hallouminate/config.toml.tmpl:1-25`
+
 ## Gotcha: index drift is its own drift class
 
 The hallouminate wiki index (LanceDB) is derived from the markdown on disk. If
