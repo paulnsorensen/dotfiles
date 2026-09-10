@@ -35,7 +35,7 @@ spawn_client() {
     local cols="$1" rows="$2" session="${3:-s}"
     local before after new_tty
     before="$(tmux -L "$SOCK" list-clients -F '#{client_tty}' 2>/dev/null)"
-    (script -qfec "stty cols $cols rows $rows; tmux -L $SOCK attach -t $session" /dev/null </dev/null >/dev/null 2>&1 &)
+    (script -qfec "stty cols $cols rows $rows; TERM=xterm tmux -L $SOCK attach -t $session" /dev/null </dev/null >/dev/null 2>&1 &)
 
     local waited=0
     while (( waited < 100 )); do
