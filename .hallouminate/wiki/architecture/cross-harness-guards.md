@@ -44,7 +44,7 @@ Inside a Claude-created isolated worktree, the dispatcher does not delegate a pl
 
 **Trigger:** the event `cwd` matches `/\.claude/worktrees/` and any command segment has the command word `git` after `commandWord` strips env assignments and a leading `rtk` / `rtk proxy`. A quoted `git` inside a string does not trigger. A lexer miss fails closed to the normal delegate path.
 
-**Why:** the Agent tool's `isolation: "worktree"` guard in Claude Code refuses a command whose command word is not `git` but carries a git operand. rtk rewrites `git status` to `rtk git status`, so the guard refused 89 ordinary git calls across 3 sessions on 2026-09-09/10. Agents then flailed (`unset -f git`, `/usr/bin/git status`) and 6 of 10 sampled refusals were followed by another refusal.
+**Why:** the Agent tool's `isolation: "worktree"` guard in Claude Code refuses a command whose command word is not `git` but carries a git operand. rtk rewrites `git status` to `rtk git status`, so the guard refuses ordinary git calls. A 3-session sample on 2026-09-09/10 showed 89 refusals; the full session logs under `~/.claude/projects` hold 1,208 through 2026-09-10 (904 on 09-09, 258 on 09-10): 631 plain `git …`, 414 `pwd && git …`-style chains, 71 agent-typed `rtk git …`, 28 `wt-git …`, and 63 non-git constructs. Agents then flailed (`unset -f git`, `/usr/bin/git status`) and 6 of 10 sampled refusals were followed by another refusal.
 
 **Why a path test, not `git rev-parse`:** the hook runs on every Bash call inside a 5 s budget. Claude Code's guard applies only to worktrees it creates under `.claude/worktrees/`, so the path test is exact for this purpose.
 
@@ -52,7 +52,12 @@ Inside a Claude-created isolated worktree, the dispatcher does not delegate a pl
 
 **Accepted loss:** git output inside isolated agents does not get rtk compaction. Git output is small.
 
-**Residuals:** an agent that types `rtk git …` itself is still refused by Claude Code; the hook does not delegate it either. A `cd <own-cwd> && git …` in a worktree takes the cd-strip path, which still delegates the stripped remainder to rtk.
+**Measured non-issues and residuals (session logs through 2026-09-10):**
+
+- `wt-git <path> …` (the `cd-git` rewrite) passes the guard: 610 allowed, 14 refused inside isolated worktrees. The 14 are one repeated `ls-files` pathspec that Claude Code called "too complex to verify". 14 more `wt-git` refusals also carried a bare `git` segment that rtk wrapped; the passthrough now covers that shape.
+- `cd <own-cwd> && git …` (the cd-strip path): 0 refused, 211 allowed. The stripped remainder still goes to rtk, but no refusal is on record, so the hook leaves this path alone.
+- An agent that types `rtk git …` itself (71 cases) is still refused by Claude Code; the hook does not delegate it either.
+- 63 refusals name no git at all (`eval`, `bash <script>`, `for` loops, `hash`). Those come from Claude Code's complexity guard and are outside this hook's scope.
 
 ## Claude-only pre-tool guards
 
