@@ -5,6 +5,7 @@
 # Harness: all (default) | claude | codex | omp | cursor | copilot
 # sql runs one raw query against the database (markdown output).
 # SESSIONS_DB overrides the database path and disables auto-ingest.
+# SESSIONS_DUCKDB_MEMORY_LIMIT overrides the duckdb memory_limit cap (default 8GB).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,7 +42,7 @@ ensure_db() {
         exit 0
     fi
     local n
-    n="$(duckdb -init /dev/null "$DB" -noheader -list -c \
+    n="$(duckdb -init /dev/null "$DB" -cmd "SET memory_limit='$(sessions_duckdb_memory_limit)'" -noheader -list -c \
         "SELECT count(*) FROM information_schema.tables WHERE table_name = 'tool_uses'" 2>/dev/null || echo 0)"
     if [[ "$n" != 1 ]]; then
         echo "Session database at $DB has no ingested tables."
@@ -49,13 +50,13 @@ ensure_db() {
     fi
 }
 
-run() { duckdb -init /dev/null "$DB" -markdown -c "$1" 2>/dev/null || echo "(query failed)"; }
+run() { duckdb -init /dev/null "$DB" -cmd "SET memory_limit='$(sessions_duckdb_memory_limit)'" -markdown -c "$1" 2>/dev/null || echo "(query failed)"; }
 
 ensure_db
 
 case "$REPORT" in
     sql)
-        duckdb -init /dev/null "$DB" -markdown -c "$RAW_SQL"
+        duckdb -init /dev/null "$DB" -cmd "SET memory_limit='$(sessions_duckdb_memory_limit)'" -markdown -c "$RAW_SQL"
         ;;
     tools)
         run "SELECT tool_name, count(*) AS uses

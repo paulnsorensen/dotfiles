@@ -12,3 +12,7 @@ sessions_db_path() {
     fi
     printf '%s\n' "$db"
 }
+
+sessions_duckdb_memory_limit() {
+    printf '%s\n' "${SESSIONS_DUCKDB_MEMORY_LIMIT:-8GB}"
+}
