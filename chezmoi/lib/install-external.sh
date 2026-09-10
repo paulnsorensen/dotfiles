@@ -213,23 +213,27 @@ source_skill_names() {
     done
 }
 
-remove_stale_source_skills() {
-    local repo="$1" expected installed stale_output name
+find_stale_source_skills() {
+    local repo="$1" expected installed
     expected=$(source_skill_names "$repo") || return 1
     if ! installed=$(npx --yes skills list --global --json 2>&1); then
         echo -e "    ${RED}Could not list installed skills before reconciling $repo${NC}" >&2
         return 1
     fi
-    if ! stale_output=$(jq -r --arg source "$repo" --arg expected "$expected" '
+    if ! jq -r --arg source "$repo" --arg expected "$expected" '
         ($expected | split("\n") | map(select(length > 0))) as $keep
         | .[]
         | .name as $name
         | select(.source == $source and ($keep | index($name)) == null)
         | $name
-    ' <<<"$installed"); then
+    ' <<<"$installed"; then
         echo -e "    ${RED}Could not parse installed skills while reconciling $repo${NC}" >&2
         return 1
     fi
+}
+
+remove_stale_source_skills() {
+    local stale_output="$1" name
     [[ -n "$stale_output" ]] || return 0
 
     local -a stale=()
@@ -314,9 +318,15 @@ install_source() {
         return 0
     fi
 
-    local output
+    local output stale_output
+    if ! stale_output=$(find_stale_source_skills "$repo"); then
+        echo -e "    ${RED}✗${NC} $repo → cleanup failed"
+        echo x >> "$FAIL_COUNTER"
+        return 0
+    fi
+
     if output=$(GIT_TERMINAL_PROMPT=0 npx "${args[@]}" 2>&1); then
-        if remove_stale_source_skills "$repo"; then
+        if remove_stale_source_skills "$stale_output"; then
             echo -e "    ${GREEN}✓${NC} $repo → $repo_supported"
         else
             echo -e "    ${RED}✗${NC} $repo → cleanup failed"
