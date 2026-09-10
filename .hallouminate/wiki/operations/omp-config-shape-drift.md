@@ -52,7 +52,6 @@ wrapper injects flags into `omp`, call the raw binary:
 
 Related: [[sync-and-chezmoi]], [[../harnesses/omp]].
 
-
 ## Not every unknown key is drift
 
 The gate also fires on genuinely new upstream keys. Tell the two apart by

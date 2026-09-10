@@ -106,8 +106,6 @@ Two zsh-startup caching patterns in this repo looked correct but silently degrad
 - **`compinit` never touches an unchanged `.zcompdump`** — a "-C when the dump is <24h old" gate therefore stops firing ~24h after the dump is first written (mtime goes stale forever, every shell pays the full compaudit sweep again). `zsh/completion.zsh` explicitly `touch`es the dump in the full-`compinit` branch to reset the window. Verified empirically: backdating the dump and running full `compinit` leaves the mtime unchanged.
 - **Caching `eval "$(<tool> init zsh)"` output makes transient failures permanent** — the uncached eval self-heals next shell; a cache written with a bare `> $cache` persists partial output from a failed init and sources it forever. `_init_cache` in `zsh/tools.zsh` writes to a temp file, checks the exit code, and atomically swaps — a failed init leaves the old cache intact (or none), never a poisoned one. Caches live in `~/.cache/zsh-init/`, keyed on binary mtime via zsh's fork-free `$commands[tool]`.
 
-
-
 Every assembled `exact_` tree also needs an `ignores:` entry in
 `.markdownlint-cli2.yaml`. The tree is gitignored but still on disk, and
 `just check` globs `**/*.md`, so vendored external skills fail `lint-markdown`
