@@ -259,6 +259,7 @@ claude:
   # ── ~/.claude/skills selection (repo skills/) ───────────────────────────────
   skills:
     - claude-local
+    - ci-optimize
     - de-slop
     - ghostbuster
     - git-hygiene

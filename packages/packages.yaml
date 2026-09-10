@@ -75,7 +75,7 @@ packages:
 
   # Zed external-agent adapters (ACP)
   # renovate: datasource=npm depName=@agentclientprotocol/codex-acp
-  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "1.10.0", platform: mac } # runs Codex as a Zed ACP agent
+  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "1.11.0", platform: mac } # runs Codex as a Zed ACP agent
 
   # uv tools (Python)
   # renovate: datasource=pypi depName=ralphify
@@ -92,7 +92,7 @@ packages:
 
   # gh CLI extensions
   # renovate: datasource=github-releases depName=github/gh-stack
-  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.1" }
 
   # Cargo
   # renovate: datasource=crate depName=cargo-update
