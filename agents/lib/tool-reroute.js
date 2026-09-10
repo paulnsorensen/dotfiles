@@ -18,6 +18,14 @@
 // event through and echoing rtk's output verbatim, so non-reroute commands keep
 // rtk's compaction.
 //
+// One exception sits before the delegate: inside a Claude-created isolated
+// worktree (cwd under `.claude/worktrees/`) a plain `git …` PASSES THROUGH
+// untouched (module tag `worktree-git`, action `passthrough`). Claude Code's
+// worktree-isolation guard refuses the rtk rewrite (`rtk git status`) because
+// it cannot prove the wrapped operand targets the agent's own worktree; the
+// plain command is allowed. Git output is small — the lost compaction is
+// accepted.
+//
 // Fail-open everywhere: malformed stdin, a thrown detection error, or an absent
 // rtk all resolve to exit 0 with no rewrite — the command runs unchanged. A
 // rewrite hook must never become a denial-of-service.
@@ -26,6 +34,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { appendJsonl, scrubSecrets } = require('./jsonl-log');
+const { parse, commandWord } = require('./tool-reroute/shell');
 const search = require('./tool-reroute/search');
 const cdStrip = require('./tool-reroute/cd-strip');
 const cdGit = require('./tool-reroute/cd-git');
@@ -74,8 +83,8 @@ function logDir() {
     || path.join(os.homedir(), '.local', 'state', 'claude-tool-reroute');
 }
 
-// Log a rewrite/deny decision to decisions.jsonl. Never called for a
-// delegate — that path carries no module/action to record.
+// Log a rewrite/deny/strip/passthrough decision to decisions.jsonl. Never
+// called for a plain delegate — that path carries no module/action to record.
 function logDecision(harness, event, toolName, cwd, hit, action) {
   const command = (event.tool_input && event.tool_input.command) || '';
   appendJsonl(logDir(), 'decisions.jsonl', {
@@ -107,6 +116,25 @@ function runRtk(harness, stdin) {
 function delegate(harness, stdin) {
   const out = runRtk(harness, stdin);
   if (out) process.stdout.write(out);
+}
+
+// Claude Code's Agent tool (`isolation: "worktree"`) creates its worktrees
+// under `<repo>/.claude/worktrees/agent-*`, and its isolation guard applies
+// only to those. A path test is sufficient — no `git rev-parse`: the hook runs
+// on every Bash call inside a 5 s budget.
+function isIsolatedWorktree(cwd) {
+  return /\/\.claude\/worktrees\//.test(cwd);
+}
+
+// True when any segment's command word is `git` (commandWord already strips
+// env assignments and a leading `rtk` / `rtk proxy`). A lexer miss fails
+// closed to false, so an odd shape keeps the plain delegate path.
+function mentionsGit(command) {
+  try {
+    return parse(command).some((seg) => commandWord(seg.argv).word === 'git');
+  } catch {
+    return false;
+  }
 }
 
 function main() {
@@ -181,8 +209,18 @@ function main() {
       }));
       return;
     }
-    // No module owns it. Delegate Bash to rtk; allow any other tool untouched.
-    if (toolName === 'Bash') delegate(harness, stdin);
+    // No module owns it. Allow any other tool untouched. Inside an isolated
+    // worktree a plain git command runs unchanged (see header); otherwise
+    // delegate Bash to rtk.
+    if (toolName !== 'Bash') return;
+    if (isIsolatedWorktree(cwd) && mentionsGit(input.command || '')) {
+      logDecision(harness, event, toolName, cwd, {
+        module: 'worktree-git',
+        reason: 'isolated worktree: plain git passes through so Claude Code can verify its target',
+      }, 'passthrough');
+      return;
+    }
+    delegate(harness, stdin);
   });
 }
 

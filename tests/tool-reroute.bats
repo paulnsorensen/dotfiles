@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 # Tests for the tool-reroute PreToolUse hook (harness-agnostic).
 #   agents/hooks/tool-reroute.sh  — bash bridge (self-locating, overrideable harness)
-#   agents/lib/tool-reroute.js    — dispatcher (search → cd-git → io → delegate)
+#   agents/lib/tool-reroute.js    — dispatcher (search → cd-strip → cd-git → io
+#                                   → worktree-git passthrough → delegate)
 #   agents/lib/tool-reroute/{shell,search,cd-git,io}.js — lexer + modules
 #
 # WHY: hard-denying grep/cat/find does not stop the model RETRYING — the static
@@ -292,6 +293,97 @@ RTK
     run env PATH="$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$json' | '$DEPLOY/hooks/tool-reroute.sh'"
     [ "$status" -eq 0 ]
     [[ -z "$output" ]]
+}
+
+# ── tool-reroute/worktree-git: plain git inside a Claude-created worktree ─
+# Claude Code's Agent tool (`isolation: "worktree"`) refuses any Bash command
+# whose command word is not `git` but carries a git operand, so rtk's rewrite
+# `rtk git status` is denied inside `<repo>/.claude/worktrees/agent-*` (89
+# refusals across 3 sessions, 2026-09-09/10). The dispatcher passes plain git
+# through unchanged there — no rtk delegate, no stdout — and accepts the lost
+# compaction. The check is path-based, so no real worktree is needed.
+
+isolated_worktree() {
+    W="$BATS_TEST_TMPDIR/.claude/worktrees/agent-x"
+    mkdir -p "$W"
+}
+
+@test "tool-reroute/worktree-git: plain git in an isolated worktree is NOT delegated to rtk" {
+    isolated_worktree
+    local out; out=$(out_for_rtk 'git status' "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ -z "$out" ]]
+    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
+}
+
+@test "tool-reroute/worktree-git: git -C <own worktree> status is NOT delegated" {
+    isolated_worktree
+    local out; out=$(out_for_rtk "git -C $W status" "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ -z "$out" ]]
+    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
+}
+
+@test "tool-reroute/worktree-git: git chained with && is NOT delegated" {
+    isolated_worktree
+    local out; out=$(out_for_rtk 'git log -1 --oneline && git status' "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ -z "$out" ]]
+    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
+}
+
+@test "tool-reroute/worktree-git: a leading rtk git in an isolated worktree is NOT delegated" {
+    # Known residual: the agent typed the rtk form itself, so Claude Code still
+    # refuses this one on its own. The hook must not compound it by delegating.
+    isolated_worktree
+    local out; out=$(out_for_rtk 'rtk git status' "$(record_stub "$BATS_TEST_TMPDIR")")
+    [[ -z "$out" ]]
+    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
+}
+
+@test "tool-reroute/worktree-git: a non-git command in an isolated worktree IS still delegated" {
+    isolated_worktree
+    out_for_rtk 'yarn nx test foo' "$(record_stub "$BATS_TEST_TMPDIR")" >/dev/null
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'yarn nx test foo' ]]
+}
+
+@test "tool-reroute/worktree-git: a quoted 'git' word does not trigger passthrough" {
+    isolated_worktree
+    out_for_rtk 'echo "git status"' "$(record_stub "$BATS_TEST_TMPDIR")" >/dev/null
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'echo "git status"' ]]
+}
+
+@test "tool-reroute/worktree-git: plain git outside a worktree IS still delegated" {
+    out_for_rtk 'git status' "$(record_stub "$BATS_TEST_TMPDIR")" >/dev/null
+    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'git status' ]]
+}
+
+@test "tool-reroute/worktree-git: the codex bridge passes plain git through in an isolated worktree too" {
+    # The passthrough is harness-agnostic (cwd path + command word), so a
+    # future codex deploy of this hook behaves identically. The recording stub
+    # proves no delegate call happened under the codex harness argument.
+    local hook; hook=$(deploy_codex)
+    isolated_worktree
+    local stub="$BATS_TEST_TMPDIR/rtk-stub-bin"
+    mkdir -p "$stub"
+    { printf '#!/usr/bin/env bash\n'; record_stub "$BATS_TEST_TMPDIR"; } >"$stub/rtk"
+    chmod +x "$stub/rtk"
+    local nodedir; nodedir="$(dirname "$(command -v node)")"
+    local j; j=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
+    run env DOTFILES_HARNESS=codex PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$j' | '$hook'"
+    [ "$status" -eq 0 ]
+    [[ -z "$output" ]]
+    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
+    local log="$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl"
+    [[ "$(jq -r .module <"$log")" == "worktree-git" ]]
+    [[ "$(jq -r .harness <"$log")" == "codex" ]]
+}
+
+@test "tool-reroute/log: a worktree-git passthrough logs action passthrough, module worktree-git" {
+    isolated_worktree
+    out_for_rtk 'git status' "$SILENT_STUB" >/dev/null
+    local log="$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl"
+    [ "$(wc -l <"$log")" -eq 1 ]
+    [[ "$(jq -r .module <"$log")" == "worktree-git" ]]
+    [[ "$(jq -r .action <"$log")" == "passthrough" ]]
+    [[ "$(jq -r .command <"$log")" == "git status" ]]
 }
 
 # ── tool-reroute: rtk-prefix stripping ───────────────────────────────────
