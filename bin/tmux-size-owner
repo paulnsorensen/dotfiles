@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# tmux-size-owner - make one tmux client the sole driver of window-size latest
+# Usage: tmux-size-owner <client_tty>
+#        tmux-size-owner --release [session]
+set -euo pipefail
+
+usage() {
+    echo "usage: tmux-size-owner <client_tty>" >&2
+    echo "       tmux-size-owner --release [session]" >&2
+}
+
+flag() {
+    tmux refresh-client -t "$1" -f "$2"
+}
+
+# Makes $1 the sole size driver of its session: clears ignore-size on it and
+# sets ignore-size on every other client of the same session. Clients of
+# other sessions keep their flags.
+own() {
+    local owner_tty=$1 client_list owner_session="" session_clients tty session
+    client_list=$(tmux list-clients -F '#{client_tty} #{client_session}' 2>/dev/null) || {
+        echo "tmux-size-owner: tmux list-clients failed" >&2
+        return 1
+    }
+    while IFS=' ' read -r tty session; do
+        if [[ "$tty" == "$owner_tty" ]]; then
+            owner_session=$session
+            break
+        fi
+    done <<< "$client_list"
+    if [[ -z "$owner_session" ]]; then
+        echo "tmux-size-owner: unknown client tty '$owner_tty'" >&2
+        return 1
+    fi
+    session_clients=$(tmux list-clients -t "$owner_session" -F '#{client_tty}' 2>/dev/null) || {
+        echo "tmux-size-owner: tmux list-clients failed" >&2
+        return 1
+    }
+    while IFS= read -r tty; do
+        [[ -n "$tty" ]] || continue
+        if [[ "$tty" == "$owner_tty" ]]; then
+            flag "$tty" '!ignore-size'
+        else
+            flag "$tty" ignore-size
+        fi
+    done <<< "$session_clients"
+}
+
+# Runs from the client-detached hook. Hands ownership to the most recently
+# active surviving client of $1's session, or of every session when $1 is
+# empty (client-detached hooks lose #{client_session} on some tmux builds
+# once the client is gone). Reassigning, rather than releasing every flag,
+# keeps exactly one owner when a non-owner such as a stale phone client
+# drops. A session with no clients left is not an error.
+release() {
+    local session="${1:-}" listing newest
+    if [[ -n "$session" ]]; then
+        listing=$(tmux list-clients -t "$session" -F '#{client_activity} #{client_tty}' 2>/dev/null) || return 0
+    else
+        listing=$(tmux list-clients -F '#{client_activity} #{client_tty}' 2>/dev/null) || return 0
+    fi
+    newest=$(printf '%s\n' "$listing" | awk 'NF == 2' | sort -rn | head -1 | cut -d' ' -f2)
+    [[ -n "$newest" ]] || return 0
+    own "$newest"
+}
+
+if [[ "${1:-}" == "--release" ]]; then
+    [[ $# -le 2 ]] || { usage; exit 2; }
+    release "${2:-}"
+    exit 0
+fi
+
+if [[ $# -ne 1 ]]; then
+    usage
+    exit 2
+fi
+
+# Control-mode clients (tmux -CC, iTerm2, cmux) expand #{client_tty} to an
+# empty string. Reject before touching any client's flags.
+if [[ -z "$1" ]]; then
+    echo "tmux-size-owner: empty client tty (control-mode client?)" >&2
+    exit 1
+fi
+
+own "$1"
