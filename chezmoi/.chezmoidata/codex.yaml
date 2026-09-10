@@ -69,6 +69,12 @@ codex:
   # Rendered to <name>.toml from agents/registry.yaml metadata at assembly
   # time. Every name must exist in the registry AND declare the codex harness;
   # the assembler fails loud otherwise.
+  # Model per agent comes from registry `models.codex`. Tier ladder: Sol =
+  # `powerful`, Terra = `default`, Luna = `cheap` (agents/preamble.md Dispatch
+  # gates). reviewer Sol; researcher, generalist, ghostbuster Terra; coder,
+  # explorer, nih-scanner, duckdb-expert, whey-drainer, roquefort-wrecker,
+  # worktree-content-digest Luna. This config has no per-spawn model override,
+  # so a `Review mode: taste-test` dispatch runs at the reviewer's pinned Sol.
   agents:
     - coder
     - duckdb-expert

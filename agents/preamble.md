@@ -63,7 +63,8 @@ Retain iterative diagnosis inline; delegate implementation and verification. On 
 
 Apply these gates before every `coder` or `reviewer` dispatch. A worker returns `blocked: missing-contract` when a gate is skipped; that is a dispatcher defect, not a worker defect.
 
-1. **Reviewer mode.** The prompt contains the literal line `Review mode: severity-report` or `Review mode: taste-test`. Pass `model: sonnet` for `taste-test`. Do not dispatch a third taste-test round on the same artifact; ask the user instead.
+1. **Reviewer mode.** The prompt contains the literal line `Review mode: severity-report` or `Review mode: taste-test`. Request `powerful` power for `severity-report`. Request `default` power at `medium` effort for `taste-test`. Run `whey-drainer` at `cheap` / `low`. Do not dispatch a third taste-test round on the same artifact; ask the user instead.
+   Tier bindings: Claude takes the tier per dispatch through `model:` — `powerful` opus, `default` sonnet, `cheap` haiku. Codex pins GPT-5.6 per agent from `agents/registry.yaml` — Sol `powerful` (reviewer), Terra `default` (researcher, generalist), Luna `cheap` (coder, explorer, whey-drainer); a Codex taste-test runs at the reviewer's pinned Sol.
 2. **Coder contract.** The prompt contains both `Done means` (the exact gate command and what green looks like) and `Scope fence` (what not to touch, and whether to commit).
 3. **Coder size.** Count the edit sites, the files, and whether the task bundles implementation with a gate audit. When two or more of {more than 5 sites, more than 3 files, implement + audit} are true, name the split in the prompt or state why the task is indivisible.
 4. **Age does not code.** Under `/age`, do not dispatch `coder`. Return the report; `/cure` owns application.

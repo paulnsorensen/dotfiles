@@ -70,11 +70,19 @@ The four phase agents hand results back through their **final message**, which t
 
 Sixty days of Claude session analytics (609 `Agent` dispatches) showed three agent-side gates never fired as prose: 72 of 148 reviewer dispatches had no `Review mode:` line and zero returned blocked; 0% of coder dispatches carried `Done means`, yet none refused; taste-tests ran up to six Opus rounds on one draft. The definitions now make each gate a verbatim block the worker copies rather than composes:
 
-- `reviewer.md` scans for the literal `Review mode:` before any tool call and returns a fixed `blocked: missing-contract` handoff otherwise. Round ≥ 3 of a taste-test returns `blocked: taste-loop` so the parent asks the user. `taste-test` is declared Sonnet-sufficient; dispatchers pass `model: sonnet` (its fix-rate matched severity-report at the same prompt size, so Opus added cost without signal).
+- `reviewer.md` scans for the literal `Review mode:` before any tool call and returns a fixed `blocked: missing-contract` handoff otherwise. Round ≥ 3 of a taste-test returns `blocked: taste-loop` so the parent asks the user. `taste-test` is declared sufficient at `default` power / `medium` effort (its fix-rate matched severity-report at the same prompt size, so the `powerful` tier added cost without signal — easy-cheese#659).
 - `coder.md` returns `blocked: missing-contract` when **both** `Done means` and `Scope fence` are absent; one missing field still asks. The resume brief's Gates section records the worktree path and base SHA so a resumed coder reuses the worktree (26 cold installs in one session was the trigger).
 - `preamble.md` carries five numbered **Dispatch gates** and two table changes: `coder` is "not under `/age`" (39 of 67 age-span coders were cure work that `/cure` owns) and `whey-drainer` gets a row (1 spawn in 60 days because coders ran gates themselves).
 
-Model tiers were confirmed correct and left alone. A cross-harness `tier:` field mapped per renderer was proposed (#952 item 6) and deferred as a design call.
+Generic prompts (`preamble.md`, `agent_definitions/*.md`) use the easy-cheese tier vocabulary `cheap | default | powerful` plus effort, never a model name, so one body serves every harness (paulnsorensen/easy-cheese#659 `routing-policy.md`). Each harness binds the tiers where it owns models:
+
+| Tier | Claude (`model:` per dispatch) | Codex (`models.codex`, pinned per agent toml) | OMP (`modelRoles` alias, pinned in agent frontmatter) |
+|---|---|---|---|
+| `powerful` | `opus` | `gpt-5.6-sol` — reviewer | `@strong` (Sol) — reviewer, cheese-reviewer |
+| `default` | `sonnet` | `gpt-5.6-terra` — researcher, generalist, ghostbuster | `@balanced` (Terra) |
+| `cheap` | `haiku` | `gpt-5.6-luna` — coder, explorer, whey-drainer, scanners | `@fast` (Luna; `task`, `tiny`, `smol`) — coder |
+
+Only Claude honors a per-dispatch tier, so a `taste-test` at `default` is a Claude-only saving today; Codex and OMP run the reviewer's pinned `powerful` model for both modes. Bindings live in `preamble.md` (Claude + Codex), `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md` (OMP), and as comments in `codex.yaml` and the registry reviewer entry; `tests/phase-agent-handoff.bats` locks them. A cross-harness `tier:` registry field mapped per renderer was proposed (#952 item 6) and deferred as a design call. See [[omp-agent-model-effort]] for the Codex/OMP workload matrix.
 
 ### Skills — `skills/` tree + `skills/_registry.yaml`
 

@@ -155,7 +155,26 @@ block_sha() {
     assert_success
     run grep -Fq 'Two rounds are the ceiling' "$reviewer"
     assert_success
-    run grep -Fq 'the dispatcher should pass `model: sonnet`' "$reviewer"
+    # Tier vocabulary is harness-neutral (easy-cheese routing-policy); no model names in the generic body.
+    run grep -Fq '`default` power at `medium` effort is sufficient' "$reviewer"
+    assert_success
+    run grep -Eq 'Opus-tier|Sonnet-tier' "$reviewer"
+    assert_failure
+}
+
+@test "tier vocabulary binds to concrete models per harness" {
+    # Generic prompt: tiers only, plus the Claude and Codex bindings (preamble serves both).
+    run grep -Fq 'Request `default` power at `medium` effort for `taste-test`' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'Claude takes the tier per dispatch through `model:` — `powerful` opus, `default` sonnet, `cheap` haiku' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'Codex pins GPT-5.6 per agent from `agents/registry.yaml`' "$PREAMBLE"
+    assert_success
+    # OMP has its own prompt; it binds the same tiers to modelRoles aliases.
+    local append="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
+    run grep -Fq '`powerful` = `@strong` (GPT-5.6 Sol' "$append"
+    assert_success
+    run grep -Fq '`cheap` = `@fast` (Luna' "$append"
     assert_success
 }
 

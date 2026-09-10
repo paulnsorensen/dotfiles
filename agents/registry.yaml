@@ -186,7 +186,10 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/researcher.md
   reviewer:
-    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path through an explicit severity-report or taste-test contract. Source-read-only — never writes fixes; may write only its own .cheese artifact through tilth_write. A top-level /age orchestrator may supply specialist evidence. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
+    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path through an explicit severity-report or taste-test contract. Source-read-only — never writes fixes; may write only its own .cheese artifact through tilth_write. A top-level /age orchestrator may supply specialist evidence. Models the easy-cheese review phase. `powerful` tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
+    # Claude: severity-report at opus/high (`powerful`). A taste-test dispatch
+    # passes `model: sonnet` (`default`). Codex pins Sol for both modes; OMP
+    # pins `@strong` in dot_omp/private_agent/agents/reviewer.md.
     models:
       claude: opus
       codex: gpt-5.6-sol
