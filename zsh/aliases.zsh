@@ -109,6 +109,16 @@ tmux-detach-others() {
     tmux detach-client -a
 }
 
+# Make this client the sole driver of window-size latest; other clients stay
+# attached but stop resizing the shared window.
+tmux-take-size() {
+    if [[ -z "$TMUX" ]]; then
+        echo "usage: tmux-take-size (run inside a tmux client)" >&2
+        return 1
+    fi
+    tmux-size-owner "$(tmux display -p '#{client_tty}')"
+}
+
 # Tailscale shortcuts
 alias tss='tailscale status'
 alias tsip='tailscale ip -4'

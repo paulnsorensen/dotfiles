@@ -48,16 +48,47 @@ tunes or disables this (tmux issue #1019, open).
 
 **Cause 1: slow client.** A client that reads slower than tmux writes — a
 laggy phone link, a slow renderer — fills the buffer, triggering a discard
-and redraw. **Cause 2: window-size contention.** `window-size latest` sizes
-shared windows to whichever attached client acted most recently (tmux.1);
-a small phone client going active can shrink the window for everyone.
-Whether a better `window-size`/`aggressive-resize` default exists for this
-mix of clients is an open question the research did not confirm.
+and redraw. **Cause 2: window-size flip-flop.** `window-size latest` sizes
+shared windows to whichever attached client acted most recently (tmux.1).
+In tmux 3.7b, `server_client_key_callback` stamps `client_activity`
+(server-client.c:1198) before it filters `KEYC_FOCUS_IN`/`KEYC_FOCUS_OUT`
+(line 1240). With `focus-events on`, a bare focus change on the desktop
+Ghostty client (155x47) makes it "latest" and the window jumps away from
+the phone (46x36). The next phone keystroke jumps it back. Each flip sends
+SIGWINCH to Claude Code, which repaints its whole transcript through mosh —
+the "screen reprints and rescrolls, everything is slow" symptom on moshi.
+Diagnosed 2026-09-10; the phone had been attached for 7.5 h and Ghostty had
+logged activity 1.5 h after the phone attached.
+
+**Fix (PR fix/tmux-size-owner).** `resize.c` skips clients flagged
+`ignore-size` under `latest` (resize.c:153, 291). `bin/tmux-size-owner
+<client_tty>` sets `ignore-size` on every other client in the owner's
+session and clears it on the named one. A `client-attached` hook runs it
+for each newly attached client, so the newest client owns the window size.
+The others stay attached but stop resizing it. The hook and the script
+both reject control-mode clients (tmux -CC, iTerm2, cmux), whose
+`#{client_tty}` expands empty, instead of flagging every client. A
+`client-detached` hook (`tmux-size-owner --release <session>`) hands
+ownership to the most recently active survivor of that session. A
+non-owner leaving, such as a stale phone client, does not disturb the
+owner. Reclaim the size
+without re-attaching with the prefix binding or `tmux-take-size`. Rejected
+alternatives: `focus-events off` (loses vim/Claude focus signals and
+keystrokes still flip), `window-size smallest` (a stale phone client pins
+the desktop at 46 columns for hours), and auto `detach-client -a` on
+attach (kills intentional mirroring, e.g. cmux).
+
+**Not fixed by this.** moshi resizes its client when the on-screen keyboard
+shows or hides (46x36 ↔ 46x21), which still triggers a repaint per toggle;
+that is a client-side setting. Stale moshi clients linger for hours (one
+sat idle 46 h) because moshi launches `mosh-server` through `sh -lc`, which
+never sources `zshenv`'s `MOSH_SERVER_NETWORK_TMOUT`.
 
 **Remedies, in order:**
 
 1. Detach stale or idle clients with `tmux-detach-others` (`tmux
-   detach-client -a`) so only the active client drives sizing.
+   detach-client -a`) so only the active client drives sizing, or claim
+   the size with `tmux-take-size`.
 2. Give phone clients their own session name instead of sharing one; moshi
    lets the user set the tmux session it attaches (getmoshi.app/docs/tmux).
 3. Keep cmux updated. Two cmux clients on one remote tmux session drove the
