@@ -43,12 +43,18 @@ setup() {
     # Behavior is configured per-test via $NPX_BEHAVIOR:
     #   ok        - exit 0 for everything (default)
     #   fail-add  - `npx ... skills add ...` exits 1
+    # NPX_LIST_JSON_AFTER_ADD simulates the CLI dropping retired ownership
+    # metadata when an add refreshes its lock file.
     cat > "$MOCK_BIN/npx" << 'MOCK'
 #!/bin/bash
 printf 'npx %s\n' "$*" >> "${NPX_LOG:-/dev/null}"
 
 if [[ "$*" == *" skills list --global --json"* ]]; then
-    printf '%s\n' "${NPX_LIST_JSON:-[]}"
+    if [[ -n "${NPX_LIST_JSON_AFTER_ADD:-}" ]] && grep -q 'skills add' "${NPX_LOG:-/dev/null}"; then
+        printf '%s\n' "$NPX_LIST_JSON_AFTER_ADD"
+    else
+        printf '%s\n' "${NPX_LIST_JSON:-[]}"
+    fi
     exit 0
 fi
 
@@ -247,6 +253,29 @@ EOF
       {"name":"alternate","source":"acme/widgets"},
       {"name":"retired","source":"acme/widgets"},
       {"name":"foreign","source":"other/source"}
+    ]'
+
+    run_sync
+    assert_success
+    run grep -F 'skills remove' "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills remove retired --global -y" ]]
+}
+
+@test "skill sync: snapshots retired ownership before add rewrites the CLI lock" {
+    write_registry "acme/widgets"
+    write_env "codex"
+
+    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
+    mkdir -p "$repo_cache/skills/current"
+    printf '%s\n' '# current' > "$repo_cache/skills/current/SKILL.md"
+    export NPX_LIST_JSON='[
+      {"name":"current","source":"acme/widgets"},
+      {"name":"retired","source":"acme/widgets"}
+    ]'
+    export NPX_LIST_JSON_AFTER_ADD='[
+      {"name":"current","source":"acme/widgets"},
+      {"name":"retired","source":null}
     ]'
 
     run_sync
