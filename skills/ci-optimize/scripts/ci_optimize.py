@@ -8,7 +8,8 @@ import json
 import math
 import os
 import sys
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from statistics import median
@@ -18,10 +19,42 @@ SCHEMA_VERSION = 1
 CI_SOURCE = "github-actions"
 LOCAL_SOURCE = "local"
 LOCAL_STATUSES = {"success", "failed", "cancelled", "timed_out"}
+MAX_TEXT_LENGTH = 1000
+
+_CI_CONTEXT_FIELDS = (
+    "repository",
+    "workflow",
+    "workflow_id",
+    "event",
+    "event_class",
+    "workload_label",
+    "validation_contract",
+    "runner_toolchain",
+    "cache_state",
+)
+_COMPARISON_CONTEXT_FIELDS = ("environment", "cache_state", "local_command")
+_RECONSTRUCTION_LABELS = (
+    ("collection.run_id", "observation.provenance.run_id"),
+    ("collection.attempt", "observation.provenance.attempt"),
+    ("job page total_count", "observation.provenance.total_count"),
+    ("collection.captured_at", "observation.provenance.captured_at"),
+    ("run.conclusion", "observation.conclusion"),
+)
 
 
 class InputError(ValueError):
     """Input does not satisfy the measurement contract."""
+
+
+class ExecutionError(RuntimeError):
+    """A file operation required to complete the command failed."""
+
+
+@dataclass(frozen=True)
+class _Variants:
+    context: int = 1
+    jobset: int = 1
+    workflow: int = 1
 
 
 def _object(value: Any, label: str) -> dict[str, Any]:
@@ -30,8 +63,8 @@ def _object(value: Any, label: str) -> dict[str, Any]:
     return value
 
 
-def _string(value: Any, label: str, *, nonempty: bool = True) -> str:
-    if not isinstance(value, str) or (nonempty and not value):
+def _string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
         raise InputError(f"{label} must be a non-empty string")
     return value
 
@@ -44,6 +77,12 @@ def _integer(value: Any, label: str, *, positive: bool = False) -> int:
     return value
 
 
+def _schema_version(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value != SCHEMA_VERSION:
+        raise InputError(f"unsupported {label}")
+    return value
+
+
 def _number(value: Any, label: str, *, allow_none: bool = False) -> float | None:
     if value is None and allow_none:
         return None
@@ -51,7 +90,7 @@ def _number(value: Any, label: str, *, allow_none: bool = False) -> float | None
         raise InputError(f"{label} must be a finite number")
     try:
         number = float(value)
-    except (OverflowError, ValueError) as exc:
+    except OverflowError as exc:
         raise InputError(f"{label} must be a finite number") from exc
     if not math.isfinite(number) or number < 0:
         raise InputError(f"{label} must be a finite non-negative number")
@@ -67,7 +106,7 @@ def _boolean(value: Any, label: str) -> bool:
 def _timestamp(value: Any, label: str) -> datetime:
     text = _string(value, label)
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(text)
     except ValueError as exc:
         raise InputError(f"{label} must be an ISO-8601 timestamp") from exc
     if parsed.tzinfo is None:
@@ -93,12 +132,7 @@ def _ids(value: Any, label: str) -> list[int]:
 
 def _schema(value: Any, source: str) -> dict[str, Any]:
     data = _object(value, "input")
-    if (
-        not isinstance(data.get("schema_version"), int)
-        or isinstance(data.get("schema_version"), bool)
-        or data["schema_version"] != SCHEMA_VERSION
-    ):
-        raise InputError("unsupported schema_version")
+    _schema_version(data.get("schema_version"), "schema_version")
     if data.get("source") != source:
         raise InputError(f"source must be {source}")
     return data
@@ -106,55 +140,56 @@ def _schema(value: Any, source: str) -> dict[str, Any]:
 
 def _safe_text(value: Any, label: str) -> str:
     text = _string(value, label)
-    if len(text) > 1000:
+    if len(text) > MAX_TEXT_LENGTH:
         raise InputError(f"{label} is too long")
     return text
 
 
-def _context(data: dict[str, Any], source: str) -> dict[str, Any]:
-    if source == CI_SOURCE:
-        context = _object(data.get("context"), "context")
-        fields = {
-            "repository": "repository",
-            "workflow": "workflow",
-            "workflow_id": "workflow_id",
-            "event": "event",
-            "event_class": "event_class",
-            "workload_label": "workload_label",
-            "validation_contract": "validation_contract",
-            "runner_toolchain": "runner_toolchain",
-            "cache_state": "cache_state",
-        }
-        result: dict[str, Any] = {}
-        for output, key in fields.items():
-            if key in context:
-                value = context[key]
-                if (
-                    key == "workflow_id"
-                    and isinstance(value, int)
-                    and not isinstance(value, bool)
-                ):
-                    value = str(value)
-                result[output] = _safe_text(value, f"context.{key}")
-        for key in ("repository", "workload_label", "validation_contract"):
-            if key not in result:
-                raise InputError(f"context.{key} is required")
-        return result
+def _ci_context(context: Any) -> dict[str, Any]:
+    context = _object(context, "context")
+    result: dict[str, Any] = {}
+    for key in _CI_CONTEXT_FIELDS:
+        if key in context:
+            value = context[key]
+            if (
+                key == "workflow_id"
+                and isinstance(value, int)
+                and not isinstance(value, bool)
+            ):
+                value = str(value)
+            result[key] = _safe_text(value, f"context.{key}")
+    for key in ("repository", "workload_label", "validation_contract"):
+        if key not in result:
+            raise InputError(f"context.{key} is required")
+    return result
 
-    result = {}
+
+def _local_context(data: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
     for key in ("command", "revision", "environment", "cache_state", "workload_label"):
         result[key] = _safe_text(data.get(key), key)
     benchmark = _object(data.get("benchmark_source"), "benchmark_source")
-    result["benchmark_source"] = {
+    benchmark_source = {
         "tool": _safe_text(benchmark.get("tool"), "benchmark_source.tool"),
         "evidence_file": _safe_text(
             benchmark.get("evidence_file"), "benchmark_source.evidence_file"
         ),
     }
+    if benchmark.get("version") is not None:
+        benchmark_source["version"] = _safe_text(
+            benchmark["version"], "benchmark_source.version"
+        )
+    result["benchmark_source"] = benchmark_source
+    if data.get("captured_at") is not None:
+        result["captured_at"] = _timestamp(
+            data["captured_at"], "captured_at"
+        ).isoformat()
     return result
 
 
-def _job_summary(job: dict[str, Any], selected: bool) -> dict[str, Any]:
+def _job_summary(
+    job: dict[str, Any], selected: bool
+) -> tuple[dict[str, Any], datetime | None, datetime | None]:
     job_id = _integer(job.get("id"), "job.id", positive=True)
     summary: dict[str, Any] = {
         "id": job_id,
@@ -182,45 +217,12 @@ def _job_summary(job: dict[str, Any], selected: bool) -> dict[str, Any]:
         if started is not None and completed is not None
         else None
     )
-    return summary
+    return summary, started, completed
 
 
-def _ci_observation(capture: Any) -> dict[str, Any]:
-    capture = _object(capture, "capture")
-    context = _context({"context": capture.get("context")}, CI_SOURCE)
-    run = _object(capture.get("run"), "capture.run")
-    run_id = _integer(run.get("id"), "run.id", positive=True)
-    attempt = _integer(run.get("run_attempt"), "run.run_attempt", positive=True)
-    workflow_id = _integer(run.get("workflow_id"), "run.workflow_id", positive=True)
-    created = _timestamp(run.get("created_at"), "run.created_at")
-    status = _safe_text(run.get("status"), "run.status")
-    conclusion = run.get("conclusion")
-    if conclusion is not None:
-        conclusion = _safe_text(conclusion, "run.conclusion")
-
-    if context.get("workflow_id") is not None and context["workflow_id"] != str(
-        workflow_id
-    ):
-        raise InputError("context.workflow_id does not match run.workflow_id")
-    if context.get("event") is not None and context["event"] != run.get("event"):
-        raise InputError("context.event does not match run.event")
-
-    collection = _object(capture.get("collection"), "collection")
-    requested_value = collection.get("run_id")
-    requested = _integer(requested_value, "collection.run_id", positive=True)
-    requested_attempt = _integer(
-        collection.get("attempt"), "collection.attempt", positive=True
-    )
-    if requested != run_id or requested_attempt != attempt:
-        raise InputError("collection request does not match run identity")
-    selected_ids = _ids(collection.get("selected_job_ids"), "selected_job_ids")
-    expected_ids = _ids(collection.get("expected_job_ids"), "expected_job_ids")
-    if not set(selected_ids).issubset(expected_ids):
-        raise InputError("selected_job_ids must be a subset of expected_job_ids")
-    captured = _timestamp(collection.get("captured_at"), "collection.captured_at")
-    _seconds(created, captured, "capture interval")
-
-    pages = capture.get("job_pages")
+def _collect_jobs(
+    pages: Any, run_id: int, attempt: int
+) -> tuple[dict[int, dict[str, Any]], int]:
     if not isinstance(pages, list) or not pages:
         raise InputError("job_pages must be a non-empty list")
     jobs: dict[int, dict[str, Any]] = {}
@@ -246,25 +248,19 @@ def _ci_observation(capture: Any) -> dict[str, Any]:
             jobs[job_id] = job
     if len(total_counts) > 1:
         raise InputError("job page totals conflict")
-    expected_total = total_counts.pop()
-    reasons: list[str] = []
-    if expected_total < len(jobs):
-        raise InputError("job page total is smaller than captured population")
-    if expected_total != len(jobs):
-        reasons.append("incomplete_job_pages")
-    missing_expected = [job_id for job_id in expected_ids if job_id not in jobs]
-    if missing_expected:
-        reasons.append("missing_expected_jobs")
-    selected_jobs = [jobs[job_id] for job_id in selected_ids if job_id in jobs]
-    summaries = [
-        _job_summary(job, job_id in selected_ids) for job_id, job in jobs.items()
-    ]
-    for summary in summaries:
-        for field in ("started_at", "completed_at"):
-            if summary[field] is not None:
-                instant = _timestamp(summary[field], f"job.{field}")
-                _seconds(created, instant, "job after creation")
-                _seconds(instant, captured, "job before capture")
+    return jobs, total_counts.pop()
+
+
+def _eligibility_reasons(
+    created: datetime,
+    job_times: dict[int, tuple[datetime | None, datetime | None]],
+    selected_ids: list[int],
+    selected_jobs: list[dict[str, Any]],
+    status: str,
+    conclusion: str | None,
+    attempt: int,
+    reasons: list[str],
+) -> tuple[list[datetime], list[datetime]]:
     complete_times: list[datetime] = []
     selected_started: list[datetime] = []
     for job in selected_jobs:
@@ -272,16 +268,14 @@ def _ci_observation(capture: Any) -> dict[str, Any]:
         job_conclusion = job.get("conclusion")
         if job_status != "completed" or job_conclusion != "success":
             reasons.append(f"selected_job_{job.get('id')}_not_successful")
-        completed_at = job.get("completed_at")
-        if completed_at is None:
+        started, completed = job_times[job["id"]]
+        if completed is None:
             reasons.append(f"selected_job_{job.get('id')}_missing_completion")
         else:
-            completed_time = _timestamp(completed_at, "job.completed_at")
-            _seconds(created, completed_time, "full wait")
-            complete_times.append(completed_time)
-        started_at = job.get("started_at")
-        if started_at is not None:
-            selected_started.append(_timestamp(started_at, "job.started_at"))
+            _seconds(created, completed, "full wait")
+            complete_times.append(completed)
+        if started is not None:
+            selected_started.append(started)
     if not selected_ids:
         reasons.append("no_selected_jobs")
     if not selected_jobs:
@@ -290,13 +284,83 @@ def _ci_observation(capture: Any) -> dict[str, Any]:
         reasons.append(f"run_{status}_{conclusion or 'no_conclusion'}")
     if attempt > 1:
         reasons.append("rerun_no_creation_anchor")
-    eligible = not reasons and bool(complete_times)
+    return complete_times, selected_started
+
+
+def _ci_observation(capture: Any) -> dict[str, Any]:
+    capture = _object(capture, "capture")
+    context = _ci_context(capture.get("context"))
+    run = _object(capture.get("run"), "capture.run")
+    run_id = _integer(run.get("id"), "run.id", positive=True)
+    attempt = _integer(run.get("run_attempt"), "run.run_attempt", positive=True)
+    workflow_id = _integer(run.get("workflow_id"), "run.workflow_id", positive=True)
+    created = _timestamp(run.get("created_at"), "run.created_at")
+    status = _safe_text(run.get("status"), "run.status")
+    conclusion = run.get("conclusion")
+    if conclusion is not None:
+        conclusion = _safe_text(conclusion, "run.conclusion")
+
+    if context.get("workflow_id") is not None and context["workflow_id"] != str(
+        workflow_id
+    ):
+        raise InputError("context.workflow_id does not match run.workflow_id")
+    if context.get("event") is not None and context["event"] != run.get("event"):
+        raise InputError("context.event does not match run.event")
+    if context.get("event_class") is not None and context["event_class"] != run.get(
+        "event"
+    ):
+        raise InputError("context.event_class does not match run.event")
+
+    collection = _object(capture.get("collection"), "collection")
+    requested_value = collection.get("run_id")
+    requested = _integer(requested_value, "collection.run_id", positive=True)
+    requested_attempt = _integer(
+        collection.get("attempt"), "collection.attempt", positive=True
+    )
+    if requested != run_id or requested_attempt != attempt:
+        raise InputError("collection request does not match run identity")
+    selected_ids = _ids(collection.get("selected_job_ids"), "selected_job_ids")
+    expected_ids = _ids(collection.get("expected_job_ids"), "expected_job_ids")
+    if not set(selected_ids).issubset(expected_ids):
+        raise InputError("selected_job_ids must be a subset of expected_job_ids")
+    captured = _timestamp(collection.get("captured_at"), "collection.captured_at")
+    _seconds(created, captured, "capture interval")
+
+    jobs, expected_total = _collect_jobs(capture.get("job_pages"), run_id, attempt)
+    reasons: list[str] = []
+    if expected_total < len(jobs):
+        reasons.append("inconsistent_job_population")
+    elif expected_total != len(jobs):
+        reasons.append("incomplete_job_pages")
+    missing_expected = [job_id for job_id in expected_ids if job_id not in jobs]
+    if missing_expected:
+        reasons.append("missing_expected_jobs")
+    selected_id_set = set(selected_ids)
+    selected_jobs = [jobs[job_id] for job_id in selected_ids if job_id in jobs]
+    summaries: list[dict[str, Any]] = []
+    job_times: dict[int, tuple[datetime | None, datetime | None]] = {}
+    for job_id, job in jobs.items():
+        summary, started, completed = _job_summary(job, job_id in selected_id_set)
+        summaries.append(summary)
+        job_times[job_id] = (started, completed)
+        if started is not None:
+            _seconds(created, started, "job after creation")
+        if completed is not None:
+            _seconds(created, completed, "job after creation")
+            _seconds(completed, captured, "job before capture")
+    complete_times, selected_started = _eligibility_reasons(
+        created,
+        job_times,
+        selected_ids,
+        selected_jobs,
+        status,
+        conclusion,
+        attempt,
+        reasons,
+    )
     selected_completed = max(complete_times) if complete_times else None
-    if eligible:
-        assert selected_completed is not None
-        duration = _seconds(created, selected_completed, "full wait")
-    else:
-        duration = None
+    eligible = not reasons and selected_completed is not None
+    duration = _seconds(created, selected_completed, "full wait") if eligible else None
     pre_start = (
         _seconds(created, min(selected_started), "pre-start interval")
         if selected_started
@@ -320,9 +384,9 @@ def _ci_observation(capture: Any) -> dict[str, Any]:
         ),
         "duration_seconds": duration,
         "eligibility": eligible,
-        "reasons": reasons,
+        "reasons": sorted(reasons),
         "pre_start_seconds": pre_start,
-        "jobs": summaries,
+        "jobs": sorted(summaries, key=lambda summary: summary["id"]),
         "selected_job_names": sorted(
             summary["name"] for summary in summaries if summary["selected"]
         ),
@@ -344,13 +408,16 @@ def _normalize_ci(value: Any) -> dict[str, Any]:
         raise InputError("captures must be a non-empty list")
     observations = []
     identities: set[tuple[int, int]] = set()
-    for capture in captures:
-        observation = _ci_observation(capture)
-        identity = observation["identity"]
-        key = (identity["run_id"], identity["run_attempt"])
-        if key in identities:
-            raise InputError("duplicate run_id/run_attempt pair")
-        identities.add(key)
+    for index, capture in enumerate(captures):
+        try:
+            observation = _ci_observation(capture)
+            identity = observation["identity"]
+            key = (identity["run_id"], identity["run_attempt"])
+            if key in identities:
+                raise InputError("duplicate run_id/run_attempt pair")
+            identities.add(key)
+        except InputError as exc:
+            raise InputError(f"captures[{index}]: {exc}") from exc
         observations.append(observation)
     contexts = {json.dumps(item["context"], sort_keys=True) for item in observations}
     return {
@@ -369,7 +436,7 @@ def _normalize_ci(value: Any) -> dict[str, Any]:
 
 def _local_observation(sample: Any, benchmark: dict[str, str]) -> dict[str, Any]:
     sample = _object(sample, "sample")
-    sample_id = _string(sample.get("id"), "sample.id")
+    sample_id = _safe_text(sample.get("id"), "sample.id")
     status = _safe_text(sample.get("status"), "sample.status")
     if status not in LOCAL_STATUSES:
         raise InputError(f"unknown sample status: {status}")
@@ -394,6 +461,8 @@ def _local_observation(sample: Any, benchmark: dict[str, str]) -> dict[str, Any]
         if exit_code == 0:
             raise InputError(f"{status} sample cannot have exit_code 0")
         reasons.append(status)
+    else:
+        raise InputError(f"unhandled sample status: {status}")
     if warmup:
         reasons.append("warmup")
     eligible = status == "success" and not warmup
@@ -414,7 +483,7 @@ def _normalize_local(value: Any) -> dict[str, Any]:
     samples = data.get("samples")
     if not isinstance(samples, list) or not samples:
         raise InputError("samples must be a non-empty list")
-    context = _context(data, LOCAL_SOURCE)
+    context = _local_context(data)
     observations = []
     identities: set[str] = set()
     for sample in samples:
@@ -437,24 +506,135 @@ def _normalize_local(value: Any) -> dict[str, Any]:
     }
 
 
-def _validate_normalized(value: Any) -> dict[str, Any]:
+def _relabel_reconstruction_error(exc: InputError) -> InputError:
+    message = str(exc)
+    for old, new in _RECONSTRUCTION_LABELS:
+        message = message.replace(old, new)
+    return InputError(message)
+
+
+def _check_ci_observation(
+    item: dict[str, Any],
+    identity: dict[str, Any],
+    duration: float | None,
+    eligible: bool,
+    seen: set[tuple[str, str]],
+    ci_contexts: set[str],
+    ci_jobsets: set[str],
+    ci_workflows: set[tuple[int, str]],
+) -> dict[str, Any]:
+    observation_context = _ci_context(item.get("context"))
+    ci_contexts.add(json.dumps(observation_context, sort_keys=True))
+    if not isinstance(item.get("selected_job_names"), list):
+        raise InputError("CI observation selected_job_names must be a list")
+    selected_names = item["selected_job_names"]
+    if any(not isinstance(name, str) or not name for name in selected_names):
+        raise InputError("CI observation selected_job_names must be a string list")
+    ci_jobsets.add(json.dumps(sorted(selected_names)))
+    run_id = _integer(
+        identity.get("run_id"), "observation.identity.run_id", positive=True
+    )
+    run_attempt = _integer(
+        identity.get("run_attempt"),
+        "observation.identity.run_attempt",
+        positive=True,
+    )
+    semantic_key = ("ci", f"{run_id}:{run_attempt}")
+    if semantic_key in seen:
+        raise InputError("duplicate CI run_id/run_attempt identity")
+    seen.add(semantic_key)
+    _integer(
+        identity.get("workflow_id"),
+        "observation.identity.workflow_id",
+        positive=True,
+    )
+    _safe_text(identity.get("head_sha"), "observation.identity.head_sha")
+    event = _safe_text(identity.get("event"), "observation.identity.event")
+    ci_workflows.add((identity["workflow_id"], event))
+    if not isinstance(item.get("jobs"), list):
+        raise InputError("CI observation jobs must be a list")
+    _timestamp(item.get("created_at"), "observation.created_at")
+    completed = item.get("selected_completed_at")
+    if completed is not None:
+        _timestamp(completed, "observation.selected_completed_at")
+    if eligible and completed is None:
+        raise InputError("eligible CI observation requires completion")
+
+    provenance = _object(item.get("provenance"), "observation.provenance")
+    status = _safe_text(item.get("status"), "observation.status")
+    try:
+        rebuilt = _ci_observation(
+            {
+                "context": item["context"],
+                "run": {
+                    "id": identity["run_id"],
+                    "run_attempt": identity["run_attempt"],
+                    "workflow_id": identity["workflow_id"],
+                    "head_sha": identity["head_sha"],
+                    "event": identity["event"],
+                    "created_at": item["created_at"],
+                    "status": status,
+                    "conclusion": item.get("conclusion"),
+                },
+                "job_pages": [
+                    {
+                        "total_count": provenance.get("total_count"),
+                        "jobs": item["jobs"],
+                    }
+                ],
+                "collection": provenance,
+            }
+        )
+    except InputError as exc:
+        raise _relabel_reconstruction_error(exc) from exc
+    for field in (
+        "eligibility",
+        "reasons",
+        "duration_seconds",
+        "selected_completed_at",
+        "pre_start_seconds",
+        "selected_job_names",
+        "jobs",
+    ):
+        if item.get(field) != rebuilt[field]:
+            raise InputError(f"CI {field} does not match capture evidence")
+    return item | {"duration_seconds": duration}
+
+
+def _check_local_observation(
+    item: dict[str, Any],
+    identity: dict[str, Any],
+    context: dict[str, Any],
+    duration: float | None,
+    seen: set[tuple[str, str]],
+) -> dict[str, Any]:
+    sample_id = _string(identity.get("id"), "observation.identity.id")
+    semantic_key = ("local", sample_id)
+    if semantic_key in seen:
+        raise InputError("duplicate local observation id")
+    seen.add(semantic_key)
+    rebuilt = _local_observation(
+        item | {"id": identity["id"]}, context["benchmark_source"]
+    )
+    for field in ("eligibility", "reasons", "duration_seconds", "provenance"):
+        if item.get(field) != rebuilt[field]:
+            raise InputError(f"local {field} does not match sample evidence")
+    return item | {"duration_seconds": duration}
+
+
+def _dataset_context(data: dict[str, Any], source: str) -> dict[str, Any]:
+    if source == CI_SOURCE:
+        return _ci_context(data.get("context"))
+    return _local_context(_object(data.get("context"), "context"))
+
+
+def _validate_normalized(value: Any) -> tuple[dict[str, Any], _Variants]:
     data = _object(value, "dataset")
     source = _string(data.get("source"), "dataset.source")
     if source not in {CI_SOURCE, LOCAL_SOURCE}:
         raise InputError("dataset source is invalid")
-    if (
-        not isinstance(data.get("schema_version"), int)
-        or isinstance(data.get("schema_version"), bool)
-        or data["schema_version"] != SCHEMA_VERSION
-    ):
-        raise InputError("unsupported dataset schema_version")
-    if source == LOCAL_SOURCE and isinstance(data.get("context"), dict):
-        context_input = data | data["context"]
-    else:
-        context_input = (
-            data if source == LOCAL_SOURCE else {"context": data.get("context")}
-        )
-    context = _context(context_input, source)
+    _schema_version(data.get("schema_version"), "dataset schema_version")
+    context = _dataset_context(data, source)
     observations = data.get("observations")
     if not isinstance(observations, list):
         raise InputError("dataset observations must be a list")
@@ -466,204 +646,45 @@ def _validate_normalized(value: Any) -> dict[str, Any]:
     ci_contexts: set[str] = set()
     ci_jobsets: set[str] = set()
     ci_workflows: set[tuple[int, str]] = set()
-    for item_value in observations:
-        item = _object(item_value, "observation")
-        identity = _object(item.get("identity"), "observation.identity")
-        duration = _number(
-            item.get("duration_seconds"),
-            "observation.duration_seconds",
-            allow_none=True,
-        )
-        eligible = _boolean(item.get("eligibility"), "observation.eligibility")
-        reasons = item.get("reasons")
-        if not isinstance(reasons, list) or any(
-            not isinstance(reason, str) for reason in reasons
-        ):
-            raise InputError("observation.reasons must be a string list")
-        if eligible and (duration is None or reasons):
-            raise InputError("eligible observation requires a duration and no reasons")
-        if not eligible and not reasons:
-            raise InputError("excluded observation requires a reason")
-        if source == CI_SOURCE:
-            observation_context = _context({"context": item.get("context")}, CI_SOURCE)
-            ci_contexts.add(json.dumps(observation_context, sort_keys=True))
-            if not isinstance(item.get("selected_job_names"), list):
-                raise InputError("CI observation selected_job_names must be a list")
-            selected_names = item["selected_job_names"]
-            if any(not isinstance(name, str) or not name for name in selected_names):
+    for index, item_value in enumerate(observations):
+        try:
+            item = _object(item_value, "observation")
+            identity = _object(item.get("identity"), "observation.identity")
+            duration = _number(
+                item.get("duration_seconds"),
+                "observation.duration_seconds",
+                allow_none=True,
+            )
+            eligible = _boolean(item.get("eligibility"), "observation.eligibility")
+            reasons = item.get("reasons")
+            if not isinstance(reasons, list) or any(
+                not isinstance(reason, str) for reason in reasons
+            ):
+                raise InputError("observation.reasons must be a string list")
+            if eligible and (duration is None or reasons):
                 raise InputError(
-                    "CI observation selected_job_names must be a string list"
+                    "eligible observation requires a duration and no reasons"
                 )
-            ci_jobsets.add(json.dumps(sorted(selected_names)))
-            run_id = _integer(
-                identity.get("run_id"), "observation.identity.run_id", positive=True
-            )
-            run_attempt = _integer(
-                identity.get("run_attempt"),
-                "observation.identity.run_attempt",
-                positive=True,
-            )
-            semantic_key = ("ci", f"{run_id}:{run_attempt}")
-            if semantic_key in seen:
-                raise InputError("duplicate CI run_id/run_attempt identity")
-            seen.add(semantic_key)
-            _integer(
-                identity.get("workflow_id"),
-                "observation.identity.workflow_id",
-                positive=True,
-            )
-            _safe_text(identity.get("head_sha"), "observation.identity.head_sha")
-            event = _safe_text(identity.get("event"), "observation.identity.event")
-            ci_workflows.add((identity["workflow_id"], event))
-            status = _safe_text(item.get("status"), "observation.status")
-            conclusion = item.get("conclusion")
-            if conclusion is not None:
-                _safe_text(conclusion, "observation.conclusion")
-            _timestamp(item.get("created_at"), "observation.created_at")
-            completed = item.get("selected_completed_at")
-            reported_completed = (
-                _timestamp(completed, "observation.selected_completed_at")
-                if completed is not None
-                else None
-            )
-            if eligible and reported_completed is None:
-                raise InputError("eligible CI observation requires completion")
-            if eligible:
-                assert reported_completed is not None
-                if duration != _seconds(
-                    _timestamp(item["created_at"], "observation.created_at"),
-                    reported_completed,
-                    "full wait",
-                ):
-                    raise InputError("CI duration does not match timestamps")
-            jobs = item.get("jobs")
-            if not isinstance(jobs, list):
-                raise InputError("CI observation jobs must be a list")
-            job_ids: set[int] = set()
-            actual_selected: list[str] = []
-            selected_job_completions: list[datetime] = []
-            selected_jobs_successful = True
-            for job_value in jobs:
-                job = _object(job_value, "CI observation job")
-                job_id = _integer(job.get("id"), "CI observation job.id", positive=True)
-                if job_id in job_ids:
-                    raise InputError("duplicate normalized job ID")
-                job_ids.add(job_id)
-                name = _safe_text(job.get("name"), "CI observation job.name")
-                job_status = _safe_text(job.get("status"), "CI observation job.status")
-                if job.get("conclusion") is not None:
-                    _safe_text(job["conclusion"], "CI observation job.conclusion")
-                selected = _boolean(job.get("selected"), "CI observation job.selected")
-                if selected and (
-                    job_status != "completed" or job.get("conclusion") != "success"
-                ):
-                    selected_jobs_successful = False
-                job_duration = _number(
-                    job.get("duration_seconds"),
-                    "CI observation job.duration_seconds",
-                    allow_none=True,
+            if not eligible and not reasons:
+                raise InputError("excluded observation requires a reason")
+            if source == CI_SOURCE:
+                checked_item = _check_ci_observation(
+                    item,
+                    identity,
+                    duration,
+                    eligible,
+                    seen,
+                    ci_contexts,
+                    ci_jobsets,
+                    ci_workflows,
                 )
-                started = job.get("started_at")
-                finished = job.get("completed_at")
-                if started is not None and finished is not None:
-                    expected = _seconds(
-                        _timestamp(started, "CI observation job.started_at"),
-                        _timestamp(finished, "CI observation job.completed_at"),
-                        "job interval",
-                    )
-                    if job_duration != expected:
-                        raise InputError(
-                            "normalized job duration does not match timestamps"
-                        )
-                elif job_duration is not None:
-                    raise InputError("normalized job duration requires timestamps")
-                if selected:
-                    actual_selected.append(name)
-                    if finished is not None:
-                        selected_job_completions.append(
-                            _timestamp(finished, "CI observation job.completed_at")
-                        )
-            if sorted(actual_selected) != sorted(selected_names):
-                raise InputError("selected job names do not match normalized jobs")
-            if eligible and (
-                not selected_jobs_successful
-                or len(selected_job_completions) != len(actual_selected)
-                or reported_completed != max(selected_job_completions, default=None)
-            ):
-                raise InputError(
-                    "eligible CI observation timing does not match selected jobs"
+            else:
+                checked_item = _check_local_observation(
+                    item, identity, context, duration, seen
                 )
-            if eligible and (
-                status != "completed"
-                or conclusion != "success"
-                or identity["run_attempt"] > 1
-            ):
-                raise InputError("eligible CI observation has invalid run state")
-        else:
-            sample_id = _string(identity.get("id"), "observation.identity.id")
-            semantic_key = ("local", sample_id)
-            if semantic_key in seen:
-                raise InputError("duplicate local observation id")
-            seen.add(semantic_key)
-            status = _safe_text(item.get("status"), "observation.status")
-            if status not in LOCAL_STATUSES:
-                raise InputError("unknown observation status")
-            exit_code = item.get("exit_code")
-            if exit_code is not None:
-                _integer(exit_code, "observation.exit_code")
-            if status == "success" and exit_code != 0:
-                raise InputError("successful observation requires exit_code 0")
-            if status == "failed" and (exit_code is None or exit_code == 0):
-                raise InputError("failed observation requires a nonzero exit_code")
-            if status in {"cancelled", "timed_out"} and exit_code == 0:
-                raise InputError(f"{status} observation cannot have exit_code 0")
-            warmup = _boolean(item.get("warmup"), "observation.warmup")
-            expected_eligibility = status == "success" and not warmup
-            if eligible != expected_eligibility:
-                raise InputError("local observation eligibility does not match status")
-        if source == CI_SOURCE:
-            provenance = _object(item.get("provenance"), "observation.provenance")
-            rebuilt = _ci_observation(
-                {
-                    "context": item["context"],
-                    "run": {
-                        "id": identity["run_id"],
-                        "run_attempt": identity["run_attempt"],
-                        "workflow_id": identity["workflow_id"],
-                        "head_sha": identity["head_sha"],
-                        "event": identity["event"],
-                        "created_at": item["created_at"],
-                        "status": item["status"],
-                        "conclusion": item.get("conclusion"),
-                    },
-                    "job_pages": [
-                        {
-                            "total_count": provenance.get("total_count"),
-                            "jobs": item["jobs"],
-                        }
-                    ],
-                    "collection": provenance,
-                }
-            )
-            for field in (
-                "eligibility",
-                "reasons",
-                "duration_seconds",
-                "selected_completed_at",
-                "pre_start_seconds",
-                "selected_job_names",
-                "jobs",
-            ):
-                if item.get(field) != rebuilt[field]:
-                    raise InputError(f"CI {field} does not match capture evidence")
-        else:
-            rebuilt = _local_observation(
-                item | {"id": identity["id"]}, context["benchmark_source"]
-            )
-            for field in ("eligibility", "reasons", "duration_seconds", "provenance"):
-                if item.get(field) != rebuilt[field]:
-                    raise InputError(f"local {field} does not match sample evidence")
-        checked.append(item | {"duration_seconds": duration})
+        except InputError as exc:
+            raise InputError(f"observations[{index}]: {exc}") from exc
+        checked.append(checked_item)
     expected_exclusions = [
         {"identity": item["identity"], "reasons": item["reasons"]}
         for item in checked
@@ -680,7 +701,7 @@ def _validate_normalized(value: Any) -> dict[str, Any]:
             raise InputError("context_variants must be an integer")
         if declared != actual_context_variants:
             raise InputError("context_variants does not match observations")
-        if context != _context({"context": checked[0]["context"]}, CI_SOURCE):
+        if context != _ci_context(checked[0]["context"]):
             raise InputError("dataset context does not match first observation")
         normalized = {
             "schema_version": SCHEMA_VERSION,
@@ -690,16 +711,18 @@ def _validate_normalized(value: Any) -> dict[str, Any]:
             "observations": checked,
             "exclusions": exclusions,
         }
-        normalized["_jobset_variants"] = len(ci_jobsets)
-        normalized["_workflow_variants"] = len(ci_workflows)
-        return normalized
+        return normalized, _Variants(
+            context=actual_context_variants,
+            jobset=len(ci_jobsets),
+            workflow=len(ci_workflows),
+        )
     return {
         "schema_version": SCHEMA_VERSION,
         "source": source,
         "context": context,
         "observations": checked,
         "exclusions": exclusions,
-    }
+    }, _Variants()
 
 
 def _side(data: dict[str, Any]) -> dict[str, Any]:
@@ -711,6 +734,8 @@ def _side(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "eligible_count": len(values),
         "excluded_count": len(data["observations"]) - len(values),
+        # Decimal avoids float median overflowing to inf on huge finite values,
+        # which json.dumps(allow_nan=False) would then reject.
         "median_seconds": float(median([Decimal(str(value)) for value in values]))
         if values
         else None,
@@ -719,28 +744,46 @@ def _side(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _comparison_context(data: dict[str, Any]) -> dict[str, Any]:
+def _side_provenance(data: dict[str, Any]) -> dict[str, Any]:
+    context = data["context"]
+    if data["source"] == CI_SOURCE:
+        first = data["observations"][0]["identity"]
+        return {
+            "repository": context["repository"],
+            "workflow_id": first["workflow_id"],
+            "event": first["event"],
+            "runs": [
+                {
+                    "run_id": item["identity"]["run_id"],
+                    "run_attempt": item["identity"]["run_attempt"],
+                    "head_sha": item["identity"]["head_sha"],
+                }
+                for item in data["observations"]
+                if item["eligibility"]
+            ],
+        }
+    return {
+        "revision": context.get("revision"),
+        "command": context.get("command"),
+        "benchmark_source": context["benchmark_source"],
+    }
+
+
+def _comparison_context(data: dict[str, Any], variants: _Variants) -> dict[str, Any]:
     context = data["context"]
     if data["source"] == CI_SOURCE:
         observations = data["observations"]
-        workflow_values = {
-            (item["identity"]["workflow_id"], item["identity"]["event"])
-            for item in observations
-        }
-        jobsets = {
-            tuple(sorted(item.get("selected_job_names", []))) for item in observations
-        }
         first = observations[0]["identity"]
         return {
             "repository": context["repository"],
-            "workflow_id": first["workflow_id"] if len(workflow_values) == 1 else None,
-            "event_class": first["event"] if len(workflow_values) == 1 else None,
+            "workflow_id": first["workflow_id"] if variants.workflow == 1 else None,
+            "event_class": first["event"] if variants.workflow == 1 else None,
             "workload_label": context["workload_label"],
             "validation_contract": context["validation_contract"],
             "environment": context.get("runner_toolchain"),
             "cache_state": context.get("cache_state"),
-            "selected_job_names": list(next(iter(jobsets)))
-            if len(jobsets) == 1
+            "selected_job_names": sorted(observations[0].get("selected_job_names", []))
+            if variants.jobset == 1
             else None,
         }
     return {
@@ -753,30 +796,17 @@ def _comparison_context(data: dict[str, Any]) -> dict[str, Any]:
 
 def _acknowledge(
     ack: Any, differences: list[dict[str, Any]]
-) -> set[tuple[str, str, str]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if ack is None:
-        return set()
+        return [], list(differences)
     ack = _object(ack, "acknowledgements")
-    if (
-        not isinstance(ack.get("schema_version"), int)
-        or isinstance(ack.get("schema_version"), bool)
-        or ack["schema_version"] != SCHEMA_VERSION
-    ):
-        raise InputError("unsupported acknowledgement schema_version")
-    _string(ack.get("plan_ref"), "acknowledgements.plan_ref")
+    _schema_version(ack.get("schema_version"), "acknowledgement schema_version")
+    _safe_text(ack.get("plan_ref"), "acknowledgements.plan_ref")
     entries = ack.get("differences")
     if not isinstance(entries, list):
         raise InputError("acknowledgements.differences must be a list")
     allowed = {"environment", "cache_state", "local command"}
-    expected = {
-        (
-            item["field"],
-            json.dumps(item["before"], sort_keys=True),
-            json.dumps(item["after"], sort_keys=True),
-        )
-        for item in differences
-    }
-    actual: set[tuple[str, str, str]] = set()
+    acknowledged_triples: set[tuple[str, str, str]] = set()
     for entry in entries:
         entry = _object(entry, "acknowledgement difference")
         field = _safe_text(entry.get("field"), "acknowledgement field")
@@ -787,12 +817,26 @@ def _acknowledge(
             json.dumps(entry.get("before"), sort_keys=True),
             json.dumps(entry.get("after"), sort_keys=True),
         )
-        if triple in actual:
+        if triple in acknowledged_triples:
             raise InputError("duplicate acknowledgement difference")
-        actual.add(triple)
-    if not actual.issubset(expected):
+        acknowledged_triples.add(triple)
+    expected = {
+        (
+            item["field"],
+            json.dumps(item["before"], sort_keys=True),
+            json.dumps(item["after"], sort_keys=True),
+        ): item
+        for item in differences
+    }
+    if not acknowledged_triples.issubset(expected.keys()):
         raise InputError("acknowledgement does not match observed differences")
-    return actual
+    acknowledged = [
+        item for triple, item in expected.items() if triple in acknowledged_triples
+    ]
+    unacknowledged = [
+        item for triple, item in expected.items() if triple not in acknowledged_triples
+    ]
+    return acknowledged, unacknowledged
 
 
 def _unknown(value: Any) -> bool:
@@ -802,28 +846,26 @@ def _unknown(value: Any) -> bool:
 
 
 def _compare_datasets(
-    before_value: Any, after_value: Any, minimum_samples: int, ack: Any = None
+    before: dict[str, Any],
+    before_variants: _Variants,
+    after: dict[str, Any],
+    after_variants: _Variants,
+    minimum_samples: int,
+    ack: Any = None,
 ) -> dict[str, Any]:
     minimum_samples = _integer(minimum_samples, "minimum_samples", positive=True)
-    before = _validate_normalized(before_value)
-    after = _validate_normalized(after_value)
     reasons: list[str] = []
     if before["source"] != after["source"]:
         reasons.append("measurement_sources_differ")
-    if before.get("context_variants", 1) > 1:
-        reasons.append("before_mixed_context")
-    if after.get("context_variants", 1) > 1:
-        reasons.append("after_mixed_context")
-    if before.get("_workflow_variants", 1) > 1:
-        reasons.append("before_mixed_workflow")
-    if after.get("_workflow_variants", 1) > 1:
-        reasons.append("after_mixed_workflow")
-    if before.get("_jobset_variants", 1) > 1:
-        reasons.append("before_mixed_jobset")
-    if after.get("_jobset_variants", 1) > 1:
-        reasons.append("after_mixed_jobset")
-    before_context = _comparison_context(before)
-    after_context = _comparison_context(after)
+    for kind in ("context", "workflow", "jobset"):
+        for side_name, variants in (
+            ("before", before_variants),
+            ("after", after_variants),
+        ):
+            if getattr(variants, kind) > 1:
+                reasons.append(f"{side_name}_mixed_{kind}")
+    before_context = _comparison_context(before, before_variants)
+    after_context = _comparison_context(after, after_variants)
     fields = (
         (
             "repository",
@@ -847,30 +889,23 @@ def _compare_datasets(
             "before": before_context.get(field),
             "after": after_context.get(field),
         }
-        for field in ("environment", "cache_state", "local_command")
+        for field in _COMPARISON_CONTEXT_FIELDS
         if before_context.get(field) != after_context.get(field)
     ]
+    unknown_fields = (
+        _COMPARISON_CONTEXT_FIELDS
+        if before["source"] == LOCAL_SOURCE
+        else _COMPARISON_CONTEXT_FIELDS[:2]
+    )
     unknown_context = [
         field
-        for field in (
-            ("environment", "cache_state", "local_command")
-            if before["source"] == LOCAL_SOURCE
-            else ("environment", "cache_state")
-        )
+        for field in unknown_fields
         if _unknown(before_context.get(field)) or _unknown(after_context.get(field))
     ]
     if unknown_context:
         reasons.append("comparison_context_unknown")
-    acknowledged = _acknowledge(ack, differences)
-    if differences and any(
-        (
-            item["field"],
-            json.dumps(item["before"], sort_keys=True),
-            json.dumps(item["after"], sort_keys=True),
-        )
-        not in acknowledged
-        for item in differences
-    ):
+    acknowledged, unacknowledged = _acknowledge(ack, differences)
+    if unacknowledged:
         reasons.append("context_differences_not_acknowledged")
     before_side = _side(before)
     after_side = _side(after)
@@ -902,16 +937,11 @@ def _compare_datasets(
         "reasons": reasons,
         "context_differences": differences,
         "acknowledgement_plan_ref": ack["plan_ref"] if ack is not None else None,
-        "acknowledged_differences": [
-            item
-            for item in differences
-            if (
-                item["field"],
-                json.dumps(item["before"], sort_keys=True),
-                json.dumps(item["after"], sort_keys=True),
-            )
-            in acknowledged
-        ],
+        "acknowledged_differences": acknowledged,
+        "provenance": {
+            "before": _side_provenance(before),
+            "after": _side_provenance(after),
+        },
         "before": before_side,
         "after": after_side,
         "delta": {
@@ -926,12 +956,21 @@ def _read_json(path: str) -> Any:
     try:
         with Path(path).open(encoding="utf-8") as stream:
             return json.load(stream)
+    except RecursionError as exc:
+        raise InputError(f"input {path} is nested too deeply") from exc
     except json.JSONDecodeError as exc:
         raise InputError(f"invalid JSON input {path}: {exc}") from exc
     except UnicodeError as exc:
         raise InputError(f"invalid text input {path}: {exc}") from exc
     except OSError as exc:
-        raise RuntimeError(f"cannot read JSON input {path}: {exc}") from exc
+        raise ExecutionError(f"cannot read JSON input {path}: {exc}") from exc
+
+
+def _load_normalized(path: str) -> tuple[dict[str, Any], _Variants]:
+    try:
+        return _validate_normalized(_read_json(path))
+    except InputError as exc:
+        raise InputError(f"{path}: {exc}") from exc
 
 
 def _write_json(value: Any, path: str | None, force: bool) -> None:
@@ -941,13 +980,22 @@ def _write_json(value: Any, path: str | None, force: bool) -> None:
             raise InputError("--force requires an output path")
         print(encoded, end="")
         return
-    flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if force else os.O_EXCL)
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | ((os.O_TRUNC | os.O_NOFOLLOW) if force else os.O_EXCL)
+    )
     try:
         descriptor = os.open(path, flags, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            os.fchmod(descriptor, 0o600)
             stream.write(encoded)
+    except FileExistsError as exc:
+        raise ExecutionError(
+            f"output {path} already exists; pass --force to overwrite"
+        ) from exc
     except OSError as exc:
-        raise RuntimeError(f"cannot write output {path}: {exc}") from exc
+        raise ExecutionError(f"cannot write output {path}: {exc}") from exc
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -965,7 +1013,77 @@ def _parser() -> argparse.ArgumentParser:
     compare.add_argument("--acknowledgements")
     compare.add_argument("--output")
     compare.add_argument("--force", action="store_true")
+    from_hyperfine = subparsers.add_parser("from-hyperfine")
+    from_hyperfine.add_argument("--input", required=True)
+    from_hyperfine.add_argument("--command", dest="hyperfine_command", required=True)
+    from_hyperfine.add_argument("--revision", required=True)
+    from_hyperfine.add_argument("--environment", required=True)
+    from_hyperfine.add_argument("--cache-state", required=True)
+    from_hyperfine.add_argument("--workload-label", required=True)
+    from_hyperfine.add_argument("--sample-prefix", default="sample")
+    from_hyperfine.add_argument("--tool-version")
+    from_hyperfine.add_argument("--captured-at")
+    from_hyperfine.add_argument("--output")
+    from_hyperfine.add_argument("--force", action="store_true")
     return parser
+
+
+def _from_hyperfine(args: argparse.Namespace) -> dict[str, Any]:
+    export = _read_json(args.input)
+    export = _object(export, "hyperfine export")
+    results = export.get("results")
+    if not isinstance(results, list) or len(results) != 1:
+        raise InputError("hyperfine export must contain exactly one result")
+    result = _object(results[0], "hyperfine result")
+    times = result.get("times")
+    exit_codes = result.get("exit_codes")
+    if not isinstance(times, list) or not times:
+        raise InputError("hyperfine result.times must be a non-empty list")
+    if not isinstance(exit_codes, list):
+        raise InputError("hyperfine result.exit_codes must be a list")
+    if len(times) != len(exit_codes):
+        raise InputError(
+            "hyperfine result.times and exit_codes must be the same length"
+        )
+    samples = []
+    for index, (time_value, exit_code) in enumerate(zip(times, exit_codes)):
+        duration = _number(time_value, f"times[{index}]")
+        if (
+            exit_code is None
+            or isinstance(exit_code, bool)
+            or not isinstance(exit_code, int)
+        ):
+            raise InputError(f"exit_codes[{index}] must be an integer")
+        samples.append(
+            {
+                "id": f"{args.sample_prefix}-{index}",
+                "status": "success" if exit_code == 0 else "failed",
+                "duration_seconds": duration,
+                "exit_code": exit_code,
+                "warmup": False,
+            }
+        )
+    if args.captured_at is not None:
+        captured_at = args.captured_at
+    else:
+        mtime = Path(args.input).stat().st_mtime
+        captured_at = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+    benchmark_source = {"tool": "hyperfine", "evidence_file": args.input}
+    if args.tool_version is not None:
+        benchmark_source["version"] = args.tool_version
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "source": LOCAL_SOURCE,
+        "command": args.hyperfine_command,
+        "revision": args.revision,
+        "environment": args.environment,
+        "cache_state": args.cache_state,
+        "workload_label": args.workload_label,
+        "captured_at": captured_at,
+        "benchmark_source": benchmark_source,
+        "samples": samples,
+    }
+    return _normalize_local(payload)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -975,11 +1093,17 @@ def main(argv: list[str] | None = None) -> int:
             result = _normalize_ci(_read_json(args.input))
         elif args.command == "local":
             result = _normalize_local(_read_json(args.input))
+        elif args.command == "from-hyperfine":
+            result = _from_hyperfine(args)
         else:
             ack = _read_json(args.acknowledgements) if args.acknowledgements else None
+            before, before_variants = _load_normalized(args.before)
+            after, after_variants = _load_normalized(args.after)
             result = _compare_datasets(
-                _read_json(args.before),
-                _read_json(args.after),
+                before,
+                before_variants,
+                after,
+                after_variants,
                 args.minimum_samples,
                 ack,
             )
@@ -987,7 +1111,7 @@ def main(argv: list[str] | None = None) -> int:
     except InputError as exc:
         print(f"ci-optimize: {exc}", file=sys.stderr)
         return 2
-    except RuntimeError as exc:
+    except ExecutionError as exc:
         print(f"ci-optimize: {exc}", file=sys.stderr)
         return 1
     return 0

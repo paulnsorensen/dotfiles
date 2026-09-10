@@ -17,10 +17,12 @@ lint-shell:
     shellcheck -x -e SC1091 -s bash tests/workflows-test.sh
     @echo "shellcheck: ok"
 
+PYTHON_LINT_PATHS := "skills/session-analytics/scripts/ skills/ci-optimize/scripts/ tests/ci_optimize/"
+
 # ruff on python files
 lint-python:
-    ruff check skills/session-analytics/scripts/ skills/ci-optimize/scripts tests/ci_optimize/
-    ruff format --check skills/session-analytics/scripts/ skills/ci-optimize/scripts tests/ci_optimize/
+    ruff check {{PYTHON_LINT_PATHS}}
+    ruff format --check {{PYTHON_LINT_PATHS}}
 
 # eslint on JS hooks (config in claude/hooks/eslint.config.js)
 lint-js:
@@ -35,8 +37,8 @@ lint-fix: lint-python-fix lint-js-fix lint-markdown-fix
 
 # ruff --fix + ruff format
 lint-python-fix:
-    ruff check --fix skills/session-analytics/scripts/
-    ruff format skills/session-analytics/scripts/
+    ruff check --fix {{PYTHON_LINT_PATHS}}
+    ruff format {{PYTHON_LINT_PATHS}}
 
 # eslint --fix
 lint-js-fix:

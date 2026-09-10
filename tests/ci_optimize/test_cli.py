@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import stat
 import subprocess
 import sys
 import tempfile
@@ -15,11 +16,17 @@ SCRIPT = ROOT / "skills" / "ci-optimize" / "scripts" / "ci_optimize.py"
 def run_cli(
     *args: str, payload: dict[str, Any] | None = None
 ) -> subprocess.CompletedProcess[str]:
+    if payload is None:
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), *args],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
     with tempfile.TemporaryDirectory() as directory:
         input_path = Path(directory) / "input.json"
-        if payload is not None:
-            input_path.write_text(json.dumps(payload), encoding="utf-8")
-            args = (*args, "--input", str(input_path))
+        input_path.write_text(json.dumps(payload), encoding="utf-8")
+        args = (*args, "--input", str(input_path))
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
             text=True,
@@ -89,6 +96,40 @@ def ci_payload(*, attempt: int = 1, completed: bool = True) -> dict[str, Any]:
     }
 
 
+def _mixed_context_payload() -> dict[str, Any]:
+    payload = ci_payload()
+    second_capture = json.loads(json.dumps(payload["captures"][0]))
+    second_capture["context"]["runner_toolchain"] = "macos-arm64"
+    second_capture["run"]["id"] = 100
+    second_capture["collection"]["run_id"] = 100
+    for job in second_capture["job_pages"][0]["jobs"]:
+        job["run_id"] = 100
+    payload["captures"].append(second_capture)
+    return payload
+
+
+def _local_sample_payload() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "source": "local",
+        "command": "just check",
+        "revision": "abc",
+        "environment": "macos",
+        "cache_state": "warm",
+        "workload_label": "default",
+        "benchmark_source": {"tool": "time", "evidence_file": "samples.json"},
+        "samples": [
+            {
+                "id": "1",
+                "status": "success",
+                "duration_seconds": 1.0,
+                "exit_code": 0,
+                "warmup": False,
+            }
+        ],
+    }
+
+
 class CliTests(unittest.TestCase):
     def test_ci_uses_latest_selected_completion_not_sum(self) -> None:
         result = run_cli("ci", payload=ci_payload())
@@ -106,14 +147,29 @@ class CliTests(unittest.TestCase):
         )
         self.assertTrue(observation["eligibility"])
 
-    def test_ci_keeps_incomplete_observation_as_diagnostic(self) -> None:
-        payload = ci_payload(completed=False)
+    def test_ci_flags_run_when_selected_jobs_never_complete(self) -> None:
+        result = run_cli("ci", payload=ci_payload(completed=False))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observation = json.loads(result.stdout)["observations"][0]
+        self.assertFalse(observation["eligibility"])
+        self.assertEqual(
+            sorted(observation["reasons"]),
+            [
+                "selected_job_101_missing_completion",
+                "selected_job_101_not_successful",
+                "selected_job_102_missing_completion",
+                "selected_job_102_not_successful",
+            ],
+        )
+
+    def test_ci_flags_run_with_conflicting_total_count(self) -> None:
+        payload = ci_payload()
         payload["captures"][0]["job_pages"][0]["total_count"] = 3
         result = run_cli("ci", payload=payload)
         self.assertEqual(result.returncode, 0, result.stderr)
         observation = json.loads(result.stdout)["observations"][0]
         self.assertFalse(observation["eligibility"])
-        self.assertIn("incomplete_job_pages", observation["reasons"])
+        self.assertEqual(sorted(observation["reasons"]), ["incomplete_job_pages"])
 
     def test_ci_rejects_duplicate_job_ids(self) -> None:
         payload = ci_payload()
@@ -277,7 +333,10 @@ class CliTests(unittest.TestCase):
                 check=False,
             )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("timing does not match", result.stderr)
+        self.assertIn(
+            "observations[0]: CI duration_seconds does not match capture evidence",
+            result.stderr,
+        )
 
     def test_compare_rejects_boolean_schema_version(self) -> None:
         dataset = {
@@ -363,6 +422,108 @@ class CliTests(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 2)
         self.assertIn("no reasons", result.stderr)
+        self.assertTrue(
+            result.stderr.startswith(f"ci-optimize: {before}: observations[0]:")
+        )
+
+    def test_compare_provenance_includes_ci_run_identity(self) -> None:
+        normalized = run_cli("ci", payload=ci_payload()).stdout
+        with tempfile.TemporaryDirectory() as directory:
+            before = Path(directory) / "before.json"
+            after = Path(directory) / "after.json"
+            before.write_text(normalized, encoding="utf-8")
+            after.write_text(normalized, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "compare",
+                    "--before",
+                    str(before),
+                    "--after",
+                    str(after),
+                    "--minimum-samples",
+                    "1",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run_entry = json.loads(result.stdout)["provenance"]["before"]["runs"][0]
+        self.assertEqual(run_entry["run_id"], 99)
+        self.assertEqual(run_entry["run_attempt"], 1)
+        self.assertEqual(run_entry["head_sha"], "a" * 40)
+
+    def test_compare_provenance_includes_local_revision_and_command(self) -> None:
+        def dataset(revision: str) -> dict[str, Any]:
+            return {
+                "schema_version": 1,
+                "source": "local",
+                "context": {
+                    "command": "just check",
+                    "revision": revision,
+                    "environment": "macos",
+                    "cache_state": "warm",
+                    "workload_label": "default",
+                    "benchmark_source": {"tool": "time", "evidence_file": "x"},
+                },
+                "observations": [
+                    {
+                        "identity": {"id": "1"},
+                        "duration_seconds": 1.0,
+                        "eligibility": True,
+                        "reasons": [],
+                        "status": "success",
+                        "exit_code": 0,
+                        "warmup": False,
+                        "provenance": {"tool": "time", "evidence_file": "x"},
+                    }
+                ],
+                "exclusions": [],
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            before = Path(directory) / "before.json"
+            after = Path(directory) / "after.json"
+            before.write_text(json.dumps(dataset("before-sha")), encoding="utf-8")
+            after.write_text(json.dumps(dataset("after-sha")), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "compare",
+                    "--before",
+                    str(before),
+                    "--after",
+                    str(after),
+                    "--minimum-samples",
+                    "1",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        provenance = json.loads(result.stdout)["provenance"]["before"]
+        self.assertEqual(provenance["revision"], "before-sha")
+        self.assertEqual(provenance["command"], "just check")
+        self.assertEqual(
+            provenance["benchmark_source"], {"tool": "time", "evidence_file": "x"}
+        )
+
+    def test_ci_rejects_deeply_nested_input(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            deep = Path(directory) / "deep.json"
+            deep.write_text("[" * 200000 + "]" * 200000, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "ci", "--input", str(deep)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("nested too deeply", result.stderr)
 
     def test_compare_report_retains_acknowledgement_plan_ref(self) -> None:
         def dataset(cache_state: str) -> dict[str, Any]:
@@ -435,6 +596,83 @@ class CliTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertTrue(report["comparability"])
         self.assertEqual(report["acknowledgement_plan_ref"], "approved-plan-7")
+
+    def test_ci_normalizes_two_page_capture_and_uses_latest_completion(self) -> None:
+        payload = ci_payload()
+        jobs = payload["captures"][0]["job_pages"][0]["jobs"]
+        payload["captures"][0]["job_pages"] = [
+            {"total_count": 2, "jobs": [jobs[0]]},
+            {"total_count": 2, "jobs": [jobs[1]]},
+        ]
+        result = run_cli("ci", payload=payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observation = json.loads(result.stdout)["observations"][0]
+        self.assertEqual(observation["duration_seconds"], 480.0)
+
+    def test_ci_normalizes_context_variants_across_captures(self) -> None:
+        result = run_cli("ci", payload=_mixed_context_payload())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["context_variants"], 2)
+
+    def test_compare_flags_mixed_context_before(self) -> None:
+        mixed_result = run_cli("ci", payload=_mixed_context_payload())
+        self.assertEqual(mixed_result.returncode, 0, mixed_result.stderr)
+        clean_result = run_cli("ci", payload=ci_payload())
+        self.assertEqual(clean_result.returncode, 0, clean_result.stderr)
+        with tempfile.TemporaryDirectory() as directory:
+            before = Path(directory) / "before.json"
+            after = Path(directory) / "after.json"
+            before.write_text(mixed_result.stdout, encoding="utf-8")
+            after.write_text(clean_result.stdout, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "compare",
+                    "--before",
+                    str(before),
+                    "--after",
+                    str(after),
+                    "--minimum-samples",
+                    "1",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("before_mixed_context", json.loads(result.stdout)["reasons"])
+
+    def test_write_json_refuses_symlink_target_even_with_force(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "target.json"
+            target.write_bytes(b"original")
+            link = Path(directory) / "output.json"
+            link.symlink_to(target)
+            result = run_cli(
+                "local",
+                "--output",
+                str(link),
+                "--force",
+                payload=_local_sample_payload(),
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(target.read_bytes(), b"original")
+
+    def test_write_json_force_resets_permissions_to_owner_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output.json"
+            output.write_text("{}", encoding="utf-8")
+            output.chmod(0o644)
+            result = run_cli(
+                "local",
+                "--output",
+                str(output),
+                "--force",
+                payload=_local_sample_payload(),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
 
 
 if __name__ == "__main__":
