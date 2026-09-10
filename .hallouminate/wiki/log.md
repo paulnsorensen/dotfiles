@@ -69,3 +69,5 @@
 2026-09-08 · 98ab6e3d49b0f009 · merged · operations/sync-and-chezmoi.md · Record persistent environment setup for parser tests; temporary function assignments cause false failures.
 
 2026-09-08 · c980af7ece888d18 · new-page · operations/ci-optimization.md · Record import-only timing, attempt identity, and comparison limits.
+
+2026-09-08 · ci-optimize-skill · merged · operations/ci-optimization.md · Record approval boundaries and executable source-name encoding.

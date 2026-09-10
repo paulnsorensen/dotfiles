@@ -1136,6 +1136,14 @@ TOML
             || { echo "missing $source_claude/$tree" >&2; return 1; }
     done
     [[ -f "$source_claude/exact_skills/exact_dummy-paulnsorensen__easy-cheese/SKILL.md" ]]
+    # Local skills retain all reference and helper bytes.
+    local ci_skill_src="$REAL_DOTFILES_DIR/skills/ci-optimize"
+    local ci_skill_dst="$source_claude/exact_skills/exact_ci-optimize"
+    cmp "$ci_skill_src/SKILL.md" "$ci_skill_dst/SKILL.md"
+    for ref in "$ci_skill_src"/references/*.md; do
+        cmp "$ref" "$ci_skill_dst/exact_references/$(basename "$ref")"
+    done
+    cmp "$ci_skill_src/scripts/ci_optimize.py" "$ci_skill_dst/exact_scripts/executable_ci_optimize.py"
     grep -q '^name: whey-drainer$' "$source_claude/exact_agents/whey-drainer.md"
     grep -q '^model: haiku$' "$source_claude/exact_agents/whey-drainer.md"
     [[ -f "$source_claude/exact_hooks/executable_git-guard.sh" ]]
