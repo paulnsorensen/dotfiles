@@ -92,6 +92,7 @@ print_cheatsheet() {
     row "mtmux <host> [sess]"    "mosh + tmux resilient remote shell"
     row "tmux-clients"           "per-client written/discarded stats"
     row "tmux-detach-others"     "detach every client but this one"
+    row "tmux-take-size"         "make this client own the window size"
     row "tss"                    "tailscale status"
     row "tsip"                   "tailscale ip -4"
 
@@ -105,6 +106,7 @@ print_cheatsheet() {
     row "prefix ?"               "general dotfiles cheatsheet"
     row "prefix /"               "this tmux cheatsheet (popup)"
     row "prefix r"               "reload tmux config"
+    row "prefix R"               "this client owns the window size"
     row "tmux-cheatsheet"        "this reference"
 
     tmux_live_bindings

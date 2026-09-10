@@ -856,3 +856,85 @@ SCRIPT
     [[ -n "$copilot_line" ]]
     [[ "$visible_line" -lt "$copilot_line" ]]
 }
+
+@test "package upgrade and ordinary config run between chezmoi phases" {
+    cd "$FAKE_DOTFILES"
+    export SYNC_EVENTS="$TEST_HOME/sync-events.log"
+    mkdir -p "$FAKE_DOTFILES/mysubdir"
+    cat > "$FAKE_DOTFILES/chezmoi/.sync" <<'SCRIPT'
+#!/bin/bash
+printf 'chezmoi-%s\n' "${CHEZMOI_SYNC_PHASE:-unknown}" >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/chezmoi/.sync"
+    cat > "$FAKE_DOTFILES/mysubdir/.sync" <<'SCRIPT'
+#!/bin/bash
+printf 'ordinary-config\n' >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/mysubdir/.sync"
+    rm -f "$FAKE_DOTFILES/packages/sync.sh"
+    cat > "$FAKE_DOTFILES/packages/sync.sh" <<'SCRIPT'
+#!/bin/bash
+printf 'packages-upgrade=%s\n' "$UPGRADE_MODE" >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    run cat "$SYNC_EVENTS"
+    [ "$output" = $'chezmoi-prepare\npackages-upgrade=true\nordinary-config\nchezmoi-final' ]
+}
+
+@test "--no-upgrade overrides inherited upgrade mode" {
+    cd "$FAKE_DOTFILES"
+    export SYNC_EVENTS="$TEST_HOME/sync-events.log"
+    mkdir -p "$FAKE_DOTFILES/mysubdir"
+    cat > "$FAKE_DOTFILES/chezmoi/.sync" <<'SCRIPT'
+#!/bin/bash
+printf 'chezmoi-%s\n' "${CHEZMOI_SYNC_PHASE:-unknown}" >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/chezmoi/.sync"
+    cat > "$FAKE_DOTFILES/mysubdir/.sync" <<'SCRIPT'
+#!/bin/bash
+printf 'ordinary-config\n' >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/mysubdir/.sync"
+    rm -f "$FAKE_DOTFILES/packages/sync.sh"
+    cat > "$FAKE_DOTFILES/packages/sync.sh" <<'SCRIPT'
+#!/bin/bash
+printf 'packages-upgrade=%s\n' "$UPGRADE_MODE" >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT" --no-upgrade
+    assert_success
+    run cat "$SYNC_EVENTS"
+    [ "$output" = $'chezmoi-prepare\npackages-upgrade=false\nordinary-config\nchezmoi-final' ]
+}
+
+@test "package failure prevents ordinary config and final chezmoi apply" {
+    cd "$FAKE_DOTFILES"
+    export SYNC_EVENTS="$TEST_HOME/sync-events.log"
+    mkdir -p "$FAKE_DOTFILES/mysubdir"
+    cat > "$FAKE_DOTFILES/chezmoi/.sync" <<'SCRIPT'
+#!/bin/bash
+printf 'chezmoi-%s\n' "${CHEZMOI_SYNC_PHASE:-unknown}" >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/chezmoi/.sync"
+    cat > "$FAKE_DOTFILES/mysubdir/.sync" <<'SCRIPT'
+#!/bin/bash
+printf 'ordinary-config\n' >> "$SYNC_EVENTS"
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/mysubdir/.sync"
+    rm -f "$FAKE_DOTFILES/packages/sync.sh"
+    cat > "$FAKE_DOTFILES/packages/sync.sh" <<'SCRIPT'
+#!/bin/bash
+printf 'packages-failed\n' >> "$SYNC_EVENTS"
+exit 7
+SCRIPT
+    chmod +x "$FAKE_DOTFILES/packages/sync.sh"
+
+    run bash "$SYNC_SCRIPT"
+    assert_failure
+    run cat "$SYNC_EVENTS"
+    [ "$output" = $'chezmoi-prepare\npackages-failed' ]
+}

@@ -1,6 +1,6 @@
 # Explorer artifact contract
 
-Status: proposed in `fix/harness-explorer-contract`; not merged or deployed.
+Status: merged and deployed on `main` (dotfiles PR #886, `fix/harness-explorer-contract`, commit `9fc9251`).
 
 The user accepts source-read-only explorers with optional evidence artifacts.
 Parents retain decisions, dialogue, and canonical reports.

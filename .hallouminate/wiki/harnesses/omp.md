@@ -22,7 +22,7 @@ sources:
 ---
 # OMP
 
-OMP 17.2.12 uses Milknado as its sole work tracker. Native Todo and its reminders are disabled in the repo-authoritative chezmoi data, the system prompt assigns planning to Milknado MCP, and a directly discovered input extension consumes `/todo` before OMP can create a disconnected native list.
+OMP 18.1.14 uses Milknado as its sole work tracker. Native Todo and its reminders are disabled in the repo-authoritative chezmoi data, the system prompt assigns planning to Milknado MCP, and a directly discovered input extension consumes `/todo` before OMP can create a disconnected native list.
 
 ## Ownership contract
 
@@ -113,7 +113,7 @@ Do not build that adapter unless native-looking Todo behavior becomes a requirem
 - The real apply regression seeds a pre-existing retired extension, applies into an explicit temporary destination with scripts excluded, and verifies deletion plus survival of all four modules (`tests/omp-config.bats:333-359`).
 - The extension-contract test executes every remaining extension handler test (`tests/omp-config.bats:361-368`).
 
-Root `dots sync` verifies exact live outputs — currently `omp/18.0.5` (`OMP_PIN` in `packages/sync.sh`, renovate-locked in lockstep with the `.sync` guard literal; see [[../operations/sync-and-chezmoi]]) and `codex-cli 0.153.0` — after package convergence, applies the final chezmoi state under those schemas, and repeats both exact probes after a successful final apply. A failed final apply skips post-apply probes; a failed post-apply probe reports `harness-versions` while retaining upgraded binaries. The focused ordering, mismatch, absence, command-failure, and upgraded-state-retention tests live at `tests/sync-orchestrator.bats:180-548`.
+Root `dots sync` verifies exact live outputs — currently `omp/18.1.14` (`OMP_PIN` in `packages/sync.sh`, renovate-locked in lockstep with the `.sync` guard literal; see [[../operations/sync-and-chezmoi]]) and `codex-cli 0.153.4` — after package convergence, applies the final chezmoi state under those schemas, and repeats both exact probes after a successful final apply. A failed final apply skips post-apply probes; a failed post-apply probe reports `harness-versions` while retaining upgraded binaries. The focused ordering, mismatch, absence, command-failure, and upgraded-state-retention tests live at `tests/sync-orchestrator.bats:180-548`.
 
 `tests/extensions/milknado-todo-guard.test.mjs:32-62` separately pins exact-command blocking, warning contents, the handled action, negative inputs, the continue action, and absence of spurious notifications. The focused OMP config suite and all remaining extension handler tests pass in the corrective gate.
 

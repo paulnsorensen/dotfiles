@@ -1,0 +1,62 @@
+# tui — terminal UI design, build, and visual verification.
+# Closed MCP world: library docs (Context7), AST nav (tilth), web research
+# (tavily), repo-wiki grounding (hallouminate). No shadcn/Figma (browser-only)
+# and no milknado (terminal apps don't need Mikado execution here).
+# NOTE: hallouminate is declared as a plain MCP server here (not via
+# enabled_plugins) so it loads under --strict-mcp-config — the isolated launch
+# only loads MCPs from the generated --mcp-config, and does not restore custom
+# plugin marketplaces. Tool name is the bare mcp__hallouminate__* form (not the
+# plugin-scoped mcp__plugin_*__ name).
+name: tui
+description: Terminal UI design, build, and visual verification — ratatui/Textual/bubbletea apps plus zsh/tmux/theme work
+registries:
+  agents: agents/registry.yaml
+isolated: true
+system_prompt: CLAUDE.md
+env:
+  ENABLE_TOOL_SEARCH: "true"
+permissions_allow:
+  - "Bash(agent-tty:*)"
+  - "Bash(node:*)"
+  - "Bash(npm:*)"
+  - "Bash(vhs:*)"
+  - "Bash(cargo:*)"
+  - "Bash(uv:*)"
+  - "Bash(uvx:*)"
+  - "Bash(go:*)"
+  - "Bash(python3:*)"
+  - "Bash(tmux:*)"
+  - "Bash(jq:*)"
+  - "Bash(yq:*)"
+  - "Bash(shellcheck:*)"
+  - "mcp__context7__*"
+  - "mcp__tilth__*"
+  - "mcp__tavily__*"
+  - "mcp__hallouminate__*"
+enabled_plugins:
+  "playwright@claude-plugins-official": false
+  "frontend-design@claude-plugins-official": false
+  "plugin-dev@claude-plugins-official": false
+  "skill-creator@claude-plugins-official": false
+  "todoist-flow@todoist-flow": false
+mcps:
+  - name: context7
+    command: agent-secret-proxy
+    args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]
+  - name: tavily
+    command: agent-secret-proxy
+    args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
+  - name: hallouminate
+    command: hallouminate
+    args: ["serve"]
+skills:
+  - { name: tui-design, path: skills/tui-design }
+  - { name: tui-verify, path: skills/tui-verify }
+  - { name: tui-demo, path: skills/tui-demo }
+  - { name: term-theme, path: skills/term-theme }
+  - { name: de-slop, path: skills/de-slop }
+  - { name: version-doctor, path: skills/version-doctor }
+  - { source: paulnsorensen/easy-cheese }

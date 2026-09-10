@@ -57,6 +57,14 @@ packages:
   # renovate: datasource=npm depName=@vtsls/language-server
   - vtsls: { source: npm, pkg: "@vtsls/language-server", version: "0.3.0" }
 
+  # TUI verification (/tui-verify, /tui-demo)
+  # agent-tty needs Node >=24 <27; run `agent-tty doctor` after install.
+  # Its bundled playwright (1.60) differs from a bare `npx playwright install`;
+  # run once: node "$(npm root -g)/agent-tty/node_modules/playwright/cli.js"
+  # install chromium-headless-shell
+  # renovate: datasource=npm depName=agent-tty
+  - agent-tty: { source: npm, version: "0.5.0" } # persistent PTY + screenshots for /tui-verify (needs Node >=24 <27; run `agent-tty doctor`)
+
   # Linters
   # renovate: datasource=npm depName=eslint
   - eslint: { source: npm, version: "10.9.1" }
@@ -67,13 +75,13 @@ packages:
 
   # Zed external-agent adapters (ACP)
   # renovate: datasource=npm depName=@agentclientprotocol/codex-acp
-  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "1.10.0", platform: mac } # runs Codex as a Zed ACP agent
+  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "1.11.0", platform: mac } # runs Codex as a Zed ACP agent
 
   # uv tools (Python)
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.16.5" } # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.16.6" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
   - check-jsonschema: { source: uv, version: "0.38.0" }
   # renovate: datasource=git-refs depName=agentskills/agentskills
@@ -84,7 +92,7 @@ packages:
 
   # gh CLI extensions
   # renovate: datasource=github-releases depName=github/gh-stack
-  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.0" }
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.1" }
 
   # Cargo
   # renovate: datasource=crate depName=cargo-update

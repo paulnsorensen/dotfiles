@@ -47,8 +47,8 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ "$(yq -oy -r '.codex.agents | length' "$reg")" -gt 0 ]]
 }
 
-@test "managed tilth MCPs expose search v2 alongside v1 in edit mode" {
-    local expected='["--mcp","--edit","--search-surface","both"]'
+@test "managed tilth MCPs use the canonical search surface in edit mode" {
+    local expected='["--mcp","--edit"]'
     local entry path query actual rendered profile
 
     for entry in \
@@ -64,12 +64,6 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
         }
     done
 
-    path="$DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
-    actual=$(jq -c '.mcpServers.tilth.args' "$path")
-    [[ "$actual" == "$expected" ]] || {
-        echo "$path: expected $expected, got $actual" >&2
-        return 1
-    }
 
     path="$DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
     rendered=$(chezmoi execute-template < "$path")
@@ -79,7 +73,15 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
         return 1
     }
 
-    for profile in "$DOTFILES_DIR"/profiles/{codex-code,codex-plan,fe,oss-docs,plugin,review,rtkonly,skills-doctor,spec}/profile.yaml; do
+    path="$DOTFILES_DIR/chezmoi/dot_config/zed/settings.json.tmpl"
+    rendered=$(chezmoi execute-template < "$path")
+    actual=$(sed '/^[[:space:]]*\/\//d' <<< "$rendered" | jq -c '.context_servers.tilth.args')
+    [[ "$actual" == "$expected" ]] || {
+        echo "$path: expected $expected, got $actual" >&2
+        return 1
+    }
+
+    for profile in "$DOTFILES_DIR"/profiles/{codex-code,codex-plan,fe,oss-docs,plugin,review,rtkonly,skills-doctor,spec,tui}/profile.yaml; do
         actual=$(yq -I=0 -o=json '.mcps[] | select(.name == "tilth") | .args' "$profile")
         [[ "$actual" == "$expected" ]] || {
             echo "$profile: expected $expected, got $actual" >&2

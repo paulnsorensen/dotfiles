@@ -75,6 +75,15 @@ STUB
     }
 }
 
+@test "dots up forwards --no-upgrade to sync" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" up --no-upgrade
+    assert_success
+    assert_output_contains "stub-dotsync args=--no-upgrade"
+    assert_output_contains "stub-sync UPGRADE_MODE=true"
+}
+
 @test "dots up shorthand uses the same pull, sync, and skill-refresh flow" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
@@ -284,4 +293,11 @@ stub_claude_gate() {
     assert_success
     assert_output_contains "claude diff"
     assert_output_contains ".claude.json"
+}
+
+@test "sync parser upgrades by default and honors --no-upgrade over inherited mode" {
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh'; parse_sync_args; printf 'default=%s\\n' \"\$UPGRADE_MODE\"; export UPGRADE_MODE=true; parse_sync_args --no-upgrade; printf 'optout=%s\\n' \"\$UPGRADE_MODE\""
+    assert_success
+    assert_output_contains "default=true"
+    assert_output_contains "optout=false"
 }

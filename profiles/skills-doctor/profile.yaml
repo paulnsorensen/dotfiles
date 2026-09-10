@@ -10,7 +10,7 @@ env:
 mcps:
   - name: tilth
     command: tilth
-    args: ["--mcp", "--edit", "--search-surface", "both"]
+    args: ["--mcp", "--edit"]
     scope: user
   - name: hallouminate
     command: hallouminate

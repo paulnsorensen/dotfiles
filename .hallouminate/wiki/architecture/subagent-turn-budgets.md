@@ -126,6 +126,17 @@ Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
   `.context/` path segment may persist resumable state. The guard atomically
   creates `checkpoint-spent` before allowing the call, so concurrent attempts
   have one winner and a failed tool execution still consumes the allowance.[^checkpoint-write]
+  The edit must use only content-writing ops (`CHECKPOINT_OPS` in the guard:
+  `create_file`, `replace_text`, `prepend`, `append`, `replace`, `insert_*`,
+  `replace_block`, `insert_after_block`); `delete*` and `move_file` stay denied.
+  **Gotcha (#894):** the original set omitted `create_file` and `replace_text`, so
+  a new `.cheese/notes/*.md` handoff was denied and 60 of 61 checkpoint artifacts
+  were lost in one week. Keep the op list in one constant and name it in the deny
+  message, so a future mismatch is self-correcting for the agent.[^checkpoint-ops]
+  The decision log (2026-08-29 → 09-06) shows every hard-ceiling record with
+  `ctx_source=tokens` and zero `bytes-fallback`, so the byte→token switch does not
+  explain the rise in ceiling hits over [[operations/subagent-dispatch-analytics]];
+  the coder context ceiling is the real trip (68 coder agents vs 15 turn-wall agents).
   Fresh and resumed agents use the same rule; the old three-call resume grace and
   its eligibility markers were removed after retained decision logs showed zero
   grace grants while fresh mid-run crossings accounted for every observed hard
@@ -153,6 +164,17 @@ Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
   `default` (40 soft / 50 hard turns). `general-purpose` — the ultracook /
   cheese-factory full-peer worker — sits at coder tier (75/100) for this reason;
   a new pipeline-scale agent type left off the table gets half a coder's budget.
+
+### Measured 2026-09-09: the 90k soft-stop was dead text; the resume brief replaces it
+
+`/session-analytics` over 203 unique coder sub-agent transcripts (Jul–Sep 2026, `~/.claude/projects/*/*/subagents/agent-*.jsonl`, context = `input + cache_read + cache_creation` per assistant message):
+
+- 148 runs crossed 90k. Only 7 checkpointed inside the 90–130k band the prompt asked for. 93% of `blocked: out of context` returns landed at ≥125k (median 138k). The coder checkpoints when the guard hook forces it, not when the prompt asks.
+- The return protocol itself is learned: 76/76 high-context bailouts used the `out of context` phrasing, 60 wrote a `.cheese/notes/` file. Note-writing rose from 1/10 (Jul) to 38/44 (Sep); timing did not move.
+- 38 resumed coders (dispatch prompt carried a `.cheese/notes/` path): 34 read the note in their first turns, then still spent a median 37k tokens (p25 24k, p75 43k) before their first code write. About 60% of that was `tilth_read`/shell `cat` re-reading source; 12% was `ToolSearch` schema loads. 18 of 38 ran out of context a second time.
+- Recovered notes were 10–21 KB with "Goal / Done / Left" headings, 1–3 `file:line` anchors against 12–31 file mentions, and no gate state. Redispatch prompts said "read the note" and carried no `Sites:` field (0/38).
+
+Decision (dotfiles PR #934, easy-cheese PR #652): drop the 90k number from `coder.md`; keep "checkpoint incrementally". Define the checkpoint as a **resume brief** with *Already read* (ranges, do not re-read), *Read next* (anchored sites), *Gates* (command, result, SHA), and *Locked decisions*. `/cook` reads the brief itself and pastes those sections into the redispatch as `Sites:` / `Known-false leads` / `Done means`. Re-measure with the same script (`.context/coder_ctx.py` in the PR #934 workspace, or re-derive from the transcript glob) after a few weeks of resumes.
 
 ## Upstream spawn-depth and concurrency caps (July 2026)
 
@@ -188,3 +210,4 @@ Delegation still pays on genuinely independent, sizeable tracks. Full deltas:
 
 [^checkpoint-write]: `agents/lib/turn-budget-guard.js:499-545,603-630`; `tests/turn-budget-guard.bats:269-360`
 [^checkpoint-evidence]: <https://github.com/paulnsorensen/dotfiles/issues/552>
+[^checkpoint-ops]: <https://github.com/paulnsorensen/dotfiles/issues/894>; `agents/lib/turn-budget-guard.js` `CHECKPOINT_OPS`; `tests/turn-budget-guard.bats` "A2b: a create_file checkpoint"

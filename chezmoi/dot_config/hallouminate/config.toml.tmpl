@@ -27,7 +27,7 @@ exclude = ["**/.git/**"]
 # from one session. Same rules as the cheez-wiki block above: stat-guarded per
 # machine, and flat [[corpus]] (NOT [[repository]]) so these never collide with
 # each repo's own repo-layer config deriving `repo:<name>:wiki`.
-{{ range $repo := list "milknado" "easy-cheese" "tilth" "hallouminate" -}}
+{{ range $repo := list "milknado" "easy-cheese" "tilth" "hallouminate" "algorhythm" -}}
 {{ if stat (joinPath $.chezmoi.homeDir "Dev" $repo ".hallouminate" "wiki") -}}
 [[corpus]]
 name = "{{ $repo }}-wiki"
@@ -63,3 +63,15 @@ exclude = ["**/.git/**"]
 enabled = true
 model = "snowflake/snowflake-arctic-embed-s"
 quantized = false
+
+# Maintenance-debt backpressure thresholds. The defaults (soft 100 / hard 500
+# fragments) are tuned for a single small corpus; this baseline aggregates ~9
+# corpora, so the store legitimately holds 500+ well-packed LanceDB fragments
+# that compaction cannot merge further. At the default hard=500 the daemon
+# wedges in permanent `debt: Hard` and blocks EVERY mutation daemon-wide (all
+# wiki writes, boot catch-up, index) with no self-clearing path. Raise the
+# ceiling to give the multi-corpus store real headroom. Upstream fix owed:
+# fragment count is a poor debt proxy for full fragments (see lance.rs debt()).
+[daemon]
+debt_soft_fragments = 1000
+debt_hard_fragments = 3000

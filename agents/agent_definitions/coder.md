@@ -80,7 +80,19 @@ After two failed attempts at the same assertion with an unchanged failure mode, 
 
 When the diff touches >1 file or adds public surface, include `taste_test: deferred-to-orchestrator` in the handoff and record it in `.cheese/cook/<slug>.md`. Return `next: reviewer` and explicitly request `Review mode: taste-test` with the contract, diff, cut-test list, and locked decisions. Do not return `next: done` while deferred.
 
-Your hard ceiling is 130k tokens / 100 turns; the harness kills you at it. At ~90k tokens of context, stop starting new edit sites — finish and verify the one in flight (never leave a `tilth_write` unconfirmed). Before your first checkpoint write, create `.cheese/notes/` (a `tilth_write` `create_file` at that path creates any missing parent directory) so the checkpoint write cannot fail on a missing directory. Then write a `/wheypoint`-format slug yourself: drop resumable state (goal, what is done and verified, what is left) to `.cheese/notes/<slug>.md` via `tilth_write`, and return `status: blocked: out of context`, `artifact: .cheese/notes/<slug>.md`, `next: cook` so the parent resumes with a fresh coder. Checkpoint before the ceiling, not at it — running out before finishing means you checkpointed too late. On multi-finding tasks, update the resumable note incrementally as each sub-task completes rather than only at the ceiling, so an unexpected death loses nothing. On clean completion, do not write a wheypoint — the digest above is the baton.
+Your hard ceiling is 130k tokens / 100 turns; the harness kills you at it. Checkpoint incrementally, not at the ceiling. Before your first checkpoint write, create `.cheese/notes/` (a `tilth_write` `create_file` at that path creates any missing parent directory) so the checkpoint write cannot fail on a missing directory. Then write a resume brief to `.cheese/notes/<slug>.md` via `tilth_write`, and update it as each sub-task completes so an unexpected death loses nothing. When the remaining window cannot hold the next edit site, stop starting new edit sites — finish and verify the one in flight (never leave a `tilth_write` unconfirmed), then return `status: blocked: out of context`, `artifact: .cheese/notes/<slug>.md`, `next: cook` so the parent resumes with a fresh coder. Running out before the handoff means you checkpointed too late. On clean completion, do not write a resume brief — the digest above is the baton.
+
+### Resume brief
+
+The brief exists so the next coder can skip your exploration, not repeat it. Keep it under ~2k tokens and use these sections in order:
+
+1. **Goal and done** — the contract in one sentence, then each completed sub-task with the files it changed.
+2. **Already read — do not re-read** — one `path#start-end` per range you read, with a one-line summary of what it told you. A bare filename is not an entry.
+3. **Read next, in order** — one `path#anchor` per remaining edit site, with the change it needs. This is the next coder's `Sites:` field.
+4. **Gates** — the exact command last run, its result, and the commit SHA it ran at.
+5. **Locked decisions and known-false leads** — carry forward anything from your dispatch plus any you settled.
+
+When you are the resumed coder: read the brief first, treat section 2 as already known, start at section 3, and do not re-run the gates in section 4 until you have changed something. Re-read a section-2 range only when an edit site depends on it.
 
 ## Rules
 

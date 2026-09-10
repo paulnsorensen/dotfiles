@@ -16,8 +16,23 @@ omp_agent_names() {
     done | sort
 }
 
+all_omp_agents() {
+    {
+        canonical_agents
+        printf '%s\n' cheese-reviewer
+    } | sort
+}
+
 frontmatter() {
     yq --front-matter=extract -oy -r "$1" "$2"
+}
+
+body() {
+    awk '
+        NR == 1 && $0 == "---" { in_frontmatter = 1; next }
+        in_frontmatter && $0 == "---" { in_frontmatter = 0; next }
+        !in_frontmatter { print }
+    ' "$1"
 }
 
 expected_omp_model() {
@@ -106,16 +121,56 @@ expected_omp_thinking() {
     done < <(canonical_agents)
 }
 
-@test "OMP canonical prompts contain no foreign harness tool names" {
+@test "OMP agents expose native structural and symbol tools by role" {
+    local name file tools prompt
+
+    for name in cheese-reviewer coder explorer generalist ghostbuster nih-scanner researcher reviewer roquefort-wrecker; do
+        file="$OMP_AGENTS/$name.md"
+        tools=",$(frontmatter '.tools' "$file"),"
+        prompt="$(body "$file")"
+        [[ "$tools" == *,ast_grep,* ]]
+        [[ "$tools" == *,lsp,* ]]
+        [[ "$prompt" == *ast_grep* ]]
+        [[ "$prompt" == *lsp* ]]
+    done
+
+    for name in coder generalist roquefort-wrecker; do
+        tools=",$(frontmatter '.tools' "$OMP_AGENTS/$name.md"),"
+        [[ "$tools" == *,ast_edit,* ]]
+        [[ "$(body "$OMP_AGENTS/$name.md")" == *ast_edit* ]]
+    done
+}
+
+@test "OMP read-only code agents declare read-only LSP actions" {
+    local name file prompt
+
+    for name in cheese-reviewer explorer ghostbuster nih-scanner researcher reviewer; do
+        file="$OMP_AGENTS/$name.md"
+        prompt="$(body "$file")"
+        [[ "$prompt" == *"Use only read-only LSP actions."* ]]
+    done
+}
+
+@test "OMP agents contain no foreign harness tool names" {
     local name file
 
     while IFS= read -r name; do
         file="$OMP_AGENTS/$name.md"
-        if grep -Eq 'tilth_|mcp__tilth|ToolSearch|AskUserQuestion|NotebookEdit|MultiEdit|TodoWrite|WebFetch' "$file"; then
+        if grep -Eiq 'tilth_|mcp__tilth|(^|[^[:alnum:]_])tilth([^[:alnum:]_]|$)|ToolSearch|AskUserQuestion|NotebookEdit|MultiEdit|TodoWrite|WebFetch' "$file"; then
             echo "$name still references a foreign harness tool" >&2
             return 1
         fi
-    done < <(canonical_agents)
+    done < <(all_omp_agents)
+}
+
+@test "OMP reviewer defaults safely and stops on parent return requests" {
+    local mode_contract prompt
+    mode_contract="Use \`severity-report\` unless the dispatch explicitly selects \`taste-test\`"
+    prompt="$(body "$OMP_AGENTS/reviewer.md")"
+
+    [[ "$prompt" == *"$mode_contract"* ]]
+    [[ "$prompt" == *"When the parent requests an immediate return, stop all tool use"* ]]
+    [[ "$prompt" != *"If the mode is missing or invalid"* ]]
 }
 
 @test "OMP custom model tiers resolve to the intended OpenAI families" {
@@ -125,6 +180,7 @@ expected_omp_thinking() {
     [[ "$(yq -oy -r '.omp.config.modelRoles.default' "$OMP_CONFIG")" == "@strong:medium" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.plan' "$OMP_CONFIG")" == "@strong:xhigh" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.task' "$OMP_CONFIG")" == "@fast" ]]
+    [[ "$(yq -oy -r '.omp.config.modelRoles.slow' "$OMP_CONFIG")" == "openai-codex/gpt-6-astra:high" ]]
     [[ "$(frontmatter '.model' "$OMP_AGENTS/cheese-reviewer.md")" == "@strong" ]]
     [[ "$(frontmatter '.thinkingLevel' "$OMP_AGENTS/cheese-reviewer.md")" == "xhigh" ]]
 }

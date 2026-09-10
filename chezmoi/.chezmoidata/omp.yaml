@@ -77,9 +77,10 @@ omp:
       toolResultPreview: false
     skills:
       enableSkillCommands: true
-      # omp-introduced (v18.1): discovery of universal skills under
-      # ~/.agents/skills, which install-external.sh owns for non-Claude
-      # harnesses. Folded at omp's live default (true) to keep that lane.
+      # omp-introduced (v18): discover ~/.agents/skills, the harness-managed
+      # cross-harness skill cache install-external.sh populates for non-Claude
+      # harnesses. Kept true (omp's live default) — this is the intended
+      # consumer of that dir; chezmoi never owns it (see .chezmoiignore).
       enableAgentsUser: true
     tui:
       tight: true
@@ -87,6 +88,9 @@ omp:
     # default.
     composer:
       shape: box
+    spelling:
+      # Disable macOS dictionary completions shown as predictive inline text.
+      autocomplete: false
     startup:
       quiet: true
     advisor:
@@ -104,6 +108,8 @@ omp:
       keepRecentTokens: 20000
       midTurnEnabled: true
       autoContinue: true
+      # OMP v18.1.14 enables streaming for remote compaction responses.
+      remoteStreamingV2Enabled: true
     lsp:
       enabled: true
       lazy: true
@@ -118,10 +124,16 @@ omp:
       eager: default
       enableLsp: true
       # omp-introduced (v17.3.x): per-task reasoning-effort control and task
-      # sandbox isolation mode — folded in at omp's live defaults.
+      # sandbox isolation — folded at omp's live defaults. v18.1.x replaced the
+      # nested `isolation.mode: auto` with a boolean `isolation.enabled` (omp
+      # now reports `task.isolation.mode` as an unknown setting).
       enableEffort: true
       isolation:
-        mode: auto
+        enabled: true
+    # omp-introduced (v18.1.x): top-level sandbox backend selector, sibling to
+    # the per-task `task.isolation` toggle above — folded at omp's live default.
+    isolation:
+      backend: auto
     # omp-introduced (v17.3.x) cross-harness slash-command import toggles.
     # All off, matching the external-discovery shutdown policy above.
     commands:
@@ -160,7 +172,7 @@ omp:
       plan: '@strong:xhigh'
       advisor: '@strong'
       tiny: '@fast'
-      slow: '@strong:xhigh'
+      slow: openai-codex/gpt-6-astra:high
       task: '@fast'
       commit: '@fast'
       vision: '@balanced'

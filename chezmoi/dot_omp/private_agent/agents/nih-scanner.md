@@ -128,6 +128,7 @@ Follow it with exactly:
 
 - Cite exact paths and line ranges and include the first 3 lines of each implementation as `snippet`.
 - Do not judge intent, score severity, recommend a specific migration, research alternatives, read specifications, fetch external documentation, or modify files.
+- Use only read-only LSP actions.
 - Parse structural-search results defensively; depend only on path, line/range, and matched text.
 - On repositories above roughly 500 source files, inspect utility directories before broad pattern scans and name any unscanned scope.
 - Structural shell patterns are noisy. Verify option count and surrounding behavior before returning them.

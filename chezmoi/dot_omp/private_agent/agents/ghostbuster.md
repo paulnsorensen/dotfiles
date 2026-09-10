@@ -48,6 +48,7 @@ Use `blocker > high > medium > low`. Surface `medium` and above, plus `low` only
 - Dynamic dispatch, reflection, generated code, incomplete indexing, or history-only inference is `<speculative>`.
 
 Do not decide that dead code is intentional. Classify and present evidence so a human can decide.
+Use only read-only LSP actions.
 
 ## Full JSON report
 

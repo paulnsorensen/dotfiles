@@ -60,3 +60,14 @@
 
 2026-08-23 · omp-guard-lockstep-20260823 · merged · operations/sync-and-chezmoi.md · Refreshed the stale `verify_harness_versions` literal (`omp/17.2.12`→`omp/17.3.0`, line spans) and added the OMP guard/pin lockstep gotcha: the two renovate managers over `.sync` and `packages/sync.sh` plus the `groupName: oh-my-pi` packageRule that bundles them into one PR (a split deadlocks automerge on the `tests/packages.bats` tripwire); codex-cli still manual (#743, #754).
 2026-08-23 · omp-guard-lockstep-20260823 · merged · operations/mise-manifest-precedence.md · Corrected the same stale `omp/17.2.12` literal and line numbers, cross-linked the new lockstep note.
+
+2026-09-06 · wiki-harvest-20260906 · new-page · operations/just-check-read-only-gate.md · Recorded PR #885: `just check` used to open with `lint-fix` (a mutating step), so verification could silently rewrite tracked source; `check` now runs read-only legs only, plus the nested-worktree markdownlint ignore added in the same PR.
+2026-09-06 · wiki-harvest-20260906 · merged · operations/index.md · Registered just-check-read-only-gate.md under Repo-local traps.
+2026-09-06 · wiki-harvest-20260906 · merged · architecture/explorer-artifact-contract.md · Corrected stale "proposed, not merged" status: PR #886 (commit 9fc9251) merged and deployed on main; verified against agents/agent_definitions/explorer.md.
+2026-09-06 · wiki-harvest-20260906 · merged · architecture/cross-harness-guards.md · Corrected stale "proposed, not merged" status on the Tilth payload coverage section: PR #891 (commit 5b8bb72) merged and deployed on main; verified editTargets/move_file handling against agents/lib/sensitive-file-guard.js and claude/hooks/worktree-guard.js.
+
+2026-09-08 · 98ab6e3d49b0f009 · merged · operations/sync-and-chezmoi.md · Record persistent environment setup for parser tests; temporary function assignments cause false failures.
+
+2026-09-08 · c980af7ece888d18 · new-page · operations/ci-optimization.md · Record import-only timing, attempt identity, and comparison limits.
+
+2026-09-08 · ci-optimize-skill · merged · operations/ci-optimization.md · Record approval boundaries and executable source-name encoding.

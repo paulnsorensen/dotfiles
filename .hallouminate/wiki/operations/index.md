@@ -22,6 +22,7 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 
 - [[git-stash-hygiene]] — the dotfiles tree carries unrelated WIP stashes, so a bare `git stash pop` applies someone else's WIP; pop only your own stash by exact ref, and untracked files don't stash via pathspec.
 - [[just-check-claude-guard-flake]] — `just check` test 349 (claude-wrapper.bats) fails purely because ≥8 Claude sessions are running (the launcher guard), not because of the diff; confirm with `pgrep -cx claude` and rerun under `CLAUDE_GUARD=0`.
+- [[just-check-read-only-gate]] — before PR #885, `check` opened with `lint-fix`, so verifying could silently rewrite tracked source; `check` now runs only read-only legs and `lint-fix` is a separate, explicit step.
 - [[cloud-routines-location]] — the five Claude Code cloud routines live in the private `paulnsorensen/routines` repo, not in dotfiles/tilth; edit them there.
 
 ## Packaging and machine state
@@ -35,6 +36,8 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 - [[rectangle-sync]] — why `rectangle/.sync` needs a hash stamp: it used to hard-restart Rectangle Pro on every `dots sync`, and SIGKILL leaves no crash report, so "the app keeps crashing" had no diagnostic trail.
 
 ## Measurement and prompting
+
+- [[ci-optimization]] — import-only CI and local measurement contracts, attempt boundaries, and limits on comparison claims.
 
 - [[test-suite-performance]] — the Bats suite is dominated by repeated integration setup, not runner parallelism; keep the CPU-count default and shorten the work inside tests instead of tuning job count.
 - [[prompting-claude-opus-5]] — the Opus 5 behaviour deltas that actually change decisions here: model-tier pins, review fan-out sizing, verification scaffolding, delegation restraint.

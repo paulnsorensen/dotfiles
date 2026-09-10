@@ -16,6 +16,12 @@ README*
 # Git-only metadata: lives in the source dir to enforce LF endings on
 # templates, but chezmoi must never try to render or apply it.
 .gitattributes
+# ~/.agents/skills is harness-managed cache (populated by the skills CLI via
+# install-external.sh for non-Claude harnesses; OMP discovers it). chezmoi
+# must never own it. A stray `chezmoi add ~/.agents` once captured the whole
+# live cache into private_dot_agents/exact_skills/; this guard makes chezmoi
+# skip the target so the accidental capture cannot recur. Target-relative.
+.agents/**
 # Helper scripts the run_onchange template invokes via {{ .chezmoi.sourceDir }}/lib/.
 # They live inside the source dir for colocation, but chezmoi must not apply
 # them as $HOME files.

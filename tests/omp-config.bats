@@ -47,7 +47,7 @@ STDIN"
     [ "$(yq '.modelRoles.plan' "$OUT")" = "@strong:xhigh" ]
     [ "$(yq '.modelRoles.advisor' "$OUT")" = "@strong" ]
     [ "$(yq '.modelRoles.tiny' "$OUT")" = "@fast" ]
-    [ "$(yq '.modelRoles.slow' "$OUT")" = "@strong:xhigh" ]
+    [ "$(yq '.modelRoles.slow' "$OUT")" = "openai-codex/gpt-6-astra:high" ]
     [ "$(yq '.modelRoles.designer' "$OUT")" = "@balanced" ]
     [ "$(yq '.textVerbosity' "$OUT")" = "medium" ]
     [ "$(yq '.tools.artifactSpillThreshold' "$OUT")" = "2" ]
@@ -59,6 +59,7 @@ STDIN"
     [ "$(yq '.skills.enableSkillCommands' "$OUT")" = "true" ]
     [ "$(yq '.tui.tight' "$OUT")" = "true" ]
     [ "$(yq '.composer.shape' "$OUT")" = "box" ]
+    [ "$(yq '.spelling.autocomplete' "$OUT")" = "false" ]
     [ "$(yq '.startup.quiet' "$OUT")" = "true" ]
     [ "$(yq 'has("compaction") and (.compaction | has("thresholdTokens"))' "$OUT")" = "false" ]
     [ "$(yq 'has("compaction") and (.compaction | has("strategy"))' "$OUT")" = "false" ]
@@ -66,6 +67,7 @@ STDIN"
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.compaction.midTurnEnabled' "$OUT")" = "true" ]
     [ "$(yq '.compaction.autoContinue' "$OUT")" = "true" ]
+    [ "$(yq '.compaction.remoteStreamingV2Enabled' "$OUT")" = "true" ]
     [ "$(yq '.task.enableLsp' "$OUT")" = "true" ]
     [ "$(yq '.retry.modelFallback' "$OUT")" = "false" ]
     [ "$(yq '.lsp.lazy' "$OUT")" = "true" ]
@@ -120,6 +122,39 @@ setupVersion: 1'
     [ "$(yq '.compaction.methodOrder | join(",")' "$OUT")" = "snapcompact,remote,soft" ]
     [ "$(yq '.compaction.keepRecentTokens' "$OUT")" = "20000" ]
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
+}
+@test "omp-config: retired task isolation mode is migrated" {
+    run_modify 'symbolPreset: nerd
+theme:
+  dark: chocolate-donut
+  light: light
+task:
+  enableLsp: true
+  isolation:
+    enabled: true
+    mode: auto
+setupVersion: 1'
+    [ "$status" -eq 0 ]
+    [ "$(yq 'has("task") and (.task.isolation | has("mode") | not)' "$OUT")" = "true" ]
+    [ "$(yq '.task.isolation.enabled' "$OUT")" = "true" ]
+    [ "$(yq '.task.enableLsp' "$OUT")" = "true" ]
+    [ "$(yq '.setupVersion' "$OUT")" = "1" ]
+}
+
+@test "omp-config: unknown task isolation key still halts" {
+    run_modify 'symbolPreset: nerd
+theme:
+  dark: chocolate-donut
+  light: light
+task:
+  enableLsp: true
+  isolation:
+    enabled: true
+    unexpected: true
+setupVersion: 1'
+    [ "$status" -ne 0 ]
+    [ ! -s "$OUT" ]
+    [[ "$output" == *"task.isolation.unexpected"* ]]
 }
 @test "omp-config: unknown compaction key is not covered by retired-key deletion" {
     run_modify 'symbolPreset: nerd
@@ -202,7 +237,7 @@ STDIN"
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
 }
 
-@test "omp-mcp: native user config keeps brokered context7 + tavily; wiki/planner are plugins" {
+@test "omp-mcp: native code tools keep brokered context7 + tavily; wiki/planner are plugins" {
     local cfg="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/mcp.json"
     local omp_reg="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/omp.yaml"
     jq -e '.mcpServers.context7.command == "/usr/local/libexec/dotfiles/agent-secret-proxy"' "$cfg"
@@ -213,6 +248,7 @@ STDIN"
     jq -e '.mcpServers.tavily.args == ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]' "$cfg"
     jq -e '(.mcpServers.tavily | has("env") | not)' "$cfg"
     jq -e '(.mcpServers.tavily | has("envFile") | not)' "$cfg"
+    jq -e '.mcpServers | keys == ["context7", "tavily"]' "$cfg"
     local retired
     for retired in \
         CONTEXT7_API_KEY TAVILY_API_KEY TODOIST_API_KEY GITHUB_APP_PRIVATE_KEY \

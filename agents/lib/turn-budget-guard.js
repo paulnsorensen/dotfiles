@@ -551,13 +551,22 @@ function rotateLogIfLarge(maxBytes) {
   }
 }
 
+// Content-writing tilth_write ops a checkpoint may use. Destructive ops
+// (delete*, move_file) stay excluded so a starved agent cannot erase state.
+const CHECKPOINT_OPS = [
+  'create_file', 'replace_text', 'prepend', 'append', 'replace',
+  'insert_before', 'insert_after', 'replace_block', 'insert_after_block',
+];
+const CHECKPOINT_SHAPE =
+  `exactly one edit targeting .cheese/ or .context/ using only ${CHECKPOINT_OPS.join('/')} ops`;
+
 function checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent) {
   const exceeded = [];
   if (turns > budget.turnHard) exceeded.push(`turns ${turns}/${budget.turnHard}`);
   if (tokens > budget.ctxHard) exceeded.push(`context ${tokens}/${budget.ctxHard} tokens`);
   const status = checkpointSpent
     ? 'Stop calling tools now — synthesize your findings and return inline. The checkpoint allowance is spent.'
-    : 'One mcp__tilth__tilth_write with exactly one edit targeting .cheese/ or .context/ remains. No tool call is allowed except that constrained checkpoint write; after it, return inline.';
+    : `One mcp__tilth__tilth_write with ${CHECKPOINT_SHAPE} remains. No tool call is allowed except that constrained checkpoint write; after it, return inline.`;
   return `Sub-agent budget exceeded (type '${agentType || 'default'}': ${exceeded.join(', ')}). ` +
     `${status} ` +
     `If your task is incomplete, open your final reply with ` +
@@ -580,7 +589,7 @@ function nudgeContext(agentType, budget) {
 function hardNudgeContext(agentType, budget, checkpointSpent) {
   const checkpoint = checkpointSpent
     ? 'The one checkpoint allowance is already spent; return inline now.'
-    : 'One mcp__tilth__tilth_write with exactly one edit targeting .cheese/ or .context/ is allowed to persist a checkpoint.';
+    : `One mcp__tilth__tilth_write with ${CHECKPOINT_SHAPE} is allowed to persist a checkpoint.`;
   return `Context hard ceiling exceeded (type '${agentType || 'default'}': ` +
     `${budget.ctxHard} tokens). ${checkpoint} Do not keep exploring. If your task is ` +
     `incomplete, open your final reply with "status: blocked: out of context" ` +
@@ -599,10 +608,7 @@ function isCheckpointWrite(event) {
     !Array.isArray(edit.ops) ||
     edit.ops.length === 0
   ) return false;
-  const contentOperations = new Set([
-    'prepend', 'append', 'replace', 'insert_before', 'insert_after',
-    'replace_block', 'insert_after_block',
-  ]);
+  const contentOperations = new Set(CHECKPOINT_OPS);
   const cwd = [input.cwd, event.cwd, process.cwd()].find(
     (candidate) => typeof candidate === 'string' && candidate.trim(),
   );

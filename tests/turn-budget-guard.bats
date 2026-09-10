@@ -293,6 +293,34 @@ post_event() {
     [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
 }
 
+@test "A2b: a create_file checkpoint for a new handoff note is allowed over the hard ceiling" {
+    local json
+    seed_usage_transcript s2b checkpoint_create "$((130000 + 1)):0:0"
+    json=$(jq -nc --argjson event "$(checkpoint_event s2b checkpoint_create coder .cheese/notes/handoff.md)" \
+        '$event | .tool_input.edits[0].ops = [{op:"create_file",content:"# handoff"}]')
+    fire "$json"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
+    [[ -f "$CLAUDE_TURN_BUDGET_DIR/s2b/checkpoint_create/checkpoint-spent" ]]
+}
+
+@test "A2b: a replace_text checkpoint is allowed over the turn-hard ceiling" {
+    local json
+    seed_turns s2b checkpoint_replace_text 100
+    json=$(jq -nc --argjson event "$(checkpoint_event s2b checkpoint_replace_text coder .context/handoff.md)" \
+        '$event | .tool_input.edits[0].ops = [{op:"replace_text",old:"todo",new:"done"}]')
+    fire "$json"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
+}
+
+@test "A2b: hard-ceiling deny message names the allowed checkpoint ops" {
+    seed_turns s2b checkpoint_msg 100
+    fire "$(pre_event s2b checkpoint_msg coder)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$output" == *"create_file/replace_text/prepend/append/replace/insert_before/insert_after/replace_block/insert_after_block"* ]]
+}
+
 @test "A2b: a second valid checkpoint is denied after the allowance is spent" {
     seed_turns s2b checkpoint3 100
     fire "$(checkpoint_event s2b checkpoint3 coder .cheese/first.md)"
@@ -336,6 +364,8 @@ post_event() {
     local valid all_content_ops event_cwd process_cwd invalid_segment native_write alias other_tilth missing empty missing_ops empty_ops multiple mixed delete delete_block delete_file move_file move_outside mixed_destructive mixed_rename
     valid=$(checkpoint_event s2b classifier coder .cheese/handoff.md)
     all_content_ops=$(jq -nc --argjson event "$valid" '$event | .tool_input.edits[0].ops = [
+        {op:"create_file",content:"checkpoint"},
+        {op:"replace_text",old:"a",new:"b"},
         {op:"prepend",content:"checkpoint"},
         {op:"append",content:"checkpoint"},
         {op:"replace",start:1,end:1,content:"checkpoint"},

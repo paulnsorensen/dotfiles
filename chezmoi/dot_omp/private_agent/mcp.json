@@ -14,15 +14,6 @@
         "--socket",
         "/var/run/dotfiles-agent-secrets/tavily.sock"
       ]
-    },
-    "tilth": {
-      "command": "tilth",
-      "args": [
-        "--mcp",
-        "--edit",
-        "--search-surface",
-        "both"
-      ]
     }
   }
 }

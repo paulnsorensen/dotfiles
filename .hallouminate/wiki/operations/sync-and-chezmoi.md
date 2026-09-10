@@ -18,24 +18,40 @@ The custom backup/restore/rollback subsystem has been **deleted** (chezmoi-conso
 
 `dots sync` applies chezmoi **twice**, with package convergence in between, because the two have a circular dependency: packages are pinned by a chezmoi-managed manifest, and some chezmoi templates need the converged binaries.
 
-`run_sync` (`.sync`) drives it:
+`dots sync` upgrades packages by default before it applies settings.
+`--no-upgrade` disables upgrade mode but retains the previous cached package-sync behavior and harness-version checks.
+Combine it with `refresh` to bypass the package cache without enabling upgrade mode.
+`dots up` retains its Git pull and then uses the same sync path.
+`dots sync` does not pull Git changes.[^upgrade-first]
 
-1. **prepare** — `chezmoi` is dispatched with `CHEZMOI_SYNC_PHASE=prepare` (`.sync:130`). `chezmoi/.sync` wires chezmoi, applies the mise manifest, and **exits early at `:44`** without applying any generated config. If `chezmoi` isn't installed yet, a bootstrap-only `packages/sync.sh` run precedes all this (`.sync:111-123`).
-2. **package-sync** — `packages/sync.sh` runs with `MISE_CONFIG_FILE` pointed at the tracked source (`.sync:140-141`), converging brew, mise, cargo, npm, uv, and gh extensions. mise shims go on `PATH` immediately after (`.sync:142-143`).
-3. **final** — gated on `verify_harness_versions` (`.sync:146`). On pass, `CHEZMOI_SYNC_PHASE=final bash chezmoi/.sync` applies everything (`.sync:148`), then re-verifies (`.sync:152`). On fail, the apply is **skipped** and a `harness-versions` entry is recorded (`.sync:157-159`).
+`run_sync` uses this order:
 
-A skipped or failed final apply does not abort the run — upgraded packages are retained, failures accumulate in `SYNC_FAILURES`, and the run exits 1 at the end (`.sync:174-182`) after the remaining steps (TPM, prek hooks, tilth, Claude MCP reconcile, omp plugins) still execute.
+1. **Prepare:** Bootstrap chezmoi if necessary, then apply only the tracked mise manifest.
+2. **Packages:** Run package convergence with the tracked manifest and the selected upgrade mode.
+3. **Configuration:** Run the remaining directory scripts and symlink steps after package convergence succeeds.
+4. **Final apply:** Check harness versions, apply the full chezmoi source, then check versions again.
+
+The prepare exception prevents stale live mise pins from blocking their own replacement.
+See [[mise-manifest-precedence]].
+Upgrades preserve declared version pins and existing package exclusions.
+They do not replace pinned tools with arbitrary latest releases.
+
+A package process failure stops configuration dispatch.
+A failed final apply retains installed packages and records a sync failure.
+Remaining post-apply steps still run before the failure summary.[^upgrade-first]
+
+[^upgrade-first]: `.sync:125-180`, `.sync-lib.sh:200-221`, `bin/dots` upgrade dispatch, and `tests/sync-orchestrator.bats`. The shared upgrade mode removes the need for a separate package-upgrade command before settings deployment.
 
 Two consequences worth internalizing:
 
-- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/18.0.5` at `.sync:57-58`, `codex-cli 0.151.0` at `.sync:70-71` — and covers only those two harnesses. The literal and the install pin must move together or `dots sync` fails its post-install harness check (`omp version mismatch: expected omp/18.0.5, got <old version>`). For **OMP** this is now enforced automatically — see the gotcha below; **codex-cli** has no such manager, so its literal is still bumped by hand alongside the manifest.
+- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/18.1.14` at `.sync:57-58`, `codex-cli 0.153.4` at `.sync:70-71` — and covers only those two harnesses. The literal and the install pin must move together or `dots sync` fails its post-install harness check (`omp version mismatch: expected omp/18.1.14, got <old version>`). For **OMP** this is now enforced automatically — see the gotcha below; **codex-cli** has no such manager, so its literal is still bumped by hand alongside the manifest.
 - **The final apply is the only step that refreshes most live config**, so anything the package phase reads from a live file must be applied during *prepare* instead. That is exactly the trap in [[mise-manifest-precedence]], and the reason `apply_mise_manifest` exists in the prepare branch.
 
 ### Gotcha: the OMP guard and installer pin move in one PR
 
 The OMP verify literal in `.sync` and the actual install pin `OMP_PIN` in `packages/sync.sh` are two copies of the same version that drift independently — a bump to one without the other reds the post-install harness check. `renovate.json5` keeps them locked with two coupled mechanisms:
 
-- A `custom.regex` manager over `.sync` (`renovate.json5:54-66`) rewrites **both** the `!= "omp/<v>"` and `expected omp/<v>` occurrences from the `can1357/oh-my-pi` github-tags datasource, with `extractVersionTemplate` stripping the `v` prefix so the guard's bare `18.0.5` matches the `v18.0.5` tag. A separate manager (`renovate.json5:44-53`) bumps `OMP_PIN` itself.
+- A `custom.regex` manager over `.sync` (`renovate.json5:54-66`) rewrites **both** the `!= "omp/<v>"` and `expected omp/<v>` occurrences from the `can1357/oh-my-pi` github-tags datasource, with `extractVersionTemplate` stripping the `v` prefix so the guard's bare `<v>` matches the `v<v>` tag. A separate manager (`renovate.json5:44-53`) bumps `OMP_PIN` itself.
 - A `groupName: oh-my-pi` packageRule (`renovate.json5:81-85`) bundles both updates into a **single PR**. This grouping is load-bearing, not tidiness: split across two PRs, each would fail the `sync OMP verification follows the managed package pin` tripwire in `tests/packages.bats` on its own, and automerge would deadlock because neither PR can go green alone.
 
 `tests/sync-orchestrator.bats` derives its expected OMP version from `OMP_PIN` in `setup_file`, so a bump needs zero test edits — only the deliberate `omp/17.1.3` fail-closed mismatch fixture stays literal (#754).
@@ -119,6 +135,17 @@ Every shell function that does real work needs a bats test. `.sync` (and any orc
 - New shell logic goes into a named function in a sourced library (`.sync-lib.sh`, `chezmoi/lib/*.sh`, `claude/lib/sync-common.sh`), taking inputs as arguments (no hidden globals).
 - A `tests/<area>.bats` file exercises every branch; mock externals (`gh`, `claude`, `yq`, `jq`, `chezmoi`) by putting fakes earlier on `$PATH` (see `tests/chezmoi-wiring.bats`, `tests/skills-external.bats`).
 - `.sync` scripts stay thin: parse args, source lib, dispatch. Add new test files to `tests/run-tests.sh` so `dots test` runs them.
+
+### Parser tests must use persistent environment setup
+
+Set `UPGRADE_MODE` with a separate `export UPGRADE_MODE=true` statement before calling `parse_sync_args --no-upgrade`.
+A function-prefix assignment creates a temporary binding that Bash restores after the function returns.
+The old test therefore observed `true` after the parser correctly exported `false`.
+The separate export matches the persistent environment used by the real sync caller.[^parser-test-environment]
+
+[^parser-test-environment]: `tests/dots.bats:298-302`; `.sync:83-86`; `.sync-lib.sh:199-221`. Reproduction on Bash 5.3.15: prefix assignment restores `true`; separate export and inherited child-process environment both retain `false`.
+
+*Source: sync parser regression diagnosis · Updated: 2026-09-08 · Supersedes: none*
 
 ## Gotcha: private skill sources need a git credential helper (self-healed since 2026-08-28)
 

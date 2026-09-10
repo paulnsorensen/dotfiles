@@ -943,6 +943,70 @@ TOML
     assert_output_contains "npm is required to install @paulnsorensen/hallouminate-nightly"
 }
 
+@test "nightly installers pin the resolved npm version" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    local npm_bin="$TEST_HOME/nightly-npm-bin"
+    local npm_log="$TEST_HOME/nightly-npm.log"
+    local npm_state="$TEST_HOME/nightly-npm.state"
+    local active_prefix="$TEST_HOME/active-prefix"
+    mkdir -p "$npm_bin" "$active_prefix"
+    cat > "$npm_bin/npm" <<EOF
+#!/bin/bash
+echo "\$*" >> "$npm_log"
+case "\$1 \$2" in
+    "view @paulnsorensen/tilth-nightly") echo "0.0.0-experimental.70.1" ;;
+    "view @paulnsorensen/hallouminate-nightly") echo "0.0.0-experimental.176.1" ;;
+    "install -g") printf '%s\n' "\$3" > "$npm_state" ;;
+    "ls -g")
+        [[ -f "$npm_state" ]] || exit 1
+        case "\$(cat "$npm_state")" in
+            "\$3"@*) echo "└── \$(cat "$npm_state")" ;;
+            *) exit 1 ;;
+        esac
+        ;;
+    "prefix -g") echo "$active_prefix" ;;
+esac
+EOF
+    chmod +x "$npm_bin/npm"
+
+    local tool template script version
+    for tool in tilth hallouminate; do
+        template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-$tool.sh.tmpl"
+        script="$TEST_HOME/install-$tool.sh"
+        chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
+        version="0.0.0-experimental.70.1"
+        [[ "$tool" == "hallouminate" ]] && version="0.0.0-experimental.176.1"
+
+        run env HOME="$TEST_HOME" PATH="$npm_bin:/usr/bin:/bin" /bin/bash "$script"
+        assert_success
+        grep -q "install -g @paulnsorensen/$tool-nightly@$version .*--prefer-online" "$npm_log"
+    done
+}
+
+@test "nightly installer fails when npm leaves the old package installed" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-tilth.sh.tmpl"
+    local script="$TEST_HOME/install-tilth.sh"
+    local npm_bin="$TEST_HOME/stale-nightly-npm-bin"
+    mkdir -p "$npm_bin"
+    chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
+    cat > "$npm_bin/npm" <<'EOF'
+#!/bin/bash
+case "$1 $2" in
+    "view @paulnsorensen/tilth-nightly") echo "0.0.0-experimental.70.1" ;;
+    "install -g") exit 0 ;;
+    "ls -g") echo "└── @paulnsorensen/tilth-nightly@0.0.0-experimental.69.1" ;;
+esac
+EOF
+    chmod +x "$npm_bin/npm"
+
+    run env HOME="$TEST_HOME" PATH="$npm_bin:/usr/bin:/bin" /bin/bash "$script"
+    assert_failure
+    assert_output_contains "expected 0.0.0-experimental.70.1, got 0.0.0-experimental.69.1"
+}
+
 @test "nightly installer removes a second npm prefix's copy of the bin" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
@@ -1072,6 +1136,14 @@ TOML
             || { echo "missing $source_claude/$tree" >&2; return 1; }
     done
     [[ -f "$source_claude/exact_skills/exact_dummy-paulnsorensen__easy-cheese/SKILL.md" ]]
+    # Local skills retain all reference and helper bytes.
+    local ci_skill_src="$REAL_DOTFILES_DIR/skills/ci-optimize"
+    local ci_skill_dst="$source_claude/exact_skills/exact_ci-optimize"
+    cmp "$ci_skill_src/SKILL.md" "$ci_skill_dst/SKILL.md"
+    for ref in "$ci_skill_src"/references/*.md; do
+        cmp "$ref" "$ci_skill_dst/exact_references/$(basename "$ref")"
+    done
+    cmp "$ci_skill_src/scripts/ci_optimize.py" "$ci_skill_dst/exact_scripts/executable_ci_optimize.py"
     grep -q '^name: whey-drainer$' "$source_claude/exact_agents/whey-drainer.md"
     grep -q '^model: haiku$' "$source_claude/exact_agents/whey-drainer.md"
     [[ -f "$source_claude/exact_hooks/executable_git-guard.sh" ]]
