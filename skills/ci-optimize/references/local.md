@@ -2,117 +2,63 @@
 
 Use the repository's existing timing tool. Define a safe command, revision, environment, cache state, workload label, run count, warmup policy, and evidence file before execution.
 
-Do not require Hyperfine installation. When Hyperfine is available, use explicit failure-preserving flags:
+Do not require Hyperfine installation. When Hyperfine is available, anchor `--runs` to the planned `--minimum-samples` value plus headroom for warmup or failed rows. Publish the export without clobbering a concurrent run:
 
 ```bash
+set -euo pipefail
+minimum_samples=3
+runs=$((minimum_samples + 2))
+tmp_export=$(mktemp hyperfine.json.XXXXXX)
+hyperfine --ignore-failure --runs "$runs" --warmup 0 --export-json "$tmp_export" 'just check'
 hyperfine_json=hyperfine.json
-[[ ! -e "$hyperfine_json" ]] || { printf 'refusing to replace %s\n' "$hyperfine_json" >&2; exit 1; }
-hyperfine --ignore-failure --runs 10 --warmup 0 --export-json "$hyperfine_json" 'just check'
+if ! ln "$tmp_export" "$hyperfine_json"; then
+  printf 'refusing to replace %s\n' "$hyperfine_json" >&2
+  exit 1
+fi
+rm -f "$tmp_export"
 ```
 
 The JSON export records `command`, `times`, and `exit_codes` in each result. Keep every result row. A missing `times` array, unequal `times` and `exit_codes` lengths, or an unknown exit code is not a successful duration. A null exit code is unknown and remains a signal, not success.
 
-## Adapter example
+## Import with `from-hyperfine`
 
-For a synthetic smoke test, use this `hyperfine.json` content:
-
-```json
-{"results":[{"command":"just check","times":[12.4,15.1],"exit_codes":[0,1]}]}
-```
-
-Run this standard-library adapter from the consumer repository. It refuses to replace an existing output file.
+Convert the published export with the helper's `from-hyperfine` subcommand. It is import-only: it reads the export, builds samples, and writes a normalized local dataset. It never runs the workload.
 
 ```bash
-HYPERFINE_JSON=hyperfine.json
-LOCAL_INPUT_JSON=local-input.json
-python3 - "$HYPERFINE_JSON" "$LOCAL_INPUT_JSON" abc123 macos-arm64 warm "repository gates" <<'PY'
-import json
-import math
-import sys
-from pathlib import Path
-
-input_path = Path(sys.argv[1])
-output_path = Path(sys.argv[2])
-revision, environment, cache_state, workload_label = sys.argv[3:]
-payload = json.loads(input_path.read_text(encoding="utf-8"))
-results = payload.get("results")
-if not isinstance(results, list) or len(results) != 1:
-    raise SystemExit("expected one Hyperfine result")
-result = results[0]
-command = result.get("command")
-if not isinstance(command, str) or not command:
-    raise SystemExit("result.command must be non-empty")
-times = result.get("times")
-exit_codes = result.get("exit_codes")
-if not isinstance(times, list) or not isinstance(exit_codes, list):
-    raise SystemExit("result times and exit_codes must be lists")
-if len(times) != len(exit_codes):
-    raise SystemExit("result times and exit_codes lengths differ")
-
-def duration(value):
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise SystemExit("duration must be numeric or null")
-    if not math.isfinite(value) or value < 0:
-        raise SystemExit("duration must be finite and non-negative")
-    return value
-
-samples = []
-for index, (time, exit_code) in enumerate(zip(times, exit_codes, strict=True), 1):
-    if exit_code is None:
-        raise SystemExit(f"sample-{index}: null exit code is unknown; collect status evidence before adapting")
-    elif isinstance(exit_code, bool) or not isinstance(exit_code, int):
-        raise SystemExit(f"sample-{index}: exit_code must be an integer")
-    elif exit_code == 0:
-        status = "success"
-    else:
-        status = "failed"
-    samples.append({
-        "id": f"hyperfine-{index}",
-        "status": status,
-        "duration_seconds": duration(time),
-        "exit_code": exit_code,
-        "warmup": False,
-    })
-
-output = {
-    "schema_version": 1,
-    "source": "local",
-    "command": command,
-    "revision": revision,
-    "environment": environment,
-    "cache_state": cache_state,
-    "workload_label": workload_label,
-    "benchmark_source": {"tool": "hyperfine", "evidence_file": str(input_path)},
-    "samples": samples,
-}
-encoded = json.dumps(output, indent=2, sort_keys=True) + "\n"
-try:
-    with output_path.open("x", encoding="utf-8") as stream:
-        stream.write(encoded)
-except FileExistsError as error:
-    raise SystemExit(f"refusing to replace {output_path}") from error
-PY
+python3 "$CI_OPTIMIZE_HELPER" from-hyperfine \
+  --input hyperfine.json \
+  --command 'just check' \
+  --revision abc123 \
+  --environment macos-arm64 \
+  --cache-state warm \
+  --workload-label "repository gates" \
+  --tool-version "$(hyperfine --version)" \
+  --output LOCAL.json
 ```
 
-The adapter rejects null exit codes because their cause is unavailable. It leaves the raw export unchanged and writes no local input. Collect status evidence before creating local input. Do not fabricate cancellation or timeout.
+`--sample-prefix` names each sample; it defaults to `sample`. `--tool-version` records the Hyperfine version; it defaults to `unknown`. The helper rejects an export with zero or more than one result, a missing or unequal-length `times`/`exit_codes` pair, or a non-integer exit code. It maps a nonzero exit code to `failed`. Add `--force` only to replace an existing explicit output file.
 
-The resulting input has this shape:
+The resulting dataset has this shape:
 
 ```json
 {
   "schema_version": 1,
   "source": "local",
-  "command": "just check",
-  "revision": "abc123",
-  "environment": "macos-arm64",
-  "cache_state": "warm",
-  "workload_label": "repository gates",
-  "benchmark_source": {"tool": "hyperfine", "evidence_file": "hyperfine.json"},
-  "samples": [
-    {"id": "hyperfine-1", "status": "success", "duration_seconds": 12.4, "exit_code": 0, "warmup": false},
-    {"id": "hyperfine-2", "status": "failed", "duration_seconds": 15.1, "exit_code": 1, "warmup": false}
+  "context": {
+    "command": "just check",
+    "revision": "abc123",
+    "environment": "macos-arm64",
+    "cache_state": "warm",
+    "workload_label": "repository gates",
+    "benchmark_source": {"tool": "hyperfine", "version": "1.18.0", "evidence_file": "hyperfine.json"},
+    "captured_at": "2026-01-01T00:10:00Z"
+  },
+  "observations": [
+    {"identity": {"id": "sample-0"}, "status": "success", "duration_seconds": 12.4, "exit_code": 0, "warmup": false, "eligibility": true, "reasons": [], "provenance": {"tool": "hyperfine", "version": "1.18.0", "evidence_file": "hyperfine.json"}},
+    {"identity": {"id": "sample-1"}, "status": "failed", "duration_seconds": 15.1, "exit_code": 1, "warmup": false, "eligibility": false, "reasons": ["failed"], "provenance": {"tool": "hyperfine", "version": "1.18.0", "evidence_file": "hyperfine.json"}}
+  ],
+  "exclusions": [
+    {"identity": {"id": "sample-1"}, "reasons": ["failed"]}
   ]
 }
 ```

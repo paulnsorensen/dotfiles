@@ -37,6 +37,16 @@ An acknowledgement cannot waive a different workflow, event, workload, or valida
 It also cannot prove that checks and artifacts remain equivalent.
 The optimization workflow must verify those properties separately.[^tests]
 
+## Provenance and the unknown token
+
+Every capture template value must be a real value or the literal `unknown`. The helper's unknown check blocks that token, an empty string, or an absent value. A placeholder reminder sentence would still compare as a real value and mask a context difference.[^cli]
+
+A capture keeps only the fields the normalizer reads, projected out of the full API response. A stored capture cannot leak commit author emails, runner labels, or step logs.[^attempts]
+
+`from-hyperfine` keeps the import-only boundary for Hyperfine users: it reads one export and writes a normalized local dataset, and it never runs the benchmarked command.[^cli]
+
+A comparison report carries a `provenance` block per side: run identity for CI, revision and benchmark source for local. This lets a saved-percent claim trace back to the runs and command that produced it.[^tests]
+
 ## Skill approval and deployment
 
 The skill separates a measurement run plan from approval of optimization edits.
