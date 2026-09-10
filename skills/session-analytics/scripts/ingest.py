@@ -597,8 +597,16 @@ def db_is_fresh():
 
 
 def run_sql(sql, db_path=None):
+    limit = os.environ.get("SESSIONS_DUCKDB_MEMORY_LIMIT") or "8GB"
     result = subprocess.run(
-        ["duckdb", db_path or DB_TMP_PATH, "-c", sql],
+        [
+            "duckdb",
+            db_path or DB_TMP_PATH,
+            "-cmd",
+            f"SET memory_limit='{limit}'",
+            "-c",
+            sql,
+        ],
         capture_output=True,
         text=True,
         timeout=600,
