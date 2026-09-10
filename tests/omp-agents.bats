@@ -163,6 +163,16 @@ expected_omp_thinking() {
     done < <(all_omp_agents)
 }
 
+@test "OMP reviewer defaults safely and stops on parent return requests" {
+    local mode_contract prompt
+    mode_contract="Use \`severity-report\` unless the dispatch explicitly selects \`taste-test\`"
+    prompt="$(body "$OMP_AGENTS/reviewer.md")"
+
+    [[ "$prompt" == *"$mode_contract"* ]]
+    [[ "$prompt" == *"When the parent requests an immediate return, stop all tool use"* ]]
+    [[ "$prompt" != *"If the mode is missing or invalid"* ]]
+}
+
 @test "OMP custom model tiers resolve to the intended OpenAI families" {
     [[ "$(yq -oy -r '.omp.config.modelRoles.strong' "$OMP_CONFIG")" == "openai-codex/gpt-5.6-sol" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.balanced' "$OMP_CONFIG")" == "openai-codex/gpt-5.6-terra" ]]
