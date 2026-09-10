@@ -34,6 +34,24 @@ The contract:
 
 The Claude self-heal matcher in `renderers/claude.py` extracts the hook basename from the text after `/hooks/`, so the prefix does not disturb it. Golden fixtures under `agent-profile/tests/fixtures/golden/` carry the prefix.
 
+## tool-reroute
+
+`agents/lib/tool-reroute.js` is the Claude-only `PreToolUse` dispatcher for `Bash|Grep|Glob`. It rewrites wrong-tool calls to `tilth` / `wt-git`, denies the two cases with no shell target, and delegates every other Bash command to `rtk hook claude` for compaction.
+
+### worktree-git passthrough
+
+Inside a Claude-created isolated worktree, the dispatcher does not delegate a plain `git` command to rtk. It logs `module: worktree-git`, `action: passthrough`, and lets the command run unchanged.
+
+**Trigger:** the event `cwd` matches `/\.claude/worktrees/` and any command segment has the command word `git` after `commandWord` strips env assignments and a leading `rtk` / `rtk proxy`. A quoted `git` inside a string does not trigger. A lexer miss fails closed to the normal delegate path.
+
+**Why:** the Agent tool's `isolation: "worktree"` guard in Claude Code refuses a command whose command word is not `git` but carries a git operand. rtk rewrites `git status` to `rtk git status`, so the guard refused 89 ordinary git calls across 3 sessions on 2026-09-09/10. Agents then flailed (`unset -f git`, `/usr/bin/git status`) and 6 of 10 sampled refusals were followed by another refusal.
+
+**Why a path test, not `git rev-parse`:** the hook runs on every Bash call inside a 5 s budget. Claude Code's guard applies only to worktrees it creates under `.claude/worktrees/`, so the path test is exact for this purpose.
+
+**Accepted loss:** git output inside isolated agents does not get rtk compaction. Git output is small.
+
+**Residuals:** an agent that types `rtk git …` itself is still refused by Claude Code; the hook does not delegate it either. A `cd <own-cwd> && git …` in a worktree takes the cd-strip path, which still delegates the stripped remainder to rtk.
+
 ## Claude-only pre-tool guards
 
 Beyond the cross-harness git-guard, Claude wires a `PreToolUse` guard (in `claude/hooks/`):
@@ -56,4 +74,4 @@ Status: merged and deployed on `main`. Keep parser fixtures aligned with the act
 [^tilth-correction]: `agents/lib/sensitive-file-guard.js` (`editTargets`, `resolveTilthReadPath`); `claude/hooks/worktree-guard.js` (`editTargets`, `resolveEditPath`).
 [^tilth-fixture]: `tests/sensitive-file-guard.bats`; `tests/hooks-blockers.bats`.
 
-_Source: harness audit + PR #891 · Updated: 2026-09-06 · Supersedes: unresolved-gap-only description._
+_Source: harness audit + PR #891 + worktree-git passthrough (session analytics 2026-09-09/10) · Updated: 2026-09-10 · Supersedes: unresolved-gap-only description._
