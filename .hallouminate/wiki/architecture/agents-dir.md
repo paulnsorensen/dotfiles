@@ -79,10 +79,10 @@ Generic prompts (`preamble.md`, `agent_definitions/*.md`) use the easy-cheese ti
 | Tier | Claude (`model:` per dispatch) | Codex (`models.codex`, pinned per agent toml) | OMP (`modelRoles` alias, pinned in agent frontmatter) |
 |---|---|---|---|
 | `powerful` | `opus` | `gpt-5.6-sol` — reviewer | `@strong` (Sol) — reviewer, cheese-reviewer |
-| `default` | `sonnet` | `gpt-5.6-terra` — researcher, generalist, ghostbuster | `@balanced` (Terra) |
+| `default` | `sonnet` | `gpt-5.6-terra` — taste-tester, researcher, generalist, ghostbuster | `@balanced` (Terra) — taste-tester |
 | `cheap` | `haiku` | `gpt-5.6-luna` — coder, explorer, whey-drainer, scanners | `@fast` (Luna; `task`, `tiny`, `smol`) — coder |
 
-Only Claude honors a per-dispatch tier, so a `taste-test` at `default` is a Claude-only saving today; Codex and OMP run the reviewer's pinned `powerful` model for both modes. Bindings live in `preamble.md` (Claude + Codex), `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md` (OMP), and as comments in `codex.yaml` and the registry reviewer entry; `tests/phase-agent-handoff.bats` locks them. A cross-harness `tier:` registry field mapped per renderer was proposed (#952 item 6) and deferred as a design call. See [[omp-agent-model-effort]] for the Codex/OMP workload matrix.
+Only Claude honors a per-dispatch tier. Codex and OMP pin the model in the agent file, so a `default`-tier taste-test needs its own agent: `taste-tester` (easy-cheese `reviewer (taste-test)`) is pinned sonnet / Terra / `@balanced` at `medium` on all three, and the preamble routes every taste-test to it. `reviewer` keeps `Review mode: taste-test` for compatibility only. Bindings live in `preamble.md` (Claude + Codex), `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md` (OMP), and as comments in `codex.yaml` and the registry; `tests/phase-agent-handoff.bats` locks them. A cross-harness `tier:` registry field mapped per renderer was proposed (#952 item 6) and stays deferred; the second agent was the cheaper fix. See [[omp-agent-model-effort]] for the Codex/OMP workload matrix.
 
 ### Skills — `skills/` tree + `skills/_registry.yaml`
 

@@ -51,7 +51,7 @@ expected_omp_thinking() {
         generalist) echo xhigh ;;
         roquefort-wrecker|coder) echo xhigh ;;
         explorer) echo high ;;
-        nih-scanner) echo medium ;;
+        nih-scanner|taste-tester) echo medium ;;
         duckdb-expert|whey-drainer|worktree-content-digest) echo low ;;
         *) return 1 ;;
     esac
