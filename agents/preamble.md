@@ -52,10 +52,20 @@ Delegate coherent phase work unless it is a trivial one-step task:
 | Orient in unfamiliar code or trace impact | `explorer` |
 | Research external facts, APIs, or versions | `researcher` |
 | Review a diff, branch, PR, or path | `reviewer` |
-| Write or change code | `coder` |
+| Write or change code (not under `/age`) | `coder` |
+| Run an existing test gate and return only failures | `whey-drainer` |
 
 The top-level orchestrator owns planning, user decisions, and fan-out. Workers return condensed evidence rather than raw file or fetch output.
 
 Retain iterative diagnosis inline; delegate implementation and verification. On `blocked: suspect-environment`, diagnose the reproduction and competing hypotheses before redispatch, passing measured dead ends as known-false leads with ruling-out evidence.
 
-Set `Review mode: severity-report` or `Review mode: taste-test` in every reviewer prompt. Do not dispatch a reviewer without this line.
+### Dispatch gates
+
+Apply these gates before every `coder` or `reviewer` dispatch. A worker returns `blocked: missing-contract` when a gate is skipped; that is a dispatcher defect, not a worker defect.
+
+1. **Reviewer mode.** Dispatch `taste-tester` for a taste-test. Dispatch `reviewer` for a severity report, and put the literal line `Review mode: severity-report` in its prompt; every `reviewer` prompt carries a `Review mode:` line (`Review mode: taste-test` on `reviewer` stays for compatibility). `severity-report` runs at `powerful`; `taste-tester` is pinned at `default` / `medium` on every harness; `whey-drainer` runs at `cheap` / `low`. Do not dispatch a third taste-test round on the same artifact; ask the user instead.
+   Tier bindings: Claude takes the tier per dispatch through `model:` — `powerful` opus, `default` sonnet, `cheap` haiku. Codex pins GPT-5.6 per agent from `agents/registry.yaml` — Sol `powerful` (reviewer), Terra `default` (taste-tester, researcher, generalist), Luna `cheap` (coder, explorer, whey-drainer).
+2. **Coder contract.** The prompt contains both `Done means` (the exact gate command and what green looks like) and `Scope fence` (what not to touch, and whether to commit).
+3. **Coder size.** Count the edit sites, the files, and whether the task bundles implementation with a gate audit. When two or more of {more than 5 sites, more than 3 files, implement + audit} are true, name the split in the prompt or state why the task is indivisible.
+4. **Age does not code.** Under `/age`, do not dispatch `coder`. Return the report; `/cure` owns application.
+5. **Resume reuse.** When redispatching a coder from a `.cheese/notes/<slug>.md` brief, pass the worktree path and base SHA recorded in its Gates section instead of creating a new worktree.

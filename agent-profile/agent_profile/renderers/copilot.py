@@ -18,8 +18,9 @@ Skips:
   - permissions — Copilot uses runtime ``--deny-tool`` flags, not config.
   - AGENTS.md   — never touched (chezmoi-managed globally).
 
-Models: Copilot ignores the ``model`` field on agents. If a profile sets
-``models.copilot``, it is stripped and a warning is emitted.
+Models: Copilot CLI >= 1.0.83 honors the ``model`` field on agents. If a
+profile sets ``models.copilot``, it is emitted as a single pinned ``model:``
+line; the ``models`` map itself never leaks. No ``model-policy`` is emitted.
 
 Substrate: stdlib :mod:`json` (own-your-keys; ``del``/``pop`` for surgical
 removal). No ``jq``. The frontmatter, hook-JSON, and MCP-config shapes are
@@ -189,16 +190,12 @@ class CopilotRenderer:
                 continue  # native plugin delivers agents via copilot plugin install
             name = agent["name"]
 
-            models = agent.get("models") or {}
-            if models.get("copilot"):
-                _warn(
-                    f"copilot: model override on agent '{name}' ignored "
-                    "(Copilot ignores model field)"
-                )
-
             frontmatter = {
                 k: v for k, v in agent.items() if k not in _AGENT_STRIP_KEYS
             }
+            model = (agent.get("models") or {}).get("copilot")
+            if model:
+                frontmatter["model"] = model
 
             rel = f".github/agents/{name}.agent.md"
             abs_path = base / rel

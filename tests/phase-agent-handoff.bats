@@ -128,7 +128,7 @@ block_sha() {
     assert_success
     run grep -Fq 'Review mode: taste-test' "$reviewer"
     assert_success
-    run grep -Fq 'Do not infer the mode from words such as “lenses”' "$reviewer"
+    run grep -Fq 'Do not infer the mode from words such as "lenses"' "$reviewer"
     assert_success
     run grep -Fq -- '- Drift: pass | revise — <evidence>' "$reviewer"
     assert_success
@@ -138,6 +138,104 @@ block_sha() {
     assert_success
     run grep -Fq 'Review mode: severity-report' "$PREAMBLE"
     assert_success
+}
+
+@test "reviewer mode gate is mechanical: verbatim blocked block and a taste-test round cap" {
+    local reviewer="$AGENTS_DIR/agent_definitions/reviewer.md"
+
+    # The blocked handoff is spelled out so an unlabeled dispatch has nothing to compose.
+    run grep -Fq 'Before any tool call, scan the prompt for the literal string `Review mode:`' "$reviewer"
+    assert_success
+    run grep -Fq 'status: blocked: missing-contract — dispatch prompt has no `Review mode: severity-report | taste-test` line' "$reviewer"
+    assert_success
+    run grep -Fq 'return this block verbatim as your entire final message and stop' "$reviewer"
+    assert_success
+    # Taste-test is a check, not a loop: round 3 blocks instead of re-running lenses.
+    run grep -Fq 'status: blocked: taste-loop' "$reviewer"
+    assert_success
+    run grep -Fq 'Two rounds are the ceiling' "$reviewer"
+    assert_success
+    # Tier vocabulary is harness-neutral (easy-cheese routing-policy); no model names in the generic body.
+    run grep -Fq '`default` power at `medium` effort is sufficient; the dedicated `taste-tester` agent' "$reviewer"
+    assert_success
+    run grep -Eq 'Opus-tier|Sonnet-tier' "$reviewer"
+    assert_failure
+}
+
+@test "taste-tester is the default-tier taste-test agent on every harness" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    local body="$AGENTS_DIR/agent_definitions/taste-tester.md"
+    local omp="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/agents/taste-tester.md"
+
+    # Pinned at default / medium: Claude sonnet, Codex Terra, OMP @balanced.
+    [[ "$(yq -r '.agents.taste-tester.models.claude' "$registry")" == sonnet ]]
+    [[ "$(yq -r '.agents.taste-tester.models.codex' "$registry")" == gpt-5.6-terra ]]
+    [[ "$(yq -r '.agents.taste-tester.effort' "$registry")" == medium ]]
+    [[ "$(yq --front-matter=extract -r '.model' "$omp")" == '@balanced' ]]
+    # Every harness selects it.
+    run yq -e '.claude.agents[] | select(. == "taste-tester")' "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+    assert_success
+    run yq -e '.codex.agents[] | select(. == "taste-tester")' "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
+    assert_success
+    # Single mode: a severity-report dispatch is refused, the round cap holds, the seven lenses are named.
+    run grep -Fq 'status: blocked: missing-contract — taste-test needs an artifact and a contract; severity-report belongs to `reviewer`' "$body"
+    assert_success
+    run grep -Fq 'status: blocked: taste-loop' "$body"
+    assert_success
+    for lens in Drift Readability Scope Simplify 'Production path' 'Wired callers' 'Locked decision'; do
+        run grep -Fq -- "- $lens: pass |" "$body"
+        assert_success
+        run grep -Fq -- "- $lens: pass |" "$omp"
+        assert_success
+    done
+    run yq -e '.agents.taste-tester.disallowedTools[] | select(. == "Write")' "$registry"
+    assert_success
+}
+
+@test "tier vocabulary binds to concrete models per harness" {
+    # Generic prompt: tiers only, plus the Claude and Codex bindings (preamble serves both).
+    run grep -Fq 'Dispatch `taste-tester` for a taste-test' "$PREAMBLE"
+    assert_success
+    run grep -Fq '`taste-tester` is pinned at `default` / `medium` on every harness' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'Claude takes the tier per dispatch through `model:` — `powerful` opus, `default` sonnet, `cheap` haiku' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'Codex pins GPT-5.6 per agent from `agents/registry.yaml`' "$PREAMBLE"
+    assert_success
+    # OMP has its own prompt; it binds the same tiers to modelRoles aliases.
+    local append="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
+    run grep -Fq '`powerful` = `@strong` (GPT-5.6 Sol' "$append"
+    assert_success
+    run grep -Fq '`taste-tester` `@balanced`' "$append"
+    assert_success
+    run grep -Fq '`cheap` = `@fast` (Luna' "$append"
+    assert_success
+}
+
+@test "coder refuses a dispatch missing both Done means and Scope fence" {
+    local coder="$AGENTS_DIR/agent_definitions/coder.md"
+
+    run grep -Fq 'status: blocked: missing-contract — dispatch prompt has neither `Done means` nor `Scope fence`' "$coder"
+    assert_success
+    run grep -Fq 'If exactly one of the two is missing, ask for it before starting work' "$coder"
+    assert_success
+    # The resume brief records the worktree so a resumed coder does not pay a cold install.
+    run grep -Fq 'record the absolute worktree path and base SHA' "$coder"
+    assert_success
+}
+
+@test "preamble carries numbered dispatch gates for coder and reviewer" {
+    for gate in '### Dispatch gates' \
+        '1. **Reviewer mode.**' \
+        '2. **Coder contract.**' \
+        '3. **Coder size.**' \
+        '4. **Age does not code.**' \
+        '5. **Resume reuse.**' \
+        'Under `/age`, do not dispatch `coder`' \
+        '| Run an existing test gate and return only failures | `whey-drainer` |'; do
+        run grep -Fq -- "$gate" "$PREAMBLE"
+        assert_success
+    done
 }
 
 @test "reviewer may write only its own artifact through tilth_write" {
@@ -155,7 +253,9 @@ block_sha() {
 # The descriptions promise read-only phase agents that cannot recurse, and a
 # coder that edits only through tilth. Lock those tool-surface contracts in the
 # registry so they cannot silently drift. Claude and Codex consume the model
-# metadata; Copilot ignores model overrides.
+# metadata. The Copilot renderer honors `models.copilot` as a pinned `model:`
+# (CLI >= 1.0.83), but the phase agents deliberately leave it unset so Copilot
+# keeps its own default model.
 @test "phase agents declare model intent for model-aware harnesses" {
     local registry="$AGENTS_DIR/registry.yaml"
     for agent in explorer researcher reviewer coder; do
@@ -166,7 +266,7 @@ block_sha() {
         done
         run yq ".agents.${agent}.models.copilot" "$registry"
         assert_success
-        [[ "$output" == "null" ]] || { echo "$agent must not set Copilot model (renderer ignores it)" >&2; return 1; }
+        [[ "$output" == "null" ]] || { echo "$agent must not pin a Copilot model (phase agents use Copilot's default)" >&2; return 1; }
     done
 }
 

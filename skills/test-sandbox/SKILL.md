@@ -3,6 +3,7 @@ name: test-sandbox
 model: haiku
 effort: low
 context: fork
+background: false
 allowed-tools: Read, Write, Bash(python3:*), Bash(uv:*), Bash(pytest:*), Bash(ls:*), Bash(rm:*)
 description: >
   Run Python test code in an isolated .claude/testing sandbox (via sub-agent)

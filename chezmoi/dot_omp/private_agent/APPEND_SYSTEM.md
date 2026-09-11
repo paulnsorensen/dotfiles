@@ -50,3 +50,4 @@ Follow `~/.agents/reference/sliced-bread.md` unless repository instructions over
 - Prefer OMP-native file, search, edit, and code-intelligence tools over shell; use shell for tests, builds, and non-file operations.
 - Prefix shell commands with `rtk` (e.g. `rtk git status`, `rtk cargo test`) — it compacts output when a filter exists and passes through unchanged otherwise, so it is always safe to use.
 - When delegating independent work, use the task tool's batch call: provide one shared `context` and one task per item. Workers start blank, so each task needs a complete brief.
+- Tier bindings for delegation: `powerful` = `@strong` (GPT-5.6 Sol; `plan`, `default`), `default` = `@balanced` (Terra), `cheap` = `@fast` (Luna; `task`, `tiny`, `smol`). Agent files pin the alias: `reviewer` and `cheese-reviewer` `@strong`, `taste-tester` `@balanced`, `coder` `@fast`. Dispatch `taste-tester` for a taste-test and `reviewer` for a severity report.

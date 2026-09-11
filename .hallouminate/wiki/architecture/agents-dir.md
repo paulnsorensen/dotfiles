@@ -58,13 +58,31 @@ A mapping of `name → {event, script|command, shared_assets, harnesses, matcher
 
 The cheese sub-agents. Metadata lives in the registry; instruction bodies live as frontmatter-free Markdown at `body_path` under `agents/agent_definitions/`. This split keeps all per-harness metadata in one YAML file while bodies stay editable prose.
 
-- **`models` is per-harness**: each renderer reads its own key; `inherit` or absence means no override. Copilot ignores model overrides.
+- **`models` is per-harness**: each renderer reads its own key; `inherit` or absence means no override. The Copilot renderer emits `models.copilot` as one pinned `model:` line (Copilot CLI ≥ 1.0.83 honors it; before that it was stripped). No `model-policy` or fallback list is emitted — a list would need a registry schema change across every renderer, so it stays a follow-up. The phase agents leave `models.copilot` unset on purpose.
 - **`maxTurns` is Claude frontmatter**: the shared Claude/Cursor file carries it, Claude honors it, and Cursor ignores it.[^max-turns]
 - **`tools` / `disallowedTools` are lists.** Claude/Cursor render CSV frontmatter; Codex derives sandbox/read-only intent. `shared.agent_is_read_only` also counts MCP write surfaces, not only `Edit`/`Write`.
 
 Two tiers live here: narrow specialists (`ghostbuster`, `nih-scanner`, `roquefort-wrecker`, `duckdb-expert`, `whey-drainer`, `worktree-content-digest`) used as fork targets by dotfiles-local skills, and four general phase agents (`explorer`/`researcher`/`reviewer`/`coder`) modelling the explore→research→review→code loop. The former `/age` fork specialists (`fromage-age-arch`, `fromage-age-history`, `fromage-secaudit`, `fromage-fort`, `ricotta-reducer`) were removed 2026-07-31 — the reduced `/age` + `age-fanout` workflow dispatches only `explorer`/`reviewer` workers, leaving them dispatcher-less (see [[agent-vs-skill-tiering]]). Planning is intentionally *not* an agent: it owns the human-approval loop and a level-1 sub-agent can't fan out, so it stays an orchestrator concern.
 
 The four phase agents hand results back through their **final message**, which the harness returns to the orchestrator as the tool result. Each agent body carries the same four-line handoff block (`status` / `next` / `artifact` / one-line orientation), and `tests/phase-agent-handoff.bats` locks the four copies byte-identically rather than treating the preamble as their schema owner.[^handoff] The block is the in-session twin of the `/wheypoint` slug. Agents do **not** call `/wheypoint` on clean completion; when context is exhausted, their role-owned handoff rules checkpoint durable state and tell the orchestrator which fresh phase agent should continue. The heavier fork specialists (`ghostbuster`, `nih-scanner`) use the same principle: finalize partial output and flag unscanned scope before their context limit.
+
+#### Dispatch gates are mechanical, not prose (2026-09-10, dotfiles#952)
+
+Sixty days of Claude session analytics (609 `Agent` dispatches) showed three agent-side gates never fired as prose: 72 of 148 reviewer dispatches had no `Review mode:` line and zero returned blocked; 0% of coder dispatches carried `Done means`, yet none refused; taste-tests ran up to six Opus rounds on one draft. The definitions now make each gate a verbatim block the worker copies rather than composes:
+
+- `reviewer.md` scans for the literal `Review mode:` before any tool call and returns a fixed `blocked: missing-contract` handoff otherwise. Round ≥ 3 of a taste-test returns `blocked: taste-loop` so the parent asks the user. `taste-test` is declared sufficient at `default` power / `medium` effort (its fix-rate matched severity-report at the same prompt size, so the `powerful` tier added cost without signal — easy-cheese#659).
+- `coder.md` returns `blocked: missing-contract` when **both** `Done means` and `Scope fence` are absent; one missing field still asks. The resume brief's Gates section records the worktree path and base SHA so a resumed coder reuses the worktree (26 cold installs in one session was the trigger).
+- `preamble.md` carries five numbered **Dispatch gates** and two table changes: `coder` is "not under `/age`" (39 of 67 age-span coders were cure work that `/cure` owns) and `whey-drainer` gets a row (1 spawn in 60 days because coders ran gates themselves).
+
+Generic prompts (`preamble.md`, `agent_definitions/*.md`) use the easy-cheese tier vocabulary `cheap | default | powerful` plus effort, never a model name, so one body serves every harness (paulnsorensen/easy-cheese#659 `routing-policy.md`). Each harness binds the tiers where it owns models:
+
+| Tier | Claude (`model:` per dispatch) | Codex (`models.codex`, pinned per agent toml) | OMP (`modelRoles` alias, pinned in agent frontmatter) |
+|---|---|---|---|
+| `powerful` | `opus` | `gpt-5.6-sol` — reviewer | `@strong` (Sol) — reviewer, cheese-reviewer |
+| `default` | `sonnet` | `gpt-5.6-terra` — taste-tester, researcher, generalist, ghostbuster | `@balanced` (Terra) — taste-tester |
+| `cheap` | `haiku` | `gpt-5.6-luna` — coder, explorer, whey-drainer, scanners | `@fast` (Luna; `task`, `tiny`, `smol`) — coder |
+
+Only Claude honors a per-dispatch tier. Codex and OMP pin the model in the agent file, so a `default`-tier taste-test needs its own agent: `taste-tester` (easy-cheese `reviewer (taste-test)`) is pinned sonnet / Terra / `@balanced` at `medium` on all three, and the preamble routes every taste-test to it. `reviewer` keeps `Review mode: taste-test` for compatibility only. Bindings live in `preamble.md` (Claude + Codex), `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md` (OMP), and as comments in `codex.yaml` and the registry; `tests/phase-agent-handoff.bats` locks them. A cross-harness `tier:` registry field mapped per renderer was proposed (#952 item 6) and stays deferred; the second agent was the cheaper fix. See [[omp-agent-model-effort]] for the Codex/OMP workload matrix.
 
 ### Skills — `skills/` tree + `skills/_registry.yaml`
 

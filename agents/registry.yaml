@@ -186,7 +186,10 @@ agents:
     maxTurns: 50
     body_path: agents/agent_definitions/researcher.md
   reviewer:
-    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path through an explicit severity-report or taste-test contract. Source-read-only — never writes fixes; may write only its own .cheese artifact through tilth_write. A top-level /age orchestrator may supply specialist evidence. Models the easy-cheese review phase. Opus-tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
+    description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path through an explicit severity-report or taste-test contract. Source-read-only — never writes fixes; may write only its own .cheese artifact through tilth_write. A top-level /age orchestrator may supply specialist evidence. Models the easy-cheese review phase. `powerful` tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
+    # `powerful` on every harness: Claude opus/high, Codex Sol, OMP `@strong`.
+    # A taste-test goes to `taste-tester`; `Review mode: taste-test` here is
+    # accepted for compatibility only.
     models:
       claude: opus
       codex: gpt-5.6-sol
@@ -202,6 +205,28 @@ agents:
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/reviewer.md
+  taste-tester:
+    # easy-cheese `reviewer (taste-test)`: `default` power, `medium` effort,
+    # pinned on every harness (Claude sonnet, Codex Terra, OMP `@balanced`).
+    # A separate agent because Codex and OMP pin the model per agent file and
+    # cannot lower `reviewer` from Sol per dispatch.
+    description: Fresh-context taste-tester. Runs the seven handoff lenses (Drift, Readability, Scope, Simplify, Production path, Wired callers, Locked decision) over one diff or draft against its contract and returns one pass/revise verdict per lens. Source-read-only — never fixes; never runs the ten-dimension /age review — dispatch `reviewer` for that. Models the easy-cheese `reviewer (taste-test)` role after /cook, /cure, and the /mold fork test. Two rounds per artifact; round 3 blocks.
+    models:
+      claude: sonnet
+      codex: gpt-5.6-terra
+    disallowedTools:
+    - Edit
+    - Write
+    - NotebookEdit
+    - Agent
+    - Grep
+    - Glob
+    - Skill
+    color: yellow
+    effort: medium
+    skills: []
+    maxTurns: 30
+    body_path: agents/agent_definitions/taste-tester.md
   coder:
     # Codex uses Luna for bounded high-volume work. OMP's native coder pairs the
     # same family with xhigh thinking; registry effort remains Claude-specific.

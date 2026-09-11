@@ -356,10 +356,10 @@ def test_hook_missing_script_file_raises(target, src):
         renderer().render(m, target)
 
 
-# ─── models.copilot is ignored (model field stripped) ──────────────────
+# ─── models.copilot is emitted as a pinned model: line ───────────────
 
 
-def test_model_copilot_stripped_byte_parity(target, src, capsys):
+def test_model_copilot_pinned_byte_parity(target, src, capsys):
     (src / "agents").mkdir()
     (src / "agents" / "x.md").write_text("BODY\n")
     m = manifest(
@@ -376,11 +376,32 @@ def test_model_copilot_stripped_byte_parity(target, src, capsys):
     renderer().render(m, target)
 
     produced = (target / ".github/agents/x.agent.md").read_text()
-    assert produced == golden("model_strip/target/.github/agents/x.agent.md")
-    # Neither the model value nor the models map leaks into frontmatter.
-    assert "model: gpt-5" not in produced
+    assert produced == golden("model_pin/target/.github/agents/x.agent.md")
+    # The pinned value renders; the per-harness models map never leaks.
+    assert "model: gpt-5" in produced
     assert "models:" not in produced
-    assert "copilot: model override on agent 'x' ignored" in capsys.readouterr().err
+    assert "model override" not in capsys.readouterr().err
+
+
+def test_model_copilot_absent_emits_no_model_line(target, src):
+    (src / "agents").mkdir()
+    (src / "agents" / "x.md").write_text("BODY\n")
+    m = manifest(
+        src,
+        agents=[
+            {
+                "name": "x",
+                "description": "d",
+                "body_path": "agents/x.md",
+                "models": {"claude": "opus"},
+            }
+        ],
+    )
+    renderer().render(m, target)
+
+    produced = (target / ".github/agents/x.agent.md").read_text()
+    assert "model:" not in produced
+    assert "models:" not in produced
 
 
 # ─── commands and permissions are skipped ──────────────────────────────

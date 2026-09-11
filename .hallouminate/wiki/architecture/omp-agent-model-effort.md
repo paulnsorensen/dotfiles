@@ -8,6 +8,7 @@ Canonical agents choose their Codex GPT-5.6 model by workload, while each OMP-na
 |---|---|---|---|
 | `reviewer` | GPT-5.6 Sol | `xhigh` | Quality-first final review |
 | `ghostbuster`, `researcher` | GPT-5.6 Terra | `high` | Broad evidence synthesis with bounded output |
+| `taste-tester` | GPT-5.6 Terra | `medium` | Seven-lens handoff check; `default` tier so the taste-test never pays Sol |
 | `generalist` | GPT-5.6 Terra | `xhigh` | Open-ended mixed work needs deeper reasoning |
 | `roquefort-wrecker`, `coder` | GPT-5.6 Luna | `xhigh` | Bounded write tasks pair the high-volume tier with deep reasoning |
 | `explorer` | GPT-5.6 Luna | `high` | High-volume local inspection with concise synthesis |
