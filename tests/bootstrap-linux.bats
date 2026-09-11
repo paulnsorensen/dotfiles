@@ -92,7 +92,6 @@ YAML
     assert_output_contains "htop"
     assert_output_not_contains "ripgrep"
     assert_output_not_contains "node"
-    assert_output_not_contains "rtk"
 }
 
 # Stub bootstrap externals and yq so main reaches install_brew_packages and

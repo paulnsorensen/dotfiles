@@ -87,7 +87,7 @@ Apply the minimum change:
 
 ### Step 5: Verify
 
-Run the build to confirm the fix works (rtk filters output automatically):
+Run the build to confirm the fix works:
 
 | Build System | Verify Command |
 |-------------|----------------|

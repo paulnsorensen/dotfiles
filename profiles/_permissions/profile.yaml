@@ -19,7 +19,6 @@ settings:
   permissions_allow:
     - Bash(git:*)
     - Bash(approve:*)
-    - Bash(rtk:*)
     - Bash(tilth:*)
     - Bash(ls:*)
     - Bash(head:*)
@@ -80,18 +79,16 @@ settings:
     - Skill
   # PoC disallow-list (walk-back-able). Two groups:
   #   1. Search/IO routing. The tool-reroute hook (claude-only) now OWNS this:
-  #      it REWRITES grep/rg/ag/ack/cat/find to tilth and DELEGATES the rest to
-  #      rtk, so grep/ag/ack and the Grep/Glob tools are no longer denied here.
-  #      Cursor and Copilot keep the routing system-prompt nudge. Bash(rg:*)'s
-  #      allow stays removed (a stray rg prompts rather than running unfiltered).
-  #      Only the `rtk proxy git grep` tunnel stays denied below: the lexer's
-  #      rtk-strip turns it into `git grep`, which has no tilth rewrite target.
+  #      it REWRITES grep/rg/ag/ack/cat/find to tilth and lets everything else
+  #      run unchanged, so grep/ag/ack and the Grep/Glob tools are no longer
+  #      denied here. Cursor and Copilot keep the routing system-prompt nudge.
+  #      Bash(rg:*)'s allow stays removed (a stray rg prompts rather than
+  #      running unfiltered).
   #   2. Cross-harness safety floor (porting the retired bash-guard hook's
   #      spirit to every harness). `Bash(rm -rf:*)` is COARSER than bash-guard
   #      was (it blocks even safe relative `rm -rf node_modules`); with the
   #      hook removed, this coarse deny is the floor for Claude too.
   permissions_deny:
-    - Bash(rtk proxy git grep:*)
     - Bash(sudo:*)
     - Bash(rm -rf:*)
     # Secret-protection floor. `.env.*` is intentionally not denied because it

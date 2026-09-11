@@ -442,7 +442,7 @@ run_sync() {
         git-delta git-lfs tmux prek zoxide atuin bottom dust procs tokei yazi
         difftastic mergiraf lazygit git-town sesh just chezmoi duckdb node bun
         sd vhs sccache cargo-nextest protobuf uv rustup
-        rust-analyzer cargo-llvm-cov rtk bash-language-server yaml-language-server
+        rust-analyzer cargo-llvm-cov bash-language-server yaml-language-server
         basedpyright gopls oven-sh/bun joshmedeski/sesh
     )
     local name

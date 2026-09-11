@@ -110,19 +110,19 @@ hooks:
   # ─── Tool reroute ───────────────────────────────────────────────────
   # Transparently REWRITES wrong-tool Bash/Grep/Glob calls to their tilth /
   # wt-git shell equivalent via updatedInput (grep/rg/ag/ack → tilth, cd+git →
-  # wt-git, bare cat → tilth, find -name → tilth <glob>), DENIES the two cases
-  # with no shell rewrite target (the Grep/Glob tools, shell write-redirects)
-  # naming cheez-search / cheez-write, and DELEGATES every other Bash command to
-  # `rtk hook <harness>` for token compaction. One dispatcher (tool-reroute.js)
+  # wt-git, bare cat → tilth, find -name → tilth <glob>), and DENIES the two
+  # cases with no shell rewrite target (the Grep/Glob tools, shell
+  # write-redirects) naming cheez-search / cheez-write. Rewrite and deny only —
+  # every other Bash command runs unchanged. One dispatcher (tool-reroute.js)
   # runs four independently-removable modules (lib/tool-reroute/{search,cd-strip,
   # cd-git,io}.js); cd-strip strips a no-op `cd <cwd> &&` prefix and re-classifies
   # the remainder; the shared lexer is lib/tool-reroute/shell.js and the shared
   # jsonl append/rotate helper is lib/jsonl-log.js. Both harnesses share the
   # allow/deny + updatedInput schema. Harness identity: see wiki
   # architecture/cross-harness-guards.
-  # Fail-open: a missing logic file, absent node, or absent rtk degrades to the
-  # unrewritten command. Every rewrite/deny is appended to decisions.jsonl
-  # (fail-open, 5 MiB rotation) for observability.
+  # Fail-open: a missing logic file or absent node degrades to the unrewritten
+  # command. Every rewrite/deny is appended to decisions.jsonl (fail-open,
+  # 5 MiB rotation) for observability.
   tool-reroute:
     event: PreToolUse
     script: agents/hooks/tool-reroute.sh
@@ -137,7 +137,7 @@ hooks:
     harnesses: [claude] # adding codex requires the DOTFILES_HARNESS prefix (see wiki architecture/cross-harness-guards)
     matcher: "Bash|Grep|Glob"
     timeout: 5
-    description: Rewrite wrong-tool Bash/Grep/Glob calls to tilth/wt-git; delegate the rest to rtk
+    description: Rewrite wrong-tool Bash/Grep/Glob calls to tilth/wt-git; otherwise run unchanged
 
   # ─── Deep-think nudge ───────────────────────────────────────────────
   # When a reasoning-heavy skill (briesearch/culture/spec/mold) is invoked at an

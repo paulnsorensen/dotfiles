@@ -1,7 +1,6 @@
 {
   "autoRun": {
     "allow_instructions": [
-      "Allow any shell command whose first token is rtk (the required shell wrapper in this environment).",
       "Allow routine developer shell tools: git, gh, just, dots, jq, yq, rg, fd, node, npm, npx, uv, uvx, python3, python, mise, cargo, go, rustc, tokei, bat, delta, pretk, prek, sed, awk, sort, uniq, wc, tr, cut, tee, xargs, env, printf, basename, dirname, realpath, mktemp, mkdir, touch, cp, mv, ln, chmod, ls, find, tree, file, stat, head, tail, cat, echo, true, false, test, which, command, type, diff, patch.",
       "Allow all tilth MCP tools (tilth_list, tilth_search, tilth_read, tilth_grok, tilth_diff, tilth_deps, tilth_write) under any tilth server id (tilth, user-tilth).",
       "Allow all hallouminate MCP tools (ground, read_markdown, add_markdown, list_tree, list_files, list_corpora, index, backlinks, corpus_stats, get_footnote, delete_markdown) under any hallouminate server id (hallouminate, user-hallouminate, plugin-hallouminate-hallouminate).",

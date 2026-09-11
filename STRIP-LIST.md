@@ -74,7 +74,6 @@ Distilled from `.cheese/notes/strip-log.md` + Phase D decisions.
 
 ### Stripped from packages.yaml (personal)
 
-- `rtk` — personal cargo tool (rtk-ai/rtk)
 - `tilth` — paulnsorensen/tilth (personal repo; URL leaks identity)
 - `hallouminate` — paulnsorensen/hallouminate (personal repo; URL leaks identity)
 - `milknado` — paulnsorensen/milknado (personal project)
@@ -114,7 +113,6 @@ All other packages (productivity tools, editors, optional CLIs). See catalog.
 | `agents/registry.yaml` | EMPTY+SCHEMA | All sub-agents are catalog |
 | `agents/lib/cheese-flair.sh` | SKIP | Personal flair library |
 | `agents/hooks/session-start-cheese-flair.sh` | SKIP | Personal flair hook |
-| `agents/RTK.md` | SKIP | Personal RTK config |
 | `agents/AGENTS.md` | SKIP | Personal agent preferences |
 | `agents/reference/cheese-flair.md` | SKIP | Personal flair bank |
 
@@ -159,7 +157,6 @@ All other packages (productivity tools, editors, optional CLIs). See catalog.
 | `profiles/notion/` | SKIP | Catalog profile |
 | `profiles/plugin/` | SKIP | Catalog profile |
 | `profiles/review/` | SKIP | Catalog profile |
-| `profiles/rtkonly/` | SKIP | Personal RTK profile |
 | `profiles/spec/` | SKIP | Catalog profile |
 | `profiles/todo/` | SKIP | Catalog profile |
 
@@ -243,7 +240,7 @@ All other packages (productivity tools, editors, optional CLIs). See catalog.
 | `codex/` | Personal codex config |
 | `cursor/` (most) | Personal cursor config; only `repo-hooks/` plugin extracted |
 | `iterm2/` (plists) | Personal iTerm2 |
-| `.github/` | Personal GitHub config (includes rtk-rewrite.json) |
+| `.github/` | Personal GitHub config |
 
 ---
 
@@ -256,7 +253,6 @@ be offered to any adopter without personal content.
 
 Items excluded from catalog:
 
-- `rtk` — personal tool
 - `tilth` / `hallouminate` cargo packages — personal repo URLs leak identity (MCPs included by binary name)
 - `milknado` — personal project
 - `cheese-flow`, `vaudeville` plugins — personal flair

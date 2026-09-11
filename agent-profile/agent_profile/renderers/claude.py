@@ -472,7 +472,7 @@ class ClaudeRenderer:
     # alongside the plugin's (it merges both at load time). For each hook we
     # just wired into the plugin, drop any settings.json hook whose command
     # duplicates it. User hooks the plugin doesn't manage (the JS guards,
-    # rtk, a tmux Stop hook) carry no managed signature and survive.
+    # a tmux Stop hook) carry no managed signature and survive.
     def _clean_legacy_settings_hooks(
         self, hook_entries: dict[str, list[dict]], base: Path
     ) -> None:

@@ -388,13 +388,15 @@ email = "test@example.com"
 TOML
     run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" managed
     [ "$status" -eq 0 ]
-    [[ "$output" == *".omp/agent/extensions/rtk.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/sliced-bread-audit.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/milknado-todo-guard.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
     [[ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/no-fork-all.ts" ]]
+    [[ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/rtk.ts" ]]
     grep -Fxq '.omp/agent/extensions/no-fork-all.ts' \
+        "$REAL_DOTFILES_DIR/chezmoi/.chezmoiremove"
+    grep -Fxq '.omp/agent/extensions/rtk.ts' \
         "$REAL_DOTFILES_DIR/chezmoi/.chezmoiremove"
     ! grep -Eq 'assignment|fork_turns' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
@@ -406,7 +408,8 @@ TOML
     local extension
     mkdir -p "$destination/.omp/agent/extensions"
     printf 'retired sentinel\n' > "$destination/.omp/agent/extensions/no-fork-all.ts"
-    for extension in rtk.ts cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
+    printf 'retired sentinel\n' > "$destination/.omp/agent/extensions/rtk.ts"
+    for extension in cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
         printf 'managed sentinel\n' > "$destination/.omp/agent/extensions/$extension"
     done
     cat > "$cfg" <<TOML
@@ -422,7 +425,8 @@ TOML
     run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" apply --force --exclude=scripts
     [ "$status" -eq 0 ]
     [ ! -e "$destination/.omp/agent/extensions/no-fork-all.ts" ]
-    for extension in rtk.ts cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
+    [ ! -e "$destination/.omp/agent/extensions/rtk.ts" ]
+    for extension in cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
         [ -e "$destination/.omp/agent/extensions/$extension" ]
     done
 }
