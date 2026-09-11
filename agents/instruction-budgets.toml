@@ -19,10 +19,6 @@ path = "agents/AGENTS.md"
 max_tokens = 4100
 
 [[source]]
-path = "agents/RTK.md"
-max_tokens = 300
-
-[[source]]
 path = "agents/preamble.md"
 max_tokens = 2600
 
@@ -55,10 +51,6 @@ max_tokens = 900
 
 [[source]]
 path = "profiles/review/CLAUDE.md"
-max_tokens = 700
-
-[[source]]
-path = "profiles/rtkonly/CLAUDE.md"
 max_tokens = 700
 
 [[source]]
@@ -116,7 +108,7 @@ max_tokens = 6750
 
 [[stack]]
 name = "global_claude"
-sources = ["agents/AGENTS.md", "agents/preamble.md", "agents/RTK.md"]
+sources = ["agents/AGENTS.md", "agents/preamble.md"]
 max_tokens = 7000
 
 [[stack]]
@@ -126,7 +118,7 @@ max_tokens = 9250
 
 [[stack]]
 name = "repo_claude"
-sources = ["agents/AGENTS.md", "agents/preamble.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md"]
+sources = ["agents/AGENTS.md", "agents/preamble.md", "AGENTS.md", "CLAUDE.md"]
 max_tokens = 9750
 
 [[stack]]
@@ -161,39 +153,34 @@ max_tokens = 3000
 
 [[stack]]
 name = "profile_fe"
-sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/fe/CLAUDE.md"]
+sources = ["agents/AGENTS.md", "AGENTS.md", "CLAUDE.md", "profiles/fe/CLAUDE.md"]
 max_tokens = 8000
 
 [[stack]]
 name = "profile_oss_docs"
-sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/oss-docs/CLAUDE.md"]
+sources = ["agents/AGENTS.md", "AGENTS.md", "CLAUDE.md", "profiles/oss-docs/CLAUDE.md"]
 max_tokens = 8000
 [[stack]]
 name = "profile_plugin"
-sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/plugin/CLAUDE.md"]
+sources = ["agents/AGENTS.md", "AGENTS.md", "CLAUDE.md", "profiles/plugin/CLAUDE.md"]
 max_tokens = 8000
 
 [[stack]]
 name = "profile_review"
-sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/review/CLAUDE.md"]
-max_tokens = 7750
-
-[[stack]]
-name = "profile_rtkonly"
-sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/rtkonly/CLAUDE.md"]
+sources = ["agents/AGENTS.md", "AGENTS.md", "CLAUDE.md", "profiles/review/CLAUDE.md"]
 max_tokens = 7750
 
 [[stack]]
 name = "profile_skills_doctor"
-sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/skills-doctor/CLAUDE.md"]
+sources = ["agents/AGENTS.md", "AGENTS.md", "CLAUDE.md", "profiles/skills-doctor/CLAUDE.md"]
 max_tokens = 7250
 
 [[stack]]
 name = "profile_spec"
-sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/spec/CLAUDE.md"]
+sources = ["agents/AGENTS.md", "AGENTS.md", "CLAUDE.md", "profiles/spec/CLAUDE.md"]
 max_tokens = 7750
 
 [[stack]]
 name = "profile_todo"
-sources = ["agents/AGENTS.md", "agents/RTK.md", "AGENTS.md", "CLAUDE.md", "profiles/todo/CLAUDE.md"]
+sources = ["agents/AGENTS.md", "AGENTS.md", "CLAUDE.md", "profiles/todo/CLAUDE.md"]
 max_tokens = 8000

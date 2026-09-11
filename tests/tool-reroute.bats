@@ -1,18 +1,17 @@
 #!/usr/bin/env bats
 # Tests for the tool-reroute PreToolUse hook (harness-agnostic).
 #   agents/hooks/tool-reroute.sh  — bash bridge (self-locating, overrideable harness)
-#   agents/lib/tool-reroute.js    — dispatcher (search → cd-strip → cd-git → io
-#                                   → worktree-git passthrough → delegate)
+#   agents/lib/tool-reroute.js    — dispatcher (search → cd-strip → cd-git → io)
 #   agents/lib/tool-reroute/{shell,search,cd-git,io}.js — lexer + modules
 #
 # WHY: hard-denying grep/cat/find does not stop the model RETRYING — the static
 # permissions_deny even overrides a hook deny, so the redirect never lands. This
 # hook instead REWRITES the wrong-tool call to its tilth/wt-git shell equivalent
-# via updatedInput (transparent, one step), DENIES only the two cross-tool cases
-# with no shell target (the Grep/Glob tools, write-redirects), and DELEGATES
-# everything else to rtk so non-reroute commands keep their compaction. The
-# rewrite tests assert the exact updatedInput.command; the delegate/fail-open
-# tests encode that a non-reroute or broken hook never blocks a call.
+# via updatedInput (transparent, one step) and DENIES only the two cross-tool
+# cases with no shell target (the Grep/Glob tools, write-redirects); every other
+# command runs unchanged. The rewrite tests assert the exact updatedInput.command;
+# the passthrough/fail-open tests encode that a non-reroute or broken hook never
+# blocks a call.
 
 load test_helper
 
@@ -77,54 +76,22 @@ out_for_input() {
     printf '%s' "$output"
 }
 
+# Like out_for, but passes the JSON as an argv (not interpolated into -c) so a
+# cmd containing a literal single/double quote can't break the shell string.
+out_for_safe() {
+    local cmd="$1" json
+    json=$(jq -nc --arg c "$cmd" --arg w "$W" \
+        '{tool_name:"Bash", tool_input:{command:$c}, cwd:$w}')
+    # shellcheck disable=SC2016  # $1/$2 expand inside the inner bash, by design
+    run env bash -c 'printf "%s" "$1" | "$2"' bash "$json" "$DEPLOY/hooks/tool-reroute.sh"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output"
+}
+
 decision() { jq -r '.hookSpecificOutput.permissionDecision' <<<"$1"; }
 newcmd()   { jq -r '.hookSpecificOutput.updatedInput.command' <<<"$1"; }
 reason()   { jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$1"; }
 no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision") | not' <<<"$1" >/dev/null; }
-
-# A stub rtk that consumes the piped event and prints nothing — the silent
-# case a cd-strip hit's rtk delegate call falls back from.
-SILENT_STUB='cat >/dev/null'
-
-# A stub script body that records rtk's stdin verbatim to <dir>/rtk-stdin.json
-# and prints nothing, so a negative cd-strip case can assert rtk actually ran
-# and received the untouched original command.
-record_stub() {
-    printf 'cat >"%s/rtk-stdin.json"\n' "$1"
-}
-
-# Run out_for with a stub rtk placed first on PATH, so a strip hit's rtk
-# delegate call is deterministic and never depends on a real rtk install.
-out_for_rtk() {
-    local cmd="$1" script="$2" json
-    local stub="$BATS_TEST_TMPDIR/rtk-stub-bin"
-    mkdir -p "$stub"
-    { printf '#!/usr/bin/env bash\n'; printf '%s\n' "$script"; } >"$stub/rtk"
-    chmod +x "$stub/rtk"
-    local nodedir; nodedir="$(dirname "$(command -v node)")"
-    json=$(jq -nc --arg c "$cmd" --arg w "$W" \
-        '{tool_name:"Bash", tool_input:{command:$c}, cwd:$w}')
-    run env PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$json' | '$DEPLOY/hooks/tool-reroute.sh'"
-    [ "$status" -eq 0 ]
-    printf '%s' "$output"
-}
-
-# Variant that passes JSON as a shell argument, preserving literal apostrophes.
-out_for_rtk_safe() {
-    local cmd="$1" script="$2" json
-    local stub="$BATS_TEST_TMPDIR/rtk-stub-bin"
-    mkdir -p "$stub"
-    { printf '#!/usr/bin/env bash\n'; printf '%s\n' "$script"; } >"$stub/rtk"
-    chmod +x "$stub/rtk"
-    local nodedir; nodedir="$(dirname "$(command -v node)")"
-    json=$(jq -nc --arg c "$cmd" --arg w "$W" \
-        '{tool_name:"Bash", tool_input:{command:$c}, cwd:$w}')
-    # shellcheck disable=SC2016
-    # Intentional: preserve positional parameters for the inner shell.
-    run env PATH="$stub:$nodedir:/usr/bin:/bin" bash -c 'printf "%s" "$1" | "$2"' bash "$json" "$DEPLOY/hooks/tool-reroute.sh"
-    [ "$status" -eq 0 ]
-    printf '%s' "$output"
-}
 
 # ── tool-reroute/search: grep/rg/ag/ack/find → tilth (rewrite) ───────────
 
@@ -164,7 +131,7 @@ out_for_rtk_safe() {
 
 @test "tool-reroute/search: exotic grep (-l) is NOT rewritten to tilth (delegated)" {
     # -l changes semantics (file list, not matches); tilth can't express it, so
-    # it must fall through to rtk, never a tilth rewrite or a hard block.
+    # it must fall through unchanged, never a tilth rewrite or a hard block.
     local out; out=$(out_for 'grep -l foo .')
     [[ "$out" != *"tilth foo"* ]]
 }
@@ -180,7 +147,7 @@ out_for_rtk_safe() {
 
 @test "tool-reroute/search: non-name find is NOT rewritten (delegated)" {
     # A -size predicate is a real filesystem op tilth can't express, so it must
-    # never become a tilth rewrite — it falls through to rtk delegation.
+    # never become a tilth rewrite — it falls through unchanged.
     local out; out=$(out_for 'find . -size +100M')
     [[ "$(newcmd "$out")" != tilth* ]]
 }
@@ -261,139 +228,24 @@ out_for_rtk_safe() {
     [[ "$out" != *'"permissionDecision":"deny"'* ]]
 }
 
-# ── tool-reroute/delegate: non-reroute Bash → rtk hook ───────────────────
+# ── tool-reroute/passthrough: non-reroute Bash runs unchanged ────────────
 
-@test "tool-reroute/delegate: plain git is handed to rtk (rtk git …)" {
-    # No module owns `git status`; the dispatcher delegates to `rtk hook claude`
-    # and echoes rtk's stdout verbatim. Stub rtk on PATH (mock externals — the
-    # repo never assumes a real rtk install) so the delegation wiring is tested
-    # deterministically; the rtk-absent fail-open path is covered separately.
-    local stub="$TEST_HOME/rtk-stub-bin"
-    mkdir -p "$stub"
-    cat >"$stub/rtk" <<'RTK'
-#!/usr/bin/env bash
-cat >/dev/null   # consume the piped PreToolUse event
-printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{"command":"rtk git status"}}}'
-RTK
-    chmod +x "$stub/rtk"
-    local nodedir; nodedir="$(dirname "$(command -v node)")"
-    local json; json=$(jq -nc --arg w "$W" \
-        '{tool_name:"Bash", tool_input:{command:"git status"}, cwd:$w}')
-    run env PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$json' | '$DEPLOY/hooks/tool-reroute.sh'"
-    [ "$status" -eq 0 ]
-    # the stable signal that delegation happened is rtk's rewritten command.
-    [[ "$(newcmd "$output")" == "rtk git status" ]]
+@test "tool-reroute/passthrough: plain git is not touched (exit 0, empty)" {
+    # No module owns `git status` — it runs unchanged: exit 0, no stdout.
+    local out; out=$(out_for 'git status')
+    [[ -z "$out" ]]
 }
 
-@test "tool-reroute/delegate: rtk absent fails open (allow, empty)" {
-    # node present but rtk off PATH → spawn ENOENT → fail open, command unchanged.
-    local nodedir; nodedir="$(dirname "$(command -v node)")"
-    local json; json=$(jq -nc --arg w "$W" \
-        '{tool_name:"Bash", tool_input:{command:"git status"}, cwd:$w}')
-    run env PATH="$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$json' | '$DEPLOY/hooks/tool-reroute.sh'"
-    [ "$status" -eq 0 ]
-    [[ -z "$output" ]]
-}
-
-# ── tool-reroute/worktree-git: plain git inside a Claude-created worktree ─
-# Claude Code's Agent tool (`isolation: "worktree"`) refuses any Bash command
-# whose command word is not `git` but carries a git operand, so rtk's rewrite
-# `rtk git status` is denied inside `<repo>/.claude/worktrees/agent-*` (89
-# refusals across 3 sessions, 2026-09-09/10). The dispatcher passes plain git
-# through unchanged there — no rtk delegate, no stdout — and accepts the lost
-# compaction. The check is path-based, so no real worktree is needed.
-
-isolated_worktree() {
+@test "tool-reroute/passthrough: plain git inside a Claude worktree is not touched" {
+    # Claude Code's Agent tool (`isolation: "worktree"`) creates worktrees under
+    # `<repo>/.claude/worktrees/agent-*`. Plain passthrough is the default
+    # everywhere, so a command inside one of these worktrees needs no special
+    # case.
     W="$BATS_TEST_TMPDIR/.claude/worktrees/agent-x"
     mkdir -p "$W"
-}
-
-@test "tool-reroute/worktree-git: plain git in an isolated worktree is NOT delegated to rtk" {
-    isolated_worktree
-    local out; out=$(out_for_rtk 'git status' "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for 'git status')
     [[ -z "$out" ]]
-    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
-}
-
-@test "tool-reroute/worktree-git: git -C <own worktree> status is NOT delegated" {
-    isolated_worktree
-    local out; out=$(out_for_rtk "git -C $W status" "$(record_stub "$BATS_TEST_TMPDIR")")
-    [[ -z "$out" ]]
-    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
-}
-
-@test "tool-reroute/worktree-git: git chained with && is NOT delegated" {
-    isolated_worktree
-    local out; out=$(out_for_rtk 'git log -1 --oneline && git status' "$(record_stub "$BATS_TEST_TMPDIR")")
-    [[ -z "$out" ]]
-    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
-}
-
-@test "tool-reroute/worktree-git: a leading rtk git in an isolated worktree is NOT delegated" {
-    # Known residual: the agent typed the rtk form itself, so Claude Code still
-    # refuses this one on its own. The hook must not compound it by delegating.
-    isolated_worktree
-    local out; out=$(out_for_rtk 'rtk git status' "$(record_stub "$BATS_TEST_TMPDIR")")
-    [[ -z "$out" ]]
-    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
-}
-
-@test "tool-reroute/worktree-git: a non-git command in an isolated worktree IS still delegated" {
-    isolated_worktree
-    out_for_rtk 'yarn nx test foo' "$(record_stub "$BATS_TEST_TMPDIR")" >/dev/null
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'yarn nx test foo' ]]
-}
-
-@test "tool-reroute/worktree-git: a quoted 'git' word does not trigger passthrough" {
-    isolated_worktree
-    out_for_rtk 'echo "git status"' "$(record_stub "$BATS_TEST_TMPDIR")" >/dev/null
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'echo "git status"' ]]
-}
-
-@test "tool-reroute/worktree-git: plain git outside a worktree IS still delegated" {
-    out_for_rtk 'git status' "$(record_stub "$BATS_TEST_TMPDIR")" >/dev/null
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'git status' ]]
-}
-
-@test "tool-reroute/worktree-git: the codex bridge passes plain git through in an isolated worktree too" {
-    # The passthrough is harness-agnostic (cwd path + command word), so a
-    # future codex deploy of this hook behaves identically. The recording stub
-    # proves no delegate call happened under the codex harness argument.
-    local hook; hook=$(deploy_codex)
-    isolated_worktree
-    local stub="$BATS_TEST_TMPDIR/rtk-stub-bin"
-    mkdir -p "$stub"
-    { printf '#!/usr/bin/env bash\n'; record_stub "$BATS_TEST_TMPDIR"; } >"$stub/rtk"
-    chmod +x "$stub/rtk"
-    local nodedir; nodedir="$(dirname "$(command -v node)")"
-    local j; j=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
-    run env DOTFILES_HARNESS=codex PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$j' | '$hook'"
-    [ "$status" -eq 0 ]
-    [[ -z "$output" ]]
-    [ ! -e "$BATS_TEST_TMPDIR/rtk-stdin.json" ]
-    local log="$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl"
-    [[ "$(jq -r .module <"$log")" == "worktree-git" ]]
-    [[ "$(jq -r .harness <"$log")" == "codex" ]]
-}
-
-@test "tool-reroute/log: a worktree-git passthrough logs action passthrough, module worktree-git" {
-    isolated_worktree
-    out_for_rtk 'git status' "$SILENT_STUB" >/dev/null
-    local log="$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl"
-    [ "$(wc -l <"$log")" -eq 1 ]
-    [[ "$(jq -r .module <"$log")" == "worktree-git" ]]
-    [[ "$(jq -r .action <"$log")" == "passthrough" ]]
-    [[ "$(jq -r .command <"$log")" == "git status" ]]
-}
-
-# ── tool-reroute: rtk-prefix stripping ───────────────────────────────────
-
-@test "tool-reroute/search: a leading rtk wrapper is stripped before detection" {
-    [[ "$(newcmd "$(out_for 'rtk grep foo src')")" == "tilth foo --scope src" ]]
-}
-
-@test "tool-reroute/search: a leading rtk proxy wrapper is stripped too" {
-    [[ "$(newcmd "$(out_for 'rtk proxy grep bar')")" == "tilth bar" ]]
+    [ ! -e "$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl" ]
 }
 
 # ── tool-reroute: protocol / fail-open ───────────────────────────────────
@@ -442,12 +294,6 @@ isolated_worktree() {
     [[ "$(yq -r '.hooks.tool-reroute.shared_assets | length' "$reg")" -ge 5 ]]
 }
 
-@test "tool-reroute: the standalone rtk hook claude registration is removed from claude settings" {
-    local settings="$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json"
-    run jq -e '.hooks.PreToolUse[] | select(.matcher=="Bash") | .hooks[] | select(.command=="rtk hook claude")' "$settings"
-    [ "$status" -ne 0 ]   # must NOT be present
-}
-
 @test "tool-reroute: permissions profile allows tilth and un-denies the search tools" {
     local prof="$REAL_DOTFILES_DIR/profiles/_permissions/profile.yaml"
     # rewritten tilth commands run without a prompt
@@ -456,16 +302,14 @@ isolated_worktree() {
     # the hook owns search routing now, so the static denies are gone
     run yq -e '.settings.permissions_deny[] | select(. == "Grep" or . == "Glob" or . == "Bash(grep:*)")' "$prof"
     [ "$status" -ne 0 ]
-    # the rg allow stays removed; the rtk-proxy git-grep tunnel stays denied
+    # the rg allow stays removed (a stray rg prompts rather than running unfiltered)
     run yq -e '.settings.permissions_allow[] | select(. == "Bash(rg:*)")' "$prof"
     [ "$status" -ne 0 ]
-    run yq -e '.settings.permissions_deny[] | select(. == "Bash(rtk proxy git grep:*)")' "$prof"
-    [ "$status" -eq 0 ]
 }
 
 # ── press hardening: the never-hard-block contract ───────────────────────
 # The rewrite-not-deny design hinges on this: any wrong-tool call tilth cannot
-# faithfully express must degrade to rtk delegation (a prompt at worst), never
+# faithfully express must run unchanged (a prompt at worst), never
 # a hook DENY. A regression that turned any fall-through into a deny would
 # reinstate the exact retry-loop trap the hook was built to remove. The
 # original suite asserts these shapes are not *rewritten*; here we lock the
@@ -606,66 +450,44 @@ deploy_codex() {
     printf '%s' "$root/hooks/tool-reroute.sh"
 }
 
-@test "tool-reroute: codex harness — deny+rewrite fire; delegation never blocks" {
+@test "tool-reroute: codex harness — deny+rewrite fire; non-reroute never blocks" {
     local hook; hook=$(deploy_codex)
-    # deny is rtk-independent → must fire identically under the codex bridge
+    # deny fires identically under the codex bridge
     local dj; dj=$(jq -nc --arg w "$W" '{tool_name:"Grep",tool_input:{pattern:"foo"},cwd:$w}')
     run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$dj' | '$hook'"
     [ "$status" -eq 0 ]
     [[ "$(decision "$output")" == "deny" ]]
-    # rewrite is rtk-independent → must fire identically under the codex bridge
+    # rewrite fires identically under the codex bridge
     local gj; gj=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"grep foo ."},cwd:$w}')
     run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$gj' | '$hook'"
     [ "$status" -eq 0 ]
     [[ "$(newcmd "$output")" == "tilth foo --scope ." ]]
-    # delegation: `rtk hook codex` errors (no codex subcommand) → fail open.
-    # The documented non-goal must still be SAFE: never a deny, never a bogus
-    # tilth/wt-git injection — the command just runs.
+    # a non-reroute command under the codex bridge just runs, unchanged.
     local cj; cj=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
     run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$cj' | '$hook'"
     [ "$status" -eq 0 ]
-    ! denied "$output"
-    [[ "$output" != *wt-git* ]]
-    [[ "$output" != *'"command":"tilth'* ]]
+    [[ -z "$output" ]]
 }
 
 @test "tool-reroute: DOTFILES_HARNESS unset defaults to claude, even under a .codex deploy root" {
     local hook; hook=$(deploy_codex)
-    # Stub rtk to echo the harness argument it received, so the assertion pins
-    # the exact default value — the bridge must NOT infer codex from the
-    # deploy path; only DOTFILES_HARNESS (set by the renderer) selects it.
-    local stub="$TEST_HOME/rtk-stub-bin"
-    mkdir -p "$stub"
-    cat >"$stub/rtk" <<'RTK'
-#!/usr/bin/env bash
-cat >/dev/null
-printf '%s' "$2"
-RTK
-    chmod +x "$stub/rtk"
-    local nodedir; nodedir="$(dirname "$(command -v node)")"
-    local j; j=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
-    run env -u DOTFILES_HARNESS PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$j' | '$hook'"
+    # The bridge must NOT infer codex from the deploy path; only
+    # DOTFILES_HARNESS (set by the renderer) selects it. A deny logs the
+    # harness the bridge resolved.
+    local j; j=$(jq -nc --arg w "$W" '{tool_name:"Grep",tool_input:{pattern:"foo"},cwd:$w}')
+    run env -u DOTFILES_HARNESS bash -c "printf '%s' '$j' | '$hook'"
     [ "$status" -eq 0 ]
-    [[ "$output" == "claude" ]]
+    [[ "$(jq -r .harness "$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl")" == "claude" ]]
 }
 
 @test "tool-reroute: an unrecognized DOTFILES_HARNESS value still fails open" {
     # The bridge only accepts claude|codex; an unrecognized value falls back
-    # to claude rather than passing the bogus value through to rtk. Stub rtk
-    # to echo the harness argument it received, pinning the exact fallback.
-    local stub="$TEST_HOME/rtk-stub-bin"
-    mkdir -p "$stub"
-    cat >"$stub/rtk" <<'RTK'
-#!/usr/bin/env bash
-cat >/dev/null
-printf '%s' "$2"
-RTK
-    chmod +x "$stub/rtk"
-    local nodedir; nodedir="$(dirname "$(command -v node)")"
-    local j; j=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
-    run env DOTFILES_HARNESS=bogus PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$j' | '$DEPLOY/hooks/tool-reroute.sh'"
+    # to claude rather than passing the bogus value through. A deny logs the
+    # harness the bridge resolved.
+    local j; j=$(jq -nc --arg w "$W" '{tool_name:"Grep",tool_input:{pattern:"foo"},cwd:$w}')
+    run env DOTFILES_HARNESS=bogus bash -c "printf '%s' '$j' | '$DEPLOY/hooks/tool-reroute.sh'"
     [ "$status" -eq 0 ]
-    [[ "$output" == "claude" ]]
+    [[ "$(jq -r .harness "$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl")" == "claude" ]]
 }
 
 @test "tool-reroute: node absent fails open (bridge command -v node guard)" {
@@ -688,40 +510,40 @@ RTK
     # A strip-only hit forwards updatedInput WITHOUT permissionDecision —
     # normal permission evaluation runs on the rewritten command, per
     # Claude Code's PreToolUse contract.
-    local out; out=$(out_for_rtk "cd $W && git status" "$SILENT_STUB")
+    local out; out=$(out_for "cd $W && git status")
     [[ "$(newcmd "$out")" == "git status" ]]
     no_permission_decision "$out"
 }
 
 @test "tool-reroute/cd-strip: quoted cwd target with a semicolon separator strips" {
-    local out; out=$(out_for_rtk "cd \"$W\"; echo hi" "$SILENT_STUB")
+    local out; out=$(out_for "cd \"$W\"; echo hi")
     [[ "$(newcmd "$out")" == "echo hi" ]]
     no_permission_decision "$out"
 }
 
 @test "tool-reroute/cd-strip: a trailing slash on the cwd target still strips" {
-    local out; out=$(out_for_rtk "cd $W/ && ls" "$SILENT_STUB")
+    local out; out=$(out_for "cd $W/ && ls")
     [[ "$(newcmd "$out")" == "ls" ]]
     no_permission_decision "$out"
 }
 
 @test "tool-reroute/cd-strip: a newline separator strips" {
     local cmd; cmd=$(printf 'cd %s\necho hi' "$W")
-    local out; out=$(out_for_rtk "$cmd" "$SILENT_STUB")
+    local out; out=$(out_for "$cmd")
     [[ "$(newcmd "$out")" == "echo hi" ]]
     no_permission_decision "$out"
 }
 
 @test "tool-reroute/cd-strip: an empty quoted target is left alone" {
-    local out; out=$(out_for_rtk 'cd "" && ls' "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for 'cd "" && ls')
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'cd "" && ls' ]]
+    [[ -z "$out" ]]
 }
 
 @test "tool-reroute/cd-strip: a path with a behavior-changing .. component is left alone" {
-    local out; out=$(out_for_rtk "cd $W/agents/.. && ls" "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for "cd $W/agents/.. && ls")
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "cd $W/agents/.. && ls" ]]
+    [[ -z "$out" ]]
 }
 
 @test "tool-reroute/cd-strip: unquoted glob and brace targets are left alone" {
@@ -760,30 +582,28 @@ NODE
 
 @test "tool-reroute/cd-strip: a subdirectory target is left alone" {
     # Not stripped: a real strip would produce updatedInput.command == "ls"
-    # exactly. The recording stub proves rtk actually ran and received the
-    # ORIGINAL, untouched command — a crash before delegate() would leave no
-    # recorded stdin, so the negative case can't pass by accident.
-    local out; out=$(out_for_rtk "cd $W/sub && ls" "$(record_stub "$BATS_TEST_TMPDIR")")
+    # exactly. No module matches, so the command runs unchanged (empty output).
+    local out; out=$(out_for "cd $W/sub && ls")
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "cd $W/sub && ls" ]]
+    [[ -z "$out" ]]
 }
 
 @test "tool-reroute/cd-strip: an unrelated target is left alone" {
-    local out; out=$(out_for_rtk 'cd /other && ls' "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for 'cd /other && ls')
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == 'cd /other && ls' ]]
+    [[ -z "$out" ]]
 }
 
 @test "tool-reroute/cd-strip: an || separator is left alone" {
-    local out; out=$(out_for_rtk "cd $W || ls" "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for "cd $W || ls")
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "cd $W || ls" ]]
+    [[ -z "$out" ]]
 }
 
 @test "tool-reroute/cd-strip: a bare cd with no remainder is left alone" {
-    local out; out=$(out_for_rtk "cd $W" "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for "cd $W")
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "cd $W" ]]
+    [[ -z "$out" ]]
 }
 
 @test "tool-reroute/cd-strip: the remainder re-classifies against search" {
@@ -797,51 +617,31 @@ NODE
     [[ "$(decision "$out")" == "deny" ]]
 }
 
-@test "tool-reroute/cd-strip: a strip-only hit with no rehit forwards updatedInput and delegates to rtk" {
-    local out; out=$(out_for_rtk "cd $W && frobnicate --x" "$SILENT_STUB")
+@test "tool-reroute/cd-strip: a strip-only hit with no rehit forwards updatedInput" {
+    local out; out=$(out_for "cd $W && frobnicate --x")
     [[ "$(newcmd "$out")" == "frobnicate --x" ]]
     no_permission_decision "$out"
 }
 
-@test "tool-reroute/cd-strip: rtk's own updatedInput is forwarded verbatim (parity with plain delegate)" {
-    local fixed='{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecisionReason":"RTK auto-rewrite","updatedInput":{"command":"rtk ls"},"permissionDecision":"allow"}}'
-    local script; script=$(printf 'cat >"%s/rtk-in.json"\nprintf %%s '\''%s'\''' "$BATS_TEST_TMPDIR" "$fixed")
-    local out; out=$(out_for_rtk "cd $W && ls" "$script")
-    [[ "$out" == "$fixed" ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-in.json")" == "ls" ]]
-}
-
 @test "tool-reroute/cd-strip: a chain of no-op cds collapses in a loop" {
-    local out; out=$(out_for_rtk "cd $W && cd $W && ls" "$SILENT_STUB")
+    local out; out=$(out_for "cd $W && cd $W && ls")
     [[ "$(newcmd "$out")" == "ls" ]]
 }
 
 @test "tool-reroute/cd-strip: sibling tool_input fields survive the strip" {
     local cmd out
     cmd=$(printf 'cd %s && npm run build' "$W")
-    local stub="$BATS_TEST_TMPDIR/rtk-stub-bin"
-    mkdir -p "$stub"
-    { printf '#!/usr/bin/env bash\n'; printf '%s\n' "$SILENT_STUB"; } >"$stub/rtk"
-    chmod +x "$stub/rtk"
-    local nodedir; nodedir="$(dirname "$(command -v node)")"
     local json; json=$(jq -nc --arg c "$cmd" --arg w "$W" \
         '{tool_name:"Bash", tool_input:{command:$c, run_in_background:true, timeout:600000, description:"build"}, cwd:$w}')
-    run env PATH="$stub:$nodedir:/usr/bin:/bin" bash -c "printf '%s' '$json' | '$DEPLOY/hooks/tool-reroute.sh'"
+    run bash -c "printf '%s' '$json' | '$DEPLOY/hooks/tool-reroute.sh'"
     [ "$status" -eq 0 ]
     out="$output"
     local expected='{"command":"npm run build","run_in_background":true,"timeout":600000,"description":"build"}'
     [[ "$(jq -S -c '.hookSpecificOutput.updatedInput' <<<"$out")" == "$(jq -S -c . <<<"$expected")" ]]
 }
 
-@test "tool-reroute/cd-strip: an rtk deny on the stripped command is forwarded verbatim" {
-    local deny='{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"stub deny"}}'
-    local script; script=$(printf 'cat >/dev/null\nprintf %%s '\''%s'\''' "$deny")
-    local out; out=$(out_for_rtk "cd $W && rm -rf /" "$script")
-    [[ "$(jq -S -c . <<<"$out")" == "$(jq -S -c . <<<"$deny")" ]]
-}
-
 @test "tool-reroute/cd-strip: a trailing separator with an empty remainder is not a strip" {
-    local out; out=$(out_for_rtk "cd $W && " "$SILENT_STUB")
+    local out; out=$(out_for "cd $W && ")
     [[ "$out" != *'updatedInput'* ]]
 }
 
@@ -886,25 +686,25 @@ NODE
 
 @test "tool-reroute/cd-git: assignments before later git segments delegate" {
     local cmd='cd /repo && git status && FOO=1 git status'
-    local out; out=$(out_for_rtk "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for "$cmd")
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+    [[ -z "$out" ]]
 }
 
 @test "tool-reroute/cd-git: sudo wrapper before later git delegates" {
     local cmd='cd /repo && git status && sudo git status'
-    local out; out=$(out_for_rtk "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for "$cmd")
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+    [[ -z "$out" ]]
 }
 
 @test "tool-reroute/cd-git: expansion in later git arguments delegates unchanged" {
     # shellcheck disable=SC2016
     # Intentional: preserve literal $message in the fixture.
     local cmd='cd /repo && git status && git commit -m "$message"'
-    local out; out=$(out_for_rtk "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for "$cmd")
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+    [[ -z "$out" ]]
 }
 
 @test "tool-reroute/cd-git: pathname expansion in later git arguments delegates unchanged" {
@@ -916,22 +716,22 @@ NODE
         'cd /repo && git status && git add -n ~/src.js' \
         'cd /repo && git status && git hash-object --stdin < file' \
         'cd /repo && git status # note'; do
-        out=$(out_for_rtk "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+        out=$(out_for "$cmd")
         [[ "$out" != *'updatedInput'* ]]
-        [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+        [[ -z "$out" ]]
     done
 }
 
 @test "tool-reroute/cd-git: unterminated later git quotes delegate unchanged" {
     local cmd="cd /repo && git status && git commit -m 'oops"
-    local out; out=$(out_for_rtk_safe "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    local out; out=$(out_for_safe "$cmd")
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+    [[ -z "$out" ]]
 
     cmd='cd /repo && git status && git commit -m "oops'
-    out=$(out_for_rtk_safe "$cmd" "$(record_stub "$BATS_TEST_TMPDIR")")
+    out=$(out_for_safe "$cmd")
     [[ "$out" != *'updatedInput'* ]]
-    [[ "$(jq -r '.tool_input.command' "$BATS_TEST_TMPDIR/rtk-stdin.json")" == "$cmd" ]]
+    [[ -z "$out" ]]
 }
 
 # ── tool-reroute/log: rewrite/deny decisions append to decisions.jsonl ───
@@ -960,7 +760,7 @@ NODE
 }
 
 @test "tool-reroute/log: a strip-only hit logs action strip, module cd-strip" {
-    out_for_rtk "cd $W && frobnicate --x" "$SILENT_STUB" >/dev/null
+    out_for "cd $W && frobnicate --x" >/dev/null
     local log="$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl"
     [ "$(wc -l <"$log")" -eq 1 ]
     [[ "$(jq -r .action <"$log")" == "strip" ]]

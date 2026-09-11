@@ -16,7 +16,6 @@ DISCOVERY_PATTERNS = (
     "CLAUDE.md",
     "agent-profile/AGENTS.md",
     "agents/AGENTS.md",
-    "agents/RTK.md",
     "agents/preamble.md",
     "profiles/*/AGENTS.md",
     "profiles/*/CLAUDE.md",

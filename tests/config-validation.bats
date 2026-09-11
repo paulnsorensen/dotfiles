@@ -81,7 +81,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
         return 1
     }
 
-    for profile in "$DOTFILES_DIR"/profiles/{codex-code,codex-plan,fe,oss-docs,plugin,review,rtkonly,skills-doctor,spec,tui}/profile.yaml; do
+    for profile in "$DOTFILES_DIR"/profiles/{codex-code,codex-plan,fe,oss-docs,plugin,review,skills-doctor,spec,tui}/profile.yaml; do
         actual=$(yq -I=0 -o=json '.mcps[] | select(.name == "tilth") | .args' "$profile")
         [[ "$actual" == "$expected" ]] || {
             echo "$profile: expected $expected, got $actual" >&2

@@ -83,7 +83,6 @@
       "matchDepNames": [
         "aqua:anthropics/claude-code",
         "aqua:openai/codex",
-        "aqua:rtk-ai/rtk",
         "can1357/oh-my-pi",
         "@playwright/mcp",
         "@agentclientprotocol/codex-acp",

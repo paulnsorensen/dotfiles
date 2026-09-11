@@ -20,4 +20,3 @@ A tight Codex session for planning and spec work.
 ## Tools
 
 - Use tilth (`mcp__tilth__*`) to read and search code.
-- Route exploratory shell through rtk to keep output token-lean: `rtk git <subcommand>`, `rtk diff`, `rtk grep <pattern>`, or `rtk rewrite <full command>` for anything else.

@@ -117,12 +117,6 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 |------|-----------|---------|
 | `worktree-guard.js` | Edit, Write, MultiEdit, tilth_write | In a git worktree, blocks writes outside the worktree root. **Opt-out**: enforces by default; `CLAUDE_WORKTREE_GUARD=0` disables it. Extend the allowlist with `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2`. Always allowed: worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, any `.cheese/` dir |
 
-### Other
-
-| Hook | Event | Purpose |
-|------|-------|---------|
-| `rtk hook claude` | PreToolUse Bash | Token-optimizing command rewriter |
-
 ## Settings (`settings.json`)
 
 ```json

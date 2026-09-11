@@ -4,7 +4,7 @@
 // Claude SessionStart hook runs, so both harnesses draw from one flair bank.
 //
 // Fails open: a missing or failing script is a no-op, never blocks startup.
-// Modeled on the vendored rtk.ts extension structure.
+// Modeled on the before_agent_start-based structure used by other extensions.
 //
 // `session_start` cannot return an injected message (notification-only), so we
 // use `before_agent_start` — the only lifecycle event that returns a persisted

@@ -16,6 +16,12 @@ Managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run on commit: 
 
 **Always `dots sync` before committing** — the sync check blocks the commit if `~/.claude/` (settings, agents, commands, hooks, skills) is out of sync with the repo. `git commit --no-verify` overrides, but only for rare temporary cases; fix the underlying issue (e.g. a detected secret) instead. Run `prek install` after cloning to set up the hooks.
 
+## rtk wiring (removed 2026-09)
+
+`agents/lib/tool-reroute.js` delegated unmatched Bash commands to `rtk hook claude`; `claude.yaml` allowed `Bash(rtk:*)`; OMP ran a vendored `rtk.ts` extension; mise pinned `aqua:rtk-ai/rtk`. All of it is removed. The hook now lets an unmatched Bash command run unchanged.
+
+**Measured value is near zero.** Two independent benchmarks (Quesma, Terminal-Bench 2.1, rtk 0.45.0, 2026-09; JetBrains SkillsBench, 2026-07) found rtk changes cost by -3% to +7.6% and lowers pass rate by 1-2 points. `rtk gain` reports bytes/4 against raw output the agent never receives, because Claude Code truncates long output and cached re-reads bill at 1/10. Filtered or broken rewrites add turns; Quesma saw one `rtk find` flag loop 339 times. This repo routes file reads through tilth, so rtk only touches git, test, gh, and build output. Full evidence: `.cheese/research/rtk-quesma/rtk-quesma.md`. Known local breakage: [[rtk-diff-false-drift]].
+
 ## Claude marketplace plugins
 
 Distinct from the `agents/` registry system (see [[../architecture/agents-dir]]) and from the `global@local` plugin that `ap` wires (see [[../architecture/agent-profile]]): these are third-party plugins from external marketplaces, managed declaratively via `claude/plugins/registry.yaml`.

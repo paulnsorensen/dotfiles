@@ -37,13 +37,12 @@ error rates are floors — a handful of harness-side truncation notices lack the
 flag).
 
 **`bash_cmd` is the model-typed command, pre-hook.** A PreToolUse
-`updatedInput` rewrite (e.g. the tool-reroute hook's `git status` → `rtk git
-status`) executes the rewritten command but the transcript records the
-original — verified live: a hook-rewritten call produced rtk-format output
-while the JSONL logged the plain command. Hook rewrite coverage is therefore
-NOT measurable from claude transcripts; a low `rtk %` in `bash_cmd` says only
-how often the model typed the prefix itself (this artifact produced the false
-"rtk hook barely fires on claude" finding in issue #702).
+`updatedInput` rewrite executes the rewritten command but the transcript
+records the original — verified live with the now-retired rtk hook, whose
+`git status` → `rtk git status` rewrite produced rtk-format output while the
+JSONL logged the plain command, so hook rewrite coverage is not measurable
+from claude transcripts (this artifact produced the false "rtk hook barely
+fires on claude" finding in issue #702).
 
 ### codex
 

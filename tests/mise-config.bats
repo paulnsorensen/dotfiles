@@ -14,10 +14,10 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ $status -eq 0 ]]
 }
 
-@test "mise config pins exactly 48 tools (40 aqua + 3 core-plugin + 5 backend)" {
+@test "mise config pins exactly 47 tools (39 aqua + 3 core-plugin + 5 backend)" {
     run yq -p=toml -o=json '.tools | length' "$CONFIG"
     [[ $status -eq 0 ]]
-    [[ "$output" == "48" ]]
+    [[ "$output" == "47" ]]
 }
 
 @test "no tool version is 'latest' or a floating range specifier" {
@@ -50,12 +50,11 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ -z "$dupes" ]]
 }
 
-@test "claude, codex, and rtk are pinned to exact tags, not floating" {
+@test "claude and codex are pinned to exact tags, not floating" {
     local tool version
     for tool in \
         'aqua:anthropics/claude-code' \
-        'aqua:openai/codex' \
-        'aqua:rtk-ai/rtk'; do
+        'aqua:openai/codex'; do
         version="$(yq -p=toml -o=json '.tools' "$CONFIG" | jq -r --arg tool "$tool" '.[$tool]')"
         [[ "$version" =~ ^(v|rust-v)[0-9]+\.[0-9]+\.[0-9]+$ ]]
     done

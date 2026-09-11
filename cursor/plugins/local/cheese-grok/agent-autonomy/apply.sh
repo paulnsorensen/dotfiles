@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Cursor Auto-review + sandbox policy for the rtk/tilth/hallouminate/
+# Install Cursor Auto-review + sandbox policy for the tilth/hallouminate/
 # easy-cheese stack, and expand the IDE shell/MCP allowlists.
 #
 # Source of truth (tracked):
@@ -42,7 +42,7 @@ db, key = sys.argv[1], sys.argv[2]
 shell_allow = sorted(set([
     "cat", "create_one", "echo", "gh", "mktemp", "set", "true", "git", "head",
     "mkdir", "python3",
-    "rtk", "ls", "find", "rg", "fd", "jq", "yq", "node", "npm", "npx", "uv",
+    "ls", "find", "rg", "fd", "jq", "yq", "node", "npm", "npx", "uv",
     "uvx", "python", "mise", "just", "dots", "cargo", "go", "tokei", "bat",
     "delta", "prek", "pretk", "awk", "sed", "sort", "uniq", "wc", "tr", "cut",
     "tee", "xargs", "env", "printf", "basename", "dirname", "realpath", "touch",

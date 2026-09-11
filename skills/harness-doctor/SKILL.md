@@ -100,5 +100,5 @@ Only .claude/settings.local.json may change. Never change settings.json.
 - Never publish a GitHub issue without explicit authorization for that specific action.
 - Never treat Cursor or Copilot extras as stale without repository provenance.
 - Never overwrite Codex runtime state during comparison.
-- Never touch Claude JS guards, rtk, or inline user hooks.
+- Never touch Claude JS guards or inline user hooks.
 - Never fabricate history or wiki claims.

@@ -83,7 +83,7 @@ The hook routes calls at runtime. It does not imply a redirect-to-skill table.
 | Bare cat with one file | Rewrite to tilth |
 | Grep or Glob tool | Deny and recommend tilth search |
 | Repository write redirect | Deny and recommend tilth_write |
-| Other Bash calls | Delegate to rtk |
+| Other Bash calls | Run unchanged |
 
 Only clean shapes are rewritten.
 Pipelines, redirects, semantic flags, and regex patterns delegate instead.

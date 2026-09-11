@@ -64,5 +64,3 @@ cargo vs bazel) so the output references what the project actually uses.
   cook → press → age → cure.
 - **Troubleshooting one-liners** (`/go`, `/lsp`) — meta-tool
   state, irrelevant to any project.
-- **RTK** — the rtk proxy is a personal tooling layer; it's auto-applied
-  by hooks regardless and doesn't need to be repeated in a project file.

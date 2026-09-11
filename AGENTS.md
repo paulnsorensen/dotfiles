@@ -68,4 +68,3 @@ Implementation details (vault provisioning, codex merge semantics, credential is
 - New `zsh/` files need an ordered `zshrc` source entry.
 - Reference docs belong in gitignored `reference/`.
 - `git commit --no-verify` is only for rare temporary prek overrides.
-- A hook rewrites shell commands through `rtk`. Do not add the prefix by hand. See `~/.claude/RTK.md` for meta commands.

@@ -13,6 +13,8 @@ stops/disables/masks them so a still-running stale copy can't restart. */ -}}
 local-llm/configs/lean.json
 {{ end }}
 .omp/agent/extensions/no-fork-all.ts
+.omp/agent/extensions/rtk.ts
+.config/rtk/filters.toml
 
 # Retired native harnesses. Remove their configuration and runtime state;
 # package binaries are removed by packages/sync.sh.
@@ -26,3 +28,6 @@ local-llm/configs/lean.json
 .local/share/crush
 .local/state/crush
 .cache/crush
+
+# Retired: the rtk hook and RTK.md instructions doc are gone.
+.claude/RTK.md

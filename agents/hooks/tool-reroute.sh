@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PreToolUse hook: transparently REWRITE wrong-tool Bash/Grep/Glob calls to their
-# tilth / wt-git shell equivalent (via updatedInput), and DELEGATE every other
-# Bash command to the harness's rtk hook for token compaction. The detection
-# logic lives in the sibling Node module (lib/tool-reroute.js) + its
-# lib/tool-reroute/ modules; this bridge exists so the entry deploys as a `.sh`
+# tilth / wt-git shell equivalent (via updatedInput); every other command runs
+# unchanged. The detection logic lives in the sibling Node module
+# (lib/tool-reroute.js) + its lib/tool-reroute/ modules; this bridge exists so
+# the entry deploys as a `.sh`
 # that runs correctly whether invoked directly via shebang (the `ap` plugin-tree
 # path) or as `bash <path>` (the legacy sync path) — a `.js` script entry would
 # break under the latter.
