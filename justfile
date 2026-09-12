@@ -13,7 +13,7 @@ lint-shell:
     shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/claude-mcp-reconcile.sh chezmoi/lib/claude-plugin-reconcile.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-shared-assets.sh
     shellcheck -x -s sh chezmoi/private_dot_codex/modify_private_config.toml
     shellcheck -x -e SC1091 -s bash agents/hooks/session-start-cheese-flair.sh macos/.sync macos/lib.sh
-    shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh
+    shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh tests/lib/shard.sh
     shellcheck -x -e SC1091 -s bash tests/workflows-test.sh
     @echo "shellcheck: ok"
 
