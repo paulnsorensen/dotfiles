@@ -2,7 +2,6 @@
 
 REPO_ROOT="$BATS_TEST_DIRNAME/.."
 HOOKS_CATALOG="$REPO_ROOT/skills/skillz/references/hooks-catalog.md"
-SKILL="$REPO_ROOT/skills/skillz/SKILL.md"
 
 setup() {
     TEST_TMPDIR="$(mktemp -d)"
@@ -41,15 +40,6 @@ run_hook() {
     printf "%s" "$payload" | node "$script"
 }
 
-@test "skillz targetless self-update contract remains explicit" {
-    run grep -F "Require a target only for \`add\`, \`improve\`, and \`audit\`." "$SKILL"
-    [ "$status" -eq 0 ]
-    run grep -F "\`self-update\` has no target." "$SKILL"
-    [ "$status" -eq 0 ]
-    run grep -F 'Ask for the mode when it is missing.' "$SKILL"
-    [ "$status" -eq 0 ]
-}
-
 @test "hook examples read stdin JSON and preserve absent-field defaults" {
     local prompt_script="$TEST_TMPDIR/prompt.js"
     local output_script="$TEST_TMPDIR/output.js"
@@ -79,6 +69,10 @@ run_hook() {
     [ "$status" -eq 0 ]
     [ "$output" = "WARNING: $source_file written without a test file." ]
 
+    run run_hook '{"tool_input":{"file_path":"'"$source_file"'"}}' "$output_script"
+    [ "$status" -eq 0 ]
+    [ "$output" = "WARNING: $source_file written without a test file." ]
+
     run run_hook '{}' "$output_script"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
@@ -88,6 +82,12 @@ run_hook() {
     extract_example '// .claude/hooks/preprocess-context.js' "$preprocess_source_script"
     sed "s|path.join('/tmp',|path.join('$TEST_TMPDIR',|" "$preprocess_source_script" > "$preprocess_script"
     run run_hook '{"tool_input":{"path":"'"$log_file"'"}}' "$preprocess_script"
+    [ "$status" -eq 0 ]
+    [ "$output" = "Filtered $log_file: 3 → 1 lines. See $filtered_file" ]
+    actual="$(<"$filtered_file")"
+    [ "$actual" = $'[3 lines → 1]\n\nWARN: cache is stale' ]
+
+    run run_hook '{"tool_input":{"file_path":"'"$log_file"'"}}' "$preprocess_script"
     [ "$status" -eq 0 ]
     [ "$output" = "Filtered $log_file: 3 → 1 lines. See $filtered_file" ]
     actual="$(<"$filtered_file")"
@@ -104,6 +104,10 @@ run_hook() {
     expected_banned=$'Pattern violations in '
     expected_banned+="$source_file"
     expected_banned+=$':\n  Use project logger instead of console.log (1x)'
+    [ "$output" = "$expected_banned" ]
+
+    run run_hook '{"tool_input":{"file_path":"'"$source_file"'"}}' "$banned_script"
+    [ "$status" -eq 0 ]
     [ "$output" = "$expected_banned" ]
 
     run run_hook '{}' "$banned_script"

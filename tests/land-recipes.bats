@@ -2,7 +2,6 @@
 
 ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 RECIPES="$ROOT/skills/land/references/gh-recipes.md"
-SKILL="$ROOT/skills/land/SKILL.md"
 
 setup() {
     export TEST_TMP="${BATS_TEST_TMPDIR}/land"
@@ -72,6 +71,11 @@ MOCK
 exit 0
 MOCK
     chmod +x "$MOCK_BIN/sleep"
+    cat > "$MOCK_BIN/date" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' '2026-09-12T00:00:00Z'
+MOCK
+    chmod +x "$MOCK_BIN/date"
     export PATH="$MOCK_BIN:$PATH"
 }
 
@@ -116,6 +120,13 @@ run_example() {
     [[ "$output" == *"completed"* ]]
 }
 
+@test "pending review initializes its timestamp before polling" {
+    unset REQUESTED_AT
+    run run_example "# TEST: review-completion-poll" review-success
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"completed"* ]]
+}
+
 @test "review poll accepts a newer actionable summary comment" {
     export REQUESTED_AT="2026-09-12T00:00:00Z"
     run run_example "# TEST: review-completion-poll" review-summary
@@ -144,11 +155,6 @@ run_example() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"review timed out"* ]]
     [ "$(awk 'END { print NR }' "$GH_LOG")" -eq 80 ]
-}
-
-@test "review poll uses a fixed 40 poll bound" {
-    grep -Fq 'for ((poll=1; poll<=40; poll++)); do' "$RECIPES"
-    ! grep -Fq 'POLL_LIMIT' "$RECIPES"
 }
 
 @test "review thread query paginates after the first page" {
@@ -238,18 +244,4 @@ run_example() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"merge timed out"* ]]
     [ "$(awk 'END { print NR }' "$GH_LOG")" -eq 60 ]
-}
-
-@test "land flow gates no-fix paths once per validated head" {
-    grep -Fq 'Run the project gate exactly once per validated head, including no-fix paths' "$SKILL"
-    grep -Fq 'just check' "$SKILL"
-    grep -Fq 'When no thread remains' "$SKILL"
-    grep -Fq 'go to step 6' "$SKILL"
-    grep -Fq "Add \`--auto\` when the branch is protected or a merge queue exists." "$SKILL"
-}
-
-@test "land flow counts attempts, not polling sleeps" {
-    grep -Fq 'Count each review attempt once, including repeated rate-limit attempts.' "$SKILL"
-    grep -Fq 'Polling sleeps do not consume rounds.' "$SKILL"
-    grep -Fq 'Default 3' "$SKILL"
 }

@@ -50,7 +50,7 @@ Wait for completion with a bounded poll. The poll accepts only a newer bot revie
 
 ```bash
 # TEST: review-completion-poll
-REQUESTED_AT="${REQUESTED_AT:?set the request timestamp}"
+REQUESTED_AT="${REQUESTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 for ((poll=1; poll<=40; poll++)); do
   if ! reviews="$(gh api "repos/{o}/{r}/pulls/<n>/reviews" --paginate \
       --jq '.[] | select(.user.login=="coderabbitai[bot]") | .submitted_at')"; then

@@ -50,8 +50,10 @@ Exact `gh` commands live in `references/gh-recipes.md`. Read it before step 2.
    - `pending` — the head SHA is newer than the last bot review and no signal above applies.
 3. **Request a review when needed.** For `rate-limited`: parse a wait time from the comment; when none exists, use 5 minutes.
    Wait that long (cap 60 minutes) with the host wait primitive or a bounded `sleep` loop.
-   For `rate-limited` or `paused`: post `@coderabbitai review` (or `full review` with `--full-review`).
+   For `rate-limited` or `paused`: set `REQUESTED_AT` to the current UTC timestamp immediately before posting the review request.
+   Post `@coderabbitai review` (or `full review` with `--full-review`).
    For `pending`: post nothing; CodeRabbit reviews pushes on its own.
+   Set `REQUESTED_AT` to the current UTC timestamp immediately before polling.
    Then wait for a bot review or an actionable bot summary comment newer than the request (timeout 20 minutes).
    Count each review attempt once, including repeated rate-limit attempts.
    Polling sleeps do not consume rounds.
