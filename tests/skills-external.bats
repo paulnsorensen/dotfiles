@@ -192,6 +192,53 @@ run_sync() {
     [[ "$output" == "0" ]]
 }
 
+# ─── local skills tree leg ─────────────────────────────────────────────
+# skills/<name>/SKILL.md in this repo is chezmoi-authoritative for Claude
+# only; every other CLI harness (codex, cursor, github-copilot) has no other
+# path to those 28 local skills, so install-external.sh installs the local
+# tree itself via `npx skills add <dotfiles>/skills`.
+
+@test "skill sync: local skills tree installs into every non-excluded harness" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "claude-code cursor codex github-copilot"
+
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync
+    assert_success
+
+    run grep -F "skills add $MOCK_DOTFILES/skills" "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills add $MOCK_DOTFILES/skills --skill * --agent cursor --agent codex --agent github-copilot -g --copy -y" ]]
+
+    # claude-code never reaches the local-tree npx invocation.
+    run grep -F "skills add $MOCK_DOTFILES/skills --skill * --agent claude-code" "$NPX_LOG"
+    assert_failure
+}
+
+@test "skill sync: --dry-run prints the local-tree command and makes no npx add call" {
+    write_registry
+    write_env "cursor"
+
+    run_sync --dry-run
+    assert_success
+    assert_output_contains "[dry-run] npx --yes skills add $MOCK_DOTFILES/skills --skill * --agent cursor -g --copy -y"
+
+    run grep -c -- "skills add $MOCK_DOTFILES/skills" "$NPX_LOG"
+    [[ "$output" == "0" ]]
+}
+
+@test "skill sync: a failed local-tree npx add propagates exit 1 (PR #196 invariant)" {
+    write_registry
+    write_env "cursor"
+    export NPX_BEHAVIOR="fail-add"
+
+    run_sync
+    assert_failure
+    local stripped
+    stripped=$(strip_colors "$output")
+    [[ "$stripped" == *"✗ local skills → cursor"* ]]
+}
+
 # ─── registry parsing ──────────────────────────────────────────────────
 
 @test "skill sync: missing registry.yaml fails fast" {
@@ -451,9 +498,9 @@ EOF
     run_sync
     assert_success
 
-    # First run did a real install (one source).
+    # First run did a real install (one source + the local skills tree).
     run grep -c 'skills add' "$NPX_LOG"
-    [[ "$output" == "1" ]]
+    [[ "$output" == "2" ]]
 
     # Cache file was written
     assert_file_exists "$HOME/.local/state/dotfiles/skill-external-hash"
@@ -502,9 +549,9 @@ EOF
     : > "$NPX_LOG"
     run_sync
     assert_success
-    # Cache invalidated, real install happens again.
+    # Cache invalidated, real install happens again (source + local tree).
     run grep -c 'skills add' "$NPX_LOG"
-    [[ "$output" == "1" ]]
+    [[ "$output" == "2" ]]
 }
 
 @test "skill sync: harness change busts the cache" {
@@ -522,7 +569,7 @@ EOF
     run_sync
     assert_success
     run grep -c 'skills add' "$NPX_LOG"
-    [[ "$output" == "1" ]]
+    [[ "$output" == "2" ]]
 }
 
 @test "skill sync: --dry-run does not write the cache file" {
@@ -619,8 +666,11 @@ EOF
     run_sync --dry-run
     assert_success
     assert_output_contains "--agent claude-code"
-    run grep -F 'agent cursor' <<< "$output"
-    assert_failure
+    # Scope to the acme/widgets line: the local-skills-tree leg (a separate,
+    # unrestricted call) legitimately targets cursor too.
+    run grep -F 'skills add acme/widgets' <<< "$output"
+    assert_success
+    [[ "$output" != *"--agent cursor"* ]]
 }
 
 @test "skill sync: per-repo harnesses honor SKILL_EXCLUDE_AGENTS" {
@@ -683,13 +733,13 @@ EOF
     run_sync
     assert_success
     # npx was called with claude-code, not the raw ap name 'claude'.
-    run grep -F -- '--agent claude-code' "$NPX_LOG"
+    # Scope to the acme/widgets line: the local-skills-tree leg (a separate,
+    # unrestricted call) legitimately targets codex and cursor too.
+    run grep -F 'skills add acme/widgets' "$NPX_LOG"
     assert_success
-    # The other harnesses were not passed.
-    run grep -F -- '--agent codex' "$NPX_LOG"
-    assert_failure
-    run grep -F -- '--agent cursor' "$NPX_LOG"
-    assert_failure
+    [[ "$output" == *'--agent claude-code'* ]]
+    [[ "$output" != *'--agent codex'* ]]
+    [[ "$output" != *'--agent cursor'* ]]
 }
 
 @test "registry.yaml: real registry parses cleanly with yq" {
