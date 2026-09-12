@@ -4,7 +4,7 @@
 
 # harness: harness='all' (agent_spawns / mcp_calls are claude-dominant — note that)
 
-# owner: skill-improver
+# owner: skillz
 
 What `{SKILL}` actually does after it fires: which tools, agents, and MCPs it
 drives in the 10-minute window after each invocation. Run by `duckdb-expert`,

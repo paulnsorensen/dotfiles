@@ -4,7 +4,7 @@
 
 # harness: harness='all' (skill_invocations is claude-dominant — note that)
 
-# owner: skill-improver
+# owner: skillz
 
 Detects behavioral drift over time for `{SKILL}`: usage decay, error-rate
 regression, and friction creep that static audit can't see. Run by

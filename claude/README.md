@@ -82,7 +82,7 @@ repo-root `agents/registry.yaml` (metadata) with bodies under
 | `taste-tester` | Seven-lens handoff check over one artifact (`default` tier on every harness) |
 | `nih-scanner` | Structural NIH pattern scanner |
 | `worktree-content-digest` | Read-only per-worktree content digest (fanned out by the worktree-triage skill) |
-| `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by skill-improver) |
+| `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by skillz) |
 
 Review/analysis agents use severity tiers (blocker/high/medium/low) with calibration tags (`<certain>`/`<speculative>`); surface medium+ and certain lows.
 

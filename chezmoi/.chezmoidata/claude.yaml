@@ -265,11 +265,12 @@ claude:
     - git-risk
     - grok-codebase
     - harness-doctor
+    - land
     - nih-audit
     - prompt-analytics
     - rennet
     - session-analytics
-    - skill-improver
+    - skillz
     - steel-thread
     - term-theme
     - test-sandbox

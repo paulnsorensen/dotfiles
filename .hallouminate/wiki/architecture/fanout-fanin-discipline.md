@@ -123,6 +123,18 @@ outputs go to a strong adjudicator comparing evidence, not majority vote → 5
 merge failure: stop parallel work, freeze state, one integrator → 6 architecture
 failure: back to plan; don't patch around a broken contract.
 
+### Age review-lock artifact order
+
+Create review evidence files before the Age lock.
+Write the canonical Age report before the Affinage report.
+The lock includes ancillary `.cheese/` files, even when `git status` is clean.[^age-lock-artifacts]
+Only the named lock, canonical Markdown, HTML, and body outputs receive the report exemption.
+Thus, a new verifier packet or Affinage report can cause a source-drift error without a tracked code change.
+Keep verifier responses in the parent until the canonical report exists, or prepare their files before the lock.
+Do not replace the locked digest to accept changed evidence.
+
+[^age-lock-artifacts]: PR #968 review, 2026-09-12. The installed `age.pyz` helper exposes `easy_cheese.skills.age.review_lock._is_review_output` and `_exclude_pathspecs`. Both verifier packets and `.cheese/affinage/pr-968.md` fall outside the exemption. Removing only those new transient outputs restores the original digest, `1679e1b58572292b9f000d7829d8639398d6f4dc970e5cc64c2587222f8f139e`, without a new lock.
+
 ## Shared memory instead of the orchestrator bottleneck (2026-07-24)
 
 The fan-in contract above passes findings *through the parent*. When workers'
