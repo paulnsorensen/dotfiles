@@ -9,8 +9,11 @@
     "defaultMode": "auto"
   },
   "sandbox": {
-    "enabled": false,
+    "enabled": true,
     "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": false,
+    "failIfUnavailable": true,
+    "excludedCommands": [],
     "network": {
       "allowedDomains": [
         "127.0.0.1",
@@ -47,10 +50,7 @@
         "~/.local/bin",
         "~/.cheese"
       ]
-    },
-    "excludedCommands": [
-      "gh *"
-    ]
+    }
   },
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark-daltonized",
