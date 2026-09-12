@@ -61,7 +61,8 @@ fi
 # Args look like: --yes skills add <spec> --skill ... --agent ... -g --copy -y
 for a in "$@"; do
     if [[ "$a" == "add" ]]; then
-        if [[ "${NPX_BEHAVIOR:-ok}" == "fail-add" ]]; then
+        if [[ "${NPX_BEHAVIOR:-ok}" == "fail-add" ||
+              ( "${NPX_BEHAVIOR:-ok}" == "fail-local" && "$*" == *"$MOCK_DOTFILES/skills"* ) ]]; then
             echo "mock npx skills: add failed for $*" >&2
             exit 1
         fi
@@ -250,7 +251,7 @@ run_sync() {
     assert_output_contains "Registry file not found"
 }
 
-@test "skill sync: empty sources map exits with 'No sources defined'" {
+@test "skill sync: empty sources map still installs local skills" {
     cat > "$MOCK_REGISTRY_FILE" <<'EOF'
 sources: {}
 EOF
@@ -259,6 +260,22 @@ EOF
     run_sync
     assert_success
     assert_output_contains "No sources defined in registry"
+    run grep -F "skills add $MOCK_DOTFILES/skills --skill * --agent claude-code -g --copy -y" "$NPX_LOG"
+    assert_success
+}
+
+@test "skill sync: empty sources local failure exits 1" {
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources: {}
+EOF
+    write_env "cursor"
+    export NPX_BEHAVIOR="fail-local"
+
+    run_sync
+    assert_failure
+    [[ "$status" -eq 1 ]]
+    assert_output_contains "local skills"
+    [[ ! -f "$HOME/.local/state/dotfiles/skill-external-hash" ]]
 }
 
 # ─── --skill '*' (auto-discovery) vs explicit skill list ───────────────
@@ -406,6 +423,21 @@ EOF
     [[ "$stripped" == *"✗ acme/widgets → claude-code"* ]]
 }
 
+@test "skill sync: local install follows external install" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "cursor"
+
+    run_sync
+    assert_success
+    run awk '
+        /skills add acme\/widgets / { external = NR }
+        /skills add .*\/skills --skill/ { local = NR }
+        END { exit !(external > 0 && local > external) }
+    ' "$NPX_LOG"
+    assert_success
+}
+
 # ─── multi-source registry ─────────────────────────────────────────────
 
 @test "skill sync: handles multiple sources" {
@@ -485,11 +517,10 @@ EOF
 
 # ─── cache: skip-if-unchanged ──────────────────────────────────────────
 # install-external.sh writes $XDG_STATE_HOME/dotfiles/skill-external-hash
-# (or ~/.local/state/...) after a successful run, then early-exits on
-# subsequent runs when the (registry content + harness list) digest matches.
-# This is the optimization that turns a multi-source re-sync into a no-op.
+# (or ~/.local/state/...) after a successful run.
+# A matching digest skips external sources; the local tree always refreshes.
 
-@test "skill sync: second run with unchanged registry+harnesses early-exits and runs no installs" {
+@test "skill sync: second run with unchanged registry+harnesses skips external but installs local" {
     write_registry "acme/widgets" "    skills:
       - alpha
       - bravo"
@@ -505,15 +536,72 @@ EOF
     # Cache file was written
     assert_file_exists "$HOME/.local/state/dotfiles/skill-external-hash"
 
-    # Reset log, then run again with no changes — should skip entirely.
+    # Reset log, then run again with no changes.
     : > "$NPX_LOG"
     run_sync
     assert_success
     assert_output_contains "unchanged since last sync"
 
-    # Zero install calls on the second run.
-    run grep -c 'skills add' "$NPX_LOG"
+    # The cache skips external work, but local skills always refresh.
+    run grep -c 'skills add acme/widgets' "$NPX_LOG"
     [[ "$output" == "0" ]]
+    run grep -c "skills add $MOCK_DOTFILES/skills" "$NPX_LOG"
+    [[ "$output" == "1" ]]
+}
+
+@test "skill sync: local skill changes on cache hit run only local install with filtered harnesses" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "claude-code cursor codex"
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync
+    assert_success
+
+    mkdir -p "$MOCK_REGISTRY_DIR/new-skill"
+    printf '%s\n' '# changed' > "$MOCK_REGISTRY_DIR/new-skill/SKILL.md"
+    : > "$NPX_LOG"
+
+    SKILL_EXCLUDE_AGENTS="claude-code" run_sync
+    assert_success
+    assert_output_contains "unchanged since last sync"
+
+    run grep -c 'skills add acme/widgets' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+    run grep -c 'skills list --global --json' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+    run grep -c 'skills remove' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+    run grep -F "skills add $MOCK_DOTFILES/skills --skill * --agent cursor --agent codex -g --copy -y" "$NPX_LOG"
+    assert_success
+}
+
+@test "skill sync: local failure on cache hit exits 1 and retries without external work" {
+    write_registry "acme/widgets" "    skills:
+      - alpha"
+    write_env "cursor"
+    run_sync
+    assert_success
+    local cache_file="$HOME/.local/state/dotfiles/skill-external-hash"
+    local cached_digest
+    cached_digest=$(cat "$cache_file")
+    : > "$NPX_LOG"
+
+    export NPX_BEHAVIOR="fail-local"
+    run_sync
+    assert_failure
+    [[ "$status" -eq 1 ]]
+    assert_output_contains "local skills"
+    [[ "$(cat "$cache_file")" == "$cached_digest" ]]
+    run grep -c 'skills add acme/widgets' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+
+    unset NPX_BEHAVIOR
+    : > "$NPX_LOG"
+    run_sync
+    assert_success
+    run grep -c 'skills add acme/widgets' "$NPX_LOG"
+    [[ "$output" == "0" ]]
+    run grep -c "skills add $MOCK_DOTFILES/skills" "$NPX_LOG"
+    [[ "$output" == "1" ]]
 }
 
 @test "skill sync: --force bypasses the cache even when registry is unchanged" {
