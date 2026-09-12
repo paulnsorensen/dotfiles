@@ -7,7 +7,7 @@ early_access: false
 
 reviews:
   # `chill` keeps signal high and nitpick volume low on a small OSS repo.
-  # Switch to `assertive` for stricter automatic gating.
+  # Switch to `assertive` for broader review feedback.
   profile: chill
   high_level_summary: true
   poem: false
@@ -21,8 +21,6 @@ reviews:
     enabled: true
     auto_incremental_review: true
     drafts: false
-    base_branches:
-      - main
 
   # Excludes only. Bare patterns would switch to include-only mode.
   # The chezmoi SOURCE tree stays reviewable; rendered targets live in
@@ -30,7 +28,6 @@ reviews:
   path_filters:
     - "!archive/**"
     - "!**/*-lock.json"
-    - "!agent-profile/tests/fixtures/golden/**"
     - "!fonts/**"
 
   path_instructions:
@@ -40,14 +37,22 @@ reviews:
         Flag hardcoded secrets, API keys, tokens, passwords, or credentials in any file.
         Flag silent failures: empty catch blocks, swallowed errors, and missing error handling on I/O.
         Flag complexity budget violations: functions over 40 lines, files over 300 lines, more than 4 parameters, or nesting deeper than 3 levels.
-        Comment only at high confidence. Do not flag a pattern that is used consistently elsewhere in the repo.
+        Comment only at high confidence.
+        Do not report harmless style differences that match established repository conventions.
+        Continue to report correctness, security, and reliability issues even when they repeat.
         Do not comment on formatting, whitespace, import ordering, or missing docstrings on internal functions.
         Suggest a specific fix, and raise each issue once.
-    - path: "**/*.{sh,bash,zsh}"
+    - path: "{**/*.{sh,bash,zsh},bin/**,.sync,**/.sync}"
       instructions: |
         New shell logic belongs in a sourced library with Bats coverage; `.sync` scripts stay parse-and-dispatch only.
-        Flag a missing `set -euo pipefail` in an executable script, unquoted expansions, and any `cd`-prefixed compound command.
-        Require `[[ ]]` over `[ ]`, `local` for function-scoped variables, and `printf` over `echo` for portable output.
+        Identify the shell dialect from its shebang or sourcing context before applying shell-specific rules.
+        Apply shell rules only to shell files; treat non-shell files under `bin/` as general files.
+        Flag a missing `set -euo pipefail` only in executable Bash scripts.
+        Flag unquoted expansions and any `cd`-prefixed compound command.
+        Require `[[ ]]` only in Bash scripts.
+        Require `local` for function-scoped variables in Bash scripts.
+        Do not apply Bash rules to POSIX sh or sourced zsh.
+        Use `printf` over `echo` for portable output.
         Extract logic that repeats or exceeds 10 lines into a function.
         A `.zsh` file in `zsh/` is sourced, not executed; do not add a shebang to it. Put Claude and MCP aliases in `zsh/claude.zsh`, general utilities in `zsh/aliases.zsh`.
     - path: ".sync-lib.sh"
@@ -78,11 +83,6 @@ reviews:
     - path: "tests/**/*.bats"
       instructions: |
         Require specific assertions on real command output. Reject existence-only or no-crash checks.
-    - path: "**/*.md"
-      instructions: |
-        Enforce Simplified Technical English (ASD-STE100): one instruction per sentence, active voice, and present tense.
-        Keep procedural sentences to 20 words and descriptive sentences to 25 words.
-
   # Native linters. CodeRabbit auto-skips a linter that already runs in the
   # repo's own GitHub workflow, so these are safe to pin on.
   tools:
