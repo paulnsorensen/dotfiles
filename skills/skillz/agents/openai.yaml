@@ -1,0 +1,5 @@
+interface:
+  display_name: "skillz"
+  short_description: "Add, improve, audit, or self-update a skill or agent definition."
+policy:
+  allow_implicit_invocation: false

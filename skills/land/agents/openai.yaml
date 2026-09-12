@@ -1,0 +1,5 @@
+interface:
+  display_name: "land"
+  short_description: "Fix the open CodeRabbit comments on a PR, wait for CI, and merge."
+policy:
+  allow_implicit_invocation: false

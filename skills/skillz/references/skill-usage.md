@@ -4,7 +4,7 @@
 
 # harness: harness='all' by default (skill_invocations is claude-dominant — note that)
 
-# owner: skill-improver
+# owner: skillz
 
 Measures invocation patterns for `{SKILL}`. Run by `duckdb-expert`, one spawn.
 Schema: `skills/session-analytics/references/canonical-schema.md`.

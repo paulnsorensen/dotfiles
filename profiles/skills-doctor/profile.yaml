@@ -17,7 +17,7 @@ mcps:
     args: ["serve"]
     scope: user
 skills:
-  - { name: skill-improver, path: skills/skill-improver }
+  - { name: skillz, path: skills/skillz }
   - { name: harness-doctor, path: skills/harness-doctor }
   - { name: tool-efficiency, path: skills/tool-efficiency }
   - { name: prompt-analytics, path: skills/prompt-analytics }
