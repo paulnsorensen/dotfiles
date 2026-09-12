@@ -63,15 +63,15 @@ rm -f "$tmp_capture"
 trap - EXIT
 ```
 
-`selected_ids` defaults to every captured job; override it before publishing when the approved job set is a subset of the captured jobs. Replace `validation_contract`, `runner_toolchain`, and `cache_state` with real values before comparing: the helper treats `unknown` as unresolved context and blocks a comparison built from it. The hard link publishes without clobbering a concurrent capture.
+This example selects every captured job. Therefore, `selected_job_ids` and `expected_job_ids` match. Keep the complete captured population when the approved selection is narrower. Set `selected_job_ids` to the approved subset. Set `expected_job_ids` to the full expected population. The helper records a missing expected job as incomplete. It never treats that capture as complete. Replace `validation_contract`, `runner_toolchain`, and `cache_state` with real values before comparing. The helper treats `unknown` as unresolved context. It blocks comparisons built from unknown context. The hard link publishes without clobbering a concurrent capture.
 
-Record the requested repository, run ID, attempt, selected job IDs, expected job IDs, capture timestamp, source revision, and context labels. The input capture must contain the run metadata and all attempt-specific job pages. Preserve `jobs[].run_id` and `jobs[].run_attempt` when the API returns them.
+Record the requested repository, run ID, and attempt. Record selected and expected job IDs. Record the capture timestamp, source revision, and context labels. Include the run metadata and all attempt-specific job pages. Preserve `jobs[].run_id` and `jobs[].run_attempt` when the API returns them.
 
 The API page population is authoritative for this capture. Do not substitute a workflow summary, a different attempt, or a single jobs page. Follow the repository's authentication policy. Never store tokens, environment dumps, or raw logs in the measurement dataset. The `jq` filters above keep only the fields the helper reads.
 
 ## Full-wait rule
 
-For an eligible initial attempt, calculate:
+Use the initial attempt for primary comparison and calculate:
 
 ```text
 full_wait_seconds = latest selected job completion - run.created_at
