@@ -37,7 +37,9 @@ console.log(message);
 **Tuned version** (keyword-filtered to avoid overhead on simple prompts):
 
 ```javascript
-const prompt = process.env.USER_PROMPT || '';
+const fs = require('fs');
+const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
+const prompt = payload.prompt === undefined ? '' : payload.prompt;
 const skillKeywords = ['review', 'test', 'deploy', 'migrate', 'refactor', 'analyze'];
 const shouldEval = skillKeywords.some(kw => prompt.toLowerCase().includes(kw));
 if (shouldEval) {
@@ -57,8 +59,11 @@ Reported cost (community, not benchmarked): ~$0.007/prompt, ~7s overhead.
 // .claude/hooks/validate-output.js
 const fs = require('fs');
 const path = require('path');
-const toolInput = JSON.parse(process.env.TOOL_INPUT || '{}');
-const filePath = toolInput.path || toolInput.file_path || '';
+const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
+const toolInput = payload.tool_input === undefined ? {} : payload.tool_input;
+const filePath = toolInput.path === undefined
+  ? (toolInput.file_path === undefined ? '' : toolInput.file_path)
+  : toolInput.path;
 if (!filePath) process.exit(0);
 
 const ext = path.extname(filePath);
@@ -90,8 +95,11 @@ if (isSourceFile) {
 // .claude/hooks/preprocess-context.js
 const fs = require('fs');
 const path = require('path');
-const toolInput = JSON.parse(process.env.TOOL_INPUT || '{}');
-const filePath = toolInput.path || '';
+const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
+const toolInput = payload.tool_input === undefined ? {} : payload.tool_input;
+const filePath = toolInput.path === undefined
+  ? (toolInput.file_path === undefined ? '' : toolInput.file_path)
+  : toolInput.path;
 if (!filePath) process.exit(0);
 
 if (filePath.endsWith('.log')) {
@@ -115,8 +123,11 @@ if (filePath.endsWith('.log')) {
 ```javascript
 // .claude/hooks/banned-patterns.js
 const fs = require('fs');
-const toolInput = JSON.parse(process.env.TOOL_INPUT || '{}');
-const filePath = toolInput.path || toolInput.file_path || '';
+const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
+const toolInput = payload.tool_input === undefined ? {} : payload.tool_input;
+const filePath = toolInput.path === undefined
+  ? (toolInput.file_path === undefined ? '' : toolInput.file_path)
+  : toolInput.path;
 if (!filePath || !fs.existsSync(filePath)) process.exit(0);
 
 const content = fs.readFileSync(filePath, 'utf-8');
@@ -148,8 +159,16 @@ auto-compaction is the "dumb zone."
 // .claude/hooks/token-budget-check.js
 const fs = require('fs');
 const file = '/tmp/claude-prompt-counter.json';
-let counter = { count: 0, lastCompact: Date.now() };
-try { counter = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch {}
+let counter;
+try {
+  counter = JSON.parse(fs.readFileSync(file, 'utf-8'));
+} catch (error) {
+  if (error.code === 'ENOENT') {
+    counter = { count: 0, lastCompact: Date.now() };
+  } else {
+    throw error;
+  }
+}
 counter.count++;
 fs.writeFileSync(file, JSON.stringify(counter));
 

@@ -52,21 +52,25 @@ Exact `gh` commands live in `references/gh-recipes.md`. Read it before step 2.
    Wait that long (cap 60 minutes) with the host wait primitive or a bounded `sleep` loop.
    For `rate-limited` or `paused`: post `@coderabbitai review` (or `full review` with `--full-review`).
    For `pending`: post nothing; CodeRabbit reviews pushes on its own.
-   Then wait for a bot review or a bot summary comment newer than the request (timeout 20 minutes).
-   A second rate-limit comment counts as one round.
+   Then wait for a bot review or an actionable bot summary comment newer than the request (timeout 20 minutes).
+   Count each review attempt once, including repeated rate-limit attempts.
+   Polling sleeps do not consume rounds.
 4. **Collect open threads.** Use the GraphQL `reviewThreads` query.
    Keep threads where `isResolved` is false and the first comment author is `coderabbitai`.
    Skip `isOutdated` threads unless `--include-outdated` is set.
-   When no thread remains and the newest bot review says `Actionable comments posted: 0`, go to step 7.
+   When no thread remains and the newest bot review says `Actionable comments posted: 0`, go to step 6.
 5. **Triage and fix.** Classify each thread:
    - **accept** — a contained fix inside the PR's scope. Apply it.
    - **reject** — wrong, unsupported, or out of scope. Draft a one-sentence reason.
    - **needs-human** — a fix that changes the PR's design or touches files outside its scope. Stop and ask.
    Apply accepted fixes inline when they touch at most 5 sites in at most 3 files.
    Otherwise dispatch `coder` with `Done means` and `Scope fence` lines.
-6. **Gate, commit, push.** Run the project's check gate (`just check` when the justfile defines it; else the project's documented test command).
-   Commit with a `fix:` subject that names the review.
-   Push with `/plate` when the skill exists; else `git push`.
+6. **Gate, commit, push.** Run the project gate exactly once per validated head, including no-fix paths.
+   Use `just check` when the justfile defines it.
+   Otherwise, use the documented command.
+   When fixes exist, commit with a `fix:` subject that names the review.
+   When no fixes exist, do not commit or push.
+   When fixes exist, push with `/plate` when the skill exists; otherwise use `git push`.
    Reply on every triaged thread (`Fixed in <sha> — …` or `Not applied — <reason>`), then resolve accepted threads with `resolveReviewThread`.
    Sign each reply `agent on behalf of <handle>`.
 7. **Wait for CI.** Run `gh pr checks <n> --watch --fail-fast`.
@@ -76,12 +80,14 @@ Exact `gh` commands live in `references/gh-recipes.md`. Read it before step 2.
 8. **Wait for the re-review.** After a push, repeat step 2 and step 3.
    When new unresolved bot threads exist and rounds remain, return to step 4.
    When rounds are exhausted, halt with the open thread list.
-9. **Merge and watch.** Skip this step with `--no-merge`.
-   Read the repo's allowed merge methods and prefer squash.
-   Run `gh pr merge <n> --squash --delete-branch`; add `--auto` when the branch is protected or a merge queue exists.
-   Poll `gh pr view --json state,mergedAt` every 30 seconds until `MERGED` (timeout 30 minutes).
-   Halt on `mergeStateStatus: DIRTY` and route conflicts to `/melt`.
+9. **Merge and watch.** Skip execution with `--no-merge`, but build the supported merge command first.
+   Read the repo's allowed merge methods and prefer squash, then use an allowed fallback.
+   Add `--auto` when the branch is protected or a merge queue exists.
+   Include `--match-head-commit` with the validated head SHA.
+   Poll `state`, `mergedAt`, and `mergeStateStatus` every 30 seconds until `MERGED` (timeout 30 minutes).
+   Halt on `DIRTY` and route conflicts to `/melt`.
    Halt on `BLOCKED` and name the missing requirement.
+   Halt on `CLOSED`, API errors, or timeout.
 10. **Report.** Use the output block below.
 
 ## Output
@@ -104,7 +110,8 @@ artifact: <PR url>
 - Never force-push.
 - Never merge with `--admin`.
 - Treat `Review rate limited` as a passing check that proves nothing; the bot comment is the signal.
-- Count every wait against `--rounds`; the skill ends, it does not spin.
+- Count each review attempt once against `--rounds`; polling sleeps do not consume rounds.
+- Preserve the default maximum of 3 rounds and never retry indefinitely.
 
 ## Gotchas
 

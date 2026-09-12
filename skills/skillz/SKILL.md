@@ -22,8 +22,10 @@ The product is a **predictable** definition: the same process on every run and o
 Every lens asks one question of each line: *does this make the run more predictable, or is it sediment?*
 
 The mode is the first word after the skill name.
-The target is the second word.
-Ask when either is missing.
+Require a target only for `add`, `improve`, and `audit`.
+`self-update` has no target.
+Ask for the mode when it is missing.
+Ask for a target when the mode requires one.
 
 ## Modes
 
