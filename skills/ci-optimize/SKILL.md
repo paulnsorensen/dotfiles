@@ -2,68 +2,78 @@
 name: ci-optimize
 model: sonnet
 effort: medium
-description: Optimize CI with measured GitHub Actions and local timing evidence. Use for workflow comparisons, speedup validation, and approval-gated change plans.
+description: Optimize GitHub Actions workflow wait time with measured evidence. Use for "speed up CI", "why is GitHub Actions slow", workflow comparisons, or /ci-optimize. Route local command timing to /build-optimize.
 ---
 
 # CI optimization
 
-Measure before changing. Preserve required checks, artifacts, repository gates, and the user's approval boundary.
+Measure GitHub Actions wait time before changing. Preserve required checks, artifacts, and failure behavior.
 
 ## Discipline
 
-**Iron Law:** No optimization edit or remote mutation occurs without a measured evidence set and explicit approval of a concrete change plan.
+**Iron Law:** Capture the baseline before proposing a concrete edit.
 
-Explicit authorization is required before destructive cleanup, paid infrastructure, source edits, dependency installs, or remote dispatch.
+Explicit authorization is required before destructive cleanup, paid infrastructure, dependency installation, source edits, or remote dispatch.
 
 **Red Flags** — stop when you notice these:
 
-- A check or artifact is removed to create a numerical gain.
-
-The rationalization table below covers the other stop conditions.
+- A check, artifact, workload, or failure path is removed to create a speed result.
+- A rerun, partial job page, or changed validation contract enters the primary cohort.
+- A local result or zero exit status replaces a CI comparison.
 
 | Rationalization | Why it fails | Required action |
 | --- | --- | --- |
-| “The cache change is obvious, so I can apply it now.” | Measurement cannot authorize a source or remote mutation. | Present the plan and wait for approval. |
-| “The local command is faster, so CI is faster.” | Local and CI sources measure different systems. | Report them separately. |
-| “The jobs run in parallel, so their durations add up.” | Full wait ends at the latest selected completion. | Calculate from run creation. |
-| “The rerun has the same workflow, so it is comparable.” | Version 1 excludes reruns and has no attempt-creation anchor field. | Keep timings as diagnostics and exclude primary wait. |
-| “Failed benchmark rows add noise.” | Failures expose workload and tool behavior. | Preserve them as exclusions. |
+| "The cache change is obvious, so I can apply it now." | Measurement does not approve mutation. | Present the plan and wait. |
+| "Parallel jobs add their durations." | The metric ends at the latest selected completion. | Measure from run creation. |
+| "The rerun uses the same workflow, so it is comparable." | Schema version 1 excludes reruns from primary wait. | Keep reruns as diagnostics. |
 
 ## Workflow
 
-1. Read the repository instructions and identify the authoritative verification commands.
-2. Select one GitHub Actions workflow, event class, workload, validation contract, and job set.
-3. Capture at least the planned `--minimum-samples` count of runs, plus headroom for exclusions, before proposing a change.
-4. Also capture every selected attempt-specific jobs page before proposing a change.
-5. Skip local timing for a CI-only request.
-6. Otherwise, obtain explicit run-plan authorization for the safe command, cache plan, and expected cost before local timing.
-7. Resolve `CI_OPTIMIZE_HELPER` as `$SKILL_DIR/scripts/ci_optimize.py`, where `SKILL_DIR` is this `SKILL.md`'s absolute directory.
-8. Import each source from the consumer repository's working directory.
-9. Compare compatible normalized datasets with an explicit minimum sample count.
-10. Present one concrete plan with affected files, expected benefit, risks, and verification steps.
-11. Wait for explicit plan approval before any tracked-source edit, CI dispatch, or remote mutation.
-12. After approval, use the repository's existing implementation and verification workflows.
-13. Repeat the complete CI capture, including queue and startup delay, then verify checks and artifacts.
+1. Read repository instructions. Identify authoritative verification commands.
+2. Select one workflow, event class, workload, validation contract, and selected job set.
+3. Read [references/github.md](references/github.md) before capturing runs. Read [references/schemas.md](references/schemas.md) before constructing inputs.
+4. Capture baseline initial attempts and every selected attempt-specific jobs page.
+5. Capture the planned sample count plus headroom for exclusions. Normalize the baseline.
+6. Inspect eligible and excluded observations.
+7. For a mixed request, read [references/local.md](references/local.md) before defining local timing. Define a local run plan. Name the exact command, warmup and sample counts, cache operations, isolation, output paths, and cost.
+8. For a mixed request, obtain explicit approval for the local run plan.
+9. Present one concrete edit plan.
+10. Name affected files, expected benefit, risks, verification, and any established rollback.
+11. Obtain explicit edit-plan approval before any tracked-source edit, dispatch, or remote mutation.
+12. Apply the approved change through existing implementation and verification workflows.
+13. Repeat the complete CI capture with the same boundary. Include queue and startup delay.
+14. Normalize the after dataset. Compare datasets with an explicit minimum sample count.
+15. Read comparison JSON. Require `comparability: true`.
+16. Verify required checks, coverage, artifacts, and failure behavior.
+17. Report observations without promising a numeric gain. Stop after the report or when required input is missing.
 
-Read [references/github.md](references/github.md) for GitHub capture and full-wait rules. Read [references/schemas.md](references/schemas.md) before constructing input, acknowledgement, or comparison files. Read [references/local.md](references/local.md) when adapting local timing output.
+Skip only local timing for a CI-only request. Local timing cannot establish CI wait improvement. Keep cache cohorts separate.
 
-Use an existing `justfile` command only when the approved plan needs it. Preserve existing Makefiles and repository gate names.
+Acknowledgements record approved environment, cache-state, or local-command differences.
+They cannot waive workload, validation, identity, or equivalent-coverage mismatches.
+They do not prove causation or authorize edits.
 
 ## Commands
 
-Run these commands from the consumer repository's working directory:
+Resolve `CI_OPTIMIZE_HELPER` from the actual loaded `SKILL.md` directory.
+Resolve symlinks before using `scripts/ci_optimize.py`.
+Never derive the helper path from the consumer repository's current directory.
+The helper does not execute commands, edit workflows, install dependencies, dispatch runs, or commit changes.
+
+Run commands from the consumer repository's working directory:
 
 ```text
-python3 "$CI_OPTIMIZE_HELPER" ci --input CAPTURES.json
-python3 "$CI_OPTIMIZE_HELPER" from-hyperfine --input HYPERFINE.json --command 'COMMAND' --revision REVISION --environment ENV --cache-state STATE --workload-label LABEL
-python3 "$CI_OPTIMIZE_HELPER" local --input SAMPLES.json
-python3 "$CI_OPTIMIZE_HELPER" compare --before BEFORE.json --after AFTER.json --minimum-samples N
+python3 "$CI_OPTIMIZE_HELPER" ci --input BEFORE-CAPTURES.json --output BEFORE.json
+python3 "$CI_OPTIMIZE_HELPER" ci --input AFTER-CAPTURES.json --output AFTER.json
+python3 "$CI_OPTIMIZE_HELPER" compare --before BEFORE.json --after AFTER.json --minimum-samples N --output COMPARISON.json
 ```
 
-Use `--output PATH` for a new output file. Add `--force` only to replace an existing explicit output file. The helper does not execute commands, edit workflows, install dependencies, dispatch runs, or commit changes.
+## Evidence and report
 
-## Evidence rules
-
-The primary CI metric is the latest selected job completion minus run creation; do not sum parallel jobs, and do not waive identity, context, or acknowledgement rules.
-
-Read [references/github.md](references/github.md) for full-wait and eligibility rules. Read [references/schemas.md](references/schemas.md) for provenance, exclusion, and acknowledgement rules.
+The CI metric spans run creation to the latest selected job completion.
+Use initial attempts only for the primary cohort. Do not sum parallel job durations.
+Report status, workflow and selected-job boundary, eligible and excluded counts, medians and range, and delta.
+Report checks, artifacts, limitations, next approval, and evidence paths.
+Preserve excluded observations and their reasons.
+Return no more than 200 words.
+Do not rename unrelated gates, add auto-fix checks, or change local build behavior.

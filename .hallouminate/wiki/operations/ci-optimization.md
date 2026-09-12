@@ -11,7 +11,7 @@ This boundary keeps deterministic arithmetic separate from source edits and remo
 
 Python's standard library supplies JSON parsing, timestamp arithmetic, and descriptive statistics.
 The helper adds no runtime dependency or benchmark service.
-It exposes three commands: `ci`, `local`, and `compare`.[^cli]
+It exposes four commands: `ci`, `local`, `from-hyperfine`, and `compare`.[^cli]
 
 ## CI wait and attempt identity
 
@@ -41,7 +41,8 @@ The optimization workflow must verify those properties separately.[^tests]
 
 Every capture template value must be a real value or the literal `unknown`. The helper's unknown check blocks that token, an empty string, or an absent value. A placeholder reminder sentence would still compare as a real value and mask a context difference.[^cli]
 
-A capture keeps only the fields the normalizer reads, projected out of the full API response. A stored capture cannot leak commit author emails, runner labels, or step logs.[^attempts]
+The capture example removes API fields that the normalizer does not need.
+This limits stored metadata, but user-supplied context still requires a secret check.[^attempts]
 
 `from-hyperfine` keeps the import-only boundary for Hyperfine users: it reads one export and writes a normalized local dataset, and it never runs the benchmarked command.[^cli]
 
@@ -64,8 +65,19 @@ The assembler retains nested directories and executable file attributes.
 Thus, the helper becomes `exact_scripts/executable_ci_optimize.py` in source state.
 Byte tests must use encoded source names, not deployed target names.[^assembly]
 
-The existing OMP and profile paths consume local skills through their own assembly paths.
-This selection does not change Codex global skill selection.[^assembly]
+OMP and profile paths consume local skills through their own assembly paths.[^assembly]
+PR #965 adds local-tree installation for configured CLI harnesses, including Codex, Cursor, and Copilot.
+The installer uses the existing harness filters and excludes chezmoi-managed Claude targets during sync.
+Local skills install after external skills, so local definitions retain priority.[^local-deploy]
+
+The external registry cache must not control local installation.
+Its digest includes the registry and harness list, but not local skill content.
+An unchanged or empty external registry must still permit local skill updates.[^local-deploy]
+
+The build-optimize skill reuses the sibling ci-optimize helper rather than maintaining a second measurement implementation.
+A missing helper blocks comparison, not evidence collection.
+Baseline evidence permits a concrete proposal; after-change evidence verifies the approved change.
+This order prevents a circular prerequisite that requires the result before the edit.[^local-skill]
 
 ## Repository gates
 
@@ -81,6 +93,8 @@ Related: [[just-check-read-only-gate]] records why generic task-runner defaults 
 [^skill]: `skills/ci-optimize/SKILL.md`; approval and validation-equivalence pressure scenarios, 2026-09-08.
 [^routing]: `tests/agent-skill-model-effort.bats`, selected non-inline skill tests; `skills/harness-doctor/SKILL.md`, existing routing convention.
 [^assembly]: `.sync-lib.sh`, `_cz_encode_name` and `sync_claude_chezmoi_sources`; `tests/chezmoi-wiring.bats`, assembled payload test.
+[^local-deploy]: `chezmoi/lib/install-external.sh`; `tests/skills-external.bats`; [PR #965](https://github.com/paulnsorensen/dotfiles/pull/965).
+[^local-skill]: `skills/build-optimize/SKILL.md`; `skills/ci-optimize/SKILL.md`; baseline pressure evaluation, 2026-09-12.
 [^gates]: `tests/ci-optimize.bats`; `justfile`, `lint-python` and `check` recipes.
 
-*Source: approved ci-optimize implementation contract and endpoint verification · Updated: 2026-09-08 · Supersedes: none*
+*Source: approved ci-optimize implementation contract and endpoint verification · Updated: 2026-09-12 · Supersedes: none*

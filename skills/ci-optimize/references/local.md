@@ -1,30 +1,37 @@
 # Local timing adapters
 
-Use the repository's existing timing tool. Define a safe command, revision, environment, cache state, workload label, run count, warmup policy, and evidence file before execution.
+Use the repository's existing timing tool. Define the command, revision, environment, cache state, and workload label before execution. Define the run count, warmup policy, and evidence file before execution.
 
-Do not require Hyperfine installation. When Hyperfine is available, anchor `--runs` to the planned `--minimum-samples` value plus headroom for warmup or failed rows. Publish the export without clobbering a concurrent run:
+Do not require Hyperfine. When it is available, set measured runs to the planned `--minimum-samples` value plus failure headroom:
 
-```bash
+~~~bash
 set -euo pipefail
 minimum_samples=3
-runs=$((minimum_samples + 2))
+warmup_runs=3
+measured_runs=$((minimum_samples + 2))
 tmp_export=$(mktemp hyperfine.json.XXXXXX)
-hyperfine --ignore-failure --runs "$runs" --warmup 0 --export-json "$tmp_export" 'just check'
+hyperfine --ignore-failure --runs "$measured_runs" --warmup "$warmup_runs" --export-json "$tmp_export" 'just check'
 hyperfine_json=hyperfine.json
 if ! ln "$tmp_export" "$hyperfine_json"; then
   printf 'refusing to replace %s\n' "$hyperfine_json" >&2
   exit 1
 fi
 rm -f "$tmp_export"
-```
+~~~
 
-The JSON export records `command`, `times`, and `exit_codes` in each result. Keep every result row. A missing `times` array, unequal `times` and `exit_codes` lengths, or an unknown exit code is not a successful duration. A null exit code is unknown and remains a signal, not success.
+Warmup runs are not measured and do not appear in `times`. Extra measured runs provide headroom for failed rows.
+
+The JSON export records `command`, `times`, and `exit_codes` for each result. Keep every result row.
+
+The importer requires a nonempty `times` list, equal `times` and `exit_codes` lengths, finite nonnegative durations, and integer exit codes. It rejects missing or null exit codes as unknown.
+
+Map a nonzero exit code to `failed`. Do not drop that measured row.
 
 ## Import with `from-hyperfine`
 
-Convert the published export with the helper's `from-hyperfine` subcommand. It is import-only: it reads the export, builds samples, and writes a normalized local dataset. It never runs the workload.
+Convert the export with the helper's `from-hyperfine` subcommand. The subcommand imports data and never runs the workload.
 
-```bash
+~~~bash
 python3 "$CI_OPTIMIZE_HELPER" from-hyperfine \
   --input hyperfine.json \
   --command 'just check' \
@@ -34,13 +41,19 @@ python3 "$CI_OPTIMIZE_HELPER" from-hyperfine \
   --workload-label "repository gates" \
   --tool-version "$(hyperfine --version)" \
   --output LOCAL.json
-```
+~~~
 
-`--sample-prefix` names each sample; it defaults to `sample`. `--tool-version` records the Hyperfine version; it defaults to `unknown`. The helper rejects an export with zero or more than one result, a missing or unequal-length `times`/`exit_codes` pair, or a non-integer exit code. It maps a nonzero exit code to `failed`. Add `--force` only to replace an existing explicit output file.
+`--sample-prefix` defaults to `sample`. Pass `--tool-version` to record the Hyperfine version. When omitted, the normalizer omits `benchmark_source.version`.
+
+The optional `--captured-at` value records capture time. When omitted, the importer uses the input file modification time.
+
+The helper rejects zero or multiple Hyperfine results, unequal arrays, unknown exit codes, invalid durations, and output replacement without `--force`.
+
+Use `--force` only when you intend to replace an existing explicit output file.
 
 The resulting dataset has this shape:
 
-```json
+~~~json
 {
   "schema_version": 1,
   "source": "local",
@@ -61,8 +74,12 @@ The resulting dataset has this shape:
     {"identity": {"id": "sample-1"}, "reasons": ["failed"]}
   ]
 }
-```
+~~~
 
-Map every measured attempt. Use `failed`, `cancelled`, or `timed_out` only when external evidence supports that status. Preserve a supplied duration only when it is finite and nonnegative. Do not classify a warm cache as a cause. Local evidence cannot establish CI wait improvement.
+Map every measured attempt. Use `failed`, `cancelled`, or `timed_out` only when external evidence supports that status.
 
-The Hyperfine result shape is documented in [`benchmark_result.rs`](https://github.com/sharkdp/hyperfine/blob/master/src/benchmark/benchmark_result.rs) and [`export/json.rs`](https://github.com/sharkdp/hyperfine/blob/master/src/export/json.rs).
+Preserve a supplied duration only when it is finite and nonnegative. Do not classify a warm cache as a cause.
+
+Local evidence cannot establish CI wait improvement.
+
+The Hyperfine [benchmark result](https://github.com/sharkdp/hyperfine/blob/master/src/benchmark/benchmark_result.rs) and [JSON export](https://github.com/sharkdp/hyperfine/blob/master/src/export/json.rs) define the input shape.

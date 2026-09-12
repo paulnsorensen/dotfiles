@@ -4,13 +4,13 @@ The helper accepts schema version `1` only. It validates container shapes, times
 
 ## Errors and exit codes
 
-Every input error is one line. A `ci` or `local` error has no `<path>` prefix, for example `ci-optimize: captures[0]: run.id must be an integer`. Only `compare`'s `observations[i]` form carries the path: `ci-optimize: <path>: observations[i]: <message>`. An argument, acknowledgement, or output error is `ci-optimize: <message>`.
+Every input error is one line. A `ci` or `local` error has no `<path>` prefix. For example, `ci-optimize: captures[0]: run.id must be an integer`. Only `compare`'s `observations[i]` error carries the path. The form is `ci-optimize: <path>: observations[i]: <message>`. An argument, acknowledgement, or output error is `ci-optimize: <message>`.
 
 | Exit code | Meaning |
 | --- | --- |
 | `2` | Malformed input, an unsupported schema version, or JSON nested too deeply. |
 | `1` | A runtime or write failure, including an existing output path (the message names `--force` as the way to overwrite it). |
-| `0` | Success. |
+| `0` | The command emitted valid JSON output. |
 
 ## CI input
 
@@ -93,21 +93,21 @@ A complete two-run cohort has this shape:
 
 ## Local input
 
-Set `source` to `local`. Provide command, revision, environment, cache state, workload label, benchmark source, and a nonempty `samples` list. Each sample has a unique ID, status, duration, exit code, and Boolean warmup. Allowed statuses are `success`, `failed`, `cancelled`, and `timed_out`.
+Set `source` to `local`. Provide command, revision, environment, cache state, workload label, benchmark source, and a nonempty `samples` list. Each sample has a unique ID, status, and Boolean `warmup`; duration and exit code may be null for unsuccessful samples. Allowed statuses are `success`, `failed`, `cancelled`, and `timed_out`.
 
 Success requires exit code `0` and a finite nonnegative duration. Failure requires a nonzero integer exit code. Cancelled and timed-out records may have a null exit code. Unsuccessful records may have a null duration. Any supplied duration remains subject to finite nonnegative validation.
 
 ## from-hyperfine
 
-The `from-hyperfine` subcommand imports one Hyperfine export directly into a normalized local dataset; it does not run the workload. Required flags: `--input`, `--command`, `--revision`, `--environment`, `--cache-state`, `--workload-label`. Optional flags: `--sample-prefix` (default `sample`), `--tool-version` (default `unknown`), `--output`, `--force`. The export must contain exactly one result with equal-length `times` and `exit_codes` lists of integers; a nonzero exit code maps the sample to `failed`.
+The `from-hyperfine` subcommand imports one Hyperfine export into a normalized local dataset. It does not run the workload. Required flags are `--input`, `--command`, `--revision`, `--environment`, `--cache-state`, and `--workload-label`. Optional flags are `--sample-prefix` (default `sample`), `--tool-version`, `--captured-at`, `--output`, and `--force`. The export must contain exactly one result. The `times` and `exit_codes` lists must have equal lengths. Each duration must be finite and nonnegative. Each exit code must be an integer. A nonzero exit code maps the sample to `failed`; a missing or null exit code is rejected as unknown. When omitted, `--tool-version` leaves `benchmark_source.version` absent.
 
 ## Normalized dataset
 
 The helper emits `schema_version`, `source`, `context`, `observations`, and `exclusions`. A CI dataset also emits `context_variants`, an integer count of distinct observation contexts.
 
-Each CI observation retains `identity` (`run_id`, `run_attempt`, `workflow_id`, `head_sha`, `event`), `context`, `status`, `conclusion`, `created_at`, `selected_completed_at`, `duration_seconds`, `eligibility`, `reasons`, `pre_start_seconds`, `jobs`, `selected_job_names`, and `provenance`. `pre_start_seconds` is the earliest selected job start minus run creation, or null when no selected job started. CI `provenance` retains `run_id`, `attempt`, `selected_job_ids`, `expected_job_ids`, `total_count` (one reconciled scalar shared by every page, not each page's own value), and `captured_at`.
+Each CI observation retains identity, context, status, conclusion, timestamps, duration, eligibility, reasons, jobs, selected names, and provenance. `pre_start_seconds` is the earliest selected job start minus run creation, or null when no selected job started. CI provenance retains `run_id`, `attempt`, selected and expected job IDs, reconciled `total_count`, and `captured_at`.
 
-Each local observation retains `identity` (`id`), `status`, `exit_code`, `warmup`, `duration_seconds`, `eligibility`, `reasons`, and `provenance` (the dataset's `benchmark_source`). The dataset `context` — not the observation — carries `command`, `revision`, `environment`, `cache_state`, `workload_label`, `benchmark_source`, and an optional `captured_at`.
+Each local observation retains identity, status, exit code, warmup, duration, eligibility, reasons, and provenance. Dataset context carries command, revision, environment, cache state, workload label, benchmark source, and optional `captured_at`.
 
 Exclusions remain visible: each entry pairs an observation's `identity` and `reasons`.
 
@@ -161,14 +161,14 @@ An acknowledgement can make these exact context differences comparable only when
 
 ## Compare and report
 
-Use `--minimum-samples N` with a positive integer. `compare` accepts only the nested `context` shape (`{"source": ..., "context": {...}, "observations": [...], "exclusions": [...]}`); a flat or hybrid dataset without a nested `context` object is rejected.
+Use `--minimum-samples N` with a positive integer. `compare` accepts only the nested `context` shape: `{"source": ..., "context": {...}, "observations": [...], "exclusions": [...]}`. A flat or hybrid dataset without a nested `context` object is rejected.
 
-The report contains `schema_version`, `source`, `comparability`, `reasons`, `before`, `after`, `delta`, `minimum_samples`, `acknowledgement_plan_ref`, `acknowledged_differences`, `context_differences`, and `provenance`. Each side (`before`, `after`) reports eligible count, excluded count, median, minimum, and maximum. `context_differences` lists every observed difference; `acknowledged_differences` lists only the entries the acknowledgement file matched.
+The report contains `schema_version`, `source`, `comparability`, `reasons`, `before`, `after`, `delta`, `minimum_samples`, acknowledgement data, context differences, and provenance. Each side reports eligible count, excluded count, median, minimum, and maximum. `context_differences` lists every observed difference. `acknowledged_differences` lists only entries matched by the acknowledgement file.
 
-`provenance.before` and `provenance.after` each carry the evidence that produced that side's numbers: for a CI side, `repository`, `workflow_id`, `event`, and the `run_id`/`run_attempt`/`head_sha` of every eligible run; for a local side, `revision`, `command`, and `benchmark_source`. The comparison context for a local side also carries `revision`, so a saved-percent claim can be traced to the measured tree.
+`provenance.before` and `provenance.after` carry the evidence for each side's numbers. CI provenance includes `repository`, `workflow_id`, `event`, and every eligible run's `run_id`, `run_attempt`, and `head_sha`. Local provenance includes `revision`, `command`, and `benchmark_source`. Local comparison context also includes `revision`, which links a saved-percent claim to the measured tree.
 
 Delta reports saved seconds and saved percent, or null percent when the baseline median is zero. Direction is `observed_faster`, `observed_slower`, `unchanged`, or `unavailable`.
 
-Mixed CI and local sources, incompatible contexts, insufficient eligible samples, or missing measurements produce a limitation. They do not produce a verified CI improvement claim.
+For `compare`, exit `0` means that the helper emitted a report. Accept a comparison only when `comparability` is `true`, both sides meet `minimum_samples`, and the validation contract remains preserved. Mixed CI and local sources, incompatible contexts, insufficient eligible samples, or missing measurements produce a limitation. They do not produce a verified CI improvement claim.
 
 Report CI and local results in separate sections. Describe observations, not causation.
