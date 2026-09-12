@@ -37,8 +37,13 @@ jobs:
     - name: Run linters
       run: just lint
 
-  test:
+  test-shard:
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,10 +78,56 @@ jobs:
         echo "$(pwd)/.github/lint-deps/node_modules/.bin" >> "$GITHUB_PATH"
 
     - name: Run tests
-      run: just test
+      run: just test --shard ${{ matrix.shard }}/4 --timings /tmp/bats-timings
+
+    - name: Upload Bats timings
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: bats-timings-${{ matrix.shard }}
+        path: /tmp/bats-timings
+        retention-days: 5
+
+  test-extras:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Install just
+      uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+    - name: Install Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24
 
     - name: Run Python tests
       run: just test-python
 
     - name: Run smoke tests
       run: just smoke
+
+  # Stable aggregate gate. Branch protection requires the check named `test`,
+  # so that name must not change when the shard count does. `if: always()`
+  # plus an explicit result assertion is required: without it a failed shard
+  # makes this job *skip*, and a skipped required check does not block a
+  # merge -- the gate would silently pass while tests were red.
+  test:
+    runs-on: ubuntu-latest
+    needs: [test-shard, test-extras]
+    if: always()
+
+    steps:
+    - name: Assert every test job succeeded
+      env:
+        SHARDS: ${{ needs.test-shard.result }}
+        EXTRAS: ${{ needs.test-extras.result }}
+      run: |
+        echo "test-shard=$SHARDS test-extras=$EXTRAS"
+        [ "$SHARDS" = success ] && [ "$EXTRAS" = success ]

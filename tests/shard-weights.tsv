@@ -1,0 +1,104 @@
+# Relative cost hints for CI shard packing (tests/lib/shard.sh).
+# Columns: bats file basename, seconds. Tab separated.
+# Measured once from a single suite run; these only balance shards across
+# the CI matrix, never affect correctness. A stale or missing entry just
+# costs balance -- an unlisted file falls back to the median weight.
+#
+# Refresh from real CI data (each `test (N)` job uploads a
+# `bats-timings-N` JUnit artifact):
+#   gh run download <run-id> -p 'bats-timings-*' -D /tmp/bats-timings
+#   python3 tests/lib/junit_to_weights.py \
+#     --header-from tests/shard-weights.tsv \
+#     --output tests/shard-weights.tsv \
+#     /tmp/bats-timings/bats-timings-*/report.xml
+packages.bats	37.67
+agents-hooks-sync.bats	13.30
+agent-secret-broker.bats	12.24
+tool-reroute.bats	10.57
+chezmoi-wiring.bats	10.50
+turn-budget-guard.bats	10.23
+ci-optimize.bats	9.13
+ccw-sweep.bats	8.31
+sync-claude-sources.bats	8.21
+cheese-flair.bats	6.66
+agent-instruction-budget.bats	6.27
+agent-skill-model-effort.bats	6.16
+git-guard.bats	6.08
+skills-external.bats	5.32
+tmux-size-owner.bats	5.14
+sync-orchestrator.bats	4.83
+sensitive-file-guard.bats	4.74
+claude-settings.bats	4.59
+sync-claude.bats	3.70
+hooks-blockers.bats	3.54
+dots.bats	3.17
+just-check.bats	3.16
+cursor-plugin.bats	2.97
+omp-config.bats	2.83
+config-validation.bats	2.57
+omp-plugins.bats	2.41
+local-llm.bats	2.32
+sync-codex-sources.bats	2.30
+phase-agent-handoff.bats	2.23
+claude-plugin-reconcile.bats	2.19
+worktree-lib.bats	2.00
+worktree-skill-scripts.bats	1.64
+agent-secret-install.bats	1.62
+git-hooks.bats	1.58
+iterm2-fonts.bats	1.48
+theme-palette.bats	1.46
+rectangle.bats	1.46
+plugin-sync.bats	1.45
+omp-agents.bats	1.43
+copilot-guard.bats	1.42
+claude-json-prune.bats	1.32
+window-mgmt.bats	1.24
+cheatsheet.bats	1.19
+shard-split.bats	1.17
+claude-mcp-reconcile.bats	1.12
+vault-provision.bats	1.08
+mcp-lib.bats	1.06
+bootstrap-linux.bats	1.02
+git-file-risk.bats	1.01
+deep-think-nudge.bats	0.82
+npm-nightly.bats	0.79
+worktree-settings.bats	0.78
+ccw-rm.bats	0.78
+install-prompts.bats	0.76
+ccw-find.bats	0.69
+skills-local.bats	0.67
+permission-log.bats	0.66
+resume.bats	0.64
+tmux-cheatsheet.bats	0.63
+wt.bats	0.57
+sync-worktree-guard.bats	0.53
+agent-secret-config.bats	0.46
+packages-yaml-pins.bats	0.44
+gh-pr-batch.bats	0.43
+zsh-config.bats	0.36
+reconcile-claude-mcps.bats	0.36
+junit-to-weights.bats	0.34
+migrate-ap-claude.bats	0.32
+vault.bats	0.28
+zed-config.bats	0.28
+mise-config.bats	0.27
+tpm-plugin-install.bats	0.26
+install-agents-doc.bats	0.25
+cc-session-name.bats	0.25
+copilot-wrapper.bats	0.21
+cc-env.bats	0.19
+claude-mcp-pins.bats	0.16
+analytics-skill-scripts.bats	0.15
+session-analytics-db-path.bats	0.14
+tilth-claude-code-hook.bats	0.12
+prompt.bats	0.09
+tui-suite.bats	0.08
+agent-secret-python.bats	0.07
+test-helper-sandbox.bats	0.03
+agent-worktree-isolation.bats	0.02
+hook-docs.bats	0.02
+claude-wrapper.bats	0.01
+cc-session-mirror.bats	0.00
+macos.bats	0.00
+session-analytics-duckdb-memory.bats	0.00
+session-analytics-ingest.bats	0.00

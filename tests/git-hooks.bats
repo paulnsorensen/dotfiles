@@ -4,6 +4,31 @@
 
 load test_helper
 
+# Build the prek hook environments once per file instead of once per test.
+# setup() below still runs `prek install -f` / `prek install-hooks` per test
+# for isolation, but PREK_HOME points every test at this warm cache, so the
+# expensive environment build (uv venvs, tool downloads) happens only here.
+# BATS_FILE_TMPDIR persists across the file's tests; BATS_TEST_TMPDIR does not.
+setup_file() {
+    command -v prek &>/dev/null || return 0
+
+    export PREK_HOME="$BATS_FILE_TMPDIR/prek-home"
+    mkdir -p "$PREK_HOME"
+
+    local warm_repo="$BATS_FILE_TMPDIR/prek-warm-repo"
+    mkdir -p "$warm_repo"
+    (
+        cd "$warm_repo" || exit 1
+        git init --quiet
+        git config user.email "test@example.com"
+        git config user.name "Test User"
+        grep -v 'check-claude-sync' "$REAL_DOTFILES_DIR/prek.toml" \
+            | grep -v 'check-claude-settings-schema' > prek.toml
+        prek install -f >/dev/null 2>&1
+        prek install-hooks >/dev/null 2>&1 || true
+    )
+}
+
 setup() {
     setup_test_env
 
@@ -25,7 +50,9 @@ setup() {
     # Copy prek.toml from dotfiles (without claude-sync check since test repo != dotfiles)
     grep -v 'check-claude-sync' "$REAL_DOTFILES_DIR/prek.toml" > "$TEST_REPO/prek.toml"
 
-    # Install prek hooks (prek auto-detects prek.toml in repo root)
+    # Install prek hooks (prek auto-detects prek.toml in repo root). PREK_HOME
+    # is warm from setup_file, so this is a cheap per-test hook-shim write,
+    # not a full environment rebuild.
     prek install -f >/dev/null 2>&1
     # Pre-install hook environments
     prek install-hooks >/dev/null 2>&1 || true
