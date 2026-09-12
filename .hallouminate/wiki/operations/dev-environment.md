@@ -37,3 +37,31 @@ Distinct from the `agents/` registry system (see [[../architecture/agents-dir]])
 ## skhd (removed 2026-08)
 
 skhd is removed from this repo and this machine. The `skhdrc` was an empty skeleton after the yabai removal, so nothing used it. A stray `asmvik/formulae` tap also shipped `skhd`, which made the bare name ambiguous and broke the `dots up` brew-upgrade leg. The removal deleted `skhd/`, `zsh/skhd.zsh`, the `packages.yaml` entry, and the `koekeishiya/formulae` tap entry. If skhd returns, install it with the fully-qualified name `koekeishiya/formulae/skhd` and grant Accessibility access manually.
+
+## CodeRabbit configuration review
+
+Use the local `coderabbit` skill for repository configuration audits and requested setup changes.
+The official CodeRabbit skills cover CLI code reviews and bot-thread fixes, not this configuration-audit workflow.[^coderabbit-skills]
+The local skill keeps audit mode read-only and checks current product documentation instead of copying one repository preset.[^coderabbit-local]
+
+Claude deploys the selected local skill through `dots sync`.
+Codex uses the Skills CLI copy under `~/.agents/skills`; chezmoi intentionally excludes that cache.[^coderabbit-deploy]
+Refresh the Codex copy after changing this local source:
+
+```sh
+npx --yes skills add <checkout> --skill coderabbit --agent codex -g --copy -y
+```
+
+Retiring Copilot review does not establish that its instruction files are inactive.
+CodeRabbit detects `.github/instructions/*.instructions.md` and `AGENTS.md`; actual application also depends on guideline scope and mappings.[^coderabbit-guidelines]
+Verify effective scope before removing or duplicating those instructions.
+
+A successful CodeRabbit status does not alone prove that a review completes.
+PR 967 has a successful status while its bot comment reports a review-capacity limit.[^coderabbit-limit]
+Check completed-review evidence for the exact commit before relying on a replacement reviewer.
+
+[^coderabbit-skills]: <https://github.com/coderabbitai/skills/tree/main/skills>
+[^coderabbit-local]: skills/coderabbit/SKILL.md
+[^coderabbit-guidelines]: <https://docs.coderabbit.ai/knowledge-base/code-guidelines>
+[^coderabbit-limit]: <https://github.com/paulnsorensen/dotfiles/pull/967#issuecomment-5644530712>
+[^coderabbit-deploy]: chezmoi/.chezmoiignore:19-24; .sync-lib.sh:592-603; verified Skills CLI deployment and byte comparison on 2026-09-12.

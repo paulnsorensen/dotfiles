@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+# CodeRabbit configuration for this public, open-source dotfiles repo.
+# Docs: https://docs.coderabbit.ai/reference/yaml-template
+language: "en-US"
+tone_instructions: "Be direct and concise. Name root causes, not symptoms. Keep review prose in plain English."
+early_access: false
+
+reviews:
+  # `chill` keeps signal high and nitpick volume low on a small OSS repo.
+  # Switch to `assertive` for broader review feedback.
+  profile: chill
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  suggested_labels: false
+  suggested_reviewers: false
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+
+  # Excludes only. Bare patterns would switch to include-only mode.
+  # The chezmoi SOURCE tree stays reviewable; rendered targets live in
+  # $HOME and are never committed, so there is nothing to exclude there.
+  path_filters:
+    - "!archive/**"
+    - "!**/*-lock.json"
+    - "!fonts/**"
+
+  path_instructions:
+    # Repo-wide review focus, ported from the retired Copilot review instructions.
+    - path: "**"
+      instructions: |
+        Flag hardcoded secrets, API keys, tokens, passwords, or credentials in any file.
+        Flag silent failures: empty catch blocks, swallowed errors, and missing error handling on I/O.
+        Flag complexity budget violations: functions over 40 lines, files over 300 lines, more than 4 parameters, or nesting deeper than 3 levels.
+        Comment only at high confidence.
+        Do not report harmless style differences that match established repository conventions.
+        Continue to report correctness, security, and reliability issues even when they repeat.
+        Do not comment on formatting, whitespace, import ordering, or missing docstrings on internal functions.
+        Suggest a specific fix, and raise each issue once.
+    - path: "{**/*.{sh,bash,zsh},bin/**,.sync,**/.sync}"
+      instructions: |
+        New shell logic belongs in a sourced library with Bats coverage; `.sync` scripts stay parse-and-dispatch only.
+        Identify the shell dialect from its shebang or sourcing context before applying shell-specific rules.
+        Apply shell rules only to shell files; treat non-shell files under `bin/` as general files.
+        Flag a missing `set -euo pipefail` only in executable Bash scripts.
+        Flag unquoted expansions and any `cd`-prefixed compound command.
+        Require `[[ ]]` only in Bash scripts.
+        Require `local` for function-scoped variables in Bash scripts.
+        Do not apply Bash rules to POSIX sh or sourced zsh.
+        Use `printf` over `echo` for portable output.
+        Extract logic that repeats or exceeds 10 lines into a function.
+        A `.zsh` file in `zsh/` is sourced, not executed; do not add a shebang to it. Put Claude and MCP aliases in `zsh/claude.zsh`, general utilities in `zsh/aliases.zsh`.
+    - path: ".sync-lib.sh"
+      instructions: |
+        This file is sourced shared logic; changes here need matching Bats coverage under tests/.
+    - path: "zsh/**"
+      instructions: |
+        Confirm each new file has an ordered source entry in zshrc, per AGENTS.md.
+    - path: "chezmoi/**"
+      instructions: |
+        This is the chezmoi SOURCE tree. Rendered targets live in $HOME and must never be committed.
+        Flag any `prompt*` directive used outside `.chezmoi.toml.tmpl`, and any plaintext secret.
+    - path: "**/*.{yaml,yml}"
+      instructions: |
+        For registry, agent, skill, plugin, or MCP config changes (claude.yaml, codex.yaml, agents/registry.yaml, and similar),
+        confirm the PR ran `dots sync` and did not hand-edit a rendered target.
+    - path: "{CLAUDE,AGENTS}.md"
+      instructions: |
+        Verify commands and aliases added in the diff are documented here.
+        Verify the architecture and topic map match the actual directory layout.
+        Verify skill and agent references match the definitions under skills/ and agents/registry.yaml.
+        Flag information duplicated across AGENTS.md files.
+    - path: "{skills/**/SKILL.md,agents/**/*.md}"
+      instructions: |
+        Verify `allowed-tools` lists only tools the skill actually uses, and `description` states when to invoke it.
+        Verify each tool is referenced by its correct domain: ast-grep for structural patterns, LSP for symbols and type inference.
+        Do not attribute one tool's capability to another.
+    - path: "tests/**/*.bats"
+      instructions: |
+        Require specific assertions on real command output. Reject existence-only or no-crash checks.
+  # Native linters. CodeRabbit auto-skips a linter that already runs in the
+  # repo's own GitHub workflow, so these are safe to pin on.
+  tools:
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    actionlint:
+      enabled: true
+    gitleaks:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: auto
+  pull_requests:
+    scope: auto

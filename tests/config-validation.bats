@@ -4,6 +4,55 @@
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
+# ── CodeRabbit ────────────────────────────────────────────────────────────────
+
+@test "CodeRabbit config covers reviewable shell entry points with minimatch" {
+    local config="$DOTFILES_DIR/.coderabbit.yaml"
+    local shell_path instructions
+
+    shell_path=$(yq -r '.reviews.path_instructions[] | select(.path | test("bin/\\*\\*|\\.sync")) | .path' "$config" | head -1)
+    [[ "$shell_path" == "{**/*.{sh,bash,zsh},bin/**,.sync,**/.sync}" ]]
+    [[ "$(yq -r '.reviews.path_filters[]' "$config" | grep -Fxc '!agent-profile/tests/fixtures/golden/**')" == "0" ]]
+    [[ "$(yq -r '.reviews.auto_review | has("base_branches")' "$config")" == "false" ]]
+
+    instructions=$(yq -r '.reviews.path_instructions[] | select(.path == "{**/*.{sh,bash,zsh},bin/**,.sync,**/.sync}") | .instructions' "$config")
+    [[ "$instructions" == *"Identify the shell dialect"* ]]
+    [[ "$instructions" == *"Do not apply Bash rules to POSIX sh or sourced zsh"* ]]
+    [[ "$instructions" == *'Require `local` for function-scoped variables'* ]]
+
+    run node - "$shell_path" "$DOTFILES_DIR/.github/lint-deps/node_modules/minimatch" <<'NODE'
+const [pattern, modulePath] = process.argv.slice(2);
+const minimatch = require(modulePath);
+const matches = ["bin/dots", ".sync", "chezmoi/.sync", "macos/.sync", "zsh/claude.zsh"];
+const misses = ["README.md", "agent-profile/README.txt"];
+for (const path of matches) {
+    if (!minimatch(path, pattern)) {
+        console.error(`Expected minimatch to include ${path}`);
+        process.exitCode = 1;
+    }
+}
+for (const path of misses) {
+    if (minimatch(path, pattern)) {
+        console.error(`Expected minimatch to exclude ${path}`);
+        process.exitCode = 1;
+    }
+}
+NODE
+    [[ $status -eq 0 ]]
+}
+
+@test "CodeRabbit and Copilot guidance report repeated defects" {
+    local config="$DOTFILES_DIR/.coderabbit.yaml"
+    local copilot="$DOTFILES_DIR/.github/instructions/code-review.instructions.md"
+    local file
+
+    for file in "$config" "$copilot"; do
+        grep -qF "Do not report harmless style differences" "$file"
+        grep -qF "Continue to report correctness, security, and reliability issues" "$file"
+        ! grep -qF "Do not flag a pattern that is used consistently" "$file"
+    done
+}
+
 # ── Milknado ─────────────────────────────────────────────────────────────────
 
 @test "milknado config pins the repository verification gate" {

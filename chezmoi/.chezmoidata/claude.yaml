@@ -258,6 +258,7 @@ claude:
   skills:
     - claude-local
     - ci-optimize
+    - coderabbit
     - de-slop
     - ghostbuster
     - git-hygiene
