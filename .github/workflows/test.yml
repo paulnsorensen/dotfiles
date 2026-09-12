@@ -78,7 +78,15 @@ jobs:
         echo "$(pwd)/.github/lint-deps/node_modules/.bin" >> "$GITHUB_PATH"
 
     - name: Run tests
-      run: just test --shard ${{ matrix.shard }}/4
+      run: just test --shard ${{ matrix.shard }}/4 --timings /tmp/bats-timings
+
+    - name: Upload Bats timings
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: bats-timings-${{ matrix.shard }}
+        path: /tmp/bats-timings
+        retention-days: 5
 
   test-extras:
     runs-on: ubuntu-latest

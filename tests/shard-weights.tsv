@@ -3,6 +3,14 @@
 # Measured once from a single suite run; these only balance shards across
 # the CI matrix, never affect correctness. A stale or missing entry just
 # costs balance -- an unlisted file falls back to the median weight.
+#
+# Refresh from real CI data (each `test (N)` job uploads a
+# `bats-timings-N` JUnit artifact):
+#   gh run download <run-id> -p 'bats-timings-*' -D /tmp/bats-timings
+#   python3 tests/lib/junit_to_weights.py \
+#     --header-from tests/shard-weights.tsv \
+#     --output tests/shard-weights.tsv \
+#     /tmp/bats-timings/bats-timings-*/report.xml
 agent-secret-config.bats	1.07
 agent-secret-python.bats	0.34
 agent-secret-install.bats	3.20
