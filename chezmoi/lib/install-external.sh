@@ -109,17 +109,19 @@ fi
 echo -e "${BLUE}Harnesses:${NC} $HARNESSES"
 echo
 
-# Cache: skip when registry content + harness list match the last successful
-# run. Bust with --force, by deleting $CACHE_FILE, or by running
+# Cache external sources when registry content + harness list match the last
+# successful run. The local skills tree always runs after this cache check.
+# Bust with --force, by deleting $CACHE_FILE, or by running
 # `npx skills update --global -y` to pull upstream changes.
 CACHE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/skill-external-hash"
 REGISTRY_DIGEST=$(shasum -a 256 "$REGISTRY_FILE" | awk '{print $1}')
 COMBINED_DIGEST=$(printf '%s\n%s\n' "$REGISTRY_DIGEST" "$HARNESSES" | shasum -a 256 | awk '{print $1}')
 
+cache_hit=false
 if ! $FORCE && ! $DRY_RUN && [[ -f "$CACHE_FILE" ]] && [[ "$(cat "$CACHE_FILE" 2>/dev/null)" == "$COMBINED_DIGEST" ]]; then
-    echo -e "${GREEN}Registry + harnesses unchanged since last sync — skipping.${NC}"
+    echo -e "${GREEN}Registry + harnesses unchanged since last sync — skipping external sources.${NC}"
     echo "  Pass --force, delete $CACHE_FILE, or run 'npx --yes skills update --global -y' to refresh."
-    exit 0
+    cache_hit=true
 fi
 
 # Failure counter (one line per failed source).
@@ -376,19 +378,18 @@ install_local_tree() {
 SOURCES=$(yq -o=json '.sources' "$REGISTRY_FILE" | jq -r 'keys[]')
 if [[ -z "$SOURCES" ]]; then
     echo -e "${YELLOW}No sources defined in registry.${NC}"
-    exit 0
+elif ! $cache_hit; then
+    for repo in $SOURCES; do
+        description=$(yq -r ".sources.\"$repo\".description // \"\"" "$REGISTRY_FILE")
+        pin=$(yq -r ".sources.\"$repo\".pin // \"\"" "$REGISTRY_FILE")
+
+        echo -e "${BLUE}Source:${NC} $repo"
+        [[ -n "$description" ]] && echo "  $description"
+
+        install_source "$repo" "$pin"
+        echo
+    done
 fi
-
-for repo in $SOURCES; do
-    description=$(yq -r ".sources.\"$repo\".description // \"\"" "$REGISTRY_FILE")
-    pin=$(yq -r ".sources.\"$repo\".pin // \"\"" "$REGISTRY_FILE")
-
-    echo -e "${BLUE}Source:${NC} $repo"
-    [[ -n "$description" ]] && echo "  $description"
-
-    install_source "$repo" "$pin"
-    echo
-done
 
 echo -e "${BLUE}Local skills tree${NC}"
 install_local_tree
