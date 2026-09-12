@@ -1,6 +1,6 @@
 # Local benchmarking and just-parallelism methodology
 
-Use the [Hyperfine README](https://github.com/sharkdp/hyperfine) and [Hyperfine man page](https://github.com/sharkdp/hyperfine/blob/master/doc/hyperfine.1.md) as primary references.
+Use the [Hyperfine README](https://github.com/sharkdp/hyperfine) and [Hyperfine man page](https://github.com/sharkdp/hyperfine/blob/master/doc/hyperfine.1) as primary references.
 
 ## Hyperfine
 

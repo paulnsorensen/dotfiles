@@ -163,7 +163,7 @@ An acknowledgement can make these exact context differences comparable only when
 
 Use `--minimum-samples N` with a positive integer. `compare` accepts only the nested `context` shape: `{"source": ..., "context": {...}, "observations": [...], "exclusions": [...]}`. A flat or hybrid dataset without a nested `context` object is rejected.
 
-The report contains `schema_version`, `source`, `comparability`, `reasons`, `before`, `after`, `delta`, `minimum_samples`, acknowledgement data, context differences, and provenance. Each side reports eligible count, excluded count, median, minimum, and maximum. `context_differences` lists every observed difference. `acknowledged_differences` lists only entries matched by the acknowledgement file.
+The report contains `schema_version`, `source`, `comparability`, `reasons`, `before`, `after`, `delta`, `minimum_samples`, `acknowledgement_plan_ref`, `acknowledged_differences`, context differences, and provenance. Each side reports eligible count, excluded count, median, minimum, and maximum. `context_differences` lists every observed difference. `acknowledged_differences` lists only entries matched by the acknowledgement file.
 
 `provenance.before` and `provenance.after` carry the evidence for each side's numbers. CI provenance includes `repository`, `workflow_id`, `event`, and every eligible run's `run_id`, `run_attempt`, and `head_sha`. Local provenance includes `revision`, `command`, and `benchmark_source`. Local comparison context also includes `revision`, which links a saved-percent claim to the measured tree.
 

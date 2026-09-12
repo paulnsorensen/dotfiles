@@ -68,6 +68,9 @@ python3 "$CI_OPTIMIZE_HELPER" ci --input AFTER-CAPTURES.json --output AFTER.json
 python3 "$CI_OPTIMIZE_HELPER" compare --before BEFORE.json --after AFTER.json --minimum-samples N --output COMPARISON.json
 ```
 
+Run this sequence separately for approved cache cohorts with distinct output paths.
+Use `--force` only to replace an existing explicit output file.
+
 ## Evidence and report
 
 The CI metric spans run creation to the latest selected job completion.

@@ -21,7 +21,7 @@ rm -f "$tmp_export"
 
 Warmup runs are not measured and do not appear in `times`. Extra measured runs provide headroom for failed rows.
 
-The JSON export records `command`, `times`, and `exit_codes` for each result. Keep every result row.
+The JSON export records `command`, `times`, and `exit_codes` for each result. `from-hyperfine` accepts exactly one result; preserve every sample in its `times` list.
 
 The importer requires a nonempty `times` list, equal `times` and `exit_codes` lengths, finite nonnegative durations, and integer exit codes. It rejects missing or null exit codes as unknown.
 
