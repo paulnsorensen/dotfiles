@@ -341,6 +341,38 @@ install_source() {
     fi
 }
 
+# Install the repo's own skills/<name>/SKILL.md tree into every harness that
+# isn't excluded. Unlike install_source, there is no per-source `harnesses:`
+# restriction to honor here, so this reuses the same AGENT_FLAGS/
+# SUPPORTED_HARNESSES already filtered for SKILL_HARNESSES + KNOWN_AGENTS +
+# SKILL_EXCLUDE_AGENTS above (claude-code is excluded there: ~/.claude/skills
+# is chezmoi-managed, same as install_source's per-repo path).
+install_local_tree() {
+    local local_dir="$DOTFILES_DIR/skills"
+    if [[ ! -d "$local_dir" ]]; then
+        echo -e "  ${YELLOW}No local skills tree at $local_dir — skipping.${NC}"
+        return 0
+    fi
+
+    local args=(--yes skills add "$local_dir" --skill '*' "${AGENT_FLAGS[@]}" -g --copy -y)
+
+    if $DRY_RUN; then
+        echo -e "  ${BLUE}[dry-run]${NC} npx ${args[*]}"
+        return 0
+    fi
+
+    local output
+    if output=$(GIT_TERMINAL_PROMPT=0 npx "${args[@]}" 2>&1); then
+        echo -e "  ${GREEN}✓${NC} local skills → $SUPPORTED_HARNESSES"
+    else
+        echo -e "  ${RED}✗${NC} local skills → $SUPPORTED_HARNESSES"
+        echo x >> "$FAIL_COUNTER"
+        if [[ -n "$output" ]]; then
+            echo "$output" | tail -5 | sed -e "s/^/    /"
+        fi
+    fi
+}
+
 SOURCES=$(yq -o=json '.sources' "$REGISTRY_FILE" | jq -r 'keys[]')
 if [[ -z "$SOURCES" ]]; then
     echo -e "${YELLOW}No sources defined in registry.${NC}"
@@ -357,6 +389,10 @@ for repo in $SOURCES; do
     install_source "$repo" "$pin"
     echo
 done
+
+echo -e "${BLUE}Local skills tree${NC}"
+install_local_tree
+echo
 
 fail_count=0
 if [[ -s "$FAIL_COUNTER" ]]; then
