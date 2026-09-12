@@ -101,14 +101,14 @@ metadata:
 
 | Host | Source | Re-check |
 |---|---|---|
-| Claude Code | https://code.claude.com/docs/en/skills | frontmatter fields, listing truncation, line guidance |
-| Agent Skills spec | https://agentskills.io/specification | field set and limits |
-| Anthropic skills repo | https://github.com/anthropics/skills | reference layouts, skill-creator |
-| Codex | https://learn.chatgpt.com/docs/build-skills | scan paths, `$skill` invocation, `agents/openai.yaml` |
-| OMP | https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md | provider priority, honored fields, `/skill:` |
-| Pi | https://pi.dev/docs/latest/skills | paths, validation, `/skill:` |
-| Zed | https://zed.dev/docs/ai/skills and https://zed.dev/docs/ai/external-agents | native vs ACP scope |
-| skills CLI | https://github.com/vercel-labs/skills | per-agent path table, compatibility matrix |
+| Claude Code | <https://code.claude.com/docs/en/skills> | frontmatter fields, listing truncation, line guidance |
+| Agent Skills spec | <https://agentskills.io/specification> | field set and limits |
+| Anthropic skills repo | <https://github.com/anthropics/skills> | reference layouts, skill-creator |
+| Codex | <https://learn.chatgpt.com/docs/build-skills> | scan paths, `$skill` invocation, `agents/openai.yaml` |
+| OMP | <https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md> | provider priority, honored fields, `/skill:` |
+| Pi | <https://pi.dev/docs/latest/skills> | paths, validation, `/skill:` |
+| Zed | <https://zed.dev/docs/ai/skills> and <https://zed.dev/docs/ai/external-agents> | native vs ACP scope |
+| skills CLI | <https://github.com/vercel-labs/skills> | per-agent path table, compatibility matrix |
 
 Research record: `.cheese/research/cross-harness-skill-layout.md`.
 
