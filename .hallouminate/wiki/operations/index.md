@@ -6,12 +6,14 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 - [[sync-and-chezmoi]] — how `dots sync` deploys (the symlink + `.sync` system, `SYNC_SKIP_LIST`, `bin/` PATH-from-clone), the chezmoi-managed subset, and the "shell functions need tests" convention.
 - [[claude-dotfiles-ownership]] — treating `~/.claude/` as a runtime tree with repo-owned inputs: the settings scope model, the `modify_settings.json` merge/ownership policy, and the provenance-aware destructive-cleanup rule.
 - [[zed-workspace-and-agents]] — Zed ACP agents, the code-first three-zone workspace default, and the deuteranopia-aware Modus theme decision.
+  - [[zed-codex-acp]] — the two retained Codex entries in Zed (ACP Registry `codex-acp` vs. the repo-managed custom `Codex` agent) and why they stay separate.
 - [[rtk-diff-false-drift]] — why the rtk `diff`→`git diff` rewrite can report false file drift (a `~/.gitattributes` symlink error makes the command exit non-zero regardless of file equality), and to compare with `shasum`/`cmp` instead.
 - [[dev-environment]] — git tooling (difftastic, mergiraf, the conflict-resolution chain), prek pre-commit hooks, Claude marketplace plugins, and the skhd removal record.
 - [[tmux-plugin-gotchas]] — tmux plugin wiring: why continuum silently disarms when `status-right` is rewritten after TPM runs, the required plugin declaration order, catppuccin palette injection via `theme/generate.sh`, and the live vs. repo plugin tree.
 - [[remote-access]] — the remote-shell stack: Tailscale mesh transport → mosh (UDP, survives roaming/sleep) → tmux session persistence, the `mtmux` wrapper, and why Tailscale stays a manual install under the Homebrew-on-Linux package model.
 
 - [[subagent-dispatch-analytics]] — measured behaviour of the phase agents across 578 real runs: dispatch size (not detail) drives the coder's 37% out-of-context rate, line anchors don't rescue an oversized dispatch, ~40% of the coder's budget goes to pre-write exploration, and the tool-reroute hook catches under 8% of the shell searches it targets. Query pack in `references/subagent-runs.md`.
+- [[session-analytics-gotchas]] — measurement pitfalls a future session-log analysis would otherwise rediscover: `tool_uses.bash_cmd` records the pre-hook command, `tilth_write` result bytes dominate coder transcripts, sub-agent transcripts carry no `subagent_type`, and permission-log redaction/rotation must happen at the shared persistence boundary.
 
 - [[omp-config-shape-drift]] — unknown-key gate tripping on nested `dev.autoqa.*` means a stale per-machine config serialization: normalize with an `omp config set` re-save; never fold the nested shape into the shared registry (the #487 flip-flop).
 - [[omp-fanout-worker-models]] — OMP fan-out guardrails and evidence-dated worker-model cost research: separate parent reasoning from cheap worker roles, bound task fan-out, and treat speed rankings as provisional until measured locally.
@@ -24,6 +26,9 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 - [[just-check-claude-guard-flake]] — `just check` test 349 (claude-wrapper.bats) fails purely because ≥8 Claude sessions are running (the launcher guard), not because of the diff; confirm with `pgrep -cx claude` and rerun under `CLAUDE_GUARD=0`.
 - [[just-check-read-only-gate]] — before PR #885, `check` opened with `lint-fix`, so verifying could silently rewrite tracked source; `check` now runs only read-only legs and `lint-fix` is a separate, explicit step.
 - [[cloud-routines-location]] — the five Claude Code cloud routines live in the private `paulnsorensen/routines` repo, not in dotfiles/tilth; edit them there.
+- [[agents-dir-not-chezmoi-managed]] — `~/.agents/skills` is a harness-managed cache, not chezmoi source; a stray `chezmoi add ~/.agents` captures it wholesale, and `.chezmoiignore` is the guard. Every assembled `exact_` skills tree also needs a markdownlint ignore.
+- [[skill-cleanup-before-refresh]] — `install-external.sh` must snapshot the pre-refresh skill-lock state before `npx skills add` runs, or a retired upstream skill's directory survives with `source: null` and source-filtered cleanup can no longer find it.
+- [[shared-checkout-branch-contention]] — the shared dotfiles checkout lets one agent session's commit land on another session's just-switched branch; verify `git branch --show-current` beside the commit, or use a dedicated worktree instead.
 
 ## Packaging and machine state
 
@@ -34,6 +39,9 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 - [[mise-github-auth]] — `gh` keeps its token in the macOS keychain, so mise's default reader finds nothing and aqua release lookups go anonymous against the 60/hr cap; must be fixed with `MISE_GITHUB_CREDENTIAL_COMMAND`, never a `[settings]` block.
 - [[omp-install-etxtbsy]] — `curl: (23)` during an omp install is `ETXTBSY` from overwriting a running binary, not a network fault; the fix is stage-then-`rename(2)`.
 - [[rectangle-sync]] — why `rectangle/.sync` needs a hash stamp: it used to hard-restart Rectangle Pro on every `dots sync`, and SIGKILL leaves no crash report, so "the app keeps crashing" had no diagnostic trail.
+- [[macos-modifier-keys]] — Caps Lock → Left Control stays a `hidutil` LaunchAgent because Apple exposes no supported CLI for the native per-keyboard preference; verify via the IORegistry driver state, not `hidutil property --get`, which can read back `(null)` while the mapping is live.
+- [[macos-symbolic-hotkeys]] — never `defaults write ... -dict-add` a nested symbolic-hotkey dict as OpenStep text: leaf values serialize as strings, so `enabled = 0` becomes a non-empty `"0"` that macOS Tahoe treats as enabled. Managed writes go through `macos_write_symbolic_hotkeys`, which types edits with `plutil`.
+- [[theme-contrast-policy]] — every scheme text role must clear WCAG AA (≥4.5:1 on base00/base01, ≥3:1 on base02) verified by relative-luminance math; four surfaces (Cursor, OMP, gitconfig delta colors, the Bats fixture) hand-mirror palette hexes and need updating alongside any scheme change.
 
 ## Measurement and prompting
 
