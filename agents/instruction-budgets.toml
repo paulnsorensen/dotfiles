@@ -16,11 +16,11 @@ max_tokens = 600
 
 [[source]]
 path = "agents/AGENTS.md"
-max_tokens = 4100
+max_tokens = 550
 
 [[source]]
 path = "agents/preamble.md"
-max_tokens = 2600
+max_tokens = 500
 
 [[source]]
 path = "profiles/codex-code/AGENTS.md"
@@ -67,7 +67,7 @@ max_tokens = 900
 
 [[source]]
 path = "chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
-max_tokens = 900
+max_tokens = 500
 
 [[source]]
 path = ".github/copilot-instructions.md"
@@ -104,12 +104,12 @@ max_tokens = 5000
 [[stack]]
 name = "global_codex"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 6750
+max_tokens = 1050
 
 [[stack]]
 name = "global_claude"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 7000
+max_tokens = 1050
 
 [[stack]]
 name = "repo_codex"
@@ -129,7 +129,7 @@ max_tokens = 10000
 [[stack]]
 name = "omp"
 sources = ["chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"]
-max_tokens = 1000
+max_tokens = 500
 
 [[stack]]
 name = "copilot_coding_max"

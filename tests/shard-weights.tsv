@@ -95,7 +95,6 @@ prompt.bats	0.09
 tui-suite.bats	0.08
 agent-secret-python.bats	0.07
 test-helper-sandbox.bats	0.03
-agent-worktree-isolation.bats	0.02
 hook-docs.bats	0.02
 claude-wrapper.bats	0.01
 cc-session-mirror.bats	0.00
