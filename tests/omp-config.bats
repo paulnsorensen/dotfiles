@@ -391,6 +391,7 @@ TOML
     [[ "$output" == *".omp/agent/extensions/cheese-flair.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/sliced-bread-audit.ts"* ]]
     [[ "$output" == *".omp/agent/extensions/milknado-todo-guard.ts"* ]]
+    [[ "$output" == *".omp/agent/extensions/commit-hallouminate-reminder.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
     [[ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/no-fork-all.ts" ]]
     [[ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/rtk.ts" ]]
@@ -409,7 +410,7 @@ TOML
     mkdir -p "$destination/.omp/agent/extensions"
     printf 'retired sentinel\n' > "$destination/.omp/agent/extensions/no-fork-all.ts"
     printf 'retired sentinel\n' > "$destination/.omp/agent/extensions/rtk.ts"
-    for extension in cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
+    for extension in cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts commit-hallouminate-reminder.ts; do
         printf 'managed sentinel\n' > "$destination/.omp/agent/extensions/$extension"
     done
     cat > "$cfg" <<TOML
@@ -426,8 +427,10 @@ TOML
     [ "$status" -eq 0 ]
     [ ! -e "$destination/.omp/agent/extensions/no-fork-all.ts" ]
     [ ! -e "$destination/.omp/agent/extensions/rtk.ts" ]
-    for extension in cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts; do
-        [ -e "$destination/.omp/agent/extensions/$extension" ]
+    for extension in cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts commit-hallouminate-reminder.ts; do
+        deployed="$destination/.omp/agent/extensions/$extension"
+        [ -e "$deployed" ]
+        cmp -s "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/$extension" "$deployed"
     done
 }
 

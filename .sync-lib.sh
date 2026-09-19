@@ -740,7 +740,7 @@ _cz_codex_hooks_json() {
         | group_by(.event)
         | map({ (.[0].event): [ .[] | {
                 hooks: [ { type: "command",
-                           command: ("bash " + $dir + "/" + (.script | split("/") | last)) }
+                           command: ("env DOTFILES_HARNESS=codex bash " + $dir + "/" + (.script | split("/") | last)) }
                          + (if .timeout then { timeout: .timeout } else {} end) ] }
               + (if .matcher then { matcher: .matcher } else {} end) ] })
         | add

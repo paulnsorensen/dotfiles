@@ -34,6 +34,18 @@ The contract:
 
 The Claude self-heal matcher in `renderers/claude.py` extracts the hook basename from the text after `/hooks/`, so the prefix does not disturb it. Golden fixtures under `agent-profile/tests/fixtures/golden/` carry the prefix.
 
+## Hallouminate commit reminder
+
+The Stop hook uses `hallouminate wiki status --cwd "$cwd" --json` as its dirty-knowledge classifier. This command replaces the hard-coded `.hallouminate/` path check. It covers every configured wiki and corpus root inside the repository.[^hallouminate-status-hook]
+
+The hook reminds only after a recent commit leaves unstaged or untracked knowledge files. Staged-only files remain silent because Hallouminate treats them as captured. A missing or failed Hallouminate command fails open.[^hallouminate-status-tests]
+
+Claude receives `additionalContext`. Codex receives a one-shot block continuation. The OMP `session_stop` extension receives bare reminder text from the same script.[^hallouminate-status-adapters]
+
+[^hallouminate-status-hook]: `agents/hooks/commit-hallouminate-reminder.sh:35-65`.
+[^hallouminate-status-tests]: `tests/commit-hallouminate-reminder.bats:17-235`.
+[^hallouminate-status-adapters]: `agents/hooks/registry.yaml:276-294`; `chezmoi/dot_omp/private_agent/extensions/commit-hallouminate-reminder.ts:1-40`.
+
 ## tool-reroute
 
 `agents/lib/tool-reroute.js` is the Claude-only `PreToolUse` dispatcher for `Bash|Grep|Glob`. It rewrites wrong-tool calls to `tilth` / `wt-git`, denies the two cases with no shell target, and delegates every other Bash command to `rtk hook claude` for compaction.
