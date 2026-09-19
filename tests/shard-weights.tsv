@@ -61,6 +61,7 @@ mcp-lib.bats	1.06
 bootstrap-linux.bats	1.02
 git-file-risk.bats	1.01
 deep-think-nudge.bats	0.82
+commit-hallouminate-reminder.bats	0.82
 npm-nightly.bats	0.79
 worktree-settings.bats	0.78
 ccw-rm.bats	0.78

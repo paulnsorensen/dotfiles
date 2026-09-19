@@ -118,6 +118,15 @@ claude:
           - type: command
             command: 'if [ -x "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" ]; then "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh" idle; fi'
             timeout: 5
+      # After a commit that leaves wiki or corpus changes uncommitted, remind the
+      # agent to include its knowledge files (additionalContext). Registry
+      # entry `commit-hallouminate-reminder` deploys the script + the codex/omp
+      # wiring; this authors the live-claude settings.json half. No
+      # DOTFILES_HARNESS prefix: the script defaults to claude when unset.
+      - hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/commit-hallouminate-reminder.sh"'
+            timeout: 5
     PostToolUse:
       - matcher: ".*"
         hooks:

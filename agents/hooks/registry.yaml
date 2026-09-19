@@ -272,3 +272,23 @@ hooks:
     harnesses: [claude]
     timeout: 5
     description: Log PermissionDenied events to events.jsonl
+
+  # ─── Hallouminate commit reminder ────────────────────────────────
+  # After a commit that leaves wiki or corpus changes uncommitted, remind the
+  # agent to include its hallouminate knowledge files. Self-contained bash with
+  # hallouminate, jq, and git. Stop takes no matcher (dropped on write).
+  # Both harnesses reach the model differently on Stop, so the one script emits a
+  # harness-native shape keyed on the renderer-set DOTFILES_HARNESS env:
+  #   claude — hookSpecificOutput.additionalContext (model-visible Stop feedback)
+  #   codex  — {decision:"block", reason} (Codex Stop has no additionalContext)
+  # OMP is not a registry target; it deploys the sibling session_stop extension
+  # chezmoi/dot_omp/private_agent/extensions/commit-hallouminate-reminder.ts,
+  # which reuses this same script via `bash <path> --omp <session_id>`.
+  # Fires at most once per commit per session; fail-open. Opt out with
+  # HALLOUMINATE_COMMIT_REMINDER=0.
+  commit-hallouminate-reminder:
+    event: Stop
+    script: agents/hooks/commit-hallouminate-reminder.sh
+    harnesses: [claude, codex]
+    timeout: 5
+    description: After a commit omits knowledge changes, remind the agent to include wiki and corpus files
