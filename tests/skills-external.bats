@@ -349,6 +349,109 @@ EOF
     [[ "$output" == "npx --yes skills remove retired --global -y" ]]
 }
 
+# ─── legacy Codex skill mirror eviction ────────────────────────────────
+# ~/.codex/skills is a frozen skills-CLI-era mirror. The current CLI installs
+# the codex agent into the shared ~/.agents/skills, so this root only serves
+# stale copies that Codex still reads. Sync removes it wholesale.
+
+@test "skill sync: evicts the legacy ~/.codex/skills mirror" {
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources: {}
+EOF
+    write_env "cursor"
+
+    mkdir -p "$HOME/.codex/skills/age"
+    printf '# stale age\n' > "$HOME/.codex/skills/age/SKILL.md"
+
+    run_sync
+    assert_success
+    [[ ! -e "$HOME/.codex/skills" ]]
+    assert_output_contains "Removed legacy Codex skill mirror"
+}
+
+@test "skill sync: no legacy Codex mirror is a silent no-op" {
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources: {}
+EOF
+    write_env "cursor"
+
+    run_sync
+    assert_success
+    [[ ! -e "$HOME/.codex/skills" ]]
+    run grep -F "Removed legacy Codex skill mirror" <<<"$output"
+    assert_failure
+}
+
+@test "skill sync: --dry-run reports but keeps the legacy Codex mirror" {
+    write_registry
+    write_env "cursor"
+
+    mkdir -p "$HOME/.codex/skills/age"
+    printf '# stale age\n' > "$HOME/.codex/skills/age/SKILL.md"
+
+    run_sync --dry-run
+    assert_success
+    [[ -d "$HOME/.codex/skills/age" ]]
+    assert_output_contains "[dry-run] rm -rf"
+}
+
+# ─── retired local-skill reconciliation ────────────────────────────────
+# install_local_tree copies the repo's skills/ tree into the shared agents
+# root. The CLI never removes a name dropped from that source, so a manifest
+# tracks exactly what we installed and prunes only our own retired names.
+
+@test "skill sync: removes a local skill dropped from the source, keeps current + foreign" {
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources: {}
+EOF
+    write_env "cursor"
+
+    # Source now ships only `keep`.
+    mkdir -p "$MOCK_DOTFILES/skills/keep"
+    printf '# keep\n' > "$MOCK_DOTFILES/skills/keep/SKILL.md"
+
+    # Target already holds a previously-managed pair plus a foreign skill.
+    local target="$HOME/.agents/skills"
+    mkdir -p "$target/keep" "$target/dropped" "$target/foreign"
+    printf 'keep\ndropped\n' > "$target/.dotfiles-local-managed"
+
+    run_sync
+    assert_success
+    [[ -d "$target/keep" ]]
+    [[ ! -e "$target/dropped" ]]
+    [[ -d "$target/foreign" ]]
+    assert_output_contains "Removed retired local skill: dropped"
+
+    # Manifest now records only the current source set.
+    run cat "$target/.dotfiles-local-managed"
+    [[ "$output" == "keep" ]]
+}
+
+@test "skill sync: first run records the local manifest without deleting anything" {
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources: {}
+EOF
+    write_env "cursor"
+
+    mkdir -p "$MOCK_DOTFILES/skills/alpha" "$MOCK_DOTFILES/skills/beta"
+    printf '# a\n' > "$MOCK_DOTFILES/skills/alpha/SKILL.md"
+    printf '# b\n' > "$MOCK_DOTFILES/skills/beta/SKILL.md"
+
+    local target="$HOME/.agents/skills"
+    mkdir -p "$target/unrelated"
+
+    run_sync
+    assert_success
+    # No prior manifest → nothing pruned.
+    [[ -d "$target/unrelated" ]]
+    run grep -F "Removed retired local skill" <<<"$output"
+    assert_failure
+    # Manifest captures the current source set, sorted.
+    run cat "$target/.dotfiles-local-managed"
+    [[ "$output" == "alpha
+beta" ]]
+}
+
 @test "skill sync: wildcard source without vendor cache fails without caching partial convergence" {
     write_registry "acme/widgets"
     write_env "cursor"
