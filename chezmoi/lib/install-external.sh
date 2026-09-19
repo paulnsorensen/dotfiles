@@ -39,6 +39,17 @@ source "$DOTFILES_DIR/claude/lib/sync-common.sh"
 
 sync_parse_args "$@"
 
+# Legacy Codex skill mirror + shared agents skill root. The current `skills`
+# CLI installs the codex agent's skills into the shared ~/.agents/skills; the
+# old ~/.codex/skills mirror is a frozen fossil that Codex still reads, so sync
+# evicts it wholesale (decision: chezmoi-authoritative-codex). The agents root
+# also holds the copied local tree, so retired local skills are reconciled
+# there. Both paths are overridable so the Bats suite can point them at a
+# sandbox HOME.
+AGENTS_SKILLS_DIR="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
+LEGACY_CODEX_SKILLS_DIR="${LEGACY_CODEX_SKILLS_DIR:-$HOME/.codex/skills}"
+LOCAL_MANIFEST_NAME=".dotfiles-local-managed"
+
 # Skill sync needs npx (Node) + yq + jq. `npx skills add` clones each source and
 # places skills into each agent's skill dir; npx fetches the `skills` CLI itself
 # (float-to-latest, no pin).
@@ -343,6 +354,62 @@ install_source() {
     fi
 }
 
+# Reconcile retired local skills. install_local_tree copies the repo's skills/
+# tree into the shared agents root via `npx skills add`, but the CLI never
+# removes a skill dropped from that source: its lock records local skills with
+# source: null, which also covers retired externals and other repos' skills, so
+# a source-filtered cleanup cannot target them safely. Track the exact set we
+# install in a manifest and remove only names we previously installed that the
+# source no longer provides. Bash 3.2 compatible (macOS /bin/bash).
+reconcile_local_skills() {
+    local local_dir="$1"
+    local target="$AGENTS_SKILLS_DIR"
+    local manifest="$target/$LOCAL_MANIFEST_NAME"
+    [[ -d "$target" ]] || return 0
+
+    local -a current=()
+    local d
+    for d in "$local_dir"/*/; do
+        [[ -d "$d" ]] || continue
+        [[ -f "$d/SKILL.md" ]] || continue
+        current+=("$(basename "$d")")
+    done
+
+    if [[ -f "$manifest" ]]; then
+        local name
+        while IFS= read -r name; do
+            [[ -n "$name" ]] || continue
+            if printf '%s\n' ${current[@]+"${current[@]}"} | grep -Fxq "$name"; then
+                continue
+            fi
+            if [[ -d "$target/$name" ]]; then
+                rm -rf -- "${target:?}/${name:?}"
+                echo -e "    ${GREEN}Removed retired local skill:${NC} $name"
+            fi
+        done < "$manifest"
+    fi
+
+    if ((${#current[@]})); then
+        printf '%s\n' ${current[@]+"${current[@]}"} | LC_ALL=C sort > "$manifest"
+    else
+        : > "$manifest"
+    fi
+}
+
+# Evict the legacy ~/.codex/skills mirror wholesale (see AGENTS_SKILLS_DIR
+# note). Codex resolves skills through ~/.agents/skills, so this frozen root
+# only serves stale copies — removing it each sync keeps instruction versions
+# from mixing.
+evict_legacy_codex_skills() {
+    [[ -d "$LEGACY_CODEX_SKILLS_DIR" ]] || return 0
+    if $DRY_RUN; then
+        echo -e "  ${BLUE}[dry-run]${NC} rm -rf $LEGACY_CODEX_SKILLS_DIR (legacy Codex skill mirror)"
+        return 0
+    fi
+    rm -rf -- "${LEGACY_CODEX_SKILLS_DIR:?}"
+    echo -e "  ${GREEN}✓${NC} Removed legacy Codex skill mirror: $LEGACY_CODEX_SKILLS_DIR"
+}
+
 # Install the repo's own skills/<name>/SKILL.md tree into every harness that
 # isn't excluded. Unlike install_source, there is no per-source `harnesses:`
 # restriction to honor here, so this reuses the same AGENT_FLAGS/
@@ -365,6 +432,7 @@ install_local_tree() {
 
     local output
     if output=$(GIT_TERMINAL_PROMPT=0 npx "${args[@]}" 2>&1); then
+        reconcile_local_skills "$local_dir"
         echo -e "  ${GREEN}✓${NC} local skills → $SUPPORTED_HARNESSES"
     else
         echo -e "  ${RED}✗${NC} local skills → $SUPPORTED_HARNESSES"
@@ -393,6 +461,10 @@ fi
 
 echo -e "${BLUE}Local skills tree${NC}"
 install_local_tree
+echo
+
+echo -e "${BLUE}Legacy Codex skill mirror${NC}"
+evict_legacy_codex_skills
 echo
 
 fail_count=0
