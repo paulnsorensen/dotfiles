@@ -428,7 +428,9 @@ TOML
     [ ! -e "$destination/.omp/agent/extensions/no-fork-all.ts" ]
     [ ! -e "$destination/.omp/agent/extensions/rtk.ts" ]
     for extension in cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts commit-hallouminate-reminder.ts; do
-        [ -e "$destination/.omp/agent/extensions/$extension" ]
+        deployed="$destination/.omp/agent/extensions/$extension"
+        [ -e "$deployed" ]
+        cmp -s "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/$extension" "$deployed"
     done
 }
 

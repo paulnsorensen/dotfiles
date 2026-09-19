@@ -28,7 +28,8 @@
 # exits 0 with no output — a reminder must never block or crash a turn. Opt out
 # for a session with HALLOUMINATE_COMMIT_REMINDER=0.
 
-set -u
+set -euo pipefail
+trap 'exit 0' ERR
 
 [[ "${HALLOUMINATE_COMMIT_REMINDER:-1}" == "0" ]] && exit 0
 
@@ -82,7 +83,10 @@ state_file="$state_dir/$key"
 if [[ -f "$state_file" ]] && [[ "$(cat "$state_file" 2>/dev/null)" == "$head" ]]; then
     exit 0
 fi
-mkdir -p "$state_dir" 2>/dev/null && printf '%s' "$head" >"$state_file" 2>/dev/null
+if ! mkdir -p "$state_dir" 2>/dev/null ||
+    ! printf '%s' "$head" >"$state_file" 2>/dev/null; then
+    exit 0
+fi
 
 # ── Emit the reminder in the harness-native shape ──────────────────────────
 msg="A commit was just made, but hallouminate wiki or corpus files still have unstaged or untracked changes. If those changes belong with this work, stage and commit them so they are not left behind. Run 'hallouminate wiki status' to list them."
