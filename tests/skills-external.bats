@@ -51,10 +51,18 @@ printf 'npx %s\n' "$*" >> "${NPX_LOG:-/dev/null}"
 
 if [[ "$*" == *" skills list --global --json"* ]]; then
     if [[ -n "${NPX_LIST_JSON_AFTER_ADD:-}" ]] && grep -q 'skills add' "${NPX_LOG:-/dev/null}"; then
-        printf '%s\n' "$NPX_LIST_JSON_AFTER_ADD"
+        list_payload="$NPX_LIST_JSON_AFTER_ADD"
     else
-        printf '%s\n' "${NPX_LIST_JSON:-[]}"
+        list_payload="${NPX_LIST_JSON:-[]}"
     fi
+    # The real CLI writes its payload to a non-blocking pipe and can exit
+    # before the pipe drains, truncating silently at the pipe buffer. A
+    # regular-file stdout is a blocking write and keeps the whole payload.
+    if [[ -n "${NPX_LIST_TRUNCATE_ON_PIPE:-}" && -p /dev/stdout ]]; then
+        printf '%s' "${list_payload:0:$NPX_LIST_TRUNCATE_ON_PIPE}"
+        exit 0
+    fi
+    printf '%s\n' "$list_payload"
     exit 0
 fi
 
@@ -318,6 +326,31 @@ EOF
       {"name":"retired","source":"acme/widgets"},
       {"name":"foreign","source":"other/source"}
     ]'
+
+    run_sync
+    assert_success
+    run grep -F 'skills remove' "$NPX_LOG"
+    assert_success
+    [[ "$output" == "npx --yes skills remove retired --global -y" ]]
+}
+
+@test "skill sync: reads the installed list without pipe truncation" {
+    write_registry "acme/widgets"
+    write_env "codex"
+
+    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
+    mkdir -p "$repo_cache/skills/current"
+    printf '%s\n' '# current' > "$repo_cache/skills/current/SKILL.md"
+
+    # Pad past the pipe buffer so a pipe-truncated read is unparseable JSON
+    # and the retired entry falls beyond the cut.
+    local padding
+    padding=$(printf 'p%.0s' {1..9000})
+    export NPX_LIST_JSON="[
+      {\"name\":\"current\",\"source\":\"acme/widgets\",\"note\":\"$padding\"},
+      {\"name\":\"retired\",\"source\":\"acme/widgets\"}
+    ]"
+    export NPX_LIST_TRUNCATE_ON_PIPE=8192
 
     run_sync
     assert_success

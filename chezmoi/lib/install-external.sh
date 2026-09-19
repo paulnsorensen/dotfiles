@@ -227,9 +227,15 @@ source_skill_names() {
 }
 
 find_stale_source_skills() {
-    local repo="$1" expected installed
+    local repo="$1" expected installed_file
     expected=$(source_skill_names "$repo") || return 1
-    if ! installed=$(npx --yes skills list --global --json 2>&1); then
+    # `skills list --json` writes its full JSON payload with a single
+    # process.stdout.write() and can exit before a pipe drains, truncating
+    # output silently at the pipe buffer size when captured via $(...).
+    # Redirecting to a regular file is a blocking write and avoids the race.
+    installed_file=$(mktemp "${TMPDIR:-/tmp}/skill-installed.XXXXXX")
+    trap 'rm -f "$installed_file"' RETURN
+    if ! npx --yes skills list --global --json >"$installed_file" 2>&1; then
         echo -e "    ${RED}Could not list installed skills before reconciling $repo${NC}" >&2
         return 1
     fi
@@ -239,7 +245,7 @@ find_stale_source_skills() {
         | .name as $name
         | select(.source == $source and ($keep | index($name)) == null)
         | $name
-    ' <<<"$installed"; then
+    ' "$installed_file"; then
         echo -e "    ${RED}Could not parse installed skills while reconciling $repo${NC}" >&2
         return 1
     fi
