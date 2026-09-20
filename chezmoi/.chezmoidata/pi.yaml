@@ -1,0 +1,33 @@
+# Upstream Pi registry. Chezmoi authors managed configuration while Pi owns
+# auth, trust, sessions, caches, and package stores under ~/.pi/agent.
+
+pi:
+  settings:
+    defaultProvider: openai-codex
+    defaultModel: gpt-5.6-sol
+    defaultThinkingLevel: medium
+    theme: chocolate-donut
+    steeringMode: all
+    followUpMode: all
+    transport: auto
+    httpIdleTimeoutMs: 300000
+    markdown:
+      mermaid: streaming
+    showCacheMissNotices: true
+    enableInstallTelemetry: false
+    enableSkillCommands: true
+    doubleEscapeAction: tree
+    treeFilterMode: default
+    tuiMode: regular
+    fullscreenExitOutput: transcript
+    packages:
+      # renovate: datasource=npm depName=pi-mcp-adapter
+      - npm:pi-mcp-adapter@2.34.0
+      # renovate: datasource=npm depName=pi-subagents
+      - npm:pi-subagents@0.70.0
+      # renovate: datasource=npm depName=pi-web-access
+      - npm:pi-web-access@0.30.0
+      # renovate: datasource=npm depName=@gotgenes/pi-permission-system
+      - npm:@gotgenes/pi-permission-system@33.0.3
+      # renovate: datasource=npm depName=pi-vim
+      - npm:pi-vim@0.14.2

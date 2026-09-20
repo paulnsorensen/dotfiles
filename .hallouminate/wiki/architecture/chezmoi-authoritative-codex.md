@@ -72,9 +72,8 @@ by the stale `lib/tool-reroute.js` and `lib/reroute/` disappearing on first sync
 - **`yq` writes TOML** (v4.53.3) and round-trips quoted keys containing dots,
   colons, and slashes; it also hoists root scalars above table headers, so JSON key
   order cannot produce invalid TOML. It does not preserve comments.
-- **`tool-reroute` is claude-only** (`5f78a0f`, one day after the frozen render),
-  which is why live Codex ran it for a month after the decision. Codex therefore
-  has no `rtk` command rewriting.
+- **`tool-reroute` is Claude-only** (`5f78a0f`, one day after the frozen render).
+  Codex does not receive Claude's command-routing hook.
 
 ## `agent_is_read_only` was inverted for tilth writers
 

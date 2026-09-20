@@ -107,7 +107,7 @@ FROM tot LEFT JOIN fw USING (root);
 ```sql
 SELECT m.agent_type,
   sum(CASE WHEN r.tname = 'Bash'
-        AND regexp_matches(tu.bash_cmd, '^(rtk )?(grep|cat|sed|find|ls|rg|awk|head|tail|wc|tree)( |$)')
+        AND regexp_matches(tu.bash_cmd, '^(grep|cat|sed|find|ls|rg|awk|head|tail|wc|tree)( |$)')
       THEN 1 ELSE 0 END) AS shell_fileio,
   sum(CASE WHEN r.tname IN ('Read','Grep','Glob','Edit','Write') THEN 1 ELSE 0 END) AS builtin_fileio,
   sum(CASE WHEN r.tname LIKE 'mcp__tilth%' THEN 1 ELSE 0 END) AS tilth,

@@ -2,7 +2,7 @@
 # query.sh <report> [harness] | sql "SELECT ..." — canned session-log reports.
 # Reports: tools errors mcp skills sessions bash denials allowlist-gaps
 #          python3 hooks compound projects heatmap latency
-# Harness: all (default) | claude | codex | omp | cursor | copilot
+# Harness: all (default) | claude | codex | omp | pi | cursor | copilot
 # sql runs one raw query against the database (markdown output).
 # SESSIONS_DB overrides the database path and disables auto-ingest.
 # SESSIONS_DUCKDB_MEMORY_LIMIT overrides the duckdb memory_limit cap (default 8GB).

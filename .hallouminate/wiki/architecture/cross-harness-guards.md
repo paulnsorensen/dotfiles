@@ -48,28 +48,7 @@ Claude receives `additionalContext`. Codex receives a one-shot block continuatio
 
 ## tool-reroute
 
-`agents/lib/tool-reroute.js` is the Claude-only `PreToolUse` dispatcher for `Bash|Grep|Glob`. It rewrites wrong-tool calls to `tilth` / `wt-git`, denies the two cases with no shell target, and delegates every other Bash command to `rtk hook claude` for compaction.
-
-### worktree-git passthrough
-
-Inside a Claude-created isolated worktree, the dispatcher does not delegate a plain `git` command to rtk. It logs `module: worktree-git`, `action: passthrough`, and lets the command run unchanged.
-
-**Trigger:** the event `cwd` matches `/\.claude/worktrees/` and any command segment has the command word `git` after `commandWord` strips env assignments and a leading `rtk` / `rtk proxy`. A quoted `git` inside a string does not trigger. A lexer miss fails closed to the normal delegate path.
-
-**Why:** the Agent tool's `isolation: "worktree"` guard in Claude Code refuses a command whose command word is not `git` but carries a git operand. rtk rewrites `git status` to `rtk git status`, so the guard refuses ordinary git calls. A 3-session sample on 2026-09-09/10 showed 89 refusals; the full session logs under `~/.claude/projects` hold 1,208 through 2026-09-10 (904 on 09-09, 258 on 09-10): 631 plain `git …`, 414 `pwd && git …`-style chains, 71 agent-typed `rtk git …`, 28 `wt-git …`, and 63 non-git constructs. Agents then flailed (`unset -f git`, `/usr/bin/git status`) and 6 of 10 sampled refusals were followed by another refusal.
-
-**Why a path test, not `git rev-parse`:** the hook runs on every Bash call inside a 5 s budget. Claude Code's guard applies only to worktrees it creates under `.claude/worktrees/`, so the path test is exact for this purpose.
-
-**Harness scope:** the refusal is Claude Code's. On 2026-09-10, 36 session files under `~/.claude/projects` carry the refusal text; `~/.codex/sessions` and `~/.omp/agent/sessions` carry none. The hook deploys to Claude only (`harnesses: [claude]`). rtk has no `codex` hook subcommand, and OMP rewrites through the vendored `rtk.ts` extension, which has no worktree guard. The check itself is harness-agnostic, so a future codex deploy of the hook behaves the same; a bats case pins it under the codex bridge. The passthrough does not touch `wt-git`: that stays the `cd-git` rewrite target for `cd <path> && git …`.
-
-**Accepted loss:** git output inside isolated agents does not get rtk compaction. Git output is small.
-
-**Measured non-issues and residuals (session logs through 2026-09-10):**
-
-- `wt-git <path> …` (the `cd-git` rewrite) passes the guard: 610 allowed, 14 refused inside isolated worktrees. The 14 are one repeated `ls-files` pathspec that Claude Code called "too complex to verify". 14 more `wt-git` refusals also carried a bare `git` segment that rtk wrapped; the passthrough now covers that shape.
-- `cd <own-cwd> && git …` (the cd-strip path): 0 refused, 211 allowed. The stripped remainder still goes to rtk, but no refusal is on record, so the hook leaves this path alone.
-- An agent that types `rtk git …` itself (71 cases) is still refused by Claude Code; the hook does not delegate it either.
-- 63 refusals name no git at all (`eval`, `bash <script>`, `for` loops, `hash`). Those come from Claude Code's complexity guard and are outside this hook's scope.
+`agents/lib/tool-reroute.js` is the Claude-only `PreToolUse` dispatcher for `Bash|Grep|Glob`. It redirects file operations to Tilth, rewrites worktree command shapes to `wt-git`, denies unsupported shell-file operations, and passes unrelated Bash commands unchanged.
 
 ## Claude-only pre-tool guards
 

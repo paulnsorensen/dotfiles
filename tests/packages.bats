@@ -885,6 +885,18 @@ YAML
     grep -q "npm install -g markdownlint-cli2" "$NPM_LOG"
 }
 
+@test "sync passes configured npm install flags" {
+    cat > "$PACKAGES_FILE" <<'YAML'
+packages:
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.86.0", flags: ["--ignore-scripts"] }
+YAML
+
+    run_sync
+    assert_success
+
+    grep -q "npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.86.0" "$NPM_LOG"
+}
+
 @test "sync excludes linux-only npm packages on Darwin" {
     [[ "$(uname)" == "Darwin" ]] || skip "macOS only"
 
@@ -920,6 +932,62 @@ YAML
 
     ! grep -Eq '^brew (install|reinstall|uninstall|upgrade)( |$)' "$BREW_LOG"
     [[ ! -f "$CURL_LOG" ]]
+}
+
+@test "sync cache restores a missing configured npm package" {
+    cat > "$PACKAGES_FILE" <<'YAML'
+packages:
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.86.0", flags: ["--ignore-scripts"] }
+YAML
+    run_sync
+    assert_success
+    rm -f "$NPM_LOG"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    grep -qx "npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.86.0" "$NPM_LOG"
+}
+
+@test "sync cache leaves an installed npm package untouched" {
+    cat > "$PACKAGES_FILE" <<'YAML'
+packages:
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.86.0", flags: ["--ignore-scripts"] }
+YAML
+    run_sync
+    assert_success
+    rm -f "$NPM_LOG" "$MOCK_BIN/npm"
+    cat > "$MOCK_BIN/npm" <<'MOCKNPM'
+#!/bin/bash
+echo "npm $*" >> "$NPM_LOG"
+[[ "$1" == "ls" ]] && echo '{"dependencies":{"@earendil-works/pi-coding-agent":{"version":"0.86.0"}}}'
+exit 0
+MOCKNPM
+    chmod +x "$MOCK_BIN/npm"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    ! grep -q '^npm install ' "$NPM_LOG"
+}
+
+@test "sync cache repairs a mismatched pinned npm package" {
+    cat > "$PACKAGES_FILE" <<'YAML'
+packages:
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.86.0", flags: ["--ignore-scripts"] }
+YAML
+    run_sync
+    assert_success
+    rm -f "$NPM_LOG" "$MOCK_BIN/npm"
+    cat > "$MOCK_BIN/npm" <<'MOCKNPM'
+#!/bin/bash
+echo "npm $*" >> "$NPM_LOG"
+[[ "$1" == "ls" ]] && echo '{"dependencies":{"@earendil-works/pi-coding-agent":{"version":"0.85.1"}}}'
+exit 0
+MOCKNPM
+    chmod +x "$MOCK_BIN/npm"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    grep -qx "npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.86.0" "$NPM_LOG"
 }
 
 @test "sync cache restores every configured mise package" {
@@ -1239,6 +1307,14 @@ MOCKBREW
     [[ "$expected" == "$managed" ]]
 }
 
+
+@test "sync Pi verification follows the managed package pin" {
+    local managed expected
+    managed=$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")
+    expected=$(sed -n 's/.*pi_version.*!= "\([^"]*\)".*/\1/p' "$REAL_DOTFILES_DIR/.sync")
+    [[ -n "$managed" ]]
+    [[ "$expected" == "$managed" ]]
+}
 
 @test "package sync removes a stale Bun OMP before native convergence" {
     write_mock_bun

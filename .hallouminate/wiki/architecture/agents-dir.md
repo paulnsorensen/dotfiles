@@ -19,7 +19,7 @@ The registries are also the stable **edit surface**: `mcp-edit`, `hook-edit`, `a
 | Sub-agents | `agents/registry.yaml` | `agent-edit` | name-keyed mapping |
 | Skills | `skills/_registry.yaml` (external) + `skills/` tree (local) | `skill-edit` | sources + dir tree |
 
-These four are unioned by the `base` profile — the only profile that reads *all four* registries (see `profiles/base/profile.yaml`). The isolated profiles (`fe`, `review`, `spec`, `mgmt`, `todo`, `plugin`, `rtkonly`) are closed worlds that do *not* `include: [base]`; each references the agents registry directly via `registries: {agents: agents/registry.yaml}`. Everything downstream — every harness layout — flows from the `base` union.
+These four are unioned by the `base` profile — the only profile that reads *all four* registries (see `profiles/base/profile.yaml`). Profiles that include `base` use that union. Claude's isolated profiles (`fe`, `review`, `spec`, `todo`, `plugin`, `tui`, `oss-docs`, `skills-doctor`) do *not* `include: [base]`; each uses its direct `registries.agents` input. The Codex-only isolated profiles (`codex-code`, `codex-plan`) define their own closed worlds. `mgmt` is not isolated.
 
 ### MCP registry — `agents/mcp/registry.yaml`
 
@@ -113,9 +113,8 @@ The standalone `agents/mcp/sync.sh` and `agents/hooks/sync.sh` remain legacy nat
 
 Shared agent *content* that chezmoi copies directly (not through `ap`):
 
-- **`agents/AGENTS.md`** — global coding-agent preferences installed as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`.
-- **`agents/preamble.md`** — the compact standing system-prompt body. Claude wrappers pass it with `--system-prompt-file`; `install-prompts.sh` installs it as Codex's `model_instructions_file`. OMP uses a separate native `APPEND_SYSTEM.md` because its prompt contract differs.
-- **`agents/RTK.md`** — RTK proxy reference, Claude-only (copied to `~/.claude/RTK.md`).
+- **`agents/AGENTS.md`** — global coding-agent preferences installed for Claude, Codex, and Pi.
+- **`agents/preamble.md`** — the compact standing system-prompt body. Claude wrappers pass it with `--system-prompt-file`; `install-prompts.sh` installs it as Codex's `model_instructions_file`. OMP and Pi use separate native `APPEND_SYSTEM.md` files because their prompt contracts differ.
 
 See [[../harnesses/index]] for how each harness consumes these artifacts and the official docs for its native config surfaces.
 

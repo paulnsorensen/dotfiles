@@ -6,8 +6,8 @@
 #   source:      brew (default) | cask | tap | cargo | npm | uv | gh-extension
 #   dev:         only when DOTFILES_DEV=true
 #   platform:    mac | linux (default: both)
-#   flags:       extra args spliced into the installer (uv source only;
-#                e.g. ["--python", "3.13", "--prerelease=allow"])
+#   flags:       extra args spliced into npm/uv installers
+#                (e.g. ["--ignore-scripts"] or ["--python", "3.13"])
 #   float:       uv source only; unpinned entries only. Upgrade the tool on
 #                every sync, not only in UPGRADE_MODE (dots up).
 
@@ -52,6 +52,10 @@ packages:
   # Dev (DOTFILES_DEV=true)
   - pyenv: { dev: true }
   - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app
+
+  # AI harnesses not owned by mise
+  # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.86.0", flags: ["--ignore-scripts"] }
 
   # LSP servers not owned by mise
   # renovate: datasource=npm depName=@vtsls/language-server

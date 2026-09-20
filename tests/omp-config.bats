@@ -394,10 +394,7 @@ TOML
     [[ "$output" == *".omp/agent/extensions/commit-hallouminate-reminder.ts"* ]]
     [[ "$output" == *".omp/agent/APPEND_SYSTEM.md"* ]]
     [[ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/no-fork-all.ts" ]]
-    [[ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/extensions/rtk.ts" ]]
     grep -Fxq '.omp/agent/extensions/no-fork-all.ts' \
-        "$REAL_DOTFILES_DIR/chezmoi/.chezmoiremove"
-    grep -Fxq '.omp/agent/extensions/rtk.ts' \
         "$REAL_DOTFILES_DIR/chezmoi/.chezmoiremove"
     ! grep -Eq 'assignment|fork_turns' \
         "$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
@@ -409,7 +406,6 @@ TOML
     local extension
     mkdir -p "$destination/.omp/agent/extensions"
     printf 'retired sentinel\n' > "$destination/.omp/agent/extensions/no-fork-all.ts"
-    printf 'retired sentinel\n' > "$destination/.omp/agent/extensions/rtk.ts"
     for extension in cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts commit-hallouminate-reminder.ts; do
         printf 'managed sentinel\n' > "$destination/.omp/agent/extensions/$extension"
     done
@@ -426,7 +422,6 @@ TOML
     run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" apply --force --exclude=scripts
     [ "$status" -eq 0 ]
     [ ! -e "$destination/.omp/agent/extensions/no-fork-all.ts" ]
-    [ ! -e "$destination/.omp/agent/extensions/rtk.ts" ]
     for extension in cheese-flair.ts sliced-bread-audit.ts milknado-todo-guard.ts commit-hallouminate-reminder.ts; do
         deployed="$destination/.omp/agent/extensions/$extension"
         [ -e "$deployed" ]

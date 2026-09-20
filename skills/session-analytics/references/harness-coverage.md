@@ -7,7 +7,7 @@ accessible logs is recorded here and skipped non-fatally — full coverage of wh
 is reachable, not parsing the unparseable.
 
 Every canonical table carries a `harness` column (`claude` / `codex` / `omp` /
-`cursor` / `copilot`) so one query can compare sources. See
+`pi` / `cursor` / `copilot`) so one query can compare sources. See
 `canonical-schema.md` for the table shapes.
 
 ## Coverage status
@@ -17,6 +17,7 @@ Every canonical table carries a `harness` column (`claude` / `codex` / `omp` /
 | claude | `~/.claude/projects/**/*.jsonl` | JSONL, one turn per line; assistant/user `message.content[]` blocks | `claude_normalize` (pass-through, already canonical) | parsed |
 | codex | `~/.codex/sessions/**/*.jsonl` | JSONL rollout; `session_meta` + `response_item`/`event_msg` payloads | `codex_normalize` | parsed |
 | omp | `~/.omp/agent/sessions/<flattened-project-dir>/*.jsonl` | JSONL; `session` header + `message` entries with `toolCall` / `toolResult` | `omp_normalize` | parsed |
+| pi | `~/.pi/agent/sessions/<flattened-project-dir>/*.jsonl` | Pi-family JSONL | `pi_normalize` | parsed |
 | cursor | `~/.cursor/projects/<project-slug>/agent-transcripts/<uuid>/<uuid>.jsonl` (+ `subagents/*.jsonl`) | JSONL, one message per line; `role`/`message.content[]` blocks, plus `turn_ended` status lines | `cursor_normalize` | parsed |
 | copilot | `~/.copilot/` | holds `skills/` + `mcp-config.json` only; no local transcript found | none | **no accessible logs** |
 
@@ -37,12 +38,9 @@ error rates are floors — a handful of harness-side truncation notices lack the
 flag).
 
 **`bash_cmd` is the model-typed command, pre-hook.** A PreToolUse
-`updatedInput` rewrite executes the rewritten command but the transcript
-records the original — verified live with the now-retired rtk hook, whose
-`git status` → `rtk git status` rewrite produced rtk-format output while the
-JSONL logged the plain command, so hook rewrite coverage is not measurable
-from claude transcripts (this artifact produced the false "rtk hook barely
-fires on claude" finding in issue #702).
+`updatedInput` rewrite can execute a different command while the transcript
+records the original. Hook rewrite coverage is therefore not measurable from
+Claude transcripts.
 
 ### codex
 
@@ -67,9 +65,9 @@ Rollout JSONL. Each line is `{timestamp, type, payload}`:
 Codex has no `Skill` / `Agent` tool primitives, so `skill_invocations` and
 `agent_spawns` stay claude-centric. `reasoning` items (encrypted) are dropped.
 
-### omp
+### omp and pi
 
-oh-my-pi session JSONL, one file per session under a flattened-path project dir
+Both harnesses use Pi-family session JSONL, one file per session under a flattened-path project dir
 (e.g. `-Dev-dotfiles`). The `session` header entry (`{type:'session', id, cwd,
 timestamp, title}`) supplies sessionId + cwd for every row. `message` entries:
 
@@ -87,7 +85,7 @@ Error flag: every `toolResult` message carries a **msg-level `isError` boolean**
 at `details.xdev.inner.isError`; verified perfectly consistent with the
 msg-level flag across all sessions, so the adapter reads only the msg-level one.
 
-Caveats:
+OMP-specific caveats:
 
 - **MCP naming** is a third scheme: `mcp__tilth_search` = `mcp__` + server +
   *single* underscore + tool. These rows land in `mcp_calls` (the `mcp__%`
@@ -164,7 +162,7 @@ Re-evaluate if a transcript store appears.
 
 Some metrics are only reliable on harnesses that record the underlying field —
 e.g. token/cost data is absent from most logs (`token-economics` degrades to
-"insufficient signal"), and codex/omp lack Claude's hook + permission-denial
+"insufficient signal"), and Codex/OMP/Pi lack Claude's hook + permission-denial
 entries, so `stop_hooks` / `permission_denials` are effectively claude-only.
 Packs must degrade gracefully rather than fabricate.
 
