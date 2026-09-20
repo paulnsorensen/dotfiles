@@ -44,15 +44,15 @@ Remaining post-apply steps still run before the failure summary.[^upgrade-first]
 
 Two consequences worth internalizing:
 
-- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/18.2.6`, `codex-cli 0.154.0`, and Pi `0.86.0` at `.sync:57-84`. The literals and install pins must move together or `dots sync` fails its post-install harness check. Renovate keeps the **OMP** and **Pi** guards aligned with their pins. **codex-cli** has no matching manager, so its literal still moves by hand with the manifest.
+- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/18.2.8`, `codex-cli 0.154.0`, and Pi `0.87.0` at `.sync:57-84`. The literals and install pins must move together or `dots sync` fails its post-install harness check. Renovate keeps the **OMP** and **Pi** guards aligned with their pins. **codex-cli** has no matching manager, so its literal still moves by hand with the manifest.
 - **The final apply is the only step that refreshes most live config**, so anything the package phase reads from a live file must be applied during *prepare* instead. That is exactly the trap in [[mise-manifest-precedence]], and the reason `apply_mise_manifest` exists in the prepare branch.
 
 ### Gotcha: the OMP guard and installer pin move in one PR
 
 The OMP verify literal in `.sync` and the actual install pin `OMP_PIN` in `packages/sync.sh` are two copies of the same version that drift independently — a bump to one without the other reds the post-install harness check. `renovate.json5` keeps them locked with two coupled mechanisms:
 
-- A `custom.regex` manager over `.sync` (`renovate.json5:54-66`) rewrites **both** the `!= "omp/<v>"` and `expected omp/<v>` occurrences from the `can1357/oh-my-pi` github-tags datasource, with `extractVersionTemplate` stripping the `v` prefix so the guard's bare `<v>` matches the `v<v>` tag. A separate manager (`renovate.json5:44-53`) bumps `OMP_PIN` itself.
-- A `groupName: oh-my-pi` packageRule (`renovate.json5:81-85`) bundles both updates into a **single PR**. This grouping is load-bearing, not tidiness: split across two PRs, each would fail the `sync OMP verification follows the managed package pin` tripwire in `tests/packages.bats` on its own, and automerge would deadlock because neither PR can go green alone.
+- A `custom.regex` manager over `.sync` (`renovate.json5:75-87`) rewrites **both** the `!= "omp/<v>"` and `expected omp/<v>` occurrences from the `can1357/oh-my-pi` github-tags datasource, with `extractVersionTemplate` stripping the `v` prefix so the guard's bare `<v>` matches the `v<v>` tag. A separate manager (`renovate.json5:53-62`) bumps `OMP_PIN` itself.
+- A `groupName: oh-my-pi` packageRule (`renovate.json5:124-126`) bundles both updates into a **single PR**. This grouping is load-bearing, not tidiness: split across two PRs, each would fail the `sync OMP verification follows the managed package pin` tripwire in `tests/packages.bats` on its own, and automerge would deadlock because neither PR can go green alone.
 
 `tests/sync-orchestrator.bats` derives its expected OMP version from `OMP_PIN` in `setup_file`, so a bump needs zero test edits — only the deliberate `omp/17.1.3` fail-closed mismatch fixture stays literal (#754).
 
