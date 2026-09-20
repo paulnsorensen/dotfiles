@@ -82,7 +82,9 @@ TOML
     run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$CZ_SRC" apply --force --exclude=scripts
     [ "$status" -eq 0 ]
     [ -f "$destination/.pi/agent/settings.json" ]
-    [ ! -e "$destination/.pi/agent/models.json" ]
+    run find "$destination/.pi/agent" -name models.json -print
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
     [ -f "$destination/.pi/agent/mcp.json" ]
     [ -f "$destination/.pi/agent/APPEND_SYSTEM.md" ]
     [ -f "$destination/.pi/agent/themes/chocolate-donut.json" ]

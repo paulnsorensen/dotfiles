@@ -86,7 +86,10 @@ Subset of `tool_uses` for `Skill` calls (claude). Columns: `harness`,
 ## `mcp_calls`
 
 Subset of `tool_uses` where `tool_name LIKE 'mcp__%'`. Same columns as
-`tool_uses`. The name encodes server + method: `mcp__<server>__<method>`.
+`tool_uses`. Names are harness-specific: Claude and Cursor use
+`mcp__<server>__<method>`, while Pi and OMP preserve
+`mcp__<server>_<method>`. Consumers must branch on `harness`; for Pi-family
+rows, split the suffix once at the first underscore.
 
 ## `sessions`
 
