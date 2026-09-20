@@ -44,7 +44,7 @@ Remaining post-apply steps still run before the failure summary.[^upgrade-first]
 
 Two consequences worth internalizing:
 
-- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/18.1.14` at `.sync:57-58`, `codex-cli 0.153.4` at `.sync:70-71` — and covers only those two harnesses. The literal and the install pin must move together or `dots sync` fails its post-install harness check (`omp version mismatch: expected omp/18.1.14, got <old version>`). For **OMP** this is now enforced automatically — see the gotcha below; **codex-cli** has no such manager, so its literal is still bumped by hand alongside the manifest.
+- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/18.2.6`, `codex-cli 0.154.0`, and Pi `0.86.0` at `.sync:57-84`. The literals and install pins must move together or `dots sync` fails its post-install harness check. Renovate keeps the **OMP** and **Pi** guards aligned with their pins. **codex-cli** has no matching manager, so its literal still moves by hand with the manifest.
 - **The final apply is the only step that refreshes most live config**, so anything the package phase reads from a live file must be applied during *prepare* instead. That is exactly the trap in [[mise-manifest-precedence]], and the reason `apply_mise_manifest` exists in the prepare branch.
 
 ### Gotcha: the OMP guard and installer pin move in one PR
