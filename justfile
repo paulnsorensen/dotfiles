@@ -9,7 +9,7 @@ lint: lint-shell lint-python lint-js lint-markdown
 
 # shellcheck on shell scripts
 lint-shell:
-    shellcheck -x -e SC1091 $(find bin -type f) .sync
+    shellcheck -x -e SC1091 $(find bin -type f ! -name gate-slot) .sync
     shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/claude-mcp-reconcile.sh chezmoi/lib/claude-plugin-reconcile.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-shared-assets.sh
     shellcheck -x -s sh chezmoi/private_dot_codex/modify_private_config.toml
     shellcheck -x -e SC1091 -s bash agents/hooks/session-start-cheese-flair.sh macos/.sync macos/lib.sh
@@ -17,7 +17,7 @@ lint-shell:
     shellcheck -x -e SC1091 -s bash tests/workflows-test.sh
     @echo "shellcheck: ok"
 
-PYTHON_LINT_PATHS := "skills/session-analytics/scripts/ skills/ci-optimize/scripts/ tests/ci_optimize/ tests/lib/"
+PYTHON_LINT_PATHS := "bin/gate-slot skills/session-analytics/scripts/ skills/ci-optimize/scripts/ tests/ci_optimize/ tests/lib/"
 
 # ruff on python files
 lint-python:
@@ -80,4 +80,4 @@ check:
     # the parent, and an empty value makes mise resolve its cache dir to a
     # *relative* `mise`, dumping aqua bin_paths caches into the repo root. Pin
     # a real value so the shimmed tools every leg runs cache under $HOME.
-    XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel -k --group just ::: lint-shell lint-python lint-js lint-markdown test-python smoke test
+    bin/gate-slot run --slots 1 --name dotfiles-check -- env XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel -k --group just ::: lint-shell lint-python lint-js lint-markdown test-python smoke test

@@ -71,3 +71,7 @@
 2026-09-08 · c980af7ece888d18 · new-page · operations/ci-optimization.md · Record import-only timing, attempt identity, and comparison limits.
 
 2026-09-08 · ci-optimize-skill · merged · operations/ci-optimization.md · Record approval boundaries and executable source-name encoding.
+
+2026-09-19 · a5da953c96c5a279 · merged · operations/dev-environment.md · Record failure-atomic launch, workload ownership, bounded timeout retries, and the GNU sem manual.
+
+2026-09-19 · gate-slot-argv-relay · merged · operations/dev-environment.md · Keep argv outside GNU replacement templates and keep stderr backpressure outside guardian supervision.
