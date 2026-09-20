@@ -183,8 +183,12 @@ case "$REPORT" in
     latency)
         # Model round-trip cost per turn. duration/ttft/prompt_k are omp-only.
         # A database from before model_turns existed can still be inside the TTL.
-        if [[ "$(duckdb -init /dev/null "$DB" -noheader -list -c \
-            "SELECT count(*) FROM information_schema.tables WHERE table_name = 'model_turns'" 2>/dev/null)" != 1 ]]; then
+        if ! has_turns="$(duckdb -init /dev/null "$DB" -noheader -list -c \
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = 'model_turns'")"; then
+            echo "Cannot query $DB." >&2
+            exit 1
+        fi
+        if [[ "$has_turns" != 1 ]]; then
             echo "No model_turns table in $DB — run ingest.py --force."
             exit 0
         fi

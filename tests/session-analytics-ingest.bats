@@ -181,6 +181,14 @@ JSONL
     [[ "$output" != *claude* ]]
 }
 
+@test "query: latency names the re-ingest fix when the database predates model_turns" {
+    mkdir -p "$(dirname "$DB")"
+    duckdb -init /dev/null "$DB" -c "CREATE TABLE tool_uses(harness VARCHAR);"
+    run env SESSIONS_DB="$DB" "$REAL_DOTFILES_DIR/skills/session-analytics/scripts/query.sh" latency
+    assert_success
+    assert_output_contains "run ingest.py --force"
+}
+
 # --- boundary + round-trip hardening -------------------------------------
 
 @test "ingest: codex function_call_output round-trips into a tool_result with matching call_id" {
