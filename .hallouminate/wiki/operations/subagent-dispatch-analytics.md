@@ -179,6 +179,63 @@ Two output dialects coexist in reviewer dispatches — the `/age`
 `pass|revise|halt` per-lens block (48%) — with nothing in the prompt saying which
 one applies.
 
+## Measured 2026-09-19: soft stops and large write responses
+
+The quoted two-coder failure is a local-budget stop, not evidence of a provider context-limit error.
+Both coders receive the 110,000-token soft warning.
+Neither records a hard-denied tool call.
+The second coder crosses 130,000 tokens while completing its handoff.[^20260919-session]
+
+| Measure | First coder | Resumed coder |
+|---|---:|---:|
+| Initial assistant context | 17,284 | 15,691 |
+| Context at soft warning | 113,882 | 110,241 |
+| Guard call count at warning | 24 | 27 |
+| Peak assistant context | 126,675 | 136,784 |
+| Source changes | None | Three files |
+
+The first dispatch has 6,527 characters and combines investigation, implementation, consolidation, integration tests, bundle generation, and full gates.
+Its continuation assigns all eleven remaining edit steps rather than a smaller behavior boundary.
+The first coder returns only a resume note.
+The resumed coder starts source edits at 52,837 context tokens.[^20260919-session]
+
+Two successful writes return the complete 1,031-line and 1,032-line shared module.
+Their serialized results total 87,219 characters.
+Context grows by 35,938 tokens across those calls, including request and response overhead.
+Narrow source reads therefore do not bound write-response growth.[^20260919-session]
+
+The first resume note contains 20,900 result characters despite the role's approximately 2,000-token target.
+The second checkpoint fails on invalid JSON, an existing create target, and an undisplayed line range before it succeeds.
+These failures spend the remaining handoff budget without advancing implementation.[^20260919-session]
+
+The parent announces direct implementation at 154,423 context tokens.
+The guard exempts calls without an agent identifier.
+Moving implementation into that parent defeats this guard's context-control purpose.[^20260919-guard]
+
+The retained decision log covers 70 distinct coder identifiers from September 13 through September 20 UTC.
+It records soft warnings for 48 and hard denials for 20.
+These are observed identifiers, not a completed-run failure rate.[^20260919-log]
+
+This sample confirms the earlier scope problem and adds write-response amplification as a measured cause.
+It does not establish a model-capacity defect or justify raising the limit alone.
+The follow-up fixes retain the existing caps and models.
+The coder returns compact observations instead of writing an ad hoc checkpoint.
+The parent uses the phase-owned checkpoint protocol before one targeted fresh retry.
+The legacy workflow retries only explicit `needs-context` handoffs with a checkpoint reference.
+Generic failures and second exhaustion halt; the parent does not take over implementation automatically.[^20260919-recovery]
+
+The companion easy-cheese change connects writer exhaustion to authoritative save and resolve.
+The Tilth change bounds write-response source output while preserving displayed-line provenance.
+These source changes need publication and deployment before later sessions can measure their effect.
+
+[^20260919-recovery]: `agents/agent_definitions/coder.md`, `agents/preamble.md`, `agents/lib/turn-budget-guard.js`, and `claude/workflows/cheese-factory.js`. Regression tests: `tests/phase-agent-handoff.bats`, `tests/turn-budget-guard.bats`, and `tests/workflows/cheese-factory.test.mjs`. Cross-repository work: easy-cheese and Tilth branches `worktree/coder-context-recovery`.
+
+*Source: session-analytics and the retained guard log · Updated: 2026-09-19 · Supersedes: no historical measurements*
+
+[^20260919-session]: Claude session `0f1b8bc0-66e8-49b3-a3e7-4f0103e58708`, cwd suffix `easy-cheese/tehran-v2`, September 19, 2026, 23:03–23:49 UTC. Canonical `raw_entries` supplies assistant usage and full tool-result blocks. Coders: `a8c17c8ef8e71004d` and `ad868e3a733d79a83`. Context is input plus cache-read plus cache-creation tokens; parent and sidechain rows are separated.
+[^20260919-guard]: `agents/lib/turn-budget-guard.js:79-82,580-596,641-650,694-708`; parent announcement at `2026-09-19T23:16:48.432Z` in the cited session.
+[^20260919-log]: `~/.local/state/claude-turn-budget/decisions.jsonl`, queried through `2026-09-20T02:23:34.083Z`; grouped by `(session_id, agent_id)`, filtered to `agent_type = coder`.
+
 ## What changed as a result
 
 - `agents/agent_definitions/coder.md` — added a "Dispatch contract" section the
