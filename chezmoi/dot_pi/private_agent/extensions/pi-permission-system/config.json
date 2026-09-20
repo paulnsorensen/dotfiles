@@ -4,6 +4,7 @@
   "yoloMode": true,
   "permission": {
     "*": "allow",
+    "tilth_write": "allow",
     "path": {
       "*": "allow",
       "*.env": "deny",

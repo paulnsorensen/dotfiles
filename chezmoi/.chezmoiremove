@@ -17,6 +17,9 @@ local-llm/configs/lean.json
 .claude/RTK.md
 .omp/agent/extensions/no-fork-all.ts
 
+# Pi local providers are disabled until the local model catalog is restored.
+.pi/agent/models.json
+
 # Retired native harnesses. Remove their configuration and runtime state;
 # package binaries are removed by packages/sync.sh.
 .config/opencode

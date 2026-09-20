@@ -4,11 +4,11 @@ Upstream Pi is a first-class global harness sibling. It is not an `ap` render ta
 
 ## Ownership
 
-`chezmoi/.chezmoidata/pi.yaml` owns managed settings, package pins, and the optional local-model catalog.
+`chezmoi/.chezmoidata/pi.yaml` owns managed settings and package pins.
 
 - `chezmoi/dot_pi/private_agent/modify_settings.json` authors `~/.pi/agent/settings.json` wholesale.
 - The modifier preserves `lastChangelogVersion` and halts on unknown live key paths.
-- `models.json.tmpl` emits local models only when the machine enables `localLLM`.
+- `.chezmoiremove` removes `~/.pi/agent/models.json`; Pi has no managed local providers.
 - `mcp.json` configures the MCP adapter and direct Tilth tools.
 - `auth.json`, `trust.json`, `sessions/`, caches, and package stores remain Pi-owned.
 
@@ -26,7 +26,7 @@ Pi uses pinned mainstream packages:
 
 `sync_pi_packages` runs `pi update --extensions` after chezmoi applies the managed settings. Exact package sources remain pinned. Renovate owns package updates in `pi.yaml`.
 
-The permission configuration replaces a harness-specific secret guard. It denies secret-bearing paths across built-in tools, Bash, MCP, and extension tools while allowing known public companion files. Global `yoloMode` auto-approves `ask` decisions, but explicit `deny` rules still block access.
+The permission configuration replaces a harness-specific secret guard. It denies secret-bearing paths across built-in tools, Bash, MCP, and extension tools while allowing known public companion files. It explicitly allows `tilth_write`. Global `yoloMode` auto-approves `ask` decisions, but explicit `deny` rules still block access.
 
 ## Shared resources
 

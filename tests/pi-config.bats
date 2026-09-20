@@ -56,6 +56,7 @@ JSON
     [ "$(jq -r '.mcpServers.tilth.command' "$mcp")" = "tilth" ]
     [ "$(jq -r '.mcpServers.hallouminate.command' "$mcp")" = "hallouminate" ]
     [ "$(jq -r '.yoloMode' "$permissions")" = "true" ]
+    [ "$(jq -r '.permission.tilth_write' "$permissions")" = "allow" ]
     [ "$(jq -r '.permission.path["*.env"]' "$permissions")" = "deny" ]
     [ "$(jq -r '.permission.path["*.env.example"]' "$permissions")" = "allow" ]
     [ "$(jq -r '.permission.path["~/.ssh/*"]' "$permissions")" = "deny" ]
@@ -67,6 +68,7 @@ JSON
     local destination="$TEST_HOME/home"
     mkdir -p "$destination/.pi/agent"
     printf 'runtime state\n' > "$destination/.pi/agent/auth.json"
+    printf '{"providers":{"local-llm":{}}}\n' > "$destination/.pi/agent/models.json"
     cat > "$cfg" <<TOML
 sourceDir = "$CZ_SRC"
 destDir = "$destination"
@@ -80,13 +82,12 @@ TOML
     run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$CZ_SRC" apply --force --exclude=scripts
     [ "$status" -eq 0 ]
     [ -f "$destination/.pi/agent/settings.json" ]
-    [ -f "$destination/.pi/agent/models.json" ]
+    [ ! -e "$destination/.pi/agent/models.json" ]
     [ -f "$destination/.pi/agent/mcp.json" ]
     [ -f "$destination/.pi/agent/APPEND_SYSTEM.md" ]
     [ -f "$destination/.pi/agent/themes/chocolate-donut.json" ]
     [ -f "$destination/.pi/agent/extensions/cheese-flair.ts" ]
     [ "$(cat "$destination/.pi/agent/auth.json")" = "runtime state" ]
-    [ "$(jq -c . "$destination/.pi/agent/models.json")" = '{"providers":{}}' ]
     [ "$(jq -S . "$destination/.pi/agent/settings.json")" = "$(yq -o=json '.pi.settings' "$REGISTRY" | jq -S .)" ]
     cmp -s "$CZ_SRC/dot_pi/private_agent/mcp.json" "$destination/.pi/agent/mcp.json"
     cmp -s "$CZ_SRC/dot_pi/private_agent/APPEND_SYSTEM.md" "$destination/.pi/agent/APPEND_SYSTEM.md"
