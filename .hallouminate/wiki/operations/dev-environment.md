@@ -10,6 +10,45 @@ The local developer-experience tooling that isn't agent config: git diff/merge t
 - **Conflict-resolution chain:** mergiraf (auto-resolve structural) → rerere (replay remembered manual resolutions) → kdiff3 (manual). The `/melt` skill drives this cascade.
 - `grb` rebases from `main` (not `master`).
 
+### Host-wide command admission
+
+`gate-slot` is the supported host-wide admission wrapper for heavy local commands.
+It delegates scheduling to GNU `sem` and uses only the Python standard library.[^gate-slot-cli]
+
+The wrapper uses a guardian because the visible wrapper cannot trap `SIGKILL`.
+The guardian monitors wrapper liveness until exit, including after the `sem` leader exits.
+A bounded relay keeps a blocked stderr sink from blocking supervision.
+A failed sink disables forwarding without transferring workload ownership.
+Normal completion drains stderr in order.[^gate-slot-guardian]
+A launch barrier holds `sem` until its process-group identity is published.
+Guardian loss closes the barrier, so an unpublished child cannot start queued or running work.[^gate-slot-barrier]
+
+Command arguments travel through a private JSON file, not the `sem` command template.
+A fixed helper reads that file and calls `os.execvp`.
+Shell quoting alone cannot prevent GNU Parallel replacement expressions from evaluating command data.[^gate-slot-argv][^gate-slot-replacements]
+GNU documents negative timeouts as an exit without execution; positive timeouts take a slot even when none is available.[^gate-slot-manual]
+`--timeout` bounds each wait attempt, not command execution.
+The wrapper makes three total attempts, with 0.1-second and 0.2-second backoff.
+An expired wait returns exit 75 only after the final attempt.
+It never retries a started command or a cancelled wait.
+This bounded policy permits brief contention without an unbounded retry loop.[^gate-slot-timeout]
+
+`just check` uses the named `dotfiles-check` pool with one host-wide slot.
+This keeps separate worktrees from running the repository's full parallel gate together.[^gate-slot-just]
+GNU Parallel remains the external runtime dependency and is installed through the package registry.[^gate-slot-package]
+
+[^gate-slot-cli]: bin/gate-slot:1-24,368-470
+[^gate-slot-guardian]: bin/gate-slot:128-147,205-321; tests/gate-slot.bats:485-609,765-912
+[^gate-slot-barrier]: bin/gate-slot:173-203,284-297; tests/gate-slot.bats:611-685
+[^gate-slot-argv]: bin/gate-slot:159-188; tests/gate-slot.bats:738-763
+[^gate-slot-timeout]: bin/gate-slot:57-61,323-352; tests/gate-slot.bats:325-449,687-736
+[^gate-slot-just]: justfile:73-83
+[^gate-slot-package]: packages/packages.yaml:17-23
+[^gate-slot-manual]: [GNU sem manual, DESCRIPTION and OPTIONS](https://www.gnu.org/software/parallel/sem.html), GNU Parallel 20260422; verified 2026-09-19.
+[^gate-slot-replacements]: [GNU Parallel tutorial, Perl expression replacement string](https://www.gnu.org/software/parallel/parallel_tutorial.html); verified 2026-09-19.
+
+*Source: gate-slot-cli Cure and focused regression tests · Updated: 2026-09-19 · Supersedes: shell-quoted argv and incomplete lifecycle notes.*
+
 ## Pre-commit hooks (prek)
 
 Managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run on commit: trailing-whitespace, secret detection, shellcheck, large-file checks, and a **claude-config-sync check**.

@@ -1,0 +1,469 @@
+#!/usr/bin/env python3
+"""Bound a command with GNU sem while cleaning up after wrapper death."""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import json
+import math
+import os
+import queue
+import select
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+VERSION = "0.1.0"
+TIMEOUT_EXIT = 75
+
+
+def positive_float(value: str) -> float:
+    try:
+        result = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive number") from exc
+    if not math.isfinite(result) or result <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return result
+
+
+def positive_int(value: str) -> int:
+    try:
+        result = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if result <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return result
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="gate-slot",
+        description="Run one command through a host-wide GNU sem slot pool.",
+    )
+    parser.add_argument("--version", action="version", version=f"gate-slot {VERSION}")
+    subparsers = parser.add_subparsers(dest="subcommand")
+    run_parser = subparsers.add_parser("run", help="run a command through sem")
+    run_parser.add_argument("--slots", required=True, type=positive_int)
+    run_parser.add_argument("--name", default="default")
+    run_parser.add_argument(
+        "--timeout",
+        type=positive_float,
+        help="per-attempt wait timeout; retry up to 3 wait attempts with 0.1s/0.2s backoff",
+    )
+    run_parser.add_argument("command", nargs=argparse.REMAINDER)
+    return parser
+
+
+@dataclasses.dataclass(frozen=True)
+class GuardianOutcome:
+    returncode: int
+    wait_expired: bool = False
+    cancelled: bool = False
+
+    def encode(self) -> bytes:
+        return f"{self.returncode}\t{int(self.wait_expired)}\t{int(self.cancelled)}\n".encode()
+
+    @classmethod
+    def decode(cls, data: bytes) -> GuardianOutcome:
+        returncode, wait_expired, cancelled = data.decode().split("\t")
+        return cls(int(returncode), bool(int(wait_expired)), bool(int(cancelled)))
+
+
+def kill_group(process: subprocess.Popen[bytes], sig: signal.Signals) -> None:
+    try:
+        os.killpg(process.pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def kill_marker_group(marker: Path, sig: signal.Signals) -> None:
+    try:
+        pid = int(marker.read_text())
+    except (FileNotFoundError, ValueError):
+        return
+    try:
+        os.killpg(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def cleanup_marker(marker: Path) -> None:
+    try:
+        marker.unlink()
+    except FileNotFoundError:
+        pass
+    try:
+        marker.parent.rmdir()
+    except OSError:
+        pass
+
+
+def guardian_main(
+    read_fd: int,
+    sem_prefix: list[str],
+    command: list[str],
+    marker: Path,
+    sem_marker: Path,
+    timeout: float | None,
+) -> GuardianOutcome:
+    os.setsid()
+    stop_requested = False
+    read_pipe_open = True
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        nonlocal stop_requested
+        stop_requested = True
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+    relay_queue: queue.Queue[bytes | None] = queue.Queue(maxsize=1)
+    relay_failed = threading.Event()
+    relay_done = threading.Event()
+    relay_read_fd, relay_write_fd = os.pipe()
+
+    def relay_stderr() -> None:
+        try:
+            while (chunk := relay_queue.get()) is not None:
+                os.write(relay_write_fd, b".")
+                pending = memoryview(chunk)
+                while pending:
+                    pending = pending[os.write(2, pending) :]
+        except OSError:
+            relay_failed.set()
+        finally:
+            relay_done.set()
+            os.write(relay_write_fd, b".")
+
+    # Only this thread writes to the inherited sink. Its queue bounds backpressure.
+    threading.Thread(target=relay_stderr, daemon=True).start()
+
+    def run_attempt() -> GuardianOutcome:
+        nonlocal read_fd, read_pipe_open
+        process: subprocess.Popen[bytes] | None = None
+        stderr_open = True
+        stop_sent = False
+        stop_deadline: float | None = None
+        timeout_warning = False
+        stderr_tail = b""
+        launch_read_fd, launch_write_fd = os.pipe()
+        try:
+            command_path = marker.parent / "command"
+            command_path.write_text(json.dumps(command))
+            helper = (
+                "import json,os; from pathlib import Path; "
+                "root=Path(os.environ.pop('GATE_SLOT_DIRECTORY')); "
+                "command=json.loads((root/'command').read_text()); "
+                "(root/'started').write_text(str(os.getpgrp())); "
+                "os.execvp(command[0],command)"
+            )
+            script = 'exec "$GATE_SLOT_PYTHON" -c ' + shlex.quote(helper)
+            sem_argv = list(sem_prefix)
+            if timeout is not None:
+                sem_argv.extend(["--semaphoretimeout", str(-timeout)])
+            sem_argv.extend(["--", shlex.join(["/bin/sh", "-c", script])])
+            barrier = (
+                "import os,sys; fd=int(sys.argv[1]); "
+                "released=os.read(fd,1); os.close(fd); "
+                "released == b'\\n' or sys.exit(127); "
+                "os.execv(sys.argv[2],sys.argv[2:])"
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-c", barrier, str(launch_read_fd), *sem_argv],
+                start_new_session=True,
+                stderr=subprocess.PIPE,
+                pass_fds=(launch_read_fd,),
+                env=dict(
+                    os.environ,
+                    GATE_SLOT_DIRECTORY=str(marker.parent),
+                    GATE_SLOT_PYTHON=sys.executable,
+                ),
+            )
+            os.close(launch_read_fd)
+            launch_read_fd = -1
+            sem_marker.write_text(str(process.pid))
+            if stop_requested:
+                kill_group(process, signal.SIGINT)
+                stop_sent = True
+                stop_deadline = time.monotonic() + 1.0
+            elif process.poll() is None:
+                try:
+                    os.write(launch_write_fd, b"\n")
+                except OSError:
+                    kill_group(process, signal.SIGKILL)
+            os.close(launch_write_fd)
+            launch_write_fd = -1
+
+            while process.poll() is None or stderr_open:
+                if stop_requested and not stop_sent:
+                    kill_group(process, signal.SIGINT)
+                    kill_marker_group(marker, signal.SIGINT)
+                    stop_sent = True
+                    stop_deadline = time.monotonic() + 1.0
+                if stop_deadline is not None and time.monotonic() >= stop_deadline:
+                    kill_group(process, signal.SIGKILL)
+                    kill_marker_group(marker, signal.SIGKILL)
+                    stop_deadline = None
+
+                ready_fds = [relay_read_fd]
+                if read_pipe_open:
+                    ready_fds.append(read_fd)
+                discard_output = (
+                    stop_requested or not read_pipe_open or relay_failed.is_set()
+                )
+                if (
+                    stderr_open
+                    and process.stderr is not None
+                    and (discard_output or not relay_queue.full())
+                ):
+                    ready_fds.append(process.stderr.fileno())
+                try:
+                    ready, _, _ = select.select(ready_fds, [], [], 0.05)
+                except InterruptedError:
+                    continue
+                if read_pipe_open and read_fd in ready:
+                    try:
+                        alive = os.read(read_fd, 1)
+                    except OSError:
+                        alive = b""
+                    if not alive:
+                        read_pipe_open = False
+                        os.close(read_fd)
+                        read_fd = -1
+                        kill_group(process, signal.SIGKILL)
+                        kill_marker_group(marker, signal.SIGKILL)
+                if relay_read_fd in ready:
+                    os.read(relay_read_fd, 4096)
+                if (
+                    stderr_open
+                    and process.stderr is not None
+                    and process.stderr.fileno() in ready
+                ):
+                    try:
+                        chunk = process.stderr.read1(4096)
+                    except OSError:
+                        kill_group(process, signal.SIGKILL)
+                        kill_marker_group(marker, signal.SIGKILL)
+                        stderr_open = False
+                    else:
+                        if not chunk:
+                            stderr_open = False
+                        else:
+                            timeout_warning = (
+                                timeout_warning
+                                or b"Semaphore timed out." in stderr_tail + chunk
+                            )
+                            stderr_tail = (stderr_tail + chunk)[-64:]
+                            if (
+                                not stop_requested
+                                and read_pipe_open
+                                and not relay_failed.is_set()
+                            ):
+                                relay_queue.put_nowait(chunk)
+            returncode = process.wait()
+            return GuardianOutcome(
+                returncode if returncode >= 0 else 128 + -returncode,
+                wait_expired=(
+                    timeout_warning and not marker.exists() and not stop_requested
+                ),
+                cancelled=stop_requested,
+            )
+        except OSError as exc:
+            try:
+                relay_queue.put_nowait(
+                    f"gate-slot: failed to start sem: {exc}\n".encode()
+                )
+            except queue.Full:
+                pass  # Cleanup must not wait for a failed startup diagnostic.
+            return GuardianOutcome(127, cancelled=stop_requested)
+        finally:
+            if launch_read_fd >= 0:
+                os.close(launch_read_fd)
+            if launch_write_fd >= 0:
+                os.close(launch_write_fd)
+            if process is not None:
+                kill_group(process, signal.SIGKILL)
+                kill_marker_group(marker, signal.SIGKILL)
+                process.wait()
+                if process.stderr is not None:
+                    process.stderr.close()
+            for path in (sem_marker, marker, marker.parent / "command"):
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+
+    def finish(outcome: GuardianOutcome) -> GuardianOutcome:
+        nonlocal read_fd, read_pipe_open
+        eof_sent = False
+        while not relay_done.is_set() and read_pipe_open and not stop_requested:
+            if not eof_sent and not relay_queue.full():
+                relay_queue.put_nowait(None)
+                eof_sent = True
+            ready, _, _ = select.select([read_fd, relay_read_fd], [], [], 0.05)
+            if relay_read_fd in ready:
+                os.read(relay_read_fd, 4096)
+            if read_fd in ready and not os.read(read_fd, 1):
+                os.close(read_fd)
+                read_fd = -1
+                read_pipe_open = False
+        cleanup_marker(marker)
+        if stop_requested:
+            return GuardianOutcome(130, cancelled=True)
+        return outcome
+
+    for attempt in range(3):
+        if stop_requested:
+            return finish(GuardianOutcome(130, cancelled=True))
+        outcome = run_attempt()
+        if not outcome.wait_expired or outcome.cancelled or attempt == 2:
+            return finish(outcome)
+        delay = (0.1, 0.2)[attempt]
+        deadline = time.monotonic() + delay
+        while time.monotonic() < deadline:
+            if stop_requested:
+                return finish(GuardianOutcome(130, cancelled=True))
+            if not read_pipe_open:
+                return finish(GuardianOutcome(127))
+            try:
+                ready, _, _ = select.select(
+                    [read_fd], [], [], max(0.0, deadline - time.monotonic())
+                )
+            except InterruptedError:
+                continue
+            if ready:
+                try:
+                    if not os.read(read_fd, 1):
+                        read_pipe_open = False
+                        os.close(read_fd)
+                        read_fd = -1
+                        return finish(GuardianOutcome(127))
+                except OSError:
+                    read_pipe_open = False
+                    return finish(GuardianOutcome(127))
+    return finish(outcome)
+
+
+def write_outcome(outcome_fd: int, outcome: GuardianOutcome) -> None:
+    try:
+        os.write(outcome_fd, outcome.encode())
+    except BrokenPipeError:
+        pass
+
+
+def run_command(args: argparse.Namespace) -> int:
+    if not args.name:
+        raise ValueError("--name must not be empty")
+    command = list(args.command)
+    if command and command[0] == "--":
+        command.pop(0)
+    if not command:
+        raise ValueError("a command is required after --")
+    sem_path = shutil.which("sem")
+    if sem_path is None:
+        raise ValueError("GNU sem was not found; install GNU parallel")
+    marker_dir = Path(tempfile.mkdtemp(prefix="gate-slot-marker-"))
+    os.chmod(marker_dir, 0o700)
+    marker = marker_dir / "started"
+    sem_marker = marker_dir / "sem"
+    sem_prefix = [
+        sem_path,
+        "--fg",
+        "--ungroup",
+        "--id",
+        args.name,
+        "-j",
+        str(args.slots),
+    ]
+
+    read_fd, write_fd = os.pipe()
+    outcome_read_fd, outcome_write_fd = os.pipe()
+    try:
+        guardian_pid = os.fork()
+    except OSError:
+        os.close(read_fd)
+        os.close(write_fd)
+        os.close(outcome_read_fd)
+        os.close(outcome_write_fd)
+        cleanup_marker(sem_marker)
+        cleanup_marker(marker)
+        raise
+    if guardian_pid == 0:
+        os.close(write_fd)
+        os.close(outcome_read_fd)
+        outcome = guardian_main(
+            read_fd, sem_prefix, command, marker, sem_marker, args.timeout
+        )
+        write_outcome(outcome_write_fd, outcome)
+        os.close(outcome_write_fd)
+        os._exit(0)
+    os.close(read_fd)
+    os.close(outcome_write_fd)
+
+    def forward_signal(_signum: int, _frame: object) -> None:
+        try:
+            os.kill(guardian_pid, signal.SIGINT)
+        except ProcessLookupError:
+            pass
+
+    signal.signal(signal.SIGINT, forward_signal)
+    signal.signal(signal.SIGTERM, forward_signal)
+    try:
+        while True:
+            try:
+                _, _status = os.waitpid(guardian_pid, 0)
+                break
+            except InterruptedError:
+                continue
+        os.close(write_fd)
+        outcome_data = os.read(outcome_read_fd, 1024)
+        os.close(outcome_read_fd)
+        if not outcome_data:
+            kill_marker_group(sem_marker, signal.SIGKILL)
+            kill_marker_group(marker, signal.SIGKILL)
+            return 127
+        try:
+            outcome = GuardianOutcome.decode(outcome_data)
+        except (UnicodeDecodeError, ValueError):
+            kill_marker_group(sem_marker, signal.SIGKILL)
+            kill_marker_group(marker, signal.SIGKILL)
+            return 127
+        if outcome.wait_expired:
+            return TIMEOUT_EXIT
+        return outcome.returncode
+    finally:
+        try:
+            os.close(write_fd)
+        except OSError:
+            pass
+        try:
+            os.close(outcome_read_fd)
+        except OSError:
+            pass
+        cleanup_marker(sem_marker)
+        cleanup_marker(marker)
+        cleanup_marker(marker.parent / "command")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.subcommand != "run":
+        parser.error("a subcommand is required")
+    try:
+        return run_command(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
