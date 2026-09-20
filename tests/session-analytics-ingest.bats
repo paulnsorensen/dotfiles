@@ -109,6 +109,29 @@ q() { duckdb "$DB" -json -c "$1"; }
     assert_output_contains '"n":1'
 }
 
+@test "ingest: omp assistant turns land in model_turns with model, tokens, and latency" {
+    mkdir -p "$TEST_HOME/.omp/agent/sessions/proj"
+    cat > "$TEST_HOME/.omp/agent/sessions/proj/s.jsonl" <<'JSONL'
+{"type":"session","id":"o-1","cwd":"/work/omp"}
+{"type":"message","timestamp":"2026-05-30T13:00:00Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-x","stopReason":"toolUse","duration":7000.5,"ttft":1500,"usage":{"input":100,"output":20,"cacheRead":9000},"contextSnapshot":{"promptTokens":9100},"content":[{"type":"toolCall","id":"t1","name":"read","arguments":{"path":"a"}},{"type":"toolCall","id":"t2","name":"read","arguments":{"path":"b"}}]}}
+{"type":"message","timestamp":"2026-05-30T13:00:09Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-x","stopReason":"error","errorMessage":"usage_limit_reached","content":[]}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT model, stop_reason, tool_calls, input_tokens, cache_read_tokens, prompt_tokens, duration_ms, ttft_ms FROM model_turns WHERE harness='omp' AND stop_reason='tool_use';"
+    assert_output_contains '"model":"openai-codex/gpt-x"'
+    assert_output_contains '"tool_calls":2'
+    assert_output_contains '"input_tokens":100'
+    assert_output_contains '"cache_read_tokens":9000'
+    assert_output_contains '"prompt_tokens":9100'
+    assert_output_contains '"duration_ms":7000.5'
+    assert_output_contains '"ttft_ms":1500.0'
+    # An omp error stop must reach stop_events, or quota stalls stay invisible.
+    run q "SELECT e.stop_reason, t.error_message FROM stop_events e JOIN model_turns t USING (sessionId, timestamp) WHERE e.harness='omp';"
+    assert_output_contains '"stop_reason":"error"'
+    assert_output_contains '"error_message":"usage_limit_reached"'
+}
+
 # --- boundary + round-trip hardening -------------------------------------
 
 @test "ingest: codex function_call_output round-trips into a tool_result with matching call_id" {

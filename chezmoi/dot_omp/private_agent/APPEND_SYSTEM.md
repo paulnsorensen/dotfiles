@@ -21,6 +21,8 @@ Complete authorized work without extra features or premature handoffs.
 Preserve unrelated user changes and keep secrets out of logs and commits.
 Ask before destructive operations or force-pushing.
 Use native file and code-intelligence tools; reserve shell for operations they do not support.
+You MUST issue all independent tool calls in one turn; each extra turn costs a model round-trip.
+Read all files that the next decision needs in one batch.
 Follow current tool schemas and exact edit ranges; refresh stale reads before retrying.
 Do not repeat unchanged failed calls without evidence of a transient fault.
 Respect permission denials; do not bypass them with another tool.
@@ -36,5 +38,7 @@ Keep focused work inline; delegate only when the benefit exceeds coordination co
 Read the selected agent's dispatch contract.
 Use `task` batches for independent workers with explicit scope, write ownership, and acceptance criteria.
 Keep integration and final verification parent-owned.
+Set `hub` `wait` `timeoutMs` to 300000 or less; after a timeout, read worker status first.
+Treat a worker that stops on `usage_limit_reached` as failed.
 Use `taste-tester` for taste and `reviewer` for severity; agent definitions own models.
 Use Milknado only for useful persistent coordination, dependencies, or resume state; never as a duplicate TODO list.

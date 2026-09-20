@@ -59,7 +59,9 @@ omp:
     display:
       showTokenUsage: true
       cacheMissMarker: true
-    includeWorkspaceTree: true
+    # Latency (2026-09-20 session-analytics audit): the tree costs ~1k prompt
+    # tokens on every turn of every sub-agent; `glob` serves the same need.
+    includeWorkspaceTree: false
     # Output tightening (2026-07-09 research: .cheese/research/oh-my-pi-config).
     # `read.toolResultPreview: false` keeps read results (including `skill://...`)
     # as summary rows instead of inline transcript dumps. Tool spill settings
@@ -82,6 +84,15 @@ omp:
       # harnesses. Kept true (omp's live default) — this is the intended
       # consumer of that dir; chezmoi never owns it (see .chezmoiignore).
       enableAgentsUser: true
+      # Claude-only or retired skills. Each listed skill costs prompt tokens on
+      # every turn of every agent; these cannot act inside OMP.
+      ignoredSkills:
+        - claude-local
+        - git-hygiene
+        - routine-env
+        - routine-scaffold
+        - ultracook
+        - wt-git
     tui:
       tight: true
     # omp-introduced (v18): input-composer frame shape — folded at omp's live
@@ -130,6 +141,10 @@ omp:
       enableEffort: true
       isolation:
         enabled: true
+      # Latency audit: omp's default of 32 parallel workers exhausts the Codex
+      # quota (221 of 224 model error stops were usage_limit_reached), and a
+      # worker that stops this way leaves the coordinator in `hub wait`.
+      maxConcurrency: 6
     # omp-introduced (v18.1.x): top-level sandbox backend selector, sibling to
     # the per-task `task.isolation` toggle above — folded at omp's live default.
     isolation:

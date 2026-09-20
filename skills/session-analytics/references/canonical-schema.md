@@ -53,6 +53,23 @@ Flattened from user `message.content[]` blocks where `type='tool_result'`.
 Assistant messages where the model stopped generating. Columns: `harness`,
 `stop_reason`, `timestamp`, `sessionId`, `cwd`, `gitBranch`.
 
+## `model_turns`
+
+One row per assistant turn that names a model. Use it for round-trip latency,
+batching, and quota analysis (`query.sh latency`).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| harness | VARCHAR | Source harness (claude and omp; codex and cursor name no model) |
+| model | VARCHAR | Model id; omp uses `<provider>/<model>` |
+| stop_reason | VARCHAR | Canonical stop reason; omp `toolUse`/`stop` map to `tool_use`/`end_turn` |
+| error_message | VARCHAR | Provider error text on an `error` stop (omp only) |
+| input_tokens / output_tokens / cache_read_tokens | BIGINT | Token usage for the turn |
+| prompt_tokens | BIGINT | Full context size sent for the turn (omp only) |
+| duration_ms / ttft_ms | DOUBLE | Model round-trip time and time to first token (omp only) |
+| tool_calls | BIGINT | Tool calls issued in the turn; 1 means the turn did not batch |
+| timestamp, sessionId, cwd | VARCHAR | Join keys |
+
 ## `agent_spawns`
 
 Subset of `tool_uses` for `Agent` (claude) and `Task` (cursor) calls. Columns: `harness`,

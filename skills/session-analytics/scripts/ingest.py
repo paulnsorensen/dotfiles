@@ -280,6 +280,40 @@ def omp_discover():
     return out
 
 
+# omp stopReason -> the canonical (claude) stop_reason vocabulary.
+_OMP_STOP_REASONS = {"stop": "end_turn", "toolUse": "tool_use", "length": "max_tokens"}
+
+
+def _omp_turn_meta(msg):
+    """Per-turn model metadata from an omp assistant message, in claude key names.
+
+    Feeds ``stop_events`` and ``model_turns``. Latency fields (``duration_ms``,
+    ``ttft_ms``) and ``prompt_tokens`` are omp-only; other harnesses leave them NULL.
+    """
+    usage = msg.get("usage") if isinstance(msg.get("usage"), dict) else {}
+    snapshot = msg.get("contextSnapshot")
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    stop = msg.get("stopReason")
+    model = msg.get("model")
+    if model and msg.get("provider"):
+        model = f"{msg['provider']}/{model}"
+    meta = {
+        "model": model,
+        "stop_reason": _OMP_STOP_REASONS.get(stop, stop),
+        "error_message": msg.get("errorMessage"),
+        "usage": {
+            "input_tokens": usage.get("input"),
+            "output_tokens": usage.get("output"),
+            "cache_read_input_tokens": usage.get("cacheRead"),
+            "cache_creation_input_tokens": usage.get("cacheWrite"),
+        },
+        "duration_ms": msg.get("duration"),
+        "ttft_ms": msg.get("ttft"),
+        "prompt_tokens": snapshot.get("promptTokens"),
+    }
+    return {k: v for k, v in meta.items() if v is not None}
+
+
 def omp_normalize(path):
     """oh-my-pi session JSONL -> canonical envelope.
 
@@ -337,7 +371,7 @@ def omp_normalize(path):
                 "timestamp": ts,
                 "sessionId": session_id,
                 "cwd": cwd,
-                "message": {"content": blocks},
+                "message": {"content": blocks, **_omp_turn_meta(msg)},
             }
         elif role == "toolResult":
             text = "\n".join(
@@ -776,6 +810,33 @@ def main():
           AND message IS NOT NULL
           AND json_extract_string(message, '$.stop_reason')
               IN ('end_turn', 'stop_sequence', 'max_tokens', 'success', 'error', 'aborted');
+    """)
+
+    # Step 4b: model_turns (one row per assistant turn that names a model).
+    # Latency and prompt_tokens are omp-only; claude carries model + usage.
+    print("  Creating model_turns...")
+    run_sql("""
+        CREATE TABLE model_turns AS
+        SELECT
+            harness,
+            json_extract_string(message, '$.model') AS model,
+            json_extract_string(message, '$.stop_reason') AS stop_reason,
+            json_extract_string(message, '$.error_message') AS error_message,
+            CAST(json_extract(message, '$.usage.input_tokens') AS BIGINT) AS input_tokens,
+            CAST(json_extract(message, '$.usage.output_tokens') AS BIGINT) AS output_tokens,
+            CAST(json_extract(message, '$.usage.cache_read_input_tokens') AS BIGINT)
+                AS cache_read_tokens,
+            CAST(json_extract(message, '$.prompt_tokens') AS BIGINT) AS prompt_tokens,
+            CAST(json_extract(message, '$.duration_ms') AS DOUBLE) AS duration_ms,
+            CAST(json_extract(message, '$.ttft_ms') AS DOUBLE) AS ttft_ms,
+            (SELECT count(*)
+               FROM unnest(json_extract(json_extract(message, '$.content'), '$[*]')) AS c(block)
+              WHERE json_extract_string(block, '$.type') = 'tool_use') AS tool_calls,
+            timestamp, sessionId, cwd
+        FROM raw_entries
+        WHERE type = 'assistant'
+          AND message IS NOT NULL
+          AND json_extract_string(message, '$.model') IS NOT NULL;
     """)
 
     # Step 5: agent_spawns.

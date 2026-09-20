@@ -119,6 +119,18 @@ Root `dots sync` verifies exact live outputs — currently `omp/18.1.14` (`OMP_P
 
 `tests/config-validation.bats:9-15` proves the project config exists, parses as TOML, and resolves the exact `just check` gate. `milknado agents check` validates base agent resolution; a direct profile probe confirmed that `implement`, `spec`, `spike`, `prototype`, and `research` all inherit `just check`.
 
+## Latency policy
+
+A 2026-09-20 session-analytics audit (5,957 sessions, 190k turns) found that no single call is slow. Wall-clock time comes from turn count and dead waits:
+
+- A user prompt needs a median of 47 model turns; 79% of turns issue one tool call at about 6 s per round-trip. OMP's built-in prompt only says `SHOULD parallelize`.
+- `hub` `wait` totals 96.7 h against 29 h for all `bash`; the model sets `timeoutMs: 3600000`.
+- 221 of 224 model error stops are Codex `usage_limit_reached`, and those agents do not resume.
+
+The repo answers with three levers. `APPEND_SYSTEM.md` makes batching a MUST, caps `hub` `wait` at 300000 ms, and tells the coordinator to treat a quota stop as a failed worker. `omp.yaml` sets `task.maxConcurrency: 6` (OMP default 32) so fan-out does not drain the quota. `omp.yaml` also sets `includeWorkspaceTree: false` and `skills.ignoredSkills` for Claude-only skills; the skills block was 27k of a 78k-character sub-agent prompt.
+
+`retry.waitForUsageReset` stays `false`: a worker that sleeps until reset hides the stall from the coordinator. Measure any change with `query.sh latency omp` (`model_turns` table): watch `single_call_pct`, `error_stops`, and `model_hours`.
+
 ## Remaining policy
 
 Completed request graphs remain durable in Milknado. This cutover does not decide whether old graphs should be retained permanently, archived, or deleted; any lifecycle policy must preserve the single-owner rule and be implemented in Milknado rather than reintroducing native Todo state.
