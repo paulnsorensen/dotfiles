@@ -63,7 +63,7 @@ into several raw entries; this table groups them by `message.id`.
 | Column | Type | Description |
 |--------|------|-------------|
 | harness | VARCHAR | Source harness (claude and omp; codex and cursor name no model) |
-| model | VARCHAR | Model id; omp uses `<provider>/<model>` |
+| model | VARCHAR | Model id; omp uses `<provider>/<model>`, or the bare model when the log names no provider |
 | stop_reason | VARCHAR | Canonical stop reason; omp `toolUse`/`stop` map to `tool_use`/`end_turn` |
 | error_message | VARCHAR | Provider error text on an `error` stop (omp only) |
 | input_tokens / output_tokens / cache_read_tokens | BIGINT | Token usage for the turn |
